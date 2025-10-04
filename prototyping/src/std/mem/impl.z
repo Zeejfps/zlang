@@ -1,10 +1,10 @@
 struct Allocator {
     data: *
-    alloc: func<T>(data: *): T*;
+    alloc: func<T>(data: *) -> T*;
     free: func<T>(data: *, item: T*);
 }
 
-func alloc<T>(allocator: Allocator*): T* {
+func alloc<T>(allocator: Allocator*) -> T* {
     return allocator.alloc(allocator.data)
 }
 

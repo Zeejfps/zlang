@@ -38,3 +38,10 @@ out.write(first_item.to_string());
 
 const str = std.string.create("Some litteral string");
 const str_slice = str.slice(0, 10);
+
+struct Vec2<T> = std.vec.Vec2<T>;
+
+const v1: Vec2<u8> = {
+    c1 = 0,
+    c2 = 10
+};

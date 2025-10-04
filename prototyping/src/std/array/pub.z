@@ -1,8 +1,8 @@
-trait Allocator = std.mem.Allocator
+struct Allocator = std.mem.Allocator
 
 struct Array<T> {
     length: u32
 }
 
-func create<T>(len: u32, allocator: Allocator): Array<T>;
+func create<T>(len: u32, allocator: Allocator) -> Array<T>;
 func destroy<T>(array: Array<T>);

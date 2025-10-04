@@ -4,7 +4,7 @@ struct HeapAllocatorData {
     buffer: u8[]
 }
 
-func create() => Allocator {
+func create() -> Allocator {
     const data = malloc<HeapAllocatorData>()
     return {
         data: data,
@@ -13,7 +13,7 @@ func create() => Allocator {
     }
 }
 
-func alloc<T>(data: *): T* {
+func alloc<T>(data: *) -> T* {
     const heap_allocator_data = (HeapAllocatorData*)data
 }
 
