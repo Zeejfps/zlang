@@ -5,7 +5,7 @@ struct List<T> {
     allocator: Allocator*;
     capacity: u32;
     item_count: u32;
-    items: T[];
+    items: T*;
 }
 
 func create<T>(allocator: Allocator*) -> List<T>* {
@@ -29,7 +29,7 @@ func destroy<T>(list: List<T>*){
 func push_item<T>(list: List<T>*, item: T) {
     const new_count = list.item_count + 1;
     if (new_count > list.capacity) {
-        expand(list)
+        expand(list);
     }
     list.items[list.item_count] = item;
     list.item_count += 1;
