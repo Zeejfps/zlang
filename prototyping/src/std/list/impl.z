@@ -56,3 +56,7 @@ func expand(list: List<T>*) {
     allocator.free(items);
     list.items = new_items;
 }
+
+operator [] <T>(list: List<T>*, index: u32) -> T {
+    return list.items[index];
+}
