@@ -7,13 +7,18 @@ struct Allocator {
 }
 
 func alloc<T>(allocator: Allocator*) -> T* {
-    return allocator.alloc(allocator.data)
+    const size = sizeof(T);
+    const ptr = allocator.alloc(allocator.impl, size);
+    return cast<T*>(ptr);
 }
 
 func malloc<T>(allocator: Allocator*, count: u32) -> T* {
-    return allocator.malloc(allocator.data, count)
+    const size = sizeof(T) * count;
+    const ptr = allocator.alloc(allocator.impl, size);
+    return cast<T*>(ptr);
 }
 
 func free<T>(allocator: Allocator*, item: T*) {
-    return allocator.free(allocator.data)
+    const size = sizeof(T);
+    return allocator.free(allocator.impl, item, size)
 }
