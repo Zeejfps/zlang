@@ -1,7 +1,4 @@
-type TempAllocator = struct {
-    Allocator* allocator
+trait Allocator {
+    alloc<T>(): T*;
+    free<T>(item: T*);
 }
-
-Allocator* default_allocator
-
-func free(TempAllocator* allocator)

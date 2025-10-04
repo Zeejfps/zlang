@@ -14,7 +14,7 @@ func create(literal: Array<u8>*) : String* {
 }
 
 func create(literal: Array<u8>*, allocator: Allocator*) : String* {
-    let str = allocator.alloc<String>()
+    const str = allocator.alloc<String>()
     str.allocator = allocator
     str.chars = create<Char>(15, allocator)
 }
@@ -27,3 +27,7 @@ func destroy(str: String*) {
 func length(str: String*) : u32 {
     return str.chars.length()
 }
+
+func slice(str: String*, start_index: u32) : Slice<Char>;
+func slice(str: String*, start_index: u32, length: u32) : Slice<Char>;
+func get_char(str: String* , index: u32) : Char;
