@@ -1,9 +1,9 @@
 
 struct Allocator {
-    data: *
-    alloc: func<T>(data: *) -> T*;
-    malloc: func<T>(data: *, count: u32) -> T*;
-    free: func<T>(data: *, item: T*);
+    impl: *
+    alloc:  func(impl: *, size: u32) -> *;
+    resize: func(impl: *, start: *, old_size: u32, new_size: u32) -> *;
+    free:   func(impl: *, start: *, size: u32);
 }
 
 func alloc<T>(allocator: Allocator*) -> T* {
