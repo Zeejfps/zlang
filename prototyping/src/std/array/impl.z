@@ -11,6 +11,7 @@ func create<T>(len: u32, allocator: Allocator) -> Array<T> {
     array.length = len;
     array.data = allocator.malloc<T>(len);
     array.allocator = allocator;
+    return array;
 }
 
 func destroy<T>(array: Array<T>) {
