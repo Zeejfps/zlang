@@ -1,3 +1,4 @@
+const mem = std.mem;
 struct Allocator = std.mem.Allocator
 
 struct Array<T> {
@@ -7,16 +8,16 @@ struct Array<T> {
 }
 
 func create<T>(len: u32, allocator: Allocator) -> Array<T> {
-    const array = allocator.alloc<Array<T>>();
+    const array = mem.alloc<Array<T>>(allocator);
     array.length = len;
-    array.data = allocator.malloc<T>(len);
+    array.data = mem.malloc<T>(allocator, len);
     array.allocator = allocator;
     return array;
 }
 
 func destroy<T>(array: Array<T>) {
     const allocator = array.allocator;
-    allocator.free(array.data);
+    mem.free(allocator, array.data, array.length);
     array.data = null;
     array.length = 0;
     array.allocator = null;

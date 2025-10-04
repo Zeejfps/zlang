@@ -22,3 +22,8 @@ func free<T>(allocator: Allocator*, item: T*) {
     const size = sizeof(T);
     return allocator.free(allocator.impl, item, size)
 }
+
+func free<T>(allocator: Allocator*, items: T*, count: u32) {
+    const size = sizeof(T) * count;
+    return allocator.free(allocator.impl, items, size)
+}
