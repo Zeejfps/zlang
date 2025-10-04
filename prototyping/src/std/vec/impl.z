@@ -12,3 +12,12 @@ func add<T: Number>(v1: Vec2<T>*, v2: Vec2<T>*) -> Vec2<T> {
         c2 = v1.c2 + v2.c2
     }
 }
+
+operator + <T: Number>(v1: Vec2<T>*, v2: Vec2<T>*) -> Vec2<T> {
+    return add(v1, v2);
+}
+
+operator += <T: Number>(v1: Vec2<T>*, v2: Vec2<T>*) {
+    v1.c1 += v2.c1;
+    v1.c2 += v2.c2;
+}

@@ -1,5 +1,7 @@
 struct Allocator = std.mem.Allocator;
-struct List<T>;
+struct List<T> {
+    
+};
 
 func create<T>() -> List<T>*;
 func create<T>(allocator: Allocator*) -> List<T>*;
