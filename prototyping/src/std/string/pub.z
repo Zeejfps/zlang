@@ -1,8 +1,8 @@
 const mem = std.mem;
-struct Array<T> = std.array.Array<T>;
+type Array<T> = std.array.Array<T>;
 
-struct String;
-struct Char;
+type String;
+type Char;
 
 func create(literal: Array<u8>*) : String*;
 func create(
