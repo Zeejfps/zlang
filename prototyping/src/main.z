@@ -1,6 +1,7 @@
 const array = std.array;
 const list = std.list;
 const io = std.io;
+const stdout = io.out;
 const fmt = std.fmt;
 const string = std.string;
 struct HeapAllocator = std.mem.heap.HeapAllocator
@@ -34,7 +35,7 @@ std.io.out.write(std.fmt.to_string(first_item));
 // OR
 std.io.out.write(first_item.to_string());
 // OR
-out.write(first_item.to_string());
+stdout.write(first_item.to_string());
 
 const str = std.string.create("Some litteral string");
 const str_slice = str.slice(0, 10);

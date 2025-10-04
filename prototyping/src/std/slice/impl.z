@@ -1,5 +1,13 @@
-type Slice<T>;
+struct Slice<T> {
+    data: T*
+    start_index: u32;
+    end_index: u32;
+}
 
 func get<T>(slice: Slice<T>, index: u32) : T;
 func slice<T>(slice: Slice<T>, start_index: u32) : Slice<T>;
 func slice<T>(slice: Slice<T>, start_index: u32, length: u32) : Slice<T>;
+
+operator [] (slice: Slice<T>, index: u32) -> {
+    return slice.data[slice.start_index + index];
+}
