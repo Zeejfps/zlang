@@ -1,0 +1,16 @@
+using std.mem
+using std.array
+
+type String
+type Char
+
+func create(Array<u8> literal) : String*
+func create(
+    Array<u8> literal, 
+    Allocator* allocator = env.default_allocator
+) : String*
+func destroy(String* str)
+func length(String* str) : usize
+func slice(String* str, usize start_index) : Slice<Char>
+func slice(String* str, usize start_index, usize length) : Slice<Char>
+func get_char(String* str, usize index) : Char

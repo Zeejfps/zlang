@@ -1,0 +1,28 @@
+using std.mem
+using std.array
+
+type String = struct {
+    Allocator* allocator
+    Array<Char> chars
+}
+    
+type Char = u16
+
+func create(Array<u8>* literal) : String* {
+    return create(literal, std.mem.default_allocator)
+}
+
+func create(Array<u8>* literal, Allocator* allocator) : String* {
+    let str = allocator.alloc<String>()
+    str.allocator = allocator
+    str.chars = create<Char>(15, allocator)
+}
+
+func destroy(String* str) {
+    str.chars.free()
+    str.allocator.free(str)
+}
+
+func length(String* str) : usize {
+    return str.chars.length()
+}

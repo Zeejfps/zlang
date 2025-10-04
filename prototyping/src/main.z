@@ -1,0 +1,40 @@
+using std.array
+using std.list
+using std.io
+using std.fmt
+using std.string
+
+std.mem.TempAllocator
+
+u8[10] stack_array
+
+stack_array[0] = 1
+
+u8[] heap_array = create<u8>(50)
+defer array.destroy(heap_array)
+
+std.list.List<T> my_list = std.list.create<u8>()
+List<T> my_list = create<u8>()
+
+defer std.list.destroy(my_list) 
+// OR
+defer my_list.destroy()
+
+std.list.push_item(my_list, 0)
+// OR
+my_list.push_item(0)
+
+let first_item = std.list.get_item(my_list, 0)
+// OR
+let first_item = get_item(my_list, 0)
+// OR
+let first_item = my_list.get_item(0)
+
+std.io.out.write(std.fmt.to_string(first_item))
+// OR
+std.io.out.write(first_item.to_string())
+// OR
+out.write(first_item.to_string())
+
+let str = std.string.create("Some litteral string")
+let str_slice = str.slice(0, 10)

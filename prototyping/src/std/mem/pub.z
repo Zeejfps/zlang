@@ -1,0 +1,9 @@
+trait Allocator {
+    alloc<T>()
+    free<T>()
+}
+
+Allocator* default_allocator
+
+func alloc<T>(TempAllocator* allocator)
+func free<T>(TempAllocator* allocator)

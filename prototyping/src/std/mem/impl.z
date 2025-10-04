@@ -1,0 +1,7 @@
+type TempAllocator = struct {
+    Allocator* allocator
+}
+
+Allocator* default_allocator
+
+func free(TempAllocator* allocator)

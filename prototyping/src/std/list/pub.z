@@ -1,0 +1,12 @@
+type List<T>
+
+func create<T>() : List<T>*
+func create<T>(Allocator* allocator) : List<T>*
+func destroy<T>(List<T>* list)
+func size(List<T>* list) : usize
+func push_item<T>(List<T>* list, T item)
+func pop_item<T>(List<T>* list, T item)
+func insert_item<T>(List<T>* list, T item, usize index)
+func remove_item<T>(List<T>* list, T item) : bool
+func get_item<T>(List<T>* list, usize index) : T
+
