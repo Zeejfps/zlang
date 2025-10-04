@@ -2,7 +2,7 @@ const mem = std.mem
 const array = std.array
 trait Allocator = std.mem.Allocator
 
-type String = struct {
+struct String {
     allocator: Allocator* 
     chars: Array<Char> 
 }

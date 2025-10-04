@@ -1,7 +1,6 @@
-const mem = std.mem;
-type Array<T> = std.array.Array<T>;
-
-type String;
+trait Allocator;
+struct Array<T>;
+struct String;
 type Char;
 
 func create(literal: Array<u8>*) : String*;

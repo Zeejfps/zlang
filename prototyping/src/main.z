@@ -3,7 +3,8 @@ const list = std.list;
 const io = std.io;
 const fmt = std.fmt;
 const string = std.string;
-type Array<u8> = array.Array<u8>;
+
+struct Array<T> = array.Array<T>;
 
 const stack_array: u8[10];
 stack_array[0] = 1;
