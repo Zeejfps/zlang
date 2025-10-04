@@ -1,0 +1,10 @@
+interface std.os {
+    func write();
+    func read(buffer: u8*, size: u32);
+}
+
+#if WINDOWS
+module std.os = std.os.windows;
+#elseif OSX
+module std.os = std.os.osx;
+#endif

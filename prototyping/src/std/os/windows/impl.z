@@ -1,0 +1,10 @@
+module std.os.windows impl os {
+
+    func write() {
+
+    }
+
+    func read(buffer: u8*, size: u32) {
+
+    }
+}
