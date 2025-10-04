@@ -1,9 +1,9 @@
 trait Allocator {
-    alloc<T>()
-    free<T>()
+    alloc<T>();
+    free<T>();
 }
 
-Allocator* default_allocator
+const default_allocator: Allocator*;
 
-func alloc<T>(TempAllocator* allocator)
-func free<T>(TempAllocator* allocator)
+func alloc<T>(allocator: TempAllocator*);
+func free<T>(allocator: TempAllocator*);

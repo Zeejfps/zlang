@@ -1,9 +1,9 @@
 using std.mem
 using std.array
 
-type String = struct {
-    Allocator* allocator
-    Array<Char> chars
+struct String = struct {
+    allocator: Allocator* 
+    chars: Array<Char> 
 }
     
 type Char = u16

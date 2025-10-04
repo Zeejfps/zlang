@@ -1,8 +1,8 @@
 const mem = std.mem;
-type Array<T> = std.array.Array<T>;
+struct Array<T> = std.array.Array<T>;
 
-type String;
-type Char;
+struct String;
+struct Char;
 
 func create(literal: Array<u8>*) : String*;
 func create(
@@ -10,7 +10,7 @@ func create(
     allocator: Allocator* = env.default_allocator
 ) : String*;
 func destroy(str: String*);
-func length(str: String* ) : usize;
-func slice(str: String*, start_index: usize) : Slice<Char>;
-func slice(str: String*, start_index: usize, length: usize) : Slice<Char>;
-func get_char(str: String* , index: usize) : Char;
+func length(str: String* ) : u32;
+func slice(str: String*, start_index: u32) : Slice<Char>;
+func slice(str: String*, start_index: u32, length: u32) : Slice<Char>;
+func get_char(str: String* , index: u32) : Char;

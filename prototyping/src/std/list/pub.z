@@ -1,5 +1,5 @@
 trait Allocator = std.mem.Allocator;
-type List<T>;
+struct List<T>;
 
 func create<T>() : List<T>*;
 func create<T>(allocator: Allocator*) : List<T>*;
