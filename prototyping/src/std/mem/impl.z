@@ -1,4 +1,13 @@
-trait Allocator {
-    alloc<T>(): T*;
-    free<T>(item: T*);
+struct Allocator {
+    data: *
+    alloc: func<T>(data: *): T*;
+    free: func<T>(data: *, item: T*);
+}
+
+func alloc<T>(allocator: Allocator*): T* {
+    return allocator.alloc(allocator.data)
+}
+
+func free<T>(allocator: Allocator*, item: T*) {
+    return allocator.free(allocator.data)
 }

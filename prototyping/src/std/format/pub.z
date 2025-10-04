@@ -1,1 +1,1 @@
-func to_string(u8 input) : u8[]
+func to_string(input: u8[]) : u8[]

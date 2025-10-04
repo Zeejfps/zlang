@@ -1,6 +1,6 @@
 const mem = std.mem
 const array = std.array
-trait Allocator = std.mem.Allocator
+struct Allocator = std.mem.Allocator
 
 struct String {
     allocator: Allocator* 
@@ -14,18 +14,22 @@ func create(literal: Array<u8>*) : String* {
 }
 
 func create(literal: Array<u8>*, allocator: Allocator*) : String* {
-    const str = allocator.alloc<String>()
-    str.allocator = allocator
-    str.chars = create<Char>(15, allocator)
+    const str = allocator.alloc<String>();
+    // OR
+    const str = std.mem.alloc<String>(allocator);
+    // OR
+    const str = allocator.alloc(allocator.data);
+    str.allocator = allocator;
+    str.chars = array.create<Char>(15, allocator);
 }
 
 func destroy(str: String*) {
-    str.chars.free()
-    str.allocator.free(str)
+    str.chars.free();
+    str.allocator.free(str);
 }
 
 func length(str: String*) : u32 {
-    return str.chars.length()
+    return str.chars.length();
 }
 
 func slice(str: String*, start_index: u32) : Slice<Char>;
