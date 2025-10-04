@@ -1,5 +1,5 @@
-type Slice<T>
+type Slice<T>;
 
-func get<T>(Slice<T>* slice, usize index) : T
-func slice<T>(Slice<T>* slice, usize start_index) : Slice
-func slice<T>(Slice<T>* slice, usize start_index, usize length) : Slice
+func get<T>(slice: Slice<T>, index: u32) : T;
+func slice<T>(slice: Slice<T>, start_index: u32) : Slice<T>;
+func slice<T>(slice: Slice<T>, start_index: u32, length: u32) : Slice<T>;

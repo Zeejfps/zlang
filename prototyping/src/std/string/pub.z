@@ -1,16 +1,16 @@
-using std.mem
-using std.array
+const mem = std.mem;
+type Array<T> = std.array.Array<T>;
 
-type String
-type Char
+type String;
+type Char;
 
-func create(Array<u8> literal) : String*
+func create(literal: Array<u8>*) : String*;
 func create(
-    Array<u8> literal, 
-    Allocator* allocator = env.default_allocator
-) : String*
-func destroy(String* str)
-func length(String* str) : usize
-func slice(String* str, usize start_index) : Slice<Char>
-func slice(String* str, usize start_index, usize length) : Slice<Char>
-func get_char(String* str, usize index) : Char
+    literal: Array<u8>*, 
+    allocator: Allocator* = env.default_allocator
+) : String*;
+func destroy(str: String*);
+func length(str: String* ) : usize;
+func slice(str: String*, start_index: usize) : Slice<Char>;
+func slice(str: String*, start_index: usize, length: usize) : Slice<Char>;
+func get_char(str: String* , index: usize) : Char;

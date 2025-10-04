@@ -1,12 +1,13 @@
-type List<T>
+trait Allocator = std.mem.Allocator;
+type List<T>;
 
-func create<T>() : List<T>*
-func create<T>(Allocator* allocator) : List<T>*
-func destroy<T>(List<T>* list)
-func size(List<T>* list) : usize
-func push_item<T>(List<T>* list, T item)
-func pop_item<T>(List<T>* list, T item)
-func insert_item<T>(List<T>* list, T item, usize index)
-func remove_item<T>(List<T>* list, T item) : bool
-func get_item<T>(List<T>* list, usize index) : T
+func create<T>() : List<T>*;
+func create<T>(allocator: Allocator*) : List<T>*;
+func destroy<T>(list: List<T>*);
+func size(list: List<T>*) : u32;
+func push_item<T>(list: List<T>*, item: T);
+func pop_item<T>(list: List<T>* , item: T );
+func insert_item<T>(list: List<T>*, item: T, index: u32);
+func remove_item<T>(list: List<T>*, item: T) : bool;
+func get_item<T>(list: List<T>*, index: u32) : T;
 
