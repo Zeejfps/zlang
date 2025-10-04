@@ -1,11 +1,16 @@
 struct Allocator {
     data: *
     alloc: func<T>(data: *) -> T*;
+    malloc: func<T>(data: *, count: u32) -> T*;
     free: func<T>(data: *, item: T*);
 }
 
 func alloc<T>(allocator: Allocator*) -> T* {
     return allocator.alloc(allocator.data)
+}
+
+func malloc<T>(allocator: Allocator*, count: u32) -> T* {
+    return allocator.malloc(allocator.data, count)
 }
 
 func free<T>(allocator: Allocator*, item: T*) {
