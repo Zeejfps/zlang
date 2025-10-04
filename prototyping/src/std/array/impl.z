@@ -1,8 +1,22 @@
 struct Allocator = std.mem.Allocator
 
 struct Array<T> {
-    length: u32
+    allocator: Allocator*;
+    length: u32;
+    data: T*;
 }
 
-func create<T>(len: u32, allocator: Allocator) -> Array<T>;
-func destroy<T>(array: Array<T>);
+func create<T>(len: u32, allocator: Allocator) -> Array<T> {
+    const array = allocator.alloc<Array<T>>();
+    array.length = len;
+    array.data = allocator.malloc<T>(len);
+    array.allocator = allocator;
+}
+
+func destroy<T>(array: Array<T>) {
+    const allocator = array.allocator;
+    allocator.free(array.data);
+    array.data = null;
+    array.length = 0;
+    array.allocator = null;
+}

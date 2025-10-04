@@ -45,3 +45,11 @@ const v1: Vec2<u8> = {
     c1 = 0,
     c2 = 10
 };
+
+const v2: Vec2<u8> = {
+    c1 = 2,
+    c2 = 3
+}
+
+v1 += v2;
+const v3 = v1 + v2;

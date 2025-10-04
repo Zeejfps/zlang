@@ -3,8 +3,8 @@ const array = std.array
 struct Allocator = std.mem.Allocator
 
 struct String {
-    allocator: Allocator* 
-    chars: Array<Char>* 
+    allocator: Allocator*; 
+    chars: Array<Char>*;
 }
     
 type Char = u16
