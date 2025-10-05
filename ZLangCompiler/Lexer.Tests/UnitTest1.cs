@@ -2,10 +2,6 @@
 
 public class Tests
 {
-    [SetUp]
-    public void Setup()
-    {
-    }
 
     [Test]
     public void Test1()
@@ -23,7 +19,5 @@ public class Tests
             new Token(TokenKind.Identifier, "string", 1, 21),
             new Token(TokenKind.Eof, string.Empty, 1, 27)
         }));
-        
-        Assert.Pass();
     }
 }
