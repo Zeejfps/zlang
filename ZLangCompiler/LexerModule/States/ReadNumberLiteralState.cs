@@ -21,7 +21,7 @@ internal sealed class ReadNumberLiteralState : ILexerState
         if (!lexer.IsDigit(nextChar))
         {
             lexer.EmitToken(TokenKind.LiteralNumber);
-            return _states.FindNextTokenState;
+            return null;
         }
         
         lexer.ReadChar();

@@ -27,7 +27,7 @@ internal sealed class ReadTextLiteralState : ILexerState
         {
             lexer.EmitToken(TokenKind.LiteralText);
             lexer.SkipChar();
-            return _states.FindNextTokenState;
+            return null;
         }
         lexer.ReadChar();
         return this;

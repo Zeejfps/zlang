@@ -5,7 +5,6 @@ namespace LexerModule;
 
 internal sealed class LexerStates : IEnumerable<ILexerState>
 {
-    public ILexerState FindNextTokenState { get; }
     public ILexerState ReadSymbolTokenState { get; }
     public ILexerState ReadIdentTokenState { get; }
     public ILexerState EndOfFileState { get; }
@@ -16,7 +15,6 @@ internal sealed class LexerStates : IEnumerable<ILexerState>
     
     public LexerStates()
     {
-        FindNextTokenState = new ReadNextState(this);
         ReadIdentTokenState = new ReadIdentState(this);
         ReadSymbolTokenState = new ReadSymbolState(this);
         ReadNumberLiteralState = new ReadNumberLiteralState(this);

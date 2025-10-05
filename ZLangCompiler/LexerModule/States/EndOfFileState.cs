@@ -13,7 +13,7 @@ internal sealed class EndOfFileState : ILexerState
         return false;
     }
 
-    public ILexerState Update(Lexer lexer)
+    public ILexerState? Update(Lexer lexer)
     {
         return this;
     }

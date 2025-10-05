@@ -31,7 +31,7 @@ public sealed class Lexer : IDisposable
     private readonly Queue<Token> _tokens = new();
     private readonly LexerStates _states;
     
-    private ILexerState _state;
+    private ILexerState? _state;
     private int _writeHead;
     private bool _disposed;
 
@@ -39,7 +39,6 @@ public sealed class Lexer : IDisposable
     {
         _reader = reader;
         _states = new LexerStates();
-        _state = _states.FindNextTokenState;
     }
     
     public void Dispose()
@@ -70,9 +69,31 @@ public sealed class Lexer : IDisposable
         {
             throw new Exception("Unexpected end of file");
         }
+
+        while (_state == null)
+        {
+            var nextState = FindNextState();
+            if (nextState == null)
+                SkipChar();
+            else
+                _state = nextState;
+        }
         
         _state = _state.Update(this);
         return ReadNextToken();
+    }
+
+    private ILexerState? FindNextState()
+    {
+        foreach (var state in _states)
+        {
+            if (state.TryEnter(this))
+            {
+                return state;
+            }
+        }
+
+        return null;
     }
 
     public bool IsSymbol(int charCode)

@@ -23,6 +23,6 @@ internal sealed class ReadSymbolState : ILexerState
         {
             lexer.EmitToken(tokenKind);
         }
-        return _states.FindNextTokenState;
+        return null;
     }
 }

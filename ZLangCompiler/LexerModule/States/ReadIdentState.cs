@@ -15,7 +15,7 @@ internal sealed class ReadIdentState : ILexerState
         return lexer.IsLetter(nextChar);
     }
 
-    public ILexerState Update(Lexer lexer)
+    public ILexerState? Update(Lexer lexer)
     {
         var nextChar = lexer.PeekChar();
         if (nextChar == -1 || !lexer.IsLetterOrDigit(nextChar))
@@ -30,7 +30,7 @@ internal sealed class ReadIdentState : ILexerState
                 lexer.EmitToken(TokenKind.Identifier);
             }
 
-            return _states.FindNextTokenState;
+            return null;
         }
         
         lexer.ReadChar();
