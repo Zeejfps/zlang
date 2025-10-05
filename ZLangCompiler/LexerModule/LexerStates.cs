@@ -1,8 +1,9 @@
+using System.Collections;
 using LexerModule.States;
 
 namespace LexerModule;
 
-internal sealed class LexerStates
+internal sealed class LexerStates : IEnumerable<ILexerState>
 {
     public ILexerState FindNextTokenState { get; }
     public ILexerState ProcessIdentTokenState { get; }
@@ -12,6 +13,8 @@ internal sealed class LexerStates
     public ILexerState ReadNumberLiteralState { get; }
     public ILexerState ReadTextLiteralState { get; }
 
+    private ILexerState[] _allStates;
+    
     public LexerStates()
     {
         FindNextTokenState = new FindNextTokenState(this);
@@ -21,5 +24,24 @@ internal sealed class LexerStates
         ReadNumberLiteralState = new ReadNumberLiteralState(this);
         ReadTextLiteralState = new ReadTextLiteralState(this);
         EndOfFileState = new EndOfFileState();
+
+        _allStates = [
+            ReadIdentTokenState,
+            ProcessIdentTokenState,
+            ReadSymbolTokenState,
+            ReadNumberLiteralState,
+            ReadTextLiteralState,
+            EndOfFileState
+        ];
+    }
+
+    public IEnumerator<ILexerState> GetEnumerator()
+    {
+        throw new NotImplementedException();
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
     }
 }
