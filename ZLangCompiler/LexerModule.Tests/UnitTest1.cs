@@ -8,9 +8,9 @@ public class Tests
     public void Test1()
     {
         const string input = "module string = std.string";   
-        using var tokenStream = Lexer.Tokenize(input);
+        var tokens = Lexer.Tokenize(input).ToList();
         
-        Assert.That(tokenStream, Is.EquivalentTo(new[]
+        Assert.That(tokens, Is.EquivalentTo(new[]
         {
             new Token(TokenKind.KeywordModule, "module", 1, 1),
             new Token(TokenKind.Identifier, "string", 1, 8),
