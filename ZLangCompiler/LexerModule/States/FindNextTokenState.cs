@@ -14,7 +14,7 @@ internal sealed class FindNextTokenState : ILexerState
         var nextChar = lexer.PeekChar();
         if (nextChar == -1)
         {
-            lexer.EnqueueToken(TokenKind.Eof);
+            lexer.EnqueueToken(TokenKind.EOF);
             return _lexerStates.EndOfFileState;
         }
         

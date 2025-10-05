@@ -40,6 +40,8 @@ stdout.write(first_item.to_string());
 var str = std.string.create("Some litteral string");
 var str_slice = str.slice(0, 10);
 
+var number: u32 = 10;
+
 struct Vec2<T> = std.vec.Vec2<T>;
 
 // Testing

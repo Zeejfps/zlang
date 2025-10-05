@@ -19,7 +19,7 @@ public class Tests
             new Token(TokenKind.SymbolDot, ".", 1, 20),
             new Token(TokenKind.Identifier, "string", 1, 21),
             new Token(TokenKind.SymbolSemicolon, ";", 1, 27),
-            new Token(TokenKind.Eof, string.Empty, 1, 28)
+            new Token(TokenKind.EOF, string.Empty, 1, 28)
         }));
     }
     
@@ -42,7 +42,7 @@ public class Tests
             new Token(TokenKind.SymbolDot, ".", 1, 36),
             new Token(TokenKind.Identifier, "Allocator", 1, 37),
             new Token(TokenKind.SymbolSemicolon, ";", 1, 46),
-            new Token(TokenKind.Eof, string.Empty, 1, 47)
+            new Token(TokenKind.EOF, string.Empty, 1, 47)
         }));
     }
     
@@ -67,7 +67,26 @@ public class Tests
             new Token(TokenKind.Identifier, "T", 1, 31),
             new Token(TokenKind.SymbolGreaterThan, ">", 1, 32),
             new Token(TokenKind.SymbolSemicolon, ";", 1, 33),
-            new Token(TokenKind.Eof, string.Empty, 1, 34)
+            new Token(TokenKind.EOF, string.Empty, 1, 34)
+        }));
+    }
+    
+    [Test]
+    public void TestVarAssignment()
+    {
+        const string input = "var number: u32 = 10;";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.KeywordVar, "var", 1, 1),
+            new Token(TokenKind.Identifier, "number", 1, 8),
+            new Token(TokenKind.SymbolColon, ":", 1, 13),
+            new Token(TokenKind.Identifier, "u32", 1, 14),
+            new Token(TokenKind.SymbolEquals, "=", 1, 17),
+            new Token(TokenKind.Identifier, "10", 1, 19),
+            new Token(TokenKind.SymbolSemicolon, ";", 1, 33),
+            new Token(TokenKind.EOF, string.Empty, 1, 34)
         }));
     }
 }

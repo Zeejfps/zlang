@@ -119,7 +119,7 @@ public sealed class Lexer : IDisposable
     {
         Token token;
         using var lexer = new Lexer(reader);
-        while ((token = lexer.ReadNextToken()).Kind != TokenKind.Eof)
+        while ((token = lexer.ReadNextToken()).Kind != TokenKind.EOF)
         {
             yield return token;
         }

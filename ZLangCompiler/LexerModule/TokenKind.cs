@@ -7,6 +7,7 @@ public enum TokenKind
     // Keywords
     KeywordModule,
     KeywordStruct,
+    KeywordVar,
     
     // Symbols
     SymbolEquals,
@@ -14,6 +15,11 @@ public enum TokenKind
     SymbolLessThan,
     SymbolGreaterThan,
     SymbolSemicolon,
+    SymbolColon,
     
-    Eof,
+    // Literals
+    LiteralNumber,
+    LiteralText,
+    
+    EOF,
 }
