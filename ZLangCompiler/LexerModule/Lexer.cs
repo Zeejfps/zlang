@@ -28,10 +28,8 @@ public sealed class Lexer : IDisposable
 
     private readonly TextReader _reader;
     private readonly char[] _buffer = new char[1024];
-    private readonly Queue<Token> _tokens = new();
     private readonly LexerStates _states;
     
-    private ILexerState? _state;
     private int _writeHead;
     private bool _disposed;
 
@@ -49,45 +47,29 @@ public sealed class Lexer : IDisposable
         _disposed = true;
         _reader.Dispose();
     }
-    
-    public void EmitToken(TokenKind kind)
-    {
-        var token = new Token(kind, Lexeme.ToString(), Line, Column);
-        Column += _writeHead;
-        _writeHead = 0;
-        _tokens.Enqueue(token);
-    }
 
     public Token ReadNextToken()
     {
-        if (_tokens.TryDequeue(out var token))
+        var state = FindNextState();
+        while (state == null)
         {
-            return token;
-        }
-        
-        if (_state == _states.EndOfFileState)
-        {
-            throw new Exception("Unexpected end of file");
+            SkipChar();
+            state = FindNextState();
         }
 
-        while (_state == null)
-        {
-            var nextState = FindNextState();
-            if (nextState == null)
-                SkipChar();
-            else
-                _state = nextState;
-        }
-        
-        _state = _state.Update(this);
-        return ReadNextToken();
+        var tokenKind = state.FinishReading(this);
+        var lexeme = Lexeme.ToString();
+        var token = new Token(tokenKind, lexeme, Line, Column);
+        Column += _writeHead;
+        _writeHead = 0;
+        return token;
     }
 
     private ILexerState? FindNextState()
     {
         foreach (var state in _states)
         {
-            if (state.TryEnter(this))
+            if (state.TryStartReading(this))
             {
                 return state;
             }

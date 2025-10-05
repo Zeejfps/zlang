@@ -2,6 +2,6 @@ namespace LexerModule;
 
 public interface ILexerState
 {
-    bool TryEnter(Lexer lexer);
-    ILexerState? Update(Lexer lexer);
+    bool TryStartReading(Lexer lexer);
+    TokenKind FinishReading(Lexer lexer);
 }

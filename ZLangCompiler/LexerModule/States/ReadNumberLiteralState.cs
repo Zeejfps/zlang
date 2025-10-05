@@ -9,22 +9,20 @@ internal sealed class ReadNumberLiteralState : ILexerState
         _states = states;
     }
 
-    public bool TryEnter(Lexer lexer)
+    public bool TryStartReading(Lexer lexer)
     {
         var nextChar = lexer.PeekChar();
         return lexer.IsDigit(nextChar);
     }
 
-    public ILexerState Update(Lexer lexer)
+    public TokenKind FinishReading(Lexer lexer)
     {
         var nextChar = lexer.PeekChar();
-        if (!lexer.IsDigit(nextChar))
+        while (nextChar != -1 && lexer.IsDigit(nextChar))
         {
-            lexer.EmitToken(TokenKind.LiteralNumber);
-            return null;
+            lexer.ReadChar();
+            nextChar = lexer.PeekChar();
         }
-        
-        lexer.ReadChar();
-        return this;
+        return TokenKind.LiteralNumber;
     }
 }

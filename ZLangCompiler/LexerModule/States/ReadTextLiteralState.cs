@@ -9,7 +9,7 @@ internal sealed class ReadTextLiteralState : ILexerState
         _states = states;
     }
 
-    public bool TryEnter(Lexer lexer)
+    public bool TryStartReading(Lexer lexer)
     {
         if (lexer.PeekChar() == '"')
         {
@@ -20,16 +20,20 @@ internal sealed class ReadTextLiteralState : ILexerState
         return false;
     }
 
-    public ILexerState Update(Lexer lexer)
+    public TokenKind FinishReading(Lexer lexer)
     {
         var nextChar = lexer.PeekChar();
+        while (nextChar != -1 && nextChar != '"')
+        {
+            lexer.ReadChar();
+            nextChar = lexer.PeekChar();
+        }
+
         if (nextChar == '"')
         {
-            lexer.EmitToken(TokenKind.LiteralText);
             lexer.SkipChar();
-            return null;
         }
-        lexer.ReadChar();
-        return this;
+
+        return TokenKind.LiteralText;
     }
 }

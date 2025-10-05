@@ -9,31 +9,32 @@ internal sealed class ReadIdentState : ILexerState
         _states = states;
     }
 
-    public bool TryEnter(Lexer lexer)
+    public bool TryStartReading(Lexer lexer)
     {
         var nextChar = lexer.PeekChar();
+        //Console.WriteLine($"{(char)nextChar} isLetter: {lexer.IsLetter(nextChar)}");
         return lexer.IsLetter(nextChar);
     }
 
-    public ILexerState? Update(Lexer lexer)
+    public TokenKind FinishReading(Lexer lexer)
     {
         var nextChar = lexer.PeekChar();
-        if (nextChar == -1 || !lexer.IsLetterOrDigit(nextChar))
+        var max = 100;
+        var i = 0;
+        while (nextChar != -1 && lexer.IsLetterOrDigit(nextChar) && i < max)
         {
-            var lexeme = lexer.Lexeme.ToString();
-            if (lexer.Keywords.TryGetValue(lexeme, out var tokenKind))
-            {
-                lexer.EmitToken(tokenKind);
-            }
-            else
-            {
-                lexer.EmitToken(TokenKind.Identifier);
-            }
-
-            return null;
+            lexer.ReadChar();
+            nextChar = lexer.PeekChar();
+            i++;
         }
         
-        lexer.ReadChar();
-        return this;
+        var lexeme = lexer.Lexeme.ToString();
+        //Console.WriteLine(lexeme);
+        if (lexer.Keywords.TryGetValue(lexeme, out var tokenKind))
+        {
+            return tokenKind;
+        }
+        
+        return TokenKind.Identifier;
     }
 }

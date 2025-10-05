@@ -3,26 +3,28 @@ namespace LexerModule.States;
 internal sealed class ReadSymbolState : ILexerState
 {
     private readonly LexerStates _states;
+    
+    private TokenKind _tokenKind;
 
     public ReadSymbolState(LexerStates states)
     {
         _states = states;
     }
 
-    public bool TryEnter(Lexer lexer)
+    public bool TryStartReading(Lexer lexer)
     {
         var nextChar = lexer.PeekChar();
-        return lexer.IsSymbol(nextChar);
+        if (lexer.Symbols.TryGetValue((char)nextChar, out var tokenKind))
+        {
+            lexer.ReadChar();
+            _tokenKind = tokenKind;
+            return true;
+        }
+        return false;
     }
     
-    public ILexerState Update(Lexer lexer)
+    public TokenKind FinishReading(Lexer lexer)
     {
-        lexer.ReadChar();
-        var lexeme = lexer.Lexeme;
-        if (lexer.Symbols.TryGetValue(lexeme[0], out var tokenKind))
-        {
-            lexer.EmitToken(tokenKind);
-        }
-        return null;
+        return _tokenKind;
     }
 }
