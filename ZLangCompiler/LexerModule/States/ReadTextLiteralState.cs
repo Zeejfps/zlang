@@ -16,11 +16,19 @@ internal sealed class ReadTextLiteralState : ILexerState
 
     public void Enter(Lexer lexer)
     {
-        lexer.ReadChar();
+        lexer.SkipChar();
     }
 
     public ILexerState Update(Lexer lexer)
     {
-        throw new NotImplementedException();
+        var nextChar = lexer.PeekChar();
+        if (nextChar == '"')
+        {
+            lexer.EmitToken(TokenKind.LiteralText);
+            lexer.SkipChar();
+            return _states.FindNextTokenState;
+        }
+        lexer.ReadChar();
+        return this;
     }
 }

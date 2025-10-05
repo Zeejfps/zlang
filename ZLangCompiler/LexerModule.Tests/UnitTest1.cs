@@ -102,8 +102,8 @@ public class Tests
             new Token(TokenKind.Identifier, "number", 1, 5),
             new Token(TokenKind.SymbolEquals, "=", 1, 12),
             new Token(TokenKind.LiteralText, "Hello World", 1, 15),
-            new Token(TokenKind.SymbolSemicolon, ";", 1, 21),
-            new Token(TokenKind.EOF, string.Empty, 1, 27)
+            new Token(TokenKind.SymbolSemicolon, ";", 1, 27),
+            new Token(TokenKind.EOF, string.Empty, 1, 28)
         }));
     }
 }
