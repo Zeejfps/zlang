@@ -6,7 +6,7 @@ public sealed class Lexer : IDisposable
 {
     public ILexerState ProcessIdentTokenState { get; } = new ProcessIdentTokenState();
     public ILexerState FindNextTokenState { get; } = new FindNextTokenState();
-    public ILexerState ReadOperatorTokenState { get; } = new ReadOperatorTokenState();
+    public ILexerState ReadOperatorTokenState { get; } = new ReadSymbolTokenState();
     public ILexerState ReadWordTokenState { get; } = new ReadIdentTokenState();
     public ILexerState ProcessOperatorTokenState { get; } = new ProcessSymbolTokenState();
     public ILexerState EndOfFileState { get; } = new EndOfFileState();

@@ -1,6 +1,6 @@
 namespace LexerModule.States;
 
-internal sealed class ReadOperatorTokenState : ILexerState
+internal sealed class ReadSymbolTokenState : ILexerState
 {
     public ILexerState Update(Lexer lexer)
     {
