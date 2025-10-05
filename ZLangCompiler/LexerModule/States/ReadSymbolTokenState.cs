@@ -12,6 +12,11 @@ internal sealed class ReadSymbolTokenState : ILexerState
     public ILexerState Update(Lexer lexer)
     {
         lexer.ReadChar();
-        return _states.ProcessSymbolTokenState;
+        var lexeme = lexer.Lexeme;
+        if (lexer.Symbols.TryGetValue(lexeme[0], out var tokenKind))
+        {
+            lexer.EmitToken(tokenKind);
+        }
+        return _states.FindNextTokenState;
     }
 }

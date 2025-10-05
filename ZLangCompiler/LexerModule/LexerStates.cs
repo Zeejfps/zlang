@@ -8,7 +8,6 @@ internal sealed class LexerStates
     public ILexerState ProcessIdentTokenState { get; }
     public ILexerState ReadSymbolTokenState { get; }
     public ILexerState ReadIdentTokenState { get; }
-    public ILexerState ProcessSymbolTokenState { get; }
     public ILexerState EndOfFileState { get; }
     public ILexerState ReadNumberLiteralState { get; }
 
@@ -18,7 +17,6 @@ internal sealed class LexerStates
         ReadIdentTokenState = new ReadIdentTokenState(this);
         ProcessIdentTokenState = new ProcessIdentTokenState(this);
         ReadSymbolTokenState = new ReadSymbolTokenState(this);
-        ProcessSymbolTokenState = new ProcessSymbolTokenState(this);
         ReadNumberLiteralState = new ReadNumberLiteralState(this);
         EndOfFileState = new EndOfFileState();
     }
