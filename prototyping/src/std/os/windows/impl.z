@@ -1,4 +1,4 @@
-module std.os.windows impl os {
+module std.os.windows : std.os {
 
     func write() {
 

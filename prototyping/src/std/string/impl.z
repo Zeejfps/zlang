@@ -1,37 +1,40 @@
-const mem = std.mem
-const array = std.array
-struct Allocator = std.mem.Allocator
+module std.string {
+    const mem = std.mem
+    const array = std.array
+    struct Allocator = std.mem.Allocator
 
-struct String {
-    allocator: Allocator*; 
-    chars: Array<Char>*;
+    struct String {
+        allocator: Allocator*; 
+        chars: Array<Char>*;
+    }
+        
+    type Char = u16
+
+    func create(literal: Array<u8>*) -> String* {
+        return create(literal, std.mem.default_allocator)
+    }
+
+    func create(literal: Array<u8>*, allocator: Allocator*) -> String* {
+        const str = allocator.alloc<String>();
+        // OR
+        const str = std.mem.alloc<String>(allocator);
+        // OR
+        const str = allocator.alloc(allocator.data);
+        str.allocator = allocator;
+        str.chars = array.create<Char>(15, allocator);
+    }
+
+    func destroy(str: String*) {
+        str.chars.free();
+        str.allocator.free(str);
+    }
+
+    func length(str: String*) -> u32 {
+        return str.chars.length();
+    }
+
+    func slice(str: String*, start_index: u32) -> Slice<Char>;
+    func slice(str: String*, start_index: u32, length: u32) -> Slice<Char>;
+    func get_char(str: String* , index: u32) -> Char;
 }
-    
-type Char = u16
 
-func create(literal: Array<u8>*) -> String* {
-    return create(literal, std.mem.default_allocator)
-}
-
-func create(literal: Array<u8>*, allocator: Allocator*) -> String* {
-    const str = allocator.alloc<String>();
-    // OR
-    const str = std.mem.alloc<String>(allocator);
-    // OR
-    const str = allocator.alloc(allocator.data);
-    str.allocator = allocator;
-    str.chars = array.create<Char>(15, allocator);
-}
-
-func destroy(str: String*) {
-    str.chars.free();
-    str.allocator.free(str);
-}
-
-func length(str: String*) -> u32 {
-    return str.chars.length();
-}
-
-func slice(str: String*, start_index: u32) -> Slice<Char>;
-func slice(str: String*, start_index: u32, length: u32) -> Slice<Char>;
-func get_char(str: String* , index: u32) -> Char;

@@ -1,24 +1,26 @@
-const mem = std.mem;
-struct Allocator = std.mem.Allocator
+module std.array {
+    const mem = std.mem;
+    struct Allocator = std.mem.Allocator
 
-struct Array<T> {
-    allocator: Allocator*;
-    length: u32;
-    data: T*;
-}
+    struct Array<T> {
+        allocator: Allocator*;
+        length: u32;
+        data: T*;
+    }
 
-func create<T>(len: u32, allocator: Allocator) -> Array<T> {
-    const array = mem.alloc<Array<T>>(allocator);
-    array.length = len;
-    array.data = mem.malloc<T>(allocator, len);
-    array.allocator = allocator;
-    return array;
-}
+    func create<T>(len: u32, allocator: Allocator) -> Array<T> {
+        const array = mem.alloc<Array<T>>(allocator);
+        array.length = len;
+        array.data = mem.malloc<T>(allocator, len);
+        array.allocator = allocator;
+        return array;
+    }
 
-func destroy<T>(array: Array<T>) {
-    const allocator = array.allocator;
-    mem.free(allocator, array.data, array.length);
-    array.data = null;
-    array.length = 0;
-    array.allocator = null;
+    func destroy<T>(array: Array<T>) {
+        const allocator = array.allocator;
+        mem.free(allocator, array.data, array.length);
+        array.data = null;
+        array.length = 0;
+        array.allocator = null;
+    }
 }

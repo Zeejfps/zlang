@@ -1,1 +1,3 @@
-const os = std.os;
+module std.io {
+    const os = std.os;
+}
