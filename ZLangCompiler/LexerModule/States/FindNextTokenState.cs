@@ -17,6 +17,11 @@ internal sealed class FindNextTokenState : ILexerState
             lexer.EmitToken(TokenKind.EOF);
             return _lexerStates.EndOfFileState;
         }
+
+        if (nextChar == '"')
+        {
+            return _lexerStates.ReadTextLiteralState;
+        }
         
         if (lexer.IsSymbol(nextChar))
         {
