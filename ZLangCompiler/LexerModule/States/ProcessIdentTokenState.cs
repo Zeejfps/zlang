@@ -6,6 +6,7 @@ internal sealed class ProcessIdentTokenState : ILexerState
     {
         {"module",  TokenKind.KeywordModule},
         {"struct",  TokenKind.KeywordStruct},
+        {"var",  TokenKind.KeywordVar},
     };
     
     private readonly LexerStates _states;

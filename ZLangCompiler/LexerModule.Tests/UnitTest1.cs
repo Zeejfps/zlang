@@ -80,13 +80,13 @@ public class Tests
         Assert.That(tokens, Is.EquivalentTo(new[]
         {
             new Token(TokenKind.KeywordVar, "var", 1, 1),
-            new Token(TokenKind.Identifier, "number", 1, 8),
-            new Token(TokenKind.SymbolColon, ":", 1, 13),
-            new Token(TokenKind.Identifier, "u32", 1, 14),
+            new Token(TokenKind.Identifier, "number", 1, 5),
+            new Token(TokenKind.SymbolColon, ":", 1, 11),
+            new Token(TokenKind.Identifier, "u32", 1, 13),
             new Token(TokenKind.SymbolEquals, "=", 1, 17),
-            new Token(TokenKind.Identifier, "10", 1, 19),
-            new Token(TokenKind.SymbolSemicolon, ";", 1, 33),
-            new Token(TokenKind.EOF, string.Empty, 1, 34)
+            new Token(TokenKind.LiteralNumber, "10", 1, 19),
+            new Token(TokenKind.SymbolSemicolon, ";", 1, 21),
+            new Token(TokenKind.EOF, string.Empty, 1, 22)
         }));
     }
 }

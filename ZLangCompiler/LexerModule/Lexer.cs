@@ -7,9 +7,10 @@ public sealed class Lexer : IDisposable
     public Dictionary<char, TokenKind> Symbols { get; } = new()
     {
         {'=', TokenKind.SymbolEquals},
-        {'.',  TokenKind.SymbolDot},
+        {'.', TokenKind.SymbolDot},
         {'<', TokenKind.SymbolLessThan},
         {'>', TokenKind.SymbolGreaterThan},
+        {':', TokenKind.SymbolColon},
         {';', TokenKind.SymbolSemicolon},
     };
     
