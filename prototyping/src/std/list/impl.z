@@ -11,7 +11,7 @@ module std.list {
     }
 
     func create<T>(allocator: Allocator*) -> List<T>* {
-        const list = allocator.alloc<List<T>>();
+        var list = allocator.alloc<List<T>>();
         list.allocator = allocator;
         list.capacity = 10;
         list.items = allocator.malloc<T>(list.capacity);
@@ -20,7 +20,7 @@ module std.list {
     }
 
     func destroy<T>(list: List<T>*){
-        const allocator = list.allocator;
+        var allocator = list.allocator;
         allocator.free(list.items)
         allocator.free(list);
         list.item_count = 0;
@@ -29,7 +29,7 @@ module std.list {
     }
 
     func push_item<T>(list: List<T>*, item: T) {
-        const new_count = list.item_count + 1;
+        var new_count = list.item_count + 1;
         if (new_count > list.capacity) {
             expand(list);
         }
@@ -38,7 +38,7 @@ module std.list {
     }
 
     func pop_item<T>(list: List<T>*) -> T {
-        const item = list.items[list.item_count];
+        var item = list.items[list.item_count];
         list.item_count -= 1;
         return item;
     }
@@ -48,10 +48,10 @@ module std.list {
     func get_item<T>(list: List<T>*, index: u32) -> T;
 
     func expand(list: List<T>*) {
-        const items = list.items;
-        const allocator = list.allocator;
-        const new_capacity = list.capacity * 2;
-        const new_items = allocator.alloc<T>(new_capacity);
+        var items = list.items;
+        var allocator = list.allocator;
+        var new_capacity = list.capacity * 2;
+        var new_items = allocator.alloc<T>(new_capacity);
         for (var i = 0; i < list.item_count; i++) {
             new_items[i] = items[i];
         }

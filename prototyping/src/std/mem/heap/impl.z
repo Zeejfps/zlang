@@ -5,7 +5,7 @@ struct HeapAllocatorData {
 }
 
 func create() -> Allocator {
-    const data = malloc<HeapAllocatorData>()
+    var data = malloc<HeapAllocatorData>()
     return {
         data: data,
         alloc: &alloc,
@@ -14,9 +14,9 @@ func create() -> Allocator {
 }
 
 func alloc<T>(data: *) -> T* {
-    const heap_allocator_data = (HeapAllocatorData*)data
+    var heap_allocator_data = (HeapAllocatorData*)data
 }
 
 func free<T>(data: *){
-    const heap_allocator_data = (HeapAllocatorData*)data
+    var heap_allocator_data = (HeapAllocatorData*)data
 }

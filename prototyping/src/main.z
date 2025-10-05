@@ -8,14 +8,14 @@ struct HeapAllocator = std.mem.heap.HeapAllocator
 
 struct Array<T> = array.Array<T>;
 
-const stack_array: u8[10];
+var stack_array: u8[10];
 stack_array[0] = 1;
 
-const heap_array: Array<u8> = array.create<u8>(50);
+var heap_array: Array<u8> = array.create<u8>(50);
 defer array.destroy(heap_array);
 
-const my_list_std = std.list.create<u8>();
-const my_list = list.create<u8>();
+var my_list_std = std.list.create<u8>();
+var my_list = list.create<u8>();
 
 defer std.list.destroy(my_list);
 // OR
@@ -25,11 +25,11 @@ std.list.push_item(my_list, 0);
 // OR
 my_list.push_item(0);
 
-const first_item = std.list.get_item(my_list, 0);
+var first_item = std.list.get_item(my_list, 0);
 // OR
-const first_item = get_item(my_list, 0);
+var first_item = get_item(my_list, 0);
 // OR
-const first_item = my_list.get_item(0);
+var first_item = my_list.get_item(0);
 
 std.io.out.write(std.fmt.to_string(first_item));
 // OR
@@ -37,20 +37,20 @@ std.io.out.write(first_item.to_string());
 // OR
 stdout.write(first_item.to_string());
 
-const str = std.string.create("Some litteral string");
-const str_slice = str.slice(0, 10);
+var str = std.string.create("Some litteral string");
+var str_slice = str.slice(0, 10);
 
 struct Vec2<T> = std.vec.Vec2<T>;
 
-const v1: Vec2<u8> = {
+var v1: Vec2<u8> = {
     c1 = 0,
     c2 = 10
 };
 
-const v2: Vec2<u8> = {
+var v2: Vec2<u8> = {
     c1 = 2,
     c2 = 3
 }
 
 v1 += v2;
-const v3 = v1 + v2;
+var v3 = v1 + v2;
