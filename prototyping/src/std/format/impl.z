@@ -1,1 +1,0 @@
-func to_string(input: u8[]) : u8[]
