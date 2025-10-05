@@ -16,6 +16,13 @@ public sealed class Lexer : IDisposable
         {';', TokenKind.SymbolSemicolon},
     };
     
+    public Dictionary<string, TokenKind> Keywords { get; } = new()
+    {
+        {"module",  TokenKind.KeywordModule},
+        {"struct",  TokenKind.KeywordStruct},
+        {"var",  TokenKind.KeywordVar},
+    };
+    
     private int Line { get; set; } = 1;
     private int Column { get; set; } = 1;
 
