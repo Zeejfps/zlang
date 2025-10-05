@@ -2,27 +2,34 @@ namespace LexerModule.States;
 
 public sealed class FindNextTokenState : ILexerState
 {
+    private readonly LexerStates _lexerStates;
+
+    public FindNextTokenState(LexerStates lexerStates)
+    {
+        _lexerStates = lexerStates;
+    }
+
     public ILexerState Update(Lexer lexer)
     {
         var nextChar = lexer.PeekChar();
         if (nextChar == -1)
         {
-            return lexer.EndOfFileState;
+            return _lexerStates.EndOfFileState;
         }
         
         if (nextChar == '=')
         {
-            return lexer.ReadSymbolTokenState;
+            return _lexerStates.ReadSymbolTokenState;
         }
 
         if (nextChar == '.')
         {
-            return lexer.ReadSymbolTokenState;
+            return _lexerStates.ReadSymbolTokenState;
         }
 
         if (char.IsLetter((char)nextChar))
         {
-            return lexer.ReadWordTokenState;
+            return _lexerStates.ReadIdentTokenState;
         }
 
         lexer.SkipChar();

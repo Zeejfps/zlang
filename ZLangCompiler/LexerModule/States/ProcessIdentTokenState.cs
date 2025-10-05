@@ -7,6 +7,13 @@ public sealed class ProcessIdentTokenState : ILexerState
         {"module",  TokenKind.KeywordModule},
     };
     
+    private readonly LexerStates _states;
+
+    public ProcessIdentTokenState(LexerStates states)
+    {
+        _states = states;
+    }
+
     public ILexerState Update(Lexer lexer)
     {
         var lexeme = lexer.Lexeme.ToString();
@@ -19,6 +26,6 @@ public sealed class ProcessIdentTokenState : ILexerState
             lexer.EnqueueToken(TokenKind.Identifier);
         }
 
-        return lexer.FindNextTokenState;
+        return _states.FindNextTokenState;
     }
 }

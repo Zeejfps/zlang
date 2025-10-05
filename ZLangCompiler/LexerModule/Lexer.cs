@@ -1,15 +1,7 @@
-﻿using LexerModule.States;
-
-namespace LexerModule;
+﻿namespace LexerModule;
 
 public sealed class Lexer : IDisposable
 {
-    public ILexerState ProcessIdentTokenState { get; } = new ProcessIdentTokenState();
-    public ILexerState FindNextTokenState { get; } = new FindNextTokenState();
-    public ILexerState ReadSymbolTokenState { get; } = new ReadSymbolTokenState();
-    public ILexerState ReadWordTokenState { get; } = new ReadIdentTokenState();
-    public ILexerState ProcessOperatorTokenState { get; } = new ProcessSymbolTokenState();
-    public ILexerState EndOfFileState { get; } = new EndOfFileState();
     public Span<char> Lexeme => _buffer.AsSpan(0, _writeHead);
 
     public int Line { get; private set; } = 1;
@@ -42,8 +34,9 @@ public sealed class Lexer : IDisposable
     public static IEnumerable<Token> Tokenize(TextReader reader)
     {
         var lexer = new Lexer(reader);
-        var state = lexer.FindNextTokenState;
-        while (state != lexer.EndOfFileState)
+        var lexerStates = new LexerStates();
+        var state = lexerStates.FindNextTokenState;
+        while (state != lexerStates.EndOfFileState)
         {
             state = state.Update(lexer);
             while (lexer.TryDequeueToken(out var token))

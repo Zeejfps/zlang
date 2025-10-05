@@ -8,6 +8,13 @@ internal sealed class ProcessSymbolTokenState : ILexerState
         {".",  TokenKind.Dot},
     };
     
+    private readonly LexerStates _states;
+
+    public ProcessSymbolTokenState(LexerStates states)
+    {
+        _states = states;
+    }
+    
     public ILexerState Update(Lexer lexer)
     {
         var lexeme = lexer.Lexeme.ToString();
@@ -15,6 +22,6 @@ internal sealed class ProcessSymbolTokenState : ILexerState
         {
             lexer.EnqueueToken(tokenKind);
         }
-        return lexer.FindNextTokenState;
+        return _states.FindNextTokenState;
     }
 }
