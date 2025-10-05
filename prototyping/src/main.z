@@ -42,11 +42,13 @@ var str_slice = str.slice(0, 10);
 
 struct Vec2<T> = std.vec.Vec2<T>;
 
+// Testing
 var v1: Vec2<u8> = {
     c1 = 0,
     c2 = 10
 };
 
+// Comments
 var v2: Vec2<u8> = {
     c1 = 2,
     c2 = 3

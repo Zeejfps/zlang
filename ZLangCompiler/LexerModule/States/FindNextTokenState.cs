@@ -23,7 +23,7 @@ internal sealed class FindNextTokenState : ILexerState
             return _lexerStates.ReadSymbolTokenState;
         }
 
-        if (char.IsLetter((char)nextChar))
+        if (lexer.IsLetter(nextChar))
         {
             return _lexerStates.ReadIdentTokenState;
         }

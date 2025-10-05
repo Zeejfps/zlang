@@ -77,6 +77,11 @@ public sealed class Lexer : IDisposable
         return false;
     }
     
+    public bool IsLetter(int nextChar)
+    {
+        return char.IsLetter((char)nextChar);
+    }
+    
     public bool IsLetterOrDigit(int c)
     {
         return char.IsLetterOrDigit((char)c);
