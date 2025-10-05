@@ -7,8 +7,8 @@ public class Tests
     [Test]
     public void Test1()
     {
-        const string input = "module string = std.string";   
-        var tokens = Lexer.Tokenize(input).ToList();
+        const string input = "module string = std.string";
+        var tokens = Lexer.Tokenize(input);
         
         Assert.That(tokens, Is.EquivalentTo(new[]
         {
