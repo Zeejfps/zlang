@@ -9,7 +9,8 @@ public class Tests
     {
         var input = "module string = std.string";
         using var textReader = new StringReader(input);
-        var tokens = Lexer.Tokenize(textReader);
+        var tokens = Lexer.Tokenize(textReader)
+            .ToList();
 
         Assert.That(tokens, Is.EquivalentTo(new[]
         {
