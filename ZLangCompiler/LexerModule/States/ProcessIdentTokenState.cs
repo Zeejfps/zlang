@@ -1,6 +1,6 @@
 namespace LexerModule.States;
 
-public sealed class ProcessIdentTokenState : ILexerState
+internal sealed class ProcessIdentTokenState : ILexerState
 {
     private readonly Dictionary<string, TokenKind> _keywords = new()
     {

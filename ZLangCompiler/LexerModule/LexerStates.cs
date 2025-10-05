@@ -2,7 +2,7 @@ using LexerModule.States;
 
 namespace LexerModule;
 
-public sealed class LexerStates
+internal sealed class LexerStates
 {
     public ILexerState FindNextTokenState { get; }
     public ILexerState ProcessIdentTokenState { get; }

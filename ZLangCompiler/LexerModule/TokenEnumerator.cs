@@ -26,7 +26,6 @@ internal sealed class TokenEnumerator : IEnumerator<Token>
 
         _isDisposed = true;
         _lexer.Dispose();
-        Console.WriteLine("Disposed");
     }
 
     public bool MoveNext()
@@ -34,13 +33,11 @@ internal sealed class TokenEnumerator : IEnumerator<Token>
         if (_isDisposed)
             return false;
         
-        Console.WriteLine($"MoveNext {_lexer.TokenCount}");
         while (_state != _states.EndOfFileState && _lexer.TokenCount == 0)
         {
             _state = _state.Update(_lexer);
         }
         
-        Console.WriteLine($"After State Update: {_lexer.TokenCount}");
         if (_lexer.TryDequeueToken(out var token))
         {
             _currentToken = token;

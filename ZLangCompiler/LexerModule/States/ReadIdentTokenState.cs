@@ -1,6 +1,6 @@
 namespace LexerModule.States;
 
-public sealed class ReadIdentTokenState : ILexerState
+internal sealed class ReadIdentTokenState : ILexerState
 {
     private readonly LexerStates _states;
 

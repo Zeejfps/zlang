@@ -2,7 +2,7 @@ using System.Collections;
 
 namespace LexerModule;
 
-public sealed class TokenEnumerable : IEnumerable<Token>
+internal sealed class TokenEnumerable : IEnumerable<Token>
 {
     private readonly TextReader _reader;
 
