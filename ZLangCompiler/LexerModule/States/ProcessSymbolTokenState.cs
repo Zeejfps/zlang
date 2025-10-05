@@ -4,8 +4,11 @@ internal sealed class ProcessSymbolTokenState : ILexerState
 {
     private readonly Dictionary<string, TokenKind> _symbols = new()
     {
-        {"=", TokenKind.Equals},
-        {".",  TokenKind.Dot},
+        {"=", TokenKind.SymbolEquals},
+        {".",  TokenKind.SymbolDot},
+        {"<", TokenKind.SymbolLessThan},
+        {">", TokenKind.SymbolGreaterThan},
+        {";", TokenKind.SymbolSemicolon},
     };
     
     private readonly LexerStates _states;

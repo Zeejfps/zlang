@@ -18,12 +18,7 @@ internal sealed class FindNextTokenState : ILexerState
             return _lexerStates.EndOfFileState;
         }
         
-        if (nextChar == '=')
-        {
-            return _lexerStates.ReadSymbolTokenState;
-        }
-
-        if (nextChar == '.')
+        if (lexer.IsSymbol(nextChar))
         {
             return _lexerStates.ReadSymbolTokenState;
         }

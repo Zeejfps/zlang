@@ -9,8 +9,11 @@ public enum TokenKind
     KeywordStruct,
     
     // Symbols
-    Equals,
-    Dot,
+    SymbolEquals,
+    SymbolDot,
+    SymbolLessThan,
+    SymbolGreaterThan,
+    SymbolSemicolon,
     
     Eof,
 }

@@ -57,6 +57,16 @@ public sealed class Lexer : IDisposable
         return ReadNextToken();
     }
 
+    public bool IsSymbol(int c)
+    {
+        return char.IsSymbol((char)c) || c == '.' || c == ';';
+    }
+    
+    public bool IsLetterOrDigit(int c)
+    {
+        return char.IsLetterOrDigit((char)c);
+    }
+
     public int PeekChar()
     {
         return _reader.Peek();
