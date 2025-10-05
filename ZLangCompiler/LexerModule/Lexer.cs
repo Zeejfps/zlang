@@ -96,4 +96,18 @@ public sealed class Lexer : IDisposable
         var lexer = new Lexer(reader);
         return new TokenStream(lexer);
     }
+    
+    public static TokenStream Tokenize(string input)
+    {
+        var reader = new StringReader(input);
+        var lexer = new Lexer(reader);
+        return new TokenStream(lexer);
+    }
+    
+    public static TokenStream Tokenize(Stream stream)
+    {
+        var reader = new StreamReader(stream);
+        var lexer = new Lexer(reader);
+        return new TokenStream(lexer);
+    }
 }
