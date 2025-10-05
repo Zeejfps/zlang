@@ -3,17 +3,16 @@
 public sealed class Lexer : IDisposable
 {
     public Span<char> Lexeme => _buffer.AsSpan(0, _writeHead);
+    public int TokenCount => _tokens.Count;
 
     private int Line { get; set; } = 1;
     private int Column { get; set; } = 1;
     private int LastChar { get; set; }
-    
-    public int TokenCount => _tokens.Count;
 
     private readonly TextReader _reader;
     private readonly char[] _buffer = new char[1024];
-    private int _writeHead = 0;
     private readonly Queue<Token> _tokens = new();
+    private int _writeHead;
 
     public Lexer(TextReader reader)
     {
@@ -66,8 +65,8 @@ public sealed class Lexer : IDisposable
         } 
     }
     
-    public static IEnumerable<Token> Tokenize(TextReader reader)
+    public static TokenSequence Tokenize(TextReader reader)
     {
-        return new TokenEnumerable(reader);
+        return new TokenSequence(reader);
     }
 }
