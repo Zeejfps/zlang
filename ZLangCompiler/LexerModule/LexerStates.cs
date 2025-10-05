@@ -17,7 +17,7 @@ internal sealed class LexerStates : IEnumerable<ILexerState>
     public LexerStates()
     {
         FindNextTokenState = new FindNextTokenState(this);
-        ReadIdentTokenState = new ReadIdentTokenState(this);
+        ReadIdentTokenState = new ReadIdentState(this);
         ReadSymbolTokenState = new ReadSymbolState(this);
         ReadNumberLiteralState = new ReadNumberLiteralState(this);
         ReadTextLiteralState = new ReadTextLiteralState(this);
