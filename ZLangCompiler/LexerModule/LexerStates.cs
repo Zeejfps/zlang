@@ -13,7 +13,7 @@ internal sealed class LexerStates : IEnumerable<ILexerState>
     public ILexerState ReadNumberLiteralState { get; }
     public ILexerState ReadTextLiteralState { get; }
 
-    private ILexerState[] _allStates;
+    private readonly List<ILexerState> _allStates;
     
     public LexerStates()
     {
@@ -37,7 +37,7 @@ internal sealed class LexerStates : IEnumerable<ILexerState>
 
     public IEnumerator<ILexerState> GetEnumerator()
     {
-        throw new NotImplementedException();
+        return _allStates.GetEnumerator();
     }
 
     IEnumerator IEnumerable.GetEnumerator()
