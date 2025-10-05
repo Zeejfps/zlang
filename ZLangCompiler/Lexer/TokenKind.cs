@@ -2,7 +2,7 @@ namespace LexerModule;
 
 public enum TokenKind
 {
-    Module,
+    ModuleKeyWord,
     Identifier,
     Equals,
     Dot,

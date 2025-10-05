@@ -15,7 +15,7 @@ public class Tests
 
         Assert.That(new[]
         {
-            new Token(TokenKind.Module, "module", 1, 1),
+            new Token(TokenKind.ModuleKeyWord, "module", 1, 1),
             new Token(TokenKind.Identifier, "string", 1, 8),
             new Token(TokenKind.Equals, "=", 1, 15),
             new Token(TokenKind.Identifier, "std", 1, 17),
