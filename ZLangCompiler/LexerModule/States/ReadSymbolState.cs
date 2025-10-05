@@ -9,17 +9,12 @@ internal sealed class ReadSymbolState : ILexerState
         _states = states;
     }
 
-    public bool CanEnter(Lexer lexer)
+    public bool TryEnter(Lexer lexer)
     {
         var nextChar = lexer.PeekChar();
         return lexer.IsSymbol(nextChar);
     }
-
-    public void Enter(Lexer lexer)
-    {
-        
-    }
-
+    
     public ILexerState Update(Lexer lexer)
     {
         lexer.ReadChar();

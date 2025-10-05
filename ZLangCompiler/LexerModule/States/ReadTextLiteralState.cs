@@ -9,14 +9,15 @@ internal sealed class ReadTextLiteralState : ILexerState
         _states = states;
     }
 
-    public bool CanEnter(Lexer lexer)
+    public bool TryEnter(Lexer lexer)
     {
-        return lexer.PeekChar() == '"';
-    }
+        if (lexer.PeekChar() == '"')
+        {
+            lexer.SkipChar();
+            return true;
+        }
 
-    public void Enter(Lexer lexer)
-    {
-        lexer.SkipChar();
+        return false;
     }
 
     public ILexerState Update(Lexer lexer)

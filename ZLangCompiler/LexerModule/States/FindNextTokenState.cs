@@ -9,21 +9,16 @@ internal sealed class FindNextTokenState : ILexerState
         _lexerStates = lexerStates;
     }
 
-    public bool CanEnter(Lexer lexer)
+    public bool TryEnter(Lexer lexer)
     {
         return false;
-    }
-
-    public void Enter(Lexer lexer)
-    {
-        
     }
 
     public ILexerState Update(Lexer lexer)
     {
         foreach (var state in _lexerStates)
         {
-            if (state.CanEnter(lexer))
+            if (state.TryEnter(lexer))
             {
                 return state;
             }

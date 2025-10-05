@@ -2,14 +2,15 @@ namespace LexerModule.States;
 
 internal sealed class EndOfFileState : ILexerState
 {
-    public bool CanEnter(Lexer lexer)
+    public bool TryEnter(Lexer lexer)
     {
-        return lexer.PeekChar() == -1;
-    }
+        if (lexer.PeekChar() == -1)
+        {
+            lexer.EmitToken(TokenKind.EOF);
+            return true;
+        }
 
-    public void Enter(Lexer lexer)
-    {
-        lexer.EmitToken(TokenKind.EOF);
+        return false;
     }
 
     public ILexerState Update(Lexer lexer)
