@@ -41,11 +41,6 @@ public sealed class Lexer : IDisposable
         _tokens.Enqueue(token);
     }
 
-    public bool TryDequeueToken(out Token token)
-    {
-        return _tokens.TryDequeue(out token);
-    }
-
     public Token ReadNextToken()
     {
         if (_tokens.TryDequeue(out var token))

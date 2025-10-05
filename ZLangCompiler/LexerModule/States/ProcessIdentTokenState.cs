@@ -5,6 +5,7 @@ internal sealed class ProcessIdentTokenState : ILexerState
     private readonly Dictionary<string, TokenKind> _keywords = new()
     {
         {"module",  TokenKind.KeywordModule},
+        {"struct",  TokenKind.KeywordStruct},
     };
     
     private readonly LexerStates _states;

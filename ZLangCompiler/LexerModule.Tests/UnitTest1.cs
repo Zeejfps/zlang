@@ -5,7 +5,7 @@ public class Tests
 {
 
     [Test]
-    public void Test1()
+    public void TestModuleAssignment()
     {
         const string input = "module string = std.string";
         var tokens = Lexer.Tokenize(input);
@@ -19,6 +19,28 @@ public class Tests
             new Token(TokenKind.Dot, ".", 1, 20),
             new Token(TokenKind.Identifier, "string", 1, 21),
             new Token(TokenKind.Eof, string.Empty, 1, 27)
+        }));
+    }
+    
+    [Test]
+    public void TestStructAssignment()
+    {
+        const string input = "struct HeapAllocator = std.mem.heap.Allocator";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.KeywordStruct, "struct", 1, 1),
+            new Token(TokenKind.Identifier, "HeapAllocator", 1, 8),
+            new Token(TokenKind.Equals, "=", 1, 22),
+            new Token(TokenKind.Identifier, "std", 1, 24),
+            new Token(TokenKind.Dot, ".", 1, 27),
+            new Token(TokenKind.Identifier, "mem", 1, 28),
+            new Token(TokenKind.Dot, ".", 1, 31),
+            new Token(TokenKind.Identifier, "heap", 1, 32),
+            new Token(TokenKind.Dot, ".", 1, 36),
+            new Token(TokenKind.Identifier, "Allocator", 1, 37),
+            new Token(TokenKind.Eof, string.Empty, 1, 46)
         }));
     }
 }

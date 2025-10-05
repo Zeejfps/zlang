@@ -2,9 +2,15 @@ namespace LexerModule;
 
 public enum TokenKind
 {
-    KeywordModule,
     Identifier,
+    
+    // Keywords
+    KeywordModule,
+    KeywordStruct,
+    
+    // Symbols
     Equals,
     Dot,
+    
     Eof,
 }
