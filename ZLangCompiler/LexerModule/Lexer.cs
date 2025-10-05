@@ -12,15 +12,25 @@ public sealed class Lexer : IDisposable
     private readonly TextReader _reader;
     private readonly char[] _buffer = new char[1024];
     private readonly Queue<Token> _tokens = new();
+    private readonly LexerStates _states;
+    
+    private ILexerState _state;
     private int _writeHead;
+    private bool _disposed;
 
     public Lexer(TextReader reader)
     {
         _reader = reader;
+        _states = new LexerStates();
+        _state = _states.FindNextTokenState;
     }
     
     public void Dispose()
     {
+        if (_disposed)
+            return;
+        
+        _disposed = true;
         _reader.Dispose();
     }
     
@@ -35,6 +45,22 @@ public sealed class Lexer : IDisposable
     public bool TryDequeueToken(out Token token)
     {
         return _tokens.TryDequeue(out token);
+    }
+
+    public Token ReadNextToken()
+    {
+        if (_tokens.TryDequeue(out var token))
+        {
+            return token;
+        }
+        
+        if (_state == _states.EndOfFileState)
+        {
+            throw new Exception("Unexpected end of file");
+        }
+        
+        _state = _state.Update(this);
+        return ReadNextToken();
     }
 
     public int PeekChar()
@@ -65,8 +91,9 @@ public sealed class Lexer : IDisposable
         } 
     }
     
-    public static TokenSequence Tokenize(TextReader reader)
+    public static TokenStream Tokenize(TextReader reader)
     {
-        return new TokenSequence(reader);
+        var lexer = new Lexer(reader);
+        return new TokenStream(lexer);
     }
 }
