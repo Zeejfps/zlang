@@ -16,7 +16,7 @@ internal sealed class LexerStates
         FindNextTokenState = new FindNextTokenState(this);
         ReadIdentTokenState = new ReadIdentTokenState(this);
         ProcessIdentTokenState = new ProcessIdentTokenState(this);
-        ReadSymbolTokenState = new ReadSymbolTokenState(this);
+        ReadSymbolTokenState = new ReadSymbolState(this);
         ReadNumberLiteralState = new ReadNumberLiteralState(this);
         EndOfFileState = new EndOfFileState();
     }

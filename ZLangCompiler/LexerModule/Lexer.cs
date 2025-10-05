@@ -11,6 +11,8 @@ public sealed class Lexer : IDisposable
         {'<', TokenKind.SymbolLessThan},
         {'>', TokenKind.SymbolGreaterThan},
         {':', TokenKind.SymbolColon},
+        {'(', TokenKind.SymbolLeftParen},
+        {')', TokenKind.SymbolRightParen},
         {';', TokenKind.SymbolSemicolon},
     };
     

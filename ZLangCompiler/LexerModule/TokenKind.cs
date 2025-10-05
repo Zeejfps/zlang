@@ -16,6 +16,8 @@ public enum TokenKind
     SymbolGreaterThan,
     SymbolSemicolon,
     SymbolColon,
+    SymbolLeftParen,
+    SymbolRightParen,
     
     // Literals
     LiteralNumber,
