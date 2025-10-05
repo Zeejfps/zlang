@@ -14,7 +14,7 @@ internal sealed class ProcessSymbolTokenState : ILexerState
         var lexeme = lexer.Lexeme;
         if (lexer.Symbols.TryGetValue(lexeme[0], out var tokenKind))
         {
-            lexer.EnqueueToken(tokenKind);
+            lexer.EmitToken(tokenKind);
         }
         return _states.FindNextTokenState;
     }

@@ -21,11 +21,11 @@ internal sealed class ProcessIdentTokenState : ILexerState
         var lexeme = lexer.Lexeme.ToString();
         if (_keywords.TryGetValue(lexeme, out var tokenKind))
         {
-            lexer.EnqueueToken(tokenKind);
+            lexer.EmitToken(tokenKind);
         }
         else
         {
-            lexer.EnqueueToken(TokenKind.Identifier);
+            lexer.EmitToken(TokenKind.Identifier);
         }
 
         return _states.FindNextTokenState;

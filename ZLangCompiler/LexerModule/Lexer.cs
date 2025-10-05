@@ -42,7 +42,7 @@ public sealed class Lexer : IDisposable
         _reader.Dispose();
     }
     
-    public void EnqueueToken(TokenKind kind)
+    public void EmitToken(TokenKind kind)
     {
         var token = new Token(kind, Lexeme.ToString(), Line, Column);
         Column += _writeHead;
@@ -139,5 +139,10 @@ public sealed class Lexer : IDisposable
         using var reader = new StreamReader(stream);
         foreach (var token in Tokenize(reader))
             yield return token;
+    }
+
+    public bool IsDigit(int nextChar)
+    {
+        return char.IsDigit((char)nextChar);
     }
 }
