@@ -1,12 +1,14 @@
-﻿namespace LexerModule;
+﻿using LexerModule.States;
+
+namespace LexerModule;
 
 public sealed class Lexer : IDisposable
 {
-    public ILexerState ProcessWordTokenState { get; } = new ProcessWordTokenState();
+    public ILexerState ProcessIdentTokenState { get; } = new ProcessIdentTokenState();
     public ILexerState FindNextTokenState { get; } = new FindNextTokenState();
     public ILexerState ReadOperatorTokenState { get; } = new ReadOperatorTokenState();
-    public ILexerState ReadWordTokenState { get; } = new ReadWordTokenState();
-    public ILexerState ProcessOperatorTokenState { get; } = new ProcessOperatorTokenState();
+    public ILexerState ReadWordTokenState { get; } = new ReadIdentTokenState();
+    public ILexerState ProcessOperatorTokenState { get; } = new ProcessSymbolTokenState();
     public ILexerState EndOfFileState { get; } = new EndOfFileState();
     public ILexerState ReadDotTokenState { get; } = new  ReadDotTokenState();
     public Span<char> Lexeme => _buffer.AsSpan(0, _writeHead);
@@ -36,12 +38,6 @@ public sealed class Lexer : IDisposable
     private bool TryDequeueToken(out Token token)
     {
         return _tokens.TryDequeue(out token);
-    }
-    
-    public static IEnumerable<Token> Tokenize(string empty)
-    {
-        var reader = new StringReader(empty);
-        return Tokenize(reader);
     }
 
     public static IEnumerable<Token> Tokenize(TextReader reader)
@@ -92,116 +88,5 @@ public sealed class Lexer : IDisposable
             Line++;
             Column = 1;
         } 
-    }
-}
-
-public interface ILexerState
-{
-    ILexerState Update(Lexer lexer);
-}
-
-public sealed class ReadWordTokenState : ILexerState
-{
-    public ILexerState Update(Lexer lexer)
-    {
-        var nextChar = lexer.PeekChar();
-        if (nextChar == '.' || nextChar == ' ' || nextChar == '=' || nextChar == -1)
-        {
-            return lexer.ProcessWordTokenState;
-        }
-        
-        lexer.ReadChar();
-        return this;
-    }
-}
-
-public sealed class ProcessWordTokenState : ILexerState
-{
-    public ILexerState Update(Lexer lexer)
-    {
-        var lexeme = lexer.Lexeme;
-        if (lexeme is "module")
-        {
-            lexer.EnqueueToken(TokenKind.ModuleKeyWord);
-        }
-        else
-        {
-            lexer.EnqueueToken(TokenKind.Identifier);
-        }
-
-        return lexer.FindNextTokenState;
-    }
-}
-
-public sealed class FindNextTokenState : ILexerState
-{
-    public ILexerState Update(Lexer lexer)
-    {
-        var nextChar = lexer.PeekChar();
-        if (nextChar == -1)
-        {
-            return lexer.EndOfFileState;
-        }
-        
-        if (nextChar == '=')
-        {
-            return lexer.ReadOperatorTokenState;
-        }
-
-        if (nextChar == '.')
-        {
-            return lexer.ReadDotTokenState;
-        }
-
-        if (char.IsLetter((char)nextChar))
-        {
-            return lexer.ReadWordTokenState;
-        }
-
-        lexer.SkipChar();
-        return this;
-    }
-}
-
-public sealed class ReadOperatorTokenState : ILexerState
-{
-    public ILexerState Update(Lexer lexer)
-    {
-        lexer.ReadChar();
-        return lexer.ProcessOperatorTokenState;
-    }
-}
-
-public sealed class ProcessOperatorTokenState : ILexerState
-{
-    public ILexerState Update(Lexer lexer)
-    {
-        var lexeme = lexer.Lexeme;
-        if (lexeme is "=")
-        {
-            lexer.EnqueueToken(TokenKind.Equals);
-        }
-
-        return lexer.FindNextTokenState;
-    }
-}
-
-public sealed class EndOfFileState : ILexerState
-{
-    public ILexerState Update(Lexer lexer)
-    {
-        lexer.EnqueueToken(TokenKind.Eof);
-        lexer.SkipChar();
-        return this;
-    }
-}
-
-public sealed class ReadDotTokenState : ILexerState
-{
-    public ILexerState Update(Lexer lexer)
-    {
-        lexer.ReadChar();
-        lexer.EnqueueToken(TokenKind.Dot);
-        return lexer.FindNextTokenState;
     }
 }

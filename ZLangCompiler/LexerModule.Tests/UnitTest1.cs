@@ -7,12 +7,13 @@ public class Tests
     [Test]
     public void Test1()
     {
-        var tokens = Lexer
-            .Tokenize("module string = std.string");
+        var input = "module string = std.string";
+        using var textReader = new StringReader(input);
+        var tokens = Lexer.Tokenize(textReader);
 
         Assert.That(tokens, Is.EquivalentTo(new[]
         {
-            new Token(TokenKind.ModuleKeyWord, "module", 1, 1),
+            new Token(TokenKind.KeywordModule, "module", 1, 1),
             new Token(TokenKind.Identifier, "string", 1, 8),
             new Token(TokenKind.Equals, "=", 1, 15),
             new Token(TokenKind.Identifier, "std", 1, 17),
