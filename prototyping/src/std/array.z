@@ -1,5 +1,5 @@
 module std.array {
-    const mem = std.mem;
+    module mem = std.mem;
     struct Allocator = std.mem.Allocator
 
     struct Array<T> {

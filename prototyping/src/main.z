@@ -1,9 +1,9 @@
-const array = std.array;
-const list = std.list;
-const io = std.io;
-const stdout = io.out;
-const fmt = std.fmt;
-const string = std.string;
+module array = std.array;
+module list = std.list;
+module io = std.io;
+module stdout = io.out;
+module fmt = std.fmt;
+module string = std.string;
 struct HeapAllocator = std.mem.heap.HeapAllocator
 
 struct Array<T> = array.Array<T>;

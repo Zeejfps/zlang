@@ -1,6 +1,6 @@
 module std.string {
-    const mem = std.mem
-    const array = std.array
+    module mem = std.mem
+    module array = std.array
     struct Allocator = std.mem.Allocator
 
     struct String {
