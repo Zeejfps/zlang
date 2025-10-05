@@ -72,7 +72,7 @@ public class Tests
     }
     
     [Test]
-    public void TestVarAssignment()
+    public void TestVarAssignmentToNumberLiteral()
     {
         const string input = "var number: u32 = 10;";
         var tokens = Lexer.Tokenize(input);
@@ -87,6 +87,23 @@ public class Tests
             new Token(TokenKind.LiteralNumber, "10", 1, 19),
             new Token(TokenKind.SymbolSemicolon, ";", 1, 21),
             new Token(TokenKind.EOF, string.Empty, 1, 22)
+        }));
+    }
+    
+    [Test]
+    public void TestVarAssignmentToTextLiteral()
+    {
+        const string input = "var number = \"Hello World\";";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.KeywordVar, "var", 1, 1),
+            new Token(TokenKind.Identifier, "number", 1, 5),
+            new Token(TokenKind.SymbolEquals, "=", 1, 12),
+            new Token(TokenKind.LiteralText, "Hello World", 1, 15),
+            new Token(TokenKind.SymbolSemicolon, ";", 1, 21),
+            new Token(TokenKind.EOF, string.Empty, 1, 27)
         }));
     }
 }
