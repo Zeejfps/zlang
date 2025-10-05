@@ -4,7 +4,15 @@ public sealed class Lexer : IDisposable
 {
     public Span<char> Lexeme => _buffer.AsSpan(0, _writeHead);
     public int PrevChar { get; private set; }
-
+    public Dictionary<char, TokenKind> Symbols { get; } = new()
+    {
+        {'=', TokenKind.SymbolEquals},
+        {'.',  TokenKind.SymbolDot},
+        {'<', TokenKind.SymbolLessThan},
+        {'>', TokenKind.SymbolGreaterThan},
+        {';', TokenKind.SymbolSemicolon},
+    };
+    
     private int Line { get; set; } = 1;
     private int Column { get; set; } = 1;
 
@@ -57,9 +65,16 @@ public sealed class Lexer : IDisposable
         return ReadNextToken();
     }
 
-    public bool IsSymbol(int c)
+    public bool IsSymbol(int charCode)
     {
-        return char.IsSymbol((char)c) || c == '.' || c == ';';
+        var c = (char)charCode;
+        foreach (var symbol in Symbols.Keys)
+        {
+            if (c == symbol)
+                return true;
+        }
+
+        return false;
     }
     
     public bool IsLetterOrDigit(int c)
