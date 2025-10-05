@@ -12,12 +12,12 @@ public sealed class FindNextTokenState : ILexerState
         
         if (nextChar == '=')
         {
-            return lexer.ReadOperatorTokenState;
+            return lexer.ReadSymbolTokenState;
         }
 
         if (nextChar == '.')
         {
-            return lexer.ReadDotTokenState;
+            return lexer.ReadSymbolTokenState;
         }
 
         if (char.IsLetter((char)nextChar))

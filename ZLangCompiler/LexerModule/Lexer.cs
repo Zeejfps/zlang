@@ -6,11 +6,10 @@ public sealed class Lexer : IDisposable
 {
     public ILexerState ProcessIdentTokenState { get; } = new ProcessIdentTokenState();
     public ILexerState FindNextTokenState { get; } = new FindNextTokenState();
-    public ILexerState ReadOperatorTokenState { get; } = new ReadSymbolTokenState();
+    public ILexerState ReadSymbolTokenState { get; } = new ReadSymbolTokenState();
     public ILexerState ReadWordTokenState { get; } = new ReadIdentTokenState();
     public ILexerState ProcessOperatorTokenState { get; } = new ProcessSymbolTokenState();
     public ILexerState EndOfFileState { get; } = new EndOfFileState();
-    public ILexerState ReadDotTokenState { get; } = new  ReadDotTokenState();
     public Span<char> Lexeme => _buffer.AsSpan(0, _writeHead);
 
     public int Line { get; private set; } = 1;
