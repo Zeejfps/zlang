@@ -9,6 +9,17 @@ internal sealed class ReadNumberLiteralState : ILexerState
         _states = states;
     }
 
+    public bool CanEnter(Lexer lexer)
+    {
+        var nextChar = lexer.PeekChar();
+        return lexer.IsDigit(nextChar);
+    }
+
+    public void Enter(Lexer lexer)
+    {
+        
+    }
+
     public ILexerState Update(Lexer lexer)
     {
         var nextChar = lexer.PeekChar();

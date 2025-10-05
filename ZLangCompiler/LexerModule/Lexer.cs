@@ -71,7 +71,12 @@ public sealed class Lexer : IDisposable
             throw new Exception("Unexpected end of file");
         }
         
-        _state = _state.Update(this);
+        var newState = _state.Update(this);
+        if (_state != newState)
+        {
+            newState.Enter(this);
+            _state = newState;
+        }
         return ReadNextToken();
     }
 

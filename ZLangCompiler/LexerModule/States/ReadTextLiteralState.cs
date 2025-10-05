@@ -8,7 +8,17 @@ internal sealed class ReadTextLiteralState : ILexerState
     {
         _states = states;
     }
-    
+
+    public bool CanEnter(Lexer lexer)
+    {
+        return lexer.PeekChar() == '"';
+    }
+
+    public void Enter(Lexer lexer)
+    {
+        lexer.ReadChar();
+    }
+
     public ILexerState Update(Lexer lexer)
     {
         throw new NotImplementedException();
