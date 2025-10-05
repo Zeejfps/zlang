@@ -1,8 +1,8 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lexer", "Lexer\Lexer.csproj", "{2D9B9C87-234A-4A48-A4EF-B788C38E04EA}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LexerModule", "LexerModule\LexerModule.csproj", "{2D9B9C87-234A-4A48-A4EF-B788C38E04EA}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lexer.Tests", "Lexer.Tests\Lexer.Tests.csproj", "{217C7D6B-C5C5-4E19-9FE4-2B9290703E08}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LexerModule.Tests", "LexerModule.Tests\LexerModule.Tests.csproj", "{217C7D6B-C5C5-4E19-9FE4-2B9290703E08}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

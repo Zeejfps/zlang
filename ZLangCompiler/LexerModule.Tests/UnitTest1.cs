@@ -1,5 +1,6 @@
 ﻿namespace LexerModule.Tests;
 
+[TestFixture]
 public class Tests
 {
 

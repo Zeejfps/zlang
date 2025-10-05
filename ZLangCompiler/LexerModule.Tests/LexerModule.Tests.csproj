@@ -23,7 +23,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\Lexer\Lexer.csproj" />
+      <ProjectReference Include="..\LexerModule\LexerModule.csproj" />
     </ItemGroup>
 
 </Project>
