@@ -44,6 +44,7 @@ public class Tests
         var printer = new AstPrinter();
         astNode.Accept(printer);
         var result = printer.ToString();
+        Console.WriteLine(result);
         Assert.Pass();
     }
 }

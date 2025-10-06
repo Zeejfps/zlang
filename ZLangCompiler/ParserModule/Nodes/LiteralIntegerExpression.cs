@@ -9,7 +9,10 @@ public sealed class LiteralIntegerExpression : PrimaryExpressionNode
     public LiteralIntegerExpression(Token token)
     {
         _token = token;
+        Value = int.Parse(token.Lexeme);
     }
+
+    public int Value { get; }
 
     public override void Accept(IAstNodeVisitor visitor)
     {
