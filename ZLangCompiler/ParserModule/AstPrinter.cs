@@ -4,8 +4,7 @@ namespace ParserModule;
 
 public sealed class AstPrinter : IAstNodeVisitor
 {
-    public void VisitPrimaryExpressionNode(PrimaryExpressionNode primaryExpressionNode)
+    public void VisitIntegerNumberExpression(LiteralIntegerExpression integerNumberExpression)
     {
-        throw new NotImplementedException();
     }
 }
