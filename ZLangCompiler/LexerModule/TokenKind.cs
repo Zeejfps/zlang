@@ -8,6 +8,7 @@ public enum TokenKind
     KeywordModule,
     KeywordStruct,
     KeywordVar,
+    KeywordFunc,
     
     // Symbols
     SymbolEquals,
@@ -18,6 +19,8 @@ public enum TokenKind
     SymbolColon,
     SymbolLeftParen,
     SymbolRightParen,
+    SymbolLeftBrace,
+    SymbolRightBrace,
     
     // Literals
     LiteralNumber,

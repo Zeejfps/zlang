@@ -16,6 +16,8 @@ public sealed class Lexer : IDisposable
         {'(', TokenKind.SymbolLeftParen},
         {')', TokenKind.SymbolRightParen},
         {';', TokenKind.SymbolSemicolon},
+        {'{', TokenKind.SymbolLeftBrace},
+        {'}', TokenKind.SymbolRightBrace},
     };
     
     public Dictionary<string, TokenKind> Keywords { get; } = new()
@@ -23,6 +25,7 @@ public sealed class Lexer : IDisposable
         {"module",  TokenKind.KeywordModule},
         {"struct",  TokenKind.KeywordStruct},
         {"var",  TokenKind.KeywordVar},
+        {"func",  TokenKind.KeywordFunc},
     };
     
     private int Line { get; set; } = 1;

@@ -119,4 +119,17 @@ public class Tests
             new Token(TokenKind.EOF, string.Empty, 1, 14)
         }));
     }
+    
+    [Test]
+    public void TestFuncKeyword()
+    {
+        const string input = "func";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.KeywordFunc, "func", 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, 5)
+        }));
+    }
 }
