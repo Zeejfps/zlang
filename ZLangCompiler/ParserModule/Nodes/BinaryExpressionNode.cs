@@ -4,11 +4,11 @@ namespace ParserModule.Nodes;
 
 public sealed class BinaryExpressionNode : AstNode
 {
-    public PrimaryExpressionNode Left { get; }
+    public AstNode Left { get; }
     public Token Op { get; }
-    public PrimaryExpressionNode Right { get; }
+    public AstNode Right { get; }
 
-    public BinaryExpressionNode(PrimaryExpressionNode left, Token op, PrimaryExpressionNode right)
+    public BinaryExpressionNode(AstNode left, Token op, AstNode right)
     {
         Left = left;
         Op = op;

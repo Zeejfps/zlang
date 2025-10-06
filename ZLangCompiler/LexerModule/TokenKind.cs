@@ -17,8 +17,8 @@ public enum TokenKind
     SymbolEquals, // =
     SymbolDot, // .
     SymbolComma, // ,
-    SymbolLeftAngleBracket,  // <
-    SymbolRightAngleBracket, // >
+    SymbolLessThan,  // <
+    SymbolGreaterThan, // >
     SymbolSemicolon, // ;
     SymbolColon, // :
     SymbolLeftParen,  // (

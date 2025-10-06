@@ -72,26 +72,32 @@ public sealed class Parser
     
     public static BinaryExpressionNode ParseBinaryExpression(TokenReader tokenReader)
     {
-        var left = ParsePrimaryExpression(tokenReader);
-        var nextToken = tokenReader.Peek();
-        if (!Operators.Contains(nextToken.Kind))
-        {
-            throw new Exception("Invalid token: " + nextToken + "");
-        }
-        var op = tokenReader.Read();
-        var right = ParsePrimaryExpression(tokenReader);
-        return new BinaryExpressionNode(left, op, right);
-    }
-    
-    public static ExpressionNode ParseExpression(TokenReader tokenReader)
-    {
         var left = ParseComparison(tokenReader);
         var nextToken = tokenReader.Peek();
-        // if (nextToken.Kind == TokenKind.SymbolPlusEquals)
-        return null;
+        if (nextToken.Kind == TokenKind.SymbolEqualsEquals || nextToken.Kind == TokenKind.SymbolNotEquals)
+        {
+            var op = tokenReader.Read();
+            var right = ParseComparison(tokenReader);
+            return new BinaryExpressionNode(left, op, right);
+        }
+        return left;
     }
 
-    public static AstNode ParseComparison(TokenReader tokenReader)
+    public static BinaryExpressionNode ParseComparison(TokenReader tokenReader)
+    {
+        var left = ParseTerm(tokenReader);
+        var nextToken = tokenReader.Peek();
+        if (nextToken.Kind == TokenKind.SymbolGreaterThan ||
+            nextToken.Kind == TokenKind.SymbolLessThan)
+        {
+            var op = tokenReader.Read();
+            var right = ParseTerm(tokenReader);
+            return new BinaryExpressionNode(left, op, right);       
+        }
+        return left;
+    }
+
+    public static BinaryExpressionNode ParseTerm(TokenReader tokenReader)
     {
         return null;
     }
