@@ -27,6 +27,7 @@ public sealed class Lexer : IDisposable
         {"struct",  TokenKind.KeywordStruct},
         {"var",  TokenKind.KeywordVar},
         {"func",  TokenKind.KeywordFunc},
+        {"defer",  TokenKind.KeywordDefer},
     };
     
     private int Line { get; set; } = 1;

@@ -9,6 +9,7 @@ public enum TokenKind
     KeywordStruct,
     KeywordVar,
     KeywordFunc,
+    KeywordDefer,
     
     // Symbols
     SymbolEquals,
