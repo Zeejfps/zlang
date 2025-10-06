@@ -50,17 +50,13 @@ public sealed class Lexer : IDisposable
 
     public Token ReadNextToken()
     {
-        var state = FindNextState();
-        while (state == null)
+        var tokenReader = StartReading();
+        while (tokenReader == null)
         {
             SkipChar();
-            state = FindNextState();
+            tokenReader = StartReading();
         }
-
-        var token = state.FinishReading(this);
-        Column += _writeHead;
-        _writeHead = 0;
-        return token;
+        return FinishReading(tokenReader);
     }
 
     public Token CreateToken(TokenKind tokenKind)
@@ -69,7 +65,7 @@ public sealed class Lexer : IDisposable
         return new Token(tokenKind, lexeme, Line, Column);
     }
 
-    private ILexerState? FindNextState()
+    private ILexerState? StartReading()
     {
         foreach (var state in _states)
         {
@@ -80,6 +76,14 @@ public sealed class Lexer : IDisposable
         }
 
         return null;
+    }
+
+    private Token FinishReading(ILexerState tokenReader)
+    {
+        var token = tokenReader.FinishReading(this);
+        Column += _writeHead;
+        _writeHead = 0;
+        return token;
     }
 
     public bool IsSymbol(int charCode)
@@ -102,6 +106,11 @@ public sealed class Lexer : IDisposable
     public bool IsLetterOrDigit(int c)
     {
         return char.IsLetterOrDigit((char)c);
+    }
+    
+    public bool IsDigit(int nextChar)
+    {
+        return char.IsDigit((char)nextChar);
     }
 
     public int PeekChar()
@@ -155,10 +164,5 @@ public sealed class Lexer : IDisposable
         using var reader = new StreamReader(stream);
         foreach (var token in Tokenize(reader))
             yield return token;
-    }
-
-    public bool IsDigit(int nextChar)
-    {
-        return char.IsDigit((char)nextChar);
     }
 }
