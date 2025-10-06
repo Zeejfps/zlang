@@ -21,13 +21,10 @@ internal sealed class IdentTokenReader : ITokenReader
     {
         var lexer = _lexer;
         var nextChar = lexer.PeekChar();
-        var max = 100;
-        var i = 0;
-        while (nextChar != -1 && lexer.IsLetterOrDigit(nextChar) && i < max)
+        while (nextChar != -1 && lexer.IsLetterOrDigit(nextChar))
         {
             lexer.ReadChar();
             nextChar = lexer.PeekChar();
-            i++;
         }
         
         var lexeme = lexer.Lexeme.ToString();
