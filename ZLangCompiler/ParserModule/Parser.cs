@@ -59,7 +59,7 @@ public sealed class Parser
         throw new NotImplementedException();
     }
 
-    public static PrimaryExpressionNode ParsePrimaryExpression(TokenReader tokenReader)
+    public static AstNode ParsePrimaryExpression(TokenReader tokenReader)
     {
         var token = tokenReader.Read();
         if (token.Kind == TokenKind.LiteralInteger)
@@ -70,7 +70,7 @@ public sealed class Parser
         throw new Exception("Invalid token: " + token + "");
     }
     
-    public static BinaryExpressionNode ParseBinaryExpression(TokenReader tokenReader)
+    public static AstNode ParseExpression(TokenReader tokenReader)
     {
         var left = ParseComparison(tokenReader);
         var nextToken = tokenReader.Peek();
@@ -84,7 +84,7 @@ public sealed class Parser
         return left;
     }
 
-    public static BinaryExpressionNode ParseComparison(TokenReader tokenReader)
+    public static AstNode ParseComparison(TokenReader tokenReader)
     {
         var left = ParseTerm(tokenReader);
         var nextToken = tokenReader.Peek();
@@ -100,7 +100,7 @@ public sealed class Parser
         return left;
     }
 
-    public static BinaryExpressionNode ParseTerm(TokenReader tokenReader)
+    public static AstNode ParseTerm(TokenReader tokenReader)
     {
         var left = ParseFactor(tokenReader);
         var nextToken = tokenReader.Peek();
@@ -113,7 +113,7 @@ public sealed class Parser
         return left;
     }
     
-    public static BinaryExpressionNode ParseFactor(TokenReader tokenReader)
+    public static AstNode ParseFactor(TokenReader tokenReader)
     {
         var left = ParseUnary(tokenReader);
         var nextToken = tokenReader.Peek();
@@ -127,13 +127,16 @@ public sealed class Parser
         return left;
     }
     
-    public static BinaryExpressionNode ParseUnary(TokenReader tokenReader)
+    public static AstNode ParseUnary(TokenReader tokenReader)
     {
         var nextToken = tokenReader.Peek();
-        if (nextToken.Kind == TokenKind.SymbolExclamation)
+        if (nextToken.Kind == TokenKind.SymbolExclamation ||
+            nextToken.Kind == TokenKind.SymbolMinus)
         {
-            
+            var op = tokenReader.Read();
+            var right = ParseUnary(tokenReader);
+            return new UnaryExpressionNode(op, right);
         }
-        return null;
+        return ParsePrimaryExpression(tokenReader);
     }
 }

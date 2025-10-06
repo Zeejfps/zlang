@@ -21,6 +21,12 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append(")");       
     }
 
+    public void VisitUnaryExpression(UnaryExpressionNode unaryExpressionNode)
+    {
+        _sb.Append(unaryExpressionNode.Operator.Lexeme);
+        unaryExpressionNode.Right.Accept(this);       
+    }
+
     public override string ToString()
     {
         return _sb.ToString();       

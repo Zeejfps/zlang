@@ -27,7 +27,7 @@ public class Tests
         const string input = "10 + 5";
         var tokens = Lexer.Tokenize(input);
         var tokenReader = new TokenReader(tokens);
-        var astNode = Parser.ParseBinaryExpression(tokenReader);
+        var astNode = Parser.ParseExpression(tokenReader);
         var printer = new AstPrinter();
         astNode.Accept(printer);
         var result = printer.ToString();
@@ -41,11 +41,12 @@ public class Tests
         const string input = "10 + 5 * 10";
         var tokens = Lexer.Tokenize(input);
         var tokenReader = new TokenReader(tokens);
-        var astNode = Parser.ParseBinaryExpression(tokenReader);
+        var astNode = Parser.ParseExpression(tokenReader);
         var printer = new AstPrinter();
         astNode.Accept(printer);
         var result = printer.ToString();
         Console.WriteLine(result);
+        
         Assert.Pass();
     }
     

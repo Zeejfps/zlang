@@ -6,6 +6,7 @@
     &lt;TestAncestor&gt;&#xD;
       &lt;TestId&gt;NUnit3x::818E856C-7877-4273-94A6-FF77E4233885::net9.0::ParserModule.Tests.Tests.TestPrimaryExpressionNumber&lt;/TestId&gt;&#xD;
       &lt;TestId&gt;NUnit3x::818E856C-7877-4273-94A6-FF77E4233885::net9.0::ParserModule.Tests.Tests.TestBinaryExpression&lt;/TestId&gt;&#xD;
+      &lt;TestId&gt;NUnit3x::818E856C-7877-4273-94A6-FF77E4233885::net9.0::ParserModule.Tests.Tests.TestExpression&lt;/TestId&gt;&#xD;
     &lt;/TestAncestor&gt;&#xD;
     &lt;Project Location="G:\Dev\zlang\ZLangCompiler\LexerModule.Tests" Presentation="&amp;lt;LexerModule.Tests&amp;gt;" /&gt;&#xD;
   &lt;/Or&gt;&#xD;
