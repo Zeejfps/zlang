@@ -11,7 +11,7 @@ public enum TokenKind
     KeywordFunc,
     KeywordDefer,
     
-    // Symbols
+    // One Char Symbols
     SymbolEquals, // =
     SymbolDot, // .
     SymbolComma, // ,
@@ -25,7 +25,12 @@ public enum TokenKind
     SymbolRightCurlyBrace, // }
     SymbolLeftSquareBracket,  // [
     SymbolRightSquareBracket, // ]
+    SymbolStar, // *
+    SymbolPlus, // +
+    
+    // Two Char Symbols
     SymbolReturnArrow, // ->
+    SymbolPlusEquals, // +=
     
     // Literals
     LiteralNumber,

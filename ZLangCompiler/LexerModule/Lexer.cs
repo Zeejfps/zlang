@@ -22,11 +22,14 @@ public sealed class Lexer : IDisposable
         {'}', TokenKind.SymbolRightCurlyBrace},
         {'[', TokenKind.SymbolLeftSquareBracket},
         {']', TokenKind.SymbolRightSquareBracket},
+        {'*', TokenKind.SymbolStar},
+        {'+', TokenKind.SymbolPlus},
     };
     
     public Dictionary<TwoCharSymbol, TokenKind> TwoCharSymbols { get; } = new()
     {
         {"->", TokenKind.SymbolReturnArrow},
+        {"+=", TokenKind.SymbolPlusEquals},
     };
     
     public Dictionary<string, TokenKind> Keywords { get; } = new()
