@@ -21,16 +21,17 @@ public class Tests
         Assert.Pass();
     }
     
-    //[Test]
-    public void TestExpression()
+    [Test]
+    public void TestBinaryExpression()
     {
         const string input = "10 + 5";
         var tokens = Lexer.Tokenize(input);
         var tokenReader = new TokenReader(tokens);
-        var astNode = Parser.ParsePrimaryExpression(tokenReader);
+        var astNode = Parser.ParseBinaryExpression(tokenReader);
         var printer = new AstPrinter();
         astNode.Accept(printer);
         var result = printer.ToString();
+        Console.WriteLine(result);
         Assert.Pass();
     }
     

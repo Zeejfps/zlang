@@ -50,6 +50,10 @@ public sealed class TokenReader : IDisposable
 
 public sealed class Parser
 {
+    public static HashSet<TokenKind> Operators = [
+        TokenKind.SymbolPlus
+    ]; 
+    
     public static Ast Parse(IEnumerable<Token> tokens)
     {
         throw new NotImplementedException();
@@ -60,9 +64,22 @@ public sealed class Parser
         var token = tokenReader.Read();
         if (token.Kind == TokenKind.LiteralInteger)
         {
-            return new LiteralIntegerExpression(token);
+            return new LiteralIntegerExpressionNode(token);
         }
 
         throw new Exception("Invalid token: " + token + "");
+    }
+    
+    public static BinaryExpressionNode ParseBinaryExpression(TokenReader tokenReader)
+    {
+        var left = ParsePrimaryExpression(tokenReader);
+        var nextToken = tokenReader.Peek();
+        if (!Operators.Contains(nextToken.Kind))
+        {
+            throw new Exception("Invalid token: " + nextToken + "");
+        }
+        var op = tokenReader.Read();
+        var right = ParsePrimaryExpression(tokenReader);
+        return new BinaryExpressionNode(left, op, right);
     }
 }

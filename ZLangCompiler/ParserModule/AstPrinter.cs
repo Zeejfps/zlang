@@ -7,9 +7,18 @@ public sealed class AstPrinter : IAstNodeVisitor
 {
     private readonly StringBuilder _sb = new();
     
-    public void VisitIntegerNumberExpression(LiteralIntegerExpression integerNumberExpression)
+    public void VisitIntegerNumberExpression(LiteralIntegerExpressionNode integerNumberExpression)
     {
         _sb.Append(integerNumberExpression.Value);
+    }
+
+    public void VisitBinaryExpression(BinaryExpressionNode binaryExpressionNode)
+    {
+        _sb.Append("(");
+        binaryExpressionNode.Left.Accept(this);
+        _sb.Append(binaryExpressionNode.Op.Lexeme);
+        binaryExpressionNode.Right.Accept(this);       
+        _sb.Append(")");       
     }
 
     public override string ToString()

@@ -4,5 +4,6 @@ namespace ParserModule;
 
 public interface IAstNodeVisitor
 {
-    void VisitIntegerNumberExpression(LiteralIntegerExpression integerNumberExpression);
+    void VisitIntegerNumberExpression(LiteralIntegerExpressionNode integerNumberExpression);
+    void VisitBinaryExpression(BinaryExpressionNode binaryExpressionNode);
 }
