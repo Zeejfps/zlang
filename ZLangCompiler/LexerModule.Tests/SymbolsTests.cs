@@ -122,4 +122,30 @@ public class SymbolsTests
             new Token(TokenKind.EOF, string.Empty, 1, 3)
         }));
     }
+    
+    [Test]
+    public void TestLessThanEquals()
+    {
+        const string input = "<=";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.SymbolLessThanEquals, "<=", 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, 3)
+        }));
+    }
+    
+    [Test]
+    public void TestGreaterThanEquals()
+    {
+        const string input = ">=";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.SymbolGreaterThanEquals, ">=", 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, 3)
+        }));
+    }
 }
