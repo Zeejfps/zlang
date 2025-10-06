@@ -21,6 +21,7 @@ public enum TokenKind
     SymbolRightParen,
     SymbolLeftBrace,
     SymbolRightBrace,
+    SymbolComma,
     
     // Literals
     LiteralNumber,

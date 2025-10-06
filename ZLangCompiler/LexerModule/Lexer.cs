@@ -10,6 +10,7 @@ public sealed class Lexer : IDisposable
     {
         {'=', TokenKind.SymbolEquals},
         {'.', TokenKind.SymbolDot},
+        {',', TokenKind.SymbolComma},
         {'<', TokenKind.SymbolLessThan},
         {'>', TokenKind.SymbolGreaterThan},
         {':', TokenKind.SymbolColon},

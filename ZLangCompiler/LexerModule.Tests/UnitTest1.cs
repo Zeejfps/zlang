@@ -146,4 +146,33 @@ public class Tests
             new Token(TokenKind.EOF, string.Empty, 1, 3)
         }));
     }
+    
+    [Test]
+    public void TestVarAssignmentToStruct()
+    {
+        const string input = "var v1: Vec2<u8> = { c1 = 0, c2 = 10 }";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.KeywordVar, "var", 1, 1),
+            new Token(TokenKind.Identifier, "v1", 1, 5),
+            new Token(TokenKind.SymbolColon, ":", 1, 7),
+            new Token(TokenKind.Identifier, "Vec2", 1, 9),
+            new Token(TokenKind.SymbolLessThan, "<", 1, 13),
+            new Token(TokenKind.Identifier, "u8", 1, 14),
+            new Token(TokenKind.SymbolGreaterThan, ">", 1, 16),
+            new Token(TokenKind.SymbolEquals, "=", 1, 18),
+            new Token(TokenKind.SymbolLeftBrace, "{", 1, 20),
+            new Token(TokenKind.Identifier, "c1", 1, 22),
+            new Token(TokenKind.SymbolEquals, "=", 1, 25),
+            new Token(TokenKind.LiteralNumber, "0", 1, 27),
+            new Token(TokenKind.SymbolComma, ",", 1, 28),
+            new Token(TokenKind.Identifier, "c2", 1, 30),
+            new Token(TokenKind.SymbolEquals, "=", 1, 33),
+            new Token(TokenKind.LiteralNumber, "10", 1, 35),
+            new Token(TokenKind.SymbolRightBrace, "}", 1, 38),
+            new Token(TokenKind.EOF, string.Empty, 1, 39)
+        }));
+    }
 }

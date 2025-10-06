@@ -48,7 +48,9 @@ struct Vec2<T> = std.vec.Vec2<T>;
 var v1: Vec2<u8> = {
     c1 = 0,
     c2 = 10
-};
+}
+
+var v1: Vec2<u8> = { c1 = 0, c2 = 10 }
 
 // Comments
 var v2: Vec2<u8> = {
