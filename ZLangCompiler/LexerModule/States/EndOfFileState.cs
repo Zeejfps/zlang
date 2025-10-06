@@ -13,8 +13,10 @@ internal sealed class EndOfFileState : ILexerState
         return false;
     }
 
-    public TokenKind FinishReading(Lexer lexer)
+    public Token FinishReading(Lexer lexer)
     {
-        return TokenKind.EOF;
+        var token = lexer.CreateToken(TokenKind.EOF);
+        lexer.SkipChar();
+        return token;
     }
 }

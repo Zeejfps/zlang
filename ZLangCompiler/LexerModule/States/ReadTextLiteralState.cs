@@ -20,7 +20,7 @@ internal sealed class ReadTextLiteralState : ILexerState
         return false;
     }
 
-    public TokenKind FinishReading(Lexer lexer)
+    public Token FinishReading(Lexer lexer)
     {
         var nextChar = lexer.PeekChar();
         while (nextChar != -1 && nextChar != '"')
@@ -29,11 +29,12 @@ internal sealed class ReadTextLiteralState : ILexerState
             nextChar = lexer.PeekChar();
         }
 
+        var token = lexer.CreateToken(TokenKind.LiteralText);
         if (nextChar == '"')
         {
             lexer.SkipChar();
         }
 
-        return TokenKind.LiteralText;
+        return token;
     }
 }

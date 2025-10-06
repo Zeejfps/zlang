@@ -23,8 +23,8 @@ internal sealed class ReadSymbolState : ILexerState
         return false;
     }
     
-    public TokenKind FinishReading(Lexer lexer)
+    public Token FinishReading(Lexer lexer)
     {
-        return _tokenKind;
+        return lexer.CreateToken(_tokenKind);
     }
 }

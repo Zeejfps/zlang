@@ -16,7 +16,7 @@ internal sealed class ReadIdentState : ILexerState
         return lexer.IsLetter(nextChar);
     }
 
-    public TokenKind FinishReading(Lexer lexer)
+    public Token FinishReading(Lexer lexer)
     {
         var nextChar = lexer.PeekChar();
         var max = 100;
@@ -32,9 +32,9 @@ internal sealed class ReadIdentState : ILexerState
         //Console.WriteLine(lexeme);
         if (lexer.Keywords.TryGetValue(lexeme, out var tokenKind))
         {
-            return tokenKind;
+            return lexer.CreateToken(tokenKind);
         }
         
-        return TokenKind.Identifier;
+        return lexer.CreateToken(TokenKind.Identifier);
     }
 }

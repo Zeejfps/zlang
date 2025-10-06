@@ -57,12 +57,16 @@ public sealed class Lexer : IDisposable
             state = FindNextState();
         }
 
-        var tokenKind = state.FinishReading(this);
-        var lexeme = Lexeme.ToString();
-        var token = new Token(tokenKind, lexeme, Line, Column);
+        var token = state.FinishReading(this);
         Column += _writeHead;
         _writeHead = 0;
         return token;
+    }
+
+    public Token CreateToken(TokenKind tokenKind)
+    {
+        var lexeme = Lexeme.ToString();
+        return new Token(tokenKind, lexeme, Line, Column);
     }
 
     private ILexerState? FindNextState()

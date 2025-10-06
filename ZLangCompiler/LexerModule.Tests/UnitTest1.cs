@@ -106,4 +106,17 @@ public class Tests
             new Token(TokenKind.EOF, string.Empty, 1, 28)
         }));
     }
+    
+    [Test]
+    public void TestTextLiteral()
+    {
+        const string input = "\"Hello World\"";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.LiteralText, "Hello World", 1, 2),
+            new Token(TokenKind.EOF, string.Empty, 1, 14)
+        }));
+    }
 }

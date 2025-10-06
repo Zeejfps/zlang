@@ -15,7 +15,7 @@ internal sealed class ReadNumberLiteralState : ILexerState
         return lexer.IsDigit(nextChar);
     }
 
-    public TokenKind FinishReading(Lexer lexer)
+    public Token FinishReading(Lexer lexer)
     {
         var nextChar = lexer.PeekChar();
         while (nextChar != -1 && lexer.IsDigit(nextChar))
@@ -23,6 +23,6 @@ internal sealed class ReadNumberLiteralState : ILexerState
             lexer.ReadChar();
             nextChar = lexer.PeekChar();
         }
-        return TokenKind.LiteralNumber;
+        return lexer.CreateToken(TokenKind.LiteralNumber);
     }
 }
