@@ -1,4 +1,6 @@
-﻿namespace LexerModule;
+﻿using LexerModule.States;
+
+namespace LexerModule;
 
 public sealed class Lexer : IDisposable
 {
@@ -28,7 +30,7 @@ public sealed class Lexer : IDisposable
 
     private readonly TextReader _reader;
     private readonly char[] _buffer = new char[1024];
-    private readonly LexerStates _states;
+    private readonly ILexerState[] _states;
     
     private int _writeHead;
     private bool _disposed;
@@ -36,7 +38,13 @@ public sealed class Lexer : IDisposable
     public Lexer(TextReader reader)
     {
         _reader = reader;
-        _states = new LexerStates();
+        _states = [
+            new ReadIdentState(this),
+            new ReadSymbolState(this),
+            new ReadNumberLiteralState(this),
+            new ReadTextLiteralState(this),
+            new EndOfFileState(this)
+        ];
     }
     
     public void Dispose()

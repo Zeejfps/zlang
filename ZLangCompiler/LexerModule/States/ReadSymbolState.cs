@@ -2,11 +2,11 @@ namespace LexerModule.States;
 
 internal sealed class ReadSymbolState : ILexerState
 {
-    private readonly LexerStates _states;
+    private readonly Lexer _states;
     
     private TokenKind _tokenKind;
 
-    public ReadSymbolState(LexerStates states)
+    public ReadSymbolState(Lexer states)
     {
         _states = states;
     }

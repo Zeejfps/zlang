@@ -2,6 +2,13 @@ namespace LexerModule.States;
 
 internal sealed class EndOfFileState : ILexerState
 {
+    private readonly Lexer _states;
+    
+    public EndOfFileState(Lexer states)
+    {
+        _states = states;
+    }
+    
     public bool TryStartReading(Lexer lexer)
     {
         var nextChar = lexer.PeekChar();

@@ -2,9 +2,9 @@ namespace LexerModule.States;
 
 internal sealed class ReadNumberLiteralState : ILexerState
 {
-    private readonly LexerStates _states;
+    private readonly Lexer _states;
 
-    public ReadNumberLiteralState(LexerStates states)
+    public ReadNumberLiteralState(Lexer states)
     {
         _states = states;
     }
