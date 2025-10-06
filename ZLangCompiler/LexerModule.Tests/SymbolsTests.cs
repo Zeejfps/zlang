@@ -148,4 +148,17 @@ public class SymbolsTests
             new Token(TokenKind.EOF, string.Empty, 1, 3)
         }));
     }
+    
+    [Test]
+    public void TestForwardSlash()
+    {
+        const string input = "/";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.SymbolForwardSlash, "/", 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, 2)
+        }));
+    }
 }

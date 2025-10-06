@@ -74,7 +74,8 @@ public sealed class Parser
     {
         var left = ParseComparison(tokenReader);
         var nextToken = tokenReader.Peek();
-        if (nextToken.Kind == TokenKind.SymbolEqualsEquals || nextToken.Kind == TokenKind.SymbolNotEquals)
+        if (nextToken.Kind == TokenKind.SymbolEqualsEquals ||
+            nextToken.Kind == TokenKind.SymbolNotEquals)
         {
             var op = tokenReader.Read();
             var right = ParseComparison(tokenReader);
@@ -88,7 +89,9 @@ public sealed class Parser
         var left = ParseTerm(tokenReader);
         var nextToken = tokenReader.Peek();
         if (nextToken.Kind == TokenKind.SymbolGreaterThan ||
-            nextToken.Kind == TokenKind.SymbolLessThan)
+            nextToken.Kind == TokenKind.SymbolLessThan ||
+            nextToken.Kind == TokenKind.SymbolGreaterThanEquals ||
+            nextToken.Kind == TokenKind.SymbolLessThanEquals)
         {
             var op = tokenReader.Read();
             var right = ParseTerm(tokenReader);
@@ -98,6 +101,31 @@ public sealed class Parser
     }
 
     public static BinaryExpressionNode ParseTerm(TokenReader tokenReader)
+    {
+        var left = ParseFactor(tokenReader);
+        var nextToken = tokenReader.Peek();
+        if (nextToken.Kind == TokenKind.SymbolPlus || nextToken.Kind == TokenKind.SymbolMinus)
+        {
+            var op = tokenReader.Read();
+            var right = ParseFactor(tokenReader);
+            return new BinaryExpressionNode(left, op, right);       
+        }
+        return left;
+    }
+    
+    public static BinaryExpressionNode ParseFactor(TokenReader tokenReader)
+    {
+        var left = ParseFactor(tokenReader);
+        var nextToken = tokenReader.Peek();
+        if (nextToken.Kind == TokenKind.SymbolStar ||
+            nextToken.Kind == TokenKind.SymbolForwardSlash)
+        {
+            
+        }
+        return null;
+    }
+    
+    public static BinaryExpressionNode ParseUnary(TokenReader tokenReader)
     {
         return null;
     }

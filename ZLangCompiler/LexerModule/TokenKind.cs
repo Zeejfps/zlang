@@ -27,8 +27,10 @@ public enum TokenKind
     SymbolRightCurlyBrace, // }
     SymbolLeftSquareBracket,  // [
     SymbolRightSquareBracket, // ]
-    SymbolStar, // *
-    SymbolPlus, // +
+    SymbolStar,         // *
+    SymbolPlus,         // +
+    SymbolMinus,        // -
+    SymbolForwardSlash, // /
     
     // Two Char Symbols
     SymbolReturnArrow, // ->

@@ -22,8 +22,9 @@ public sealed class Lexer : IDisposable
         {'}', TokenKind.SymbolRightCurlyBrace},
         {'[', TokenKind.SymbolLeftSquareBracket},
         {']', TokenKind.SymbolRightSquareBracket},
-        {'*', TokenKind.SymbolStar},
         {'+', TokenKind.SymbolPlus},
+        {'*', TokenKind.SymbolStar},
+        {'/', TokenKind.SymbolForwardSlash},
     };
     
     public Dictionary<TwoCharSymbol, TokenKind> TwoCharSymbols { get; } = new()
