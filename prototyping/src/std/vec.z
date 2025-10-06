@@ -1,5 +1,5 @@
 module std.vec {
-    type Number = u8 | u16 | u32 | u64 | usize | f32
+    union Number = u8 | u16 | u32 | u64 | usize | f32
 
     struct Vec2<T: Number> {
         c1: T
