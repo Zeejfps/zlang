@@ -29,12 +29,13 @@ public sealed class Parser
     {
         var left = ParseComparison(tokenReader);
         var nextToken = tokenReader.Peek();
-        if (nextToken.Kind == TokenKind.SymbolEqualsEquals ||
+        while (nextToken.Kind == TokenKind.SymbolEqualsEquals ||
             nextToken.Kind == TokenKind.SymbolNotEquals)
         {
             var op = tokenReader.Read();
             var right = ParseComparison(tokenReader);
-            return new BinaryExpressionNode(left, op, right);
+            left = new BinaryExpressionNode(left, op, right);
+            nextToken = tokenReader.Peek();       
         }
         return left;
     }
@@ -43,14 +44,15 @@ public sealed class Parser
     {
         var left = ParseTerm(tokenReader);
         var nextToken = tokenReader.Peek();
-        if (nextToken.Kind == TokenKind.SymbolGreaterThan ||
+        while (nextToken.Kind == TokenKind.SymbolGreaterThan ||
             nextToken.Kind == TokenKind.SymbolLessThan ||
             nextToken.Kind == TokenKind.SymbolGreaterThanEquals ||
             nextToken.Kind == TokenKind.SymbolLessThanEquals)
         {
             var op = tokenReader.Read();
             var right = ParseTerm(tokenReader);
-            return new BinaryExpressionNode(left, op, right);       
+            left = new BinaryExpressionNode(left, op, right);       
+            nextToken = tokenReader.Peek();      
         }
         return left;
     }
@@ -59,11 +61,13 @@ public sealed class Parser
     {
         var left = ParseFactor(tokenReader);
         var nextToken = tokenReader.Peek();
-        if (nextToken.Kind == TokenKind.SymbolPlus || nextToken.Kind == TokenKind.SymbolMinus)
+        while (nextToken.Kind == TokenKind.SymbolPlus ||
+               nextToken.Kind == TokenKind.SymbolMinus)
         {
             var op = tokenReader.Read();
             var right = ParseFactor(tokenReader);
-            return new BinaryExpressionNode(left, op, right);       
+            left = new BinaryExpressionNode(left, op, right);       
+            nextToken = tokenReader.Peek();      
         }
         return left;
     }
@@ -72,12 +76,13 @@ public sealed class Parser
     {
         var left = ParseUnary(tokenReader);
         var nextToken = tokenReader.Peek();
-        if (nextToken.Kind == TokenKind.SymbolStar ||
-            nextToken.Kind == TokenKind.SymbolForwardSlash)
+        while (nextToken.Kind == TokenKind.SymbolStar || 
+               nextToken.Kind == TokenKind.SymbolForwardSlash)
         {
             var op = tokenReader.Read();
             var right = ParseUnary(tokenReader);
-            return new BinaryExpressionNode(left, op, right);      
+            left = new BinaryExpressionNode(left, op, right);      
+            nextToken = tokenReader.Peek();      
         }
         return left;
     }
