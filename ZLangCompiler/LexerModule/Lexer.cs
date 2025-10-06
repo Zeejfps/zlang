@@ -1,4 +1,4 @@
-﻿using LexerModule.States;
+﻿using LexerModule.TokenReaders;
 
 namespace LexerModule;
 

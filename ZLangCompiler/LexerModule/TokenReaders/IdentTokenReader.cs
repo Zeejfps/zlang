@@ -1,4 +1,4 @@
-namespace LexerModule.States;
+namespace LexerModule.TokenReaders;
 
 internal sealed class IdentTokenReader : ITokenReader
 {
