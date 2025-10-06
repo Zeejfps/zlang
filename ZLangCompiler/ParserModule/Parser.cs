@@ -115,18 +115,25 @@ public sealed class Parser
     
     public static BinaryExpressionNode ParseFactor(TokenReader tokenReader)
     {
-        var left = ParseFactor(tokenReader);
+        var left = ParseUnary(tokenReader);
         var nextToken = tokenReader.Peek();
         if (nextToken.Kind == TokenKind.SymbolStar ||
             nextToken.Kind == TokenKind.SymbolForwardSlash)
         {
-            
+            var op = tokenReader.Read();
+            var right = ParseUnary(tokenReader);
+            return new BinaryExpressionNode(left, op, right);      
         }
-        return null;
+        return left;
     }
     
     public static BinaryExpressionNode ParseUnary(TokenReader tokenReader)
     {
+        var nextToken = tokenReader.Peek();
+        if (nextToken.Kind == TokenKind.SymbolExclamation)
+        {
+            
+        }
         return null;
     }
 }

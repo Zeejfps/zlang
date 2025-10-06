@@ -31,6 +31,7 @@ public enum TokenKind
     SymbolPlus,         // +
     SymbolMinus,        // -
     SymbolForwardSlash, // /
+    SymbolExclamation,  // !
     
     // Two Char Symbols
     SymbolReturnArrow, // ->

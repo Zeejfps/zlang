@@ -161,4 +161,17 @@ public class SymbolsTests
             new Token(TokenKind.EOF, string.Empty, 1, 2)
         }));
     }
+    
+    [Test]
+    public void TestExclamation()
+    {
+        const string input = "!";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.SymbolExclamation, "!", 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, 2)
+        }));
+    }
 }

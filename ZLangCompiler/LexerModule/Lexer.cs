@@ -25,6 +25,7 @@ public sealed class Lexer : IDisposable
         {'+', TokenKind.SymbolPlus},
         {'*', TokenKind.SymbolStar},
         {'/', TokenKind.SymbolForwardSlash},
+        {'!', TokenKind.SymbolExclamation},
     };
     
     public Dictionary<TwoCharSymbol, TokenKind> TwoCharSymbols { get; } = new()
