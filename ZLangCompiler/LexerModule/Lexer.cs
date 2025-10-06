@@ -7,7 +7,7 @@ public sealed class Lexer : IDisposable
     private const int MaxLookAhead = 2;
     
     public Span<char> Lexeme => _buffer.AsSpan(0, _writeHead);
-    public Dictionary<char, TokenKind> Symbols { get; } = new()
+    public Dictionary<char, TokenKind> SingleCharSymbols { get; } = new()
     {
         {'=', TokenKind.SymbolEquals},
         {'.', TokenKind.SymbolDot},
@@ -22,6 +22,11 @@ public sealed class Lexer : IDisposable
         {'}', TokenKind.SymbolRightCurlyBrace},
         {'[', TokenKind.SymbolLeftSquareBracket},
         {']', TokenKind.SymbolRightSquareBracket},
+    };
+    
+    public Dictionary<TwoCharSymbol, TokenKind> TwoCharSymbols { get; } = new()
+    {
+        {"->", TokenKind.SymbolReturnArrow},
     };
     
     public Dictionary<string, TokenKind> Keywords { get; } = new()
@@ -51,7 +56,8 @@ public sealed class Lexer : IDisposable
         _reader = reader;
         _tokenReaders = [
             new IdentTokenReader(this),
-            new SymbolTokenReader(this),
+            new TwoCharSymbolTokenReader(this),
+            new OneCharSymbolTokenReader(this),
             new NumberLiteralTokenReader(this),
             new TextLiteralTokenReader(this),
             new EndOfFileTokenReader(this)
@@ -139,7 +145,7 @@ public sealed class Lexer : IDisposable
     public bool IsSymbol(int charCode)
     {
         var c = (char)charCode;
-        foreach (var symbol in Symbols.Keys)
+        foreach (var symbol in SingleCharSymbols.Keys)
         {
             if (c == symbol)
                 return true;

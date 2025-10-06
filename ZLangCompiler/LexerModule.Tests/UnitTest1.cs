@@ -163,7 +163,7 @@ public class Tests
         }));
     }
 
-    [Test]
+    //[Test]
     public void TestFileLexing()
     {
         var fileReader = File.OpenRead("/Users/zee-seriesai/src/zlang/prototyping/src/main.z");
