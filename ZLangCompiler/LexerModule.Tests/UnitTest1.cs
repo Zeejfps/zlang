@@ -1,4 +1,6 @@
-﻿namespace LexerModule.Tests;
+﻿using System.Diagnostics;
+
+namespace LexerModule.Tests;
 
 [TestFixture]
 public class Tests
@@ -159,5 +161,27 @@ public class Tests
             new Token(TokenKind.SymbolRightCurlyBrace, "}", 1, 38),
             new Token(TokenKind.EOF, string.Empty, 1, 39)
         }));
+    }
+
+    [Test]
+    public void TestFileLexing()
+    {
+        var fileReader = File.OpenRead("/Users/zee-seriesai/src/zlang/prototyping/src/main.z");
+        
+        var stopwatch = Stopwatch.StartNew();
+        var tokens = Lexer.Tokenize(fileReader).ToList();
+        var elapsed = stopwatch.ElapsedTicks;
+        stopwatch.Stop();
+
+        double nsPerTick = (1_000_000_000.0) / Stopwatch.Frequency;
+        double elapsedNanoseconds = elapsed * nsPerTick;
+
+        Console.WriteLine($"Lexing took: {elapsedNanoseconds} ns");
+        foreach (var token in tokens)
+        {
+            Console.WriteLine(token);
+        }
+
+        Assert.Pass();
     }
 }
