@@ -10,6 +10,8 @@ public enum TokenKind
     KeywordVar,
     KeywordFunc,
     KeywordDefer,
+    KeywordOperator,
+    KeywordUnion,
     
     // One Char Symbols
     SymbolEquals, // =

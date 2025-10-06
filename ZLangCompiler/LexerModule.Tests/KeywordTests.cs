@@ -28,4 +28,30 @@ public class KeywordTests
             new Token(TokenKind.EOF, string.Empty, 1, 6)
         }));
     }
+    
+    [Test]
+    public void TestUnionKeyword()
+    {
+        const string input = "union";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.KeywordUnion, "union", 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, 6)
+        }));
+    }
+    
+    [Test]
+    public void TestOperatorKeyword()
+    {
+        const string input = "operator";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.KeywordOperator, "operator", 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, 9)
+        }));
+    }
 }

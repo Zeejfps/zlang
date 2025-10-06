@@ -39,6 +39,8 @@ public sealed class Lexer : IDisposable
         {"var",  TokenKind.KeywordVar},
         {"func",  TokenKind.KeywordFunc},
         {"defer",  TokenKind.KeywordDefer},
+        {"union",  TokenKind.KeywordUnion},
+        {"operator",  TokenKind.KeywordOperator},
     };
     
     private int Line { get; set; } = 1;
