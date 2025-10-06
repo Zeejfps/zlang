@@ -5,28 +5,16 @@ namespace LexerModule;
 
 internal sealed class LexerStates : IEnumerable<ILexerState>
 {
-    public ILexerState ReadSymbolTokenState { get; }
-    public ILexerState ReadIdentTokenState { get; }
-    public ILexerState EndOfFileState { get; }
-    public ILexerState ReadNumberLiteralState { get; }
-    public ILexerState ReadTextLiteralState { get; }
-
     private readonly List<ILexerState> _allStates;
     
     public LexerStates()
     {
-        ReadIdentTokenState = new ReadIdentState(this);
-        ReadSymbolTokenState = new ReadSymbolState(this);
-        ReadNumberLiteralState = new ReadNumberLiteralState(this);
-        ReadTextLiteralState = new ReadTextLiteralState(this);
-        EndOfFileState = new EndOfFileState();
-
         _allStates = [
-            ReadIdentTokenState,
-            ReadSymbolTokenState,
-            ReadNumberLiteralState,
-            ReadTextLiteralState,
-            EndOfFileState
+            new ReadIdentState(this),
+            new ReadSymbolState(this),
+            new ReadNumberLiteralState(this),
+            new ReadTextLiteralState(this),
+            new EndOfFileState()
         ];
     }
 
