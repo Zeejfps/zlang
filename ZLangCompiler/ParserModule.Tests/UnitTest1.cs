@@ -68,6 +68,22 @@ public class Tests
     }
     
     [Test]
+    public void TestExpressionWithIdentifiers()
+    {
+        const string input = "10 + x * (x - 29) / -y";
+        Console.WriteLine(input);
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var astNode = Parser.ParseExpression(tokenReader);
+        var printer = new AstPrinter();
+        astNode.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine(result);
+        
+        Assert.Pass();
+    }
+    
+    [Test]
     public void TestPrimaryExpressionNumber()
     {
         const string input = "10";

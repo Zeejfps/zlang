@@ -2,9 +2,15 @@
 module std.os = std.os.windows;
 #elseif OSX
 module std.os = std.os.osx;
+#elseif LINUX
+module std.os = std.os.linux;
 #endif
 
 interface std.os {
+    struct File {
+        u32 fd;
+    }
+
     func write();
     func read(buffer: u8*, size: u32);
 }

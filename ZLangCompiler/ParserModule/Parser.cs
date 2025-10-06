@@ -119,6 +119,12 @@ public sealed class Parser
             return new LiteralBoolExpressionNode(token);
         }
 
+        if (token.Kind == TokenKind.Identifier)
+        {
+            tokenReader.Read();
+            return new IdentifierExpressionNode(token);
+        }
+
         if (token.Kind == TokenKind.SymbolLeftParen)
         {
             tokenReader.Read();

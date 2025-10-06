@@ -8,4 +8,5 @@ public interface IAstNodeVisitor
     void VisitLiteralBoolExpression(LiteralBoolExpressionNode literalBoolExpressionNode);
     void VisitBinaryExpression(BinaryExpressionNode binaryExpressionNode);
     void VisitUnaryExpression(UnaryExpressionNode unaryExpressionNode);
+    void VisitIdentifierExpression(IdentifierExpressionNode identifierExpressionNode);
 }

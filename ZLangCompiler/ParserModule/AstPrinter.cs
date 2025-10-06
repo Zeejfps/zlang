@@ -32,6 +32,11 @@ public sealed class AstPrinter : IAstNodeVisitor
         unaryExpressionNode.Right.Accept(this);       
     }
 
+    public void VisitIdentifierExpression(IdentifierExpressionNode identifierExpressionNode)
+    {
+        _sb.Append(identifierExpressionNode.Token.Lexeme);
+    }
+
     public override string ToString()
     {
         return _sb.ToString();       
