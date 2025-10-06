@@ -31,6 +31,11 @@ internal sealed class IdentTokenReader : ITokenReader
         }
         
         var lexeme = lexer.Lexeme.ToString();
+        if (lexeme == "true" || lexeme == "false")
+        {
+            return lexer.CreateToken(TokenKind.LiteralBool);
+        }
+        
         //Console.WriteLine(lexeme);
         if (lexer.Keywords.TryGetValue(lexeme, out var tokenKind))
         {
