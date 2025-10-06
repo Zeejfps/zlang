@@ -65,6 +65,17 @@ public sealed class Lexer : IDisposable
 
     public Token ReadNextToken()
     {
+        var nextChar = PeekChar();
+        if (nextChar == '/')
+        {
+            nextChar = PeekChar(1);
+            if (nextChar == '/')
+            {
+                // We have a comment
+                SkipLine();
+            }
+        }
+        
         var tokenReader = StartReading();
         while (tokenReader == null)
         {
@@ -80,6 +91,18 @@ public sealed class Lexer : IDisposable
         return new Token(tokenKind, lexeme, Line, Column);
     }
 
+    private void SkipLine()
+    {
+        int c;
+        while ((c = _reader.Peek()) != -1 && c != '\n')
+        {
+            _reader.Read();
+        }
+        _reader.Read();
+        Line++;
+        Column = 1;
+    }
+    
     private ITokenReader? StartReading()
     {
         foreach (var state in _tokenReaders)
@@ -128,7 +151,7 @@ public sealed class Lexer : IDisposable
         return char.IsDigit((char)nextChar);
     }
 
-    public int PeekChar()
+    public int PeekChar(int offset = 0)
     {
         return _reader.Peek();
     }
