@@ -86,12 +86,10 @@ public sealed class Lexer : IDisposable
         }
         
         var tokenReader = StartReading();
-        int i = 0, max = 1000;
-        while (tokenReader == null && i < max)
+        while (tokenReader == null)
         {
             SkipChar();
             tokenReader = StartReading();
-            i++;
         }
         return FinishReading(tokenReader);
     }
