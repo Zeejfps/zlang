@@ -4,6 +4,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LexerModule", "LexerModule\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LexerModule.Tests", "LexerModule.Tests\LexerModule.Tests.csproj", "{217C7D6B-C5C5-4E19-9FE4-2B9290703E08}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LexerModule.Benchmarks", "LexerModule.Benchmarks\LexerModule.Benchmarks.csproj", "{D0EFAAE6-F820-49D4-9416-5EB41C1C43FB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{217C7D6B-C5C5-4E19-9FE4-2B9290703E08}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{217C7D6B-C5C5-4E19-9FE4-2B9290703E08}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{217C7D6B-C5C5-4E19-9FE4-2B9290703E08}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D0EFAAE6-F820-49D4-9416-5EB41C1C43FB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D0EFAAE6-F820-49D4-9416-5EB41C1C43FB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D0EFAAE6-F820-49D4-9416-5EB41C1C43FB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D0EFAAE6-F820-49D4-9416-5EB41C1C43FB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
