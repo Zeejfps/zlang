@@ -121,6 +121,18 @@ public class Tests
     }
     
     [Test]
+    public void TestComment()
+    {
+        const string input = "//Hello Comment";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.EOF, string.Empty, 1, 16)
+        }));
+    }
+    
+    [Test]
     public void TestVarAssignmentToStruct()
     {
         const string input = "var v1: Vec2<u8> = { c1 = 0, c2 = 10 }";

@@ -4,8 +4,9 @@ namespace LexerModule;
 
 public sealed class Lexer : IDisposable
 {
+    private const int MaxLookAhead = 2;
+    
     public Span<char> Lexeme => _buffer.AsSpan(0, _writeHead);
-    public int PrevChar { get; private set; }
     public Dictionary<char, TokenKind> Symbols { get; } = new()
     {
         {'=', TokenKind.SymbolEquals},
@@ -38,6 +39,9 @@ public sealed class Lexer : IDisposable
     private readonly TextReader _reader;
     private readonly char[] _buffer = new char[1024];
     private readonly ITokenReader[] _tokenReaders;
+    private readonly int[] _lookAheadBuffer = new int[MaxLookAhead * 2];
+    private int _peekHead;
+    private int _readHead;
     
     private int _writeHead;
     private bool _disposed;
@@ -65,22 +69,18 @@ public sealed class Lexer : IDisposable
 
     public Token ReadNextToken()
     {
-        var nextChar = PeekChar();
-        if (nextChar == '/')
+        while (IsComment())
         {
-            nextChar = PeekChar(1);
-            if (nextChar == '/')
-            {
-                // We have a comment
-                SkipLine();
-            }
+            SkipLine();
         }
         
         var tokenReader = StartReading();
-        while (tokenReader == null)
+        int i = 0, max = 1000;
+        while (tokenReader == null && i < max)
         {
             SkipChar();
             tokenReader = StartReading();
+            i++;
         }
         return FinishReading(tokenReader);
     }
@@ -91,16 +91,28 @@ public sealed class Lexer : IDisposable
         return new Token(tokenKind, lexeme, Line, Column);
     }
 
+    private bool IsComment()
+    {
+        var nextChar = PeekChar();
+        if (nextChar == '/')
+        {
+            nextChar = PeekChar(1);
+            if (nextChar == '/')
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void SkipLine()
     {
         int c;
-        while ((c = _reader.Peek()) != -1 && c != '\n')
+        while ((c = PeekChar()) != -1 && c != '\n')
         {
-            _reader.Read();
+            SkipChar();
         }
-        _reader.Read();
-        Line++;
-        Column = 1;
+        SkipChar();
     }
     
     private ITokenReader? StartReading()
@@ -153,30 +165,93 @@ public sealed class Lexer : IDisposable
 
     public int PeekChar(int offset = 0)
     {
-        return _reader.Peek();
+        int readCount;
+        if (_peekHead < _readHead)
+        {
+            readCount = _lookAheadBuffer.Length - _readHead - 1 + _peekHead;
+        }
+        else if (_peekHead > _readHead)
+        {
+            readCount = _peekHead - _readHead;
+        }
+        else
+        {
+            readCount = 0;
+        }
+        
+        for (var i = readCount; i < offset + 1; i++)
+        {
+            _lookAheadBuffer[_peekHead] = _reader.Read();
+            _peekHead++;
+            if (_peekHead >= _lookAheadBuffer.Length)
+            {
+                _peekHead = 0;
+            }
+        }
+
+        var peekIndex = (_readHead + offset) % _lookAheadBuffer.Length;
+        var c = _lookAheadBuffer[peekIndex];
+        //Console.WriteLine($"PeekChar: '{c}' offset: {offset}");
+        return c;
     }
 
     public void ReadChar()
     {
-        PrevChar = _reader.Read();
-        _buffer[_writeHead] = (char)PrevChar;
+        char c;
+        if (_readHead == _peekHead)
+        {
+            c = (char)_reader.Read();
+        }
+        else
+        {
+            c = (char)_lookAheadBuffer[_readHead];
+            _readHead++;
+            if (_readHead >= _lookAheadBuffer.Length)
+            {
+                _readHead = 0;
+            }
+        }
+        
+        _buffer[_writeHead] = c;
         _writeHead++;
-        if (PrevChar == '\n')
+        if (c == '\n')
         {
             Line++;
             Column = 1;
         }
+        //Console.WriteLine("Read char: " + c);
     }
 
-    public void SkipChar()
+    public int SkipChar()
     {
-        PrevChar = _reader.Read();
-        Column++;
-        if (PrevChar == '\n')
+        int c;
+        if (_readHead == _peekHead)
+        {
+            c = _reader.Read();
+        }
+        else
+        {
+            c = _lookAheadBuffer[_readHead];
+            _readHead++;
+            if (_readHead >= _lookAheadBuffer.Length)
+            {
+                _readHead = 0;
+            }
+        }
+
+        if (c != -1)
+        {
+            Column++;
+        }
+        
+        if (c == '\n')
         {
             Line++;
             Column = 1;
         } 
+        
+        //Console.WriteLine($"Skipping: {c}");
+        return c;
     }
     
     public static IEnumerable<Token> Tokenize(TextReader reader)
