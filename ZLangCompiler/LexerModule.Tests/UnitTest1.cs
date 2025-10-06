@@ -163,10 +163,12 @@ public class Tests
         }));
     }
 
-    //[Test]
+    [Test]
     public void TestFileLexing()
     {
-        var fileReader = File.OpenRead("/Users/zee-seriesai/src/zlang/prototyping/src/main.z");
+        var assetsPath = Path.Combine(AppContext.BaseDirectory, "Assets");
+        var pathToFile = Path.Combine(assetsPath, "main.z");
+        var fileReader = File.OpenRead(pathToFile);
         
         var stopwatch = Stopwatch.StartNew();
         var tokens = Lexer.Tokenize(fileReader).ToList();
