@@ -132,4 +132,18 @@ public class Tests
             new Token(TokenKind.EOF, string.Empty, 1, 5)
         }));
     }
+    
+    [Test]
+    public void TestBraces()
+    {
+        const string input = "{}";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.SymbolLeftBrace, "{", 1, 1),
+            new Token(TokenKind.SymbolRightBrace, "}", 1, 2),
+            new Token(TokenKind.EOF, string.Empty, 1, 3)
+        }));
+    }
 }
