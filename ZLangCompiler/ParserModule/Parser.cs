@@ -1,6 +1,20 @@
 ﻿using LexerModule;
+using ParserModule.Nodes;
 
 namespace ParserModule;
+
+public sealed class TokenReader(IEnumerable<Token> tokens)
+{
+    public Token Peek()
+    {
+        throw new NotImplementedException();
+    }
+
+    public Token Read()
+    {
+        throw new NotImplementedException();
+    }
+}
 
 public sealed class Parser
 {
@@ -9,8 +23,17 @@ public sealed class Parser
         throw new NotImplementedException();
     }
 
-    public AstNode ParseExpression(IEnumerable<Token> tokens)
+    public static PrimaryExpressionNode ParsePrimaryExpression(TokenReader tokenReader)
     {
-        throw new NotImplementedException();
+        var token = tokenReader.Read();
+        if (token.Kind == TokenKind.LiteralInteger)
+        {
+            return new PrimaryExpressionNode
+            {
+                
+            };
+        }
+
+        throw new Exception("Invalid token: " + token.Lexeme + "");
     }
 }

@@ -25,6 +25,6 @@ internal sealed class NumberLiteralTokenReader : ITokenReader
             lexer.ReadChar();
             nextChar = lexer.PeekChar();
         }
-        return lexer.CreateToken(TokenKind.LiteralNumber);
+        return lexer.CreateToken(TokenKind.LiteralInteger);
     }
 }

@@ -35,7 +35,7 @@ public enum TokenKind
     SymbolPlusEquals, // +=
     
     // Literals
-    LiteralNumber,
+    LiteralInteger,
     LiteralText,
     LiteralBool,
     

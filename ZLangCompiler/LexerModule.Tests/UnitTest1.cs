@@ -86,7 +86,7 @@ public class Tests
             new Token(TokenKind.SymbolColon, ":", 1, 11),
             new Token(TokenKind.Identifier, "u32", 1, 13),
             new Token(TokenKind.SymbolEquals, "=", 1, 17),
-            new Token(TokenKind.LiteralNumber, "10", 1, 19),
+            new Token(TokenKind.LiteralInteger, "10", 1, 19),
             new Token(TokenKind.SymbolSemicolon, ";", 1, 21),
             new Token(TokenKind.EOF, string.Empty, 1, 22)
         }));
@@ -177,11 +177,11 @@ public class Tests
             new Token(TokenKind.SymbolLeftCurlyBrace, "{", 1, 20),
             new Token(TokenKind.Identifier, "c1", 1, 22),
             new Token(TokenKind.SymbolEquals, "=", 1, 25),
-            new Token(TokenKind.LiteralNumber, "0", 1, 27),
+            new Token(TokenKind.LiteralInteger, "0", 1, 27),
             new Token(TokenKind.SymbolComma, ",", 1, 28),
             new Token(TokenKind.Identifier, "c2", 1, 30),
             new Token(TokenKind.SymbolEquals, "=", 1, 33),
-            new Token(TokenKind.LiteralNumber, "10", 1, 35),
+            new Token(TokenKind.LiteralInteger, "10", 1, 35),
             new Token(TokenKind.SymbolRightCurlyBrace, "}", 1, 38),
             new Token(TokenKind.EOF, string.Empty, 1, 39)
         }));
