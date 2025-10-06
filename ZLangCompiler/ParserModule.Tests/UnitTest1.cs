@@ -20,4 +20,17 @@ public class Tests
         var result = printer.ToString();
         Assert.Pass();
     }
+    
+    [Test]
+    public void TestExpression()
+    {
+        const string input = "10 + 5";
+        var tokens = Lexer.Tokenize(input);
+        var parser = new Parser();
+        var astNode = parser.ParseExpression(tokens);
+        var printer = new AstPrinter();
+        astNode.Accept(printer);
+        var result = printer.ToString();
+        Assert.Pass();
+    }
 }
