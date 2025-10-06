@@ -56,16 +56,16 @@ public class Tests
         {
             new Token(TokenKind.KeywordStruct, "struct", 1, 1),
             new Token(TokenKind.Identifier, "Array", 1, 8),
-            new Token(TokenKind.SymbolLessThan, "<", 1, 13),
+            new Token(TokenKind.SymbolLeftAngleThan, "<", 1, 13),
             new Token(TokenKind.Identifier, "T", 1, 14),
-            new Token(TokenKind.SymbolGreaterThan, ">", 1, 15),
+            new Token(TokenKind.SymbolRightAngleThan, ">", 1, 15),
             new Token(TokenKind.SymbolEquals, "=", 1, 17),
             new Token(TokenKind.Identifier, "array", 1, 19),
             new Token(TokenKind.SymbolDot, ".", 1, 24),
             new Token(TokenKind.Identifier, "Array", 1, 25),
-            new Token(TokenKind.SymbolLessThan, "<", 1, 30),
+            new Token(TokenKind.SymbolLeftAngleThan, "<", 1, 30),
             new Token(TokenKind.Identifier, "T", 1, 31),
-            new Token(TokenKind.SymbolGreaterThan, ">", 1, 32),
+            new Token(TokenKind.SymbolRightAngleThan, ">", 1, 32),
             new Token(TokenKind.SymbolSemicolon, ";", 1, 33),
             new Token(TokenKind.EOF, string.Empty, 1, 34)
         }));
@@ -120,21 +120,6 @@ public class Tests
         }));
     }
     
-    
-    [Test]
-    public void TestBraces()
-    {
-        const string input = "{}";
-        var tokens = Lexer.Tokenize(input);
-        
-        Assert.That(tokens, Is.EquivalentTo(new[]
-        {
-            new Token(TokenKind.SymbolLeftBrace, "{", 1, 1),
-            new Token(TokenKind.SymbolRightBrace, "}", 1, 2),
-            new Token(TokenKind.EOF, string.Empty, 1, 3)
-        }));
-    }
-    
     [Test]
     public void TestVarAssignmentToStruct()
     {
@@ -147,11 +132,11 @@ public class Tests
             new Token(TokenKind.Identifier, "v1", 1, 5),
             new Token(TokenKind.SymbolColon, ":", 1, 7),
             new Token(TokenKind.Identifier, "Vec2", 1, 9),
-            new Token(TokenKind.SymbolLessThan, "<", 1, 13),
+            new Token(TokenKind.SymbolLeftAngleThan, "<", 1, 13),
             new Token(TokenKind.Identifier, "u8", 1, 14),
-            new Token(TokenKind.SymbolGreaterThan, ">", 1, 16),
+            new Token(TokenKind.SymbolRightAngleThan, ">", 1, 16),
             new Token(TokenKind.SymbolEquals, "=", 1, 18),
-            new Token(TokenKind.SymbolLeftBrace, "{", 1, 20),
+            new Token(TokenKind.SymbolLeftCurlyBrace, "{", 1, 20),
             new Token(TokenKind.Identifier, "c1", 1, 22),
             new Token(TokenKind.SymbolEquals, "=", 1, 25),
             new Token(TokenKind.LiteralNumber, "0", 1, 27),
@@ -159,7 +144,7 @@ public class Tests
             new Token(TokenKind.Identifier, "c2", 1, 30),
             new Token(TokenKind.SymbolEquals, "=", 1, 33),
             new Token(TokenKind.LiteralNumber, "10", 1, 35),
-            new Token(TokenKind.SymbolRightBrace, "}", 1, 38),
+            new Token(TokenKind.SymbolRightCurlyBrace, "}", 1, 38),
             new Token(TokenKind.EOF, string.Empty, 1, 39)
         }));
     }

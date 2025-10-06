@@ -1,0 +1,33 @@
+namespace LexerModule.Tests;
+
+[TestFixture]
+public class SymbolsTests
+{
+    [Test]
+    public void TestCurlyBraces()
+    {
+        const string input = "{}";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.SymbolLeftCurlyBrace, "{", 1, 1),
+            new Token(TokenKind.SymbolRightCurlyBrace, "}", 1, 2),
+            new Token(TokenKind.EOF, string.Empty, 1, 3)
+        }));
+    }
+    
+    [Test]
+    public void TestSquareBrackets()
+    {
+        const string input = "[]";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.SymbolLeftSquareBracket, "[", 1, 1),
+            new Token(TokenKind.SymbolRightSquareBracket, "]", 1, 2),
+            new Token(TokenKind.EOF, string.Empty, 1, 3)
+        }));
+    }
+}

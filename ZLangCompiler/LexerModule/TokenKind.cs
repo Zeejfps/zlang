@@ -14,15 +14,17 @@ public enum TokenKind
     // Symbols
     SymbolEquals,
     SymbolDot,
-    SymbolLessThan,
-    SymbolGreaterThan,
+    SymbolComma,
+    SymbolLeftAngleThan,
+    SymbolRightAngleThan,
     SymbolSemicolon,
     SymbolColon,
     SymbolLeftParen,
     SymbolRightParen,
-    SymbolLeftBrace,
-    SymbolRightBrace,
-    SymbolComma,
+    SymbolLeftCurlyBrace,
+    SymbolRightCurlyBrace,
+    SymbolLeftSquareBracket,
+    SymbolRightSquareBracket,
     
     // Literals
     LiteralNumber,

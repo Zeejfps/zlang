@@ -11,14 +11,16 @@ public sealed class Lexer : IDisposable
         {'=', TokenKind.SymbolEquals},
         {'.', TokenKind.SymbolDot},
         {',', TokenKind.SymbolComma},
-        {'<', TokenKind.SymbolLessThan},
-        {'>', TokenKind.SymbolGreaterThan},
+        {'<', TokenKind.SymbolLeftAngleThan},
+        {'>', TokenKind.SymbolRightAngleThan},
         {':', TokenKind.SymbolColon},
         {'(', TokenKind.SymbolLeftParen},
         {')', TokenKind.SymbolRightParen},
         {';', TokenKind.SymbolSemicolon},
-        {'{', TokenKind.SymbolLeftBrace},
-        {'}', TokenKind.SymbolRightBrace},
+        {'{', TokenKind.SymbolLeftCurlyBrace},
+        {'}', TokenKind.SymbolRightCurlyBrace},
+        {'[', TokenKind.SymbolLeftSquareBracket},
+        {']', TokenKind.SymbolRightSquareBracket},
     };
     
     public Dictionary<string, TokenKind> Keywords { get; } = new()
