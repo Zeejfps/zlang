@@ -84,6 +84,19 @@ public class SymbolsTests
     }
     
     [Test]
+    public void TestMinus()
+    {
+        const string input = "-";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.SymbolMinus, "-", 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, 2)
+        }));
+    }
+    
+    [Test]
     public void TestPlusBeforePlusEquals()
     {
         const string input = "++=";

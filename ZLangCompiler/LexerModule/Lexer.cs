@@ -23,6 +23,7 @@ public sealed class Lexer : IDisposable
         {'[', TokenKind.SymbolLeftSquareBracket},
         {']', TokenKind.SymbolRightSquareBracket},
         {'+', TokenKind.SymbolPlus},
+        {'-', TokenKind.SymbolMinus},
         {'*', TokenKind.SymbolStar},
         {'/', TokenKind.SymbolForwardSlash},
         {'!', TokenKind.SymbolExclamation},

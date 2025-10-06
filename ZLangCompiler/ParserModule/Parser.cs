@@ -57,7 +57,8 @@ public sealed class Parser
             Console.WriteLine($"OP: {op}");
             var right = ParseTerm(tokenReader);
             left = new BinaryExpressionNode(left, op, right);       
-            nextToken = tokenReader.Peek();      
+            nextToken = tokenReader.Peek(); 
+            Console.WriteLine($"Next token after term: {nextToken}");
         }
         return left;
     }
@@ -67,14 +68,16 @@ public sealed class Parser
         Console.WriteLine("Parsing term");
         var left = ParseFactor(tokenReader);
         var nextToken = tokenReader.Peek();
+        Console.WriteLine($"Next token: {nextToken.Lexeme}");
         while (nextToken.Kind == TokenKind.SymbolPlus ||
                nextToken.Kind == TokenKind.SymbolMinus)
         {
             var op = tokenReader.Read();
-            Console.WriteLine($"OP: {op}");
+            Console.WriteLine($"OP: {op.Lexeme}");
             var right = ParseFactor(tokenReader);
             left = new BinaryExpressionNode(left, op, right);       
-            nextToken = tokenReader.Peek();      
+            nextToken = tokenReader.Peek();  
+            Console.WriteLine($"Next token after factor: {nextToken.Lexeme}");
         }
         return left;
     }
@@ -88,7 +91,7 @@ public sealed class Parser
                nextToken.Kind == TokenKind.SymbolForwardSlash)
         {
             var op = tokenReader.Read();
-            Console.WriteLine($"OP: {op}");
+            Console.WriteLine($"OP: {op.Lexeme}");
             var right = ParseUnary(tokenReader);
             left = new BinaryExpressionNode(left, op, right);      
             nextToken = tokenReader.Peek();      
