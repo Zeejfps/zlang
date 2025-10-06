@@ -123,6 +123,30 @@ public class Tests
     }
     
     [Test]
+    public void TestBoolTrueLiteral()
+    {
+        const string input = "true";
+        var tokens = Lexer.Tokenize(input);
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.LiteralBool, "true", 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, 5)
+        }));
+    }
+    
+    [Test]
+    public void TestBoolFalseLiteral()
+    {
+        const string input = "false";
+        var tokens = Lexer.Tokenize(input);
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.LiteralBool, "false", 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, 6)
+        }));
+    }
+    
+    [Test]
     public void TestComment()
     {
         const string input = "//Hello Comment";

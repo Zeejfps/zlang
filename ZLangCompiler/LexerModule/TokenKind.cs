@@ -37,6 +37,7 @@ public enum TokenKind
     // Literals
     LiteralNumber,
     LiteralText,
+    LiteralBool,
     
     EOF,
 }
