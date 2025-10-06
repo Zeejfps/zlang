@@ -15,4 +15,12 @@
       <ProjectReference Include="..\LexerModule\LexerModule.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+        <Content Include="../../prototyping/src/main.z">
+            <Link>Assets/main.z</Link>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <TargetPath>Assets/main.z</TargetPath>
+        </Content>
+    </ItemGroup>
+
 </Project>

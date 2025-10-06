@@ -11,7 +11,8 @@ public class LexerBenchmark
     [GlobalSetup]
     public void Setup()
     {
-        _filePath = "/Users/zee-seriesai/src/zlang/prototyping/src/main.z";
+        var assetsPath = Path.Combine(AppContext.BaseDirectory, "Assets");
+        _filePath = Path.Combine(assetsPath, "main.z");
     }
 
     [IterationSetup]

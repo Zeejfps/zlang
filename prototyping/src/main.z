@@ -63,7 +63,7 @@ var v3 = v1 + v2;
 
 func main() {
     stdout.write("Hello world!");
-}
+} 
 
 module std.vec {
     union Number = u8 | u16 | u32 | u64 | usize | f32
