@@ -19,6 +19,7 @@ public sealed class Parser
         var token = tokenReader.Read();
         if (token.Kind == TokenKind.LiteralInteger)
         {
+            Console.WriteLine($"Parsed integer: {token.Lexeme}");           
             return new LiteralIntegerExpressionNode(token);
         }
 
@@ -27,12 +28,14 @@ public sealed class Parser
     
     public static AstNode ParseExpression(TokenReader tokenReader)
     {
+        Console.WriteLine("Parsing expression");
         var left = ParseComparison(tokenReader);
         var nextToken = tokenReader.Peek();
         while (nextToken.Kind == TokenKind.SymbolEqualsEquals ||
             nextToken.Kind == TokenKind.SymbolNotEquals)
         {
             var op = tokenReader.Read();
+            Console.WriteLine($"OP: {op}");
             var right = ParseComparison(tokenReader);
             left = new BinaryExpressionNode(left, op, right);
             nextToken = tokenReader.Peek();       
@@ -42,6 +45,7 @@ public sealed class Parser
 
     public static AstNode ParseComparison(TokenReader tokenReader)
     {
+        Console.WriteLine("Parsing comparison");
         var left = ParseTerm(tokenReader);
         var nextToken = tokenReader.Peek();
         while (nextToken.Kind == TokenKind.SymbolGreaterThan ||
@@ -50,6 +54,7 @@ public sealed class Parser
             nextToken.Kind == TokenKind.SymbolLessThanEquals)
         {
             var op = tokenReader.Read();
+            Console.WriteLine($"OP: {op}");
             var right = ParseTerm(tokenReader);
             left = new BinaryExpressionNode(left, op, right);       
             nextToken = tokenReader.Peek();      
@@ -59,12 +64,14 @@ public sealed class Parser
 
     public static AstNode ParseTerm(TokenReader tokenReader)
     {
+        Console.WriteLine("Parsing term");
         var left = ParseFactor(tokenReader);
         var nextToken = tokenReader.Peek();
         while (nextToken.Kind == TokenKind.SymbolPlus ||
                nextToken.Kind == TokenKind.SymbolMinus)
         {
             var op = tokenReader.Read();
+            Console.WriteLine($"OP: {op}");
             var right = ParseFactor(tokenReader);
             left = new BinaryExpressionNode(left, op, right);       
             nextToken = tokenReader.Peek();      
@@ -74,12 +81,14 @@ public sealed class Parser
     
     public static AstNode ParseFactor(TokenReader tokenReader)
     {
+        Console.WriteLine("Parsing factor");
         var left = ParseUnary(tokenReader);
         var nextToken = tokenReader.Peek();
         while (nextToken.Kind == TokenKind.SymbolStar || 
                nextToken.Kind == TokenKind.SymbolForwardSlash)
         {
             var op = tokenReader.Read();
+            Console.WriteLine($"OP: {op}");
             var right = ParseUnary(tokenReader);
             left = new BinaryExpressionNode(left, op, right);      
             nextToken = tokenReader.Peek();      
@@ -89,11 +98,14 @@ public sealed class Parser
     
     public static AstNode ParseUnary(TokenReader tokenReader)
     {
+        Console.WriteLine("Parsing unary left");
         var nextToken = tokenReader.Peek();
         if (nextToken.Kind == TokenKind.SymbolExclamation ||
             nextToken.Kind == TokenKind.SymbolMinus)
         {
             var op = tokenReader.Read();
+            Console.WriteLine($"OP: {op}");
+            Console.WriteLine("Parsing unary right");
             var right = ParseUnary(tokenReader);
             return new UnaryExpressionNode(op, right);
         }

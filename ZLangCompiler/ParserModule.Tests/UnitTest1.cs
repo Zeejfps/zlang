@@ -39,6 +39,7 @@ public class Tests
     public void TestExpression()
     {
         const string input = "10 + 5 * 10 - 29 / -30";
+        Console.WriteLine(input);
         var tokens = Lexer.Tokenize(input);
         var tokenReader = new TokenReader(tokens);
         var astNode = Parser.ParseExpression(tokenReader);
