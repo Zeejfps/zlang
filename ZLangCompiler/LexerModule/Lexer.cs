@@ -30,7 +30,7 @@ public sealed class Lexer : IDisposable
 
     private readonly TextReader _reader;
     private readonly char[] _buffer = new char[1024];
-    private readonly ILexerState[] _states;
+    private readonly ITokenReader[] _tokenReaders;
     
     private int _writeHead;
     private bool _disposed;
@@ -38,7 +38,7 @@ public sealed class Lexer : IDisposable
     public Lexer(TextReader reader)
     {
         _reader = reader;
-        _states = [
+        _tokenReaders = [
             new ReadIdentState(this),
             new ReadSymbolState(this),
             new ReadNumberLiteralState(this),
@@ -73,9 +73,9 @@ public sealed class Lexer : IDisposable
         return new Token(tokenKind, lexeme, Line, Column);
     }
 
-    private ILexerState? StartReading()
+    private ITokenReader? StartReading()
     {
-        foreach (var state in _states)
+        foreach (var state in _tokenReaders)
         {
             if (state.TryStartReading(this))
             {
@@ -86,7 +86,7 @@ public sealed class Lexer : IDisposable
         return null;
     }
 
-    private Token FinishReading(ILexerState tokenReader)
+    private Token FinishReading(ITokenReader tokenReader)
     {
         var token = tokenReader.FinishReading(this);
         Column += _writeHead;

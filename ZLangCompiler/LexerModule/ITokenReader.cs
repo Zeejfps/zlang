@@ -1,6 +1,6 @@
 namespace LexerModule;
 
-public interface ILexerState
+public interface ITokenReader
 {
     bool TryStartReading(Lexer lexer);
     Token FinishReading(Lexer lexer);
