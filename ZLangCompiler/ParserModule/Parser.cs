@@ -82,4 +82,17 @@ public sealed class Parser
         var right = ParsePrimaryExpression(tokenReader);
         return new BinaryExpressionNode(left, op, right);
     }
+    
+    public static ExpressionNode ParseExpression(TokenReader tokenReader)
+    {
+        var left = ParseComparison(tokenReader);
+        var nextToken = tokenReader.Peek();
+        // if (nextToken.Kind == TokenKind.SymbolPlusEquals)
+        return null;
+    }
+
+    public static AstNode ParseComparison(TokenReader tokenReader)
+    {
+        return null;
+    }
 }

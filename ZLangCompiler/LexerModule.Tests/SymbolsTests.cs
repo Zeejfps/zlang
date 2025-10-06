@@ -96,4 +96,30 @@ public class SymbolsTests
             new Token(TokenKind.EOF, string.Empty, 1, 4)
         }));
     }
+    
+    [Test]
+    public void TestEqualsEquals()
+    {
+        const string input = "==";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.SymbolEqualsEquals, "==", 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, 3)
+        }));
+    }
+    
+    [Test]
+    public void TestNotEqualsEquals()
+    {
+        const string input = "!=";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.SymbolNotEquals, "!=", 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, 3)
+        }));
+    }
 }

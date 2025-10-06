@@ -33,6 +33,8 @@ public enum TokenKind
     // Two Char Symbols
     SymbolReturnArrow, // ->
     SymbolPlusEquals, // +=
+    SymbolEqualsEquals, // ==
+    SymbolNotEquals, // ==
     
     // Literals
     LiteralInteger,
