@@ -1,6 +1,6 @@
 namespace LexerModule;
 
-public record struct Token(TokenKind Kind, string Lexeme, int Line, int Column)
+public readonly record struct Token(TokenKind Kind, string Lexeme, int Line, int Column)
 {
     public override string ToString()
     {
