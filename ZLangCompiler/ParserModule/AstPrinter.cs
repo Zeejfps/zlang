@@ -9,16 +9,21 @@ public sealed class AstPrinter : IAstNodeVisitor
     
     public void VisitIntegerNumberExpression(LiteralIntegerExpressionNode integerNumberExpression)
     {
-        _sb.Append(integerNumberExpression.Value);
+        _sb.Append(integerNumberExpression.Token.Lexeme);
+    }
+
+    public void VisitLiteralBoolExpression(LiteralBoolExpressionNode literalBoolExpressionNode)
+    {
+        _sb.Append(literalBoolExpressionNode.Token.Lexeme);       
     }
 
     public void VisitBinaryExpression(BinaryExpressionNode binaryExpressionNode)
     {
-        _sb.Append("(");
+        _sb.Append('(');
         binaryExpressionNode.Left.Accept(this);
         _sb.Append(binaryExpressionNode.Op.Lexeme);
         binaryExpressionNode.Right.Accept(this);       
-        _sb.Append(")");       
+        _sb.Append(')');       
     }
 
     public void VisitUnaryExpression(UnaryExpressionNode unaryExpressionNode)

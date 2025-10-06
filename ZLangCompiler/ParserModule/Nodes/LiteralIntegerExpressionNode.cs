@@ -2,17 +2,16 @@
 
 namespace ParserModule.Nodes;
 
-public sealed class LiteralIntegerExpressionNode : PrimaryExpressionNode
+public sealed class LiteralIntegerExpressionNode : AstNode
 {
-    private readonly Token _token;
+    public Token Token { get; }
+    public int Value { get; }
 
     public LiteralIntegerExpressionNode(Token token)
     {
-        _token = token;
+        Token = token;
         Value = int.Parse(token.Lexeme);
     }
-
-    public int Value { get; }
 
     public override void Accept(IAstNodeVisitor visitor)
     {
