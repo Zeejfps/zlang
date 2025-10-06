@@ -2,22 +2,24 @@ namespace LexerModule.States;
 
 internal sealed class IdentTokenReader : ITokenReader
 {
-    private readonly Lexer _states;
+    private readonly Lexer _lexer;
 
-    public IdentTokenReader(Lexer states)
+    public IdentTokenReader(Lexer lexer)
     {
-        _states = states;
+        _lexer = lexer;
     }
 
-    public bool TryStartReading(Lexer lexer)
+    public bool TryStartReading()
     {
+        var lexer = _lexer;
         var nextChar = lexer.PeekChar();
         //Console.WriteLine($"{(char)nextChar} isLetter: {lexer.IsLetter(nextChar)}");
         return lexer.IsLetter(nextChar);
     }
 
-    public Token FinishReading(Lexer lexer)
+    public Token FinishReading()
     {
+        var lexer = _lexer;
         var nextChar = lexer.PeekChar();
         var max = 100;
         var i = 0;

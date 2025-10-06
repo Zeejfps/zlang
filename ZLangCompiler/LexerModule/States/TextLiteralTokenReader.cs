@@ -2,15 +2,16 @@ namespace LexerModule.States;
 
 internal sealed class TextLiteralTokenReader : ITokenReader
 {
-    private readonly Lexer _states;
+    private readonly Lexer _lexer;
 
-    public TextLiteralTokenReader(Lexer states)
+    public TextLiteralTokenReader(Lexer lexer)
     {
-        _states = states;
+        _lexer = lexer;
     }
 
-    public bool TryStartReading(Lexer lexer)
+    public bool TryStartReading()
     {
+        var lexer = _lexer;
         if (lexer.PeekChar() == '"')
         {
             lexer.SkipChar();
@@ -20,8 +21,9 @@ internal sealed class TextLiteralTokenReader : ITokenReader
         return false;
     }
 
-    public Token FinishReading(Lexer lexer)
+    public Token FinishReading()
     {
+        var lexer = _lexer;
         var nextChar = lexer.PeekChar();
         while (nextChar != -1 && nextChar != '"')
         {

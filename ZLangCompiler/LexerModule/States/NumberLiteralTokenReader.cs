@@ -2,21 +2,23 @@ namespace LexerModule.States;
 
 internal sealed class NumberLiteralTokenReader : ITokenReader
 {
-    private readonly Lexer _states;
+    private readonly Lexer _lexer;
 
-    public NumberLiteralTokenReader(Lexer states)
+    public NumberLiteralTokenReader(Lexer lexer)
     {
-        _states = states;
+        _lexer = lexer;
     }
 
-    public bool TryStartReading(Lexer lexer)
+    public bool TryStartReading()
     {
+        var lexer = _lexer;
         var nextChar = lexer.PeekChar();
         return lexer.IsDigit(nextChar);
     }
 
-    public Token FinishReading(Lexer lexer)
+    public Token FinishReading()
     {
+        var lexer = _lexer;
         var nextChar = lexer.PeekChar();
         while (nextChar != -1 && lexer.IsDigit(nextChar))
         {

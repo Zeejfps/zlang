@@ -77,7 +77,7 @@ public sealed class Lexer : IDisposable
     {
         foreach (var state in _tokenReaders)
         {
-            if (state.TryStartReading(this))
+            if (state.TryStartReading())
             {
                 return state;
             }
@@ -88,7 +88,7 @@ public sealed class Lexer : IDisposable
 
     private Token FinishReading(ITokenReader tokenReader)
     {
-        var token = tokenReader.FinishReading(this);
+        var token = tokenReader.FinishReading();
         Column += _writeHead;
         _writeHead = 0;
         return token;

@@ -2,15 +2,16 @@ namespace LexerModule.States;
 
 internal sealed class EndOfFileTokenReader : ITokenReader
 {
-    private readonly Lexer _states;
+    private readonly Lexer _lexer;
     
-    public EndOfFileTokenReader(Lexer states)
+    public EndOfFileTokenReader(Lexer lexer)
     {
-        _states = states;
+        _lexer = lexer;
     }
     
-    public bool TryStartReading(Lexer lexer)
+    public bool TryStartReading()
     {
+        var lexer = _lexer;
         var nextChar = lexer.PeekChar();
         if (nextChar == -1)
         {
@@ -20,8 +21,9 @@ internal sealed class EndOfFileTokenReader : ITokenReader
         return false;
     }
 
-    public Token FinishReading(Lexer lexer)
+    public Token FinishReading()
     {
+        var lexer = _lexer;
         var token = lexer.CreateToken(TokenKind.EOF);
         lexer.SkipChar();
         return token;
