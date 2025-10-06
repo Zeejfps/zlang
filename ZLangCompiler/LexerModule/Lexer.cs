@@ -39,11 +39,11 @@ public sealed class Lexer : IDisposable
     {
         _reader = reader;
         _tokenReaders = [
-            new ReadIdentState(this),
-            new ReadSymbolState(this),
-            new ReadNumberLiteralState(this),
-            new ReadTextLiteralState(this),
-            new EndOfFileState(this)
+            new IdentTokenReader(this),
+            new SymbolTokenReader(this),
+            new NumberLiteralTokenReader(this),
+            new TextLiteralTokenReader(this),
+            new EndOfFileTokenReader(this)
         ];
     }
     

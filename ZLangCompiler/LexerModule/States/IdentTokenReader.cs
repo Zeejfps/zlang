@@ -1,10 +1,10 @@
 namespace LexerModule.States;
 
-internal sealed class ReadIdentState : ITokenReader
+internal sealed class IdentTokenReader : ITokenReader
 {
     private readonly Lexer _states;
 
-    public ReadIdentState(Lexer states)
+    public IdentTokenReader(Lexer states)
     {
         _states = states;
     }
