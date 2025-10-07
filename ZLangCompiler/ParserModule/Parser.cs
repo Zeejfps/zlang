@@ -182,6 +182,26 @@ public sealed class Parser
 
     public static AstNode ParseBlockStatement(TokenReader tokenReader)
     {
-        throw new NotImplementedException();
+        tokenReader.Read(TokenKind.SymbolLeftCurlyBrace);
+        var statements = new List<AstNode>();
+
+        while (tokenReader.Peek().Kind != TokenKind.SymbolRightCurlyBrace)
+        {
+            var statement = ParseStatement(tokenReader);
+            statements.Add(statement);
+        }
+
+        tokenReader.Read();
+        return new BlockStatementNode(statements);
+    }
+
+    public static AstNode ParseStatement(TokenReader tokenReader)
+    {
+        var nextToken = tokenReader.Peek();
+        if (nextToken.Kind == TokenKind.KeywordVar)
+        {
+            return ParseVarAssignmentStatement(tokenReader);
+        }
+        throw new ParserException("Unexpected token encountered", nextToken);
     }
 }

@@ -39,6 +39,7 @@ public sealed class AstPrinter : IAstNodeVisitor
 
     public void VisitVarAssignmentStatement(VarAssignmentStatementNode node)
     {
+        _sb.Append("var ");       
         _sb.Append(node.Name);
         if (node.Type != null)
         {
@@ -50,6 +51,7 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append('=');
         _sb.Append(' ');
         node.Value.Accept(this);
+        _sb.Append(';');       
     }
 
     public void VisitNamedTypeNode(NamedTypeNode namedTypeNode)
@@ -63,6 +65,7 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append('\n');
         foreach (var statement in blockStatementNode.Statements)
         {
+            _sb.Append('\t');
             statement.Accept(this);
             _sb.Append('\n');
         }

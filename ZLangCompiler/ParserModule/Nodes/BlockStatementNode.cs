@@ -4,9 +4,9 @@ public sealed class BlockStatementNode : AstNode
 {
     public IReadOnlyCollection<AstNode> Statements { get; }
 
-    public BlockStatementNode()
+    public BlockStatementNode(List<AstNode> statements)
     {
-        
+        Statements = statements;
     }
     
     public override void Accept(IAstNodeVisitor visitor)
