@@ -2,9 +2,9 @@ namespace ParserModule.Nodes;
 
 public sealed class VarAssignmentStatementNode : AstNode
 {
-    public required string VarName { get; init; }
-    public AstNode? VarType { get; init; }
-    public required AstNode VarValue { get; init; }
+    public required string Name { get; init; }
+    public AstNode? Type { get; init; }
+    public required AstNode Value { get; init; }
 
     public override void Accept(IAstNodeVisitor visitor)
     {

@@ -165,9 +165,9 @@ public sealed class Parser
         
         return new VarAssignmentStatementNode
         {
-            VarName = identifier.Lexeme,
-            VarType = type,
-            VarValue = value,
+            Name = identifier.Lexeme,
+            Type = type,
+            Value = value,
         };
     }
 

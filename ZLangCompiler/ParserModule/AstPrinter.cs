@@ -39,17 +39,17 @@ public sealed class AstPrinter : IAstNodeVisitor
 
     public void VisitVarAssignmentStatement(VarAssignmentStatementNode node)
     {
-        _sb.Append(node.VarName);
-        if (node.VarType != null)
+        _sb.Append(node.Name);
+        if (node.Type != null)
         {
             _sb.Append(':');
             _sb.Append(' ');
-            node.VarType.Accept(this);
+            node.Type.Accept(this);
         }
         _sb.Append(' ');
         _sb.Append('=');
         _sb.Append(' ');
-        node.VarValue.Accept(this);
+        node.Value.Accept(this);
     }
 
     public void VisitNamedTypeNode(NamedTypeNode namedTypeNode)

@@ -1,4 +1,5 @@
 ﻿using LexerModule;
+using ParserModule.Nodes;
 
 namespace ParserModule.Tests;
 
@@ -110,6 +111,14 @@ public class Tests
         astNode.Accept(printer);
         var result = printer.ToString();
         Console.WriteLine("Output: " + result);
-        Assert.Pass();
+        
+        astNode.AssertIsType<VarAssignmentStatementNode>(out var varAssign);
+        Assert.That(varAssign.Name, Is.EqualTo("x"));
+        
+        varAssign.Type!.AssertIsType<NamedTypeNode>(out var namedType);
+        Assert.That(namedType.Name, Is.EqualTo("u32"));
+        
+        varAssign.Value.AssertIsType<LiteralIntegerExpressionNode>(out var literal);
+        Assert.That(literal.Value, Is.EqualTo(1337));
     }
 }
