@@ -96,4 +96,20 @@ public class Tests
         Console.WriteLine(result);
         Assert.Pass();
     }
+    
+    [Test]
+    public void TestVarAssignmentStatement()
+    {
+        const string input = "var x: u32 = 1337;";
+        Console.WriteLine("Input: " + input);
+        
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var astNode = Parser.ParseVarAssignmentStatement(tokenReader);
+        var printer = new AstPrinter();
+        astNode.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output: " + result);
+        Assert.Pass();
+    }
 }

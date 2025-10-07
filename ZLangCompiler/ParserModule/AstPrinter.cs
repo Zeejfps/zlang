@@ -37,6 +37,26 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append(identifierExpressionNode.Token.Lexeme);
     }
 
+    public void VisitVarAssignmentStatement(VarAssignmentStatementNode node)
+    {
+        _sb.Append(node.VarName);
+        if (node.VarType != null)
+        {
+            _sb.Append(':');
+            _sb.Append(' ');
+            node.VarType.Accept(this);
+        }
+        _sb.Append(' ');
+        _sb.Append('=');
+        _sb.Append(' ');
+        node.VarValue.Accept(this);
+    }
+
+    public void VisitNamedTypeNode(NamedTypeNode namedTypeNode)
+    {
+        _sb.Append(namedTypeNode.Name);
+    }
+
     public override string ToString()
     {
         return _sb.ToString();       

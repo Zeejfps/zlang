@@ -9,4 +9,6 @@ public interface IAstNodeVisitor
     void VisitBinaryExpression(BinaryExpressionNode binaryExpressionNode);
     void VisitUnaryExpression(UnaryExpressionNode unaryExpressionNode);
     void VisitIdentifierExpression(IdentifierExpressionNode identifierExpressionNode);
+    void VisitVarAssignmentStatement(VarAssignmentStatementNode node);
+    void VisitNamedTypeNode(NamedTypeNode namedTypeNode);
 }

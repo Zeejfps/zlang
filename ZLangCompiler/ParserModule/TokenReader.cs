@@ -40,6 +40,16 @@ public sealed class TokenReader : IDisposable
         _lookAheadBuffer.RemoveFirst();
         return first.Value;
     }
+    
+    public Token Read(TokenKind expected)
+    {
+        var token = Read();
+        if (token.Kind != expected)
+        {
+            throw new UnexpectedTokenException(expected, token);
+        }
+        return token;
+    }
 
     public void Dispose()
     {
