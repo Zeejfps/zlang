@@ -48,6 +48,7 @@ public sealed class Lexer : IDisposable
         {"defer",  TokenKind.KeywordDefer},
         {"union",  TokenKind.KeywordUnion},
         {"operator",  TokenKind.KeywordOperator},
+        {"return",  TokenKind.KeywordReturn},
     };
     
     private int Line { get; set; } = 1;

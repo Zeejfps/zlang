@@ -145,7 +145,7 @@ public sealed class Parser
             return expression;
         }
 
-        throw new ParserException("Unexpected token encountered", token);
+        throw new ParserException($"Unexpected token encountered, {token}", token);
     }
 
     public static AstNode ParseVarAssignmentStatement(TokenReader tokenReader)
@@ -156,7 +156,7 @@ public sealed class Parser
         if (tokenReader.Peek().Kind == TokenKind.SymbolColon)
         {
             tokenReader.Read();
-            type = ParseType(tokenReader);
+            type = ParseTypeNode(tokenReader);
         }
 
         tokenReader.Read(TokenKind.SymbolEquals);
@@ -171,7 +171,7 @@ public sealed class Parser
         };
     }
 
-    public static AstNode ParseType(TokenReader tokenReader)
+    public static AstNode ParseTypeNode(TokenReader tokenReader)
     {
         var identifier = tokenReader.Read(TokenKind.Identifier);
         return new NamedTypeNode
@@ -180,7 +180,7 @@ public sealed class Parser
         };
     }
 
-    public static AstNode ParseBlockStatement(TokenReader tokenReader)
+    public static BlockStatementNode ParseBlockStatement(TokenReader tokenReader)
     {
         tokenReader.Read(TokenKind.SymbolLeftCurlyBrace);
         var statements = new List<AstNode>();
@@ -202,11 +202,52 @@ public sealed class Parser
         {
             return ParseVarAssignmentStatement(tokenReader);
         }
-        throw new ParserException("Unexpected token encountered", nextToken);
+
+        if (nextToken.Kind == TokenKind.KeywordReturn)
+        {
+            return ParseReturnStatement(tokenReader);
+        }
+        throw new ParserException($"Unexpected token encountered, {nextToken}", nextToken);
     }
 
     public static AstNode ParseFunctionDeclaration(TokenReader tokenReader)
     {
-        throw new NotImplementedException();
+        tokenReader.Read(TokenKind.KeywordFunc);
+        var identifier = tokenReader.Read(TokenKind.Identifier);
+        var name = identifier.Lexeme;
+        
+        tokenReader.Read(TokenKind.SymbolLeftParen);
+        //TODO: Handle args
+        tokenReader.Read(TokenKind.SymbolRightParen);
+
+        AstNode? returnType = null;
+        if (tokenReader.Peek().Kind == TokenKind.SymbolReturnArrow)
+        {
+            tokenReader.Read();
+            returnType = ParseTypeNode(tokenReader);
+        }
+        
+        var body = ParseBlockStatement(tokenReader);
+        return new FunctionDeclarationNode
+        {
+            Name = name,
+            Body = body,
+            ReturnType = returnType,
+        };
+    }
+
+    public static ReturnStatementNode ParseReturnStatement(TokenReader tokenReader)
+    {
+        tokenReader.Read(TokenKind.KeywordReturn);
+        AstNode? value = null;
+        if (tokenReader.Peek().Kind != TokenKind.SymbolSemicolon)
+        {
+            value = ParseExpression(tokenReader);
+        }
+        tokenReader.Read(TokenKind.SymbolSemicolon);       
+        return new ReturnStatementNode
+        {
+            Value = value,       
+        };
     }
 }

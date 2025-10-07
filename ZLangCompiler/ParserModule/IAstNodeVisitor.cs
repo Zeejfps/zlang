@@ -8,9 +8,10 @@ public interface IAstNodeVisitor
     void VisitLiteralBoolExpression(LiteralBoolExpressionNode literalBoolExpressionNode);
     void VisitBinaryExpression(BinaryExpressionNode binaryExpressionNode);
     void VisitUnaryExpression(UnaryExpressionNode unaryExpressionNode);
-    void VisitIdentifierExpression(IdentifierExpressionNode identifierExpressionNode);
+    void VisitIdentifierExpression(IdentifierExpressionNode node);
     void VisitVarAssignmentStatement(VarAssignmentStatementNode node);
-    void VisitNamedTypeNode(NamedTypeNode namedTypeNode);
-    void VisitBlockStatement(BlockStatementNode blockStatementNode);
-    void VisitFunctionDeclarationNode(FunctionDeclarationNode functionDeclarationNode);
+    void VisitNamedTypeNode(NamedTypeNode node);
+    void VisitBlockStatement(BlockStatementNode node);
+    void VisitFunctionDeclarationNode(FunctionDeclarationNode node);
+    void VisitReturnStatementNode(ReturnStatementNode node);
 }

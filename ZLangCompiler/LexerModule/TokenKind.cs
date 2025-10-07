@@ -12,6 +12,7 @@ public enum TokenKind
     KeywordDefer,
     KeywordOperator,
     KeywordUnion,
+    KeywordReturn,
     
     // One Char Symbols
     SymbolEquals, // =

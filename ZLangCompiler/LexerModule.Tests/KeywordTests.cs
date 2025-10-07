@@ -54,4 +54,17 @@ public class KeywordTests
             new Token(TokenKind.EOF, string.Empty, 1, 9)
         }));
     }
+    
+    [Test]
+    public void TestReturnKeyword()
+    {
+        const string input = "return";
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.KeywordReturn, "return", 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, 7)
+        }));
+    }
 }

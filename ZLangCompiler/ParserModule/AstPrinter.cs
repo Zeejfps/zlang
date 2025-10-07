@@ -32,9 +32,9 @@ public sealed class AstPrinter : IAstNodeVisitor
         unaryExpressionNode.Right.Accept(this);       
     }
 
-    public void VisitIdentifierExpression(IdentifierExpressionNode identifierExpressionNode)
+    public void VisitIdentifierExpression(IdentifierExpressionNode node)
     {
-        _sb.Append(identifierExpressionNode.Token.Lexeme);
+        _sb.Append(node.Token.Lexeme);
     }
 
     public void VisitVarAssignmentStatement(VarAssignmentStatementNode node)
@@ -54,16 +54,16 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append(';');       
     }
 
-    public void VisitNamedTypeNode(NamedTypeNode namedTypeNode)
+    public void VisitNamedTypeNode(NamedTypeNode node)
     {
-        _sb.Append(namedTypeNode.Name);
+        _sb.Append(node.Name);
     }
 
-    public void VisitBlockStatement(BlockStatementNode blockStatementNode)
+    public void VisitBlockStatement(BlockStatementNode node)
     {
         _sb.Append('{');
         _sb.Append('\n');
-        foreach (var statement in blockStatementNode.Statements)
+        foreach (var statement in node.Statements)
         {
             _sb.Append('\t');
             statement.Accept(this);
@@ -72,14 +72,30 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append('}');
     }
 
-    public void VisitFunctionDeclarationNode(FunctionDeclarationNode functionDeclarationNode)
+    public void VisitFunctionDeclarationNode(FunctionDeclarationNode node)
     {
         _sb.Append("func ");
-        _sb.Append(functionDeclarationNode.Name);
+        _sb.Append(node.Name);
         _sb.Append('(');
         _sb.Append(')');
+        if (node.ReturnType != null)
+        {
+            _sb.Append(" -> ");
+            node.ReturnType.Accept(this);       
+        }
         _sb.Append(' ');
-        functionDeclarationNode.Body.Accept(this);
+        node.Body.Accept(this);
+    }
+
+    public void VisitReturnStatementNode(ReturnStatementNode node)
+    {
+        _sb.Append("return");
+        if (node.Value != null)
+        {
+            _sb.Append(' ');
+            node.Value.Accept(this);
+        }
+        _sb.Append(';');       
     }
 
     public override string ToString()
