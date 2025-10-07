@@ -105,8 +105,9 @@ public class Tests
         Console.WriteLine("Input: " + input);
         
         var tokens = Lexer.Tokenize(input);
-        var tokenReader = new TokenReader(tokens);
+        using var tokenReader = new TokenReader(tokens);
         var astNode = Parser.ParseVarAssignmentStatement(tokenReader);
+        
         var printer = new AstPrinter();
         astNode.Accept(printer);
         var result = printer.ToString();
