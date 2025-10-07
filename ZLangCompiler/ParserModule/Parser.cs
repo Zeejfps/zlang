@@ -204,4 +204,9 @@ public sealed class Parser
         }
         throw new ParserException("Unexpected token encountered", nextToken);
     }
+
+    public static AstNode ParseFunctionDeclaration(TokenReader tokenReader)
+    {
+        throw new NotImplementedException();
+    }
 }

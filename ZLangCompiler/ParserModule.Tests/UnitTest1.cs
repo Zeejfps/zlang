@@ -144,4 +144,29 @@ public class Tests
         astNode.AssertIsType<BlockStatementNode>(out var blockStatementNode);
         Assert.That(blockStatementNode.Statements.Count, Is.EqualTo(1));
     }
+    
+    [Test]
+    public void TestVoidFunctionDeclaration()
+    {
+        const string input = 
+@"func main() { 
+    var x: u32 = 1337; 
+}";
+        Console.WriteLine("Input: " + input);
+        
+        var tokens = Lexer.Tokenize(input);
+        using var tokenReader = new TokenReader(tokens);
+        var astNode = Parser.ParseFunctionDeclaration(tokenReader);
+        
+        var printer = new AstPrinter();
+        astNode.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output: " + result);
+        
+        astNode.AssertIsType<FunctionDeclarationNode>(out var functionDeclarationNode);
+        Assert.That(functionDeclarationNode.Name, Is.EqualTo("main"));
+        
+        functionDeclarationNode.Body.AssertIsType<BlockStatementNode>(out var blockStatementNode);
+        Assert.That(blockStatementNode.Statements.Count, Is.EqualTo(1));
+    }
 }

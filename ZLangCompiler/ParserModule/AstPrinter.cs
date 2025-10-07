@@ -72,6 +72,16 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append('}');
     }
 
+    public void VisitFunctionDeclarationNode(FunctionDeclarationNode functionDeclarationNode)
+    {
+        _sb.Append("func ");
+        _sb.Append(functionDeclarationNode.Name);
+        _sb.Append('(');
+        _sb.Append(')');
+        _sb.Append(' ');
+        functionDeclarationNode.Body.Accept(this);
+    }
+
     public override string ToString()
     {
         return _sb.ToString();       

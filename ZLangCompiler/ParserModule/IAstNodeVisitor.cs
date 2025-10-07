@@ -12,4 +12,5 @@ public interface IAstNodeVisitor
     void VisitVarAssignmentStatement(VarAssignmentStatementNode node);
     void VisitNamedTypeNode(NamedTypeNode namedTypeNode);
     void VisitBlockStatement(BlockStatementNode blockStatementNode);
+    void VisitFunctionDeclarationNode(FunctionDeclarationNode functionDeclarationNode);
 }
