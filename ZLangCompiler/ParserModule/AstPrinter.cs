@@ -57,6 +57,18 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append(namedTypeNode.Name);
     }
 
+    public void VisitBlockStatement(BlockStatementNode blockStatementNode)
+    {
+        _sb.Append('{');
+        _sb.Append('\n');
+        foreach (var statement in blockStatementNode.Statements)
+        {
+            statement.Accept(this);
+            _sb.Append('\n');
+        }
+        _sb.Append('}');
+    }
+
     public override string ToString()
     {
         return _sb.ToString();       

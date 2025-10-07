@@ -11,4 +11,5 @@ public interface IAstNodeVisitor
     void VisitIdentifierExpression(IdentifierExpressionNode identifierExpressionNode);
     void VisitVarAssignmentStatement(VarAssignmentStatementNode node);
     void VisitNamedTypeNode(NamedTypeNode namedTypeNode);
+    void VisitBlockStatement(BlockStatementNode blockStatementNode);
 }

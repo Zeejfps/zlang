@@ -73,9 +73,11 @@ public class Tests
     {
         const string input = "10 + x * (x - 29) / -y";
         Console.WriteLine(input);
+        
         var tokens = Lexer.Tokenize(input);
         var tokenReader = new TokenReader(tokens);
         var astNode = Parser.ParseExpression(tokenReader);
+        
         var printer = new AstPrinter();
         astNode.Accept(printer);
         var result = printer.ToString();
@@ -121,5 +123,25 @@ public class Tests
         
         varAssign.Value.AssertIsType<LiteralIntegerExpressionNode>(out var literal);
         Assert.That(literal.Value, Is.EqualTo(1337));
+    }
+    
+    
+    [Test]
+    public void TestBlockStatement()
+    {
+        const string input = "{ var x: u32 = 1337; }";
+        Console.WriteLine("Input: " + input);
+        
+        var tokens = Lexer.Tokenize(input);
+        using var tokenReader = new TokenReader(tokens);
+        var astNode = Parser.ParseBlockStatement(tokenReader);
+        
+        var printer = new AstPrinter();
+        astNode.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output: " + result);
+        
+        astNode.AssertIsType<BlockStatementNode>(out var blockStatementNode);
+        Assert.That(blockStatementNode.Statements.Count, Is.EqualTo(1));
     }
 }

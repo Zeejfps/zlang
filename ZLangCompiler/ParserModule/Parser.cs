@@ -179,4 +179,9 @@ public sealed class Parser
             Name = identifier.Lexeme,
         };
     }
+
+    public static AstNode ParseBlockStatement(TokenReader tokenReader)
+    {
+        throw new NotImplementedException();
+    }
 }
