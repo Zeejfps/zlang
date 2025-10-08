@@ -1,22 +1,16 @@
-﻿using LexerModule;
-using LLVMSharp.Interop;
+﻿using LLVMSharp.Interop;
 using ParserModule;
 using ParserModule.Nodes;
 
 namespace CodeGenModule;
 
-internal sealed class StatementVisitor : IAstNodeVisitor
+public sealed class ExpressionVisitor : IAstNodeVisitor
 {
-    private readonly LLVMBuilderRef _builder;
-    
-    public StatementVisitor(LLVMBuilderRef builder)
-    {
-        _builder = builder;
-    }
+    public LLVMValueRef Value { get; private set; }
     
     public void VisitLiteralIntegerNode(LiteralIntegerNode node)
     {
-        throw new NotImplementedException();
+        Value = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, (ulong)node.Value);
     }
 
     public void VisitLiteralBoolNode(LiteralBoolNode node)
@@ -26,20 +20,7 @@ internal sealed class StatementVisitor : IAstNodeVisitor
 
     public void VisitBinaryExpression(BinaryExpressionNode node)
     {
-        var expressionVisitor = new ExpressionVisitor();
-        
-        node.Left.Accept(expressionVisitor);
-        var left = expressionVisitor.Value;
-        
-        node.Right.Accept(expressionVisitor);
-        var right = expressionVisitor.Value;
-        
-        // TODO: Move this into semantic analysis
-        if (node.Op.Kind == TokenKind.SymbolPlus)
-        {
-            var addRef = _builder.BuildAdd(left, right);
-            _builder.BuildRet(addRef);
-        }
+        throw new NotImplementedException();
     }
 
     public void VisitUnaryExpression(UnaryExpressionNode node)
@@ -64,13 +45,7 @@ internal sealed class StatementVisitor : IAstNodeVisitor
 
     public void VisitBlockStatement(BlockStatementNode node)
     {
-        // Console.WriteLine("VisitBlockStatement");
-        // var block = _funcRef.AppendBasicBlock("entry");
-        // _builder.PositionAtEnd(block);
-        // foreach (var statement in node.Statements)
-        // {
-        //     statement.Accept(this);
-        // }
+        throw new NotImplementedException();
     }
 
     public void VisitFunctionDeclarationNode(FunctionDefinitionNode node)
@@ -80,14 +55,7 @@ internal sealed class StatementVisitor : IAstNodeVisitor
 
     public void VisitReturnStatementNode(ReturnStatementNode node)
     {
-        if (node.Value == null)
-        {
-            _builder.BuildRetVoid();
-        }
-        else
-        {
-            node.Value.Accept(this);
-        }
+        throw new NotImplementedException();
     }
 
     public void VisitParameterNode(ParameterNode node)
