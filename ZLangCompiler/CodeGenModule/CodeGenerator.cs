@@ -71,6 +71,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
         
         var parameters = node.Parameters;
         Span<LLVMTypeRef> paramTypeRefs = stackalloc LLVMTypeRef[parameters.Count];
+        var scope = new Dictionary<string, LLVMValueRef>();
         for (var i = 0; i < parameters.Count; i++)
         {
             parameters[i].Type.Accept(_typeVisitor);
@@ -79,12 +80,18 @@ public sealed class CodeGenerator : IAstNodeVisitor
         
         var funcTypeRef = LLVMTypeRef.CreateFunction(returnTypeRef, paramTypeRefs, false);
         var funcRef = _module.AddFunction(name, funcTypeRef);
-
+        Span<LLVMValueRef> paramValueRefs = stackalloc LLVMValueRef[parameters.Count];
+        for (var i = 0; i < parameters.Count; i++)
+        {
+            var paramValueRef = funcRef.GetParam((uint)i);
+            scope.Add(parameters[i].Name, paramValueRef);
+        }
+        
         var blockRef = funcRef.AppendBasicBlock("entry");
         _builder.PositionAtEnd(blockRef);
         
         var body = node.Body;
-        var statementVisitor = new StatementVisitor(_builder);
+        var statementVisitor = new StatementVisitor(_builder, scope);
         foreach (var statement in body.Statements)
         {
             statement.Accept(statementVisitor);

@@ -6,6 +6,13 @@ namespace CodeGenModule;
 
 public sealed class ExpressionVisitor : IAstNodeVisitor
 {
+    private readonly Dictionary<string, LLVMValueRef> _scope;
+
+    public ExpressionVisitor(Dictionary<string, LLVMValueRef> scope)
+    {
+        _scope = scope;
+    }
+
     public LLVMValueRef Value { get; private set; }
     
     public void VisitLiteralIntegerNode(LiteralIntegerNode node)
@@ -30,7 +37,7 @@ public sealed class ExpressionVisitor : IAstNodeVisitor
 
     public void VisitIdentifierNode(IdentifierNode node)
     {
-        throw new NotImplementedException();
+        Value = _scope[node.Name];
     }
 
     public void VisitVarAssignmentStatement(VarAssignmentStatementNode node)

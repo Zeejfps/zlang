@@ -8,10 +8,12 @@ namespace CodeGenModule;
 internal sealed class StatementVisitor : IAstNodeVisitor
 {
     private readonly LLVMBuilderRef _builder;
-    
-    public StatementVisitor(LLVMBuilderRef builder)
+    private readonly Dictionary<string, LLVMValueRef> _scope;
+
+    public StatementVisitor(LLVMBuilderRef builder, Dictionary<string, LLVMValueRef> scope)
     {
         _builder = builder;
+        _scope = scope;
     }
     
     public void VisitLiteralIntegerNode(LiteralIntegerNode node)
@@ -26,7 +28,7 @@ internal sealed class StatementVisitor : IAstNodeVisitor
 
     public void VisitBinaryExpression(BinaryExpressionNode node)
     {
-        var expressionVisitor = new ExpressionVisitor();
+        var expressionVisitor = new ExpressionVisitor(_scope);
         
         node.Left.Accept(expressionVisitor);
         var left = expressionVisitor.Value;
