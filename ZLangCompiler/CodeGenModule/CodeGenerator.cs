@@ -7,7 +7,7 @@ namespace CodeGenModule;
 public sealed class CodeGenerator : IAstNodeVisitor
 {
     private readonly LLVMModuleRef _module;
-    private readonly LLVMBuilderRef Builder;
+    private readonly LLVMBuilderRef _builder;
     private readonly LLVMContextRef Context;
     private readonly Dictionary<string, LLVMValueRef> NamedValues = new();
     private readonly TypeVisitor _typeVisitor = new();
@@ -15,6 +15,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
     public CodeGenerator()
     {
         _module = LLVMModuleRef.CreateWithName("z_lang_program");
+        _builder = LLVMBuilderRef.Create(LLVMContextRef.Global);
     }
     
     public void VisitLiteralIntegerNode(LiteralIntegerNode node)
@@ -79,8 +80,15 @@ public sealed class CodeGenerator : IAstNodeVisitor
         var funcTypeRef = LLVMTypeRef.CreateFunction(returnTypeRef, paramTypeRefs, false);
         var funcRef = _module.AddFunction(name, funcTypeRef);
 
-        var funcBodyVisitor = new FuncBodyBuilder(funcRef);
-        node.Body.Accept(funcBodyVisitor);
+        var blockRef = funcRef.AppendBasicBlock("entry");
+        _builder.PositionAtEnd(blockRef);
+        
+        var body = node.Body;
+        var statementVisitor = new StatementVisitor(_builder);
+        foreach (var statement in body.Statements)
+        {
+            statement.Accept(statementVisitor);
+        }
     }
 
     public void VisitReturnStatementNode(ReturnStatementNode node)

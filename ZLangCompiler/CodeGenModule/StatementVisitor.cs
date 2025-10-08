@@ -4,15 +4,13 @@ using ParserModule.Nodes;
 
 namespace CodeGenModule;
 
-internal sealed class FuncBodyBuilder : IAstNodeVisitor
+internal sealed class StatementVisitor : IAstNodeVisitor
 {
-    private readonly LLVMValueRef _funcRef;
     private readonly LLVMBuilderRef _builder;
     
-    public FuncBodyBuilder(LLVMValueRef funcRef)
+    public StatementVisitor(LLVMBuilderRef builder)
     {
-        _funcRef = funcRef;
-        _builder = LLVMBuilderRef.Create(LLVMContextRef.Global);
+        _builder = builder;
     }
     
     public void VisitLiteralIntegerNode(LiteralIntegerNode node)
@@ -52,13 +50,13 @@ internal sealed class FuncBodyBuilder : IAstNodeVisitor
 
     public void VisitBlockStatement(BlockStatementNode node)
     {
-        Console.WriteLine("VisitBlockStatement");
-        var block = _funcRef.AppendBasicBlock("entry");
-        _builder.PositionAtEnd(block);
-        foreach (var statement in node.Statements)
-        {
-            statement.Accept(this);
-        }
+        // Console.WriteLine("VisitBlockStatement");
+        // var block = _funcRef.AppendBasicBlock("entry");
+        // _builder.PositionAtEnd(block);
+        // foreach (var statement in node.Statements)
+        // {
+        //     statement.Accept(this);
+        // }
     }
 
     public void VisitFunctionDeclarationNode(FunctionDeclarationNode node)
@@ -68,10 +66,8 @@ internal sealed class FuncBodyBuilder : IAstNodeVisitor
 
     public void VisitReturnStatementNode(ReturnStatementNode node)
     {
-        Console.WriteLine("VisitReturnStatementNode");
         if (node.Value == null)
         {
-            Console.WriteLine("Returning void");
             _builder.BuildRetVoid();
             return;
         }
