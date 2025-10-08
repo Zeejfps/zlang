@@ -222,4 +222,30 @@ public class Tests
         functionDeclarationNode.Body.Statements[1].AssertIsType<ReturnStatementNode>(out var returnStatementNode);
         Assert.That(returnStatementNode.Value, Is.Not.Null);
     }
+
+    [Test]
+    public void TestStructImport()
+    {
+        const string input = "struct MyStruct = std.some.ModuleStruct";
+        Console.WriteLine("Input: " + input);
+        
+        var tokens = Lexer.Tokenize(input);
+        using var tokenReader = new TokenReader(tokens);
+        var astNode = Parser.ParseStruct(tokenReader);
+        
+        var printer = new AstPrinter();
+        astNode.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output: " + result);
+        
+        astNode.AssertIsType<StructImportNode>(out var structImportNode);
+        Assert.That(structImportNode.AliasName, Is.EqualTo("MyStruct"));
+        Assert.That(structImportNode.QualifiedIdentifier.Parts, 
+            Is.EquivalentTo(new[] {
+                "std",
+                "some",
+                "ModuleStruct"
+            })
+        );
+    }
 }

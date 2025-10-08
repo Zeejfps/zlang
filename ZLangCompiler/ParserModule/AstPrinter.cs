@@ -115,6 +115,40 @@ public sealed class AstPrinter : IAstNodeVisitor
         parameterNode.Type.Accept(this);
     }
 
+    public void VisitStructImportNode(StructImportNode node)
+    {
+        _sb.Append("struct ");
+        _sb.Append(node.AliasName);
+        _sb.Append(' ');
+        _sb.Append('=');
+        _sb.Append(' ');
+        var parts = node.QualifiedIdentifier.Parts;
+        for (var i = 0; i < parts.Count - 1; i++)
+        {
+            _sb.Append(parts[i]);
+            _sb.Append('.');
+        }
+        _sb.Append(parts[^1]);
+    }
+
+    public void VisitQualifiedIdentifierNode(QualifiedIdentifierNode node)
+    {
+        for (var i = 0; i < node.Parts.Count - 1; i++)
+        {
+            _sb.Append(node.Parts[i]);
+            _sb.Append('.');
+        }
+        _sb.Append(node.Parts[^1]);
+    }
+
+    public void VisitStructDefinitionNode(StructDefinitionNode node)
+    {
+        _sb.Append("struct ");
+        _sb.Append(node.Name);
+        _sb.Append('{');
+        _sb.Append('}');
+    }
+
     public override string ToString()
     {
         return _sb.ToString();       

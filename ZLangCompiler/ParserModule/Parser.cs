@@ -289,4 +289,52 @@ public sealed class Parser
 
         return @params;
     }
+
+    public static AstNode ParseStruct(TokenReader tokenReader)
+    {
+        tokenReader.Read(TokenKind.KeywordStruct);
+        var nameToken = tokenReader.Read(TokenKind.Identifier);
+        var name = nameToken.Lexeme;
+
+        var nextToken = tokenReader.Peek();
+        if (nextToken.Kind == TokenKind.SymbolEquals)
+        {
+            tokenReader.Read();
+            var qualifiedIdentifier = ParseQualifiedIdentifier(tokenReader);
+            return new StructImportNode
+            {
+                AliasName = name,
+                QualifiedIdentifier = qualifiedIdentifier,
+            };
+        }
+
+        if (nextToken.Kind == TokenKind.SymbolLeftCurlyBrace)
+        {
+            tokenReader.Read();
+            return new StructDefinitionNode
+            {
+                Name = name,
+            };
+        }
+        
+        throw new Exception("Expected a { or =");
+    }
+
+    public static QualifiedIdentifierNode ParseQualifiedIdentifier(TokenReader tokenReader)
+    {
+        var parts = new List<string>();
+
+        parts.Add(tokenReader.Read(TokenKind.Identifier).Lexeme);
+        while (tokenReader.Peek().Kind == TokenKind.SymbolDot)
+        {
+            tokenReader.Read();
+            var identToken = tokenReader.Read(TokenKind.Identifier);
+            parts.Add(identToken.Lexeme);
+        }
+
+        return new QualifiedIdentifierNode
+        {
+            Parts = parts
+        };
+    }
 }
