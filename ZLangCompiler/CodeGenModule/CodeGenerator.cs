@@ -104,4 +104,14 @@ public sealed class CodeGenerator : IAstNodeVisitor
     {
         throw new NotImplementedException();
     }
+
+    public void Verify()
+    {
+        _module.Verify(LLVMVerifierFailureAction.LLVMAbortProcessAction);
+    }
+
+    public void SaveToFile(ReadOnlySpan<char> testAsm)
+    {
+        _module.PrintToFile(testAsm);
+    }
 }

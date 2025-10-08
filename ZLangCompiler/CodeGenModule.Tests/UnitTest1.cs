@@ -24,6 +24,9 @@ public class Tests
         var ast = Parser.Parse(tokens);
         var codeGenerator = new CodeGenerator();
         ast.Accept(codeGenerator);
+        codeGenerator.Verify();
+        
+        codeGenerator.SaveToFile("test.asm");
         
         Assert.Pass();
     }
