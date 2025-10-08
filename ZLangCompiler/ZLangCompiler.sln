@@ -10,6 +10,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ParserModule", "ParserModul
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ParserModule.Tests", "ParserModule.Tests\ParserModule.Tests.csproj", "{818E856C-7877-4273-94A6-FF77E4233885}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeGenModule", "CodeGenModule\CodeGenModule.csproj", "{03E9B1D8-B4B9-4725-8627-C28E6DBEACF0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeGenModule.Tests", "CodeGenModule.Tests\CodeGenModule.Tests.csproj", "{C910EBC5-59BB-42CC-A522-45573C0FFC6F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -36,5 +40,13 @@ Global
 		{818E856C-7877-4273-94A6-FF77E4233885}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{818E856C-7877-4273-94A6-FF77E4233885}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{818E856C-7877-4273-94A6-FF77E4233885}.Release|Any CPU.Build.0 = Release|Any CPU
+		{03E9B1D8-B4B9-4725-8627-C28E6DBEACF0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{03E9B1D8-B4B9-4725-8627-C28E6DBEACF0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{03E9B1D8-B4B9-4725-8627-C28E6DBEACF0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{03E9B1D8-B4B9-4725-8627-C28E6DBEACF0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C910EBC5-59BB-42CC-A522-45573C0FFC6F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C910EBC5-59BB-42CC-A522-45573C0FFC6F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C910EBC5-59BB-42CC-A522-45573C0FFC6F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C910EBC5-59BB-42CC-A522-45573C0FFC6F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
