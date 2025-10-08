@@ -22,6 +22,8 @@ public class Tests
         
         var tokens = Lexer.Tokenize(input);
         var ast = Parser.Parse(tokens);
+        var codeGenerator = new CodeGenerator();
+        ast.Accept(codeGenerator);
         
         Assert.Pass();
     }

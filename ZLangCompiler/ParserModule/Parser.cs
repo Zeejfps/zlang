@@ -116,19 +116,19 @@ public sealed class Parser
         {
             //Console.WriteLine($"Parsed integer: {token.Lexeme}");  
             tokenReader.Read();
-            return new LiteralIntegerExpressionNode(token);
+            return new LiteralIntegerNode(token);
         }
 
         if (token.Kind == TokenKind.LiteralBool)
         {
             tokenReader.Read();
-            return new LiteralBoolExpressionNode(token);
+            return new LiteralBoolNode(token);
         }
 
         if (token.Kind == TokenKind.Identifier)
         {
             tokenReader.Read();
-            return new IdentifierExpressionNode(token);
+            return new IdentifierNode(token);
         }
 
         if (token.Kind == TokenKind.SymbolLeftParen)

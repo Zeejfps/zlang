@@ -2,17 +2,17 @@
 
 namespace ParserModule.Nodes;
 
-public sealed class IdentifierExpressionNode : AstNode
+public sealed class IdentifierNode : AstNode
 {
     public Token Token { get; }
 
-    public IdentifierExpressionNode(Token token)
+    public IdentifierNode(Token token)
     {
         Token = token;
     }
 
     public override void Accept(IAstNodeVisitor visitor)
     {
-        visitor.VisitIdentifierExpression(this);
+        visitor.VisitIdentifierNode(this);
     }
 }

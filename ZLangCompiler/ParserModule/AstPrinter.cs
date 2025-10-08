@@ -7,12 +7,12 @@ public sealed class AstPrinter : IAstNodeVisitor
 {
     private readonly StringBuilder _sb = new();
     
-    public void VisitIntegerNumberExpression(LiteralIntegerExpressionNode integerNumberExpression)
+    public void VisitLiteralIntegerNode(LiteralIntegerNode integerNumberExpression)
     {
         _sb.Append(integerNumberExpression.Token.Lexeme);
     }
 
-    public void VisitLiteralBoolExpression(LiteralBoolExpressionNode literalBoolExpressionNode)
+    public void VisitLiteralBoolNode(LiteralBoolNode literalBoolExpressionNode)
     {
         _sb.Append(literalBoolExpressionNode.Token.Lexeme);       
     }
@@ -32,7 +32,7 @@ public sealed class AstPrinter : IAstNodeVisitor
         unaryExpressionNode.Right.Accept(this);       
     }
 
-    public void VisitIdentifierExpression(IdentifierExpressionNode node)
+    public void VisitIdentifierNode(IdentifierNode node)
     {
         _sb.Append(node.Token.Lexeme);
     }

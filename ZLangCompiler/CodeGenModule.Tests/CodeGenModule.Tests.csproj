@@ -21,6 +21,7 @@
     </ItemGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\CodeGenModule\CodeGenModule.csproj" />
       <ProjectReference Include="..\LexerModule\LexerModule.csproj" />
       <ProjectReference Include="..\ParserModule\ParserModule.csproj" />
     </ItemGroup>

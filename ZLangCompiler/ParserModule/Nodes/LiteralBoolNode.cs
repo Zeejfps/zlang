@@ -2,12 +2,12 @@
 
 namespace ParserModule.Nodes;
 
-public sealed class LiteralBoolExpressionNode : AstNode
+public sealed class LiteralBoolNode : AstNode
 {
     public Token Token { get; }
     public bool Value { get; }
 
-    public LiteralBoolExpressionNode(Token token)
+    public LiteralBoolNode(Token token)
     {
         Token = token;
         Value = bool.Parse(token.Lexeme);
@@ -15,6 +15,6 @@ public sealed class LiteralBoolExpressionNode : AstNode
     
     public override void Accept(IAstNodeVisitor visitor)
     {
-        visitor.VisitLiteralBoolExpression(this);
+        visitor.VisitLiteralBoolNode(this);
     }
 }
