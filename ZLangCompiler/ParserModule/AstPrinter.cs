@@ -72,7 +72,7 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append('}');
     }
 
-    public void VisitFunctionDeclarationNode(FunctionDeclarationNode node)
+    public void VisitFunctionDeclarationNode(FunctionDefinitionNode node)
     {
         _sb.Append("func ");
         _sb.Append(node.Name);
@@ -147,6 +147,11 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append(node.Name);
         _sb.Append('{');
         _sb.Append('}');
+    }
+
+    public void VisitModuleDefinitionNode(ModuleDefinitionNode node)
+    {
+        throw new NotImplementedException();
     }
 
     public override string ToString()

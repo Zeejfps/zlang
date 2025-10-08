@@ -58,7 +58,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
-    public void VisitFunctionDeclarationNode(FunctionDeclarationNode node)
+    public void VisitFunctionDeclarationNode(FunctionDefinitionNode node)
     {
         var name = node.Name;
         var returnType = node.ReturnType;
@@ -109,6 +109,14 @@ public sealed class CodeGenerator : IAstNodeVisitor
     public void VisitStructDefinitionNode(StructDefinitionNode node)
     {
         throw new NotImplementedException();
+    }
+
+    public void VisitModuleDefinitionNode(ModuleDefinitionNode node)
+    {
+        foreach (var function in node.Functions)
+        {
+            function.Accept(this);
+        }
     }
 
     public void VisitQualifiedIdentifierNode(QualifiedIdentifierNode node)

@@ -13,7 +13,22 @@ public sealed class Parser
     public static AstNode Parse(IEnumerable<Token> tokens)
     {
         using var tokenReader = new TokenReader(tokens);
-        return ParseFunctionDeclaration(tokenReader);
+        
+        var functions = new List<AstNode>();
+        while (tokenReader.Peek().Kind != TokenKind.EOF)
+        {
+            if (tokenReader.Peek().Kind == TokenKind.KeywordFunc)
+            {
+                var functionDeclaration = ParseFunctionDefinition(tokenReader);
+                functions.Add(functionDeclaration);
+            }
+        }
+        tokenReader.Read(TokenKind.EOF);
+
+        return new ModuleDefinitionNode
+        {
+            Functions = functions,       
+        };
     }
 
     public static AstNode ParseExpression(TokenReader tokenReader)
@@ -211,7 +226,7 @@ public sealed class Parser
         throw new ParserException($"Unexpected token encountered, {nextToken}", nextToken);
     }
 
-    public static AstNode ParseFunctionDeclaration(TokenReader tokenReader)
+    public static AstNode ParseFunctionDefinition(TokenReader tokenReader)
     {
         tokenReader.Read(TokenKind.KeywordFunc);
         var identifier = tokenReader.Read(TokenKind.Identifier);
@@ -239,7 +254,7 @@ public sealed class Parser
         }
         
         var body = ParseBlockStatement(tokenReader);
-        return new FunctionDeclarationNode
+        return new FunctionDefinitionNode
         {
             Name = name,
             Body = body,

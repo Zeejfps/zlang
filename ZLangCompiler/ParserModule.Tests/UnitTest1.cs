@@ -156,14 +156,14 @@ public class Tests
         
         var tokens = Lexer.Tokenize(input);
         using var tokenReader = new TokenReader(tokens);
-        var astNode = Parser.ParseFunctionDeclaration(tokenReader);
+        var astNode = Parser.ParseFunctionDefinition(tokenReader);
         
         var printer = new AstPrinter();
         astNode.Accept(printer);
         var result = printer.ToString();
         Console.WriteLine("Output: " + result);
         
-        astNode.AssertIsType<FunctionDeclarationNode>(out var functionDeclarationNode);
+        astNode.AssertIsType<FunctionDefinitionNode>(out var functionDeclarationNode);
         Assert.That(functionDeclarationNode.Name, Is.EqualTo("main"));
         Assert.That(functionDeclarationNode.Body.Statements.Count, Is.EqualTo(1));
     }
@@ -180,14 +180,14 @@ public class Tests
         
         var tokens = Lexer.Tokenize(input);
         using var tokenReader = new TokenReader(tokens);
-        var astNode = Parser.ParseFunctionDeclaration(tokenReader);
+        var astNode = Parser.ParseFunctionDefinition(tokenReader);
         
         var printer = new AstPrinter();
         astNode.Accept(printer);
         var result = printer.ToString();
         Console.WriteLine("Output: " + result);
         
-        astNode.AssertIsType<FunctionDeclarationNode>(out var functionDeclarationNode);
+        astNode.AssertIsType<FunctionDefinitionNode>(out var functionDeclarationNode);
         Assert.That(functionDeclarationNode.Name, Is.EqualTo("add"));
         Assert.That(functionDeclarationNode.Body.Statements.Count, Is.EqualTo(2));
         
@@ -207,14 +207,14 @@ public class Tests
         
         var tokens = Lexer.Tokenize(input);
         using var tokenReader = new TokenReader(tokens);
-        var astNode = Parser.ParseFunctionDeclaration(tokenReader);
+        var astNode = Parser.ParseFunctionDefinition(tokenReader);
         
         var printer = new AstPrinter();
         astNode.Accept(printer);
         var result = printer.ToString();
         Console.WriteLine("Output: " + result);
         
-        astNode.AssertIsType<FunctionDeclarationNode>(out var functionDeclarationNode);
+        astNode.AssertIsType<FunctionDefinitionNode>(out var functionDeclarationNode);
         Assert.That(functionDeclarationNode.Name, Is.EqualTo("add"));
         Assert.That(functionDeclarationNode.Body.Statements.Count, Is.EqualTo(2));
         Assert.That(functionDeclarationNode.Parameters.Count, Is.EqualTo(2));

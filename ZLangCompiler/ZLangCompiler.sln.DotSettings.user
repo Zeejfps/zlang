@@ -5,7 +5,10 @@
 	<s:String x:Key="/Default/CodeInspection/ExcludedFiles/FilesAndFoldersToSkip2/=7020124F_002D9FFC_002D4AC3_002D8F3D_002DAAB8E0240759_002Ff_003ALLVMVerifierFailureAction_002Ecs_002Fl_003AC_0021_003FUsers_003Fzeejf_003FAppData_003FRoaming_003FJetBrains_003FRider2025_002E2_003Fresharper_002Dhost_003FSourcesCache_003F292b4561c77176496fb8db896d2b67e8d2266ebfc6a9f0174e36be500de0_003FLLVMVerifierFailureAction_002Ecs/@EntryIndexedValue">ForceIncluded</s:String>
 	<s:String x:Key="/Default/CodeInspection/ExcludedFiles/FilesAndFoldersToSkip2/=7020124F_002D9FFC_002D4AC3_002D8F3D_002DAAB8E0240759_002Ff_003AObject_002Ecs_002Fl_003AC_0021_003FUsers_003Fzeejf_003FAppData_003FRoaming_003FJetBrains_003FRider2025_002E2_003Fresharper_002Dhost_003FSourcesCache_003F9a6b1457cbcf17db31a383ba49ef9bcc786cf3ef77146d997eee499b27a46d_003FObject_002Ecs/@EntryIndexedValue">ForceIncluded</s:String>
 	<s:String x:Key="/Default/Environment/UnitTesting/UnitTestSessionStore/Sessions/=b06a57f4_002Db274_002D471e_002D9332_002D4b60bf36db0d/@EntryIndexedValue">&lt;SessionState ContinuousTestingMode="0" IsActive="True" Name="All tests from &amp;lt;ParserModule.Tests&amp;gt;" xmlns="urn:schemas-jetbrains-com:jetbrains-ut-session"&gt;&#xD;
-  &lt;ProjectFile&gt;C910EBC5-59BB-42CC-A522-45573C0FFC6F/f:UnitTest1.cs&lt;/ProjectFile&gt;&#xD;
+  &lt;Or&gt;&#xD;
+    &lt;ProjectFile&gt;C910EBC5-59BB-42CC-A522-45573C0FFC6F/f:UnitTest1.cs&lt;/ProjectFile&gt;&#xD;
+    &lt;Project Location="G:\Dev\zlang\ZLangCompiler\ParserModule.Tests" Presentation="&amp;lt;ParserModule.Tests&amp;gt;" /&gt;&#xD;
+  &lt;/Or&gt;&#xD;
 &lt;/SessionState&gt;</s:String>
 	
 	

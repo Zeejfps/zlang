@@ -59,7 +59,7 @@ internal sealed class StatementVisitor : IAstNodeVisitor
         // }
     }
 
-    public void VisitFunctionDeclarationNode(FunctionDeclarationNode node)
+    public void VisitFunctionDeclarationNode(FunctionDefinitionNode node)
     {
         throw new NotImplementedException();
     }
@@ -89,6 +89,11 @@ internal sealed class StatementVisitor : IAstNodeVisitor
     }
 
     public void VisitStructDefinitionNode(StructDefinitionNode node)
+    {
+        throw new NotImplementedException();
+    }
+
+    public void VisitModuleDefinitionNode(ModuleDefinitionNode node)
     {
         throw new NotImplementedException();
     }
