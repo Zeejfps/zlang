@@ -194,4 +194,32 @@ public class Tests
         functionDeclarationNode.Body.Statements[1].AssertIsType<ReturnStatementNode>(out var returnStatementNode);
         Assert.That(returnStatementNode.Value, Is.Not.Null);
     }
+    
+    [Test]
+    public void TestFunctionDeclarationWithReturnTypeAndArguments()
+    {
+        const string input = 
+@"func add(y: u32, z: u32) -> u32 { 
+    var x: u32 = 1337; 
+    return x;
+}";
+        Console.WriteLine("Input: " + input);
+        
+        var tokens = Lexer.Tokenize(input);
+        using var tokenReader = new TokenReader(tokens);
+        var astNode = Parser.ParseFunctionDeclaration(tokenReader);
+        
+        var printer = new AstPrinter();
+        astNode.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output: " + result);
+        
+        astNode.AssertIsType<FunctionDeclarationNode>(out var functionDeclarationNode);
+        Assert.That(functionDeclarationNode.Name, Is.EqualTo("add"));
+        Assert.That(functionDeclarationNode.Body.Statements.Count, Is.EqualTo(2));
+        Assert.That(functionDeclarationNode.Parameters.Count, Is.EqualTo(2));
+        
+        functionDeclarationNode.Body.Statements[1].AssertIsType<ReturnStatementNode>(out var returnStatementNode);
+        Assert.That(returnStatementNode.Value, Is.Not.Null);
+    }
 }

@@ -215,9 +215,14 @@ public sealed class Parser
         tokenReader.Read(TokenKind.KeywordFunc);
         var identifier = tokenReader.Read(TokenKind.Identifier);
         var name = identifier.Lexeme;
+        List<ParameterNode>? @params = null;
         
         tokenReader.Read(TokenKind.SymbolLeftParen);
         //TODO: Handle args
+        if (tokenReader.Peek().Kind != TokenKind.SymbolRightParen)
+        {
+            @params = ParseParamsList(tokenReader);
+        }
         tokenReader.Read(TokenKind.SymbolRightParen);
 
         AstNode? returnType = null;
@@ -226,6 +231,11 @@ public sealed class Parser
             tokenReader.Read();
             returnType = ParseTypeNode(tokenReader);
         }
+
+        if (@params == null)
+        {
+            @params = [];
+        }
         
         var body = ParseBlockStatement(tokenReader);
         return new FunctionDeclarationNode
@@ -233,6 +243,7 @@ public sealed class Parser
             Name = name,
             Body = body,
             ReturnType = returnType,
+            Parameters = @params,
         };
     }
 
@@ -249,5 +260,33 @@ public sealed class Parser
         {
             Value = value,       
         };
+    }
+
+    public static List<ParameterNode> ParseParamsList(TokenReader tokenReader)
+    {
+        var @params = new List<ParameterNode>();
+        while (true)
+        {
+            var nameToken = tokenReader.Read(TokenKind.Identifier);
+            var name = nameToken.Lexeme;
+            tokenReader.Read(TokenKind.SymbolColon);
+            var type = ParseTypeNode(tokenReader);
+            @params.Add(new ParameterNode
+            {
+                Name = name,
+                Type = type,
+            });
+
+            if (tokenReader.Peek().Kind == TokenKind.SymbolComma)
+            {
+                tokenReader.Read();
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return @params;
     }
 }

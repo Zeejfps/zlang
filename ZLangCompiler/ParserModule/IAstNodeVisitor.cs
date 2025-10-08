@@ -14,4 +14,5 @@ public interface IAstNodeVisitor
     void VisitBlockStatement(BlockStatementNode node);
     void VisitFunctionDeclarationNode(FunctionDeclarationNode node);
     void VisitReturnStatementNode(ReturnStatementNode node);
+    void VisitParameterNode(ParameterNode parameterNode);
 }

@@ -77,6 +77,16 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append("func ");
         _sb.Append(node.Name);
         _sb.Append('(');
+        if (node.Parameters.Count > 0)
+        {
+            for (var i = 0; i < node.Parameters.Count - 1; i++)
+            {
+                node.Parameters[i].Accept(this);
+                _sb.Append(',');
+                _sb.Append(' ');
+            }
+            node.Parameters[^1].Accept(this);
+        }
         _sb.Append(')');
         if (node.ReturnType != null)
         {
@@ -96,6 +106,13 @@ public sealed class AstPrinter : IAstNodeVisitor
             node.Value.Accept(this);
         }
         _sb.Append(';');       
+    }
+
+    public void VisitParameterNode(ParameterNode parameterNode)
+    {
+        _sb.Append(parameterNode.Name);
+        _sb.Append(':');
+        parameterNode.Type.Accept(this);
     }
 
     public override string ToString()
