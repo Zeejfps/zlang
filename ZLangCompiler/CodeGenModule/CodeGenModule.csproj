@@ -10,4 +10,8 @@
       <ProjectReference Include="..\ParserModule\ParserModule.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+      <PackageReference Include="LLVMSharp" Version="20.1.2" />
+    </ItemGroup>
+
 </Project>

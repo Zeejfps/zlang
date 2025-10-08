@@ -1,10 +1,16 @@
-﻿using ParserModule;
+﻿using LLVMSharp.Interop;
+using ParserModule;
 using ParserModule.Nodes;
 
 namespace CodeGenModule;
 
 public sealed class CodeGenerator : IAstNodeVisitor
 {
+    private readonly LLVMModuleRef Module;
+    private readonly  LLVMBuilderRef Builder;
+    private readonly  LLVMContextRef Context;
+    private readonly  Dictionary<string, LLVMValueRef> NamedValues = new();
+    
     public void VisitLiteralIntegerNode(LiteralIntegerNode node)
     {
         throw new NotImplementedException();
