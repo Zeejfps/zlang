@@ -4,18 +4,9 @@ using ParserModule.Nodes;
 
 namespace CodeGenModule;
 
-public sealed class CodeGenerator : IAstNodeVisitor
+internal sealed class TypeVisitor : IAstNodeVisitor
 {
-    private readonly LLVMModuleRef _module;
-    private readonly LLVMBuilderRef Builder;
-    private readonly LLVMContextRef Context;
-    private readonly Dictionary<string, LLVMValueRef> NamedValues = new();
-    private readonly TypeVisitor _typeVisitor = new();
-
-    public CodeGenerator()
-    {
-        _module = LLVMModuleRef.CreateWithName("z_lang_program");
-    }
+    public LLVMTypeRef Type { get; private set; }
     
     public void VisitLiteralIntegerNode(LiteralIntegerNode node)
     {
@@ -49,7 +40,12 @@ public sealed class CodeGenerator : IAstNodeVisitor
 
     public void VisitNamedTypeNode(NamedTypeNode node)
     {
-        throw new NotImplementedException();
+        Type = node.Name switch
+        {
+            "u32" or "i32" => LLVMTypeRef.Int32,
+            "u8" or "i8" => LLVMTypeRef.Int8,
+            _ => throw new ArgumentOutOfRangeException()
+        };
     }
 
     public void VisitBlockStatement(BlockStatementNode node)
@@ -59,25 +55,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
 
     public void VisitFunctionDeclarationNode(FunctionDeclarationNode node)
     {
-        var name = node.Name;
-        var returnType = node.ReturnType;
-        var returnTypeRef = LLVMTypeRef.Void;
-        if (returnType != null)
-        {
-            returnType.Accept(_typeVisitor);
-            returnTypeRef = _typeVisitor.Type;
-        }
-        
-        var parameters = node.Parameters;
-        Span<LLVMTypeRef> paramTypeRefs = stackalloc LLVMTypeRef[parameters.Count];
-        for (var i = 0; i < parameters.Count; i++)
-        {
-            parameters[i].Type.Accept(_typeVisitor);
-            paramTypeRefs[i] = _typeVisitor.Type;
-        }
-        
-        var funcTypeRef = LLVMTypeRef.CreateFunction(returnTypeRef, paramTypeRefs, false);
-        var funcRef = _module.AddFunction(name, funcTypeRef);
+        throw new NotImplementedException();
     }
 
     public void VisitReturnStatementNode(ReturnStatementNode node)
@@ -95,12 +73,12 @@ public sealed class CodeGenerator : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
-    public void VisitStructDefinitionNode(StructDefinitionNode node)
+    public void VisitQualifiedIdentifierNode(QualifiedIdentifierNode node)
     {
         throw new NotImplementedException();
     }
 
-    public void VisitQualifiedIdentifierNode(QualifiedIdentifierNode node)
+    public void VisitStructDefinitionNode(StructDefinitionNode node)
     {
         throw new NotImplementedException();
     }
