@@ -78,6 +78,9 @@ public sealed class CodeGenerator : IAstNodeVisitor
         
         var funcTypeRef = LLVMTypeRef.CreateFunction(returnTypeRef, paramTypeRefs, false);
         var funcRef = _module.AddFunction(name, funcTypeRef);
+
+        var funcBodyVisitor = new FuncBodyBuilder(funcRef);
+        node.Body.Accept(funcBodyVisitor);
     }
 
     public void VisitReturnStatementNode(ReturnStatementNode node)
