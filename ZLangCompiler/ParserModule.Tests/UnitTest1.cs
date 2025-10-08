@@ -17,7 +17,7 @@ public class Tests
         var tokens = Lexer.Tokenize(input);
         var ast = Parser.Parse(tokens);
         var printer = new AstPrinter();
-        ast.Root.Accept(printer);
+        ast.Accept(printer);
         var result = printer.ToString();
         Assert.Pass();
     }

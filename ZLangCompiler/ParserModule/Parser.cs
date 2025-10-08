@@ -10,7 +10,7 @@ public sealed class Parser
         TokenKind.SymbolPlus
     ];
 
-    public static Ast Parse(IEnumerable<Token> tokens)
+    public static AstNode Parse(IEnumerable<Token> tokens)
     {
         throw new NotImplementedException();
     }
