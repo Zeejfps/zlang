@@ -12,7 +12,8 @@ public sealed class Parser
 
     public static AstNode Parse(IEnumerable<Token> tokens)
     {
-        throw new NotImplementedException();
+        using var tokenReader = new TokenReader(tokens);
+        return ParseFunctionDeclaration(tokenReader);
     }
 
     public static AstNode ParseExpression(TokenReader tokenReader)
