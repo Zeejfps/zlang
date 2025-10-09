@@ -3,7 +3,7 @@ using ParserModule.Nodes;
 
 namespace ParserModule.Tests;
 
-public class Tests
+public class ParserTests
 {
     [SetUp]
     public void Setup()
