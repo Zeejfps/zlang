@@ -158,4 +158,9 @@ public sealed class AstPrinter : IAstNodeVisitor
     {
         return _sb.ToString();       
     }
+
+    public void VisitIfStatementNode(IfStatementNode node)
+    {
+        throw new NotImplementedException();
+    }
 }

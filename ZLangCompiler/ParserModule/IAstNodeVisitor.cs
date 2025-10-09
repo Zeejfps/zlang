@@ -2,7 +2,7 @@
 
 namespace ParserModule;
 
-public interface IAstNodeVisitor
+public interface IAstNodeVisitor : IStatementNodeVisitor
 {
     void VisitLiteralIntegerNode(LiteralIntegerNode node);
     void VisitLiteralBoolNode(LiteralBoolNode node);
