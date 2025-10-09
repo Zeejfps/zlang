@@ -45,6 +45,8 @@ public enum TokenKind
     SymbolNotEquals, // ==
     SymbolGreaterThanEquals, // >=
     SymbolLessThanEquals, // <=
+    SymbolPlusPlus, // ++
+    SymbolMinsMinus, // --
     
     // Literals
     LiteralInteger,

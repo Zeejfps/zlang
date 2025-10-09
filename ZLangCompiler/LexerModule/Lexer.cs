@@ -37,6 +37,8 @@ public sealed class Lexer : IDisposable
         {"!=", TokenKind.SymbolNotEquals},
         {">=", TokenKind.SymbolGreaterThanEquals},
         {"<=", TokenKind.SymbolLessThanEquals},
+        {"++", TokenKind.SymbolPlusPlus},
+        {"--", TokenKind.SymbolMinsMinus},
     };
     
     public Dictionary<string, TokenKind> Keywords { get; } = new()

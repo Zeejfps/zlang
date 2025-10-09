@@ -265,6 +265,8 @@ public class LexerTests
     
     [TestCase("->", TokenKind.SymbolReturnArrow)]
     [TestCase("+=", TokenKind.SymbolPlusEquals)]
+    [TestCase("++", TokenKind.SymbolPlusPlus)]
+    [TestCase("--", TokenKind.SymbolMinsMinus)]
     [TestCase("==", TokenKind.SymbolEqualsEquals)]
     [TestCase("!=", TokenKind.SymbolNotEquals)]
     [TestCase(">=", TokenKind.SymbolGreaterThanEquals)]
