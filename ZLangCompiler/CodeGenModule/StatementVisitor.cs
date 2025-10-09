@@ -116,4 +116,9 @@ internal sealed class StatementVisitor : IAstNodeVisitor
     {
         throw new NotImplementedException();
     }
+
+    public void VisitIfStatementNode(IfStatementNode node)
+    {
+        throw new NotImplementedException();
+    }
 }

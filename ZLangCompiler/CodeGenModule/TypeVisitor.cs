@@ -87,4 +87,9 @@ internal sealed class TypeVisitor : IAstNodeVisitor
     {
         throw new NotImplementedException();
     }
+
+    public void VisitIfStatementNode(IfStatementNode node)
+    {
+        throw new NotImplementedException();
+    }
 }

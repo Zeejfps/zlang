@@ -8,8 +8,6 @@ public sealed class CodeGenerator : IAstNodeVisitor
 {
     private readonly LLVMModuleRef _module;
     private readonly LLVMBuilderRef _builder;
-    private readonly LLVMContextRef Context;
-    private readonly Dictionary<string, LLVMValueRef> NamedValues = new();
     private readonly TypeVisitor _typeVisitor = new();
 
     public CodeGenerator()
@@ -139,5 +137,10 @@ public sealed class CodeGenerator : IAstNodeVisitor
     public void SaveToFile(ReadOnlySpan<char> testAsm)
     {
         _module.PrintToFile(testAsm);
+    }
+
+    public void VisitIfStatementNode(IfStatementNode node)
+    {
+        throw new NotImplementedException();
     }
 }

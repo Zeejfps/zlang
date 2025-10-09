@@ -89,4 +89,9 @@ public sealed class ExpressionVisitor : IAstNodeVisitor
     {
         throw new NotImplementedException();
     }
+
+    public void VisitIfStatementNode(IfStatementNode node)
+    {
+        throw new NotImplementedException();
+    }
 }
