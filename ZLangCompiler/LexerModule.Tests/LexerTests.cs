@@ -219,6 +219,8 @@ public class LexerTests
     [TestCase("union", TokenKind.KeywordUnion)]
     [TestCase("operator", TokenKind.KeywordOperator)]
     [TestCase("return", TokenKind.KeywordReturn)]
+    [TestCase("if", TokenKind.KeywordIf)]
+    [TestCase("else", TokenKind.KeywordElse)]
     public void TestKeywordTokenization(string input, TokenKind expectedKind)
     {
         var tokens = Lexer.Tokenize(input);
