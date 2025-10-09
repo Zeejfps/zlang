@@ -210,4 +210,23 @@ public class Tests
 
         Assert.Pass();
     }
+    
+    [TestCase("module", TokenKind.KeywordModule)]
+    [TestCase("struct", TokenKind.KeywordStruct)]
+    [TestCase("var", TokenKind.KeywordVar)]
+    [TestCase("func", TokenKind.KeywordFunc)]
+    [TestCase("defer", TokenKind.KeywordDefer)]
+    [TestCase("union", TokenKind.KeywordUnion)]
+    [TestCase("operator", TokenKind.KeywordOperator)]
+    [TestCase("return", TokenKind.KeywordReturn)]
+    public void TestKeywordTokenization(string input, TokenKind expectedKind)
+    {
+        var tokens = Lexer.Tokenize(input);
+
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(expectedKind, input, 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, input.Length + 1)
+        }));
+    }
 }
