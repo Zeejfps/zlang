@@ -57,6 +57,26 @@ var v2: Vec2<u8> = {
     c1 = 2,
     c2 = 3
 }
+s
+var count = 10;
+while (count > 0) {
+    count--;
+}
+
+for (var i = 0; i < 10; i++) {
+
+}
+
+var num = 3;
+if (num == 3) {
+    
+}
+else if (num == 4) {
+
+}
+else {
+    
+}
 
 v1 += v2;
 var v3 = v1 + v2;

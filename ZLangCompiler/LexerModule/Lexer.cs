@@ -51,7 +51,7 @@ public sealed class Lexer : IDisposable
         {"return",  TokenKind.KeywordReturn},
         {"if",  TokenKind.KeywordIf},
         {"else",  TokenKind.KeywordElse},
-        {"for",  TokenKind.KeywordElse},
+        {"for",  TokenKind.KeywordFor},
         {"while",  TokenKind.KeywordWhile},
     };
     
