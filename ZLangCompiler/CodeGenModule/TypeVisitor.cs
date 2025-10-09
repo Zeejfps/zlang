@@ -68,7 +68,7 @@ internal sealed class TypeVisitor : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
-    public void VisitStructImportNode(StructImportNode node)
+    public void VisitStructImportStatementNode(StructImportStatementNode node)
     {
         throw new NotImplementedException();
     }

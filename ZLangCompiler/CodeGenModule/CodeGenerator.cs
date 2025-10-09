@@ -106,7 +106,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
-    public void VisitStructImportNode(StructImportNode node)
+    public void VisitStructImportStatementNode(StructImportStatementNode node)
     {
         throw new NotImplementedException();
     }

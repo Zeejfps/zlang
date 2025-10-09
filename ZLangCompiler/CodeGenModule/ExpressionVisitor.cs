@@ -70,7 +70,7 @@ public sealed class ExpressionVisitor : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
-    public void VisitStructImportNode(StructImportNode node)
+    public void VisitStructImportStatementNode(StructImportStatementNode node)
     {
         throw new NotImplementedException();
     }

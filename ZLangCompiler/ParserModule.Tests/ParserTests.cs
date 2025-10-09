@@ -240,7 +240,7 @@ public class ParserTests
         var result = printer.ToString();
         Console.WriteLine("Output: " + result);
         
-        astNode.AssertIsType<StructImportNode>(out var structImportNode);
+        astNode.AssertIsType<StructImportStatementNode>(out var structImportNode);
         Assert.That(structImportNode.AliasName, Is.EqualTo("MyStruct"));
         Assert.That(structImportNode.QualifiedIdentifier.Parts, 
             Is.EquivalentTo(new[] {
@@ -256,7 +256,11 @@ public class ParserTests
     {
         const string input = 
             """
-            if (x < y) {}
+            if (x < y) {
+            
+            } else {
+                
+            }
             """;
         var tokens = Lexer.Tokenize(input);
         var tokenReader = new TokenReader(tokens);
@@ -269,5 +273,8 @@ public class ParserTests
 
         ifStatementNode.Condition.AssertIsType<BinaryExpressionNode>(out var condition);
         ifStatementNode.ThenBranch.AssertIsType<BlockStatementNode>(out var thenBranch);
+        
+        Assert.That(ifStatementNode.ElseBranch, Is.Not.Null);
+        ifStatementNode.ElseBranch.AssertIsType<BlockStatementNode>(out var elseBranch);
     }
 }
