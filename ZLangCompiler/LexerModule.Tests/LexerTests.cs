@@ -233,4 +233,50 @@ public class LexerTests
             new Token(TokenKind.EOF, string.Empty, 1, input.Length + 1)
         }));
     }
+    
+    [TestCase("=", TokenKind.SymbolEquals)]
+    [TestCase(".", TokenKind.SymbolDot)]
+    [TestCase(",", TokenKind.SymbolComma)]
+    [TestCase("<", TokenKind.SymbolLessThan)]
+    [TestCase(">", TokenKind.SymbolGreaterThan)]
+    [TestCase(":", TokenKind.SymbolColon)]
+    [TestCase("(", TokenKind.SymbolLeftParen)]
+    [TestCase(")", TokenKind.SymbolRightParen)]
+    [TestCase(";", TokenKind.SymbolSemicolon)]
+    [TestCase("{", TokenKind.SymbolLeftCurlyBrace)]
+    [TestCase("}", TokenKind.SymbolRightCurlyBrace)]
+    [TestCase("[", TokenKind.SymbolLeftSquareBracket)]
+    [TestCase("]", TokenKind.SymbolRightSquareBracket)]
+    [TestCase("+", TokenKind.SymbolPlus)]
+    [TestCase("-", TokenKind.SymbolMinus)]
+    [TestCase("*", TokenKind.SymbolStar)]
+    [TestCase("/", TokenKind.SymbolForwardSlash)]
+    [TestCase("!", TokenKind.SymbolExclamation)]
+    public void TestOneCharSymbolsTokenization(string input, TokenKind expectedKind)
+    {
+        var tokens = Lexer.Tokenize(input);
+
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(expectedKind, input, 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, input.Length + 1)
+        }));
+    }
+    
+    [TestCase("->", TokenKind.SymbolReturnArrow)]
+    [TestCase("+=", TokenKind.SymbolPlusEquals)]
+    [TestCase("==", TokenKind.SymbolEqualsEquals)]
+    [TestCase("!=", TokenKind.SymbolNotEquals)]
+    [TestCase(">=", TokenKind.SymbolGreaterThanEquals)]
+    [TestCase("<=", TokenKind.SymbolLessThanEquals)]
+    public void TestTwoCharSymbolsTokenization(string input, TokenKind expectedKind)
+    {
+        var tokens = Lexer.Tokenize(input);
+
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(expectedKind, input, 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, input.Length + 1)
+        }));
+    }
 }
