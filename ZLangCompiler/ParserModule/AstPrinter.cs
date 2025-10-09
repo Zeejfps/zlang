@@ -161,6 +161,9 @@ public sealed class AstPrinter : IAstNodeVisitor
 
     public void VisitIfStatementNode(IfStatementNode node)
     {
-        throw new NotImplementedException();
+        _sb.Append("if ");
+        node.Condition.Accept(this);
+        _sb.Append(' ');
+        node.ThenBranch.Accept(this);
     }
 }

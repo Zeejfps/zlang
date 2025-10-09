@@ -199,10 +199,12 @@ public class ParserTests
     public void TestFunctionDeclarationWithReturnTypeAndArguments()
     {
         const string input = 
-@"func add(y: u32, z: u32) -> u32 { 
-    var x: u32 = 1337; 
-    return x;
-}";
+            """
+            func add(y: u32, z: u32) -> u32 { 
+                var x: u32 = 1337; 
+                return x;
+            }
+            """;
         Console.WriteLine("Input: " + input);
         
         var tokens = Lexer.Tokenize(input);
@@ -247,5 +249,25 @@ public class ParserTests
                 "ModuleStruct"
             })
         );
+    }
+    
+    [Test]
+    public void TestIfStatement()
+    {
+        const string input = 
+            """
+            if (x < y) {}
+            """;
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var ifStatementNode = Parser.ParseIfStatement(tokenReader);
+        
+        var printer = new AstPrinter();
+        ifStatementNode.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output: " + result);
+
+        ifStatementNode.Condition.AssertIsType<BinaryExpressionNode>(out var condition);
+        ifStatementNode.ThenBranch.AssertIsType<BlockStatementNode>(out var thenBranch);
     }
 }

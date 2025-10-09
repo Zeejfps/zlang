@@ -214,6 +214,11 @@ public sealed class Parser
     public static AstNode ParseStatement(TokenReader tokenReader)
     {
         var nextToken = tokenReader.Peek();
+        if (nextToken.Kind == TokenKind.SymbolLeftCurlyBrace)
+        {
+            return ParseBlockStatement(tokenReader);
+        }
+        
         if (nextToken.Kind == TokenKind.KeywordVar)
         {
             return ParseVarAssignmentStatement(tokenReader);
@@ -351,6 +356,20 @@ public sealed class Parser
         return new QualifiedIdentifierNode
         {
             Parts = parts
+        };
+    }
+
+    public static IfStatementNode ParseIfStatement(TokenReader tokenReader)
+    {
+        tokenReader.Read(TokenKind.KeywordIf);
+
+        var condition = ParseExpression(tokenReader);
+        var thenBranch = ParseStatement(tokenReader);
+        
+        return new IfStatementNode
+        {
+            Condition = condition,
+            ThenBranch = thenBranch
         };
     }
 }
