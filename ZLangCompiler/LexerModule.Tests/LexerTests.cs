@@ -221,6 +221,8 @@ public class LexerTests
     [TestCase("return", TokenKind.KeywordReturn)]
     [TestCase("if", TokenKind.KeywordIf)]
     [TestCase("else", TokenKind.KeywordElse)]
+    [TestCase("for", TokenKind.KeywordFor)]
+    [TestCase("while", TokenKind.KeywordWhile)]
     public void TestKeywordTokenization(string input, TokenKind expectedKind)
     {
         var tokens = Lexer.Tokenize(input);

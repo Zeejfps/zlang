@@ -15,6 +15,8 @@ public enum TokenKind
     KeywordReturn,
     KeywordIf,
     KeywordElse,
+    KeywordFor,
+    KeywordWhile,
     
     // One Char Symbols
     SymbolEquals, // =
