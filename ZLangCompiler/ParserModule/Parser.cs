@@ -164,7 +164,7 @@ public sealed class Parser
         throw new ParserException($"Unexpected token encountered, {token}", token);
     }
 
-    public static AstNode ParseVarAssignmentStatement(TokenReader tokenReader)
+    public static VarAssignmentStatementNode ParseVarAssignmentStatement(TokenReader tokenReader)
     {
         tokenReader.Read(TokenKind.KeywordVar);
         var identifier = tokenReader.Read(TokenKind.Identifier);
@@ -199,7 +199,7 @@ public sealed class Parser
     public static BlockStatementNode ParseBlockStatement(TokenReader tokenReader)
     {
         tokenReader.Read(TokenKind.SymbolLeftCurlyBrace);
-        var statements = new List<AstNode>();
+        var statements = new List<StatementNode>();
 
         while (tokenReader.Peek().Kind != TokenKind.SymbolRightCurlyBrace)
         {
@@ -211,7 +211,7 @@ public sealed class Parser
         return new BlockStatementNode(statements);
     }
 
-    public static AstNode ParseStatement(TokenReader tokenReader)
+    public static StatementNode ParseStatement(TokenReader tokenReader)
     {
         var nextToken = tokenReader.Peek();
         if (nextToken.Kind == TokenKind.KeywordIf)

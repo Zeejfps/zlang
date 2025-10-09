@@ -2,9 +2,9 @@
 
 public sealed class BlockStatementNode : StatementNode
 {
-    public IReadOnlyList<AstNode> Statements { get; }
+    public IReadOnlyList<StatementNode> Statements { get; }
 
-    public BlockStatementNode(List<AstNode> statements)
+    public BlockStatementNode(List<StatementNode> statements)
     {
         Statements = statements;
     }

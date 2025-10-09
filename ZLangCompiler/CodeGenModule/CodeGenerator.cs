@@ -78,7 +78,6 @@ public sealed class CodeGenerator : IAstNodeVisitor
         
         var funcTypeRef = LLVMTypeRef.CreateFunction(returnTypeRef, paramTypeRefs, false);
         var funcRef = _module.AddFunction(name, funcTypeRef);
-        Span<LLVMValueRef> paramValueRefs = stackalloc LLVMValueRef[parameters.Count];
         for (var i = 0; i < parameters.Count; i++)
         {
             var paramValueRef = funcRef.GetParam((uint)i);
