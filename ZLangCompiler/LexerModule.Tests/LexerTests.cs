@@ -3,7 +3,7 @@
 namespace LexerModule.Tests;
 
 [TestFixture]
-public class Tests
+public class LexerTests
 {
 
     [Test]
