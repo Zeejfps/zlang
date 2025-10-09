@@ -269,7 +269,7 @@ public class ParserTests
         var printer = new AstPrinter();
         ifStatementNode.Accept(printer);
         var result = printer.ToString();
-        Console.WriteLine("Output: " + result);
+        Console.WriteLine("Output:\n" + result);
 
         ifStatementNode.Condition.AssertIsType<BinaryExpressionNode>(out var condition);
         ifStatementNode.ThenBranch.AssertIsType<BlockStatementNode>(out var thenBranch);

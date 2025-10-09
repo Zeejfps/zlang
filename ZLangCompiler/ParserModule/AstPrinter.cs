@@ -165,5 +165,10 @@ public sealed class AstPrinter : IAstNodeVisitor
         node.Condition.Accept(this);
         _sb.Append(' ');
         node.ThenBranch.Accept(this);
+        if (node.ElseBranch != null)
+        {
+            _sb.Append(" else ");
+            node.ElseBranch.Accept(this);
+        }
     }
 }
