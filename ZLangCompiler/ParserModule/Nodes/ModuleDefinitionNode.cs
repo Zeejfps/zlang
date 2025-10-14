@@ -9,6 +9,6 @@ public sealed class ModuleDefinitionNode : AstNode
 
     public override void Accept(IAstNodeVisitor visitor)
     {
-        visitor.VisitModuleDefinitionNode(this);
+        visitor.VisitModuleDefinition(this);
     }
 }

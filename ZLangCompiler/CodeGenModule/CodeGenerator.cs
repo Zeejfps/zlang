@@ -129,12 +129,12 @@ public sealed class CodeGenerator : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
-    public void VisitStructDefinitionNode(StructDefinitionNode node)
+    public void VisitStructDefinition(StructDefinitionNode node)
     {
         throw new NotImplementedException();
     }
 
-    public void VisitModuleDefinitionNode(ModuleDefinitionNode node)
+    public void VisitModuleDefinition(ModuleDefinitionNode node)
     {
        
     }

@@ -1,11 +1,11 @@
 namespace ParserModule.Nodes;
 
-public sealed class StructDefinitionNode : AstNode
+public sealed class StructDefinitionNode : ModuleLevelStatementNode
 {
     public required string Name { get; init; }
     
-    public override void Accept(IAstNodeVisitor visitor)
+    public override void Accept(IModuleLevelNodeVisitor visitor)
     {
-        visitor.VisitStructDefinitionNode(this);
+        visitor.VisitStructDefinition(this);
     }
 }

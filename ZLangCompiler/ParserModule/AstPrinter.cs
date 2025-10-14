@@ -191,7 +191,7 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append(node.Parts[^1]);
     }
 
-    public void VisitStructDefinitionNode(StructDefinitionNode node)
+    public void VisitStructDefinition(StructDefinitionNode node)
     {
         _sb.Append("struct ");
         _sb.Append(node.Name);
@@ -199,7 +199,7 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append('}');
     }
 
-    public void VisitModuleDefinitionNode(ModuleDefinitionNode node)
+    public void VisitModuleDefinition(ModuleDefinitionNode node)
     {
         _sb.Append("module ");
         node.Name.Accept(this);

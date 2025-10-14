@@ -10,7 +10,6 @@ public interface IAstNodeVisitor :
     ITypeNodeVisitor
 {
     void VisitParameterNode(ParameterNode node);
-    void VisitStructDefinitionNode(StructDefinitionNode node);
-    void VisitModuleDefinitionNode(ModuleDefinitionNode node);
+    void VisitModuleDefinition(ModuleDefinitionNode node);
     void VisitProgram(ProgramDefinitionNode node);
 }

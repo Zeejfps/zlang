@@ -87,11 +87,6 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
         }
     }
 
-    public void VisitStructImportStatementNode(StructImportStatementNode node)
-    {
-        throw new NotImplementedException();
-    }
-
     public void VisitIfStatementNode(IfStatementNode node)
     {
         var expressionVisitor = new ExpressionVisitor(_scope, _builder);
