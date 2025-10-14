@@ -89,7 +89,7 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append(';');       
     }
 
-    public void VisitNamedTypeNode(NamedTypeNode node)
+    public void VisitNamedType(NamedTypeNode node)
     {
         _sb.Append(node.Name);
     }

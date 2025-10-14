@@ -62,7 +62,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
-    public void VisitNamedTypeNode(NamedTypeNode node)
+    public void VisitNamedType(NamedTypeNode node)
     {
         throw new NotImplementedException();
     }

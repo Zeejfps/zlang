@@ -224,7 +224,7 @@ public sealed class Parser
         };
     }
 
-    public static AstNode ParseTypeNode(TokenReader tokenReader)
+    public static TypeNode ParseTypeNode(TokenReader tokenReader)
     {
         var identifier = tokenReader.Read(TokenKind.Identifier);
         return new NamedTypeNode
@@ -299,7 +299,7 @@ public sealed class Parser
         }
         tokenReader.Read(TokenKind.SymbolRightParen);
 
-        AstNode? returnType = null;
+        TypeNode? returnType = null;
         if (tokenReader.Peek().Kind == TokenKind.SymbolReturnArrow)
         {
             tokenReader.Read();

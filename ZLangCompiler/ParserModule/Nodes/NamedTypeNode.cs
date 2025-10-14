@@ -1,11 +1,11 @@
 namespace ParserModule.Nodes;
 
-public sealed class NamedTypeNode : AstNode
+public sealed class NamedTypeNode : TypeNode
 {
     public required string Name { get; init; }
     
-    public override void Accept(IAstNodeVisitor visitor)
+    public override void Accept(ITypeNodeVisitor visitor)
     {
-        visitor.VisitNamedTypeNode(this);
+        visitor.VisitNamedType(this);
     }
 }
