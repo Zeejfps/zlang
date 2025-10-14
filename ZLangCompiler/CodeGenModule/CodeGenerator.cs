@@ -6,6 +6,7 @@ namespace CodeGenModule;
 
 public sealed class CodeGenerator : IAstNodeVisitor
 {
+    private readonly LLVMContextRef _context = LLVMContextRef.Global;
     private readonly LLVMModuleRef _module;
     private readonly LLVMBuilderRef _builder;
     private readonly TypeVisitor _typeVisitor = new();
@@ -93,7 +94,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
         _builder.PositionAtEnd(blockRef);
         
         var body = node.Body;
-        var statementVisitor = new StatementVisitor(_builder, scope);
+        var statementVisitor = new StatementVisitor(_context, _builder, funcRef, scope);
         body.Accept(statementVisitor);
     }
 

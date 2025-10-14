@@ -44,6 +44,22 @@ public sealed class ExpressionVisitor : IExpressionNodeVisitor
         {
             Result = _builder.BuildSub(left, right);
         }
+        else if (node.Op.Kind == TokenKind.SymbolLessThan)
+        {
+            Result = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, left, right);
+        }
+        else if (node.Op.Kind == TokenKind.SymbolLessThanEquals)
+        {
+            Result = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLE, left, right);
+        }
+        else if (node.Op.Kind == TokenKind.SymbolGreaterThan)
+        {
+            Result = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, left, right);
+        }
+        else if (node.Op.Kind == TokenKind.SymbolGreaterThanEquals)
+        {
+            Result = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, left, right);
+        }
         else
         {
             throw new Exception("Unknown binary operator");       

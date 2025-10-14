@@ -372,7 +372,7 @@ public sealed class Parser
 
         var condition = ParseExpression(tokenReader);
         var thenBranch = ParseStatement(tokenReader);
-        AstNode? elseBranch = null;
+        StatementNode? elseBranch = null;
         if (tokenReader.Peek().Kind == TokenKind.KeywordElse)
         {
             tokenReader.Read(); 
