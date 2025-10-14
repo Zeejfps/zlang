@@ -1,11 +1,10 @@
-﻿using LexerModule;
-using LLVMSharp.Interop;
+﻿using LLVMSharp.Interop;
 using ParserModule;
 using ParserModule.Nodes;
 
 namespace CodeGenModule;
 
-internal sealed class StatementVisitor : IAstNodeVisitor
+internal sealed class StatementVisitor : IStatementNodeVisitor
 {
     private readonly LLVMBuilderRef _builder;
     private readonly Dictionary<string, LLVMValueRef> _scope;
@@ -15,33 +14,6 @@ internal sealed class StatementVisitor : IAstNodeVisitor
         _builder = builder;
         _scope = scope;
     }
-    
-    public void VisitLiteralInteger(LiteralIntegerExpressionNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitLiteralBool(LiteralBoolExpressionNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitBinary(BinaryExpressionNode node)
-    {
-        var expressionVisitor = new ExpressionVisitor(_scope, _builder);
-        node.Accept(expressionVisitor);
-        _builder.BuildRet(expressionVisitor.Result);
-    }
-
-    public void VisitUnary(UnaryExpressionNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitIdentifier(IdentifierExpressionNode node)
-    {
-        throw new NotImplementedException();
-    }
 
     public void VisitVarAssignmentStatement(VarAssignmentStatementNode node)
     {
@@ -49,11 +21,6 @@ internal sealed class StatementVisitor : IAstNodeVisitor
     }
 
     public void VisitForStatement(ForStatemetNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitNamedTypeNode(NamedTypeNode node)
     {
         throw new NotImplementedException();
     }
@@ -68,12 +35,7 @@ internal sealed class StatementVisitor : IAstNodeVisitor
         //     statement.Accept(this);
         // }
     }
-
-    public void VisitFunctionDeclarationNode(FunctionDefinitionNode node)
-    {
-        throw new NotImplementedException();
-    }
-
+    
     public void VisitReturnStatementNode(ReturnStatementNode node)
     {
         if (node.Result == null)
@@ -82,31 +44,13 @@ internal sealed class StatementVisitor : IAstNodeVisitor
         }
         else
         {
-            node.Result.Accept(this);
+            var expressionVisitor = new ExpressionVisitor(_scope, _builder);
+            node.Result.Accept(expressionVisitor);
+            _builder.BuildRet(expressionVisitor.Result);
         }
     }
 
-    public void VisitParameterNode(ParameterNode node)
-    {
-        throw new NotImplementedException();
-    }
-
     public void VisitStructImportStatementNode(StructImportStatementNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitQualifiedIdentifierNode(QualifiedIdentifierNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitStructDefinitionNode(StructDefinitionNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitModuleDefinitionNode(ModuleDefinitionNode node)
     {
         throw new NotImplementedException();
     }
