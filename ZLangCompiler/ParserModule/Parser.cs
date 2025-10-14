@@ -188,6 +188,28 @@ public sealed class Parser
             Value = value,
         };
     }
+    
+    public static VarAssignmentStatementNode ParseVarReassignmentStatement(TokenReader tokenReader)
+    {
+        var identifier = tokenReader.Read(TokenKind.Identifier);
+        AstNode? type = null;
+        if (tokenReader.Peek().Kind == TokenKind.SymbolColon)
+        {
+            tokenReader.Read();
+            type = ParseTypeNode(tokenReader);
+        }
+
+        tokenReader.Read(TokenKind.SymbolEquals);
+        var value = ParseExpression(tokenReader);
+        tokenReader.Read(TokenKind.SymbolSemicolon);
+        
+        return new VarAssignmentStatementNode
+        {
+            Name = identifier.Lexeme,
+            Type = type,
+            Value = value,
+        };
+    }
 
     public static AstNode ParseTypeNode(TokenReader tokenReader)
     {
@@ -220,6 +242,11 @@ public sealed class Parser
         {
             return ParseIfStatement(tokenReader);
         }
+
+        if (nextToken.Kind == TokenKind.KeywordElse)
+        {
+            return ParseStatement(tokenReader);
+        }
         
         if (nextToken.Kind == TokenKind.SymbolLeftCurlyBrace)
         {
@@ -235,6 +262,12 @@ public sealed class Parser
         {
             return ParseReturnStatement(tokenReader);
         }
+
+        if (nextToken.Kind == TokenKind.Identifier)
+        {
+            return ParseVarReassignmentStatement(tokenReader);
+        }
+        
         throw new ParserException($"Unexpected token encountered, {nextToken}", nextToken);
     }
 

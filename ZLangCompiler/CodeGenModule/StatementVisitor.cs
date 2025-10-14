@@ -31,9 +31,16 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
 
     public void VisitBlockStatement(BlockStatementNode node)
     {
+        var hasTerminator = false;
         foreach (var statement in node.Statements)
         {
             statement.Accept(this);
+            hasTerminator |= statement is ReturnStatementNode;
+        }
+
+        if (!hasTerminator)
+        {
+            _builder.BuildBr(_func.LastBasicBlock);
         }
     }
     
@@ -64,8 +71,25 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
         var condition = expressionVisitor.Result;
 
         var thenBlockRef = LLVMBasicBlockRef.AppendInContext(_context, _func, "then");
-        var elseBlockRef = LLVMBasicBlockRef.AppendInContext(_context, _func, "else");
+        var mergeBlockRef = LLVMBasicBlockRef.AppendInContext(_context, _func, "ifcont");
+        var elseBlockRef = mergeBlockRef;
 
+        if (node.ElseBranch != null)
+        {
+            elseBlockRef = LLVMBasicBlockRef.AppendInContext(_context, _func, "else");
+        }
+        
         _builder.BuildCondBr(condition, thenBlockRef, elseBlockRef);
+        
+        _builder.PositionAtEnd(thenBlockRef);
+        node.ThenBranch.Accept(this);
+
+        if (node.ElseBranch != null)
+        {
+            _builder.PositionAtEnd(elseBlockRef);
+            node.ElseBranch.Accept(this);   
+        }
+
+        _builder.PositionAtEnd(mergeBlockRef);
     }
 }
