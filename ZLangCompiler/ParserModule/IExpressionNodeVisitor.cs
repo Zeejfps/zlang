@@ -4,6 +4,9 @@ namespace ParserModule;
 
 public interface IExpressionNodeVisitor
 {
-    void VisitBinaryExpression(BinaryExpressionNode node);
-    void VisitUnaryExpression(UnaryExpressionNode node);
+    void VisitBinary(BinaryExpressionNode node);
+    void VisitUnary(UnaryExpressionNode node);
+    void VisitLiteralInteger(LiteralIntegerExpressionNode node);
+    void VisitLiteralBool(LiteralBoolExpressionNode node);
+    void VisitIdentifier(IdentifierExpressionNode node);
 }

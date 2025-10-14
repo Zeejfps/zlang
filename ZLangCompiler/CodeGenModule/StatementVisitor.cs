@@ -16,17 +16,17 @@ internal sealed class StatementVisitor : IAstNodeVisitor
         _scope = scope;
     }
     
-    public void VisitLiteralIntegerNode(LiteralIntegerNode node)
+    public void VisitLiteralInteger(LiteralIntegerExpressionNode node)
     {
         throw new NotImplementedException();
     }
 
-    public void VisitLiteralBoolNode(LiteralBoolNode node)
+    public void VisitLiteralBool(LiteralBoolExpressionNode node)
     {
         throw new NotImplementedException();
     }
 
-    public void VisitBinaryExpression(BinaryExpressionNode node)
+    public void VisitBinary(BinaryExpressionNode node)
     {
         var expressionVisitor = new ExpressionVisitor(_scope);
         
@@ -44,12 +44,12 @@ internal sealed class StatementVisitor : IAstNodeVisitor
         }
     }
 
-    public void VisitUnaryExpression(UnaryExpressionNode node)
+    public void VisitUnary(UnaryExpressionNode node)
     {
         throw new NotImplementedException();
     }
 
-    public void VisitIdentifierNode(IdentifierNode node)
+    public void VisitIdentifier(IdentifierExpressionNode node)
     {
         throw new NotImplementedException();
     }

@@ -31,7 +31,7 @@ public sealed class Parser
         };
     }
 
-    public static AstNode ParseExpression(TokenReader tokenReader)
+    public static ExpressionNode ParseExpression(TokenReader tokenReader)
     {
         //Console.WriteLine("Parsing expression");
         var left = ParseComparison(tokenReader);
@@ -49,7 +49,7 @@ public sealed class Parser
         return left;
     }
 
-    public static AstNode ParseComparison(TokenReader tokenReader)
+    public static ExpressionNode ParseComparison(TokenReader tokenReader)
     {
         //Console.WriteLine("Parsing comparison");
         var left = ParseTerm(tokenReader);
@@ -70,7 +70,7 @@ public sealed class Parser
         return left;
     }
 
-    public static AstNode ParseTerm(TokenReader tokenReader)
+    public static ExpressionNode ParseTerm(TokenReader tokenReader)
     {
         //Console.WriteLine("Parsing term");
         var left = ParseFactor(tokenReader);
@@ -90,7 +90,7 @@ public sealed class Parser
         return left;
     }
 
-    public static AstNode ParseFactor(TokenReader tokenReader)
+    public static ExpressionNode ParseFactor(TokenReader tokenReader)
     {
         //Console.WriteLine("Parsing factor");
         var left = ParseUnary(tokenReader);
@@ -108,7 +108,7 @@ public sealed class Parser
         return left;
     }
 
-    public static AstNode ParseUnary(TokenReader tokenReader)
+    public static ExpressionNode ParseUnary(TokenReader tokenReader)
     {
         //Console.WriteLine("Parsing unary left");
         var nextToken = tokenReader.Peek();
@@ -125,26 +125,26 @@ public sealed class Parser
         return ParsePrimaryExpression(tokenReader);
     }
 
-    public static AstNode ParsePrimaryExpression(TokenReader tokenReader)
+    public static ExpressionNode ParsePrimaryExpression(TokenReader tokenReader)
     {
         var token = tokenReader.Peek();
         if (token.Kind == TokenKind.LiteralInteger)
         {
             //Console.WriteLine($"Parsed integer: {token.Lexeme}");  
             tokenReader.Read();
-            return new LiteralIntegerNode(token);
+            return new LiteralIntegerExpressionNode(token);
         }
 
         if (token.Kind == TokenKind.LiteralBool)
         {
             tokenReader.Read();
-            return new LiteralBoolNode(token);
+            return new LiteralBoolExpressionNode(token);
         }
 
         if (token.Kind == TokenKind.Identifier)
         {
             tokenReader.Read();
-            return new IdentifierNode(token);
+            return new IdentifierExpressionNode(token);
         }
 
         if (token.Kind == TokenKind.SymbolLeftParen)

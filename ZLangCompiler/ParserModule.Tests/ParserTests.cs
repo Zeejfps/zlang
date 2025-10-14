@@ -121,7 +121,7 @@ public class ParserTests
         varAssign.Type!.AssertIsType<NamedTypeNode>(out var namedType);
         Assert.That(namedType.Name, Is.EqualTo("u32"));
         
-        varAssign.Value.AssertIsType<LiteralIntegerNode>(out var literal);
+        varAssign.Value.AssertIsType<LiteralIntegerExpressionNode>(out var literal);
         Assert.That(literal.Value, Is.EqualTo(1337));
     }
     

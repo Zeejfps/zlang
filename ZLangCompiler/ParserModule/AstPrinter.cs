@@ -7,17 +7,17 @@ public sealed class AstPrinter : IAstNodeVisitor
 {
     private readonly StringBuilder _sb = new();
     
-    public void VisitLiteralIntegerNode(LiteralIntegerNode integerNumberExpression)
+    public void VisitLiteralInteger(LiteralIntegerExpressionNode integerNumberExpression)
     {
         _sb.Append(integerNumberExpression.Token.Lexeme);
     }
 
-    public void VisitLiteralBoolNode(LiteralBoolNode literalBoolExpressionNode)
+    public void VisitLiteralBool(LiteralBoolExpressionNode literalBoolExpressionNode)
     {
         _sb.Append(literalBoolExpressionNode.Token.Lexeme);       
     }
 
-    public void VisitBinaryExpression(BinaryExpressionNode binaryExpressionNode)
+    public void VisitBinary(BinaryExpressionNode binaryExpressionNode)
     {
         _sb.Append('(');
         binaryExpressionNode.Left.Accept(this);
@@ -26,13 +26,13 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append(')');       
     }
 
-    public void VisitUnaryExpression(UnaryExpressionNode unaryExpressionNode)
+    public void VisitUnary(UnaryExpressionNode unaryExpressionNode)
     {
         _sb.Append(unaryExpressionNode.Operator.Lexeme);
         unaryExpressionNode.Right.Accept(this);       
     }
 
-    public void VisitIdentifierNode(IdentifierNode node)
+    public void VisitIdentifier(IdentifierExpressionNode node)
     {
         _sb.Append(node.Token.Lexeme);
     }

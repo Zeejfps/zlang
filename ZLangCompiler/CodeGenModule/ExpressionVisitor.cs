@@ -15,27 +15,27 @@ public sealed class ExpressionVisitor : IAstNodeVisitor
 
     public LLVMValueRef Value { get; private set; }
     
-    public void VisitLiteralIntegerNode(LiteralIntegerNode node)
+    public void VisitLiteralInteger(LiteralIntegerExpressionNode node)
     {
         Value = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, (ulong)node.Value);
     }
 
-    public void VisitLiteralBoolNode(LiteralBoolNode node)
+    public void VisitLiteralBool(LiteralBoolExpressionNode node)
     {
         throw new NotImplementedException();
     }
 
-    public void VisitBinaryExpression(BinaryExpressionNode node)
+    public void VisitBinary(BinaryExpressionNode node)
     {
         throw new NotImplementedException();
     }
 
-    public void VisitUnaryExpression(UnaryExpressionNode node)
+    public void VisitUnary(UnaryExpressionNode node)
     {
         throw new NotImplementedException();
     }
 
-    public void VisitIdentifierNode(IdentifierNode node)
+    public void VisitIdentifier(IdentifierExpressionNode node)
     {
         Value = _scope[node.Name];
     }

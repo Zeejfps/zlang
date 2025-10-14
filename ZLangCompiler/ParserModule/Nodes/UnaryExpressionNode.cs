@@ -2,7 +2,7 @@
 
 namespace ParserModule.Nodes;
 
-public sealed class UnaryExpressionNode : AstNode
+public sealed class UnaryExpressionNode : ExpressionNode
 {
     public Token Operator { get; }
     public AstNode Right { get; }
@@ -13,8 +13,8 @@ public sealed class UnaryExpressionNode : AstNode
         Right = right;
     }
 
-    public override void Accept(IAstNodeVisitor visitor)
+    public override void Accept(IExpressionNodeVisitor visitor)
     {
-        visitor.VisitUnaryExpression(this);
+        visitor.VisitUnary(this);
     }
 }
