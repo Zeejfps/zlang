@@ -121,7 +121,7 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append('}');
     }
 
-    public void VisitFunctionDeclarationNode(FunctionDefinitionNode node)
+    public void VisitFunctionDefinition(FunctionDefinitionNode node)
     {
         _sb.Append("func ");
         _sb.Append(node.Name);

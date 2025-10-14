@@ -7,8 +7,8 @@ public sealed class FunctionDefinitionNode : ModuleLevelStatementNode
     public required TypeNode? ReturnType { get; init; }
     public required List<ParameterNode> Parameters { get; init; }
     
-    public override void Accept(IAstNodeVisitor visitor)
+    public override void Accept(IModuleLevelNodeVisitor visitor)
     {
-        visitor.VisitFunctionDeclarationNode(this);
+        visitor.VisitFunctionDefinition(this);
     }
 }

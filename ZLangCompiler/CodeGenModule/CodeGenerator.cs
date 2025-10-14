@@ -77,7 +77,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
-    public void VisitFunctionDeclarationNode(FunctionDefinitionNode node)
+    public void VisitFunctionDefinition(FunctionDefinitionNode node)
     {
         var name = node.Name;
         var returnType = node.ReturnType;
