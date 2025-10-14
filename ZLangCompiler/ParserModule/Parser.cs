@@ -223,6 +223,21 @@ public sealed class Parser
             Value = value,
         };
     }
+    
+    public static WhileStatementNode ParseWhileStatement(TokenReader tokenReader)
+    {
+        tokenReader.Read(TokenKind.KeywordWhile);
+        tokenReader.Read(TokenKind.SymbolLeftParen);
+        var condition = ParseExpression(tokenReader);
+        tokenReader.Read(TokenKind.SymbolRightParen);
+        var body = ParseStatement(tokenReader);
+        
+        return new WhileStatementNode
+        {
+            Condition = condition,
+            Body = body,
+        };
+    }
 
     public static TypeNode ParseTypeNode(TokenReader tokenReader)
     {

@@ -11,4 +11,5 @@ public interface IStatementNodeVisitor
     void VisitVarDefinition(VarDefinitionStatementNode node);
     void VisitVarDeclaration(VarDeclarationStatementNode node);
     void VisitVarAssignment(VarAssignmentStatementNode node);
+    void VisitWhileStatement(WhileStatementNode node);
 }

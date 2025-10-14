@@ -89,6 +89,14 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append(';');       
     }
 
+    public void VisitWhileStatement(WhileStatementNode node)
+    {
+        _sb.Append("while ( ");
+        node.Condition.Accept(this);
+        _sb.Append(" ) ");
+        node.Body.Accept(this);
+    }
+
     public void VisitNamedType(NamedTypeNode node)
     {
         _sb.Append(node.Name);

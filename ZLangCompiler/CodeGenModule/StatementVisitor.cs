@@ -48,6 +48,11 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
         _builder.BuildStore(expressionVisitor.Result, _scope[node.Name]);
     }
 
+    public void VisitWhileStatement(WhileStatementNode node)
+    {
+        throw new NotImplementedException();
+    }
+
     public void VisitBlockStatement(BlockStatementNode node)
     {
         var hasTerminator = false;

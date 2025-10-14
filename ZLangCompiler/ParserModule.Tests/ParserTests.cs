@@ -373,4 +373,27 @@ public class ParserTests
         varAssignment.Value.AssertIsType<LiteralIntegerExpressionNode>(out var literal);
         Assert.That(literal.Value, Is.EqualTo(52));
     }
+    
+    
+    [Test]
+    public void TestWhileLoop()
+    {
+        const string input = 
+            """
+            while (true) {
+                var i = 1;
+            }
+            """;
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var whileNode = Parser.ParseWhileStatement(tokenReader);
+        
+        var printer = new AstPrinter();
+        whileNode.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output:\n" + result);
+        
+        Assert.That(whileNode.Condition, Is.Not.Null);
+        Assert.That(whileNode.Body, Is.Not.Null);
+    }
 }
