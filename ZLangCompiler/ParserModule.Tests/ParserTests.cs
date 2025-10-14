@@ -229,19 +229,18 @@ public class ParserTests
     [Test]
     public void TestStructImport()
     {
-        const string input = "struct MyStruct = std.some.ModuleStruct";
+        const string input = "struct MyStruct = std.some.ModuleStruct;";
         Console.WriteLine("Input: " + input);
         
         var tokens = Lexer.Tokenize(input);
         using var tokenReader = new TokenReader(tokens);
-        var astNode = Parser.ParseStruct(tokenReader);
+        var structImportNode = Parser.ParseStructImport(tokenReader);
         
         var printer = new AstPrinter();
-        astNode.Accept(printer);
+        structImportNode.Accept(printer);
         var result = printer.ToString();
         Console.WriteLine("Output: " + result);
         
-        astNode.AssertIsType<StructImportStatementNode>(out var structImportNode);
         Assert.That(structImportNode.AliasName, Is.EqualTo("MyStruct"));
         Assert.That(structImportNode.QualifiedIdentifier.Parts, 
             Is.EquivalentTo(new[] {
@@ -250,6 +249,24 @@ public class ParserTests
                 "ModuleStruct"
             })
         );
+    }
+    
+    [Test]
+    public void TestStructDefinition()
+    {
+        const string input = "struct MyStruct { }";
+        Console.WriteLine("Input: " + input);
+        
+        var tokens = Lexer.Tokenize(input);
+        using var tokenReader = new TokenReader(tokens);
+        var structDefinition = Parser.ParseStructDefinition(tokenReader);
+        
+        var printer = new AstPrinter();
+        structDefinition.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output: " + result);
+        
+        Assert.That(structDefinition.Name, Is.EqualTo("MyStruct"));
     }
     
     [Test]
