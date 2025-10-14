@@ -2,6 +2,7 @@
 using ParserModule;
 using ParserModule.Nodes;
 using ParserModule.Nodes.Expressions;
+using ParserModule.Visitors;
 
 namespace CodeGenModule;
 

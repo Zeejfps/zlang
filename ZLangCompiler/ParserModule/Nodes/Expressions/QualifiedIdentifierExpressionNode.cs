@@ -1,3 +1,5 @@
+using ParserModule.Visitors;
+
 namespace ParserModule.Nodes.Expressions;
 
 public sealed class QualifiedIdentifierExpressionNode : ExpressionNode

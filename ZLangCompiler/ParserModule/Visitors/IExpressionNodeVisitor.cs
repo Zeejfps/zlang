@@ -1,7 +1,6 @@
-﻿using ParserModule.Nodes;
-using ParserModule.Nodes.Expressions;
+﻿using ParserModule.Nodes.Expressions;
 
-namespace ParserModule;
+namespace ParserModule.Visitors;
 
 public interface IExpressionNodeVisitor
 {

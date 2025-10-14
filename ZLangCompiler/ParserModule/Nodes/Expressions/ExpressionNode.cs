@@ -1,4 +1,6 @@
-﻿namespace ParserModule.Nodes.Expressions;
+﻿using ParserModule.Visitors;
+
+namespace ParserModule.Nodes.Expressions;
 
 public abstract class ExpressionNode : AstNode
 {

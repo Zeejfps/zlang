@@ -1,4 +1,6 @@
-﻿namespace ParserModule.Nodes;
+﻿using ParserModule.Visitors;
+
+namespace ParserModule.Nodes;
 
 public abstract class TypeNode : AstNode
 {

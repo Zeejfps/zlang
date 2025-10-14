@@ -1,6 +1,6 @@
 ﻿using ParserModule.Nodes;
 
-namespace ParserModule;
+namespace ParserModule.Visitors;
 
 public interface IModuleLevelNodeVisitor
 {

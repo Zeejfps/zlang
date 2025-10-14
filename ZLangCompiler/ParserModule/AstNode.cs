@@ -1,4 +1,6 @@
-﻿namespace ParserModule;
+﻿using ParserModule.Visitors;
+
+namespace ParserModule;
 
 public abstract class AstNode
 {

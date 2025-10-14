@@ -1,3 +1,5 @@
+using ParserModule.Visitors;
+
 namespace ParserModule.Nodes;
 
 public sealed class StructDefinitionNode : ModuleLevelStatementNode
