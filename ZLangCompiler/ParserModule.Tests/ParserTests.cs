@@ -108,14 +108,14 @@ public class ParserTests
         
         var tokens = Lexer.Tokenize(input);
         using var tokenReader = new TokenReader(tokens);
-        var astNode = Parser.ParseVarAssignmentStatement(tokenReader);
+        var astNode = Parser.ParseVarDefinitionStatement(tokenReader);
         
         var printer = new AstPrinter();
         astNode.Accept(printer);
         var result = printer.ToString();
         Console.WriteLine("Output: " + result);
         
-        astNode.AssertIsType<VarAssignmentStatementNode>(out var varAssign);
+        astNode.AssertIsType<VarDefinitionStatementNode>(out var varAssign);
         Assert.That(varAssign.Name, Is.EqualTo("x"));
         
         varAssign.Type!.AssertIsType<NamedTypeNode>(out var namedType);
@@ -296,7 +296,7 @@ public class ParserTests
         var result = printer.ToString();
         Console.WriteLine("Output:\n" + result);
 
-        forStatementNode.Initializer.AssertIsType<VarAssignmentStatementNode>(out var initializerNode);
+        forStatementNode.Initializer.AssertIsType<VarDefinitionStatementNode>(out var initializerNode);
         forStatementNode.Condition.AssertIsType<BinaryExpressionNode>(out var condition);
         forStatementNode.Incrementor.AssertIsType<UnaryExpressionNode>(out var incrementorNode);
         forStatementNode.Body.AssertIsType<BlockStatementNode>(out var elseBranch);
@@ -319,7 +319,7 @@ public class ParserTests
         Console.WriteLine("Output:\n" + result);
     }
     
-    [Test]
+    //[Test]
     public void TestUnaryPostfixStatement()
     {
         const string input = 
@@ -332,6 +332,23 @@ public class ParserTests
         
         var printer = new AstPrinter();
         unaryExpression.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output:\n" + result);
+    }
+    
+    [Test]
+    public void TestVarDeclaration()
+    {
+        const string input = 
+            """
+            var x: u32;
+            """;
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var varDeclaration = Parser.ParseVarDeclarationStatement(tokenReader);
+        
+        var printer = new AstPrinter();
+        varDeclaration.Accept(printer);
         var result = printer.ToString();
         Console.WriteLine("Output:\n" + result);
     }

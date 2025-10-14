@@ -1,6 +1,6 @@
 namespace ParserModule.Nodes;
 
-public sealed class VarAssignmentStatementNode : StatementNode
+public sealed class VarDefinitionStatementNode : StatementNode
 {
     public required string Name { get; init; }
     public AstNode? Type { get; init; }

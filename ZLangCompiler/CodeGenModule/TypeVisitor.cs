@@ -33,12 +33,17 @@ internal sealed class TypeVisitor : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
-    public void VisitVarAssignmentStatement(VarAssignmentStatementNode node)
+    public void VisitVarAssignmentStatement(VarDefinitionStatementNode node)
     {
         throw new NotImplementedException();
     }
 
     public void VisitForStatement(ForStatemetNode node)
+    {
+        throw new NotImplementedException();
+    }
+
+    public void VisitVarDeclaration(VarDeclarationStatementNode node)
     {
         throw new NotImplementedException();
     }
