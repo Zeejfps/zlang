@@ -3,7 +3,7 @@ using ParserModule;
 
 namespace CodeGenModule.Tests;
 
-public class Tests
+public class CodeGenTests
 {
     [SetUp]
     public void Setup()
