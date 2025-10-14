@@ -94,10 +94,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
         
         var body = node.Body;
         var statementVisitor = new StatementVisitor(_builder, scope);
-        foreach (var statement in body.Statements)
-        {
-            statement.Accept(statementVisitor);
-        }
+        body.Accept(statementVisitor);
     }
 
     public void VisitReturnStatementNode(ReturnStatementNode node)

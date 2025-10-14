@@ -27,13 +27,10 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
 
     public void VisitBlockStatement(BlockStatementNode node)
     {
-        // Console.WriteLine("VisitBlockStatement");
-        // var block = _funcRef.AppendBasicBlock("entry");
-        // _builder.PositionAtEnd(block);
-        // foreach (var statement in node.Statements)
-        // {
-        //     statement.Accept(this);
-        // }
+        foreach (var statement in node.Statements)
+        {
+            statement.Accept(this);
+        }
     }
     
     public void VisitReturnStatementNode(ReturnStatementNode node)
