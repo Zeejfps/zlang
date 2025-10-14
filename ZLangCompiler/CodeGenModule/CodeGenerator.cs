@@ -46,6 +46,11 @@ public sealed class CodeGenerator : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
+    public void VisitForStatement(ForStatemetNode node)
+    {
+        throw new NotImplementedException();
+    }
+
     public void VisitNamedTypeNode(NamedTypeNode node)
     {
         throw new NotImplementedException();

@@ -45,6 +45,11 @@ public sealed class ExpressionVisitor : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
+    public void VisitForStatement(ForStatemetNode node)
+    {
+        throw new NotImplementedException();
+    }
+
     public void VisitNamedTypeNode(NamedTypeNode node)
     {
         throw new NotImplementedException();

@@ -59,6 +59,11 @@ internal sealed class StatementVisitor : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
+    public void VisitForStatement(ForStatemetNode node)
+    {
+        throw new NotImplementedException();
+    }
+
     public void VisitNamedTypeNode(NamedTypeNode node)
     {
         throw new NotImplementedException();

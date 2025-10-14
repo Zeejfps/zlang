@@ -2,12 +2,10 @@
 
 namespace ParserModule;
 
-public interface IAstNodeVisitor : IStatementNodeVisitor
+public interface IAstNodeVisitor : IStatementNodeVisitor, IExpressionNodeVisitor
 {
     void VisitLiteralIntegerNode(LiteralIntegerNode node);
     void VisitLiteralBoolNode(LiteralBoolNode node);
-    void VisitBinaryExpression(BinaryExpressionNode node);
-    void VisitUnaryExpression(UnaryExpressionNode node);
     void VisitIdentifierNode(IdentifierNode node);
     void VisitNamedTypeNode(NamedTypeNode node);
     void VisitFunctionDeclarationNode(FunctionDefinitionNode node);

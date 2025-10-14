@@ -8,4 +8,5 @@ public interface IStatementNodeVisitor
     void VisitBlockStatement(BlockStatementNode node);
     void VisitReturnStatementNode(ReturnStatementNode node);
     void VisitVarAssignmentStatement(VarAssignmentStatementNode node);
+    void VisitForStatement(ForStatemetNode node);
 }

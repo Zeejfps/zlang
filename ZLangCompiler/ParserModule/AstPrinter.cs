@@ -54,6 +54,14 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append(';');       
     }
 
+    public void VisitForStatement(ForStatemetNode node)
+    {
+        _sb.Append("for (");
+        
+        _sb.Append(")");
+        node.Body.Accept(this);       
+    }
+
     public void VisitNamedTypeNode(NamedTypeNode node)
     {
         _sb.Append(node.Name);

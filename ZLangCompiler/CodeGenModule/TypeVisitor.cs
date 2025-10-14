@@ -38,6 +38,11 @@ internal sealed class TypeVisitor : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
+    public void VisitForStatement(ForStatemetNode node)
+    {
+        throw new NotImplementedException();
+    }
+
     public void VisitNamedTypeNode(NamedTypeNode node)
     {
         Type = node.Name switch
