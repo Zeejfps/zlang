@@ -6,7 +6,14 @@ module fmt = std.fmt;
 module string = std.string;
 struct HeapAllocator = std.mem.heap.HeapAllocator;
 
-struct Array<T> = array.Array<T>;
+use std.array as array;
+use std.list as list;
+use std.io as io;
+use std.stdout as stdout;
+use std.fmt as fmt;
+use std.string as string;
+use std.mem.heap.HeapAllocator as HeapAllocator;
+use array.Array<T> as Array<T>
 
 var stack_array: u8[10];
 stack_array[0] = 1;

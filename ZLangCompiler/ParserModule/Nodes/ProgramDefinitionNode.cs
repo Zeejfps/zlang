@@ -8,8 +8,6 @@ public sealed class ProgramDefinitionNode : AstNode
     {
         visitor.VisitProgram(this);
     }
-
-    public required List<AstNode> Functions { get; init; }
     
-    public List<TopLevelStatementNode> Statements { get; init; }
+    public required List<TopLevelStatementNode> Statements { get; init; }
 }

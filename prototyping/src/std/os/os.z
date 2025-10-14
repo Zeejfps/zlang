@@ -14,3 +14,14 @@ interface std.os {
     func write();
     func read(buffer: u8*, size: u32);
 }
+
+// If we change to new keyword
+#if WINDOWS
+use std.os.windows as std.os;
+#elseif OSX
+use std.os.osx as std.os;
+#elseif LINUX
+use std.os.linux as std.os;
+#endif
+
+module std.os;

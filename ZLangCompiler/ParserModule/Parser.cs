@@ -6,11 +6,6 @@ namespace ParserModule;
 
 public sealed class Parser
 {
-    public static HashSet<TokenKind> Operators =
-    [
-        TokenKind.SymbolPlus
-    ];
-
     public static AstNode Parse(IEnumerable<Token> tokens)
     {
         using var tokenReader = new TokenReader(tokens);
@@ -19,23 +14,31 @@ public sealed class Parser
     
     public static ProgramDefinitionNode ParseProgram(TokenReader tokenReader)
     {
-        var functions = new List<AstNode>();
+        var statements = new List<TopLevelStatementNode>();
         while (tokenReader.Peek().Kind != TokenKind.EOF)
         {
-            if (tokenReader.Peek().Kind == TokenKind.KeywordFunc)
-            {
-                var functionDeclaration = ParseFunctionDefinition(tokenReader);
-                functions.Add(functionDeclaration);
-            }
+            var statement = ParseTopLevelStatement(tokenReader);
+            statements.Add(statement);
         }
         tokenReader.Read(TokenKind.EOF);
 
         return new ProgramDefinitionNode
         {
-            Functions = functions,       
+            Statements = statements,       
         };
     }
-    
+
+    private static TopLevelStatementNode ParseTopLevelStatement(TokenReader tokenReader)
+    {
+        var nextToken = tokenReader.Peek();
+        if (nextToken.Kind == TokenKind.KeywordModule)
+        {
+            return ParseModuleDefinition(tokenReader);
+        }
+        
+        throw new Exception($"Unexpected Token {nextToken}. Expected a top level statement");   
+    }
+
     public static ModuleDefinitionNode ParseModuleDefinition(TokenReader tokenReader)
     {
         tokenReader.Read(TokenKind.KeywordModule);
