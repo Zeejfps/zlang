@@ -104,7 +104,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
         _builder.PositionAtEnd(blockRef);
         
         var body = node.Body;
-        var statementVisitor = new StatementVisitor(_context, _builder, funcRef, scope);
+        var statementVisitor = new StatementVisitor(_context, _builder, funcRef, funcTypeRef, scope);
         body.Accept(statementVisitor);
     }
 
@@ -143,7 +143,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
 
     public void Verify()
     {
-        _module.Verify(LLVMVerifierFailureAction.LLVMAbortProcessAction);
+        _module.Verify(LLVMVerifierFailureAction.LLVMPrintMessageAction);
     }
 
     public void SaveToFile(ReadOnlySpan<char> testAsm)

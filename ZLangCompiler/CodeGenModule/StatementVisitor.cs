@@ -8,14 +8,16 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
 {
     private readonly LLVMContextRef _context;
     private readonly LLVMValueRef _func;
+    private readonly LLVMTypeRef _funcType;
     private readonly LLVMBuilderRef _builder;
     private readonly Dictionary<string, LLVMValueRef> _scope;
 
-    public StatementVisitor(LLVMContextRef context, LLVMBuilderRef builder, LLVMValueRef func, Dictionary<string, LLVMValueRef> scope)
+    public StatementVisitor(LLVMContextRef context, LLVMBuilderRef builder, LLVMValueRef func, LLVMTypeRef funcType, Dictionary<string, LLVMValueRef> scope)
     {
         _context = context;
         _builder = builder;
         _scope = scope;
+        _funcType = funcType;
         _func = func;
     }
 
@@ -71,7 +73,12 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
         {
             var expressionVisitor = new ExpressionVisitor(_scope, _builder);
             node.Result.Accept(expressionVisitor);
-            _builder.BuildRet(expressionVisitor.Result);
+            var resultValueRef = expressionVisitor.Result;
+            if (resultValueRef.TypeOf.Kind != _funcType.ReturnType.Kind)
+            {
+                resultValueRef = _builder.BuildLoad2(_funcType.ReturnType, resultValueRef);
+            }
+            _builder.BuildRet(resultValueRef);
         }
     }
 
