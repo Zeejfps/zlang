@@ -2,7 +2,7 @@
 
 public sealed class ReturnStatementNode : StatementNode
 {
-    public AstNode? Value { get; init; }
+    public ExpressionNode? Result { get; init; }
     
     public override void Accept(IStatementNodeVisitor visitor)
     {

@@ -1,33 +1,53 @@
-﻿using LLVMSharp.Interop;
+﻿using LexerModule;
+using LLVMSharp.Interop;
 using ParserModule;
 using ParserModule.Nodes;
 
 namespace CodeGenModule;
 
-public sealed class ExpressionVisitor : IAstNodeVisitor
+public sealed class ExpressionVisitor : IExpressionNodeVisitor
 {
     private readonly Dictionary<string, LLVMValueRef> _scope;
+    private readonly LLVMBuilderRef _builder;
 
-    public ExpressionVisitor(Dictionary<string, LLVMValueRef> scope)
+    public ExpressionVisitor(Dictionary<string, LLVMValueRef> scope, LLVMBuilderRef builder)
     {
         _scope = scope;
+        _builder = builder;
     }
 
-    public LLVMValueRef Value { get; private set; }
+    public LLVMValueRef Result { get; private set; }
     
     public void VisitLiteralInteger(LiteralIntegerExpressionNode node)
     {
-        Value = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, (ulong)node.Value);
+        Result = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, (ulong)node.Value);
     }
 
     public void VisitLiteralBool(LiteralBoolExpressionNode node)
     {
-        throw new NotImplementedException();
+        Result = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int1, (ulong)(node.Value ? 1 : 0));       
     }
 
     public void VisitBinary(BinaryExpressionNode node)
     {
-        throw new NotImplementedException();
+        node.Left.Accept(this);
+        var left = Result;
+        
+        node.Right.Accept(this);
+        var right = Result;
+        
+        if (node.Op.Kind == TokenKind.SymbolPlus)
+        {
+            Result = _builder.BuildAdd(left, right);
+        }
+        else if (node.Op.Kind == TokenKind.SymbolMinus)
+        {
+            Result = _builder.BuildSub(left, right);
+        }
+        else
+        {
+            throw new Exception("Unknown binary operator");       
+        }
     }
 
     public void VisitUnary(UnaryExpressionNode node)
@@ -37,66 +57,7 @@ public sealed class ExpressionVisitor : IAstNodeVisitor
 
     public void VisitIdentifier(IdentifierExpressionNode node)
     {
-        Value = _scope[node.Name];
+        Result = _scope[node.Name];
     }
-
-    public void VisitVarAssignmentStatement(VarAssignmentStatementNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitForStatement(ForStatemetNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitNamedTypeNode(NamedTypeNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitBlockStatement(BlockStatementNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitFunctionDeclarationNode(FunctionDefinitionNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitReturnStatementNode(ReturnStatementNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitParameterNode(ParameterNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitStructImportStatementNode(StructImportStatementNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitQualifiedIdentifierNode(QualifiedIdentifierNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitStructDefinitionNode(StructDefinitionNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitModuleDefinitionNode(ModuleDefinitionNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitIfStatementNode(IfStatementNode node)
-    {
-        throw new NotImplementedException();
-    }
+    
 }

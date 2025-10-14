@@ -113,7 +113,9 @@ public sealed class Parser
         //Console.WriteLine("Parsing unary left");
         var nextToken = tokenReader.Peek();
         if (nextToken.Kind == TokenKind.SymbolExclamation ||
-            nextToken.Kind == TokenKind.SymbolMinus)
+            nextToken.Kind == TokenKind.SymbolMinus ||
+            nextToken.Kind == TokenKind.SymbolPlusPlus || 
+            nextToken.Kind == TokenKind.SymbolMinsMinus)
         {
             var op = tokenReader.Read();
             //Console.WriteLine($"OP: {op}");
@@ -276,7 +278,7 @@ public sealed class Parser
     public static ReturnStatementNode ParseReturnStatement(TokenReader tokenReader)
     {
         tokenReader.Read(TokenKind.KeywordReturn);
-        AstNode? value = null;
+        ExpressionNode? value = null;
         if (tokenReader.Peek().Kind != TokenKind.SymbolSemicolon)
         {
             value = ParseExpression(tokenReader);
@@ -284,7 +286,7 @@ public sealed class Parser
         tokenReader.Read(TokenKind.SymbolSemicolon);       
         return new ReturnStatementNode
         {
-            Value = value,       
+            Result = value,       
         };
     }
 
@@ -382,6 +384,25 @@ public sealed class Parser
             Condition = condition,
             ThenBranch = thenBranch,
             ElseBranch = elseBranch
+        };
+    }
+
+    public static ForStatemetNode ParseForStatement(TokenReader tokenReader)
+    {
+        tokenReader.Read(TokenKind.KeywordFor);
+        tokenReader.Read(TokenKind.SymbolLeftParen);
+
+        var initializer = ParseStatement(tokenReader);
+        var condition = ParseExpression(tokenReader);
+        var incrementor = ParseExpression(tokenReader);
+        var body = ParseStatement(tokenReader);
+        
+        return new ForStatemetNode
+        {
+            Initializer = initializer,
+            Condition = condition,
+            Incrementor = incrementor,
+            Body = body,       
         };
     }
 }

@@ -112,10 +112,10 @@ public sealed class AstPrinter : IAstNodeVisitor
     public void VisitReturnStatementNode(ReturnStatementNode node)
     {
         _sb.Append("return");
-        if (node.Value != null)
+        if (node.Result != null)
         {
             _sb.Append(' ');
-            node.Value.Accept(this);
+            node.Result.Accept(this);
         }
         _sb.Append(';');       
     }

@@ -28,20 +28,9 @@ internal sealed class StatementVisitor : IAstNodeVisitor
 
     public void VisitBinary(BinaryExpressionNode node)
     {
-        var expressionVisitor = new ExpressionVisitor(_scope);
-        
-        node.Left.Accept(expressionVisitor);
-        var left = expressionVisitor.Value;
-        
-        node.Right.Accept(expressionVisitor);
-        var right = expressionVisitor.Value;
-        
-        // TODO: Move this into semantic analysis
-        if (node.Op.Kind == TokenKind.SymbolPlus)
-        {
-            var addRef = _builder.BuildAdd(left, right);
-            _builder.BuildRet(addRef);
-        }
+        var expressionVisitor = new ExpressionVisitor(_scope, _builder);
+        node.Accept(expressionVisitor);
+        _builder.BuildRet(expressionVisitor.Result);
     }
 
     public void VisitUnary(UnaryExpressionNode node)
@@ -87,13 +76,13 @@ internal sealed class StatementVisitor : IAstNodeVisitor
 
     public void VisitReturnStatementNode(ReturnStatementNode node)
     {
-        if (node.Value == null)
+        if (node.Result == null)
         {
             _builder.BuildRetVoid();
         }
         else
         {
-            node.Value.Accept(this);
+            node.Result.Accept(this);
         }
     }
 

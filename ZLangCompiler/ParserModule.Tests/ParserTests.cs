@@ -192,7 +192,7 @@ public class ParserTests
         Assert.That(functionDeclarationNode.Body.Statements.Count, Is.EqualTo(2));
         
         functionDeclarationNode.Body.Statements[1].AssertIsType<ReturnStatementNode>(out var returnStatementNode);
-        Assert.That(returnStatementNode.Value, Is.Not.Null);
+        Assert.That(returnStatementNode.Result, Is.Not.Null);
     }
     
     [Test]
@@ -222,7 +222,7 @@ public class ParserTests
         Assert.That(functionDeclarationNode.Parameters.Count, Is.EqualTo(2));
         
         functionDeclarationNode.Body.Statements[1].AssertIsType<ReturnStatementNode>(out var returnStatementNode);
-        Assert.That(returnStatementNode.Value, Is.Not.Null);
+        Assert.That(returnStatementNode.Result, Is.Not.Null);
     }
 
     [Test]
@@ -276,5 +276,63 @@ public class ParserTests
         
         Assert.That(ifStatementNode.ElseBranch, Is.Not.Null);
         ifStatementNode.ElseBranch.AssertIsType<BlockStatementNode>(out var elseBranch);
+    }
+    
+    [Test]
+    public void TestForStatement()
+    {
+        const string input = 
+            """
+            for (var x = 0; x < 10; x+=1) {
+
+            } 
+            """;
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var forStatementNode = Parser.ParseForStatement(tokenReader);
+        
+        var printer = new AstPrinter();
+        forStatementNode.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output:\n" + result);
+
+        forStatementNode.Initializer.AssertIsType<VarAssignmentStatementNode>(out var initializerNode);
+        forStatementNode.Condition.AssertIsType<BinaryExpressionNode>(out var condition);
+        forStatementNode.Incrementor.AssertIsType<UnaryExpressionNode>(out var incrementorNode);
+        forStatementNode.Body.AssertIsType<BlockStatementNode>(out var elseBranch);
+    }
+    
+    [Test]
+    public void TestUnaryPrefixStatement()
+    {
+        const string input = 
+            """
+            ++x
+            """;
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var unaryExpression = Parser.ParseUnary(tokenReader);
+        
+        var printer = new AstPrinter();
+        unaryExpression.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output:\n" + result);
+    }
+    
+    [Test]
+    public void TestUnaryPostfixStatement()
+    {
+        const string input = 
+            """
+            x++;
+            """;
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var unaryExpression = Parser.ParseUnary(tokenReader);
+        
+        var printer = new AstPrinter();
+        unaryExpression.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output:\n" + result);
     }
 }
