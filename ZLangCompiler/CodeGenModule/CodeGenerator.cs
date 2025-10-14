@@ -42,7 +42,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
-    public void VisitVarAssignmentStatement(VarDefinitionStatementNode node)
+    public void VisitVarDefinition(VarDefinitionStatementNode node)
     {
         throw new NotImplementedException();
     }
@@ -53,6 +53,11 @@ public sealed class CodeGenerator : IAstNodeVisitor
     }
 
     public void VisitVarDeclaration(VarDeclarationStatementNode node)
+    {
+        throw new NotImplementedException();
+    }
+
+    public void VisitVarAssignment(VarAssignmentStatementNode node)
     {
         throw new NotImplementedException();
     }

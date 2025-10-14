@@ -8,6 +8,6 @@ public sealed class VarDefinitionStatementNode : StatementNode
 
     public override void Accept(IStatementNodeVisitor visitor)
     {
-        visitor.VisitVarAssignmentStatement(this);
+        visitor.VisitVarDefinition(this);
     }
 }

@@ -101,7 +101,7 @@ public class ParserTests
     }
     
     [Test]
-    public void TestVarAssignmentStatement()
+    public void TestVarDefinition()
     {
         const string input = "var x: u32 = 1337;";
         Console.WriteLine("Input: " + input);
@@ -351,5 +351,26 @@ public class ParserTests
         varDeclaration.Accept(printer);
         var result = printer.ToString();
         Console.WriteLine("Output:\n" + result);
+    }
+    
+    [Test]
+    public void TestVarAssignment()
+    {
+        const string input = 
+            """
+            x = 52;
+            """;
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var varAssignment = Parser.ParseVarAssignmentStatement(tokenReader);
+        
+        var printer = new AstPrinter();
+        varAssignment.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output:\n" + result);
+        
+        Assert.That(varAssignment.Name, Is.EqualTo("x"));
+        varAssignment.Value.AssertIsType<LiteralIntegerExpressionNode>(out var literal);
+        Assert.That(literal.Value, Is.EqualTo(52));
     }
 }

@@ -37,7 +37,7 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append(node.Token.Lexeme);
     }
 
-    public void VisitVarAssignmentStatement(VarDefinitionStatementNode node)
+    public void VisitVarDefinition(VarDefinitionStatementNode node)
     {
         _sb.Append("var ");       
         _sb.Append(node.Name);
@@ -76,6 +76,16 @@ public sealed class AstPrinter : IAstNodeVisitor
             _sb.Append(' ');
             node.Type.Accept(this);
         }
+        _sb.Append(';');       
+    }
+
+    public void VisitVarAssignment(VarAssignmentStatementNode node)
+    {
+        _sb.Append(node.Name);
+        _sb.Append(' ');
+        _sb.Append('=');
+        _sb.Append(' ');
+        node.Value.Accept(this);
         _sb.Append(';');       
     }
 

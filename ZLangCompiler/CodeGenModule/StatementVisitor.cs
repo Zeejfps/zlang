@@ -19,7 +19,7 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
         _func = func;
     }
 
-    public void VisitVarAssignmentStatement(VarDefinitionStatementNode node)
+    public void VisitVarDefinition(VarDefinitionStatementNode node)
     {
         throw new NotImplementedException();
     }
@@ -30,6 +30,11 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
     }
 
     public void VisitVarDeclaration(VarDeclarationStatementNode node)
+    {
+        throw new NotImplementedException();
+    }
+
+    public void VisitVarAssignment(VarAssignmentStatementNode node)
     {
         throw new NotImplementedException();
     }
