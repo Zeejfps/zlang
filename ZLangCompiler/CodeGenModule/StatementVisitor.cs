@@ -21,7 +21,12 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
 
     public void VisitVarDefinition(VarDefinitionStatementNode node)
     {
-        throw new NotImplementedException();
+        var expressionVisitor = new ExpressionVisitor(_scope, _builder);
+        node.Value.Accept(expressionVisitor);
+        var value = expressionVisitor.Result;
+        var allocaRef = _builder.BuildAlloca(value.TypeOf, node.Name);
+        _builder.BuildStore(value, allocaRef);
+        _scope.Add(node.Name, allocaRef);
     }
 
     public void VisitForStatement(ForStatemetNode node)
@@ -36,7 +41,9 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
 
     public void VisitVarAssignment(VarAssignmentStatementNode node)
     {
-        throw new NotImplementedException();
+        var expressionVisitor = new ExpressionVisitor(_scope, _builder);
+        node.Value.Accept(expressionVisitor);
+        _builder.BuildStore(expressionVisitor.Result, _scope[node.Name]);
     }
 
     public void VisitBlockStatement(BlockStatementNode node)
@@ -81,7 +88,7 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
         var condition = expressionVisitor.Result;
 
         var thenBlockRef = LLVMBasicBlockRef.AppendInContext(_context, _func, "then");
-        var mergeBlockRef = LLVMBasicBlockRef.AppendInContext(_context, _func, "ifcont");
+        var mergeBlockRef = LLVMBasicBlockRef.AppendInContext(_context, _func, "end");
         var elseBlockRef = mergeBlockRef;
 
         if (node.ElseBranch != null)

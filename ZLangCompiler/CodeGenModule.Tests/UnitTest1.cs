@@ -85,13 +85,15 @@ public class Tests
     [Test]
     public void TestIfElseStatement()
     {
+        // TODO: I need to distinguish between a pass by ref and value to properly return Z here
         const string input =
             """
             func test(x: u32, y: u32) -> u32 {
                 if (x < y) {
                     return 10;
                 } else {
-                    x = 10;
+                    var z = 13;
+                    return z;
                 }
                 return x + y;
             }
