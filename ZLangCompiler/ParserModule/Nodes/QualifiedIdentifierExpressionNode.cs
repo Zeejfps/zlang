@@ -1,0 +1,11 @@
+namespace ParserModule.Nodes;
+
+public sealed class QualifiedIdentifierExpressionNode : ExpressionNode
+{
+    public required List<string> Parts { get; init; }
+    
+    public override void Accept(IExpressionNodeVisitor visitor)
+    {
+        visitor.VisitQualifiedIdentifier(this);
+    }
+}

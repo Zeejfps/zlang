@@ -141,7 +141,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
         }
     }
 
-    public void VisitQualifiedIdentifierNode(QualifiedIdentifierNode node)
+    public void VisitQualifiedIdentifier(QualifiedIdentifierExpressionNode node)
     {
         throw new NotImplementedException();
     }

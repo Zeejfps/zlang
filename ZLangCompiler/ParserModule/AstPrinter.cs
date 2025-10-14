@@ -28,8 +28,12 @@ public sealed class AstPrinter : IAstNodeVisitor
 
     public void VisitUnary(UnaryExpressionNode unaryExpressionNode)
     {
-        _sb.Append(unaryExpressionNode.Operator.Lexeme);
-        unaryExpressionNode.Right.Accept(this);       
+        if (unaryExpressionNode.IsPrefix)
+            _sb.Append(unaryExpressionNode.Operator.Lexeme);
+        
+        unaryExpressionNode.Value.Accept(this);       
+        if (!unaryExpressionNode.IsPrefix)
+            _sb.Append(unaryExpressionNode.Operator.Lexeme);       
     }
 
     public void VisitIdentifier(IdentifierExpressionNode node)
@@ -58,11 +62,13 @@ public sealed class AstPrinter : IAstNodeVisitor
     {
         _sb.Append("for (");
         node.Initializer.Accept(this);
-        _sb.Append(';');
+        
         node.Condition.Accept(this);
         _sb.Append(';');
+        
         node.Incrementor.Accept(this);
         _sb.Append(')');
+        
         node.Body.Accept(this);       
     }
 
@@ -174,7 +180,7 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append(parts[^1]);
     }
 
-    public void VisitQualifiedIdentifierNode(QualifiedIdentifierNode node)
+    public void VisitQualifiedIdentifier(QualifiedIdentifierExpressionNode node)
     {
         for (var i = 0; i < node.Parts.Count - 1; i++)
         {

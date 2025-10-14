@@ -3,7 +3,7 @@ namespace ParserModule.Nodes;
 public sealed class StructImportStatementNode : AstNode
 {
     public required string AliasName { get; init; }
-    public required QualifiedIdentifierNode QualifiedIdentifier { get; init; }
+    public required QualifiedIdentifierExpressionNode QualifiedIdentifier { get; init; }
 
     public override void Accept(IAstNodeVisitor visitor)
     {

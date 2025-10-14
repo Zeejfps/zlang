@@ -75,5 +75,9 @@ public sealed class ExpressionVisitor : IExpressionNodeVisitor
     {
         Result = _scope[node.Name];
     }
-    
+
+    public void VisitQualifiedIdentifier(QualifiedIdentifierExpressionNode node)
+    {
+        throw new NotImplementedException();
+    }
 }

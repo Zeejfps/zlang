@@ -121,10 +121,28 @@ public sealed class Parser
             //Console.WriteLine($"OP: {op}");
             //Console.WriteLine("Parsing unary right");
             var right = ParseUnary(tokenReader);
-            return new UnaryExpressionNode(op, right);
+            return new UnaryExpressionNode
+            {
+                Operator = op,
+                Value = right,       
+                IsPrefix = true
+            };
         }
 
-        return ParsePrimaryExpression(tokenReader);
+        var left = ParsePrimaryExpression(tokenReader);
+        nextToken = tokenReader.Peek();
+        if (nextToken.Kind == TokenKind.SymbolPlusPlus ||
+            nextToken.Kind == TokenKind.SymbolMinsMinus)
+        {
+            var op = tokenReader.Read();
+            return new UnaryExpressionNode
+            {
+                Operator = op,
+                Value = left
+            };       
+        }
+
+        return left;
     }
 
     public static ExpressionNode ParsePrimaryExpression(TokenReader tokenReader)
@@ -409,7 +427,7 @@ public sealed class Parser
         throw new Exception("Expected a { or =");
     }
 
-    public static QualifiedIdentifierNode ParseQualifiedIdentifier(TokenReader tokenReader)
+    public static QualifiedIdentifierExpressionNode ParseQualifiedIdentifier(TokenReader tokenReader)
     {
         var parts = new List<string>();
 
@@ -421,7 +439,7 @@ public sealed class Parser
             parts.Add(identToken.Lexeme);
         }
 
-        return new QualifiedIdentifierNode
+        return new QualifiedIdentifierExpressionNode
         {
             Parts = parts
         };
@@ -452,10 +470,14 @@ public sealed class Parser
     {
         tokenReader.Read(TokenKind.KeywordFor);
         tokenReader.Read(TokenKind.SymbolLeftParen);
-
         var initializer = ParseStatement(tokenReader);
+        
         var condition = ParseExpression(tokenReader);
+        tokenReader.Read(TokenKind.SymbolSemicolon);
+        
         var incrementor = ParseExpression(tokenReader);
+        tokenReader.Read(TokenKind.SymbolRightParen);
+        
         var body = ParseStatement(tokenReader);
         
         return new ForStatemetNode

@@ -9,4 +9,5 @@ public interface IExpressionNodeVisitor
     void VisitLiteralInteger(LiteralIntegerExpressionNode node);
     void VisitLiteralBool(LiteralBoolExpressionNode node);
     void VisitIdentifier(IdentifierExpressionNode node);
+    void VisitQualifiedIdentifier(QualifiedIdentifierExpressionNode node);
 }
