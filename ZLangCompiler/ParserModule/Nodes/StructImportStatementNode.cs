@@ -10,6 +10,6 @@ public sealed class StructImportStatementNode : AstNode
 
     public override void Accept(IAstNodeVisitor visitor)
     {
-        visitor.VisitStructImportStatementNode(this);
+        visitor.VisitStructImport(this);
     }
 }

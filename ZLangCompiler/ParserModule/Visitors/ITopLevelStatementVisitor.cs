@@ -4,5 +4,6 @@ namespace ParserModule.Visitors;
 
 public interface ITopLevelStatementVisitor
 {
-    void VisitStructImportStatementNode(StructImportStatementNode node);
+    void VisitStructImport(StructImportStatementNode node);
+    void VisitModuleDefinition(ModuleDefinitionNode node);
 }

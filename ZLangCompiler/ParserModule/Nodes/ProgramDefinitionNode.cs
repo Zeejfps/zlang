@@ -10,4 +10,6 @@ public sealed class ProgramDefinitionNode : AstNode
     }
 
     public required List<AstNode> Functions { get; init; }
+    
+    public List<TopLevelStatementNode> Statements { get; init; }
 }

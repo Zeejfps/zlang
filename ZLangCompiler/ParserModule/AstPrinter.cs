@@ -166,7 +166,7 @@ public sealed class AstPrinter : IAstNodeVisitor
         parameterNode.Type.Accept(this);
     }
 
-    public void VisitStructImportStatementNode(StructImportStatementNode node)
+    public void VisitStructImport(StructImportStatementNode node)
     {
         _sb.Append("struct ");
         _sb.Append(node.AliasName);
