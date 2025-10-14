@@ -2,8 +2,9 @@
 
 public sealed class ModuleDefinitionNode : AstNode
 {
-    public required List<AstNode> Functions { get; init; }
-    
+    public required QualifiedIdentifierExpressionNode Name { get; init; }
+    public required BlockStatementNode Body { get; init; }
+
     public override void Accept(IAstNodeVisitor visitor)
     {
         visitor.VisitModuleDefinitionNode(this);

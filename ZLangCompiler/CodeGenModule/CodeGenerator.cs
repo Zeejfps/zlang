@@ -135,6 +135,11 @@ public sealed class CodeGenerator : IAstNodeVisitor
 
     public void VisitModuleDefinitionNode(ModuleDefinitionNode node)
     {
+       
+    }
+
+    public void VisitProgram(ProgramDefinitionNode node)
+    {
         foreach (var function in node.Functions)
         {
             function.Accept(this);

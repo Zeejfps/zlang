@@ -8,4 +8,5 @@ public interface IAstNodeVisitor : ITopLevelStatementVisitor, IStatementNodeVisi
     void VisitParameterNode(ParameterNode node);
     void VisitStructDefinitionNode(StructDefinitionNode node);
     void VisitModuleDefinitionNode(ModuleDefinitionNode node);
+    void VisitProgram(ProgramDefinitionNode node);
 }

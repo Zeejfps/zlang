@@ -396,4 +396,25 @@ public class ParserTests
         Assert.That(whileNode.Condition, Is.Not.Null);
         Assert.That(whileNode.Body, Is.Not.Null);
     }
+    
+    [Test]
+    public void TestModuleDefinition()
+    {
+        const string input = 
+            """
+            module std.list {
+                
+            }
+            """;
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var moduleDefinition = Parser.ParseModuleDefinition(tokenReader);
+        
+        var printer = new AstPrinter();
+        moduleDefinition.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output:\n" + result);
+        
+        Assert.That(moduleDefinition.Name.Parts, Is.EquivalentTo(new[] {"std", "list"}));
+    }
 }

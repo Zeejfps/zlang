@@ -13,7 +13,11 @@ public sealed class Parser
     public static AstNode Parse(IEnumerable<Token> tokens)
     {
         using var tokenReader = new TokenReader(tokens);
-        
+        return ParseProgram(tokenReader);
+    }
+    
+    public static ProgramDefinitionNode ParseProgram(TokenReader tokenReader)
+    {
         var functions = new List<AstNode>();
         while (tokenReader.Peek().Kind != TokenKind.EOF)
         {
@@ -25,9 +29,21 @@ public sealed class Parser
         }
         tokenReader.Read(TokenKind.EOF);
 
-        return new ModuleDefinitionNode
+        return new ProgramDefinitionNode
         {
             Functions = functions,       
+        };
+    }
+    
+    public static ModuleDefinitionNode ParseModuleDefinition(TokenReader tokenReader)
+    {
+        tokenReader.Read(TokenKind.KeywordModule);
+        var name = ParseQualifiedIdentifier(tokenReader);
+        var body = ParseBlockStatement(tokenReader);
+        return new ModuleDefinitionNode
+        {
+            Name = name,
+            Body = body
         };
     }
 

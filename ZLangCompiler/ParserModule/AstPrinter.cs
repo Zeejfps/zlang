@@ -200,6 +200,14 @@ public sealed class AstPrinter : IAstNodeVisitor
 
     public void VisitModuleDefinitionNode(ModuleDefinitionNode node)
     {
+        _sb.Append("module ");
+        node.Name.Accept(this);
+        _sb.Append(' ');
+        node.Body.Accept(this);       
+    }
+
+    public void VisitProgram(ProgramDefinitionNode node)
+    {
         throw new NotImplementedException();
     }
 
