@@ -1,3 +1,5 @@
+using ParserModule.Nodes.Expressions;
+
 namespace ParserModule.Nodes;
 
 public sealed class VarDefinitionStatementNode : StatementNode

@@ -1,6 +1,7 @@
 ﻿using LLVMSharp.Interop;
 using ParserModule;
 using ParserModule.Nodes;
+using ParserModule.Nodes.Expressions;
 
 namespace CodeGenModule;
 

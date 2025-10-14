@@ -1,4 +1,4 @@
-﻿namespace ParserModule.Nodes;
+﻿namespace ParserModule.Nodes.Expressions;
 
 public abstract class ExpressionNode : AstNode
 {
