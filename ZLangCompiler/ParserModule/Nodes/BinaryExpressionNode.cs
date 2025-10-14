@@ -2,7 +2,7 @@
 
 namespace ParserModule.Nodes;
 
-public sealed class BinaryExpressionNode : AstNode
+public sealed class BinaryExpressionNode : ExpressionNode
 {
     public AstNode Left { get; }
     public Token Op { get; }
@@ -15,7 +15,7 @@ public sealed class BinaryExpressionNode : AstNode
         Right = right;
     }
 
-    public override void Accept(IAstNodeVisitor visitor)
+    public override void Accept(IExpressionNodeVisitor visitor)
     {
         visitor.VisitBinaryExpression(this);
     }
