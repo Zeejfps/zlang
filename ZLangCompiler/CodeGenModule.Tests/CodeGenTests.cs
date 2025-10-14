@@ -21,7 +21,8 @@ public class CodeGenTests
             """;
         
         var tokens = Lexer.Tokenize(input);
-        var ast = Parser.Parse(tokens);
+        var tokenReader = new TokenReader(tokens);
+        var ast = Parser.ParseFunctionDefinition(tokenReader);
         
         var codeGenerator = new CodeGenerator();
         ast.Accept(codeGenerator);
@@ -71,7 +72,8 @@ public class CodeGenTests
             """;
         
         var tokens = Lexer.Tokenize(input);
-        var ast = Parser.Parse(tokens);
+        var tokenReader = new TokenReader(tokens);
+        var ast = Parser.ParseFunctionDefinition(tokenReader);
         
         var codeGenerator = new CodeGenerator();
         ast.Accept(codeGenerator);
