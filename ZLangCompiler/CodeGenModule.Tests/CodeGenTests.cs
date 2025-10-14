@@ -38,12 +38,14 @@ public class CodeGenTests
     {
         const string input =
             """
-            func main() {
-                return;
-            }
-            
-            func add(x: u32, y: u32) -> u32 {
-                return x + y;
+            module test {
+                func main() {
+                    return;
+                }
+                
+                func add(x: u32, y: u32) -> u32 {
+                    return x + y;
+                }
             }
             """;
         
