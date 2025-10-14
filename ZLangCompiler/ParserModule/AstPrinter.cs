@@ -202,8 +202,12 @@ public sealed class AstPrinter : IAstNodeVisitor
     {
         _sb.Append("module ");
         node.Name.Accept(this);
-        _sb.Append(' ');
-        node.Body.Accept(this);       
+        _sb.Append(" {").AppendLine();
+        foreach (var statement in node.Body)
+        {
+            statement.Accept(this);
+        }
+        _sb.Append("}");       
     }
 
     public void VisitProgram(ProgramDefinitionNode node)

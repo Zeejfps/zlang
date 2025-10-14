@@ -39,12 +39,32 @@ public sealed class Parser
     {
         tokenReader.Read(TokenKind.KeywordModule);
         var name = ParseQualifiedIdentifier(tokenReader);
-        var body = ParseBlockStatement(tokenReader);
+        tokenReader.Read(TokenKind.SymbolLeftCurlyBrace);
+        
+        var body = new List<ModuleLevelStatementNode>();
+        while (tokenReader.Peek().Kind != TokenKind.SymbolRightCurlyBrace)
+        {
+            var statement = ParseModuleLevelStatement(tokenReader);
+            body.Add(statement);
+        }
+        
+        tokenReader.Read(TokenKind.SymbolRightCurlyBrace);
         return new ModuleDefinitionNode
         {
             Name = name,
-            Body = body
+            Body = body.ToArray()
         };
+    }
+
+    private static ModuleLevelStatementNode ParseModuleLevelStatement(TokenReader tokenReader)
+    {
+        var nextToken = tokenReader.Peek();
+        if (nextToken.Kind == TokenKind.KeywordFunc)
+        {
+            return ParseFunctionDefinition(tokenReader);
+        }
+
+        throw new Exception($"Unexpected Token {nextToken}. Expected a module level statement");
     }
 
     public static ExpressionNode ParseExpression(TokenReader tokenReader)
@@ -333,7 +353,7 @@ public sealed class Parser
         throw new ParserException($"Unexpected token encountered, {nextToken}", nextToken);
     }
 
-    public static AstNode ParseFunctionDefinition(TokenReader tokenReader)
+    public static FunctionDefinitionNode ParseFunctionDefinition(TokenReader tokenReader)
     {
         tokenReader.Read(TokenKind.KeywordFunc);
         var identifier = tokenReader.Read(TokenKind.Identifier);

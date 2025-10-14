@@ -1,6 +1,6 @@
 ﻿namespace ParserModule.Nodes;
 
-public sealed class FunctionDefinitionNode : AstNode
+public sealed class FunctionDefinitionNode : ModuleLevelStatementNode
 {
     public required string Name { get; init; }
     public required BlockStatementNode Body { get; init; }
