@@ -6,6 +6,18 @@ namespace LexerModule.Tests;
 public class LexerTests
 {
 
+    [TestCase("get_name_func")]
+    public void TestIdentifiers(string input)
+    {
+        var tokens = Lexer.Tokenize(input);
+        
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(TokenKind.Identifier, input, 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, input.Length + 1)
+        }));
+    }
+    
     [Test]
     public void TestModuleAssignment()
     {

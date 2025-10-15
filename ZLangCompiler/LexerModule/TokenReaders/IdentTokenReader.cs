@@ -21,7 +21,7 @@ internal sealed class IdentTokenReader : ITokenReader
     {
         var lexer = _lexer;
         var nextChar = lexer.PeekChar();
-        while (nextChar != -1 && lexer.IsLetterOrDigit(nextChar))
+        while (nextChar != -1 && (lexer.IsLetterOrDigit(nextChar) || nextChar == '_'))
         {
             lexer.ReadChar();
             nextChar = lexer.PeekChar();

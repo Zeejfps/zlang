@@ -464,6 +464,6 @@ public class ParserTests
         var result = printer.ToString();
         Console.WriteLine("Output:\n" + result);
         
-        Assert.That(externFunction.Signature.Name, Is.EqualTo("get_std_handler"));
+        Assert.That(externFunction.Signature.Name, Is.EqualTo("get_std_handle"));
     }
 }
