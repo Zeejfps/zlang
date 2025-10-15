@@ -1,4 +1,24 @@
 module std.os.windows {
+    
+    #metadata {
+        "extern": [
+            {
+                "func": "get_std_handle",
+                "export_name" : "GetStdHandle",
+                "lib": "kernel32.dll",
+                "calling_conv": "win32"
+            },
+            {
+                "func": "write_to_console",
+                "export_name": "WriteConsoleA",
+                "lib": "kernel32.dll",
+                "calling_conv": "win32"           
+            }
+        ]
+    }
+    
+    extern func get_std_handle(nStdHandle: i32) -> ptr;
+    extern func write_to_console(hConsole: ptr, buffer: ptr, length: u32, written: ptr<u32>, reserved: ptr) -> bool;
 
     func write() {
 
@@ -70,7 +90,8 @@ module std.os.windows {
     extern func write_to_console(hConsole: ptr, buffer: ptr, length: u32, written: ptr<u32>, reserved: ptr) -> bool;
 
     #link {
-        "lib": "kernel32.dll";
+        "lib": "kernel32.dll",
+        "calling_conv": "win32",
         "functions": [
             {
                "export_name" : "GetStdHandle",
@@ -78,6 +99,43 @@ module std.os.windows {
                "calling_conv": "win32"
             },
             {
+                "export_name": "WriteConsoleA"
+                "func": "write_to_console",
+                "calling_conv": "win32"           
+            }
+        ]
+    }
+    
+    #metadata {
+        "extern": {
+            "lib": "kernel32.dll",
+            "calling_conv": "win32",
+            "functions": [
+                {
+                   "export_name" : "GetStdHandle",
+                   "func": "get_std_handle"
+                   "calling_conv": "win32"
+                },
+                {
+                    "export_name": "WriteConsoleA"
+                    "func": "write_to_console",
+                    "calling_conv": "win32"           
+                }
+            ]
+        }
+    }
+    
+        
+    #metadata {
+        "extern": [
+            {
+                "lib": "kernel32.dll",
+                "export_name" : "GetStdHandle",
+                "func": "get_std_handle"
+                "calling_conv": "win32"
+            },
+            {
+                "lib": "kernel32.dll",
                 "export_name": "WriteConsoleA"
                 "func": "write_to_console",
                 "calling_conv": "win32"           
