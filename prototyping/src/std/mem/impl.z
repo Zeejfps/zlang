@@ -1,29 +1,29 @@
 module std.mem {
     struct Allocator {
-        impl: *
-        alloc:  func(impl: *, size: u32) -> *;
-        resize: func(impl: *, start: *, old_size: u32, new_size: u32) -> *;
-        free:   func(impl: *, start: *, size: u32);
+        impl: ptr
+        alloc:  func(impl: ptr, size: u32) -> *;
+        resize: func(impl: ptr, start: ptr, old_size: u32, new_size: u32) -> ptr;
+        free:   func(impl: ptr, start: ptr, size: u32);
     }
 
-    func alloc<T>(allocator: Allocator*) -> T* {
+    func alloc<T>(allocator: ptr<Allocator>) -> ptr<T> {
         const size = sizeof(T);
-        const ptr = allocator.alloc(allocator.impl, size);
-        return cast<T*>(ptr);
+        const mem = allocator.alloc(allocator.impl, size);
+        return mem as ptr<T>;
     }
 
     func malloc<T>(allocator: Allocator*, count: u32) -> T* {
         const size = sizeof(T) * count;
-        const ptr = allocator.alloc(allocator.impl, size);
-        return cast<T*>(ptr);
+        const mem = allocator.alloc(allocator.impl, size);
+        return mem as ptr<T>;
     }
 
-    func free<T>(allocator: Allocator*, item: T*) {
+    func free<T>(allocator: ptr<Allocator>, item: ptr<T>) {
         const size = sizeof(T);
         return allocator.free(allocator.impl, item, size)
     }
 
-    func free<T>(allocator: Allocator*, items: T*, count: u32) {
+    func free<T>(allocator: ptr<Allocator>, items: ptr<T>, count: u32) {
         const size = sizeof(T) * count;
         return allocator.free(allocator.impl, items, size)
     }
