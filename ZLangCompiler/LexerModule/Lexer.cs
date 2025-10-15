@@ -78,6 +78,7 @@ public sealed class Lexer : IDisposable
     {
         _reader = reader;
         _tokenReaders = [
+            new DirectiveTokenReader(this),
             new IdentTokenReader(this),
             new TwoCharSymbolTokenReader(this),
             new OneCharSymbolTokenReader(this),

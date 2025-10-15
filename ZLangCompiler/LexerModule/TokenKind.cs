@@ -57,5 +57,8 @@ public enum TokenKind
     LiteralText,
     LiteralBool,
     
+    // Directive
+    DirectiveMetadata,
+    
     EOF,
 }

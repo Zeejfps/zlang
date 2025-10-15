@@ -285,4 +285,16 @@ public class LexerTests
             new Token(TokenKind.EOF, string.Empty, 1, input.Length + 1)
         }));
     }
+    
+    [TestCase("#metadata", TokenKind.DirectiveMetadata)]
+    public void TestDirectiveTokenization(string input, TokenKind expectedKind)
+    {
+        var tokens = Lexer.Tokenize(input);
+
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(expectedKind, input, 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, input.Length + 1)
+        }));
+    }
 }
