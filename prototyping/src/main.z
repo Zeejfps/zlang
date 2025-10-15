@@ -109,18 +109,18 @@ module std.vec {
         c2: T
     }
 
-    func add<T: Number>(v1: Vec2<T>*, v2: Vec2<T>*) -> Vec2<T> {
+    func add<T: Number>(v1: ptr<Vec2<T>>, v2: ptr<Vec2<T>>) -> ptr<Vec2<T>> {
         return {
             c1 = v1.c1 + v2.c1,
             c2 = v1.c2 + v2.c2
         }
     }
 
-    operator + <T: Number>(v1: Vec2<T>*, v2: Vec2<T>*) -> Vec2<T> {
+    operator + <T: Number>(v1: ptr<Vec2<T>>, v2: ptr<Vec2<T>>) -> Vec2<T> {
         return add(v1, v2);
     }
 
-    operator += <T: Number>(v1: Vec2<T>*, v2: Vec2<T>*) {
+    operator += <T: Number>(v1: ptr<Vec2<T>>, v2: ptr<Vec2<T>>) {
         v1.c1 += v2.c1;
         v1.c2 += v2.c2;
     }

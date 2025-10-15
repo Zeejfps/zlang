@@ -1,10 +1,13 @@
-module std.os.windows : std.os {
+module std.os.windows {
 
     func write() {
 
     }
 
-    func read(buffer: u8*, size: u32) {
+    func read(buffer: ptr<u8>, size: u32) {
 
     }
+    
+    extern func WriteConsoleA(hConsole: ptr, buffer: ptr, length: u32, written: ptr<u32>, reserved: ptr) -> bool from "kernel32.dll";
+    extern func GetStdHandle(nStdHandle: i32) -> ptr from "kernel32.dll";
 }
