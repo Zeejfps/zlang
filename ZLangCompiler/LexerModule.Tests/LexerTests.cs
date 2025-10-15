@@ -225,6 +225,8 @@ public class LexerTests
     [TestCase("while", TokenKind.KeywordWhile)]
     [TestCase("as", TokenKind.KeywordAs)]
     [TestCase("import", TokenKind.KeywordImport)]
+    [TestCase("extern", TokenKind.KeywordExtern)]
+    [TestCase("from", TokenKind.KeywordFrom)]
     public void TestKeywordTokenization(string input, TokenKind expectedKind)
     {
         var tokens = Lexer.Tokenize(input);

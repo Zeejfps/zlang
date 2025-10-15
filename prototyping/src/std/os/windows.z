@@ -10,4 +10,78 @@ module std.os.windows {
     
     extern func WriteConsoleA(hConsole: ptr, buffer: ptr, length: u32, written: ptr<u32>, reserved: ptr) -> bool from "kernel32.dll";
     extern func GetStdHandle(nStdHandle: i32) -> ptr from "kernel32.dll";
+    
+    use std.vector as vec;
+    
+    extern "kernel32.dll" {
+    
+        [export_name("GetStdHandle")]
+        func GetStdHandle(nStdHandle: i32) -> ptr;
+        
+        [export_name("WriteConsoleA")]
+        func WriteConsoleA(hConsole: ptr, buffer: ptr, length: u32, written: ptr<u32>, reserved: ptr) -> bool;
+    }
+    
+    [Extern(lib: "kernel32.dll", export_name: "GetStdHandle", calling_conv: "win32")]
+    func GetStdHandle(nStdHandle: i32) -> ptr;
+
+    extern "kernel32.dll" {
+        GetStdHandle: func(nStdHandle: i32) -> ptr;
+        WriteConsoleA: func(hConsole: ptr, buffer: ptr, length: u32, written: ptr<u32>, reserved: ptr) -> bool;    
+    }
+    
+    extern {
+        lib_name: "kernel32.dll";
+        export_name: "GetStdHandle";
+        calling_conv: "win32";
+        declaration: func(nStdHandle: i32) -> ptr;
+    }
+    
+    extern {
+        lib_name: "kernel32.dll";
+        export_name: "WriteConsoleA";
+        calling_conv: "win32";
+        declaration: func(hConsole: ptr, buffer: ptr, length: u32, written: ptr<u32>, reserved: ptr) -> bool;
+    }
+    
+    extern {
+        lib_name: "kernel32.dll";
+        declaration: func(hConsole: ptr, buffer: ptr, length: u32, written: ptr<u32>, reserved: ptr) -> bool;
+    }
+    
+    extern {
+        lib_name: "kernel32.dll";
+        functions: [
+            {
+                export_name: "GetStdHandle";
+                calling_conv: "win32";
+                declaration: func(nStdHandle: i32) -> ptr;
+            },
+            {
+                export_name: "WriteConsoleA";
+                calling_conv: "win32";
+                declaration: func(hConsole: ptr, buffer: ptr, length: u32, written: ptr<u32>, reserved: ptr) -> bool;
+            }
+        ]
+    }
+    
+    
+    extern func get_std_handle(nStdHandle: i32) -> ptr;
+    extern func write_to_console(hConsole: ptr, buffer: ptr, length: u32, written: ptr<u32>, reserved: ptr) -> bool;
+
+    #link {
+        "lib": "kernel32.dll";
+        "functions": [
+            {
+               "export_name" : "GetStdHandle",
+               "func": "get_std_handle"
+               "calling_conv": "win32"
+            },
+            {
+                "export_name": "WriteConsoleA"
+                "func": "write_to_console",
+                "calling_conv": "win32"           
+            }
+        ]
+    }
 }
