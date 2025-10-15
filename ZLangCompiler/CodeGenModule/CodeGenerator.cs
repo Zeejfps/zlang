@@ -86,8 +86,8 @@ public sealed class CodeGenerator : IAstNodeVisitor
 
     public void VisitFunctionDefinition(FunctionDefinitionNode node)
     {
-        var name = node.Name;
-        var returnType = node.ReturnType;
+        var name = node.Signature.Name;
+        var returnType = node.Signature.ReturnType;
         var returnTypeRef = LLVMTypeRef.Void;
         if (returnType != null)
         {
@@ -95,7 +95,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
             returnTypeRef = _typeVisitor.Type;
         }
         
-        var parameters = node.Parameters;
+        var parameters = node.Signature.Parameters;
         Span<LLVMTypeRef> paramTypeRefs = stackalloc LLVMTypeRef[parameters.Count];
         var scope = new Dictionary<string, LLVMValueRef>();
         for (var i = 0; i < parameters.Count; i++)
@@ -136,6 +136,11 @@ public sealed class CodeGenerator : IAstNodeVisitor
     }
 
     public void VisitStructDefinition(StructDefinitionNode node)
+    {
+        throw new NotImplementedException();
+    }
+
+    public void VisitExternFunctionDeclaration(ExternFunctionDeclarationNode node)
     {
         throw new NotImplementedException();
     }
