@@ -12,6 +12,8 @@
 
     <ItemGroup>
       <PackageReference Include="libLLVM" Version="20.1.2" />
+      <PackageReference Include="libLLVM.runtime.osx-arm64" Version="20.1.2" />
+      <PackageReference Include="libLLVM.runtime.osx-x64" Version="18.1.3" />
       <PackageReference Include="libLLVM.runtime.win-x64" Version="20.1.2" />
       <PackageReference Include="LLVMSharp" Version="20.1.2" />
     </ItemGroup>
