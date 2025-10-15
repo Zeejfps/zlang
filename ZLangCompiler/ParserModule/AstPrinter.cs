@@ -132,11 +132,11 @@ public sealed class AstPrinter : IAstNodeVisitor
         {
             for (var i = 0; i < node.Parameters.Count - 1; i++)
             {
-                node.Parameters[i].Accept(this);
+                VisitParameterNode(node.Parameters[i]);
                 _sb.Append(',');
                 _sb.Append(' ');
             }
-            node.Parameters[^1].Accept(this);
+            VisitParameterNode(node.Parameters[^1]);
         }
         _sb.Append(')');
         if (node.ReturnType != null)
@@ -159,11 +159,11 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append(';');       
     }
 
-    public void VisitParameterNode(ParameterNode parameterNode)
+    public void VisitParameterNode(FunctionParameter functionParameter)
     {
-        _sb.Append(parameterNode.Name);
+        _sb.Append(functionParameter.Name);
         _sb.Append(':');
-        parameterNode.Type.Accept(this);
+        functionParameter.Type.Accept(this);
     }
 
     public void VisitStructImport(StructImportStatementNode node)

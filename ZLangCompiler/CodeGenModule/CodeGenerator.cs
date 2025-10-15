@@ -120,7 +120,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
-    public void VisitParameterNode(ParameterNode node)
+    public void VisitParameterNode(FunctionParameter node)
     {
         throw new NotImplementedException();
     }

@@ -362,7 +362,7 @@ public sealed class Parser
         tokenReader.Read(TokenKind.KeywordFunc);
         var identifier = tokenReader.Read(TokenKind.Identifier);
         var name = identifier.Lexeme;
-        List<ParameterNode>? @params = null;
+        List<FunctionParameter>? @params = null;
         
         tokenReader.Read(TokenKind.SymbolLeftParen);
         //TODO: Handle args
@@ -409,16 +409,16 @@ public sealed class Parser
         };
     }
 
-    public static List<ParameterNode> ParseParamsList(TokenReader tokenReader)
+    public static List<FunctionParameter> ParseParamsList(TokenReader tokenReader)
     {
-        var @params = new List<ParameterNode>();
+        var @params = new List<FunctionParameter>();
         while (true)
         {
             var nameToken = tokenReader.Read(TokenKind.Identifier);
             var name = nameToken.Lexeme;
             tokenReader.Read(TokenKind.SymbolColon);
             var type = ParseTypeNode(tokenReader);
-            @params.Add(new ParameterNode
+            @params.Add(new FunctionParameter
             {
                 Name = name,
                 Type = type,
