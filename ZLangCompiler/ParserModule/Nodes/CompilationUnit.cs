@@ -2,7 +2,7 @@
 
 namespace ParserModule.Nodes;
 
-public sealed class ProgramDefinitionNode : AstNode
+public sealed class CompilationUnit : AstNode
 {
     public override void Accept(IAstNodeVisitor visitor)
     {

@@ -9,5 +9,5 @@ public interface IAstNodeVisitor :
     IExpressionNodeVisitor,
     ITypeNodeVisitor
 {
-    void VisitProgram(ProgramDefinitionNode node);
+    void VisitProgram(CompilationUnit node);
 }

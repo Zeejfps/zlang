@@ -205,7 +205,7 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append("}");       
     }
 
-    public void VisitProgram(ProgramDefinitionNode node)
+    public void VisitProgram(CompilationUnit node)
     {
         throw new NotImplementedException();
     }

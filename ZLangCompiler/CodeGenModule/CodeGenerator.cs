@@ -143,7 +143,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
         }
     }
 
-    public void VisitProgram(ProgramDefinitionNode node)
+    public void VisitProgram(CompilationUnit node)
     {
         foreach (var statement in node.Statements)
         {

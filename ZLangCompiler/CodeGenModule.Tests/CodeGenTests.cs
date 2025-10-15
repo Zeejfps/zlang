@@ -50,10 +50,10 @@ public class CodeGenTests
             """;
         
         var tokens = Lexer.Tokenize(input);
-        var ast = Parser.Parse(tokens);
+        var compilationUnit = Parser.Parse(tokens);
         
         var codeGenerator = new CodeGenerator();
-        ast.Accept(codeGenerator);
+        compilationUnit.Accept(codeGenerator);
         codeGenerator.Verify();
         
         codeGenerator.SaveToFile("test2.asm");

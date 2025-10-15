@@ -6,13 +6,13 @@ namespace ParserModule;
 
 public sealed class Parser
 {
-    public static AstNode Parse(IEnumerable<Token> tokens)
+    public static CompilationUnit Parse(IEnumerable<Token> tokens)
     {
         using var tokenReader = new TokenReader(tokens);
-        return ParseProgram(tokenReader);
+        return Parse(tokenReader);
     }
     
-    public static ProgramDefinitionNode ParseProgram(TokenReader tokenReader)
+    public static CompilationUnit Parse(TokenReader tokenReader)
     {
         var statements = new List<TopLevelStatementNode>();
         while (tokenReader.Peek().Kind != TokenKind.EOF)
@@ -22,7 +22,7 @@ public sealed class Parser
         }
         tokenReader.Read(TokenKind.EOF);
 
-        return new ProgramDefinitionNode
+        return new CompilationUnit
         {
             Statements = statements,       
         };
