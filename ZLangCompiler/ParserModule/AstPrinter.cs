@@ -125,26 +125,7 @@ public sealed class AstPrinter : IAstNodeVisitor
 
     public void VisitFunctionDefinition(FunctionDefinitionNode node)
     {
-        _sb.Append("func ");
-        _sb.Append(node.Name);
-        _sb.Append('(');
-        if (node.Parameters.Count > 0)
-        {
-            for (var i = 0; i < node.Parameters.Count - 1; i++)
-            {
-                VisitParameterNode(node.Parameters[i]);
-                _sb.Append(',');
-                _sb.Append(' ');
-            }
-            VisitParameterNode(node.Parameters[^1]);
-        }
-        _sb.Append(')');
-        if (node.ReturnType != null)
-        {
-            _sb.Append(" -> ");
-            node.ReturnType.Accept(this);       
-        }
-        _sb.Append(' ');
+        VisitFunctionSignature(node.Signature);
         node.Body.Accept(this);
     }
 
@@ -191,6 +172,36 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append(node.Name);
         _sb.Append('{');
         _sb.Append('}');
+    }
+
+    public void VisitExternFunctionDeclaration(ExternFunctionDeclarationNode node)
+    {
+        _sb.Append("extern ");
+        VisitFunctionSignature(node.Signature);
+    }
+
+    public void VisitFunctionSignature(FunctionSignature node)
+    {
+        _sb.Append("func ");
+        _sb.Append(node.Name);
+        _sb.Append('(');
+        if (node.Parameters.Count > 0)
+        {
+            for (var i = 0; i < node.Parameters.Count - 1; i++)
+            {
+                VisitParameterNode(node.Parameters[i]);
+                _sb.Append(',');
+                _sb.Append(' ');
+            }
+            VisitParameterNode(node.Parameters[^1]);
+        }
+        _sb.Append(')');
+        if (node.ReturnType != null)
+        {
+            _sb.Append(" -> ");
+            node.ReturnType.Accept(this);       
+        }
+        _sb.Append(' ');
     }
 
     public void VisitModuleDefinition(ModuleDefinitionNode node)

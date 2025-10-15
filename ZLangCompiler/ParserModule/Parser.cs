@@ -479,38 +479,12 @@ public sealed class Parser
 
     public static FunctionDefinitionNode ParseFunctionDefinition(TokenReader tokenReader)
     {
-        tokenReader.Read(TokenKind.KeywordFunc);
-        var identifier = tokenReader.Read(TokenKind.Identifier);
-        var name = identifier.Lexeme;
-        List<FunctionParameter>? @params = null;
-        
-        tokenReader.Read(TokenKind.SymbolLeftParen);
-        //TODO: Handle args
-        if (tokenReader.Peek().Kind != TokenKind.SymbolRightParen)
-        {
-            @params = ParseParamsList(tokenReader);
-        }
-        tokenReader.Read(TokenKind.SymbolRightParen);
-
-        TypeNode? returnType = null;
-        if (tokenReader.Peek().Kind == TokenKind.SymbolReturnArrow)
-        {
-            tokenReader.Read();
-            returnType = ParseTypeNode(tokenReader);
-        }
-
-        if (@params == null)
-        {
-            @params = [];
-        }
-        
+        var signature = ParseFunctionSignature(tokenReader);
         var body = ParseBlockStatement(tokenReader);
         return new FunctionDefinitionNode
         {
-            Name = name,
-            Body = body,
-            ReturnType = returnType,
-            Parameters = @params,
+            Signature = signature,
+            Body = body
         };
     }
 
@@ -646,6 +620,46 @@ public sealed class Parser
             Condition = condition,
             Incrementor = incrementor,
             Body = body,       
+        };
+    }
+
+    public static ExternFunctionDeclarationNode ParseExternFunctionDeclaration(TokenReader tokenReader)
+    {
+        tokenReader.Read(TokenKind.KeywordExtern);
+        var signature = ParseFunctionSignature(tokenReader);
+        return new ExternFunctionDeclarationNode
+        {
+            Signature = signature
+        };
+    }
+
+    public static FunctionSignature ParseFunctionSignature(TokenReader tokenReader)
+    {
+        tokenReader.Read(TokenKind.KeywordFunc);
+        var identifier = tokenReader.Read(TokenKind.Identifier);
+        var name = identifier.Lexeme;
+        List<FunctionParameter>? @params = null;
+        
+        tokenReader.Read(TokenKind.SymbolLeftParen);
+        //TODO: Handle args
+        if (tokenReader.Peek().Kind != TokenKind.SymbolRightParen)
+        {
+            @params = ParseParamsList(tokenReader);
+        }
+        tokenReader.Read(TokenKind.SymbolRightParen);
+
+        TypeNode? returnType = null;
+        if (tokenReader.Peek().Kind == TokenKind.SymbolReturnArrow)
+        {
+            tokenReader.Read();
+            returnType = ParseTypeNode(tokenReader);
+        }
+
+        return new FunctionSignature
+        {
+            Name = name,
+            Parameters = @params ?? [],
+            ReturnType = returnType
         };
     }
 }

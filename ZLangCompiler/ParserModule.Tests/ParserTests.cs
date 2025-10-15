@@ -153,7 +153,7 @@ public class ParserTests
         Console.WriteLine("Output: " + result);
         
         astNode.AssertIsType<FunctionDefinitionNode>(out var functionDeclarationNode);
-        Assert.That(functionDeclarationNode.Name, Is.EqualTo("main"));
+        Assert.That(functionDeclarationNode.Signature.Name, Is.EqualTo("main"));
         Assert.That(functionDeclarationNode.Body.Statements.Count, Is.EqualTo(1));
     }
     
@@ -177,7 +177,7 @@ public class ParserTests
         Console.WriteLine("Output: " + result);
         
         astNode.AssertIsType<FunctionDefinitionNode>(out var functionDeclarationNode);
-        Assert.That(functionDeclarationNode.Name, Is.EqualTo("add"));
+        Assert.That(functionDeclarationNode.Signature.Name, Is.EqualTo("add"));
         Assert.That(functionDeclarationNode.Body.Statements.Count, Is.EqualTo(2));
         
         functionDeclarationNode.Body.Statements[1].AssertIsType<ReturnStatementNode>(out var returnStatementNode);
@@ -206,9 +206,9 @@ public class ParserTests
         Console.WriteLine("Output: " + result);
         
         astNode.AssertIsType<FunctionDefinitionNode>(out var functionDeclarationNode);
-        Assert.That(functionDeclarationNode.Name, Is.EqualTo("add"));
+        Assert.That(functionDeclarationNode.Signature.Name, Is.EqualTo("add"));
         Assert.That(functionDeclarationNode.Body.Statements.Count, Is.EqualTo(2));
-        Assert.That(functionDeclarationNode.Parameters.Count, Is.EqualTo(2));
+        Assert.That(functionDeclarationNode.Signature.Parameters.Count, Is.EqualTo(2));
         
         functionDeclarationNode.Body.Statements[1].AssertIsType<ReturnStatementNode>(out var returnStatementNode);
         Assert.That(returnStatementNode.Result, Is.Not.Null);
@@ -446,5 +446,24 @@ public class ParserTests
         Console.WriteLine("Output:\n" + metadata);
         
         Assert.That(metadata, Is.Not.Null);
+    }
+    
+    [Test]
+    public void TestExternFunction()
+    {
+        const string input = 
+            """
+            extern func get_std_handle(handle: i32) -> ptr;
+            """;
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var externFunction = Parser.ParseExternFunctionDeclaration(tokenReader);
+        
+        var printer = new AstPrinter();
+        externFunction.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output:\n" + result);
+        
+        Assert.That(externFunction.Signature.Name, Is.EqualTo("get_std_handler"));
     }
 }
