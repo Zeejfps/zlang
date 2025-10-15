@@ -1,4 +1,5 @@
-﻿using LexerModule;
+﻿using System.Text.Json.Nodes;
+using LexerModule;
 using ParserModule.Nodes;
 using ParserModule.Nodes.Expressions;
 
@@ -51,10 +52,20 @@ public sealed class Parser
         tokenReader.Read(TokenKind.SymbolLeftCurlyBrace);
         
         var body = new List<ModuleLevelStatementNode>();
-        while (tokenReader.Peek().Kind != TokenKind.SymbolRightCurlyBrace)
+        var metadata = new List<JsonObject>();
+        var nextToken = tokenReader.Peek();
+        while (nextToken.Kind != TokenKind.SymbolRightCurlyBrace)
         {
-            var statement = ParseModuleLevelStatement(tokenReader);
-            body.Add(statement);
+            if (nextToken.Kind == TokenKind.DirectiveMetadata)
+            {
+                metadata.Add(ParseMetadata(tokenReader));
+            }
+            else
+            {
+                var statement = ParseModuleLevelStatement(tokenReader);
+                body.Add(statement); 
+            }
+            nextToken = tokenReader.Peek();       
         }
         
         tokenReader.Read(TokenKind.SymbolRightCurlyBrace);
@@ -63,6 +74,110 @@ public sealed class Parser
             Name = name,
             Body = body.ToArray()
         };
+    }
+
+    public static JsonObject ParseMetadata(TokenReader tokenReader)
+    {
+        tokenReader.Read(TokenKind.DirectiveMetadata);
+        return ParseJsonObject(tokenReader);
+    }
+
+    private static JsonObject ParseJsonObject(TokenReader tokenReader)
+    {
+        var jsonObject = new JsonObject();
+        tokenReader.Read(TokenKind.SymbolLeftCurlyBrace);
+        
+        var nextToken = tokenReader.Peek();
+        var keepGoing = true;
+        while (keepGoing)
+        {
+            if (nextToken.Kind == TokenKind.EOF)
+            {
+                throw new Exception("Unexpected EOF while parsing json object");
+            }
+            
+            var propName = tokenReader.Read(TokenKind.LiteralText);
+            tokenReader.Read(TokenKind.SymbolColon);
+            var propValue = ParseJsonValue(tokenReader);
+            jsonObject.Add(propName.Lexeme, propValue);
+            nextToken = tokenReader.Peek();
+
+            if (nextToken.Kind == TokenKind.SymbolComma)
+            {
+                tokenReader.Read();
+            }
+            else
+            {
+                keepGoing = false;
+            }
+        }
+        tokenReader.Read(TokenKind.SymbolRightCurlyBrace);
+        return jsonObject;
+    }
+
+    private static JsonNode ParseJsonValue(TokenReader tokenReader)
+    {
+        var nextToken = tokenReader.Peek();
+        if (nextToken.Kind == TokenKind.LiteralText)
+        {
+            var token = tokenReader.Read();
+            return JsonValue.Create(token.Lexeme);
+        }
+
+        if (nextToken.Kind == TokenKind.LiteralInteger)
+        {
+            var token = tokenReader.Read();
+            return JsonValue.Create(int.Parse(token.Lexeme));
+        }
+        
+        if (nextToken.Kind == TokenKind.LiteralBool)
+        {
+            var token = tokenReader.Read();
+            return JsonValue.Create(bool.Parse(token.Lexeme));
+        }
+        
+        if (nextToken.Kind == TokenKind.SymbolLeftCurlyBrace)
+        {
+            return ParseJsonObject(tokenReader);
+        }
+
+        if (nextToken.Kind == TokenKind.SymbolLeftSquareBracket)
+        {
+            return ParseJsonArray(tokenReader);
+        }
+        
+        throw new Exception($"Unexpected Token {nextToken}. Expected a json value");  
+    }
+
+    private static JsonArray ParseJsonArray(TokenReader tokenReader)
+    {
+        var array = new JsonArray();
+        tokenReader.Read(TokenKind.SymbolLeftSquareBracket);
+        
+        var nextToken = tokenReader.Peek();
+        var keepGoing = true;
+        while (keepGoing)
+        {
+            if (nextToken.Kind == TokenKind.EOF)
+            {
+                throw new Exception("Unexpected EOF while parsing json array");
+            }
+            
+            var value = ParseJsonValue(tokenReader);
+            array.Add(value);
+            nextToken = tokenReader.Peek();
+            if (nextToken.Kind == TokenKind.SymbolComma)
+            {
+                tokenReader.Read();
+            }
+            else
+            {
+                keepGoing = false;
+            }
+        }
+        
+        tokenReader.Read(TokenKind.SymbolRightSquareBracket);
+        return array;
     }
 
     private static ModuleLevelStatementNode ParseModuleLevelStatement(TokenReader tokenReader)

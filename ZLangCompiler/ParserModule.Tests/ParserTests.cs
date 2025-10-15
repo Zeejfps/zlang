@@ -423,4 +423,28 @@ public class ParserTests
         
         Assert.That(moduleDefinition.Name.Parts, Is.EquivalentTo(new[] {"std", "list"}));
     }
+    
+    [Test]
+    public void TestMetadataDefinition()
+    {
+        const string input = 
+            """
+            #metadata {
+                "extern": [
+                    {
+                        "name": "GetSomeFunc",
+                        "func": "get_some_name",
+                        "lib": "kernel32.dll"
+                    }
+                ]
+            }
+            """;
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var metadata = Parser.ParseMetadata(tokenReader);
+        
+        Console.WriteLine("Output:\n" + metadata);
+        
+        Assert.That(metadata, Is.Not.Null);
+    }
 }
