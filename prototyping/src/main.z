@@ -15,6 +15,15 @@ use std.string as string;
 use std.mem.heap.HeapAllocator as HeapAllocator;
 use array.Array<T> as Array<T>
 
+import std.array as array;
+import std.list as list;
+import std.io as io;
+import std.stdout as stdout;
+import std.fmt as fmt;
+import std.string as string;
+import std.mem.heap.HeapAllocator as HeapAllocator;
+import array.Array<T> as Array<T>
+
 var stack_array: u8[10];
 stack_array[0] = 1;
 
