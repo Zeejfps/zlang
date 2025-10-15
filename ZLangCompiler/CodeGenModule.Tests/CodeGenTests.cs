@@ -38,6 +38,8 @@ public class CodeGenTests
     {
         const string input =
             """
+            import std.list as list;
+            
             module test {
                 func main() {
                     return;
