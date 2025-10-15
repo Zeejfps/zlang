@@ -18,6 +18,11 @@ public sealed class CodeGenerator : IAstNodeVisitor
         _module = LLVMModuleRef.CreateWithName("z_lang_program");
         _builder = LLVMBuilderRef.Create(LLVMContextRef.Global);
     }
+
+    public void Generate(CompilationUnit compilationUnit)
+    {
+        
+    }
     
     public void VisitLiteralInteger(LiteralIntegerExpressionNode node)
     {

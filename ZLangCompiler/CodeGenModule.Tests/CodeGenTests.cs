@@ -53,9 +53,8 @@ public class CodeGenTests
         var compilationUnit = Parser.Parse(tokens);
         
         var codeGenerator = new CodeGenerator();
-        compilationUnit.Accept(codeGenerator);
+        codeGenerator.Generate(compilationUnit);
         codeGenerator.Verify();
-        
         codeGenerator.SaveToFile("test2.asm");
         
         Assert.Pass();
