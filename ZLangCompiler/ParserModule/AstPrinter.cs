@@ -168,18 +168,11 @@ public sealed class AstPrinter : IAstNodeVisitor
 
     public void VisitStructImport(StructImportStatementNode node)
     {
-        _sb.Append("struct ");
+        _sb.Append("import ");
+        node.QualifiedIdentifier.Accept(this);
+        _sb.Append(" as ");
         _sb.Append(node.AliasName);
-        _sb.Append(' ');
-        _sb.Append('=');
-        _sb.Append(' ');
-        var parts = node.QualifiedIdentifier.Parts;
-        for (var i = 0; i < parts.Count - 1; i++)
-        {
-            _sb.Append(parts[i]);
-            _sb.Append('.');
-        }
-        _sb.Append(parts[^1]);
+        _sb.Append(';');
     }
 
     public void VisitQualifiedIdentifier(QualifiedIdentifierExpressionNode node)

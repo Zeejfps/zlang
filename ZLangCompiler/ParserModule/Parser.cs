@@ -439,11 +439,11 @@ public sealed class Parser
 
     public static StructImportStatementNode ParseStructImport(TokenReader tokenReader)
     {
-        tokenReader.Read(TokenKind.KeywordStruct);
+        tokenReader.Read(TokenKind.KeywordImport);
+        var qualifiedIdentifier = ParseQualifiedIdentifier(tokenReader);
+        tokenReader.Read(TokenKind.KeywordAs);
         var nameToken = tokenReader.Read(TokenKind.Identifier);
         var name = nameToken.Lexeme;
-        tokenReader.Read(TokenKind.SymbolEquals);
-        var qualifiedIdentifier = ParseQualifiedIdentifier(tokenReader);
         tokenReader.Read(TokenKind.SymbolSemicolon);
         
         return new StructImportStatementNode
