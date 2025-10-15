@@ -3,12 +3,12 @@ using ParserModule.Visitors;
 
 namespace ParserModule.Nodes;
 
-public sealed class StructImportStatementNode : AstNode
+public sealed class ImportStatementNode : TopLevelStatementNode
 {
     public required string AliasName { get; init; }
     public required QualifiedIdentifierExpressionNode QualifiedIdentifier { get; init; }
 
-    public override void Accept(IAstNodeVisitor visitor)
+    public override void Accept(ITopLevelStatementVisitor visitor)
     {
         visitor.VisitStructImport(this);
     }

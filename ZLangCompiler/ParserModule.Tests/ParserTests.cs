@@ -234,15 +234,15 @@ public class ParserTests
         
         var tokens = Lexer.Tokenize(input);
         using var tokenReader = new TokenReader(tokens);
-        var structImportNode = Parser.ParseStructImport(tokenReader);
+        var importStatement = Parser.ParseImportStatement(tokenReader);
         
         var printer = new AstPrinter();
-        structImportNode.Accept(printer);
+        importStatement.Accept(printer);
         var result = printer.ToString();
         Console.WriteLine("Output: " + result);
         
-        Assert.That(structImportNode.AliasName, Is.EqualTo("MyStruct"));
-        Assert.That(structImportNode.QualifiedIdentifier.Parts, 
+        Assert.That(importStatement.AliasName, Is.EqualTo("MyStruct"));
+        Assert.That(importStatement.QualifiedIdentifier.Parts, 
             Is.EquivalentTo(new[] {
                 "std",
                 "some",

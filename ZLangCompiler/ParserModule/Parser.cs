@@ -31,6 +31,11 @@ public sealed class Parser
     private static TopLevelStatementNode ParseTopLevelStatement(TokenReader tokenReader)
     {
         var nextToken = tokenReader.Peek();
+        if (nextToken.Kind == TokenKind.KeywordImport)
+        {
+            return ParseImportStatement(tokenReader);
+        }
+        
         if (nextToken.Kind == TokenKind.KeywordModule)
         {
             return ParseModuleDefinition(tokenReader);
@@ -437,7 +442,7 @@ public sealed class Parser
         return @params;
     }
 
-    public static StructImportStatementNode ParseStructImport(TokenReader tokenReader)
+    public static ImportStatementNode ParseImportStatement(TokenReader tokenReader)
     {
         tokenReader.Read(TokenKind.KeywordImport);
         var qualifiedIdentifier = ParseQualifiedIdentifier(tokenReader);
@@ -446,7 +451,7 @@ public sealed class Parser
         var name = nameToken.Lexeme;
         tokenReader.Read(TokenKind.SymbolSemicolon);
         
-        return new StructImportStatementNode
+        return new ImportStatementNode
         {
             AliasName = name,
             QualifiedIdentifier = qualifiedIdentifier,
