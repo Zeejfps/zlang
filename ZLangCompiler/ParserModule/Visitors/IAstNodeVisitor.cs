@@ -9,6 +9,5 @@ public interface IAstNodeVisitor :
     IExpressionNodeVisitor,
     ITypeNodeVisitor
 {
-    void VisitParameterNode(ParameterNode node);
     void VisitProgram(ProgramDefinitionNode node);
 }
