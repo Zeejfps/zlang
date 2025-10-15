@@ -17,6 +17,8 @@ public enum TokenKind
     KeywordElse,
     KeywordFor,
     KeywordWhile,
+    KeywordAs,
+    KeywordImport,
     
     // One Char Symbols
     SymbolEquals, // =

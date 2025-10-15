@@ -229,7 +229,7 @@ public class ParserTests
     [Test]
     public void TestStructImport()
     {
-        const string input = "struct MyStruct = std.some.ModuleStruct;";
+        const string input = "import std.some.ModuleStruct as MyStruct;";
         Console.WriteLine("Input: " + input);
         
         var tokens = Lexer.Tokenize(input);

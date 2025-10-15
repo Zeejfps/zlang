@@ -55,6 +55,8 @@ public sealed class Lexer : IDisposable
         {"else",  TokenKind.KeywordElse},
         {"for",  TokenKind.KeywordFor},
         {"while",  TokenKind.KeywordWhile},
+        {"as",  TokenKind.KeywordAs},
+        {"import",  TokenKind.KeywordImport},
     };
     
     private int Line { get; set; } = 1;
