@@ -555,7 +555,7 @@ public sealed class Parser
         var name = nameToken.Lexeme;
         tokenReader.Read(TokenKind.SymbolLeftCurlyBrace);
 
-        var props = new List<StructPropertyDeclarationNode>();
+        var props = new List<StructFieldDeclarationNode>();
         while (tokenReader.Peek().Kind != TokenKind.SymbolRightCurlyBrace)
         {
             var prop = ParseStructPropertyDeclaration(tokenReader);
@@ -570,12 +570,12 @@ public sealed class Parser
         };
     }
 
-    public static StructPropertyDeclarationNode ParseStructPropertyDeclaration(TokenReader tokenReader)
+    public static StructFieldDeclarationNode ParseStructPropertyDeclaration(TokenReader tokenReader)
     {
         var propName = tokenReader.Read(TokenKind.Identifier);
         tokenReader.Read(TokenKind.SymbolColon);
         var propType = ParseTypeNode(tokenReader);
-        return new StructPropertyDeclarationNode
+        return new StructFieldDeclarationNode
         {
             Name = propName.Lexeme,
             Type = propType,
