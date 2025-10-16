@@ -219,6 +219,8 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append("module ");
         node.Name.Accept(this);
         _sb.Append(" {").AppendLine();
+        _sb.Append("\t#metadata ");
+        _sb.AppendLine(node.Metadata.ToJsonString());
         foreach (var statement in node.Body)
         {
             statement.Accept(this);

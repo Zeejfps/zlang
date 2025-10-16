@@ -1,4 +1,5 @@
-﻿using LexerModule;
+﻿using System.Text.Json.Nodes;
+using LexerModule;
 using ParserModule.Nodes;
 using ParserModule.Nodes.Expressions;
 
@@ -474,5 +475,42 @@ public class ParserTests
         Console.WriteLine("Output:\n" + result);
         
         Assert.That(externFunction.Signature.Name, Is.EqualTo("get_std_handle"));
+    }
+    
+    [Test]
+    public void TestModuleDefinitionWithMetadata()
+    {
+        const string input = 
+            """
+            module std.list {
+                #metadata {
+                    "extern": [
+                        {
+                            "name": "GetSomeName",
+                            "func": "get_some_name"
+                        }
+                    ]
+                }
+            }
+            """;
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var moduleDefinition = Parser.ParseModuleDefinition(tokenReader);
+        
+        var printer = new AstPrinter();
+        moduleDefinition.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output:\n" + result);
+        
+        Assert.That(moduleDefinition.Name.Parts, Is.EquivalentTo(new[] {"std", "list"}));
+        Assert.That(moduleDefinition.Metadata, Is.Not.Null);
+
+        var externArray = moduleDefinition.Metadata["extern"] as JsonArray;
+        Assert.That(externArray, Is.Not.Null);
+
+        var firstElement = externArray[0]?.AsObject();
+        Assert.That(firstElement, Is.Not.Null);
+        
+        Assert.That(firstElement["name"]?.AsValue().GetValue<string>(), Is.EqualTo("GetSomeName"));
     }
 }
