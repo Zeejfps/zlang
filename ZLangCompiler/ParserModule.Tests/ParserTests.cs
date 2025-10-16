@@ -242,8 +242,14 @@ public class ParserTests
     [Test]
     public void TestStructDefinition()
     {
-        const string input = "struct MyStruct { }";
-        Console.WriteLine("Input: " + input);
+        const string input = 
+        """
+        struct MyStruct {
+            prop1: u32
+            prop2: bool
+        }"
+        """;
+        Console.WriteLine("Input:\n" + input);
         
         var tokens = Lexer.Tokenize(input);
         using var tokenReader = new TokenReader(tokens);
@@ -252,9 +258,12 @@ public class ParserTests
         var printer = new AstPrinter();
         structDefinition.Accept(printer);
         var result = printer.ToString();
-        Console.WriteLine("Output: " + result);
+        Console.WriteLine("Output:\n" + result);
         
         Assert.That(structDefinition.Name, Is.EqualTo("MyStruct"));
+        Assert.That(structDefinition.Properties.Count, Is.EqualTo(2));
+        Assert.That(structDefinition.Properties[0].Name, Is.EqualTo("prop1"));
+        Assert.That(structDefinition.Properties[1].Name, Is.EqualTo("prop2"));
     }
     
     [Test]

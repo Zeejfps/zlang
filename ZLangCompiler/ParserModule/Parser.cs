@@ -553,11 +553,31 @@ public sealed class Parser
         var nameToken = tokenReader.Read(TokenKind.Identifier);
         var name = nameToken.Lexeme;
         tokenReader.Read(TokenKind.SymbolLeftCurlyBrace);
-        // TODO: Read the body of struct
+
+        var props = new List<StructPropertyDeclarationNode>();
+        while (tokenReader.Peek().Kind != TokenKind.SymbolRightCurlyBrace)
+        {
+            var prop = ParseStructPropertyDeclaration(tokenReader);
+            props.Add(prop);
+        }
+        
         tokenReader.Read(TokenKind.SymbolRightCurlyBrace);
         return new StructDefinitionNode
         {
             Name = name,
+            Properties = props,
+        };
+    }
+
+    public static StructPropertyDeclarationNode ParseStructPropertyDeclaration(TokenReader tokenReader)
+    {
+        var propName = tokenReader.Read(TokenKind.Identifier);
+        tokenReader.Read(TokenKind.SymbolColon);
+        var propType = ParseTypeNode(tokenReader);
+        return new StructPropertyDeclarationNode
+        {
+            Name = propName.Lexeme,
+            Type = propType,
         };
     }
 

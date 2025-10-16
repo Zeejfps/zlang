@@ -171,6 +171,16 @@ public sealed class AstPrinter : IAstNodeVisitor
         _sb.Append("struct ");
         _sb.Append(node.Name);
         _sb.Append('{');
+        _sb.AppendLine();
+        foreach (var prop in node.Properties)
+        {
+            _sb.Append('\t');
+            _sb.Append(prop.Name);
+            _sb.Append(':');
+            _sb.Append(' ');
+            prop.Type.Accept(this);
+            _sb.AppendLine();       
+        }
         _sb.Append('}');
     }
 
