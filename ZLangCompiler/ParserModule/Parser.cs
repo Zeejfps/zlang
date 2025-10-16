@@ -52,13 +52,13 @@ public sealed class Parser
         tokenReader.Read(TokenKind.SymbolLeftCurlyBrace);
         
         var body = new List<ModuleLevelStatementNode>();
-        var metadata = new List<JsonObject>();
+        var metadata = new JsonObject();
         var nextToken = tokenReader.Peek();
         while (nextToken.Kind != TokenKind.SymbolRightCurlyBrace)
         {
             if (nextToken.Kind == TokenKind.DirectiveMetadata)
             {
-                metadata.Add(ParseMetadata(tokenReader));
+                metadata.Merge(ParseMetadata(tokenReader));
             }
             else
             {
@@ -72,7 +72,8 @@ public sealed class Parser
         return new ModuleDefinitionNode
         {
             Name = name,
-            Body = body.ToArray()
+            Body = body.ToArray(),
+            Metadata = metadata
         };
     }
 
