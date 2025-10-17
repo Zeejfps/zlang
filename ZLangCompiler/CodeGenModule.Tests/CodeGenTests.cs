@@ -113,4 +113,25 @@ public class CodeGenTests
         
         Assert.Pass();
     }
+    
+    [Test]
+    public void TestExternFunctionDeclaration()
+    {
+        const string input =
+            """
+            extern func test(x: u32, y: u32) -> u32;
+            """;
+        
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var ast = Parser.ParseExternFunctionDeclaration(tokenReader);
+        
+        var codeGenerator = new CodeGenerator();
+        ast.Accept(codeGenerator);
+        codeGenerator.Verify();
+        
+        codeGenerator.SaveToFile("externfunc.asm");
+        
+        Assert.Pass();
+    }
 }

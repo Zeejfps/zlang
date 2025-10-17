@@ -86,8 +86,9 @@ public sealed class CodeGenerator : IAstNodeVisitor
 
     public void VisitFunctionDefinition(FunctionDefinitionNode node)
     {
-        var name = node.Signature.Name;
-        var returnType = node.Signature.ReturnType;
+        var signature = node.Signature;
+        var name = signature.Name;
+        var returnType = signature.ReturnType;
         var returnTypeRef = LLVMTypeRef.Void;
         if (returnType != null)
         {
@@ -95,7 +96,7 @@ public sealed class CodeGenerator : IAstNodeVisitor
             returnTypeRef = _typeVisitor.Type;
         }
         
-        var parameters = node.Signature.Parameters;
+        var parameters = signature.Parameters;
         Span<LLVMTypeRef> paramTypeRefs = stackalloc LLVMTypeRef[parameters.Count];
         var scope = new Dictionary<string, LLVMValueRef>();
         for (var i = 0; i < parameters.Count; i++)
@@ -142,7 +143,26 @@ public sealed class CodeGenerator : IAstNodeVisitor
 
     public void VisitExternFunctionDeclaration(ExternFunctionDeclarationNode node)
     {
-        throw new NotImplementedException();
+        var signature = node.Signature;
+        var name = signature.Name;
+        var returnType = signature.ReturnType;
+        var returnTypeRef = LLVMTypeRef.Void;
+        if (returnType != null)
+        {
+            returnType.Accept(_typeVisitor);
+            returnTypeRef = _typeVisitor.Type;
+        }
+        
+        var parameters = signature.Parameters;
+        Span<LLVMTypeRef> paramTypeRefs = stackalloc LLVMTypeRef[parameters.Count];
+        for (var i = 0; i < parameters.Count; i++)
+        {
+            parameters[i].Type.Accept(_typeVisitor);
+            paramTypeRefs[i] = _typeVisitor.Type;
+        }
+        
+        var funcTypeRef = LLVMTypeRef.CreateFunction(returnTypeRef, paramTypeRefs, false);
+        _module.AddFunction(name, funcTypeRef);
     }
 
     public void VisitModuleDefinition(ModuleDefinitionNode node)
