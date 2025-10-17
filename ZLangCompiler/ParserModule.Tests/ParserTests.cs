@@ -505,6 +505,25 @@ public class ParserTests
     }
     
     [Test]
+    public void TestFunctionCall()
+    {
+        const string input = 
+            """
+            array.create(30);
+            """;
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var functionCallNode = Parser.ParseFunctionCall(tokenReader);
+        
+        var printer = new AstPrinter();
+        functionCallNode.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output:\n" + result);
+        
+        Assert.That(functionCallNode.Identifier.Parts, Is.EquivalentTo(new [] {"array", "create"}));
+    }
+    
+    [Test]
     public void TestModuleDefinitionWithMetadata()
     {
         const string input = 

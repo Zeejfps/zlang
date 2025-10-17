@@ -706,4 +706,9 @@ public sealed class Parser
             ReturnType = returnType
         };
     }
+
+    public static FunctionCallNode ParseFunctionCall(TokenReader tokenReader)
+    {
+        throw new NotImplementedException();
+    }
 }
