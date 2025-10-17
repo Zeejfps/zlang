@@ -109,12 +109,18 @@ public sealed class AstPrinter : IAstNodeVisitor
     {
         node.Identifier.Accept(this);
         _sb.Append('(');
-        if (node.Arguments != null && node.Arguments.Count > 0)
+        if (node.Arguments.Count > 0)
         {
-            foreach (var argument in node.Arguments)
+            for (var i = 0; i < node.Arguments.Count - 1; i++)
             {
+                var argument = node.Arguments[i];
                 argument.Accept(this);
+                _sb.Append(',');
+                _sb.Append(' ');
             }
+            
+            var lastArg = node.Arguments[^1];
+            lastArg.Accept(this);       
         }
         _sb.Append(')');
     }

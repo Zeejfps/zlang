@@ -709,6 +709,28 @@ public sealed class Parser
 
     public static FunctionCallNode ParseFunctionCall(TokenReader tokenReader)
     {
-        throw new NotImplementedException();
+        var identifier = ParseQualifiedIdentifier(tokenReader);
+        tokenReader.Read(TokenKind.SymbolLeftParen);
+        var args = new List<ExpressionNode>();
+
+        var keepGoing = tokenReader.Peek().Kind != TokenKind.SymbolRightParen;
+        while (keepGoing)
+        {
+            var arg = ParseExpression(tokenReader);
+            args.Add(arg);
+            
+            keepGoing = tokenReader.Peek().Kind == TokenKind.SymbolComma;
+            if (keepGoing)
+            {
+                tokenReader.Read(TokenKind.SymbolComma);
+            }
+        }
+        tokenReader.Read(TokenKind.SymbolRightParen);
+
+        return new FunctionCallNode
+        {
+            Identifier = identifier,
+            Arguments = args
+        };
     }
 }
