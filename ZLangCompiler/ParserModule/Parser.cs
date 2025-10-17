@@ -324,8 +324,18 @@ public sealed class Parser
 
         if (token.Kind == TokenKind.Identifier)
         {
-            tokenReader.Read();
-            return new IdentifierExpressionNode(token);
+            var identifier = ParseQualifiedIdentifier(tokenReader);
+            if (tokenReader.Peek().Kind == TokenKind.SymbolLeftParen)
+            {
+                var args = ParseFunctionArgs(tokenReader);
+                return new FunctionCallNode
+                {
+                    Identifier = identifier,
+                    Arguments = args
+                };
+            }
+            
+            return identifier;
         }
 
         if (token.Kind == TokenKind.SymbolLeftParen)
@@ -710,6 +720,16 @@ public sealed class Parser
     public static FunctionCallNode ParseFunctionCall(TokenReader tokenReader)
     {
         var identifier = ParseQualifiedIdentifier(tokenReader);
+        var args = ParseFunctionArgs(tokenReader);
+        return new FunctionCallNode
+        {
+            Identifier = identifier,
+            Arguments = args
+        };
+    }
+
+    private static List<ExpressionNode> ParseFunctionArgs(TokenReader tokenReader)
+    {
         tokenReader.Read(TokenKind.SymbolLeftParen);
         var args = new List<ExpressionNode>();
 
@@ -726,11 +746,7 @@ public sealed class Parser
             }
         }
         tokenReader.Read(TokenKind.SymbolRightParen);
-
-        return new FunctionCallNode
-        {
-            Identifier = identifier,
-            Arguments = args
-        };
-    }
+        
+        return args;
+    } 
 }
