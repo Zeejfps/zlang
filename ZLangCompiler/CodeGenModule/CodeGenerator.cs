@@ -79,6 +79,11 @@ public sealed class CodeGenerator : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
+    public void VisitPtrType(PtrTypeNode node)
+    {
+        throw new NotImplementedException();
+    }
+
     public void VisitBlockStatement(BlockStatementNode node)
     {
         throw new NotImplementedException();

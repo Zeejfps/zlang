@@ -420,13 +420,36 @@ public sealed class Parser
 
     public static TypeNode ParseTypeNode(TokenReader tokenReader)
     {
+        var nextToken = tokenReader.Peek();
+        if (nextToken.Kind == TokenKind.TypePtr)
+        {
+            return ParsePtrTypeNode(tokenReader);
+        }
+        
         var identifier = tokenReader.Read(TokenKind.Identifier);
         return new NamedTypeNode
         {
-            Name = identifier.Lexeme,
+            Identifier = identifier.Lexeme,
         };
     }
 
+    public static PtrTypeNode ParsePtrTypeNode(TokenReader tokenReader)
+    {
+        tokenReader.Read(TokenKind.TypePtr);
+        TypeNode? genericType = null;
+        if (tokenReader.Peek().Kind == TokenKind.SymbolLessThan)
+        {
+            tokenReader.Read(TokenKind.SymbolLessThan);
+            genericType = ParseTypeNode(tokenReader);
+            tokenReader.Read(TokenKind.SymbolGreaterThan);
+        }
+
+        return new PtrTypeNode
+        {
+            GenericType = genericType,
+        };
+    }
+    
     public static BlockStatementNode ParseBlockStatement(TokenReader tokenReader)
     {
         tokenReader.Read(TokenKind.SymbolLeftCurlyBrace);

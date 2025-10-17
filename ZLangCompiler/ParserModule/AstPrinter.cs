@@ -107,7 +107,18 @@ public sealed class AstPrinter : IAstNodeVisitor
 
     public void VisitNamedType(NamedTypeNode node)
     {
-        _sb.Append(node.Name);
+        _sb.Append(node.Identifier);
+    }
+
+    public void VisitPtrType(PtrTypeNode node)
+    {
+        _sb.Append("ptr");
+        if (node.GenericType != null)
+        {
+            _sb.Append('<');
+            node.GenericType.Accept(this);
+            _sb.Append('>');       
+        }
     }
 
     public void VisitBlockStatement(BlockStatementNode node)

@@ -109,7 +109,7 @@ public class ParserTests
         Assert.That(varAssign.Name, Is.EqualTo("x"));
         
         varAssign.Type!.AssertIsType<NamedTypeNode>(out var namedType);
-        Assert.That(namedType.Name, Is.EqualTo("u32"));
+        Assert.That(namedType.Identifier, Is.EqualTo("u32"));
         
         varAssign.Value.AssertIsType<LiteralIntegerExpressionNode>(out var literal);
         Assert.That(literal.Value, Is.EqualTo(1337));
@@ -459,11 +459,38 @@ public class ParserTests
     }
     
     [Test]
+    public void TestGenericPtr()
+    {
+        const string input = 
+            """
+            ptr<u32>
+            """;
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var ptrTypeNode = Parser.ParsePtrTypeNode(tokenReader);
+        
+        var printer = new AstPrinter();
+        ptrTypeNode.Accept(printer);
+        var result = printer.ToString();
+        Console.WriteLine("Output:\n" + result);
+        
+        Assert.That(ptrTypeNode.GenericType, Is.Not.Null);
+        ptrTypeNode.GenericType.AssertIsType<NamedTypeNode>(out var namedTypeNode);
+        Assert.That(namedTypeNode.Identifier, Is.EqualTo("u32"));
+    }
+    
+    [Test]
     public void TestExternFunction()
     {
         const string input = 
             """
-            extern func get_std_handle(handle: i32) -> ptr;
+            extern func WriteConsoleA(
+                hConsoleOutput: ptr, 
+                lpBuffer: ptr<u16>, 
+                nNumberOfCharsToWrite: u32,
+                lpNumberOfCharsWritten: ptr<u32>,
+                lpReserved: ptr
+            ) -> i32;
             """;
         var tokens = Lexer.Tokenize(input);
         var tokenReader = new TokenReader(tokens);
@@ -474,7 +501,7 @@ public class ParserTests
         var result = printer.ToString();
         Console.WriteLine("Output:\n" + result);
         
-        Assert.That(externFunction.Signature.Name, Is.EqualTo("get_std_handle"));
+        Assert.That(externFunction.Signature.Name, Is.EqualTo("WriteConsoleA"));
     }
     
     [Test]
