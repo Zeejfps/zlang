@@ -69,14 +69,12 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
 
     public void VisitBlockStatement(BlockStatementNode node)
     {
-        var hasTerminator = false;
         foreach (var statement in node.Statements)
         {
             statement.Accept(this);
-            hasTerminator |= statement is ReturnStatementNode;
         }
 
-        if (!hasTerminator)
+        if (_builder.InsertBlock.Terminator == default)
         {
             Console.WriteLine("Warning: Block statement has no terminator");
             _builder.BuildBr(_func.LastBasicBlock);
