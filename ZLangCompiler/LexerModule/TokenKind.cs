@@ -22,6 +22,9 @@ public enum TokenKind
     KeywordExtern,
     KeywordFrom,
     
+    // Primitive types
+    TypePtr, // ptr
+    
     // One Char Symbols
     SymbolEquals, // =
     SymbolDot, // .

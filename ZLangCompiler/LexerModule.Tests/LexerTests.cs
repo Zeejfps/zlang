@@ -250,6 +250,19 @@ public class LexerTests
         }));
     }
     
+    [TestCase("ptr", TokenKind.TypePtr)]
+    public void TestTypeTokenization(string input, TokenKind expectedKind)
+    {
+        var tokens = Lexer.Tokenize(input);
+
+        Assert.That(tokens, Is.EquivalentTo(new[]
+        {
+            new Token(expectedKind, input, 1, 1),
+            new Token(TokenKind.EOF, string.Empty, 1, input.Length + 1)
+        }));
+    }
+    
+    
     [TestCase("=", TokenKind.SymbolEquals)]
     [TestCase(".", TokenKind.SymbolDot)]
     [TestCase(",", TokenKind.SymbolComma)]

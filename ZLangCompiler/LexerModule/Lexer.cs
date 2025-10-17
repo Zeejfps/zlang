@@ -41,7 +41,7 @@ public sealed class Lexer : IDisposable
         {"--", TokenKind.SymbolMinsMinus},
     };
     
-    public Dictionary<string, TokenKind> Keywords { get; } = new()
+    public Dictionary<string, TokenKind> ReservedKeywords { get; } = new()
     {
         {"module",  TokenKind.KeywordModule},
         {"struct",  TokenKind.KeywordStruct},
@@ -59,6 +59,7 @@ public sealed class Lexer : IDisposable
         {"import",  TokenKind.KeywordImport},
         {"extern",  TokenKind.KeywordExtern},
         {"from",  TokenKind.KeywordFrom},
+        {"ptr",  TokenKind.TypePtr},
     };
     
     private int Line { get; set; } = 1;
