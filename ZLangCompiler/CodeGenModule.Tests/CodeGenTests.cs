@@ -38,24 +38,24 @@ public class CodeGenTests
     {
         const string input =
             """
-            import std.list as list;
-            
             module test {
-                func main() {
-                    return;
-                }
-                
                 func add(x: u32, y: u32) -> u32 {
                     return x + y;
+                }
+                
+                func main() {
+                    add(2, 2);
+                    return;
                 }
             }
             """;
         
         var tokens = Lexer.Tokenize(input);
-        var compilationUnit = Parser.Parse(tokens);
+        var tokenReader = new TokenReader(tokens);
+        var compilationUnit = Parser.ParseModuleDefinition(tokenReader);
         
         var codeGenerator = new CodeGenerator();
-        codeGenerator.Generate(compilationUnit);
+        compilationUnit.Accept(codeGenerator);
         codeGenerator.Verify();
         codeGenerator.SaveToFile("test2.asm");
         
@@ -148,13 +148,15 @@ public class CodeGenTests
             """
             module main {
                 
-                extern func WriteConsoleA(
-                    hConsoleOutput: ptr, 
-                    lpBuffer: ptr<u16>, 
+                func WriteConsoleA(
+                    hConsoleOutput: u32, 
+                    lpBuffer: u32, 
                     nNumberOfCharsToWrite: u32,
-                    lpNumberOfCharsWritten: ptr<u32>,
-                    lpReserved: ptr
-                ) -> i32;
+                    lpNumberOfCharsWritten: u32,
+                    lpReserved: u32
+                ) -> i32 {
+                    return 0;
+                }
                 
                 func main() {
                     WriteConsoleA(0, 0, 0, 0, 0);
@@ -170,7 +172,7 @@ public class CodeGenTests
         moduleDefinition.Accept(codeGenerator);
         codeGenerator.Verify();
         
-        codeGenerator.SaveToFile("funcCall.asm");
+        codeGenerator.SaveToFile("externCall.asm");
         
         Assert.Pass();
     }
