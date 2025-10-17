@@ -12,19 +12,27 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
     private readonly LLVMTypeRef _funcType;
     private readonly LLVMBuilderRef _builder;
     private readonly Dictionary<string, LLVMValueRef> _scope;
+    private readonly Dictionary<string, FunctionSymbol> _functions;
 
-    public StatementVisitor(LLVMContextRef context, LLVMBuilderRef builder, LLVMValueRef func, LLVMTypeRef funcType, Dictionary<string, LLVMValueRef> scope)
+    public StatementVisitor(
+        LLVMContextRef context,
+        LLVMBuilderRef builder,
+        LLVMValueRef func,
+        LLVMTypeRef funcType,
+        Dictionary<string, LLVMValueRef> scope,
+        Dictionary<string, FunctionSymbol> functions)
     {
         _context = context;
         _builder = builder;
         _scope = scope;
+        _functions = functions;
         _funcType = funcType;
         _func = func;
     }
 
     public void VisitVarDefinition(VarDefinitionStatementNode node)
     {
-        var expressionVisitor = new ExpressionVisitor(_scope, _builder);
+        var expressionVisitor = new ExpressionVisitor(_scope, _functions, _builder);
         node.Value.Accept(expressionVisitor);
         var value = expressionVisitor.Result;
         var allocaRef = _builder.BuildAlloca(value.TypeOf, node.Name);
@@ -44,7 +52,7 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
 
     public void VisitVarAssignment(VarAssignmentStatementNode node)
     {
-        var expressionVisitor = new ExpressionVisitor(_scope, _builder);
+        var expressionVisitor = new ExpressionVisitor(_scope, _functions, _builder);
         node.Value.Accept(expressionVisitor);
         _builder.BuildStore(expressionVisitor.Result, _scope[node.Name]);
     }
@@ -77,7 +85,7 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
         }
         else
         {
-            var expressionVisitor = new ExpressionVisitor(_scope, _builder);
+            var expressionVisitor = new ExpressionVisitor(_scope, _functions, _builder);
             node.Result.Accept(expressionVisitor);
             var resultValueRef = expressionVisitor.Result;
             if (resultValueRef.TypeOf.Kind != _funcType.ReturnType.Kind)
@@ -90,7 +98,7 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
 
     public void VisitIfStatementNode(IfStatementNode node)
     {
-        var expressionVisitor = new ExpressionVisitor(_scope, _builder);
+        var expressionVisitor = new ExpressionVisitor(_scope, _functions, _builder);
         
         node.Condition.Accept(expressionVisitor);
         var condition = expressionVisitor.Result;

@@ -10,4 +10,9 @@ public sealed class QualifiedIdentifierExpressionNode : ExpressionNode
     {
         visitor.VisitQualifiedIdentifier(this);
     }
+
+    public override string ToString()
+    {
+        return string.Join(".", Parts);
+    }
 }

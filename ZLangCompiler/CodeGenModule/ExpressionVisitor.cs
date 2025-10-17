@@ -1,6 +1,5 @@
 ﻿using LexerModule;
 using LLVMSharp.Interop;
-using ParserModule;
 using ParserModule.Nodes;
 using ParserModule.Nodes.Expressions;
 using ParserModule.Visitors;
@@ -9,13 +8,18 @@ namespace CodeGenModule;
 
 public sealed class ExpressionVisitor : IExpressionNodeVisitor
 {
+    private readonly Dictionary<string, FunctionSymbol> _function;
     private readonly Dictionary<string, LLVMValueRef> _scope;
     private readonly LLVMBuilderRef _builder;
 
-    public ExpressionVisitor(Dictionary<string, LLVMValueRef> scope, LLVMBuilderRef builder)
+    public ExpressionVisitor(
+        Dictionary<string, LLVMValueRef> scope, 
+        Dictionary<string, FunctionSymbol> function, 
+        LLVMBuilderRef builder)
     {
         _scope = scope;
         _builder = builder;
+        _function = function;
     }
 
     public LLVMValueRef Result { get; private set; }
@@ -85,6 +89,14 @@ public sealed class ExpressionVisitor : IExpressionNodeVisitor
 
     public void VisitFunctionCall(FunctionCallNode node)
     {
-        throw new NotImplementedException();
+        var funcSymbol = _function[node.Identifier.ToString()];
+        var argsRef = new LLVMValueRef[node.Arguments.Count];
+        for (var i = 0; i < node.Arguments.Count; i++)
+        {
+            node.Arguments[i].Accept(this);
+            argsRef[i] = Result;
+        }
+
+        Result = _builder.BuildCall2(funcSymbol.TypeRef, funcSymbol.ValueRef, argsRef);
     }
 }

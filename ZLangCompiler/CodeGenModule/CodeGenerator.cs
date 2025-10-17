@@ -13,6 +13,8 @@ public sealed class CodeGenerator : IAstNodeVisitor
     private readonly LLVMBuilderRef _builder;
     private readonly TypeVisitor _typeVisitor = new();
 
+    private readonly Dictionary<string, FunctionSymbol> _functions = new();
+    
     public CodeGenerator()
     {
         _module = LLVMModuleRef.CreateWithName("z_lang_program");
@@ -116,18 +118,27 @@ public sealed class CodeGenerator : IAstNodeVisitor
         }
         
         var funcTypeRef = LLVMTypeRef.CreateFunction(returnTypeRef, paramTypeRefs, false);
-        var funcRef = _module.AddFunction(name, funcTypeRef);
+        var funcValueRef = _module.AddFunction(name, funcTypeRef);
         for (var i = 0; i < parameters.Count; i++)
         {
-            var paramValueRef = funcRef.GetParam((uint)i);
+            var paramValueRef = funcValueRef.GetParam((uint)i);
             scope.Add(parameters[i].Name, paramValueRef);
         }
         
-        var blockRef = funcRef.AppendBasicBlock("entry");
+        _functions.Add(name, new FunctionSymbol(funcTypeRef, funcValueRef));
+        
+        var blockRef = funcValueRef.AppendBasicBlock("entry");
         _builder.PositionAtEnd(blockRef);
         
         var body = node.Body;
-        var statementVisitor = new StatementVisitor(_context, _builder, funcRef, funcTypeRef, scope);
+        var statementVisitor = new StatementVisitor(
+            _context, 
+            _builder, 
+            funcValueRef, 
+            funcTypeRef,
+            scope,
+            _functions
+        );
         body.Accept(statementVisitor);
     }
 
@@ -172,7 +183,8 @@ public sealed class CodeGenerator : IAstNodeVisitor
         }
         
         var funcTypeRef = LLVMTypeRef.CreateFunction(returnTypeRef, paramTypeRefs, false);
-        _module.AddFunction(name, funcTypeRef);
+        var funcValueRef = _module.AddFunction(name, funcTypeRef);
+        _functions.Add(name, new FunctionSymbol(funcTypeRef, funcValueRef));
     }
 
     public void VisitModuleDefinition(ModuleDefinitionNode node)
