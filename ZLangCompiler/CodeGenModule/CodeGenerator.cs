@@ -1,107 +1,69 @@
 ﻿using LLVMSharp.Interop;
 using ParserModule;
 using ParserModule.Nodes;
-using ParserModule.Nodes.Expressions;
 using ParserModule.Visitors;
 
 namespace CodeGenModule;
 
-public sealed class CodeGenerator : IAstNodeVisitor
+public sealed class CodeGenerator : ITopLevelStatementVisitor
 {
     private readonly LLVMContextRef _context = LLVMContextRef.Global;
     private readonly LLVMModuleRef _module;
     private readonly LLVMBuilderRef _builder;
+    private readonly Dictionary<string, FunctionSymbol> _functions = new();
     private readonly TypeVisitor _typeVisitor = new();
 
-    private readonly Dictionary<string, FunctionSymbol> _functions = new();
-    
+    public ExternFunctionGenerator ExternFunctionGenerator { get; }
+
     public CodeGenerator()
     {
         _module = LLVMModuleRef.CreateWithName("z_lang_program");
         _builder = LLVMBuilderRef.Create(LLVMContextRef.Global);
+        ExternFunctionGenerator = new ExternFunctionGenerator(_module, _functions);
     }
 
-    public void Generate(CompilationUnit compilationUnit)
+    public static void Generate(CompilationUnit compilationUnit)
     {
-        
+        var generator = new CodeGenerator();
+        foreach (var statement in compilationUnit.Statements)
+        {
+            statement.Accept(generator);       
+        }
     }
     
-    public void VisitLiteralInteger(LiteralIntegerExpressionNode node)
+    public void GenerateExternFunctionDeclaration(ExternFunctionDeclarationNode node)
+    {
+        ExternFunctionGenerator.Generate(node);
+    }
+    
+    public void GenerateModuleDefinition(ModuleDefinitionNode node)
+    {
+        var moduleGenerator = new ModuleLevelNodeVisitor(this);
+        foreach (var statement in node.Body)
+        {
+            statement.Accept(moduleGenerator);
+        }
+    }
+    
+    public void VisitStructImport(ImportStatementNode node)
     {
         throw new NotImplementedException();
     }
 
-    public void VisitLiteralBool(LiteralBoolExpressionNode node)
+    public void VisitModuleDefinition(ModuleDefinitionNode node)
     {
-        throw new NotImplementedException();
+        GenerateModuleDefinition(node);
     }
 
-    public void VisitBinary(BinaryExpressionNode node)
+    public void VisitProgram(CompilationUnit node)
     {
-        throw new NotImplementedException();
+        foreach (var statement in node.Statements)
+        {
+            statement.Accept(this);
+        }
     }
 
-    public void VisitUnary(UnaryExpressionNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitIdentifier(IdentifierExpressionNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitVarDefinition(VarDefinitionStatementNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitForStatement(ForStatemetNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitVarDeclaration(VarDeclarationStatementNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitVarAssignment(VarAssignmentStatementNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitWhileStatement(WhileStatementNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitExpressionStatement(ExpressionStatement node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitFunctionCall(FunctionCallNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitNamedType(NamedTypeNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitPtrType(PtrTypeNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitBlockStatement(BlockStatementNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitFunctionDefinition(FunctionDefinitionNode node)
+    public void GenerateFunctionDefinition(FunctionDefinitionNode node)
     {
         var signature = node.Signature;
         var name = signature.Name;
@@ -147,72 +109,6 @@ public sealed class CodeGenerator : IAstNodeVisitor
         body.Accept(statementVisitor);
     }
 
-    public void VisitReturnStatementNode(ReturnStatementNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitParameterNode(FunctionParameter node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitStructImport(ImportStatementNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitStructDefinition(StructDefinitionNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitExternFunctionDeclaration(ExternFunctionDeclarationNode node)
-    {
-        var signature = node.Signature;
-        var name = signature.Name;
-        var returnType = signature.ReturnType;
-        var returnTypeRef = LLVMTypeRef.Void;
-        if (returnType != null)
-        {
-            returnType.Accept(_typeVisitor);
-            returnTypeRef = _typeVisitor.Type;
-        }
-        
-        var parameters = signature.Parameters;
-        Span<LLVMTypeRef> paramTypeRefs = stackalloc LLVMTypeRef[parameters.Count];
-        for (var i = 0; i < parameters.Count; i++)
-        {
-            parameters[i].Type.Accept(_typeVisitor);
-            paramTypeRefs[i] = _typeVisitor.Type;
-        }
-        
-        var funcTypeRef = LLVMTypeRef.CreateFunction(returnTypeRef, paramTypeRefs, false);
-        var funcValueRef = _module.AddFunction(name, funcTypeRef);
-        _functions.Add(name, new FunctionSymbol(funcTypeRef, funcValueRef));
-    }
-
-    public void VisitModuleDefinition(ModuleDefinitionNode node)
-    {
-        foreach (var statement in node.Body)
-        {
-            statement.Accept(this);
-        }
-    }
-
-    public void VisitProgram(CompilationUnit node)
-    {
-        foreach (var statement in node.Statements)
-        {
-            statement.Accept(this);
-        }
-    }
-
-    public void VisitQualifiedIdentifier(QualifiedIdentifierExpressionNode node)
-    {
-        throw new NotImplementedException();
-    }
-
     public void Verify()
     {
         _module.Verify(LLVMVerifierFailureAction.LLVMPrintMessageAction);
@@ -221,10 +117,5 @@ public sealed class CodeGenerator : IAstNodeVisitor
     public void SaveToFile(ReadOnlySpan<char> testAsm)
     {
         _module.PrintToFile(testAsm);
-    }
-
-    public void VisitIfStatementNode(IfStatementNode node)
-    {
-        throw new NotImplementedException();
     }
 }

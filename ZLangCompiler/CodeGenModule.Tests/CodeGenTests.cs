@@ -25,7 +25,7 @@ public class CodeGenTests
         var ast = Parser.ParseFunctionDefinition(tokenReader);
         
         var codeGenerator = new CodeGenerator();
-        ast.Accept(codeGenerator);
+        codeGenerator.GenerateFunctionDefinition(ast);
         codeGenerator.Verify();
         
         codeGenerator.SaveToFile("test.asm");
@@ -51,10 +51,10 @@ public class CodeGenTests
         
         var tokens = Lexer.Tokenize(input);
         var tokenReader = new TokenReader(tokens);
-        var compilationUnit = Parser.ParseModuleDefinition(tokenReader);
+        var moduleDefinitionNode = Parser.ParseModuleDefinition(tokenReader);
         
         var codeGenerator = new CodeGenerator();
-        compilationUnit.Accept(codeGenerator);
+        codeGenerator.GenerateModuleDefinition(moduleDefinitionNode);
         codeGenerator.Verify();
         codeGenerator.SaveToFile("test2.asm");
         
@@ -78,7 +78,7 @@ public class CodeGenTests
         var ast = Parser.ParseFunctionDefinition(tokenReader);
         
         var codeGenerator = new CodeGenerator();
-        ast.Accept(codeGenerator);
+        codeGenerator.GenerateFunctionDefinition(ast);
         codeGenerator.Verify();
         
         codeGenerator.SaveToFile("ifstmt.asm");
@@ -105,7 +105,7 @@ public class CodeGenTests
         var ast = Parser.ParseFunctionDefinition(tokenReader);
         
         var codeGenerator = new CodeGenerator();
-        ast.Accept(codeGenerator);
+        codeGenerator.GenerateFunctionDefinition(ast);
         codeGenerator.Verify();
         
         codeGenerator.SaveToFile("ifelsestmt.asm");
@@ -129,10 +129,10 @@ public class CodeGenTests
         
         var tokens = Lexer.Tokenize(input);
         var tokenReader = new TokenReader(tokens);
-        var ast = Parser.ParseExternFunctionDeclaration(tokenReader);
+        var externFunctionDeclaration = Parser.ParseExternFunctionDeclaration(tokenReader);
         
         var codeGenerator = new CodeGenerator();
-        ast.Accept(codeGenerator);
+        codeGenerator.GenerateExternFunctionDeclaration(externFunctionDeclaration);
         codeGenerator.Verify();
         
         codeGenerator.SaveToFile("externfunc.asm");
@@ -167,7 +167,7 @@ public class CodeGenTests
         var moduleDefinition = Parser.ParseModuleDefinition(tokenReader);
         
         var codeGenerator = new CodeGenerator();
-        moduleDefinition.Accept(codeGenerator);
+        codeGenerator.GenerateModuleDefinition(moduleDefinition);
         codeGenerator.Verify();
         
         codeGenerator.SaveToFile("externCall.asm");
