@@ -189,6 +189,11 @@ public sealed class Parser
             return ParseFunctionDefinition(tokenReader);
         }
 
+        if (nextToken.Kind == TokenKind.KeywordExtern)
+        {
+            return ParseExternFunctionDeclaration(tokenReader);
+        }
+
         throw new Exception($"Unexpected Token {nextToken}. Expected a module level statement");
     }
 
@@ -505,7 +510,30 @@ public sealed class Parser
 
         if (nextToken.Kind == TokenKind.Identifier)
         {
-            return ParseVarAssignmentStatement(tokenReader);
+            var identifier = ParseQualifiedIdentifier(tokenReader);
+            if (tokenReader.Peek().Kind == TokenKind.SymbolLeftParen)
+            {
+                var args = ParseFunctionArgs(tokenReader);
+                tokenReader.Read(TokenKind.SymbolSemicolon);
+                return new ExpressionStatement
+                {
+                    Expression = new FunctionCallNode
+                    {
+                        Identifier = identifier,
+                        Arguments = args
+                    }
+                };
+            }
+           
+            tokenReader.Read(TokenKind.SymbolEquals);
+            var value = ParseExpression(tokenReader);
+            tokenReader.Read(TokenKind.SymbolSemicolon);
+        
+            return new VarAssignmentStatementNode
+            {
+                Name = identifier.ToString(),
+                Value = value,
+            };
         }
         
         throw new ParserException($"Unexpected token encountered, {nextToken}", nextToken);
@@ -681,6 +709,7 @@ public sealed class Parser
     {
         tokenReader.Read(TokenKind.KeywordExtern);
         var signature = ParseFunctionSignature(tokenReader);
+        tokenReader.Read(TokenKind.SymbolSemicolon);
         return new ExternFunctionDeclarationNode
         {
             Signature = signature

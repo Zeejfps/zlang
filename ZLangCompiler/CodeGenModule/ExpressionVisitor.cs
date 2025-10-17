@@ -84,7 +84,8 @@ public sealed class ExpressionVisitor : IExpressionNodeVisitor
 
     public void VisitQualifiedIdentifier(QualifiedIdentifierExpressionNode node)
     {
-        throw new NotImplementedException();
+        var identifier = node.ToString();
+        Result = _scope[identifier];
     }
 
     public void VisitFunctionCall(FunctionCallNode node)

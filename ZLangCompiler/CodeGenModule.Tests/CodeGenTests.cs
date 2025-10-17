@@ -140,4 +140,38 @@ public class CodeGenTests
         
         Assert.Pass();
     }
+    
+    [Test]
+    public void TestFunctionCallDeclaration()
+    {
+        const string input =
+            """
+            module main {
+                
+                extern func WriteConsoleA(
+                    hConsoleOutput: ptr, 
+                    lpBuffer: ptr<u16>, 
+                    nNumberOfCharsToWrite: u32,
+                    lpNumberOfCharsWritten: ptr<u32>,
+                    lpReserved: ptr
+                ) -> i32;
+                
+                func main() {
+                    WriteConsoleA(0, 0, 0, 0, 0);
+                }
+            }
+            """;
+        
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var moduleDefinition = Parser.ParseModuleDefinition(tokenReader);
+        
+        var codeGenerator = new CodeGenerator();
+        moduleDefinition.Accept(codeGenerator);
+        codeGenerator.Verify();
+        
+        codeGenerator.SaveToFile("funcCall.asm");
+        
+        Assert.Pass();
+    }
 }

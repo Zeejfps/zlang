@@ -76,6 +76,11 @@ public sealed class CodeGenerator : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
+    public void VisitExpressionStatement(ExpressionStatement node)
+    {
+        throw new NotImplementedException();
+    }
+
     public void VisitFunctionCall(FunctionCallNode node)
     {
         throw new NotImplementedException();

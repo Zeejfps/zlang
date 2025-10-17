@@ -1,5 +1,4 @@
 ﻿using LLVMSharp.Interop;
-using ParserModule;
 using ParserModule.Nodes;
 using ParserModule.Visitors;
 
@@ -60,6 +59,12 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
     public void VisitWhileStatement(WhileStatementNode node)
     {
         throw new NotImplementedException();
+    }
+
+    public void VisitExpressionStatement(ExpressionStatement node)
+    {
+        var expressionVisitor = new ExpressionVisitor(_scope, _functions, _builder);
+        node.Expression.Accept(expressionVisitor);
     }
 
     public void VisitBlockStatement(BlockStatementNode node)

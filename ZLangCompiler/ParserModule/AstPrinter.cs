@@ -105,6 +105,12 @@ public sealed class AstPrinter : IAstNodeVisitor
         node.Body.Accept(this);
     }
 
+    public void VisitExpressionStatement(ExpressionStatement node)
+    {
+        node.Expression.Accept(this);
+        _sb.Append(';');       
+    }
+
     public void VisitFunctionCall(FunctionCallNode node)
     {
         node.Identifier.Accept(this);
