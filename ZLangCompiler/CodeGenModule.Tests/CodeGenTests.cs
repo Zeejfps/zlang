@@ -119,7 +119,13 @@ public class CodeGenTests
     {
         const string input =
             """
-            extern func test(x: u32, y: u32) -> u32;
+            extern func WriteConsoleA(
+                hConsoleOutput: ptr, 
+                lpBuffer: ptr<u16>, 
+                nNumberOfCharsToWrite: u32,
+                lpNumberOfCharsWritten: ptr<u32>,
+                lpReserved: ptr
+            ) -> i32;
             """;
         
         var tokens = Lexer.Tokenize(input);
