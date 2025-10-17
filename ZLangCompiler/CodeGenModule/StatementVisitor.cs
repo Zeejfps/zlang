@@ -78,6 +78,7 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
 
         if (!hasTerminator)
         {
+            Console.WriteLine("Warning: Block statement has no terminator");
             _builder.BuildBr(_func.LastBasicBlock);
         }
     }

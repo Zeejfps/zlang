@@ -39,13 +39,12 @@ public class CodeGenTests
         const string input =
             """
             module test {
-                func add(x: u32, y: u32) -> u32 {
-                    return x + y;
+                func main() {
+                    return;
                 }
                 
-                func main() {
-                    add(2, 2);
-                    return;
+                func add(x: u32, y: u32) -> u32 {
+                    return x + y;
                 }
             }
             """;
@@ -148,18 +147,17 @@ public class CodeGenTests
             """
             module main {
                 
-                func WriteConsoleA(
+                extern func WriteConsoleA(
                     hConsoleOutput: u32, 
                     lpBuffer: u32, 
                     nNumberOfCharsToWrite: u32,
                     lpNumberOfCharsWritten: u32,
                     lpReserved: u32
-                ) -> i32 {
-                    return 0;
-                }
+                ) -> i32;
                 
                 func main() {
                     WriteConsoleA(0, 0, 0, 0, 0);
+                    return;
                 }
             }
             """;
