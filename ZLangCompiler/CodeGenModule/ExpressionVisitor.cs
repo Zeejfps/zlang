@@ -82,4 +82,9 @@ public sealed class ExpressionVisitor : IExpressionNodeVisitor
     {
         throw new NotImplementedException();
     }
+
+    public void VisitFunctionCall(FunctionCallNode node)
+    {
+        throw new NotImplementedException();
+    }
 }

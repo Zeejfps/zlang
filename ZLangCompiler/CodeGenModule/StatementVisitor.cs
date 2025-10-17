@@ -54,11 +54,6 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
         throw new NotImplementedException();
     }
 
-    public void VisitFunctionCall(FunctionCallNode node)
-    {
-        throw new NotImplementedException();
-    }
-
     public void VisitBlockStatement(BlockStatementNode node)
     {
         var hasTerminator = false;

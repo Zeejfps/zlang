@@ -1,4 +1,5 @@
-﻿using ParserModule.Nodes.Expressions;
+﻿using ParserModule.Nodes;
+using ParserModule.Nodes.Expressions;
 
 namespace ParserModule.Visitors;
 
@@ -10,4 +11,5 @@ public interface IExpressionNodeVisitor
     void VisitLiteralBool(LiteralBoolExpressionNode node);
     void VisitIdentifier(IdentifierExpressionNode node);
     void VisitQualifiedIdentifier(QualifiedIdentifierExpressionNode node);
+    void VisitFunctionCall(FunctionCallNode node);
 }
