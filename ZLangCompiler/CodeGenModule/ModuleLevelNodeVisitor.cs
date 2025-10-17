@@ -1,5 +1,4 @@
-﻿using LLVMSharp.Interop;
-using ParserModule.Nodes;
+﻿using ParserModule.Nodes;
 using ParserModule.Visitors;
 
 namespace CodeGenModule;
