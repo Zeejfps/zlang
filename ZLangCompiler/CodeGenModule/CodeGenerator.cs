@@ -13,22 +13,13 @@ public sealed class CodeGenerator : ITopLevelStatementVisitor
     private readonly Dictionary<string, FunctionSymbol> _functions = new();
     private readonly TypeVisitor _typeVisitor = new();
 
-    public ExternFunctionGenerator ExternFunctionGenerator { get; }
+    private ExternFunctionGenerator ExternFunctionGenerator { get; }
 
     public CodeGenerator()
     {
         _module = LLVMModuleRef.CreateWithName("z_lang_program");
         _builder = LLVMBuilderRef.Create(LLVMContextRef.Global);
         ExternFunctionGenerator = new ExternFunctionGenerator(_module, _functions);
-    }
-
-    public static void Generate(CompilationUnit compilationUnit)
-    {
-        var generator = new CodeGenerator();
-        foreach (var statement in compilationUnit.Statements)
-        {
-            statement.Accept(generator);       
-        }
     }
     
     public void GenerateExternFunctionDeclaration(ExternFunctionDeclarationNode node)

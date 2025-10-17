@@ -25,6 +25,6 @@ public sealed class ModuleLevelNodeVisitor : IModuleLevelNodeVisitor
 
     public void VisitExternFunctionDeclaration(ExternFunctionDeclarationNode node)
     {
-        _codeGenerator.ExternFunctionGenerator.Generate(node);
+        _codeGenerator.GenerateExternFunctionDeclaration(node);
     }
 }
