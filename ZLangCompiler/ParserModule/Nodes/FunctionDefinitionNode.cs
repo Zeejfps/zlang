@@ -2,10 +2,14 @@
 
 namespace ParserModule.Nodes;
 
-public sealed class FunctionParameter
+public sealed class FunctionParameter : AstNode
 {
     public required string Name { get; init; }
     public required TypeNode Type { get; init; }
+    public override void Accept(IAstNodeVisitor visitor)
+    {
+        throw new NotImplementedException();
+    }
 }
 
 public sealed class FunctionDefinitionNode : ModuleLevelStatementNode
