@@ -38,11 +38,6 @@ public sealed class AstPrinter : IAstNodeVisitor
             _sb.Append(unaryExpressionNode.Operator.Lexeme);       
     }
 
-    public void VisitIdentifier(IdentifierExpressionNode node)
-    {
-        _sb.Append(node.Token.Lexeme);
-    }
-
     public void VisitVarDefinition(VarDefinitionStatementNode node)
     {
         _sb.Append("var ");       
@@ -230,7 +225,7 @@ public sealed class AstPrinter : IAstNodeVisitor
     public void VisitFunctionSignature(FunctionSignature node)
     {
         _sb.Append("func ");
-        _sb.Append(node.Name);
+        _sb.Append(node.Identifier);
         _sb.Append('(');
         if (node.Parameters.Count > 0)
         {

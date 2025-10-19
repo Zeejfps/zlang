@@ -20,4 +20,10 @@
         <Using Include="NUnit.Framework"/>
     </ItemGroup>
 
+    <ItemGroup>
+      <ProjectReference Include="..\LexerModule\LexerModule.csproj" />
+      <ProjectReference Include="..\ParserModule\ParserModule.csproj" />
+      <ProjectReference Include="..\SemanticAnalysisModule\SemanticAnalysisModule.csproj" />
+    </ItemGroup>
+
 </Project>

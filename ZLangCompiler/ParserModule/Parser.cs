@@ -740,7 +740,7 @@ public sealed class Parser
 
         return new FunctionSignature
         {
-            Name = name,
+            Identifier = name,
             Parameters = @params ?? [],
             ReturnType = returnType
         };

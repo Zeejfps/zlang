@@ -46,18 +46,10 @@ public sealed class CodeGenerator : ITopLevelStatementVisitor
         GenerateModuleDefinition(node);
     }
 
-    public void VisitProgram(CompilationUnit node)
-    {
-        foreach (var statement in node.Statements)
-        {
-            statement.Accept(this);
-        }
-    }
-
     public void GenerateFunctionDefinition(FunctionDefinitionNode node)
     {
         var signature = node.Signature;
-        var name = signature.Name;
+        var name = signature.Identifier;
         var returnType = signature.ReturnType;
         var returnTypeRef = LLVMTypeRef.Void;
         if (returnType != null)

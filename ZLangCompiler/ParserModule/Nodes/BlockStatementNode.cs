@@ -4,7 +4,7 @@ namespace ParserModule.Nodes;
 
 public sealed class BlockStatementNode : StatementNode
 {
-    public IReadOnlyList<StatementNode> Statements { get; }
+    public List<StatementNode> Statements { get; }
 
     public BlockStatementNode(List<StatementNode> statements)
     {

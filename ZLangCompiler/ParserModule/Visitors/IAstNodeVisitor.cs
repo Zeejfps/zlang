@@ -1,6 +1,4 @@
-﻿using ParserModule.Nodes;
-
-namespace ParserModule.Visitors;
+﻿namespace ParserModule.Visitors;
 
 public interface IAstNodeVisitor :
     ITopLevelStatementVisitor,
@@ -9,5 +7,4 @@ public interface IAstNodeVisitor :
     IExpressionNodeVisitor,
     ITypeNodeVisitor
 {
-    void VisitProgram(CompilationUnit node);
 }

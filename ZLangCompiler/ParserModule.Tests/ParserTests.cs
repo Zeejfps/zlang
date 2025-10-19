@@ -154,7 +154,7 @@ public class ParserTests
         Console.WriteLine("Output: " + result);
         
         astNode.AssertIsType<FunctionDefinitionNode>(out var functionDeclarationNode);
-        Assert.That(functionDeclarationNode.Signature.Name, Is.EqualTo("main"));
+        Assert.That(functionDeclarationNode.Signature.Identifier, Is.EqualTo("main"));
         Assert.That(functionDeclarationNode.Body.Statements.Count, Is.EqualTo(1));
     }
     
@@ -178,7 +178,7 @@ public class ParserTests
         Console.WriteLine("Output: " + result);
         
         astNode.AssertIsType<FunctionDefinitionNode>(out var functionDeclarationNode);
-        Assert.That(functionDeclarationNode.Signature.Name, Is.EqualTo("add"));
+        Assert.That(functionDeclarationNode.Signature.Identifier, Is.EqualTo("add"));
         Assert.That(functionDeclarationNode.Body.Statements.Count, Is.EqualTo(2));
         
         functionDeclarationNode.Body.Statements[1].AssertIsType<ReturnStatementNode>(out var returnStatementNode);
@@ -207,7 +207,7 @@ public class ParserTests
         Console.WriteLine("Output: " + result);
         
         astNode.AssertIsType<FunctionDefinitionNode>(out var functionDeclarationNode);
-        Assert.That(functionDeclarationNode.Signature.Name, Is.EqualTo("add"));
+        Assert.That(functionDeclarationNode.Signature.Identifier, Is.EqualTo("add"));
         Assert.That(functionDeclarationNode.Body.Statements.Count, Is.EqualTo(2));
         Assert.That(functionDeclarationNode.Signature.Parameters.Count, Is.EqualTo(2));
         
@@ -501,7 +501,7 @@ public class ParserTests
         var result = printer.ToString();
         Console.WriteLine("Output:\n" + result);
         
-        Assert.That(externFunction.Signature.Name, Is.EqualTo("WriteConsoleA"));
+        Assert.That(externFunction.Signature.Identifier, Is.EqualTo("WriteConsoleA"));
     }
     
     [Test]

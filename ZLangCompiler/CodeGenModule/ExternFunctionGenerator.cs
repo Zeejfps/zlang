@@ -18,7 +18,7 @@ public sealed class ExternFunctionGenerator
     public void Generate(ExternFunctionDeclarationNode node)
     {
         var signature = node.Signature;
-        var name = signature.Name;
+        var name = signature.Identifier;
         var returnType = signature.ReturnType;
         var returnTypeRef = LLVMTypeRef.Void;
         if (returnType != null)
