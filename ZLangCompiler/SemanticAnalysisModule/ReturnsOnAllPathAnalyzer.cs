@@ -9,40 +9,16 @@ public sealed class ReturnsOnAllPathAnalyzer : IStatementNodeVisitor
     
     public bool Result { get; private set; }
 
-    public static bool ReturnsOnAllPaths(StatementNode statement, TypeNode? expectedReturnType)
+    private bool ReturnsOnAllPaths(StatementNode statement)
     {
-        if (statement is ReturnStatementNode returnStatementNode)
-        {
-            return expectedReturnType == returnStatementNode.InferredType;
-        }
-
-        if (statement is BlockStatementNode blockStatement)
-        {
-            return blockStatement
-                .Statements
-                .Any(stmt => ReturnsOnAllPaths(stmt, expectedReturnType));
-        }
-
-        if (statement is IfStatementNode ifStatement)
-        {
-            var thenReturns = ReturnsOnAllPaths(ifStatement.ThenBranch, expectedReturnType);
-            var elseReturns = ifStatement.ElseBranch != null && ReturnsOnAllPaths(ifStatement.ElseBranch, expectedReturnType);
-            return thenReturns && elseReturns;
-        }
-
-        return false;
+        statement.Accept(this);
+        return Result;
     }
 
     public void VisitIfStatementNode(IfStatementNode ifStatement)
     {
-        var expectedReturnType = ExpectedReturnType;
-        var thenReturns = ReturnsOnAllPaths(ifStatement.ThenBranch, expectedReturnType);
-        var elseReturns = true;
-        if (ifStatement.ElseBranch != null)
-        {
-            elseReturns = ReturnsOnAllPaths(ifStatement.ElseBranch, expectedReturnType);
-        }
-
+        var thenReturns = ReturnsOnAllPaths(ifStatement.ThenBranch);
+        var elseReturns = ifStatement.ElseBranch != null && ReturnsOnAllPaths(ifStatement.ElseBranch);
         Result = thenReturns && elseReturns;
     }
 
@@ -50,7 +26,7 @@ public sealed class ReturnsOnAllPathAnalyzer : IStatementNodeVisitor
     {
         Result = blockStatement
             .Statements
-            .Any(stmt => ReturnsOnAllPaths(stmt, ExpectedReturnType));
+            .Any(ReturnsOnAllPaths);
     }
 
     public void VisitReturnStatementNode(ReturnStatementNode returnStatement)

@@ -36,7 +36,7 @@ public class SemanticAnalyzerTests
     {
         const string input =
             """
-            {
+            func main(x: u32, y: u32) {
                 if (x < y) {
                     return;
                 } 
@@ -45,9 +45,36 @@ public class SemanticAnalyzerTests
         
         var tokens = Lexer.Tokenize(input);
         var tokenReader = new TokenReader(tokens);
-        var blockStatement = Parser.ParseBlockStatement(tokenReader);
+        var functionDefinition = Parser.ParseFunctionDefinition(tokenReader);
         var returnsOnAllPathAnalyzer = new ReturnsOnAllPathAnalyzer();
-        blockStatement.Accept(returnsOnAllPathAnalyzer);
+        functionDefinition.Body.Accept(returnsOnAllPathAnalyzer);
+        Assert.That(returnsOnAllPathAnalyzer.Result, Is.False);
+    }
+    
+    [Test]
+    public void TestReturnsOnAllPaths_SimpleFunctionWithReturnType()
+    {
+        const string input =
+            """
+            func main(x: u32, y: u32) -> u32{
+                if (x < y) {
+                    return;
+                } 
+                return;
+            }
+            """;
+        
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var functionDefinition = Parser.ParseFunctionDefinition(tokenReader);
+        var returnsOnAllPathAnalyzer = new ReturnsOnAllPathAnalyzer
+        {
+            ExpectedReturnType = new NamedTypeNode
+            {
+                Identifier = "u32"
+            }
+        };
+        functionDefinition.Body.Accept(returnsOnAllPathAnalyzer);
         Assert.That(returnsOnAllPathAnalyzer.Result, Is.False);
     }
 }
