@@ -6,8 +6,9 @@ namespace SemanticAnalysisModule;
 
 public sealed class SymbolsDeclarationAnalyzer : IAstNodeVisitor
 {
-    
     private Scope _currentScope = new(null);
+    
+    public Scope Scope => _currentScope;
     
     public void VisitStructImport(ImportStatementNode node)
     {
@@ -52,7 +53,8 @@ public sealed class SymbolsDeclarationAnalyzer : IAstNodeVisitor
 
     public void VisitIfStatementNode(IfStatementNode node)
     {
-        throw new NotImplementedException();
+        node.ThenBranch.Accept(this);
+        node.ElseBranch?.Accept(this);
     }
 
     public void VisitBlockStatement(BlockStatementNode blockStatement)

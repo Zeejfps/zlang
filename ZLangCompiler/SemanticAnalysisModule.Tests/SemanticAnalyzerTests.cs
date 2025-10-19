@@ -78,4 +78,28 @@ public class SemanticAnalyzerTests
         functionDefinition.Body.Accept(returnsOnAllPathAnalyzer);
         Assert.That(returnsOnAllPathAnalyzer.Result, Is.False);
     }
+    
+    [Test]
+    public void TestSymbolCollection()
+    {
+        const string input =
+            """
+            func main(x: u32, y: u32) -> u32{
+                if (x < y) {
+                    return;
+                } 
+                return;
+            }
+            """;
+        
+        var tokens = Lexer.Tokenize(input);
+        var tokenReader = new TokenReader(tokens);
+        var functionDefinition = Parser.ParseFunctionDefinition(tokenReader);
+        var symbolsDeclarationAnalyzer = new SymbolsDeclarationAnalyzer();
+        functionDefinition.Accept(symbolsDeclarationAnalyzer);
+        
+        Console.WriteLine(symbolsDeclarationAnalyzer.Scope);
+        
+        Assert.Pass();
+    }
 }

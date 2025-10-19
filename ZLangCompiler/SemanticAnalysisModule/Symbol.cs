@@ -3,7 +3,7 @@ using ParserModule.Nodes;
 
 namespace SemanticAnalysisModule;
 
-class Symbol
+public class Symbol
 {
     public string Name { get; }
     public TypeNode? Type { get; }
@@ -14,5 +14,10 @@ class Symbol
         Name = name;
         Type = type;
         DeclaringNode = declaringNode;
+    }
+
+    public override string ToString()
+    {
+        return $"{Name} {DeclaringNode.GetType()} -> {Type}";
     }
 }

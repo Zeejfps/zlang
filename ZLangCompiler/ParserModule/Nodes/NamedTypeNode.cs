@@ -10,4 +10,9 @@ public sealed class NamedTypeNode : TypeNode
     {
         visitor.VisitNamedType(this);
     }
+
+    public override string ToString()
+    {
+        return Identifier;
+    }
 }
