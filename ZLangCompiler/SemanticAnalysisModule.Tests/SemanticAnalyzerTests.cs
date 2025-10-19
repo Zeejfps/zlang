@@ -86,9 +86,10 @@ public class SemanticAnalyzerTests
             """
             func main(x: u32, y: u32) -> u32{
                 if (x < y) {
-                    return;
+                    var z = 10;
+                    return z;
                 } 
-                return;
+                return x;
             }
             """;
         

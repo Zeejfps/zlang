@@ -1,14 +1,15 @@
 using ParserModule.Nodes;
-using ParserModule.Nodes.Expressions;
 using ParserModule.Visitors;
 
 namespace SemanticAnalysisModule;
 
-public sealed class SymbolsDeclarationAnalyzer : IAstNodeVisitor
+public sealed class SymbolsDeclarationAnalyzer : ITopLevelStatementVisitor, IModuleLevelNodeVisitor, IStatementNodeVisitor
 {
     private Scope _currentScope = new(null);
     
     public Scope Scope => _currentScope;
+
+    private readonly ExpressionTypeAnalyzer _expressionTypeAnalyzer = new();
     
     public void VisitStructImport(ImportStatementNode node)
     {
@@ -17,7 +18,12 @@ public sealed class SymbolsDeclarationAnalyzer : IAstNodeVisitor
 
     public void VisitModuleDefinition(ModuleDefinitionNode node)
     {
-        throw new NotImplementedException();
+        _currentScope = new Scope(_currentScope);
+        foreach (var statement in node.Body)
+        {
+            statement.Accept(this);
+        }
+        _currentScope = _currentScope.Parent!;
     }
 
     public void VisitFunctionDefinition(FunctionDefinitionNode node)
@@ -48,7 +54,10 @@ public sealed class SymbolsDeclarationAnalyzer : IAstNodeVisitor
 
     public void VisitExternFunctionDeclaration(ExternFunctionDeclarationNode node)
     {
-        throw new NotImplementedException();
+        var signature = node.Signature;
+        var symbol = new Symbol(signature.Identifier, signature.ReturnType, node);
+        if (!_currentScope.TryDefine(symbol))
+            throw new Exception($"Function '{signature.Identifier}' already defined in this scope.");
     }
 
     public void VisitIfStatementNode(IfStatementNode node)
@@ -69,7 +78,6 @@ public sealed class SymbolsDeclarationAnalyzer : IAstNodeVisitor
 
     public void VisitReturnStatementNode(ReturnStatementNode node)
     {
-        
     }
 
     public void VisitForStatement(ForStatemetNode node)
@@ -79,7 +87,11 @@ public sealed class SymbolsDeclarationAnalyzer : IAstNodeVisitor
 
     public void VisitVarDefinition(VarDefinitionStatementNode node)
     {
-        var symbol = new Symbol(node.Identifier, node.Type, node);
+        var inferType = _expressionTypeAnalyzer.InferType(node.Value);
+        if (node.Type != null && inferType != node.Type)
+            throw new Exception($"Inferred type does not match specified type. Inferred: {inferType}, Specified: {node.Type}");
+        
+        var symbol = new Symbol(node.Identifier, inferType, node);
         if (!_currentScope.TryDefine(symbol))
             throw new Exception($"Variable '{node.Identifier}' already defined in this scope.");
     }
@@ -93,7 +105,6 @@ public sealed class SymbolsDeclarationAnalyzer : IAstNodeVisitor
 
     public void VisitVarAssignment(VarAssignmentStatementNode node)
     {
-        throw new NotImplementedException();
     }
 
     public void VisitWhileStatement(WhileStatementNode node)
@@ -106,42 +117,7 @@ public sealed class SymbolsDeclarationAnalyzer : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
-    public void VisitBinary(BinaryExpressionNode binaryExpression)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitUnary(UnaryExpressionNode unaryExpression)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitLiteralInteger(LiteralIntegerExpressionNode literalIntegerExpression)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitLiteralBool(LiteralBoolExpressionNode literalBoolExpression)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitQualifiedIdentifier(QualifiedIdentifierExpressionNode identifierExpression)
-    {
-        throw new NotImplementedException();
-    }
-
     public void VisitFunctionCall(FunctionCallNode functionCallExpression)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitNamedType(NamedTypeNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitPtrType(PtrTypeNode node)
     {
         throw new NotImplementedException();
     }

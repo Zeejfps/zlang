@@ -387,13 +387,8 @@ public sealed class Parser
     {
         tokenReader.Read(TokenKind.KeywordVar);
         var identifier = tokenReader.Read(TokenKind.Identifier);
-        TypeNode? type = null;
-        if (tokenReader.Peek().Kind == TokenKind.SymbolColon)
-        {
-            tokenReader.Read();
-            type = ParseTypeNode(tokenReader);
-        }
-        
+        tokenReader.Read(TokenKind.SymbolColon);
+        var type = ParseTypeNode(tokenReader);
         tokenReader.Read(TokenKind.SymbolSemicolon);
         
         return new VarDeclarationStatementNode
