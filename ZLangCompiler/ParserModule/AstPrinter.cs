@@ -41,7 +41,7 @@ public sealed class AstPrinter : IAstNodeVisitor
     public void VisitVarDefinition(VarDefinitionStatementNode node)
     {
         _sb.Append("var ");       
-        _sb.Append(node.Name);
+        _sb.Append(node.Identifier);
         if (node.Type != null)
         {
             _sb.Append(':');
@@ -72,7 +72,7 @@ public sealed class AstPrinter : IAstNodeVisitor
     public void VisitVarDeclaration(VarDeclarationStatementNode node)
     {
         _sb.Append("var ");
-        _sb.Append(node.Name);
+        _sb.Append(node.Identifier);
         if (node.Type != null)
         {
             _sb.Append(':');

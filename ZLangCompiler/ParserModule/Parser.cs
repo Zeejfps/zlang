@@ -364,7 +364,7 @@ public sealed class Parser
     {
         tokenReader.Read(TokenKind.KeywordVar);
         var identifier = tokenReader.Read(TokenKind.Identifier);
-        AstNode? type = null;
+        TypeNode? type = null;
         if (tokenReader.Peek().Kind == TokenKind.SymbolColon)
         {
             tokenReader.Read();
@@ -377,7 +377,7 @@ public sealed class Parser
         
         return new VarDefinitionStatementNode
         {
-            Name = identifier.Lexeme,
+            Identifier = identifier.Lexeme,
             Type = type,
             Value = value,
         };
@@ -387,7 +387,7 @@ public sealed class Parser
     {
         tokenReader.Read(TokenKind.KeywordVar);
         var identifier = tokenReader.Read(TokenKind.Identifier);
-        AstNode? type = null;
+        TypeNode? type = null;
         if (tokenReader.Peek().Kind == TokenKind.SymbolColon)
         {
             tokenReader.Read();
@@ -398,7 +398,7 @@ public sealed class Parser
         
         return new VarDeclarationStatementNode
         {
-            Name = identifier.Lexeme,
+            Identifier = identifier.Lexeme,
             Type = type,
         };
     }

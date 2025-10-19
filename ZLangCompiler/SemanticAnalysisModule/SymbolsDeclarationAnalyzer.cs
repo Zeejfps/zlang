@@ -55,14 +55,19 @@ public sealed class SymbolsDeclarationAnalyzer : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
-    public void VisitBlockStatement(BlockStatementNode node)
+    public void VisitBlockStatement(BlockStatementNode blockStatement)
     {
-        throw new NotImplementedException();
+        _currentScope = new Scope(_currentScope);
+        foreach (var statement in blockStatement.Statements)
+        {
+            statement.Accept(this);
+        }
+        _currentScope = _currentScope.Parent!;
     }
 
     public void VisitReturnStatementNode(ReturnStatementNode node)
     {
-        throw new NotImplementedException();
+        
     }
 
     public void VisitForStatement(ForStatemetNode node)
@@ -72,12 +77,16 @@ public sealed class SymbolsDeclarationAnalyzer : IAstNodeVisitor
 
     public void VisitVarDefinition(VarDefinitionStatementNode node)
     {
-        throw new NotImplementedException();
+        var symbol = new Symbol(node.Identifier, node.Type, node);
+        if (!_currentScope.TryDefine(symbol))
+            throw new Exception($"Variable '{node.Identifier}' already defined in this scope.");
     }
 
     public void VisitVarDeclaration(VarDeclarationStatementNode node)
     {
-        throw new NotImplementedException();
+        var symbol = new Symbol(node.Identifier, node.Type, node);
+        if (!_currentScope.TryDefine(symbol))
+            throw new Exception($"Variable '{node.Identifier}' already defined in this scope.");
     }
 
     public void VisitVarAssignment(VarAssignmentStatementNode node)

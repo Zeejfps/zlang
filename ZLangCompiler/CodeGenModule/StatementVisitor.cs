@@ -34,9 +34,9 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
         var expressionVisitor = new ExpressionVisitor(_scope, _functions, _builder);
         node.Value.Accept(expressionVisitor);
         var value = expressionVisitor.Result;
-        var allocaRef = _builder.BuildAlloca(value.TypeOf, node.Name);
+        var allocaRef = _builder.BuildAlloca(value.TypeOf, node.Identifier);
         _builder.BuildStore(value, allocaRef);
-        _scope.Add(node.Name, allocaRef);
+        _scope.Add(node.Identifier, allocaRef);
     }
 
     public void VisitForStatement(ForStatemetNode node)

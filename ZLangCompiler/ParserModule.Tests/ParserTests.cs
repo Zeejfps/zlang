@@ -106,7 +106,7 @@ public class ParserTests
         Console.WriteLine("Output: " + result);
         
         astNode.AssertIsType<VarDefinitionStatementNode>(out var varAssign);
-        Assert.That(varAssign.Name, Is.EqualTo("x"));
+        Assert.That(varAssign.Identifier, Is.EqualTo("x"));
         
         varAssign.Type!.AssertIsType<NamedTypeNode>(out var namedType);
         Assert.That(namedType.Identifier, Is.EqualTo("u32"));
