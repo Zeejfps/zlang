@@ -5,10 +5,10 @@ namespace ParserModule.Visitors;
 
 public interface IExpressionNodeVisitor
 {
-    void VisitBinary(BinaryExpressionNode node);
-    void VisitUnary(UnaryExpressionNode node);
-    void VisitLiteralInteger(LiteralIntegerExpressionNode node);
-    void VisitLiteralBool(LiteralBoolExpressionNode node);
-    void VisitQualifiedIdentifier(QualifiedIdentifierExpressionNode node);
-    void VisitFunctionCall(FunctionCallNode node);
+    void VisitBinary(BinaryExpressionNode binaryExpression);
+    void VisitUnary(UnaryExpressionNode unaryExpression);
+    void VisitLiteralInteger(LiteralIntegerExpressionNode literalIntegerExpression);
+    void VisitLiteralBool(LiteralBoolExpressionNode literalBoolExpression);
+    void VisitQualifiedIdentifier(QualifiedIdentifierExpressionNode identifierExpression);
+    void VisitFunctionCall(FunctionCallNode functionCallExpression);
 }

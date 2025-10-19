@@ -67,6 +67,7 @@ public class SemanticAnalyzerTests
         var tokens = Lexer.Tokenize(input);
         var tokenReader = new TokenReader(tokens);
         var functionDefinition = Parser.ParseFunctionDefinition(tokenReader);
+        var expressionTypeAnalyzer = new ExpressionTypeAnalyzer();
         var returnsOnAllPathAnalyzer = new ReturnsOnAllPathAnalyzer
         {
             ExpectedReturnType = new NamedTypeNode
