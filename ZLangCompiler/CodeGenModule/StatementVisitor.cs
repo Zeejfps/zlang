@@ -29,10 +29,10 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
         _func = func;
     }
 
-    public void VisitVarDefinition(VarDefinitionStatementNode node)
+    public void VisitVarDeclaration(VarDeclarationStatementNode node)
     {
         var expressionVisitor = new ExpressionVisitor(_scope, _functions, _builder);
-        node.Value.Accept(expressionVisitor);
+        node.Initializer.Accept(expressionVisitor);
         var value = expressionVisitor.Result;
         var allocaRef = _builder.BuildAlloca(value.TypeOf, node.Identifier);
         _builder.BuildStore(value, allocaRef);
@@ -40,11 +40,6 @@ internal sealed class StatementVisitor : IStatementNodeVisitor
     }
 
     public void VisitForStatement(ForStatemetNode node)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void VisitVarDeclaration(VarDeclarationStatementNode node)
     {
         throw new NotImplementedException();
     }

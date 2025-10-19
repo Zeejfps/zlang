@@ -360,7 +360,7 @@ public sealed class Parser
         throw new ParserException($"Unexpected token encountered, {token}", token);
     }
 
-    public static VarDefinitionStatementNode ParseVarDefinitionStatement(TokenReader tokenReader)
+    public static VarDeclarationStatementNode ParseVarDefinitionStatement(TokenReader tokenReader)
     {
         tokenReader.Read(TokenKind.KeywordVar);
         var identifier = tokenReader.Read(TokenKind.Identifier);
@@ -371,30 +371,20 @@ public sealed class Parser
             type = ParseTypeNode(tokenReader);
         }
 
-        tokenReader.Read(TokenKind.SymbolEquals);
-        var value = ParseExpression(tokenReader);
-        tokenReader.Read(TokenKind.SymbolSemicolon);
-        
-        return new VarDefinitionStatementNode
+        ExpressionNode? initializer = null;
+        if (tokenReader.Peek().Kind == TokenKind.SymbolEquals)
         {
-            Identifier = identifier.Lexeme,
-            Type = type,
-            Value = value,
-        };
-    }
-    
-    public static VarDeclarationStatementNode ParseVarDeclarationStatement(TokenReader tokenReader)
-    {
-        tokenReader.Read(TokenKind.KeywordVar);
-        var identifier = tokenReader.Read(TokenKind.Identifier);
-        tokenReader.Read(TokenKind.SymbolColon);
-        var type = ParseTypeNode(tokenReader);
+            tokenReader.Read();
+            initializer = ParseExpression(tokenReader);
+        }
+        
         tokenReader.Read(TokenKind.SymbolSemicolon);
         
         return new VarDeclarationStatementNode
         {
             Identifier = identifier.Lexeme,
             Type = type,
+            Initializer = initializer,
         };
     }
     

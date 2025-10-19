@@ -85,6 +85,8 @@ public class SemanticAnalyzerTests
         const string input =
             """
             func main(x: u32, y: u32) -> u32{
+                var d: bool;
+                d = false;
                 if (x < y) {
                     var z = 10;
                     return z;

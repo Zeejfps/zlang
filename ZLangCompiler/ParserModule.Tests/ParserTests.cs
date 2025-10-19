@@ -105,13 +105,13 @@ public class ParserTests
         var result = printer.ToString();
         Console.WriteLine("Output: " + result);
         
-        astNode.AssertIsType<VarDefinitionStatementNode>(out var varAssign);
+        astNode.AssertIsType<VarDeclarationStatementNode>(out var varAssign);
         Assert.That(varAssign.Identifier, Is.EqualTo("x"));
         
         varAssign.Type!.AssertIsType<NamedTypeNode>(out var namedType);
         Assert.That(namedType.Identifier, Is.EqualTo("u32"));
         
-        varAssign.Value.AssertIsType<LiteralIntegerExpressionNode>(out var literal);
+        varAssign.Initializer.AssertIsType<LiteralIntegerExpressionNode>(out var literal);
         Assert.That(literal.Value, Is.EqualTo(1337));
     }
     
@@ -312,7 +312,7 @@ public class ParserTests
         var result = printer.ToString();
         Console.WriteLine("Output:\n" + result);
 
-        forStatementNode.Initializer.AssertIsType<VarDefinitionStatementNode>(out var initializerNode);
+        forStatementNode.Initializer.AssertIsType<VarDeclarationStatementNode>(out var initializerNode);
         forStatementNode.Condition.AssertIsType<BinaryExpressionNode>(out var condition);
         forStatementNode.Incrementor.AssertIsType<UnaryExpressionNode>(out var incrementorNode);
         forStatementNode.Body.AssertIsType<BlockStatementNode>(out var elseBranch);
@@ -361,7 +361,7 @@ public class ParserTests
             """;
         var tokens = Lexer.Tokenize(input);
         var tokenReader = new TokenReader(tokens);
-        var varDeclaration = Parser.ParseVarDeclarationStatement(tokenReader);
+        var varDeclaration = Parser.ParseVarDefinitionStatement(tokenReader);
         
         var printer = new AstPrinter();
         varDeclaration.Accept(printer);

@@ -56,16 +56,11 @@ public sealed class SemanticTransformer : IAstNodeVisitor
         throw new NotImplementedException();
     }
 
-    public void VisitVarDefinition(VarDefinitionStatementNode node)
-    {
-
-    }
-
     public void VisitVarDeclaration(VarDeclarationStatementNode node)
     {
-        throw new NotImplementedException();
-    }
 
+    }
+    
     public void VisitVarAssignment(VarAssignmentStatementNode node)
     {
         throw new NotImplementedException();

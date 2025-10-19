@@ -39,13 +39,9 @@ public sealed class ReturnsOnAllPathAnalyzer : IStatementNodeVisitor
         throw new NotImplementedException();
     }
 
-    public void VisitVarDefinition(VarDefinitionStatementNode node)
-    {
-        
-    }
-
     public void VisitVarDeclaration(VarDeclarationStatementNode node)
     {
+        Result = false;
     }
 
     public void VisitVarAssignment(VarAssignmentStatementNode node)

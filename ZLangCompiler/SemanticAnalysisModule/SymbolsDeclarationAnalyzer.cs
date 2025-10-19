@@ -85,20 +85,22 @@ public sealed class SymbolsDeclarationAnalyzer : ITopLevelStatementVisitor, IMod
         throw new NotImplementedException();
     }
 
-    public void VisitVarDefinition(VarDefinitionStatementNode node)
-    {
-        var inferType = _expressionTypeAnalyzer.InferType(node.Value);
-        if (node.Type != null && inferType != node.Type)
-            throw new Exception($"Inferred type does not match specified type. Inferred: {inferType}, Specified: {node.Type}");
-        
-        var symbol = new Symbol(node.Identifier, inferType, node);
-        if (!_currentScope.TryDefine(symbol))
-            throw new Exception($"Variable '{node.Identifier}' already defined in this scope.");
-    }
-
     public void VisitVarDeclaration(VarDeclarationStatementNode node)
     {
-        var symbol = new Symbol(node.Identifier, node.Type, node);
+        var specifiedType = node.Type;
+        if (specifiedType == null && node.Initializer == null)
+            throw new Exception("Variable declaration must have initializer statement or type specified");
+        
+        if (node.Initializer != null)
+        {
+            var inferType = _expressionTypeAnalyzer.InferType(node.Initializer);
+            if (specifiedType != null && inferType != specifiedType)
+                throw new Exception($"Inferred type does not match specified type. Inferred: {inferType}, Specified: {node.Type}");
+            
+            specifiedType = inferType;
+        }
+        
+        var symbol = new Symbol(node.Identifier, specifiedType, node);
         if (!_currentScope.TryDefine(symbol))
             throw new Exception($"Variable '{node.Identifier}' already defined in this scope.");
     }
