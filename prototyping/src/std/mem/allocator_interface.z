@@ -1,7 +1,7 @@
-module std.mem {
+impl std.mem {
     struct Allocator {
         impl: ptr
-        alloc:  func(impl: ptr, size: u32) -> *;
+        alloc:  func(impl: ptr, size: u32) -> ptr;
         resize: func(impl: ptr, start: ptr, old_size: u32, new_size: u32) -> ptr;
         free:   func(impl: ptr, start: ptr, size: u32);
     }
@@ -12,7 +12,7 @@ module std.mem {
         return mem as ptr<T>;
     }
 
-    func malloc<T>(allocator: Allocator*, count: u32) -> T* {
+    func malloc<T>(allocator: ptr<Allocator>, count: u32) -> ptr<T> {
         const size = sizeof(T) * count;
         const mem = allocator.alloc(allocator.impl, size);
         return mem as ptr<T>;
