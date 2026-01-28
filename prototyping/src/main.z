@@ -1,127 +1,90 @@
-module array = std.array;
-module list = std.list;
-module io = std.io;
-module stdout = io.out;
-module fmt = std.fmt;
-module string = std.string;
-struct HeapAllocator = std.mem.heap.HeapAllocator;
 
-use std.array as array;
-use std.list as list;
-use std.io as io;
-use std.stdout as stdout;
-use std.fmt as fmt;
-use std.string as string;
-use std.mem.heap.HeapAllocator as HeapAllocator;
-use array.Array<T> as Array<T>
+impl main {
 
-import std.array as array;
-import std.list as list;
-import std.io as io;
-import std.stdout as stdout;
-import std.fmt as fmt;
-import std.string as string;
-import std.mem.heap.HeapAllocator as HeapAllocator;
-import array.Array<T> as Array<T>
-
-var stack_array: u8[10];
-stack_array[0] = 1;
-
-var heap_array: Array<u8> = array.create<u8>(50);
-defer array.destroy(heap_array);
-
-var my_list_std = std.list.create<u8>();
-var my_list = list.create<u8>();
-
-defer std.list.destroy(my_list);
-// OR
-defer my_list.destroy();
-
-std.list.push_item(my_list, 0);
-// OR
-my_list.push_item(0);
-
-var first_item = std.list.get_item(my_list, 0);
-// OR
-var first_item = get_item(my_list, 0);
-// OR
-var first_item = my_list.get_item(0);
-
-std.io.out.write(std.fmt.to_string(first_item));
-// OR
-std.io.out.write(first_item.to_string());
-// OR
-stdout.write(first_item.to_string());
-
-var str = std.string.create("Some litteral string");
-var str_slice = str.slice(0, 10);
-
-var number: u32 = 10;
-
-struct Vec2<T> = std.vec.Vec2<T>;
-
-// Testing
-var v1: Vec2<u8> = {
-    c1 = 0,
-    c2 = 10
-}
-
-var v1: Vec2<u8> = { c1 = 0, c2 = 10 }
-
-// Comments
-var v2: Vec2<u8> = {
-    c1 = 2,
-    c2 = 3
-}
-s
-var count = 10;
-while (count > 0) {
-    count--;
-}
-
-for (var i = 0; i < 10; i++) {
-
-}
-
-var num = 3;
-if (num == 3) {
+    uses std.array as array;
+    uses std.list as list;
+    uses std.io as io;
+    uses std.stdout as stdout;
+    uses std.fmt as fmt;
+    uses std.string as string;
+    uses std.mem.heap.HeapAllocator as HeapAllocator;
+    uses array.Array as Array;
     
-}
-else if (num == 4) {
-
-}
-else {
+    func main() {
     
-}
-
-v1 += v2;
-var v3 = v1 + v2;
-
-func main() {
-    stdout.write("Hello world!");
-} 
-
-module std.vec {
-    union Number = u32 | i32 | f32
-
-    struct Vec2<T: Number> {
-        c1: T
-        c2: T
-    }
-
-    func add<T: Number>(v1: ptr<Vec2<T>>, v2: ptr<Vec2<T>>) -> ptr<Vec2<T>> {
-        return {
-            c1 = v1.c1 + v2.c1,
-            c2 = v1.c2 + v2.c2
+        var stack_array: u8[10];
+        stack_array[0] = 1;
+        
+        var heap_array: Array<u8> = array.create<u8>(50);
+        defer array.destroy(heap_array);
+        
+        var my_list_std = std.list.create<u8>();
+        var my_list = list.create<u8>();
+        
+        defer std.list.destroy(my_list);
+        // OR
+        defer my_list.destroy();
+        
+        std.list.push_item(my_list, 0);
+        // OR
+        my_list.push_item(0);
+        
+        var first_item = std.list.get_item(my_list, 0);
+        // OR
+        var first_item = get_item(my_list, 0);
+        // OR
+        var first_item = my_list.get_item(0);
+        
+        std.io.out.write(std.fmt.to_string(first_item));
+        // OR
+        std.io.out.write(first_item.to_string());
+        // OR
+        stdout.write(first_item.to_string());
+        
+        var str = std.string.create("Some litteral string");
+        var str_slice = str.slice(0, 10);
+        
+        var number: u32 = 10;
+        
+        struct Vec2<T> = std.vec.Vec2<T>;
+    
+        stdout.write("Hello world!");
+        
+        // Testing
+        var v1: Vec2<u8> = {
+            c1 = 0,
+            c2 = 10
         }
-    }
-
-    operator + <T: Number>(v1: ptr<Vec2<T>>, v2: ptr<Vec2<T>>) -> Vec2<T> {
-        return add(v1, v2);
-    }
-
-    operator += <T: Number>(v1: ptr<Vec2<T>>, v2: ptr<Vec2<T>>) {
-        v1.c1 += v2.c1;
-        v1.c2 += v2.c2;
-    }
+        
+        var v1: Vec2<u8> = { c1 = 0, c2 = 10 }
+        
+        // Comments
+        var v2: Vec2<u8> = {
+            c1 = 2,
+            c2 = 3
+        }
+        s
+        var count = 10;
+        while (count > 0) {
+            count--;
+        }
+        
+        for (var i = 0; i < 10; i++) {
+        
+        }
+        
+        var num = 3;
+        if (num == 3) {
+            
+        }
+        else if (num == 4) {
+        
+        }
+        else {
+            
+        }
+        
+        v1 += v2;
+        var v3 = v1 + v2;
+    } 
 }
