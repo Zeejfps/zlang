@@ -14,10 +14,11 @@ impl main {
     
         var heap = Heap.allocator;
     
-        var stack_array: u8[10];
-        stack_array[0] = 1;
+        var stack_array = array.Array<u8>();
+        array.init(&stack_array, 8, heap);
+        defer array.deinit(&stack_array);
         
-        var test_array = array.create<u8>(heap, 50);
+        var test_array = array.create<u8>(50, heap);
         defer array.destroy(test_array);
         
         var my_list_std = std.list.create<u8>(heap);
