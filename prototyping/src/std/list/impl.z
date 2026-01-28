@@ -1,16 +1,16 @@
 module std.list {
 
-    struct Allocator = std.mem.Allocator;
-    struct Array<T> = std.array.Array<T>;
+    use std.mem.Allocator as Allocator;
+    use std.array.Array<T> as Array<T>;
 
     struct List<T> {
-        allocator: Allocator*;
+        allocator: ptr<Allocator>;
         capacity: u32;
         item_count: u32;
         items: T*;
     }
 
-    func create<T>(allocator: Allocator*) -> ptr<List<T>> {
+    func create<T>(allocator: ptr<Allocator>) -> ptr<List<T>> {
         var list = allocator.alloc<List<T>>();
         list.allocator = allocator;
         list.capacity = 10;
@@ -59,7 +59,7 @@ module std.list {
         list.items = new_items;
     }
 
-    operator [] <T>(list: List<T>*, index: u32) -> T {
+    operator [] <T>(list: ptr<List<T>>, index: u32) -> T {
         return list.items[index];
     }
 }
