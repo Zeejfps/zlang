@@ -1,6 +1,6 @@
 module std.array {
-    module mem = std.mem;
-    struct Allocator = std.mem.Allocator
+    use std.mem as mem;
+    use std.mem.Allocator as Allocator;
 
     struct Array<T> {
         allocator: Allocator*;
