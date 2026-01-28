@@ -10,7 +10,7 @@ module std.list {
         items: T*;
     }
 
-    func create<T>(allocator: Allocator*) -> List<T>* {
+    func create<T>(allocator: Allocator*) -> ptr<List<T>> {
         var list = allocator.alloc<List<T>>();
         list.allocator = allocator;
         list.capacity = 10;
@@ -19,7 +19,7 @@ module std.list {
         return list;
     }
 
-    func destroy<T>(list: List<T>*){
+    func destroy<T>(list: ptr<List<T>>){
         var allocator = list.allocator;
         allocator.free(list.items)
         allocator.free(list);
@@ -28,7 +28,7 @@ module std.list {
         list.allocator = nil;
     }
 
-    func push_item<T>(list: List<T>*, item: T) {
+    func push_item<T>(list: ptr<List<T>>, item: T) {
         var new_count = list.item_count + 1;
         if (new_count > list.capacity) {
             expand(list);
@@ -37,17 +37,17 @@ module std.list {
         list.item_count += 1;
     }
 
-    func pop_item<T>(list: List<T>*) -> T {
+    func pop_item<T>(list: ptr<List<T>>) -> T {
         var item = list.items[list.item_count];
         list.item_count -= 1;
         return item;
     }
 
-    func insert_item<T>(list: List<T>*, item: T, index: u32);
-    func remove_item<T>(list: List<T>*, item: T) -> bool;
-    func get_item<T>(list: List<T>*, index: u32) -> T;
+    func insert_item<T>(list: ptr<List<T>>, item: T, index: u32);
+    func remove_item<T>(list: ptr<List<T>>, item: T) -> bool;
+    func get_item<T>(list: ptr<List<T>>, index: u32) -> T;
 
-    func expand(list: List<T>*) {
+    func expand(list: ptr<List<T>>) {
         var items = list.items;
         var allocator = list.allocator;
         var new_capacity = list.capacity * 2;
