@@ -7,7 +7,7 @@ module std.list {
         allocator: ptr<Allocator>;
         capacity: u32;
         item_count: u32;
-        items: T*;
+        items: ptr<T>;
     }
 
     func create<T>(allocator: ptr<Allocator>) -> ptr<List<T>> {
@@ -45,7 +45,10 @@ module std.list {
 
     func insert_item<T>(list: ptr<List<T>>, item: T, index: u32);
     func remove_item<T>(list: ptr<List<T>>, item: T) -> bool;
-    func get_item<T>(list: ptr<List<T>>, index: u32) -> T;
+    
+    func get_item<T>(list: ptr<List<T>>, index: u32) -> T {
+        list.items[index];
+    }
 
     func expand(list: ptr<List<T>>) {
         var items = list.items;
