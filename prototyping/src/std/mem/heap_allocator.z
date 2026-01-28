@@ -9,21 +9,21 @@ module std.mem.HeapAllocator {
         buffer: u8[]
     }
     
-    func create() -> Allocator {
-        var heap_allocator = malloc<HeapAllocatorData>()
+    func create() -> ptr<Allocator> {
+        var allocator = mem.alloc<HeapAllocator>(data:))
         return {
-            data: data,
+            impl: allocator,
             alloc: &alloc,
             free: &free,
         }
     }
     
-    func alloc<T>(data: ptr, size: u32) -> ptr<T> {
-        var heap_allocator = data as ptr<HeapAllocatorData>
+    func alloc<T>(impl: ptr, size: u32) -> ptr<T> {
+        var heap_allocator = impl as ptr<HeapAllocator>
         return heap_allocator.ptr
     }
     
-    func free<T>(data: ptr){
-        var heap_allocator = data as ptr<HeapAllocatorData>
+    func free<T>(impl: ptr, data: ptr<T>){
+        var heap_allocator = impl as ptr<HeapAllocator>
     }
 }
