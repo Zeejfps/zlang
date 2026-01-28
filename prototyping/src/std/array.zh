@@ -1,12 +1,13 @@
 ﻿module std.array {
     uses std.mem as mem;
+    uses std.mem.heap as heap;
     uses std.mem.Allocator as Allocator;
 
     struct Array<T>;
 
-    func init<T>(array: ptr<Array<T>>, len: u32, allocator: ptr<Allocator> = mem.default_allocator);
+    func init<T>(array: ptr<Array<T>>, len: u32, allocator: ptr<Allocator> = &heap.allocator);
     func deinit<T>(array: ptr<Array<T>>);
 
-    func create<T>(len: u32, allocator: ptr<Allocator> = mem.default_allocator) -> ptr<Array<T>>;
+    func create<T>(len: u32, allocator: ptr<Allocator> = &heap.allocator) -> ptr<Array<T>>;
     func destroy<T>(array: ptr<Array<T>>);
 }

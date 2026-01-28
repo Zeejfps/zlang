@@ -1,6 +1,6 @@
 impl std.mem {
     struct Allocator {
-        data: ptr
+        data:   ptr
         alloc:  func(data: ptr, size: u32) -> ptr;
         resize: func(data: ptr, start: ptr, old_size: u32, new_size: u32) -> ptr;
         free:   func(data: ptr, start: ptr, size: u32);

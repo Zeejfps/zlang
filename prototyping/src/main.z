@@ -2,26 +2,24 @@
 impl main {
 
     uses std.array as array;
+    uses std.array.Array as Array;
     uses std.list as list;
     uses std.io as io;
     uses std.stdout as stdout;
     uses std.fmt as fmt;
     uses std.string as string;
-    uses std.mem.heap as Heap;
-    uses array.Array as Array;
+    uses std.mem.heap as heap;
     
     func main() {
-    
-        var heap = Heap.allocator;
-    
+        
         var stack_array = array.Array<u8>();
-        array.init(&stack_array, 8, heap);
+        array.init(&stack_array, 8, &heap.allocator);
         defer array.deinit(&stack_array);
         
-        var test_array = array.create<u8>(50, heap);
+        var test_array = array.create<u8>(50, &heap.allocator);
         defer array.destroy(test_array);
         
-        var my_list_std = std.list.create<u8>(heap);
+        var my_list_std = std.list.create<u8>(&heap.allocator);
         var my_list = list.create<u8>(heap);
         
         defer std.list.destroy(my_list);

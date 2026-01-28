@@ -1,13 +1,16 @@
 
-module std.mem.HeapAllocator {
+module std.mem.heap {
 
-    const var HeapAllocatorInstance: Allocator = {
-        
-    }
+    
 
-    struct HeapAllocator {
-        buffer: u8[]
-    }
+    const var allocator = Allocator() {
+    
+    };
+
+    struct HeapAllocator {}
+
+    extern func c_malloc(size: u64) -> ptr;                                                           
+    extern func c_free(ptr: ptr);  
     
     func create() -> ptr<Allocator> {
         var allocator = mem.alloc<HeapAllocator>(data:))
