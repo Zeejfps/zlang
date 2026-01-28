@@ -7,10 +7,12 @@ impl main {
     uses std.stdout as stdout;
     uses std.fmt as fmt;
     uses std.string as string;
-    uses std.mem.heap.HeapAllocator as HeapAllocator;
+    uses std.mem.heap as Heap;
     uses array.Array as Array;
     
     func main() {
+    
+        var allocator = Heap.allocator;
     
         var stack_array: u8[10];
         stack_array[0] = 1;
