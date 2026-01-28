@@ -1,11 +1,8 @@
 ﻿module std.list {
+    uses std.array.Array as Array
+    uses std.mem.Allocator as Allocator;
 
-    struct List<T> {
-        allocator: ptr<Allocator>;
-        capacity: u32;
-        item_count: u32;
-        items: ptr<T>;
-    }
+    struct List<T>;
 
     func create<T>(allocator: ptr<Allocator>) -> ptr<List<T>>;
     func destroy<T>(list: ptr<List<T>>);
@@ -14,5 +11,6 @@
     func insert_item<T>(list: ptr<List<T>>, item: T, index: u32);
     func remove_item<T>(list: ptr<List<T>>, item: T) -> bool;
     func get_item<T>(list: ptr<List<T>>, index: u32) -> T;
+    
     operator [] <T>(list: ptr<List<T>>, index: u32) -> T;
 }

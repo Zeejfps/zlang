@@ -1,7 +1,4 @@
-module std.list {
-
-    use std.mem.Allocator as Allocator;
-    use std.array.Array<T> as Array<T>;
+impl std.list {
 
     struct List<T> {
         allocator: ptr<Allocator>;

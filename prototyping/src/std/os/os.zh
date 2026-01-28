@@ -1,3 +1,12 @@
+module std.os { 
+    uses std.array.Array as Array
+
+    struct File;
+    
+    func write(file: ptr<File>);
+    func read(file: ptr<File>, array: Array<u8>);
+}
+
 #if WINDOWS
 module std.os = std.os.windows;
 #elseif OSX
