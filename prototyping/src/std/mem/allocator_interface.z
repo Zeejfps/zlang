@@ -1,4 +1,9 @@
-﻿module std.mem.allocators {
+﻿module std.mem.allocator {
     uses std.mem.Allocator;
-    func create_allocator(impl: ptr, alloc_fn: func(), free_fn: func()) -> Allocator;
+    func init_allocator(
+        allocator: ptr<Allocator>, 
+        impl: ptr, 
+        alloc_fn: func(), 
+        free_fn: func()
+    );
 }

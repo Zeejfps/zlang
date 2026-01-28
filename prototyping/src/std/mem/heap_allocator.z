@@ -1,8 +1,6 @@
 
 module std.mem.heap {
    
-    uses std.mem.allocators;
-
     #metadata {
         "extern": [
             {
@@ -19,16 +17,19 @@ module std.mem.heap {
             },
         ]
     }
+    
+    const g_allocator = std.mem.Allocator;
+    const g_is_global_allocator_initialized = false;
 
     extern func c_malloc(size: u64) -> ptr;                                                           
     extern func c_free(ptr: ptr);  
     
-    func create_allocator() -> ptr<Allocator> {
-        return {
-            impl: null,
-            alloc: &alloc,
-            free: &free,
+    func allocator() -> ptr<Allocator> {
+        if (!g_is_global_allocator_initialized){
+            std.mem.allocator.init_allocator(&g_allocator, alloc, free);
+            g_is_global_allocator_initialized = true;
         }
+        return &g_allocator;
     }
     
     func alloc(impl: ptr, size: u32) -> ptr {
