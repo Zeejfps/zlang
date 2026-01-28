@@ -1,20 +1,20 @@
 module std.string {
-    module mem = std.mem
-    module array = std.array
-    struct Allocator = std.mem.Allocator
+    uses std.mem as mem;
+    uses std.array as array;
+    uses std.mem.Allocator;
 
     struct String {
-        allocator: Allocator*; 
-        chars: Array<Char>*;
+        allocator: ptr<Allocator>; 
+        chars: Array<Char>;
     }
         
     type Char = u16
 
-    func create(literal: Array<u8>*) -> String* {
+    func create(literal: Array<u8>) -> ptr<String> {
         return create(literal, std.mem.default_allocator)
     }
 
-    func create(literal: Array<u8>*, allocator: Allocator*) -> String* {
+    func create(literal: ptr<Array<u8>>, allocator: ptr<Allocator>) -> ptr<String> {
         var str = allocator.alloc<String>();
         // OR
         var str = std.mem.alloc<String>(allocator);
@@ -24,17 +24,17 @@ module std.string {
         str.chars = array.create<Char>(15, allocator);
     }
 
-    func destroy(str: String*) {
+    func destroy(str: ptr<String>) {
         str.chars.free();
         str.allocator.free(str);
     }
 
-    func length(str: String*) -> u32 {
+    func length(str: ptr<String>) -> u32 {
         return str.chars.length();
     }
 
-    func slice(str: String*, start_index: u32) -> Slice<Char>;
-    func slice(str: String*, start_index: u32, length: u32) -> Slice<Char>;
-    func get_char(str: String* , index: u32) -> Char;
+    func slice(str: ptr<String>, start_index: u32) -> Slice<Char>;
+    func slice(str: ptr<String>, start_index: u32, length: u32) -> Slice<Char>;
+    func get_char(str: ptr<String> , index: u32) -> Char;
 }
 
