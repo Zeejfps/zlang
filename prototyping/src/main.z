@@ -11,6 +11,8 @@ impl main {
     uses std.mem.heap as heap;
     
     func main() {
+    
+        var test_allocator = std.mem.Allocator();
         
         var stack_array = array.Array<u8>();
         array.init(&stack_array, 8, &heap.allocator);

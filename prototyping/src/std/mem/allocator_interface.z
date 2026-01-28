@@ -1,23 +1,4 @@
-impl std.mem {
-    struct Allocator {
-        impl:   ptr
-        alloc:  func(impl: ptr, size: u32) -> ptr;
-        free:   func(impl: ptr, start: ptr);
-    }
-
-    func alloc<T>(allocator: ptr<Allocator>) -> ptr<T> {
-        const size = sizeof(T);
-        const mem = allocator.alloc(allocator.data, size);
-        return mem as ptr<T>;
-    }
-
-    func malloc<T>(allocator: ptr<Allocator>, count: u32) -> ptr<T> {
-        const size = sizeof(T) * count;
-        const mem = allocator.alloc(allocator.data, size);
-        return mem as ptr<T>;
-    }
-
-    func free<T>(allocator: ptr<Allocator>, item: ptr<T>) {
-        return allocator.free(allocator.data, item)
-    }
+﻿module std.mem.allocators {
+    uses std.mem.Allocator;
+    func create_allocator(impl: ptr, alloc_fn: func(), free_fn: func()) -> Allocator;
 }
