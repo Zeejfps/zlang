@@ -3,26 +3,25 @@ module std.array {
     uses std.mem.Allocator as Allocator;
 
     struct Array<T> {
-        allocator: Allocator*;
+        allocator: ptr<Allocator>;
         length: u32;
         data: ptr<T>;
     }
 
-    func create<T>(len: u32, allocator: Allocator) -> Array<T> {
-        data = mem.malloc<T>(allocator, len);
-        var array = {
-            length = len,
-            data = data,
-            allocator = allocator,
-        };
+    func create<T>(len: u32, allocator: ptr<Allocator>) -> ptr<Array<T>> {
+        var array = mem.alloc<Array<T>>(allocator)
+        array.length = len;
+        array.data = mem.malloc<T>(allocator, len);
+        array.allocator = allocator;
         return array;
     }
 
     func destroy<T>(array: ptr<Array<T>>) {
         var allocator = array.allocator;
-        mem.free(allocator, array.data, array.length);
+        mem.mfree(allocator, array.data, array.length);
         array.data = null;
         array.length = 0;
         array.allocator = null;
+        mem.free(allocator, array);
     }
 }
