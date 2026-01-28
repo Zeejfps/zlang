@@ -21,7 +21,7 @@ module std.list {
 
     func destroy<T>(list: ptr<List<T>>){
         var allocator = list.allocator;
-        allocator.free(list.items)
+        allocator.free(list.items);
         allocator.free(list);
         list.item_count = 0;
         list.capacity = 0;
