@@ -1,9 +1,8 @@
 impl std.mem {
     struct Allocator {
-        data:   ptr
-        alloc:  func(data: ptr, size: u32) -> ptr;
-        resize: func(data: ptr, start: ptr, old_size: u32, new_size: u32) -> ptr;
-        free:   func(data: ptr, start: ptr, size: u32);
+        impl:   ptr
+        alloc:  func(impl: ptr, size: u32) -> ptr;
+        free:   func(impl: ptr, start: ptr);
     }
 
     func alloc<T>(allocator: ptr<Allocator>) -> ptr<T> {
@@ -19,12 +18,6 @@ impl std.mem {
     }
 
     func free<T>(allocator: ptr<Allocator>, item: ptr<T>) {
-        const size = sizeof(T);
-        return allocator.free(allocator.data, item, size)
-    }
-
-    func free<T>(allocator: ptr<Allocator>, items: ptr<T>, count: u32) {
-        const size = sizeof(T) * count;
-        return allocator.free(allocator.data, items, size)
+        return allocator.free(allocator.data, item)
     }
 }
