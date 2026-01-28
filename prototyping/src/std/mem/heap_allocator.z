@@ -1,0 +1,24 @@
+
+impl std.mem {
+    struct Allocator {
+        buffer: u8[]
+    }
+    
+    func create() -> Allocator {
+        var data = malloc<HeapAllocatorData>()
+        return {
+            data: data,
+            alloc: &alloc,
+            free: &free,
+        }
+    }
+    
+    func alloc<T>(impl: ptr) -> T* {
+        var heap_allocator = impl as ptr<HeapAllocatorData>
+        return heap_allocator_data.data.ptr
+    }
+    
+    func free<T>(data: *){
+        var heap_allocator_data = (HeapAllocatorData*)data
+    }
+}
