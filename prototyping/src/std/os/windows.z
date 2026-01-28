@@ -1,4 +1,4 @@
-module std.os.windows {
+impl std.os {
     
     #metadata {
         "extern": [
@@ -20,14 +20,17 @@ module std.os.windows {
     extern func get_std_handle(nStdHandle: i32) -> ptr;
     extern func write_to_console(hConsole: ptr, buffer: ptr, length: u32, written: ptr<u32>, reserved: ptr) -> bool;
 
-    func write() {
+    func write(file: ptr<File>) {
 
     }
 
-    func read(buffer: ptr<u8>, size: u32) {
+    func read(file: ptr<File>, buffer: Array<u8>) {
 
     }
     
+    /*
+    * IGNORE
+    *
     extern func WriteConsoleA(hConsole: ptr, buffer: ptr, length: u32, written: ptr<u32>, reserved: ptr) -> bool from "kernel32.dll";
     extern func GetStdHandle(nStdHandle: i32) -> ptr from "kernel32.dll";
     
@@ -85,7 +88,6 @@ module std.os.windows {
         ]
     }
     
-    
     extern func get_std_handle(nStdHandle: i32) -> ptr;
     extern func write_to_console(hConsole: ptr, buffer: ptr, length: u32, written: ptr<u32>, reserved: ptr) -> bool;
 
@@ -142,4 +144,5 @@ module std.os.windows {
             }
         ]
     }
+    */
 }

@@ -6,31 +6,3 @@ module std.os {
     func write(file: ptr<File>);
     func read(file: ptr<File>, array: Array<u8>);
 }
-
-#if WINDOWS
-module std.os = std.os.windows;
-#elseif OSX
-module std.os = std.os.osx;
-#elseif LINUX
-module std.os = std.os.linux;
-#endif
-
-interface std.os {
-    struct File {
-        u32 fd;
-    }
-
-    func write();
-    func read(buffer: u8*, size: u32);
-}
-
-// If we change to new keyword
-#if WINDOWS
-use std.os.windows as std.os;
-#elseif OSX
-use std.os.osx as std.os;
-#elseif LINUX
-use std.os.linux as std.os;
-#endif
-
-module std.os;
