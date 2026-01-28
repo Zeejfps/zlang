@@ -1,4 +1,7 @@
 ﻿module std.mem {
+
+    const var default_allocator: ptr<Allocator>;
+    
     struct Allocator;
 
     func alloc<T>(allocator: ptr<Allocator>) -> ptr<T>;

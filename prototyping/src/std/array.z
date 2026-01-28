@@ -1,4 +1,4 @@
-module std.array {
+impl std.array {
     uses std.mem as mem;
     uses std.mem.Allocator as Allocator;
 
