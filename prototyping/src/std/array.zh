@@ -5,9 +5,9 @@
 
     struct Array<T>;
 
-    func init<T>(array: ptr<Array<T>>, len: u32, allocator: ptr<Allocator> = &heap.allocator);
+    func init<T>(array: ptr<Array<T>>, len: u32, allocator: ptr<Allocator>);
     func deinit<T>(array: ptr<Array<T>>);
 
-    func create<T>(len: u32, allocator: ptr<Allocator> = &heap.allocator) -> ptr<Array<T>>;
+    func create<T>(len: u32, allocator: ptr<Allocator>) -> ptr<Array<T>>;
     func destroy<T>(array: ptr<Array<T>>);
 }

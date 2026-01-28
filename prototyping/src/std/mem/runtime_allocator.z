@@ -6,16 +6,15 @@ impl std.mem, std.mem.allocators {
         free:   func(impl: ptr, start: ptr);
     }
     
-    func create_allocator(
+    func init_allocator(
+        allocator: ptr<Allocator>,
         impl: ptr,
         alloc: func(), 
         free: func()
-    ) -> Allocator {
-        return Allocator { 
-            impl: impl,
-            alloc: alloc,
-            free: free
-        }
+    ) {
+        allocator.impl = impl;
+        allocator.alloc = alloc;
+        allocator.free = free;
     }
 
     func alloc<T>(allocator: ptr<Allocator>) -> ptr<T> {

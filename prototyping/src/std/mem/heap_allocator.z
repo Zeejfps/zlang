@@ -7,27 +7,27 @@ module std.mem.heap {
                 "func": "c_malloc",
                 "export_name" : "malloc",
                 "lib": "kernel32.dll",
-                "calling_conv": "win32"
+                "calling_conv": "cdecl"
             },
             {
                 "func": "c_free",
-                "export_name" : "malloc",
+                "export_name" : "free",
                 "lib": "kernel32.dll",
-                "calling_conv": "win32"
+                "calling_conv": "cdecl"
             },
         ]
     }
     
-    const g_allocator = std.mem.Allocator;
-    const g_is_global_allocator_initialized = false;
+    var g_allocator = std.mem.Allocator();
+    var g_is_initialized = false;
 
     extern func c_malloc(size: u64) -> ptr;                                                           
     extern func c_free(ptr: ptr);  
     
     func allocator() -> ptr<Allocator> {
-        if (!g_is_global_allocator_initialized){
+        if (!g_is_initialized){
             std.mem.allocator.init_allocator(&g_allocator, alloc, free);
-            g_is_global_allocator_initialized = true;
+            g_is_initialized = true;
         }
         return &g_allocator;
     }

@@ -12,16 +12,16 @@ impl main {
     
     func main() {
     
-        var test_allocator = heap.create_allocator();
+        var test_allocator = heap.allocator();
         
         var stack_array = array.Array<u8>();
-        array.init(&stack_array, 8, &heap.allocator);
+        array.init(&stack_array, 8, heap.allocator());
         defer array.deinit(&stack_array);
         
-        var test_array = array.create<u8>(50, &heap.allocator);
+        var test_array = array.create<u8>(50, heap.allocator());
         defer array.destroy(test_array);
         
-        var my_list_std = std.list.create<u8>(&heap.allocator);
+        var my_list_std = std.list.create<u8>(heap.allocator());
         var my_list = list.create<u8>(heap);
         
         defer std.list.destroy(my_list);
