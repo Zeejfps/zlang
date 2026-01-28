@@ -8,10 +8,14 @@ impl std.mem, std.mem.allocators {
     
     func create_allocator(
         impl: ptr,
-        alloc_fn: func(), 
-        free_fn: func()
-    ) -> ptr<Allocator> {
-        
+        alloc: func(), 
+        free: func()
+    ) -> Allocator {
+        return Allocator { 
+            impl: impl,
+            alloc: alloc,
+            free: free
+        }
     }
 
     func alloc<T>(allocator: ptr<Allocator>) -> ptr<T> {

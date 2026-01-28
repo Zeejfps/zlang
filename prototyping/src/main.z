@@ -12,7 +12,7 @@ impl main {
     
     func main() {
     
-        var test_allocator = std.mem.Allocator();
+        var test_allocator = heap.create_allocator();
         
         var stack_array = array.Array<u8>();
         array.init(&stack_array, 8, &heap.allocator);

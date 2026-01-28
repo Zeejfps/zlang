@@ -2,33 +2,40 @@
 module std.mem.heap {
    
     uses std.mem.allocators;
-   
-    var g_allocator: ptr<Allocator> = null;
-    
-    func allocator() -> ptr<Allocator> {
-        if (g_allocator == null) {
-            g_allocator = create_allocator(null, &alloc, &free);
-        }
+
+    #metadata {
+        "extern": [
+            {
+                "func": "c_malloc",
+                "export_name" : "malloc",
+                "lib": "kernel32.dll",
+                "calling_conv": "win32"
+            },
+            {
+                "func": "c_free",
+                "export_name" : "malloc",
+                "lib": "kernel32.dll",
+                "calling_conv": "win32"
+            },
+        ]
     }
 
     extern func c_malloc(size: u64) -> ptr;                                                           
     extern func c_free(ptr: ptr);  
     
-    func create() -> ptr<Allocator> {
-        var allocator = mem.alloc<HeapAllocator>(data:))
+    func create_allocator() -> ptr<Allocator> {
         return {
-            impl: allocator,
+            impl: null,
             alloc: &alloc,
             free: &free,
         }
     }
     
     func alloc(impl: ptr, size: u32) -> ptr {
-        var heap_allocator = impl as ptr<HeapAllocator>
-        return heap_allocator.ptr
+        c_malloc(size)
     }
     
     func free(impl: ptr, data: ptr){
-        var heap_allocator = impl as ptr<HeapAllocator>
+        c_free(data);
     }
 }
