@@ -1,5 +1,5 @@
 module std.os { 
-    uses std.array.Array as Array
+    uses std.array.Array as Array;
 
     struct File;
     
