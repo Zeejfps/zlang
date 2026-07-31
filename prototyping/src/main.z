@@ -12,20 +12,12 @@ impl main {
     
     func main() {
     
-        var test_allocator = heap.allocator();
+        // Lists
+    
+        var heap_allocator = heap.create_allocator();
+        defer heap.destroy_allocator(heap_allocator);
         
-        var stack_array = array.Array<u8>();
-        array.init(&stack_array, 8, heap.allocator());
-        defer array.deinit(&stack_array);
-        
-        var test_array = array.create<u8>(50, heap.allocator());
-        defer array.destroy(test_array);
-        
-        var my_list_std = heap_list.create<u8>(heap.allocator());
-
-        var heap_allocator = std.mem.heap.Allocator();
         var my_list = heap_list.create<u8>(heap_allocator);
-        
         defer heap_list.destroy(my_list);
 
         heap_list.push_item(my_list, 0);
@@ -33,55 +25,5 @@ impl main {
         var first_item = heap_list.get_item(my_list, 0);
         
         std.io.out.write(std.fmt.to_string(first_item));
-        // OR
-        std.io.out.write(first_item.to_string());
-        // OR
-        stdout.write(first_item.to_string());
-        
-        var str = std.string.create("Some litteral string");
-        var str_slice = str.slice(0, 10);
-        
-        var number: u32 = 10;
-        
-        struct Vec2<T> = std.vec.Vec2<T>;
-    
-        stdout.write("Hello world!");
-        
-        // Testing
-        var v1: Vec2<u8> = {
-            c1 = 0,
-            c2 = 10
-        }
-        
-        var v1: Vec2<u8> = { c1 = 0, c2 = 10 }
-        
-        // Comments
-        var v2: Vec2<u8> = {
-            c1 = 2,
-            c2 = 3
-        }
-        s
-        var count = 10;
-        while (count > 0) {
-            count--;
-        }
-        
-        for (var i = 0; i < 10; i++) {
-        
-        }
-        
-        var num = 3;
-        if (num == 3) {
-            
-        }
-        else if (num == 4) {
-        
-        }
-        else {
-            
-        }
-        
-        v1 += v2;
-        var v3 = v1 + v2;
     } 
 }

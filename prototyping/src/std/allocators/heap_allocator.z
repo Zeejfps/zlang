@@ -24,12 +24,16 @@ module std.mem.heap : std.mem {
     extern func c_malloc(size: u64) -> ptr;                                                           
     extern func c_free(ptr: ptr);  
     
-    func allocator() -> ptr<Allocator> {
+    func create_allocator() -> ptr<Allocator> {
         if (!g_is_initialized){
             std.mem.allocator.init_allocator(&g_allocator, alloc, free);
             g_is_initialized = true;
         }
         return &g_allocator;
+    }
+
+    func destroy(allocator: ptr<Allocator>) {
+
     }
     
     func alloc(impl: ptr, size: u32) -> ptr {

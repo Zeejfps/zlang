@@ -1,5 +1,7 @@
 ﻿module std.mem {    
     struct Allocator;
+    func create_allocator() -> ptr<Allocator>;
+    func destroy_allocator(allocator: ptr<Allocator>);
     func alloc<T>(allocator: ptr<Allocator>) -> ptr<T>;
     func malloc<T>(allocator: ptr<Allocator>, count: u32) -> ptr<T>;
     func free<T>(allocator: ptr<Allocator>, data: ptr<T>);
