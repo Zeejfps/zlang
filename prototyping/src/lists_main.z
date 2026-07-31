@@ -2,7 +2,7 @@
 impl main {
 
     uses std.mem.heap as heap;
-    uses std.list(std.mem.heap) as heap_list;
+    uses std.list<heap> as heap_list;
     
     func main() {
         

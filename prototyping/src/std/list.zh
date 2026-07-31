@@ -1,4 +1,4 @@
-﻿module std.list(Mem: std.mem) {
+﻿module std.list<Mem: std.mem> {
     uses std.array.Array as Array
     uses Mem.Allocator as Allocator;
 
