@@ -1,4 +1,6 @@
-impl std.list {
+impl std.list(Mem: std.mem) {
+
+    uses Mem.Allocator as Allocator;
 
     struct List<T> {
         allocator: ptr<Allocator>;

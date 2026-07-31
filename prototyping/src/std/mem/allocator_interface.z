@@ -1,9 +1,0 @@
-﻿module std.mem.allocator {
-    uses std.mem.Allocator;
-    func init_allocator(
-        allocator: ptr<Allocator>, 
-        impl: ptr, 
-        alloc_fn: func(), 
-        free_fn: func()
-    );
-}

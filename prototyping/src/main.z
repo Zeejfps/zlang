@@ -3,7 +3,7 @@ impl main {
 
     uses std.array as array;
     uses std.array.Array as Array;
-    uses std.list as list;
+    uses std.list(std.mem.heap) as heap_list;
     uses std.io as io;
     uses std.stdout as stdout;
     uses std.fmt as fmt;
@@ -21,22 +21,16 @@ impl main {
         var test_array = array.create<u8>(50, heap.allocator());
         defer array.destroy(test_array);
         
-        var my_list_std = std.list.create<u8>(heap.allocator());
-        var my_list = list.create<u8>(heap);
+        var my_list_std = heap_list.create<u8>(heap.allocator());
+
+        var heap_allocator = std.mem.heap.Allocator();
+        var my_list = heap_list.create<u8>(heap_allocator);
         
-        defer std.list.destroy(my_list);
-        // OR
-        defer my_list.destroy();
-        
-        std.list.push_item(my_list, 0);
-        // OR
-        my_list.push_item(0);
-        
-        var first_item = std.list.get_item(my_list, 0);
-        // OR
-        var first_item = get_item(my_list, 0);
-        // OR
-        var first_item = my_list.get_item(0);
+        defer heap_list.destroy(my_list);
+
+        heap_list.push_item(my_list, 0);
+
+        var first_item = heap_list.get_item(my_list, 0);
         
         std.io.out.write(std.fmt.to_string(first_item));
         // OR

@@ -1,6 +1,6 @@
-﻿module std.list {
+﻿module std.list(Mem: std.mem) {
     uses std.array.Array as Array
-    uses std.mem.Allocator as Allocator;
+    uses Mem.Allocator as Allocator;
 
     struct List<T>;
 

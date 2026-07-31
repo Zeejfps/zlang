@@ -1,4 +1,4 @@
-impl std.mem, std.mem.allocators {
+impl std.mem.runtime_allocator : std.mem {
     
     struct Allocator {
         impl:   ptr
