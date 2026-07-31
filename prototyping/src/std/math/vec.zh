@@ -1,6 +1,6 @@
 ﻿module std.math.vec {
 
-    union Number = u8 | u16 | u32 | u64 | usize | f32
+    union Number = u8 | u16 | u32 | u64 | usize | f32;
 
     struct Vec2<T: Number> {
         operator + <T: Number>(v2: ptr<Vec2<T>>);
