@@ -1,19 +1,11 @@
 
 impl main {
 
-    uses std.array as array;
-    uses std.array.Array as Array;
-    uses std.list(std.mem.heap) as heap_list;
-    uses std.io as io;
-    uses std.stdout as stdout;
-    uses std.fmt as fmt;
-    uses std.string as string;
     uses std.mem.heap as heap;
+    uses std.list(std.mem.heap) as heap_list;
     
     func main() {
-    
-        // Lists
-    
+        
         var heap_allocator = heap.create_allocator();
         defer heap.destroy_allocator(heap_allocator);
         
