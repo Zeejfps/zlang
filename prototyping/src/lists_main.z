@@ -1,17 +1,13 @@
 ﻿impl main {
 
-    uses std.mem.heap as heap;
-    uses std.list<Mem = heap> as heap_list;
-    uses std.map<Mem = heap> as heap_map;
-    uses std.sort<Mem = heap> as sort;
-    uses std.fmt.str<Mem = heap> as fmt_str;
-    uses std.io as io;
-
     impl func main() {
-
-        to_string: std.fmt.str.to_string;
-
-        invoke: () {
+        heap: std.mem.heap,
+        sort: std.sort,
+        reverse_sort: std.sort<u8> {
+            Ord: std.ord.reverse_u8
+        },
+        to_string: std.fmt.str.to_string,
+        body: () {
             var heap_allocator = heap.create_allocator();
             defer heap.destroy_allocator(heap_allocator);
 
@@ -27,8 +23,8 @@
             io.write(io.out, fmt_str.to_string(heap_allocator, first_item) with(std.fmt.hex_u8));
             io.write(io.out, fmt_str.to_string(heap_allocator, my_list) with(std.fmt.hex_u8));
 
-            sort.sort(my_list);
-            sort.sort(my_list) with(std.ord.reverse_u8);
+            sort(my_list);
+            sort(my_list);
 
             var my_map = heap_map.create<u8, u8>(heap_allocator);
             defer heap_map.destroy(my_map);

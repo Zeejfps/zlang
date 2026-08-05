@@ -1,11 +1,11 @@
-﻿module std.sort<Mem: std.mem> {
-    uses std.list<Mem = Mem> as list;
+﻿module std.sort {
+    Allocator: std.mem
+    List<T>: std.list {
+        Allocator: Allocator
+    }
 
-    // O is solved per call, and is internal: callers seed an impl and it is
-    // matched to this slot by trait + type, so renaming O breaks nobody.
-    //
-    //   sort.sort(items);                           // canonical Ord<T>
-    //   sort.sort(items) with(std.ord.reverse_u8);  // descending
-    func sort<T>(items: ptr<list.List<T>>)
-        requires(O: std.ord.Ord<T>);
+    func sort<T>{
+        Ord: std.ord.Ord<T>;
+        body: (items: ptr<List<T>>);
+    }
 }
