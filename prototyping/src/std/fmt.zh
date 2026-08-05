@@ -1,9 +1,4 @@
-module std.fmt {
-    uses std.io.Writer as Writer;
-    func format<T: Formattable>(w: ptr<Writer>, value: T);
-}
-
-module std.fmt.Formattable<T> { 
+trait std.fmt<T> { 
     uses std.io.Writer as Writer;
     func format(value: T, w: ptr<Writer>);
 }

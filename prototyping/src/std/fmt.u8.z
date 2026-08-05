@@ -1,4 +1,4 @@
-impl std.fmt.Formattable<u8> {
+impl std.fmt<u8> {
     uses std.io.Writer as Writer;
     func format(value: u8, w: ptr<Writer>){
         // TODO: write the value

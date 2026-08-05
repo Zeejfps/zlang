@@ -16,6 +16,6 @@ impl main {
 
         var first_item = heap_list.get_item(my_list, 0);
         
-        std.io.out.write(std.fmt.to_string(first_item));
+        std.io.out.write(first_item);
     } 
 }
