@@ -1,12 +1,11 @@
 ﻿module std.sort<Mem: std.mem> {
     uses std.list<Mem = Mem> as list;
 
-    // O is solved per call. This is the case with() really exists for: swapping
-    // one witness for another where BOTH are legitimate, and neither is a
-    // formatting flag.
+    // O is solved per call, and is internal: callers seed an impl and it is
+    // matched to this slot by trait + type, so renaming O breaks nobody.
     //
-    //   sort.sort(items);                              // canonical Ord<T>
-    //   sort.sort(items) with(O = std.ord.reverse_u8); // descending
+    //   sort.sort(items);                           // canonical Ord<T>
+    //   sort.sort(items) with(std.ord.reverse_u8);  // descending
     func sort<T>(items: ptr<list.List<T>>)
         requires(O: std.ord.Ord<T>);
 }

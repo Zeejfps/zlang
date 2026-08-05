@@ -5,8 +5,8 @@ module std.fmt.str<Mem: std.mem> {
 
     // <Mem> is bound once, at the `uses` site.
     // requires(F) is solved fresh at every call, because T isn't known until then.
-    // A caller overrides F by name, without disturbing <T>:
-    //   to_string(alloc, value) with(F = std.fmt.hex_u8);
+    // F is internal -- a caller seeds an impl and it is matched by trait + type:
+    //   to_string(alloc, value) with(std.fmt.hex_u8);
     func to_string<T>(allocator: ptr<Allocator>, value: T) -> ptr<String>
         requires(F: std.fmt.Formattable<T>);
 
