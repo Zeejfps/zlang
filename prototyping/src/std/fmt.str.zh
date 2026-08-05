@@ -1,4 +1,5 @@
 module std.fmt.str<Mem: std.mem> {
-    using Mem.Allocator as Allocator;
-    func to_string<T: std.fmt.Formattable<T>>(allocator: ptr<Allocator>, value: T) -> ptr<String>;
+    uses Mem.Allocator as Allocator;
+    func to_string<T>(allocator: ptr<Allocator>, value: T) -> ptr<String>
+        requires(F: std.fmt.Formattable<T>);
 }
