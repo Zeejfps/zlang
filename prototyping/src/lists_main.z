@@ -2,6 +2,8 @@
 
     uses std.mem.heap as heap;
     uses std.list<Mem = heap> as heap_list;
+    uses std.map<Mem = heap> as heap_map;
+    uses std.sort<Mem = heap> as sort;
     uses std.fmt.str<Mem = heap> as fmt_str;
     uses std.io as io;
 
@@ -13,21 +15,33 @@
         var my_list = heap_list.create<u8>(heap_allocator);
         defer heap_list.destroy(my_list);
 
-        heap_list.push_item(my_list, 1);
         heap_list.push_item(my_list, 2);
+        heap_list.push_item(my_list, 1);
 
         var first_item = heap_list.get_item(my_list, 0);
 
-        // Solves F = impl std.fmt.Formattable<u8>. Nothing written at the call.
+        // 1. Solved. F = impl std.fmt.Formattable<u8>, nothing written at the call.
         io.write(io.out, fmt_str.to_string(heap_allocator, first_item));
 
-        // Solves F = impl<Mem, T> Formattable<ptr<List<T>>> at Mem = heap, T = u8,
-        // which recursively demands Formattable<u8>. Prints "[1, 2]".
+        // 2. Solved recursively. F = impl<Mem, T> Formattable<ptr<List<T>>> at
+        //    Mem = heap, T = u8, which in turn demands Formattable<u8>.
         io.write(io.out, fmt_str.to_string(heap_allocator, my_list));
 
-        // Explicit override: no search runs, the named impl is passed positionally
-        // in <>, exactly like heap is passed to std.list above.
-        io.write(io.out, fmt_str.to_string<u8, std.fmt.hex_u8>(heap_allocator, first_item));
+        // 3. Overridden by name. <T> is still inferred, so the call's arity
+        //    matches the declaration -- only the witness moves.
+        io.write(io.out, fmt_str.to_string(heap_allocator, first_item) with(F = std.fmt.hex_u8));
 
+        // 4. The same mechanism with nothing to do with formatting.
+        sort.sort(my_list);
+        sort.sort(my_list) with(O = std.ord.reverse_u8);
+
+        // 5. Three witnesses solved at once -- Formattable<u8> twice (KF, VF) and
+        //    Ord<u8> once (KO), all demanded by the Map impl, none written here.
+        var my_map = heap_map.create<u8, u8>(heap_allocator);
+        defer heap_map.destroy(my_map);
+        heap_map.put(my_map, 2, 20);
+        heap_map.put(my_map, 1, 10);
+
+        io.write(io.out, fmt_str.to_string(heap_allocator, my_map));
     }
 }

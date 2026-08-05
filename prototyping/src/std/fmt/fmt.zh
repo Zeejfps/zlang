@@ -1,3 +1,6 @@
+// A trait is a module whose parameter is a type. Impls are indexed by that
+// parameter, and the solver searches them; `requires(...)` declares a witness,
+// `with(...)` overrides one at the call site.
 trait std.fmt.Formattable<T> {
     uses std.io.Writer as Writer;
     func format(value: T, w: ptr<Writer>);
