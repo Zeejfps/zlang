@@ -13,6 +13,17 @@
         return str;
     }
 
+    impl func to_string<T> {
+        Allocator: std.mem.Allocator,
+        format: std.fmt.format<T>,
+        invoke: (allocator: ptr<Allocator>, value: T) -> ptr<String> {
+            var str = std.string.create("", allocator);
+            var w = string_writer(str);
+            format(value, &w);
+            return str;
+        }
+    }
+
     func join<T>(allocator: ptr<Allocator>, items: ptr<list.List<T>>, sep: ptr<String>) -> ptr<String>
         requires(F: std.fmt.Formattable<T>)
     {

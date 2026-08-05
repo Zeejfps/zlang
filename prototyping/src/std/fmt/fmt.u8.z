@@ -13,9 +13,8 @@ impl std.fmt.Formattable<u8> {
     }
 }
 
-// A named impl is NOT a search candidate. It exists only to be passed by hand,
-// so it can never make std.fmt.Formattable<u8> ambiguous.
-impl std.fmt.Formattable<u8> as std.fmt.hex_u8 {
+
+impl std.fmt.hex_u8 : std.fmt.Formattable<u8>  {
     uses std.io.Writer as Writer;
     uses std.io as io;
 

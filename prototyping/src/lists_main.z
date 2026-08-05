@@ -7,54 +7,42 @@
     uses std.fmt.str<Mem = heap> as fmt_str;
     uses std.io as io;
 
-    func main() {
+    impl func main() {
 
-        var heap_allocator = heap.create_allocator();
-        defer heap.destroy_allocator(heap_allocator);
+        to_string: std.fmt.str.to_string;
 
-        var my_list = heap_list.create<u8>(heap_allocator);
-        defer heap_list.destroy(my_list);
+        invoke: () {
+            var heap_allocator = heap.create_allocator();
+            defer heap.destroy_allocator(heap_allocator);
 
-        heap_list.push_item(my_list, 2);
-        heap_list.push_item(my_list, 1);
+            var my_list = heap_list.create<u8>(heap_allocator);
+            defer heap_list.destroy(my_list);
 
-        var first_item = heap_list.get_item(my_list, 0);
+            heap_list.push_item(my_list, 2);
+            heap_list.push_item(my_list, 1);
 
-        // 1. Solved. The goal is Formattable<u8>; the canonical impl answers it.
-        io.write(io.out, fmt_str.to_string(heap_allocator, first_item));
+            var first_item = heap_list.get_item(my_list, 0);
+            io.write(io.out, fmt_str.to_string(heap_allocator, first_item));
+            io.write(io.out, fmt_str.to_string(heap_allocator, my_list));
+            io.write(io.out, fmt_str.to_string(heap_allocator, first_item) with(std.fmt.hex_u8));
+            io.write(io.out, fmt_str.to_string(heap_allocator, my_list) with(std.fmt.hex_u8));
 
-        // 2. Solved recursively. The goal is Formattable<ptr<List<u8>>>, answered
-        //    by the blanket List impl, whose own requires(F) sub-goal is
-        //    Formattable<u8>. Prints "[2, 1]".
-        io.write(io.out, fmt_str.to_string(heap_allocator, my_list));
+            sort.sort(my_list);
+            sort.sort(my_list) with(std.ord.reverse_u8);
 
-        // 3. Seeded. hex_u8 is matched to an open slot by trait + type, so the
-        //    caller never names F. Prints "02".
-        io.write(io.out, fmt_str.to_string(heap_allocator, first_item) with(std.fmt.hex_u8));
+            var my_map = heap_map.create<u8, u8>(heap_allocator);
+            defer heap_map.destroy(my_map);
+            heap_map.put(my_map, 2, 20);
+            heap_map.put(my_map, 1, 10);
 
-        // 4. The seed reaches sub-goals, not just the outermost one. Here it does
-        //    NOT match Formattable<ptr<List<u8>>>, so the List impl is still
-        //    chosen -- but it does match that impl's Formattable<u8> sub-goal.
-        //    Prints "[02, 01]". No nested with() needed.
-        io.write(io.out, fmt_str.to_string(heap_allocator, my_list) with(std.fmt.hex_u8));
+            io.write(io.out, fmt_str.to_string(heap_allocator, my_map));
 
-        // 5. The same mechanism with nothing to do with formatting.
-        sort.sort(my_list);
-        sort.sort(my_list) with(std.ord.reverse_u8);
+            func to_string = std.fmt.str.ToString<T> {
+                Mem: std.mem.heap,
+                Fmt: std.fmt.Formattable<T>
+            };
 
-        // 6. Three witnesses solved at once -- Formattable<u8> twice and Ord<u8>
-        //    once, all demanded by the Map impl, none written here.
-        var my_map = heap_map.create<u8, u8>(heap_allocator);
-        defer heap_map.destroy(my_map);
-        heap_map.put(my_map, 2, 20);
-        heap_map.put(my_map, 1, 10);
-
-        io.write(io.out, fmt_str.to_string(heap_allocator, my_map));
-
-        // 7. Ambiguity: the Map impl has two open Formattable<u8> slots (keys and
-        //    values), so one seed fills both. That is usually what you want; when
-        //    it isn't, the requirement name is the escape hatch:
-        //      ... with(KF = std.fmt.hex_u8);
-        io.write(io.out, fmt_str.to_string(heap_allocator, my_map) with(std.fmt.hex_u8));
+            to_string.invoke()
+        }
     }
 }

@@ -1,11 +1,4 @@
-﻿// Conditional impl, three witnesses across two different traits.
-//
-// Solving Formattable<ptr<Map<u8, u8>>> spawns three sub-goals:
-//   Formattable<u8>  (for KF)
-//   Formattable<u8>  (for VF)
-//   Ord<u8>          (for KO)
-// All three must succeed, or this impl simply does not apply.
-impl<Mem: std.mem, K, V> std.fmt.Formattable<ptr<std.map<Mem>.Map<K, V>>>
+﻿impl<Mem: std.mem, K, V> std.fmt.Formattable<ptr<std.map<Mem>.Map<K, V>>>
     requires(
         KF: std.fmt.Formattable<K>,
         VF: std.fmt.Formattable<V>,
