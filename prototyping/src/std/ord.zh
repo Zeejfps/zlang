@@ -1,0 +1,4 @@
+trait std.ord.Ord<T> {
+    // < 0 if a orders before b, 0 if equal, > 0 if after.
+    func compare(a: T, b: T) -> i32;
+}

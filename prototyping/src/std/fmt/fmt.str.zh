@@ -1,0 +1,13 @@
+module std.fmt.str<Mem: std.mem> {
+    uses Mem.Allocator as Allocator;
+    uses std.string.String as String;
+    uses std.list<Mem = Mem> as list;
+
+    // <Mem> is bound once, at the `uses` site.
+    // requires(F) is solved fresh at every call, because T isn't known until then.
+    func to_string<T>(allocator: ptr<Allocator>, value: T) -> ptr<String>
+        requires(F: std.fmt.Formattable<T>);
+
+    func join<T>(allocator: ptr<Allocator>, items: ptr<list.List<T>>, sep: ptr<String>) -> ptr<String>
+        requires(F: std.fmt.Formattable<T>);
+}

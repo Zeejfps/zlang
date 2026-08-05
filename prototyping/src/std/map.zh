@@ -1,0 +1,16 @@
+module std.map<Mem: std.mem> {
+    uses Mem.Allocator as Allocator;
+
+    struct Map<K, V>;
+    struct Entry<K, V> {
+        key:   K;
+        value: V;
+    }
+
+    func create<K, V>(allocator: ptr<Allocator>) -> ptr<Map<K, V>>;
+    func destroy<K, V>(map: ptr<Map<K, V>>);
+    func put<K, V>(map: ptr<Map<K, V>>, key: K, value: V);
+    func get<K, V>(map: ptr<Map<K, V>>, key: K) -> V;
+    func count<K, V>(map: ptr<Map<K, V>>) -> u32;
+    func entry_at<K, V>(map: ptr<Map<K, V>>, index: u32) -> Entry<K, V>;
+}

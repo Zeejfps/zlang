@@ -1,0 +1,25 @@
+﻿// Conditional impl, one witness.
+//
+// Note Mem in the binder: List is defined inside std.list<Mem: std.mem>, so
+// std.list<heap>.List<u8> and std.list<arena>.List<u8> are different types.
+// Any blanket impl over List therefore has to quantify over Mem as well.
+impl<Mem: std.mem, T> std.fmt.Formattable<ptr<std.list<Mem>.List<T>>>
+    requires(F: std.fmt.Formattable<T>)
+{
+    uses std.io.Writer as Writer;
+    uses std.io as io;
+    uses std.list<Mem = Mem> as list;
+
+    func format(value: ptr<list.List<T>>, w: ptr<Writer>) {
+        io.write_bytes(w, "[", 1);
+        for (var i = 0; i < value.item_count; i++) {
+            if (i > 0) {
+                io.write_bytes(w, ", ", 2);
+            }
+            // Solving Formattable<ptr<List<u8>>> spawned the sub-goal
+            // Formattable<u8>; F is that solution, handed to us by the solver.
+            F.format(value[i], w);
+        }
+        io.write_bytes(w, "]", 1);
+    }
+}

@@ -1,0 +1,29 @@
+﻿// The unnamed impl is the canonical one: this is what the solver finds when it
+// needs a std.fmt.Formattable<u8>.
+impl std.fmt.Formattable<u8> {
+    uses std.io.Writer as Writer;
+    uses std.io as io;
+
+    func format(value: u8, w: ptr<Writer>) {
+        if (value >= 10) {
+            format(value / 10, w);
+        }
+        var digit = '0' + (value % 10);
+        io.write_bytes(w, &digit, 1);
+    }
+}
+
+// A named impl is NOT a search candidate. It exists only to be passed by hand,
+// so it can never make std.fmt.Formattable<u8> ambiguous.
+impl std.fmt.Formattable<u8> as std.fmt.hex_u8 {
+    uses std.io.Writer as Writer;
+    uses std.io as io;
+
+    func format(value: u8, w: ptr<Writer>) {
+        var digits = "0123456789abcdef";
+        var hi = digits[value / 16];
+        var lo = digits[value % 16];
+        io.write_bytes(w, &hi, 1);
+        io.write_bytes(w, &lo, 1);
+    }
+}

@@ -1,21 +1,33 @@
-
-impl main {
+﻿impl main {
 
     uses std.mem.heap as heap;
-    uses std.list<heap> as heap_list;
-    
+    uses std.list<Mem = heap> as heap_list;
+    uses std.fmt.str<Mem = heap> as fmt_str;
+    uses std.io as io;
+
     func main() {
-        
+
         var heap_allocator = heap.create_allocator();
         defer heap.destroy_allocator(heap_allocator);
-        
+
         var my_list = heap_list.create<u8>(heap_allocator);
         defer heap_list.destroy(my_list);
 
-        heap_list.push_item(my_list, 0);
+        heap_list.push_item(my_list, 1);
+        heap_list.push_item(my_list, 2);
 
         var first_item = heap_list.get_item(my_list, 0);
-        
-        std.io.out.write(first_item);
-    } 
+
+        // Solves F = impl std.fmt.Formattable<u8>. Nothing written at the call.
+        io.write(io.out, fmt_str.to_string(heap_allocator, first_item));
+
+        // Solves F = impl<Mem, T> Formattable<ptr<List<T>>> at Mem = heap, T = u8,
+        // which recursively demands Formattable<u8>. Prints "[1, 2]".
+        io.write(io.out, fmt_str.to_string(heap_allocator, my_list));
+
+        // Explicit override: no search runs, the named impl is passed positionally
+        // in <>, exactly like heap is passed to std.list above.
+        io.write(io.out, fmt_str.to_string<u8, std.fmt.hex_u8>(heap_allocator, first_item));
+
+    }
 }

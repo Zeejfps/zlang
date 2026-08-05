@@ -1,0 +1,34 @@
+﻿impl std.fmt.str<Mem: std.mem> {
+    uses Mem.Allocator as Allocator;
+    uses std.string.String as String;
+    uses std.list<Mem = Mem> as list;
+    uses std.io.Writer as Writer;
+
+    func to_string<T>(allocator: ptr<Allocator>, value: T) -> ptr<String>
+        requires(F: std.fmt.Formattable<T>)
+    {
+        var str = std.string.create("", allocator);
+        var w = string_writer(str);
+        F.format(value, &w);
+        return str;
+    }
+
+    func join<T>(allocator: ptr<Allocator>, items: ptr<list.List<T>>, sep: ptr<String>) -> ptr<String>
+        requires(F: std.fmt.Formattable<T>)
+    {
+        var str = std.string.create("", allocator);
+        var w = string_writer(str);
+
+        for (var i = 0; i < items.item_count; i++) {
+            if (i > 0) {
+                std.io.write(&w, sep);
+            }
+            F.format(items[i], &w);
+        }
+
+        return str;
+    }
+
+    // TODO: a Writer whose write_bytes appends into the String's char array.
+    func string_writer(str: ptr<String>) -> Writer;
+}
