@@ -1,30 +1,29 @@
-impl std.list<Mem: std.mem> {
-
-    uses Mem.Allocator as Allocator;
-
-    struct List<T> {
-        allocator: ptr<Allocator>;
+impl std.list(
+    mem: std.mem
+){
+    data List<T> {
+        allocator: ptr<mem.Allocator>;
         capacity: u32;
         item_count: u32;
         items: ptr<T>;
     }
 
-    func create<T>(allocator: ptr<Allocator>) -> ptr<List<T>> {
-        var list = allocator.alloc<List<T>>();
+    func create<T>(allocator: ptr<mem.Allocator>) -> ptr<List<T>> {
+        var list = mem.alloc<List<T>>(allocator);
         list.allocator = allocator;
         list.capacity = 10;
-        list.items = allocator.malloc<T>(list.capacity);
+        list.items = mem.malloc<T>(allocator, list.capacity);
         list.item_count = 0;
         return list;
     }
 
     func destroy<T>(list: ptr<List<T>>){
         var allocator = list.allocator;
-        allocator.free(list.items);
-        allocator.free(list);
         list.item_count = 0;
         list.capacity = 0;
         list.allocator = nil;
+        mem.free(allocator, list.items);
+        mem.free(allocator, list);
     }
 
     func push_item<T>(list: ptr<List<T>>, item: T) {
@@ -53,11 +52,11 @@ impl std.list<Mem: std.mem> {
         var items = list.items;
         var allocator = list.allocator;
         var new_capacity = list.capacity * 2;
-        var new_items = allocator.alloc<T>(new_capacity);
+        var new_items = mem.alloc<T>(allocator, new_capacity);
         for (var i = 0; i < list.item_count; i++) {
             new_items[i] = items[i];
         }
-        allocator.free(items);
+        mem.free(allocator, items);
         list.items = new_items;
     }
 

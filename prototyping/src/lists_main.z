@@ -1,44 +1,39 @@
 ﻿impl main {
 
-    impl func main() {
-        heap: std.mem.heap,
-        sort: std.sort,
-        reverse_sort: std.sort<u8> {
-            Ord: std.ord.reverse_u8
-        },
-        to_string: std.fmt.str.to_string,
-        body: () {
-            var heap_allocator = heap.create_allocator();
-            defer heap.destroy_allocator(heap_allocator);
+    fn main() {
+        mod heap_list<T> = std.list<T>({
+            mem = std.mem.heap()
+        });
 
-            var my_list = heap_list.create<u8>(heap_allocator);
-            defer heap_list.destroy(my_list);
+        var heap_allocator = heap.create_allocator();
+        defer heap.destroy_allocator(heap_allocator);
 
-            heap_list.push_item(my_list, 2);
-            heap_list.push_item(my_list, 1);
+        var my_list = heap_list.create<u8>(heap_allocator);
+        defer heap_list.destroy(my_list);
 
-            var first_item = heap_list.get_item(my_list, 0);
-            io.write(io.out, fmt_str.to_string(heap_allocator, first_item));
-            io.write(io.out, fmt_str.to_string(heap_allocator, my_list));
-            io.write(io.out, fmt_str.to_string(heap_allocator, first_item) with(std.fmt.hex_u8));
-            io.write(io.out, fmt_str.to_string(heap_allocator, my_list) with(std.fmt.hex_u8));
+        heap_list.push_item(my_list, 2);
+        heap_list.push_item(my_list, 1);
 
-            sort(my_list);
-            sort(my_list);
+        var first_item = heap_list.get_item(my_list, 0);
+        io.write(io.out, fmt_str.to_string(heap_allocator, first_item));
+        io.write(io.out, fmt_str.to_string(heap_allocator, my_list));
+        io.write(io.out, fmt_str.to_string(heap_allocator, first_item) with(std.fmt.hex_u8));
+        io.write(io.out, fmt_str.to_string(heap_allocator, my_list) with(std.fmt.hex_u8));
 
-            var my_map = heap_map.create<u8, u8>(heap_allocator);
-            defer heap_map.destroy(my_map);
-            heap_map.put(my_map, 2, 20);
-            heap_map.put(my_map, 1, 10);
+        sort(my_list);
 
-            io.write(io.out, fmt_str.to_string(heap_allocator, my_map));
+        var my_map = heap_map.create<u8, u8>(heap_allocator);
+        defer heap_map.destroy(my_map);
+        heap_map.put(my_map, 2, 20);
+        heap_map.put(my_map, 1, 10);
 
-            func to_string = std.fmt.str.ToString<T> {
-                Mem: std.mem.heap,
-                Fmt: std.fmt.Formattable<T>
-            };
+        io.write(io.out, fmt_str.to_string(heap_allocator, my_map));
 
-            to_string.invoke()
-        }
+        func to_string = std.fmt.str.ToString<T> {
+            Mem: std.mem.heap,
+            Fmt: std.fmt.Formattable<T>
+        };
+
+        to_string.invoke()
     }
 }

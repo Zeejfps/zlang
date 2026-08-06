@@ -1,14 +1,11 @@
 ﻿module std.list {
 
-    Allocator: std.mem;
-    Array: std.array;
-    List<T>: data;
+    type List<T>;
 
-    create<T>: func (allocator: ptr<Allocator>) -> ptr<List<T>>;
+    func Create<T>({
+        mem: std.mem
+    })(allocator: mem.Allocator) -> ptr<List<T>>;
 
-    struct List<T>;
-
-    func create<T>(allocator: ptr<Allocator>) -> ptr<List<T>>;
     func destroy<T>(list: ptr<List<T>>);
     func push_item<T>(list: ptr<List<T>>, item: T);
     func pop_item<T>(list: ptr<List<T>>) -> T;

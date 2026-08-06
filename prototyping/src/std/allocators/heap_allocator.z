@@ -1,5 +1,5 @@
 
-module std.mem.heap : std.mem {
+impl std.mem.heap : std.mem {
    
     #metadata {
         "extern": [
