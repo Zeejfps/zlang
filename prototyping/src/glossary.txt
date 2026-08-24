@@ -363,7 +363,6 @@ KEYWORDS  --  the entire budget
 
     oneof       the sum projection
     match, _    destructuring; `_` is a hole in any binding position
-    try         propagate the `err` arm of a Result
     defer       run at scope exit
     if while for loop return continue break
 

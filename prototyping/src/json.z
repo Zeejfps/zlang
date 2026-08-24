@@ -351,7 +351,8 @@ is_digit :: (c: u8) -> bool { c >= '0' && c <= '9' }
 // fields initialise in declaration order and there is no constructor body.
 //
 // Two answers exist and neither is a constructor body. PRIME AT THE CALL SITE
-// and pass the token in -- `tok := try lex.next()`, then a `(lex, allocator,
+// and pass the token in -- prime it with a match at the call site, then a
+// `(lex, allocator,
 // primed: Token) -> self` -- which turns the fallible step into a value
 // dependency the type system enforces, unlike ecs.z's forgettable `w.wire()`.
 // Here I take the other one and dodge with a lazily-filled lookahead, which is
@@ -366,19 +367,19 @@ Parser :: <M: Allocator> (lex: ptr<Lexer>, allocator: M) -> self {
             some (t) { return ok(t) }
             none     { }
         }
-        t := try self.lex.next()                  // `try` propagates err
+        t := match (self.lex.next()) { ok (t) { t }  err (e) { return err(e) } }
         self.look = Option<Token>.some(t)
         ok(t)
     }
 
     bump :: (&self) -> Result<Token, Error> {
-        t := try self.peek()
+        t := match (self.peek()) { ok (t) { t }  err (e) { return err(e) } }
         self.look = Option<Token>.none()
         ok(t)
     }
 
     expect :: (&self, want: Token, why: slice<u8>) -> Result<(), Error> {
-        t := try self.bump()
+        t := match (self.bump()) { ok (t) { t }  err (e) { return err(e) } }
         if (tag_of(t) != tag_of(want)) {           // FRICTION 7: no tag test
             return Result<(), Error>.err(Error(self.lex.pos, why))
         }
@@ -386,7 +387,7 @@ Parser :: <M: Allocator> (lex: ptr<Lexer>, allocator: M) -> self {
     }
 
     value :: (&self) -> Result<Json<M>, Error> {
-        t := try self.bump()
+        t := match (self.bump()) { ok (t) { t }  err (e) { return err(e) } }
         match (t) {
             null      { ok(Json.null())      }
             truth (b) { ok(Json.truth(b))    }
@@ -404,12 +405,12 @@ Parser :: <M: Allocator> (lex: ptr<Lexer>, allocator: M) -> self {
 
     array :: (&self) -> Result<Json<M>, Error> {
         xs := List<Json<M>, M>(self.allocator)
-        t  := try self.peek()
+        t  := match (self.peek()) { ok (t) { t }  err (e) { return err(e) } }
         match (t) { rbrack { _ := self.bump(); return ok(Json.array(xs)) }  _ { } }
         loop {
-            v := try self.value()
+            v := match (self.value()) { ok (v) { v }  err (e) { return err(e) } }
             xs.push(v)
-            n := try self.bump()
+            n := match (self.bump()) { ok (n) { n }  err (e) { return err(e) } }
             match (n) {
                 comma  { }
                 rbrack { return ok(Json.array(xs)) }
@@ -421,18 +422,21 @@ Parser :: <M: Allocator> (lex: ptr<Lexer>, allocator: M) -> self {
     object :: (&self) -> Result<Json<M>, Error> {
         // KY is part of the type, so this must spell what `Json` spells.
         members := Map<slice<u8>, Json<M>, M, KY = str_key>(self.allocator)
-        t := try self.peek()
+        t := match (self.peek()) { ok (t) { t }  err (e) { return err(e) } }
         match (t) { rbrace { _ := self.bump(); return ok(Json.object(members)) }  _ { } }
         loop {
-            k := try self.bump()
+            k := match (self.bump()) { ok (k) { k }  err (e) { return err(e) } }
             key := match (k) {
                 text (s) { s }
                 _        { return self.oops("expected object key") }
             }
-            try self.expect(Token.colon(), "expected :")
-            v := try self.value()
+            match (self.expect(Token.colon(), "expected :")) {
+                ok (_)  { }
+                err (e) { return err(e) }
+            }
+            v := match (self.value()) { ok (v) { v }  err (e) { return err(e) } }
             members.put(key, v)
-            n := try self.bump()
+            n := match (self.bump()) { ok (n) { n }  err (e) { return err(e) } }
             match (n) {
                 comma  { }
                 rbrace { return ok(Json.object(members)) }
@@ -449,8 +453,8 @@ Parser :: <M: Allocator> (lex: ptr<Lexer>, allocator: M) -> self {
 parse :: <M: Allocator> (allocator: M, src: slice<u8>) -> Result<Json<M>, Error> {
     lx := Lexer(src)
     p  := Parser(&lx, allocator)
-    v  := try p.value()
-    t  := try p.bump()
+    v  := match (p.value()) { ok (v) { v }  err (e) { return err(e) } }
+    t  := match (p.bump())  { ok (t) { t }  err (e) { return err(e) } }
     match (t) { eof { ok(v) }  _ { p.oops("trailing input") } }
 }
 
@@ -797,11 +801,14 @@ main :: () -> () {
 //   match.
 //
 //   What is still worth considering is SUGAR, not a missing capability: the
-//   `{ arm (v) { v }  _ { return } }` tail repeats. Swift spells it `guard`,
-//   Rust `let ... else`. Note that `try` cannot cover it -- `try` propagates
-//   the other arms to the caller, and here the arms have the wrong type to
+//   `{ arm (v) { v }  _ { return } }` tail repeats, and now that `try` is cut
+//   the `{ ok (v) { v }  err (e) { return err(e) } }` tail repeats beside it.
+//   Swift spells the first `guard`, Rust `let ... else`. Note that a
+//   propagating form could never have covered both: propagation returns the
+//   other arm to the caller, and here the arms have the wrong type to
 //   propagate (a `Json<M>` cannot be returned from a function whose error
-//   type is `Error`). A single-arm binder would need its own `else`.
+//   type is `Error`). A single-arm binder would need its own `else`, and it
+//   is now the only sugar this file still wants.
 //
 // FRICTION 4 -- `ok(...)` / `err(...)` NEED THE TYPE. Written honestly it is
 //   `Result<Token, Error>.ok(t)` at every one of the fourteen returns in the
@@ -874,7 +881,8 @@ main :: () -> () {
 // genuinely replaces struct, module, trait, impl and enum-of-one, and the
 // shape/policy split is a better answer than Rust's or Go's. The two things
 // standing between this and a language you could write in were a sum projection
-// -- `-> oneof`, `_`, `try` -- and an answer to what monomorphisation does to
+// -- `-> oneof`, `_`, and match-as-expression -- and an answer to what
+// monomorphisation does to
 // recursive data (FRICTION 2). The first is done. The second is not, and it is
 // not syntax.
 // ============================================================================

@@ -4,7 +4,7 @@
 //
 // The second program written against rules.txt. json.z was a JSON parser: a
 // tree of sums, built once, walked recursively, freed all at once. It found
-// the sum projection, `try`, `match`-as-expression and `self`-in-an-instance.
+// the sum projection, `match`-as-expression and `self`-in-an-instance.
 //
 // It could not reach five things, and this file was chosen to hit all five:
 //
@@ -301,9 +301,9 @@ is_dead :: (a: Ai) -> bool {
 // in a `-> self` block. A field initialiser is an expression; there is
 // nowhere to run a step that is not a binding. json.z hit this as FRICTION 5
 // and read it as being about FAILURE. A fallible PROJECTION was adopted for
-// it -- `-> Result<self, E>`, so that a field initialiser could say `try` --
-// and is now cut. It was not useless: under a Result projection the err arm
-// does have somewhere to return to. It was the wrong HALF. Failure was never
+// it -- `-> Result<self, E>`, so that a field initialiser could fail -- and
+// is now cut. It was not useless: under a Result projection the err arm did
+// have somewhere to return to. It was the wrong HALF. Failure was never
 // the friction here; the missing thing is a statement position and `self`
 // inside it, and a projection supplies neither. See [P21], which proposes
 // both together and is where a fallible projection belongs.
@@ -919,8 +919,8 @@ main :: () -> () {
 //   cannot refer to itself. See the long note above `World`. json.z met the
 //   same wall (FRICTION 5) and read it as being about FAILURE. The fallible
 //   projection adopted for it -- `-> Result<self, E>` -- gave the constructor
-//   a RETURN TYPE and still no BODY, and is cut. It is not that `try` had
-//   nowhere to unwind to; under a Result projection it does. It is that a
+//   a RETURN TYPE and still no BODY, and is cut. It is not that a failure had
+//   nowhere to unwind to; under a Result projection it did. It is that a
 //   return type is not a body, and a body is the whole of what is missing.
 //
 //   The cost here is two-phase construction -- `w.wire()` -- which is the
@@ -1064,8 +1064,8 @@ main :: () -> () {
 //       statements, run in textual order at construction, interleaved with the
 //       `:=` field bindings. `self` becomes available at the point every `:=`
 //       field is bound; before that, naming it is an error. The projection
-//       may be `-> Result<self, E>`, and then `try` in that body means what it
-//       means everywhere else -- proposed HERE, as part of this, rather than
+//       may be `-> Result<self, E>`, and then a failing step in that body
+//       returns the err arm -- proposed HERE, as part of this, rather than
 //       standing alone as it briefly did. Standing alone it answered only the
 //       failure that happens to be attached to binding a field, and collided
 //       with BINDING in rules.txt, where a `-> SomeType` projection means the
@@ -1075,7 +1075,7 @@ main :: () -> () {
 //           World :: <M: Allocator, E> (allocator: M) -> Result<self, E> {
 //               pos    := Store<Vec2, M>(allocator)
 //               vel    := Store<Vec2, M>(allocator)
-//               stores := try List<ptr<AnyStore>, M>(allocator)
+//               stores := List<ptr<AnyStore>, M>(allocator)
 //               stores.push(&self.pos)          // self is available: all
 //               stores.push(&self.vel)          // fields are bound
 //           }
@@ -1178,7 +1178,7 @@ main :: () -> () {
 // ----------------------------------------------------------------------------
 //
 // json.z built a tree and printed it, and found the language's missing
-// vocabulary -- sums, `try`, `match`, `self`. This file MUTATES and STORES,
+// vocabulary -- sums, `match`, `self`. This file MUTATES and STORES,
 // and everything it found is downstream of those two verbs. The declaration
 // form itself did not bend: `-> self` blocks as systems, generic stores erased
 // to one shape, a policy as a state machine's formatter, all of it worked.

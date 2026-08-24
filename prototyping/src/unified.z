@@ -28,8 +28,9 @@ Result :: <T, E> -> oneof {
     err: E
 }
 
-// `try e` yields the `ok` payload, or returns the `err` arm to the caller's
-// projection. It is the only reason `Result` is worth having over a match.
+// `Result` is an ordinary sum and the language knows nothing about it. There
+// is no `try`: propagating an error is a one-arm match that returns, written
+// out at every site. See MATCH in rules.txt for why the keyword went.
 
 // A closure is a block with a `()` member, so a callable is an ordinary shape.
 // One per arity is the cost; see OPEN.

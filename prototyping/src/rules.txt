@@ -318,7 +318,6 @@ is an error asking for `&self`, not an implicit receiver.
 The rest of the budget, written down so it stops growing by accident:
     oneof                 a projection
     match  _              destructuring
-    try                   propagate the `err` arm of a Result
     defer                 run at scope exit
     if while for loop return continue break
 
@@ -348,6 +347,24 @@ failure arms do real work; when they do not, bind and move on. Languages
 that miss this end up adding `if let`, `guard let` and `let else` as three
 separate forms.
 
+THIS IS ALSO THE ERROR CHANNEL, and there is no `try`. Propagating a failure
+is the same one-arm match, written out:
+
+    t := match (self.bump()) { ok (t) { t }  err (e) { return err(e) } }
+
+THERE WAS A `try` KEYWORD and it is cut, because it was the one place the
+language reached into a library type by name. `Result` is declared in
+std.core as an ordinary `-> oneof { ok: T, err: E }` -- no more privileged
+than `Option` or anything you write -- and `try` had to know that the second
+variant is spelled `err`. Asked of a user's `-> oneof { a: T, b: E }` it had
+no answer, and none was ever written. Either `Result` is built in, with the
+standing of `u32` and `ptr`, or the keyword goes; the keyword went, and the
+propagation is spelled at all fourteen sites in json.z.
+
+WHAT IT COSTS is a line where a word used to be, and it is not free: the
+error arm is the same eight tokens every time, and json.z is where you can
+see whether that reads as honest or as noise.
+
 `_` IS A HOLE IN A BINDING POSITION, and that is its whole definition. Four
 uses, one idea:
 
@@ -362,8 +379,10 @@ The last one comes with a rule: A VALUE MAY NOT BE DROPPED SILENTLY.
     xs.pop()                an error: an Option<T> went nowhere
     _ := xs.pop()           "bind it to nothing", said out loud
 
-The rule exists because `-> Result<T, E>` is the language's error channel,
-and an ignored Result is the one mistake it must not make easy to write.
+The rule exists because an ignored error is the one mistake a language must
+not make easy to write, and with no `try` the error channel is an ordinary
+returned value like any other -- which is exactly why nothing but this rule
+is watching it.
 
 `_` DOES NOT REACH PROJECTION POSITION, and that is a cost the language
 accepts rather than a gap it intends to close. It fixes the CONSUMERS of a
@@ -765,8 +784,8 @@ OPEN
     that can fail, has nowhere to go. What is missing is a STATEMENT
     POSITION, and `self` inside it; nothing less answers any of the three.
     A fallible PROJECTION was tried -- `-> Result<self, E>`, so that a field
-    initialiser could say `try` -- and is cut. It worked, as far as it went:
-    the err arm has somewhere to return to when the projection is a Result.
+    initialiser could fail -- and is cut. It worked, as far as it went: the
+    err arm had somewhere to return to when the projection was a Result.
     But it answers only the case where the failure is attached to binding a
     field, it never said which other wraps were legal, and `-> SomeType` is
     already spoken for by BINDING above, where it means "fill the holes with
