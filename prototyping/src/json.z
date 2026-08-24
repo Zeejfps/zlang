@@ -482,11 +482,7 @@ parse :: (mem: Allocator, src: slice<u8>) -> Result<Json, Error> {
                 w.write("[")
                 for (i := 0; i < xs.count; i += 1) {
                     if (i > 0) { w.write(",") }
-                    // [W6] a type used in value position IS the solved default
-                    // instance. This is the same move unified.z already makes
-                    // at `Formattable<u8>.format(v / 10, w)`, and it is what
-                    // makes recursive instances possible at all.
-                    fmt.Formattable<Json>.format(xs[i], w)
+                    self.format(xs[i], w)          // this instance; see NOTE 7
                 }
                 w.write("]")
             }
@@ -500,7 +496,7 @@ parse :: (mem: Allocator, src: slice<u8>) -> Result<Json, Error> {
                             if (!first) { w.write(",") }
                             first = false
                             w.write("\""); write_escaped(e.key, w); w.write("\":")
-                            fmt.Formattable<Json>.format(e.value, w)
+                            self.format(e.value, w)
                         }
                         empty { }
                         dead  { }
@@ -511,6 +507,84 @@ parse :: (mem: Allocator, src: slice<u8>) -> Result<Json, Error> {
         }
     }
 }
+
+// ----------------------------------------------------------------------------
+// `spaced` -- a SECOND Formattable<Json>. Named, so it is never searched; the
+// caller reaches it by hand with `<F = spaced>`.
+//
+// It differs from the pooled instance in exactly one character: `", "` instead
+// of `","`. Everything else delegates. It is what found FRICTION 11.
+//
+// READ THE THREE SELF-REFERENCES BELOW. Two are recursion (`self`) and one is
+// deliberate delegation (`Formattable<Json>`). Before `self` existed all three
+// were the same text, and two of them were silently wrong -- which is what
+// FRICTION 11 was.
+// ----------------------------------------------------------------------------
+
+spaced :: -> fmt.Formattable<Json> {
+    format = (v, w) -> () {
+        match (v) {
+
+            array (xs) {
+                w.write("[")
+                for (i := 0; i < xs.count; i += 1) {
+                    if (i > 0) { w.write(", ") }          // the only difference
+                    self.format(xs[i], w)
+                    //  ^^^^ THIS INSTANCE. `xs[i]` is a Json, so printing it
+                    //  must stay in `spaced` or the space is lost one level
+                    //  down. `self` is available because this block has no
+                    //  runtime group: it IS its value, so there is exactly one
+                    //  and nothing needs passing.
+                }
+                w.write("]")
+            }
+
+            object (m) {
+                w.write("{")
+                first := true
+                for (i := 0; i < m.cap; i += 1) {
+                    match (m.slots[i]) {
+                        live (e) {
+                            if (!first) { w.write(", ") }
+                            first = false
+                            w.write("\""); write_escaped(e.key, w); w.write("\": ")
+                            self.format(e.value, w)            // this instance, same reason
+                        }
+                        empty { }
+                        dead  { }
+                    }
+                }
+                w.write("}")
+            }
+
+            _ { fmt.Formattable<Json>.format(v, w) }
+            //  ^^^^^^^^^^^^^^^^^^^^^^^ THE DEFAULT, on purpose. null, bool,
+            //  number and string contain no Json, so there is nothing to
+            //  recurse into and delegating is exactly right. Both spellings
+            //  are needed in one instance, and they now read differently.
+        }
+    }
+}
+
+// WHAT IT PRINTS.  Source: {"name":"z","tags":[1,2,3],"ok":true}
+//
+//     to_string(heap, doc)                 {"name":"z","tags":[1,2,3],"ok":true}
+//     to_string<F = spaced>(heap, doc)     {"name": "z", "tags": [1, 2, 3], "ok": true}
+//
+// The override now reaches all the way down. Written with
+// `fmt.Formattable<Json>.format` in the array arm instead, it would print
+//
+//                                          {"name": "z", "tags": [1,2,3], "ok": true}
+//                                                                 ^^^^^^^
+// -- spaced at the top level, default underneath, with no type error available
+// to catch it, because both spellings have the same type and one of them is
+// what you wanted. That was FRICTION 11.
+//
+// A NAMED instance could also have written `spaced.format(...)`, which is
+// ordinary recursion and needs no new rule. `self` is preferred because the
+// anonymous pooled instances have no name by construction, and because a
+// parameterised instance would otherwise have to re-thread its own
+// compile-time arguments by hand. See NOTE 7 in unified.z.
 
 write_escaped :: (s: slice<u8>, w: ptr<Writer>) -> () {
     for (i := 0; i < s.len; i += 1) {
@@ -584,12 +658,11 @@ main :: () -> () {
             // round-trip
             io.out.write(fmt.to_string(heap, doc))
 
-            // A `<F = pretty_json>` override belongs here and CANNOT BE
-            // WRITTEN. See FRICTION 11 -- the printer recurses through
-            // `Formattable<Json>.format`, which is the solver's default, so
-            // the choice is lost one level down. The `=` spelling itself is
-            // fine and is exercised on a non-recursive type in unified.z's
-            // main (`to_string<F = hex_u8>`).
+            // Override the solver by naming the instance, and the override
+            // now reaches the children. See the note above `spaced`.
+            //
+            //   {"name": "z", "tags": [1, 2, 3], "ok": true}
+            io.out.write(fmt.to_string<F = spaced>(heap, doc))
 
             // iterate an array through the Iterator shape
             match (doc) {
@@ -725,30 +798,37 @@ main :: () -> () {
 //
 // FRICTION 9 -- NO VISIBILITY, and see [P5]: the fix is already in the grammar.
 //
-// FRICTION 11 -- A RECURSIVE DICTIONARY INSTANCE CANNOT PROPAGATE THE CALLER'S
-//   CHOICE. Found by trying to write the `<F = pretty_json>` call in main, and
-//   the most serious thing in this file that unified.z has not absorbed.
+// FRICTION 11 -- A RECURSIVE INSTANCE COULD NOT NAME ITSELF.  RESOLVED -> [P16]
 //
-//   The Json printer recurses on its children:
+//   Found by trying to write `spaced`, above. A dictionary is chosen at the
+//   CALL SITE, so when an instance recurses it must name a dictionary again --
+//   and naming the type gets the SOLVER'S DEFAULT ([W6]), not the instance the
+//   caller picked. `to_string<F = spaced>(mem, doc)` spaced the outermost value
+//   and printed every child with the default, silently, one level down.
 //
-//       array (xs) { ... fmt.Formattable<Json>.format(xs[i], w) ... }
+//   It was also invisible: in `spaced` the recursion and the deliberate
+//   delegation were the same text, `fmt.Formattable<Json>.format(...)`, in
+//   three places, and two of them were wrong.
 //
-//   and `Formattable<Json>` in value position is THE SOLVER'S DEFAULT ([W6]).
-//   So `to_string<F = pretty_json>(mem, doc)` picks pretty for the outermost
-//   value and the default for every child. The override silently stops at
-//   depth 1.
+//   Latent in unified.z too: its `Formattable<u8>` instance recursed via
+//   `Formattable<u8>.format` and worked only because it happened to BE the
+//   pooled instance. A second decimal instance would have recursed into the
+//   wrong one.
 //
-//   unified.z's `Formattable<List<T,M>>` dodges this without noticing: it
-//   takes `F: Formattable<T> = ?` and threads the ELEMENT's instance by hand.
-//   That works because a list's elements are a different type from the list.
-//   For a RECURSIVE type the instance would have to name itself --
-//   `F: Formattable<Json> = ?` inside the Formattable<Json> instance -- and
-//   there is no spelling for "the instance I am". Dictionaries have no `self`.
+//   FIRST ANSWER, and it is most of the fix: a NAMED instance can just say its
+//   own name -- `spaced.format(...)` is ordinary recursion and needs nothing
+//   new. That alone drops this from "cannot be expressed" to "expressible".
+//   What it does not cover:
+//     - anonymous instances have no name BY CONSTRUCTION, since naming one is
+//       exactly what removes it from the pool -- so the DEFAULT instance for
+//       every type is the one that cannot say its own name;
+//     - a parameterised instance must re-thread its own compile-time args, and
+//       `pretty.format(...)` instead of `pretty<indent>.format(...)` silently
+//       resets every nested level.
 //
-//   The shape side does not have this problem, because a ptr<Shape> carries
-//   its vtable and recursion goes through the value. It is specific to
-//   dictionaries, and it is the first thing found that the shape/dictionary
-//   split makes WORSE rather than better.
+//   ADOPTED: `self`, available lexically in a block with no runtime group.
+//   Not a second meaning -- a receiver exists to say WHICH instance, and a
+//   block with no runtime group already IS its value, so there is exactly one.
 //
 // FRICTION 12 -- `_` DOES NOT REACH PROJECTION POSITION. [P4] cleans up `sort`
 //   because `M` appears only in a parameter type. It cannot clean up
@@ -773,12 +853,13 @@ main :: () -> () {
 // ----------------------------------------------------------------------------
 //
 // STATUS. [P1] [P2] [P3] [P4] [P5] [P6] [P8] [P9] [P10] [P11] [P12] [P13] [P14]
-// [P15] are ADOPTED and now live in unified.z; they are kept below because the
+// [P15] [P16] are ADOPTED and now live in unified.z; they are kept below because the
 // argument for each is the evidence, and the evidence is here. [P7] (import as
 // an ordinary compile-time binding) is stated in unified.z's keyword list but
 // nothing in either file exercises it yet.
 //
-// Applying them turned up two things they do NOT fix: FRICTION 11 and 12.
+// Applying them turned up two things they did NOT fix: FRICTION 11 and 12.
+// FRICTION 11 is now closed by [P16]; FRICTION 12 is open.
 //
 // [P1]  `-> oneof` : the sum projection. A block whose holes are disjunctive.
 //         -> self   ALL holes filled (unfilled = abstract = shape/dictionary)
@@ -868,6 +949,22 @@ main :: () -> () {
 //       (FRICTION 5), and also gives `-> Option<self>` and `-> ptr<self>` for
 //       free.
 //
+// [P16] `self` IS AVAILABLE LEXICALLY IN A BLOCK WITH NO RUNTIME GROUP, which
+//       is every module and every dictionary instance. It lets an instance
+//       recurse into ITSELF rather than into the solver's default, and makes
+//       recursion and delegation read differently:
+//
+//         self.format(child, w)             the instance I am
+//         Formattable<Json>.format(v, w)    the solver's default
+//
+//       Both are needed -- `reverse_u8` wants the second on purpose. It costs
+//       no keyword and is arguably not even a change: `self` already means
+//       "the block", and the receiver only ever existed to say which instance.
+//       A block with a runtime group is a TYPE, so its members must still take
+//       `&self`; bare `self` there is an error, not an implicit receiver.
+//       Side effect: settles whether a module's members may say `self`. They
+//       may, and it means the module.
+//
 // [P15] DROP `operator`; OPERATORS ARE MEMBERS WITH SYMBOLIC NAMES.
 //         [] :: (&self, i: u32) -> T
 //         () :: (&self, v: u8)  -> ()
@@ -920,7 +1017,7 @@ main :: () -> () {
 // standing between this and a language you could write in were a sum projection
 // ([P1], [P2], `_`, `try`) and an answer to what monomorphisation does to
 // recursive data (FRICTION 2). The first is done. The second is not, and it has
-// since been joined by FRICTION 11, which is the same shape of problem one
-// level up: the dictionary story has no `self`, so anything recursive loses the
-// caller's choice. Both are about recursion, and neither is about syntax.
+// since been joined by FRICTION 11 -- which turned out to be much smaller than
+// it first looked, and closed by giving the dictionary story the `self` it was
+// missing. What is left is the monomorphisation one, and it is not syntax.
 // ============================================================================

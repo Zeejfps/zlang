@@ -108,6 +108,28 @@
 //     ptr<self>             what &self desugars to
 //     -> Result<self, E>    a projection may WRAP self: fallible construction
 //
+// WHEN `self` NEEDS A RECEIVER, AND WHEN IT DOES NOT. It is one meaning; the
+// receiver exists only to say WHICH instance, and is therefore required
+// exactly when the block is a type rather than a value:
+//
+//     block has a runtime group   ->  it is a TYPE. Many values exist, so a
+//                                     member must take `self` / `&self` to
+//                                     know which one it was called on.
+//                                     `List`, `Heap()`, `Arena`.
+//
+//     block has no runtime group  ->  it IS its value, already evaluated.
+//                                     There is exactly one, so `self` is
+//                                     available lexically with nothing passed.
+//                                     `mem`, `io`, `reverse_u8`, and every
+//                                     dictionary instance.
+//
+// The second case is the one that lets an instance recurse into itself -- see
+// `Formattable<u8>` below and NOTE 7. It also answers a question the earlier
+// draft left open: yes, a member of `mem` may say `self`, and it means `mem`.
+//
+// A member of a block that HAS a runtime group may not say bare `self`; that
+// is an error asking for `&self`, not an implicit receiver.
+//
 // The rest of the budget, written down so it stops growing by accident:
 //     oneof                 a projection
 //     match  _              destructuring
@@ -337,6 +359,9 @@ Ord :: <T> -> self {
 // the pooled instance, not this one -- a type in value position is what the
 // solver picks.
 reverse_u8 :: -> Ord<u8> {
+    // `Ord<u8>` here is the solver's default, NOT this block -- deliberate
+    // delegation. `self.compare` would be infinite recursion. Both spellings
+    // are needed and they now look different. See NOTE 7.
     compare = (a, b) -> i32 { Ord<u8>.compare(b, a) }
 }
 
@@ -365,7 +390,7 @@ Formattable :: <T> -> self {
 
 :: -> Formattable<u8> {
     format = (v, w) -> () {
-        if (v >= 10) { Formattable<u8>.format(v / 10, w) }
+        if (v >= 10) { self.format(v / 10, w) }   // ME, not the pool. NOTE 7.
         d := '0' + (v % 10)
         w.write_bytes(&d, 1)
     }
@@ -591,6 +616,41 @@ main :: () -> () {
 // and it becomes a shared type precisely when you write `ptr<Fn<u8, ()>>`,
 // which is the same coercion as `ptr<Allocator>` and not a second mechanism.
 //
+// ----------------------------------------------------------------------------
+// NOTE 7 -- how an instance names itself, and why `self` and not its own name.
+//
+// A dictionary is chosen at the CALL SITE, so when an instance's body recurses
+// it has to name a dictionary again -- and naming the type gets the solver's
+// default, not the instance the caller picked. Written the obvious way, a
+// `pretty` printer prints the outermost value pretty and every child with the
+// default, silently, one level down.
+//
+// A NAMED instance can just say its own name (`pretty.format(...)`), which is
+// ordinary recursion and needs nothing new. Two things push past that:
+//
+//   - The anonymous instances -- the ones in the pool, which is to say the
+//     DEFAULT for every type -- have no name to say by construction. Naming an
+//     instance is exactly what removes it from the pool.
+//
+//   - A parameterised instance must re-thread its own compile-time arguments
+//     by hand. `pretty :: <indent: u32 = 2> -> Formattable<Json>` has to write
+//     `pretty<indent>.format(...)`; writing `pretty.format(...)` silently
+//     resets every nested level to the default while the top level uses what
+//     the caller asked for. `self` carries the arguments and cannot be got
+//     wrong.
+//
+// Both spellings remain necessary, and they now read differently, which is the
+// real win:
+//
+//     self.format(child, w)              the instance I am      -- recursion
+//     Formattable<Json>.format(v, w)     the solver's default   -- delegation
+//
+// `reverse_u8` wants the second on purpose. A pretty-printer wants the first.
+// Before this, only the second was sayable and the two were the same text.
+//
+// This is not a second meaning for `self`. See KEYWORDS: the receiver exists
+// to say which instance, and an instance is already a single value.
+//
 // ============================================================================
 // CHANGED IN THIS REVISION -- all of it found by writing src/json.z, a JSON
 // parser plus the containers it needs, in this syntax. That file keeps the
@@ -611,6 +671,11 @@ main :: () -> () {
 //   CHANGED  `operator []` -> `[]`. See NOTE 6.
 //   CHANGED  `List.pop` returns Option<T>.
 //   CHANGED  shape-vs-dictionary is a property of the block, not of each hole.
+//   ADDED    `self` is available lexically in a block with no runtime group,
+//            which is what lets an instance recurse into itself rather than
+//            into the solver's default. NOTE 7. Found by trying to write a
+//            second Formattable<Json> in json.z and watching the override stop
+//            at depth 1.
 //   FIXED    `io.out` is now declared; the UFCS comment on List.items was
 //            wrong; UFCS scope resolution is now stated.
 //
@@ -629,25 +694,6 @@ main :: () -> () {
 //     or stored together. The only livable answer found so far is to erase at
 //     the type declaration (`ptr<Allocator>`), which means the headline feature
 //     is unavailable for exactly the data structures people write most.
-//
-//   - A RECURSIVE DICTIONARY INSTANCE CANNOT PROPAGATE THE CALLER'S CHOICE.
-//     `Formattable<Json>` prints its children by calling `Formattable<Json>
-//     .format`, which is the SOLVER'S DEFAULT -- so `to_string<F = pretty>`
-//     picks `pretty` for the outermost value and the default for every child.
-//     The override stops at depth 1, silently.
-//
-//     `Formattable<List<T,M>>` above dodges this without noticing, because a
-//     list's elements are a DIFFERENT type and it can thread `F` by hand. A
-//     recursive type would have to name itself -- `F: Formattable<Json> = ?`
-//     inside the Formattable<Json> instance -- and there is no spelling for
-//     "the instance I am". Dictionaries have no `self`; that is what makes
-//     them free-standing and it is what breaks here.
-//
-//     Shapes are immune: a ptr<Shape> carries its vtable, so recursion through
-//     the value keeps the choice. This is the first thing found that the
-//     shape/dictionary split makes WORSE rather than better, and it is the
-//     same shape of problem as the recursive-monomorphisation item above --
-//     both are about recursion, neither is about syntax.
 //
 //   - `_` DOES NOT REACH PROJECTION POSITION, so it half-fixes the plumbing
 //     parameter. `sort` is clean because `M` appears only in a parameter type.
