@@ -1,4 +1,0 @@
-impl std.os {
-    func write();
-    func read(buffer: u8*, size: u32);
-}

@@ -1,0 +1,6 @@
+{"name": "databricks_mcp.server.databricks_mcp_server", "level": "INFO", "message": "Starting Databricks MCP server", "timestamp": "2026-08-24T08:23:51-0500"}
+{"name": "databricks_mcp.server.databricks_mcp_server", "level": "INFO", "message": "Initializing Databricks MCP server", "timestamp": "2026-08-24T08:23:51-0500"}
+{"name": "mcp.server.lowlevel.server", "level": "INFO", "message": "Processing request of type ListToolsRequest", "timestamp": "2026-08-24T08:23:51-0500"}
+{"name": "mcp.server.lowlevel.server", "level": "INFO", "message": "Processing request of type ListPromptsRequest", "timestamp": "2026-08-24T08:23:51-0500"}
+{"name": "mcp.server.lowlevel.server", "level": "INFO", "message": "Processing request of type ListResourcesRequest", "timestamp": "2026-08-24T08:23:51-0500"}
+{"name": "mcp.server.lowlevel.server", "level": "INFO", "message": "Processing request of type ListResourceTemplatesRequest", "timestamp": "2026-08-24T08:24:21-0500"}

@@ -1,3 +1,0 @@
-module std.io {
-    module os = std.os;
-}

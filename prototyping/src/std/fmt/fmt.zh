@@ -1,6 +1,0 @@
-module std.fmt {
-    func format<T> {
-        Writer: std.io.Writer;
-        invoke: (value: T, w: ptr<Writer>);
-    }
-}
