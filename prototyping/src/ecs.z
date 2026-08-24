@@ -1,0 +1,1305 @@
+// ============================================================================
+// ecs.z  --  an entity-component-system and the game loop around it.
+// ============================================================================
+//
+// The second program written against unified.z. json.z was a JSON parser: a
+// tree of sums, built once, walked recursively, freed all at once. It found
+// the sum projection, `try`, `match`-as-expression and `self`-in-an-instance.
+//
+// It could not reach five things, and this file was chosen to hit all five:
+//
+//     1. ARITHMETIC ON USER TYPES.        json.z added no two values of its
+//                                         own types. `Vec2 + Vec2` does.
+//     2. HETEROGENEOUS STORAGE.           json.z erased exactly one value
+//                                         (`ptr<Writer>`) and stored none. An
+//                                         ECS is a bag of `ptr<Shape>`.
+//     3. CALLABLES STORED IN DATA.        json.z passed one closure to one
+//                                         function. An event bus keeps them.
+//     4. MUTATION IN PLACE.               json.z only ever built and printed.
+//                                         A simulation writes back every tick.
+//     5. TEARDOWN OF THE UNKNOWN.         json.z used an arena and never
+//                                         freed a node. A world despawns.
+//
+// Same convention as json.z: everything is unified.z's syntax as-is except
+// where marked [P#], which points at a numbered proposal in FINDINGS. [W#]
+// marks something that held up and must not be lost. Numbering continues from
+// json.z -- wins start at [W8], frictions at 13, proposals at [P17].
+//
+// ============================================================================
+
+
+// ============================================================================
+// imports
+// ============================================================================
+//
+// `List` and `Map` graduated from json.z into std between the two files; Map
+// is unchanged from json.z's open-addressed version.
+
+std   :: import("std")
+mem   :: std.mem
+io    :: std.io
+fmt   :: std.fmt
+core  :: std.core
+
+Allocator :: mem.Allocator
+Writer    :: io.Writer
+List      :: std.list.List
+Map       :: std.map.Map
+Key       :: std.key.Key
+Option    :: core.Option
+Result    :: core.Result
+Fn        :: core.Fn
+Fn2       :: core.Fn2
+
+
+// ============================================================================
+// std.num  --  where the operator story breaks.  FRICTION 13, and [P17].
+// ============================================================================
+//
+// unified.z NOTE 6 says operators are members with symbolic names, and gives
+// two examples, `[]` and `()`. Both take `self`. Written the same way, `+` is
+//
+//     Vec2 :: (x: f32, y: f32) -> self {
+//         + :: (&self, b: Vec2) -> Vec2 { Vec2(self.x + b.x, self.y + b.y) }
+//     }
+//
+// and it fails on the second line of real vector code:
+//
+//     v * 2.0      ->  v.*(2.0)      fine, a member of Vec2
+//     2.0 * v      ->  (2.0).*(v)    a member of f32, which I do not own
+//
+// UFCS would rescue it -- `*(2.0, v)` resolves a free function in the caller's
+// scope -- and that is exactly the rescue NOTE 4 forbids, because a free
+// function may never satisfy a shape. So under the current rules `Vec2` can be
+// added to itself and cannot be scaled by a number, and no shape can require
+// "is addable" of it.
+//
+// THE ANSWER IS ALREADY IN THE LANGUAGE, and it is unified.z's own test that
+// finds it. Ask the question NOTE 1 asks: can there legitimately be two of
+// these for one type?
+//
+//     Two ways for a List to index itself?     No.   -> `[]` is a SHAPE.
+//     Two ways to compare two u8?              Yes.  -> `Ord` is a POLICY.
+//     Two ways to add two Vec2?                Yes -- saturating, wrapping,
+//                                              checked, and for a matrix,
+//                                              two multiplications.
+//                                                    -> `+` is a POLICY.
+//
+// So `[]` and `()` take `self` and the arithmetic operators do not, and that
+// is not an inconsistency, it is the same test giving two answers. Everything
+// awkward falls out at once: a policy is not attached to a type, so `2.0 * v`
+// needs nobody to own f32; primitives are pooled instances like any other; and
+// NOTE 4 stays intact because these are instances, not extrinsic functions.
+//
+// [P17] `a + b` is `Num<A>.add(a, b)`, solver-found.
+
+Num :: <T> -> self {
+    add: (a: T, b: T) -> T
+    sub: (a: T, b: T) -> T
+    mul: (a: T, b: T) -> T
+    zero: () -> T
+}
+
+// The primitive instances are ordinary pooled ones. Nothing is built in.
+:: -> Num<f32> {
+    add  = (a, b) -> f32 { intrinsic_add_f32(a, b) }
+    sub  = (a, b) -> f32 { intrinsic_sub_f32(a, b) }
+    mul  = (a, b) -> f32 { intrinsic_mul_f32(a, b) }
+    zero = ()     -> f32 { 0.0 }
+}
+
+// The mixed-operand case, which is why `Num<T>` alone is not enough: the
+// operands have different types and so does the result. Written with three
+// compile-time parameters it works, and reads badly at every use. See
+// FRICTION 14 -- what it actually wants is an OUTPUT parameter.
+Scale :: <V, S> -> self {
+    scale: (v: V, s: S) -> V
+}
+
+:: -> Scale<f32, f32> { scale = (v, s) -> f32 { v * s } }
+
+
+// ----------------------------------------------------------------------------
+// Vec2. A record plus two policy instances. Note that the type declaration is
+// one line ([W2] from json.z, still the best line in the language) and that
+// NOTHING about Vec2 mentions arithmetic -- the instances are separate, which
+// is the whole point of them being policies.
+
+Vec2 :: (x: f32, y: f32) -> self
+
+:: -> Num<Vec2> {
+    add  = (a, b) -> Vec2 { Vec2(a.x + b.x, a.y + b.y) }
+    sub  = (a, b) -> Vec2 { Vec2(a.x - b.x, a.y - b.y) }
+    mul  = (a, b) -> Vec2 { Vec2(a.x * b.x, a.y * b.y) }   // componentwise
+    zero = ()     -> Vec2 { Vec2(0.0, 0.0) }
+}
+
+:: -> Scale<Vec2, f32> { scale = (v, s) -> Vec2 { Vec2(v.x * s, v.y * s) } }
+
+// A named second instance, exactly as `reverse_u8` is a second `Ord<u8>`.
+// This is the evidence that `+` had to be a policy: `wrapping` cannot be a
+// member of Vec2, because `+` already is one and there is only one of those.
+saturating :: -> Num<Vec2> {
+    add = (a, b) -> Vec2 { Vec2(clamp_unit(a.x + b.x), clamp_unit(a.y + b.y)) }
+    sub = (a, b) -> Vec2 { Num<Vec2>.sub(a, b) }           // delegate; NOTE 7
+    mul = (a, b) -> Vec2 { Num<Vec2>.mul(a, b) }
+    zero = ()    -> Vec2 { Num<Vec2>.zero() }
+}
+
+clamp_unit :: (v: f32) -> f32 { if (v > 1.0) { 1.0 } else { if (v < -1.0) { -1.0 } else { v } } }
+
+length_sq :: (v: Vec2) -> f32 { v.x * v.x + v.y * v.y }
+
+// A generic over any numeric type -- the thing the current draft cannot say at
+// all, and the reason [P17] is worth a proposal rather than a workaround.
+lerp :: <T, N: Num<T> = ?, S: Scale<T, f32> = ?> (a: T, b: T, t: f32) -> T {
+    N.add(a, S.scale(N.sub(b, a), t))
+}
+
+
+// ============================================================================
+// ecs.entity
+// ============================================================================
+//
+// A generational handle: the id indexes the storage, the generation says the
+// slot has not been recycled underneath you. `Entity` is one line, as `Span`
+// and `Error` were in json.z.
+
+Entity :: (id: u32, gen: u32) -> self
+
+// Used as a Map key, so it needs a `Key<Entity>` instance -- which is also the
+// only way to ask "are these the same entity", because there is no `==` on a
+// user type and [P17]'s `Num` is not the right home for equality. `Key` was
+// json.z's [P11]: hash and equals must agree, so they live in one block.
+:: -> Key<Entity> {
+    hash   = (k) -> u64  { (k.id * 2654435761) ^ (k.gen * 40503) }
+    equals = (a, b) -> bool { a.id == b.id && a.gen == b.gen }
+}
+
+// FRICTION 15 in one line: `Key<Entity>.equals(a, b)` is what you write at
+// every comparison site, and it is not obviously an equality test. `a == b`
+// under [P17] would desugar to the same call through an `Eq<T>` policy.
+same :: (a: Entity, b: Entity) -> bool { Key<Entity>.equals(a, b) }
+
+NO_ENTITY :: Entity(0, 0)
+
+
+// ============================================================================
+// ecs.store  --  a sparse set. Dense array for iteration, map for lookup.
+// ============================================================================
+//
+// This is the container that makes an ECS fast, and writing it found the two
+// sharpest results in the file: FRICTION 16 (`[]` cannot be assigned through)
+// and FRICTION 17 (a container cannot be encapsulated, because reaching into
+// its fields is the only way to mutate an element).
+
+Store :: <C, M: Allocator> (mem: M) -> self {
+
+    dense := List<C, M>(mem)          // the components themselves
+    owner := List<Entity, M>(mem)     // dense[i] belongs to owner[i]
+    index := Map<Entity, u32, M>(mem) // entity -> dense index
+
+    count :: (&self) -> u32 { self.dense.count }
+
+    has :: (&self, e: Entity) -> bool {
+        match (self.index.get(e)) { some (_) { true }  none { false } }
+    }
+
+    // Returns a POINTER, not a value, and that is not a style choice.
+    // `get` returning `Option<C>` gives you a copy, and a movement system that
+    // writes the new position back has to hash the entity a second time to
+    // store it. So the reader of a mutable container returns a place.
+    //
+    // FRICTION 16: `self.dense.items[i]` reaches past `[]` into List's raw
+    // pointer field, because `[] :: (&self, i: u32) -> C` yields a value and
+    // there is no way to spell "the slot". `xs[i] = v` cannot be written for
+    // any user container in this language. json.z hid this: `List.push` writes
+    // `self.items[...]` from INSIDE List, where reaching into the field is
+    // legitimate. From outside it is a layering violation that the language
+    // requires.
+    at :: (&self, e: Entity) -> Option<ptr<C>> {
+        match (self.index.get(e)) {
+            none     { Option<ptr<C>>.none() }
+            some (i) { Option<ptr<C>>.some(&self.dense.items[i]) }
+        }
+    }
+
+    add :: (&self, e: Entity, c: C) -> () {
+        match (self.index.get(e)) {
+            some (i) { self.dense.items[i] = c }      // overwrite in place
+            none     {
+                self.index.put(e, self.dense.count)
+                self.dense.push(c)
+                self.owner.push(e)
+            }
+        }
+    }
+
+    // Swap-remove, so the dense array stays dense. The moved element's index
+    // has to be repaired, which is the one place a sparse set is subtle.
+    remove :: (&self, e: Entity) -> bool {
+        i := match (self.index.get(e)) { some (i) { i }  none { return false } }
+        last := self.dense.count - 1
+        if (i != last) {
+            self.dense.items[i] = self.dense.items[last]
+            moved := self.owner.items[last]
+            self.owner.items[i] = moved
+            self.index.put(moved, i)
+        }
+        // Three results dropped on the floor: `pop` yields `Option<C>` and
+        // `remove` a bool, and nothing in the language says whether ignoring a
+        // return value is allowed, warned about, or an error. Small, but it is
+        // a decision, and `try`/`Result` make it matter.
+        self.dense.pop()
+        self.owner.pop()
+        self.index.remove(e)
+        true
+    }
+
+    // Iteration is over the dense arrays, by index, because there is no
+    // `for (x in xs)` form and building a ListIter per store per system costs
+    // more syntax than the index loop it replaces. See FRICTION 18.
+    entity_at :: (&self, i: u32) -> Entity  { self.owner.items[i] }
+    slot_at   :: (&self, i: u32) -> ptr<C>  { &self.dense.items[i] }
+
+    deinit :: (&self) -> () {
+        self.index.deinit()
+        self.owner.deinit()
+        self.dense.deinit()
+    }
+}
+
+
+// ============================================================================
+// ecs.store  --  erasing it
+// ============================================================================
+//
+// [W8] A GENERIC TYPE ERASES TO A NON-GENERIC SHAPE, as long as no hole in the
+// shape mentions the type parameter. `Store<Vec2, M>` and `Store<Health, M>`
+// are different types with different vtables, and both coerce to
+// `ptr<AnyStore>` because `remove`, `count` and `deinit` never say `C`.
+//
+// That is NOTE 3's rule ("multiply the vtables, do not add defaults") read
+// backwards, and it is what makes a heterogeneous component registry possible
+// at all. It is the single largest thing that worked in this file.
+
+AnyStore :: -> self {
+    remove: (&self, e: Entity) -> bool
+    count:  (&self) -> u32
+    deinit: (&self) -> ()
+}
+
+// FRICTION 19, and it is a cost of structural matching that json.z never paid:
+// `Store` satisfies `AnyStore` only because I NAMED its members `remove`,
+// `count` and `deinit` to match. Had `Store` come from another library and
+// called them `erase`, `len` and `dispose`, there would be no way to say "it
+// satisfies AnyStore via this renaming" -- structural matching has no adapter.
+// You write a wrapper block per mismatch, and a wrapper costs a pointer, a
+// vtable and a name.
+//
+//     StoreAsAny :: <C, M> (inner: ptr<Store<C, M>>) -> self {
+//         remove :: (&self, e: Entity) -> bool { self.inner.erase(e) }
+//         count  :: (&self) -> u32 { self.inner.len() }
+//         deinit :: (&self) -> ()  { self.inner.dispose() }
+//     }
+//
+// Go has the same hole and lives with it. Worth writing down rather than
+// discovering it in a user's bug report.
+
+
+// ============================================================================
+// game.components
+// ============================================================================
+
+Health :: (hp: i32, max: i32) -> self
+
+// A state machine as a sum, with the state's data in the state. This is what
+// `-> oneof` is for and it reads exactly right.
+Ai :: -> oneof {
+    idle:  ()
+    hunt:  Entity            // who we are chasing
+    flee:  Vec2              // where we are running to
+    dead:  ()
+}
+
+// FRICTION 20, which json.z raised as FRICTION 7 and which is much worse here.
+// "Is this entity dead" is a tag test with no payload to bind, and there is no
+// way to say it. Every such question becomes a match with a tail of dead arms:
+is_dead :: (a: Ai) -> bool {
+    match (a) { dead { true }  idle { false }  hunt (_) { false }  flee (_) { false } }
+}
+// The ECS version of the same gap is worse than a bool: a real ECS keys its
+// archetypes off a COMPONENT BITMASK, and a bitmask needs each variant to have
+// an ordinal. A sum's discriminant is not a value, cannot be compared, cannot
+// index an array, and cannot be serialised. See [P19].
+
+
+// ============================================================================
+// ecs.world
+// ============================================================================
+//
+// FRICTION 21, the largest new result in the file: A `-> self` BLOCK HAS NO
+// CONSTRUCTOR BODY, so a self-referential structure cannot be built.
+//
+// What the World wants is four typed stores AND a list of pointers to those
+// same stores, so that despawn and teardown can sweep every component type
+// without naming it. Written the obvious way:
+//
+//     World :: <M: Allocator> (mem: M) -> self {
+//         pos    := Store<Vec2, M>(mem)
+//         hp     := Store<Health, M>(mem)
+//         stores := List<ptr<AnyStore>, M>(mem)
+//         stores.push(&self.pos)          // <- no `self` here, and no
+//         stores.push(&self.hp)           //    statement position either
+//     }
+//
+// Two separate things stop it, and only the first is about syntax:
+//
+//   1. There is no statement position in a `-> self` block. A field
+//      initialiser is an expression; there is nowhere to run a step that is
+//      not a binding. json.z hit this as FRICTION 5 and read it as being about
+//      FAILURE, and [P14] (`-> Result<self, E>`) was adopted for it. [P14] is
+//      the wrong half of the fix: it gives the constructor a RETURN TYPE and
+//      still no BODY. `try` in a field initialiser has nothing to unwind to.
+//
+//   2. `&self.pos` during construction is a pointer into a value that is about
+//      to be returned to the caller. THE LANGUAGE HAS NO STATEMENT ABOUT
+//      WHETHER VALUES MOVE. json.z never noticed because no interior pointer
+//      it took outlived the expression that took it -- `&b` in `to_string`,
+//      `&arena` in main, `&tally(&n)` as an argument. Every one of those is a
+//      pointer to a local that stays put. The moment a structure points into
+//      itself, "is a returned block copied or constructed in place" becomes a
+//      question the language must answer, and it does not have the vocabulary
+//      to ask it. See [P18].
+//
+// The workaround below is two-phase construction, which is exactly what the
+// unified declaration form was supposed to abolish: a `wire` you must remember
+// to call, and a World that is unsafe to use between the two lines.
+
+World :: <M: Allocator> (mem: M) -> self {
+
+    next_id := 1
+    recycle := List<Entity, M>(mem)       // despawned ids, ready for reuse
+    live    := Map<Entity, bool, M>(mem)
+
+    pos   := Store<Vec2, M>(mem)
+    vel   := Store<Vec2, M>(mem)
+    hp    := Store<Health, M>(mem)
+    brain := Store<Ai, M>(mem)
+
+    // Declared here, defined two hundred lines below. json.z's FRICTION 10
+    // (order independence is required and unstated) is load-bearing again.
+    died  := Signal<Entity, M>(mem)
+
+    // Bound here and POPULATED by `wire`, below, because populating it needs
+    // `self` and there is nowhere in this block that `self` exists.
+    stores := List<ptr<AnyStore>, M>(mem)
+    wired  := false
+
+    // PHASE TWO. Everything that needs `self` lives here, and the type is
+    // unusable until it has run.
+    wire :: (&self) -> () {
+        if (self.wired) { return }
+        self.stores.push(&self.pos)
+        self.stores.push(&self.vel)
+        self.stores.push(&self.hp)
+        self.stores.push(&self.brain)
+        self.wired = true
+    }
+
+    spawn :: (&self) -> Entity {
+        e := match (self.recycle.pop()) {
+            some (old) { Entity(old.id, old.gen + 1) }
+            none       { id := self.next_id; self.next_id += 1; Entity(id, 1) }
+        }
+        self.live.put(e, true)
+        e
+    }
+
+    // The erased sweep, and the reason `stores` exists: despawn must remove
+    // this entity from EVERY component type, and it must not know which types
+    // those are. Three of the five items in this file's header meet here.
+    despawn :: (&self, e: Entity) -> () {
+        for (i := 0; i < self.stores.count; i += 1) {
+            self.stores[i].remove(e)             // indirect call, one per type
+        }
+        self.live.remove(e)
+        self.recycle.push(e)
+    }
+
+    alive :: (&self, e: Entity) -> bool {
+        match (self.live.get(e)) { some (b) { b }  none { false } }
+    }
+
+    deinit :: (&self) -> () {
+        // By hand, in reverse declaration order, because `deinit` is a
+        // naming convention and nothing calls it for you -- FRICTION 22.
+        // NOT through `stores` either: that would be four indirect calls to
+        // reach four fields that are statically right here. Erasure earns its
+        // keep for `despawn`, which is per-entity and dynamic, and not for
+        // teardown, which is per-type and static.
+        self.brain.deinit()
+        self.hp.deinit()
+        self.vel.deinit()
+        self.pos.deinit()
+        self.stores.deinit()
+        self.died.deinit()
+        self.live.deinit()
+        self.recycle.deinit()
+    }
+}
+
+
+// ============================================================================
+// ecs.query  --  joining two stores
+// ============================================================================
+//
+// FRICTION 23. The natural signature for a join is
+//
+//     next :: (&self) -> Option<{e: Entity, a: ptr<A>, b: ptr<B>}>
+//
+// -- json.z's [W4], the partial projection, used as a RESULT TYPE. It does not
+// work, and the reason is worth stating: `-> {a, b}` names no type. It is a
+// projection, which is a property of a DECLARATION, and `Option<T>` needs a
+// TYPE. So the multiple-return form, which json.z found to be the thing you
+// reach for constantly, does not compose with generics: the moment a
+// multiple-return has to be stored, wrapped in an Option, or put in a list, it
+// must be given a name and become an ordinary record.
+//
+// Naming it brings the plumbing parameters back with it, which is json.z's
+// FRICTION 1 arriving at a second, unrelated site.
+
+Hit :: <A, B> (e: Entity, a: ptr<A>, b: ptr<B>) -> self
+
+Join2 :: <A, B, M> (xs: ptr<Store<A, M>>, ys: ptr<Store<B, M>>) -> self {
+
+    i := 0
+
+    // Iterate the smaller store and probe the larger -- the standard join, and
+    // the reason `count` is on the store at all.
+    next :: (&self) -> Option<Hit<A, B>> {
+        while (self.i < self.xs.count()) {
+            e := self.xs.entity_at(self.i)
+            a := self.xs.slot_at(self.i)
+            self.i += 1
+            match (self.ys.at(e)) {
+                some (b) { return Option<Hit<A, B>>.some(Hit(e, a, b)) }
+                none     { }
+            }
+        }
+        Option<Hit<A, B>>.none()
+    }
+}
+
+// FRICTION 24. `Join2`, `Join3`, `Join4`. json.z's FRICTION 6 called the
+// `Fn`/`Fn2` family "cheap enough to live with". At a query API it is not
+// cosmetic any more: a system that reads three components and writes a fourth
+// is the ordinary case, and the arity family is now part of the surface a user
+// of the library has to learn.
+
+join2 :: <A, B, M> (xs: ptr<Store<A, M>>, ys: ptr<Store<B, M>>) -> Join2<A, B, M> {
+    Join2(xs, ys)
+}
+
+
+// ============================================================================
+// ecs.system
+// ============================================================================
+//
+// A shape, so systems can be held in one list and run in order. `M` is here
+// only because `World` has it, which is json.z's FRICTION 2 (monomorphisation
+// is viral through containing types) reappearing in a SHAPE rather than in
+// data. The alias trick that fixed it for `Json` does not apply: a library
+// cannot name the application's allocator, so `System` stays generic and every
+// implementer of it does too.
+
+System :: <M: Allocator> -> self {
+    run:  (&self, w: ptr<World<M>>, dt: f32) -> ()
+    name: (&self) -> slice<u8>
+}
+
+// A stateless system is a block with no fields, so it is zero-sized, and the
+// `ptr<System<M>>` in the schedule is one word plus a shared vtable.
+Movement :: <M: Allocator> () -> self {
+    name :: (&self) -> slice<u8> { "movement" }
+    run :: (&self, w: ptr<World<M>>, dt: f32) -> () {
+        it := join2(&w.pos, &w.vel)
+        loop {
+            h := match (it.next()) { some (h) { h }  none { return } }
+            // Mutation in place, through the pointer the join yielded.
+            // `h.a^ = ...` -- the pointee is written, and nothing in the type
+            // says `run` may do that while `name` may not. FRICTION 25.
+            h.a^ = Num<Vec2>.add(h.a^, Scale<Vec2, f32>.scale(h.b^, dt))
+        }
+    }
+}
+
+// A system WITH state: the tuning constant is a field, so it is a runtime
+// param of the block, which is json.z's [W2] again -- params of a `-> self`
+// def are the fields, and a configured system needs no new form.
+Decay :: <M: Allocator> (rate: f32) -> self {
+    name :: (&self) -> slice<u8> { "decay" }
+    run :: (&self, w: ptr<World<M>>, dt: f32) -> () {
+        for (i := 0; i < w.vel.count(); i += 1) {
+            v := w.vel.slot_at(i)
+            v^ = Scale<Vec2, f32>.scale(v^, 1.0 - self.rate * dt)
+        }
+    }
+}
+
+Reaper :: <M: Allocator> (doomed: ptr<List<Entity, M>>) -> self {
+    name :: (&self) -> slice<u8> { "reaper" }
+    run :: (&self, w: ptr<World<M>>, dt: f32) -> () {
+        // Collect first, despawn second: `despawn` swap-removes inside every
+        // store, so mutating while iterating a dense array is the same bug it
+        // is in every other language. Nothing in the type system helps.
+        self.doomed.count = 0
+        for (i := 0; i < w.hp.count(); i += 1) {
+            h := w.hp.slot_at(i)
+            if (h.hp <= 0) { self.doomed.push(w.hp.entity_at(i)) }
+        }
+        for (i := 0; i < self.doomed.count; i += 1) {
+            e := self.doomed.items[i]
+            w.died.emit(e)                     // see Signal, below
+            w.despawn(e)
+        }
+    }
+}
+
+// The schedule. Every element is a fat pointer, and NOTHING OWNS THE POINTEES:
+// the concrete `Movement`, `Decay` and `Reaper` blocks have to be locals in
+// main that outlive the schedule, because there is no way to store a shape BY
+// VALUE and no box to put one in. See FRICTION 26 and [P20].
+Schedule :: <M: Allocator> (mem: M) -> self {
+    items := List<ptr<System<M>>, M>(mem)
+
+    add :: (&self, s: ptr<System<M>>) -> () { self.items.push(s) }
+
+    tick :: (&self, w: ptr<World<M>>, dt: f32) -> () {
+        for (i := 0; i < self.items.count; i += 1) { self.items[i].run(w, dt) }
+    }
+
+    deinit :: (&self) -> () { self.items.deinit() }
+}
+
+
+// ============================================================================
+// ecs.signal  --  callables stored in data
+// ============================================================================
+//
+// json.z passed one closure to one function and it worked ([P15]: a closure is
+// a block with a `()` member). KEEPING one is a different question, and it is
+// the third thing this file was written to find out.
+
+Signal :: <E, M: Allocator> (mem: M) -> self {
+
+    subs := List<ptr<Fn<E, ()>>, M>(mem)
+
+    // FRICTION 26 concretely. The argument is a fat pointer, so the CALLER
+    // owns the closure block and must keep it alive for as long as the signal
+    // lives. In main below, the subscriber is a local declared before the
+    // world and never mentioned again -- if it went out of scope first, this
+    // list would hold two dangling words and nothing would say so.
+    on :: (&self, f: ptr<Fn<E, ()>>) -> () { self.subs.push(f) }
+
+    // FRICTION 27. There is no `off`. Unsubscribing means finding the
+    // subscriber again, and a `ptr<Fn<E,()>>` is a PAIR of words built at the
+    // coercion site. Two coercions of the same block are two fat pointers; are
+    // they equal? unified.z says a fat pointer is "built at the moment of
+    // coercion, and only there", which suggests yes for the data half and
+    // nothing at all about the vtable half. Identity of an erased value is
+    // undefined, so an observer list can be added to and never pruned.
+    emit :: (&self, e: E) -> () {
+        for (i := 0; i < self.subs.count; i += 1) {
+            self.subs[i](e)                   // -> self.subs[i].()(e)  [P15]
+        }
+    }
+
+    deinit :: (&self) -> () { self.subs.deinit() }
+}
+
+// A subscriber that has to mutate the thing that is emitting to it. This is
+// the ordinary case for an event bus and it is where FRICTION 25 stops being
+// theoretical: `w` is a `ptr<World<M>>` captured by a closure that `World`
+// itself calls, from inside `Reaper.run`, while `Reaper.run` is iterating
+// `w.hp`. Nothing in any of the three signatures says who may write what, so
+// nothing can flag the reentrancy.
+on_death :: <M: Allocator> (log: ptr<List<Entity, M>>) (e: Entity) -> () {
+    log.push(e)
+}
+
+
+// ============================================================================
+// game.combat  --  a system that reads a sum and writes two components
+// ============================================================================
+
+Combat :: <M: Allocator> (bite: i32) -> self {
+
+    name :: (&self) -> slice<u8> { "combat" }
+
+    run :: (&self, w: ptr<World<M>>, dt: f32) -> () {
+        for (i := 0; i < w.brain.count(); i += 1) {
+            e := w.brain.entity_at(i)
+            a := w.brain.slot_at(i)
+
+            // A state machine step. The match is an EXPRESSION, so the whole
+            // transition is one assignment -- json.z's best structural result,
+            // and it holds here.
+            a^ = match (a^) {
+                idle       { self.wake(w, e) }
+                hunt (t)   { self.chase(w, e, t) }
+                flee (to)  { self.run_away(w, e, to) }
+                dead       { Ai.dead() }
+            }
+        }
+    }
+
+    wake :: (&self, w: ptr<World<M>>, e: Entity) -> Ai {
+        match (self.nearest(w, e)) {
+            some (t) { Ai.hunt(t) }
+            none     { Ai.idle() }
+        }
+    }
+
+    chase :: (&self, w: ptr<World<M>>, e: Entity, t: Entity) -> Ai {
+        if (!w.alive(t)) { return Ai.idle() }
+
+        // Four pointers out of two stores, each an Option, each needing an
+        // arm. `match ... { some (x) { x }  _ { return } }` per line is
+        // json.z's binding idiom and it is still the right shape -- but see
+        // FRICTION 28: every one of these is a hash lookup that the join
+        // above already did, and there is no way to hold onto the result.
+        me   := match (w.pos.at(e)) { some (p) { p }  none { return Ai.idle() } }
+        prey := match (w.pos.at(t)) { some (p) { p }  none { return Ai.idle() } }
+
+        d := Num<Vec2>.sub(prey^, me^)
+        if (length_sq(d) < 1.0) {
+            match (w.hp.at(t)) {
+                some (h) { h.hp -= self.bite }
+                none     { }
+            }
+            return Ai.hunt(t)
+        }
+
+        match (w.vel.at(e)) {
+            some (v) { v^ = Scale<Vec2, f32>.scale(d, 0.5) }
+            none     { }
+        }
+        Ai.hunt(t)
+    }
+
+    run_away :: (&self, w: ptr<World<M>>, e: Entity, to: Vec2) -> Ai {
+        me := match (w.pos.at(e)) { some (p) { p }  none { return Ai.idle() } }
+        if (length_sq(Num<Vec2>.sub(to, me^)) < 1.0) { return Ai.idle() }
+        Ai.flee(to)
+    }
+
+    nearest :: (&self, w: ptr<World<M>>, e: Entity) -> Option<Entity> {
+        me   := match (w.pos.at(e)) { some (p) { p }  none { return Option<Entity>.none() } }
+        best := Option<Entity>.none()
+        bd   := 1000000.0
+        for (i := 0; i < w.hp.count(); i += 1) {
+            t := w.hp.entity_at(i)
+            if (same(t, e)) { continue }
+            match (w.pos.at(t)) {
+                some (p) {
+                    d := length_sq(Num<Vec2>.sub(p^, me^))
+                    if (d < bd) { bd = d; best = Option<Entity>.some(t) }
+                }
+                none { }
+            }
+        }
+        best
+    }
+}
+
+
+// ============================================================================
+// game.print
+// ============================================================================
+
+:: -> fmt.Formattable<Vec2> {
+    format = (v, w) -> () {
+        w.write("(")
+        fmt.Formattable<f32>.format(v.x, w)
+        w.write(", ")
+        fmt.Formattable<f32>.format(v.y, w)
+        w.write(")")
+    }
+}
+
+// A PARAMETERISED, NAMED policy instance -- the case NOTE 7 argues from and
+// which nothing in json.z actually exercised. Three things show up at once:
+//
+//   - `indent: u32 = 2` is a COMPILE-TIME VALUE parameter. unified.z says
+//     compile-time args come in two kinds, inferred-from-a-runtime-arg and
+//     solved-by-search. A value parameter is a third kind and is never
+//     mentioned, though `capacity :: 10` in `List` implies it. FRICTION 29.
+//
+//   - `M` must be inferred and `indent` must be given, so the caller cannot
+//     pass positionally and must write `dump<indent = 4>`. Named compile-time
+//     arguments stop being a convenience and become the only way to call this.
+//
+//   - `self.row(...)` is [P16] carrying `indent` down with it. Written
+//     `dump.row(...)` the nested levels would silently reset to 2, and written
+//     `Formattable<World<M>>.row(...)` it would not compile, since `row` is a
+//     fresh member and not one of the type's holes. The distinction NOTE 7
+//     introduced is doing exactly the work it was introduced for.
+dump :: <M, indent: u32 = 2> -> fmt.Formattable<World<M>> {
+
+    format = (v, w) -> () {
+        w.write("world {\n")
+        for (i := 0; i < v.pos.count(); i += 1) {
+            e := v.pos.entity_at(i)
+            self.row(v, e, w)
+        }
+        w.write("}\n")
+    }
+
+    // Creates a member; not one of Formattable's holes, so `::` and not `=`.
+    // The glossary calls this out and it turned out to be the common case:
+    // this instance has one hole and two helpers.
+    row :: (v: World<M>, e: Entity, w: ptr<Writer>) -> () {
+        self.pad(w)
+        w.write("#")
+        fmt.Formattable<u32>.format(e.id, w)
+        w.write(" ")
+        match (v.pos.at(e)) { some (p) { fmt.Formattable<Vec2>.format(p^, w) }  none { } }
+        match (v.hp.at(e))  { some (h) { w.write(" hp="); fmt.Formattable<i32>.format(h.hp, w) }  none { } }
+        match (v.brain.at(e)) {
+            some (a) {
+                w.write(" ")
+                w.write(match (a^) {
+                    idle     { "idle" }
+                    hunt (_) { "hunt" }
+                    flee (_) { "flee" }
+                    dead     { "dead" }
+                })
+            }
+            none { }
+        }
+        w.write("\n")
+    }
+
+    pad :: (w: ptr<Writer>) -> () {
+        for (i := 0; i < indent; i += 1) { w.write(" ") }
+    }
+}
+
+
+// ============================================================================
+// main
+// ============================================================================
+
+main :: () -> () {
+    heap  := mem.Heap()
+    arena := mem.Arena(page, 1 << 20)
+
+    // json.z's alias trick, applied to a second type. It works exactly as well
+    // here, and it is worth noting that this line is the ONLY place in the
+    // program below `World` that an allocator is named.
+    A :: ptr<Arena>
+
+    w := World<A>(&arena)
+    w.wire()                                // <- FRICTION 21. Forget it and
+    defer w.deinit()                        //    `despawn` silently does
+                                            //    nothing at all.
+
+    // THE OWNERSHIP DANCE. Every one of these is a local whose ADDRESS goes
+    // into a list that outlives this statement, so declaration order here is
+    // load-bearing and nothing in the language enforces it. Written in the
+    // other order it compiles and dangles. See FRICTION 26.
+    move   := Movement<A>()
+    decay  := Decay<A>(0.1)
+    fight  := Combat<A>(3)
+    doomed := List<Entity, A>(&arena)
+    reap   := Reaper<A>(&doomed)
+
+    sched := Schedule<A>(&arena)
+    defer sched.deinit()
+    sched.add(&move)                        // &Movement<A> -> ptr<System<A>>
+    sched.add(&decay)
+    sched.add(&fight)
+    sched.add(&reap)
+
+    // A stored closure. `obituary` is a block with one field (`&log`) and one
+    // `()` member; `&obituary` is the coercion to `ptr<Fn<Entity, ()>>`, built
+    // here and only here, exactly as `boxed : ptr<Allocator>` is in unified.z.
+    log      := List<Entity, A>(&arena)
+    obituary := on_death<A>(&log)
+    w.died.on(&obituary)
+
+    // Spawn: three predators and one very unlucky herbivore.
+    for (i := 0; i < 3; i += 1) {
+        e := w.spawn()
+        // `f32_of` is invented. Neither file has a story for numeric
+        // conversion, and under [P17] it is one more policy (`From<A, B>`).
+        w.pos.add(e, Vec2(f32_of(i), 0.0))
+        w.vel.add(e, Vec2(1.0, 0.0))
+        w.hp.add(e, Health(10, 10))
+        w.brain.add(e, Ai.idle())
+    }
+
+    prey := w.spawn()
+    w.pos.add(prey, Vec2(0.5, 0.0))
+    w.hp.add(prey, Health(4, 4))
+    // No Velocity and no Ai: the join in `Movement` skips it, which is the
+    // whole point of a component system and the one part of this program that
+    // needed no comment while writing it.
+
+    for (t := 0; t < 4; t += 1) { sched.tick(&w, 0.5) }
+
+    io.out.write(fmt.to_string(heap, w))                  // pooled: no instance
+    io.out.write(fmt.to_string<F = dump<indent = 4>>(heap, w))
+
+    // `dump` is NAMED, so it is never searched and the first line above has no
+    // instance to find. json.z's `spaced` had the same property and hid it,
+    // because `Formattable<Json>` also had an anonymous instance in the pool.
+    // Here there is none, so the first line is an error and the file has to
+    // choose: publish `dump<>` anonymously, or make every caller name it.
+    // FRICTION 30 -- there is no way to say "this instance, and also pooled".
+
+    io.out.write("died: ")
+    io.out.write(fmt.to_string(heap, log.count))
+}
+
+
+// ============================================================================
+// ============================================================================
+//
+//                                F I N D I N G S
+//
+// ============================================================================
+// ============================================================================
+//
+// Numbering continues json.z: [W8+], FRICTION 13+, [P17+].
+//
+//
+// ----------------------------------------------------------------------------
+// WHAT HELD UP
+// ----------------------------------------------------------------------------
+//
+// [W8]  A GENERIC TYPE ERASES TO A NON-GENERIC SHAPE when no hole in the shape
+//       mentions the parameter. `Store<Vec2,M>` and `Store<Health,M>` are
+//       different types with different vtables and both are `ptr<AnyStore>`.
+//       This is NOTE 3's rule read backwards and it is what makes a
+//       heterogeneous registry possible at all. Without it `despawn` would
+//       have to name every component type in the application.
+//
+// [W9]  "PARAMS OF A `-> self` DEF ARE THE FIELDS" survives its second file
+//       and is still the highest-value line in the language. A configured
+//       system -- `Decay(0.1)`, `Combat(3)`, `Reaper(&doomed)` -- needs no
+//       builder, no config struct and no new form, and a stateless one is
+//       `Movement()`: no fields, zero bytes, one shared vtable behind
+//       `ptr<System<M>>`.
+//
+// [W10] MATCH-AS-EXPRESSION IS WHAT MAKES SUM-TYPED STATE MACHINES READABLE.
+//       The entire AI transition is one assignment:
+//
+//           a^ = match (a^) { idle {...} hunt (t) {...} flee (to) {...} dead {...} }
+//
+//       Every arm has to produce the same type, so a forgotten transition is a
+//       type error rather than a state that quietly never changes. This is the
+//       strongest argument in either file for `match` being an expression.
+//
+// [W11] THE SHAPE/POLICY TEST ANSWERS QUESTIONS IT WAS NOT DESIGNED FOR.
+//       "Can there legitimately be two?" applied to operators says `[]` and
+//       `()` are shapes and `+` is a policy, which is exactly the split the
+//       implementation needs, and it was derived rather than decided. When a
+//       one-line test keeps producing the right answer in cases nobody had in
+//       mind, that is evidence the abstraction is real.
+//
+// [W12] [P16] PAYS OFF EXACTLY WHERE NOTE 7 SAID IT WOULD. `dump<indent>` is
+//       the parameterised named instance NOTE 7 argues from, and json.z never
+//       actually had one. `self.row(...)` carries `indent` down; `dump.row(...)`
+//       would reset every nested level to the default; and
+//       `Formattable<World<M>>.row(...)` does not even typecheck, because
+//       `row` is a fresh member and not one of the type's holes. Three
+//       spellings, three distinct meanings, all visible in the text.
+//
+// [W13] THE ALIAS TRICK GENERALISES. `A :: ptr<Arena>` in main is the only
+//       mention of an allocator in the whole application layer, exactly as
+//       `Doc :: Json<ptr<Arena>>` was in json.z. Two unrelated programs, same
+//       one-line fix, no library changes: this is now a pattern rather than a
+//       coincidence and belongs in the language's documentation.
+//
+//
+// ----------------------------------------------------------------------------
+// WHERE IT FOUGHT BACK
+// ----------------------------------------------------------------------------
+//
+// Ordered by how much they cost, not by discovery.
+//
+// FRICTION 25 -- NOTHING SAYS WHO MAY WRITE WHAT, and in a simulation this
+//   stops being a documentation problem. json.z raised it as FRICTION 8 with
+//   `get` and `put` both taking `&self`. Here:
+//
+//     - `Store.at` hands out a `ptr<C>` into a `List` that reallocates on
+//       `push`. The pointer is valid until anyone adds a component of that
+//       type. Nothing in the signature, the shape or the call site says so.
+//     - `Reaper.run` iterates `w.hp` and calls `w.died.emit`, which calls a
+//       closure holding `ptr<World<M>>`, which may despawn -- which
+//       swap-removes inside `w.hp`, under the loop. Three signatures, no
+//       reentrancy anywhere in them.
+//     - `Combat.chase` holds `me` and `prey`, two interior pointers into the
+//       same store, and writes through one of them.
+//
+//   This is now the file's top item. `::`/`:=` encode immutable/mutable for
+//   BINDINGS and there is still no counterpart for POINTEES, so a `ptr<T>` is
+//   a fully mutable, unrestricted, indefinitely-lived handle. Note the shape
+//   of the fix matters more than usual: the language's whole story is that
+//   dispatch and cost are visible in the type, and aliasing is the one cost
+//   that currently is not.
+//
+// FRICTION 21 -- A `-> self` BLOCK HAS NO CONSTRUCTOR BODY, so a structure
+//   cannot refer to itself. See the long note above `World`. json.z met the
+//   same wall (FRICTION 5) and read it as being about FAILURE; [P14]
+//   (`-> Result<self, E>`) was adopted and gives the constructor a RETURN TYPE
+//   while still giving it no BODY. `try` in a field initialiser has nothing to
+//   unwind to and no place to run.
+//
+//   The cost here is two-phase construction -- `w.wire()` -- which is the
+//   pattern the unified form was meant to abolish, and which is unchecked:
+//   forget the line and `despawn` sweeps an empty list forever.  -> [P21]
+//
+// FRICTION 13 -- NO OPERATOR STORY BEYOND `[]` AND `()`. `2.0 * v` cannot be
+//   written: the member would have to belong to f32, UFCS would resolve a free
+//   `*` in the caller's scope, and NOTE 4 forbids a free function from
+//   satisfying a shape -- correctly, since otherwise "is Vec2 numeric" would
+//   depend on imports. Without a fix, user types get `+` and not `*` by a
+//   scalar, and no bound can require arithmetic of a type parameter.  -> [P17]
+//
+// FRICTION 16 -- `[]` CANNOT BE ASSIGNED THROUGH. `[] :: (&self, i: u32) -> T`
+//   yields a value, so `xs[i] = v` is unwritable for every user container in
+//   the language. Every mutation in this file goes through `.items[i]` or a
+//   `ptr<C>` from `at`. json.z hid this because `List.push` writes
+//   `self.items[...]` from INSIDE List, where the raw field is in scope.
+//   The language has no PLACE concept: no way for a member to name a slot
+//   rather than produce a copy.  -> [P22]
+//
+// FRICTION 17 -- SO A CONTAINER CANNOT BE ENCAPSULATED. This is FRICTION 16's
+//   consequence and it is worse than it, because it invalidates a feature
+//   already adopted. json.z's [P5] says the projection is the export list:
+//
+//       List :: <T, M> (mem: M) -> {push, pop, count, []} { ... }
+//
+//   Do that and this file stops compiling -- `self.dense.items[i] = c`,
+//   `self.doomed.count = 0`, and json.z's own JSON printer, which reaches into
+//   `m.slots` and `m.cap` because `Map` has no iterator. Today every container
+//   in both files must export its raw storage, and [P5] is unusable on exactly
+//   the types it was meant for. Places ([P22]) and iteration ([P23]) are what
+//   make visibility affordable.
+//
+// FRICTION 26 -- AN ERASED VALUE IS A POINTER, AND NOTHING OWNS THE POINTEE.
+//   `List<ptr<System<M>>>` holds four fat pointers into four locals in main,
+//   and the schedule outlives the statement that made each one. Declaration
+//   order in main is load-bearing and unenforced; reorder two lines and it
+//   compiles and dangles. There is no way to store a shape BY VALUE (the size
+//   is not known) and no box to put one in.
+//
+//   This is the price of "erasure is a coercion at one line" ([W7] in json.z),
+//   which is otherwise the design's best trick, and it is only visible once
+//   erased values are STORED rather than passed.  -> [P20]
+//
+// FRICTION 22 -- TEARDOWN IS A NAMING CONVENTION. `deinit` is an ordinary
+//   member that happens to be spelled the same everywhere. Nothing calls it,
+//   `defer` is lexical so it only helps for locals, and `List<T>` does not
+//   destroy its elements -- so `Store<Store<...>, M>` leaks and no diagnostic
+//   exists. `World.deinit` names its four stores explicitly, in reverse
+//   declaration order, by hand.
+//
+//   Note the erased list does NOT help: sweeping `stores` for teardown would
+//   be four indirect calls to reach four fields that are statically right
+//   there. Erasure earns its keep for `despawn`, which is per-entity and
+//   dynamic, and not for teardown, which is per-type and static.
+//
+// FRICTION 14 -- A POLICY HAS ONLY INPUT PARAMETERS. `Scale<V, S>` wants to
+//   say "and the result type is whatever V's scaling produces". It cannot, so
+//   the result is pinned to V and any operation whose output type differs from
+//   its inputs needs a third parameter that the caller must supply and the
+//   solver cannot infer.
+//
+//   The same gap is already visible in json.z and was not recognised there:
+//
+//       Iterator :: <T> -> self { next: (&self) -> Option<T> }
+//       fold :: <T, A, I: Iterator<T>, F: Fn2<A, T, A>> (it: ptr<I>, ...) -> A
+//
+//   `T` is a property OF the iterator, not a choice the caller makes, and it
+//   is threaded through `fold`'s signature only because the shape has nowhere
+//   to put it. A shape needs to be able to declare a type its implementer
+//   supplies.  -> [P24], which turns out to cost nothing.
+//
+// FRICTION 20 -- A SUM'S DISCRIMINANT IS NOT A VALUE. json.z's FRICTION 7
+//   wanted `expect(Token.colon())` to mean "same variant, ignore payload".
+//   Here the same gap blocks three separate things: a tag test (`is_dead`
+//   spells out four arms to compute a bool), an archetype BITMASK (the actual
+//   data structure a real ECS uses, which needs one bit per component type and
+//   therefore an ordinal per variant), and serialisation (a saved game must
+//   write a stable number for `Ai.hunt`). "Ignore the payload" was the small
+//   version of this.  -> [P19]
+//
+// FRICTION 23 -- A PARTIAL PROJECTION IS NOT A TYPE. json.z's [W4] found
+//   `-> {at, found}` to be the thing you reach for constantly. Its limit is
+//   that `-> {a, b}` is a property of a DECLARATION and names nothing, so
+//   `Option<{e: Entity, a: ptr<A>}>` cannot be written and every join result
+//   has to become a named record (`Hit<A, B>`) -- which brings the plumbing
+//   parameters with it. The multiple-return form does not compose with
+//   generics, and that is precisely where container code needs it.
+//
+// FRICTION 24 -- ARITY FAMILIES REACH THE PUBLIC SURFACE. json.z called
+//   `Fn`/`Fn2` "cheap enough to live with". `Join2`, `Join3`, `Join4` are not
+//   an implementation detail; they are what a user of the ECS types every day,
+//   and a system reading three components and writing a fourth is the ordinary
+//   case, not the exotic one. Variadic compile-time args are the only real
+//   answer and nothing cheaper was found.
+//
+// FRICTION 18 -- THERE IS NO `for (x in xs)`, so every traversal in this file
+//   is a C index loop and `Iterator<T>` -- a shape both files declare -- is
+//   used exactly once, by `fold`, in json.z. A `loop` + `match` + `Option`
+//   consumer is four lines to replace one, so nobody writes it, so the
+//   abstraction that the standard library is built around goes unused in the
+//   two programs written against it. That is worth taking as a signal.  -> [P23]
+//
+// FRICTION 28 -- POINTERS INTO A CONTAINER ARE THE ONLY MUTABLE HANDLE, and
+//   the join hands out two per hit. `Combat.chase` then re-looks-up the same
+//   entity in the same store because there is no way to keep the pointer the
+//   join already found across a call that might have invalidated it. Half a
+//   performance problem and half FRICTION 25.
+//
+// FRICTION 19 -- STRUCTURAL MATCHING HAS NO ADAPTER. `Store` satisfies
+//   `AnyStore` only because I chose the member names to match. A foreign type
+//   with the right operations under different names cannot be adapted without
+//   a wrapper block costing a pointer, a vtable and a name. Go has the same
+//   hole; worth writing down rather than rediscovering.
+//
+// FRICTION 29 -- COMPILE-TIME VALUE PARAMETERS ARE UNSTATED. `dump<indent: u32
+//   = 2>` is a compile-time parameter whose type is not a type. unified.z says
+//   compile-time args come in TWO kinds, inferred-from-a-runtime-argument and
+//   solved-by-search; this is a third, it is used by `List`'s `capacity :: 10`
+//   and by every array size, and the file never mentions it. It also forces
+//   named passing: `M` is inferred and `indent` is not, so `dump<indent = 4>`
+//   is the only spelling available.
+//
+// FRICTION 15 -- NO EQUALITY ON USER TYPES. `Key<Entity>.equals(a, b)` is what
+//   an `==` costs today, and `Key` exists to pair hashing with equality for a
+//   map -- using it as the equality mechanism is an accident. Subsumed by
+//   [P17], which puts `==` in an `Eq<T>` policy where `Ord`, `Num` and `Key`
+//   already live.
+//
+// FRICTION 27 -- THE IDENTITY OF AN ERASED VALUE IS UNDEFINED, so `Signal` has
+//   no `off`. A `ptr<Shape>` is two words built at the coercion site; whether
+//   two coercions of one block compare equal is not stated, and the vtable
+//   half is a compiler-chosen address. Any API that removes a registered
+//   callback needs an answer -- probably a handle returned by `on`, but the
+//   language-level question (is `ptr<Shape>` comparable) still has to be
+//   settled.
+//
+// FRICTION 30 -- AN INSTANCE IS EITHER POOLED OR NAMED, NEVER BOTH. Naming is
+//   what removes it from the pool, so `dump` cannot also be the default
+//   `Formattable<World<M>>` and `fmt.to_string(heap, w)` in main has nothing
+//   to find. json.z hid this: `spaced` was a named SECOND instance and an
+//   anonymous first one already existed.
+//
+//   RESOLVED BY IDIOM, no proposal needed -- publish a forwarder:
+//
+//       :: <M> -> fmt.Formattable<World<M>> { format = (v, w) -> () { dump<>.format(v, w) } }
+//
+//   It costs one line, it makes "the default is `dump` with indent 2" explicit
+//   rather than implicit, and it is exactly what `reverse_u8` does in reverse.
+//   Document it; do not add a keyword.
+//
+//
+// ----------------------------------------------------------------------------
+// PROPOSALS
+// ----------------------------------------------------------------------------
+//
+// [P17] ARITHMETIC AND COMPARISON OPERATORS ARE POLICIES; `[]` AND `()` STAY
+//       SHAPES. `a + b` is `Num<A>.add(a, b)`, `a == b` is `Eq<A>.eq(a, b)`,
+//       `a < b` is `Ord<A>.compare(a, b) < 0`, all solver-found. `a[i]` and
+//       `a(x)` stay members, because they take `self`.
+//
+//       Derived from unified.z's own test rather than chosen: two ways to add
+//       two Vec2 (saturating, wrapping) -- yes, so it is a policy; two ways
+//       for a List to index itself -- no, so it is a shape. Everything
+//       awkward dissolves at once:
+//
+//         - `2.0 * v` works, because a policy is not attached to a type and
+//           nobody has to own f32;
+//         - primitives stop being special: `Num<f32>` is a pooled instance
+//           like any other, and the language has no built-in arithmetic;
+//         - NOTE 4 is untouched, because these are instances, not extrinsics;
+//         - `lerp :: <T, N: Num<T> = ?>` -- a generic over "anything numeric"
+//           -- becomes sayable, which it currently is not in any form;
+//         - `Ord` and `Key` were already policies, so `<` and `==` land where
+//           the standard library had already put them.
+//
+//       The cost is a fixed precedence table in the language, since a member
+//       name carries none. That is unavoidable in any design and is not
+//       user-extensible, which is the right call.
+//
+//       This is the highest value-per-word change available and it removes
+//       machinery rather than adding it.
+//
+// [P21] THE BLOCK IS THE CONSTRUCTOR. A `-> self` block may contain plain
+//       statements, run in textual order at construction, interleaved with the
+//       `:=` field bindings. `self` becomes available at the point every `:=`
+//       field is bound; before that, naming it is an error. With [P14]'s
+//       `-> Result<self, E>` in the projection, `try` in that body means what
+//       it means everywhere else.
+//
+//           World :: <M: Allocator> (mem: M) -> Result<self, E> {
+//               pos    := Store<Vec2, M>(mem)
+//               vel    := Store<Vec2, M>(mem)
+//               stores := try List<ptr<AnyStore>, M>(mem)
+//               stores.push(&self.pos)          // self is available: all
+//               stores.push(&self.vel)          // fields are bound
+//           }
+//
+//       This is not a new form -- a field initialiser is already a statement
+//       that runs at construction; the proposal is that it need not be a
+//       binding. It closes json.z's FRICTION 5, this file's FRICTION 21, and
+//       makes [P14] mean something. It depends on [P18].
+//
+// [P18] SAY WHETHER VALUES MOVE. `stores.push(&self.pos)` takes the address of
+//       a field of a block that is about to be handed to the caller. Whether
+//       that pointer survives is currently unanswerable, because neither file
+//       says whether returning a block copies it or constructs it in place.
+//       json.z never noticed: every interior pointer it took (`&b`, `&arena`,
+//       `&tally(&n)`) pointed at a local that stayed put.
+//
+//       The cheapest answer consistent with everything else here is: a value
+//       has one address for its lifetime; `x := Foo()` constructs in place;
+//       assigning a whole struct to an existing binding is a copy and it is
+//       the programmer's business whether that invalidates interior pointers.
+//       Whatever the answer, it must be WRITTEN DOWN -- self-referential
+//       structures, closures stored in data, and `ptr<Shape>` in a container
+//       all depend on it, and all three appear in the first non-trivial
+//       program that stores anything.
+//
+// [P24] AN ASSOCIATED TYPE IS A HOLE WHOSE TYPE IS `type`. This costs nothing:
+//       a hole is already "declared, not supplied", and a block may already
+//       hold a compile-time type member (`A :: ptr<Arena>` in main is one).
+//
+//           Iterator :: -> self {
+//               Item: type
+//               next: (&self) -> Option<self.Item>
+//           }
+//
+//           ListIter :: <T, M> (xs: ptr<List<T, M>>) -> self {
+//               Item :: T                                  // fills the hole
+//               next :: (&self) -> Option<T> { ... }
+//           }
+//
+//       `fold :: <I: Iterator, A, F: Fn2<A, I.Item, A>> (it: ptr<I>, ...)`
+//       loses a parameter, and the parameter it loses is the one the caller
+//       never chose. Same for `Scale<V, S> { Out: type }`.
+//
+//       ONE AMENDMENT IS REQUIRED, and it is small: json.z's [P12] says a
+//       block whose holes all take `self` is a shape and one whose holes take
+//       none is a policy, and mixing is an error. A `: type` hole takes no
+//       self and would make every shape carrying one an error. The test must
+//       quantify over VALUE holes only; type holes are neither, in either kind
+//       of block.
+//
+// [P22] PLACES. A member may yield a slot rather than a copy, so that
+//       `xs[i] = v` is writable and containers can stop exporting their
+//       storage. Two spellings were considered:
+//
+//         (a) `[] :: (&self, i: u32) -> ptr<T>`, with `xs[i]` meaning
+//             `xs.[](i)^` in both value and assignment position. One rule, no
+//             new concept, and the same trick works for a field accessor.
+//         (b) a second member `[]=`, which is C++'s split and reintroduces
+//             the paired-name problem [P15] removed.
+//
+//       (a). It also gives `Store.at` a better signature, and it is what makes
+//       [P5]'s visibility usable on a container at all (FRICTION 17).
+//
+// [P23] `for (x := it) { ... }` over anything satisfying `Iterator`,
+//       desugaring to the `loop` + `match` + `Option` consumer written by hand
+//       four times in this file. With [P24], `for (h := join2(&w.pos, &w.vel))`
+//       is the whole of a system's traversal. The evidence that this is not
+//       sugar-for-its-own-sake: `Iterator<T>` is declared by both files and
+//       used by neither, because the manual consumer is four times the size of
+//       the index loop it replaces.
+//
+// [P19] A SUM'S DISCRIMINANT IS A VALUE. For `S :: -> oneof {...}`, `S.tag` is
+//       a derived sum of unit variants, `tag_of(v): S.tag` is total, and it is
+//       comparable, ordinal, and usable as an array index or a bit position.
+//       `expect(Token.colon())` becomes `tag_of(t) == Token.tag.colon`, an
+//       archetype mask becomes `1 << ordinal_of(tag)`, and a save file has a
+//       stable number to write. Closes json.z's FRICTION 7 and this file's
+//       FRICTION 20.
+//
+// [P20] OWNED ERASURE. `ptr<Shape>` is a borrow with no owner, which is right
+//       for arguments and wrong for containers. This is the one item where the
+//       honest answer is "std, plus a language question that is not yet
+//       answerable": a `Box<Shape, M>` -- allocate, move the block in, keep
+//       the fat pointer, call a `deinit` slot on destruction -- is writable
+//       today except for the two things the language lacks, which are the move
+//       ([P18]) and the destructor (FRICTION 22). Both are prerequisites, so
+//       the proposal is really: decide those two, and this falls out of std
+//       without new syntax.
+//
+//
+// ----------------------------------------------------------------------------
+// WHAT THIS FILE SAYS ABOUT json.z's OPEN ITEMS
+// ----------------------------------------------------------------------------
+//
+//   CONFIRMED, WORSE THAN STATED
+//     FRICTION 8 (mutability) is not a documentation gap, it is the file's
+//     top item -- see FRICTION 25. Interior pointers are the only mutable
+//     handle, and they are invalidated by ordinary container operations.
+//
+//     FRICTION 7 (tag comparison) blocks a data structure, not a convenience:
+//     no ordinal, no bitmask, no archetypes, no serialisation.
+//
+//     FRICTION 6 (arity families) becomes public API at a query interface.
+//
+//   CONFIRMED, AS STATED
+//     FRICTION 2 (monomorphisation is viral) reappears in a SHAPE --
+//     `System<M>` -- where the alias trick cannot reach, because a library
+//     cannot name the application's allocator. The alias still fixes the
+//     application layer, in one line, in a second unrelated program ([W13]).
+//
+//     FRICTION 10 (order independence) is required again: `World` names
+//     `Signal`, declared two hundred lines later. Still unstated in unified.z.
+//
+//     FRICTION 12 (`_` does not reach projection position) recurs verbatim at
+//     `Join2`, `Hit`, and `join2`.
+//
+//   DOWNGRADED
+//     FRICTION 3 (no refutable match) barely showed up. The one-arm-plus-`_`
+//     binding idiom absorbed almost every case here, including four in
+//     `Combat.chase`. What is left is `is_dead`, which [P19] handles.
+//
+//   OPEN ITEM SHARPENED -- COHERENCE
+//     unified.z calls two anonymous `-> Ord<u8>` in different files "the
+//     biggest unanswered question". [P17] raises the stakes: arithmetic
+//     becomes solver-dispatched, so a second `Num<Vec2>` in a second file is
+//     now a question about `a + b`, in every expression, not about a sort
+//     order. It has to be decided before [P17] can be adopted.
+//
+//
+// ----------------------------------------------------------------------------
+// THE ONE-PARAGRAPH VERDICT
+// ----------------------------------------------------------------------------
+//
+// json.z built a tree and printed it, and found the language's missing
+// vocabulary -- sums, `try`, `match`, `self`. This file MUTATES and STORES,
+// and everything it found is downstream of those two verbs. The declaration
+// form itself did not bend: `-> self` blocks as systems, generic stores erased
+// to one shape, a policy as a state machine's formatter, all of it worked, and
+// the shape/policy test answered a question (operators) it was never designed
+// for, correctly, which is the best evidence in either file that the
+// abstraction is real rather than tidy.
+//
+// What is missing is not more declaration syntax. It is that the language can
+// say what a value IS and cannot yet say anything about WHERE IT LIVES, WHO
+// MAY WRITE IT, or WHEN IT DIES. Places ([P22]), the move story ([P18]), the
+// constructor body ([P21]) and ownership of erased values ([P20]) are four
+// faces of that one gap, and mutability (FRICTION 25) is what it costs today.
+// [P17] and [P24] are separate, cheap, and both REMOVE machinery: operators
+// become policies the language already has, and an associated type becomes a
+// hole whose type is `type`. Those two are ready now; the other four want one
+// decision about memory, made once, on purpose.
+// ============================================================================
