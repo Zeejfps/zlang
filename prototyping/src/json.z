@@ -47,20 +47,54 @@ List      :: list.List
 //     -> self    the block escapes.  ALL holes must be filled to instantiate.
 //                Unfilled -> abstract -> usable only as a bound or behind ptr.
 //
-//     -> one     the block escapes.  EXACTLY ONE hole is filled.
+//     -> oneof   the block escapes.  EXACTLY ONE hole is filled.
 //                Unfilled -> nothing; a sum is never abstract.
 //
 // Same block, same holes, same `name : T` syntax. The projection alone decides
 // whether the holes are conjunctive or disjunctive. `Allocator` and `Option`
 // are then literally the same declaration shape read two ways, which is a much
 // better story than "there is also an enum".
+//
+// THE PROJECTION QUANTIFIES OVER HOLES, AND NOTHING ELSE. `::` and `:=` members
+// are unaffected by it, so a sum carries methods the same way a struct does:
+//
+//                       -> self                     -> oneof
+//     name : T          requirement, all filled     variant, exactly one filled
+//     name :: v         method / ct field           method
+//     name := v         runtime field               -- (no shared storage)
+//
+// ON THE NAME. `one` was the first choice and is wrong twice over. unified.z
+// line 14 already glosses `-> T` as "one value escapes", so `-> one` collides
+// with the projection next to it. And the projection slot otherwise holds type
+// names -- `-> ptr { ... }` and `-> one { ... }` parse identically -- so a bare
+// `one` there is a contextual keyword that permanently burns a plausible
+// identifier. `oneof` collides with nothing and reads as what it is: one OF the
+// block. Its only cost is protobuf, where `oneof` is a field group INSIDE a
+// message rather than the message itself; someone may expect to write it in the
+// middle of a `-> self` block.
+//
+// `union` was rejected as poisoned by C (untagged), `variant` names a member
+// rather than the whole, `either` implies exactly two, `any` reads as a top
+// type.
+//
+// It is spelled bare, not `-> oneof self`, because `self` means "the WHOLE
+// block escapes" and here it does not -- one member does. That puts `oneof` in
+// the same family as `{a, b}`, which also does not say `self`:
+//
+//     -> self         all of the block
+//     -> {a, b}       these members of the block          (subset, product)
+//     -> oneof        one member of the block, tagged
+//     -> oneof {a, b} one member of a subset              (see [P5])
+//
+// The last line is not designed, it falls out -- it is [P5]'s visibility rule
+// applied to a sum, giving variants that only the declaring module can build.
 
-Option :: <T> -> one {
+Option :: <T> -> oneof {
     none: ()
     some: T
 }
 
-Result :: <T, E> -> one {
+Result :: <T, E> -> oneof {
     ok:  T
     err: E
 }
@@ -228,7 +262,7 @@ Map :: <K, V, M: Allocator, KY: Key<K> = ?> (mem: M) -> self {
     // args for free. `Entry` is `Entry<K, V>` without ever saying so.
     Entry :: (key: K, value: V) -> self {}
 
-    Slot :: -> one {
+    Slot :: -> oneof {
         empty: ()
         dead:  ()
         live:  Entry
@@ -308,7 +342,7 @@ Map :: <K, V, M: Allocator, KY: Key<K> = ?> (mem: M) -> self {
 //
 // FRICTION 1 in its sharpest form. The honest declaration is
 //
-//     Json :: <M: Allocator> -> one { ... array: List<Json<M>, M> ... }
+//     Json :: <M: Allocator> -> oneof { ... array: List<Json<M>, M> ... }
 //
 // and then M infects every signature in the parser, the printer, and every
 // caller of any of them, forever, for a parameter nobody ever chooses. So the
@@ -316,7 +350,7 @@ Map :: <K, V, M: Allocator, KY: Key<K> = ?> (mem: M) -> self {
 // trade is "visible in the code instead of hidden in a keyword" -- correct, and
 // this is what that visibility costs when the type is recursive.
 
-Json :: -> one {
+Json :: -> oneof {
     null:   ()
     truth:  bool
     number: f64
@@ -330,7 +364,7 @@ Json :: -> one {
 // json.lex
 // ============================================================================
 
-Token :: -> one {
+Token :: -> oneof {
     lbrace: ();  rbrace:   ()
     lbrack: ();  rbrack:   ()
     colon:  ();  comma:    ()
@@ -796,11 +830,17 @@ main :: () -> () {
 // PROPOSALS
 // ----------------------------------------------------------------------------
 //
-// [P1]  `-> one` : the sum projection. A block whose holes are disjunctive.
+// [P1]  `-> oneof` : the sum projection. A block whose holes are disjunctive.
 //         -> self   ALL holes filled (unfilled = abstract = shape/dictionary)
-//         -> one    EXACTLY ONE hole filled
+//         -> oneof  EXACTLY ONE hole filled
 //       Construction reuses "`=` fills a declared hole in a literal"
 //       (`Option<u8>{some = 3}`), and the derived `Option<u8>.some(3)`.
+//       The projection quantifies over HOLES only; `::` members are methods in
+//       either kind of block. Spelled `oneof` and not `one` -- `-> T` is already
+//       glossed "one value escapes", and a bare `one` in a slot that otherwise
+//       holds type names burns a plausible identifier. Spelled bare and not
+//       `oneof self`, because a sum does not project the whole block. See the
+//       std.sum header for the rejected alternatives.
 //       This is the single largest gap in unified.z and the fix adds one word.
 //
 // [P2]  A match arm is spelled like a declaration: `name (binders) { body }`.
