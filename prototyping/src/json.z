@@ -648,8 +648,11 @@ each_child :: <M> (v: Json<M>, f: Fn2<slice<u8>, Json<M>, ()>) -> () {
 // Under [P15] this is sugar for a `-> self` block with a `()` member, so the
 // last OPEN question in unified.z answers itself: it has its own type, and it
 // becomes a shared type exactly when you write `ptr<Fn2<...>>`.
-tally :: <M> (out: ptr<u32>) (k: slice<u8>, v: Json<M>) -> () {
-    out^ += 1
+// `&u32`, not `ptr<u32>`: a place parameter, which is `&self` without the
+// special case. It cannot be stored -- a `&T` field is forbidden -- so the
+// signature now says "I write through this and do not keep it".
+tally :: <M> (out: &u32) (k: slice<u8>, v: Json<M>) -> () {
+    out += 1
 }
 
 

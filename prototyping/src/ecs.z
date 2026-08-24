@@ -73,8 +73,8 @@ Fn2       :: core.Fn2
 //
 // and it fails on the second line of real vector code:
 //
-//     v * 2.0      ->  v.*(2.0)      fine, a member of Vec2
-//     2.0 * v      ->  (2.0).*(v)    a member of f32, which I do not own
+//     v * 2.0      ->  a member of Vec2 named `*`.  Fine.
+//     2.0 * v      ->  a member of f32 named `*`.   I do not own f32.
 //
 // UFCS would rescue it -- `*(2.0, v)` resolves a free function in the caller's
 // scope -- and that is exactly the rescue NOTE 4 forbids, because a free
@@ -535,9 +535,9 @@ Movement :: <M: Allocator> () -> self {
         loop {
             h := match (it.next()) { some (h) { h }  none { return } }
             // Mutation in place, through the pointer the join yielded.
-            // `h.a^ = ...` -- the pointee is written, and nothing in the type
+            // `h.a.* = ...` -- the pointee is written, and nothing in the type
             // says `run` may do that while `name` may not. FRICTION 25.
-            h.a^ = Num<Vec2>.add(h.a^, Scale<Vec2, f32>.scale(h.b^, dt))
+            h.a.* = Num<Vec2>.add(h.a.*, Scale<Vec2, f32>.scale(h.b.*, dt))
         }
     }
 }
@@ -550,7 +550,7 @@ Decay :: <M: Allocator> (rate: f32) -> self {
     run :: (&self, w: ptr<World<M>>, dt: f32) -> () {
         for (i := 0; i < w.vel.count(); i += 1) {
             v := w.vel.slot_at(i)
-            v^ = Scale<Vec2, f32>.scale(v^, 1.0 - self.rate * dt)
+            v.* = Scale<Vec2, f32>.scale(v.*, 1.0 - self.rate * dt)
         }
     }
 }
@@ -653,7 +653,7 @@ Combat :: <M: Allocator> (bite: i32) -> self {
             // A state machine step. The match is an EXPRESSION, so the whole
             // transition is one assignment -- json.z's best structural result,
             // and it holds here.
-            a^ = match (a^) {
+            a.* = match (a.*) {
                 idle       { self.wake(w, e) }
                 hunt (t)   { self.chase(w, e, t) }
                 flee (to)  { self.run_away(w, e, to) }
@@ -680,7 +680,7 @@ Combat :: <M: Allocator> (bite: i32) -> self {
         me   := match (w.pos.at(e)) { some (p) { p }  none { return Ai.idle() } }
         prey := match (w.pos.at(t)) { some (p) { p }  none { return Ai.idle() } }
 
-        d := Num<Vec2>.sub(prey^, me^)
+        d := Num<Vec2>.sub(prey.*, me.*)
         if (length_sq(d) < 1.0) {
             match (w.hp.at(t)) {
                 some (h) { h.hp -= self.bite }
@@ -690,7 +690,7 @@ Combat :: <M: Allocator> (bite: i32) -> self {
         }
 
         match (w.vel.at(e)) {
-            some (v) { v^ = Scale<Vec2, f32>.scale(d, 0.5) }
+            some (v) { v.* = Scale<Vec2, f32>.scale(d, 0.5) }
             none     { }
         }
         Ai.hunt(t)
@@ -698,7 +698,7 @@ Combat :: <M: Allocator> (bite: i32) -> self {
 
     run_away :: (&self, w: ptr<World<M>>, e: Entity, to: Vec2) -> Ai {
         me := match (w.pos.at(e)) { some (p) { p }  none { return Ai.idle() } }
-        if (length_sq(Num<Vec2>.sub(to, me^)) < 1.0) { return Ai.idle() }
+        if (length_sq(Num<Vec2>.sub(to, me.*)) < 1.0) { return Ai.idle() }
         Ai.flee(to)
     }
 
@@ -711,7 +711,7 @@ Combat :: <M: Allocator> (bite: i32) -> self {
             if (same(t, e)) { continue }
             match (w.pos.at(t)) {
                 some (p) {
-                    d := length_sq(Num<Vec2>.sub(p^, me^))
+                    d := length_sq(Num<Vec2>.sub(p.*, me.*))
                     if (d < bd) { bd = d; best = Option<Entity>.some(t) }
                 }
                 none { }
@@ -772,12 +772,12 @@ dump :: <M, indent: u32 = 2> -> fmt.Formattable<World<M>> {
         w.write("#")
         fmt.Formattable<u32>.format(e.id, w)
         w.write(" ")
-        match (v.pos.at(e)) { some (p) { fmt.Formattable<Vec2>.format(p^, w) }  none { } }
+        match (v.pos.at(e)) { some (p) { fmt.Formattable<Vec2>.format(p.*, w) }  none { } }
         match (v.hp.at(e))  { some (h) { w.write(" hp="); fmt.Formattable<i32>.format(h.hp, w) }  none { } }
         match (v.brain.at(e)) {
             some (a) {
                 w.write(" ")
-                w.write(match (a^) {
+                w.write(match (a.*) {
                     idle     { "idle" }
                     hunt (_) { "hunt" }
                     flee (_) { "flee" }
@@ -904,7 +904,7 @@ main :: () -> () {
 // [W10] MATCH-AS-EXPRESSION IS WHAT MAKES SUM-TYPED STATE MACHINES READABLE.
 //       The entire AI transition is one assignment:
 //
-//           a^ = match (a^) { idle {...} hunt (t) {...} flee (to) {...} dead {...} }
+//           a.* = match (a.*) { idle {...} hunt (t) {...} flee (to) {...} dead {...} }
 //
 //       Every arm has to produce the same type, so a forgotten transition is a
 //       type error rather than a state that quietly never changes. This is the
@@ -1230,8 +1230,9 @@ main :: () -> () {
 //
 //       Two spellings were considered here and both were wrong:
 //
-//         (a) `[] :: (&self, i: u32) -> ptr<T>` with an explicit `^`. Costs no
-//             syntax, and makes `xs[i]` -- the shortest spelling -- mean the
+//         (a) `[] :: (&self, i: u32) -> ptr<T>` with an explicit deref at the
+//             use site, `xs[i].* = v`. Costs no syntax, and makes `xs[i]` --
+//             the shortest spelling -- mean the
 //             ADDRESS of the element, when every reader alive reads it as the
 //             element. `v := xs[i]` would compile and hand back a pointer.
 //         (b) a second member `[]=`, which is C++'s split and reintroduces the

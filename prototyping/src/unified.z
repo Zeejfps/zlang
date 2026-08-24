@@ -147,9 +147,11 @@
 //
 // FOUR RULES, and they are the whole of it:
 //
-//   1. `-> &T` IS A PROJECTION AND ONLY A PROJECTION. It never appears inside
-//      another type. There is no `Option<&V>`, no `List<&T>`, no `&T` field.
-//      This is what stops `&T` from quietly becoming a second pointer type.
+//   1. `&T` APPEARS IN TWO POSITIONS, BOTH OF THEM CALLING CONVENTIONS: after
+//      `->`, and in a parameter list. It NEVER appears inside another type.
+//      There is no `Option<&V>`, no `List<&T>`, no `&T` field. That is what
+//      stops it from quietly becoming a second pointer type -- and it is also
+//      what makes the parameter form worth having, below.
 //
 //   2. THE BODY MUST EVALUATE TO A PLACE, not to a pointer: a field, an index
 //      into a pointer, a deref, or another `-> &T` call. Symmetric with
@@ -162,9 +164,9 @@
 //   4. `xs[i] += 1` CALLS THE ACCESSOR ONCE. Stated because accessors can have
 //      side effects, and because C++ gets this wrong with proxy objects.
 //
-// WHY NOT `-> ptr<T>` AND AN EXPLICIT `^`, which would have cost no syntax at
-// all: it makes `xs[i]` -- the shortest and commonest spelling -- mean the
-// ADDRESS of the element, when every reader alive reads it as the element.
+// WHY NOT `-> ptr<T>` AND AN EXPLICIT DEREF (`xs[i].* = v`), which would have
+// cost no syntax at all: it makes `xs[i]` -- the shortest and commonest
+// spelling -- mean the ADDRESS of the element, when every reader alive reads it as the element.
 // `v := xs[i]` would compile and hand back a pointer. The bare form has to be
 // the ordinary meaning; the unusual one is what you type extra characters for.
 //
@@ -175,6 +177,35 @@
 // died of. And a fallible lookup is not a place, because there is no such
 // thing as "maybe a location": `Map.get` returns `Option<ptr<V>>` and the
 // match arm derefs it.
+//
+// A PARAMETER MAY BE A PLACE, and this is not a new idea -- `&self` has been
+// one since the first draft. `self.count += 1` writes through the caller's
+// value with nothing spelled out, so a general `(out: &u32)` is `&self`
+// without the special case, and forbidding it was the asymmetry.
+//
+//     tally :: (out: &u32) (k: slice<u8>, v: Json) -> () { out += 1 }
+//
+// The call site is unchanged -- `sort(&xs)`, an argument is still explicit.
+// What changes is what the SIGNATURE promises, and it promises something the
+// language could not say before:
+//
+//     print :: (w: &World) -> ()        I will not keep this
+//     keep  :: (w: ptr<World>) -> ()    I might store this
+//
+// A `&T` parameter provably cannot be stored, because rule 1 forbids the field
+// that would hold it. Both spellings below are in this file and the difference
+// is real: `sort` borrows a list for the length of a call, `ListIter` keeps
+// one, and now they do not look alike.
+//
+//     sort     :: <T, O: Ord<T> = ?> (xs: &List<T, _>) -> ()
+//     ListIter :: <T, M> (xs: ptr<List<T, M>>) -> self      // a FIELD
+//
+// It is a down payment on the mutability question in OPEN and not an answer to
+// it: it says who may KEEP a pointer, and still nothing about who may write
+// through one, or for how long it stays valid.
+//
+// A SHAPE NAME IS ALREADY A POINTER in a parameter list -- `(m: Allocator)` is
+// the erased one -- so `&Shape` would say nothing new and is not written.
 //
 // WHAT IT BUYS, beyond writing to an element: it is what makes `-> {a, b}`
 // usable on a container. Without places, every caller reaches around `[]` into
@@ -306,6 +337,40 @@
 //     ptr<T>       typed
 //     ptr          the same thing with its arg defaulted to opaque. Not a
 //                  special form -- compile-time args take defaults anyway.
+//
+// REACHING THROUGH A POINTER. The compiler inserts a deref and an address-of
+// in a few positions and never said which, so: it is these three, and nothing
+// else is implicit.
+//
+//     p.field       `.` reaches through ANY number of pointers. So does a
+//     p[i]          symbolic member -- `p[i]` is `p.[](i)` and reaches too.
+//     xs.push(v)    a `&self` receiver takes the address of the value it was
+//                   called on. `sort(&xs)` does NOT: an argument is explicit.
+//
+//     p.*           REACH THROUGH AND STOP. The whole pointee, as a place.
+//
+// `.*` is the shape of the rule, not decoration: `.` reaches through and stops
+// at a member, `.*` reaches through and stops at the value. The two spellings
+// are the same act ending in different places, which is why the deref lives
+// after the dot rather than being its own symbol.
+//
+//     out.* += 1              write the whole pointee
+//     v.* = Vec2(1.0, 2.0)    ...even when it is a struct
+//     a.b.*                   postfix, so it chains left to right
+//
+// `.*` is available BECAUSE `*` is not a member name. `[]` and `()` are, so
+// `f.()(x)` and `a.[](i)` are real spellings; had arithmetic stayed a member
+// this deref would have collided with the multiply member on the first day.
+//
+// AND `^` IS FREE FOR XOR, which is the reason it is not the deref. A hash
+// function writes `h = (h ^ k[i]) * prime`, and a language whose deref is also
+// postfix `^` eventually has to parse `h^ ^ x`. Bitwise and (`&`) has the same
+// problem against address-of; deref was the half that could move.
+//
+// DEREF IS NEVER OPTIONAL, and this is why full auto-deref is not on offer:
+//     p = q         make the two pointers equal
+//     p.* = q.*     copy the pointee
+// Both are things you have to be able to say, and they must not be one text.
 //
 // COMPILE-TIME ARGS COME IN THREE KINDS
 //     <T>                      a TYPE, inferred from a runtime argument's type
@@ -603,7 +668,10 @@ ListIter :: <T, M> (xs: ptr<List<T, M>>) -> self {
 // `I.Item`. The parameter that disappeared is the point --
 //     before:  fold :: <T, A, I: Iterator<T>, F: Fn2<A, T, A>> (...)
 //     after:   fold :: <I: Iterator, A, F: Fn2<A, I.Item, A>> (...)
-fold :: <I: Iterator, A, F: Fn2<A, I.Item, A>> (it: ptr<I>, acc: A, f: F) -> A {
+// `&I`, because fold borrows the iterator for the length of the call.
+// `ListIter` above takes `ptr<List<T, M>>` because it KEEPS it -- a runtime
+// param of a `-> self` def is a field, and rule 1 forbids a `&T` field.
+fold :: <I: Iterator, A, F: Fn2<A, I.Item, A>> (it: &I, acc: A, f: F) -> A {
     a := acc
     loop {
         match (it.next()) {
@@ -681,7 +749,7 @@ reverse_u8 :: -> Ord<u8> {
 // only so that `List<T, M>` parses is the noisiest thing in the old draft.
 // Every line that used to say `xs.items[j]` now says `xs[j]`, and `sort` no
 // longer knows that a List has a pointer in it.
-sort :: <T, O: Ord<T> = ?> (xs: ptr<List<T, _>>) -> () {
+sort :: <T, O: Ord<T> = ?> (xs: &List<T, _>) -> () {
     for (i := 1; i < xs.count; i += 1) {
         v := xs[i]
         j := i
@@ -945,8 +1013,8 @@ main :: () -> () {
 // THE OTHER HALF OF THE OPERATORS ARE NOT MEMBERS AT ALL. Written as one,
 // arithmetic breaks on the second line of vector code:
 //
-//     v * 2.0      ->  v.*(2.0)      fine, a member of Vec2
-//     2.0 * v      ->  (2.0).*(v)    a member of f32, which nobody owns
+//     v * 2.0      ->  a member of Vec2 named `*`.  Fine.
+//     2.0 * v      ->  a member of f32 named `*`.   Nobody owns f32.
 //
 // UFCS looks like the rescue -- `*(2.0, v)` resolves a free function in the
 // caller's scope -- and it is the rescue NOTE 4 forbids, correctly: if it were
@@ -1117,6 +1185,17 @@ main :: () -> () {
 //            Used by `List`'s `capacity :: 10` and by every array size, and
 //            never mentioned. Mixing one with an inferred type parameter is
 //            what makes named passing the only way to call a declaration.
+//   ADDED    `.*` IS THE DEREF, replacing postfix `^`, which was also xor in
+//            two hash functions in this repo and would have had to parse
+//            `h^ ^ x`. It is not an arbitrary swap: `.` reaches through a
+//            pointer and stops at a member, `.*` reaches through and stops at
+//            the value. The three implicit reach-throughs are now written down
+//            as well, having been used since the first draft and never stated.
+//   ADDED    A PARAMETER MAY BE A PLACE -- `(out: &u32)` -- which is `&self`
+//            without the special case. It cannot be stored, because rule 1
+//            forbids a `&T` field, so `(w: &World)` says "I will not keep
+//            this" and `(w: ptr<World>)` says "I might". The first thing in
+//            the language able to say that.
 //   ADDED    PLACES. `-> &T` is a sixth projection: a LOCATION escapes. It is
 //            what makes `xs[i] = v` writable for a user container, and what
 //            makes `-> {a, b}` usable on one -- `List` now exports six names
