@@ -40,6 +40,9 @@
 //         name := v      runtime member.       A field; occupies storage.
 //         name : T       a HOLE -- see below.  No binder at all.
 //
+//     A hole's type may be `type`, which makes it an ASSOCIATED TYPE -- see
+//     below. `Item :: T` fills one, and is an ordinary compile-time member.
+//
 // BINDER
 //     `::` or `:=`. The thing between a name and its value. `:` is NOT a
 //     binder -- it is type ascription and nothing else, so `x : u32 := 3`
@@ -86,6 +89,28 @@
 //
 //     A hole is the single mechanism behind interfaces AND sum types. What it
 //     means depends on the projection -- see PROJECTION.
+//
+// ASSOCIATED TYPE
+//     A hole whose type is `type`:
+//
+//         Iterator :: -> self {
+//             Item: type
+//             next: (&self) -> Option<self.Item>
+//         }
+//
+//     Not a new construct. `type` is an ordinary type whose values are types,
+//     so a hole of that type is a type the implementer supplies rather than
+//     one the caller chooses. The line between it and a compile-time PARAMETER
+//     is who decides: the solver searches on parameters, so anything the
+//     caller must know in order to find an instance is a parameter, and
+//     anything the instance itself determines is a hole. A result type cannot
+//     be a parameter -- you would have to know the answer to look it up.
+//
+//     Two consequences. The shape/policy test below reads VALUE holes only, so
+//     both kinds of block may carry a type hole. And a shape with an unfilled
+//     type hole cannot be erased -- `ptr<Iterator>` has no layout for
+//     `Option<Item>` -- so you fix it at the coercion, `ptr<Iterator<Item = u8>>`,
+//     which is the ordinary "fill a hole by name with `=`".
 //
 // PROJECTION
 //     What comes after `->`. It says what escapes the block, and it is what
@@ -156,6 +181,21 @@
 //     Defaulting: written anonymously, it goes in the solver POOL and is
 //     found automatically. Written with a name, it is reachable only by hand.
 //
+//     MOST OPERATORS ARE POLICIES, and it is the test below that says so
+//     rather than a decision:
+//
+//         a + b   ->  Add<A, B>.add(a, b)      two ways to add two vectors
+//         a == b  ->  Eq<A, B>.eq(a, b)        (saturating, wrapping) -> policy
+//         a < b   ->  Ord<A>.compare(a, b) < 0
+//
+//         a[i]    ->  a member                 one way for a List to index
+//         a(x)    ->  a member                 itself -> shape
+//
+//     Which is why `2.0 * v` works: a policy is attached to nothing, so the
+//     instance for the flipped operand order is just another declaration and
+//     nobody has to own f32. An operator always names the solver's default;
+//     `saturating.add(a, b)` is how you ask for a different one.
+//
 // ----------------------------------------------------------------------------
 // WHICH ONE AM I WRITING?
 //
@@ -166,6 +206,11 @@
 //         Two ways for an Arena to
 //         allocate?                     No.
 //                                       -> shape
+//         Two ways to add two Vec2?     Yes -- saturating, wrapping.
+//                                       -> policy, which is why `+` is one
+//         Two ways for a List to
+//         index itself?                 No.
+//                                       -> shape, which is why `[]` is a member
 //
 //     Or equivalently: is the behavior a PROPERTY OF THE THING, or a CHOICE
 //     THE CALLER MAKES ABOUT THE THING? Writing is a property of a file.
@@ -253,6 +298,20 @@
 //     with no name on the left is in the pool. `reverse_u8 :: -> Ord<u8>` is
 //     not, and can only be reached by writing its name.
 //
+// COHERENCE
+//     The rule about the pool: EXACTLY ONE anonymous instance per (policy,
+//     type) in a program, and the pool is whole-program rather than scoped to
+//     what a module imported. A second instance, or one that overlaps an
+//     existing one, is an error reported against the declarations. There is no
+//     priority order and no most-specific-wins.
+//
+//     There is NO ORPHAN RULE -- anyone may write an instance for anyone's
+//     type, which is the entire advantage policies hold over traits. What
+//     replaces the check is a convention: an anonymous instance is a claim on
+//     the GLOBAL DEFAULT, so publish one only for a policy or a type you own.
+//     Two libraries claiming the same one is a build error, and the fix is for
+//     one of them to name its instance. See NOTE 8 in unified.z.
+//
 // INSTANCE
 //     One filled-in policy. `reverse_u8` is an instance of `Ord<u8>`.
 //     (Note the collision with the everyday sense of "an instance of a
@@ -314,6 +373,10 @@
 //     defer       run at scope exit
 //     if while for loop return continue break
 //
+// `type` is NOT in this list. It is a built-in type name whose values are
+// types, with exactly the status of `u32` and `bool`, and it is what makes
+// `Item: type` an ordinary hole rather than a new construct.
+//
 //
 // ============================================================================
 // WORDS THAT ARE NOT IN THE LANGUAGE, AND WHAT REPLACES THEM
@@ -328,7 +391,10 @@
 //     abstract    a block with an unfilled hole already is.
 //     impl        an ordinary declaration whose projection is the shape.
 //     class       -- 
-//     operator    a member with a symbolic name: `[]`, `()`.
+//     operator    `[]` and `()` are members with symbolic names. The rest --
+//                 `+`, `==`, `<` -- are POLICIES: `a + b` is
+//                 `Add<A, B>.add(a, b)`, found by the solver. Which is which
+//                 is decided by the shape/policy test, not by a list.
 //     pub         the projection is the export list: `-> {a, b}`.
 //     dyn         `ptr<Shape>`.
 //     import      an ordinary compile-time binding of an ordinary function:

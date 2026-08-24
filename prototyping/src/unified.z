@@ -92,6 +92,20 @@
 //     name :: v         method / ct field          method
 //     name := v         runtime field              -- (no shared storage)
 //
+// A HOLE MAY BE A TYPE, because `type` is an ordinary type whose values are
+// types, and a hole is a member you did not supply:
+//
+//     Iterator :: -> self {
+//         Item: type                          // supplied by the implementer
+//         next: (&self) -> Option<self.Item>
+//     }
+//
+// That is the whole of what other languages call an associated type. It is
+// filled like any other member -- `Item :: T` -- and it is the difference
+// between a thing the CALLER chooses (a parameter, searched on) and a thing
+// the INSTANCE decides (a hole, reported back). See NOTE 9. `type` is a
+// built-in type name and not a keyword, exactly as `u32` and `bool` are.
+//
 // Construction needs no new rule: `=` already fills a declared hole in a
 // literal, so `Option<u8>{ some = 3 }`. Since a variant is a hole of type T,
 // the variant name is also a derived function (T) -> Self: `Option<u8>.some(3)`.
@@ -168,7 +182,15 @@
 //
 // `_` is a hole in a BINDING position: a wildcard arm, an ignored payload, or
 // a compile-time arg you decline to name (`ptr<List<T, _>>`). One symbol, one
-// idea.
+// idea. DISCARDING A RESULT is the fourth use of the same symbol, and the
+// rule that goes with it: a value may not be dropped silently.
+//
+//     xs.push(v)              fine -- push projects `()`, there is no value
+//     xs.pop()                an error: an Option<T> went nowhere
+//     _ := xs.pop()           "bind it to nothing", said out loud
+//
+// The rule exists because `-> Result<T, E>` is the language's error channel,
+// and an ignored Result is the one mistake it must not make easy to write.
 //
 // MATCH IS AN EXPRESSION, and this is what keeps sum types from turning code
 // into a pyramid. A one-arm-plus-`_` match BINDS instead of nesting:
@@ -182,9 +204,47 @@
 // that miss this end up adding `if let`, `guard let` and `let else` as three
 // separate forms.
 //
-// OPERATORS ARE MEMBERS WITH SYMBOLIC NAMES. There is no `operator` keyword.
+// OPERATORS. There is no `operator` keyword, and there are two kinds of
+// operator, because the shape/policy test asked of them gives two answers:
+//
+//     [] ()            take self  ->  MEMBERS of the block
+//     + - * / == <     take none  ->  POLICIES, found by the solver
+//
 //     [] :: (&self, i: u32) -> T       indexing
 //     () :: (&self, v: u8)  -> ()      calling
+//
+//     a + b    ->  Add<A, B>.add(a, b)
+//     a * b    ->  Mul<A, B>.mul(a, b)
+//     a % b    ->  Rem<A, B>.rem(a, b)
+//     a == b   ->  Eq<A, B>.eq(a, b)
+//     a < b    ->  Ord<A>.compare(a, b) is negative
+//     a += b   ->  a = a + b
+//     -a       ->  Neg<A>.neg(a)
+//
+// Ask NOTE 1's question of each. Two ways for a List to index itself? No --
+// indexing is a property of the container, so `[]` is a member. Two ways to
+// add two vectors, or to compare two u8? Yes -- saturating and wrapping,
+// ascending and descending -- so those are choices the caller makes, and a
+// choice the caller makes is a policy. See std.num and NOTE 6.
+//
+// THE DESUGARING BOTTOMS OUT IN THE PRIMITIVE INSTANCES, and it has to be
+// written so that it does. `a < b` expands to a test of `Ord<A>.compare`'s
+// i32 against zero as an INSTRUCTION, not to another `<` -- otherwise the
+// expansion is infinite -- and for the same reason the pooled `Ord<u8>` below
+// is written in intrinsics rather than in `<`. A primitive instance is where
+// arithmetic stops being a call, so there is no arithmetic inside one.
+//
+// An operator always names the SOLVER'S DEFAULT for its operand types. To use
+// a different instance, name it and call its member -- `saturating.add(a, b)`.
+// A generic function that wants the choice threaded through takes the policy
+// as a `= ?` parameter and calls it by hand, exactly as `sort` does with Ord.
+// The consequence, stated because it is a real decision: a generic body's bare
+// `a + b` is checked when the function is INSTANTIATED, not where it is
+// declared. Declaring the bound is how you get the earlier error.
+//
+// `&&` and `||` are not policies and never will be: they must not evaluate
+// their right operand, so they are control flow wearing an operator's clothes.
+//
 // A closure is therefore not a special form. It is a block with a `()` member,
 // which is why `Fn<A, R>` below is an ordinary shape and needs no function-type
 // machinery. See NOTE 6.
@@ -194,11 +254,17 @@
 //     ptr          the same thing with its arg defaulted to opaque. Not a
 //                  special form -- compile-time args take defaults anyway.
 //
-// COMPILE-TIME ARGS COME IN TWO KINDS
-//     <T>                      inferred from a runtime argument's type
-//     <F: Formattable<T> = ?>  solved by search: nothing at the call site
-//                              mentions it, so the solver goes and finds it
-//     Either may be passed by name at the call site with `=`.
+// COMPILE-TIME ARGS COME IN THREE KINDS
+//     <T>                      a TYPE, inferred from a runtime argument's type
+//     <F: Formattable<T> = ?>  a POLICY, solved by search: nothing at the call
+//                              site mentions it, so the solver goes and finds it
+//     <indent: u32 = 2>        a VALUE. An ordinary compile-time binding in the
+//                              parameter list; `capacity :: 10` is the same
+//                              thing as a member.
+//     Any of them may be passed by name at the call site with `=`, and once a
+//     declaration mixes an inferred type with a value there is no other way to
+//     call it: `dump<indent = 4>` cannot be written positionally, because the
+//     type parameter in front of it is never spelled.
 //
 // A DECLARATION WITH NO NAME is what the solver searches. `::` with nothing
 // on its left is an anonymous compile-time binding; it goes in the pool.
@@ -208,6 +274,33 @@
 // means "whatever instance the solver picks for Ord<u8>". This is not sugar --
 // it is what lets a derived instance recurse into itself, and what a named
 // instance calls to delegate. See `reverse_u8`.
+//
+// COHERENCE. There is EXACTLY ONE anonymous instance per (policy, type) in a
+// program, and the pool is GLOBAL -- not scoped to what a module imported.
+// A second one, or one that overlaps an existing one, is an error reported
+// against the two declarations. There is no priority order, no most-specific-
+// wins and no specialisation.
+//
+// The pool has to be global because the alternative is that a type's identity
+// depends on who imported what: `Map<slice<u8>, V>` picks its `Key` from the
+// pool, so an import-scoped pool would let two modules build two different
+// maps with the same spelling. NOTE 4 already refuses that hazard for UFCS
+// and shape satisfaction; this is the same refusal.
+//
+// THERE IS NO ORPHAN RULE. Anyone may write an instance for anyone's type, and
+// that is the entire reason policies are worth having over traits. What
+// replaces it is a convention with teeth: an ANONYMOUS instance is a claim on
+// the global default, so publish one only for a policy or a type you own. If
+// two libraries both claim `Formattable<Vec2>`, the program does not build
+// until one of them names its instance -- which is the same one-word fix that
+// makes `reverse_u8` reachable only by hand. See NOTE 8.
+//
+// ORDER INDEPENDENCE. Declarations in a block, and blocks in a file, are
+// order-independent. Recursive types force it (`Slot` holds an `Entry`
+// declared below it), the solver forces it (it must have seen every anonymous
+// declaration before it can pick), and coherence forces it (a duplicate is a
+// whole-program property). This was relied on from the first draft and never
+// said.
 //
 // UFCS.  `a.f(x)` falls back to `f(a, x)` when `a` has no member `f`, and `f`
 // is found by ORDINARY NAME LOOKUP IN THE CALLER'S SCOPE. That is precisely
@@ -219,6 +312,8 @@
 //     holes do not         ->  POLICY.     Extrinsic, several may exist, the
 //                              caller picks, the solver defaults it.
 //     Mixing the two in one block is an error, not a third thing.
+//     The test reads VALUE holes only. A `: type` hole takes no self and is
+//     neither; both kinds of block may carry one.
 //
 // A SHAPE NAME IN AN ARGUMENT POSITION says which dispatch you are buying:
 //     <M: Allocator>   a bound.   Monomorphised, calls direct, 0-byte field.
@@ -250,6 +345,58 @@ Result :: <T, E> -> oneof {
 // One per arity is the cost; see OPEN.
 Fn  :: <A, R>    -> self { (): (&self, a: A)       -> R }
 Fn2 :: <A, B, R> -> self { (): (&self, a: A, b: B) -> R }
+
+
+// ============================================================================
+// std.num  --  the operator policies
+// ============================================================================
+//
+// One policy per operator, each with TWO operand types and an output type it
+// decides for itself. Both halves of that are forced by the case that made
+// operators policies in the first place:
+//
+//     v * 2.0        Vec2 and f32 -- so the operands may differ
+//     Vec2           -- and the result matches neither of them positionally
+//
+// `Out` is a HOLE and not a third parameter, and the difference is the whole
+// argument for type holes: the solver searches on a policy's PARAMETERS, so a
+// third parameter would have to be known at the call site before the instance
+// that determines it could be found. An output must not be a search key.
+// See NOTE 9.
+
+Add :: <A, B> -> self { Out: type;  add: (a: A, b: B) -> self.Out }
+Sub :: <A, B> -> self { Out: type;  sub: (a: A, b: B) -> self.Out }
+Mul :: <A, B> -> self { Out: type;  mul: (a: A, b: B) -> self.Out }
+Div :: <A, B> -> self { Out: type;  div: (a: A, b: B) -> self.Out }
+Rem :: <A, B> -> self { Out: type;  rem: (a: A, b: B) -> self.Out }
+Neg :: <A>    -> self { Out: type;  neg: (a: A)       -> self.Out }
+
+// The primitives are ordinary pooled instances. Arithmetic is not built in;
+// what is built in is the instruction each of these bodies is.
+:: -> Add<u8, u8> { Out :: u8;  add = (a, b) -> u8 { intrinsic_add_u8(a, b) } }
+:: -> Add<f32, f32> { Out :: f32;  add = (a, b) -> f32 { intrinsic_add_f32(a, b) } }
+:: -> Mul<f32, f32> { Out :: f32;  mul = (a, b) -> f32 { intrinsic_mul_f32(a, b) } }
+// ...and so on, one per (operator, primitive pair). Generated, not written.
+
+// A user type joins in by publishing instances. Nothing is added to Vec2
+// itself, which is what makes `2.0 * v` possible at all -- the instance for
+// the flipped operand order is just another declaration, and it does not have
+// to live near f32 or belong to anyone.
+Vec2 :: (x: f32, y: f32) -> self
+
+:: -> Add<Vec2, Vec2> { Out :: Vec2;  add = (a, b) -> Vec2 { Vec2(a.x + b.x, a.y + b.y) } }
+:: -> Mul<Vec2, f32>  { Out :: Vec2;  mul = (v, s) -> Vec2 { Vec2(v.x * s, v.y * s)     } }
+:: -> Mul<f32, Vec2>  { Out :: Vec2;  mul = (s, v) -> Vec2 { v * s                      } }
+
+:: -> Eq<Vec2, Vec2> { eq = (a, b) -> bool { a.x == b.x && a.y == b.y } }
+
+// A second addition, named, therefore not in the pool. `a + b` never means
+// this one; `saturating.add(a, b)` does. This is the two-of-them that makes
+// arithmetic a policy rather than a member.
+saturating :: -> Add<Vec2, Vec2> {
+    Out :: Vec2
+    add = (a, b) -> Vec2 { Vec2(clamp(a.x + b.x), clamp(a.y + b.y)) }
+}
 
 
 // ============================================================================
@@ -366,19 +513,94 @@ List :: <T, M: Allocator> (mem: M) -> self {
 
 
 // ============================================================================
+// std.iter  --  what a type hole is for
+// ============================================================================
+//
+// `Item` is decided by the implementer and reported back, so it is a hole. The
+// element type of an iterator was never a choice the caller makes -- it is a
+// property of the iterator -- and threading it through as a parameter is what
+// made `fold`'s signature carry a `T` that nobody at the call site chooses.
+
+Iterator :: -> self {
+    Item: type
+    next: (&self) -> Option<self.Item>
+}
+
+ListIter :: <T, M> (xs: ptr<List<T, M>>) -> self {
+    Item :: T                                  // fills the hole; costs 0 bytes
+    i := 0
+    next :: (&self) -> Option<T> {
+        if (self.i >= self.xs.count) { return Option<T>.none() }
+        v := self.xs.items[self.i]
+        self.i += 1
+        Option<T>.some(v)
+    }
+}
+
+// A compile-time member of a BOUND is reached the same way as one of a value:
+// `I.Item`. The parameter that disappeared is the point --
+//     before:  fold :: <T, A, I: Iterator<T>, F: Fn2<A, T, A>> (...)
+//     after:   fold :: <I: Iterator, A, F: Fn2<A, I.Item, A>> (...)
+fold :: <I: Iterator, A, F: Fn2<A, I.Item, A>> (it: ptr<I>, acc: A, f: F) -> A {
+    a := acc
+    loop {
+        match (it.next()) {
+            none    { return a }
+            some(v) { a = f(a, v) }
+        }
+    }
+}
+
+// ERASING A SHAPE WITH A TYPE HOLE. A vtable slot returning `Option<self.Item>`
+// has no layout until Item is known, so a shape with an unfilled type hole
+// cannot be coerced. Fix it at the coercion, with the spelling that already
+// means "fill a declared hole":
+//
+//     it : ptr<Iterator<Item = u8>> := &li
+//
+// This is NOTE 3's rule -- shape-level generics multiply vtables -- arriving
+// at the same place from the other direction, and it needs no new syntax:
+// `=` fills a hole, and `to_string<F = hex_u8>` already passes one by name.
+// A static bound (`I: Iterator`) needs no such thing, because monomorphising
+// knows Item exactly.
+
+
+// ============================================================================
 // std.ord  --  Ord is a POLICY: u8 has no one true ordering, and the
-// caller must be able to pick. Nothing is attached to u8.
+// caller must be able to pick. Nothing is attached to u8. `<`, `<=`, `>` and
+// `>=` desugar to it, and `==` and `!=` to Eq.
 // ============================================================================
 
 Ord :: <T> -> self {
     compare: (a: T, b: T) -> i32     // no self -> policy
 }
 
+// Equality is separate from ordering, because plenty of types have one and not
+// the other, and homogeneous-by-default like Add is not: `Eq<A, B>` lets a
+// slice compare against a literal without a conversion.
+Eq :: <A, B> -> self {
+    eq: (a: A, b: B) -> bool
+}
+
+// Note what this does NOT replace. `Key<K>` in std.map carries hash AND equals
+// in one block, because those two must agree ([P11] in json.z) and because a
+// map's key comparison is a choice -- case-folding or not -- that is allowed
+// to differ from what `==` means. `Eq` is the default; `Key` is the caller's.
+
 // Anonymous -> in the solver pool. This is what `Ord<u8>` resolves to.
+//
+// NOTE THE INTRINSICS, because adopting [P17] made them mandatory and the
+// first draft of this instance was silently infinitely recursive: `a < b`
+// desugars to `Ord<u8>.compare(a, b) < 0`, and inside the pooled `Ord<u8>`
+// that is a call to itself. Every primitive instance is where a desugaring
+// bottoms out, so every primitive instance is written in instructions. It is
+// the same shape of mistake as FRICTION 11 in json.z -- a default instance
+// recursing into itself by writing the obvious thing -- and it is worth
+// keeping visible.
 :: -> Ord<u8> {
     compare = (a, b) -> i32 {
-        if (a < b) { return -1 }
-        if (a > b) { return  1 }
+        if (intrinsic_lt_u8(a, b)) { return -1 }
+        if (intrinsic_lt_u8(b, a)) { return  1 }
         return 0
     }
 }
@@ -471,6 +693,9 @@ to_string :: <T, M: Allocator, F: Formattable<T> = ?> (mem: M, v: T) -> slice<u8
 }
 
 
+add_u8 :: (a: u8, v: u8) -> u8 { a + v }
+
+
 // ============================================================================
 // main
 // ============================================================================
@@ -511,6 +736,18 @@ main :: () -> () {
     ys := List<u8>(boxed)
     defer ys.deinit()
 
+    // Operators are policy calls, so this is `Add<Vec2, Vec2>.add(...)` and
+    // then `Mul<f32, Vec2>.mul(...)`. Neither line needs Vec2 to own anything,
+    // and the second one is the case a member could not have expressed.
+    v := Vec2(1.0, 2.0) + Vec2(3.0, 4.0)
+    w := 2.0 * v
+    if (w == Vec2(8.0, 12.0)) { io.out.write("yes") }
+    io.out.write(to_string(mem, saturating.add(v, w)))   // the named one, by hand
+
+    // The iterator shape, with its Item supplied by the implementer.
+    li    := ListIter(&xs)
+    total := fold(&li, 0, add_u8)
+
     // A closure is what is left over: a block holding `m` with one member
     // named `()`. A closure is a struct; that is the whole point.
     print_u8 :: <M: Allocator> (m: M) (v: u8) -> () { io.out.write(to_string(m, v)) }
@@ -546,9 +783,18 @@ main :: () -> () {
 // type? Two orderings of u8, yes -> policy. Two ways for an Arena to
 // allocate, no -> shape.
 //
-// It is a property of the BLOCK, not of each hole. A block with one self hole
-// and one non-self hole is an error; it would have no dispatch story and no
-// coercion, and admitting it buys nothing.
+// IT ANSWERS QUESTIONS IT WAS NOT DESIGNED FOR, which is the best evidence
+// available that it is real rather than tidy. Asked of the operators it says
+// `[]` and `()` are members and `+` and `==` are policies -- two ways for a
+// List to index itself, no; two ways to add two vectors, yes -- and that split
+// is exactly the one the implementation needs, because a policy is not
+// attached to a type and so `2.0 * v` needs nobody to own f32.
+//
+// It is a property of the BLOCK, not of each hole, and it quantifies over
+// VALUE holes: a `: type` hole takes no self and is neither shape-like nor
+// policy-like, so both kinds of block may carry one (NOTE 9). A block with one
+// self value hole and one non-self value hole is an error; it would have no
+// dispatch story and no coercion, and admitting it buys nothing.
 //
 // Anything that must AGREE belongs in ONE block. A hash and an equals solved
 // as two independent `= ?` params can be defaulted inconsistently -- a
@@ -627,14 +873,42 @@ main :: () -> () {
 // return type, which it already had to do for `= ?` params.
 //
 // ----------------------------------------------------------------------------
-// NOTE 6 -- why `operator` had to go.
+// NOTE 6 -- why `operator` had to go, and why half the operators left with it.
 //
 // It was the language's only two-token name, and the only place the word
 // appeared. Naming the member `[]` costs nothing and removes a keyword.
 //
-// It also pays for itself twice, because the same move names the member `()`,
-// and that is what a closure is. `print_u8 :: <M: Allocator> (m: M) (v: u8)`
-// desugars to
+// THE OTHER HALF OF THE OPERATORS ARE NOT MEMBERS AT ALL. Written as one,
+// arithmetic breaks on the second line of vector code:
+//
+//     v * 2.0      ->  v.*(2.0)      fine, a member of Vec2
+//     2.0 * v      ->  (2.0).*(v)    a member of f32, which nobody owns
+//
+// UFCS looks like the rescue -- `*(2.0, v)` resolves a free function in the
+// caller's scope -- and it is the rescue NOTE 4 forbids, correctly: if it were
+// allowed, "is Vec2 numeric" would depend on what happened to be imported.
+// So a member cannot express scaling, and no bound could ever require
+// arithmetic of a type parameter.
+//
+// The test in NOTE 1 says why, and says what to do instead. Two ways to add
+// two vectors -- saturating and wrapping -- so addition is a CHOICE, and a
+// choice is a policy: `a + b` is `Add<A, B>.add(a, b)`, solver-found, with the
+// operand types as the search key. Everything awkward goes at once. Scalars on
+// the left work, because a policy is attached to nothing. Primitives stop
+// being special: `Add<u8, u8>` is a pooled instance like any other and the
+// language has no built-in arithmetic, only built-in instructions inside those
+// instances. `Ord` and `Eq` were already policies, so `<` and `==` land where
+// std had already put them. And `lerp :: <T> (a: T, b: T, t: f32) -> T` --
+// generic code over anything numeric -- becomes sayable, which under the
+// member reading it was not, in any form.
+//
+// What it costs: a fixed precedence table, since a member name carries none.
+// Not user-extensible, which is the right call and is also true of every
+// language that has tried the alternative.
+//
+// The member half pays for itself twice, because the same move names the
+// member `()`, and that is what a closure is.
+// `print_u8 :: <M: Allocator> (m: M) (v: u8)` desugars to
 //
 //     print_u8 :: <M: Allocator> (m: M) -> self { (): (&self, v: u8) -> () {...} }
 //
@@ -679,107 +953,214 @@ main :: () -> () {
 // This is not a second meaning for `self`. See KEYWORDS: the receiver exists
 // to say which instance, and an instance is already a single value.
 //
-// ============================================================================
-// CHANGED IN THIS REVISION -- all of it found by writing src/json.z, a JSON
-// parser plus the containers it needs, in this syntax. That file keeps the
-// full log, including what was tried and rejected.
+// ----------------------------------------------------------------------------
+// NOTE 8 -- coherence, and why the pool is global and unique.
 //
-//   ADDED    `-> oneof`, the sum projection, and holes-are-quantified-by-the-
-//            projection. A JSON value is a sum; so is Option, Result, a hash
-//            slot, and a token. The previous draft could express none of them.
-//   ADDED    `match`, `_`, `try`, and `defer` (which the old draft already used
-//            at line 283 without introducing it).
-//   ADDED    `-> {a, b}` as visibility. It was already in the grammar.
-//   ADDED    the instantiation rule (declaration / +<> = type / +() = value),
-//            and "a type in value position is the solver's default instance".
-//            Both were relied on and neither was stated.
-//   ADDED    a shape in `<>` is static, in `()` is erased.
-//   CHANGED  `to_string<F: hex_u8>` -> `<F = hex_u8>`. The old spelling
-//            contradicted "`:` is type ascription and nothing else".
-//   CHANGED  `operator []` -> `[]`. See NOTE 6.
-//   CHANGED  `List.pop` returns Option<T>.
-//   CHANGED  shape-vs-policy is a property of the block, not of each hole.
-//   RENAMED  DICTIONARY -> POLICY. The old name was GHC's word for how a
-//            typeclass constraint is compiled, and it collides with the
-//            everyday meaning (a hash map -- `Map` in json.z, in this repo).
-//            See glossary.z for the alternatives considered.
-//   ADDED    `self` is available lexically in a block with no runtime group,
-//            which is what lets an instance recurse into itself rather than
-//            into the solver's default. NOTE 7. Found by trying to write a
-//            second Formattable<Json> in json.z and watching the override stop
-//            at depth 1.
-//   FIXED    `io.out` is now declared; the UFCS comment on List.items was
-//            wrong; UFCS scope resolution is now stated.
+// The rule is in the header: one anonymous instance per (policy, type), pool
+// is whole-program, a duplicate or an overlap is an error at the declarations.
+// The alternatives were:
+//
+//   IMPORT-SCOPED POOL. Rejected on the same grounds as NOTE 4. A type that
+//   defaults a policy parameter -- `Map<slice<u8>, V>` picking its `Key` --
+//   would have a different layout in two modules that imported differently,
+//   with one spelling. The language already refuses to let shape satisfaction
+//   depend on imports; it cannot then let type identity depend on them.
+//
+//   ERROR AT THE USE SITE instead of the declaration. Attractive, because a
+//   conflict nobody exercises would be harmless. It is a dead end: the fix at
+//   a use site is to name the instance you meant, and the instances in
+//   conflict are ANONYMOUS -- they have no name by construction. Ambiguity you
+//   cannot spell your way out of is worse than a build error.
+//
+//   MOST-SPECIFIC-WINS, so that `Formattable<List<u8, M>>` could override
+//   `Formattable<List<T, M>>` for strings. Rejected: it makes the solver's
+//   answer depend on a subtyping order among patterns, which is where every
+//   language that has tried it spends the next decade. Overlap is an error.
+//   Wanting the special case means wanting a distinct type or a named
+//   instance, and both are one line.
+//
+//   AN ORPHAN RULE, checked. Rejected because extrinsic instances on foreign
+//   types is the ENTIRE advantage policies hold over traits -- it is why `Ord`
+//   works on u8 and why the fmt derivation in this file can be written by
+//   someone who owns neither Formattable nor List. Keeping the check would
+//   have bought coherence-by-construction at the price of the feature.
+//
+// So the orphan rule survives as a convention rather than a check: an
+// anonymous instance is a claim on the global default, so publish one only for
+// a policy or a type you own. Where two libraries both claim one, the program
+// does not build until one names its instance. That is a real cost and it is
+// the deliberate trade: a loud failure in a rare case, in exchange for
+// extrinsic instances in every common one.
+//
+// [P17] raises the stakes and does not change the answer. With arithmetic
+// solver-dispatched, a duplicate `Add<Vec2, Vec2>` is a question about what
+// `+` means in every expression rather than about a sort order -- which is an
+// argument for deciding it, and this is the decision.
+//
+// ----------------------------------------------------------------------------
+// NOTE 9 -- a type hole, and why it is not a parameter.
+//
+// `Item: type` in a shape, `Out: type` in an operator policy. Both are the
+// thing other languages call an associated type, and here it is not a new
+// construct: `type` is a type whose values are types, a hole is a member you
+// did not supply, so a hole of type `type` is a type the implementer supplies.
+// `Item :: T` fills it, at zero bytes, like every other `::` member.
+//
+// THE LINE BETWEEN A PARAMETER AND A HOLE IS WHO DECIDES, and it is mechanical
+// once stated: the solver searches on parameters, so anything the caller must
+// know before an instance can be found is a parameter, and anything the
+// instance itself determines is a hole. `Mul<Vec2, f32>` searches on both
+// operand types; the result type is not a search key and could not be one --
+// you would have to know the answer to look it up.
+//
+// What it removes, from code that was already written:
+//     json.z   fold :: <T, A, I: Iterator<T>, F: Fn2<A, T, A>>
+//     here     fold :: <I: Iterator, A, F: Fn2<A, I.Item, A>>
+// `T` was never a choice a caller of `fold` made; it belonged to the iterator,
+// and had to be spelled because the shape had nowhere to put it.
+//
+// Two rules come with it, both already stated above and both consequences
+// rather than additions: the shape/policy test quantifies over value holes
+// only, and a shape with an unfilled type hole cannot be coerced to
+// `ptr<Shape>` -- fix it at the coercion, `ptr<Iterator<Item = u8>>`, which is
+// the existing "fill a hole by name with `=`" and nothing more.
+//
+// ============================================================================
+// CHANGED IN THIS REVISION -- all of it found by writing src/ecs.z, an
+// entity-component-system and the game loop around it, chosen because it
+// MUTATES and STORES where json.z only built and printed. That file keeps the
+// full log.
+//
+//   ADDED    OPERATORS ARE POLICIES, except `[]` and `()`, which take self and
+//            stay members. `a + b` is `Add<A, B>.add(a, b)`. Found by `2.0 * v`
+//            being unwritable as a member and unrescuable by UFCS without
+//            breaking NOTE 4. Brings std.num, `Eq`, and NOTE 6's rewrite.
+//   ADDED    A HOLE MAY BE A TYPE -- `Item: type`, `Out: type`. An associated
+//            type, with no new construct: a hole is a member you did not
+//            supply. Brings std.iter, NOTE 9, and the rule that a shape with an
+//            unfilled type hole cannot be erased without fixing it
+//            (`ptr<Iterator<Item = u8>>`). Required by the operator policies,
+//            since a result type must not be a search key.
+//   ADDED    COHERENCE. One anonymous instance per (policy, type), the pool is
+//            whole-program, duplicates and overlaps are errors at the
+//            declarations, and there is no orphan rule -- the convention
+//            replaces the check. NOTE 8. This closes the oldest item in the
+//            file, and the operator change is what forced it: a second
+//            anonymous `Add<Vec2, Vec2>` is a question about `+` everywhere.
+//   ADDED    ORDER INDEPENDENCE, relied on since the first draft and never
+//            stated. Recursive types, the solver and coherence all require it.
+//   ADDED    COMPILE-TIME VALUE ARGUMENTS as the third kind, `<indent: u32 = 2>`.
+//            Used by `List`'s `capacity :: 10` and by every array size, and
+//            never mentioned. Mixing one with an inferred type parameter is
+//            what makes named passing the only way to call a declaration.
+//   ADDED    A VALUE MAY NOT BE DROPPED SILENTLY; `_ := xs.pop()` says so out
+//            loud. The fourth use of `_`, and the one an error channel needs.
+//   CHANGED  the shape/policy test quantifies over VALUE holes only, so a type
+//            hole may appear in either kind of block.
+//   ADDED    NOTE 8 (coherence) and NOTE 9 (type holes); NOTE 1 and NOTE 6
+//            rewritten.
+//
+// PREVIOUS REVISION -- found by writing src/json.z, a JSON parser and the
+// containers under it: `-> oneof` and holes-quantified-by-the-projection,
+// `match`, `_`, `try`, `defer`, `-> {a, b}` as visibility, the instantiation
+// rule, a shape in `<>` is static and in `()` is erased, `<F = hex_u8>` over
+// `<F: hex_u8>`, `[]` over `operator []`, `List.pop` returning an Option,
+// shape-vs-policy as a property of the block, DICTIONARY renamed to POLICY,
+// and `self` available lexically in a block with no runtime group.
 //
 // ----------------------------------------------------------------------------
 // OPEN
 //
-//   - COHERENCE. Two anonymous `-> Ord<u8>` in different files is an
-//     ambiguity. Error at the use site, or first-wins, or one-per-module? Still
-//     the biggest unanswered question in the file.
+//   - MEMORY, WHICH IS ONE DECISION WEARING SIX HATS, and now the largest gap
+//     in the design by a distance. The language can say what a value IS and
+//     cannot say WHERE IT LIVES, WHO MAY WRITE IT, or WHEN IT DIES. In the
+//     order ecs.z hit them:
 //
-//   - MONOMORPHISATION IS VIRAL THROUGH CONTAINING TYPES. A compile-time
-//     allocator does not stay in signatures, it climbs into DATA: a struct
-//     with a `Json<M>` field becomes `Config<M>`, and whatever holds that
-//     becomes generic too. `_` cannot stop it, because a field's type is
-//     projection position.
+//       PLACES.  `[] :: (&self, i: u32) -> T` yields a copy, so `xs[i] = v` is
+//       unwritable for every user container, and every mutation goes through a
+//       raw `.items[i]`. Which means `-> {push, pop}` visibility is unusable on
+//       exactly the types it was meant for: turn it on and both programs in
+//       this repo stop compiling, json.z's own printer included, because it
+//       reaches into `m.slots` for want of an iterator.
 //
-//     This is livable and the answer is an alias -- collapse the parameter
-//     once, in the application (`Doc :: Json<ptr<Arena>>`), and let library
-//     code that PRODUCES the type stay generic in one parameter. Erasing to
-//     `ptr<Shape>` inside the type declaration instead costs ~40% per node
-//     and turns every call indirect; it is the right call only when documents
-//     from different allocators must genuinely share a type.
+//       MOVES.  Nothing says whether returning a block copies it or constructs
+//       it in place, so `stores.push(&self.pos)` -- a structure pointing into
+//       itself -- is unanswerable rather than wrong. json.z never noticed
+//       because no interior pointer it took outlived its expression.
 //
-//     The residual cost is real but narrow, and it is the honest statement of
-//     NOTE 2's trade for recursive data: ONE ALLOCATOR PER TYPE. `Json<Heap>`
-//     and `Json<Arena>` cannot be compared, merged, or stored together.
+//       THE CONSTRUCTOR BODY.  A `-> self` block has field initialisers and no
+//       statements, so anything needing `self`, or two fields at once, or a
+//       step that can fail, has nowhere to go. `-> Result<self, E>` was adopted
+//       for the fallible case and turns out to be the wrong half: it gave the
+//       constructor a return type and still no body. The cost is two-phase
+//       construction, unchecked -- ecs.z's `w.wire()`.
 //
-//   - `_` DOES NOT REACH PROJECTION POSITION, so it half-fixes the plumbing
-//     parameter. `sort` is clean because `M` appears only in a parameter type.
-//     A wrapper is not: `iter :: <T, M> (xs: ptr<List<T, M>>) -> ListIter<T, M>`
-//     must name the type to spell its own return. Nor can `_` say "the same
-//     type I did not name" -- two `_` are two independent fresh parameters.
+//       OWNED ERASURE.  `ptr<Shape>` is a borrow with no owner, which is right
+//       for an argument and wrong for a container. A schedule of
+//       `ptr<System>` holds pointers into locals, and declaration order in
+//       main is load-bearing and unenforced. A `Box<Shape, M>` in std would
+//       cover it and needs the move and the destructor first.
 //
-//   - MUTABILITY. `get` and `put` both take `&self`. Nothing says `get` does
-//     not write, so nothing can alias-check, and a `ptr<Allocator>` handed to a
-//     printer is a fully mutable handle. `::`/`:=` already encode immutable vs
-//     mutable for BINDINGS; there is no counterpart for POINTEES, and no
-//     candidate spelling yet that does not cost a keyword.
+//       DESTRUCTION.  `deinit` is a naming convention. Nothing calls it,
+//       `defer` is lexical, and `List<T>` does not destroy its elements, so a
+//       container of containers leaks with no diagnostic.
 //
-//   - THE DISCRIMINANT IS NOT A VALUE. "same variant, ignore the payload" --
-//     what a parser's `expect(Token.colon())` wants -- cannot be said.
+//       MUTABILITY.  `::`/`:=` encode immutable/mutable for BINDINGS and
+//       nothing does for POINTEES, so a `ptr<T>` is an unrestricted handle of
+//       indefinite life. In a simulation this stops being a documentation
+//       problem: a pointer into a store is invalidated by any push, and an
+//       event emitted mid-iteration reenters the loop that emitted it. This is
+//       the one cost in the language that is not visible in a type.
 //
-//   - REFUTABLE MATCH. When `probe` has already proved the slot is `live`, the
-//     match must still name `empty` and `dead`. Every container grows a tail of
-//     dead arms. Wanted: a single-arm assertion form.
+//     These are six faces of one question and should be answered together, on
+//     purpose, rather than one at a time by whatever the next program needs.
 //
-//   - INFERENCE DIRECTION. `Result<Token, Error>.ok(t)` at every return is
-//     unreadable, and the fix is to infer the sum's type from the enclosing
-//     projection -- inference flowing INWARD from the signature into the body,
-//     which the language does not otherwise do. Decide it deliberately.
+//   - THE DISCRIMINANT IS NOT A VALUE. Both programs hit it. json.z wanted
+//     `expect(Token.colon())` to mean "same variant, ignore the payload"; ecs.z
+//     wanted an ordinal per variant, which is what an archetype bitmask and a
+//     save file are made of. Wanted: `S.tag`, a derived sum of unit variants,
+//     with `tag_of(v)` total, comparable, and ordered.
 //
-//   - ORDER INDEPENDENCE is required and unstated. Recursive types force it
-//     (a slot references an entry declared after it), and so does the solver,
-//     which must have seen the whole file. This interacts with the next item.
+//   - NO `for (x := it)`. `Iterator` is declared by the standard library and
+//     used by neither program written against it, because the `loop`/`match`/
+//     `Option` consumer is four lines to replace one. That is a signal about
+//     the sugar, not about the shape.
 //
-//   - FORWARD DECLARATIONS. Bodiless means hole, so a hand-written .zh full of
-//     `func insert_item<T>(...);` would make the module abstract rather than
-//     declaring it. Headers have to be generated from implementations, not
-//     maintained beside them. Probably the right answer anyway, but it is a
-//     real change to how the project is laid out.
+//   - ARITY FAMILIES. `Fn`, `Fn2`, `Fn3` were "cheap enough to live with" when
+//     they were an implementation detail. `Join2`, `Join3`, `Join4` at a query
+//     interface are public surface. Variadic compile-time args are the only
+//     real answer and nothing cheaper has been found.
 //
-//   - FALLIBLE CONSTRUCTION. `-> Result<self, E>` is adopted above, but its
-//     interaction with field-initialiser order is unspecified: which fields
-//     exist when the failing step runs, and what is destroyed on the err path?
+//   - STRUCTURAL MATCHING HAS NO ADAPTER. A foreign type with the right
+//     operations under the wrong names cannot be made to satisfy a shape
+//     except by a wrapper costing a pointer, a vtable and a name. Go has the
+//     same hole; it is written down rather than solved.
 //
-//   - Does `capacity :: 10` (compile-time field, 0 bytes) make List<u8> with
-//     cap 10 a different type from cap 20? Zig says yes.
+//   - IS `ptr<Shape>` COMPARABLE? It is two words built at the coercion site.
+//     Whether two coercions of one block are equal decides whether an observer
+//     list can ever remove a subscriber, and nothing says.
+//
+//   - `_` DOES NOT REACH PROJECTION POSITION, so it fixes the consumers of a
+//     plumbing parameter and not the wrappers: `iter` must name the type it
+//     declined to name in order to spell its own return. Two `_` are also two
+//     independent parameters, so it cannot say "the same type I did not name".
+//
+//   - MONOMORPHISATION IS VIRAL THROUGH CONTAINING TYPES. Livable, and the
+//     answer is an alias collapsing the parameter once in the application --
+//     `Doc :: Json<ptr<Arena>>`, `A :: ptr<Arena>`. Two unrelated programs,
+//     same one-line fix, so it is a pattern rather than a coincidence. The
+//     residual cost is ONE ALLOCATOR PER TYPE, and it does not reach a library
+//     shape: `System<M>` stays generic because a library cannot name the
+//     application's allocator.
+//
+//   - FORWARD DECLARATIONS. Bodiless means hole, so a hand-written header full
+//     of `func insert_item<T>(...);` declares an abstract module rather than a
+//     module. Headers have to be generated from implementations.
+//
+//   - Does `capacity :: 10` make List-with-cap-10 a different type from
+//     cap-20? Zig says yes.
 //
 //   - Is the ptr<Shape> coercion implicit at call sites (`F.format(v, &b)`) or
 //     does it need the annotation, as `boxed` does? Implicit is nicer to write
 //     and hides a representation change from direct calls to indirect ones.
-//
-//   - `Fn`, `Fn2`, `Fn3`. A numbered family of names, the only one in the
-//     language, and unavoidable without variadic compile-time args.
 // ============================================================================

@@ -903,7 +903,10 @@ main :: () -> () {
 //       the propagation `_` was meant to stop. This is why FRICTION 2 needs an
 //       alias rather than a wildcard.
 //
-// FRICTION 10 -- ORDER DEPENDENCE IS UNSTATED. `Slot` references `Entry`
+// FRICTION 10 -- ORDER DEPENDENCE IS UNSTATED.  RESOLVED: order independence
+//   is now stated in unified.z, forced a second time by ecs.z (`World` names a
+//   `Signal` declared two hundred lines below it) and a third by coherence,
+//   which is a whole-program property. `Slot` references `Entry`
 //   declared after it; `Json` references `Map` declared after it; the anonymous
 //   `Formattable<Json>` instance is found by a solver that must have seen the
 //   whole file. Top-level and block-level declarations have to be order-

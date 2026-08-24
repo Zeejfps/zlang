@@ -56,6 +56,14 @@ Fn2       :: core.Fn2
 // std.num  --  where the operator story breaks.  FRICTION 13, and [P17].
 // ============================================================================
 //
+// ADOPTED, in a different shape. unified.z spells this as one policy per
+// operator -- `Add<A, B>`, `Mul<A, B>` -- each with an `Out: type` hole,
+// rather than the homogeneous `Num<T>` plus a `Scale` workaround below. The
+// reason is [P24], which arrived at the same time and let the result type stop
+// being a parameter; `Scale<V, S>` was this file's evidence that it had to.
+// The declarations here are local to this file and are left as written,
+// because the argument for the proposal is what they cost.
+//
 // unified.z NOTE 6 says operators are members with symbolic names, and gives
 // two examples, `[]` and `()`. Both take `self`. Written the same way, `+` is
 //
@@ -962,7 +970,7 @@ main :: () -> () {
 //   pattern the unified form was meant to abolish, and which is unchecked:
 //   forget the line and `despawn` sweeps an empty list forever.  -> [P21]
 //
-// FRICTION 13 -- NO OPERATOR STORY BEYOND `[]` AND `()`. `2.0 * v` cannot be
+// FRICTION 13 -- NO OPERATOR STORY BEYOND `[]` AND `()`.  RESOLVED -> [P17] `2.0 * v` cannot be
 //   written: the member would have to belong to f32, UFCS would resolve a free
 //   `*` in the caller's scope, and NOTE 4 forbids a free function from
 //   satisfying a shape -- correctly, since otherwise "is Vec2 numeric" would
@@ -1013,7 +1021,7 @@ main :: () -> () {
 //   there. Erasure earns its keep for `despawn`, which is per-entity and
 //   dynamic, and not for teardown, which is per-type and static.
 //
-// FRICTION 14 -- A POLICY HAS ONLY INPUT PARAMETERS. `Scale<V, S>` wants to
+// FRICTION 14 -- A POLICY HAS ONLY INPUT PARAMETERS.  RESOLVED -> [P24] `Scale<V, S>` wants to
 //   say "and the result type is whatever V's scaling produces". It cannot, so
 //   the result is pinned to V and any operation whose output type differs from
 //   its inputs needs a third parameter that the caller must supply and the
@@ -1072,7 +1080,8 @@ main :: () -> () {
 //   a wrapper block costing a pointer, a vtable and a name. Go has the same
 //   hole; worth writing down rather than rediscovering.
 //
-// FRICTION 29 -- COMPILE-TIME VALUE PARAMETERS ARE UNSTATED. `dump<indent: u32
+// FRICTION 29 -- COMPILE-TIME VALUE PARAMETERS ARE UNSTATED.  RESOLVED: they
+//   are now the third kind of compile-time argument in unified.z. `dump<indent: u32
 //   = 2>` is a compile-time parameter whose type is not a type. unified.z says
 //   compile-time args come in TWO kinds, inferred-from-a-runtime-argument and
 //   solved-by-search; this is a third, it is used by `List`'s `capacity :: 10`
@@ -1080,7 +1089,7 @@ main :: () -> () {
 //   named passing: `M` is inferred and `indent` is not, so `dump<indent = 4>`
 //   is the only spelling available.
 //
-// FRICTION 15 -- NO EQUALITY ON USER TYPES. `Key<Entity>.equals(a, b)` is what
+// FRICTION 15 -- NO EQUALITY ON USER TYPES.  RESOLVED -> [P17], `Eq<A, B>` `Key<Entity>.equals(a, b)` is what
 //   an `==` costs today, and `Key` exists to pair hashing with equality for a
 //   map -- using it as the equality mechanism is an accident. Subsumed by
 //   [P17], which puts `==` in an `Eq<T>` policy where `Ord`, `Num` and `Key`
@@ -1112,6 +1121,15 @@ main :: () -> () {
 // ----------------------------------------------------------------------------
 // PROPOSALS
 // ----------------------------------------------------------------------------
+//
+// STATUS. [P17] and [P24] are ADOPTED and now live in unified.z, together with
+// [P25] and [P26] below, which came out of adopting them. They are kept here
+// because the argument for each is the evidence, and the evidence is this file.
+// [P18] [P19] [P20] [P21] [P22] [P23] are OPEN; five of the six are faces of
+// the memory question and are now unified.z's single largest open item.
+//
+// Adopting [P17] and [P24] resolved FRICTION 13, 14, 15 and 29, and forced the
+// coherence decision that had been open since before json.z.
 //
 // [P17] ARITHMETIC AND COMPARISON OPERATORS ARE POLICIES; `[]` AND `()` STAY
 //       SHAPES. `a + b` is `Num<A>.add(a, b)`, `a == b` is `Eq<A>.eq(a, b)`,
@@ -1241,6 +1259,45 @@ main :: () -> () {
 //       without new syntax.
 //
 //
+// [P25] A VALUE MAY NOT BE DROPPED SILENTLY, and `_` already spells the
+//       exception. `Store.remove` above discards three results -- two
+//       `Option<C>` from `pop` and a bool from `Map.remove` -- and nothing in
+//       the language says whether that is allowed, warned about, or an error.
+//       It has to be decided, because `-> Result<T, E>` is the error channel
+//       and an ignored Result is the one mistake that must not be easy:
+//
+//           xs.push(v)         fine, `push` projects `()`
+//           xs.pop()           an error
+//           _ := xs.pop()      "bind it to nothing", said out loud
+//
+//       The fourth use of one symbol, and no new one.
+//
+// [P26] COHERENCE: ONE ANONYMOUS INSTANCE PER (POLICY, TYPE), POOL IS
+//       WHOLE-PROGRAM, DUPLICATES AND OVERLAPS ARE ERRORS AT THE DECLARATIONS,
+//       AND THERE IS NO ORPHAN RULE.
+//
+//       unified.z has called this its biggest unanswered question since before
+//       json.z. [P17] forced it: with arithmetic solver-dispatched, a second
+//       anonymous `Add<Vec2, Vec2>` is a question about what `+` means in
+//       every expression.
+//
+//       The pool must be global, not import-scoped, because `Map<slice<u8>, V>`
+//       defaults its `Key` from it -- so an import-scoped pool would give one
+//       spelling two layouts in two modules, which is the hazard NOTE 4
+//       already refuses for shape satisfaction. Erroring at the USE site
+//       instead is a dead end: the fix at a use site is to name the instance
+//       you meant, and instances in conflict are anonymous by construction.
+//       Most-specific-wins was rejected for the usual reason. An orphan rule
+//       was rejected because extrinsic instances on foreign types is the whole
+//       advantage policies hold over traits.
+//
+//       So it survives as a convention with teeth: an anonymous instance is a
+//       claim on the global default, so publish one only for a policy or a
+//       type you own; two libraries claiming one is a build error until one of
+//       them names its instance. A loud failure in a rare case, in exchange
+//       for extrinsic instances in every common one. See NOTE 8 in unified.z.
+//
+//
 // ----------------------------------------------------------------------------
 // WHAT THIS FILE SAYS ABOUT json.z's OPEN ITEMS
 // ----------------------------------------------------------------------------
@@ -1272,12 +1329,12 @@ main :: () -> () {
 //     binding idiom absorbed almost every case here, including four in
 //     `Combat.chase`. What is left is `is_dead`, which [P19] handles.
 //
-//   OPEN ITEM SHARPENED -- COHERENCE
-//     unified.z calls two anonymous `-> Ord<u8>` in different files "the
-//     biggest unanswered question". [P17] raises the stakes: arithmetic
-//     becomes solver-dispatched, so a second `Num<Vec2>` in a second file is
-//     now a question about `a + b`, in every expression, not about a sort
-//     order. It has to be decided before [P17] can be adopted.
+//   OPEN ITEM CLOSED -- COHERENCE.  RESOLVED -> [P26]
+//     unified.z called two anonymous `-> Ord<u8>` in different files "the
+//     biggest unanswered question". [P17] raised the stakes -- with arithmetic
+//     solver-dispatched, a duplicate instance is a question about `a + b` in
+//     every expression, not about a sort order -- and forced the decision.
+//     One per (policy, type), global pool, no orphan rule.
 //
 //
 // ----------------------------------------------------------------------------
