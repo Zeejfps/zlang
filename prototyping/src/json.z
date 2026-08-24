@@ -690,30 +690,23 @@ main :: () -> () {
             //   {"name": "z", "tags": [1, 2, 3], "ok": true}
             io.out.write(fmt.to_string<F = spaced>(heap, doc))
 
-            // iterate an array through the Iterator shape
-            match (doc) {
-                object (m) {
-                    match (m["tags"]) {
-                        some (tags) {
-                            match (tags) {
-                                array (xs) {
-                                    it    := iter(&xs)
-                                    total := fold(&it, 0.0, sum_numbers)
-                                    io.out.write(fmt.to_string(heap, total))  // 6
-                                }
-                                _ { }
-                            }
-                        }
-                        none { }
-                    }
+            // NO PYRAMID. `match` is an EXPRESSION, so a one-arm-plus-`_`
+            // match BINDS rather than nesting -- each line either produces a
+            // value or leaves. Four levels of arrow-code become four lines,
+            // with nothing added to the language.
+            obj  := match (doc)         { object (o) { o }  _ { return } }
+            tags := match (obj["tags"]) { some   (t) { t }  _ { return } }
+            xs   := match (tags)        { array  (a) { a }  _ { return } }
 
-                    // closure + erasure
-                    n := 0
-                    each_child(doc, &tally(&n))
-                    io.out.write(fmt.to_string(heap, n))                      // 3
-                }
-                _ { }
-            }
+            // iterate an array through the Iterator shape
+            it    := iter(&xs)
+            total := fold(&it, 0.0, sum_numbers)
+            io.out.write(fmt.to_string(heap, total))                  // 6
+
+            // closure + erasure
+            n := 0
+            each_child(doc, &tally(&n))
+            io.out.write(fmt.to_string(heap, n))                      // 3
         }
     }
 }
@@ -803,11 +796,30 @@ main :: () -> () {
 //   or a plugin boundary where the allocator is not known where the type is
 //   declared. It should be the exception, chosen deliberately.
 //
-// FRICTION 3 -- NO REFUTABLE MATCH. `get` knows the slot is `live` because
-//   `probe` said `found`, but the match must still name `empty` and `dead`.
-//   Every container gets a tail of dead arms. Wanted: a single-arm form that
-//   is an assertion, and a `_` catch-all. `_` is used above; it is not in
-//   unified.z and should be.
+// FRICTION 3 -- NO REFUTABLE MATCH, and a pyramid that turned out not to be
+//   one. `get` knows the slot is `live` because `probe` said `found`, but the
+//   match must still name `empty` and `dead`. Every container grows a tail of
+//   dead arms. Wanted: a single-arm form that is an assertion.
+//
+//   The related worry -- that pulling a value out of four nested sums means
+//   four levels of arrow-code -- is NOT a gap. `match` is an expression, so a
+//   one-arm-plus-`_` match binds:
+//
+//       obj  := match (doc)         { object (o) { o }  _ { return } }
+//       tags := match (obj["tags"]) { some   (t) { t }  _ { return } }
+//       xs   := match (tags)        { array  (a) { a }  _ { return } }
+//
+//   main used to nest five deep and now does not. `Parser.object` had been
+//   using this idiom all along without anyone naming it. Nest only when the
+//   failure arms do real work -- main's outer `err (e)` arm prints a message,
+//   so it stays a match.
+//
+//   What is still worth considering is SUGAR, not a missing capability: the
+//   `{ arm (v) { v }  _ { return } }` tail repeats. Swift spells it `guard`,
+//   Rust `let ... else`. Note that `try` cannot cover it -- `try` propagates
+//   the other arms to the caller, and here the arms have the wrong type to
+//   propagate (a `Json<M>` cannot be returned from a function whose error
+//   type is `Error`). A single-arm binder would need its own `else`.
 //
 // FRICTION 4 -- `ok(...)` / `err(...)` NEED THE TYPE. Written honestly it is
 //   `Result<Token, Error>.ok(t)` at every one of the fourteen returns in the

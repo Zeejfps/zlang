@@ -170,6 +170,18 @@
 // a compile-time arg you decline to name (`ptr<List<T, _>>`). One symbol, one
 // idea.
 //
+// MATCH IS AN EXPRESSION, and this is what keeps sum types from turning code
+// into a pyramid. A one-arm-plus-`_` match BINDS instead of nesting:
+//
+//     obj  := match (doc)         { object (o) { o }  _ { return } }
+//     tags := match (obj["tags"]) { some   (t) { t }  _ { return } }
+//     xs   := match (tags)        { array  (a) { a }  _ { return } }
+//
+// Each line either produces a value or leaves. Nested matches are for when the
+// failure arms do real work; when they do not, bind and move on. Languages
+// that miss this end up adding `if let`, `guard let` and `let else` as three
+// separate forms.
+//
 // OPERATORS ARE MEMBERS WITH SYMBOLIC NAMES. There is no `operator` keyword.
 //     [] :: (&self, i: u32) -> T       indexing
 //     () :: (&self, v: u8)  -> ()      calling
