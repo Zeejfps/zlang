@@ -148,11 +148,13 @@
 //     the call site derefs, exactly as `&self` is `ptr<self>` underneath.
 //
 //     `&T` APPEARS IN TWO POSITIONS, both of them calling conventions: after
-//     `->`, and in a PARAMETER LIST. Never inside another type -- no
-//     `Option<&V>`, no `List<&T>`, no `&T` field -- which is what keeps it
-//     from becoming a second pointer type.
+//     `->`, and in the PARAMETER LIST of a block that does not project
+//     `-> self`. Never inside another type -- no `Option<&V>`, no `List<&T>`,
+//     no `&T` field -- which is what keeps it from becoming a second pointer
+//     type. A `-> self` block's runtime params are its fields, so a place
+//     parameter there would be that forbidden field.
 //
-//         tally :: (out: &u32) (k: slice<u8>, v: Json) -> () { out += 1 }
+//         tally :: (out: &u32, v: Json) -> () { out += 1 }
 //
 //     A place parameter is `&self` without the special case: `self.count += 1`
 //     has always written through the caller's value with nothing spelled out.

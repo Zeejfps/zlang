@@ -454,7 +454,9 @@ main :: () -> () {
 
     // A closure is what is left over: a block holding `m` with one member
     // named `()`. A closure is a struct; that is the whole point.
-    print_u8 :: <M: Allocator> (m: M) (v: u8) -> () { io.out.write(to_string(m, v)) }
+    print_u8 :: <M: Allocator> (m: M) -> self {
+        () :: (&self, v: u8) -> () { io.out.write(to_string(self.m, v)) }
+    }
     p := print_u8(mem)
     p(7)                               // -> p.()(7)
 

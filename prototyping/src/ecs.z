@@ -46,6 +46,10 @@ Writer    :: io.Writer
 List      :: std.list.List
 Map       :: std.map.Map
 Key       :: std.key.Key
+Add       :: std.num.Add
+Sub       :: std.num.Sub
+Mul       :: std.num.Mul
+Eq        :: std.ord.Eq
 Option    :: core.Option
 Result    :: core.Result
 Fn        :: core.Fn
@@ -53,116 +57,60 @@ Fn2       :: core.Fn2
 
 
 // ============================================================================
-// std.num  --  where the operator story breaks.  FRICTION 13, and [P17].
+// game.vec2  --  a user type joining the arithmetic
 // ============================================================================
 //
-// ADOPTED, in a different shape. rules.z spells this as one policy per
-// operator -- `Add<A, B>`, `Mul<A, B>` -- each with an `Out: type` hole,
-// rather than the homogeneous `Num<T>` plus a `Scale` workaround below. The
-// reason is [P24], which arrived at the same time and let the result type stop
-// being a parameter; `Scale<V, S>` was this file's evidence that it had to.
-// The declarations here are local to this file and are left as written,
-// because the argument for the proposal is what they cost.
+// Arithmetic is a policy and not a member: `a + b` is `Add<A, B>.add(a, b)`,
+// found by the solver with the operand types as the search key. `[]` and `()`
+// take `self` and stay members. See NOTE 6 in rules.z, and [W11] below for
+// why that split is derived rather than decided.
 //
-// rules.z NOTE 6 says operators are members with symbolic names, and gives
-// two examples, `[]` and `()`. Both take `self`. Written the same way, `+` is
+// So a type joins in by PUBLISHING INSTANCES, and nothing is attached to Vec2
+// itself. The type declaration is one line ([W2] from json.z, still the best
+// line in the language) and it does not mention arithmetic anywhere. That is
+// what makes `2.0 * v` an ordinary declaration nobody has to own f32 to
+// write, and it is what allows two additions for one type.
 //
-//     Vec2 :: (x: f32, y: f32) -> self {
-//         + :: (&self, b: Vec2) -> Vec2 { Vec2(self.x + b.x, self.y + b.y) }
-//     }
-//
-// and it fails on the second line of real vector code:
-//
-//     v * 2.0      ->  a member of Vec2 named `*`.  Fine.
-//     2.0 * v      ->  a member of f32 named `*`.   I do not own f32.
-//
-// UFCS would rescue it -- `*(2.0, v)` resolves a free function in the caller's
-// scope -- and that is exactly the rescue NOTE 4 forbids, because a free
-// function may never satisfy a shape. So under the current rules `Vec2` can be
-// added to itself and cannot be scaled by a number, and no shape can require
-// "is addable" of it.
-//
-// THE ANSWER IS ALREADY IN THE LANGUAGE, and it is rules.z's own test that
-// finds it. Ask the question NOTE 1 asks: can there legitimately be two of
-// these for one type?
-//
-//     Two ways for a List to index itself?     No.   -> `[]` is a SHAPE.
-//     Two ways to compare two u8?              Yes.  -> `Ord` is a POLICY.
-//     Two ways to add two Vec2?                Yes -- saturating, wrapping,
-//                                              checked, and for a matrix,
-//                                              two multiplications.
-//                                                    -> `+` is a POLICY.
-//
-// So `[]` and `()` take `self` and the arithmetic operators do not, and that
-// is not an inconsistency, it is the same test giving two answers. Everything
-// awkward falls out at once: a policy is not attached to a type, so `2.0 * v`
-// needs nobody to own f32; primitives are pooled instances like any other; and
-// NOTE 4 stays intact because these are instances, not extrinsic functions.
-//
-// [P17] `a + b` is `Num<A>.add(a, b)`, solver-found.
-
-Num :: <T> -> self {
-    add: (a: T, b: T) -> T
-    sub: (a: T, b: T) -> T
-    mul: (a: T, b: T) -> T
-    zero: () -> T
-}
-
-// The primitive instances are ordinary pooled ones. Nothing is built in.
-:: -> Num<f32> {
-    add  = (a, b) -> f32 { intrinsic_add_f32(a, b) }
-    sub  = (a, b) -> f32 { intrinsic_sub_f32(a, b) }
-    mul  = (a, b) -> f32 { intrinsic_mul_f32(a, b) }
-    zero = ()     -> f32 { 0.0 }
-}
-
-// The mixed-operand case, which is why `Num<T>` alone is not enough: the
-// operands have different types and so does the result. Written with three
-// compile-time parameters it works, and reads badly at every use. See
-// FRICTION 14 -- what it actually wants is an OUTPUT parameter.
-Scale :: <V, S> -> self {
-    scale: (v: V, s: S) -> V
-}
-
-:: -> Scale<f32, f32> { scale = (v, s) -> f32 { v * s } }
-
-
-// ----------------------------------------------------------------------------
-// Vec2. A record plus two policy instances. Note that the type declaration is
-// one line ([W2] from json.z, still the best line in the language) and that
-// NOTHING about Vec2 mentions arithmetic -- the instances are separate, which
-// is the whole point of them being policies.
+// The result type is a HOLE and not a third parameter: the solver searches on
+// `Mul<Vec2, f32>`'s two operands, and `Vec2` is the answer rather than part
+// of the question. An output must not be a search key. See NOTE 9.
 
 Vec2 :: (x: f32, y: f32) -> self
 
-:: -> Num<Vec2> {
-    add  = (a, b) -> Vec2 { Vec2(a.x + b.x, a.y + b.y) }
-    sub  = (a, b) -> Vec2 { Vec2(a.x - b.x, a.y - b.y) }
-    mul  = (a, b) -> Vec2 { Vec2(a.x * b.x, a.y * b.y) }   // componentwise
-    zero = ()     -> Vec2 { Vec2(0.0, 0.0) }
+:: -> Add<Vec2, Vec2> {
+    Out :: Vec2
+    add = (a, b) -> Vec2 { Vec2(a.x + b.x, a.y + b.y) }
 }
 
-:: -> Scale<Vec2, f32> { scale = (v, s) -> Vec2 { Vec2(v.x * s, v.y * s) } }
+:: -> Sub<Vec2, Vec2> {
+    Out :: Vec2
+    sub = (a, b) -> Vec2 { Vec2(a.x - b.x, a.y - b.y) }
+}
+
+:: -> Mul<Vec2, f32> {
+    Out :: Vec2
+    mul = (v, s) -> Vec2 { Vec2(v.x * s, v.y * s) }
+}
 
 // A named second instance, exactly as `reverse_u8` is a second `Ord<u8>`.
-// This is the evidence that `+` had to be a policy: `wrapping` cannot be a
-// member of Vec2, because `+` already is one and there is only one of those.
-saturating :: -> Num<Vec2> {
+// Naming is what keeps it out of the pool: `a + b` is always the anonymous
+// instance above, and `saturating.add(a, b)` is how you ask for this one. A
+// member could not be written twice, which is the whole of why `+` is a
+// policy and not a member.
+saturating :: -> Add<Vec2, Vec2> {
+    Out :: Vec2
     add = (a, b) -> Vec2 { Vec2(clamp_unit(a.x + b.x), clamp_unit(a.y + b.y)) }
-    sub = (a, b) -> Vec2 { Num<Vec2>.sub(a, b) }           // delegate; NOTE 7
-    mul = (a, b) -> Vec2 { Num<Vec2>.mul(a, b) }
-    zero = ()    -> Vec2 { Num<Vec2>.zero() }
 }
 
 clamp_unit :: (v: f32) -> f32 { if (v > 1.0) { 1.0 } else { if (v < -1.0) { -1.0 } else { v } } }
 
 length_sq :: (v: Vec2) -> f32 { v.x * v.x + v.y * v.y }
 
-// A generic over any numeric type -- the thing the current draft cannot say at
-// all, and the reason [P17] is worth a proposal rather than a workaround.
-lerp :: <T, N: Num<T> = ?, S: Scale<T, f32> = ?> (a: T, b: T, t: f32) -> T {
-    N.add(a, S.scale(N.sub(b, a), t))
-}
+// A generic over anything numeric, which reads as arithmetic and is sayable
+// only because arithmetic is a policy. The bare `+` and `*` are checked where
+// `lerp` is INSTANTIATED; naming `Add<T, T>` and `Mul<T, f32>` as bounds is
+// how you ask for the error here instead.
+lerp :: <T> (a: T, b: T, t: f32) -> T { a + (b - a) * t }
 
 
 // ============================================================================
@@ -175,19 +123,19 @@ lerp :: <T, N: Num<T> = ?, S: Scale<T, f32> = ?> (a: T, b: T, t: f32) -> T {
 
 Entity :: (id: u32, gen: u32) -> self
 
-// Used as a Map key, so it needs a `Key<Entity>` instance -- which is also the
-// only way to ask "are these the same entity", because there is no `==` on a
-// user type and [P17]'s `Num` is not the right home for equality. `Key` was
-// json.z's [P11]: hash and equals must agree, so they live in one block.
-:: -> Key<Entity> {
-    hash   = (k) -> u64  { (k.id * 2654435761) ^ (k.gen * 40503) }
-    equals = (a, b) -> bool { a.id == b.id && a.gen == b.gen }
+// Two instances, and the difference between them is the point. `Eq` is what
+// `==` means. `Key` is what a Map means, and it carries hash AND equals in one
+// block because those two must agree -- json.z's [P11]. A map is allowed to
+// compare its keys differently from `==`; this one does not, so `equals`
+// delegates to the default rather than restating it.
+:: -> Eq<Entity, Entity> {
+    eq = (a, b) -> bool { a.id == b.id && a.gen == b.gen }
 }
 
-// FRICTION 15 in one line: `Key<Entity>.equals(a, b)` is what you write at
-// every comparison site, and it is not obviously an equality test. `a == b`
-// under [P17] would desugar to the same call through an `Eq<T>` policy.
-same :: (a: Entity, b: Entity) -> bool { Key<Entity>.equals(a, b) }
+:: -> Key<Entity> {
+    hash   = (k) -> u64  { (k.id * 2654435761) ^ (k.gen * 40503) }
+    equals = (a, b) -> bool { a == b }
+}
 
 NO_ENTITY :: Entity(0, 0)
 
@@ -196,10 +144,9 @@ NO_ENTITY :: Entity(0, 0)
 // ecs.store  --  a sparse set. Dense array for iteration, map for lookup.
 // ============================================================================
 //
-// This is the container that makes an ECS fast, and writing it found the two
-// sharpest results in the file: FRICTION 16 (`[]` cannot be assigned through)
-// and FRICTION 17 (a container cannot be encapsulated, because reaching into
-// its fields is the only way to mutate an element).
+// This is the container that makes an ECS fast, and writing it found the
+// sharpest result in the file: FRICTION 17, a container that still cannot be
+// fully encapsulated, because iterating one means reaching into its fields.
 
 Store :: <C, M: Allocator> (mem: M) -> self {
 
@@ -216,25 +163,21 @@ Store :: <C, M: Allocator> (mem: M) -> self {
     // Returns a POINTER, not a value, and that is not a style choice.
     // `get` returning `Option<C>` gives you a copy, and a movement system that
     // writes the new position back has to hash the entity a second time to
-    // store it. So the reader of a mutable container returns a place.
+    // store it. So the reader of a mutable container hands back an address.
     //
-    // FRICTION 16: `self.dense.items[i]` reaches past `[]` into List's raw
-    // pointer field, because `[] :: (&self, i: u32) -> C` yields a value and
-    // there is no way to spell "the slot". `xs[i] = v` cannot be written for
-    // any user container in this language. json.z hid this: `List.push` writes
-    // `self.items[...]` from INSIDE List, where reaching into the field is
-    // legitimate. From outside it is a layering violation that the language
-    // requires.
+    // Not `-> &C`: a fallible lookup is not a place, because there is no such
+    // thing as maybe-a-location. `self.dense[i]` IS a place, so `&` takes its
+    // address and the match arm at the call site derefs it.
     at :: (&self, e: Entity) -> Option<ptr<C>> {
         match (self.index.get(e)) {
             none     { Option<ptr<C>>.none() }
-            some (i) { Option<ptr<C>>.some(&self.dense.items[i]) }
+            some (i) { Option<ptr<C>>.some(&self.dense[i]) }
         }
     }
 
     add :: (&self, e: Entity, c: C) -> () {
         match (self.index.get(e)) {
-            some (i) { self.dense.items[i] = c }      // overwrite in place
+            some (i) { self.dense[i] = c }            // overwrite in place
             none     {
                 self.index.put(e, self.dense.count)
                 self.dense.push(c)
@@ -249,26 +192,25 @@ Store :: <C, M: Allocator> (mem: M) -> self {
         i := match (self.index.get(e)) { some (i) { i }  none { return false } }
         last := self.dense.count - 1
         if (i != last) {
-            self.dense.items[i] = self.dense.items[last]
-            moved := self.owner.items[last]
-            self.owner.items[i] = moved
+            self.dense[i] = self.dense[last]
+            moved := self.owner[last]
+            self.owner[i] = moved
             self.index.put(moved, i)
         }
-        // Three results dropped on the floor: `pop` yields `Option<C>` and
-        // `remove` a bool, and nothing in the language says whether ignoring a
-        // return value is allowed, warned about, or an error. Small, but it is
-        // a decision, and `try`/`Result` make it matter.
-        self.dense.pop()
-        self.owner.pop()
-        self.index.remove(e)
+        // Three results that go nowhere -- an `Option<C>` and an
+        // `Option<Entity>` from `pop`, and a bool from `Map.remove`. A value
+        // may not be dropped silently, so each one has to say so out loud.
+        _ := self.dense.pop()
+        _ := self.owner.pop()
+        _ := self.index.remove(e)
         true
     }
 
     // Iteration is over the dense arrays, by index, because there is no
     // `for (x in xs)` form and building a ListIter per store per system costs
     // more syntax than the index loop it replaces. See FRICTION 18.
-    entity_at :: (&self, i: u32) -> Entity  { self.owner.items[i] }
-    slot_at   :: (&self, i: u32) -> ptr<C>  { &self.dense.items[i] }
+    entity_at :: (&self, i: u32) -> Entity  { self.owner[i] }
+    slot_at   :: (&self, i: u32) -> ptr<C>  { &self.dense[i] }
 
     deinit :: (&self) -> () {
         self.index.deinit()
@@ -297,13 +239,13 @@ AnyStore :: -> self {
     deinit: (&self) -> ()
 }
 
-// FRICTION 19, and it is a cost of structural matching that json.z never paid:
-// `Store` satisfies `AnyStore` only because I NAMED its members `remove`,
-// `count` and `deinit` to match. Had `Store` come from another library and
-// called them `erase`, `len` and `dispose`, there would be no way to say "it
-// satisfies AnyStore via this renaming" -- structural matching has no adapter.
-// You write a wrapper block per mismatch, and a wrapper costs a pointer, a
-// vtable and a name.
+// STRUCTURAL MATCHING HAS NO ADAPTER, and this file is where that costs
+// something json.z never paid: `Store` satisfies `AnyStore` only because I
+// NAMED its members `remove`, `count` and `deinit` to match. Had `Store` come
+// from another library and called them `erase`, `len` and `dispose`, there
+// would be no way to say "it satisfies AnyStore via this renaming". You write
+// a wrapper block per mismatch, and a wrapper costs a pointer, a vtable and a
+// name.
 //
 //     StoreAsAny :: <C, M> (inner: ptr<Store<C, M>>) -> self {
 //         remove :: (&self, e: Entity) -> bool { self.inner.erase(e) }
@@ -361,24 +303,18 @@ is_dead :: (a: Ai) -> bool {
 //         stores.push(&self.hp)           //    statement position either
 //     }
 //
-// Two separate things stop it, and only the first is about syntax:
+// ONE thing stops it, and it is about syntax: there is no statement position
+// in a `-> self` block. A field initialiser is an expression; there is
+// nowhere to run a step that is not a binding. json.z hit this as FRICTION 5
+// and read it as being about FAILURE, and [P14] (`-> Result<self, E>`) was
+// adopted for it. [P14] is the wrong half of the fix: it gives the
+// constructor a RETURN TYPE and still no BODY. `try` in a field initialiser
+// has nothing to unwind to.
 //
-//   1. There is no statement position in a `-> self` block. A field
-//      initialiser is an expression; there is nowhere to run a step that is
-//      not a binding. json.z hit this as FRICTION 5 and read it as being about
-//      FAILURE, and [P14] (`-> Result<self, E>`) was adopted for it. [P14] is
-//      the wrong half of the fix: it gives the constructor a RETURN TYPE and
-//      still no BODY. `try` in a field initialiser has nothing to unwind to.
-//
-//   2. `&self.pos` during construction is a pointer into a value that is about
-//      to be returned to the caller. THE LANGUAGE HAS NO STATEMENT ABOUT
-//      WHETHER VALUES MOVE. json.z never noticed because no interior pointer
-//      it took outlived the expression that took it -- `&b` in `to_string`,
-//      `&arena` in main, `&tally(&n)` as an argument. Every one of those is a
-//      pointer to a local that stays put. The moment a structure points into
-//      itself, "is a returned block copied or constructed in place" becomes a
-//      question the language must answer, and it does not have the vocabulary
-//      to ask it. See [P18].
+// What does NOT stop it is `&self.pos`. A value has one address for as long
+// as it is alive, so a pointer into a block survives that block being handed
+// to the caller, and a structure pointing into itself means what it says.
+// That half is answered; the body to write it in is what is missing.
 //
 // The workaround below is two-phase construction, which is exactly what the
 // unified declaration form was supposed to abolish: a `wire` you must remember
@@ -395,8 +331,8 @@ World :: <M: Allocator> (mem: M) -> self {
     hp    := Store<Health, M>(mem)
     brain := Store<Ai, M>(mem)
 
-    // Declared here, defined two hundred lines below. json.z's FRICTION 10
-    // (order independence is required and unstated) is load-bearing again.
+    // Declared here, defined two hundred lines below. Order independence is
+    // load-bearing again, and this is the second program that needs it.
     died  := Signal<Entity, M>(mem)
 
     // Bound here and POPULATED by `wire`, below, because populating it needs
@@ -440,8 +376,8 @@ World :: <M: Allocator> (mem: M) -> self {
     }
 
     deinit :: (&self) -> () {
-        // By hand, in reverse declaration order, because `deinit` is a
-        // naming convention and nothing calls it for you -- FRICTION 22.
+        // By hand, in reverse declaration order, because there is no
+        // automatic destruction and `deinit` is a naming convention.
         // NOT through `stores` either: that would be four indirect calls to
         // reach four fields that are statically right here. Erasure earns its
         // keep for `despawn`, which is per-entity and dynamic, and not for
@@ -537,7 +473,7 @@ Movement :: <M: Allocator> () -> self {
             // Mutation in place, through the pointer the join yielded.
             // `h.a.* = ...` -- the pointee is written, and nothing in the type
             // says `run` may do that while `name` may not. FRICTION 25.
-            h.a.* = Num<Vec2>.add(h.a.*, Scale<Vec2, f32>.scale(h.b.*, dt))
+            h.a.* = h.a.* + h.b.* * dt
         }
     }
 }
@@ -550,7 +486,7 @@ Decay :: <M: Allocator> (rate: f32) -> self {
     run :: (&self, w: ptr<World<M>>, dt: f32) -> () {
         for (i := 0; i < w.vel.count(); i += 1) {
             v := w.vel.slot_at(i)
-            v.* = Scale<Vec2, f32>.scale(v.*, 1.0 - self.rate * dt)
+            v.* = v.* * (1.0 - self.rate * dt)
         }
     }
 }
@@ -567,17 +503,17 @@ Reaper :: <M: Allocator> (doomed: ptr<List<Entity, M>>) -> self {
             if (h.hp <= 0) { self.doomed.push(w.hp.entity_at(i)) }
         }
         for (i := 0; i < self.doomed.count; i += 1) {
-            e := self.doomed.items[i]
+            e := self.doomed[i]
             w.died.emit(e)                     // see Signal, below
             w.despawn(e)
         }
     }
 }
 
-// The schedule. Every element is a fat pointer, and NOTHING OWNS THE POINTEES:
-// the concrete `Movement`, `Decay` and `Reaper` blocks have to be locals in
-// main that outlive the schedule, because there is no way to store a shape BY
-// VALUE and no box to put one in. See FRICTION 26 and [P20].
+// The schedule. Every element is a fat pointer and ERASURE IS A BORROW, so
+// nothing here owns the pointees: the concrete `Movement`, `Decay` and
+// `Reaper` blocks have to be locals in main that outlive the schedule. There
+// is no way to store a shape BY VALUE and no box to put one in.
 Schedule :: <M: Allocator> (mem: M) -> self {
     items := List<ptr<System<M>>, M>(mem)
 
@@ -603,11 +539,11 @@ Signal :: <E, M: Allocator> (mem: M) -> self {
 
     subs := List<ptr<Fn<E, ()>>, M>(mem)
 
-    // FRICTION 26 concretely. The argument is a fat pointer, so the CALLER
-    // owns the closure block and must keep it alive for as long as the signal
-    // lives. In main below, the subscriber is a local declared before the
-    // world and never mentioned again -- if it went out of scope first, this
-    // list would hold two dangling words and nothing would say so.
+    // The same borrow, concretely. The argument is a fat pointer, so the
+    // CALLER owns the closure block and must keep it alive for as long as the
+    // signal lives. In main below, the subscriber is a local declared before
+    // the world and never mentioned again -- if it went out of scope first,
+    // this list would hold two dangling words and nothing would say so.
     on :: (&self, f: ptr<Fn<E, ()>>) -> () { self.subs.push(f) }
 
     // FRICTION 27. There is no `off`. Unsubscribing means finding the
@@ -632,8 +568,8 @@ Signal :: <E, M: Allocator> (mem: M) -> self {
 // itself calls, from inside `Reaper.run`, while `Reaper.run` is iterating
 // `w.hp`. Nothing in any of the three signatures says who may write what, so
 // nothing can flag the reentrancy.
-on_death :: <M: Allocator> (log: ptr<List<Entity, M>>) (e: Entity) -> () {
-    log.push(e)
+on_death :: <M: Allocator> (log: ptr<List<Entity, M>>) -> self {
+    () :: (&self, e: Entity) -> () { self.log.push(e) }
 }
 
 
@@ -680,7 +616,7 @@ Combat :: <M: Allocator> (bite: i32) -> self {
         me   := match (w.pos.at(e)) { some (p) { p }  none { return Ai.idle() } }
         prey := match (w.pos.at(t)) { some (p) { p }  none { return Ai.idle() } }
 
-        d := Num<Vec2>.sub(prey.*, me.*)
+        d := prey.* - me.*
         if (length_sq(d) < 1.0) {
             match (w.hp.at(t)) {
                 some (h) { h.hp -= self.bite }
@@ -690,7 +626,7 @@ Combat :: <M: Allocator> (bite: i32) -> self {
         }
 
         match (w.vel.at(e)) {
-            some (v) { v.* = Scale<Vec2, f32>.scale(d, 0.5) }
+            some (v) { v.* = d * 0.5 }
             none     { }
         }
         Ai.hunt(t)
@@ -698,7 +634,7 @@ Combat :: <M: Allocator> (bite: i32) -> self {
 
     run_away :: (&self, w: ptr<World<M>>, e: Entity, to: Vec2) -> Ai {
         me := match (w.pos.at(e)) { some (p) { p }  none { return Ai.idle() } }
-        if (length_sq(Num<Vec2>.sub(to, me.*)) < 1.0) { return Ai.idle() }
+        if (length_sq(to - me.*) < 1.0) { return Ai.idle() }
         Ai.flee(to)
     }
 
@@ -708,10 +644,10 @@ Combat :: <M: Allocator> (bite: i32) -> self {
         bd   := 1000000.0
         for (i := 0; i < w.hp.count(); i += 1) {
             t := w.hp.entity_at(i)
-            if (same(t, e)) { continue }
+            if (t == e) { continue }
             match (w.pos.at(t)) {
                 some (p) {
-                    d := length_sq(Num<Vec2>.sub(p.*, me.*))
+                    d := length_sq(p.* - me.*)
                     if (d < bd) { bd = d; best = Option<Entity>.some(t) }
                 }
                 none { }
@@ -739,10 +675,10 @@ Combat :: <M: Allocator> (bite: i32) -> self {
 // A PARAMETERISED, NAMED policy instance -- the case NOTE 7 argues from and
 // which nothing in json.z actually exercised. Three things show up at once:
 //
-//   - `indent: u32 = 2` is a COMPILE-TIME VALUE parameter. rules.z says
-//     compile-time args come in two kinds, inferred-from-a-runtime-arg and
-//     solved-by-search. A value parameter is a third kind and is never
-//     mentioned, though `capacity :: 10` in `List` implies it. FRICTION 29.
+//   - `indent: u32 = 2` is a COMPILE-TIME VALUE parameter, the third kind of
+//     compile-time argument, and exactly what `capacity :: 10` in `List` is:
+//     an ordinary compile-time binding that happens to sit in a parameter
+//     list rather than in a block.
 //
 //   - `M` must be inferred and `indent` must be given, so the caller cannot
 //     pass positionally and must write `dump<indent = 4>`. Named compile-time
@@ -816,7 +752,8 @@ main :: () -> () {
     // THE OWNERSHIP DANCE. Every one of these is a local whose ADDRESS goes
     // into a list that outlives this statement, so declaration order here is
     // load-bearing and nothing in the language enforces it. Written in the
-    // other order it compiles and dangles. See FRICTION 26.
+    // other order it compiles and dangles. That is what erasure-as-a-borrow
+    // costs, and this is where the language says you pay it.
     move   := Movement<A>()
     decay  := Decay<A>(0.1)
     fight  := Combat<A>(3)
@@ -841,7 +778,7 @@ main :: () -> () {
     for (i := 0; i < 3; i += 1) {
         e := w.spawn()
         // `f32_of` is invented. Neither file has a story for numeric
-        // conversion, and under [P17] it is one more policy (`From<A, B>`).
+        // conversion, and it wants to be one more policy (`From<A, B>`).
         w.pos.add(e, Vec2(f32_of(i), 0.0))
         w.vel.add(e, Vec2(1.0, 0.0))
         w.hp.add(e, Health(10, 10))
@@ -912,7 +849,7 @@ main :: () -> () {
 //
 // [W11] THE SHAPE/POLICY TEST ANSWERS QUESTIONS IT WAS NOT DESIGNED FOR.
 //       "Can there legitimately be two?" applied to operators says `[]` and
-//       `()` are shapes and `+` is a policy, which is exactly the split the
+//       `()` are members and `+` is a policy, which is exactly the split the
 //       implementation needs, and it was derived rather than decided. When a
 //       one-line test keeps producing the right answer in cases nobody had in
 //       mind, that is evidence the abstraction is real.
@@ -970,75 +907,19 @@ main :: () -> () {
 //   pattern the unified form was meant to abolish, and which is unchecked:
 //   forget the line and `despawn` sweeps an empty list forever.  -> [P21]
 //
-// FRICTION 13 -- NO OPERATOR STORY BEYOND `[]` AND `()`.  RESOLVED -> [P17] `2.0 * v` cannot be
-//   written: the member would have to belong to f32, UFCS would resolve a free
-//   `*` in the caller's scope, and NOTE 4 forbids a free function from
-//   satisfying a shape -- correctly, since otherwise "is Vec2 numeric" would
-//   depend on imports. Without a fix, user types get `+` and not `*` by a
-//   scalar, and no bound can require arithmetic of a type parameter.  -> [P17]
+// FRICTION 17 -- A CONTAINER STILL CANNOT BE FULLY ENCAPSULATED. `List` can
+//   close its projection now that `[]` hands out a place, and no line in this
+//   file reaches into a List field any more. `Map` cannot: json.z's own
+//   printer reaches into `m.slots` and `m.cap` to ITERATE, and a place does
+//   not address iteration. json.z's [P5] says the projection is the export
+//   list:
 //
-// FRICTION 16 -- `[]` CANNOT BE ASSIGNED THROUGH.  RESOLVED -> [P22] `[] :: (&self, i: u32) -> T`
-//   yields a value, so `xs[i] = v` is unwritable for every user container in
-//   the language. Every mutation in this file goes through `.items[i]` or a
-//   `ptr<C>` from `at`. json.z hid this because `List.push` writes
-//   `self.items[...]` from INSIDE List, where the raw field is in scope.
-//   The language has no PLACE concept: no way for a member to name a slot
-//   rather than produce a copy.  -> [P22]
+//       Map :: <K, V, M> (mem: M) -> {get, put, remove, count, deinit} { ... }
 //
-// FRICTION 17 -- SO A CONTAINER CANNOT BE ENCAPSULATED.  HALF RESOLVED -> [P22]
-//   -- `List` can now close its projection; `Map` still cannot, because the
-//   printer reaches into `m.slots` to ITERATE, which places do not address. This is FRICTION 16's
-//   consequence and it is worse than it, because it invalidates a feature
-//   already adopted. json.z's [P5] says the projection is the export list:
-//
-//       List :: <T, M> (mem: M) -> {push, pop, count, []} { ... }
-//
-//   Do that and this file stops compiling -- `self.dense.items[i] = c`,
-//   `self.doomed.count = 0`, and json.z's own JSON printer, which reaches into
-//   `m.slots` and `m.cap` because `Map` has no iterator. Today every container
-//   in both files must export its raw storage, and [P5] is unusable on exactly
-//   the types it was meant for. Places ([P22]) and iteration ([P23]) are what
-//   make visibility affordable.
-//
-// FRICTION 26 -- AN ERASED VALUE IS A POINTER, AND NOTHING OWNS THE POINTEE.
-//   `List<ptr<System<M>>>` holds four fat pointers into four locals in main,
-//   and the schedule outlives the statement that made each one. Declaration
-//   order in main is load-bearing and unenforced; reorder two lines and it
-//   compiles and dangles. There is no way to store a shape BY VALUE (the size
-//   is not known) and no box to put one in.
-//
-//   This is the price of "erasure is a coercion at one line" ([W7] in json.z),
-//   which is otherwise the design's best trick, and it is only visible once
-//   erased values are STORED rather than passed.  -> [P20]
-//
-// FRICTION 22 -- TEARDOWN IS A NAMING CONVENTION.  DECIDED, NOT FIXED: it
-//   stays one. See rules.z -- no automatic destruction, on purpose. `deinit` is an ordinary
-//   member that happens to be spelled the same everywhere. Nothing calls it,
-//   `defer` is lexical so it only helps for locals, and `List<T>` does not
-//   destroy its elements -- so `Store<Store<...>, M>` leaks and no diagnostic
-//   exists. `World.deinit` names its four stores explicitly, in reverse
-//   declaration order, by hand.
-//
-//   Note the erased list does NOT help: sweeping `stores` for teardown would
-//   be four indirect calls to reach four fields that are statically right
-//   there. Erasure earns its keep for `despawn`, which is per-entity and
-//   dynamic, and not for teardown, which is per-type and static.
-//
-// FRICTION 14 -- A POLICY HAS ONLY INPUT PARAMETERS.  RESOLVED -> [P24] `Scale<V, S>` wants to
-//   say "and the result type is whatever V's scaling produces". It cannot, so
-//   the result is pinned to V and any operation whose output type differs from
-//   its inputs needs a third parameter that the caller must supply and the
-//   solver cannot infer.
-//
-//   The same gap is already visible in json.z and was not recognised there:
-//
-//       Iterator :: <T> -> self { next: (&self) -> Option<T> }
-//       fold :: <T, A, I: Iterator<T>, F: Fn2<A, T, A>> (it: ptr<I>, ...) -> A
-//
-//   `T` is a property OF the iterator, not a choice the caller makes, and it
-//   is threaded through `fold`'s signature only because the shape has nowhere
-//   to put it. A shape needs to be able to declare a type its implementer
-//   supplies.  -> [P24], which turns out to cost nothing.
+//   Do that and the printer stops compiling. Half of what makes visibility
+//   affordable on a container arrived with places; the other half is
+//   iteration ([P23]), and until it does, a container that cannot be walked
+//   through its own projection must export its storage.
 //
 // FRICTION 20 -- A SUM'S DISCRIMINANT IS NOT A VALUE. json.z's FRICTION 7
 //   wanted `expect(Token.colon())` to mean "same variant, ignore payload".
@@ -1077,27 +958,6 @@ main :: () -> () {
 //   join already found across a call that might have invalidated it. Half a
 //   performance problem and half FRICTION 25.
 //
-// FRICTION 19 -- STRUCTURAL MATCHING HAS NO ADAPTER. `Store` satisfies
-//   `AnyStore` only because I chose the member names to match. A foreign type
-//   with the right operations under different names cannot be adapted without
-//   a wrapper block costing a pointer, a vtable and a name. Go has the same
-//   hole; worth writing down rather than rediscovering.
-//
-// FRICTION 29 -- COMPILE-TIME VALUE PARAMETERS ARE UNSTATED.  RESOLVED: they
-//   are now the third kind of compile-time argument in rules.z. `dump<indent: u32
-//   = 2>` is a compile-time parameter whose type is not a type. rules.z says
-//   compile-time args come in TWO kinds, inferred-from-a-runtime-argument and
-//   solved-by-search; this is a third, it is used by `List`'s `capacity :: 10`
-//   and by every array size, and the file never mentions it. It also forces
-//   named passing: `M` is inferred and `indent` is not, so `dump<indent = 4>`
-//   is the only spelling available.
-//
-// FRICTION 15 -- NO EQUALITY ON USER TYPES.  RESOLVED -> [P17], `Eq<A, B>` `Key<Entity>.equals(a, b)` is what
-//   an `==` costs today, and `Key` exists to pair hashing with equality for a
-//   map -- using it as the equality mechanism is an accident. Subsumed by
-//   [P17], which puts `==` in an `Eq<T>` policy where `Ord`, `Num` and `Key`
-//   already live.
-//
 // FRICTION 27 -- THE IDENTITY OF AN ERASED VALUE IS UNDEFINED, so `Signal` has
 //   no `off`. A `ptr<Shape>` is two words built at the coercion site; whether
 //   two coercions of one block compare equal is not stated, and the vtable
@@ -1125,34 +985,32 @@ main :: () -> () {
 // PROPOSALS
 // ----------------------------------------------------------------------------
 //
-// STATUS. [P17] and [P24] are ADOPTED and now live in rules.z, together with
-// [P25] and [P26] below, which came out of adopting them. They are kept here
-// because the argument for each is the evidence, and the evidence is this file.
-// [P18] [P19] [P20] [P21] [P22] [P23] are OPEN; five of the six are faces of
-// the memory question and are now rules.z's single largest open item.
-//
-// Adopting [P17] and [P24] resolved FRICTION 13, 14, 15 and 29, and forced the
-// coherence decision that had been open since before json.z.
+// STATUS. [P19], [P21] and [P23] are open. [P17] and [P22] are not: they are
+// the arguments rules.z and unified.z point at for operators-as-policies and
+// for places, and they stay here because the evidence for each is this file.
 //
 // [P17] ARITHMETIC AND COMPARISON OPERATORS ARE POLICIES; `[]` AND `()` STAY
-//       SHAPES. `a + b` is `Num<A>.add(a, b)`, `a == b` is `Eq<A>.eq(a, b)`,
-//       `a < b` is `Ord<A>.compare(a, b) < 0`, all solver-found. `a[i]` and
-//       `a(x)` stay members, because they take `self`.
+//       MEMBERS. `a + b` is `Add<A, B>.add(a, b)`, `a == b` is
+//       `Eq<A, B>.eq(a, b)`, `a < b` is `Ord<A>.compare(a, b)` tested against
+//       zero, all solver-found. `a[i]` and `a(x)` stay members, because they
+//       take `self`.
 //
 //       Derived from rules.z's own test rather than chosen: two ways to add
 //       two Vec2 (saturating, wrapping) -- yes, so it is a policy; two ways
-//       for a List to index itself -- no, so it is a shape. Everything
+//       for a List to index itself -- no, so it is a member. Everything
 //       awkward dissolves at once:
 //
 //         - `2.0 * v` works, because a policy is not attached to a type and
 //           nobody has to own f32;
-//         - primitives stop being special: `Num<f32>` is a pooled instance
-//           like any other, and the language has no built-in arithmetic;
+//         - primitives stop being special: `Add<f32, f32>` is a pooled
+//           instance like any other, and the language has no built-in
+//           arithmetic, only instructions inside those instances;
 //         - NOTE 4 is untouched, because these are instances, not extrinsics;
-//         - `lerp :: <T, N: Num<T> = ?>` -- a generic over "anything numeric"
-//           -- becomes sayable, which it currently is not in any form;
-//         - `Ord` and `Key` were already policies, so `<` and `==` land where
-//           the standard library had already put them.
+//         - `lerp :: <T> (a: T, b: T, t: f32) -> T` -- a generic over
+//           "anything numeric" -- becomes sayable, which under the member
+//           reading it is not, in any form;
+//         - `Ord` and `Eq` are policies, so `<` and `==` land where the
+//           standard library already keeps them.
 //
 //       The cost is a fixed precedence table in the language, since a member
 //       name carries none. That is unavoidable in any design and is not
@@ -1179,51 +1037,11 @@ main :: () -> () {
 //       This is not a new form -- a field initialiser is already a statement
 //       that runs at construction; the proposal is that it need not be a
 //       binding. It closes json.z's FRICTION 5, this file's FRICTION 21, and
-//       makes [P14] mean something. It depends on [P18].
+//       makes [P14] mean something. What it needs underneath it -- that a
+//       value has one address, so `&self.pos` survives the return -- it has.
 //
-// [P18] SAY WHETHER VALUES MOVE. `stores.push(&self.pos)` takes the address of
-//       a field of a block that is about to be handed to the caller. Whether
-//       that pointer survives is currently unanswerable, because neither file
-//       says whether returning a block copies it or constructs it in place.
-//       json.z never noticed: every interior pointer it took (`&b`, `&arena`,
-//       `&tally(&n)`) pointed at a local that stayed put.
-//
-//       The cheapest answer consistent with everything else here is: a value
-//       has one address for its lifetime; `x := Foo()` constructs in place;
-//       assigning a whole struct to an existing binding is a copy and it is
-//       the programmer's business whether that invalidates interior pointers.
-//       Whatever the answer, it must be WRITTEN DOWN -- self-referential
-//       structures, closures stored in data, and `ptr<Shape>` in a container
-//       all depend on it, and all three appear in the first non-trivial
-//       program that stores anything.
-//
-// [P24] AN ASSOCIATED TYPE IS A HOLE WHOSE TYPE IS `type`. This costs nothing:
-//       a hole is already "declared, not supplied", and a block may already
-//       hold a compile-time type member (`A :: ptr<Arena>` in main is one).
-//
-//           Iterator :: -> self {
-//               Item: type
-//               next: (&self) -> Option<self.Item>
-//           }
-//
-//           ListIter :: <T, M> (xs: ptr<List<T, M>>) -> self {
-//               Item :: T                                  // fills the hole
-//               next :: (&self) -> Option<T> { ... }
-//           }
-//
-//       `fold :: <I: Iterator, A, F: Fn2<A, I.Item, A>> (it: ptr<I>, ...)`
-//       loses a parameter, and the parameter it loses is the one the caller
-//       never chose. Same for `Scale<V, S> { Out: type }`.
-//
-//       ONE AMENDMENT IS REQUIRED, and it is small: json.z's [P12] says a
-//       block whose holes all take `self` is a shape and one whose holes take
-//       none is a policy, and mixing is an error. A `: type` hole takes no
-//       self and would make every shape carrying one an error. The test must
-//       quantify over VALUE holes only; type holes are neither, in either kind
-//       of block.
-//
-// [P22] PLACES.  ADOPTED, in a third form neither option below anticipated:
-//       a PROJECTION. `-> &T` says a LOCATION escapes, alongside `-> T`,
+// [P22] PLACES ARE A PROJECTION -- the third form, which neither option
+//       below anticipated. `-> &T` says a LOCATION escapes, alongside `-> T`,
 //       `-> self`, `-> {a, b}` and `-> oneof`.
 //
 //         [] :: (&self, i: u32) -> &T { self.items[i] }
@@ -1247,8 +1065,8 @@ main :: () -> () {
 //
 // [P23] `for (x := it) { ... }` over anything satisfying `Iterator`,
 //       desugaring to the `loop` + `match` + `Option` consumer written by hand
-//       four times in this file. With [P24], `for (h := join2(&w.pos, &w.vel))`
-//       is the whole of a system's traversal. The evidence that this is not
+//       four times in this file. `for (h := join2(&w.pos, &w.vel))` is then
+//       the whole of a system's traversal. The evidence that this is not
 //       sugar-for-its-own-sake: `Iterator<T>` is declared by both files and
 //       used by neither, because the manual consumer is four times the size of
 //       the index loop it replaces.
@@ -1260,56 +1078,6 @@ main :: () -> () {
 //       archetype mask becomes `1 << ordinal_of(tag)`, and a save file has a
 //       stable number to write. Closes json.z's FRICTION 7 and this file's
 //       FRICTION 20.
-//
-// [P20] OWNED ERASURE. `ptr<Shape>` is a borrow with no owner, which is right
-//       for arguments and wrong for containers. This is the one item where the
-//       honest answer is "std, plus a language question that is not yet
-//       answerable": a `Box<Shape, M>` -- allocate, move the block in, keep
-//       the fat pointer, call a `deinit` slot on destruction -- is writable
-//       today except for the two things the language lacks, which are the move
-//       ([P18]) and the destructor (FRICTION 22). Both are prerequisites, so
-//       the proposal is really: decide those two, and this falls out of std
-//       without new syntax.
-//
-//
-// [P25] A VALUE MAY NOT BE DROPPED SILENTLY, and `_` already spells the
-//       exception. `Store.remove` above discards three results -- two
-//       `Option<C>` from `pop` and a bool from `Map.remove` -- and nothing in
-//       the language says whether that is allowed, warned about, or an error.
-//       It has to be decided, because `-> Result<T, E>` is the error channel
-//       and an ignored Result is the one mistake that must not be easy:
-//
-//           xs.push(v)         fine, `push` projects `()`
-//           xs.pop()           an error
-//           _ := xs.pop()      "bind it to nothing", said out loud
-//
-//       The fourth use of one symbol, and no new one.
-//
-// [P26] COHERENCE: ONE ANONYMOUS INSTANCE PER (POLICY, TYPE), POOL IS
-//       WHOLE-PROGRAM, DUPLICATES AND OVERLAPS ARE ERRORS AT THE DECLARATIONS,
-//       AND THERE IS NO ORPHAN RULE.
-//
-//       rules.z has called this its biggest unanswered question since before
-//       json.z. [P17] forced it: with arithmetic solver-dispatched, a second
-//       anonymous `Add<Vec2, Vec2>` is a question about what `+` means in
-//       every expression.
-//
-//       The pool must be global, not import-scoped, because `Map<slice<u8>, V>`
-//       defaults its `Key` from it -- so an import-scoped pool would give one
-//       spelling two layouts in two modules, which is the hazard NOTE 4
-//       already refuses for shape satisfaction. Erroring at the USE site
-//       instead is a dead end: the fix at a use site is to name the instance
-//       you meant, and instances in conflict are anonymous by construction.
-//       Most-specific-wins was rejected for the usual reason. An orphan rule
-//       was rejected because extrinsic instances on foreign types is the whole
-//       advantage policies hold over traits.
-//
-//       So it survives as a convention with teeth: an anonymous instance is a
-//       claim on the global default, so publish one only for a policy or a
-//       type you own; two libraries claiming one is a build error until one of
-//       them names its instance. A loud failure in a rare case, in exchange
-//       for extrinsic instances in every common one. See NOTE 8 in rules.z.
-//
 //
 // ----------------------------------------------------------------------------
 // WHAT THIS FILE SAYS ABOUT json.z's OPEN ITEMS
@@ -1331,23 +1099,10 @@ main :: () -> () {
 //     cannot name the application's allocator. The alias still fixes the
 //     application layer, in one line, in a second unrelated program ([W13]).
 //
-//     FRICTION 10 (order independence) is required again: `World` names
-//     `Signal`, declared two hundred lines later. Still unstated in rules.z.
-//
-//     FRICTION 12 (`_` does not reach projection position) recurs verbatim at
-//     `Join2`, `Hit`, and `join2`.
-//
 //   DOWNGRADED
 //     FRICTION 3 (no refutable match) barely showed up. The one-arm-plus-`_`
 //     binding idiom absorbed almost every case here, including four in
 //     `Combat.chase`. What is left is `is_dead`, which [P19] handles.
-//
-//   OPEN ITEM CLOSED -- COHERENCE.  RESOLVED -> [P26]
-//     rules.z called two anonymous `-> Ord<u8>` in different files "the
-//     biggest unanswered question". [P17] raised the stakes -- with arithmetic
-//     solver-dispatched, a duplicate instance is a question about `a + b` in
-//     every expression, not about a sort order -- and forced the decision.
-//     One per (policy, type), global pool, no orphan rule.
 //
 //
 // ----------------------------------------------------------------------------
@@ -1363,13 +1118,11 @@ main :: () -> () {
 // for, correctly, which is the best evidence in either file that the
 // abstraction is real rather than tidy.
 //
-// What is missing is not more declaration syntax. It is that the language can
-// say what a value IS and cannot yet say anything about WHERE IT LIVES, WHO
-// MAY WRITE IT, or WHEN IT DIES. Places ([P22]), the move story ([P18]), the
-// constructor body ([P21]) and ownership of erased values ([P20]) are four
-// faces of that one gap, and mutability (FRICTION 25) is what it costs today.
-// [P17] and [P24] are separate, cheap, and both REMOVE machinery: operators
-// become policies the language already has, and an associated type becomes a
-// hole whose type is `type`. Those two are ready now; the other four want one
-// decision about memory, made once, on purpose.
+// What is missing is not more declaration syntax. The language can say what a
+// value IS and where it lives; what it still cannot say is WHO MAY WRITE IT
+// and for how long. Places, one address per value, and no destructor answer
+// most of the memory question, and this file is where each of them is paid
+// for by hand -- in `wire`, in `deinit`, and in main's declaration order.
+// What is left of that question is the constructor body ([P21]) and aliasing,
+// and mutability (FRICTION 25) is what the second one costs today.
 // ============================================================================

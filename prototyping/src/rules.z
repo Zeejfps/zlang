@@ -166,10 +166,16 @@
 // FOUR RULES, and they are the whole of it:
 //
 //   1. `&T` APPEARS IN TWO POSITIONS, BOTH OF THEM CALLING CONVENTIONS: after
-//      `->`, and in a parameter list. It NEVER appears inside another type.
-//      There is no `Option<&V>`, no `List<&T>`, no `&T` field. That is what
-//      stops it from quietly becoming a second pointer type -- and it is also
-//      what makes the parameter form worth having, below.
+//      `->`, and in the parameter list of a block that does not project
+//      `-> self`. It NEVER appears inside another type. There is no
+//      `Option<&V>`, no `List<&T>`, no `&T` field. That is what stops it from
+//      quietly becoming a second pointer type -- and it is also what makes the
+//      parameter form worth having, below.
+//
+//      The `-> self` half is not a second rule. A `-> self` block's runtime
+//      params ARE its fields, so a place parameter there is the forbidden
+//      field wearing a different spelling. A function may take one; a struct
+//      and a closure may not.
 //
 //   2. THE BODY MUST EVALUATE TO A PLACE, not to a pointer: a field, an index
 //      into a pointer, a deref, or another `-> &T` call. Symmetric with
@@ -193,15 +199,18 @@
 // back, so it cannot offer `[]` as a place at all. It offers `get(i)` and
 // `set(i, b)`. There are no proxy objects, which is the disease `vector<bool>`
 // died of. And a fallible lookup is not a place, because there is no such
-// thing as "maybe a location": `Map.get` returns `Option<ptr<V>>` and the
-// match arm derefs it.
+// thing as "maybe a location". There is no `Option<&V>`. A lookup that may
+// miss projects an ordinary value, and WHICH value is the container's choice
+// and not the language's: `Option<V>` hands back a copy, `Option<ptr<V>>`
+// points into the container's own storage so the match arm can write through
+// it. Both are `-> T`.
 //
 // A PARAMETER MAY BE A PLACE, and it is the same idea as `&self`, which is
 // one. `self.count += 1` writes through the caller's value with nothing
 // spelled out, so a general `(out: &u32)` is `&self` without the special
 // case; forbidding it would be an asymmetry and nothing more.
 //
-//     tally :: (out: &u32) (k: slice<u8>, v: Json) -> () { out += 1 }
+//     tally :: (out: &u32, v: Json) -> () { out += 1 }
 //
 // The call site says what it always says -- `sort(&xs)`, an argument is
 // explicit. What the SIGNATURE promises is the part no other spelling says:
@@ -413,8 +422,9 @@
 // their right operand, so they are control flow wearing an operator's clothes.
 //
 // A CLOSURE IS NOT A SPECIAL FORM. It is a block with a `()` member, which is
-// why `Fn<A, R>` is an ordinary shape and needs no function-type machinery.
-// The desugaring is in NOTE 6.
+// why `Fn<A, R>` is an ordinary shape and needs no function-type machinery,
+// and why there is no curried spelling: what a closure captures, it captures
+// as a field, in a block written out like any other. NOTE 6 shows one.
 //
 // ----------------------------------------------------------------------------
 // POINTERS
@@ -625,8 +635,9 @@
 //
 // Background, since the tension is real for anything with a table:
 //     GENERIC . OVERRIDABLE . VIRTUAL  --  pick two.
-// Shape-level generics escape it by multiplying vtables; that is why
-// Iterator<T> is right and Allocator<T> is not.
+// Shape-level generics escape it by multiplying vtables, which is why
+// `TypedAllocator<T>` is a shape per T and a generic `make` inside `Allocator`
+// is not a method at all.
 //
 // ----------------------------------------------------------------------------
 // NOTE 4 -- what lives in the block, and what UFCS may do.
@@ -693,13 +704,16 @@
 // language that has tried the alternative.
 //
 // The member half pays for itself twice, because the same move names the
-// member `()`, and that is what a closure is.
-// `print_u8 :: <M: Allocator> (m: M) (v: u8)` desugars to
+// member `()`, and that is what a closure is:
 //
-//     print_u8 :: <M: Allocator> (m: M) -> self { (): (&self, v: u8) -> () {...} }
+//     print_u8 :: <M: Allocator> (m: M) -> self {
+//         () :: (&self, v: u8) -> () { io.out.write(to_string(self.m, v)) }
+//     }
 //
-// -- an ordinary `-> self` block, whose runtime params are its captured fields,
-// exactly as everywhere else. Two questions answer themselves: `print_u8(mem)`
+// -- an ordinary `-> self` block, whose runtime params are its captured
+// fields, exactly as everywhere else. There is no curried spelling and no
+// second runtime group: THE RULE has one, and a closure needs nothing beyond
+// a block. Two questions answer themselves: `print_u8(mem)`
 // has its OWN type (so it is free), and it becomes a shared type precisely
 // when you write `ptr<Fn<u8, ()>>`, which is the same coercion as
 // `ptr<Allocator>` and not a second mechanism.
