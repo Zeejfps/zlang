@@ -32,9 +32,12 @@ APPLYING A DECLARATION. Stated because everything else depends on it:
     List<u8>       ...compile-time args applied   ->  a TYPE
     List<u8>(mem)  ...runtime args applied        ->  a VALUE
 
-    No runtime group at all (`x :: -> T {...}`) means the thing IS its
-    value, already evaluated. An explicit empty `()` means you call it.
-    That is the whole of why `Heap()` is a call and `Writer` is not.
+    No runtime group at all (`x :: -> T {...}`) means there is nothing to
+    apply, so the name alone is the finished thing. An explicit empty `()`
+    means you call it. That is the whole of why `Heap()` is a call and
+    `Writer` is not. Whether the finished thing is a TYPE or a VALUE is a
+    separate question and KEYWORDS answers it: `Writer` has holes and is a
+    type, `hex_u8` has none and is a value.
 
 BRACKETS
     <>   compile-time args      List<u8>, ptr<T>
@@ -96,13 +99,21 @@ interfaces:
 So `Allocator` and `Option` are the same declaration shape read two ways.
 THERE IS NO `trait`, `interface`, `abstract`, `enum` OR `union`.
 
-The projection quantifies over HOLES and nothing else. `::` and `:=` members
-are unaffected by it, so a sum carries methods exactly as a struct does:
+The projection quantifies over HOLES, and `::` is untouched by it, so a sum
+carries methods exactly as a struct does. `:=` is the one member form the
+projection does reach, and it reaches it for a representational reason
+rather than a rule: a sum IS one of its variants, so there is no second
+place for a shared field to live.
 
                       -> self                    -> oneof
     name : T          requirement                variant
     name :: v         method / ct field          method
-    name := v         runtime field              -- (no shared storage)
+    name := v         runtime field              an error, no shared storage
+
+WHICH IS WHY A `-> oneof` BLOCK HAS NO RUNTIME GROUP EITHER: a runtime param
+of a def IS a field, and a sum has nowhere to put one. Its compile-time args
+are untouched, since those live in the type -- `Option<T>` and `Json<M>` are
+ordinary declarations.
 
 A HOLE IS A VALUE, ALWAYS. There is no hole of type `type`, and so nothing
 here of what the rest of the world calls an associated type. The one that
@@ -295,25 +306,44 @@ means "the block".
 
 WHEN `self` NEEDS A RECEIVER, AND WHEN IT DOES NOT. It is one meaning; the
 receiver exists only to say WHICH instance, and is therefore required
-exactly when the block is a type rather than a value:
+exactly when the block is a TYPE rather than a value. Three things make a
+block a type, any one of them is enough, and a block is a value only when
+none of them holds:
 
-    block has a runtime group   ->  it is a TYPE. Many values exist, so a
-                                    member must take `self` / `&self` to
-                                    know which one it was called on.
-                                    `List`, `Heap()`, `Arena`.
+    a runtime group     ->  applying it yields a value, so many exist.
+                            `List`, `Heap`, `Arena`, `Span`.
 
-    block has no runtime group  ->  it IS its value, already evaluated.
-                                    There is exactly one, so `self` is
-                                    available lexically with nothing passed.
-                                    `mem`, `io`, `reverse_u8`, and every
-                                    policy instance.
+    an unfilled hole    ->  no value has been built at all. HOLES says such
+                            a block cannot be instantiated, which is a
+                            stronger statement than "many exist", not a
+                            weaker one. `Allocator`, `Writer`, `Ord<u8>`.
 
-The second case means a member of `mem` may say `self`, and it means `mem`.
+    -> oneof            ->  one value per variant, so many exist.
+                            `Option`, `Result`, `Token`, `Json`.
+
+    none of the three   ->  it IS its value, already evaluated. There is
+                            exactly one, so `self` is available lexically
+                            with nothing passed. `mem`, `io`, `reverse_u8`,
+                            `hex_u8`, and every other policy INSTANCE.
+
+A member of a type must take `self` / `&self`, and THAT IS WHY THE HOLES OF
+A SHAPE TAKE ONE. `Allocator` has no runtime group, and its `alloc` hole
+still writes `&self`, because the hole is itself what makes the block a
+type. NOTE 1's test reads a shape off exactly that, so the two rules are one
+rule seen from either end.
+
+A POLICY TYPE AND A POLICY INSTANCE SPLIT ON THE SECOND LINE, and nothing
+else tells them apart: `Formattable<u8>` has an unfilled `format` and is a
+type; `hex_u8 :: -> Formattable<u8>` fills it and is a value. Same
+projection, same block, different side of the test -- which is the same
+distinction `List` and `List<u8>(mem)` make on the first line.
+
+The last case means a member of `mem` may say `self`, and it means `mem`.
 An instance that recurses may say `self` for the same reason, though it may
 equally say its own name, which every instance now has.
 
-A member of a block that HAS a runtime group may not say bare `self`; that
-is an error asking for `&self`, not an implicit receiver.
+A member of a TYPE may not say bare `self`; that is an error asking for
+`&self`, not an implicit receiver.
 
 The rest of the budget, written down so it stops growing by accident:
     oneof                 a projection
@@ -523,17 +553,28 @@ COMPILE-TIME ARGS COME IN THREE KINDS
     defaulted -- `dump<>` in ecs.z -- and it is the same rule as `Heap()`
     one bracket up: a group left off entirely means the thing IS its value,
     an explicit empty group means apply it. `dump` names the declaration and
-    `dump<>` names the instance, exactly as `Writer` and `Heap()` differ.
+    `dump<>` names the instance, exactly as `Heap` and `Heap()` differ.
 
 EVERY DECLARATION HAS A NAME. `::` with nothing on its left is not a
 spelling. There is no anonymous instance, no pool, no search and no default:
 a policy parameter is supplied at the call site, or the call does not
 compile.
 
-A TYPE IS NEVER A VALUE. `Ord<u8>` is a type and `ord_u8` is an instance of
-it; `Ord<u8>.compare` is not a spelling. An instance that delegates to
-another names it -- `ord_u8.compare(b, a)`, in `reverse_u8` -- which is
-ordinary name lookup and needs no rule of its own.
+A TYPE IS NEVER A VALUE, SO A HOLE CANNOT BE REACHED THROUGH ONE.
+`Ord<u8>` is a type and `ord_u8` is an instance of it; `Ord<u8>.compare` is
+not a spelling, because `compare` is an unfilled hole and the type is
+precisely what has not filled it. An instance that delegates to another
+names it -- `ord_u8.compare(b, a)`, in `reverse_u8` -- which is ordinary
+name lookup and needs no rule of its own.
+
+WHAT A TYPE NAME DOES CARRY is whatever the DECLARATION put there, as
+against what an instance fills in: its `::` members, and -- since HOLES
+makes a variant a derived function -- its constructors. `Option<u8>.some(3)`
+and `Token.colon()` are spellings for that reason. The two lines look alike
+and are not: `compare` is a hole asking for the value that fills it, `some`
+is the function that MAKES one. That is the CONJUNCTIVE / DISJUNCTIVE split
+of HOLES arriving at the call site, and it needs no rule beyond the one
+there.
 
 WHAT THIS COST, since it is the largest thing traded away in the language.
 A search would have let `sort(&xs)`, `to_string(heap, v)` and `a + b` each
