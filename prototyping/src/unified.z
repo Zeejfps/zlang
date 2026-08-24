@@ -21,11 +21,24 @@
 //
 // BINDING
 //     ::   binds at compile time      :=   binds at runtime
+//     :    declares a hole: a type with no value yet
+//
 //     A runtime param of a `-> self` def IS a field: the block is what you
 //     kept, so the params are in it.
 //     A field bound with `::` costs zero bytes; it lives in the type.
 //     No runtime group at all (`x :: -> T {...}`) means the thing IS its
 //     value, already evaluated. An explicit empty `()` means you call it.
+//
+// `self` IS THE ONLY NEW KEYWORD. It always means "the block".
+//     -> self      in a projection: the block escapes
+//     self         a receiver, by value
+//     &self        a receiver, by pointer
+//     ptr<self>    what &self desugars to
+//
+// POINTERS
+//     ptr<T>       typed
+//     ptr          the same thing with its arg defaulted to opaque. Not a
+//                  special form -- compile-time args take defaults anyway.
 //
 // COMPILE-TIME ARGS COME IN TWO KINDS
 //     <T>                      inferred from a runtime argument's type
@@ -36,12 +49,11 @@
 // on its left is an anonymous compile-time binding; it goes in the pool.
 // Give it a name and it is reachable only by hand.
 //
-// TWO KINDS OF ABSTRACTION, ONE SYNTAX. See NOTE 1 -- this is the load-
-// bearing idea in the file.
-//     first param is `self`  ->  SHAPE.      Intrinsic to a type, matched
-//                                structurally, coercible to ptr<Shape>.
-//     first param is not     ->  DICTIONARY. Extrinsic, several may exist,
-//                                the caller picks, the solver defaults it.
+// TWO KINDS OF ABSTRACTION, ONE SYNTAX. See NOTE 1.
+//     first param is self  ->  SHAPE.      Intrinsic to a type, matched
+//                              structurally, coercible to ptr<Shape>.
+//     first param is not   ->  DICTIONARY. Extrinsic, several may exist, the
+//                              caller picks, the solver defaults it.
 //
 // ============================================================================
 
@@ -51,38 +63,38 @@
 // ============================================================================
 
 Allocator :: -> self {
-    alloc: (self, n: u32) -> ptr<()>
-    free:  (self, p: ptr<()>) -> ()
+    // `:` = hole. Becomes a vtable slot, so it must be monomorphic. NOTE 3.
+    alloc: (&self, n: u32) -> ptr
+    free:  (&self, p: ptr) -> ()
+
+    // `::` = provided. Resolved statically, never in the vtable, so it is
+    // free to be generic. This is where the typed layer lives.
+    make :: <T> (&self, n: u32) -> ptr<T> { self.alloc(n * size_of<T>()) }
+    drop :: <T> (&self, p: ptr<T>) -> ()  { self.free(p) }
 }
 
 // No fields -> zero-sized -> the field costs 0 bytes wherever it is stored
 // and every call through it is direct.
 Heap :: () -> self {
-    alloc :: (self, n: u32) -> ptr<()> { c_malloc(n) }
-    free  :: (self, p: ptr<()>) -> ()  { c_free(p)   }
+    alloc :: (&self, n: u32) -> ptr { c_malloc(n) }
+    free  :: (&self, p: ptr) -> ()  { c_free(p)   }
 }
 
 Arena :: (base: ptr<u8>, size: u32) -> self {
     top := 0
-    alloc :: (self, n: u32) -> ptr<()> {
+    alloc :: (&self, n: u32) -> ptr {
         p := self.base + self.top
         self.top += n
         p
     }
-    free :: (self, p: ptr<()>) -> () { }
+    free :: (&self, p: ptr) -> () { }
 }
 
 // Wraps any allocator, and is itself one.
 Tracking :: <M: Allocator> (inner: M) -> self {
-    alloc :: (self, n: u32) -> ptr<()> { log("alloc %", n); self.inner.alloc(n) }
-    free  :: (self, p: ptr<()>) -> ()  { log("free");       self.inner.free(p)  }
+    alloc :: (&self, n: u32) -> ptr { log("alloc %", n); self.inner.alloc(n) }
+    free  :: (&self, p: ptr) -> ()  { log("free");       self.inner.free(p)  }
 }
-
-// `M: Allocator` means "any type structurally providing that shape".
-// ptr<Allocator> provides it too -- that is the entire static/dynamic switch,
-// with no keyword. See NOTE 2.
-make :: <T, M: Allocator> (m: M, n: u32) -> ptr<T> { m.alloc(n * size_of<T>()) }
-drop :: <T, M: Allocator> (m: M, p: ptr<T>) -> ()  { m.free(p) }
 
 
 // ============================================================================
@@ -90,46 +102,51 @@ drop :: <T, M: Allocator> (m: M, p: ptr<T>) -> ()  { m.free(p) }
 // ============================================================================
 
 Writer :: -> self {
-    write_bytes: (self, p: ptr<u8>, n: u32) -> ()
+    write_bytes: (&self, p: ptr<u8>, n: u32) -> ()
+
+    write :: (&self, s: slice<u8>) -> () { self.write_bytes(s.ptr, s.len) }
 }
 
 
 // ============================================================================
-// std.list  --  methods live in the block. See NOTE 3.
+// std.list  --  methods live in the block. See NOTE 4.
 // ============================================================================
 
+// `M: Allocator` means "any type structurally providing that shape".
+// ptr<Allocator> provides it too -- that is the entire static/dynamic switch,
+// with no keyword. See NOTE 2.
 List :: <T, M: Allocator> (mem: M) -> self {
     capacity := 10
     count    := 0
-    items    := make<T>(mem, capacity)
+    items    := mem.make<T>(capacity)
 
-    push :: (self, item: T) -> () {
+    push :: (&self, item: T) -> () {
         if (self.count + 1 > self.capacity) { self.expand() }
         self.items[self.count] = item
         self.count += 1
     }
 
-    pop :: (self) -> T {
+    pop :: (&self) -> T {
         self.count -= 1
         self.items[self.count]
     }
 
-    expand :: (self) -> () {
+    expand :: (&self) -> () {
         new_cap   := self.capacity * 2
-        new_items := make<T>(self.mem, new_cap)
+        new_items := self.mem.make<T>(new_cap)
         for (i := 0; i < self.count; i += 1) { new_items[i] = self.items[i] }
-        drop(self.mem, self.items)
+        self.mem.drop(self.items)
         self.items    = new_items
         self.capacity = new_cap
     }
 
-    deinit :: (self) -> () {
-        drop(self.mem, self.items)
+    deinit :: (&self) -> () {
+        self.mem.drop(self.items)
         self.items = nil
         self.count = 0
     }
 
-    operator [] :: (self, i: u32) -> T { self.items[i] }
+    operator [] :: (&self, i: u32) -> T { self.items[i] }
 }
 
 
@@ -139,7 +156,7 @@ List :: <T, M: Allocator> (mem: M) -> self {
 // ============================================================================
 
 Ord :: <T> -> self {
-    compare: (a: T, b: T) -> i32     // < 0 before, 0 equal, > 0 after
+    compare: (a: T, b: T) -> i32     // no self -> dictionary
 }
 
 // Anonymous -> in the solver pool. This is what `Ord<u8>` resolves to.
@@ -197,15 +214,15 @@ hex_u8 :: -> Formattable<u8> {
 
 // A derived instance is an ordinary def: args on the left, result on the
 // right. The solver matches the return type. No special impl syntax, no
-// pattern on the left-hand side. See NOTE 4.
+// pattern on the left-hand side. See NOTE 5.
 :: <T, M, F: Formattable<T> = ?> -> Formattable<List<T, M>> {
     format = (v, w) {
-        w.write_bytes("[", 1)
+        w.write("[")
         for (i := 0; i < v.count; i += 1) {
-            if (i > 0) { w.write_bytes(", ", 2) }
+            if (i > 0) { w.write(", ") }
             F.format(v.items[i], w)
         }
-        w.write_bytes("]", 1)
+        w.write("]")
     }
 }
 
@@ -218,11 +235,11 @@ hex_u8 :: -> Formattable<u8> {
 StringWriter :: <M: Allocator> (mem: M) -> self {
     buf := List<u8>(mem)
 
-    write_bytes :: (self, p: ptr<u8>, n: u32) -> () {
+    write_bytes :: (&self, p: ptr<u8>, n: u32) -> () {
         for (i := 0; i < n; i += 1) { self.buf.push(p[i]) }
     }
 
-    finish :: (self) -> slice<u8> { slice(self.buf.items, self.buf.count) }
+    finish :: (&self) -> slice<u8> { slice(self.buf.items, self.buf.count) }
 }
 
 to_string :: <T, M: Allocator, F: Formattable<T> = ?> (mem: M, v: T) -> slice<u8> {
@@ -244,13 +261,12 @@ main :: () -> () {
     xs.push(2)
     xs.push(1)
 
-    io.write(io.out, to_string(mem, xs[0]))              // "2"
-    io.write(io.out, to_string(mem, xs))                 // "[2, 1]"
+    io.out.write(to_string(mem, xs[0]))              // "2"
+    io.out.write(to_string(mem, xs))                 // "[2, 1]"
 
-    // `with` matches by type: hex_u8 is a Formattable<u8>, so it binds F.
-    io.write(io.out, to_string(mem, xs[0]) with hex_u8)  // "02"
-    io.write(io.out, to_string(mem, xs)    with hex_u8)  // "[02, 01]"
-    io.write(io.out, to_string<F: hex_u8>(mem, xs[0]))   // same, positionally
+    // Override the solver by naming the dictionary. It is just an argument.
+    io.out.write(to_string<F: hex_u8>(mem, xs[0]))   // "02"
+    io.out.write(to_string<F: hex_u8>(mem, xs))      // "[02, 01]"
 
     sort(&xs)                          // Ord<u8> from the pool
     sort<O: reverse_u8>(&xs)           // by hand
@@ -269,7 +285,7 @@ main :: () -> () {
 
     // Closures are what is left over: a block holding `m` with a call still
     // pending. A closure is a struct; that is the whole point.
-    print_u8 :: (m: Allocator) (v: u8) -> () { io.write(io.out, to_string(m, v)) }
+    print_u8 :: (m: Allocator) (v: u8) -> () { io.out.write(to_string(m, v)) }
     p := print_u8(mem)
     p(7)
 }
@@ -281,15 +297,15 @@ main :: () -> () {
 // Rust conflates these and pays for it with orphan rules. Go has only shapes.
 // Haskell has only dictionaries. You can have both, told apart by one word:
 //
-//   SHAPE       first param is `self`. An allocator, a writer, a socket --
+//   SHAPE       first param is self. An allocator, a writer, a socket --
 //               things where the abstraction is a property of the object and
 //               there is exactly one sensible answer per type. Satisfied
 //               structurally by any type with matching methods, so it needs
 //               no registration. Coerce to ptr<Shape> for dynamic dispatch.
 //
-//   DICTIONARY  no `self`. Ord<u8>, Formattable<u8> -- things where several
+//   DICTIONARY  no self. Ord<u8>, Formattable<u8> -- things where several
 //               answers exist and the caller must be able to choose. A free-
-//               standing value, defaulted by the solver, overridden by `with`.
+//               standing value, defaulted by the solver, overridden by name.
 //               Works on primitives and foreign types, since nothing has to be
 //               attached to them.
 //
@@ -309,9 +325,25 @@ main :: () -> () {
 // visible in the code instead of hidden in a keyword.
 //
 // ----------------------------------------------------------------------------
-// NOTE 3 -- methods live inside the block, and that is forced.
+// NOTE 3 -- object safety falls out of `:` vs `::`.
 //
-// The earlier draft wrote `push :: <T, M> (self: ptr<List<T, M>>, item: T)` at
+// A hole (`alloc: (&self, n: u32) -> ptr`) becomes a vtable slot. A vtable has
+// a fixed number of slots, so a hole cannot be generic -- one slot per
+// instantiation is an infinite table. A provided method (`make :: <T> ...`) is
+// resolved statically and never appears in the vtable, so it can be generic
+// freely.
+//
+// That is why Allocator is not `Allocator<T>`. An allocator is not per-type;
+// its *methods* are. Untyped monomorphic holes at the bottom, generic typed
+// helpers layered on top, and `ptr<Allocator>` keeps working.
+//
+// You do not have to memorize an object-safety rule. You just cannot put a
+// generic in a hole.
+//
+// ----------------------------------------------------------------------------
+// NOTE 4 -- methods live inside the block, and that is forced.
+//
+// An earlier draft wrote `push :: <T, M> (self: ptr<List<T, M>>, item: T)` at
 // top level and restated the type params on every function. Putting methods in
 // the block deletes that boilerplate -- T, M and the fields are already in
 // scope -- and it is also what makes structural matching possible: a shape is
@@ -322,19 +354,13 @@ main :: () -> () {
 // intrinsic abstraction goes inside, extrinsic abstraction goes outside.
 //
 // ----------------------------------------------------------------------------
-// NOTE 4 -- two problems from the last draft are gone.
+// NOTE 5 -- derived instances are ordinary defs.
 //
-// (a) The derived Formattable used to need a pattern on the left-hand side:
-//         Formattable<List<T,M>> :: <T, M, F: Formattable<T> = ?> { ... }
-//     a second, unification-shaped mechanism. Writing it as an anonymous def
-//     with a return type makes it an ordinary declaration; the solver matches
-//     the return type, which it already had to do for `= ?` params.
-//
-// (b) StringWriter used to hold a `writer` closure capturing the sibling field
-//     `buf`, which made `-> self` blocks self-referential and not movable.
-//     With methods taking `self`, nothing captures anything, and every struct
-//     stays memcpy-movable. Closures still exist, but only where you actually
-//     asked for one (`print_u8(mem)`).
+// The pattern-on-the-left form
+//     Formattable<List<T,M>> :: <T, M, F: Formattable<T> = ?> { ... }
+// was a second, unification-shaped mechanism. Writing it as an anonymous def
+// with a return type makes it an ordinary declaration; the solver matches the
+// return type, which it already had to do for `= ?` params.
 //
 // ----------------------------------------------------------------------------
 // OPEN
@@ -345,8 +371,12 @@ main :: () -> () {
 //   - Does `capacity :: 10` (compile-time field, 0 bytes) make List<u8> with
 //     cap 10 a different type from cap 20? Zig says yes.
 //   - Is the ptr<Shape> coercion implicit at call sites (`F.format(v, &b)`) or
-//     does it require the annotation, as `boxed` does? Implicit is nicer to
-//     write and hides a representation change.
+//     does it need the annotation, as `boxed` does? Implicit is nicer to write
+//     and hides a representation change.
+//   - `print_u8 :: (m: Allocator) (v: u8)` takes a shape by value in a
+//     parameter position. Does that mean "any M: Allocator" (a compile-time
+//     arg in disguise) or "a ptr<Allocator>"? Bare shape names in value
+//     position need one rule, not two.
 //   - Is `print_u8(mem)` its own type, or a `(u8) -> ()`? Own type = free.
 //     Shared type = erasure, i.e. the same fat-pointer trick as ptr<Shape>.
 // ============================================================================
