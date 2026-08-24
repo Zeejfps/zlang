@@ -1,10 +1,10 @@
 // ============================================================================
-// unified.z  --  scratch: one declaration form for module/struct/func/trait
+// unified.z  --  one declaration form for module / struct / func / trait
 // ============================================================================
 //
 // THE RULE
 //
-//   Name [compile-time args] (runtime args) -> projection { body }
+//     Name <compile-time args> (runtime args) -> projection { body }
 //
 // Every declaration takes args and builds a block of named values.
 // The projection says what escapes the block:
@@ -14,10 +14,24 @@
 //     -> self      the whole block escapes    struct / module
 //     -> {a, b}    part of it escapes         multiple return
 //
-// `::` binds at compile time. `:=` binds at runtime.
-// A runtime param of a `-> self` def IS a field -- the block is what you kept.
-// A field bound with `::` costs zero bytes; it lives in the type.
-// `= ?` on a compile-time param means "solver fills this in".
+// BRACKETS
+//     <>   compile-time args      List<u8>, ptr<T>
+//     ()   runtime args           xs.get(0)
+//     []   indexing               xs[0]
+//
+// BINDING
+//     ::   binds at compile time      :=   binds at runtime
+//     A runtime param of a `-> self` def IS a field. The block is what
+//     you kept, so the params are in it.
+//     A field bound with `::` costs zero bytes; it lives in the type.
+//
+// COMPILE-TIME ARGS COME IN TWO KINDS
+//     <T>                     inferred from a runtime argument's type
+//     <F: Formattable<T> = ?> solved by search; nothing at the call site
+//                             mentions it, so the solver goes and finds it
+//
+// NO `dyn`. A trait is a struct whose fields are functions, so ptr<Trait>
+// is already a pointer to a table of function pointers. See NOTE 1.
 //
 // ============================================================================
 
@@ -27,38 +41,44 @@
 // ============================================================================
 
 // A trait is a block whose fields are functions with no value yet (holes).
+// State is *captured by the closures*, not carried as a separate type param.
 Allocator :: -> self {
-    State: type
-    alloc: (s: *State, n: u32) -> *()
-    free:  (s: *State, p: *()) -> ()
+    alloc: (n: u32) -> ptr<()>
+    free:  (p: ptr<()>) -> ()
 }
 
-// An impl is a value of that block. Unnamed => canonical, the solver finds it.
-Allocator {
-    State = heap.Arena
-    alloc = (s, n) { heap.c_malloc(n) }
-    free  = (s, p) { heap.c_free(p) }
+// Captures nothing -> zero-sized struct -> every call devirtualizes and the
+// field costs 0 bytes in whatever holds it.
+heap_allocator :: () -> Allocator {
+    alloc = (n) { heap.c_malloc(n) }
+    free  = (p) { heap.c_free(p)   }
 }
 
-// Named => never a search candidate, reachable only by hand.
-tracking :: Allocator {
-    State = heap.Arena
-    alloc = (s, n) { log("alloc %", n); heap.c_malloc(n) }
-    free  = (s, p) { log("free");       heap.c_free(p)   }
+// Captures `a` -> one pointer wide. Calls still direct: the closures are
+// statically known, only the captured environment is runtime.
+arena_allocator :: (a: ptr<Arena>) -> Allocator {
+    alloc = (n) { p := a.top; a.top += n; p }
+    free  = (p) { }
 }
 
-// Typed helpers over the untyped trait.
-make  :: [T, A: Allocator = ?] (a: *A.State, n: u32) -> *T { A.alloc(a, n * size_of(T)) }
-drop  :: [T, A: Allocator = ?] (a: *A.State, p: *T) -> ()  { A.free(a, p) }
+tracking :: (inner: Allocator) -> Allocator {
+    alloc = (n) { log("alloc %", n); inner.alloc(n) }
+    free  = (p) { log("free");       inner.free(p)  }
+}
+
+// `M: Allocator` = any type structurally providing those fields.
+// ptr<Allocator> satisfies it too, via auto-deref -- that is the whole
+// static/dynamic switch. See NOTE 2.
+make :: <T, M: Allocator> (m: M, n: u32) -> ptr<T> { m.alloc(n * size_of(T)) }
+drop :: <T, M: Allocator> (m: M, p: ptr<T>) -> ()  { m.free(p) }
 
 
 // ============================================================================
-// std.io  --  Writer is `dyn` on purpose. See NOTE 1 at the bottom.
+// std.io
 // ============================================================================
 
 Writer :: -> self {
-    State: type
-    write_bytes: (s: *State, p: *u8, n: u32) -> ()
+    write_bytes: (p: ptr<u8>, n: u32) -> ()
 }
 
 
@@ -66,56 +86,56 @@ Writer :: -> self {
 // std.list
 // ============================================================================
 
-// Compile-time: T, and which allocator impl.
-// Runtime: the allocator state -- which is therefore a field.
-List :: [T, A: Allocator = ?] (a: *A.State) -> self {
+// M is inferred from `mem`, not searched. `mem` is a runtime param of a
+// `-> self` def, so it is a field -- no `list.allocator = allocator` line.
+List :: <T, M: Allocator> (mem: M) -> self {
     capacity := 10
     count    := 0
-    items    := make[T](a, capacity)
+    items    := make<T>(mem, capacity)
 }
 
-// Nested or free, same thing. `self` is an ordinary first param;
-// `xs.push(2)` is sugar for `push(&xs, 2)`.
-push :: [T, A] (self: *List[T, A], item: T) -> () {
+// `self` is an ordinary first param. `xs.push(2)` is sugar for `push(&xs, 2)`.
+push :: <T, M> (self: ptr<List<T, M>>, item: T) -> () {
     if (self.count + 1 > self.capacity) { expand(self) }
     self.items[self.count] = item
     self.count += 1
 }
 
-pop :: [T, A] (self: *List[T, A]) -> T {
+pop :: <T, M> (self: ptr<List<T, M>>) -> T {
     self.count -= 1
     self.items[self.count]
 }
 
-get :: [T, A] (self: *List[T, A], i: u32) -> T { self.items[i] }
+get :: <T, M> (self: ptr<List<T, M>>, i: u32) -> T { self.items[i] }
 
-expand :: [T, A] (self: *List[T, A]) -> () {
+expand :: <T, M> (self: ptr<List<T, M>>) -> () {
     new_cap   := self.capacity * 2
-    new_items := make[T](self.a, new_cap)
+    new_items := make<T>(self.mem, new_cap)
     for (i := 0; i < self.count; i += 1) { new_items[i] = self.items[i] }
-    drop(self.a, self.items)
+    drop(self.mem, self.items)
     self.items    = new_items
     self.capacity = new_cap
 }
 
-deinit :: [T, A] (self: *List[T, A]) -> () {
-    drop(self.a, self.items)
+deinit :: <T, M> (self: ptr<List<T, M>>) -> () {
+    drop(self.mem, self.items)
     self.items = nil
     self.count = 0
 }
 
-operator [] :: [T, A] (self: *List[T, A], i: u32) -> T { self.items[i] }
+operator [] :: <T, M> (self: ptr<List<T, M>>, i: u32) -> T { self.items[i] }
 
 
 // ============================================================================
 // std.ord
 // ============================================================================
 
-Ord :: [T] -> self {
+Ord :: <T> -> self {
     compare: (a: T, b: T) -> i32     // < 0 before, 0 equal, > 0 after
 }
 
-Ord[u8] {
+// Unnamed => canonical. This is what the solver finds for Ord<u8>.
+Ord<u8> {
     compare = (a, b) {
         if (a < b) { return -1 }
         if (a > b) { return  1 }
@@ -123,12 +143,13 @@ Ord[u8] {
     }
 }
 
-reverse_u8 :: Ord[u8] {
-    compare = (a, b) { Ord[u8].compare(b, a) }
+// Named => never a search candidate. Reachable only by hand.
+reverse_u8 :: Ord<u8> {
+    compare = (a, b) { Ord<u8>.compare(b, a) }
 }
 
-// The bound is just a compile-time argument with a default of "solve it".
-sort :: [T, A, O: Ord[T] = ?] (xs: *List[T, A]) -> () {
+// O is searched (`= ?`): nothing in the runtime args mentions Ord.
+sort :: <T, M, O: Ord<T> = ?> (xs: ptr<List<T, M>>) -> () {
     for (i := 1; i < xs.count; i += 1) {
         v := xs.items[i]
         j := i
@@ -145,19 +166,19 @@ sort :: [T, A, O: Ord[T] = ?] (xs: *List[T, A]) -> () {
 // std.fmt
 // ============================================================================
 
-Formattable :: [T] -> self {
-    format: (v: T, w: *dyn Writer) -> ()
+Formattable :: <T> -> self {
+    format: (v: T, w: ptr<Writer>) -> ()
 }
 
-Formattable[u8] {
+Formattable<u8> {
     format = (v, w) {
-        if (v >= 10) { Formattable[u8].format(v / 10, w) }
+        if (v >= 10) { Formattable<u8>.format(v / 10, w) }
         d := '0' + (v % 10)
         w.write_bytes(&d, 1)
     }
 }
 
-hex_u8 :: Formattable[u8] {
+hex_u8 :: Formattable<u8> {
     format = (v, w) {
         digits :: "0123456789abcdef"
         hi := digits[v / 16]
@@ -167,10 +188,10 @@ hex_u8 :: Formattable[u8] {
     }
 }
 
-// Derived impl: formatting a List[T] needs a Formattable[T].
-// Left side is the pattern the solver matches; the `[...]` after `::` are the
-// arguments it must solve recursively to build this one. See NOTE 2.
-Formattable[List[T, A]] :: [T, A, F: Formattable[T] = ?] {
+// Derived impl: formatting a List<T, M> needs a Formattable<T>.
+// Left side is the pattern the solver matches; the <...> after `::` are the
+// args it must solve recursively to build this one. See NOTE 3.
+Formattable<List<T, M>> :: <T, M, F: Formattable<T> = ?> {
     format = (v, w) {
         w.write_bytes("[", 1)
         for (i := 0; i < v.count; i += 1) {
@@ -181,10 +202,27 @@ Formattable[List[T, A]] :: [T, A, F: Formattable[T] = ?] {
     }
 }
 
-// Needs an allocator (to build the string) and a Formattable. Both solved.
-to_string :: [T, A: Allocator = ?, F: Formattable[T] = ?] (a: *A.State, v: T) -> str {
-    b := StringWriter[A](a)
-    F.format(v, &b as *dyn Writer)
+
+// ============================================================================
+// std.fmt.str
+// ============================================================================
+
+// `writer` is a closure capturing a sibling field. See NOTE 4.
+StringWriter :: <M: Allocator> (mem: M) -> self {
+    buf    := List<u8>(mem)
+    writer := Writer {
+        write_bytes = (p, n) { for (i := 0; i < n; i += 1) { buf.push(p[i]) } }
+    }
+}
+
+finish :: <M> (self: ptr<StringWriter<M>>) -> str {
+    str.from(self.buf.items, self.buf.count)
+}
+
+// M inferred from `mem`; F searched.
+to_string :: <T, M: Allocator, F: Formattable<T> = ?> (mem: M, v: T) -> str {
+    b := StringWriter(mem)
+    F.format(v, &b.writer)
     b.finish()
 }
 
@@ -194,31 +232,35 @@ to_string :: [T, A: Allocator = ?, F: Formattable[T] = ?] (a: *A.State, v: T) ->
 // ============================================================================
 
 main :: () -> () {
-    a := heap.create()
-    defer heap.destroy(a)
-
-    xs := List[u8](a)          // A solved from typeof(a) == *heap.Arena
+    mem := heap_allocator()            // zero-sized; every alloc call is direct
+    xs  := List<u8>(mem)               // M inferred = HeapAllocator
     defer xs.deinit()
 
     xs.push(2)
     xs.push(1)
 
-    io.write(io.out, to_string(a, xs.get(0)))            // "2"
-    io.write(io.out, to_string(a, xs))                   // "[2, 1]"
+    io.write(io.out, to_string(mem, xs[0]))              // "2"
+    io.write(io.out, to_string(mem, xs))                 // "[2, 1]"
 
-    // `with` matches by type: hex_u8 is a Formattable[u8], so it binds F.
-    io.write(io.out, to_string(a, xs.get(0)) with hex_u8)   // "02"
-    io.write(io.out, to_string(a, xs)        with hex_u8)   // "[02, 01]"
-    // equivalently, positionally:
-    io.write(io.out, to_string[F: hex_u8](a, xs.get(0)))
+    // `with` matches by type: hex_u8 is a Formattable<u8>, so it binds F.
+    io.write(io.out, to_string(mem, xs[0]) with hex_u8)  // "02"
+    io.write(io.out, to_string(mem, xs)    with hex_u8)  // "[02, 01]"
+    io.write(io.out, to_string<F: hex_u8>(mem, xs[0]))   // same, positionally
 
-    sort(&xs)                          // Ord[u8], canonical
-    sort[O: reverse_u8](&xs)           // by hand
+    sort(&xs)                          // Ord<u8>, canonical
+    sort<O: reverse_u8>(&xs)           // by hand
 
-    // Partial application. `println` is a block holding one field (the
-    // allocator) with a call still pending -- i.e. a closure, i.e. a struct.
-    println := (a: *heap.Arena) (v: u8) -> () { io.write(io.out, to_string(a, v)) }
-    p := println(a)
+    // Same List code, dynamic allocator: pass ptr<Allocator> instead of a
+    // concrete one. Different type, no second declaration, no `dyn`.
+    a     := Arena(1024)
+    boxed := arena_allocator(&a)
+    ys    := List<u8>(&boxed)          // M = ptr<Allocator>, calls indirect
+    defer ys.deinit()
+
+    // Partial application. `p` is a block holding one field (mem) with a call
+    // still pending -- i.e. a closure, i.e. a struct.
+    println :: (m: Allocator) (v: u8) -> () { io.write(io.out, to_string(m, v)) }
+    p := println(mem)
     p(7)
 }
 
@@ -226,54 +268,68 @@ main :: () -> () {
 // ============================================================================
 // WHAT THIS REPLACED
 //
-//   module / data / struct / func / mod / trait / impl   ->  one form
-//   mod heap_list<T> = std.list<T>({mem = ...})          ->  List[A: heap]
-//   list.allocator = allocator                           ->  gone; the param
-//                                                            IS the field
-//   with(std.fmt.hex_u8)                                 ->  kept, now it is
-//                                                            just an argument
+//   module / data / struct / func / mod / trait / impl  ->  one form
+//   mod heap_list<T> = std.list<T>({mem = ...})         ->  List<u8>(mem)
+//   list.allocator = allocator                          ->  gone; the param
+//                                                           IS the field
+//   Allocator holding fn ptrs + an opaque `impl: ptr`   ->  closures capture
+//                                                           their own state
+//   dyn / vtables as a language feature                 ->  ptr<Trait>
+//   with(std.fmt.hex_u8)                                ->  kept; now it is
+//                                                           just an argument
 //
 // ----------------------------------------------------------------------------
-// NOTE 1 -- Writer must be `dyn`, and that is a real finding.
+// NOTE 1 -- why there is no `dyn`.
 //
-// Your fmt.zh makes Writer a compile-time field of format:
+// Rust needs `dyn` because its traits are not values. Here a trait is a struct
+// whose fields are functions, so ptr<Allocator> is already a pointer to a table
+// of function pointers. That IS the vtable. The keyword was never carrying
+// information.
 //
-//     func format<T> { Writer: std.io.Writer; invoke: (...) }
-//
-// That means Formattable[u8] is not one type -- there is a different one per
-// writer. The solver then can't answer "give me the Formattable[u8]", and
-// every impl gets duplicated per writer with no benefit, since formatting is
-// I/O-bound anyway. Making it `*dyn Writer` collapses the whole family to one
-// dictionary. This is the boundary where dyn earns its cost.
-//
-// ----------------------------------------------------------------------------
-// NOTE 2 -- The derived impl is the ugliest line in the file.
-//
-//     Formattable[List[T, A]] :: [T, A, F: Formattable[T] = ?] { ... }
-//
-// Compile-time args appear on both sides: T and A are bound by matching the
-// left, F is solved from them. Everything else in this file is "args flow left
-// to right"; this one is a unification pattern. If you want to keep the model
-// honest, the alternative is to forbid derived impls and make the caller pass
-// the element formatter explicitly -- which costs you `to_string(a, xs)`.
+// Cost: a struct-of-closures is fatter than Rust's (data*, vtable*), because
+// each closure carries its own captured environment -- a 2-method trait can be
+// 4 words instead of 2. That is a compiler problem, not a language problem:
+// when every closure in a struct captures the same environment, collapse it to
+// one env pointer plus a shared static vtable. You get the classic layout back
+// without ever having named it.
 //
 // ----------------------------------------------------------------------------
-// NOTE 3 -- `List[T, A]` leaks into every signature.
+// NOTE 2 -- static vs dynamic is a type, not a keyword.
 //
-// Look at `push :: [T, A] (self: *List[T, A], ...)`. A is inferred at call
-// sites so you never type it, but it is in the type, which means a heap list
-// and an arena list are different types. If you want one List type, the
-// allocator has to be `*dyn Allocator` and you pay an indirect call per alloc.
-// Pick per container; List is probably fine as-is, a heterogenous scene graph
-// is not.
+//     List<u8>(mem)      M = HeapAllocator   concrete, closures known, inlined
+//     List<u8>(&boxed)   M = ptr<Allocator>  indirect through the struct
+//
+// Same declaration both times. The consequence: those are two different List
+// types and cannot share an array. Fine for List; not fine for a heterogenous
+// scene graph, where you want ptr<Allocator> everywhere on purpose.
+//
+// ----------------------------------------------------------------------------
+// NOTE 3 -- the derived impl is the ugliest line in the file.
+//
+//     Formattable<List<T, M>> :: <T, M, F: Formattable<T> = ?> { ... }
+//
+// Everywhere else args flow left to right. Here T and M are bound by *matching*
+// the left side and F is solved from them -- that is unification, a second
+// mechanism. It buys you `to_string(mem, xs)` printing "[2, 1]" without passing
+// the element formatter by hand. The alternative is to forbid derived impls and
+// make the caller supply it, which costs you exactly that call.
+//
+// ----------------------------------------------------------------------------
+// NOTE 4 -- StringWriter.writer captures a sibling field.
+//
+// `writer` closes over `buf`, which lives in the same block. So a field can
+// capture another field, which means a `-> self` block can be self-referential
+// and is therefore not trivially movable. Either forbid it, or make moves
+// re-point captured references, or require ptr<> for cross-field capture.
+// This is the first place the model bites.
 //
 // ----------------------------------------------------------------------------
 // OPEN
 //
-//   - `::` fields are compile-time and free. Does `capacity :: 10` make
-//     List[u8] with cap 10 a different type from cap 20? (Zig: yes.)
-//   - Nested defs: static with implicit self until you value one, then a real
-//     closure materializes. Where exactly does that transition happen?
-//   - Is `println(a)` its own type, or a `fn(u8) -> ()`? Own type = free.
-//     Shared type = erasure. Default to own, opt into `dyn`.
+//   - Does `capacity :: 10` (compile-time field, 0 bytes) make List<u8> with
+//     cap 10 a different type from cap 20? Zig says yes.
+//   - Nested defs stay static with an implicit self until you value one, then a
+//     real closure materializes. Where exactly is that line?
+//   - Is `println(mem)` its own type, or a `(u8) -> ()`? Own type = free.
+//     Shared type = erasure. Default to own, opt in to the pointer.
 // ============================================================================
