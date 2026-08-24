@@ -319,7 +319,7 @@ The rest of the budget, written down so it stops growing by accident:
     oneof                 a projection
     match  _              destructuring
     defer                 run at scope exit
-    if while for loop return continue break
+    if else while for loop return continue break
 
 There is no `struct`, `enum`, `union`, `interface`, `trait`, `impl`,
 `operator`, `pub`, `dyn`, or `import`. Imports are ordinary compile-time
@@ -334,6 +334,23 @@ group binding the payload, a body. Nothing new to learn.
         some (x) { ... }
         _        { ... }
     }
+
+A MATCH NAMES EVERY VARIANT, or ends in `_`. It is checked, and the check is
+the only thing making the one-arm form below safe to write: `_` is what the
+arms you did not name collapse into, so leaving it off is how you ask to be
+told when a sum grows a variant. Two costs, both already paid in the corpus
+and neither of them a surprise:
+
+    - a match that CANNOT reach an arm must still write it. json.z's `get`
+      knows the slot is `live` because `probe` said `found`, and still spells
+      `empty` and `dead`. Every container grows a tail of dead arms.
+    - a TAG TEST -- "is this the `dead` variant" -- has no payload to bind and
+      no short spelling, so it is a full match too. See OPEN: the discriminant
+      is not a value, and that is the same gap read from the other side.
+
+Writing `_` silences both, and silences the growth warning with them. That is
+the trade, and it is the reason `_` is a spelling you choose rather than the
+default.
 
 MATCH IS AN EXPRESSION, and this is what keeps sum types from turning code
 into a pyramid. A one-arm-plus-`_` match BINDS instead of nesting:

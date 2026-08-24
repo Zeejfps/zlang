@@ -364,7 +364,7 @@ KEYWORDS  --  the entire budget
     oneof       the sum projection
     match, _    destructuring; `_` is a hole in any binding position
     defer       run at scope exit
-    if while for loop return continue break
+    if else while for loop return continue break
 
 `type` is NOT in this list. It is a built-in type name whose values are
 types, with exactly the status of `u32` and `bool`. It appears only as the
