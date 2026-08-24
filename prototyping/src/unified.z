@@ -11,7 +11,7 @@
 //
 //     -> ()        nothing escapes            procedure
 //     -> T         one value escapes          function
-//     -> self      the whole block escapes    struct / module / interface
+//     -> self      the whole block escapes    struct / module / shape
 //     -> {a, b}    part of it escapes         multiple return
 //
 // BRACKETS
@@ -21,13 +21,17 @@
 //
 // BINDING
 //     ::   binds at compile time      :=   binds at runtime
-//     :    declares a hole: a type with no value yet
+//     :    a HOLE -- a type with no value yet
 //
 //     A runtime param of a `-> self` def IS a field: the block is what you
 //     kept, so the params are in it.
 //     A field bound with `::` costs zero bytes; it lives in the type.
 //     No runtime group at all (`x :: -> T {...}`) means the thing IS its
 //     value, already evaluated. An explicit empty `()` means you call it.
+//
+// THERE IS NO `trait` OR `interface`. A type with unfilled holes cannot be
+// instantiated, so it is only usable as a bound or behind a pointer. That is
+// all an interface ever was. Filling the holes gives you a value.
 //
 // `self` IS THE ONLY NEW KEYWORD. It always means "the block".
 //     -> self      in a projection: the block escapes
@@ -49,6 +53,9 @@
 // on its left is an anonymous compile-time binding; it goes in the pool.
 // Give it a name and it is reachable only by hand.
 //
+// UFCS.  `a.f(x)` falls back to `f(a, x)` when `a` has no method `f`.
+// Sugar for calling only -- see NOTE 4.
+//
 // TWO KINDS OF ABSTRACTION, ONE SYNTAX. See NOTE 1.
 //     first param is self  ->  SHAPE.      Intrinsic to a type, matched
 //                              structurally, coercible to ptr<Shape>.
@@ -59,18 +66,21 @@
 
 
 // ============================================================================
-// std.mem  --  Allocator is a SHAPE: an allocator is an object with state.
+// std.mem
 // ============================================================================
 
+// A shape is nothing but holes. No bodies, so no defaults, so nothing can be
+// silently overridden. See NOTE 3.
 Allocator :: -> self {
-    // `:` = hole. Becomes a vtable slot, so it must be monomorphic. NOTE 3.
     alloc: (&self, n: u32) -> ptr
     free:  (&self, p: ptr) -> ()
+}
 
-    // `::` = provided. Resolved statically, never in the vtable, so it is
-    // free to be generic. This is where the typed layer lives.
-    make :: <T> (&self, n: u32) -> ptr<T> { self.alloc(n * size_of<T>()) }
-    drop :: <T> (&self, p: ptr<T>) -> ()  { self.free(p) }
+// The typed layer is an ordinary module of free functions. It is not part of
+// the shape, so anyone can extend it, and UFCS makes it read like a method.
+mem :: -> self {
+    make :: <T, M: Allocator> (m: M, n: u32) -> ptr<T> { m.alloc(n * size_of<T>()) }
+    drop :: <T, M: Allocator> (m: M, p: ptr<T>) -> ()  { m.free(p) }
 }
 
 // No fields -> zero-sized -> the field costs 0 bytes wherever it is stored
@@ -98,13 +108,15 @@ Tracking :: <M: Allocator> (inner: M) -> self {
 
 
 // ============================================================================
-// std.io  --  also a SHAPE.
+// std.io
 // ============================================================================
 
 Writer :: -> self {
     write_bytes: (&self, p: ptr<u8>, n: u32) -> ()
+}
 
-    write :: (&self, s: slice<u8>) -> () { self.write_bytes(s.ptr, s.len) }
+io :: -> self {
+    write :: <W: Writer> (w: W, s: slice<u8>) -> () { w.write_bytes(s.ptr, s.len) }
 }
 
 
@@ -118,7 +130,7 @@ Writer :: -> self {
 List :: <T, M: Allocator> (mem: M) -> self {
     capacity := 10
     count    := 0
-    items    := mem.make<T>(capacity)
+    items    := mem.make<T>(capacity)     // UFCS -> mem.make<T>(mem, capacity)
 
     push :: (&self, item: T) -> () {
         if (self.count + 1 > self.capacity) { self.expand() }
@@ -313,6 +325,8 @@ main :: () -> () {
 // type? Two orderings of u8, yes -> dictionary. Two ways for an Arena to
 // allocate, no -> shape.
 //
+// Neither is a new construct. Both are a block with unfilled holes.
+//
 // ----------------------------------------------------------------------------
 // NOTE 2 -- static vs dynamic is a type, not a keyword.
 //
@@ -325,33 +339,48 @@ main :: () -> () {
 // visible in the code instead of hidden in a keyword.
 //
 // ----------------------------------------------------------------------------
-// NOTE 3 -- object safety falls out of `:` vs `::`.
+// NOTE 3 -- shapes contain holes and nothing else.
 //
-// A hole (`alloc: (&self, n: u32) -> ptr`) becomes a vtable slot. A vtable has
-// a fixed number of slots, so a hole cannot be generic -- one slot per
-// instantiation is an infinite table. A provided method (`make :: <T> ...`) is
-// resolved statically and never appears in the vtable, so it can be generic
-// freely.
+// An earlier draft let a shape carry provided methods -- `make :: <T> ...`
+// with a body, non-virtual, generic, overridable by an implementer. It bought
+// `a.make<T>(n)` and cost three things:
 //
-// That is why Allocator is not `Allocator<T>`. An allocator is not per-type;
-// its *methods* are. Untyped monomorphic holes at the bottom, generic typed
-// helpers layered on top, and `ptr<Allocator>` keeps working.
+//   - `:` vs `::` had to be read carefully inside every shape
+//   - an implementer could override a provided method, and that override
+//     would silently vanish the moment the value was coerced to ptr<Shape>,
+//     because non-virtual methods are not in the table
+//   - the shape's author owned the convenience layer forever
 //
-// You do not have to memorize an object-safety rule. You just cannot put a
-// generic in a hole.
+// Moving them to `mem` costs nothing at the call site, because UFCS makes
+// `mem.make<T>(capacity)` read the same either way. All three problems go.
+//
+// What is genuinely lost: a Pool cannot specialize `make` with per-type free
+// lists. If that need ever becomes real, the answer is a separate
+// `TypedAllocator<T>` shape -- monomorphic holes per instantiation, so the
+// specialization is a vtable slot and survives coercion -- not a default.
+//
+// Background, since the tension is real for anything with a table:
+//     GENERIC . OVERRIDABLE . VIRTUAL  --  pick two.
+// Shape-level generics escape it by multiplying vtables; that is why
+// Iterator<T> is right and Allocator<T> is not.
 //
 // ----------------------------------------------------------------------------
-// NOTE 4 -- methods live inside the block, and that is forced.
+// NOTE 4 -- what lives in the block, and what UFCS may do.
 //
-// An earlier draft wrote `push :: <T, M> (self: ptr<List<T, M>>, item: T)` at
-// top level and restated the type params on every function. Putting methods in
-// the block deletes that boilerplate -- T, M and the fields are already in
-// scope -- and it is also what makes structural matching possible: a shape is
-// satisfied by a type's own methods, so they have to be the type's.
+// Methods in the block get T, M and the fields in scope for free, and they are
+// the only thing shape matching looks at.
 //
-// The price: no extension methods. You cannot add a method to a type you do
-// not own. That is exactly the case dictionaries cover, so nothing is lost --
-// intrinsic abstraction goes inside, extrinsic abstraction goes outside.
+//     INTRINSIC   declared in the block. Counts for shape satisfaction. May
+//                 be virtual. `push`, `alloc`, `write_bytes`.
+//     EXTRINSIC   a free function called via UFCS. Convenience only, never
+//                 satisfies a shape. `make`, `drop`, `write`.
+//
+// The second half of that rule is load-bearing. If UFCS could satisfy a shape,
+// then "does Heap satisfy Allocator" would depend on what is imported, and two
+// modules could coerce the same value and build different vtables.
+//
+// With that split you do get extension methods -- add anything to a type you
+// do not own, it just cannot participate in a shape.
 //
 // ----------------------------------------------------------------------------
 // NOTE 5 -- derived instances are ordinary defs.
@@ -366,13 +395,17 @@ main :: () -> () {
 // OPEN
 //
 //   - COHERENCE. Two anonymous `-> Ord<u8>` in different files is an
-//     ambiguity. Error at the use site, or first-wins, or one-per-module? This
-//     is the biggest unanswered question in the file.
+//     ambiguity. Error at the use site, or first-wins, or one-per-module? Still
+//     the biggest unanswered question in the file.
+//   - FORWARD DECLARATIONS. `:` means "hole" only if bodiless always means
+//     hole. The .zh headers are full of bodiless declarations that are really
+//     "defined elsewhere". Either headers are generated rather than written,
+//     or forward declaration needs its own spelling.
 //   - Does `capacity :: 10` (compile-time field, 0 bytes) make List<u8> with
 //     cap 10 a different type from cap 20? Zig says yes.
 //   - Is the ptr<Shape> coercion implicit at call sites (`F.format(v, &b)`) or
 //     does it need the annotation, as `boxed` does? Implicit is nicer to write
-//     and hides a representation change.
+//     and hides a representation change from direct calls to indirect ones.
 //   - `print_u8 :: (m: Allocator) (v: u8)` takes a shape by value in a
 //     parameter position. Does that mean "any M: Allocator" (a compile-time
 //     arg in disguise) or "a ptr<Allocator>"? Bare shape names in value
