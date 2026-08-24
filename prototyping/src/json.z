@@ -37,13 +37,14 @@ List      :: list.List
 
 
 // ============================================================================
-// std.core  --  sums and operators
+// std.core  --  sums
 // ============================================================================
 //
-// The rules for both are in rules.z: what a hole means under `-> oneof`, and
-// NOTE 6 on why half the operators are not members. What stays here is the
-// part rules.z cannot carry -- WHERE the need showed up, which is the code
-// below.
+// The rule is in rules.z: what a hole means under `-> oneof`. What stays here
+// is the part rules.z cannot carry -- WHERE the need showed up, which is the
+// code below. Operators get no section of their own: `+` and `<` on a
+// primitive are instructions, and there is no declaration behind them to
+// point at.
 //
 // Option, Result, Fn and Fn2 are std.core; they are not declared here.
 
@@ -82,21 +83,23 @@ Span :: (lo: u32, hi: u32) -> self
 // be able to choose.
 // ============================================================================
 //
-// Hash and equals go in ONE policy, not two. Two `= ?` params that
-// the solver defaults independently can be defaulted inconsistently -- a
-// case-folding hash with a case-sensitive equals is a silently broken map, and
-// no type error catches it. Anything that must agree must be one block.
+// Hash and equals go in ONE policy, not two. Two policy params are supplied
+// independently, so they can be supplied inconsistently -- a case-folding hash
+// with a case-sensitive equals is a silently broken map, and no type error
+// catches it. Anything that must agree must be one block.
 //
 // This is a design rule the unified form makes cheap: grouping costs nothing
-// because a policy is just a block.
+// because a policy is just a block, and one name at the one site that chooses
+// is one thing to get right instead of two.
 
 Key :: <K> -> self {
     hash:   (k: K) -> u64
     equals: (a: K, b: K) -> bool
 }
 
-// Anonymous -> in the solver pool. This is what `Key<slice<u8>>` resolves to.
-:: -> Key<slice<u8>> {
+// The obvious instance. There is no pool and nothing resolves to it: a `Map`
+// gets it because a call site writes `KY = str_key`.
+str_key :: -> Key<slice<u8>> {
     hash = (k) -> u64 {                          // [P9] projection kept
         h := 14695981039346656037
         for (i := 0; i < k.len; i += 1) {
@@ -113,7 +116,9 @@ Key :: <K> -> self {
     }
 }
 
-// Named -> never searched, reachable only by hand: `Map<..., KY = ci_key>`.
+// A second instance. Nothing but the name separates it from `str_key`:
+// `Map<..., KY = ci_key>`. Neither is a default, so the wrong choice is a
+// visible typo and not a silent omission.
 ci_key :: -> Key<slice<u8>> {
     hash   = (k) -> u64  { fnv_lower(k) }
     equals = (a, b) -> bool { eq_lower(a, b) }
@@ -124,7 +129,7 @@ ci_key :: -> Key<slice<u8>> {
 // std.map  --  open addressing, robin-hood-free, tombstoned.
 // ============================================================================
 
-Map :: <K, V, M: Allocator, KY: Key<K> = ?> (allocator: M) -> self {
+Map :: <K, V, M: Allocator, KY: Key<K>> (allocator: M) -> self {
 
     // [W3] Nested declarations inside a block capture the block's compile-time
     // args for free. `Entry` is `Entry<K, V>` without ever saying so.
@@ -241,7 +246,7 @@ Json :: <M: Allocator> -> oneof {
     number: f64
     text:   slice<u8>
     array:  List<Json<M>, M>
-    object: Map<slice<u8>, Json<M>, M>              // [W5] KY defaults here too
+    object: Map<slice<u8>, Json<M>, M, KY = str_key>       // [W5]
 }
 
 
@@ -415,7 +420,8 @@ Parser :: <M: Allocator> (lex: ptr<Lexer>, allocator: M) -> self {
     }
 
     object :: (&self) -> Result<Json<M>, Error> {
-        members := Map<slice<u8>, Json<M>, M>(self.allocator)
+        // KY is part of the type, so this must spell what `Json` spells.
+        members := Map<slice<u8>, Json<M>, M, KY = str_key>(self.allocator)
         t := try self.peek()
         match (t) { rbrace { _ := self.bump(); return ok(Json.object(members)) }  _ { } }
         loop {
@@ -451,22 +457,23 @@ parse :: <M: Allocator> (allocator: M, src: slice<u8>) -> Result<Json<M>, Error>
 
 
 // ============================================================================
-// json.print  --  a derived Formattable instance, as an ordinary def (NOTE 5)
+// json.print  --  a Formattable instance for Json. An ordinary named def; a
+// caller reaches it exactly as it reaches any other name.
 // ============================================================================
 
-:: <M> -> fmt.Formattable<Json<M>> {
+json_fmt :: <M> -> fmt.Formattable<Json<M>> {
     format = (v, w) -> () {
         match (v) {
             null      { io.write(w, "null") }
             truth (b) { io.write(w, if (b) { "true" } else { "false" }) }
-            number(n) { fmt.Formattable<f64>.format(n, w) }
+            number(n) { fmt.fmt_f64.format(n, w) }
             text  (s) { io.write(w, "\""); write_escaped(s, w); io.write(w, "\"") }
 
             array (xs) {
                 io.write(w, "[")
                 for (i := 0; i < xs.count; i += 1) {
                     if (i > 0) { io.write(w, ",") }
-                    self.format(xs[i], w)          // this instance; see NOTE 7
+                    self.format(xs[i], w)          // this instance, not `spaced`
                 }
                 io.write(w, "]")
             }
@@ -493,16 +500,16 @@ parse :: <M: Allocator> (allocator: M, src: slice<u8>) -> Result<Json<M>, Error>
 }
 
 // ----------------------------------------------------------------------------
-// `spaced` -- a SECOND Formattable<Json>. Named, so it is never searched; the
-// caller reaches it by hand with `<F = spaced>`.
+// `spaced` -- a SECOND Formattable<Json>. It is reached exactly as `json_fmt`
+// is, by a caller writing `<F = spaced>`. Neither of the two is first.
 //
-// It differs from the pooled instance in exactly one character: `", "` instead
-// of `","`. Everything else delegates. It is why an instance has to be able to
+// It differs from `json_fmt` in exactly one character: `", "` instead of
+// `","`. Everything else delegates. It is why an instance has to be able to
 // name itself.
 //
 // READ THE THREE SELF-REFERENCES BELOW. Two are recursion (`self`) and one is
-// deliberate delegation (`Formattable<Json>`). Without `self` all three would
-// be the same text, and two of them would be silently wrong.
+// deliberate delegation (`json_fmt<M>`). They sit in one block, mean opposite
+// things, and nothing but reading them says which is which.
 // ----------------------------------------------------------------------------
 
 spaced :: <M> -> fmt.Formattable<Json<M>> {
@@ -541,34 +548,33 @@ spaced :: <M> -> fmt.Formattable<Json<M>> {
                 io.write(w, "}")
             }
 
-            _ { fmt.Formattable<Json<M>>.format(v, w) }
-            //  ^^^^^^^^^^^^^^^^^^^^^^^ THE DEFAULT, on purpose. null, bool,
-            //  number and string contain no Json, so there is nothing to
-            //  recurse into and delegating is exactly right. Both spellings
-            //  are needed in one instance, and they read differently.
+            _ { json_fmt<M>.format(v, w) }
+            //  ^^^^^^^^^^^ THE OTHER INSTANCE, on purpose. null, bool, number
+            //  and string contain no Json, so there is nothing to recurse
+            //  into and delegating is exactly right. Both spellings are needed
+            //  in one instance, and they read differently.
         }
     }
 }
 
 // WHAT IT PRINTS.  Source: {"name":"z","tags":[1,2,3],"ok":true}
 //
-//     to_string(heap, doc)                 {"name":"z","tags":[1,2,3],"ok":true}
-//     to_string<F = spaced>(heap, doc)     {"name": "z", "tags": [1, 2, 3], "ok": true}
+//     to_string<F = json_fmt<M>>(heap, doc)  {"name":"z","tags":[1,2,3],"ok":true}
+//     to_string<F = spaced<M>>(heap, doc)    {"name": "z", "tags": [1, 2, 3], "ok": true}
 //
-// The override reaches all the way down. Written with
-// `fmt.Formattable<Json>.format` in the array arm instead, it would print
+// The choice reaches all the way down. Written with `json_fmt<M>.format` in
+// the array arm instead, it would print
 //
-//                                          {"name": "z", "tags": [1,2,3], "ok": true}
-//                                                                 ^^^^^^^
-// -- spaced at the top level, default underneath, with no type error available
-// to catch it, because both spellings have the same type and one of them is
-// what you wanted.
+//                                            {"name": "z", "tags": [1,2,3], "ok": true}
+//                                                                   ^^^^^^^
+// -- spaced at the top level, the other instance underneath, with no type
+// error available to catch it, because the two have the same type and one of
+// them is what you wanted.
 //
-// A NAMED instance could also have written `spaced.format(...)`, which is
-// ordinary recursion and needs no new rule. `self` is preferred because the
-// anonymous pooled instances have no name by construction, and because a
-// parameterised instance would otherwise have to re-thread its own
-// compile-time arguments by hand. See NOTE 7 in rules.z.
+// `spaced<M>.format(...)` says the same thing as `self.format(...)` and needs
+// no new rule. `self` is preferred because it carries this instance's
+// compile-time arguments with it, so a recursion cannot drift from the
+// instance it is written inside. It is the one spelling with no wrong version.
 
 write_escaped :: (s: slice<u8>, w: ptr<Writer>) -> () {
     for (i := 0; i < s.len; i += 1) {
@@ -639,24 +645,29 @@ main :: () -> () {
     // pointer is here only because Arena has mutable state to share.
     Doc :: Json<ptr<Arena>>
 
+    // Three lines and not one, because a printer is parameterised on the same
+    // allocator and has to be applied by hand. Same move, same place.
+    doc_fmt    :: json_fmt<ptr<Arena>>
+    doc_spaced :: spaced<ptr<Arena>>
+
     src := "{\"name\":\"z\",\"tags\":[1,2,3],\"ok\":true}"
 
     match (parse(&arena, src)) {          // -> Result<Doc, Error>
         err (e) {
             io.write(io.out, "parse error at ")
-            io.write(io.out, fmt.to_string(heap, e.at))
+            io.write(io.out, fmt.to_string<F = fmt.fmt_u32>(heap, e.at))
             io.write(io.out, ": ")
             io.write(io.out, e.why)
         }
         ok (doc) {
             // round-trip
-            io.write(io.out, fmt.to_string(heap, doc))
+            io.write(io.out, fmt.to_string<F = doc_fmt>(heap, doc))
 
-            // Override the solver by naming the instance, and the override
-            // reaches the children. See the note above `spaced`.
+            // A different instance, the same call, and the choice reaches the
+            // children. See the note above `spaced`.
             //
             //   {"name": "z", "tags": [1, 2, 3], "ok": true}
-            io.write(io.out, fmt.to_string<F = spaced>(heap, doc))
+            io.write(io.out, fmt.to_string<F = doc_spaced>(heap, doc))
 
             // NO PYRAMID. `match` is an EXPRESSION, so a one-arm-plus-`_`
             // match BINDS rather than nesting -- each line either produces a
@@ -670,12 +681,12 @@ main :: () -> () {
             // `sum_numbers` is an ordinary call, not a callback.
             total := 0.0
             for (i := 0; i < xs.count; i += 1) { total = sum_numbers(total, xs[i]) }
-            io.write(io.out, fmt.to_string(heap, total))              // 6
+            io.write(io.out, fmt.to_string<F = fmt.fmt_f64>(heap, total))  // 6
 
             // closure + erasure
             n := 0
             each_child(doc, &tally(&n))
-            io.write(io.out, fmt.to_string(heap, n))                  // 3
+            io.write(io.out, fmt.to_string<F = fmt.fmt_u32>(heap, n))      // 3
         }
     }
 }
@@ -691,16 +702,16 @@ main :: () -> () {
 //
 //
 // ----------------------------------------------------------------------------
-// WHAT HELD UP  (do not lose these)
+// WHAT HELD UP  (do not lose these)  --  and, marked CUT, what did not
 // ----------------------------------------------------------------------------
 //
-// [W1] A TYPE HOLE TAKES AN OUTPUT OUT OF A SIGNATURE rather than moving it
-//      somewhere else. `Add<A, B>` carries `Out: type` (unified.z), so `a + n`
-//      in `sum_numbers` names only the operands and the result type comes back
-//      from the instance. A hole is not a parameter, and that is the point:
-//      the solver searches on `A` and `B`, and an output must never be a
-//      search key. A policy is never coerced to a fat pointer, so the hole
-//      costs nothing at the use site either.
+// [W1] CUT, ALONG WITH THE PROBLEM IT SOLVED. A type hole took an output out
+//      of a signature rather than moving it elsewhere: `Add<A, B>` carried
+//      `Out: type`, so `a + n` in `sum_numbers` named only the operands and
+//      the result type came back from the instance. `Out` was the only
+//      `: type` hole in the language and the arithmetic policies were its only
+//      user. Those are instructions now. `a + n` reads exactly as it did, and
+//      there is no longer a rule behind it to get right.
 //
 // [W2] `X :: (a: A, b: B) -> self {}` is a struct declaration, with no struct
 //      form. "Runtime params of a `-> self` def ARE fields" is the single
@@ -715,15 +726,20 @@ main :: () -> () {
 //      `{at, found}` is the shape of half of all container internals and the
 //      names land at the call site (`r.found`) rather than in a throwaway type.
 //
-// [W5] `= ?` solver params work in TYPE position, not just call position:
-//      `Map<slice<u8>, Json, ptr<Allocator>>` leaves `KY` to the solver. This
-//      falls out of policies being zero-sized compile-time bindings, and it
-//      is what keeps the JSON type declaration readable.
+// [W5] CUT. `= ?` reached TYPE position and not just call position, so
+//      `Map<slice<u8>, Json, ptr<Allocator>>` could leave `KY` to the solver,
+//      and that is what kept the `Json` declaration short. The bill for losing
+//      it is visible above: the key policy is part of the type, so `Json` and
+//      `Parser.object` must spell the same `KY = str_key` with nothing to
+//      infer one from the other. It is a small bill, and it is charged in the
+//      two places that decide, which is the whole argument for paying it.
 //
-// [W6] "A type in value position is the solver's default instance."
-//      `Formattable<Json>.format(...)` inside the anonymous `-> Formattable<Json>`
-//      instance is how one instance delegates to the pooled one. It is a real
-//      rule doing real work, and `reverse_u8` in unified.z leans on it too.
+// [W6] CUT. "A type in value position is the solver's default instance" was
+//      how one instance delegated to another -- `Formattable<Json>.format(...)`
+//      from inside the Json instance. The delegation survives and reads better
+//      as a name: `spaced`'s `_` arm calls `json_fmt<M>.format(v, w)`, which
+//      says WHICH instance instead of implying it. The rule was doing real
+//      work; the work turned out not to need a rule.
 //
 // [W7] The `Tracking` / `ptr<Allocator>` split from NOTE 2 is genuinely nice in
 //      practice. Deciding erasure at the `a : ptr<Allocator> := &arena` line and
@@ -738,7 +754,7 @@ main :: () -> () {
 //   file. `M` in `List<T, M>` is never chosen by anyone, but it must be spelled
 //   in every signature that mentions a list:
 //
-//       sort :: <T, M, O: Ord<T> = ?> (xs: ptr<List<T, M>>)   // unified.z
+//       sort :: <T, M, O: Ord<T>> (xs: ptr<List<T, M>>)   // unified.z
 //
 //   `sort` declares `M` purely so that `List<T, M>` parses. When the type is
 //   recursive (`Json`) it is not merely noise, it is fatal -- see FRICTION 2.

@@ -9,7 +9,9 @@
 // It could not reach five things, and this file was chosen to hit all five:
 //
 //     1. ARITHMETIC ON USER TYPES.        json.z added no two values of its
-//                                         own types. `Vec2 + Vec2` does.
+//                                         own types. `Vec2` does, and with
+//                                         `+` an instruction on primitives
+//                                         it has to spell every one out.
 //     2. HETEROGENEOUS STORAGE.           json.z erased exactly one value
 //                                         (`ptr<Writer>`) and stored none. An
 //                                         ECS is a bag of `ptr<Shape>`.
@@ -46,10 +48,6 @@ Writer    :: io.Writer
 List      :: std.list.List
 Map       :: std.map.Map
 Key       :: std.key.Key
-Add       :: std.num.Add
-Sub       :: std.num.Sub
-Mul       :: std.num.Mul
-Eq        :: std.ord.Eq
 Option    :: core.Option
 Result    :: core.Result
 Fn        :: core.Fn
@@ -57,60 +55,50 @@ Fn2       :: core.Fn2
 
 
 // ============================================================================
-// game.vec2  --  a user type joining the arithmetic
+// game.vec2  --  a user type spelling its own arithmetic
 // ============================================================================
 //
-// Arithmetic is a policy and not a member: `a + b` is `Add<A, B>.add(a, b)`,
-// found by the solver with the operand types as the search key. `[]` and `()`
-// take `self` and stay members. See NOTE 6 in rules.z, and [W11] below for
-// why that split is derived rather than decided.
+// `+ - *` are instructions on f32 and they stop there. A user type publishes
+// MEMBERS instead, and the call site names the type whose arithmetic it is
+// asking for. Nothing is attached from outside and nothing needs to be: the
+// members sit in the block that already declares the fields, which is [W2]
+// from json.z doing one more job.
 //
-// So a type joins in by PUBLISHING INSTANCES, and nothing is attached to Vec2
-// itself. The type declaration is one line ([W2] from json.z, still the best
-// line in the language) and it does not mention arithmetic anywhere. That is
-// what makes `2.0 * v` an ordinary declaration nobody has to own f32 to
-// write, and it is what allows two additions for one type.
-//
-// The result type is a HOLE and not a third parameter: the solver searches on
-// `Mul<Vec2, f32>`'s two operands, and `Vec2` is the answer rather than part
-// of the question. An output must not be a search key. See NOTE 9.
+// This is the section the file was written to exercise and it is the section
+// the language lost. The argument the other way was [P17], and it was a good
+// one -- `2.0 * v` with nobody owning f32, two additions for one type, a
+// `lerp` generic over anything numeric. It lost anyway, to the one thing it
+// could not answer: a policy is reached BY NAME, every instance is now named,
+// and `+` is the one call site that has no name to reach with. [P17] is
+// recorded below as the argument it was.
 
-Vec2 :: (x: f32, y: f32) -> self
-
-:: -> Add<Vec2, Vec2> {
-    Out :: Vec2
-    add = (a, b) -> Vec2 { Vec2(a.x + b.x, a.y + b.y) }
+Vec2 :: (x: f32, y: f32) -> self {
+    add   :: (self, b: Vec2) -> Vec2 { Vec2(self.x + b.x, self.y + b.y) }
+    sub   :: (self, b: Vec2) -> Vec2 { Vec2(self.x - b.x, self.y - b.y) }
+    scale :: (self, s: f32)  -> Vec2 { Vec2(self.x * s,   self.y * s)   }
+    eq    :: (self, b: Vec2) -> bool { self.x == b.x && self.y == b.y   }
 }
 
-:: -> Sub<Vec2, Vec2> {
-    Out :: Vec2
-    sub = (a, b) -> Vec2 { Vec2(a.x - b.x, a.y - b.y) }
-}
-
-:: -> Mul<Vec2, f32> {
-    Out :: Vec2
-    mul = (v, s) -> Vec2 { Vec2(v.x * s, v.y * s) }
-}
-
-// A named second instance, exactly as `reverse_u8` is a second `Ord<u8>`.
-// Naming is what keeps it out of the pool: `a + b` is always the anonymous
-// instance above, and `saturating.add(a, b)` is how you ask for this one. A
-// member could not be written twice, which is the whole of why `+` is a
-// policy and not a member.
-saturating :: -> Add<Vec2, Vec2> {
-    Out :: Vec2
-    add = (a, b) -> Vec2 { Vec2(clamp_unit(a.x + b.x), clamp_unit(a.y + b.y)) }
+// The second addition. It was a second `Add<Vec2, Vec2>` and reachable only
+// by name, because a member cannot be written twice -- which was the whole of
+// why `+` was a policy. With `add` a member there is no first instance for it
+// to be second to, and the call site does not notice: `saturating.add(a, b)`
+// is what it always was, and that is all the naming ever bought.
+saturating :: -> self {
+    add :: (a: Vec2, b: Vec2) -> Vec2 { Vec2(clamp_unit(a.x + b.x), clamp_unit(a.y + b.y)) }
 }
 
 clamp_unit :: (v: f32) -> f32 { if (v > 1.0) { 1.0 } else { if (v < -1.0) { -1.0 } else { v } } }
 
 length_sq :: (v: Vec2) -> f32 { v.x * v.x + v.y * v.y }
 
-// A generic over anything numeric, which reads as arithmetic and is sayable
-// only because arithmetic is a policy. The bare `+` and `*` are checked where
-// `lerp` is INSTANTIATED; naming `Add<T, T>` and `Mul<T, f32>` as bounds is
-// how you ask for the error here instead.
-lerp :: <T> (a: T, b: T, t: f32) -> T { a + (b - a) * t }
+// `lerp :: <T> (a: T, b: T, t: f32) -> T { a + (b - a) * t }` -- a generic
+// over anything numeric, which read as arithmetic and was sayable only while
+// arithmetic was a policy. It is the one thing in this file with no
+// replacement at all: no instruction is generic over `T`, so `lerp` is a
+// function per type and its body reads as a chain rather than as a formula.
+// That is what [P17] was buying, priced.
+lerp :: (a: Vec2, b: Vec2, t: f32) -> Vec2 { a.add(b.sub(a).scale(t)) }
 
 
 // ============================================================================
@@ -118,23 +106,27 @@ lerp :: <T> (a: T, b: T, t: f32) -> T { a + (b - a) * t }
 // ============================================================================
 //
 // A generational handle: the id indexes the storage, the generation says the
-// slot has not been recycled underneath you. `Entity` is one line, as `Span`
-// and `Error` were in json.z.
+// slot has not been recycled underneath you. It was one line, as `Span` and
+// `Error` were in json.z, until equality had to be a member and gave it a
+// body.
 
-Entity :: (id: u32, gen: u32) -> self
-
-// Two instances, and the difference between them is the point. `Eq` is what
-// `==` means. `Key` is what a Map means, and it carries hash AND equals in one
-// block because those two must agree -- json.z's [P11]. A map is allowed to
-// compare its keys differently from `==`; this one does not, so `equals`
-// delegates to the default rather than restating it.
-:: -> Eq<Entity, Entity> {
-    eq = (a, b) -> bool { a.id == b.id && a.gen == b.gen }
+Entity :: (id: u32, gen: u32) -> self {
+    eq :: (self, b: Entity) -> bool { self.id == b.id && self.gen == b.gen }
 }
 
-:: -> Key<Entity> {
+// A member and a policy, and the difference between them is the point.
+// Equality is a member because there is one of it: two handles are the same
+// handle or they are not. `Key` is a policy because a Map is allowed to
+// compare its keys differently from `eq`, and it carries hash AND equals in
+// one block because those two must agree -- json.z's [P11]. This one does not
+// differ, so `equals` delegates to the member rather than restating it.
+//
+// A name is now the only way to reach an instance, so both `Map`s below say
+// `KY = entity_key`. Two declarations, three words each: that is the whole of
+// what the pool was saving here, and the whole of what it was hiding.
+entity_key :: -> Key<Entity> {
     hash   = (k) -> u64  { (k.id * 2654435761) ^ (k.gen * 40503) }
-    equals = (a, b) -> bool { a == b }
+    equals = (a, b) -> bool { a.eq(b) }
 }
 
 NO_ENTITY :: Entity(0, 0)
@@ -152,7 +144,7 @@ Store :: <C, M: Allocator> (allocator: M) -> self {
 
     dense := List<C, M>(allocator)          // the components themselves
     owner := List<Entity, M>(allocator)     // dense[i] belongs to owner[i]
-    index := Map<Entity, u32, M>(allocator) // entity -> dense index
+    index := Map<Entity, u32, M, KY = entity_key>(allocator)  // entity -> dense index
 
     count :: (&self) -> u32 { self.dense.count }
 
@@ -325,7 +317,7 @@ World :: <M: Allocator> (allocator: M) -> self {
 
     next_id := 1
     recycle := List<Entity, M>(allocator)       // despawned ids, ready for reuse
-    live    := Map<Entity, bool, M>(allocator)
+    live    := Map<Entity, bool, M, KY = entity_key>(allocator)
 
     pos   := Store<Vec2, M>(allocator)
     vel   := Store<Vec2, M>(allocator)
@@ -474,7 +466,11 @@ Movement :: <M: Allocator> () -> self {
             // Mutation in place, through the pointer the join yielded.
             // `h.a.* = ...` -- the pointee is written, and nothing in the type
             // says `run` may do that while `name` may not. FRICTION 25.
-            h.a.* = h.a.* + h.b.* * dt
+            //
+            // It used to read `h.a.* + h.b.* * dt`. An integration step is the
+            // one expression a reader takes in by its shape, and the shape is
+            // what the member call costs -- see [P17].
+            h.a.* = h.a.*.add(h.b.*.scale(dt))
         }
     }
 }
@@ -487,7 +483,7 @@ Decay :: <M: Allocator> (rate: f32) -> self {
     run :: (&self, w: ptr<World<M>>, dt: f32) -> () {
         for (i := 0; i < w.vel.count(); i += 1) {
             v := w.vel.slot_at(i)
-            v.* = v.* * (1.0 - self.rate * dt)
+            v.* = v.*.scale(1.0 - self.rate * dt)
         }
     }
 }
@@ -617,7 +613,7 @@ Combat :: <M: Allocator> (bite: i32) -> self {
         me   := match (w.pos.at(e)) { some (p) { p }  none { return Ai.idle() } }
         prey := match (w.pos.at(t)) { some (p) { p }  none { return Ai.idle() } }
 
-        d := prey.* - me.*
+        d := prey.*.sub(me.*)
         if (length_sq(d) < 1.0) {
             match (w.hp.at(t)) {
                 some (h) { h.hp -= self.bite }
@@ -627,7 +623,7 @@ Combat :: <M: Allocator> (bite: i32) -> self {
         }
 
         match (w.vel.at(e)) {
-            some (v) { v.* = d * 0.5 }
+            some (v) { v.* = d.scale(0.5) }
             none     { }
         }
         Ai.hunt(t)
@@ -635,7 +631,7 @@ Combat :: <M: Allocator> (bite: i32) -> self {
 
     run_away :: (&self, w: ptr<World<M>>, e: Entity, to: Vec2) -> Ai {
         me := match (w.pos.at(e)) { some (p) { p }  none { return Ai.idle() } }
-        if (length_sq(to - me.*) < 1.0) { return Ai.idle() }
+        if (length_sq(to.sub(me.*)) < 1.0) { return Ai.idle() }
         Ai.flee(to)
     }
 
@@ -645,10 +641,10 @@ Combat :: <M: Allocator> (bite: i32) -> self {
         bd   := 1000000.0
         for (i := 0; i < w.hp.count(); i += 1) {
             t := w.hp.entity_at(i)
-            if (t == e) { continue }
+            if (t.eq(e)) { continue }
             match (w.pos.at(t)) {
                 some (p) {
-                    d := length_sq(p.* - me.*)
+                    d := length_sq(p.*.sub(me.*))
                     if (d < bd) { bd = d; best = Option<Entity>.some(t) }
                 }
                 none { }
@@ -663,18 +659,19 @@ Combat :: <M: Allocator> (bite: i32) -> self {
 // game.print
 // ============================================================================
 
-:: -> fmt.Formattable<Vec2> {
+vec2_fmt :: -> fmt.Formattable<Vec2> {
     format = (v, w) -> () {
         io.write(w, "(")
-        fmt.Formattable<f32>.format(v.x, w)
+        fmt.fmt_f32.format(v.x, w)
         io.write(w, ", ")
-        fmt.Formattable<f32>.format(v.y, w)
+        fmt.fmt_f32.format(v.y, w)
         io.write(w, ")")
     }
 }
 
-// A PARAMETERISED, NAMED policy instance -- the case NOTE 7 argues from and
-// which nothing in json.z actually exercised. Three things show up at once:
+// A PARAMETERISED policy instance. Every instance is named now, so that half
+// has stopped being remarkable; taking compile-time arguments has not, and
+// nothing in json.z actually exercised one. Three things show up at once:
 //
 //   - `indent: u32 = 2` is a COMPILE-TIME VALUE parameter, the third kind of
 //     compile-time argument, and exactly what `capacity :: 10` in `List` is:
@@ -686,10 +683,13 @@ Combat :: <M: Allocator> (bite: i32) -> self {
 //     arguments stop being a convenience and become the only way to call this.
 //
 //   - `self.row(...)` is [P16] carrying `indent` down with it. Written
-//     `dump.row(...)` the nested levels would silently reset to 2, and written
-//     `Formattable<World<M>>.row(...)` it would not compile, since `row` is a
-//     fresh member and not one of the type's holes. The distinction NOTE 7
-//     introduced is doing exactly the work it was introduced for.
+//     `dump.row(...)` the nested levels would silently reset to 2. Two
+//     spellings, two meanings, and that difference is the whole reason `self`
+//     exists inside an instance. There used to be a third spelling here --
+//     `Formattable<World<M>>.row(...)`, which did not compile because `row` is
+//     a fresh member and not one of the type's holes -- and it is not a
+//     spelling any more: a type in value position meant "whichever instance
+//     the solver picked", and there is no solver.
 dump :: <M, indent: u32 = 2> -> fmt.Formattable<World<M>> {
 
     format = (v, w) -> () {
@@ -707,10 +707,10 @@ dump :: <M, indent: u32 = 2> -> fmt.Formattable<World<M>> {
     row :: (v: World<M>, e: Entity, w: ptr<Writer>) -> () {
         self.pad(w)
         io.write(w, "#")
-        fmt.Formattable<u32>.format(e.id, w)
+        fmt.fmt_u32.format(e.id, w)
         io.write(w, " ")
-        match (v.pos.at(e)) { some (p) { fmt.Formattable<Vec2>.format(p.*, w) }  none { } }
-        match (v.hp.at(e))  { some (h) { io.write(w, " hp="); fmt.Formattable<i32>.format(h.hp, w) }  none { } }
+        match (v.pos.at(e)) { some (p) { vec2_fmt.format(p.*, w) }  none { } }
+        match (v.hp.at(e))  { some (h) { io.write(w, " hp="); fmt.fmt_i32.format(h.hp, w) }  none { } }
         match (v.brain.at(e)) {
             some (a) {
                 io.write(w, " ")
@@ -795,18 +795,19 @@ main :: () -> () {
 
     for (t := 0; t < 4; t += 1) { sched.tick(&w, 0.5) }
 
-    io.write(io.out, fmt.to_string(heap, w))                  // pooled: no instance
+    io.write(io.out, fmt.to_string<F = dump<>>(heap, w))
     io.write(io.out, fmt.to_string<F = dump<indent = 4>>(heap, w))
 
-    // `dump` is NAMED, so it is never searched and the first line above has no
-    // instance to find. json.z's `spaced` had the same property and hid it,
-    // because `Formattable<Json>` also had an anonymous instance in the pool.
-    // Here there is none, so the first line is an error and the file has to
-    // choose: publish `dump<>` anonymously, or make every caller name it.
-    // FRICTION 30 -- there is no way to say "this instance, and also pooled".
+    // Two calls, two formatters, both said out loud. The first line used to
+    // read `fmt.to_string(heap, w)` and it was an ERROR: naming `dump` was
+    // what took it out of the pool, so there was nothing left for that call to
+    // find, and the fix was to publish the default a second time anonymously.
+    // That was FRICTION 30. It is not a friction any more, because there is no
+    // unnamed spelling left to be missing -- `dump<>` IS the default, written
+    // where it is used.
 
     io.write(io.out, "died: ")
-    io.write(io.out, fmt.to_string(heap, log.count))
+    io.write(io.out, fmt.to_string<F = fmt.fmt_u32>(heap, log.count))
 }
 
 
@@ -848,20 +849,33 @@ main :: () -> () {
 //       type error rather than a state that quietly never changes. This is the
 //       strongest argument in either file for `match` being an expression.
 //
-// [W11] THE SHAPE/POLICY TEST ANSWERS QUESTIONS IT WAS NOT DESIGNED FOR.
-//       "Can there legitimately be two?" applied to operators says `[]` and
-//       `()` are members and `+` is a policy, which is exactly the split the
-//       implementation needs, and it was derived rather than decided. When a
-//       one-line test keeps producing the right answer in cases nobody had in
-//       mind, that is evidence the abstraction is real.
+// [W11] THE SHAPE/POLICY TEST ANSWERS QUESTIONS IT WAS NOT DESIGNED FOR --
+//       AND CAN STILL BE OVERRULED. "Can there legitimately be two?" applied
+//       to operators said `[]` and `()` are members and `+` is a policy. Half
+//       of that stands and is the design: `[]` and `()` take `self`, there is
+//       one way for a List to index itself, and both are members today for
+//       exactly the reason the test gave.
 //
-// [W12] [P16] PAYS OFF EXACTLY WHERE NOTE 7 SAID IT WOULD. `dump<indent>` is
-//       the parameterised named instance NOTE 7 argues from, and json.z never
-//       actually had one. `self.row(...)` carries `indent` down; `dump.row(...)`
-//       would reset every nested level to the default; and
-//       `Formattable<World<M>>.row(...)` does not even typecheck, because
-//       `row` is a fresh member and not one of the type's holes. Three
-//       spellings, three distinct meanings, all visible in the text.
+//       The other half was right and lost. There ARE two ways to add two
+//       Vec2 -- `saturating` is still on the page -- and `+` is not a policy
+//       anyway, because a policy is reached by name and an operator has no
+//       name in it. The test answers "is this one or many". It does not
+//       answer "can the call site say WHICH", and that second question is the
+//       one that decided operators. Keep it as a record of a good test's
+//       limit: a one-line test that keeps producing the right answer is still
+//       only answering its own question.
+//
+// [W12] [P16] PAYS OFF ON A PARAMETERISED INSTANCE. `dump<indent>` is one and
+//       json.z never actually had one. `self.row(...)` carries `indent` down;
+//       `dump.row(...)` resets every nested level to the default. Two
+//       spellings, two distinct meanings, both visible in the text, and that
+//       difference is the entire reason `self` exists inside an instance.
+//
+//       There was a third -- `Formattable<World<M>>.row(...)`, which did not
+//       typecheck because `row` is a fresh member and not one of the type's
+//       holes. That distinction was worth drawing while a type in value
+//       position meant something. It does not any more, and losing the case
+//       cost the win nothing: the two that remain are the two that mattered.
 //
 // [W13] THE ALIAS TRICK GENERALISES. `A :: ptr<Arena>` in main is the only
 //       mention of an allocator in the whole application layer, exactly as
@@ -969,58 +983,78 @@ main :: () -> () {
 //   language-level question (is `ptr<Shape>` comparable) still has to be
 //   settled.
 //
-// FRICTION 30 -- AN INSTANCE IS EITHER POOLED OR NAMED, NEVER BOTH. Naming is
-//   what removes it from the pool, so `dump` cannot also be the default
-//   `Formattable<World<M>>` and `fmt.to_string(heap, w)` in main has nothing
-//   to find. json.z hid this: `spaced` was a named SECOND instance and an
-//   anonymous first one already existed.
+// FRICTION 30 -- AN INSTANCE WAS EITHER POOLED OR NAMED, NEVER BOTH. Naming
+//   was what removed an instance from the pool, so `dump` could not also be
+//   the default `Formattable<World<M>>`, and `fmt.to_string(heap, w)` in main
+//   had nothing to find. json.z hid it: `spaced` was a named SECOND instance
+//   and an anonymous first one already existed. The idiom that resolved it was
+//   a one-line forwarder republishing `dump<>` anonymously.
 //
-//   RESOLVED BY IDIOM, no proposal needed -- publish a forwarder:
-//
-//       :: <M> -> fmt.Formattable<World<M>> { format = (v, w) -> () { dump<>.format(v, w) } }
-//
-//   It costs one line, it makes "the default is `dump` with indent 2" explicit
-//   rather than implicit, and it is exactly what `reverse_u8` does in reverse.
-//   Document it; do not add a keyword.
+//   DISSOLVED, and it is the cleanest thing the cut bought. With no pool there
+//   is no pooled/named distinction to fall on the wrong side of, no forwarder,
+//   and no implicit default a reader has to already know. `dump<>` in
+//   `to_string<F = dump<>>` says which formatter, in the call, every time. The
+//   friction was never about `dump`. It was about a lookup that could silently
+//   find nothing, and the answer turned out to be to stop looking things up.
 //
 //
 // ----------------------------------------------------------------------------
 // PROPOSALS
 // ----------------------------------------------------------------------------
 //
-// STATUS. [P19], [P21] and [P23] are open. [P17] and [P22] are not: they are
-// the arguments rules.z and unified.z point at for operators-as-policies and
-// for places, and they stay here because the evidence for each is this file.
+// STATUS. [P19], [P21] and [P23] are open. [P22] is not: places were adopted,
+// and it stays because the evidence for them is this file. [P17] is not
+// either, for the opposite reason -- it was REJECTED, together with the pool
+// it needed. It stays for the same reason: the evidence was this file, and a
+// proposal that lost is worth more written down than deleted.
 //
-// [P17] ARITHMETIC AND COMPARISON OPERATORS ARE POLICIES; `[]` AND `()` STAY
-//       MEMBERS. `a + b` is `Add<A, B>.add(a, b)`, `a == b` is
-//       `Eq<A, B>.eq(a, b)`, `a < b` is `Ord<A>.compare(a, b)` tested against
-//       zero, all solver-found. `a[i]` and `a(x)` stay members, because they
-//       take `self`.
+// [P17] REJECTED. ARITHMETIC AND COMPARISON OPERATORS ARE POLICIES; `[]` AND
+//       `()` STAY MEMBERS. As proposed: `a + b` is `Add<A, B>.add(a, b)`,
+//       `a == b` is `Eq<A, B>.eq(a, b)`, `a < b` is `Ord<A>.compare(a, b)`
+//       tested against zero, every one of them found by the solver on the
+//       operand types. `a[i]` and `a(x)` stay members, because they take
+//       `self`.
 //
 //       Derived from rules.z's own test rather than chosen: two ways to add
-//       two Vec2 (saturating, wrapping) -- yes, so it is a policy; two ways
-//       for a List to index itself -- no, so it is a member. Everything
-//       awkward dissolves at once:
+//       two Vec2 (saturating, wrapping) -- yes, so a policy; two ways for a
+//       List to index itself -- no, so a member. And everything awkward
+//       dissolved at once:
 //
-//         - `2.0 * v` works, because a policy is not attached to a type and
+//         - `2.0 * v` worked, because a policy is not attached to a type and
 //           nobody has to own f32;
-//         - primitives stop being special: `Add<f32, f32>` is a pooled
-//           instance like any other, and the language has no built-in
+//         - primitives stopped being special: `Add<f32, f32>` was a pooled
+//           instance like any other, and the language had no built-in
 //           arithmetic, only instructions inside those instances;
-//         - NOTE 4 is untouched, because these are instances, not extrinsics;
+//         - NOTE 4 was untouched, because these are instances, not extrinsics;
 //         - `lerp :: <T> (a: T, b: T, t: f32) -> T` -- a generic over
-//           "anything numeric" -- becomes sayable, which under the member
+//           "anything numeric" -- became sayable, which under the member
 //           reading it is not, in any form;
-//         - `Ord` and `Eq` are policies, so `<` and `==` land where the
+//         - `Ord` and `Eq` were policies, so `<` and `==` landed where the
 //           standard library already keeps them.
 //
-//       The cost is a fixed precedence table in the language, since a member
-//       name carries none. That is unavoidable in any design and is not
-//       user-extensible, which is the right call.
+//       Every line of that is still true and none of it survived, because the
+//       argument was never against a competing operator design. It was for
+//       the POOL, and it did not know that was what it was arguing. A policy
+//       is reached by NAME; `+` is the one call site in the language that
+//       carries no name and cannot be given one; so operators-as-policies
+//       needs an instance nobody named, which is the pool, which is the
+//       solver. The pool went for reasons with nothing to do with arithmetic
+//       -- an unnamed declaration is invisible, and what one resolves to is a
+//       whole-program question -- and operator overloading went with it,
+//       because it IS the solver rather than a customer of it.
 //
-//       This is the highest value-per-word change available and it removes
-//       machinery rather than adding it.
+//       `Ord`, `Formattable` and `Key` survive as policies precisely where
+//       `Add` could not: `sort`, `to_string` and `Map` take them as ordinary
+//       compile-time parameters, and an ordinary call site can name what it
+//       passes. That is the whole difference, and it is a difference about
+//       spelling, not about how many instances there legitimately are.
+//
+//       The cost is on the page above and it is real: `h.a.*.add(h.b.*.scale(dt))`
+//       for an integration step, `t.eq(e)` for a handle comparison, no
+//       `2.0 * v` in any form, and no `lerp` over `T` in any form. The
+//       proposal's closing line was that it removed machinery rather than
+//       adding it. That was true, and it is why it lost -- cutting the pool
+//       removed more.
 //
 // [P21] THE BLOCK IS THE CONSTRUCTOR. A `-> self` block may contain plain
 //       statements, run in textual order at construction, interleaved with the
@@ -1118,10 +1152,14 @@ main :: () -> () {
 // vocabulary -- sums, `try`, `match`, `self`. This file MUTATES and STORES,
 // and everything it found is downstream of those two verbs. The declaration
 // form itself did not bend: `-> self` blocks as systems, generic stores erased
-// to one shape, a policy as a state machine's formatter, all of it worked, and
-// the shape/policy test answered a question (operators) it was never designed
-// for, correctly, which is the best evidence in either file that the
-// abstraction is real rather than tidy.
+// to one shape, a policy as a state machine's formatter, all of it worked.
+//
+// The one thing this file argued for and lost is operators-as-policies
+// ([P17]), and it lost to a property of the POOL rather than to a better
+// operator design -- which is the most useful way to lose, because what
+// replaced it is shorter to specify and every dispatch above is now written
+// where it happens. The bill is `h.a.*.add(h.b.*.scale(dt))`, and it is
+// itemised rather than hidden, which is the trade the whole language makes.
 //
 // What is missing is not more declaration syntax. The language can say what a
 // value IS and where it lives; what it still cannot say is WHO MAY WRITE IT

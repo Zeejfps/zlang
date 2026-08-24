@@ -40,9 +40,7 @@
 //         name := v      runtime member.       A field; occupies storage.
 //         name : T       a HOLE -- see below.  No binder at all.
 //
-//     A hole's type may be `type`, which makes it an ASSOCIATED TYPE -- see
-//     below. `Out :: Vec2` fills one, and is an ordinary compile-time member.
-//
+
 // BINDER
 //     `::` or `:=`. The thing between a name and its value. `:` is NOT a
 //     binder -- it is type ascription and nothing else, so `x : u32 := 3`
@@ -90,29 +88,6 @@
 //
 //     A hole is the single mechanism behind interfaces AND sum types. What it
 //     means depends on the projection -- see PROJECTION.
-//
-// ASSOCIATED TYPE
-//     A hole whose type is `type`:
-//
-//         Mul :: <A, B> -> self {
-//             Out: type
-//             mul: (a: A, b: B) -> self.Out
-//         }
-//
-//     Not a new construct. `type` is an ordinary type whose values are types,
-//     so a hole of that type is a type the instance supplies rather than one
-//     the caller chooses. The line between it and a compile-time PARAMETER is
-//     who decides: the solver searches on parameters, so anything the caller
-//     must know in order to find an instance is a parameter, and anything the
-//     instance itself determines is a hole. A result type cannot be a
-//     parameter -- you would have to know the answer to look it up.
-//
-//     ONLY A POLICY MAY CARRY ONE. The argument above is about SEARCH, and a
-//     policy is what the solver searches. A shape exists to be erased, and a
-//     vtable slot whose type an implementer supplies has no layout, so a type
-//     hole in a shape needed a second rule -- fill it at the coercion -- which
-//     bought one signature and went out with `Iterator`. So the shape/policy
-//     test below reads VALUE holes only and never has to except anything.
 //
 // PROJECTION
 //     What comes after `->`. It says what escapes the block, and it is what
@@ -214,23 +189,20 @@
 //     `sorted()`, a Haskell typeclass instance.
 //
 //     Dispatch: `O.compare(a, b)` -- the CALL SITE decides, by choosing O.
-//     Defaulting: written anonymously, it goes in the solver POOL and is
-//     found automatically. Written with a name, it is reachable only by hand.
+//     Every instance has a name and the caller writes it:
+//     `sort<O = reverse_u8>(&xs)`. There is no default and nothing is
+//     searched for.
 //
-//     MOST OPERATORS ARE POLICIES, and it is the test below that says so
-//     rather than a decision:
-//
-//         a + b   ->  Add<A, B>.add(a, b)      two ways to add two vectors
-//         a == b  ->  Eq<A, B>.eq(a, b)        (saturating, wrapping) -> policy
-//         a < b   ->  Ord<A>.compare(a, b) < 0
+//     THE OPERATORS ARE WHERE THIS BIT. The test below says `+`, `==` and `<`
+//     are policies -- two ways to add two vectors, so addition is a choice --
+//     and it is right. But an operator has nowhere to write a name, so it can
+//     only reach a policy that can be found WITHOUT one, and that is a solver.
+//     With the pool gone, arithmetic is built in on the primitives and a user
+//     type publishes members: `v.add(w)`, `v.scale(2.0)`, `a.eq(b)`.
+//     `2.0 * v` has no spelling. See NOTE 6 in rules.z.
 //
 //         a[i]    ->  a member                 one way for a List to index
 //         a(x)    ->  a member                 itself -> shape
-//
-//     Which is why `2.0 * v` works: a policy is attached to nothing, so the
-//     instance for the flipped operand order is just another declaration and
-//     nobody has to own f32. An operator always names the solver's default;
-//     `saturating.add(a, b)` is how you ask for a different one.
 //
 // ----------------------------------------------------------------------------
 // WHICH ONE AM I WRITING?
@@ -277,9 +249,9 @@
 //     happening to match. There is no hole in scope, so `alloc` is a fresh
 //     member, written `::`.
 //
-//     A policy instance is the opposite. It MUST name its type in the
-//     projection, because that is how the solver finds it. So the type's holes
-//     are in scope, and `format` fills one, written `=`.
+//     A policy instance is the opposite. It NAMES its type in the projection --
+//     `hex_u8 :: -> Formattable<u8>` -- so the type's holes are in scope, and
+//     `format` fills one, written `=`.
 //
 //                          SHAPE                     POLICY
 //         satisfied by     structure -- the member   naming the type in the
@@ -324,38 +296,16 @@
 // DISPATCH VOCABULARY
 // ============================================================================
 //
-// SOLVER
-//     The compile-time search that fills a `= ?` parameter. When you write
-//     `sort(&xs)` and sort wants an `O: Ord<T> = ?`, nothing at the call site
-//     mentions O, so the solver goes and finds one.
-//
-// POOL
-//     What the solver searches: every ANONYMOUS declaration. `:: -> Ord<u8>`
-//     with no name on the left is in the pool. `reverse_u8 :: -> Ord<u8>` is
-//     not, and can only be reached by writing its name.
-//
-// COHERENCE
-//     The rule about the pool: EXACTLY ONE anonymous instance per (policy,
-//     type) in a program, and the pool is whole-program rather than scoped to
-//     what a module imported. A second instance, or one that overlaps an
-//     existing one, is an error reported against the declarations. There is no
-//     priority order and no most-specific-wins.
-//
-//     There is NO ORPHAN RULE -- anyone may write an instance for anyone's
-//     type, which is the entire advantage policies hold over traits. What
-//     replaces the check is a convention: an anonymous instance is a claim on
-//     the GLOBAL DEFAULT, so publish one only for a policy or a type you own.
-//     Two libraries claiming the same one is a build error, and the fix is for
-//     one of them to name its instance. See NOTE 8 in rules.z.
-//
 // INSTANCE
-//     One filled-in policy. `reverse_u8` is an instance of `Ord<u8>`.
+//     One filled-in policy, and always a NAMED one. `ord_u8` and `reverse_u8`
+//     are both instances of `Ord<u8>`; neither is preferred, and a caller that
+//     wants one says which.
 //     (Note the collision with the everyday sense of "an instance of a
 //     struct". Another casualty of the Haskell vocabulary.)
 //
 // MONOMORPHISE
-//     Compile a separate copy of a generic per concrete type. `List<u8>(mem)`
-//     with `mem: Heap` produces code specific to Heap: calls are direct, the
+//     Compile a separate copy of a generic per concrete type. `List<u8>(heap)`
+//     with `heap: Heap` produces code specific to Heap: calls are direct, the
 //     allocator field is 0 bytes. The cost is that `List<u8, Heap>` and
 //     `List<u8, Arena>` are different types that cannot share an array.
 //
@@ -421,8 +371,9 @@
 //     if while for loop return continue break
 //
 // `type` is NOT in this list. It is a built-in type name whose values are
-// types, with exactly the status of `u32` and `bool`, and it is what makes
-// `Out: type` an ordinary hole rather than a new construct.
+// types, with exactly the status of `u32` and `bool`. It appears only as the
+// type of a compile-time parameter -- there is no hole of type `type`, and so
+// nothing here of what other languages call an associated type.
 //
 //
 // ============================================================================
@@ -439,9 +390,8 @@
 //     impl        an ordinary declaration whose projection is the shape.
 //     class       -- 
 //     operator    `[]` and `()` are members with symbolic names. The rest --
-//                 `+`, `==`, `<` -- are POLICIES: `a + b` is
-//                 `Add<A, B>.add(a, b)`, found by the solver. Which is which
-//                 is decided by the shape/policy test, not by a list.
+//                 `+`, `==`, `<` -- are instructions on the primitives and do
+//                 not overload. A user type publishes `add`, `scale`, `eq`.
 //     pub         the projection is the export list: `-> {a, b}`.
 //     dyn         `ptr<Shape>`.
 //     import      an ordinary compile-time binding of an ordinary function:

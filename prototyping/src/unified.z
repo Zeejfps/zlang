@@ -38,54 +38,36 @@ Fn2 :: <A, B, R> -> self { (): (&self, a: A, b: B) -> R }
 
 
 // ============================================================================
-// std.num  --  the operator policies
+// std.num  --  arithmetic is built in, and stops there
 // ============================================================================
 //
-// One policy per operator, each with TWO operand types and an output type it
-// decides for itself. Both halves of that are forced by the case that made
-// operators policies in the first place:
+// `+ - * / %`, `== !=`, `< <= > >=` and unary `-` are INSTRUCTIONS on the
+// primitives, and they desugar to nothing. There is no operator overloading
+// and no `operator` keyword, so a fixed precedence table is the whole of the
+// grammar for them.
 //
-//     v * 2.0        Vec2 and f32 -- so the operands may differ
-//     Vec2           -- and the result matches neither of them positionally
+// THIS IS WHAT REMOVING THE POOL COST, and it is worth naming rather than
+// hiding. Arithmetic was a policy: `a + b` meant `Add<A, B>.add(a, b)`, with
+// the operand types as the search key, which is how `2.0 * v` worked when
+// nobody owns f32. That reading needs a type in value position to mean "the
+// instance the solver picked" -- and with every instance named, `+` has
+// nothing to name. Operator overloading IS the solver; it does not survive it.
 //
-// `Out` is a HOLE and not a third parameter, and the difference is the whole
-// argument for type holes: the solver searches on a policy's PARAMETERS, so a
-// third parameter would have to be known at the call site before the instance
-// that determines it could be found. An output must not be a search key.
-// See NOTE 9.
+// So a user type gets ordinary members, and the call site says which type's
+// arithmetic it is asking for.
 
-Add :: <A, B> -> self { Out: type;  add: (a: A, b: B) -> self.Out }
-Sub :: <A, B> -> self { Out: type;  sub: (a: A, b: B) -> self.Out }
-Mul :: <A, B> -> self { Out: type;  mul: (a: A, b: B) -> self.Out }
-Div :: <A, B> -> self { Out: type;  div: (a: A, b: B) -> self.Out }
-Rem :: <A, B> -> self { Out: type;  rem: (a: A, b: B) -> self.Out }
-Neg :: <A>    -> self { Out: type;  neg: (a: A)       -> self.Out }
+Vec2 :: (x: f32, y: f32) -> self {
+    add   :: (self, b: Vec2) -> Vec2 { Vec2(self.x + b.x, self.y + b.y) }
+    sub   :: (self, b: Vec2) -> Vec2 { Vec2(self.x - b.x, self.y - b.y) }
+    scale :: (self, s: f32)  -> Vec2 { Vec2(self.x * s,   self.y * s)   }
+    eq    :: (self, b: Vec2) -> bool { self.x == b.x && self.y == b.y   }
+}
 
-// The primitives are ordinary pooled instances. Arithmetic is not built in;
-// what is built in is the instruction each of these bodies is.
-:: -> Add<u8, u8> { Out :: u8;  add = (a, b) -> u8 { intrinsic_add_u8(a, b) } }
-:: -> Add<f32, f32> { Out :: f32;  add = (a, b) -> f32 { intrinsic_add_f32(a, b) } }
-:: -> Mul<f32, f32> { Out :: f32;  mul = (a, b) -> f32 { intrinsic_mul_f32(a, b) } }
-// ...and so on, one per (operator, primitive pair). Generated, not written.
-
-// A user type joins in by publishing instances. Nothing is added to Vec2
-// itself, which is what makes `2.0 * v` possible at all -- the instance for
-// the flipped operand order is just another declaration, and it does not have
-// to live near f32 or belong to anyone.
-Vec2 :: (x: f32, y: f32) -> self
-
-:: -> Add<Vec2, Vec2> { Out :: Vec2;  add = (a, b) -> Vec2 { Vec2(a.x + b.x, a.y + b.y) } }
-:: -> Mul<Vec2, f32>  { Out :: Vec2;  mul = (v, s) -> Vec2 { Vec2(v.x * s, v.y * s)     } }
-:: -> Mul<f32, Vec2>  { Out :: Vec2;  mul = (s, v) -> Vec2 { v * s                      } }
-
-:: -> Eq<Vec2, Vec2> { eq = (a, b) -> bool { a.x == b.x && a.y == b.y } }
-
-// A second addition, named, therefore not in the pool. `a + b` never means
-// this one; `saturating.add(a, b)` does. This is the two-of-them that makes
-// arithmetic a policy rather than a member.
-saturating :: -> Add<Vec2, Vec2> {
-    Out :: Vec2
-    add = (a, b) -> Vec2 { Vec2(clamp(a.x + b.x), clamp(a.y + b.y)) }
+// The second addition that made arithmetic a policy in the first place. It is
+// now what it always was underneath -- another name -- and the reading at the
+// call site is the same one `v.add(w)` gets.
+saturating :: -> self {
+    add :: (a: Vec2, b: Vec2) -> Vec2 { Vec2(clamp(a.x + b.x), clamp(a.y + b.y)) }
 }
 
 
@@ -218,59 +200,42 @@ List :: <T, M: Allocator> (allocator: M) -> {push, pop, count, [], span, deinit}
 
 // ============================================================================
 // std.ord  --  Ord is a POLICY: u8 has no one true ordering, and the
-// caller must be able to pick. Nothing is attached to u8. `<`, `<=`, `>` and
-// `>=` desugar to it, and `==` and `!=` to Eq.
+// caller must be able to pick. Nothing is attached to u8. It is not what `<`
+// means -- `<` is an instruction on the primitives -- it is what a function
+// that must be TOLD an ordering takes.
 // ============================================================================
 
 Ord :: <T> -> self {
     compare: (a: T, b: T) -> i32     // no self -> policy
 }
 
-// Equality is separate from ordering, because plenty of types have one and not
-// the other, and homogeneous-by-default like Add is not: `Eq<A, B>` lets a
-// slice compare against a literal without a conversion.
-Eq :: <A, B> -> self {
-    eq: (a: A, b: B) -> bool
-}
+// `Key<K>` in std.map carries hash AND equals in one block, because those two
+// must agree ([P11] in json.z). It is a separate policy for that reason, not
+// because equality needed abstracting: `a == b` on a primitive is an
+// instruction, and a user type publishes an `eq` member.
 
-// Note what this does NOT replace. `Key<K>` in std.map carries hash AND equals
-// in one block, because those two must agree ([P11] in json.z) and because a
-// map's key comparison is a choice -- case-folding or not -- that is allowed
-// to differ from what `==` means. `Eq` is the default; `Key` is the caller's.
-
-// Anonymous -> in the solver pool. This is what `Ord<u8>` resolves to.
-//
-// NOTE THE INTRINSICS, because adopting [P17] made them mandatory and the
-// first draft of this instance was silently infinitely recursive: `a < b`
-// desugars to `Ord<u8>.compare(a, b) < 0`, and inside the pooled `Ord<u8>`
-// that is a call to itself. Every primitive instance is where a desugaring
-// bottoms out, so every primitive instance is written in instructions. It is
-// the same shape of mistake as FRICTION 11 in json.z -- a default instance
-// recursing into itself by writing the obvious thing -- and it is worth
-// keeping visible.
-:: -> Ord<u8> {
+// The ordinary ordering of u8. A NAME, like every instance -- there is no
+// pool, so `Ord<u8>` is a type and never stands for a value.
+ord_u8 :: -> Ord<u8> {
     compare = (a, b) -> i32 {
-        if (intrinsic_lt_u8(a, b)) { return -1 }
-        if (intrinsic_lt_u8(b, a)) { return  1 }
+        if (a < b) { return -1 }
+        if (b < a) { return  1 }
         return 0
     }
 }
 
-// Named -> never searched. Reachable only by hand. `Ord<u8>` on the right is
-// the pooled instance, not this one -- a type in value position is what the
-// solver picks.
+// A second ordering, which is the whole reason Ord is a policy rather than a
+// member of u8. It delegates by naming the other instance, which is ordinary
+// name lookup and needs no rule.
 reverse_u8 :: -> Ord<u8> {
-    // `Ord<u8>` here is the solver's default, NOT this block -- deliberate
-    // delegation. `self.compare` would be infinite recursion. Both spellings
-    // are needed and they now look different. See NOTE 7.
-    compare = (a, b) -> i32 { Ord<u8>.compare(b, a) }
+    compare = (a, b) -> i32 { ord_u8.compare(b, a) }
 }
 
 // `_` for the allocator: sort does not care which one, and naming a parameter
 // only so that `List<T, M>` parses is the noisiest thing in the old draft.
 // Every line that used to say `xs.items[j]` now says `xs[j]`, and `sort` no
 // longer knows that a List has a pointer in it.
-sort :: <T, O: Ord<T> = ?> (xs: ptr<List<T, _>>) -> () {
+sort :: <T, O: Ord<T>> (xs: ptr<List<T, _>>) -> () {
     for (i := 1; i < xs.count; i += 1) {
         v := xs[i]
         j := i
@@ -285,15 +250,16 @@ sort :: <T, O: Ord<T> = ?> (xs: ptr<List<T, _>>) -> () {
 
 // ============================================================================
 // std.fmt  --  also a POLICY: you want hex and decimal for the same u8.
+// Every one is named, and every call site says which it meant.
 // ============================================================================
 
 Formattable :: <T> -> self {
     format: (v: T, w: ptr<Writer>) -> ()
 }
 
-:: -> Formattable<u8> {
+fmt_u8 :: -> Formattable<u8> {
     format = (v, w) -> () {
-        if (v >= 10) { self.format(v / 10, w) }   // ME, not the pool. NOTE 7.
+        if (v >= 10) { fmt_u8.format(v / 10, w) }   // recursion is a NAME now
         d := '0' + (v % 10)
         w.write_bytes(&d, 1)
     }
@@ -309,10 +275,11 @@ hex_u8 :: -> Formattable<u8> {
     }
 }
 
-// A derived instance is an ordinary def: args on the left, result on the
-// right. The solver matches the return type. No special impl syntax, no
-// pattern on the left-hand side. See NOTE 5.
-:: <T, M, F: Formattable<T> = ?> -> Formattable<List<T, M>> {
+// What used to be a DERIVED INSTANCE, which the solver built by unifying
+// against this return type and then solved `F` for in turn. It is an ordinary
+// compile-time function: you apply it, and the application is the instance.
+// `to_string<F = list_fmt<F = fmt_u8>>(heap, xs)`.
+list_fmt :: <T, M, F: Formattable<T>> -> Formattable<List<T, M>> {
     format = (v, w) -> () {
         io.write(w, "[")
         for (i := 0; i < v.count; i += 1) {
@@ -320,6 +287,16 @@ hex_u8 :: -> Formattable<u8> {
             F.format(v[i], w)
         }
         io.write(w, "]")
+    }
+}
+
+vec2_fmt :: -> Formattable<Vec2> {
+    format = (v, w) -> () {
+        io.write(w, "(")
+        fmt_f32.format(v.x, w)
+        io.write(w, ", ")
+        fmt_f32.format(v.y, w)
+        io.write(w, ")")
     }
 }
 
@@ -339,7 +316,7 @@ StringWriter :: <M: Allocator> (allocator: M) -> self {
     finish :: (&self) -> slice<u8> { self.buf.span() }
 }
 
-to_string :: <T, M: Allocator, F: Formattable<T> = ?> (allocator: M, v: T) -> slice<u8> {
+to_string :: <T, M: Allocator, F: Formattable<T>> (allocator: M, v: T) -> slice<u8> {
     b := StringWriter(allocator)
     F.format(v, &b)          // &b coerces to ptr<Writer>; the fat pointer is
     b.finish()               // built right here, and only here
@@ -358,19 +335,19 @@ main :: () -> () {
     xs.push(2)
     xs.push(1)
 
-    io.write(io.out, to_string(heap, xs[0]))             // "2"
-    io.write(io.out, to_string(heap, xs))                // "[2, 1]"
+    // EVERY POLICY IS NAMED. There is no default and nothing is searched for,
+    // so the element formatter and the list formatter are both visible, and
+    // the second is the first applied to it.
+    io.write(io.out, to_string<F = fmt_u8>(heap, xs[0]))                 // "2"
+    io.write(io.out, to_string<F = list_fmt<F = fmt_u8>>(heap, xs))      // "[2, 1]"
+    io.write(io.out, to_string<F = hex_u8>(heap, xs[0]))                 // "02"
+    io.write(io.out, to_string<F = list_fmt<F = hex_u8>>(heap, xs))      // "[02, 01]"
 
-    // Override the solver by naming the policy. It is a compile-time
-    // argument passed by name, so it uses `=`, like any other default.
-    io.write(io.out, to_string<F = hex_u8>(heap, xs[0])) // "02"
-    io.write(io.out, to_string<F = hex_u8>(heap, xs))    // "[02, 01]"
-
-    sort(&xs)                          // Ord<u8> from the pool
-    sort<O = reverse_u8>(&xs)          // by hand
+    sort<O = ord_u8>(&xs)
+    sort<O = reverse_u8>(&xs)
 
     match (xs.pop()) {
-        some (v) { io.write(io.out, to_string(heap, v)) }
+        some (v) { io.write(io.out, to_string<F = fmt_u8>(heap, v)) }
         none     { io.write(io.err, "empty") }
     }
 
@@ -386,18 +363,20 @@ main :: () -> () {
     ys := List<u8>(boxed)
     defer ys.deinit()
 
-    // Operators are policy calls, so this is `Add<Vec2, Vec2>.add(...)` and
-    // then `Mul<f32, Vec2>.mul(...)`. Neither line needs Vec2 to own anything,
-    // and the second one is the case a member could not have expressed.
-    v := Vec2(1.0, 2.0) + Vec2(3.0, 4.0)
-    w := 2.0 * v
-    if (w == Vec2(8.0, 12.0)) { io.write(io.out, "yes") }
-    io.write(io.out, to_string(heap, saturating.add(v, w)))  // the named one, by hand
+    // Arithmetic on a user type is a member call. `2.0 * v` has no spelling
+    // -- `v.scale(2.0)` is the same operation asked for from the type that
+    // owns it, which is the trade the pool paid for and no longer buys.
+    v := Vec2(1.0, 2.0).add(Vec2(3.0, 4.0))
+    w := v.scale(2.0)
+    if (w.eq(Vec2(8.0, 12.0))) { io.write(io.out, "yes") }
+    io.write(io.out, to_string<F = vec2_fmt>(heap, saturating.add(v, w)))
 
     // A closure is what is left over: a block holding `allocator` with one member
     // named `()`. A closure is a struct; that is the whole point.
     print_u8 :: <M: Allocator> (allocator: M) -> self {
-        () :: (&self, v: u8) -> () { io.write(io.out, to_string(self.allocator, v)) }
+        () :: (&self, v: u8) -> () {
+            io.write(io.out, to_string<F = fmt_u8>(self.allocator, v))
+        }
     }
     p := print_u8(heap)
     p(7)                               // -> p.()(7)
