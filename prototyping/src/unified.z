@@ -706,19 +706,28 @@ main :: () -> () {
 //     ambiguity. Error at the use site, or first-wins, or one-per-module? Still
 //     the biggest unanswered question in the file.
 //
-//   - MONOMORPHISATION AND RECURSIVE TYPES, and now the closest rival for that
-//     title. A JSON value parameterised by its allocator is `Json<M>`, its
-//     arrays are `List<Json<M>, M>`, and M then appears in the parser, the
-//     printer, the error type and every user function. Two documents built from
-//     different allocators are DIFFERENT TYPES and cannot be compared, merged
-//     or stored together. The only livable answer found so far is to erase at
-//     the type declaration (`ptr<Allocator>`), which means the headline feature
-//     is unavailable for exactly the data structures people write most.
+//   - MONOMORPHISATION IS VIRAL THROUGH CONTAINING TYPES. A compile-time
+//     allocator does not stay in signatures, it climbs into DATA: a struct
+//     with a `Json<M>` field becomes `Config<M>`, and whatever holds that
+//     becomes generic too. `_` cannot stop it, because a field's type is
+//     projection position.
+//
+//     This is livable and the answer is an alias -- collapse the parameter
+//     once, in the application (`Doc :: Json<ptr<Arena>>`), and let library
+//     code that PRODUCES the type stay generic in one parameter. Erasing to
+//     `ptr<Shape>` inside the type declaration instead costs ~40% per node
+//     and turns every call indirect; it is the right call only when documents
+//     from different allocators must genuinely share a type.
+//
+//     The residual cost is real but narrow, and it is the honest statement of
+//     NOTE 2's trade for recursive data: ONE ALLOCATOR PER TYPE. `Json<Heap>`
+//     and `Json<Arena>` cannot be compared, merged, or stored together.
 //
 //   - `_` DOES NOT REACH PROJECTION POSITION, so it half-fixes the plumbing
 //     parameter. `sort` is clean because `M` appears only in a parameter type.
 //     A wrapper is not: `iter :: <T, M> (xs: ptr<List<T, M>>) -> ListIter<T, M>`
-//     must name the type to spell its own return.
+//     must name the type to spell its own return. Nor can `_` say "the same
+//     type I did not name" -- two `_` are two independent fresh parameters.
 //
 //   - MUTABILITY. `get` and `put` both take `&self`. Nothing says `get` does
 //     not write, so nothing can alias-check, and a `ptr<Allocator>` handed to a

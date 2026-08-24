@@ -241,23 +241,40 @@ Map :: <K, V, M: Allocator, KY: Key<K> = ?> (mem: M) -> self {
 // json  --  the value type
 // ============================================================================
 //
-// FRICTION 1 in its sharpest form. The honest declaration is
+// The allocator is a compile-time parameter, which is the whole point of the
+// language, and it stays one here. An earlier pass erased it to `ptr<Allocator>`
+// to keep the signatures short. That was the wrong default, and it is worth
+// knowing what it cost, because `Json` is the element type of its own arrays
+// and so the allocator field is stored in EVERY node:
 //
-//     Json :: <M: Allocator> -> oneof { ... array: List<Json<M>, M> ... }
+//                          M = Heap        M = ptr<Allocator>
+//     List<Json<M>, M>     16 bytes        32 bytes      (mem: 0 vs 16)
+//     Map<..., M>          16 bytes        32 bytes
+//     Json  (max + tag)    24 bytes        40 bytes
 //
-// and then M infects every signature in the parser, the printer, and every
-// caller of any of them, forever, for a parameter nobody ever chooses. So the
-// value type takes the erased allocator instead. NOTE 2 says the static/dynamic
-// trade is "visible in the code instead of hidden in a keyword" -- correct, and
-// this is what that visibility costs when the type is recursive.
+// -- roughly 40% larger per node, and every alloc through a vtable instead of
+// a direct call.
+//
+// The reason erasure was tempting is not signature noise ([P4]'s `_` handles
+// consumers). It is that `M` is VIRAL THROUGH CONTAINING TYPES: a struct with
+// a `Json<M>` field must itself become generic, and so must anything holding
+// THAT, all the way up. `_` cannot stop it, because a field's type is
+// effectively projection position (FRICTION 12).
+//
+// The answer is to collapse the parameter ONCE, in the application, with an
+// alias -- see `Doc` in main. Library code that produces a Json stays generic
+// in one parameter; everything downstream names the alias. The residual cost
+// is real but narrow: ONE ALLOCATOR PER DOCUMENT TYPE. `Json<Heap>` and
+// `Json<Arena>` cannot be compared, merged, or stored in one list. See
+// FRICTION 2.
 
-Json :: -> oneof {
+Json :: <M: Allocator> -> oneof {
     null:   ()
     truth:  bool
     number: f64
     text:   slice<u8>
-    array:  List<Json, ptr<Allocator>>
-    object: Map<slice<u8>, Json, ptr<Allocator>>    // [W5] KY defaults here too
+    array:  List<Json<M>, M>
+    object: Map<slice<u8>, Json<M>, M>              // [W5] KY defaults here too
 }
 
 
@@ -369,7 +386,7 @@ is_digit :: (c: u8) -> bool { c >= '0' && c <= '9' }
 // rather than only alone. Here I dodge it with a lazily-filled lookahead, which
 // is what you would end up writing in C anyway, and costs one Option per peek.
 
-Parser :: (lex: ptr<Lexer>, mem: Allocator) -> self {
+Parser :: <M: Allocator> (lex: ptr<Lexer>, mem: M) -> self {
 
     look := Option<Token>.none()
 
@@ -397,7 +414,7 @@ Parser :: (lex: ptr<Lexer>, mem: Allocator) -> self {
         ok(())
     }
 
-    value :: (&self) -> Result<Json, Error> {
+    value :: (&self) -> Result<Json<M>, Error> {
         t := try self.bump()
         match (t) {
             null      { ok(Json.null())      }
@@ -414,8 +431,8 @@ Parser :: (lex: ptr<Lexer>, mem: Allocator) -> self {
         }
     }
 
-    array :: (&self) -> Result<Json, Error> {
-        xs := List<Json, ptr<Allocator>>(self.mem)
+    array :: (&self) -> Result<Json<M>, Error> {
+        xs := List<Json<M>, M>(self.mem)
         t  := try self.peek()
         match (t) { rbrack { self.bump(); return ok(Json.array(xs)) }  _ { } }
         loop {
@@ -430,8 +447,8 @@ Parser :: (lex: ptr<Lexer>, mem: Allocator) -> self {
         }
     }
 
-    object :: (&self) -> Result<Json, Error> {
-        m := Map<slice<u8>, Json, ptr<Allocator>>(self.mem)
+    object :: (&self) -> Result<Json<M>, Error> {
+        m := Map<slice<u8>, Json<M>, M>(self.mem)
         t := try self.peek()
         match (t) { rbrace { self.bump(); return ok(Json.object(m)) }  _ { } }
         loop {
@@ -457,7 +474,7 @@ Parser :: (lex: ptr<Lexer>, mem: Allocator) -> self {
     }
 }
 
-parse :: (mem: Allocator, src: slice<u8>) -> Result<Json, Error> {
+parse :: <M: Allocator> (mem: M, src: slice<u8>) -> Result<Json<M>, Error> {
     lx := Lexer(src)
     p  := Parser(&lx, mem)
     v  := try p.value()
@@ -470,7 +487,7 @@ parse :: (mem: Allocator, src: slice<u8>) -> Result<Json, Error> {
 // json.print  --  a derived Formattable instance, as an ordinary def (NOTE 5)
 // ============================================================================
 
-:: -> fmt.Formattable<Json> {
+:: <M> -> fmt.Formattable<Json<M>> {
     format = (v, w) -> () {
         match (v) {
             null      { w.write("null") }
@@ -521,7 +538,7 @@ parse :: (mem: Allocator, src: slice<u8>) -> Result<Json, Error> {
 // FRICTION 11 was.
 // ----------------------------------------------------------------------------
 
-spaced :: -> fmt.Formattable<Json> {
+spaced :: <M> -> fmt.Formattable<Json<M>> {
     format = (v, w) -> () {
         match (v) {
 
@@ -557,7 +574,7 @@ spaced :: -> fmt.Formattable<Json> {
                 w.write("}")
             }
 
-            _ { fmt.Formattable<Json>.format(v, w) }
+            _ { fmt.Formattable<Json<M>>.format(v, w) }
             //  ^^^^^^^^^^^^^^^^^^^^^^^ THE DEFAULT, on purpose. null, bool,
             //  number and string contain no Json, so there is nothing to
             //  recurse into and delegating is exactly right. Both spellings
@@ -603,14 +620,17 @@ write_escaped :: (s: slice<u8>, w: ptr<Writer>) -> () {
 
 // [P15] in action: a closure is a block with a `()` member, so it satisfies
 // `Fn2` structurally and needs no function-type machinery.
-sum_numbers :: (a: f64, v: Json) -> f64 {
+// A pure consumer, so [P4] applies: `_` declines to name the allocator.
+sum_numbers :: (a: f64, v: Json<_>) -> f64 {
     match (v) { number (n) { a + n }  _ { a } }
 }
 
 // Erased callback. A shape in a RUNTIME group already means ptr<Shape>, so
 // `f: Fn2<...>` is the fat pointer. Note the sugar is params-only: the type
 // ARGUMENT in `List<Json, ptr<Allocator>>` below still spells the pointer.
-each_child :: (v: Json, f: Fn2<slice<u8>, Json, ()>) -> () {
+// `M` must be NAMED here: it appears twice and the two must be the same type.
+// Two `_` would be two independent fresh parameters. See FRICTION 12.
+each_child :: <M> (v: Json<M>, f: Fn2<slice<u8>, Json<M>, ()>) -> () {
     match (v) {
         object (m) {
             for (i := 0; i < m.cap; i += 1) {
@@ -628,7 +648,7 @@ each_child :: (v: Json, f: Fn2<slice<u8>, Json, ()>) -> () {
 // Under [P15] this is sugar for a `-> self` block with a `()` member, so the
 // last OPEN question in unified.z answers itself: it has its own type, and it
 // becomes a shared type exactly when you write `ptr<Fn2<...>>`.
-tally :: (out: ptr<u32>) (k: slice<u8>, v: Json) -> () {
+tally :: <M> (out: ptr<u32>) (k: slice<u8>, v: Json<M>) -> () {
     out^ += 1
 }
 
@@ -641,13 +661,19 @@ main :: () -> () {
     heap  := mem.Heap()
     arena := mem.Arena(page, 1 << 20)
 
-    // The parser is allocator-erased by construction (see Json, above), so the
-    // coercion happens once, here, and every Json value shares one type.
-    a : ptr<Allocator> := &arena
+    // ONE LINE COLLAPSES THE PARAMETER for the whole application. Everything
+    // below says `Doc`; no signature here mentions an allocator; calls stay
+    // direct and the allocator field stays out of every node.
+    //
+    // Note `ptr<Arena>` is still MONOMORPHIC -- the pointee type is known, so
+    // dispatch is direct and only the pointer is stored. It is `ptr<Allocator>`,
+    // a pointer to a SHAPE, that costs a fat pointer and indirect calls. The
+    // pointer is here only because Arena has mutable state to share.
+    Doc :: Json<ptr<Arena>>
 
     src := "{\"name\":\"z\",\"tags\":[1,2,3],\"ok\":true}"
 
-    match (parse(a, src)) {
+    match (parse(&arena, src)) {          // -> Result<Doc, Error>
         err (e) {
             io.out.write("parse error at ")
             io.out.write(fmt.to_string(heap, e.at))
@@ -755,15 +781,27 @@ main :: () -> () {
 //   recursive (`Json`) it is not merely noise, it is fatal -- see FRICTION 2.
 //   -> [P4]
 //
-// FRICTION 2 -- MONOMORPHISATION INFECTS RECURSIVE TYPES. A `Json` parameterised
-//   by its allocator is `Json<M>`, its arrays are `List<Json<M>, M>`, and M
-//   appears in the parser, the printer, the error type and every user function.
-//   Two documents from different allocators are different types and cannot be
-//   compared, merged, or stored together. The only livable answer is to erase
-//   at the type declaration (`ptr<Allocator>`), which means the language's
-//   headline feature -- static allocator dispatch -- is unavailable for exactly
-//   the data structures people write most. This is not a syntax bug, but it is
-//   the biggest thing the design has not confronted, and it belongs in OPEN.
+// FRICTION 2 -- MONOMORPHISATION IS VIRAL THROUGH CONTAINING TYPES.
+//   DOWNGRADED. An earlier pass called this fatal and erased the allocator to
+//   `ptr<Allocator>` in the Json declaration. That was wrong, and the erasure
+//   cost ~40% per node plus indirect calls (see the note above `Json`).
+//
+//   What is true: `M` does not stay in signatures, it climbs into DATA. A
+//   struct with a `Json<M>` field becomes `Config<M>`, whatever holds that
+//   becomes generic too, and `_` cannot stop it because a field's type is
+//   effectively projection position (FRICTION 12).
+//
+//   What is false: that erasure is the only way out. Collapse the parameter
+//   once, in the application, with an alias -- `Doc :: Json<ptr<Arena>>`.
+//   Library code that PRODUCES a Json stays generic in one parameter; every
+//   consumer names the alias. This is the Zig answer and it costs one line.
+//
+//   THE RESIDUAL COST, which is real and narrow: ONE ALLOCATOR PER DOCUMENT
+//   TYPE. `Json<Heap>` and `Json<Arena>` are different types and cannot be
+//   compared, merged, or stored in one list. Erasure remains the right call
+//   when you actually need that -- heterogeneous documents in one collection,
+//   or a plugin boundary where the allocator is not known where the type is
+//   declared. It should be the exception, chosen deliberately.
 //
 // FRICTION 3 -- NO REFUTABLE MATCH. `get` knows the slot is `live` because
 //   `probe` said `found`, but the match must still name `empty` and `dead`.
@@ -839,6 +877,19 @@ main :: () -> () {
 //   because `iter` must NAME the elided type to spell its own return type. So
 //   `_` fixes the consumers of a plumbing parameter and not the wrappers, and
 //   FRICTION 1 survives wherever a type is passed through rather than used.
+//
+//   Two further limits, both hit while parameterising `Json`:
+//
+//     - `_` CANNOT SAY "THE SAME TYPE I DID NOT NAME". Two `_` are two
+//       independent fresh parameters, so
+//           each_child :: (v: Json<_>, f: Fn2<slice<u8>, Json<_>, ()>) -> ()
+//       does not mean what it reads as, and M has to be named. `sum_numbers`
+//       one line above CAN use `_`, because it mentions the type once.
+//
+//     - A FIELD'S TYPE IS PROJECTION POSITION. `doc: Json<_>` inside a struct
+//       would have to introduce a parameter on the struct, which is exactly
+//       the propagation `_` was meant to stop. This is why FRICTION 2 needs an
+//       alias rather than a wildcard.
 //
 // FRICTION 10 -- ORDER DEPENDENCE IS UNSTATED. `Slot` references `Entry`
 //   declared after it; `Json` references `Map` declared after it; the anonymous
