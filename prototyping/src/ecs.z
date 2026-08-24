@@ -228,9 +228,9 @@ Store :: <C, M: Allocator> (allocator: M) -> self {
 // at all. It is the single largest thing that worked in this file.
 
 AnyStore :: -> self {
-    remove: (&self, e: Entity) -> bool
-    count:  (&self) -> u32
-    deinit: (&self) -> ()
+    remove :? (&self, e: Entity) -> bool
+    count  :? (&self) -> u32
+    deinit :? (&self) -> ()
 }
 
 // STRUCTURAL MATCHING HAS NO ADAPTER, and this file is where that costs
@@ -260,10 +260,10 @@ Health :: (hp: i32, max: i32) -> self
 // A state machine as a sum, with the state's data in the state. This is what
 // `-> oneof` is for and it reads exactly right.
 Ai :: -> oneof {
-    idle:  ()
-    hunt:  Entity            // who we are chasing
-    flee:  Vec2              // where we are running to
-    dead:  ()
+    idle :? ()
+    hunt :? Entity             // who we are chasing
+    flee :? Vec2               // where we are running to
+    dead :? ()
 }
 
 // FRICTION 20, which json.z raised as FRICTION 7 and which is much worse here.
@@ -455,8 +455,8 @@ join2 :: <A, B, M> (xs: ptr<Store<A, M>>, ys: ptr<Store<B, M>>) -> Join2<A, B, M
 // implementer of it does too.
 
 System :: <M: Allocator> -> self {
-    run:  (&self, w: ptr<World<M>>, dt: f32) -> ()
-    name: (&self) -> slice<u8>
+    run  :? (&self, w: ptr<World<M>>, dt: f32) -> ()
+    name :? (&self) -> slice<u8>
 }
 
 // A stateless system is a block with no fields, so it is zero-sized, and the

@@ -19,13 +19,13 @@
 // ============================================================================
 
 Option :: <T> -> oneof {
-    none: ()
-    some: T
+    none :? ()
+    some :? T
 }
 
 Result :: <T, E> -> oneof {
-    ok:  T
-    err: E
+    ok  :? T
+    err :? E
 }
 
 // `Result` is an ordinary sum and the language knows nothing about it. There
@@ -34,8 +34,8 @@ Result :: <T, E> -> oneof {
 
 // A closure is a block with a `()` member, so a callable is an ordinary shape.
 // One per arity is the cost; see OPEN.
-Fn  :: <A, R>    -> self { (): (&self, a: A)       -> R }
-Fn2 :: <A, B, R> -> self { (): (&self, a: A, b: B) -> R }
+Fn  :: <A, R>    -> self { () :? (&self, a: A)       -> R }
+Fn2 :: <A, B, R> -> self { () :? (&self, a: A, b: B) -> R }
 
 
 // ============================================================================
@@ -76,11 +76,11 @@ saturating :: -> self {
 // std.mem
 // ============================================================================
 
-// Nothing but holes -- two names with types and no binder. Uninstantiable,
-// therefore usable only as a bound or behind a pointer.
+// Nothing but holes -- two names marked `:?`. Uninstantiable, therefore
+// usable only as a bound or behind a pointer.
 Allocator :: -> self {
-    alloc: (&self, n: u32) -> ptr
-    free:  (&self, p: ptr) -> ()
+    alloc :? (&self, n: u32) -> ptr
+    free  :? (&self, p: ptr) -> ()
 }
 
 // The typed layer is an ordinary module of free functions. It is not part of
@@ -123,7 +123,7 @@ Tracking :: <M: Allocator> (inner: M) -> self {
 // ============================================================================
 
 Writer :: -> self {
-    write_bytes: (&self, p: ptr<u8>, n: u32) -> ()
+    write_bytes :? (&self, p: ptr<u8>, n: u32) -> ()
 }
 
 io :: -> {out, err, write} {
@@ -209,7 +209,7 @@ List :: <T, M: Allocator> (allocator: M) -> {push, pop, count, [], span, deinit}
 // ============================================================================
 
 Ord :: <T> -> self {
-    compare: (a: T, b: T) -> i32     // no self -> policy
+    compare :? (a: T, b: T) -> i32     // no self -> policy
 }
 
 // `Key<K>` in std.map carries hash AND equals in one block, because those two
@@ -260,7 +260,7 @@ sort :: <T, O: Ord<T>> (xs: ptr<List<T, _>>) -> () {
 // ============================================================================
 
 Formattable :: <T> -> self {
-    format: (v: T, w: ptr<Writer>) -> ()
+    format :? (v: T, w: ptr<Writer>) -> ()
 }
 
 fmt_u8 :: -> Formattable<u8> {

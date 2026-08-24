@@ -166,7 +166,7 @@ The language cannot yet be implemented from these documents. That is the
 expected state. The documents exist to make the holes countable rather than
 to hide them.
 
-spec.txt carries 89 markers of the form [UNSPECIFIED] (47), [CONFLICT] (14),
+spec.txt carries 89 markers of the form [UNSPECIFIED] (49), [CONFLICT] (12),
 [INVENTED] (12) and [OPEN oq.N] (16), each beginning a line with `>>>`, so
 
     grep '>>>' spec.txt
@@ -175,13 +175,18 @@ lists every known hole. (It also catches the five lines in the INTRODUCTION
 that describe the notation, which is why the raw count is 94.) The tallies
 are repeated in the COVERAGE section at the end of spec.txt.
 
-issues.txt ranks 46 issues in five bands, six of them BLOCKING: no statement
-or control-flow form is specified anywhere, `[]` has five meanings with no
-disambiguation rule, `<` is both comparison and the compile-time bracket,
-bodiless-means-hole contradicts the bodiless record, `-> oneof {a, b}` is
-specified and cannot be parsed, and the rule since written for `<` is
-unvalidated -- the corpus cannot tell it apart from bracket balance alone.
-Any one of those stops a parser.
+issues.txt ranks 46 issues in five bands, five of them still BLOCKING: no
+statement or control-flow form is specified anywhere, `[]` has five meanings
+with no disambiguation rule, `<` is both comparison and the compile-time
+bracket, `-> oneof {a, b}` is specified and cannot be parsed, and the rule
+since written for `<` is unvalidated -- the corpus cannot tell it apart from
+bracket balance alone. Any one of those stops a parser.
+
+The sixth, Z-04, is closed: holes are now marked `:?` rather than inferred
+from a missing binder, so bodiless stopped being the criterion that
+contradicted the bodiless record. The same marker closed Z-28, a DEFECT, for
+the same reason -- `_` is a name declined and is not a hole. Both are marked
+CLOSED in issues.txt rather than removed.
 
 core.txt adds no issues and closes none. It reports eighteen breaks, B-1
 through B-18, of which eleven appear to be new and seven restate or

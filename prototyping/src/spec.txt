@@ -209,9 +209,12 @@ The following character sequences represent operators and punctuation:
     &&   ||   !
     +=   -=   *=   /=   %=
     &=   |=   ^=   <<=  >>=
-    =    :=   ::   :    ->   .*
+    =    :=   ::   :?   :    ->   .*
     (    )    [    ]    {    }
     ,    ;    .
+
+`?` occurs in no other operator and in no literal, so `:?` is lexed by the
+character after the `:` alone, exactly as `::` and `:=` are.
 
     unary_op  = "-" | "!" | "&" | "~" .
     mul_op    = "*" | "/" | "%" | "<<" | ">>" | "&" .
@@ -383,13 +386,15 @@ sole value.
 Signature types
 
 A declaration written with its body left off is a type: the type of the
-values that would fill it. This is why `alloc: (&self, n: u32) -> ptr` is a
-type.
+values that would fill it. This is why the hole `alloc :? (&self, n: u32)
+-> ptr` has a type.
 
     SignatureType = [ TypeParams ] [ Parameters ] "->" Projection .
 
-See DECLARATIONS AND BINDING for the conflict this rule is in with the
-bodiless record declaration.
+Being bodiless makes a TYPE and never makes a hole; the `:?` does that. See
+DECLARATIONS AND BINDING, where hole.bodiless.1 says so, and where the
+conflict this rule used to be in with the bodiless record declaration is
+recorded as closed.
 
 ----------------------------------------------------------------------------
 When a block is a type and when it is a value
@@ -524,7 +529,8 @@ independently optional. Everything to the right of the binder is a function
 literal, so the form is not a declaration form of its own: it is
 `Name binder value`, where the value happens to be a function literal.
 
-    Declaration   = MemberName ":" Type [ Binder Expression ]
+    Declaration   = MemberName ":?" Type
+                  | MemberName ":" Type Binder Expression
                   | MemberName Binder Expression .
 
     Binder        = "::" | ":=" .
@@ -629,10 +635,16 @@ Brackets
 Binders
 
 [bind.ascription.1] `:` is type ascription. It is not a binder and has no
-other meaning.
+other meaning. A member introduced with `:` carries a binder: `name : T`
+alone is not a declaration.
 
-[bind.binder.1] The binder carries the meaning of a member. A hole is a
-member with no binder.
+[bind.binder.1] The mark a member is introduced with carries its meaning. A
+member is introduced with `::`, `:=` or `:?`; the first two are binders and
+supply a value, and the third marks a hole and supplies none.
+
+[bind.marked.1] A hole is marked and is never inferred from an absence. A
+member with a type and no introducing mark does not parse, so a forgotten
+binder is a diagnosed error and not a silently abstract block.
 
 [bind.ct.1] `name :: v` binds `name` at compile time.
 
@@ -642,15 +654,16 @@ member with no binder.
 
 [bind.rt.2] `name : T := v` binds at run time with the type written out.
 
-[bind.hole.1] `name : T` with no binder declares a hole.
+[bind.hole.1] `name :? T` declares a hole.
 
 [bind.undefined.1] `name := undefined` declares a field to be filled later.
 
 >>> [UNSPECIFIED] bind.undefined.1 has no use anywhere in the corpus, and
     nothing states what distinguishes `name := undefined` from the hole
-    `name : T`, what a read before the fill yields, or whether the fill is
+    `name :? T`, what a read before the fill yields, or whether the fill is
     required. `undefined` is not in the keyword budget and is declared
-    nowhere. See U.4.2.
+    nowhere. See U.4.2. The two are now at least spelled apart, which they
+    were not while a hole was written `name : T`.
 
 [bind.assign.1] `=` assigns. It mutates an existing binding, fills a
 declared hole, supplies a parameter default, or passes a compile-time
@@ -687,34 +700,39 @@ the type.
 ----------------------------------------------------------------------------
 Bodiless declarations
 
-[hole.bodiless.1] A bodiless declaration declares a hole. A header of
-bodiless declarations is an abstract module and cannot be instantiated.
+[hole.bodiless.1] A bodiless declaration is not thereby a hole. Being
+bodiless is a property of a member's TYPE and never of the member: what
+makes a member a hole is the `:?` it is introduced with. `Span :: (lo: u32,
+hi: u32) -> self` is a record declaration, and a bodiless `::` or `:=`
+member is a binding whose value happens to have no body.
 
 [bind.bodyless.1] A declaration whose body would be empty may omit it.
 `Span :: (lo: u32, hi: u32) -> self` is a record declaration.
 
->>> [CONFLICT] hole.bodiless.1 against bind.bodyless.1. These cannot both
-    hold as written.
-    Reading A (rules.txt:132): bodiless means hole, so `Span`, `Error`
+    Note. hole.bodiless.1 and bind.bodyless.1 were in conflict while a hole
+    was written `name : T` and inferred from an absence: the same text
+    classified two ways, and the corpus was on one side -- `Span`, `Error`
     (json.z:268), `Entry` (json.z:136), `Health` (ecs.z:258) and `Hit`
-    (ecs.z:413) are holes.
-    Reading B (rules.txt:81): a bodiless declaration with a binder is a
-    record, and those five are records. Under Reading B the distinguishing
-    property is the binder, which hole.bodiless.1 never mentions even though
-    bind.binder.1 has already made the binder the thing that carries
-    meaning. The only illustration hole.bodiless.1 gives --
-    `func insert_item<T>(...);` -- is written in a syntax this language does
-    not have.
+    (ecs.z:413) are all bodiless, all carry `::`, and all are records. The
+    `:?` marker removes the criterion the conflict rested on rather than
+    choosing between the two readings. That closed issues.txt Z-04.
 
 [hole.noheaders.1] Headers are generated from implementations. A header
 cannot be hand-written.
 
+>>> [UNSPECIFIED] hole.noheaders.1 is retained, but the argument that
+    produced it is gone. It followed from bodiless-means-hole: a
+    hand-written header was an abstract module by accident, so headers had
+    to be generated. A header of `:?` members is now abstract on purpose
+    and says so, which is what the marker is for. Whether hole.noheaders.1
+    survives as a decision on other grounds is unanswered here.
+
 ----------------------------------------------------------------------------
 Holes
 
-[hole.def.1] `name : T` with no binder is a hole. This rule and bind.hole.1
-are one rule stated twice; it is stated here in both places because BINDING
-and HOLES are read as one section.
+[hole.def.1] `name :? T` is a hole. This rule and bind.hole.1 are one rule
+stated twice; it is stated here in both places because BINDING and HOLES
+are read as one section.
 
 [hole.meaning.1] The projection decides what a hole means.
 
@@ -738,19 +756,19 @@ rules.txt:111) and is stated here once.
 The three member forms under the two projections:
 
                       -> self                    -> oneof
-    name : T          requirement                variant
+    name :? T         requirement                variant
     name :: v         method / compile-time      method
                       field
     name := v         runtime field              an error
 
-[hole.self.req.1] Under `-> self`, `name : T` is a requirement.
+[hole.self.req.1] Under `-> self`, `name :? T` is a requirement.
 
 [hole.self.method.1] Under `-> self`, `name :: v` is a method or a
 compile-time field.
 
 [hole.self.field.1] Under `-> self`, `name := v` is a runtime field.
 
-[hole.oneof.variant.1] Under `-> oneof`, `name : T` is a variant.
+[hole.oneof.variant.1] Under `-> oneof`, `name :? T` is a variant.
 
 [hole.oneof.method.1] Under `-> oneof`, `name :: v` is a method.
 
@@ -871,22 +889,27 @@ The blank identifier
 
 `_` has four uses.
 
-[wild.def.1] `_` is a hole in a binding position, and that is its whole
-definition.
+[wild.def.1] `_` is a name declined, and that is its whole definition. It
+is never a hole: a hole is marked `:?` by hole.def.1, and none of the four
+uses below is.
 
->>> [CONFLICT] wild.def.1 against hole.def.1 and against three of its own
-    four cases.
-    Reading A (rules.txt:415): the four uses are one idea, `_` is a hole,
-    and a hole is what hole.def.1 says it is.
-    Reading B (the four cases read against hole.def.1): a hole is a member
-    with a type and no binder. `_ := xs.pop()` has a binder and no type.
-    `_ { ... }` is in pattern position, has no type, no binder, and is not a
-    member of anything. `ptr<List<T, _>>` introduces a fresh anonymous
-    compile-time parameter, which creates a binding rather than declining
-    one -- the opposite of the other three. rules.txt:438 proves the last
-    point itself: "two `_` are two independent parameters", which is
-    unintelligible if `_` is a hole of an already-declared type. Under
-    Reading B there are three ideas, not one.
+    Note. wild.def.1 read "`_` is a hole in a binding position" while a
+    hole was `name : T` inferred from an absence, and was in conflict with
+    hole.def.1 and with three of its own four cases: `_ := xs.pop()` has a
+    binder and no type, `_ { ... }` is in pattern position with neither and
+    is not a member of anything, and `ptr<List<T, _>>` introduces a fresh
+    anonymous compile-time parameter -- creating a binding rather than
+    declining one, which is the opposite of a hole. Marking holes `:?`
+    settles it by making `_` and a hole different marks for different acts,
+    and "a name declined" then covers all four uses, the compile-time
+    parameter included: declining to name a parameter still creates it,
+    which is why two `_` are two independent parameters. That closed
+    issues.txt Z-28.
+
+>>> [UNSPECIFIED] wild.def.1 now says what the four uses have in common and
+    not what each one binds. Whether `_` in an expression position is an
+    error, and what a program means that writes `_` where a value is read,
+    are unanswered.
 
 [wild.arm.1] `_ { ... }` is a wildcard match arm. See MATCH.
 
@@ -1477,7 +1500,7 @@ which costs a pointer, a vtable and a name.
     addresses. See U.9.1 and U.9.2.
 
 >>> [OPEN oq.7] Whether an allocator can fail, and how it says so. The
-    `Allocator` shape declares `alloc: (&self, n: u32) -> ptr`, whose
+    `Allocator` shape declares `alloc :? (&self, n: u32) -> ptr`, whose
     projection has no room for a failure. See U.6.1.
 
 >>> [OPEN oq.10] Whether `ptr<Shape>` is comparable.
@@ -1575,7 +1598,8 @@ terminators may be supplied by the semicolon rule in LEXICAL ELEMENTS.
     TypeArgs      = "<" [ TypeArgList [ "," ] ] ">" .
     TypeArgList   = TypeArg { "," TypeArg } .
     TypeArg       = [ identifier "=" ] Expression .
-    Declaration   = MemberName ":" Type [ Binder Expression ]
+    Declaration   = MemberName ":?" Type
+                  | MemberName ":" Type Binder Expression
                   | MemberName Binder Expression .
     Binder        = "::" | ":=" .
     FunctionLit   = SignatureType [ Block ] .
@@ -1885,8 +1909,8 @@ one is the clearest statement of a rule.
 ----------------------------------------------------------------------------
 Markers
 
-    [UNSPECIFIED]   47
-    [CONFLICT]      14
+    [UNSPECIFIED]   49
+    [CONFLICT]      12
     [INVENTED]      12
     [OPEN oq.N]     16
 
@@ -1896,7 +1920,7 @@ All sixteen open questions, OQ-0 through OQ-15, are cited at the point in
 the text where the question arises. The forty-nine unchecked-behaviour
 entries are indexed in Annex B and cited inline where a rule creates one.
 
-The fourteen conflicts, in the order they appear:
+The twelve conflicts, in the order they appear:
 
     1  the two lists of words that are not in the language      KEYWORDS
     2  the keyword budget omits `nil`                           KEYWORDS
@@ -1905,13 +1929,21 @@ The fourteen conflicts, in the order they appear:
     5  a value does not move, against swap-remove               TYPES
     6  compile-time args applied yields a type                  DECLARATIONS
     7  `[]` has four meanings (pointer)                         DECLARATIONS
-    8  bodiless means hole, against the bodiless record         DECLARATIONS
-    9  `_` is one idea, against three of its four uses          DECLARATIONS
-    10 a value may not be dropped silently, against ecs.z       DECLARATIONS
-    11 `[]` has four meanings (full statement)                  EXPRESSIONS
-    12 there is no such thing as a place                        EXPRESSIONS
-    13 `.` reaches through, against deref is never optional     EXPRESSIONS
-    14 an accessor hides storage, against `Map`                 EXPRESSIONS
+    8  a value may not be dropped silently, against ecs.z       DECLARATIONS
+    9  `[]` has four meanings (full statement)                  EXPRESSIONS
+    10 there is no such thing as a place                        EXPRESSIONS
+    11 `.` reaches through, against deref is never optional     EXPRESSIONS
+    12 an accessor hides storage, against `Map`                 EXPRESSIONS
+
+Two conflicts closed when holes were given the `:?` marker, and both closed
+the same way -- by removing the criterion they rested on rather than by
+choosing a reading. They were "bodiless means hole, against the bodiless
+record" (DECLARATIONS, issues.txt Z-04, a BLOCKING issue) and "`_` is one
+idea, against three of its four uses" (DECLARATIONS, issues.txt Z-28). The
+notes recording each are at hole.bodiless.1 and wild.def.1. Both left an
+[UNSPECIFIED] behind, which is why the total is unchanged at 89: a marked
+hole answers what a hole IS and does not answer what hole.noheaders.1 is
+for, or what `_` means in an expression position.
 
 ----------------------------------------------------------------------------
 What this document could not do

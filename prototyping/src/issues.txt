@@ -55,13 +55,19 @@ Within a band, issues are ordered by how much else they block.
 ----------------------------------------------------------------------------
 SUMMARY
 
-    BLOCKING     6      Z-01 .. Z-05, Z-41
+    BLOCKING     6      Z-01 .. Z-05, Z-41      (Z-04 CLOSED, so 5 open)
     SOUNDNESS   10      Z-06 .. Z-14, Z-42
     GAP         12      Z-15 .. Z-25, Z-43
-    DEFECT      14      Z-26 .. Z-37, Z-44, Z-45
+    DEFECT      14      Z-26 .. Z-37, Z-44, Z-45 (Z-28 CLOSED, so 13 open)
     CORPUS       4      Z-38 .. Z-40, Z-46
     ----------------------
-    TOTAL       46
+    TOTAL       46      (44 open, 2 closed)
+
+Z-04 and Z-28 were closed together by giving holes an explicit marker,
+`name :? T`. Both rested on a hole being inferred from a missing binder;
+neither was resolved by choosing between its readings. Counts above are
+kept at their original values with the closures noted, because an id
+belongs to the thing and a retired entry is kept and marked.
 
 45 findings from the three inputs were folded into 15 of these issues as
 duplicates. 6 findings were rejected or corrected; they are at the bottom.
@@ -103,11 +109,16 @@ THE FIVE THAT MATTER MOST
            has no dependencies and should be written before anything else
            acquires a dependency on it.
 
-  5. Z-04  BODILESS MEANS HOLE (rules.txt:132) and "a def whose body would
-           be empty may drop it -- `Span :: (lo, hi) -> self` is a record"
-           (rules.txt:80-81) cannot both hold, and five bodiless records in
-           the corpus prove the second. The criterion the document needs is
-           the binder, which the first rule never mentions.
+  5. Z-04  CLOSED. Was: BODILESS MEANS HOLE (rules.txt:132) against "a def
+           whose body would be empty may drop it -- `Span :: (lo, hi) ->
+           self` is a record" (rules.txt:80-81), with five bodiless records
+           in the corpus proving the second. The criterion the document
+           needed was the binder, which the first rule never mentioned.
+           Holes are now marked `:?`, so nothing is inferred from an
+           absence and the criterion is gone rather than chosen. See Z-04.
+
+So four of the five now stand. No issue was promoted into the empty slot:
+the candidate is discussed two paragraphs down and does not qualify.
 
 Cheapest large win, if there is an afternoon spare: Z-20, the sum
 discriminant. Fully specified already in ecs.z:1142-1148, zero
@@ -239,6 +250,20 @@ OPTIONS   No candidate resolution in the sources. (The `>>` half has one:
 
 ----------------------------------------------------------------------------
 Z-04  BODILESS MEANS HOLE CONTRADICTS THE BODILESS RECORD       BLOCKING
+      -- CLOSED. Holes are marked `:?`; bodiless is no longer a criterion.
+
+CLOSED    A hole is now written `name :? T` and is never inferred from an
+          absence, so "bodiless" classifies nothing and the two rules stop
+          overlapping. This resolves the issue by removing the criterion it
+          rested on rather than by choosing between the readings below --
+          neither OPTION was taken. The five bodiless declarations in the
+          corpus are records because they carry `::`, which is now the only
+          thing that was ever distinguishing them.
+          Landed in: grammar.ebnf Declaration and SignatureType,
+          spec.txt hole.bodiless.1 (restated) and bind.marked.1 (new),
+          glossary.txt HOLE and MEMBER. The corpus was converted: 42 holes
+          across the three files.
+          The entry is kept and marked rather than deleted, per README.
 
 WHAT      Two rules classify the same text two ways, and the corpus is on
           one side.
@@ -1266,6 +1291,25 @@ OPTIONS   No candidate resolution in the sources beyond merging the lists.
 
 ----------------------------------------------------------------------------
 Z-28  `_` IS DEFINED AS ONE IDEA AND IS THREE                   DEFECT
+      -- CLOSED by the same change that closed Z-04.
+
+CLOSED    Half of this issue was that `_` is not a hole. That half is now
+          settled by construction: a hole is marked `:?` and none of the
+          four uses of `_` carries one, so the two are different marks for
+          different acts and the definition can no longer be stated in
+          terms of a hole.
+          The other half -- that it is three ideas, not one -- did not
+          survive re-reading once the first was fixed. "A name declined"
+          covers all four uses including the compile-time parameter:
+          declining to name a parameter still creates it, which is exactly
+          why two `_` are two independent parameters. That sentence was
+          unintelligible only under the hole reading.
+          spec.txt wild.def.1 is restated accordingly and INV's proposed
+          three-way split was NOT taken; wild.arm.1, wild.payload.1 and
+          wild.discard.1 already state the three positions separately, so
+          the split existed and only the definition above them was wrong.
+          What remains is narrower and is now an [UNSPECIFIED] at
+          wild.def.1: whether `_` in an expression position is an error.
 
 WHAT      The stated definition covers neither the wildcard arm nor the
           anonymous compile-time parameter, and the document proves this

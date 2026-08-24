@@ -185,10 +185,14 @@ R-04  A hole is the whole of what an interface ever was
 
       [Editor: this argument assumes that an unfilled hole is what makes a
       block abstract, which is what BODILESS MEANS HOLE (rules.txt:132-136)
-      then leans on to declare a bodiless header an abstract module. That
-      conflicts with a bodiless record -- `Span :: (lo: u32, hi: u32)
+      then leaned on to declare a bodiless header an abstract module. That
+      conflicted with a bodiless record -- `Span :: (lo: u32, hi: u32)
       -> self` at rules.txt:81 and json.z:77, which is bodiless and is not
-      abstract -- see spec.txt CONFLICT marker.]
+      abstract. The argument above is unaffected and now rests on something
+      it can carry: a hole is marked `:?`, so an unfilled hole is a thing
+      you wrote rather than a thing you omitted, and `Span` is a record
+      because it carries `::`. The spec.txt CONFLICT marker is gone and the
+      closure is recorded at hole.bodiless.1; issues.txt Z-04 is closed.]
 
       Alternatives weighed: a separate abstraction construct, rejected on
       the ground that the hole reading already covers it for every block
@@ -845,6 +849,13 @@ R-33  `_` does not reach projection position
 
       This is a cost the language accepts rather than a gap it intends to
       close.
+
+      [Editor: "two `_` are two independent parameters" was the sentence
+      that made the old definition of `_` -- "a hole in a binding position"
+      -- unintelligible, and it is issues.txt Z-28. It reads correctly now:
+      `_` is a name declined, declining to name a parameter still creates
+      the parameter, and a hole is the different thing marked `:?`. The
+      argument in this entry is unchanged.]
 
       Alternatives weighed: an existential type, rejected as larger than the
       convenience it would buy.

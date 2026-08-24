@@ -34,17 +34,22 @@ BLOCK
     "The block" is what `self` always refers to.
 
 MEMBER
-    A name inside a block. Three kinds, told apart by the binder:
+    A name inside a block. Three kinds, told apart by the mark that
+    introduces them:
 
         name :: v      compile-time member.  Costs 0 bytes. Methods and
                        compile-time constants are these.
         name := v      runtime member.       A field; occupies storage.
-        name : T       a HOLE -- see below.  No binder at all.
+        name :? T      a HOLE -- see below.  Declared, not supplied.
 
 BINDER
     `::` or `:=`. The thing between a name and its value. `:` is NOT a
     binder -- it is type ascription and nothing else, so `x : u32 := 3`
-    reads "x, of type u32, bound at run time to 3".
+    reads "x, of type u32, bound at run time to 3". A member introduced
+    with `:` goes on to carry a binder; `x : u32` alone is not a member.
+
+    `:?` is not a binder: it introduces a name and supplies no value, which
+    is what makes it a hole. Read it as "of this type -- and missing".
 
     `=` is not a binder either. It assigns: mutates an existing binding,
     fills a declared hole, gives a parameter a default, or passes a
@@ -56,8 +61,8 @@ WHICH BINDER DO I WRITE?  --  the question this glossary exists for
     Three spellings for what looks like the same act. They are distinguished
     by ONE question: DOES THIS NAME ALREADY EXIST?
 
-        format: (v: T, w: ptr<Writer>) -> ()   declare a hole. Name exists,
-                                               value does not. No binder.
+        format :? (v: T, w: ptr<Writer>) -> () declare a hole. Name exists,
+                                               value does not.
         format :: (v, w) -> () { ... }         CREATE the name and supply it.
         format = (v, w) -> () { ... }          FILL a hole declared
                                                elsewhere. Creates nothing.
@@ -83,8 +88,13 @@ WHICH BINDER DO I WRITE?  --  the question this glossary exists for
         }
 
 HOLE
-    A member with a type and NO binder: `alloc: (&self, n: u32) -> ptr`.
+    A member introduced with `:?`: `alloc :? (&self, n: u32) -> ptr`.
     Something that is declared but not supplied.
+
+    A hole is MARKED, never inferred from an absence. A member whose binder
+    you forget is a parse error and not a silently abstract block, and a
+    bodiless declaration that carries a binder -- `Span :: (lo: u32,
+    hi: u32) -> self` -- is a record and not a hole.
 
     A hole is the single mechanism behind interfaces AND sum types. What it
     means depends on the projection -- see PROJECTION.
@@ -157,7 +167,7 @@ the holes take `self`.
 SHAPE   --  every hole takes self
 
     Writer :: -> self {
-        write_bytes: (&self, p: ptr<u8>, n: u32) -> ()
+        write_bytes :? (&self, p: ptr<u8>, n: u32) -> ()
     }
 
     A description of what a TYPE CAN DO. Any type with matching members
@@ -175,7 +185,7 @@ SHAPE   --  every hole takes self
 POLICY   --  no hole takes self
 
     Ord :: <T> -> self {
-        compare: (a: T, b: T) -> i32
+        compare :? (a: T, b: T) -> i32
     }
 
     A description of HOW TO TREAT A TYPE FOR SOME PURPOSE. It is not
@@ -362,7 +372,8 @@ KEYWORDS  --  the entire budget
                 ptr<self>           what &self desugars to
 
     oneof       the sum projection
-    match, _    destructuring; `_` is a hole in any binding position
+    match, _    destructuring; `_` is a name declined, in any position that
+                takes one. It is never a hole -- a hole is marked `:?`.
     defer       run at scope exit
     if else while for loop return continue break
 
@@ -403,7 +414,7 @@ THE THREE-LINE VERSION
 ============================================================================
 
     A block is the only container.
-    A hole is a member you did not supply.
+    A hole is a member you marked `:?` and did not supply.
     The projection says what escapes, and how the holes are read.
 
 Everything else is a consequence.

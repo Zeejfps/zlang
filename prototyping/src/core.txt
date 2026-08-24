@@ -84,7 +84,7 @@ The forms
 
     d ::=
       D1    n =^s e                      a bound member
-      D2    n : e                        a hole: a member with no binder
+      D2    n :? e                       a hole: a member marked `:?`
 
     p ::=  x : e                         a parameter
 
@@ -282,10 +282,13 @@ Also Error (json.z:268), Entry (json.z:136), Health (ecs.z:258), Hit
 RELIES ON. bind.bodyless.1, bind.field.1, decl.proj.self.1,
 kw.type.rtgroup.1.
 
-NOTE ON Z-04. hole.bodiless.1 says a bodiless declaration is a hole;
-bind.bodyless.1 says it is a record. The core decides it without an extra
-rule, twice over. First, D2 has no binder by construction and `Span ::` has
-one, so `Span` is D1 and not D2. Second, and more usefully, a bodiless
+NOTE ON Z-04, now closed at the surface. The two rules disagreed while a
+hole was inferred from a missing binder; holes are now marked `:?` and the
+criterion is gone. The core had already decided it without an extra rule,
+twice over, and both arguments survive the change intact -- the first is
+now simply visible in the surface syntax as well. First, D2 is marked by
+construction and `Span ::` carries a binder, so `Span` is D1 and not D2.
+Second, and more usefully, a bodiless
 declaration is well formed in the core exactly when its projection
 restricts: `keep (rec {}) {...}` and `rec {...}` are terms, and a `-> T` or
 `-> ()` body with nothing in it has no tail expression to be the result,
@@ -326,8 +329,8 @@ ct.named.1, abs.bound.1, decl.apply.3.
 THE ATTEMPTED REDUCTION, AND WHY IT FAILS. A `-> T` body looks like it
 ought to be `keep (rec { ... }) {result}` -- a block projecting exactly one
 member. Two things stop it. The member has no name and no member form
-declares it: `::`, `:=` and `name : T` are the three member forms and none
-of them spells "the value of the block". And the members are ordered:
+declares it: `::`, `:=` and `:?` are the three member forms and none of
+them spells "the value of the block". And the members are ordered:
 `b.finish()` must run after `F.format(v, &b)`, while order.independent.1
 makes members of a block order-independent. So `-> T` projects something a
 block cannot contain, in an order a block does not have. B-9.
@@ -374,23 +377,30 @@ surface projections, and exactly one of them is another one in disguise.
 
 E7, and not E5. The attempt to translate it as E5 is in B-1.
 
+NOTE ON THE MARK. The surface spells a variant and a requirement the same
+way -- both are `:?`, and hole.meaning.1 has the projection tell them apart.
+The core does not: a requirement is D2 inside `rec` and a variant is E7's
+own `n : e`, which is why E7's members keep a plain `:` in every
+translation below. One surface mark, two core forms, and that gap is this
+document's whole thesis restated in punctuation.
+
 WORKED EXAMPLES. unified.z:21-24, unified.z:26-29, json.z:243-250.
 
-    Option :: <T> -> oneof { none: ()  some: T }
+    Option :: <T> -> oneof { none :? ()  some :? T }
 
     Option =^c fn^c (T) sum { none : Unit, some : T }
 
-    Result :: <T, E> -> oneof { ok: T  err: E }
+    Result :: <T, E> -> oneof { ok :? T  err :? E }
 
     Result =^c fn^c (T, E) sum { ok : T, err : E }
 
     Json :: <M: Allocator> -> oneof {
-        null:   ()
-        truth:  bool
-        number: f64
-        text:   slice<u8>
-        array:  List<Json<M>, M>
-        object: Map<slice<u8>, Json<M>, M, KY = str_key>
+        null   :? ()
+        truth  :? bool
+        number :? f64
+        text   :? slice<u8>
+        array  :? List<Json<M>, M>
+        object :? Map<slice<u8>, Json<M>, M, KY = str_key>
     }
 
     Json =^c fn^c (M : fit M Allocator)
@@ -425,30 +435,33 @@ WORKED EXAMPLES. unified.z:81-84, unified.z:125-127, unified.z:37,
 ecs.z:457-460.
 
     Allocator :: -> self {
-        alloc: (&self, n: u32) -> ptr
-        free:  (&self, p: ptr) -> ()
+        alloc :? (&self, n: u32) -> ptr
+        free  :? (&self, p: ptr) -> ()
     }
 
     Allocator =^c rec {
-        alloc : arrow^r ((self : Ptr self, n : U32), Ptr),
-        free  : arrow^r ((self : Ptr self, p : Ptr), Unit)
+        alloc :? arrow^r ((self : Ptr self, n : U32), Ptr),
+        free  :? arrow^r ((self : Ptr self, p : Ptr), Unit)
     }
 
-    Fn :: <A, R> -> self { (): (&self, a: A) -> R }
+    Fn :: <A, R> -> self { () :? (&self, a: A) -> R }
 
     Fn =^c fn^c (A, R)
-             rec { "()" : arrow^r ((self : Ptr self, a : A), R) }
+             rec { "()" :? arrow^r ((self : Ptr self, a : A), R) }
 
     System :: <M: Allocator> -> self {
-        run:  (&self, w: ptr<World<M>>, dt: f32) -> ()
-        name: (&self) -> slice<u8>
+        run  :? (&self, w: ptr<World<M>>, dt: f32) -> ()
+        name :? (&self) -> slice<u8>
     }
 
     System =^c fn^c (M : fit M Allocator)
-                 rec { run  : arrow^r ((self : Ptr self,
-                                        w : Ptr @^c (World @^c (M)),
-                                        dt : F32), Unit),
-                       name : arrow^r ((self : Ptr self), Slice @^c (U8)) }
+                 rec { run  :? arrow^r ((self : Ptr self,
+                                         w : Ptr @^c (World @^c (M)),
+                                         dt : F32), Unit),
+                       name :? arrow^r ((self : Ptr self), Slice @^c (U8)) }
+
+The inner `self : Ptr self` and `n : U32` keep `:`: they are parameters,
+`p ::= x : e`, and not members. Only a D2 member carries `:?`.
 
 The two uses of a shape:
 
@@ -908,17 +921,24 @@ as designed. The break is one level out, in the parameter list itself.
     TypeParam = identifier [ ":" Type ] [ "=" Expression ]
 
 That is the same shape as a member: an identifier, an optional ascription,
-an optional filler. Read against bind.hole.1, `<T>` is an identifier with
-no ascription and no binder, which is a hole. Its filler is `u8`. So the
-compile-time parameter list contains holes of kind TYPE, and
+an optional filler. Read against the bind.hole.1 that was -- `name : T`
+with no binder -- `<T>` was an identifier with no ascription and no binder,
+which made it a hole. Its filler is `u8`. So the compile-time parameter
+list contained holes of kind TYPE, and
 hole.noassoc.1 says "There is no hole of type `type`, and therefore no
 associated type", and hole.valueonly.1 says "Every hole is a hole of a
 value".
 
-The design escapes by calling `<T>` a parameter rather than a hole. The
-core cannot: bind.field.1 has already made a parameter a member, and D2 has
-already made an unbound member a hole, so the two categories are the same
-category and the kind distinction has to be real. In the core, E3 at stage
+The design escapes by calling `<T>` a parameter rather than a hole, and
+since holes were given the `:?` marker that escape is spelled rather than
+asserted: D2 is now marked, `<T>` carries no mark, so an unbound member and
+a parameter are no longer the same category by construction. That removes
+the mechanism this break rested on. What it does not remove is the kind
+question underneath: bind.field.1 still makes a parameter a member, E3 at
+stage c still binds variables of two kinds, and ct.kinds.1 still says "a
+type, a policy or a value" three sections from the two rules that deny it.
+B-11 is therefore narrowed, not closed -- the collapse is gone and the
+kind distinction still has to be made real. In the core, E3 at stage
 c binds variables of two kinds -- types and values -- and E4 at stage c
 applies both, and ct.kinds.1 says as much ("a type, a policy or a value")
 three sections away from the two rules that deny it.
@@ -926,11 +946,15 @@ three sections away from the two rules that deny it.
 The compile-time parameter list contains all three kinds and spells them
 almost identically:
 
-    <T>                     a hole of kind type
-    <F: Formattable<T>>     a hole of kind value, ascribed
+    <T>                     a parameter of kind type
+    <F: Formattable<T>>     a parameter of kind value, ascribed
     <indent: u32 = 2>       a binding of kind value, with a default
-    <M: Allocator>          a hole of kind value whose ascription is a
+    <M: Allocator>          a parameter of kind value whose ascription is a
                             conjunctive hole set, i.e. a bound
+
+    None of the four carries `:?`, which is what now keeps them out of D2
+    and off hole.valueonly.1's books. They are still spelled almost
+    identically to each other, and the kinds are still not written down.
 
 WHAT WOULD CLOSE IT. Say that hole.valueonly.1 and hole.noassoc.1 are about
 MEMBER holes, and that a compile-time parameter may have kind type. That is

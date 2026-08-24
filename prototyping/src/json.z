@@ -93,8 +93,8 @@ Span :: (lo: u32, hi: u32) -> self
 // is one thing to get right instead of two.
 
 Key :: <K> -> self {
-    hash:   (k: K) -> u64
-    equals: (a: K, b: K) -> bool
+    hash   :? (k: K) -> u64
+    equals :? (a: K, b: K) -> bool
 }
 
 // The obvious instance. There is no pool and nothing resolves to it: a `Map`
@@ -136,9 +136,9 @@ Map :: <K, V, M: Allocator, KY: Key<K>> (allocator: M) -> self {
     Entry :: (key: K, value: V) -> self
 
     Slot :: -> oneof {
-        empty: ()
-        dead:  ()
-        live:  Entry
+        empty :? ()
+        dead  :? ()
+        live  :? Entry
     }
 
     cap   := 16
@@ -241,12 +241,12 @@ Map :: <K, V, M: Allocator, KY: Key<K>> (allocator: M) -> self {
 // FRICTION 2.
 
 Json :: <M: Allocator> -> oneof {
-    null:   ()
-    truth:  bool
-    number: f64
-    text:   slice<u8>
-    array:  List<Json<M>, M>
-    object: Map<slice<u8>, Json<M>, M, KY = str_key>       // [W5]
+    null   :? ()
+    truth  :? bool
+    number :? f64
+    text   :? slice<u8>
+    array  :? List<Json<M>, M>
+    object :? Map<slice<u8>, Json<M>, M, KY = str_key>       // [W5]
 }
 
 
@@ -255,14 +255,14 @@ Json :: <M: Allocator> -> oneof {
 // ============================================================================
 
 Token :: -> oneof {
-    lbrace: ();  rbrace:   ()
-    lbrack: ();  rbrack:   ()
-    colon:  ();  comma:    ()
-    text:   slice<u8>
-    number: f64
-    truth:  bool
-    null:   ()
-    eof:    ()
+    lbrace :? ();  rbrace :? ()
+    lbrack :? ();  rbrack :? ()
+    colon  :? ();  comma  :? ()
+    text   :? slice<u8>
+    number :? f64
+    truth  :? bool
+    null   :? ()
+    eof    :? ()
 }
 
 Error :: (at: u32, why: slice<u8>) -> self

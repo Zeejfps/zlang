@@ -94,7 +94,7 @@ QualifiedName = identifier { "." identifier } .
 //     &&   ||   !
 //     +=   -=   *=   /=   %=
 //     &=   |=   ^=   <<=  >>=
-//     =    :=   ::   :    ->   .*
+//     =    :=   ::   :?   :    ->   .*
 //     (    )    [    ]    {    }
 //     ,    ;    .    <    >
 //
@@ -183,8 +183,12 @@ NamedType     = QualifiedName [ TypeArgs ] .
 // The type of a block that projects nothing.
 UnitType      = "(" ")" .
 
-// A hole's type is a declaration with the body left off -- "bodiless means
-// hole". This is why `alloc: (&self, n: u32) -> ptr` is a type.
+// A signature is a declaration with the body left off, and it is a TYPE --
+// which is why `alloc :? (&self, n: u32) -> ptr` has one. Being bodiless is
+// a property of this TYPE and never of the member: what makes that member a
+// hole is the ":?" it is introduced with, not the absence of a body. That is
+// what keeps the bodiless record `Span :: (lo: u32, hi: u32) -> self` a
+// record.
 SignatureType = [ TypeParams ] [ Parameters ] "->" Projection .
 
 TypeArgs      = "<" [ TypeArgList [ "," ] ] ">" .
@@ -205,16 +209,22 @@ TypeArg       = [ identifier "=" ] Expression .
 // value happens to be a function literal. Each of the compile-time group,
 // the runtime group and the block is independently optional.
 //
-// Four member forms, told apart by the binder:
+// Four member forms, told apart by the mark that introduces them:
 //
-//     name : T                 a HOLE            no binder
+//     name :? T                a HOLE            marker ":?"
 //     name :: v                compile-time      binder "::"
 //     name := v                run time          binder ":="
 //     name = v                 FILLS a hole      not a binder; see
 //                                                Assignment, which is the
 //                                                same production
+//
+// A hole is MARKED and never inferred from an absence. ":" is ascription
+// only, and a ":" member must go on to carry a binder -- `name : T` alone
+// does not derive, so a forgotten binder is a parse error rather than a
+// silently abstract block.
 
-Declaration   = MemberName ":" Type [ Binder Expression ]
+Declaration   = MemberName ":?" Type
+              | MemberName ":" Type Binder Expression
               | MemberName Binder Expression .
 
 Binder        = "::" | ":=" .
@@ -497,6 +507,19 @@ LoopStmt      = "loop" Block .
 //      parsing; it does not make that claim true. TypeArg being an
 //      unrestricted Expression is the root: `Foo<a + b>` and
 //      `Foo<if (c) {1} else {2}>` are also compile-time arguments.
+//
+// ----------------------------------------------------------------------------
+// NO LONGER OVER-ACCEPTED -- removed when holes were marked
+// ----------------------------------------------------------------------------
+//
+//   A HOLE IN A STATEMENT POSITION. Statement includes Declaration, and a
+//   Declaration was `MemberName ":" Type [ Binder Expression ]` with the
+//   binder optional, so `x : u32` derived inside a function body and
+//   declared a hole where no block exists to hold one. It was never listed
+//   above because it was not noticed. Requiring the binder after ":" and
+//   marking holes ":?" removes it, along with the same misparse at file
+//   scope: a member whose binder is forgotten is now a parse error rather
+//   than a silently abstract block.
 //
 // ----------------------------------------------------------------------------
 // KNOWN UNDER-ACCEPTANCE -- a language-design finding, not a grammar bug
