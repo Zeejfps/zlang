@@ -350,13 +350,12 @@ is_digit :: (c: u8) -> bool { c >= '0' && c <= '9' }
 // and priming can fail. A `-> self` block has nowhere to put fallible setup:
 // fields initialise in declaration order and there is no constructor body.
 //
-// A projection may wrap self, so
-//
-//     Parser :: (src: slice<u8>) -> Result<self, Error> { ... }
-//
-// is sayable -- but that gives the constructor a return type and still no
-// body. Here I dodge it with a lazily-filled lookahead, which is what you
-// would end up writing in C anyway, and costs one Option per peek.
+// Two answers exist and neither is a constructor body. PRIME AT THE CALL SITE
+// and pass the token in -- `tok := try lex.next()`, then a `(lex, allocator,
+// primed: Token) -> self` -- which turns the fallible step into a value
+// dependency the type system enforces, unlike ecs.z's forgettable `w.wire()`.
+// Here I take the other one and dodge with a lazily-filled lookahead, which is
+// what you would end up writing in C anyway, and costs one Option per peek.
 
 Parser :: <M: Allocator> (lex: ptr<Lexer>, allocator: M) -> self {
 

@@ -360,7 +360,6 @@ KEYWORDS  --  the entire budget
                 -> self             a projection
                 self, &self         a receiver
                 ptr<self>           what &self desugars to
-                -> Result<self, E>  a projection may wrap it
 
     oneof       the sum projection
     match, _    destructuring; `_` is a hole in any binding position

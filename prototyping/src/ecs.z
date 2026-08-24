@@ -300,10 +300,13 @@ is_dead :: (a: Ai) -> bool {
 // ONE thing stops it, and it is about syntax: there is no statement position
 // in a `-> self` block. A field initialiser is an expression; there is
 // nowhere to run a step that is not a binding. json.z hit this as FRICTION 5
-// and read it as being about FAILURE, and [P14] (`-> Result<self, E>`) was
-// adopted for it. [P14] is the wrong half of the fix: it gives the
-// constructor a RETURN TYPE and still no BODY. `try` in a field initialiser
-// has nothing to unwind to.
+// and read it as being about FAILURE. A fallible PROJECTION was adopted for
+// it -- `-> Result<self, E>`, so that a field initialiser could say `try` --
+// and is now cut. It was not useless: under a Result projection the err arm
+// does have somewhere to return to. It was the wrong HALF. Failure was never
+// the friction here; the missing thing is a statement position and `self`
+// inside it, and a projection supplies neither. See [P21], which proposes
+// both together and is where a fallible projection belongs.
 //
 // What does NOT stop it is `&self.pos`. A value has one address for as long
 // as it is alive, so a pointer into a block survives that block being handed
@@ -914,10 +917,11 @@ main :: () -> () {
 //
 // FRICTION 21 -- A `-> self` BLOCK HAS NO CONSTRUCTOR BODY, so a structure
 //   cannot refer to itself. See the long note above `World`. json.z met the
-//   same wall (FRICTION 5) and read it as being about FAILURE; [P14]
-//   (`-> Result<self, E>`) was adopted and gives the constructor a RETURN TYPE
-//   while still giving it no BODY. `try` in a field initialiser has nothing to
-//   unwind to and no place to run.
+//   same wall (FRICTION 5) and read it as being about FAILURE. The fallible
+//   projection adopted for it -- `-> Result<self, E>` -- gave the constructor
+//   a RETURN TYPE and still no BODY, and is cut. It is not that `try` had
+//   nowhere to unwind to; under a Result projection it does. It is that a
+//   return type is not a body, and a body is the whole of what is missing.
 //
 //   The cost here is two-phase construction -- `w.wire()` -- which is the
 //   pattern the unified form was meant to abolish, and which is unchecked:
@@ -1059,11 +1063,16 @@ main :: () -> () {
 // [P21] THE BLOCK IS THE CONSTRUCTOR. A `-> self` block may contain plain
 //       statements, run in textual order at construction, interleaved with the
 //       `:=` field bindings. `self` becomes available at the point every `:=`
-//       field is bound; before that, naming it is an error. With [P14]'s
-//       `-> Result<self, E>` in the projection, `try` in that body means what
-//       it means everywhere else.
+//       field is bound; before that, naming it is an error. The projection
+//       may be `-> Result<self, E>`, and then `try` in that body means what it
+//       means everywhere else -- proposed HERE, as part of this, rather than
+//       standing alone as it briefly did. Standing alone it answered only the
+//       failure that happens to be attached to binding a field, and collided
+//       with BINDING in rules.txt, where a `-> SomeType` projection means the
+//       members fill holes with `=`. A body settles both: the block is still
+//       building a fresh `self`, and the wrap says how it may fail.
 //
-//           World :: <M: Allocator> (allocator: M) -> Result<self, E> {
+//           World :: <M: Allocator, E> (allocator: M) -> Result<self, E> {
 //               pos    := Store<Vec2, M>(allocator)
 //               vel    := Store<Vec2, M>(allocator)
 //               stores := try List<ptr<AnyStore>, M>(allocator)
@@ -1073,8 +1082,9 @@ main :: () -> () {
 //
 //       This is not a new form -- a field initialiser is already a statement
 //       that runs at construction; the proposal is that it need not be a
-//       binding. It closes json.z's FRICTION 5, this file's FRICTION 21, and
-//       makes [P14] mean something. What it needs underneath it -- that a
+//       binding. It closes json.z's FRICTION 5 and this file's FRICTION 21,
+//       and it is the only thing that makes a fallible projection worth
+//       having. What it needs underneath it -- that a
 //       value has one address, so `&self.pos` survives the return -- it has.
 //
 // [P22] ADOPTED, THEN REVERSED. PLACES ARE A PROJECTION -- `-> &T` says a

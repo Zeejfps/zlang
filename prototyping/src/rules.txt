@@ -292,7 +292,6 @@ means "the block".
     self                  a receiver, by value
     &self                 a receiver, by pointer
     ptr<self>             what &self desugars to
-    -> Result<self, E>    a projection may WRAP self: fallible construction
 
 WHEN `self` NEEDS A RECEIVER, AND WHEN IT DOES NOT. It is one meaning; the
 receiver exists only to say WHICH instance, and is therefore required
@@ -763,11 +762,19 @@ OPEN
 
   - THE CONSTRUCTOR BODY. A `-> self` block has field initialisers and no
     statements, so anything needing `self`, or two fields at once, or a step
-    that can fail, has nowhere to go. `-> Result<self, E>` covers the
-    fallible case and is the wrong half: it gives the constructor a return
-    type and still no body. The cost is two-phase construction, unchecked --
-    ecs.z's `w.wire()`. A value having one address is what makes such a body
-    definable at all, so this is the next thing to decide.
+    that can fail, has nowhere to go. What is missing is a STATEMENT
+    POSITION, and `self` inside it; nothing less answers any of the three.
+    A fallible PROJECTION was tried -- `-> Result<self, E>`, so that a field
+    initialiser could say `try` -- and is cut. It worked, as far as it went:
+    the err arm has somewhere to return to when the projection is a Result.
+    But it answers only the case where the failure is attached to binding a
+    field, it never said which other wraps were legal, and `-> SomeType` is
+    already spoken for by BINDING above, where it means "fill the holes with
+    `=`" -- which a body full of `:=` is not. It belongs to whatever gives
+    the constructor a body, not beside it. The cost meanwhile is two-phase
+    construction, unchecked -- ecs.z's `w.wire()`. A value having one address
+    is what makes such a body definable at all, so this is the next thing to
+    decide.
 
   - RECURSIVE TYPES UNDER MONOMORPHISATION. NOTE 2's trade is livable for a
     container of concrete values and not for a type that contains itself.
