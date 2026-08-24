@@ -947,11 +947,12 @@ main :: () -> () {
 //       No new binding form, no `:` overload, and it composes with `_`.
 //
 // [P3]  NAMED COMPILE-TIME ARGUMENTS USE `=`, NOT `:`.
-//       rules.z line 292 writes `to_string<F: hex_u8>` -- but line 22 says
-//       "`:` is type ascription and nothing else", and `hex_u8` is a value.
-//       `=` is already "a default in a parameter list"; passing one by name is
-//       its exact mirror.  ->  `to_string<F = hex_u8>`, `sort<O = reverse_u8>`.
-//       This is the clearest internal contradiction in the current file.
+//       The pre-revision spec wrote `to_string<F: hex_u8>` (line 292) -- but
+//       line 22 said "`:` is type ascription and nothing else", and `hex_u8`
+//       is a value. `=` is already "a default in a parameter list"; passing
+//       one by name is its exact mirror.  ->  `to_string<F = hex_u8>`,
+//       `sort<O = reverse_u8>`. The clearest internal contradiction the spec
+//       had; rules.z now writes `=` throughout.
 //
 // [P4]  `_` AS AN ELIDED COMPILE-TIME ARG IN TYPE POSITION:
 //         sort :: <T, O: Ord<T> = ?> (xs: ptr<List<T, _>>) -> ()
