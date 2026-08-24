@@ -245,10 +245,10 @@ ListIter :: <T, M> (xs: ptr<List<T, M>>) -> self {
 // `I.Item`. The parameter that disappeared is the point --
 //     before:  fold :: <T, A, I: Iterator<T>, F: Fn2<A, T, A>> (...)
 //     after:   fold :: <I: Iterator, A, F: Fn2<A, I.Item, A>> (...)
-// `&I`, because fold borrows the iterator for the length of the call.
-// `ListIter` above takes `ptr<List<T, M>>` because it KEEPS it -- a runtime
-// param of a `-> self` def is a field, and rule 1 forbids a `&T` field.
-fold :: <I: Iterator, A, F: Fn2<A, I.Item, A>> (it: &I, acc: A, f: F) -> A {
+// `ptr<I>`, because fold writes through the iterator. A parameter is never a
+// place -- see PLACES -- and the body is unaffected either way, since `.`
+// reaches through a pointer: `it.next()` is the same text.
+fold :: <I: Iterator, A, F: Fn2<A, I.Item, A>> (it: ptr<I>, acc: A, f: F) -> A {
     a := acc
     loop {
         match (it.next()) {
@@ -326,7 +326,7 @@ reverse_u8 :: -> Ord<u8> {
 // only so that `List<T, M>` parses is the noisiest thing in the old draft.
 // Every line that used to say `xs.items[j]` now says `xs[j]`, and `sort` no
 // longer knows that a List has a pointer in it.
-sort :: <T, O: Ord<T> = ?> (xs: &List<T, _>) -> () {
+sort :: <T, O: Ord<T> = ?> (xs: ptr<List<T, _>>) -> () {
     for (i := 1; i < xs.count; i += 1) {
         v := xs[i]
         j := i

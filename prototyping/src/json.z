@@ -649,9 +649,8 @@ each_child :: <M> (v: Json<M>, f: Fn2<slice<u8>, Json<M>, ()>) -> () {
 // A named closure: a block holding `out`, with one member named `()`. It has
 // its own type, and becomes a shared type exactly when you write
 // `ptr<Fn2<...>>`.
-// `ptr<u32>` and not `&u32`, because a runtime param of a `-> self` block IS
-// a field and a `&T` field is forbidden. A place parameter belongs on a block
-// that is called rather than kept.
+// `ptr<u32>`, because a parameter is never a place. An out-parameter is a
+// pointer written through with `.*`, here and everywhere else.
 tally :: <M> (out: ptr<u32>) -> self {
     () :: (&self, k: slice<u8>, v: Json<M>) -> () { self.out.* += 1 }
 }
