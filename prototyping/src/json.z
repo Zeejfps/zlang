@@ -37,85 +37,21 @@ List      :: list.List
 
 
 // ============================================================================
-// std.sum  --  [P1] THE MISSING PROJECTION
+// std.sum / std.ops  --  ADOPTED, now in unified.z
 // ============================================================================
 //
-// unified.z has no sum type, and a JSON value is a sum type, so this is the
-// first wall. It is also the most interesting one, because the fix is not a
-// new construct -- it is a second reading of the hole that is already there.
+// These two sections were the experiment's main output and their rationale has
+// moved into unified.z (the HOLES table, and NOTE 6). What stays here is only
+// the part unified.z cannot carry: WHERE the need showed up, which is the
+// evidence that they are not speculative. See FINDINGS / WHERE SUMS WERE FORCED.
 //
-//     -> self    the block escapes.  ALL holes must be filled to instantiate.
-//                Unfilled -> abstract -> usable only as a bound or behind ptr.
-//
-//     -> oneof   the block escapes.  EXACTLY ONE hole is filled.
-//                Unfilled -> nothing; a sum is never abstract.
-//
-// Same block, same holes, same `name : T` syntax. The projection alone decides
-// whether the holes are conjunctive or disjunctive. `Allocator` and `Option`
-// are then literally the same declaration shape read two ways, which is a much
-// better story than "there is also an enum".
-//
-// THE PROJECTION QUANTIFIES OVER HOLES, AND NOTHING ELSE. `::` and `:=` members
-// are unaffected by it, so a sum carries methods the same way a struct does:
-//
-//                       -> self                     -> oneof
-//     name : T          requirement, all filled     variant, exactly one filled
-//     name :: v         method / ct field           method
-//     name := v         runtime field               -- (no shared storage)
-//
-// ON THE NAME. `one` was the first choice and is wrong twice over. unified.z
-// line 14 already glosses `-> T` as "one value escapes", so `-> one` collides
-// with the projection next to it. And the projection slot otherwise holds type
-// names -- `-> ptr { ... }` and `-> one { ... }` parse identically -- so a bare
-// `one` there is a contextual keyword that permanently burns a plausible
-// identifier. `oneof` collides with nothing and reads as what it is: one OF the
-// block. Its only cost is protobuf, where `oneof` is a field group INSIDE a
-// message rather than the message itself; someone may expect to write it in the
-// middle of a `-> self` block.
-//
-// `union` was rejected as poisoned by C (untagged), `variant` names a member
-// rather than the whole, `either` implies exactly two, `any` reads as a top
-// type.
-//
-// It is spelled bare, not `-> oneof self`, because `self` means "the WHOLE
-// block escapes" and here it does not -- one member does. That puts `oneof` in
-// the same family as `{a, b}`, which also does not say `self`:
-//
-//     -> self         all of the block
-//     -> {a, b}       these members of the block          (subset, product)
-//     -> oneof        one member of the block, tagged
-//     -> oneof {a, b} one member of a subset              (see [P5])
-//
-// The last line is not designed, it falls out -- it is [P5]'s visibility rule
-// applied to a sum, giving variants that only the declaring module can build.
+// Option, Result, Fn and Fn2 are now std.core; they are no longer declared here.
 
-Option :: <T> -> oneof {
-    none: ()
-    some: T
-}
-
-Result :: <T, E> -> oneof {
-    ok:  T
-    err: E
-}
-
-// CONSTRUCTION needs no new rule either. unified.z already says `=` fills a
-// declared hole in a literal:
-//
-//     Option<u8>{ some = 3 }
-//
-// and since a variant is a hole of type T, the variant name is also a function
-// (T) -> Self, derived, not declared:
-//
-//     Option<u8>.some(3)
-//
-// DESTRUCTURING is [P2]: a match arm is spelled exactly like a declaration --
-// a name, a runtime group binding the payload, a body. Nothing new to learn.
-//
-//     match (v) {
-//         none     { ... }
-//         some (x) { ... use x ... }
-//     }
+core   :: std.core
+Option :: core.Option
+Result :: core.Result
+Fn     :: core.Fn
+Fn2    :: core.Fn2
 
 unwrap_or :: <T> (o: Option<T>, d: T) -> T {
     match (o) {
@@ -127,41 +63,6 @@ unwrap_or :: <T> (o: Option<T>, d: T) -> T {
 is_some :: <T> (o: Option<T>) -> bool {
     match (o) { none { false }  some (_) { true } }
 }
-
-
-// ============================================================================
-// std.ops  --  [P15] OPERATORS ARE MEMBERS WITH SYMBOLIC NAMES
-// ============================================================================
-//
-// unified.z spells indexing `operator [] :: (&self, i: u32) -> T`. That is the
-// only two-token name in the language and the only place `operator` appears.
-// Drop the keyword: the member is just named `[]`.
-//
-//     [] :: (&self, i: u32) -> T
-//
-// This pays for itself immediately, because it also explains closures. A
-// closure in unified.z is "a block holding `m` with a call still pending" --
-// but a block cannot have a call pending, blocks have members. What it
-// actually is, is a block with one member named `()`:
-
-Fn :: <A, R> -> self {
-    (): (&self, a: A) -> R
-}
-
-Fn2 :: <A, B, R> -> self {
-    (): (&self, a: A, b: B) -> R
-}
-
-// and `print_u8 :: (m: Allocator) (v: u8) -> ()` from unified.z desugars to
-//
-//     print_u8 :: (m: Allocator) -> self { (): (&self, v: u8) -> () { ... } }
-//
-// which is an ordinary `-> self` block, satisfies `Fn<u8, ()>` structurally,
-// coerces to `ptr<Fn<u8, ()>>` for erasure, and needs no answer to the last
-// OPEN question in unified.z: `print_u8(mem)` is its own type, and it is
-// shared-type only when you write the coercion, exactly like every other shape.
-//
-// Cost: one shape per arity (Fn, Fn2, Fn3). See FRICTION 6.
 
 
 // ============================================================================
@@ -180,7 +81,7 @@ Iterator :: <T> -> self {
 // declaration. This is one of the strongest results in the whole experiment.
 // [P8] make the empty body optional: `Span :: (lo: u32, hi: u32) -> self`.
 
-Span :: (lo: u32, hi: u32) -> self {}
+Span :: (lo: u32, hi: u32) -> self
 
 // A concrete iterator. Note `M` -- see FRICTION 1, it is pure plumbing.
 ListIter :: <T, M> (xs: ptr<List<T, M>>) -> self {
@@ -260,7 +161,7 @@ Map :: <K, V, M: Allocator, KY: Key<K> = ?> (mem: M) -> self {
 
     // [W3] Nested declarations inside a block capture the block's compile-time
     // args for free. `Entry` is `Entry<K, V>` without ever saying so.
-    Entry :: (key: K, value: V) -> self {}
+    Entry :: (key: K, value: V) -> self
 
     Slot :: -> oneof {
         empty: ()
@@ -375,7 +276,7 @@ Token :: -> oneof {
     eof:    ()
 }
 
-Error :: (at: u32, why: slice<u8>) -> self {}
+Error :: (at: u32, why: slice<u8>) -> self
 
 Lexer :: (src: slice<u8>) -> self {
 
@@ -468,7 +369,7 @@ is_digit :: (c: u8) -> bool { c >= '0' && c <= '9' }
 // rather than only alone. Here I dodge it with a lazily-filled lookahead, which
 // is what you would end up writing in C anyway, and costs one Option per peek.
 
-Parser :: (lex: ptr<Lexer>, mem: ptr<Allocator>) -> self {
+Parser :: (lex: ptr<Lexer>, mem: Allocator) -> self {
 
     look := Option<Token>.none()
 
@@ -556,7 +457,7 @@ Parser :: (lex: ptr<Lexer>, mem: ptr<Allocator>) -> self {
     }
 }
 
-parse :: (mem: ptr<Allocator>, src: slice<u8>) -> Result<Json, Error> {
+parse :: (mem: Allocator, src: slice<u8>) -> Result<Json, Error> {
     lx := Lexer(src)
     p  := Parser(&lx, mem)
     v  := try p.value()
@@ -632,8 +533,10 @@ sum_numbers :: (a: f64, v: Json) -> f64 {
     match (v) { number (n) { a + n }  _ { a } }
 }
 
-// Erased callback: `ptr<Fn2<...>>` is a fat pointer, same as ptr<Allocator>.
-each_child :: (v: Json, f: ptr<Fn2<slice<u8>, Json, ()>>) -> () {
+// Erased callback. A shape in a RUNTIME group already means ptr<Shape>, so
+// `f: Fn2<...>` is the fat pointer. Note the sugar is params-only: the type
+// ARGUMENT in `List<Json, ptr<Allocator>>` below still spells the pointer.
+each_child :: (v: Json, f: Fn2<slice<u8>, Json, ()>) -> () {
     match (v) {
         object (m) {
             for (i := 0; i < m.cap; i += 1) {
@@ -681,8 +584,12 @@ main :: () -> () {
             // round-trip
             io.out.write(fmt.to_string(heap, doc))
 
-            // dictionary override by name, spelled with `=` not `:`  [P3]
-            io.out.write(fmt.to_string<F = compact_json>(heap, doc))
+            // A `<F = pretty_json>` override belongs here and CANNOT BE
+            // WRITTEN. See FRICTION 11 -- the printer recurses through
+            // `Formattable<Json>.format`, which is the solver's default, so
+            // the choice is lost one level down. The `=` spelling itself is
+            // fine and is exercised on a non-recursive type in unified.z's
+            // main (`to_string<F = hex_u8>`).
 
             // iterate an array through the Iterator shape
             match (doc) {
@@ -818,6 +725,41 @@ main :: () -> () {
 //
 // FRICTION 9 -- NO VISIBILITY, and see [P5]: the fix is already in the grammar.
 //
+// FRICTION 11 -- A RECURSIVE DICTIONARY INSTANCE CANNOT PROPAGATE THE CALLER'S
+//   CHOICE. Found by trying to write the `<F = pretty_json>` call in main, and
+//   the most serious thing in this file that unified.z has not absorbed.
+//
+//   The Json printer recurses on its children:
+//
+//       array (xs) { ... fmt.Formattable<Json>.format(xs[i], w) ... }
+//
+//   and `Formattable<Json>` in value position is THE SOLVER'S DEFAULT ([W6]).
+//   So `to_string<F = pretty_json>(mem, doc)` picks pretty for the outermost
+//   value and the default for every child. The override silently stops at
+//   depth 1.
+//
+//   unified.z's `Formattable<List<T,M>>` dodges this without noticing: it
+//   takes `F: Formattable<T> = ?` and threads the ELEMENT's instance by hand.
+//   That works because a list's elements are a different type from the list.
+//   For a RECURSIVE type the instance would have to name itself --
+//   `F: Formattable<Json> = ?` inside the Formattable<Json> instance -- and
+//   there is no spelling for "the instance I am". Dictionaries have no `self`.
+//
+//   The shape side does not have this problem, because a ptr<Shape> carries
+//   its vtable and recursion goes through the value. It is specific to
+//   dictionaries, and it is the first thing found that the shape/dictionary
+//   split makes WORSE rather than better.
+//
+// FRICTION 12 -- `_` DOES NOT REACH PROJECTION POSITION. [P4] cleans up `sort`
+//   because `M` appears only in a parameter type. It cannot clean up
+//
+//       ListIter :: <T, M> (xs: ptr<List<T, M>>) -> self
+//       iter     :: <T, M> (xs: ptr<List<T, M>>) -> ListIter<T, M>
+//
+//   because `iter` must NAME the elided type to spell its own return type. So
+//   `_` fixes the consumers of a plumbing parameter and not the wrappers, and
+//   FRICTION 1 survives wherever a type is passed through rather than used.
+//
 // FRICTION 10 -- ORDER DEPENDENCE IS UNSTATED. `Slot` references `Entry`
 //   declared after it; `Json` references `Map` declared after it; the anonymous
 //   `Formattable<Json>` instance is found by a solver that must have seen the
@@ -829,6 +771,14 @@ main :: () -> () {
 // ----------------------------------------------------------------------------
 // PROPOSALS
 // ----------------------------------------------------------------------------
+//
+// STATUS. [P1] [P2] [P3] [P4] [P5] [P6] [P8] [P9] [P10] [P11] [P12] [P13] [P14]
+// [P15] are ADOPTED and now live in unified.z; they are kept below because the
+// argument for each is the evidence, and the evidence is here. [P7] (import as
+// an ordinary compile-time binding) is stated in unified.z's keyword list but
+// nothing in either file exercises it yet.
+//
+// Applying them turned up two things they do NOT fix: FRICTION 11 and 12.
 //
 // [P1]  `-> oneof` : the sum projection. A block whose holes are disjunctive.
 //         -> self   ALL holes filled (unfilled = abstract = shape/dictionary)
@@ -930,44 +880,47 @@ main :: () -> () {
 //
 //
 // ----------------------------------------------------------------------------
-// DEFECTS IN unified.z ITSELF
+// DEFECTS IN unified.z ITSELF  --  all fixed in the current revision
 // ----------------------------------------------------------------------------
 //
-//   line 145  comment reads `// UFCS -> mem.make<T>(mem, capacity)`;
-//             should be `make<T>(mem, capacity)`.
+// Line numbers below refer to the PRE-revision file; the rewrite renumbered
+// everything. Kept as a record of what writing a program actually caught.
 //
-//   line 145  `mem.make<T>(capacity)` -- `mem` here is the field, but the
-//             module is ALSO named `mem`, and UFCS resolves the method through
-//             it. A field and a module with the same name, in one expression,
-//             where the resolution goes field-then-module. It works, but it is
-//             an accident. Line 160 in the same block writes `self.mem.make`.
-//             Pick one, and rename the module or the field.
+//   line 292  `to_string<F: hex_u8>` contradicted line 22, which says `:` is
+//             type ascription and nothing else. `hex_u8` is a value.  -> [P3]
+//   line 173  `operator []`, the only two-token name.                 -> [P15]
+//   line 188  `compare = (a, b) { ... }`, the only callable with no
+//             projection.                                             -> [P9]
+//   line 288  `io.out` was used and never declared.
+//   line 283  `defer` was used and never introduced.
+//   line 145  the UFCS comment read `mem.make<T>(mem, capacity)`; the
+//             expansion is `make<T>(mem, capacity)`.
+//   line 197  `Ord<u8>.compare(b, a)` inside `reverse_u8 :: -> Ord<u8>` reads
+//             as infinite recursion unless [W6] is stated. It now is.
 //
-//   line 288  `io.out` is never declared; `io` has only `write`.
-//
-//   line 292  `to_string<F: hex_u8>` contradicts line 22.  -> [P3]
-//
-//   line 283  `defer` is used and never introduced.
-//
-//   line 197  `Ord<u8>.compare(b, a)` inside `reverse_u8 :: -> Ord<u8>`: a
-//             named instance calling the pooled one by writing the type. Fine,
-//             but it is [W6] and needs stating, otherwise it reads as infinite
-//             recursion.
-//
-//   line 173  `operator []` -- see [P15].
-//
-//   line 188  `compare = (a, b) { ... }` -- see [P9].
+// WITHDRAWN. An earlier pass here claimed the field `mem` shadowed the module
+// `mem` in `List` and resolved "by accident". It does not: bare `mem` at line
+// 145 is the runtime PARAM, which a field initialiser sees directly, and
+// `self.mem` in the methods is the same name reached the other way. Both are
+// correct. What was actually missing is the rule underneath -- UFCS resolves
+// the free function by ordinary lookup in the CALLER's scope -- which is now
+// stated, and which turns out to be the same fact NOTE 4 already depends on.
 //
 //
 // ----------------------------------------------------------------------------
 // THE ONE-PARAGRAPH VERDICT
 // ----------------------------------------------------------------------------
 //
+// (Written before the revision; it still stands, with one item moved.)
+//
 // The unification is real and it survives contact with a non-trivial program.
 // "Params of a `-> self` def are fields" plus "an unfilled hole is abstract"
 // genuinely replaces struct, module, trait, impl and enum-of-one, and the
 // shape/dictionary split is a better answer than Rust's or Go's. The two things
-// standing between this and a language you could write in are a sum projection
+// standing between this and a language you could write in were a sum projection
 // ([P1], [P2], `_`, `try`) and an answer to what monomorphisation does to
-// recursive data (FRICTION 2). Everything else in this file is tightening.
+// recursive data (FRICTION 2). The first is done. The second is not, and it has
+// since been joined by FRICTION 11, which is the same shape of problem one
+// level up: the dictionary story has no `self`, so anything recursive loses the
+// caller's choice. Both are about recursion, and neither is about syntax.
 // ============================================================================

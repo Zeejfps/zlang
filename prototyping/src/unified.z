@@ -630,6 +630,30 @@ main :: () -> () {
 //     the type declaration (`ptr<Allocator>`), which means the headline feature
 //     is unavailable for exactly the data structures people write most.
 //
+//   - A RECURSIVE DICTIONARY INSTANCE CANNOT PROPAGATE THE CALLER'S CHOICE.
+//     `Formattable<Json>` prints its children by calling `Formattable<Json>
+//     .format`, which is the SOLVER'S DEFAULT -- so `to_string<F = pretty>`
+//     picks `pretty` for the outermost value and the default for every child.
+//     The override stops at depth 1, silently.
+//
+//     `Formattable<List<T,M>>` above dodges this without noticing, because a
+//     list's elements are a DIFFERENT type and it can thread `F` by hand. A
+//     recursive type would have to name itself -- `F: Formattable<Json> = ?`
+//     inside the Formattable<Json> instance -- and there is no spelling for
+//     "the instance I am". Dictionaries have no `self`; that is what makes
+//     them free-standing and it is what breaks here.
+//
+//     Shapes are immune: a ptr<Shape> carries its vtable, so recursion through
+//     the value keeps the choice. This is the first thing found that the
+//     shape/dictionary split makes WORSE rather than better, and it is the
+//     same shape of problem as the recursive-monomorphisation item above --
+//     both are about recursion, neither is about syntax.
+//
+//   - `_` DOES NOT REACH PROJECTION POSITION, so it half-fixes the plumbing
+//     parameter. `sort` is clean because `M` appears only in a parameter type.
+//     A wrapper is not: `iter :: <T, M> (xs: ptr<List<T, M>>) -> ListIter<T, M>`
+//     must name the type to spell its own return.
+//
 //   - MUTABILITY. `get` and `put` both take `&self`. Nothing says `get` does
 //     not write, so nothing can alias-check, and a `ptr<Allocator>` handed to a
 //     printer is a fully mutable handle. `::`/`:=` already encode immutable vs
