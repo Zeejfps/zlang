@@ -1,8 +1,8 @@
 // ============================================================================
-// glossary.z  --  what the words in unified.z mean
+// glossary.z  --  what the words in rules.z mean
 // ============================================================================
 //
-// Read this before unified.z. It defines no syntax; it only names things.
+// Read this before rules.z. It defines no syntax; it only names things.
 //
 // ============================================================================
 // HOW TO READ A DECLARATION
@@ -349,7 +349,7 @@
 //     replaces the check is a convention: an anonymous instance is a claim on
 //     the GLOBAL DEFAULT, so publish one only for a policy or a type you own.
 //     Two libraries claiming the same one is a build error, and the fix is for
-//     one of them to name its instance. See NOTE 8 in unified.z.
+//     one of them to name its instance. See NOTE 8 in rules.z.
 //
 // INSTANCE
 //     One filled-in policy. `reverse_u8` is an instance of `Ord<u8>`.

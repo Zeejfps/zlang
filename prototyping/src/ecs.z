@@ -2,7 +2,7 @@
 // ecs.z  --  an entity-component-system and the game loop around it.
 // ============================================================================
 //
-// The second program written against unified.z. json.z was a JSON parser: a
+// The second program written against rules.z. json.z was a JSON parser: a
 // tree of sums, built once, walked recursively, freed all at once. It found
 // the sum projection, `try`, `match`-as-expression and `self`-in-an-instance.
 //
@@ -20,7 +20,7 @@
 //     5. TEARDOWN OF THE UNKNOWN.         json.z used an arena and never
 //                                         freed a node. A world despawns.
 //
-// Same convention as json.z: everything is unified.z's syntax as-is except
+// Same convention as json.z: everything is rules.z's syntax as-is except
 // where marked [P#], which points at a numbered proposal in FINDINGS. [W#]
 // marks something that held up and must not be lost. Numbering continues from
 // json.z -- wins start at [W8], frictions at 13, proposals at [P17].
@@ -56,7 +56,7 @@ Fn2       :: core.Fn2
 // std.num  --  where the operator story breaks.  FRICTION 13, and [P17].
 // ============================================================================
 //
-// ADOPTED, in a different shape. unified.z spells this as one policy per
+// ADOPTED, in a different shape. rules.z spells this as one policy per
 // operator -- `Add<A, B>`, `Mul<A, B>` -- each with an `Out: type` hole,
 // rather than the homogeneous `Num<T>` plus a `Scale` workaround below. The
 // reason is [P24], which arrived at the same time and let the result type stop
@@ -64,7 +64,7 @@ Fn2       :: core.Fn2
 // The declarations here are local to this file and are left as written,
 // because the argument for the proposal is what they cost.
 //
-// unified.z NOTE 6 says operators are members with symbolic names, and gives
+// rules.z NOTE 6 says operators are members with symbolic names, and gives
 // two examples, `[]` and `()`. Both take `self`. Written the same way, `+` is
 //
 //     Vec2 :: (x: f32, y: f32) -> self {
@@ -82,7 +82,7 @@ Fn2       :: core.Fn2
 // added to itself and cannot be scaled by a number, and no shape can require
 // "is addable" of it.
 //
-// THE ANSWER IS ALREADY IN THE LANGUAGE, and it is unified.z's own test that
+// THE ANSWER IS ALREADY IN THE LANGUAGE, and it is rules.z's own test that
 // finds it. Ask the question NOTE 1 asks: can there legitimately be two of
 // these for one type?
 //
@@ -613,7 +613,7 @@ Signal :: <E, M: Allocator> (mem: M) -> self {
     // FRICTION 27. There is no `off`. Unsubscribing means finding the
     // subscriber again, and a `ptr<Fn<E,()>>` is a PAIR of words built at the
     // coercion site. Two coercions of the same block are two fat pointers; are
-    // they equal? unified.z says a fat pointer is "built at the moment of
+    // they equal? rules.z says a fat pointer is "built at the moment of
     // coercion, and only there", which suggests yes for the data half and
     // nothing at all about the vtable half. Identity of an erased value is
     // undefined, so an observer list can be added to and never pruned.
@@ -739,7 +739,7 @@ Combat :: <M: Allocator> (bite: i32) -> self {
 // A PARAMETERISED, NAMED policy instance -- the case NOTE 7 argues from and
 // which nothing in json.z actually exercised. Three things show up at once:
 //
-//   - `indent: u32 = 2` is a COMPILE-TIME VALUE parameter. unified.z says
+//   - `indent: u32 = 2` is a COMPILE-TIME VALUE parameter. rules.z says
 //     compile-time args come in two kinds, inferred-from-a-runtime-arg and
 //     solved-by-search. A value parameter is a third kind and is never
 //     mentioned, though `capacity :: 10` in `List` implies it. FRICTION 29.
@@ -1012,7 +1012,7 @@ main :: () -> () {
 //   erased values are STORED rather than passed.  -> [P20]
 //
 // FRICTION 22 -- TEARDOWN IS A NAMING CONVENTION.  DECIDED, NOT FIXED: it
-//   stays one. See unified.z -- no automatic destruction, on purpose. `deinit` is an ordinary
+//   stays one. See rules.z -- no automatic destruction, on purpose. `deinit` is an ordinary
 //   member that happens to be spelled the same everywhere. Nothing calls it,
 //   `defer` is lexical so it only helps for locals, and `List<T>` does not
 //   destroy its elements -- so `Store<Store<...>, M>` leaks and no diagnostic
@@ -1084,8 +1084,8 @@ main :: () -> () {
 //   hole; worth writing down rather than rediscovering.
 //
 // FRICTION 29 -- COMPILE-TIME VALUE PARAMETERS ARE UNSTATED.  RESOLVED: they
-//   are now the third kind of compile-time argument in unified.z. `dump<indent: u32
-//   = 2>` is a compile-time parameter whose type is not a type. unified.z says
+//   are now the third kind of compile-time argument in rules.z. `dump<indent: u32
+//   = 2>` is a compile-time parameter whose type is not a type. rules.z says
 //   compile-time args come in TWO kinds, inferred-from-a-runtime-argument and
 //   solved-by-search; this is a third, it is used by `List`'s `capacity :: 10`
 //   and by every array size, and the file never mentions it. It also forces
@@ -1125,11 +1125,11 @@ main :: () -> () {
 // PROPOSALS
 // ----------------------------------------------------------------------------
 //
-// STATUS. [P17] and [P24] are ADOPTED and now live in unified.z, together with
+// STATUS. [P17] and [P24] are ADOPTED and now live in rules.z, together with
 // [P25] and [P26] below, which came out of adopting them. They are kept here
 // because the argument for each is the evidence, and the evidence is this file.
 // [P18] [P19] [P20] [P21] [P22] [P23] are OPEN; five of the six are faces of
-// the memory question and are now unified.z's single largest open item.
+// the memory question and are now rules.z's single largest open item.
 //
 // Adopting [P17] and [P24] resolved FRICTION 13, 14, 15 and 29, and forced the
 // coherence decision that had been open since before json.z.
@@ -1139,7 +1139,7 @@ main :: () -> () {
 //       `a < b` is `Ord<A>.compare(a, b) < 0`, all solver-found. `a[i]` and
 //       `a(x)` stay members, because they take `self`.
 //
-//       Derived from unified.z's own test rather than chosen: two ways to add
+//       Derived from rules.z's own test rather than chosen: two ways to add
 //       two Vec2 (saturating, wrapping) -- yes, so it is a policy; two ways
 //       for a List to index itself -- no, so it is a shape. Everything
 //       awkward dissolves at once:
@@ -1289,7 +1289,7 @@ main :: () -> () {
 //       WHOLE-PROGRAM, DUPLICATES AND OVERLAPS ARE ERRORS AT THE DECLARATIONS,
 //       AND THERE IS NO ORPHAN RULE.
 //
-//       unified.z has called this its biggest unanswered question since before
+//       rules.z has called this its biggest unanswered question since before
 //       json.z. [P17] forced it: with arithmetic solver-dispatched, a second
 //       anonymous `Add<Vec2, Vec2>` is a question about what `+` means in
 //       every expression.
@@ -1308,7 +1308,7 @@ main :: () -> () {
 //       claim on the global default, so publish one only for a policy or a
 //       type you own; two libraries claiming one is a build error until one of
 //       them names its instance. A loud failure in a rare case, in exchange
-//       for extrinsic instances in every common one. See NOTE 8 in unified.z.
+//       for extrinsic instances in every common one. See NOTE 8 in rules.z.
 //
 //
 // ----------------------------------------------------------------------------
@@ -1332,7 +1332,7 @@ main :: () -> () {
 //     application layer, in one line, in a second unrelated program ([W13]).
 //
 //     FRICTION 10 (order independence) is required again: `World` names
-//     `Signal`, declared two hundred lines later. Still unstated in unified.z.
+//     `Signal`, declared two hundred lines later. Still unstated in rules.z.
 //
 //     FRICTION 12 (`_` does not reach projection position) recurs verbatim at
 //     `Join2`, `Hit`, and `join2`.
@@ -1343,7 +1343,7 @@ main :: () -> () {
 //     `Combat.chase`. What is left is `is_dead`, which [P19] handles.
 //
 //   OPEN ITEM CLOSED -- COHERENCE.  RESOLVED -> [P26]
-//     unified.z called two anonymous `-> Ord<u8>` in different files "the
+//     rules.z called two anonymous `-> Ord<u8>` in different files "the
 //     biggest unanswered question". [P17] raised the stakes -- with arithmetic
 //     solver-dispatched, a duplicate instance is a question about `a + b` in
 //     every expression, not about a sort order -- and forced the decision.

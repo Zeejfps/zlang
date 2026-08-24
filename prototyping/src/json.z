@@ -1,5 +1,5 @@
 // ============================================================================
-// json.z  --  a real program written in the unified.z declaration form.
+// json.z  --  a real program written in the rules.z declaration form.
 // ============================================================================
 //
 // The goal here is not the JSON parser. The goal is to find out where the one
@@ -8,9 +8,9 @@
 //     Name <compile-time args> (runtime args) -> projection { body }
 //
 // bends, where it breaks, and where it turns out to be doing more work than
-// unified.z claims for it.
+// rules.z claims for it.
 //
-// Everything below is written in unified.z's syntax as-is EXCEPT where marked
+// Everything below is written in rules.z's syntax as-is EXCEPT where marked
 // [P#], which points at a numbered proposal in the FINDINGS section at the
 // bottom. Where the existing syntax already covered something I expected to
 // need an extension for, it is marked [W#] -- those are the load-bearing wins
@@ -37,12 +37,12 @@ List      :: list.List
 
 
 // ============================================================================
-// std.sum / std.ops  --  ADOPTED, now in unified.z
+// std.sum / std.ops  --  ADOPTED, now in rules.z
 // ============================================================================
 //
 // These two sections were the experiment's main output and their rationale has
-// moved into unified.z (the HOLES table, and NOTE 6). What stays here is only
-// the part unified.z cannot carry: WHERE the need showed up, which is the
+// moved into rules.z (the HOLES table, and NOTE 6). What stays here is only
+// the part rules.z cannot carry: WHERE the need showed up, which is the
 // evidence that they are not speculative. See FINDINGS / WHERE SUMS WERE FORCED.
 //
 // Option, Result, Fn and Fn2 are now std.core; they are no longer declared here.
@@ -110,7 +110,7 @@ fold :: <T, A, I: Iterator<T>, F: Fn2<A, T, A>> (it: ptr<I>, acc: A, f: F) -> A 
 
 
 // ============================================================================
-// std.key  --  a POLICY, by unified.z's own test: slice<u8> has more than
+// std.key  --  a POLICY, by rules.z's own test: slice<u8> has more than
 // one legitimate ordering/hashing (case sensitive or not), so the caller must
 // be able to choose.
 // ============================================================================
@@ -601,7 +601,7 @@ spaced :: <M> -> fmt.Formattable<Json<M>> {
 // ordinary recursion and needs no new rule. `self` is preferred because the
 // anonymous pooled instances have no name by construction, and because a
 // parameterised instance would otherwise have to re-thread its own
-// compile-time arguments by hand. See NOTE 7 in unified.z.
+// compile-time arguments by hand. See NOTE 7 in rules.z.
 
 write_escaped :: (s: slice<u8>, w: ptr<Writer>) -> () {
     for (i := 0; i < s.len; i += 1) {
@@ -644,9 +644,9 @@ each_child :: <M> (v: Json<M>, f: Fn2<slice<u8>, Json<M>, ()>) -> () {
     }
 }
 
-// A named closure declaration -- two runtime groups, curried, per unified.z.
+// A named closure declaration -- two runtime groups, curried, per rules.z.
 // Under [P15] this is sugar for a `-> self` block with a `()` member, so the
-// last OPEN question in unified.z answers itself: it has its own type, and it
+// last OPEN question in rules.z answers itself: it has its own type, and it
 // becomes a shared type exactly when you write `ptr<Fn2<...>>`.
 // `&u32`, not `ptr<u32>`: a place parameter, which is `&self` without the
 // special case. It cannot be stored -- a `&T` field is forbidden -- so the
@@ -734,7 +734,7 @@ main :: () -> () {
 //
 // [W2] `X :: (a: A, b: B) -> self {}` is a struct declaration, with no struct
 //      form. "Runtime params of a `-> self` def ARE fields" is the single
-//      highest-value line in unified.z. `Entry`, `Span` and `Error` above are
+//      highest-value line in rules.z. `Entry`, `Span` and `Error` above are
 //      one line each and read better than a `struct` keyword would.
 //
 // [W3] Nested declarations capture the enclosing block's compile-time args.
@@ -752,7 +752,7 @@ main :: () -> () {
 //
 // [W6] "A type in value position is the solver's default instance."
 //      `Formattable<Json>.format(...)` inside the anonymous `-> Formattable<Json>`
-//      instance is how a recursive instance calls itself. unified.z already
+//      instance is how a recursive instance calls itself. rules.z already
 //      relies on this at line 223 and at `reverse_u8`, but never states it.
 //      STATE IT -- it is a real rule and it is doing real work.
 //
@@ -907,13 +907,13 @@ main :: () -> () {
 //       alias rather than a wildcard.
 //
 // FRICTION 10 -- ORDER DEPENDENCE IS UNSTATED.  RESOLVED: order independence
-//   is now stated in unified.z, forced a second time by ecs.z (`World` names a
+//   is now stated in rules.z, forced a second time by ecs.z (`World` names a
 //   `Signal` declared two hundred lines below it) and a third by coherence,
 //   which is a whole-program property. `Slot` references `Entry`
 //   declared after it; `Json` references `Map` declared after it; the anonymous
 //   `Formattable<Json>` instance is found by a solver that must have seen the
 //   whole file. Top-level and block-level declarations have to be order-
-//   independent. unified.z never says so, and it interacts with the FORWARD
+//   independent. rules.z never says so, and it interacts with the FORWARD
 //   DECLARATIONS item already in OPEN.
 //
 //
@@ -922,9 +922,9 @@ main :: () -> () {
 // ----------------------------------------------------------------------------
 //
 // STATUS. [P1] [P2] [P3] [P4] [P5] [P6] [P8] [P9] [P10] [P11] [P12] [P13] [P14]
-// [P15] [P16] are ADOPTED and now live in unified.z; they are kept below because the
+// [P15] [P16] are ADOPTED and now live in rules.z; they are kept below because the
 // argument for each is the evidence, and the evidence is here. [P7] (import as
-// an ordinary compile-time binding) is stated in unified.z's keyword list but
+// an ordinary compile-time binding) is stated in rules.z's keyword list but
 // nothing in either file exercises it yet.
 //
 // Applying them turned up two things they did NOT fix: FRICTION 11 and 12.
@@ -941,13 +941,13 @@ main :: () -> () {
 //       holds type names burns a plausible identifier. Spelled bare and not
 //       `oneof self`, because a sum does not project the whole block. See the
 //       std.sum header for the rejected alternatives.
-//       This is the single largest gap in unified.z and the fix adds one word.
+//       This is the single largest gap in rules.z and the fix adds one word.
 //
 // [P2]  A match arm is spelled like a declaration: `name (binders) { body }`.
 //       No new binding form, no `:` overload, and it composes with `_`.
 //
 // [P3]  NAMED COMPILE-TIME ARGUMENTS USE `=`, NOT `:`.
-//       unified.z line 292 writes `to_string<F: hex_u8>` -- but line 22 says
+//       rules.z line 292 writes `to_string<F: hex_u8>` -- but line 22 says
 //       "`:` is type ascription and nothing else", and `hex_u8` is a value.
 //       `=` is already "a default in a parameter list"; passing one by name is
 //       its exact mirror.  ->  `to_string<F = hex_u8>`, `sort<O = reverse_u8>`.
@@ -961,7 +961,7 @@ main :: () -> () {
 //       "a binding position I decline to name".
 //
 // [P5]  PARTIAL PROJECTION IS VISIBILITY. This is already in the grammar and
-//       unified.z does not notice it:
+//       rules.z does not notice it:
 //         mem :: -> {make, drop} { make :: ...  drop :: ...  helper :: ... }
 //       `-> self` exports everything, `-> {a, b}` exports two names. No `pub`,
 //       no `export`, no new rule -- the projection was always the export list.
@@ -1008,7 +1008,7 @@ main :: () -> () {
 // [P13] `try e` propagates the `err` arm of a `Result` to the enclosing
 //       function's projection. Needed by every non-trivial program; the only
 //       alternative is `match` at every call, which the parser above shows is
-//       unreadable. It is a keyword, but so is `defer`, which unified.z already
+//       unreadable. It is a keyword, but so is `defer`, which rules.z already
 //       uses at line 283 without ever introducing it.
 //
 // [P14] LET THE PROJECTION WRAP `self`:
@@ -1046,7 +1046,7 @@ main :: () -> () {
 //
 //
 // ----------------------------------------------------------------------------
-// DEFECTS IN unified.z ITSELF  --  all fixed in the current revision
+// DEFECTS IN rules.z ITSELF  --  all fixed in the current revision
 // ----------------------------------------------------------------------------
 //
 // Line numbers below refer to the PRE-revision file; the rewrite renumbered
