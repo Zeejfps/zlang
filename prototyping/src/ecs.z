@@ -148,11 +148,11 @@ NO_ENTITY :: Entity(0, 0)
 // sharpest result in the file: FRICTION 17, a container that still cannot be
 // fully encapsulated, because iterating one means reaching into its fields.
 
-Store :: <C, M: Allocator> (mem: M) -> self {
+Store :: <C, M: Allocator> (m: M) -> self {
 
-    dense := List<C, M>(mem)          // the components themselves
-    owner := List<Entity, M>(mem)     // dense[i] belongs to owner[i]
-    index := Map<Entity, u32, M>(mem) // entity -> dense index
+    dense := List<C, M>(m)          // the components themselves
+    owner := List<Entity, M>(m)     // dense[i] belongs to owner[i]
+    index := Map<Entity, u32, M>(m) // entity -> dense index
 
     count :: (&self) -> u32 { self.dense.count }
 
@@ -295,10 +295,10 @@ is_dead :: (a: Ai) -> bool {
 // same stores, so that despawn and teardown can sweep every component type
 // without naming it. Written the obvious way:
 //
-//     World :: <M: Allocator> (mem: M) -> self {
-//         pos    := Store<Vec2, M>(mem)
-//         hp     := Store<Health, M>(mem)
-//         stores := List<ptr<AnyStore>, M>(mem)
+//     World :: <M: Allocator> (m: M) -> self {
+//         pos    := Store<Vec2, M>(m)
+//         hp     := Store<Health, M>(m)
+//         stores := List<ptr<AnyStore>, M>(m)
 //         stores.push(&self.pos)          // <- no `self` here, and no
 //         stores.push(&self.hp)           //    statement position either
 //     }
@@ -320,24 +320,24 @@ is_dead :: (a: Ai) -> bool {
 // unified declaration form was supposed to abolish: a `wire` you must remember
 // to call, and a World that is unsafe to use between the two lines.
 
-World :: <M: Allocator> (mem: M) -> self {
+World :: <M: Allocator> (m: M) -> self {
 
     next_id := 1
-    recycle := List<Entity, M>(mem)       // despawned ids, ready for reuse
-    live    := Map<Entity, bool, M>(mem)
+    recycle := List<Entity, M>(m)       // despawned ids, ready for reuse
+    live    := Map<Entity, bool, M>(m)
 
-    pos   := Store<Vec2, M>(mem)
-    vel   := Store<Vec2, M>(mem)
-    hp    := Store<Health, M>(mem)
-    brain := Store<Ai, M>(mem)
+    pos   := Store<Vec2, M>(m)
+    vel   := Store<Vec2, M>(m)
+    hp    := Store<Health, M>(m)
+    brain := Store<Ai, M>(m)
 
     // Declared here, defined two hundred lines below. Order independence is
     // load-bearing again, and this is the second program that needs it.
-    died  := Signal<Entity, M>(mem)
+    died  := Signal<Entity, M>(m)
 
     // Bound here and POPULATED by `wire`, below, because populating it needs
     // `self` and there is nowhere in this block that `self` exists.
-    stores := List<ptr<AnyStore>, M>(mem)
+    stores := List<ptr<AnyStore>, M>(m)
     wired  := false
 
     // PHASE TWO. Everything that needs `self` lives here, and the type is
@@ -514,8 +514,8 @@ Reaper :: <M: Allocator> (doomed: ptr<List<Entity, M>>) -> self {
 // nothing here owns the pointees: the concrete `Movement`, `Decay` and
 // `Reaper` blocks have to be locals in main that outlive the schedule. There
 // is no way to store a shape BY VALUE and no box to put one in.
-Schedule :: <M: Allocator> (mem: M) -> self {
-    items := List<ptr<System<M>>, M>(mem)
+Schedule :: <M: Allocator> (m: M) -> self {
+    items := List<ptr<System<M>>, M>(m)
 
     add :: (&self, s: ptr<System<M>>) -> () { self.items.push(s) }
 
@@ -535,9 +535,9 @@ Schedule :: <M: Allocator> (mem: M) -> self {
 // a block with a `()` member). KEEPING one is a different question, and it is
 // the third thing this file was written to find out.
 
-Signal :: <E, M: Allocator> (mem: M) -> self {
+Signal :: <E, M: Allocator> (m: M) -> self {
 
-    subs := List<ptr<Fn<E, ()>>, M>(mem)
+    subs := List<ptr<Fn<E, ()>>, M>(m)
 
     // The same borrow, concretely. The argument is a fat pointer, so the
     // CALLER owns the closure block and must keep it alive for as long as the
@@ -664,11 +664,11 @@ Combat :: <M: Allocator> (bite: i32) -> self {
 
 :: -> fmt.Formattable<Vec2> {
     format = (v, w) -> () {
-        w.write("(")
+        io.write(w, "(")
         fmt.Formattable<f32>.format(v.x, w)
-        w.write(", ")
+        io.write(w, ", ")
         fmt.Formattable<f32>.format(v.y, w)
-        w.write(")")
+        io.write(w, ")")
     }
 }
 
@@ -692,12 +692,12 @@ Combat :: <M: Allocator> (bite: i32) -> self {
 dump :: <M, indent: u32 = 2> -> fmt.Formattable<World<M>> {
 
     format = (v, w) -> () {
-        w.write("world {\n")
+        io.write(w, "world {\n")
         for (i := 0; i < v.pos.count(); i += 1) {
             e := v.pos.entity_at(i)
             self.row(v, e, w)
         }
-        w.write("}\n")
+        io.write(w, "}\n")
     }
 
     // Creates a member; not one of Formattable's holes, so `::` and not `=`.
@@ -705,15 +705,15 @@ dump :: <M, indent: u32 = 2> -> fmt.Formattable<World<M>> {
     // this instance has one hole and two helpers.
     row :: (v: World<M>, e: Entity, w: ptr<Writer>) -> () {
         self.pad(w)
-        w.write("#")
+        io.write(w, "#")
         fmt.Formattable<u32>.format(e.id, w)
-        w.write(" ")
+        io.write(w, " ")
         match (v.pos.at(e)) { some (p) { fmt.Formattable<Vec2>.format(p.*, w) }  none { } }
-        match (v.hp.at(e))  { some (h) { w.write(" hp="); fmt.Formattable<i32>.format(h.hp, w) }  none { } }
+        match (v.hp.at(e))  { some (h) { io.write(w, " hp="); fmt.Formattable<i32>.format(h.hp, w) }  none { } }
         match (v.brain.at(e)) {
             some (a) {
-                w.write(" ")
-                w.write(match (a.*) {
+                io.write(w, " ")
+                io.write(w, match (a.*) {
                     idle     { "idle" }
                     hunt (_) { "hunt" }
                     flee (_) { "flee" }
@@ -722,11 +722,11 @@ dump :: <M, indent: u32 = 2> -> fmt.Formattable<World<M>> {
             }
             none { }
         }
-        w.write("\n")
+        io.write(w, "\n")
     }
 
     pad :: (w: ptr<Writer>) -> () {
-        for (i := 0; i < indent; i += 1) { w.write(" ") }
+        for (i := 0; i < indent; i += 1) { io.write(w, " ") }
     }
 }
 
@@ -794,8 +794,8 @@ main :: () -> () {
 
     for (t := 0; t < 4; t += 1) { sched.tick(&w, 0.5) }
 
-    io.out.write(fmt.to_string(heap, w))                  // pooled: no instance
-    io.out.write(fmt.to_string<F = dump<indent = 4>>(heap, w))
+    io.write(io.out, fmt.to_string(heap, w))                  // pooled: no instance
+    io.write(io.out, fmt.to_string<F = dump<indent = 4>>(heap, w))
 
     // `dump` is NAMED, so it is never searched and the first line above has no
     // instance to find. json.z's `spaced` had the same property and hid it,
@@ -804,8 +804,8 @@ main :: () -> () {
     // choose: publish `dump<>` anonymously, or make every caller name it.
     // FRICTION 30 -- there is no way to say "this instance, and also pooled".
 
-    io.out.write("died: ")
-    io.out.write(fmt.to_string(heap, log.count))
+    io.write(io.out, "died: ")
+    io.write(io.out, fmt.to_string(heap, log.count))
 }
 
 
@@ -914,7 +914,7 @@ main :: () -> () {
 //   not address iteration. json.z's [P5] says the projection is the export
 //   list:
 //
-//       Map :: <K, V, M> (mem: M) -> {get, put, remove, count, deinit} { ... }
+//       Map :: <K, V, M> (m: M) -> {get, put, remove, count, deinit} { ... }
 //
 //   Do that and the printer stops compiling. Half of what makes visibility
 //   affordable on a container arrived with places; the other half is
@@ -1026,10 +1026,10 @@ main :: () -> () {
 //       `-> Result<self, E>` in the projection, `try` in that body means what
 //       it means everywhere else.
 //
-//           World :: <M: Allocator> (mem: M) -> Result<self, E> {
-//               pos    := Store<Vec2, M>(mem)
-//               vel    := Store<Vec2, M>(mem)
-//               stores := try List<ptr<AnyStore>, M>(mem)
+//           World :: <M: Allocator> (m: M) -> Result<self, E> {
+//               pos    := Store<Vec2, M>(m)
+//               vel    := Store<Vec2, M>(m)
+//               stores := try List<ptr<AnyStore>, M>(m)
 //               stores.push(&self.pos)          // self is available: all
 //               stores.push(&self.vel)          // fields are bound
 //           }

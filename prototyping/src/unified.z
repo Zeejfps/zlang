@@ -101,7 +101,8 @@ Allocator :: -> self {
 }
 
 // The typed layer is an ordinary module of free functions. It is not part of
-// the shape, so anyone can extend it, and UFCS makes it read like a method.
+// the shape, so anyone can extend it -- and being outside it, it is called
+// like what it is: `mem.make<T>(m, n)`, never `m.make<T>(n)`. See NOTE 4.
 mem :: -> self {
     make :: <T, M: Allocator> (m: M, n: u32) -> ptr<T> { m.alloc(n * size_of<T>()) }
     drop :: <T, M: Allocator> (m: M, p: ptr<T>) -> ()  { m.free(p) }
@@ -166,13 +167,14 @@ io :: -> {out, err, write} {
 // hands out a location rather than a copy. `span` exists for the same reason
 // -- building a slice needs the base pointer, and closing the projection means
 // asking for it by name instead of reaching in.
-List :: <T, M: Allocator> (mem: M) -> {push, pop, count, [], span, deinit} {
+List :: <T, M: Allocator> (m: M) -> {push, pop, count, [], span, deinit} {
     capacity := 10
     count    := 0
 
     // A field initialiser sees the runtime params directly; methods reach them
-    // through `self`. `make` itself is found by lookup in this scope, per UFCS.
-    items    := mem.make<T>(capacity)     // UFCS -> make<T>(mem, capacity)
+    // through `self`. An allocator VALUE is `m`; the module of free functions
+    // over it is `mem`, and the two never collide.
+    items    := mem.make<T>(m, capacity)
 
     push :: (&self, item: T) -> () {
         if (self.count + 1 > self.capacity) { self.expand() }
@@ -190,15 +192,15 @@ List :: <T, M: Allocator> (mem: M) -> {push, pop, count, [], span, deinit} {
 
     expand :: (&self) -> () {
         new_cap   := self.capacity * 2
-        new_items := self.mem.make<T>(new_cap)
+        new_items := mem.make<T>(self.m, new_cap)
         for (i := 0; i < self.count; i += 1) { new_items[i] = self.items[i] }
-        self.mem.drop(self.items)
+        mem.drop(self.m, self.items)
         self.items    = new_items
         self.capacity = new_cap
     }
 
     deinit :: (&self) -> () {
-        self.mem.drop(self.items)
+        mem.drop(self.m, self.items)
         self.items = nil
         self.count = 0
     }
@@ -365,12 +367,12 @@ hex_u8 :: -> Formattable<u8> {
 // pattern on the left-hand side. See NOTE 5.
 :: <T, M, F: Formattable<T> = ?> -> Formattable<List<T, M>> {
     format = (v, w) -> () {
-        w.write("[")
+        io.write(w, "[")
         for (i := 0; i < v.count; i += 1) {
-            if (i > 0) { w.write(", ") }
+            if (i > 0) { io.write(w, ", ") }
             F.format(v[i], w)
         }
-        w.write("]")
+        io.write(w, "]")
     }
 }
 
@@ -380,8 +382,8 @@ hex_u8 :: -> Formattable<u8> {
 // ============================================================================
 
 // A Writer, structurally. No closures, no capture, memcpy-movable.
-StringWriter :: <M: Allocator> (mem: M) -> self {
-    buf := List<u8>(mem)
+StringWriter :: <M: Allocator> (m: M) -> self {
+    buf := List<u8>(m)
 
     write_bytes :: (&self, p: ptr<u8>, n: u32) -> () {
         for (i := 0; i < n; i += 1) { self.buf.push(p[i]) }
@@ -390,8 +392,8 @@ StringWriter :: <M: Allocator> (mem: M) -> self {
     finish :: (&self) -> slice<u8> { self.buf.span() }
 }
 
-to_string :: <T, M: Allocator, F: Formattable<T> = ?> (mem: M, v: T) -> slice<u8> {
-    b := StringWriter(mem)
+to_string :: <T, M: Allocator, F: Formattable<T> = ?> (m: M, v: T) -> slice<u8> {
+    b := StringWriter(m)
     F.format(v, &b)          // &b coerces to ptr<Writer>; the fat pointer is
     b.finish()               // built right here, and only here
 }
@@ -405,27 +407,27 @@ add_u8 :: (a: u8, v: u8) -> u8 { a + v }
 // ============================================================================
 
 main :: () -> () {
-    mem := Heap()                      // zero-sized
-    xs  := List<u8>(mem)               // M = Heap; every alloc call is direct
+    heap := Heap()                     // zero-sized
+    xs   := List<u8>(heap)             // M = Heap; every alloc call is direct
     defer xs.deinit()
 
     xs.push(2)
     xs.push(1)
 
-    io.out.write(to_string(mem, xs[0]))              // "2"
-    io.out.write(to_string(mem, xs))                 // "[2, 1]"
+    io.write(io.out, to_string(heap, xs[0]))             // "2"
+    io.write(io.out, to_string(heap, xs))                // "[2, 1]"
 
     // Override the solver by naming the policy. It is a compile-time
     // argument passed by name, so it uses `=`, like any other default.
-    io.out.write(to_string<F = hex_u8>(mem, xs[0]))  // "02"
-    io.out.write(to_string<F = hex_u8>(mem, xs))     // "[02, 01]"
+    io.write(io.out, to_string<F = hex_u8>(heap, xs[0])) // "02"
+    io.write(io.out, to_string<F = hex_u8>(heap, xs))    // "[02, 01]"
 
     sort(&xs)                          // Ord<u8> from the pool
     sort<O = reverse_u8>(&xs)          // by hand
 
     match (xs.pop()) {
-        some (v) { io.out.write(to_string(mem, v)) }
-        none     { io.err.write("empty") }
+        some (v) { io.write(io.out, to_string(heap, v)) }
+        none     { io.write(io.err, "empty") }
     }
 
     // Static composition: Tracking<Heap> is a distinct type, calls still direct.
@@ -445,8 +447,8 @@ main :: () -> () {
     // and the second one is the case a member could not have expressed.
     v := Vec2(1.0, 2.0) + Vec2(3.0, 4.0)
     w := 2.0 * v
-    if (w == Vec2(8.0, 12.0)) { io.out.write("yes") }
-    io.out.write(to_string(mem, saturating.add(v, w)))   // the named one, by hand
+    if (w == Vec2(8.0, 12.0)) { io.write(io.out, "yes") }
+    io.write(io.out, to_string(heap, saturating.add(v, w)))  // the named one, by hand
 
     // The iterator shape, with its Item supplied by the implementer.
     li    := ListIter(&xs)
@@ -455,9 +457,9 @@ main :: () -> () {
     // A closure is what is left over: a block holding `m` with one member
     // named `()`. A closure is a struct; that is the whole point.
     print_u8 :: <M: Allocator> (m: M) -> self {
-        () :: (&self, v: u8) -> () { io.out.write(to_string(self.m, v)) }
+        () :: (&self, v: u8) -> () { io.write(io.out, to_string(self.m, v)) }
     }
-    p := print_u8(mem)
+    p := print_u8(heap)
     p(7)                               // -> p.()(7)
 
     // ...and since it is a block with a `()` member, it satisfies Fn<u8, ()>

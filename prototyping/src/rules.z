@@ -510,9 +510,14 @@
 // whole-program property). Three independent reasons for one rule.
 //
 // ----------------------------------------------------------------------------
-// UFCS.  `a.f(x)` falls back to `f(a, x)` when `a` has no member `f`, and `f`
-// is found by ORDINARY NAME LOOKUP IN THE CALLER'S SCOPE. That is precisely
-// why an extrinsic function may never satisfy a shape -- see NOTE 4.
+// CALLS.  `a.f(x)` IS THE MEMBER `f` OF `a`, and there is nothing else it can
+// be. A free function is called as `f(a, x)` -- `mem.make<T>(m, n)`,
+// `io.write(w, s)` -- and no convenience turns it back into a member.
+//
+// There is no UFCS. Method position is reserved for what is actually in the
+// block, so a reader can tell a shape's operations from the conveniences
+// around it by looking at the call, and shape satisfaction never depends on
+// what a caller imported. What that buys, and what it costs, is NOTE 4.
 //
 // ----------------------------------------------------------------------------
 // TWO KINDS OF ABSTRACTION, ONE SYNTAX. Both are a block with unfilled holes.
@@ -624,9 +629,10 @@
 //     because non-virtual methods are not in the table
 //   - the shape's author owns the convenience layer forever
 //
-// Keeping them out, as free functions on `mem`, costs nothing at the call
-// site, because UFCS makes `mem.make<T>(capacity)` read the same either way.
-// All three problems go.
+// Keeping them out, as free functions over `M: Allocator`, costs the module
+// name at the call site -- `mem.make<T>(m, capacity)` and not
+// `m.make<T>(capacity)`, since CALLS gives no fallback. All three problems go
+// for those four characters.
 //
 // What it costs: a Pool cannot specialize `make` with per-type free
 // lists. If that need becomes real, the answer is a separate
@@ -640,23 +646,33 @@
 // is not a method at all.
 //
 // ----------------------------------------------------------------------------
-// NOTE 4 -- what lives in the block, and what UFCS may do.
+// NOTE 4 -- what lives in the block, and why nothing joins it later.
 //
 // Methods in the block get T, M and the fields in scope for free, and they are
 // the only thing shape matching looks at.
 //
 //     INTRINSIC   declared in the block. Counts for shape satisfaction. May
 //                 be virtual. `push`, `alloc`, `write_bytes`.
-//     EXTRINSIC   a free function called via UFCS. Convenience only, never
+//     EXTRINSIC   a free function over a bound. Convenience only, never
 //                 satisfies a shape. `make`, `drop`, `write`.
 //
-// The second half of that rule is load-bearing, and follows directly from UFCS
-// resolving the free function in the CALLER's scope. If UFCS could satisfy a
-// shape, then "does Heap satisfy Allocator" would depend on what is imported,
-// and two modules could coerce the same value and build different vtables.
+// WITH NO UFCS THE SPLIT IS VISIBLE IN THE TEXT. `w.write_bytes(p, n)` is the
+// shape's and `io.write(w, s)` is not, and the two do not look alike, so
+// nobody has to know what a file imported to tell an operation from a
+// convenience.
 //
-// With that split you do get extension methods -- add anything to a type you
-// do not own, it just cannot participate in a shape.
+// The alternative is what makes the rule worth stating. Let `a.f(x)` fall back
+// to `f(a, x)` resolved in the CALLER's scope and one of two things must be
+// true: either the fallback can satisfy a shape, and "does Heap satisfy
+// Allocator" becomes a question about imports -- two modules coerce the same
+// value and build different vtables -- or it cannot, and the language has a
+// method call whose meaning depends on a distinction the call site hides.
+// The first is unsound and the second is the reader's problem forever. Both
+// are avoided by the same one-line rule, and the price is `mem.make<T>(m, n)`
+// where `m.make<T>(n)` would have read more like prose.
+//
+// You still get extension functions -- write anything over a type you do not
+// own -- they just cannot join a shape, and they cannot dress as members.
 //
 // ----------------------------------------------------------------------------
 // NOTE 5 -- derived instances are ordinary defs.
@@ -681,11 +697,11 @@
 //     v * 2.0      ->  a member of Vec2 named `*`.  Fine.
 //     2.0 * v      ->  a member of f32 named `*`.   Nobody owns f32.
 //
-// UFCS looks like the rescue -- `*(2.0, v)` resolves a free function in the
-// caller's scope -- and it is the rescue NOTE 4 forbids, correctly: if it were
-// allowed, "is Vec2 numeric" would depend on what happened to be imported.
-// So a member cannot express scaling, and no bound could ever require
-// arithmetic of a type parameter.
+// Nothing rescues it. The only candidate is a free function reached from
+// method position, which is the fallback NOTE 4 rules out, correctly: resolved
+// in the caller's scope, "is Vec2 numeric" would depend on what happened to be
+// imported. So a member cannot express scaling, and no bound could ever
+// require arithmetic of a type parameter.
 //
 // The test in NOTE 1 says why, and says what to do instead. Two ways to add
 // two vectors -- saturating and wrapping -- so addition is a CHOICE, and a
@@ -707,7 +723,7 @@
 // member `()`, and that is what a closure is:
 //
 //     print_u8 :: <M: Allocator> (m: M) -> self {
-//         () :: (&self, v: u8) -> () { io.out.write(to_string(self.m, v)) }
+//         () :: (&self, v: u8) -> () { io.write(io.out, to_string(self.m, v)) }
 //     }
 //
 // -- an ordinary `-> self` block, whose runtime params are its captured

@@ -396,20 +396,17 @@
 //
 // INTRINSIC / EXTRINSIC
 //     Where a callable is declared, which decides whether it can satisfy a
-//     shape:
+//     shape AND how it is called:
 //
 //         INTRINSIC   declared inside the block. Counts for shape matching.
-//                     `push`, `alloc`, `write_bytes`.
-//         EXTRINSIC   a free function reached through UFCS. Convenience only,
-//                     NEVER satisfies a shape. `make`, `drop`, `write`.
+//                     Called `a.f(x)`. `push`, `alloc`, `write_bytes`.
+//         EXTRINSIC   a free function over a bound. Convenience only, NEVER
+//                     satisfies a shape. Called `f(a, x)`. `make`, `drop`,
+//                     `write`.
 //
-//     The second half matters: UFCS finds free functions by ordinary lookup in
-//     the CALLER's scope, so if extrinsics counted, "does Heap satisfy
-//     Allocator" would depend on what happened to be imported.
-//
-// UFCS
-//     Uniform Function Call Syntax. `a.f(x)` falls back to `f(a, x)` when `a`
-//     has no member `f`. Sugar for calling, and nothing else.
+//     There is no UFCS -- `a.f(x)` does not fall back to `f(a, x)` -- so the
+//     two are told apart at the call site and not by what the file imported.
+//     See NOTE 4 in rules.z.
 //
 //
 // ============================================================================
