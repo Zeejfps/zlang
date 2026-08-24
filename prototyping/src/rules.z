@@ -108,15 +108,16 @@
 // A HOLE MAY BE A TYPE, because `type` is an ordinary type whose values are
 // types, and a hole is a member you did not supply:
 //
-//     Iterator :: -> self {
-//         Item: type                          // supplied by the implementer
-//         next: (&self) -> Option<self.Item>
+//     Mul :: <A, B> -> self {
+//         Out: type                           // supplied by the instance
+//         mul: (a: A, b: B) -> self.Out
 //     }
 //
 // That is the whole of what other languages call an associated type. It is
-// filled like any other member -- `Item :: T` -- at zero bytes. `type` is a
-// built-in type name and not a keyword, exactly as `u32` and `bool` are. Which
-// things are holes and which are parameters is NOTE 9.
+// filled like any other member -- `Out :: Vec2` -- at zero bytes. `type` is a
+// built-in type name and not a keyword, exactly as `u32` and `bool` are.
+// ONLY A POLICY MAY CARRY ONE, and which things are holes and which are
+// parameters, is NOTE 9.
 //
 // Construction needs no new rule: `=` already fills a declared hole in a
 // literal, so `Option<u8>{ some = 3 }`. Since a variant is a hole of type T,
@@ -369,8 +370,9 @@
 //
 // `_` DOES NOT REACH PROJECTION POSITION, and that is a cost the language
 // accepts rather than a gap it intends to close. It fixes the CONSUMERS of a
-// plumbing parameter and not the WRAPPERS: `iter` must name in its projection
-// the type it declined to name in its parameters. Two `_` are also two
+// plumbing parameter and not the WRAPPERS: a function that RETURNS a
+// `List<T, M>` must name the M it declined to name in its parameters, because
+// a projection is a type and `_` is the absence of one. Two `_` are also two
 // independent parameters, so `_` can never say "the same type I did not name".
 // Both would want a real existential, which is a larger feature than the
 // convenience is worth.
@@ -525,8 +527,8 @@
 //     holes do not         ->  POLICY.     Extrinsic, several may exist, the
 //                              caller picks, the solver defaults it.
 //     Mixing the two in one block is an error, not a third thing.
-//     The test reads VALUE holes only. A `: type` hole takes no self and is
-//     neither; both kinds of block may carry one. See NOTE 9.
+//     The test reads VALUE holes only, since a `: type` hole takes no self
+//     and is neither. Only a POLICY may carry one. See NOTE 9.
 //
 // A SHAPE NAME IN AN ARGUMENT POSITION says which dispatch you are buying:
 //     <M: Allocator>   a bound.   Monomorphised, calls direct, 0-byte field.
@@ -534,9 +536,8 @@
 // The bracket already separates compile time from run time; it separates
 // static from dynamic for the same reason, and no `dyn` is needed.
 //
-// A shape with an unfilled TYPE hole cannot be erased until the hole is
-// fixed at the coercion: `ptr<Iterator<Item = u8>>`, which is the existing
-// "fill a hole by name with `=`" and nothing more.
+// A SHAPE'S HOLES ARE ALL SELF-TAKING VALUE HOLES, which is what keeps every
+// shape erasable without a second rule. See NOTE 9.
 //
 // STRUCTURAL MATCHING HAS NO ADAPTER, and does not get one. A foreign type
 // with the right operations under the wrong names cannot be made to satisfy a
@@ -808,30 +809,31 @@
 // rather than advisory.
 //
 // ----------------------------------------------------------------------------
-// NOTE 9 -- a type hole, and why it is not a parameter.
+// NOTE 9 -- a type hole, why it is not a parameter, and why only a policy has
+// one.
 //
-// `Item: type` in a shape, `Out: type` in an operator policy. Both are the
-// thing other languages call an associated type, and here it is not a new
-// construct: `type` is a type whose values are types, a hole is a member you
-// did not supply, so a hole of type `type` is a type the implementer supplies.
+// `Out: type` in an operator policy, and nowhere else. It is the thing other
+// languages call an associated type, and here it is not a new construct:
+// `type` is a type whose values are types, a hole is a member you did not
+// supply, so a hole of type `type` is a type the INSTANCE supplies.
 //
 // THE LINE BETWEEN A PARAMETER AND A HOLE IS WHO DECIDES, and it is mechanical
 // once stated: the solver searches on parameters, so anything the caller must
 // know before an instance can be found is a parameter, and anything the
 // instance itself determines is a hole. `Mul<Vec2, f32>` searches on both
 // operand types; the result type is not a search key and could not be one --
-// you would have to know the answer to look it up.
+// you would have to know the answer to look it up. There is nowhere else to
+// put it, which is the whole argument for the feature.
 //
-// What it removes from a signature, `fold` being the smallest example:
-//     without   fold :: <T, A, I: Iterator<T>, F: Fn2<A, T, A>>
-//     with      fold :: <I: Iterator, A, F: Fn2<A, I.Item, A>>
-// `T` is not a choice a caller of `fold` makes; it belongs to the iterator. A
-// shape with nowhere to put it makes the caller spell it anyway.
-//
-// Two rules follow from it, both stated above: the shape/policy test
-// quantifies over value holes only, and a
-// shape with an unfilled type hole cannot be coerced to `ptr<Shape>` until the
-// hole is fixed at the coercion.
+// IT IS AN ARGUMENT ABOUT SEARCH, so it reaches policies and stops there. A
+// SHAPE MAY NOT CARRY A TYPE HOLE. A shape exists to be erasable, and a vtable
+// slot returning `Option<self.Item>` has no layout until an implementer
+// supplies Item -- so the shape half needed a rule of its own, filling the
+// hole at the coercion (`ptr<Iterator<Item = u8>>`) while a static bound
+// needed nothing. That rule bought one signature, in an `Iterator` that both
+// programs declared and neither used, and went out with it. A policy is found
+// at compile time and never erased, so it needs no such rule and keeps
+// the hole.
 //
 // ============================================================================
 // OPEN
@@ -863,10 +865,12 @@
 //     save file are made of. Wanted: `S.tag`, a derived sum of unit variants,
 //     with `tag_of(v)` total, comparable, and ordered.
 //
-//   - NO `for (x := it)`. `Iterator` is declared by the standard library and
-//     used by neither program written against it, because the `loop`/`match`/
-//     `Option` consumer is four lines to replace one. That is a signal about
-//     the sugar, not about the shape.
+//   - NO `for (x := it)`. Every traversal in both programs is an index loop,
+//     because the `loop`/`match`/`Option` consumer is four lines to replace
+//     one and nobody writes them. `Iterator` was the standard library's answer
+//     WITHOUT the form -- declared by both programs, used by neither -- and is
+//     cut. The form is still missing and still wanted; what it quantifies over
+//     is the open half. See [P23] in ecs.z.
 //
 //   - ARITY FAMILIES. `Fn`, `Fn2`, `Fn3` are cheap enough to live with as an
 //     implementation detail. `Join2`, `Join3`, `Join4` at a query interface

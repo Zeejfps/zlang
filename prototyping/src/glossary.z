@@ -41,7 +41,7 @@
 //         name : T       a HOLE -- see below.  No binder at all.
 //
 //     A hole's type may be `type`, which makes it an ASSOCIATED TYPE -- see
-//     below. `Item :: T` fills one, and is an ordinary compile-time member.
+//     below. `Out :: Vec2` fills one, and is an ordinary compile-time member.
 //
 // BINDER
 //     `::` or `:=`. The thing between a name and its value. `:` is NOT a
@@ -94,24 +94,25 @@
 // ASSOCIATED TYPE
 //     A hole whose type is `type`:
 //
-//         Iterator :: -> self {
-//             Item: type
-//             next: (&self) -> Option<self.Item>
+//         Mul :: <A, B> -> self {
+//             Out: type
+//             mul: (a: A, b: B) -> self.Out
 //         }
 //
 //     Not a new construct. `type` is an ordinary type whose values are types,
-//     so a hole of that type is a type the implementer supplies rather than
-//     one the caller chooses. The line between it and a compile-time PARAMETER
-//     is who decides: the solver searches on parameters, so anything the
-//     caller must know in order to find an instance is a parameter, and
-//     anything the instance itself determines is a hole. A result type cannot
-//     be a parameter -- you would have to know the answer to look it up.
+//     so a hole of that type is a type the instance supplies rather than one
+//     the caller chooses. The line between it and a compile-time PARAMETER is
+//     who decides: the solver searches on parameters, so anything the caller
+//     must know in order to find an instance is a parameter, and anything the
+//     instance itself determines is a hole. A result type cannot be a
+//     parameter -- you would have to know the answer to look it up.
 //
-//     Two consequences. The shape/policy test below reads VALUE holes only, so
-//     both kinds of block may carry a type hole. And a shape with an unfilled
-//     type hole cannot be erased -- `ptr<Iterator>` has no layout for
-//     `Option<Item>` -- so you fix it at the coercion, `ptr<Iterator<Item = u8>>`,
-//     which is the ordinary "fill a hole by name with `=`".
+//     ONLY A POLICY MAY CARRY ONE. The argument above is about SEARCH, and a
+//     policy is what the solver searches. A shape exists to be erased, and a
+//     vtable slot whose type an implementer supplies has no layout, so a type
+//     hole in a shape needed a second rule -- fill it at the coercion -- which
+//     bought one signature and went out with `Iterator`. So the shape/policy
+//     test below reads VALUE holes only and never has to except anything.
 //
 // PROJECTION
 //     What comes after `->`. It says what escapes the block, and it is what
@@ -421,7 +422,7 @@
 //
 // `type` is NOT in this list. It is a built-in type name whose values are
 // types, with exactly the status of `u32` and `bool`, and it is what makes
-// `Item: type` an ordinary hole rather than a new construct.
+// `Out: type` an ordinary hole rather than a new construct.
 //
 //
 // ============================================================================

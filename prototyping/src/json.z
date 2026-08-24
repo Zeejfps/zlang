@@ -66,49 +66,14 @@ is_some :: <T> (o: Option<T>) -> bool {
 
 
 // ============================================================================
-// std.iter
+// std.span
 // ============================================================================
 //
-// [W1] A TYPE HOLE, NOT A PARAMETER. The element type belongs to the iterator
-// rather than to the caller, which is what keeps it out of `fold`'s signature.
-
-Iterator :: -> self {
-    Item: type
-    next: (&self) -> Option<self.Item>
-}
-
 // [W2] `-> self {}` with only parameters is a plain record, with no new form.
 // Params of a `-> self` def ARE the fields, so an empty body is a struct
 // declaration. This is one of the strongest results in the whole experiment.
 
 Span :: (lo: u32, hi: u32) -> self
-
-// A concrete iterator. Note `M` -- see FRICTION 1, it is pure plumbing.
-ListIter :: <T, M> (xs: ptr<List<T, M>>) -> self {
-    Item :: T
-    i    := 0
-    next :: (&self) -> Option<T> {
-        if (self.i >= self.xs.count) { return Option<T>.none() }
-        v := self.xs[self.i]
-        self.i += 1
-        Option<T>.some(v)
-    }
-}
-
-iter :: <T, M> (xs: ptr<List<T, M>>) -> ListIter<T, M> { ListIter(xs) }
-
-// Extrinsic, so it can never satisfy a shape (NOTE 4), which is right: `fold`
-// is convenience, `next` is the abstraction. It reads as one at the call too
-// -- `fold(&it, acc, f)`, never `it.fold(...)`.
-fold :: <I: Iterator, A, F: Fn2<A, I.Item, A>> (it: ptr<I>, acc: A, f: F) -> A {
-    a := acc
-    loop {
-        match (it.next()) {
-            none    { return a }
-            some(v) { a = f(a, v) }          // f(a, v) is f.()(a, v)
-        }
-    }
-}
 
 
 // ============================================================================
@@ -617,7 +582,7 @@ write_escaped :: (s: slice<u8>, w: ptr<Writer>) -> () {
 
 
 // ============================================================================
-// a small query layer, to exercise closures and iterators
+// a small query layer, to exercise closures
 // ============================================================================
 
 // A closure is a block with a `()` member, so it satisfies `Fn2`
@@ -701,9 +666,10 @@ main :: () -> () {
             tags := match (obj["tags"]) { some   (t) { t }  _ { return } }
             xs   := match (tags)        { array  (a) { a }  _ { return } }
 
-            // iterate an array through the Iterator shape
-            it    := iter(&xs)
-            total := fold(&it, 0.0, sum_numbers)
+            // An array is a `List`, so the traversal is an index loop and
+            // `sum_numbers` is an ordinary call, not a callback.
+            total := 0.0
+            for (i := 0; i < xs.count; i += 1) { total = sum_numbers(total, xs[i]) }
             io.write(io.out, fmt.to_string(heap, total))              // 6
 
             // closure + erasure
@@ -728,10 +694,13 @@ main :: () -> () {
 // WHAT HELD UP  (do not lose these)
 // ----------------------------------------------------------------------------
 //
-// [W1] A TYPE HOLE TAKES A PLUMBING PARAMETER OUT OF A SIGNATURE rather than
-//      moving it somewhere else. `Iterator` carries `Item: type`, so `fold`
-//      names only what its caller chooses -- the iterator, the accumulator,
-//      the function -- and the element type stays with the iterator.
+// [W1] A TYPE HOLE TAKES AN OUTPUT OUT OF A SIGNATURE rather than moving it
+//      somewhere else. `Add<A, B>` carries `Out: type` (unified.z), so `a + n`
+//      in `sum_numbers` names only the operands and the result type comes back
+//      from the instance. A hole is not a parameter, and that is the point:
+//      the solver searches on `A` and `B`, and an output must never be a
+//      search key. A policy is never coerced to a fat pointer, so the hole
+//      costs nothing at the use site either.
 //
 // [W2] `X :: (a: A, b: B) -> self {}` is a struct declaration, with no struct
 //      form. "Runtime params of a `-> self` def ARE fields" is the single
@@ -769,8 +738,7 @@ main :: () -> () {
 //   file. `M` in `List<T, M>` is never chosen by anyone, but it must be spelled
 //   in every signature that mentions a list:
 //
-//       ListIter :: <T, M> (xs: ptr<List<T, M>>) -> self
-//       sort     :: <T, M, O: Ord<T> = ?> (xs: ptr<List<T, M>>)   // unified.z
+//       sort :: <T, M, O: Ord<T> = ?> (xs: ptr<List<T, M>>)   // unified.z
 //
 //   `sort` declares `M` purely so that `List<T, M>` parses. When the type is
 //   recursive (`Json`) it is not merely noise, it is fatal -- see FRICTION 2.
@@ -848,12 +816,13 @@ main :: () -> () {
 // FRICTION 12 -- `_` DOES NOT REACH PROJECTION POSITION. `_` cleans up `sort`
 //   because `M` appears only in a parameter type. It cannot clean up
 //
-//       ListIter :: <T, M> (xs: ptr<List<T, M>>) -> self
-//       iter     :: <T, M> (xs: ptr<List<T, M>>) -> ListIter<T, M>
+//       spaced :: <M> -> fmt.Formattable<Json<M>>
+//       parse  :: <M: Allocator> (allocator: M, src: slice<u8>) -> Result<Json<M>, Error>
 //
-//   because `iter` must NAME the elided type to spell its own return type. So
-//   `_` fixes the consumers of a plumbing parameter and not the wrappers, and
-//   FRICTION 1 survives wherever a type is passed through rather than used.
+//   because both must NAME the type to spell their own projection -- `spaced`
+//   mentions `M` nowhere else at all. So `_` fixes the consumers of a plumbing
+//   parameter and not the producers, and FRICTION 1 survives wherever a type
+//   is passed through rather than used.
 //
 //   Two further limits, both hit while parameterising `Json`:
 //

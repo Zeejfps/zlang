@@ -207,8 +207,9 @@ Store :: <C, M: Allocator> (allocator: M) -> self {
     }
 
     // Iteration is over the dense arrays, by index, because there is no
-    // `for (x in xs)` form and building a ListIter per store per system costs
-    // more syntax than the index loop it replaces. See FRICTION 18.
+    // `for (x in xs)` form and an iterator block per store per system cost
+    // more syntax than the index loop it replaced -- which is why there is no
+    // longer an iterator shape to build one from. See FRICTION 18.
     entity_at :: (&self, i: u32) -> Entity  { self.owner[i] }
     slot_at   :: (&self, i: u32) -> ptr<C>  { &self.dense[i] }
 
@@ -947,11 +948,12 @@ main :: () -> () {
 //   answer and nothing cheaper was found.
 //
 // FRICTION 18 -- THERE IS NO `for (x in xs)`, so every traversal in this file
-//   is a C index loop and `Iterator<T>` -- a shape both files declare -- is
-//   used exactly once, by `fold`, in json.z. A `loop` + `match` + `Option`
-//   consumer is four lines to replace one, so nobody writes it, so the
-//   abstraction that the standard library is built around goes unused in the
-//   two programs written against it. That is worth taking as a signal.  -> [P23]
+//   is a C index loop. `Iterator<T>` was the standard library's answer, both
+//   files declared it, and it was used exactly once -- by `fold`, in json.z --
+//   because a `loop` + `match` + `Option` consumer is four lines to replace
+//   one and nobody writes those four lines. That was taken as the signal it
+//   was: `Iterator`, `ListIter`, `iter` and `fold` are cut. The shape was
+//   never the friction, though; the missing form still is.  -> [P23]
 //
 // FRICTION 28 -- POINTERS INTO A CONTAINER ARE THE ONLY MUTABLE HANDLE, and
 //   the join hands out two per hit. `Combat.chase` then re-looks-up the same
@@ -1064,13 +1066,15 @@ main :: () -> () {
 //       visibility usable on a container at all (FRICTION 17), and `List` in
 //       unified.z now exports six names and hides its storage.
 //
-// [P23] `for (x := it) { ... }` over anything satisfying `Iterator`,
-//       desugaring to the `loop` + `match` + `Option` consumer written by hand
-//       four times in this file. `for (h := join2(&w.pos, &w.vel))` is then
-//       the whole of a system's traversal. The evidence that this is not
-//       sugar-for-its-own-sake: `Iterator<T>` is declared by both files and
-//       used by neither, because the manual consumer is four times the size of
-//       the index loop it replaces.
+// [P23] `for (x := it) { ... }` over anything with a `next` that returns
+//       `Option<T>`, desugaring to the `loop` + `match` + `Option` consumer
+//       written by hand four times in this file. `for (h := join2(&w.pos,
+//       &w.vel))` is then the whole of a system's traversal. `Iterator<T>`
+//       was the standard library's attempt at this without the form, and it
+//       was cut: both files declared it, neither used it, because the manual
+//       consumer is four times the size of the index loop it replaces. That
+//       was the argument for the form, not against it -- the shape carried
+//       nothing the desugaring does not already need structurally.
 //
 // [P19] A SUM'S DISCRIMINANT IS A VALUE. For `S :: -> oneof {...}`, `S.tag` is
 //       a derived sum of unit variants, `tag_of(v): S.tag` is total, and it is

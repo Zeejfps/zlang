@@ -217,62 +217,6 @@ List :: <T, M: Allocator> (allocator: M) -> {push, pop, count, [], span, deinit}
 
 
 // ============================================================================
-// std.iter  --  what a type hole is for
-// ============================================================================
-//
-// `Item` is decided by the implementer and reported back, so it is a hole. The
-// element type of an iterator was never a choice the caller makes -- it is a
-// property of the iterator -- and threading it through as a parameter is what
-// made `fold`'s signature carry a `T` that nobody at the call site chooses.
-
-Iterator :: -> self {
-    Item: type
-    next: (&self) -> Option<self.Item>
-}
-
-ListIter :: <T, M> (xs: ptr<List<T, M>>) -> self {
-    Item :: T                                  // fills the hole; costs 0 bytes
-    i := 0
-    next :: (&self) -> Option<T> {
-        if (self.i >= self.xs.count) { return Option<T>.none() }
-        v := self.xs[self.i]
-        self.i += 1
-        Option<T>.some(v)
-    }
-}
-
-// A compile-time member of a BOUND is reached the same way as one of a value:
-// `I.Item`. The parameter that disappeared is the point --
-//     before:  fold :: <T, A, I: Iterator<T>, F: Fn2<A, T, A>> (...)
-//     after:   fold :: <I: Iterator, A, F: Fn2<A, I.Item, A>> (...)
-// `ptr<I>`, because fold writes through the iterator. A parameter is never a
-// place -- see PLACES -- and the body is unaffected either way, since `.`
-// reaches through a pointer: `it.next()` is the same text.
-fold :: <I: Iterator, A, F: Fn2<A, I.Item, A>> (it: ptr<I>, acc: A, f: F) -> A {
-    a := acc
-    loop {
-        match (it.next()) {
-            none    { return a }
-            some(v) { a = f(a, v) }
-        }
-    }
-}
-
-// ERASING A SHAPE WITH A TYPE HOLE. A vtable slot returning `Option<self.Item>`
-// has no layout until Item is known, so a shape with an unfilled type hole
-// cannot be coerced. Fix it at the coercion, with the spelling that already
-// means "fill a declared hole":
-//
-//     it : ptr<Iterator<Item = u8>> := &li
-//
-// This is NOTE 3's rule -- shape-level generics multiply vtables -- arriving
-// at the same place from the other direction, and it needs no new syntax:
-// `=` fills a hole, and `to_string<F = hex_u8>` already passes one by name.
-// A static bound (`I: Iterator`) needs no such thing, because monomorphising
-// knows Item exactly.
-
-
-// ============================================================================
 // std.ord  --  Ord is a POLICY: u8 has no one true ordering, and the
 // caller must be able to pick. Nothing is attached to u8. `<`, `<=`, `>` and
 // `>=` desugar to it, and `==` and `!=` to Eq.
@@ -402,9 +346,6 @@ to_string :: <T, M: Allocator, F: Formattable<T> = ?> (allocator: M, v: T) -> sl
 }
 
 
-add_u8 :: (a: u8, v: u8) -> u8 { a + v }
-
-
 // ============================================================================
 // main
 // ============================================================================
@@ -452,10 +393,6 @@ main :: () -> () {
     w := 2.0 * v
     if (w == Vec2(8.0, 12.0)) { io.write(io.out, "yes") }
     io.write(io.out, to_string(heap, saturating.add(v, w)))  // the named one, by hand
-
-    // The iterator shape, with its Item supplied by the implementer.
-    li    := ListIter(&xs)
-    total := fold(&li, 0, add_u8)
 
     // A closure is what is left over: a block holding `allocator` with one member
     // named `()`. A closure is a struct; that is the whole point.
