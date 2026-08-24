@@ -46,8 +46,39 @@
 //     reads "x, of type u32, bound at run time to 3".
 //
 //     `=` is not a binder either. It assigns: mutates an existing binding,
-//     fills a declared hole in a literal, gives a parameter a default, or
-//     passes a compile-time argument by name.
+//     fills a declared hole, gives a parameter a default, or passes a
+//     compile-time argument by name. It NEVER creates a name.
+//
+// ----------------------------------------------------------------------------
+// WHICH BINDER DO I WRITE?  --  the question this glossary exists for
+//
+//     Three spellings for what looks like the same act. They are distinguished
+//     by ONE question: DOES THIS NAME ALREADY EXIST?
+//
+//         format: (v: T, w: ptr<Writer>) -> ()   declare a hole. Name exists,
+//                                                value does not. No binder.
+//         format :: (v, w) -> () { ... }         CREATE the name and supply it.
+//         format = (v, w) -> () { ... }          FILL a hole declared
+//                                                elsewhere. Creates nothing.
+//
+//     The PROJECTION tells you which case you are in, every time:
+//
+//         -> self        you are building a fresh block. Nothing exists yet,
+//                        so every member is `::` or `:=`.
+//         -> SomeType    you are building a value of a type that ALREADY HAS
+//                        HOLES. Members matching those holes are `=`.
+//
+//     So in `List :: <T, M> (mem: M) -> self`, `push :: (&self, ...)` creates
+//     a member. In `spaced :: -> Formattable<Json>`, `format = (v, w) ...`
+//     fills the hole `Formattable` declared.
+//
+//     Mixing is normal. A helper that is NOT one of the type's holes is a
+//     fresh member, written `::`, and it does not escape:
+//
+//         spaced :: -> Formattable<Json> {
+//             format = (v, w) -> () { ... self.indent(w) ... }   // fills
+//             indent :: (w: ptr<Writer>) -> () { ... }           // creates
+//         }
 //
 // HOLE
 //     A member with a type and NO binder: `alloc: (&self, n: u32) -> ptr`.
@@ -141,6 +172,45 @@
 //     Case-insensitive comparison is a choice you make about a string.
 //
 //     Mixing the two in one block is an error, not a third kind of thing.
+//
+// ----------------------------------------------------------------------------
+// HOW YOU PROVIDE THE MEMBERS, AND WHY IT IS SPELLED TWO WAYS
+//
+//     This is the most common source of confusion in the language, and it is
+//     not arbitrary -- it is the structural/nominal difference, showing up in
+//     the binder.
+//
+//         Heap :: () -> self {
+//             alloc :: (&self, n: u32) -> ptr { c_malloc(n) }      // creates
+//         }
+//
+//         spaced :: -> Formattable<Json> {
+//             format = (v, w) -> () { ... }                        // fills
+//         }
+//
+//     Both look like "provide an implementation", and they are spelled
+//     differently because they are not the same act.
+//
+//     `alloc` IS a hole in Allocator -- but Heap never says `-> Allocator`. It
+//     says `-> self` and satisfies the shape STRUCTURALLY, by its members
+//     happening to match. There is no hole in scope, so `alloc` is a fresh
+//     member, written `::`.
+//
+//     A policy instance is the opposite. It MUST name its type in the
+//     projection, because that is how the solver finds it. So the type's holes
+//     are in scope, and `format` fills one, written `=`.
+//
+//                          SHAPE                     POLICY
+//         satisfied by     structure -- the member   naming the type in the
+//                          names match               projection
+//         members written  `::`  -- creating         `=`   -- filling
+//         checked against  nothing; any shape it     the named type's holes,
+//                          satisfies is incidental   signature by signature
+//
+//     Reading the binder therefore tells you something real. `::` means "fresh
+//     member; whatever shape it happens to satisfy is a coincidence". `=`
+//     means "honouring a contract that exists elsewhere, and the compiler is
+//     checking the signature against it".
 //
 // ----------------------------------------------------------------------------
 // WHY "POLICY" AND NOT "DICTIONARY"

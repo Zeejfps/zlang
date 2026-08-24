@@ -41,9 +41,25 @@
 //     name          := undefined        a field you fill in later
 //
 //     `=` is assignment: mutating an existing binding, filling a declared
-//     hole in a literal, a default in a parameter list, or passing a
-//     compile-time arg by name (`to_string<F = hex_u8>`). It never creates
-//     a binding.
+//     hole, a default in a parameter list, or passing a compile-time arg by
+//     name (`to_string<F = hex_u8>`). It never creates a binding.
+//
+//     SO THE PROJECTION DECIDES WHICH ONE A MEMBER TAKES, and this is worth
+//     stating because the three spellings look like one act:
+//
+//         -> self      you are building a FRESH block. Nothing exists yet, so
+//                      every member is `::` or `:=`.
+//         -> SomeType  you are building a value of a type that ALREADY HAS
+//                      HOLES. Members matching those holes are `=`; anything
+//                      else is a fresh, private member and takes `::`.
+//
+//     Which is why `Heap` writes `alloc :: ...` and `hex_u8` writes
+//     `format = ...` for what looks like the same act. Heap says `-> self` and
+//     satisfies Allocator STRUCTURALLY -- it never names it, so there is no
+//     hole in scope and `alloc` is created. A policy instance must NAME its
+//     type in the projection, because that is how the solver finds it, so the
+//     holes are in scope and it fills one. The binder is the structural /
+//     nominal difference made visible. See glossary.z.
 //
 //     A runtime param of a `-> self` def IS a field: the block is what you
 //     kept, so the params are in it. A def whose body would be empty may drop
