@@ -1,5 +1,5 @@
 // ============================================================================
-// unified.z  --  one declaration form for module / struct / func / trait
+// unified.z  --  one declaration form for module / struct / func / sum / shape
 // ============================================================================
 //
 // THE RULE
@@ -11,8 +11,19 @@
 //
 //     -> ()        nothing escapes            procedure
 //     -> T         one value escapes          function
-//     -> self      the whole block escapes    struct / module / shape
-//     -> {a, b}    part of it escapes         multiple return
+//     -> self      all of the block           struct / module / shape
+//     -> {a, b}    these members of it        multiple return, AND visibility
+//     -> oneof     one member of it, tagged   sum
+//
+// APPLYING A DECLARATION. Stated because everything else depends on it:
+//
+//     List           the declaration
+//     List<u8>       ...compile-time args applied   ->  a TYPE
+//     List<u8>(mem)  ...runtime args applied        ->  a VALUE
+//
+//     No runtime group at all (`x :: -> T {...}`) means the thing IS its
+//     value, already evaluated. An explicit empty `()` means you call it.
+//     That is the whole of why `Heap()` is a call and `Writer` is not.
 //
 // BRACKETS
 //     <>   compile-time args      List<u8>, ptr<T>
@@ -30,26 +41,103 @@
 //     name          := undefined        a field you fill in later
 //
 //     `=` is assignment: mutating an existing binding, filling a declared
-//     hole in a literal, or a default in a parameter list. It never creates
-//     one.
+//     hole in a literal, a default in a parameter list, or passing a
+//     compile-time arg by name (`to_string<F = hex_u8>`). It never creates
+//     a binding.
 //
 //     A runtime param of a `-> self` def IS a field: the block is what you
-//     kept, so the params are in it.
+//     kept, so the params are in it. A def whose body would be empty may drop
+//     it -- `Span :: (lo: u32, hi: u32) -> self` is a record declaration.
 //     A field bound with `::` costs zero bytes; it lives in the type.
-//     No runtime group at all (`x :: -> T {...}`) means the thing IS its
-//     value, already evaluated. An explicit empty `()` means you call it.
 //
-// THERE IS NO `trait`, `interface` OR `abstract`. A block with an unfilled
-// hole cannot be instantiated, so it is only usable as a bound or behind a
-// pointer. That is all an interface ever was, and it applies to every block
-// equally -- a List with one unfilled field is abstract for the same reason
-// Allocator is. Filling the holes gives you a value.
+// ----------------------------------------------------------------------------
+// HOLES.  `name : T` with no binder is a hole. What a hole MEANS is decided by
+// the projection, and that single fact is the whole of both sums and
+// interfaces:
 //
-// `self` IS THE ONLY NEW KEYWORD. It always means "the block".
-//     -> self      in a projection: the block escapes
-//     self         a receiver, by value
-//     &self        a receiver, by pointer
-//     ptr<self>    what &self desugars to
+//     -> self    CONJUNCTIVE. All holes must be filled to instantiate. A block
+//                with an unfilled hole cannot be instantiated, so it is usable
+//                only as a bound or behind a pointer. That is all an interface
+//                ever was, and it applies to every block equally -- a List with
+//                one unfilled field is abstract for the same reason Allocator
+//                is. Filling the holes gives you a value.
+//
+//     -> oneof   DISJUNCTIVE. Exactly one hole is filled. A sum is never
+//                abstract; there is nothing left to fill.
+//
+// So `Allocator` and `Option` are the same declaration shape read two ways.
+// THERE IS NO `trait`, `interface`, `abstract`, `enum` OR `union`.
+//
+// The projection quantifies over HOLES and nothing else. `::` and `:=` members
+// are unaffected by it, so a sum carries methods exactly as a struct does:
+//
+//                       -> self                    -> oneof
+//     name : T          requirement                variant
+//     name :: v         method / ct field          method
+//     name := v         runtime field              -- (no shared storage)
+//
+// Construction needs no new rule: `=` already fills a declared hole in a
+// literal, so `Option<u8>{ some = 3 }`. Since a variant is a hole of type T,
+// the variant name is also a derived function (T) -> Self: `Option<u8>.some(3)`.
+//
+// `-> oneof {a, b}` is a sum over a subset -- variants only the declaring
+// module can construct, matchable by everyone. It falls out of visibility
+// below rather than being designed.
+//
+// On the name: `-> T` is already glossed "one value escapes", so `-> one`
+// would collide with the projection above it, and a bare `one` in a slot that
+// otherwise holds type names burns a plausible identifier. `union` is poisoned
+// by C, `variant` names a member rather than the whole, `either` implies two.
+// It is spelled bare and not `-> oneof self` because a sum does not project the
+// whole block -- one member escapes, which puts it in `{a, b}`'s family.
+//
+// ----------------------------------------------------------------------------
+// VISIBILITY IS THE PROJECTION. `-> self` exports the whole block; `-> {a, b}`
+// exports two names. There is no `pub` and no export list, because the
+// projection always was one. See `io` below.
+//
+// A value may escape while its type does not. `io.out` is exported and
+// `FileWriter` is not, which is an opaque type for free.
+//
+// ----------------------------------------------------------------------------
+// KEYWORDS.  `self` is the only new one in the declaration form. It always
+// means "the block".
+//     -> self               in a projection: all of the block escapes
+//     self                  a receiver, by value
+//     &self                 a receiver, by pointer
+//     ptr<self>             what &self desugars to
+//     -> Result<self, E>    a projection may WRAP self: fallible construction
+//
+// The rest of the budget, written down so it stops growing by accident:
+//     oneof                 a projection
+//     match  _              destructuring
+//     try                   propagate the `err` arm of a Result
+//     defer                 run at scope exit
+//     if while for loop return continue break
+//
+// There is no `struct`, `enum`, `union`, `interface`, `trait`, `impl`,
+// `operator`, `pub`, `dyn`, or `import`. Imports are ordinary compile-time
+// bindings of an ordinary compile-time function: `std :: import("std")`.
+//
+// MATCH.  An arm is spelled like a declaration -- a name, a runtime group
+// binding the payload, a body. Nothing new to learn.
+//
+//     match (v) {
+//         none     { ... }
+//         some (x) { ... }
+//         _        { ... }
+//     }
+//
+// `_` is a hole in a BINDING position: a wildcard arm, an ignored payload, or
+// a compile-time arg you decline to name (`ptr<List<T, _>>`). One symbol, one
+// idea.
+//
+// OPERATORS ARE MEMBERS WITH SYMBOLIC NAMES. There is no `operator` keyword.
+//     [] :: (&self, i: u32) -> T       indexing
+//     () :: (&self, v: u8)  -> ()      calling
+// A closure is therefore not a special form. It is a block with a `()` member,
+// which is why `Fn<A, R>` below is an ordinary shape and needs no function-type
+// machinery. See NOTE 6.
 //
 // POINTERS
 //     ptr<T>       typed
@@ -60,21 +148,58 @@
 //     <T>                      inferred from a runtime argument's type
 //     <F: Formattable<T> = ?>  solved by search: nothing at the call site
 //                              mentions it, so the solver goes and finds it
+//     Either may be passed by name at the call site with `=`.
 //
 // A DECLARATION WITH NO NAME is what the solver searches. `::` with nothing
 // on its left is an anonymous compile-time binding; it goes in the pool.
 // Give it a name and it is reachable only by hand.
 //
-// UFCS.  `a.f(x)` falls back to `f(a, x)` when `a` has no method `f`.
-// Sugar for calling only -- see NOTE 4.
+// A TYPE IN VALUE POSITION IS THE SOLVER'S DEFAULT INSTANCE. `Ord<u8>.compare`
+// means "whatever instance the solver picks for Ord<u8>". This is not sugar --
+// it is what lets a derived instance recurse into itself, and what a named
+// instance calls to delegate. See `reverse_u8`.
+//
+// UFCS.  `a.f(x)` falls back to `f(a, x)` when `a` has no member `f`, and `f`
+// is found by ORDINARY NAME LOOKUP IN THE CALLER'S SCOPE. That is precisely
+// why an extrinsic function may never satisfy a shape -- see NOTE 4.
 //
 // TWO KINDS OF ABSTRACTION, ONE SYNTAX. See NOTE 1.
-//     first param is self  ->  SHAPE.      Intrinsic to a type, matched
+//     holes take self      ->  SHAPE.      Intrinsic to a type, matched
 //                              structurally, coercible to ptr<Shape>.
-//     first param is not   ->  DICTIONARY. Extrinsic, several may exist, the
+//     holes do not         ->  DICTIONARY. Extrinsic, several may exist, the
 //                              caller picks, the solver defaults it.
+//     Mixing the two in one block is an error, not a third thing.
+//
+// A SHAPE NAME IN AN ARGUMENT POSITION says which dispatch you are buying:
+//     <M: Allocator>   a bound.   Monomorphised, calls direct, 0-byte field.
+//     (m: Allocator)   ptr<Allocator>. Erased, calls indirect.
+// The bracket already separates compile time from run time; it separates
+// static from dynamic for the same reason, and no `dyn` is needed.
 //
 // ============================================================================
+
+
+// ============================================================================
+// std.core
+// ============================================================================
+
+Option :: <T> -> oneof {
+    none: ()
+    some: T
+}
+
+Result :: <T, E> -> oneof {
+    ok:  T
+    err: E
+}
+
+// `try e` yields the `ok` payload, or returns the `err` arm to the caller's
+// projection. It is the only reason `Result` is worth having over a match.
+
+// A closure is a block with a `()` member, so a callable is an ordinary shape.
+// One per arity is the cost; see OPEN.
+Fn  :: <A, R>    -> self { (): (&self, a: A)       -> R }
+Fn2 :: <A, B, R> -> self { (): (&self, a: A, b: B) -> R }
 
 
 // ============================================================================
@@ -82,7 +207,7 @@
 // ============================================================================
 
 // Nothing but holes -- two names with types and no binder. Uninstantiable,
-// therefore usable only as a bound or behind a pointer. See NOTE 3.
+// therefore usable only as a bound or behind a pointer.
 Allocator :: -> self {
     alloc: (&self, n: u32) -> ptr
     free:  (&self, p: ptr) -> ()
@@ -120,14 +245,24 @@ Tracking :: <M: Allocator> (inner: M) -> self {
 
 
 // ============================================================================
-// std.io
+// std.io  --  the projection is the export list
 // ============================================================================
 
 Writer :: -> self {
     write_bytes: (&self, p: ptr<u8>, n: u32) -> ()
 }
 
-io :: -> self {
+io :: -> {out, err, write} {
+
+    // Not in the projection, so it does not escape. `out` does, which makes
+    // its type opaque outside this block at no cost.
+    FileWriter :: (fd: i32) -> self {
+        write_bytes :: (&self, p: ptr<u8>, n: u32) -> () { c_write(self.fd, p, n) }
+    }
+
+    out :: FileWriter(1)
+    err :: FileWriter(2)
+
     write :: <W: Writer> (w: W, s: slice<u8>) -> () { w.write_bytes(s.ptr, s.len) }
 }
 
@@ -142,7 +277,10 @@ io :: -> self {
 List :: <T, M: Allocator> (mem: M) -> self {
     capacity := 10
     count    := 0
-    items    := mem.make<T>(capacity)     // UFCS -> mem.make<T>(mem, capacity)
+
+    // A field initialiser sees the runtime params directly; methods reach them
+    // through `self`. `make` itself is found by lookup in this scope, per UFCS.
+    items    := mem.make<T>(capacity)     // UFCS -> make<T>(mem, capacity)
 
     push :: (&self, item: T) -> () {
         if (self.count + 1 > self.capacity) { self.expand() }
@@ -150,9 +288,12 @@ List :: <T, M: Allocator> (mem: M) -> self {
         self.count += 1
     }
 
-    pop :: (&self) -> T {
+    // Returning `T` was a lie about the empty list. This is what `-> oneof`
+    // buys in the first ten lines of a standard library.
+    pop :: (&self) -> Option<T> {
+        if (self.count == 0) { return Option<T>.none() }
         self.count -= 1
-        self.items[self.count]
+        Option<T>.some(self.items[self.count])
     }
 
     expand :: (&self) -> () {
@@ -170,7 +311,7 @@ List :: <T, M: Allocator> (mem: M) -> self {
         self.count = 0
     }
 
-    operator [] :: (&self, i: u32) -> T { self.items[i] }
+    [] :: (&self, i: u32) -> T { self.items[i] }
 }
 
 
@@ -185,19 +326,23 @@ Ord :: <T> -> self {
 
 // Anonymous -> in the solver pool. This is what `Ord<u8>` resolves to.
 :: -> Ord<u8> {
-    compare = (a, b) {
+    compare = (a, b) -> i32 {
         if (a < b) { return -1 }
         if (a > b) { return  1 }
         return 0
     }
 }
 
-// Named -> never searched. Reachable only by hand.
+// Named -> never searched. Reachable only by hand. `Ord<u8>` on the right is
+// the pooled instance, not this one -- a type in value position is what the
+// solver picks.
 reverse_u8 :: -> Ord<u8> {
-    compare = (a, b) { Ord<u8>.compare(b, a) }
+    compare = (a, b) -> i32 { Ord<u8>.compare(b, a) }
 }
 
-sort :: <T, M, O: Ord<T> = ?> (xs: ptr<List<T, M>>) -> () {
+// `_` for the allocator: sort does not care which one, and naming a parameter
+// only so that `List<T, M>` parses is the noisiest thing in the old draft.
+sort :: <T, O: Ord<T> = ?> (xs: ptr<List<T, _>>) -> () {
     for (i := 1; i < xs.count; i += 1) {
         v := xs.items[i]
         j := i
@@ -219,7 +364,7 @@ Formattable :: <T> -> self {
 }
 
 :: -> Formattable<u8> {
-    format = (v, w) {
+    format = (v, w) -> () {
         if (v >= 10) { Formattable<u8>.format(v / 10, w) }
         d := '0' + (v % 10)
         w.write_bytes(&d, 1)
@@ -227,7 +372,7 @@ Formattable :: <T> -> self {
 }
 
 hex_u8 :: -> Formattable<u8> {
-    format = (v, w) {
+    format = (v, w) -> () {
         digits :: "0123456789abcdef"
         hi := digits[v / 16]
         lo := digits[v % 16]
@@ -240,7 +385,7 @@ hex_u8 :: -> Formattable<u8> {
 // right. The solver matches the return type. No special impl syntax, no
 // pattern on the left-hand side. See NOTE 5.
 :: <T, M, F: Formattable<T> = ?> -> Formattable<List<T, M>> {
-    format = (v, w) {
+    format = (v, w) -> () {
         w.write("[")
         for (i := 0; i < v.count; i += 1) {
             if (i > 0) { w.write(", ") }
@@ -288,12 +433,18 @@ main :: () -> () {
     io.out.write(to_string(mem, xs[0]))              // "2"
     io.out.write(to_string(mem, xs))                 // "[2, 1]"
 
-    // Override the solver by naming the dictionary. It is just an argument.
-    io.out.write(to_string<F: hex_u8>(mem, xs[0]))   // "02"
-    io.out.write(to_string<F: hex_u8>(mem, xs))      // "[02, 01]"
+    // Override the solver by naming the dictionary. It is a compile-time
+    // argument passed by name, so it uses `=`, like any other default.
+    io.out.write(to_string<F = hex_u8>(mem, xs[0]))  // "02"
+    io.out.write(to_string<F = hex_u8>(mem, xs))     // "[02, 01]"
 
     sort(&xs)                          // Ord<u8> from the pool
-    sort<O: reverse_u8>(&xs)           // by hand
+    sort<O = reverse_u8>(&xs)          // by hand
+
+    match (xs.pop()) {
+        some (v) { io.out.write(to_string(mem, v)) }
+        none     { io.err.write("empty") }
+    }
 
     // Static composition: Tracking<Heap> is a distinct type, calls still direct.
     audited := Tracking(Heap())
@@ -307,11 +458,16 @@ main :: () -> () {
     ys := List<u8>(boxed)
     defer ys.deinit()
 
-    // Closures are what is left over: a block holding `m` with a call still
-    // pending. A closure is a struct; that is the whole point.
-    print_u8 :: (m: Allocator) (v: u8) -> () { io.out.write(to_string(m, v)) }
+    // A closure is what is left over: a block holding `m` with one member
+    // named `()`. A closure is a struct; that is the whole point.
+    print_u8 :: <M: Allocator> (m: M) (v: u8) -> () { io.out.write(to_string(m, v)) }
     p := print_u8(mem)
-    p(7)
+    p(7)                               // -> p.()(7)
+
+    // ...and since it is a block with a `()` member, it satisfies Fn<u8, ()>
+    // structurally, and erases exactly like every other shape.
+    f : ptr<Fn<u8, ()>> := &p
+    f(8)
 }
 
 
@@ -321,21 +477,31 @@ main :: () -> () {
 // Rust conflates these and pays for it with orphan rules. Go has only shapes.
 // Haskell has only dictionaries. You can have both, told apart by one word:
 //
-//   SHAPE       first param is self. An allocator, a writer, a socket --
+//   SHAPE       every hole takes self. An allocator, a writer, a socket --
 //               things where the abstraction is a property of the object and
 //               there is exactly one sensible answer per type. Satisfied
 //               structurally by any type with matching methods, so it needs
 //               no registration. Coerce to ptr<Shape> for dynamic dispatch.
 //
-//   DICTIONARY  no self. Ord<u8>, Formattable<u8> -- things where several
-//               answers exist and the caller must be able to choose. A free-
-//               standing value, defaulted by the solver, overridden by name.
-//               Works on primitives and foreign types, since nothing has to be
-//               attached to them.
+//   DICTIONARY  no hole takes self. Ord<u8>, Formattable<u8> -- things where
+//               several answers exist and the caller must be able to choose. A
+//               free-standing value, defaulted by the solver, overridden by
+//               name. Works on primitives and foreign types, since nothing has
+//               to be attached to them.
 //
 // The test is not stylistic: can there legitimately be two of these for one
 // type? Two orderings of u8, yes -> dictionary. Two ways for an Arena to
 // allocate, no -> shape.
+//
+// It is a property of the BLOCK, not of each hole. A block with one self hole
+// and one non-self hole is an error; it would have no dispatch story and no
+// coercion, and admitting it buys nothing.
+//
+// Anything that must AGREE belongs in ONE block. A hash and an equals solved
+// as two independent `= ?` params can be defaulted inconsistently -- a
+// case-folding hash with a case-sensitive equals is a silently broken map that
+// no type error catches. Grouping is free here, because a dictionary is just a
+// block.
 //
 // Neither is a new construct. Both are a block with unfilled holes.
 //
@@ -349,6 +515,9 @@ main :: () -> () {
 // One declaration, three behaviors. The cost of the first two: they are
 // different types and cannot share an array. That is the trade, and it is now
 // visible in the code instead of hidden in a keyword.
+//
+// The trade gets much worse for RECURSIVE types, which is now the largest
+// open problem in the design. See OPEN.
 //
 // ----------------------------------------------------------------------------
 // NOTE 3 -- shapes contain holes and nothing else.
@@ -387,9 +556,10 @@ main :: () -> () {
 //     EXTRINSIC   a free function called via UFCS. Convenience only, never
 //                 satisfies a shape. `make`, `drop`, `write`.
 //
-// The second half of that rule is load-bearing. If UFCS could satisfy a shape,
-// then "does Heap satisfy Allocator" would depend on what is imported, and two
-// modules could coerce the same value and build different vtables.
+// The second half of that rule is load-bearing, and follows directly from UFCS
+// resolving the free function in the CALLER's scope. If UFCS could satisfy a
+// shape, then "does Heap satisfy Allocator" would depend on what is imported,
+// and two modules could coerce the same value and build different vtables.
 //
 // With that split you do get extension methods -- add anything to a type you
 // do not own, it just cannot participate in a shape.
@@ -404,25 +574,101 @@ main :: () -> () {
 // return type, which it already had to do for `= ?` params.
 //
 // ----------------------------------------------------------------------------
+// NOTE 6 -- why `operator` had to go.
+//
+// It was the language's only two-token name, and the only place the word
+// appeared. Naming the member `[]` costs nothing and removes a keyword.
+//
+// It also pays for itself twice, because the same move names the member `()`,
+// and that is what a closure is. `print_u8 :: <M: Allocator> (m: M) (v: u8)`
+// desugars to
+//
+//     print_u8 :: <M: Allocator> (m: M) -> self { (): (&self, v: u8) -> () {...} }
+//
+// -- an ordinary `-> self` block, whose runtime params are its captured fields,
+// exactly as everywhere else. Two questions that were open in the previous
+// draft answer themselves: `print_u8(mem)` has its OWN type (so it is free),
+// and it becomes a shared type precisely when you write `ptr<Fn<u8, ()>>`,
+// which is the same coercion as `ptr<Allocator>` and not a second mechanism.
+//
+// ============================================================================
+// CHANGED IN THIS REVISION -- all of it found by writing src/json.z, a JSON
+// parser plus the containers it needs, in this syntax. That file keeps the
+// full log, including what was tried and rejected.
+//
+//   ADDED    `-> oneof`, the sum projection, and holes-are-quantified-by-the-
+//            projection. A JSON value is a sum; so is Option, Result, a hash
+//            slot, and a token. The previous draft could express none of them.
+//   ADDED    `match`, `_`, `try`, and `defer` (which the old draft already used
+//            at line 283 without introducing it).
+//   ADDED    `-> {a, b}` as visibility. It was already in the grammar.
+//   ADDED    the instantiation rule (declaration / +<> = type / +() = value),
+//            and "a type in value position is the solver's default instance".
+//            Both were relied on and neither was stated.
+//   ADDED    a shape in `<>` is static, in `()` is erased.
+//   CHANGED  `to_string<F: hex_u8>` -> `<F = hex_u8>`. The old spelling
+//            contradicted "`:` is type ascription and nothing else".
+//   CHANGED  `operator []` -> `[]`. See NOTE 6.
+//   CHANGED  `List.pop` returns Option<T>.
+//   CHANGED  shape-vs-dictionary is a property of the block, not of each hole.
+//   FIXED    `io.out` is now declared; the UFCS comment on List.items was
+//            wrong; UFCS scope resolution is now stated.
+//
+// ----------------------------------------------------------------------------
 // OPEN
 //
 //   - COHERENCE. Two anonymous `-> Ord<u8>` in different files is an
 //     ambiguity. Error at the use site, or first-wins, or one-per-module? Still
 //     the biggest unanswered question in the file.
+//
+//   - MONOMORPHISATION AND RECURSIVE TYPES, and now the closest rival for that
+//     title. A JSON value parameterised by its allocator is `Json<M>`, its
+//     arrays are `List<Json<M>, M>`, and M then appears in the parser, the
+//     printer, the error type and every user function. Two documents built from
+//     different allocators are DIFFERENT TYPES and cannot be compared, merged
+//     or stored together. The only livable answer found so far is to erase at
+//     the type declaration (`ptr<Allocator>`), which means the headline feature
+//     is unavailable for exactly the data structures people write most.
+//
+//   - MUTABILITY. `get` and `put` both take `&self`. Nothing says `get` does
+//     not write, so nothing can alias-check, and a `ptr<Allocator>` handed to a
+//     printer is a fully mutable handle. `::`/`:=` already encode immutable vs
+//     mutable for BINDINGS; there is no counterpart for POINTEES, and no
+//     candidate spelling yet that does not cost a keyword.
+//
+//   - THE DISCRIMINANT IS NOT A VALUE. "same variant, ignore the payload" --
+//     what a parser's `expect(Token.colon())` wants -- cannot be said.
+//
+//   - REFUTABLE MATCH. When `probe` has already proved the slot is `live`, the
+//     match must still name `empty` and `dead`. Every container grows a tail of
+//     dead arms. Wanted: a single-arm assertion form.
+//
+//   - INFERENCE DIRECTION. `Result<Token, Error>.ok(t)` at every return is
+//     unreadable, and the fix is to infer the sum's type from the enclosing
+//     projection -- inference flowing INWARD from the signature into the body,
+//     which the language does not otherwise do. Decide it deliberately.
+//
+//   - ORDER INDEPENDENCE is required and unstated. Recursive types force it
+//     (a slot references an entry declared after it), and so does the solver,
+//     which must have seen the whole file. This interacts with the next item.
+//
 //   - FORWARD DECLARATIONS. Bodiless means hole, so a hand-written .zh full of
 //     `func insert_item<T>(...);` would make the module abstract rather than
 //     declaring it. Headers have to be generated from implementations, not
 //     maintained beside them. Probably the right answer anyway, but it is a
 //     real change to how the project is laid out.
+//
+//   - FALLIBLE CONSTRUCTION. `-> Result<self, E>` is adopted above, but its
+//     interaction with field-initialiser order is unspecified: which fields
+//     exist when the failing step runs, and what is destroyed on the err path?
+//
 //   - Does `capacity :: 10` (compile-time field, 0 bytes) make List<u8> with
 //     cap 10 a different type from cap 20? Zig says yes.
+//
 //   - Is the ptr<Shape> coercion implicit at call sites (`F.format(v, &b)`) or
 //     does it need the annotation, as `boxed` does? Implicit is nicer to write
 //     and hides a representation change from direct calls to indirect ones.
-//   - `print_u8 :: (m: Allocator) (v: u8)` takes a shape by value in a
-//     parameter position. Does that mean "any M: Allocator" (a compile-time
-//     arg in disguise) or "a ptr<Allocator>"? Bare shape names in value
-//     position need one rule, not two.
-//   - Is `print_u8(mem)` its own type, or a `(u8) -> ()`? Own type = free.
-//     Shared type = erasure, i.e. the same fat-pointer trick as ptr<Shape>.
+//
+//   - `Fn`, `Fn2`, `Fn3`. A numbered family of names, the only one in the
+//     language, and unavoidable without variadic compile-time args.
 // ============================================================================
