@@ -6,7 +6,7 @@
 //
 //     Name <compile-time args> (runtime args) -> projection { body }
 //
-// What that form MEANS -- the projections, holes, places, keywords, operator
+// What that form MEANS -- the projections, holes, elements, keywords, operator
 // policies, coherence, and NOTE 1-9 arguing for each -- is in rules.z. What
 // its words mean is in glossary.z. This file is the source those rules were
 // derived from and are checked against: a core, an allocator layer, a list, an
@@ -147,9 +147,10 @@ io :: -> {out, err, write} {
 // `M: Allocator` means "any type structurally providing that shape".
 // ptr<Allocator> provides it too -- that is the entire static/dynamic switch,
 // with no keyword. See NOTE 2.
-// THE PROJECTION IS CLOSED, which is only possible because of places: `items`
-// and `capacity` do not escape, so no caller can see the storage, and `[]`
-// hands out a location rather than a copy. `span` exists for the same reason
+// THE PROJECTION IS CLOSED, which is only possible because `[]` exists:
+// `items` and `capacity` do not escape, so no caller can see the storage, and
+// `[]` hands out the element's address rather than a copy. `span` is there for
+// the same reason
 // -- building a slice needs the base pointer, and closing the projection means
 // asking for it by name instead of reaching in.
 List :: <T, M: Allocator> (allocator: M) -> {push, pop, count, [], span, deinit} {
@@ -190,9 +191,10 @@ List :: <T, M: Allocator> (allocator: M) -> {push, pop, count, [], span, deinit}
         self.count = 0
     }
 
-    // A LOCATION escapes, so `xs[i] = v` and `xs[i] += 1` are writable and
-    // `&xs[i]` is a ptr<T>. The body is a place, not a pointer -- no `&`.
-    [] :: (&self, i: u32) -> &T { self.items[i] }
+    // The ELEMENT'S ADDRESS escapes, so `xs[i].* = v` and `xs[i].* += 1` are
+    // writable and `xs[i]` already IS the ptr<T>. There is no `-> &T`, so the
+    // body takes the address itself. See ELEMENTS in rules.z.
+    [] :: (&self, i: u32) -> ptr<T> { &self.items[i] }
 
     span :: (&self) -> slice<T> { slice(self.items, self.count) }
 }
@@ -233,17 +235,20 @@ reverse_u8 :: -> Ord<u8> {
 
 // `_` for the allocator: sort does not care which one, and naming a parameter
 // only so that `List<T, M>` parses is the noisiest thing in the old draft.
-// Every line that used to say `xs.items[j]` now says `xs[j]`, and `sort` no
-// longer knows that a List has a pointer in it.
+// Every line that used to say `xs.items[j]` now says `xs[j].*`, and `sort` no
+// longer knows WHICH pointer a List has in it. The `.*` is the cost of cutting
+// places: `v := xs[i]` would bind a pointer into the array the loop below then
+// overwrites, and only the `O.compare` call -- arguments do not auto-deref --
+// would catch it.
 sort :: <T, O: Ord<T>> (xs: ptr<List<T, _>>) -> () {
     for (i := 1; i < xs.count; i += 1) {
-        v := xs[i]
+        v := xs[i].*
         j := i
-        while (j > 0 && O.compare(xs[j - 1], v) > 0) {
-            xs[j] = xs[j - 1]
+        while (j > 0 && O.compare(xs[j - 1].*, v) > 0) {
+            xs[j].* = xs[j - 1].*
             j -= 1
         }
-        xs[j] = v
+        xs[j].* = v
     }
 }
 
@@ -284,7 +289,7 @@ list_fmt :: <T, M, F: Formattable<T>> -> Formattable<List<T, M>> {
         io.write(w, "[")
         for (i := 0; i < v.count; i += 1) {
             if (i > 0) { io.write(w, ", ") }
-            F.format(v[i], w)
+            F.format(v[i].*, w)
         }
         io.write(w, "]")
     }
@@ -338,9 +343,9 @@ main :: () -> () {
     // EVERY POLICY IS NAMED. There is no default and nothing is searched for,
     // so the element formatter and the list formatter are both visible, and
     // the second is the first applied to it.
-    io.write(io.out, to_string<F = fmt_u8>(heap, xs[0]))                 // "2"
+    io.write(io.out, to_string<F = fmt_u8>(heap, xs[0].*))               // "2"
     io.write(io.out, to_string<F = list_fmt<F = fmt_u8>>(heap, xs))      // "[2, 1]"
-    io.write(io.out, to_string<F = hex_u8>(heap, xs[0]))                 // "02"
+    io.write(io.out, to_string<F = hex_u8>(heap, xs[0].*))               // "02"
     io.write(io.out, to_string<F = list_fmt<F = hex_u8>>(heap, xs))      // "[02, 01]"
 
     sort<O = ord_u8>(&xs)

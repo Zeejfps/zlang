@@ -157,19 +157,20 @@ Store :: <C, M: Allocator> (allocator: M) -> self {
     // writes the new position back has to hash the entity a second time to
     // store it. So the reader of a mutable container hands back an address.
     //
-    // Not `-> &C`: a fallible lookup is not a place, because there is no such
-    // thing as maybe-a-location. `self.dense[i]` IS a place, so `&` takes its
-    // address and the match arm at the call site derefs it.
+    // A fallible lookup could never have handed back a location anyway --
+    // there is no such thing as maybe-an-address -- so this signature is what
+    // it always was, and cutting `-> &T` did not touch it. `self.dense[i]` is
+    // already the element's address, and the match arm at the call site derefs.
     at :: (&self, e: Entity) -> Option<ptr<C>> {
         match (self.index.get(e)) {
             none     { Option<ptr<C>>.none() }
-            some (i) { Option<ptr<C>>.some(&self.dense[i]) }
+            some (i) { Option<ptr<C>>.some(self.dense[i]) }
         }
     }
 
     add :: (&self, e: Entity, c: C) -> () {
         match (self.index.get(e)) {
-            some (i) { self.dense[i] = c }            // overwrite in place
+            some (i) { self.dense[i].* = c }          // overwrite in place
             none     {
                 self.index.put(e, self.dense.count)
                 self.dense.push(c)
@@ -184,9 +185,9 @@ Store :: <C, M: Allocator> (allocator: M) -> self {
         i := match (self.index.get(e)) { some (i) { i }  none { return false } }
         last := self.dense.count - 1
         if (i != last) {
-            self.dense[i] = self.dense[last]
-            moved := self.owner[last]
-            self.owner[i] = moved
+            self.dense[i].* = self.dense[last].*
+            moved := self.owner[last].*
+            self.owner[i].* = moved
             self.index.put(moved, i)
         }
         // Three results that go nowhere -- an `Option<C>` and an
@@ -202,8 +203,8 @@ Store :: <C, M: Allocator> (allocator: M) -> self {
     // `for (x in xs)` form and an iterator block per store per system cost
     // more syntax than the index loop it replaced -- which is why there is no
     // longer an iterator shape to build one from. See FRICTION 18.
-    entity_at :: (&self, i: u32) -> Entity  { self.owner[i] }
-    slot_at   :: (&self, i: u32) -> ptr<C>  { &self.dense[i] }
+    entity_at :: (&self, i: u32) -> Entity  { self.owner[i].* }
+    slot_at   :: (&self, i: u32) -> ptr<C>  { self.dense[i] }
 
     deinit :: (&self) -> () {
         self.index.deinit()
@@ -500,7 +501,7 @@ Reaper :: <M: Allocator> (doomed: ptr<List<Entity, M>>) -> self {
             if (h.hp <= 0) { self.doomed.push(w.hp.entity_at(i)) }
         }
         for (i := 0; i < self.doomed.count; i += 1) {
-            e := self.doomed[i]
+            e := self.doomed[i].*
             w.died.emit(e)                     // see Signal, below
             w.despawn(e)
         }
@@ -923,19 +924,18 @@ main :: () -> () {
 //   forget the line and `despawn` sweeps an empty list forever.  -> [P21]
 //
 // FRICTION 17 -- A CONTAINER STILL CANNOT BE FULLY ENCAPSULATED. `List` can
-//   close its projection now that `[]` hands out a place, and no line in this
-//   file reaches into a List field any more. `Map` cannot: json.z's own
-//   printer reaches into `members.slots` and `members.cap` to ITERATE, and a
-//   place does
-//   not address iteration. json.z's [P5] says the projection is the export
-//   list:
+//   close its projection now that `[]` hands out the element's address, and no
+//   line in this file reaches into a List field any more. `Map` cannot:
+//   json.z's own printer reaches into `members.slots` and `members.cap` to
+//   ITERATE, and an accessor does not address iteration. json.z's [P5] says
+//   the projection is the export list:
 //
 //       Map :: <K, V, M> (allocator: M) -> {get, put, remove, count, deinit} { ... }
 //
 //   Do that and the printer stops compiling. Half of what makes visibility
-//   affordable on a container arrived with places; the other half is
-//   iteration ([P23]), and until it does, a container that cannot be walked
-//   through its own projection must export its storage.
+//   affordable on a container arrived with `[]`; the other half is iteration
+//   ([P23]), and until it does, a container that cannot be walked through its
+//   own projection must export its storage.
 //
 // FRICTION 20 -- A SUM'S DISCRIMINANT IS NOT A VALUE. json.z's FRICTION 7
 //   wanted `expect(Token.colon())` to mean "same variant, ignore payload".
@@ -1002,11 +1002,11 @@ main :: () -> () {
 // PROPOSALS
 // ----------------------------------------------------------------------------
 //
-// STATUS. [P19], [P21] and [P23] are open. [P22] is not: places were adopted,
-// and it stays because the evidence for them is this file. [P17] is not
-// either, for the opposite reason -- it was REJECTED, together with the pool
-// it needed. It stays for the same reason: the evidence was this file, and a
-// proposal that lost is worth more written down than deleted.
+// STATUS. [P19], [P21] and [P23] are open. [P22] is not: places were adopted
+// and then REVERSED, and it stays because the evidence on both sides is this
+// file. [P17] is not either, for the same reason -- it was rejected together
+// with the pool it needed. A proposal that lost is worth more written down
+// than deleted, and one that won and was then given back is worth more still.
 //
 // [P17] REJECTED. ARITHMETIC AND COMPARISON OPERATORS ARE POLICIES; `[]` AND
 //       `()` STAY MEMBERS. As proposed: `a + b` is `Add<A, B>.add(a, b)`,
@@ -1077,28 +1077,47 @@ main :: () -> () {
 //       makes [P14] mean something. What it needs underneath it -- that a
 //       value has one address, so `&self.pos` survives the return -- it has.
 //
-// [P22] PLACES ARE A PROJECTION -- the third form, which neither option
-//       below anticipated. `-> &T` says a LOCATION escapes, alongside `-> T`,
-//       `-> self`, `-> {a, b}` and `-> oneof`.
+// [P22] ADOPTED, THEN REVERSED. PLACES ARE A PROJECTION -- `-> &T` says a
+//       LOCATION escapes, alongside `-> T`, `-> self`, `-> {a, b}` and
+//       `-> oneof`.
 //
 //         [] :: (&self, i: u32) -> &T { self.items[i] }
 //
-//       Two spellings were considered here and both were wrong:
+//       Two spellings were weighed against it and both were called wrong:
 //
 //         (a) `[] :: (&self, i: u32) -> ptr<T>` with an explicit deref at the
 //             use site, `xs[i].* = v`. Costs no syntax, and makes `xs[i]` --
-//             the shortest spelling -- mean the
-//             ADDRESS of the element, when every reader alive reads it as the
-//             element. `v := xs[i]` would compile and hand back a pointer.
+//             the shortest spelling -- mean the ADDRESS of the element, when
+//             every reader alive reads it as the element. `v := xs[i]` would
+//             compile and hand back a pointer.
 //         (b) a second member `[]=`, which is C++'s split and reintroduces the
 //             paired-name problem [P15] removed.
 //
-//       The projection form keeps `xs[i]` meaning the element and `&xs[i]`
-//       meaning its address, as in every language a reader has already used,
-//       and it costs no new pointer type: `-> &T` is `ptr<T>` underneath and
-//       appears only in projection position. It is what makes [P5]'s
-//       visibility usable on a container at all (FRICTION 17), and `List` in
-//       unified.z now exports six names and hides its storage.
+//       (a) IS NOW THE DESIGN, and the objection above was right about the
+//       cost and wrong about the price. What decided it was counting the
+//       feature's use against its specification: one declaration in the whole
+//       corpus -- `List` in unified.z -- against four rules, the first of
+//       which had to reach into every type position in the language to forbid
+//       `&T` fields, `&T` arguments, `Option<&V>` and `List<&T>`, so that `&`
+//       could not become a second pointer type. rules.z had already run the
+//       same argument for place PARAMETERS and rejected them, in the sentence
+//       that gives the reason here too: the call site is identical either way,
+//       an argument is explicit, and that is the argument.
+//
+//       This file is the strongest evidence, and it is evidence against.
+//       `AoS` declares no `-> &T` at all: `at` projects `Option<ptr<C>>`
+//       because a fallible lookup was never a location, and `slot_at` projects
+//       `ptr<C>` because iteration wanted an address it could keep. Both were
+//       already written in the (a) idiom, and the whole file is written in
+//       `.*`. What FRICTION 17 needed was a CLOSED PROJECTION, which
+//       `-> ptr<T>` supplies exactly as well.
+//
+//       WHAT THE REVERSAL COSTS is (a)'s objection, unchanged and now paid:
+//       `v := xs[i]` binds a pointer where a copy was meant and compiles, and
+//       `p[i]` on a raw pointer means the element while `xs[i]` on a List
+//       means its address -- one syntax, two meanings, both of them inside
+//       `List` itself. rules.z ELEMENTS itemises them rather than reframing
+//       the cut as a simplification.
 //
 // [P23] `for (x := it) { ... }` over anything with a `next` that returns
 //       `Option<T>`, desugaring to the `loop` + `match` + `Option` consumer
@@ -1163,8 +1182,9 @@ main :: () -> () {
 //
 // What is missing is not more declaration syntax. The language can say what a
 // value IS and where it lives; what it still cannot say is WHO MAY WRITE IT
-// and for how long. Places, one address per value, and no destructor answer
-// most of the memory question, and this file is where each of them is paid
+// and for how long. An accessor handing back an address, one address per
+// value, and no destructor answer most of the memory question, and this file
+// is where each of them is paid
 // for by hand -- in `wire`, in `deinit`, and in main's declaration order.
 // What is left of that question is the constructor body ([P21]) and aliasing,
 // and mutability (FRICTION 25) is what the second one costs today.

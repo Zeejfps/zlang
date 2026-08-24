@@ -22,7 +22,6 @@
 //
 //     -> ()        nothing escapes            procedure
 //     -> T         one value escapes          function
-//     -> &T        a LOCATION escapes         a writable element
 //     -> self      all of the block           struct / module / shape
 //     -> {a, b}    these members of it        multiple return, AND visibility
 //     -> oneof     one member of it, tagged   sum
@@ -142,60 +141,66 @@
 // `FileWriter` is not, which is an opaque type for free.
 //
 // ----------------------------------------------------------------------------
-// PLACES.  `-> &T` says A LOCATION ESCAPES, and it is what lets a container
-// hand out an element you can write to:
+// ELEMENTS.  How a container hands back something you can write to. The
+// answer is the one pointer type the language already has:
 //
-//     [] :: (&self, i: u32) -> &T { self.items[i] }
+//     [] :: (&self, i: u32) -> ptr<T> { &self.items[i] }
 //
-//     v := xs[i]        read it
-//     xs[i] = v         write it
-//     xs[i] += 1        both, and `[]` is called exactly once
-//     p := &xs[i]       take its address, which is a ptr<T>
+//     v := xs[i].*      read it
+//     xs[i].* = v       write it
+//     xs[i].* += 1      both, and `[]` is called exactly once. See OPERATORS
+//     p := xs[i]        keep its address, which already IS a ptr<T>
 //
-// `&` is the right symbol because it already means "the thing itself, not a
-// copy" wherever it appears -- `&self` is the actual block, `&x` is the actual
-// x. In a projection it means the same.
+// THERE IS NO `-> &T`, AND NO SUCH THING AS A PLACE. An earlier design had a
+// fourth projection -- `-> &T`, "a LOCATION escapes" -- so that `xs[i] = v`
+// could be written bare. It is cut, and the argument that killed it is the one
+// made below against place PARAMETERS, re-run and decided the same way: the
+// call site is what a reader reads, and `.*` there says a pointer is being
+// written through, in a language whose whole claim is that memory is the
+// programmer's business. `sort(&xs)` spells its address-of for the same reason.
+// [P22] in ecs.z records the reversal.
 //
-// FOUR RULES, and they are the whole of it:
+// KEEPING IT COST FOUR RULES, and the first had to reach into every type
+// position in the language to forbid `&T` fields, `&T` arguments, `Option<&V>`
+// and `List<&T>` -- so that `&` could not quietly become a second pointer type.
+// With the projection gone, `&` stops being a type constructor at all: those
+// four spellings are ungrammatical rather than prohibited, and the rule
+// forbidding them is not needed. Nothing below the syntax changed either --
+// `-> &T` was `ptr<T>` underneath, with the compiler inserting the deref the
+// source now writes.
 //
-//   1. `&T` APPEARS IN EXACTLY ONE POSITION: after `->`. Not in a parameter
-//      list, not inside another type. There is no `Option<&V>`, no `List<&T>`,
-//      no `&T` field and no `&T` argument. That is what stops it from quietly
-//      becoming a second pointer type: a place is the calling convention for
-//      handing a location OUT, and it is nothing else.
+// THE PRICE, itemised, because it is real and is paid at every use:
 //
-//   2. THE BODY MUST EVALUATE TO A PLACE, not to a pointer: a field, an index
-//      into a pointer, a deref, or another `-> &T` call. Symmetric with
-//      everything else -- `-> T`'s body is a value, `-> self`'s body is the
-//      block, `-> &T`'s body is a location.
+//   - `v := xs[i]` BINDS A POINTER WHERE A COPY WAS MEANT, and compiles. The
+//     shuffle in insertion sort is the live example: miss the `.*` and `v`
+//     aliases the array it is about to overwrite, which is a wrong answer
+//     rather than a crash. Arguments do not auto-deref, so passing it on is a
+//     type error and catches most of these -- but `.` and a symbolic member
+//     reach through any number of pointers, so a `v.x` read never errors. This
+//     is the sharp edge of the cut and it does not go away.
 //
-//   3. UNDERNEATH IT IS `ptr<T>`, exactly as `&self` is `ptr<self>` underneath.
-//      The call site derefs. No new representation and nothing in the ABI.
+//   - `p[i]` ON A RAW POINTER IS THE ELEMENT; `xs[i]` ON A LIST IS ITS
+//     ADDRESS. One syntax, two meanings, and both appear inside List itself --
+//     `new_items[i] = self.items[i]` in the grow path, `xs[i].* = v` in every
+//     caller. Places made these uniform. Nothing else does.
 //
-//   4. `xs[i] += 1` CALLS THE ACCESSOR ONCE. Stated because accessors can have
-//      side effects, and because C++ gets this wrong with proxy objects.
+//   - `[]` HAS NO ONE MEANING ACROSS CONTAINERS. List projects `ptr<T>`, Map
+//     projects `Option<V>`. That was already true before the cut -- a fallible
+//     lookup was never a place either -- and the cut makes it the common case
+//     rather than the exception.
 //
-// Two other spellings do the same job and are wrong: `-> ptr<T>` with an
-// explicit `xs[i].* = v` at the use site, and a paired `[]=` member. [P22] in
-// ecs.z weighs both; the short of it is that the bare, shortest spelling has
-// to carry the ordinary meaning, and `xs[i]` means the element to every reader
-// alive.
+// A FALLIBLE LOOKUP HANDS BACK A VALUE, and WHICH value is the container's
+// choice and not the language's: `Option<V>` is a copy, `Option<ptr<V>>` points
+// into the container's own storage so the match arm can write through it. A
+// packed container -- a bitset, a compressed array, an element computed on the
+// fly -- has no address to hand back at all, and offers `get(i)` and
+// `set(i, b)`. THERE ARE NO PROXY OBJECTS, which is the disease `vector<bool>`
+// died of.
 //
-// WHAT IT DELIBERATELY WILL NOT DO. A packed container -- a bitset, a
-// compressed array, an element computed on the fly -- has no location to hand
-// back, so it cannot offer `[]` as a place at all. It offers `get(i)` and
-// `set(i, b)`. There are no proxy objects, which is the disease `vector<bool>`
-// died of. And a fallible lookup is not a place, because there is no such
-// thing as "maybe a location". There is no `Option<&V>`. A lookup that may
-// miss projects an ordinary value, and WHICH value is the container's choice
-// and not the language's: `Option<V>` hands back a copy, `Option<ptr<V>>`
-// points into the container's own storage so the match arm can write through
-// it. Both are `-> T`.
-//
-// A PARAMETER IS NEVER A PLACE. `&self` is a receiver and stays one; the
-// tempting generalisation -- a `(out: &u32)` that is `&self` without the
-// special case -- is not taken. Written with a pointer it is C, and it costs
-// one token in one body:
+// A PARAMETER IS A POINTER, WRITTEN AS ONE. `&self` is a receiver and stays
+// one; the tempting generalisation -- a `(out: &u32)` that is `&self` without
+// the special case -- is not taken. Written with a pointer it is C, and it
+// costs one token in one body:
 //
 //     tally :: (out: ptr<u32>, v: Json) -> () { out.* += 1 }
 //     sort  :: <T, O: Ord<T>> (xs: ptr<List<T, _>>) -> ()
@@ -208,28 +213,26 @@
 //     print :: (w: &World) -> ()        I will not keep this
 //     keep  :: (w: ptr<World>) -> ()    I might store this
 //
-// A promise worth having, and not worth what it cost. It held only because a
-// `&T` field is forbidden, which needed rule 1 to reach inside every type,
-// plus a carve-out for `-> self` blocks whose runtime params ARE fields, plus
-// the reason `&Shape` is unsayable -- three interlocking clauses so that one
-// line of a signature could say something the language enforces nowhere else.
-// A pointer is an unrestricted handle of indefinite life (see OPEN), and a
-// parameter list is not the place to pretend otherwise.
+// A promise worth having, and not worth what it cost. A pointer is an
+// unrestricted handle of indefinite life (see OPEN), and a parameter list is
+// not the place to pretend otherwise.
 //
 // NOTHING IS LOST IN THE BODY EITHER, because `.` and a symbolic member both
-// reach through any number of pointers: `xs[j] = v` and `xs.count` read the
-// same whether `xs` is a List or a `ptr<List>`. See POINTERS. `sort`'s body
-// did not change when its signature did.
+// reach through any number of pointers: `xs[j].*` and `xs.count` read the same
+// whether `xs` is a List or a `ptr<List>`. See POINTERS. `sort`'s body did not
+// change when its signature did.
 //
-// WHAT IT BUYS, beyond writing to an element: it is what makes `-> {a, b}`
-// usable on a container. Without places, every caller reaches around `[]` into
-// the raw `items` field, so closing the projection breaks every program that
-// touches a List. With them, `List` exports six names and hides its storage,
-// and nothing outside it can see a pointer.
-//
+// WHAT AN ACCESSOR BUYS, beyond writing to an element: it is what makes
+// `-> {a, b}` usable on a container. Without one, every caller reaches around
+// `[]` into the raw `items` field, so closing the projection breaks every
+// program that touches a List. With one, `List` exports six names and hides
+// its storage. It does not hide POINTERS -- `span` hands out a slice and `[]`
+// hands out a `ptr<T>` -- but nothing outside can see `items` or `capacity`,
+// which is the whole of what the projection ever promised.
 // ----------------------------------------------------------------------------
-// MEMORY.  Where a value lives, and when it dies. Places, above, are the
-// first of four answers; the other three are here. Two questions have no
+// MEMORY.  Where a value lives, and when it dies. Three answers are here;
+// the fourth -- how a container hands back a writable element -- is
+// ELEMENTS, above. Two questions have no
 // answer -- the constructor body, and who may write through a pointer and for
 // how long it stays valid -- and both are in OPEN. The second is the deepest
 // hole in the design.
@@ -239,15 +242,15 @@
 //     - a `-> self` body constructs the value where it will live. A return is
 //       not a copy, and there is no "returning moves it" step to reason about.
 //     - a binding's address is fixed from its initialisation to scope exit.
-//     - so an INTERIOR POINTER -- `&self.pos`, `&xs[i]` -- stays valid for as
-//       long as the value it points into is alive. `stores.push(&self.pos)`,
+//     - so an INTERIOR POINTER -- `&self.pos`, `&self.items[i]` -- stays valid
+//       for as long as the value it points into is alive. `stores.push(&self.pos)`,
 //       a structure pointing into itself, is legal and means what it says.
 //     - copying is what binding from another value does, and the copy is a
 //       second value with its own address.
 //
 // The rule is load-bearing, because three things in the language are an
-// address kept past the expression that made it: a place, a closure stored in
-// data, and a `ptr<Shape>` in a container. None of them means anything without
+// address kept past the expression that made it: an element pointer handed out
+// by `[]`, a closure stored in data, and a `ptr<Shape>` in a container. None of them means anything without
 // it. It is also the cheapest rule that carries them -- the alternative is
 // move semantics, and move semantics is a borrow checker.
 //
@@ -378,13 +381,18 @@
 //     [] ()            take self  ->  MEMBERS of the block
 //     + - * / == <     take none  ->  ...and so, NOT OPERATORS AT ALL
 //
-//     [] :: (&self, i: u32) -> T       indexing
+//     [] :: (&self, i: u32) -> ptr<T>  indexing
 //     () :: (&self, v: u8)  -> ()      calling
 //
 // ARITHMETIC AND COMPARISON ARE INSTRUCTIONS ON THE PRIMITIVES, and they
 // desugar to nothing. `+ - * / %`, `== !=`, `< <= > >=`, the bitwise
 // `& | ^ << >> ~`, and unary `-` work on u8, u32, i32, f32, f64 and bool, and
-// nowhere else. `a += b` is `a = a + b`, and so for every compound form.
+// nowhere else. `a += b` is `a = a + b`, and so for every compound form --
+// EXCEPT THAT THE DESTINATION IS EVALUATED ONCE. `xs[i].* += 1` calls `[]` a
+// single time and `out.* += 1` computes `out` a single time; the expansion
+// says which operator, not that the left-hand side may be run twice. Stated
+// because an accessor can have side effects, and because C++ gets this wrong
+// with proxy objects.
 // A user type publishes ordinary members -- `v.add(w)`, `v.scale(2.0)`,
 // `a.eq(b)` -- and the call site says whose arithmetic it asked for.
 //
@@ -748,8 +756,9 @@
 //     does for POINTEES, so a `ptr<T>` is an unrestricted handle of indefinite
 //     life. In a simulation that is not a documentation problem: a pointer
 //     into a store is invalidated by any push, and an event emitted
-//     mid-iteration reenters the loop that emitted it. Places make an interior
-//     pointer easy to take and one address per value makes it worth keeping,
+//     mid-iteration reenters the loop that emitted it. An accessor handing back
+//     `ptr<T>` makes an interior pointer easy to take and one address per value
+//     makes it worth keeping,
 //     so both raise the stakes here without changing the kind of hole it is.
 //     This is the one cost in the language not visible in a type.
 //

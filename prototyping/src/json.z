@@ -473,7 +473,7 @@ json_fmt :: <M> -> fmt.Formattable<Json<M>> {
                 io.write(w, "[")
                 for (i := 0; i < xs.count; i += 1) {
                     if (i > 0) { io.write(w, ",") }
-                    self.format(xs[i], w)          // this instance, not `spaced`
+                    self.format(xs[i].*, w)        // this instance, not `spaced`
                 }
                 io.write(w, "]")
             }
@@ -520,8 +520,8 @@ spaced :: <M> -> fmt.Formattable<Json<M>> {
                 io.write(w, "[")
                 for (i := 0; i < xs.count; i += 1) {
                     if (i > 0) { io.write(w, ", ") }      // the only difference
-                    self.format(xs[i], w)
-                    //  ^^^^ THIS INSTANCE. `xs[i]` is a Json, so printing it
+                    self.format(xs[i].*, w)
+                    //  ^^^^ THIS INSTANCE. `xs[i].*` is a Json, so printing it
                     //  must stay in `spaced` or the space is lost one level
                     //  down. `self` is available because this block has no
                     //  runtime group: it IS its value, so there is exactly one
@@ -611,7 +611,7 @@ each_child :: <M> (v: Json<M>, f: Fn2<slice<u8>, Json<M>, ()>) -> () {
             }
         }
         array (xs) {
-            for (i := 0; i < xs.count; i += 1) { f("", xs[i]) }
+            for (i := 0; i < xs.count; i += 1) { f("", xs[i].*) }
         }
         _ { }
     }
@@ -620,8 +620,8 @@ each_child :: <M> (v: Json<M>, f: Fn2<slice<u8>, Json<M>, ()>) -> () {
 // A named closure: a block holding `out`, with one member named `()`. It has
 // its own type, and becomes a shared type exactly when you write
 // `ptr<Fn2<...>>`.
-// `ptr<u32>`, because a parameter is never a place. An out-parameter is a
-// pointer written through with `.*`, here and everywhere else.
+// `ptr<u32>`, because a parameter is a pointer written as one. It is written
+// through with `.*`, here and everywhere else.
 tally :: <M> (out: ptr<u32>) -> self {
     () :: (&self, k: slice<u8>, v: Json<M>) -> () { self.out.* += 1 }
 }
@@ -680,7 +680,7 @@ main :: () -> () {
             // An array is a `List`, so the traversal is an index loop and
             // `sum_numbers` is an ordinary call, not a callback.
             total := 0.0
-            for (i := 0; i < xs.count; i += 1) { total = sum_numbers(total, xs[i]) }
+            for (i := 0; i < xs.count; i += 1) { total = sum_numbers(total, xs[i].*) }
             io.write(io.out, fmt.to_string<F = fmt.fmt_f64>(heap, total))  // 6
 
             // closure + erasure

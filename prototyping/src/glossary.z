@@ -95,7 +95,6 @@
 //
 //         -> ()        nothing escapes                    a procedure
 //         -> T         one value escapes                  a function
-//         -> &T        a LOCATION escapes                 a writable element
 //         -> self      all of the block escapes           struct / module
 //         -> {a, b}    only these members escape          multiple return,
 //                                                         and visibility
@@ -111,33 +110,32 @@
 // PLACE
 //     A location you can write to, as opposed to a value you can only read.
 //     `x`, `p.*`, `s.field` and `items[i]` are places; `f()` and `a + b` are
-//     not. Other languages call the distinction lvalue and rvalue.
+//     not. Other languages call the distinction lvalue and rvalue. It is a
+//     property of an EXPRESSION and there is no `place` in the type system:
+//     no projection yields one, and no parameter takes one.
 //
-//     A member yields one by projecting `&T`:
+//     A container hands back a writable element as an ordinary `ptr<T>`:
 //
-//         [] :: (&self, i: u32) -> &T { self.items[i] }
+//         [] :: (&self, i: u32) -> ptr<T> { &self.items[i] }
 //
-//         v := xs[i]      read       xs[i] = v     write
-//         xs[i] += 1      both       p := &xs[i]   its address, a ptr<T>
+//         v := xs[i].*    read       xs[i].* = v   write
+//         xs[i].* += 1    both       p := xs[i]    its address, already a ptr<T>
 //
-//     `&` because it already means "the thing itself, not a copy" -- `&self`
-//     is the actual block, `&x` is the actual x. Underneath it is `ptr<T>` and
-//     the call site derefs, exactly as `&self` is `ptr<self>` underneath.
+//     THERE WAS ONCE A `-> &T` PROJECTION, so that `xs[i] = v` could be
+//     written bare. It is cut. `.*` at the write site says a pointer is being
+//     written through, which is what `sort(&xs)` says at a call site, and the
+//     restriction that kept `&T` out of every other type position went with
+//     it. The cost is that `v := xs[i]` binds a pointer where a copy was
+//     meant. See ELEMENTS in rules.z.
 //
-//     `&T` APPEARS IN EXACTLY ONE POSITION: after `->`. Never in a parameter
-//     list and never inside another type -- no `Option<&V>`, no `List<&T>`,
-//     no `&T` field -- which is what keeps it from becoming a second pointer
-//     type. A place is how a location is handed OUT, and nothing else.
-//
-//     A PARAMETER IS NEVER A PLACE. `&self` is a receiver and stays one; an
-//     out-parameter takes a pointer and writes through it, as in C:
+//     AN OUT-PARAMETER TAKES A POINTER and writes through it, as in C:
 //
 //         tally :: (out: ptr<u32>, v: Json) -> () { out.* += 1 }
 //
-//     The call site is `tally(&count, doc)` either way, so the place form was
-//     invisible to every reader of a call. See PLACES in rules.z.
+//     The call site is `tally(&count, doc)` either way, so a `&u32` parameter
+//     would have been invisible to every reader of a call.
 //
-//     Places are why a container can have a closed projection. Without them
+//     An accessor is why a container can have a closed projection. Without one
 //     every caller reaches around `[]` into the raw storage, and `-> {push,
 //     pop}` breaks everything that touches a List.
 //
