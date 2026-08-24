@@ -1,0 +1,279 @@
+// ============================================================================
+// unified.z  --  scratch: one declaration form for module/struct/func/trait
+// ============================================================================
+//
+// THE RULE
+//
+//   Name [compile-time args] (runtime args) -> projection { body }
+//
+// Every declaration takes args and builds a block of named values.
+// The projection says what escapes the block:
+//
+//     -> ()        nothing escapes            procedure
+//     -> T         one value escapes          function
+//     -> self      the whole block escapes    struct / module
+//     -> {a, b}    part of it escapes         multiple return
+//
+// `::` binds at compile time. `:=` binds at runtime.
+// A runtime param of a `-> self` def IS a field -- the block is what you kept.
+// A field bound with `::` costs zero bytes; it lives in the type.
+// `= ?` on a compile-time param means "solver fills this in".
+//
+// ============================================================================
+
+
+// ============================================================================
+// std.mem
+// ============================================================================
+
+// A trait is a block whose fields are functions with no value yet (holes).
+Allocator :: -> self {
+    State: type
+    alloc: (s: *State, n: u32) -> *()
+    free:  (s: *State, p: *()) -> ()
+}
+
+// An impl is a value of that block. Unnamed => canonical, the solver finds it.
+Allocator {
+    State = heap.Arena
+    alloc = (s, n) { heap.c_malloc(n) }
+    free  = (s, p) { heap.c_free(p) }
+}
+
+// Named => never a search candidate, reachable only by hand.
+tracking :: Allocator {
+    State = heap.Arena
+    alloc = (s, n) { log("alloc %", n); heap.c_malloc(n) }
+    free  = (s, p) { log("free");       heap.c_free(p)   }
+}
+
+// Typed helpers over the untyped trait.
+make  :: [T, A: Allocator = ?] (a: *A.State, n: u32) -> *T { A.alloc(a, n * size_of(T)) }
+drop  :: [T, A: Allocator = ?] (a: *A.State, p: *T) -> ()  { A.free(a, p) }
+
+
+// ============================================================================
+// std.io  --  Writer is `dyn` on purpose. See NOTE 1 at the bottom.
+// ============================================================================
+
+Writer :: -> self {
+    State: type
+    write_bytes: (s: *State, p: *u8, n: u32) -> ()
+}
+
+
+// ============================================================================
+// std.list
+// ============================================================================
+
+// Compile-time: T, and which allocator impl.
+// Runtime: the allocator state -- which is therefore a field.
+List :: [T, A: Allocator = ?] (a: *A.State) -> self {
+    capacity := 10
+    count    := 0
+    items    := make[T](a, capacity)
+}
+
+// Nested or free, same thing. `self` is an ordinary first param;
+// `xs.push(2)` is sugar for `push(&xs, 2)`.
+push :: [T, A] (self: *List[T, A], item: T) -> () {
+    if (self.count + 1 > self.capacity) { expand(self) }
+    self.items[self.count] = item
+    self.count += 1
+}
+
+pop :: [T, A] (self: *List[T, A]) -> T {
+    self.count -= 1
+    self.items[self.count]
+}
+
+get :: [T, A] (self: *List[T, A], i: u32) -> T { self.items[i] }
+
+expand :: [T, A] (self: *List[T, A]) -> () {
+    new_cap   := self.capacity * 2
+    new_items := make[T](self.a, new_cap)
+    for (i := 0; i < self.count; i += 1) { new_items[i] = self.items[i] }
+    drop(self.a, self.items)
+    self.items    = new_items
+    self.capacity = new_cap
+}
+
+deinit :: [T, A] (self: *List[T, A]) -> () {
+    drop(self.a, self.items)
+    self.items = nil
+    self.count = 0
+}
+
+operator [] :: [T, A] (self: *List[T, A], i: u32) -> T { self.items[i] }
+
+
+// ============================================================================
+// std.ord
+// ============================================================================
+
+Ord :: [T] -> self {
+    compare: (a: T, b: T) -> i32     // < 0 before, 0 equal, > 0 after
+}
+
+Ord[u8] {
+    compare = (a, b) {
+        if (a < b) { return -1 }
+        if (a > b) { return  1 }
+        return 0
+    }
+}
+
+reverse_u8 :: Ord[u8] {
+    compare = (a, b) { Ord[u8].compare(b, a) }
+}
+
+// The bound is just a compile-time argument with a default of "solve it".
+sort :: [T, A, O: Ord[T] = ?] (xs: *List[T, A]) -> () {
+    for (i := 1; i < xs.count; i += 1) {
+        v := xs.items[i]
+        j := i
+        while (j > 0 && O.compare(xs.items[j - 1], v) > 0) {
+            xs.items[j] = xs.items[j - 1]
+            j -= 1
+        }
+        xs.items[j] = v
+    }
+}
+
+
+// ============================================================================
+// std.fmt
+// ============================================================================
+
+Formattable :: [T] -> self {
+    format: (v: T, w: *dyn Writer) -> ()
+}
+
+Formattable[u8] {
+    format = (v, w) {
+        if (v >= 10) { Formattable[u8].format(v / 10, w) }
+        d := '0' + (v % 10)
+        w.write_bytes(&d, 1)
+    }
+}
+
+hex_u8 :: Formattable[u8] {
+    format = (v, w) {
+        digits :: "0123456789abcdef"
+        hi := digits[v / 16]
+        lo := digits[v % 16]
+        w.write_bytes(&hi, 1)
+        w.write_bytes(&lo, 1)
+    }
+}
+
+// Derived impl: formatting a List[T] needs a Formattable[T].
+// Left side is the pattern the solver matches; the `[...]` after `::` are the
+// arguments it must solve recursively to build this one. See NOTE 2.
+Formattable[List[T, A]] :: [T, A, F: Formattable[T] = ?] {
+    format = (v, w) {
+        w.write_bytes("[", 1)
+        for (i := 0; i < v.count; i += 1) {
+            if (i > 0) { w.write_bytes(", ", 2) }
+            F.format(v.items[i], w)
+        }
+        w.write_bytes("]", 1)
+    }
+}
+
+// Needs an allocator (to build the string) and a Formattable. Both solved.
+to_string :: [T, A: Allocator = ?, F: Formattable[T] = ?] (a: *A.State, v: T) -> str {
+    b := StringWriter[A](a)
+    F.format(v, &b as *dyn Writer)
+    b.finish()
+}
+
+
+// ============================================================================
+// main
+// ============================================================================
+
+main :: () -> () {
+    a := heap.create()
+    defer heap.destroy(a)
+
+    xs := List[u8](a)          // A solved from typeof(a) == *heap.Arena
+    defer xs.deinit()
+
+    xs.push(2)
+    xs.push(1)
+
+    io.write(io.out, to_string(a, xs.get(0)))            // "2"
+    io.write(io.out, to_string(a, xs))                   // "[2, 1]"
+
+    // `with` matches by type: hex_u8 is a Formattable[u8], so it binds F.
+    io.write(io.out, to_string(a, xs.get(0)) with hex_u8)   // "02"
+    io.write(io.out, to_string(a, xs)        with hex_u8)   // "[02, 01]"
+    // equivalently, positionally:
+    io.write(io.out, to_string[F: hex_u8](a, xs.get(0)))
+
+    sort(&xs)                          // Ord[u8], canonical
+    sort[O: reverse_u8](&xs)           // by hand
+
+    // Partial application. `println` is a block holding one field (the
+    // allocator) with a call still pending -- i.e. a closure, i.e. a struct.
+    println := (a: *heap.Arena) (v: u8) -> () { io.write(io.out, to_string(a, v)) }
+    p := println(a)
+    p(7)
+}
+
+
+// ============================================================================
+// WHAT THIS REPLACED
+//
+//   module / data / struct / func / mod / trait / impl   ->  one form
+//   mod heap_list<T> = std.list<T>({mem = ...})          ->  List[A: heap]
+//   list.allocator = allocator                           ->  gone; the param
+//                                                            IS the field
+//   with(std.fmt.hex_u8)                                 ->  kept, now it is
+//                                                            just an argument
+//
+// ----------------------------------------------------------------------------
+// NOTE 1 -- Writer must be `dyn`, and that is a real finding.
+//
+// Your fmt.zh makes Writer a compile-time field of format:
+//
+//     func format<T> { Writer: std.io.Writer; invoke: (...) }
+//
+// That means Formattable[u8] is not one type -- there is a different one per
+// writer. The solver then can't answer "give me the Formattable[u8]", and
+// every impl gets duplicated per writer with no benefit, since formatting is
+// I/O-bound anyway. Making it `*dyn Writer` collapses the whole family to one
+// dictionary. This is the boundary where dyn earns its cost.
+//
+// ----------------------------------------------------------------------------
+// NOTE 2 -- The derived impl is the ugliest line in the file.
+//
+//     Formattable[List[T, A]] :: [T, A, F: Formattable[T] = ?] { ... }
+//
+// Compile-time args appear on both sides: T and A are bound by matching the
+// left, F is solved from them. Everything else in this file is "args flow left
+// to right"; this one is a unification pattern. If you want to keep the model
+// honest, the alternative is to forbid derived impls and make the caller pass
+// the element formatter explicitly -- which costs you `to_string(a, xs)`.
+//
+// ----------------------------------------------------------------------------
+// NOTE 3 -- `List[T, A]` leaks into every signature.
+//
+// Look at `push :: [T, A] (self: *List[T, A], ...)`. A is inferred at call
+// sites so you never type it, but it is in the type, which means a heap list
+// and an arena list are different types. If you want one List type, the
+// allocator has to be `*dyn Allocator` and you pay an indirect call per alloc.
+// Pick per container; List is probably fine as-is, a heterogenous scene graph
+// is not.
+//
+// ----------------------------------------------------------------------------
+// OPEN
+//
+//   - `::` fields are compile-time and free. Does `capacity :: 10` make
+//     List[u8] with cap 10 a different type from cap 20? (Zig: yes.)
+//   - Nested defs: static with implicit self until you value one, then a real
+//     closure materializes. Where exactly does that transition happen?
+//   - Is `println(a)` its own type, or a `fn(u8) -> ()`? Own type = free.
+//     Shared type = erasure. Default to own, opt into `dyn`.
+// ============================================================================
