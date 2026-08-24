@@ -1,0 +1,1978 @@
+============================================================================
+issues.txt  --  the consolidated issue list, three analyses merged
+============================================================================
+
+WHAT THIS IS. Three independent analyses of rules.txt were run -- a rule
+inventory of all 249 paragraphs, an annex of 49 unchecked behaviours, and a
+log of 16 open design questions -- plus a first formal grammar. They overlap
+heavily and nobody merged them. This file is the merge. Every issue has one
+id, every source that found it is named, and every citation in it was
+re-checked against rules.txt, glossary.txt, grammar.ebnf and the corpus.
+
+A FIFTH SOURCE WAS ADDED LATER. A parser was built from grammar.ebnf and run
+on all three corpus programs. It is the only input to this file that is an
+execution rather than a reading, and it produced Z-41 through Z-46. Its
+citations into grammar.ebnf are against the repaired grammar; every earlier
+grammar.ebnf citation in this file was re-checked against the same file and
+corrected where it had drifted.
+
+THE CORPUS IS THE ARBITER. unified.z, json.z and ecs.z are the only evidence
+about this language that is not an opinion. Where an analysis and the corpus
+disagreed, the corpus won and the finding was downgraded, corrected or
+killed. What was killed is listed at the end, under CLAIMS I COULD NOT
+CONFIRM.
+
+SOURCE ABBREVIATIONS
+    INV     the rule inventory (an internal working document, not
+            shipped in this tree), findings A-E
+    ANX     the unchecked-behaviour annex (unchecked.txt), ids U.*
+    OQ      the open-questions log (open.txt), ids OQ-0..OQ-15
+    GRM     grammar.ebnf, where its header records an invented resolution
+    PRS     the parser built from grammar.ebnf and run on the corpus,
+            findings Z-41 .. Z-46
+    ADJ     this consolidation, from the corpus, where no input had it
+
+----------------------------------------------------------------------------
+THE BANDS
+
+    BLOCKING   The language cannot be specified until this is decided. A
+               parser cannot be written, or two rules contradict such that
+               no implementation could satisfy both.
+
+    SOUNDNESS  A rule as written admits programs that are wrong, or the
+               spec commits to something the corpus already violates.
+
+    GAP        Used in the corpus, specified nowhere. Mechanical to fix
+               once someone writes it down.
+
+    DEFECT     The document contradicts itself, cites something that is not
+               there, or states one rule in several places with drift.
+
+    CORPUS     A bug in the .z programs, not in the language.
+
+Within a band, issues are ordered by how much else they block.
+
+----------------------------------------------------------------------------
+SUMMARY
+
+    BLOCKING     6      Z-01 .. Z-05, Z-41
+    SOUNDNESS   10      Z-06 .. Z-14, Z-42
+    GAP         12      Z-15 .. Z-25, Z-43
+    DEFECT      14      Z-26 .. Z-37, Z-44, Z-45
+    CORPUS       4      Z-38 .. Z-40, Z-46
+    ----------------------
+    TOTAL       46
+
+45 findings from the three inputs were folded into 15 of these issues as
+duplicates. 6 findings were rejected or corrected; they are at the bottom.
+
+The last six, Z-41 through Z-46, came later and from the parser rather than
+from the three inputs. Ids are positional in this file only by accident:
+they belong to the thing and not to the band, which is why the bands are no
+longer contiguous runs. One of the six, Z-44, is recorded as FIXED AND
+VERIFIED rather than open.
+
+THE FIVE THAT MATTER MOST
+
+  1. Z-01  Nothing inside a function body is specified. rules.txt names
+           `if else while for loop return continue break` once, in a
+           keyword budget (rules.txt:352), and gives no form and no
+           semantics for any of them, while the corpus contains 28
+           three-clause `for` loops, 6 `while`, 4 `loop` and 4 `continue`.
+           grammar.ebnf had to invent the whole statement grammar, the
+           semicolon rule and the precedence table. This is the largest
+           single volume of missing specification in the project.
+
+  2. Z-02  `[]` means five different things and no rule picks between them.
+           Two normative rules -- "`p[i]` on a raw pointer is the element"
+           and "`p[i]` is `p.[](i)`" -- are mutually exclusive on the same
+           expression, both spellings occur inside `List` itself, and a
+           fifth case (indexing a `slice`) is in the corpus and in no rule
+           at all. A reader cannot determine what a program means.
+
+  3. Z-06  Decide the one bit: does a pointee carry a qualifier, yes or no.
+           It is the root of the design log, rules.txt itself calls it "the
+           deepest hole in the design" (rules.txt:249) and then schedules
+           something else, and Z-09 and Z-25 both wait on it. It is a
+           yes/no and it is answerable this week.
+
+  4. Z-07  Arithmetic has no overflow, division-by-zero or shift rule, and
+           the standard library already depends on wrapping multiplication
+           to compute the value it intends (json.z:106, ecs.z:128). This is
+           a commitment already made in code and not yet made in prose. It
+           has no dependencies and should be written before anything else
+           acquires a dependency on it.
+
+  5. Z-04  BODILESS MEANS HOLE (rules.txt:132) and "a def whose body would
+           be empty may drop it -- `Span :: (lo, hi) -> self` is a record"
+           (rules.txt:80-81) cannot both hold, and five bodiless records in
+           the corpus prove the second. The criterion the document needs is
+           the binder, which the first rule never mentions.
+
+Cheapest large win, if there is an afternoon spare: Z-20, the sum
+discriminant. Fully specified already in ecs.z:1142-1148, zero
+dependencies, changes no existing spelling, closes frictions in both
+programs.
+
+Closest to displacing one of the five, and it does not: Z-41. It is Z-03's
+proposed answer rather than a sixth independent hole, and Z-03 is not in the
+five either. It is nevertheless the only issue in this file that says a fix
+already written does not work, and anyone writing a parser should read it
+next to Z-03 and Z-46.
+
+============================================================================
+BLOCKING
+============================================================================
+
+----------------------------------------------------------------------------
+Z-01  NO STATEMENT OR CONTROL-FLOW FORM IS SPECIFIED ANYWHERE   BLOCKING
+
+WHAT      rules.txt lists eight control-flow keywords in a budget and never
+          states the syntax or the semantics of any of them.
+
+EVIDENCE  rules.txt:352  "    if else while for loop return continue break"
+          -- the only occurrence of `while`, `loop`, `continue` or `break`
+          in the file outside prose. glossary.txt:367 repeats the same line
+          and adds only `defer  run at scope exit` (glossary.txt:366).
+          The corpus: 28 three-clause `for` loops, e.g. unified.z:183
+          "for (i := 0; i < self.count; i += 1) { new_items[i] = ... }";
+          6 `while`; 4 `loop`, e.g. json.z:152-162; 4 `continue`, e.g.
+          json.z:585; 0 `break` anywhere in any .z file.
+          grammar.ebnf:353-382 invents Statement, WhileStmt, ForStmt,
+          LoopStmt, DeferStmt, ReturnStmt, BreakStmt, ContinueStmt;
+          grammar.ebnf:329 invents IfExpr; grammar.ebnf:137-165 invents a
+          Go-style semicolon-insertion rule; grammar.ebnf:270-284 invents
+          the precedence table, noting "The sources say only that
+          `precedence is a fixed table`; this is that table."
+
+FOUND BY  GRM, which had to invent all of it and says so at
+          grammar.ebnf:25-27. ADJ, from the corpus counts. INV does not
+          raise it because it inventories what rules.txt says, not what it
+          omits; ANX raises only the two evaluation-order fragments (U.10.1
+          `defer`, U.10.2 operand order); OQ raises only the missing
+          traversal form (OQ-3). No input saw the whole hole.
+
+BLOCKS    A parser. Every function body in the corpus. The semantics of
+          `defer` (Z-23), of `return` inside a match arm, and of whether a
+          `loop` value is an expression.
+
+OPTIONS   grammar.ebnf:353-382 is already a complete C-style proposal, and
+          grammar.ebnf:137-165 a complete termination rule, both derived
+          from the corpus. Adopt or reject them explicitly; the grammar
+          says its positions are "NOT argued here".
+
+----------------------------------------------------------------------------
+Z-02  `[]` HAS FIVE MEANINGS AND NO DISAMBIGUATION RULE         BLOCKING
+
+WHAT      One syntax carries five incompatible readings and the predicate
+          that chooses between them is stated nowhere.
+
+EVIDENCE  rules.txt:46  "    []   indexing               xs[0]"
+          rules.txt:159 List's accessor projects the element's ADDRESS;
+            unified.z:198 "[] :: (&self, i: u32) -> ptr<T> { &self.items[i] }"
+          rules.txt:198-200 Map projects a COPY;
+            json.z:208  "[] :: (&self, k: K) -> Option<V> { self.get(k) }"
+            used at json.z:680 -- `obj["tags"]` matched as an Option.
+          rules.txt:193-194 "`p[i]` ON A RAW POINTER IS THE ELEMENT; `xs[i]`
+            ON A LIST IS ITS ADDRESS. One syntax, two meanings, and both
+            appear inside List itself";
+            unified.z:183  "new_items[i] = self.items[i]"  (raw, no `.*`)
+            unified.z:168  "self.items[self.count] = item"
+          rules.txt:496 "a symbolic member -- `p[i]` is `p.[](i)` and
+            reaches too";  ecs.z:365, ecs.z:507, unified.z:246 index
+            through a pointer to a container.
+          FIFTH CASE, in no rule and no glossary entry: indexing a slice.
+            unified.z:277-278  "hi := digits[v / 16]" where
+            `digits :: "0123456789abcdef"`; json.z:106 "k.ptr[i]".
+          A SIXTH shape exists as a named member rather than `[]`:
+            ecs.z:164  "at :: (&self, e: Entity) -> Option<ptr<C>>".
+          rules.txt:193-196 itemises the collision and files it under a
+          heading of PRICES, not as an unresolved rule.
+
+FOUND BY  INV (B1, "most serious"), ANX twice and independently of itself
+          (U.3.2 raw-vs-List, U.3.3 varies-across-containers, plus U.3.1
+          for the aliasing consequence), and GRM, whose single production
+          `Index = "[" Expression "]"` (grammar.ebnf:318) cannot express
+          the difference. Two of the three analyses, three findings.
+          NOT found by OQ, which touches `[]` only at OQ-3 as the reason
+          `List` could close its projection -- see CLAIMS, item 6.
+
+BLOCKS    The meaning of every container expression in the language. The
+          memory model (which of these yields something you can alias). The
+          `slice` type (Z-15). Z-14, since `Map`'s reading is the one that
+          forces its storage open.
+
+OPTIONS   INV proposes one rule with an explicit precedence, and guesses
+          the predicate is "does the pointee declare a `[]` member" -- and
+          states plainly that this predicate "appears nowhere" in the
+          sources. Treat it as a guess, not as a candidate. Beyond that:
+          no candidate resolution in the sources.
+
+----------------------------------------------------------------------------
+Z-03  `<` IS BOTH COMPARISON AND THE COMPILE-TIME BRACKET       BLOCKING
+
+WHAT      The same token opens a compile-time argument list and compares
+          two values, and nothing in any source says how a parser tells
+          them apart.
+
+EVIDENCE  rules.txt:43  "    <>   compile-time args      List<u8>, ptr<T>"
+          rules.txt:456 lists `< <= > >=` as instructions on the primitives.
+          grammar.ebnf:314 "Suffix = Selector | Deref | Index | Arguments
+          | TypeArgs | BlockLit ." -- so any PrimaryExpr may be followed by
+          `<`, while grammar.ebnf:292 "RelExpr = AddExpr { rel_op AddExpr }"
+          also consumes `<`. The corpus puts both in one file and one
+          function: ecs.z:364 "for (i := 0; i < self.stores.count; i += 1)"
+          against ecs.z:519 "ptr<System<M>>".
+          GRM sees half of the problem and fixes only that half:
+          grammar.ebnf:101-103 "`>>` and `>>=` are single tokens. A parser
+          closing TypeArgs splits a `>>` into two `>`... so that
+          `ptr<List<T,_>>` lexes."
+
+FOUND BY  GRM for the `>>` half only. ADJ for the `<` half, from the two
+          corpus sites above. No input raised the opening bracket.
+
+BLOCKS    A parser, independently of Z-01. Also the precedence table, since
+          `<` sits at level 4 and level 8 at once in grammar.ebnf:270-284.
+
+OPTIONS   No candidate resolution in the sources. (The `>>` half has one:
+          grammar.ebnf:101-103.)
+
+----------------------------------------------------------------------------
+Z-04  BODILESS MEANS HOLE CONTRADICTS THE BODILESS RECORD       BLOCKING
+
+WHAT      Two rules classify the same text two ways, and the corpus is on
+          one side.
+
+EVIDENCE  rules.txt:132-136  "BODILESS MEANS HOLE, so a hand-written header
+          full of `func insert_item<T>(...);` declares an ABSTRACT MODULE".
+          rules.txt:80-81  "A def whose body would be empty may drop it --
+          `Span :: (lo: u32, hi: u32) -> self` is a record declaration."
+          Five bodiless declarations in the corpus are records, not holes:
+            json.z:77   "Span :: (lo: u32, hi: u32) -> self"
+            json.z:136  "    Entry :: (key: K, value: V) -> self"
+            json.z:268  "Error :: (at: u32, why: slice<u8>) -> self"
+            ecs.z:258   "Health :: (hp: i32, max: i32) -> self"
+            ecs.z:413   "Hit :: <A, B> (e: Entity, a: ptr<A>,
+                                       b: ptr<B>) -> self"
+          The distinguishing property is the binder, which rules.txt:132
+          never mentions even though rules.txt:48-49 has already made the
+          binder the thing that carries meaning.
+          Compounding it: the only illustration of the rule is written in
+          another language -- `func` and a statement-terminating `;` exist
+          nowhere in zlang and in no other line of rules.txt.
+
+FOUND BY  INV (B7, second of its three most serious) and, independently,
+          GRM, which resolved it by the binder without flagging the
+          conflict: grammar.ebnf:217-220 makes a hole `MemberName ":" Type`
+          with no binder, and grammar.ebnf:188 makes a bodiless signature
+          the TYPE of a hole rather than a hole itself.
+
+BLOCKS    The classification of every declaration in the language, and
+          therefore the hole rules, the shape/policy split, and the type
+          test at rules.txt:309-311.
+
+OPTIONS   INV: restate as "a member with no binder is a hole, whether or
+          not a body follows", and delete "bodiless" as the criterion.
+          GRM has already implemented exactly that.
+
+----------------------------------------------------------------------------
+Z-05  `-> oneof {a, b}` IS SPECIFIED AND CANNOT BE PARSED       BLOCKING
+
+WHAT      rules.txt gives a subset-sum projection whose spelling collides
+          with a `-> oneof` block's body, and the grammar has no production
+          for it.
+
+EVIDENCE  rules.txt:128-130  "`-> oneof {a, b}` is a sum over a subset --
+          variants only the declaring module can construct, matchable by
+          everyone. It falls out of visibility below rather than being
+          designed."
+          grammar.ebnf:247-249  "Projection = "oneof" | ProjectionList
+          | Type ." -- `oneof` and a list are alternatives, never a
+          sequence. The form has no parse.
+          The collision is not hypothetical: a `-> oneof` block's body is
+          also braces, json.z:138-142
+              Slot :: -> oneof {
+                  empty: ()
+                  dead:  ()
+                  live:  Entry
+              }
+          so `-> oneof {a, b}` reads as a `oneof` followed by a body
+          declaring `a` and `b` -- which is not a valid body either, since
+          grammar.ebnf:217-218 requires a Declaration to carry a `:` and a
+          type, or a binder.
+          Zero uses in the corpus.
+          "Falls out of visibility below" points forward to rules.txt:147,
+          and the derivation is never shown.
+
+FOUND BY  INV (C3: zero corpus support, derivation not shown, and the
+          forward reference logged separately as E5) and GRM (no
+          production). Two sources, describing it differently: INV read it
+          as an unexercised rule, GRM as an unparseable one. Both are true
+          and the second is the one that blocks.
+
+BLOCKS    Whether `-> oneof` takes a body, a projection list, or both.
+          How a partially-projected sum interacts with the exhaustiveness
+          rule at rules.txt:368-369, which nothing states.
+
+OPTIONS   No candidate resolution in the sources.
+
+----------------------------------------------------------------------------
+Z-41  THE `<` DISAMBIGUATION RULE IS UNVALIDATED: THE CORPUS
+      CANNOT TELL IT FROM FIVE WEAKER ONES                      BLOCKING
+
+WHAT      Z-03 says nothing decides between `<` the comparison and `<` the
+          compile-time bracket. A rule has since been written and a parser
+          built from it. The parser makes the right decision on every `<`
+          in the corpus -- and so do five strictly weaker rules, the
+          weakest being bracket balance with no lookahead at all. The
+          corpus therefore does not validate the rule. It cannot tell the
+          rule apart from guessing.
+
+EVIDENCE  PRS. On the three corpus programs the rule made 166 decisions and
+          got 166 right. Five progressively weaker rules were then run
+          against the same 166 inputs and every one of them also scored
+          166 out of 166, bracket balance alone included. The two clauses
+          the grammar actually names as the discriminator never once
+          discriminated: on no corpus input did the decision turn on
+          either of them.
+          The hard case is not decided by the rule, it is declared.
+          grammar.ebnf:432-446 states the position: where a token scan
+          cannot tell the two apart, THE ARGUMENT-LIST READING WINS, so in
+          `if (a < b && c > (d))` the `<` opens a compile-time argument
+          list applied to `b && c`, and the escape is to parenthesise the
+          comparison -- `if ((a < b) && (c > (d)))`. The grammar says as
+          much in the same place: "This is a genuine ambiguity, not an
+          oversight; the rule above resolves it by fiat and the
+          parenthesised spelling is the escape." That is a decision
+          recorded, not a problem solved, and no source document
+          authorises it. No input in the corpus has that shape, so the
+          corpus does not object to it either.
+          ADJ, counted directly against the three files: every `<` written
+          as a comparison has a space on both sides -- 36 of them, e.g.
+          unified.z:224 "if (a < b)" and ecs.z:652 "if (d < bd)" -- and
+          every `<` written as a compile-time bracket has no space on
+          either side -- 274 of them, e.g. ecs.z:519 "ptr<System<M>>". The
+          split is 310 for 310. Whitespace is not a rule of this language
+          and no source document mentions it, so what the corpus actually
+          exercises is one author's spacing habit. See Z-45.
+
+FOUND BY  PRS. One source. Z-03 raised the ambiguity; this issue is about
+          the proposed answer to it, and is filed separately so that
+          closing Z-03 does not silently close this.
+
+BLOCKS    Everything Z-03 blocks, and additionally any claim that a parser
+          built from grammar.ebnf is correct. A parse-clean run over this
+          corpus is not evidence about `<`.
+
+OPTIONS   grammar.ebnf:386-446 is a complete and self-aware proposal: it
+          states the rule, states that a token scan cannot decide the
+          ambiguous case, picks the winner by fiat and gives the escape
+          hatch. Adopt or reject it explicitly. Whatever is adopted needs a
+          test set that is not the corpus, because the corpus contains no
+          input on which the candidate rules disagree.
+
+============================================================================
+SOUNDNESS
+============================================================================
+
+----------------------------------------------------------------------------
+Z-06  A POINTEE CARRIES NO QUALIFIER AND NOTHING SAYS SO        SOUNDNESS
+
+WHAT      `ptr<T>` is an unrestricted handle of indefinite life, no
+          signature can say otherwise, and seven distinct ways to get a
+          wrong answer follow from it.
+
+EVIDENCE  rules.txt:249  "The second is the deepest hole in the design."
+          rules.txt:829-838 (OPEN) states that `::`/`:=` encode mutability
+          for bindings and nothing does for pointees.
+          glossary.txt:397-398  "const  -- nothing yet. `::` gives
+          immutable BINDINGS; there is no story for immutable POINTEES.
+          Open."
+          The corpus pays it in four shapes:
+            ecs.z:164 `Store.at` hands out `Option<ptr<C>>` into a List
+              that reallocates on the next `add` (ecs.z:171-180);
+            ecs.z:617-630 `Combat.chase` holds two interior pointers into
+              one store and writes through one;
+            ecs.z:497-510 against ecs.z:566-574 -- `Reaper.run` iterates
+              `w.hp` and emits an event whose subscriber despawns, which
+              swap-removes inside `w.hp` under the loop;
+            ecs.z:188 the swap-remove itself (see Z-12).
+
+FOUND BY  OQ-0, which is the root of its dependency graph. ANX, as seven
+          separate entries: U.1.1 invalidation, U.1.2 lifetime, U.1.3
+          erased-borrow, U.1.4 aliasing, U.1.6 reentrancy, U.1.7
+          self-referential copy, U.3.6 slice aliasing. INV, at
+          rules.txt:227-229. All three inputs, nine findings, one issue.
+          The framings differ usefully: OQ treats it as one undecided bit;
+          ANX treats it as seven permanent holes to be documented. Both are
+          right, in that order -- ANX's seven become permanent only if the
+          bit comes back "no".
+
+BLOCKS    Z-09 (the constructor body's hardest case is
+          `stores.push(&self.pos)`), Z-25 (a traversal form has to say what
+          happens when the body mutates the thing traversed), Z-14, and the
+          language's central claim that dispatch and cost are visible in
+          the type.
+
+OPTIONS   OQ-0: split one bit off -- "does a pointee carry a qualifier at
+          all, yes or no" -- and decide that before the full aliasing
+          design. A "no" closes seven annex entries as permanent and
+          unblocks Z-09 immediately; a "yes" opens the design space.
+
+----------------------------------------------------------------------------
+Z-07  NO OVERFLOW, DIVISION OR SHIFT RULE, AND THE STDLIB
+      ALREADY DEPENDS ON ONE ANSWER                             SOUNDNESS
+
+WHAT      What arithmetic does when a result is not representable, when a
+          divisor is zero, or when a shift count is out of range, is not
+          stated, and the standard library has already committed to
+          wrapping without saying so.
+
+EVIDENCE  rules.txt:454-457 is the whole of the arithmetic rule:
+          "ARITHMETIC AND COMPARISON ARE INSTRUCTIONS ON THE PRIMITIVES,
+          and they desugar to nothing. ... work on u8, u32, i32, f32, f64
+          and bool, and nowhere else." Nothing follows about behaviour.
+          Already depended on:
+            json.z:104-106  "h := 14695981039346656037" then
+              "h = (h ^ k.ptr[i]) * 1099511628211"  -- FNV-1a requires the
+              multiply to wrap;
+            ecs.z:128  "hash   = (k) -> u64  { (k.id * 2654435761)
+              ^ (k.gen * 40503) }" -- the product exceeds u32 for almost
+              every input.
+          Already a hazard:
+            unified.z:92  "allocator.alloc(n * size_of<T>())" -- an
+              overflow here under-allocates and every element write after
+              it is out of bounds;
+            unified.z:181  "new_cap   := self.capacity * 2";
+            json.z:152  "i    := KY.hash(k) % self.cap" -- a modulo on
+              every lookup, with no rule for a zero divisor.
+          rules.txt does contain the words "saturating" and "wrapping",
+          once each, at rules.txt:775-776, and glossary.txt:215 has them
+          too -- but only as the example that makes ADDITION A CHOICE and
+          therefore a policy. Neither is a rule about primitive arithmetic.
+          See CLAIMS, items 1 and 2.
+
+FOUND BY  ANX (U.5.1 overflow, U.5.2 divzero, U.5.3 shift) and OQ-4.
+          Independently: ANX reached it by enumerating what the spec does
+          not check; OQ reached it by noticing the corpus had already
+          decided. ANX calls it "the largest single gap in the
+          specification"; OQ calls it "a design question wearing a spec
+          gap's clothes". The second framing is the more useful one --
+          this is not drafting, because the plausible answers differ.
+
+BLOCKS    Any claim that a zlang program means one thing. Z-08, since a
+          narrowing conversion is the same decision.
+
+OPTIONS   OQ-4 lists four: wrap, trap, checked-build-traps /
+          release-wraps, and undefined. It does not choose.
+
+----------------------------------------------------------------------------
+Z-08  THE PRIMITIVE LIST OMITS u64 AND THERE IS NO CONVERSION
+      RULE, WHILE THE CORPUS DOES BOTH                          SOUNDNESS
+
+WHAT      rules.txt names six types arithmetic works on "and nowhere else",
+          the corpus does arithmetic on a seventh, and mixes widths in one
+          expression with no rule permitting it.
+
+EVIDENCE  rules.txt:455-456  "... work on u8, u32, i32, f32, f64 and bool,
+          and nowhere else."
+          u64 in the corpus, four sites:
+            json.z:96   "    hash:   (k: K) -> u64"
+            json.z:103  "    hash = (k) -> u64 {"
+            json.z:123  "    hash   = (k) -> u64  { fnv_lower(k) }"
+            ecs.z:128   u32 operands, u64 result
+          Mixed widths with no conversion rule:
+            json.z:152  a u64 hash reduced modulo a u32 capacity;
+            ecs.z:785-787 invents a function and says so: "`f32_of` is
+              invented. Neither file has a story for numeric conversion,
+              and it wants to be one more policy (`From<A, B>`)."
+          Sharpest form of the contradiction: rules.txt:516 uses
+          "A hash function writes `h = (h ^ k[i]) * prime`" as the argument
+          for how deref is spelled -- an operation on a type its own
+          operator rule forbids, used to justify a different rule.
+
+FOUND BY  INV (B13), ANX (U.5.4 conversion, U.5.5 float) and OQ-5. All
+          three. INV framed it as the primitive list being wrong; ANX and
+          OQ framed it as conversion being unspecified. They are one issue:
+          the list is honest only if there is a way between its members,
+          and `u64` is either in it or the hash functions are not in the
+          language.
+
+BLOCKS    Numeric code generally. Z-40. The honesty of the primitive list.
+
+OPTIONS   ecs.z:786 proposes one more policy, `From<A, B>`. OQ-5 records it
+          as ecs.z's guess and does not endorse it. Nothing in the sources
+          addresses whether u64 joins the primitive list.
+
+----------------------------------------------------------------------------
+Z-09  A `-> self` BLOCK HAS NO STATEMENT POSITION, SO EVERY
+      NON-TRIVIAL CONSTRUCTION IS TWO-PHASE AND UNCHECKED       SOUNDNESS
+
+WHAT      Anything needing `self`, two fields at once, or a step that can
+          fail has nowhere to go, and the workaround is a second call
+          nothing requires.
+
+EVIDENCE  rules.txt:840-854 states the hole and the cost: "The cost
+          meanwhile is two-phase construction, unchecked -- ecs.z's
+          `w.wire()`."
+          ecs.z:342-349 `World.wire` pushes `&self.pos`, `&self.vel`,
+          `&self.hp`, `&self.brain` into `self.stores` after construction;
+          ecs.z:753-755 calls it in `main` with the comment that forgetting
+          it makes `despawn` silently do nothing at all.
+          json.z:349-357 takes the other dodge: `Parser` cannot prime its
+          lookahead at construction because priming can fail, so `look` is
+          an `Option<Token>` and every `peek` pays a match. json.z:351 also
+          asserts "fields initialise in declaration order", which no rule
+          in rules.txt says and which ORDER INDEPENDENCE at
+          rules.txt:589-591 does not license.
+          Related and unexercised: rules.txt:56  "    name          :=
+          undefined        a field you fill in later" -- zero uses in the
+          corpus, and nothing distinguishes it from a hole.
+
+FOUND BY  OQ-1, ANX (U.4.1 two-phase, U.4.2 `undefined`, U.4.3 initialiser
+          order) and INV (C1, `undefined` has no corpus support). All
+          three, five findings.
+
+BLOCKS    Self-referential structures, which rules.txt:256-259 explicitly
+          permits and the syntax cannot build. Fallible construction.
+          Z-10, since a constructor that allocates has nowhere to report a
+          failure.
+
+OPTIONS   OQ-1 points at [P21], ecs.z:1063-1088, as a complete proposal:
+          statements interleaved with `:=` bindings in textual order,
+          `self` available at the point every `:=` field is bound, and
+          `-> Result<self, E>` folded in rather than standing alone.
+          rules.txt:844-853 records why the fallible projection was cut on
+          its own. Soft dependency on Z-06.
+
+----------------------------------------------------------------------------
+Z-10  AN ALLOCATOR CANNOT REPORT FAILURE                        SOUNDNESS
+
+WHAT      The `Allocator` shape's projection has no room for a failure, so
+          no allocator can report one and no caller can test for one.
+
+EVIDENCE  unified.z:81-84
+              Allocator :: -> self {
+                  alloc: (&self, n: u32) -> ptr
+                  free:  (&self, p: ptr) -> ()
+              }
+          unified.z:91-93 `mem.make` returns the result unexamined.
+          unified.z:104-112 `Arena.alloc` advances `top` by `n` and returns
+          without comparing anything to `size`. It is not an oversight;
+          there is nowhere to put the answer.
+          Every allocation in the corpus is used without a check:
+          unified.z:164, unified.z:182, json.z:146.
+
+FOUND BY  OQ-7 and ANX (U.6.1 failure, U.6.2 exhaustion). Two sources,
+          same framing.
+
+BLOCKS    Any program that must survive exhaustion, and the whole class of
+          fixed-extent allocators the language otherwise encourages.
+
+OPTIONS   No candidate resolution in the sources beyond a dependency: OQ-7
+          says an `alloc` returning `Option<ptr>` is unusable until Z-09
+          gives a constructor a failure path.
+
+----------------------------------------------------------------------------
+Z-11  "COMPILE-TIME ARGS APPLIED -> A TYPE" IS FALSE OF EVERY
+      POLICY INSTANCE IN THE CORPUS                             SOUNDNESS
+
+WHAT      The table in the section the document says everything depends on
+          states the wrong answer, and the document's own type test does
+          not list compile-time application among the things that make a
+          type.
+
+EVIDENCE  rules.txt:29-33
+              APPLYING A DECLARATION. Stated because everything else
+              depends on it:
+                  List           the declaration
+                  List<u8>       ...compile-time args applied   ->  a TYPE
+                  List<u8>(mem)  ...runtime args applied        ->  a VALUE
+          Five corpus sites apply compile-time arguments and get a VALUE:
+            unified.z:348  "to_string<F = list_fmt<F = fmt_u8>>(heap, xs)"
+            json.z:653     "    doc_fmt    :: json_fmt<ptr<Arena>>"
+            json.z:654     "    doc_spaced :: spaced<ptr<Arena>>"
+            json.z:554     "json_fmt<M>.format(v, w)"  -- a member call
+            ecs.z:802-803  "dump<>" and "dump<indent = 4>", passed as `F =`
+          rules.txt:38-40 patches it -- "Whether the finished thing is a
+          TYPE or a VALUE is a separate question and KEYWORDS answers it"
+          -- but the table two lines above still asserts the wrong answer,
+          and the patch is a forward reference to rules.txt:309, 270 lines
+          later.
+          Worse, rules.txt:309-311 lists three properties that make a block
+          a type and compile-time application is not among them, so
+          `List<u8>` is a type because it has a runtime group, not because
+          arguments were applied. The stated causation is wrong even for
+          its own example.
+
+FOUND BY  INV (B3, third of its three most serious). One source only, but
+          it holds against five corpus sites.
+
+BLOCKS    Reading the document in order. Any type checker, since the
+          type/value predicate is the pivot of KEYWORDS.
+
+OPTIONS   INV: delete the type/value column from the application table.
+          Application determines how much is left to apply; rules.txt:309
+          determines type-hood, independently.
+
+----------------------------------------------------------------------------
+Z-12  "A VALUE DOES NOT MOVE" IS FALSE FOR CONTAINER ELEMENTS,
+      AND THE STATED EXCEPTION NAMES THE WRONG MECHANISM        SOUNDNESS
+
+WHAT      The one-address guarantee has a carve-out for reallocation only,
+          and swap-remove invalidates element pointers with no
+          reallocation involved.
+
+EVIDENCE  rules.txt:251  "A VALUE DOES NOT MOVE. A value has ONE ADDRESS
+          for as long as it is alive".
+          rules.txt:270-276 carves out exactly one exception: a container
+          reallocating its buffer.
+          ecs.z:186-192, the swap-remove:
+              if (i != last) {
+                  self.dense[i].* = self.dense[last].*
+                  moved := self.owner[last].*
+                  ...
+          `Store.at` (ecs.z:164) has been handing out `ptr<C>` into that
+          array. After a remove, a pointer into slot `last` addresses a
+          slot that is now dead, and a pointer into slot `i` addresses a
+          different entity's component. No reallocation occurred.
+          A precise reading, which INV's version does not make:
+          rules.txt:260-261 makes this a COPY, not a move, so the letter of
+          the rule survives and the guarantee a caller actually relies on
+          does not.
+
+FOUND BY  INV (B10). ANX reaches the same array from the other end (U.1.1
+          invalidation) but attributes it only to reallocation -- the same
+          too-narrow mechanism rules.txt uses.
+
+BLOCKS    What a `ptr<T>` into a container promises, which is Z-06 at a
+          specific site.
+
+OPTIONS   INV: state the guarantee over bindings and `-> self` results, and
+          state explicitly that an element of a container has the lifetime
+          and address the container's own code gives it.
+
+----------------------------------------------------------------------------
+Z-13  A PROJECTED `:=` FIELD IS WRITABLE FROM OUTSIDE THE BLOCK SOUNDNESS
+
+WHAT      The projection is the export list and says nothing about read
+          versus write, so a caller can desynchronise a container through
+          its own published projection.
+
+EVIDENCE  rules.txt:147-148 makes the projection the export list; nothing
+          in VISIBILITY (rules.txt:147-153) mentions mutability.
+          unified.z:157  "List :: <T, M: Allocator> (allocator: M)
+          -> {push, pop, count, [], span, deinit} {"  -- `count` is a `:=`
+          field (unified.z:159) and is exported.
+          ecs.z:501  "            self.doomed.count = 0" -- a caller
+          resetting a List by writing its length, leaving the storage
+          untouched.
+          rules.txt:240-242 claims the accessor lets `List` "hide its
+          storage ... which is the whole of what the projection ever
+          promised". This write makes that untrue in effect.
+          Note ecs.z:930-931 says "no line in this file reaches into a List
+          field any more" -- correct, because `count` is not reaching in;
+          it is the projection working as specified.
+
+FOUND BY  ANX (U.3.7) and INV (as an unnumbered rider to B5). Two sources.
+          ANX classes it UNCHECKED with static detection; INV notices it
+          while checking a different rule. Independent discovery of the
+          same site.
+
+BLOCKS    What VISIBILITY IS THE PROJECTION actually promises.
+
+OPTIONS   No candidate resolution in the sources.
+
+----------------------------------------------------------------------------
+Z-14  THE ACCESSOR RULE CLAIMS A CONTAINER CAN HIDE ITS
+      STORAGE, AND `Map` REFUTES IT                             SOUNDNESS
+
+WHAT      A container that cannot be walked through its own projection must
+          export its storage, which the accessor rule presents as solved.
+
+EVIDENCE  rules.txt:236-242  "WHAT AN ACCESSOR BUYS ... With one, `List`
+          exports six names and hides its storage."
+          But json.z:132  "Map :: <K, V, M: Allocator, KY: Key<K>>
+          (allocator: M) -> self {" -- `Map` projects everything, and must,
+          because iterating it means reaching into `slots` and `cap`:
+          json.z:487-488 and json.z:539-540, two formatters.
+          ecs.z:930-942 (FRICTION 17) states the general rule the spec does
+          not: "a container that cannot be walked through its own
+          projection must export its storage", and shows that closing
+          `Map`'s projection stops the printer compiling.
+          Exactly one declaration in the corpus exercises the rule as
+          stated (`List`) and exactly one refutes it (`Map`).
+
+FOUND BY  INV (C10), ANX (U.3.8 open-storage) and OQ-3, which reaches it
+          from the iteration side: "this question decides whether
+          VISIBILITY IS THE PROJECTION is a rule containers can actually
+          obey". All three, three framings, one issue.
+
+BLOCKS    Whether the visibility rule is achievable by the standard library
+          it was written for.
+
+OPTIONS   OQ-3 and [P23] (ecs.z:1132-1136): a traversal form. See Z-25.
+          Nothing in the sources proposes an alternative.
+
+----------------------------------------------------------------------------
+Z-42  NINE CLASSES OF PROGRAM DERIVE THAT NO RULE ADMITS,
+      AND THERE IS NO LVALUE RESTRICTION AT ALL                 SOUNDNESS
+
+WHAT      The grammar derives programs that no reading of any source
+          document allows, and nothing in spec.txt, rules.txt or
+          glossary.txt rejects them either. The largest single case is that
+          there is no lvalue restriction anywhere: the left-hand side of
+          `=` is an arbitrary expression.
+
+EVIDENCE  PRS, from a parser built out of grammar.ebnf; each item below was
+          confirmed to derive. The grammar now records all nine itself, at
+          grammar.ebnf:449-499, under the heading KNOWN OVER-ACCEPTANCE --
+          to be resolved by static rules, not by syntax.
+            1  no lvalue restriction: `1 = 2` and `a == b = c` are
+               statements. spec.txt [bind.assign.1] says `=` mutates an
+               existing binding, fills a declared hole, supplies a
+               parameter default or passes a compile-time argument by name,
+               and never says what may stand to its left.
+            2  suffixes on literals: `3.*`, `"abc"<T>(1)`, `3 { a = 1 }`.
+            3  a receiver anywhere and repeatable: `(a: u32, &self)` and
+               `(&self, self)`. Nothing pins it to the first position.
+            4  a projection list mixing its two readings:
+               `-> {a, b: u32, []}` is a visibility entry, a
+               multiple-return entry and a symbolic member in one list.
+               See Z-19.
+            5  a zero-arm `match`: `match (x) { }`. rules.txt:368-369
+               requires exhaustiveness in prose and nothing enforces it.
+            6  `() :: 3` at file scope: a symbolic member name bound where
+               there is no block for it to be a member of.
+            7  unbounded projection nesting: `f :: -> -> -> () { }`, and
+               `-> _`.
+            8  repeated compile-time application: `f<T><U>(x)`.
+            9  a type absorbing a following `{`. This one is different in
+               kind and is filed separately as Z-45.
+          Items 1, 2, 7 and 8 all trace to one absence: the grammar has a
+          single Expression nonterminal and uses it in every operand
+          position, including the destination of an assignment and the
+          argument of a compile-time application.
+
+FOUND BY  PRS. One source. Not raised by INV, ANX, OQ or GRM: the first
+          four analyses read the documents, and over-acceptance is only
+          visible once something derives from them.
+
+BLOCKS    Nothing immediately; a later pass would reject these. Banded
+          SOUNDNESS and not DEFECT because no document contradicts itself
+          here -- the rules simply admit the programs, and a reader has no
+          statement to appeal to. The grammar is right that syntax cannot
+          express the restrictions; what is missing is the prose that does.
+
+OPTIONS   No candidate resolution in the sources. The lvalue question is
+          entangled with Z-30 (there is no such thing as a place) and Z-02
+          (`[]` has five meanings) and should not be answered before them.
+
+============================================================================
+GAP
+============================================================================
+
+----------------------------------------------------------------------------
+Z-15  `slice<T>` IS IN NO RULE AND NO GLOSSARY ENTRY            GAP
+
+WHAT      The type of every string literal in the corpus, the projection of
+          `List.span`, and the subject of the fifth `[]` reading, is
+          specified nowhere.
+
+EVIDENCE  The word "slice" appears in rules.txt exactly once, at
+          rules.txt:240, in passing: "`span` hands out a slice and `[]`
+          hands out a `ptr<T>`". It is not defined there and it is not a
+          headword in glossary.txt.
+          In the corpus it is load-bearing:
+            unified.z:200  "span :: (&self) -> slice<T> { slice(self.items,
+              self.count) }"
+            unified.z:140  "write :: <W: Writer> (w: W, s: slice<u8>)"
+            json.z:102     "str_key :: -> Key<slice<u8>>"
+            json.z:268     "Error :: (at: u32, why: slice<u8>) -> self"
+            unified.z:277  "digits[v / 16]" -- indexing one
+          Its two fields, `.ptr` and `.len`, are read at json.z:106 and
+          json.z:112 and declared nowhere.
+
+FOUND BY  INV (B1's fifth row and D.1) and ANX (U.3.6 slice aliasing,
+          which assumes a definition that does not exist). Two sources.
+          INV's phrasing is slightly overstated -- see CLAIMS, item 5.
+
+BLOCKS    Z-02, which cannot state the index rule without knowing what a
+          slice is. Z-16, since `slice(p, n)` is also undeclared.
+
+OPTIONS   INV: add `slice` to the type vocabulary. No form is proposed.
+
+----------------------------------------------------------------------------
+Z-16  SEVEN NAMES ARE USED BY THE CORPUS AND DECLARED NOWHERE   GAP
+
+WHAT      The corpus calls functions and names values that exist in no
+          rule, no glossary entry and no .z declaration.
+
+EVIDENCE  unified.z:92   "size_of<T>()"      -- one use, no declaration
+          unified.z:200, json.z:325, json.z:338  "slice(p, n)" used as a
+                                                 constructor
+          unified.z:191  "        self.items = nil"  -- `nil` is in no list
+            in rules.txt, is absent from the keyword budget at
+            rules.txt:348-352 and from glossary.txt:357-372, and is
+            declared nowhere in the corpus. Either it is a fourteenth
+            keyword or a std.core value nobody wrote down.
+          unified.z:367, json.z:639, ecs.z:745  "page" as an argument to
+            `Arena`
+          json.z:338  "parse_f64"
+          json.z:383  "tag_of"   -- flagged as invented by json.z itself
+          ecs.z:785   "f32_of"   -- flagged as invented by ecs.z itself
+          grammar.ebnf:72-73 resolves `nil` by fiat: "`type`, `true`,
+          `false`, `nil` and `ptr` are ordinary predeclared identifiers and
+          are not listed here."
+
+FOUND BY  INV (B11, for `nil`, `size_of`, `slice`, `page`, `type`,
+          `tag_of`) and ANX (U.1.8, which cites grammar.ebnf:72 for `nil`,
+          and U.6.3, which notes "`size_of` is itself used and declared
+          nowhere"). Two sources, converging.
+
+BLOCKS    Whether there is a std.core the rules do not describe, and
+          whether the keyword budget at rules.txt:348-352 is complete.
+
+OPTIONS   grammar.ebnf:72-73 proposes the predeclared-identifier route for
+          `nil`, `type`, `true`, `false` and `ptr`. Nothing in the sources
+          addresses the function-valued ones.
+
+----------------------------------------------------------------------------
+Z-17  NESTED DECLARATIONS CAPTURE THE ENCLOSING BLOCK'S
+      COMPILE-TIME ARGUMENTS, AND NO RULE SAYS SO               GAP
+
+WHAT      A declaration inside a block silently acquires the block's
+          compile-time parameters, which the corpus depends on and
+          rules.txt never states.
+
+EVIDENCE  json.z:134-136
+              // [W3] Nested declarations inside a block capture the
+              // block's compile-time args for free. `Entry` is
+              // `Entry<K, V>` without ever saying so.
+                  Entry :: (key: K, value: V) -> self
+          json.z:138-142 `Slot :: -> oneof { ... live: Entry }` is likewise
+          `Slot<K, V>`, inside `Map<K, V, M, KY>` (json.z:132).
+          Load-bearing for `Json`'s `object` variant.
+          rules.txt has no rule for it. The closest thing is
+          rules.txt:727-728, inside NOTE 4, and it is about shape matching.
+
+FOUND BY  INV (C6, reached while verifying the `-> oneof` rules in its B4).
+          One source. Confirmed here against json.z directly.
+
+BLOCKS    Name resolution inside a block, jointly with Z-18.
+
+OPTIONS   No candidate resolution in the sources. json.z names the
+          behaviour ([W3]) without proposing a rule.
+
+----------------------------------------------------------------------------
+Z-18  WHEN A NAME MAY BE WRITTEN UNQUALIFIED INSIDE ITS OWN
+      BLOCK IS STATED NOWHERE                                   GAP
+
+WHAT      Field initialisers and members read the enclosing declaration's
+          parameters bare, while methods reach the same names through
+          `self`, and no rule distinguishes the two positions.
+
+EVIDENCE  unified.z:164  "    items    := mem.make<T>(allocator, capacity)"
+            -- bare `allocator` (a runtime parameter) and bare `capacity`
+            (a sibling field), in a field initialiser;
+          unified.z:167  "if (self.count + 1 > self.capacity)"
+            -- the same field, through `self`, in a method;
+          ecs.z:697 and ecs.z:734
+              dump :: <M, indent: u32 = 2> -> fmt.Formattable<World<M>>
+              for (i := 0; i < indent; i += 1) { io.write(w, " ") }
+            -- a compile-time parameter of the enclosing declaration read
+            bare inside a member.
+          unified.z:161-163 documents the split as a fact and not a rule:
+          "A field initialiser sees the runtime params directly; methods
+          reach them through `self`."
+          rules.txt:727-728 is the closest statement and is inside NOTE 4
+          and about shape matching. See Z-33.
+
+FOUND BY  INV (C13, and the same site again while checking its B8). One
+          source. Confirmed here at all three corpus sites.
+
+BLOCKS    Name resolution. Together with Z-17, everything about scope.
+
+OPTIONS   INV: promote rules.txt:727-728 out of NOTE 4 into a rule. It does
+          not claim that statement is sufficient, and it is not: it says
+          nothing about the initialiser-versus-method split.
+
+----------------------------------------------------------------------------
+Z-19  A PROJECTION LIST THAT DECLARES TYPED MEMBERS, AND ITS
+      BRACE LITERAL, ARE USED AND UNSPECIFIED                   GAP
+
+WHAT      rules.txt reads `-> {a, b}` as naming existing members; the
+          corpus also uses it to declare new typed ones and construct them
+          with a bare brace literal.
+
+EVIDENCE  rules.txt:26  "    -> {a, b}    these members of it
+          multiple return, AND visibility" -- one reading.
+          json.z:151-159 is the other:
+              probe :: (&self, k: K) -> {at: u32, found: bool} {
+                  ...
+                  empty   { return { at = if (free < self.cap) { free }
+                                          else { i },
+                                     found = false } }
+          and the caller reads `r.found` at json.z:168.
+          json.z:148-150 records it as [W4] and calls it "the thing you
+          reach for constantly in container code".
+          rules.txt:67-69 covers a literal for `-> SomeType`; nothing
+          covers a bare brace literal for a partial projection.
+          grammar.ebnf resolved it by fiat -- grammar.ebnf:251-255 makes
+          MemberSpec carry an optional type, and grammar.ebnf:323-327 makes
+          BlockLit bare -- with the comment "One form, two readings."
+          ecs.z:953-959 (FRICTION 23) then shows the form does not compose:
+          "`-> {a, b}` is a property of a DECLARATION and names nothing, so
+          `Option<{e: Entity, a: ptr<A>}>` cannot be written".
+
+FOUND BY  INV (C14) and GRM (which invented both productions). Two sources,
+          different framings: INV as a missing rule, GRM as an invented
+          one.
+
+BLOCKS    Whether a partial projection is a type. Container code generally,
+          per ecs.z:958-959.
+
+OPTIONS   grammar.ebnf:251-255 and 323-327 are already a concrete proposal.
+          ecs.z:953-959 states the limit and proposes nothing.
+
+----------------------------------------------------------------------------
+Z-20  A SUM'S DISCRIMINANT IS NOT A VALUE                       GAP
+
+WHAT      There is no spelling for "same variant, ignore the payload", no
+          ordinal per variant, and therefore no bitmask, no array index by
+          tag, and no stable serialised form.
+
+EVIDENCE  rules.txt:859-863 (OPEN) states the want: `S.tag`, with
+          `tag_of(v)` total, comparable and ordered.
+          rules.txt:377-379 states the cost as accepted: a tag test has no
+          payload and no short spelling, so it is a full match.
+          The corpus pays it:
+            ecs.z:272-274  `is_dead` spells four arms to compute a bool;
+            json.z:381-387 `Parser.expect` invents `tag_of` -- json.z:383
+              "if (tag_of(t) != tag_of(want)) {  // FRICTION 7: no tag test"
+              -- and json.z:828 admits the invention. See Z-39;
+            json.z:175-179 `Map.get` writes `empty` and `dead` arms it can
+              prove unreachable;
+            ecs.z:275-278  the archetype bitmask, which cannot be written
+              at all: "A sum's discriminant is not a value, cannot be
+              compared, cannot index an array, and cannot be serialised."
+
+FOUND BY  OQ-2, ANX (U.7.2, classed UNSPECIFIED) and INV (C18, which
+          catches that the corpus half-violates rules.txt:377-379). All
+          three.
+
+BLOCKS    A data structure, not a convenience -- ecs.z:1159-1160: "no
+          ordinal, no bitmask, no archetypes, no serialisation."
+
+OPTIONS   [P19], ecs.z:1142-1148, is a complete proposal: `S.tag` as a
+          derived sum of unit variants, `tag_of(v)` total, comparable,
+          ordinal, usable as an array index or a bit position. OQ-2 notes
+          it has zero dependencies and changes no existing spelling.
+
+----------------------------------------------------------------------------
+Z-21  POINTER ARITHMETIC IS USED AND DEFINED NOWHERE            GAP
+
+WHAT      `p + n` appears in the corpus; whether pointer arithmetic exists,
+          whether it scales by the pointee's size, and what an
+          out-of-allocation result means are unstated.
+
+EVIDENCE  unified.z:107  "        p := self.base + self.top"  --
+          `ptr<u8> + u32`, inside `Arena.alloc`, the allocator the whole
+          corpus runs on.
+          json.z:325  "s := slice(self.src.ptr + start, self.pos - start)"
+          json.z:338  the same expression again.
+          rules.txt:492-498 lists exactly three implicit reach-throughs and
+          one deref, and no arithmetic. rules.txt:455-456 lists the types
+          the arithmetic operators work on and `ptr` is not among them, so
+          on the letter of that rule these three lines do not compile.
+
+FOUND BY  ANX (U.1.9, classed UNWRITTEN). One source. Verified here; note
+          that under Z-08's reading of rules.txt:455-456 this is also a
+          contradiction, not only a gap, which ANX does not say.
+
+BLOCKS    `Arena`, `Lexer`, and any implementation of `slice`.
+
+OPTIONS   No candidate resolution in the sources.
+
+----------------------------------------------------------------------------
+Z-22  THE CORPUS INFERS A TYPE OUTWARD FROM THE PROJECTION AND
+      THE RULES DO NOT LICENSE IT                               GAP
+
+WHAT      `ok(...)` and `err(...)` are written bare at dozens of sites,
+          which requires inference flowing from the enclosing declaration's
+          projection into its body -- the one direction the language does
+          not otherwise do.
+
+EVIDENCE  json.z:291  "        if (self.at_end()) { return ok(Token.eof())
+          }    // FRICTION 4"
+          json.z:813-817  "FRICTION 4 -- `ok(...)` / `err(...)` NEED THE
+          TYPE. Written honestly it is `Result<Token, Error>.ok(t)` at
+          every one of the fourteen returns in the lexer. Inference from
+          the enclosing function's return type is the obvious fix, but note
+          it is inference flowing OUTWARD from the projection into the
+          body, which the language does not otherwise do."
+          rules.txt:540-550 licenses inference from a runtime argument's
+          type and from an expected type; these sites are the second case
+          only if a `return` position counts as an expected type, which
+          nothing states.
+          Counted here: 42 bare `ok(` / `err(` / `some(` / `none(` calls
+          across the three files, against 54 written out with their type.
+
+FOUND BY  OQ-13. One source. It is the one place the corpus is written in a
+          language the rules do not describe, which makes it a correctness
+          question about the specification rather than a convenience.
+
+BLOCKS    Nothing structural. It blocks the claim that the corpus is a
+          worked example of these rules.
+
+OPTIONS   json.z:815-817 names inference from the enclosing projection as
+          "the obvious fix" and says it is worth deciding deliberately.
+
+----------------------------------------------------------------------------
+Z-23  `defer` HAS ONE GLOSS AND NO SEMANTICS; EVALUATION ORDER
+      IS FIXED IN ONE PLACE AND OPEN EVERYWHERE ELSE            GAP
+
+WHAT      `defer` is the whole of the language's destruction story and is
+          glossed in four words; the order of everything except a compound
+          assignment's destination is unstated.
+
+EVIDENCE  glossary.txt:366  "    defer       run at scope exit"
+          rules.txt:352 lists `defer` in the keyword budget. That is all.
+          Unstated: whether "scope" is the enclosing block or the enclosing
+          declaration; in what order several defers run; whether a defer
+          runs on `return`, `break` and `continue`; whether a defer in a
+          loop body runs once per iteration.
+          rules.txt:457-462 fixes exactly one ordering -- "EXCEPT THAT THE
+          DESTINATION IS EVALUATED ONCE" -- and says it matters "because an
+          accessor can have side effects", which is precisely the reason
+          argument order matters too, and argument order is not fixed.
+          rules.txt:278-280 makes `defer` load-bearing: "there is no
+          automatic destruction ... `deinit` is an ordinary member and
+          `defer` calls it."
+
+FOUND BY  ANX (U.10.1 defer, U.10.2 operand order). One source, two
+          entries, merged here because both are the same drafting job.
+
+BLOCKS    The destruction story, which is the whole answer to Z-06's
+          lifetime half.
+
+OPTIONS   No candidate resolution in the sources.
+
+----------------------------------------------------------------------------
+Z-24  ELEVEN SUBJECTS ARE UNWRITTEN RATHER THAN UNDECIDED;
+      EIGHT OF THEM ARE HERE                                    GAP
+
+WHAT      The annex identifies a set of entries where the answer is not in
+          dispute and has simply never been written down. They are one
+          issue here because they are one work item.
+
+COUNT     Eleven. The set is the UNWRITTEN entries of unchecked.txt that no
+          open question claims. Enumerated against the per-entry
+          classifications in unchecked.txt U.13 it is exactly: U.1.5,
+          U.1.8, U.1.9, U.2.5, U.3.4, U.6.3, U.10.1, U.10.2, U.10.3,
+          U.11.1, U.11.3. Three of the eleven are large enough to stand
+          alone and are filed separately -- Z-21 is U.1.9, Z-23 is U.10.1
+          and U.10.2. The remaining eight are this issue.
+
+EVIDENCE  From unchecked.txt, verified against the cited sources:
+            U.1.5  whether an implementation may assume two pointers do not
+                   alias -- rules.txt:487-523 is silent
+            U.1.8  null: no rule says whether a `ptr<T>` may hold one or
+                   what a read through one does, and `nil` is predeclared
+                   with no semantics (unified.z:189-193)
+            U.2.5  allocator preconditions: the `Allocator` shape does not
+                   say that `free(p)` requires `p` to have come from that
+                   allocator, and `Arena.free` is a no-op (unified.z:81-84,
+                   unified.z:111)
+            U.3.4  bounds: no rule requires an index to be in range;
+                   unified.z:198 computes the address for any `i` and never
+                   consults `count`
+            U.6.3  alignment: unified.z:82 `alloc` takes a byte count and
+                   no alignment
+            U.10.3 recursion depth; json.z:389-446 is a recursive descent
+                   parser whose depth is its input's
+            U.11.1 layout, size, alignment, padding, tag representation --
+                   and json.z:222-224 already tabulates `Json` at 24 bytes
+                   against no stated layout rule
+            U.11.3 what a compile-time function may do; rules.txt:355-356
+                   makes `import` one and says nothing more
+
+FOUND BY  ANX, which lists eleven such entries in its U.13 and states the
+          distinction: "They are specification work: the answer is not in
+          dispute, it has simply never been written down." OQ endorses the
+          split and refuses all eleven entry into the design log
+          (open.txt:29-36). The two analyses agree, which is worth noting
+          because it is the only place they explicitly negotiated a
+          boundary.
+          CORRECTED HERE. An earlier draft of this issue gave the set three
+          different sizes: "eight" in its title, "twelve" in this field,
+          and a list of eight that was neither. That list wrongly included
+          U.11.2, which oq.mono.recursive claims in part and which
+          open.txt:35-36 explicitly removes from the set, and U.11.5, which
+          is classed PLATFORM and is a permanent property of the target
+          rather than unwritten work; and it omitted U.1.8 and U.2.5.
+          unchecked.txt U.13 and open.txt both said eleven and both were
+          right.
+
+BLOCKS    Nothing individually. Collectively, a first complete draft.
+
+OPTIONS   No candidate resolution in the sources; none is needed.
+
+----------------------------------------------------------------------------
+Z-25  THERE IS NO TRAVERSAL FORM                                GAP
+
+WHAT      Every traversal in both programs is a C index loop, and the
+          standard library's attempt to answer it without a form was cut.
+
+EVIDENCE  rules.txt:865-870 (OPEN) states it and records the history.
+          ecs.z:415-433 `Join2` has a `next` returning `Option<Hit<A,B>>`
+          and every user writes the consumer by hand -- ecs.z:466-479 is
+          four lines where one would do.
+          Index loops with no `next` at all: ecs.z:487-493, ecs.z:502-510,
+          ecs.z:586-599, json.z:477-480, json.z:686.
+          ecs.z:968-974 (FRICTION 18): `Iterator`, `ListIter`, `iter` and
+          `fold` are cut, and none of the four appears in the corpus now.
+
+FOUND BY  OQ-3 and ANX (U.3.5, mutation during traversal). Two sources, and
+          they disagree usefully: ANX states that a traversal form does NOT
+          retire U.3.5, because a desugared loop reads the same count from
+          the same container and skips the same swap-removed element, and
+          OQ-3 concedes exactly that in its Retires line. Both are right,
+          and it is worth keeping: the form removes the syntax cost, not
+          the hazard.
+
+BLOCKS    Z-14, and therefore whether VISIBILITY IS THE PROJECTION is a
+          rule containers can obey. Depends on Z-06.
+
+OPTIONS   [P23], ecs.z:1132-1136: `for (x := it)` over anything with a
+          `next` returning `Option<T>`. OQ-3 says the desugaring is
+          proposed and what it quantifies over is the open half.
+
+----------------------------------------------------------------------------
+Z-43  THERE IS NO BARE BLOCK, SO NOTHING CAN OPEN A SCOPE --
+      AND `defer` FIRES AT SCOPE EXIT                           GAP
+
+WHAT      `{ x := 1 }` in a function body does not derive. A brace opens a
+          declaration body, a control-flow body, a match arm or a block
+          literal, and nothing else, so a program has no way to open a
+          scope for its own sake. The language nevertheless has a construct
+          whose entire definition is a scope boundary.
+
+EVIDENCE  PRS, and grammar.ebnf:501-512 now records it under KNOWN
+          UNDER-ACCEPTANCE -- a language-design finding, not a grammar bug:
+          "Block is not an Operand, and the only `{` an expression may open
+          is a BlockLit, whose FieldFill requires `name = expr`. So the
+          language has no way to open a scope."
+          glossary.txt:366 is the whole of `defer`: "defer  run at scope
+          exit". Z-23 records that nothing says whether "scope" means the
+          enclosing block or the enclosing declaration. Without a bare
+          block the only scopes a programmer can introduce are a function
+          body and the body of an `if`, `while`, `for`, `loop` or match
+          arm -- but no document states that, and the gloss is written as
+          though a reader could open one.
+          The corpus does not settle it. All five `defer`s in the corpus
+          sit at the top of a function body -- unified.z:339, unified.z:363,
+          unified.z:370, ecs.z:754, ecs.z:769 -- so every one has the same
+          meaning under both readings and none of them exercises a narrower
+          scope.
+          Related: Z-09, a `-> self` block has no statement position at
+          all, which is why ecs.z:342-349 is two-phase. A bare block is one
+          of the things a statement position would have to decide about.
+
+FOUND BY  PRS for the derivation, ADJ for the consequence. A gap in the
+          language and not a bug in grammar.ebnf, which is why the grammar
+          records it rather than inventing a production. Adding one is a
+          line; the reason not to add it unilaterally is that `{` is
+          already spoken for -- declaration body, control-flow body, match
+          arm, and the construction form `Option<u8>{ some = 3 }`
+          (rules.txt:124-125) -- so deciding that a brace in statement
+          position opens a scope is a decision about all of them.
+
+BLOCKS    Z-23, which cannot state `defer` semantics without knowing what a
+          scope is. Part of Z-01, which must either give the statement
+          layer a form for this or state that there is none.
+
+OPTIONS   No candidate resolution in the sources. Neither rules.txt nor
+          glossary.txt contains a bare block and the corpus contains none,
+          so there is nothing to adopt or reject: this one has to be
+          decided rather than found.
+
+============================================================================
+DEFECT
+============================================================================
+
+----------------------------------------------------------------------------
+Z-26  "EACH RULE IS STATED ONCE" IS FALSE                       DEFECT
+
+WHAT      The document's own organising claim does not hold: nine rules are
+          stated two or more times inside rules.txt and fourteen more are
+          restated near-verbatim in glossary.txt.
+
+EVIDENCE  rules.txt:11-12  "EACH RULE IS STATED ONCE, in the sections
+          below."
+          Spot-checked and confirmed in-file:
+            a runtime param of a `-> self` def is a field, three times --
+              rules.txt:79-80, 113-114, 818-819;
+            a hole is a value, always -- rules.txt:118 and 616;
+            precedence is a fixed table -- rules.txt:474-475 and 806-807;
+            an empty group means apply -- rules.txt:35-38 and 552-556;
+            mixing receiver-taking and receiver-free holes is an error --
+              rules.txt:615 and 661-663;
+            `sort(&xs)` spells its address-of, four times --
+              rules.txt:171, 188-189, 219, 498.
+          Cross-file, spot-checked:
+            the binder rule -- rules.txt:48, 58-60 against
+              glossary.txt:44-51;
+            the five-projection table -- rules.txt:23-27 against
+              glossary.txt:96-102, near-identical including the glosses.
+
+FOUND BY  INV (Finding A). One source, and the only one that read
+          glossary.txt against rules.txt at all.
+
+BLOCKS    Nothing. It costs the merged spec one decision per pair: keep
+          one, delete the other.
+
+OPTIONS   INV pairs every duplicate with an id so the spec can keep one and
+          delete the other. Its counts -- 9 in-file, 14 cross-file -- are
+          not fully re-verified here; the eight pairs above are.
+
+----------------------------------------------------------------------------
+Z-27  THERE ARE THREE LISTS OF "WORDS THAT ARE NOT IN THE
+      LANGUAGE" AND NO TWO AGREE                                DEFECT
+
+WHAT      The same negative claim is made three times with three different
+          memberships.
+
+EVIDENCE  rules.txt:100   "THERE IS NO `trait`, `interface`, `abstract`,
+                           `enum` OR `union`."      -- five words
+          rules.txt:354-355 "There is no `struct`, `enum`, `union`,
+                           `interface`, `trait`, `impl`, `operator`, `pub`,
+                           `dyn`, or `import`."     -- ten words
+          glossary.txt:379-398  struct, module, enum, union, interface,
+                           trait, abstract, impl, class, operator, pub,
+                           dyn, import, const       -- fourteen words
+          `abstract` is in the first and third and not the second.
+          `module`, `class` and `const` are in the third only. `const`
+          carries content the others do not -- glossary.txt:397-398 "`::`
+          gives immutable BINDINGS; there is no story for immutable
+          POINTEES. Open." -- which duplicates Z-06 without
+          cross-referencing it.
+
+FOUND BY  INV (A2). One source.
+
+BLOCKS    Nothing.
+
+OPTIONS   No candidate resolution in the sources beyond merging the lists.
+
+----------------------------------------------------------------------------
+Z-28  `_` IS DEFINED AS ONE IDEA AND IS THREE                   DEFECT
+
+WHAT      The stated definition covers neither the wildcard arm nor the
+          anonymous compile-time parameter, and the document proves this
+          itself two dozen lines later.
+
+EVIDENCE  rules.txt:415-421
+              `_` IS A HOLE IN A BINDING POSITION, and that is its whole
+              definition. Four uses, one idea:
+                  _        { ... }        a wildcard arm
+                  some (_) { ... }        an ignored payload
+                  ptr<List<T, _>>         a compile-time arg you decline
+                                          to name
+                  _ := xs.pop()           a value you decline to keep
+          Neither half survives. It is not a hole: rules.txt:85 defines a
+          hole as a member with a type and no binder, while `_ := xs.pop()`
+          has a binder and no type, and `_ { ... }` is in pattern position
+          and is not a member of anything.
+          It is not one idea: the third use INTRODUCES a fresh anonymous
+          compile-time parameter, the opposite of declining a binding, and
+          rules.txt:438-439 says so outright -- "Two `_` are also two
+          independent parameters, so `_` can never say 'the same type I did
+          not name'." That sentence is unintelligible under the stated
+          definition.
+          rules.txt:434-438 then has to except projection position, an
+          exception a genuine single-idea rule would not need.
+
+FOUND BY  INV (B6). One source, and its argument is internal to rules.txt,
+          so the corpus cannot adjudicate it. Confirmed here by reading.
+
+BLOCKS    Nothing, but it is three rules pretending to be one and the spec
+          will have to split them.
+
+OPTIONS   INV proposes three rules: `_` as the exhaustiveness arm under
+          MATCH; `_` as a discard in a binding position, covering
+          `some (_)` and `_ := e`, paired with the no-silent-drop rule; and
+          `_` as an anonymous compile-time parameter under COMPILE-TIME
+          ARGS, with rules.txt:434-439 as its two clauses.
+
+----------------------------------------------------------------------------
+Z-29  "`.` REACHES THROUGH ANY NUMBER OF POINTERS" AND "DEREF
+      IS NEVER OPTIONAL" ARE TWENTY-FIVE LINES APART            DEFECT
+
+WHAT      The second rule is stated with no scope at all, having just been
+          made optional twice.
+
+EVIDENCE  rules.txt:495-496  "`.` reaches through ANY number of pointers.
+          So does a symbolic member -- `p[i]` is `p.[](i)` and reaches
+          too."
+          rules.txt:520-523  deref is never optional; `p = q` and
+          `p.* = q.*` are different acts and must not be one text.
+          The corpus shows the missing qualification is about position, not
+          about reads:
+            ecs.z:365  "self.stores[i].remove(e)" -- reaches through two
+              pointers implicitly;
+            ecs.z:623  "some (h) { h.hp -= self.bite }" where `h` is a
+              `ptr<Health>` -- a WRITE through an implicit deref, against
+              rules.txt:507 "out.* += 1", the identical act spelled with an
+              explicit `.*`. The difference is member versus whole pointee;
+            ecs.z:620  "prey.*.sub(me.*)" -- explicit, because the whole
+              pointee is the argument.
+          rules.txt:190-191 already admits the consequence ("a `v.x` read
+          never errors"), so the document knows the deref is optional for
+          `.` and still says "never".
+
+FOUND BY  INV (B2), which correctly calls it "not a contradiction of
+          substance; a contradiction of text". ANX reaches the same site
+          from the other end at U.3.1, where the implicit reach-through is
+          the reason a mis-bound pointer is never caught.
+
+BLOCKS    Nothing that a scoping clause does not fix.
+
+OPTIONS   INV: the deref is implicit in member-selection and
+          symbolic-member positions and nowhere else; it is never implicit
+          where the whole pointee is read, written, bound or passed.
+
+----------------------------------------------------------------------------
+Z-30  "NO SUCH THING AS A PLACE" CONTRADICTS THE GLOSSARY'S
+      PLACE ENTRY AND THREE RULES                               DEFECT
+
+WHAT      A heading overstates a cut: what went is the place TYPE, not
+          places.
+
+EVIDENCE  rules.txt:165  "THERE IS NO `-> &T`, AND NO SUCH THING AS A
+          PLACE."
+          glossary.txt:110-115 has a full PLACE headword: "A location you
+          can write to ... `x`, `p.*`, `s.field` and `items[i]` are places
+          ... It is a property of an EXPRESSION and there is no `place` in
+          the type system: no projection yields one, and no parameter takes
+          one."
+          rules.txt:457-458 states a rule about THE DESTINATION of a
+          compound assignment, which quantifies over places.
+          rules.txt:500 glosses `p.*` as the whole pointee, as a place.
+          The corpus writes to places constantly: unified.z:168,
+          unified.z:108, ecs.z:593, ecs.z:623.
+
+FOUND BY  INV (B9). One source. DOWNGRADED here: INV frames it as the
+          heading contradicting "the rest of the document", but
+          glossary.txt:114-115 already states the correct scoping, so this
+          is drift between a heading and a glossary that got it right --
+          not an open question. See CLAIMS, item 4.
+
+BLOCKS    Nothing.
+
+OPTIONS   The glossary's own wording, at glossary.txt:114-115, is the
+          candidate: there is no `place` in the type system.
+
+----------------------------------------------------------------------------
+Z-31  "`&` STOPS BEING A TYPE CONSTRUCTOR AT ALL" IS FALSE      DEFECT
+
+WHAT      The rule is right in substance and false as stated, because
+          `&self` is `&` in a type position and appears in dozens of
+          signatures.
+
+EVIDENCE  rules.txt:177-178  "With the projection gone, `&` stops being a
+          type constructor at all: those four spellings are ungrammatical
+          rather than prohibited".
+          rules.txt:304-305 declares `&self` a receiver in a parameter list
+          and says it desugars to `ptr<self>` -- which is `&X` with its
+          argument restricted to `self`.
+          glossary.txt:160 writes it in a hole's type position:
+          "write_bytes: (&self, p: ptr<u8>, n: u32) -> ()".
+          grammar.ebnf:241 resolves it: "Receiver      = [ "&" ] "self" ."
+
+FOUND BY  INV (B12) and, silently, GRM. Two sources.
+
+BLOCKS    Nothing.
+
+OPTIONS   INV: "`&self` is the sole use of `&` in a type position, and is
+          sugar for `ptr<self>`." grammar.ebnf:241 has implemented it.
+
+----------------------------------------------------------------------------
+Z-32  TWENTY-ONE FORWARD REFERENCES, THREE OF THEM STRUCTURAL   DEFECT
+
+WHAT      Rules depend on rules stated later, including in the section the
+          document says everything else depends on.
+
+EVIDENCE  The three structural ones, verified:
+            rules.txt:29 says APPLYING A DECLARATION is "Stated because
+              everything else depends on it", and rules.txt:38-40 then
+              defers the type/value question to KEYWORDS at rules.txt:309
+              -- 270 lines later. See Z-11;
+            BINDING (rules.txt:48-83) is written entirely in terms of holes
+              and precedes their definition at rules.txt:85;
+            the shape/policy test is stated only at rules.txt:651-654,
+              inside NOTE 1, and is the derivation for rules.txt:445,
+              rules.txt:332 and rules.txt:609-614 -- all earlier.
+          Individual ones spot-checked: rules.txt:26 and 128-130 both point
+          at visibility, stated at rules.txt:147; rules.txt:163 points at
+          OPERATORS, stated at rules.txt:458; rules.txt:231-234 points at
+          POINTERS, stated at rules.txt:495-496; rules.txt:885 states "It
+          is two words built at the coercion site" as if already known, and
+          the definition is glossary.txt:329-331, in the other file.
+
+FOUND BY  INV (Finding E). One source. Its count of 21 is not fully
+          re-verified here; the three structural ones and four of the
+          individual ones are.
+
+BLOCKS    Reading the document in order, which is what a specification is
+          for. rules.txt:9 tells the reader to read it in order.
+
+OPTIONS   INV: the type test (rules.txt:309-311) must come first in the
+          spec, and the shape/policy test must be promoted out of NOTE 1.
+
+----------------------------------------------------------------------------
+Z-33  FOUR NORMATIVE STATEMENTS LIVE ONLY IN NOTES              DEFECT
+
+WHAT      Content that other rules derive from is filed as rationale, or
+          exists only as a NOTE's title.
+
+EVIDENCE  rules.txt:651-654, the shape/policy test -- the only statement of
+          it, and the derivation for three normative rules. See Z-32.
+          rules.txt:665-669  "ANYTHING THAT MUST AGREE BELONGS IN ONE
+          BLOCK." Corpus-supported -- json.z:95-98, `Key<K>` carries `hash`
+          and `equals` -- and stated in no rule section.
+          rules.txt:696  "NOTE 3 -- shapes contain holes and nothing else."
+          A rule stated only as a heading. Corpus-supported: `Allocator`,
+          `Writer`, `Ord`, `Formattable`, `Key`, `AnyStore`, `System`,
+          `Fn`, `Fn2` all contain holes only.
+          rules.txt:727-728, members have the block's compile-time args and
+          fields in scope -- the rule the corpus leans on hardest (Z-18)
+          and it is inside NOTE 4.
+
+FOUND BY  INV (C11, C12, C13, and the rationale count in its summary). One
+          source.
+
+BLOCKS    Z-18 directly. Otherwise nothing.
+
+OPTIONS   INV: promote all four, and annex the remaining rationale
+          paragraphs, which it estimates shrinks the rule sections by
+          roughly a third.
+
+----------------------------------------------------------------------------
+Z-34  NOTE 5 DOES NOT EXIST, TWO CROSS-REFERENCES POINT AT THE
+      WRONG NOTE, AND unified.z ADVERTISES NINE                 DEFECT
+
+WHAT      The note numbering is broken in three ways.
+
+EVIDENCE  rules.txt contains NOTE 1 (634), NOTE 2 (674), NOTE 3 (696),
+          NOTE 4 (725) and NOTE 6 (755). There is no NOTE 5 and nothing
+          explains the gap.
+          rules.txt:799  "...and gets the wrapper problem in NOTE 1's last
+          paragraph." NOTE 1's last paragraph is rules.txt:671, "Neither is
+          a new construct." The wrapper problem is rules.txt:623-631, in a
+          different section entirely.
+          rules.txt:876  "...problem in NOTE 1 for anything else" -- the
+          same mis-citation, for the adapter.
+          unified.z:10  "policies, coherence, and NOTE 1-9 arguing for each
+          -- is in rules.txt."
+
+FOUND BY  INV (A.3). One source. All three verified here.
+
+BLOCKS    Nothing.
+
+OPTIONS   No candidate resolution in the sources; the target of both
+          citations is rules.txt:623-631.
+
+----------------------------------------------------------------------------
+Z-35  THE DOCUMENT LEADS WITH THE CONSTRUCTION FORM THE CORPUS
+      NEVER USES                                                DEFECT
+
+WHAT      `Option<u8>{ some = 3 }` is stated as the primary rule and has
+          zero uses; the derived-function form it presents as a consequence
+          is used exclusively.
+
+EVIDENCE  rules.txt:124-126  "Construction needs no new rule: `=` already
+          fills a declared hole in a literal, so `Option<u8>{ some = 3 }`.
+          Since a variant is a hole of type T, the variant name is also a
+          derived function (T) -> Self: `Option<u8>.some(3)`."
+          Corpus: zero occurrences of a `Type{ field = ... }` literal in
+          any of the three files. The only brace literals with `=` fills
+          are json.z:156 and json.z:159, and those construct an anonymous
+          partial projection, not a value of a declared type -- see Z-19.
+          Against that, 54 qualified derived-function constructions:
+          `Ai.idle()` seven times, `Token.colon()` five, `Option<V>.none()`
+          three, `Ai.hunt()` three, plus `Json.object()`, `Slot.live()`,
+          `Result<Token, Error>.ok()` and the rest -- and 42 bare ones on
+          top of that (Z-22).
+
+FOUND BY  INV (C2). One source. Re-counted here.
+
+BLOCKS    Nothing, but it is evidence about which form the language
+          actually has, and the spec leads with the other one.
+
+OPTIONS   No candidate resolution in the sources. Note that grammar.ebnf
+          keeps both -- grammar.ebnf:323-327 -- and the brace form is what
+          makes Z-19 parse.
+
+----------------------------------------------------------------------------
+Z-36  THE DOCUMENT SCHEDULES ONE THING AND NAMES A DIFFERENT
+      THING THE DEEPEST HOLE                                    DEFECT
+
+WHAT      rules.txt calls aliasing "the deepest hole in the design" in one
+          section and schedules the constructor body as "the next thing to
+          decide" in another, without reconciling them.
+
+EVIDENCE  rules.txt:247-249  "Two questions have no answer -- the
+          constructor body, and who may write through a pointer and for how
+          long it stays valid -- and both are in OPEN. The second is the
+          deepest hole in the design."
+          rules.txt:853-854  "A value having one address is what makes such
+          a body definable at all, so this is the next thing to decide."
+          Six hundred lines apart. Both can be true -- deepest is not next
+          -- but the document never says why, and the reason it gives for
+          scheduling the constructor body is about a prerequisite being
+          satisfied rather than about what the decision unblocks.
+
+FOUND BY  OQ, in its closing section. One source. Verified here at both
+          line numbers.
+
+BLOCKS    The order of work, which is what this whole exercise is for.
+
+OPTIONS   OQ makes three amendments and gives a recommended order: the
+          aliasing bit (Z-06) first; arithmetic and conversion (Z-07, Z-08)
+          second, because they are already committed to in code; the
+          discriminant (Z-20) third, because it is free; the constructor
+          body (Z-09) fourth. Its argument is in that file's last section.
+
+----------------------------------------------------------------------------
+Z-37  rules.txt AND ecs.z DISAGREE ABOUT WHETHER `Iterator` WAS
+      EVER USED                                                 DEFECT
+
+WHAT      Two documents give two histories of the same cut, and the corpus
+          can no longer arbitrate because the code was deleted.
+
+EVIDENCE  rules.txt:867-868  "`Iterator` was the standard library's answer
+          WITHOUT the form -- declared by both programs, used by neither --
+          and is cut."
+          ecs.z:969-973  "`Iterator<T>` was the standard library's answer,
+          both files declared it, and it was used exactly once -- by
+          `fold`, in json.z -- because a `loop` + `match` + `Option`
+          consumer is four lines to replace one".
+          Neither `Iterator`, `ListIter`, `iter` nor `fold` appears in any
+          .z file now.
+
+FOUND BY  ADJ. OQ-3 repeats ecs.z's version ("used by one call site in one
+          of them") without noticing that rules.txt says the opposite.
+
+BLOCKS    Nothing. It is a one-clause fix, and it is listed because the
+          argument for cutting the shape rests on the fact.
+
+OPTIONS   No candidate resolution in the sources. ecs.z is the more
+          specific claim and was written later.
+
+----------------------------------------------------------------------------
+Z-44  THE GRAMMAR AS WRITTEN COULD NOT PARSE THE CORPUS:
+      SIX DEFECTS, TWO FATAL                                    DEFECT
+
+WHAT      grammar.ebnf is the one document that claims to be complete --
+          "the whole syntax in one file". A parser built from it as
+          literally written did not accept the three programs the rest of
+          this directory treats as the arbiter. Six defects, two of them
+          fatal in the sense that no input of that shape parsed at all.
+
+EVIDENCE  PRS. A parser was generated from grammar.ebnf as written, with no
+          repairs, and run over unified.z, json.z and ecs.z. It failed on
+          all three. This is the first check of grammar.ebnf in this
+          directory that was not a reading: INV, ANX and OQ do not cite the
+          grammar at all, and GRM is the grammar's own header. Six defects
+          survived that, which is the reason to record the method as well
+          as the result.
+
+STATUS    FIXED AND VERIFIED. All six are repaired in the shipped
+          grammar.ebnf, and a parser rebuilt from it accepts all three
+          corpus programs against the grammar as literally written, with no
+          flags and no workarounds: 26, 34 and 42 top-level declarations
+          from unified.z, json.z and ecs.z, exit 0.
+          The two fatal defects are reproducible on demand as regression
+          tests, by asking the parser to restore the old behaviour:
+              python zparse.py --relax no-asi-shr json.z
+              python zparse.py --relax literal-gt
+          The issue is kept rather than deleted because the id is cited and
+          because the two regression flags are the record of what was
+          wrong.
+          NOT closed by this: Z-41 and Z-45, which are the two findings
+          from the same run that the repair did not resolve and could not.
+
+FOUND BY  PRS. One source.
+
+BLOCKS    Nothing now. Before the repair it blocked any use of grammar.ebnf
+          as a specification of the syntax. It never blocked Z-01 through
+          Z-05: those are holes in the sources that the grammar had to
+          invent around, and repairing the grammar does not fill them.
+
+OPTIONS   Done.
+
+----------------------------------------------------------------------------
+Z-45  "A TYPE NEVER ABSORBS A FOLLOWING `{`" IS FALSE OF THE
+      PRODUCTIONS THAT FILE STATES                              DEFECT
+
+WHAT      grammar.ebnf:176-177 states, as the property that keeps a
+          declaration's body out of its projection, that "A Type NEVER
+          absorbs a following `{`". Its own productions do not have that
+          property.
+
+EVIDENCE  PRS, and the grammar records it against itself as item 9 of
+          grammar.ebnf:493-499: TypeArg is Expression and Suffix includes
+          BlockLit, so `-> Formattable<Bar { x = 1 }>` derives. The root is
+          that a compile-time argument is an unrestricted expression, which
+          also makes `Foo<a + b>` and `Foo<if (c) {1} else {2}>` compile-
+          time arguments.
+          UNRESOLVED BY CONSTRUCTION. This is the one finding from the
+          parser run that the grammar repair could not fix. The `<`
+          disambiguation (Z-41) is what keeps the corpus parsing in
+          practice -- a balanced `>` delimits the list and the interior is
+          parsed strictly within those bounds -- but that is a parsing
+          strategy, not a property of the productions, and it does not make
+          the sentence at grammar.ebnf:176-177 true. Closing the gap needs
+          a restricted TypeArg, which is a restructure of the type grammar
+          rather than an edit.
+
+FOUND BY  PRS. One source. Filed apart from Z-42 because it is not
+          over-acceptance of the ordinary kind: the other eight items are
+          things the grammar knowingly leaves to a later static pass, and
+          this one is a claim the document makes about itself that is
+          false. That is DEFECT by this file's own bands.
+
+BLOCKS    Any argument that rests on a type having a closed right edge --
+          which includes the reason `hex_u8 :: -> Formattable<u8> { ... }`
+          parses as a projection plus a body, and therefore touches Z-04
+          and Z-19.
+
+OPTIONS   A restricted TypeArg -- a compile-time argument grammar that is
+          not the full Expression. Nothing in the sources proposes one, and
+          grammar.ebnf names the restructure without attempting it.
+
+============================================================================
+CORPUS
+============================================================================
+
+----------------------------------------------------------------------------
+Z-38  ecs.z:365 AND ecs.z:367 DISCARD A bool WITH NO `_ :=`     CORPUS
+
+WHAT      Two calls in one function drop a returned value silently, which
+          rules.txt makes an error, and the same file spells it correctly
+          170 lines earlier.
+
+EVIDENCE  ecs.z:363-369
+              despawn :: (&self, e: Entity) -> () {
+                  for (i := 0; i < self.stores.count; i += 1) {
+                      self.stores[i].remove(e)   // one call per type
+                  }
+                  self.live.remove(e)
+                  self.recycle.push(e)
+              }
+          Both `remove` calls project `bool`:
+            ecs.z:231   "    remove: (&self, e: Entity) -> bool"  (AnyStore)
+            json.z:182  "    remove :: (&self, k: K) -> bool"     (Map)
+          rules.txt:423-427 makes this an error and gives the spelling:
+          "A VALUE MAY NOT BE DROPPED SILENTLY ... `_ := xs.pop()`  'bind
+          it to nothing', said out loud".
+          ecs.z:193-198 obeys it for the identical call and quotes the rule
+          in a comment -- "A value may not be dropped silently, so each one
+          has to say so out loud" -- then writes
+          `_ := self.index.remove(e)`.
+
+FOUND BY  INV (B5) and ANX (the non-normative note under U.8.1),
+          INDEPENDENTLY. This is a confirmation, not a duplication: two
+          analyses working from different directions -- INV auditing a rule
+          against the corpus, ANX auditing the corpus while cataloguing a
+          hole -- landed on the same two line numbers. Independent
+          discovery raises confidence that the defect is real and not a
+          misreading of the rule. They also agree on the diagnosis: a bug
+          in ecs.z, not a hole in the language.
+
+BLOCKS    Nothing. It is four characters, twice.
+
+OPTIONS   `_ := self.stores[i].remove(e)` and `_ := self.live.remove(e)`,
+          which is the spelling ecs.z:196-198 already uses.
+
+----------------------------------------------------------------------------
+Z-39  json.z:383 CALLS AN INVENTED FUNCTION AND DOES NOT
+      COMPILE UNDER THE STATED RULES                            CORPUS
+
+WHAT      `Parser.expect` needs a tag test, the language has none, and the
+          file invents `tag_of` and says so.
+
+EVIDENCE  json.z:381-383
+              expect :: (&self, want: Token, why: slice<u8>)
+                  -> Result<(), Error> {
+                  ...
+                  if (tag_of(t) != tag_of(want)) {  // FRICTION 7: no tag test
+          json.z:828 admits the invention. `tag_of` is declared nowhere.
+          rules.txt:377-379 states the rule this violates: a tag test has
+          no payload and no short spelling, so it is a full match.
+          ecs.z:272-274 obeys the same rule with four arms.
+
+FOUND BY  INV (C18, which caught that the corpus half-obeys and
+          half-violates the same rule), ANX (in U.7.2's neighbourhood) and
+          OQ-2. The clean framing is INV's: one file obeys, one invents.
+
+BLOCKS    Nothing directly. It is the strongest single piece of evidence
+          for Z-20.
+
+OPTIONS   Resolve Z-20 and `tag_of` becomes real. Until then json.z:383 is
+          not in the language.
+
+----------------------------------------------------------------------------
+Z-40  ecs.z:785 CALLS AN INVENTED CONVERSION FUNCTION           CORPUS
+
+WHAT      `main` converts a loop counter to `f32` through a function that
+          does not exist.
+
+EVIDENCE  ecs.z:783-787
+              for (i := 0; i < 3; i += 1) {
+                  e := w.spawn()
+                  // `f32_of` is invented. Neither file has a story for
+                  // numeric conversion, and it wants to be one more policy
+                  // (`From<A, B>`).
+                  w.pos.add(e, Vec2(f32_of(i), 0.0))
+          `f32_of` is declared nowhere. rules.txt has no conversion rule at
+          all.
+
+FOUND BY  ANX (U.5.4), OQ-5 and INV (B13's closing note). All three, same
+          site, same reading.
+
+BLOCKS    Nothing directly. It is the evidence for Z-08.
+
+OPTIONS   Resolve Z-08. ecs.z:786 proposes `From<A, B>` as a policy and
+          does not develop it.
+
+----------------------------------------------------------------------------
+Z-46  THE PARSE-CLEAN RESULT RESTS ON THREE HOUSE-STYLE
+      HABITS THAT ARE NOT RULES                                 CORPUS
+
+WHAT      The corpus now parses (Z-44), and that is weaker evidence than it
+          looks. All three programs are one author's in one style, and
+          three habits of that style are each load-bearing for the clean
+          parse while none of them is a rule of this language. A second
+          author would break the parser without writing anything any
+          document forbids.
+
+EVIDENCE  ADJ, counted directly against the three files, prompted by PRS.
+            1  NO EXPRESSION CONTINUES ACROSS A LINE BREAK. In 2,483 lines
+               there is exactly one place where a line ends part-way
+               through a parenthesised expression -- ecs.z:721-726, and
+               there the continuation is inside braces. Everywhere else a
+               construct that opens a `(` closes it on the same line. The
+               semicolon-insertion rule at grammar.ebnf:137-165 was
+               invented (Z-01) and the corpus never tests it: rule 1
+               inserts a `;` after `)`, `]`, `}`, `>`, `>>` and `.*`, and
+               no corpus line ends inside an expression for it to break.
+            2  NO RIGHT-SHIFT OPERATOR IS EVER WRITTEN. Every `>>` in the
+               corpus closes two nested compile-time argument lists, which
+               is exactly the case grammar.ebnf:101-103 splits (Z-03). The
+               only shifts written are left shifts -- json.z:639 and
+               ecs.z:745, both `1 << 20` -- and neither meets a type
+               argument. `a >> b` is untested by the arbiter.
+            3  NO COMPARISON PUTS A TYPE-ARGUMENT-TAKING NAME ON EITHER
+               SIDE, AND THE SPACING SEPARATES THE TWO USES OF `<` BY
+               ITSELF. All 36 comparisons written with `<` have a space on
+               both sides; all 274 compile-time brackets have a space on
+               neither. 310 for 310. Whitespace decides every case in the
+               corpus and is not a rule of the language, is not mentioned
+               by any source document, and is not what the grammar's rule
+               uses. See Z-41.
+
+FOUND BY  PRS for the parse-clean run, ADJ for the counts. Banded CORPUS
+          because it is a property of the three .z files and not of the
+          language -- with the caveat that it is not a bug in any one of
+          them. It is a limit on what the arbiter can arbitrate.
+
+BLOCKS    Nothing. It qualifies Z-41, and it qualifies THE CORPUS IS THE
+          ARBITER at the head of this file: the corpus is decisive about
+          what the language must accept and almost silent about what it
+          must reject.
+
+OPTIONS   A second corpus by a second author is the only thing that answers
+          this, and nothing in the sources proposes one.
+
+============================================================================
+WHAT THE CORPUS PROVES
+============================================================================
+
+unified.z, json.z and ecs.z are the only evidence about this language that
+is not an opinion. Every claim below was counted or read out of the three
+files during this consolidation, not taken from an input. Where a claim
+settles something the prose gets wrong, the prose line is named.
+
+ 1. `break` IS NEVER NEEDED. Zero occurrences in 2,483 lines of .z. It
+    appears only in the keyword budget (rules.txt:352, glossary.txt:367)
+    and in the grammar that had to invent a production for it
+    (grammar.ebnf:371). `continue` is used four times (json.z:585-587,
+    ecs.z:648); `loop` four times; `while` six. A keyword budget "written
+    down so it stops growing by accident" (rules.txt:348) contains a word
+    the worked source has never once wanted.
+
+ 2. THE DOCUMENTED CONSTRUCTION FORM IS NEVER USED. `Option<u8>{ some = 3 }`
+    (rules.txt:124-125) has zero occurrences. The derived-function form the
+    same paragraph presents as a consequence -- `Option<u8>.some(3)` -- has
+    54 qualified uses plus 42 unqualified ones. The rule stated as primary
+    is unexercised; the rule stated as a corollary is the language.
+
+ 3. u64 ARITHMETIC HAPPENS DESPITE u64 BEING ABSENT FROM THE PRIMITIVE
+    LIST. rules.txt:455-456 says the operators work on six types "and
+    nowhere else". `Key.hash` projects `u64` (json.z:96), FNV-1a xors and
+    multiplies on it (json.z:104-106), and ecs.z:128 combines two u32
+    operands into a u64 result. The document then quotes that same hash
+    expression at rules.txt:516 as the argument for how deref is spelled.
+
+ 4. THE STANDARD LIBRARY REQUIRES WRAPPING MULTIPLICATION AND NO RULE SAYS
+    SO. json.z:106 `h = (h ^ k.ptr[i]) * 1099511628211` and ecs.z:128
+    `k.id * 2654435761` produce the values they intend only if the multiply
+    wraps. rules.txt says nothing about overflow anywhere; its only uses of
+    the words "saturating" and "wrapping" (rules.txt:775-776,
+    glossary.txt:215) are an example of addition being a choice.
+
+ 5. 28 THREE-CLAUSE `for` LOOPS EXIST AND rules.txt HAS NO FORM FOR THEM.
+    Every one is `for (init; cond; step)`. rules.txt names `for` once, in a
+    keyword list, and never gives a syntax. The same is true of `while`,
+    `loop`, `if`, `return`, `continue` and `defer`. grammar.ebnf:353-382
+    invented the lot. (The count is 28, not 32: four further occurrences of
+    "for (" are comments about forms that do not exist. See CLAIMS.)
+
+ 6. `[]` MEANS FIVE THINGS, AND TWO OF THEM ARE IN THE SAME DECLARATION.
+    `List` writes `new_items[i] = self.items[i]` (unified.z:183, raw
+    pointer, element, no `.*`) and declares
+    `[] :: (&self, i: u32) -> ptr<T>` (unified.z:198), which requires
+    `xs[i].* = v` for the same write. Map's `[]` projects `Option<V>`
+    (json.z:208). A slice's `[]` projects the element (unified.z:277).
+    `Store.at` projects `Option<ptr<C>>` (ecs.z:164). No rule chooses.
+
+ 7. THE `-> oneof` RULES ALL HOLD. Every sum in the corpus -- `Option`
+    (unified.z:21), `Result` (unified.z:26), `Slot` (json.z:138), `Json`
+    (json.z:243), `Token` (json.z:257), `Ai` (ecs.z:262) -- has no runtime
+    group, as rules.txt:113-115 requires, and three of the six carry
+    compile-time arguments. This is the one substantial block of rules the
+    corpus fully confirms.
+
+ 8. A BODILESS DECLARATION IS A RECORD, NOT A HOLE, WHEN IT HAS A BINDER.
+    json.z:77, json.z:136, json.z:268, ecs.z:258 and ecs.z:413 are all
+    bodiless, all have `::`, and all are records. rules.txt:132 says
+    bodiless means hole and never mentions the binder.
+
+ 9. APPLYING COMPILE-TIME ARGUMENTS PRODUCES VALUES AS OFTEN AS TYPES.
+    `json_fmt<ptr<Arena>>` (json.z:653), `spaced<ptr<Arena>>` (json.z:654),
+    `dump<>` and `dump<indent = 4>` (ecs.z:802-803),
+    `list_fmt<F = fmt_u8>` (unified.z:348) are all values. rules.txt:32
+    says a type.
+
+10. A CONTAINER THAT CANNOT BE ITERATED CANNOT CLOSE ITS PROJECTION.
+    `List` projects six names (unified.z:157) because `[]` exists. `Map`
+    projects `-> self` (json.z:132) because two formatters must read
+    `members.slots` and `members.cap` to iterate (json.z:487-488,
+    json.z:539-540). One rule, one confirming case, one refuting case.
+
+11. THE PROJECTION IS AN EXPORT LIST AND NOT A READ-ONLY ONE. `count` is a
+    `:=` field in `List`'s projection (unified.z:157-159), and ecs.z:501
+    writes it: `self.doomed.count = 0`, resetting a container by its
+    length. Legal under every rule as written.
+
+12. FOUR NAMES THE CORPUS CALLS DO NOT EXIST. `size_of` (unified.z:92),
+    `slice(p, n)` (unified.z:200), `parse_f64` (json.z:338) and `page`
+    (unified.z:367) are used and declared nowhere; `tag_of` (json.z:383)
+    and `f32_of` (ecs.z:785) are used and admitted as inventions in the
+    files' own comments; `nil` (unified.z:191) is in no keyword list and no
+    declaration. Seven names, four files, no home.
+
+13. THE CORPUS IS WRITTEN IN A DIALECT THE RULES DO NOT DESCRIBE. 42 bare
+    `ok(`/`err(`/`some(`/`none(` calls need a type inferred outward from
+    the enclosing projection (json.z:291 and thirteen more in the lexer
+    alone). rules.txt:540-550 licenses inference from arguments and from an
+    expected type, and never from a projection into a body.
+
+14. TWO-PHASE CONSTRUCTION IS NOT A STYLE CHOICE. ecs.z:342-349 exists
+    because a `-> self` block has no statement position; ecs.z:753-755
+    records that forgetting the second call makes `despawn` silently do
+    nothing; json.z:349-357 takes the other dodge and pays a match on every
+    `peek`. Two independent programs, two different workarounds, one hole.
+
+15. THE ERASED-COERCION QUESTION IS GENUINELY OPEN, BECAUSE THE CORPUS DOES
+    BOTH. Annotated: unified.z:368 `boxed : ptr<Allocator> := &arena`,
+    unified.z:392 `f : ptr<Fn<u8, ()>> := &p`. Implicit: unified.z:327
+    `F.format(v, &b)`, json.z:691 `each_child(doc, &tally(&n))`, ecs.z:779
+    `w.died.on(&obituary)`. rules.txt:892 names the first implicit site
+    itself, inside the OPEN item that asks the question.
+
+============================================================================
+CLAIMS I COULD NOT CONFIRM
+============================================================================
+
+Six findings from the inputs were rejected, corrected or downgraded. A
+finding correctly killed is worth as much as one kept, so they are recorded
+rather than dropped.
+
+ 1. REJECTED, PHRASING. open-questions OQ-4: "`rules.txt` and
+    `glossary.txt` contain no occurrence of overflow, wrap, saturate, trap,
+    divide or division." False. rules.txt:775-776 reads "two ways to add
+    two vectors -- saturating and wrapping", and glossary.txt:215 reads
+    "Two ways to add two Vec2? Yes -- saturating, wrapping."
+    THE UNDERLYING ISSUE IS REAL AND IS KEPT AS Z-07: both occurrences are
+    an example of addition being A CHOICE and therefore a policy, and
+    neither is a rule about what primitive arithmetic does. The claim
+    needed to be about what the words are doing, not whether they appear.
+
+ 2. REJECTED, SAME PHRASING, DIFFERENT ANALYSIS. annex-unchecked U.5
+    preamble: "There is no statement anywhere in `rules.txt` or
+    `glossary.txt` containing the words overflow, wrap, saturate, trap,
+    divide, convert, widen, truncate, or cast." Falsified by the same two
+    lines. Worth recording separately: two analyses made the same
+    overstatement independently, which is a caution about how the claim
+    was checked, not about the subject. Substance kept in Z-07.
+
+ 3. REJECTED. rule-inventory B14, "an OPEN question the corpus has already
+    answered": it argues that json.z:691 forces the `ptr<Shape>` coercion
+    to be implicit, so either rules.txt:892-894 or rules.txt:620 is stale.
+    The corpus does BOTH -- see WHAT THE CORPUS PROVES, item 15 -- and
+    rules.txt:892 cites the implicit site (`F.format(v, &b)`) inside the
+    OPEN item itself, so the document is not unaware of it. rules.txt:620
+    states what the parameter's type IS, which is a different question from
+    whether an argument coerces without an annotation. OQ-11's framing --
+    both spellings are in the corpus and the rules license only one clearly
+    -- is the correct one and is the version kept.
+
+ 4. DOWNGRADED. rule-inventory B9: the "no such thing as a place" heading
+    "contradicts three other rules and the glossary". It contradicts the
+    heading only. glossary.txt:114-115 already states the correct scoping
+    ("there is no `place` in the type system: no projection yields one, and
+    no parameter takes one"), which is what the heading should say. Kept as
+    Z-30, band DEFECT rather than a contradiction of substance.
+
+ 5. CORRECTED. rule-inventory D.1 lists `slice` as appearing "in no rule
+    and no glossary entry". It appears in rules.txt once, at rules.txt:240,
+    in passing. The substance survives -- it is defined nowhere, has no
+    headword, and its two fields are read without declaration -- and is
+    kept as Z-15 with the wording fixed.
+
+ 6. CORRECTED, COUNT. The figure of 32 three-clause `for` loops is 28. The
+    other four occurrences of "for (" are comments about forms the language
+    does not have: ecs.z:203 and ecs.z:968 discuss `for (x in xs)`, and
+    ecs.z:1132 and ecs.z:1134 propose `for (x := it)`. Counts of `while`
+    (6), `loop` (4), `continue` (4) and `break` (0) were verified directly.
+
+ 7. NOT A REJECTION, A CORRECTION OF ATTRIBUTION. The brief mentions that
+    `[]` having multiple incompatible meanings "appears in all three"
+    analyses. It appears in two -- rule-inventory (B1) and the annex (twice,
+    as U.3.2 and U.3.3) -- plus the grammar, whose single `Index`
+    production cannot express the difference. open-questions touches `[]`
+    only at OQ-3, as the reason `List` was able to close its projection,
+    and never raises the ambiguity. Recorded because the gap is itself
+    informative: the design log does not treat the most serious
+    contradiction in the document as a design question.
+
+Also checked and found sound, so not rejected: the annex's own arithmetic
+(9+5+8+3+5+3+2+1+5+3+5 = 49 entries; 8 UNCHECKED, 15 UNDIAGNOSED, 5
+UNSPECIFIED, 1 PLATFORM, 20 UNWRITTEN); rule-inventory's B4, which checked
+the `-> oneof` rules against all six corpus sums and correctly reported no
+violations; and rule-inventory's B8, which tested a suspected `Span`
+conflict and correctly reported that there is none.
+
+============================================================================

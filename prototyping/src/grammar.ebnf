@@ -1,0 +1,514 @@
+// ============================================================================
+// grammar.ebnf  --  zlang, the first formal grammar
+// ============================================================================
+//
+// Notation is the Go specification's EBNF, with "..." written for Go's
+// character-range ellipsis so the file stays plain ASCII:
+//
+//     Production  = production_name "=" [ Expression ] "." .
+//     Expression  = Term { "|" Term } .
+//     Term        = Factor { Factor } .
+//     Factor      = production_name | token [ "..." token ] | Group
+//                 | Option | Repetition .
+//     Group       = "(" Expression ")" .
+//     Option      = "[" Expression "]" .
+//     Repetition  = "{" Expression "}" .
+//
+// zlang spells blocks with { } and indexing with [ ], and this notation
+// spells repetition and option with the same two pairs, so every such
+// TERMINAL is double-quoted: "{" is zlang's brace, { } is repetition.
+//
+// The root production is SourceFile. Every production below is reachable
+// from it.
+//
+// Sources: glossary.txt, rules.txt, and the corpus unified.z, json.z,
+// ecs.z. Where the sources do not settle a question the grammar takes a
+// position; those positions are listed in the accompanying findings and are
+// NOT argued here.
+//
+// ============================================================================
+
+
+// ============================================================================
+// Source file
+// ============================================================================
+//
+// A file is a list of declarations. There is no import statement, no
+// package clause and no statement position at file scope: an import is an
+// ordinary compile-time binding of an ordinary function.
+
+SourceFile    = { Declaration ";" } .
+
+
+// ============================================================================
+// Characters
+// ============================================================================
+
+newline        = /* the Unicode code point U+000A */ .
+unicode_char   = /* an arbitrary Unicode code point except newline */ .
+unicode_letter = /* a Unicode code point categorized as "Letter" */ .
+
+letter         = unicode_letter | "_" .
+decimal_digit  = "0" ... "9" .
+
+
+// ============================================================================
+// Lexical elements -- comments
+// ============================================================================
+//
+// Line comments only. No block-comment form appears anywhere in the corpus
+// and none is defined here. A comment acts as a newline.
+
+Comment       = "//" { unicode_char } newline .
+
+
+// ============================================================================
+// Lexical elements -- identifiers and keywords
+// ============================================================================
+
+identifier    = letter { letter | decimal_digit } .
+
+// The keywords are reserved and may not be used as identifiers. This is the
+// entire budget; `type`, `true`, `false`, `nil` and `ptr` are ordinary
+// predeclared identifiers and are not listed here.
+//
+//     _        break     continue  defer     else
+//     for      if        loop      match     oneof
+//     return   self      while
+
+// A member may carry one of two symbolic names instead of an identifier.
+// `*` is deliberately NOT among them, which is what makes ".*" available.
+
+MemberName    = identifier | "_" | "[" "]" | "(" ")" .
+
+QualifiedName = identifier { "." identifier } .
+
+
+// ============================================================================
+// Lexical elements -- operators and punctuation
+// ============================================================================
+//
+//     +    -    *    /    %
+//     &    |    ^    <<   >>   ~
+//     ==   !=   <    <=   >    >=
+//     &&   ||   !
+//     +=   -=   *=   /=   %=
+//     &=   |=   ^=   <<=  >>=
+//     =    :=   ::   :    ->   .*
+//     (    )    [    ]    {    }
+//     ,    ;    .    <    >
+//
+// ">>" and ">>=" are single tokens. A parser closing TypeArgs splits a
+// ">>" into two ">" and a ">>=" into ">" and ">=", so that "ptr<List<T,_>>"
+// lexes. See THE "<" DISAMBIGUATION at the end of this file.
+
+unary_op      = "-" | "!" | "&" | "~" .
+mul_op        = "*" | "/" | "%" | "<<" | ">>" | "&" .
+add_op        = "+" | "-" | "|" | "^" .
+rel_op        = "==" | "!=" | "<" | "<=" | ">" | ">=" .
+// Enumerated, not composed: each compound assignment is ONE token. Spelled
+// `[ add_op | mul_op ] "="` it would be two symbols and `a + = b` would
+// derive.
+assign_op     = "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|="
+              | "^=" | "<<=" | ">>=" .
+
+
+// ============================================================================
+// Lexical elements -- literals
+// ============================================================================
+//
+// Decimal only. No radix prefix, no digit separator and no exponent appears
+// in the corpus and none is invented here.
+
+int_lit       = decimal_digit { decimal_digit } .
+float_lit     = decimal_digit { decimal_digit } "."
+                decimal_digit { decimal_digit } .
+
+char_lit      = "'" ( unicode_value | escaped_char ) "'" .
+string_lit    = `"` { unicode_value | escaped_char } `"` .
+
+unicode_value = /* any unicode_char except the enclosing quote and "\" */ .
+escaped_char  = "\" ( "n" | "r" | "t" | "\" | "'" | `"` ) .
+
+Literal       = int_lit | float_lit | char_lit | string_lit .
+
+
+// ============================================================================
+// Lexical elements -- semicolons
+// ============================================================================
+//
+// zlang is NEWLINE-TERMINATED with an explicit ";" available as an
+// alternative, exactly as Go is. The evidence is that the corpus separates
+// two statements on one physical line with ";" and never otherwise --
+//
+//     alloc :: (&self, n: u32) -> ptr { log("alloc %", n);
+//                                       self.inner.alloc(n) }
+//     lbrace: ();  rbrace: ()
+//
+// -- while a declaration or statement occupying its own line carries no
+// terminator, and a construct broken across lines after "," or "{" carries
+// none either (json.z's `probe`, every `-> oneof` body).
+//
+// The formal rule, as in Go:
+//
+//   1. A ";" is automatically inserted at the end of a line when the last
+//      token of that line is
+//        - an identifier, "_", "self", or a literal;
+//        - one of the keywords "break", "continue", "return";
+//        - one of ")", "]", "}", ">", ">>", or ".*".
+//   2. A ";" may be omitted before a closing ")" or "}".
+//
+// Rule 1 is what makes "A :: ptr<Arena>" and "Span :: (lo: u32) -> self"
+// terminate, and what forces `} else {` onto one line.
+//
+// The grammar below writes ";" wherever a terminator is required; every
+// occurrence may be supplied by rule 1.
+
+
+// ============================================================================
+// Types
+// ============================================================================
+//
+// A type expression is a restricted expression: a name, optionally applied
+// to compile-time arguments. `ptr<T>` and `ptr` are ordinary applications of
+// an ordinary declaration and get no production of their own.
+//
+// A Type NEVER absorbs a following "{". That is what keeps the body of
+// `hex_u8 :: -> Formattable<u8> { ... }` out of the projection.
+
+Type          = NamedType | UnitType | SignatureType | "self" | "_" .
+
+NamedType     = QualifiedName [ TypeArgs ] .
+
+// The type of a block that projects nothing.
+UnitType      = "(" ")" .
+
+// A hole's type is a declaration with the body left off -- "bodiless means
+// hole". This is why `alloc: (&self, n: u32) -> ptr` is a type.
+SignatureType = [ TypeParams ] [ Parameters ] "->" Projection .
+
+TypeArgs      = "<" [ TypeArgList [ "," ] ] ">" .
+TypeArgList   = TypeArg { "," TypeArg } .
+TypeArg       = [ identifier "=" ] Expression .
+
+
+// ============================================================================
+// Declarations
+// ============================================================================
+//
+// THE RULE:
+//
+//     Name <compile-time args> (runtime args) -> projection { body }
+//
+// Everything to the right of the binder is a FunctionLit, so the rule is
+// not a declaration form at all: it is `Name binder <value>` where the
+// value happens to be a function literal. Each of the compile-time group,
+// the runtime group and the block is independently optional.
+//
+// Four member forms, told apart by the binder:
+//
+//     name : T                 a HOLE            no binder
+//     name :: v                compile-time      binder "::"
+//     name := v                run time          binder ":="
+//     name = v                 FILLS a hole      not a binder; see
+//                                                Assignment, which is the
+//                                                same production
+
+Declaration   = MemberName ":" Type [ Binder Expression ]
+              | MemberName Binder Expression .
+
+Binder        = "::" | ":=" .
+
+
+// ----------------------------------------------------------------------------
+// Signatures and parameters
+
+FunctionLit   = SignatureType [ Block ] .
+
+TypeParams    = "<" [ TypeParamList [ "," ] ] ">" .
+TypeParamList = TypeParam { "," TypeParam } .
+
+// <T> a type, <F: Formattable<T>> a policy, <indent: u32 = 2> a value.
+TypeParam     = identifier [ ":" Type ] [ "=" Expression ] .
+
+Parameters    = "(" [ ParameterList [ "," ] ] ")" .
+ParameterList = Parameter { "," Parameter } .
+
+// The type is elided when a filled hole already supplies it, as in
+// `compare = (a, b) -> i32 { ... }`.
+Parameter     = Receiver | identifier [ ":" Type ] [ "=" Expression ] .
+
+Receiver      = [ "&" ] "self" .
+
+
+// ----------------------------------------------------------------------------
+// Projections -- what escapes the block
+
+Projection    = "oneof"
+              | ProjectionList
+              | Type .
+
+// "-> {a, b}" as a visibility list, and "-> {at: u32, found: bool}" as a
+// multiple return. One form, two readings.
+ProjectionList = "{" [ MemberSpecList [ "," ] ] "}" .
+MemberSpecList = MemberSpec { "," MemberSpec } .
+MemberSpec     = MemberName [ ":" Type ] .
+
+
+// ============================================================================
+// Blocks
+// ============================================================================
+//
+// The only container. A struct, a module, a function body, a shape, a sum
+// and a closure are all this. The value of a block is the value of its last
+// statement when that statement is an expression.
+
+Block         = "{" StatementList "}" .
+StatementList = { Statement ";" } .
+
+
+// ============================================================================
+// Expressions
+// ============================================================================
+//
+// PRECEDENCE, highest binding first. The sources say only that "precedence
+// is a fixed table"; this is that table.
+//
+//     8   postfix   .name  .*  [ ]  ( )  < >  { }
+//     7   unary     -  !  &  ~
+//     6             *  /  %  <<  >>  &
+//     5             +  -  |  ^
+//     4             ==  !=  <  <=  >  >=
+//     3             &&
+//     2             ||
+//   (no level 1: assignment is STATEMENT-LEVEL, not an expression)
+//
+// Levels 6, 5 and 4 and their relative order are Go's, adopted whole.
+
+Expression    = OrExpr .
+
+OrExpr        = AndExpr { "||" AndExpr } .
+AndExpr       = RelExpr { "&&" RelExpr } .
+RelExpr       = AddExpr { rel_op AddExpr } .
+AddExpr       = MulExpr { add_op MulExpr } .
+MulExpr       = UnaryExpr { mul_op UnaryExpr } .
+
+UnaryExpr     = PrimaryExpr | unary_op UnaryExpr .
+
+PrimaryExpr   = Operand { Suffix } .
+
+Operand       = Literal
+              | QualifiedName
+              | "self"
+              | "_"
+              | UnitValue
+              | "(" Expression ")"
+              | BlockLit
+              | FunctionLit
+              | IfExpr
+              | MatchExpr .
+
+// The value of a block that projects nothing: `ok(())`.
+UnitValue     = "(" ")" .
+
+Suffix        = Selector | Deref | Index | Arguments | TypeArgs | BlockLit .
+
+Selector      = "." MemberName .
+Deref         = ".*" .
+Index         = "[" Expression "]" .
+
+Arguments     = "(" [ ExpressionList [ "," ] ] ")" .
+ExpressionList = Expression { "," Expression } .
+
+// `{ at = i, found = true }` bare, and `Option<u8>{ some = 3 }` applied to
+// a type. "=" fills a declared hole, which is all a literal needs.
+BlockLit      = "{" [ FieldFillList [ "," ] ] "}" .
+FieldFillList = FieldFill { "," FieldFill } .
+FieldFill     = MemberName "=" Expression .
+
+IfExpr        = "if" "(" Expression ")" Block
+                [ "else" ( IfExpr | Block ) ] .
+
+
+// ============================================================================
+// Match
+// ============================================================================
+//
+// An arm is spelled like a declaration: a name, a runtime group binding the
+// payload, a body. A match names every variant or ends in "_". It is an
+// EXPRESSION, which is what lets the one-arm-plus-"_" form bind instead of
+// nest.
+
+MatchExpr     = "match" "(" Expression ")" "{" MatchArmList "}" .
+MatchArmList  = { MatchArm [ ";" ] } .
+
+MatchArm      = ( identifier | "_" ) [ "(" Pattern ")" ] Block .
+Pattern       = identifier | "_" .
+
+
+// ============================================================================
+// Statements
+// ============================================================================
+
+Statement     = Declaration
+              | SimpleStmt
+              | ReturnStmt
+              | BreakStmt
+              | ContinueStmt
+              | DeferStmt
+              | WhileStmt
+              | ForStmt
+              | LoopStmt .
+
+// An expression statement covers `xs.push(v)`, and -- since `if` and
+// `match` are expressions -- covers `if (c) { ... }` and `match (v) { ... }`
+// as well. Assignment covers mutation, hole filling, and nothing else:
+// "=" never creates a name.
+SimpleStmt    = Assignment | Expression .
+Assignment    = Expression assign_op Expression .
+
+ReturnStmt    = "return" [ Expression ] .
+BreakStmt     = "break" .
+ContinueStmt  = "continue" .
+DeferStmt     = "defer" Expression .
+
+WhileStmt     = "while" "(" Expression ")" Block .
+
+// Three clauses, C-style. There is no `for (x := it)` form.
+ForStmt       = "for" "(" [ ForInit ] ";" [ Expression ] ";"
+                [ SimpleStmt ] ")" Block .
+ForInit       = Declaration | SimpleStmt .
+
+LoopStmt      = "loop" Block .
+
+
+// ============================================================================
+// THE "<" DISAMBIGUATION
+// ============================================================================
+//
+// "<" opens both a relational expression and a compile-time argument list,
+// and ">" closes the list while also being rel_op. One rule settles both
+// ends, and it applies in EVERY position a TypeArgs or a TypeParams list
+// may appear: as a Suffix in an expression, in NamedType, and in
+// SignatureType. There is no position in which the list is delimited by
+// some other means.
+//
+// WHERE A LIST BEGINS. A "<" opens TypeArgs (or TypeParams) if and only if
+// the BALANCED-">" SCAN below finds a closer, the tokens between the two
+// derive TypeArgList (or TypeParamList), and the token after the closer is
+// one of
+//
+//     (   )   ]   }   >   ,   ;   .   =   :
+//
+// counting an automatically inserted ";" as a ";". Otherwise the "<" is
+// rel_op.
+//
+// THE BALANCED-">" SCAN. Start after the "<" with angle depth 1 and an
+// empty bracket stack. For each following token:
+//
+//   - "(", "[" or "{" is pushed on the bracket stack;
+//   - ")", "]" or "}" pops it, and ABANDONS the scan if the stack is
+//     already empty -- an unmatched closer means the "<" was rel_op;
+//   - while the bracket stack is empty, "<" raises the angle depth and ">"
+//     lowers it; the ">" that lowers it to 0 is the BALANCED ">", and the
+//     scan ends there;
+//   - a ";", explicit or inserted, ABANDONS the scan while the bracket
+//     stack is empty: no argument list spans a terminator;
+//   - end of file ABANDONS the scan.
+//
+// A ">>" is split into two ">" for this scan, and a ">>=" into ">" and
+// ">=", per the note under "Lexical elements -- operators and
+// punctuation".
+//
+// WHERE A LIST ENDS. The balanced ">" DELIMITS the list. The interior is
+// parsed strictly within those bounds: inside TypeArgs or TypeParams, a
+// ">" or ">=" at angle depth 0 and bracket depth 0 always closes the list
+// and is never read as rel_op. This is what stops `-> Key<Entity> { ... }`
+// from reading as `Entity > { ... }` and swallowing the block, and it is
+// what makes `f<a > b>(x)` mean one argument list and not a chain of
+// comparisons. TO COMPARE inside a compile-time argument, parenthesise:
+// write `f<(a > b)>(x)`.
+//
+// WHICH READING WINS. "(" is in the follow set above, so where a token
+// scan cannot tell the two apart, THE ARGUMENT-LIST READING WINS. The
+// case is real: in
+//
+//     if (a < b && c > (d)) { ... }
+//
+// the "<" opens a compile-time argument list applied to `b && c`, because
+// the scan reaches a balanced ">" followed by "(". TO FORCE the relational
+// reading, parenthesise the comparison so the scan meets an unmatched
+// closer and abandons:
+//
+//     if ((a < b) && (c > (d))) { ... }
+//
+// This is a genuine ambiguity, not an oversight; the rule above resolves
+// it by fiat and the parenthesised spelling is the escape.
+
+
+// ============================================================================
+// KNOWN OVER-ACCEPTANCE -- to be resolved by static rules, not by syntax
+// ============================================================================
+//
+// Every item below DERIVES from the productions above and should not be a
+// legal program. Each was confirmed against a parser built from this file.
+// They are recorded here so they are not mistaken for oversights and not
+// lost. None is fixed in the grammar: each is a restriction a later pass
+// must impose, because the syntax alone cannot express it without either
+// duplicating productions or a lookahead the notation does not have.
+//
+//   1. NO LVALUE RESTRICTION. Assignment = Expression assign_op Expression
+//      puts no constraint on the left side, so `1 = 2` and `a == b = c`
+//      are legal statements. What "=" may name is stated nowhere.
+//
+//   2. SUFFIXES ON LITERALS. PrimaryExpr = Operand { Suffix } with no
+//      restriction on Operand, so `3 { a = 1 }`, `"abc"<T>(1)` and `3.*`
+//      all derive.
+//
+//   3. RECEIVER ANYWHERE, AND REPEATABLE. Receiver is an ordinary
+//      alternative of Parameter, so `(a: u32, &self)` and `(&self, self)`
+//      derive. Nothing pins the receiver to the first position or to one
+//      occurrence.
+//
+//   4. A PROJECTIONLIST MAY MIX ITS TWO READINGS. MemberSpec's ":" Type is
+//      optional, so `-> {a, b: u32, []}` mixes a visibility entry, a
+//      multiple-return entry and a symbolic member name in one list. The
+//      note above says "one form, two readings"; the productions also
+//      permit one list to be both.
+//
+//   5. A ZERO-ARM MATCH. MatchArmList = { MatchArm [ ";" ] } , so
+//      `match (x) { }` derives. "A match names every variant or ends in
+//      `_`" is prose only.
+//
+//   6. `() :: 3` AT FILE SCOPE. MemberName is unrestricted in Declaration,
+//      so the symbolic names `()` and `[]` may be bound at file scope,
+//      where there is no containing block for them to be a member of.
+//
+//   7. UNBOUNDED PROJECTION NESTING. Projection = Type and Type includes
+//      SignatureType, so `f :: -> -> -> () { }` derives, as does `-> _`.
+//
+//   8. REPEATED COMPILE-TIME APPLICATION. TypeArgs is a Suffix and Suffix
+//      repeats, so `f<T><U>(x)` derives.
+//
+//   9. A TYPE CAN ABSORB A "{". TypeArg = Expression and Suffix includes
+//      BlockLit, so `-> Formattable<Bar { x = 1 }>` derives -- which
+//      contradicts this file's own claim, above Type, that "A Type NEVER
+//      absorbs a following `{`". The "<" disambiguation keeps the corpus
+//      parsing; it does not make that claim true. TypeArg being an
+//      unrestricted Expression is the root: `Foo<a + b>` and
+//      `Foo<if (c) {1} else {2}>` are also compile-time arguments.
+//
+// ----------------------------------------------------------------------------
+// KNOWN UNDER-ACCEPTANCE -- a language-design finding, not a grammar bug
+// ----------------------------------------------------------------------------
+//
+//   THERE IS NO BARE BLOCK. `{ x := 1 }` in a function body does not
+//   derive: Block is not an Operand, and the only "{" an expression may
+//   open is a BlockLit, whose FieldFill requires `name = expr`. So the
+//   language has no way to open a scope. That matters because `defer`
+//   fires at scope exit, and without a bare block the only scope a
+//   programmer can introduce is a function body or the body of an `if`,
+//   `while`, `for`, `loop` or `match` arm. No construct is invented here;
+//   the gap is recorded for the language to answer.
+//
+// ============================================================================

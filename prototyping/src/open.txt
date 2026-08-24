@@ -1,0 +1,703 @@
+==============================================================================
+open.txt  --  the questions the design has not answered
+==============================================================================
+
+WHAT IS STILL UNDECIDED, and nothing else. It states no rule and retires no
+hole. Rules: spec.txt, which is the sole normative document. Syntax:
+grammar.ebnf. Argument: rationale.txt. rules.txt is the superseded
+original, retained frozen so that the line citations here stay valid; it is
+not to be cited as current.
+
+Every item carries an IN THE SPEC. line giving the spec.txt rule
+identifiers the question hangs off, or saying that no rule corresponds and
+naming the issue in issues.txt that tracks the gap. Each item is also cited
+in spec.txt at the point where the question arises, as `>>> [OPEN oq.N]`.
+
+A design log. Every item here is genuinely undecided: the design does not
+have an answer, and the answer will change the language. Anything already
+decided -- including decided holes, of which there are forty-nine -- belongs
+in unchecked.txt and not here.
+
+Items are ordered by how much of the rest of the language each one blocks,
+which is not the order they were discovered in and not the order rules.txt
+gives. The argument for the order is in the last section.
+
+Each item carries a stable identifier, the question in one line, what the
+corpus pays instead today with file:line evidence, what the answer unblocks,
+what it depends on, and which annex entries it would retire.
+
+NOT IN THIS LOG. Eleven gaps in the specification are not design questions:
+the answer is not in dispute, it has simply never been written down. They are
+unchecked.txt U.1.5, U.1.8, U.1.9, U.2.5, U.3.4, U.6.3, U.10.1, U.10.2,
+U.10.3, U.11.1 and U.11.3 -- aliasing assumptions, null, pointer arithmetic,
+allocator preconditions, bounds, alignment, `defer` semantics, operand order,
+recursion depth, layout, and compile-time effects. Those are drafting, and
+none of them should acquire an entry here. Compile-time termination, U.11.2,
+was in that list and is not: OQ-8 reaches part of it.
+
+------------------------------------------------------------------------------
+OQ-0  `oq.ptr.mutability`
+
+QUESTION. Does a pointee carry a qualifier -- mutability, validity, or both
+-- or does `ptr<T>` remain a single unrestricted handle of indefinite life?
+
+This is one bit, and it is prior to the rest of the aliasing question.
+Deciding yes opens a large design space (what the qualifier is, where it is
+written, whether it is inferred, what it costs). Deciding no closes seven
+annex entries as permanent and unblocks OQ-1 immediately.
+
+WHAT HAPPENS INSTEAD TODAY. `::` and `:=` encode immutable and mutable for
+bindings and nothing does for pointees, so every `ptr<T>` is fully mutable.
+The corpus pays this in four separate shapes:
+
+  - `Store.at` hands out a `ptr<C>` into a `List` that reallocates on the
+    next `add` -- ecs.z:164-169, valid until anyone adds a component of that
+    type, with nothing in the signature saying so.
+
+  - `Combat.chase` holds `me` and `prey`, two interior pointers into the same
+    store, obtained from two lookups -- ecs.z:617-618 -- and writes through
+    two further pointers into two other stores in the same body, at
+    ecs.z:623 and ecs.z:630. Nothing in any of the four signatures says which
+    of them may alias.
+
+  - `Signal.emit` calls every subscriber while the emitter is mid-operation
+    -- ecs.z:557-561 -- and a subscriber may hold a pointer to the container
+    the caller is walking. Three signatures, no reentrancy in any of them.
+
+  - `Map.get` and `Map.put` both take `&self` -- json.z:172 and json.z:165 --
+    and nothing says `get` does not write. json.z:831-836 states the gap.
+
+WHAT IT BLOCKS. The language's central claim, which is that dispatch and cost
+are visible in the type. Aliasing is the one cost that is not
+(rules.txt:838). Downstream: `const` has no story at all (glossary.txt:398);
+a container accessor cannot promise anything about the pointer it returns;
+an `off` on an observer list is not the only API the language cannot express.
+
+IN THE SPEC. spec.txt [mem.nomove.1], [mem.bindaddr.1], [mem.interior.1],
+[ptr.typed.1]. The question is cited there as `>>> [OPEN oq.0]`.
+
+DEPENDS ON. Nothing. It is the root.
+
+RETIRES. U.1.1 (invalidation), U.1.2 (lifetime), U.1.4 (aliasing), U.1.6
+(reentrancy), U.3.6 (slice aliasing); possibly U.1.3 and U.1.7 depending on
+how far the qualifier reaches.
+
+NOTE. rules.txt calls this "the deepest hole in the design" at line 249 and
+does not schedule it. Splitting the one-bit question out of the full aliasing
+design is the point of this entry: the bit is answerable now, and OQ-1 needs
+it.
+
+NOTE ON THE EVIDENCE. ecs.z:897-916 (FRICTION 25) states two of the bullets
+above more strongly than its own code supports. It says `Combat.chase`
+"writes through one of" `me` and `prey`; both are only read, at ecs.z:620.
+It says a closure holding `ptr<World<M>>` despawns under `Reaper`'s loop over
+`w.hp`; the closure actually written, `on_death` at ecs.z:572-574, captures a
+`ptr<List<Entity,M>>`, and `Reaper.run` collects in one loop and emits in a
+second for exactly that reason (ecs.z:498-510). The hazards are real and
+unexpressible either way. The corpus pays for them by hand rather than
+exhibiting them.
+
+------------------------------------------------------------------------------
+OQ-1  `oq.ctor.body`
+
+QUESTION. What gives a `-> self` block a statement position, and where does
+`self` become available inside it?
+
+WHAT HAPPENS INSTEAD TODAY. Two-phase construction, unchecked. A second
+member does everything the block cannot, and the caller must remember it:
+
+  - `World.wire` -- ecs.z:342-349 -- pushes `&self.pos`, `&self.vel`,
+    `&self.hp`, `&self.brain` into `self.stores`, guarded by a `wired` flag
+    that exists only to make the omission idempotent rather than detectable.
+
+  - `main` calls it on the line after construction -- ecs.z:753-755 -- with
+    the comment "Forget it and `despawn` silently does nothing at all."
+
+  - json.z takes the other dodge: `Parser` cannot prime its lookahead at
+    construction because priming can fail, so `look` is an `Option<Token>`
+    filled lazily and every `peek` pays a match -- json.z:349-373. The file
+    records the alternative it did not take (prime at the call site and pass
+    the token in) at json.z:353-357.
+
+WHAT IT BLOCKS. Anything needing `self`, two fields at once, or a step that
+can fail. Concretely: self-referential structures, which the memory rules
+explicitly permit (rules.txt:256-259) and the syntax cannot build; fallible
+construction; and any allocation-failure story, since a constructor that
+allocates has nowhere to report the failure.
+
+IN THE SPEC. spec.txt [mem.construct.1], [bind.which.self.1]. The question is
+cited there as `>>> [OPEN oq.1]`.
+
+DEPENDS ON. OQ-0, softly but really. [P21]'s worked example is
+`stores.push(&self.pos)` -- taking a mutable interior pointer to a
+partially-constructed value and storing it where it outlives the constructor.
+That is the single hardest case any pointee qualifier will have to
+adjudicate. Specifying the body first means specifying it around an example
+whose legality the aliasing answer has not yet settled.
+
+RETIRES. U.4.1 (two-phase), U.4.2 (`undefined` fields, which exist mainly
+because there is no body to fill them in), U.4.3 (initialiser order, which a
+statement position makes textual).
+
+PRIOR ART IN THIS REPO. [P21] in ecs.z:1063-1088 is a complete proposal:
+statements interleaved with `:=` bindings, run in textual order; `self`
+available at the point every `:=` field is bound; `-> Result<self, E>` folded
+in rather than standing alone. The fallible projection was tried separately
+and cut -- rules.txt:844-853 and ecs.z:918-928 give the reason, which is that
+a return type is not a body.
+
+------------------------------------------------------------------------------
+OQ-2  `oq.sum.discriminant`
+
+QUESTION. Is a sum's discriminant a value? [P19] proposes `S.tag` as a
+derived sum of unit variants, with `tag_of(v)` total, comparable, ordinal,
+and usable as an array index or a bit position.
+
+WHAT HAPPENS INSTEAD TODAY. A full match for every question about a tag:
+
+  - `is_dead` spells four arms to compute a bool -- ecs.z:272-274.
+  - `Parser.expect` invents `tag_of` because the language has no spelling for
+    "same variant, ignore the payload" -- json.z:381-387, marked FRICTION 7.
+  - `Map.get` writes `empty` and `dead` arms it can prove unreachable --
+    json.z:175-179.
+  - An archetype bitmask, which is what a real ECS is built from, cannot be
+    written at all: it needs one bit per component type and therefore an
+    ordinal per variant -- ecs.z:275-278.
+  - Serialisation has no stable number to write -- same site.
+
+WHAT IT BLOCKS. A data structure, not a convenience. Both programs hit it,
+and ecs.z upgraded it from json.z's rating on exactly that ground
+(ecs.z:1159-1160: "no ordinal, no bitmask, no archetypes, no
+serialisation").
+
+IN THE SPEC. spec.txt [decl.proj.oneof.1], [hole.oneof.variant.1]. The
+question is cited there as `>>> [OPEN oq.2]`.
+
+DEPENDS ON. Nothing. It touches no other open question and no decided rule --
+HOLES already makes a variant a derived function, so a derived sum of unit
+variants is the same move read once more.
+
+RETIRES. U.7.2 (sum representation unspecified).
+
+NOTE. This is the cheapest large win in the log: fully specified in [P19]
+(ecs.z:1142-1148), zero dependencies, closes frictions in both programs, and
+changes no existing spelling.
+
+------------------------------------------------------------------------------
+OQ-3  `oq.iter.form`
+
+QUESTION. `for (x := it)` over anything with a `next` returning `Option<T>`
+-- and what the form quantifies over. [P23] proposes the desugaring; what it
+ranges over is the open half.
+
+WHAT HAPPENS INSTEAD TODAY. Every traversal in both programs is a C index
+loop. The standard library's attempt to answer this without the form --
+`Iterator<T>`, `ListIter`, `iter`, `fold` -- was declared by both programs
+and is cut (rules.txt:865-870, ecs.z:968-974). The hand-written consumer is
+four lines to replace one:
+
+  - `Join2` has a `next` returning `Option<Hit<A,B>>` -- ecs.z:415-433 -- and
+    every user writes the `loop` + `match` consumer out by hand:
+    `Movement.run` at ecs.z:466-479 is four lines where
+    `for (h := join2(&w.pos, &w.vel))` is one.
+  - Everything with no `next` at all is a C index loop: ecs.z:487-493
+    (`Decay.run`), ecs.z:502-510 (`Reaper.run`, twice), ecs.z:586-599
+    (`Combat.run`), json.z:686 and json.z:477-480.
+
+[UNVERIFIED -- citation not confirmed] How much the cut shape was used is
+recorded twice and inconsistently. rules.txt:867-868 says `Iterator` was
+"declared by both programs, used by neither". ecs.z:970 says it "was used
+exactly once -- by `fold`, in json.z". Neither the shape nor `fold` survives
+in json.z as it stands, so no call site can be checked from the corpus. The
+argument does not turn on the number.
+
+WHAT IT BLOCKS. A visibility property of the whole standard library. `Map`
+cannot close its projection, because iterating a `Map` means reaching into
+`slots` and `cap` -- json.z:487-488, ecs.z:930-942 (FRICTION 17). `List`
+closed its projection only because `[]` arrived. So this question decides
+whether VISIBILITY IS THE PROJECTION is a rule containers can actually obey.
+
+IN THE SPEC. spec.txt: none -- see issues.txt Z-25. The question is cited in
+spec.txt as `>>> [OPEN oq.3]`.
+
+DEPENDS ON. OQ-0. The traversal form has to say what happens when the body
+mutates the thing being traversed, and that is the aliasing question at a
+specific site.
+
+RETIRES. Nothing in the annex. In particular it does not retire U.3.5
+(mutation during traversal): a desugared loop reads the same count from the
+same container and skips the same swap-removed element. It removes the syntax
+cost, not the hazard.
+
+------------------------------------------------------------------------------
+OQ-4  `oq.num.semantics`
+
+QUESTION. What do arithmetic overflow, division by zero, and out-of-range
+shift do?
+
+WHAT HAPPENS INSTEAD TODAY. Nothing is written. No rule in rules.txt or
+glossary.txt defines overflow, integer conversion, or division by zero, and
+the words `overflow`, `trap`, `divide`, `division` and `convert` do not occur
+in either file. `saturating` and `wrapping` do occur, at rules.txt:775-776
+and glossary.txt:215, but only as the example of why ADDITION IS A CHOICE
+that wants a policy -- in the argument whose conclusion is that arithmetic is
+an instruction on the primitives and there is no policy for it. Neither line
+says what a primitive `+` does. Meanwhile:
+
+  - the standard library's FNV-1a hash requires wrapping multiplication to
+    compute the value it intends -- json.z:104-108, a `u64` accumulator with
+    an offset basis and prime that are defined modulo 2^64;
+  - `mem.make` allocates `n * size_of<T>()` -- unified.z:91-93 -- so an
+    overflow there under-allocates silently and every element write
+    afterwards is out of bounds;
+  - `List.expand` doubles a capacity -- unified.z:181;
+  - `entity_key.hash` at ecs.z:128 multiplies `u32` operands into a `u64`
+    projection, which overflows under one reading and does not under the
+    other, and computes a different hash each way. That one is as much OQ-5
+    as OQ-4, which is the argument for deciding them together.
+
+WHAT IT BLOCKS. Any claim that a zlang program means one thing. It also
+blocks OQ-5, since a conversion rule has to say what a narrowing conversion
+does and that is the same decision.
+
+IN THE SPEC. spec.txt [op.instructions.1], [op.primtypes.2]. The question is
+cited there as `>>> [OPEN oq.4]`.
+
+DEPENDS ON. Nothing.
+
+RETIRES. U.5.1, U.5.2, U.5.3.
+
+NOTE. This item is here rather than in the drafting list because it is not
+merely unwritten: the plausible answers differ (wrap, trap,
+checked-build-traps-release-wraps, undefined), and the standard library has
+already committed to one of them without saying so. That is a design question
+wearing a spec gap's clothes.
+
+------------------------------------------------------------------------------
+OQ-5  `oq.num.conversion`
+
+QUESTION. How do the six primitive types convert into one another? ecs.z's
+guess is "one more policy, `From<A, B>`" -- ecs.z:785-786.
+
+WHAT HAPPENS INSTEAD TODAY. The corpus mixes widths with no rule permitting
+it, and invents a function where it cannot:
+
+  - `Map.probe` reduces a `u64` hash modulo a `u32` capacity -- json.z:152;
+  - `entity_key.hash` combines two `u32` operands into a `u64` result --
+    ecs.z:128;
+  - `main` calls `f32_of(i)` on a loop counter, and the comment says the
+    function is invented -- ecs.z:785-787.
+
+WHAT IT BLOCKS. Numeric code generally, and the honesty of the primitive
+list: rules.txt:456 names six types that arithmetic works on and no way to
+get between them.
+
+IN THE SPEC. spec.txt [op.primtypes.1], [op.primtypes.2]. The question is
+cited there as `>>> [OPEN oq.5]`.
+
+DEPENDS ON. OQ-4 (narrowing is overflow), and interacts with OQ-6 -- if
+conversion is a policy, it is the second policy the language ships and the
+first that a generic body would want.
+
+RETIRES. U.5.4, U.5.5.
+
+------------------------------------------------------------------------------
+OQ-6  `oq.numeric.generic`
+
+QUESTION. Can generic code be numeric?
+`lerp :: <T> (a: T, b: T, t: f32) -> T` cannot be written, because a generic
+body has no `+`.
+
+WHAT HAPPENS INSTEAD TODAY. A function per type, whose body reads as a chain
+rather than as a formula:
+
+  - `lerp` is monomorphic on `Vec2` and spelled `a.add(b.sub(a).scale(t))` --
+    ecs.z:101, with the comment at ecs.z:97-99 calling it "the one thing in
+    this file with no replacement at all";
+  - the integration step in `Movement.run` is `h.a.*.add(h.b.*.scale(dt))` --
+    ecs.z:477, against the `h.a.* + h.b.* * dt` it used to be;
+  - `2.0 * v` has no spelling in any form.
+
+WHAT IT BLOCKS. Numeric libraries. The available answer is a shape with `add`
+and `scale`, which serves types you own, hits the no-adapter problem
+(rules.txt:624-631) for anything else, and cannot serve the primitives at all
+-- nothing can be added to `u8`.
+
+IN THE SPEC. spec.txt [op.instructions.1], [op.notoperators.1],
+[op.usertype.1]. The question is cited there as `>>> [OPEN oq.6]`.
+
+DEPENDS ON. OQ-5 conceptually. Blocked by a decision already taken: the
+solver is gone, and [P17] -- operators as policies -- was rejected with it
+(ecs.z:1015-1061). Any answer here must work without a pool, which is what
+makes it hard rather than merely unwritten.
+
+RETIRES. Nothing in the annex. This is a missing capability, not a hole.
+
+------------------------------------------------------------------------------
+OQ-7  `oq.alloc.failure`
+
+QUESTION. Can an allocator fail, and if so how does it say so?
+
+WHAT HAPPENS INSTEAD TODAY. `Allocator` declares
+`alloc: (&self, n: u32) -> ptr` -- unified.z:81-84 -- which has no room for a
+failure. So:
+
+  - `mem.make` returns the result unexamined -- unified.z:91-93;
+  - every allocation in both programs is used without a check --
+    unified.z:164, unified.z:182, json.z:146;
+  - `Arena.alloc` advances `top` by `n` and returns without comparing
+    anything to `size` -- unified.z:104-112, where `size` is a field the
+    block never reads. It is not that the arena forgot to check; it is that
+    there is nowhere to put the answer.
+
+WHAT IT BLOCKS. Any program that must survive exhaustion, and the whole class
+of fixed-extent allocators the language otherwise encourages.
+
+IN THE SPEC. spec.txt: none -- see issues.txt Z-10. The question is cited in
+spec.txt as `>>> [OPEN oq.7]`.
+
+DEPENDS ON. OQ-1. A constructor that allocates -- which is every container --
+needs a body with a failure path before `alloc` returning an `Option<ptr>` is
+usable. `List :: <T, M> (allocator: M) -> self` with
+`items := mem.make(...)` has nowhere to handle a `none`.
+
+RETIRES. U.6.1, U.6.2.
+
+------------------------------------------------------------------------------
+OQ-8  `oq.mono.recursive`
+
+QUESTION. What does monomorphisation do to a type that contains itself?
+
+WHAT HAPPENS INSTEAD TODAY. The alias trick, applied once per application:
+`Doc :: Json<ptr<Arena>>` (json.z:649) and `A :: ptr<Arena>` (ecs.z:750). Two
+unrelated programs reached for the same one-line fix, which makes it a
+pattern (rules.txt NOTE 2 683-693, ecs.z:884-888).
+
+The residual cost is one allocator per document type: `Json<Heap>` and
+`Json<Arena>` cannot be compared, merged, or stored in one list --
+json.z:778-783. And the alias does not reach a library shape: `System<M>`
+stays generic because a library cannot name the application's allocator --
+ecs.z:450-455.
+
+WHAT IT BLOCKS. Recursive generic data structures, and the reach of the alias
+workaround into libraries.
+
+IN THE SPEC. spec.txt [abs.bound.1]. The question is cited there as `>>> [OPEN
+oq.8]`.
+
+DEPENDS ON. Nothing.
+
+RETIRES. U.11.2, in part -- a decision here would say what a non-terminating
+instantiation does.
+
+NOTE. json.z's closing verdict names this as one of exactly two things
+standing between the design and a usable language, and says of it "it is not
+syntax" -- json.z:879-887. The other one is done.
+
+------------------------------------------------------------------------------
+OQ-9  `oq.variadic`
+
+QUESTION. Variadic compile-time arguments, or arity families forever?
+
+WHAT HAPPENS INSTEAD TODAY. Numbered families of names. `Fn`, `Fn2`, `Fn3`
+were rated "cheap enough to live with as an implementation detail"
+(json.z:823-825). `Join2`, `Join3`, `Join4` are not an implementation detail
+-- they are the public surface of a query API, and a system reading three
+components and writing a fourth is the ordinary case, not the exotic one
+(ecs.z:435-439, ecs.z:961-966).
+
+WHAT IT BLOCKS. The shape of any query or tuple-like library.
+
+IN THE SPEC. spec.txt [ct.kinds.1], [decl.brackets.ct.1]. The question is
+cited there as `>>> [OPEN oq.9]`.
+
+DEPENDS ON. Nothing. Blocks nothing else in this log.
+
+RETIRES. Nothing.
+
+------------------------------------------------------------------------------
+OQ-10  `oq.shape.identity`
+
+QUESTION. Is `ptr<Shape>` comparable? A fat pointer is two words built at the
+coercion site; whether two coercions of one value are equal is unstated for
+the data word and unstated for the vtable word.
+
+WHAT HAPPENS INSTEAD TODAY. `Signal` has no `off`, so an observer list can be
+added to and never pruned -- ecs.z:550-556, which records the reasoning and
+concludes "identity of an erased value is undefined".
+
+WHAT IT BLOCKS. Any API that removes a registered callback. A handle returned
+by `on` works around it, but the language-level question is still what
+decides whether the workaround is necessary.
+
+IN THE SPEC. spec.txt [abs.erased.1], [mem.borrow.1]. The question is cited
+there as `>>> [OPEN oq.10]`.
+
+DEPENDS ON. Nothing.
+
+RETIRES. U.9.1, U.9.2 (whether two zero-sized values have distinct addresses
+is the same question about the data word).
+
+------------------------------------------------------------------------------
+OQ-11  `oq.shape.coercion`
+
+QUESTION. Is the coercion to `ptr<Shape>` implicit at a call site, or does it
+need the annotation, as `boxed : ptr<Allocator> := &arena` does?
+
+WHAT HAPPENS INSTEAD TODAY. Both spellings are in the corpus and the rules
+license only one of them clearly.
+
+  - Annotated, at a binding: unified.z:368 (`boxed : ptr<Allocator> :=
+    &arena`) and unified.z:392 (`f : ptr<Fn<u8, ()>> := &p`).
+  - Implicit, at a call site, with nothing written: unified.z:327
+    (`F.format(v, &b)`, `&b` coercing to `ptr<Writer>`), ecs.z:770-773
+    (`sched.add(&move)` and three more, coercing to `ptr<System<A>>`) and
+    ecs.z:780 (`w.died.on(&obituary)`, coercing to `ptr<Fn<Entity, ()>>`).
+
+Note that ecs.z carries no annotated coercion at all; its comment at
+ecs.z:775-777 calls `&obituary` "the coercion ... exactly as
+`boxed : ptr<Allocator>` is in unified.z", but the two sites are written in
+the two different forms this question is about.
+
+WHAT IT BLOCKS. Whether a reader can tell a direct call from an indirect one
+by reading the call, which is the property the bracket split exists to
+provide (rules.txt:618-622). Implicit is nicer to write and hides a
+representation change.
+
+IN THE SPEC. spec.txt [abs.erased.1], [abs.nodyn.1]. The question is cited
+there as `>>> [OPEN oq.11]`.
+
+DEPENDS ON. Nothing.
+
+RETIRES. U.9.3.
+
+------------------------------------------------------------------------------
+OQ-12  `oq.type.ctvalue-identity`
+
+QUESTION. Does `capacity :: 10` make `List`-with-cap-10 a different type from
+cap-20? Zig says yes.
+
+WHAT HAPPENS INSTEAD TODAY. Nothing depends on the answer in the corpus.
+`List` declares `capacity := 10` as a runtime field, not `::` --
+unified.z:158 -- so the case does not arise, which is itself the evidence
+that this is a small question.
+
+IN THE SPEC. spec.txt [bind.ctfield.1], [ct.typecarries.1]. The question is
+cited there as `>>> [OPEN oq.12]`.
+
+DEPENDS ON. Nothing. BLOCKS. Nothing in this log.
+
+RETIRES. U.11.4.
+
+------------------------------------------------------------------------------
+OQ-13  `oq.infer.outward`
+
+QUESTION. May a type be inferred outward, from the enclosing declaration's
+projection into its body? `ok(...)` and `err(...)` need it.
+
+WHAT HAPPENS INSTEAD TODAY. The corpus writes the short form the rules do not
+license. `Lexer.next` returns `ok(Token.eof())` -- json.z:291 -- where
+written honestly it is `Result<Token, Error>.ok(t)`. The short form appears
+at twelve sites inside `Lexer` (json.z:291, 294-299, 302-304, 327 and 338)
+and at twenty-two sites across json.z. json.z:813-817 flags this and says
+"worth deciding deliberately", noting that it is inference flowing outward
+from the projection into the body, which the language does not otherwise do.
+
+The count is corrected here: json.z:814 says "fourteen returns in the lexer".
+There are twelve. Fourteen is the number of `err (e) { return err(e) }`
+propagation sites in the file, which rules.txt:409 states correctly and which
+this file counts again at OQ-15.
+
+WHAT IT BLOCKS. Nothing structural. But it is the one place where the corpus
+is written in a language the rules do not describe, which makes it a
+correctness question about the specification rather than a convenience.
+
+IN THE SPEC. spec.txt [ct.expected.1], [ct.noexpected.1]. The question is
+cited there as `>>> [OPEN oq.13]`.
+
+DEPENDS ON. Nothing.
+
+RETIRES. Nothing.
+
+------------------------------------------------------------------------------
+OQ-14  `oq.lambda.projection`
+
+QUESTION. May a lambda filling a typed hole elide its projection, since the
+hole already supplies it? `compare = (a, b) -> i32 { ... }` writes `-> i32`
+that `Ord<T>` already declared.
+
+WHAT HAPPENS INSTEAD TODAY. Every callable writes its `->`, including every
+policy instance in the corpus -- unified.z:223, unified.z:267, json.z:103,
+ecs.z:128. [P9], json.z:867-872: "settled nowhere".
+
+IN THE SPEC. spec.txt [op.closure.1], [ct.expected.1]. The question is cited
+there as `>>> [OPEN oq.14]`.
+
+DEPENDS ON. Nothing. BLOCKS. Nothing.
+
+RETIRES. Nothing.
+
+------------------------------------------------------------------------------
+OQ-15  `oq.match.binder-sugar`
+
+QUESTION. A single-arm binding form with an `else`, for the tail that
+repeats. Swift spells it `guard`, Rust `let ... else`.
+
+WHAT HAPPENS INSTEAD TODAY. Two tails, written out.
+`{ arm (v) { v }  _ { return } }` appears at json.z:679-681 and four times in
+`Combat.chase` (ecs.z:617-618, ecs.z:637, ecs.z:643);
+`{ ok (v) { v }  err (e) { return err(e) } }` appears at all fourteen
+propagation sites in json.z (json.z:370, 376, 382, 390, 408, 411, 413, 425,
+428, 433-436, 437, 439, 456, 457), and rules.txt:411-413 says json.z "is
+where you can see whether that reads as honest or as noise".
+
+WHAT IT BLOCKS. Nothing. json.z:803-811 calls it "the only sugar this file
+still wants" and notes that a propagating form could never have covered both
+tails, because the arms have the wrong type to propagate.
+
+IN THE SPEC. spec.txt [match.expr.1], [match.errchannel.1]. The question is
+cited there as `>>> [OPEN oq.15]`.
+
+DEPENDS ON. Nothing.
+
+RETIRES. Nothing.
+
+------------------------------------------------------------------------------
+THE ORDER, AND WHETHER rules.txt HAS IT RIGHT
+
+rules.txt schedules exactly one thing. At line 854 it says of the constructor
+body: "A value having one address is what makes such a body definable at all,
+so this is the next thing to decide."
+
+That is nearly right and it is right for the wrong reason, and the document
+contradicts itself six hundred lines earlier: MEMORY, at line 249, calls
+aliasing "the deepest hole in the design". Both statements can be true --
+deepest is not next -- but the document never says why the deepest hole is
+not the next one, and the reason it gives for scheduling the constructor body
+is about a prerequisite being satisfied rather than about what the decision
+unblocks.
+
+THREE AMENDMENTS.
+
+ONE: SPLIT ONE BIT OFF THE ALIASING QUESTION AND DECIDE THAT BIT FIRST. The
+full aliasing design is large and may take a year. The question "does a
+pointee carry a qualifier at all -- yes or no" is answerable now, and OQ-1
+needs the answer. [P21]'s worked example is `stores.push(&self.pos)`: taking
+a mutable interior pointer to a value that is still being constructed and
+storing it where it outlives the constructor. That is the hardest case a
+pointee qualifier will ever face. Specify the constructor body first and you
+specify it around an example whose legality the aliasing rule has not
+settled -- and the reverse dependency does not exist, because the aliasing
+answer does not need a constructor body to be stated. If the bit comes back
+no -- which is consistent with the language's stated character, since it has
+already refused a borrow checker and move semantics -- then OQ-1 is genuinely
+next and can proceed in isolation, and this amendment costs a week.
+
+TWO: OQ-2, THE DISCRIMINANT, IS A BETTER SECOND THAN THE CONSTRUCTOR BODY ON
+PURE RETURN. It is fully specified already ([P19]), has zero dependencies,
+changes no existing spelling, and blocks a data structure rather than a
+convenience -- no ordinal, no bitmask, no archetypes, no serialisation. The
+constructor body is a larger change with a soft dependency on OQ-0. Deciding
+OQ-2 while OQ-0 is being settled costs nothing and closes frictions in both
+programs.
+
+THREE: THE ARITHMETIC QUESTIONS (OQ-4, OQ-5) ARE SCHEDULED NOWHERE AND SHOULD
+BE. rules.txt does not list them in OPEN because it does not know they are
+open -- the subject has never been raised, and the two occurrences of
+`saturating` and `wrapping` in the specification (rules.txt:775-776,
+glossary.txt:215) are an argument about policies rather than a statement
+about arithmetic. But the standard library's hash already depends on wrapping
+multiplication (json.z:106) and the corpus already mixes integer widths in
+three places (json.z:152, ecs.z:128, ecs.z:787). This is not a gap waiting
+for a language feature; it is a commitment already made in code and not yet
+made in prose. It should be decided before anything else acquires a
+dependency on it.
+
+------------------------------------------------------------------------------
+RECOMMENDED DECISION ORDER
+
+    1   OQ-0   oq.ptr.mutability, the one bit
+                   Root. OQ-1 and OQ-3 both need it, and it is a yes/no.
+    2   OQ-4   oq.num.semantics
+                   Already committed to in code, undecided in prose.
+    3   OQ-5   oq.num.conversion
+                   Same commitment, and OQ-4 settles half of it already.
+    4   OQ-2   oq.sum.discriminant
+                   Fully specified, no dependencies, blocks a data structure.
+    5   OQ-1   oq.ctor.body
+                   rules.txt's choice, correctly second-tier once OQ-0 is in.
+    6   OQ-7   oq.alloc.failure
+                   Needs OQ-1's body before a failure has anywhere to go.
+    7   OQ-3   oq.iter.form
+                   Needs OQ-0. Unblocks closed projections on containers.
+    8   OQ-8   oq.mono.recursive
+                   Hard, independent, and json.z calls it one of two blockers.
+    9   OQ-6   oq.numeric.generic
+                   Large, and wants OQ-5 decided before it starts.
+    10  OQ-9   oq.variadic
+                   Large, and nothing in this log waits on it.
+    11  OQ-10  oq.shape.identity
+                   Small and independent; one afternoon each from here down.
+    12  OQ-11  oq.shape.coercion
+                   Small; the corpus already uses both spellings.
+    13  OQ-12  oq.type.ctvalue-identity
+                   Small; nothing in the corpus depends on the answer.
+    14  OQ-13  oq.infer.outward
+                   Small, and a discrepancy between corpus and rules.
+    15  OQ-14  oq.lambda.projection
+                   Small; pure spelling, settled nowhere.
+    16  OQ-15  oq.match.binder-sugar
+                   Small; sugar over a tail the corpus writes out fourteen
+                   times.
+
+The last six are genuinely six afternoons. Grouping them at the bottom is not
+a slight: OQ-13 in particular is a discrepancy between the corpus and the
+rules, and discrepancies are cheaper to fix than to explain.
+
+------------------------------------------------------------------------------
+DEPENDENCY DIAGRAM
+
+    ---->   hard dependency: the lower item cannot be specified until the
+            upper one is answered
+    ....>   soft dependency: specifiable either way, but the worked example
+            is settled by the upper one
+
+        OQ-0  oq.ptr.mutability
+          |
+          +................+
+          .                |
+          v                v
+        OQ-1             OQ-3  oq.iter.form
+        oq.ctor.body
+          |
+          v
+        OQ-7  oq.alloc.failure
+
+
+        OQ-4  oq.num.semantics
+          |
+          v
+        OQ-5  oq.num.conversion
+          .
+          v
+        OQ-6  oq.numeric.generic
+
+
+    No edge in, no edge out:
+
+        OQ-2   oq.sum.discriminant
+        OQ-8   oq.mono.recursive
+        OQ-9   oq.variadic
+        OQ-10  oq.shape.identity
+        OQ-11  oq.shape.coercion
+        OQ-12  oq.type.ctvalue-identity
+        OQ-13  oq.infer.outward
+        OQ-14  oq.lambda.projection
+        OQ-15  oq.match.binder-sugar
+
+Read off it: exactly two roots have anything under them, OQ-0 and OQ-4.
+Between them they gate four of the sixteen items. The other ten are decidable
+in any order, which is why the schedule above spends its argument on the
+first five entries and stops.
+
+==============================================================================

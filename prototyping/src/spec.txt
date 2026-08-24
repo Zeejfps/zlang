@@ -1,0 +1,1935 @@
+============================================================================
+spec.txt  --  the zlang specification
+============================================================================
+
+
+INTRODUCTION
+
+This is the specification of zlang. It states what a program means. It does
+not argue for any of it: the arguments are in rationale.txt, which is
+indexed by the same rule identifiers used here.
+
+The language is not finished. This document is written so that what is
+missing is visible rather than smoothed over. Where a question is open, the
+question is printed instead of an answer.
+
+Every normative sentence carries a stable identifier in brackets at the
+start of its paragraph. Identifiers are those assigned by the rule
+inventory; they are never reused and never renamed. A paragraph with no
+identifier is a definition of terms or an example and constrains nothing.
+
+Four markers interrupt the text. Each begins a line with `>>>` so that the
+gaps in the specification can be found by eye and counted by machine.
+
+    >>> [UNSPECIFIED]   The specification must answer a question here and
+                        does not. The unanswered question is stated.
+
+    >>> [OPEN oq.N]     A live design question. The one-line summary is
+                        here; the entry is in open.txt.
+
+    >>> [INVENTED]      A rule that exists because the grammar had to
+                        choose, and that no source document states. It is
+                        recorded as an invention, not as a decision.
+
+    >>> [CONFLICT]      Two source rules that cannot both hold. Both
+                        readings are given. This document picks neither.
+
+Annex A collects the grammar. Annex B indexes the unchecked behaviour.
+Annex C indexes the open questions. The final section records coverage.
+
+
+============================================================================
+NOTATION
+============================================================================
+
+The syntax is specified using a variant of Extended Backus-Naur Form (EBNF):
+
+    Production  = production_name "=" [ Expression ] "." .
+    Expression  = Term { "|" Term } .
+    Term        = Factor { Factor } .
+    Factor      = production_name | token [ "..." token ] | Group
+                | Option | Repetition .
+    Group       = "(" Expression ")" .
+    Option      = "[" Expression "]" .
+    Repetition  = "{" Expression "}" .
+
+Productions are expressions constructed from terms and the following
+operators, in increasing precedence:
+
+    |   alternation
+    ()  grouping
+    []  option (0 or 1 times)
+    {}  repetition (0 to n times)
+
+Lowercase production names are used to identify lexical tokens.
+Non-terminals are in CamelCase. Lexical tokens are enclosed in double
+quotes or back quotes.
+
+The form `a ... b` represents the set of characters from `a` through `b` as
+alternatives. Go's specification writes an ellipsis character here; this
+document is plain ASCII throughout and writes three dots.
+
+zlang spells blocks with `{` `}` and indexing with `[` `]`, and this
+notation spells repetition and option with the same two pairs. Every such
+terminal is therefore double-quoted: `"{"` is the language's brace, `{ }`
+is repetition.
+
+The root production is SourceFile. Every production is reachable from it.
+
+
+============================================================================
+SOURCE CODE REPRESENTATION
+============================================================================
+
+Source code is Unicode text.
+
+    newline        = /* the Unicode code point U+000A */ .
+    unicode_char   = /* an arbitrary Unicode code point except newline */ .
+    unicode_letter = /* a Unicode code point categorized as "Letter" */ .
+
+    letter         = unicode_letter | "_" .
+    decimal_digit  = "0" ... "9" .
+
+The underscore character `_` is a letter.
+
+>>> [UNSPECIFIED] The source encoding is not stated. Whether a source file
+    must be UTF-8, what a byte sequence invalid in that encoding does, and
+    whether a byte-order mark is permitted are unanswered.
+
+>>> [UNSPECIFIED] Which characters other than U+000A terminate a line is
+    not stated. Carriage return, form feed and U+2028 are unaddressed, and
+    the semicolon rule below is defined in terms of "a line".
+
+>>> [UNSPECIFIED] The set of characters permitted as white space between
+    tokens is not stated.
+
+
+============================================================================
+LEXICAL ELEMENTS
+============================================================================
+
+----------------------------------------------------------------------------
+Comments
+
+    Comment = "//" { unicode_char } newline .
+
+A comment acts as a newline.
+
+>>> [INVENTED] There is one comment form. No block-comment form appears in
+    any source document or anywhere in the corpus, and none is defined. The
+    absence is the grammar's choice, not a recorded decision.
+
+----------------------------------------------------------------------------
+Semicolons
+
+The formal grammar uses semicolons as terminators in a number of
+productions. A program may omit most of them using the following two rules.
+
+    1. A semicolon is automatically inserted at the end of a line when the
+       last token of that line is
+         - an identifier, `_`, `self`, or a literal;
+         - one of the keywords `break`, `continue`, `return`;
+         - one of `)`, `]`, `}`, `>`, or `.*`.
+
+    2. A semicolon may be omitted before a closing `)` or `}`.
+
+Rule 1 terminates `A :: ptr<Arena>` and `Span :: (lo: u32) -> self`, and is
+what requires `} else {` to be written on one line.
+
+>>> [INVENTED] Both rules, and in particular the token list in rule 1, are
+    reconstructed from the corpus, which separates two statements on one
+    physical line with `;` and never otherwise. No source document states a
+    semicolon rule. The inclusion of `>` and `.*` in the list is an
+    invention with no evidence either way.
+
+----------------------------------------------------------------------------
+Identifiers
+
+    identifier    = letter { letter | decimal_digit } .
+
+    QualifiedName = identifier { "." identifier } .
+
+A member may carry one of two symbolic names in place of an identifier.
+
+    MemberName    = identifier | "_" | "[" "]" | "(" ")" .
+
+`*` is not among them, which is what makes `.*` available as a deref.
+
+>>> [INVENTED] That `_` is admissible as a MemberName is the grammar's
+    choice. No source document says whether a member may be named `_`.
+
+>>> [UNSPECIFIED] The set of predeclared identifiers is not stated anywhere.
+    `type`, `true`, `false`, `nil` and `ptr` are treated as predeclared and
+    are not keywords. The corpus additionally uses `nil` (unified.z:191),
+    `size_of` (unified.z:92), `slice` as a constructor (unified.z:200),
+    `page` (unified.z:367), `undefined` (rules.txt only) and `tag_of`
+    (json.z:383, which the corpus itself records as invented). None of these
+    is declared in the corpus or listed in any rule. Whether each is a
+    keyword, a predeclared identifier, or a member of an implicitly imported
+    module is unanswered.
+
+----------------------------------------------------------------------------
+Keywords
+
+[kw.budget.1] The following words are reserved and may not be used as
+identifiers.
+
+    _        break     continue  defer     else
+    for      if        loop      match     oneof
+    return   self      while
+
+[kw.nokeywords.1] There is no `struct`, `enum`, `union`, `interface`,
+`trait`, `impl`, `operator`, `pub`, `dyn` or `import`.
+
+[hole.nokeywords.1] There is no `trait`, `interface`, `abstract`, `enum` or
+`union`. This rule and kw.nokeywords.1 are one rule stated twice in the
+sources; it is stated here once, and both source memberships are recorded
+in the conflict below rather than merged into a single list.
+
+>>> [CONFLICT] The two lists of words that are not in the language disagree.
+    Reading A (rules.txt:100): {trait, interface, abstract, enum, union}.
+    Reading B (rules.txt:354): {struct, enum, union, interface, trait, impl,
+    operator, pub, dyn, import}. `abstract` appears only in A; six words
+    appear only in B. glossary.txt:379-398 gives a third list adding
+    `class`, `module` and `const`. No list is marked authoritative.
+
+>>> [CONFLICT] kw.budget.1 states that the keyword budget is written down
+    "so it stops growing by accident", and omits `nil`, which unified.z:191
+    uses. Either the budget is incomplete or `nil` is a predeclared
+    identifier nobody has declared. See U.1.8.
+
+----------------------------------------------------------------------------
+Operators and punctuation
+
+The following character sequences represent operators and punctuation:
+
+    +    -    *    /    %
+    &    |    ^    <<   >>   ~
+    ==   !=   <    <=   >    >=
+    &&   ||   !
+    +=   -=   *=   /=   %=
+    &=   |=   ^=   <<=  >>=
+    =    :=   ::   :    ->   .*
+    (    )    [    ]    {    }
+    ,    ;    .
+
+    unary_op  = "-" | "!" | "&" | "~" .
+    mul_op    = "*" | "/" | "%" | "<<" | ">>" | "&" .
+    add_op    = "+" | "-" | "|" | "^" .
+    rel_op    = "==" | "!=" | "<" | "<=" | ">" | ">=" .
+    assign_op = [ add_op | mul_op ] "=" .
+
+`>>` and `>>=` are single tokens. A parser closing a compile-time argument
+list splits a `>>` into two `>` and a `>>=` into `>` and `>=`, so that
+`ptr<List<T, _>>` lexes.
+
+>>> [INVENTED] The `>>` splitting rule is the grammar's. No source document
+    mentions it, and the corpus contains the spelling that requires it.
+
+>>> [UNSPECIFIED] `<` is both the less-than operator and the opening
+    delimiter of a compile-time argument list, and nothing disambiguates
+    them. `a < b` and `a<b>(c)` begin identically, and the grammar admits
+    TypeArgs as a suffix on any PrimaryExpr. Whether the decision is made
+    by lookahead, by whether the name denotes a declaration taking
+    compile-time arguments, or by some other rule, is unanswered. This is
+    the one ambiguity in the grammar that no single token resolves.
+
+----------------------------------------------------------------------------
+Literals
+
+    int_lit       = decimal_digit { decimal_digit } .
+    float_lit     = decimal_digit { decimal_digit } "."
+                    decimal_digit { decimal_digit } .
+
+    char_lit      = "'" ( unicode_value | escaped_char ) "'" .
+    string_lit    = `"` { unicode_value | escaped_char } `"` .
+
+    unicode_value = /* any unicode_char except the quote and "\" */ .
+    escaped_char  = "\" ( "n" | "r" | "t" | "\" | "'" | `"` ) .
+
+    Literal       = int_lit | float_lit | char_lit | string_lit .
+
+>>> [INVENTED] Decimal only. No radix prefix, no digit separator and no
+    exponent appears in the corpus and none is defined. The escape set is
+    likewise the grammar's minimum.
+
+>>> [UNSPECIFIED] The type of a literal is not stated. Whether an integer
+    literal is untyped and takes the type of its context, or has a default
+    type, is unanswered; `capacity := 10` (unified.z:158) and
+    `h := 14695981039346656037` (json.z:104, which does not fit in u32)
+    both occur, and no rule covers either.
+
+>>> [UNSPECIFIED] The type of a string literal is not stated. The corpus
+    passes string literals where `slice<u8>` is expected. `slice` appears
+    in no rule and in no glossary entry.
+
+
+============================================================================
+TYPES
+============================================================================
+
+A type expression is a restricted expression: a name, optionally applied to
+compile-time arguments.
+
+    Type          = NamedType | UnitType | SignatureType | "self" | "_" .
+
+    NamedType     = QualifiedName [ TypeArgs ] .
+    UnitType      = "(" ")" .
+    SignatureType = [ TypeParams ] [ Parameters ] "->" Projection .
+
+    TypeArgs      = "<" [ TypeArgList [ "," ] ] ">" .
+    TypeArgList   = TypeArg { "," TypeArg } .
+    TypeArg       = [ identifier "=" ] Expression .
+
+A Type never absorbs a following `{`. That is what keeps the body of
+`hex_u8 :: -> Formattable<u8> { ... }` out of the projection.
+
+>>> [INVENTED] That a Type stops before `{` is the grammar's rule. The
+    sources do not state it; without it the projection of every declaration
+    with a body is ambiguous.
+
+----------------------------------------------------------------------------
+Primitive types
+
+[op.primtypes.1] The primitive types are `u8`, `u32`, `i32`, `f32`, `f64`
+and `bool`. The set is restated in EXPRESSIONS, where op.primtypes.2 names
+the operators that apply to it.
+
+>>> [CONFLICT] The primitive list omits `u64`, and the corpus performs
+    arithmetic on `u64`.
+    Reading A (rules.txt:455-457): the operators work on the six types
+    named above "and nowhere else", so `u64` is not a type of the language.
+    Reading B (the corpus): `hash: (k: K) -> u64` (json.z:96),
+    `h = (h ^ k.ptr[i]) * 1099511628211` on a `u64` (json.z:104-106), and
+    `(k.id * 2654435761) ^ (k.gen * 40503)` (ecs.z:128) combining two `u32`
+    operands into a `u64`. rules.txt:516 quotes the first of these as
+    evidence for an unrelated rule about deref spelling.
+
+>>> [UNSPECIFIED] No rule anywhere defines what an arithmetic operation
+    does when its result is not representable, what `/` and `%` do with a
+    zero divisor, what an out-of-range or negative shift count does,
+    whether `>>` on `i32` is arithmetic or logical, or how any two of the
+    primitive types convert into one another. The words overflow, wrap,
+    saturate, trap, divide, convert, widen, truncate and cast do not occur
+    in any source document. See U.5.1 through U.5.5.
+
+>>> [OPEN oq.4] What arithmetic overflow, division by zero and an
+    out-of-range shift do. The standard library's hash functions already
+    require wrapping multiplication and no rule grants it.
+
+>>> [OPEN oq.5] How the primitive types convert into one another. The
+    corpus mixes widths in three places and invents `f32_of` where it
+    cannot.
+
+>>> [UNSPECIFIED] There is no statement of IEEE-754 conformance, of NaN
+    behaviour under `==` and `<`, of rounding mode, or of whether an `f32`
+    expression may be evaluated at wider precision. `Vec2.eq` is `==` on
+    `f32` (unified.z:64) and is used as an equality test. See U.5.5.
+
+----------------------------------------------------------------------------
+Pointer types
+
+[ptr.typed.1] `ptr<T>` is a typed pointer to a value of type `T`.
+
+[ptr.opaque.1] `ptr` is `ptr<T>` with its compile-time argument defaulted to
+an opaque type. It is an ordinary defaulted compile-time argument and is not
+a separate type constructor.
+
+[kw.self.desugar.1] `&self` desugars to `ptr<self>`.
+
+[elem.noamptype.1] `&` is not a general type constructor. `&T` as a field
+type, as a parameter type, and inside a compile-time argument -- `Option<&V>`,
+`List<&T>` -- is ungrammatical rather than prohibited.
+
+>>> [CONFLICT] `&` in a type position.
+    Reading A (rules.txt:177-178): with the `-> &T` projection gone, "`&`
+    stops being a type constructor at all".
+    Reading B (rules.txt:303-305, glossary.txt:160, and roughly forty
+    signatures in the corpus): `&self` occurs in parameter lists and in the
+    types of holes, and desugars to `ptr<self>`, which makes `&` a type
+    constructor whose argument is restricted to `self`. The two cannot both
+    be read literally, and no source says which is the exception.
+
+>>> [UNSPECIFIED] Whether `ptr<T>` may hold a null value, and what a read or
+    write through one does, is not stated. `nil` is assigned to a pointer
+    field at unified.z:191 and has no semantics anywhere. See U.1.8.
+
+>>> [UNSPECIFIED] Pointer arithmetic is used in the corpus
+    (`self.base + self.top`, unified.z:107; `self.src.ptr + start`,
+    json.z:325) and defined nowhere. Whether it exists, whether it scales by
+    the pointee's size, and what a result outside an allocation means are
+    unanswered. See U.1.9.
+
+----------------------------------------------------------------------------
+Slice types
+
+>>> [UNSPECIFIED] `slice<T>` is the return type of `List.span`
+    (unified.z:200), the type of every string in the corpus, and the subject
+    of `slice(p, n)` used as a constructor. It appears in no rule and in no
+    glossary entry. Its definition, its members, whether it owns its
+    storage, and what indexing it means are all unanswered. See U.3.6.
+
+----------------------------------------------------------------------------
+The unit type
+
+`( )` is the type of a block that projects nothing, and `( )` is also its
+sole value.
+
+>>> [INVENTED] That the unit type and the unit value share a spelling, and
+    that `ok(())` is therefore the way to write a successful result carrying
+    nothing, is the grammar's reading of the corpus. No rule states it.
+
+----------------------------------------------------------------------------
+Signature types
+
+A declaration written with its body left off is a type: the type of the
+values that would fill it. This is why `alloc: (&self, n: u32) -> ptr` is a
+type.
+
+    SignatureType = [ TypeParams ] [ Parameters ] "->" Projection .
+
+See DECLARATIONS AND BINDING for the conflict this rule is in with the
+bodiless record declaration.
+
+----------------------------------------------------------------------------
+When a block is a type and when it is a value
+
+[kw.type.test.1] Three properties each independently make a block a type.
+Any one of them is enough. A block is a value only when none of them holds.
+
+[kw.type.rtgroup.1] A block with a runtime group is a type; applying the
+group yields a value, so many values exist. `List`, `Heap`, `Arena`, `Span`.
+
+[kw.type.hole.1] A block with an unfilled hole is a type; no value has been
+built at all. `Allocator`, `Writer`, `Ord<u8>`.
+
+[kw.type.oneof.1] A `-> oneof` block is a type; there is one value per
+variant. `Option`, `Result`, `Token`, `Json`.
+
+[kw.value.1] A block with none of the three is its own value, already
+evaluated. There is exactly one, so `self` is available lexically with
+nothing passed. `mem`, `io`, `reverse_u8`, `hex_u8`, and every policy
+instance.
+
+Note that compile-time application is not among the three properties. See
+the conflict recorded under APPLYING A DECLARATION.
+
+[ct.typenotvalue.1] A type is never a value. A hole cannot be reached
+through a type: `Ord<u8>.compare` is not a spelling.
+
+[ct.typecarries.1] A type name carries what the declaration put in it: its
+`::` members and the constructors derived from its variants.
+
+----------------------------------------------------------------------------
+Holes are holes of values
+
+[hole.valueonly.1] Every hole is a hole of a value. This rule is stated
+twice in the sources (also as abs.valuehole.1, rules.txt:616) and is stated
+here once.
+
+[hole.noassoc.1] There is no hole of type `type`, and therefore no
+associated type.
+
+[hole.typeparam.1] A type that a block needs is a compile-time parameter of
+that block, spelled by the caller.
+
+>>> [UNSPECIFIED] `type` is declared as a built-in type name in
+    glossary.txt:369 and mentioned once in rules.txt. What its values are,
+    where one may be written, and how it relates to hole.noassoc.1 are
+    unanswered.
+
+----------------------------------------------------------------------------
+Type identity
+
+>>> [UNSPECIFIED] Type identity is not defined. Whether two applications of
+    one declaration with equal compile-time arguments denote one type,
+    whether a `-> self` block is identified nominally or structurally, and
+    what makes two SignatureTypes the same type are all unanswered. Shape
+    satisfaction is structural (see SHAPES AND POLICIES) and is a separate
+    relation from identity.
+
+>>> [OPEN oq.12] Whether a `::` field's value participates in type
+    identity -- whether `List` with `capacity :: 10` and `List` with
+    `capacity :: 20` are one type or two. See U.11.4.
+
+>>> [UNSPECIFIED] The size, alignment, field order and padding of a block
+    are not stated, nor the representation of a sum's tag and payload. A
+    program cannot compute a layout. See U.11.1 and U.7.2.
+
+----------------------------------------------------------------------------
+Values and addresses
+
+[mem.nomove.1] A value does not move. A value has one address for as long
+as it is alive.
+
+>>> [CONFLICT] mem.nomove.1 against the way a container removes an element.
+    Reading A (rules.txt:251): a value has one address for its whole life,
+    with reallocation of a container's buffer named as the sole exception
+    (rules.txt:270-276).
+    Reading B (the corpus): `self.dense[i].* = self.dense[last].*`
+    (ecs.z:188) is a swap-remove; a live component is copied to a different
+    index and stays live at a new address, with no reallocation involved,
+    while `Store.at` (ecs.z:164) has been handing out `ptr<C>` into that
+    array. Under Reading A the guarantee covers container elements and is
+    false; under Reading B it covers bindings and `-> self` results only,
+    and the sources never say so.
+
+[mem.bindaddr.1] A binding's address is fixed from its initialisation to
+scope exit.
+
+>>> [OPEN oq.1] What gives a `-> self` block a statement position, and
+    where `self` becomes available inside it. Today a `-> self` body has
+    field initialisers and nothing else, so anything needing `self`, two
+    fields at once, or a step that can fail is a second member the caller
+    must remember to call. See U.4.1.
+
+[mem.construct.1] A `-> self` body constructs the value where it will live.
+A return is not a copy.
+
+[mem.interior.1] An interior pointer stays valid for as long as the value it
+points into is alive. A structure holding a pointer into itself is legal.
+
+[mem.copy.1] Binding from another value copies it. The copy is a second
+value with its own address.
+
+[mem.nodtor.1] There is no automatic destruction. A block gets no destructor
+at scope exit. `deinit` is an ordinary member, and `defer` calls it.
+
+[mem.borrow.1] `ptr<Shape>` is a pointer with no owner.
+
+[mem.nobox.1] There is no `Box`.
+
+>>> [OPEN oq.0] Whether a pointee carries a qualifier -- mutability,
+    validity, or both -- or whether `ptr<T>` remains a single unrestricted
+    handle of indefinite life. This is the root open question; see U.1.1
+    through U.1.7.
+
+
+============================================================================
+DECLARATIONS AND BINDING
+============================================================================
+
+----------------------------------------------------------------------------
+The declaration form
+
+[decl.form.1] A declaration is written
+
+    Name <compile-time args> (runtime args) -> projection { body }
+
+[decl.form.2] Every declaration takes arguments and builds a block of named
+values. The projection states what escapes the block.
+
+Each of the compile-time group, the runtime group and the block is
+independently optional. Everything to the right of the binder is a function
+literal, so the form is not a declaration form of its own: it is
+`Name binder value`, where the value happens to be a function literal.
+
+    Declaration   = MemberName ":" Type [ Binder Expression ]
+                  | MemberName Binder Expression .
+
+    Binder        = "::" | ":=" .
+
+    FunctionLit   = SignatureType [ Block ] .
+
+    TypeParams    = "<" [ TypeParamList [ "," ] ] ">" .
+    TypeParamList = TypeParam { "," TypeParam } .
+    TypeParam     = identifier [ ":" Type ] [ "=" Expression ] .
+
+    Parameters    = "(" [ ParameterList [ "," ] ] ")" .
+    ParameterList = Parameter { "," Parameter } .
+    Parameter     = Receiver | identifier [ ":" Type ] [ "=" Expression ] .
+
+    Receiver      = [ "&" ] "self" .
+
+----------------------------------------------------------------------------
+Projections
+
+    Projection     = "oneof" | ProjectionList | Type .
+
+    ProjectionList = "{" [ MemberSpecList [ "," ] ] "}" .
+    MemberSpecList = MemberSpec { "," MemberSpec } .
+    MemberSpec     = MemberName [ ":" Type ] .
+
+There are five projection forms.
+
+[decl.proj.unit.1] `-> ()`: nothing escapes.
+
+[decl.proj.value.1] `-> T`: one value of type `T` escapes.
+
+[decl.proj.self.1] `-> self`: the whole block escapes.
+
+[decl.proj.subset.1] `-> {a, b}`: the named members escape.
+
+[decl.proj.oneof.1] `-> oneof`: one member escapes, tagged.
+
+A projection does not denote a location. There is no `-> &T` form.
+
+>>> [UNSPECIFIED] `ProjectionList` has two readings and no rule chooses
+    between them. `-> {push, pop, count}` is a visibility list naming
+    members that already exist; `-> {at: u32, found: bool}` is a multiple
+    return declaring two names. One production, two meanings, and nothing
+    says whether the presence of `:` decides it or something else does.
+
+>>> [UNSPECIFIED] How a value of a `-> {a, b}` projection is constructed and
+    returned is not stated. json.z:156-159 writes `return { at = ..., found
+    = ... }` and the caller reads `r.found` (json.z:168). No rule covers a
+    brace literal for a partial projection, and ecs.z:953-959 records that
+    the form does not compose with generics.
+
+----------------------------------------------------------------------------
+Applying a declaration
+
+[decl.apply.1] An unapplied name denotes the declaration.
+
+[decl.apply.2] Applying the compile-time arguments yields a type.
+
+[decl.apply.3] Applying the runtime arguments yields a value.
+
+[decl.apply.4] A declaration with no runtime group is already finished; the
+name alone denotes the result. An explicit empty group denotes application.
+`Heap()` is a call; `Writer` is not. This rule is stated twice in the
+sources -- also as ct.emptyargs.1 for the compile-time group, rules.txt:552
+-- and is stated here once, for both groups: an empty `<>` applies a
+declaration whose compile-time arguments are all inferred or defaulted.
+
+[decl.apply.6] Whether the finished thing is a type or a value is decided by
+kw.type.test.1, not by which groups have been applied.
+
+>>> [CONFLICT] decl.apply.2 against kw.type.test.1 and against the corpus.
+    Reading A (rules.txt:32): applying the compile-time arguments yields a
+    type, so `List<u8>` is a type because its compile-time group was
+    applied.
+    Reading B (rules.txt:38-40, kw.type.test.1, and five corpus sites):
+    application says only how much is left to apply, and type-hood is
+    decided by the three properties in kw.type.test.1, among which
+    compile-time application does not appear. Under Reading B `List<u8>` is
+    a type because it has a runtime group, and every policy instance --
+    `list_fmt<F = fmt_u8>` (unified.z:348), `json_fmt<ptr<Arena>>`
+    (json.z:653), `spaced<ptr<Arena>>` (json.z:654), `dump<>` and
+    `dump<indent = 4>` (ecs.z:802-803) -- applies compile-time arguments and
+    yields a value. decl.apply.2 is false of every one of them.
+    The sources state both, three lines apart, and pick neither.
+
+----------------------------------------------------------------------------
+Brackets
+
+[decl.brackets.ct.1] `<>` delimits compile-time arguments.
+
+[decl.brackets.rt.1] `()` delimits runtime arguments.
+
+[decl.brackets.index.1] `[]` delimits an index.
+
+>>> [CONFLICT] `[]` has four normative meanings and a fifth in the corpus,
+    and no rule chooses between them. The readings are set out in full under
+    EXPRESSIONS, Index expressions. This is the one place in the language
+    where a reader cannot determine what a program means from the rules
+    given.
+
+----------------------------------------------------------------------------
+Binders
+
+[bind.ascription.1] `:` is type ascription. It is not a binder and has no
+other meaning.
+
+[bind.binder.1] The binder carries the meaning of a member. A hole is a
+member with no binder.
+
+[bind.ct.1] `name :: v` binds `name` at compile time.
+
+[bind.ct.2] `name : T :: v` binds at compile time with the type written out.
+
+[bind.rt.1] `name := v` binds `name` at run time.
+
+[bind.rt.2] `name : T := v` binds at run time with the type written out.
+
+[bind.hole.1] `name : T` with no binder declares a hole.
+
+[bind.undefined.1] `name := undefined` declares a field to be filled later.
+
+>>> [UNSPECIFIED] bind.undefined.1 has no use anywhere in the corpus, and
+    nothing states what distinguishes `name := undefined` from the hole
+    `name : T`, what a read before the fill yields, or whether the fill is
+    required. `undefined` is not in the keyword budget and is declared
+    nowhere. See U.4.2.
+
+[bind.assign.1] `=` assigns. It mutates an existing binding, fills a
+declared hole, supplies a parameter default, or passes a compile-time
+argument by name. It never creates a binding.
+
+----------------------------------------------------------------------------
+Which binder a member takes
+
+[bind.which.self.1] Under `-> self` every member is `::` or `:=`. Nothing
+exists to fill.
+
+[bind.which.named.1] Under `-> SomeType`, a member matching one of that
+type's holes is written `=`. Any other member is fresh and is written `::`.
+
+[bind.which.private.1] A member created under `-> SomeType` that matches
+none of that type's holes is private to the block. It is fresh, it is
+written `::`, and it does not escape through the projection.
+
+    Note. The argument for the three rules above is rationale.txt R-01.
+    The pointer is navigational and not normative: rationale.txt states no
+    rule, and nothing in it decides what a program means.
+
+----------------------------------------------------------------------------
+Fields
+
+[bind.field.1] A runtime parameter of a `-> self` declaration is a field of
+the resulting block. This rule is stated three times in the sources
+(rules.txt:80, 113, 818) and is stated here once. It applies to closures
+exactly as it applies to any other block.
+
+[bind.ctfield.1] A field bound with `::` occupies no storage. It lives in
+the type.
+
+----------------------------------------------------------------------------
+Bodiless declarations
+
+[hole.bodiless.1] A bodiless declaration declares a hole. A header of
+bodiless declarations is an abstract module and cannot be instantiated.
+
+[bind.bodyless.1] A declaration whose body would be empty may omit it.
+`Span :: (lo: u32, hi: u32) -> self` is a record declaration.
+
+>>> [CONFLICT] hole.bodiless.1 against bind.bodyless.1. These cannot both
+    hold as written.
+    Reading A (rules.txt:132): bodiless means hole, so `Span`, `Error`
+    (json.z:268), `Entry` (json.z:136), `Health` (ecs.z:258) and `Hit`
+    (ecs.z:413) are holes.
+    Reading B (rules.txt:81): a bodiless declaration with a binder is a
+    record, and those five are records. Under Reading B the distinguishing
+    property is the binder, which hole.bodiless.1 never mentions even though
+    bind.binder.1 has already made the binder the thing that carries
+    meaning. The only illustration hole.bodiless.1 gives --
+    `func insert_item<T>(...);` -- is written in a syntax this language does
+    not have.
+
+[hole.noheaders.1] Headers are generated from implementations. A header
+cannot be hand-written.
+
+----------------------------------------------------------------------------
+Holes
+
+[hole.def.1] `name : T` with no binder is a hole. This rule and bind.hole.1
+are one rule stated twice; it is stated here in both places because BINDING
+and HOLES are read as one section.
+
+[hole.meaning.1] The projection decides what a hole means.
+
+[hole.conjunctive.1] Under `-> self` holes are conjunctive: every hole must
+be filled to instantiate. A block with an unfilled hole cannot be
+instantiated and is usable only as a bound or behind a pointer.
+
+[hole.disjunctive.1] Under `-> oneof` holes are disjunctive: exactly one
+hole is filled.
+
+[hole.disjunctive.2] A `-> oneof` block is never abstract.
+
+[hole.quantify.1] The projection quantifies over holes only. `::` members
+are unaffected, so a `-> oneof` block carries methods exactly as a `-> self`
+block does.
+
+[hole.sum.nofield.1] A `:=` member is an error under `-> oneof`. This rule
+is stated twice in the sources (also as hole.oneof.nofield.1,
+rules.txt:111) and is stated here once.
+
+The three member forms under the two projections:
+
+                      -> self                    -> oneof
+    name : T          requirement                variant
+    name :: v         method / compile-time      method
+                      field
+    name := v         runtime field              an error
+
+[hole.self.req.1] Under `-> self`, `name : T` is a requirement.
+
+[hole.self.method.1] Under `-> self`, `name :: v` is a method or a
+compile-time field.
+
+[hole.self.field.1] Under `-> self`, `name := v` is a runtime field.
+
+[hole.oneof.variant.1] Under `-> oneof`, `name : T` is a variant.
+
+[hole.oneof.method.1] Under `-> oneof`, `name :: v` is a method.
+
+[hole.oneof.nortgroup.1] A `-> oneof` declaration has no runtime group.
+
+[hole.oneof.ctargs.1] A `-> oneof` declaration may take compile-time
+arguments.
+
+[hole.ctor.1] A variant name is also a derived function `(T) -> Self`.
+
+[hole.literal.1] A literal fills a declared hole with `=`:
+`Option<u8>{ some = 3 }`.
+
+>>> [UNSPECIFIED] hole.literal.1 has no use anywhere in the corpus. Every
+    construction in the corpus uses the derived function of hole.ctor.1
+    instead -- `Option<T>.none()`, `Json.array(xs)`, `Slot.live(Entry(k,v))`
+    -- roughly sixty times. Whether the literal form and the derived
+    function are both available for a `-> oneof` block, and what a literal
+    filling two holes of a `-> oneof` block means, are unanswered.
+
+[hole.oneof.subset.1] `-> oneof {a, b}` is a sum over a subset: only the
+declaring module may construct the unlisted variants, and everyone may match
+them.
+
+>>> [UNSPECIFIED] `-> oneof {a, b}` is defined by hole.oneof.subset.1 and
+    cannot be parsed. The Projection production admits `"oneof"` alone or a
+    ProjectionList alone, never the two in sequence, and no source document
+    gives the form a grammar. It has no use in the corpus, and nothing
+    states how a partially projected sum interacts with match.exhaustive.1.
+
+----------------------------------------------------------------------------
+Receivers and self
+
+[kw.self.1] `self` is the only keyword introduced by the declaration form.
+It always means the block.
+
+[kw.self.proj.1] In a projection, `-> self` means the whole block escapes.
+
+[kw.self.recv.1] `self` is a receiver taken by value.
+
+[kw.self.recvptr.1] `&self` is a receiver taken by pointer.
+
+[kw.recv.rule.1] A receiver is required exactly when the block is a type
+rather than a value.
+
+[kw.member.recv.1] A member of a type takes `self` or `&self`. This is why
+the holes of a shape take a receiver.
+
+[kw.value.self.1] A member of a value block may say `self`, and may equally
+say the block's own name.
+
+[kw.type.nobareself.1] A member of a type may not say bare `self`.
+
+>>> [UNSPECIFIED] Nothing states when a name may be written unqualified
+    inside its own block. `dump.pad` reads the bare compile-time parameter
+    `indent` (ecs.z:734); `List`'s field initialisers read bare `allocator`
+    and bare `capacity` (unified.z:164) while its methods write
+    `self.capacity` (unified.z:167). abs.shape.scope.1 is the nearest rule
+    and is about shape matching. The corpus leans on this harder than on
+    almost anything else.
+
+>>> [UNSPECIFIED] Nothing states that a nested declaration captures the
+    enclosing block's compile-time arguments. `Entry` and `Slot` inside
+    `Map<K, V, M, KY>` are `Entry<K, V>` and `Slot<K, V>` without saying so
+    (json.z:136-142), and `Json`'s `object` variant depends on it.
+
+----------------------------------------------------------------------------
+Compile-time arguments
+
+[ct.kinds.1] A compile-time argument is a type, a policy or a value.
+
+[ct.type.1] `<T>` is a type argument, inferred from a runtime argument's
+type.
+
+[ct.policy.1] `<F: Formattable<T>>` is a policy argument: an ordinary
+compile-time value that is a block of holes, named by the call site.
+
+[ct.value.1] `<indent: u32 = 2>` is a value argument: an ordinary
+compile-time binding sitting in a parameter list.
+
+[ct.named.1] Any compile-time argument may be passed by name with `=`, at a
+call site and in a type alike.
+
+[ct.named.forced.1] Where an inferred type parameter precedes a value
+parameter, the value parameter can only be passed by name.
+
+[ct.expected.1] A type argument is also inferred from the expected type of
+the position the application sits in.
+
+[ct.noexpected.1] Where there is no expected type, the compile-time
+arguments are written out.
+
+[ct.named.decl.1] Every declaration has a name. `::` with nothing on its
+left is not a spelling.
+
+[ct.nopool.1] There is no anonymous instance, no pool, no search and no
+default. A policy parameter is supplied at the call site or the call does
+not compile.
+
+[ct.delegate.1] An instance delegating to another names it. This is ordinary
+name lookup.
+
+>>> [OPEN oq.13] Whether a type may be inferred outward, from the enclosing
+    declaration's projection into its body. `ok(...)` and `err(...)` need
+    it, and json.z uses the short form at fourteen sites in a language the
+    rules do not describe.
+
+>>> [OPEN oq.9] Variadic compile-time arguments, or arity families forever.
+    `Fn`, `Fn2`, `Fn3`; `Join2`, `Join3`, `Join4`.
+
+>>> [UNSPECIFIED] No limit on compile-time evaluation or on instantiation
+    depth is stated, and what a compile-time function may do -- read the
+    filesystem, observe its call site, fail -- is unstated. See U.11.2 and
+    U.11.3.
+
+----------------------------------------------------------------------------
+The blank identifier
+
+`_` has four uses.
+
+[wild.def.1] `_` is a hole in a binding position, and that is its whole
+definition.
+
+>>> [CONFLICT] wild.def.1 against hole.def.1 and against three of its own
+    four cases.
+    Reading A (rules.txt:415): the four uses are one idea, `_` is a hole,
+    and a hole is what hole.def.1 says it is.
+    Reading B (the four cases read against hole.def.1): a hole is a member
+    with a type and no binder. `_ := xs.pop()` has a binder and no type.
+    `_ { ... }` is in pattern position, has no type, no binder, and is not a
+    member of anything. `ptr<List<T, _>>` introduces a fresh anonymous
+    compile-time parameter, which creates a binding rather than declining
+    one -- the opposite of the other three. rules.txt:438 proves the last
+    point itself: "two `_` are two independent parameters", which is
+    unintelligible if `_` is a hole of an already-declared type. Under
+    Reading B there are three ideas, not one.
+
+[wild.arm.1] `_ { ... }` is a wildcard match arm. See MATCH.
+
+[wild.payload.1] `some (_) { ... }` ignores a bound payload.
+
+[wild.discard.1] `_ := xs.pop()` declines to keep a value.
+
+[wild.nodrop.1] A value may not be dropped silently. `xs.push(v)` is fine;
+`xs.pop()` as a statement is an error; `_ := xs.pop()` is the spelling.
+
+>>> [CONFLICT] wild.nodrop.1 against the corpus. ecs.z:365
+    (`self.stores[i].remove(e)`) and ecs.z:367 (`self.live.remove(e)`) both
+    discard a `bool`, and ecs.z:196-198 writes `_ := self.index.remove(e)`
+    for the identical call with a comment quoting the rule. Either the rule
+    holds and those two lines do not compile, or the rule is narrower than
+    stated and nothing says how. See U.8.1.
+
+[wild.ctarg.1] `ptr<List<T, _>>` declines to name a compile-time argument.
+
+[wild.independent.1] Two `_` are two independent parameters. `_` cannot
+denote a type already declined elsewhere.
+
+[wild.noprojection.1] `_` does not reach projection position. A declaration
+returning `List<T, M>` must name `M`.
+
+----------------------------------------------------------------------------
+Visibility
+
+[vis.projection.1] The projection is the export list. `-> self` exports the
+whole block; `-> {a, b}` exports those two names.
+
+[vis.nopub.1] There is no `pub` and no separate export list.
+
+[vis.opaque.1] A value may escape a block while its type does not. The type
+is then opaque outside the block.
+
+>>> [UNSPECIFIED] The projection says nothing about mutability. Whether an
+    exported `:=` member is writable from outside the block is unanswered;
+    ecs.z:501 writes `self.doomed.count = 0` through `List`'s own published
+    projection, leaving the container inconsistent with its storage. See
+    U.3.7.
+
+
+============================================================================
+BLOCKS AND SCOPE
+============================================================================
+
+A block is the only container in the language. A struct, a module, a
+function body, a shape, a sum and a closure are all a block.
+
+    Block         = "{" StatementList "}" .
+    StatementList = { Statement ";" } .
+
+>>> [INVENTED] The value of a block is the value of its last statement when
+    that statement is an expression. The corpus depends on this at every
+    body that ends without a `return`, and no source document states it.
+
+[order.independent.1] Declarations in a block, and blocks in a file, are
+order-independent.
+
+[abs.shape.scope.1] Members of a block have the block's compile-time
+arguments and its fields in scope, and are the only thing shape matching
+considers.
+
+>>> [UNSPECIFIED] The scope of a binding introduced by a statement is not
+    stated. Whether order independence extends to `:=` bindings inside a
+    function body -- where the corpus plainly reads them top to bottom --
+    or applies only to members of a `-> self` block, is unanswered.
+
+>>> [UNSPECIFIED] The order in which `:=` field initialisers are evaluated
+    is not stated, and neither is what a cycle among them does. The corpus
+    relies on an order: `List` initialises `items` from `capacity`
+    (unified.z:161-164), and json.z:350 asserts "fields initialise in
+    declaration order", which no rule says. See U.4.3.
+
+>>> [UNSPECIFIED] Nothing states whether an inner declaration may shadow an
+    outer name, or what a duplicate member name in one block does.
+
+
+============================================================================
+EXPRESSIONS
+============================================================================
+
+----------------------------------------------------------------------------
+Operands
+
+    Expression    = OrExpr .
+
+    PrimaryExpr   = Operand { Suffix } .
+
+    Operand       = Literal
+                  | QualifiedName
+                  | "self"
+                  | "_"
+                  | UnitValue
+                  | "(" Expression ")"
+                  | BlockLit
+                  | FunctionLit
+                  | IfExpr
+                  | MatchExpr .
+
+    UnitValue     = "(" ")" .
+
+    Suffix        = Selector | Deref | Index | Arguments | TypeArgs
+                  | BlockLit .
+
+    Selector      = "." MemberName .
+    Deref         = ".*" .
+    Index         = "[" Expression "]" .
+
+    Arguments      = "(" [ ExpressionList [ "," ] ] ")" .
+    ExpressionList = Expression { "," Expression } .
+
+----------------------------------------------------------------------------
+Selectors and calls
+
+[call.member.1] `a.f(x)` is the member `f` of `a`, and nothing else.
+
+[call.free.1] A free function is called `f(a, x)`.
+
+[call.noufcs.1] There is no uniform function call syntax. Method position is
+reserved for members of the block, and shape satisfaction never depends on
+what a caller imported.
+
+[call.intrinsic.1] An intrinsic is declared in the block, counts for shape
+satisfaction, and may be virtual.
+
+[call.extrinsic.1] An extrinsic is a free function over a bound. It never
+satisfies a shape.
+
+----------------------------------------------------------------------------
+Index expressions
+
+[elem.accessor.1] A container's `[]` member projects `ptr<T>`, and its body
+takes the element's address.
+
+    v := xs[i].*        reads the element
+    xs[i].* = v         writes the element
+    p := xs[i]          binds the element's address, already a ptr<T>
+
+[elem.compound.1] `xs[i].* += 1` reads and writes, and calls `[]` exactly
+once. See op.compound.once.1.
+
+[elem.polyindex.1] `[]` has no fixed meaning across containers: `List`
+projects `ptr<T>`, `Map` projects `Option<V>`.
+
+[elem.fallible.1] A fallible lookup projects a value. The container chooses
+whether that value is a copy (`Option<V>`) or an address (`Option<ptr<V>>`).
+A container with no element address offers `get` and `set` instead.
+
+[elem.rawindex.1] `p[i]` on a raw pointer denotes the element. `xs[i]` on a
+`List` denotes its address.
+
+[elem.noproxy.1] There are no proxy objects.
+
+[elem.noplace.1] There is no `-> &T` projection and no place in the type
+system.
+
+>>> [CONFLICT] `[]` has four normative meanings, a fifth in the corpus, and
+    no disambiguation rule. This is the most serious open point in the
+    language.
+
+      Reading 1 (elem.accessor.1): on a `List<T, M>`, `xs[i]` is `ptr<T>`,
+        the element's address. unified.z:198, used at unified.z:246-252.
+      Reading 2 (elem.polyindex.1): on a `Map<K, V, ...>`, `xs[i]` is
+        `Option<V>`, a copy. json.z:208, used at json.z:680.
+      Reading 3 (elem.rawindex.1): on a raw `ptr<T>`, `p[i]` is the element
+        itself, as a writable location. unified.z:168, json.z:106.
+      Reading 4 (ptr.reach.symbolic.1): `p[i]` is `p.[](i)` and reaches
+        through the pointer to the pointee's `[]` member. unified.z:246,
+        ecs.z:365.
+      Reading 5 (nowhere): on a `slice<u8>`, `digits[v / 16]` is the
+        element. unified.z:277-278. No rule mentions it.
+
+    Readings 3 and 4 are mutually exclusive on the same expression: a
+    `ptr<u8>` has no `[]` member, so the rewrite of Reading 4 cannot apply,
+    and a `ptr<List>` does, so the element reading of Reading 3 cannot. The
+    predicate that chooses -- presumably "does the pointee declare a `[]`
+    member" -- appears nowhere. Both spellings occur inside one declaration:
+    unified.z:183 writes `new_items[i] = self.items[i]` with no `.*`, and
+    unified.z:198 declares `[] :: (&self, i: u32) -> ptr<T>`, which requires
+    `xs[i].* = v` for the same write. The sources itemise this as a price
+    and never as an unresolved rule. A `ptr<List<T, M>>` that is the base of
+    an array of `List`s has no spelling at all. See U.3.2 and U.3.3.
+
+>>> [CONFLICT] elem.noplace.1 against the rest of the language.
+    Reading A (rules.txt:165): there is no such thing as a place.
+    Reading B (glossary.txt:110-122, op.compound.once.1, ptr.deref.1, and
+    the corpus): glossary.txt defines PLACE and names `x`, `p.*`, `s.field`
+    and `items[i]` as places; op.compound.once.1 quantifies over the
+    destination of an assignment; ptr.deref.1 glosses `p.*` as "the whole
+    pointee, as a place"; and the corpus assigns to places constantly. Under
+    Reading B what the language lacks is a place type and a place
+    projection, not places.
+
+>>> [UNSPECIFIED] No rule requires an index to be in range. `List.[]`
+    computes the address of `items[i]` for any `i` and does not consult
+    `count`. See U.3.4.
+
+----------------------------------------------------------------------------
+Address-of and dereference
+
+[ptr.implicit.1] The compiler inserts a dereference or an address-of in
+exactly three positions, and nothing else is implicit.
+
+[ptr.reach.dot.1] `.` reaches through any number of pointers.
+
+[ptr.reach.symbolic.1] A symbolic member reaches through pointers too:
+`p[i]` is `p.[](i)`.
+
+[elem.reachthrough.1] `.` and a symbolic member reach through any number of
+pointers, so a body reads the same whether its subject is a value or a
+pointer to one. This rule is stated three times in the sources
+(rules.txt:189, 231, 495) and is stated here once, as ptr.reach.dot.1 and
+ptr.reach.symbolic.1 above.
+
+[ptr.recv.addr.1] A `&self` receiver takes the address of the value it is
+called on.
+
+[ptr.arg.explicit.1] An argument does not take an address implicitly.
+`sort(&xs)` is written out.
+
+[ptr.deref.1] `p.*` reaches through and stops. It denotes the whole pointee.
+
+[ptr.deref.spelling.1] `*` is not a member name, so `.*` is unambiguous.
+`[]` and `()` are member names, so `f.()(x)` and `a.[](i)` are spellings.
+
+[ptr.derefrequired.1] A dereference is never optional. `p = q` and
+`p.* = q.*` are different acts and must not be one text.
+
+[elem.outparam.1] An out-parameter is a pointer, written as one. `&self` is
+a receiver and is the only implicit address-of; there is no `&T` parameter
+form.
+
+[elem.accessor.limits.1] An accessor does not hide pointers. It hides only
+the fields the projection omits.
+
+>>> [CONFLICT] ptr.reach.dot.1 against ptr.derefrequired.1.
+    Reading A: the dereference is never optional, stated without scope,
+    three lines after `.` has been made to reach through pointers twice.
+    Reading B: the two rules are scoped differently -- implicit in
+    member-selection and symbolic-member position, required everywhere
+    else -- and the sources never write the qualification. The corpus needs
+    Reading B and needs it for writes as well as reads:
+    `self.stores[i].remove(e)` reaches through two pointers (ecs.z:365);
+    `h.hp -= self.bite` writes through an implicit dereference with `h` a
+    `ptr<Health>` (ecs.z:623), while `out.* += 1` (rules.txt:507) spells the
+    identical act out. This document states both rules and picks neither.
+
+>>> [CONFLICT] elem.accessor.limits.1 against the corpus. `Map` projects
+    `-> self` and must, because iterating a `Map` means reaching into
+    `members.slots` and `members.cap` from outside (json.z:487-488,
+    539-540). ecs.z:930-942 states the general form: a container that
+    cannot be walked through its own projection must export its storage.
+    The rule is given as general and the counterexample is in the standard
+    library. See U.3.8.
+
+>>> [UNSPECIFIED] ptr.deref.spelling.1's spellings `f.()(x)` and `a.[](i)`
+    appear nowhere in the corpus except in two comments. The corpus always
+    writes `p(7)` and `self.subs[i](e)`. Whether the long form is a real
+    spelling or a gloss is unanswered.
+
+----------------------------------------------------------------------------
+Compile-time application
+
+A compile-time argument list is a suffix, and applies the declaration it
+follows.
+
+    TypeArgs = "<" [ TypeArgList [ "," ] ] ">" .
+
+See ct.named.1 for `f<F = hex_u8>`, and the ambiguity note under Operators
+and punctuation for what `<` costs the grammar.
+
+----------------------------------------------------------------------------
+Block literals
+
+    BlockLit      = "{" [ FieldFillList [ "," ] ] "}" .
+    FieldFillList = FieldFill { "," FieldFill } .
+    FieldFill     = MemberName "=" Expression .
+
+A block literal fills declared holes with `=`. It may appear bare, as
+`{ at = i, found = true }`, or applied to a type, as `Option<u8>{ some = 3 }`.
+
+>>> [INVENTED] That a bare block literal is an Operand, and that an applied
+    one is a Suffix on a type, is the grammar's construction. The sources
+    give only the applied form (hole.literal.1), and only the bare form is
+    used in the corpus (json.z:156-159), for a purpose -- a `-> {a, b}`
+    return -- that hole.literal.1 does not cover.
+
+>>> [UNSPECIFIED] A BlockLit and a Block are the same two braces, and
+    nothing distinguishes them. `{ }` is both an empty block and an empty
+    literal, and `{ f = e }` could be a literal or a block containing one
+    assignment statement.
+
+----------------------------------------------------------------------------
+If expressions
+
+    IfExpr = "if" "(" Expression ")" Block [ "else" ( IfExpr | Block ) ] .
+
+>>> [UNSPECIFIED] `if` is used as an expression and specified as one
+    nowhere. No source document says an `if` has a value, what that value is
+    when the `else` is omitted, or whether the two branches must agree in
+    type. The grammar admits `if` as an Operand because the corpus needs a
+    value from it and because match.expr.1 has set the precedent for `match`
+    and not for `if`.
+
+----------------------------------------------------------------------------
+Operators
+
+[op.precedence.1] Precedence is a fixed table. It is not user-extensible.
+This rule is stated twice in the sources (also rules.txt:806) and is stated
+here once.
+
+The table, highest binding first:
+
+    8   postfix   .name  .*  [ ]  ( )  < >  { }
+    7   unary     -  !  &  ~
+    6             *  /  %  <<  >>  &
+    5             +  -  |  ^
+    4             ==  !=  <  <=  >  >=
+    3             &&
+    2             ||
+    1   assign    =  +=  -=  *=  /=  %=  &=  |=  ^=  <<=  >>=
+
+    OrExpr    = AndExpr { "||" AndExpr } .
+    AndExpr   = RelExpr { "&&" RelExpr } .
+    RelExpr   = AddExpr { rel_op AddExpr } .
+    AddExpr   = MulExpr { add_op MulExpr } .
+    MulExpr   = UnaryExpr { mul_op UnaryExpr } .
+    UnaryExpr = PrimaryExpr | unary_op UnaryExpr .
+
+[op.assoc.postfix.1] The level-8 operators are postfix and chain left to
+right. `a.b.*` is `(a.b).*` and `xs[i].*` is `(xs[i]).*`.
+
+>>> [INVENTED] Levels 6, 5 and 4 are Go's table adopted whole. The placement
+    of `<<` and `>>` with the multiplicatives, of `&` with them, of `|` and
+    `^` with the additives, and the relative order of those three levels
+    against each other, are Go's decisions and not this language's. The
+    sources say only that "precedence is a fixed table" and never print one.
+    Nothing in the corpus exercises any of these six operators in a position
+    where the level matters. The productions above are left-associative at
+    levels 6 through 2 for the same reason -- the grammar wrote them that
+    way. Only the postfix level's associativity is stated in the sources;
+    that is op.assoc.postfix.1.
+
+[op.instructions.1] Arithmetic and comparison are instructions on the
+primitives. They desugar to nothing.
+
+[op.primtypes.2] `+ - * / %`, `== !=`, `< <= > >=`, `& | ^ << >> ~` and
+unary `-` operate on `u8`, `u32`, `i32`, `f32`, `f64` and `bool`, and on no
+other type. See the conflict under TYPES for `u64`.
+
+[op.compound.1] `a += b` means `a = a + b`, and likewise for every compound
+form.
+
+[op.compound.once.1] The destination of a compound assignment is evaluated
+once.
+
+[op.usertype.1] A user type publishes ordinary members for arithmetic and
+comparison.
+
+[op.shortcircuit.1] `&&` and `||` are built in and do not evaluate their
+right operand unconditionally.
+
+[op.nokeyword.1] There is no `operator` keyword.
+
+[op.members.1] `[]` and `()` take a receiver and are members of the block.
+
+    [] :: (&self, i: u32) -> ptr<T>
+    () :: (&self, v: u8) -> ()
+
+[op.notoperators.1] `+ - * / == <` take no receiver and are not overloadable
+operators.
+
+[op.closure.1] A closure is a block with a `()` member. `Fn<A, R>` is an
+ordinary shape.
+
+[op.closure.capture.1] What a closure captures, it captures as a field of
+its block.
+
+[op.nocurry.1] There is no curried spelling and no function-type machinery.
+
+>>> [UNSPECIFIED] The order in which a call's arguments, and the operands of
+    a binary operator, are evaluated is not stated. Accessors may have side
+    effects. op.compound.once.1 is the only ordering rule the sources
+    contain. See U.10.2.
+
+>>> [OPEN oq.6] Whether generic code can be numeric. A generic body has no
+    `+`, so `lerp :: <T> (a: T, b: T, t: f32) -> T` cannot be written.
+
+
+============================================================================
+MATCH
+============================================================================
+
+    MatchExpr    = "match" "(" Expression ")" "{" MatchArmList "}" .
+    MatchArmList = { MatchArm [ ";" ] } .
+
+    MatchArm     = ( identifier | "_" ) [ "(" Pattern ")" ] Block .
+    Pattern      = identifier | "_" .
+
+[match.arm.1] A match arm is spelled as a declaration: a name, a runtime
+group binding the payload, and a body.
+
+    match (v) {
+        none     { ... }
+        some (x) { ... }
+        _        { ... }
+    }
+
+[match.exhaustive.1] A match names every variant or ends in `_`. This is
+checked.
+
+[match.growth.1] Omitting `_` requests a diagnostic when the sum gains a
+variant.
+
+[match.expr.1] A match is an expression. A one-arm-plus-`_` match binds
+rather than nesting.
+
+[match.errchannel.1] Error propagation is an ordinary one-arm match that
+returns.
+
+    t := match (self.bump()) { ok (t) { t } err (e) { return err(e) } }
+
+[match.notry.1] There is no `try`.
+
+See wild.arm.1 and wild.payload.1 under THE BLANK IDENTIFIER for `_` in arm
+and in payload position.
+
+>>> [UNSPECIFIED] The pattern language is one identifier. Nothing states
+    whether a match may test a literal, a range, a nested variant or a
+    guard, and nothing states what happens when the matched expression is
+    not a `-> oneof` value. The grammar admits `match (n) { ... }` for any
+    `n`.
+
+>>> [UNSPECIFIED] Whether a match arm binds its payload by value or by
+    address is not stated, and neither is whether a match over a
+    `ptr<Sum>` is legal.
+
+>>> [UNSPECIFIED] A sum's discriminant is not a value, so a test of the tag
+    alone is a full match. json.z:381-387 invents a function `tag_of` for
+    it and records the invention. See U.7.2.
+
+>>> [OPEN oq.2] Whether a sum's discriminant is a value: `S.tag` as a
+    derived sum of unit variants, with `tag_of(v)` total, comparable and
+    ordinal.
+
+>>> [OPEN oq.15] A single-arm binding form with an `else`, for the tail that
+    repeats at all fourteen propagation sites in json.z.
+
+
+============================================================================
+STATEMENTS
+============================================================================
+
+    Statement    = Declaration
+                 | SimpleStmt
+                 | ReturnStmt
+                 | BreakStmt
+                 | ContinueStmt
+                 | DeferStmt
+                 | WhileStmt
+                 | ForStmt
+                 | LoopStmt .
+
+    SimpleStmt   = Assignment | Expression .
+    Assignment   = Expression assign_op Expression .
+
+    ReturnStmt   = "return" [ Expression ] .
+    BreakStmt    = "break" .
+    ContinueStmt = "continue" .
+    DeferStmt    = "defer" Expression .
+
+    WhileStmt    = "while" "(" Expression ")" Block .
+    ForStmt      = "for" "(" [ ForInit ] ";" [ Expression ] ";"
+                   [ SimpleStmt ] ")" Block .
+    ForInit      = Declaration | SimpleStmt .
+    LoopStmt     = "loop" Block .
+
+An expression statement covers `xs.push(v)`, and -- since `if` and `match`
+are expressions -- covers `if (c) { ... }` and `match (v) { ... }` as well.
+
+Assignment covers mutation and hole filling and nothing else; `=` never
+creates a name (bind.assign.1). A value produced by an expression statement
+and used nowhere is an error (wild.nodrop.1).
+
+>>> [INVENTED] `for` has three clauses, C-style. There is no `for (x := it)`
+    form, `break` and `continue` take no label, and `loop` takes no
+    condition. All four are the grammar's readings of the corpus.
+
+>>> [INVENTED] The Assignment production is `Expression assign_op
+    Expression`, so the set of expressions that may appear on the left is
+    not restricted by the grammar. Nothing states which expressions are
+    assignable; see the conflict on places under EXPRESSIONS.
+
+>>> [UNSPECIFIED] `defer` is glossed "run at scope exit" and nothing else.
+    Whether "scope" is the enclosing block or the enclosing declaration, in
+    what order several defers run, whether a defer runs on `return`, `break`
+    and `continue`, and whether a defer in a loop body runs once per
+    iteration are unstated. `defer` is the whole of the language's
+    destruction story. See U.10.1.
+
+>>> [UNSPECIFIED] What `break` and `continue` do inside a `match` arm nested
+    in a loop, and whether `return` from inside a match arm returns from the
+    enclosing declaration, are not stated.
+
+>>> [UNSPECIFIED] Nothing states that a declaration whose projection is not
+    `()` must return on every path, and nothing states what a missing
+    `return` yields.
+
+>>> [UNSPECIFIED] No limit on recursion depth is stated and no behaviour on
+    exhausting the stack. The corpus contains a recursive descent parser
+    whose depth is set by its input. See U.10.3.
+
+>>> [OPEN oq.3] `for (x := it)` over anything with a `next` returning
+    `Option<T>`, and what the form quantifies over.
+
+
+============================================================================
+SHAPES AND POLICIES
+============================================================================
+
+[abs.both.1] A shape and a policy are both a block with unfilled holes.
+Neither is a construct of its own.
+
+[abs.shape.holesonly.1] A shape contains holes and nothing else.
+
+[abs.shape.1] If every hole takes a receiver, the block is a shape:
+intrinsic to a type, matched structurally, and coercible to `ptr<Shape>`.
+
+[abs.policy.1] If no hole takes a receiver, the block is a policy:
+extrinsic, several may exist for one type, and the caller names the one it
+wants.
+
+[abs.nomix.1] A block mixing receiver-taking and receiver-free holes is an
+error. The property is of the block, not of each hole. This rule is stated
+twice in the sources (also rules.txt:661) and is stated here once.
+
+The test that separates the two: ask whether two of these can legitimately
+exist for one type. If they can, it is a policy; if they cannot, it is a
+shape. `u8` has no one true ordering, so `Ord` is a policy. A type has one
+way of allocating, so `Allocator` is a shape.
+
+    Note. The sources state this test only inside a rationale note, as
+    rat.shapepolicy.test.1 (rules.txt:651-654), and three normative rules --
+    abs.shape.1, abs.policy.1 and op.nokeyword.1 -- are derived from it
+    there. It is stated here as a rule because nothing else states it.
+
+[rat.shapepolicy.agree.1] Anything that must agree belongs in one policy
+block. This is why `Key<K>` carries `hash` and `equals` together. The
+sources state it only inside a rationale note (rules.txt:665-670); it is
+stated here as a rule because nothing else states it.
+
+[kw.policy.split.1] A policy type has an unfilled hole; a policy instance
+fills it. Nothing else distinguishes them. `Formattable<u8>` is a type;
+`hex_u8 :: -> Formattable<u8>` is a value.
+
+[abs.bound.1] `<M: Allocator>` is a bound: monomorphised, direct calls, a
+zero-byte field.
+
+[abs.erased.1] `(a: Allocator)` in a runtime group is `ptr<Allocator>`:
+erased, indirect calls.
+
+[abs.nodyn.1] The bracket separates static from dynamic. There is no `dyn`.
+
+[abs.noadapter.1] Structural matching has no adapter. A type whose
+operations carry the wrong names satisfies a shape only through a wrapper,
+which costs a pointer, a vtable and a name.
+
+>>> [UNSPECIFIED] abs.erased.1 has one use in the corpus (json.z:609).
+    Everywhere else the pointer is written out: `boxed : ptr<Allocator>`
+    (unified.z:368), `ptr<System<M>>` (ecs.z:519), `ptr<Writer>`
+    (json.z:582). Whether the sugar and the explicit spelling are the same
+    declaration is unanswered.
+
+>>> [UNSPECIFIED] Shape satisfaction is structural and requires no
+    declaration of intent, so a block satisfies a shape by accident and
+    stops satisfying it when either side renames a member. There is no
+    place to record that a match was meant. See U.9.4.
+
+>>> [UNSPECIFIED] Nothing checks that a policy instance obeys the contract
+    its users assume. An `Ord<T>` that is not a total order is well-typed.
+    See U.9.5.
+
+>>> [UNSPECIFIED] Whether two coercions of one block yield equal
+    `ptr<Shape>` values is not stated for the data word or for the vtable
+    word, and neither is whether two zero-sized values have distinct
+    addresses. See U.9.1 and U.9.2.
+
+>>> [OPEN oq.7] Whether an allocator can fail, and how it says so. The
+    `Allocator` shape declares `alloc: (&self, n: u32) -> ptr`, whose
+    projection has no room for a failure. See U.6.1.
+
+>>> [OPEN oq.10] Whether `ptr<Shape>` is comparable.
+
+>>> [OPEN oq.11] Whether the coercion to `ptr<Shape>` is implicit at a call
+    site or requires the annotation. The corpus does both --
+    `boxed : ptr<Allocator> := &arena` (unified.z:368) and
+    `each_child(doc, &tally(&n))` with no annotation (json.z:691) -- and
+    abs.erased.1 already answers the question one way, which makes either
+    the rule or the open item stale.
+
+>>> [OPEN oq.8] What monomorphisation does to a type that contains itself.
+    The corpus applies an alias once per application -- `Doc :: Json<ptr
+    <Arena>>` (json.z:649), `A :: ptr<Arena>` (ecs.z:750) -- and a library
+    shape cannot reach for it.
+
+>>> [OPEN oq.14] Whether a lambda filling a typed hole may elide its
+    projection, since the hole already supplies it.
+
+
+============================================================================
+PROGRAM STRUCTURE
+============================================================================
+
+    SourceFile = { Declaration ";" } .
+
+A file is a list of declarations. There is no package clause, no import
+statement, and no statement position at file scope.
+
+[kw.import.1] An import is a compile-time binding of a compile-time
+function: `std :: import("std")`.
+
+A module is a block. A module is declared, named and applied exactly as
+every other declaration is:
+
+    mem :: -> self {
+        make :: <T, M: Allocator> (allocator: M, n: u32) -> ptr<T> { ... }
+    }
+
+By kw.value.1 such a block is a value, since it has no runtime group, no
+unfilled hole and no `-> oneof`.
+
+>>> [UNSPECIFIED] Nothing states how a file becomes a module, how
+    `import("std")` locates what it names, what the argument to `import`
+    means, or whether a file and a module are the same thing. The corpus
+    binds the result of `import` and then rebinds its members
+    (`mem :: std.mem`), and no rule covers that either.
+
+>>> [UNSPECIFIED] `main` is not specified. The corpus declares
+    `main :: () -> ()` (unified.z:334) and nothing states that a program has
+    an entry point, what its name is, what signature it must have, what its
+    projection means, or what a program's exit status is.
+
+>>> [UNSPECIFIED] Nothing states what a compilation unit is, whether a
+    program is one file or many, or how two files see each other's names.
+    order.independent.1 says blocks in a file are order-independent and says
+    nothing about files.
+
+
+============================================================================
+ANNEX A -- GRAMMAR SUMMARY
+============================================================================
+
+Every production of the language, collected. The root is SourceFile, and
+every production below is reachable from it. Semicolons written here as
+terminators may be supplied by the semicolon rule in LEXICAL ELEMENTS.
+
+    SourceFile    = { Declaration ";" } .
+    newline        = /* the Unicode code point U+000A */ .
+    unicode_char   = /* an arbitrary Unicode code point except newline */ .
+    unicode_letter = /* a Unicode code point categorized as "Letter" */ .
+    letter         = unicode_letter | "_" .
+    decimal_digit  = "0" ... "9" .
+    Comment       = "//" { unicode_char } newline .
+    identifier    = letter { letter | decimal_digit } .
+    MemberName    = identifier | "_" | "[" "]" | "(" ")" .
+    QualifiedName = identifier { "." identifier } .
+    unary_op      = "-" | "!" | "&" | "~" .
+    mul_op        = "*" | "/" | "%" | "<<" | ">>" | "&" .
+    add_op        = "+" | "-" | "|" | "^" .
+    rel_op        = "==" | "!=" | "<" | "<=" | ">" | ">=" .
+    assign_op     = [ add_op | mul_op ] "=" .
+    int_lit       = decimal_digit { decimal_digit } .
+    float_lit     = decimal_digit { decimal_digit } "."
+                    decimal_digit { decimal_digit } .
+    char_lit      = "'" ( unicode_value | escaped_char ) "'" .
+    string_lit    = `"` { unicode_value | escaped_char } `"` .
+    unicode_value = /* any unicode_char except the quote and "\" */ .
+    escaped_char  = "\" ( "n" | "r" | "t" | "\" | "'" | `"` ) .
+    Literal       = int_lit | float_lit | char_lit | string_lit .
+    Type          = NamedType | UnitType | SignatureType | "self" | "_" .
+    NamedType     = QualifiedName [ TypeArgs ] .
+    UnitType      = "(" ")" .
+    SignatureType = [ TypeParams ] [ Parameters ] "->" Projection .
+    TypeArgs      = "<" [ TypeArgList [ "," ] ] ">" .
+    TypeArgList   = TypeArg { "," TypeArg } .
+    TypeArg       = [ identifier "=" ] Expression .
+    Declaration   = MemberName ":" Type [ Binder Expression ]
+                  | MemberName Binder Expression .
+    Binder        = "::" | ":=" .
+    FunctionLit   = SignatureType [ Block ] .
+    TypeParams    = "<" [ TypeParamList [ "," ] ] ">" .
+    TypeParamList = TypeParam { "," TypeParam } .
+    TypeParam     = identifier [ ":" Type ] [ "=" Expression ] .
+    Parameters    = "(" [ ParameterList [ "," ] ] ")" .
+    ParameterList = Parameter { "," Parameter } .
+    Parameter     = Receiver | identifier [ ":" Type ] [ "=" Expression ] .
+    Receiver      = [ "&" ] "self" .
+    Projection    = "oneof"
+                  | ProjectionList
+                  | Type .
+    ProjectionList = "{" [ MemberSpecList [ "," ] ] "}" .
+    MemberSpecList = MemberSpec { "," MemberSpec } .
+    MemberSpec     = MemberName [ ":" Type ] .
+    Block         = "{" StatementList "}" .
+    StatementList = { Statement ";" } .
+    Expression    = OrExpr .
+    OrExpr        = AndExpr { "||" AndExpr } .
+    AndExpr       = RelExpr { "&&" RelExpr } .
+    RelExpr       = AddExpr { rel_op AddExpr } .
+    AddExpr       = MulExpr { add_op MulExpr } .
+    MulExpr       = UnaryExpr { mul_op UnaryExpr } .
+    UnaryExpr     = PrimaryExpr | unary_op UnaryExpr .
+    PrimaryExpr   = Operand { Suffix } .
+    Operand       = Literal
+                  | QualifiedName
+                  | "self"
+                  | "_"
+                  | UnitValue
+                  | "(" Expression ")"
+                  | BlockLit
+                  | FunctionLit
+                  | IfExpr
+                  | MatchExpr .
+    UnitValue     = "(" ")" .
+    Suffix        = Selector | Deref | Index | Arguments | TypeArgs
+                  | BlockLit .
+    Selector      = "." MemberName .
+    Deref         = ".*" .
+    Index         = "[" Expression "]" .
+    Arguments     = "(" [ ExpressionList [ "," ] ] ")" .
+    ExpressionList = Expression { "," Expression } .
+    BlockLit      = "{" [ FieldFillList [ "," ] ] "}" .
+    FieldFillList = FieldFill { "," FieldFill } .
+    FieldFill     = MemberName "=" Expression .
+    IfExpr        = "if" "(" Expression ")" Block
+                    [ "else" ( IfExpr | Block ) ] .
+    MatchExpr     = "match" "(" Expression ")" "{" MatchArmList "}" .
+    MatchArmList  = { MatchArm [ ";" ] } .
+    MatchArm      = ( identifier | "_" ) [ "(" Pattern ")" ] Block .
+    Pattern       = identifier | "_" .
+    Statement     = Declaration
+                  | SimpleStmt
+                  | ReturnStmt
+                  | BreakStmt
+                  | ContinueStmt
+                  | DeferStmt
+                  | WhileStmt
+                  | ForStmt
+                  | LoopStmt .
+    SimpleStmt    = Assignment | Expression .
+    Assignment    = Expression assign_op Expression .
+    ReturnStmt    = "return" [ Expression ] .
+    BreakStmt     = "break" .
+    ContinueStmt  = "continue" .
+    DeferStmt     = "defer" Expression .
+    WhileStmt     = "while" "(" Expression ")" Block .
+    ForStmt       = "for" "(" [ ForInit ] ";" [ Expression ] ";"
+                    [ SimpleStmt ] ")" Block .
+    ForInit       = Declaration | SimpleStmt .
+    LoopStmt      = "loop" Block .
+
+>>> [UNSPECIFIED] The grammar is ambiguous in three places and no
+    disambiguation rule accompanies it. `<` opens both a relational
+    expression and a compile-time argument list; `"{"` opens both a Block
+    and a BlockLit; and `Type` and `Expression` overlap wherever a
+    NamedType and a QualifiedName may both appear. The first is discussed
+    under LEXICAL ELEMENTS, the second under EXPRESSIONS.
+
+
+============================================================================
+ANNEX B -- UNCHECKED BEHAVIOUR
+============================================================================
+
+Forty-nine entries, in five categories: UNCHECKED (a rule exists and is not
+enforced), UNDIAGNOSED (the behaviour is defined and is not what was
+intended), UNSPECIFIED (several behaviours are permitted), PLATFORM (the
+target decides), and UNWRITTEN (the specification has not addressed the
+case). Each entry is stated in full, with its sources and its detection
+note, in unchecked.txt. Only the identifier, the category and a single
+line appear here.
+
+An entry is a normative promise about absence, except where it is marked
+UNWRITTEN. UNWRITTEN entries are defects in this document.
+
+  U.1  Pointers and lifetime
+    U.1.1  UNCHECKED     a ptr into a container dies when it reallocates
+    U.1.2  UNCHECKED     a ptr to a binding may outlive the binding
+    U.1.3  UNCHECKED     a container of ptr<Shape> owns nothing; order is
+                         load-bearing
+    U.1.4  UNDIAGNOSED   two ptr<T> may address one value; no signature says
+    U.1.5  UNWRITTEN     whether an implementation may assume non-aliasing
+    U.1.6  UNDIAGNOSED   a stored callable may re-enter a value mid-operation
+    U.1.7  UNCHECKED     copying a value that points into itself
+    U.1.8  UNWRITTEN     whether ptr<T> may be null, and what nil is
+    U.1.9  UNWRITTEN     pointer arithmetic is used and undefined
+
+  U.2  Memory management
+    U.2.1  UNDIAGNOSED   a container does not free its elements
+    U.2.2  UNDIAGNOSED   a value reached only through ptr<Shape> is freed by
+                         hand
+    U.2.3  UNDIAGNOSED   nothing requires deinit to exist or to be called
+    U.2.4  UNCHECKED     nothing prevents deinit twice, or use after it
+    U.2.5  UNWRITTEN     free(p) has no stated precondition on p's origin
+
+  U.3  Elements and containers
+    U.3.1  UNDIAGNOSED   v := xs[i] binds an address where a copy was meant
+    U.3.2  UNDIAGNOSED   p[i] is the element, xs[i] is its address
+    U.3.3  UNDIAGNOSED   [] has no one meaning across containers
+    U.3.4  UNWRITTEN     no rule requires an index to be in range
+    U.3.5  UNDIAGNOSED   a swap-remove skips an element under a forward loop
+    U.3.6  UNCHECKED     a slice outlives what it is a slice of
+    U.3.7  UNCHECKED     a projected field is writable from outside
+    U.3.8  UNDIAGNOSED   a container that cannot be walked must export its
+                         storage
+
+  U.4  Construction
+    U.4.1  UNCHECKED     two-phase construction; nothing requires phase two
+    U.4.2  UNWRITTEN     what a read of an `undefined` field yields
+    U.4.3  UNWRITTEN     the order in which field initialisers run
+
+  U.5  Arithmetic and numbers
+    U.5.1  UNWRITTEN     what overflow does; the hash functions depend on it
+    U.5.2  UNWRITTEN     what / and % do with a zero divisor
+    U.5.3  UNWRITTEN     out-of-range shift, negative shift, >> on i32
+    U.5.4  UNWRITTEN     conversion between the primitive types
+    U.5.5  UNWRITTEN     IEEE-754 conformance, NaN, rounding, precision
+
+  U.6  Allocation
+    U.6.1  UNWRITTEN     an allocator has nowhere to report failure
+    U.6.2  UNDIAGNOSED   a fixed-extent allocator does not check exhaustion
+    U.6.3  UNWRITTEN     alignment is neither requested nor promised
+
+  U.7  Sums and matching
+    U.7.1  UNDIAGNOSED   a new variant routes into every existing `_` arm
+    U.7.2  UNSPECIFIED   a sum's tag width, numbering, order and layout
+
+  U.8  Values, results and drops
+    U.8.1  UNDIAGNOSED   `_ := f()` discards an error exactly as it discards
+                         anything
+
+  U.9  Shapes, policies and erasure
+    U.9.1  UNSPECIFIED   whether two coercions of one value compare equal
+    U.9.2  UNSPECIFIED   whether two zero-sized values have distinct
+                         addresses
+    U.9.3  UNSPECIFIED   whether the ptr<Shape> coercion is implicit
+    U.9.4  UNDIAGNOSED   a block satisfies a shape by accident
+    U.9.5  UNDIAGNOSED   nothing checks that a policy instance is consistent
+
+  U.10 Evaluation order and scope
+    U.10.1 UNWRITTEN     what `defer` means beyond "at scope exit"
+    U.10.2 UNWRITTEN     the order of argument and operand evaluation
+    U.10.3 UNWRITTEN     recursion depth and stack exhaustion
+
+  U.11 Representation and compilation
+    U.11.1 UNWRITTEN     size, alignment, field order, padding, sum layout
+    U.11.2 UNWRITTEN     limits on compile-time evaluation and instantiation
+    U.11.3 UNWRITTEN     what a compile-time function may do
+    U.11.4 UNSPECIFIED   whether a `::` member participates in type identity
+    U.11.5 PLATFORM      pointer size, size_of's width, byte order
+
+Counts: UNCHECKED 8, UNDIAGNOSED 15, UNSPECIFIED 5, PLATFORM 1,
+UNWRITTEN 20. Total 49.
+
+
+============================================================================
+ANNEX C -- OPEN QUESTIONS
+============================================================================
+
+Sixteen questions the design has not answered. Each is stated in full, with
+what the corpus pays instead, what the answer unblocks, and what it depends
+on, in open.txt. Only the identifier and a single line appear here.
+
+    OQ-0   oq.ptr.mutability      does a pointee carry a qualifier at all
+    OQ-1   oq.ctor.body           what gives a `-> self` block statements
+    OQ-2   oq.sum.discriminant    is a sum's discriminant a value
+    OQ-3   oq.iter.form           `for (x := it)`, and over what
+    OQ-4   oq.num.semantics       overflow, division by zero, shift
+    OQ-5   oq.num.conversion      how the primitive types convert
+    OQ-6   oq.numeric.generic     can generic code be numeric
+    OQ-7   oq.alloc.failure       can an allocator fail, and how does it say
+    OQ-8   oq.mono.recursive      monomorphising a type containing itself
+    OQ-9   oq.variadic            variadic compile-time args, or arity
+                                  families forever
+    OQ-10  oq.shape.identity      is ptr<Shape> comparable
+    OQ-11  oq.shape.coercion      is the ptr<Shape> coercion implicit
+    OQ-12  oq.type.ctvalue-identity  does a `::` field's value make a type
+    OQ-13  oq.infer.outward       may a type be inferred from the projection
+    OQ-14  oq.lambda.projection   may a lambda elide the hole's projection
+    OQ-15  oq.match.binder-sugar  a single-arm binding form with an `else`
+
+The recommended order of decision, and the argument for it, are in
+open.txt. OQ-0 is the root: OQ-1 and OQ-3 both need it.
+
+
+============================================================================
+COVERAGE
+============================================================================
+
+This section records what this document did with its sources. It is
+bookkeeping and constrains no program.
+
+----------------------------------------------------------------------------
+Normative rules
+
+The rule inventory classes 161 of its 249 paragraphs as NORMATIVE. The
+inventory is an internal working document and is not filed in this
+directory, so the figures below count what is in THIS document and do not
+claim anything that cannot be checked here.
+
+162 distinct identifiers appear in this document in brackets, one to a
+paragraph, none repeated and none reused. 159 of them were assigned by the
+inventory. Three were assigned by this document and appear nowhere before
+it:
+
+    op.primtypes.2            see the note on op.primtypes below
+    op.assoc.postfix.1        see the two restorations below
+    bind.which.private.1      see the two restorations below
+
+Three further inventory identifiers do not appear in brackets, because the
+rule each of them names is stated here once under the identifier it was
+merged into. Every merge is recorded at the point of statement:
+
+    abs.valuehole.1           merged into hole.valueonly.1, line 426
+    ct.emptyargs.1            merged into decl.apply.4, line 588
+    hole.oneof.nofield.1      merged into hole.sum.nofield.1, line 734
+
+Three of the 159 inventory identifiers stated here in brackets --
+rat.shapepolicy.agree.1, abs.shape.holesonly.1 and abs.shape.scope.1 -- are
+paragraphs the inventory classes RATIONALE and this document promotes, so
+they are not drawn from the 161. That leaves 156 of the inventory's
+NORMATIVE identifiers stated here in brackets, and three more covered by a
+documented merge: 159 of 161. What became of the other two cannot be
+determined from this directory, because the inventory is not in it.
+
+An earlier draft of this section read "All 161 identifiers appear in this
+document. None was omitted." Both sentences were false as written: three
+inventory identifiers appear only as prose inside a merge note, and neither
+sentence could be checked against a document that is not here.
+
+Nine rules the inventory found stated more than once in rules.txt are stated
+here once, with the duplication noted at the point of statement:
+
+    bind.field.1              stated three times in the sources
+    elem.reachthrough.1       stated three times, as ptr.reach.dot.1 and
+                              ptr.reach.symbolic.1
+    hole.valueonly.1          also stated as abs.valuehole.1
+    hole.sum.nofield.1        also stated as hole.oneof.nofield.1
+    decl.apply.4              also stated as ct.emptyargs.1
+    abs.nomix.1               restated in a rationale note
+    op.precedence.1           restated in a rationale note
+    ct.nopool.1               restated in a rationale note
+    ptr.arg.explicit.1        stated four times across two sections
+
+    hole.nokeywords.1 and kw.nokeywords.1 are one rule whose two source
+    statements have different memberships. Both memberships are recorded and
+    neither is chosen; see the conflict under KEYWORDS.
+
+    hole.def.1 and bind.hole.1 are the same sentence in two sections and are
+    both stated here, because BINDING and HOLES are read as one section.
+
+    op.primtypes.1 and op.primtypes.2 are two rules and not one.
+    op.primtypes.1, under TYPES, names the primitive types.
+    op.primtypes.2, under EXPRESSIONS, names the operators that apply to
+    them and to no other type. Earlier drafts of this document gave both
+    statements the identifier op.primtypes.1.
+
+Two further rules are stated here that the inventory records under no
+identifier, because the split lost the sentence each was drawn from. They
+are restored from the sources and identified here for the first time:
+
+    op.assoc.postfix.1        the postfix level chains left to right
+                              (rules.txt:509)
+    bind.which.private.1      a member under `-> SomeType` that matches
+                              no hole is private (rules.txt:69)
+
+Four paragraphs the inventory classes RATIONALE carry normative content
+stated nowhere else, and are stated here as rules rather than left to
+rationale.txt. They are marked as promotions where they appear:
+
+    rat.shapepolicy.test.1    the shape/policy test
+    rat.shapepolicy.agree.1   what must agree belongs in one policy block
+    abs.shape.holesonly.1     a shape contains holes and nothing else
+    abs.shape.scope.1         what a member has in scope
+
+    Three of the four carry their identifier in brackets. The fourth,
+    rat.shapepolicy.test.1, is stated as a rule at line 1428 but under a
+    Note (line 1434) rather than under a bracketed identifier, so it is not
+    among the 162 counted above. That is a drafting defect, not a decision.
+
+The RATIONALE, EXAMPLE and META paragraphs are not reproduced. Rationale is
+in rationale.txt under the same identifiers. Examples appear here only where
+one is the clearest statement of a rule.
+
+----------------------------------------------------------------------------
+Markers
+
+    [UNSPECIFIED]   47
+    [CONFLICT]      14
+    [INVENTED]      12
+    [OPEN oq.N]     16
+
+    Total           89
+
+All sixteen open questions, OQ-0 through OQ-15, are cited at the point in
+the text where the question arises. The forty-nine unchecked-behaviour
+entries are indexed in Annex B and cited inline where a rule creates one.
+
+The fourteen conflicts, in the order they appear:
+
+    1  the two lists of words that are not in the language      KEYWORDS
+    2  the keyword budget omits `nil`                           KEYWORDS
+    3  the primitive list omits `u64`                           TYPES
+    4  `&` is not a type constructor, against `&self`           TYPES
+    5  a value does not move, against swap-remove               TYPES
+    6  compile-time args applied yields a type                  DECLARATIONS
+    7  `[]` has four meanings (pointer)                         DECLARATIONS
+    8  bodiless means hole, against the bodiless record         DECLARATIONS
+    9  `_` is one idea, against three of its four uses          DECLARATIONS
+    10 a value may not be dropped silently, against ecs.z       DECLARATIONS
+    11 `[]` has four meanings (full statement)                  EXPRESSIONS
+    12 there is no such thing as a place                        EXPRESSIONS
+    13 `.` reaches through, against deref is never optional     EXPRESSIONS
+    14 an accessor hides storage, against `Map`                 EXPRESSIONS
+
+----------------------------------------------------------------------------
+What this document could not do
+
+Three things were carried rather than resolved, and are the reason the
+document reads as it does.
+
+The `[]` conflict is load-bearing. Indexing is the one construct whose
+meaning cannot be determined from the rules given, and it is reachable from
+the standard library in five different ways. Every rule that mentions an
+element, an accessor, a container or a pointer is stated here against an
+undecided background.
+
+The type/value question is stated twice with two different answers, in the
+section the sources say everything else depends on. This document orders
+kw.type.test.1 before DECLARATIONS so that the predicate exists before it is
+used, which the sources do not do.
+
+`if` is used as an expression throughout the corpus and specified as one
+nowhere. The grammar admits it because the corpus requires it. Nothing in
+any source document says an `if` has a value.

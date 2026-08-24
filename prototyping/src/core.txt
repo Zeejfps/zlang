@@ -1,0 +1,1234 @@
+============================================================================
+core.txt  --  a core language for zlang, and where the translation breaks
+============================================================================
+
+A TEST OF THE CENTRAL CLAIM, and nothing else. This file states no rule and
+retires no issue. It asks one question: if module, struct, function,
+procedure, sum, interface, closure and policy are all one construct read
+differently, then a small core language plus a translation should exist,
+and everything else should be sugar. This file writes the core, writes the
+translation, and reports every place the translation needed something the
+core did not have.
+
+Read spec.txt first. Rule identifiers below are spec.txt's. Issue
+identifiers are issues.txt's; open-question identifiers are open.txt's.
+Where a break is already filed, the identifier is given and the break is
+not re-reported as new.
+
+
+============================================================================
+1  SCOPE AND PURPOSE
+============================================================================
+
+NON-NORMATIVE. Nothing here constrains a program. Where this file and
+spec.txt disagree, spec.txt is the specification and this file is the
+report of a failed reduction.
+
+IN SCOPE. The declaration layer: blocks, holes, projections, binders,
+compile-time versus runtime application, shapes, policies, sums, closures,
+visibility, receivers, and the derived constructors of a sum.
+
+OUT OF SCOPE, AND WHY. The statement layer. `if`, `while`, `for`, `loop`,
+`defer`, `return`, `break`, `continue` and assignment are not elaborated
+here and no core form is offered for any of them. Z-01 records that no
+source document specifies a statement or control-flow form at all: the
+grammar's productions for them are marked INVENTED in spec.txt (STATEMENTS)
+and were reconstructed from the corpus. A translation of an unspecified
+layer would be a translation of this file's own inventions, which tests
+nothing. The exclusion is not free, and section 4 records the two places
+where the declaration layer cannot be closed without it (B-9, B-15).
+
+WHAT COUNTS AS A BREAK. Three things, and each is filed in section 4:
+
+    - the translation needed a core form that is not one construct read
+      differently, but a second construct;
+    - the translation needed a side condition that the surface syntax does
+      not express, so the surface form is not enough to elaborate from;
+    - two surface forms the design calls the same translate to different
+      core terms, or one surface form translates two ways with no stated
+      discriminator.
+
+
+============================================================================
+2  THE CORE
+============================================================================
+
+----------------------------------------------------------------------------
+Notation
+
+`n` ranges over member names, `x` over variables, `k` over constants. `s`
+ranges over the two stages, `c` for compile time and `r` for run time; it
+is not a form, it is an index carried by three of the forms. `[[ ... ]]` is
+the translation of a surface phrase.
+
+Types and values are one syntactic category, as the design intends: a type
+is a term, and which terms are types is decided by kw.type.test.1 and not
+by the grammar. The single exception is E12, and E12 is a break (B-10).
+
+----------------------------------------------------------------------------
+The forms
+
+    e ::=
+      E1    x                            a name
+      E2    e . n                        member selection
+      E3    fn^s (p, ...) e              abstraction at stage s
+      E4    e @^s (e, ...)               application at stage s
+      E5    rec { d, ... }               a block: a recursive record
+      E6    keep e {n, ...}              restriction to a name set
+      E7    sum { n : e, ... }           a tagged block
+      E8    e # n                        injection into a tagged block
+      E9    case e { n(x) -> e, ... }    discrimination of a tagged block
+      E10   fit e e                      structural satisfaction / erasure
+      E11   k                            constants and primitive operations
+      E12   arrow^s ((p, ...), e)        the type of an abstraction
+
+    d ::=
+      D1    n =^s e                      a bound member
+      D2    n : e                        a hole: a member with no binder
+
+    p ::=  x : e                         a parameter
+
+E5 binds `self` to the record itself, and binds every member name of the
+record in the scope of every member. That is the fixpoint, and it is what
+makes `fmt_u8.format` inside `fmt_u8` (unified.z:268) and `self.format`
+inside `spaced` (json.z:526) two spellings of one thing.
+
+E6 is written as "keep" and not as "remove" deliberately: it names what
+escapes, which is what a projection does.
+
+----------------------------------------------------------------------------
+The count
+
+Fourteen forms: twelve terms and two declaration forms. The brief asked for
+under ten and said that needing more than ten weakens the claim. It is
+weakened, and the arithmetic says by exactly how much:
+
+    E1 E2 E3 E4 E5 E6 E10 E11 + D1 D2      ten forms
+                                           module, struct, record, shape,
+                                           policy type, policy instance,
+                                           closure, namespace, visibility,
+                                           compile-time and runtime
+                                           application, bounds, erasure
+
+    E7 E8 E9                               three more, for `-> oneof`
+                                           alone (B-1)
+
+    E12                                    one more, because a declaration
+                                           and the type of a declaration
+                                           are one surface production
+                                           (B-10, the root of Z-04)
+
+So the claim's own budget is met on the nose -- ten forms -- for six of the
+eight things it names. It is exceeded by four, and every one of the four is
+attributable to a single named cause.
+
+
+============================================================================
+3  THE TRANSLATIONS
+============================================================================
+
+Each translation is followed by a corpus declaration translated verbatim,
+with a file:line citation, and by the rule identifiers the translation
+leans on. Where a translation needs a side condition, the condition is
+named S1 or S2 and filed in section 4.
+
+Two side conditions are used throughout and are stated once here.
+
+    S1  PARAMETER INJECTION. Under a projection that restricts (`-> self`
+        or `-> {a, b}`), every runtime parameter other than the receiver
+        becomes a member of the record, bound at run time to itself.
+        Compile-time parameters likewise become members bound at compile
+        time. Under `-> T`, `-> ()` and `-> oneof` no such injection
+        happens.
+
+    S2  RECEIVER. `self` and `&self` are not parameters in the S1 sense.
+        `[[ self ]] = self : e` where e is the enclosing rec, and
+        `[[ &self ]] = self : Ptr e`, by kw.self.desugar.1.
+
+----------------------------------------------------------------------------
+3.1  A MODULE
+
+    [[ N :: -> {n1, ..., nk} { B } ]]
+      =  N =^c keep (rec { [[ B ]] }) {n1, ..., nk}
+
+    [[ N :: -> self { B } ]]
+      =  N =^c rec { [[ B ]] }
+
+The second is the first with the name set taken to be every member. The
+`-> self` projection is therefore not a form of its own: it is maximal
+restriction. This is the first thing the core makes visible and section 5
+returns to it.
+
+WORKED EXAMPLE. unified.z:129-141.
+
+    io :: -> {out, err, write} {
+        FileWriter :: (fd: i32) -> self {
+            write_bytes :: (&self, p: ptr<u8>, n: u32) -> ()
+                { c_write(self.fd, p, n) }
+        }
+        out :: FileWriter(1)
+        err :: FileWriter(2)
+        write :: <W: Writer> (w: W, s: slice<u8>) -> ()
+            { w.write_bytes(s.ptr, s.len) }
+    }
+
+    io =^c keep (rec {
+
+        FileWriter =^c fn^r (fd : I32)
+            rec {
+                fd =^r fd,                          -- S1
+                write_bytes =^c fn^r (self : Ptr self,
+                                      p : Ptr @^c(U8), n : U32)
+                                 c_write @^r (self.fd, p, n)
+            },
+
+        out =^c FileWriter @^r (1),
+        err =^c FileWriter @^r (2),
+
+        write =^c fn^c (W : fit W Writer)
+                    fn^r (w : W, s : Slice @^c(U8))
+                      (w . write_bytes) @^r (s.ptr, s.len)
+
+    }) {out, err, write}
+
+RELIES ON. decl.form.1, decl.form.2, decl.proj.subset.1, decl.proj.self.1,
+vis.projection.1, vis.nopub.1, vis.opaque.1, bind.ct.1, kw.value.1,
+decl.apply.4, abs.bound.1, abs.shape.scope.1.
+
+NOTE. vis.opaque.1 costs nothing in the core. `keep` restricts a set of
+names and does not touch the values those names hold, so `out` escapes
+while `FileWriter` does not, and the type of `out` is unnameable outside
+without a rule saying so. That is a genuine reduction.
+
+NOTE. `write`'s bound `<W: Writer>` is E10 in a parameter position. Nothing
+in the core distinguishes it from the fit used by a policy instance in 3.8;
+see section 5.
+
+----------------------------------------------------------------------------
+3.2  A STRUCT
+
+    [[ N :: <C1, ..., Cm> (r1: T1, ..., rn: Tn) -> {n1, ..., nk} { B } ]]
+      =  N =^c fn^c (C1, ..., Cm)
+                 fn^r (r1 : T1, ..., rn : Tn)
+                   keep (rec { r1 =^r r1, ..., rn =^r rn,   -- S1
+                               [[ B ]] })
+                        {n1, ..., nk}
+
+WORKED EXAMPLE. unified.z:157-201.
+
+    List :: <T, M: Allocator> (allocator: M)
+            -> {push, pop, count, [], span, deinit} {
+        capacity := 10
+        count    := 0
+        items    := mem.make<T>(allocator, capacity)
+        push   :: (&self, item: T) -> () { ... }
+        pop    :: (&self) -> Option<T> { ... }
+        expand :: (&self) -> () { ... }
+        deinit :: (&self) -> () { ... }
+        []     :: (&self, i: u32) -> ptr<T> { &self.items[i] }
+        span   :: (&self) -> slice<T> { slice(self.items, self.count) }
+    }
+
+    List =^c fn^c (T, M : fit M Allocator)
+               fn^r (allocator : M)
+                 keep (rec {
+                   allocator =^r allocator,          -- S1
+                   capacity  =^r 10,
+                   count     =^r 0,
+                   items     =^r (mem . make) @^c (T)
+                                             @^r (allocator, capacity),
+                   push      =^c fn^r (self : Ptr self, item : T) ...,
+                   pop       =^c fn^r (self : Ptr self) ...,
+                   expand    =^c fn^r (self : Ptr self) ...,
+                   deinit    =^c fn^r (self : Ptr self) ...,
+                   "[]"      =^c fn^r (self : Ptr self, i : U32)
+                                   addr ((self.items) @^r (i)),
+                   span      =^c fn^r (self : Ptr self) ...
+                 }) {push, pop, count, "[]", span, deinit}
+
+RELIES ON. decl.form.1, bind.field.1, bind.rt.1, bind.ct.1, bind.ctfield.1,
+kw.type.rtgroup.1, decl.apply.3, decl.proj.subset.1, vis.projection.1,
+op.members.1, abs.bound.1, kw.member.recv.1, kw.self.desugar.1,
+ptr.recv.addr.1.
+
+NOTE. bind.field.1 is stated for `-> self` only, and `List` is `-> {a, b}`.
+The corpus reads `self.allocator` at unified.z:182, 184 and 190, so S1 must
+apply here or the language's most-used type does not compile. B-4.
+
+NOTE. `items`' initialiser reads `allocator` bare and `capacity` bare;
+`expand` reads `self.allocator` and `self.capacity`. In the core these are
+two different binders -- the `fn^r` parameter and the `rec` member -- with
+one identifier each, made equal by S1. That is a mechanical account of one
+half of Z-18, and only of the half about parameters.
+
+----------------------------------------------------------------------------
+3.3  A RECORD
+
+    [[ N :: (r1: T1, ..., rn: Tn) -> self ]]
+      =  N =^c fn^r (r1 : T1, ..., rn : Tn) rec { r1 =^r r1, ..., rn =^r rn }
+
+The record is 3.2 with an empty body and a maximal name set. Nothing is
+added; the whole content of the declaration is S1.
+
+WORKED EXAMPLE. json.z:77.
+
+    Span :: (lo: u32, hi: u32) -> self
+
+    Span =^c fn^r (lo : U32, hi : U32) rec { lo =^r lo, hi =^r hi }
+
+Also Error (json.z:268), Entry (json.z:136), Health (ecs.z:258), Hit
+(ecs.z:413), all of the same shape.
+
+RELIES ON. bind.bodyless.1, bind.field.1, decl.proj.self.1,
+kw.type.rtgroup.1.
+
+NOTE ON Z-04. hole.bodiless.1 says a bodiless declaration is a hole;
+bind.bodyless.1 says it is a record. The core decides it without an extra
+rule, twice over. First, D2 has no binder by construction and `Span ::` has
+one, so `Span` is D1 and not D2. Second, and more usefully, a bodiless
+declaration is well formed in the core exactly when its projection
+restricts: `keep (rec {}) {...}` and `rec {...}` are terms, and a `-> T` or
+`-> ()` body with nothing in it has no tail expression to be the result,
+and a `-> oneof` body with nothing in it declares no variants. So the core
+predicts that `Span :: (lo, hi) -> self` is legal and that
+`alloc :: (&self, n: u32) -> ptr` with no body is not -- which is the
+distinction hole.bodiless.1's own illustration was reaching for and could
+not state. Z-04 is filed; this is a note on it, not a new report.
+
+----------------------------------------------------------------------------
+3.4  A FUNCTION
+
+    [[ N :: <C> (R) -> T { s1; ...; sm; E } ]]
+      =  N =^c fn^c (C) fn^r (R) <<s1; ...; sm; E>>
+
+where `<<...>>` is the statement layer and is not translated. See B-9.
+
+WORKED EXAMPLE. unified.z:325-329.
+
+    to_string :: <T, M: Allocator, F: Formattable<T>>
+                 (allocator: M, v: T) -> slice<u8> {
+        b := StringWriter(allocator)
+        F.format(v, &b)
+        b.finish()
+    }
+
+    to_string =^c fn^c (T,
+                        M : fit M Allocator,
+                        F : fit F (Formattable @^c (T)))
+                    fn^r (allocator : M, v : T)
+                      <<  b := StringWriter @^c (M) @^r (allocator) ;
+                          (F . format) @^r (v, addr b) ;
+                          (b . finish) @^r ()  >>
+
+RELIES ON. decl.form.1, decl.proj.value.1, ct.type.1, ct.policy.1,
+ct.named.1, abs.bound.1, decl.apply.3.
+
+THE ATTEMPTED REDUCTION, AND WHY IT FAILS. A `-> T` body looks like it
+ought to be `keep (rec { ... }) {result}` -- a block projecting exactly one
+member. Two things stop it. The member has no name and no member form
+declares it: `::`, `:=` and `name : T` are the three member forms and none
+of them spells "the value of the block". And the members are ordered:
+`b.finish()` must run after `F.format(v, &b)`, while order.independent.1
+makes members of a block order-independent. So `-> T` projects something a
+block cannot contain, in an order a block does not have. B-9.
+
+NOTE. `b := StringWriter(allocator)` is a `:=` binding inside a `-> T`
+body, and bind.which.named.1 says that under `-> SomeType` a member is
+either `=` or `::`. Either a function-body local is not a member, in which
+case a block has two kinds of contents and is not "the only container", or
+it is, in which case bind.which.named.1 is false of every function in the
+corpus. B-13.
+
+----------------------------------------------------------------------------
+3.5  A PROCEDURE
+
+    [[ n :: (&self, R) -> () { B } ]]
+      =  n =^c fn^r (self : Ptr self, R) <<B ; ()>>
+
+This is 3.4 at T = Unit. `-> ()` is not a sixth thing; it is
+decl.proj.value.1 with the unit type, and the identity of the unit type and
+the unit value (spec.txt, TYPES, The unit type, marked INVENTED) makes the
+tail expression write itself.
+
+WORKED EXAMPLE. unified.z:166-170.
+
+    push :: (&self, item: T) -> () {
+        if (self.count + 1 > self.capacity) { self.expand() }
+        self.items[self.count] = item
+        self.count += 1
+    }
+
+    push =^c fn^r (self : Ptr self, item : T) << ... ; () >>
+
+RELIES ON. decl.proj.unit.1, decl.proj.value.1, kw.self.recvptr.1,
+kw.self.desugar.1, ptr.recv.addr.1, kw.member.recv.1, kw.recv.rule.1.
+
+RESULT. This is the one genuine reduction among the five projections. Five
+surface projections, and exactly one of them is another one in disguise.
+
+----------------------------------------------------------------------------
+3.6  A SUM
+
+    [[ N :: <C> -> oneof { n1: T1, ..., nk: Tk } ]]
+      =  N =^c fn^c (C) sum { n1 : T1, ..., nk : Tk }
+
+E7, and not E5. The attempt to translate it as E5 is in B-1.
+
+WORKED EXAMPLES. unified.z:21-24, unified.z:26-29, json.z:243-250.
+
+    Option :: <T> -> oneof { none: ()  some: T }
+
+    Option =^c fn^c (T) sum { none : Unit, some : T }
+
+    Result :: <T, E> -> oneof { ok: T  err: E }
+
+    Result =^c fn^c (T, E) sum { ok : T, err : E }
+
+    Json :: <M: Allocator> -> oneof {
+        null:   ()
+        truth:  bool
+        number: f64
+        text:   slice<u8>
+        array:  List<Json<M>, M>
+        object: Map<slice<u8>, Json<M>, M, KY = str_key>
+    }
+
+    Json =^c fn^c (M : fit M Allocator)
+               sum { null   : Unit,
+                     truth  : Bool,
+                     number : F64,
+                     text   : Slice @^c (U8),
+                     array  : List @^c (Json @^c (M), M),
+                     object : Map  @^c (Slice @^c (U8), Json @^c (M), M,
+                                        KY = str_key) }
+
+RELIES ON. decl.proj.oneof.1, hole.meaning.1, hole.disjunctive.1,
+hole.disjunctive.2, hole.oneof.variant.1, hole.oneof.nortgroup.1,
+hole.sum.nofield.1, hole.quantify.1, kw.type.oneof.1, ct.named.1.
+
+NOTE. `Json` mentions `Json` under a compile-time application, so E7 must
+sit inside a compile-time fixpoint and not only inside E5's. oq.8 asks what
+monomorphisation does to a type that contains itself, and this is that
+question in core form.
+
+----------------------------------------------------------------------------
+3.7  A SHAPE
+
+    [[ N :: <C> -> self { n1: T1, ..., nk: Tk } ]]
+      =  N =^c fn^c (C) rec { n1 : T1, ..., nk : Tk }
+
+D2 members only. No new form. This is the cleanest result in the file: a
+shape is an ordinary block, all of whose members happen to lack a binder,
+and kw.type.hole.1 falls out because a `rec` with a D2 member has no value.
+
+WORKED EXAMPLES. unified.z:81-84, unified.z:125-127, unified.z:37,
+ecs.z:457-460.
+
+    Allocator :: -> self {
+        alloc: (&self, n: u32) -> ptr
+        free:  (&self, p: ptr) -> ()
+    }
+
+    Allocator =^c rec {
+        alloc : arrow^r ((self : Ptr self, n : U32), Ptr),
+        free  : arrow^r ((self : Ptr self, p : Ptr), Unit)
+    }
+
+    Fn :: <A, R> -> self { (): (&self, a: A) -> R }
+
+    Fn =^c fn^c (A, R)
+             rec { "()" : arrow^r ((self : Ptr self, a : A), R) }
+
+    System :: <M: Allocator> -> self {
+        run:  (&self, w: ptr<World<M>>, dt: f32) -> ()
+        name: (&self) -> slice<u8>
+    }
+
+    System =^c fn^c (M : fit M Allocator)
+                 rec { run  : arrow^r ((self : Ptr self,
+                                        w : Ptr @^c (World @^c (M)),
+                                        dt : F32), Unit),
+                       name : arrow^r ((self : Ptr self), Slice @^c (U8)) }
+
+The two uses of a shape:
+
+    [[ <M: Shape> ]]   =  fn^c (M : fit M Shape)      abs.bound.1
+    [[ (a: Shape) ]]   =  fn^r (a : Ptr Shape)        abs.erased.1
+
+and the coercion at a use site is E10 again:
+
+    [[ boxed : ptr<Allocator> := &arena ]]
+      =  boxed =^r fit (addr arena) (Ptr Allocator)   unified.z:368
+
+RELIES ON. abs.both.1, abs.shape.holesonly.1, abs.shape.1, abs.nomix.1,
+hole.def.1, hole.conjunctive.1, kw.type.hole.1, kw.member.recv.1,
+abs.bound.1, abs.erased.1, abs.nodyn.1, abs.noadapter.1, mem.borrow.1.
+
+NOTE. E12 (`arrow`) appears here for the first time and is unavoidable: the
+hole's type is the type of a function, and the core cannot spell it with
+E3, which requires a body. The surface has one production for both --
+`FunctionLit = SignatureType [ Block ]` -- and that is exactly the
+conflation Z-04 is about, seen from the other end. B-10.
+
+NOTE. Nothing in the core or in the sources forbids a hole with its own
+compile-time parameters, e.g. `make: <T> (&self, n: u32) -> ptr<T>`. Such a
+shape can be a bound (`fn^c (M : fit M Shape)` monomorphises) but cannot be
+erased (`Ptr Shape` is one vtable and a vtable has no room for a family).
+No rule states the restriction, and unified.z:86-89 is the corpus routing
+around it by hand: the typed layer is put in the module `mem` rather than
+in the `Allocator` shape, with a comment explaining the placement in terms
+of extensibility rather than in terms of the restriction. B-12.
+
+----------------------------------------------------------------------------
+3.8  A POLICY INSTANCE
+
+    [[ N :: <C> -> P { n1 = e1, ..., nj = ej, m1 :: f1, ..., mi :: fi } ]]
+      =  N =^c fn^c (C) fit (rec { n1 =^c e1, ..., nj =^c ej,
+                                   m1 =^c f1, ..., mi =^c fi })
+                             [[ P ]]
+
+Every member becomes D1 at stage c. The two binders `=` and `::` collapse.
+See section 5 for what that means.
+
+WORKED EXAMPLES. unified.z:222-228, unified.z:274-282, ecs.z:697-736.
+
+    ord_u8 :: -> Ord<u8> {
+        compare = (a, b) -> i32 {
+            if (a < b) { return -1 }
+            if (b < a) { return  1 }
+            return 0
+        }
+    }
+
+    ord_u8 =^c fit (rec {
+                 compare =^c fn^r (a : U8, b : U8) << ... >>
+               }) (Ord @^c (U8))
+
+    hex_u8 :: -> Formattable<u8> {
+        format = (v, w) -> () {
+            digits :: "0123456789abcdef"
+            hi := digits[v / 16]
+            lo := digits[v % 16]
+            w.write_bytes(&hi, 1)
+            w.write_bytes(&lo, 1)
+        }
+    }
+
+    hex_u8 =^c fit (rec {
+                 format =^c fn^r (v : U8, w : Ptr Writer) << ... >>
+               }) (Formattable @^c (U8))
+
+A parameterised instance with a `::` helper, which is the case that shows
+where the fixpoint sits. ecs.z:697-736:
+
+    dump :: <M, indent: u32 = 2> -> fmt.Formattable<World<M>> {
+        format = (v, w) -> () { ... self.row(v, e, w) ... }
+        row :: (v: World<M>, e: Entity, w: ptr<Writer>) -> ()
+            { self.pad(w) ... }
+        pad :: (w: ptr<Writer>) -> ()
+            { for (i := 0; i < indent; i += 1) { io.write(w, " ") } }
+    }
+
+    dump =^c fn^c (M, indent : U32 = 2)
+               fit (rec {
+                 format =^c fn^r (v : World @^c (M), w : Ptr Writer)
+                              << ... (self . row) @^r (v, e, w) ... >>,
+                 row    =^c fn^r (v : World @^c (M), e : Entity,
+                                  w : Ptr Writer)
+                              << (self . pad) @^r (w) ... >>,
+                 pad    =^c fn^r (w : Ptr Writer)
+                              << ... indent ... >>
+               }) (fmt.Formattable @^c (World @^c (M)))
+
+E5's `self` is bound INSIDE `fn^c`, so it carries `M` and `indent`. That is
+a mechanical account of ecs.z:689-691: `self.row(...)` is
+`(self . row)` where `self` is this application's record, and
+`dump.row(...)` is `((dump @^c ()) . row)`, a second application with the
+default `indent = 2`. Two spellings, two terms, and the difference is
+visible in the core where the surface needs a comment to explain it.
+
+RELIES ON. abs.both.1, abs.policy.1, kw.policy.split.1, bind.which.named.1,
+bind.assign.1, kw.value.1, ct.policy.1, ct.value.1, ct.named.1,
+ct.named.forced.1, ct.nopool.1, ct.delegate.1, ct.named.decl.1,
+decl.apply.4.
+
+NOTE. `compare = (a, b) -> i32 { ... }` gives its parameters no types. The
+hole `compare: (a: T, b: T) -> i32` has them. No rule says the fill's
+parameter types come from the hole, and oq.14 asks the same question about
+the projection and not about the parameters. B-14.
+
+NOTE. `spaced` (json.z:518-556) uses both `self.format` and
+`json_fmt<M>.format` in one block, one recursion and one delegation. In the
+core they are `(self . format)` and `((json_fmt @^c (M)) . format)`, and
+nothing further is needed: ct.delegate.1's "this is ordinary name lookup"
+is exactly right and the core confirms it.
+
+----------------------------------------------------------------------------
+3.9  A CLOSURE
+
+    [[ N :: <C> (R) -> self { () :: (&self, A) -> R2 { B } } ]]
+      =  N =^c fn^c (C) fn^r (R)
+                 rec { R-as-members,                     -- S1
+                       "()" =^c fn^r (self : Ptr self, A) <<B>> }
+
+    [[ p(7) ]]  =  (p . "()") @^r (7)
+
+WORKED EXAMPLE. unified.z:382-388.
+
+    print_u8 :: <M: Allocator> (allocator: M) -> self {
+        () :: (&self, v: u8) -> () {
+            io.write(io.out, to_string<F = fmt_u8>(self.allocator, v))
+        }
+    }
+    p := print_u8(heap)
+    p(7)
+
+    print_u8 =^c fn^c (M : fit M Allocator)
+                   fn^r (allocator : M)
+                     rec {
+                       allocator =^r allocator,          -- S1
+                       "()" =^c fn^r (self : Ptr self, v : U8)
+                                  << (io . write) @^r (io.out,
+                                       to_string @^c (F = fmt_u8)
+                                                 @^r (self.allocator, v)) >>
+                     }
+
+    p =^r print_u8 @^c () @^r (heap)
+    (p . "()") @^r (7)
+
+and the erasure two lines later, unified.z:392-393:
+
+    f =^r fit (addr p) (Ptr (Fn @^c (U8, Unit)))
+    (f . "()") @^r (8)
+
+RELIES ON. op.closure.1, op.closure.capture.1, op.members.1, op.nocurry.1,
+bind.field.1, ptr.deref.spelling.1, ptr.reach.symbolic.1, abs.shape.1,
+abs.erased.1.
+
+RESULT. The closure is the strongest confirmation of the claim in the file.
+It needs no core form of its own, no capture list, no environment, and no
+function type: it is 3.2 with one member whose name happens to be `()`, and
+`op.closure.capture.1` is not a rule about closures at all -- it is S1
+applied to a block that has a `()` member.
+
+NOTE. `p(7)` and `Heap()` (unified.z:337) are one surface form and two core
+terms: `(p . "()") @^r (7)` and `Heap @^r ()`. The discriminator is
+kw.type.test.1 applied to the callee -- `Heap` has a runtime group and is a
+type, `p` has none and is a value -- so no expression can be elaborated
+without first deciding the type-or-value question about its head. B-17.
+
+----------------------------------------------------------------------------
+3.10  A VARIANT AS A CONSTRUCTOR FUNCTION
+
+    [[ S<A>.n(e) ]]  =  ((S @^c (A)) # n) @^r (e)          when Tn is not Unit
+    [[ S<A>.n()  ]]  =  ((S @^c (A)) # n) @^r ()           when Tn is Unit
+
+and the eliminator, which has no counterpart anywhere else in the language:
+
+    [[ match (v) { n1 (x) { E1 }  n2 { E2 }  _ { E3 } } ]]
+      =  case v { n1(x) -> <<E1>>, n2(_) -> <<E2>>, _(_) -> <<E3>> }
+
+WORKED EXAMPLES. unified.z:175, unified.z:177, json.z:167, json.z:392.
+
+    Option<u8>.some(3)     ->  ((Option @^c (U8)) # some) @^r (3)
+    Option<T>.none()       ->  ((Option @^c (T))  # none) @^r ()
+    Slot.live(Entry(k, v)) ->  (Slot # live) @^r (Entry @^r (k, v))
+    Json.array(xs)         ->  (Json # array) @^r (xs)
+
+RELIES ON. hole.ctor.1, hole.oneof.variant.1, hole.disjunctive.1,
+match.arm.1, match.exhaustive.1, match.expr.1, ct.expected.1,
+ct.typecarries.1.
+
+NOTE. E8 is spelled `#` and E2 is spelled `.`, and the surface spells both
+`.`. `Option<u8>.some` reaches a hole through a type, which
+ct.typenotvalue.1 forbids in the same words it forbids `Ord<u8>.compare`.
+B-3.
+
+NOTE. hole.ctor.1 says the derived function is `(T) -> Self`. For
+`none: ()` that is `(()) -> Option<T>` and the call is `none(())`. The
+corpus writes `none()` at thirty-two sites. B-2.
+
+
+============================================================================
+4  WHAT DOES NOT REDUCE
+============================================================================
+
+Eighteen entries. Each is one line, then the detail. Entries marked FILED
+are already in issues.txt or open.txt and are cross-referenced rather than
+re-reported; the rest appear to be new, and each says what would have to be
+written for the translation to close.
+
+----------------------------------------------------------------------------
+B-1  `-> oneof` needs three core forms of its own and shares only the
+     header and the member spelling with `-> self`.
+
+This is the central pressure point and the translation gives a clean
+answer. The attempted reduction is this: give E5 a fill discipline K in
+{all, one}, so that `rec_all` requires every D2 member to be filled and
+`rec_one` requires exactly one. That much works, and it is a real
+observation: the INTRODUCTION forms of `-> self` and `-> oneof` genuinely
+are one thing read with two cardinalities.
+
+Everything after introduction diverges.
+
+    ELIMINATION. Under K = all, E2 is total: `v.alloc` always denotes.
+    Under K = one, E2 is partial: `v.some` denotes only if `some` was the
+    hole that got filled. Nothing in E1-E6 makes partiality observable, so
+    the core cannot recover the information. E9 is required, and E9 has no
+    counterpart under `-> self`: there is no `case` over a struct and no
+    member selection on a sum.
+
+    REPRESENTATION. E9 needs a tag, and the tag is a value that no member
+    form declares. spec.txt says so itself under MATCH ("A sum's
+    discriminant is not a value"), and the corpus invents `tag_of` to reach
+    it (json.z:381-387, filed as Z-39) and writes a five-arm match to ask a
+    one-bit question (ecs.z:272-273). E7 is required.
+
+    DERIVATION. Under K = one, every hole derives a function (hole.ctor.1).
+    Under K = all, no hole derives anything and the spelling that would
+    reach one is explicitly forbidden (ct.typenotvalue.1). E8 is required.
+
+    ABSTRACTNESS. kw.type.hole.1 says a block with an unfilled hole is a
+    type. hole.disjunctive.2 says a `-> oneof` block is never abstract.
+    Both are true of `Option<T>`, which has two unfilled holes. So a hole
+    set is an OBLIGATION under K = all and a SIGNATURE under K = one, and
+    one representation cannot be both.
+
+    STAGE. hole.oneof.nortgroup.1 deletes the runtime group and
+    hole.sum.nofield.1 deletes the `:=` member, so `-> oneof` has no
+    runtime stage at all. `fn^r` never appears in 3.6 and appears in every
+    other translation in section 3.
+
+VERDICT ON THE PRESSURE POINT. `-> oneof` is not `-> self` with holes read
+disjunctively. It is a second construct that shares a header. The one thing
+the two do share -- the introduction form -- is real and is worth keeping;
+the design should say that and stop there.
+
+----------------------------------------------------------------------------
+B-2  hole.ctor.1's derived function has the wrong arity for every unit
+     variant, at thirty-two sites in the corpus.
+
+hole.ctor.1: "A variant name is also a derived function `(T) -> Self`." For
+`none: ()`, T is the unit type, so the derived function is
+`(()) -> Option<T>` and the call is `Option<T>.none(())`. The grammar
+supports it: `UnitValue = "(" ")"` is an Operand and `Arguments` takes an
+ExpressionList, so `none(())` is one argument and `none()` is zero.
+
+The corpus writes `none()`. Thirty-two sites: unified.z:175, json.z:174,
+177, 178, 185, 291, 294-299, 304, 363, 377, 392, 433, ecs.z:166, 431, 597,
+605, 610, 617, 618, 637, 638, 643, 644, 790, and the two commentary
+occurrences at json.z:827 and ecs.z:945, 1145.
+
+WHAT WOULD CLOSE IT. One sentence: the derived function of a variant whose
+payload type is `()` takes no arguments. It is a special case and it should
+be written down as one, because "a variant name is also a derived function
+`(T) -> Self`" reads like a uniform rule and is not one.
+
+----------------------------------------------------------------------------
+B-3  ct.typenotvalue.1 forbids the spelling hole.ctor.1 requires.
+
+ct.typenotvalue.1: "A type is never a value. A hole cannot be reached
+through a type: `Ord<u8>.compare` is not a spelling." `Option<u8>` is a
+type by kw.type.oneof.1 and `some` is one of its holes by
+hole.oneof.variant.1, so `Option<u8>.some` is a hole reached through a
+type, in exactly the form the rule names.
+
+The intended reconciliation is presumably that the derived function is a
+separate member that happens to share the hole's name, so `Option<u8>.some`
+selects the derivation rather than the hole. The core makes the cost of
+that reading explicit: two members named `some` live on one block, one of
+type `u8` and one of type `(u8) -> Option<u8>`, and E2 must consult the
+fill discipline to know which it returns. Nothing states this.
+
+WHAT WOULD CLOSE IT. Scope ct.typenotvalue.1 to conjunctive hole sets, or
+say that the derived constructor is a member and that it shadows the hole.
+
+----------------------------------------------------------------------------
+B-4  bind.field.1 is stated for `-> self` and the corpus needs it under
+     `-> {a, b}`.
+
+bind.field.1: "A runtime parameter of a `-> self` declaration is a field of
+the resulting block." `List` (unified.z:157) projects
+`-> {push, pop, count, [], span, deinit}`, not `-> self`, and its methods
+read `self.allocator` at unified.z:182, 184 and 190. So S1 must apply to
+restricting projections generally.
+
+Confirmed by every other struct in the corpus with a partial projection,
+and by `probe` (json.z:151), which is the one place S1 must NOT apply:
+`probe` has a runtime parameter `k` and a projection `{at, found}`, and `k`
+is not a member of anything.
+
+WHAT WOULD CLOSE IT. Restate bind.field.1 for restricting projections, and
+say that a projection with typed members is not one of them. That second
+half depends on Z-19.
+
+----------------------------------------------------------------------------
+B-5  S1 is a side condition the surface syntax does not express, and it has
+     three exceptions the surface does not mark.
+
+S1 turns a binder into a member. It is the whole content of the record
+declaration (3.3) and half the content of the struct (3.2), and it is not
+visible anywhere in `Name <args> (args) -> proj { body }`: the parameter
+list is written to the LEFT of the projection that decides whether its
+entries are parameters or fields. A translator must read to the arrow
+before it knows what the parameter list meant.
+
+Its exceptions: the receiver is never injected (S2); a `-> T` or `-> ()`
+declaration injects nothing; and a `-> {a: T, b: U}` declaration injects
+nothing either, though it is written with the same production as one that
+does.
+
+WHAT WOULD CLOSE IT. Nothing, short of a syntax change. This is a genuine
+cost of putting the projection after the parameters, and it should be
+recorded as one rather than as a property of `-> self`.
+
+----------------------------------------------------------------------------
+B-6  `-> T { body }` has two meanings and no rule names the discriminator.
+
+    to_string :: <...> (allocator: M, v: T) -> slice<u8> { ...; b.finish() }
+    ord_u8    :: -> Ord<u8> { compare = (a, b) -> i32 { ... } }
+
+Both are decl.proj.value.1. The first body's tail expression is the result.
+The second body has no tail expression; it is a set of fills for `Ord<u8>`'s
+holes. `[[ ... ]]` for the first ends in `<<...>>` and for the second in
+`fit (rec {...}) [[T]]`. Two translations, one surface form.
+
+Three candidate discriminators, all of which the corpus tests:
+
+    (a) "T has holes". Fails: `parse :: <M: Allocator> (allocator, src)
+        -> Result<Json<M>, Error>` (json.z:453) projects a type with two
+        holes and is an ordinary function.
+
+    (b) "there is no runtime group". Holds across the whole corpus, and is
+        never stated. It also gives no answer for `x :: -> u32 { 3 }`,
+        which no rule forbids and which kw.value.1 says is a value.
+
+    (c) "T's holes are conjunctive, i.e. T is a `-> self` block with
+        holes". Holds across the corpus, and consults three properties of
+        a type that is written in a projection position where the reader is
+        expecting a result type.
+
+bind.which.named.1 is the nearest rule and describes only case (c); see
+B-13 for what it does to case (a).
+
+WHAT WOULD CLOSE IT. Name the discriminator. (c) is the right one and it
+means saying, in the section on projections, that `-> T` where T is a
+conjunctive hole set is a different act from `-> T` where it is not.
+
+----------------------------------------------------------------------------
+B-7  hole.quantify.1 and vis.projection.1 contradict each other on `List`.
+
+hole.quantify.1: "The projection quantifies over holes only. `::` members
+are unaffected, so a `-> oneof` block carries methods exactly as a
+`-> self` block does."
+
+vis.projection.1: "The projection is the export list. `-> self` exports the
+whole block; `-> {a, b}` exports those two names."
+
+`expand` (unified.z:180) is a `::` member of `List` and is not in `List`'s
+projection. Under hole.quantify.1 it is unaffected by the projection and
+escapes. Under vis.projection.1 it does not. The whole point of `List`'s
+closed projection, argued at unified.z:151-156, is that `items`, `capacity`
+and by implication `expand` do not escape.
+
+In the core the two rules are two different operations on one term: E6
+restricts a name set without regard to how the names were bound, which is
+vis.projection.1; hole.quantify.1 asks E6 to skip D1 members, which would
+make E6 a no-op for every block whose members are all bound.
+
+The charitable reading is that hole.quantify.1 is about `-> oneof` only and
+its first sentence overreaches. The core cannot take the charitable reading
+because it has one restriction operator.
+
+WHAT WOULD CLOSE IT. Scope hole.quantify.1 to `-> oneof`, where it is doing
+real work, and delete its claim about the projection in general.
+
+Note also that hole.quantify.1's payoff -- a sum carrying methods -- is
+used at zero sites in the corpus. Every helper over a sum is a free
+function: `unwrap_or` and `is_some` (json.z:57-66), `is_dead` (ecs.z:272).
+
+----------------------------------------------------------------------------
+B-8  ProjectionList is restriction in one place and construction in the
+     other, and the two are opposite operations. FILED: Z-19.
+
+Recorded here only because the core sharpens it. `-> {push, pop, ...}`
+(unified.z:157) is E6: it names members that exist and removes the others,
+constructs nothing, and leaves the block's identity and lifetime alone.
+`-> {at: u32, found: bool}` (json.z:151) is the reverse: it names members
+that do not exist in the block, and json.z:156-159 constructs a fresh
+anonymous record at each `return`.
+
+One production, and in the core one of them shrinks a record while the
+other builds one. Z-19 files this as a gap in the rules; the core's reading
+is that they are not one form with two readings but two forms with one
+spelling, and that `-> {a, b}` should be split before it is specified.
+
+----------------------------------------------------------------------------
+B-9  `-> T` and `-> ()` project an unnamed, ordered result that no member
+     form declares. This is the boundary with the statement layer.
+
+Set out in 3.4. Two of the five projections cannot be given meaning in the
+declaration layer at all: they name the value of a body, and the value of a
+body is the value of its last statement, which spec.txt marks INVENTED and
+which Z-01 says is unspecified along with everything else in that layer.
+
+The consequence for the claim is worth stating plainly: of the five
+projections offered as five readings of one construct, two are not
+declaration-layer constructs. They are the function's result type, and
+their meaning is owed by a layer that does not exist yet.
+
+----------------------------------------------------------------------------
+B-10 A declaration and the type of a declaration are one surface
+     production, and the core needs two forms. ROOT OF: Z-04.
+
+`FunctionLit = SignatureType [ Block ]`. The body is optional, and dropping
+it turns a declaration into its own type. The core cannot do that: E3 needs
+a body and E12 is a separate former. Every hole of every shape in the
+corpus needs E12 -- `Allocator.alloc`, `Writer.write_bytes`,
+`Fn."()"`, `System.run`, `Ord.compare`, `Key.hash`, `Formattable.format`,
+`AnyStore.remove` -- and no surface form distinguishes them from a
+declaration someone forgot to finish.
+
+Z-04 files the contradiction between hole.bodiless.1 and bind.bodyless.1.
+This entry files its cause: the two rules are trying to decide a question
+the grammar refused to ask, and 3.3 shows a clean answer falls out of the
+core (a bodiless declaration is well formed exactly when its projection
+restricts).
+
+----------------------------------------------------------------------------
+B-11 `<T>` is a hole whose filler is a type, which hole.valueonly.1 and
+     hole.noassoc.1 deny.
+
+The pressure point asks this about `Formattable<T>` and `Key<K>`, and those
+two are fine: `format: (v: T, w: ptr<Writer>) -> ()` and
+`hash: (k: K) -> u64` are holes of VALUES whose types mention a type
+parameter, which is exactly hole.valueonly.1 plus hole.typeparam.1 working
+as designed. The break is one level out, in the parameter list itself.
+
+    TypeParam = identifier [ ":" Type ] [ "=" Expression ]
+
+That is the same shape as a member: an identifier, an optional ascription,
+an optional filler. Read against bind.hole.1, `<T>` is an identifier with
+no ascription and no binder, which is a hole. Its filler is `u8`. So the
+compile-time parameter list contains holes of kind TYPE, and
+hole.noassoc.1 says "There is no hole of type `type`, and therefore no
+associated type", and hole.valueonly.1 says "Every hole is a hole of a
+value".
+
+The design escapes by calling `<T>` a parameter rather than a hole. The
+core cannot: bind.field.1 has already made a parameter a member, and D2 has
+already made an unbound member a hole, so the two categories are the same
+category and the kind distinction has to be real. In the core, E3 at stage
+c binds variables of two kinds -- types and values -- and E4 at stage c
+applies both, and ct.kinds.1 says as much ("a type, a policy or a value")
+three sections away from the two rules that deny it.
+
+The compile-time parameter list contains all three kinds and spells them
+almost identically:
+
+    <T>                     a hole of kind type
+    <F: Formattable<T>>     a hole of kind value, ascribed
+    <indent: u32 = 2>       a binding of kind value, with a default
+    <M: Allocator>          a hole of kind value whose ascription is a
+                            conjunctive hole set, i.e. a bound
+
+WHAT WOULD CLOSE IT. Say that hole.valueonly.1 and hole.noassoc.1 are about
+MEMBER holes, and that a compile-time parameter may have kind type. That is
+a small edit and it makes ct.kinds.1 consistent with the two rules it
+currently contradicts.
+
+----------------------------------------------------------------------------
+B-12 A hole may carry compile-time parameters, and then its shape can be a
+     bound but not erased. No rule says so; the corpus routes around it.
+
+Set out in the second note to 3.7. `abs.bound.1` monomorphises, so a
+generic hole is fine behind `<M: Shape>`. `abs.erased.1` makes
+`(a: Shape)` a `ptr<Shape>` with a vtable, and a vtable has one slot per
+member, not one per instantiation. So a shape with a generic hole is
+usable one way and not the other, and abs.nodyn.1's "the bracket separates
+static from dynamic" quietly stops being true for it.
+
+unified.z:86-89 is the corpus avoiding this without naming it: `mem.make`
+is generic and lives in a module of free functions rather than in the
+`Allocator` shape, and the comment explains the placement in terms of
+extensibility.
+
+----------------------------------------------------------------------------
+B-13 bind.which.named.1 admits only `=` and `::` under `-> T`, and every
+     function body in the corpus writes `:=`.
+
+bind.which.named.1: "Under `-> SomeType`, a member matching one of that
+type's holes is written `=`. Any other member is fresh and is written
+`::`." `to_string` is `-> slice<u8>` and writes `b := StringWriter(...)`
+(unified.z:326). `probe` writes `i :=` and `free :=` (json.z:152-153).
+`parse` writes `lx :=`, `p :=`, `v :=`, `t :=` (json.z:454-457).
+
+The rule survives only if a binding introduced inside a body is not a
+member of the block. But BLOCKS AND SCOPE says a block is the only
+container, `Statement = Declaration | ...` makes it a declaration, and
+order.independent.1 makes declarations in a block order-independent, which
+the corpus visibly relies on being false inside a body.
+
+So either a block has two kinds of contents -- members and locals -- and
+"every declaration builds a block of named values" is not the whole story,
+or bind.which.named.1 is false in every function. The core needs the
+distinction either way: `rec` is unordered and recursive, `<<...>>` is
+ordered and sequential, and the surface uses one pair of braces for both.
+
+WHAT WOULD CLOSE IT. Say whether a body-local `:=` is a member. This is a
+declaration-layer question with a declaration-layer answer, and it does not
+wait on Z-01.
+
+----------------------------------------------------------------------------
+B-14 The parameters of a lambda filling a hole are given no types and no
+     rule supplies them.
+
+`compare = (a, b) -> i32 { ... }` (unified.z:223) against the hole
+`compare: (a: T, b: T) -> i32` (unified.z:212). Same at unified.z:234, 267,
+275, 289, 300, json.z:103, 110, 123, 124, 468, 519, ecs.z:128, 129, 667,
+699.
+
+The grammar admits it -- `Parameter = Receiver | identifier [ ":" Type ]
+[ "=" Expression ]` -- and nothing states that the omitted types come from
+the hole being filled. oq.14 asks the same question about the PROJECTION
+("whether a lambda filling a typed hole may elide its projection, since the
+hole already supplies it") and the corpus never elides the projection and
+always elides the parameter types, so oq.14 is asking about the case that
+does not arise and not about the one that does.
+
+----------------------------------------------------------------------------
+B-15 `::` and `:=` are a staging discipline the core needs, and
+     order.independent.1 denies the ordering the corpus relies on.
+
+E5 is a recursive unordered record. The corpus needs it to be two ordered
+phases. `Map` (json.z:132-146) declares `Entry` (136) and `Slot` (138) as
+`::` members and then initialises the `:=` field `slots` (146) by passing
+`Slot` as a
+compile-time argument, so the compile-time members must be resolved before
+the runtime fields are. `List` (unified.z:158-164) initialises `items` from
+`capacity`, and json.z:350 asserts "fields initialise in declaration
+order", which no rule states and which order.independent.1 appears to deny.
+
+The core can express the staging -- `=^c` before `=^r` -- and cannot
+express the ordering within a stage without the statement layer. That half
+belongs to Z-01 and is not pursued here. The half that does not: nothing
+says that `::` members are resolved before `:=` fields, and every container
+in the corpus depends on it.
+
+----------------------------------------------------------------------------
+B-16 Structural fit is a primitive, and the shape/policy classification
+     does not constrain which side of the fit is written.
+
+E10 is not derivable from E1-E6. Membership (`ord_u8 : Ord<u8>`, written at
+the declaration) and subsumption (`Heap` satisfies `Allocator`, checked at
+the use site) are one operation in the core, which is a real reduction and
+the answer to the fourth pressure point: THE CORE DOES NOT NEED TO KNOW
+`::` FROM `=`. A member is written `=` iff its name is a hole of the
+projected type, so the binder is a redundancy check and carries no
+information the core cannot recover.
+
+What the core then shows is that the classification is one-directional.
+abs.shape.1 and abs.policy.1 classify a HOLE SET by whether its holes take
+a receiver. They do not constrain how an instance is written, and only one
+of the two directions is closed:
+
+    A SHAPE CANNOT BE FILLED NOMINALLY, and this does fall out.
+    `x :: -> Allocator { alloc = ... }` makes `x` a value by kw.value.1;
+    kw.recv.rule.1 says a receiver is required exactly when the block is a
+    type; the hole takes `&self`; so there is nothing for the receiver to
+    receive. Good -- no rule needed.
+
+    A POLICY CAN BE SATISFIED STRUCTURALLY, and nothing says whether that
+    is intended. `Ord<u8>`'s hole takes no receiver, so any value block
+    with a matching `compare` satisfies it, and `sort<O = anything>` will
+    take it. `saturating` (unified.z:70-72) is exactly this: a value block
+    of receiver-free `::` members, structurally a policy instance of a
+    policy nobody declared, used as a module. `mem` (unified.z:90-95) has
+    the same shape and is a module too.
+
+So the binder difference makes the shape case visible and the policy case
+invisible, and U.9.4 ("a block satisfies a shape by accident") is a
+statement about half of the relation.
+
+----------------------------------------------------------------------------
+B-17 `p(7)` and `Heap()` are one surface form and two core operations.
+
+Set out in the note to 3.9. `Heap()` is E4 at stage r. `p(7)` is E2 then
+E4. `decl.apply.4` decides between them, and deciding requires knowing
+whether the head is a declaration with an unapplied runtime group or a
+value with a `()` member -- that is, kw.type.test.1 must be run on the head
+of every call before the call can be elaborated. It is resolvable and it is
+not free, and ptr.deref.spelling.1's long form `f.()(x)`, which would make
+it explicit, is used at zero sites in the corpus and is flagged in spec.txt
+as possibly only a gloss.
+
+The case that has no answer at all: a declaration with both a runtime group
+and a `()` member. `B(x)` applies the group by decl.apply.4 and `B(x)(y)`
+invokes the member, but the corpus never writes one and no rule addresses
+it.
+
+----------------------------------------------------------------------------
+B-18 `rec` must be a fixpoint at both stages, and the compile-time one is
+     an open question. FILED: oq.8.
+
+E5 binds `self` and every member name in every member, which is what
+`fmt_u8.format` calling `fmt_u8` (unified.z:268) and `self.format` inside
+`spaced` (json.z:526) need. That much is ordinary.
+
+`Json` (json.z:243-250) mentions `Json<M>` inside its own variant types, so
+E7 must sit inside a compile-time fixpoint as well: `Json` is not finished
+when `array: List<Json<M>, M>` is elaborated. oq.8 asks what
+monomorphisation does to a type that contains itself, and this is the same
+question with the recursion made syntactic. Cross-referenced, not
+re-reported.
+
+
+============================================================================
+5  CONSEQUENCES
+============================================================================
+
+----------------------------------------------------------------------------
+What the core makes obvious that the surface hides
+
+`-> self` IS NOT A MARKER. It is maximal restriction: `-> self` and
+`-> {a, b}` are one operation, E6, differing only in the size of the name
+set. rules.txt's own table calls `-> self` "struct / module / shape" and
+`-> {a, b}` "multiple return, AND visibility", which reads as two entries
+and is one. What actually makes a block a struct is having a runtime group
+(kw.type.rtgroup.1), and `List` proves it: it is the corpus's central
+struct and its projection is `-> {a, b}`.
+
+THE MODULE IS NOT A CONSTRUCT AT ALL. `io`, `mem`, `saturating` and
+`ord_u8` translate to the same core term modulo the projection: a rec of
+compile-time members, no runtime group, no holes. Module, namespace,
+arithmetic helper and policy instance are one thing with four names. This
+is the claim's strongest result and it holds without qualification.
+
+THE CLOSURE IS NOT A CONSTRUCT EITHER. 3.9 needs nothing that 3.2 does not
+already need. `op.closure.capture.1` is S1 with a different name.
+
+THE BINDER IS REDUNDANT. `=` versus `::` under a named projection carries
+no information the core cannot recover from the projected type's hole set.
+It is a check, not a distinction. That is a good property and the design
+should claim it more strongly than it does.
+
+`self` VERSUS THE NAME IS MECHANICAL. `self` is E5's fixpoint variable,
+bound inside `fn^c`; the bare name is the same declaration applied to its
+defaults. That is why `dump.row(...)` resets `indent` to 2 and
+`self.row(...)` does not (ecs.z:689-691), and why `json_fmt<M>.format` and
+`self.format` mean opposite things in one block (json.z:518-556). The
+corpus explains this twice in prose; the core needs no explanation.
+
+VISIBILITY IS FREE. vis.opaque.1 -- a value escaping while its type does
+not -- is not a rule about types. It is E6 restricting a name set and not
+touching what the names hold. `io.out` needs no machinery.
+
+BODILESSNESS IS DECIDABLE. A bodiless declaration is well formed exactly
+when its projection restricts. Neither reading in Z-04 says this and it
+falls out of the core in one line.
+
+----------------------------------------------------------------------------
+Where the core shows two things the design calls the same are not
+
+THE PROJECTION IS NOT ONE THING. Five surface projections, four core
+operations, and exactly one genuine reduction:
+
+    -> ()          E3 body, tail = unit     REDUCES to -> T
+    -> T           E3 body, tail typed      result type
+    -> self        E6, maximal              restriction
+    -> {a, b}      E6, partial              restriction
+    -> {a: T}      fresh record             CONSTRUCTION -- opposite of E6
+    -> oneof       E7                       a different construct
+
+So the three uses named in the brief -- visibility, multiple return, the
+struct/module marker -- do NOT elaborate the same way. Visibility and the
+struct marker are the same operation (E6). Multiple return is its
+opposite. And the result type is a fourth thing that is not in the
+declaration layer at all.
+
+`-> oneof` IS A SECOND CONSTRUCT. B-1. The introduction forms coincide; the
+elimination, the representation, the derivation and the stage discipline
+all diverge. Three of the fourteen core forms exist for it alone.
+
+A HOLE IS TWO THINGS. Under a conjunctive reading it is an obligation on
+whoever instantiates, whose filler has the hole's own type, and which
+cannot be reached through the type. Under a disjunctive reading it is a
+labelled injection, whose derived filler has type `(T) -> Self`, and which
+is reached through the type at every construction site in the corpus. The
+design says "a hole means a requirement under `-> self` and a variant under
+`-> oneof`, and that is the whole of both interfaces and sums". The first
+half is exactly right and the interface case reduces perfectly (3.7). The
+second half is a second construct wearing the first one's syntax.
+
+A PARAMETER IS TWO THINGS. Under a restricting projection it is a field
+(S1); otherwise it is a binder. The projection that decides is written
+after it.
+
+----------------------------------------------------------------------------
+The verdict
+
+IT IS NOT ONE CONSTRUCT. It is TWO, plus one whose status cannot be
+decided until the statement layer exists.
+
+    ONE.    A block: a recursive record whose members are bound at compile
+            time, bound at run time, or unbound. This single form absorbs
+            module, struct, record, shape, policy type, policy instance,
+            closure, namespace, visibility, bounds and erasure -- six of
+            the eight things the claim names, plus several it does not.
+            Ten core forms. The claim is TRUE here, and more strongly than
+            the design argues it: the shape is not a block with a special
+            property, it is a block whose members happen to have no
+            binders, and the closure is not a construct at all.
+
+    TWO.    A tagged block. Shares the header and the member spelling with
+            the block and nothing below them. Three core forms of its own,
+            its own eliminator, its own representation, its own derived
+            functions, and its own stage discipline. The claim is FALSE
+            here.
+
+    PENDING. A function. `-> T` and `-> ()` project a value that no member
+            form declares, in an order a block does not have. It reduces to
+            the block if and only if the statement layer supplies an
+            ordered anonymous result member. That layer is Z-01 and is
+            unwritten, so the question is open rather than answered either
+            way. It is worth noting which way it is likely to fall: a
+            function body is ordered and a block is not, so the honest
+            expectation is a third construct rather than a reduction.
+
+The claim as stated -- "module, struct, function, procedure, sum type,
+interface, closure and policy are ALL ONE CONSTRUCT read differently" -- is
+therefore right about six of its eight terms, wrong about the seventh
+(sum), and undecided about the eighth (function, with procedure as its unit
+case). That is a strong result for a language design and a weak one for the
+sentence, and the difference between the two is worth the edit: the
+sentence should name the block, say that a shape and a policy and a closure
+and a module are all it, and stop before the sum.
+
+----------------------------------------------------------------------------
+Counts
+
+    Core forms needed                                   14
+      terms                                             12
+      declaration forms                                  2
+    Forms attributable to `-> oneof` alone                3
+    Forms attributable to declaration-versus-its-type     1
+    Forms the block alone needs                          10
+
+    Breaks filed in section 4                            18
+      apparently new                                     11
+        B-2, B-3, B-4, B-5, B-6, B-7, B-11, B-12,
+        B-13, B-14, B-17
+      new framing of a filed issue                        4
+        B-1 (near Z-05, Z-20), B-8 (Z-19),
+        B-10 (Z-04), B-16 (U.9.4)
+      cross-references only                               3
+        B-9 (Z-01), B-15 (Z-01, U.4.3), B-18 (oq.8)
+
+    Surface projections                                   5
+    Distinct core operations behind them                  4
+    Genuine reductions among them                         1  (`-> ()`)
+
+    Side conditions the surface does not express          2  (S1, S2)
+
+
+============================================================================

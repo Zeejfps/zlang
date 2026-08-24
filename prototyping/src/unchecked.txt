@@ -1,0 +1,870 @@
+==============================================================================
+unchecked.txt  --  annex U, what the language does not check or define
+==============================================================================
+
+WHAT THE LANGUAGE DOES NOT CHECK AND DOES NOT DEFINE. It adds no rule.
+Rules: spec.txt, which is the sole normative document. Syntax:
+grammar.ebnf. Argument: rationale.txt. rules.txt is the superseded
+original, retained frozen so that the line citations below stay valid; it
+is not to be cited as current.
+
+Every entry names a hole that some rule in spec.txt creates, states what a
+program that gets it wrong does instead, and points at the rule. Each
+entry's Source line gives the spec.txt rule identifiers first and the
+superseded rules.txt lines, with the corpus evidence, in parentheses after
+them. Where no spec.txt rule corresponds, the Source line says so and names
+the issue in issues.txt that tracks the gap. Words are defined in
+glossary.txt. Questions that are still open, rather than decided, are in
+open.txt.
+
+An entry is a normative promise about absence. A program may rely on an
+entry being permanent unless the entry is marked UNWRITTEN, which means the
+specification has not yet decided, or unless a decision listed in open.txt
+retires it by name.
+
+Each entry carries a stable dotted identifier. Identifiers are never reused
+and never renamed. An entry that is retired is kept, marked retired, and
+dated.
+
+------------------------------------------------------------------------------
+READING GUIDE
+
+C's Annex J has three lists: undefined, unspecified and
+implementation-defined behaviour. This annex has five.
+
+Three of the five are Annex J's, renamed. UNCHECKED is undefined behaviour:
+a rule exists and nothing enforces it. UNSPECIFIED is unspecified
+behaviour: several answers are permitted and none is promised. PLATFORM is
+implementation-defined behaviour: the target decides and an implementation
+says which.
+
+UNDIAGNOSED is a category C has no use for, because C does not claim what
+this language claims. The program is well-formed. Its behaviour is fully
+defined. It runs, it terminates, and it computes something other than what
+its author meant. No rule is violated, so there is nothing for a compiler to
+detect and no diagnostic it could issue that would not be wrong. `v := xs[i]`
+binds an address where a copy was meant. A match ends in `_` and absorbs a
+variant added years later. A policy's `hash` and `equals` disagree. Each is a
+correct program. It is the largest category here -- fifteen of forty-nine --
+and eight of the ten entries with no mechanical detection at all are in it.
+That is the direct cost of a language whose claim is that cost is visible: a
+visible cost is a cost the programmer can forget to look at.
+
+UNWRITTEN is not a property of the language. It is a defect in the
+specification: the case has never been addressed, and programs already depend
+on the answer being one thing rather than another. Every UNWRITTEN entry must
+become one of the other four. There are twenty.
+
+------------------------------------------------------------------------------
+U.0  CATEGORIES
+
+Five categories. The first four are decided; the fifth is a defect in the
+specification and is listed so that the defects are countable.
+
+UNCHECKED
+A rule exists, the program must obey it, and the language does not enforce
+it. A program that violates it has no defined behaviour from that point on.
+C calls this undefined behaviour.
+
+UNDIAGNOSED
+The behaviour is fully defined and is not what the program's author intended.
+No diagnostic is issued, because nothing is wrong: the program means what it
+says. C has no category for this.
+
+UNSPECIFIED
+Several behaviours are permitted. The language does not say which occurs and
+does not require an implementation to document its choice. A correct program
+does not depend on it.
+
+PLATFORM
+The target decides and an implementation documents its choice. A program may
+depend on it by naming the target.
+
+UNWRITTEN
+The specification does not address the case. There is no decided answer, and
+programs already depend on the answer being one thing rather than another.
+Every entry in this category must move into one of the four above.
+
+Each entry also carries a detection note, which says how an implementation
+could find a violation if it chose to:
+
+    static         a checker can reject it without running the program.
+    dynamic        a checked build can trap it at the point of the fault.
+    instrumented   detection needs a shadow build: a tracking allocator, a
+                   pointer-provenance map, or both.
+    none           no mechanical detection exists without a language change.
+
+------------------------------------------------------------------------------
+U.1  POINTERS AND LIFETIME
+
+U.1.1  `unchecked.ptr.invalidation`
+       UNCHECKED -- detection: instrumented
+
+A `ptr<T>` into a container's storage remains valid only until that container
+reallocates. `List.push` allocates a larger buffer, copies the elements, and
+frees the old one; every pointer into the old buffer is then dangling. The
+language does not track which pointers point into a container and does not
+invalidate them. A read or write through such a pointer has no defined
+behaviour.
+
+    Source: spec.txt [mem.nomove.1], [mem.interior.1], [elem.accessor.1]
+            (rules.txt MEMORY 270-276; unified.z:180-187 (`expand`);
+            ecs.z:164-169 (`Store.at` hands out `Option<ptr<C>>` into a `List`
+            that reallocates on `add`))
+
+U.1.2  `unchecked.ptr.lifetime`
+       UNCHECKED -- detection: instrumented
+
+A binding's address is fixed from its initialisation to scope exit. Nothing
+prevents a pointer to that binding from being stored in a value that outlives
+the scope. A read or write through the pointer after scope exit has no
+defined behaviour.
+
+    Source: spec.txt [mem.bindaddr.1], [ptr.typed.1]
+            (rules.txt MEMORY 251-261)
+
+U.1.3  `unchecked.ptr.erased-borrow`
+       UNCHECKED -- detection: none
+
+Erasure is a borrow. A `ptr<Shape>` has no owner, so a container of
+`ptr<Shape>` holds pointers into whatever storage the caller supplied,
+usually locals. The program keeps those values alive by declaring them in a
+scope that outlives the container. Declaration order is therefore
+load-bearing and unenforced; the same program with two lines exchanged
+compiles and dangles.
+
+    Source: spec.txt [mem.borrow.1], [mem.nobox.1]
+            (rules.txt MEMORY 289-297; ecs.z:757-773 (schedule of
+            `ptr<System<A>>`); ecs.z:541-548 (`Signal.subs` holds
+            `ptr<Fn<E,()>>` owned by the caller))
+
+U.1.4  `unchecked.ptr.aliasing`
+       UNDIAGNOSED -- detection: none
+
+Two `ptr<T>` may address the same value. No signature says whether they do,
+and no rule forbids it. A body holding two pointers obtained from two lookups
+cannot say whether a write through one is visible through the other, and
+nothing in the accessor's projection answers it.
+
+    Source: spec.txt [elem.outparam.1], [ptr.arg.explicit.1]
+            (rules.txt ELEMENTS 211-229 (a parameter is a pointer, and a
+            pointer promises nothing); ecs.z:617-620 (`me` and `prey`, two
+            interior pointers into one store, obtained from two lookups);
+            ecs.z:466-479 (`Movement.run` writes through `h.a` while reading
+            `h.b`, two pointers the join handed out together))
+
+NOTE, non-normative. ecs.z:908-909 states that `Combat.chase` "writes through
+one of" `me` and `prey`. It does not: both are read at ecs.z:620 and never
+written. The writes in that body are ecs.z:623 and ecs.z:630, through
+pointers into two other stores. The language property is unchanged -- nothing
+says whether any two of the four alias -- and the file's own account of it
+is wrong.
+
+U.1.5  `unchecked.ptr.alias-assumption`
+       UNWRITTEN -- detection: n/a
+
+Whether an implementation may assume that two pointers of unrelated types, or
+two pointers derived from unrelated bindings, do not alias is not stated. No
+`restrict`, no type-based aliasing rule, and no statement that there is none.
+
+    Source: spec.txt: none -- see Z-24
+            (rules.txt POINTERS 487-523 (silent))
+
+U.1.6  `unchecked.ptr.reentrancy`
+       UNDIAGNOSED -- detection: none
+
+A callable stored in data may hold a pointer to a value that is
+mid-operation. Emitting an event from inside a traversal calls a subscriber
+that may mutate the container being traversed. No signature in the chain says
+that any of it happens.
+
+    Source: spec.txt: none -- see Z-06
+            (rules.txt OPEN 829-838; ecs.z:904-907 (the hazard, stated);
+            ecs.z:539-561 (`Signal.emit` calls every subscriber with the
+            emitter mid-operation); ecs.z:497-510 (`Reaper.run`))
+
+NOTE, non-normative. The corpus describes this case rather than exhibiting
+it. `Reaper.run` collects into `self.doomed` in a first loop over `w.hp`
+(ecs.z:502-505) and emits in a second loop over `self.doomed`
+(ecs.z:506-510), for the reason given at ecs.z:498-500. The subscriber
+actually written, `on_death` at ecs.z:572-574, captures a
+`ptr<List<Entity,M>>` and not the `ptr<World<M>>` that ecs.z:904-907
+describes. Nothing in the language prevents the described version; the
+program avoids it by hand, which is the evidence.
+
+U.1.7  `unchecked.ptr.self-referential-copy`
+       UNCHECKED -- detection: static
+
+A value may hold a pointer into itself, and the language guarantees it means
+what it says. Copying is what binding from another value does, and the copy
+is a second value with its own address. The interior pointers inside the copy
+still address the original. Nothing marks a block as non-copyable, and no
+diagnostic is issued.
+
+    Source: spec.txt [mem.copy.1], [mem.interior.1]
+            (rules.txt MEMORY 251-261 (`stores.push(&self.pos)` is legal at
+            258-259; a copy is a second value at 261); ecs.z:344-348
+            (`World.wire` builds exactly such a value))
+
+U.1.8  `unchecked.ptr.null`
+       UNWRITTEN -- detection: dynamic
+
+Whether a `ptr<T>` may hold a null value, whether every `ptr<T>` may, and
+what a read or write through one does are not stated. `nil` is a predeclared
+identifier and has no semantics anywhere in the rules. A `List` used after
+`deinit` indexes through it.
+
+    Source: spec.txt: none -- see Z-16
+            (rules.txt POINTERS 487-523 (silent); grammar.ebnf:72 (`nil` is
+            predeclared and nothing more); unified.z:189-193)
+
+U.1.9  `unchecked.ptr.arith`
+       UNWRITTEN -- detection: n/a
+
+`p + n` is used in the corpus and no rule defines it. Whether pointer
+arithmetic exists, whether it scales by the pointee's size, and what a result
+outside the allocation means are unstated. POINTERS lists exactly three
+implicit reach-throughs and one deref, and no arithmetic.
+
+    Source: spec.txt: none -- see Z-21
+            (rules.txt POINTERS 492-500; unified.z:107 (`self.base +
+            self.top`); json.z:325 and json.z:338 (`self.src.ptr + start`))
+
+------------------------------------------------------------------------------
+U.2  MEMORY MANAGEMENT
+
+U.2.1  `unchecked.leak.container`
+       UNDIAGNOSED -- detection: instrumented
+
+A container does not free its elements. Freeing a `List` frees the buffer and
+not what the elements own. The compiler does not mention it.
+
+    Source: spec.txt [mem.nodtor.1]
+            (rules.txt MEMORY 278-288 (the price is itemised at 285-288))
+
+U.2.2  `unchecked.leak.erased`
+       UNDIAGNOSED -- detection: instrumented
+
+A value reached only through a `ptr<Shape>` is kept alive by hand and freed
+by hand. There is no `Box`, because a box cannot exist without a destructor
+to run. The compiler does not mention it.
+
+    Source: spec.txt [mem.borrow.1], [mem.nobox.1], [mem.nodtor.1]
+            (rules.txt MEMORY 289-297)
+
+U.2.3  `unchecked.mem.deinit-omitted`
+       UNDIAGNOSED -- detection: instrumented
+
+`deinit` is an ordinary member and a naming convention. Nothing requires a
+type to have one, nothing requires a caller to call it, and nothing pairs it
+with the construction it undoes. A block does not get a destructor that runs
+at scope exit.
+
+    Source: spec.txt [mem.nodtor.1]
+            (rules.txt MEMORY 278-281)
+
+U.2.4  `unchecked.mem.deinit-repeated`
+       UNCHECKED -- detection: instrumented
+
+Nothing prevents `deinit` from being called twice, or a value from being used
+after it. What the second call hands the allocator is whatever the first one
+left behind, and no rule fixes that either: `List.deinit` nils `items` before
+returning, so a second call frees `nil`, which is U.1.8; a `deinit` that does
+not nil hands back an already-released pointer, which is U.2.5. Nothing
+distinguishes a released value from a live one.
+
+    Source: spec.txt [mem.nodtor.1]
+            (rules.txt MEMORY 278-281; unified.z:189-193)
+
+U.2.5  `unchecked.mem.free-foreign`
+       UNWRITTEN -- detection: instrumented
+
+The `Allocator` shape does not state that `free(p)` requires `p` to have come
+from that allocator, and does not state what a mismatch does. `Arena.free` is
+a no-op, so an arena-allocated pointer freed through a heap is not detected
+on either side.
+
+    Source: spec.txt: none -- see Z-10
+            (unified.z:81-84 (the shape); unified.z:111 (`Arena.free`))
+
+------------------------------------------------------------------------------
+U.3  ELEMENTS AND CONTAINERS
+
+U.3.1  `unchecked.elem.pointer-for-copy`
+       UNDIAGNOSED -- detection: none
+
+`v := xs[i]` binds the element's address where a copy was meant, and
+compiles. The value is then an alias of storage the surrounding code may
+overwrite, which produces a wrong answer rather than a crash. Partial
+detection follows from two other rules: arguments do not auto-deref, so
+passing the binding on is a type error, but `.` and a symbolic member reach
+through any number of pointers, so `v.x` and `v[i]` never error.
+
+    Source: spec.txt [elem.accessor.1], [elem.reachthrough.1],
+            [ptr.arg.explicit.1]
+            (rules.txt ELEMENTS 185-191; unified.z:240-243 (the hazard, named
+            in a comment) against unified.z:244-253 (the shuffle in `sort`,
+            which writes `v := xs[i].*` at 246 and would alias without it))
+
+U.3.2  `unchecked.elem.index-meaning`
+       UNDIAGNOSED -- detection: none
+
+`p[i]` on a raw pointer is the element. `xs[i]` on a `List` is the element's
+address. One syntax, two meanings, and both occur inside `List` itself.
+
+    Source: spec.txt [elem.rawindex.1]
+            (rules.txt ELEMENTS 193-196; unified.z:183 against unified.z:198)
+
+U.3.3  `unchecked.elem.projection-varies`
+       UNDIAGNOSED -- detection: static
+
+`[]` has no one meaning across containers. `List` projects `ptr<T>`, `Map`
+projects `Option<V>`, `Store.at` projects `Option<ptr<C>>`. A body written
+against one container does not port to another by changing the type.
+
+    Source: spec.txt [elem.polyindex.1], [elem.fallible.1]
+            (rules.txt ELEMENTS 198-209; unified.z:198, json.z:208, ecs.z:164)
+
+U.3.4  `unchecked.elem.bounds`
+       UNWRITTEN -- detection: dynamic
+
+No rule requires an index to be in range. `List.[]` computes the address of
+`items[i]` for any `i`, and `count` is not consulted. Whether an
+out-of-range index is checked, and what it does when it is not, is unstated.
+
+    Source: spec.txt: none -- see Z-24
+            (rules.txt ELEMENTS 157-162 (the accessor, with no precondition);
+            unified.z:198; ecs.z:206-207)
+
+U.3.5  `unchecked.container.mutation-during-traversal`
+       UNDIAGNOSED -- detection: none
+
+There is no traversal form, so every traversal is an index loop over a count
+read at each step. A container that removes by swapping the last element into
+the vacated slot silently skips the moved element when it is removed from
+under a forward loop.
+
+    Source: spec.txt: none -- see Z-25
+            (rules.txt OPEN 865-870 (no `for (x := it)`); ecs.z:182-200
+            (`Store.remove` swap-removes); ecs.z:497-510 (the program collects
+            first and despawns second by hand to avoid it))
+
+U.3.6  `unchecked.container.slice-aliasing`
+       UNCHECKED -- detection: instrumented
+
+A `slice<T>` is a pointer and a length over storage it does not own. `span`
+hands out a slice over a container's buffer, so a slice is invalidated by the
+same reallocation as an element pointer (U.1.1), and a slice may outlive the
+value it was taken from (U.1.2). A parsed structure whose leaves are slices
+of an input buffer is valid only while that buffer is, and nothing in the
+structure's type says so.
+
+    Source: spec.txt: none -- see Z-15
+            (rules.txt ELEMENTS 236-242; unified.z:200 (`span`); json.z:270
+            (`Lexer` is handed a `slice<u8>` it does not own), json.z:325 and
+            json.z:327 (`Token.text` carries a slice of it), json.z:395 (which
+            becomes `Json.text`), json.z:453-459 (`parse` returns the document
+            and drops the lexer))
+
+U.3.7  `unchecked.container.projected-field-writable`
+       UNCHECKED -- detection: static
+
+The projection is the export list and says nothing about mutability. A `:=`
+member that appears in a projection is writable from outside the block.
+`List` projects `count`, so a caller may set the length without touching the
+storage, leaving the container inconsistent.
+
+    Source: spec.txt [vis.projection.1], [vis.nopub.1]
+            (rules.txt VISIBILITY 147-152; unified.z:157 (`count` is in the
+            projection) and unified.z:159 (it is a `:=` field); ecs.z:501
+            (`self.doomed.count = 0`, a caller resetting a `List` by writing
+            its length))
+
+U.3.8  `unchecked.container.open-storage`
+       UNDIAGNOSED -- detection: static
+
+A container that cannot be walked through its own projection must export its
+storage, and an exported field is writable (U.3.7). `Map` exports `slots` and
+`cap` because iterating a `Map` means reaching into them.
+
+    Source: spec.txt [elem.accessor.limits.1], [vis.projection.1]
+            (rules.txt ELEMENTS 236-242 (an accessor addresses indexing, not
+            iteration); json.z:487-488 and json.z:539-540 (two formatters read
+            `members.slots` and `members.cap`); ecs.z:930-942)
+
+------------------------------------------------------------------------------
+U.4  CONSTRUCTION
+
+U.4.1  `unchecked.ctor.two-phase`
+       UNCHECKED -- detection: none
+
+A `-> self` block has field initialisers and no statement position, and
+`self` does not exist inside it. Setup that needs `self`, or two fields at
+once, is a second member the caller must call after construction. Nothing
+requires the call, nothing marks the value as unusable before it, and nothing
+reports the omission. A value used between the two calls is incomplete: in
+the corpus, the sweep over erased component stores iterates an empty list and
+removes nothing.
+
+    Source: spec.txt [mem.construct.1], [bind.which.self.1]
+            (rules.txt OPEN 840-854 (which names this cost "unchecked" at
+            851); ecs.z:342-349 (`World.wire`); ecs.z:753-755 (`w.wire()` in
+            `main`, with the comment "forget it and `despawn` silently does
+            nothing at all"))
+
+U.4.2  `unchecked.ctor.undefined-field`
+       UNWRITTEN -- detection: instrumented
+
+`name := undefined` declares a field filled in later. What a read before the
+fill yields is not stated, and no rule requires the fill to happen.
+
+    Source: spec.txt [bind.undefined.1]
+            (rules.txt BINDING 56. `undefined` occurs exactly once in
+            rules.txt and not at all in glossary.txt)
+
+U.4.3  `unchecked.ctor.init-order`
+       UNWRITTEN -- detection: static
+
+Declarations in a block are order-independent, and a field initialiser may
+name another field of the same block. The order in which `:=` initialisers
+are evaluated is not stated, and neither is what a cycle among them does. The
+corpus relies on an order: a `List` initialises `items` from `capacity`.
+
+    Source: spec.txt [order.independent.1], [bind.field.1]
+            (rules.txt ORDER INDEPENDENCE 588-594 against unified.z:158
+            (`capacity := 10`) and unified.z:164 (`items := mem.make<T>(
+            allocator, capacity)`); json.z:350-351 asserts "fields initialise
+            in declaration order", which no rule says)
+
+------------------------------------------------------------------------------
+U.5  ARITHMETIC AND NUMBERS
+
+Every entry in this section is UNWRITTEN. The specification says that
+`+ - * / %`, `== !=`, `< <= > >=`, `& | ^ << >> ~` and unary `-` are
+instructions on `u8`, `u32`, `i32`, `f32`, `f64` and `bool`, that they
+desugar to nothing, and that precedence is a fixed table. It says nothing
+else about them.
+
+No rule anywhere defines overflow, integer conversion, or division by zero.
+The words `overflow`, `trap`, `divide`, `division`, `convert`, `widen`,
+`truncate`, `cast`, `IEEE`, `NaN` and `rounding` do not occur in rules.txt or
+glossary.txt at all. The words `saturating` and `wrapping` do occur --
+rules.txt:775-776 and glossary.txt:215 -- but only as the worked example of
+why ADDITION IS A CHOICE and therefore wants a policy, in the argument that
+ends with arithmetic built in on the primitives and no policy for it.
+Neither line is a statement about what a primitive `+` does. The standard
+library meanwhile already depends on a specific answer.
+
+This is the largest single gap in the specification, and it is not a hole the
+design has chosen: it is a subject the design has not reached. Three of the
+five entries below already have code in the corpus whose meaning depends on
+the answer, one of them in the standard library's hash functions.
+
+    Source for all: spec.txt [op.instructions.1], [op.primtypes.1],
+                    [op.primtypes.2]  (rules.txt OPERATORS 454-464).
+
+U.5.1  `unchecked.num.overflow`
+       UNWRITTEN -- detection: dynamic
+
+What an arithmetic operation does when its result is not representable is not
+stated. Wrapping, trapping, saturating and undefined are all consistent with
+the text.
+
+Already depended on: json.z:104-108 is FNV-1a with a `u64` accumulator, an
+offset basis of 14695981039346656037 and a prime of 1099511628211. The
+algorithm is defined modulo 2^64, so `(h ^ k.ptr[i]) * 1099511628211` must
+wrap to compute the value it intends, and every alternative answer gives a
+different hash.
+
+Already a hazard: `mem.make` computes `n * size_of<T>()` and allocates the
+product (unified.z:92), so an overflow there under-allocates and every
+subsequent element write is out of bounds; `List.expand` computes
+`capacity * 2` (unified.z:181).
+
+    Source: spec.txt [op.instructions.1], [op.primtypes.2]
+            (rules.txt OPERATORS 454-464; json.z:104-108; unified.z:92;
+            unified.z:181)
+
+NOTE, non-normative. ecs.z:128 -- `(k.id * 2654435761) ^ (k.gen * 40503)`,
+with `u32` operands and a `u64` projection -- is usually quoted alongside the
+FNV case as a second site requiring wrapping. It is weaker than that and
+worse. Read as a `u32` multiply it overflows for almost every input and must
+wrap; read as a widening to `u64` first it does not overflow at all. The two
+readings compute different hashes, and nothing chooses between them, because
+that choice is U.5.4 and is also unwritten.
+
+U.5.2  `unchecked.num.divzero`
+       UNWRITTEN -- detection: dynamic
+
+What `/` and `%` do with a zero divisor is not stated. `Map.probe` reduces a
+hash modulo `cap` on every lookup (json.z:152).
+
+    Source: spec.txt [op.instructions.1], [op.primtypes.2]
+            (rules.txt OPERATORS 454-464; json.z:152)
+
+U.5.3  `unchecked.num.shift`
+       UNWRITTEN -- detection: dynamic
+
+The bitwise shifts are listed as instructions. A shift count equal to or
+greater than the width of the operand, a negative shift count, and whether
+`>>` on `i32` is arithmetic or logical are unstated.
+
+    Source: spec.txt [op.instructions.1], [op.primtypes.2]
+            (rules.txt OPERATORS 454-464)
+
+U.5.4  `unchecked.num.conversion`
+       UNWRITTEN -- detection: static
+
+No rule permits, forbids, or defines mixing the six primitive types in one
+expression, and no conversion syntax exists. The corpus does all three:
+json.z:152 reduces a `u64` modulo a `u32`; ecs.z:128 combines `u32` operands
+into a `u64` result; ecs.z:785-787 invents a function `f32_of` and records in
+a comment that "neither file has a story for numeric conversion".
+
+    Source: spec.txt [op.primtypes.1], [op.primtypes.2]
+            (rules.txt OPERATORS 454-464; json.z:152; ecs.z:128;
+            ecs.z:785-787)
+
+U.5.5  `unchecked.num.float`
+       UNWRITTEN -- detection: n/a
+
+There is no statement of IEEE-754 conformance, of NaN behaviour under `==`
+and `<`, of rounding mode, of whether an `f32` expression may be evaluated at
+wider precision, or of what `f32`/`f64` conversion does. `Vec2.eq` is `==` on
+`f32` (unified.z:64) and is used as an equality test in `main`
+(unified.z:377).
+
+    Source: spec.txt [op.primtypes.1]
+            (rules.txt OPERATORS 454-464; unified.z:64; unified.z:377)
+
+------------------------------------------------------------------------------
+U.6  ALLOCATION
+
+U.6.1  `unchecked.alloc.failure`
+       UNWRITTEN -- detection: dynamic
+
+The `Allocator` shape declares `alloc: (&self, n: u32) -> ptr`. The
+projection has no room for a failure, so an allocator cannot report one and a
+caller cannot test for one. Whether a failed allocation returns a null
+pointer, aborts the program, or is outside the language is not stated. Every
+allocation in the corpus is used without a check.
+
+    Source: spec.txt: none -- see Z-10
+            (unified.z:81-84 (the shape); unified.z:91-93 (`mem.make` returns
+            the result unexamined); unified.z:164 and unified.z:182;
+            json.z:146)
+
+U.6.2  `unchecked.alloc.exhaustion`
+       UNDIAGNOSED -- detection: dynamic
+
+An allocator with a fixed extent has nowhere to report exhaustion (U.6.1), so
+it does not check. `Arena.alloc` advances `top` by `n` and returns the
+pointer without comparing either against `size`. `size` is a field of `Arena`
+and is read nowhere in the block.
+
+    Source: spec.txt: none -- see Z-10
+            (unified.z:104-112)
+
+U.6.3  `unchecked.alloc.alignment`
+       UNWRITTEN -- detection: n/a
+
+`alloc` takes a byte count and no alignment. `mem.make<T>` requests
+`n * size_of<T>()` bytes and treats the result as a `ptr<T>`. What alignment
+an allocator must provide, and what an under-aligned access does, are
+unstated. The word `align` occurs nowhere in rules.txt or glossary.txt.
+`size_of` is itself used once, at unified.z:92, and declared nowhere in the
+corpus.
+
+    Source: spec.txt: none -- see Z-24
+            (unified.z:81-84; unified.z:91-93)
+
+------------------------------------------------------------------------------
+U.7  SUMS AND MATCHING
+
+U.7.1  `unchecked.sum.wildcard-absorbs`
+       UNDIAGNOSED -- detection: static
+
+A match names every variant or ends in `_`. `_` is what the arms not named
+collapse into, so adding a variant to a published sum routes the new variant
+into every existing `_` arm in every program, with no diagnostic. Leaving `_`
+off is how a match asks to be told; the rule cannot make that the default,
+because the one-arm binding idiom depends on `_`.
+
+    Source: spec.txt [match.exhaustive.1], [match.growth.1]
+            (rules.txt MATCH 368-383, which states the trade and calls `_` "a
+            spelling you choose rather than the default")
+
+U.7.2  `unchecked.sum.representation`
+       UNSPECIFIED -- detection: n/a
+
+A sum's discriminant is not a value. The tag's width, its numbering, the
+order of the variants, and the layout of the payload are not stated and may
+not be relied on. A sum cannot be serialised to a stable form by the
+language.
+
+    Source: spec.txt: none -- see Z-20
+            (rules.txt OPEN 859-864; ecs.z:275-278)
+
+------------------------------------------------------------------------------
+U.8  VALUES, RESULTS AND DROPS
+
+U.8.1  `unchecked.value.discarded-error`
+       UNDIAGNOSED -- detection: none
+
+A value may not be dropped silently: an expression whose value goes nowhere
+is an error, and `_ := e` is the licensed spelling for discarding one. The
+rule constrains the spelling, not the examination. `Result` is an ordinary
+`-> oneof` in `std.core` with no privileged standing, so `_ := f()` discards
+a `Result` carrying an error exactly as it discards an `Option`. There is no
+annotation marking a value as one that must be inspected, and with no `try`
+the error channel is an ordinary returned value that nothing but this rule is
+watching.
+
+    Source: spec.txt [wild.nodrop.1], [wild.discard.1], [match.notry.1]
+            (rules.txt MATCH 405-409 and 423-432; json.z:409 and json.z:426
+            (`_ := self.bump()`); ecs.z:196-198 (three results discarded in
+            one function, one of them a `bool` reporting whether a removal
+            happened))
+
+NOTE, non-normative. The corpus does not apply the rule uniformly.
+ecs.z:365 (`self.stores[i].remove(e)`, whose projection is `bool` at
+ecs.z:231) and ecs.z:367 (`self.live.remove(e)`, whose projection is `bool`
+at json.z:182) each discard a value with no `_ :=`, and should not compile
+under rules.txt:423-432. The two citations name two different files on
+purpose, and both are right. `self.stores[i]` is a `ptr<AnyStore>`, so its
+`remove` is the shape hole at ecs.z:231. `self.live` is declared
+`Map<Entity, bool, M, KY = entity_key>` at ecs.z:324; `Map` is bound to
+`std.map.Map` at ecs.z:49, having graduated out of json.z between the two
+files (ecs.z:37); and the only written declaration of `Map.remove` in the
+corpus is json.z:182. ecs.z:194 calls that same member `Map.remove` in its
+own comment. The same `Map.remove` call is written `_ :=
+self.index.remove(e)` at ecs.z:198, earlier in the same file. This is a
+defect in ecs.z, not a hole in the language, and is recorded here because
+it is evidence about how visible the rule is in practice.
+
+------------------------------------------------------------------------------
+U.9  SHAPES, POLICIES AND ERASURE
+
+U.9.1  `unchecked.shape.identity`
+       UNSPECIFIED -- detection: n/a
+
+A `ptr<Shape>` is two words built at the coercion site. Whether two coercions
+of one value compare equal is not stated for the data word or for the vtable
+word. A program that registers a callback cannot remove it.
+
+    Source: spec.txt [abs.erased.1], [mem.borrow.1]
+            (glossary.txt FAT POINTER 329-331; rules.txt OPEN 885-887;
+            ecs.z:550-556 (`Signal` has no `off`, and the comment records the
+            identity question as the reason))
+
+U.9.2  `unchecked.shape.zero-sized-identity`
+       UNSPECIFIED -- detection: n/a
+
+A block with no fields costs zero bytes. Whether two such values have
+distinct addresses is not stated, and a schedule of `ptr<Shape>` stores
+exactly such addresses.
+
+    Source: spec.txt [abs.erased.1]
+            (unified.z:97-98; rules.txt NOTE 2 676-677; ecs.z:462-464 and
+            ecs.z:762)
+
+U.9.3  `unchecked.shape.coercion-site`
+       UNSPECIFIED -- detection: n/a
+
+Whether the coercion to `ptr<Shape>` happens implicitly at a call site or
+requires the annotation is undecided. Until it is, whether a given call is
+direct or indirect is not determined by the source, which is the one property
+the static/dynamic split exists to make visible.
+
+    Source: spec.txt [abs.erased.1], [abs.nodyn.1]
+            (rules.txt OPEN 892-894; rules.txt TWO KINDS OF ABSTRACTION
+            618-622)
+
+U.9.4  `unchecked.shape.accidental-satisfaction`
+       UNDIAGNOSED -- detection: none
+
+Structural matching requires no declaration of intent. A block satisfies a
+shape by having members whose names and signatures match, whether or not that
+was intended, and stops satisfying it when either side renames a member.
+There is no adapter and no registration, so there is also no place to record
+that a match was meant.
+
+    Source: spec.txt [abs.noadapter.1], [abs.shape.1]
+            (rules.txt 624-631; glossary.txt 261-264 (`::` means "fresh
+            member; whatever shape it happens to satisfy is a coincidence");
+            ecs.z:236-251)
+
+U.9.5  `unchecked.policy.inconsistent`
+       UNDIAGNOSED -- detection: none
+
+Nothing checks that a policy instance obeys the contract its users assume. An
+`Ord<T>` that is not a total order, and a `Key<K>` whose `hash` and `equals`
+disagree, are well-typed. `sort` and `Map` then produce wrong results rather
+than errors. Grouping `hash` and `equals` into one block removes the failure
+mode where two independently supplied parameters disagree; it does not check
+that one block agrees with itself.
+
+    Source: spec.txt [abs.policy.1], [rat.shapepolicy.agree.1]
+            (rules.txt NOTE 1 664-670; json.z:95-125 (`Key`, `str_key`,
+            `ci_key`))
+
+------------------------------------------------------------------------------
+U.10  EVALUATION ORDER AND SCOPE
+
+U.10.1  `unchecked.order.defer`
+        UNWRITTEN -- detection: n/a
+
+`defer` is glossed "run at scope exit" and nothing else. Whether "scope" is
+the enclosing block or the enclosing declaration, in what order several
+defers run, whether a defer runs on `return`, `break` and `continue`, and
+whether a defer in a loop body runs once per iteration, are unstated. `defer`
+is the whole of the language's destruction story.
+
+    Source: spec.txt: none -- see Z-23
+            (rules.txt KEYWORDS 351; glossary.txt KEYWORDS 366. The word
+            occurs once more, at rules.txt:279, which says `defer` is how a
+            `deinit` gets called and adds no semantics)
+
+U.10.2  `unchecked.order.operands`
+        UNWRITTEN -- detection: n/a
+
+The order in which a call's arguments, and the operands of a binary operator,
+are evaluated is not stated. Accessors may have side effects, which the
+specification notes when it fixes the one ordering rule it does state -- that
+a compound assignment evaluates its destination exactly once.
+
+    Source: spec.txt [op.compound.once.1]
+            (rules.txt OPERATORS 457-462 (which settles the destination and
+            leaves everything else open))
+
+U.10.3  `unchecked.order.recursion-depth`
+        UNWRITTEN -- detection: dynamic
+
+No limit on recursion depth is stated and no behaviour on exhausting the
+stack. The corpus contains a recursive descent parser whose depth is set by
+its input.
+
+    Source: spec.txt: none -- see Z-24
+            (json.z:389-404 and json.z:406-446 (`value`, `array` and `object`
+            recurse once per level of nesting); json.z:467-503 (the printer
+            recurses to match))
+
+------------------------------------------------------------------------------
+U.11  REPRESENTATION AND COMPILATION
+
+U.11.1  `unchecked.layout.repr`
+        UNWRITTEN -- detection: n/a
+
+The size, alignment, field order and padding of a block are not stated, nor
+the representation of a sum's tag and payload, nor whether a `-> self` block
+and a `-> oneof` block over the same members have any relation. A program
+cannot compute a layout, and the corpus already costs one out: json.z:222-228
+tabulates `Json` at 24 bytes against no stated layout rule.
+
+    Source: spec.txt: none -- see Z-24
+            (json.z:222-228)
+
+U.11.2  `unchecked.ct.divergence`
+        UNWRITTEN -- detection: dynamic
+
+No limit on compile-time evaluation or on instantiation depth is stated, and
+no diagnostic is required for an instantiation that does not terminate.
+Recursive types under monomorphisation are recorded as undecided, so the case
+is known to be reachable.
+
+    Source: spec.txt: none -- see Z-24
+            (rules.txt OPEN 856-858; rules.txt NOTE 2 683-693)
+
+U.11.3  `unchecked.ct.effects`
+        UNWRITTEN -- detection: n/a
+
+`import` is an ordinary compile-time binding of an ordinary compile-time
+function. What a compile-time function may do -- read the filesystem, observe
+where it is called from, fail -- is unstated, and so is whether compile-time
+evaluation is required to terminate.
+
+    Source: spec.txt [kw.import.1]
+            (rules.txt KEYWORDS 355-356)
+
+U.11.4  `unchecked.type.ctfield-identity`
+        UNSPECIFIED -- detection: n/a
+
+Whether a compile-time member participates in a type's identity is not
+stated, so whether `List` with `capacity :: 10` and `List` with
+`capacity :: 20` are one type or two is unanswered. A program may not depend
+on either answer.
+
+    Source: spec.txt [bind.ctfield.1]
+            (rules.txt OPEN 889-890; rules.txt BINDING 82-83)
+
+U.11.5  `unchecked.primitive.width`
+        PLATFORM -- detection: n/a
+
+The six primitive types name their widths, so those are fixed. The size of a
+`ptr<T>`, the size of an opaque `ptr`, the width of `size_of`'s result, and
+byte order are not stated and are the target's.
+
+    Source: spec.txt [ptr.typed.1], [ptr.opaque.1], [op.primtypes.1]
+            (rules.txt POINTERS 488-490; unified.z:92)
+
+------------------------------------------------------------------------------
+U.12  COUNTS
+
+    Category         Entries      Detection      Entries
+    UNCHECKED              8      none                10
+    UNDIAGNOSED           15      static               7
+    UNSPECIFIED            5      dynamic              9
+    PLATFORM               1      instrumented         9
+    UNWRITTEN             20      n/a                 14
+    Total                 49      Total               49
+
+Two numbers are worth reading off this table.
+
+Twenty UNWRITTEN entries. These are not the language's holes; they are the
+specification's. Five of them -- U.5.1 through U.5.5 -- are one subject the
+document has not opened at all.
+
+Fifteen UNDIAGNOSED entries, against eight UNCHECKED. The characteristic
+failure of a program in this language is not a crash and not an undefined
+state. It is a program that compiles, runs, means exactly what it says, and
+computes the wrong answer. Ten of the forty-nine entries have no mechanical
+detection at all, and eight of those ten are UNDIAGNOSED -- there is nothing
+to detect, because nothing is broken.
+
+------------------------------------------------------------------------------
+U.13  ENTRIES THAT A DECISION WOULD RETIRE
+
+Cross-reference to open.txt. An open question that is answered retires the
+entries listed against it there; those entries are then marked retired in
+this annex rather than deleted.
+
+    Open question             Retires
+    oq.ptr.mutability         U.1.1, U.1.2, U.1.4, U.1.6, U.3.6, and
+                              possibly U.1.3, U.1.7
+    oq.ctor.body              U.4.1, U.4.2, U.4.3
+    oq.alloc.failure          U.6.1, U.6.2
+    oq.num.semantics          U.5.1, U.5.2, U.5.3
+    oq.num.conversion         U.5.4, U.5.5
+    oq.sum.discriminant       U.7.2
+    oq.shape.identity         U.9.1, U.9.2
+    oq.shape.coercion         U.9.3
+    oq.type.ctvalue-identity  U.11.4
+    oq.mono.recursive         U.11.2, in part -- a decision there says what
+                              a non-terminating instantiation does
+
+Entries retired by no open question (26): U.1.5, U.1.8, U.1.9, U.2.1, U.2.2,
+U.2.3, U.2.4, U.2.5, U.3.1, U.3.2, U.3.3, U.3.4, U.3.5, U.3.7, U.3.8, U.6.3,
+U.7.1, U.8.1, U.9.4, U.9.5, U.10.1, U.10.2, U.10.3, U.11.1, U.11.3, U.11.5.
+
+Of those 26, the ones marked UNCHECKED, UNDIAGNOSED, UNSPECIFIED or PLATFORM
+are permanent properties of the language. The ones marked UNWRITTEN --
+U.1.5, U.1.8, U.1.9, U.2.5, U.3.4, U.6.3, U.10.1, U.10.2, U.10.3, U.11.1,
+U.11.3 -- are not permanent and are not open design questions either. They
+are specification work: the answer is not in dispute, it has simply never
+been written down. Eleven entries, none of which should reach open.txt.
+
+Note in particular that `oq.iter.form` -- a `for (x := it)` traversal -- does
+not retire U.3.5. A desugared traversal reads the same count from the same
+container and skips the same element.
+
+==============================================================================

@@ -1,0 +1,1155 @@
+============================================================================
+rationale.txt  --  why the rules in spec.txt are the rules they are
+============================================================================
+
+THE ARGUMENTS, AND NOTHING ELSE. No rule is stated here. spec.txt says what
+the syntax means; this file says why, and records what was weighed and
+rejected to get there. It is the companion to the normative document, in
+the way the C Rationale is the companion to the C standard: nothing here
+constrains an implementation, and nothing here may be cited to decide what
+a program means.
+
+Every entry names the spec rule IDs it argues for, and the lines of the
+original design document it was drawn from. The prose is the author's; the
+editing is confined to making an argument readable by someone who has not
+just read the rule it sat under. Where a pronoun's referent was in the
+surrounding rule text, the referent is now spelled out. Where the original
+said "the rule above", the rule's ID is now written.
+
+Read glossary.txt, then spec.txt, then this file.
+
+----------------------------------------------------------------------------
+ON THE NOTE NUMBERING, AND THE MISSING NOTE 5
+
+The original design document contains NOTE 1, NOTE 2, NOTE 3, NOTE 4 and
+NOTE 6. THERE IS NO NOTE 5. It was not misplaced in this extraction and it
+is not elsewhere in the source: nothing in rules.txt, glossary.txt,
+unified.z, json.z or ecs.z references a NOTE 5, and nothing explains the
+gap. (unified.z:10 advertises "NOTE 1-9", which is stale in the other
+direction -- there were never nine.)
+
+DECISION: THE GAP IS KEPT. The notes are referred to here as N1, N2, N3,
+N4 and N6, mapping one-to-one onto NOTE 1, 2, 3, 4 and 6. There is no N5
+and there will not be one.
+
+The reason is that the note numbers are cited from outside the document
+and renumbering would silently break those citations. glossary.txt:200
+says "See NOTE 6 in rules.txt"; unified.z:89 and :145 say "See NOTE 4",
+unified.z:150 says "See NOTE 2"; ecs.z:226 and :836 cite "NOTE 3's rule";
+ecs.z:1032 cites NOTE 4; json.z:747 cites NOTE 2. A gap a reader notices
+once and finds explained here is cheaper than five stale pointers in three
+corpus files, each of which would then have to be found and corrected.
+
+----------------------------------------------------------------------------
+ON TWO CORRECTED CROSS-REFERENCES
+
+rules.txt cites "the wrapper problem in NOTE 1's last paragraph" at line
+799, and "the adapter problem in NOTE 1" at line 876. NEITHER IS IN NOTE 1.
+NOTE 1's last paragraph (rules.txt:671) reads in full: "Neither is a new
+construct. Both are a block with unfilled holes."
+
+The argument both lines want is STRUCTURAL MATCHING HAS NO ADAPTER, at
+rules.txt:623-631, which is in the TWO KINDS OF ABSTRACTION section and not
+in any note. Both pointers are redirected here to R-10, and both fixes are
+flagged at the entries that carried them: R-35 (which inherits line 799's
+citation) and R-38's neighbour material on numeric generic code, which
+inherits line 876's.
+
+============================================================================
+RULES TO PROMOTE INTO spec.txt
+============================================================================
+
+FOUR PARAGRAPHS BELOW WERE CLASSED AS ARGUMENT AND ARE NOT. Each states a
+rule that is stated nowhere else in the original, so none of them may be
+annexed into this file. They are reproduced here for the spec author to
+lift, and they should then be DELETED from this section rather than left
+in two places.
+
+  1. THE SHAPE / POLICY TEST.  rules.txt:651-654. The only statement of the
+     test, and three normative rules derive from it -- abs.shape.1,
+     abs.policy.1 and the operator split at op.members.1 /
+     op.notoperators.1. Text:
+
+         The test is not stylistic: CAN THERE LEGITIMATELY BE TWO OF THESE
+         FOR ONE TYPE? Two orderings of u8, yes -> policy. Two ways for an
+         Arena to allocate, no -> shape.
+
+  2. ANYTHING THAT MUST AGREE BELONGS IN ONE BLOCK.  rules.txt:665-670.
+     Stated nowhere in the rule sections, and corpus-supported: `Key<K>`
+     carries hash and equals together at json.z:95-98. Text:
+
+         ANYTHING THAT MUST AGREE BELONGS IN ONE BLOCK. A hash and an
+         equals passed as two independent parameters can be supplied
+         inconsistently -- a case-folding hash with a case-sensitive equals
+         is a silently broken map that no type error catches. `Key<K>`
+         carries both. Grouping is free here, because a policy is just a
+         block.
+
+  3. A SHAPE CONTAINS HOLES AND NOTHING ELSE.  rules.txt:696, the title of
+     NOTE 3. The rule exists only as that title; the note's body argues for
+     it and never restates it. Corpus-supported by every shape declared:
+     Allocator, Writer, Ord, Formattable, Key, AnyStore, System, Fn, Fn2.
+     Text:
+
+         A shape contains holes and nothing else.
+
+  4. A MEMBER HAS THE BLOCK'S COMPILE-TIME ARGS AND FIELDS IN SCOPE, AND
+     MEMBERS ARE THE ONLY THING SHAPE MATCHING LOOKS AT.  rules.txt:727-728,
+     the opening of NOTE 4. Stated only inside a note, and load-bearing:
+     it is what lets `dump.pad` read a bare `indent` (ecs.z:733-735) and
+     `List`'s field initialisers read a bare `allocator` and `capacity`
+     (unified.z:164). Text:
+
+         Methods in the block get T, M and the fields in scope for free,
+         and they are the only thing shape matching looks at.
+
+============================================================================
+DECLARATION AND PROJECTION
+============================================================================
+
+R-01  The binder is the structural / nominal difference made visible
+      Argues for:  bind.which.self.1, bind.which.named.1
+      Source:      rules.txt:71-77
+
+      Three spellings look like one act, which is why the projection's
+      effect on them is worth stating: `Heap` writes `alloc :: ...` and
+      `hex_u8` writes `format = ...` for what looks like the same act.
+      Heap says `-> self` and satisfies Allocator STRUCTURALLY -- it never
+      names it, so there is no hole in scope and `alloc` is created. A
+      policy instance NAMES its type in the projection --
+      `hex_u8 :: -> Formattable<u8>` -- so the holes are in scope and it
+      fills one. The binder is the structural / nominal difference made
+      visible.
+
+      Alternatives weighed: none recorded. The alternative not taken is
+      implicit: a separate keyword or annotation saying which of the two
+      kinds of satisfaction a declaration intends, where the projection and
+      the binder already carry it.
+      Cost accepted:        a reader must know which of the two projections
+      a block wrote before the binders in its body can be read.
+
+----------------------------------------------------------------------------
+R-02  What an accessor buys a closed projection
+      Argues for:  elem.accessor.1, elem.accessor.limits.1, vis.projection.1
+      Source:      rules.txt:236-242
+
+      Beyond writing to an element, an accessor -- a `[]` member projecting
+      `ptr<T>` -- is what makes `-> {a, b}` usable on a container. Without
+      one, every caller reaches around `[]` into the raw `items` field, so
+      closing the projection breaks every program that touches a List. With
+      one, `List` exports six names and hides its storage. It does not hide
+      POINTERS -- `span` hands out a slice and `[]` hands out a `ptr<T>` --
+      but nothing outside can see `items` or `capacity`, which is the whole
+      of what the projection ever promised.
+
+      Alternatives weighed: none recorded.
+      Cost accepted:        none recorded here; the price of the accessor
+      itself is R-34.
+
+----------------------------------------------------------------------------
+R-03  Order independence now stands on one leg
+      Argues for:  order.independent.1
+      Source:      rules.txt:589-594
+
+      Declarations in a block, and blocks in a file, are order-independent,
+      because recursive types force it: `Slot` holds an `Entry` declared
+      below it. That was one of three reasons and is now the only one --
+      the others were the solver needing to have seen every anonymous
+      declaration before it could pick, and coherence being a whole-program
+      property. Both went out with the instance pool (R-35). A rule left
+      standing on one leg is worth noticing; this leg holds.
+
+      Alternatives weighed: none recorded. The two reasons the rule has
+      lost are recorded above precisely so that the rule is not later
+      re-justified from them.
+      Cost accepted:        none recorded.
+
+============================================================================
+HOLES AND ABSTRACTION
+============================================================================
+
+R-04  A hole is the whole of what an interface ever was
+      Argues for:  hole.conjunctive.1, hole.meaning.1, hole.nokeywords.1
+      Source:      rules.txt:89-94
+
+      Under `-> self`, holes are read conjunctively: all of them must be
+      filled to instantiate, so a block with an unfilled hole cannot be
+      instantiated and is usable only as a bound or behind a pointer. That
+      is all an interface ever was, and it applies to every block equally
+      -- a List with one unfilled field is abstract for the same reason
+      Allocator is. Filling the holes gives you a value.
+
+      The consequence is that `Allocator` and `Option` are the same
+      declaration shape read two ways, and that no `trait`, `interface`,
+      `abstract`, `enum` or `union` is needed to tell them apart.
+
+      [Editor: this argument assumes that an unfilled hole is what makes a
+      block abstract, which is what BODILESS MEANS HOLE (rules.txt:132-136)
+      then leans on to declare a bodiless header an abstract module. That
+      conflicts with a bodiless record -- `Span :: (lo: u32, hi: u32)
+      -> self` at rules.txt:81 and json.z:77, which is bodiless and is not
+      abstract -- see spec.txt CONFLICT marker.]
+
+      Alternatives weighed: a separate abstraction construct, rejected on
+      the ground that the hole reading already covers it for every block
+      and not only for blocks that opted in.
+      Cost accepted:        none recorded.
+
+----------------------------------------------------------------------------
+R-05  Shapes and policies, and why one syntax is enough
+      Argues for:  abs.both.1
+      Source:      rules.txt:636-637, 671
+
+      Rust conflates shapes and policies and pays for it with orphan rules.
+      Go has only shapes. Haskell has only policies. You can have both, told
+      apart by one word: whether the holes take `self`.
+
+      Neither is a new construct. Both are a block with unfilled holes.
+
+      Alternatives weighed: Rust's single conflated construct, which buys
+      one mechanism and pays in orphan rules; Go's shapes-only and
+      Haskell's policies-only, each of which simply lacks the other half.
+      Cost accepted:        none recorded.
+
+----------------------------------------------------------------------------
+R-06  What a shape is
+      Argues for:  abs.shape.1
+      Source:      rules.txt:639-643
+
+      SHAPE: every hole takes `self`. An allocator, a writer, a socket --
+      things where the abstraction is a property of the object and there is
+      exactly one sensible answer per type. Satisfied structurally by any
+      type with matching methods, so it needs no registration. Coerce to
+      `ptr<Shape>` for dynamic dispatch.
+
+      Alternatives weighed: nominal registration, rejected because
+      structural satisfaction needs none.
+      Cost accepted:        the adapter problem -- see R-10.
+
+----------------------------------------------------------------------------
+R-07  What a policy is
+      Argues for:  abs.policy.1, ct.policy.1
+      Source:      rules.txt:645-649
+
+      POLICY: no hole takes `self`. `Ord<u8>`, `Formattable<u8>`, `Key<K>`
+      -- things where several answers exist and the caller must choose. A
+      free-standing NAMED value, passed as a compile-time argument. Works on
+      primitives and foreign types, since nothing has to be attached to
+      them.
+
+      Alternatives weighed: attaching the choice to the type, which cannot
+      be done for a primitive or a foreign type and cannot represent two
+      answers at once.
+      Cost accepted:        the call site names the instance. See R-35.
+
+----------------------------------------------------------------------------
+R-08  The test answers questions it was not designed for
+      Argues for:  abs.shape.1, abs.policy.1, op.members.1, op.notoperators.1
+      Source:      rules.txt:656-659
+
+      The shape / policy test -- CAN THERE LEGITIMATELY BE TWO OF THESE FOR
+      ONE TYPE? -- answers questions it was not designed for, which is the
+      best evidence available that it is real rather than tidy. Asked of the
+      operators it says `[]` and `()` are members and `+` and `==` are
+      policies -- and it is still right, which is exactly why losing the
+      solver cost the language arithmetic rather than merely respelling it.
+      See R-35.
+
+      [Editor: the operator split at rules.txt:444-447 is itself derived
+      from this test, so citing that split back as independent evidence
+      that the test is real is circular. The evidence is not worthless --
+      the test does produce a determinate answer where the operators are
+      concerned -- but it is not evidence from an unrelated question.]
+
+      Alternatives weighed: a stylistic reading of the shape / policy split,
+      rejected here as the thing the test is being shown not to be.
+      Cost accepted:        none recorded.
+
+----------------------------------------------------------------------------
+R-09  Shape or policy is a property of the block
+      Argues for:  abs.nomix.1
+      Source:      rules.txt:661-663
+
+      The shape / policy distinction is a property of the BLOCK, not of each
+      hole. A block with one `self`-taking value hole and one non-`self`
+      value hole is an error; it would have no dispatch story and no
+      coercion, and admitting it buys nothing. Because every hole is a value
+      hole, the test never has to except anything.
+
+      Alternatives weighed: admitting the mixed block as a third kind of
+      abstraction, rejected for having neither a dispatch story nor a
+      coercion.
+      Cost accepted:        none recorded.
+
+----------------------------------------------------------------------------
+R-10  Structural matching has no adapter
+      Argues for:  abs.shape.1, abs.noadapter.1
+      Source:      rules.txt:623-631
+      [Fix: this is the argument rules.txt:799 and rules.txt:876 both cite
+      as being in NOTE 1. It is not in NOTE 1; it is in the TWO KINDS OF
+      ABSTRACTION section. Both pointers now land here.]
+
+      Structural matching has no adapter, and does not get one. A foreign
+      type with the right operations under the wrong names cannot be made to
+      satisfy a shape except by a wrapper costing a pointer, a vtable and a
+      name. Go has the same hole. Every fix for it -- a rename clause, an
+      impl block, a coercion declaration -- is nominal registration, which
+      is the thing structural matching exists to avoid; and the escape hatch
+      is real, since a POLICY may be written for a type you do not own. The
+      wrapper is the price of the shape half.
+
+      Alternatives weighed:
+        - a rename clause          -- nominal registration
+        - an impl block            -- nominal registration
+        - a coercion declaration   -- nominal registration
+      Cost accepted:        a wrapper per foreign type, costing a pointer,
+      a vtable and a name. Where the abstraction can be a policy instead,
+      the wrapper is not needed, because a policy attaches to nothing.
+
+----------------------------------------------------------------------------
+R-11  A shape carries no provided methods
+      Argues for:  abs.shape.holesonly.1 (see RULES TO PROMOTE, 3)
+      Source:      rules.txt:698-711
+
+      A shape COULD carry provided methods -- `make :: <T> ...` with a body,
+      non-virtual, generic, overridable by an implementer. That buys
+      `a.make<T>(n)` and costs three things:
+
+        - `:` vs `::` has to be read carefully inside every shape
+        - an implementer can override a provided method, and that override
+          silently vanishes the moment the value is coerced to `ptr<Shape>`,
+          because non-virtual methods are not in the table
+        - the shape's author owns the convenience layer forever
+
+      Keeping them out, as free functions over `M: Allocator`, costs the
+      module name at the call site -- `mem.make<T>(allocator, capacity)` and
+      not `allocator.make<T>(capacity)`, since there is no UFCS to supply a
+      fallback (R-22, R-23). All three problems go for those four
+      characters.
+
+      Alternatives weighed: provided methods on the shape, itemised above
+      with their three costs.
+      Cost accepted:        four characters of module name at every call
+      site of a convenience.
+
+----------------------------------------------------------------------------
+R-12  What no provided methods costs, and the specialisation given up
+      Argues for:  abs.shape.holesonly.1 (see RULES TO PROMOTE, 3)
+      Source:      rules.txt:713-722
+
+      What keeping provided methods out of a shape costs: a Pool cannot
+      specialize `make` with per-type free lists. If that need becomes real,
+      the answer is a separate `TypedAllocator<T>` shape -- monomorphic
+      holes per instantiation, so the specialization is a vtable slot and
+      survives coercion -- not a default.
+
+      Background, since the tension is real for anything with a table:
+
+          GENERIC . OVERRIDABLE . VIRTUAL  --  pick two.
+
+      Shape-level generics escape it by multiplying vtables, which is why
+      `TypedAllocator<T>` is a shape per T and a generic `make` inside
+      `Allocator` is not a method at all.
+
+      Alternatives weighed: a defaulted `make` overridable per allocator,
+      rejected because the override does not survive coercion to
+      `ptr<Shape>`; a shape per element type, accepted as the answer if the
+      need becomes real.
+      Cost accepted:        no per-type specialisation of a convenience
+      until a second shape is written for it.
+
+============================================================================
+MEMORY AND POINTERS
+============================================================================
+
+R-13  A value does not move
+      Argues for:  mem.nomove.1, mem.construct.1, mem.bindaddr.1,
+                   mem.interior.1, mem.copy.1
+      Source:      rules.txt:263-268
+
+      The rule that a value has one address for as long as it is alive is
+      load-bearing, because three things in the language are an address kept
+      past the expression that made it: an element pointer handed out by
+      `[]`, a closure stored in data, and a `ptr<Shape>` in a container.
+      None of them means anything without it. It is also the cheapest rule
+      that carries them -- the alternative is move semantics, and move
+      semantics is a borrow checker.
+
+      Alternatives weighed: move semantics, rejected because it brings a
+      borrow checker with it.
+      Cost accepted:        the language cannot relocate a value on its own
+      behalf, ever. What it does not promise is R-14.
+
+----------------------------------------------------------------------------
+R-14  What one address per value does not promise
+      Argues for:  mem.nomove.1, unchecked.txt U.1.1 (was mem.realloc.1)
+      Source:      rules.txt:270-276
+
+      "A value does not move" does not promise that a pointer into a
+      CONTAINER survives the container's own reallocation. `List.push` may
+      allocate a bigger buffer and copy the elements into it. That copy is
+      written by hand, in the container's own code, and it is a genuine
+      relocation of every element -- the language simply never inserts one
+      you did not write. Every pointer into the old buffer is then dangling,
+      and nothing catches it. That is the invalidation half of WHO MAY
+      WRITE, which is open, and it is about a buffer, not about values.
+
+      Alternatives weighed: none recorded.
+      Cost accepted:        a dangling interior pointer after any container
+      growth, uncaught.
+
+----------------------------------------------------------------------------
+R-15  No automatic destruction
+      Argues for:  mem.nodtor.1, unchecked.txt U.2.1 (was mem.leaks.1)
+      Source:      rules.txt:278-287
+
+      A block does not get a destructor that runs at scope exit. `deinit` is
+      an ordinary member and `defer` is how you call it, which is the same
+      idea written where it can be seen.
+
+      The alternative is not one feature: once destructors fire on their
+      own, the language must also define what happens on assignment over a
+      live value, on return, and on copy, and that is the road to move
+      semantics. This language's claim is that cost is visible and there is
+      no hidden machinery; a destructor at a closing brace is hidden
+      machinery.
+
+      Alternatives weighed: automatic destruction at scope exit, rejected
+      because it forces rules for assignment-over-live-value, return and
+      copy, which together are move semantics.
+      Cost accepted, with open eyes:
+        - containers do not free their elements
+        - an erased value in a container is kept alive by hand
+        - both are leaks the compiler will not mention
+
+----------------------------------------------------------------------------
+R-16  Erasure is a borrow, and there is no Box
+      Argues for:  mem.borrow.1, mem.nobox.1,
+                   unchecked.txt U.1.3 (was mem.keepalive.1)
+      Source:      rules.txt:289-297
+
+      `ptr<Shape>` is a pointer with no owner. That is right for an argument
+      and thin for a container: a schedule of `ptr<System>` holds pointers
+      into locals, so declaration order in `main` is load-bearing and
+      unenforced. The fix would be a `Box<Shape, M>`, which cannot exist
+      without a destructor to free it -- so with destruction decided (R-15),
+      this is decided with it. YOU KEEP THE VALUES ALIVE YOURSELF: declare
+      the concrete values in a scope that outlives the container of
+      pointers.
+
+      Alternatives weighed: `Box<Shape, M>`, rejected as unbuildable
+      without automatic destruction.
+      Cost accepted:        it is a real cost, it is paid in ecs.z's `main`,
+      and it is the same trade as R-15.
+
+----------------------------------------------------------------------------
+R-17  A parameter is a pointer, written as one
+      Argues for:  elem.outparam.1, ptr.arg.explicit.1,
+                   unchecked.txt U.1.4 (was elem.ptr.unrestricted.1)
+      Source:      rules.txt:211-234
+
+      `&self` is a receiver and stays one; the tempting generalisation -- a
+      `(out: &u32)` that is `&self` without the special case -- is not
+      taken. Written with a pointer it is C, and it costs one token in one
+      body:
+
+          tally :: (out: ptr<u32>, v: Json) -> () { out.* += 1 }
+          sort  :: <T, O: Ord<T>> (xs: ptr<List<T, _>>) -> ()
+
+      THE CALL SITE IS IDENTICAL EITHER WAY -- `sort(&xs)`, an argument is
+      explicit -- and that is the argument. The place form was invisible to
+      every reader of a call and paid only readers of signatures, where it
+      promised one thing that a pointer cannot:
+
+          print :: (w: &World) -> ()        I will not keep this
+          keep  :: (w: ptr<World>) -> ()    I might store this
+
+      A promise worth having, and not worth what it cost. A pointer is an
+      unrestricted handle of indefinite life, and a parameter list is not
+      the place to pretend otherwise.
+
+      Nothing is lost in the body either, because `.` and a symbolic member
+      both reach through any number of pointers: `xs[j].*` and `xs.count`
+      read the same whether `xs` is a List or a `ptr<List>`. `sort`'s body
+      did not change when its signature did.
+
+      Alternatives weighed: a `&T` place parameter, generalising `&self`.
+      Rejected: identical at the call site, and its one benefit -- a
+      signature promising not to retain -- is a promise the pointer model
+      cannot back.
+      Cost accepted:        a signature can no longer say "I will not keep
+      this".
+
+----------------------------------------------------------------------------
+R-18  Deref is never optional
+      Argues for:  ptr.derefrequired.1
+      Source:      rules.txt:520-523
+
+      Full auto-deref is not on offer, because two acts must not be one
+      text:
+
+          p = q         make the two pointers equal
+          p.* = q.*     copy the pointee
+
+      Both are things you have to be able to say.
+
+      Alternatives weighed: full auto-deref, rejected because it collapses
+      the two spellings above into one.
+      Cost accepted:        the explicit `.*` at every whole-pointee read
+      and write. The alias hazard it does not close is itemised in R-34.
+
+============================================================================
+DISPATCH AND POLICIES
+============================================================================
+
+R-19  Static versus dynamic is a type, not a keyword
+      Argues for:  abs.bound.1, abs.erased.1, abs.nodyn.1
+      Source:      rules.txt:676-682
+
+          List<u8>(mem)      M = Heap            direct calls, 0-byte field
+          List<u8>(audited)  M = Tracking<Heap>  direct calls, still mono
+          List<u8>(boxed)    M = ptr<Allocator>  fat pointer, indirect calls
+
+      One declaration, three behaviors. The cost of the first two: they are
+      different types and cannot share an array. That is the trade, and it
+      is visible in the code instead of hidden in a keyword.
+
+      Alternatives weighed: a `dyn` keyword or equivalent annotation,
+      rejected because the bracket already separates compile time from run
+      time and so separates static from dynamic for the same reason.
+      Cost accepted:        two monomorphisations of one declaration are
+      different types and cannot share an array.
+
+----------------------------------------------------------------------------
+R-20  Monomorphisation is viral, and the alias that stops it
+      Argues for:  abs.bound.1
+      Source:      rules.txt:684-693
+
+      Monomorphisation is viral through containing types -- a `List<T, M>`
+      field makes its owner generic in M, and so on up. Livable, and the
+      answer is an alias collapsing the parameter once in the application:
+      `A :: ptr<Arena>`, `Doc :: Json<A>`. Two unrelated programs, json.z
+      and ecs.z, reached for the same one-line fix, so it is a pattern
+      rather than a coincidence.
+
+      The residual cost is ONE ALLOCATOR PER TYPE, and it does not reach a
+      library shape: `System<M>` stays generic because a library cannot name
+      the application's allocator.
+
+      The trade gets worse for RECURSIVE types, which is open.
+
+      Alternatives weighed: none recorded; the alias is offered as the
+      mitigation rather than as an alternative design.
+      Cost accepted:
+        - one allocator per type, in the application
+        - library shapes stay generic and cannot be collapsed
+        - recursive types are not answered at all
+
+----------------------------------------------------------------------------
+R-21  Inference from the expected type is checking, not searching
+      Argues for:  ct.expected.1, ct.noexpected.1
+      Source:      rules.txt:540-550
+
+      A type argument is also inferred from the expected type, which matters
+      now that instances are applied by hand. In
+
+          to_string<F = list_fmt<F = fmt_u8>>(heap, xs)
+
+      `list_fmt`'s own `T` and `M` are never written: the position it sits
+      in wants a `Formattable<List<u8, Heap>>`, so they are read off that.
+      This is CHECKING and not searching -- one expected type, matched
+      against one declaration, with nothing to look up and nothing that
+      could be ambiguous. Where there is no expected type there is nothing
+      to read, and the args are written: `doc_fmt :: json_fmt<ptr<Arena>>`
+      in json.z.
+
+      The distinction matters because searching is what R-35 records the
+      removal of; this is the part of the convenience that survived, and it
+      survived precisely because it is local.
+
+      [Editor: this argument assumes that applying compile-time args to a
+      declaration yields a TYPE (rules.txt:32), which is false of every
+      policy instance -- `list_fmt<F = fmt_u8>` in the example above is a
+      VALUE, as are `json_fmt<ptr<Arena>>`, `spaced<ptr<Arena>>`, `dump<>`
+      and `dump<indent = 4>` -- see spec.txt CONFLICT marker.]
+
+      Alternatives weighed: a search over instances, rejected as
+      whole-program -- see R-35.
+      Cost accepted:        where there is no expected type, the arguments
+      are written out.
+
+----------------------------------------------------------------------------
+R-22  With no UFCS the split is visible in the text
+      Argues for:  call.noufcs.1, call.intrinsic.1, call.extrinsic.1
+      Source:      rules.txt:730-738
+
+      Members of a block get T, M and the fields in scope for free, and they
+      are the only thing shape matching looks at. That divides operations in
+      two:
+
+          INTRINSIC   declared in the block. Counts for shape satisfaction.
+                      May be virtual. `push`, `alloc`, `write_bytes`.
+          EXTRINSIC   a free function over a bound. Convenience only, never
+                      satisfies a shape. `make`, `drop`, `write`.
+
+      With no UFCS the split is visible in the text. `w.write_bytes(p, n)`
+      is the shape's and `io.write(w, s)` is not, and the two do not look
+      alike, so nobody has to know what a file imported to tell an operation
+      from a convenience.
+
+      Alternatives weighed: see R-23.
+      Cost accepted:        see R-23.
+
+----------------------------------------------------------------------------
+R-23  A method-position fallback is either unsound or invisible
+      Argues for:  call.noufcs.1
+      Source:      rules.txt:740-752
+
+      The alternative is what makes the no-UFCS rule worth stating. Let
+      `a.f(x)` fall back to `f(a, x)` resolved in the CALLER's scope and one
+      of two things must be true: either the fallback can satisfy a shape,
+      and "does Heap satisfy Allocator" becomes a question about imports --
+      two modules coerce the same value and build different vtables -- or it
+      cannot, and the language has a method call whose meaning depends on a
+      distinction the call site hides. The first is unsound and the second
+      is the reader's problem forever. Both are avoided by the same one-line
+      rule.
+
+      You still get extension functions -- write anything over a type you do
+      not own -- they just cannot join a shape, and they cannot dress as
+      members.
+
+      Alternatives weighed:
+        - a fallback that CAN satisfy a shape   -- unsound: satisfaction
+          becomes a property of the importer, and two modules build
+          different vtables for one value
+        - a fallback that CANNOT satisfy a shape -- sound, but the call site
+          hides which kind of call it is
+      Cost accepted:        `mem.make<T>(allocator, n)` where
+      `allocator.make<T>(n)` would have read more like prose.
+
+============================================================================
+SYNTAX
+============================================================================
+
+R-24  The name `oneof`, and why it is spelled bare
+      Argues for:  decl.proj.oneof.1
+      Source:      rules.txt:138-144
+
+      `-> T` is already glossed "one value escapes", so `-> one` would
+      collide with the projection above it, and a bare `one` in a slot that
+      otherwise holds type names burns a plausible identifier. `union` is
+      poisoned by C, `variant` names a member rather than the whole,
+      `either` implies two.
+
+      It is spelled bare and not `-> oneof self` because a sum does not
+      project the whole block -- one member escapes, which puts it in
+      `{a, b}`'s family.
+
+      Alternatives weighed:
+        - `one`      -- collides with `-> T`, and burns an identifier
+        - `union`    -- poisoned by C
+        - `variant`  -- names a member, not the whole
+        - `either`   -- implies two
+        - `oneof self` -- wrong family; a sum projects one member, not the
+          block
+      Cost accepted:        none recorded.
+
+----------------------------------------------------------------------------
+R-25  `.*` is the shape of the rule, not decoration
+      Argues for:  ptr.deref.1, ptr.reach.dot.1
+      Source:      rules.txt:502-505
+
+      `.` reaches through and stops at a member; `.*` reaches through and
+      stops at the value. The two spellings are the same act ending in
+      different places, which is why the deref lives after the dot rather
+      than being its own symbol.
+
+      Alternatives weighed: a prefix or standalone deref symbol, rejected
+      because it would not show that the deref and the member selection are
+      the same act.
+      Cost accepted:        none recorded.
+
+----------------------------------------------------------------------------
+R-26  `^` is free for xor, so deref is the half that moved
+      Argues for:  ptr.deref.1
+      Source:      rules.txt:515-518
+
+      A hash function writes `h = (h ^ k[i]) * prime`, and a language whose
+      deref is also postfix `^` eventually has to parse `h^ ^ x`. Bitwise
+      and (`&`) has the same problem against address-of; deref was the half
+      that could move.
+
+      `.*` is available BECAUSE `*` is not a member name. `[]` and `()` are,
+      so `f.()(x)` and `a.[](i)` are real spellings; had arithmetic stayed a
+      member this deref would have collided with the multiply member on the
+      first day.
+
+      Alternatives weighed: postfix `^` as deref, rejected on the parse
+      of `h^ ^ x`; `&` as deref, unavailable against address-of.
+      Cost accepted:        none recorded.
+
+----------------------------------------------------------------------------
+R-27  Naming the member `[]` spends no keyword
+      Argues for:  op.nokeyword.1, op.members.1
+      Source:      rules.txt:757-759
+
+      `operator []` would be the language's only two-token name, and the
+      only place the word `operator` appears. Naming the member `[]` costs
+      nothing and spends no keyword.
+
+      Alternatives weighed: an `operator` keyword, rejected as a two-token
+      name introduced for one purpose.
+      Cost accepted:        none recorded.
+
+----------------------------------------------------------------------------
+R-28  A closure is a block with a `()` member
+      Argues for:  op.closure.1, op.closure.capture.1, op.nocurry.1
+      Source:      rules.txt:481-484, 809-824
+
+      A closure is not a special form. It is a block with a `()` member,
+      which is why `Fn<A, R>` is an ordinary shape and needs no
+      function-type machinery, and why there is no curried spelling: what a
+      closure captures, it captures as a field, in a block written out like
+      any other.
+
+      The member half of the operator decision pays for itself twice,
+      because the same move that names a member `[]` names a member `()`,
+      and that is what a closure is:
+
+          print_u8 :: <M: Allocator> (allocator: M) -> self {
+              () :: (&self, v: u8) -> () {
+                  io.write(io.out, to_string(self.allocator, v))
+              }
+          }
+
+      -- an ordinary `-> self` block, whose runtime params are its captured
+      fields, exactly as everywhere else. There is no curried spelling and
+      no second runtime group: the declaration form has one, and a closure
+      needs nothing beyond a block. Two questions answer themselves:
+      `print_u8(mem)` has its OWN type (so it is free), and it becomes a
+      shared type precisely when you write `ptr<Fn<u8, ()>>`, which is the
+      same coercion as `ptr<Allocator>` and not a second mechanism.
+
+      Alternatives weighed: a function type and a curried spelling, neither
+      needed once `()` is an ordinary member name.
+      Cost accepted:        none recorded.
+
+----------------------------------------------------------------------------
+R-29  Precedence is a fixed table
+      Argues for:  op.precedence.1
+      Source:      rules.txt:474-475, 806-807
+
+      Precedence is a fixed table and is not user-extensible, which now
+      costs nothing to say, because nothing is extensible. It always was a
+      fixed table, and it is now merely a fact about the grammar rather than
+      a cost, since there is nothing to extend.
+
+      [Editor: the original states this twice, at rules.txt:474-475 and
+      again at rules.txt:806-807, in near-identical words. Both statements
+      are folded into this one entry.]
+
+      Alternatives weighed: user-extensible precedence, which has no
+      standing once operators are not overloadable at all (R-35).
+      Cost accepted:        none recorded; the original explicitly records
+      that this stopped being a cost when the solver went.
+
+----------------------------------------------------------------------------
+R-30  A match is an expression
+      Argues for:  match.expr.1
+      Source:      rules.txt:385-395
+
+      Match being an expression is what keeps sum types from turning code
+      into a pyramid. A one-arm-plus-`_` match BINDS instead of nesting:
+
+          obj  := match (doc)         { object (o) { o }  _ { return } }
+          tags := match (obj["tags"]) { some   (t) { t }  _ { return } }
+          xs   := match (tags)        { array  (a) { a }  _ { return } }
+
+      Each line either produces a value or leaves. Nested matches are for
+      when the failure arms do real work; when they do not, bind and move
+      on. Languages that miss this end up adding `if let`, `guard let` and
+      `let else` as three separate forms.
+
+      Alternatives weighed: statement-only match plus dedicated binding
+      forms, rejected as three forms where one expression does the work.
+      Cost accepted:        none recorded.
+
+----------------------------------------------------------------------------
+R-31  What exhaustiveness costs, and why `_` is chosen rather than defaulted
+      Argues for:  match.exhaustive.1, match.growth.1
+      Source:      rules.txt:368-383
+
+      A match names every variant, or ends in `_`. It is checked, and the
+      check is the only thing making the one-arm binding form (R-30) safe to
+      write: `_` is what the arms you did not name collapse into, so leaving
+      it off is how you ask to be told when a sum grows a variant.
+
+      Two costs, both already paid in the corpus and neither of them a
+      surprise:
+
+        - a match that CANNOT reach an arm must still write it. json.z's
+          `get` knows the slot is `live` because `probe` said `found`, and
+          still spells `empty` and `dead`. Every container grows a tail of
+          dead arms.
+        - a TAG TEST -- "is this the `dead` variant" -- has no payload to
+          bind and no short spelling, so it is a full match too. The
+          discriminant is not a value, which is open, and that is the same
+          gap read from the other side.
+
+      Writing `_` silences both, and silences the growth warning with them.
+      That is the trade, and it is the reason `_` is a spelling you choose
+      rather than the default.
+
+      [Editor: the tag-test cost was subsequently worked around rather than
+      paid -- json.z:383 writes `if (tag_of(t) != tag_of(want))` and
+      json.z:828 admits `tag_of` is invented. The cost as stated is
+      therefore understated by the corpus that was supposed to demonstrate
+      it.]
+
+      Alternatives weighed: `_` as the default, rejected because it would
+      silence the growth diagnostic for every match that did not opt out.
+      Cost accepted:
+        - a tail of unreachable arms in every container
+        - a tag test spelled as a full match
+
+----------------------------------------------------------------------------
+R-32  A value may not be dropped silently
+      Argues for:  wild.nodrop.1, wild.discard.1
+      Source:      rules.txt:423-432
+
+          xs.push(v)              fine -- push projects `()`, no value
+          xs.pop()                an error: an Option<T> went nowhere
+          _ := xs.pop()           "bind it to nothing", said out loud
+
+      The rule exists because an ignored error is the one mistake a language
+      must not make easy to write, and with no `try` (R-36) the error
+      channel is an ordinary returned value like any other -- which is
+      exactly why nothing but this rule is watching it.
+
+      Alternatives weighed: none recorded.
+      Cost accepted:        the explicit `_ :=` at every deliberate discard.
+
+----------------------------------------------------------------------------
+R-33  `_` does not reach projection position
+      Argues for:  wild.noprojection.1, wild.independent.1
+      Source:      rules.txt:434-441
+
+      `_` fixes the CONSUMERS of a plumbing parameter and not the WRAPPERS:
+      a function that RETURNS a `List<T, M>` must name the M it declined to
+      name in its parameters, because a projection is a type and `_` is the
+      absence of one. Two `_` are also two independent parameters, so `_`
+      can never say "the same type I did not name". Both gaps would want a
+      real existential, which is a larger feature than the convenience is
+      worth.
+
+      This is a cost the language accepts rather than a gap it intends to
+      close.
+
+      Alternatives weighed: an existential type, rejected as larger than the
+      convenience it would buy.
+      Cost accepted:
+        - a wrapper must name the plumbing parameter its callees decline
+        - `_` cannot refer back to an earlier `_`
+
+============================================================================
+CUT FEATURES
+============================================================================
+
+These entries exist to record why something was removed. Each is here so
+that the feature is not re-proposed without first answering the argument
+that killed it.
+
+R-34  CUT: the `-> &T` place projection
+      Argues for:  elem.noplace.1, elem.accessor.1, elem.noamptype.1,
+                   elem.rawindex.1, elem.polyindex.1, elem.fallible.1,
+                   elem.noproxy.1
+      Source:      rules.txt:165-209; reversal recorded as [P22] in ecs.z
+                   (ecs.z:1090-1130)
+
+      An earlier design had a fourth projection -- `-> &T`, "a LOCATION
+      escapes" -- so that `xs[i] = v` could be written bare. It is cut, and
+      the argument that killed it is the one made against place PARAMETERS
+      (R-17), re-run and decided the same way: the call site is what a
+      reader reads, and `.*` there says a pointer is being written through,
+      in a language whose whole claim is that memory is the programmer's
+      business. `sort(&xs)` spells its address-of for the same reason.
+
+      What replaced it is the one pointer type the language already has:
+
+          [] :: (&self, i: u32) -> ptr<T> { &self.items[i] }
+
+          v := xs[i].*      read it
+          xs[i].* = v       write it
+          xs[i].* += 1      both, and `[]` is called exactly once
+          p := xs[i]        keep its address, already a ptr<T>
+
+      KEEPING IT COST FOUR RULES, and the first had to reach into every type
+      position in the language to forbid `&T` fields, `&T` arguments,
+      `Option<&V>` and `List<&T>` -- so that `&` could not quietly become a
+      second pointer type. With the projection gone, `&` stops being a type
+      constructor: those four spellings are ungrammatical rather than
+      prohibited, and the rule forbidding them is not needed. Nothing below
+      the syntax changed either -- `-> &T` was `ptr<T>` underneath, with the
+      compiler inserting the deref the source now writes.
+
+      What decided it was counting the feature's use against its
+      specification: one declaration in the whole corpus -- `List` in
+      unified.z -- against four rules.
+
+      A FALLIBLE LOOKUP HANDS BACK A VALUE, and WHICH value is the
+      container's choice and not the language's: `Option<V>` is a copy,
+      `Option<ptr<V>>` points into the container's own storage so the match
+      arm can write through it. A packed container -- a bitset, a compressed
+      array, an element computed on the fly -- has no address to hand back
+      at all, and offers `get(i)` and `set(i, b)`. THERE ARE NO PROXY
+      OBJECTS, which is the disease `vector<bool>` died of.
+
+      [Editor: this argument assumes `[]` has a determinate meaning at each
+      use, which it does not -- `[]` carries at least four: the element's
+      address on a List, an `Option<V>` on a Map, the element itself on a
+      raw pointer, and a reach-through on a `ptr<Container>` -- see spec.txt
+      CONFLICT marker.]
+
+      [Editor: this argument also asserts that `&` stops being a type
+      constructor entirely, which is false of `&self` -- see spec.txt
+      CONFLICT marker.]
+
+      Alternatives weighed:
+        - `-> &T`, the place projection. Costs four rules, the first of
+          which reaches into every type position in the language.
+        - a second member `[]=`, which is C++'s split and reintroduces the
+          paired-name problem the single-member design removed.
+        - `-> ptr<T>` with an explicit deref at the use site. Adopted.
+
+      Cost accepted, itemised, because it is real and is paid at every use:
+
+        - `v := xs[i]` BINDS A POINTER WHERE A COPY WAS MEANT, and compiles.
+          The shuffle in insertion sort is the live example: miss the `.*`
+          and `v` aliases the array it is about to overwrite, which is a
+          wrong answer rather than a crash. Arguments do not auto-deref, so
+          passing it on is a type error and catches most of these -- but `.`
+          and a symbolic member reach through any number of pointers, so a
+          `v.x` read never errors. This is the sharp edge of the cut and it
+          does not go away.
+
+        - `p[i]` ON A RAW POINTER IS THE ELEMENT; `xs[i]` ON A LIST IS ITS
+          ADDRESS. One syntax, two meanings, and both appear inside List
+          itself -- `new_items[i] = self.items[i]` in the grow path,
+          `xs[i].* = v` in every caller. Places made these uniform. Nothing
+          else does.
+
+        - `[]` HAS NO ONE MEANING ACROSS CONTAINERS. List projects `ptr<T>`,
+          Map projects `Option<V>`. That was already true before the cut --
+          a fallible lookup was never a place either -- and the cut makes it
+          the common case rather than the exception.
+
+----------------------------------------------------------------------------
+R-35  CUT: the instance pool and the solver, and with them operator
+      overloading
+      Argues for:  ct.nopool.1, ct.named.decl.1, ct.typenotvalue.1,
+                   op.notoperators.1, op.instructions.1, op.usertype.1,
+                   op.nokeyword.1
+      Source:      rules.txt:444-472, 558-586, 762-807
+      [Fix: rules.txt:799 sends the reader to "the wrapper problem in
+      NOTE 1's last paragraph" for what a numeric shape costs. That
+      argument is not in NOTE 1; it is R-10.]
+
+      EVERY DECLARATION HAS A NAME. `::` with nothing on its left is not a
+      spelling. There is no anonymous instance, no pool, no search and no
+      default: a policy parameter is supplied at the call site, or the call
+      does not compile.
+
+      WHAT THIS COST, since it is the largest thing traded away in the
+      language. A search would have let `sort(&xs)`, `to_string(heap, v)`
+      and `a + b` each find their instance with nothing written. It bought
+      that with a global pool, whole-program uniqueness, overlap checking,
+      an orphan convention, derived instances resolved by unification, and a
+      rule letting an anonymous instance name itself because it had none.
+      Every one of those is a whole-program property -- a thing you cannot
+      answer by reading the file in front of you. The call site is longer
+      now, and it is local.
+
+      OPERATOR OVERLOADING WENT WITH IT, and the reason is worth stating
+      exactly, because the policy reading was not wrong.
+
+      Start from where arithmetic cannot go. Written as a member, it breaks
+      on the second line of vector code:
+
+          v * 2.0      ->  a member of Vec2 named `*`.  Fine.
+          2.0 * v      ->  a member of f32 named `*`.   Nobody owns f32.
+
+      Nothing rescues that. The only candidate is a free function reached
+      from method position, which is the fallback R-23 rules out, correctly:
+      resolved in the caller's scope, "is Vec2 numeric" would depend on what
+      happened to be imported. So a member cannot express scaling, and no
+      bound could ever require arithmetic of a type parameter.
+
+      SO THE LANGUAGE HAD IT AS A POLICY. The shape / policy test gives the
+      reason: two ways to add two vectors -- saturating and wrapping -- so
+      addition is a CHOICE, and a choice is a policy. `a + b` was
+      `Add<A, B>.add(a, b)` with the operand types as the search key.
+      Everything awkward about the member reading went at once. Scalars on
+      the left worked, because a policy is attached to nothing. And
+      `lerp :: <T> (a: T, b: T, t: f32) -> T` -- generic code over anything
+      numeric -- was sayable, which under the member reading it is not, in
+      any form.
+
+      IT DID NOT SURVIVE THE POOL. An operator is a spelling with no room to
+      name anything: `a + b` has nowhere to put `Add<Vec2, Vec2>`. So an
+      operator can only dispatch to a policy if the policy can be found
+      WITHOUT being named, and that is a solver, and the solver is what
+      went. What is left once instances must be named is
+      `vec2_add.add(a, b)` -- which is a function call with a symbol in
+      front of it, not an operator -- or `v.add(w)`, which is at least
+      honest about being a method.
+
+      The short of it: the shape / policy test is right, arithmetic IS a
+      choice, and a choice wants a policy -- but a policy is only an
+      OPERATOR if the caller can leave it unsaid, and leaving it unsaid is a
+      solver. `2.0 * v` cannot be written without one, and no member could
+      ever have expressed it. THERE IS NO THIRD DESIGN: there is a language
+      with a solver, and a language with `v.scale(2.0)`.
+
+      What is left in the language is arithmetic as instructions on the
+      primitives, desugaring to nothing, and a user type publishing ordinary
+      members -- `v.add(w)`, `v.scale(2.0)`, `a.eq(b)` -- where the call
+      site says whose arithmetic it asked for. This is the one place the
+      language got worse.
+
+      Alternatives weighed:
+        - arithmetic as a member of the left operand -- cannot express
+          `2.0 * v`; nobody owns f32
+        - a free function reached from method position -- makes "is Vec2
+          numeric" depend on the caller's imports (R-23)
+        - arithmetic as a policy WITH a solver -- works completely, and
+          costs the pool: whole-program uniqueness, overlap checking, an
+          orphan convention, and unification
+        - arithmetic as a policy WITHOUT a solver -- `vec2_add.add(a, b)`,
+          which is not an operator, only a call with a symbol in front
+
+      Cost accepted, itemised, because it is the largest regression in the
+      language and should not be quietly reframed as a simplification:
+        - `2.0 * v` has no spelling at all. `v.scale(2.0)` is the operation,
+          in the other order, from the type that owns it.
+        - `lerp` over anything numeric is gone. A generic body cannot say
+          `a + b`, so numeric generic code needs a shape with `add`/`scale`
+          members and gets the wrapper problem in R-10.
+        - the operand types no longer have to agree with anything, so a type
+          with `add` and a type with `plus` are simply different.
+
+      What was gained is the whole of the entry above: no pool, no
+      coherence, no orphan convention, no unification, and nothing about a
+      call that a reader has to leave the file to answer.
+
+----------------------------------------------------------------------------
+R-36  CUT: the `try` keyword
+      Argues for:  match.notry.1, match.errchannel.1
+      Source:      rules.txt:397-413
+
+      Propagating a failure is an ordinary one-arm match, written out:
+
+          t := match (self.bump()) { ok (t) { t }  err (e) { return err(e) } }
+
+      THERE WAS A `try` KEYWORD and it is cut, because it was the one place
+      the language reached into a library type by name. `Result` is declared
+      in std.core as an ordinary `-> oneof { ok: T, err: E }` -- no more
+      privileged than `Option` or anything you write -- and `try` had to
+      know that the second variant is spelled `err`. Asked of a user's
+      `-> oneof { a: T, b: E }` it had no answer, and none was ever written.
+      Either `Result` is built in, with the standing of `u32` and `ptr`, or
+      the keyword goes; the keyword went, and the propagation is spelled at
+      all fourteen sites in json.z.
+
+      Alternatives weighed:
+        - `Result` built in, with the standing of `u32` and `ptr`. Rejected;
+          the keyword went instead.
+        - a `try` that works on any two-variant sum. No answer was ever
+          written for which variant is the failure.
+      Cost accepted:        a line where a word used to be, and it is not
+      free: the error arm is the same eight tokens every time, and json.z is
+      where you can see whether that reads as honest or as noise.
+
+----------------------------------------------------------------------------
+R-37  CUT: the fallible projection `-> Result<self, E>`
+      Argues for:  bind.which.named.1, open.txt OQ-1 (was open.ctorbody.1)
+      Source:      rules.txt:840-854
+
+      A `-> self` block has field initialisers and no statements, so
+      anything needing `self`, or two fields at once, or a step that can
+      fail, has nowhere to go. What is missing is a STATEMENT POSITION, and
+      `self` inside it; nothing less answers any of the three.
+
+      A fallible PROJECTION was tried -- `-> Result<self, E>`, so that a
+      field initialiser could fail -- and is cut. IT WORKED, AS FAR AS IT
+      WENT: the err arm had somewhere to return to when the projection was a
+      Result. But it answers only the case where the failure is attached to
+      binding a field, it never said which other wraps were legal, and
+      `-> SomeType` is already spoken for by the binding rules, where it
+      means "fill the holes with `=`" -- which a body full of `:=` is not.
+      It belongs to whatever gives the constructor a body, not beside it.
+
+      A value having one address (R-13) is what makes such a body definable
+      at all, so this is the next thing to decide.
+
+      Alternatives weighed:
+        - `-> Result<self, E>` as a projection. Cut: partial, undefined for
+          other wraps, and collides with the meaning `-> SomeType` already
+          has.
+        - a statement position in a `-> self` body, with `self` available
+          inside it. Not designed; recorded as the thing that must come
+          first.
+      Cost accepted:        two-phase construction, unchecked -- ecs.z's
+      `w.wire()`.
+
+----------------------------------------------------------------------------
+R-38  CUT: `Iterator`
+      Argues for:  open.txt OQ-3 (was open.foreach.1)
+      Source:      rules.txt:865-870; see [P23] and FRICTION 18 in ecs.z
+                   (ecs.z:968-974, 1132-1140)
+
+      There is no `for (x := it)`. Every traversal in both programs is an
+      index loop, because the `loop`/`match`/`Option` consumer is four lines
+      to replace one and nobody writes them.
+
+      `Iterator` was the standard library's answer WITHOUT the form --
+      declared by both programs, used by neither -- and is cut. `ListIter`,
+      `iter` and `fold` went with it. The shape was never the friction: it
+      carried nothing the desugaring does not already need structurally.
+      That a shape nobody used was the only thing standing in for a missing
+      syntactic form was taken as the signal it was.
+
+      The form is still missing and still wanted; what it quantifies over is
+      the open half.
+
+      Alternatives weighed:
+        - an `Iterator<T>` shape with no `for` form. Tried in both programs
+          and used in neither, because the hand-written consumer is four
+          lines where the index loop is one.
+        - a `for (x := it)` form desugaring to that consumer. Wanted, not
+          designed; what it quantifies over is undecided.
+      Cost accepted:        every traversal in the corpus is a C index loop.
+
+----------------------------------------------------------------------------
+R-39  CUT: associated types, and the `Out` hole
+      Argues for:  hole.noassoc.1, hole.valueonly.1, hole.typeparam.1
+      Source:      rules.txt:118-122
+
+      A HOLE IS A VALUE, ALWAYS. There is no hole of type `type`, and so
+      nothing here of what the rest of the world calls an associated type.
+      The one that existed was `Out` in the arithmetic policies -- the
+      result type an `Add<A, B>` instance decided for itself -- and it went
+      out with them (R-35). A type a block needs is a compile-time
+      PARAMETER, which the caller spells.
+
+      The rule pays for itself elsewhere: because every hole is a value
+      hole, the shape / policy test never has to except anything (R-09).
+
+      Alternatives weighed: a hole of type `type`, which is what an
+      associated type is. It had exactly one use -- `Out` -- and that use
+      was removed for an unrelated reason, leaving the feature with none.
+      Cost accepted:        a type a block needs must be spelled by the
+      caller as a compile-time parameter, rather than chosen by the
+      instance.
+
+============================================================================
