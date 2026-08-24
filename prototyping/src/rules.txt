@@ -1,0 +1,811 @@
+============================================================================
+rules.txt  --  one declaration form for module / struct / func / sum / shape
+============================================================================
+
+THE LANGUAGE RULES, and nothing else. No program is written here; this file
+is only what the syntax means, plus the notes arguing for why. The worked
+source these rules are drawn from -- std.core through main -- is in
+unified.z, and the words they are written in are defined in glossary.z.
+Read glossary.z, then this file, then unified.z.
+
+EACH RULE IS STATED ONCE, in the sections below. Each ARGUMENT for a rule --
+the alternatives weighed, the thing that would break -- is stated once, in
+the NOTE the rule points at. A section that says "See NOTE 6" is not
+summarising the note; the note is the rest of the sentence.
+
+THE RULE
+
+    Name <compile-time args> (runtime args) -> projection { body }
+
+Every declaration takes args and builds a block of named values.
+The projection says what escapes the block:
+
+    -> ()        nothing escapes            procedure
+    -> T         one value escapes          function
+    -> self      all of the block           struct / module / shape
+    -> {a, b}    these members of it        multiple return, AND visibility
+    -> oneof     one member of it, tagged   sum
+
+APPLYING A DECLARATION. Stated because everything else depends on it:
+
+    List           the declaration
+    List<u8>       ...compile-time args applied   ->  a TYPE
+    List<u8>(mem)  ...runtime args applied        ->  a VALUE
+
+    No runtime group at all (`x :: -> T {...}`) means the thing IS its
+    value, already evaluated. An explicit empty `()` means you call it.
+    That is the whole of why `Heap()` is a call and `Writer` is not.
+
+BRACKETS
+    <>   compile-time args      List<u8>, ptr<T>
+    ()   runtime args           Heap()
+    []   indexing               xs[0]
+
+----------------------------------------------------------------------------
+BINDING.  `:` is type ascription and nothing else. The binder is what
+carries meaning, and a hole is the absence of one.
+
+    name          :: v     compile-time binding
+    name : T      :: v     ...with the type spelled out
+    name          := v     runtime binding
+    name : T      := v     ...with the type spelled out
+    name : T               no binder  ->  HOLE
+    name          := undefined        a field you fill in later
+
+    `=` is assignment: mutating an existing binding, filling a declared
+    hole, a default in a parameter list, or passing a compile-time arg by
+    name (`to_string<F = hex_u8>`). It never creates a binding.
+
+    SO THE PROJECTION DECIDES WHICH ONE A MEMBER TAKES, and this is worth
+    stating because the three spellings look like one act:
+
+        -> self      you are building a FRESH block. Nothing exists yet, so
+                     every member is `::` or `:=`.
+        -> SomeType  you are building a value of a type that ALREADY HAS
+                     HOLES. Members matching those holes are `=`; anything
+                     else is a fresh, private member and takes `::`.
+
+    Which is why `Heap` writes `alloc :: ...` and `hex_u8` writes
+    `format = ...` for what looks like the same act. Heap says `-> self` and
+    satisfies Allocator STRUCTURALLY -- it never names it, so there is no
+    hole in scope and `alloc` is created. A policy instance NAMES its type
+    in the projection -- `hex_u8 :: -> Formattable<u8>` -- so the holes are
+    in scope and it fills one. The binder is the structural / nominal
+    difference made visible. See glossary.z.
+
+    A runtime param of a `-> self` def IS a field: the block is what you
+    kept, so the params are in it. A def whose body would be empty may drop
+    it -- `Span :: (lo: u32, hi: u32) -> self` is a record declaration.
+    A field bound with `::` costs zero bytes; it lives in the type.
+
+----------------------------------------------------------------------------
+HOLES.  `name : T` with no binder is a hole. What a hole MEANS is decided by
+the projection, and that single fact is the whole of both sums and
+interfaces:
+
+    -> self    CONJUNCTIVE. All holes must be filled to instantiate. A block
+               with an unfilled hole cannot be instantiated, so it is usable
+               only as a bound or behind a pointer. That is all an interface
+               ever was, and it applies to every block equally -- a List with
+               one unfilled field is abstract for the same reason Allocator
+               is. Filling the holes gives you a value.
+
+    -> oneof   DISJUNCTIVE. Exactly one hole is filled. A sum is never
+               abstract; there is nothing left to fill.
+
+So `Allocator` and `Option` are the same declaration shape read two ways.
+THERE IS NO `trait`, `interface`, `abstract`, `enum` OR `union`.
+
+The projection quantifies over HOLES and nothing else. `::` and `:=` members
+are unaffected by it, so a sum carries methods exactly as a struct does:
+
+                      -> self                    -> oneof
+    name : T          requirement                variant
+    name :: v         method / ct field          method
+    name := v         runtime field              -- (no shared storage)
+
+A HOLE IS A VALUE, ALWAYS. There is no hole of type `type`, and so nothing
+here of what the rest of the world calls an associated type. The one that
+existed was `Out` in the arithmetic policies -- the result type an
+`Add<A, B>` instance decided for itself -- and it went out with them. A type
+a block needs is a compile-time PARAMETER, which the caller spells.
+
+Construction needs no new rule: `=` already fills a declared hole in a
+literal, so `Option<u8>{ some = 3 }`. Since a variant is a hole of type T,
+the variant name is also a derived function (T) -> Self: `Option<u8>.some(3)`.
+
+`-> oneof {a, b}` is a sum over a subset -- variants only the declaring
+module can construct, matchable by everyone. It falls out of visibility
+below rather than being designed.
+
+BODILESS MEANS HOLE, so a hand-written header full of
+`func insert_item<T>(...);` declares an ABSTRACT MODULE rather than a
+module, and would be uninstantiable rather than linkable. Headers are
+generated from implementations; there is no way to hand-write one and no
+intention of adding it.
+
+On the name `oneof`: `-> T` is already glossed "one value escapes", so
+`-> one` would collide with the projection above it, and a bare `one` in a
+slot that otherwise holds type names burns a plausible identifier. `union`
+is poisoned by C, `variant` names a member rather than the whole, `either`
+implies two. It is spelled bare and not `-> oneof self` because a sum does
+not project the whole block -- one member escapes, which puts it in
+`{a, b}`'s family.
+
+----------------------------------------------------------------------------
+VISIBILITY IS THE PROJECTION. `-> self` exports the whole block; `-> {a, b}`
+exports two names. There is no `pub` and no export list, because the
+projection always was one. See `io` in unified.z.
+
+A value may escape while its type does not. `io.out` is exported and
+`FileWriter` is not, which is an opaque type for free.
+
+----------------------------------------------------------------------------
+ELEMENTS.  How a container hands back something you can write to. The
+answer is the one pointer type the language already has:
+
+    [] :: (&self, i: u32) -> ptr<T> { &self.items[i] }
+
+    v := xs[i].*      read it
+    xs[i].* = v       write it
+    xs[i].* += 1      both, and `[]` is called exactly once. See OPERATORS
+    p := xs[i]        keep its address, which already IS a ptr<T>
+
+THERE IS NO `-> &T`, AND NO SUCH THING AS A PLACE. An earlier design had a
+fourth projection -- `-> &T`, "a LOCATION escapes" -- so that `xs[i] = v`
+could be written bare. It is cut, and the argument that killed it is the one
+made below against place PARAMETERS, re-run and decided the same way: the
+call site is what a reader reads, and `.*` there says a pointer is being
+written through, in a language whose whole claim is that memory is the
+programmer's business. `sort(&xs)` spells its address-of for the same reason.
+[P22] in ecs.z records the reversal.
+
+KEEPING IT COST FOUR RULES, and the first had to reach into every type
+position in the language to forbid `&T` fields, `&T` arguments, `Option<&V>`
+and `List<&T>` -- so that `&` could not quietly become a second pointer type.
+With the projection gone, `&` stops being a type constructor at all: those
+four spellings are ungrammatical rather than prohibited, and the rule
+forbidding them is not needed. Nothing below the syntax changed either --
+`-> &T` was `ptr<T>` underneath, with the compiler inserting the deref the
+source now writes.
+
+THE PRICE, itemised, because it is real and is paid at every use:
+
+  - `v := xs[i]` BINDS A POINTER WHERE A COPY WAS MEANT, and compiles. The
+    shuffle in insertion sort is the live example: miss the `.*` and `v`
+    aliases the array it is about to overwrite, which is a wrong answer
+    rather than a crash. Arguments do not auto-deref, so passing it on is a
+    type error and catches most of these -- but `.` and a symbolic member
+    reach through any number of pointers, so a `v.x` read never errors. This
+    is the sharp edge of the cut and it does not go away.
+
+  - `p[i]` ON A RAW POINTER IS THE ELEMENT; `xs[i]` ON A LIST IS ITS
+    ADDRESS. One syntax, two meanings, and both appear inside List itself --
+    `new_items[i] = self.items[i]` in the grow path, `xs[i].* = v` in every
+    caller. Places made these uniform. Nothing else does.
+
+  - `[]` HAS NO ONE MEANING ACROSS CONTAINERS. List projects `ptr<T>`, Map
+    projects `Option<V>`. That was already true before the cut -- a fallible
+    lookup was never a place either -- and the cut makes it the common case
+    rather than the exception.
+
+A FALLIBLE LOOKUP HANDS BACK A VALUE, and WHICH value is the container's
+choice and not the language's: `Option<V>` is a copy, `Option<ptr<V>>` points
+into the container's own storage so the match arm can write through it. A
+packed container -- a bitset, a compressed array, an element computed on the
+fly -- has no address to hand back at all, and offers `get(i)` and
+`set(i, b)`. THERE ARE NO PROXY OBJECTS, which is the disease `vector<bool>`
+died of.
+
+A PARAMETER IS A POINTER, WRITTEN AS ONE. `&self` is a receiver and stays
+one; the tempting generalisation -- a `(out: &u32)` that is `&self` without
+the special case -- is not taken. Written with a pointer it is C, and it
+costs one token in one body:
+
+    tally :: (out: ptr<u32>, v: Json) -> () { out.* += 1 }
+    sort  :: <T, O: Ord<T>> (xs: ptr<List<T, _>>) -> ()
+
+THE CALL SITE IS IDENTICAL EITHER WAY -- `sort(&xs)`, an argument is
+explicit -- and that is the argument. The place form was invisible to every
+reader of a call and paid only readers of signatures, where it promised one
+thing that a pointer cannot:
+
+    print :: (w: &World) -> ()        I will not keep this
+    keep  :: (w: ptr<World>) -> ()    I might store this
+
+A promise worth having, and not worth what it cost. A pointer is an
+unrestricted handle of indefinite life (see OPEN), and a parameter list is
+not the place to pretend otherwise.
+
+NOTHING IS LOST IN THE BODY EITHER, because `.` and a symbolic member both
+reach through any number of pointers: `xs[j].*` and `xs.count` read the same
+whether `xs` is a List or a `ptr<List>`. See POINTERS. `sort`'s body did not
+change when its signature did.
+
+WHAT AN ACCESSOR BUYS, beyond writing to an element: it is what makes
+`-> {a, b}` usable on a container. Without one, every caller reaches around
+`[]` into the raw `items` field, so closing the projection breaks every
+program that touches a List. With one, `List` exports six names and hides
+its storage. It does not hide POINTERS -- `span` hands out a slice and `[]`
+hands out a `ptr<T>` -- but nothing outside can see `items` or `capacity`,
+which is the whole of what the projection ever promised.
+----------------------------------------------------------------------------
+MEMORY.  Where a value lives, and when it dies. Three answers are here;
+the fourth -- how a container hands back a writable element -- is
+ELEMENTS, above. Two questions have no
+answer -- the constructor body, and who may write through a pointer and for
+how long it stays valid -- and both are in OPEN. The second is the deepest
+hole in the design.
+
+A VALUE DOES NOT MOVE. A value has ONE ADDRESS for as long as it is alive:
+
+    - a `-> self` body constructs the value where it will live. A return is
+      not a copy, and there is no "returning moves it" step to reason about.
+    - a binding's address is fixed from its initialisation to scope exit.
+    - so an INTERIOR POINTER -- `&self.pos`, `&self.items[i]` -- stays valid
+      for as long as the value it points into is alive.
+      `stores.push(&self.pos)`, a structure pointing into itself, is legal
+      and means what it says.
+    - copying is what binding from another value does, and the copy is a
+      second value with its own address.
+
+The rule is load-bearing, because three things in the language are an
+address kept past the expression that made it: an element pointer handed out
+by `[]`, a closure stored in data, and a `ptr<Shape>` in a container. None
+of them means anything without it. It is also the cheapest rule that carries
+them -- the alternative is move semantics, and move semantics is a borrow
+checker.
+
+WHAT IT DOES NOT PROMISE: that a pointer into a CONTAINER survives the
+container's own reallocation. `List.push` may allocate a bigger buffer and
+copy the elements into it. That copy is written by hand, in the container's
+own code, and it is a genuine relocation of every element -- the language
+simply never inserts one you did not write. Every pointer into the old
+buffer is then dangling, and nothing catches it. That is the invalidation
+half of WHO MAY WRITE in OPEN, and it is about a buffer, not about values.
+
+NO AUTOMATIC DESTRUCTION. A block does not get a destructor that runs at
+scope exit. `deinit` is an ordinary member and `defer` is how you call it,
+which is the same idea written where it can be seen. The alternative is not
+one feature: once destructors fire on their own, the language must also
+define what happens on assignment over a live value, on return, and on copy,
+and that is the road to move semantics. This language's claim is that
+cost is visible and there is no hidden machinery; a destructor at a closing
+brace is hidden machinery. The price, accepted with open eyes: containers do
+not free their elements, an erased value in a container is kept alive by
+hand, and both are leaks the compiler will not mention.
+
+ERASURE IS A BORROW, AND THERE IS NO `Box`. `ptr<Shape>` is a pointer with
+no owner. That is right for an argument and thin for a container: a schedule
+of `ptr<System>` holds pointers into locals, so declaration order in `main`
+is load-bearing and unenforced. The fix would be a `Box<Shape, M>`, which
+cannot exist without a destructor to free it -- so with destruction decided,
+this is decided with it. YOU KEEP THE VALUES ALIVE YOURSELF: declare the
+concrete values in a scope that outlives the container of pointers. It is a
+real cost, it is paid in ecs.z's `main`, and it is the same trade as the
+paragraph above.
+
+----------------------------------------------------------------------------
+KEYWORDS.  `self` is the only new one in the declaration form. It always
+means "the block".
+    -> self               in a projection: all of the block escapes
+    self                  a receiver, by value
+    &self                 a receiver, by pointer
+    ptr<self>             what &self desugars to
+    -> Result<self, E>    a projection may WRAP self: fallible construction
+
+WHEN `self` NEEDS A RECEIVER, AND WHEN IT DOES NOT. It is one meaning; the
+receiver exists only to say WHICH instance, and is therefore required
+exactly when the block is a type rather than a value:
+
+    block has a runtime group   ->  it is a TYPE. Many values exist, so a
+                                    member must take `self` / `&self` to
+                                    know which one it was called on.
+                                    `List`, `Heap()`, `Arena`.
+
+    block has no runtime group  ->  it IS its value, already evaluated.
+                                    There is exactly one, so `self` is
+                                    available lexically with nothing passed.
+                                    `mem`, `io`, `reverse_u8`, and every
+                                    policy instance.
+
+The second case means a member of `mem` may say `self`, and it means `mem`.
+An instance that recurses may say `self` for the same reason, though it may
+equally say its own name, which every instance now has.
+
+A member of a block that HAS a runtime group may not say bare `self`; that
+is an error asking for `&self`, not an implicit receiver.
+
+The rest of the budget, written down so it stops growing by accident:
+    oneof                 a projection
+    match  _              destructuring
+    try                   propagate the `err` arm of a Result
+    defer                 run at scope exit
+    if while for loop return continue break
+
+There is no `struct`, `enum`, `union`, `interface`, `trait`, `impl`,
+`operator`, `pub`, `dyn`, or `import`. Imports are ordinary compile-time
+bindings of an ordinary compile-time function: `std :: import("std")`.
+
+----------------------------------------------------------------------------
+MATCH, AND `_`.  An arm is spelled like a declaration -- a name, a runtime
+group binding the payload, a body. Nothing new to learn.
+
+    match (v) {
+        none     { ... }
+        some (x) { ... }
+        _        { ... }
+    }
+
+MATCH IS AN EXPRESSION, and this is what keeps sum types from turning code
+into a pyramid. A one-arm-plus-`_` match BINDS instead of nesting:
+
+    obj  := match (doc)         { object (o) { o }  _ { return } }
+    tags := match (obj["tags"]) { some   (t) { t }  _ { return } }
+    xs   := match (tags)        { array  (a) { a }  _ { return } }
+
+Each line either produces a value or leaves. Nested matches are for when the
+failure arms do real work; when they do not, bind and move on. Languages
+that miss this end up adding `if let`, `guard let` and `let else` as three
+separate forms.
+
+`_` IS A HOLE IN A BINDING POSITION, and that is its whole definition. Four
+uses, one idea:
+
+    _        { ... }        a wildcard arm
+    some (_) { ... }        an ignored payload
+    ptr<List<T, _>>         a compile-time arg you decline to name
+    _ := xs.pop()           a value you decline to keep
+
+The last one comes with a rule: A VALUE MAY NOT BE DROPPED SILENTLY.
+
+    xs.push(v)              fine -- push projects `()`, there is no value
+    xs.pop()                an error: an Option<T> went nowhere
+    _ := xs.pop()           "bind it to nothing", said out loud
+
+The rule exists because `-> Result<T, E>` is the language's error channel,
+and an ignored Result is the one mistake it must not make easy to write.
+
+`_` DOES NOT REACH PROJECTION POSITION, and that is a cost the language
+accepts rather than a gap it intends to close. It fixes the CONSUMERS of a
+plumbing parameter and not the WRAPPERS: a function that RETURNS a
+`List<T, M>` must name the M it declined to name in its parameters, because
+a projection is a type and `_` is the absence of one. Two `_` are also two
+independent parameters, so `_` can never say "the same type I did not name".
+Both would want a real existential, which is a larger feature than the
+convenience is worth.
+
+----------------------------------------------------------------------------
+OPERATORS. There is no `operator` keyword, and there are two kinds of
+operator, because NOTE 1's test asked of them gives two answers -- two ways
+for a List to index itself, no; two ways to add two vectors, yes:
+
+    [] ()            take self  ->  MEMBERS of the block
+    + - * / == <     take none  ->  ...and so, NOT OPERATORS AT ALL
+
+    [] :: (&self, i: u32) -> ptr<T>  indexing
+    () :: (&self, v: u8)  -> ()      calling
+
+ARITHMETIC AND COMPARISON ARE INSTRUCTIONS ON THE PRIMITIVES, and they
+desugar to nothing. `+ - * / %`, `== !=`, `< <= > >=`, the bitwise
+`& | ^ << >> ~`, and unary `-` work on u8, u32, i32, f32, f64 and bool, and
+nowhere else. `a += b` is `a = a + b`, and so for every compound form --
+EXCEPT THAT THE DESTINATION IS EVALUATED ONCE. `xs[i].* += 1` calls `[]` a
+single time and `out.* += 1` computes `out` a single time; the expansion
+says which operator, not that the left-hand side may be run twice. Stated
+because an accessor can have side effects, and because C++ gets this wrong
+with proxy objects.
+A user type publishes ordinary members -- `v.add(w)`, `v.scale(2.0)`,
+`a.eq(b)` -- and the call site says whose arithmetic it asked for.
+
+THIS IS THE ONE PLACE THE LANGUAGE GOT WORSE, and NOTE 6 is the argument.
+The short of it: the test above is right, arithmetic IS a choice, and a
+choice wants a policy -- but a policy is only an OPERATOR if the caller can
+leave it unsaid, and leaving it unsaid is a solver. `2.0 * v` cannot be
+written without one, and no member could ever have expressed it. There is no
+third design: there is a language with a solver, and a language with
+`v.scale(2.0)`.
+
+Precedence is a fixed table and is not user-extensible, which now costs
+nothing to say, because nothing is extensible.
+
+`&&` and `||` are built in for a second reason on top of that one: they must
+not evaluate their right operand, so they are control flow wearing an
+operator's clothes and could never have been a call.
+
+A CLOSURE IS NOT A SPECIAL FORM. It is a block with a `()` member, which is
+why `Fn<A, R>` is an ordinary shape and needs no function-type machinery,
+and why there is no curried spelling: what a closure captures, it captures
+as a field, in a block written out like any other. NOTE 6 shows one.
+
+----------------------------------------------------------------------------
+POINTERS
+    ptr<T>       typed
+    ptr          the same thing with its arg defaulted to opaque. Not a
+                 special form -- compile-time args take defaults anyway.
+
+REACHING THROUGH A POINTER. The compiler inserts a deref and an address-of
+in exactly three positions, and nothing else is implicit.
+
+    p.field       `.` reaches through ANY number of pointers. So does a
+    p[i]          symbolic member -- `p[i]` is `p.[](i)` and reaches too.
+    xs.push(v)    a `&self` receiver takes the address of the value it was
+                  called on. `sort(&xs)` does NOT: an argument is explicit.
+
+    p.*           REACH THROUGH AND STOP. The whole pointee, as a place.
+
+`.*` is the shape of the rule, not decoration: `.` reaches through and stops
+at a member, `.*` reaches through and stops at the value. The two spellings
+are the same act ending in different places, which is why the deref lives
+after the dot rather than being its own symbol.
+
+    out.* += 1              write the whole pointee
+    v.* = Vec2(1.0, 2.0)    ...even when it is a struct
+    a.b.*                   postfix, so it chains left to right
+
+`.*` is available BECAUSE `*` is not a member name. `[]` and `()` are, so
+`f.()(x)` and `a.[](i)` are real spellings; had arithmetic stayed a member
+this deref would have collided with the multiply member on the first day.
+
+AND `^` IS FREE FOR XOR, which is the reason it is not the deref. A hash
+function writes `h = (h ^ k[i]) * prime`, and a language whose deref is also
+postfix `^` eventually has to parse `h^ ^ x`. Bitwise and (`&`) has the same
+problem against address-of; deref was the half that could move.
+
+DEREF IS NEVER OPTIONAL, and this is why full auto-deref is not on offer:
+    p = q         make the two pointers equal
+    p.* = q.*     copy the pointee
+Both are things you have to be able to say, and they must not be one text.
+
+----------------------------------------------------------------------------
+COMPILE-TIME ARGS COME IN THREE KINDS
+    <T>                      a TYPE, inferred from a runtime argument's type
+    <F: Formattable<T>>      a POLICY. An ordinary compile-time value that
+                             happens to be a block of holes; the call site
+                             names it, because nothing else will
+    <indent: u32 = 2>        a VALUE. An ordinary compile-time binding in the
+                             parameter list; `capacity :: 10` is the same
+                             thing as a member.
+    Any of them may be passed by name with `=` -- at a call site and in a
+    type, which is the same act -- and once a declaration mixes an inferred
+    type with a value there is no other way to write it: `dump<indent = 4>`
+    cannot be written positionally, because the type parameter in front of
+    it is never spelled.
+
+    A TYPE ARG IS ALSO INFERRED FROM THE EXPECTED TYPE, which matters now
+    that instances are applied by hand. In
+
+        to_string<F = list_fmt<F = fmt_u8>>(heap, xs)
+
+    `list_fmt`'s own `T` and `M` are never written: the position it sits in
+    wants a `Formattable<List<u8, Heap>>`, so they are read off that. This
+    is CHECKING and not searching -- one expected type, matched against one
+    declaration, with nothing to look up and nothing that could be
+    ambiguous. Where there is no expected type there is nothing to read, and
+    the args are written: `doc_fmt :: json_fmt<ptr<Arena>>` in json.z.
+
+    AN EMPTY `<>` APPLIES A DECLARATION whose args are all inferred or
+    defaulted -- `dump<>` in ecs.z -- and it is the same rule as `Heap()`
+    one bracket up: a group left off entirely means the thing IS its value,
+    an explicit empty group means apply it. `dump` names the declaration and
+    `dump<>` names the instance, exactly as `Writer` and `Heap()` differ.
+
+EVERY DECLARATION HAS A NAME. `::` with nothing on its left is not a
+spelling. There is no anonymous instance, no pool, no search and no default:
+a policy parameter is supplied at the call site, or the call does not
+compile.
+
+A TYPE IS NEVER A VALUE. `Ord<u8>` is a type and `ord_u8` is an instance of
+it; `Ord<u8>.compare` is not a spelling. An instance that delegates to
+another names it -- `ord_u8.compare(b, a)`, in `reverse_u8` -- which is
+ordinary name lookup and needs no rule of its own.
+
+WHAT THIS COST, since it is the largest thing traded away in the language.
+A search would have let `sort(&xs)`, `to_string(heap, v)` and `a + b` each
+find their instance with nothing written. It bought that with a global pool,
+whole-program uniqueness, overlap checking, an orphan convention, derived
+instances resolved by unification, and a rule letting an anonymous instance
+name itself because it had none. Every one of those is a whole-program
+property -- a thing you cannot answer by reading the file in front of you.
+The call site is longer now, and it is local.
+
+----------------------------------------------------------------------------
+ORDER INDEPENDENCE. Declarations in a block, and blocks in a file, are
+order-independent, because recursive types force it: `Slot` holds an `Entry`
+declared below it. That was one of three reasons and is now the only one --
+the others were the solver needing to have seen every anonymous declaration
+before it could pick, and coherence being a whole-program property. A rule
+left standing on one leg is worth noticing; this leg holds.
+
+----------------------------------------------------------------------------
+CALLS.  `a.f(x)` IS THE MEMBER `f` OF `a`, and there is nothing else it can
+be. A free function is called as `f(a, x)` -- `mem.make<T>(allocator, n)`,
+`io.write(w, s)` -- and no convenience turns it back into a member.
+
+There is no UFCS. Method position is reserved for what is actually in the
+block, so a reader can tell a shape's operations from the conveniences
+around it by looking at the call, and shape satisfaction never depends on
+what a caller imported. What that buys, and what it costs, is NOTE 4.
+
+----------------------------------------------------------------------------
+TWO KINDS OF ABSTRACTION, ONE SYNTAX. Both are a block with unfilled holes.
+The question that tells them apart, and the answer to why one syntax is
+enough, is NOTE 1.
+
+    holes take self      ->  SHAPE.      Intrinsic to a type, matched
+                             structurally, coercible to ptr<Shape>.
+    holes do not         ->  POLICY.     Extrinsic, several may exist, and
+                             the caller names the one it wants.
+    Mixing the two in one block is an error, not a third thing.
+    Every hole is a value hole, so the test never has to except anything.
+
+A SHAPE NAME IN AN ARGUMENT POSITION says which dispatch you are buying:
+    <M: Allocator>   a bound.   Monomorphised, calls direct, 0-byte field.
+    (a: Allocator)   ptr<Allocator>. Erased, calls indirect.
+The bracket already separates compile time from run time; it separates
+static from dynamic for the same reason, and no `dyn` is needed.
+
+STRUCTURAL MATCHING HAS NO ADAPTER, and does not get one. A foreign type
+with the right operations under the wrong names cannot be made to satisfy a
+shape except by a wrapper costing a pointer, a vtable and a name. Go has the
+same hole. Every fix for it -- a rename clause, an impl block, a coercion
+declaration -- is nominal registration, which is the thing structural
+matching exists to avoid; and the escape hatch is real, since a POLICY may
+be written for a type you do not own. The wrapper is the price of the shape
+half.
+
+============================================================================
+NOTE 1 -- shapes vs policies, and why one syntax is enough.
+
+Rust conflates these and pays for it with orphan rules. Go has only shapes.
+Haskell has only policies. You can have both, told apart by one word:
+
+  SHAPE       every hole takes self. An allocator, a writer, a socket --
+              things where the abstraction is a property of the object and
+              there is exactly one sensible answer per type. Satisfied
+              structurally by any type with matching methods, so it needs
+              no registration. Coerce to ptr<Shape> for dynamic dispatch.
+
+  POLICY      no hole takes self. Ord<u8>, Formattable<u8>, Key<K> -- things
+              where several answers exist and the caller must choose. A
+              free-standing NAMED value, passed as a compile-time argument.
+              Works on primitives and foreign types, since nothing has to be
+              attached to them.
+
+The test is not stylistic: CAN THERE LEGITIMATELY BE TWO OF THESE FOR ONE
+TYPE? Two orderings of u8, yes -> policy. Two ways for an Arena to
+allocate, no -> shape.
+
+IT ANSWERS QUESTIONS IT WAS NOT DESIGNED FOR, which is the best evidence
+available that it is real rather than tidy. Asked of the operators it says
+`[]` and `()` are members and `+` and `==` are policies -- and it is still
+right, which is exactly why losing the solver cost the language arithmetic
+rather than merely respelling it. See NOTE 6.
+
+It is a property of the BLOCK, not of each hole. A block with one self value
+hole and one non-self value hole is an error; it would have no dispatch
+story and no coercion, and admitting it buys nothing.
+
+ANYTHING THAT MUST AGREE BELONGS IN ONE BLOCK. A hash and an equals passed
+as two independent parameters can be supplied inconsistently -- a
+case-folding hash with a case-sensitive equals is a silently broken map that
+no type error catches. `Key<K>` carries both. Grouping is free here, because
+a policy is just a block.
+
+Neither is a new construct. Both are a block with unfilled holes.
+
+----------------------------------------------------------------------------
+NOTE 2 -- static vs dynamic is a type, not a keyword.
+
+    List<u8>(mem)      M = Heap            direct calls, 0-byte field
+    List<u8>(audited)  M = Tracking<Heap>  direct calls, still monomorphic
+    List<u8>(boxed)    M = ptr<Allocator>  fat pointer, indirect calls
+
+One declaration, three behaviors. The cost of the first two: they are
+different types and cannot share an array. That is the trade, and it is
+visible in the code instead of hidden in a keyword.
+
+MONOMORPHISATION IS VIRAL THROUGH CONTAINING TYPES -- a `List<T, M>` field
+makes its owner generic in M, and so on up. Livable, and the answer is an
+alias collapsing the parameter once in the application: `A :: ptr<Arena>`,
+`Doc :: Json<A>`. Two unrelated programs, json.z and ecs.z, reached for the
+same one-line fix, so it is a pattern rather than a coincidence. The
+residual cost is ONE ALLOCATOR PER TYPE, and it does not reach a library
+shape: `System<M>` stays generic because a library cannot name the
+application's allocator.
+
+The trade gets worse for RECURSIVE types. See OPEN.
+
+----------------------------------------------------------------------------
+NOTE 3 -- shapes contain holes and nothing else.
+
+A shape COULD carry provided methods -- `make :: <T> ...` with a body,
+non-virtual, generic, overridable by an implementer. That buys `a.make<T>(n)`
+and costs three things:
+
+  - `:` vs `::` has to be read carefully inside every shape
+  - an implementer can override a provided method, and that override
+    silently vanishes the moment the value is coerced to ptr<Shape>,
+    because non-virtual methods are not in the table
+  - the shape's author owns the convenience layer forever
+
+Keeping them out, as free functions over `M: Allocator`, costs the module
+name at the call site -- `mem.make<T>(allocator, capacity)` and not
+`allocator.make<T>(capacity)`, since CALLS gives no fallback. All three
+problems go for those four characters.
+
+What it costs: a Pool cannot specialize `make` with per-type free
+lists. If that need becomes real, the answer is a separate
+`TypedAllocator<T>` shape -- monomorphic holes per instantiation, so the
+specialization is a vtable slot and survives coercion -- not a default.
+
+Background, since the tension is real for anything with a table:
+    GENERIC . OVERRIDABLE . VIRTUAL  --  pick two.
+Shape-level generics escape it by multiplying vtables, which is why
+`TypedAllocator<T>` is a shape per T and a generic `make` inside `Allocator`
+is not a method at all.
+
+----------------------------------------------------------------------------
+NOTE 4 -- what lives in the block, and why nothing joins it later.
+
+Methods in the block get T, M and the fields in scope for free, and they are
+the only thing shape matching looks at.
+
+    INTRINSIC   declared in the block. Counts for shape satisfaction. May
+                be virtual. `push`, `alloc`, `write_bytes`.
+    EXTRINSIC   a free function over a bound. Convenience only, never
+                satisfies a shape. `make`, `drop`, `write`.
+
+WITH NO UFCS THE SPLIT IS VISIBLE IN THE TEXT. `w.write_bytes(p, n)` is the
+shape's and `io.write(w, s)` is not, and the two do not look alike, so
+nobody has to know what a file imported to tell an operation from a
+convenience.
+
+The alternative is what makes the rule worth stating. Let `a.f(x)` fall back
+to `f(a, x)` resolved in the CALLER's scope and one of two things must be
+true: either the fallback can satisfy a shape, and "does Heap satisfy
+Allocator" becomes a question about imports -- two modules coerce the same
+value and build different vtables -- or it cannot, and the language has a
+method call whose meaning depends on a distinction the call site hides.
+The first is unsound and the second is the reader's problem forever. Both
+are avoided by the same one-line rule, and the price is
+`mem.make<T>(allocator, n)` where `allocator.make<T>(n)` would have read
+more like prose.
+
+You still get extension functions -- write anything over a type you do not
+own -- they just cannot join a shape, and they cannot dress as members.
+
+----------------------------------------------------------------------------
+NOTE 6 -- why there is no `operator` keyword, and why arithmetic on a user
+type is a method call.
+
+`operator []` would be the language's only two-token name, and the only
+place the word appears. Naming the member `[]` costs nothing and spends no
+keyword.
+
+THE OTHER HALF OF THE OPERATORS ARE NOT MEMBERS AT ALL. Written as one,
+arithmetic breaks on the second line of vector code:
+
+    v * 2.0      ->  a member of Vec2 named `*`.  Fine.
+    2.0 * v      ->  a member of f32 named `*`.   Nobody owns f32.
+
+Nothing rescues it. The only candidate is a free function reached from
+method position, which is the fallback NOTE 4 rules out, correctly: resolved
+in the caller's scope, "is Vec2 numeric" would depend on what happened to be
+imported. So a member cannot express scaling, and no bound could ever
+require arithmetic of a type parameter.
+
+SO THE LANGUAGE HAD IT AS A POLICY, and this note used to end there. The
+test in NOTE 1 gives the reason: two ways to add two vectors -- saturating
+and wrapping -- so addition is a CHOICE, and a choice is a policy. `a + b`
+was `Add<A, B>.add(a, b)` with the operand types as the search key.
+Everything awkward about the member reading went at once. Scalars on the
+left worked, because a policy is attached to nothing. And
+`lerp :: <T> (a: T, b: T, t: f32) -> T` -- generic code over anything
+numeric -- was sayable, which under the member reading it is not, in any
+form.
+
+IT DID NOT SURVIVE THE POOL, and the reason is worth stating exactly,
+because the policy reading was not wrong. An operator is a spelling with no
+room to name anything: `a + b` has nowhere to put `Add<Vec2, Vec2>`. So an
+operator can only dispatch to a policy if the policy can be found WITHOUT
+being named, and that is a solver, and the solver is what went. What is left
+once instances must be named is `vec2_add.add(a, b)` -- which is a function
+call with a symbol in front of it, not an operator -- or `v.add(w)`, which
+is at least honest about being a method.
+
+WHAT WAS LOST, itemised, because it is the largest regression in the
+language and should not be quietly reframed as a simplification:
+    - `2.0 * v` has no spelling at all. `v.scale(2.0)` is the operation, in
+      the other order, from the type that owns it.
+    - `lerp` over anything numeric is gone. A generic body cannot say
+      `a + b`, so numeric generic code needs a shape with `add`/`scale`
+      members and gets the wrapper problem in NOTE 1's last paragraph.
+    - the operand types no longer have to agree with anything, so a type
+      with `add` and a type with `plus` are simply different.
+What was gained is in COMPILE-TIME ARGS: no pool, no coherence, no orphan
+convention, no unification, and nothing about a call that a reader has to
+leave the file to answer.
+
+Precedence is a fixed table. It always was, and it is now merely a fact
+about the grammar rather than a cost, since there is nothing to extend.
+
+The member half pays for itself twice, because the same move names the
+member `()`, and that is what a closure is:
+
+    print_u8 :: <M: Allocator> (allocator: M) -> self {
+        () :: (&self, v: u8) -> () {
+            io.write(io.out, to_string(self.allocator, v))
+        }
+    }
+
+-- an ordinary `-> self` block, whose runtime params are its captured
+fields, exactly as everywhere else. There is no curried spelling and no
+second runtime group: THE RULE has one, and a closure needs nothing beyond
+a block. Two questions answer themselves: `print_u8(mem)`
+has its OWN type (so it is free), and it becomes a shared type precisely
+when you write `ptr<Fn<u8, ()>>`, which is the same coercion as
+`ptr<Allocator>` and not a second mechanism.
+
+============================================================================
+OPEN
+
+  - WHO MAY WRITE, AND FOR HOW LONG. The memory question with no cheap
+    answer. `::`/`:=` encode immutable/mutable for BINDINGS and nothing
+    does for POINTEES, so a `ptr<T>` is an unrestricted handle of indefinite
+    life. In a simulation that is not a documentation problem: a pointer
+    into a store is invalidated by any push, and an event emitted
+    mid-iteration reenters the loop that emitted it. An accessor handing back
+    `ptr<T>` makes an interior pointer easy to take and one address per value
+    makes it worth keeping,
+    so both raise the stakes here without changing the kind of hole it is.
+    This is the one cost in the language not visible in a type.
+
+  - THE CONSTRUCTOR BODY. A `-> self` block has field initialisers and no
+    statements, so anything needing `self`, or two fields at once, or a step
+    that can fail, has nowhere to go. `-> Result<self, E>` covers the
+    fallible case and is the wrong half: it gives the constructor a return
+    type and still no body. The cost is two-phase construction, unchecked --
+    ecs.z's `w.wire()`. A value having one address is what makes such a body
+    definable at all, so this is the next thing to decide.
+
+  - RECURSIVE TYPES UNDER MONOMORPHISATION. NOTE 2's trade is livable for a
+    container of concrete values and not for a type that contains itself.
+
+  - THE DISCRIMINANT IS NOT A VALUE. Both programs hit it. json.z needs
+    `expect(Token.colon())` to mean "same variant, ignore the payload"; ecs.z
+    needs an ordinal per variant, which is what an archetype bitmask and a
+    save file are made of. Wanted: `S.tag`, a derived sum of unit variants,
+    with `tag_of(v)` total, comparable, and ordered.
+
+  - NO `for (x := it)`. Every traversal in both programs is an index loop,
+    because the `loop`/`match`/`Option` consumer is four lines to replace
+    one and nobody writes them. `Iterator` was the standard library's answer
+    WITHOUT the form -- declared by both programs, used by neither -- and is
+    cut. The form is still missing and still wanted; what it quantifies over
+    is the open half. See [P23] in ecs.z.
+
+  - NUMERIC GENERIC CODE. With arithmetic built in on the primitives and
+    nowhere else, `lerp :: <T> (a: T, b: T, t: f32) -> T` cannot be written,
+    because a generic body has no `+`. The answer available is a shape with
+    `add` and `scale` members, which serves types you own, hits the adapter
+    problem in NOTE 1 for anything else, and cannot serve the primitives at
+    all -- nothing can be added to u8. This is what the solver was buying
+    and it is the hole it left behind. See NOTE 6.
+
+  - ARITY FAMILIES. `Fn`, `Fn2`, `Fn3` are cheap enough to live with as an
+    implementation detail. `Join2`, `Join3`, `Join4` at a query interface
+    are public surface. Variadic compile-time args are the only real answer,
+    and nothing cheaper works.
+
+  - IS `ptr<Shape>` COMPARABLE? It is two words built at the coercion site.
+    Whether two coercions of one block are equal decides whether an observer
+    list can ever remove a subscriber, and nothing says.
+
+  - Does `capacity :: 10` make List-with-cap-10 a different type from
+    cap-20? Zig says yes.
+
+  - Is the ptr<Shape> coercion implicit at call sites (`F.format(v, &b)`) or
+    does it need the annotation, as `boxed` does? Implicit is nicer to write
+    and hides a representation change from direct calls to indirect ones.
+============================================================================

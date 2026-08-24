@@ -2,7 +2,7 @@
 // ecs.z  --  an entity-component-system and the game loop around it.
 // ============================================================================
 //
-// The second program written against rules.z. json.z was a JSON parser: a
+// The second program written against rules.txt. json.z was a JSON parser: a
 // tree of sums, built once, walked recursively, freed all at once. It found
 // the sum projection, `try`, `match`-as-expression and `self`-in-an-instance.
 //
@@ -22,7 +22,7 @@
 //     5. TEARDOWN OF THE UNKNOWN.         json.z used an arena and never
 //                                         freed a node. A world despawns.
 //
-// Same convention as json.z: everything is rules.z's syntax as-is except
+// Same convention as json.z: everything is rules.txt's syntax as-is except
 // where marked [P#], which points at a numbered proposal in FINDINGS. [W#]
 // marks something that held up and must not be lost. Numbering continues from
 // json.z -- wins start at [W8], frictions at 13, proposals at [P17].
@@ -547,7 +547,7 @@ Signal :: <E, M: Allocator> (allocator: M) -> self {
     // FRICTION 27. There is no `off`. Unsubscribing means finding the
     // subscriber again, and a `ptr<Fn<E,()>>` is a PAIR of words built at the
     // coercion site. Two coercions of the same block are two fat pointers; are
-    // they equal? rules.z says a fat pointer is "built at the moment of
+    // they equal? rules.txt says a fat pointer is "built at the moment of
     // coercion, and only there", which suggests yes for the data half and
     // nothing at all about the vtable half. Identity of an erased value is
     // undefined, so an observer list can be added to and never pruned.
@@ -1015,7 +1015,7 @@ main :: () -> () {
 //       operand types. `a[i]` and `a(x)` stay members, because they take
 //       `self`.
 //
-//       Derived from rules.z's own test rather than chosen: two ways to add
+//       Derived from rules.txt's own test rather than chosen: two ways to add
 //       two Vec2 (saturating, wrapping) -- yes, so a policy; two ways for a
 //       List to index itself -- no, so a member. And everything awkward
 //       dissolved at once:
@@ -1099,7 +1099,7 @@ main :: () -> () {
 //       corpus -- `List` in unified.z -- against four rules, the first of
 //       which had to reach into every type position in the language to forbid
 //       `&T` fields, `&T` arguments, `Option<&V>` and `List<&T>`, so that `&`
-//       could not become a second pointer type. rules.z had already run the
+//       could not become a second pointer type. rules.txt had already run the
 //       same argument for place PARAMETERS and rejected them, in the sentence
 //       that gives the reason here too: the call site is identical either way,
 //       an argument is explicit, and that is the argument.
@@ -1116,7 +1116,7 @@ main :: () -> () {
 //       `v := xs[i]` binds a pointer where a copy was meant and compiles, and
 //       `p[i]` on a raw pointer means the element while `xs[i]` on a List
 //       means its address -- one syntax, two meanings, both of them inside
-//       `List` itself. rules.z ELEMENTS itemises them rather than reframing
+//       `List` itself. rules.txt ELEMENTS itemises them rather than reframing
 //       the cut as a simplification.
 //
 // [P23] `for (x := it) { ... }` over anything with a `next` that returns

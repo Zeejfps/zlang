@@ -7,7 +7,7 @@
 //     Name <compile-time args> (runtime args) -> projection { body }
 //
 // What that form MEANS -- the projections, holes, elements, keywords, operator
-// policies, coherence, and NOTE 1-9 arguing for each -- is in rules.z. What
+// policies, coherence, and NOTE 1-9 arguing for each -- is in rules.txt. What
 // its words mean is in glossary.z. This file is the source those rules were
 // derived from and are checked against: a core, an allocator layer, a list, an
 // iterator, an ordering, a formatter, and a main that uses them.
@@ -193,7 +193,7 @@ List :: <T, M: Allocator> (allocator: M) -> {push, pop, count, [], span, deinit}
 
     // The ELEMENT'S ADDRESS escapes, so `xs[i].* = v` and `xs[i].* += 1` are
     // writable and `xs[i]` already IS the ptr<T>. There is no `-> &T`, so the
-    // body takes the address itself. See ELEMENTS in rules.z.
+    // body takes the address itself. See ELEMENTS in rules.txt.
     [] :: (&self, i: u32) -> ptr<T> { &self.items[i] }
 
     span :: (&self) -> slice<T> { slice(self.items, self.count) }

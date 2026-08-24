@@ -1,5 +1,5 @@
 // ============================================================================
-// json.z  --  a real program written in the rules.z declaration form.
+// json.z  --  a real program written in the rules.txt declaration form.
 // ============================================================================
 //
 // The goal here is not the JSON parser. The goal is to find out where the one
@@ -8,9 +8,9 @@
 //     Name <compile-time args> (runtime args) -> projection { body }
 //
 // bends, where it breaks, and where it turns out to be doing more work than
-// rules.z claims for it.
+// rules.txt claims for it.
 //
-// Everything below is written in rules.z's syntax as-is EXCEPT where marked
+// Everything below is written in rules.txt's syntax as-is EXCEPT where marked
 // [P#], which points at a numbered proposal in the FINDINGS section at the
 // bottom. Where the existing syntax already covered something I expected to
 // need an extension for, it is marked [W#] -- those are the load-bearing wins
@@ -40,8 +40,8 @@ List      :: list.List
 // std.core  --  sums
 // ============================================================================
 //
-// The rule is in rules.z: what a hole means under `-> oneof`. What stays here
-// is the part rules.z cannot carry -- WHERE the need showed up, which is the
+// The rule is in rules.txt: what a hole means under `-> oneof`. What stays here
+// is the part rules.txt cannot carry -- WHERE the need showed up, which is the
 // code below. Operators get no section of their own: `+` and `<` on a
 // primitive are instructions, and there is no declaration behind them to
 // point at.
@@ -78,7 +78,7 @@ Span :: (lo: u32, hi: u32) -> self
 
 
 // ============================================================================
-// std.key  --  a POLICY, by rules.z's own test: slice<u8> has more than
+// std.key  --  a POLICY, by rules.txt's own test: slice<u8> has more than
 // one legitimate ordering/hashing (case sensitive or not), so the caller must
 // be able to choose.
 // ============================================================================
@@ -715,7 +715,7 @@ main :: () -> () {
 //
 // [W2] `X :: (a: A, b: B) -> self {}` is a struct declaration, with no struct
 //      form. "Runtime params of a `-> self` def ARE fields" is the single
-//      highest-value line in rules.z. `Entry`, `Span` and `Error` above are
+//      highest-value line in rules.txt. `Entry`, `Span` and `Error` above are
 //      one line each and read better than a `struct` keyword would.
 //
 // [W3] Nested declarations capture the enclosing block's compile-time args.

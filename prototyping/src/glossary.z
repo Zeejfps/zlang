@@ -1,8 +1,8 @@
 // ============================================================================
-// glossary.z  --  what the words in rules.z mean
+// glossary.z  --  what the words in rules.txt mean
 // ============================================================================
 //
-// Read this before rules.z. It defines no syntax; it only names things.
+// Read this before rules.txt. It defines no syntax; it only names things.
 //
 // ============================================================================
 // HOW TO READ A DECLARATION
@@ -126,7 +126,7 @@
 //     written through, which is what `sort(&xs)` says at a call site, and the
 //     restriction that kept `&T` out of every other type position went with
 //     it. The cost is that `v := xs[i]` binds a pointer where a copy was
-//     meant. See ELEMENTS in rules.z.
+//     meant. See ELEMENTS in rules.txt.
 //
 //     AN OUT-PARAMETER TAKES A POINTER and writes through it, as in C:
 //
@@ -197,7 +197,7 @@
 //     only reach a policy that can be found WITHOUT one, and that is a solver.
 //     With the pool gone, arithmetic is built in on the primitives and a user
 //     type publishes members: `v.add(w)`, `v.scale(2.0)`, `a.eq(b)`.
-//     `2.0 * v` has no spelling. See NOTE 6 in rules.z.
+//     `2.0 * v` has no spelling. See NOTE 6 in rules.txt.
 //
 //         a[i]    ->  a member                 one way for a List to index
 //         a(x)    ->  a member                 itself -> shape
@@ -349,7 +349,7 @@
 //
 //     There is no UFCS -- `a.f(x)` does not fall back to `f(a, x)` -- so the
 //     two are told apart at the call site and not by what the file imported.
-//     See NOTE 4 in rules.z.
+//     See NOTE 4 in rules.txt.
 //
 //
 // ============================================================================
