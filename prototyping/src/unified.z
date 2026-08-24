@@ -121,7 +121,7 @@
 //                                     There is exactly one, so `self` is
 //                                     available lexically with nothing passed.
 //                                     `mem`, `io`, `reverse_u8`, and every
-//                                     dictionary instance.
+//                                     policy instance.
 //
 // The second case is the one that lets an instance recurse into itself -- see
 // `Formattable<u8>` below and NOTE 7. It also answers a question the earlier
@@ -188,7 +188,7 @@
 // TWO KINDS OF ABSTRACTION, ONE SYNTAX. See NOTE 1.
 //     holes take self      ->  SHAPE.      Intrinsic to a type, matched
 //                              structurally, coercible to ptr<Shape>.
-//     holes do not         ->  DICTIONARY. Extrinsic, several may exist, the
+//     holes do not         ->  POLICY.     Extrinsic, several may exist, the
 //                              caller picks, the solver defaults it.
 //     Mixing the two in one block is an error, not a third thing.
 //
@@ -338,12 +338,12 @@ List :: <T, M: Allocator> (mem: M) -> self {
 
 
 // ============================================================================
-// std.ord  --  Ord is a DICTIONARY: u8 has no one true ordering, and the
+// std.ord  --  Ord is a POLICY: u8 has no one true ordering, and the
 // caller must be able to pick. Nothing is attached to u8.
 // ============================================================================
 
 Ord :: <T> -> self {
-    compare: (a: T, b: T) -> i32     // no self -> dictionary
+    compare: (a: T, b: T) -> i32     // no self -> policy
 }
 
 // Anonymous -> in the solver pool. This is what `Ord<u8>` resolves to.
@@ -381,7 +381,7 @@ sort :: <T, O: Ord<T> = ?> (xs: ptr<List<T, _>>) -> () {
 
 
 // ============================================================================
-// std.fmt  --  also a DICTIONARY: you want hex and decimal for the same u8.
+// std.fmt  --  also a POLICY: you want hex and decimal for the same u8.
 // ============================================================================
 
 Formattable :: <T> -> self {
@@ -458,7 +458,7 @@ main :: () -> () {
     io.out.write(to_string(mem, xs[0]))              // "2"
     io.out.write(to_string(mem, xs))                 // "[2, 1]"
 
-    // Override the solver by naming the dictionary. It is a compile-time
+    // Override the solver by naming the policy. It is a compile-time
     // argument passed by name, so it uses `=`, like any other default.
     io.out.write(to_string<F = hex_u8>(mem, xs[0]))  // "02"
     io.out.write(to_string<F = hex_u8>(mem, xs))     // "[02, 01]"
@@ -497,10 +497,10 @@ main :: () -> () {
 
 
 // ============================================================================
-// NOTE 1 -- shapes vs dictionaries, and why one syntax is enough.
+// NOTE 1 -- shapes vs policies, and why one syntax is enough.
 //
 // Rust conflates these and pays for it with orphan rules. Go has only shapes.
-// Haskell has only dictionaries. You can have both, told apart by one word:
+// Haskell has only policies. You can have both, told apart by one word:
 //
 //   SHAPE       every hole takes self. An allocator, a writer, a socket --
 //               things where the abstraction is a property of the object and
@@ -508,14 +508,14 @@ main :: () -> () {
 //               structurally by any type with matching methods, so it needs
 //               no registration. Coerce to ptr<Shape> for dynamic dispatch.
 //
-//   DICTIONARY  no hole takes self. Ord<u8>, Formattable<u8> -- things where
+//   POLICY      no hole takes self. Ord<u8>, Formattable<u8> -- things where
 //               several answers exist and the caller must be able to choose. A
 //               free-standing value, defaulted by the solver, overridden by
 //               name. Works on primitives and foreign types, since nothing has
 //               to be attached to them.
 //
 // The test is not stylistic: can there legitimately be two of these for one
-// type? Two orderings of u8, yes -> dictionary. Two ways for an Arena to
+// type? Two orderings of u8, yes -> policy. Two ways for an Arena to
 // allocate, no -> shape.
 //
 // It is a property of the BLOCK, not of each hole. A block with one self hole
@@ -525,7 +525,7 @@ main :: () -> () {
 // Anything that must AGREE belongs in ONE block. A hash and an equals solved
 // as two independent `= ?` params can be defaulted inconsistently -- a
 // case-folding hash with a case-sensitive equals is a silently broken map that
-// no type error catches. Grouping is free here, because a dictionary is just a
+// no type error catches. Grouping is free here, because a policy is just a
 // block.
 //
 // Neither is a new construct. Both are a block with unfilled holes.
@@ -619,8 +619,8 @@ main :: () -> () {
 // ----------------------------------------------------------------------------
 // NOTE 7 -- how an instance names itself, and why `self` and not its own name.
 //
-// A dictionary is chosen at the CALL SITE, so when an instance's body recurses
-// it has to name a dictionary again -- and naming the type gets the solver's
+// A policy is chosen at the CALL SITE, so when an instance's body recurses
+// it has to name a policy again -- and naming the type gets the solver's
 // default, not the instance the caller picked. Written the obvious way, a
 // `pretty` printer prints the outermost value pretty and every child with the
 // default, silently, one level down.
@@ -670,7 +670,11 @@ main :: () -> () {
 //            contradicted "`:` is type ascription and nothing else".
 //   CHANGED  `operator []` -> `[]`. See NOTE 6.
 //   CHANGED  `List.pop` returns Option<T>.
-//   CHANGED  shape-vs-dictionary is a property of the block, not of each hole.
+//   CHANGED  shape-vs-policy is a property of the block, not of each hole.
+//   RENAMED  DICTIONARY -> POLICY. The old name was GHC's word for how a
+//            typeclass constraint is compiled, and it collides with the
+//            everyday meaning (a hash map -- `Map` in json.z, in this repo).
+//            See glossary.z for the alternatives considered.
 //   ADDED    `self` is available lexically in a block with no runtime group,
 //            which is what lets an instance recurse into itself rather than
 //            into the solver's default. NOTE 7. Found by trying to write a

@@ -107,7 +107,7 @@
 //     Erasure:  `ptr<Writer>` is a fat pointer (data + vtable).
 //
 // ----------------------------------------------------------------------------
-// DICTIONARY   --  no hole takes self          [name under review, see below]
+// POLICY   --  no hole takes self
 //
 //     Ord :: <T> -> self {
 //         compare: (a: T, b: T) -> i32
@@ -131,7 +131,7 @@
 //     Ask: can there legitimately be TWO of these for one type?
 //
 //         Two orderings of u8?          Yes -- ascending, descending.
-//                                       -> dictionary
+//                                       -> policy
 //         Two ways for an Arena to
 //         allocate?                     No.
 //                                       -> shape
@@ -143,32 +143,30 @@
 //     Mixing the two in one block is an error, not a third kind of thing.
 //
 // ----------------------------------------------------------------------------
-// WHY THE WORD "DICTIONARY" IS PROBABLY WRONG
+// WHY "POLICY" AND NOT "DICTIONARY"
 //
-//     It comes from GHC's implementation of Haskell typeclasses, where a
-//     constraint compiles into an extra hidden argument -- a record of the
-//     class's functions, called a "dictionary". Accurate, but it is jargon
-//     from one compiler's internals.
+//     Earlier drafts called this a DICTIONARY, from GHC's implementation of
+//     Haskell typeclasses: a constraint compiles into an extra hidden
+//     argument, a record of the class's functions, which that compiler calls a
+//     dictionary. Accurate, but jargon from one compiler's internals -- and to
+//     everyone else, and to `Map` in json.z in this repo, a dictionary is a
+//     HASH MAP. Two meanings, one codebase.
 //
-//     To almost every other programmer, and in `json.z` in this very repo,
-//     a dictionary is a HASH MAP. Two meanings, one codebase.
+//     POLICY is from C++ policy-based design and evokes the right thing: a
+//     choice plugged in by the caller. One wrinkle to know about -- in C++ the
+//     allocator is THE canonical policy, and here `Allocator` is a SHAPE. The
+//     test below, not the C++ analogy, decides which you are writing.
 //
-//     Candidates, none adopted yet:
+//     Also considered: STRATEGY (the GoF pattern; a Comparator literally is
+//     one, and it is the most widely recognised -- but it connotes a runtime
+//     object, which these are not) and WITNESS (from type theory, the most
+//     precise and the most obscure; it evokes proof rather than choice, and
+//     choice is the defining feature).
 //
-//       POLICY     C++ policy-based design. Evokes "a choice plugged in by
-//                  the caller", which is exactly right. Slight friction:
-//                  in C++ the allocator IS the canonical policy, and here
-//                  the allocator is a SHAPE.
-//       STRATEGY   The GoF pattern; a Comparator literally is one. The most
-//                  widely recognised of the three. Carries OO-pattern
-//                  connotations of a runtime object, which these are not.
-//       WITNESS    From type theory: a value that witnesses "u8 can be
-//                  ordered". The most precise, the most obscure, and it
-//                  evokes proof rather than choice -- and choice is the
-//                  defining feature.
+//     `shape` has no such problem and stays.
 //
-//     Leading candidate: POLICY. Decide before the term spreads further.
-//     `shape` has no such problem and should stay.
+//     One casualty of the same Haskell vocabulary remains: INSTANCE, below,
+//     which already means "an instance of a struct" to everyone.
 //
 //
 // ============================================================================
@@ -186,7 +184,7 @@
 //     not, and can only be reached by writing its name.
 //
 // INSTANCE
-//     One filled-in dictionary. `reverse_u8` is an instance of `Ord<u8>`.
+//     One filled-in policy. `reverse_u8` is an instance of `Ord<u8>`.
 //     (Note the collision with the everyday sense of "an instance of a
 //     struct". Another casualty of the Haskell vocabulary.)
 //
@@ -256,7 +254,7 @@
 //     enum        a `-> oneof` block.
 //     union       a `-> oneof` block. (Tagged. There is no untagged one.)
 //     interface   a `-> self` block with unfilled holes.
-//     trait       same. Split into SHAPE and DICTIONARY -- see above.
+//     trait       same. Split into SHAPE and POLICY -- see above.
 //     abstract    a block with an unfilled hole already is.
 //     impl        an ordinary declaration whose projection is the shape.
 //     class       -- 

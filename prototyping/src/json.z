@@ -110,18 +110,18 @@ fold :: <T, A, I: Iterator<T>, F: Fn2<A, T, A>> (it: ptr<I>, acc: A, f: F) -> A 
 
 
 // ============================================================================
-// std.key  --  a DICTIONARY, by unified.z's own test: slice<u8> has more than
+// std.key  --  a POLICY, by unified.z's own test: slice<u8> has more than
 // one legitimate ordering/hashing (case sensitive or not), so the caller must
 // be able to choose.
 // ============================================================================
 //
-// [P11] hash and equals go in ONE dictionary, not two. Two `= ?` params that
+// [P11] hash and equals go in ONE policy, not two. Two `= ?` params that
 // the solver defaults independently can be defaulted inconsistently -- a
 // case-folding hash with a case-sensitive equals is a silently broken map, and
 // no type error catches it. Anything that must agree must be one block.
 //
 // This is a design rule the unified form makes cheap: grouping costs nothing
-// because a dictionary is just a block.
+// because a policy is just a block.
 
 Key :: <K> -> self {
     hash:   (k: K) -> u64
@@ -725,7 +725,7 @@ main :: () -> () {
 //
 // [W5] `= ?` solver params work in TYPE position, not just call position:
 //      `Map<slice<u8>, Json, ptr<Allocator>>` leaves `KY` to the solver. This
-//      falls out of dictionaries being zero-sized compile-time bindings, and it
+//      falls out of policies being zero-sized compile-time bindings, and it
 //      is what keeps the JSON type declaration readable.
 //
 // [W6] "A type in value position is the solver's default instance."
@@ -800,8 +800,8 @@ main :: () -> () {
 //
 // FRICTION 11 -- A RECURSIVE INSTANCE COULD NOT NAME ITSELF.  RESOLVED -> [P16]
 //
-//   Found by trying to write `spaced`, above. A dictionary is chosen at the
-//   CALL SITE, so when an instance recurses it must name a dictionary again --
+//   Found by trying to write `spaced`, above. A policy is chosen at the
+//   CALL SITE, so when an instance recurses it must name a policy again --
 //   and naming the type gets the SOLVER'S DEFAULT ([W6]), not the instance the
 //   caller picked. `to_string<F = spaced>(mem, doc)` spaced the outermost value
 //   and printed every child with the default, silently, one level down.
@@ -862,7 +862,7 @@ main :: () -> () {
 // FRICTION 11 is now closed by [P16]; FRICTION 12 is open.
 //
 // [P1]  `-> oneof` : the sum projection. A block whose holes are disjunctive.
-//         -> self   ALL holes filled (unfilled = abstract = shape/dictionary)
+//         -> self   ALL holes filled (unfilled = abstract = shape/policy)
 //         -> oneof  EXACTLY ONE hole filled
 //       Construction reuses "`=` fills a declared hole in a literal"
 //       (`Option<u8>{some = 3}`), and the derived `Option<u8>.some(3)`.
@@ -926,15 +926,15 @@ main :: () -> () {
 //       Everything about `Heap()` vs `Writer`, and about when `-> self` is a
 //       type versus an instance, falls out of this one line.
 //
-// [P11] A DICTIONARY IS A BLOCK, SO GROUP WHAT MUST AGREE. `Key<K>` carries
+// [P11] A POLICY IS A BLOCK, SO GROUP WHAT MUST AGREE. `Key<K>` carries
 //       hash AND equals. Two independently-solved `= ?` params that must be
 //       consistent is a silent-corruption bug the type system cannot see.
 //
-// [P12] SHAPE-vs-DICTIONARY IS A PROPERTY OF THE BLOCK, NOT THE MEMBER. NOTE 1
+// [P12] SHAPE-vs-POLICY IS A PROPERTY OF THE BLOCK, NOT THE MEMBER. NOTE 1
 //       states the test per-member ("first param is self"). A block with one
 //       self member and one non-self member is currently well-formed and means
 //       nothing. Make it an error, and say the test is: ALL holes take self ->
-//       shape; NO hole takes self -> dictionary.
+//       shape; NO hole takes self -> policy.
 //
 // [P13] `try e` propagates the `err` arm of a `Result` to the enclosing
 //       function's projection. Needed by every non-trivial program; the only
@@ -950,7 +950,7 @@ main :: () -> () {
 //       free.
 //
 // [P16] `self` IS AVAILABLE LEXICALLY IN A BLOCK WITH NO RUNTIME GROUP, which
-//       is every module and every dictionary instance. It lets an instance
+//       is every module and every policy instance. It lets an instance
 //       recurse into ITSELF rather than into the solver's default, and makes
 //       recursion and delegation read differently:
 //
@@ -1013,11 +1013,11 @@ main :: () -> () {
 // The unification is real and it survives contact with a non-trivial program.
 // "Params of a `-> self` def are fields" plus "an unfilled hole is abstract"
 // genuinely replaces struct, module, trait, impl and enum-of-one, and the
-// shape/dictionary split is a better answer than Rust's or Go's. The two things
+// shape/policy split is a better answer than Rust's or Go's. The two things
 // standing between this and a language you could write in were a sum projection
 // ([P1], [P2], `_`, `try`) and an answer to what monomorphisation does to
 // recursive data (FRICTION 2). The first is done. The second is not, and it has
 // since been joined by FRICTION 11 -- which turned out to be much smaller than
-// it first looked, and closed by giving the dictionary story the `self` it was
+// it first looked, and closed by giving the policy story the `self` it was
 // missing. What is left is the monomorphisation one, and it is not syntax.
 // ============================================================================
