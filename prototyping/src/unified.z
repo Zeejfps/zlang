@@ -19,9 +19,19 @@
 //     ()   runtime args           Heap()
 //     []   indexing               xs[0]
 //
-// BINDING
-//     ::   binds at compile time      :=   binds at runtime
-//     :    a HOLE -- a type with no value yet
+// BINDING.  `:` is type ascription and nothing else. The binder is what
+// carries meaning, and a hole is the absence of one.
+//
+//     name          :: v     compile-time binding
+//     name : T      :: v     ...with the type spelled out
+//     name          := v     runtime binding
+//     name : T      := v     ...with the type spelled out
+//     name : T               no binder  ->  HOLE
+//     name          := undefined        a field you fill in later
+//
+//     `=` is assignment: mutating an existing binding, filling a declared
+//     hole in a literal, or a default in a parameter list. It never creates
+//     one.
 //
 //     A runtime param of a `-> self` def IS a field: the block is what you
 //     kept, so the params are in it.
@@ -29,9 +39,11 @@
 //     No runtime group at all (`x :: -> T {...}`) means the thing IS its
 //     value, already evaluated. An explicit empty `()` means you call it.
 //
-// THERE IS NO `trait` OR `interface`. A type with unfilled holes cannot be
-// instantiated, so it is only usable as a bound or behind a pointer. That is
-// all an interface ever was. Filling the holes gives you a value.
+// THERE IS NO `trait`, `interface` OR `abstract`. A block with an unfilled
+// hole cannot be instantiated, so it is only usable as a bound or behind a
+// pointer. That is all an interface ever was, and it applies to every block
+// equally -- a List with one unfilled field is abstract for the same reason
+// Allocator is. Filling the holes gives you a value.
 //
 // `self` IS THE ONLY NEW KEYWORD. It always means "the block".
 //     -> self      in a projection: the block escapes
@@ -69,8 +81,8 @@
 // std.mem
 // ============================================================================
 
-// A shape is nothing but holes. No bodies, so no defaults, so nothing can be
-// silently overridden. See NOTE 3.
+// Nothing but holes -- two names with types and no binder. Uninstantiable,
+// therefore usable only as a bound or behind a pointer. See NOTE 3.
 Allocator :: -> self {
     alloc: (&self, n: u32) -> ptr
     free:  (&self, p: ptr) -> ()
@@ -291,7 +303,7 @@ main :: () -> () {
     // Dynamic: the annotation is the coercion. Same List, no second decl,
     // no `dyn`. Now the calls go through a fat pointer.
     arena := Arena(page, 4096)
-    boxed : ptr<Allocator> = &arena
+    boxed : ptr<Allocator> := &arena
     ys := List<u8>(boxed)
     defer ys.deinit()
 
@@ -397,10 +409,11 @@ main :: () -> () {
 //   - COHERENCE. Two anonymous `-> Ord<u8>` in different files is an
 //     ambiguity. Error at the use site, or first-wins, or one-per-module? Still
 //     the biggest unanswered question in the file.
-//   - FORWARD DECLARATIONS. `:` means "hole" only if bodiless always means
-//     hole. The .zh headers are full of bodiless declarations that are really
-//     "defined elsewhere". Either headers are generated rather than written,
-//     or forward declaration needs its own spelling.
+//   - FORWARD DECLARATIONS. Bodiless means hole, so a hand-written .zh full of
+//     `func insert_item<T>(...);` would make the module abstract rather than
+//     declaring it. Headers have to be generated from implementations, not
+//     maintained beside them. Probably the right answer anyway, but it is a
+//     real change to how the project is laid out.
 //   - Does `capacity :: 10` (compile-time field, 0 bytes) make List<u8> with
 //     cap 10 a different type from cap 20? Zig says yes.
 //   - Is the ptr<Shape> coercion implicit at call sites (`F.format(v, &b)`) or
