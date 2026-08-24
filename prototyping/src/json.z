@@ -159,7 +159,7 @@ ci_key :: -> Key<slice<u8>> {
 // std.map  --  open addressing, robin-hood-free, tombstoned.
 // ============================================================================
 
-Map :: <K, V, M: Allocator, KY: Key<K> = ?> (m: M) -> self {
+Map :: <K, V, M: Allocator, KY: Key<K> = ?> (allocator: M) -> self {
 
     // [W3] Nested declarations inside a block capture the block's compile-time
     // args for free. `Entry` is `Entry<K, V>` without ever saying so.
@@ -173,7 +173,7 @@ Map :: <K, V, M: Allocator, KY: Key<K> = ?> (m: M) -> self {
 
     cap   := 16
     count := 0
-    slots := mem.make<Slot>(m, cap)              // `m`, not `mem` -- `mem` is the module
+    slots := mem.make<Slot>(allocator, cap)      // the value; `mem` is the module
 
     // [W4] `-> {a, b}` -- partial projection as a multiple return -- turns out
     // to be the thing you reach for constantly in container code, and reads
@@ -221,7 +221,7 @@ Map :: <K, V, M: Allocator, KY: Key<K> = ?> (m: M) -> self {
         old     := self.slots
         old_cap := self.cap
         self.cap   = self.cap * 2
-        self.slots = mem.make<Slot>(self.m, self.cap)
+        self.slots = mem.make<Slot>(self.allocator, self.cap)
         self.count = 0
         for (i := 0; i < old_cap; i += 1) {
             match (old[i]) {
@@ -230,10 +230,10 @@ Map :: <K, V, M: Allocator, KY: Key<K> = ?> (m: M) -> self {
                 dead    { }
             }
         }
-        mem.drop(self.m, old)
+        mem.drop(self.allocator, old)
     }
 
-    deinit :: (&self) -> () { mem.drop(self.m, self.slots); self.count = 0 }
+    deinit :: (&self) -> () { mem.drop(self.allocator, self.slots); self.count = 0 }
 
     [] :: (&self, k: K) -> Option<V> { self.get(k) }
 }
@@ -250,7 +250,7 @@ Map :: <K, V, M: Allocator, KY: Key<K> = ?> (m: M) -> self {
 // allocator field is stored in EVERY node:
 //
 //                          M = Heap        M = ptr<Allocator>
-//     List<Json<M>, M>     16 bytes        32 bytes      (mem: 0 vs 16)
+//     List<Json<M>, M>     16 bytes        32 bytes      (allocator: 0 vs 16)
 //     Map<..., M>          16 bytes        32 bytes
 //     Json  (max + tag)    24 bytes        40 bytes
 //
@@ -388,7 +388,7 @@ is_digit :: (c: u8) -> bool { c >= '0' && c <= '9' }
 // body. Here I dodge it with a lazily-filled lookahead, which is what you
 // would end up writing in C anyway, and costs one Option per peek.
 
-Parser :: <M: Allocator> (lex: ptr<Lexer>, mem: M) -> self {
+Parser :: <M: Allocator> (lex: ptr<Lexer>, allocator: M) -> self {
 
     look := Option<Token>.none()
 
@@ -434,7 +434,7 @@ Parser :: <M: Allocator> (lex: ptr<Lexer>, mem: M) -> self {
     }
 
     array :: (&self) -> Result<Json<M>, Error> {
-        xs := List<Json<M>, M>(self.mem)
+        xs := List<Json<M>, M>(self.allocator)
         t  := try self.peek()
         match (t) { rbrack { _ := self.bump(); return ok(Json.array(xs)) }  _ { } }
         loop {
@@ -450,9 +450,9 @@ Parser :: <M: Allocator> (lex: ptr<Lexer>, mem: M) -> self {
     }
 
     object :: (&self) -> Result<Json<M>, Error> {
-        m := Map<slice<u8>, Json<M>, M>(self.mem)
+        members := Map<slice<u8>, Json<M>, M>(self.allocator)
         t := try self.peek()
-        match (t) { rbrace { _ := self.bump(); return ok(Json.object(m)) }  _ { } }
+        match (t) { rbrace { _ := self.bump(); return ok(Json.object(members)) }  _ { } }
         loop {
             k := try self.bump()
             key := match (k) {
@@ -461,11 +461,11 @@ Parser :: <M: Allocator> (lex: ptr<Lexer>, mem: M) -> self {
             }
             try self.expect(Token.colon(), "expected :")
             v := try self.value()
-            m.put(key, v)
+            members.put(key, v)
             n := try self.bump()
             match (n) {
                 comma  { }
-                rbrace { return ok(Json.object(m)) }
+                rbrace { return ok(Json.object(members)) }
                 _      { return self.oops("expected , or }") }
             }
         }
@@ -476,9 +476,9 @@ Parser :: <M: Allocator> (lex: ptr<Lexer>, mem: M) -> self {
     }
 }
 
-parse :: <M: Allocator> (mem: M, src: slice<u8>) -> Result<Json<M>, Error> {
+parse :: <M: Allocator> (allocator: M, src: slice<u8>) -> Result<Json<M>, Error> {
     lx := Lexer(src)
-    p  := Parser(&lx, mem)
+    p  := Parser(&lx, allocator)
     v  := try p.value()
     t  := try p.bump()
     match (t) { eof { ok(v) }  _ { p.oops("trailing input") } }
@@ -506,11 +506,11 @@ parse :: <M: Allocator> (mem: M, src: slice<u8>) -> Result<Json<M>, Error> {
                 io.write(w, "]")
             }
 
-            object (m) {
+            object (members) {
                 io.write(w, "{")
                 first := true
-                for (i := 0; i < m.cap; i += 1) {
-                    match (m.slots[i]) {
+                for (i := 0; i < members.cap; i += 1) {
+                    match (members.slots[i]) {
                         live (e) {
                             if (!first) { io.write(w, ",") }
                             first = false
@@ -558,11 +558,11 @@ spaced :: <M> -> fmt.Formattable<Json<M>> {
                 io.write(w, "]")
             }
 
-            object (m) {
+            object (members) {
                 io.write(w, "{")
                 first := true
-                for (i := 0; i < m.cap; i += 1) {
-                    match (m.slots[i]) {
+                for (i := 0; i < members.cap; i += 1) {
+                    match (members.slots[i]) {
                         live (e) {
                             if (!first) { io.write(w, ", ") }
                             first = false
@@ -634,9 +634,9 @@ sum_numbers :: (a: f64, v: Json<_>) -> f64 {
 // Two `_` would be two independent fresh parameters. See FRICTION 12.
 each_child :: <M> (v: Json<M>, f: Fn2<slice<u8>, Json<M>, ()>) -> () {
     match (v) {
-        object (m) {
-            for (i := 0; i < m.cap; i += 1) {
-                match (m.slots[i]) { live (e) { f(e.key, e.value) }  _ { } }
+        object (members) {
+            for (i := 0; i < members.cap; i += 1) {
+                match (members.slots[i]) { live (e) { f(e.key, e.value) }  _ { } }
             }
         }
         array (xs) {

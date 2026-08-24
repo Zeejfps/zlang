@@ -102,10 +102,13 @@ Allocator :: -> self {
 
 // The typed layer is an ordinary module of free functions. It is not part of
 // the shape, so anyone can extend it -- and being outside it, it is called
-// like what it is: `mem.make<T>(m, n)`, never `m.make<T>(n)`. See NOTE 4.
+// like what it is: `mem.make<T>(allocator, n)`, never `allocator.make<T>(n)`.
+// See NOTE 4.
 mem :: -> self {
-    make :: <T, M: Allocator> (m: M, n: u32) -> ptr<T> { m.alloc(n * size_of<T>()) }
-    drop :: <T, M: Allocator> (m: M, p: ptr<T>) -> ()  { m.free(p) }
+    make :: <T, M: Allocator> (allocator: M, n: u32) -> ptr<T> {
+        allocator.alloc(n * size_of<T>())
+    }
+    drop :: <T, M: Allocator> (allocator: M, p: ptr<T>) -> () { allocator.free(p) }
 }
 
 // No fields -> zero-sized -> the field costs 0 bytes wherever it is stored
@@ -167,14 +170,14 @@ io :: -> {out, err, write} {
 // hands out a location rather than a copy. `span` exists for the same reason
 // -- building a slice needs the base pointer, and closing the projection means
 // asking for it by name instead of reaching in.
-List :: <T, M: Allocator> (m: M) -> {push, pop, count, [], span, deinit} {
+List :: <T, M: Allocator> (allocator: M) -> {push, pop, count, [], span, deinit} {
     capacity := 10
     count    := 0
 
     // A field initialiser sees the runtime params directly; methods reach them
-    // through `self`. An allocator VALUE is `m`; the module of free functions
+    // through `self`. The VALUE is `allocator`; the module of free functions
     // over it is `mem`, and the two never collide.
-    items    := mem.make<T>(m, capacity)
+    items    := mem.make<T>(allocator, capacity)
 
     push :: (&self, item: T) -> () {
         if (self.count + 1 > self.capacity) { self.expand() }
@@ -192,15 +195,15 @@ List :: <T, M: Allocator> (m: M) -> {push, pop, count, [], span, deinit} {
 
     expand :: (&self) -> () {
         new_cap   := self.capacity * 2
-        new_items := mem.make<T>(self.m, new_cap)
+        new_items := mem.make<T>(self.allocator, new_cap)
         for (i := 0; i < self.count; i += 1) { new_items[i] = self.items[i] }
-        mem.drop(self.m, self.items)
+        mem.drop(self.allocator, self.items)
         self.items    = new_items
         self.capacity = new_cap
     }
 
     deinit :: (&self) -> () {
-        mem.drop(self.m, self.items)
+        mem.drop(self.allocator, self.items)
         self.items = nil
         self.count = 0
     }
@@ -382,8 +385,8 @@ hex_u8 :: -> Formattable<u8> {
 // ============================================================================
 
 // A Writer, structurally. No closures, no capture, memcpy-movable.
-StringWriter :: <M: Allocator> (m: M) -> self {
-    buf := List<u8>(m)
+StringWriter :: <M: Allocator> (allocator: M) -> self {
+    buf := List<u8>(allocator)
 
     write_bytes :: (&self, p: ptr<u8>, n: u32) -> () {
         for (i := 0; i < n; i += 1) { self.buf.push(p[i]) }
@@ -392,8 +395,8 @@ StringWriter :: <M: Allocator> (m: M) -> self {
     finish :: (&self) -> slice<u8> { self.buf.span() }
 }
 
-to_string :: <T, M: Allocator, F: Formattable<T> = ?> (m: M, v: T) -> slice<u8> {
-    b := StringWriter(m)
+to_string :: <T, M: Allocator, F: Formattable<T> = ?> (allocator: M, v: T) -> slice<u8> {
+    b := StringWriter(allocator)
     F.format(v, &b)          // &b coerces to ptr<Writer>; the fat pointer is
     b.finish()               // built right here, and only here
 }
@@ -454,10 +457,10 @@ main :: () -> () {
     li    := ListIter(&xs)
     total := fold(&li, 0, add_u8)
 
-    // A closure is what is left over: a block holding `m` with one member
+    // A closure is what is left over: a block holding `allocator` with one member
     // named `()`. A closure is a struct; that is the whole point.
-    print_u8 :: <M: Allocator> (m: M) -> self {
-        () :: (&self, v: u8) -> () { io.write(io.out, to_string(self.m, v)) }
+    print_u8 :: <M: Allocator> (allocator: M) -> self {
+        () :: (&self, v: u8) -> () { io.write(io.out, to_string(self.allocator, v)) }
     }
     p := print_u8(heap)
     p(7)                               // -> p.()(7)

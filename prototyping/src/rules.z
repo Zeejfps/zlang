@@ -229,7 +229,7 @@
 // It says who may KEEP a pointer. It says nothing about who may WRITE through
 // one, or for how long it stays valid -- see MEMORY, and OPEN.
 //
-// A SHAPE NAME IS ALREADY A POINTER in a parameter list -- `(m: Allocator)` is
+// A SHAPE NAME IS ALREADY A POINTER in a parameter list -- `(a: Allocator)` is
 // the erased one -- so `&Shape` would say nothing new and is not written.
 //
 // WHAT IT BUYS, beyond writing to an element: it is what makes `-> {a, b}`
@@ -511,7 +511,7 @@
 //
 // ----------------------------------------------------------------------------
 // CALLS.  `a.f(x)` IS THE MEMBER `f` OF `a`, and there is nothing else it can
-// be. A free function is called as `f(a, x)` -- `mem.make<T>(m, n)`,
+// be. A free function is called as `f(a, x)` -- `mem.make<T>(allocator, n)`,
 // `io.write(w, s)` -- and no convenience turns it back into a member.
 //
 // There is no UFCS. Method position is reserved for what is actually in the
@@ -534,7 +534,7 @@
 //
 // A SHAPE NAME IN AN ARGUMENT POSITION says which dispatch you are buying:
 //     <M: Allocator>   a bound.   Monomorphised, calls direct, 0-byte field.
-//     (m: Allocator)   ptr<Allocator>. Erased, calls indirect.
+//     (a: Allocator)   ptr<Allocator>. Erased, calls indirect.
 // The bracket already separates compile time from run time; it separates
 // static from dynamic for the same reason, and no `dyn` is needed.
 //
@@ -630,9 +630,9 @@
 //   - the shape's author owns the convenience layer forever
 //
 // Keeping them out, as free functions over `M: Allocator`, costs the module
-// name at the call site -- `mem.make<T>(m, capacity)` and not
-// `m.make<T>(capacity)`, since CALLS gives no fallback. All three problems go
-// for those four characters.
+// name at the call site -- `mem.make<T>(allocator, capacity)` and not
+// `allocator.make<T>(capacity)`, since CALLS gives no fallback. All three
+// problems go for those four characters.
 //
 // What it costs: a Pool cannot specialize `make` with per-type free
 // lists. If that need becomes real, the answer is a separate
@@ -668,8 +668,9 @@
 // value and build different vtables -- or it cannot, and the language has a
 // method call whose meaning depends on a distinction the call site hides.
 // The first is unsound and the second is the reader's problem forever. Both
-// are avoided by the same one-line rule, and the price is `mem.make<T>(m, n)`
-// where `m.make<T>(n)` would have read more like prose.
+// are avoided by the same one-line rule, and the price is
+// `mem.make<T>(allocator, n)` where `allocator.make<T>(n)` would have read
+// more like prose.
 //
 // You still get extension functions -- write anything over a type you do not
 // own -- they just cannot join a shape, and they cannot dress as members.
@@ -722,8 +723,10 @@
 // The member half pays for itself twice, because the same move names the
 // member `()`, and that is what a closure is:
 //
-//     print_u8 :: <M: Allocator> (m: M) -> self {
-//         () :: (&self, v: u8) -> () { io.write(io.out, to_string(self.m, v)) }
+//     print_u8 :: <M: Allocator> (allocator: M) -> self {
+//         () :: (&self, v: u8) -> () {
+//             io.write(io.out, to_string(self.allocator, v))
+//         }
 //     }
 //
 // -- an ordinary `-> self` block, whose runtime params are its captured

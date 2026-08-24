@@ -148,11 +148,11 @@ NO_ENTITY :: Entity(0, 0)
 // sharpest result in the file: FRICTION 17, a container that still cannot be
 // fully encapsulated, because iterating one means reaching into its fields.
 
-Store :: <C, M: Allocator> (m: M) -> self {
+Store :: <C, M: Allocator> (allocator: M) -> self {
 
-    dense := List<C, M>(m)          // the components themselves
-    owner := List<Entity, M>(m)     // dense[i] belongs to owner[i]
-    index := Map<Entity, u32, M>(m) // entity -> dense index
+    dense := List<C, M>(allocator)          // the components themselves
+    owner := List<Entity, M>(allocator)     // dense[i] belongs to owner[i]
+    index := Map<Entity, u32, M>(allocator) // entity -> dense index
 
     count :: (&self) -> u32 { self.dense.count }
 
@@ -295,10 +295,10 @@ is_dead :: (a: Ai) -> bool {
 // same stores, so that despawn and teardown can sweep every component type
 // without naming it. Written the obvious way:
 //
-//     World :: <M: Allocator> (m: M) -> self {
-//         pos    := Store<Vec2, M>(m)
-//         hp     := Store<Health, M>(m)
-//         stores := List<ptr<AnyStore>, M>(m)
+//     World :: <M: Allocator> (allocator: M) -> self {
+//         pos    := Store<Vec2, M>(allocator)
+//         hp     := Store<Health, M>(allocator)
+//         stores := List<ptr<AnyStore>, M>(allocator)
 //         stores.push(&self.pos)          // <- no `self` here, and no
 //         stores.push(&self.hp)           //    statement position either
 //     }
@@ -320,24 +320,24 @@ is_dead :: (a: Ai) -> bool {
 // unified declaration form was supposed to abolish: a `wire` you must remember
 // to call, and a World that is unsafe to use between the two lines.
 
-World :: <M: Allocator> (m: M) -> self {
+World :: <M: Allocator> (allocator: M) -> self {
 
     next_id := 1
-    recycle := List<Entity, M>(m)       // despawned ids, ready for reuse
-    live    := Map<Entity, bool, M>(m)
+    recycle := List<Entity, M>(allocator)       // despawned ids, ready for reuse
+    live    := Map<Entity, bool, M>(allocator)
 
-    pos   := Store<Vec2, M>(m)
-    vel   := Store<Vec2, M>(m)
-    hp    := Store<Health, M>(m)
-    brain := Store<Ai, M>(m)
+    pos   := Store<Vec2, M>(allocator)
+    vel   := Store<Vec2, M>(allocator)
+    hp    := Store<Health, M>(allocator)
+    brain := Store<Ai, M>(allocator)
 
     // Declared here, defined two hundred lines below. Order independence is
     // load-bearing again, and this is the second program that needs it.
-    died  := Signal<Entity, M>(m)
+    died  := Signal<Entity, M>(allocator)
 
     // Bound here and POPULATED by `wire`, below, because populating it needs
     // `self` and there is nowhere in this block that `self` exists.
-    stores := List<ptr<AnyStore>, M>(m)
+    stores := List<ptr<AnyStore>, M>(allocator)
     wired  := false
 
     // PHASE TWO. Everything that needs `self` lives here, and the type is
@@ -514,8 +514,8 @@ Reaper :: <M: Allocator> (doomed: ptr<List<Entity, M>>) -> self {
 // nothing here owns the pointees: the concrete `Movement`, `Decay` and
 // `Reaper` blocks have to be locals in main that outlive the schedule. There
 // is no way to store a shape BY VALUE and no box to put one in.
-Schedule :: <M: Allocator> (m: M) -> self {
-    items := List<ptr<System<M>>, M>(m)
+Schedule :: <M: Allocator> (allocator: M) -> self {
+    items := List<ptr<System<M>>, M>(allocator)
 
     add :: (&self, s: ptr<System<M>>) -> () { self.items.push(s) }
 
@@ -535,9 +535,9 @@ Schedule :: <M: Allocator> (m: M) -> self {
 // a block with a `()` member). KEEPING one is a different question, and it is
 // the third thing this file was written to find out.
 
-Signal :: <E, M: Allocator> (m: M) -> self {
+Signal :: <E, M: Allocator> (allocator: M) -> self {
 
-    subs := List<ptr<Fn<E, ()>>, M>(m)
+    subs := List<ptr<Fn<E, ()>>, M>(allocator)
 
     // The same borrow, concretely. The argument is a fat pointer, so the
     // CALLER owns the closure block and must keep it alive for as long as the
@@ -910,11 +910,12 @@ main :: () -> () {
 // FRICTION 17 -- A CONTAINER STILL CANNOT BE FULLY ENCAPSULATED. `List` can
 //   close its projection now that `[]` hands out a place, and no line in this
 //   file reaches into a List field any more. `Map` cannot: json.z's own
-//   printer reaches into `m.slots` and `m.cap` to ITERATE, and a place does
+//   printer reaches into `members.slots` and `members.cap` to ITERATE, and a
+//   place does
 //   not address iteration. json.z's [P5] says the projection is the export
 //   list:
 //
-//       Map :: <K, V, M> (m: M) -> {get, put, remove, count, deinit} { ... }
+//       Map :: <K, V, M> (allocator: M) -> {get, put, remove, count, deinit} { ... }
 //
 //   Do that and the printer stops compiling. Half of what makes visibility
 //   affordable on a container arrived with places; the other half is
@@ -1026,10 +1027,10 @@ main :: () -> () {
 //       `-> Result<self, E>` in the projection, `try` in that body means what
 //       it means everywhere else.
 //
-//           World :: <M: Allocator> (m: M) -> Result<self, E> {
-//               pos    := Store<Vec2, M>(m)
-//               vel    := Store<Vec2, M>(m)
-//               stores := try List<ptr<AnyStore>, M>(m)
+//           World :: <M: Allocator> (allocator: M) -> Result<self, E> {
+//               pos    := Store<Vec2, M>(allocator)
+//               vel    := Store<Vec2, M>(allocator)
+//               stores := try List<ptr<AnyStore>, M>(allocator)
 //               stores.push(&self.pos)          // self is available: all
 //               stores.push(&self.vel)          // fields are bound
 //           }

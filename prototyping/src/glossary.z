@@ -71,7 +71,8 @@
 //         -> SomeType    you are building a value of a type that ALREADY HAS
 //                        HOLES. Members matching those holes are `=`.
 //
-//     So in `List :: <T, M> (mem: M) -> self`, `push :: (&self, ...)` creates
+//     So in `List :: <T, M> (allocator: M) -> self`, `push :: (&self, ...)`
+//     creates
 //     a member. In `spaced :: -> Formattable<Json>`, `format = (v, w) ...`
 //     fills the hole `Formattable` declared.
 //
