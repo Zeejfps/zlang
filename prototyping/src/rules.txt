@@ -5,8 +5,8 @@ rules.txt  --  one declaration form for module / struct / func / sum / shape
 THE LANGUAGE RULES, and nothing else. No program is written here; this file
 is only what the syntax means, plus the notes arguing for why. The worked
 source these rules are drawn from -- std.core through main -- is in
-unified.z, and the words they are written in are defined in glossary.z.
-Read glossary.z, then this file, then unified.z.
+unified.z, and the words they are written in are defined in glossary.txt.
+Read glossary.txt, then this file, then unified.z.
 
 EACH RULE IS STATED ONCE, in the sections below. Each ARGUMENT for a rule --
 the alternatives weighed, the thing that would break -- is stated once, in
@@ -71,7 +71,7 @@ carries meaning, and a hole is the absence of one.
     hole in scope and `alloc` is created. A policy instance NAMES its type
     in the projection -- `hex_u8 :: -> Formattable<u8>` -- so the holes are
     in scope and it fills one. The binder is the structural / nominal
-    difference made visible. See glossary.z.
+    difference made visible. See glossary.txt.
 
     A runtime param of a `-> self` def IS a field: the block is what you
     kept, so the params are in it. A def whose body would be empty may drop
