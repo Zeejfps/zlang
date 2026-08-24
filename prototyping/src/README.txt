@@ -51,17 +51,18 @@ IMPLEMENTING A PARSER
 THE FILES
 ============================================================================
 
-spec.txt  1935 lines  --  NORMATIVE. This file alone says what a program
+spec.txt  2165 lines  --  NORMATIVE. This file alone says what a program
 means; everything else in this directory is commentary. "This is the
 specification of zlang. It states what a program means." Rules carry dotted
 identifiers in brackets at the start of a paragraph -- [bind.ascription.1],
-[decl.form.2] -- 162 of them, 159 assigned by the rule inventory and three
-assigned by this document, never reused or renamed. Sections run
+[decl.form.2] -- 183 of them: 159 assigned by the rule inventory, three
+assigned when this document was drafted, and twenty-one assigned since by
+issues being answered. None is ever reused or renamed. Sections run
 INTRODUCTION through PROGRAM STRUCTURE, then Annex A (grammar), Annex B
 (unchecked behaviour), Annex C (open questions) and COVERAGE, which records
 what the document did with its sources.
 
-rationale.txt  1155 lines  --  Commentary. "THE ARGUMENTS, AND NOTHING
+rationale.txt  1166 lines  --  Commentary. "THE ARGUMENTS, AND NOTHING
 ELSE." Thirty-nine entries, R-01 through R-39, grouped by topic, each naming
 the spec rule IDs it argues for and the lines of the original it was drawn
 from. The last five are CUT FEATURES: things considered and rejected.
@@ -71,7 +72,7 @@ argument for three rules is written, not what those rules mean. It is the
 only citation running from the normative document into this one, and it is
 marked at both ends. No other should be added.
 
-core.txt  1234 lines  --  Commentary, and NON-NORMATIVE throughout: it
+core.txt  1258 lines  --  Commentary, and NON-NORMATIVE throughout: it
 states no rule, retires no issue and constrains no program. "A TEST OF THE
 CENTRAL CLAIM, and nothing else." It defines a small core language --
 fourteen forms -- and translates every surface declaration form into it, to
@@ -93,13 +94,13 @@ U.1.1 through U.11.3, in five categories (UNCHECKED, UNDIAGNOSED,
 UNSPECIFIED, PLATFORM, UNWRITTEN). Indexed one line per entry in spec.txt
 Annex B. An UNWRITTEN entry is a defect, not a promise.
 
-open.txt  703 lines  --  Commentary. "WHAT IS STILL UNDECIDED, and nothing
+open.txt  720 lines  --  Commentary. "WHAT IS STILL UNDECIDED, and nothing
 else." Sixteen items, OQ-0 through OQ-15, each carrying a slug such as
 `oq.ptr.mutability`, ordered by how much of the language each one blocks
 rather than by discovery. Indexed one line per item in spec.txt Annex C and
 cited inline there as `>>> [OPEN oq.N]`.
 
-issues.txt  1978 lines  --  Commentary, and the work list. Three earlier
+issues.txt  2141 lines  --  Commentary, and the work list. Three earlier
 analyses merged into 40 issues, plus six later ones from a parser built out
 of grammar.ebnf: 46 issues, Z-01 through Z-46, in five bands: BLOCKING (6),
 SOUNDNESS (10), GAP (12), DEFECT (14), CORPUS (4). The bands are no longer
@@ -108,7 +109,7 @@ band. Every issue names which analysis found it and every citation was
 re-checked against the corpus. It ends with WHAT THE CORPUS PROVES and
 CLAIMS I COULD NOT CONFIRM, which is the list of findings the corpus killed.
 
-grammar.ebnf  514 lines  --  Commentary. The first formal grammar, in the Go
+grammar.ebnf  541 lines  --  Commentary. The first formal grammar, in the Go
 specification's EBNF with `...` for Go's range ellipsis. No identifier
 scheme: cite it by production name or by line. Where the sources did not
 settle a question it takes a position and says so without arguing for it;
@@ -117,7 +118,7 @@ two lists it keeps against itself -- KNOWN OVER-ACCEPTANCE, nine programs
 that derive and should not, and KNOWN UNDER-ACCEPTANCE, the missing bare
 block -- which are issues.txt Z-42, Z-43 and Z-45.
 
-glossary.txt  410 lines  --  Commentary, and the shortest way in. "Read this
+glossary.txt  484 lines  --  Commentary, and the shortest way in. "Read this
 before rules.txt. It defines no syntax; it only names things." Terms are
 CAPS headings -- BLOCK, MEMBER, BINDER, HOLE, PROJECTION -- so cite by term.
 It ends with THE THREE-LINE VERSION.
@@ -166,16 +167,24 @@ The language cannot yet be implemented from these documents. That is the
 expected state. The documents exist to make the holes countable rather than
 to hide them.
 
-spec.txt carries 89 markers of the form [UNSPECIFIED] (49), [CONFLICT] (12),
-[INVENTED] (12) and [OPEN oq.N] (16), each beginning a line with `>>>`, so
+spec.txt carries 92 markers of the form [UNSPECIFIED] (54), [CONFLICT] (11),
+[INVENTED] (12) and [OPEN oq.N] (15), each beginning a line with `>>>`, so
 
     grep '>>>' spec.txt
 
 lists every known hole. (It also catches the five lines in the INTRODUCTION
-that describe the notation, which is why the raw count is 94.) The tallies
+that describe the notation, which is why the raw count is 97.) The tallies
 are repeated in the COVERAGE section at the end of spec.txt.
 
-issues.txt ranks 46 issues in five bands, five of them still BLOCKING: no
+The count went UP by three when three issues were answered, and that is the
+normal direction. Answering them retired one [CONFLICT], one [OPEN] and
+three [UNSPECIFIED], and then stating twenty rules where there had been
+none exposed eight further things this document does not say. A marker
+counts what the document can see it is missing; writing a rule is how it
+gets somewhere it can see further from.
+
+issues.txt ranks 46 issues in five bands, 41 of them open and five still
+BLOCKING: no
 statement or control-flow form is specified anywhere, `[]` has five meanings
 with no disambiguation rule, `<` is both comparison and the compile-time
 bracket, `-> oneof {a, b}` is specified and cannot be parsed, and the rule
@@ -185,8 +194,21 @@ bracket balance alone. Any one of those stops a parser.
 The sixth, Z-04, is closed: holes are now marked `:?` rather than inferred
 from a missing binder, so bodiless stopped being the criterion that
 contradicted the bodiless record. The same marker closed Z-28, a DEFECT, for
-the same reason -- `_` is a name declined and is not a hole. Both are marked
-CLOSED in issues.txt rather than removed.
+the same reason -- `_` is a name declined and is not a hole.
+
+Three GAPs are closed since: Z-15, `slice<T>`, which is now a predeclared
+record of a `ptr` and a `len`; Z-16, the seven names the corpus used and
+nobody declared, which are now a universe scope of ten predeclared
+identifiers -- with `page` reclassified as a corpus defect, because no one
+value fits its three uses; and Z-20, the sum discriminant, which is now a
+value: `tag_of(v)` projects `S.tag`, and `ordinal_of` makes a tag an array
+index. Z-20 answers OQ-2, the first of the sixteen open questions to be
+answered. All five closures are marked CLOSED in issues.txt rather than
+removed, so that 46 stays the number of things that were found.
+
+That leaves 41 open. None of the five that matter most is among the
+closures, which is the honest summary: what has been answered so far is what
+the corpus had already decided and nobody had written down.
 
 core.txt adds no issues and closes none. It reports eighteen breaks, B-1
 through B-18, of which eleven appear to be new and seven restate or

@@ -193,10 +193,11 @@ in the conflict below rather than merged into a single list.
     appear only in B. glossary.txt:379-398 gives a third list adding
     `class`, `module` and `const`. No list is marked authoritative.
 
->>> [CONFLICT] kw.budget.1 states that the keyword budget is written down
-    "so it stops growing by accident", and omits `nil`, which unified.z:191
-    uses. Either the budget is incomplete or `nil` is a predeclared
-    identifier nobody has declared. See U.1.8.
+`nil` is absent from this list because it is not a keyword. It is a
+predeclared identifier, declared at pre.nil.1; so are `true`, `false`, `ptr`,
+`slice`, `type`, `size_of`, `tag_of`, `ordinal_of` and `import`. See
+PREDECLARED IDENTIFIERS under PROGRAM STRUCTURE. The budget is complete as
+written.
 
 ----------------------------------------------------------------------------
 Operators and punctuation
@@ -353,9 +354,9 @@ type, as a parameter type, and inside a compile-time argument -- `Option<&V>`,
     constructor whose argument is restricted to `self`. The two cannot both
     be read literally, and no source says which is the exception.
 
->>> [UNSPECIFIED] Whether `ptr<T>` may hold a null value, and what a read or
-    write through one does, is not stated. `nil` is assigned to a pointer
-    field at unified.z:191 and has no semantics anywhere. See U.1.8.
+[ptr.null.1] A `ptr<T>` may hold `nil`, and a read or a write through `nil`
+is unchecked behaviour. See pre.nil.1 and pre.nil.deref.1, where `nil` is
+defined, and the note there on what is still open.
 
 >>> [UNSPECIFIED] Pointer arithmetic is used in the corpus
     (`self.base + self.top`, unified.z:107; `self.src.ptr + start`,
@@ -366,11 +367,57 @@ type, as a parameter type, and inside a compile-time argument -- `Option<&V>`,
 ----------------------------------------------------------------------------
 Slice types
 
->>> [UNSPECIFIED] `slice<T>` is the return type of `List.span`
-    (unified.z:200), the type of every string in the corpus, and the subject
-    of `slice(p, n)` used as a constructor. It appears in no rule and in no
-    glossary entry. Its definition, its members, whether it owns its
-    storage, and what indexing it means are all unanswered. See U.3.6.
+[slice.decl.1] `slice` is a predeclared declaration, written in the language
+and needing nothing this document does not already have:
+
+    slice :: <T> (ptr: ptr<T>, len: u32) -> self
+
+Its runtime group gives it two runtime fields and no others, `ptr` and `len`;
+by kw.type.rtgroup.1 it is therefore a type; and it is a record and not a
+hole, because it is bodiless and everything it has comes from the group. See
+hole.bodiless.1. It is the return type of `List.span` (unified.z:200) and the
+type of every string in the corpus.
+
+[slice.field.name.1] The field named `ptr` shadows the predeclared type name
+`ptr` inside the declaration. This is pre.universe.1 working as stated -- a
+predeclared name is an ordinary identifier and may be shadowed -- and it is
+why the field's own type is written before the shadow exists and not after.
+
+[slice.ctor.1] `slice(p, n)` is that runtime group applied, by decl.apply.1,
+and is the only way to build one. unified.z:200, json.z:325, json.z:338.
+
+[slice.borrow.1] A slice owns nothing. It is two fields, copied like any
+other value by mem.copy.1; it frees no storage; and nothing relates its life
+to the life of what it points into.
+
+[slice.index.1] `s[i]` on a `slice<T>` is `s.ptr[i]`, and denotes the element
+by elem.rawindex.1. unified.z:277-278.
+
+[slice.len.1] `len` counts elements and not bytes.
+
+[slice.string.1] A string literal has type `slice<u8>`. Its storage is the
+program's and outlives every binding of it.
+
+This states Reading 5 of the `[]` conflict recorded under EXPRESSIONS, which
+was the one reading with no rule at all. It does not settle that conflict:
+what a slice index means was never the part in dispute.
+
+>>> [UNSPECIFIED] Nothing checks `i < s.len` at `s[i]`, and nothing relates a
+    slice's life to its storage's: `List.span` (unified.z:200) hands out a
+    slice into a buffer that the next `add` may reallocate (unified.z:181).
+    slice.borrow.1 states the absence; it does not repair it. See U.3.6 and
+    U.3.4, and oq.0, which is the same question one level down.
+
+>>> [UNSPECIFIED] A string literal's storage is writable through the slice,
+    because a pointee carries no qualifier (oq.0) and `s.ptr` is an ordinary
+    `ptr<u8>`. Nothing here forbids writing through `digits` at
+    unified.z:275. This is oq.0's bill and not a separate question.
+
+>>> [UNSPECIFIED] `u32` is `len`'s type because `write_bytes(p: ptr<u8>,
+    n: u32)` (unified.z:126) is what the corpus passes it to, at
+    unified.z:140. Whether a slice may exceed 2^32 elements, and whether
+    `ptr` may be `nil` when `len` is zero, are unanswered: the width is
+    fixed here from one call site and not from a decision.
 
 ----------------------------------------------------------------------------
 The unit type
@@ -779,6 +826,63 @@ arguments.
 
 [hole.ctor.1] A variant name is also a derived function `(T) -> Self`.
 
+----------------------------------------------------------------------------
+A sum's discriminant
+
+[sum.tag.type.1] For a declaration `S` whose projection is `oneof`, `S.tag`
+is a derived type: a `-> oneof` block carrying one variant per variant of
+`S`, named identically, each with no payload. It is derived and is never
+written.
+
+[sum.tag.ctor.1] The variants of `S.tag` are constructed by hole.ctor.1 like
+any others, so the spelling carries its parentheses: `Token.tag.colon()`. The
+proposal this rule comes from, ecs.z:1142-1148, writes it without them; the
+parentheses are kept, because `Option<T>.none()` already spells a payloadless
+variant that way about sixty times in the corpus, and one rule is worth more
+than one character.
+
+[sum.tag.idem.1] `S.tag.tag` is `S.tag`. The derivation is idempotent and
+does not regress.
+
+[sum.tag.of.1] `tag_of(v)` projects `S.tag` for a value `v` of a `-> oneof`
+type `S`. It is total: every value of a sum has a tag, so the call cannot
+fail and does not project an `Option`. It is predeclared; see pre.list.1.
+
+[sum.tag.ordinal.1] The variants of `S` are numbered from `0` in the order
+they are declared, and `ordinal_of(t)` projects that number as `u32` for a
+value `t` of `S.tag`. A tag is therefore an array index, and
+`1 << ordinal_of(t)` is a bit position. `ordinal_of` is predeclared.
+
+[sum.tag.compare.1] `S.tag` publishes derived `==` and `!=` members, and
+derived `<`, `<=`, `>` and `>=` members that order by ordinal. This is
+op.usertype.1 satisfied by derivation rather than by hand: the members are
+ordinary, and they exist without the author writing them because a tag has
+no payload whose comparison anyone would have to choose.
+
+[sum.tag.stable.1] A variant's ordinal is its declaration order, so it is
+stable across compilations of one source text and it changes when a variant
+is inserted or moved. A program that writes an ordinal to a file has
+committed to that order. Nothing in this document versions it.
+
+What this closes. `Parser.expect` (json.z:381-387) becomes
+`tag_of(t) != tag_of(want)` with no invented function -- see json.z:383,
+which records the invention. `is_dead` (ecs.z:272-274) becomes one comparison
+instead of four arms. The archetype bitmask of ecs.z:275-278, which could not
+be written at all, becomes `1 << ordinal_of(tag_of(c))`. `Map.get`
+(json.z:175-179) may still spell arms it can prove unreachable; that is
+match.exhaustive.1 and not this.
+
+>>> [UNSPECIFIED] The representation of a tag -- its width, and whether the
+    ordinal of sum.tag.ordinal.1 is the number an implementation actually
+    stores -- is not stated. sum.tag.ordinal.1 fixes what `ordinal_of`
+    projects and not the layout. See U.7.2, which is now answered on
+    numbering and order and open on width and layout.
+
+>>> [UNSPECIFIED] Whether `S.tag` is in scope for a `-> oneof` block that
+    projects a subset by hole.oneof.subset.1, and whether its tag type
+    carries the unlisted variants, is unanswered. The subset form has no
+    grammar either; see the note under hole.oneof.subset.1.
+
 [hole.literal.1] A literal fills a declared hole with `=`:
 `Option<u8>{ some = 3 }`.
 
@@ -1081,8 +1185,10 @@ system.
       Reading 4 (ptr.reach.symbolic.1): `p[i]` is `p.[](i)` and reaches
         through the pointer to the pointee's `[]` member. unified.z:246,
         ecs.z:365.
-      Reading 5 (nowhere): on a `slice<u8>`, `digits[v / 16]` is the
-        element. unified.z:277-278. No rule mentions it.
+      Reading 5 (slice.index.1): on a `slice<u8>`, `digits[v / 16]` is the
+        element, by way of `s.ptr[i]`. unified.z:277-278. This reading had
+        no rule and now has one; it is a fifth case for the missing
+        predicate to handle and not a step toward it.
 
     Readings 3 and 4 are mutually exclusive on the same expression: a
     `ptr<u8>` has no `[]` member, so the rewrite of Reading 4 cannot apply,
@@ -1349,13 +1455,9 @@ and in payload position.
     address is not stated, and neither is whether a match over a
     `ptr<Sum>` is legal.
 
->>> [UNSPECIFIED] A sum's discriminant is not a value, so a test of the tag
-    alone is a full match. json.z:381-387 invents a function `tag_of` for
-    it and records the invention. See U.7.2.
-
->>> [OPEN oq.2] Whether a sum's discriminant is a value: `S.tag` as a
-    derived sum of unit variants, with `tag_of(v)` total, comparable and
-    ordinal.
+A test of the tag alone is not a full match. `tag_of(v)` projects `S.tag`
+and compares; see A SUM'S DISCRIMINANT under DECLARATIONS AND BINDING, where
+sum.tag.type.1 through sum.tag.stable.1 answer what oq.2 asked.
 
 >>> [OPEN oq.15] A single-arm binding form with an `else`, for the tail that
     repeats at all fourteen propagation sites in json.z.
@@ -1559,6 +1661,59 @@ unfilled hole and no `-> oneof`.
     order.independent.1 says blocks in a file are order-independent and says
     nothing about files.
 
+----------------------------------------------------------------------------
+Predeclared identifiers
+
+[pre.universe.1] Some names are bound before any file is read, in a scope
+outside every file. They are ordinary identifiers and not keywords: they are
+absent from the budget of kw.budget.1 by design rather than by oversight, and
+a declaration may shadow any of them. slice.field.name.1 is an instance.
+
+[pre.list.1] The predeclared identifiers are:
+
+    types        ptr, slice, and the primitive types of op.primtypes.1 --
+                 u8, u32, i32, f32, f64, bool
+    values       true, false, nil
+    functions    size_of, tag_of, ordinal_of
+    compile-time type, import
+
+Each is defined where its subject is: `ptr` at ptr.typed.1 and ptr.opaque.1,
+`slice` at slice.decl.1, the primitives at op.primtypes.1, `tag_of` and
+`ordinal_of` at sum.tag.of.1 and sum.tag.ordinal.1, `import` at kw.import.1,
+`size_of` and `nil` here. `type` is named at hole.noassoc.1 and is defined
+nowhere; see the note under HOLES ARE HOLES OF VALUES.
+
+[pre.sizeof.1] `size_of<T>()` projects the size of `T` in bytes as `u32`. Its
+argument is compile-time and it takes none at runtime, which is why
+unified.z:92 writes `size_of<T>()` and not `size_of<T>`.
+
+[pre.nil.1] `nil` is the null pointer: a value of `ptr<T>` for every `T`. It
+compares equal to a pointer that is also `nil` and unequal to a pointer into
+a live value. unified.z:191 assigns it to a `ptr<T>` field after freeing the
+buffer that field held.
+
+[pre.nil.deref.1] A read or a write through `nil` is unchecked behaviour.
+Nothing in this document prevents one, and nothing diagnoses one. See U.1.8.
+
+>>> [UNSPECIFIED] pre.nil.1 makes every `ptr<T>` nullable and gives no way to
+    write one that is not. Whether nullability is the qualifier oq.0 asks
+    about or a second one beside it is unanswered; U.1.8 asks the two
+    together and only the first half -- what `nil` is -- is answered here.
+
+>>> [UNSPECIFIED] `size_of` cannot be evaluated. pre.sizeof.1 says what it
+    projects, and the layout rules that would give it a value do not exist:
+    the size, alignment, field order and padding of a block are unstated.
+    See U.11.1, and the note under TYPE IDENTITY.
+
+>>> [UNSPECIFIED] `page` is passed as the base of an `Arena` at
+    unified.z:367, json.z:639 and ecs.z:745 and is declared nowhere. It is
+    deliberately absent from pre.list.1: no one value fits the three uses,
+    since the same name is the base of a 4096-byte arena and of a
+    1 << 20-byte one and so cannot be a block of either size. The three call
+    sites want a function -- something of the shape `map(n) -> ptr<u8>` --
+    and have written a value. This is a defect in the corpus and not a gap
+    here.
+
 
 ============================================================================
 ANNEX A -- GRAMMAR SUMMARY
@@ -1706,7 +1861,7 @@ UNWRITTEN. UNWRITTEN entries are defects in this document.
     U.1.5  UNWRITTEN     whether an implementation may assume non-aliasing
     U.1.6  UNDIAGNOSED   a stored callable may re-enter a value mid-operation
     U.1.7  UNCHECKED     copying a value that points into itself
-    U.1.8  UNWRITTEN     whether ptr<T> may be null, and what nil is
+    U.1.8  UNCHECKED     ptr<T> may be null; a deref of nil is unchecked
     U.1.9  UNWRITTEN     pointer arithmetic is used and undefined
 
   U.2  Memory management
@@ -1747,7 +1902,8 @@ UNWRITTEN. UNWRITTEN entries are defects in this document.
 
   U.7  Sums and matching
     U.7.1  UNDIAGNOSED   a new variant routes into every existing `_` arm
-    U.7.2  UNSPECIFIED   a sum's tag width, numbering, order and layout
+    U.7.2  UNSPECIFIED   a sum's tag width and layout; numbering and
+                         order are fixed by sum.tag.ordinal.1
 
   U.8  Values, results and drops
     U.8.1  UNDIAGNOSED   `_ := f()` discards an error exactly as it discards
@@ -1781,13 +1937,16 @@ UNWRITTEN 20. Total 49.
 ANNEX C -- OPEN QUESTIONS
 ============================================================================
 
-Sixteen questions the design has not answered. Each is stated in full, with
-what the corpus pays instead, what the answer unblocks, and what it depends
-on, in open.txt. Only the identifier and a single line appear here.
+Sixteen questions the design has not answered, of which fifteen are still
+open. Each is stated in full, with what the corpus pays instead, what the
+answer unblocks, and what it depends on, in open.txt. Only the identifier and
+a single line appear here. An answered question keeps its identifier and is
+marked, so that a citation into it still lands.
 
     OQ-0   oq.ptr.mutability      does a pointee carry a qualifier at all
     OQ-1   oq.ctor.body           what gives a `-> self` block statements
-    OQ-2   oq.sum.discriminant    is a sum's discriminant a value
+    OQ-2   oq.sum.discriminant    ANSWERED: yes. sum.tag.type.1 and the
+                                  rules under it. See issues.txt Z-20.
     OQ-3   oq.iter.form           `for (x := it)`, and over what
     OQ-4   oq.num.semantics       overflow, division by zero, shift
     OQ-5   oq.num.conversion      how the primitive types convert
@@ -1804,7 +1963,9 @@ on, in open.txt. Only the identifier and a single line appear here.
     OQ-15  oq.match.binder-sugar  a single-arm binding form with an `else`
 
 The recommended order of decision, and the argument for it, are in
-open.txt. OQ-0 is the root: OQ-1 and OQ-3 both need it.
+open.txt. OQ-0 is the root: OQ-1 and OQ-3 both need it. OQ-2 was answered
+first instead, because it depended on nothing and changed no existing
+spelling.
 
 
 ============================================================================
@@ -1822,14 +1983,38 @@ inventory is an internal working document and is not filed in this
 directory, so the figures below count what is in THIS document and do not
 claim anything that cannot be checked here.
 
-162 distinct identifiers appear in this document in brackets, one to a
+183 distinct identifiers appear in this document in brackets, one to a
 paragraph, none repeated and none reused. 159 of them were assigned by the
-inventory. Three were assigned by this document and appear nowhere before
-it:
+inventory. Three were assigned by this document when it was first drafted
+and appear nowhere before it:
 
     op.primtypes.2            see the note on op.primtypes below
     op.assoc.postfix.1        see the two restorations below
     bind.which.private.1      see the two restorations below
+
+Twenty-one more have been assigned since, each by an issue being answered,
+and each is listed with its issue. This paragraph read 162 until the last of
+them landed; the figure was already one short before that, because
+bind.marked.1 arrived with the closure of issues.txt Z-04 and this count was
+not revised with it. It is revised now.
+
+    bind.marked.1                                       Z-04, Z-28
+
+    slice.decl.1        slice.field.name.1              Z-15
+    slice.ctor.1        slice.borrow.1
+    slice.index.1       slice.len.1
+    slice.string.1
+
+    sum.tag.type.1      sum.tag.ctor.1                  Z-20
+    sum.tag.idem.1      sum.tag.of.1
+    sum.tag.ordinal.1   sum.tag.compare.1
+    sum.tag.stable.1
+
+    pre.universe.1      pre.list.1                      Z-16
+    pre.sizeof.1        pre.nil.1
+    pre.nil.deref.1     ptr.null.1
+
+159 + 3 + 21 = 183.
 
 Three further inventory identifiers do not appear in brackets, because the
 rule each of them names is stated here once under the identifier it was
@@ -1909,31 +2094,44 @@ one is the clearest statement of a rule.
 ----------------------------------------------------------------------------
 Markers
 
-    [UNSPECIFIED]   49
-    [CONFLICT]      12
+    [UNSPECIFIED]   54
+    [CONFLICT]      11
     [INVENTED]      12
-    [OPEN oq.N]     16
+    [OPEN oq.N]     15
 
-    Total           89
+    Total           92
 
-All sixteen open questions, OQ-0 through OQ-15, are cited at the point in
-the text where the question arises. The forty-nine unchecked-behaviour
-entries are indexed in Annex B and cited inline where a rule creates one.
+Fifteen of the sixteen open questions are cited at the point in the text
+where the question arises. The sixteenth, OQ-2, was answered; its citation
+under MATCH is now a pointer to the rules that answer it. The forty-nine
+unchecked-behaviour entries are indexed in Annex B and cited inline where a
+rule creates one.
 
-The twelve conflicts, in the order they appear:
+The total rose by three while three issues were being answered, which is the
+normal direction. Answering Z-15, Z-16 and Z-20 retired one [CONFLICT], one
+[OPEN] and three [UNSPECIFIED], and stating twenty rules where there had
+been none exposed eight further things this document does not say -- what
+bounds a slice index, what a tag's width is, what `size_of` evaluates to.
+A marker is not debt against the answer; it is what the answer could see
+from where it stands.
+
+The eleven conflicts, in the order they appear:
 
     1  the two lists of words that are not in the language      KEYWORDS
-    2  the keyword budget omits `nil`                           KEYWORDS
-    3  the primitive list omits `u64`                           TYPES
-    4  `&` is not a type constructor, against `&self`           TYPES
-    5  a value does not move, against swap-remove               TYPES
-    6  compile-time args applied yields a type                  DECLARATIONS
-    7  `[]` has four meanings (pointer)                         DECLARATIONS
-    8  a value may not be dropped silently, against ecs.z       DECLARATIONS
-    9  `[]` has four meanings (full statement)                  EXPRESSIONS
-    10 there is no such thing as a place                        EXPRESSIONS
-    11 `.` reaches through, against deref is never optional     EXPRESSIONS
-    12 an accessor hides storage, against `Map`                 EXPRESSIONS
+    2  the primitive list omits `u64`                           TYPES
+    3  `&` is not a type constructor, against `&self`           TYPES
+    4  a value does not move, against swap-remove               TYPES
+    5  compile-time args applied yields a type                  DECLARATIONS
+    6  `[]` has four meanings (pointer)                         DECLARATIONS
+    7  a value may not be dropped silently, against ecs.z       DECLARATIONS
+    8  `[]` has four meanings (full statement)                  EXPRESSIONS
+    9  there is no such thing as a place                        EXPRESSIONS
+    10 `.` reaches through, against deref is never optional     EXPRESSIONS
+    11 an accessor hides storage, against `Map`                 EXPRESSIONS
+
+The conflict that left is "the keyword budget omits `nil`", which is
+resolved rather than carried: `nil` is a predeclared identifier by pre.nil.1
+and was never a candidate for the budget. See issues.txt Z-16.
 
 Two conflicts closed when holes were given the `:?` marker, and both closed
 the same way -- by removing the criterion they rested on rather than by
@@ -1941,9 +2139,9 @@ choosing a reading. They were "bodiless means hole, against the bodiless
 record" (DECLARATIONS, issues.txt Z-04, a BLOCKING issue) and "`_` is one
 idea, against three of its four uses" (DECLARATIONS, issues.txt Z-28). The
 notes recording each are at hole.bodiless.1 and wild.def.1. Both left an
-[UNSPECIFIED] behind, which is why the total is unchanged at 89: a marked
-hole answers what a hole IS and does not answer what hole.noheaders.1 is
-for, or what `_` means in an expression position.
+[UNSPECIFIED] behind, which is why the total was unchanged at 89 when they
+closed: a marked hole answers what a hole IS and does not answer what
+hole.noheaders.1 is for, or what `_` means in an expression position.
 
 ----------------------------------------------------------------------------
 What this document could not do

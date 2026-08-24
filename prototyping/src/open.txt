@@ -147,7 +147,17 @@ and cut -- rules.txt:844-853 and ecs.z:918-928 give the reason, which is that
 a return type is not a body.
 
 ------------------------------------------------------------------------------
-OQ-2  `oq.sum.discriminant`
+OQ-2  `oq.sum.discriminant`      -- ANSWERED: YES
+
+ANSWER. Yes. [P19] adopted whole, with one deviation: the rule spells a tag
+variant `Token.tag.colon()` and [P19] spells it `Token.tag.colon`, because a
+tag's variants are constructed by hole.ctor.1 like every other variant and
+`Option<T>.none()` already spells a payloadless one with parentheses. Stated
+at spec.txt sum.tag.type.1 through sum.tag.stable.1, under A SUM'S
+DISCRIMINANT. Two things [P19] left implicit are now stated: `S.tag.tag` is
+`S.tag`, and an ordinal is declaration order and nothing versions it. The
+entry below is kept as it was written, so that what was asked can still be
+read against what was answered. See issues.txt Z-20.
 
 QUESTION. Is a sum's discriminant a value? [P19] proposes `S.tag` as a
 derived sum of unit variants, with `tag_of(v)` total, comparable, ordinal,
@@ -594,7 +604,9 @@ already refused a borrow checker and move semantics -- then OQ-1 is genuinely
 next and can proceed in isolation, and this amendment costs a week.
 
 TWO: OQ-2, THE DISCRIMINANT, IS A BETTER SECOND THAN THE CONSTRUCTOR BODY ON
-PURE RETURN. It is fully specified already ([P19]), has zero dependencies,
+PURE RETURN. -- TAKEN, and answered ahead of the order below; see the head of
+OQ-2 and issues.txt Z-20. The argument is left standing because it is the
+reason it was taken. It is fully specified already ([P19]), has zero dependencies,
 changes no existing spelling, and blocks a data structure rather than a
 convenience -- no ordinal, no bitmask, no archetypes, no serialisation. The
 constructor body is a larger change with a soft dependency on OQ-0. Deciding
@@ -622,8 +634,13 @@ RECOMMENDED DECISION ORDER
                    Already committed to in code, undecided in prose.
     3   OQ-5   oq.num.conversion
                    Same commitment, and OQ-4 settles half of it already.
-    4   OQ-2   oq.sum.discriminant
+    4   OQ-2   oq.sum.discriminant                          -- ANSWERED
                    Fully specified, no dependencies, blocks a data structure.
+                   Answered out of order, for exactly those reasons. It is
+                   left at position 4 rather than struck, because the order
+                   is an argument and not a worklist, and removing a step
+                   from an argument makes the remaining steps read as though
+                   they were always numbered that way.
     5   OQ-1   oq.ctor.body
                    rules.txt's choice, correctly second-tier once OQ-0 is in.
     6   OQ-7   oq.alloc.failure
@@ -685,7 +702,7 @@ DEPENDENCY DIAGRAM
 
     No edge in, no edge out:
 
-        OQ-2   oq.sum.discriminant
+        OQ-2   oq.sum.discriminant                          -- ANSWERED
         OQ-8   oq.mono.recursive
         OQ-9   oq.variadic
         OQ-10  oq.shape.identity

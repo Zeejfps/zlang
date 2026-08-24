@@ -382,6 +382,11 @@ types, with exactly the status of `u32` and `bool`. It appears only as the
 type of a compile-time parameter -- there is no hole of type `type`, and so
 nothing here of what other languages call an associated type.
 
+Neither are `ptr`, `slice`, `nil`, `true`, `false`, `size_of`, `tag_of`,
+`ordinal_of` or `import`. They are PREDECLARED NAMES, below: ordinary
+identifiers bound before any file is read, which a declaration may shadow.
+The budget above is the whole budget, and it is thirteen words.
+
 
 ============================================================================
 WORDS THAT ARE NOT IN THE LANGUAGE, AND WHAT REPLACES THEM
@@ -406,7 +411,65 @@ WORDS THAT ARE NOT IN THE LANGUAGE, AND WHAT REPLACES THEM
     import      an ordinary compile-time binding of an ordinary function:
                 `std :: import("std")`.
     const       -- nothing yet. `::` gives immutable BINDINGS; there is no
-                story for immutable POINTEES. Open.
+                story for immutable POINTEES. Open. This is the root open
+                question, and a string literal pays for it: its storage is
+                writable through the `slice<u8>` that names it, because
+                `slice.ptr` is an ordinary `ptr<u8>`.
+
+
+============================================================================
+PREDECLARED NAMES
+============================================================================
+
+Bound before any file is read. Not keywords -- a declaration may shadow any
+of them, and `slice` shadows `ptr` with its own field. Defined in spec.txt
+under PREDECLARED IDENTIFIERS.
+
+    ptr<T>      a typed pointer. `ptr` alone is `ptr<T>` with the argument
+                defaulted to an opaque type, and not a second constructor.
+                May hold `nil`.
+
+    slice<T>    a pointer and a count, and nothing else:
+
+                    slice :: <T> (ptr: ptr<T>, len: u32) -> self
+
+                An ordinary bodiless record. It OWNS NOTHING -- it does not
+                free its storage, and nothing ties its life to the life of
+                what it points into. `len` counts elements, not bytes.
+                `s[i]` is `s.ptr[i]`. `slice(p, n)` is the only way to build
+                one. Every string literal is a `slice<u8>`.
+
+    nil         the null pointer, a value of `ptr<T>` for every `T`. Reading
+                or writing through it is unchecked. This is what
+                `self.items = nil` after a free has always meant.
+
+    size_of<T>()
+                the size of `T` in bytes, as `u32`. Compile-time argument,
+                no runtime argument -- hence the empty `()`. What it
+                evaluates to is not yet decided, because layout is not.
+
+    tag_of(v)   the DISCRIMINANT of a sum value, as a value. For a `-> oneof`
+                declaration `S`, `S.tag` is a derived sum carrying one
+                payloadless variant per variant of `S`, and `tag_of` is
+                total into it. Written `tag_of(t) == Token.tag.colon()`.
+                This is what makes "same variant, ignore the payload" a
+                comparison instead of a full `match`.
+
+    ordinal_of(t)
+                a tag's position in declaration order, from `0`, as `u32`.
+                What makes a tag an array index and `1 << ordinal_of(t)` a
+                bit position. It changes if a variant is inserted or moved,
+                so a file written with it is committed to that order.
+
+    true, false the two `bool` values.
+
+    type        a built-in type name; see the note under KEYWORDS.
+
+    import      a compile-time function: `std :: import("std")`.
+
+`page`, which unified.z, json.z and ecs.z all pass to `Arena`, is NOT one of
+these and is declared nowhere. The three call sites want a function and have
+written a value; it is a corpus defect.
 
 
 ============================================================================

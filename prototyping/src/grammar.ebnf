@@ -69,8 +69,12 @@ Comment       = "//" { unicode_char } newline .
 identifier    = letter { letter | decimal_digit } .
 
 // The keywords are reserved and may not be used as identifiers. This is the
-// entire budget; `type`, `true`, `false`, `nil` and `ptr` are ordinary
-// predeclared identifiers and are not listed here.
+// entire budget; `type`, `true`, `false`, `nil`, `ptr`, `slice`, `size_of`,
+// `tag_of`, `ordinal_of` and `import` are ordinary predeclared identifiers
+// and are not listed here. That was this file's resolution by fiat and now
+// has a rule behind it: spec.txt pre.universe.1 and pre.list.1. Nothing in
+// the grammar distinguishes a predeclared identifier from any other, which
+// is the point of the category -- a declaration may shadow one.
 //
 //     _        break     continue  defer     else
 //     for      if        loop      match     oneof

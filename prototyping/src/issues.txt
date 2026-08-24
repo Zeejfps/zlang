@@ -57,17 +57,28 @@ SUMMARY
 
     BLOCKING     6      Z-01 .. Z-05, Z-41      (Z-04 CLOSED, so 5 open)
     SOUNDNESS   10      Z-06 .. Z-14, Z-42
-    GAP         12      Z-15 .. Z-25, Z-43
+    GAP         12      Z-15 .. Z-25, Z-43      (Z-15, Z-16, Z-20 CLOSED,
+                                                 so 9 open)
     DEFECT      14      Z-26 .. Z-37, Z-44, Z-45 (Z-28 CLOSED, so 13 open)
     CORPUS       4      Z-38 .. Z-40, Z-46
     ----------------------
-    TOTAL       46      (44 open, 2 closed)
+    TOTAL       46      (41 open, 5 closed)
 
 Z-04 and Z-28 were closed together by giving holes an explicit marker,
 `name :? T`. Both rested on a hole being inferred from a missing binder;
 neither was resolved by choosing between its readings. Counts above are
 kept at their original values with the closures noted, because an id
 belongs to the thing and a retired entry is kept and marked.
+
+Z-15, Z-16 and Z-20 were closed together and in that order, because each
+needed the one before it: `slice` could not be declared until there was a
+scope to declare it in, and the predeclared list could not be written until
+`tag_of` had a definition to be listed with. All three were GAPs, which is
+to say the corpus had already decided them and nobody had written it down.
+None required a design decision, and none changed a spelling in the corpus.
+The one place a choice was made -- `Token.tag.colon()` against [P19]'s
+parenless `Token.tag.colon` -- went to the existing rule; it is recorded at
+sum.tag.ctor.1.
 
 45 findings from the three inputs were folded into 15 of these issues as
 duplicates. 6 findings were rejected or corrected; they are at the bottom.
@@ -120,10 +131,16 @@ THE FIVE THAT MATTER MOST
 So four of the five now stand. No issue was promoted into the empty slot:
 the candidate is discussed two paragraphs down and does not qualify.
 
-Cheapest large win, if there is an afternoon spare: Z-20, the sum
-discriminant. Fully specified already in ecs.z:1142-1148, zero
-dependencies, changes no existing spelling, closes frictions in both
-programs.
+Cheapest large win, taken: Z-20, the sum discriminant, closed along with
+Z-15 and Z-16. It was fully specified already in ecs.z:1142-1148, had zero
+dependencies, changed no existing spelling, and closed frictions in both
+programs. It cost twenty rules in spec.txt across the three issues.
+
+Next cheapest, on the same test -- decided by the corpus, no dependencies,
+no spelling changed: Z-21, pointer arithmetic, which the corpus performs in
+two places and no rule mentions; and Z-15's leftovers, which are now
+[UNSPECIFIED] markers rather than an absent type. Neither is a large win.
+The next LARGE win is not cheap and is Z-06.
 
 Closest to displacing one of the five, and it does not: Z-41. It is Z-03's
 proposed answer rather than a sixth independent hole, and Z-03 is not in the
@@ -799,6 +816,34 @@ GAP
 
 ----------------------------------------------------------------------------
 Z-15  `slice<T>` IS IN NO RULE AND NO GLOSSARY ENTRY            GAP
+      -- CLOSED. `slice` is a predeclared record: a `ptr` and a `len`.
+
+CLOSED    Declared, in the language, as
+
+              slice :: <T> (ptr: ptr<T>, len: u32) -> self
+
+          which needs no machinery the document did not have: it is a
+          bodiless record by Z-04's resolution, a type by kw.type.rtgroup.1,
+          and `slice(p, n)` is its runtime group applied by decl.apply.1.
+          The four questions this entry asked are answered in that order --
+          its members are `ptr` and `len` (slice.decl.1); it owns nothing
+          (slice.borrow.1); `s[i]` is `s.ptr[i]` (slice.index.1); a string
+          literal is a `slice<u8>` (slice.string.1). `len` counts elements
+          and is `u32` because unified.z:140 passes it to a `u32`.
+          What did NOT close, and is now three [UNSPECIFIED] markers where
+          it was one absent type: nothing checks `i < s.len`; nothing
+          relates a slice's life to its storage's, which is U.3.6 and is
+          oq.0 one level down; and a string literal's storage is writable
+          through the slice, which is oq.0's bill.
+          Landed in: spec.txt SLICE TYPES (slice.decl.1, slice.field.name.1,
+          slice.ctor.1, slice.borrow.1, slice.index.1, slice.len.1,
+          slice.string.1), the `[]` conflict's Reading 5, and glossary.txt
+          PREDECLARED NAMES. The corpus was not changed: every use of
+          `slice` in it already matched this declaration, which is why this
+          was a GAP.
+          Z-02 is NOT unblocked. Reading 5 now has a rule where it had none,
+          which makes it a fifth case the missing predicate must handle and
+          not a step toward the predicate. See Z-02.
 
 WHAT      The type of every string literal in the corpus, the projection of
           `List.span`, and the subject of the fifth `[]` reading, is
@@ -829,6 +874,46 @@ OPTIONS   INV: add `slice` to the type vocabulary. No form is proposed.
 
 ----------------------------------------------------------------------------
 Z-16  SEVEN NAMES ARE USED BY THE CORPUS AND DECLARED NOWHERE   GAP
+      -- CLOSED. Four declared, one reclassified, two already had ids.
+
+CLOSED    spec.txt now has a PREDECLARED IDENTIFIERS section under PROGRAM
+          STRUCTURE, and pre.universe.1 says what the category is: names
+          bound before any file is read, which are ordinary identifiers and
+          not keywords, and which any declaration may shadow. That is the
+          route grammar.ebnf:72-73 proposed by fiat, adopted with a rule
+          behind it. All seven names are accounted for, but not all the same
+          way:
+            size_of  pre.sizeof.1. `size_of<T>()` projects `u32`. What it
+                     EVALUATES to is still unknown, because layout is
+                     (U.11.1) -- the name is declared, the number is not.
+            slice    slice.decl.1. See Z-15.
+            nil      pre.nil.1 and pre.nil.deref.1. Every `ptr<T>` may hold
+                     it and a deref of it is unchecked. This closes the
+                     kw.budget CONFLICT -- the budget was complete and `nil`
+                     was never a candidate for it -- and moves U.1.8 from
+                     UNWRITTEN to UNCHECKED. It does NOT answer oq.0:
+                     whether nullability is that qualifier or a second one
+                     beside it is a new [UNSPECIFIED].
+            tag_of   sum.tag.of.1. Declared by Z-20, listed here.
+            page     NOT declared, and reclassified as a corpus defect. No
+                     one value fits the three uses: the same name is the
+                     base of a 4096-byte arena at unified.z:367 and of a
+                     1 << 20-byte one at json.z:639 and ecs.z:745, so it
+                     cannot be a block of either size. The call sites want a
+                     function of the shape `map(n) -> ptr<u8>` and have
+                     written a value. Recorded as such in spec.txt rather
+                     than filed as a new Z-id, because it is one line of
+                     three files and Z-39 and Z-40 are the same kind of
+                     thing.
+            parse_f64  Z-39, already open and unchanged.
+            f32_of     Z-40, already open and unchanged.
+          So the answer to what this entry actually asked -- is there a
+          std.core the rules do not describe -- is no. There is a universe
+          scope with ten names in it, and it is now written down.
+          Landed in: spec.txt PREDECLARED IDENTIFIERS (pre.universe.1,
+          pre.list.1, pre.sizeof.1, pre.nil.1, pre.nil.deref.1), ptr.null.1,
+          the retired kw.budget CONFLICT, Annex B U.1.8, and glossary.txt
+          PREDECLARED NAMES.
 
 WHAT      The corpus calls functions and names values that exist in no
           rule, no glossary entry and no .z declaration.
@@ -962,6 +1047,40 @@ OPTIONS   grammar.ebnf:251-255 and 323-327 are already a concrete proposal.
 
 ----------------------------------------------------------------------------
 Z-20  A SUM'S DISCRIMINANT IS NOT A VALUE                       GAP
+      -- CLOSED. It is one now. [P19] adopted, with one deviation.
+
+CLOSED    [P19] (ecs.z:1142-1148) adopted whole: for a `-> oneof`
+          declaration `S`, `S.tag` is a derived sum of payloadless variants,
+          `tag_of(v)` is total into it, and `ordinal_of(t)` gives declaration
+          order from `0` as `u32`. Tags compare and order. This answers
+          oq.2, which is marked ANSWERED in Annex C and keeps its id.
+          ONE DEVIATION FROM [P19]. The proposal writes `Token.tag.colon`;
+          the rule writes `Token.tag.colon()`. A tag's variants are
+          constructed by hole.ctor.1 like every other variant, and
+          `Option<T>.none()` already spells a payloadless variant with
+          parentheses about sixty times in the corpus. One rule was judged
+          worth more than one character. Recorded at sum.tag.ctor.1.
+          Two things [P19] did not say, and now stated: `S.tag.tag` is
+          `S.tag`, so the derivation does not regress (sum.tag.idem.1); and
+          an ordinal is declaration order, so a file written with one is
+          committed to that order and nothing versions it
+          (sum.tag.stable.1).
+          What this closes in the corpus, which is the point of it:
+          json.z:381-387 loses its invented `tag_of` and becomes
+          `tag_of(t) != tag_of(want)`; ecs.z:272-274 becomes one comparison
+          instead of four arms; and the archetype bitmask of ecs.z:275-278,
+          which could not be written at all, becomes
+          `1 << ordinal_of(tag_of(c))`. json.z:175-179 still spells
+          unreachable arms; that is match.exhaustive.1 and not this.
+          U.7.2 splits: numbering and order are now fixed by
+          sum.tag.ordinal.1, width and layout stay UNSPECIFIED.
+          The corpus was NOT rewritten to use it. Z-39 stays open, because
+          removing json.z's invention is an edit to json.z and this is an
+          edit to the specification.
+          Landed in: spec.txt A SUM'S DISCRIMINANT (sum.tag.type.1,
+          sum.tag.ctor.1, sum.tag.idem.1, sum.tag.of.1, sum.tag.ordinal.1,
+          sum.tag.compare.1, sum.tag.stable.1), the retired MATCH markers,
+          Annex B U.7.2, Annex C oq.2, and glossary.txt PREDECLARED NAMES.
 
 WHAT      There is no spelling for "same variant, ignore the payload", no
           ordinal per variant, and therefore no bitmask, no array index by
