@@ -977,7 +977,7 @@ main :: () -> () {
 //   depend on imports. Without a fix, user types get `+` and not `*` by a
 //   scalar, and no bound can require arithmetic of a type parameter.  -> [P17]
 //
-// FRICTION 16 -- `[]` CANNOT BE ASSIGNED THROUGH. `[] :: (&self, i: u32) -> T`
+// FRICTION 16 -- `[]` CANNOT BE ASSIGNED THROUGH.  RESOLVED -> [P22] `[] :: (&self, i: u32) -> T`
 //   yields a value, so `xs[i] = v` is unwritable for every user container in
 //   the language. Every mutation in this file goes through `.items[i]` or a
 //   `ptr<C>` from `at`. json.z hid this because `List.push` writes
@@ -985,7 +985,9 @@ main :: () -> () {
 //   The language has no PLACE concept: no way for a member to name a slot
 //   rather than produce a copy.  -> [P22]
 //
-// FRICTION 17 -- SO A CONTAINER CANNOT BE ENCAPSULATED. This is FRICTION 16's
+// FRICTION 17 -- SO A CONTAINER CANNOT BE ENCAPSULATED.  HALF RESOLVED -> [P22]
+//   -- `List` can now close its projection; `Map` still cannot, because the
+//   printer reaches into `m.slots` to ITERATE, which places do not address. This is FRICTION 16's
 //   consequence and it is worse than it, because it invalidates a feature
 //   already adopted. json.z's [P5] says the projection is the export list:
 //
@@ -1009,7 +1011,8 @@ main :: () -> () {
 //   which is otherwise the design's best trick, and it is only visible once
 //   erased values are STORED rather than passed.  -> [P20]
 //
-// FRICTION 22 -- TEARDOWN IS A NAMING CONVENTION. `deinit` is an ordinary
+// FRICTION 22 -- TEARDOWN IS A NAMING CONVENTION.  DECIDED, NOT FIXED: it
+//   stays one. See unified.z -- no automatic destruction, on purpose. `deinit` is an ordinary
 //   member that happens to be spelled the same everywhere. Nothing calls it,
 //   `defer` is lexical so it only helps for locals, and `List<T>` does not
 //   destroy its elements -- so `Store<Store<...>, M>` leaks and no diagnostic
@@ -1219,18 +1222,27 @@ main :: () -> () {
 //       quantify over VALUE holes only; type holes are neither, in either kind
 //       of block.
 //
-// [P22] PLACES. A member may yield a slot rather than a copy, so that
-//       `xs[i] = v` is writable and containers can stop exporting their
-//       storage. Two spellings were considered:
+// [P22] PLACES.  ADOPTED, in a third form neither option below anticipated:
+//       a PROJECTION. `-> &T` says a LOCATION escapes, alongside `-> T`,
+//       `-> self`, `-> {a, b}` and `-> oneof`.
 //
-//         (a) `[] :: (&self, i: u32) -> ptr<T>`, with `xs[i]` meaning
-//             `xs.[](i)^` in both value and assignment position. One rule, no
-//             new concept, and the same trick works for a field accessor.
-//         (b) a second member `[]=`, which is C++'s split and reintroduces
-//             the paired-name problem [P15] removed.
+//         [] :: (&self, i: u32) -> &T { self.items[i] }
 //
-//       (a). It also gives `Store.at` a better signature, and it is what makes
-//       [P5]'s visibility usable on a container at all (FRICTION 17).
+//       Two spellings were considered here and both were wrong:
+//
+//         (a) `[] :: (&self, i: u32) -> ptr<T>` with an explicit `^`. Costs no
+//             syntax, and makes `xs[i]` -- the shortest spelling -- mean the
+//             ADDRESS of the element, when every reader alive reads it as the
+//             element. `v := xs[i]` would compile and hand back a pointer.
+//         (b) a second member `[]=`, which is C++'s split and reintroduces the
+//             paired-name problem [P15] removed.
+//
+//       The projection form keeps `xs[i]` meaning the element and `&xs[i]`
+//       meaning its address, as in every language a reader has already used,
+//       and it costs no new pointer type: `-> &T` is `ptr<T>` underneath and
+//       appears only in projection position. It is what makes [P5]'s
+//       visibility usable on a container at all (FRICTION 17), and `List` in
+//       unified.z now exports six names and hides its storage.
 //
 // [P23] `for (x := it) { ... }` over anything satisfying `Iterator`,
 //       desugaring to the `loop` + `match` + `Option` consumer written by hand

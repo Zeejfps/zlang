@@ -118,6 +118,7 @@
 //
 //         -> ()        nothing escapes                    a procedure
 //         -> T         one value escapes                  a function
+//         -> &T        a LOCATION escapes                 a writable element
 //         -> self      all of the block escapes           struct / module
 //         -> {a, b}    only these members escape          multiple return,
 //                                                         and visibility
@@ -129,6 +130,28 @@
 //                    an unfilled hole cannot be instantiated, which is the
 //                    entire definition of "interface".
 //         -> oneof   EXACTLY ONE hole is filled. That is a sum.
+//
+// PLACE
+//     A location you can write to, as opposed to a value you can only read.
+//     `x`, `p^`, `s.field` and `items[i]` are places; `f()` and `a + b` are
+//     not. Other languages call the distinction lvalue and rvalue.
+//
+//     A member yields one by projecting `&T`:
+//
+//         [] :: (&self, i: u32) -> &T { self.items[i] }
+//
+//         v := xs[i]      read       xs[i] = v     write
+//         xs[i] += 1      both       p := &xs[i]   its address, a ptr<T>
+//
+//     `&` because it already means "the thing itself, not a copy" -- `&self`
+//     is the actual block, `&x` is the actual x. `-> &T` is a PROJECTION and
+//     nothing else: there is no `Option<&V>` and no `&T` field, which is what
+//     keeps it from becoming a second pointer type. Underneath it is `ptr<T>`
+//     and the call site derefs, exactly as `&self` is `ptr<self>` underneath.
+//
+//     Places are why a container can have a closed projection. Without them
+//     every caller reaches around `[]` into the raw storage, and `-> {push,
+//     pop}` breaks everything that touches a List.
 //
 // ABSTRACT
 //     Not a keyword. A `-> self` block with at least one unfilled hole. You

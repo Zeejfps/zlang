@@ -11,6 +11,7 @@
 //
 //     -> ()        nothing escapes            procedure
 //     -> T         one value escapes          function
+//     -> &T        a LOCATION escapes         a writable element
 //     -> self      all of the block           struct / module / shape
 //     -> {a, b}    these members of it        multiple return, AND visibility
 //     -> oneof     one member of it, tagged   sum
@@ -128,6 +129,58 @@
 //
 // A value may escape while its type does not. `io.out` is exported and
 // `FileWriter` is not, which is an opaque type for free.
+//
+// ----------------------------------------------------------------------------
+// PLACES.  `-> &T` says A LOCATION ESCAPES, and it is what lets a container
+// hand out an element you can write to:
+//
+//     [] :: (&self, i: u32) -> &T { self.items[i] }
+//
+//     v := xs[i]        read it
+//     xs[i] = v         write it
+//     xs[i] += 1        both, and `[]` is called exactly once
+//     p := &xs[i]       take its address, which is a ptr<T>
+//
+// `&` is the right symbol because it already means "the thing itself, not a
+// copy" wherever it appears -- `&self` is the actual block, `&x` is the actual
+// x. In a projection it means the same.
+//
+// FOUR RULES, and they are the whole of it:
+//
+//   1. `-> &T` IS A PROJECTION AND ONLY A PROJECTION. It never appears inside
+//      another type. There is no `Option<&V>`, no `List<&T>`, no `&T` field.
+//      This is what stops `&T` from quietly becoming a second pointer type.
+//
+//   2. THE BODY MUST EVALUATE TO A PLACE, not to a pointer: a field, an index
+//      into a pointer, a deref, or another `-> &T` call. Symmetric with
+//      everything else -- `-> T`'s body is a value, `-> self`'s body is the
+//      block, `-> &T`'s body is a location.
+//
+//   3. UNDERNEATH IT IS `ptr<T>`, exactly as `&self` is `ptr<self>` underneath.
+//      The call site derefs. No new representation and nothing in the ABI.
+//
+//   4. `xs[i] += 1` CALLS THE ACCESSOR ONCE. Stated because accessors can have
+//      side effects, and because C++ gets this wrong with proxy objects.
+//
+// WHY NOT `-> ptr<T>` AND AN EXPLICIT `^`, which would have cost no syntax at
+// all: it makes `xs[i]` -- the shortest and commonest spelling -- mean the
+// ADDRESS of the element, when every reader alive reads it as the element.
+// `v := xs[i]` would compile and hand back a pointer. The bare form has to be
+// the ordinary meaning; the unusual one is what you type extra characters for.
+//
+// WHAT IT DELIBERATELY WILL NOT DO. A packed container -- a bitset, a
+// compressed array, an element computed on the fly -- has no location to hand
+// back, so it cannot offer `[]` as a place at all. It offers `get(i)` and
+// `set(i, b)`. There are no proxy objects, which is the disease `vector<bool>`
+// died of. And a fallible lookup is not a place, because there is no such
+// thing as "maybe a location": `Map.get` returns `Option<ptr<V>>` and the
+// match arm derefs it.
+//
+// WHAT IT BUYS, beyond writing to an element: it is what makes `-> {a, b}`
+// usable on a container. Without places, every caller reaches around `[]` into
+// the raw `items` field, so closing the projection breaks every program that
+// touches a List. With them, `List` below exports six names and hides its
+// storage, and nothing outside it can see a pointer.
 //
 // ----------------------------------------------------------------------------
 // KEYWORDS.  `self` is the only new one in the declaration form. It always
@@ -471,7 +524,12 @@ io :: -> {out, err, write} {
 // `M: Allocator` means "any type structurally providing that shape".
 // ptr<Allocator> provides it too -- that is the entire static/dynamic switch,
 // with no keyword. See NOTE 2.
-List :: <T, M: Allocator> (mem: M) -> self {
+// THE PROJECTION IS CLOSED, which is only possible because of places: `items`
+// and `capacity` do not escape, so no caller can see the storage, and `[]`
+// hands out a location rather than a copy. `span` exists for the same reason
+// -- building a slice needs the base pointer, and closing the projection means
+// asking for it by name instead of reaching in.
+List :: <T, M: Allocator> (mem: M) -> {push, pop, count, [], span, deinit} {
     capacity := 10
     count    := 0
 
@@ -508,7 +566,11 @@ List :: <T, M: Allocator> (mem: M) -> self {
         self.count = 0
     }
 
-    [] :: (&self, i: u32) -> T { self.items[i] }
+    // A LOCATION escapes, so `xs[i] = v` and `xs[i] += 1` are writable and
+    // `&xs[i]` is a ptr<T>. The body is a place, not a pointer -- no `&`.
+    [] :: (&self, i: u32) -> &T { self.items[i] }
+
+    span :: (&self) -> slice<T> { slice(self.items, self.count) }
 }
 
 
@@ -531,7 +593,7 @@ ListIter :: <T, M> (xs: ptr<List<T, M>>) -> self {
     i := 0
     next :: (&self) -> Option<T> {
         if (self.i >= self.xs.count) { return Option<T>.none() }
-        v := self.xs.items[self.i]
+        v := self.xs[self.i]
         self.i += 1
         Option<T>.some(v)
     }
@@ -617,15 +679,17 @@ reverse_u8 :: -> Ord<u8> {
 
 // `_` for the allocator: sort does not care which one, and naming a parameter
 // only so that `List<T, M>` parses is the noisiest thing in the old draft.
+// Every line that used to say `xs.items[j]` now says `xs[j]`, and `sort` no
+// longer knows that a List has a pointer in it.
 sort :: <T, O: Ord<T> = ?> (xs: ptr<List<T, _>>) -> () {
     for (i := 1; i < xs.count; i += 1) {
-        v := xs.items[i]
+        v := xs[i]
         j := i
-        while (j > 0 && O.compare(xs.items[j - 1], v) > 0) {
-            xs.items[j] = xs.items[j - 1]
+        while (j > 0 && O.compare(xs[j - 1], v) > 0) {
+            xs[j] = xs[j - 1]
             j -= 1
         }
-        xs.items[j] = v
+        xs[j] = v
     }
 }
 
@@ -664,7 +728,7 @@ hex_u8 :: -> Formattable<u8> {
         w.write("[")
         for (i := 0; i < v.count; i += 1) {
             if (i > 0) { w.write(", ") }
-            F.format(v.items[i], w)
+            F.format(v[i], w)
         }
         w.write("]")
     }
@@ -683,7 +747,7 @@ StringWriter :: <M: Allocator> (mem: M) -> self {
         for (i := 0; i < n; i += 1) { self.buf.push(p[i]) }
     }
 
-    finish :: (&self) -> slice<u8> { slice(self.buf.items, self.buf.count) }
+    finish :: (&self) -> slice<u8> { self.buf.span() }
 }
 
 to_string :: <T, M: Allocator, F: Formattable<T> = ?> (mem: M, v: T) -> slice<u8> {
@@ -1053,6 +1117,24 @@ main :: () -> () {
 //            Used by `List`'s `capacity :: 10` and by every array size, and
 //            never mentioned. Mixing one with an inferred type parameter is
 //            what makes named passing the only way to call a declaration.
+//   ADDED    PLACES. `-> &T` is a sixth projection: a LOCATION escapes. It is
+//            what makes `xs[i] = v` writable for a user container, and what
+//            makes `-> {a, b}` usable on one -- `List` now exports six names
+//            and hides its storage, which was unwritable before. Four rules,
+//            no new pointer type, nothing in the ABI. [P22] in ecs.z, adopted
+//            in a third form: neither a pointer return nor a paired `[]=`.
+//   DECIDED  NO AUTOMATIC DESTRUCTION. A block does not get a destructor that
+//            runs at scope exit. `deinit` is an ordinary member and `defer` is
+//            how you call it, which is the same idea written where it can be
+//            seen. The alternative is not one feature: once destructors fire
+//            on their own, the language must also define what happens on
+//            assignment over a live value, on return, and on copy, and that is
+//            the road to move semantics and a borrow checker. This language's
+//            claim is that cost is visible and there is no hidden machinery;
+//            a destructor at a closing brace is hidden machinery. The price,
+//            accepted with open eyes: containers do not free their elements,
+//            an erased value in a container is kept alive by hand, and both
+//            are leaks the compiler will not mention.
 //   ADDED    A VALUE MAY NOT BE DROPPED SILENTLY; `_ := xs.pop()` says so out
 //            loud. The fourth use of `_`, and the one an error channel needs.
 //   CHANGED  the shape/policy test quantifies over VALUE holes only, so a type
@@ -1071,49 +1153,43 @@ main :: () -> () {
 // ----------------------------------------------------------------------------
 // OPEN
 //
-//   - MEMORY, WHICH IS ONE DECISION WEARING SIX HATS, and now the largest gap
-//     in the design by a distance. The language can say what a value IS and
-//     cannot say WHERE IT LIVES, WHO MAY WRITE IT, or WHEN IT DIES. In the
-//     order ecs.z hit them:
+//   - MEMORY. Two of the six are now decided -- places, above, and no
+//     automatic destruction -- and the rest are what is left. They are still
+//     one question: the language can say what a value IS and cannot yet say
+//     WHERE IT LIVES, WHO MAY WRITE IT, or WHEN IT DIES.
 //
-//       PLACES.  `[] :: (&self, i: u32) -> T` yields a copy, so `xs[i] = v` is
-//       unwritable for every user container, and every mutation goes through a
-//       raw `.items[i]`. Which means `-> {push, pop}` visibility is unusable on
-//       exactly the types it was meant for: turn it on and both programs in
-//       this repo stop compiling, json.z's own printer included, because it
-//       reaches into `m.slots` for want of an iterator.
-//
-//       MOVES.  Nothing says whether returning a block copies it or constructs
-//       it in place, so `stores.push(&self.pos)` -- a structure pointing into
-//       itself -- is unanswerable rather than wrong. json.z never noticed
-//       because no interior pointer it took outlived its expression.
+//       DO VALUES MOVE?  Nothing says whether returning a block copies it or
+//       constructs it in place, so `stores.push(&self.pos)` -- a structure
+//       pointing into itself -- is unanswerable rather than wrong. The cheapest
+//       answer consistent with everything else here is that a value has one
+//       address for its lifetime, and it has to be WRITTEN DOWN: places,
+//       closures stored in data, and `ptr<Shape>` in a container all depend on
+//       it. It is the next thing to decide, because the constructor body
+//       depends on it.
 //
 //       THE CONSTRUCTOR BODY.  A `-> self` block has field initialisers and no
 //       statements, so anything needing `self`, or two fields at once, or a
 //       step that can fail, has nowhere to go. `-> Result<self, E>` was adopted
-//       for the fallible case and turns out to be the wrong half: it gave the
-//       constructor a return type and still no body. The cost is two-phase
-//       construction, unchecked -- ecs.z's `w.wire()`.
+//       for the fallible case and is the wrong half: it gave the constructor a
+//       return type and still no body. The cost is two-phase construction,
+//       unchecked -- ecs.z's `w.wire()`.
 //
 //       OWNED ERASURE.  `ptr<Shape>` is a borrow with no owner, which is right
-//       for an argument and wrong for a container. A schedule of
-//       `ptr<System>` holds pointers into locals, and declaration order in
-//       main is load-bearing and unenforced. A `Box<Shape, M>` in std would
-//       cover it and needs the move and the destructor first.
+//       for an argument and wrong for a container: a schedule of `ptr<System>`
+//       holds pointers into locals, and declaration order in main is
+//       load-bearing and unenforced. A `Box<Shape, M>` would fix it and cannot
+//       exist without a destructor, so with destruction decided this one is
+//       decided too: you keep the values alive yourself.
 //
-//       DESTRUCTION.  `deinit` is a naming convention. Nothing calls it,
-//       `defer` is lexical, and `List<T>` does not destroy its elements, so a
-//       container of containers leaks with no diagnostic.
-//
-//       MUTABILITY.  `::`/`:=` encode immutable/mutable for BINDINGS and
+//       WHO MAY WRITE.  `::`/`:=` encode immutable/mutable for BINDINGS and
 //       nothing does for POINTEES, so a `ptr<T>` is an unrestricted handle of
 //       indefinite life. In a simulation this stops being a documentation
 //       problem: a pointer into a store is invalidated by any push, and an
-//       event emitted mid-iteration reenters the loop that emitted it. This is
-//       the one cost in the language that is not visible in a type.
-//
-//     These are six faces of one question and should be answered together, on
-//     purpose, rather than one at a time by whatever the next program needs.
+//       event emitted mid-iteration reenters the loop that emitted it. Places
+//       make an interior pointer easier to take, which raises the stakes
+//       without changing the kind of hole it is. This is the one cost in the
+//       language not visible in a type, and the only one of the six with no
+//       cheap answer.
 //
 //   - THE DISCRIMINANT IS NOT A VALUE. Both programs hit it. json.z wanted
 //     `expect(Token.colon())` to mean "same variant, ignore the payload"; ecs.z
