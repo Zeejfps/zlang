@@ -9,6 +9,8 @@
 // Natives (provided by the runtime):
 //   f64_digits { n: f64, into: slice::Slice(u8) } -> usize   writes the shortest round-trip text
 //   f32_digits { n: f32, into: slice::Slice(u8) } -> usize   of n into `into`; traps if it doesn't fit
+//   f64_parse  { text: slice::Slice(u8) } -> f64    the nearest value to `text`, which must already
+//   f32_parse  { text: slice::Slice(u8) } -> f32    be valid float syntax (see parse_f64)
 
 namespace ascii {
     struct String { bytes: slice::Slice(u8) }
@@ -77,13 +79,45 @@ namespace ascii {
         return null
     }
 
+    // Index of the first occurrence of `needle`, or null. An empty needle is found at 0.
+    fn find_str { s: String, needle: String } -> ?usize {
+        let n = needle.bytes.len
+        if (n > s.bytes.len) { return null }
+        let mut i: usize = 0
+        while (i + n <= s.bytes.len) {
+            if (eq{ a = sub{ s, lo = i, hi = i + n }, b = needle }) { return i }
+            i = i + 1
+        }
+        return null
+    }
+
+    // The text before and after the first `c`, or null if there is none.
+    //   split_once{ s = "key=value", c = '=' }  ->  head "key", tail "value"
+    struct Split { head: String, tail: String }
+
+    fn split_once { s: String, c: u8 } -> ?Split {
+        let i = find{ s, c }
+        if (i != null) {
+            return Split{ head = sub{ s, lo = 0, hi = i }, tail = sub{ s, lo = i + 1, hi = s.bytes.len } }
+        }
+        return null
+    }
+
     // Without leading and trailing whitespace.
     fn trim { s: String } -> String {
+        return trim_end{ s = trim_start{ s } }
+    }
+
+    fn trim_start { s: String } -> String {
         let mut lo: usize = 0
+        while (lo < s.bytes.len and is_space{ c = at{ s, i = lo } }) { lo = lo + 1 }
+        return sub{ s, lo, hi = s.bytes.len }
+    }
+
+    fn trim_end { s: String } -> String {
         let mut hi = s.bytes.len
-        while (lo < hi and is_space{ c = at{ s, i = lo } }) { lo = lo + 1 }
-        while (hi > lo and is_space{ c = at{ s, i = hi - 1 } }) { hi = hi - 1 }
-        return sub{ s, lo, hi }
+        while (hi > 0 and is_space{ c = at{ s, i = hi - 1 } }) { hi = hi - 1 }
+        return sub{ s, lo = 0, hi }
     }
 
     // ---- characters
@@ -151,6 +185,54 @@ namespace ascii {
         return v
     }
 
+    const F64_MAX: f64 = 1.7976931348623157e308
+    const F32_MAX: f32 = 3.4028234663852886e38
+
+    // Parses decimal text such as "3", "-0.25", "1e+100" or "6.02E23", and "inf", "-inf" and
+    // "nan", so that it reads back everything fmt_f64 writes. Rounds to the nearest f64. Null if
+    // malformed, or if a number is too large for f64.
+    fn parse_f64 { s: String } -> ?f64 {
+        if (is_float_word{ s }) { return f64_parse{ text = s.bytes } }
+        if (not is_float_number{ s }) { return null }
+        let v = f64_parse{ text = s.bytes }
+        if (v > F64_MAX or v < -F64_MAX) { return null }
+        return v
+    }
+
+    // Like parse_f64, rounding once, directly to the nearest f32.
+    fn parse_f32 { s: String } -> ?f32 {
+        if (is_float_word{ s }) { return f32_parse{ text = s.bytes } }
+        if (not is_float_number{ s }) { return null }
+        let v = f32_parse{ text = s.bytes }
+        if (v > F32_MAX or v < -F32_MAX) { return null }
+        return v
+    }
+
+    // "inf", "-inf" or "nan".
+    fn is_float_word { s: String } -> bool {
+        let inf = "inf"
+        let minus_inf = "-inf"
+        let nan = "nan"
+        if (eq{ a = s, b = of{ chars = &inf } } or eq{ a = s, b = of{ chars = &nan } }) { return true }
+        return eq{ a = s, b = of{ chars = &minus_inf } }
+    }
+
+    // An optional '-', digits, optionally '.' and digits, optionally 'e' or 'E', an optional sign
+    // and digits.
+    fn is_float_number { s: String } -> bool {
+        let mut cur = cursor{ s }
+        eat{ &cur, ch = '-' }
+        if (take_while{ &cur, f = is_digit }.bytes.len == 0) { return false }
+        if (eat{ &cur, ch = '.' }) {
+            if (take_while{ &cur, f = is_digit }.bytes.len == 0) { return false }
+        }
+        if (eat{ &cur, ch = 'e' } or eat{ &cur, ch = 'E' }) {
+            if (not eat{ &cur, ch = '+' }) { eat{ &cur, ch = '-' } }
+            if (take_while{ &cur, f = is_digit }.bytes.len == 0) { return false }
+        }
+        return done{ cur }
+    }
+
     // Writes n in decimal to the start of `into` and returns that text. Traps if it doesn't fit;
     // 20 bytes always do.
     fn fmt_i64 { n: i64, into: slice::Slice(u8) } -> String {
@@ -209,6 +291,74 @@ namespace ascii {
 
     fn fmt_f32 { n: f32, into: slice::Slice(u8) } -> String {
         return String{ bytes = slice::sub{ s = into, lo = 0, hi = f32_digits{ n, into } } }
+    }
+
+    // ---- scanning
+
+    // A read position in a String, for hand-written lexers and parsers.
+    //
+    //   let mut cur = ascii::cursor{ s = line }
+    //   ascii::skip_space{ &cur }
+    //   let name = ascii::take_while{ &cur, f = ascii::is_alpha }
+    //   if (ascii::eat{ &cur, ch = '=' }) { ... }
+    struct Cursor { s: String, pos: usize }
+
+    fn cursor { s: String } -> Cursor {
+        return Cursor{ s, pos = 0 }
+    }
+
+    fn done { cur: Cursor } -> bool {
+        return cur.pos >= cur.s.bytes.len
+    }
+
+    // The unread text.
+    fn rest { cur: Cursor } -> String {
+        return sub{ s = cur.s, lo = cur.pos, hi = cur.s.bytes.len }
+    }
+
+    // The next character without consuming it, or null at the end.
+    fn peek { cur: Cursor } -> ?u8 {
+        return peek_at{ cur, ahead = 0 }
+    }
+
+    // The character `ahead` places past the next one, or null past the end.
+    fn peek_at { cur: Cursor, ahead: usize } -> ?u8 {
+        let i = cur.pos + ahead
+        if (i >= cur.s.bytes.len) { return null }
+        return at{ s = cur.s, i }
+    }
+
+    // Consumes and returns the next character, or null at the end.
+    fn bump { mut cur: Cursor } -> ?u8 {
+        if (done{ cur }) { return null }
+        cur.pos = cur.pos + 1
+        return at{ s = cur.s, i = cur.pos - 1 }
+    }
+
+    // Consumes `ch` if it is next.
+    fn eat { mut cur: Cursor, ch: u8 } -> bool {
+        if (done{ cur } or at{ s = cur.s, i = cur.pos } != ch) { return false }
+        cur.pos = cur.pos + 1
+        return true
+    }
+
+    // Consumes `s` if the unread text starts with it.
+    fn eat_str { mut cur: Cursor, s: String } -> bool {
+        if (not starts_with{ s = rest{ cur }, prefix = s }) { return false }
+        cur.pos = cur.pos + s.bytes.len
+        return true
+    }
+
+    // Consumes characters while `f` accepts them and returns them. `f` may be a character test
+    // such as `ascii::is_digit`.
+    fn take_while { mut cur: Cursor, f: &fn{ c: u8 } -> bool } -> String {
+        let lo = cur.pos
+        while (not done{ cur } and f{ c = at{ s = cur.s, i = cur.pos } }) { cur.pos = cur.pos + 1 }
+        return sub{ s = cur.s, lo, hi = cur.pos }
+    }
+
+    fn skip_space { mut cur: Cursor } {
+        take_while{ &cur, f = is_space }
     }
 
     // ---- building strings

@@ -788,6 +788,118 @@ fn main { mut io: Io } {
 """, b'12\r\n30\nabcdefghij\n  -2\nlast')
         self.assertEqual(out, '12\n30\nabcdefgh\nij\n  -2\nlast\n40\n')
 
+    def test_parse_float(self):
+        self.assertOutput("""
+fn show { mut io: Io, r: ?f64 } {
+    match (r) {
+        null => { io::println_bool{ &io, n = false } }
+        some{ value } => { io::println_f64{ &io, n = value } }
+    }
+}
+fn show32 { mut io: Io, r: ?f32 } {
+    match (r) {
+        null => { io::println_bool{ &io, n = false } }
+        some{ value } => { io::println_f32{ &io, n = value } }
+    }
+}
+fn main { mut io: Io } {
+    let a = "-0.25"
+    let b = "6.02E23"
+    let c = "1e+100"
+    let d = "3"
+    let e = "-inf"
+    let f = "1e999"
+    let g = "1."
+    let h = ".5"
+    let i = "1e"
+    let j = "+1"
+    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &a } } }
+    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &b } } }
+    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &c } } }
+    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &d } } }
+    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &e } } }
+    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &f } } }
+    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &g } } }
+    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &h } } }
+    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &i } } }
+    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &j } } }
+    let k = "1.1"
+    let l = "1e39"
+    let m = "1.000000059604644775390625000001"
+    show32{ &io, r = ascii::parse_f32{ s = ascii::of{ chars = &k } } }
+    show32{ &io, r = ascii::parse_f32{ s = ascii::of{ chars = &l } } }
+    show32{ &io, r = ascii::parse_f32{ s = ascii::of{ chars = &m } } }
+}
+""", '-0.25\n6.02e+23\n1e+100\n3.0\n-inf\nfalse\nfalse\nfalse\nfalse\nfalse\n'
+     '1.1\nfalse\n1.0000001\n')
+
+    def test_parse_float_round_trips(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let xs = [0.1, -2.5e-300, 1.7976931348623157e308, 5e-324, 123456.789]
+    let mut buf: [32]u8
+    let mut i: usize = 0
+    while (i < xs.len) {
+        let text = ascii::fmt_f64{ n = xs[i], into = slice::of(u8){ a = &buf } }
+        let back = ascii::parse_f64{ s = text }
+        if (back != null) { io::println_bool{ &io, n = back == xs[i] } }
+        i = i + 1
+    }
+}
+""", 'true\n' * 5)
+
+    def test_cursor(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let src = "  let x1 = 42 -> y"
+    let mut cur = ascii::cursor{ s = ascii::of{ chars = &src } }
+    ascii::skip_space{ &cur }
+    io::println{ &io, s = ascii::take_while{ &cur, f = ascii::is_alpha } }
+    ascii::skip_space{ &cur }
+    io::println{ &io, s = ascii::take_while{ &cur, f = ascii::is_alnum } }
+    ascii::skip_space{ &cur }
+    io::println_bool{ &io, n = ascii::eat{ &cur, ch = '+' } }
+    io::println_bool{ &io, n = ascii::eat{ &cur, ch = '=' } }
+    ascii::skip_space{ &cur }
+    let n = ascii::parse_i64{ s = ascii::take_while{ &cur, f = ascii::is_digit } }
+    if (n != null) { io::println_i64{ &io, n } }
+    ascii::skip_space{ &cur }
+    let c = ascii::peek_at{ cur, ahead = 1 }
+    if (c != null) { io::put_char{ &io, c } }
+    let arrow = "->"
+    io::println_bool{ &io, n = ascii::eat_str{ &cur, s = ascii::of{ chars = &arrow } } }
+    io::println{ &io, s = ascii::rest{ cur } }
+    ascii::bump{ &cur }
+    let y = ascii::bump{ &cur }
+    if (y != null) { io::put_char{ &io, c = y } }
+    io::println_bool{ &io, n = ascii::done{ cur } }
+    io::println_bool{ &io, n = ascii::bump{ &cur } == null and ascii::peek{ cur } == null }
+}
+""", 'let\nx1\nfalse\ntrue\n42\n>true\n y\nytrue\ntrue\n')
+
+    def test_split_and_search(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let kv = "key=val=ue"
+    let s = ascii::of{ chars = &kv }
+    let sp = ascii::split_once{ s, c = '=' }
+    if (sp != null) {
+        io::println{ &io, s = sp.head }
+        io::println{ &io, s = sp.tail }
+    }
+    io::println_bool{ &io, n = ascii::split_once{ s, c = ';' } == null }
+    let val = "val"
+    let at = ascii::find_str{ s, needle = ascii::of{ chars = &val } }
+    if (at != null) { io::println_u64{ &io, n = at } }
+    let long = "key=val=ue!"
+    io::println_bool{ &io, n = ascii::find_str{ s, needle = ascii::of{ chars = &long } } == null }
+    let padded = "  x  "
+    let p = ascii::of{ chars = &padded }
+    io::println_u64{ &io, n = ascii::len{ s = ascii::trim_start{ s = p } } }
+    io::println_u64{ &io, n = ascii::len{ s = ascii::trim_end{ s = p } } }
+}
+""", 'key\nval=ue\ntrue\n4\ntrue\n3\n3\n')
+
     def test_slice_helpers(self):
         self.assertOutput("""
 fn main { mut io: Io } {
@@ -857,6 +969,173 @@ fn main { mut io: Io } {
             run_source('fn main { mut io: Io } { io::println_i64{ &io, n = "x" } }', 'user.ctx')
         self.assertEqual(cm.exception.pos[2], 'user.ctx')
         self.assertIn('expected i64, got [1]u8', cm.exception.msg)
+
+
+MAP_SETUP = """
+fn main { mut io: Io } {
+    let mut mem: [262144]u8
+    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+    let mut m = map::new(i32, i64){ realloc = arena::alloc, hash = map::hash_i32, eq = map::eq_i32 }
+%s
+}
+"""
+
+
+class Map(Base):
+    def run_map(self, body, expected):
+        self.assertOutput(MAP_SETUP % body, expected)
+
+    def test_put_get_grow(self):
+        self.run_map("""
+    let mut i = 0
+    while (i < 1000) {
+        map::put{ &m, &heap, key = i * 7, value = i }
+        i = i + 1
+    }
+    io::println_u64{ &io, n = map::len{ m } }
+    let mut sum: i64 = 0
+    i = 0
+    while (i < 1000) {
+        let v = map::get{ m, key = i * 7 }
+        if (v != null) { sum = sum + v }
+        i = i + 1
+    }
+    io::println_i64{ &io, n = sum }
+    io::println_bool{ &io, n = map::has{ m, key = 8 } }
+""", '1000\n499500\nfalse\n')
+
+    def test_replace_and_at(self):
+        self.run_map("""
+    map::put{ &m, &heap, key = -5, value = 1 }
+    map::put{ &m, &heap, key = -5, value = 2 }
+    io::println_u64{ &io, n = map::len{ m } }
+    let p = map::at{ m, key = -5 }
+    if (p != null) { p.* = p.* + 40 }
+    let v = map::get{ m, key = -5 }
+    if (v != null) { io::println_i64{ &io, n = v } }
+    io::println_bool{ &io, n = map::at{ m, key = 6 } == null }
+""", '1\n42\ntrue\n')
+
+    def test_remove(self):
+        self.run_map("""
+    let mut i = 0
+    while (i < 50) {
+        map::put{ &m, &heap, key = i, value = i }
+        i = i + 1
+    }
+    i = 0
+    while (i < 50) {
+        if (i % 2 == 0) { map::remove{ &m, key = i } }
+        i = i + 1
+    }
+    io::println_u64{ &io, n = map::len{ m } }
+    io::println_bool{ &io, n = map::remove{ &m, key = 4 } == null }
+    let r = map::remove{ &m, key = 7 }
+    if (r != null) { io::println_i64{ &io, n = r } }
+    io::println_bool{ &io, n = map::has{ m, key = 9 } and not map::has{ m, key = 10 } }
+    // Churn: removed slots are reused or dropped, so the table doesn't fill with them.
+    i = 0
+    while (i < 2000) {
+        map::put{ &m, &heap, key = 100, value = i }
+        map::remove{ &m, key = 100 }
+        i = i + 1
+    }
+    io::println_u64{ &io, n = map::len{ m } }
+    io::println_bool{ &io, n = m.slots.len <= 128 }
+""", '25\ntrue\n7\ntrue\n24\ntrue\n')
+
+    def test_iterate_and_each(self):
+        self.assertOutput("""
+fn add { mut total: i64, key: i32, value: i64 } { total = total + value }
+""" + MAP_SETUP % """
+    let mut i = 1
+    while (i <= 10) {
+        map::put{ &m, &heap, key = i, value = i * 100 }
+        i = i + 1
+    }
+    let mut keys: i32 = 0
+    let mut cursor: usize = 0
+    while (true) {
+        match (map::next{ m, &cursor }) {
+            null => { break }
+            some{ value } => {
+                keys = keys + value.key
+                if (value.key % 2 == 0) { map::remove{ &m, key = value.key } }
+            }
+        }
+    }
+    io::println_i64{ &io, n = keys }
+    io::println_u64{ &io, n = map::len{ m } }
+    let mut total: i64 = 0
+    map::each{ m, f = add{ &total, _ } }
+    io::println_i64{ &io, n = total }
+""", '55\n5\n2500\n')
+
+    def test_string_keys(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let mut mem: [8192]u8
+    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+    let mut counts = map::new(ascii::String, i32){
+        realloc = arena::alloc, hash = map::hash_string, eq = ascii::eq,
+    }
+    let text = "the cat and the dog and the bird"
+    let mut cur = ascii::cursor{ s = ascii::of{ chars = &text } }
+    while (not ascii::done{ cur }) {
+        let word = ascii::take_while{ &cur, f = ascii::is_alpha }
+        let p = map::at{ m = counts, key = word }
+        if (p != null) {
+            p.* = p.* + 1
+        } else {
+            map::put{ m = &counts, &heap, key = word, value = 1 }
+        }
+        ascii::skip_space{ &cur }
+    }
+    io::println_u64{ &io, n = map::len{ m = counts } }
+    let the = "the"
+    let n = map::get{ m = counts, key = ascii::of{ chars = &the } }
+    if (n != null) { io::println_i64{ &io, n } }
+}
+""", '5\n3\n')
+
+    def test_clear_and_free(self):
+        self.run_map("""
+    map::put{ &m, &heap, key = 1, value = 1 }
+    map::put{ &m, &heap, key = 2, value = 2 }
+    map::clear{ &m }
+    io::println_u64{ &io, n = map::len{ m } }
+    io::println_bool{ &io, n = map::has{ m, key = 1 } }
+    map::put{ &m, &heap, key = 3, value = 3 }
+    io::println_u64{ &io, n = map::len{ m } }
+    map::free{ &m, &heap }
+    io::println_u64{ &io, n = m.slots.len }
+    io::println_bool{ &io, n = map::get{ m, key = 3 } == null }
+""", '0\nfalse\n1\n0\ntrue\n')
+
+    def test_allocation_failure(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let mut mem: [256]u8
+    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+    let mut m = map::new(u64, u64){ realloc = arena::alloc, hash = map::hash_u64, eq = map::eq_u64 }
+    let mut i: u64 = 0
+    let mut ok = true
+    while (ok) {
+        ok = map::put{ &m, &heap, key = i, value = i }
+        if (ok) { i = i + 1 }
+    }
+    io::println_u64{ &io, n = i }
+    io::println_u64{ &io, n = map::len{ m } }
+    io::println_bool{ &io, n = map::has{ m, key = i - 1 } and not map::has{ m, key = i } }
+}
+""", '6\n6\ntrue\n')
+
+    def test_key_needs_matching_hash(self):
+        self.assertCompileError("""
+fn main { mut io: Io } {
+    let m = map::new(i32, i32){ realloc = arena::alloc, hash = map::hash_i64, eq = map::eq_i32 }
+}
+""", 'expected')
 
 
 if __name__ == '__main__':

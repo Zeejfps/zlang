@@ -1,0 +1,254 @@
+// std: map. A hash map from keys K to values V, generic over the allocator state S.
+//
+// Keys have no built-in hashing or equality, so a map holds a function for each. std provides
+// them for the common key types below; `ascii::eq` serves as the equality for ascii::String.
+//
+//   let mut ages = map::new(ascii::String, i64){
+//       realloc = arena::alloc, hash = map::hash_string, eq = ascii::eq,
+//   }
+//   map::put{ m = &ages, &heap, key = name, value = 42 }
+//   let age = map::get{ m = ages, key = name }       // ?i64
+//
+// A map copies its keys but not memory they point to: the bytes of an ascii::String key must
+// outlive its entry.
+//
+// Open addressing with linear probing. `remove` leaves a marker that `put` reuses and the next
+// rehash drops.
+
+namespace map {
+    type Hash(K) = fn{ key: K } -> u64
+    type Eq(K) = fn{ a: K, b: K } -> bool
+
+    union Slot(K, V) {
+        empty,
+        removed,
+        full{ k: K, v: V },
+    }
+
+    struct Map(K, V, S) {
+        slots:   slice::Slice(Slot(K, V)),  // capacity is slots.len: 0 or a power of two
+        len:     usize,                    // full slots
+        used:    usize,                    // full and removed slots
+        realloc: alloc::Fn(S),
+        hash:    Hash(K),
+        eq:      Eq(K),
+    }
+
+    struct Entry(K, V) { key: K, value: V }
+
+    fn new(K, V, S) { realloc: alloc::Fn(S), hash: Hash(K), eq: Eq(K) } -> Map(K, V, S) {
+        return Map{ slots = slice::empty(Slot(K, V)){}, len = 0, used = 0, realloc, hash, eq }
+    }
+
+    fn len(K, V, S) { m: Map(K, V, S) } -> usize {
+        return m.len
+    }
+
+    fn has(K, V, S) { m: Map(K, V, S), key: K } -> bool {
+        return find{ m, key } != null
+    }
+
+    fn get(K, V, S) { m: Map(K, V, S), key: K } -> ?V {
+        let i = find{ m, key }
+        if (i != null) {
+            match (slice::get{ s = m.slots, i }) {
+                full{ v } => { return v }
+                else      => { }
+            }
+        }
+        return null
+    }
+
+    // Pointer to the value stored for key, or null. Invalidated by the next `put`.
+    fn at(K, V, S) { m: Map(K, V, S), key: K } -> ?*V {
+        let i = find{ m, key }
+        if (i != null) {
+            match (slice::at{ s = m.slots, i }) {
+                full{ &v } => { return &v }
+                else       => { }
+            }
+        }
+        return null
+    }
+
+    // Inserts key, or replaces its value. Returns false on allocation failure, leaving m unchanged.
+    fn put(K, V, S) { mut m: Map(K, V, S), mut heap: S, key: K, value: V } -> bool {
+        let found = find{ m, key }
+        if (found != null) {
+            slice::set{ s = m.slots, i = found, v = Slot::full{ k = key, v = value } }
+            return true
+        }
+        if ((m.used + 1) * 4 > m.slots.len * 3) {         // keep the load at most 3/4
+            if (not rehash{ .. }) { return false }        // `..` forwards &m, &heap
+        }
+        let i = free_slot{ m, key }
+        match (slice::get{ s = m.slots, i }) {
+            empty => { m.used = m.used + 1 }
+            else  => { }                                  // reuses a removed slot
+        }
+        slice::set{ s = m.slots, i, v = Slot::full{ k = key, v = value } }
+        m.len = m.len + 1
+        return true
+    }
+
+    // Removes key and returns its value, or null if it wasn't there. Never reallocates.
+    fn remove(K, V, S) { mut m: Map(K, V, S), key: K } -> ?V {
+        let i = find{ m, key }
+        if (i != null) {
+            let old = slice::get{ s = m.slots, i }
+            slice::set{ s = m.slots, i, v = Slot::removed }
+            m.len = m.len - 1
+            match (old) {
+                full{ v } => { return v }
+                else      => { }
+            }
+        }
+        return null
+    }
+
+    // Removes every entry and keeps the capacity.
+    fn clear(K, V, S) { mut m: Map(K, V, S) } {
+        slice::fill{ s = m.slots, v = Slot::empty }
+        m.len = 0
+        m.used = 0
+    }
+
+    fn free(K, V, S) { mut m: Map(K, V, S), mut heap: S } {
+        alloc::resize{ realloc = m.realloc, &heap, mem = m.slots, count = 0 }   // result discarded
+        m.slots = slice::empty(Slot(K, V)){}
+        m.len = 0
+        m.used = 0
+    }
+
+    // Iterates in no particular order. Start `cursor` at 0 and call until null:
+    //
+    //   let mut cursor: usize = 0
+    //   while (true) {
+    //       match (map::next{ m, &cursor }) {
+    //           null          => { break }
+    //           some{ value } => { use value.key and value.value }
+    //       }
+    //   }
+    //
+    // `remove` is allowed while iterating; `put` is not.
+    fn next(K, V, S) { m: Map(K, V, S), mut cursor: usize } -> ?Entry(K, V) {
+        while (cursor < m.slots.len) {
+            let i = cursor
+            cursor = cursor + 1
+            match (slice::get{ s = m.slots, i }) {
+                full{ k, v } => { return Entry{ key = k, value = v } }
+                else         => { }
+            }
+        }
+        return null
+    }
+
+    fn each(K, V, S) { m: Map(K, V, S), f: &fn{ key: K, value: V } } {
+        let mut i: usize = 0
+        while (i < m.slots.len) {
+            match (slice::get{ s = m.slots, i }) {
+                full{ k, v } => { f{ key = k, value = v } }
+                else         => { }
+            }
+            i = i + 1
+        }
+    }
+
+    // ---- hash and equality functions for common key types
+
+    fn hash_i32   { key: i32 }   -> u64 { return @trunc(u64, key) }
+    fn hash_i64   { key: i64 }   -> u64 { return @trunc(u64, key) }
+    fn hash_u32   { key: u32 }   -> u64 { return key }
+    fn hash_u64   { key: u64 }   -> u64 { return key }
+    fn hash_usize { key: usize } -> u64 { return key }
+
+    fn eq_i32   { a: i32, b: i32 }     -> bool { return a == b }
+    fn eq_i64   { a: i64, b: i64 }     -> bool { return a == b }
+    fn eq_u32   { a: u32, b: u32 }     -> bool { return a == b }
+    fn eq_u64   { a: u64, b: u64 }     -> bool { return a == b }
+    fn eq_usize { a: usize, b: usize } -> bool { return a == b }
+
+    // A multiply-add over the bytes. `home` spreads the result, so it needn't be well mixed.
+    fn hash_bytes { key: slice::Slice(u8) } -> u64 {
+        let mut h: u64 = 14695981039346656037
+        let mut i: usize = 0
+        while (i < key.len) {
+            h = @wrap_mul(@wrap_add(h, @as(u64, slice::get{ s = key, i })), 1099511628211)
+            i = i + 1
+        }
+        return h
+    }
+
+    fn eq_bytes { a: slice::Slice(u8), b: slice::Slice(u8) } -> bool {
+        return ascii::eq{ a = ascii::String{ bytes = a }, b = ascii::String{ bytes = b } }
+    }
+
+    fn hash_string { key: ascii::String } -> u64 {
+        return hash_bytes{ key = key.bytes }
+    }
+
+    // ---- internals
+
+    // The slot where probing for key starts. Fibonacci hashing: the top bits of hash * 2^64/phi,
+    // which spreads even an identity hash across the table. Needs a nonzero capacity.
+    fn home(K, V, S) { m: Map(K, V, S), key: K } -> usize {
+        let h = @wrap_mul(m.hash{ key }, 11400714819323198485)
+        let cap = @as(u64, m.slots.len)
+        return @as(usize, h / (18446744073709551615 / cap + 1))   // divides by 2^64 / cap
+    }
+
+    // Index of the full slot holding key, or null. Stops at an empty slot; the load limit in
+    // `put` guarantees there is one.
+    fn find(K, V, S) { m: Map(K, V, S), key: K } -> ?usize {
+        if (m.len == 0) { return null }
+        let mut i = home{ m, key }
+        while (true) {
+            match (slice::get{ s = m.slots, i }) {
+                empty     => { return null }
+                removed   => { }
+                full{ k } => { if (m.eq{ a = k, b = key }) { return i } }
+            }
+            i = (i + 1) % m.slots.len
+        }
+    }
+
+    // The first empty or removed slot on key's probe path.
+    fn free_slot(K, V, S) { m: Map(K, V, S), key: K } -> usize {
+        let mut i = home{ m, key }
+        while (true) {
+            match (slice::get{ s = m.slots, i }) {
+                full => { }
+                else => { return i }
+            }
+            i = (i + 1) % m.slots.len
+        }
+    }
+
+    // Moves every entry into a new table with room for one more at a load of at most 1/2, and
+    // drops removed slots. Returns false on allocation failure, leaving m unchanged.
+    fn rehash(K, V, S) { mut m: Map(K, V, S), mut heap: S } -> bool {
+        let mut cap: usize = 8
+        while ((m.len + 1) * 2 > cap) { cap = cap * 2 }
+        let fresh = alloc::resize{
+            realloc = m.realloc, &heap, mem = slice::empty(Slot(K, V)){}, count = cap,
+        }
+        let old = m.slots
+        match (fresh) {
+            null          => { return false }
+            some{ value } => { m.slots = value }
+        }
+        slice::fill{ s = m.slots, v = Slot::empty }
+        m.used = m.len
+        let mut i: usize = 0
+        while (i < old.len) {
+            let slot = slice::get{ s = old, i }
+            match (slot) {
+                full{ k } => { slice::set{ s = m.slots, i = free_slot{ m, key = k }, v = slot } }
+                else      => { }
+            }
+            i = i + 1
+        }
+        alloc::resize{ realloc = m.realloc, &heap, mem = old, count = 0 }
+        return true
+    }
+}
