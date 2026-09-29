@@ -1,6 +1,6 @@
 """ctxi: interpreter for ctxlang.
 
-    python -m ctxi program.ctx [--check] [--stack BYTES]
+    python -m ctxi program.ctx [--check] [--stack BYTES] [args...] [-- args...]
 """
 
 import argparse
@@ -14,6 +14,7 @@ from .parser import parse
 from .checker import check
 from .natives import natives
 from .runtime import Runtime, Trap
+from .types import struct_fields
 
 STD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'std')
 
@@ -31,17 +32,39 @@ def load(src, file=None):
     return check(parse(src, file), std_decls(), natives())
 
 
-def run_source(src, file=None, out=None, err=None, inp=None, stack_size=16 << 20):
+def run_source(src, file=None, out=None, err=None, inp=None, stack_size=16 << 20, args=()):
+    """Runs a program. Returns its exit code: what main returns, or 0."""
     c = load(src, file)
     rt = Runtime(c, stack_size=stack_size, out=out, err=err, inp=inp)
     main = c.main
-    cap = rt.sp
-    rt.sp += 16
-    args = {name: (cap if mut else b'') for name, mut, _ in main.sig_fields}
+    cap = rt.push_bytes(bytes(16), 16)
+    fields = {}
+    for name, mut, t in main.sig_fields:
+        if mut:
+            fields[name] = cap
+        elif name == 'args':
+            fields[name] = main_args(rt, t, args)
+        else:
+            fields[name] = b''
     try:
-        rt.get_callable(main, []).call(args)
+        code = rt.get_callable(main, []).call(fields)
     finally:
         rt.flush()
+        rt.close_files()
+    return code or 0
+
+
+def main_args(rt, t, args):
+    """Places the command-line arguments in memory and returns main's `args` slice."""
+    elem = struct_fields(t)[0][1].elem.elem          # Slice(u8), from Slice(Slice(u8)).ptr: ?*T
+    size = rt.layout(elem).size
+    views = []
+    for a in args:
+        data = os.fsencode(a)
+        views.append(rt.make_slice(elem, rt.push_bytes(data) if data else 0, len(data)))
+    base = rt.push_bytes(b''.join(views), 8) if views else 0
+    assert all(len(v) == size for v in views)
+    return rt.make_slice(t, base, len(views))
 
 
 def fmt_pos(path, pos):
@@ -57,7 +80,15 @@ def main(argv=None):
     ap.add_argument('file')
     ap.add_argument('--check', action='store_true', help='only parse and type-check')
     ap.add_argument('--stack', type=int, default=16 << 20, help='stack size in bytes')
+    ap.add_argument('args', nargs='*', help="the program's arguments, in main's `args`; "
+                                            "put any that start with '-' after --")
+    argv = sys.argv[1:] if argv is None else list(argv)
+    rest = []
+    if '--' in argv:
+        i = argv.index('--')
+        argv, rest = argv[:i], argv[i + 1:]
     a = ap.parse_args(argv)
+    a.args += rest
     with open(a.file, encoding='utf-8') as f:
         src = f.read()
 
@@ -68,7 +99,7 @@ def main(argv=None):
             if a.check:
                 load(src, a.file)
             else:
-                run_source(src, a.file, stack_size=a.stack)
+                result[0] = run_source(src, a.file, stack_size=a.stack, args=a.args)
         except CompileError as e:
             sys.stdout.flush()
             print(f'{fmt_pos(a.file, e.pos)}: error: {e.msg}', file=sys.stderr)

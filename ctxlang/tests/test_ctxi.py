@@ -1555,5 +1555,231 @@ fn main { mut io: Io } {
                                 '`defer` takes a call, an assignment or a block')
 
 
+FS_MAIN = """
+fn main { mut io: Io, mut fs: Fs, args: slice::Slice(slice::Slice(u8)) } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+%s
+}
+"""
+
+
+def show_error():
+    return """
+fn show { mut io: Io, e: fs::Error } {
+    let code = match (e) {
+        not_found => { 1 } permission_denied => { 2 } is_directory => { 3 } exists => { 4 }
+        not_directory => { 5 } bad_file => { 6 } out_of_memory => { 7 } other => { 8 }
+    }
+    io::println_i64{ &io, n = code }
+}
+"""
+
+
+class Fs(Base):
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = self.tmp.name
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def path(self, name):
+        return os.path.join(self.dir, name)
+
+    def run_fs(self, body, args=(), extra=''):
+        out = io.StringIO()
+        code = run_source(extra + FS_MAIN % body, out=out, args=list(args))
+        return out.getvalue(), code
+
+    def test_read_all_and_write_all(self):
+        src, dst = self.path('in.txt'), self.path('out.txt')
+        with open(src, 'wb') as f:
+            f.write(b'hello\nfrom a file\n')
+        out, code = self.run_fs("""
+    let text = match (fs::read_all{ &fs, &heap, realloc = arena::alloc, path = slice::get{ s = args, i = 0 } }) {
+        ok{ value }  => { value }
+        err{ error } => { return 1 }
+    }
+    io::print{ &io, s = ascii::from{ bytes = text } }
+    let wrote = fs::write_all{ &fs, path = slice::get{ s = args, i = 1 }, bytes = text }
+    io::println_u64{ &io, n = result::unwrap{ r = wrote } }
+    io::println_u64{ &io, n = result::unwrap{ r = fs::size{ &fs, path = slice::get{ s = args, i = 1 } } } }
+    return 0
+""", [src, dst])
+        self.assertEqual((out, code), ('hello\nfrom a file\n18\n18\n', 0))
+        with open(dst, 'rb') as f:
+            self.assertEqual(f.read(), b'hello\nfrom a file\n')
+
+    def test_read_all_large_and_empty(self):
+        big, empty = self.path('big.bin'), self.path('empty.bin')
+        data = bytes(i % 251 for i in range(10000))
+        with open(big, 'wb') as f:
+            f.write(data)
+        open(empty, 'wb').close()
+        out, _ = self.run_fs("""
+    let a = result::unwrap{ r = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = slice::get{ s = args, i = 0 } } }
+    io::println_u64{ &io, n = a.len }
+    let mut sum: u64 = 0
+    let mut i: usize = 0
+    while (i < a.len) {
+        sum = sum + slice::get{ s = a, i }
+        i = i + 1
+    }
+    io::println_u64{ &io, n = sum }
+    let b = result::unwrap{ r = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = slice::get{ s = args, i = 1 } } }
+    io::println_u64{ &io, n = b.len }
+    return 0
+""", [big, empty])
+        self.assertEqual(out, f'10000\n{sum(data)}\n0\n')
+
+    def test_open_read_write_close(self):
+        p = self.path('f.txt')
+        out, _ = self.run_fs("""
+    let path = slice::get{ s = args, i = 0 }
+    let w = result::unwrap{ r = fs::open{ &fs, path, mode = fs::Mode::create } }
+    let a = "abc"
+    fs::write{ &fs, file = w, bytes = slice::of(u8){ a = &a } }
+    io::println_bool{ &io, n = fs::close{ &fs, file = w } == null }
+    let x = fs::open{ &fs, path, mode = fs::Mode::append }
+    if (result::is_ok{ r = x }) {
+        let d = "de"
+        fs::write{ &fs, file = result::unwrap{ r = x }, bytes = slice::of(u8){ a = &d } }
+    }
+    let r = result::unwrap{ r = fs::open{ &fs, path, mode = fs::Mode::read } }
+    defer fs::close{ &fs, file = r }
+    let mut buf: [2]u8
+    let mut total: usize = 0
+    while (true) {
+        let n = result::unwrap{ r = fs::read{ &fs, file = r, into = slice::of(u8){ a = &buf } } }
+        if (n == 0) { break }
+        io::print{ &io, s = ascii::from{ bytes = slice::sub{ s = slice::of(u8){ a = &buf }, lo = 0, hi = n } } }
+        total = total + n
+    }
+    io::newline{ &io }
+    io::println_u64{ &io, n = total }
+    return 0
+""", [p])
+        self.assertEqual(out, 'true\nabcde\n5\n')
+
+    def test_errors(self):
+        existing, missing = self.path('there.txt'), self.path('missing.txt')
+        open(existing, 'wb').close()
+        out, _ = self.run_fs("""
+    let there = slice::get{ s = args, i = 0 }
+    let missing = slice::get{ s = args, i = 1 }
+    let dir = slice::get{ s = args, i = 2 }
+    let nested = slice::get{ s = args, i = 3 }
+    let e1 = result::error{ r = fs::open{ &fs, path = missing, mode = fs::Mode::read } }
+    if (e1 != null) { show{ &io, e = e1 } }
+    let e2 = result::error{ r = fs::open{ &fs, path = there, mode = fs::Mode::create } }
+    if (e2 != null) { show{ &io, e = e2 } }
+    let e3 = result::error{ r = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = dir } }
+    if (e3 != null) { show{ &io, e = e3 } }
+    let e4 = fs::close{ &fs, file = fs::File{ id = 999 } }
+    if (e4 != null) { show{ &io, e = e4 } }
+    let e5 = fs::remove{ &fs, path = missing }
+    if (e5 != null) { show{ &io, e = e5 } }
+    io::println_bool{ &io, n = fs::remove{ &fs, path = there } == null }
+    io::println_bool{ &io, n = result::is_err{ r = fs::size{ &fs, path = there } } }
+    let e6 = result::error{ r = fs::open{ &fs, path = nested, mode = fs::Mode::write } }
+    if (e6 != null) { show{ &io, e = e6 } }
+    let empty = slice::empty(u8){}
+    let e7 = result::error{ r = fs::size{ &fs, path = empty } }
+    if (e7 != null) { show{ &io, e = e7 } }
+    return 0
+""", [existing, missing, self.dir, os.path.join(self.dir, 'no_such_dir', 'x.txt')], show_error())
+        self.assertEqual(out, '1\n4\n3\n6\n1\ntrue\ntrue\n1\n1\n')
+
+    def test_read_all_out_of_memory(self):
+        p = self.path('big.bin')
+        with open(p, 'wb') as f:
+            f.write(bytes(5000))
+        out, _ = self.run_fs("""
+    let mut small: [100]u8
+    let mut tiny = arena::new{ buf = slice::of(u8){ a = &small } }
+    let e = result::error{ r = fs::read_all{ &fs, heap = &tiny, realloc = arena::alloc, path = slice::get{ s = args, i = 0 } } }
+    if (e != null) { show{ &io, e } }
+    return 0
+""", [p], show_error())
+        self.assertEqual(out, '7\n')
+
+    def test_exit_code_and_args(self):
+        out, code = self.run_fs("""
+    io::println_u64{ &io, n = args.len }
+    let a = ascii::from{ bytes = slice::get{ s = args, i = 1 } }
+    io::println{ &io, s = a }
+    io::println_u64{ &io, n = slice::get{ s = args, i = 2 }.len }
+    return 3
+""", ['x', 'second', ''])
+        self.assertEqual((out, code), ('3\nsecond\n0\n', 3))
+
+    def test_no_args(self):
+        out, code = self.run_fs('    io::println_u64{ &io, n = args.len }\n    return 0')
+        self.assertEqual((out, code), ('0\n', 0))
+
+    def test_main_without_return_exits_zero(self):
+        self.assertEqual(run_source('fn main { mut io: Io } { }', out=io.StringIO()), 0)
+
+    def test_main_return_type(self):
+        self.assertCompileError('fn main { mut io: Io } -> i64 { return 0 }', '`main` can only return i32')
+
+    def test_main_args_type(self):
+        self.assertCompileError('fn main { args: slice::Slice(u8) } { }', '`args` must have type')
+
+    def test_main_field_must_be_capability(self):
+        self.assertCompileError('fn main { n: i32 } { }', 'must have a capability type (Io, Fs)')
+
+    def test_fs_needs_capability(self):
+        self.assertCompileError("""
+fn helper { path: slice::Slice(u8) } { fs::remove{ path } }
+fn main { mut fs: Fs } { }
+""", 'missing `fs`')
+
+
+class WordCountExample(Base):
+    def setUp(self):
+        import tempfile
+        with open(os.path.join(ROOT, 'examples', 'wordcount.ctx'), encoding='utf-8') as f:
+            self.src = f.read()
+        self.tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_wc(self, args):
+        out, err = io.StringIO(), io.StringIO()
+        code = run_source(self.src, out=out, err=err, args=args)
+        return out.getvalue(), err.getvalue(), code
+
+    def test_counts(self):
+        p = os.path.join(self.tmp.name, 'words.txt')
+        with open(p, 'wb') as f:
+            f.write(b'The cat and the dog.\nA cat, the bird!\nand THE end')
+        self.assertEqual(self.run_wc([p]),
+                         ('lines: 3\nwords: 12\ndistinct: 7\nmost common: the 4\n', '', 0))
+
+    def test_tie_goes_to_alphabetically_first(self):
+        p = os.path.join(self.tmp.name, 'tie.txt')
+        with open(p, 'wb') as f:
+            f.write(b'b a b a c\n')
+        self.assertEqual(self.run_wc([p])[0], 'lines: 1\nwords: 5\ndistinct: 3\nmost common: a 2\n')
+
+    def test_usage(self):
+        self.assertEqual(self.run_wc([]), ('', 'usage: wordcount FILE\n', 2))
+
+    def test_missing_file(self):
+        out, err, code = self.run_wc([os.path.join(self.tmp.name, 'nope.txt')])
+        self.assertEqual((out, code), ('', 1))
+        self.assertTrue(err.endswith('nope.txt: no such file\n'))
+
+    def test_not_ascii(self):
+        p = os.path.join(self.tmp.name, 'bin')
+        with open(p, 'wb') as f:
+            f.write(b'caf\xc3\xa9')
+        self.assertEqual(self.run_wc([p]), ('', 'not an ASCII text file\n', 1))
+
+
 if __name__ == '__main__':
     unittest.main()

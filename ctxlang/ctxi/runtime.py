@@ -163,6 +163,8 @@ class Runtime:
         self.const_busy = set()
         self.streams = [out or sys.stdout, err or sys.stderr]
         self.inp = inp if inp is not None else sys.stdin.buffer
+        self.files = {}           # handle -> open Python file, for std/fs.ctx
+        self.next_file = 1
         mem = self.mem
         self.u64_load = lambda a: U64.unpack_from(mem, a)[0]
         self.u64_store = lambda a, v: U64.pack_into(mem, a, v)
@@ -184,6 +186,31 @@ class Runtime:
         if TAG.unpack_from(v, poff)[0] == 0:
             return 0, n
         return U64.unpack_from(v, poff + self.layout(pt).pay_off)[0], n
+
+    def make_slice(self, t, addr, n):
+        """The memory image of a `slice::Slice(T)` value of type t."""
+        lay = self.layout(t)
+        _, pt, poff = next(f for f in lay.fields if f[0] == 'ptr')
+        buf = bytearray(lay.size)
+        if n:
+            TAG.pack_into(buf, poff, 1)
+            U64.pack_into(buf, poff + self.layout(pt).pay_off, addr)
+        U64.pack_into(buf, lay.offs['len'], n)
+        return bytes(buf)
+
+    def push_bytes(self, data, align=1):
+        """Copies data to the bottom of the stack, below main's frame. Returns its address."""
+        addr = align_up(self.sp, align)
+        self.sp = addr + len(data)
+        if self.sp > self.end:
+            raise Trap('stack overflow')
+        self.mem[addr:self.sp] = data
+        return addr
+
+    def close_files(self):
+        for f in self.files.values():
+            f.close()
+        self.files.clear()
 
     def span(self, addr, n, pos=None):
         if n and (addr < GUARD or addr + n > self.end):

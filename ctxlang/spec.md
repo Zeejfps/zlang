@@ -1,6 +1,6 @@
 # ctxlang: spec draft
 
-Example: [examples/list.ctx](examples/list.ctx)
+Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound functions), [examples/wordcount.ctx](examples/wordcount.ctx) (files, arguments, maps).
 
 ## 1. Top level
 
@@ -382,9 +382,15 @@ The compiler checks, within each function, that the address of a local doesn't o
 
 ## 15. Entry point
 
+```
+fn main { mut io: Io, mut fs: Fs, args: slice::Slice(slice::Slice(u8)) } -> i32 { ... }
+```
+
 1. `fn main { ... }` is the entry point.
-2. Every field of `main` must have a **capability type**. The runtime supplies them.
-3. User code can't construct capability types. Current capability types: `Io`.
+2. Every field of `main` must have a **capability type**, except a read-only field `args`. The runtime supplies them. A program declares only the ones it uses.
+3. User code can't construct capability types. Current capability types: `Io` (console, §17 `io`) and `Fs` (files, §17 `fs`).
+4. `args: slice::Slice(slice::Slice(u8))` holds the command-line arguments that follow the program, as bytes.
+5. `main` may return `i32`: the program's exit code. Without a return type it exits with 0.
 
 ## 16. Open questions
 
@@ -404,12 +410,13 @@ The compiler checks, within each function, that the address of a local doesn't o
 
 1. The standard library is ctxlang source (`std/*.ctx`), except for a few functions provided by the runtime (natives). It is part of every program.
 2. Its namespaces are visible from user code as if declared at top level. A user declaration with the same name shadows a std one (§10).
-3. It allocates only through an allocator the caller passes in (§14), and does IO only through an `Io` the caller passes in (§15).
+3. It allocates only through an allocator the caller passes in (§14), and does IO only through an `Io` or `Fs` the caller passes in (§15).
 
 | Namespace | Contents |
 |---|---|
 | `slice` | `Slice(T)`, `from`, `of` (view an array), `empty`, `is_empty`, `at`, `get`, `set`, `sub`, `cast`, `copy`, `fill` |
 | `Result(T, E)` | Declared at the top level: `union Result(T, E) { ok{ value: T }, err{ error: E } }`. Namespace `result`: `is_ok`, `is_err`, `value`, `error`, `value_or`, `unwrap`, `ok_or`. |
+| `fs` | `File`, `Mode` (`read`, `write`, `append`, `create`), `Error`; `open`, `read`, `write`, `close`, `size`, `remove`, and `read_all` (into memory from an allocator) and `write_all`. Every function takes `mut fs: Fs` and reports failure as a `Result(T, fs::Error)` or `?fs::Error`. Natives: `sys_open`, `sys_read`, `sys_write`, `sys_close`, `sys_size`, `sys_remove`. |
 | `alloc` | `Bytes`, the allocator type `Fn(S)`, typed `resize(T, S)` |
 | `arena` | `Arena`, a bump allocator: `new`, `alloc` (an `alloc::Fn(Arena)`), `reset`, `remaining` |
 | `list` | `List(T, S)`: `new`, `reserve`, `push`, `pop`, `get`, `set`, `at`, `items`, `clear`, `each`, `free` |

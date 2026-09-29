@@ -14,6 +14,10 @@ from .types import (
 )
 
 
+CAPABILITIES = ('Io', 'Fs')
+ARGS_TYPE = 'slice::Slice(slice::Slice(u8))'     # main's optional `args` field
+
+
 class Namespace:
     def __init__(self, name, parent):
         self.name, self.parent = name, parent
@@ -123,7 +127,8 @@ class Checker:
         self.universe = Namespace(None, None)
         for name, t in PRIMS.items():
             self.universe.paths[name] = t
-        self.universe.paths['Io'] = Cap('Io')
+        for cap in CAPABILITIES:
+            self.universe.paths[cap] = Cap(cap)
         # User code sees std names unqualified, and its own declarations shadow them.
         self.std = Namespace(None, self.universe)
         self.root = Namespace(None, self.std)
@@ -207,11 +212,18 @@ class Checker:
             self.err('no `fn main` entry point', (1, 1))
         if m.tparams:
             self.err('`main` cannot be generic', m.pos)
-        if m.ret_t is not VOID:
-            self.err('`main` cannot return a value', m.pos)
+        if m.ret_t is not VOID and prune(m.ret_t) is not I32:
+            self.err(f'`main` can only return i32 (the exit code), not {tstr(m.ret_t)}', m.pos)
+        args_t = self.rtype(parse_type(ARGS_TYPE), self.std, {})
         for name, mut, t in m.sig_fields:
+            if name == 'args' and not mut:
+                if not unify(t, args_t):
+                    self.err(f'`main` context field `args` must have type {ARGS_TYPE}, got {tstr(t)}', m.pos)
+                continue
             if not isinstance(prune(t), Cap):
-                self.err(f'`main` context field `{name}` must have a capability type (Io), got {tstr(t)}', m.pos)
+                caps = ', '.join(CAPABILITIES)
+                self.err(f'`main` context field `{name}` must have a capability type ({caps}) '
+                         f'or be `args: {ARGS_TYPE}`, got {tstr(t)}', m.pos)
         self.main = m
 
     # ---------------------------------------------------------------- lookup
