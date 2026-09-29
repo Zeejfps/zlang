@@ -395,6 +395,37 @@ fn main { mut io: Io } { let x = r{ n = 0 } }
 """, out=io.StringIO(), stack_size=1 << 20)
 
 
+class Builtins(Base):
+    def test_unknown_builtin(self):
+        self.assertCompileError('fn main { mut io: Io } { let x = @nope(1) }', 'unknown builtin `@nope`')
+
+    def test_wrong_argument_count(self):
+        self.assertCompileError('fn main { mut io: Io } { let x = @as(i32) }',
+                                'wrong number of arguments: @as(T, x)')
+        self.assertCompileError('fn main { mut io: Io } { let x = @size_of(i32, 1) }',
+                                'wrong number of arguments: @size_of(T)')
+        self.assertCompileError('fn main { mut io: Io } { @trap(1) }',
+                                'wrong number of arguments: @trap()')
+        self.assertCompileError('fn main { mut io: Io } { let x = @wrap_add(1) }',
+                                'wrong number of arguments: @wrap_add(a, b)')
+
+    def test_parentheses_required(self):
+        self.assertCompileError('fn main { mut io: Io } { @trap }', "expected '(' after @trap")
+
+    def test_type_argument_parsed_as_type(self):
+        # `S` names both a struct and a local; in a type position it can only be the struct.
+        self.assertOutput("""
+struct S { a: u8, b: u32 }
+fn main { mut io: Io } {
+    let S: u8 = 1
+    io::println_u64{ &io, n = @size_of(S) + @align_of(*S) + @as(u64, S) }
+}
+""", '17\n')
+
+    def test_value_argument_parsed_as_expression(self):
+        self.assertCompileError('fn main { mut io: Io } { let x = @addr(i32) }', '`i32` is a type, not a value')
+
+
 class LoopControl(Base):
     def test_break_and_continue(self):
         self.assertOutput("""

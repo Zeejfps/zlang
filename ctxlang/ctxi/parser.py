@@ -4,8 +4,20 @@ from .lexer import CompileError, lex
 from . import ast as A
 
 CMP_OPS = ('==', '!=', '<', '<=', '>', '>=')
-TYPE_BUILTINS = {'size_of': (True, 0), 'align_of': (True, 0),
-                 'as': (True, 1), 'trunc': (True, 1), 'cast': (True, 1)}
+# Every builtin's signature (spec §13): (type arguments, value arguments, usage).
+# Type arguments always come first, so the name alone says how to parse each argument.
+BUILTINS = {
+    'size_of':  (1, 0, '@size_of(T)'),
+    'align_of': (1, 0, '@align_of(T)'),
+    'as':       (1, 1, '@as(T, x)'),
+    'trunc':    (1, 1, '@trunc(T, x)'),
+    'cast':     (1, 1, '@cast(*U, q)'),
+    'addr':     (0, 1, '@addr(q)'),
+    'wrap_add': (0, 2, '@wrap_add(a, b)'),
+    'wrap_sub': (0, 2, '@wrap_sub(a, b)'),
+    'wrap_mul': (0, 2, '@wrap_mul(a, b)'),
+    'trap':     (0, 0, '@trap()'),
+}
 
 
 class Parser:
@@ -522,21 +534,26 @@ class Parser:
     def builtin(self):
         tok = self.next()
         name = tok.val
+        if name not in BUILTINS:
+            self.err(f'unknown builtin `@{name}`', tok)
+        ntypes, nvalues, usage = BUILTINS[name]
         if not self.is_op('('):
-            self.err(f"expected '(' after @{name}")
+            self.err(f"expected '(' after @{name}: {usage}")
         self.next()
-        targ = None
-        args = []
-        if name in TYPE_BUILTINS:
-            targ = self.type()
-            if TYPE_BUILTINS[name][1]:
-                self.expect_op(',')
-        while not self.is_op(')'):
-            args.append(self.expr())
-            if not self.accept_op(','):
-                break
-        self.expect_op(')')
-        return A.Builtin(name, targ, args, tok.pos)
+        parts = []
+        for k in range(ntypes + nvalues):
+            if k and not self.accept_op(','):
+                self.err(f'wrong number of arguments: {usage}')
+            if self.is_op(')'):
+                self.err(f'wrong number of arguments: {usage}')
+            parts.append(self.type() if k < ntypes else self.expr())
+        if parts:
+            self.accept_op(',')
+        if not self.is_op(')'):
+            self.err(f'wrong number of arguments: {usage}')
+        self.next()
+        targ = parts[0] if ntypes else None
+        return A.Builtin(name, targ, parts[ntypes:], tok.pos)
 
 
 def parse(src, file=None):

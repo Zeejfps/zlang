@@ -1240,13 +1240,7 @@ class Checker:
     # ---- builtins
 
     def e_Builtin(self, e, exp):
-        n, args = e.name, e.args
-        want = {'size_of': 0, 'align_of': 0, 'as': 1, 'trunc': 1, 'cast': 1, 'addr': 1,
-                'wrap_add': 2, 'wrap_sub': 2, 'wrap_mul': 2, 'trap': 0}
-        if n not in want:
-            self.err(f'unknown builtin `@{n}`', e.pos)
-        if len(args) != want[n]:
-            self.err(f'@{n} takes {want[n]} value argument(s)', e.pos)
+        n, args = e.name, e.args     # the parser checked the name and the argument count
         if e.targ is not None:
             e.targ_t = self.rtype(e.targ, self.ns, self.tps)
         if n in ('size_of', 'align_of'):

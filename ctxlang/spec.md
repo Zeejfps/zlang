@@ -298,16 +298,20 @@ Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?
 ## 13. Builtins
 
 1. A name starting with `@` is a compiler builtin. User code can't declare such names.
-2. Arguments are in `( )`. They are types or expressions. `@name(...)` is always a builtin call, never generic application (§9).
+2. `@name(...)` is always a builtin call, never generic application (§9). The parentheses are required, even with no arguments.
+3. Each builtin has the fixed signature below. Type arguments always come before value arguments, so the builtin's name alone says whether each argument is parsed as a type or an expression.
+4. An unknown builtin, or a call with the wrong number of arguments, is a syntax error.
 
-- `@size_of(T) -> usize`
-- `@as(T, x) -> T`: converts a number to numeric type `T`. Traps if the value isn't representable in `T`. Float to integer rounds toward zero and traps on NaN. Integer to float rounds to nearest.
-- `@trunc(T, x) -> T`: converts an integer to integer type `T`, keeping the low bits.
-- `@align_of(T) -> usize`: the required alignment of `T`. A power of two.
-- `@addr(q) -> usize`: the address of pointer `q` as an integer.
-- `@wrap_add(a, b)`, `@wrap_sub(a, b)`, `@wrap_mul(a, b)`: integer arithmetic that wraps instead of trapping.
-- `@cast(*U, q) -> *U`: reinterprets pointer `q`. Unchecked.
-- `@trap()`: stops the program. Never returns. It ends a path for return and assignment checks.
+| Signature | Result | Meaning |
+|---|---|---|
+| `@size_of(T)` | `usize` | The size of `T` in bytes. |
+| `@align_of(T)` | `usize` | The required alignment of `T`. A power of two. |
+| `@as(T, x)` | `T` | Converts number `x` to numeric type `T`. Traps if the value isn't representable in `T`. Float to integer rounds toward zero and traps on NaN. Integer to float rounds to nearest. |
+| `@trunc(T, x)` | `T` | Converts integer `x` to integer type `T`, keeping the low bits. |
+| `@cast(*U, q)` | `*U` | Reinterprets pointer `q`. Unchecked. |
+| `@addr(q)` | `usize` | The address of pointer `q` as an integer. |
+| `@wrap_add(a, b)`, `@wrap_sub(a, b)`, `@wrap_mul(a, b)` | type of `a` | Integer arithmetic that wraps instead of trapping. `a` and `b` have the same integer type. |
+| `@trap()` | none | Stops the program. Never returns. It ends a path for return and assignment checks. |
 
 ## 14. Memory
 
