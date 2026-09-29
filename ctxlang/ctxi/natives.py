@@ -7,7 +7,7 @@ import struct
 from fractions import Fraction
 
 from .checker import NativeFn
-from .runtime import TAG, f32r, panic
+from .runtime import PAGE, TAG, align_up, f32r, panic
 
 
 def _write(rt, nf, args):
@@ -192,6 +192,20 @@ def _remove(rt, nf, args):
     return 0
 
 
+# ---- mem
+
+MAX_MEMORY = 1 << 32     # total bytes mem::pages hands out, like a 32-bit address space
+
+
+def _pages(rt, nf, args):
+    size = align_up(args['size'], PAGE)
+    t = nf.ret_t
+    if size == 0 or rt.end + size > MAX_MEMORY:
+        return rt.make_slice(t, 0, 0)
+    addr = rt.grow(size)
+    return rt.make_slice(t, addr, size if addr else 0)
+
+
 def natives():
     return [
         NativeFn(('io',), 'write',
@@ -218,6 +232,8 @@ def natives():
                  [('fs', True, 'Fs'), ('path', False, 'slice::Slice(u8)')], 'i64', _size),
         NativeFn(('fs',), 'sys_remove',
                  [('fs', True, 'Fs'), ('path', False, 'slice::Slice(u8)')], 'i64', _remove),
+        NativeFn(('mem',), 'sys_pages',
+                 [('mem', True, 'Mem'), ('size', False, 'usize')], 'slice::Slice(u8)', _pages),
         NativeFn(('ascii',), 'f64_parse', [('text', False, 'slice::Slice(u8)')], 'f64', _parse_f64),
         NativeFn(('ascii',), 'f32_parse', [('text', False, 'slice::Slice(u8)')], 'f32', _parse_f32),
     ]

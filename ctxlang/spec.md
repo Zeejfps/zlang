@@ -376,9 +376,10 @@ Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?
 
 1. There is no static memory. `const NAME: T = e` declares a constant. `e` must be computable at compile time: literals, other consts, operators, `@size_of`, `@align_of`, and struct, union and array literals of these. `const` data is immutable and its location is unobservable: a const is a value, not a place, so `&C` is an error.
 2. Locals and context fields live on the stack.
-3. Memory not on the stack is obtained only by calling an allocator function, and is accessed only through pointers.
+3. Memory not on the stack comes from `mem::pages`, which needs the `Mem` capability (§15), or from an allocator function over memory the caller provides. It is accessed only through pointers.
    - Allocators are byte-level: `alloc::Fn(S) = fn{ mut heap: S, mem: Bytes, new: usize, align: usize } -> ?Bytes`. The result must be aligned to `align`.
-   - Typed code calls the standard library's `alloc::resize(T, S)`, which passes `count * @size_of(T)` and `@align_of(T)` and casts the result.
+   - Typed code calls the standard library's `alloc::resize(T, S)`, which passes `count * @size_of(T)` and `@align_of(T)` and casts the result, or `alloc::new(T, S)` for one initialized `T`.
+   - Pages are never freed. They live until the program ends.
 4. The size of every local is known at compile time.
 5. Structs, unions and arrays are values. Assignment and `return` copy them.
 6. A `mut` context field is passed as a pointer. A read-only context field is passed by copy or by reference, at the compiler's choice. §3.1 makes the choice unobservable for checked arguments. A bind always copies (§4).
@@ -411,7 +412,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 
 1. `fn main { ... }` is the entry point.
 2. Every field of `main` must have a **capability type**, except a read-only field `args`. The runtime supplies them. A program declares only the ones it uses.
-3. User code can't construct capability types. Current capability types: `Io` (console, §17 `io`) and `Fs` (files, §17 `fs`).
+3. User code can't construct capability types. Current capability types: `Io` (console, §17 `io`), `Fs` (files, §17 `fs`) and `Mem` (memory beyond the stack, §17 `mem`).
 4. `args: Args` holds the command-line arguments that follow the program, as bytes. `Args` is a top-level std alias for `slice::Slice(slice::Slice(u8))` (§17), so either spelling is accepted.
 5. `main` may return `i32`: the program's exit code. Without a return type it exits with 0.
 
@@ -425,7 +426,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 6. **Imports:** some form of `use slice::Slice` to shorten long paths?
 7. **Variant shorthand:** should `.variant{...}` be allowed when the expected type is known?
 8. **Untagged unions:** needed for C interop? Or `@cast` only?
-9. **Large stack frames:** should the compiler error or warn above a size limit? Should `main` receive an `Os` capability for page allocation?
+9. **Large stack frames:** should the compiler error or warn above a size limit? (Page allocation is now the `Mem` capability, §15.) Should pages be freeable?
 10. **Loop control:** `break` and `continue` apply to the innermost loop. Are labels needed to leave an outer loop?
 11. **Strings:** literals are `[N]u8` values (§11) and text is `ascii::String` or `utf8::String` (§17). Should `utf8::String` become the only text type, with `ascii` reduced to byte-level character tests? Should a literal be usable where a slice is expected without first binding it to a local?
 
@@ -433,7 +434,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 
 1. The standard library is ctxlang source (`std/*.ctx`), except for a few functions provided by the runtime (natives). It is part of every program.
 2. Its namespaces are visible from user code as if declared at top level. A user declaration with the same name shadows a std one (§10).
-3. It allocates only through an allocator the caller passes in (§14), and does IO only through an `Io` or `Fs` the caller passes in (§15).
+3. It allocates only through an allocator the caller passes in (§14), and does IO only through an `Io` or `Fs` the caller passes in (§15). Only `mem::pages` takes memory from the system, through a `Mem` the caller passes in.
 
 | Namespace | Contents |
 |---|---|
@@ -441,11 +442,12 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 | `Args` | Declared at the top level: `type Args = slice::Slice(slice::Slice(u8))`, the type of `main`'s `args` (§15). |
 | `Result(T, E)` | Declared at the top level: `union Result(T, E) { ok{ value: T }, err{ error: E } }`. Namespace `result`: `is_ok`, `is_err`, `value`, `error`, `value_or`, `unwrap`, `ok_or`. |
 | `fs` | `File`, `Mode` (`read`, `write`, `append`, `create`), `Error`; `open`, `read`, `write`, `close`, `size`, `remove`, and `read_all` (into memory from an allocator) and `write_all`. Every function takes `mut fs: Fs` and reports failure as a `Result(T, fs::Error)` or `?fs::Error`. Natives: `sys_open`, `sys_read`, `sys_write`, `sys_close`, `sys_size`, `sys_remove`. |
-| `alloc` | `Bytes`, the allocator type `Fn(S)`, typed `resize(T, S)` |
+| `alloc` | `Bytes`, the allocator type `Fn(S)`, typed `resize(T, S)`, and `new(T, S)` and `free(T, S)` for one `T`: `new` returns a `?*T` holding the given `value` |
+| `mem` | `pages`: at least `size` bytes of zeroed, page-aligned memory, as a `?alloc::Bytes`. Takes `mut mem: Mem`. Native: `sys_pages`. |
 | `arena` | `Arena`, a bump allocator: `new`, `alloc` (an `alloc::Fn(Arena)`), `reset`, `remaining` |
 | `list` | `List(T, S)`: `new`, `reserve`, `push`, `pop`, `get`, `set`, `at`, `items`, `clear`, `each`, `free` |
 | `map` | `Map(K, V, S)`, a hash map that holds its key type's hash and equality functions: `new`, `len`, `has`, `get`, `at`, `put`, `remove`, `clear`, `free`, `next`, `each`. `hash_*` and `eq_*` for `i32`, `i64`, `u32`, `u64`, `usize` and byte slices; `hash_string` for `ascii::String`, with `ascii::eq`; `hash_utf8` for `utf8::String`, with `utf8::eq`. |
-| `ascii` | `String { bytes: slice::Slice(u8) }`, a non-owning view of ASCII text: `from`, `of`, `empty`, `len`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, character tests and case, `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes. Natives: `f64_digits`, `f32_digits`, `f64_parse`, `f32_parse`. |
+| `ascii` | `String { bytes: slice::Slice(u8) }`, a non-owning view of ASCII text: `from`, `of`, `empty`, `len`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, character tests and case, `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes, with `push`, `push_char`, `push_i64`, `push_u64`, `push_f64`, `push_f32`. Natives: `f64_digits`, `f32_digits`, `f64_parse`, `f32_parse`. |
 | `utf8` | `String { bytes: slice::Slice(u8) }`, a non-owning view of valid UTF-8 text. Offsets are in bytes, and an offset inside a character panics; a character is a `u32` code point. `from` (checks the bytes, returning `Result(String, Invalid)` with the offset of the first bad byte), `of`, `from_ascii`, `to_ascii`, `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`. Character tests and case (ASCII only). `Cursor` and `Builder(S)` as in `ascii`, by character. |
 | `io` | `Stream`; `print`, `println`, `eprint`, `eprintln`, their `_utf8` forms for `utf8::String`, `newline`, `put_char`, `print_i64`, `print_u64`, `print_f64`, `print_f32`, `print_bool` and their `println_` forms (smaller number types widen to these), `read_line`. Natives: `write`, `read`. |
 

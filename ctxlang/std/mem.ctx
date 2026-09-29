@@ -1,0 +1,28 @@
+// std: mem. Memory beyond the stack.
+//
+// `pages` takes `mut mem: Mem`. Only `main` receives a `Mem`, from the runtime, so a function
+// can get memory this way only if its caller passes it down. Everything else allocates from
+// buffers it is given (§14), usually an arena over pages:
+//
+//   fn main { mut io: Io, mut mem: Mem } -> i32 {
+//       let some{ value = buf } = mem::pages{ &mem, size = 67108864 } else { return 1 }   // 64 MiB
+//       let mut heap = arena::new{ buf }
+//       let mut xs = list::new(i32){ realloc = arena::alloc }
+//       ...
+//   }
+//
+// Natives (provided by the runtime):
+//   sys_pages { mut mem: Mem, size: usize } -> slice::Slice(u8)
+//       `size` rounded up to a multiple of the page size, zeroed and page-aligned. Empty if
+//       `size` is 0 or there isn't enough memory.
+
+namespace mem {
+    // At least `size` bytes of zeroed, page-aligned memory. They stay valid until the program ends.
+    // Null if there isn't enough memory. Asking for 0 bytes gives an empty slice.
+    fn pages { mut mem: Mem, size: usize } -> ?alloc::Bytes {
+        if (size == 0) { return slice::empty(u8){} }
+        let got = sys_pages{ &mem, size }
+        if (got.len == 0) { return null }
+        return got
+    }
+}

@@ -407,6 +407,16 @@ namespace ascii {
         return push{ &b, &heap, s = fmt_u64{ n, into = slice::of(u8){ a = &buf } } }
     }
 
+    fn push_f64(S) { mut b: Builder(S), mut heap: S, n: f64 } -> bool {
+        let mut buf: [32]u8
+        return push{ &b, &heap, s = fmt_f64{ n, into = slice::of(u8){ a = &buf } } }
+    }
+
+    fn push_f32(S) { mut b: Builder(S), mut heap: S, n: f32 } -> bool {
+        let mut buf: [32]u8
+        return push{ &b, &heap, s = fmt_f32{ n, into = slice::of(u8){ a = &buf } } }
+    }
+
     fn clear(S) { mut b: Builder(S) } {
         list::clear{ list = &b.chars }
     }

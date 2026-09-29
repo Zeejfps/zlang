@@ -2172,13 +2172,143 @@ class Fs(Base):
         self.assertEqual(run_source(src, out=io.StringIO()), 0)
 
     def test_main_field_must_be_capability(self):
-        self.assertCompileError('fn main { n: i32 } { }', 'must have a capability type (Io, Fs)')
+        self.assertCompileError('fn main { n: i32 } { }', 'must have a capability type (Io, Fs, Mem)')
 
     def test_fs_needs_capability(self):
         self.assertCompileError("""
 fn helper { path: slice::Slice(u8) } { fs::remove{ path } }
 fn main { mut fs: Fs } { }
 """, 'missing `fs`')
+
+
+MEM_MAIN = """
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+%s
+}
+"""
+
+
+class Mem(Base):
+    def run_mem(self, body, extra=''):
+        out = io.StringIO()
+        code = run_source(extra + MEM_MAIN % body, out=out)
+        return out.getvalue(), code
+
+    def test_pages_256_mib(self):
+        out, code = self.run_mem("""
+    let some{ value = buf } = mem::pages{ &mem, size = 268435456 } else { return 1 }
+    io::println_u64{ &io, n = buf.len }
+    io::println_u64{ &io, n = @addr(slice::at{ s = buf, i = 0 }) % 4096 }
+    io::println_u64{ &io, n = slice::get{ s = buf, i = buf.len - 1 } }
+    slice::set{ s = buf, i = buf.len - 1, v = 7 }
+    io::println_u64{ &io, n = slice::get{ s = buf, i = buf.len - 1 } }
+    return 0
+""")
+        self.assertEqual((out, code), ('268435456\n0\n0\n7\n', 0))
+
+    def test_pages_round_up_and_do_not_overlap(self):
+        out, _ = self.run_mem("""
+    let some{ value = a } = mem::pages{ &mem, size = 10 } else { return 1 }
+    let some{ value = b } = mem::pages{ &mem, size = 5000 } else { return 1 }
+    io::println_u64{ &io, n = a.len }
+    io::println_u64{ &io, n = b.len }
+    slice::fill{ s = a, v = 1 }
+    slice::fill{ s = b, v = 2 }
+    io::println_u64{ &io, n = slice::get{ s = a, i = a.len - 1 } }
+    io::println_bool{ &io, n = @addr(slice::at{ s = b, i = 0 }) > @addr(slice::at{ s = a, i = a.len - 1 }) }
+    return 0
+""")
+        self.assertEqual(out, '4096\n8192\n1\ntrue\n')
+
+    def test_pages_zero_and_too_large(self):
+        out, _ = self.run_mem("""
+    let some{ value = z } = mem::pages{ &mem, size = 0 } else { return 1 }
+    io::println_u64{ &io, n = z.len }
+    if (mem::pages{ &mem, size = 1099511627776 } == null) { io::println_i64{ &io, n = -1 } }
+    return 0
+""")
+        self.assertEqual(out, '0\n-1\n')
+
+    def test_pages_are_not_stack(self):
+        # Memory from pages doesn't extend the stack: deep recursion still overflows.
+        with self.assertRaises(Panic) as cm:
+            self.run_mem("""
+    mem::pages{ &mem, size = 67108864 }
+    return down{ n = 0 }
+""", extra='fn down { n: i32 } -> i32 { let big: [1048576]u8 = [0; 1048576]; if (n == 20) { return 0 }; return down{ n = n + 1 } }\n')
+        self.assertIn('stack overflow', cm.exception.msg)
+
+    def test_pages_need_capability(self):
+        self.assertCompileError("""
+fn grab {} { mem::pages{ size = 10 } }
+fn main { mut mem: Mem } { }
+""", 'missing `mem`')
+
+    def test_alloc_new_and_free(self):
+        out, _ = self.run_mem("""
+    let some{ value = buf } = mem::pages{ &mem, size = 4096 } else { return 1 }
+    let mut heap = arena::new{ buf }
+    let mut head: ?*Node = null
+    let mut i: i64 = 1
+    while (i <= 4) {
+        let some{ value = n } = alloc::new{ realloc = arena::alloc, &heap, value = Node{ v = i, next = head } } else { return 2 }
+        head = n
+        i = i + 1
+    }
+    let mut total: i64 = 0
+    let mut cur = head
+    while (true) {
+        let some{ value = n } = cur else { break }
+        total = total * 10 + n.v
+        cur = n.next
+    }
+    io::println_i64{ &io, n = total }
+    let some{ value = h } = head else { return 3 }
+    alloc::free{ realloc = arena::alloc, &heap, p = h }
+    return 0
+""", extra='struct Node { v: i64, next: ?*Node }\n')
+        self.assertEqual(out, '4321\n')
+
+    def test_alloc_new_out_of_memory(self):
+        out, _ = self.run_mem("""
+    let mut buf: [16]u8
+    let mut heap = arena::new{ buf = slice::of(u8){ a = &buf } }
+    let a = alloc::new{ realloc = arena::alloc, &heap, value = [1, 2, 3, 4, 5] }
+    io::println_bool{ &io, n = a == null }
+    let b = alloc::new{ realloc = arena::alloc, &heap, value = 5 }
+    io::println_bool{ &io, n = b == null }
+    return 0
+""")
+        self.assertEqual(out, 'true\nfalse\n')
+
+    def test_alloc_new_zero_sized(self):
+        with self.assertRaises(Panic) as cm:
+            self.run_mem("""
+    let mut buf: [16]u8
+    let mut heap = arena::new{ buf = slice::of(u8){ a = &buf } }
+    alloc::new{ realloc = arena::alloc, &heap, value = Empty{} }
+    return 0
+""", extra='struct Empty {}\n')
+        self.assertIn('alloc::new: T is zero-sized', cm.exception.msg)
+
+    def test_builder_push_floats(self):
+        out, _ = self.run_mem("""
+    let some{ value = buf } = mem::pages{ &mem, size = 4096 } else { return 1 }
+    let mut heap = arena::new{ buf }
+    let mut b = ascii::builder{ realloc = arena::alloc }
+    ascii::push_f64{ &b, &heap, n = 0.1 }
+    ascii::push_char{ &b, &heap, c = ' ' }
+    ascii::push_f32{ &b, &heap, n = 0.1 }
+    ascii::push_char{ &b, &heap, c = ' ' }
+    ascii::push_f64{ &b, &heap, n = 1e100 }
+    io::println{ &io, s = ascii::view{ b } }
+    let mut u = utf8::builder{ realloc = arena::alloc }
+    utf8::push_f64{ b = &u, &heap, n = -2.5 }
+    utf8::push_f32{ b = &u, &heap, n = 3.0 }
+    io::println_utf8{ &io, s = utf8::view{ b = u } }
+    return 0
+""")
+        self.assertEqual(out, '0.1 0.1 1e+100\n-2.53.0\n')
 
 
 class WordCountExample(Base):

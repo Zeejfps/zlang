@@ -22,6 +22,7 @@ from .types import (
 )
 
 GUARD = 64            # addresses below this are never valid
+PAGE = 4096           # mem::pages hands out memory in multiples of this
 TAG = struct.Struct('<I')
 U64 = struct.Struct('<Q')
 F32 = struct.Struct('<f')
@@ -114,7 +115,7 @@ class FnInst(Callable):
         rt = self.rt
         fp = rt.sp
         sp = fp + self.frame
-        if sp > rt.end:
+        if sp > rt.stack_end:
             raise Panic('stack overflow')
         rt.sp = sp
         try:
@@ -152,7 +153,8 @@ class Runtime:
         import sys
         self.checker = checker
         self.mem = bytearray(GUARD + stack_size)
-        self.end = len(self.mem)
+        self.stack_end = len(self.mem)
+        self.end = len(self.mem)  # grows as mem::pages hands out memory above the stack
         self.sp = GUARD
         self.callables = [None]
         self.fn_ids = {}
@@ -202,9 +204,19 @@ class Runtime:
         """Copies data to the bottom of the stack, below main's frame. Returns its address."""
         addr = align_up(self.sp, align)
         self.sp = addr + len(data)
-        if self.sp > self.end:
+        if self.sp > self.stack_end:
             raise Panic('stack overflow')
         self.mem[addr:self.sp] = data
+        return addr
+
+    def grow(self, size):
+        """Appends `size` zero bytes at a PAGE-aligned address. Returns it, or 0 if out of memory."""
+        addr = align_up(self.end, PAGE)
+        try:
+            self.mem.extend(bytes(addr + size - self.end))
+        except MemoryError:
+            return 0
+        self.end = len(self.mem)
         return addr
 
     def close_files(self):
@@ -583,7 +595,6 @@ class Compiler:
         sv = self.expr(s.scrut)
         through = s.through
         size = lay.size
-        end = rt.end
         mem = rt.mem
         table = {}
         other = None
@@ -603,7 +614,7 @@ class Compiler:
         def match(fp):
             v = sv(fp)
             if through:
-                if v < GUARD or v + size > end:
+                if v < GUARD or v + size > rt.end:
                     panic('invalid memory access', pos)
                 tag = TAG.unpack_from(mem, v)[0]
             else:
@@ -682,11 +693,11 @@ class Compiler:
         return lambda fp: fp + off
 
     def checked(self, f, size, pos):
-        end = self.rt.end
+        rt = self.rt
 
         def chk(fp):
             a = f(fp)
-            if a < GUARD or a + size > end:
+            if a < GUARD or a + size > rt.end:
                 panic('invalid memory access', pos)
             return a
         return chk

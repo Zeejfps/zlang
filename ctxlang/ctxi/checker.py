@@ -14,7 +14,7 @@ from .types import (
 )
 
 
-CAPABILITIES = ('Io', 'Fs')
+CAPABILITIES = ('Io', 'Fs', 'Mem')
 ARGS_TYPE = 'Args'     # main's optional `args` field (std/args.ctx)
 
 
