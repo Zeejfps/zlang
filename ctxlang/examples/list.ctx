@@ -1,0 +1,347 @@
+// Growable list, generic over the element type T and the allocator state S.
+//
+// Assumed std function (not defined here):
+//   io::print_i32 { mut io: Io, n: i32 }
+
+// ---- std: slice (shown here for completeness) ----
+
+namespace slice {
+    // Zero value is the empty slice.
+    struct Slice(T) { ptr: ?*T, len: usize }
+
+    fn from(T) { ptr: *T, len: usize } -> Slice(T) {
+        return Slice{ ptr, len }
+    }
+
+    fn empty(T) {} -> Slice(T) {
+        return Slice{ ptr = null, len = 0 }
+    }
+
+    // Bounds-checked pointer to element i.
+    fn at(T) { s: Slice(T), i: usize } -> *T {
+        if (i >= s.len) { @trap() }
+        let p = s.ptr
+        if (p != null) { return p + i }
+        @trap()                                    // unreachable: len > 0 implies ptr != null
+    }
+
+    fn get(T) { s: Slice(T), i: usize } -> T {
+        return at{ s, i }.*
+    }
+
+    fn set(T) { s: Slice(T), i: usize, v: T } {
+        at{ s, i }.* = v
+    }
+
+    // Elements lo up to but not including hi.
+    fn sub(T) { s: Slice(T), lo: usize, hi: usize } -> Slice(T) {
+        if (lo > hi or hi > s.len) { @trap() }
+        let p = s.ptr
+        if (p != null) { return Slice{ ptr = p + lo, len = hi - lo } }
+        return empty(T){}
+    }
+
+    // Reinterprets the elements. Traps if the byte length doesn't divide evenly. Alignment is unchecked.
+    fn cast(T, U) { s: Slice(T) } -> Slice(U) {
+        let bytes = s.len * @size_of(T)
+        if (bytes % @size_of(U) != 0) { @trap() }
+        let p = s.ptr
+        if (p != null) { return Slice{ ptr = @cast(*U, p), len = bytes / @size_of(U) } }
+        return empty(U){}
+    }
+
+    // Copies all of src into the start of dst.
+    fn copy(T) { dst: Slice(T), src: Slice(T) } {
+        if (dst.len < src.len) { @trap() }
+        let mut i = 0
+        while (i < src.len) {
+            set{ s = dst, i, v = get{ s = src, i } }
+            i = i + 1
+        }
+    }
+}
+
+// ---- allocators ----
+
+namespace alloc {
+    type Bytes = slice::Slice(u8)
+
+    // One function allocates, resizes and frees, so alloc and free can't be mismatched.
+    //   mem.len == 0  -> allocate `new` bytes
+    //   new == 0      -> free `mem`, return an empty slice
+    //   otherwise     -> resize `mem` to `new` bytes, keeping its contents
+    // The result's address is a multiple of `align`. Returns null on failure.
+    // Byte-level, so one allocator serves every element type.
+    type Fn(S) = fn{ mut heap: S, mem: Bytes, new: usize, align: usize } -> ?Bytes
+
+    // Typed wrapper: resizes `mem` to hold `count` items of T, with T's alignment.
+    fn resize(T, S) { realloc: Fn(S), mut heap: S, mem: slice::Slice(T), count: usize } -> ?slice::Slice(T) {
+        let bytes = realloc{
+            &heap,
+            mem = slice::cast(T, u8){ s = mem },
+            new = count * @size_of(T),
+            align = @align_of(T),
+        }
+        if (bytes != null) { return slice::cast(u8, T){ s = bytes } }
+        return null
+    }
+}
+
+namespace arena {
+    // Bump allocator over a caller-provided buffer.
+    struct Arena { buf: alloc::Bytes, used: usize }
+
+    // Has type alloc::Fn(Arena).
+    fn alloc { mut heap: Arena, mem: alloc::Bytes, new: usize, align: usize } -> ?alloc::Bytes {
+        if (new == 0) { return slice::empty(u8){} }                       // individual frees are no-ops
+        if (new <= mem.len) { return slice::sub{ s = mem, lo = 0, hi = new } }   // shrink in place
+
+        let p = heap.buf.ptr
+        if (p != null) {
+            // Round the absolute address up to a multiple of align.
+            let addr = @addr(p) + heap.used
+            let start = heap.used + (align - addr % align) % align
+            if (start + new > heap.buf.len) { return null }
+
+            let out = slice::sub{ s = heap.buf, lo = start, hi = start + new }
+            heap.used = start + new
+            slice::copy{ dst = out, src = mem }
+            return out
+        }
+        return null                                                        // empty buffer
+    }
+
+    fn reset { mut heap: Arena } {
+        heap.used = 0
+    }
+}
+
+// ---- list ----
+
+namespace list {
+    struct List(T, S) {
+        items:   slice::Slice(T),   // capacity is items.len
+        len:     usize,
+        realloc: alloc::Fn(S),      // `fn`, not `&fn`: a bound function can't be passed here
+        // The heap is NOT stored here. Every call that allocates takes it via its context.
+    }
+
+    fn new(T, S) { realloc: alloc::Fn(S) } -> List(T, S) {
+        return List{ items = slice::empty(T){}, len = 0, realloc }
+    }
+
+    // Ensures room for `extra` more items. Returns false on allocation failure.
+    fn reserve(T, S) { mut list: List(T, S), mut heap: S, extra: usize } -> bool {
+        let need = list.len + extra
+        if (need <= list.items.len) { return true }
+
+        let mut cap = list.items.len
+        if (cap == 0) { cap = 4 }
+        while (cap < need) { cap = cap * 2 }
+
+        let items = alloc::resize{ realloc = list.realloc, &heap, mem = list.items, count = cap }
+        match (items) {
+            null          => { return false }
+            some{ value } => { list.items = value }
+        }
+        return true
+    }
+
+    fn push(T, S) { mut list: List(T, S), mut heap: S, item: T } -> bool {
+        if (not reserve{ extra = 1, .. }) { return false }   // `..` forwards &list, &heap
+        slice::set{ s = list.items, i = list.len, v = item }
+        list.len = list.len + 1
+        return true
+    }
+
+    fn pop(T, S) { mut list: List(T, S) } -> ?T {
+        if (list.len == 0) { return null }
+        list.len = list.len - 1
+        return slice::get{ s = list.items, i = list.len }    // T converts to ?T
+    }
+
+    // Needs no heap, so it can't allocate.
+    fn get(T, S) { list: List(T, S), i: usize } -> ?T {
+        if (i >= list.len) { return null }
+        return slice::get{ s = list.items, i }
+    }
+
+    fn set(T, S) { mut list: List(T, S), i: usize, item: T } -> bool {
+        if (i >= list.len) { return false }
+        slice::set{ s = list.items, i, v = item }
+        return true
+    }
+
+    // Bounds-checked against len, not capacity.
+    fn at(T, S) { list: List(T, S), i: usize } -> *T {
+        if (i >= list.len) { @trap() }
+        return slice::at{ s = list.items, i }
+    }
+
+    fn clear(T, S) { mut list: List(T, S) } {
+        list.len = 0
+    }
+
+    // `&fn` accepts both bound and unbound functions.
+    fn each(T, S) { list: List(T, S), f: &fn{ item: T } } {
+        let mut i = 0
+        while (i < list.len) {
+            f{ item = slice::get{ s = list.items, i } }
+            i = i + 1
+        }
+    }
+
+    fn free(T, S) { mut list: List(T, S), mut heap: S } {
+        alloc::resize{ realloc = list.realloc, &heap, mem = list.items, count = 0 }   // result discarded
+        list.items = slice::empty(T){}
+        list.len = 0
+    }
+}
+
+// ---- using it ----
+
+union Event {
+    push{ value: i32 },
+    pop,
+    clear,
+}
+
+// Applies one event to the list. Returns false on allocation failure.
+fn apply(S) { mut nums: list::List(i32, S), mut heap: S, ev: Event } -> bool {
+    match (ev) {
+        push{ value } => { return list::push{ list = &nums, item = value, .. } }
+        pop           => { list::pop{ list = &nums } }
+        clear         => { list::clear{ list = &nums } }
+    }
+    return true
+}
+
+// Mutates payloads in place by matching through a pointer.
+fn scale_pushes(S) { mut events: list::List(Event, S), by: i32 } {
+    let mut i = 0
+    while (i < events.len) {
+        match (list::at{ list = events, i }) {          // *Event
+            push{ &value } => { value = value * by }
+            else           => { }
+        }
+        i = i + 1
+    }
+}
+
+fn print_item { mut io: Io, item: i32 } {
+    io::print_i32{ &io, n = item }
+}
+
+fn add_to { mut total: i32, item: i32 } {
+    total = total + item
+}
+
+fn main { mut io: Io } {
+    let mut mem: [4096]u8                                          // zeroed, on the stack
+    let mut heap = arena::Arena{ buf = slice::from{ ptr = &mem[0], len = mem.len }, used = 0 }
+
+    let mut events = list::new(Event){ realloc = arena::alloc }    // S = arena::Arena is inferred
+    let mut i = 1
+    while (i <= 5) {
+        list::push{ list = &events, item = Event::push{ value = i }, .. }   // `..` supplies &heap
+        i = i + 1
+    }
+    list::push{ list = &events, item = Event::pop, .. }
+    scale_pushes{ &events, by = 10 }
+
+    let mut nums = list::new(i32){ realloc = arena::alloc }
+    let mut j = 0
+    while (j < events.len) {
+        let ev = slice::get{ s = events.items, i = j }
+        if (not apply{ &nums, ev, .. }) { return }
+        j = j + 1
+    }
+
+    // Binding io gives &fn{ item: i32 }, which matches each's slot. Passed down: OK.
+    list::each{ list = nums, f = print_item{ &io, _ } }
+
+    let mut total = 0
+    list::each{ list = nums, f = add_to{ &total, _ } }
+    io::print_i32{ &io, n = total }
+
+    // Event has no zero value, so `last` must be assigned on every path before it is read.
+    let last: Event
+    if (total > 100) { last = Event::clear } else { last = Event::pop }
+    apply{ &nums, ev = last, .. }
+
+    let first = list::get{ list = nums, i = 0 }
+    if (first != null) { io::print_i32{ &io, n = first } }        // first is i32 here
+
+    list::free{ list = &nums, .. }
+    list::free{ list = &events, .. }
+
+    let h = &heap                  // raw *arena::Arena
+    arena::reset{ heap = h }       // a mut field given a raw pointer: exclusivity not checked
+}
+
+// ---- Compile errors ----
+//
+// let mut m = malloc::Heap{}
+// list::push{ list = &nums, heap = &m, item = 1 }
+//     error: nums is List(i32, arena::Arena), heap is malloc::Heap
+//
+// list::each{ list = nums, f = print_item }
+//     error: print_item needs `mut io`, which slot &fn{ item: i32 } doesn't provide
+//
+// struct Handler { f: fn{ item: i32 } }
+// let h = Handler{ f = print_item{ &io, _ } }
+//     error: expected fn{ item: i32 }, got &fn{ item: i32 }
+//
+// struct Handler2 { f: &fn{ item: i32 } }
+//     error: &fn can't be a struct field type
+//
+// fn log_to { mut log: Io, mut heap: arena::Arena, mem: alloc::Bytes, new: usize, align: usize } -> ?alloc::Bytes { ... }
+// list::new(i32){ realloc = log_to{ &io, _ } }
+//     error: expected alloc::Fn(S), got &fn{ ... }
+//
+// match (ev) { push{ value } => { } }
+//     error: match isn't exhaustive: missing pop, clear
+//
+// io::print_i32{ &io, n = list::get{ list = nums, i = 0 } }
+//     error: expected i32, got ?i32
+//
+// fn move_first(S) { mut from: list::List(i32, S), mut to: list::List(i32, S), mut heap: S } { ... }
+// move_first{ from = &nums, to = &nums, .. }
+//     error: two mut references to nums in one call
+//
+// let mut ev = Event::push{ value = 1 }
+// match (&ev) {
+//     push{ &value } => { ev = Event::pop; value = 2 }
+//     else           => { }
+// }
+//     error: ev overlaps the match scrutinee; access it only through `value`
+//
+// let ev: Event
+// if (total > 100) { ev = Event::clear }
+// apply{ &nums, ev, .. }
+//     error: ev may be read before it is assigned
+//
+// fn sum_into { mut total: i32, f: &fn{ item: i32 } } { ... }
+// let f = add_to{ &total, _ }
+// sum_into{ &total, f }
+//     error: total overlaps a place held by f
+//
+// let mut maybe = list::get{ list = nums, i = 0 }
+// if (maybe != null) { io::print_i32{ &io, n = maybe } }
+//     error: maybe is mutable and can't be narrowed; copy it to a `let` first
+//
+// ---- Not caught ----
+//
+// let mut other = arena::Arena{ buf = slice::from{ ptr = &mem2[0], len = mem2.len }, used = 0 }
+// list::push{ list = &nums, heap = &other, item = 1 }
+//     compiles: same type S, wrong instance
+//
+// fn make_arena {} -> arena::Arena {
+//     let mut mem: [64]u8
+//     return arena::Arena{ buf = slice::from{ ptr = &mem[0], len = mem.len }, used = 0 }
+// }
+//     compiles: the returned arena's buf points into a dead stack frame
+//
+// let p = &mem[0]
+// p[5000] = 1
+//     compiles: pointer indexing isn't bounds-checked
