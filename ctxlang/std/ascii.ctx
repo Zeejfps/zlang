@@ -1,0 +1,269 @@
+// std: ascii. ASCII text.
+//
+// `String` is a view of bytes that are all below 128. Like a slice, it doesn't own its memory:
+// build one over a string literal, a buffer, or a `Builder`.
+//
+//   let hi = "hello"                        // a [5]u8 value
+//   let s = ascii::of{ chars = &hi }        // an ascii::String viewing it
+//
+// Natives (provided by the runtime):
+//   f64_digits { n: f64, into: slice::Slice(u8) } -> usize   writes the shortest round-trip text
+//   f32_digits { n: f32, into: slice::Slice(u8) } -> usize   of n into `into`; traps if it doesn't fit
+
+namespace ascii {
+    struct String { bytes: slice::Slice(u8) }
+
+    // Traps if any byte isn't ASCII.
+    fn from { bytes: slice::Slice(u8) } -> String {
+        let mut i: usize = 0
+        while (i < bytes.len) {
+            if (slice::get{ s = bytes, i } > 127) { @trap() }
+            i = i + 1
+        }
+        return String{ bytes }
+    }
+
+    // Views the byte array `chars` points to, typically a string literal.
+    fn of(A) { chars: *A } -> String {
+        return from{ bytes = slice::of(u8){ a = chars } }
+    }
+
+    fn empty {} -> String {
+        return String{ bytes = slice::empty(u8){} }
+    }
+
+    fn len { s: String } -> usize {
+        return s.bytes.len
+    }
+
+    // Bounds-checked.
+    fn at { s: String, i: usize } -> u8 {
+        return slice::get{ s = s.bytes, i }
+    }
+
+    // Characters lo up to but not including hi.
+    fn sub { s: String, lo: usize, hi: usize } -> String {
+        return String{ bytes = slice::sub{ s = s.bytes, lo, hi } }
+    }
+
+    fn eq { a: String, b: String } -> bool {
+        if (a.bytes.len != b.bytes.len) { return false }
+        let mut i: usize = 0
+        while (i < a.bytes.len) {
+            if (at{ s = a, i } != at{ s = b, i }) { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    fn starts_with { s: String, prefix: String } -> bool {
+        if (prefix.bytes.len > s.bytes.len) { return false }
+        return eq{ a = sub{ s, lo = 0, hi = prefix.bytes.len }, b = prefix }
+    }
+
+    fn ends_with { s: String, suffix: String } -> bool {
+        let n = s.bytes.len
+        if (suffix.bytes.len > n) { return false }
+        return eq{ a = sub{ s, lo = n - suffix.bytes.len, hi = n }, b = suffix }
+    }
+
+    // Index of the first `c`, or null.
+    fn find { s: String, c: u8 } -> ?usize {
+        let mut i: usize = 0
+        while (i < s.bytes.len) {
+            if (at{ s, i } == c) { return i }
+            i = i + 1
+        }
+        return null
+    }
+
+    // Without leading and trailing whitespace.
+    fn trim { s: String } -> String {
+        let mut lo: usize = 0
+        let mut hi = s.bytes.len
+        while (lo < hi and is_space{ c = at{ s, i = lo } }) { lo = lo + 1 }
+        while (hi > lo and is_space{ c = at{ s, i = hi - 1 } }) { hi = hi - 1 }
+        return sub{ s, lo, hi }
+    }
+
+    // ---- characters
+
+    fn is_digit { c: u8 } -> bool { return c >= '0' and c <= '9' }
+    fn is_upper { c: u8 } -> bool { return c >= 'A' and c <= 'Z' }
+    fn is_lower { c: u8 } -> bool { return c >= 'a' and c <= 'z' }
+    fn is_alpha { c: u8 } -> bool { return is_upper{ c } or is_lower{ c } }
+    fn is_alnum { c: u8 } -> bool { return is_alpha{ c } or is_digit{ c } }
+    fn is_space { c: u8 } -> bool { return c == ' ' or c == '\t' or c == '\n' or c == '\r' }
+
+    fn to_upper { c: u8 } -> u8 {
+        if (is_lower{ c }) { return c - 32 }
+        return c
+    }
+
+    fn to_lower { c: u8 } -> u8 {
+        if (is_upper{ c }) { return c + 32 }
+        return c
+    }
+
+    // ---- numbers
+
+    // Parses an optional '-' followed by decimal digits. Null if malformed or out of range.
+    fn parse_i64 { s: String } -> ?i64 {
+        let n = s.bytes.len
+        if (n == 0) { return null }
+        let mut i: usize = 0
+        let neg = at{ s, i = 0 } == '-'
+        if (neg) {
+            if (n == 1) { return null }
+            i = 1
+        }
+        // Accumulate negatively so that i64's minimum is reachable.
+        let min: i64 = -9223372036854775808
+        let mut v: i64 = 0
+        while (i < n) {
+            let c = at{ s, i }
+            if (not is_digit{ c }) { return null }
+            let d = @as(i64, c - '0')
+            if (v < (min + d) / 10) { return null }
+            v = v * 10 - d
+            i = i + 1
+        }
+        if (neg) { return v }
+        if (v == min) { return null }
+        return -v
+    }
+
+    // Parses decimal digits. Null if malformed or out of range.
+    fn parse_u64 { s: String } -> ?u64 {
+        let n = s.bytes.len
+        if (n == 0) { return null }
+        let max: u64 = 18446744073709551615
+        let mut v: u64 = 0
+        let mut i: usize = 0
+        while (i < n) {
+            let c = at{ s, i }
+            if (not is_digit{ c }) { return null }
+            let d = @as(u64, c - '0')
+            if (v > (max - d) / 10) { return null }
+            v = v * 10 + d
+            i = i + 1
+        }
+        return v
+    }
+
+    // Writes n in decimal to the start of `into` and returns that text. Traps if it doesn't fit;
+    // 20 bytes always do.
+    fn fmt_i64 { n: i64, into: slice::Slice(u8) } -> String {
+        let mut digits: [20]u8
+        let mut k: usize = 0
+        let mut v = n
+        if (v > 0) { v = -v }                     // work in negatives so i64's minimum fits
+        let mut more = true
+        while (more) {
+            digits[k] = '0' + @as(u8, -(v % 10))
+            k = k + 1
+            v = v / 10
+            more = v != 0
+        }
+        let mut out: usize = 0
+        if (n < 0) {
+            slice::set{ s = into, i = 0, v = '-' }
+            out = 1
+        }
+        let total = out + k
+        if (total > into.len) { @trap() }
+        while (k > 0) {
+            k = k - 1
+            slice::set{ s = into, i = out, v = digits[k] }
+            out = out + 1
+        }
+        return String{ bytes = slice::sub{ s = into, lo = 0, hi = total } }
+    }
+
+    // Like fmt_i64, for unsigned values.
+    fn fmt_u64 { n: u64, into: slice::Slice(u8) } -> String {
+        let mut digits: [20]u8
+        let mut k: usize = 0
+        let mut v = n
+        let mut more = true
+        while (more) {
+            digits[k] = '0' + @trunc(u8, v % 10)
+            k = k + 1
+            v = v / 10
+            more = v != 0
+        }
+        if (k > into.len) { @trap() }
+        let total = k
+        let mut out: usize = 0
+        while (k > 0) {
+            k = k - 1
+            slice::set{ s = into, i = out, v = digits[k] }
+            out = out + 1
+        }
+        return String{ bytes = slice::sub{ s = into, lo = 0, hi = total } }
+    }
+
+    // Shortest text that reads back as n, e.g. "0.1", "3.0", "1e+100", "inf", "nan".
+    // 32 bytes always fit.
+    fn fmt_f64 { n: f64, into: slice::Slice(u8) } -> String {
+        return String{ bytes = slice::sub{ s = into, lo = 0, hi = f64_digits{ n, into } } }
+    }
+
+    fn fmt_f32 { n: f32, into: slice::Slice(u8) } -> String {
+        return String{ bytes = slice::sub{ s = into, lo = 0, hi = f32_digits{ n, into } } }
+    }
+
+    // ---- building strings
+
+    // A growable string that owns its bytes, allocated like a list. Free it with `free`.
+    //
+    //   let mut b = ascii::builder{ realloc = arena::alloc }
+    //   ascii::push{ &b, &heap, s = name }
+    //   ascii::push_i64{ &b, &heap, n = 42 }
+    //   io::println{ &io, s = ascii::view{ b } }
+    struct Builder(S) { chars: list::List(u8, S) }
+
+    fn builder(S) { realloc: alloc::Fn(S) } -> Builder(S) {
+        return Builder{ chars = list::new(u8){ realloc } }
+    }
+
+    // The text so far. Invalidated by the next push.
+    fn view(S) { b: Builder(S) } -> String {
+        return String{ bytes = list::items{ list = b.chars } }
+    }
+
+    // Each push returns false on allocation failure.
+    fn push(S) { mut b: Builder(S), mut heap: S, s: String } -> bool {
+        if (not list::reserve{ list = &b.chars, &heap, extra = s.bytes.len }) { return false }
+        let mut i: usize = 0
+        while (i < s.bytes.len) {
+            list::push{ list = &b.chars, &heap, item = at{ s, i } }
+            i = i + 1
+        }
+        return true
+    }
+
+    // Traps if c isn't ASCII.
+    fn push_char(S) { mut b: Builder(S), mut heap: S, c: u8 } -> bool {
+        if (c > 127) { @trap() }
+        return list::push{ list = &b.chars, &heap, item = c }
+    }
+
+    fn push_i64(S) { mut b: Builder(S), mut heap: S, n: i64 } -> bool {
+        let mut buf: [20]u8
+        return push{ &b, &heap, s = fmt_i64{ n, into = slice::of(u8){ a = &buf } } }
+    }
+
+    fn push_u64(S) { mut b: Builder(S), mut heap: S, n: u64 } -> bool {
+        let mut buf: [20]u8
+        return push{ &b, &heap, s = fmt_u64{ n, into = slice::of(u8){ a = &buf } } }
+    }
+
+    fn clear(S) { mut b: Builder(S) } {
+        list::clear{ list = &b.chars }
+    }
+
+    fn free(S) { mut b: Builder(S), mut heap: S } {
+        list::free{ list = &b.chars, &heap }
+    }
+}

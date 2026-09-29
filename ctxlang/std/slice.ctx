@@ -1,0 +1,78 @@
+// std: slice. Bounds-checked views over contiguous memory. A slice doesn't own its memory.
+
+namespace slice {
+    // Zero value is the empty slice.
+    struct Slice(T) { ptr: ?*T, len: usize }
+
+    fn from(T) { ptr: *T, len: usize } -> Slice(T) {
+        return Slice{ ptr, len }
+    }
+
+    // Views the whole array `a` points to. `A` must be an array of T:
+    //   let mut buf: [64]u8
+    //   let s = slice::of(u8){ a = &buf }
+    fn of(T, A) { a: *A } -> Slice(T) {
+        if (@size_of(A) % @size_of(T) != 0) { @trap() }
+        return Slice{ ptr = @cast(*T, a), len = @size_of(A) / @size_of(T) }
+    }
+
+    fn empty(T) {} -> Slice(T) {
+        return Slice{ ptr = null, len = 0 }
+    }
+
+    fn is_empty(T) { s: Slice(T) } -> bool {
+        return s.len == 0
+    }
+
+    // Bounds-checked pointer to element i.
+    fn at(T) { s: Slice(T), i: usize } -> *T {
+        if (i >= s.len) { @trap() }
+        let p = s.ptr
+        if (p != null) { return p + i }
+        @trap()                                    // unreachable: len > 0 implies ptr != null
+    }
+
+    fn get(T) { s: Slice(T), i: usize } -> T {
+        return at{ s, i }.*
+    }
+
+    fn set(T) { s: Slice(T), i: usize, v: T } {
+        at{ s, i }.* = v
+    }
+
+    // Elements lo up to but not including hi.
+    fn sub(T) { s: Slice(T), lo: usize, hi: usize } -> Slice(T) {
+        if (lo > hi or hi > s.len) { @trap() }
+        let p = s.ptr
+        if (p != null) { return Slice{ ptr = p + lo, len = hi - lo } }
+        return empty(T){}
+    }
+
+    // Reinterprets the elements. Traps if the byte length doesn't divide evenly. Alignment is unchecked.
+    fn cast(T, U) { s: Slice(T) } -> Slice(U) {
+        let bytes = s.len * @size_of(T)
+        if (bytes % @size_of(U) != 0) { @trap() }
+        let p = s.ptr
+        if (p != null) { return Slice{ ptr = @cast(*U, p), len = bytes / @size_of(U) } }
+        return empty(U){}
+    }
+
+    // Copies all of src into the start of dst. Traps if dst is shorter.
+    fn copy(T) { dst: Slice(T), src: Slice(T) } {
+        if (dst.len < src.len) { @trap() }
+        let mut i: usize = 0
+        while (i < src.len) {
+            set{ s = dst, i, v = get{ s = src, i } }
+            i = i + 1
+        }
+    }
+
+    // Sets every element to v.
+    fn fill(T) { s: Slice(T), v: T } {
+        let mut i: usize = 0
+        while (i < s.len) {
+            set{ s, i, v }
+            i = i + 1
+        }
+    }
+}

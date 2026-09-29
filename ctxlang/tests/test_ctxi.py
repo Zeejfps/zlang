@@ -56,7 +56,7 @@ class ListExample(Base):
         self.assertCompileError(LIB + extra + MAIN_SETUP % body, fragment)
 
     def test_setup_compiles(self):
-        self.assertOutput(LIB + MAIN_SETUP % '    io::print_i32{ &io, n = total }', '0\n')
+        self.assertOutput(LIB + MAIN_SETUP % '    io::println_i32{ &io, n = total }', '0\n')
 
     def test_wrong_heap_type(self):
         self.lib_error("""
@@ -85,7 +85,7 @@ class ListExample(Base):
     match (ev) { push{ value } => { } }""", "match isn't exhaustive: missing pop, clear")
 
     def test_optional_not_unwrapped(self):
-        self.lib_error('    io::print_i32{ &io, n = list::get{ list = nums, i = 0 } }',
+        self.lib_error('    io::println_i32{ &io, n = list::get{ list = nums, i = 0 } }',
                        'expected i32, got ?i32')
 
     def test_two_mut_refs(self):
@@ -108,7 +108,7 @@ class ListExample(Base):
         else           => { }
     }
     match (ev) {
-        push{ value } => { io::print_i32{ &io, n = value } }
+        push{ value } => { io::println_i32{ &io, n = value } }
         else          => { }
     }""", '7\n')
 
@@ -135,14 +135,14 @@ class ListExample(Base):
     def test_mutable_not_narrowed(self):
         self.lib_error("""
     let mut maybe = list::get{ list = nums, i = 0 }
-    if (maybe != null) { io::print_i32{ &io, n = maybe } }""", 'expected i32, got ?i32')
+    if (maybe != null) { io::println_i32{ &io, n = maybe } }""", 'expected i32, got ?i32')
 
     def test_not_caught_wrong_instance(self):
         self.assertOutput(LIB + MAIN_SETUP % """
     let mut mem2: [256]u8
     let mut other = arena::Arena{ buf = slice::from{ ptr = &mem2[0], len = mem2.len }, used = 0 }
     list::push{ list = &nums, heap = &other, item = 1 }
-    io::print_usize{ &io, n = nums.len }""", '1\n')
+    io::println_usize{ &io, n = nums.len }""", '1\n')
 
 
 class Basics(Base):
@@ -153,15 +153,15 @@ fn fib { n: u64 } -> u64 {
     return fib{ n = n - 1 } + fib{ n = n - 2 }
 }
 fn main { mut io: Io } {
-    io::print_u64{ &io, n = fib{ n = 20 } }
+    io::println_u64{ &io, n = fib{ n = 20 } }
     let mut i = 0
     let mut s: i64
     while (i < 10) { s = s + @as(i64, i); i = i + 1 }
-    io::print_i64{ &io, n = s }
-    io::print_i32{ &io, n = -7 / 2 }
-    io::print_i32{ &io, n = -7 % 2 }
-    io::print_f64{ &io, n = 1.5 * 2.0 }
-    io::print_bool{ &io, n = 3 > 2 and not (1 == 2) }
+    io::println_i64{ &io, n = s }
+    io::println_i32{ &io, n = -7 / 2 }
+    io::println_i32{ &io, n = -7 % 2 }
+    io::println_f64{ &io, n = 1.5 * 2.0 }
+    io::println_bool{ &io, n = 3 > 2 and not (1 == 2) }
 }
 """, '6765\n45\n-3\n-1\n3.0\n true\n'.replace(' ', ''))
 
@@ -192,7 +192,7 @@ fn main { mut io: Io } { let x = d{ a = 1, b = 0 } }
 fn main { mut io: Io } {
     let a = [1, 2, 3]
     let mut i: usize = 3
-    io::print_i32{ &io, n = a[i] }
+    io::println_i32{ &io, n = a[i] }
 }
 """, 'out of bounds')
 
@@ -203,17 +203,17 @@ fn main { mut io: Io } {
         self.assertOutput("""
 fn main { mut io: Io } {
     let x: u8 = 250
-    io::print_u8{ &io, n = @wrap_add(x, 10) }
-    io::print_i8{ &io, n = @trunc(i8, 200) }
-    io::print_i32{ &io, n = @as(i32, 3.9) }
-    io::print_i32{ &io, n = @as(i32, -3.9) }
-    io::print_f64{ &io, n = @as(f64, 7) }
+    io::println_u8{ &io, n = @wrap_add(x, 10) }
+    io::println_i8{ &io, n = @trunc(i8, 200) }
+    io::println_i32{ &io, n = @as(i32, 3.9) }
+    io::println_i32{ &io, n = @as(i32, -3.9) }
+    io::println_f64{ &io, n = @as(f64, 7) }
 }
 """, '4\n-56\n3\n-3\n7.0\n')
 
     def test_as_traps(self):
         self.assertTrap("""
-fn main { mut io: Io } { let x: i32 = 300; io::print_u8{ &io, n = @as(u8, x) } }
+fn main { mut io: Io } { let x: i32 = 300; io::println_u8{ &io, n = @as(u8, x) } }
 """, 'not representable')
 
     def test_literal_range(self):
@@ -235,14 +235,14 @@ fn main { mut io: Io } {
     bump{ p = &a }
     let q = &a
     q.x = q.x + 100
-    io::print_i32{ &io, n = sum{ p = a } }
-    io::print_i32{ &io, n = sum{ p = b } }
+    io::println_i32{ &io, n = sum{ p = a } }
+    io::println_i32{ &io, n = sum{ p = b } }
     let mut arr = [P{ x = 1, y = 1 }; 3]
     arr[2].y = 9
     let pa = &arr
-    io::print_i32{ &io, n = pa[2].y + @as(i32, pa.len) }
+    io::println_i32{ &io, n = pa[2].y + @as(i32, pa.len) }
     let p0 = &arr[0]
-    io::print_i32{ &io, n = (p0 + 2).*.y }
+    io::println_i32{ &io, n = (p0 + 2).*.y }
 }
 """, '112\n6\n12\n9\n')
 
@@ -291,8 +291,8 @@ fn half { n: i32 } -> Result(i32) {
 }
 fn show { mut io: Io, r: Result(i32) } {
     match (r) {
-        ok{ value } => { io::print_i32{ &io, n = value } }
-        err{ code } => { io::print_i32{ &io, n = -code } }
+        ok{ value } => { io::println_i32{ &io, n = value } }
+        err{ code } => { io::println_i32{ &io, n = -code } }
     }
 }
 fn first(T) { a: [3]T } -> ?T { return a[0] }
@@ -300,11 +300,11 @@ fn main { mut io: Io } {
     show{ &io, r = half{ n = 10 } }
     show{ &io, r = half{ n = 7 } }
     let f = first{ a = [4, 5, 6] }
-    if (f == null) { } else { io::print_i32{ &io, n = f } }
+    if (f == null) { } else { io::println_i32{ &io, n = f } }
     let none: ?i32 = null
     match (none) {
-        null => { io::print_i32{ &io, n = 0 } }
-        some{ value } => { io::print_i32{ &io, n = value } }
+        null => { io::println_i32{ &io, n = 0 } }
+        some{ value } => { io::println_i32{ &io, n = value } }
     }
 }
 """, '5\n-7\n4\n0\n')
@@ -317,13 +317,13 @@ fn twice { f: fn{ a: i32, b: i32 } -> i32 } -> i32 { return f{ a = 2, b = 3 } * 
 fn count { mut n: i32, by: i32 } { n = n + by }
 fn main { mut io: Io } {
     let add5 = add{ a = 5, _ }
-    io::print_i32{ &io, n = apply{ f = add5, x = 10 } }
-    io::print_i32{ &io, n = twice{ f = add } }
+    io::println_i32{ &io, n = apply{ f = add5, x = 10 } }
+    io::println_i32{ &io, n = twice{ f = add } }
     let mut c = 0
     let inc = count{ n = &c, _ }
     inc{ by = 3 }
     inc{ by = 4 }
-    io::print_i32{ &io, n = c }
+    io::println_i32{ &io, n = c }
 }
 """, '15\n10\n7\n')
 
@@ -369,9 +369,9 @@ namespace geo {
 }
 fn main { mut io: Io } {
     let mut arr: [geo::N * 2]u8
-    io::print_usize{ &io, n = arr.len }
-    io::print_i32{ &io, n = geo::dot{ a = geo::ORIGIN, b = geo::V{ x = 3, y = 4 } } }
-    io::print_usize{ &io, n = @size_of(geo::V) }
+    io::println_usize{ &io, n = arr.len }
+    io::println_i32{ &io, n = geo::dot{ a = geo::ORIGIN, b = geo::V{ x = 3, y = 4 } } }
+    io::println_usize{ &io, n = @size_of(geo::V) }
 }
 """, '8\n11\n8\n')
 
@@ -393,6 +393,209 @@ fn main { mut io: Io } { let u = U::a; match (u) { a => { } b => { } else => { }
 fn r { n: u64 } -> u64 { let mut big: [1024]u64; return r{ n = n + 1 } }
 fn main { mut io: Io } { let x = r{ n = 0 } }
 """, out=io.StringIO(), stack_size=1 << 20)
+
+
+def run_io(src, stdin=b''):
+    out, err = io.StringIO(), io.StringIO()
+    run_source(src, out=out, err=err, inp=io.BytesIO(stdin))
+    return out.getvalue(), err.getvalue()
+
+
+class StdLib(Base):
+    def test_hello(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let hi = "hello, \\"world\\"\\t!"
+    io::println{ &io, s = ascii::of{ chars = &hi } }
+    io::put_char{ &io, c = 'x' }
+    io::newline{ &io }
+}
+""", 'hello, "world"\t!\nx\n')
+
+    def test_stderr(self):
+        out, err = run_io("""
+fn main { mut io: Io } {
+    let a = "out"
+    let b = "err"
+    io::println{ &io, s = ascii::of{ chars = &a } }
+    io::eprintln{ &io, s = ascii::of{ chars = &b } }
+}
+""")
+        self.assertEqual((out, err), ('out\n', 'err\n'))
+
+    def test_number_formatting(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = -9223372036854775808 }
+    io::println_i64{ &io, n = 0 }
+    io::println_u64{ &io, n = 18446744073709551615 }
+    io::println_i8{ &io, n = -128 }
+    io::println_usize{ &io, n = 7 }
+    io::println_f64{ &io, n = 3.0 }
+    io::println_f64{ &io, n = 1e100 }
+    io::println_f64{ &io, n = -0.1 }
+    io::println_f32{ &io, n = 1.1 }
+    io::println_bool{ &io, n = false }
+    io::print_i32{ &io, n = 1 }
+    io::print_i32{ &io, n = 2 }
+    io::newline{ &io }
+}
+""", '-9223372036854775808\n0\n18446744073709551615\n-128\n7\n3.0\n1e+100\n-0.1\n1.1\nfalse\n12\n')
+
+    def test_parse(self):
+        self.assertOutput("""
+fn show { mut io: Io, r: ?i64 } {
+    match (r) {
+        null => { io::println_i32{ &io, n = 0 } }
+        some{ value } => { io::println_i64{ &io, n = value } }
+    }
+}
+fn main { mut io: Io } {
+    let a = "-9223372036854775808"
+    let b = "9223372036854775808"
+    let c = "12x"
+    let d = "-"
+    let e = "0042"
+    show{ &io, r = ascii::parse_i64{ s = ascii::of{ chars = &a } } }
+    show{ &io, r = ascii::parse_i64{ s = ascii::of{ chars = &b } } }
+    show{ &io, r = ascii::parse_i64{ s = ascii::of{ chars = &c } } }
+    show{ &io, r = ascii::parse_i64{ s = ascii::of{ chars = &d } } }
+    show{ &io, r = ascii::parse_i64{ s = ascii::of{ chars = &e } } }
+    let u = "18446744073709551616"
+    io::println_bool{ &io, n = ascii::parse_u64{ s = ascii::of{ chars = &u } } == null }
+}
+""", '-9223372036854775808\n0\n0\n0\n42\ntrue\n')
+
+    def test_string_ops(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let raw = "  Hello, World \\n"
+    let s = ascii::trim{ s = ascii::of{ chars = &raw } }
+    io::println{ &io, s }
+    io::println_usize{ &io, n = ascii::len{ s } }
+    let hel = "Hello"
+    let rld = "rld"
+    io::println_bool{ &io, n = ascii::starts_with{ s, prefix = ascii::of{ chars = &hel } } }
+    io::println_bool{ &io, n = ascii::ends_with{ s, suffix = ascii::of{ chars = &rld } } }
+    io::println_bool{ &io, n = ascii::eq{ a = s, b = ascii::of{ chars = &hel } } }
+    let comma = ascii::find{ s, c = ',' }
+    if (comma != null) {
+        io::println{ &io, s = ascii::sub{ s, lo = 0, hi = comma } }
+    }
+    io::put_char{ &io, c = ascii::to_upper{ c = 'q' } }
+    io::put_char{ &io, c = ascii::to_lower{ c = 'Q' } }
+    io::newline{ &io }
+}
+""", 'Hello, World\n12\ntrue\ntrue\nfalse\nHello\nQq\n')
+
+    def test_builder(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let mut mem: [1024]u8
+    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+    let mut b = ascii::builder{ realloc = arena::alloc }
+    let name = "count"
+    ascii::push{ &b, &heap, s = ascii::of{ chars = &name } }
+    ascii::push_char{ &b, &heap, c = '=' }
+    ascii::push_i64{ &b, &heap, n = -1234567 }
+    ascii::push_char{ &b, &heap, c = ' ' }
+    ascii::push_u64{ &b, &heap, n = 99 }
+    io::println{ &io, s = ascii::view{ b } }
+    ascii::free{ &b, &heap }
+    io::println_usize{ &io, n = ascii::len{ s = ascii::view{ b } } }
+}
+""", 'count=-1234567 99\n0\n')
+
+    def test_read_line(self):
+        out, _ = run_io("""
+fn main { mut io: Io } {
+    let mut buf: [8]u8
+    let mut total: i64 = 0
+    let mut more = true
+    while (more) {
+        let line = io::read_line{ &io, into = slice::of(u8){ a = &buf } }
+        if (line == null) {
+            more = false
+        } else {
+            let n = ascii::parse_i64{ s = ascii::trim{ s = line } }
+            if (n != null) { total = total + n }
+            io::println{ &io, s = line }
+        }
+    }
+    io::println_i64{ &io, n = total }
+}
+""", b'12\r\n30\nabcdefghij\n  -2\nlast')
+        self.assertEqual(out, '12\n30\nabcdefgh\nij\n  -2\nlast\n40\n')
+
+    def test_slice_helpers(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let mut a: [5]i32
+    let s = slice::of(i32){ a = &a }
+    slice::fill{ s, v = 3 }
+    slice::set{ s, i = 4, v = 9 }
+    io::println_i32{ &io, n = a[0] + a[4] }
+    io::println_usize{ &io, n = s.len }
+    io::println_bool{ &io, n = slice::is_empty{ s = slice::sub{ s, lo = 2, hi = 2 } } }
+}
+""", '12\n5\ntrue\n')
+
+    def test_non_ascii_traps(self):
+        self.assertTrap("""
+fn main { mut io: Io } {
+    let b = "caf\\xe9"
+    io::println{ &io, s = ascii::of{ chars = &b } }
+}
+""", '@trap()')
+
+    def test_non_ascii_literal_rejected(self):
+        self.assertCompileError('fn main { mut io: Io } { let b = "café" }', 'non-ASCII')
+
+    def test_slice_bounds_trap(self):
+        self.assertTrap("""
+fn main { mut io: Io } {
+    let mut a: [2]u8
+    let s = slice::of(u8){ a = &a }
+    let x = slice::get{ s, i = 2 }
+}
+""", '@trap()')
+
+    def test_io_needs_capability(self):
+        self.assertCompileError("""
+fn helper { n: i32 } { io::println_i32{ n } }
+fn main { mut io: Io } { }
+""", 'missing `io`')
+
+    def test_user_namespace_shadows_std(self):
+        self.assertOutput("""
+namespace slice { fn answer {} -> i32 { return 42 } }
+fn main { mut io: Io } { io::println_i32{ &io, n = slice::answer{} } }
+""", '42\n')
+
+    def test_string_literal_escape_check(self):
+        self.assertCompileError("""
+fn greet {} -> ascii::String {
+    let hi = "hi"
+    return ascii::of{ chars = &hi }
+}
+fn main { mut io: Io } { }
+""", 'returned value holds the address of local `hi`')
+
+    def test_trap_in_std_reports_std_file(self):
+        with self.assertRaises(Trap) as cm:
+            run_source("""
+fn main { mut io: Io } {
+    let mut a: [2]u8
+    let x = slice::get{ s = slice::of(u8){ a = &a }, i = 5 }
+}
+""", 'user.ctx', out=io.StringIO())
+        self.assertEqual(cm.exception.pos[2], 'std/slice.ctx')
+
+    def test_error_reports_user_file(self):
+        with self.assertRaises(CompileError) as cm:
+            run_source('fn main { mut io: Io } { io::println_i32{ &io, n = "x" } }', 'user.ctx')
+        self.assertEqual(cm.exception.pos[2], 'user.ctx')
+        self.assertIn('expected i32, got [1]u8', cm.exception.msg)
 
 
 if __name__ == '__main__':

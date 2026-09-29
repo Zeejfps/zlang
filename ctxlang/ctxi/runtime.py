@@ -9,6 +9,7 @@ Each generic instantiation is compiled lazily, on its first call, into a tree
 of Python closures that take the frame pointer.
 """
 
+import io
 import math
 import struct
 
@@ -16,7 +17,7 @@ from . import ast as A
 from .lexer import CompileError
 from .checker import NativeFn
 from .types import (
-    Prim, Ptr, Arr, Opt, StructT, UnionT, FnT, Cap, VOID, prune, subst, tkey, tstr,
+    Prim, Ptr, Arr, Opt, StructT, UnionT, FnT, Cap, VOID, prune, subst, tkey, tstr, qualname,
     struct_fields, variants_of,
 )
 
@@ -35,6 +36,7 @@ class Trap(Exception):
     def __init__(self, msg, pos=None):
         super().__init__(msg)
         self.msg, self.pos = msg, pos
+        self.frames = []     # qualified function names, innermost first
 
 
 def align_up(n, a):
@@ -90,6 +92,9 @@ class FnInst(Callable):
             for name, off, st in self.params:
                 st(fp + off, args[name])
             r = self.body(fp)
+        except Trap as e:
+            e.frames.append(qualname(self.decl))
+            raise
         finally:
             rt.sp = fp
         return None if r is None else r[0]
@@ -110,11 +115,11 @@ class NativeCallable(Callable):
         self.rt, self.nf = rt, nf
 
     def call(self, args):
-        return self.nf.impl(self.rt, args)
+        return self.nf.impl(self.rt, self.nf, args)
 
 
 class Runtime:
-    def __init__(self, checker, stack_size=16 << 20, out=None):
+    def __init__(self, checker, stack_size=16 << 20, out=None, err=None, inp=None):
         import sys
         self.checker = checker
         self.mem = bytearray(GUARD + stack_size)
@@ -127,10 +132,61 @@ class Runtime:
         self.layout_busy = set()
         self.consts = {}
         self.const_busy = set()
-        self.out = out or sys.stdout
+        self.streams = [out or sys.stdout, err or sys.stderr]
+        self.inp = inp if inp is not None else sys.stdin.buffer
         mem = self.mem
         self.u64_load = lambda a: U64.unpack_from(mem, a)[0]
         self.u64_store = lambda a, v: U64.pack_into(mem, a, v)
+
+    # ---- helpers for natives
+
+    def arg_type(self, nf, name):
+        for n, _, t in nf.sig_fields:
+            if n == name:
+                return t
+        raise KeyError(name)
+
+    def slice_arg(self, nf, name, v):
+        """(address, length) of a `slice::Slice(T)` argument; address 0 if its ptr is null."""
+        lay = self.layout(self.arg_type(nf, name))
+        _, pt, poff = next(f for f in lay.fields if f[0] == 'ptr')
+        loff = lay.offs['len']
+        n = U64.unpack_from(v, loff)[0]
+        if TAG.unpack_from(v, poff)[0] == 0:
+            return 0, n
+        return U64.unpack_from(v, poff + self.layout(pt).pay_off)[0], n
+
+    def span(self, addr, n, pos=None):
+        if n and (addr < GUARD or addr + n > self.end):
+            trap('invalid memory access', pos)
+        return addr, addr + n
+
+    def write(self, stream, data):
+        s = self.streams[stream]
+        buf = getattr(s, 'buffer', None)
+        if buf is not None:
+            s.flush()
+            buf.write(data)
+            if stream == 1:
+                buf.flush()
+        elif isinstance(s, io.TextIOBase):
+            s.write(data.decode('utf-8', 'replace'))
+        else:
+            s.write(data)
+
+    def read(self, n):
+        f = getattr(self.inp, 'read1', None) or self.inp.read
+        return f(n) or b''
+
+    def flush(self):
+        for s in self.streams:
+            try:
+                s.flush()
+                buf = getattr(s, 'buffer', None)
+                if buf is not None:
+                    buf.flush()
+            except (OSError, ValueError):
+                pass
 
     # ---- layout
 
@@ -540,6 +596,10 @@ class Compiler:
         v = e.val
         if prune(e.ty).name == 'f32':
             v = f32r(v)
+        return lambda fp: v
+
+    def e_StrLit(self, e):
+        v = e.val
         return lambda fp: v
 
     def e_BoolLit(self, e):

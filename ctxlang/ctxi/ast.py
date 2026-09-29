@@ -147,6 +147,13 @@ class FloatLit(Node):
         self.val, self.pos = val, pos
 
 
+class StrLit(Node):
+    """`"..."`: a `[N]u8` array value."""
+
+    def __init__(self, val, pos):
+        self.val, self.pos = val, pos
+
+
 class BoolLit(Node):
     def __init__(self, val, pos):
         self.val, self.pos = val, pos

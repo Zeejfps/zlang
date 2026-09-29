@@ -211,6 +211,9 @@ Precedence, tightest first:
 3. `true` and `false` are the `bool` values. `null` is described in §8.
 4. `[a, b, c]` is a `[3]T` array. Every element has type `T`.
 5. `[x; N]` is a `[N]T` array with every element a copy of `x`. `N` is a compile-time constant.
+6. A string literal `"..."` is a `[N]u8` array value holding its `N` bytes, with no terminator. Like any array it is a value, not a place: bind it to a local to take its address. `ascii::of` views it as text (§17).
+7. A character literal `'a'` is an integer literal whose value is the character's byte.
+8. String and character literals hold ASCII characters only. Escapes: `\n`, `\t`, `\r`, `\0`, `\\`, `\"`, `\'`, and `\xNN` for any byte.
 
 ### Places
 
@@ -270,7 +273,7 @@ step  := .field | [index]
 1. `a[i]` on an array is bounds-checked. An out-of-bounds index traps.
 2. `a.len` is `N`, of type `usize`.
 
-Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?*T, len: usize }` and bounds-checked functions on it.
+Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?*T, len: usize }` and bounds-checked functions on it (§17).
 
 ## 13. Builtins
 
@@ -336,4 +339,27 @@ The compiler checks, within each function, that the address of a local doesn't o
 9. **Untagged unions:** needed for C interop? Or `@cast` only?
 10. **Large stack frames:** should the compiler error or warn above a size limit? Should `main` receive an `Os` capability for page allocation?
 11. **Loop control:** add `break` and `continue`?
-12. **Strings:** literal syntax and type (`Slice(u8)`? a `const` byte array?).
+12. **Strings:** literals are `[N]u8` values (§11) and text is `ascii::String` (§17). Is a UTF-8 string type needed? Should a literal be usable where a slice is expected without first binding it to a local?
+
+## 17. Standard library
+
+1. The standard library is ctxlang source (`std/*.ctx`), except for a few functions provided by the runtime (natives). It is part of every program.
+2. Its namespaces are visible from user code as if declared at top level. A user declaration with the same name shadows a std one (§10).
+3. It allocates only through an allocator the caller passes in (§14), and does IO only through an `Io` the caller passes in (§15).
+
+| Namespace | Contents |
+|---|---|
+| `slice` | `Slice(T)`, `from`, `of` (view an array), `empty`, `is_empty`, `at`, `get`, `set`, `sub`, `cast`, `copy`, `fill` |
+| `alloc` | `Bytes`, the allocator type `Fn(S)`, typed `resize(T, S)` |
+| `arena` | `Arena`, a bump allocator: `new`, `alloc` (an `alloc::Fn(Arena)`), `reset`, `remaining` |
+| `list` | `List(T, S)`: `new`, `reserve`, `push`, `pop`, `get`, `set`, `at`, `items`, `clear`, `each`, `free` |
+| `ascii` | `String { bytes: slice::Slice(u8) }`, a non-owning view of ASCII text: `from`, `of`, `empty`, `len`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `trim`, character tests and case, `parse_i64`, `parse_u64`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Builder(S)`: a growable string that owns its bytes. |
+| `io` | `Stream`; `print`, `println`, `eprint`, `eprintln`, `newline`, `put_char`, `print_<T>` and `println_<T>` for each number type and `bool`, `read_line`. Natives: `write`, `read`. |
+
+```
+fn main { mut io: Io } {
+    let hi = "hello"                                   // [5]u8
+    io::println{ &io, s = ascii::of{ chars = &hi } }
+    io::println_i32{ &io, n = 42 }
+}
+```

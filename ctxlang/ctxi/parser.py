@@ -473,6 +473,12 @@ class Parser:
         if k == 'float':
             self.next()
             return A.FloatLit(tok.val, pos)
+        if k == 'char':
+            self.next()
+            return A.IntLit(tok.val, pos)
+        if k == 'str':
+            self.next()
+            return A.StrLit(tok.val, pos)
         if k == 'id':
             self.next()
             return A.Path([A.Seg(tok.val, None, pos)], pos)
@@ -527,5 +533,13 @@ class Parser:
         return A.Builtin(name, targ, args, tok.pos)
 
 
-def parse(src):
-    return Parser(lex(src)).program()
+def parse(src, file=None):
+    return Parser(lex(src, file)).program()
+
+
+def parse_type(src):
+    p = Parser(lex(src))
+    t = p.type()
+    if p.peek().kind != 'eof':
+        p.err('unexpected text after type')
+    return t

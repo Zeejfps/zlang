@@ -4,57 +4,51 @@
 """
 
 import argparse
+import glob
+import os
 import sys
 import threading
 
 from .lexer import CompileError
 from .parser import parse
-from .checker import check, NativeFn
+from .checker import check
+from .natives import natives
 from .runtime import Runtime, Trap
-from .types import PRIMS, VOID, Cap
 
-IO = Cap('Io')
-
-
-def _printer(ty, fmt=str):
-    def impl(rt, args):
-        rt.out.write(fmt(args['n']) + '\n')
-    return NativeFn('print_' + ty, [('io', True, IO), ('n', False, PRIMS[ty])], VOID, impl)
+STD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'std')
 
 
-def _fmt_f32(v):
-    return f'{v:.9g}'
+def std_decls():
+    decls = []
+    for path in sorted(glob.glob(os.path.join(STD_DIR, '*.ctx'))):
+        with open(path, encoding='utf-8') as f:
+            decls += parse(f.read(), os.path.relpath(path, os.path.dirname(STD_DIR)).replace(os.sep, '/'))
+    return decls
 
 
-def natives():
-    out = [_printer(ty) for ty in ('i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64', 'usize', 'f64')]
-    out.append(_printer('f32', _fmt_f32))
-    out.append(_printer('bool', lambda v: 'true' if v else 'false'))
-
-    def put_byte(rt, args):
-        rt.out.write(chr(args['b']))
-    out.append(NativeFn('put_byte', [('io', True, IO), ('b', False, PRIMS['u8'])], VOID, put_byte))
-    return out
+def load(src, file=None):
+    """Parse and check a program together with std. Raises CompileError."""
+    return check(parse(src, file), std_decls(), natives())
 
 
-def load(src):
-    """Parse and check a program. Raises CompileError."""
-    return check(parse(src), natives())
-
-
-def run_source(src, out=None, stack_size=16 << 20):
-    c = load(src)
-    rt = Runtime(c, stack_size=stack_size, out=out)
+def run_source(src, file=None, out=None, err=None, inp=None, stack_size=16 << 20):
+    c = load(src, file)
+    rt = Runtime(c, stack_size=stack_size, out=out, err=err, inp=inp)
     main = c.main
     cap = rt.sp
     rt.sp += 16
     args = {name: (cap if mut else b'') for name, mut, _ in main.sig_fields}
-    rt.get_callable(main, []).call(args)
+    try:
+        rt.get_callable(main, []).call(args)
+    finally:
+        rt.flush()
 
 
 def fmt_pos(path, pos):
     if pos is None:
         return path
+    if len(pos) > 2 and pos[2]:
+        path = pos[2]
     return f'{path}:{pos[0]}:{pos[1]}'
 
 
@@ -72,9 +66,9 @@ def main(argv=None):
     def go():
         try:
             if a.check:
-                load(src)
+                load(src, a.file)
             else:
-                run_source(src, stack_size=a.stack)
+                run_source(src, a.file, stack_size=a.stack)
         except CompileError as e:
             sys.stdout.flush()
             print(f'{fmt_pos(a.file, e.pos)}: error: {e.msg}', file=sys.stderr)
@@ -82,6 +76,8 @@ def main(argv=None):
         except Trap as e:
             sys.stdout.flush()
             print(f'{fmt_pos(a.file, e.pos)}: trap: {e.msg}', file=sys.stderr)
+            for name in e.frames:
+                print(f'    in {name}', file=sys.stderr)
             result[0] = 134
         except RecursionError:
             sys.stdout.flush()

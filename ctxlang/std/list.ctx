@@ -1,0 +1,87 @@
+// std: list. A growable list, generic over the element type T and the allocator state S.
+
+namespace list {
+    struct List(T, S) {
+        items:   slice::Slice(T),   // capacity is items.len
+        len:     usize,
+        realloc: alloc::Fn(S),      // `fn`, not `&fn`: a bound function can't be stored here
+        // The heap is NOT stored here. Every call that allocates takes it via its context.
+    }
+
+    fn new(T, S) { realloc: alloc::Fn(S) } -> List(T, S) {
+        return List{ items = slice::empty(T){}, len = 0, realloc }
+    }
+
+    // Ensures room for `extra` more items. Returns false on allocation failure.
+    fn reserve(T, S) { mut list: List(T, S), mut heap: S, extra: usize } -> bool {
+        let need = list.len + extra
+        if (need <= list.items.len) { return true }
+
+        let mut cap = list.items.len
+        if (cap == 0) { cap = 4 }
+        while (cap < need) { cap = cap * 2 }
+
+        let items = alloc::resize{ realloc = list.realloc, &heap, mem = list.items, count = cap }
+        match (items) {
+            null          => { return false }
+            some{ value } => { list.items = value }
+        }
+        return true
+    }
+
+    // Returns false on allocation failure.
+    fn push(T, S) { mut list: List(T, S), mut heap: S, item: T } -> bool {
+        if (not reserve{ extra = 1, .. }) { return false }   // `..` forwards &list, &heap
+        slice::set{ s = list.items, i = list.len, v = item }
+        list.len = list.len + 1
+        return true
+    }
+
+    fn pop(T, S) { mut list: List(T, S) } -> ?T {
+        if (list.len == 0) { return null }
+        list.len = list.len - 1
+        return slice::get{ s = list.items, i = list.len }    // T converts to ?T
+    }
+
+    // Needs no heap, so it can't allocate.
+    fn get(T, S) { list: List(T, S), i: usize } -> ?T {
+        if (i >= list.len) { return null }
+        return slice::get{ s = list.items, i }
+    }
+
+    fn set(T, S) { mut list: List(T, S), i: usize, item: T } -> bool {
+        if (i >= list.len) { return false }
+        slice::set{ s = list.items, i, v = item }
+        return true
+    }
+
+    // Bounds-checked against len, not capacity.
+    fn at(T, S) { list: List(T, S), i: usize } -> *T {
+        if (i >= list.len) { @trap() }
+        return slice::at{ s = list.items, i }
+    }
+
+    // The first `len` items. Invalidated by the next call that may reallocate.
+    fn items(T, S) { list: List(T, S) } -> slice::Slice(T) {
+        return slice::sub{ s = list.items, lo = 0, hi = list.len }
+    }
+
+    fn clear(T, S) { mut list: List(T, S) } {
+        list.len = 0
+    }
+
+    // `&fn` accepts both bound and unbound functions.
+    fn each(T, S) { list: List(T, S), f: &fn{ item: T } } {
+        let mut i: usize = 0
+        while (i < list.len) {
+            f{ item = slice::get{ s = list.items, i } }
+            i = i + 1
+        }
+    }
+
+    fn free(T, S) { mut list: List(T, S), mut heap: S } {
+        alloc::resize{ realloc = list.realloc, &heap, mem = list.items, count = 0 }   // result discarded
+        list.items = slice::empty(T){}
+        list.len = 0
+    }
+}

@@ -6,8 +6,9 @@ The checker annotates the AST in place; the compiler reads those annotations.
 
 from . import ast as A
 from .lexer import CompileError
+from .parser import parse_type
 from .types import (
-    Prim, PRIMS, I32, USIZE, F64, BOOL, Ptr, Arr, Opt, StructT, UnionT, FnT, Cap,
+    Prim, PRIMS, I32, USIZE, F64, BOOL, U8, Ptr, Arr, Opt, StructT, UnionT, FnT, Cap,
     VOID, NULL, TParam, TVar, prune, subst, tstr, is_int, is_float, is_num, unify,
     fn_accepts, contains_bound_fn, free_vars, struct_fields, variants_of, qualname,
 )
@@ -21,13 +22,16 @@ class Namespace:
 
 
 class NativeFn:
-    """A runtime-provided function (the `io` prelude)."""
+    """A runtime-provided function, declared into a std namespace.
 
-    def __init__(self, name, fields, ret, impl):
-        self.name = name
+    Field and return types are ctxlang type source, resolved in that namespace.
+    """
+
+    def __init__(self, path, name, fields, ret, impl):
+        self.path, self.name = path, name
+        self.field_src = fields    # [(name, mut, type source)]
+        self.ret_src = ret         # type source or None
         self.tparams, self.tparam_objs = [], []
-        self.sig_fields = fields
-        self.ret_t = ret
         self.impl = impl
         self.pos = None
 
@@ -114,18 +118,15 @@ CHILDREN = {
 
 
 class Checker:
-    def __init__(self, decls, natives):
-        self.decls = decls
+    def __init__(self, decls, std_decls=(), natives=()):
+        self.decls, self.std_decls, self.natives = decls, std_decls, natives
         self.universe = Namespace(None, None)
         for name, t in PRIMS.items():
             self.universe.paths[name] = t
         self.universe.paths['Io'] = Cap('Io')
-        io_ns = Namespace('io', self.universe)
-        for nf in natives:
-            nf.ns = io_ns
-            io_ns.values[nf.name] = nf
-        self.universe.paths['io'] = io_ns
-        self.root = Namespace(None, self.universe)
+        # User code sees std names unqualified, and its own declarations shadow them.
+        self.std = Namespace(None, self.universe)
+        self.root = Namespace(None, self.std)
         self.fns, self.structs, self.unions, self.aliases, self.consts = [], [], [], [], []
         self.alias_stack = []
         self.const_stack = []
@@ -141,7 +142,16 @@ class Checker:
     # ---------------------------------------------------------------- program
 
     def check(self):
+        self.collect(self.std_decls, self.std)
         self.collect(self.decls, self.root)
+        for nf in self.natives:
+            ns = self.std
+            for part in nf.path:
+                ns = ns.paths.get(part)
+                if not isinstance(ns, Namespace):
+                    raise CompileError(f"native `{'::'.join(nf.path)}::{nf.name}` has no std namespace")
+            nf.ns = ns
+            self.add_name(ns.values, nf.name, nf, None)
         for d in self.structs + self.unions + self.fns:
             d.tparam_objs = [TParam(n) for n in d.tparams]
             if len(set(d.tparams)) != len(d.tparams):
@@ -157,6 +167,10 @@ class Checker:
             d.cty = self.rtype(d.texpr, d.ns, {})
         for d in self.fns:
             self.resolve_sig(d)
+        for nf in self.natives:
+            nf.sig_fields = [(n, m, self.rtype(parse_type(src), nf.ns, {}, allow_bound=not m))
+                             for n, m, src in nf.field_src]
+            nf.ret_t = self.rtype(parse_type(nf.ret_src), nf.ns, {}) if nf.ret_src else VOID
         for d in self.consts:
             self.check_const(d)
         for d in self.fns:
@@ -393,7 +407,7 @@ class Checker:
         self.const_ok(d.expr)
 
     def const_ok(self, e):
-        ok = (A.IntLit, A.FloatLit, A.BoolLit, A.NullLit, A.Binary, A.Unary, A.ArrayLit,
+        ok = (A.IntLit, A.FloatLit, A.StrLit, A.BoolLit, A.NullLit, A.Binary, A.Unary, A.ArrayLit,
               A.ArrayRep, A.Coerce, A.Path, A.Builtin, A.Braced)
         if not isinstance(e, ok):
             self.err('a const must be computable at compile time', e.pos)
@@ -794,6 +808,9 @@ class Checker:
     def e_FloatLit(self, e, exp):
         self.lits.append(e)
         return TVar('float')
+
+    def e_StrLit(self, e, exp):
+        return Arr(len(e.val), U8)
 
     def e_BoolLit(self, e, exp):
         return BOOL
@@ -1324,7 +1341,7 @@ class Checker:
         return set()
 
 
-def check(decls, natives):
-    c = Checker(decls, natives)
+def check(decls, std_decls=(), natives=()):
+    c = Checker(decls, std_decls, natives)
     c.check()
     return c

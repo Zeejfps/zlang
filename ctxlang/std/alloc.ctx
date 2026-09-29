@@ -1,0 +1,25 @@
+// std: alloc. The allocator interface. Allocators are plain functions over caller-held state `S`.
+
+namespace alloc {
+    type Bytes = slice::Slice(u8)
+
+    // One function allocates, resizes and frees, so alloc and free can't be mismatched.
+    //   mem.len == 0  -> allocate `new` bytes
+    //   new == 0      -> free `mem`, return an empty slice
+    //   otherwise     -> resize `mem` to `new` bytes, keeping its contents
+    // The result's address is a multiple of `align`. Returns null on failure.
+    // Byte-level, so one allocator serves every element type.
+    type Fn(S) = fn{ mut heap: S, mem: Bytes, new: usize, align: usize } -> ?Bytes
+
+    // Typed wrapper: resizes `mem` to hold `count` items of T, with T's alignment.
+    fn resize(T, S) { realloc: Fn(S), mut heap: S, mem: slice::Slice(T), count: usize } -> ?slice::Slice(T) {
+        let bytes = realloc{
+            &heap,
+            mem = slice::cast(T, u8){ s = mem },
+            new = count * @size_of(T),
+            align = @align_of(T),
+        }
+        if (bytes != null) { return slice::cast(u8, T){ s = bytes } }
+        return null
+    }
+}
