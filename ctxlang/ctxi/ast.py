@@ -130,6 +130,16 @@ class Return(Node):
         self.expr, self.pos = expr, pos
 
 
+class Break(Node):
+    def __init__(self, pos):
+        self.pos = pos
+
+
+class Continue(Node):
+    def __init__(self, pos):
+        self.pos = pos
+
+
 class ExprStmt(Node):
     def __init__(self, expr, pos):
         self.expr, self.pos = expr, pos

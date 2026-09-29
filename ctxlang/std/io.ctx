@@ -6,7 +6,7 @@
 //   fn main { mut io: Io } {
 //       let hi = "hello, world"
 //       io::println{ &io, s = ascii::of{ chars = &hi } }
-//       io::println_i32{ &io, n = 42 }
+//       io::println_i64{ &io, n = 42 }
 //   }
 //
 // Natives (provided by the runtime):
@@ -53,6 +53,9 @@ namespace io {
     }
 
     // ---- numbers
+    //
+    // Smaller types widen implicitly: print_i64 takes any signed integer or u8..u32, print_u64
+    // any unsigned integer, print_f64 an f32 too. print_f32 prints an f32's own shortest text.
 
     fn print_i64 { mut io: Io, n: i64 } {
         let mut buf: [20]u8
@@ -84,26 +87,11 @@ namespace io {
         }
     }
 
-    fn print_i8    { mut io: Io, n: i8 }    { print_i64{ &io, n = @as(i64, n) } }
-    fn print_i16   { mut io: Io, n: i16 }   { print_i64{ &io, n = @as(i64, n) } }
-    fn print_i32   { mut io: Io, n: i32 }   { print_i64{ &io, n = @as(i64, n) } }
-    fn print_u8    { mut io: Io, n: u8 }    { print_u64{ &io, n = @as(u64, n) } }
-    fn print_u16   { mut io: Io, n: u16 }   { print_u64{ &io, n = @as(u64, n) } }
-    fn print_u32   { mut io: Io, n: u32 }   { print_u64{ &io, n = @as(u64, n) } }
-    fn print_usize { mut io: Io, n: usize } { print_u64{ &io, n = @as(u64, n) } }
-
-    fn println_i8    { mut io: Io, n: i8 }    { print_i8{ &io, n };    newline{ &io } }
-    fn println_i16   { mut io: Io, n: i16 }   { print_i16{ &io, n };   newline{ &io } }
-    fn println_i32   { mut io: Io, n: i32 }   { print_i32{ &io, n };   newline{ &io } }
-    fn println_i64   { mut io: Io, n: i64 }   { print_i64{ &io, n };   newline{ &io } }
-    fn println_u8    { mut io: Io, n: u8 }    { print_u8{ &io, n };    newline{ &io } }
-    fn println_u16   { mut io: Io, n: u16 }   { print_u16{ &io, n };   newline{ &io } }
-    fn println_u32   { mut io: Io, n: u32 }   { print_u32{ &io, n };   newline{ &io } }
-    fn println_u64   { mut io: Io, n: u64 }   { print_u64{ &io, n };   newline{ &io } }
-    fn println_usize { mut io: Io, n: usize } { print_usize{ &io, n }; newline{ &io } }
-    fn println_f32   { mut io: Io, n: f32 }   { print_f32{ &io, n };   newline{ &io } }
-    fn println_f64   { mut io: Io, n: f64 }   { print_f64{ &io, n };   newline{ &io } }
-    fn println_bool  { mut io: Io, n: bool }  { print_bool{ &io, n };  newline{ &io } }
+    fn println_i64  { mut io: Io, n: i64 }  { print_i64{ &io, n };  newline{ &io } }
+    fn println_u64  { mut io: Io, n: u64 }  { print_u64{ &io, n };  newline{ &io } }
+    fn println_f64  { mut io: Io, n: f64 }  { print_f64{ &io, n };  newline{ &io } }
+    fn println_f32  { mut io: Io, n: f32 }  { print_f32{ &io, n };  newline{ &io } }
+    fn println_bool { mut io: Io, n: bool } { print_bool{ &io, n }; newline{ &io } }
 
     // ---- input
 
@@ -111,18 +99,16 @@ namespace io {
     // A line longer than `into` comes back in pieces. Non-ASCII bytes become '?'.
     fn read_line { mut io: Io, into: slice::Slice(u8) } -> ?ascii::String {
         let mut n: usize = 0
-        let mut got = false
         while (n < into.len) {
             let one = slice::sub{ s = into, lo = n, hi = n + 1 }
             if (read{ &io, into = one } == 0) {
-                if (not got) { return null }
-                return ascii::from{ bytes = slice::sub{ s = into, lo = 0, hi = n } }
+                if (n == 0) { return null }
+                break
             }
-            got = true
             let c = slice::get{ s = one, i = 0 }
             if (c == '\n') {
                 if (n > 0 and slice::get{ s = into, i = n - 1 } == '\r') { n = n - 1 }
-                return ascii::from{ bytes = slice::sub{ s = into, lo = 0, hi = n } }
+                break
             }
             if (c > 127) { slice::set{ s = one, i = 0, v = '?' } }
             n = n + 1

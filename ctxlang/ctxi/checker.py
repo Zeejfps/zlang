@@ -10,7 +10,7 @@ from .parser import parse_type
 from .types import (
     Prim, PRIMS, I32, USIZE, F64, BOOL, U8, Ptr, Arr, Opt, StructT, UnionT, FnT, Cap,
     VOID, NULL, TParam, TVar, prune, subst, tstr, is_int, is_float, is_num, unify,
-    fn_accepts, contains_bound_fn, free_vars, struct_fields, variants_of, qualname,
+    fn_accepts, widens, contains_bound_fn, free_vars, struct_fields, variants_of, qualname,
 )
 
 
@@ -381,6 +381,7 @@ class Checker:
         self.scopes = [{}]
         self.depth = 0
         self.loop_depth = 0
+        self.loops = []
         self.st = State(set(), set(), False)
         self.lits = []
         self.gvars = []
@@ -539,8 +540,6 @@ class Checker:
             if v.tracked and not v.mutable:
                 if v in self.st.maybe and not self.st.dead:
                     self.err(f'`{v.name}` may be assigned more than once', s.pos)
-                if v.loop_depth < self.loop_depth:
-                    self.err(f'`{v.name}` is assigned inside a loop; declare it with `let mut`', s.pos)
             self.st.defs.add(v)
             self.st.maybe.add(v)
             self.check_store((v, ()), False, s.rhs, s.pos)
@@ -608,10 +607,42 @@ class Checker:
     def s_While(self, s):
         s.cond = self.expect(s.cond, BOOL)
         s0 = self.save()
+        breaks, conts = [], []
+        self.loops.append((breaks, conts))
         self.loop_depth += 1
         self.block(s.body)
         self.loop_depth -= 1
-        self.st = State(s0.defs, s0.maybe | self.st.maybe, s0.dead)
+        self.loops.pop()
+        # A read-only `let x: T` declared outside the loop must not be assigned on a path that
+        # can repeat the loop (the end of the body or a `continue`).
+        for back in [self.st] + conts:
+            if back.dead:
+                continue
+            for v in back.maybe - s0.maybe:
+                if v.tracked and not v.mutable and v.loop_depth <= self.loop_depth:
+                    self.err(f'`{v.name}` may be assigned more than once: it is assigned in a loop '
+                             f'that can repeat; declare it with `let mut`', s.pos)
+        maybe = s0.maybe | self.st.maybe
+        for b in breaks + conts:
+            maybe |= b.maybe
+        if isinstance(s.cond, A.BoolLit) and s.cond.val:
+            # `while (true)` exits only through a break; without one it ends the path.
+            after = self.merge(breaks) if breaks else State(set(s0.defs), set(), True)
+            self.st = State(after.defs, maybe, s0.dead or after.dead)
+        else:
+            self.st = State(s0.defs, maybe, s0.dead)
+
+    def s_Break(self, s):
+        if not self.loops:
+            self.err('`break` outside a loop', s.pos)
+        self.loops[-1][0].append(self.save())
+        self.st.dead = True
+
+    def s_Continue(self, s):
+        if not self.loops:
+            self.err('`continue` outside a loop', s.pos)
+        self.loops[-1][1].append(self.save())
+        self.st.dead = True
 
     def s_Match(self, s):
         st = prune(self.expr(s.scrut))
@@ -783,12 +814,12 @@ class Checker:
         if isinstance(e, Opt):
             if isinstance(a, Opt) or (isinstance(a, TVar) and a.kind == 'any'):
                 return 'id' if unify(a, e) else None
-            return 'some' if unify(a, e.elem) else None
+            return 'some' if unify(a, e.elem) or widens(a, e.elem) else None
         if isinstance(e, FnT) and isinstance(a, FnT):
             if a.bound and not e.bound:
                 return None
             return 'id' if fn_accepts(a, e) else None
-        return 'id' if unify(a, e) else None
+        return 'id' if unify(a, e) or widens(a, e) else None
 
     def mismatch(self, a, e):
         a, e = prune(a), prune(e)
@@ -1113,19 +1144,20 @@ class Checker:
             e.nullcmp = False
             lt = self.expr(e.lhs)
             rt = self.expr(e.rhs, lt)
-            if not unify(lt, rt):
+            t = self.operand_type(lt, rt)
+            if t is None:
                 self.err(f'cannot compare {tstr(lt)} with {tstr(rt)}', e.pos)
-            t = prune(lt)
             if not (is_num(t) or t is BOOL or isinstance(t, Ptr)):
                 self.err(f'{tstr(t)} has no built-in equality', e.pos)
             return BOOL
         if op in ('<', '<=', '>', '>='):
             lt = self.expr(e.lhs)
             rt = self.expr(e.rhs, lt)
-            if not unify(lt, rt):
+            t = self.operand_type(lt, rt)
+            if t is None:
                 self.err(f'cannot compare {tstr(lt)} with {tstr(rt)}', e.pos)
-            if not is_num(lt):
-                self.err(f'`{op}` needs numbers, got {tstr(lt)}', e.pos)
+            if not is_num(t):
+                self.err(f'`{op}` needs numbers, got {tstr(t)}', e.pos)
             return BOOL
         lt = self.expr(e.lhs, exp)
         plt = prune(lt)
@@ -1137,11 +1169,24 @@ class Checker:
             return plt
         e.ptrarith = False
         rt = self.expr(e.rhs, lt)
-        if not unify(lt, rt):
-            self.err(f'operands of `{op}` have different types: {tstr(lt)} and {tstr(rt)}', e.pos)
-        if not is_num(lt):
-            self.err(f'`{op}` needs numbers, got {tstr(lt)}', e.pos)
-        return lt
+        t = self.operand_type(lt, rt)
+        if t is None:
+            self.err(f'operands of `{op}` have incompatible types: {tstr(lt)} and {tstr(rt)}; '
+                     f'convert one with @as', e.pos)
+        if not is_num(t):
+            self.err(f'`{op}` needs numbers, got {tstr(t)}', e.pos)
+        return t
+
+    @staticmethod
+    def operand_type(lt, rt):
+        """The common type of two operands: equal types, or the one the other widens to."""
+        if unify(lt, rt):
+            return prune(lt)
+        if widens(rt, lt):
+            return prune(lt)
+        if widens(lt, rt):
+            return prune(rt)
+        return None
 
     # ---- postfix
 

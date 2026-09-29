@@ -280,6 +280,12 @@ class Parser:
                 return A.While(cond, self.block(), pos)
             if tok.val == 'match':
                 return self.match_stmt()
+            if tok.val == 'break':
+                self.next()
+                return A.Break(pos)
+            if tok.val == 'continue':
+                self.next()
+                return A.Continue(pos)
             if tok.val == 'return':
                 self.next()
                 nxt = self.peek()

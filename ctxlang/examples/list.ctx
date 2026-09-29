@@ -30,7 +30,7 @@ fn scale_pushes(S) { mut events: list::List(Event, S), by: i32 } {
 }
 
 fn print_item { mut io: Io, item: i32 } {
-    io::println_i32{ &io, n = item }
+    io::println_i64{ &io, n = item }
 }
 
 fn add_to { mut total: i32, item: i32 } {
@@ -63,7 +63,7 @@ fn main { mut io: Io } {
 
     let mut total = 0
     list::each{ list = nums, f = add_to{ &total, _ } }
-    io::println_i32{ &io, n = total }
+    io::println_i64{ &io, n = total }
 
     // Event has no zero value, so `last` must be assigned on every path before it is read.
     let last: Event
@@ -71,7 +71,7 @@ fn main { mut io: Io } {
     apply{ &nums, ev = last, .. }
 
     let first = list::get{ list = nums, i = 0 }
-    if (first != null) { io::println_i32{ &io, n = first } }        // first is i32 here
+    if (first != null) { io::println_i64{ &io, n = first } }        // first is i32 here
 
     list::free{ list = &nums, .. }
     list::free{ list = &events, .. }
@@ -103,8 +103,8 @@ fn main { mut io: Io } {
 // match (ev) { push{ value } => { } }
 //     error: match isn't exhaustive: missing pop, clear
 //
-// io::println_i32{ &io, n = list::get{ list = nums, i = 0 } }
-//     error: expected i32, got ?i32
+// io::println_i64{ &io, n = list::get{ list = nums, i = 0 } }
+//     error: expected i64, got ?i32
 //
 // fn move_first(S) { mut from: list::List(i32, S), mut to: list::List(i32, S), mut heap: S } { ... }
 // move_first{ from = &nums, to = &nums, .. }
@@ -134,7 +134,7 @@ fn main { mut io: Io } {
 //     error: returned value holds the address of local `mem`
 //
 // let mut maybe = list::get{ list = nums, i = 0 }
-// if (maybe != null) { io::println_i32{ &io, n = maybe } }
+// if (maybe != null) { io::println_i64{ &io, n = maybe } }
 //     error: maybe is mutable and can't be narrowed; copy it to a `let` first
 //
 // ---- Not caught ----

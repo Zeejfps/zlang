@@ -30,7 +30,7 @@ class Tok:
 
 KEYWORDS = {
     'fn', 'struct', 'union', 'type', 'const', 'namespace', 'let', 'mut',
-    'if', 'else', 'while', 'match', 'return', 'and', 'or', 'not',
+    'if', 'else', 'while', 'break', 'continue', 'match', 'return', 'and', 'or', 'not',
     'true', 'false', 'null',
 }
 

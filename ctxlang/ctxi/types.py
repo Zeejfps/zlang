@@ -261,6 +261,29 @@ def unify(a, b):
     return False  # distinct Prims / TParams
 
 
+def widens(a, b):
+    """Does a convert implicitly to b? Only when every value of a is a value of b.
+
+    Signed and unsigned integers widen to wider types of their own signedness, unsigned ones
+    also to wider signed types. usize is assumed to be 32 to 64 bits: u8..u32 widen to it and
+    it widens to u64. f32 widens to f64. Integers never convert to floats implicitly.
+    """
+    a, b = prune(a), prune(b)
+    if not (isinstance(a, Prim) and isinstance(b, Prim)) or a is b:
+        return False
+    if a.kind == 'float' and b.kind == 'float':
+        return a.bits < b.bits
+    if a.kind != 'int' or b.kind != 'int':
+        return False
+    if a.name == 'usize':
+        return b.name == 'u64'
+    if b.name == 'usize':
+        return not a.signed and a.bits <= 32
+    if a.signed:
+        return b.signed and b.bits > a.bits
+    return b.bits > a.bits
+
+
 def fn_accepts(g, s):
     """§5: can function g be used where s is expected (ignoring bound-ness)?"""
     sf = {n: (m, t) for n, m, t in s.fields}

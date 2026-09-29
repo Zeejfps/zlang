@@ -171,6 +171,8 @@ let x = e      let mut x = e      let x: T = e      let x: T      let mut x: T
 x = e
 if (e) { } else if (e) { } else { }
 while (e) { }
+break
+continue
 match (e) { ... }
 return e
 return
@@ -184,6 +186,8 @@ f{ ... }
 5. In `x = e`, `x` must be a mutable place.
 6. An expression statement must be a call or a builtin call. Its result is discarded.
 7. `return` without a value is only allowed in a function with no `-> R`. In a function with `-> R`, every path must end in `return e` or `@trap()`.
+8. `break` leaves the innermost enclosing `while`. `continue` skips the rest of its body and goes to its next condition check. Both are errors outside a loop, and both end a path.
+9. `while (true)` without a `break` that leaves it ends a path, like `return`.
 
 ### Expressions
 
@@ -199,10 +203,26 @@ Precedence, tightest first:
 | and | `and` | short-circuit |
 | or | `or` | short-circuit |
 
-1. Arithmetic applies to two operands of the same numeric type. There are no implicit numeric conversions. Use `@as` or `@trunc` (§13).
+1. Arithmetic and comparison apply to two operands of the same numeric type, after widening (below). If the operand types differ, the one that widens to the other is converted. If neither widens to the other, it is an error. Use `@as` or `@trunc` (§13).
 2. Integer `+ - *` trap on overflow. `/` and `%` trap on a zero divisor. Use `@wrap_*` (§13) for wrapping arithmetic.
 3. `==` and `!=` work on numbers, `bool` and pointers (by address), and on `?T` against `null`. Other types have no built-in equality.
 4. `and`, `or` and `not` take and give `bool`. Conditions must be `bool`.
+
+### Widening
+
+A value of numeric type `A` converts implicitly to numeric type `B` when every value of `A` is a value of `B`:
+
+| From | Widens to |
+|---|---|
+| `iN` | `iM` for M > N |
+| `uN` | `uM` and `iM` for M > N |
+| `u8`, `u16`, `u32` | `usize` |
+| `usize` | `u64` |
+| `f32` | `f64` |
+
+1. Widening applies wherever an expression of type `B` is expected: a read-only call argument, a struct or union field, an assignment, a `let` with a type, a `return`, and the `T` of an implicit `T` to `?T` conversion. It also applies between the operands of a binary operator (rule 1 above).
+2. Nothing else converts implicitly. In particular integers don't widen to floats, `usize` doesn't widen to a signed type, and `?A`, `*A` and `[N]A` don't convert to `?B`, `*B` and `[N]B`. A `mut` field's argument is a pointer, so its type must match exactly.
+3. `usize` is at least 32 and at most 64 bits wide on every target, which is what makes the `usize` rows lossless.
 
 ### Literals
 
@@ -230,7 +250,7 @@ step  := .field | [index]
 
 ### Initialization
 
-1. `let x: T` without an initializer: `x` must be assigned exactly once on every path before it is read.
+1. `let x: T` without an initializer: `x` must be assigned exactly once on every path before it is read. An assignment inside a loop is allowed only if no path leads from it back to the loop's next iteration, for example because a `break` follows it.
 2. `let mut x: T` without an initializer: if `T` has a zero value, `x` starts as that value. Otherwise `x` must be assigned on every path before it is read.
 3. Zero values:
 
@@ -338,7 +358,7 @@ The compiler checks, within each function, that the address of a local doesn't o
 8. **Variant shorthand:** should `.variant{...}` be allowed when the expected type is known?
 9. **Untagged unions:** needed for C interop? Or `@cast` only?
 10. **Large stack frames:** should the compiler error or warn above a size limit? Should `main` receive an `Os` capability for page allocation?
-11. **Loop control:** add `break` and `continue`?
+11. **Loop control:** `break` and `continue` apply to the innermost loop. Are labels needed to leave an outer loop?
 12. **Strings:** literals are `[N]u8` values (§11) and text is `ascii::String` (§17). Is a UTF-8 string type needed? Should a literal be usable where a slice is expected without first binding it to a local?
 
 ## 17. Standard library
@@ -354,12 +374,12 @@ The compiler checks, within each function, that the address of a local doesn't o
 | `arena` | `Arena`, a bump allocator: `new`, `alloc` (an `alloc::Fn(Arena)`), `reset`, `remaining` |
 | `list` | `List(T, S)`: `new`, `reserve`, `push`, `pop`, `get`, `set`, `at`, `items`, `clear`, `each`, `free` |
 | `ascii` | `String { bytes: slice::Slice(u8) }`, a non-owning view of ASCII text: `from`, `of`, `empty`, `len`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `trim`, character tests and case, `parse_i64`, `parse_u64`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Builder(S)`: a growable string that owns its bytes. |
-| `io` | `Stream`; `print`, `println`, `eprint`, `eprintln`, `newline`, `put_char`, `print_<T>` and `println_<T>` for each number type and `bool`, `read_line`. Natives: `write`, `read`. |
+| `io` | `Stream`; `print`, `println`, `eprint`, `eprintln`, `newline`, `put_char`, `print_i64`, `print_u64`, `print_f64`, `print_f32`, `print_bool` and their `println_` forms (smaller number types widen to these), `read_line`. Natives: `write`, `read`. |
 
 ```
 fn main { mut io: Io } {
     let hi = "hello"                                   // [5]u8
     io::println{ &io, s = ascii::of{ chars = &hi } }
-    io::println_i32{ &io, n = 42 }
+    io::println_i64{ &io, n = 42 }
 }
 ```

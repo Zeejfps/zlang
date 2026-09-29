@@ -26,6 +26,9 @@ TAG = struct.Struct('<I')
 U64 = struct.Struct('<Q')
 F32 = struct.Struct('<f')
 RET_NONE = (None,)
+# Statement closures return None to fall through, a 1-tuple to return, or one of these.
+BREAK = object()
+CONTINUE = object()
 
 FMT = {'i8': 'b', 'u8': 'B', 'i16': 'h', 'u16': 'H', 'i32': 'i', 'u32': 'I',
        'i64': 'q', 'u64': 'Q', 'usize': 'Q', 'f32': 'f', 'f64': 'd', 'bool': '?'}
@@ -438,8 +441,17 @@ class Compiler:
             while c(fp):
                 r = body(fp)
                 if r is not None:
-                    return r
+                    if r is BREAK:
+                        return None
+                    if r is not CONTINUE:
+                        return r
         return loop
+
+    def s_Break(self, s):
+        return lambda fp: BREAK
+
+    def s_Continue(self, s):
+        return lambda fp: CONTINUE
 
     def s_Match(self, s):
         rt = self.rt

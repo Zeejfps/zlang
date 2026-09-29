@@ -158,12 +158,11 @@ namespace ascii {
         let mut k: usize = 0
         let mut v = n
         if (v > 0) { v = -v }                     // work in negatives so i64's minimum fits
-        let mut more = true
-        while (more) {
+        while (true) {
             digits[k] = '0' + @as(u8, -(v % 10))
             k = k + 1
             v = v / 10
-            more = v != 0
+            if (v == 0) { break }
         }
         let mut out: usize = 0
         if (n < 0) {
@@ -185,12 +184,11 @@ namespace ascii {
         let mut digits: [20]u8
         let mut k: usize = 0
         let mut v = n
-        let mut more = true
-        while (more) {
+        while (true) {
             digits[k] = '0' + @trunc(u8, v % 10)
             k = k + 1
             v = v / 10
-            more = v != 0
+            if (v == 0) { break }
         }
         if (k > into.len) { @trap() }
         let total = k
