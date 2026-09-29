@@ -1,0 +1,128 @@
+// Pretty-prints a JSON file, or the part of it at a dotted path:
+//
+//   python -m ctxi examples/json examples/json/sample.json
+//   python -m ctxi examples/json examples/json/sample.json users.0.name
+//
+// A directory is one program: this file holds main, value.ctx the data model (namespace json),
+// parser.ctx the parser, and printer.ctx the writer.
+
+fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
+    if (args.len < 1 or args.len > 2) {
+        let usage = "usage: json FILE [PATH]"
+        io::eprintln{ &io, s = ascii::of{ chars = &usage } }
+        return 2
+    }
+    let path = slice::get{ s = args, i = 0 }
+
+    let mut mem: [4194304]u8                                    // the heap: 4 MiB on the stack
+    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+
+    let bytes = match (fs::read_all{ &fs, &heap, realloc = arena::alloc, path }) {
+        ok{ value }  => { value }
+        err          => {
+            io::write{ &io, to = io::Stream::err, bytes = path }
+            let msg = ": cannot read"
+            io::eprintln{ &io, s = ascii::of{ chars = &msg } }
+            return 1
+        }
+    }
+
+    let doc = match (parser::parse{ &heap, realloc = arena::alloc, text = bytes }) {
+        ok{ value }  => { value }
+        err{ error } => {
+            report{ &io, path, text = bytes, error }
+            return 1
+        }
+    }
+
+    let mut v = doc
+    if (args.len == 2) {
+        let query = slice::get{ s = args, i = 1 }
+        let found = match (utf8::from{ bytes = query }) {
+            ok{ value } => { json::lookup{ v = doc, path = value } }
+            err         => { null }
+        }
+        v = match (found) {
+            some{ value } => { value }
+            null          => {
+                let msg = "no value at "
+                io::eprint{ &io, s = ascii::of{ chars = &msg } }
+                io::write{ &io, to = io::Stream::err, bytes = query }
+                io::eprintln{ &io, s = ascii::empty{} }
+                return 1
+            }
+        }
+    }
+
+    let out = match (printer::format{ &heap, realloc = arena::alloc, v, indent = 2 }) {
+        some{ value } => { value }
+        null          => {
+            let msg = "out of memory"
+            io::eprintln{ &io, s = ascii::of{ chars = &msg } }
+            return 1
+        }
+    }
+    io::println_utf8{ &io, s = out }
+    return 0
+}
+
+// Prints "FILE:LINE:COLUMN: message" to standard error. The column counts characters.
+fn report { mut io: Io, path: slice::Slice(u8), text: slice::Slice(u8), error: parser::Error } {
+    let mut line: u64 = 1
+    let mut col: u64 = 1
+    let mut i: usize = 0
+    while (i < error.at) {
+        let c = slice::get{ s = text, i }
+        if (c == '\n') {
+            line = line + 1
+            col = 1
+        } else if (c < 128 or c >= 192) {                   // not a UTF-8 continuation byte
+            col = col + 1
+        }
+        i = i + 1
+    }
+    io::write{ &io, to = io::Stream::err, bytes = path }
+    let mut buf: [48]u8
+    let mut b = ascii::builder{ realloc = arena::alloc }
+    let mut heap = arena::new{ buf = slice::of(u8){ a = &buf } }
+    ascii::push_char{ &b, &heap, c = ':' }
+    ascii::push_u64{ &b, &heap, n = line }
+    ascii::push_char{ &b, &heap, c = ':' }
+    ascii::push_u64{ &b, &heap, n = col }
+    let sep = ": "
+    ascii::push{ &b, &heap, s = ascii::of{ chars = &sep } }
+    io::eprint{ &io, s = ascii::view{ b } }
+    describe{ &io, problem = error.problem }
+}
+
+fn describe { mut io: Io, problem: parser::Problem } {
+    let not_utf8 = "not UTF-8 text"
+    let end = "unexpected end of input"
+    let value = "expected a value"
+    let array = "expected ',' or ']'"
+    let object = "expected ',' or '}'"
+    let key = "expected a string key"
+    let colon = "expected ':'"
+    let number = "invalid number"
+    let escape = "invalid escape"
+    let control = "control character in string"
+    let deep = "nested too deeply"
+    let trailing = "unexpected text after the value"
+    let oom = "out of memory"
+    let msg = match (problem) {
+        not_utf8                  => { ascii::of{ chars = &not_utf8 } }
+        unexpected_end            => { ascii::of{ chars = &end } }
+        expected_value            => { ascii::of{ chars = &value } }
+        expected_comma_or_bracket => { ascii::of{ chars = &array } }
+        expected_comma_or_brace   => { ascii::of{ chars = &object } }
+        expected_key              => { ascii::of{ chars = &key } }
+        expected_colon            => { ascii::of{ chars = &colon } }
+        bad_number                => { ascii::of{ chars = &number } }
+        bad_escape                => { ascii::of{ chars = &escape } }
+        control_char              => { ascii::of{ chars = &control } }
+        too_deep                  => { ascii::of{ chars = &deep } }
+        trailing_text             => { ascii::of{ chars = &trailing } }
+        out_of_memory             => { ascii::of{ chars = &oom } }
+    }
+    io::eprintln{ &io, s = msg }
+}

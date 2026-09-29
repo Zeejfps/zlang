@@ -1,0 +1,4 @@
+{"name": "ctxlang", "version": 0.1, "tags": ["systems", "contexts"],
+ "users": [{"name": "Ada", "id": 1, "admin": true}, {"name": "Zoë ☃", "id": 2, "admin": false, "note": null}],
+ "limits": {"depth": 256, "ratio": -1.5e-3, "big": 1e300, "empty": {}, "none": []},
+ "escapes": "tab\there \"quoted\" back\\slash 😀"}

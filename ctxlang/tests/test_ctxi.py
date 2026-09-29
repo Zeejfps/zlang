@@ -8,7 +8,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from ctxi.__main__ import run_source  # noqa: E402
+from ctxi.__main__ import read_program, run_source, run_sources  # noqa: E402
 from ctxi.lexer import CompileError  # noqa: E402
 from ctxi.runtime import Trap  # noqa: E402
 
@@ -1935,6 +1935,91 @@ class WordCountExample(Base):
         with open(p, 'wb') as f:
             f.write(b'caf\xe9')
         self.assertEqual(self.run_wc([p]), ('', 'not a UTF-8 text file\n', 1))
+
+
+class JsonExample(Base):
+    """examples/json: a program made of a directory of files."""
+
+    def setUp(self):
+        import tempfile
+        self.sources = read_program(os.path.join(ROOT, 'examples', 'json'))
+        self.tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_json(self, text, *query):
+        p = os.path.join(self.tmp.name, 'in.json')
+        with open(p, 'wb') as f:
+            f.write(text if isinstance(text, bytes) else text.encode('utf-8'))
+        out, err = io.StringIO(), io.StringIO()
+        code = run_sources(self.sources, out=out, err=err, args=[p, *query])
+        return out.getvalue(), err.getvalue().replace(p, 'in.json'), code
+
+    def test_loads_every_file(self):
+        names = sorted(os.path.basename(f) for _, f in self.sources)
+        self.assertEqual(names, ['main.ctx', 'parser.ctx', 'printer.ctx', 'value.ctx'])
+
+    def test_pretty_prints(self):
+        self.assertEqual(self.run_json('{"a":[1,2.5,{}],"b":{"c":null,"d":[]},"e":true}'), ('''{
+  "a": [
+    1,
+    2.5,
+    {}
+  ],
+  "b": {
+    "c": null,
+    "d": []
+  },
+  "e": true
+}
+''', '', 0))
+
+    def test_numbers(self):
+        for text, expected in [('-0', '0'), ('1E+2', '100'), ('-1.5e-3', '-0.0015'), ('1e300', '1e+300'),
+                               ('123456789012345678', '1.2345678901234568e+17')]:
+            self.assertEqual(self.run_json(text), (expected + '\n', '', 0), text)
+
+    def test_strings(self):
+        self.assertEqual(self.run_json(r'"t\t \"q\" \\ \/ é 😀 \u001f"')[0],
+                         r'"t\t \"q\" \\ / é 😀 \u001f"' + '\n')
+        self.assertEqual(self.run_json('"Zoë ☃"')[0], '"Zoë ☃"\n')
+
+    def test_lookup(self):
+        doc = '{"users": [{"name": "Ada"}, {"name": "Zoë", "x": 1, "x": 2}]}'
+        self.assertEqual(self.run_json(doc, 'users.1.name'), ('"Zoë"\n', '', 0))
+        self.assertEqual(self.run_json(doc, 'users.1.x'), ('2\n', '', 0))       # the last duplicate wins
+        self.assertEqual(self.run_json(doc, 'users.2'), ('', 'no value at users.2\n', 1))
+        self.assertEqual(self.run_json(doc, 'users.name'), ('', 'no value at users.name\n', 1))
+
+    def test_errors(self):
+        for text, expected in [
+            ('[1, 2,]', '1:7: expected a value'),
+            ('{"a" 1}', "1:6: expected ':'"),
+            ('{"a":1,}', '1:8: expected a string key'),
+            ('[1 2]', "1:4: expected ',' or ']'"),
+            ('{"a":1 "b":2}', "1:8: expected ',' or '}'"),
+            ('[01]', '1:2: invalid number'),
+            ('1.', '1:1: invalid number'),
+            ('1e999', '1:1: invalid number'),
+            (r'"\x"', '1:2: invalid escape'),
+            (r'"\ud800"', '1:2: invalid escape'),
+            (r'"\udc00"', '1:2: invalid escape'),
+            ('"a\tb"', '1:3: control character in string'),
+            ('"abc', '1:5: unexpected end of input'),
+            ('', '1:1: unexpected end of input'),
+            ('[1] 2', '1:5: unexpected text after the value'),
+            ('{\n  "é": [1,\n     "é", tru]}', '3:11: expected a value'),
+        ]:
+            self.assertEqual(self.run_json(text), ('', 'in.json:' + expected + '\n', 1), text)
+
+    def test_not_utf8(self):
+        self.assertEqual(self.run_json(b'"caf\xe9"'), ('', 'in.json:1:5: not UTF-8 text\n', 1))
+
+    def test_usage(self):
+        err = io.StringIO()
+        self.assertEqual(run_sources(self.sources, out=io.StringIO(), err=err, args=[]), 2)
+        self.assertEqual(err.getvalue(), 'usage: json FILE [PATH]\n')
 
 
 if __name__ == '__main__':

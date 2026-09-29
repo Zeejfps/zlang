@@ -1,0 +1,315 @@
+// A JSON parser (RFC 8259), by recursive descent.
+//
+//   let v = match (parser::parse{ &heap, realloc = arena::alloc, text = bytes }) {
+//       ok{ value }  => { value }
+//       err{ error } => { ... }                // error.at is a byte offset into text
+//   }
+//
+// The input must be UTF-8. Strings without escapes are views of it, so it must outlive the tree.
+// Everything else, and every string with an escape, is allocated from heap and never freed:
+// parse into an arena.
+
+namespace parser {
+    union Problem {
+        not_utf8,
+        unexpected_end,
+        expected_value,
+        expected_comma_or_bracket,      // inside an array
+        expected_comma_or_brace,        // inside an object
+        expected_key,
+        expected_colon,
+        bad_number,
+        bad_escape,
+        control_char,                   // an unescaped byte below 0x20 inside a string
+        too_deep,
+        trailing_text,
+        out_of_memory,
+    }
+
+    struct Error { problem: Problem, at: usize }
+
+    // Deeper nesting is rejected rather than risk the stack.
+    const MAX_DEPTH: u32 = 256
+
+    struct Parser(S) {
+        text:    slice::Slice(u8),
+        pos:     usize,
+        depth:   u32,
+        realloc: alloc::Fn(S),
+    }
+
+    fn parse(S) { mut heap: S, realloc: alloc::Fn(S), text: slice::Slice(u8) } -> Result(json::Value, Error) {
+        match (utf8::from{ bytes = text }) {
+            ok           => { }
+            err{ error } => { return fail{ at = error.at, problem = Problem::not_utf8 } }
+        }
+        let mut p = Parser{ text, pos = 0, depth = 0, realloc }
+        let v = match (parse_value{ &p, &heap }) {
+            ok{ value }  => { value }
+            err{ error } => { return Result::err{ error } }
+        }
+        skip_space{ &p }
+        if (p.pos < text.len) { return fail{ at = p.pos, problem = Problem::trailing_text } }
+        return Result::ok{ value = v }
+    }
+
+    fn parse_value(S) { mut p: Parser(S), mut heap: S } -> Result(json::Value, Error) {
+        skip_space{ &p }
+        let c = match (peek{ p }) {
+            null          => { return fail{ at = p.pos, problem = Problem::unexpected_end } }
+            some{ value } => { value }
+        }
+        if (c == '{') { return parse_object{ .. } }
+        if (c == '[') { return parse_array{ .. } }
+        if (c == '"') {
+            return match (parse_string{ .. }) {
+                ok{ value }  => { Result::ok{ value = json::Value::string{ value } } }
+                err{ error } => { Result::err{ error } }
+            }
+        }
+        if (c == '-' or ascii::is_digit{ c }) { return parse_number{ &p } }
+        let t = "true"
+        let f = "false"
+        let n = "null"
+        if (eat_word{ &p, w = ascii::of{ chars = &t } }) { return Result::ok{ value = json::Value::boolean{ value = true } } }
+        if (eat_word{ &p, w = ascii::of{ chars = &f } }) { return Result::ok{ value = json::Value::boolean{ value = false } } }
+        if (eat_word{ &p, w = ascii::of{ chars = &n } }) { return Result::ok{ value = json::Value::nil } }
+        return fail{ at = p.pos, problem = Problem::expected_value }
+    }
+
+    // At '['.
+    fn parse_array(S) { mut p: Parser(S), mut heap: S } -> Result(json::Value, Error) {
+        if (not enter{ &p }) { return fail{ at = p.pos, problem = Problem::too_deep } }
+        defer p.depth = p.depth - 1
+        let mut items = list::new(json::Value){ realloc = p.realloc }
+        skip_space{ &p }
+        if (not eat{ &p, c = ']' }) {
+            while (true) {
+                let v = match (parse_value{ .. }) {
+                    ok{ value }  => { value }
+                    err{ error } => { return Result::err{ error } }
+                }
+                if (not list::push{ list = &items, &heap, item = v }) {
+                    return fail{ at = p.pos, problem = Problem::out_of_memory }
+                }
+                skip_space{ &p }
+                if (eat{ &p, c = ']' }) { break }
+                if (not eat{ &p, c = ',' }) { return fail{ at = p.pos, problem = Problem::expected_comma_or_bracket } }
+            }
+        }
+        return Result::ok{ value = json::Value::array{ items = list::items{ list = items } } }
+    }
+
+    // At '{'.
+    fn parse_object(S) { mut p: Parser(S), mut heap: S } -> Result(json::Value, Error) {
+        if (not enter{ &p }) { return fail{ at = p.pos, problem = Problem::too_deep } }
+        defer p.depth = p.depth - 1
+        let mut members = list::new(json::Member){ realloc = p.realloc }
+        skip_space{ &p }
+        if (not eat{ &p, c = '}' }) {
+            while (true) {
+                skip_space{ &p }
+                if (not next_is{ p, c = '"' }) { return fail{ at = p.pos, problem = Problem::expected_key } }
+                let key = match (parse_string{ .. }) {
+                    ok{ value }  => { value }
+                    err{ error } => { return Result::err{ error } }
+                }
+                skip_space{ &p }
+                if (not eat{ &p, c = ':' }) { return fail{ at = p.pos, problem = Problem::expected_colon } }
+                let value = match (parse_value{ .. }) {
+                    ok{ value }  => { value }
+                    err{ error } => { return Result::err{ error } }
+                }
+                if (not list::push{ list = &members, &heap, item = json::Member{ key, value } }) {
+                    return fail{ at = p.pos, problem = Problem::out_of_memory }
+                }
+                skip_space{ &p }
+                if (eat{ &p, c = '}' }) { break }
+                if (not eat{ &p, c = ',' }) { return fail{ at = p.pos, problem = Problem::expected_comma_or_brace } }
+            }
+        }
+        return Result::ok{ value = json::Value::object{ members = list::items{ list = members } } }
+    }
+
+    // At '"'. A string without escapes is a view of the input; one with escapes is decoded into
+    // a copy, built from the runs of plain text between them.
+    fn parse_string(S) { mut p: Parser(S), mut heap: S } -> Result(utf8::String, Error) {
+        p.pos = p.pos + 1
+        let mut b = utf8::builder{ realloc = p.realloc }
+        let mut copied = false
+        while (true) {
+            // The run ends at an ASCII byte, so both ends are character boundaries.
+            let lo = p.pos
+            while (p.pos < p.text.len and plain{ c = slice::get{ s = p.text, i = p.pos } }) { p.pos = p.pos + 1 }
+            let run = utf8::String{ bytes = slice::sub{ s = p.text, lo, hi = p.pos } }
+
+            let c = match (peek{ p }) {
+                null          => { return fail{ at = p.pos, problem = Problem::unexpected_end } }
+                some{ value } => { value }
+            }
+            if (c < 32) { return fail{ at = p.pos, problem = Problem::control_char } }
+            if (c == '"' and not copied) {
+                p.pos = p.pos + 1
+                return Result::ok{ value = run }
+            }
+            if (not utf8::push{ &b, &heap, s = run }) { return fail{ at = p.pos, problem = Problem::out_of_memory } }
+            if (c == '"') {
+                p.pos = p.pos + 1
+                return Result::ok{ value = utf8::view{ b } }
+            }
+            // c is '\\'
+            let ch = match (parse_escape{ &p }) {
+                ok{ value }  => { value }
+                err{ error } => { return Result::err{ error } }
+            }
+            if (not utf8::push_char{ &b, &heap, c = ch }) { return fail{ at = p.pos, problem = Problem::out_of_memory } }
+            copied = true
+        }
+    }
+
+    // A byte that stands for itself inside a string.
+    fn plain { c: u8 } -> bool {
+        return c != '"' and c != '\\' and c >= 32
+    }
+
+    // At '\\'. Returns the character the escape stands for. A \u escape for a UTF-16 high
+    // surrogate must be followed by one for a low surrogate; together they are one character.
+    fn parse_escape(S) { mut p: Parser(S) } -> Result(u32, Error) {
+        let at = p.pos
+        p.pos = p.pos + 1
+        let c = match (bump{ &p }) {
+            null          => { return fail{ at = p.pos, problem = Problem::unexpected_end } }
+            some{ value } => { value }
+        }
+        if (c == '"' or c == '\\' or c == '/') { return Result::ok{ value = c } }
+        if (c == 'b') { return Result::ok{ value = 8 } }
+        if (c == 'f') { return Result::ok{ value = 12 } }
+        if (c == 'n') { return Result::ok{ value = '\n' } }
+        if (c == 'r') { return Result::ok{ value = '\r' } }
+        if (c == 't') { return Result::ok{ value = '\t' } }
+        if (c != 'u') { return fail{ at, problem = Problem::bad_escape } }
+
+        let hi = match (hex4{ &p }) {
+            null          => { return fail{ at, problem = Problem::bad_escape } }
+            some{ value } => { value }
+        }
+        if (hi < 55296 or hi > 57343) { return Result::ok{ value = hi } }      // not U+D800..U+DFFF
+        if (hi > 56319) { return fail{ at, problem = Problem::bad_escape } }  // a lone low surrogate
+        if (not eat{ &p, c = '\\' } or not eat{ &p, c = 'u' }) { return fail{ at, problem = Problem::bad_escape } }
+        let lo = match (hex4{ &p }) {
+            null          => { return fail{ at, problem = Problem::bad_escape } }
+            some{ value } => { value }
+        }
+        if (lo < 56320 or lo > 57343) { return fail{ at, problem = Problem::bad_escape } }
+        return Result::ok{ value = 65536 + (hi - 55296) * 1024 + (lo - 56320) }
+    }
+
+    // Four hex digits, or null.
+    fn hex4(S) { mut p: Parser(S) } -> ?u32 {
+        let mut v: u32 = 0
+        let mut k = 0
+        while (k < 4) {
+            let c = match (bump{ &p }) {
+                null          => { return null }
+                some{ value } => { value }
+            }
+            let d = match (hex_digit{ c }) {
+                null          => { return null }
+                some{ value } => { value }
+            }
+            v = v * 16 + d
+            k = k + 1
+        }
+        return v
+    }
+
+    fn hex_digit { c: u8 } -> ?u32 {
+        if (ascii::is_digit{ c }) { return c - '0' }
+        if (c >= 'a' and c <= 'f') { return c - 'a' + 10 }
+        if (c >= 'A' and c <= 'F') { return c - 'A' + 10 }
+        return null
+    }
+
+    // At '-' or a digit:  -? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?
+    fn parse_number(S) { mut p: Parser(S) } -> Result(json::Value, Error) {
+        let start = p.pos
+        eat{ &p, c = '-' }
+        if (eat{ &p, c = '0' }) {
+            let next = peek{ p }
+            if (next != null) {
+                if (ascii::is_digit{ c = next }) { return fail{ at = start, problem = Problem::bad_number } }   // leading zero
+            }
+        } else if (digits{ &p } == 0) {
+            return fail{ at = start, problem = Problem::bad_number }
+        }
+        if (eat{ &p, c = '.' }) {
+            if (digits{ &p } == 0) { return fail{ at = start, problem = Problem::bad_number } }
+        }
+        if (eat{ &p, c = 'e' } or eat{ &p, c = 'E' }) {
+            if (not eat{ &p, c = '+' }) { eat{ &p, c = '-' } }
+            if (digits{ &p } == 0) { return fail{ at = start, problem = Problem::bad_number } }
+        }
+        // Everything consumed is ASCII, and valid syntax for parse_f64.
+        let text = ascii::String{ bytes = slice::sub{ s = p.text, lo = start, hi = p.pos } }
+        return match (ascii::parse_f64{ s = text }) {
+            null          => { fail{ at = start, problem = Problem::bad_number } }      // beyond f64
+            some{ value } => { Result::ok{ value = json::Value::number{ value } } }
+        }
+    }
+
+    // ---- scanning
+
+    fn fail(T) { at: usize, problem: Problem } -> Result(T, Error) {
+        return Result::err{ error = Error{ problem, at } }
+    }
+
+    // Counts a level of nesting. False if that is too deep.
+    fn enter(S) { mut p: Parser(S) } -> bool {
+        if (p.depth >= MAX_DEPTH) { return false }
+        p.depth = p.depth + 1
+        p.pos = p.pos + 1                                   // the '[' or '{'
+        return true
+    }
+
+    fn peek(S) { p: Parser(S) } -> ?u8 {
+        if (p.pos >= p.text.len) { return null }
+        return slice::get{ s = p.text, i = p.pos }
+    }
+
+    fn bump(S) { mut p: Parser(S) } -> ?u8 {
+        let c = peek{ p }
+        if (c != null) { p.pos = p.pos + 1 }
+        return c
+    }
+
+    fn next_is(S) { p: Parser(S), c: u8 } -> bool {
+        return p.pos < p.text.len and slice::get{ s = p.text, i = p.pos } == c
+    }
+
+    fn eat(S) { mut p: Parser(S), c: u8 } -> bool {
+        if (not next_is{ p, c }) { return false }
+        p.pos = p.pos + 1
+        return true
+    }
+
+    // Consumes w if the text continues with it.
+    fn eat_word(S) { mut p: Parser(S), w: ascii::String } -> bool {
+        let n = ascii::len{ s = w }
+        if (p.pos + n > p.text.len) { return false }
+        if (not map::eq_bytes{ a = slice::sub{ s = p.text, lo = p.pos, hi = p.pos + n }, b = w.bytes }) { return false }
+        p.pos = p.pos + n
+        return true
+    }
+
+    // Consumes decimal digits and returns how many.
+    fn digits(S) { mut p: Parser(S) } -> usize {
+        let lo = p.pos
+        while (p.pos < p.text.len and ascii::is_digit{ c = slice::get{ s = p.text, i = p.pos } }) { p.pos = p.pos + 1 }
+        return p.pos - lo
+    }
+
+    // JSON whitespace: space, tab, newline and carriage return, the same set as ascii::is_space.
+    fn skip_space(S) { mut p: Parser(S) } {
+        while (p.pos < p.text.len and ascii::is_space{ c = slice::get{ s = p.text, i = p.pos } }) { p.pos = p.pos + 1 }
+    }
+}

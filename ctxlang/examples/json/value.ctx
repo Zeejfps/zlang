@@ -1,0 +1,82 @@
+// The JSON data model and lookups into it.
+//
+// A Value is a tree. Arrays and objects hold slices of their children, and strings are UTF-8
+// views; `parser::parse` allocates them from the heap it is given, or views the input text
+// directly. Nothing in a tree owns memory, so parse into an arena and drop the arena when done.
+
+namespace json {
+    union Value {
+        nil,                                    // JSON's null: `null` is a keyword
+        boolean{ value: bool },
+        number{ value: f64 },
+        string{ value: utf8::String },
+        array{ items: slice::Slice(Value) },
+        object{ members: slice::Slice(Member) },
+    }
+
+    // Members keep the order they were written in. Duplicate keys are kept too; `get` finds the
+    // last one, as JavaScript does.
+    struct Member { key: utf8::String, value: Value }
+
+    // The member `key` of an object, or null if v isn't an object or has no such member.
+    fn get { v: Value, key: utf8::String } -> ?Value {
+        let members = match (v) {
+            object{ members } => { members }
+            else              => { return null }
+        }
+        let mut i = members.len
+        while (i > 0) {
+            i = i - 1
+            let m = slice::get{ s = members, i }
+            if (utf8::eq{ a = m.key, b = key }) { return m.value }
+        }
+        return null
+    }
+
+    // Item i of an array, or null if v isn't an array or is too short.
+    fn index { v: Value, i: usize } -> ?Value {
+        return match (v) {
+            array{ items } => { if (i < items.len) { slice::get{ s = items, i } } else { null } }
+            else           => { null }
+        }
+    }
+
+    // Follows a dotted path such as "users.0.name": a segment of digits indexes an array, any
+    // other segment names an object member. The empty path is v itself. Null if a step fails.
+    fn lookup { v: Value, path: utf8::String } -> ?Value {
+        let mut here = v
+        let mut rest = path
+        while (utf8::len{ s = rest } > 0) {
+            let mut seg = rest
+            rest = utf8::empty{}
+            let split = utf8::split_once{ s = seg, c = '.' }
+            if (split != null) {
+                seg = split.head
+                rest = split.tail
+            }
+            let next = match (here) {
+                array => { index_by{ v = here, seg } }
+                else  => { get{ v = here, key = seg } }
+            }
+            here = match (next) {
+                null          => { return null }
+                some{ value } => { value }
+            }
+        }
+        return here
+    }
+
+    // Indexes an array by a segment of lookup's path. Null unless seg is all digits.
+    fn index_by { v: Value, seg: utf8::String } -> ?Value {
+        let digits = match (utf8::to_ascii{ s = seg }) {
+            null          => { return null }
+            some{ value } => { value }
+        }
+        let n = match (ascii::parse_u64{ s = digits }) {
+            null          => { return null }
+            some{ value } => { value }
+        }
+        if (n > 4294967295) { return null }                 // any real index fits in a u32
+        return index{ v, i = @as(usize, n) }
+    }
+}

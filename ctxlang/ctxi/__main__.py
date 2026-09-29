@@ -1,6 +1,8 @@
 """ctxi: interpreter for ctxlang.
 
-    python -m ctxi program.ctx [--check] [--stack BYTES] [args...] [-- args...]
+    python -m ctxi PROGRAM [--check] [--stack BYTES] [args...] [-- args...]
+
+PROGRAM is a .ctx file, or a directory whose .ctx files together make up one program.
 """
 
 import argparse
@@ -27,14 +29,42 @@ def std_decls():
     return decls
 
 
+def read_program(path):
+    """The (source, file) pairs of a program: one file, or every .ctx file in a directory."""
+    if os.path.isdir(path):
+        paths = sorted(glob.glob(os.path.join(path, '*.ctx')))
+        if not paths:
+            raise CompileError('no .ctx files in directory', (0, 0, path))
+    else:
+        paths = [path]
+    sources = []
+    for p in paths:
+        with open(p, encoding='utf-8') as f:
+            sources.append((f.read(), p))
+    return sources
+
+
 def load(src, file=None):
     """Parse and check a program together with std. Raises CompileError."""
-    return check(parse(src, file), std_decls(), natives())
+    return load_sources([(src, file)])
 
 
-def run_source(src, file=None, out=None, err=None, inp=None, stack_size=16 << 20, args=()):
+def load_sources(sources):
+    """Like load, for a program made of several (source, file) pairs."""
+    decls = []
+    for src, file in sources:
+        decls += parse(src, file)
+    return check(decls, std_decls(), natives())
+
+
+def run_source(src, file=None, **kw):
     """Runs a program. Returns its exit code: what main returns, or 0."""
-    c = load(src, file)
+    return run_sources([(src, file)], **kw)
+
+
+def run_sources(sources, out=None, err=None, inp=None, stack_size=16 << 20, args=()):
+    """Like run_source, for a program made of several (source, file) pairs."""
+    c = load_sources(sources)
     rt = Runtime(c, stack_size=stack_size, out=out, err=err, inp=inp)
     main = c.main
     cap = rt.push_bytes(bytes(16), 16)
@@ -77,7 +107,7 @@ def fmt_pos(path, pos):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='ctxi', description='ctxlang interpreter')
-    ap.add_argument('file')
+    ap.add_argument('file', help='a .ctx file, or a directory of them')
     ap.add_argument('--check', action='store_true', help='only parse and type-check')
     ap.add_argument('--stack', type=int, default=16 << 20, help='stack size in bytes')
     ap.add_argument('args', nargs='*', help="the program's arguments, in main's `args`; "
@@ -89,17 +119,16 @@ def main(argv=None):
         argv, rest = argv[:i], argv[i + 1:]
     a = ap.parse_args(argv)
     a.args += rest
-    with open(a.file, encoding='utf-8') as f:
-        src = f.read()
 
     result = [0]
 
     def go():
         try:
+            sources = read_program(a.file)
             if a.check:
-                load(src, a.file)
+                load_sources(sources)
             else:
-                result[0] = run_source(src, a.file, stack_size=a.stack, args=a.args)
+                result[0] = run_sources(sources, stack_size=a.stack, args=a.args)
         except CompileError as e:
             sys.stdout.flush()
             print(f'{fmt_pos(a.file, e.pos)}: error: {e.msg}', file=sys.stderr)
