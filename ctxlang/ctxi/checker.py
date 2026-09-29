@@ -577,15 +577,112 @@ class Checker:
                          f'which does not live as long', pos)
 
     def s_If(self, s):
+        self.check_if(s, None, False)
+
+    def e_If(self, e, exp):
+        return self.check_if(e, exp, True)
+
+    def check_if(self, s, exp, value, may_leave=False):
         s.cond = self.expect(s.cond, BOOL)
         nar = self.narrowing(s.cond)
         s0 = self.save()
-        self.block(s.then, [nar[1]] if nar and nar[0] == '!=' else ())
+        body = self.value_block if value else self.branch_block
+        t1 = body(s.then, [nar[1]] if nar and nar[0] == '!=' else (), exp)
         s1 = self.st
         self.st = State(set(s0.defs), set(s0.maybe), s0.dead)
+        t2 = None
         if s.els is not None:
-            self.block(s.els, [nar[1]] if nar and nar[0] == '==' else ())
+            t2 = body(s.els, [nar[1]] if nar and nar[0] == '==' else (), exp)
         self.st = self.merge([s1, self.st])
+        if value:
+            return self.join(s, [(s.then, t1), (s.els, t2)], exp, may_leave)
+
+    def branch_block(self, b, extra, exp):
+        self.block(b, extra)
+
+    def value_block(self, b, extra, exp):
+        """A branch of an `if` or `match` expression: its last statement gives its value.
+
+        A trailing `if` with an `else`, or `match`, is itself the value, unless every one of its
+        branches leaves. Returns the value's type, or None if the branch never finishes (it
+        leaves through `return`, `break`, `continue` or `@trap()`).
+        """
+        entry_dead = self.st.dead
+        self.push()
+        for v in extra:
+            self.declare(v)
+        stmts = b.stmts
+        last = stmts[-1] if stmts else None
+        nested = isinstance(last, A.Match) or (isinstance(last, A.If) and last.els is not None)
+        valued = nested or (isinstance(last, A.ExprStmt)
+                            and not (isinstance(last.expr, A.Builtin) and last.expr.name == 'trap'))
+        for st in (stmts[:-1] if valued else stmts):
+            self.stmt(st)
+        b.result = None
+        t = None
+        if nested:
+            check = self.check_match if isinstance(last, A.Match) else self.check_if
+            t = last.ty = check(last, exp, True, may_leave=True)
+            b.result = last
+        elif valued:
+            e = last.expr
+            t = self.expr(e, exp)
+            if t is VOID:
+                self.err('this branch has no value: its last expression returns nothing', e.pos)
+            b.result = e
+        if b.result is not None and t is not None:
+            e = b.result
+            for L in self.derives(e):
+                if L.depth == self.depth:
+                    self.err(f'the value of this branch holds the address of local `{L.name}`, '
+                             f'which ends with the branch', e.pos)
+            for root, _ in self.held_of(e):
+                if root.depth == self.depth:
+                    self.err(f'the value of this branch holds `{root.name}`, which ends with the branch',
+                             e.pos)
+        elif not self.st.dead:
+            self.err('this branch must end in a value, or leave with `return`, `break`, '
+                     '`continue` or `@trap()`', b.pos)
+        self.pop()
+        if self.st.dead and not entry_dead:
+            return None
+        return t
+
+    def join(self, e, branches, exp, may_leave=False):
+        """The type of an `if` or `match` expression, from its (block, type) branches.
+
+        With an expected type that every branch converts to, that type. Otherwise the first
+        branch type that every other converts to (widening, `null` and `T` to `?T`).
+        """
+        live = [(b, t) for b, t in branches if t is not None]
+        if not live:
+            if may_leave:
+                return None
+            self.err('no branch of this expression produces a value; use a statement instead', e.pos)
+        types = [t for _, t in live]
+        target = None
+        if exp is not None and all(self.coerce(t, exp) is not None for t in types):
+            target = exp
+        else:
+            has_null = any(prune(t) is NULL for t in types)
+            for cand in types:
+                c = prune(cand)
+                if c is NULL:
+                    continue
+                if has_null and not isinstance(c, Opt):
+                    c = Opt(c)
+                if all(self.coerce(t, c) is not None for t in types):
+                    target = c
+                    break
+            if target is None:
+                if all(prune(t) is NULL for t in types):
+                    return NULL
+                a = types[0]
+                b = next(t for t in types[1:] if self.coerce(t, a) is None)
+                self.err(f'branches have different types: {tstr(a)} and {tstr(b)}', e.pos)
+        for b, t in live:
+            b.result = self.coerce_node(b.result, t, target)
+        return target
 
     def narrowing(self, cond):
         if not (isinstance(cond, A.Binary) and getattr(cond, 'nullcmp', False)):
@@ -645,6 +742,12 @@ class Checker:
         self.st.dead = True
 
     def s_Match(self, s):
+        self.check_match(s, None, False)
+
+    def e_Match(self, e, exp):
+        return self.check_match(e, exp, True)
+
+    def check_match(self, s, exp, value, may_leave=False):
         st = prune(self.expr(s.scrut))
         through = isinstance(st, Ptr)
         ut = prune(st.elem) if through else st
@@ -658,6 +761,8 @@ class Checker:
             forb = self.place_path(s.scrut.expr)
         scrut_derived = set() if through else self.derives(s.scrut)
         seen, results, has_else = [], [], False
+        branches = []
+        body = self.value_block if value else self.branch_block
         s0 = self.save()
         for i, arm in enumerate(s.arms):
             arm.bvars = []
@@ -694,7 +799,7 @@ class Checker:
                     v.derived = scrut_derived
                     arm.bvars.append((v, fi))
             self.st = State(set(s0.defs), set(s0.maybe), s0.dead)
-            self.block(arm.body, [v for v, _ in arm.bvars])
+            branches.append((arm.body, body(arm.body, [v for v, _ in arm.bvars], exp)))
             results.append(self.st)
             if forb is not None:
                 self.scan_forbidden(arm.body, forb, [v.name for v, _ in arm.bvars])
@@ -702,6 +807,8 @@ class Checker:
             missing = [n for n in names if n not in seen]
             self.err(f"match isn't exhaustive: missing {', '.join(missing)}", s.pos)
         self.st = self.merge(results)
+        if value:
+            return self.join(s, branches, exp, may_leave)
 
     def s_Return(self, s):
         if s.expr is None:
@@ -1073,6 +1180,12 @@ class Checker:
             return a.ref[1].held
         if isinstance(a, A.Braced) and a.bind:
             return a.held
+        if isinstance(a, (A.If, A.Match)):
+            out = []
+            for b in value_blocks(a):
+                if getattr(b, 'result', None) is not None:
+                    out += self.held_of(b.result)
+            return out
         return ()
 
     def struct_lit(self, e, d, seg, exp):
@@ -1377,7 +1490,20 @@ class Checker:
             return out
         if isinstance(e, A.ArrayRep):
             return self.derives(e.elem)
+        if isinstance(e, (A.If, A.Match)):
+            out = set()
+            for b in value_blocks(e):
+                if getattr(b, 'result', None) is not None:
+                    out |= self.derives(b.result)
+            return out
         return set()
+
+
+def value_blocks(e):
+    """The branch blocks of an `if` or `match` expression."""
+    if isinstance(e, A.If):
+        return [e.then, e.els]
+    return [arm.body for arm in e.arms]
 
 
 def check(decls, std_decls=(), natives=()):

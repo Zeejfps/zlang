@@ -329,6 +329,20 @@ class Parser:
                 els = self.block()
         return A.If(cond, then, els, pos)
 
+    def if_expr(self):
+        """An `if` in expression position. `else` is required; `else if` nests another one."""
+        tok = self.next()
+        cond = self.paren_expr()
+        then = self.block()
+        if not self.accept_kw('else'):
+            self.err("an `if` expression needs an `else`", tok)
+        if self.is_kw('if'):
+            ipos = self.peek().pos
+            els = A.Block([A.ExprStmt(self.if_expr(), ipos)], ipos)
+        else:
+            els = self.block()
+        return A.If(cond, then, els, tok.pos)
+
     def match_stmt(self):
         pos = self.next().pos
         scrut = self.paren_expr()
@@ -427,6 +441,8 @@ class Parser:
 
     def postfix(self):
         e = self.primary()
+        if isinstance(e, (A.If, A.Match)):
+            return e        # `if` and `match` expressions end at their closing `}`
         while True:
             tok = self.peek()
             if tok.kind != 'op':
@@ -507,6 +523,10 @@ class Parser:
             if tok.val == 'null':
                 self.next()
                 return A.NullLit(pos)
+            if tok.val == 'if':
+                return self.if_expr()
+            if tok.val == 'match':
+                return self.match_stmt()
         if k == 'builtin':
             return self.builtin()
         if self.accept_op('('):

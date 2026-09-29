@@ -30,6 +30,17 @@ RET_NONE = (None,)
 BREAK = object()
 CONTINUE = object()
 
+
+class Escape(Exception):
+    """A branch of an `if` or `match` expression left through return, break or continue.
+
+    Expression closures return values, not control signals, so the signal travels as an
+    exception to the enclosing statement, which returns it as usual.
+    """
+
+    def __init__(self, signal):
+        self.signal = signal
+
 FMT = {'i8': 'b', 'u8': 'B', 'i16': 'h', 'u16': 'H', 'i32': 'i', 'u32': 'I',
        'i64': 'q', 'u64': 'Q', 'usize': 'Q', 'f32': 'f', 'f64': 'd', 'bool': '?'}
 CODECS = {k: struct.Struct('<' + v) for k, v in FMT.items()}
@@ -346,6 +357,7 @@ class Compiler:
         self.off = 0
         self.max = 0
         self.slots = {}
+        self.value_blocks = 0     # how many `if`/`match` expressions have been compiled
 
     def T(self, t):
         return subst(t, self.m)
@@ -388,7 +400,34 @@ class Compiler:
         return run
 
     def stmt(self, s):
-        return getattr(self, 's_' + type(s).__name__)(s)
+        before = self.value_blocks
+        f = getattr(self, 's_' + type(s).__name__)(s)
+        if self.value_blocks == before:
+            return f
+
+        def catch(fp):
+            try:
+                return f(fp)
+            except Escape as e:
+                return e.signal
+        return catch
+
+    def value_block(self, b):
+        """A branch of an `if` or `match` expression: a closure returning its value."""
+        self.value_blocks += 1
+        save = self.off
+        stmts = b.stmts[:-1] if b.result is not None else b.stmts
+        fns = tuple(self.stmt(s) for s in stmts)
+        ev = self.expr(b.result) if b.result is not None else None
+        self.off = save
+
+        def run(fp):
+            for f in fns:
+                r = f(fp)
+                if r is not None:
+                    raise Escape(r)
+            return ev(fp)
+        return run
 
     def s_Let(self, s):
         ev = self.expr(s.init) if s.init is not None else None
@@ -416,6 +455,12 @@ class Compiler:
             v = ev(fp)
             st(pl(fp), v)
         return assign
+
+    def e_If(self, e):
+        c = self.expr(e.cond)
+        t = self.value_block(e.then)
+        f = self.value_block(e.els)
+        return lambda fp: t(fp) if c(fp) else f(fp)
 
     def s_If(self, s):
         c = self.expr(s.cond)
@@ -454,6 +499,12 @@ class Compiler:
         return lambda fp: CONTINUE
 
     def s_Match(self, s):
+        return self.match(s, self.block)
+
+    def e_Match(self, e):
+        return self.match(e, self.value_block)
+
+    def match(self, s, compile_body):
         rt = self.rt
         lay = rt.layout(self.T(s.utype))
         sv = self.expr(s.scrut)
@@ -475,7 +526,7 @@ class Compiler:
                     binds.append((1, off, foff, rt.loader(ft), rt.storer(ft)))
                 else:
                     binds.append((2, off, foff, rt.decoder(ft), rt.storer(ft)))
-            body = self.block(arm.body)
+            body = compile_body(arm.body)
             self.off = save
             entry = (tuple(binds), body)
             if arm.vindex is None:

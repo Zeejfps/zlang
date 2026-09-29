@@ -125,7 +125,7 @@ match (e) {
 4. If the scrutinee has type `*U` for a union `U`, the match goes through the pointer. In its arms, `&f` binds payload field `f` as a mutable place.
 5. `&f` in a pattern is an error unless the scrutinee is a pointer.
 6. If the scrutinee is `&p`, no place that overlaps `p` (§3.1) may be accessed inside an arm except through that arm's bindings. For other pointer scrutinees this isn't checked.
-7. `match` is a statement.
+7. `match` is a statement, and can also be an expression (§11, If and match expressions).
 
 ### Optional
 
@@ -184,10 +184,30 @@ f{ ... }
 3. Statements are separated by newlines or `;`. A postfix `{`, `[` or `(` must be on the same line as the expression before it.
 4. Every block is a scope. A `let` is visible from its declaration to the end of its block.
 5. In `x = e`, `x` must be a mutable place.
-6. An expression statement must be a call or a builtin call. Its result is discarded.
+6. An expression statement must be a call or a builtin call. Its result is discarded. The exception is the last statement of a branch of an `if` or `match` expression, which gives the branch its value (below).
 7. `return` without a value is only allowed in a function with no `-> R`. In a function with `-> R`, every path must end in `return e` or `@trap()`.
 8. `break` leaves the innermost enclosing `while`. `continue` skips the rest of its body and goes to its next condition check. Both are errors outside a loop, and both end a path.
 9. `while (true)` without a `break` that leaves it ends a path, like `return`.
+
+### If and match expressions
+
+```
+let sign = if (n < 0) { -1 } else if (n == 0) { 0 } else { 1 }
+let v = match (parse{ s }) {
+    ok{ value }  => { value }
+    err{ error } => { return Result::err{ error } }
+}
+```
+
+1. `if` and `match` are statements at the start of a statement, and expressions everywhere else.
+2. An `if` expression must have an `else`.
+3. Each branch is a block whose last statement is an expression: the branch's value. `{ let y = f{}; y + 1 }` has the value `y + 1`.
+4. Instead of ending in a value, a branch may leave: it ends a path (§11.7, 8, 9) through `return`, `break`, `continue` or `@trap()`. At least one branch must produce a value.
+5. A branch whose last statement is an `if` with an `else`, or a `match`, takes that statement's value, unless every one of its branches leaves.
+6. Type: if the expression has an expected type (§11, Widening, rule 1) that every branch value converts to, that type. Otherwise the first branch type that every other branch value converts to, where `null` among the branches makes it `?T`. It is an error if there is none.
+7. Narrowing (§8, Optional) applies in the branches as in an `if` statement.
+8. A branch value must not hold the address of, or a bound function holding, a local declared in that branch (§6, §14).
+9. An `if` or `match` expression takes no postfix operators. To apply one, put the expression in parentheses.
 
 ### Expressions
 
@@ -358,12 +378,11 @@ The compiler checks, within each function, that the address of a local doesn't o
 4. **Method sugar:** should `x.f{...}` mean `f{ first = &x, ... }`?
 5. **File = namespace:** should each file implicitly be a namespace?
 6. **Imports:** some form of `use slice::Slice` to shorten long paths?
-7. **Expressions:** should `if` and `match` be expressions?
-8. **Variant shorthand:** should `.variant{...}` be allowed when the expected type is known?
-9. **Untagged unions:** needed for C interop? Or `@cast` only?
-10. **Large stack frames:** should the compiler error or warn above a size limit? Should `main` receive an `Os` capability for page allocation?
-11. **Loop control:** `break` and `continue` apply to the innermost loop. Are labels needed to leave an outer loop?
-12. **Strings:** literals are `[N]u8` values (§11) and text is `ascii::String` (§17). Is a UTF-8 string type needed? Should a literal be usable where a slice is expected without first binding it to a local?
+7. **Variant shorthand:** should `.variant{...}` be allowed when the expected type is known?
+8. **Untagged unions:** needed for C interop? Or `@cast` only?
+9. **Large stack frames:** should the compiler error or warn above a size limit? Should `main` receive an `Os` capability for page allocation?
+10. **Loop control:** `break` and `continue` apply to the innermost loop. Are labels needed to leave an outer loop?
+11. **Strings:** literals are `[N]u8` values (§11) and text is `ascii::String` (§17). Is a UTF-8 string type needed? Should a literal be usable where a slice is expected without first binding it to a local?
 
 ## 17. Standard library
 
@@ -374,6 +393,7 @@ The compiler checks, within each function, that the address of a local doesn't o
 | Namespace | Contents |
 |---|---|
 | `slice` | `Slice(T)`, `from`, `of` (view an array), `empty`, `is_empty`, `at`, `get`, `set`, `sub`, `cast`, `copy`, `fill` |
+| `Result(T, E)` | Declared at the top level: `union Result(T, E) { ok{ value: T }, err{ error: E } }`. Namespace `result`: `is_ok`, `is_err`, `value`, `error`, `value_or`, `unwrap`, `ok_or`. |
 | `alloc` | `Bytes`, the allocator type `Fn(S)`, typed `resize(T, S)` |
 | `arena` | `Arena`, a bump allocator: `new`, `alloc` (an `alloc::Fn(Arena)`), `reset`, `remaining` |
 | `list` | `List(T, S)`: `new`, `reserve`, `push`, `pop`, `get`, `set`, `at`, `items`, `clear`, `each`, `free` |

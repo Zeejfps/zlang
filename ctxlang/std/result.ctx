@@ -1,0 +1,62 @@
+// std: result. The outcome of an operation that can fail: a value of type T or an error of type E.
+//
+// Pass an error up to the caller with a match expression:
+//
+//   union ParseError { empty, bad_digit{ at: usize } }
+//
+//   fn parse_pair { a: ascii::String, b: ascii::String } -> Result(Pair, ParseError) {
+//       let x = match (parse_one{ s = a }) {
+//           ok{ value }  => { value }
+//           err{ error } => { return Result::err{ error } }
+//       }
+//       let y = match (parse_one{ s = b }) {
+//           ok{ value }  => { value }
+//           err{ error } => { return Result::err{ error } }
+//       }
+//       return Result::ok{ value = Pair{ x, y } }
+//   }
+//
+// `Result` is declared at the top level, like a built-in type, so it needs no namespace prefix.
+
+union Result(T, E) {
+    ok{ value: T },
+    err{ error: E },
+}
+
+namespace result {
+    fn is_ok(T, E) { r: Result(T, E) } -> bool {
+        return match (r) { ok => { true } err => { false } }
+    }
+
+    fn is_err(T, E) { r: Result(T, E) } -> bool {
+        return not is_ok{ r }
+    }
+
+    // The value, or null if r is an error.
+    fn value(T, E) { r: Result(T, E) } -> ?T {
+        return match (r) { ok{ value } => { value } err => { null } }
+    }
+
+    // The error, or null if r is a value.
+    fn error(T, E) { r: Result(T, E) } -> ?E {
+        return match (r) { ok => { null } err{ error } => { error } }
+    }
+
+    // The value, or `default` if r is an error.
+    fn value_or(T, E) { r: Result(T, E), default: T } -> T {
+        return match (r) { ok{ value } => { value } err => { default } }
+    }
+
+    // The value. Traps if r is an error.
+    fn unwrap(T, E) { r: Result(T, E) } -> T {
+        return match (r) { ok{ value } => { value } err => { @trap() } }
+    }
+
+    // `o`'s value, or `error` if o is null.
+    fn ok_or(T, E) { o: ?T, error: E } -> Result(T, E) {
+        return match (o) {
+            null          => { Result::err{ error } }
+            some{ value } => { Result::ok{ value } }
+        }
+    }
+}

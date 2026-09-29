@@ -1138,5 +1138,279 @@ fn main { mut io: Io } {
 """, 'expected')
 
 
+class Expressions(Base):
+    def test_if_expression(self):
+        self.assertOutput("""
+fn sign { n: i64 } -> i64 {
+    return if (n < 0) { -1 } else if (n == 0) { 0 } else { 1 }
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = sign{ n = -5 } + sign{ n = 0 } * 10 + sign{ n = 9 } * 100 }
+    let n = 4
+    let v = if (n > 3) {
+        let doubled = n * 2
+        doubled + 1
+    } else {
+        0
+    }
+    io::println_i64{ &io, n = v }
+    io::println_i64{ &io, n = if (n == 4) { 10 } else { 20 } + 1 }
+}
+""", '99\n9\n11\n')
+
+    def test_match_expression(self):
+        self.assertOutput("""
+union Shape { circle{ r: i64 }, square{ side: i64 }, point }
+fn area { s: Shape } -> i64 {
+    return match (s) {
+        circle{ r }    => { 3 * r * r }
+        square{ side } => { side * side }
+        point          => { 0 }
+    }
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = area{ s = Shape::circle{ r = 2 } } }
+    io::println_i64{ &io, n = area{ s = Shape::square{ side = 5 } } }
+    let o: ?i32 = 7
+    let x = match (o) { null => { 0 } some{ value } => { value } }
+    io::println_i64{ &io, n = x }
+}
+""", '12\n25\n7\n')
+
+    def test_expected_type_and_join(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let small: u8 = 3
+    let w = if (true) { small } else { 100 }      // the literal becomes u8
+    let wide: i64 = if (false) { small } else { -1 }
+    let o: ?i32 = if (false) { 5 } else { null }
+    let p = if (true) { 5 } else { null }           // joins to ?i32
+    let f: f64 = if (true) { 1.5 } else { 2.0 }
+    io::println_u64{ &io, n = w }
+    io::println_i64{ &io, n = wide }
+    io::println_bool{ &io, n = o == null }
+    io::println_bool{ &io, n = p != null }
+    io::println_f64{ &io, n = f }
+}
+""", '3\n-1\ntrue\ntrue\n1.5\n')
+
+    def test_narrowing_in_if_expression(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let o = ascii::parse_i64{ s = ascii::empty{} }
+    let x = if (o != null) { o } else { 42 }
+    let y = if (o == null) { 1 } else { o }
+    io::println_i64{ &io, n = x + y }
+}
+""", '43\n')
+
+    def test_branches_can_leave(self):
+        self.assertOutput("""
+fn first_even { xs: [5]i64 } -> i64 {
+    let mut i: usize = 0
+    let mut found: i64 = -1
+    while (i < xs.len) {
+        let x = if (xs[i] % 2 == 0) { xs[i] } else { i = i + 1; continue }
+        found = x
+        break
+    }
+    return found
+}
+fn pick { o: ?i64 } -> i64 {
+    let v = match (o) { null => { return -1 } some{ value } => { value } }
+    return v * 10
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = first_even{ xs = [1, 3, 8, 5, 6] } }
+    io::println_i64{ &io, n = pick{ o = 4 } }
+    io::println_i64{ &io, n = pick{ o = null } }
+    let n = match (ascii::parse_i64{ s = ascii::empty{} }) {
+        null => { 0 }
+        some{ value } => { value }
+    }
+    io::println_i64{ &io, n }
+}
+""", '8\n40\n-1\n0\n')
+
+    def test_nested_branches(self):
+        self.assertOutput("""
+fn f { c: bool } -> i32 {
+    let x = if (c) { if (c) { return 1 } else { return 2 } } else { 3 }
+    return x
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = f{ c = true } }
+    io::println_i64{ &io, n = f{ c = false } }
+    let o: ?i32 = 4
+    let y = if (true) {
+        match (o) {
+            null => { 0 }
+            some{ value } => { if (value > 3) { 30 } else { 3 } }
+        }
+    } else {
+        1
+    }
+    io::println_i64{ &io, n = y }
+}
+""", '1\n3\n30\n')
+
+    def test_trap_branch(self):
+        self.assertTrap("""
+fn main { mut io: Io } {
+    let o: ?i32 = null
+    let x = match (o) { null => { @trap() } some{ value } => { value } }
+}
+""", '@trap()')
+
+    def test_if_statement_unchanged(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    if (true) { io::println_i64{ &io, n = 1 } }
+    match (ascii::parse_i64{ s = ascii::empty{} }) {
+        null => { io::println_i64{ &io, n = 2 } }
+        else => { }
+    }
+}
+""", '1\n2\n')
+
+    def test_needs_else(self):
+        self.assertCompileError('fn main { mut io: Io } { let x = if (true) { 1 } }',
+                                'needs an `else`')
+
+    def test_branch_types_differ(self):
+        self.assertCompileError('fn main { mut io: Io } { let x = if (true) { 1 } else { true } }',
+                                'branches have different types')
+
+    def test_branch_without_value(self):
+        self.assertCompileError('fn main { mut io: Io } { let x = if (true) { let a = 1 } else { 1 } }',
+                                'must end in a value')
+
+    def test_void_branch(self):
+        self.assertCompileError(
+            'fn main { mut io: Io } { let x = if (true) { io::newline{ &io } } else { 1 } }',
+            'has no value')
+
+    def test_no_branch_produces_value(self):
+        self.assertCompileError("""
+fn f {} -> i32 {
+    let x = if (true) { return 1 } else { return 2 }
+    return x
+}
+fn main { mut io: Io } { }
+""", 'no branch of this expression produces a value')
+
+    def test_branch_escape(self):
+        self.assertCompileError("""
+fn main { mut io: Io } {
+    let p = if (true) { let y = 1; &y } else { let z = 2; &z }
+}
+""", 'holds the address of local `y`')
+
+    def test_branch_bound_escape(self):
+        self.assertCompileError("""
+fn g { mut a: i32, b: i32 } { }
+fn main { mut io: Io } {
+    let h = if (true) { let mut y = 0; g{ a = &y, _ } } else { let mut z = 0; g{ a = &z, _ } }
+}
+""", 'holds `y`')
+
+    def test_branch_address_of_outer_local(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a = 1
+    let b = 2
+    let p = if (true) { &a } else { &b }
+    io::println_i64{ &io, n = p.* }
+}
+""", '1\n')
+
+    def test_escape_through_expression(self):
+        self.assertCompileError("""
+fn f {} -> *i32 {
+    let a = 1
+    return if (true) { &a } else { &a }
+}
+fn main { mut io: Io } { }
+""", 'returned value holds the address of local `a`')
+
+
+class ResultType(Base):
+    def test_propagation(self):
+        self.assertOutput("""
+union ParseError { empty, bad{ at: usize } }
+fn parse_one { s: ascii::String } -> Result(i64, ParseError) {
+    if (ascii::len{ s } == 0) { return Result::err{ error = ParseError::empty } }
+    let mut i: usize = 0
+    while (i < ascii::len{ s }) {
+        if (not ascii::is_digit{ c = ascii::at{ s, i } }) {
+            return Result::err{ error = ParseError::bad{ at = i } }
+        }
+        i = i + 1
+    }
+    return result::ok_or{ o = ascii::parse_i64{ s }, error = ParseError::bad{ at = 0 } }
+}
+fn sum { s: ascii::String } -> Result(i64, ParseError) {
+    let parts = match (ascii::split_once{ s, c = ',' }) {
+        null          => { return Result::err{ error = ParseError::empty } }
+        some{ value } => { value }
+    }
+    let x = match (parse_one{ s = parts.head }) {
+        ok{ value }  => { value }
+        err{ error } => { return Result::err{ error } }
+    }
+    let y = match (parse_one{ s = parts.tail }) {
+        ok{ value }  => { value }
+        err{ error } => { return Result::err{ error } }
+    }
+    return Result::ok{ value = x + y }
+}
+fn report { mut io: Io, r: Result(i64, ParseError) } {
+    let code = match (r) {
+        ok{ value }  => { value }
+        err{ error } => { match (error) { empty => { -1 } bad{ at } => { -100 - @as(i64, at) } } }
+    }
+    io::println_i64{ &io, n = code }
+}
+fn main { mut io: Io } {
+    let a = "12,30"
+    let b = "12,3x"
+    let c = "12"
+    report{ &io, r = sum{ s = ascii::of{ chars = &a } } }
+    report{ &io, r = sum{ s = ascii::of{ chars = &b } } }
+    report{ &io, r = sum{ s = ascii::of{ chars = &c } } }
+}
+""", '42\n-101\n-1\n')
+
+    def test_helpers(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let good: Result(i32, bool) = Result::ok{ value = 5 }
+    let bad: Result(i32, bool) = Result::err{ error = true }
+    io::println_bool{ &io, n = result::is_ok{ r = good } and result::is_err{ r = bad } }
+    io::println_i64{ &io, n = result::unwrap{ r = good } }
+    io::println_i64{ &io, n = result::value_or{ r = bad, default = 9 } }
+    io::println_bool{ &io, n = result::value{ r = bad } == null }
+    let e = result::error{ r = bad }
+    if (e != null) { io::println_bool{ &io, n = e } }
+    let none: ?i32 = null
+    io::println_bool{ &io, n = result::is_err{ r = result::ok_or{ o = none, error = false } } }
+}
+""", 'true\n5\n9\ntrue\ntrue\ntrue\n')
+
+    def test_unwrap_traps(self):
+        self.assertTrap("""
+fn main { mut io: Io } {
+    let bad: Result(i32, bool) = Result::err{ error = true }
+    let x = result::unwrap{ r = bad }
+}
+""", '@trap()')
+
+    def test_user_result_shadows_std(self):
+        self.assertOutput("""
+struct Result { n: i32 }
+fn main { mut io: Io } { io::println_i64{ &io, n = Result{ n = 3 }.n } }
+""", '3\n')
+
+
 if __name__ == '__main__':
     unittest.main()
