@@ -16,7 +16,7 @@ fn name(Generics) { field: T, mut field: T, ... } -> R { body }
 
 1. The `{ ... }` after the name is the **context**. It is the function's only input.
 2. A context field is read-only unless marked `mut`.
-3. A function can't assign to a read-only field or any field or element of it. Memory reached through a pointer inside it is not part of it (§12.7).
+3. A function can't assign to a read-only field or any field or element of it. Memory reached through a pointer inside it is not part of it (§12, Pointers).
 4. `-> R` may be omitted. The function then returns no value.
 5. Two fields in one context can't share a name.
 6. A `mut x: T` field holds a `*T`. Inside the function, `x` is the place of type `T` it points to, and `&x` gives the `*T`.
@@ -41,7 +41,10 @@ f{ a = expr, b = &place, c, &d, .. }
 
 1. Only places (§11) that don't go through a deref are checked. Their root is a local, context field or match binding.
 2. Two places **overlap** if one's steps are a prefix of the other's, with the same root. Any two `[index]` steps count as equal.
-3. A call's **mut references** are each place `p` supplied as `&p` to a `mut` field, and each place `p` held as `&p` by a bound-function argument. A `&fn` local holds every place held by any bind assigned to it. A `&fn` context field holds no checked places.
+3. A call's **mut references** are each place `p` supplied as `&p` to a `mut` field, and each place `p` held as `&p` by a bound-function argument.
+   - A bind holds every place it takes as `&p`, plus every place held by its `&fn` arguments.
+   - A `&fn` local holds every place held by any bind assigned to it.
+   - A `&fn` context field holds no checked places.
 4. Two mut references of one call must not overlap. A violation is a compile error.
 5. If a read-only field's argument is a place that overlaps a mut reference of the same call, it is passed by copy.
 6. Pointers that don't come from `&p` in the call itself are not checked, and neither are places that go through a deref.
@@ -79,7 +82,7 @@ A function `g` of type `fn{Cg} -> Rg` (or `&fn`) is accepted where `fn{Cs} -> Rs
 ## 6. Bound functions
 
 1. `&fn{C} -> R` may only be the type of a local or of a read-only context field. It can't be a return type, a struct field type, a union payload type, an array element type, the `T` of `?T` or `*T`, or the type of a `mut` context field.
-2. A bound function can't be assigned to a local declared in a scope outside that of any place whose address it holds.
+2. A bound function can't be assigned to a local declared in a scope outside that of any place it holds (§3.1.3, including places held through nested binds).
 3. A bound function may be stored in a local and passed as a call argument.
 4. Code that only calls a function value should take `&fn`, which accepts both kinds. Code that stores one must take `fn`, which rejects bound functions.
 
@@ -116,7 +119,7 @@ match (e) {
 }
 ```
 
-1. The arms must be exhaustive. `else` matches every variant not listed, and must come last.
+1. The arms must be exhaustive. `else` matches every variant not listed, and must come last. `else` is an error if every variant is already listed.
 2. Each variant appears in at most one arm.
 3. A pattern `variant{ f }` binds payload field `f` as a read-only local. A pattern may bind a subset of the fields.
 4. If the scrutinee has type `*U` for a union `U`, the match goes through the pointer. In its arms, `&f` binds payload field `f` as a mutable place.
@@ -133,7 +136,7 @@ match (e) {
 ## 9. Generics
 
 1. Generic parameters are types, listed in `( )` directly after a declaration's name.
-2. `( )` directly after a name or `::` path is generic application. Everywhere else, `( )` groups an expression.
+2. `( )` directly after a name or `::` path, with no whitespace in between, is generic application. Everywhere else, `( )` groups an expression. Builtins are the exception (§13).
 3. At a call, struct literal or union construction, explicit arguments bind parameters left to right. The remaining parameters are inferred from the supplied fields or the expected type. A parameter that can't be inferred is an error.
 4. In a literal, a generic struct or union may be named without arguments (`Slice{ ... }`), and then every parameter is inferred.
 
@@ -170,15 +173,44 @@ if (e) { } else if (e) { } else { }
 while (e) { }
 match (e) { ... }
 return e
+return
+f{ ... }
 ```
 
 1. Conditions and match scrutinees are always in parentheses.
 2. `{` after the `)` of a condition or scrutinee, after `else`, or after `=>` begins a block. `{` after any other expression begins a call or literal.
-3. Statements are separated by newlines or `;`.
-4. Operators: `and or not == != < <= > >= + - * / %`, and prefix `&`.
-5. An integer literal has an integer type that is inferred from every use within the enclosing function body, including uses of locals it initializes. If no use fixes it, it is `i32`.
-6. In `x = e`, `x` must be a mutable place.
-7. Integer `+ - *` trap on overflow. `/` and `%` trap on a zero divisor. Use `@wrap_*` (§13) for wrapping arithmetic.
+3. Statements are separated by newlines or `;`. A postfix `{`, `[` or `(` must be on the same line as the expression before it.
+4. Every block is a scope. A `let` is visible from its declaration to the end of its block.
+5. In `x = e`, `x` must be a mutable place.
+6. An expression statement must be a call or a builtin call. Its result is discarded.
+7. `return` without a value is only allowed in a function with no `-> R`. In a function with `-> R`, every path must end in `return e` or `@trap()`.
+
+### Expressions
+
+Precedence, tightest first:
+
+| Level | Operators | Notes |
+|---|---|---|
+| postfix | `.f` `.*` `[i]` `{ ... }` `::x` `(G)` | left to right |
+| prefix | `&` `-` `not` | |
+| multiplicative | `*` `/` `%` | left to right |
+| additive | `+` `-` | left to right |
+| comparison | `==` `!=` `<` `<=` `>` `>=` | don't chain: `a < b < c` is an error |
+| and | `and` | short-circuit |
+| or | `or` | short-circuit |
+
+1. Arithmetic applies to two operands of the same numeric type. There are no implicit numeric conversions. Use `@as` or `@trunc` (§13).
+2. Integer `+ - *` trap on overflow. `/` and `%` trap on a zero divisor. Use `@wrap_*` (§13) for wrapping arithmetic.
+3. `==` and `!=` work on numbers, `bool` and pointers (by address), and on `?T` against `null`. Other types have no built-in equality.
+4. `and`, `or` and `not` take and give `bool`. Conditions must be `bool`.
+
+### Literals
+
+1. An integer literal (`42`) has an integer type that is inferred from every use within the enclosing function body, including uses of locals it initializes. If no use fixes it, it is `i32`.
+2. A float literal (`1.5`, `2e3`) is inferred the same way among float types, and defaults to `f64`.
+3. `true` and `false` are the `bool` values. `null` is described in §8.
+4. `[a, b, c]` is a `[3]T` array. Every element has type `T`.
+5. `[x; N]` is a `[N]T` array with every element a copy of `x`. `N` is a compile-time constant.
 
 ### Places
 
@@ -206,7 +238,7 @@ step  := .field | [index]
 | `?T` | `null` |
 | `[N]T` | every element zero, if `T` has a zero value |
 | struct | every field zero, if every field type has a zero value |
-| `*T`, union, `fn{C} -> R`, `&fn{C} -> R`, capability types | none |
+| `*T`, user-defined unions, `fn{C} -> R`, `&fn{C} -> R`, capability types | none |
 
 4. Reading a variable before it is assigned is a compile error. There is no way to declare uninitialized memory.
 
@@ -229,22 +261,25 @@ step  := .field | [index]
 3. If `q` is a `*S` for a struct `S`, `q.f` means `q.*.f`.
 4. `q + n`, with `n: usize`, points `n` elements of `T` after `q`.
 5. `q[i]` means `(q + i).*`. It is not bounds-checked.
-6. Pointers aren't tracked. Using a pointer to memory that no longer exists, or outside its allocation, is undefined behaviour.
-7. Writes through a pointer aren't checked against read-only-ness. Every place that goes through a deref is mutable (§11).
+6. Exception: if `q` is a `*[N]T`, `q[i]` means `q.*[i]` (bounds-checked) and `q.len` means `N`.
+7. Pointers aren't tracked. Using a pointer to memory that no longer exists, or outside its allocation, is undefined behaviour.
+8. Writes through a pointer aren't checked against read-only-ness. Every place that goes through a deref is mutable (§11).
 
 ### Arrays
 
 1. `a[i]` on an array is bounds-checked. An out-of-bounds index traps.
-2. `a.len` is `N`.
+2. `a.len` is `N`, of type `usize`.
 
 Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?*T, len: usize }` and bounds-checked functions on it.
 
 ## 13. Builtins
 
 1. A name starting with `@` is a compiler builtin. User code can't declare such names.
-2. Arguments are in `( )`. They are types or expressions.
+2. Arguments are in `( )`. They are types or expressions. `@name(...)` is always a builtin call, never generic application (§9).
 
 - `@size_of(T) -> usize`
+- `@as(T, x) -> T`: converts a number to numeric type `T`. Traps if the value isn't representable in `T`. Float to integer rounds toward zero and traps on NaN. Integer to float rounds to nearest.
+- `@trunc(T, x) -> T`: converts an integer to integer type `T`, keeping the low bits.
 - `@align_of(T) -> usize`: the required alignment of `T`. A power of two.
 - `@addr(q) -> usize`: the address of pointer `q` as an integer.
 - `@wrap_add(a, b)`, `@wrap_sub(a, b)`, `@wrap_mul(a, b)`: integer arithmetic that wraps instead of trapping.
@@ -253,7 +288,7 @@ Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?
 
 ## 14. Memory
 
-1. There is no static memory. `const` data is immutable and its location is unobservable: a const is a value, not a place, so `&C` is an error.
+1. There is no static memory. `const NAME: T = e` declares a constant. `e` must be computable at compile time: literals, other consts, operators, `@size_of`, `@align_of`, and struct, union and array literals of these. `const` data is immutable and its location is unobservable: a const is a value, not a place, so `&C` is an error.
 2. Locals and context fields live on the stack.
 3. Memory not on the stack is obtained only by calling an allocator function, and is accessed only through pointers.
    - Allocators are byte-level: `alloc::Fn(S) = fn{ mut heap: S, mem: Bytes, new: usize, align: usize } -> ?Bytes`. The result must be aligned to `align`.
@@ -281,3 +316,5 @@ Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?
 8. **Variant shorthand:** should `.variant{...}` be allowed when the expected type is known?
 9. **Untagged unions:** needed for C interop? Or `@cast` only?
 10. **Large stack frames:** should the compiler error or warn above a size limit? Should `main` receive an `Os` capability for page allocation?
+11. **Loop control:** add `break` and `continue`?
+12. **Strings:** literal syntax and type (`Slice(u8)`? a `const` byte array?).
