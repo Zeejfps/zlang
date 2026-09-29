@@ -1556,7 +1556,7 @@ fn main { mut io: Io } {
 
 
 FS_MAIN = """
-fn main { mut io: Io, mut fs: Fs, args: slice::Slice(slice::Slice(u8)) } -> i32 {
+fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     let mut mem: [65536]u8
     let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
 %s
@@ -1727,6 +1727,14 @@ class Fs(Base):
 
     def test_main_args_type(self):
         self.assertCompileError('fn main { args: slice::Slice(u8) } { }', '`args` must have type')
+
+    def test_main_args_long_spelling(self):
+        src = 'fn main { args: slice::Slice(slice::Slice(u8)) } -> i32 { return @as(i32, args.len) }'
+        self.assertEqual(run_source(src, out=io.StringIO(), args=['a', 'b']), 2)
+
+    def test_main_args_with_user_args_type(self):
+        src = 'struct Args { n: i32 }\nfn main { args: slice::Slice(slice::Slice(u8)) } { }'
+        self.assertEqual(run_source(src, out=io.StringIO()), 0)
 
     def test_main_field_must_be_capability(self):
         self.assertCompileError('fn main { n: i32 } { }', 'must have a capability type (Io, Fs)')

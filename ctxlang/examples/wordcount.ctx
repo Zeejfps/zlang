@@ -7,7 +7,7 @@
 
 struct Top { word: ascii::String, count: i64 }
 
-fn main { mut io: Io, mut fs: Fs, args: slice::Slice(slice::Slice(u8)) } -> i32 {
+fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     if (args.len != 1) {
         let usage = "usage: wordcount FILE"
         io::eprintln{ &io, s = ascii::of{ chars = &usage } }

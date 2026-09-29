@@ -3,7 +3,7 @@
 // Every function takes `mut fs: Fs`. Only `main` receives an `Fs`, from the runtime, so a
 // function can touch the filesystem only if its caller passes it down.
 //
-//   fn main { mut io: Io, mut fs: Fs, args: slice::Slice(slice::Slice(u8)) } -> i32 {
+//   fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
 //       let mut mem: [65536]u8
 //       let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
 //       let path = slice::get{ s = args, i = 0 }

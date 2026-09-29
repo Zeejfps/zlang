@@ -15,7 +15,7 @@ from .types import (
 
 
 CAPABILITIES = ('Io', 'Fs')
-ARGS_TYPE = 'slice::Slice(slice::Slice(u8))'     # main's optional `args` field
+ARGS_TYPE = 'Args'     # main's optional `args` field (std/args.ctx)
 
 
 class Namespace:
