@@ -111,7 +111,7 @@ def place_str(p):
 CHILDREN = {
     A.Block: ('stmts',), A.Let: ('init',), A.Assign: ('lhs', 'rhs'),
     A.If: ('cond', 'then', 'els'), A.While: ('cond', 'body'), A.Match: ('scrut', 'arms'),
-    A.Arm: ('body',), A.Return: ('expr',), A.ExprStmt: ('expr',), A.Unary: ('expr',),
+    A.Arm: ('body',), A.Defer: ('body',), A.Return: ('expr',), A.ExprStmt: ('expr',), A.Unary: ('expr',),
     A.AddrOf: ('expr',), A.Binary: ('lhs', 'rhs'), A.ArrayLit: ('elems',),
     A.ArrayRep: ('elem',), A.Builtin: ('args',), A.Coerce: ('expr',),
 }
@@ -382,6 +382,7 @@ class Checker:
         self.depth = 0
         self.loop_depth = 0
         self.loops = []
+        self.defers = 0           # how many `defer` bodies enclose the current statement
         self.st = State(set(), set(), False)
         self.lits = []
         self.gvars = []
@@ -731,13 +732,13 @@ class Checker:
 
     def s_Break(self, s):
         if not self.loops:
-            self.err('`break` outside a loop', s.pos)
+            self.err('`break` outside a loop' + (' in this defer' if self.defers else ''), s.pos)
         self.loops[-1][0].append(self.save())
         self.st.dead = True
 
     def s_Continue(self, s):
         if not self.loops:
-            self.err('`continue` outside a loop', s.pos)
+            self.err('`continue` outside a loop' + (' in this defer' if self.defers else ''), s.pos)
         self.loops[-1][1].append(self.save())
         self.st.dead = True
 
@@ -810,7 +811,22 @@ class Checker:
         if value:
             return self.join(s, branches, exp, may_leave)
 
+    def s_Defer(self, s):
+        # Checked where it appears, but it runs later, so it leaves the flow state unchanged.
+        s0 = self.save()
+        loops, self.loops = self.loops, []     # a break or continue can't leave the defer
+        self.defers += 1
+        self.block(s.body)
+        self.defers -= 1
+        self.loops = loops
+        for v in self.st.maybe - s0.maybe:
+            if v.tracked and not v.mutable:
+                self.err(f'cannot assign `{v.name}` in a defer: declare it with `let mut`', s.pos)
+        self.st = s0
+
     def s_Return(self, s):
+        if self.defers:
+            self.err('cannot `return` from a defer', s.pos)
         if s.expr is None:
             if self.ret is not VOID:
                 self.err('`return` needs a value here', s.pos)

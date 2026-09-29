@@ -140,6 +140,13 @@ class Continue(Node):
         self.pos = pos
 
 
+class Defer(Node):
+    """`defer stmt` or `defer { ... }`: body runs when the enclosing block exits."""
+
+    def __init__(self, body, pos):
+        self.body, self.pos = body, pos
+
+
 class ExprStmt(Node):
     def __init__(self, expr, pos):
         self.expr, self.pos = expr, pos

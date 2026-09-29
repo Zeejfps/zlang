@@ -8,13 +8,13 @@ union Event {
 }
 
 // Applies one event to the list. Returns false on allocation failure.
+// `match` is an expression here: each arm's last expression is its value.
 fn apply(S) { mut nums: list::List(i32, S), mut heap: S, ev: Event } -> bool {
-    match (ev) {
-        push{ value } => { return list::push{ list = &nums, item = value, .. } }
-        pop           => { list::pop{ list = &nums } }
-        clear         => { list::clear{ list = &nums } }
+    return match (ev) {
+        push{ value } => { list::push{ list = &nums, item = value, .. } }
+        pop           => { list::pop{ list = &nums }; true }
+        clear         => { list::clear{ list = &nums }; true }
     }
-    return true
 }
 
 // Mutates payloads in place by matching through a pointer.
@@ -42,6 +42,7 @@ fn main { mut io: Io } {
     let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
 
     let mut events = list::new(Event){ realloc = arena::alloc }    // S = arena::Arena is inferred
+    defer list::free{ list = &events, .. }     // runs when main exits, including the early return
     let mut i = 1
     while (i <= 5) {
         list::push{ list = &events, item = Event::push{ value = i }, .. }   // `..` supplies &heap
@@ -51,6 +52,7 @@ fn main { mut io: Io } {
     scale_pushes{ &events, by = 10 }
 
     let mut nums = list::new(i32){ realloc = arena::alloc }
+    defer list::free{ list = &nums, .. }       // deferred frees run in reverse: nums, then events
     let mut j = 0
     while (j < events.len) {
         let ev = slice::get{ s = events.items, i = j }
@@ -65,17 +67,14 @@ fn main { mut io: Io } {
     list::each{ list = nums, f = add_to{ &total, _ } }
     io::println_i64{ &io, n = total }
 
-    // Event has no zero value, so `last` must be assigned on every path before it is read.
-    let last: Event
-    if (total > 100) { last = Event::clear } else { last = Event::pop }
+    // An `if` expression needs an `else`, so `last` is assigned on every path.
+    let last = if (total > 100) { Event::clear } else { Event::pop }
     apply{ &nums, ev = last, .. }
 
-    let first = list::get{ list = nums, i = 0 }
-    if (first != null) { io::println_i64{ &io, n = first } }        // first is i32 here
-
-    list::free{ list = &nums, .. }
-    list::free{ list = &events, .. }
+    let first = list::get{ list = nums, i = 0 }                     // ?i32
+    io::println_i64{ &io, n = if (first != null) { first } else { -1 } }   // narrowed to i32
 
     let h = &heap                  // raw *arena::Arena
     arena::reset{ heap = h }       // a mut field given a raw pointer: exclusivity not checked
+                                   // (the deferred frees still run after this; an arena ignores them)
 }

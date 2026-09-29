@@ -176,6 +176,7 @@ continue
 match (e) { ... }
 return e
 return
+defer f{ ... }      defer x = e      defer { }
 f{ ... }
 ```
 
@@ -188,6 +189,21 @@ f{ ... }
 7. `return` without a value is only allowed in a function with no `-> R`. In a function with `-> R`, every path must end in `return e` or `@trap()`.
 8. `break` leaves the innermost enclosing `while`. `continue` skips the rest of its body and goes to its next condition check. Both are errors outside a loop, and both end a path.
 9. `while (true)` without a `break` that leaves it ends a path, like `return`.
+
+### Defer
+
+```
+let mut xs = list::new(i32){ realloc = arena::alloc }
+defer list::free{ list = &xs, &heap }
+```
+
+1. `defer` takes a call, an assignment or a block. Its body runs when the enclosing block exits: at its end, or through `return`, `break`, `continue`, or a branch of an `if` or `match` expression leaving (§11, If and match expressions).
+2. A block's deferred bodies run in reverse order of their `defer` statements. Only `defer` statements that were reached run.
+3. The body is evaluated when it runs, not at the `defer`: `defer say{ n = i }` sees the value `i` has at exit. A `return e` evaluates `e` before deferred bodies run.
+4. A `defer` inside a loop body runs at the end of each iteration that reached it.
+5. Deferred bodies don't run when the program stops through `@trap()`.
+6. The body is checked where it appears. It can read only variables that are assigned there (§11, Initialization), and it can't assign a `let x: T` declared outside it.
+7. The body can't leave: `return` is an error in it, and `break` and `continue` in it must be inside a loop that is also in it.
 
 ### If and match expressions
 

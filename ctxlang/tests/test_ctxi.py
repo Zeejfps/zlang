@@ -1412,5 +1412,148 @@ fn main { mut io: Io } { io::println_i64{ &io, n = Result{ n = 3 }.n } }
 """, '3\n')
 
 
+class Defer(Base):
+    def test_order_and_return(self):
+        self.assertOutput("""
+fn say { mut io: Io, n: i64 } { io::println_i64{ &io, n } }
+fn early { mut io: Io, stop: bool } -> i64 {
+    defer say{ &io, n = 1 }
+    defer { say{ &io, n = 2 }; say{ &io, n = 3 } }
+    if (stop) { return 10 }
+    say{ &io, n = 4 }
+    return 20
+}
+fn main { mut io: Io } {
+    say{ &io, n = early{ &io, stop = true } }
+    say{ &io, n = early{ &io, stop = false } }
+}
+""", '2\n3\n1\n10\n4\n2\n3\n1\n20\n')
+
+    def test_runs_at_exit_of_its_block(self):
+        self.assertOutput("""
+fn say { mut io: Io, n: i64 } { io::println_i64{ &io, n } }
+fn main { mut io: Io } {
+    if (true) {
+        defer say{ &io, n = 1 }
+        say{ &io, n = 2 }
+    }
+    say{ &io, n = 3 }
+}
+""", '2\n1\n3\n')
+
+    def test_loops(self):
+        self.assertOutput("""
+fn say { mut io: Io, n: i64 } { io::println_i64{ &io, n } }
+fn main { mut io: Io } {
+    let mut i = 0
+    while (i < 3) {
+        defer say{ &io, n = 100 + i }     // evaluated at exit, after i changes
+        i = i + 1
+        if (i == 2) { continue }
+        if (i == 3) { break }
+        say{ &io, n = i }
+    }
+}
+""", '1\n101\n102\n103\n')
+
+    def test_expression_branches(self):
+        self.assertOutput("""
+fn say { mut io: Io, n: i64 } { io::println_i64{ &io, n } }
+fn branch { mut io: Io, o: ?i64 } -> i64 {
+    let v = match (o) {
+        null => { defer say{ &io, n = -1 }; return 0 }
+        some{ value } => { defer say{ &io, n = -2 }; value * 2 }
+    }
+    return v
+}
+fn main { mut io: Io } {
+    say{ &io, n = branch{ &io, o = null } }
+    say{ &io, n = branch{ &io, o = 21 } }
+}
+""", '-1\n0\n-2\n42\n')
+
+    def test_free_list(self):
+        self.assertOutput("""
+fn total { mut heap: arena::Arena, n: i32 } -> i64 {
+    let mut xs = list::new(i32){ realloc = arena::alloc }
+    defer list::free{ list = &xs, &heap }
+    let mut i = 0
+    while (i < n) {
+        if (not list::push{ list = &xs, &heap, item = i }) { return -1 }
+        i = i + 1
+    }
+    let mut sum: i64 = 0
+    let mut j: usize = 0
+    while (j < xs.len) {
+        sum = sum + list::at{ list = xs, i = j }.*
+        j = j + 1
+    }
+    return sum
+}
+fn main { mut io: Io } {
+    let mut mem: [4096]u8
+    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+    io::println_i64{ &io, n = total{ &heap, n = 10 } }
+}
+""", '45\n')
+
+    def test_assignment_and_loop_inside(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let mut n = 0
+    defer n = n + 1
+    defer {
+        let mut i = 0
+        while (true) {
+            i = i + 1
+            if (i == 3) { break }
+        }
+        io::println_i64{ &io, n = n + i }
+    }
+}
+""", '3\n')
+
+    def test_not_run_on_trap(self):
+        out = io.StringIO()
+        with self.assertRaises(Trap):
+            run_source("""
+fn main { mut io: Io } {
+    defer io::println_i64{ &io, n = 1 }
+    @trap()
+}
+""", out=out)
+        self.assertEqual(out.getvalue(), '')
+
+    def test_no_return(self):
+        self.assertCompileError("""
+fn f {} -> i32 {
+    defer { return 1 }
+    return 2
+}
+fn main { mut io: Io } { }
+""", 'cannot `return` from a defer')
+
+    def test_no_break_out(self):
+        self.assertCompileError('fn main { mut io: Io } { while (true) { defer { break } } }',
+                                '`break` outside a loop in this defer')
+
+    def test_no_assign_once_local(self):
+        self.assertCompileError('fn main { mut io: Io } { let x: i32; defer { x = 1 }; x = 2 }',
+                                'cannot assign `x` in a defer')
+
+    def test_checked_where_written(self):
+        self.assertCompileError("""
+fn main { mut io: Io } {
+    let x: i32
+    defer io::println_i64{ &io, n = x }
+    x = 2
+}
+""", '`x` may be read before it is assigned')
+
+    def test_takes_call_assignment_or_block(self):
+        self.assertCompileError('fn main { mut io: Io } { defer let x = 1 }',
+                                '`defer` takes a call, an assignment or a block')
+
+
 if __name__ == '__main__':
     unittest.main()

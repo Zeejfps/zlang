@@ -298,6 +298,14 @@ class Parser:
             if tok.val == 'continue':
                 self.next()
                 return A.Continue(pos)
+            if tok.val == 'defer':
+                self.next()
+                if self.is_op('{'):
+                    return A.Defer(self.block(), pos)
+                inner = self.stmt()
+                if not isinstance(inner, (A.ExprStmt, A.Assign)):
+                    self.err('`defer` takes a call, an assignment or a block', tok)
+                return A.Defer(A.Block([inner], inner.pos), pos)
             if tok.val == 'return':
                 self.next()
                 nxt = self.peek()

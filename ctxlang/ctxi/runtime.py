@@ -31,6 +31,21 @@ BREAK = object()
 CONTINUE = object()
 
 
+class Value:
+    """The signal a value block's last expression returns: the block's value."""
+    __slots__ = ('v',)
+
+    def __init__(self, v):
+        self.v = v
+
+
+class Tail:
+    """Stands in for a value block's last statement: the expression that gives its value."""
+
+    def __init__(self, expr):
+        self.expr = expr
+
+
 class Escape(Exception):
     """A branch of an `if` or `match` expression left through return, break or continue.
 
@@ -384,8 +399,29 @@ class Compiler:
 
     def block(self, b):
         save = self.off
-        fns = [self.stmt(s) for s in b.stmts]
+        run = self.seq(list(b.stmts))
         self.off = save
+        return run
+
+    def seq(self, stmts):
+        """Closure running stmts in order, returning the first control signal.
+
+        Statements after a `defer` run inside it: the deferred body runs once they finish,
+        however they finish, except by a trap.
+        """
+        fns = []
+        for i, s in enumerate(stmts):
+            if isinstance(s, A.Defer):
+                d = self.block(s.body)
+                rest = self.seq(stmts[i + 1:])
+
+                def deferred(fp, rest=rest, d=d):
+                    r = rest(fp)
+                    d(fp)
+                    return r
+                fns.append(deferred)
+                break
+            fns.append(self.stmt(s))
         if not fns:
             return lambda fp: None
         if len(fns) == 1:
@@ -398,6 +434,16 @@ class Compiler:
                 if r is not None:
                     return r
         return run
+
+    def s_Tail(self, s):
+        ev = self.expr(s.expr)
+
+        def tail(fp):
+            try:
+                return Value(ev(fp))
+            except Escape as e:      # a branch of a nested expression left
+                return e.signal
+        return tail
 
     def stmt(self, s):
         before = self.value_blocks
@@ -416,17 +462,17 @@ class Compiler:
         """A branch of an `if` or `match` expression: a closure returning its value."""
         self.value_blocks += 1
         save = self.off
-        stmts = b.stmts[:-1] if b.result is not None else b.stmts
-        fns = tuple(self.stmt(s) for s in stmts)
-        ev = self.expr(b.result) if b.result is not None else None
+        stmts = list(b.stmts)
+        if b.result is not None:
+            stmts[-1] = Tail(b.result)
+        body = self.seq(stmts)
         self.off = save
 
         def run(fp):
-            for f in fns:
-                r = f(fp)
-                if r is not None:
-                    raise Escape(r)
-            return ev(fp)
+            r = body(fp)
+            if type(r) is Value:
+                return r.v
+            raise Escape(r)
         return run
 
     def s_Let(self, s):
