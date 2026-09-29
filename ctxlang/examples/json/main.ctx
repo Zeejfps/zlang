@@ -17,22 +17,16 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     let mut mem: [4194304]u8                                    // the heap: 4 MiB on the stack
     let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
 
-    let bytes = match (fs::read_all{ &fs, &heap, realloc = arena::alloc, path }) {
-        ok{ value }  => { value }
-        err          => {
-            io::write{ &io, to = io::Stream::err, bytes = path }
-            let msg = ": cannot read"
-            io::eprintln{ &io, s = ascii::of{ chars = &msg } }
-            return 1
-        }
+    let ok{ value = bytes } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } else {
+        io::write{ &io, to = io::Stream::err, bytes = path }
+        let msg = ": cannot read"
+        io::eprintln{ &io, s = ascii::of{ chars = &msg } }
+        return 1
     }
 
-    let doc = match (parser::parse{ &heap, realloc = arena::alloc, text = bytes }) {
-        ok{ value }  => { value }
-        err{ error } => {
-            report{ &io, path, text = bytes, error }
-            return 1
-        }
+    let ok{ value = doc } = parser::parse{ &heap, realloc = arena::alloc, text = bytes } else err{ error } {
+        report{ &io, path, text = bytes, error }
+        return 1
     }
 
     let mut v = doc
@@ -42,25 +36,21 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
             ok{ value } => { json::lookup{ v = doc, path = value } }
             err         => { null }
         }
-        v = match (found) {
-            some{ value } => { value }
-            null          => {
-                let msg = "no value at "
-                io::eprint{ &io, s = ascii::of{ chars = &msg } }
-                io::write{ &io, to = io::Stream::err, bytes = query }
-                io::eprintln{ &io, s = ascii::empty{} }
-                return 1
-            }
-        }
-    }
-
-    let out = match (printer::format{ &heap, realloc = arena::alloc, v, indent = 2 }) {
-        some{ value } => { value }
-        null          => {
-            let msg = "out of memory"
-            io::eprintln{ &io, s = ascii::of{ chars = &msg } }
+        if (found == null) {
+            let msg = "no value at "
+            io::eprint{ &io, s = ascii::of{ chars = &msg } }
+            io::write{ &io, to = io::Stream::err, bytes = query }
+            io::eprintln{ &io, s = ascii::empty{} }
             return 1
         }
+        v = found
+    }
+
+    let out = printer::format{ &heap, realloc = arena::alloc, v, indent = 2 }
+    if (out == null) {
+        let msg = "out of memory"
+        io::eprintln{ &io, s = ascii::of{ chars = &msg } }
+        return 1
     }
     io::println_utf8{ &io, s = out }
     return 0

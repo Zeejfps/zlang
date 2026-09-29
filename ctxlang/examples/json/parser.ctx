@@ -1,8 +1,7 @@
 // A JSON parser (RFC 8259), by recursive descent.
 //
-//   let v = match (parser::parse{ &heap, realloc = arena::alloc, text = bytes }) {
-//       ok{ value }  => { value }
-//       err{ error } => { ... }                // error.at is a byte offset into text
+//   let ok{ value = v } = parser::parse{ &heap, realloc = arena::alloc, text = bytes } else err{ error } {
+//       ...                                    // error.at is a byte offset into text
 //   }
 //
 // The input must be UTF-8. Strings without escapes are views of it, so it must outlive the tree.
@@ -39,33 +38,23 @@ namespace parser {
     }
 
     fn parse(S) { mut heap: S, realloc: alloc::Fn(S), text: slice::Slice(u8) } -> Result(json::Value, Error) {
-        match (utf8::from{ bytes = text }) {
-            ok           => { }
-            err{ error } => { return fail{ at = error.at, problem = Problem::not_utf8 } }
-        }
+        let ok = utf8::from{ bytes = text } else err{ error } { return fail{ at = error.at, problem = Problem::not_utf8 } }
         let mut p = Parser{ text, pos = 0, depth = 0, realloc }
-        let v = match (parse_value{ &p, &heap }) {
-            ok{ value }  => { value }
-            err{ error } => { return Result::err{ error } }
-        }
+        let ok{ value } = parse_value{ &p, &heap } else err{ error } { return Result::err{ error } }
         skip_space{ &p }
         if (p.pos < text.len) { return fail{ at = p.pos, problem = Problem::trailing_text } }
-        return Result::ok{ value = v }
+        return Result::ok{ value }
     }
 
     fn parse_value(S) { mut p: Parser(S), mut heap: S } -> Result(json::Value, Error) {
         skip_space{ &p }
-        let c = match (peek{ p }) {
-            null          => { return fail{ at = p.pos, problem = Problem::unexpected_end } }
-            some{ value } => { value }
-        }
+        let c = peek{ p }
+        if (c == null) { return fail{ at = p.pos, problem = Problem::unexpected_end } }
         if (c == '{') { return parse_object{ .. } }
         if (c == '[') { return parse_array{ .. } }
         if (c == '"') {
-            return match (parse_string{ .. }) {
-                ok{ value }  => { Result::ok{ value = json::Value::string{ value } } }
-                err{ error } => { Result::err{ error } }
-            }
+            let ok{ value } = parse_string{ .. } else err{ error } { return Result::err{ error } }
+            return Result::ok{ value = json::Value::string{ value } }
         }
         if (c == '-' or ascii::is_digit{ c }) { return parse_number{ &p } }
         let t = "true"
@@ -85,11 +74,8 @@ namespace parser {
         skip_space{ &p }
         if (not eat{ &p, c = ']' }) {
             while (true) {
-                let v = match (parse_value{ .. }) {
-                    ok{ value }  => { value }
-                    err{ error } => { return Result::err{ error } }
-                }
-                if (not list::push{ list = &items, &heap, item = v }) {
+                let ok{ value } = parse_value{ .. } else err{ error } { return Result::err{ error } }
+                if (not list::push{ list = &items, &heap, item = value }) {
                     return fail{ at = p.pos, problem = Problem::out_of_memory }
                 }
                 skip_space{ &p }
@@ -110,16 +96,10 @@ namespace parser {
             while (true) {
                 skip_space{ &p }
                 if (not next_is{ p, c = '"' }) { return fail{ at = p.pos, problem = Problem::expected_key } }
-                let key = match (parse_string{ .. }) {
-                    ok{ value }  => { value }
-                    err{ error } => { return Result::err{ error } }
-                }
+                let ok{ value = key } = parse_string{ .. } else err{ error } { return Result::err{ error } }
                 skip_space{ &p }
                 if (not eat{ &p, c = ':' }) { return fail{ at = p.pos, problem = Problem::expected_colon } }
-                let value = match (parse_value{ .. }) {
-                    ok{ value }  => { value }
-                    err{ error } => { return Result::err{ error } }
-                }
+                let ok{ value } = parse_value{ .. } else err{ error } { return Result::err{ error } }
                 if (not list::push{ list = &members, &heap, item = json::Member{ key, value } }) {
                     return fail{ at = p.pos, problem = Problem::out_of_memory }
                 }
@@ -143,10 +123,8 @@ namespace parser {
             while (p.pos < p.text.len and plain{ c = slice::get{ s = p.text, i = p.pos } }) { p.pos = p.pos + 1 }
             let run = utf8::String{ bytes = slice::sub{ s = p.text, lo, hi = p.pos } }
 
-            let c = match (peek{ p }) {
-                null          => { return fail{ at = p.pos, problem = Problem::unexpected_end } }
-                some{ value } => { value }
-            }
+            let c = peek{ p }
+            if (c == null) { return fail{ at = p.pos, problem = Problem::unexpected_end } }
             if (c < 32) { return fail{ at = p.pos, problem = Problem::control_char } }
             if (c == '"' and not copied) {
                 p.pos = p.pos + 1
@@ -158,10 +136,7 @@ namespace parser {
                 return Result::ok{ value = utf8::view{ b } }
             }
             // c is '\\'
-            let ch = match (parse_escape{ &p }) {
-                ok{ value }  => { value }
-                err{ error } => { return Result::err{ error } }
-            }
+            let ok{ value = ch } = parse_escape{ &p } else err{ error } { return Result::err{ error } }
             if (not utf8::push_char{ &b, &heap, c = ch }) { return fail{ at = p.pos, problem = Problem::out_of_memory } }
             copied = true
         }
@@ -177,10 +152,8 @@ namespace parser {
     fn parse_escape(S) { mut p: Parser(S) } -> Result(u32, Error) {
         let at = p.pos
         p.pos = p.pos + 1
-        let c = match (bump{ &p }) {
-            null          => { return fail{ at = p.pos, problem = Problem::unexpected_end } }
-            some{ value } => { value }
-        }
+        let c = bump{ &p }
+        if (c == null) { return fail{ at = p.pos, problem = Problem::unexpected_end } }
         if (c == '"' or c == '\\' or c == '/') { return Result::ok{ value = c } }
         if (c == 'b') { return Result::ok{ value = 8 } }
         if (c == 'f') { return Result::ok{ value = 12 } }
@@ -189,17 +162,13 @@ namespace parser {
         if (c == 't') { return Result::ok{ value = '\t' } }
         if (c != 'u') { return fail{ at, problem = Problem::bad_escape } }
 
-        let hi = match (hex4{ &p }) {
-            null          => { return fail{ at, problem = Problem::bad_escape } }
-            some{ value } => { value }
-        }
+        let hi = hex4{ &p }
+        if (hi == null) { return fail{ at, problem = Problem::bad_escape } }
         if (hi < 55296 or hi > 57343) { return Result::ok{ value = hi } }      // not U+D800..U+DFFF
         if (hi > 56319) { return fail{ at, problem = Problem::bad_escape } }  // a lone low surrogate
         if (not eat{ &p, c = '\\' } or not eat{ &p, c = 'u' }) { return fail{ at, problem = Problem::bad_escape } }
-        let lo = match (hex4{ &p }) {
-            null          => { return fail{ at, problem = Problem::bad_escape } }
-            some{ value } => { value }
-        }
+        let lo = hex4{ &p }
+        if (lo == null) { return fail{ at, problem = Problem::bad_escape } }
         if (lo < 56320 or lo > 57343) { return fail{ at, problem = Problem::bad_escape } }
         return Result::ok{ value = 65536 + (hi - 55296) * 1024 + (lo - 56320) }
     }
@@ -209,14 +178,10 @@ namespace parser {
         let mut v: u32 = 0
         let mut k = 0
         while (k < 4) {
-            let c = match (bump{ &p }) {
-                null          => { return null }
-                some{ value } => { value }
-            }
-            let d = match (hex_digit{ c }) {
-                null          => { return null }
-                some{ value } => { value }
-            }
+            let c = bump{ &p }
+            if (c == null) { return null }
+            let d = hex_digit{ c }
+            if (d == null) { return null }
             v = v * 16 + d
             k = k + 1
         }

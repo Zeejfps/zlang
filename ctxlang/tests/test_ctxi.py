@@ -1554,6 +1554,272 @@ fn main { mut io: Io } { io::println_i64{ &io, n = Result{ n = 3 }.n } }
 """, '3\n')
 
 
+class NarrowingAfterIf(Base):
+    """§8 Optional: an `if` whose null branch leaves narrows x for the rest of the block."""
+
+    def test_then_leaves(self):
+        self.assertOutput("""
+fn f { x: ?i32 } -> i32 {
+    if (x == null) { return -1 }
+    return x + 1
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = f{ x = 4 } }
+    io::println_i64{ &io, n = f{ x = null } }
+}
+""", '5\n-1\n')
+
+    def test_else_leaves(self):
+        self.assertOutput("""
+fn f { x: ?i32 } -> i32 {
+    let y = x
+    if (y != null) { } else { return -1 }
+    return y * 2
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = f{ x = 4 } }
+    io::println_i64{ &io, n = f{ x = null } }
+}
+""", '8\n-1\n')
+
+    def test_in_loop_with_continue(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let xs: [3]?i32 = [1, null, 3]
+    let mut i: usize = 0
+    while (i < xs.len) {
+        let x = xs[i]
+        i = i + 1
+        if (x == null) { continue }
+        io::println_i64{ &io, n = x }
+    }
+}
+""", '1\n3\n')
+
+    def test_ends_with_the_block(self):
+        self.assertCompileError("""
+fn f { x: ?i32 } -> i32 {
+    if (true) {
+        if (x == null) { return 0 }
+    }
+    return x
+}
+fn main {} { }
+""", 'expected i32, got ?i32')
+
+    def test_not_when_branch_may_finish(self):
+        self.assertCompileError("""
+fn main { mut io: Io } {
+    let x: ?i32 = 1
+    if (x == null) { io::println_i64{ &io, n = 0 } }
+    let y = x + 1
+}
+""", 'incompatible types')
+
+    def test_not_when_else_is_missing(self):
+        self.assertCompileError("""
+fn main { mut io: Io } {
+    let x: ?i32 = 1
+    if (x != null) { return }
+    let y = x + 1
+}
+""", 'incompatible types')
+
+    def test_mutable_not_narrowed(self):
+        self.assertCompileError("""
+fn main { mut io: Io } {
+    let mut x: ?i32 = 1
+    if (x == null) { return }
+    let y = x + 1
+}
+""", 'incompatible types')
+
+    def test_outer_variable_can_be_shadowed(self):
+        self.assertOutput("""
+fn f { x: ?i32 } -> i32 {
+    if (x == null) { return 0 }
+    let x = x * 10
+    return x
+}
+fn main { mut io: Io } { io::println_i64{ &io, n = f{ x = 7 } } }
+""", '70\n')
+
+    def test_same_scope_cannot_be_redeclared(self):
+        self.assertCompileError("""
+fn main {} {
+    let x: ?i32 = 1
+    if (x == null) { return }
+    let x = 2
+}
+""", 'already declared')
+
+
+class LetElse(Base):
+    """§11 Let-else: `let variant{ ... } = e else { ... }`."""
+
+    SRC = """
+union E { odd{ n: i32 }, negative }
+fn half { n: i32 } -> Result(i32, E) {
+    if (n < 0) { return Result::err{ error = E::negative } }
+    if (n % 2 != 0) { return Result::err{ error = E::odd{ n } } }
+    return Result::ok{ value = n / 2 }
+}
+"""
+
+    def test_result_propagation(self):
+        self.assertOutput(self.SRC + """
+fn quarter { n: i32 } -> Result(i32, E) {
+    let ok{ value = h } = half{ n } else err{ error } { return Result::err{ error } }
+    let ok{ value } = half{ n = h } else err{ error } { return Result::err{ error } }
+    return Result::ok{ value }
+}
+fn show { mut io: Io, r: Result(i32, E) } {
+    let ok{ value } = r else err{ error } {
+        let odd{ n } = error else { io::println_i64{ &io, n = -1000 }; return }
+        io::println_i64{ &io, n = -n }
+        return
+    }
+    io::println_i64{ &io, n = value }
+}
+fn main { mut io: Io } {
+    show{ &io, r = quarter{ n = 12 } }
+    show{ &io, r = quarter{ n = 6 } }
+    show{ &io, r = quarter{ n = -4 } }
+}
+""", '3\n-3\n-1000\n')
+
+    def test_optional(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let xs: [3]?i32 = [1, null, 3]
+    let mut i: usize = 0
+    while (i < xs.len) {
+        let x = xs[i]
+        i = i + 1
+        let some{ value = v } = x else { io::println_i64{ &io, n = 0 }; continue }
+        io::println_i64{ &io, n = v }
+    }
+}
+""", '1\n0\n3\n')
+
+    def test_variant_without_bindings(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let x: ?i32 = null
+    let null = x else { @trap() }
+    let r: Result(i32, bool) = Result::ok{ value = 1 }
+    let ok = r else { @trap() }
+    io::println_i64{ &io, n = 1 }
+}
+""", '1\n')
+
+    def test_else_runs_defers(self):
+        self.assertOutput("""
+fn f { mut io: Io, x: ?i32 } {
+    defer io::println_i64{ &io, n = 99 }
+    let some{ value } = x else { return }
+    io::println_i64{ &io, n = value }
+}
+fn main { mut io: Io } {
+    f{ &io, x = 5 }
+    f{ &io, x = null }
+}
+""", '5\n99\n99\n')
+
+    def test_rename_in_match(self):
+        self.assertOutput("""
+union P { pt{ x: i32, y: i32 } }
+fn main { mut io: Io } {
+    let mut p = P::pt{ x = 1, y = 2 }
+    match (&p) { pt{ &x = a, y = b } => { a = a + b } }
+    match (p) { pt{ x = a } => { io::println_i64{ &io, n = a } } }
+}
+""", '3\n')
+
+    def test_else_must_leave(self):
+        self.assertCompileError("""
+fn main { mut io: Io } {
+    let x: ?i32 = 1
+    let some{ value } = x else { io::println_i64{ &io, n = 0 } }
+}
+""", 'must leave')
+
+    def test_bindings_not_visible_in_else(self):
+        self.assertCompileError("""
+fn main { mut io: Io } {
+    let x: ?i32 = 1
+    let some{ value } = x else { io::println_i64{ &io, n = value }; return }
+}
+""", 'unknown name `value`')
+
+    def test_else_pattern_must_be_the_only_other_variant(self):
+        self.assertCompileError(self.SRC + """
+union T { a, b, c }
+fn main {} {
+    let t = T::a
+    let a = t else b { return }
+}
+""", 'would skip c')
+
+    def test_else_pattern_repeats_variant(self):
+        self.assertCompileError("""
+fn main {} {
+    let x: ?i32 = 1
+    let some{ value } = x else some { return }
+}
+""", 'both sides')
+
+    def test_needs_else(self):
+        self.assertCompileError("""
+fn main {} {
+    let x: ?i32 = 1
+    let some{ value } = x
+}
+""", 'needs an `else`')
+
+    def test_needs_union(self):
+        self.assertCompileError("""
+fn main {} {
+    let x = 1
+    let some = x else { return }
+}
+""", 'needs a union or optional')
+
+    def test_unknown_variant(self):
+        self.assertCompileError("""
+fn main {} {
+    let x: ?i32 = 1
+    let ok{ value } = x else { return }
+}
+""", 'no variant `ok`')
+
+    def test_no_pointer_scrutinee(self):
+        self.assertCompileError("""
+fn main {} {
+    let x: ?i32 = 1
+    let p = &x
+    let some{ value } = p else { return }
+}
+""", 'through a pointer')
+
+    def test_no_amp_binding(self):
+        self.assertCompileError("""
+fn main {} {
+    let x: ?i32 = 1
+    let some{ &value } = x else { return }
+}
+""", 'needs a pointer scrutinee')
+
+    def test_duplicate_binding_name(self):
+        self.assertCompileError("""
+fn main {} {
+    let x: ?i32 = 1
+    let some{ value } = x else { return }
+    let some{ value } = x else { return }
+}
+""", 'already declared')
+
+
 class Defer(Base):
     def test_order_and_return(self):
         self.assertOutput("""

@@ -278,11 +278,17 @@ class Parser:
             if tok.val == 'let':
                 self.next()
                 mut = self.accept_kw('mut')
+                if not mut and self.is_kw('null'):
+                    return self.let_else(pos, *self.pattern())
                 name = self.ident()
+                if not mut and self.is_op('{'):
+                    return self.let_else(pos, name, self.binders())
                 texpr = self.type() if self.accept_op(':') else None
                 init = self.expr() if self.accept_op('=') else None
                 if texpr is None and init is None:
                     self.err(f'`let {name}` needs a type or an initializer', tok)
+                if init is not None and texpr is None and not mut and self.is_kw('else'):
+                    return self.let_else_tail(pos, name, [], init)      # `let variant = e else`
                 return A.Let(name, mut, texpr, init, pos)
             if tok.val == 'if':
                 return self.if_stmt()
@@ -317,6 +323,60 @@ class Parser:
             self.next()
             return A.Assign(e, self.expr(), pos)
         return A.ExprStmt(e, pos)
+
+    def let_else(self, pos, variant, binders):
+        """`let variant{ binders } = init else ...`, after the pattern."""
+        self.expect_op('=')
+        init = self.expr()
+        if not self.is_kw('else'):
+            self.err("a `let` with a pattern needs an `else`")
+        return self.let_else_tail(pos, variant, binders, init)
+
+    def let_else_tail(self, pos, variant, binders, init):
+        """From the `else`: an optional pattern for the other variant, then the block."""
+        self.expect_kw('else')
+        els_variant, els_binders = None, []
+        if not self.is_op('{'):
+            # `else v { ... }` binds nothing; `else v{ ... } { ... }` has bindings, then the block.
+            els_variant = 'null' if self.accept_kw('null') else self.ident()
+            if self.braces_then_brace():
+                els_binders = self.binders()
+        return A.LetElse(variant, binders, init, els_variant, els_binders, self.block(), pos)
+
+    def braces_then_brace(self):
+        """Whether the `{ ... }` starting here is followed by another `{`."""
+        if not self.is_op('{'):
+            return False
+        depth, k = 0, 0
+        while self.peek(k).kind != 'eof':
+            if self.is_op('{', k):
+                depth += 1
+            elif self.is_op('}', k):
+                depth -= 1
+                if depth == 0:
+                    return self.is_op('{', k + 1)
+            k += 1
+        return False
+
+    def pattern(self):
+        """`variant` or `variant{ binders }`, where variant may be `null`."""
+        variant = 'null' if self.accept_kw('null') else self.ident()
+        return variant, self.binders() if self.is_op('{') else []
+
+    def binders(self):
+        """`{ f, &g, h = x, &k = y }`: the payload fields a pattern binds, as (field, amp, pos, local)."""
+        self.expect_op('{')
+        binders = []
+        while not self.is_op('}'):
+            bpos = self.peek().pos
+            amp = self.accept_op('&')
+            field = self.ident()
+            local = self.ident() if self.accept_op('=') else field
+            binders.append((field, amp, bpos, local))
+            if not self.accept_op(','):
+                break
+        self.expect_op('}')
+        return binders
 
     def paren_expr(self):
         self.expect_op('(')
@@ -360,20 +420,9 @@ class Parser:
         while not self.is_op('}'):
             apos = self.peek().pos
             if self.accept_kw('else'):
-                variant = None
-            elif self.accept_kw('null'):
-                variant = 'null'
+                variant, binders = None, []
             else:
-                variant = self.ident()
-            binders = []
-            if variant is not None and self.accept_op('{'):
-                while not self.is_op('}'):
-                    bpos = self.peek().pos
-                    amp = self.accept_op('&')
-                    binders.append((self.ident(), amp, bpos))
-                    if not self.accept_op(','):
-                        break
-                self.expect_op('}')
+                variant, binders = self.pattern()
             self.expect_op('=>')
             arms.append(A.Arm(variant, binders, self.block(), apos))
             self.accept_op(',')

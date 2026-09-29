@@ -121,17 +121,25 @@ match (e) {
 
 1. The arms must be exhaustive. `else` matches every variant not listed, and must come last. `else` is an error if every variant is already listed.
 2. Each variant appears in at most one arm.
-3. A pattern `variant{ f }` binds payload field `f` as a read-only local. A pattern may bind a subset of the fields.
-4. If the scrutinee has type `*U` for a union `U`, the match goes through the pointer. In its arms, `&f` binds payload field `f` as a mutable place.
+3. A pattern `variant{ f }` binds payload field `f` as a read-only local. `variant{ f = x }` binds it under the name `x` instead. A pattern may bind a subset of the fields.
+4. If the scrutinee has type `*U` for a union `U`, the match goes through the pointer. In its arms, `&f` binds payload field `f` as a mutable place, and `&f = x` binds it as `x`.
 5. `&f` in a pattern is an error unless the scrutinee is a pointer.
 6. If the scrutinee is `&p`, no place that overlaps `p` (§3.1) may be accessed inside an arm except through that arm's bindings. For other pointer scrutinees this isn't checked.
 7. `match` is a statement, and can also be an expression (§11, If and match expressions).
+8. To take one variant apart and leave on any other, use `let` with a pattern (§11, Let-else).
 
 ### Optional
 
 1. `?T` is a built-in union with variants `null` and `some{ value: T }`.
 2. `null` is a value of every `?T`. An expression of type `T` converts implicitly to `?T` as `some{ value = expr }`.
 3. Narrowing: in `if (x != null) { B }`, `x` has type `T` in `B`. In `if (x == null) { } else { B }`, `x` has type `T` in `B`. `x` must be a `let` local or a read-only context field. To narrow a mutable one, copy it first (`let y = x`) or `match` on it.
+4. Narrowing after an `if` statement: if the branch where `x` is null always leaves (it ends a path, §11.7, 8, 9), `x` has type `T` from after the `if` to the end of the enclosing block. That branch is the `{ }` of `if (x == null) { }`, or the `else` of `if (x != null) { } else { }`. `x` must be as in rule 3. A `let x` in that same block is an error if `x` was declared there, and shadows it otherwise.
+
+```
+let d = hex_digit{ c }            // ?u32
+if (d == null) { return null }
+v = v * 16 + d                    // d: u32
+```
 
 ## 9. Generics
 
@@ -168,6 +176,7 @@ name::item
 
 ```
 let x = e      let mut x = e      let x: T = e      let x: T      let mut x: T
+let variant{ f, g = y } = e else { }      let ok{ value } = e else err{ error } { }
 x = e
 if (e) { } else if (e) { } else { }
 while (e) { }
@@ -181,7 +190,7 @@ f{ ... }
 ```
 
 1. Conditions and match scrutinees are always in parentheses.
-2. `{` after the `)` of a condition or scrutinee, after `else`, or after `=>` begins a block. `{` after any other expression begins a call or literal.
+2. `{` after the `)` of a condition or scrutinee, after `else`, or after `=>` begins a block. `{` after any other expression begins a call or literal. In a let-else, `{` after the `else`'s variant holds its pattern if another `{` follows its `}`, and is the block otherwise.
 3. Statements are separated by newlines or `;`. A postfix `{`, `[` or `(` must be on the same line as the expression before it.
 4. Every block is a scope. A `let` is visible from its declaration to the end of its block.
 5. In `x = e`, `x` must be a mutable place.
@@ -189,6 +198,20 @@ f{ ... }
 7. `return` without a value is only allowed in a function with no `-> R`. In a function with `-> R`, every path must end in `return e` or `@trap()`.
 8. `break` leaves the innermost enclosing `while`. `continue` skips the rest of its body and goes to its next condition check. Both are errors outside a loop, and both end a path.
 9. `while (true)` without a `break` that leaves it ends a path, like `return`.
+
+### Let-else
+
+```
+let ok{ value = h } = half{ n } else err{ error } { return Result::err{ error } }
+let some{ value = c } = peek{ p } else { return null }
+let null = cached else { @trap() }
+```
+
+1. `let P = e else { B }` matches `e` against the pattern `P`, which is a variant with optional bindings as in a match arm (§8, Match). `P` may not be `mut`, and bindings may not use `&`.
+2. `e` must have a union or `?T` type. A pointer is an error: use `match`.
+3. If `e` holds `P`'s variant, its bindings are read-only locals from after the statement to the end of the enclosing block, as if declared by `let`.
+4. Otherwise `B` runs. `B` must leave: it ends a path (§11.7, 8, 9). `P`'s bindings aren't visible in it.
+5. `else V{ ... } { B }` binds `V`'s fields in `B`. `V` must be the union's only variant other than `P`'s.
 
 ### Defer
 

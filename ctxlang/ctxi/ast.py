@@ -99,6 +99,15 @@ class Let(Node):
         self.name, self.mut, self.texpr, self.init, self.pos = name, mut, texpr, init, pos
 
 
+class LetElse(Node):
+    """`let variant{ binders } = init else variant{ binders } { els }`. The else pattern is optional
+    (els_variant is None without one); binders are as in Arm."""
+
+    def __init__(self, variant, binders, init, els_variant, els_binders, els, pos):
+        self.variant, self.binders, self.init, self.pos = variant, binders, init, pos
+        self.els_variant, self.els_binders, self.els = els_variant, els_binders, els
+
+
 class Assign(Node):
     def __init__(self, lhs, rhs, pos):
         self.lhs, self.rhs, self.pos = lhs, rhs, pos
@@ -116,7 +125,8 @@ class While(Node):
 
 class Arm(Node):
     def __init__(self, variant, binders, body, pos):
-        # variant: name or None for `else`; binders: list of (name, amp, pos)
+        # variant: name or None for `else`; binders: list of (field, amp, pos, local), where
+        # local is the name the field is bound to: the field's own name unless renamed
         self.variant, self.binders, self.body, self.pos = variant, binders, body, pos
 
 

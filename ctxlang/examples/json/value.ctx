@@ -20,10 +20,7 @@ namespace json {
 
     // The member `key` of an object, or null if v isn't an object or has no such member.
     fn get { v: Value, key: utf8::String } -> ?Value {
-        let members = match (v) {
-            object{ members } => { members }
-            else              => { return null }
-        }
+        let object{ members } = v else { return null }
         let mut i = members.len
         while (i > 0) {
             i = i - 1
@@ -58,24 +55,18 @@ namespace json {
                 array => { index_by{ v = here, seg } }
                 else  => { get{ v = here, key = seg } }
             }
-            here = match (next) {
-                null          => { return null }
-                some{ value } => { value }
-            }
+            if (next == null) { return null }
+            here = next
         }
         return here
     }
 
     // Indexes an array by a segment of lookup's path. Null unless seg is all digits.
     fn index_by { v: Value, seg: utf8::String } -> ?Value {
-        let digits = match (utf8::to_ascii{ s = seg }) {
-            null          => { return null }
-            some{ value } => { value }
-        }
-        let n = match (ascii::parse_u64{ s = digits }) {
-            null          => { return null }
-            some{ value } => { value }
-        }
+        let digits = utf8::to_ascii{ s = seg }
+        if (digits == null) { return null }
+        let n = ascii::parse_u64{ s = digits }
+        if (n == null) { return null }
         if (n > 4294967295) { return null }                 // any real index fits in a u32
         return index{ v, i = @as(usize, n) }
     }

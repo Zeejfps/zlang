@@ -589,19 +589,10 @@ class Compiler:
         other = None
         for arm in s.arms:
             save = self.off
-            binds = []
-            for v, fi in arm.bvars:
-                off = self.alloc_var(v)
-                _, ft, foff = lay.variants[arm.vindex][1][fi]
-                if through and v.indirect:
-                    binds.append((0, off, foff, None, None))
-                elif through:
-                    binds.append((1, off, foff, rt.loader(ft), rt.storer(ft)))
-                else:
-                    binds.append((2, off, foff, rt.decoder(ft), rt.storer(ft)))
+            binds = self.pattern_binds(lay, arm.vindex, arm.bvars, through)
             body = compile_body(arm.body)
             self.off = save
-            entry = (tuple(binds), body)
+            entry = (binds, body)
             if arm.vindex is None:
                 other = entry
             else:
@@ -627,6 +618,42 @@ class Compiler:
                     st(fp + off, ld(v, foff))
             return body(fp)
         return match
+
+    def pattern_binds(self, lay, vindex, bvars, through):
+        """Allocates a pattern's bindings. Returns how to fill them: (kind, slot, field offset,
+        load, store) for bind_fields."""
+        rt = self.rt
+        binds = []
+        for v, fi in bvars:
+            off = self.alloc_var(v)
+            _, ft, foff = lay.variants[vindex][1][fi]
+            if through and v.indirect:
+                binds.append((0, off, foff, None, None))
+            elif through:
+                binds.append((1, off, foff, rt.loader(ft), rt.storer(ft)))
+            else:
+                binds.append((2, off, foff, rt.decoder(ft), rt.storer(ft)))
+        return tuple(binds)
+
+    def s_LetElse(self, s):
+        lay = self.rt.layout(self.T(s.utype))
+        sv = self.expr(s.init)
+        save = self.off
+        els_binds = self.pattern_binds(lay, s.els_vindex, s.els_bvars, False)
+        els = self.block(s.els)
+        self.off = save
+        binds = self.pattern_binds(lay, s.vindex, s.bvars, False)   # live to the end of the block
+        want = s.vindex
+
+        def let_else(fp):
+            v = sv(fp)
+            if TAG.unpack_from(v, 0)[0] != want:
+                for _, off, foff, ld, st in els_binds:
+                    st(fp + off, ld(v, foff))
+                return els(fp)           # the checker ensures it leaves
+            for _, off, foff, ld, st in binds:
+                st(fp + off, ld(v, foff))
+        return let_else
 
     def s_Return(self, s):
         if s.expr is None:

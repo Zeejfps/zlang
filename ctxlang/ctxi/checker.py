@@ -113,7 +113,7 @@ def place_str(p):
 
 # Children to visit when scanning an arm body for forbidden accesses.
 CHILDREN = {
-    A.Block: ('stmts',), A.Let: ('init',), A.Assign: ('lhs', 'rhs'),
+    A.Block: ('stmts',), A.Let: ('init',), A.LetElse: ('init', 'els'), A.Assign: ('lhs', 'rhs'),
     A.If: ('cond', 'then', 'els'), A.While: ('cond', 'body'), A.Match: ('scrut', 'arms'),
     A.Arm: ('body',), A.Defer: ('body',), A.Return: ('expr',), A.ExprStmt: ('expr',), A.Unary: ('expr',),
     A.AddrOf: ('expr',), A.Binary: ('lhs', 'rhs'), A.ArrayLit: ('elems',),
@@ -468,7 +468,9 @@ class Checker:
 
     def declare(self, v):
         scope = self.scopes[-1]
-        if v.name in scope:
+        old = scope.get(v.name)
+        # A narrowed view of an outer variable (from narrowing after an `if`) can be shadowed.
+        if old is not None and not (old.kind == 'narrow' and old.root().depth < self.depth):
             self.err(f'`{v.name}` is already declared in this scope', v.pos)
         v.depth = self.depth
         v.loop_depth = self.loop_depth
@@ -606,9 +608,17 @@ class Checker:
         t2 = None
         if s.els is not None:
             t2 = body(s.els, [nar[1]] if nar and nar[0] == '==' else (), exp)
-        self.st = self.merge([s1, self.st])
+        s2 = self.st
+        self.st = self.merge([s1, s2])
         if value:
             return self.join(s, [(s.then, t1), (s.els, t2)], exp, may_leave)
+        if nar and not s0.dead:
+            # If the branch where x is null always leaves, x stays narrowed to the end of the block.
+            null_branch = s1 if nar[0] == '==' else (s2 if s.els is not None else None)
+            if null_branch is not None and null_branch.dead:
+                nv = self.narrowing(s.cond)[1]
+                nv.depth, nv.loop_depth = self.depth, self.loop_depth
+                self.scopes[-1][nv.name] = nv       # replaces x, or shadows it if x is outer
 
     def branch_block(self, b, extra, exp):
         self.block(b, extra)
@@ -793,24 +803,7 @@ class Checker:
                     self.err(f'variant `{arm.variant}` appears in more than one arm', arm.pos)
                 seen.append(arm.variant)
                 arm.vindex = names.index(arm.variant)
-                fields = vs[arm.vindex][1]
-                if arm.binders and fields is None:
-                    self.err(f'variant `{arm.variant}` has no payload', arm.pos)
-                fnames = [f for f, _ in fields or []]
-                bseen = set()
-                for bname, amp, bpos in arm.binders:
-                    if bname not in fnames:
-                        self.err(f'variant `{arm.variant}` has no field `{bname}`', bpos)
-                    if bname in bseen:
-                        self.err(f'`{bname}` is bound twice', bpos)
-                    bseen.add(bname)
-                    if amp and not through:
-                        self.err(f'`&{bname}` needs a pointer scrutinee', bpos)
-                    fi = fnames.index(bname)
-                    v = VarInfo(bname, fields[fi][1], 'bind', amp, bpos)
-                    v.indirect = amp
-                    v.derived = scrut_derived
-                    arm.bvars.append((v, fi))
+                arm.bvars = self.pattern_vars(vs, arm.vindex, arm.binders, through, scrut_derived, arm.pos)
             self.st = State(set(s0.defs), set(s0.maybe), s0.dead)
             branches.append((arm.body, body(arm.body, [v for v, _ in arm.bvars], exp)))
             results.append(self.st)
@@ -822,6 +815,66 @@ class Checker:
         self.st = self.merge(results)
         if value:
             return self.join(s, branches, exp, may_leave)
+
+    def pattern_vars(self, vs, vindex, binders, through, derived, pos):
+        """The (VarInfo, field index) pairs a pattern for variant vs[vindex] binds."""
+        variant, fields = vs[vindex]
+        if binders and fields is None:
+            self.err(f'variant `{variant}` has no payload', pos)
+        fnames = [f for f, _ in fields or []]
+        bseen = set()
+        out = []
+        for field, amp, bpos, local in binders:
+            if field not in fnames:
+                self.err(f'variant `{variant}` has no field `{field}`', bpos)
+            if field in bseen:
+                self.err(f'`{field}` is bound twice', bpos)
+            bseen.add(field)
+            if amp and not through:
+                self.err(f'`&{field}` needs a pointer scrutinee', bpos)
+            fi = fnames.index(field)
+            v = VarInfo(local, fields[fi][1], 'bind', amp, bpos)
+            v.indirect = amp
+            v.derived = derived
+            out.append((v, fi))
+        return out
+
+    def s_LetElse(self, s):
+        """`let variant{ ... } = e else { ... }`: the bindings live on in the enclosing block, and
+        the else block, which runs for every other variant, must leave."""
+        t = prune(self.value_type(s.init))
+        if isinstance(t, Ptr):
+            self.err('a `let` pattern cannot match through a pointer; use `match`', s.init.pos)
+        if not isinstance(t, (UnionT, Opt)):
+            self.err(f'a `let` pattern needs a union or optional value, got {tstr(t)}', s.init.pos)
+        s.utype = t
+        vs = variants_of(t)
+        names = [n for n, _ in vs]
+        if s.variant not in names:
+            self.err(f'{tstr(t)} has no variant `{s.variant}`', s.pos)
+        s.vindex = names.index(s.variant)
+        derived = self.derives(s.init)
+        s.bvars = self.pattern_vars(vs, s.vindex, s.binders, False, derived, s.pos)
+        s.els_vindex, s.els_bvars = None, []
+        if s.els_variant is not None:
+            others = [n for n in names if n != s.variant]
+            if s.els_variant not in names:
+                self.err(f'{tstr(t)} has no variant `{s.els_variant}`', s.els.pos)
+            if s.els_variant == s.variant:
+                self.err(f'variant `{s.variant}` appears on both sides of the `else`', s.els.pos)
+            if len(others) != 1:
+                self.err(f"`else {s.els_variant}` would skip {', '.join(n for n in others if n != s.els_variant)}; "
+                         f'a pattern after `else` must name the only other variant', s.els.pos)
+            s.els_vindex = names.index(s.els_variant)
+            s.els_bvars = self.pattern_vars(vs, s.els_vindex, s.els_binders, False, derived, s.els.pos)
+        s0 = self.save()
+        self.block(s.els, [v for v, _ in s.els_bvars])
+        if not self.st.dead:
+            self.err('the `else` of a `let` pattern must leave: end it with `return`, `break`, '
+                     '`continue` or `@trap()`', s.els.pos)
+        self.st = State(s0.defs, s0.maybe | self.st.maybe, s0.dead)
+        for v, _ in s.bvars:
+            self.declare(v)
 
     def s_Defer(self, s):
         # Checked where it appears, but it runs later, so it leaves the flow state unchanged.
