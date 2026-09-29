@@ -298,6 +298,25 @@ Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?
 6. A `mut` context field is passed as a pointer. A read-only context field is passed by copy or by reference, at the compiler's choice. §3.1 makes the choice unobservable for checked arguments. A bind always copies (§4).
 7. Stack size is finite. Exceeding it traps.
 
+### Escape check
+
+The compiler checks, within each function, that the address of a local doesn't outlive it. Nothing crosses function boundaries except through the call rule in 2.
+
+1. A **stack pointer** to `L` is `&p` where `p` doesn't go through a deref and its root is `L`, a local or a read-only context field. `&x` for a `mut` context field `x` is not a stack pointer, because it points into the caller.
+2. A value is **derived from** `L` if it is a stack pointer to `L`, or is produced from a value derived from `L` by:
+   - `let` or assignment
+   - a struct, union or array literal
+   - pointer arithmetic or `@cast`
+   - a call, whose result is derived from everything its read-only arguments are derived from. Arguments passed to `mut` fields don't count.
+
+   Only values whose type contains a pointer carry this. `&fn` values follow §6 instead.
+3. It is a compile error to:
+   - `return` a value derived from any local or read-only context field of the function
+   - assign a value derived from `L` to a local declared in a scope outside `L`'s
+   - assign a value derived from `L` to a `mut` context field or any part of one
+   - assign a value derived from `L` to a place that goes through a deref
+4. Not checked: a callee storing a read-only pointer argument through its own `mut` field, and a pointer returned from a `&p` passed to a `mut` field. These remain undefined behaviour if the memory no longer exists (§12).
+
 ## 15. Entry point
 
 1. `fn main { ... }` is the entry point.
@@ -306,7 +325,7 @@ Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?
 
 ## 16. Open questions
 
-1. **Dangling pointers:** add a lint for returning or storing `&local`?
+1. **Dangling pointers across calls:** the escape check (§14) is intraprocedural. Would inferred per-function summaries be worth it?
 2. **Read-only pointers:** `&x` on a read-only place gives a writable `*T`. Add `*mut T`?
 3. **Allocator instance mismatch:** passing a different `S` instance of the same type isn't caught. Brands would close this.
 4. **Method sugar:** should `x.f{...}` mean `f{ first = &x, ... }`?

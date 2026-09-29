@@ -326,6 +326,12 @@ fn main { mut io: Io } {
 // sum_into{ &total, f }
 //     error: total overlaps a place held by f
 //
+// fn make_arena {} -> arena::Arena {
+//     let mut mem: [64]u8
+//     return arena::Arena{ buf = slice::from{ ptr = &mem[0], len = mem.len }, used = 0 }
+// }
+//     error: returned value holds the address of local `mem`
+//
 // let mut maybe = list::get{ list = nums, i = 0 }
 // if (maybe != null) { io::print_i32{ &io, n = maybe } }
 //     error: maybe is mutable and can't be narrowed; copy it to a `let` first
@@ -336,11 +342,12 @@ fn main { mut io: Io } {
 // list::push{ list = &nums, heap = &other, item = 1 }
 //     compiles: same type S, wrong instance
 //
-// fn make_arena {} -> arena::Arena {
-//     let mut mem: [64]u8
-//     return arena::Arena{ buf = slice::from{ ptr = &mem[0], len = mem.len }, used = 0 }
+// fn addr_of { mut s: slice::Slice(i32) } -> *slice::Slice(i32) { return &s }   // s is a mut field: fine
+// fn bad {} -> *slice::Slice(i32) {
+//     let mut local = slice::empty(i32){}
+//     return addr_of{ &local }
 // }
-//     compiles: the returned arena's buf points into a dead stack frame
+//     compiles: a pointer returned through a `mut` argument isn't tracked (§14)
 //
 // let p = &mem[0]
 // p[5000] = 1
