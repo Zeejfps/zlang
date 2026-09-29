@@ -1,0 +1,413 @@
+// std: utf8. UTF-8 text.
+//
+// `String` is a view of bytes that are valid UTF-8. Like a slice, it doesn't own its memory.
+// Input that might not be valid, such as a file, goes through `from`, which checks it once:
+//
+//   let text = match (utf8::from{ bytes }) {
+//       ok{ value }  => { value }
+//       err{ error } => { return 1 }              // error.at is the offset of the bad byte
+//   }
+//
+// Offsets are in bytes, as in `ascii`. `len` is the length in bytes and `count` the number of
+// characters. A character is a Unicode code point, held in a u32. Functions that take an offset
+// trap if it falls inside a character.
+//
+// Most operations match `ascii`'s byte by byte: in valid UTF-8, one character's bytes never
+// appear inside another's, so a byte match is a character match. Character tests and case
+// conversion recognize ASCII only; std has no Unicode tables. To parse a number, convert with
+// `to_ascii` and use `ascii::parse_*`.
+
+namespace utf8 {
+    struct String { bytes: slice::Slice(u8) }
+
+    // Where the first invalid byte sequence starts.
+    struct Invalid { at: usize }
+
+    fn from { bytes: slice::Slice(u8) } -> Result(String, Invalid) {
+        let mut i: usize = 0
+        while (i < bytes.len) {
+            let n = seq_len{ bytes, i }
+            if (n == 0) { return Result::err{ error = Invalid{ at = i } } }
+            i = i + n
+        }
+        return Result::ok{ value = String{ bytes } }
+    }
+
+    // Views the byte array `chars` points to, typically a string literal. Traps if it isn't valid.
+    fn of(A) { chars: *A } -> String {
+        return result::unwrap{ r = from{ bytes = slice::of(u8){ a = chars } } }
+    }
+
+    // ASCII is valid UTF-8, so this can't fail.
+    fn from_ascii { s: ascii::String } -> String {
+        return String{ bytes = s.bytes }
+    }
+
+    // Null if s has a character outside ASCII.
+    fn to_ascii { s: String } -> ?ascii::String {
+        let mut i: usize = 0
+        while (i < s.bytes.len) {
+            if (slice::get{ s = s.bytes, i } > 127) { return null }
+            i = i + 1
+        }
+        return ascii::String{ bytes = s.bytes }
+    }
+
+    fn empty {} -> String {
+        return String{ bytes = slice::empty(u8){} }
+    }
+
+    // In bytes.
+    fn len { s: String } -> usize {
+        return s.bytes.len
+    }
+
+    // In characters. Walks the whole string.
+    fn count { s: String } -> usize {
+        let mut n: usize = 0
+        let mut i: usize = 0
+        while (i < s.bytes.len) {
+            if (not is_cont{ b = slice::get{ s = s.bytes, i } }) { n = n + 1 }
+            i = i + 1
+        }
+        return n
+    }
+
+    // Whether byte offset i is at the start of a character or at the end of s.
+    fn is_boundary { s: String, i: usize } -> bool {
+        if (i >= s.bytes.len) { return i == s.bytes.len }
+        return not is_cont{ b = slice::get{ s = s.bytes, i } }
+    }
+
+    // The character starting at byte offset i. Traps if i isn't the start of a character.
+    fn at { s: String, i: usize } -> u32 {
+        return decode{ s, i }.c
+    }
+
+    // Bytes lo up to but not including hi. Traps if either isn't a boundary.
+    fn sub { s: String, lo: usize, hi: usize } -> String {
+        if (not is_boundary{ s, i = lo } or not is_boundary{ s, i = hi }) { @trap() }
+        return String{ bytes = slice::sub{ s = s.bytes, lo, hi } }
+    }
+
+    fn eq { a: String, b: String } -> bool {
+        return ascii::eq{ a = raw{ s = a }, b = raw{ s = b } }
+    }
+
+    fn starts_with { s: String, prefix: String } -> bool {
+        return ascii::starts_with{ s = raw{ s }, prefix = raw{ s = prefix } }
+    }
+
+    fn ends_with { s: String, suffix: String } -> bool {
+        return ascii::ends_with{ s = raw{ s }, suffix = raw{ s = suffix } }
+    }
+
+    // Byte offset of the first `c`, or null.
+    fn find { s: String, c: u32 } -> ?usize {
+        let mut buf: [4]u8
+        return find_str{ s, needle = encode{ c, into = slice::of(u8){ a = &buf } } }
+    }
+
+    // Byte offset of the first occurrence of `needle`, or null. An empty needle is found at 0.
+    fn find_str { s: String, needle: String } -> ?usize {
+        return ascii::find_str{ s = raw{ s }, needle = raw{ s = needle } }
+    }
+
+    // The text before and after the first `c`, or null if there is none.
+    struct Split { head: String, tail: String }
+
+    fn split_once { s: String, c: u32 } -> ?Split {
+        let mut buf: [4]u8
+        let sep = encode{ c, into = slice::of(u8){ a = &buf } }
+        let i = find_str{ s, needle = sep }
+        if (i != null) {
+            return Split{ head = sub{ s, lo = 0, hi = i }, tail = sub{ s, lo = i + sep.bytes.len, hi = s.bytes.len } }
+        }
+        return null
+    }
+
+    // Without leading and trailing ASCII whitespace.
+    fn trim { s: String } -> String {
+        return String{ bytes = ascii::trim{ s = raw{ s } }.bytes }
+    }
+
+    fn trim_start { s: String } -> String {
+        return String{ bytes = ascii::trim_start{ s = raw{ s } }.bytes }
+    }
+
+    fn trim_end { s: String } -> String {
+        return String{ bytes = ascii::trim_end{ s = raw{ s } }.bytes }
+    }
+
+    // ---- characters
+
+    // Whether c is a Unicode scalar value: a code point that UTF-8 can encode.
+    fn is_scalar { c: u32 } -> bool {
+        return c <= 1114111 and (c < 55296 or c > 57343)      // U+10FFFF, not U+D800..U+DFFF
+    }
+
+    fn is_ascii { c: u32 } -> bool { return c < 128 }
+
+    // ASCII-only, like `ascii`'s tests.
+    fn is_digit { c: u32 } -> bool { return c < 128 and ascii::is_digit{ c = @trunc(u8, c) } }
+    fn is_upper { c: u32 } -> bool { return c < 128 and ascii::is_upper{ c = @trunc(u8, c) } }
+    fn is_lower { c: u32 } -> bool { return c < 128 and ascii::is_lower{ c = @trunc(u8, c) } }
+    fn is_alpha { c: u32 } -> bool { return c < 128 and ascii::is_alpha{ c = @trunc(u8, c) } }
+    fn is_alnum { c: u32 } -> bool { return c < 128 and ascii::is_alnum{ c = @trunc(u8, c) } }
+    fn is_space { c: u32 } -> bool { return c < 128 and ascii::is_space{ c = @trunc(u8, c) } }
+
+    // Changes ASCII letters only.
+    fn to_upper { c: u32 } -> u32 {
+        if (c < 128) { return ascii::to_upper{ c = @trunc(u8, c) } }
+        return c
+    }
+
+    fn to_lower { c: u32 } -> u32 {
+        if (c < 128) { return ascii::to_lower{ c = @trunc(u8, c) } }
+        return c
+    }
+
+    // Writes c's bytes to the start of `into` and returns them. Traps if c isn't a scalar value or
+    // doesn't fit; 4 bytes always do.
+    fn encode { c: u32, into: slice::Slice(u8) } -> String {
+        if (not is_scalar{ c }) { @trap() }
+        let mut n: usize = 4
+        let mut lead: u32 = 240
+        if (c < 128) {
+            n = 1
+            lead = 0
+        } else if (c < 2048) {
+            n = 2
+            lead = 192
+        } else if (c < 65536) {
+            n = 3
+            lead = 224
+        }
+        if (n > into.len) { @trap() }
+        let mut v = c
+        let mut k = n - 1
+        while (k > 0) {                                   // continuation bytes carry 6 bits each
+            slice::set{ s = into, i = k, v = @trunc(u8, 128 + v % 64) }
+            v = v / 64
+            k = k - 1
+        }
+        slice::set{ s = into, i = 0, v = @trunc(u8, lead + v) }
+        return String{ bytes = slice::sub{ s = into, lo = 0, hi = n } }
+    }
+
+    // ---- scanning
+
+    // A read position in a String, for hand-written lexers and parsers. `pos` is a byte offset
+    // and always a boundary.
+    //
+    //   let mut cur = utf8::cursor{ s = line }
+    //   utf8::skip_space{ &cur }
+    //   let name = utf8::take_while{ &cur, f = utf8::is_alpha }
+    //   if (utf8::eat{ &cur, ch = '=' }) { ... }
+    struct Cursor { s: String, pos: usize }
+
+    fn cursor { s: String } -> Cursor {
+        return Cursor{ s, pos = 0 }
+    }
+
+    fn done { cur: Cursor } -> bool {
+        return cur.pos >= cur.s.bytes.len
+    }
+
+    // The unread text.
+    fn rest { cur: Cursor } -> String {
+        return sub{ s = cur.s, lo = cur.pos, hi = cur.s.bytes.len }
+    }
+
+    // The next character without consuming it, or null at the end.
+    fn peek { cur: Cursor } -> ?u32 {
+        if (done{ cur }) { return null }
+        return at{ s = cur.s, i = cur.pos }
+    }
+
+    // The character `ahead` characters past the next one, or null past the end.
+    fn peek_at { cur: Cursor, ahead: usize } -> ?u32 {
+        let mut i = cur.pos
+        let mut k: usize = 0
+        while (k < ahead) {
+            if (i >= cur.s.bytes.len) { return null }
+            i = i + decode{ s = cur.s, i }.size
+            k = k + 1
+        }
+        if (i >= cur.s.bytes.len) { return null }
+        return at{ s = cur.s, i }
+    }
+
+    // Consumes and returns the next character, or null at the end.
+    fn bump { mut cur: Cursor } -> ?u32 {
+        if (done{ cur }) { return null }
+        let d = decode{ s = cur.s, i = cur.pos }
+        cur.pos = cur.pos + d.size
+        return d.c
+    }
+
+    // Consumes `ch` if it is next.
+    fn eat { mut cur: Cursor, ch: u32 } -> bool {
+        if (done{ cur }) { return false }
+        let d = decode{ s = cur.s, i = cur.pos }
+        if (d.c != ch) { return false }
+        cur.pos = cur.pos + d.size
+        return true
+    }
+
+    // Consumes `s` if the unread text starts with it.
+    fn eat_str { mut cur: Cursor, s: String } -> bool {
+        if (not starts_with{ s = rest{ cur }, prefix = s }) { return false }
+        cur.pos = cur.pos + s.bytes.len
+        return true
+    }
+
+    // Consumes characters while `f` accepts them and returns them. `f` may be a character test
+    // such as `utf8::is_digit`.
+    fn take_while { mut cur: Cursor, f: &fn{ c: u32 } -> bool } -> String {
+        let lo = cur.pos
+        while (not done{ cur }) {
+            let d = decode{ s = cur.s, i = cur.pos }
+            if (not f{ c = d.c }) { break }
+            cur.pos = cur.pos + d.size
+        }
+        return sub{ s = cur.s, lo, hi = cur.pos }
+    }
+
+    fn skip_space { mut cur: Cursor } {
+        take_while{ &cur, f = is_space }
+    }
+
+    // ---- building strings
+
+    // A growable string that owns its bytes, allocated like a list. Free it with `free`.
+    //
+    //   let mut b = utf8::builder{ realloc = arena::alloc }
+    //   utf8::push{ &b, &heap, s = name }
+    //   utf8::push_char{ &b, &heap, c = 233 }            // U+00E9, e with an acute accent
+    //   io::println_utf8{ &io, s = utf8::view{ b } }
+    struct Builder(S) { bytes: list::List(u8, S) }
+
+    fn builder(S) { realloc: alloc::Fn(S) } -> Builder(S) {
+        return Builder{ bytes = list::new(u8){ realloc } }
+    }
+
+    // The text so far. Invalidated by the next push.
+    fn view(S) { b: Builder(S) } -> String {
+        return String{ bytes = list::items{ list = b.bytes } }
+    }
+
+    // Each push returns false on allocation failure.
+    fn push(S) { mut b: Builder(S), mut heap: S, s: String } -> bool {
+        if (not list::reserve{ list = &b.bytes, &heap, extra = s.bytes.len }) { return false }
+        let mut i: usize = 0
+        while (i < s.bytes.len) {
+            list::push{ list = &b.bytes, &heap, item = slice::get{ s = s.bytes, i } }
+            i = i + 1
+        }
+        return true
+    }
+
+    // Traps if c isn't a scalar value.
+    fn push_char(S) { mut b: Builder(S), mut heap: S, c: u32 } -> bool {
+        let mut buf: [4]u8
+        return push{ &b, &heap, s = encode{ c, into = slice::of(u8){ a = &buf } } }
+    }
+
+    fn push_i64(S) { mut b: Builder(S), mut heap: S, n: i64 } -> bool {
+        let mut buf: [20]u8
+        return push{ &b, &heap, s = from_ascii{ s = ascii::fmt_i64{ n, into = slice::of(u8){ a = &buf } } } }
+    }
+
+    fn push_u64(S) { mut b: Builder(S), mut heap: S, n: u64 } -> bool {
+        let mut buf: [20]u8
+        return push{ &b, &heap, s = from_ascii{ s = ascii::fmt_u64{ n, into = slice::of(u8){ a = &buf } } } }
+    }
+
+    fn clear(S) { mut b: Builder(S) } {
+        list::clear{ list = &b.bytes }
+    }
+
+    fn free(S) { mut b: Builder(S), mut heap: S } {
+        list::free{ list = &b.bytes, &heap }
+    }
+
+    // ---- internals
+
+    // s's bytes as an ascii::String, for ascii's byte-level functions. They don't check their
+    // input, and on valid UTF-8 their byte matches are character matches.
+    fn raw { s: String } -> ascii::String {
+        return ascii::String{ bytes = s.bytes }
+    }
+
+    fn is_cont { b: u8 } -> bool {
+        return b >= 128 and b < 192
+    }
+
+    // Length of the valid sequence starting at bytes[i], or 0 if there is none. Rejects overlong
+    // forms, surrogates and values above U+10FFFF.
+    fn seq_len { bytes: slice::Slice(u8), i: usize } -> usize {
+        let b = slice::get{ s = bytes, i }
+        if (b < 128) { return 1 }
+        let mut n: usize = 0
+        let mut lo: u8 = 128                              // the second byte's range
+        let mut hi: u8 = 191
+        if (b >= 194 and b <= 223) {
+            n = 2
+        } else if (b == 224) {                            // E0: no overlong 3-byte forms
+            n = 3
+            lo = 160
+        } else if (b == 237) {                            // ED: no surrogates
+            n = 3
+            hi = 159
+        } else if (b >= 225 and b <= 239) {
+            n = 3
+        } else if (b == 240) {                            // F0: no overlong 4-byte forms
+            n = 4
+            lo = 144
+        } else if (b >= 241 and b <= 243) {
+            n = 4
+        } else if (b == 244) {                            // F4: nothing above U+10FFFF
+            n = 4
+            hi = 143
+        } else {
+            return 0
+        }
+        if (i + n > bytes.len) { return 0 }
+        let b1 = slice::get{ s = bytes, i = i + 1 }
+        if (b1 < lo or b1 > hi) { return 0 }
+        let mut k: usize = 2
+        while (k < n) {
+            if (not is_cont{ b = slice::get{ s = bytes, i = i + k } }) { return 0 }
+            k = k + 1
+        }
+        return n
+    }
+
+    struct Decoded { c: u32, size: usize }
+
+    // The character starting at byte offset i and its length in bytes. s is valid, so the lead
+    // byte gives the length. Traps if i isn't the start of a character.
+    fn decode { s: String, i: usize } -> Decoded {
+        if (i >= s.bytes.len or not is_boundary{ s, i }) { @trap() }
+        let b0: u32 = slice::get{ s = s.bytes, i }
+        if (b0 < 128) { return Decoded{ c = b0, size = 1 } }
+        let mut c: u32 = 0
+        let mut size: usize = 4
+        if (b0 < 224) {
+            c = b0 - 192
+            size = 2
+        } else if (b0 < 240) {
+            c = b0 - 224
+            size = 3
+        } else {
+            c = b0 - 240
+        }
+        let mut k: usize = 1
+        while (k < size) {
+            c = c * 64 + (slice::get{ s = s.bytes, i = i + k } - 128)
+            k = k + 1
+        }
+        return Decoded{ c, size }
+    }
+}

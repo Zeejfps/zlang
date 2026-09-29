@@ -41,6 +41,25 @@ namespace io {
         write{ &io, to = Stream::err, bytes = slice::of(u8){ a = &nl } }
     }
 
+    // UTF-8 text. The bytes go out unchanged, as with ascii::String.
+    fn print_utf8 { mut io: Io, s: utf8::String } {
+        write{ &io, to = Stream::out, bytes = s.bytes }
+    }
+
+    fn println_utf8 { mut io: Io, s: utf8::String } {
+        print_utf8{ &io, s }
+        newline{ &io }
+    }
+
+    fn eprint_utf8 { mut io: Io, s: utf8::String } {
+        write{ &io, to = Stream::err, bytes = s.bytes }
+    }
+
+    fn eprintln_utf8 { mut io: Io, s: utf8::String } {
+        eprint_utf8{ &io, s }
+        eprintln{ &io, s = ascii::empty{} }
+    }
+
     fn newline { mut io: Io } {
         let nl = "\n"
         write{ &io, to = Stream::out, bytes = slice::of(u8){ a = &nl } }

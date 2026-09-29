@@ -1138,6 +1138,148 @@ fn main { mut io: Io } {
 """, 'expected')
 
 
+class Utf8(Base):
+    # "café €=😀!": 1 + 1 + 1 + 2 + 1 + 3 + 1 + 4 + 1 bytes
+    TEXT = r'let lit = "caf\xc3\xa9 \xe2\x82\xac=\xf0\x9f\x98\x80!"' + '\n    let s = utf8::of{ chars = &lit }\n'
+
+    def test_basics(self):
+        out, err = run_io(r"""
+fn main { mut io: Io } {
+    %s
+    io::println_utf8{ &io, s }
+    io::println_u64{ &io, n = utf8::len{ s } }
+    io::println_u64{ &io, n = utf8::count{ s } }
+    io::println_u64{ &io, n = utf8::at{ s, i = 3 } }
+    io::println_bool{ &io, n = utf8::is_boundary{ s, i = 4 } }
+    io::println_bool{ &io, n = utf8::is_boundary{ s, i = 5 } }
+    io::println_bool{ &io, n = utf8::is_boundary{ s, i = 15 } }
+    io::println_utf8{ &io, s = utf8::sub{ s, lo = 6, hi = 9 } }
+    let euro = "\xe2\x82\xac"
+    opt{ &io, n = utf8::find_str{ s, needle = utf8::of{ chars = &euro } } }
+    opt{ &io, n = utf8::find{ s, c = 128512 } }
+    opt{ &io, n = utf8::find{ s, c = 234 } }
+    let caf = "caf"
+    io::println_bool{ &io, n = utf8::starts_with{ s, prefix = utf8::of{ chars = &caf } } }
+    let bang = "\xf0\x9f\x98\x80!"
+    io::println_bool{ &io, n = utf8::ends_with{ s, suffix = utf8::of{ chars = &bang } } }
+    let sp = utf8::split_once{ s, c = 8364 }
+    if (sp != null) {
+        io::println_utf8{ &io, s = sp.head }
+        io::println_utf8{ &io, s = sp.tail }
+    }
+    io::println_bool{ &io, n = utf8::to_ascii{ s } == null }
+    let hi = "  hi\t"
+    let a = utf8::to_ascii{ s = utf8::trim{ s = utf8::of{ chars = &hi } } }
+    if (a != null) { io::println{ &io, s = a } }
+    io::eprintln_utf8{ &io, s = utf8::sub{ s, lo = 0, hi = 5 } }
+}
+fn opt { mut io: Io, n: ?usize } {
+    match (n) {
+        null          => { io::println_i64{ &io, n = -1 } }
+        some{ value } => { io::println_u64{ &io, n = value } }
+    }
+}
+""".replace('%s', self.TEXT))
+        self.assertEqual(out, 'café €=😀!\n15\n9\n233\nfalse\ntrue\ntrue\n€\n6\n10\n-1\n'
+                              'true\ntrue\ncafé \n=😀!\ntrue\nhi\n')
+        self.assertEqual(err, 'café\n')
+
+    def test_validation(self):
+        cases = [
+            (r'\x80', 0), (r'a\xc0\xaf', 1), (r'\xe0\x80\xaf', 0), (r'\xed\xa0\x80', 0),
+            (r'\xf4\x90\x80\x80', 0), (r'ab\xe2\x82', 2), (r'\xf5\x80\x80\x80', 0), (r'\xc3\x28', 0),
+            (r'\xc2\x80', None), (r'\xed\x9f\xbf', None), (r'\xee\x80\x80', None),
+            (r'\xf0\x90\x80\x80', None), (r'\xf4\x8f\xbf\xbf', None), ('', None),
+        ]
+        body = ''.join('    let b%d = "%s"\n    check{ &io, bytes = slice::of(u8){ a = &b%d } }\n' % (i, lit, i)
+                       for i, (lit, _) in enumerate(cases))
+        src = """
+fn check { mut io: Io, bytes: slice::Slice(u8) } {
+    match (utf8::from{ bytes }) {
+        ok{ value }  => { io::println_i64{ &io, n = -1 } }
+        err{ error } => { io::println_u64{ &io, n = error.at } }
+    }
+}
+fn main { mut io: Io } {
+%s}
+""" % body
+        self.assertOutput(src, ''.join('%d\n' % (-1 if at is None else at) for _, at in cases))
+
+    def test_encode_round_trip(self):
+        points = [0, 127, 128, 2047, 2048, 55295, 57344, 65535, 65536, 1114111]
+        body = ''.join("""    let e%d = utf8::encode{ c = %d, into = slice::of(u8){ a = &buf } }
+    io::println_u64{ &io, n = utf8::len{ s = e%d } }
+    io::println_bool{ &io, n = utf8::at{ s = e%d, i = 0 } == %d }
+""" % (i, c, i, i, c) for i, c in enumerate(points))
+        expected = ''.join('%d\ntrue\n' % len(chr(c).encode('utf-8')) for c in points)
+        self.assertOutput('fn main { mut io: Io } {\n    let mut buf: [4]u8\n%s}\n' % body, expected)
+
+    def test_traps(self):
+        self.assertTrap(r"""
+fn main { mut io: Io } {
+    %s
+    let t = utf8::sub{ s, lo = 0, hi = 4 }
+}
+""".replace('%s', self.TEXT), '@trap()')
+        self.assertTrap('fn main { mut io: Io } {\n    %s    let c = utf8::at{ s, i = 4 }\n}\n' % self.TEXT, '@trap()')
+        self.assertTrap("""
+fn main { mut io: Io } {
+    let mut buf: [4]u8
+    let e = utf8::encode{ c = 55296, into = slice::of(u8){ a = &buf } }
+}
+""", '@trap()')
+        self.assertTrap(r"""
+fn main { mut io: Io } {
+    let bad = "\xff"
+    let s = utf8::of{ chars = &bad }
+}
+""", '@trap()')
+
+    def test_cursor(self):
+        self.assertOutput(r"""
+fn main { mut io: Io } {
+    let lit = "  \xc3\xa9t\xc3\xa9=42 \xe2\x82\xac"
+    let mut cur = utf8::cursor{ s = utf8::of{ chars = &lit } }
+    utf8::skip_space{ &cur }
+    opt{ &io, n = utf8::peek{ cur } }
+    opt{ &io, n = utf8::peek_at{ cur, ahead = 1 } }
+    io::println_utf8{ &io, s = utf8::take_while{ &cur, f = not_eq } }
+    io::println_bool{ &io, n = utf8::eat{ &cur, ch = '=' } }
+    io::println_utf8{ &io, s = utf8::take_while{ &cur, f = utf8::is_digit } }
+    utf8::skip_space{ &cur }
+    io::println_bool{ &io, n = utf8::eat{ &cur, ch = 8364 } }
+    io::println_bool{ &io, n = utf8::done{ cur } }
+    io::println_bool{ &io, n = utf8::bump{ &cur } == null }
+    io::println_bool{ &io, n = utf8::peek_at{ cur, ahead = 0 } == null }
+}
+fn not_eq { c: u32 } -> bool { return c != '=' }
+fn opt { mut io: Io, n: ?u32 } {
+    match (n) {
+        null          => { io::println_i64{ &io, n = -1 } }
+        some{ value } => { io::println_u64{ &io, n = value } }
+    }
+}
+""", '233\n116\nété\ntrue\n42\ntrue\ntrue\ntrue\ntrue\n')
+
+    def test_builder(self):
+        self.assertOutput(r"""
+fn main { mut io: Io } {
+    let mut mem: [1024]u8
+    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+    let mut b = utf8::builder{ realloc = arena::alloc }
+    let name = "caf"
+    utf8::push{ &b, &heap, s = utf8::of{ chars = &name } }
+    utf8::push_char{ &b, &heap, c = 233 }
+    utf8::push_char{ &b, &heap, c = '=' }
+    utf8::push_i64{ &b, &heap, n = -7 }
+    utf8::push_char{ &b, &heap, c = 128512 }
+    io::println_utf8{ &io, s = utf8::view{ b } }
+    io::println_u64{ &io, n = utf8::count{ s = utf8::view{ b } } }
+    utf8::free{ &b, &heap }
+}
+""", 'café=-7😀\n8\n')
+
+
 class Expressions(Base):
     def test_if_expression(self):
         self.assertOutput("""
@@ -1782,11 +1924,17 @@ class WordCountExample(Base):
         self.assertEqual((out, code), ('', 1))
         self.assertTrue(err.endswith('nope.txt: no such file\n'))
 
-    def test_not_ascii(self):
+    def test_utf8_words(self):
+        p = os.path.join(self.tmp.name, 'utf8.txt')
+        with open(p, 'wb') as f:
+            f.write('Café au lait, café noir. Naïve café!\n'.encode('utf-8'))
+        self.assertEqual(self.run_wc([p])[0], 'lines: 1\nwords: 7\ndistinct: 5\nmost common: café 3\n')
+
+    def test_not_utf8(self):
         p = os.path.join(self.tmp.name, 'bin')
         with open(p, 'wb') as f:
-            f.write(b'caf\xc3\xa9')
-        self.assertEqual(self.run_wc([p]), ('', 'not an ASCII text file\n', 1))
+            f.write(b'caf\xe9')
+        self.assertEqual(self.run_wc([p]), ('', 'not a UTF-8 text file\n', 1))
 
 
 if __name__ == '__main__':

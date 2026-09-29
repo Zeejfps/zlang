@@ -3,9 +3,12 @@
 //   python -m ctxi examples/wordcount.ctx notes.txt
 //
 // Uses command-line arguments and files (std/fs.ctx), main's exit code, a hash map
-// (std/map.ctx), ascii::Cursor for scanning, Result, and defer.
+// (std/map.ctx), UTF-8 text and utf8::Cursor for scanning, Result, and defer.
+//
+// A word is a run of letters. std recognizes only ASCII letters (it has no Unicode tables), so
+// every non-ASCII character counts as a letter here: "café" is one word.
 
-struct Top { word: ascii::String, count: i64 }
+struct Top { word: utf8::String, count: i64 }
 
 fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     if (args.len != 1) {
@@ -28,25 +31,28 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     }
     defer alloc::resize{ realloc = arena::alloc, &heap, mem = bytes, count = 0 }
 
-    if (not lowercase{ bytes }) {
-        let msg = "not an ASCII text file"
-        io::eprintln{ &io, s = ascii::of{ chars = &msg } }
-        return 1
+    lowercase{ bytes }
+    let text = match (utf8::from{ bytes }) {
+        ok{ value }  => { value }
+        err{ error } => {
+            let msg = "not a UTF-8 text file"
+            io::eprintln{ &io, s = ascii::of{ chars = &msg } }
+            return 1
+        }
     }
-    let text = ascii::from{ bytes }
 
     // Keys are views into `bytes`, which outlives the map: defers run in reverse order.
-    let mut counts = map::new(ascii::String, i64){
-        realloc = arena::alloc, hash = map::hash_string, eq = ascii::eq,
+    let mut counts = map::new(utf8::String, i64){
+        realloc = arena::alloc, hash = map::hash_utf8, eq = utf8::eq,
     }
     defer map::free{ m = &counts, &heap }
 
     let mut words: u64 = 0
-    let mut cur = ascii::cursor{ s = text }
-    while (not ascii::done{ cur }) {
-        ascii::take_while{ &cur, f = not_letter }
-        let word = ascii::take_while{ &cur, f = ascii::is_alpha }
-        if (ascii::len{ s = word } == 0) { continue }
+    let mut cur = utf8::cursor{ s = text }
+    while (not utf8::done{ cur }) {
+        utf8::take_while{ &cur, f = not_letter }
+        let word = utf8::take_while{ &cur, f = is_letter }
+        if (utf8::len{ s = word } == 0) { continue }
         words = words + 1
         let seen = map::at{ m = counts, key = word }            // ?*i64
         if (seen != null) {
@@ -72,43 +78,46 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     if (top != null) {
         let label = "most common: "
         io::print{ &io, s = ascii::of{ chars = &label } }
-        io::print{ &io, s = top.word }
+        io::print_utf8{ &io, s = top.word }
         io::put_char{ &io, c = ' ' }
         io::println_i64{ &io, n = top.count }
     }
     return 0
 }
 
-// Lowercases the text in place. False if it isn't all ASCII.
-fn lowercase { bytes: alloc::Bytes } -> bool {
+// Lowercases the ASCII letters in place. Any bytes stay as valid or invalid UTF-8 as they were:
+// every byte of a non-ASCII character is above 127, so none of them changes.
+fn lowercase { bytes: alloc::Bytes } {
     let mut i: usize = 0
     while (i < bytes.len) {
-        let c = slice::get{ s = bytes, i }
-        if (c > 127) { return false }
-        slice::set{ s = bytes, i, v = ascii::to_lower{ c } }
+        slice::set{ s = bytes, i, v = ascii::to_lower{ c = slice::get{ s = bytes, i } } }
         i = i + 1
     }
-    return true
 }
 
-fn not_letter { c: u8 } -> bool {
-    return not ascii::is_alpha{ c }
+fn is_letter { c: u32 } -> bool {
+    return utf8::is_alpha{ c } or not utf8::is_ascii{ c }
 }
 
-fn count_lines { text: ascii::String } -> u64 {
+fn not_letter { c: u32 } -> bool {
+    return not is_letter{ c }
+}
+
+// Counts '\n' bytes. In UTF-8 a byte below 128 is always a whole character.
+fn count_lines { text: utf8::String } -> u64 {
+    let bytes = text.bytes
     let mut n: u64 = 0
     let mut i: usize = 0
-    while (i < ascii::len{ s = text }) {
-        if (ascii::at{ s = text, i } == '\n') { n = n + 1 }
+    while (i < bytes.len) {
+        if (slice::get{ s = bytes, i } == '\n') { n = n + 1 }
         i = i + 1
     }
-    let len = ascii::len{ s = text }
-    let ends_open = len > 0 and ascii::at{ s = text, i = len - 1 } != '\n'
+    let ends_open = bytes.len > 0 and slice::get{ s = bytes, i = bytes.len - 1 } != '\n'
     return if (ends_open) { n + 1 } else { n }       // a last line without '\n' still counts
 }
 
 // The most frequent word; ties go to the alphabetically first. Null if there are no words.
-fn most_common(S) { counts: map::Map(ascii::String, i64, S) } -> ?Top {
+fn most_common(S) { counts: map::Map(utf8::String, i64, S) } -> ?Top {
     let mut best: ?Top = null
     let mut cursor: usize = 0
     while (true) {
@@ -127,20 +136,20 @@ fn most_common(S) { counts: map::Map(ascii::String, i64, S) } -> ?Top {
     return best
 }
 
-// Whether a sorts before b, byte by byte.
-fn before { a: ascii::String, b: ascii::String } -> bool {
+// Whether a sorts before b, byte by byte. For UTF-8 that is code point order.
+fn before { a: utf8::String, b: utf8::String } -> bool {
     let mut i: usize = 0
-    while (i < ascii::len{ s = a } and i < ascii::len{ s = b }) {
-        let x = ascii::at{ s = a, i }
-        let y = ascii::at{ s = b, i }
+    while (i < a.bytes.len and i < b.bytes.len) {
+        let x = slice::get{ s = a.bytes, i }
+        let y = slice::get{ s = b.bytes, i }
         if (x != y) { return x < y }
         i = i + 1
     }
-    return ascii::len{ s = a } < ascii::len{ s = b }
+    return a.bytes.len < b.bytes.len
 }
 
 fn report { mut io: Io, path: slice::Slice(u8), error: fs::Error } {
-    io::eprint{ &io, s = ascii::from{ bytes = path } }
+    io::write{ &io, to = io::Stream::err, bytes = path }       // a path is bytes, not always text
     let not_found = ": no such file"
     let denied = ": permission denied"
     let dir = ": is a directory"

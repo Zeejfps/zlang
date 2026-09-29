@@ -187,6 +187,10 @@ namespace map {
         return hash_bytes{ key = key.bytes }
     }
 
+    fn hash_utf8 { key: utf8::String } -> u64 {
+        return hash_bytes{ key = key.bytes }
+    }
+
     // ---- internals
 
     // The slot where probing for key starts. Fibonacci hashing: the top bits of hash * 2^64/phi,

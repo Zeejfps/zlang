@@ -267,7 +267,7 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 3. `true` and `false` are the `bool` values. `null` is described in §8.
 4. `[a, b, c]` is a `[3]T` array. Every element has type `T`.
 5. `[x; N]` is a `[N]T` array with every element a copy of `x`. `N` is a compile-time constant.
-6. A string literal `"..."` is a `[N]u8` array value holding its `N` bytes, with no terminator. Like any array it is a value, not a place: bind it to a local to take its address. `ascii::of` views it as text (§17).
+6. A string literal `"..."` is a `[N]u8` array value holding its `N` bytes, with no terminator. Like any array it is a value, not a place: bind it to a local to take its address. `ascii::of` or `utf8::of` views it as text (§17).
 7. A character literal `'a'` is an integer literal whose value is the character's byte.
 8. String and character literals hold ASCII characters only. Escapes: `\n`, `\t`, `\r`, `\0`, `\\`, `\"`, `\'`, and `\xNN` for any byte.
 
@@ -404,7 +404,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 8. **Untagged unions:** needed for C interop? Or `@cast` only?
 9. **Large stack frames:** should the compiler error or warn above a size limit? Should `main` receive an `Os` capability for page allocation?
 10. **Loop control:** `break` and `continue` apply to the innermost loop. Are labels needed to leave an outer loop?
-11. **Strings:** literals are `[N]u8` values (§11) and text is `ascii::String` (§17). Is a UTF-8 string type needed? Should a literal be usable where a slice is expected without first binding it to a local?
+11. **Strings:** literals are `[N]u8` values (§11) and text is `ascii::String` or `utf8::String` (§17). Should `utf8::String` become the only text type, with `ascii` reduced to byte-level character tests? Should a literal be usable where a slice is expected without first binding it to a local?
 
 ## 17. Standard library
 
@@ -421,9 +421,10 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 | `alloc` | `Bytes`, the allocator type `Fn(S)`, typed `resize(T, S)` |
 | `arena` | `Arena`, a bump allocator: `new`, `alloc` (an `alloc::Fn(Arena)`), `reset`, `remaining` |
 | `list` | `List(T, S)`: `new`, `reserve`, `push`, `pop`, `get`, `set`, `at`, `items`, `clear`, `each`, `free` |
-| `map` | `Map(K, V, S)`, a hash map that holds its key type's hash and equality functions: `new`, `len`, `has`, `get`, `at`, `put`, `remove`, `clear`, `free`, `next`, `each`. `hash_*` and `eq_*` for `i32`, `i64`, `u32`, `u64`, `usize` and byte slices; `hash_string` for `ascii::String`, with `ascii::eq`. |
+| `map` | `Map(K, V, S)`, a hash map that holds its key type's hash and equality functions: `new`, `len`, `has`, `get`, `at`, `put`, `remove`, `clear`, `free`, `next`, `each`. `hash_*` and `eq_*` for `i32`, `i64`, `u32`, `u64`, `usize` and byte slices; `hash_string` for `ascii::String`, with `ascii::eq`; `hash_utf8` for `utf8::String`, with `utf8::eq`. |
 | `ascii` | `String { bytes: slice::Slice(u8) }`, a non-owning view of ASCII text: `from`, `of`, `empty`, `len`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, character tests and case, `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes. Natives: `f64_digits`, `f32_digits`, `f64_parse`, `f32_parse`. |
-| `io` | `Stream`; `print`, `println`, `eprint`, `eprintln`, `newline`, `put_char`, `print_i64`, `print_u64`, `print_f64`, `print_f32`, `print_bool` and their `println_` forms (smaller number types widen to these), `read_line`. Natives: `write`, `read`. |
+| `utf8` | `String { bytes: slice::Slice(u8) }`, a non-owning view of valid UTF-8 text. Offsets are in bytes and trap inside a character; a character is a `u32` code point. `from` (checks the bytes, returning `Result(String, Invalid)` with the offset of the first bad byte), `of`, `from_ascii`, `to_ascii`, `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`. Character tests and case (ASCII only). `Cursor` and `Builder(S)` as in `ascii`, by character. |
+| `io` | `Stream`; `print`, `println`, `eprint`, `eprintln`, their `_utf8` forms for `utf8::String`, `newline`, `put_char`, `print_i64`, `print_u64`, `print_f64`, `print_f32`, `print_bool` and their `println_` forms (smaller number types widen to these), `read_line`. Natives: `write`, `read`. |
 
 ```
 fn main { mut io: Io } {
