@@ -410,7 +410,7 @@ class Checker:
             d.ctx_vars.append(v)
         self.block(d.body)
         if d.ret_t is not VOID and not self.st.dead:
-            self.err(f'`{d.name}` must end every path in `return` or `@trap()`', d.pos)
+            self.err(f'`{d.name}` must end every path in `return` or `@panic()`', d.pos)
         self.finish()
 
     def check_const(self, d):
@@ -628,7 +628,7 @@ class Checker:
 
         A trailing `if` with an `else`, or `match`, is itself the value, unless every one of its
         branches leaves. Returns the value's type, or None if the branch never finishes (it
-        leaves through `return`, `break`, `continue` or `@trap()`).
+        leaves through `return`, `break`, `continue` or `@panic()`).
         """
         entry_dead = self.st.dead
         self.push()
@@ -638,7 +638,7 @@ class Checker:
         last = stmts[-1] if stmts else None
         nested = isinstance(last, A.Match) or (isinstance(last, A.If) and last.els is not None)
         valued = nested or (isinstance(last, A.ExprStmt)
-                            and not (isinstance(last.expr, A.Builtin) and last.expr.name == 'trap'))
+                            and not (isinstance(last.expr, A.Builtin) and last.expr.name == 'panic'))
         for st in (stmts[:-1] if valued else stmts):
             self.stmt(st)
         b.result = None
@@ -665,7 +665,7 @@ class Checker:
                              e.pos)
         elif not self.st.dead:
             self.err('this branch must end in a value, or leave with `return`, `break`, '
-                     '`continue` or `@trap()`', b.pos)
+                     '`continue` or `@panic()`', b.pos)
         self.pop()
         if self.st.dead and not entry_dead:
             return None
@@ -871,7 +871,7 @@ class Checker:
         self.block(s.els, [v for v, _ in s.els_bvars])
         if not self.st.dead:
             self.err('the `else` of a `let` pattern must leave: end it with `return`, `break`, '
-                     '`continue` or `@trap()`', s.els.pos)
+                     '`continue` or `@panic()`', s.els.pos)
         self.st = State(s0.defs, s0.maybe | self.st.maybe, s0.dead)
         for v, _ in s.bvars:
             self.declare(v)
@@ -912,7 +912,7 @@ class Checker:
                 self.err('an expression statement must be a call', e.pos)
         elif isinstance(e, A.Builtin):
             self.expr(e)
-            if e.name == 'trap':
+            if e.name == 'panic':
                 self.st.dead = True
         else:
             self.err('an expression statement must be a call', e.pos)
@@ -1439,7 +1439,11 @@ class Checker:
             e.targ_t = self.rtype(e.targ, self.ns, self.tps)
         if n in ('size_of', 'align_of'):
             return USIZE
-        if n == 'trap':
+        if n == 'panic':
+            if args:
+                if not isinstance(args[0], A.StrLit):
+                    self.err('@panic takes a string literal', args[0].pos)
+                self.expr(args[0])
             return VOID
         if n == 'as':
             if not is_num(e.targ_t):

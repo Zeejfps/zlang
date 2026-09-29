@@ -195,7 +195,7 @@ f{ ... }
 4. Every block is a scope. A `let` is visible from its declaration to the end of its block.
 5. In `x = e`, `x` must be a mutable place.
 6. An expression statement must be a call or a builtin call. Its result is discarded. The exception is the last statement of a branch of an `if` or `match` expression, which gives the branch its value (below).
-7. `return` without a value is only allowed in a function with no `-> R`. In a function with `-> R`, every path must end in `return e` or `@trap()`.
+7. `return` without a value is only allowed in a function with no `-> R`. In a function with `-> R`, every path must end in `return e` or `@panic()`.
 8. `break` leaves the innermost enclosing `while`. `continue` skips the rest of its body and goes to its next condition check. Both are errors outside a loop, and both end a path.
 9. `while (true)` without a `break` that leaves it ends a path, like `return`.
 
@@ -204,7 +204,7 @@ f{ ... }
 ```
 let ok{ value = h } = half{ n } else err{ error } { return Result::err{ error } }
 let some{ value = c } = peek{ p } else { return null }
-let null = cached else { @trap() }
+let null = cached else { @panic() }
 ```
 
 1. `let P = e else { B }` matches `e` against the pattern `P`, which is a variant with optional bindings as in a match arm (§8, Match). `P` may not be `mut`, and bindings may not use `&`.
@@ -224,7 +224,7 @@ defer list::free{ list = &xs, &heap }
 2. A block's deferred bodies run in reverse order of their `defer` statements. Only `defer` statements that were reached run.
 3. The body is evaluated when it runs, not at the `defer`: `defer say{ n = i }` sees the value `i` has at exit. A `return e` evaluates `e` before deferred bodies run.
 4. A `defer` inside a loop body runs at the end of each iteration that reached it.
-5. Deferred bodies don't run when the program stops through `@trap()`.
+5. Deferred bodies don't run when the program stops through `@panic()`.
 6. The body is checked where it appears. It can read only variables that are assigned there (§11, Initialization), and it can't assign a `let x: T` declared outside it.
 7. The body can't leave: `return` is an error in it, and `break` and `continue` in it must be inside a loop that is also in it.
 
@@ -241,7 +241,7 @@ let v = match (parse{ s }) {
 1. `if` and `match` are statements at the start of a statement, and expressions everywhere else.
 2. An `if` expression must have an `else`.
 3. Each branch is a block whose last statement is an expression: the branch's value. `{ let y = f{}; y + 1 }` has the value `y + 1`.
-4. Instead of ending in a value, a branch may leave: it ends a path (§11.7, 8, 9) through `return`, `break`, `continue` or `@trap()`. At least one branch must produce a value.
+4. Instead of ending in a value, a branch may leave: it ends a path (§11.7, 8, 9) through `return`, `break`, `continue` or `@panic()`. At least one branch must produce a value.
 5. A branch whose last statement is an `if` with an `else`, or a `match`, takes that statement's value, unless every one of its branches leaves.
 6. Type: if the expression has an expected type (§11, Widening, rule 1) that every branch value converts to, that type. Otherwise the first branch type that every other branch value converts to, where `null` among the branches makes it `?T`. It is an error if there is none.
 7. Narrowing (§8, Optional) applies in the branches as in an `if` statement.
@@ -263,7 +263,7 @@ Precedence, tightest first:
 | or | `or` | short-circuit |
 
 1. Arithmetic and comparison apply to two operands of the same numeric type, after widening (below). If the operand types differ, the one that widens to the other is converted. If neither widens to the other, it is an error. Use `@as` or `@trunc` (§13).
-2. Integer `+ - *` trap on overflow. `/` and `%` trap on a zero divisor. Use `@wrap_*` (§13) for wrapping arithmetic.
+2. Integer `+ - *` panic on overflow. `/` and `%` panic on a zero divisor. Use `@wrap_*` (§13) for wrapping arithmetic.
 3. `==` and `!=` work on numbers, `bool` and pointers (by address), and on `?T` against `null`. Other types have no built-in equality.
 4. `and`, `or` and `not` take and give `bool`. Conditions must be `bool`.
 
@@ -349,7 +349,7 @@ step  := .field | [index]
 
 ### Arrays
 
-1. `a[i]` on an array is bounds-checked. An out-of-bounds index traps.
+1. `a[i]` on an array is bounds-checked. An out-of-bounds index panics.
 2. `a.len` is `N`, of type `usize`.
 
 Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?*T, len: usize }` and bounds-checked functions on it (§17).
@@ -365,12 +365,12 @@ Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?
 |---|---|---|
 | `@size_of(T)` | `usize` | The size of `T` in bytes. |
 | `@align_of(T)` | `usize` | The required alignment of `T`. A power of two. |
-| `@as(T, x)` | `T` | Converts number `x` to numeric type `T`. Traps if the value isn't representable in `T`. Float to integer rounds toward zero and traps on NaN. Integer to float rounds to nearest. |
+| `@as(T, x)` | `T` | Converts number `x` to numeric type `T`. Panics if the value isn't representable in `T`. Float to integer rounds toward zero and panics on NaN. Integer to float rounds to nearest. |
 | `@trunc(T, x)` | `T` | Converts integer `x` to integer type `T`, keeping the low bits. |
 | `@cast(*U, q)` | `*U` | Reinterprets pointer `q`. Unchecked. |
 | `@addr(q)` | `usize` | The address of pointer `q` as an integer. |
-| `@wrap_add(a, b)`, `@wrap_sub(a, b)`, `@wrap_mul(a, b)` | type of `a` | Integer arithmetic that wraps instead of trapping. `a` and `b` have the same integer type. |
-| `@trap()` | none | Stops the program. Never returns. It ends a path for return and assignment checks. |
+| `@wrap_add(a, b)`, `@wrap_sub(a, b)`, `@wrap_mul(a, b)` | type of `a` | Integer arithmetic that wraps instead of panicking. `a` and `b` have the same integer type. |
+| `@panic()`, `@panic("reason")` | none | Stops the program. Never returns. It ends a path for return and assignment checks. The reason must be a string literal. The runtime reports it with the panic's location, so no capability is needed. |
 
 ## 14. Memory
 
@@ -382,7 +382,7 @@ Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?
 4. The size of every local is known at compile time.
 5. Structs, unions and arrays are values. Assignment and `return` copy them.
 6. A `mut` context field is passed as a pointer. A read-only context field is passed by copy or by reference, at the compiler's choice. §3.1 makes the choice unobservable for checked arguments. A bind always copies (§4).
-7. Stack size is finite. Exceeding it traps.
+7. Stack size is finite. Exceeding it panics.
 
 ### Escape check
 
@@ -446,7 +446,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 | `list` | `List(T, S)`: `new`, `reserve`, `push`, `pop`, `get`, `set`, `at`, `items`, `clear`, `each`, `free` |
 | `map` | `Map(K, V, S)`, a hash map that holds its key type's hash and equality functions: `new`, `len`, `has`, `get`, `at`, `put`, `remove`, `clear`, `free`, `next`, `each`. `hash_*` and `eq_*` for `i32`, `i64`, `u32`, `u64`, `usize` and byte slices; `hash_string` for `ascii::String`, with `ascii::eq`; `hash_utf8` for `utf8::String`, with `utf8::eq`. |
 | `ascii` | `String { bytes: slice::Slice(u8) }`, a non-owning view of ASCII text: `from`, `of`, `empty`, `len`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, character tests and case, `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes. Natives: `f64_digits`, `f32_digits`, `f64_parse`, `f32_parse`. |
-| `utf8` | `String { bytes: slice::Slice(u8) }`, a non-owning view of valid UTF-8 text. Offsets are in bytes and trap inside a character; a character is a `u32` code point. `from` (checks the bytes, returning `Result(String, Invalid)` with the offset of the first bad byte), `of`, `from_ascii`, `to_ascii`, `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`. Character tests and case (ASCII only). `Cursor` and `Builder(S)` as in `ascii`, by character. |
+| `utf8` | `String { bytes: slice::Slice(u8) }`, a non-owning view of valid UTF-8 text. Offsets are in bytes, and an offset inside a character panics; a character is a `u32` code point. `from` (checks the bytes, returning `Result(String, Invalid)` with the offset of the first bad byte), `of`, `from_ascii`, `to_ascii`, `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`. Character tests and case (ASCII only). `Cursor` and `Builder(S)` as in `ascii`, by character. |
 | `io` | `Stream`; `print`, `println`, `eprint`, `eprintln`, their `_utf8` forms for `utf8::String`, `newline`, `put_char`, `print_i64`, `print_u64`, `print_f64`, `print_f32`, `print_bool` and their `println_` forms (smaller number types widen to these), `read_line`. Natives: `write`, `read`. |
 
 ```

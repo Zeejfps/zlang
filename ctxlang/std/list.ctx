@@ -57,7 +57,7 @@ namespace list {
 
     // Bounds-checked against len, not capacity.
     fn at(T, S) { list: List(T, S), i: usize } -> *T {
-        if (i >= list.len) { @trap() }
+        if (i >= list.len) { @panic("list::at: index out of bounds") }
         return slice::at{ s = list.items, i }
     }
 

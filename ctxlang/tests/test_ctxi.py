@@ -10,7 +10,7 @@ sys.path.insert(0, ROOT)
 
 from ctxi.__main__ import read_program, run_source, run_sources  # noqa: E402
 from ctxi.lexer import CompileError  # noqa: E402
-from ctxi.runtime import Trap  # noqa: E402
+from ctxi.runtime import Panic  # noqa: E402
 
 with open(os.path.join(ROOT, 'examples', 'list.ctx'), encoding='utf-8') as f:
     LIST_SRC = f.read()
@@ -42,8 +42,8 @@ class Base(unittest.TestCase):
             run(src)
         self.assertIn(fragment, cm.exception.msg)
 
-    def assertTrap(self, src, fragment):
-        with self.assertRaises(Trap) as cm:
+    def assertPanic(self, src, fragment):
+        with self.assertRaises(Panic) as cm:
             run(src)
         self.assertIn(fragment, cm.exception.msg)
 
@@ -165,30 +165,30 @@ fn main { mut io: Io } {
 }
 """, '6765\n45\n-3\n-1\n3.0\n true\n'.replace(' ', ''))
 
-    def test_overflow_traps(self):
-        self.assertTrap("""
+    def test_overflow_panics(self):
+        self.assertPanic("""
 fn main { mut io: Io } {
     let mut x: u8 = 250
     while (true) { x = x + 1 }
 }
 """, 'integer overflow')
 
-    def test_unsigned_underflow_traps(self):
-        self.assertTrap("""
+    def test_unsigned_underflow_panics(self):
+        self.assertPanic("""
 fn main { mut io: Io } {
     let a: usize = 1
     let b = a - 2
 }
 """, 'integer overflow')
 
-    def test_div_zero_traps(self):
-        self.assertTrap("""
+    def test_div_zero_panics(self):
+        self.assertPanic("""
 fn d { a: i32, b: i32 } -> i32 { return a / b }
 fn main { mut io: Io } { let x = d{ a = 1, b = 0 } }
 """, 'division by zero')
 
-    def test_bounds_trap(self):
-        self.assertTrap("""
+    def test_bounds_panic(self):
+        self.assertPanic("""
 fn main { mut io: Io } {
     let a = [1, 2, 3]
     let mut i: usize = 3
@@ -196,8 +196,34 @@ fn main { mut io: Io } {
 }
 """, 'out of bounds')
 
-    def test_explicit_trap(self):
-        self.assertTrap('fn main { mut io: Io } { @trap() }', '@trap()')
+    def test_explicit_panic(self):
+        self.assertPanic('fn main { mut io: Io } { @panic() }', '@panic()')
+
+    def test_panic_with_reason(self):
+        with self.assertRaises(Panic) as cm:
+            run('fn main { mut io: Io } { @panic("cache is cold") }')
+        self.assertEqual(cm.exception.msg, 'cache is cold')
+
+    def test_panic_reason_escapes_non_ascii(self):
+        self.assertPanic(r'fn main { mut io: Io } { @panic("caf\xe9") }', r'caf\xe9')
+
+    def test_panic_reason_ends_a_path(self):
+        self.assertOutput("""
+fn pick { n: i32 } -> i32 {
+    let r = if (n == 1) { 10 } else { @panic("unexpected n") }
+    if (n > 0) { return r }
+    @panic("n must be positive")
+}
+fn main { mut io: Io } { io::println_i64{ &io, n = pick{ n = 1 } } }
+""", '10\n')
+
+    def test_panic_reason_must_be_literal(self):
+        self.assertCompileError("""
+fn main { mut io: Io } {
+    let why = "no"
+    @panic(why)
+}
+""", '@panic takes a string literal')
 
     def test_wrap_and_trunc(self):
         self.assertOutput("""
@@ -211,8 +237,8 @@ fn main { mut io: Io } {
 }
 """, '4\n-56\n3\n-3\n7.0\n')
 
-    def test_as_traps(self):
-        self.assertTrap("""
+    def test_as_panics(self):
+        self.assertPanic("""
 fn main { mut io: Io } { let x: i32 = 300; io::println_u64{ &io, n = @as(u8, x) } }
 """, 'not representable')
 
@@ -388,7 +414,7 @@ fn main { mut io: Io } { let u = U::a; match (u) { a => { } b => { } else => { }
 """, 'unreachable')
 
     def test_recursion_stack_overflow(self):
-        with self.assertRaises(Trap):
+        with self.assertRaises(Panic):
             run_source("""
 fn r { n: u64 } -> u64 { let mut big: [1024]u64; return r{ n = n + 1 } }
 fn main { mut io: Io } { let x = r{ n = 0 } }
@@ -432,13 +458,13 @@ class Builtins(Base):
                                 'wrong number of arguments: @as(T, x)')
         self.assertCompileError('fn main { mut io: Io } { let x = @size_of(i32, 1) }',
                                 'wrong number of arguments: @size_of(T)')
-        self.assertCompileError('fn main { mut io: Io } { @trap(1) }',
-                                'wrong number of arguments: @trap()')
+        self.assertCompileError('fn main { mut io: Io } { @panic("a", "b") }',
+                                'wrong number of arguments: @panic() or @panic("reason")')
         self.assertCompileError('fn main { mut io: Io } { let x = @wrap_add(1) }',
                                 'wrong number of arguments: @wrap_add(a, b)')
 
     def test_parentheses_required(self):
-        self.assertCompileError('fn main { mut io: Io } { @trap }', "expected '(' after @trap")
+        self.assertCompileError('fn main { mut io: Io } { @panic }', "expected '(' after @panic")
 
     def test_type_argument_parsed_as_type(self):
         # `S` names both a struct and a local; in a type position it can only be the struct.
@@ -614,8 +640,8 @@ fn main { mut io: Io } {
 }
 """, '260\n4999999999\nfalse\ntrue\n3.0\n')
 
-    def test_wider_result_traps_at_wider_range(self):
-        self.assertTrap("""
+    def test_wider_result_panics_at_wider_range(self):
+        self.assertPanic("""
 fn main { mut io: Io } { let a: u32 = 4000000000; let b: u8 = 1; let c = a * b * @as(u32, 2) }
 """, 'integer overflow')
 
@@ -913,25 +939,25 @@ fn main { mut io: Io } {
 }
 """, '12\n5\ntrue\n')
 
-    def test_non_ascii_traps(self):
-        self.assertTrap("""
+    def test_non_ascii_panics(self):
+        self.assertPanic("""
 fn main { mut io: Io } {
     let b = "caf\\xe9"
     io::println{ &io, s = ascii::of{ chars = &b } }
 }
-""", '@trap()')
+""", 'ascii::from: byte is not ASCII')
 
     def test_non_ascii_literal_rejected(self):
         self.assertCompileError('fn main { mut io: Io } { let b = "café" }', 'non-ASCII')
 
-    def test_slice_bounds_trap(self):
-        self.assertTrap("""
+    def test_slice_bounds_panic(self):
+        self.assertPanic("""
 fn main { mut io: Io } {
     let mut a: [2]u8
     let s = slice::of(u8){ a = &a }
     let x = slice::get{ s, i = 2 }
 }
-""", '@trap()')
+""", 'slice::at: index out of bounds')
 
     def test_io_needs_capability(self):
         self.assertCompileError("""
@@ -954,8 +980,8 @@ fn greet {} -> ascii::String {
 fn main { mut io: Io } { }
 """, 'returned value holds the address of local `hi`')
 
-    def test_trap_in_std_reports_std_file(self):
-        with self.assertRaises(Trap) as cm:
+    def test_panic_in_std_reports_std_file(self):
+        with self.assertRaises(Panic) as cm:
             run_source("""
 fn main { mut io: Io } {
     let mut a: [2]u8
@@ -1214,26 +1240,27 @@ fn main { mut io: Io } {
         expected = ''.join('%d\ntrue\n' % len(chr(c).encode('utf-8')) for c in points)
         self.assertOutput('fn main { mut io: Io } {\n    let mut buf: [4]u8\n%s}\n' % body, expected)
 
-    def test_traps(self):
-        self.assertTrap(r"""
+    def test_panics(self):
+        self.assertPanic(r"""
 fn main { mut io: Io } {
     %s
     let t = utf8::sub{ s, lo = 0, hi = 4 }
 }
-""".replace('%s', self.TEXT), '@trap()')
-        self.assertTrap('fn main { mut io: Io } {\n    %s    let c = utf8::at{ s, i = 4 }\n}\n' % self.TEXT, '@trap()')
-        self.assertTrap("""
+""".replace('%s', self.TEXT), 'utf8::sub: offset is inside a character')
+        self.assertPanic('fn main { mut io: Io } {\n    %s    let c = utf8::at{ s, i = 4 }\n}\n' % self.TEXT,
+                        'utf8: offset is not the start of a character')
+        self.assertPanic("""
 fn main { mut io: Io } {
     let mut buf: [4]u8
     let e = utf8::encode{ c = 55296, into = slice::of(u8){ a = &buf } }
 }
-""", '@trap()')
-        self.assertTrap(r"""
+""", 'utf8::encode: not a Unicode scalar value')
+        self.assertPanic(r"""
 fn main { mut io: Io } {
     let bad = "\xff"
     let s = utf8::of{ chars = &bad }
 }
-""", '@trap()')
+""", 'result::unwrap: result is an error')
 
     def test_cursor(self):
         self.assertOutput(r"""
@@ -1396,13 +1423,13 @@ fn main { mut io: Io } {
 }
 """, '1\n3\n30\n')
 
-    def test_trap_branch(self):
-        self.assertTrap("""
+    def test_panic_branch(self):
+        self.assertPanic("""
 fn main { mut io: Io } {
     let o: ?i32 = null
-    let x = match (o) { null => { @trap() } some{ value } => { value } }
+    let x = match (o) { null => { @panic() } some{ value } => { value } }
 }
-""", '@trap()')
+""", '@panic()')
 
     def test_if_statement_unchanged(self):
         self.assertOutput("""
@@ -1539,13 +1566,13 @@ fn main { mut io: Io } {
 }
 """, 'true\n5\n9\ntrue\ntrue\ntrue\n')
 
-    def test_unwrap_traps(self):
-        self.assertTrap("""
+    def test_unwrap_panics(self):
+        self.assertPanic("""
 fn main { mut io: Io } {
     let bad: Result(i32, bool) = Result::err{ error = true }
     let x = result::unwrap{ r = bad }
 }
-""", '@trap()')
+""", 'result::unwrap: result is an error')
 
     def test_user_result_shadows_std(self):
         self.assertOutput("""
@@ -1706,9 +1733,9 @@ fn main { mut io: Io } {
         self.assertOutput("""
 fn main { mut io: Io } {
     let x: ?i32 = null
-    let null = x else { @trap() }
+    let null = x else { @panic() }
     let r: Result(i32, bool) = Result::ok{ value = 1 }
-    let ok = r else { @trap() }
+    let ok = r else { @panic() }
     io::println_i64{ &io, n = 1 }
 }
 """, '1\n')
@@ -1921,13 +1948,13 @@ fn main { mut io: Io } {
 }
 """, '3\n')
 
-    def test_not_run_on_trap(self):
+    def test_not_run_on_panic(self):
         out = io.StringIO()
-        with self.assertRaises(Trap):
+        with self.assertRaises(Panic):
             run_source("""
 fn main { mut io: Io } {
     defer io::println_i64{ &io, n = 1 }
-    @trap()
+    @panic()
 }
 """, out=out)
         self.assertEqual(out.getvalue(), '')

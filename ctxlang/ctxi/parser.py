@@ -6,6 +6,7 @@ from . import ast as A
 CMP_OPS = ('==', '!=', '<', '<=', '>', '>=')
 # Every builtin's signature (spec §13): (type arguments, value arguments, usage).
 # Type arguments always come first, so the name alone says how to parse each argument.
+# A (min, max) pair of value arguments means the trailing ones are optional.
 BUILTINS = {
     'size_of':  (1, 0, '@size_of(T)'),
     'align_of': (1, 0, '@align_of(T)'),
@@ -16,7 +17,7 @@ BUILTINS = {
     'wrap_add': (0, 2, '@wrap_add(a, b)'),
     'wrap_sub': (0, 2, '@wrap_sub(a, b)'),
     'wrap_mul': (0, 2, '@wrap_mul(a, b)'),
-    'trap':     (0, 0, '@trap()'),
+    'panic':     (0, (0, 1), '@panic() or @panic("reason")'),
 }
 
 
@@ -614,19 +615,16 @@ class Parser:
         if name not in BUILTINS:
             self.err(f'unknown builtin `@{name}`', tok)
         ntypes, nvalues, usage = BUILTINS[name]
+        lo, hi = nvalues if isinstance(nvalues, tuple) else (nvalues, nvalues)
         if not self.is_op('('):
             self.err(f"expected '(' after @{name}: {usage}")
         self.next()
         parts = []
-        for k in range(ntypes + nvalues):
-            if k and not self.accept_op(','):
-                self.err(f'wrong number of arguments: {usage}')
-            if self.is_op(')'):
-                self.err(f'wrong number of arguments: {usage}')
-            parts.append(self.type() if k < ntypes else self.expr())
-        if parts:
-            self.accept_op(',')
-        if not self.is_op(')'):
+        while len(parts) < ntypes + hi and not self.is_op(')'):
+            parts.append(self.type() if len(parts) < ntypes else self.expr())
+            if not self.accept_op(','):
+                break
+        if len(parts) < ntypes + lo or not self.is_op(')'):
             self.err(f'wrong number of arguments: {usage}')
         self.next()
         targ = parts[0] if ntypes else None

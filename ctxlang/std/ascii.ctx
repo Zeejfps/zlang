@@ -8,18 +8,18 @@
 //
 // Natives (provided by the runtime):
 //   f64_digits { n: f64, into: slice::Slice(u8) } -> usize   writes the shortest round-trip text
-//   f32_digits { n: f32, into: slice::Slice(u8) } -> usize   of n into `into`; traps if it doesn't fit
+//   f32_digits { n: f32, into: slice::Slice(u8) } -> usize   of n into `into`; panics if it doesn't fit
 //   f64_parse  { text: slice::Slice(u8) } -> f64    the nearest value to `text`, which must already
 //   f32_parse  { text: slice::Slice(u8) } -> f32    be valid float syntax (see parse_f64)
 
 namespace ascii {
     struct String { bytes: slice::Slice(u8) }
 
-    // Traps if any byte isn't ASCII.
+    // Panics if any byte isn't ASCII.
     fn from { bytes: slice::Slice(u8) } -> String {
         let mut i: usize = 0
         while (i < bytes.len) {
-            if (slice::get{ s = bytes, i } > 127) { @trap() }
+            if (slice::get{ s = bytes, i } > 127) { @panic("ascii::from: byte is not ASCII") }
             i = i + 1
         }
         return String{ bytes }
@@ -233,7 +233,7 @@ namespace ascii {
         return done{ cur }
     }
 
-    // Writes n in decimal to the start of `into` and returns that text. Traps if it doesn't fit;
+    // Writes n in decimal to the start of `into` and returns that text. Panics if it doesn't fit;
     // 20 bytes always do.
     fn fmt_i64 { n: i64, into: slice::Slice(u8) } -> String {
         let mut digits: [20]u8
@@ -252,7 +252,7 @@ namespace ascii {
             out = 1
         }
         let total = out + k
-        if (total > into.len) { @trap() }
+        if (total > into.len) { @panic("ascii::fmt_i64: buffer too small") }
         while (k > 0) {
             k = k - 1
             slice::set{ s = into, i = out, v = digits[k] }
@@ -272,7 +272,7 @@ namespace ascii {
             v = v / 10
             if (v == 0) { break }
         }
-        if (k > into.len) { @trap() }
+        if (k > into.len) { @panic("ascii::fmt_u64: buffer too small") }
         let total = k
         let mut out: usize = 0
         while (k > 0) {
@@ -391,9 +391,9 @@ namespace ascii {
         return true
     }
 
-    // Traps if c isn't ASCII.
+    // Panics if c isn't ASCII.
     fn push_char(S) { mut b: Builder(S), mut heap: S, c: u8 } -> bool {
-        if (c > 127) { @trap() }
+        if (c > 127) { @panic("ascii::push_char: character is not ASCII") }
         return list::push{ list = &b.chars, &heap, item = c }
     }
 

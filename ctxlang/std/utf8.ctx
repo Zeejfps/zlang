@@ -10,7 +10,7 @@
 //
 // Offsets are in bytes, as in `ascii`. `len` is the length in bytes and `count` the number of
 // characters. A character is a Unicode code point, held in a u32. Functions that take an offset
-// trap if it falls inside a character.
+// panic if it falls inside a character.
 //
 // Most operations match `ascii`'s byte by byte: in valid UTF-8, one character's bytes never
 // appear inside another's, so a byte match is a character match. Character tests and case
@@ -33,7 +33,7 @@ namespace utf8 {
         return Result::ok{ value = String{ bytes } }
     }
 
-    // Views the byte array `chars` points to, typically a string literal. Traps if it isn't valid.
+    // Views the byte array `chars` points to, typically a string literal. Panics if it isn't valid.
     fn of(A) { chars: *A } -> String {
         return result::unwrap{ r = from{ bytes = slice::of(u8){ a = chars } } }
     }
@@ -79,14 +79,14 @@ namespace utf8 {
         return not is_cont{ b = slice::get{ s = s.bytes, i } }
     }
 
-    // The character starting at byte offset i. Traps if i isn't the start of a character.
+    // The character starting at byte offset i. Panics if i isn't the start of a character.
     fn at { s: String, i: usize } -> u32 {
         return decode{ s, i }.c
     }
 
-    // Bytes lo up to but not including hi. Traps if either isn't a boundary.
+    // Bytes lo up to but not including hi. Panics if either isn't a boundary.
     fn sub { s: String, lo: usize, hi: usize } -> String {
-        if (not is_boundary{ s, i = lo } or not is_boundary{ s, i = hi }) { @trap() }
+        if (not is_boundary{ s, i = lo } or not is_boundary{ s, i = hi }) { @panic("utf8::sub: offset is inside a character") }
         return String{ bytes = slice::sub{ s = s.bytes, lo, hi } }
     }
 
@@ -167,10 +167,10 @@ namespace utf8 {
         return c
     }
 
-    // Writes c's bytes to the start of `into` and returns them. Traps if c isn't a scalar value or
+    // Writes c's bytes to the start of `into` and returns them. Panics if c isn't a scalar value or
     // doesn't fit; 4 bytes always do.
     fn encode { c: u32, into: slice::Slice(u8) } -> String {
-        if (not is_scalar{ c }) { @trap() }
+        if (not is_scalar{ c }) { @panic("utf8::encode: not a Unicode scalar value") }
         let mut n: usize = 4
         let mut lead: u32 = 240
         if (c < 128) {
@@ -183,7 +183,7 @@ namespace utf8 {
             n = 3
             lead = 224
         }
-        if (n > into.len) { @trap() }
+        if (n > into.len) { @panic("utf8::encode: buffer too small") }
         let mut v = c
         let mut k = n - 1
         while (k > 0) {                                   // continuation bytes carry 6 bits each
@@ -308,7 +308,7 @@ namespace utf8 {
         return true
     }
 
-    // Traps if c isn't a scalar value.
+    // Panics if c isn't a scalar value.
     fn push_char(S) { mut b: Builder(S), mut heap: S, c: u32 } -> bool {
         let mut buf: [4]u8
         return push{ &b, &heap, s = encode{ c, into = slice::of(u8){ a = &buf } } }
@@ -387,9 +387,9 @@ namespace utf8 {
     struct Decoded { c: u32, size: usize }
 
     // The character starting at byte offset i and its length in bytes. s is valid, so the lead
-    // byte gives the length. Traps if i isn't the start of a character.
+    // byte gives the length. Panics if i isn't the start of a character.
     fn decode { s: String, i: usize } -> Decoded {
-        if (i >= s.bytes.len or not is_boundary{ s, i }) { @trap() }
+        if (i >= s.bytes.len or not is_boundary{ s, i }) { @panic("utf8: offset is not the start of a character") }
         let b0: u32 = slice::get{ s = s.bytes, i }
         if (b0 < 128) { return Decoded{ c = b0, size = 1 } }
         let mut c: u32 = 0

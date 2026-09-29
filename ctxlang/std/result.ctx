@@ -47,9 +47,9 @@ namespace result {
         return match (r) { ok{ value } => { value } err => { default } }
     }
 
-    // The value. Traps if r is an error.
+    // The value. Panics if r is an error.
     fn unwrap(T, E) { r: Result(T, E) } -> T {
-        return match (r) { ok{ value } => { value } err => { @trap() } }
+        return match (r) { ok{ value } => { value } err => { @panic("result::unwrap: result is an error") } }
     }
 
     // `o`'s value, or `error` if o is null.

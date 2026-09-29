@@ -7,7 +7,7 @@ import struct
 from fractions import Fraction
 
 from .checker import NativeFn
-from .runtime import TAG, f32r, trap
+from .runtime import TAG, f32r, panic
 
 
 def _write(rt, nf, args):
@@ -48,7 +48,7 @@ def _digits(fmt):
         text = _float_text(fmt(args['n'])).encode('ascii')
         addr, n = rt.slice_arg(nf, 'into', args['into'])
         if len(text) > n:
-            trap(f'{len(text)} characters do not fit in a buffer of {n}')
+            panic(f'{len(text)} characters do not fit in a buffer of {n}')
         lo, _ = rt.span(addr, len(text))
         rt.mem[lo:lo + len(text)] = text
         return len(text)
@@ -129,7 +129,7 @@ def _file(rt, args):
 def _open(rt, nf, args):
     mode = OPEN_MODES.get(args['mode'])
     if mode is None:
-        trap(f"invalid open mode {args['mode']}")
+        panic(f"invalid open mode {args['mode']}")
     path = _path(rt, nf, args)
     if os.path.isdir(path):
         raise IsADirectoryError(errno.EISDIR, path)   # Windows reports this as PermissionError

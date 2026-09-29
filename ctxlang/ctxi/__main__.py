@@ -15,7 +15,7 @@ from .lexer import CompileError
 from .parser import parse
 from .checker import check
 from .natives import natives
-from .runtime import Runtime, Trap
+from .runtime import Runtime, Panic
 from .types import struct_fields
 
 STD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'std')
@@ -133,15 +133,15 @@ def main(argv=None):
             sys.stdout.flush()
             print(f'{fmt_pos(a.file, e.pos)}: error: {e.msg}', file=sys.stderr)
             result[0] = 1
-        except Trap as e:
+        except Panic as e:
             sys.stdout.flush()
-            print(f'{fmt_pos(a.file, e.pos)}: trap: {e.msg}', file=sys.stderr)
+            print(f'{fmt_pos(a.file, e.pos)}: panic: {e.msg}', file=sys.stderr)
             for name in e.frames:
                 print(f'    in {name}', file=sys.stderr)
             result[0] = 134
         except RecursionError:
             sys.stdout.flush()
-            print(f'{a.file}: trap: stack overflow', file=sys.stderr)
+            print(f'{a.file}: panic: stack overflow', file=sys.stderr)
             result[0] = 134
 
     sys.setrecursionlimit(1_000_000)

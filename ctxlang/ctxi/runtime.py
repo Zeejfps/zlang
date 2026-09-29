@@ -61,7 +61,7 @@ FMT = {'i8': 'b', 'u8': 'B', 'i16': 'h', 'u16': 'H', 'i32': 'i', 'u32': 'I',
 CODECS = {k: struct.Struct('<' + v) for k, v in FMT.items()}
 
 
-class Trap(Exception):
+class Panic(Exception):
     def __init__(self, msg, pos=None):
         super().__init__(msg)
         self.msg, self.pos = msg, pos
@@ -115,13 +115,13 @@ class FnInst(Callable):
         fp = rt.sp
         sp = fp + self.frame
         if sp > rt.end:
-            raise Trap('stack overflow')
+            raise Panic('stack overflow')
         rt.sp = sp
         try:
             for name, off, st in self.params:
                 st(fp + off, args[name])
             r = self.body(fp)
-        except Trap as e:
+        except Panic as e:
             e.frames.append(qualname(self.decl))
             raise
         finally:
@@ -203,7 +203,7 @@ class Runtime:
         addr = align_up(self.sp, align)
         self.sp = addr + len(data)
         if self.sp > self.end:
-            raise Trap('stack overflow')
+            raise Panic('stack overflow')
         self.mem[addr:self.sp] = data
         return addr
 
@@ -214,7 +214,7 @@ class Runtime:
 
     def span(self, addr, n, pos=None):
         if n and (addr < GUARD or addr + n > self.end):
-            trap('invalid memory access', pos)
+            panic('invalid memory access', pos)
         return addr, addr + n
 
     def write(self, stream, data):
@@ -389,8 +389,8 @@ class Runtime:
         return v
 
 
-def trap(msg, pos=None):
-    raise Trap(msg, pos)
+def panic(msg, pos=None):
+    raise Panic(msg, pos)
 
 
 class Compiler:
@@ -434,7 +434,7 @@ class Compiler:
         """Closure running stmts in order, returning the first control signal.
 
         Statements after a `defer` run inside it: the deferred body runs once they finish,
-        however they finish, except by a trap.
+        however they finish, except by a panic.
         """
         fns = []
         for i, s in enumerate(stmts):
@@ -604,7 +604,7 @@ class Compiler:
             v = sv(fp)
             if through:
                 if v < GUARD or v + size > end:
-                    trap('invalid memory access', pos)
+                    panic('invalid memory access', pos)
                 tag = TAG.unpack_from(mem, v)[0]
             else:
                 tag = TAG.unpack_from(v, 0)[0]
@@ -687,7 +687,7 @@ class Compiler:
         def chk(fp):
             a = f(fp)
             if a < GUARD or a + size > end:
-                trap('invalid memory access', pos)
+                panic('invalid memory access', pos)
             return a
         return chk
 
@@ -723,7 +723,7 @@ class Compiler:
                     a = bp(fp)
                     i = iv(fp)
                     if i >= n:
-                        trap(f'index {i} out of bounds for length {n}', pos)
+                        panic(f'index {i} out of bounds for length {n}', pos)
                     return a + i * es
                 return idx
             bv = self.expr(e.base)
@@ -734,7 +734,7 @@ class Compiler:
                     a = bv(fp)
                     i = iv(fp)
                     if i >= n:
-                        trap(f'index {i} out of bounds for length {n}', pos)
+                        panic(f'index {i} out of bounds for length {n}', pos)
                     return a + i * es
                 return self.checked(pidx, es, pos)
             return self.checked(lambda fp: bv(fp) + iv(fp) * es, es, pos)
@@ -844,7 +844,7 @@ class Compiler:
             b = bv(fp)
             i = iv(fp)
             if i >= n:
-                trap(f'index {i} out of bounds for length {n}', pos)
+                panic(f'index {i} out of bounds for length {n}', pos)
             return dec(b, i * es)
         return ridx
 
@@ -868,7 +868,7 @@ class Compiler:
         def neg(fp):
             r = -f(fp)
             if r < lo or r > hi:
-                trap('integer overflow', pos)
+                panic('integer overflow', pos)
             return r
         return neg
 
@@ -912,40 +912,40 @@ class Compiler:
             def add(fp):
                 v = l(fp) + r(fp)
                 if v < lo or v > hi:
-                    trap('integer overflow', pos)
+                    panic('integer overflow', pos)
                 return v
             return add
         if op == '-':
             def sub(fp):
                 v = l(fp) - r(fp)
                 if v < lo or v > hi:
-                    trap('integer overflow', pos)
+                    panic('integer overflow', pos)
                 return v
             return sub
         if op == '*':
             def mul(fp):
                 v = l(fp) * r(fp)
                 if v < lo or v > hi:
-                    trap('integer overflow', pos)
+                    panic('integer overflow', pos)
                 return v
             return mul
         if op == '/':
             def div(fp):
                 a, b = l(fp), r(fp)
                 if b == 0:
-                    trap('division by zero', pos)
+                    panic('division by zero', pos)
                 q = abs(a) // abs(b)
                 if (a < 0) != (b < 0):
                     q = -q
                 if q < lo or q > hi:
-                    trap('integer overflow', pos)
+                    panic('integer overflow', pos)
                 return q
             return div
 
         def rem(fp):
             a, b = l(fp), r(fp)
             if b == 0:
-                trap('division by zero', pos)
+                panic('division by zero', pos)
             m = abs(a) % abs(b)
             return -m if a < 0 else m
         return rem
@@ -1055,9 +1055,11 @@ class Compiler:
             lay = self.rt.layout(self.T(e.targ_t))
             v = lay.size if n == 'size_of' else lay.align
             return lambda fp: v
-        if n == 'trap':
+        if n == 'panic':
+            msg = e.args[0].val.decode('ascii', 'backslashreplace') if e.args else '@panic()'
+
             def tr(fp):
-                trap('@trap()', pos)
+                panic(msg, pos)
             return tr
         if n in ('addr', 'cast'):
             return self.expr(e.args[0])
@@ -1073,17 +1075,17 @@ class Compiler:
                 def f2i(fp):
                     v = f(fp)
                     if v != v or v in (math.inf, -math.inf):
-                        trap(f'@as: {v} is not representable in {dst.name}', pos)
+                        panic(f'@as: {v} is not representable in {dst.name}', pos)
                     i = int(v)
                     if i < lo or i > hi:
-                        trap(f'@as: {v} is not representable in {dst.name}', pos)
+                        panic(f'@as: {v} is not representable in {dst.name}', pos)
                     return i
                 return f2i
 
             def i2i(fp):
                 v = f(fp)
                 if v < lo or v > hi:
-                    trap(f'@as: {v} is not representable in {dst.name}', pos)
+                    panic(f'@as: {v} is not representable in {dst.name}', pos)
                 return v
             return i2i
         if n == 'trunc':
