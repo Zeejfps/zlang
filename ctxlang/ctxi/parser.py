@@ -239,7 +239,7 @@ class Parser:
         pos = self.peek().pos
         name = self.ident()
         targs = None
-        if self.is_op('(') and not self.peek().ws:
+        if self.is_op('(') and not self.peek().nl:
             targs = self.type_list()
         return A.TSeg(name, targs, pos)
 
@@ -442,7 +442,7 @@ class Parser:
                 self.next()
                 npos = self.peek().pos
                 e.segs.append(A.Seg(self.ident(), None, npos))
-            elif v == '(' and not tok.ws and isinstance(e, A.Path) and e.segs[-1].targs is None:
+            elif v == '(' and not tok.nl and isinstance(e, A.Path) and e.segs[-1].targs is None:
                 e.segs[-1].targs = self.type_list()
             elif v == '[' and not tok.nl:
                 self.next()

@@ -136,7 +136,7 @@ match (e) {
 ## 9. Generics
 
 1. Generic parameters are types, listed in `( )` directly after a declaration's name.
-2. `( )` directly after a name or `::` path, with no whitespace in between, is generic application. Everywhere else, `( )` groups an expression. Builtins are the exception (§13).
+2. `( )` after a name or `::` path, on the same line, is generic application: `list::new(i32)` and `list::new (i32)` mean the same. Everywhere else, `( )` groups an expression. This is unambiguous because calls use `{ }` and nothing else can follow a name with `(`. Builtins are the exception (§13).
 3. At a call, struct literal or union construction, explicit arguments bind parameters left to right. The remaining parameters are inferred from the supplied fields or the expected type. A parameter that can't be inferred is an error.
 4. In a literal, a generic struct or union may be named without arguments (`Slice{ ... }`), and then every parameter is inferred.
 

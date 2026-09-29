@@ -395,6 +395,34 @@ fn main { mut io: Io } { let x = r{ n = 0 } }
 """, out=io.StringIO(), stack_size=1 << 20)
 
 
+class GenericApplication(Base):
+    def test_space_before_type_arguments(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let e = slice::empty (u8) {}
+    let s: slice::Slice (i32) = slice::empty(i32){}
+    io::println_u64{ &io, n = e.len + s.len }
+}
+""", '0\n')
+
+    def test_space_in_declaration(self):
+        self.assertOutput("""
+struct Pair (T) { a: T, b: T }
+fn sum (T) { p: Pair (T), f: fn{ x: T, y: T } -> T } -> T { return f{ x = p.a, y = p.b } }
+fn add { x: i32, y: i32 } -> i32 { return x + y }
+fn main { mut io: Io } { io::println_i64{ &io, n = sum (i32) { p = Pair{ a = 2, b = 3 }, f = add } } }
+""", '5\n')
+
+    def test_type_arguments_must_be_on_the_same_line(self):
+        with self.assertRaises(CompileError):
+            run("""
+fn main { mut io: Io } {
+    let e = slice::empty
+    (u8){}
+}
+""")
+
+
 class Builtins(Base):
     def test_unknown_builtin(self):
         self.assertCompileError('fn main { mut io: Io } { let x = @nope(1) }', 'unknown builtin `@nope`')

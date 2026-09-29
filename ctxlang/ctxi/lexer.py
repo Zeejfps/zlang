@@ -9,15 +9,14 @@ class CompileError(Exception):
 
 
 class Tok:
-    __slots__ = ('kind', 'val', 'line', 'col', 'nl', 'ws', 'file')
+    __slots__ = ('kind', 'val', 'line', 'col', 'nl', 'file')
 
-    def __init__(self, kind, val, line, col, nl, ws):
+    def __init__(self, kind, val, line, col, nl):
         self.kind = kind   # 'id', 'kw', 'int', 'float', 'op', 'builtin', 'eof'
         self.val = val
         self.line = line
         self.col = col
         self.nl = nl       # a newline precedes this token
-        self.ws = ws       # whitespace (or a newline) precedes this token
         self.file = None
 
     @property
@@ -55,7 +54,7 @@ def _lex(src, file):
     toks = []
     i, n = 0, len(src)
     line, col = 1, 1
-    nl, ws = True, True
+    nl = True
 
     def err(msg):
         raise CompileError(msg, (line, col, file))
@@ -87,17 +86,15 @@ def _lex(src, file):
             i += 1
             line += 1
             col = 1
-            nl = ws = True
+            nl = True
             continue
         if c in ' \t\r':
             i += 1
             col += 1
-            ws = True
             continue
         if src.startswith('//', i):
             while i < n and src[i] != '\n':
                 i += 1
-            ws = True
             continue
         if src.startswith('/*', i):
             j = src.find('*/', i + 2)
@@ -111,7 +108,6 @@ def _lex(src, file):
             else:
                 col += len(chunk)
             i = j + 2
-            ws = True
             continue
 
         start, scol = i, col
@@ -120,7 +116,7 @@ def _lex(src, file):
                 i += 1
             word = src[start:i]
             kind = 'kw' if word in KEYWORDS else 'id'
-            toks.append(Tok(kind, word, line, scol, nl, ws))
+            toks.append(Tok(kind, word, line, scol, nl))
         elif c.isdigit():
             kind = 'int'
             if src.startswith(('0x', '0X'), i):
@@ -154,7 +150,7 @@ def _lex(src, file):
                 val = float(text) if kind == 'float' else int(text)
             if i < n and (src[i].isalpha() or src[i] == '_'):
                 err(f'invalid number literal')
-            toks.append(Tok(kind, val, line, scol, nl, ws))
+            toks.append(Tok(kind, val, line, scol, nl))
         elif c == '"':
             j, data = i + 1, bytearray()
             while True:
@@ -163,30 +159,30 @@ def _lex(src, file):
                 b, j = char_at(j, '"')
                 data.append(b)
             i = j + 1
-            toks.append(Tok('str', bytes(data), line, scol, nl, ws))
+            toks.append(Tok('str', bytes(data), line, scol, nl))
         elif c == "'":
             b, j = char_at(i + 1, "'")
             if j >= n or src[j] != "'":
                 err('a character literal holds exactly one character')
             i = j + 1
-            toks.append(Tok('char', b, line, scol, nl, ws))
+            toks.append(Tok('char', b, line, scol, nl))
         elif c == '@':
             i += 1
             while i < n and (src[i].isalnum() or src[i] == '_'):
                 i += 1
             if i == start + 1:
                 err("expected a builtin name after '@'")
-            toks.append(Tok('builtin', src[start + 1:i], line, scol, nl, ws))
+            toks.append(Tok('builtin', src[start + 1:i], line, scol, nl))
         else:
             for op in OPS:
                 if src.startswith(op, i):
                     i += len(op)
-                    toks.append(Tok('op', op, line, scol, nl, ws))
+                    toks.append(Tok('op', op, line, scol, nl))
                     break
             else:
                 err(f'unexpected character {c!r}')
         col += i - start
-        nl = ws = False
+        nl = False
 
-    toks.append(Tok('eof', None, line, col, True, True))
+    toks.append(Tok('eof', None, line, col, True))
     return toks
