@@ -441,7 +441,7 @@ static uint64_t used_memory = 64 + (16 << 20);
 
 ctx_slice ctx_n_mem_sys_pages(void *mem, uint64_t size) {
     (void)mem;
-    ctx_slice out = { 0, NULL, 0 };
+    ctx_slice out = { NULL, 0 };
     size = (size + PAGE - 1) / PAGE * PAGE;
     if (size == 0 || used_memory + size > MAX_MEMORY) return out;
 #ifdef _WIN32
@@ -452,7 +452,6 @@ ctx_slice ctx_n_mem_sys_pages(void *mem, uint64_t size) {
 #endif
     if (!p) return out;
     used_memory += size;
-    out.tag = 1;
     out.ptr = p;
     out.len = size;
     return out;
@@ -485,7 +484,7 @@ void ctx_init(const char *const *table, uint32_t n, const char *program, int arg
 }
 
 ctx_slice ctx_args(void) {
-    ctx_slice out = { 0, NULL, 0 };
+    ctx_slice out = { NULL, 0 };
 #ifdef _WIN32
     int argc = 0;
     wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
@@ -495,18 +494,18 @@ ctx_slice ctx_args(void) {
         int n = WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, NULL, 0, NULL, NULL) - 1;
         char *bytes = ctx_alloc(n + 1);
         WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, bytes, n + 1, NULL, NULL);
-        items[i - 1] = (ctx_slice){ n ? 1 : 0, n ? bytes : NULL, (uint64_t)n };
+        items[i - 1] = (ctx_slice){ n ? bytes : NULL, (uint64_t)n };
     }
     LocalFree(argv);
-    out = (ctx_slice){ 1, items, (uint64_t)(argc - 1) };
+    out = (ctx_slice){ items, (uint64_t)(argc - 1) };
 #else
     if (arg_count <= 1) return out;
     ctx_slice *items = ctx_alloc((arg_count - 1) * sizeof *items);
     for (int i = 1; i < arg_count; i++) {
         size_t n = strlen(arg_values[i]);
-        items[i - 1] = (ctx_slice){ n ? 1 : 0, n ? arg_values[i] : NULL, (uint64_t)n };
+        items[i - 1] = (ctx_slice){ n ? arg_values[i] : NULL, (uint64_t)n };
     }
-    out = (ctx_slice){ 1, items, (uint64_t)(arg_count - 1) };
+    out = (ctx_slice){ items, (uint64_t)(arg_count - 1) };
 #endif
     return out;
 }

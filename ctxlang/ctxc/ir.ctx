@@ -9,15 +9,15 @@
 // Nothing here owns memory: a Program lives in the arena it was read into.
 
 namespace ir {
-    type Bytes = slice::Slice(u8)
+    type Bytes = []u8
     type Heap = arena::Arena
     type TypeId = u32
 
     struct Program {
         version: u64,
-        files:   slice::Slice(Bytes),       // positions index this; "" is a program read from a string
-        types:   slice::Slice(Type),        // indexed by TypeId
-        fns:     slice::Slice(Func),        // indexed by function id
+        files:   []Bytes,       // positions index this; "" is a program read from a string
+        types:   []Type,        // indexed by TypeId
+        fns:     []Func,        // indexed by function id
         main:    u32,
     }
 
@@ -31,7 +31,7 @@ namespace ir {
     struct Field { name: Bytes, ty: TypeId, offset: u64 }
 
     // A variant without a payload has null fields; one with an empty payload `v{}` has none.
-    struct Variant { name: Bytes, fields: ?slice::Slice(Field) }
+    struct Variant { name: Bytes, fields: ?[]Field }
 
     // A function type's field or a function's context field. A `mut` one is passed as a pointer.
     struct Param { name: Bytes, mutable: bool, ty: TypeId }
@@ -40,11 +40,11 @@ namespace ir {
         prim{ p: Prim },
         ptr{ elem: TypeId },
         arr{ n: u64, elem: TypeId },
-        record{ name: Bytes, size: u64, align: u64, fields: slice::Slice(Field) },
+        record{ name: Bytes, size: u64, align: u64, fields: []Field },
         // A union or optional: a u32 tag at offset 0, the payload at pay_off. null is tag 0.
-        tagged{ name: Bytes, size: u64, align: u64, pay_off: u64, variants: slice::Slice(Variant) },
+        tagged{ name: Bytes, size: u64, align: u64, pay_off: u64, variants: []Variant },
         // Fields sorted by name.
-        func{ bound: bool, params: slice::Slice(Param), ret: TypeId },
+        func{ bound: bool, params: []Param, ret: TypeId },
         cap{ name: Bytes },
         void,
     }
@@ -59,21 +59,21 @@ namespace ir {
         id:     u32,
         name:   Bytes,
         native: bool,
-        params: slice::Slice(Param),
+        params: []Param,
         ret:    TypeId,
-        locals: slice::Slice(Local),
+        locals: []Local,
         body:   Block,
     }
 
     // A value block (a branch of an `if` or `match` expression) has a result unless every path
     // through it leaves. A statement block never has one.
-    struct Block { stmts: slice::Slice(Stmt), result: ?*Expr }
+    struct Block { stmts: []Stmt, result: ?*Expr }
 
     // A match arm: the body runs for any of its patterns. pats is empty for `else`.
-    struct Arm { pats: slice::Slice(Pat), body: Block }
+    struct Arm { pats: []Pat, body: Block }
 
     // One pattern of an arm. Every pattern of an arm binds the same slots.
-    struct Pat { variant: u32, binds: slice::Slice(Bind) }
+    struct Pat { variant: u32, binds: []Bind }
 
     // A pattern binding: the slot gets payload field `field`, or its address if by_ref.
     struct Bind { slot: u32, field: u32, by_ref: bool }
@@ -90,9 +90,9 @@ namespace ir {
         ret{ value: ?Expr },
         deferred{ body: Block },
         panic{ pos: Pos, msg: Bytes },
-        choose{ scrut: Expr, through: bool, arms: slice::Slice(Arm) },       // (match ...)
-        let_else{ init: Expr, variant: u32, binds: slice::Slice(Bind),
-                  els_variant: ?u32, els_binds: slice::Slice(Bind), els: Block },
+        choose{ scrut: Expr, through: bool, arms: []Arm },       // (match ...)
+        let_else{ init: Expr, variant: u32, binds: []Bind,
+                  els_variant: ?u32, els_binds: []Bind, els: Block },
     }
 
     // ---- expressions
@@ -117,6 +117,8 @@ namespace ir {
         deref{ ptr: *Expr, pos: Pos },
         field{ base: *Expr, index: u32 },
         index{ base: *Expr, i: *Expr, pos: Pos },
+        sindex{ base: *Expr, i: *Expr, pos: Pos },              // a slice's element, bounds-checked
+        ssub{ base: *Expr, lo: *Expr, hi: ?*Expr, pos: Pos },   // (ssub T S LO HI|_ POS): S[LO..HI]
         payload{ base: *Expr, variant: u32, field: u32 },
         addr{ place: *Expr },
         seq{ first: *Expr, then: *Expr },
@@ -134,17 +136,17 @@ namespace ir {
         widen{ e: *Expr },
         some{ e: *Expr },
         fnconv{ e: *Expr },
-        call{ callee: u32, args: slice::Slice(Arg) },
-        bind{ callee: u32, args: slice::Slice(Arg) },
-        dcall{ callee: *Expr, args: slice::Slice(Arg) },
-        dbind{ callee: *Expr, args: slice::Slice(Arg) },
+        call{ callee: u32, args: []Arg },
+        bind{ callee: u32, args: []Arg },
+        dcall{ callee: *Expr, args: []Arg },
+        dbind{ callee: *Expr, args: []Arg },
         fnref{ callee: u32 },
-        record{ items: slice::Slice(Arg) },                     // (struct T [ARG...])
-        variant{ index: u32, items: slice::Slice(Arg) },
-        array{ elems: slice::Slice(Expr) },
+        record{ items: []Arg },                     // (struct T [ARG...])
+        variant{ index: u32, items: []Arg },
+        array{ elems: []Expr },
         repeat{ elem: *Expr },
         ifx{ c: *Expr, then: Block, els: Block },
-        matchx{ scrut: *Expr, through: bool, arms: slice::Slice(Arm) },
+        matchx{ scrut: *Expr, through: bool, arms: []Arm },
         convert{ e: *Expr, pos: Pos },                          // (as T E POS)
         trunc{ e: *Expr },
         wrap{ op: ArithOp, a: *Expr, b: *Expr },
@@ -153,6 +155,6 @@ namespace ir {
     }
 
     fn type_of { p: Program, id: TypeId } -> Type {
-        return slice::get{ s = p.types, i = id }
+        return p.types[id]
     }
 }

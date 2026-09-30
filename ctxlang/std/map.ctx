@@ -26,7 +26,7 @@ namespace map {
     }
 
     struct Map(K, V, S) {
-        slots:   slice::Slice(Slot(K, V)),  // capacity is slots.len: 0 or a power of two
+        slots:   []mut Slot(K, V),         // capacity is slots.len: 0 or a power of two
         len:     usize,                    // full slots
         used:    usize,                    // full and removed slots
         realloc: alloc::Fn(S),
@@ -51,7 +51,7 @@ namespace map {
     fn get(K, V, S) { m: Map(K, V, S), key: K } -> ?V {
         let i = find{ m, key }
         if i != null {
-            match slice::get{ s = m.slots, i } {
+            match m.slots[i] {
                 full{ v } => { return v }
                 else      => { }
             }
@@ -63,7 +63,7 @@ namespace map {
     fn at(K, V, S) { m: Map(K, V, S), key: K } -> ?*mut V {
         let i = find{ m, key }
         if i != null {
-            match slice::at{ s = m.slots, i } {
+            match &m.slots[i] {
                 full{ &v } => { return &v }
                 else       => { }
             }
@@ -75,18 +75,18 @@ namespace map {
     fn put(K, V, S) { mut m: Map(K, V, S), mut heap: S, key: K, value: V } -> bool {
         let found = find{ m, key }
         if found != null {
-            slice::set{ s = m.slots, i = found, v = Slot::full{ k = key, v = value } }
+            m.slots[found] = Slot::full{ k = key, v = value }
             return true
         }
         if (m.used + 1) * 4 > m.slots.len * 3 {         // keep the load at most 3/4
             if not rehash{ .. } { return false }        // `..` forwards &m, &heap
         }
         let i = free_slot{ m, key }
-        match slice::get{ s = m.slots, i } {
+        match m.slots[i] {
             empty => { m.used = m.used + 1 }
             else  => { }                                  // reuses a removed slot
         }
-        slice::set{ s = m.slots, i, v = Slot::full{ k = key, v = value } }
+        m.slots[i] = Slot::full{ k = key, v = value }
         m.len = m.len + 1
         return true
     }
@@ -95,8 +95,8 @@ namespace map {
     fn remove(K, V, S) { mut m: Map(K, V, S), key: K } -> ?V {
         let i = find{ m, key }
         if i != null {
-            let old = slice::get{ s = m.slots, i }
-            slice::set{ s = m.slots, i, v = Slot::removed }
+            let old = m.slots[i]
+            m.slots[i] = Slot::removed
             m.len = m.len - 1
             match old {
                 full{ v } => { return v }
@@ -135,7 +135,7 @@ namespace map {
         while cursor < m.slots.len {
             let i = cursor
             cursor = cursor + 1
-            match slice::get{ s = m.slots, i } {
+            match m.slots[i] {
                 full{ k, v } => { return Entry{ key = k, value = v } }
                 else         => { }
             }
@@ -146,7 +146,7 @@ namespace map {
     fn each(K, V, S) { m: Map(K, V, S), f: &fn{ key: K, value: V } } {
         let mut i: usize = 0
         while i < m.slots.len {
-            match slice::get{ s = m.slots, i } {
+            match m.slots[i] {
                 full{ k, v } => { f{ key = k, value = v } }
                 else         => { }
             }
@@ -169,17 +169,17 @@ namespace map {
     fn eq_usize { a: usize, b: usize } -> bool { return a == b }
 
     // A multiply-add over the bytes. `home` spreads the result, so it needn't be well mixed.
-    fn hash_bytes { key: slice::Slice(u8) } -> u64 {
+    fn hash_bytes { key: []u8 } -> u64 {
         let mut h: u64 = 14695981039346656037
         let mut i: usize = 0
         while i < key.len {
-            h = @wrap_mul(@wrap_add(h, @as(u64, slice::get{ s = key, i })), 1099511628211)
+            h = @wrap_mul(@wrap_add(h, @as(u64, key[i])), 1099511628211)
             i = i + 1
         }
         return h
     }
 
-    fn eq_bytes { a: slice::Slice(u8), b: slice::Slice(u8) } -> bool {
+    fn eq_bytes { a: []u8, b: []u8 } -> bool {
         return ascii::eq{ a = ascii::String{ bytes = a }, b = ascii::String{ bytes = b } }
     }
 
@@ -207,7 +207,7 @@ namespace map {
         if m.len == 0 { return null }
         let mut i = home{ m, key }
         while true {
-            match slice::get{ s = m.slots, i } {
+            match m.slots[i] {
                 empty     => { return null }
                 removed   => { }
                 full{ k } => { if m.eq{ a = k, b = key } { return i } }
@@ -220,7 +220,7 @@ namespace map {
     fn free_slot(K, V, S) { m: Map(K, V, S), key: K } -> usize {
         let mut i = home{ m, key }
         while true {
-            match slice::get{ s = m.slots, i } {
+            match m.slots[i] {
                 full => { }
                 else => { return i }
             }
@@ -245,9 +245,9 @@ namespace map {
         m.used = m.len
         let mut i: usize = 0
         while i < old.len {
-            let slot = slice::get{ s = old, i }
+            let slot = old[i]
             match slot {
-                full{ k } => { slice::set{ s = m.slots, i = free_slot{ m, key = k }, v = slot } }
+                full{ k } => { m.slots[free_slot{ m, key = k }] = slot }
                 else      => { }
             }
             i = i + 1

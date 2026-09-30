@@ -5,8 +5,8 @@
 //
 //   fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
 //       let mut mem: [65536]u8
-//       let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
-//       let path = slice::get{ s = args, i = 0 }
+//       let mut heap = arena::new{ buf = mem[..] }
+//       let path = args[0]
 //       let text = match fs::read_all{ &fs, &heap, realloc = arena::alloc, path } {
 //           ok{ value }  => { value }
 //           err{ error } => { return 1 }
@@ -19,12 +19,12 @@
 //
 // Natives (provided by the runtime). Each returns a status: >= 0 is the result, < 0 an error
 // code that `error_of` decodes.
-//   sys_open   { mut fs: Fs, path: slice::Slice(u8), mode: u8 } -> i64         a file id
-//   sys_read   { mut fs: Fs, file: u32, into: slice::Slice(u8) } -> i64        bytes read, 0 at the end
-//   sys_write  { mut fs: Fs, file: u32, bytes: slice::Slice(u8) } -> i64       bytes written
+//   sys_open   { mut fs: Fs, path: []u8, mode: u8 } -> i64         a file id
+//   sys_read   { mut fs: Fs, file: u32, into: []mut u8 } -> i64        bytes read, 0 at the end
+//   sys_write  { mut fs: Fs, file: u32, bytes: []u8 } -> i64       bytes written
 //   sys_close  { mut fs: Fs, file: u32 } -> i64
-//   sys_size   { mut fs: Fs, path: slice::Slice(u8) } -> i64                   size in bytes
-//   sys_remove { mut fs: Fs, path: slice::Slice(u8) } -> i64
+//   sys_size   { mut fs: Fs, path: []u8 } -> i64                   size in bytes
+//   sys_remove { mut fs: Fs, path: []u8 } -> i64
 
 namespace fs {
     union Error {
@@ -47,7 +47,7 @@ namespace fs {
 
     struct File { id: u32 }
 
-    fn open { mut fs: Fs, path: slice::Slice(u8), mode: Mode } -> Result(File, Error) {
+    fn open { mut fs: Fs, path: []u8, mode: Mode } -> Result(File, Error) {
         let m: u8 = match mode { read => { 0 } write => { 1 } append => { 2 } create => { 3 } }
         let r = sys_open{ &fs, path, mode = m }
         if r < 0 { return Result::err{ error = error_of{ code = r } } }
@@ -55,17 +55,17 @@ namespace fs {
     }
 
     // Reads at most into.len bytes into `into`. Returns how many; 0 at the end of the file.
-    fn read { mut fs: Fs, file: File, into: slice::Slice(u8) } -> Result(usize, Error) {
+    fn read { mut fs: Fs, file: File, into: []mut u8 } -> Result(usize, Error) {
         let r = sys_read{ &fs, file = file.id, into }
         if r < 0 { return Result::err{ error = error_of{ code = r } } }
         return Result::ok{ value = @as(usize, r) }
     }
 
     // Writes all of `bytes`.
-    fn write { mut fs: Fs, file: File, bytes: slice::Slice(u8) } -> Result(usize, Error) {
+    fn write { mut fs: Fs, file: File, bytes: []u8 } -> Result(usize, Error) {
         let mut done: usize = 0
         while done < bytes.len {
-            let r = sys_write{ &fs, file = file.id, bytes = slice::sub{ s = bytes, lo = done, hi = bytes.len } }
+            let r = sys_write{ &fs, file = file.id, bytes = bytes[done..bytes.len] }
             if r < 0 { return Result::err{ error = error_of{ code = r } } }
             done = done + @as(usize, r)
         }
@@ -79,21 +79,21 @@ namespace fs {
     }
 
     // The size of the file at `path`, in bytes.
-    fn size { mut fs: Fs, path: slice::Slice(u8) } -> Result(u64, Error) {
+    fn size { mut fs: Fs, path: []u8 } -> Result(u64, Error) {
         let r = sys_size{ &fs, path }
         if r < 0 { return Result::err{ error = error_of{ code = r } } }
         return Result::ok{ value = @as(u64, r) }
     }
 
     // Deletes the file at `path`. Null on success.
-    fn remove { mut fs: Fs, path: slice::Slice(u8) } -> ?Error {
+    fn remove { mut fs: Fs, path: []u8 } -> ?Error {
         let r = sys_remove{ &fs, path }
         return if r < 0 { error_of{ code = r } } else { null }
     }
 
     // Reads the whole file at `path` into memory from `realloc`. The caller owns the result:
     // free it with `alloc::resize(u8, S){ realloc, &heap, mem = bytes, count = 0 }`.
-    fn read_all(S) { mut fs: Fs, mut heap: S, realloc: alloc::Fn(S), path: slice::Slice(u8) } -> Result(alloc::Bytes, Error) {
+    fn read_all(S) { mut fs: Fs, mut heap: S, realloc: alloc::Fn(S), path: []u8 } -> Result(alloc::Bytes, Error) {
         let file = match open{ &fs, path, mode = Mode::read } {
             ok{ value }  => { value }
             err{ error } => { return Result::err{ error } }
@@ -113,7 +113,7 @@ namespace fs {
                     some{ value } => { value }
                 }
             }
-            let got = match read{ &fs, file, into = slice::sub{ s = buf, lo = n, hi = buf.len } } {
+            let got = match read{ &fs, file, into = buf[n..buf.len] } {
                 ok{ value }  => { value }
                 err{ error } => {
                     _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
@@ -126,11 +126,11 @@ namespace fs {
         // Shrink to the contents, so that freeing the result frees the whole allocation.
         let exact = realloc{ &heap, mem = buf, new = n, align = 1 }
         if exact != null { return Result::ok{ value = exact } }
-        return Result::ok{ value = slice::sub{ s = buf, lo = 0, hi = n } }
+        return Result::ok{ value = buf[..n] }
     }
 
     // Creates or empties the file at `path` and writes `bytes` to it.
-    fn write_all { mut fs: Fs, path: slice::Slice(u8), bytes: slice::Slice(u8) } -> Result(usize, Error) {
+    fn write_all { mut fs: Fs, path: []u8, bytes: []u8 } -> Result(usize, Error) {
         let file = match open{ &fs, path, mode = Mode::write } {
             ok{ value }  => { value }
             err{ error } => { return Result::err{ error } }

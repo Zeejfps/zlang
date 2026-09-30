@@ -31,7 +31,7 @@ extern char *ctx_stack_limit;
 
 // ---- startup
 
-typedef struct { uint32_t tag; void *ptr; uint64_t len; } ctx_slice;   // slice::Slice(T)
+typedef struct { void *ptr; uint64_t len; } ctx_slice;   // []T
 
 // `program` is the program's path, for panics in files named "": CTX_PROGRAM_NAME, which the
 // generated code's includer can define.
@@ -39,7 +39,7 @@ void ctx_init(const char *const *files, uint32_t nfiles, const char *program, in
 #ifndef CTX_PROGRAM_NAME
 #define CTX_PROGRAM_NAME "program"
 #endif
-ctx_slice ctx_args(void);                  // main's `args`: a Slice(Slice(u8)) of UTF-8 bytes
+ctx_slice ctx_args(void);                  // main's `args`: a [][]u8 of UTF-8 bytes
 int ctx_exit(int32_t code);                // flushes output, closes files; returns code
 
 #define CTX_BITCAST(T, x) ({ __typeof__(x) _bc_v = (x); T _bc_r; \
@@ -108,6 +108,13 @@ static inline uint64_t ctx_idx(uint64_t i, uint64_t n, CTX_POS) {
     if (i >= n) ctx_panic_fmt(line, col, file, "index %llu out of bounds for length %llu",
                               (unsigned long long)i, (unsigned long long)n);
     return i;
+}
+
+// A slice's sub-range lo..hi, or "range LO..HI out of bounds for length N".
+static inline void ctx_range(uint64_t lo, uint64_t hi, uint64_t n, CTX_POS) {
+    if (lo > hi || hi > n) ctx_panic_fmt(line, col, file, "range %llu..%llu out of bounds for length %llu",
+                                         (unsigned long long)lo, (unsigned long long)hi,
+                                         (unsigned long long)n);
 }
 
 // ---- @as

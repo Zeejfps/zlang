@@ -16,10 +16,10 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
         io::eprintln{ &io, s = ascii::of{ chars = &usage } }
         return 2
     }
-    let path = slice::get{ s = args, i = 0 }
+    let path = args[0]
 
     let mut mem: [1048576]u8                                  // the heap: 1 MiB on the stack
-    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+    let mut heap = arena::new{ buf = mem[..] }
 
     // `match` gives the file's bytes, or leaves main with an exit code.
     let bytes = match fs::read_all{ &fs, &heap, realloc = arena::alloc, path } {
@@ -90,7 +90,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
 fn lowercase { bytes: alloc::Bytes } {
     let mut i: usize = 0
     while i < bytes.len {
-        slice::set{ s = bytes, i, v = ascii::to_lower{ c = slice::get{ s = bytes, i } } }
+        bytes[i] = ascii::to_lower{ c = bytes[i] }
         i = i + 1
     }
 }
@@ -109,10 +109,10 @@ fn count_lines { text: utf8::String } -> u64 {
     let mut n: u64 = 0
     let mut i: usize = 0
     while i < bytes.len {
-        if slice::get{ s = bytes, i } == '\n' { n = n + 1 }
+        if bytes[i] == '\n' { n = n + 1 }
         i = i + 1
     }
-    let ends_open = bytes.len > 0 and slice::get{ s = bytes, i = bytes.len - 1 } != '\n'
+    let ends_open = bytes.len > 0 and bytes[bytes.len - 1] != '\n'
     return if ends_open { n + 1 } else { n }       // a last line without '\n' still counts
 }
 
@@ -140,15 +140,15 @@ fn most_common(S) { counts: map::Map(utf8::String, i64, S) } -> ?Top {
 fn before { a: utf8::String, b: utf8::String } -> bool {
     let mut i: usize = 0
     while i < a.bytes.len and i < b.bytes.len {
-        let x = slice::get{ s = a.bytes, i }
-        let y = slice::get{ s = b.bytes, i }
+        let x = a.bytes[i]
+        let y = b.bytes[i]
         if x != y { return x < y }
         i = i + 1
     }
     return a.bytes.len < b.bytes.len
 }
 
-fn report { mut io: Io, path: slice::Slice(u8), error: fs::Error } {
+fn report { mut io: Io, path: []u8, error: fs::Error } {
     io::write{ &io, to = io::Stream::err, bytes = path }       // a path is bytes, not always text
     let not_found = ": no such file"
     let denied = ": permission denied"

@@ -8,7 +8,7 @@ from . import ast as A
 from .lexer import CompileError
 from .parser import parse_type
 from .types import (
-    Prim, PRIMS, I32, USIZE, F64, BOOL, U8, Ptr, Arr, Opt, StructT, UnionT, FnT, Cap,
+    Prim, PRIMS, I32, USIZE, F64, BOOL, U8, Ptr, SliceT, Arr, Opt, StructT, UnionT, FnT, Cap,
     VOID, NULL, TParam, TVar, prune, subst, tstr, is_int, is_float, is_num, unify,
     fn_accepts, widens, contains_bound_fn, free_vars, struct_fields, variants_of, qualname,
 )
@@ -72,7 +72,7 @@ class State:
 
 def has_zero(t):
     t = prune(t)
-    if isinstance(t, (Prim, Opt)):
+    if isinstance(t, (Prim, Opt, SliceT)):
         return True
     if isinstance(t, Arr):
         return has_zero(t.elem)
@@ -83,7 +83,7 @@ def has_zero(t):
 
 def contains_ptr(t, seen=None):
     t = prune(t)
-    if isinstance(t, (Ptr, TParam)):
+    if isinstance(t, (Ptr, SliceT, TParam)):
         return True
     if isinstance(t, (Opt, Arr)):
         return contains_ptr(t.elem, seen)
@@ -117,7 +117,8 @@ CHILDREN = {
     A.If: ('cond', 'then', 'els'), A.While: ('cond', 'body'), A.Match: ('scrut', 'arms'),
     A.Arm: ('body',), A.Defer: ('body',), A.Return: ('expr',), A.ExprStmt: ('expr',), A.Unary: ('expr',),
     A.AddrOf: ('expr',), A.Binary: ('lhs', 'rhs'), A.ArrayLit: ('elems',),
-    A.ArrayRep: ('elem',), A.Builtin: ('args',), A.Coerce: ('expr',),
+    A.ArrayRep: ('elem',), A.Builtin: ('args',), A.Coerce: ('expr',), A.ToSlice: ('expr',),
+    A.Range: ('base', 'lo', 'hi'),
 }
 
 
@@ -253,6 +254,8 @@ class Checker:
     def rtype(self, te, ns, tps, allow_bound=False):
         if isinstance(te, A.TPtr):
             return Ptr(self.rtype(te.elem, ns, tps), te.mut)
+        if isinstance(te, A.TSlice):
+            return SliceT(self.rtype(te.elem, ns, tps), te.mut)
         if isinstance(te, A.TOpt):
             return Opt(self.rtype(te.elem, ns, tps))
         if isinstance(te, A.TArr):
@@ -1030,6 +1033,8 @@ class Checker:
         if conv == 'some':
             c = A.Coerce(e, t, e.pos)
             return c
+        if conv == 'slice':
+            return A.ToSlice(e, t, e.pos)
         if conv == 'null':
             e.ty = t
         return e
@@ -1038,9 +1043,13 @@ class Checker:
         a, e = prune(a), prune(e)
         if a is NULL:
             return 'null' if isinstance(e, Opt) else None
+        if isinstance(e, SliceT) and isinstance(a, Ptr):
+            arr = prune(a.elem)
+            if isinstance(arr, Arr) and (a.mut or not e.mut) and unify(arr.elem, e.elem):
+                return 'slice'
         if isinstance(e, Opt):
-            if isinstance(a, Opt) and isinstance(prune(a.elem), Ptr) and widens(a.elem, e.elem):
-                return 'id'     # ?*mut T to ?*T: the same value
+            if isinstance(a, Opt) and isinstance(prune(a.elem), (Ptr, SliceT)) and widens(a.elem, e.elem):
+                return 'id'     # ?*mut T to ?*T, ?[]mut T to ?[]T: the same value
             if isinstance(a, Opt) or (isinstance(a, TVar) and a.kind == 'any'):
                 return 'id' if unify(a, e) else None
             return 'some' if unify(a, e.elem) or widens(a, e.elem) else None
@@ -1079,6 +1088,9 @@ class Checker:
         return NULL
 
     def e_Coerce(self, e, exp):
+        return e.ty
+
+    def e_ToSlice(self, e, exp):
         return e.ty
 
     def e_ArrayLit(self, e, exp):
@@ -1453,6 +1465,9 @@ class Checker:
         elif isinstance(bt, Arr) and e.name == 'len':
             e.kind = 'len'
             return USIZE
+        elif isinstance(bt, SliceT) and e.name in ('len', 'ptr'):
+            e.kind = 's' + e.name
+            return USIZE if e.name == 'len' else Ptr(bt.elem, bt.mut)
         elif isinstance(bt, TVar):
             self.err(f'the type of this expression must be known before `.{e.name}`', e.pos)
         self.err(f'{tstr(bt)} has no field `{e.name}`', e.pos)
@@ -1475,6 +1490,9 @@ class Checker:
         if isinstance(bt, Arr):
             e.kind = 'arr'
             return bt.elem
+        if isinstance(bt, SliceT):
+            e.kind = 'slice'
+            return bt.elem
         if isinstance(bt, Ptr):
             inner = prune(bt.elem)
             if isinstance(inner, Arr):
@@ -1483,6 +1501,24 @@ class Checker:
             e.kind = 'ptr'
             return bt.elem
         self.err(f'cannot index {tstr(bt)}', e.pos)
+
+    def e_Range(self, e, exp):
+        """`base[lo..hi]`. An array place is sliced through its address, a `*[N]T` directly."""
+        bt = prune(self.expr(e.base))
+        if isinstance(bt, Arr):
+            self.check_place(e.base)
+            e.base = A.AddrOf(e.base, e.base.pos)
+            bt = e.base.ty = Ptr(bt, self.place_mutable(e.base.expr))
+        if isinstance(bt, Ptr) and isinstance(prune(bt.elem), Arr):
+            bt = SliceT(prune(bt.elem).elem, bt.mut)
+            e.base = A.ToSlice(e.base, bt, e.base.pos)
+        if not isinstance(bt, SliceT):
+            self.err(f'cannot slice {tstr(bt)}', e.pos)
+        if e.lo is not None:
+            e.lo = self.expect(e.lo, USIZE)
+        if e.hi is not None:
+            e.hi = self.expect(e.hi, USIZE)
+        return bt
 
     # ---- builtins
 
@@ -1511,11 +1547,21 @@ class Checker:
                 self.err('@trunc converts integers only', args[0].pos)
             return e.targ_t
         if n == 'cast':
-            if not isinstance(prune(e.targ_t), Ptr):
+            tt = prune(e.targ_t)
+            if not isinstance(tt, Ptr):
                 self.err(f'@cast needs a pointer target type, got {tstr(e.targ_t)}', e.pos)
-            if not isinstance(prune(self.expr(args[0])), Ptr):
+            at = prune(self.expr(args[0]))
+            if not isinstance(at, Ptr):
                 self.err('@cast needs a pointer argument', args[0].pos)
+            if tt.mut and not at.mut:
+                self.err(f'@cast cannot make {tstr(at)} writable', args[0].pos)
             return e.targ_t
+        if n == 'slice':
+            pt = prune(self.expr(args[0]))
+            if not isinstance(pt, Ptr):
+                self.err(f'@slice needs a pointer, got {tstr(pt)}', args[0].pos)
+            args[1] = self.expect(args[1], USIZE)
+            return SliceT(pt.elem, pt.mut)
         if n == 'addr':
             if not isinstance(prune(self.expr(args[0])), Ptr):
                 self.err('@addr needs a pointer argument', args[0].pos)
@@ -1541,7 +1587,7 @@ class Checker:
                 return self.check_place(e.base)
             if e.kind == 'pfield':
                 return
-            self.err('`.len` is not a place', e.pos)
+            self.err(f'`.{e.name}` is not a place', e.pos)
         if isinstance(e, A.Index):
             if e.kind == 'arr':
                 return self.check_place(e.base)
@@ -1562,10 +1608,11 @@ class Checker:
         elif isinstance(e, A.Index) and e.kind == 'arr':
             self.check_mutable(e.base)
         elif not self.place_mutable(e):
-            self.err(f'cannot write through {tstr(e.ptr_ty)}; it needs to be a `*mut`', e.pos)
+            want = '[]mut' if isinstance(e.ptr_ty, SliceT) else '*mut'
+            self.err(f'cannot write through {tstr(e.ptr_ty)}; it needs to be a `{want}`', e.pos)
 
     def place_mutable(self, e):
-        """Is place e mutable (§11 Places)? Through a deref, only if the pointer is `*mut`."""
+        """Is place e mutable (§11 Places)? Through a deref, only via a `*mut` or `[]mut`."""
         if isinstance(e, A.Path):
             return e.ref[1].mutable
         if isinstance(e, A.Field) and e.kind == 'field':
@@ -1614,8 +1661,14 @@ class Checker:
             if r and r[0] == 'var':
                 return set(r[1].derived)
             return set()
-        if isinstance(e, A.Coerce):
+        if isinstance(e, (A.Coerce, A.ToSlice)):
             return self._derives(e.expr)
+        if isinstance(e, A.Range):
+            return self._derives(e.base)
+        if isinstance(e, A.Field) and e.kind == 'sptr':
+            return self._derives(e.base)
+        if isinstance(e, A.Builtin) and e.name == 'slice':
+            return self._derives(e.args[0])
         if isinstance(e, A.Braced):
             if hasattr(e, 'lit'):
                 out = set()

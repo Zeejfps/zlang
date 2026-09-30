@@ -9,10 +9,10 @@ namespace ir_print {
     struct Out {
         bytes: list::List(u8, ir::Heap),
         heap:  *mut ir::Heap,
-        types: slice::Slice(ir::Type),      // a float literal's type says how to print it
+        types: []ir::Type,      // a float literal's type says how to print it
     }
 
-    fn out { heap: *mut ir::Heap, types: slice::Slice(ir::Type) } -> Out {
+    fn out { heap: *mut ir::Heap, types: []ir::Type } -> Out {
         return Out{ bytes = list::new(u8){ realloc = arena::alloc }, heap, types }
     }
 
@@ -23,7 +23,7 @@ namespace ir_print {
         let mut i: usize = 0
         while i < p.files.len {
             if i > 0 { char{ &o, c = ' ' } }
-            quote{ &o, b = slice::get{ s = p.files, i } }
+            quote{ &o, b = p.files[i] }
             i = i + 1
         }
         text{ &o, a = "])\n" }
@@ -32,13 +32,13 @@ namespace ir_print {
             text{ &o, a = "(type " }
             num{ &o, n = i }
             char{ &o, c = ' ' }
-            type_def{ &o, t = slice::get{ s = p.types, i } }
+            type_def{ &o, t = p.types[i] }
             text{ &o, a = ")\n" }
             i = i + 1
         }
         i = 0
         while i < p.fns.len {
-            function{ &o, f = slice::get{ s = p.fns, i } }
+            function{ &o, f = p.fns[i] }
             i = i + 1
         }
         text{ &o, a = "(main " }
@@ -85,7 +85,7 @@ namespace ir_print {
                 let mut i: usize = 0
                 while i < variants.len {
                     if i > 0 { char{ &o, c = ' ' } }
-                    let v = slice::get{ s = variants, i }
+                    let v = variants[i]
                     char{ &o, c = '(' }
                     quote{ &o, b = v.name }
                     char{ &o, c = ' ' }
@@ -133,12 +133,12 @@ namespace ir_print {
     }
 
     // [(NAME T OFFSET)...]
-    fn field_list { mut o: Out, fields: slice::Slice(ir::Field) } {
+    fn field_list { mut o: Out, fields: []ir::Field } {
         char{ &o, c = '[' }
         let mut i: usize = 0
         while i < fields.len {
             if i > 0 { char{ &o, c = ' ' } }
-            let f = slice::get{ s = fields, i }
+            let f = fields[i]
             char{ &o, c = '(' }
             quote{ &o, b = f.name }
             char{ &o, c = ' ' }
@@ -152,12 +152,12 @@ namespace ir_print {
     }
 
     // [(NAME MUT T)...]
-    fn param_list { mut o: Out, params: slice::Slice(ir::Param) } {
+    fn param_list { mut o: Out, params: []ir::Param } {
         char{ &o, c = '[' }
         let mut i: usize = 0
         while i < params.len {
             if i > 0 { char{ &o, c = ' ' } }
-            let p = slice::get{ s = params, i }
+            let p = params[i]
             char{ &o, c = '(' }
             quote{ &o, b = p.name }
             char{ &o, c = ' ' }
@@ -184,7 +184,7 @@ namespace ir_print {
             let mut i: usize = 0
             while i < f.locals.len {
                 if i > 0 { char{ &o, c = ' ' } }
-                let l = slice::get{ s = f.locals, i }
+                let l = f.locals[i]
                 char{ &o, c = '(' }
                 quote{ &o, b = l.name }
                 char{ &o, c = ' ' }
@@ -210,7 +210,7 @@ namespace ir_print {
         let mut i: usize = 0
         while i < b.stmts.len {
             newline{ &o, depth = depth + 1 }
-            stmt{ &o, s = slice::get{ s = b.stmts, i }, depth = depth + 1 }
+            stmt{ &o, s = b.stmts[i], depth = depth + 1 }
             i = i + 1
         }
         let r = b.result
@@ -317,12 +317,12 @@ namespace ir_print {
     }
 
     // [(VARIANT|_ [BIND...] BLOCK)...]
-    fn arm_list { mut o: Out, arms: slice::Slice(ir::Arm), depth: u32 } {
+    fn arm_list { mut o: Out, arms: []ir::Arm, depth: u32 } {
         char{ &o, c = '[' }
         let mut i: usize = 0
         while i < arms.len {
             if i > 0 { char{ &o, c = ' ' } }
-            let a = slice::get{ s = arms, i }
+            let a = arms[i]
             char{ &o, c = '(' }
             if a.pats.len == 0 {
                 char{ &o, c = '_' }
@@ -331,7 +331,7 @@ namespace ir_print {
                 let mut j: usize = 0
                 while j < a.pats.len {
                     if j > 0 { char{ &o, c = ' ' } }
-                    let p = slice::get{ s = a.pats, i = j }
+                    let p = a.pats[j]
                     char{ &o, c = '(' }
                     num{ &o, n = p.variant }
                     char{ &o, c = ' ' }
@@ -350,12 +350,12 @@ namespace ir_print {
     }
 
     // [(SLOT FIELD BYREF)...]
-    fn bind_list { mut o: Out, binds: slice::Slice(ir::Bind) } {
+    fn bind_list { mut o: Out, binds: []ir::Bind } {
         char{ &o, c = '[' }
         let mut i: usize = 0
         while i < binds.len {
             if i > 0 { char{ &o, c = ' ' } }
-            let b = slice::get{ s = binds, i }
+            let b = binds[i]
             char{ &o, c = '(' }
             num{ &o, n = b.slot }
             char{ &o, c = ' ' }
@@ -387,6 +387,17 @@ namespace ir_print {
             deref{ ptr, pos }         => { head{ &o, e, a = "deref" }; sub{ &o, e = ptr, depth }; position{ &o, p = pos } }
             field{ base, index }      => { head{ &o, e, a = "field" }; sub{ &o, e = base, depth }; spaced{ &o, n = index } }
             index{ base, i, pos }     => { head{ &o, e, a = "index" }; sub{ &o, e = base, depth }; sub{ &o, e = i, depth }; position{ &o, p = pos } }
+            sindex{ base, i, pos }    => { head{ &o, e, a = "sindex" }; sub{ &o, e = base, depth }; sub{ &o, e = i, depth }; position{ &o, p = pos } }
+            ssub{ base, lo, hi, pos } => {
+                head{ &o, e, a = "ssub" }
+                sub{ &o, e = base, depth }
+                sub{ &o, e = lo, depth }
+                match hi {
+                    null          => { text{ &o, a = " _" } }
+                    some{ value } => { sub{ &o, e = value, depth } }
+                }
+                position{ &o, p = pos }
+            }
             payload{ base, variant, field } => {
                 head{ &o, e, a = "payload" }
                 sub{ &o, e = base, depth }
@@ -455,7 +466,7 @@ namespace ir_print {
                 let mut i: usize = 0
                 while i < elems.len {
                     if i > 0 { char{ &o, c = ' ' } }
-                    expr{ &o, e = slice::get{ s = elems, i }, depth }
+                    expr{ &o, e = elems[i], depth }
                     i = i + 1
                 }
                 char{ &o, c = ']' }
@@ -518,12 +529,12 @@ namespace ir_print {
     }
 
     // ` [(INDEX E)...]`
-    fn arg_list { mut o: Out, args: slice::Slice(ir::Arg), depth: u32 } {
+    fn arg_list { mut o: Out, args: []ir::Arg, depth: u32 } {
         text{ &o, a = " [" }
         let mut i: usize = 0
         while i < args.len {
             if i > 0 { char{ &o, c = ' ' } }
-            let a = slice::get{ s = args, i }
+            let a = args[i]
             char{ &o, c = '(' }
             num{ &o, n = a.index }
             char{ &o, c = ' ' }
@@ -578,10 +589,10 @@ namespace ir_print {
     // The shortest text that reads back as v, as an f32 if ty is f32.
     fn float { mut o: Out, v: f64, ty: ir::TypeId } {
         let mut buf: [32]u8
-        let into = slice::of(u8){ a = &buf }
+        let into = buf[..]
         let mut is32 = false
         if ty < o.types.len {
-            is32 = match slice::get{ s = o.types, i = ty } {
+            is32 = match o.types[ty] {
                 prim{ p } => { match p { f32 => { true } else => { false } } }
                 else      => { false }
             }
@@ -598,7 +609,7 @@ namespace ir_print {
         char{ &o, c = '"' }
         let mut i: usize = 0
         while i < b.len {
-            let c = slice::get{ s = b, i }
+            let c = b[i]
             if c >= 32 and c <= 126 and c != '"' and c != '\\' {
                 char{ &o, c }
             } else {
@@ -625,11 +636,12 @@ namespace ir_print {
 
     fn num { mut o: Out, n: u64 } {
         let mut buf: [20]u8
-        bytes{ &o, b = ascii::fmt_u64{ n, into = slice::of(u8){ a = &buf } }.bytes }
+        bytes{ &o, b = ascii::fmt_u64{ n, into = buf[..] }.bytes }
     }
 
+    // `a` is a string literal: a [N]u8 value.
     fn text(A) { mut o: Out, a: A } {
-        bytes{ &o, b = slice::of(u8){ a = &a } }
+        bytes{ &o, b = @slice(@cast(*u8, &a), @size_of(A)) }
     }
 
     fn char { mut o: Out, c: u8 } {
@@ -639,7 +651,7 @@ namespace ir_print {
     fn bytes { mut o: Out, b: ir::Bytes } {
         if not list::reserve{ list = &o.bytes, heap = o.heap, extra = b.len } { @panic("ir_print: out of memory") }
         let len = o.bytes.len
-        slice::copy{ dst = slice::sub{ s = o.bytes.items, lo = len, hi = len + b.len }, src = b }
+        slice::copy{ dst = o.bytes.items[len..len + b.len], src = b }
         o.bytes.len = len + b.len
     }
 }

@@ -20,7 +20,7 @@ LIB = LIST_SRC[:LIST_SRC.index('fn main {')]
 MAIN_SETUP = """
 fn main { mut io: Io } {
     let mut mem: [4096]u8
-    let mut heap = arena::Arena{ buf = slice::from{ ptr = &mem[0], len = mem.len }, used = 0 }
+    let mut heap = arena::Arena{ buf = @slice(&mem[0], mem.len), used = 0 }
     let mut nums = list::new(i32){ realloc = arena::alloc }
     let mut total = 0
 %s
@@ -128,7 +128,7 @@ class ListExample(Base):
     def test_escape_return(self):
         extra = """fn make_arena {} -> arena::Arena {
     let mut mem: [64]u8
-    return arena::Arena{ buf = slice::from{ ptr = &mem[0], len = mem.len }, used = 0 }
+    return arena::Arena{ buf = @slice(&mem[0], mem.len), used = 0 }
 }
 """
         self.lib_error('', 'returned value holds the address of local `mem`', extra)
@@ -141,7 +141,7 @@ class ListExample(Base):
     def test_not_caught_wrong_instance(self):
         self.assertOutput(LIB + MAIN_SETUP % """
     let mut mem2: [256]u8
-    let mut other = arena::Arena{ buf = slice::from{ ptr = &mem2[0], len = mem2.len }, used = 0 }
+    let mut other = arena::Arena{ buf = @slice(&mem2[0], mem2.len), used = 0 }
     _ = list::push{ list = &nums, heap = &other, item = 1 }
     io::println_u64{ &io, n = nums.len }""", '1\n')
 
@@ -510,10 +510,10 @@ class GenericApplication(Base):
         self.assertOutput("""
 fn main { mut io: Io } {
     let e = slice::empty (u8) {}
-    let s: slice::Slice (i32) = slice::empty(i32){}
-    io::println_u64{ &io, n = e.len + s.len }
+    let s: ?list::List (i32, arena::Arena) = null
+    io::println_bool{ &io, n = e.len == 0 and s == null }
 }
-""", '0\n')
+""", 'true\n')
 
     def test_space_in_declaration(self):
         self.assertOutput("""
@@ -976,6 +976,145 @@ fn main { mut io: Io } { let mut a: i32 = 1; let p: **mut i32 = &a }
 """, 'expected **mut i32, got *mut i32')
 
 
+class Slices(Base):
+    def test_index_len_and_ptr(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let mut a = [10, 20, 30]
+    let s: []mut i32 = &a
+    s[1] = s[1] + 1
+    io::println_i64{ &io, n = a[1] }
+    io::println_u64{ &io, n = s.len }
+    io::println_i64{ &io, n = s.ptr[2] }
+}
+""", '21\n3\n30\n')
+
+    def test_sub_slices(self):
+        self.assertOutput("""
+fn show { mut io: Io, xs: []i32 } {
+    let mut i: usize = 0
+    while i < xs.len { io::print_i64{ &io, n = xs[i] }; i = i + 1 }
+    io::newline{ &io }
+}
+fn main { mut io: Io } {
+    let a = [1, 2, 3, 4, 5]
+    show{ &io, xs = a[1..3] }
+    show{ &io, xs = a[..2] }
+    show{ &io, xs = a[3..] }
+    show{ &io, xs = a[..] }
+    let p = &a
+    show{ &io, xs = p[2..4][1..] }
+}
+""", '23\n12\n45\n12345\n4\n')
+
+    def test_bounds(self):
+        self.assertPanic("""
+fn main { mut io: Io } { let a = [1, 2]; let s = a[..]; let i: usize = 2; let x = s[i] }
+""", 'index 2 out of bounds for length 2')
+        self.assertPanic("""
+fn main { mut io: Io } { let a = [1, 2]; let s = a[..]; let n: usize = 3; let t = s[1..n] }
+""", 'range 1..3 out of bounds for length 2')
+        self.assertPanic("""
+fn main { mut io: Io } { let a = [1, 2]; let s = a[..]; let lo: usize = 2; let t = s[lo..1] }
+""", 'range 2..1 out of bounds for length 2')
+
+    def test_zero_value_is_empty(self):
+        self.assertOutput("""
+struct Buf { data: []u8, n: i32 }
+fn main { mut io: Io } {
+    let mut s: []u8
+    let mut b: Buf
+    io::println_u64{ &io, n = s.len + b.data.len + s[0..0].len }
+}
+""", '0\n')
+
+    def test_read_only_slices(self):
+        self.assertCompileError("""
+fn f { xs: []i32 } { xs[0] = 1 }
+fn main { mut io: Io } { }
+""", 'cannot write through []i32; it needs to be a `[]mut`')
+        self.assertCompileError("""
+fn f { xs: []i32 } { xs.ptr[0] = 1 }
+fn main { mut io: Io } { }
+""", 'cannot write through *i32')
+        self.assertCompileError("""
+fn f { xs: []mut i32 } { }
+fn main { mut io: Io } { let a: [2]i32 = [1, 2]; f{ xs = &a } }
+""", 'expected []mut i32, got *[2]i32')
+        self.assertCompileError("""
+fn main { mut io: Io } { let a: [2]i32 = [1, 2]; let s: []mut i32 = a[..] }
+""", 'expected []mut i32, got []i32')
+
+    def test_mut_converts_to_read_only(self):
+        self.assertOutput("""
+fn first { xs: []i32 } -> i32 { return xs[0] }
+fn opt { xs: ?[]i32 } -> usize {
+    let some{ value } = xs else { return 0 }
+    return value.len
+}
+fn main { mut io: Io } {
+    let mut a = [7, 8]
+    let m: []mut i32 = &a
+    let o: ?[]mut i32 = m
+    io::println_i64{ &io, n = first{ xs = m } }
+    io::println_u64{ &io, n = opt{ xs = o } }
+}
+""", '7\n2\n')
+
+    def test_slice_builtin(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let mut a = [1, 2, 3]
+    let s = @slice(&a[1], 2)
+    s[1] = 9
+    io::println_i64{ &io, n = a[2] }
+}
+""", '9\n')
+        self.assertCompileError("""
+fn main { mut io: Io } { let s = @slice(3, 2) }
+""", '@slice needs a pointer, got {integer}')
+
+    def test_generic_inference_from_array(self):
+        self.assertOutput("""
+fn count(T) { xs: []T } -> usize { return xs.len }
+fn main { mut io: Io } {
+    let a = [1.5, 2.5]
+    io::println_u64{ &io, n = count{ xs = &a } }
+}
+""", '2\n')
+
+    def test_len_and_ptr_are_not_places(self):
+        self.assertCompileError("""
+fn main { mut io: Io } { let mut s: []u8; s.len = 3 }
+""", '`.len` is not a place')
+
+    def test_escape(self):
+        self.assertCompileError("""
+fn f {} -> []u8 { let mut a: [4]u8; return a[..] }
+fn main { mut io: Io } { }
+""", 'returned value holds the address of local `a`')
+        self.assertCompileError("""
+fn f {} -> []u8 { let mut a: [4]u8; let s: []u8 = &a; return s[1..] }
+fn main { mut io: Io } { }
+""", 'returned value holds the address of local `a`')
+
+    def test_cannot_slice(self):
+        self.assertCompileError("""
+fn main { mut io: Io } { let x = 3; let s = x[..] }
+""", 'cannot slice {integer}')
+
+    def test_cast_keeps_read_only(self):
+        self.assertCompileError("""
+fn f { p: *u8 } { let q = @cast(*mut i8, p) }
+fn main { mut io: Io } { }
+""", '@cast cannot make *u8 writable')
+
+    def test_type_text(self):
+        self.assertCompileError("""
+fn main { mut io: Io } { let mut a: [1]i32 = [1]; let s: [][]mut u8 = &a }
+""", 'expected [][]mut u8, got *mut [1]i32')
+
+
 class StdLib(Base):
     def test_hello(self):
         self.assertOutput("""
@@ -1067,7 +1206,7 @@ fn main { mut io: Io } {
         self.assertOutput("""
 fn main { mut io: Io } {
     let mut mem: [1024]u8
-    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+    let mut heap = arena::new{ buf = mem[..] }
     let mut b = ascii::builder{ realloc = arena::alloc }
     let name = "count"
     _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &name } }
@@ -1088,7 +1227,7 @@ fn main { mut io: Io } {
     let mut total: i64 = 0
     let mut more = true
     while more {
-        let line = io::read_line{ &io, into = slice::of(u8){ a = &buf } }
+        let line = io::read_line{ &io, into = buf[..] }
         if line == null {
             more = false
         } else {
@@ -1154,7 +1293,7 @@ fn main { mut io: Io } {
     let mut buf: [32]u8
     let mut i: usize = 0
     while i < xs.len {
-        let text = ascii::fmt_f64{ n = xs[i], into = slice::of(u8){ a = &buf } }
+        let text = ascii::fmt_f64{ n = xs[i], into = buf[..] }
         let back = ascii::parse_f64{ s = text }
         if back != null { io::println_bool{ &io, n = back == xs[i] } }
         i = i + 1
@@ -1218,14 +1357,14 @@ fn main { mut io: Io } {
         self.assertOutput("""
 fn main { mut io: Io } {
     let mut a: [5]i32
-    let s = slice::of(i32){ a = &a }
+    let s = a[..]
     slice::fill{ s, v = 3 }
-    slice::set{ s, i = 4, v = 9 }
+    s[4] = 9
     io::println_i64{ &io, n = a[0] + a[4] }
     io::println_u64{ &io, n = s.len }
-    io::println_bool{ &io, n = slice::is_empty{ s = slice::sub{ s, lo = 2, hi = 2 } } }
+    io::println_u64{ &io, n = s[2..2].len + s[3..].len + s[..4].len }
 }
-""", '12\n5\ntrue\n')
+""", '12\n5\n6\n')
 
     def test_non_ascii_panics(self):
         self.assertPanic("""
@@ -1242,10 +1381,10 @@ fn main { mut io: Io } {
         self.assertPanic("""
 fn main { mut io: Io } {
     let mut a: [2]u8
-    let s = slice::of(u8){ a = &a }
-    let x = slice::get{ s, i = 2 }
+    let s = a[..]
+    let x = s[2]
 }
-""", 'slice::at: index out of bounds')
+""", 'index 2 out of bounds for length 2')
 
     def test_io_needs_capability(self):
         self.assertCompileError("""
@@ -1273,7 +1412,8 @@ fn main { mut io: Io } { }
             run_source("""
 fn main { mut io: Io } {
     let mut a: [2]u8
-    let x = slice::get{ s = slice::of(u8){ a = &a }, i = 5 }
+    let b: [4]u8 = [1, 2, 3, 4]
+    slice::copy{ dst = a[..], src = b[..] }
 }
 """, 'user.ctx', out=io.StringIO())
         self.assertEqual(cm.exception.pos[2], 'std/slice.ctx')
@@ -1288,7 +1428,7 @@ fn main { mut io: Io } {
 MAP_SETUP = """
 fn main { mut io: Io } {
     let mut mem: [262144]u8
-    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+    let mut heap = arena::new{ buf = mem[..] }
     let mut m = map::new(i32, i64){ realloc = arena::alloc, hash = map::hash_i32, eq = map::eq_i32 }
 %s
 }
@@ -1389,7 +1529,7 @@ fn add { mut total: i64, key: i32, value: i64 } { total = total + value }
         self.assertOutput("""
 fn main { mut io: Io } {
     let mut mem: [8192]u8
-    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+    let mut heap = arena::new{ buf = mem[..] }
     let mut counts = map::new(ascii::String, i32){
         realloc = arena::alloc, hash = map::hash_string, eq = ascii::eq,
     }
@@ -1430,7 +1570,7 @@ fn main { mut io: Io } {
         self.assertOutput("""
 fn main { mut io: Io } {
     let mut mem: [256]u8
-    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+    let mut heap = arena::new{ buf = mem[..] }
     let mut m = map::new(u64, u64){ realloc = arena::alloc, hash = map::hash_u64, eq = map::eq_u64 }
     let mut i: u64 = 0
     let mut ok = true
@@ -1505,10 +1645,10 @@ fn opt { mut io: Io, n: ?usize } {
             (r'\xc2\x80', None), (r'\xed\x9f\xbf', None), (r'\xee\x80\x80', None),
             (r'\xf0\x90\x80\x80', None), (r'\xf4\x8f\xbf\xbf', None), ('', None),
         ]
-        body = ''.join('    let b%d = "%s"\n    check{ &io, bytes = slice::of(u8){ a = &b%d } }\n' % (i, lit, i)
+        body = ''.join('    let b%d = "%s"\n    check{ &io, bytes = b%d[..] }\n' % (i, lit, i)
                        for i, (lit, _) in enumerate(cases))
         src = """
-fn check { mut io: Io, bytes: slice::Slice(u8) } {
+fn check { mut io: Io, bytes: []u8 } {
     match utf8::from{ bytes } {
         ok{ value }  => { io::println_i64{ &io, n = -1 } }
         err{ error } => { io::println_u64{ &io, n = error.at } }
@@ -1521,7 +1661,7 @@ fn main { mut io: Io } {
 
     def test_encode_round_trip(self):
         points = [0, 127, 128, 2047, 2048, 55295, 57344, 65535, 65536, 1114111]
-        body = ''.join("""    let e%d = utf8::encode{ c = %d, into = slice::of(u8){ a = &buf } }
+        body = ''.join("""    let e%d = utf8::encode{ c = %d, into = buf[..] }
     io::println_u64{ &io, n = utf8::len{ s = e%d } }
     io::println_bool{ &io, n = utf8::at{ s = e%d, i = 0 } == %d }
 """ % (i, c, i, i, c) for i, c in enumerate(points))
@@ -1540,7 +1680,7 @@ fn main { mut io: Io } {
         self.assertPanic("""
 fn main { mut io: Io } {
     let mut buf: [4]u8
-    let e = utf8::encode{ c = 55296, into = slice::of(u8){ a = &buf } }
+    let e = utf8::encode{ c = 55296, into = buf[..] }
 }
 """, 'utf8::encode: not a Unicode scalar value')
         self.assertPanic(r"""
@@ -1580,7 +1720,7 @@ fn opt { mut io: Io, n: ?u32 } {
         self.assertOutput(r"""
 fn main { mut io: Io } {
     let mut mem: [1024]u8
-    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+    let mut heap = arena::new{ buf = mem[..] }
     let mut b = utf8::builder{ realloc = arena::alloc }
     let name = "caf"
     _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &name } }
@@ -2314,7 +2454,7 @@ fn total { mut heap: arena::Arena, n: i32 } -> i64 {
 }
 fn main { mut io: Io } {
     let mut mem: [4096]u8
-    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+    let mut heap = arena::new{ buf = mem[..] }
     io::println_i64{ &io, n = total{ &heap, n = 10 } }
 }
 """, '45\n')
@@ -2380,7 +2520,7 @@ fn main { mut io: Io } {
 FS_MAIN = """
 fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     let mut mem: [65536]u8
-    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+    let mut heap = arena::new{ buf = mem[..] }
 %s
 }
 """
@@ -2420,14 +2560,14 @@ class Fs(Base):
         with open(src, 'wb') as f:
             f.write(b'hello\nfrom a file\n')
         out, code = self.run_fs("""
-    let text = match fs::read_all{ &fs, &heap, realloc = arena::alloc, path = slice::get{ s = args, i = 0 } } {
+    let text = match fs::read_all{ &fs, &heap, realloc = arena::alloc, path = args[0] } {
         ok{ value }  => { value }
         err{ error } => { return 1 }
     }
     io::print{ &io, s = ascii::from{ bytes = text } }
-    let wrote = fs::write_all{ &fs, path = slice::get{ s = args, i = 1 }, bytes = text }
+    let wrote = fs::write_all{ &fs, path = args[1], bytes = text }
     io::println_u64{ &io, n = result::unwrap{ r = wrote } }
-    io::println_u64{ &io, n = result::unwrap{ r = fs::size{ &fs, path = slice::get{ s = args, i = 1 } } } }
+    io::println_u64{ &io, n = result::unwrap{ r = fs::size{ &fs, path = args[1] } } }
     return 0
 """, [src, dst])
         self.assertEqual((out, code), ('hello\nfrom a file\n18\n18\n', 0))
@@ -2441,16 +2581,16 @@ class Fs(Base):
             f.write(data)
         open(empty, 'wb').close()
         out, _ = self.run_fs("""
-    let a = result::unwrap{ r = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = slice::get{ s = args, i = 0 } } }
+    let a = result::unwrap{ r = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = args[0] } }
     io::println_u64{ &io, n = a.len }
     let mut sum: u64 = 0
     let mut i: usize = 0
     while i < a.len {
-        sum = sum + slice::get{ s = a, i }
+        sum = sum + a[i]
         i = i + 1
     }
     io::println_u64{ &io, n = sum }
-    let b = result::unwrap{ r = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = slice::get{ s = args, i = 1 } } }
+    let b = result::unwrap{ r = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = args[1] } }
     io::println_u64{ &io, n = b.len }
     return 0
 """, [big, empty])
@@ -2459,24 +2599,24 @@ class Fs(Base):
     def test_open_read_write_close(self):
         p = self.path('f.txt')
         out, _ = self.run_fs("""
-    let path = slice::get{ s = args, i = 0 }
+    let path = args[0]
     let w = result::unwrap{ r = fs::open{ &fs, path, mode = fs::Mode::create } }
     let a = "abc"
-    _ = fs::write{ &fs, file = w, bytes = slice::of(u8){ a = &a } }
+    _ = fs::write{ &fs, file = w, bytes = a[..] }
     io::println_bool{ &io, n = fs::close{ &fs, file = w } == null }
     let x = fs::open{ &fs, path, mode = fs::Mode::append }
     if result::is_ok{ r = x } {
         let d = "de"
-        _ = fs::write{ &fs, file = result::unwrap{ r = x }, bytes = slice::of(u8){ a = &d } }
+        _ = fs::write{ &fs, file = result::unwrap{ r = x }, bytes = d[..] }
     }
     let r = result::unwrap{ r = fs::open{ &fs, path, mode = fs::Mode::read } }
     defer _ = fs::close{ &fs, file = r }
     let mut buf: [2]u8
     let mut total: usize = 0
     while true {
-        let n = result::unwrap{ r = fs::read{ &fs, file = r, into = slice::of(u8){ a = &buf } } }
+        let n = result::unwrap{ r = fs::read{ &fs, file = r, into = buf[..] } }
         if n == 0 { break }
-        io::print{ &io, s = ascii::from{ bytes = slice::sub{ s = slice::of(u8){ a = &buf }, lo = 0, hi = n } } }
+        io::print{ &io, s = ascii::from{ bytes = buf[..][..n] } }
         total = total + n
     }
     io::newline{ &io }
@@ -2489,10 +2629,10 @@ class Fs(Base):
         existing, missing = self.path('there.txt'), self.path('missing.txt')
         open(existing, 'wb').close()
         out, _ = self.run_fs("""
-    let there = slice::get{ s = args, i = 0 }
-    let missing = slice::get{ s = args, i = 1 }
-    let dir = slice::get{ s = args, i = 2 }
-    let nested = slice::get{ s = args, i = 3 }
+    let there = args[0]
+    let missing = args[1]
+    let dir = args[2]
+    let nested = args[3]
     let e1 = result::error{ r = fs::open{ &fs, path = missing, mode = fs::Mode::read } }
     if e1 != null { show{ &io, e = e1 } }
     let e2 = result::error{ r = fs::open{ &fs, path = there, mode = fs::Mode::create } }
@@ -2520,8 +2660,8 @@ class Fs(Base):
             f.write(bytes(5000))
         out, _ = self.run_fs("""
     let mut small: [100]u8
-    let mut tiny = arena::new{ buf = slice::of(u8){ a = &small } }
-    let e = result::error{ r = fs::read_all{ &fs, heap = &tiny, realloc = arena::alloc, path = slice::get{ s = args, i = 0 } } }
+    let mut tiny = arena::new{ buf = small[..] }
+    let e = result::error{ r = fs::read_all{ &fs, heap = &tiny, realloc = arena::alloc, path = args[0] } }
     if e != null { show{ &io, e } }
     return 0
 """, [p], show_error())
@@ -2530,9 +2670,9 @@ class Fs(Base):
     def test_exit_code_and_args(self):
         out, code = self.run_fs("""
     io::println_u64{ &io, n = args.len }
-    let a = ascii::from{ bytes = slice::get{ s = args, i = 1 } }
+    let a = ascii::from{ bytes = args[1] }
     io::println{ &io, s = a }
-    io::println_u64{ &io, n = slice::get{ s = args, i = 2 }.len }
+    io::println_u64{ &io, n = args[2].len }
     return 3
 """, ['x', 'second', ''])
         self.assertEqual((out, code), ('3\nsecond\n0\n', 3))
@@ -2548,14 +2688,14 @@ class Fs(Base):
         self.assertCompileError('fn main { mut io: Io } -> i64 { return 0 }', '`main` can only return i32')
 
     def test_main_args_type(self):
-        self.assertCompileError('fn main { args: slice::Slice(u8) } { }', '`args` must have type')
+        self.assertCompileError('fn main { args: []u8 } { }', '`args` must have type')
 
     def test_main_args_long_spelling(self):
-        src = 'fn main { args: slice::Slice(slice::Slice(u8)) } -> i32 { return @as(i32, args.len) }'
+        src = 'fn main { args: [][]u8 } -> i32 { return @as(i32, args.len) }'
         self.assertEqual(run_source(src, out=io.StringIO(), args=['a', 'b']), 2)
 
     def test_main_args_with_user_args_type(self):
-        src = 'struct Args { n: i32 }\nfn main { args: slice::Slice(slice::Slice(u8)) } { }'
+        src = 'struct Args { n: i32 }\nfn main { args: [][]u8 } { }'
         self.assertEqual(run_source(src, out=io.StringIO()), 0)
 
     def test_main_field_must_be_capability(self):
@@ -2563,7 +2703,7 @@ class Fs(Base):
 
     def test_fs_needs_capability(self):
         self.assertCompileError("""
-fn helper { path: slice::Slice(u8) } { fs::remove{ path } }
+fn helper { path: []u8 } { fs::remove{ path } }
 fn main { mut fs: Fs } { }
 """, 'missing `fs`')
 
@@ -2585,10 +2725,10 @@ class Mem(Base):
         out, code = self.run_mem("""
     let some{ value = buf } = mem::pages{ &mem, size = 268435456 } else { return 1 }
     io::println_u64{ &io, n = buf.len }
-    io::println_u64{ &io, n = @addr(slice::at{ s = buf, i = 0 }) % 4096 }
-    io::println_u64{ &io, n = slice::get{ s = buf, i = buf.len - 1 } }
-    slice::set{ s = buf, i = buf.len - 1, v = 7 }
-    io::println_u64{ &io, n = slice::get{ s = buf, i = buf.len - 1 } }
+    io::println_u64{ &io, n = @addr(&buf[0]) % 4096 }
+    io::println_u64{ &io, n = buf[buf.len - 1] }
+    buf[buf.len - 1] = 7
+    io::println_u64{ &io, n = buf[buf.len - 1] }
     return 0
 """)
         self.assertEqual((out, code), ('268435456\n0\n0\n7\n', 0))
@@ -2601,8 +2741,8 @@ class Mem(Base):
     io::println_u64{ &io, n = b.len }
     slice::fill{ s = a, v = 1 }
     slice::fill{ s = b, v = 2 }
-    io::println_u64{ &io, n = slice::get{ s = a, i = a.len - 1 } }
-    io::println_bool{ &io, n = @addr(slice::at{ s = b, i = 0 }) > @addr(slice::at{ s = a, i = a.len - 1 }) }
+    io::println_u64{ &io, n = a[a.len - 1] }
+    io::println_bool{ &io, n = @addr(&b[0]) > @addr(&a[a.len - 1]) }
     return 0
 """)
         self.assertEqual(out, '4096\n8192\n1\ntrue\n')
@@ -2659,7 +2799,7 @@ fn main { mut mem: Mem } { }
     def test_alloc_new_out_of_memory(self):
         out, _ = self.run_mem("""
     let mut buf: [16]u8
-    let mut heap = arena::new{ buf = slice::of(u8){ a = &buf } }
+    let mut heap = arena::new{ buf = buf[..] }
     let a = alloc::new{ realloc = arena::alloc, &heap, value = [1, 2, 3, 4, 5] }
     io::println_bool{ &io, n = a == null }
     let b = alloc::new{ realloc = arena::alloc, &heap, value = 5 }
@@ -2672,7 +2812,7 @@ fn main { mut mem: Mem } { }
         with self.assertRaises(Panic) as cm:
             self.run_mem("""
     let mut buf: [16]u8
-    let mut heap = arena::new{ buf = slice::of(u8){ a = &buf } }
+    let mut heap = arena::new{ buf = buf[..] }
     _ = alloc::new{ realloc = arena::alloc, &heap, value = Empty{} }
     return 0
 """, extra='struct Empty {}\n')
@@ -2898,10 +3038,39 @@ fn main { mut io: Io } {
              '@as: 1e+300 is not representable in i32'),
             ('let n: i64 = -1\n    io::println_u64{ &io, n = @as(u32, n) }', '@as: -1 is not representable in u32'),
             ('@panic("bad \\"thing\\"")', 'bad "thing"'),
+            ('let mut a: [3]u8\n    let s = a[..]\n    let i: usize = 3\n    s[i] = 1',
+             'index 3 out of bounds for length 3'),
+            ('let a: [3]u8 = [1, 2, 3]\n    let lo: usize = 2\n    let s = a[lo..1]', 'range 2..1 out of bounds for length 3'),
+            ('let a: [3]u8 = [1, 2, 3]\n    let s = a[1..]\n    let t = s[..3]', 'range 0..3 out of bounds for length 2'),
         ]:
             with self.subTest(msg=msg):
                 _, code = self.both('fn main { mut io: Io } {\n    %s\n}\n' % body)
                 self.assertEqual(code, 'panic: ' + msg)
+
+    def test_slices(self):
+        out, code = self.both("""
+fn sum { xs: []i32 } -> i32 {
+    let mut t = 0
+    let mut i: usize = 0
+    while i < xs.len { t = t + xs[i]; i = i + 1 }
+    return t
+}
+fn bump { xs: []mut i32 } {
+    let mut i: usize = 0
+    while i < xs.len { xs[i] = xs[i] + 1; i = i + 1 }
+}
+fn main { mut io: Io, args: Args } -> i32 {
+    let mut a = [1, 2, 3, 4]
+    bump{ xs = a[1..3] }
+    io::println_i64{ &io, n = sum{ xs = &a } }
+    let s = @slice(&a[0], 2)
+    io::println_i64{ &io, n = s.ptr[1] + s[..1][0] }
+    let mut e: []i32
+    io::println_u64{ &io, n = e.len + args.len + args[0].len }
+    return a[2]
+}
+""", args=['xyz'])
+        self.assertEqual((out, code), ('12\n4\n4\n', 4))
 
     def test_matches_and_optionals(self):
         out, code = self.both("""
@@ -2913,9 +3082,9 @@ fn area { s: *mut Shape } -> f64 {
         else => { 0.0 }
     }
 }
-fn first { xs: slice::Slice(i32) } -> ?i32 {
+fn first { xs: []i32 } -> ?i32 {
     if xs.len == 0 { return null }
-    return slice::get{ s = xs, i = 0 }
+    return xs[0]
 }
 fn main { mut io: Io, args: Args } -> i32 {
     let mut c = Shape::circle{ r = 1.5 }
@@ -2924,7 +3093,7 @@ fn main { mut io: Io, args: Args } -> i32 {
     let mut sq = Shape::square{ side = 3.0 }
     io::println_f64{ &io, n = area{ s = &sq } }
     let mut nums = [4, 5]
-    let some{ value } = first{ xs = slice::of(i32){ a = &nums } } else { return 1 }
+    let some{ value } = first{ xs = nums[..] } else { return 1 }
     let null = first{ xs = slice::empty(i32){} } else { return 2 }
     return value + @as(i32, args.len)
 }

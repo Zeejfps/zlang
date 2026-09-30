@@ -72,6 +72,11 @@ class TPtr(Node):
         self.elem, self.mut, self.pos = elem, mut, pos
 
 
+class TSlice(Node):
+    def __init__(self, elem, mut, pos):
+        self.elem, self.mut, self.pos = elem, mut, pos
+
+
 class TOpt(Node):
     def __init__(self, elem, pos):
         self.elem, self.pos = elem, pos
@@ -222,6 +227,13 @@ class Index(Node):
         self.base, self.index, self.pos = base, index, pos
 
 
+class Range(Node):
+    """`base[lo..hi]`; lo and hi may be None. The checker makes base a slice."""
+
+    def __init__(self, base, lo, hi, pos):
+        self.base, self.lo, self.hi, self.pos = base, lo, hi, pos
+
+
 class Item(Node):
     def __init__(self, name, expr, pos):
         self.name, self.expr, self.pos = name, expr, pos
@@ -267,6 +279,13 @@ class Builtin(Node):
 
 class Coerce(Node):
     """Inserted by the checker: implicit T -> ?T conversion."""
+
+    def __init__(self, expr, ty, pos):
+        self.expr, self.ty, self.pos = expr, ty, pos
+
+
+class ToSlice(Node):
+    """Inserted by the checker: implicit *[N]T -> []T conversion."""
 
     def __init__(self, expr, ty, pos):
         self.expr, self.ty, self.pos = expr, ty, pos

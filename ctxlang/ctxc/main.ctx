@@ -12,14 +12,14 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let roundtrip = "roundtrip"
     let c = "c"
     let mut to_c = false
-    if args.len == 3 and map::eq_bytes{ a = slice::get{ s = args, i = 0 }, b = slice::of(u8){ a = &c } } {
+    if args.len == 3 and map::eq_bytes{ a = args[0], b = c[..] } {
         to_c = true
-    } else if args.len != 2 or not map::eq_bytes{ a = slice::get{ s = args, i = 0 }, b = slice::of(u8){ a = &roundtrip } } {
+    } else if args.len != 2 or not map::eq_bytes{ a = args[0], b = roundtrip[..] } {
         let usage = "usage: ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c"
         io::eprintln{ &io, s = ascii::of{ chars = &usage } }
         return 2
     }
-    let path = slice::get{ s = args, i = 1 }
+    let path = args[1]
 
     // The file, its IR and the output all live in one arena over pages sized to the input.
     let ok{ value = size } = fs::size{ &fs, path } else {
@@ -44,7 +44,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     }
 
     if to_c {
-        let out = slice::get{ s = args, i = 2 }
+        let out = args[2]
         let code = emit::program{ heap = &heap, p = prog }
         let ok = fs::write_all{ &fs, path = out, bytes = code } else {
             cannot{ &io, path = out, what = "cannot write" }
@@ -59,8 +59,8 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
 }
 
 // "PATH: what"
-fn cannot(A) { mut io: Io, path: slice::Slice(u8), what: A } {
-    let msg = ascii::of{ chars = &what }
+fn cannot(A) { mut io: Io, path: []u8, what: A } {
+    let msg = ascii::of{ chars = @slice(@cast(*u8, &what), @size_of(A)) }
     io::write{ &io, to = io::Stream::err, bytes = path }
     let sep = ": "
     io::eprint{ &io, s = ascii::of{ chars = &sep } }
@@ -68,12 +68,12 @@ fn cannot(A) { mut io: Io, path: slice::Slice(u8), what: A } {
 }
 
 // "PATH:LINE:COL: error: PROBLEM" for a malformed IR file.
-fn report { mut io: Io, path: slice::Slice(u8), text: slice::Slice(u8), at: usize, problem: ir_read::Problem } {
+fn report { mut io: Io, path: []u8, text: []u8, at: usize, problem: ir_read::Problem } {
     let mut line: u64 = 1
     let mut col: u64 = 1
     let mut i: usize = 0
     while i < at and i < text.len {
-        if slice::get{ s = text, i } == '\n' {
+        if text[i] == '\n' {
             line = line + 1
             col = 1
         } else {
@@ -82,7 +82,7 @@ fn report { mut io: Io, path: slice::Slice(u8), text: slice::Slice(u8), at: usiz
         i = i + 1
     }
     let mut buf: [256]u8
-    let mut heap = arena::new{ buf = slice::of(u8){ a = &buf } }
+    let mut heap = arena::new{ buf = buf[..] }
     let mut b = ascii::builder{ realloc = arena::alloc }
     _ = ascii::push_char{ &b, &heap, c = ':' }
     _ = ascii::push_u64{ &b, &heap, n = line }

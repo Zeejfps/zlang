@@ -26,7 +26,7 @@ namespace ir_read {
         text:     ir::Bytes,
         pos:      usize,
         heap:     *mut ir::Heap,
-        types:    slice::Slice(ir::Type),   // once they are read: a float's type says if it is f32
+        types:    []ir::Type,   // once they are read: a float's type says if it is f32
         failed:   bool,
         error:    Problem,
         error_at: usize,
@@ -132,7 +132,7 @@ namespace ir_read {
     }
 
     // [(NAME T OFFSET)...]
-    fn fields { mut r: Reader } -> slice::Slice(ir::Field) {
+    fn fields { mut r: Reader } -> []ir::Field {
         expect{ &r, c = '[' }
         let mut xs = list::new(ir::Field){ realloc = arena::alloc }
         while more{ &r, close = ']' } {
@@ -148,13 +148,13 @@ namespace ir_read {
     }
 
     // [(NAME _) or (NAME [FIELD...])...]
-    fn variants { mut r: Reader } -> slice::Slice(ir::Variant) {
+    fn variants { mut r: Reader } -> []ir::Variant {
         expect{ &r, c = '[' }
         let mut xs = list::new(ir::Variant){ realloc = arena::alloc }
         while more{ &r, close = ']' } {
             expect{ &r, c = '(' }
             let name = string{ &r }
-            let fs: ?slice::Slice(ir::Field) = if none{ &r } { null } else { fields{ &r } }
+            let fs: ?[]ir::Field = if none{ &r } { null } else { fields{ &r } }
             expect{ &r, c = ')' }
             add{ &r, xs = &xs, item = ir::Variant{ name, fields = fs } }
         }
@@ -163,7 +163,7 @@ namespace ir_read {
     }
 
     // [(NAME MUT T)...]
-    fn params { mut r: Reader } -> slice::Slice(ir::Param) {
+    fn params { mut r: Reader } -> []ir::Param {
         expect{ &r, c = '[' }
         let mut xs = list::new(ir::Param){ realloc = arena::alloc }
         while more{ &r, close = ']' } {
@@ -275,7 +275,7 @@ namespace ir_read {
     }
 
     // [([PAT...]|_ BLOCK)...]
-    fn arms { mut r: Reader } -> slice::Slice(ir::Arm) {
+    fn arms { mut r: Reader } -> []ir::Arm {
         expect{ &r, c = '[' }
         let mut xs = list::new(ir::Arm){ realloc = arena::alloc }
         while more{ &r, close = ']' } {
@@ -290,7 +290,7 @@ namespace ir_read {
     }
 
     // [(VARIANT [BIND...])...]
-    fn pat_list { mut r: Reader } -> slice::Slice(ir::Pat) {
+    fn pat_list { mut r: Reader } -> []ir::Pat {
         expect{ &r, c = '[' }
         let mut xs = list::new(ir::Pat){ realloc = arena::alloc }
         while more{ &r, close = ']' } {
@@ -305,7 +305,7 @@ namespace ir_read {
     }
 
     // [(SLOT FIELD BYREF)...]
-    fn bind_list { mut r: Reader } -> slice::Slice(ir::Bind) {
+    fn bind_list { mut r: Reader } -> []ir::Bind {
         expect{ &r, c = '[' }
         let mut xs = list::new(ir::Bind){ realloc = arena::alloc }
         while more{ &r, close = ']' } {
@@ -384,6 +384,15 @@ namespace ir_read {
             let base = sub{ &r }
             let i = sub{ &r }
             k = ir::ExprKind::index{ base, i, pos = pos{ &r } }
+        } else if is{ s = tag, lit = "sindex" } {
+            let base = sub{ &r }
+            let i = sub{ &r }
+            k = ir::ExprKind::sindex{ base, i, pos = pos{ &r } }
+        } else if is{ s = tag, lit = "ssub" } {
+            let base = sub{ &r }
+            let lo = sub{ &r }
+            let hi: ?*ir::Expr = if none{ &r } { null } else { sub{ &r } }
+            k = ir::ExprKind::ssub{ base, lo, hi, pos = pos{ &r } }
         } else if is{ s = tag, lit = "null" } {
             k = ir::ExprKind::nil
         } else if is{ s = tag, lit = "bool" } {
@@ -469,7 +478,7 @@ namespace ir_read {
     }
 
     // [E...]
-    fn exprs { mut r: Reader } -> slice::Slice(ir::Expr) {
+    fn exprs { mut r: Reader } -> []ir::Expr {
         expect{ &r, c = '[' }
         let mut xs = list::new(ir::Expr){ realloc = arena::alloc }
         while more{ &r, close = ']' } {
@@ -480,7 +489,7 @@ namespace ir_read {
     }
 
     // [(INDEX E)...]
-    fn args { mut r: Reader } -> slice::Slice(ir::Arg) {
+    fn args { mut r: Reader } -> []ir::Arg {
         expect{ &r, c = '[' }
         let mut xs = list::new(ir::Arg){ realloc = arena::alloc }
         while more{ &r, close = ']' } {
@@ -534,11 +543,11 @@ namespace ir_read {
     fn float { mut r: Reader, ty: ir::TypeId } -> f64 {
         skip_space{ &r }
         let start = r.pos
-        while r.pos < r.text.len and not ends_token{ c = slice::get{ s = r.text, i = r.pos } } { r.pos = r.pos + 1 }
-        let text = ascii::from{ bytes = slice::sub{ s = r.text, lo = start, hi = r.pos } }
+        while r.pos < r.text.len and not ends_token{ c = r.text[r.pos] } { r.pos = r.pos + 1 }
+        let text = ascii::from{ bytes = r.text[start..r.pos] }
         let mut is32 = false
         if ty < r.types.len {
-            let prim{ p } = slice::get{ s = r.types, i = ty } else { return 0.0 }
+            let prim{ p } = r.types[ty] else { return 0.0 }
             is32 = match p { f32 => { true } else => { false } }
         }
         if is32 {
@@ -564,7 +573,7 @@ namespace ir_read {
     }
 
     // [STR...]
-    fn strings { mut r: Reader } -> slice::Slice(ir::Bytes) {
+    fn strings { mut r: Reader } -> []ir::Bytes {
         expect{ &r, c = '[' }
         let mut xs = list::new(ir::Bytes){ realloc = arena::alloc }
         while more{ &r, close = ']' } {
@@ -580,33 +589,33 @@ namespace ir_read {
         let start = r.pos
         let mut escaped = false
         while r.pos < r.text.len {
-            let c = slice::get{ s = r.text, i = r.pos }
+            let c = r.text[r.pos]
             if c == '"' { break }
             if c == '\\' { escaped = true }
             r.pos = r.pos + 1
         }
-        let raw = slice::sub{ s = r.text, lo = start, hi = r.pos }
+        let raw = r.text[start..r.pos]
         expect{ &r, c = '"' }
         if not escaped or r.failed { return raw }
 
         let mut out = list::new(u8){ realloc = arena::alloc }
         let mut i: usize = 0
         while i < raw.len {
-            let c = slice::get{ s = raw, i }
+            let c = raw[i]
             if c != '\\' {
                 add{ &r, xs = &out, item = c }
                 i = i + 1
                 continue
             }
-            if i + 3 >= raw.len or slice::get{ s = raw, i = i + 1 } != 'x' {
+            if i + 3 >= raw.len or raw[i + 1] != 'x' {
                 fail{ &r, problem = Problem::bad_escape }
                 return raw
             }
-            let some{ value = hi } = hex{ c = slice::get{ s = raw, i = i + 2 } } else {
+            let some{ value = hi } = hex{ c = raw[i + 2] } else {
                 fail{ &r, problem = Problem::bad_escape }
                 return raw
             }
-            let some{ value = lo } = hex{ c = slice::get{ s = raw, i = i + 3 } } else {
+            let some{ value = lo } = hex{ c = raw[i + 3] } else {
                 fail{ &r, problem = Problem::bad_escape }
                 return raw
             }
@@ -628,7 +637,7 @@ namespace ir_read {
         let start = r.pos
         let mut v: u64 = 0
         while r.pos < r.text.len {
-            let c = slice::get{ s = r.text, i = r.pos }
+            let c = r.text[r.pos]
             if c < '0' or c > '9' { break }
             let d: u64 = c - '0'
             if v > (18446744073709551615 - d) / 10 {
@@ -668,8 +677,8 @@ namespace ir_read {
     // Consumes `_` if it comes next, as a whole token.
     fn none { mut r: Reader } -> bool {
         skip_space{ &r }
-        if r.failed or r.pos >= r.text.len or slice::get{ s = r.text, i = r.pos } != '_' { return false }
-        if r.pos + 1 < r.text.len and is_ident{ c = slice::get{ s = r.text, i = r.pos + 1 } } { return false }
+        if r.failed or r.pos >= r.text.len or r.text[r.pos] != '_' { return false }
+        if r.pos + 1 < r.text.len and is_ident{ c = r.text[r.pos + 1] } { return false }
         r.pos = r.pos + 1
         return true
     }
@@ -677,22 +686,22 @@ namespace ir_read {
     fn sym { mut r: Reader } -> ir::Bytes {
         skip_space{ &r }
         let start = r.pos
-        while r.pos < r.text.len and is_ident{ c = slice::get{ s = r.text, i = r.pos } } { r.pos = r.pos + 1 }
+        while r.pos < r.text.len and is_ident{ c = r.text[r.pos] } { r.pos = r.pos + 1 }
         if r.pos == start { fail{ &r, problem = Problem::expected_symbol } }
-        return slice::sub{ s = r.text, lo = start, hi = r.pos }
+        return r.text[start..r.pos]
     }
 
     // A symbol that must be w.
     fn word(A) { mut r: Reader, w: A } {
         let s = sym{ &r }
-        if not r.failed and not map::eq_bytes{ a = s, b = slice::of(u8){ a = &w } } {
+        if not r.failed and not map::eq_bytes{ a = s, b = @slice(@cast(*u8, &w), @size_of(A)) } {
             fail{ &r, problem = Problem::unknown_tag }
         }
     }
 
     // Does symbol s spell the string literal `lit`?
     fn is(A) { s: ir::Bytes, lit: A } -> bool {
-        return map::eq_bytes{ a = s, b = slice::of(u8){ a = &lit } }
+        return map::eq_bytes{ a = s, b = @slice(@cast(*u8, &lit), @size_of(A)) }
     }
 
     fn is_ident { c: u8 } -> bool {
@@ -705,7 +714,7 @@ namespace ir_read {
 
     fn skip_space { mut r: Reader } {
         while r.pos < r.text.len {
-            let c = slice::get{ s = r.text, i = r.pos }
+            let c = r.text[r.pos]
             if c != ' ' and c != '\n' and c != '\r' and c != '\t' { break }
             r.pos = r.pos + 1
         }
@@ -715,13 +724,13 @@ namespace ir_read {
     fn more { mut r: Reader, close: u8 } -> bool {
         skip_space{ &r }
         if r.failed or r.pos >= r.text.len { return false }
-        return slice::get{ s = r.text, i = r.pos } != close
+        return r.text[r.pos] != close
     }
 
     // Consumes c if it comes next.
     fn eat { mut r: Reader, c: u8 } -> bool {
         skip_space{ &r }
-        if r.failed or r.pos >= r.text.len or slice::get{ s = r.text, i = r.pos } != c { return false }
+        if r.failed or r.pos >= r.text.len or r.text[r.pos] != c { return false }
         r.pos = r.pos + 1
         return true
     }

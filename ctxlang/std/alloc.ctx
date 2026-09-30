@@ -1,7 +1,7 @@
 // std: alloc. The allocator interface. Allocators are plain functions over caller-held state `S`.
 
 namespace alloc {
-    type Bytes = slice::Slice(u8)
+    type Bytes = []mut u8
 
     // One function allocates, resizes and frees, so alloc and free can't be mismatched.
     //   mem.len == 0  -> allocate `new` bytes
@@ -12,7 +12,7 @@ namespace alloc {
     type Fn(S) = fn{ mut heap: S, mem: Bytes, new: usize, align: usize } -> ?Bytes
 
     // Typed wrapper: resizes `mem` to hold `count` items of T, with T's alignment.
-    fn resize(T, S) { realloc: Fn(S), mut heap: S, mem: slice::Slice(T), count: usize } -> ?slice::Slice(T) {
+    fn resize(T, S) { realloc: Fn(S), mut heap: S, mem: []mut T, count: usize } -> ?[]mut T {
         let bytes = realloc{
             &heap,
             mem = slice::cast(T, u8){ s = mem },
@@ -31,13 +31,13 @@ namespace alloc {
     fn new(T, S) { realloc: Fn(S), mut heap: S, value: T } -> ?*mut T {
         if @size_of(T) == 0 { @panic("alloc::new: T is zero-sized") }
         let some{ value = one } = resize(T, S){ realloc, &heap, mem = slice::empty(T){}, count = 1 } else { return null }
-        let p = slice::at{ s = one, i = 0 }
+        let p = &one[0]
         p.* = value
         return p
     }
 
     // Frees a T from `new`.
     fn free(T, S) { realloc: Fn(S), mut heap: S, p: *mut T } {
-        _ = resize(T, S){ realloc, &heap, mem = slice::from{ ptr = p, len = 1 }, count = 0 }
+        _ = resize(T, S){ realloc, &heap, mem = @slice(p, 1), count = 0 }
     }
 }

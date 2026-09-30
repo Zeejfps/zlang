@@ -23,7 +23,8 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
 9. **Integer literals default to i32.** `let mut i = 0` compared with a `usize` length is an error;
    many `: usize` annotations follow. Infer from use.
 10. **No methods** (§16 Q4). `slice::get{ s = xs, i }` and `list::push{ list = &xs, heap, item }`
-    everywhere; `xs.get{ i }` would shrink code a lot.
+    everywhere; `xs.get{ i }` would shrink code a lot. *Partly:* slices are built in (spec §12), so
+    `slice::get{ s = xs, i }` is now `xs[i]`; `list::` and `map::` calls remain.
 11. **Float-to-float `@as` reads as fallible.** It never panics, but looks like it might. A
     separate conversion, or saying so in §13.
 12. **No const string or byte tables** in namespaces without a local (keywords, names). Ties to 1.
@@ -31,3 +32,4 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
     result must be used or dropped with `_ = e` (spec §11.6).
 14. **ctxi call overhead** (implementation, not language): `slice::get`/`at` made about a million
     calls in one profile. Inlining trivial std accessors in ctxi would speed development.
+    *Partly:* slice indexing is built in now, so those calls are gone.

@@ -12,7 +12,7 @@
 //   }
 //
 // Natives (provided by the runtime):
-//   sys_pages { mut mem: Mem, size: usize } -> slice::Slice(u8)
+//   sys_pages { mut mem: Mem, size: usize } -> []u8
 //       `size` rounded up to a multiple of the page size, zeroed and page-aligned. Empty if
 //       `size` is 0 or there isn't enough memory.
 

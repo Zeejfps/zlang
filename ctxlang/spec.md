@@ -257,7 +257,7 @@ Precedence, tightest first:
 
 | Level | Operators | Notes |
 |---|---|---|
-| postfix | `.f` `.*` `[i]` `{ ... }` `::x` `(G)` | left to right |
+| postfix | `.f` `.*` `[i]` `[lo..hi]` `{ ... }` `::x` `(G)` | left to right |
 | prefix | `&` `-` `not` | |
 | multiplicative | `*` `/` `%` | left to right |
 | additive | `+` `-` | left to right |
@@ -289,9 +289,10 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 | `f32` | `f64` |
 
 1. Widening applies wherever an expression of type `B` is expected: a read-only call argument, a struct or union field, an assignment, a `let` with a type, a `return`, and the `T` of an implicit `T` to `?T` conversion. It also applies between the operands of a binary operator (rules 1 and 3 above), but not to a shift count.
-2. A `*mut T` converts implicitly to `*T`, and a `?*mut T` to `?*T`, wherever rule 1 applies and between the operands of `==` and `!=`.
-3. Nothing else converts implicitly. In particular integers don't widen to floats, `usize` doesn't widen to a signed type, `*T` doesn't convert to `*mut T`, and `?A`, `*A` and `[N]A` don't convert to `?B`, `*B` and `[N]B`. A `mut` field's argument is a `*mut` pointer, so its type must match exactly.
-4. `usize` is at least 32 and at most 64 bits wide on every target, which is what makes the `usize` rows lossless.
+2. A `*mut T` converts implicitly to `*T`, a `[]mut T` to `[]T`, and a `?*mut T` or `?[]mut T` to `?*T` or `?[]T`, wherever rule 1 applies and between the operands of `==` and `!=`.
+3. Wherever rule 1 applies, a `*[N]T` converts implicitly to a `[]T`, and a `*mut [N]T` to a `[]mut T` or `[]T`: the slice of the whole array.
+4. Nothing else converts implicitly. In particular integers don't widen to floats, `usize` doesn't widen to a signed type, `*T` doesn't convert to `*mut T` nor `[]T` to `[]mut T`, and `?A`, `*A` and `[N]A` don't convert to `?B`, `*B` and `[N]B`. A `mut` field's argument is a `*mut` pointer, so its type must match exactly.
+5. `usize` is at least 32 and at most 64 bits wide on every target, which is what makes the `usize` rows lossless.
 
 ### Literals
 
@@ -300,7 +301,7 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 3. `true` and `false` are the `bool` values. `null` is described in §8.
 4. `[a, b, c]` is a `[3]T` array. Every element has type `T`.
 5. `[x; N]` is a `[N]T` array with every element a copy of `x`. `N` is a compile-time constant.
-6. A string literal `"..."` is a `[N]u8` array value holding its `N` bytes, with no terminator. Like any array it is a value, not a place: bind it to a local to take its address. `ascii::of` or `utf8::of` views it as text (§17).
+6. A string literal `"..."` is a `[N]u8` array value holding its `N` bytes, with no terminator. Like any array it is a value, not a place: bind it to a local to take its address, which converts to a `[]u8`. `ascii::of` or `utf8::of` views it as text (§17).
 7. A character literal `'a'` is an integer literal whose value is the character's byte.
 8. String and character literals hold ASCII characters only. Escapes: `\n`, `\t`, `\r`, `\0`, `\\`, `\"`, `\'`, and `\xNN` for any byte.
 
@@ -312,9 +313,9 @@ root  := local | context field | match binding | expr.*
 step  := .field | [index]
 ```
 
-1. For a pointer `q`, `q.f` and `q[i]` are places rooted at a deref (§12).
+1. For a pointer `q`, `q.f` and `q[i]` are places rooted at a deref (§12). So is `s[i]` for a slice `s`.
 2. A place **goes through a deref** if its root is `expr.*`.
-3. A place is **mutable** if its root is a `let mut` local, a `mut` context field, or a `&f` match binding through a `*mut` (§8), or if it goes through a deref of a `*mut` pointer: `q.*`, `q.f` or `q[i]` for `q: *mut T`.
+3. A place is **mutable** if its root is a `let mut` local, a `mut` context field, or a `&f` match binding through a `*mut` (§8), or if it goes through a deref of a `*mut` pointer or a `[]mut` slice: `q.*`, `q.f` or `q[i]` for `q: *mut T`, and `s[i]` for `s: []mut T`.
 4. Every other place is read-only.
 
 ### Initialization
@@ -329,6 +330,7 @@ step  := .field | [index]
 | `bool` | `false` |
 | `?T` | `null` |
 | `[N]T` | every element zero, if `T` has a zero value |
+| `[]T`, `[]mut T` | the empty slice |
 | struct | every field zero, if every field type has a zero value |
 | `*T`, `*mut T`, user-defined unions, `fn{C} -> R`, `&fn{C} -> R`, capability types | none |
 
@@ -342,6 +344,8 @@ step  := .field | [index]
 | `*T` | read-only pointer to a `T`. Never null. |
 | `*mut T` | pointer to a `T` that can be written through. Never null. |
 | `[N]T` | fixed array. `N` is a compile-time constant. |
+| `[]T` | read-only slice: a pointer to `T`s and a length. |
+| `[]mut T` | slice whose elements can be written. |
 | `?T` | optional (§8). `?*T` is a nullable pointer. |
 | `fn{C} -> R` | unbound function type (§5) |
 | `&fn{C} -> R` | bound function type (§5, §6) |
@@ -363,7 +367,16 @@ step  := .field | [index]
 1. `a[i]` on an array is bounds-checked. An out-of-bounds index panics.
 2. `a.len` is `N`, of type `usize`.
 
-Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?*mut T, len: usize }` and bounds-checked functions on it (§17).
+### Slices
+
+A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are built in because they are a shape of memory, like arrays and pointers; what to do with memory (allocating, growing, hashing, text) is left to the standard library.
+
+1. `s.len` is the number of elements, a `usize`. `s.ptr` is a `*T` for a `[]T` and a `*mut T` for a `[]mut T`, pointing to the first element. Neither is a place. The `ptr` of an empty slice is unspecified and must not be dereferenced.
+2. `s[i]` is the element at `i`, bounds-checked: `i >= s.len` panics. It is a place through a deref (§11), mutable only for a `[]mut T`. `s.ptr[i]` is the same element without the check.
+3. `s[lo..hi]` is the slice of elements `lo` up to but not including `hi`, of `s`'s type. `lo` defaults to 0 and `hi` to `s.len`, so `s[..]` is `s`. `lo > hi` or `hi > s.len` panics. `lo` and `hi` are `usize`.
+4. `a[lo..hi]` on an array place `a` means `(&a)[lo..hi]`, and on a `*[N]T` or `*mut [N]T` it slices the array it points to. The result is `[]mut T` if the place is mutable (§11), `[]T` otherwise.
+5. `@slice(p, n)` makes the slice of `n` elements starting at pointer `p` (§13). It isn't checked.
+6. Slices have no built-in equality.
 
 ## 13. Builtins
 
@@ -378,7 +391,8 @@ Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?
 | `@align_of(T)` | `usize` | The required alignment of `T`. A power of two. |
 | `@as(T, x)` | `T` | Converts number `x` to numeric type `T`. Panics if the value isn't representable in `T`. Float to integer rounds toward zero and panics on NaN. Integer to float rounds to nearest. |
 | `@trunc(T, x)` | `T` | Converts integer `x` to integer type `T`, keeping the low bits. |
-| `@cast(*U, q)`, `@cast(*mut U, q)` | the target | Reinterprets pointer `q`. Unchecked, including its mutability for now: casting a `*T` to a `*mut U` is allowed. |
+| `@cast(*U, q)`, `@cast(*mut U, q)` | the target | Reinterprets pointer `q`. Unchecked, except that a `*T` can't be cast to a `*mut U`. |
+| `@slice(p, n)` | `[]T`, or `[]mut T` for a `*mut T` | The slice of `n: usize` elements starting at pointer `p: *T`. Unchecked. |
 | `@addr(q)` | `usize` | The address of pointer `q` as an integer. |
 | `@wrap_add(a, b)`, `@wrap_sub(a, b)`, `@wrap_mul(a, b)` | type of `a` | Integer arithmetic that wraps instead of panicking. `a` and `b` have the same integer type. |
 | `@panic()`, `@panic("reason")` | none | Stops the program. Never returns. It ends a path for return and assignment checks. The reason must be a string literal. The runtime reports it with the panic's location, so no capability is needed. |
@@ -387,7 +401,7 @@ Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?
 
 1. There is no static memory. `const NAME: T = e` declares a constant. `e` must be computable at compile time: literals, other consts, operators, `@size_of`, `@align_of`, and struct, union and array literals of these. `const` data is immutable and its location is unobservable: a const is a value, not a place, so `&C` is an error.
 2. Locals and context fields live on the stack.
-3. Memory not on the stack comes from `mem::pages`, which needs the `Mem` capability (§15), or from an allocator function over memory the caller provides. It is accessed only through pointers.
+3. Memory not on the stack comes from `mem::pages`, which needs the `Mem` capability (§15), or from an allocator function over memory the caller provides. It is accessed only through pointers and slices.
    - Allocators are byte-level: `alloc::Fn(S) = fn{ mut heap: S, mem: Bytes, new: usize, align: usize } -> ?Bytes`. The result must be aligned to `align`.
    - Typed code calls the standard library's `alloc::resize(T, S)`, which passes `count * @size_of(T)` and `@align_of(T)` and casts the result, or `alloc::new(T, S)` for one initialized `T`.
    - Pages are never freed. They live until the program ends.
@@ -404,7 +418,8 @@ The compiler checks, within each function, that the address of a local doesn't o
 2. A value is **derived from** `L` if it is a stack pointer to `L`, or is produced from a value derived from `L` by:
    - `let` or assignment
    - a struct, union or array literal
-   - pointer arithmetic or `@cast`
+   - pointer arithmetic, `@cast` or `@slice`
+   - converting a `*[N]T` to a slice, slicing (`s[lo..hi]`), or `s.ptr`
    - a call, whose result is derived from everything its read-only arguments are derived from. Arguments passed to `mut` fields don't count.
 
    Only values whose type contains a pointer carry this. `&fn` values follow §6 instead.
@@ -424,17 +439,17 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 1. `fn main { ... }` is the entry point.
 2. Every field of `main` must have a **capability type**, except a read-only field `args`. The runtime supplies them. A program declares only the ones it uses.
 3. User code can't construct capability types. Current capability types: `Io` (console, §17 `io`), `Fs` (files, §17 `fs`) and `Mem` (memory beyond the stack, §17 `mem`).
-4. `args: Args` holds the command-line arguments that follow the program, as bytes. `Args` is a top-level std alias for `slice::Slice(slice::Slice(u8))` (§17), so either spelling is accepted.
+4. `args: Args` holds the command-line arguments that follow the program, as bytes. `Args` is a top-level std alias for `[][]u8` (§17), so either spelling is accepted.
 5. `main` may return `i32`: the program's exit code. Without a return type it exits with 0.
 
 ## 16. Open questions
 
 1. **Dangling pointers across calls:** the escape check (§14) is intraprocedural. Would inferred per-function summaries be worth it?
-2. ~~**Read-only pointers.**~~ Settled: `*T` is read-only and `*mut T` writable (§12). Open: should `@cast` refuse to drop read-only-ness?
+2. ~~**Read-only pointers.**~~ Settled: `*T` is read-only and `*mut T` writable (§12), and `@cast` can't drop read-only-ness.
 3. **Allocator instance mismatch:** passing a different `S` instance of the same type isn't caught. Brands would close this.
 4. **Method sugar:** should `x.f{...}` mean `f{ first = &x, ... }`?
 5. **File = namespace:** should each file implicitly be a namespace?
-6. **Imports:** some form of `use slice::Slice` to shorten long paths?
+6. **Imports:** some form of `use list::List` to shorten long paths?
 7. **Variant shorthand:** should `.variant{...}` be allowed when the expected type is known?
 8. **Untagged unions:** needed for C interop? Or `@cast` only?
 9. **Large stack frames:** should the compiler error or warn above a size limit? (Page allocation is now the `Mem` capability, §15.) Should pages be freeable?
@@ -449,17 +464,17 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 
 | Namespace | Contents |
 |---|---|
-| `slice` | `Slice(T)`, `from`, `of` (view an array), `empty`, `is_empty`, `at`, `get`, `set`, `sub`, `cast`, `copy`, `fill` |
-| `Args` | Declared at the top level: `type Args = slice::Slice(slice::Slice(u8))`, the type of `main`'s `args` (§15). |
+| `slice` | Helpers for built-in slices (§12): `empty`, `cast`, `copy`, `fill` |
+| `Args` | Declared at the top level: `type Args = [][]u8`, the type of `main`'s `args` (§15). |
 | `Result(T, E)` | Declared at the top level: `union Result(T, E) { ok{ value: T }, err{ error: E } }`. Namespace `result`: `is_ok`, `is_err`, `value`, `error`, `value_or`, `unwrap`, `ok_or`. |
 | `fs` | `File`, `Mode` (`read`, `write`, `append`, `create`), `Error`; `open`, `read`, `write`, `close`, `size`, `remove`, and `read_all` (into memory from an allocator) and `write_all`. Every function takes `mut fs: Fs` and reports failure as a `Result(T, fs::Error)` or `?fs::Error`. Natives: `sys_open`, `sys_read`, `sys_write`, `sys_close`, `sys_size`, `sys_remove`. |
-| `alloc` | `Bytes`, the allocator type `Fn(S)`, typed `resize(T, S)`, and `new(T, S)` and `free(T, S)` for one `T`: `new` returns a `?*mut T` holding the given `value` |
+| `alloc` | `Bytes` (`[]mut u8`), the allocator type `Fn(S)`, typed `resize(T, S)`, and `new(T, S)` and `free(T, S)` for one `T`: `new` returns a `?*mut T` holding the given `value` |
 | `mem` | `pages`: at least `size` bytes of zeroed, page-aligned memory, as a `?alloc::Bytes`. Takes `mut mem: Mem`. Native: `sys_pages`. |
 | `arena` | `Arena`, a bump allocator: `new`, `alloc` (an `alloc::Fn(Arena)`), `reset`, `remaining` |
 | `list` | `List(T, S)`: `new`, `reserve`, `push`, `pop`, `get`, `set`, `at`, `items`, `clear`, `each`, `free` |
 | `map` | `Map(K, V, S)`, a hash map that holds its key type's hash and equality functions: `new`, `len`, `has`, `get`, `at`, `put`, `remove`, `clear`, `free`, `next`, `each`. `hash_*` and `eq_*` for `i32`, `i64`, `u32`, `u64`, `usize` and byte slices; `hash_string` for `ascii::String`, with `ascii::eq`; `hash_utf8` for `utf8::String`, with `utf8::eq`. |
-| `ascii` | `String { bytes: slice::Slice(u8) }`, a non-owning view of ASCII text: `from`, `of`, `empty`, `len`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, character tests and case, `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes, with `push`, `push_char`, `push_i64`, `push_u64`, `push_f64`, `push_f32`. Natives: `f64_digits`, `f32_digits`, `f64_parse`, `f32_parse`. |
-| `utf8` | `String { bytes: slice::Slice(u8) }`, a non-owning view of valid UTF-8 text. Offsets are in bytes, and an offset inside a character panics; a character is a `u32` code point. `from` (checks the bytes, returning `Result(String, Invalid)` with the offset of the first bad byte), `of`, `from_ascii`, `to_ascii`, `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`. Character tests and case (ASCII only). `Cursor` and `Builder(S)` as in `ascii`, by character. |
+| `ascii` | `String { bytes: []u8 }`, a non-owning view of ASCII text: `from`, `of`, `empty`, `len`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, character tests and case, `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes, with `push`, `push_char`, `push_i64`, `push_u64`, `push_f64`, `push_f32`. Natives: `f64_digits`, `f32_digits`, `f64_parse`, `f32_parse`. |
+| `utf8` | `String { bytes: []u8 }`, a non-owning view of valid UTF-8 text. Offsets are in bytes, and an offset inside a character panics; a character is a `u32` code point. `from` (checks the bytes, returning `Result(String, Invalid)` with the offset of the first bad byte), `of`, `from_ascii`, `to_ascii`, `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`. Character tests and case (ASCII only). `Cursor` and `Builder(S)` as in `ascii`, by character. |
 | `io` | `Stream`; `print`, `println`, `eprint`, `eprintln`, their `_utf8` forms for `utf8::String`, `newline`, `put_char`, `print_i64`, `print_u64`, `print_f64`, `print_f32`, `print_bool` and their `println_` forms (smaller number types widen to these), `read_line`. Natives: `write`, `read`. |
 
 ```

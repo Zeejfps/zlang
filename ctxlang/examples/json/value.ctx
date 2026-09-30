@@ -10,8 +10,8 @@ namespace json {
         boolean{ value: bool },
         number{ value: f64 },
         string{ value: utf8::String },
-        array{ items: slice::Slice(Value) },
-        object{ members: slice::Slice(Member) },
+        array{ items: []Value },
+        object{ members: []Member },
     }
 
     // Members keep the order they were written in. Duplicate keys are kept too; `get` finds the
@@ -24,7 +24,7 @@ namespace json {
         let mut i = members.len
         while i > 0 {
             i = i - 1
-            let m = slice::get{ s = members, i }
+            let m = members[i]
             if utf8::eq{ a = m.key, b = key } { return m.value }
         }
         return null
@@ -33,7 +33,7 @@ namespace json {
     // Item i of an array, or null if v isn't an array or is too short.
     fn index { v: Value, i: usize } -> ?Value {
         return match v {
-            array{ items } => { if i < items.len { slice::get{ s = items, i } } else { null } }
+            array{ items } => { if i < items.len { items[i] } else { null } }
             else           => { null }
         }
     }

@@ -199,41 +199,40 @@ MAX_MEMORY = 1 << 32     # total bytes mem::pages hands out, like a 32-bit addre
 
 def _pages(rt, nf, args):
     size = align_up(args['size'], PAGE)
-    t = nf.ret_t
     if size == 0 or rt.end + size > MAX_MEMORY:
-        return rt.make_slice(t, 0, 0)
+        return rt.make_slice(0, 0)
     addr = rt.grow(size)
-    return rt.make_slice(t, addr, size if addr else 0)
+    return rt.make_slice(addr, size if addr else 0)
 
 
 def natives():
     return [
         NativeFn(('io',), 'write',
-                 [('io', True, 'Io'), ('to', False, 'Stream'), ('bytes', False, 'slice::Slice(u8)')],
+                 [('io', True, 'Io'), ('to', False, 'Stream'), ('bytes', False, '[]u8')],
                  None, _write),
         NativeFn(('io',), 'read',
-                 [('io', True, 'Io'), ('into', False, 'slice::Slice(u8)')], 'usize', _read),
+                 [('io', True, 'Io'), ('into', False, '[]mut u8')], 'usize', _read),
         NativeFn(('ascii',), 'f64_digits',
-                 [('n', False, 'f64'), ('into', False, 'slice::Slice(u8)')], 'usize', _digits(repr)),
+                 [('n', False, 'f64'), ('into', False, '[]mut u8')], 'usize', _digits(repr)),
         NativeFn(('ascii',), 'f32_digits',
-                 [('n', False, 'f32'), ('into', False, 'slice::Slice(u8)')], 'usize',
+                 [('n', False, 'f32'), ('into', False, '[]mut u8')], 'usize',
                  _digits(_shortest_f32)),
         NativeFn(('fs',), 'sys_open',
-                 [('fs', True, 'Fs'), ('path', False, 'slice::Slice(u8)'), ('mode', False, 'u8')],
+                 [('fs', True, 'Fs'), ('path', False, '[]u8'), ('mode', False, 'u8')],
                  'i64', _open),
         NativeFn(('fs',), 'sys_read',
-                 [('fs', True, 'Fs'), ('file', False, 'u32'), ('into', False, 'slice::Slice(u8)')],
+                 [('fs', True, 'Fs'), ('file', False, 'u32'), ('into', False, '[]mut u8')],
                  'i64', _fread),
         NativeFn(('fs',), 'sys_write',
-                 [('fs', True, 'Fs'), ('file', False, 'u32'), ('bytes', False, 'slice::Slice(u8)')],
+                 [('fs', True, 'Fs'), ('file', False, 'u32'), ('bytes', False, '[]u8')],
                  'i64', _fwrite),
         NativeFn(('fs',), 'sys_close', [('fs', True, 'Fs'), ('file', False, 'u32')], 'i64', _close),
         NativeFn(('fs',), 'sys_size',
-                 [('fs', True, 'Fs'), ('path', False, 'slice::Slice(u8)')], 'i64', _size),
+                 [('fs', True, 'Fs'), ('path', False, '[]u8')], 'i64', _size),
         NativeFn(('fs',), 'sys_remove',
-                 [('fs', True, 'Fs'), ('path', False, 'slice::Slice(u8)')], 'i64', _remove),
+                 [('fs', True, 'Fs'), ('path', False, '[]u8')], 'i64', _remove),
         NativeFn(('mem',), 'sys_pages',
-                 [('mem', True, 'Mem'), ('size', False, 'usize')], 'slice::Slice(u8)', _pages),
-        NativeFn(('ascii',), 'f64_parse', [('text', False, 'slice::Slice(u8)')], 'f64', _parse_f64),
-        NativeFn(('ascii',), 'f32_parse', [('text', False, 'slice::Slice(u8)')], 'f32', _parse_f32),
+                 [('mem', True, 'Mem'), ('size', False, 'usize')], '[]mut u8', _pages),
+        NativeFn(('ascii',), 'f64_parse', [('text', False, '[]u8')], 'f64', _parse_f64),
+        NativeFn(('ascii',), 'f32_parse', [('text', False, '[]u8')], 'f32', _parse_f32),
     ]

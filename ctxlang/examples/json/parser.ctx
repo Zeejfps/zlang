@@ -31,13 +31,13 @@ namespace parser {
     const MAX_DEPTH: u32 = 256
 
     struct Parser(S) {
-        text:    slice::Slice(u8),
+        text:    []u8,
         pos:     usize,
         depth:   u32,
         realloc: alloc::Fn(S),
     }
 
-    fn parse(S) { mut heap: S, realloc: alloc::Fn(S), text: slice::Slice(u8) } -> Result(json::Value, Error) {
+    fn parse(S) { mut heap: S, realloc: alloc::Fn(S), text: []u8 } -> Result(json::Value, Error) {
         let ok = utf8::from{ bytes = text } else err{ error } { return fail{ at = error.at, problem = Problem::not_utf8 } }
         let mut p = Parser{ text, pos = 0, depth = 0, realloc }
         let ok{ value } = parse_value{ &p, &heap } else err{ error } { return Result::err{ error } }
@@ -120,8 +120,8 @@ namespace parser {
         while true {
             // The run ends at an ASCII byte, so both ends are character boundaries.
             let lo = p.pos
-            while p.pos < p.text.len and plain{ c = slice::get{ s = p.text, i = p.pos } } { p.pos = p.pos + 1 }
-            let run = utf8::String{ bytes = slice::sub{ s = p.text, lo, hi = p.pos } }
+            while p.pos < p.text.len and plain{ c = p.text[p.pos] } { p.pos = p.pos + 1 }
+            let run = utf8::String{ bytes = p.text[lo..p.pos] }
 
             let c = peek{ p }
             if c == null { return fail{ at = p.pos, problem = Problem::unexpected_end } }
@@ -215,7 +215,7 @@ namespace parser {
             if digits{ &p } == 0 { return fail{ at = start, problem = Problem::bad_number } }
         }
         // Everything consumed is ASCII, and valid syntax for parse_f64.
-        let text = ascii::String{ bytes = slice::sub{ s = p.text, lo = start, hi = p.pos } }
+        let text = ascii::String{ bytes = p.text[start..p.pos] }
         return match ascii::parse_f64{ s = text } {
             null          => { fail{ at = start, problem = Problem::bad_number } }      // beyond f64
             some{ value } => { Result::ok{ value = json::Value::number{ value } } }
@@ -238,7 +238,7 @@ namespace parser {
 
     fn peek(S) { p: Parser(S) } -> ?u8 {
         if p.pos >= p.text.len { return null }
-        return slice::get{ s = p.text, i = p.pos }
+        return p.text[p.pos]
     }
 
     fn bump(S) { mut p: Parser(S) } -> ?u8 {
@@ -248,7 +248,7 @@ namespace parser {
     }
 
     fn next_is(S) { p: Parser(S), c: u8 } -> bool {
-        return p.pos < p.text.len and slice::get{ s = p.text, i = p.pos } == c
+        return p.pos < p.text.len and p.text[p.pos] == c
     }
 
     fn eat(S) { mut p: Parser(S), c: u8 } -> bool {
@@ -261,7 +261,7 @@ namespace parser {
     fn eat_word(S) { mut p: Parser(S), w: ascii::String } -> bool {
         let n = ascii::len{ s = w }
         if p.pos + n > p.text.len { return false }
-        if not map::eq_bytes{ a = slice::sub{ s = p.text, lo = p.pos, hi = p.pos + n }, b = w.bytes } { return false }
+        if not map::eq_bytes{ a = p.text[p.pos..p.pos + n], b = w.bytes } { return false }
         p.pos = p.pos + n
         return true
     }
@@ -269,12 +269,12 @@ namespace parser {
     // Consumes decimal digits and returns how many.
     fn digits(S) { mut p: Parser(S) } -> usize {
         let lo = p.pos
-        while p.pos < p.text.len and ascii::is_digit{ c = slice::get{ s = p.text, i = p.pos } } { p.pos = p.pos + 1 }
+        while p.pos < p.text.len and ascii::is_digit{ c = p.text[p.pos] } { p.pos = p.pos + 1 }
         return p.pos - lo
     }
 
     // JSON whitespace: space, tab, newline and carriage return, the same set as ascii::is_space.
     fn skip_space(S) { mut p: Parser(S) } {
-        while p.pos < p.text.len and ascii::is_space{ c = slice::get{ s = p.text, i = p.pos } } { p.pos = p.pos + 1 }
+        while p.pos < p.text.len and ascii::is_space{ c = p.text[p.pos] } { p.pos = p.pos + 1 }
     }
 }

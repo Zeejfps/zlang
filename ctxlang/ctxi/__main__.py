@@ -16,7 +16,6 @@ from .parser import parse
 from .checker import check
 from .natives import natives
 from .runtime import Runtime, Panic
-from .types import struct_fields
 
 STD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'std')
 
@@ -101,15 +100,12 @@ def interpret(c, out=None, err=None, inp=None, stack_size=16 << 20, args=()):
 
 def main_args(rt, t, args):
     """Places the command-line arguments in memory and returns main's `args` slice."""
-    elem = struct_fields(t)[0][1].elem.elem          # Slice(u8), from Slice(Slice(u8)).ptr: ?*T
-    size = rt.layout(elem).size
     views = []
     for a in args:
         data = os.fsencode(a)
-        views.append(rt.make_slice(elem, rt.push_bytes(data) if data else 0, len(data)))
+        views.append(rt.make_slice(rt.push_bytes(data) if data else 0, len(data)))
     base = rt.push_bytes(b''.join(views), 8) if views else 0
-    assert all(len(v) == size for v in views)
-    return rt.make_slice(t, base, len(views))
+    return rt.make_slice(base, len(views))
 
 
 def fmt_pos(path, pos):

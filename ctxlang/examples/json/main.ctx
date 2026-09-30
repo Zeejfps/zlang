@@ -12,10 +12,10 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
         io::eprintln{ &io, s = ascii::of{ chars = &usage } }
         return 2
     }
-    let path = slice::get{ s = args, i = 0 }
+    let path = args[0]
 
     let mut mem: [4194304]u8                                    // the heap: 4 MiB on the stack
-    let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+    let mut heap = arena::new{ buf = mem[..] }
 
     let ok{ value = bytes } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } else {
         io::write{ &io, to = io::Stream::err, bytes = path }
@@ -31,7 +31,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
 
     let mut v = doc
     if args.len == 2 {
-        let query = slice::get{ s = args, i = 1 }
+        let query = args[1]
         let found = match utf8::from{ bytes = query } {
             ok{ value } => { json::lookup{ v = doc, path = value } }
             err         => { null }
@@ -57,12 +57,12 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
 }
 
 // Prints "FILE:LINE:COLUMN: message" to standard error. The column counts characters.
-fn report { mut io: Io, path: slice::Slice(u8), text: slice::Slice(u8), error: parser::Error } {
+fn report { mut io: Io, path: []u8, text: []u8, error: parser::Error } {
     let mut line: u64 = 1
     let mut col: u64 = 1
     let mut i: usize = 0
     while i < error.at {
-        let c = slice::get{ s = text, i }
+        let c = text[i]
         if c == '\n' {
             line = line + 1
             col = 1
@@ -74,7 +74,7 @@ fn report { mut io: Io, path: slice::Slice(u8), text: slice::Slice(u8), error: p
     io::write{ &io, to = io::Stream::err, bytes = path }
     let mut buf: [48]u8
     let mut b = ascii::builder{ realloc = arena::alloc }
-    let mut heap = arena::new{ buf = slice::of(u8){ a = &buf } }
+    let mut heap = arena::new{ buf = buf[..] }
     _ = ascii::push_char{ &b, &heap, c = ':' }
     _ = ascii::push_u64{ &b, &heap, n = line }
     _ = ascii::push_char{ &b, &heap, c = ':' }

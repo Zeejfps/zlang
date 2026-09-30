@@ -17,7 +17,8 @@ from . import ast as A
 from .lexer import CompileError
 from .checker import NativeFn
 from .types import (
-    Prim, Ptr, Arr, Opt, StructT, UnionT, FnT, Cap, VOID, prune, subst, tkey, tstr, qualname,
+    Prim, Ptr, SliceT, Arr, Opt, StructT, UnionT, FnT, Cap, VOID, USIZE, prune, subst, tkey, tstr,
+    qualname,
     struct_fields, variants_of,
 )
 
@@ -25,6 +26,7 @@ GUARD = 64            # addresses below this are never valid
 PAGE = 4096           # mem::pages hands out memory in multiples of this
 TAG = struct.Struct('<I')
 U64 = struct.Struct('<Q')
+SLICE = struct.Struct('<QQ')     # a slice's memory image: ptr, len
 F32 = struct.Struct('<f')
 RET_NONE = (None,)
 # Statement closures return None to fall through, a 1-tuple to return, or one of these.
@@ -179,26 +181,15 @@ class Runtime:
                 return t
         raise KeyError(name)
 
-    def slice_arg(self, nf, name, v):
-        """(address, length) of a `slice::Slice(T)` argument; address 0 if its ptr is null."""
-        lay = self.layout(self.arg_type(nf, name))
-        _, pt, poff = next(f for f in lay.fields if f[0] == 'ptr')
-        loff = lay.offs['len']
-        n = U64.unpack_from(v, loff)[0]
-        if TAG.unpack_from(v, poff)[0] == 0:
-            return 0, n
-        return U64.unpack_from(v, poff + self.layout(pt).pay_off)[0], n
+    @staticmethod
+    def slice_arg(nf, name, v):
+        """(address, length) of a slice argument."""
+        return U64.unpack_from(v, 0)[0], U64.unpack_from(v, 8)[0]
 
-    def make_slice(self, t, addr, n):
-        """The memory image of a `slice::Slice(T)` value of type t."""
-        lay = self.layout(t)
-        _, pt, poff = next(f for f in lay.fields if f[0] == 'ptr')
-        buf = bytearray(lay.size)
-        if n:
-            TAG.pack_into(buf, poff, 1)
-            U64.pack_into(buf, poff + self.layout(pt).pay_off, addr)
-        U64.pack_into(buf, lay.offs['len'], n)
-        return bytes(buf)
+    @staticmethod
+    def make_slice(addr, n):
+        """The memory image of a slice: its pointer, then its length."""
+        return SLICE.pack(addr, n)
 
     def push_bytes(self, data, align=1):
         """Copies data to the bottom of the stack, below main's frame. Returns its address."""
@@ -272,6 +263,10 @@ class Runtime:
             lay = Layout(n, n)
         elif isinstance(t, (Ptr, FnT)):
             lay = Layout(8, 8)
+        elif isinstance(t, SliceT):
+            lay = Layout(16, 8)
+            lay.fields = [('ptr', Ptr(t.elem, t.mut), 0), ('len', USIZE, 8)]
+            lay.offs = {'ptr': 0, 'len': 8}
         elif isinstance(t, Cap):
             lay = Layout(0, 1)
         elif isinstance(t, Arr):
@@ -743,6 +738,14 @@ class Compiler:
                     return a + i * es
                 return idx
             bv = self.expr(e.base)
+            if e.kind == 'slice':
+                def sidx(fp):
+                    p, n = SLICE.unpack(bv(fp))
+                    i = iv(fp)
+                    if i >= n:
+                        panic(f'index {i} out of bounds for length {n}', pos)
+                    return p + i * es
+                return self.checked(sidx, es, pos)
             if e.kind == 'parr':
                 n = self.T(e.base.ty).elem.n
 
@@ -811,6 +814,27 @@ class Compiler:
         TAG.pack_into(buf, 0, r[2])
         val = bytes(buf)
         return lambda fp: val
+
+    def e_ToSlice(self, e):
+        n = self.T(e.expr.ty).elem.n
+        p = self.expr(e.expr)
+        return lambda fp: SLICE.pack(p(fp), n)
+
+    def e_Range(self, e):
+        bv = self.expr(e.base)
+        lo = self.expr(e.lo) if e.lo is not None else (lambda fp: 0)
+        hi = self.expr(e.hi) if e.hi is not None else None
+        es = self.size(self.T(e.ty).elem)
+        pos = e.pos
+
+        def rng(fp):
+            p, n = SLICE.unpack(bv(fp))
+            a = lo(fp)
+            b = n if hi is None else hi(fp)
+            if a > b or b > n:
+                panic(f'range {a}..{b} out of bounds for length {n}', pos)
+            return SLICE.pack(p + a * es, b - a)
+        return rng
 
     def e_Coerce(self, e):
         lay = self.rt.layout(self.T(e.ty))
@@ -1100,6 +1124,9 @@ class Compiler:
             return tr
         if n in ('addr', 'cast'):
             return self.expr(e.args[0])
+        if n == 'slice':
+            p, c = self.expr(e.args[0]), self.expr(e.args[1])
+            return lambda fp: SLICE.pack(p(fp), c(fp))
         if n == 'as':
             src, dst = self.T(e.args[0].ty), self.T(e.targ_t)
             f = self.expr(e.args[0])

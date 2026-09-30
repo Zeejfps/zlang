@@ -142,13 +142,14 @@ to live and a read-only type to have, which in turn needs read-only pointers and
 1. **Read-only pointers** (§16 Q2) — *done.* `*T` is read-only and `*mut T` is writable; `*mut T`
    converts to `*T`, also inside `?`. `&p` is `*mut T` only if `p` is a mutable place. A place
    through a deref is mutable only through a `*mut`. A `mut` field holds a `*mut T`. Checker only:
-   `tkey` erases mutability, so the IR and backend are unchanged. For now `slice::Slice` holds a
-   `?*mut T` and `@cast` may still drop read-only-ness (`slice::of` needs it); step 2 removes both.
-2. **Built-in slices.** `[]T` and `[]mut T`, with `.ptr` (never null; an empty slice holds a
-   placeholder address) and `.len`. `s[i]` is bounds-checked; `s.ptr[i]` stays the unchecked form.
-   `s[lo..hi]`, `s[lo..]`, `s[..hi]`. `*[N]T` converts to `[]T`. `@slice(p, n)` builds one from a
-   pointer. The dumper lowers slices to structs, bounds checks and `ptradd`, so the IR and backend
-   don't change. `slice::` keeps `copy`, `fill` and `cast`. Then sweep std, ctxc and the examples.
+   `tkey` erases mutability, so the IR and backend are unchanged.
+2. **Built-in slices** (§12, Slices) — *done.* `[]T` and `[]mut T`, with `.ptr` and `.len`; the
+   zero value is the empty slice, whose `ptr` is unspecified. `s[i]` is bounds-checked and
+   `s.ptr[i]` is the unchecked form. `s[lo..hi]` with either end optional; an array place or
+   `*[N]T` slices too, and `*[N]T` converts to `[]T`. `@slice(p, n)` builds one from a pointer.
+   `@cast` can no longer drop read-only-ness. In the IR a slice type is a struct of `ptr` and
+   `len`, plus two nodes, `sindex` and `ssub` (IR version 3). `slice::` keeps `empty`, `cast`,
+   `copy` and `fill`.
 3. **Literal views** (#1). A string literal converts to `[]u8` where one is expected, backed by
    static read-only bytes, and is derived from no local (§14). Needs one new IR node for the bytes.
    **Open:** whether literals also convert to `ascii::String` and `utf8::String`, or §16 Q11 is
@@ -229,6 +230,7 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 | `f32` arithmetic | `float` | Needs `FLT_EVAL_METHOD == 0` (SSE). |
 | `@as`, `@trunc`, `@wrap_*` | range check then cast; unsigned arithmetic then cast | |
 | `[N]T` | `struct { T a[N]; }` | Wrapped so arrays copy, assign and return as values. |
+| `[]T`, `s[i]`, `s[lo..hi]` | `struct { T *m_ptr; uint64_t m_len; }`; `ctx_idx`, `ctx_range` | Bounds checks panic as in ctxi. The runtime's natives see it as `ctx_slice`. |
 | struct | C struct, same field order | Checked with `_Static_assert` on `sizeof` and `offsetof`. |
 | union, `?T` | `struct { uint32_t tag; union { … } p; }` | Tag at 0, payload at `align_up(4, payload align)`. `null` is tag 0. |
 | `Io`, `Fs`, `Mem` | empty struct | Size 0 with GNU C, as in ctxi. |

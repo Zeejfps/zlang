@@ -10,8 +10,8 @@
 //   }
 //
 // Natives (provided by the runtime):
-//   write { mut io: Io, to: Stream, bytes: slice::Slice(u8) }
-//   read  { mut io: Io, into: slice::Slice(u8) } -> usize
+//   write { mut io: Io, to: Stream, bytes: []u8 }
+//   read  { mut io: Io, into: []mut u8 } -> usize
 //       Reads at most into.len bytes of standard input into `into`. Returns how many; 0 at the end.
 //
 // print* functions write their value only. println* functions add a newline.
@@ -38,7 +38,7 @@ namespace io {
     fn eprintln { mut io: Io, s: ascii::String } {
         eprint{ &io, s }
         let nl = "\n"
-        write{ &io, to = Stream::err, bytes = slice::of(u8){ a = &nl } }
+        write{ &io, to = Stream::err, bytes = nl[..] }
     }
 
     // UTF-8 text. The bytes go out unchanged, as with ascii::String.
@@ -62,13 +62,13 @@ namespace io {
 
     fn newline { mut io: Io } {
         let nl = "\n"
-        write{ &io, to = Stream::out, bytes = slice::of(u8){ a = &nl } }
+        write{ &io, to = Stream::out, bytes = nl[..] }
     }
 
     // Writes one byte.
     fn put_char { mut io: Io, c: u8 } {
         let one = [c]
-        write{ &io, to = Stream::out, bytes = slice::of(u8){ a = &one } }
+        write{ &io, to = Stream::out, bytes = one[..] }
     }
 
     // ---- numbers
@@ -78,22 +78,22 @@ namespace io {
 
     fn print_i64 { mut io: Io, n: i64 } {
         let mut buf: [20]u8
-        print{ &io, s = ascii::fmt_i64{ n, into = slice::of(u8){ a = &buf } } }
+        print{ &io, s = ascii::fmt_i64{ n, into = buf[..] } }
     }
 
     fn print_u64 { mut io: Io, n: u64 } {
         let mut buf: [20]u8
-        print{ &io, s = ascii::fmt_u64{ n, into = slice::of(u8){ a = &buf } } }
+        print{ &io, s = ascii::fmt_u64{ n, into = buf[..] } }
     }
 
     fn print_f64 { mut io: Io, n: f64 } {
         let mut buf: [32]u8
-        print{ &io, s = ascii::fmt_f64{ n, into = slice::of(u8){ a = &buf } } }
+        print{ &io, s = ascii::fmt_f64{ n, into = buf[..] } }
     }
 
     fn print_f32 { mut io: Io, n: f32 } {
         let mut buf: [32]u8
-        print{ &io, s = ascii::fmt_f32{ n, into = slice::of(u8){ a = &buf } } }
+        print{ &io, s = ascii::fmt_f32{ n, into = buf[..] } }
     }
 
     fn print_bool { mut io: Io, n: bool } {
@@ -116,22 +116,22 @@ namespace io {
 
     // Reads one line into `into` and returns it without its line ending. Null at the end of input.
     // A line longer than `into` comes back in pieces. Non-ASCII bytes become '?'.
-    fn read_line { mut io: Io, into: slice::Slice(u8) } -> ?ascii::String {
+    fn read_line { mut io: Io, into: []mut u8 } -> ?ascii::String {
         let mut n: usize = 0
         while n < into.len {
-            let one = slice::sub{ s = into, lo = n, hi = n + 1 }
+            let one = into[n..n + 1]
             if read{ &io, into = one } == 0 {
                 if n == 0 { return null }
                 break
             }
-            let c = slice::get{ s = one, i = 0 }
+            let c = one[0]
             if c == '\n' {
-                if n > 0 and slice::get{ s = into, i = n - 1 } == '\r' { n = n - 1 }
+                if n > 0 and into[n - 1] == '\r' { n = n - 1 }
                 break
             }
-            if c > 127 { slice::set{ s = one, i = 0, v = '?' } }
+            if c > 127 { one[0] = '?' }
             n = n + 1
         }
-        return ascii::from{ bytes = slice::sub{ s = into, lo = 0, hi = n } }
+        return ascii::from{ bytes = into[..n] }
     }
 }

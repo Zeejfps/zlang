@@ -7,27 +7,27 @@
 //   let s = ascii::of{ chars = &hi }        // an ascii::String viewing it
 //
 // Natives (provided by the runtime):
-//   f64_digits { n: f64, into: slice::Slice(u8) } -> usize   writes the shortest round-trip text
-//   f32_digits { n: f32, into: slice::Slice(u8) } -> usize   of n into `into`; panics if it doesn't fit
-//   f64_parse  { text: slice::Slice(u8) } -> f64    the nearest value to `text`, which must already
-//   f32_parse  { text: slice::Slice(u8) } -> f32    be valid float syntax (see parse_f64)
+//   f64_digits { n: f64, into: []mut u8 } -> usize   writes the shortest round-trip text
+//   f32_digits { n: f32, into: []mut u8 } -> usize   of n into `into`; panics if it doesn't fit
+//   f64_parse  { text: []u8 } -> f64    the nearest value to `text`, which must already
+//   f32_parse  { text: []u8 } -> f32    be valid float syntax (see parse_f64)
 
 namespace ascii {
-    struct String { bytes: slice::Slice(u8) }
+    struct String { bytes: []u8 }
 
     // Panics if any byte isn't ASCII.
-    fn from { bytes: slice::Slice(u8) } -> String {
+    fn from { bytes: []u8 } -> String {
         let mut i: usize = 0
         while i < bytes.len {
-            if slice::get{ s = bytes, i } > 127 { @panic("ascii::from: byte is not ASCII") }
+            if bytes[i] > 127 { @panic("ascii::from: byte is not ASCII") }
             i = i + 1
         }
         return String{ bytes }
     }
 
-    // Views the byte array `chars` points to, typically a string literal.
-    fn of(A) { chars: *A } -> String {
-        return from{ bytes = slice::of(u8){ a = chars } }
+    // Views bytes as text, typically a string literal: `ascii::of{ chars = &hi }`.
+    fn of { chars: []u8 } -> String {
+        return from{ bytes = chars }
     }
 
     fn empty {} -> String {
@@ -40,12 +40,12 @@ namespace ascii {
 
     // Bounds-checked.
     fn at { s: String, i: usize } -> u8 {
-        return slice::get{ s = s.bytes, i }
+        return s.bytes[i]
     }
 
     // Characters lo up to but not including hi.
     fn sub { s: String, lo: usize, hi: usize } -> String {
-        return String{ bytes = slice::sub{ s = s.bytes, lo, hi } }
+        return String{ bytes = s.bytes[lo..hi] }
     }
 
     fn eq { a: String, b: String } -> bool {
@@ -235,7 +235,7 @@ namespace ascii {
 
     // Writes n in decimal to the start of `into` and returns that text. Panics if it doesn't fit;
     // 20 bytes always do.
-    fn fmt_i64 { n: i64, into: slice::Slice(u8) } -> String {
+    fn fmt_i64 { n: i64, into: []mut u8 } -> String {
         let mut digits: [20]u8
         let mut k: usize = 0
         let mut v = n
@@ -248,21 +248,21 @@ namespace ascii {
         }
         let mut out: usize = 0
         if n < 0 {
-            slice::set{ s = into, i = 0, v = '-' }
+            into[0] = '-'
             out = 1
         }
         let total = out + k
         if total > into.len { @panic("ascii::fmt_i64: buffer too small") }
         while k > 0 {
             k = k - 1
-            slice::set{ s = into, i = out, v = digits[k] }
+            into[out] = digits[k]
             out = out + 1
         }
-        return String{ bytes = slice::sub{ s = into, lo = 0, hi = total } }
+        return String{ bytes = into[..total] }
     }
 
     // Like fmt_i64, for unsigned values.
-    fn fmt_u64 { n: u64, into: slice::Slice(u8) } -> String {
+    fn fmt_u64 { n: u64, into: []mut u8 } -> String {
         let mut digits: [20]u8
         let mut k: usize = 0
         let mut v = n
@@ -277,20 +277,20 @@ namespace ascii {
         let mut out: usize = 0
         while k > 0 {
             k = k - 1
-            slice::set{ s = into, i = out, v = digits[k] }
+            into[out] = digits[k]
             out = out + 1
         }
-        return String{ bytes = slice::sub{ s = into, lo = 0, hi = total } }
+        return String{ bytes = into[..total] }
     }
 
     // Shortest text that reads back as n, e.g. "0.1", "3.0", "1e+100", "inf", "nan".
     // 32 bytes always fit.
-    fn fmt_f64 { n: f64, into: slice::Slice(u8) } -> String {
-        return String{ bytes = slice::sub{ s = into, lo = 0, hi = f64_digits{ n, into } } }
+    fn fmt_f64 { n: f64, into: []mut u8 } -> String {
+        return String{ bytes = into[..f64_digits{ n, into }] }
     }
 
-    fn fmt_f32 { n: f32, into: slice::Slice(u8) } -> String {
-        return String{ bytes = slice::sub{ s = into, lo = 0, hi = f32_digits{ n, into } } }
+    fn fmt_f32 { n: f32, into: []mut u8 } -> String {
+        return String{ bytes = into[..f32_digits{ n, into }] }
     }
 
     // ---- scanning
@@ -399,22 +399,22 @@ namespace ascii {
 
     fn push_i64(S) { mut b: Builder(S), mut heap: S, n: i64 } -> bool {
         let mut buf: [20]u8
-        return push{ &b, &heap, s = fmt_i64{ n, into = slice::of(u8){ a = &buf } } }
+        return push{ &b, &heap, s = fmt_i64{ n, into = buf[..] } }
     }
 
     fn push_u64(S) { mut b: Builder(S), mut heap: S, n: u64 } -> bool {
         let mut buf: [20]u8
-        return push{ &b, &heap, s = fmt_u64{ n, into = slice::of(u8){ a = &buf } } }
+        return push{ &b, &heap, s = fmt_u64{ n, into = buf[..] } }
     }
 
     fn push_f64(S) { mut b: Builder(S), mut heap: S, n: f64 } -> bool {
         let mut buf: [32]u8
-        return push{ &b, &heap, s = fmt_f64{ n, into = slice::of(u8){ a = &buf } } }
+        return push{ &b, &heap, s = fmt_f64{ n, into = buf[..] } }
     }
 
     fn push_f32(S) { mut b: Builder(S), mut heap: S, n: f32 } -> bool {
         let mut buf: [32]u8
-        return push{ &b, &heap, s = fmt_f32{ n, into = slice::of(u8){ a = &buf } } }
+        return push{ &b, &heap, s = fmt_f32{ n, into = buf[..] } }
     }
 
     fn clear(S) { mut b: Builder(S) } {

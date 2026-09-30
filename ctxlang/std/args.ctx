@@ -1,11 +1,11 @@
 // std: args. The command-line arguments `main` receives (spec §15):
 //
 //   fn main { mut io: Io, args: Args } -> i32 {
-//       let first = slice::get{ s = args, i = 0 }
+//       let first = args[0]
 //       ...
 //   }
 //
 // Each argument is its bytes. Use ascii::from to treat one as text.
 // `Args` is declared at the top level, like a built-in type, so it needs no namespace prefix.
 
-type Args = slice::Slice(slice::Slice(u8))
+type Args = [][]u8

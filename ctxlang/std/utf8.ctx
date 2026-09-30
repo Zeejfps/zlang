@@ -18,12 +18,12 @@
 // `to_ascii` and use `ascii::parse_*`.
 
 namespace utf8 {
-    struct String { bytes: slice::Slice(u8) }
+    struct String { bytes: []u8 }
 
     // Where the first invalid byte sequence starts.
     struct Invalid { at: usize }
 
-    fn from { bytes: slice::Slice(u8) } -> Result(String, Invalid) {
+    fn from { bytes: []u8 } -> Result(String, Invalid) {
         let mut i: usize = 0
         while i < bytes.len {
             let n = seq_len{ bytes, i }
@@ -33,9 +33,9 @@ namespace utf8 {
         return Result::ok{ value = String{ bytes } }
     }
 
-    // Views the byte array `chars` points to, typically a string literal. Panics if it isn't valid.
-    fn of(A) { chars: *A } -> String {
-        return result::unwrap{ r = from{ bytes = slice::of(u8){ a = chars } } }
+    // Views bytes as text, typically a string literal. Panics if they aren't valid.
+    fn of { chars: []u8 } -> String {
+        return result::unwrap{ r = from{ bytes = chars } }
     }
 
     // ASCII is valid UTF-8, so this can't fail.
@@ -47,7 +47,7 @@ namespace utf8 {
     fn to_ascii { s: String } -> ?ascii::String {
         let mut i: usize = 0
         while i < s.bytes.len {
-            if slice::get{ s = s.bytes, i } > 127 { return null }
+            if s.bytes[i] > 127 { return null }
             i = i + 1
         }
         return ascii::String{ bytes = s.bytes }
@@ -67,7 +67,7 @@ namespace utf8 {
         let mut n: usize = 0
         let mut i: usize = 0
         while i < s.bytes.len {
-            if not is_cont{ b = slice::get{ s = s.bytes, i } } { n = n + 1 }
+            if not is_cont{ b = s.bytes[i] } { n = n + 1 }
             i = i + 1
         }
         return n
@@ -76,7 +76,7 @@ namespace utf8 {
     // Whether byte offset i is at the start of a character or at the end of s.
     fn is_boundary { s: String, i: usize } -> bool {
         if i >= s.bytes.len { return i == s.bytes.len }
-        return not is_cont{ b = slice::get{ s = s.bytes, i } }
+        return not is_cont{ b = s.bytes[i] }
     }
 
     // The character starting at byte offset i. Panics if i isn't the start of a character.
@@ -87,7 +87,7 @@ namespace utf8 {
     // Bytes lo up to but not including hi. Panics if either isn't a boundary.
     fn sub { s: String, lo: usize, hi: usize } -> String {
         if not is_boundary{ s, i = lo } or not is_boundary{ s, i = hi } { @panic("utf8::sub: offset is inside a character") }
-        return String{ bytes = slice::sub{ s = s.bytes, lo, hi } }
+        return String{ bytes = s.bytes[lo..hi] }
     }
 
     fn eq { a: String, b: String } -> bool {
@@ -105,7 +105,7 @@ namespace utf8 {
     // Byte offset of the first `c`, or null.
     fn find { s: String, c: u32 } -> ?usize {
         let mut buf: [4]u8
-        return find_str{ s, needle = encode{ c, into = slice::of(u8){ a = &buf } } }
+        return find_str{ s, needle = encode{ c, into = buf[..] } }
     }
 
     // Byte offset of the first occurrence of `needle`, or null. An empty needle is found at 0.
@@ -118,7 +118,7 @@ namespace utf8 {
 
     fn split_once { s: String, c: u32 } -> ?Split {
         let mut buf: [4]u8
-        let sep = encode{ c, into = slice::of(u8){ a = &buf } }
+        let sep = encode{ c, into = buf[..] }
         let i = find_str{ s, needle = sep }
         if i != null {
             return Split{ head = sub{ s, lo = 0, hi = i }, tail = sub{ s, lo = i + sep.bytes.len, hi = s.bytes.len } }
@@ -169,7 +169,7 @@ namespace utf8 {
 
     // Writes c's bytes to the start of `into` and returns them. Panics if c isn't a scalar value or
     // doesn't fit; 4 bytes always do.
-    fn encode { c: u32, into: slice::Slice(u8) } -> String {
+    fn encode { c: u32, into: []mut u8 } -> String {
         if not is_scalar{ c } { @panic("utf8::encode: not a Unicode scalar value") }
         let mut n: usize = 4
         let mut lead: u32 = 240
@@ -187,12 +187,12 @@ namespace utf8 {
         let mut v = c
         let mut k = n - 1
         while k > 0 {                                   // continuation bytes carry 6 bits each
-            slice::set{ s = into, i = k, v = @trunc(u8, 128 + v % 64) }
+            into[k] = @trunc(u8, 128 + v % 64)
             v = v / 64
             k = k - 1
         }
-        slice::set{ s = into, i = 0, v = @trunc(u8, lead + v) }
-        return String{ bytes = slice::sub{ s = into, lo = 0, hi = n } }
+        into[0] = @trunc(u8, lead + v)
+        return String{ bytes = into[..n] }
     }
 
     // ---- scanning
@@ -302,7 +302,7 @@ namespace utf8 {
         if not list::reserve{ list = &b.bytes, &heap, extra = s.bytes.len } { return false }
         let mut i: usize = 0
         while i < s.bytes.len {
-            _ = list::push{ list = &b.bytes, &heap, item = slice::get{ s = s.bytes, i } }
+            _ = list::push{ list = &b.bytes, &heap, item = s.bytes[i] }
             i = i + 1
         }
         return true
@@ -311,27 +311,27 @@ namespace utf8 {
     // Panics if c isn't a scalar value.
     fn push_char(S) { mut b: Builder(S), mut heap: S, c: u32 } -> bool {
         let mut buf: [4]u8
-        return push{ &b, &heap, s = encode{ c, into = slice::of(u8){ a = &buf } } }
+        return push{ &b, &heap, s = encode{ c, into = buf[..] } }
     }
 
     fn push_i64(S) { mut b: Builder(S), mut heap: S, n: i64 } -> bool {
         let mut buf: [20]u8
-        return push{ &b, &heap, s = from_ascii{ s = ascii::fmt_i64{ n, into = slice::of(u8){ a = &buf } } } }
+        return push{ &b, &heap, s = from_ascii{ s = ascii::fmt_i64{ n, into = buf[..] } } }
     }
 
     fn push_u64(S) { mut b: Builder(S), mut heap: S, n: u64 } -> bool {
         let mut buf: [20]u8
-        return push{ &b, &heap, s = from_ascii{ s = ascii::fmt_u64{ n, into = slice::of(u8){ a = &buf } } } }
+        return push{ &b, &heap, s = from_ascii{ s = ascii::fmt_u64{ n, into = buf[..] } } }
     }
 
     fn push_f64(S) { mut b: Builder(S), mut heap: S, n: f64 } -> bool {
         let mut buf: [32]u8
-        return push{ &b, &heap, s = from_ascii{ s = ascii::fmt_f64{ n, into = slice::of(u8){ a = &buf } } } }
+        return push{ &b, &heap, s = from_ascii{ s = ascii::fmt_f64{ n, into = buf[..] } } }
     }
 
     fn push_f32(S) { mut b: Builder(S), mut heap: S, n: f32 } -> bool {
         let mut buf: [32]u8
-        return push{ &b, &heap, s = from_ascii{ s = ascii::fmt_f32{ n, into = slice::of(u8){ a = &buf } } } }
+        return push{ &b, &heap, s = from_ascii{ s = ascii::fmt_f32{ n, into = buf[..] } } }
     }
 
     fn clear(S) { mut b: Builder(S) } {
@@ -356,8 +356,8 @@ namespace utf8 {
 
     // Length of the valid sequence starting at bytes[i], or 0 if there is none. Rejects overlong
     // forms, surrogates and values above U+10FFFF.
-    fn seq_len { bytes: slice::Slice(u8), i: usize } -> usize {
-        let b = slice::get{ s = bytes, i }
+    fn seq_len { bytes: []u8, i: usize } -> usize {
+        let b = bytes[i]
         if b < 128 { return 1 }
         let mut n: usize = 0
         let mut lo: u8 = 128                              // the second byte's range
@@ -384,11 +384,11 @@ namespace utf8 {
             return 0
         }
         if i + n > bytes.len { return 0 }
-        let b1 = slice::get{ s = bytes, i = i + 1 }
+        let b1 = bytes[i + 1]
         if b1 < lo or b1 > hi { return 0 }
         let mut k: usize = 2
         while k < n {
-            if not is_cont{ b = slice::get{ s = bytes, i = i + k } } { return 0 }
+            if not is_cont{ b = bytes[i + k] } { return 0 }
             k = k + 1
         }
         return n
@@ -400,7 +400,7 @@ namespace utf8 {
     // byte gives the length. Panics if i isn't the start of a character.
     fn decode { s: String, i: usize } -> Decoded {
         if i >= s.bytes.len or not is_boundary{ s, i } { @panic("utf8: offset is not the start of a character") }
-        let b0: u32 = slice::get{ s = s.bytes, i }
+        let b0: u32 = s.bytes[i]
         if b0 < 128 { return Decoded{ c = b0, size = 1 } }
         let mut c: u32 = 0
         let mut size: usize = 4
@@ -415,7 +415,7 @@ namespace utf8 {
         }
         let mut k: usize = 1
         while k < size {
-            c = c * 64 + (slice::get{ s = s.bytes, i = i + k } - 128)
+            c = c * 64 + (s.bytes[i + k] - 128)
             k = k + 1
         }
         return Decoded{ c, size }

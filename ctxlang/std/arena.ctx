@@ -1,7 +1,7 @@
 // std: arena. A bump allocator over a caller-provided buffer.
 //
 //   let mut mem: [4096]u8
-//   let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
+//   let mut heap = arena::new{ buf = mem[..] }
 //   let mut xs = list::new(i32){ realloc = arena::alloc }
 
 namespace arena {
@@ -14,21 +14,18 @@ namespace arena {
     // Has type alloc::Fn(Arena).
     fn alloc { mut heap: Arena, mem: alloc::Bytes, new: usize, align: usize } -> ?alloc::Bytes {
         if new == 0 { return slice::empty(u8){} }                              // individual frees are no-ops
-        if new <= mem.len { return slice::sub{ s = mem, lo = 0, hi = new } }   // shrink in place
+        if new <= mem.len { return mem[..new] }                                // shrink in place
+        if heap.buf.len == 0 { return null }                                   // empty buffer
 
-        let p = heap.buf.ptr
-        if p != null {
-            // Round the absolute address up to a multiple of align.
-            let addr = @addr(p) + heap.used
-            let start = heap.used + (align - addr % align) % align
-            if start + new > heap.buf.len { return null }
+        // Round the absolute address up to a multiple of align.
+        let addr = @addr(heap.buf.ptr) + heap.used
+        let start = heap.used + (align - addr % align) % align
+        if start + new > heap.buf.len { return null }
 
-            let out = slice::sub{ s = heap.buf, lo = start, hi = start + new }
-            heap.used = start + new
-            slice::copy{ dst = out, src = mem }
-            return out
-        }
-        return null                                                              // empty buffer
+        let out = heap.buf[start..start + new]
+        heap.used = start + new
+        slice::copy{ dst = out, src = mem }
+        return out
     }
 
     // Frees everything allocated so far.

@@ -16,6 +16,7 @@ BUILTINS = {
     'trunc':    (1, 1, '@trunc(T, x)'),
     'cast':     (1, 1, '@cast(*U, q)'),
     'addr':     (0, 1, '@addr(q)'),
+    'slice':    (0, 2, '@slice(p, n)'),
     'wrap_add': (0, 2, '@wrap_add(a, b)'),
     'wrap_sub': (0, 2, '@wrap_sub(a, b)'),
     'wrap_mul': (0, 2, '@wrap_mul(a, b)'),
@@ -224,6 +225,9 @@ class Parser:
         if self.accept_op('?'):
             return A.TOpt(self.type(), pos)
         if self.accept_op('['):
+            if self.accept_op(']'):
+                mut = self.accept_kw('mut')
+                return A.TSlice(self.type(), mut, pos)
             n = self.expr()
             self.expect_op(']')
             return A.TArr(n, self.type(), pos)
@@ -549,9 +553,14 @@ class Parser:
                 e.segs[-1].targs = self.type_list()
             elif v == '[' and not tok.nl:
                 self.next()
-                idx = self.expr()
-                self.expect_op(']')
-                e = A.Index(e, idx, tok.pos)
+                lo = None if self.is_op('..') else self.expr()
+                if self.accept_op('..'):
+                    hi = None if self.is_op(']') else self.expr()
+                    self.expect_op(']')
+                    e = A.Range(e, lo, hi, tok.pos)
+                else:
+                    self.expect_op(']')
+                    e = A.Index(e, lo, tok.pos)
             elif v == '{' and not tok.nl:
                 if self.in_cond and not self.brace_is_call():
                     return e

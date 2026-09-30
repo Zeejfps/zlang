@@ -20,7 +20,7 @@ spaces. A block is `{`, then each statement on its own line indented two spaces 
 enclosing line, then for a value block `=> EXPR` on its own line, then `}` on its own line at
 the enclosing indent. An empty block is `{}`. Top-level items are one per line:
 
-    ctxir 2
+    ctxir 3
     (files [STR...])                     file names, in the order positions first use them; ""
                                          is a program read from a string
     (type ID TYPE)...                                       in id order
@@ -36,7 +36,7 @@ the enclosing indent. An empty block is `{}`. Top-level items are one per line:
 Types (ids are assigned in the order the dumper first meets them):
     (prim NAME)                          i8..i64, u8..u64, usize, f32, f64, bool
     (ptr T)  (arr N T)  (cap NAME)  (void)
-    (struct NAME SIZE ALIGN [(STR T OFFSET)...])
+    (struct NAME SIZE ALIGN [(STR T OFFSET)...])      also a slice []T: fields ptr (*T) and len
     (union NAME SIZE ALIGN PAYOFF [VARIANT...])        also ?T; tag u32 at 0, null is tag 0
         VARIANT = (STR _) | (STR [(STR T OFFSET)...])     offsets from the start of the union
     (fn BOUND [(STR MUT T)...] RET)      fields sorted by name
@@ -54,7 +54,9 @@ Expressions; each has its type T first:
     (int T N)  (float T F)  (bool T 0|1)  (str T STR)  (null T)
     (local T SLOT)  (deref T E POS)  (field T E INDEX)  (index T E E POS)
     (payload T E VARIANT FIELD)          the field of a union known to hold VARIANT
-    (addr T PLACE)                       PLACE is local, deref, field/index/payload of a place
+    (sindex T E E POS)                   element of slice E, bounds-checked; a place
+    (ssub T E LO HI|_ POS)               E[LO..HI], HI defaulting to E's length
+    (addr T PLACE)                       PLACE is local, deref, sindex, field/index/payload of a place
     (seq T E E)                          evaluates the first, then gives the second
     (neg T E POS)  (not T E)  (and T E E)  (or T E E)
     (arith T OP E E POS)                 OP: add sub mul div rem; operands have type T
@@ -78,11 +80,11 @@ from .checker import NativeFn
 from .natives import _float_text, _shortest_f32
 from .runtime import Runtime, f32r
 from .types import (
-    Prim, Ptr, Arr, Opt, StructT, UnionT, FnT, Cap, VOID, USIZE, BOOL, prune, subst, tkey, tstr,
+    Prim, Ptr, SliceT, Arr, Opt, StructT, UnionT, FnT, Cap, VOID, USIZE, BOOL, prune, subst, tkey, tstr,
     qualname, struct_fields, variants_of, widens,
 )
 
-VERSION = 2
+VERSION = 3
 
 
 class Sym(str):
@@ -193,7 +195,7 @@ class Dumper:
                         self.tid(t.ret))
         lay = self.rt.layout(t)
         name = tstr(t, muts=False).encode()
-        if isinstance(t, StructT):
+        if isinstance(t, (StructT, SliceT)):     # a slice is a struct of ptr and len
             return node('struct', name, lay.size, lay.align,
                         [(n.encode(), self.tid(ft), off) for n, ft, off in lay.fields])
         variants = []
@@ -376,6 +378,8 @@ class Dumper:
         if e.kind == 'pfield':
             base = node('deref', self.tid(bt.elem), self.ex(e.base), *self.pos(e.pos))
             return node('field', self.tid(t), base, field_index(bt.elem, e.name))
+        if e.kind in ('sptr', 'slen'):
+            return node('field', self.tid(t), self.ex(e.base), 0 if e.kind == 'sptr' else 1)
         n = bt.n if e.kind == 'len' else bt.elem.n
         lit = node('int', self.tid(USIZE), n)
         if e.kind == 'len' and isinstance(e.base, A.Path):
@@ -391,7 +395,19 @@ class Dumper:
         if e.kind == 'parr':
             arr = node('deref', self.tid(bt.elem), self.ex(e.base), *p)
             return node('index', self.tid(t), arr, i, *p)
+        if e.kind == 'slice':
+            return node('sindex', self.tid(t), self.ex(e.base), i, *p)
         return node('deref', self.tid(t), node('ptradd', self.tid(bt), self.ex(e.base), i), *p)
+
+    def e_Range(self, e, t):
+        lo = self.conv(e.lo, USIZE) if e.lo is not None else node('int', self.tid(USIZE), 0)
+        hi = self.conv(e.hi, USIZE) if e.hi is not None else NONE
+        return node('ssub', self.tid(t), self.ex(e.base), lo, hi, *self.pos(e.pos))
+
+    def e_ToSlice(self, e, t):
+        at = self.T(e.expr.ty)
+        ptr = node('cast', self.tid(Ptr(t.elem)), self.ex(e.expr))
+        return node('struct', self.tid(t), [(0, ptr), (1, node('int', self.tid(USIZE), at.elem.n))])
 
     def e_Deref(self, e, t):
         return node('deref', self.tid(t), self.ex(e.base), *self.pos(e.pos))
@@ -476,6 +492,8 @@ class Dumper:
             return node('ptraddr', self.tid(t), self.ex(e.args[0]))
         if n == 'cast':
             return node('cast', self.tid(t), self.ex(e.args[0]))
+        if n == 'slice':
+            return node('struct', self.tid(t), [(0, self.ex(e.args[0])), (1, self.conv(e.args[1], USIZE))])
         if n == 'as':
             return node('as', self.tid(t), self.ex(e.args[0]), *self.pos(e.pos))
         if n == 'trunc':
@@ -589,6 +607,16 @@ class Verifier:
     def is_usize(self, t):
         return self.prim(t) == 'usize'
 
+    def slice_elem(self, t):
+        """The element type of a slice struct (fields ptr: *T, len: usize), else None."""
+        d = self.types[t]
+        if d[0] != 'struct' or len(d[4]) != 2:
+            return None
+        (pn, pt, _), (ln, lt, _) = d[4]
+        if pn != b'ptr' or ln != b'len' or self.kind(pt) != 'ptr' or not self.is_usize(lt):
+            return None
+        return self.types[pt][1]
+
     def is_opt(self, t):
         d = self.types[t]
         return d[0] == 'union' and d[1].startswith(b'?')
@@ -678,7 +706,7 @@ class Verifier:
         tag = e[0]
         if tag in ('field', 'index', 'payload'):
             self.place(e[2])
-        elif tag not in ('local', 'deref'):
+        elif tag not in ('local', 'deref', 'sindex'):
             raise IRError(f'in {self.fn}: {tag} is not a place')
 
     def args(self, args, params, what):
@@ -717,6 +745,13 @@ class Verifier:
             d = self.types[self.ex(e[2])]
             self.expect(d[0] == 'arr' and d[2] == t, 'index of a non-array')
             self.expect(self.is_usize(self.ex(e[3])), 'index is not usize')
+        elif tag == 'sindex':
+            self.expect(self.slice_elem(self.ex(e[2])) == t, 'sindex of a non-slice')
+            self.expect(self.is_usize(self.ex(e[3])), 'index is not usize')
+        elif tag == 'ssub':
+            self.expect(self.slice_elem(t) is not None and self.ex(e[2]) == t, 'ssub type')
+            self.expect(self.is_usize(self.ex(e[3])), 'ssub lo is not usize')
+            self.expect(e[4] == NONE or self.is_usize(self.ex(e[4])), 'ssub hi is not usize')
         elif tag == 'payload':
             self.expect(self.payload(self.ex(e[2]), e[3], e[4]) == t, 'payload type')
         elif tag == 'addr':

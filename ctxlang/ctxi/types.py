@@ -36,6 +36,13 @@ class Ptr(Type):
         self.elem, self.mut = elem, mut
 
 
+class SliceT(Type):
+    """`[]T`, or `[]mut T` when mut: a pointer and a length. tkey erases mut, as for Ptr."""
+
+    def __init__(self, elem, mut=False):
+        self.elem, self.mut = elem, mut
+
+
 class Arr(Type):
     def __init__(self, n, elem):
         self.n, self.elem = n, elem
@@ -106,6 +113,8 @@ def zonk(t):
     t = prune(t)
     if isinstance(t, Ptr):
         return Ptr(zonk(t.elem), t.mut)
+    if isinstance(t, SliceT):
+        return SliceT(zonk(t.elem), t.mut)
     if isinstance(t, Opt):
         return Opt(zonk(t.elem))
     if isinstance(t, Arr):
@@ -128,6 +137,8 @@ def subst(t, m):
         return m.get(t, t)
     if isinstance(t, Ptr):
         return Ptr(subst(t.elem, m), t.mut)
+    if isinstance(t, SliceT):
+        return SliceT(subst(t.elem, m), t.mut)
     if isinstance(t, Opt):
         return Opt(subst(t.elem, m))
     if isinstance(t, Arr):
@@ -148,6 +159,8 @@ def tstr(t, muts=True):
         return t.name
     if isinstance(t, Ptr):
         return ('*mut ' if t.mut and muts else '*') + tstr(t.elem, muts)
+    if isinstance(t, SliceT):
+        return ('[]mut ' if t.mut and muts else '[]') + tstr(t.elem, muts)
     if isinstance(t, Opt):
         return '?' + tstr(t.elem, muts)
     if isinstance(t, Arr):
@@ -207,7 +220,7 @@ def occurs(v, t):
     t = prune(t)
     if t is v:
         return True
-    if isinstance(t, (Ptr, Opt, Arr)):
+    if isinstance(t, (Ptr, SliceT, Opt, Arr)):
         return occurs(v, t.elem)
     if isinstance(t, (StructT, UnionT)):
         return any(occurs(v, a) for a in t.args)
@@ -245,7 +258,7 @@ def unify(a, b):
         return _bind(b, a)
     if type(a) is not type(b):
         return False
-    if isinstance(a, Ptr):
+    if isinstance(a, (Ptr, SliceT)):
         return a.mut == b.mut and unify(a.elem, b.elem)
     if isinstance(a, Opt):
         return unify(a.elem, b.elem)
@@ -272,10 +285,10 @@ def widens(a, b):
     Signed and unsigned integers widen to wider types of their own signedness, unsigned ones
     also to wider signed types. usize is assumed to be 32 to 64 bits: u8..u32 widen to it and
     it widens to u64. f32 widens to f64. Integers never convert to floats implicitly. A `*mut T`
-    converts to a `*T`.
+    converts to a `*T`, and a `[]mut T` to a `[]T`.
     """
     a, b = prune(a), prune(b)
-    if isinstance(a, Ptr) and isinstance(b, Ptr):
+    if isinstance(a, (Ptr, SliceT)) and type(a) is type(b):
         return a.mut and not b.mut and unify(a.elem, b.elem)
     if not (isinstance(a, Prim) and isinstance(b, Prim)) or a is b:
         return False
@@ -312,7 +325,7 @@ def contains_bound_fn(t):
     t = prune(t)
     if isinstance(t, FnT):
         return t.bound
-    if isinstance(t, (Ptr, Opt, Arr)):
+    if isinstance(t, (Ptr, SliceT, Opt, Arr)):
         return contains_bound_fn(t.elem)
     if isinstance(t, (StructT, UnionT)):
         return any(contains_bound_fn(a) for a in t.args)
@@ -323,7 +336,7 @@ def free_vars(t, acc):
     t = prune(t)
     if isinstance(t, TVar):
         acc.append(t)
-    elif isinstance(t, (Ptr, Opt, Arr)):
+    elif isinstance(t, (Ptr, SliceT, Opt, Arr)):
         free_vars(t.elem, acc)
     elif isinstance(t, (StructT, UnionT)):
         for a in t.args:
@@ -359,10 +372,12 @@ def tkey(t):
         return t.name
     if isinstance(t, Ptr):
         return ('*', tkey(t.elem))
+    if isinstance(t, SliceT):
+        return ('[]', tkey(t.elem))
     if isinstance(t, Opt):
         return ('?', tkey(t.elem))
     if isinstance(t, Arr):
-        return ('[]', t.n, tkey(t.elem))
+        return ('[N]', t.n, tkey(t.elem))
     if isinstance(t, StructT):
         return ('s', id(t.decl), tuple(tkey(a) for a in t.args))
     if isinstance(t, UnionT):

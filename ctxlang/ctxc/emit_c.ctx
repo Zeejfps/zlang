@@ -50,7 +50,7 @@ namespace emit {
             o = ir_print::out{ heap, types = p.types },
             aux = ir_print::out{ heap, types = p.types },
             heap,
-            f = slice::get{ s = p.fns, i = p.main },
+            f = p.fns[p.main],
             temp = 0, sites = 0, depth = 0,
             scopes = list::new(Scope){ realloc = arena::alloc },
             thunks = list::new(bool){ realloc = arena::alloc },
@@ -72,7 +72,7 @@ namespace emit {
         put{ &e, a = "static const char *const ctx_file_table[] = {" }
         i = 0
         while i < p.files.len {
-            cstr{ &e, b = slice::get{ s = p.files, i } }
+            cstr{ &e, b = p.files[i] }
             put{ &e, a = ", " }
             i = i + 1
         }
@@ -85,7 +85,7 @@ namespace emit {
         e.o = ir_print::out{ heap, types = p.types }
         i = 0
         while i < p.fns.len {
-            let f = slice::get{ s = p.fns, i }
+            let f = p.fns[i]
             if f.native { native{ &e, f } } else { function{ &e, f } }
             i = i + 1
         }
@@ -109,7 +109,7 @@ namespace emit {
         ch{ &e, c = '\n' }
         i = 0
         while i < n {
-            let func{ params, ret } = slice::get{ s = e.p.types, i } else { i = i + 1; continue }
+            let func{ params, ret } = e.p.types[i] else { i = i + 1; continue }
             put{ &e, a = "typedef " }
             tn{ &e, t = ret }
             put{ &e, a = " (*c" }
@@ -118,7 +118,7 @@ namespace emit {
             let mut j: usize = 0
             while j < params.len {
                 put{ &e, a = ", " }
-                param_type{ &e, q = slice::get{ s = params, i = j } }
+                param_type{ &e, q = params[j] }
                 j = j + 1
             }
             put{ &e, a = ");\n" }
@@ -131,11 +131,11 @@ namespace emit {
     }
 
     fn mark { e: E, id: ir::TypeId } -> u8 {
-        return slice::get{ s = list::items{ list = e.marks }, i = id }
+        return list::items{ list = e.marks }[id]
     }
 
     fn set_mark { mut e: E, id: ir::TypeId, m: u8 } {
-        slice::set{ s = list::items{ list = e.marks }, i = id, v = m }
+        list::items{ list = e.marks }[id] = m
     }
 
     // `typedef ... tN;`, after the typedefs it refers to.
@@ -206,7 +206,7 @@ namespace emit {
                 let mut i: usize = 0
                 let mut payload = false
                 while i < variants.len {
-                    let fs = slice::get{ s = variants, i }.fields
+                    let fs = variants[i].fields
                     if fs != null {
                         define_fields{ &e, fields = fs }
                         payload = true
@@ -219,7 +219,7 @@ namespace emit {
                     put{ &e, a = "union { " }
                     i = 0
                     while i < variants.len {
-                        let fs = slice::get{ s = variants, i }.fields
+                        let fs = variants[i].fields
                         if fs != null {
                             put{ &e, a = "struct { " }
                             members{ &e, fields = fs }
@@ -241,10 +241,10 @@ namespace emit {
         }
     }
 
-    fn define_fields { mut e: E, fields: slice::Slice(ir::Field) } {
+    fn define_fields { mut e: E, fields: []ir::Field } {
         let mut i: usize = 0
         while i < fields.len {
-            define{ &e, id = slice::get{ s = fields, i }.ty }
+            define{ &e, id = fields[i].ty }
             i = i + 1
         }
     }
@@ -255,10 +255,10 @@ namespace emit {
         put{ &e, a = " { " }
     }
 
-    fn members { mut e: E, fields: slice::Slice(ir::Field) } {
+    fn members { mut e: E, fields: []ir::Field } {
         let mut i: usize = 0
         while i < fields.len {
-            let f = slice::get{ s = fields, i }
+            let f = fields[i]
             tn{ &e, t = f.ty }
             put{ &e, a = " m_" }
             raw{ &e, b = f.name }
@@ -274,7 +274,7 @@ namespace emit {
                 size_assert{ &e, id, size, align }
                 let mut i: usize = 0
                 while i < fields.len {
-                    let f = slice::get{ s = fields, i }
+                    let f = fields[i]
                     offset_assert{ &e, id, variant = null, f }
                     i = i + 1
                 }
@@ -283,11 +283,11 @@ namespace emit {
                 size_assert{ &e, id, size, align }
                 let mut i: usize = 0
                 while i < variants.len {
-                    let v = slice::get{ s = variants, i }
+                    let v = variants[i]
                     let some{ value = fields } = v.fields else { i = i + 1; continue }
                     let mut j: usize = 0
                     while j < fields.len {
-                        offset_assert{ &e, id, variant = @as(u32, i), f = slice::get{ s = fields, i = j } }
+                        offset_assert{ &e, id, variant = @as(u32, i), f = fields[j] }
                         j = j + 1
                     }
                     i = i + 1
@@ -339,7 +339,7 @@ namespace emit {
     fn prototypes { mut e: E } {
         let mut i: usize = 0
         while i < e.p.fns.len {
-            signature{ &e, f = slice::get{ s = e.p.fns, i } }
+            signature{ &e, f = e.p.fns[i] }
             put{ &e, a = ";\n" }
             i = i + 1
         }
@@ -358,9 +358,9 @@ namespace emit {
         while i < f.params.len {
             if i > 0 { put{ &e, a = ", " } }
             if f.native {
-                param_type{ &e, q = slice::get{ s = f.params, i } }
+                param_type{ &e, q = f.params[i] }
             } else {
-                tn{ &e, t = slice::get{ s = f.locals, i }.ty }
+                tn{ &e, t = f.locals[i].ty }
             }
             put{ &e, a = " l" }
             num{ &e, n = i }
@@ -385,7 +385,7 @@ namespace emit {
         put{ &e, a = "ctx_n_" }
         let mut i: usize = 0
         while i < f.name.len {
-            let c = slice::get{ s = f.name, i }
+            let c = f.name[i]
             if c == ':' {
                 ch{ &e, c = '_' }
                 i = i + 2
@@ -398,7 +398,7 @@ namespace emit {
         i = 0
         while i < f.params.len {
             if i > 0 { put{ &e, a = ", " } }
-            let q = slice::get{ s = f.params, i }
+            let q = f.params[i]
             let kind = if q.mutable { 0 } else {
                 match ty{ e, id = q.ty } { record => { 1 } tagged => { 2 } else => { 0 } }
             }
@@ -425,7 +425,7 @@ namespace emit {
         let mut i = f.params.len
         while i < f.locals.len {
             nl{ &e }
-            tn{ &e, t = slice::get{ s = f.locals, i }.ty }
+            tn{ &e, t = f.locals[i].ty }
             put{ &e, a = " l" }
             num{ &e, n = i }
             ch{ &e, c = ';' }
@@ -445,7 +445,7 @@ namespace emit {
 
     // `int main`: supplies main's capabilities and args, and returns its exit code.
     fn entry { mut e: E } {
-        let f = slice::get{ s = e.p.fns, i = e.p.main }
+        let f = e.p.fns[e.p.main]
         put{ &e, a = "int main(int argc, char **argv) {\n    static char cap[1];\n    ctx_init(ctx_file_table, " }
         num{ &e, n = e.p.files.len }
         put{ &e, a = ", CTX_PROGRAM_NAME, argc, argv);\n    " }
@@ -458,10 +458,10 @@ namespace emit {
         let args = "args"
         while i < f.params.len {
             if i > 0 { put{ &e, a = ", " } }
-            let q = slice::get{ s = f.params, i }
+            let q = f.params[i]
             if q.mutable {
                 put{ &e, a = "(void *)cap" }
-            } else if map::eq_bytes{ a = q.name, b = slice::of(u8){ a = &args } } {
+            } else if map::eq_bytes{ a = q.name, b = args[..] } {
                 put{ &e, a = "CTX_BITCAST(" }
                 tn{ &e, t = q.ty }
                 put{ &e, a = ", ctx_args())" }
@@ -486,7 +486,7 @@ namespace emit {
         let mut i: usize = 0
         while i < b.stmts.len {
             nl{ &e }
-            stmt{ &e, s = slice::get{ s = b.stmts, i } }
+            stmt{ &e, s = b.stmts[i] }
             i = i + 1
         }
         close_block{ &e }
@@ -500,7 +500,7 @@ namespace emit {
         let mut i: usize = 0
         while i < b.stmts.len {
             nl{ &e }
-            stmt{ &e, s = slice::get{ s = b.stmts, i } }
+            stmt{ &e, s = b.stmts[i] }
             i = i + 1
         }
         let r = b.result
@@ -540,7 +540,7 @@ namespace emit {
         let mut i = e.scopes.len
         while i > 0 {
             i = i - 1
-            let s = slice::get{ s = list::items{ list = e.scopes }, i }
+            let s = list::items{ list = e.scopes }[i]
             match s {
                 deferred{ body } => {
                     nl{ &e }
@@ -556,7 +556,7 @@ namespace emit {
         let mut i = e.scopes.len
         while i > 0 {
             i = i - 1
-            match slice::get{ s = list::items{ list = e.scopes }, i } {
+            match list::items{ list = e.scopes }[i] {
                 deferred => { return true }
                 block    => { match stop { block => { return false } else => {} } }
                 loop     => { match stop { loop => { return false } else => {} } }
@@ -705,10 +705,10 @@ namespace emit {
 
     // The arms of a match on _tK: an if-else chain, since `break` inside a C switch would leave
     // the switch, not the loop. With res, each arm is a value block into _tRES.
-    fn arm_chain { mut e: E, arms: slice::Slice(ir::Arm), k: u32, through: bool, union_t: ir::TypeId, res: ?u32 } {
+    fn arm_chain { mut e: E, arms: []ir::Arm, k: u32, through: bool, union_t: ir::TypeId, res: ?u32 } {
         let mut i: usize = 0
         while i < arms.len {
-            let a = slice::get{ s = arms, i }
+            let a = arms[i]
             ch{ &e, c = ' ' }
             if i > 0 { put{ &e, a = "else " } }
             if a.pats.len > 0 {
@@ -716,7 +716,7 @@ namespace emit {
                 let mut j: usize = 0
                 while j < a.pats.len {
                     if j > 0 { put{ &e, a = " || " } }
-                    tag_is{ &e, k, through, variant = slice::get{ s = a.pats, i = j }.variant }
+                    tag_is{ &e, k, through, variant = a.pats[j].variant }
                     j = j + 1
                 }
                 put{ &e, a = ") " }
@@ -737,12 +737,12 @@ namespace emit {
     fn arm_body { mut e: E, a: ir::Arm, k: u32, through: bool, union_t: ir::TypeId, res: ?u32 } {
         put{ &e, a = "{ " }
         if a.pats.len == 1 {
-            let p = slice::get{ s = a.pats, i = 0 }
+            let p = a.pats[0]
             bind_all{ &e, binds = p.binds, k, through, union_t, variant = p.variant }
-        } else if a.pats.len > 1 and slice::get{ s = a.pats, i = 0 }.binds.len > 0 {
+        } else if a.pats.len > 1 and a.pats[0].binds.len > 0 {
             let mut j: usize = 0
             while j < a.pats.len {
-                let p = slice::get{ s = a.pats, i = j }
+                let p = a.pats[j]
                 if j > 0 { put{ &e, a = "else " } }
                 put{ &e, a = "if (" }
                 tag_is{ &e, k, through, variant = p.variant }
@@ -760,10 +760,10 @@ namespace emit {
     }
 
     // Each binding's slot gets its field of variant `variant` of _tK, or the field's address.
-    fn bind_all { mut e: E, binds: slice::Slice(ir::Bind), k: u32, through: bool, union_t: ir::TypeId, variant: u32 } {
+    fn bind_all { mut e: E, binds: []ir::Bind, k: u32, through: bool, union_t: ir::TypeId, variant: u32 } {
         let mut i: usize = 0
         while i < binds.len {
-            let b = slice::get{ s = binds, i }
+            let b = binds[i]
             local{ &e, slot = b.slot }
             put{ &e, a = " = " }
             if b.by_ref { ch{ &e, c = '&' } }
@@ -781,8 +781,8 @@ namespace emit {
         num{ &e, n = variant }
         put{ &e, a = ".m_" }
         let tagged{ variants } = ty{ e, id = union_t } else { @panic("emit: payload of a non-union") }
-        let some{ value = fields } = slice::get{ s = variants, i = variant }.fields else { @panic("emit: variant has no payload") }
-        raw{ &e, b = slice::get{ s = fields, i = field }.name }
+        let some{ value = fields } = variants[variant].fields else { @panic("emit: variant has no payload") }
+        raw{ &e, b = fields[field].name }
     }
 
     // The union a match scrutinee of type t holds, through a pointer if `through`.
@@ -811,7 +811,7 @@ namespace emit {
             float{ value } => {
                 cast_open{ &e, t = x.ty }
                 let mut buf: [32]u8
-                raw{ &e, b = ascii::fmt_f64{ n = value, into = slice::of(u8){ a = &buf } }.bytes }
+                raw{ &e, b = ascii::fmt_f64{ n = value, into = buf[..] }.bytes }
                 put{ &e, a = "))" }
             }
             boolean{ value } => {
@@ -841,9 +841,11 @@ namespace emit {
                 expr{ &e, x = base.* }
                 put{ &e, a = ").m_" }
                 let record{ fields } = ty{ e, id = base.ty } else { @panic("emit: field of a non-struct") }
-                raw{ &e, b = slice::get{ s = fields, i = index }.name }
+                raw{ &e, b = fields[index].name }
             }
             index{ base, i, pos } => { index{ &e, base = base.*, i = i.*, pos } }
+            sindex{ base, i, pos } => { sindex{ &e, base = base.*, i = i.*, pos } }
+            ssub{ base, lo, hi, pos } => { ssub{ &e, t = x.ty, base = base.*, lo = lo.*, hi, pos } }
             payload{ base, variant, field } => {
                 ch{ &e, c = '(' }
                 expr{ &e, x = base.* }
@@ -1101,6 +1103,76 @@ namespace emit {
         close_temps{ &e, tt }
     }
 
+    // `(*({ S s = (B); uint64_t i = I; s.m_ptr + ctx_idx(i, s.m_len, pos); }))`: a slice's
+    // element, as a place.
+    fn sindex { mut e: E, base: ir::Expr, i: ir::Expr, pos: ir::Pos } {
+        let ks = fresh{ &e }
+        let ki = fresh{ &e }
+        put{ &e, a = "(*({ " }
+        tn{ &e, t = base.ty }
+        ch{ &e, c = ' ' }
+        tmp{ &e, k = ks }
+        put{ &e, a = " = (" }
+        expr{ &e, x = base }
+        put{ &e, a = "); uint64_t " }
+        tmp{ &e, k = ki }
+        put{ &e, a = " = " }
+        expr{ &e, x = i }
+        put{ &e, a = "; " }
+        tmp{ &e, k = ks }
+        put{ &e, a = ".m_ptr + ctx_idx(" }
+        tmp{ &e, k = ki }
+        put{ &e, a = ", " }
+        tmp{ &e, k = ks }
+        put{ &e, a = ".m_len, " }
+        position{ &e, p = pos }
+        put{ &e, a = "); }))" }
+    }
+
+    // `({ S s = (B); uint64_t lo = LO; uint64_t hi = HI; ctx_range(lo, hi, s.m_len, pos);
+    // (S){ .m_ptr = s.m_ptr + lo, .m_len = hi - lo }; })`, where HI defaults to s.m_len.
+    fn ssub { mut e: E, t: ir::TypeId, base: ir::Expr, lo: ir::Expr, hi: ?*ir::Expr, pos: ir::Pos } {
+        let ks = fresh{ &e }
+        let kl = fresh{ &e }
+        let kh = fresh{ &e }
+        put{ &e, a = "({ " }
+        tn{ &e, t }
+        ch{ &e, c = ' ' }
+        tmp{ &e, k = ks }
+        put{ &e, a = " = (" }
+        expr{ &e, x = base }
+        put{ &e, a = "); uint64_t " }
+        tmp{ &e, k = kl }
+        put{ &e, a = " = " }
+        expr{ &e, x = lo }
+        put{ &e, a = "; uint64_t " }
+        tmp{ &e, k = kh }
+        put{ &e, a = " = " }
+        match hi {
+            null          => { tmp{ &e, k = ks }; put{ &e, a = ".m_len" } }
+            some{ value } => { expr{ &e, x = value.* } }
+        }
+        put{ &e, a = "; ctx_range(" }
+        tmp{ &e, k = kl }
+        put{ &e, a = ", " }
+        tmp{ &e, k = kh }
+        put{ &e, a = ", " }
+        tmp{ &e, k = ks }
+        put{ &e, a = ".m_len, " }
+        position{ &e, p = pos }
+        put{ &e, a = "); (" }
+        tn{ &e, t }
+        put{ &e, a = "){ .m_ptr = " }
+        tmp{ &e, k = ks }
+        put{ &e, a = ".m_ptr + " }
+        tmp{ &e, k = kl }
+        put{ &e, a = ", .m_len = " }
+        tmp{ &e, k = kh }
+        put{ &e, a = " - " }
+        tmp{ &e, k = kl }
+        put{ &e, a = " }; })" }
+    }
+
     fn bit_width { p: ir::Prim } -> u64 {
         return match p {
             i8 => { 8 } u8 => { 8 } i16 => { 16 } u16 => { 16 } i32 => { 32 } u32 => { 32 } else => { 64 }
@@ -1218,10 +1290,10 @@ namespace emit {
     }
 
     // A struct or variant literal.
-    fn literal { mut e: E, t: ir::TypeId, variant: ?u32, items: slice::Slice(ir::Arg) } {
+    fn literal { mut e: E, t: ir::TypeId, variant: ?u32, items: []ir::Arg } {
         let tt = temps_args{ &e, args = items }
         compound{ &e, t }
-        let mut names = slice::empty(ir::Field){}
+        let mut names: []ir::Field
         let mut payload = false
         match ty{ e, id = t } {
             record{ fields } => { names = fields }
@@ -1229,7 +1301,7 @@ namespace emit {
                 let some{ value = v } = variant else { @panic("emit: variant literal without a variant") }
                 put{ &e, a = " .tag = " }
                 num{ &e, n = v }
-                let fs = slice::get{ s = variants, i = v }.fields
+                let fs = variants[v].fields
                 if fs != null {
                     names = fs
                     payload = true
@@ -1242,9 +1314,9 @@ namespace emit {
         }
         let mut i: usize = 0
         while i < items.len {
-            let a = slice::get{ s = items, i }
+            let a = items[i]
             put{ &e, a = " .m_" }
-            raw{ &e, b = slice::get{ s = names, i = a.index }.name }
+            raw{ &e, b = names[a.index].name }
             put{ &e, a = " = " }
             operand{ &e, x = a.value, tt, i = @as(u32, i) }
             ch{ &e, c = ',' }
@@ -1255,7 +1327,7 @@ namespace emit {
         close_temps{ &e, tt }
     }
 
-    fn array { mut e: E, t: ir::TypeId, elems: slice::Slice(ir::Expr) } {
+    fn array { mut e: E, t: ir::TypeId, elems: []ir::Expr } {
         let tt = temps_list{ &e, xs = elems }
         compound{ &e, t }
         if elems.len > 0 {
@@ -1263,7 +1335,7 @@ namespace emit {
             let mut i: usize = 0
             while i < elems.len {
                 if i > 0 { put{ &e, a = ", " } }
-                operand{ &e, x = slice::get{ s = elems, i }, tt, i = @as(u32, i) }
+                operand{ &e, x = elems[i], tt, i = @as(u32, i) }
                 i = i + 1
             }
             put{ &e, a = " }" }
@@ -1298,8 +1370,8 @@ namespace emit {
     // ---- calls and function values
 
     // fN(args in parameter order), evaluated in the IR's order.
-    fn call { mut e: E, callee: u32, args: slice::Slice(ir::Arg) } {
-        let f = slice::get{ s = e.p.fns, i = callee }
+    fn call { mut e: E, callee: u32, args: []ir::Arg } {
+        let f = e.p.fns[callee]
         let tt = temps_args{ &e, args }
         ch{ &e, c = 'f' }
         num{ &e, n = callee }
@@ -1310,13 +1382,13 @@ namespace emit {
     }
 
     // The args, by parameter index 0..n.
-    fn in_order { mut e: E, args: slice::Slice(ir::Arg), n: usize, tt: Temps } {
+    fn in_order { mut e: E, args: []ir::Arg, n: usize, tt: Temps } {
         let mut j: usize = 0
         while j < n {
             if j > 0 { put{ &e, a = ", " } }
             let mut i: usize = 0
             while i < args.len {
-                let a = slice::get{ s = args, i }
+                let a = args[i]
                 if a.index == j { operand{ &e, x = a.value, tt, i = @as(u32, i) } }
                 i = i + 1
             }
@@ -1325,7 +1397,7 @@ namespace emit {
     }
 
     // The callee first, then the args; called through its code.
-    fn dcall { mut e: E, callee: ir::Expr, args: slice::Slice(ir::Arg) } {
+    fn dcall { mut e: E, callee: ir::Expr, args: []ir::Arg } {
         let func{ params } = ty{ e, id = callee.ty } else { @panic("emit: call of a non-function") }
         let kf = fresh{ &e }
         put{ &e, a = "({ ctx_fn *" }
@@ -1348,8 +1420,8 @@ namespace emit {
     }
 
     // A bound function: a record holding the code and the given args, allocated each time.
-    fn bind { mut e: E, t: ir::TypeId, callee: u32, args: slice::Slice(ir::Arg) } {
-        let f = slice::get{ s = e.p.fns, i = callee }
+    fn bind { mut e: E, t: ir::TypeId, callee: u32, args: []ir::Arg } {
+        let f = e.p.fns[callee]
         let k = e.sites
         e.sites = e.sites + 1
         record{ &e, k, inner = false, args }
@@ -1372,7 +1444,7 @@ namespace emit {
     }
 
     // A bound function value: like bind, calling the callee value through its code.
-    fn dbind { mut e: E, t: ir::TypeId, callee: ir::Expr, args: slice::Slice(ir::Arg) } {
+    fn dbind { mut e: E, t: ir::TypeId, callee: ir::Expr, args: []ir::Arg } {
         let func{ params = target } = ty{ e, id = callee.ty } else { @panic("emit: bind of a non-function") }
         let k = e.sites
         e.sites = e.sites + 1
@@ -1397,7 +1469,7 @@ namespace emit {
     }
 
     // `struct bK { ctx_fn base; [ctx_fn *inner;] T cI; ... };` for the args it captures.
-    fn record { mut e: E, k: u32, inner: bool, args: slice::Slice(ir::Arg) } {
+    fn record { mut e: E, k: u32, inner: bool, args: []ir::Arg } {
         to_aux{ &e }
         put{ &e, a = "struct b" }
         num{ &e, n = k }
@@ -1405,7 +1477,7 @@ namespace emit {
         if inner { put{ &e, a = "ctx_fn *inner; " } }
         let mut i: usize = 0
         while i < args.len {
-            let a = slice::get{ s = args, i }
+            let a = args[i]
             tn{ &e, t = a.value.ty }
             put{ &e, a = " c" }
             num{ &e, n = a.index }
@@ -1417,7 +1489,7 @@ namespace emit {
     }
 
     // Allocates record bK and fills it, in the IR's order: the callee value, then the args.
-    fn new_record { mut e: E, k: u32, inner: ?ir::Expr, args: slice::Slice(ir::Arg) } {
+    fn new_record { mut e: E, k: u32, inner: ?ir::Expr, args: []ir::Arg } {
         let kr = fresh{ &e }
         put{ &e, a = "({ struct b" }
         num{ &e, n = k }
@@ -1441,7 +1513,7 @@ namespace emit {
         }
         let mut i: usize = 0
         while i < args.len {
-            let a = slice::get{ s = args, i }
+            let a = args[i]
             tmp{ &e, k = kr }
             put{ &e, a = "->c" }
             num{ &e, n = a.index }
@@ -1456,7 +1528,7 @@ namespace emit {
     }
 
     // `static R PREFIXK_code(ctx_fn *self, P a0, ...) {`
-    fn code_head(A) { mut e: E, prefix: A, k: u32, ret: ir::TypeId, params: slice::Slice(ir::Param) } {
+    fn code_head(A) { mut e: E, prefix: A, k: u32, ret: ir::TypeId, params: []ir::Param } {
         put{ &e, a = "static " }
         tn{ &e, t = ret }
         ch{ &e, c = ' ' }
@@ -1466,7 +1538,7 @@ namespace emit {
         let mut i: usize = 0
         while i < params.len {
             put{ &e, a = ", " }
-            param_type{ &e, q = slice::get{ s = params, i } }
+            param_type{ &e, q = params[i] }
             put{ &e, a = " a" }
             num{ &e, n = i }
             i = i + 1
@@ -1475,31 +1547,31 @@ namespace emit {
     }
 
     // The target's params in order: a captured arg (s->cJ) or the code's param of the same name.
-    fn forward { mut e: E, target: slice::Slice(ir::Param), args: slice::Slice(ir::Arg), given: slice::Slice(ir::Param) } {
+    fn forward { mut e: E, target: []ir::Param, args: []ir::Arg, given: []ir::Param } {
         let mut j: usize = 0
         while j < target.len {
             if j > 0 { put{ &e, a = ", " } }
             let mut captured = false
             let mut i: usize = 0
             while i < args.len {
-                if slice::get{ s = args, i }.index == j { captured = true }
+                if args[i].index == j { captured = true }
                 i = i + 1
             }
             if captured {
                 put{ &e, a = "s->c" }
                 num{ &e, n = j }
             } else {
-                by_name{ &e, name = slice::get{ s = target, i = j }.name, params = given }
+                by_name{ &e, name = target[j].name, params = given }
             }
             j = j + 1
         }
     }
 
     // `aI` for the param named `name`.
-    fn by_name { mut e: E, name: ir::Bytes, params: slice::Slice(ir::Param) } {
+    fn by_name { mut e: E, name: ir::Bytes, params: []ir::Param } {
         let mut i: usize = 0
         while i < params.len {
-            if map::eq_bytes{ a = slice::get{ s = params, i }.name, b = name } {
+            if map::eq_bytes{ a = params[i].name, b = name } {
                 ch{ &e, c = 'a' }
                 num{ &e, n = i }
                 return
@@ -1511,9 +1583,9 @@ namespace emit {
 
     // gN, the value of function N: a static record whose code hN calls fN.
     fn thunk { mut e: E, callee: u32, t: ir::TypeId } {
-        if slice::get{ s = list::items{ list = e.thunks }, i = callee } { return }
-        slice::set{ s = list::items{ list = e.thunks }, i = callee, v = true }
-        let f = slice::get{ s = e.p.fns, i = callee }
+        if list::items{ list = e.thunks }[callee] { return }
+        list::items{ list = e.thunks }[callee] = true
+        let f = e.p.fns[callee]
         let func{ params, ret } = ty{ e, id = t } else { @panic("emit: fnref of a non-function type") }
         to_aux{ &e }
         code_head{ &e, prefix = "h", k = callee, ret, params }
@@ -1542,7 +1614,7 @@ namespace emit {
         }
         let mut k: usize = 0
         while k < e.adapters.len {
-            let q = slice::get{ s = list::items{ list = e.adapters }, i = k }
+            let q = list::items{ list = e.adapters }[k]
             if q.from == a.ty and q.to == to { break }
             k = k + 1
         }
@@ -1567,12 +1639,12 @@ namespace emit {
         put{ &e, a = "_code)" }
     }
 
-    fn same_params { a: slice::Slice(ir::Param), b: slice::Slice(ir::Param) } -> bool {
+    fn same_params { a: []ir::Param, b: []ir::Param } -> bool {
         if a.len != b.len { return false }
         let mut i: usize = 0
         while i < a.len {
-            let x = slice::get{ s = a, i }
-            let y = slice::get{ s = b, i }
+            let x = a[i]
+            let y = b[i]
             if x.ty != y.ty or x.mutable != y.mutable or not map::eq_bytes{ a = x.name, b = y.name } { return false }
             i = i + 1
         }
@@ -1609,12 +1681,12 @@ namespace emit {
         return Temps{ on = true, base }
     }
 
-    fn temps_args { mut e: E, args: slice::Slice(ir::Arg) } -> Temps {
+    fn temps_args { mut e: E, args: []ir::Arg } -> Temps {
         let mut effects: usize = 0
         let mut vars: usize = 0
         let mut i: usize = 0
         while i < args.len {
-            let x = slice::get{ s = args, i }.value
+            let x = args[i].value
             if not pure{ e, x } { effects = effects + 1 }
             if not constant{ x } { vars = vars + 1 }
             i = i + 1
@@ -1625,7 +1697,7 @@ namespace emit {
         put{ &e, a = "({ " }
         i = 0
         while i < args.len {
-            let x = slice::get{ s = args, i }.value
+            let x = args[i].value
             declare{ &e, t = x.ty, k = base + @as(u32, i) }
             expr{ &e, x }
             put{ &e, a = "; " }
@@ -1634,12 +1706,12 @@ namespace emit {
         return Temps{ on = true, base }
     }
 
-    fn temps_list { mut e: E, xs: slice::Slice(ir::Expr) } -> Temps {
+    fn temps_list { mut e: E, xs: []ir::Expr } -> Temps {
         let mut effects: usize = 0
         let mut vars: usize = 0
         let mut i: usize = 0
         while i < xs.len {
-            let x = slice::get{ s = xs, i }
+            let x = xs[i]
             if not pure{ e, x } { effects = effects + 1 }
             if not constant{ x } { vars = vars + 1 }
             i = i + 1
@@ -1650,7 +1722,7 @@ namespace emit {
         put{ &e, a = "({ " }
         i = 0
         while i < xs.len {
-            let x = slice::get{ s = xs, i }
+            let x = xs[i]
             declare{ &e, t = x.ty, k = base + @as(u32, i) }
             expr{ &e, x }
             put{ &e, a = "; " }
@@ -1698,7 +1770,7 @@ namespace emit {
                 let mut i: usize = 0
                 let mut ok = true
                 while i < elems.len {
-                    if not pure{ e, x = slice::get{ s = elems, i } } { ok = false }
+                    if not pure{ e, x = elems[i] } { ok = false }
                     i = i + 1
                 }
                 ok
@@ -1707,10 +1779,10 @@ namespace emit {
         }
     }
 
-    fn pure_args { e: E, args: slice::Slice(ir::Arg) } -> bool {
+    fn pure_args { e: E, args: []ir::Arg } -> bool {
         let mut i: usize = 0
         while i < args.len {
-            if not pure{ e, x = slice::get{ s = args, i }.value } { return false }
+            if not pure{ e, x = args[i].value } { return false }
             i = i + 1
         }
         return true
@@ -1737,7 +1809,7 @@ namespace emit {
     fn is_place { x: ir::Expr } -> bool {
         return match x.k {
             local           => { true }
-            deref           => { true }
+            deref | sindex  => { true }
             field{ base }   => { is_place{ x = base.* } }
             index{ base }   => { is_place{ x = base.* } }
             payload{ base } => { is_place{ x = base.* } }
@@ -1748,7 +1820,7 @@ namespace emit {
     // ---- types, briefly
 
     fn ty { e: E, id: ir::TypeId } -> ir::Type {
-        return slice::get{ s = e.p.types, i = id }
+        return e.p.types[id]
     }
 
     fn is_void { e: E, t: ir::TypeId } -> bool {
@@ -1851,7 +1923,7 @@ namespace emit {
         ch{ &e, c = '"' }
         let mut i: usize = 0
         while i < b.len {
-            let c = slice::get{ s = b, i }
+            let c = b[i]
             if c >= 32 and c <= 126 and c != '"' and c != '\\' and c != '?' {
                 ch{ &e, c }
             } else {

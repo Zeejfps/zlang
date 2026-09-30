@@ -1,81 +1,36 @@
-// std: slice. Bounds-checked views over contiguous memory. A slice doesn't own its memory.
+// std: slice. Helpers for the built-in slices `[]T` and `[]mut T` (spec §12, Slices).
+// Indexing, `.len`, `.ptr` and `s[lo..hi]` are part of the language.
 
 namespace slice {
-    // Zero value is the empty slice.
-    struct Slice(T) { ptr: ?*mut T, len: usize }
-
-    fn from(T) { ptr: *mut T, len: usize } -> Slice(T) {
-        return Slice{ ptr, len }
-    }
-
-    // Views the whole array `a` points to. `A` must be an array of T:
-    //   let mut buf: [64]u8
-    //   let s = slice::of(u8){ a = &buf }
-    fn of(T, A) { a: *A } -> Slice(T) {
-        if @size_of(A) % @size_of(T) != 0 { @panic("slice::of: array size is not a multiple of T") }
-        return Slice{ ptr = @cast(*mut T, a), len = @size_of(A) / @size_of(T) }
-    }
-
-    fn empty(T) {} -> Slice(T) {
-        return Slice{ ptr = null, len = 0 }
-    }
-
-    fn is_empty(T) { s: Slice(T) } -> bool {
-        return s.len == 0
-    }
-
-    // Bounds-checked pointer to element i.
-    fn at(T) { s: Slice(T), i: usize } -> *mut T {
-        if i >= s.len { @panic("slice::at: index out of bounds") }
-        let p = s.ptr
-        if p != null { return p + i }
-        @panic("slice::at: non-empty slice has a null pointer")
-    }
-
-    fn get(T) { s: Slice(T), i: usize } -> T {
-        return at{ s, i }.*
-    }
-
-    fn set(T) { s: Slice(T), i: usize, v: T } {
-        at{ s, i }.* = v
-    }
-
-    // Elements lo up to but not including hi.
-    fn sub(T) { s: Slice(T), lo: usize, hi: usize } -> Slice(T) {
-        if lo > hi or hi > s.len { @panic("slice::sub: range out of bounds") }
-        let p = s.ptr
-        if p != null { return Slice{ ptr = p + lo, len = hi - lo } }
-        return empty(T){}
+    // An empty slice: the zero value of []T.
+    fn empty(T) {} -> []mut T {
+        let mut s: []mut T
+        return s
     }
 
     // Reinterprets the elements. Panics if the byte length doesn't divide evenly. Alignment is unchecked.
-    fn cast(T, U) { s: Slice(T) } -> Slice(U) {
+    fn cast(T, U) { s: []mut T } -> []mut U {
         let bytes = s.len * @size_of(T)
         if bytes % @size_of(U) != 0 { @panic("slice::cast: byte length does not divide evenly") }
-        let p = s.ptr
-        if p != null { return Slice{ ptr = @cast(*mut U, p), len = bytes / @size_of(U) } }
-        return empty(U){}
+        return @slice(@cast(*mut U, s.ptr), bytes / @size_of(U))
     }
 
     // Copies all of src into the start of dst. Panics if dst is shorter.
-    fn copy(T) { dst: Slice(T), src: Slice(T) } {
+    fn copy(T) { dst: []mut T, src: []T } {
         if dst.len < src.len { @panic("slice::copy: destination is shorter than source") }
         // The check above covers every index, so the loop indexes the pointers directly.
-        let some{ value = d } = dst.ptr else { return }
-        let some{ value = from } = src.ptr else { return }
         let mut i: usize = 0
         while i < src.len {
-            d[i] = from[i]
+            dst.ptr[i] = src.ptr[i]
             i = i + 1
         }
     }
 
     // Sets every element to v.
-    fn fill(T) { s: Slice(T), v: T } {
-        let some{ value = p } = s.ptr else { return }
+    fn fill(T) { s: []mut T, v: T } {
         let mut i: usize = 0
         while i < s.len {
-            p[i] = v
+            s.ptr[i] = v
             i = i + 1
         }
     }
