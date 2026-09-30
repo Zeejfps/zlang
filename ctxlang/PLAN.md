@@ -273,7 +273,7 @@ to live and a read-only type to have, which in turn needs read-only pointers and
    and computed on first use (IR version 7).
 
 *Done when:* each step passes the test suite under both backends and `ctest.py --same-c`, and
-FRICTION.md #1 and #12 are struck through.
+FRICTION.md #1 and #12 are resolved.
 
 ### 4. Lexer — done
 
