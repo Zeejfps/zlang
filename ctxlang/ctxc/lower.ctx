@@ -1,0 +1,1641 @@
+// Lowering: the checked program as typed IR (ir.ctx), a port of ctxi/irdump.py. It walks the
+// syntax trees with the checker's side tables where ctxi walks its rewritten tree, from `main`
+// through every function instance it reaches.
+//
+//   let p = lower::program{ c = &c }
+//
+// The IR must equal ctxi's byte for byte, so this follows ctxi's order exactly: IR types,
+// function instances, consts, locals and files all get their ids in the order the lowering
+// first meets them, and ctxi sometimes lowers a later child first (an `if` lowers its `else`
+// block before its condition).
+
+namespace lower {
+    type Heap = arena::Arena
+    type Id = types::Id
+
+    const NONE: u32 = 4294967295
+    const VERSION: u64 = 7
+
+    // A function instance: a declaration and its generic arguments.
+    struct Inst { decl: u32, targs: []Id }
+
+    struct Lower {
+        c:         *mut check::Checker,
+        heap:      *mut Heap,
+        types:     list::List(ir::Type, Heap),
+        type_ids:  map::Map(Id, u32, Heap),        // by the checker type, normalized (norm)
+        queue:     list::List(Inst, Heap),         // function instances, by id
+        fn_ids:    map::Map([]u8, u32, Heap),      // by the instance's key (inst_key)
+        fns:       list::List(ir::Func, Heap),
+        consts:    list::List(ir::Const, Heap),
+        const_ids: map::Map(u32, u32, Heap),       // by the const's Decl
+        files:     list::List([]u8, Heap),
+        file_ids:  map::Map(u32, u32, Heap),       // by the checker's file index
+        // The function being lowered: its instance, and its locals' slots.
+        decl:      u32,
+        targs:     []Id,
+        ret:       Id,
+        slots:     map::Map(u32, u32, Heap),       // by the checker's Var
+        locals:    list::List(ir::Local, Heap),
+    }
+
+    fn program { mut c: check::Checker } -> ir::Program {
+        let mut l = Lower{
+            c = &c, heap = c.heap,
+            types = list::new(ir::Type){ realloc = arena::alloc, heap = c.heap },
+            type_ids = map::new(Id, u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 },
+            queue = list::new(Inst){ realloc = arena::alloc, heap = c.heap },
+            fn_ids = map::new([]u8, u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_bytes, eq = slice::eq_bytes },
+            fns = list::new(ir::Func){ realloc = arena::alloc, heap = c.heap },
+            consts = list::new(ir::Const){ realloc = arena::alloc, heap = c.heap },
+            const_ids = map::new(u32, u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 },
+            files = list::new([]u8){ realloc = arena::alloc, heap = c.heap },
+            file_ids = map::new(u32, u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 },
+            decl = NONE, targs = no_ids{}, ret = types::VOID,
+            slots = map::new(u32, u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 },
+            locals = list::new(ir::Local){ realloc = arena::alloc, heap = c.heap },
+        }
+        let main = fn_id{ &l, decl = c.main, targs = no_ids{} }
+        let mut i: usize = 0
+        while i < l.queue.len {
+            let inst = list::items{ list = l.queue }[i]
+            let f = if check::get_decl{ c = l.c.*, d = inst.decl }.kind == check::Kind::native {
+                native{ &l, id = @as(u32, i), d = inst.decl }
+            } else {
+                function{ &l, id = @as(u32, i), inst }
+            }
+            if not list::push{ list = &l.fns, item = f } { @panic("lower: out of memory") }
+            i = i + 1
+        }
+        return ir::Program{
+            version = VERSION,
+            files = list::items{ list = l.files },
+            types = list::items{ list = l.types },
+            consts = list::items{ list = l.consts },
+            fns = list::items{ list = l.fns },
+            main,
+        }
+    }
+
+    fn no_ids {} -> []Id {
+        return slice::empty(Id){}
+    }
+
+    // The id of an instance, queued to be lowered the first time it is met.
+    fn fn_id { mut l: Lower, decl: u32, targs: []Id } -> u32 {
+        let k = inst_key{ &l, decl, targs }
+        let known = map::get{ m = l.fn_ids, key = k }
+        if known != null { return known }
+        let i = @as(u32, l.queue.len)
+        if not map::put{ m = &l.fn_ids, key = k, value = i } or not list::push{ list = &l.queue, item = Inst{ decl, targs } } {
+            @panic("lower: out of memory")
+        }
+        return i
+    }
+
+    // An instance's key: its declaration and its normalized arguments, four bytes each.
+    fn inst_key { mut l: Lower, decl: u32, targs: []Id } -> []u8 {
+        let mut b = list::new(u8){ realloc = arena::alloc, heap = l.heap }
+        put_u32{ xs = &b, n = decl }
+        let mut i: usize = 0
+        while i < targs.len {
+            put_u32{ xs = &b, n = norm{ &l, t = targs[i] } }
+            i = i + 1
+        }
+        return list::items{ list = b }
+    }
+
+    fn put_u32 { mut xs: list::List(u8, Heap), n: u32 } {
+        let mut k: u32 = 0
+        while k < 4 {
+            if not list::push{ list = &xs, item = @trunc(u8, n >> (k * 8)) } { @panic("lower: out of memory") }
+            k = k + 1
+        }
+    }
+
+    fn native { mut l: Lower, id: u32, d: u32 } -> ir::Func {
+        let x = check::get_decl{ c = l.c.*, d }
+        let params = params_of{ &l, fields = x.fields }
+        let ret = tid{ &l, t = x.ret }
+        let none = slice::empty(ir::Stmt){}
+        return ir::Func{
+            id, name = x.qual, native = true, params, ret,
+            locals = slice::empty(ir::Local){}, body = ir::Block{ stmts = none, result = null },
+        }
+    }
+
+    fn params_of { mut l: Lower, fields: []types::Field } -> []ir::Param {
+        let mut out = list::new(ir::Param){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < fields.len {
+            let f = fields[i]
+            let t = tid{ &l, t = T{ &l, t = f.ty } }
+            if not list::push{ list = &out, item = ir::Param{ name = f.name, mutable = f.mutable, ty = t } } { @panic("lower: out of memory") }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    fn function { mut l: Lower, id: u32, inst: Inst } -> ir::Func {
+        let x = check::get_decl{ c = l.c.*, d = inst.decl }
+        l.decl = inst.decl
+        l.targs = inst.targs
+        map::clear{ m = &l.slots }
+        l.locals = list::new(ir::Local){ realloc = arena::alloc, heap = l.heap }
+        l.ret = T{ &l, t = x.ret }
+        let mut name = x.qual
+        if inst.targs.len > 0 {
+            let mut b = message{ l }
+            let mut ok = utf8::push{ &b, s = str{ s = x.qual } } and utf8::push{ &b, s = "(" }
+            let mut i: usize = 0
+            while i < inst.targs.len {
+                if i > 0 { ok = ok and utf8::push{ &b, s = ", " } }
+                ok = ok and utf8::push{ &b, s = check::tstr{ c = l.c.*, t = inst.targs[i] } }
+                i = i + 1
+            }
+            pushed{ ok = ok and utf8::push{ &b, s = ")" } }
+            name = utf8::view{ b }.bytes
+        }
+        let first = map::get{ m = l.c.first_var, key = inst.decl }
+        let mut params = list::new(ir::Param){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < x.fields.len {
+            let f = x.fields[i]
+            let t = tid{ &l, t = T{ &l, t = f.ty } }
+            if not list::push{ list = &params, item = ir::Param{ name = f.name, mutable = f.mutable, ty = t } } { @panic("lower: out of memory") }
+            if first != null { _ = slot{ &l, v = first + @as(u32, i) } }
+            i = i + 1
+        }
+        let mut body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = null }
+        match x.syn.k {
+            func{ body = b } => { body = block{ &l, b } }
+            else => {}
+        }
+        let ret = tid{ &l, t = l.ret }
+        return ir::Func{
+            id, name, native = false, params = list::items{ list = params }, ret,
+            locals = list::items{ list = l.locals }, body,
+        }
+    }
+
+    // ---- types
+
+    // t in the function being lowered: bound variables replaced, and generic parameters by its
+    // arguments.
+    fn T { mut l: Lower, t: Id } -> Id {
+        let z = types::zonk{ s = &l.c.ty, t }
+        if l.targs.len == 0 { return z }
+        return types::subst{ s = &l.c.ty, t = z, decl = l.decl, args = l.targs }
+    }
+
+    fn get { l: Lower, t: Id } -> types::Type {
+        return types::get{ s = l.c.ty, id = types::prune{ s = l.c.ty, t } }
+    }
+
+    // t as ctxi's tkey sees it: without pointer and slice mutability, a function type's fields
+    // sorted by name. Two types are the same IR type exactly when they normalize to one Id.
+    fn norm { mut l: Lower, t: Id } -> Id {
+        let x = types::prune{ s = l.c.ty, t }
+        match types::get{ s = l.c.ty, id = x } {
+            ptr{ elem } => { return types::ptr{ s = &l.c.ty, elem = norm{ &l, t = elem }, mutable = false } }
+            slice{ elem } => { return types::slice{ s = &l.c.ty, elem = norm{ &l, t = elem }, mutable = false } }
+            opt{ elem } => { return types::opt{ s = &l.c.ty, elem = norm{ &l, t = elem } } }
+            array{ n, elem } => { return types::array{ s = &l.c.ty, n, elem = norm{ &l, t = elem } } }
+            record{ decl, args } => { return types::record{ s = &l.c.ty, decl, args = norm_all{ &l, ts = args } } }
+            sum{ decl, args } => { return types::sum{ s = &l.c.ty, decl, args = norm_all{ &l, ts = args } } }
+            func{ fields, ret, bound } => {
+                let sorted = sorted_fields{ l, fields }
+                let mut fs = list::new(types::Field){ realloc = arena::alloc, heap = l.heap }
+                let mut i: usize = 0
+                while i < sorted.len {
+                    let f = sorted[i]
+                    add_field{ xs = &fs, f = types::Field{ name = f.name, mutable = f.mutable, ty = norm{ &l, t = f.ty } } }
+                    i = i + 1
+                }
+                return types::func{ s = &l.c.ty, fields = list::items{ list = fs }, ret = norm{ &l, t = ret }, bound }
+            }
+            else => { return x }
+        }
+    }
+
+    fn norm_all { mut l: Lower, ts: []Id } -> []Id {
+        let mut out = list::new(Id){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < ts.len {
+            let n = norm{ &l, t = ts[i] }
+            if not list::push{ list = &out, item = n } { @panic("lower: out of memory") }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    fn add_field { mut xs: list::List(types::Field, Heap), f: types::Field } {
+        if not list::push{ list = &xs, item = f } { @panic("lower: out of memory") }
+    }
+
+    // A function type's fields, sorted by name.
+    fn sorted_fields { l: Lower, fields: []types::Field } -> []types::Field {
+        let mut out = list::new(types::Field){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < fields.len {
+            add_field{ xs = &out, f = fields[i] }
+            let ys = list::items{ list = out }
+            let mut k = ys.len - 1
+            while k > 0 and check::bytes_less{ a = ys[k].name, b = ys[k - 1].name } {
+                let tmp = ys[k]
+                ys[k] = ys[k - 1]
+                ys[k - 1] = tmp
+                k = k - 1
+            }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // The IR type id of t, which is already in the function's terms: an enum is its base type.
+    // A new type gets the next id before its parts do.
+    fn tid { mut l: Lower, t: Id } -> u32 {
+        let mut x = types::prune{ s = l.c.ty, t }
+        match types::get{ s = l.c.ty, id = x } {
+            enumeration{ decl } => { x = check::get_decl{ c = l.c.*, d = decl }.ty }
+            else => {}
+        }
+        let k = norm{ &l, t = x }
+        let known = map::get{ m = l.type_ids, key = k }
+        if known != null { return known }
+        let i = @as(u32, l.types.len)
+        if not map::put{ m = &l.type_ids, key = k, value = i } or not list::push{ list = &l.types, item = ir::Type::void } {
+            @panic("lower: out of memory")
+        }
+        let d = type_def{ &l, t = x }
+        list::items{ list = l.types }[i] = d
+        return i
+    }
+
+    fn type_def { mut l: Lower, t: Id } -> ir::Type {
+        match types::get{ s = l.c.ty, id = t } {
+            prim{ p } => { return ir::Type::prim{ p = ir_prim{ p } } }
+            ptr{ elem } => { return ir::Type::ptr{ elem = tid{ &l, t = elem } } }
+            array{ n, elem } => { return ir::Type::arr{ n, elem = tid{ &l, t = elem } } }
+            cap{ c = k } => { return ir::Type::cap{ name = types::CAP_NAMES[@as(usize, k)] } }
+            void => { return ir::Type::void }
+            func{ fields, ret, bound } => {
+                let sorted = sorted_fields{ l, fields }
+                let mut ps = list::new(ir::Param){ realloc = arena::alloc, heap = l.heap }
+                let mut i: usize = 0
+                while i < sorted.len {
+                    let f = sorted[i]
+                    let ft = tid{ &l, t = f.ty }
+                    if not list::push{ list = &ps, item = ir::Param{ name = f.name, mutable = f.mutable, ty = ft } } { @panic("lower: out of memory") }
+                    i = i + 1
+                }
+                return ir::Type::func{ bound, params = list::items{ list = ps }, ret = tid{ &l, t = ret } }
+            }
+            slice{ elem, mutable } => {
+                let name = type_name{ l, t }
+                let p = tid{ &l, t = types::ptr{ s = &l.c.ty, elem, mutable } }
+                let n = tid{ &l, t = types::USIZE }
+                let mut fs = list::new(ir::Field){ realloc = arena::alloc, heap = l.heap }
+                add_ir_field{ xs = &fs, f = ir::Field{ name = "ptr", ty = p, offset = 0 } }
+                add_ir_field{ xs = &fs, f = ir::Field{ name = "len", ty = n, offset = 8 } }
+                return ir::Type::record{ name, size = 16, align = 8, fields = list::items{ list = fs } }
+            }
+            record => {
+                let offs = check::struct_offsets{ c = l.c, t }
+                if offs == null { @panic("lower: a struct without a layout") }
+                let name = type_name{ l, t }
+                let fields = check::struct_fields{ c = l.c, t }
+                let mut fs = list::new(ir::Field){ realloc = arena::alloc, heap = l.heap }
+                let mut i: usize = 0
+                while i < fields.len {
+                    let ft = tid{ &l, t = fields[i].ty }
+                    add_ir_field{ xs = &fs, f = ir::Field{ name = fields[i].name, ty = ft, offset = offs.offs[i] } }
+                    i = i + 1
+                }
+                return ir::Type::record{ name, size = offs.layout.size, align = offs.layout.align, fields = list::items{ list = fs } }
+            }
+            opt | sum => {
+                let u = check::union_offsets{ c = l.c, t }
+                if u == null { @panic("lower: a union without a layout") }
+                let name = type_name{ l, t }
+                let vs = check::variants_of{ c = l.c, t }
+                let mut out = list::new(ir::Variant){ realloc = arena::alloc, heap = l.heap }
+                let mut i: usize = 0
+                while i < vs.len {
+                    let fields = vs[i].fields
+                    let mut v = ir::Variant{ name = vs[i].name, fields = null }
+                    if fields != null {
+                        let mut fs = list::new(ir::Field){ realloc = arena::alloc, heap = l.heap }
+                        let mut j: usize = 0
+                        while j < fields.len {
+                            let ft = tid{ &l, t = fields[j].ty }
+                            add_ir_field{ xs = &fs, f = ir::Field{ name = fields[j].name, ty = ft, offset = u.offs[i][j] } }
+                            j = j + 1
+                        }
+                        v.fields = list::items{ list = fs }
+                    }
+                    if not list::push{ list = &out, item = v } { @panic("lower: out of memory") }
+                    i = i + 1
+                }
+                return ir::Type::tagged{ name, size = u.layout.size, align = u.layout.align, pay_off = u.pay_off, variants = list::items{ list = out } }
+            }
+            else => { @panic("lower: a type that isn't concrete") }
+        }
+        return ir::Type::void
+    }
+
+    fn add_ir_field { mut xs: list::List(ir::Field, Heap), f: ir::Field } {
+        if not list::push{ list = &xs, item = f } { @panic("lower: out of memory") }
+    }
+
+    fn ir_prim { p: types::Prim } -> ir::Prim {
+        match p {
+            i8 => { return ir::Prim::i8 }
+            i16 => { return ir::Prim::i16 }
+            i32 => { return ir::Prim::i32 }
+            i64 => { return ir::Prim::i64 }
+            u8 => { return ir::Prim::u8 }
+            u16 => { return ir::Prim::u16 }
+            u32 => { return ir::Prim::u32 }
+            u64 => { return ir::Prim::u64 }
+            usize => { return ir::Prim::usize }
+            f32 => { return ir::Prim::f32 }
+            f64 => { return ir::Prim::f64 }
+            bool => { return ir::Prim::bool }
+        }
+    }
+
+    // A type's name in the IR: as messages write it, but without pointer mutability.
+    fn type_name { l: Lower, t: Id } -> []u8 {
+        let mut b = message{ l }
+        pushed{ ok = write_type{ l, t, &b } }
+        return utf8::view{ b }.bytes
+    }
+
+    fn write_type { l: Lower, t: Id, mut b: utf8::Builder(Heap) } -> bool {
+        match get{ l, t } {
+            ptr{ elem } => { return utf8::push{ &b, s = "*" } and write_type{ l, t = elem, &b } }
+            slice{ elem } => { return utf8::push{ &b, s = "[]" } and write_type{ l, t = elem, &b } }
+            array{ n, elem } => { return @fmt(&b, "[{}]", n) and write_type{ l, t = elem, &b } }
+            opt{ elem } => { return utf8::push{ &b, s = "?" } and write_type{ l, t = elem, &b } }
+            record{ decl, args } => { return generic{ l, decl, args, &b } }
+            sum{ decl, args } => { return generic{ l, decl, args, &b } }
+            func{ fields, ret, bound } => {
+                let mut ok = utf8::push{ &b, s = if bound { "&fn{" } else { "fn{" } }
+                let mut i: usize = 0
+                while i < fields.len {
+                    let f = fields[i]
+                    ok = ok and utf8::push{ &b, s = if i == 0 { " " } else { ", " } }
+                        and utf8::push{ &b, s = if f.mutable { "mut " } else { "" } }
+                        and @fmt(&b, "{}: ", str{ s = f.name }) and write_type{ l, t = f.ty, &b }
+                    i = i + 1
+                }
+                if fields.len > 0 { ok = ok and utf8::push{ &b, s = " " } }
+                ok = ok and utf8::push{ &b, s = "}" }
+                if ret != types::VOID { ok = ok and utf8::push{ &b, s = " -> " } and write_type{ l, t = ret, &b } }
+                return ok
+            }
+            else => { return check::write_type{ c = l.c.*, t, &b } }
+        }
+    }
+
+    fn generic { l: Lower, decl: u32, args: []Id, mut b: utf8::Builder(Heap) } -> bool {
+        let mut ok = utf8::push{ &b, s = str{ s = check::get_decl{ c = l.c.*, d = decl }.qual } }
+        if args.len == 0 { return ok }
+        ok = ok and utf8::push{ &b, s = "(" }
+        let mut i: usize = 0
+        while i < args.len {
+            if i > 0 { ok = ok and utf8::push{ &b, s = ", " } }
+            ok = ok and write_type{ l, t = args[i], &b }
+            i = i + 1
+        }
+        return ok and utf8::push{ &b, s = ")" }
+    }
+
+    // ---- places and positions
+
+    // The slot of local v, which gets the next one the first time it is met. A `mut` field's or
+    // a `&f` binding's slot holds a pointer.
+    fn slot { mut l: Lower, v: u32 } -> u32 {
+        let known = map::get{ m = l.slots, key = v }
+        if known != null { return known }
+        let s = @as(u32, l.locals.len)
+        if not map::put{ m = &l.slots, key = v, value = s } { @panic("lower: out of memory") }
+        let x = check::get_var{ c = l.c.*, v }
+        let t = T{ &l, t = x.ty }
+        let st = if x.indirect { types::ptr{ s = &l.c.ty, elem = t, mutable = false } } else { t }
+        let id = tid{ &l, t = st }
+        if not list::push{ list = &l.locals, item = ir::Local{ name = x.name, ty = id } } { @panic("lower: out of memory") }
+        return s
+    }
+
+    // A position: its line and column, and the index of its file among those the IR names, in
+    // the order it first names them.
+    fn pos { mut l: Lower, at: source::Span } -> ir::Pos {
+        let known = map::get{ m = l.file_ids, key = at.file }
+        let mut f: u32 = 0
+        if known == null {
+            f = @as(u32, l.files.len)
+            let name = l.c.files[at.file].name
+            if not map::put{ m = &l.file_ids, key = at.file, value = f } or not list::push{ list = &l.files, item = name } {
+                @panic("lower: out of memory")
+            }
+        } else {
+            f = known
+        }
+        let file = l.c.files[at.file]
+        let p = source::position{ text = file.text, lines = file.lines, offset = at.start }
+        return ir::Pos{ line = p.line, col = p.col, file = f }
+    }
+
+    fn epos { mut l: Lower, e: syntax::Expr } -> ir::Pos {
+        return pos{ &l, at = check::expr_at{ e } }
+    }
+
+    // ---- statements
+
+    fn block { mut l: Lower, b: syntax::Block } -> ir::Block {
+        return ir::Block{ stmts = stmts{ &l, xs = b.stmts }, result = null }
+    }
+
+    fn stmts { mut l: Lower, xs: []syntax::Stmt } -> []ir::Stmt {
+        let mut out = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < xs.len {
+            let s = stmt{ &l, s = xs[i] }
+            if not list::push{ list = &out, item = s } { @panic("lower: out of memory") }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    fn stmt { mut l: Lower, s: syntax::Stmt } -> ir::Stmt {
+        let k = check::stmt_key{ s }
+        match s.k {
+            local{ init } => {
+                let v = local_of{ l, k }
+                let sl = slot{ &l, v }
+                if init == null { return ir::Stmt::zero{ slot = sl } }
+                let t = check::get_var{ c = l.c.*, v }.ty
+                return ir::Stmt::define{ slot = sl, init = conv{ &l, e = init, to = t } }
+            }
+            let_else{ variant, binders, init, els_variant, els_binders, els } => {
+                let x = ex{ &l, e = init }
+                let ut = T{ &l, t = check::type_of_expr{ c = l.c.*, e = init } }
+                let vs = check::variants_of{ c = l.c, t = types::prune{ s = l.c.ty, t = ut } }
+                let mut ev: ?u32 = null
+                let mut ebinds: []ir::Bind = slice::empty(ir::Bind){}
+                if els_variant != null {
+                    let evi = variant_at{ vs, name = els_variant.text }
+                    ev = evi
+                    ebinds = binds{ &l, binders = els_binders, fields = vs[evi].fields }
+                }
+                let e = block{ &l, b = els }
+                let vi = variant_at{ vs, name = variant.text }
+                let bs = binds{ &l, binders, fields = vs[vi].fields }
+                return ir::Stmt::let_else{ init = x, variant = vi, binds = bs, els_variant = ev, els_binds = ebinds, els = e }
+            }
+            assign{ place, value } => {
+                let p = ex{ &l, e = place }
+                return ir::Stmt::assign{ place = p, value = conv{ &l, e = value, to = check::type_of_expr{ c = l.c.*, e = place } } }
+            }
+            eval{ e } => {
+                match e.k {
+                    builtin{ name, args } => {
+                        if slice::eq_bytes{ a = name.text, b = "panic" } { return panic_stmt{ &l, e, args } }
+                    }
+                    else => {}
+                }
+                return ir::Stmt::eval{ e = ex{ &l, e } }
+            }
+            discard{ e } => { return ir::Stmt::eval{ e = ex{ &l, e } } }
+            cond{ x } => {
+                // ctxi lowers the else block first.
+                let x_els = x.els
+                let mut els: ?ir::Block = null
+                if x_els != null { els = block{ &l, b = x_els } }
+                let c = ex{ &l, e = x.c.* }
+                return ir::Stmt::cond{ c, then = block{ &l, b = x.then }, els }
+            }
+            loop{ c = cond, body } => {
+                let c = ex{ &l, e = cond }
+                let b = block{ &l, b = body }
+                return ir::Stmt::loop{ c, body = b, label = map::get{ m = l.c.loop_ids, key = k } }
+            }
+            brk => { return ir::Stmt::brk{ label = map::get{ m = l.c.jump_ids, key = k } } }
+            cont => { return ir::Stmt::cont{ label = map::get{ m = l.c.jump_ids, key = k } } }
+            ret{ value } => {
+                if value == null { return ir::Stmt::ret{ value = null } }
+                return ir::Stmt::ret{ value = conv{ &l, e = value, to = l.ret } }
+            }
+            deferred{ body } => { return ir::Stmt::deferred{ body = block{ &l, b = body } } }
+            choose{ x } => { return match_stmt{ &l, x, t = types::NO_TYPE, leaving = false } }
+            error => { @panic("lower: a statement that didn't parse") }
+        }
+    }
+
+    fn local_of { l: Lower, k: u64 } -> u32 {
+        let v = map::get{ m = l.c.local_of, key = k }
+        if v == null { @panic("lower: a binding without a local") }
+        return v
+    }
+
+    // `@panic()` or `@panic("reason")` as a statement: the reason's bytes, with anything that
+    // isn't ASCII as a \xNN escape, as ctxi's backslashreplace writes it.
+    fn panic_stmt { mut l: Lower, e: syntax::Expr, args: []syntax::Expr } -> ir::Stmt {
+        let p = epos{ &l, e }
+        let mut msg: []u8 = "@panic()"
+        if args.len > 0 {
+            match args[0].k {
+                str{ bytes } => { msg = escaped{ l, bytes } }
+                else => {}
+            }
+        }
+        return ir::Stmt::panic{ pos = p, msg }
+    }
+
+    fn escaped { l: Lower, bytes: []u8 } -> []u8 {
+        let mut b = list::new(u8){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < bytes.len {
+            let ch = bytes[i]
+            if ch < 128 {
+                push_byte{ xs = &b, n = ch }
+            } else {
+                push_byte{ xs = &b, n = '\\' }
+                push_byte{ xs = &b, n = 'x' }
+                push_byte{ xs = &b, n = hex{ d = ch / 16 } }
+                push_byte{ xs = &b, n = hex{ d = ch % 16 } }
+            }
+            i = i + 1
+        }
+        return list::items{ list = b }
+    }
+
+    fn hex { d: u8 } -> u8 {
+        if d < 10 { return '0' + d }
+        return 'a' + d - 10
+    }
+
+    fn push_byte { mut xs: list::List(u8, Heap), n: u8 } {
+        if not list::push{ list = &xs, item = n } { @panic("lower: out of memory") }
+    }
+
+    fn variant_at { vs: []check::Variant, name: []u8 } -> u32 {
+        let i = check::variant_index{ vs, name }
+        if i == NONE { @panic("lower: a pattern of no variant") }
+        return i
+    }
+
+    // A pattern's bindings, each binder's field as its slot.
+    fn binds { mut l: Lower, binders: []syntax::Binder, fields: ?[]types::Field } -> []ir::Bind {
+        let mut out = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < binders.len {
+            let bd = binders[i]
+            let v = local_of{ l, k = check::name_key{ n = bd.field } }
+            let s = slot{ &l, v }
+            add_bind{ xs = &out, b = ir::Bind{ slot = s, field = field_at{ fields, name = bd.field.text }, by_ref = bd.by_ref } }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    fn add_bind { mut xs: list::List(ir::Bind, Heap), b: ir::Bind } {
+        if not list::push{ list = &xs, item = b } { @panic("lower: out of memory") }
+    }
+
+    fn field_at { fields: ?[]types::Field, name: []u8 } -> u32 {
+        if fields == null { @panic("lower: a binding in a variant without a payload") }
+        let mut i: usize = 0
+        while i < fields.len {
+            if slice::eq_bytes{ a = fields[i].name, b = name } { return @as(u32, i) }
+            i = i + 1
+        }
+        @panic("lower: a binding of no field")
+    }
+
+    // A later pattern of an arm binds its first pattern's locals, in their order, each from the
+    // field this pattern binds under the same name (ctxi's same_binds).
+    fn alt_binds { mut l: Lower, first: []syntax::Binder, binders: []syntax::Binder, fields: ?[]types::Field } -> []ir::Bind {
+        let mut out = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < first.len {
+            let fv = local_of{ l, k = check::name_key{ n = first[i].field } }
+            let name = check::get_var{ c = l.c.*, v = fv }.name
+            let mut j = binders.len
+            let mut found = NONE
+            while j > 0 {
+                j = j - 1
+                if slice::eq_bytes{ a = binder_local{ b = binders[j] }, b = name } {
+                    found = @as(u32, j)
+                    break
+                }
+            }
+            if found == NONE { @panic("lower: an arm's patterns bind different names") }
+            let bd = binders[found]
+            let s = slot{ &l, v = fv }
+            add_bind{ xs = &out, b = ir::Bind{ slot = s, field = field_at{ fields, name = bd.field.text }, by_ref = bd.by_ref } }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    fn binder_local { b: syntax::Binder } -> []u8 {
+        let local = b.local
+        return if local == null { b.field.text } else { local.text }
+    }
+
+    // A `match`: on a union or optional, through a pointer to one, or on an enum (a switch). As
+    // an expression, of type t; `leaving` for one whose every branch leaves, whose blocks have
+    // no value.
+    fn match_stmt { mut l: Lower, x: syntax::Match, t: Id, leaving: bool } -> ir::Stmt {
+        let scrut = ex{ &l, e = x.scrut.* }
+        let u = scrut_type{ &l, x }
+        if u.enum_decl != NONE {
+            return ir::Stmt::switch{ scrut, cases = cases{ &l, x, decl = u.enum_decl, t, value = leaving } }
+        }
+        return ir::Stmt::choose{ scrut, through = u.through, arms = arms{ &l, x, vs = u.vs, t, value = leaving } }
+    }
+
+    struct Scrut { through: bool, vs: []check::Variant, enum_decl: u32 }
+
+    fn scrut_type { mut l: Lower, x: syntax::Match } -> Scrut {
+        let mut t = types::prune{ s = l.c.ty, t = T{ &l, t = check::type_of_expr{ c = l.c.*, e = x.scrut.* } } }
+        let mut through = false
+        match types::get{ s = l.c.ty, id = t } {
+            ptr{ elem } => {
+                through = true
+                t = types::prune{ s = l.c.ty, t = elem }
+            }
+            else => {}
+        }
+        let mut enum_decl = NONE
+        match types::get{ s = l.c.ty, id = t } { enumeration{ decl } => { enum_decl = decl } else => {} }
+        return Scrut{ through, vs = check::variants_of{ c = l.c, t }, enum_decl }
+    }
+
+    fn arms { mut l: Lower, x: syntax::Match, vs: []check::Variant, t: Id, value: bool } -> []ir::Arm {
+        let mut out = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < x.arms.len {
+            let arm = x.arms[i]
+            let mut pats = list::new(ir::Pat){ realloc = arena::alloc, heap = l.heap }
+            let mut k: usize = 0
+            while k < arm.pats.len {
+                let p = arm.pats[k]
+                let vi = variant_at{ vs, name = p.variant.text }
+                let bs = if k == 0 {
+                    binds{ &l, binders = p.binders, fields = vs[vi].fields }
+                } else {
+                    alt_binds{ &l, first = arm.pats[0].binders, binders = p.binders, fields = vs[vi].fields }
+                }
+                if not list::push{ list = &pats, item = ir::Pat{ variant = vi, binds = bs } } { @panic("lower: out of memory") }
+                k = k + 1
+            }
+            let body = if value { value_block{ &l, b = arm.body, t } } else { block{ &l, b = arm.body } }
+            if not list::push{ list = &out, item = ir::Arm{ pats = list::items{ list = pats }, body } } { @panic("lower: out of memory") }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // A match on an enum: each arm by the values of its variants.
+    fn cases { mut l: Lower, x: syntax::Match, decl: u32, t: Id, value: bool } -> []ir::Case {
+        let d = check::get_decl{ c = l.c.*, d = decl }
+        let names = check::enum_names{ c = l.c.*, d = decl }
+        let mut out = list::new(ir::Case){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < x.arms.len {
+            let arm = x.arms[i]
+            let mut vals = list::new(ir::Int){ realloc = arena::alloc, heap = l.heap }
+            let mut k: usize = 0
+            while k < arm.pats.len {
+                let vi = name_index{ names, name = arm.pats[k].variant.text }
+                if not list::push{ list = &vals, item = int_of{ v = d.values[vi] } } { @panic("lower: out of memory") }
+                k = k + 1
+            }
+            let body = if value { value_block{ &l, b = arm.body, t } } else { block{ &l, b = arm.body } }
+            if not list::push{ list = &out, item = ir::Case{ values = list::items{ list = vals }, body } } { @panic("lower: out of memory") }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    fn name_index { names: [][]u8, name: []u8 } -> usize {
+        let mut i: usize = 0
+        while i < names.len {
+            if slice::eq_bytes{ a = names[i], b = name } { return i }
+            i = i + 1
+        }
+        @panic("lower: no such enum variant")
+    }
+
+    fn int_of { v: i64 } -> ir::Int {
+        return ir::Int{ negative = v < 0, value = check::magnitude{ v } }
+    }
+
+    // A branch of an `if` or `match` expression of type t: its last statement gives its value,
+    // unless the branch always leaves. A nested `if` or `match` whose every branch leaves is a
+    // statement.
+    fn value_block { mut l: Lower, b: syntax::Block, t: Id } -> ir::Block {
+        let xs = b.stmts
+        let v = if xs.len == 0 { check::Value::none } else { check::branch_value{ s = xs[xs.len - 1] } }
+        match v {
+            none => { return ir::Block{ stmts = stmts{ &l, xs }, result = null } }
+            else => {}
+        }
+        let mut out = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i + 1 < xs.len {
+            let s = stmt{ &l, s = xs[i] }
+            if not list::push{ list = &out, item = s } { @panic("lower: out of memory") }
+            i = i + 1
+        }
+        match v {
+            nested{ s } => {
+                if map::get{ m = l.c.expr_ty, key = check::stmt_key{ s } } == null {
+                    let st = leaving{ &l, s }
+                    if not list::push{ list = &out, item = st } { @panic("lower: out of memory") }
+                    return ir::Block{ stmts = list::items{ list = out }, result = null }
+                }
+                let r = nested_full{ &l, s }
+                let x = coerce{ &l, x = r, frm = T{ &l, t = check::value_ty{ c = l.c.*, k = check::stmt_key{ s } } }, to = T{ &l, t } }
+                return ir::Block{ stmts = list::items{ list = out }, result = box{ l, e = x } }
+            }
+            expr{ e } => {
+                let x = if t == types::NO_TYPE { ex{ &l, e } } else { conv{ &l, e, to = t } }
+                return ir::Block{ stmts = list::items{ list = out }, result = box{ l, e = x } }
+            }
+            none => {}
+        }
+        return ir::Block{ stmts = list::items{ list = out }, result = null }
+    }
+
+    fn leaving { mut l: Lower, s: syntax::Stmt } -> ir::Stmt {
+        match s.k {
+            cond{ x } => {
+                let c = ex{ &l, e = x.c.* }
+                let then = value_block{ &l, b = x.then, t = types::NO_TYPE }
+                let x_els = x.els
+                let mut els: ?ir::Block = null
+                if x_els != null { els = value_block{ &l, b = x_els, t = types::NO_TYPE } }
+                return ir::Stmt::cond{ c, then, els }
+            }
+            choose{ x } => { return match_stmt{ &l, x, t = types::NO_TYPE, leaving = true } }
+            else => { @panic("lower: a branch value that isn't an if or match") }
+        }
+    }
+
+    // A nested `if` or `match` giving a branch its value, with its conversion.
+    fn nested_full { mut l: Lower, s: syntax::Stmt } -> ir::Expr {
+        let k = check::stmt_key{ s }
+        let conv = map::get{ m = l.c.convs, key = k }
+        if conv != null {
+            match conv {
+                some{ to } => {
+                    let inner = coerce{ &l, x = nested{ &l, s }, frm = T{ &l, t = check::type_of_key{ c = l.c.*, k } }, to = opt_elem{ l, t = T{ &l, t = to } } }
+                    return mk{ ty = tid{ &l, t = T{ &l, t = to } }, k = ir::ExprKind::some{ e = box{ l, e = inner } } }
+                }
+                else => {}
+            }
+        }
+        return nested{ &l, s }
+    }
+
+    fn nested { mut l: Lower, s: syntax::Stmt } -> ir::Expr {
+        let t = T{ &l, t = check::type_of_key{ c = l.c.*, k = check::stmt_key{ s } } }
+        match s.k {
+            cond{ x } => { return if_expr{ &l, x, t } }
+            choose{ x } => { return match_expr{ &l, x, t } }
+            else => { @panic("lower: a branch value that isn't an if or match") }
+        }
+    }
+
+    fn if_expr { mut l: Lower, x: syntax::If, t: Id } -> ir::Expr {
+        let ty = tid{ &l, t }
+        let c = ex{ &l, e = x.c.* }
+        let then = value_block{ &l, b = x.then, t }
+        let x_els = x.els
+        let mut els = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = null }
+        if x_els != null { els = value_block{ &l, b = x_els, t } }
+        return mk{ ty, k = ir::ExprKind::ifx{ c = box{ l, e = c }, then, els } }
+    }
+
+    fn match_expr { mut l: Lower, x: syntax::Match, t: Id } -> ir::Expr {
+        let ty = tid{ &l, t }
+        let scrut = ex{ &l, e = x.scrut.* }
+        let u = scrut_type{ &l, x }
+        if u.enum_decl != NONE {
+            return mk{ ty, k = ir::ExprKind::switchx{ scrut = box{ l, e = scrut }, cases = cases{ &l, x, decl = u.enum_decl, t, value = true } } }
+        }
+        return mk{ ty, k = ir::ExprKind::matchx{ scrut = box{ l, e = scrut }, through = u.through, arms = arms{ &l, x, vs = u.vs, t, value = true } } }
+    }
+
+    // ---- expressions
+
+    fn mk { ty: u32, k: ir::ExprKind } -> ir::Expr {
+        return ir::Expr{ ty, k }
+    }
+
+    fn box { l: Lower, e: ir::Expr } -> *ir::Expr {
+        let some{ value = p } = alloc::new{ realloc = arena::alloc, heap = l.heap, value = e } else {
+            @panic("lower: out of memory")
+        }
+        return p
+    }
+
+    fn opt_elem { l: Lower, t: Id } -> Id {
+        match get{ l, t } {
+            opt{ elem } => { return elem }
+            else => { @panic("lower: some of a non-optional") }
+        }
+    }
+
+    // The type e has as ctxi's tree has it: with the conversion around it, if any.
+    fn after { mut l: Lower, e: syntax::Expr } -> Id {
+        return T{ &l, t = check::value_ty{ c = l.c.*, k = check::expr_key{ e } } }
+    }
+
+    // e converted to type `to`, as the checker allowed implicitly.
+    fn conv { mut l: Lower, e: syntax::Expr, to: Id } -> ir::Expr {
+        let x = ex{ &l, e }
+        return coerce{ &l, x, frm = after{ &l, e }, to = T{ &l, t = to } }
+    }
+
+    fn coerce { mut l: Lower, x: ir::Expr, frm: Id, to: Id } -> ir::Expr {
+        if norm{ &l, t = frm } == norm{ &l, t = to } { return x }
+        let a = types::prune{ s = l.c.ty, t = frm }
+        let b = types::prune{ s = l.c.ty, t = to }
+        if types::prim_of{ s = l.c.ty, t = a } != null and types::prim_of{ s = l.c.ty, t = b } != null and types::widens{ s = &l.c.ty, a, b } {
+            return mk{ ty = tid{ &l, t = b }, k = ir::ExprKind::widen{ e = box{ l, e = x } } }
+        }
+        match get{ l, t = a } {
+            func => {
+                match get{ l, t = b } {
+                    func => { return mk{ ty = tid{ &l, t = b }, k = ir::ExprKind::fnconv{ e = box{ l, e = x } } } }
+                    else => {}
+                }
+            }
+            else => {}
+        }
+        @panic("lower: no implicit conversion")
+    }
+
+    // e as ctxi's tree has it: the node, inside the conversion the checker recorded for it.
+    fn ex { mut l: Lower, e: syntax::Expr } -> ir::Expr {
+        let conv = map::get{ m = l.c.convs, key = check::expr_key{ e } }
+        if conv == null { return node{ &l, e } }
+        match conv {
+            some{ to } => {
+                let t = T{ &l, t = to }
+                let inner = coerce{ &l, x = node{ &l, e }, frm = T{ &l, t = check::type_of_expr{ c = l.c.*, e } }, to = opt_elem{ l, t } }
+                return mk{ ty = tid{ &l, t }, k = ir::ExprKind::some{ e = box{ l, e = inner } } }
+            }
+            slice{ to } => {
+                let t = T{ &l, t = to }
+                let at = T{ &l, t = check::type_of_expr{ c = l.c.*, e } }
+                let pt = tid{ &l, t = types::ptr{ s = &l.c.ty, elem = slice_elem{ l, t }, mutable = false } }
+                let p = mk{ ty = pt, k = ir::ExprKind::cast{ e = box{ l, e = node{ &l, e } } } }
+                return to_slice{ &l, t, p, n = array_len{ l, t = ptr_elem{ l, t = at } } }
+            }
+            addr_slice{ ptr, to } => {
+                let t = T{ &l, t = to }
+                let pty = T{ &l, t = ptr }
+                let pt = tid{ &l, t = types::ptr{ s = &l.c.ty, elem = slice_elem{ l, t }, mutable = false } }
+                let at = tid{ &l, t = pty }
+                let a = mk{ ty = at, k = ir::ExprKind::addr{ place = box{ l, e = node{ &l, e } } } }
+                let p = mk{ ty = pt, k = ir::ExprKind::cast{ e = box{ l, e = a } } }
+                return to_slice{ &l, t, p, n = array_len{ l, t = ptr_elem{ l, t = pty } } }
+            }
+        }
+    }
+
+    // A pointer to an array as a slice of all of it: a struct of the pointer and the length.
+    fn to_slice { mut l: Lower, t: Id, p: ir::Expr, n: u64 } -> ir::Expr {
+        let st = tid{ &l, t }
+        let n_ir = mk{ ty = tid{ &l, t = types::USIZE }, k = ir::ExprKind::int{ negative = false, value = n } }
+        return mk{ ty = st, k = ir::ExprKind::record{ items = two_args{ l, a = p, b = n_ir } } }
+    }
+
+    fn two_args { l: Lower, a: ir::Expr, b: ir::Expr } -> []ir::Arg {
+        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        add_arg{ xs = &out, a = ir::Arg{ index = 0, value = a } }
+        add_arg{ xs = &out, a = ir::Arg{ index = 1, value = b } }
+        return list::items{ list = out }
+    }
+
+    fn add_arg { mut xs: list::List(ir::Arg, Heap), a: ir::Arg } {
+        if not list::push{ list = &xs, item = a } { @panic("lower: out of memory") }
+    }
+
+    fn slice_elem { l: Lower, t: Id } -> Id {
+        match get{ l, t } { slice{ elem } => { return elem } else => { @panic("lower: not a slice") } }
+    }
+
+    fn ptr_elem { l: Lower, t: Id } -> Id {
+        match get{ l, t } { ptr{ elem } => { return elem } else => { @panic("lower: not a pointer") } }
+    }
+
+    fn array_len { l: Lower, t: Id } -> u64 {
+        match get{ l, t } { array{ n } => { return n } else => { @panic("lower: not an array") } }
+    }
+
+    fn elem_of { l: Lower, t: Id } -> Id {
+        match get{ l, t } {
+            array{ elem } => { return elem }
+            slice{ elem } => { return elem }
+            ptr{ elem } => { return elem }
+            opt{ elem } => { return elem }
+            else => { @panic("lower: a type without elements") }
+        }
+    }
+
+    fn int_lit { mut l: Lower, t: Id, n: u64 } -> ir::Expr {
+        return mk{ ty = tid{ &l, t }, k = ir::ExprKind::int{ negative = false, value = n } }
+    }
+
+    // A local, a context field or a binding, or a narrowed view of one (the payload of the ?T).
+    fn var_ex { mut l: Lower, v: u32, at: source::Span } -> ir::Expr {
+        let x = check::get_var{ c = l.c.*, v }
+        let t = T{ &l, t = x.ty }
+        if x.kind == check::VarKind::narrow {
+            let ty = tid{ &l, t }
+            let inner = var_ex{ &l, v = x.narrow_of, at }
+            return mk{ ty, k = ir::ExprKind::payload{ base = box{ l, e = inner }, variant = 1, field = 0 } }
+        }
+        let s = slot{ &l, v }
+        if x.indirect {
+            let ty = tid{ &l, t }
+            let pt = tid{ &l, t = types::ptr{ s = &l.c.ty, elem = t, mutable = false } }
+            let p = pos{ &l, at }
+            let local = mk{ ty = pt, k = ir::ExprKind::local{ slot = s } }
+            return mk{ ty, k = ir::ExprKind::deref{ ptr = box{ l, e = local }, pos = p } }
+        }
+        return mk{ ty = tid{ &l, t }, k = ir::ExprKind::local{ slot = s } }
+    }
+
+    fn node { mut l: Lower, e: syntax::Expr } -> ir::Expr {
+        let t = T{ &l, t = check::type_of_expr{ c = l.c.*, e } }
+        match e.k {
+            int{ negative, value } => {
+                let v = if value == null { 0 } else { value }
+                return mk{ ty = tid{ &l, t }, k = ir::ExprKind::int{ negative = negative and v != 0, value = v } }
+            }
+            float{ negative, value } => {
+                return mk{ ty = tid{ &l, t }, k = ir::ExprKind::float{ value = if negative { -value } else { value } } }
+            }
+            str{ bytes } => { return str_lit{ &l, bytes, t } }
+            boolean{ value } => { return mk{ ty = tid{ &l, t }, k = ir::ExprKind::boolean{ value } } }
+            nil => { return mk{ ty = tid{ &l, t }, k = ir::ExprKind::nil } }
+            path => { return path_ex{ &l, e, t } }
+            field{ base, name } => { return field_ex{ &l, e, base = base.*, name, t } }
+            deref{ base } => {
+                let ty = tid{ &l, t }
+                let b = ex{ &l, e = base.* }
+                return mk{ ty, k = ir::ExprKind::deref{ ptr = box{ l, e = b }, pos = epos{ &l, e } } }
+            }
+            index{ base, i } => { return index_ex{ &l, e, base = base.*, i = i.*, t } }
+            range{ base, lo, hi } => {
+                let lo_ir = if lo == null { int_lit{ &l, t = types::USIZE, n = 0 } } else { conv{ &l, e = lo.*, to = types::USIZE } }
+                let mut hi_ir: ?*ir::Expr = null
+                if hi != null { hi_ir = box{ l, e = conv{ &l, e = hi.*, to = types::USIZE } } }
+                let ty = tid{ &l, t }
+                let b = ex{ &l, e = base.* }
+                return mk{ ty, k = ir::ExprKind::ssub{ base = box{ l, e = b }, lo = box{ l, e = lo_ir }, hi = hi_ir, pos = epos{ &l, e } } }
+            }
+            addr{ e = x } => {
+                let ty = tid{ &l, t }
+                return mk{ ty, k = ir::ExprKind::addr{ place = box{ l, e = ex{ &l, e = x.* } } } }
+            }
+            neg{ e = x } => {
+                let ty = tid{ &l, t }
+                let v = ex{ &l, e = x.* }
+                return mk{ ty, k = ir::ExprKind::neg{ e = box{ l, e = v }, pos = epos{ &l, e } } }
+            }
+            lnot{ e = x } => {
+                let ty = tid{ &l, t }
+                return mk{ ty, k = ir::ExprKind::lnot{ e = box{ l, e = ex{ &l, e = x.* } } } }
+            }
+            binary{ op, a, b } => { return binary{ &l, e, op, a = a.*, b = b.*, t } }
+            braced{ callee, items, bind } => { return braced{ &l, e, callee = callee.*, items, bind, t } }
+            array{ elems } => {
+                let ty = tid{ &l, t }
+                let et = elem_of{ l, t }
+                let mut out = list::new(ir::Expr){ realloc = arena::alloc, heap = l.heap }
+                let mut i: usize = 0
+                while i < elems.len {
+                    let x = conv{ &l, e = elems[i], to = et }
+                    if not list::push{ list = &out, item = x } { @panic("lower: out of memory") }
+                    i = i + 1
+                }
+                return mk{ ty, k = ir::ExprKind::array{ elems = list::items{ list = out } } }
+            }
+            repeat{ elem } => {
+                let ty = tid{ &l, t }
+                return mk{ ty, k = ir::ExprKind::repeat{ elem = box{ l, e = conv{ &l, e = elem.*, to = elem_of{ l, t } } } } }
+            }
+            builtin{ name, targ, args } => { return builtin{ &l, e, name = name.text, targ, args, t } }
+            ifx{ x } => { return if_expr{ &l, x, t } }
+            matchx{ x } => { return match_expr{ &l, x, t } }
+            error => { @panic("lower: an expression that didn't parse") }
+        }
+    }
+
+    // A string literal: a [N]u8 array, or a view of static bytes as a []u8 or a utf8::String.
+    fn str_lit { mut l: Lower, bytes: []u8, t: Id } -> ir::Expr {
+        match get{ l, t } {
+            array => { return mk{ ty = tid{ &l, t }, k = ir::ExprKind::str{ bytes } } }
+            slice => { return mk{ ty = tid{ &l, t = u8_slice{ &l } }, k = ir::ExprKind::sbytes{ bytes } } }
+            else => { return text_lit{ &l, bytes, t } }
+        }
+    }
+
+    fn u8_slice { mut l: Lower } -> Id {
+        return types::slice{ s = &l.c.ty, elem = types::U8, mutable = false }
+    }
+
+    // A utf8::String around a view of static bytes.
+    fn text_lit { mut l: Lower, bytes: []u8, t: Id } -> ir::Expr {
+        let v = mk{ ty = tid{ &l, t = u8_slice{ &l } }, k = ir::ExprKind::sbytes{ bytes } }
+        let ty = tid{ &l, t }
+        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        add_arg{ xs = &out, a = ir::Arg{ index = 0, value = v } }
+        return mk{ ty, k = ir::ExprKind::record{ items = list::items{ list = out } } }
+    }
+
+    fn path_ex { mut l: Lower, e: syntax::Expr, t: Id } -> ir::Expr {
+        let r = map::get{ m = l.c.refs, key = check::expr_key{ e } }
+        if r == null { @panic("lower: a path that didn't resolve") }
+        match r {
+            local{ var } => { return var_ex{ &l, v = var, at = check::expr_at{ e } } }
+            func{ decl, targs } => {
+                let ty = tid{ &l, t }
+                let ts = T_all{ &l, ts = targs }
+                return mk{ ty, k = ir::ExprKind::fnref{ callee = fn_id{ &l, decl, targs = ts } } }
+            }
+            constant{ decl } => {
+                match get{ l, t } {
+                    array | record | sum | opt | slice => {
+                        let ty = tid{ &l, t }
+                        return mk{ ty, k = ir::ExprKind::constref{ id = const_id{ &l, d = decl } } }
+                    }
+                    else => {}
+                }
+                match check::get_decl{ c = l.c.*, d = decl }.syn.k {
+                    constant{ value } => { return ex{ &l, e = value } }
+                    else => { @panic("lower: a const without a value") }
+                }
+            }
+            enumval{ ty, index } => {
+                let d = enum_decl{ l, t = ty }
+                let v = check::get_decl{ c = l.c.*, d }.values[index]
+                return mk{ ty = tid{ &l, t }, k = ir::ExprKind::int{ negative = v < 0, value = check::magnitude{ v } } }
+            }
+            variant{ index } => {
+                return mk{ ty = tid{ &l, t }, k = ir::ExprKind::variant{ index, items = slice::empty(ir::Arg){} } }
+            }
+            path => { @panic("lower: a type as a value") }
+        }
+    }
+
+    fn enum_decl { l: Lower, t: Id } -> u32 {
+        match get{ l, t } { enumeration{ decl } => { return decl } else => { @panic("lower: not an enum") } }
+    }
+
+    fn T_all { mut l: Lower, ts: []Id } -> []Id {
+        let mut out = list::new(Id){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < ts.len {
+            let x = T{ &l, t = ts[i] }
+            if not list::push{ list = &out, item = x } { @panic("lower: out of memory") }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // The id of an array, struct or union const's item, lowered the first time it is met.
+    fn const_id { mut l: Lower, d: u32 } -> u32 {
+        let known = map::get{ m = l.const_ids, key = d }
+        if known != null { return known }
+        let i = @as(u32, l.consts.len)
+        let x = check::get_decl{ c = l.c.*, d }
+        let placeholder = ir::Const{ name = x.qual, ty = 0, value = mk{ ty = 0, k = ir::ExprKind::nil } }
+        if not map::put{ m = &l.const_ids, key = d, value = i } or not list::push{ list = &l.consts, item = placeholder } {
+            @panic("lower: out of memory")
+        }
+        let t = T{ &l, t = x.ty }
+        let ty = tid{ &l, t }
+        let mut value = placeholder.value
+        match x.syn.k {
+            constant{ value = v } => { value = conv{ &l, e = v, to = t } }
+            else => {}
+        }
+        list::items{ list = l.consts }[i] = ir::Const{ name = x.qual, ty, value }
+        return i
+    }
+
+    fn field_ex { mut l: Lower, e: syntax::Expr, base: syntax::Expr, name: syntax::Name, t: Id } -> ir::Expr {
+        let bt = T{ &l, t = check::type_of_expr{ c = l.c.*, e = base } }
+        if check::access_is{ c = l.c.*, e, a = check::Access::field } {
+            let narrow = map::get{ m = l.c.narrowed, key = check::expr_key{ e } }
+            if narrow != null {
+                let nt = tid{ &l, t = T{ &l, t = narrow } }
+                let b = ex{ &l, e = base }
+                let f = mk{ ty = nt, k = ir::ExprKind::field{ base = box{ l, e = b }, index = field_index{ &l, t = bt, name = name.text } } }
+                return mk{ ty = tid{ &l, t }, k = ir::ExprKind::payload{ base = box{ l, e = f }, variant = 1, field = 0 } }
+            }
+            let ty = tid{ &l, t }
+            let b = ex{ &l, e = base }
+            return mk{ ty, k = ir::ExprKind::field{ base = box{ l, e = b }, index = field_index{ &l, t = bt, name = name.text } } }
+        }
+        if check::access_is{ c = l.c.*, e, a = check::Access::pfield } {
+            let elem = ptr_elem{ l, t = bt }
+            let et = tid{ &l, t = elem }
+            let b = ex{ &l, e = base }
+            let d = mk{ ty = et, k = ir::ExprKind::deref{ ptr = box{ l, e = b }, pos = epos{ &l, e } } }
+            let ty = tid{ &l, t }
+            return mk{ ty, k = ir::ExprKind::field{ base = box{ l, e = d }, index = field_index{ &l, t = elem, name = name.text } } }
+        }
+        let is_ptr = check::access_is{ c = l.c.*, e, a = check::Access::sptr }
+        if is_ptr or check::access_is{ c = l.c.*, e, a = check::Access::slen } {
+            let ty = tid{ &l, t }
+            let b = ex{ &l, e = base }
+            return mk{ ty, k = ir::ExprKind::field{ base = box{ l, e = b }, index = if is_ptr { 0 } else { 1 } } }
+        }
+        // `.len` of an array or of a pointer to one: its length, after evaluating the base
+        // unless it is a name.
+        let is_len = check::access_is{ c = l.c.*, e, a = check::Access::len }
+        let n = if is_len { array_len{ l, t = bt } } else { array_len{ l, t = ptr_elem{ l, t = bt } } }
+        let lit = int_lit{ &l, t = types::USIZE, n }
+        if is_len {
+            match base.k { path => { return lit } else => {} }
+        }
+        let ty = tid{ &l, t = types::USIZE }
+        let b = ex{ &l, e = base }
+        return mk{ ty, k = ir::ExprKind::seq{ first = box{ l, e = b }, then = box{ l, e = lit } } }
+    }
+
+    fn field_index { mut l: Lower, t: Id, name: []u8 } -> u32 {
+        let fs = check::struct_fields{ c = l.c, t = types::prune{ s = l.c.ty, t } }
+        let mut i: usize = 0
+        while i < fs.len {
+            if slice::eq_bytes{ a = fs[i].name, b = name } { return @as(u32, i) }
+            i = i + 1
+        }
+        @panic("lower: no such field")
+    }
+
+    fn index_ex { mut l: Lower, e: syntax::Expr, base: syntax::Expr, i: syntax::Expr, t: Id } -> ir::Expr {
+        let bt = T{ &l, t = check::type_of_expr{ c = l.c.*, e = base } }
+        let ix = conv{ &l, e = i, to = types::USIZE }
+        let p = epos{ &l, e }
+        if check::access_is{ c = l.c.*, e, a = check::Access::arr } {
+            let ty = tid{ &l, t }
+            let b = ex{ &l, e = base }
+            return mk{ ty, k = ir::ExprKind::index{ base = box{ l, e = b }, i = box{ l, e = ix }, pos = p } }
+        }
+        if check::access_is{ c = l.c.*, e, a = check::Access::parr } {
+            let at = tid{ &l, t = ptr_elem{ l, t = bt } }
+            let b = ex{ &l, e = base }
+            let arr = mk{ ty = at, k = ir::ExprKind::deref{ ptr = box{ l, e = b }, pos = p } }
+            let ty = tid{ &l, t }
+            return mk{ ty, k = ir::ExprKind::index{ base = box{ l, e = arr }, i = box{ l, e = ix }, pos = p } }
+        }
+        if check::access_is{ c = l.c.*, e, a = check::Access::slice } {
+            let ty = tid{ &l, t }
+            let b = ex{ &l, e = base }
+            return mk{ ty, k = ir::ExprKind::sindex{ base = box{ l, e = b }, i = box{ l, e = ix }, pos = p } }
+        }
+        let ty = tid{ &l, t }
+        let pt = tid{ &l, t = bt }
+        let b = ex{ &l, e = base }
+        let q = mk{ ty = pt, k = ir::ExprKind::ptradd{ p = box{ l, e = b }, n = box{ l, e = ix } } }
+        return mk{ ty, k = ir::ExprKind::deref{ ptr = box{ l, e = q }, pos = p } }
+    }
+
+    fn binary { mut l: Lower, e: syntax::Expr, op: tok::Kind, a: syntax::Expr, b: syntax::Expr, t: Id } -> ir::Expr {
+        if op == tok::Kind::kw_and or op == tok::Kind::kw_or {
+            let ty = tid{ &l, t }
+            let x = ex{ &l, e = a }
+            let y = ex{ &l, e = b }
+            if op == tok::Kind::kw_and { return mk{ ty, k = ir::ExprKind::land{ a = box{ l, e = x }, b = box{ l, e = y } } } }
+            return mk{ ty, k = ir::ExprKind::lor{ a = box{ l, e = x }, b = box{ l, e = y } } }
+        }
+        if op == tok::Kind::eq or op == tok::Kind::ne {
+            let an = check::is_null{ e = a }
+            if an or check::is_null{ e = b } {
+                let ty = tid{ &l, t }
+                let x = ex{ &l, e = if an { b } else { a } }
+                if op == tok::Kind::eq { return mk{ ty, k = ir::ExprKind::isnull{ e = box{ l, e = x } } } }
+                return mk{ ty, k = ir::ExprKind::notnull{ e = box{ l, e = x } } }
+            }
+        }
+        let cmp = cmp_op{ op }
+        if cmp != null {
+            let lt = T{ &l, t = check::type_of_expr{ c = l.c.*, e = a } }
+            let rt = T{ &l, t = check::type_of_expr{ c = l.c.*, e = b } }
+            let common = if prims_widen{ &l, a = lt, b = rt } { rt } else { lt }
+            let ty = tid{ &l, t }
+            let x = conv{ &l, e = a, to = common }
+            let y = conv{ &l, e = b, to = common }
+            return mk{ ty, k = ir::ExprKind::cmp{ op = cmp, a = box{ l, e = x }, b = box{ l, e = y } } }
+        }
+        match get{ l, t = check::type_of_expr{ c = l.c.*, e = a } } {
+            ptr => {
+                let ty = tid{ &l, t }
+                let x = ex{ &l, e = a }
+                let y = conv{ &l, e = b, to = types::USIZE }
+                return mk{ ty, k = ir::ExprKind::ptradd{ p = box{ l, e = x }, n = box{ l, e = y } } }
+            }
+            else => {}
+        }
+        if op == tok::Kind::amp or op == tok::Kind::pipe or op == tok::Kind::caret {
+            let ty = tid{ &l, t }
+            let x = conv{ &l, e = a, to = t }
+            let y = conv{ &l, e = b, to = t }
+            let bop = if op == tok::Kind::amp { ir::BitOp::bit_and } else if op == tok::Kind::pipe { ir::BitOp::bit_or } else { ir::BitOp::bit_xor }
+            return mk{ ty, k = ir::ExprKind::bits{ op = bop, a = box{ l, e = x }, b = box{ l, e = y } } }
+        }
+        if op == tok::Kind::shl or op == tok::Kind::shr {
+            let ty = tid{ &l, t }
+            let x = conv{ &l, e = a, to = t }
+            let y = ex{ &l, e = b }
+            let sop = if op == tok::Kind::shl { ir::ShiftOp::shl } else { ir::ShiftOp::shr }
+            return mk{ ty, k = ir::ExprKind::shift{ op = sop, a = box{ l, e = x }, b = box{ l, e = y }, pos = epos{ &l, e } } }
+        }
+        let ty = tid{ &l, t }
+        let x = conv{ &l, e = a, to = t }
+        let y = conv{ &l, e = b, to = t }
+        return mk{ ty, k = ir::ExprKind::arith{ op = arith_op{ op }, a = box{ l, e = x }, b = box{ l, e = y }, pos = epos{ &l, e } } }
+    }
+
+    // Whether prim a widens to prim b (ctxi's widens, on two operands of a comparison).
+    fn prims_widen { mut l: Lower, a: Id, b: Id } -> bool {
+        return types::widens{ s = &l.c.ty, a, b }
+    }
+
+    fn cmp_op { op: tok::Kind } -> ?ir::CmpOp {
+        if op == tok::Kind::eq { return ir::CmpOp::eq }
+        if op == tok::Kind::ne { return ir::CmpOp::ne }
+        if op == tok::Kind::lt { return ir::CmpOp::lt }
+        if op == tok::Kind::le { return ir::CmpOp::le }
+        if op == tok::Kind::gt { return ir::CmpOp::gt }
+        if op == tok::Kind::ge { return ir::CmpOp::ge }
+        return null
+    }
+
+    fn arith_op { op: tok::Kind } -> ir::ArithOp {
+        if op == tok::Kind::plus { return ir::ArithOp::add }
+        if op == tok::Kind::minus { return ir::ArithOp::sub }
+        if op == tok::Kind::star { return ir::ArithOp::mul }
+        if op == tok::Kind::slash { return ir::ArithOp::div }
+        return ir::ArithOp::rem
+    }
+
+    // ---- braces: literals, calls and binds
+
+    fn braced { mut l: Lower, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, bind: bool, t: Id } -> ir::Expr {
+        let k = check::expr_key{ e }
+        let lit = map::get{ m = l.c.literal, key = k }
+        let r = map::get{ m = l.c.refs, key = check::expr_key{ e = callee } }
+        if lit != null and lit {
+            if r != null {
+                match r {
+                    variant{ index } => {
+                        let fields = check::variants_of{ c = l.c, t = types::prune{ s = l.c.ty, t } }[index].fields
+                        let ty = tid{ &l, t }
+                        let fs: []types::Field = if fields == null { slice::empty(types::Field){} } else { fields }
+                        return mk{ ty, k = ir::ExprKind::variant{ index, items = item_args{ &l, e, items, fields = fs, ptrs = false } } }
+                    }
+                    else => {}
+                }
+            }
+            let fields = check::struct_fields{ c = l.c, t = types::prune{ s = l.c.ty, t } }
+            let ty = tid{ &l, t }
+            return mk{ ty, k = ir::ExprKind::record{ items = item_args{ &l, e, items, fields, ptrs = false } } }
+        }
+        if r != null {
+            match r {
+                func{ decl, targs } => {
+                    let ts = T_all{ &l, ts = targs }
+                    let x = check::get_decl{ c = l.c.*, d = decl }
+                    let fields = check::subst_fields{ c = l.c, fields = x.fields, decl, args = ts }
+                    let fid = fn_id{ &l, decl, targs = ts }
+                    let ty = tid{ &l, t }
+                    let args = item_args{ &l, e, items, fields, ptrs = true }
+                    if bind { return mk{ ty, k = ir::ExprKind::bind{ callee = fid, args } } }
+                    return mk{ ty, k = ir::ExprKind::call{ callee = fid, args } }
+                }
+                else => {}
+            }
+        }
+        let ft = T{ &l, t = check::type_of_expr{ c = l.c.*, e = callee } }
+        let mut fields: []types::Field = slice::empty(types::Field){}
+        match get{ l, t = ft } { func{ fields = fs } => { fields = sorted_fields{ l, fields = fs } } else => {} }
+        let ty = tid{ &l, t }
+        let c = ex{ &l, e = callee }
+        let args = item_args{ &l, e, items, fields, ptrs = true }
+        if bind { return mk{ ty, k = ir::ExprKind::dbind{ callee = box{ l, e = c }, args } } }
+        return mk{ ty, k = ir::ExprKind::dcall{ callee = box{ l, e = c }, args } }
+    }
+
+    // The ARGs of a literal's or call's items, then of what `..` supplies: each converted to its
+    // field's type, a pointer to it for a call's `mut` field (ptrs).
+    fn item_args { mut l: Lower, e: syntax::Expr, items: []syntax::Item, fields: []types::Field, ptrs: bool } -> []ir::Arg {
+        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < items.len {
+            let fi = field_pos{ fields, name = items[i].name.text }
+            let x = conv{ &l, e = items[i].value, to = arg_type{ &l, f = fields[fi], ptrs } }
+            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, fi), value = x } }
+            i = i + 1
+        }
+        let fw = map::get{ m = l.c.forwards, key = check::expr_key{ e } }
+        if fw != null {
+            let at = check::expr_at{ e }
+            i = 0
+            while i < fw.len {
+                let f = fw[i]
+                let fi = field_pos{ fields, name = f.name }
+                let x = forwarded{ &l, f, at, to = arg_type{ &l, f = fields[fi], ptrs } }
+                add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, fi), value = x } }
+                i = i + 1
+            }
+        }
+        return list::items{ list = out }
+    }
+
+    fn arg_type { mut l: Lower, f: types::Field, ptrs: bool } -> Id {
+        if ptrs and f.mutable { return types::ptr{ s = &l.c.ty, elem = f.ty, mutable = false } }
+        return f.ty
+    }
+
+    fn field_pos { fields: []types::Field, name: []u8 } -> usize {
+        let mut i: usize = 0
+        while i < fields.len {
+            if slice::eq_bytes{ a = fields[i].name, b = name } { return i }
+            i = i + 1
+        }
+        @panic("lower: an argument for no field")
+    }
+
+    // What `..` supplies: the local of the field's name, or its address for a `mut` field, as
+    // ctxi's synthesized path or `&path`, converted to the field's type.
+    fn forwarded { mut l: Lower, f: check::Forward, at: source::Span, to: Id } -> ir::Expr {
+        let mut x = ir::Expr{ ty = 0, k = ir::ExprKind::nil }
+        let mut xt = T{ &l, t = f.ty }
+        if f.mutable {
+            xt = T{ &l, t = f.arg }
+            let ty = tid{ &l, t = xt }
+            let v = var_ex{ &l, v = f.var, at }
+            x = mk{ ty, k = ir::ExprKind::addr{ place = box{ l, e = v } } }
+        } else {
+            x = var_ex{ &l, v = f.var, at }
+        }
+        let conv = f.conv
+        if conv != null {
+            match conv {
+                some{ to = st } => {
+                    let t = T{ &l, t = st }
+                    let inner = coerce{ &l, x, frm = xt, to = opt_elem{ l, t } }
+                    x = mk{ ty = tid{ &l, t }, k = ir::ExprKind::some{ e = box{ l, e = inner } } }
+                    xt = t
+                }
+                else => { @panic("lower: a forwarded slice") }
+            }
+        }
+        return coerce{ &l, x, frm = xt, to = T{ &l, t = to } }
+    }
+
+    // ---- builtins
+
+    fn builtin { mut l: Lower, e: syntax::Expr, name: []u8, targ: ?*syntax::TypeExpr, args: []syntax::Expr, t: Id } -> ir::Expr {
+        if slice::eq_bytes{ a = name, b = "fmt" } { return fmt{ &l, e, args } }
+        if slice::eq_bytes{ a = name, b = "size_of" } or slice::eq_bytes{ a = name, b = "align_of" } {
+            let tt = T{ &l, t = targ_type{ l, targ } }
+            let lay = check::layout{ c = l.c, t = norm_layout{ &l, t = tt } }
+            if lay == null { @panic("lower: @size_of a type without a layout") }
+            let n = if slice::eq_bytes{ a = name, b = "size_of" } { lay.size } else { lay.align }
+            return int_lit{ &l, t, n }
+        }
+        if slice::eq_bytes{ a = name, b = "addr" } {
+            let ty = tid{ &l, t }
+            return mk{ ty, k = ir::ExprKind::ptraddr{ e = box{ l, e = ex{ &l, e = args[0] } } } }
+        }
+        if slice::eq_bytes{ a = name, b = "cast" } {
+            let ty = tid{ &l, t }
+            return mk{ ty, k = ir::ExprKind::cast{ e = box{ l, e = ex{ &l, e = args[0] } } } }
+        }
+        if slice::eq_bytes{ a = name, b = "slice" } {
+            let ty = tid{ &l, t }
+            let p = ex{ &l, e = args[0] }
+            let n = conv{ &l, e = args[1], to = types::USIZE }
+            return mk{ ty, k = ir::ExprKind::record{ items = two_args{ l, a = p, b = n } } }
+        }
+        if slice::eq_bytes{ a = name, b = "as" } {
+            let src = T{ &l, t = check::type_of_expr{ c = l.c.*, e = args[0] } }
+            match get{ l, t } {
+                enumeration{ decl } => { return to_enum{ &l, e, arg = args[0], src, t, decl } }
+                else => {}
+            }
+            match get{ l, t = src } {
+                enumeration{ decl } => {
+                    let base = check::get_decl{ c = l.c.*, d = decl }.ty
+                    if norm{ &l, t = base } == norm{ &l, t } { return ex{ &l, e = args[0] } }
+                }
+                else => {}
+            }
+            let ty = tid{ &l, t }
+            let x = ex{ &l, e = args[0] }
+            return mk{ ty, k = ir::ExprKind::convert{ e = box{ l, e = x }, pos = epos{ &l, e } } }
+        }
+        if slice::eq_bytes{ a = name, b = "trunc" } {
+            let ty = tid{ &l, t }
+            return mk{ ty, k = ir::ExprKind::trunc{ e = box{ l, e = ex{ &l, e = args[0] } } } }
+        }
+        // @wrap_add, @wrap_sub, @wrap_mul
+        let op = if slice::eq_bytes{ a = name, b = "wrap_add" } { ir::ArithOp::add } else if slice::eq_bytes{ a = name, b = "wrap_sub" } { ir::ArithOp::sub } else { ir::ArithOp::mul }
+        let ty = tid{ &l, t }
+        let x = ex{ &l, e = args[0] }
+        let y = ex{ &l, e = args[1] }
+        return mk{ ty, k = ir::ExprKind::wrap{ op, a = box{ l, e = x }, b = box{ l, e = y } } }
+    }
+
+    fn targ_type { l: Lower, targ: ?*syntax::TypeExpr } -> Id {
+        if targ == null { @panic("lower: a builtin without its type") }
+        let te = targ.*
+        let t = map::get{ m = l.c.type_of, key = check::key{ file = te.span.file, id = te.id } }
+        if t == null { @panic("lower: a type expression that wasn't resolved") }
+        return t
+    }
+
+    // The type whose layout @size_of reads: an enum's is its base's.
+    fn norm_layout { mut l: Lower, t: Id } -> Id {
+        return types::prune{ s = l.c.ty, t }
+    }
+
+    // `@as(E, n)`: a case for each variant whose value n's type can hold, which gives that
+    // value, and a panic for any other.
+    fn to_enum { mut l: Lower, e: syntax::Expr, arg: syntax::Expr, src: Id, t: Id, decl: u32 } -> ir::Expr {
+        let d = check::get_decl{ c = l.c.*, d = decl }
+        let p = types::prim_of{ s = l.c.ty, t = types::prune{ s = l.c.ty, t = src } }
+        let mut out = list::new(ir::Case){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < d.values.len {
+            let v = d.values[i]
+            if p != null and types::fits{ p, negative = v < 0, magnitude = check::magnitude{ v } } {
+                let value = mk{ ty = tid{ &l, t }, k = ir::ExprKind::int{ negative = v < 0, value = check::magnitude{ v } } }
+                let mut vals = list::new(ir::Int){ realloc = arena::alloc, heap = l.heap }
+                if not list::push{ list = &vals, item = int_of{ v } } { @panic("lower: out of memory") }
+                let body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = value } }
+                if not list::push{ list = &out, item = ir::Case{ values = list::items{ list = vals }, body } } { @panic("lower: out of memory") }
+            }
+            i = i + 1
+        }
+        let mut b = message{ l }
+        pushed{ ok = @fmt(&b, "@as: no variant of {} has this value", str{ s = d.qual }) }
+        let panic = ir::Stmt::panic{ pos = epos{ &l, e }, msg = utf8::view{ b }.bytes }
+        let mut ps = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        if not list::push{ list = &ps, item = panic } { @panic("lower: out of memory") }
+        let els = ir::Block{ stmts = list::items{ list = ps }, result = null }
+        if not list::push{ list = &out, item = ir::Case{ values = slice::empty(ir::Int){}, body = els } } { @panic("lower: out of memory") }
+        let ty = tid{ &l, t }
+        let x = ex{ &l, e = arg }
+        return mk{ ty, k = ir::ExprKind::switchx{ scrut = box{ l, e = x }, cases = list::items{ list = out } } }
+    }
+
+    // ---- @fmt: the pushes it stands for, joined by `and`
+
+    fn fmt { mut l: Lower, e: syntax::Expr, args: []syntax::Expr } -> ir::Expr {
+        let found = map::get{ m = l.c.pieces, key = check::expr_key{ e } }
+        if found == null { @panic("lower: an @fmt that wasn't checked") }
+        let ps = found
+        if ps.len == 0 { return mk{ ty = tid{ &l, t = types::BOOL }, k = ir::ExprKind::boolean{ value = true } } }
+        return pushes{ &l, args, ps, n = ps.len }
+    }
+
+    // The first n pieces' pushes: ((p0 and p1) and p2) ...
+    fn pushes { mut l: Lower, args: []syntax::Expr, ps: []check::Piece, n: usize } -> ir::Expr {
+        if n == 1 { return push_call{ &l, args, ps, i = 0 } }
+        let ty = tid{ &l, t = types::BOOL }
+        let a = pushes{ &l, args, ps, n = n - 1 }
+        let b = push_call{ &l, args, ps, i = n - 1 }
+        return mk{ ty, k = ir::ExprKind::land{ a = box{ l, e = a }, b = box{ l, e = b } } }
+    }
+
+    // The call piece i becomes: a utf8 push with the builder and the piece, or a call of the
+    // hole's function with the builder.
+    fn push_call { mut l: Lower, args: []syntax::Expr, ps: []check::Piece, i: usize } -> ir::Expr {
+        let p = ps[i]
+        let b = args[0]
+        let bt = T{ &l, t = check::type_of_expr{ c = l.c.*, e = b } }
+        let mut hole = syntax::Expr{ id = 0, span = b.span, at = 0, k = syntax::ExprKind::error }
+        if p.hole {
+            let mut h: usize = 2
+            let mut k: usize = 0
+            while k < i {
+                if ps[k].hole { h = h + 1 }
+                k = k + 1
+            }
+            hole = args[h]
+        }
+        if slice::eq_bytes{ a = p.push, b = "call" } {
+            let ft = T{ &l, t = check::type_of_expr{ c = l.c.*, e = hole } }
+            let mut fields: []types::Field = slice::empty(types::Field){}
+            match get{ l, t = ft } { func{ fields = fs } => { fields = sorted_fields{ l, fields = fs } } else => {} }
+            let ty = tid{ &l, t = types::BOOL }
+            let c = ex{ &l, e = hole }
+            let bx = coerce{ &l, x = ex{ &l, e = b }, frm = bt, to = types::ptr{ s = &l.c.ty, elem = fields[0].ty, mutable = false } }
+            let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+            add_arg{ xs = &out, a = ir::Arg{ index = 0, value = bx } }
+            return mk{ ty, k = ir::ExprKind::dcall{ callee = box{ l, e = c }, args = list::items{ list = out } } }
+        }
+        let d = push_decl{ &l, name = p.push }
+        let s = builder_state{ l, t = bt }
+        let mut ts = list::new(Id){ realloc = arena::alloc, heap = l.heap }
+        if not list::push{ list = &ts, item = s } { @panic("lower: out of memory") }
+        let targs = list::items{ list = ts }
+        let x = check::get_decl{ c = l.c.*, d }
+        let fields = check::subst_fields{ c = l.c, fields = x.fields, decl = d, args = targs }
+        let fid = fn_id{ &l, decl = d, targs }
+        let ty = tid{ &l, t = types::BOOL }
+        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        let bi = field_pos{ fields, name = "b" }
+        let bv = coerce{ &l, x = ex{ &l, e = b }, frm = bt, to = arg_type{ &l, f = fields[bi], ptrs = true } }
+        add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, bi), value = bv } }
+        if not p.hole {
+            let si = field_pos{ fields, name = "s" }
+            let v = text_lit{ &l, bytes = p.text, t = fields[si].ty }
+            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, si), value = v } }
+        } else {
+            let vname: []u8 = if slice::eq_bytes{ a = p.push, b = "push" } or slice::eq_bytes{ a = p.push, b = "push_padded" } {
+                "s"
+            } else if slice::eq_bytes{ a = p.push, b = "push_char" } {
+                "c"
+            } else if slice::eq_bytes{ a = p.push, b = "push_bool" } {
+                "v"
+            } else {
+                "n"
+            }
+            let vi = field_pos{ fields, name = vname }
+            let v = conv{ &l, e = hole, to = fields[vi].ty }
+            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, vi), value = v } }
+            let padded = slice::eq_bytes{ a = p.push, b = "push_hex" } or slice::eq_bytes{ a = p.push, b = "push_int" }
+                or slice::eq_bytes{ a = p.push, b = "push_uint" } or slice::eq_bytes{ a = p.push, b = "push_padded" }
+            if padded {
+                let wi = field_pos{ fields, name = "width" }
+                let w = p.width
+                add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, wi), value = int_lit{ &l, t = types::USIZE, n = if w == null { 0 } else { w } } } }
+                let zi = field_pos{ fields, name = "zero" }
+                let z = mk{ ty = tid{ &l, t = types::BOOL }, k = ir::ExprKind::boolean{ value = p.zero } }
+                add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, zi), value = z } }
+            }
+        }
+        return mk{ ty, k = ir::ExprKind::call{ callee = fid, args = list::items{ list = out } } }
+    }
+
+    fn push_decl { mut l: Lower, name: []u8 } -> u32 {
+        let sp = check::lookup_path{ c = l.c.*, ns = check::get_decl{ c = l.c.*, d = l.decl }.ns, name = "utf8" }
+        if sp != null {
+            match sp {
+                space{ ns } => {
+                    let d = map::get{ m = check::get_space{ c = l.c.*, ns }.values, key = name }
+                    if d != null {
+                        match d { decl{ i } => { return i } else => {} }
+                    }
+                }
+                else => {}
+            }
+        }
+        @panic("lower: no utf8 push function")
+    }
+
+    // S of the *mut utf8::Builder(S) an @fmt writes to.
+    fn builder_state { l: Lower, t: Id } -> Id {
+        match get{ l, t } {
+            ptr{ elem } => {
+                match get{ l, t = elem } {
+                    record{ args } => { if args.len == 1 { return args[0] } }
+                    else => {}
+                }
+            }
+            else => {}
+        }
+        @panic("lower: @fmt to something that isn't a builder")
+    }
+
+    // ---- text
+
+    fn message { l: Lower } -> utf8::Builder(Heap) {
+        return utf8::builder{ realloc = arena::alloc, heap = l.heap }
+    }
+
+    fn str { s: []u8 } -> utf8::String {
+        return utf8::String{ bytes = s }
+    }
+
+    fn pushed { ok: bool } {
+        if not ok { @panic("lower: out of memory") }
+    }
+}

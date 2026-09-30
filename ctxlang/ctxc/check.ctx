@@ -147,6 +147,12 @@ namespace check {
         forwards:  map::Map(u64, []Forward, Heap),    // what `..` supplies to a call
         pieces:    map::Map(u64, []mut Piece, Heap),  // an @fmt's format
         holds:     map::Map(u64, []Place, Heap),      // the places a bind holds
+        // A loop that a jump from an inner loop leaves or repeats has an id (1, 2, ... in each
+        // body), and the jump names it.
+        loop_ids:  map::Map(u64, u32, Heap),          // a `while` statement's id
+        jump_ids:  map::Map(u64, u32, Heap),          // the id of the loop a jump targets
+        label_ids: u32,                               // ids given in this body
+        first_var: map::Map(u32, u32, Heap),          // a function's first local: its first context field
         // The sets of Var.derived and Var.held.
         derived:   list::List([]u32, Heap),
         held:      list::List([]Place, Heap),
@@ -183,7 +189,7 @@ namespace check {
 
     // An enclosing loop, with the flow state at each `break` that leaves it and each `continue`
     // that repeats it.
-    struct Loop { label: []u8, breaks: list::List(State, Heap), conts: list::List(State, Heap) }
+    struct Loop { label: []u8, key: u64, breaks: list::List(State, Heap), conts: list::List(State, Heap) }
 
     // The flow state at a point of a body (ctxi's State): the tracked locals assigned on every
     // path to it (defs) and on some path (maybe), and whether every path has ended (dead). A
@@ -307,6 +313,10 @@ namespace check {
             forwards = map::new(u64, []Forward){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             pieces = map::new(u64, []mut Piece){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             holds = map::new(u64, []Place){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            loop_ids = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            jump_ids = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            label_ids = 0,
+            first_var = map::new(u32, u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             derived = list::new([]u32){ realloc = arena::alloc, &heap },
             held = list::new([]Place){ realloc = arena::alloc, &heap },
         }
@@ -1346,6 +1356,7 @@ namespace check {
         match x.syn.k {
             func{ params, body } => {
                 begin_body{ &c, sc = own_scope{ &c, d }, ret = x.ret }
+                if not map::put{ m = &c.first_var, key = d, value = @as(u32, c.vars.len) } { @panic("check: out of memory") }
                 let mut i: usize = 0
                 while i < x.fields.len and i < params.len {
                     let f = x.fields[i]
@@ -1385,6 +1396,7 @@ namespace check {
         c.maybe = slice::empty(u32){}
         c.body_errors = c.diags.errors
         c.flow_errors = 0
+        c.label_ids = 0
     }
 
     // Settles the body's literals: those whose type nothing fixed get the defaults, i32 and
@@ -1860,11 +1872,11 @@ namespace check {
                 if typed{ &c, e } == types::VOID { error{ &c, at = expr_at{ e }, msg = "nothing to discard: this returns no value" } }
             }
             cond{ x } => { _ = check_if{ &c, x, at = s.span, exp = types::NO_TYPE, value = false, may_leave = false } }
-            loop{ label, c = cond, body } => { while_stmt{ &c, label, cond, body, at = s.span } }
+            loop{ label, c = cond, body } => { while_stmt{ &c, label, cond, body, at = s.span, k = stmt_key{ s } } }
             choose{ x } => { _ = check_match{ &c, x, at = s.span, exp = types::NO_TYPE, value = false, may_leave = false } }
             ret{ value } => { return_stmt{ &c, value, at = s.span } }
-            brk{ label } => { jump{ &c, word = "break", label, at = s.span } }
-            cont{ label } => { jump{ &c, word = "continue", label, at = s.span } }
+            brk{ label } => { jump{ &c, word = "break", label, at = s.span, k = stmt_key{ s } } }
+            cont{ label } => { jump{ &c, word = "continue", label, at = s.span, k = stmt_key{ s } } }
             deferred{ body } => {
                 // Checked where it is, but it runs later, so the path goes on as before it. A
                 // jump in it sees only the loops inside it.
@@ -2020,7 +2032,7 @@ namespace check {
     }
 
     // `break` or `continue`, with the loop it leaves.
-    fn jump { mut c: Checker, word: utf8::String, label: ?syntax::Name, at: source::Span } {
+    fn jump { mut c: Checker, word: utf8::String, label: ?syntax::Name, at: source::Span, k: u64 } {
         let in_defer: utf8::String = if c.defers > 0 { " in this defer" } else { "" }
         if c.loops.len == c.loop_base {
             let mut b = message{ c }
@@ -2039,6 +2051,7 @@ namespace check {
                 if slice::eq_bytes{ a = loops[i].label, b = label.text } {
                     target = i
                     found = true
+                    if i < loops.len - 1 { name_jump{ &c, loop_key = loops[i].key, jump_key = k } }
                     break
                 }
             }
@@ -2056,7 +2069,21 @@ namespace check {
         c.dead = true
     }
 
-    fn while_stmt { mut c: Checker, label: ?syntax::Name, cond: syntax::Expr, body: syntax::Block, at: source::Span } {
+    // A jump from an inner loop to an outer one: the outer one gets an id if it has none.
+    fn name_jump { mut c: Checker, loop_key: u64, jump_key: u64 } {
+        let known = map::get{ m = c.loop_ids, key = loop_key }
+        let mut id: u32 = 0
+        if known == null {
+            c.label_ids = c.label_ids + 1
+            id = c.label_ids
+            if not map::put{ m = &c.loop_ids, key = loop_key, value = id } { @panic("check: out of memory") }
+        } else {
+            id = known
+        }
+        if not map::put{ m = &c.jump_ids, key = jump_key, value = id } { @panic("check: out of memory") }
+    }
+
+    fn while_stmt { mut c: Checker, label: ?syntax::Name, cond: syntax::Expr, body: syntax::Block, at: source::Span, k: u64 } {
         let mut name: []u8 = ""
         if label != null {
             name = label.text
@@ -2077,6 +2104,7 @@ namespace check {
         let f = facts{ c, e = cond }
         let lp = Loop{
             label = name,
+            key = k,
             breaks = list::new(State){ realloc = arena::alloc, heap = c.heap },
             conts = list::new(State){ realloc = arena::alloc, heap = c.heap },
         }
@@ -3906,6 +3934,13 @@ namespace check {
 
     fn type_of_expr { c: Checker, e: syntax::Expr } -> Id {
         let t = map::get{ m = c.expr_ty, key = expr_key{ e } }
+        return if t == null { types::ERROR } else { t }
+    }
+
+    // The type recorded under key k: an expression's, or a nested `if` or `match`'s as a branch
+    // value.
+    fn type_of_key { c: Checker, k: u64 } -> Id {
+        let t = map::get{ m = c.expr_ty, key = k }
         return if t == null { types::ERROR } else { t }
     }
 

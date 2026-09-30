@@ -15,7 +15,7 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 | 3a | Language work before the lexer (below) | done | `2056bb4` |
 | 4 | Lexer | done | |
 | 5 | Parser | done | |
-| 6 | Checker | **in progress**: sub-steps 1–5 done | |
+| 6 | Checker | **in progress**: sub-steps 1–6 done | |
 | 7 | Self-hosting fixpoint | | |
 | 7a | Language server | | |
 | 8 | Decide ctxi's role | | |
@@ -36,7 +36,9 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 - `tools/checktest.py`: ctxc's dump of the checked declarations, const initializers and function
   bodies matches ctxi's (`--decls`) for all 257 corpus programs that check, and the first
   diagnostic matches for all 486 that don't (stage 6, sub-steps 1–5): ctxc now makes every
-  check ctxi makes. The checker runs without a panic on 15,800 damaged files.
+  check ctxi makes. The checker runs without a panic on 15,840 damaged files.
+- `tools/irdiff.py`: ctxc's own front end lowers every corpus program that compiles to IR
+  identical to ctxi's, byte for byte: all 257, ctxc itself included (stage 6, sub-step 6).
 - Friction found while writing ctxc is logged in [FRICTION.md](FRICTION.md).
 
 ### Known gaps
@@ -86,10 +88,11 @@ ctxc/                  one multi-file program (every .ctx in the directory)
   source.ctx  diag.ctx                    spans and line tables, the diagnostics list
   lexer.ctx  parser.ctx  syntax.ctx       front end (stages 4–5)
   recover.ctx                             the recovery test's checks (tools/recover.py)
-  types.ctx  check.ctx                    checker (stage 6): interned types; declarations
+  types.ctx  check.ctx                    checker (stage 6): interned types; declarations and bodies
+  lower.ctx                               the checked program as IR: monomorphized (stage 6)
   ir.ctx  ir_read.ctx  ir_print.ctx       IR, its reader and canonical printer
   emit_c.ctx                              backend (stage 2)
-  dump.ctx                                token, syntax-tree and declaration dumps for the diffs
+  dump.ctx                                token, syntax-tree and checked-program dumps for the diffs
 ctxc/rt/ctxrt.h ctxrt.c                   C runtime: panic, natives, startup
 ctxi/irdump.py                            Python → IR (stage 1)
 ctxi/declsdump.py                         Python's checked declarations, for checktest (stage 6)
@@ -98,7 +101,8 @@ tools/ctxc.py                             driver: compiles a program to an execu
 tools/corpus.py  irtest.py  ctest.py      corpus, IR roundtrip, C backend differential tests
 tools/lextest.py  parsetest.py            token and tree dumps against ctxi's, and fuzzing
 tools/recover.py                          the recovery test, in parallel over the corpus
-tools/checktest.py                        declaration dumps against ctxi's (stage 6)
+tools/checktest.py                        checked-program dumps against ctxi's (stage 6)
+tools/irdiff.py                           ctxc's IR against ctxi's (stage 6)
 ```
 
 ## Editor support
@@ -474,7 +478,25 @@ Python `set` happened to give; both checkers now name the first declared (`in_or
 `Safety` tests put each of these errors in the corpus, and checktest no longer skips anything.
 
 With every check in, lexing, parsing and checking ctxc with std takes about 145 ms natively,
-against a budget of 100 ms. Profile it before sub-step 6 adds monomorphization.
+against a budget of 100 ms, and it hasn't been profiled yet.
+
+**Sub-step 6 — done.** `lower.ctx` ports `ctxi/irdump.py`: from `main`, every function instance
+it reaches, with its generic arguments substituted, as an `ir::Program` that `ir_print.ctx`
+prints (`ctxc ir STD... -- FILE...`). It walks the syntax trees with the checker's side tables
+where ctxi walks its rewritten tree: a recorded conversion is lowered as ctxi's Coerce and
+ToSlice nodes are, `..` as ctxi's synthesized paths, and `@fmt` as the pushes its pieces
+became. IR types, instances, consts, local slots and files get their ids in the order the
+lowering first meets them, so it follows ctxi's evaluation order exactly, including where ctxi
+lowers a later child first (an `if`'s `else` block before its condition). An IR type is a checker
+type normalized as ctxi's `tkey` is (no pointer or slice mutability, a function type's fields by
+name), with the name and layout of the first type met. The checker now also records which loops
+a jump from an inner loop names, and each function's first local.
+
+`tools/irdiff.py` compares ctxc's IR with ctxi's for every corpus program that compiles: all 257
+agree, ctxc's own 23,590 lines of IR (1,622 function instances) included. `ctxc ir` on the
+15,840 damaged files doesn't panic, though only 188 of them check and reach the lowering.
+Checking and lowering ctxc, with printing the IR, takes about 260 ms natively. The remaining
+steps are sub-step 7 (const folding) and then feeding ctxc's own IR to its backend (stage 7).
 
 *Done when:* IR matches the Python dump across the corpus, every compile-error test's first
 diagnostic contains the same fragment at the same position, the recovery test passes on the whole

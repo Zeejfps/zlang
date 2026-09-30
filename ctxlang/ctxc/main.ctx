@@ -1,7 +1,7 @@
 // ctxc: the ctxlang compiler, written in ctxlang. A directory is one program: this file holds
-// the driver; source.ctx, diag.ctx, lexer.ctx, syntax.ctx and parser.ctx the front end so far;
-// ir.ctx the typed IR, ir_read.ctx and ir_print.ctx its text form; emit_c.ctx the C backend;
-// dump.ctx text dumps for tests.
+// the driver; source.ctx, diag.ctx, lexer.ctx, syntax.ctx, parser.ctx, types.ctx and check.ctx
+// the front end; lower.ctx the checked program as IR; ir.ctx the typed IR, ir_read.ctx and
+// ir_print.ctx its text form; emit_c.ctx the C backend; dump.ctx text dumps for tests.
 //
 //   python -m ctxi ctxc roundtrip FILE.ir      reads IR (from `python -m ctxi PROGRAM --ir`)
 //                                              and prints it back; the output must equal FILE.ir
@@ -14,6 +14,8 @@
 //                                              checks the program of FILE..., with std's
 //                                              files STD..., and prints its declarations and
 //                                              bodies (dump.ctx, namespace decls)
+//   python -m ctxi ctxc ir STD... -- FILE...   checks the program and prints its IR, or its
+//                                              diagnostics if it has errors (lower.ctx)
 //
 // tools/ctxc.py runs the whole pipeline: IR, C and the C compiler.
 
@@ -29,7 +31,10 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
         return recovery{ .. }
     }
     if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "decls" } {
-        return declarations{ .. }
+        return declarations{ ir = false, .. }
+    }
+    if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "ir" } {
+        return declarations{ ir = true, .. }
     }
     if args.len == 3 and slice::eq_bytes{ a = args[0], b = "c" } {
         to_c = true
@@ -121,8 +126,8 @@ fn dumps { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, trees: bool } -> i3
 }
 
 // `ctxc decls STD... -- FILE...`: lexes and parses every file, then checks the program, all in
-// one arena.
-fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+// one arena. With ir, `ctxc ir ...`: prints the program's IR instead, if it has no errors.
+fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, ir: bool } -> i32 {
     let mut total: u64 = 0
     let mut split: usize = 0
     let mut i: usize = 1
@@ -139,7 +144,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
         i = i + 1
     }
     if split == 0 {
-        io::eprintln{ &io, s = "usage: ctxc decls STD... -- FILE..." }
+        io::eprintln{ &io, s = "usage: ctxc decls|ir STD... -- FILE..." }
         return 2
     }
     let some{ value = pages } = mem::pages{ &mem, size = 67108864 + @as(usize, total) * 256 } else {
@@ -164,6 +169,24 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     add_file{ &files, &heap, &diags, name = "<natives>", text = check::natives_source{ &heap } }
     let mut c = check::new{ files = list::items{ list = files }, std_files = split - 1, &heap, &diags }
     check::program{ &c }
+    if ir {
+        if diags.errors == 0 {
+            let p = lower::program{ &c }
+            let mut o = ir_print::out{ heap = &heap, types = p.types }
+            ir_print::program{ &o, p }
+            io::write{ &io, to = io::Stream::out, bytes = list::items{ list = o.bytes } }
+            return 0
+        }
+        let mut errs = utf8::builder{ realloc = arena::alloc, &heap }
+        let ds = diag::items{ diags }
+        let mut k: usize = 0
+        while k < ds.len {
+            decls::diagnostic{ out = &errs, c, d = ds[k] }
+            k = k + 1
+        }
+        io::write{ &io, to = io::Stream::out, bytes = utf8::view{ b = errs }.bytes }
+        return 1
+    }
     let mut out = utf8::builder{ realloc = arena::alloc, &heap }
     decls::file{ &out, &c }
     io::write{ &io, to = io::Stream::out, bytes = utf8::view{ b = out }.bytes }
