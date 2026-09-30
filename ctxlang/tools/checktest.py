@@ -32,8 +32,6 @@ from ctxi.natives import natives  # noqa: E402
 
 # Fragments of ctxi's messages for the checks ctxc doesn't make yet.
 PENDING = (
-    # sub-step 4: definite initialization
-    'may be read before it is assigned', 'may be assigned more than once', 'in a defer: declare it with',
     # sub-step 5: exclusivity, escape analysis and bound-function scope
     'mut references to', 'overlaps a place held by', 'overlaps the match scrutinee',
     'the address of local', 'outlives local', 'bound function stored in', 'the value of this branch holds',

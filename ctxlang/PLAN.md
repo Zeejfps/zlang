@@ -15,7 +15,7 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 | 3a | Language work before the lexer (below) | done | `2056bb4` |
 | 4 | Lexer | done | |
 | 5 | Parser | done | |
-| 6 | Checker | **in progress**: sub-steps 1–3 done | |
+| 6 | Checker | **in progress**: sub-steps 1–4 done | |
 | 7 | Self-hosting fixpoint | | |
 | 7a | Language server | | |
 | 8 | Decide ctxi's role | | |
@@ -26,7 +26,7 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 - The C backend runs a native `ctxc`. `ctxi/cbackend.py` bootstraps it into `build/ctxc` on first
   use (about 20s) and rebuilds it when ctxc, the runtime or std changes. ctxc compiles itself in
   0.2s. `CTX_CTXC=interp` runs the interpreted ctxc instead.
-- `CTX_BACKEND=c python -m unittest discover tests` passes all 332 tests.
+- `CTX_BACKEND=c python -m unittest discover tests` passes all 334 tests.
 - `tools/ctest.py` passes 171 corpus programs, and skips 20 (below). `tools/ctest.py --same-c`:
   native and interpreted ctxc write byte-identical C for all 180 programs and for ctxc itself.
 - `tools/lextest.py`: ctxc's token dumps match ctxi's for all 483 files (stage 4).
@@ -34,9 +34,9 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
   first diagnostic matches for the 91 that don't (stage 5). `tools/recover.py`: all 333,900
   damaged copies of the corpus's files parse and pass its checks.
 - `tools/checktest.py`: ctxc's dump of the checked declarations, const initializers and function
-  bodies matches ctxi's (`--decls`) for all 240 corpus programs that check, and the first
-  diagnostic matches for 421 of the 442 that don't; the other 21 stop at a check of sub-steps 4–5
-  (stage 6, sub-steps 1–3). The checker runs without a panic on 14,580 damaged files.
+  bodies matches ctxi's (`--decls`) for all 249 corpus programs that check, and the first
+  diagnostic matches for 443 of the 457 that don't; the other 14 stop at a safety check of
+  sub-step 5 (stage 6, sub-steps 1–4). The checker runs without a panic on 15,060 damaged files.
 - Friction found while writing ctxc is logged in [FRICTION.md](FRICTION.md).
 
 ### Known gaps
@@ -450,7 +450,17 @@ corpus.
 
 Natively, lexing, parsing and checking all of ctxc with std takes about 130 ms, up from 80 ms for
 the declarations alone, so bodies are already past the 100 ms budget for the whole front end.
-Profile before sub-steps 4–5 add their passes.
+Profile before sub-step 5 adds its passes.
+
+**Sub-step 4 — done.** Definite initialization. The flow state is ctxi's: besides `dead`, the
+tracked locals (`let x: T` without a value, not a `let mut` of a type with a zero value)
+assigned on every path (`defs`) and on some path (`maybe`). The sets hold only tracked locals and
+are never changed in place, so saving a state is a copy of three words. They are saved and merged
+where ctxi does, at `if`, `match`, `let … else` and `defer`, and each loop keeps the state at each
+`break` and `continue`. A read of a tracked local must come after it is assigned on every path,
+and a `let` local may be assigned once: not twice on one path, not on a path that can repeat a
+loop, not in a `defer`. A flow error is reported only while its body has no other error. The
+`Initialization` tests put each of these errors in the corpus.
 
 *Done when:* IR matches the Python dump across the corpus, every compile-error test's first
 diagnostic contains the same fragment at the same position, the recovery test passes on the whole

@@ -130,7 +130,11 @@ namespace check {
         loops:     list::List(Loop, Heap),            // the enclosing loops, innermost last
         loop_base: usize,                             // loops[..loop_base] are outside the defer
         defers:    u32,                               // `defer` bodies around the statement
-        dead:      bool,                              // the path has ended (ctxi's State.dead)
+        dead:      bool,                              // the flow state: see State
+        defs:      []u32,
+        maybe:     []u32,
+        body_errors: usize,                           // errors before the body
+        flow_errors: usize,                           // flow errors in the body
         // Side tables for expressions and statements, keyed by key{ file, id }.
         expr_ty:   map::Map(u64, Id, Heap),           // an expression's type; a branch value's too
         convs:     map::Map(u64, Conv, Heap),         // an implicit conversion of its value
@@ -166,8 +170,15 @@ namespace check {
         path{ root: u32, steps: [][]u8, ty: Id },
     }
 
-    // An enclosing loop. broken: a `break` that leaves it is reachable.
-    struct Loop { label: []u8, broken: bool }
+    // An enclosing loop, with the flow state at each `break` that leaves it and each `continue`
+    // that repeats it.
+    struct Loop { label: []u8, breaks: list::List(State, Heap), conts: list::List(State, Heap) }
+
+    // The flow state at a point of a body (ctxi's State): the tracked locals assigned on every
+    // path to it (defs) and on some path (maybe), and whether every path has ended (dead). A
+    // local is tracked if it is declared without a value (`let x: T`), and only tracked locals
+    // are in the sets. The sets are never changed in place, so a saved state stays as it was.
+    struct State { defs: []u32, maybe: []u32, dead: bool }
 
     // How a field, index or `.len` expression reaches its value (ctxi's Field.kind and
     // Index.kind): through a pointer (p), in an array or slice (s).
@@ -274,6 +285,7 @@ namespace check {
             depth = 0, loop_depth = 0,
             loops = list::new(Loop){ realloc = arena::alloc, &heap },
             loop_base = 0, defers = 0, dead = false,
+            defs = slice::empty(u32){}, maybe = slice::empty(u32){}, body_errors = 0, flow_errors = 0,
             expr_ty = map::new(u64, Id){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             convs = map::new(u64, Conv){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             refs = map::new(u64, PathRef){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
@@ -1355,6 +1367,10 @@ namespace check {
         c.loop_base = 0
         c.defers = 0
         c.dead = false
+        c.defs = slice::empty(u32){}
+        c.maybe = slice::empty(u32){}
+        c.body_errors = c.diags.errors
+        c.flow_errors = 0
     }
 
     // Settles the body's literals: those whose type nothing fixed get the defaults, i32 and
@@ -1697,6 +1713,107 @@ namespace check {
         }
     }
 
+    // ---- the flow state and definite initialization (§11, Initialization)
+
+    fn save { c: Checker } -> State {
+        return State{ defs = c.defs, maybe = c.maybe, dead = c.dead }
+    }
+
+    fn restore { mut c: Checker, s: State } {
+        c.defs = s.defs
+        c.maybe = s.maybe
+        c.dead = s.dead
+    }
+
+    // Where paths join: a local is assigned if it is on every path that goes on, and maybe
+    // assigned if it is on any. If none goes on, neither does the join.
+    fn merge { c: Checker, xs: []State } -> State {
+        let mut maybe: []u32 = slice::empty(u32){}
+        let mut defs: []u32 = slice::empty(u32){}
+        let mut live = false
+        let mut i: usize = 0
+        while i < xs.len {
+            maybe = set_union{ c, a = maybe, b = xs[i].maybe }
+            if not xs[i].dead {
+                defs = if live { set_meet{ c, a = defs, b = xs[i].defs } } else { xs[i].defs }
+                live = true
+            }
+            i = i + 1
+        }
+        if not live {
+            i = 0
+            while i < xs.len {
+                defs = set_union{ c, a = defs, b = xs[i].defs }
+                i = i + 1
+            }
+        }
+        return State{ defs, maybe, dead = not live }
+    }
+
+    fn set_add { c: Checker, xs: []u32, n: u32 } -> []u32 {
+        if has_id{ xs, n } { return xs }
+        let mut out = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < xs.len {
+            push{ xs = &out, n = xs[i] }
+            i = i + 1
+        }
+        push{ xs = &out, n }
+        return list::items{ list = out }
+    }
+
+    fn set_union { c: Checker, a: []u32, b: []u32 } -> []u32 {
+        let mut out = a
+        let mut i: usize = 0
+        while i < b.len {
+            out = set_add{ c, xs = out, n = b[i] }
+            i = i + 1
+        }
+        return out
+    }
+
+    fn set_meet { c: Checker, a: []u32, b: []u32 } -> []u32 {
+        let mut out = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < a.len {
+            if has_id{ xs = b, n = a[i] } { push{ xs = &out, n = a[i] } }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // Reports a flow error, unless the body already has another error: what flow checks find
+    // after a type error is mostly noise.
+    fn flow_error { mut c: Checker, at: source::Span, msg: utf8::String } {
+        if c.diags.errors != c.body_errors + c.flow_errors { return }
+        error{ &c, at, msg }
+        c.flow_errors = c.diags.errors - c.body_errors
+    }
+
+    // A read of local v, which must be assigned by then if it is tracked.
+    fn check_read { mut c: Checker, v: u32, at: source::Span } {
+        let r = root_var{ c, v }
+        let x = get_var{ c, v = r }
+        if x.tracked and not has_id{ xs = c.defs, n = r } and not c.dead {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "`{}` may be read before it is assigned", str{ s = x.name }) }
+            flow_error{ &c, at, msg = utf8::view{ b } }
+        }
+    }
+
+    // A tracked local that `since` doesn't have as maybe assigned but `now` does, and that may
+    // be assigned only once: declared with `let`, outside loops deeper than max_loop. NONE if
+    // there is none.
+    fn assigned_since { c: Checker, now: []u32, since: []u32, max_loop: u32 } -> u32 {
+        let mut i: usize = 0
+        while i < now.len {
+            let x = get_var{ c, v = now[i] }
+            if not has_id{ xs = since, n = now[i] } and x.tracked and not x.mutable and x.loop_depth <= max_loop { return now[i] }
+            i = i + 1
+        }
+        return NONE
+    }
+
     // ---- statements (ctxi's s_* methods)
 
     fn block { mut c: Checker, b: syntax::Block } {
@@ -1720,13 +1837,13 @@ namespace check {
             let_else{ variant, binders, init, els_variant, els_binders, els } => {
                 let_else{ &c, s, variant, binders, init, els_variant, els_binders, els }
             }
-            assign{ place, value } => { assign{ &c, place, value } }
+            assign{ place, value } => { assign{ &c, place, value, at = s.span } }
             eval{ e } => { eval_stmt{ &c, e } }
             discard{ e } => {
                 if typed{ &c, e } == types::VOID { error{ &c, at = expr_at{ e }, msg = "nothing to discard: this returns no value" } }
             }
             cond{ x } => { _ = check_if{ &c, x, at = s.span, exp = types::NO_TYPE, value = false, may_leave = false } }
-            loop{ label, c = cond, body } => { while_stmt{ &c, label, cond, body } }
+            loop{ label, c = cond, body } => { while_stmt{ &c, label, cond, body, at = s.span } }
             choose{ x } => { _ = check_match{ &c, x, at = s.span, exp = types::NO_TYPE, value = false, may_leave = false } }
             ret{ value } => { return_stmt{ &c, value, at = s.span } }
             brk{ label } => { jump{ &c, word = "break", label, at = s.span } }
@@ -1734,14 +1851,20 @@ namespace check {
             deferred{ body } => {
                 // Checked where it is, but it runs later, so the path goes on as before it. A
                 // jump in it sees only the loops inside it.
-                let s0 = c.dead
+                let s0 = save{ c }
                 let base = c.loop_base
                 c.loop_base = c.loops.len
                 c.defers = c.defers + 1
                 block{ &c, b = body }
                 c.defers = c.defers - 1
                 c.loop_base = base
-                c.dead = s0
+                let v = assigned_since{ c, now = c.maybe, since = s0.maybe, max_loop = 4294967295 }
+                if v != NONE {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "cannot assign `{}` in a defer: declare it with `let mut`", str{ s = get_var{ c, v }.name }) }
+                    flow_error{ &c, at = s.span, msg = utf8::view{ b } }
+                }
+                restore{ &c, s = s0 }
             }
         }
     }
@@ -1760,7 +1883,7 @@ namespace check {
         put_local{ &c, key = stmt_key{ s }, v }
     }
 
-    fn assign { mut c: Checker, place: syntax::Expr, value: syntax::Expr } {
+    fn assign { mut c: Checker, place: syntax::Expr, value: syntax::Expr, at: source::Span } {
         let mut v = NONE
         match place.k {
             path{ segs } => {
@@ -1783,6 +1906,15 @@ namespace check {
                 error{ &c, at = expr_at{ e = place }, msg = utf8::view{ b } }
             }
             expect{ &c, e = value, t = x.ty }
+            if x.tracked {
+                if not x.mutable and has_id{ xs = c.maybe, n = v } and not c.dead {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "`{}` may be assigned more than once", str{ s = x.name }) }
+                    flow_error{ &c, at, msg = utf8::view{ b } }
+                }
+                c.defs = set_add{ c, xs = c.defs, n = v }
+                c.maybe = set_add{ c, xs = c.maybe, n = v }
+            }
             return
         }
         let lt = expr{ &c, e = place, exp = types::NO_TYPE }
@@ -1869,11 +2001,13 @@ namespace check {
                 return
             }
         }
-        if slice::eq_bytes{ a = word.bytes, b = "break" } and not c.dead { list::at{ list = c.loops, i = target }.broken = true }
+        let l = list::at{ list = c.loops, i = target }
+        let ok = if slice::eq_bytes{ a = word.bytes, b = "break" } { list::push{ list = &l.breaks, item = save{ c } } } else { list::push{ list = &l.conts, item = save{ c } } }
+        if not ok { @panic("check: out of memory") }
         c.dead = true
     }
 
-    fn while_stmt { mut c: Checker, label: ?syntax::Name, cond: syntax::Expr, body: syntax::Block } {
+    fn while_stmt { mut c: Checker, label: ?syntax::Name, cond: syntax::Expr, body: syntax::Block, at: source::Span } {
         let mut name: []u8 = ""
         if label != null {
             name = label.text
@@ -1890,20 +2024,60 @@ namespace check {
             }
         }
         expect{ &c, e = cond, t = types::BOOL }
-        let s0 = c.dead
+        let s0 = save{ c }
         let f = facts{ c, e = cond }
-        if not list::push{ list = &c.loops, item = Loop{ label = name, broken = false } } { @panic("check: out of memory") }
+        let lp = Loop{
+            label = name,
+            breaks = list::new(State){ realloc = arena::alloc, heap = c.heap },
+            conts = list::new(State){ realloc = arena::alloc, heap = c.heap },
+        }
+        if not list::push{ list = &c.loops, item = lp } { @panic("check: out of memory") }
         c.loop_depth = c.loop_depth + 1
         open{ &c }
         assume{ &c, facts = f.yes, after_if = false }
         stmts{ &c, xs = body.stmts }
         close{ &c }
         c.loop_depth = c.loop_depth - 1
-        let l = list::pop{ list = &c.loops }
+        let popped = list::pop{ list = &c.loops }
+        let l = if popped == null { lp } else { popped }
+        let breaks = list::items{ list = l.breaks }
+        let conts = list::items{ list = l.conts }
+        // A `let x: T` from outside the loop must not be assigned on a path that can repeat it:
+        // the end of the body, or a `continue`.
+        let mut i: usize = 0
+        while i <= conts.len {
+            let back = if i == 0 { save{ c } } else { conts[i - 1] }
+            if not back.dead {
+                let v = assigned_since{ c, now = back.maybe, since = s0.maybe, max_loop = c.loop_depth }
+                if v != NONE {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "`{}` may be assigned more than once: it is assigned in a loop that can repeat; declare it with `let mut`", str{ s = get_var{ c, v }.name }) }
+                    flow_error{ &c, at, msg = utf8::view{ b } }
+                    break
+                }
+            }
+            i = i + 1
+        }
+        let mut maybe = set_union{ c, a = s0.maybe, b = c.maybe }
+        i = 0
+        while i < breaks.len {
+            maybe = set_union{ c, a = maybe, b = breaks[i].maybe }
+            i = i + 1
+        }
+        i = 0
+        while i < conts.len {
+            maybe = set_union{ c, a = maybe, b = conts[i].maybe }
+            i = i + 1
+        }
         let mut forever = false
         match cond.k { boolean{ value } => { forever = value } else => {} }
-        // `while true` leaves only through a break; without one it ends the path.
-        c.dead = s0 or (forever and (l == null or not l.broken))
+        if forever {
+            // `while true` leaves only through a break; without one it ends the path.
+            let after = if breaks.len > 0 { merge{ c, xs = breaks } } else { State{ defs = s0.defs, maybe = slice::empty(u32){}, dead = true } }
+            restore{ &c, s = State{ defs = after.defs, maybe, dead = s0.dead or after.dead } }
+        } else {
+            restore{ &c, s = State{ defs = s0.defs, maybe, dead = s0.dead } }
+        }
     }
 
     // ---- `if` and `match`, as statements and as expressions
@@ -1914,23 +2088,34 @@ namespace check {
         let cond = x.c.*
         expect{ &c, e = cond, t = types::BOOL }
         let f = facts{ c, e = cond }
-        let s0 = c.dead
+        let s0 = save{ c }
         let none = slice::empty(u32){}
         let mut bs = list::new(Branch){ realloc = arena::alloc, heap = c.heap }
         add_branch{ xs = &bs, b = branch{ &c, b = x.then, vars = none, facts = f.yes, exp, value } }
-        let d1 = c.dead
-        c.dead = s0
+        let s1 = save{ c }
+        restore{ &c, s = s0 }
         let els = x.els
         if els != null { add_branch{ xs = &bs, b = branch{ &c, b = els, vars = none, facts = f.no, exp, value } } }
-        let d2 = c.dead
-        c.dead = d1 and d2
+        let s2 = save{ c }
+        restore{ &c, s = merge{ c, xs = two_states{ c, a = s1, b = s2 } } }
         if value { return join{ &c, at, bs = list::items{ list = bs }, exp, may_leave } }
-        if not s0 {
+        if not s0.dead {
             // If one branch always leaves, what the other assumes holds to the end of the block.
-            if d1 { assume{ &c, facts = f.no, after_if = true } }
-            if els != null and d2 { assume{ &c, facts = f.yes, after_if = true } }
+            if s1.dead { assume{ &c, facts = f.no, after_if = true } }
+            if els != null and s2.dead { assume{ &c, facts = f.yes, after_if = true } }
         }
         return types::NO_TYPE
+    }
+
+    fn two_states { c: Checker, a: State, b: State } -> []State {
+        let mut xs = list::new(State){ realloc = arena::alloc, heap = c.heap }
+        add_state{ &xs, s = a }
+        add_state{ &xs, s = b }
+        return list::items{ list = xs }
+    }
+
+    fn add_state { mut xs: list::List(State, Heap), s: State } {
+        if not list::push{ list = &xs, item = s } { @panic("check: out of memory") }
     }
 
     fn add_branch { mut xs: list::List(Branch, Heap), b: Branch } {
@@ -2194,10 +2379,10 @@ namespace check {
             ok = false
         }
         let vs: []Variant = if ok { variants_of{ &c, t = ut } } else { slice::empty(Variant){} }
-        let s0 = c.dead
+        let s0 = save{ c }
         let mut seen = list::new(u32){ realloc = arena::alloc, heap = c.heap }
         let mut has_else = false
-        let mut all_dead = true
+        let mut results = list::new(State){ realloc = arena::alloc, heap = c.heap }
         let mut bs = list::new(Branch){ realloc = arena::alloc, heap = c.heap }
         let arms = x.arms
         let mut i: usize = 0
@@ -2242,9 +2427,9 @@ namespace check {
                 }
                 k = k + 1
             }
-            c.dead = s0
+            restore{ &c, s = s0 }
             add_branch{ xs = &bs, b = branch{ &c, b = arm.body, vars = first, facts = slice::empty(Fact){}, exp, value } }
-            all_dead = all_dead and c.dead
+            add_state{ xs = &results, s = save{ c } }
             i = i + 1
         }
         if ok and not has_else and seen.len < vs.len {
@@ -2263,7 +2448,7 @@ namespace check {
             pushed{ ok = okb }
             error{ &c, at, msg = utf8::view{ b } }
         }
-        c.dead = all_dead
+        restore{ &c, s = merge{ c, xs = list::items{ list = results } } }
         if value { return join{ &c, at, bs = list::items{ list = bs }, exp, may_leave } }
         return types::NO_TYPE
     }
@@ -2478,7 +2663,7 @@ namespace check {
             let efields: ?[]types::Field = if eknown { vs[evi].fields } else { null }
             evars = pattern_vars{ &c, variant = ev, known = eknown, fields = efields, binders = els_binders, through = false, ptr_mut = false, at = els.span }
         }
-        let s0 = c.dead
+        let s0 = save{ c }
         open{ &c }
         declare_all{ &c, vars = evars }
         stmts{ &c, xs = els.stmts }
@@ -2486,7 +2671,7 @@ namespace check {
         if not c.dead {
             error{ &c, at = els.span, msg = "the `else` of a `let` pattern must leave: end it with `return`, `break`, `continue` or `@panic()`" }
         }
-        c.dead = s0
+        restore{ &c, s = State{ defs = s0.defs, maybe = set_union{ c, a = s0.maybe, b = c.maybe }, dead = s0.dead } }
         declare_all{ &c, vars = bvars }
     }
 
@@ -3242,7 +3427,10 @@ namespace check {
         let r = resolve_path{ &c, e, segs, call = false }
         if r == null { return types::ERROR }
         match r {
-            local{ var } => { return get_var{ c, v = var }.ty }
+            local{ var } => {
+                check_read{ &c, v = var, at = expr_at{ e } }
+                return get_var{ c, v = var }.ty
+            }
             func{ decl, targs } => { return fn_type{ &c, d = decl, targs } }
             constant{ decl } => { return get_decl{ c, d = decl }.ty }
             variant{ ty, index } => {
@@ -3516,7 +3704,10 @@ namespace check {
                     }
                     func{ decl, targs } => { ct = fn_type{ &c, d = decl, targs } }
                     constant{ decl } => { ct = get_decl{ c, d = decl }.ty }
-                    local{ var } => { ct = get_var{ c, v = var }.ty }
+                    local{ var } => {
+                        check_read{ &c, v = var, at = expr_at{ e = callee } }
+                        ct = get_var{ c, v = var }.ty
+                    }
                 }
                 set_type{ &c, e = callee, t = ct }
             }
@@ -3647,6 +3838,7 @@ namespace check {
 
     // What `..` supplies for field f: local v, or `&v` if f is `mut` (§3, rule 7).
     fn forwarded { mut c: Checker, f: types::Field, v: u32, at: source::Span } -> Forward {
+        check_read{ &c, v, at }
         let x = get_var{ c, v }
         if f.mutable {
             let arg = types::ptr{ s = &c.ty, elem = x.ty, mutable = x.mutable }

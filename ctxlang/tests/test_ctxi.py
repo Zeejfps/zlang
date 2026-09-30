@@ -1138,6 +1138,54 @@ class Bodies(Base):
             run(src)
 
 
+class Initialization(Base):
+    """Definite initialization (§11), the ctxc checker's sub-step 4: every error at its exact
+    position, for tools/checktest.py through the corpus."""
+
+    def assertInitError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_errors(self):
+        READ = '`x` may be read before it is assigned'
+        TWICE = '`x` may be assigned more than once'
+        LOOP = TWICE + ': it is assigned in a loop that can repeat; declare it with `let mut`'
+        DEFER = 'cannot assign `x` in a defer: declare it with `let mut`'
+        for src, msg, line, col in [
+            ('fn f {} -> i32 {\n    let x: i32\n    return x\n}', READ, 3, 12),
+            ('fn f { c: bool } -> i32 {\n    let x: i32\n    if c { x = 1 }\n    return x\n}', READ, 4, 12),
+            ('fn f { c: bool } -> i32 {\n    let mut x: *i32\n    let y = 1\n    if c { x = &y }\n    return x.*\n}', READ, 5, 12),
+            ('fn f { c: bool } -> i32 {\n    let x: i32\n    while c { x = 1; break }\n    return x\n}', READ, 4, 12),
+            ('fn f {} {\n    let g: fn{}\n    g{}\n}', '`g` may be read before it is assigned', 3, 5),
+            ('fn g { n: i32 } {}\nfn f {} {\n    let n: i32\n    g{ .. }\n}', '`n` may be read before it is assigned', 4, 6),
+            ('fn f {} -> i32 {\n    let x: ?i32\n    if x == null { return 0 }\n    return x\n}', READ, 3, 8),
+            ('fn f {} {\n    let x: i32\n    x = 1\n    x = 2\n}', TWICE, 4, 5),
+            ('fn f { c: bool } {\n    let x: i32\n    if c { x = 1 }\n    x = 2\n}', TWICE, 4, 5),
+            ('fn f { c: bool } -> i32 {\n    let x: i32\n    let some{ value } = if c { 1 } else { null } else { x = 0; return x }\n    x = value\n    return x\n}', TWICE, 4, 5),
+            ('fn f { c: bool } {\n    let x: i32\n    while c {\n        x = 1\n    }\n}', LOOP, 3, 5),
+            ('fn f { c: bool } {\n    let x: i32\n    while c {\n        if c { x = 1; continue }\n        break\n    }\n}', LOOP, 3, 5),
+            ('fn f { c: bool } -> i32 {\n    let x: i32\n    while true {\n        if c { x = 1; break }\n    }\n    return x\n}', LOOP, 3, 5),
+            ('fn f {} {\n    let x: i32\n    defer x = 1\n    x = 2\n}', DEFER, 3, 5),
+            ('fn f {} {\n    let x: i32\n    defer { if true { x = 1 } }\n    x = 2\n}', DEFER, 3, 5),
+        ]:
+            self.assertInitError(src + '\nfn main {} {}', msg, line, col)
+
+    def test_checks(self):
+        for src in [
+            'fn f { c: bool } -> i32 {\n    let x: i32\n    if c { x = 1 } else { x = 2 }\n    return x\n}',
+            'fn f { c: bool } -> i32 {\n    let x: i32\n    if c { return 0 }\n    x = 3\n    return x\n}',
+            'fn f { c: bool } -> i32 {\n    let x: i32\n    while true {\n        x = 1\n        break\n    }\n    return x\n}',
+            'fn f { c: bool } -> i32 {\n    let mut x: i32\n    while c { x = x + 1 }\n    return x\n}',
+            'fn f { c: bool } -> i32 {\n    let x: i32\n    while c {\n        let y: i32\n        y = 1\n        if y > 0 { break }\n    }\n    x = 1\n    return x\n}',
+            'union U { a{ n: i32 }, b }\nfn f { u: U } -> i32 {\n    let x: i32\n    match u {\n        a{ n } => { x = n }\n        b => { x = 0 }\n    }\n    return x\n}',
+            'fn f {} -> i32 {\n    let mut x: ?i32\n    defer x = 1\n    return 0\n}',
+            'fn f { c: bool } -> i32 {\n    let x: i32\n    let y = if c { x = 1; 2 } else { x = 3; 4 }\n    return x + y\n}',
+            'fn f { c: bool } -> i32 {\n    let x: i32\n    if c { x = 1 } else { @panic() }\n    return x\n}',
+        ]:
+            run(src + '\nfn main {} {}')
+
+
 class Enums(Base):
     def test_values_and_layout(self):
         self.assertOutput(ENUM + """
