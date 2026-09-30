@@ -110,6 +110,33 @@ namespace check {
         layouts:   map::Map(Id, Layout, Heap),
         busy:      map::Map(Id, bool, Heap),     // layouts being computed
         main:      u32,                          // NONE unless `main` is valid
+        text_decl: u32,                          // utf8::String, or NONE
+        // The body being checked: a const's initializer, so far.
+        sc:        Scope,
+        ret:       Id,
+        lits:      list::List(syntax::Expr, Heap),    // literals, whose types are settled at the end
+        gvars:     list::List(GVar, Heap),            // generic arguments to infer
+        // Side tables for expressions, keyed by key{ file, id }.
+        expr_ty:   map::Map(u64, Id, Heap),           // an expression's type
+        convs:     map::Map(u64, Conv, Heap),         // an implicit conversion of its value
+        refs:      map::Map(u64, PathRef, Heap),      // what a path (or a callee) names
+        literal:   map::Map(u64, bool, Heap),         // braces: a literal (true) or a call
+    }
+
+    // A generic argument left to inference, and how to describe it if inference fails.
+    struct GVar { v: Id, param: []u8, owner: []u8, at: source::Span }
+
+    // An implicit conversion, spelled out in ctxi's tree as a Coerce (to ?T) or ToSlice node. A
+    // `null` takes its optional type, and widening is left for the IR.
+    union Conv { some{ to: Id }, slice{ to: Id } }
+
+    // What a path in an expression names.
+    union PathRef {
+        func{ decl: u32, targs: []Id },
+        constant{ decl: u32 },
+        variant{ ty: Id, index: u32 },
+        enumval{ ty: Id, index: u32 },
+        path{ e: Entry, seg: syntax::Seg },          // a type or namespace: not a value
     }
 
     // The natives, functions the runtime provides (ctxi/natives.py), as source: each is declared
@@ -161,6 +188,15 @@ namespace check {
             layouts = map::new(Id, Layout){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             busy = map::new(Id, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             main = NONE,
+            text_decl = NONE,
+            sc = Scope{ ns = ROOT, owner = NONE, names = no_names{}, args = slice::empty(Id){} },
+            ret = types::VOID,
+            lits = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
+            gvars = list::new(GVar){ realloc = arena::alloc, &heap },
+            expr_ty = map::new(u64, Id){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            convs = map::new(u64, Conv){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            refs = map::new(u64, PathRef){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            literal = map::new(u64, bool){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
         }
         _ = space{ &c, name = "", parent = NONE }
         _ = space{ &c, name = "", parent = UNIVERSE }
@@ -193,6 +229,7 @@ namespace check {
             f = f + 1
         }
         declare_natives{ &c }
+        c.text_decl = std_decl{ c, space = "utf8", name = "String" }
         generic_params{ &c, xs = c.structs }
         generic_params{ &c, xs = c.unions }
         generic_params{ &c, xs = c.fns }
@@ -203,10 +240,11 @@ namespace check {
         each{ &c, xs = c.consts, what = Phase::consts }
         each{ &c, xs = c.fns, what = Phase::sigs }
         each{ &c, xs = c.natives, what = Phase::sigs }
+        each{ &c, xs = c.consts, what = Phase::const_values }
         check_main{ &c }
     }
 
-    union Phase { structs, unions, enums, aliases, consts, sigs }
+    union Phase { structs, unions, enums, aliases, consts, sigs, const_values }
 
     fn each { mut c: Checker, xs: list::List(u32, Heap), what: Phase } {
         let items = list::items{ list = xs }
@@ -220,6 +258,7 @@ namespace check {
                 aliases => { resolve_alias{ &c, d } }
                 consts  => { resolve_const{ &c, d } }
                 sigs    => { resolve_sig{ &c, d } }
+                const_values => { check_const{ &c, d } }
             }
             i = i + 1
         }
@@ -545,7 +584,7 @@ namespace check {
     fn resolve_alias { mut c: Checker, d: u32 } {
         let x = get_decl{ c, d }
         if x.tparams.len > 0 { return }
-        let t = decl_type{ &c, e = Entry::decl{ i = d }, name = x.name, args = null, at = x.syn.span, allow_bound = true }
+        let t = decl_type{ &c, e = Entry::decl{ i = d }, name = x.name, args = null, at = x.syn.span, partial = false, allow_bound = true }
         list::at{ list = c.decls, i = d }.ty = t
     }
 
@@ -648,12 +687,26 @@ namespace check {
         if c.diags.errors == bad { c.main = m }
     }
 
+    // The declaration std's namespace `space` has as `name`, or NONE.
+    fn std_decl { c: Checker, space: []u8, name: []u8 } -> u32 {
+        let sp = map::get{ m = get_space{ c, ns = STD }.paths, key = space }
+        if sp == null { return NONE }
+        match sp {
+            space{ ns } => {
+                let e = map::get{ m = get_space{ c, ns }.paths, key = name }
+                if e == null { return NONE }
+                match e { decl{ i } => { return i } else => { return NONE } }
+            }
+            else => { return NONE }
+        }
+    }
+
     // A type std declares at its top level, such as `Args`.
     fn std_type { mut c: Checker, name: []u8 } -> Id {
         let e = lookup_path{ c, ns = STD, name }
         if e == null { return types::ERROR }
         let n = syntax::Name{ id = NONE, span = nowhere{}, text = name }
-        return decl_type{ &c, e, name = n, args = null, at = nowhere{}, allow_bound = false }
+        return decl_type{ &c, e, name = n, args = null, at = nowhere{}, partial = false, allow_bound = false }
     }
 
     // ---- type expressions
@@ -765,7 +818,7 @@ namespace check {
             }
             args = list::items{ list = xs }
         }
-        return decl_type{ &c, e, name = last.name, args, at = last.name.span, allow_bound }
+        return decl_type{ &c, e, name = last.name, args, at = last.name.span, partial = false, allow_bound }
     }
 
     // Whether a path has a missing name, which the parser has reported.
@@ -784,8 +837,10 @@ namespace check {
         error{ &c, at = n.span, msg = utf8::view{ b } }
     }
 
-    // The type that path entry e names, with args if it was given any.
-    fn decl_type { mut c: Checker, e: Entry, name: syntax::Name, args: ?[]Id, at: source::Span, allow_bound: bool } -> Id {
+    // The type that path entry e names, with args if it was given any. If partial, as where a
+    // literal or a variant names a generic type, the arguments not given are inferred: each is a
+    // new variable, which must be bound by the end of the body.
+    fn decl_type { mut c: Checker, e: Entry, name: syntax::Name, args: ?[]Id, at: source::Span, partial: bool, allow_bound: bool } -> Id {
         let given: usize = if args == null { 0 } else { args.len }
         match e {
             prim{ p } => {
@@ -805,13 +860,26 @@ namespace check {
             decl{ i } => {
                 let x = get_decl{ c, d = i }
                 let n = x.tparams.len
-                if given != n {
+                if given > n or (given < n and not partial) {
                     let mut b = message{ c }
                     pushed{ ok = @fmt(&b, "`{}` expects {} type argument(s), got {}", str{ s = x.name.text }, n, given) }
                     error{ &c, at, msg = utf8::view{ b } }
                     return types::ERROR
                 }
-                let xs: []Id = if args == null { slice::empty(Id){} } else { args }
+                let mut all = list::new(Id){ realloc = arena::alloc, heap = c.heap }
+                if args != null {
+                    let mut k: usize = 0
+                    while k < args.len {
+                        push{ xs = &all, n = args[k] }
+                        k = k + 1
+                    }
+                }
+                while all.len < n {
+                    let v = types::fresh{ s = &c.ty, kind = types::VarKind::any }
+                    generic_var{ &c, v, param = x.tparams[all.len], owner = x.name, at }
+                    push{ xs = &all, n = v }
+                }
+                let xs: []Id = list::items{ list = all }
                 match x.kind {
                     record => { return types::record{ s = &c.ty, decl = i, args = xs } }
                     sum => { return types::sum{ s = &c.ty, decl = i, args = xs } }
@@ -1080,7 +1148,14 @@ namespace check {
     }
 
     fn write_type { c: Checker, t: Id, mut b: utf8::Builder(Heap) } -> bool {
-        match types::get{ s = c.ty, id = t } {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            var{ n } => {
+                match types::var_of{ s = c.ty, n }.kind {
+                    int => { return utf8::push{ &b, s = "{integer}" } }
+                    float => { return utf8::push{ &b, s = "{float}" } }
+                    any => { return utf8::push{ &b, s = "_" } }
+                }
+            }
             error => { return utf8::push{ &b, s = "{error}" } }
             void => { return utf8::push{ &b, s = "no value" } }
             nil => { return utf8::push{ &b, s = "null" } }
@@ -1128,6 +1203,1308 @@ namespace check {
             i = i + 1
         }
         return ok and utf8::push{ &b, s = ")" }
+    }
+
+    // ---- bodies: a const's initializer, so far (ctxi's check_const)
+
+    fn check_const { mut c: Checker, d: u32 } {
+        let x = get_decl{ c, d }
+        match x.syn.k {
+            constant{ value } => {
+                begin_body{ &c, sc = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }, ret = types::VOID }
+                let before = c.diags.errors
+                expect{ &c, e = value, t = x.ty }
+                finish{ &c }
+                if c.diags.errors == before { const_ok{ &c, e = value } }
+            }
+            else => {}
+        }
+    }
+
+    fn begin_body { mut c: Checker, sc: Scope, ret: Id } {
+        c.sc = sc
+        c.ret = ret
+        list::clear{ list = &c.lits }
+        list::clear{ list = &c.gvars }
+    }
+
+    // Settles the body's literals: those whose type nothing fixed get the defaults, i32 and
+    // f64, and each integer must fit its type. Then every generic argument must be known.
+    fn finish { mut c: Checker } {
+        let lits = list::items{ list = c.lits }
+        let mut i: usize = 0
+        while i < lits.len {
+            let t = type_of_expr{ c, e = lits[i] }
+            let v = types::unbound{ s = c.ty, t }
+            if v != null {
+                let float = types::var_of{ s = c.ty, n = v }.kind == types::VarKind::float
+                _ = types::unify{ s = &c.ty, a = t, b = if float { types::prim{ p = types::Prim::f64 } } else { types::I32 } }
+            }
+            i = i + 1
+        }
+        i = 0
+        while i < lits.len {
+            let e = lits[i]
+            match e.k {
+                int{ negative, value } => {
+                    let t = types::prune{ s = c.ty, t = type_of_expr{ c, e } }
+                    let p = types::prim_of{ s = c.ty, t }
+                    if p != null and (value == null or not types::fits{ p, negative, magnitude = value }) {
+                        let mut b = message{ c }
+                        let sign: utf8::String = if negative { "-" } else { "" }
+                        let digits = if value == null { str{ s = source_text{ c, span = e.span } } } else { message_u64{ c, n = value } }
+                        pushed{ ok = @fmt(&b, "literal {}{} does not fit in {}", sign, digits, tstr{ c, t }) and fixed_by{ c, t = type_of_expr{ c, e }, &b } }
+                        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                    }
+                }
+                else => {}
+            }
+            i = i + 1
+        }
+        let gs = list::items{ list = c.gvars }
+        i = 0
+        while i < gs.len {
+            let g = gs[i]
+            if types::has_vars{ s = c.ty, t = g.v } {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "cannot infer type parameter `{}` of `{}`", str{ s = g.param }, str{ s = g.owner }) }
+                error{ &c, at = g.at, msg = utf8::view{ b } }
+            }
+            if types::has_bound_fn{ s = c.ty, t = g.v } {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "type parameter `{}` of `{}` cannot be a `&fn` type", str{ s = g.param }, str{ s = g.owner }) }
+                error{ &c, at = g.at, msg = utf8::view{ b } }
+            }
+            i = i + 1
+        }
+        list::clear{ list = &c.gvars }
+    }
+
+    fn message_u64 { c: Checker, n: u64 } -> utf8::String {
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "{}", n) }
+        return utf8::view{ b }
+    }
+
+    fn source_text { c: Checker, span: source::Span } -> []u8 {
+        return c.files[span.file].text[span.start..span.end]
+    }
+
+    // `, which it gets from `n` at 3:9`: why a literal of type t has its type, if an operand
+    // fixed it.
+    fn fixed_by { c: Checker, t: Id, mut b: utf8::Builder(Heap) } -> bool {
+        let mut x = t
+        while true {
+            match types::get{ s = c.ty, id = x } {
+                var{ n } => {
+                    let v = types::var_of{ s = c.ty, n }
+                    let f = v.fixed
+                    if f != null {
+                        let file = c.files[f.at.file]
+                        let p = source::position{ text = file.text, lines = file.lines, offset = f.at.start }
+                        if f.path.len > 0 {
+                            return @fmt(&b, ", which it gets from `{}` at {}:{}", str{ s = f.path }, p.line, p.col)
+                        }
+                        return @fmt(&b, ", which it gets from the operand at {}:{}", p.line, p.col)
+                    }
+                    if v.ref == types::NO_TYPE { return true }
+                    x = v.ref
+                }
+                else => { return true }
+            }
+        }
+        return true
+    }
+
+    // A generic argument to infer by the end of the body.
+    fn generic_var { mut c: Checker, v: Id, param: syntax::Name, owner: syntax::Name, at: source::Span } {
+        if not list::push{ list = &c.gvars, item = GVar{ v, param = param.text, owner = owner.text, at } } { @panic("check: out of memory") }
+    }
+
+    // §14: a const's initializer is computable at compile time.
+    fn const_ok { mut c: Checker, e: syntax::Expr } {
+        let at = expr_at{ e }
+        let conv = map::get{ m = c.convs, key = expr_key{ e } }
+        if conv != null {
+            match conv {
+                slice => {
+                    error{ &c, at, msg = "a const must be computable at compile time" }
+                    return
+                }
+                else => {}
+            }
+        }
+        match e.k {
+            error | int | float | str | boolean | nil => {}
+            neg{ e = x } => { const_ok{ &c, e = x.* } }
+            lnot{ e = x } => { const_ok{ &c, e = x.* } }
+            binary{ a, b } => {
+                const_ok{ &c, e = a.* }
+                const_ok{ &c, e = b.* }
+            }
+            array{ elems } => { const_list{ &c, xs = elems } }
+            repeat{ elem } => { const_ok{ &c, e = elem.* } }
+            path => {
+                let r = map::get{ m = c.refs, key = expr_key{ e } }
+                let mut ok = false
+                if r != null {
+                    match r { constant | variant | enumval => { ok = true } else => {} }
+                }
+                if not ok { error{ &c, at, msg = "a const may only refer to other consts" } }
+            }
+            builtin{ name, args } => {
+                if not slice::eq_bytes{ a = name.text, b = "size_of" } and not slice::eq_bytes{ a = name.text, b = "align_of" } {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "@{} is not allowed in a const", str{ s = name.text }) }
+                    error{ &c, at, msg = utf8::view{ b } }
+                }
+                const_list{ &c, xs = args }
+            }
+            braced{ items } => {
+                let lit = map::get{ m = c.literal, key = expr_key{ e } }
+                if lit == null or not lit {
+                    error{ &c, at, msg = "a const cannot call a function" }
+                }
+                let mut i: usize = 0
+                while i < items.len {
+                    const_ok{ &c, e = items[i].value }
+                    i = i + 1
+                }
+            }
+            else => { error{ &c, at, msg = "a const must be computable at compile time" } }
+        }
+    }
+
+    fn const_list { mut c: Checker, xs: []syntax::Expr } {
+        let mut i: usize = 0
+        while i < xs.len {
+            const_ok{ &c, e = xs[i] }
+            i = i + 1
+        }
+    }
+
+    // ---- expressions (ctxi's e_* methods)
+
+    fn expr_key { e: syntax::Expr } -> u64 {
+        return key{ file = e.span.file, id = e.id }
+    }
+
+    fn type_of_expr { c: Checker, e: syntax::Expr } -> Id {
+        let t = map::get{ m = c.expr_ty, key = expr_key{ e } }
+        return if t == null { types::ERROR } else { t }
+    }
+
+    fn set_type { mut c: Checker, e: syntax::Expr, t: Id } {
+        if not map::put{ m = &c.expr_ty, key = expr_key{ e }, value = t } { @panic("check: out of memory") }
+    }
+
+    // Checks e, of type exp if it has an expected type (types::NO_TYPE otherwise), and records
+    // its type.
+    fn expr { mut c: Checker, e: syntax::Expr, exp: Id } -> Id {
+        let t = expr_kind{ &c, e, exp }
+        set_type{ &c, e, t }
+        return t
+    }
+
+    // Checks that e has a type that converts to t.
+    fn expect { mut c: Checker, e: syntax::Expr, t: Id } {
+        let at = expr{ &c, e, exp = t }
+        coerce_node{ &c, e, at, t }
+    }
+
+    // The type of an expression that must have a value, from which a new local gets its type.
+    fn value_type { mut c: Checker, e: syntax::Expr } -> Id {
+        let t = expr{ &c, e, exp = types::NO_TYPE }
+        if t == types::NULL { error{ &c, at = expr_at{ e }, msg = "cannot infer the type of `null` here; add a type" } }
+        if t == types::VOID { error{ &c, at = expr_at{ e }, msg = "expression has no value" } }
+        return t
+    }
+
+    fn coerce_node { mut c: Checker, e: syntax::Expr, at: Id, t: Id } {
+        if at == types::VOID {
+            error{ &c, at = expr_at{ e }, msg = "expression has no value" }
+            return
+        }
+        match coerce{ &c, a = at, e = t } {
+            fail => {
+                let mut b = message{ c }
+                pushed{ ok = mismatch{ &c, a = at, e = t, &b } }
+                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+            }
+            same => {}
+            some => { put_conv{ &c, e, conv = Conv::some{ to = t } } }
+            to_slice => { put_conv{ &c, e, conv = Conv::slice{ to = t } } }
+            to_null => { set_type{ &c, e, t } }
+        }
+    }
+
+    fn put_conv { mut c: Checker, e: syntax::Expr, conv: Conv } {
+        if not map::put{ m = &c.convs, key = expr_key{ e }, value = conv } { @panic("check: out of memory") }
+    }
+
+    union Coercion { fail, same, some, to_slice, to_null }
+
+    // How a value of type a converts to type e, if it does.
+    fn coerce { mut c: Checker, a: Id, e: Id } -> Coercion {
+        let x = types::prune{ s = c.ty, t = a }
+        let y = types::prune{ s = c.ty, t = e }
+        if x == types::ERROR or y == types::ERROR { return Coercion::same }
+        let ty = types::get{ s = c.ty, id = y }
+        if x == types::NULL {
+            match ty { opt => { return Coercion::to_null } else => { return Coercion::fail } }
+        }
+        let tx = types::get{ s = c.ty, id = x }
+        match ty {
+            slice{ elem = ee, mutable = em } => {
+                match tx {
+                    ptr{ elem = ae, mutable = am } => {
+                        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = ae } } {
+                            array{ elem } => {
+                                if (am or not em) and types::unify{ s = &c.ty, a = elem, b = ee } { return Coercion::to_slice }
+                            }
+                            else => {}
+                        }
+                    }
+                    else => {}
+                }
+            }
+            opt{ elem = ee } => {
+                match tx {
+                    opt{ elem = ae } => {
+                        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = ae } } {
+                            ptr | slice => {
+                                if types::widens{ s = &c.ty, a = ae, b = ee } { return Coercion::same }
+                            }
+                            else => {}
+                        }
+                        return if types::unify{ s = &c.ty, a = x, b = y } { Coercion::same } else { Coercion::fail }
+                    }
+                    var{ n } => {
+                        if types::var_of{ s = c.ty, n }.kind == types::VarKind::any {
+                            return if types::unify{ s = &c.ty, a = x, b = y } { Coercion::same } else { Coercion::fail }
+                        }
+                    }
+                    else => {}
+                }
+                if types::unify{ s = &c.ty, a = x, b = ee } or types::widens{ s = &c.ty, a = x, b = ee } { return Coercion::some }
+                return Coercion::fail
+            }
+            func{ bound = eb } => {
+                match tx {
+                    func{ bound = ab } => {
+                        if ab and not eb { return Coercion::fail }
+                        return if fn_accepts{ &c, g = x, s = y } { Coercion::same } else { Coercion::fail }
+                    }
+                    else => {}
+                }
+            }
+            else => {}
+        }
+        if types::unify{ s = &c.ty, a = x, b = y } or types::widens{ s = &c.ty, a = x, b = y } { return Coercion::same }
+        return Coercion::fail
+    }
+
+    // §5: whether function type g is accepted where s is expected, bound-ness aside.
+    fn fn_accepts { mut c: Checker, g: Id, s: Id } -> bool {
+        match types::get{ s = c.ty, id = g } {
+            func{ fields = gf, ret = gr } => {
+                match types::get{ s = c.ty, id = s } {
+                    func{ fields = sf, ret = sr } => {
+                        let mut i: usize = 0
+                        while i < gf.len {
+                            let f = gf[i]
+                            let h = types::find_field{ fields = sf, name = f.name }
+                            if h == null or h.mutable != f.mutable or not types::unify{ s = &c.ty, a = f.ty, b = h.ty } { return false }
+                            i = i + 1
+                        }
+                        return types::unify{ s = &c.ty, a = gr, b = sr }
+                    }
+                    else => { return false }
+                }
+            }
+            else => { return false }
+        }
+    }
+
+    fn mismatch { mut c: Checker, a: Id, e: Id, mut b: utf8::Builder(Heap) } -> bool {
+        let x = types::prune{ s = c.ty, t = a }
+        let y = types::prune{ s = c.ty, t = e }
+        match types::get{ s = c.ty, id = x } {
+            func{ fields = af, bound = ab } => {
+                match types::get{ s = c.ty, id = y } {
+                    func{ fields = ef, bound = eb } => {
+                        if not (ab and not eb) {
+                            let mut i: usize = 0
+                            while i < af.len {
+                                let f = af[i]
+                                if types::find_field{ fields = ef, name = f.name } == null {
+                                    let m: utf8::String = if f.mutable { "mut " } else { "" }
+                                    return @fmt(&b, "function needs `{}{}`, which ", m, str{ s = f.name }) and write_type{ c, t = y, &b } and @fmt(&b, " doesn't provide")
+                                }
+                                i = i + 1
+                            }
+                        }
+                    }
+                    else => {}
+                }
+            }
+            else => {}
+        }
+        return @fmt(&b, "expected ") and write_type{ c, t = y, &b } and @fmt(&b, ", got ") and write_type{ c, t = x, &b }
+    }
+
+    fn expr_kind { mut c: Checker, e: syntax::Expr, exp: Id } -> Id {
+        match e.k {
+            error => { return types::ERROR }
+            int => {
+                add_lit{ &c, e }
+                return types::fresh{ s = &c.ty, kind = types::VarKind::int }
+            }
+            float => {
+                add_lit{ &c, e }
+                return types::fresh{ s = &c.ty, kind = types::VarKind::float }
+            }
+            str{ bytes } => { return str_lit{ &c, e, bytes, exp } }
+            boolean => { return types::BOOL }
+            nil => { return types::NULL }
+            path{ segs } => { return path_expr{ &c, e, segs, exp } }
+            braced{ callee, items, forward, bind } => { return braced{ &c, e, callee = callee.*, items, forward, bind, exp } }
+            neg{ e = x } => {
+                let t = expr{ &c, e = x.*, exp }
+                if not is_num{ c, t } {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "unary `-` needs a number, got {}", tstr{ c, t }) }
+                    error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                }
+                return t
+            }
+            lnot{ e = x } => {
+                expect{ &c, e = x.*, t = types::BOOL }
+                return types::BOOL
+            }
+            binary{ op, a, b } => { return binary{ &c, e, op, a = a.*, b = b.*, exp } }
+            array{ elems } => { return array_lit{ &c, e, elems, exp } }
+            repeat{ elem, count } => { return repeat{ &c, elem = elem.*, count = count.*, exp } }
+            builtin{ name, targ, args } => { return builtin{ &c, e, name, targ, args, exp } }
+            field{ base, name } => { return field_expr{ &c, e, base = base.*, name } }
+            deref{ base } => {
+                let bt = typed{ &c, e = base.* }
+                match types::get{ s = c.ty, id = bt } {
+                    ptr{ elem } => { return elem }
+                    error => { return types::ERROR }
+                    else => {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "`.*` needs a pointer, got {}", tstr{ c, t = bt }) }
+                        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                        return types::ERROR
+                    }
+                }
+            }
+            index{ base, i } => {
+                let bt = typed{ &c, e = base.* }
+                expect{ &c, e = i.*, t = types::USIZE }
+                match types::get{ s = c.ty, id = bt } {
+                    array{ elem } => { return elem }
+                    slice{ elem } => { return elem }
+                    ptr{ elem } => {
+                        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } {
+                            array{ elem = inner } => { return inner }
+                            else => { return elem }
+                        }
+                    }
+                    error => { return types::ERROR }
+                    else => {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "cannot index {}", tstr{ c, t = bt }) }
+                        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                        return types::ERROR
+                    }
+                }
+            }
+            range => { return unsupported{ &c, e, what = "a range" } }
+            addr => { return unsupported{ &c, e, what = "`&`" } }
+            ifx => { return unsupported{ &c, e, what = "an `if` expression" } }
+            matchx => { return unsupported{ &c, e, what = "a `match` expression" } }
+        }
+    }
+
+    // Marks what this port can't check yet, so tools/checktest.py can tell it from a real
+    // difference.
+    fn unsupported { mut c: Checker, e: syntax::Expr, what: utf8::String } -> Id {
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "(ctxc) not yet checked: {}", what) }
+        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+        return types::ERROR
+    }
+
+    // The type of e, pruned, with no expected type. (Pruning in the same call would copy the store
+    // before checking e adds to it.)
+    fn typed { mut c: Checker, e: syntax::Expr } -> Id {
+        let t = expr{ &c, e, exp = types::NO_TYPE }
+        return types::prune{ s = c.ty, t }
+    }
+
+    fn add_lit { mut c: Checker, e: syntax::Expr } {
+        if not list::push{ list = &c.lits, item = e } { @panic("check: out of memory") }
+    }
+
+    fn is_int { c: Checker, t: Id } -> bool {
+        let x = types::prune{ s = c.ty, t }
+        if x == types::ERROR { return true }
+        match types::get{ s = c.ty, id = x } {
+            var{ n } => { return types::var_of{ s = c.ty, n }.kind == types::VarKind::int }
+            else => { return types::is_int{ s = c.ty, t = x } }
+        }
+    }
+
+    fn is_num { c: Checker, t: Id } -> bool {
+        let x = types::prune{ s = c.ty, t }
+        if x == types::ERROR { return true }
+        match types::get{ s = c.ty, id = x } {
+            var{ n } => { return types::var_of{ s = c.ty, n }.kind != types::VarKind::any }
+            else => { return types::is_int{ s = c.ty, t = x } or types::is_float{ s = c.ty, t = x } }
+        }
+    }
+
+    // A string literal is a view of static bytes where a []u8 or a utf8::String is expected
+    // (also inside ?), and a [N]u8 array value otherwise.
+    fn str_lit { mut c: Checker, e: syntax::Expr, bytes: []u8, exp: Id } -> Id {
+        let mut want = types::NO_TYPE
+        if exp != types::NO_TYPE {
+            want = types::prune{ s = c.ty, t = exp }
+            match types::get{ s = c.ty, id = want } {
+                opt{ elem } => { want = types::prune{ s = c.ty, t = elem } }
+                else => {}
+            }
+        }
+        if want != types::NO_TYPE {
+            match types::get{ s = c.ty, id = want } {
+                slice{ elem, mutable } => {
+                    if types::prune{ s = c.ty, t = elem } == types::U8 {
+                        if mutable { error{ &c, at = expr_at{ e }, msg = "a string literal is read-only; it cannot be a []mut u8" } }
+                        return types::slice{ s = &c.ty, elem = types::U8, mutable = false }
+                    }
+                }
+                record{ decl } => {
+                    if decl == c.text_decl {
+                        match utf8::from{ bytes } {
+                            err{ error = bad } => {
+                                let mut b = message{ c }
+                                pushed{ ok = @fmt(&b, "string literal is not valid UTF-8 (byte {})", bad.at) }
+                                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                            }
+                            ok => {}
+                        }
+                        return want
+                    }
+                }
+                else => {}
+            }
+        }
+        return types::array{ s = &c.ty, n = bytes.len, elem = types::U8 }
+    }
+
+    fn path_text { c: Checker, segs: []syntax::Seg } -> utf8::String {
+        let mut b = message{ c }
+        let mut i: usize = 0
+        while i < segs.len {
+            if i > 0 { pushed{ ok = utf8::push{ &b, s = "::" } } }
+            pushed{ ok = utf8::push{ &b, s = str{ s = segs[i].name.text } } }
+            i = i + 1
+        }
+        return utf8::view{ b }
+    }
+
+    fn path_expr { mut c: Checker, e: syntax::Expr, segs: []syntax::Seg, exp: Id } -> Id {
+        let r = resolve_path{ &c, e, segs, call = false }
+        if r == null { return types::ERROR }
+        match r {
+            func{ decl, targs } => { return fn_type{ &c, d = decl, targs } }
+            constant{ decl } => { return get_decl{ c, d = decl }.ty }
+            variant{ ty, index } => {
+                let v = variants_of{ &c, t = ty }[index]
+                if v.fields != null {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "variant `{}` has a payload; construct it with `{}{{ ... }}`", str{ s = v.name }, path_text{ c, segs }) }
+                    error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                }
+                same_decl{ &c, t = ty, exp }
+                return ty
+            }
+            enumval{ ty } => { return ty }
+            path => {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`{}` is a type, not a value", path_text{ c, segs }) }
+                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                return types::ERROR
+            }
+        }
+    }
+
+    // Where the expected type is the same generic struct or union as t, unifies them, so its
+    // arguments flow into t's.
+    fn same_decl { mut c: Checker, t: Id, exp: Id } {
+        if exp == types::NO_TYPE { return }
+        let pe = types::prune{ s = c.ty, t = exp }
+        match types::get{ s = c.ty, id = t } {
+            record{ decl } => {
+                match types::get{ s = c.ty, id = pe } { record{ decl = d } => { if d == decl { _ = types::unify{ s = &c.ty, a = t, b = pe } } } else => {} }
+            }
+            sum{ decl } => {
+                match types::get{ s = c.ty, id = pe } { sum{ decl = d } => { if d == decl { _ = types::unify{ s = &c.ty, a = t, b = pe } } } else => {} }
+            }
+            else => {}
+        }
+    }
+
+    fn fn_type { mut c: Checker, d: u32, targs: []Id } -> Id {
+        let x = get_decl{ c, d }
+        let fields = subst_fields{ &c, fields = x.fields, decl = d, args = targs }
+        let ret = if targs.len == 0 { x.ret } else { types::subst{ s = &c.ty, t = x.ret, decl = d, args = targs } }
+        return types::func{ s = &c.ty, fields, ret, bound = false }
+    }
+
+    fn targs_of { mut c: Checker, seg: syntax::Seg } -> ?[]Id {
+        let targs = seg.targs
+        if targs == null { return null }
+        let mut xs = list::new(Id){ realloc = arena::alloc, heap = c.heap }
+        let mut k: usize = 0
+        while k < targs.len {
+            push{ xs = &xs, n = rtype{ &c, te = targs[k], sc = c.sc, allow_bound = false } }
+            k = k + 1
+        }
+        return list::items{ list = xs }
+    }
+
+    // What a path names (ctxi's resolve_path), or null after an error. In a call or literal
+    // (`call`), a local that doesn't hold a function would be passed over (§10).
+    fn resolve_path { mut c: Checker, e: syntax::Expr, segs: []syntax::Seg, call: bool } -> ?PathRef {
+        if missing{ segs } { return null }
+        let r = resolve_segs{ &c, segs }
+        if r != null {
+            if not map::put{ m = &c.refs, key = expr_key{ e }, value = r } { @panic("check: out of memory") }
+        }
+        return r
+    }
+
+    fn resolve_segs { mut c: Checker, segs: []syntax::Seg } -> ?PathRef {
+        let ns = c.sc.ns
+        let s0 = segs[0]
+        if segs.len == 1 {
+            let g = lookup_value{ c, ns, name = s0.name.text }
+            if g != null {
+                refer{ &c, n = s0.name, e = g }
+                return value_ref{ &c, g, seg = s0 }
+            }
+            let p = lookup_path{ c, ns, name = s0.name.text }
+            if p != null {
+                refer{ &c, n = s0.name, e = p }
+                return PathRef::path{ e = p, seg = s0 }
+            }
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "unknown name `{}`", str{ s = s0.name.text }) }
+            error{ &c, at = s0.name.span, msg = utf8::view{ b } }
+            return null
+        }
+        let first = lookup_path{ c, ns, name = s0.name.text }
+        if first == null {
+            unknown{ &c, n = s0.name }
+            return null
+        }
+        refer{ &c, n = s0.name, e = first }
+        let mut d = first
+        let mut i: usize = 1
+        while i < segs.len {
+            let s = segs[i]
+            let prev = segs[i - 1]
+            let last = i == segs.len - 1
+            let mut inner = NONE
+            match d { space{ ns = n } => { inner = n } else => {} }
+            if inner != NONE {
+                if prev.targs != null {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "namespace `{}` takes no type arguments", str{ s = prev.name.text }) }
+                    error{ &c, at = prev.name.span, msg = utf8::view{ b } }
+                    return null
+                }
+                let sp = get_space{ c, ns = inner }
+                if last {
+                    let v = map::get{ m = sp.values, key = s.name.text }
+                    if v != null {
+                        refer{ &c, n = s.name, e = v }
+                        return value_ref{ &c, g = v, seg = s }
+                    }
+                }
+                let p = map::get{ m = sp.paths, key = s.name.text }
+                if p == null {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "`{}` not found in namespace `{}`", str{ s = s.name.text }, str{ s = prev.name.text }) }
+                    error{ &c, at = s.name.span, msg = utf8::view{ b } }
+                    return null
+                }
+                refer{ &c, n = s.name, e = p }
+                d = p
+                i = i + 1
+                continue
+            }
+            let dt = decl_type{ &c, e = d, name = prev.name, args = targs_of{ &c, seg = prev }, at = prev.name.span, partial = true, allow_bound = false }
+            let t = types::prune{ s = c.ty, t = dt }
+            if t == types::ERROR { return null }
+            if last {
+                let mut names: [][]u8 = slice::empty([]u8){}
+                let mut is_enum = false
+                match types::get{ s = c.ty, id = t } {
+                    sum => { names = variant_names{ &c, t } }
+                    enumeration{ decl } => {
+                        names = enum_names{ c, d = decl }
+                        is_enum = true
+                    }
+                    else => {}
+                }
+                if names.len > 0 or is_enum or is_sum{ c, t } {
+                    if s.targs != null {
+                        error{ &c, at = s.name.span, msg = "a variant takes no type arguments" }
+                        return null
+                    }
+                    let mut k: usize = 0
+                    while k < names.len {
+                        if slice::eq_bytes{ a = names[k], b = s.name.text } {
+                            if is_enum { return PathRef::enumval{ ty = t, index = @as(u32, k) } }
+                            return PathRef::variant{ ty = t, index = @as(u32, k) }
+                        }
+                        k = k + 1
+                    }
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "{} has no variant `{}`", tstr{ c, t }, str{ s = s.name.text }) }
+                    error{ &c, at = s.name.span, msg = utf8::view{ b } }
+                    return null
+                }
+            }
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "`{}` has no member `{}`", str{ s = prev.name.text }, str{ s = s.name.text }) }
+            error{ &c, at = s.name.span, msg = utf8::view{ b } }
+            return null
+        }
+        return PathRef::path{ e = d, seg = segs[segs.len - 1] }
+    }
+
+    fn is_sum { c: Checker, t: Id } -> bool {
+        match types::get{ s = c.ty, id = t } { sum => { return true } else => { return false } }
+    }
+
+    fn variant_names { mut c: Checker, t: Id } -> [][]u8 {
+        let vs = variants_of{ &c, t }
+        let mut out = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < vs.len {
+            if not list::push{ list = &out, item = vs[i].name } { @panic("check: out of memory") }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    fn enum_names { c: Checker, d: u32 } -> [][]u8 {
+        let mut out = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
+        match get_decl{ c, d }.syn.k {
+            enumeration{ variants } => {
+                let mut i: usize = 0
+                while i < variants.len {
+                    if not list::push{ list = &out, item = variants[i].name.text } { @panic("check: out of memory") }
+                    i = i + 1
+                }
+            }
+            else => {}
+        }
+        return list::items{ list = out }
+    }
+
+    // A function or const as a value: a function's type arguments not given are inferred.
+    fn value_ref { mut c: Checker, g: Entry, seg: syntax::Seg } -> ?PathRef {
+        match g {
+            decl{ i } => {
+                let x = get_decl{ c, d = i }
+                if x.kind == Kind::constant {
+                    if seg.targs != null {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "const `{}` takes no type arguments", str{ s = x.name.text }) }
+                        error{ &c, at = seg.name.span, msg = utf8::view{ b } }
+                        return null
+                    }
+                    return PathRef::constant{ decl = i }
+                }
+                let explicit = targs_of{ &c, seg }
+                let mut all = list::new(Id){ realloc = arena::alloc, heap = c.heap }
+                if explicit != null {
+                    if explicit.len > x.tparams.len {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "`{}` expects at most {} type argument(s), got {}", str{ s = x.name.text }, x.tparams.len, explicit.len) }
+                        error{ &c, at = seg.name.span, msg = utf8::view{ b } }
+                        return null
+                    }
+                    let mut k: usize = 0
+                    while k < explicit.len {
+                        push{ xs = &all, n = explicit[k] }
+                        k = k + 1
+                    }
+                }
+                while all.len < x.tparams.len {
+                    let v = types::fresh{ s = &c.ty, kind = types::VarKind::any }
+                    generic_var{ &c, v, param = x.tparams[all.len], owner = x.name, at = seg.name.span }
+                    push{ xs = &all, n = v }
+                }
+                return PathRef::func{ decl = i, targs = list::items{ list = all } }
+            }
+            else => { return null }
+        }
+    }
+
+    // ---- braces: calls, binds and literals
+
+    fn braced { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, forward: bool, bind: bool, exp: Id } -> Id {
+        let mut ct = types::ERROR
+        let mut name = str{ s = "function" }
+        match callee.k {
+            path{ segs } => {
+                let r = resolve_path{ &c, e = callee, segs, call = true }
+                if r == null { return types::ERROR }
+                name = path_text{ c, segs }
+                match r {
+                    path{ e = d, seg } => { return struct_lit{ &c, e, d, seg, items, forward, bind, exp } }
+                    variant{ ty, index } => { return variant_lit{ &c, e, ut = ty, vi = index, items, forward, bind, exp } }
+                    enumval => {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "`{}` is an enum value; write it without braces", name) }
+                        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                        return types::ERROR
+                    }
+                    func{ decl, targs } => { ct = fn_type{ &c, d = decl, targs } }
+                    constant{ decl } => { ct = get_decl{ c, d = decl }.ty }
+                }
+                set_type{ &c, e = callee, t = ct }
+            }
+            else => { ct = expr{ &c, e = callee, exp = types::NO_TYPE } }
+        }
+        let ft = types::prune{ s = c.ty, t = ct }
+        if ft == types::ERROR { return types::ERROR }
+        match types::get{ s = c.ty, id = ft } {
+            func => {}
+            else => {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`{}` has type {} and cannot be called", name, tstr{ c, t = ct }) }
+                error{ &c, at = expr_at{ e = callee }, msg = utf8::view{ b } }
+                return types::ERROR
+            }
+        }
+        return call_args{ &c, e, ft, name, items, forward, bind }
+    }
+
+    fn set_literal { mut c: Checker, e: syntax::Expr, is: bool } {
+        if not map::put{ m = &c.literal, key = expr_key{ e }, value = is } { @panic("check: out of memory") }
+    }
+
+    // The fields supplied in braces must exist and be supplied once. `what` names the callee.
+    fn supplied { mut c: Checker, items: []syntax::Item, fields: []types::Field, what: utf8::String } {
+        let mut i: usize = 0
+        while i < items.len {
+            let it = items[i]
+            if types::find_field{ fields, name = it.name.text } == null {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "{} has no field `{}`", what, str{ s = it.name.text }) }
+                error{ &c, at = it.span, msg = utf8::view{ b } }
+            } else {
+                let mut k: usize = 0
+                while k < i {
+                    if slice::eq_bytes{ a = items[k].name.text, b = it.name.text } {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "`{}` is supplied more than once", str{ s = it.name.text }) }
+                        error{ &c, at = it.span, msg = utf8::view{ b } }
+                        break
+                    }
+                    k = k + 1
+                }
+            }
+            i = i + 1
+        }
+    }
+
+    fn given { items: []syntax::Item, name: []u8 } -> bool {
+        let mut i: usize = 0
+        while i < items.len {
+            if slice::eq_bytes{ a = items[i].name.text, b = name } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // A call or a bind of function type ft (ctxi's call_args).
+    fn call_args { mut c: Checker, e: syntax::Expr, ft: Id, name: utf8::String, items: []syntax::Item, forward: bool, bind: bool } -> Id {
+        set_literal{ &c, e, is = false }
+        let mut fields: []types::Field = slice::empty(types::Field){}
+        let mut ret = types::VOID
+        match types::get{ s = c.ty, id = ft } {
+            func{ fields = fs, ret = r } => {
+                fields = fs
+                ret = r
+            }
+            else => {}
+        }
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "`{}`", name) }
+        supplied{ &c, items, fields, what = utf8::view{ b } }
+        let mut i: usize = 0
+        while i < items.len {
+            let it = items[i]
+            let f = types::find_field{ fields, name = it.name.text }
+            if f != null {
+                if f.mutable {
+                    match it.value.k {
+                        addr => { _ = unsupported{ &c, e = it.value, what = "`&` for a `mut` field" } }
+                        else => { expect{ &c, e = it.value, t = types::ptr{ s = &c.ty, elem = f.ty, mutable = true } } }
+                    }
+                } else {
+                    expect{ &c, e = it.value, t = f.ty }
+                }
+            }
+            i = i + 1
+        }
+        let mut missing = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        i = 0
+        while i < fields.len {
+            let f = fields[i]
+            if not given{ items, name = f.name } {
+                if forward {
+                    let mut m = message{ c }
+                    pushed{ ok = @fmt(&m, "`..` cannot supply `{}`: no local or context field named `{}`", str{ s = f.name }, str{ s = f.name }) }
+                    error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
+                } else {
+                    add_field{ xs = &missing, f }
+                }
+            }
+            i = i + 1
+        }
+        let gone = list::items{ list = missing }
+        if gone.len > 0 and not bind and not forward {
+            let mut m = message{ c }
+            pushed{ ok = @fmt(&m, "call to `{}` is missing ", name) and names{ fields = gone, b = &m } }
+            error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
+        }
+        if bind { return types::func{ s = &c.ty, fields = gone, ret, bound = true } }
+        return ret
+    }
+
+    // "`a`, `b`"
+    fn names { fields: []types::Field, mut b: utf8::Builder(Heap) } -> bool {
+        let mut ok = true
+        let mut i: usize = 0
+        while i < fields.len {
+            if i > 0 { ok = ok and utf8::push{ &b, s = ", " } }
+            ok = ok and @fmt(&b, "`{}`", str{ s = fields[i].name })
+            i = i + 1
+        }
+        return ok
+    }
+
+    fn struct_lit { mut c: Checker, e: syntax::Expr, d: Entry, seg: syntax::Seg, items: []syntax::Item, forward: bool, bind: bool, exp: Id } -> Id {
+        let dt = decl_type{ &c, e = d, name = seg.name, args = targs_of{ &c, seg }, at = seg.name.span, partial = true, allow_bound = false }
+        let t = types::prune{ s = c.ty, t = dt }
+        if t == types::ERROR { return types::ERROR }
+        let mut decl = NONE
+        match types::get{ s = c.ty, id = t } { record{ decl = x } => { decl = x } else => {} }
+        if decl == NONE {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "`{}` is not a struct", str{ s = seg.name.text }) }
+            error{ &c, at = seg.name.span, msg = utf8::view{ b } }
+            return types::ERROR
+        }
+        same_decl{ &c, t, exp }
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "struct `{}`", str{ s = get_decl{ c, d = decl }.name.text }) }
+        return fields_lit{ &c, e, t, fields = struct_fields{ &c, t }, what = utf8::view{ b }, items, forward, bind }
+    }
+
+    fn variant_lit { mut c: Checker, e: syntax::Expr, ut: Id, vi: u32, items: []syntax::Item, forward: bool, bind: bool, exp: Id } -> Id {
+        let v = variants_of{ &c, t = ut }[vi]
+        let fields = v.fields
+        if fields == null {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "variant `{}` has no payload; write it without braces", str{ s = v.name }) }
+            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+            return types::ERROR
+        }
+        same_decl{ &c, t = ut, exp }
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "variant `{}`", str{ s = v.name }) }
+        return fields_lit{ &c, e, t = ut, fields, what = utf8::view{ b }, items, forward, bind }
+    }
+
+    fn fields_lit { mut c: Checker, e: syntax::Expr, t: Id, fields: []types::Field, what: utf8::String, items: []syntax::Item, forward: bool, bind: bool } -> Id {
+        set_literal{ &c, e, is = true }
+        if forward or bind {
+            let word: utf8::String = if forward { ".." } else { "_" }
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "`{}` is not allowed in a literal", word) }
+            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+        }
+        supplied{ &c, items, fields, what }
+        let mut missing = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < fields.len {
+            if not given{ items, name = fields[i].name } { add_field{ xs = &missing, f = fields[i] } }
+            i = i + 1
+        }
+        let gone = list::items{ list = missing }
+        if gone.len > 0 {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "{} is missing ", what) and names{ fields = gone, &b } }
+            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+        }
+        i = 0
+        while i < items.len {
+            let f = types::find_field{ fields, name = items[i].name.text }
+            if f != null { expect{ &c, e = items[i].value, t = f.ty } }
+            i = i + 1
+        }
+        return t
+    }
+
+    // ---- operators
+
+    fn binary { mut c: Checker, e: syntax::Expr, op: tok::Kind, a: syntax::Expr, b: syntax::Expr, exp: Id } -> Id {
+        let at = expr_at{ e }
+        let opname = str{ s = parser::kind_text{ k = op } }
+        if op == tok::Kind::kw_and or op == tok::Kind::kw_or {
+            expect{ &c, e = a, t = types::BOOL }
+            expect{ &c, e = b, t = types::BOOL }
+            return types::BOOL
+        }
+        if op == tok::Kind::eq or op == tok::Kind::ne {
+            let ln = is_null{ e = a }
+            let rn = is_null{ e = b }
+            if ln or rn {
+                if ln and rn {
+                    error{ &c, at, msg = "cannot compare null with null" }
+                    return types::BOOL
+                }
+                let x = if ln { b } else { a }
+                let xt = typed{ &c, e = x }
+                let mut is_opt = xt == types::ERROR
+                match types::get{ s = c.ty, id = xt } { opt => { is_opt = true } else => {} }
+                if not is_opt {
+                    let mut m = message{ c }
+                    pushed{ ok = @fmt(&m, "only an optional can be compared with null, got {}", tstr{ c, t = xt }) }
+                    error{ &c, at, msg = utf8::view{ b = m } }
+                }
+                set_type{ &c, e = if ln { a } else { b }, t = xt }
+                return types::BOOL
+            }
+            let lt = expr{ &c, e = a, exp = types::NO_TYPE }
+            let rt = expr{ &c, e = b, exp = lt }
+            let t = operand_type{ &c, lt, rt, a, b }
+            if t == types::NO_TYPE {
+                cannot_compare{ &c, lt, rt, at }
+                return types::BOOL
+            }
+            let mut eq = is_num{ c, t } or t == types::BOOL
+            match types::get{ s = c.ty, id = t } { ptr | enumeration => { eq = true } else => {} }
+            if not eq {
+                let mut m = message{ c }
+                pushed{ ok = @fmt(&m, "{} has no built-in equality", tstr{ c, t }) }
+                error{ &c, at, msg = utf8::view{ b = m } }
+            }
+            return types::BOOL
+        }
+        if op == tok::Kind::lt or op == tok::Kind::le or op == tok::Kind::gt or op == tok::Kind::ge {
+            let lt = expr{ &c, e = a, exp = types::NO_TYPE }
+            let rt = expr{ &c, e = b, exp = lt }
+            let t = operand_type{ &c, lt, rt, a, b }
+            if t == types::NO_TYPE {
+                cannot_compare{ &c, lt, rt, at }
+            } else if not is_num{ c, t } {
+                let mut m = message{ c }
+                pushed{ ok = @fmt(&m, "`{}` needs numbers, got {}", opname, tstr{ c, t }) }
+                error{ &c, at, msg = utf8::view{ b = m } }
+            }
+            return types::BOOL
+        }
+        if op == tok::Kind::shl or op == tok::Kind::shr {
+            let t = expr{ &c, e = a, exp }
+            if not is_int{ c, t } {
+                let mut m = message{ c }
+                pushed{ ok = @fmt(&m, "`{}` needs an integer to shift, got {}", opname, tstr{ c, t }) }
+                error{ &c, at, msg = utf8::view{ b = m } }
+            }
+            let ct = expr{ &c, e = b, exp = types::NO_TYPE }
+            if not is_int{ c, t = ct } {
+                let mut m = message{ c }
+                pushed{ ok = @fmt(&m, "a shift count must be an integer, got {}", tstr{ c, t = ct }) }
+                error{ &c, at, msg = utf8::view{ b = m } }
+            }
+            return t
+        }
+        let lt = expr{ &c, e = a, exp }
+        let plt = types::prune{ s = c.ty, t = lt }
+        match types::get{ s = c.ty, id = plt } {
+            ptr => {
+                if op != tok::Kind::plus {
+                    let mut m = message{ c }
+                    pushed{ ok = @fmt(&m, "`{}` is not defined on pointers", opname) }
+                    error{ &c, at, msg = utf8::view{ b = m } }
+                }
+                expect{ &c, e = b, t = types::USIZE }
+                return plt
+            }
+            else => {}
+        }
+        let rt = expr{ &c, e = b, exp = lt }
+        let t = operand_type{ &c, lt, rt, a, b }
+        if t == types::NO_TYPE {
+            let mut m = message{ c }
+            pushed{ ok = @fmt(&m, "operands of `{}` have incompatible types: {} and {}; convert one with @as", opname, tstr{ c, t = lt }, tstr{ c, t = rt }) }
+            error{ &c, at, msg = utf8::view{ b = m } }
+            return types::ERROR
+        }
+        if op == tok::Kind::amp or op == tok::Kind::pipe or op == tok::Kind::caret {
+            if not is_int{ c, t } {
+                let mut m = message{ c }
+                pushed{ ok = @fmt(&m, "`{}` needs integers, got {}", opname, tstr{ c, t }) }
+                error{ &c, at, msg = utf8::view{ b = m } }
+            }
+        } else if not is_num{ c, t } {
+            let mut m = message{ c }
+            pushed{ ok = @fmt(&m, "`{}` needs numbers, got {}", opname, tstr{ c, t }) }
+            error{ &c, at, msg = utf8::view{ b = m } }
+        }
+        return t
+    }
+
+    fn is_null { e: syntax::Expr } -> bool {
+        match e.k { nil => { return true } else => { return false } }
+    }
+
+    fn cannot_compare { mut c: Checker, lt: Id, rt: Id, at: source::Span } {
+        let mut m = message{ c }
+        pushed{ ok = @fmt(&m, "cannot compare {} with {}", tstr{ c, t = lt }, tstr{ c, t = rt }) }
+        error{ &c, at, msg = utf8::view{ b = m } }
+    }
+
+    // The common type of two operands: equal types, or the one the other widens to, or NO_TYPE.
+    // A literal whose type the other operand fixes remembers that operand, for finish.
+    fn operand_type { mut c: Checker, lt: Id, rt: Id, a: syntax::Expr, b: syntax::Expr } -> Id {
+        let pl = types::prune{ s = c.ty, t = lt }
+        let pr = types::prune{ s = c.ty, t = rt }
+        let vl = types::unbound{ s = c.ty, t = pl }
+        let vr = types::unbound{ s = c.ty, t = pr }
+        if vl != null and types::prim_of{ s = c.ty, t = pr } != null { fix{ &c, n = vl, by = b } }
+        if vr != null and types::prim_of{ s = c.ty, t = pl } != null { fix{ &c, n = vr, by = a } }
+        if types::unify{ s = &c.ty, a = lt, b = rt } { return types::prune{ s = c.ty, t = lt } }
+        if types::widens{ s = &c.ty, a = rt, b = lt } { return types::prune{ s = c.ty, t = lt } }
+        if types::widens{ s = &c.ty, a = lt, b = rt } { return types::prune{ s = c.ty, t = rt } }
+        return types::NO_TYPE
+    }
+
+    fn fix { mut c: Checker, n: u32, by: syntax::Expr } {
+        let mut path: []u8 = ""
+        match by.k { path{ segs } => { path = path_text{ c, segs }.bytes } else => {} }
+        list::at{ list = c.ty.vars, i = n }.fixed = types::Fixed{ at = expr_at{ e = by }, path }
+    }
+
+    fn array_lit { mut c: Checker, e: syntax::Expr, elems: []syntax::Expr, exp: Id } -> Id {
+        let mut et = types::NO_TYPE
+        if exp != types::NO_TYPE {
+            match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = exp } } { array{ elem } => { et = elem } else => {} }
+        }
+        if elems.len == 0 {
+            if et == types::NO_TYPE {
+                error{ &c, at = expr_at{ e }, msg = "an empty array literal needs a known type" }
+                return types::ERROR
+            }
+            return types::array{ s = &c.ty, n = 0, elem = et }
+        }
+        let mut i: usize = 0
+        while i < elems.len {
+            if et == types::NO_TYPE { et = value_type{ &c, e = elems[i] } } else { expect{ &c, e = elems[i], t = et } }
+            i = i + 1
+        }
+        return types::array{ s = &c.ty, n = elems.len, elem = et }
+    }
+
+    fn repeat { mut c: Checker, elem: syntax::Expr, count: syntax::Expr, exp: Id } -> Id {
+        let n = const_int{ &c, e = count, ns = c.sc.ns, what = "array length" }
+        let mut et = types::NO_TYPE
+        if exp != types::NO_TYPE {
+            match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = exp } } { array{ elem = x } => { et = x } else => {} }
+        }
+        if et != types::NO_TYPE { expect{ &c, e = elem, t = et } } else { et = value_type{ &c, e = elem } }
+        if n == null or n < 0 { return types::ERROR }
+        return types::array{ s = &c.ty, n = @as(u64, n), elem = et }
+    }
+
+    // ---- postfix
+
+    fn field_expr { mut c: Checker, e: syntax::Expr, base: syntax::Expr, name: syntax::Name } -> Id {
+        let bt = typed{ &c, e = base }
+        if bt == types::ERROR or name.text.len == 0 { return types::ERROR }
+        let is_len = slice::eq_bytes{ a = name.text, b = "len" }
+        match types::get{ s = c.ty, id = bt } {
+            ptr{ elem } => {
+                let inner = types::prune{ s = c.ty, t = elem }
+                match types::get{ s = c.ty, id = inner } {
+                    record => { return field_type{ &c, st = inner, e, name } }
+                    array => { if is_len { return types::USIZE } }
+                    else => {}
+                }
+            }
+            record => { return field_type{ &c, st = bt, e, name } }
+            array => { if is_len { return types::USIZE } }
+            slice{ elem, mutable } => {
+                if is_len { return types::USIZE }
+                if slice::eq_bytes{ a = name.text, b = "ptr" } { return types::ptr{ s = &c.ty, elem, mutable } }
+            }
+            var => {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "the type of this expression must be known before `.{}`", str{ s = name.text }) }
+                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                return types::ERROR
+            }
+            else => {}
+        }
+        return no_field{ &c, t = bt, e, name }
+    }
+
+    fn field_type { mut c: Checker, st: Id, e: syntax::Expr, name: syntax::Name } -> Id {
+        let f = types::find_field{ fields = struct_fields{ &c, t = st }, name = name.text }
+        if f != null { return f.ty }
+        return no_field{ &c, t = st, e, name }
+    }
+
+    fn no_field { mut c: Checker, t: Id, e: syntax::Expr, name: syntax::Name } -> Id {
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "{} has no field `{}`", tstr{ c, t }, str{ s = name.text }) }
+        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+        return types::ERROR
+    }
+
+    // ---- builtins (the parser has checked each name and its number of arguments)
+
+    fn builtin { mut c: Checker, e: syntax::Expr, name: syntax::Name, targ: ?*syntax::TypeExpr, args: []syntax::Expr, exp: Id } -> Id {
+        let at = expr_at{ e }
+        let mut tt = types::NO_TYPE
+        if targ != null { tt = rtype{ &c, te = targ.*, sc = c.sc, allow_bound = false } }
+        let n = name.text
+        if slice::eq_bytes{ a = n, b = "size_of" } or slice::eq_bytes{ a = n, b = "align_of" } { return types::USIZE }
+        if slice::eq_bytes{ a = n, b = "panic" } {
+            if args.len > 0 {
+                match args[0].k {
+                    str => {}
+                    else => { error{ &c, at = expr_at{ e = args[0] }, msg = "@panic takes a string literal" } }
+                }
+                _ = expr{ &c, e = args[0], exp = types::NO_TYPE }
+            }
+            return types::VOID
+        }
+        if slice::eq_bytes{ a = n, b = "fmt" } { return unsupported{ &c, e, what = "@fmt" } }
+        if slice::eq_bytes{ a = n, b = "as" } {
+            let x = args[0]
+            let src = typed{ &c, e = x }
+            if tt == types::ERROR or src == types::ERROR { return tt }
+            if is_enum{ c, t = tt } {
+                if not is_int{ c, t = src } {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "@as to an enum takes an integer, got {}", tstr{ c, t = src }) }
+                    error{ &c, at = expr_at{ e = x }, msg = utf8::view{ b } }
+                }
+                return tt
+            }
+            if is_enum{ c, t = src } {
+                if not is_int{ c, t = tt } {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "@as converts an enum to an integer type, not {}", tstr{ c, t = tt }) }
+                    error{ &c, at, msg = utf8::view{ b } }
+                }
+                return tt
+            }
+            if not is_num{ c, t = tt } {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "@as needs a numeric target type, got {}", tstr{ c, t = tt }) }
+                error{ &c, at, msg = utf8::view{ b } }
+            } else if not is_num{ c, t = src } {
+                error{ &c, at = expr_at{ e = x }, msg = "@as converts numbers only" }
+            }
+            return tt
+        }
+        if slice::eq_bytes{ a = n, b = "trunc" } {
+            if not is_int{ c, t = tt } {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "@trunc needs an integer target type, got {}", tstr{ c, t = tt }) }
+                error{ &c, at, msg = utf8::view{ b } }
+            }
+            let at0 = expr{ &c, e = args[0], exp = types::NO_TYPE }
+            if not is_int{ c, t = at0 } {
+                error{ &c, at = expr_at{ e = args[0] }, msg = "@trunc converts integers only" }
+            }
+            return tt
+        }
+        if slice::eq_bytes{ a = n, b = "cast" } {
+            let target = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = tt } }
+            let mut to_mut = false
+            let mut ok = tt == types::ERROR
+            match target { ptr{ mutable } => { ok = true; to_mut = mutable } else => {} }
+            if not ok {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "@cast needs a pointer target type, got {}", tstr{ c, t = tt }) }
+                error{ &c, at, msg = utf8::view{ b } }
+            }
+            let src = typed{ &c, e = args[0] }
+            if src != types::ERROR {
+                match types::get{ s = c.ty, id = src } {
+                    ptr{ mutable } => {
+                        if ok and to_mut and not mutable {
+                            let mut b = message{ c }
+                            pushed{ ok = @fmt(&b, "@cast cannot make {} writable", tstr{ c, t = src }) }
+                            error{ &c, at = expr_at{ e = args[0] }, msg = utf8::view{ b } }
+                        }
+                    }
+                    else => { error{ &c, at = expr_at{ e = args[0] }, msg = "@cast needs a pointer argument" } }
+                }
+            }
+            return tt
+        }
+        if slice::eq_bytes{ a = n, b = "slice" } {
+            let pt = typed{ &c, e = args[0] }
+            let mut out = types::ERROR
+            match types::get{ s = c.ty, id = pt } {
+                ptr{ elem, mutable } => { out = types::slice{ s = &c.ty, elem, mutable } }
+                error => {}
+                else => {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "@slice needs a pointer, got {}", tstr{ c, t = pt }) }
+                    error{ &c, at = expr_at{ e = args[0] }, msg = utf8::view{ b } }
+                }
+            }
+            expect{ &c, e = args[1], t = types::USIZE }
+            return out
+        }
+        if slice::eq_bytes{ a = n, b = "addr" } {
+            let pt = typed{ &c, e = args[0] }
+            match types::get{ s = c.ty, id = pt } {
+                ptr | error => {}
+                else => { error{ &c, at = expr_at{ e = args[0] }, msg = "@addr needs a pointer argument" } }
+            }
+            return types::USIZE
+        }
+        // @wrap_add, @wrap_sub, @wrap_mul
+        let lt = expr{ &c, e = args[0], exp }
+        let rt = expr{ &c, e = args[1], exp = lt }
+        if not types::unify{ s = &c.ty, a = lt, b = rt } or not is_int{ c, t = lt } {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "@{} needs two integers of the same type", str{ s = n }) }
+            error{ &c, at, msg = utf8::view{ b } }
+        }
+        return lt
+    }
+
+    fn is_enum { c: Checker, t: Id } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { enumeration => { return true } else => { return false } }
     }
 
     // ---- the fields of declared types

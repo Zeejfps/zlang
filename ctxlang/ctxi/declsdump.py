@@ -19,13 +19,18 @@ then the natives. One line per item, children indented by two spaces:
     type NAME(G)                            a generic alias is resolved only where it is used
     type NAME = T
     const NAME: T
+      KIND T                                its initializer, one line per expression
     fn NAME(G) { FIELD: T, mut FIELD: T } [-> R]
     native NAME { ... } [-> R]
     main
 
 NAME is qualified with its namespaces, and types are written as in messages (types.tstr). A
-layout that can't be computed (infinite size) is `?`. If the checker stops at an error in these
-phases, the dump is only the error: `error FILE:LINE:COL MSG`.
+layout that can't be computed (infinite size) is `?`. A const's initializer has a line per
+expression, children indented under it, with its type once the body is checked: `int`,
+`float`, `str`, `bool`, `null`, `path`, `array`, `repeat` (its element), `braced` (the values of
+its items), `neg`, `not`, `binary OP`, `@NAME` (its arguments), and around a node that converts,
+`some T` (to ?T) or `slice T`. If the checker stops at an error in these phases, the dump is
+only the error: `error FILE:LINE:COL MSG`.
 """
 
 from . import ast as A
@@ -33,7 +38,7 @@ from .checker import Checker
 from .lexer import CompileError
 from .parser import parse
 from .runtime import Runtime
-from .types import StructT, UnionT, FnT, VOID, tstr, qualname
+from .types import StructT, UnionT, FnT, VOID, tstr, qualname, zonk
 
 
 def dump_sources(sources, std, natives):
@@ -44,6 +49,8 @@ def dump_sources(sources, std, natives):
             decls += parse(src, file)
         c = Checker(decls, std, natives)
         c.check_decls()
+        for d in c.consts:
+            c.check_const(d)
         c.check_main()
     except CompileError as e:
         return error_line(e)
@@ -107,8 +114,45 @@ class Dumper:
                 self.out.append(f'type {name} = {tstr(t)}\n')
         elif isinstance(d, A.ConstDecl):
             self.out.append(f'const {name}: {tstr(d.cty)}\n')
+            self.expr(d.expr, 1)
         elif isinstance(d, A.FnDecl):
             self.out.append(f'fn {name}{g} {self.sig(d.sig_fields, d.ret_t)}\n')
+
+    def expr(self, e, depth):
+        kids = []
+        if isinstance(e, A.Coerce):
+            head, kids = 'some', [e.expr]
+        elif isinstance(e, A.ToSlice):
+            head, kids = 'slice', [e.expr]
+        elif isinstance(e, A.IntLit):
+            head = 'int'
+        elif isinstance(e, A.FloatLit):
+            head = 'float'
+        elif isinstance(e, A.StrLit):
+            head = 'str'
+        elif isinstance(e, A.BoolLit):
+            head = 'bool'
+        elif isinstance(e, A.NullLit):
+            head = 'null'
+        elif isinstance(e, A.Path):
+            head = 'path'
+        elif isinstance(e, A.ArrayLit):
+            head, kids = 'array', e.elems
+        elif isinstance(e, A.ArrayRep):
+            head, kids = 'repeat', [e.elem]
+        elif isinstance(e, A.Braced):
+            head, kids = 'braced', [a for _, _, a in e.args]
+        elif isinstance(e, A.Unary):
+            head, kids = 'neg' if e.op == '-' else 'not', [e.expr]
+        elif isinstance(e, A.Binary):
+            head, kids = f'binary {e.op}', [e.lhs, e.rhs]
+        elif isinstance(e, A.Builtin):
+            head, kids = f'@{e.name}', e.args
+        else:
+            head = type(e).__name__
+        self.out.append(f"{'  ' * depth}{head} {tstr(zonk(e.ty))}\n")
+        for k in kids:
+            self.expr(k, depth + 1)
 
     @staticmethod
     def sig(fields, ret):

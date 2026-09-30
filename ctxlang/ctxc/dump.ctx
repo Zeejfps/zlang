@@ -901,11 +901,103 @@ namespace decls {
                     pushed{ ok = @fmt(&out, "type {} = {}\n", q, check::tstr{ c, t = d.ty }) }
                 }
             }
-            constant => { pushed{ ok = @fmt(&out, "const {}: {}\n", q, check::tstr{ c, t = d.ty }) } }
+            constant => {
+                pushed{ ok = @fmt(&out, "const {}: {}\n", q, check::tstr{ c, t = d.ty }) }
+                match d.syn.k {
+                    constant{ value } => { expr{ &out, c, e = value, depth = 1 } }
+                    else => {}
+                }
+            }
             func => {
                 pushed{ ok = @fmt(&out, "fn {}", q) and tparams{ d, b = &out } and @fmt(&out, " ") and sig{ c, d, b = &out } and @fmt(&out, "\n") }
             }
             native => {}
+        }
+    }
+
+    // An initializer: a line per expression, `KIND TYPE`, children indented under it.
+    fn expr { mut out: Out, c: check::Checker, e: syntax::Expr, depth: u32 } {
+        let conv = map::get{ m = c.convs, key = check::expr_key{ e } }
+        let mut d = depth
+        if conv != null {
+            indent{ &out, depth = d }
+            match conv {
+                some{ to } => { pushed{ ok = @fmt(&out, "some {}\n", check::tstr{ c, t = to }) } }
+                slice{ to } => { pushed{ ok = @fmt(&out, "slice {}\n", check::tstr{ c, t = to }) } }
+            }
+            d = d + 1
+        }
+        indent{ &out, depth = d }
+        let t = check::tstr{ c, t = check::type_of_expr{ c, e } }
+        let none = slice::empty(syntax::Expr){}
+        let mut kids: []syntax::Expr = none
+        let mut head: utf8::String = "?"
+        let mut one: ?syntax::Expr = null
+        let mut two: ?syntax::Expr = null
+        match e.k {
+            int => { head = "int" }
+            float => { head = "float" }
+            str => { head = "str" }
+            boolean => { head = "bool" }
+            nil => { head = "null" }
+            path => { head = "path" }
+            array{ elems } => {
+                head = "array"
+                kids = elems
+            }
+            repeat{ elem } => {
+                head = "repeat"
+                one = elem.*
+            }
+            braced{ items } => {
+                pushed{ ok = @fmt(&out, "braced {}\n", t) }
+                let mut i: usize = 0
+                while i < items.len {
+                    expr{ &out, c, e = items[i].value, depth = d + 1 }
+                    i = i + 1
+                }
+                return
+            }
+            neg{ e = x } => {
+                head = "neg"
+                one = x.*
+            }
+            lnot{ e = x } => {
+                head = "not"
+                one = x.*
+            }
+            binary{ op, a, b } => {
+                pushed{ ok = @fmt(&out, "binary {} {}\n", check::str{ s = parser::kind_text{ k = op } }, t) }
+                expr{ &out, c, e = a.*, depth = d + 1 }
+                expr{ &out, c, e = b.*, depth = d + 1 }
+                return
+            }
+            builtin{ name, args } => {
+                pushed{ ok = @fmt(&out, "@{} {}\n", check::str{ s = name.text }, t) }
+                let mut i: usize = 0
+                while i < args.len {
+                    expr{ &out, c, e = args[i], depth = d + 1 }
+                    i = i + 1
+                }
+                return
+            }
+            else => {}
+        }
+        pushed{ ok = @fmt(&out, "{} {}\n", head, t) }
+        let x = one
+        if x != null { expr{ &out, c, e = x, depth = d + 1 } }
+        let mut i: usize = 0
+        while i < kids.len {
+            expr{ &out, c, e = kids[i], depth = d + 1 }
+            i = i + 1
+        }
+    }
+
+    fn indent { mut out: Out, depth: u32 } {
+        let mut i: u32 = 0
+        while i < depth {
+            dump::put{ &out, s = "  " }
+            i = i + 1
         }
     }
 

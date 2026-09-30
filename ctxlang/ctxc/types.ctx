@@ -52,12 +52,25 @@ namespace types {
         enumeration{ decl: u32 },
         func{ fields: []Field, ret: Id, bound: bool },
         param{ decl: u32, index: u32 },         // generic parameter `index` of decl, opaque
+        var{ n: u32 },                          // inference variable n (Store.vars)
     }
+
+    // An inference variable: `any` for a generic argument, `int` or `float` for a literal,
+    // which it may be bound only to a type of its kind. ref is NO_TYPE while it is unbound.
+    // A literal's variable can remember the operand that fixed its type, for messages.
+    enum VarKind: u8 { any, int, float }
+
+    struct Var { kind: VarKind, ref: Id, fixed: ?Fixed }
+
+    struct Fixed { at: source::Span, path: []u8 }       // path: the operand if it is a name
+
+    const NO_TYPE: Id = 4294967295
 
     struct Store {
         heap:  *mut Heap,
         items: list::List(Type, Heap),          // indexed by Id
         index: map::Map(Type, Id, Heap),
+        vars:  list::List(Var, Heap),
     }
 
     fn store { mut heap: Heap } -> Store {
@@ -65,6 +78,7 @@ namespace types {
             heap = &heap,
             items = list::new(Type){ realloc = arena::alloc, &heap },
             index = map::new(Type, Id){ realloc = arena::alloc, &heap, hash, eq },
+            vars = list::new(Var){ realloc = arena::alloc, &heap },
         }
         _ = intern{ &s, t = Type::error }
         _ = intern{ &s, t = Type::void }
@@ -250,6 +264,7 @@ namespace types {
                 return h
             }
             param{ decl, index } => { return mix{ h = mix{ h = 14, n = decl }, n = index } }
+            var{ n } => { return mix{ h = 15, n } }
         }
     }
 
@@ -314,7 +329,296 @@ namespace types {
             param{ decl, index } => {
                 match b { param{ decl = d, index = k } => { return decl == d and index == k } else => { return false } }
             }
+            var{ n } => { match b { var{ n = k } => { return n == k } else => { return false } } }
         }
+    }
+
+    // ---- inference (ctxi's TVar, prune, unify and widens)
+
+    fn fresh { mut s: Store, kind: VarKind } -> Id {
+        let n = @as(u32, s.vars.len)
+        if not list::push{ list = &s.vars, item = Var{ kind, ref = NO_TYPE, fixed = null } } { @panic("types: out of memory") }
+        return intern{ &s, t = Type::var{ n } }
+    }
+
+    fn var_of { s: Store, n: u32 } -> Var {
+        return list::items{ list = s.vars }[n]
+    }
+
+    // The variable t is, if it is an unbound one after pruning.
+    fn unbound { s: Store, t: Id } -> ?u32 {
+        match get{ s, id = prune{ s, t } } {
+            var{ n } => { return n }
+            else => { return null }
+        }
+    }
+
+    // t, or what the variables it is bound to are bound to, down to a type that isn't a bound
+    // variable.
+    fn prune { s: Store, t: Id } -> Id {
+        let mut x = t
+        while true {
+            match get{ s, id = x } {
+                var{ n } => {
+                    let r = var_of{ s, n }.ref
+                    if r == NO_TYPE { return x }
+                    x = r
+                }
+                else => { return x }
+            }
+        }
+    }
+
+    // t with every bound variable inside it replaced by its binding.
+    fn zonk { mut s: Store, t: Id } -> Id {
+        let x = prune{ s, t }
+        match get{ s, id = x } {
+            ptr{ elem, mutable } => { return ptr{ &s, elem = zonk{ &s, t = elem }, mutable } }
+            slice{ elem, mutable } => { return slice{ &s, elem = zonk{ &s, t = elem }, mutable } }
+            opt{ elem } => { return opt{ &s, elem = zonk{ &s, t = elem } } }
+            array{ n, elem } => { return array{ &s, n, elem = zonk{ &s, t = elem } } }
+            record{ decl, args } => { return record{ &s, decl, args = zonk_all{ &s, ts = args } } }
+            sum{ decl, args } => { return sum{ &s, decl, args = zonk_all{ &s, ts = args } } }
+            func{ fields, ret, bound } => {
+                let mut fs = list::new(Field){ realloc = arena::alloc, heap = s.heap }
+                let mut i: usize = 0
+                while i < fields.len {
+                    let f = fields[i]
+                    add{ xs = &fs, item = Field{ name = f.name, mutable = f.mutable, ty = zonk{ &s, t = f.ty } } }
+                    i = i + 1
+                }
+                return func{ &s, fields = list::items{ list = fs }, ret = zonk{ &s, t = ret }, bound }
+            }
+            else => { return x }
+        }
+    }
+
+    fn zonk_all { mut s: Store, ts: []Id } -> []Id {
+        let mut out = list::new(Id){ realloc = arena::alloc, heap = s.heap }
+        let mut i: usize = 0
+        while i < ts.len {
+            add{ xs = &out, item = zonk{ &s, t = ts[i] } }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    fn bind_var { mut s: Store, n: u32, t: Id } {
+        list::at{ list = s.vars, i = n }.ref = t
+    }
+
+    // Whether variable n occurs in t.
+    fn occurs { s: Store, n: u32, t: Id } -> bool {
+        match get{ s, id = prune{ s, t } } {
+            var{ n = k } => { return k == n }
+            ptr{ elem } => { return occurs{ s, n, t = elem } }
+            slice{ elem } => { return occurs{ s, n, t = elem } }
+            opt{ elem } => { return occurs{ s, n, t = elem } }
+            array{ elem } => { return occurs{ s, n, t = elem } }
+            record{ args } => { return any_occurs{ s, n, ts = args } }
+            sum{ args } => { return any_occurs{ s, n, ts = args } }
+            func{ fields, ret } => {
+                if occurs{ s, n, t = ret } { return true }
+                let mut i: usize = 0
+                while i < fields.len {
+                    if occurs{ s, n, t = fields[i].ty } { return true }
+                    i = i + 1
+                }
+                return false
+            }
+            else => { return false }
+        }
+    }
+
+    fn any_occurs { s: Store, n: u32, ts: []Id } -> bool {
+        let mut i: usize = 0
+        while i < ts.len {
+            if occurs{ s, n, t = ts[i] } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Binds variable n to t, if its kind allows (ctxi's _bind).
+    fn bind { mut s: Store, n: u32, t: Id } -> bool {
+        let v = var_of{ s, n }
+        let other = unbound{ s, t }
+        if other != null {
+            if v.kind == VarKind::any {
+                bind_var{ &s, n, t }
+                return true
+            }
+            let w = var_of{ s, n = other }
+            if w.kind == VarKind::any or w.kind == v.kind {
+                bind_var{ &s, n = other, t = intern{ &s, t = Type::var{ n } } }
+                return true
+            }
+            return false
+        }
+        if v.kind == VarKind::int and not is_int{ s, t } { return false }
+        if v.kind == VarKind::float and not is_float{ s, t } { return false }
+        if occurs{ s, n, t } { return false }
+        bind_var{ &s, n, t }
+        return true
+    }
+
+    // Makes a and b the same type by binding variables, if they can be. The error type is the
+    // same as every type. As in ctxi, a failed attempt may leave some variables bound.
+    fn unify { mut s: Store, a: Id, b: Id } -> bool {
+        let x = prune{ s, t = a }
+        let y = prune{ s, t = b }
+        if x == y or x == ERROR or y == ERROR { return true }
+        let vx = unbound{ s, t = x }
+        if vx != null { return bind{ &s, n = vx, t = y } }
+        let vy = unbound{ s, t = y }
+        if vy != null { return bind{ &s, n = vy, t = x } }
+        let tb = get{ s, id = y }
+        match get{ s, id = x } {
+            ptr{ elem, mutable } => {
+                match tb { ptr{ elem = e, mutable = m } => { return mutable == m and unify{ &s, a = elem, b = e } } else => { return false } }
+            }
+            slice{ elem, mutable } => {
+                match tb { slice{ elem = e, mutable = m } => { return mutable == m and unify{ &s, a = elem, b = e } } else => { return false } }
+            }
+            opt{ elem } => {
+                match tb { opt{ elem = e } => { return unify{ &s, a = elem, b = e } } else => { return false } }
+            }
+            array{ n, elem } => {
+                match tb { array{ n = k, elem = e } => { return n == k and unify{ &s, a = elem, b = e } } else => { return false } }
+            }
+            record{ decl, args } => {
+                match tb { record{ decl = d, args = xs } => { return decl == d and unify_all{ &s, a = args, b = xs } } else => { return false } }
+            }
+            sum{ decl, args } => {
+                match tb { sum{ decl = d, args = xs } => { return decl == d and unify_all{ &s, a = args, b = xs } } else => { return false } }
+            }
+            func{ fields, ret, bound } => {
+                match tb {
+                    func{ fields = fs, ret = r, bound = bd } => {
+                        if bound != bd or fields.len != fs.len { return false }
+                        let mut i: usize = 0
+                        while i < fields.len {
+                            let f = fields[i]
+                            let g = find_field{ fields = fs, name = f.name }
+                            if g == null or g.mutable != f.mutable or not unify{ &s, a = f.ty, b = g.ty } { return false }
+                            i = i + 1
+                        }
+                        return unify{ &s, a = ret, b = r }
+                    }
+                    else => { return false }
+                }
+            }
+            else => { return false }         // distinct primitives, capabilities or parameters
+        }
+    }
+
+    // As in ctxi, pairs up to the shorter list.
+    fn unify_all { mut s: Store, a: []Id, b: []Id } -> bool {
+        let mut i: usize = 0
+        while i < a.len and i < b.len {
+            if not unify{ &s, a = a[i], b = b[i] } { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    fn find_field { fields: []Field, name: []u8 } -> ?Field {
+        let mut i: usize = 0
+        while i < fields.len {
+            if slice::eq_bytes{ a = fields[i].name, b = name } { return fields[i] }
+            i = i + 1
+        }
+        return null
+    }
+
+    // Does a convert implicitly to b (spec §11, Widening)? Only when every value of a is a
+    // value of b. `*mut T` converts to `*T` and `[]mut T` to `[]T`.
+    fn widens { mut s: Store, a: Id, b: Id } -> bool {
+        let x = prune{ s, t = a }
+        let y = prune{ s, t = b }
+        match get{ s, id = x } {
+            ptr{ elem, mutable } => {
+                match get{ s, id = y } { ptr{ elem = e, mutable = m } => { return mutable and not m and unify{ &s, a = elem, b = e } } else => { return false } }
+            }
+            slice{ elem, mutable } => {
+                match get{ s, id = y } { slice{ elem = e, mutable = m } => { return mutable and not m and unify{ &s, a = elem, b = e } } else => { return false } }
+            }
+            else => {}
+        }
+        let pa = prim_of{ s, t = x }
+        let pb = prim_of{ s, t = y }
+        if pa == null or pb == null or x == y { return false }
+        if pa == Prim::bool or pb == Prim::bool { return false }
+        let fa = pa == Prim::f32 or pa == Prim::f64
+        let fb = pb == Prim::f32 or pb == Prim::f64
+        if fa and fb { return bits{ p = pa } < bits{ p = pb } }
+        if fa or fb { return false }
+        if pa == Prim::usize { return pb == Prim::u64 }
+        if pb == Prim::usize { return not signed{ p = pa } and bits{ p = pa } <= 32 }
+        if signed{ p = pa } { return signed{ p = pb } and bits{ p = pb } > bits{ p = pa } }
+        return bits{ p = pb } > bits{ p = pa }
+    }
+
+    fn prim_of { s: Store, t: Id } -> ?Prim {
+        match get{ s, id = t } {
+            prim{ p } => { return p }
+            else => { return null }
+        }
+    }
+
+    // Whether t holds an unbound variable.
+    fn has_vars { s: Store, t: Id } -> bool {
+        match get{ s, id = prune{ s, t } } {
+            var => { return true }
+            ptr{ elem } => { return has_vars{ s, t = elem } }
+            slice{ elem } => { return has_vars{ s, t = elem } }
+            opt{ elem } => { return has_vars{ s, t = elem } }
+            array{ elem } => { return has_vars{ s, t = elem } }
+            record{ args } => { return any_vars{ s, ts = args } }
+            sum{ args } => { return any_vars{ s, ts = args } }
+            func{ fields, ret } => {
+                if has_vars{ s, t = ret } { return true }
+                let mut i: usize = 0
+                while i < fields.len {
+                    if has_vars{ s, t = fields[i].ty } { return true }
+                    i = i + 1
+                }
+                return false
+            }
+            else => { return false }
+        }
+    }
+
+    fn any_vars { s: Store, ts: []Id } -> bool {
+        let mut i: usize = 0
+        while i < ts.len {
+            if has_vars{ s, t = ts[i] } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Whether t is, or holds as an element or generic argument, a bound function type.
+    fn has_bound_fn { s: Store, t: Id } -> bool {
+        match get{ s, id = prune{ s, t } } {
+            func{ bound } => { return bound }
+            ptr{ elem } => { return has_bound_fn{ s, t = elem } }
+            slice{ elem } => { return has_bound_fn{ s, t = elem } }
+            opt{ elem } => { return has_bound_fn{ s, t = elem } }
+            array{ elem } => { return has_bound_fn{ s, t = elem } }
+            record{ args } => { return any_bound_fn{ s, ts = args } }
+            sum{ args } => { return any_bound_fn{ s, ts = args } }
+            else => { return false }
+        }
+    }
+
+    fn any_bound_fn { s: Store, ts: []Id } -> bool {
+        let mut i: usize = 0
+        while i < ts.len {
+            if has_bound_fn{ s, t = ts[i] } { return true }
+            i = i + 1
+        }
+        return false
     }
 
     fn same_ids { a: []Id, b: []Id } -> bool {

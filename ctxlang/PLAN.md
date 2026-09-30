@@ -15,7 +15,7 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 | 3a | Language work before the lexer (below) | done | `2056bb4` |
 | 4 | Lexer | done | |
 | 5 | Parser | done | |
-| 6 | Checker | **in progress**: sub-step 1 done | |
+| 6 | Checker | **in progress**: sub-steps 1–2 done | |
 | 7 | Self-hosting fixpoint | | |
 | 7a | Language server | | |
 | 8 | Decide ctxi's role | | |
@@ -33,9 +33,10 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 - `tools/parsetest.py`: ctxc's syntax trees match ctxi's for the 392 files that parse, and the
   first diagnostic matches for the 91 that don't (stage 5). `tools/recover.py`: all 333,900
   damaged copies of the corpus's files parse and pass its checks.
-- `tools/checktest.py`: ctxc's dump of the checked declarations matches ctxi's (`--decls`) for all
-  341 corpus programs whose declarations check, and the first diagnostic matches for the 152 that
-  don't (stage 6, sub-step 1). The checker runs without a panic on 10,760 damaged files.
+- `tools/checktest.py`: ctxc's dump of the checked declarations and const initializers matches
+  ctxi's (`--decls`) for all 355 corpus programs whose declarations check, and the first
+  diagnostic matches for the 186 that don't (stage 6, sub-steps 1–2). The checker runs without a
+  panic on 10,760 damaged files.
 - Friction found while writing ctxc is logged in [FRICTION.md](FRICTION.md).
 
 ### Known gaps
@@ -409,6 +410,22 @@ Side tables record each syntax declaration's `Decl`, each namespace's `Space`, w
 a type refers to and each type expression's type. Array lengths and enum values are computed in
 i64, and a value that doesn't fit is `integer constant is too large`; ctxi's integers have no
 limit. Checking the declarations of all of ctxc, with lexing and parsing, takes 0.1s natively.
+
+**Sub-step 2 — done.** Inference: `types.ctx` has type variables (`var`, with the kind `any`,
+`int` or `float` and a binding in `Store.vars`), prune, zonk, unify, the occurs check and
+widening, as in ctxi. The error type unifies with everything. The checker has coercion (to `?T`,
+to a slice, `null`, function types by §5), literal defaulting and range checks at the end of a
+body, with the operand that fixed a literal's type, generic arguments inferred for literals,
+variants and function values (`partial` in `decl_type`), and `cannot infer`. A body's results
+are side tables: each expression's type, its implicit conversion (ctxi's Coerce and ToSlice
+nodes), what each path names, and whether braces are a literal or a call.
+
+Inference shows only in bodies, and the first bodies checked are const initializers, which have
+no locals or flow: literals, arrays, paths, struct and variant literals, operators, `@size_of`
+and the other builtins except `@fmt`, then §14's rule for what a const may hold. The dump gives
+each initializer a line per expression with its type. What bodies need and consts can't reach
+(`&`, ranges, `if` and `match` expressions, `@fmt`) reports `(ctxc) not yet checked`, which
+checktest counts as skipped. The `ConstInitializers` tests put every const error in the corpus.
 
 *Done when:* IR matches the Python dump across the corpus, every compile-error test's first
 diagnostic contains the same fragment at the same position, the recovery test passes on the whole

@@ -771,6 +771,74 @@ class Declarations(Base):
         run('fn main { args: [][]u8, mut io: Io, fs: Fs, mut mem: Mem } -> i32 { return 0 }')
 
 
+class ConstInitializers(Base):
+    """Const initializers, the first bodies the ctxc checker checks: every error at its exact
+    position, for tools/checktest.py through the corpus."""
+
+    def assertConstError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_errors(self):
+        for src, msg, line, col in [
+            ('const A: u8 = 300', 'literal 300 does not fit in u8', 1, 15),
+            ('const A: u8 = 1\nconst B: u8 = A + 300', 'literal 300 does not fit in u8, which it gets from `A` at 2:15', 2, 19),
+            ('const A: i8 = -129', 'literal -129 does not fit in i8', 1, 15),
+            ('const A: i32 = true', 'expected i32, got bool', 1, 16),
+            ('const A: [2]u8 = [1, 2, 3]', 'expected [2]u8, got [3]u8', 1, 18),
+            ('const A: [2]u8 = [1, true]', 'expected u8, got bool', 1, 22),
+            ('struct P(T) { a: T }\nconst A: P(u8) = P(i64){ a = 1 }', 'expected P(u8), got P(i64)', 2, 24),
+            ('struct P(T) { a: T }\nconst A: P(u8) = P{ a = 300 }', 'literal 300 does not fit in u8', 2, 25),
+            ('struct S { a: i32, b: i32 }\nconst A: S = S{ a = 1 }', 'struct `S` is missing `b`', 2, 15),
+            ('struct S { a: i32 }\nconst A: S = S{ a = 1, c = 2 }', 'struct `S` has no field `c`', 2, 24),
+            ('struct S { a: i32 }\nconst A: S = S{ a = 1, a = 2 }', '`a` is supplied more than once', 2, 24),
+            ('union U { a, b{ x: i32 } }\nconst A: U = U::b', 'variant `b` has a payload; construct it with `U::b{ ... }`', 2, 14),
+            ('union U { a, b{ x: i32 } }\nconst A: U = U::a{}', 'variant `a` has no payload; write it without braces', 2, 18),
+            ('union U { a, b{ x: i32 } }\nconst A: U = U::c', 'U has no variant `c`', 2, 17),
+            ('enum E: u8 { a }\nconst A: E = E::a{}', '`E::a` is an enum value; write it without braces', 2, 18),
+            ('struct S { a: i32 }\nconst A: S = S', '`S` is a type, not a value', 2, 14),
+            ('const A: i32 = nope', 'unknown name `nope`', 1, 16),
+            ('namespace n {}\nconst A: i32 = n::x', '`x` not found in namespace `n`', 2, 19),
+            ('struct S { a: i32 }\nconst A: i32 = S::x', '`S` has no member `x`', 2, 19),
+            ('fn f {} -> i32 { return 1 }\nconst A: i32 = f{}', 'a const cannot call a function', 2, 17),
+            ('fn f {} {}\nconst A: fn{} = f', 'a const may only refer to other consts', 2, 17),
+            ('const A: i32 = @as(i32, 1)', '@as is not allowed in a const', 1, 16),
+            ('const A: []mut u8 = "x"', 'a string literal is read-only; it cannot be a []mut u8', 1, 21),
+            ('const A: bool = 1 == null', 'only an optional can be compared with null, got {integer}', 1, 19),
+            ('const A: i32 = 1 + 1.5', 'operands of `+` have incompatible types: {integer} and {float}; convert one with @as', 1, 18),
+            ('const A: i32 = 1 << true', 'a shift count must be an integer, got bool', 1, 18),
+            ('const A: bool = not 1', 'expected bool, got {integer}', 1, 21),
+            ('const A: i32 = -true', 'unary `-` needs a number, got bool', 1, 16),
+            ('const A: bool = true < false', '`<` needs numbers, got bool', 1, 22),
+            ('union U(T) { a, b{ x: T } }\nconst A: bool = U::a == U::a', 'U(_) has no built-in equality', 2, 22),
+            ('const A: i32 = 1.5', 'expected i32, got {float}', 1, 16),
+            ('const A: [3]u8 = [7; 4]', 'expected [3]u8, got [4]u8', 1, 18),
+            ('struct S { a: i32 }\nconst A: S = S{ .. }', '`..` is not allowed in a literal', 2, 15),
+            ('const A: u8 = N\nconst N: i64 = 3', 'expected u8, got i64', 1, 15),
+            ('const A: utf8::String = "\\xff"', 'string literal is not valid UTF-8 (byte 0)', 1, 25),
+        ]:
+            self.assertConstError(src + '\nfn main {} {}', msg, line, col)
+
+    def test_inferred(self):
+        for src in [
+            'const A: [0]u8 = []',
+            'struct P(T) { a: T }\nconst A: P(u8) = P{ a = 1 }',
+            'const A: u64 = @size_of(u32) * 2',
+            'union U(T) { a, b{ x: T } }\nconst A: U(u8) = U::b{ x = 1 }',
+            'const A: ?u8 = 5',
+            'const A: ?[]u8 = "x"',
+            'const A: f32 = 1.5',
+            'const A: [3]u8 = [7; 3]',
+            'const A: usize = N\nconst N: u8 = 3',
+            'const A: i64 = N\nconst N: u8 = 3',
+            'const A: i32 = 2147483647 + 1',
+            'const A: u32 = 5\nconst B: i64 = A * 3000000000',
+            'const A: utf8::String = "ok"',
+        ]:
+            run(src + '\nfn main {} {}')
+
+
 class Enums(Base):
     def test_values_and_layout(self):
         self.assertOutput(ENUM + """

@@ -52,3 +52,11 @@ numbers, which PLAN.md and commit messages cite; git history has the resolved on
   `let` first. A hole could expect a `utf8::String`, as a bare literal hole already does.
 - **30. ctxi takes the first `--`** (implementation). `python -m ctxi ctxc decls STD -- FILE`
   loses the `--`, so it has to be `ctxc -- decls STD -- FILE`.
+- **31. A read-only argument can be copied before a later argument changes it.** Arguments are
+  evaluated in order, so `types::prune{ s = c.ty, t = expr{ &c, e } }` copies the type store,
+  then `expr` adds a type to the real one, and `prune` indexes the stale copy out of bounds.
+  §3.1 only checks overlap between arguments of one call, not a `&c` inside a nested one. The
+  fix is a local first (`check::typed`). A rule that rejects this, or evaluates nested calls
+  before plain arguments, would have caught eight such calls.
+- **32. An empty slice is inferred as `[]mut`** (again #21). `let mut fields =
+  slice::empty(types::Field){}` can't later take a `[]types::Field`.

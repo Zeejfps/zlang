@@ -7,7 +7,8 @@ dumps of the checked declarations (ctxi/declsdump.py describes the format). Wher
 program's declarations, ctxc's dump must match byte for byte and ctxc must report nothing. Where
 ctxi stops at an error, ctxc's first diagnostic must have the same file, position and message.
 An error in a function body doesn't count yet: the dump covers only what the checker settles
-before it looks at bodies.
+before it looks at function bodies. Where ctxc's first diagnostic is one of its own `(ctxc) not
+yet checked` markers, for an expression the port doesn't check yet, the program is skipped.
 
 ctxc runs natively (ctxi/cbackend.py builds it), one process per program, JOBS at a time.
 """
@@ -87,7 +88,7 @@ def main(argv):
     start = time.time()
     with ThreadPoolExecutor(int(opts.get('-j', os.cpu_count() or 4))) as pool:
         got = list(pool.map(lambda c: run_ctxc(exe, c[1]), todo))
-    checked = errors = failed = 0
+    checked = errors = failed = skipped = 0
     for (label, files), (have, crash) in zip(todo, got):
         if have is None:
             failed += 1
@@ -98,6 +99,12 @@ def main(argv):
             with open(os.path.join(ROOT, p), encoding='utf-8') as f:
                 srcs.append((f.read(), name or None))
         want = dump_sources(srcs, std, nat)
+        first = first_error(have)
+        if first is not None and ' (ctxc) not yet checked' in first:
+            skipped += 1
+            if verbose:
+                print(f'{label}: skipped: {first.strip()}')
+            continue
         if want.startswith('error '):
             errors += 1
             if first_error(have) != want:
@@ -110,8 +117,8 @@ def main(argv):
             if have != want:
                 failed += 1
                 print(f'{label}: {diff(want, have)}')
-    print(f'{len(todo) - failed}/{len(todo)} programs agree ({checked} checked, {errors} errors) '
-          f'in {time.time() - start:.1f}s')
+    print(f'{len(todo) - failed - skipped}/{len(todo)} programs agree ({checked} checked, {errors} errors, '
+          f'{skipped} skipped) in {time.time() - start:.1f}s')
     return 1 if failed else 0
 
 
