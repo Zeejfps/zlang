@@ -10,9 +10,9 @@
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut to_c = false
-    if args.len == 3 and map::eq_bytes{ a = args[0], b = "c" } {
+    if args.len == 3 and slice::eq_bytes{ a = args[0], b = "c" } {
         to_c = true
-    } else if args.len != 2 or not map::eq_bytes{ a = args[0], b = "roundtrip" } {
+    } else if args.len != 2 or not slice::eq_bytes{ a = args[0], b = "roundtrip" } {
         io::eprintln{ &io, s = "usage: ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c" }
         return 2
     }

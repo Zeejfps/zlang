@@ -258,7 +258,7 @@ namespace parser {
     fn eat_word(S) { mut p: Parser(S), w: utf8::String } -> bool {
         let n = utf8::len{ s = w }
         if p.pos + n > p.text.len { return false }
-        if not map::eq_bytes{ a = p.text[p.pos..p.pos + n], b = w.bytes } { return false }
+        if not slice::eq_bytes{ a = p.text[p.pos..p.pos + n], b = w.bytes } { return false }
         p.pos = p.pos + n
         return true
     }

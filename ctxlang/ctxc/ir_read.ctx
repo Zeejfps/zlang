@@ -699,14 +699,14 @@ namespace ir_read {
     // A symbol that must be w.
     fn word { mut r: Reader, w: []u8 } {
         let s = sym{ &r }
-        if not r.failed and not map::eq_bytes{ a = s, b = w } {
+        if not r.failed and not slice::eq_bytes{ a = s, b = w } {
             fail{ &r, problem = Problem::unknown_tag }
         }
     }
 
     // Does symbol s spell `lit`?
     fn is { s: ir::Bytes, lit: []u8 } -> bool {
-        return map::eq_bytes{ a = s, b = lit }
+        return slice::eq_bytes{ a = s, b = lit }
     }
 
     fn is_ident { c: u8 } -> bool {

@@ -81,19 +81,19 @@ namespace utf8 {
     }
 
     fn eq { a: String, b: String } -> bool {
-        return same{ a = a.bytes, b = b.bytes }
+        return slice::eq_bytes{ a = a.bytes, b = b.bytes }
     }
 
     fn starts_with { s: String, prefix: String } -> bool {
         let n = prefix.bytes.len
         if n > s.bytes.len { return false }
-        return same{ a = s.bytes[..n], b = prefix.bytes }
+        return slice::eq_bytes{ a = s.bytes[..n], b = prefix.bytes }
     }
 
     fn ends_with { s: String, suffix: String } -> bool {
         let n = s.bytes.len
         if suffix.bytes.len > n { return false }
-        return same{ a = s.bytes[n - suffix.bytes.len..], b = suffix.bytes }
+        return slice::eq_bytes{ a = s.bytes[n - suffix.bytes.len..], b = suffix.bytes }
     }
 
     // Byte offset of the first `c`, or null.
@@ -116,7 +116,7 @@ namespace utf8 {
         if n > s.bytes.len { return null }
         let mut i: usize = 0
         while i + n <= s.bytes.len {
-            if same{ a = s.bytes[i..i + n], b = needle.bytes } { return i }
+            if slice::eq_bytes{ a = s.bytes[i..i + n], b = needle.bytes } { return i }
             i = i + 1
         }
         return null
@@ -488,19 +488,9 @@ namespace utf8 {
 
     // ---- internals
 
-    fn same { a: []u8, b: []u8 } -> bool {
-        if a.len != b.len { return false }
-        let mut i: usize = 0
-        while i < a.len {
-            if a[i] != b[i] { return false }
-            i = i + 1
-        }
-        return true
-    }
-
     // "inf", "-inf" or "nan".
     fn is_float_word { s: String } -> bool {
-        return same{ a = s.bytes, b = "inf" } or same{ a = s.bytes, b = "nan" } or same{ a = s.bytes, b = "-inf" }
+        return slice::eq_bytes{ a = s.bytes, b = "inf" } or slice::eq_bytes{ a = s.bytes, b = "nan" } or slice::eq_bytes{ a = s.bytes, b = "-inf" }
     }
 
     // An optional '-', digits, optionally '.' and digits, optionally 'e' or 'E', an optional sign

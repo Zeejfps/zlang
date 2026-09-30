@@ -1,7 +1,8 @@
 // std: map. A hash map from keys K to values V, generic over the allocator state S.
 //
 // Keys have no built-in hashing or equality, so a map holds a function for each. std provides
-// them for the common key types below; `utf8::eq` serves as the equality for utf8::String.
+// them for the common key types below; `utf8::eq` serves as the equality for utf8::String, and
+// `slice::eq_bytes` for []u8.
 //
 //   let mut ages = map::new(utf8::String, i64){
 //       realloc = arena::alloc, hash = map::hash_string, eq = utf8::eq,
@@ -177,10 +178,6 @@ namespace map {
             i = i + 1
         }
         return h
-    }
-
-    fn eq_bytes { a: []u8, b: []u8 } -> bool {
-        return utf8::same{ a, b }
     }
 
     fn hash_string { key: utf8::String } -> u64 {

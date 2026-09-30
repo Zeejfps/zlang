@@ -26,6 +26,17 @@ namespace slice {
         }
     }
 
+    // Whether a and b hold the same bytes. Also the equality for a map with []u8 keys.
+    fn eq_bytes { a: []u8, b: []u8 } -> bool {
+        if a.len != b.len { return false }
+        let mut i: usize = 0
+        while i < a.len {
+            if a[i] != b[i] { return false }
+            i = i + 1
+        }
+        return true
+    }
+
     // Sets every element to v.
     fn fill(T) { s: []mut T, v: T } {
         let mut i: usize = 0

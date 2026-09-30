@@ -460,7 +460,7 @@ namespace emit {
             let q = f.params[i]
             if q.mutable {
                 put{ &e, a = "(void *)cap" }
-            } else if map::eq_bytes{ a = q.name, b = "args" } {
+            } else if slice::eq_bytes{ a = q.name, b = "args" } {
                 put{ &e, a = "CTX_BITCAST(" }
                 tn{ &e, t = q.ty }
                 put{ &e, a = ", ctx_args())" }
@@ -1579,7 +1579,7 @@ namespace emit {
     fn by_name { mut e: E, name: ir::Bytes, params: []ir::Param } {
         let mut i: usize = 0
         while i < params.len {
-            if map::eq_bytes{ a = params[i].name, b = name } {
+            if slice::eq_bytes{ a = params[i].name, b = name } {
                 ch{ &e, c = 'a' }
                 num{ &e, n = i }
                 return
@@ -1653,7 +1653,7 @@ namespace emit {
         while i < a.len {
             let x = a[i]
             let y = b[i]
-            if x.ty != y.ty or x.mutable != y.mutable or not map::eq_bytes{ a = x.name, b = y.name } { return false }
+            if x.ty != y.ty or x.mutable != y.mutable or not slice::eq_bytes{ a = x.name, b = y.name } { return false }
             i = i + 1
         }
         return true
