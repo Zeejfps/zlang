@@ -11,7 +11,7 @@
 //           ok{ value }  => { value }
 //           err{ error } => { return 1 }
 //       }
-//       io::println{ &io, s = ascii::from{ bytes = text } }
+//       io::println{ &io, s = utf8::of{ chars = text } }
 //       return 0
 //   }
 //

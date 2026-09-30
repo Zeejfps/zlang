@@ -811,7 +811,7 @@ namespace emit {
             float{ value } => {
                 cast_open{ &e, t = x.ty }
                 let mut buf: [32]u8
-                raw{ &e, b = ascii::fmt_f64{ n = value, into = buf[..] }.bytes }
+                raw{ &e, b = utf8::fmt_f64{ n = value, into = buf[..] }.bytes }
                 put{ &e, a = "))" }
             }
             boolean{ value } => {

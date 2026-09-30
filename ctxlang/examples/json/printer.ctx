@@ -60,7 +60,7 @@ namespace printer {
     const EXACT: f64 = 9007199254740992.0
 
     fn write_number(S) { mut w: Writer(S), mut heap: S, n: f64 } {
-        if n != n or n > ascii::F64_MAX or n < -ascii::F64_MAX {
+        if n != n or n > utf8::F64_MAX or n < -utf8::F64_MAX {
             put_ascii{ &w, &heap, s = "null" }
             return
         }
@@ -72,8 +72,8 @@ namespace printer {
             }
         }
         let mut buf: [32]u8
-        let text = ascii::fmt_f64{ n, into = buf[..] }
-        if not utf8::push{ b = &w.out, &heap, s = utf8::from_ascii{ s = text } } { w.failed = true }
+        let text = utf8::fmt_f64{ n, into = buf[..] }
+        if not utf8::push{ b = &w.out, &heap, s = text } { w.failed = true }
     }
 
     // Quoted, escaping '"', '\\' and control characters. Everything else, including non-ASCII

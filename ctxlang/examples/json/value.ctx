@@ -63,9 +63,7 @@ namespace json {
 
     // Indexes an array by a segment of lookup's path. Null unless seg is all digits.
     fn index_by { v: Value, seg: utf8::String } -> ?Value {
-        let digits = utf8::to_ascii{ s = seg }
-        if digits == null { return null }
-        let n = ascii::parse_u64{ s = digits }
+        let n = utf8::parse_u64{ s = seg }
         if n == null { return null }
         if n > 4294967295 { return null }                 // any real index fits in a u32
         return index{ v, i = @as(usize, n) }

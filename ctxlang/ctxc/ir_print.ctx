@@ -598,9 +598,9 @@ namespace ir_print {
             }
         }
         if is32 {
-            bytes{ &o, b = ascii::fmt_f32{ n = @as(f32, v), into }.bytes }
+            bytes{ &o, b = utf8::fmt_f32{ n = @as(f32, v), into }.bytes }
         } else {
-            bytes{ &o, b = ascii::fmt_f64{ n = v, into }.bytes }
+            bytes{ &o, b = utf8::fmt_f64{ n = v, into }.bytes }
         }
     }
 
@@ -636,7 +636,7 @@ namespace ir_print {
 
     fn num { mut o: Out, n: u64 } {
         let mut buf: [20]u8
-        bytes{ &o, b = ascii::fmt_u64{ n, into = buf[..] }.bytes }
+        bytes{ &o, b = utf8::fmt_u64{ n, into = buf[..] }.bytes }
     }
 
     // `a` is a string literal: a [N]u8 value.

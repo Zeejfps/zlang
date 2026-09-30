@@ -16,7 +16,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
         to_c = true
     } else if args.len != 2 or not map::eq_bytes{ a = args[0], b = roundtrip[..] } {
         let usage = "usage: ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c"
-        io::eprintln{ &io, s = ascii::of{ chars = &usage } }
+        io::eprintln{ &io, s = utf8::of{ chars = &usage } }
         return 2
     }
     let path = args[1]
@@ -60,10 +60,10 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
 
 // "PATH: what"
 fn cannot(A) { mut io: Io, path: []u8, what: A } {
-    let msg = ascii::of{ chars = @slice(@cast(*u8, &what), @size_of(A)) }
+    let msg = utf8::of{ chars = @slice(@cast(*u8, &what), @size_of(A)) }
     io::write{ &io, to = io::Stream::err, bytes = path }
     let sep = ": "
-    io::eprint{ &io, s = ascii::of{ chars = &sep } }
+    io::eprint{ &io, s = utf8::of{ chars = &sep } }
     io::eprintln{ &io, s = msg }
 }
 
@@ -83,13 +83,13 @@ fn report { mut io: Io, path: []u8, text: []u8, at: usize, problem: ir_read::Pro
     }
     let mut buf: [256]u8
     let mut heap = arena::new{ buf = buf[..] }
-    let mut b = ascii::builder{ realloc = arena::alloc }
-    _ = ascii::push_char{ &b, &heap, c = ':' }
-    _ = ascii::push_u64{ &b, &heap, n = line }
-    _ = ascii::push_char{ &b, &heap, c = ':' }
-    _ = ascii::push_u64{ &b, &heap, n = col }
+    let mut b = utf8::builder{ realloc = arena::alloc }
+    _ = utf8::push_char{ &b, &heap, c = ':' }
+    _ = utf8::push_u64{ &b, &heap, n = line }
+    _ = utf8::push_char{ &b, &heap, c = ':' }
+    _ = utf8::push_u64{ &b, &heap, n = col }
     let sep = ": error: "
-    _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &sep } }
+    _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &sep } }
     let expected = "expected "
     let int = "an integer"
     let large = "integer too large"
@@ -102,24 +102,24 @@ fn report { mut io: Io, path: []u8, text: []u8, at: usize, problem: ir_read::Pro
     let trailing = "unexpected text after (main)"
     match problem {
         expected{ c } => {
-            _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &expected } }
-            _ = ascii::push_char{ &b, &heap, c = '\'' }
-            _ = ascii::push_char{ &b, &heap, c }
-            _ = ascii::push_char{ &b, &heap, c = '\'' }
+            _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &expected } }
+            _ = utf8::push_char{ &b, &heap, c = '\'' }
+            _ = utf8::push_char{ &b, &heap, c }
+            _ = utf8::push_char{ &b, &heap, c = '\'' }
         }
         expected_int => {
-            _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &expected } }
-            _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &int } }
+            _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &expected } }
+            _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &int } }
         }
-        int_too_large   => { _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &large } } }
-        expected_symbol => { _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &symbol } } }
-        expected_string => { _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &string } } }
-        bad_escape      => { _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &escape } } }
-        bad_float       => { _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &float } } }
-        unknown_tag     => { _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &tag } } }
-        bad_id          => { _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &id } } }
-        trailing_text   => { _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &trailing } } }
+        int_too_large   => { _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &large } } }
+        expected_symbol => { _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &symbol } } }
+        expected_string => { _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &string } } }
+        bad_escape      => { _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &escape } } }
+        bad_float       => { _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &float } } }
+        unknown_tag     => { _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &tag } } }
+        bad_id          => { _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &id } } }
+        trailing_text   => { _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &trailing } } }
     }
     io::write{ &io, to = io::Stream::err, bytes = path }
-    io::eprintln{ &io, s = ascii::view{ b } }
+    io::eprintln{ &io, s = utf8::view{ b } }
 }

@@ -60,9 +60,9 @@ namespace parser {
         let t = "true"
         let f = "false"
         let n = "null"
-        if eat_word{ &p, w = ascii::of{ chars = &t } } { return Result::ok{ value = json::Value::boolean{ value = true } } }
-        if eat_word{ &p, w = ascii::of{ chars = &f } } { return Result::ok{ value = json::Value::boolean{ value = false } } }
-        if eat_word{ &p, w = ascii::of{ chars = &n } } { return Result::ok{ value = json::Value::nil } }
+        if eat_word{ &p, w = utf8::of{ chars = &t } } { return Result::ok{ value = json::Value::boolean{ value = true } } }
+        if eat_word{ &p, w = utf8::of{ chars = &f } } { return Result::ok{ value = json::Value::boolean{ value = false } } }
+        if eat_word{ &p, w = utf8::of{ chars = &n } } { return Result::ok{ value = json::Value::nil } }
         return fail{ at = p.pos, problem = Problem::expected_value }
     }
 
@@ -215,8 +215,8 @@ namespace parser {
             if digits{ &p } == 0 { return fail{ at = start, problem = Problem::bad_number } }
         }
         // Everything consumed is ASCII, and valid syntax for parse_f64.
-        let text = ascii::String{ bytes = p.text[start..p.pos] }
-        return match ascii::parse_f64{ s = text } {
+        let text = utf8::String{ bytes = p.text[start..p.pos] }
+        return match utf8::parse_f64{ s = text } {
             null          => { fail{ at = start, problem = Problem::bad_number } }      // beyond f64
             some{ value } => { Result::ok{ value = json::Value::number{ value } } }
         }
@@ -258,8 +258,8 @@ namespace parser {
     }
 
     // Consumes w if the text continues with it.
-    fn eat_word(S) { mut p: Parser(S), w: ascii::String } -> bool {
-        let n = ascii::len{ s = w }
+    fn eat_word(S) { mut p: Parser(S), w: utf8::String } -> bool {
+        let n = utf8::len{ s = w }
         if p.pos + n > p.text.len { return false }
         if not map::eq_bytes{ a = p.text[p.pos..p.pos + n], b = w.bytes } { return false }
         p.pos = p.pos + n

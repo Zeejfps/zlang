@@ -1,15 +1,15 @@
 // std: map. A hash map from keys K to values V, generic over the allocator state S.
 //
 // Keys have no built-in hashing or equality, so a map holds a function for each. std provides
-// them for the common key types below; `ascii::eq` serves as the equality for ascii::String.
+// them for the common key types below; `utf8::eq` serves as the equality for utf8::String.
 //
-//   let mut ages = map::new(ascii::String, i64){
-//       realloc = arena::alloc, hash = map::hash_string, eq = ascii::eq,
+//   let mut ages = map::new(utf8::String, i64){
+//       realloc = arena::alloc, hash = map::hash_string, eq = utf8::eq,
 //   }
 //   if not map::put{ m = &ages, &heap, key = name, value = 42 } { @panic("out of memory") }
 //   let age = map::get{ m = ages, key = name }       // ?i64
 //
-// A map copies its keys but not memory they point to: the bytes of an ascii::String key must
+// A map copies its keys but not memory they point to: the bytes of an utf8::String key must
 // outlive its entry.
 //
 // Open addressing with linear probing. `remove` leaves a marker that `put` reuses and the next
@@ -180,14 +180,10 @@ namespace map {
     }
 
     fn eq_bytes { a: []u8, b: []u8 } -> bool {
-        return ascii::eq{ a = ascii::String{ bytes = a }, b = ascii::String{ bytes = b } }
+        return utf8::same{ a, b }
     }
 
-    fn hash_string { key: ascii::String } -> u64 {
-        return hash_bytes{ key = key.bytes }
-    }
-
-    fn hash_utf8 { key: utf8::String } -> u64 {
+    fn hash_string { key: utf8::String } -> u64 {
         return hash_bytes{ key = key.bytes }
     }
 

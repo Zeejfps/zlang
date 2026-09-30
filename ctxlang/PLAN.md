@@ -153,8 +153,8 @@ to live and a read-only type to have, which in turn needs read-only pointers and
    `copy` and `fill`.
 3. **Literal views** (#1). A string literal converts to `[]u8` where one is expected, backed by
    static read-only bytes, and is derived from no local (§14). Needs one new IR node for the bytes.
-   **Open:** whether literals also convert to `ascii::String` and `utf8::String`, or §16 Q11 is
-   settled by making `utf8::String` the only text type. Decide after steps 1 and 2.
+   `utf8::String` is the only text type (`ascii` is byte-level character tests), so a literal
+   also converts to `utf8::String`, checked for valid UTF-8 at compile time.
 4. **Const tables** (#12). Consts may hold literal views, e.g. `const KEYWORDS: [12][]u8 = [...]`.
    Emit large consts as static data instead of inlining them if a profile shows the copies.
 5. **Default field values.** A struct field may declare a default, `name: T = e`, where `e` is a
@@ -173,8 +173,8 @@ FRICTION.md #1 and #12 are struck through.
 
 ### 4. Lexer (~500 ctxlang)
 
-Port `ctxi/lexer.py` using `ascii::Cursor`. Positions (line, column, file) must match, because
-error messages depend on them.
+Port `ctxi/lexer.py` using `utf8::Cursor`, which counts columns in characters as Python does.
+Positions (line, column, file) must match, because error messages depend on them.
 
 *Done when:* token dumps match Python for all of `std/`, `examples/` and the corpus, including
 lexer errors.

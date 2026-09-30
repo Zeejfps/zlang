@@ -5,7 +5,7 @@
 //       ...
 //   }
 //
-// Each argument is its bytes. Use ascii::from to treat one as text.
+// Each argument is its bytes. Use utf8::from to treat one as text.
 // `Args` is declared at the top level, like a built-in type, so it needs no namespace prefix.
 
 type Args = [][]u8

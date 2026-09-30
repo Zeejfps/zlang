@@ -1,21 +1,26 @@
-// std: utf8. UTF-8 text.
+// std: utf8. Text.
 //
-// `String` is a view of bytes that are valid UTF-8. Like a slice, it doesn't own its memory.
-// Input that might not be valid, such as a file, goes through `from`, which checks it once:
+// `String` is a view of bytes that are valid UTF-8, and the one text type. Like a slice, it
+// doesn't own its memory. Input that might not be valid, such as a file, goes through `from`,
+// which checks it once:
 //
 //   let text = match utf8::from{ bytes } {
 //       ok{ value }  => { value }
 //       err{ error } => { return 1 }              // error.at is the offset of the bad byte
 //   }
 //
-// Offsets are in bytes, as in `ascii`. `len` is the length in bytes and `count` the number of
-// characters. A character is a Unicode code point, held in a u32. Functions that take an offset
-// panic if it falls inside a character.
+// A string literal is viewed with `of`, which panics if it isn't valid:
 //
-// Most operations match `ascii`'s byte by byte: in valid UTF-8, one character's bytes never
-// appear inside another's, so a byte match is a character match. Character tests and case
-// conversion recognize ASCII only; std has no Unicode tables. To parse a number, convert with
-// `to_ascii` and use `ascii::parse_*`.
+//   let hi = "hello"                        // a [5]u8 value
+//   let s = utf8::of{ chars = &hi }         // a utf8::String viewing it
+//
+// Offsets are in bytes. `len` is the length in bytes and `count` the number of characters. A
+// character is a Unicode code point, held in a u32. Functions that take an offset panic if it
+// falls inside a character.
+//
+// In valid UTF-8, one character's bytes never appear inside another's, so searching and
+// comparing work byte by byte. Character tests and case conversion recognize ASCII only; std has
+// no Unicode tables. `ascii` has the same tests for a single byte.
 
 namespace utf8 {
     struct String { bytes: []u8 }
@@ -36,21 +41,6 @@ namespace utf8 {
     // Views bytes as text, typically a string literal. Panics if they aren't valid.
     fn of { chars: []u8 } -> String {
         return result::unwrap{ r = from{ bytes = chars } }
-    }
-
-    // ASCII is valid UTF-8, so this can't fail.
-    fn from_ascii { s: ascii::String } -> String {
-        return String{ bytes = s.bytes }
-    }
-
-    // Null if s has a character outside ASCII.
-    fn to_ascii { s: String } -> ?ascii::String {
-        let mut i: usize = 0
-        while i < s.bytes.len {
-            if s.bytes[i] > 127 { return null }
-            i = i + 1
-        }
-        return ascii::String{ bytes = s.bytes }
     }
 
     fn empty {} -> String {
@@ -91,29 +81,49 @@ namespace utf8 {
     }
 
     fn eq { a: String, b: String } -> bool {
-        return ascii::eq{ a = raw{ s = a }, b = raw{ s = b } }
+        return same{ a = a.bytes, b = b.bytes }
     }
 
     fn starts_with { s: String, prefix: String } -> bool {
-        return ascii::starts_with{ s = raw{ s }, prefix = raw{ s = prefix } }
+        let n = prefix.bytes.len
+        if n > s.bytes.len { return false }
+        return same{ a = s.bytes[..n], b = prefix.bytes }
     }
 
     fn ends_with { s: String, suffix: String } -> bool {
-        return ascii::ends_with{ s = raw{ s }, suffix = raw{ s = suffix } }
+        let n = s.bytes.len
+        if suffix.bytes.len > n { return false }
+        return same{ a = s.bytes[n - suffix.bytes.len..], b = suffix.bytes }
     }
 
     // Byte offset of the first `c`, or null.
     fn find { s: String, c: u32 } -> ?usize {
+        if c < 128 {
+            let mut i: usize = 0
+            while i < s.bytes.len {
+                if s.bytes[i] == c { return i }
+                i = i + 1
+            }
+            return null
+        }
         let mut buf: [4]u8
         return find_str{ s, needle = encode{ c, into = buf[..] } }
     }
 
     // Byte offset of the first occurrence of `needle`, or null. An empty needle is found at 0.
     fn find_str { s: String, needle: String } -> ?usize {
-        return ascii::find_str{ s = raw{ s }, needle = raw{ s = needle } }
+        let n = needle.bytes.len
+        if n > s.bytes.len { return null }
+        let mut i: usize = 0
+        while i + n <= s.bytes.len {
+            if same{ a = s.bytes[i..i + n], b = needle.bytes } { return i }
+            i = i + 1
+        }
+        return null
     }
 
     // The text before and after the first `c`, or null if there is none.
+    //   split_once{ s = "key=value", c = '=' }  ->  head "key", tail "value"
     struct Split { head: String, tail: String }
 
     fn split_once { s: String, c: u32 } -> ?Split {
@@ -128,15 +138,19 @@ namespace utf8 {
 
     // Without leading and trailing ASCII whitespace.
     fn trim { s: String } -> String {
-        return String{ bytes = ascii::trim{ s = raw{ s } }.bytes }
+        return trim_end{ s = trim_start{ s } }
     }
 
     fn trim_start { s: String } -> String {
-        return String{ bytes = ascii::trim_start{ s = raw{ s } }.bytes }
+        let mut lo: usize = 0
+        while lo < s.bytes.len and ascii::is_space{ c = s.bytes[lo] } { lo = lo + 1 }
+        return String{ bytes = s.bytes[lo..] }
     }
 
     fn trim_end { s: String } -> String {
-        return String{ bytes = ascii::trim_end{ s = raw{ s } }.bytes }
+        let mut hi = s.bytes.len
+        while hi > 0 and ascii::is_space{ c = s.bytes[hi - 1] } { hi = hi - 1 }
+        return String{ bytes = s.bytes[..hi] }
     }
 
     // ---- characters
@@ -148,7 +162,7 @@ namespace utf8 {
 
     fn is_ascii { c: u32 } -> bool { return c < 128 }
 
-    // ASCII-only, like `ascii`'s tests.
+    // ASCII-only.
     fn is_digit { c: u32 } -> bool { return c < 128 and ascii::is_digit{ c = @trunc(u8, c) } }
     fn is_upper { c: u32 } -> bool { return c < 128 and ascii::is_upper{ c = @trunc(u8, c) } }
     fn is_lower { c: u32 } -> bool { return c < 128 and ascii::is_lower{ c = @trunc(u8, c) } }
@@ -193,6 +207,135 @@ namespace utf8 {
         }
         into[0] = @trunc(u8, lead + v)
         return String{ bytes = into[..n] }
+    }
+
+    // ---- numbers
+
+    // Parses an optional '-' followed by decimal digits. Null if malformed or out of range.
+    fn parse_i64 { s: String } -> ?i64 {
+        let n = s.bytes.len
+        if n == 0 { return null }
+        let mut i: usize = 0
+        let neg = s.bytes[0] == '-'
+        if neg {
+            if n == 1 { return null }
+            i = 1
+        }
+        // Accumulate negatively so that i64's minimum is reachable.
+        let min: i64 = -9223372036854775808
+        let mut v: i64 = 0
+        while i < n {
+            let c = s.bytes[i]
+            if not ascii::is_digit{ c } { return null }
+            let d = @as(i64, c - '0')
+            if v < (min + d) / 10 { return null }
+            v = v * 10 - d
+            i = i + 1
+        }
+        if neg { return v }
+        if v == min { return null }
+        return -v
+    }
+
+    // Parses decimal digits. Null if malformed or out of range.
+    fn parse_u64 { s: String } -> ?u64 {
+        let n = s.bytes.len
+        if n == 0 { return null }
+        let max: u64 = 18446744073709551615
+        let mut v: u64 = 0
+        let mut i: usize = 0
+        while i < n {
+            let c = s.bytes[i]
+            if not ascii::is_digit{ c } { return null }
+            let d = @as(u64, c - '0')
+            if v > (max - d) / 10 { return null }
+            v = v * 10 + d
+            i = i + 1
+        }
+        return v
+    }
+
+    const F64_MAX: f64 = 1.7976931348623157e308
+    const F32_MAX: f32 = 3.4028234663852886e38
+
+    // Parses decimal text such as "3", "-0.25", "1e+100" or "6.02E23", and "inf", "-inf" and
+    // "nan", so that it reads back everything fmt_f64 writes. Rounds to the nearest f64. Null if
+    // malformed, or if a number is too large for f64.
+    fn parse_f64 { s: String } -> ?f64 {
+        if is_float_word{ s } { return ascii::f64_parse{ text = s.bytes } }
+        if not is_float_number{ s } { return null }
+        let v = ascii::f64_parse{ text = s.bytes }
+        if v > F64_MAX or v < -F64_MAX { return null }
+        return v
+    }
+
+    // Like parse_f64, rounding once, directly to the nearest f32.
+    fn parse_f32 { s: String } -> ?f32 {
+        if is_float_word{ s } { return ascii::f32_parse{ text = s.bytes } }
+        if not is_float_number{ s } { return null }
+        let v = ascii::f32_parse{ text = s.bytes }
+        if v > F32_MAX or v < -F32_MAX { return null }
+        return v
+    }
+
+    // Writes n in decimal to the start of `into` and returns that text. Panics if it doesn't fit;
+    // 20 bytes always do.
+    fn fmt_i64 { n: i64, into: []mut u8 } -> String {
+        let mut digits: [20]u8
+        let mut k: usize = 0
+        let mut v = n
+        if v > 0 { v = -v }                     // work in negatives so i64's minimum fits
+        while true {
+            digits[k] = '0' + @as(u8, -(v % 10))
+            k = k + 1
+            v = v / 10
+            if v == 0 { break }
+        }
+        let mut out: usize = 0
+        if n < 0 {
+            into[0] = '-'
+            out = 1
+        }
+        let total = out + k
+        if total > into.len { @panic("utf8::fmt_i64: buffer too small") }
+        while k > 0 {
+            k = k - 1
+            into[out] = digits[k]
+            out = out + 1
+        }
+        return String{ bytes = into[..total] }
+    }
+
+    // Like fmt_i64, for unsigned values.
+    fn fmt_u64 { n: u64, into: []mut u8 } -> String {
+        let mut digits: [20]u8
+        let mut k: usize = 0
+        let mut v = n
+        while true {
+            digits[k] = '0' + @trunc(u8, v % 10)
+            k = k + 1
+            v = v / 10
+            if v == 0 { break }
+        }
+        if k > into.len { @panic("utf8::fmt_u64: buffer too small") }
+        let total = k
+        let mut out: usize = 0
+        while k > 0 {
+            k = k - 1
+            into[out] = digits[k]
+            out = out + 1
+        }
+        return String{ bytes = into[..total] }
+    }
+
+    // Shortest text that reads back as n, e.g. "0.1", "3.0", "1e+100", "inf", "nan".
+    // 32 bytes always fit.
+    fn fmt_f64 { n: f64, into: []mut u8 } -> String {
+        return String{ bytes = into[..ascii::f64_digits{ n, into }] }
+    }
+
+    fn fmt_f32 { n: f32, into: []mut u8 } -> String {
+        return String{ bytes = into[..ascii::f32_digits{ n, into }] }
     }
 
     // ---- scanning
@@ -284,8 +427,9 @@ namespace utf8 {
     //
     //   let mut b = utf8::builder{ realloc = arena::alloc }
     //   _ = utf8::push{ &b, &heap, s = name }
+    //   _ = utf8::push_i64{ &b, &heap, n = 42 }
     //   _ = utf8::push_char{ &b, &heap, c = 233 }        // U+00E9, e with an acute accent
-    //   io::println_utf8{ &io, s = utf8::view{ b } }
+    //   io::println{ &io, s = utf8::view{ b } }
     struct Builder(S) { bytes: list::List(u8, S) }
 
     fn builder(S) { realloc: alloc::Fn(S) } -> Builder(S) {
@@ -316,22 +460,22 @@ namespace utf8 {
 
     fn push_i64(S) { mut b: Builder(S), mut heap: S, n: i64 } -> bool {
         let mut buf: [20]u8
-        return push{ &b, &heap, s = from_ascii{ s = ascii::fmt_i64{ n, into = buf[..] } } }
+        return push{ &b, &heap, s = fmt_i64{ n, into = buf[..] } }
     }
 
     fn push_u64(S) { mut b: Builder(S), mut heap: S, n: u64 } -> bool {
         let mut buf: [20]u8
-        return push{ &b, &heap, s = from_ascii{ s = ascii::fmt_u64{ n, into = buf[..] } } }
+        return push{ &b, &heap, s = fmt_u64{ n, into = buf[..] } }
     }
 
     fn push_f64(S) { mut b: Builder(S), mut heap: S, n: f64 } -> bool {
         let mut buf: [32]u8
-        return push{ &b, &heap, s = from_ascii{ s = ascii::fmt_f64{ n, into = buf[..] } } }
+        return push{ &b, &heap, s = fmt_f64{ n, into = buf[..] } }
     }
 
     fn push_f32(S) { mut b: Builder(S), mut heap: S, n: f32 } -> bool {
         let mut buf: [32]u8
-        return push{ &b, &heap, s = from_ascii{ s = ascii::fmt_f32{ n, into = buf[..] } } }
+        return push{ &b, &heap, s = fmt_f32{ n, into = buf[..] } }
     }
 
     fn clear(S) { mut b: Builder(S) } {
@@ -344,10 +488,38 @@ namespace utf8 {
 
     // ---- internals
 
-    // s's bytes as an ascii::String, for ascii's byte-level functions. They don't check their
-    // input, and on valid UTF-8 their byte matches are character matches.
-    fn raw { s: String } -> ascii::String {
-        return ascii::String{ bytes = s.bytes }
+    fn same { a: []u8, b: []u8 } -> bool {
+        if a.len != b.len { return false }
+        let mut i: usize = 0
+        while i < a.len {
+            if a[i] != b[i] { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // "inf", "-inf" or "nan".
+    fn is_float_word { s: String } -> bool {
+        let inf = "inf"
+        let minus_inf = "-inf"
+        let nan = "nan"
+        return same{ a = s.bytes, b = &inf } or same{ a = s.bytes, b = &nan } or same{ a = s.bytes, b = &minus_inf }
+    }
+
+    // An optional '-', digits, optionally '.' and digits, optionally 'e' or 'E', an optional sign
+    // and digits.
+    fn is_float_number { s: String } -> bool {
+        let mut cur = cursor{ s }
+        _ = eat{ &cur, ch = '-' }
+        if take_while{ &cur, f = is_digit }.bytes.len == 0 { return false }
+        if eat{ &cur, ch = '.' } {
+            if take_while{ &cur, f = is_digit }.bytes.len == 0 { return false }
+        }
+        if eat{ &cur, ch = 'e' } or eat{ &cur, ch = 'E' } {
+            if not eat{ &cur, ch = '+' } { _ = eat{ &cur, ch = '-' } }
+            if take_while{ &cur, f = is_digit }.bytes.len == 0 { return false }
+        }
+        return done{ cur }
     }
 
     fn is_cont { b: u8 } -> bool {

@@ -13,7 +13,7 @@ struct Top { word: utf8::String, count: i64 }
 fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     if args.len != 1 {
         let usage = "usage: wordcount FILE"
-        io::eprintln{ &io, s = ascii::of{ chars = &usage } }
+        io::eprintln{ &io, s = utf8::of{ chars = &usage } }
         return 2
     }
     let path = args[0]
@@ -36,14 +36,14 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
         ok{ value }  => { value }
         err{ error } => {
             let msg = "not a UTF-8 text file"
-            io::eprintln{ &io, s = ascii::of{ chars = &msg } }
+            io::eprintln{ &io, s = utf8::of{ chars = &msg } }
             return 1
         }
     }
 
     // Keys are views into `bytes`, which outlives the map: defers run in reverse order.
     let mut counts = map::new(utf8::String, i64){
-        realloc = arena::alloc, hash = map::hash_utf8, eq = utf8::eq,
+        realloc = arena::alloc, hash = map::hash_string, eq = utf8::eq,
     }
     defer map::free{ m = &counts, &heap }
 
@@ -59,26 +59,26 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
             seen.* = seen.* + 1
         } else if not map::put{ m = &counts, &heap, key = word, value = 1 } {
             let msg = "out of memory"
-            io::eprintln{ &io, s = ascii::of{ chars = &msg } }
+            io::eprintln{ &io, s = utf8::of{ chars = &msg } }
             return 1
         }
     }
 
     let lines = "lines: "
-    io::print{ &io, s = ascii::of{ chars = &lines } }
+    io::print{ &io, s = utf8::of{ chars = &lines } }
     io::println_u64{ &io, n = count_lines{ text } }
     let w = "words: "
-    io::print{ &io, s = ascii::of{ chars = &w } }
+    io::print{ &io, s = utf8::of{ chars = &w } }
     io::println_u64{ &io, n = words }
     let d = "distinct: "
-    io::print{ &io, s = ascii::of{ chars = &d } }
+    io::print{ &io, s = utf8::of{ chars = &d } }
     io::println_u64{ &io, n = map::len{ m = counts } }
 
     let top = most_common{ counts }
     if top != null {
         let label = "most common: "
-        io::print{ &io, s = ascii::of{ chars = &label } }
-        io::print_utf8{ &io, s = top.word }
+        io::print{ &io, s = utf8::of{ chars = &label } }
+        io::print{ &io, s = top.word }
         io::put_char{ &io, c = ' ' }
         io::println_i64{ &io, n = top.count }
     }
@@ -156,11 +156,11 @@ fn report { mut io: Io, path: []u8, error: fs::Error } {
     let oom = ": too large for the heap"
     let other = ": cannot read"
     let why = match error {
-        not_found         => { ascii::of{ chars = &not_found } }
-        permission_denied => { ascii::of{ chars = &denied } }
-        is_directory      => { ascii::of{ chars = &dir } }
-        out_of_memory     => { ascii::of{ chars = &oom } }
-        else              => { ascii::of{ chars = &other } }
+        not_found         => { utf8::of{ chars = &not_found } }
+        permission_denied => { utf8::of{ chars = &denied } }
+        is_directory      => { utf8::of{ chars = &dir } }
+        out_of_memory     => { utf8::of{ chars = &oom } }
+        else              => { utf8::of{ chars = &other } }
     }
     io::eprintln{ &io, s = why }
 }

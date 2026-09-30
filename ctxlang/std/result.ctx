@@ -4,7 +4,7 @@
 //
 //   union ParseError { empty, bad_digit{ at: usize } }
 //
-//   fn parse_pair { a: ascii::String, b: ascii::String } -> Result(Pair, ParseError) {
+//   fn parse_pair { a: utf8::String, b: utf8::String } -> Result(Pair, ParseError) {
 //       let x = match parse_one{ s = a } {
 //           ok{ value }  => { value }
 //           err{ error } => { return Result::err{ error } }

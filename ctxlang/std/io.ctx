@@ -5,7 +5,7 @@
 //
 //   fn main { mut io: Io } {
 //       let hi = "hello, world"
-//       io::println{ &io, s = ascii::of{ chars = &hi } }
+//       io::println{ &io, s = utf8::of{ chars = &hi } }
 //       io::println_i64{ &io, n = 42 }
 //   }
 //
@@ -21,43 +21,24 @@ namespace io {
 
     // ---- text
 
-    fn print { mut io: Io, s: ascii::String } {
+    fn print { mut io: Io, s: utf8::String } {
         write{ &io, to = Stream::out, bytes = s.bytes }
     }
 
-    fn println { mut io: Io, s: ascii::String } {
+    fn println { mut io: Io, s: utf8::String } {
         print{ &io, s }
         newline{ &io }
     }
 
     // To standard error.
-    fn eprint { mut io: Io, s: ascii::String } {
+    fn eprint { mut io: Io, s: utf8::String } {
         write{ &io, to = Stream::err, bytes = s.bytes }
     }
 
-    fn eprintln { mut io: Io, s: ascii::String } {
+    fn eprintln { mut io: Io, s: utf8::String } {
         eprint{ &io, s }
         let nl = "\n"
         write{ &io, to = Stream::err, bytes = nl[..] }
-    }
-
-    // UTF-8 text. The bytes go out unchanged, as with ascii::String.
-    fn print_utf8 { mut io: Io, s: utf8::String } {
-        write{ &io, to = Stream::out, bytes = s.bytes }
-    }
-
-    fn println_utf8 { mut io: Io, s: utf8::String } {
-        print_utf8{ &io, s }
-        newline{ &io }
-    }
-
-    fn eprint_utf8 { mut io: Io, s: utf8::String } {
-        write{ &io, to = Stream::err, bytes = s.bytes }
-    }
-
-    fn eprintln_utf8 { mut io: Io, s: utf8::String } {
-        eprint_utf8{ &io, s }
-        eprintln{ &io, s = ascii::empty{} }
     }
 
     fn newline { mut io: Io } {
@@ -65,10 +46,10 @@ namespace io {
         write{ &io, to = Stream::out, bytes = nl[..] }
     }
 
-    // Writes one byte.
-    fn put_char { mut io: Io, c: u8 } {
-        let one = [c]
-        write{ &io, to = Stream::out, bytes = one[..] }
+    // Writes one character. Panics if c isn't a Unicode scalar value.
+    fn put_char { mut io: Io, c: u32 } {
+        let mut buf: [4]u8
+        print{ &io, s = utf8::encode{ c, into = buf[..] } }
     }
 
     // ---- numbers
@@ -78,31 +59,31 @@ namespace io {
 
     fn print_i64 { mut io: Io, n: i64 } {
         let mut buf: [20]u8
-        print{ &io, s = ascii::fmt_i64{ n, into = buf[..] } }
+        print{ &io, s = utf8::fmt_i64{ n, into = buf[..] } }
     }
 
     fn print_u64 { mut io: Io, n: u64 } {
         let mut buf: [20]u8
-        print{ &io, s = ascii::fmt_u64{ n, into = buf[..] } }
+        print{ &io, s = utf8::fmt_u64{ n, into = buf[..] } }
     }
 
     fn print_f64 { mut io: Io, n: f64 } {
         let mut buf: [32]u8
-        print{ &io, s = ascii::fmt_f64{ n, into = buf[..] } }
+        print{ &io, s = utf8::fmt_f64{ n, into = buf[..] } }
     }
 
     fn print_f32 { mut io: Io, n: f32 } {
         let mut buf: [32]u8
-        print{ &io, s = ascii::fmt_f32{ n, into = buf[..] } }
+        print{ &io, s = utf8::fmt_f32{ n, into = buf[..] } }
     }
 
     fn print_bool { mut io: Io, n: bool } {
         if n {
             let t = "true"
-            print{ &io, s = ascii::of{ chars = &t } }
+            print{ &io, s = utf8::of{ chars = &t } }
         } else {
             let f = "false"
-            print{ &io, s = ascii::of{ chars = &f } }
+            print{ &io, s = utf8::of{ chars = &f } }
         }
     }
 
@@ -115,8 +96,9 @@ namespace io {
     // ---- input
 
     // Reads one line into `into` and returns it without its line ending. Null at the end of input.
-    // A line longer than `into` comes back in pieces. Non-ASCII bytes become '?'.
-    fn read_line { mut io: Io, into: []mut u8 } -> ?ascii::String {
+    // A line longer than `into` comes back in pieces. Bytes that aren't valid UTF-8, including a
+    // character cut in two by a piece boundary, become '?'.
+    fn read_line { mut io: Io, into: []mut u8 } -> ?utf8::String {
         let mut n: usize = 0
         while n < into.len {
             let one = into[n..n + 1]
@@ -124,14 +106,22 @@ namespace io {
                 if n == 0 { return null }
                 break
             }
-            let c = one[0]
-            if c == '\n' {
+            if one[0] == '\n' {
                 if n > 0 and into[n - 1] == '\r' { n = n - 1 }
                 break
             }
-            if c > 127 { one[0] = '?' }
             n = n + 1
         }
-        return ascii::from{ bytes = into[..n] }
+        let mut i: usize = 0
+        while i < n {
+            let k = utf8::seq_len{ bytes = into[..n], i }
+            if k == 0 {
+                into[i] = '?'
+                i = i + 1
+            } else {
+                i = i + k
+            }
+        }
+        return utf8::String{ bytes = into[..n] }
     }
 }

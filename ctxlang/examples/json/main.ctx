@@ -9,7 +9,7 @@
 fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     if args.len < 1 or args.len > 2 {
         let usage = "usage: json FILE [PATH]"
-        io::eprintln{ &io, s = ascii::of{ chars = &usage } }
+        io::eprintln{ &io, s = utf8::of{ chars = &usage } }
         return 2
     }
     let path = args[0]
@@ -20,7 +20,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     let ok{ value = bytes } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } else {
         io::write{ &io, to = io::Stream::err, bytes = path }
         let msg = ": cannot read"
-        io::eprintln{ &io, s = ascii::of{ chars = &msg } }
+        io::eprintln{ &io, s = utf8::of{ chars = &msg } }
         return 1
     }
 
@@ -38,9 +38,9 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
         }
         if found == null {
             let msg = "no value at "
-            io::eprint{ &io, s = ascii::of{ chars = &msg } }
+            io::eprint{ &io, s = utf8::of{ chars = &msg } }
             io::write{ &io, to = io::Stream::err, bytes = query }
-            io::eprintln{ &io, s = ascii::empty{} }
+            io::eprintln{ &io, s = utf8::empty{} }
             return 1
         }
         v = found
@@ -49,10 +49,10 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     let out = printer::format{ &heap, realloc = arena::alloc, v, indent = 2 }
     if out == null {
         let msg = "out of memory"
-        io::eprintln{ &io, s = ascii::of{ chars = &msg } }
+        io::eprintln{ &io, s = utf8::of{ chars = &msg } }
         return 1
     }
-    io::println_utf8{ &io, s = out }
+    io::println{ &io, s = out }
     return 0
 }
 
@@ -73,15 +73,15 @@ fn report { mut io: Io, path: []u8, text: []u8, error: parser::Error } {
     }
     io::write{ &io, to = io::Stream::err, bytes = path }
     let mut buf: [48]u8
-    let mut b = ascii::builder{ realloc = arena::alloc }
+    let mut b = utf8::builder{ realloc = arena::alloc }
     let mut heap = arena::new{ buf = buf[..] }
-    _ = ascii::push_char{ &b, &heap, c = ':' }
-    _ = ascii::push_u64{ &b, &heap, n = line }
-    _ = ascii::push_char{ &b, &heap, c = ':' }
-    _ = ascii::push_u64{ &b, &heap, n = col }
+    _ = utf8::push_char{ &b, &heap, c = ':' }
+    _ = utf8::push_u64{ &b, &heap, n = line }
+    _ = utf8::push_char{ &b, &heap, c = ':' }
+    _ = utf8::push_u64{ &b, &heap, n = col }
     let sep = ": "
-    _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &sep } }
-    io::eprint{ &io, s = ascii::view{ b } }
+    _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &sep } }
+    io::eprint{ &io, s = utf8::view{ b } }
     describe{ &io, problem = error.problem }
 }
 
@@ -100,19 +100,19 @@ fn describe { mut io: Io, problem: parser::Problem } {
     let trailing = "unexpected text after the value"
     let oom = "out of memory"
     let msg = match problem {
-        not_utf8                  => { ascii::of{ chars = &not_utf8 } }
-        unexpected_end            => { ascii::of{ chars = &end } }
-        expected_value            => { ascii::of{ chars = &value } }
-        expected_comma_or_bracket => { ascii::of{ chars = &array } }
-        expected_comma_or_brace   => { ascii::of{ chars = &object } }
-        expected_key              => { ascii::of{ chars = &key } }
-        expected_colon            => { ascii::of{ chars = &colon } }
-        bad_number                => { ascii::of{ chars = &number } }
-        bad_escape                => { ascii::of{ chars = &escape } }
-        control_char              => { ascii::of{ chars = &control } }
-        too_deep                  => { ascii::of{ chars = &deep } }
-        trailing_text             => { ascii::of{ chars = &trailing } }
-        out_of_memory             => { ascii::of{ chars = &oom } }
+        not_utf8                  => { utf8::of{ chars = &not_utf8 } }
+        unexpected_end            => { utf8::of{ chars = &end } }
+        expected_value            => { utf8::of{ chars = &value } }
+        expected_comma_or_bracket => { utf8::of{ chars = &array } }
+        expected_comma_or_brace   => { utf8::of{ chars = &object } }
+        expected_key              => { utf8::of{ chars = &key } }
+        expected_colon            => { utf8::of{ chars = &colon } }
+        bad_number                => { utf8::of{ chars = &number } }
+        bad_escape                => { utf8::of{ chars = &escape } }
+        control_char              => { utf8::of{ chars = &control } }
+        too_deep                  => { utf8::of{ chars = &deep } }
+        trailing_text             => { utf8::of{ chars = &trailing } }
+        out_of_memory             => { utf8::of{ chars = &oom } }
     }
     io::eprintln{ &io, s = msg }
 }

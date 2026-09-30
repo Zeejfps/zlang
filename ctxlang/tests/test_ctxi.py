@@ -1120,7 +1120,7 @@ class StdLib(Base):
         self.assertOutput("""
 fn main { mut io: Io } {
     let hi = "hello, \\"world\\"\\t!"
-    io::println{ &io, s = ascii::of{ chars = &hi } }
+    io::println{ &io, s = utf8::of{ chars = &hi } }
     io::put_char{ &io, c = 'x' }
     io::newline{ &io }
 }
@@ -1131,8 +1131,8 @@ fn main { mut io: Io } {
 fn main { mut io: Io } {
     let a = "out"
     let b = "err"
-    io::println{ &io, s = ascii::of{ chars = &a } }
-    io::eprintln{ &io, s = ascii::of{ chars = &b } }
+    io::println{ &io, s = utf8::of{ chars = &a } }
+    io::eprintln{ &io, s = utf8::of{ chars = &b } }
 }
 """)
         self.assertEqual((out, err), ('out\n', 'err\n'))
@@ -1170,13 +1170,13 @@ fn main { mut io: Io } {
     let c = "12x"
     let d = "-"
     let e = "0042"
-    show{ &io, r = ascii::parse_i64{ s = ascii::of{ chars = &a } } }
-    show{ &io, r = ascii::parse_i64{ s = ascii::of{ chars = &b } } }
-    show{ &io, r = ascii::parse_i64{ s = ascii::of{ chars = &c } } }
-    show{ &io, r = ascii::parse_i64{ s = ascii::of{ chars = &d } } }
-    show{ &io, r = ascii::parse_i64{ s = ascii::of{ chars = &e } } }
+    show{ &io, r = utf8::parse_i64{ s = utf8::of{ chars = &a } } }
+    show{ &io, r = utf8::parse_i64{ s = utf8::of{ chars = &b } } }
+    show{ &io, r = utf8::parse_i64{ s = utf8::of{ chars = &c } } }
+    show{ &io, r = utf8::parse_i64{ s = utf8::of{ chars = &d } } }
+    show{ &io, r = utf8::parse_i64{ s = utf8::of{ chars = &e } } }
     let u = "18446744073709551616"
-    io::println_bool{ &io, n = ascii::parse_u64{ s = ascii::of{ chars = &u } } == null }
+    io::println_bool{ &io, n = utf8::parse_u64{ s = utf8::of{ chars = &u } } == null }
 }
 """, '-9223372036854775808\n0\n0\n0\n42\ntrue\n')
 
@@ -1184,17 +1184,17 @@ fn main { mut io: Io } {
         self.assertOutput("""
 fn main { mut io: Io } {
     let raw = "  Hello, World \\n"
-    let s = ascii::trim{ s = ascii::of{ chars = &raw } }
+    let s = utf8::trim{ s = utf8::of{ chars = &raw } }
     io::println{ &io, s }
-    io::println_u64{ &io, n = ascii::len{ s } }
+    io::println_u64{ &io, n = utf8::len{ s } }
     let hel = "Hello"
     let rld = "rld"
-    io::println_bool{ &io, n = ascii::starts_with{ s, prefix = ascii::of{ chars = &hel } } }
-    io::println_bool{ &io, n = ascii::ends_with{ s, suffix = ascii::of{ chars = &rld } } }
-    io::println_bool{ &io, n = ascii::eq{ a = s, b = ascii::of{ chars = &hel } } }
-    let comma = ascii::find{ s, c = ',' }
+    io::println_bool{ &io, n = utf8::starts_with{ s, prefix = utf8::of{ chars = &hel } } }
+    io::println_bool{ &io, n = utf8::ends_with{ s, suffix = utf8::of{ chars = &rld } } }
+    io::println_bool{ &io, n = utf8::eq{ a = s, b = utf8::of{ chars = &hel } } }
+    let comma = utf8::find{ s, c = ',' }
     if comma != null {
-        io::println{ &io, s = ascii::sub{ s, lo = 0, hi = comma } }
+        io::println{ &io, s = utf8::sub{ s, lo = 0, hi = comma } }
     }
     io::put_char{ &io, c = ascii::to_upper{ c = 'q' } }
     io::put_char{ &io, c = ascii::to_lower{ c = 'Q' } }
@@ -1207,16 +1207,16 @@ fn main { mut io: Io } {
 fn main { mut io: Io } {
     let mut mem: [1024]u8
     let mut heap = arena::new{ buf = mem[..] }
-    let mut b = ascii::builder{ realloc = arena::alloc }
+    let mut b = utf8::builder{ realloc = arena::alloc }
     let name = "count"
-    _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &name } }
-    _ = ascii::push_char{ &b, &heap, c = '=' }
-    _ = ascii::push_i64{ &b, &heap, n = -1234567 }
-    _ = ascii::push_char{ &b, &heap, c = ' ' }
-    _ = ascii::push_u64{ &b, &heap, n = 99 }
-    io::println{ &io, s = ascii::view{ b } }
-    ascii::free{ &b, &heap }
-    io::println_u64{ &io, n = ascii::len{ s = ascii::view{ b } } }
+    _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &name } }
+    _ = utf8::push_char{ &b, &heap, c = '=' }
+    _ = utf8::push_i64{ &b, &heap, n = -1234567 }
+    _ = utf8::push_char{ &b, &heap, c = ' ' }
+    _ = utf8::push_u64{ &b, &heap, n = 99 }
+    io::println{ &io, s = utf8::view{ b } }
+    utf8::free{ &b, &heap }
+    io::println_u64{ &io, n = utf8::len{ s = utf8::view{ b } } }
 }
 """, 'count=-1234567 99\n0\n')
 
@@ -1231,7 +1231,7 @@ fn main { mut io: Io } {
         if line == null {
             more = false
         } else {
-            let n = ascii::parse_i64{ s = ascii::trim{ s = line } }
+            let n = utf8::parse_i64{ s = utf8::trim{ s = line } }
             if n != null { total = total + n }
             io::println{ &io, s = line }
         }
@@ -1240,6 +1240,20 @@ fn main { mut io: Io } {
 }
 """, b'12\r\n30\nabcdefghij\n  -2\nlast')
         self.assertEqual(out, '12\n30\nabcdefgh\nij\n  -2\nlast\n40\n')
+
+    def test_read_line_replaces_invalid_utf8(self):
+        out, _ = run_io("""
+fn main { mut io: Io } {
+    let mut buf: [8]u8
+    while true {
+        let line = io::read_line{ &io, into = buf[..] }
+        if line == null { break }
+        io::println{ &io, s = line }
+    }
+}
+""", b'caf\xc3\xa9\nx\xffy\nabcdefg\xc3\xa9\n')
+        # The last line's é is cut in two by the 8-byte buffer, so each half becomes '?'.
+        self.assertEqual(out, 'café\nx?y\nabcdefg?\n?\n')
 
     def test_parse_float(self):
         self.assertOutput("""
@@ -1266,22 +1280,22 @@ fn main { mut io: Io } {
     let h = ".5"
     let i = "1e"
     let j = "+1"
-    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &a } } }
-    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &b } } }
-    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &c } } }
-    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &d } } }
-    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &e } } }
-    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &f } } }
-    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &g } } }
-    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &h } } }
-    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &i } } }
-    show{ &io, r = ascii::parse_f64{ s = ascii::of{ chars = &j } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = &a } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = &b } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = &c } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = &d } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = &e } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = &f } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = &g } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = &h } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = &i } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = &j } } }
     let k = "1.1"
     let l = "1e39"
     let m = "1.000000059604644775390625000001"
-    show32{ &io, r = ascii::parse_f32{ s = ascii::of{ chars = &k } } }
-    show32{ &io, r = ascii::parse_f32{ s = ascii::of{ chars = &l } } }
-    show32{ &io, r = ascii::parse_f32{ s = ascii::of{ chars = &m } } }
+    show32{ &io, r = utf8::parse_f32{ s = utf8::of{ chars = &k } } }
+    show32{ &io, r = utf8::parse_f32{ s = utf8::of{ chars = &l } } }
+    show32{ &io, r = utf8::parse_f32{ s = utf8::of{ chars = &m } } }
 }
 """, '-0.25\n6.02e+23\n1e+100\n3.0\n-inf\nfalse\nfalse\nfalse\nfalse\nfalse\n'
      '1.1\nfalse\n1.0000001\n')
@@ -1293,8 +1307,8 @@ fn main { mut io: Io } {
     let mut buf: [32]u8
     let mut i: usize = 0
     while i < xs.len {
-        let text = ascii::fmt_f64{ n = xs[i], into = buf[..] }
-        let back = ascii::parse_f64{ s = text }
+        let text = utf8::fmt_f64{ n = xs[i], into = buf[..] }
+        let back = utf8::parse_f64{ s = text }
         if back != null { io::println_bool{ &io, n = back == xs[i] } }
         i = i + 1
     }
@@ -1305,28 +1319,28 @@ fn main { mut io: Io } {
         self.assertOutput("""
 fn main { mut io: Io } {
     let src = "  let x1 = 42 -> y"
-    let mut cur = ascii::cursor{ s = ascii::of{ chars = &src } }
-    ascii::skip_space{ &cur }
-    io::println{ &io, s = ascii::take_while{ &cur, f = ascii::is_alpha } }
-    ascii::skip_space{ &cur }
-    io::println{ &io, s = ascii::take_while{ &cur, f = ascii::is_alnum } }
-    ascii::skip_space{ &cur }
-    io::println_bool{ &io, n = ascii::eat{ &cur, ch = '+' } }
-    io::println_bool{ &io, n = ascii::eat{ &cur, ch = '=' } }
-    ascii::skip_space{ &cur }
-    let n = ascii::parse_i64{ s = ascii::take_while{ &cur, f = ascii::is_digit } }
+    let mut cur = utf8::cursor{ s = utf8::of{ chars = &src } }
+    utf8::skip_space{ &cur }
+    io::println{ &io, s = utf8::take_while{ &cur, f = utf8::is_alpha } }
+    utf8::skip_space{ &cur }
+    io::println{ &io, s = utf8::take_while{ &cur, f = utf8::is_alnum } }
+    utf8::skip_space{ &cur }
+    io::println_bool{ &io, n = utf8::eat{ &cur, ch = '+' } }
+    io::println_bool{ &io, n = utf8::eat{ &cur, ch = '=' } }
+    utf8::skip_space{ &cur }
+    let n = utf8::parse_i64{ s = utf8::take_while{ &cur, f = utf8::is_digit } }
     if n != null { io::println_i64{ &io, n } }
-    ascii::skip_space{ &cur }
-    let c = ascii::peek_at{ cur, ahead = 1 }
+    utf8::skip_space{ &cur }
+    let c = utf8::peek_at{ cur, ahead = 1 }
     if c != null { io::put_char{ &io, c } }
     let arrow = "->"
-    io::println_bool{ &io, n = ascii::eat_str{ &cur, s = ascii::of{ chars = &arrow } } }
-    io::println{ &io, s = ascii::rest{ cur } }
-    _ = ascii::bump{ &cur }
-    let y = ascii::bump{ &cur }
+    io::println_bool{ &io, n = utf8::eat_str{ &cur, s = utf8::of{ chars = &arrow } } }
+    io::println{ &io, s = utf8::rest{ cur } }
+    _ = utf8::bump{ &cur }
+    let y = utf8::bump{ &cur }
     if y != null { io::put_char{ &io, c = y } }
-    io::println_bool{ &io, n = ascii::done{ cur } }
-    io::println_bool{ &io, n = ascii::bump{ &cur } == null and ascii::peek{ cur } == null }
+    io::println_bool{ &io, n = utf8::done{ cur } }
+    io::println_bool{ &io, n = utf8::bump{ &cur } == null and utf8::peek{ cur } == null }
 }
 """, 'let\nx1\nfalse\ntrue\n42\n>true\n y\nytrue\ntrue\n')
 
@@ -1334,22 +1348,22 @@ fn main { mut io: Io } {
         self.assertOutput("""
 fn main { mut io: Io } {
     let kv = "key=val=ue"
-    let s = ascii::of{ chars = &kv }
-    let sp = ascii::split_once{ s, c = '=' }
+    let s = utf8::of{ chars = &kv }
+    let sp = utf8::split_once{ s, c = '=' }
     if sp != null {
         io::println{ &io, s = sp.head }
         io::println{ &io, s = sp.tail }
     }
-    io::println_bool{ &io, n = ascii::split_once{ s, c = ';' } == null }
+    io::println_bool{ &io, n = utf8::split_once{ s, c = ';' } == null }
     let val = "val"
-    let at = ascii::find_str{ s, needle = ascii::of{ chars = &val } }
+    let at = utf8::find_str{ s, needle = utf8::of{ chars = &val } }
     if at != null { io::println_u64{ &io, n = at } }
     let long = "key=val=ue!"
-    io::println_bool{ &io, n = ascii::find_str{ s, needle = ascii::of{ chars = &long } } == null }
+    io::println_bool{ &io, n = utf8::find_str{ s, needle = utf8::of{ chars = &long } } == null }
     let padded = "  x  "
-    let p = ascii::of{ chars = &padded }
-    io::println_u64{ &io, n = ascii::len{ s = ascii::trim_start{ s = p } } }
-    io::println_u64{ &io, n = ascii::len{ s = ascii::trim_end{ s = p } } }
+    let p = utf8::of{ chars = &padded }
+    io::println_u64{ &io, n = utf8::len{ s = utf8::trim_start{ s = p } } }
+    io::println_u64{ &io, n = utf8::len{ s = utf8::trim_end{ s = p } } }
 }
 """, 'key\nval=ue\ntrue\n4\ntrue\n3\n3\n')
 
@@ -1365,14 +1379,6 @@ fn main { mut io: Io } {
     io::println_u64{ &io, n = s[2..2].len + s[3..].len + s[..4].len }
 }
 """, '12\n5\n6\n')
-
-    def test_non_ascii_panics(self):
-        self.assertPanic("""
-fn main { mut io: Io } {
-    let b = "caf\\xe9"
-    io::println{ &io, s = ascii::of{ chars = &b } }
-}
-""", 'ascii::from: byte is not ASCII')
 
     def test_non_ascii_literal_rejected(self):
         self.assertCompileError('fn main { mut io: Io } { let b = "café" }', 'non-ASCII')
@@ -1400,9 +1406,9 @@ fn main { mut io: Io } { io::println_i64{ &io, n = slice::answer{} } }
 
     def test_string_literal_escape_check(self):
         self.assertCompileError("""
-fn greet {} -> ascii::String {
+fn greet {} -> utf8::String {
     let hi = "hi"
-    return ascii::of{ chars = &hi }
+    return utf8::of{ chars = &hi }
 }
 fn main { mut io: Io } { }
 """, 'returned value holds the address of local `hi`')
@@ -1530,24 +1536,24 @@ fn add { mut total: i64, key: i32, value: i64 } { total = total + value }
 fn main { mut io: Io } {
     let mut mem: [8192]u8
     let mut heap = arena::new{ buf = mem[..] }
-    let mut counts = map::new(ascii::String, i32){
-        realloc = arena::alloc, hash = map::hash_string, eq = ascii::eq,
+    let mut counts = map::new(utf8::String, i32){
+        realloc = arena::alloc, hash = map::hash_string, eq = utf8::eq,
     }
     let text = "the cat and the dog and the bird"
-    let mut cur = ascii::cursor{ s = ascii::of{ chars = &text } }
-    while not ascii::done{ cur } {
-        let word = ascii::take_while{ &cur, f = ascii::is_alpha }
+    let mut cur = utf8::cursor{ s = utf8::of{ chars = &text } }
+    while not utf8::done{ cur } {
+        let word = utf8::take_while{ &cur, f = utf8::is_alpha }
         let p = map::at{ m = counts, key = word }
         if p != null {
             p.* = p.* + 1
         } else {
             _ = map::put{ m = &counts, &heap, key = word, value = 1 }
         }
-        ascii::skip_space{ &cur }
+        utf8::skip_space{ &cur }
     }
     io::println_u64{ &io, n = map::len{ m = counts } }
     let the = "the"
-    let n = map::get{ m = counts, key = ascii::of{ chars = &the } }
+    let n = map::get{ m = counts, key = utf8::of{ chars = &the } }
     if n != null { io::println_i64{ &io, n } }
 }
 """, '5\n3\n')
@@ -1600,14 +1606,14 @@ class Utf8(Base):
         out, err = run_io(r"""
 fn main { mut io: Io } {
     %s
-    io::println_utf8{ &io, s }
+    io::println{ &io, s }
     io::println_u64{ &io, n = utf8::len{ s } }
     io::println_u64{ &io, n = utf8::count{ s } }
     io::println_u64{ &io, n = utf8::at{ s, i = 3 } }
     io::println_bool{ &io, n = utf8::is_boundary{ s, i = 4 } }
     io::println_bool{ &io, n = utf8::is_boundary{ s, i = 5 } }
     io::println_bool{ &io, n = utf8::is_boundary{ s, i = 15 } }
-    io::println_utf8{ &io, s = utf8::sub{ s, lo = 6, hi = 9 } }
+    io::println{ &io, s = utf8::sub{ s, lo = 6, hi = 9 } }
     let euro = "\xe2\x82\xac"
     opt{ &io, n = utf8::find_str{ s, needle = utf8::of{ chars = &euro } } }
     opt{ &io, n = utf8::find{ s, c = 128512 } }
@@ -1618,14 +1624,12 @@ fn main { mut io: Io } {
     io::println_bool{ &io, n = utf8::ends_with{ s, suffix = utf8::of{ chars = &bang } } }
     let sp = utf8::split_once{ s, c = 8364 }
     if sp != null {
-        io::println_utf8{ &io, s = sp.head }
-        io::println_utf8{ &io, s = sp.tail }
+        io::println{ &io, s = sp.head }
+        io::println{ &io, s = sp.tail }
     }
-    io::println_bool{ &io, n = utf8::to_ascii{ s } == null }
     let hi = "  hi\t"
-    let a = utf8::to_ascii{ s = utf8::trim{ s = utf8::of{ chars = &hi } } }
-    if a != null { io::println{ &io, s = a } }
-    io::eprintln_utf8{ &io, s = utf8::sub{ s, lo = 0, hi = 5 } }
+    io::println{ &io, s = utf8::trim{ s = utf8::of{ chars = &hi } } }
+    io::eprintln{ &io, s = utf8::sub{ s, lo = 0, hi = 5 } }
 }
 fn opt { mut io: Io, n: ?usize } {
     match n {
@@ -1635,7 +1639,7 @@ fn opt { mut io: Io, n: ?usize } {
 }
 """.replace('%s', self.TEXT))
         self.assertEqual(out, 'café €=😀!\n15\n9\n233\nfalse\ntrue\ntrue\n€\n6\n10\n-1\n'
-                              'true\ntrue\ncafé \n=😀!\ntrue\nhi\n')
+                              'true\ntrue\ncafé \n=😀!\nhi\n')
         self.assertEqual(err, 'café\n')
 
     def test_validation(self):
@@ -1698,9 +1702,9 @@ fn main { mut io: Io } {
     utf8::skip_space{ &cur }
     opt{ &io, n = utf8::peek{ cur } }
     opt{ &io, n = utf8::peek_at{ cur, ahead = 1 } }
-    io::println_utf8{ &io, s = utf8::take_while{ &cur, f = not_eq } }
+    io::println{ &io, s = utf8::take_while{ &cur, f = not_eq } }
     io::println_bool{ &io, n = utf8::eat{ &cur, ch = '=' } }
-    io::println_utf8{ &io, s = utf8::take_while{ &cur, f = utf8::is_digit } }
+    io::println{ &io, s = utf8::take_while{ &cur, f = utf8::is_digit } }
     utf8::skip_space{ &cur }
     io::println_bool{ &io, n = utf8::eat{ &cur, ch = 8364 } }
     io::println_bool{ &io, n = utf8::done{ cur } }
@@ -1728,7 +1732,7 @@ fn main { mut io: Io } {
     _ = utf8::push_char{ &b, &heap, c = '=' }
     _ = utf8::push_i64{ &b, &heap, n = -7 }
     _ = utf8::push_char{ &b, &heap, c = 128512 }
-    io::println_utf8{ &io, s = utf8::view{ b } }
+    io::println{ &io, s = utf8::view{ b } }
     io::println_u64{ &io, n = utf8::count{ s = utf8::view{ b } } }
     utf8::free{ &b, &heap }
 }
@@ -1893,7 +1897,7 @@ fn main { mut io: Io } {
     def test_narrowing_in_if_expression(self):
         self.assertOutput("""
 fn main { mut io: Io } {
-    let o = ascii::parse_i64{ s = ascii::empty{} }
+    let o = utf8::parse_i64{ s = utf8::empty{} }
     let x = if o != null { o } else { 42 }
     let y = if o == null { 1 } else { o }
     io::println_i64{ &io, n = x + y }
@@ -1920,7 +1924,7 @@ fn main { mut io: Io } {
     io::println_i64{ &io, n = first_even{ xs = [1, 3, 8, 5, 6] } }
     io::println_i64{ &io, n = pick{ o = 4 } }
     io::println_i64{ &io, n = pick{ o = null } }
-    let n = match ascii::parse_i64{ s = ascii::empty{} } {
+    let n = match utf8::parse_i64{ s = utf8::empty{} } {
         null => { 0 }
         some{ value } => { value }
     }
@@ -1962,7 +1966,7 @@ fn main { mut io: Io } {
         self.assertOutput("""
 fn main { mut io: Io } {
     if true { io::println_i64{ &io, n = 1 } }
-    match ascii::parse_i64{ s = ascii::empty{} } {
+    match utf8::parse_i64{ s = utf8::empty{} } {
         null => { io::println_i64{ &io, n = 2 } }
         else => { }
     }
@@ -2034,19 +2038,19 @@ class ResultType(Base):
     def test_propagation(self):
         self.assertOutput("""
 union ParseError { empty, bad{ at: usize } }
-fn parse_one { s: ascii::String } -> Result(i64, ParseError) {
-    if ascii::len{ s } == 0 { return Result::err{ error = ParseError::empty } }
+fn parse_one { s: utf8::String } -> Result(i64, ParseError) {
+    if utf8::len{ s } == 0 { return Result::err{ error = ParseError::empty } }
     let mut i: usize = 0
-    while i < ascii::len{ s } {
-        if not ascii::is_digit{ c = ascii::at{ s, i } } {
+    while i < utf8::len{ s } {
+        if not utf8::is_digit{ c = utf8::at{ s, i } } {
             return Result::err{ error = ParseError::bad{ at = i } }
         }
         i = i + 1
     }
-    return result::ok_or{ o = ascii::parse_i64{ s }, error = ParseError::bad{ at = 0 } }
+    return result::ok_or{ o = utf8::parse_i64{ s }, error = ParseError::bad{ at = 0 } }
 }
-fn sum { s: ascii::String } -> Result(i64, ParseError) {
-    let parts = match ascii::split_once{ s, c = ',' } {
+fn sum { s: utf8::String } -> Result(i64, ParseError) {
+    let parts = match utf8::split_once{ s, c = ',' } {
         null          => { return Result::err{ error = ParseError::empty } }
         some{ value } => { value }
     }
@@ -2071,9 +2075,9 @@ fn main { mut io: Io } {
     let a = "12,30"
     let b = "12,3x"
     let c = "12"
-    report{ &io, r = sum{ s = ascii::of{ chars = &a } } }
-    report{ &io, r = sum{ s = ascii::of{ chars = &b } } }
-    report{ &io, r = sum{ s = ascii::of{ chars = &c } } }
+    report{ &io, r = sum{ s = utf8::of{ chars = &a } } }
+    report{ &io, r = sum{ s = utf8::of{ chars = &b } } }
+    report{ &io, r = sum{ s = utf8::of{ chars = &c } } }
 }
 """, '42\n-101\n-1\n')
 
@@ -2564,7 +2568,7 @@ class Fs(Base):
         ok{ value }  => { value }
         err{ error } => { return 1 }
     }
-    io::print{ &io, s = ascii::from{ bytes = text } }
+    io::print{ &io, s = utf8::of{ chars = text } }
     let wrote = fs::write_all{ &fs, path = args[1], bytes = text }
     io::println_u64{ &io, n = result::unwrap{ r = wrote } }
     io::println_u64{ &io, n = result::unwrap{ r = fs::size{ &fs, path = args[1] } } }
@@ -2616,7 +2620,7 @@ class Fs(Base):
     while true {
         let n = result::unwrap{ r = fs::read{ &fs, file = r, into = buf[..] } }
         if n == 0 { break }
-        io::print{ &io, s = ascii::from{ bytes = buf[..][..n] } }
+        io::print{ &io, s = utf8::of{ chars = buf[..][..n] } }
         total = total + n
     }
     io::newline{ &io }
@@ -2670,7 +2674,7 @@ class Fs(Base):
     def test_exit_code_and_args(self):
         out, code = self.run_fs("""
     io::println_u64{ &io, n = args.len }
-    let a = ascii::from{ bytes = args[1] }
+    let a = utf8::of{ chars = args[1] }
     io::println{ &io, s = a }
     io::println_u64{ &io, n = args[2].len }
     return 3
@@ -2822,17 +2826,17 @@ fn main { mut mem: Mem } { }
         out, _ = self.run_mem("""
     let some{ value = buf } = mem::pages{ &mem, size = 4096 } else { return 1 }
     let mut heap = arena::new{ buf }
-    let mut b = ascii::builder{ realloc = arena::alloc }
-    _ = ascii::push_f64{ &b, &heap, n = 0.1 }
-    _ = ascii::push_char{ &b, &heap, c = ' ' }
-    _ = ascii::push_f32{ &b, &heap, n = 0.1 }
-    _ = ascii::push_char{ &b, &heap, c = ' ' }
-    _ = ascii::push_f64{ &b, &heap, n = 1e100 }
-    io::println{ &io, s = ascii::view{ b } }
+    let mut b = utf8::builder{ realloc = arena::alloc }
+    _ = utf8::push_f64{ &b, &heap, n = 0.1 }
+    _ = utf8::push_char{ &b, &heap, c = ' ' }
+    _ = utf8::push_f32{ &b, &heap, n = 0.1 }
+    _ = utf8::push_char{ &b, &heap, c = ' ' }
+    _ = utf8::push_f64{ &b, &heap, n = 1e100 }
+    io::println{ &io, s = utf8::view{ b } }
     let mut u = utf8::builder{ realloc = arena::alloc }
     _ = utf8::push_f64{ b = &u, &heap, n = -2.5 }
     _ = utf8::push_f32{ b = &u, &heap, n = 3.0 }
-    io::println_utf8{ &io, s = utf8::view{ b = u } }
+    io::println{ &io, s = utf8::view{ b = u } }
     return 0
 """)
         self.assertEqual(out, '0.1 0.1 1e+100\n-2.53.0\n')

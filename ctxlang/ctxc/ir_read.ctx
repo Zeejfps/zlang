@@ -544,20 +544,23 @@ namespace ir_read {
         skip_space{ &r }
         let start = r.pos
         while r.pos < r.text.len and not ends_token{ c = r.text[r.pos] } { r.pos = r.pos + 1 }
-        let text = ascii::from{ bytes = r.text[start..r.pos] }
+        let ok{ value = text } = utf8::from{ bytes = r.text[start..r.pos] } else {
+            fail{ &r, problem = Problem::bad_float }
+            return 0.0
+        }
         let mut is32 = false
         if ty < r.types.len {
             let prim{ p } = r.types[ty] else { return 0.0 }
             is32 = match p { f32 => { true } else => { false } }
         }
         if is32 {
-            let some{ value } = ascii::parse_f32{ s = text } else {
+            let some{ value } = utf8::parse_f32{ s = text } else {
                 fail{ &r, problem = Problem::bad_float }
                 return 0.0
             }
             return value
         }
-        let some{ value } = ascii::parse_f64{ s = text } else {
+        let some{ value } = utf8::parse_f64{ s = text } else {
             fail{ &r, problem = Problem::bad_float }
             return 0.0
         }

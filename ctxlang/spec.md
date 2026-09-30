@@ -301,7 +301,7 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 3. `true` and `false` are the `bool` values. `null` is described in §8.
 4. `[a, b, c]` is a `[3]T` array. Every element has type `T`.
 5. `[x; N]` is a `[N]T` array with every element a copy of `x`. `N` is a compile-time constant.
-6. A string literal `"..."` is a `[N]u8` array value holding its `N` bytes, with no terminator. Like any array it is a value, not a place: bind it to a local to take its address, which converts to a `[]u8`. `ascii::of` or `utf8::of` views it as text (§17).
+6. A string literal `"..."` is a `[N]u8` array value holding its `N` bytes, with no terminator. Like any array it is a value, not a place: bind it to a local to take its address, which converts to a `[]u8`. `utf8::of` views it as text (§17).
 7. A character literal `'a'` is an integer literal whose value is the character's byte.
 8. String and character literals hold ASCII characters only. Escapes: `\n`, `\t`, `\r`, `\0`, `\\`, `\"`, `\'`, and `\xNN` for any byte.
 
@@ -454,7 +454,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 8. **Untagged unions:** needed for C interop? Or `@cast` only?
 9. **Large stack frames:** should the compiler error or warn above a size limit? (Page allocation is now the `Mem` capability, §15.) Should pages be freeable?
 10. **Loop control:** `break` and `continue` apply to the innermost loop. Are labels needed to leave an outer loop?
-11. **Strings:** literals are `[N]u8` values (§11) and text is `ascii::String` or `utf8::String` (§17). Should `utf8::String` become the only text type, with `ascii` reduced to byte-level character tests? Should a literal be usable where a slice is expected without first binding it to a local?
+11. **Strings:** literals are `[N]u8` values (§11). *Partly settled:* `utf8::String` is the only text type, and `ascii` holds byte-level character tests (§17). Should a literal be usable where a slice or a `utf8::String` is expected without first binding it to a local?
 
 ## 17. Standard library
 
@@ -472,15 +472,15 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 | `mem` | `pages`: at least `size` bytes of zeroed, page-aligned memory, as a `?alloc::Bytes`. Takes `mut mem: Mem`. Native: `sys_pages`. |
 | `arena` | `Arena`, a bump allocator: `new`, `alloc` (an `alloc::Fn(Arena)`), `reset`, `remaining` |
 | `list` | `List(T, S)`: `new`, `reserve`, `push`, `pop`, `get`, `set`, `at`, `items`, `clear`, `each`, `free` |
-| `map` | `Map(K, V, S)`, a hash map that holds its key type's hash and equality functions: `new`, `len`, `has`, `get`, `at`, `put`, `remove`, `clear`, `free`, `next`, `each`. `hash_*` and `eq_*` for `i32`, `i64`, `u32`, `u64`, `usize` and byte slices; `hash_string` for `ascii::String`, with `ascii::eq`; `hash_utf8` for `utf8::String`, with `utf8::eq`. |
-| `ascii` | `String { bytes: []u8 }`, a non-owning view of ASCII text: `from`, `of`, `empty`, `len`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, character tests and case, `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes, with `push`, `push_char`, `push_i64`, `push_u64`, `push_f64`, `push_f32`. Natives: `f64_digits`, `f32_digits`, `f64_parse`, `f32_parse`. |
-| `utf8` | `String { bytes: []u8 }`, a non-owning view of valid UTF-8 text. Offsets are in bytes, and an offset inside a character panics; a character is a `u32` code point. `from` (checks the bytes, returning `Result(String, Invalid)` with the offset of the first bad byte), `of`, `from_ascii`, `to_ascii`, `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`. Character tests and case (ASCII only). `Cursor` and `Builder(S)` as in `ascii`, by character. |
-| `io` | `Stream`; `print`, `println`, `eprint`, `eprintln`, their `_utf8` forms for `utf8::String`, `newline`, `put_char`, `print_i64`, `print_u64`, `print_f64`, `print_f32`, `print_bool` and their `println_` forms (smaller number types widen to these), `read_line`. Natives: `write`, `read`. |
+| `map` | `Map(K, V, S)`, a hash map that holds its key type's hash and equality functions: `new`, `len`, `has`, `get`, `at`, `put`, `remove`, `clear`, `free`, `next`, `each`. `hash_*` and `eq_*` for `i32`, `i64`, `u32`, `u64`, `usize` and byte slices; `hash_string` for `utf8::String`, with `utf8::eq`. |
+| `ascii` | Byte-level character tests and case for a `u8`: `is_digit`, `is_upper`, `is_lower`, `is_alpha`, `is_alnum`, `is_space`, `to_upper`, `to_lower`. Natives, used by `utf8`'s numbers: `f64_digits`, `f32_digits`, `f64_parse`, `f32_parse`. |
+| `utf8` | `String { bytes: []u8 }`, the text type: a non-owning view of valid UTF-8. Offsets are in bytes, and an offset inside a character panics; a character is a `u32` code point. `from` (checks the bytes, returning `Result(String, Invalid)` with the offset of the first bad byte), `of` (panics if invalid), `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`, `is_ascii`. Character tests and case (ASCII only). `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers, by character: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes, with `push`, `push_char`, `push_i64`, `push_u64`, `push_f64`, `push_f32`, `view`, `clear`, `free`. |
+| `io` | `Stream`; `print`, `println`, `eprint`, `eprintln` for `utf8::String`, `newline`, `put_char` (one character), `print_i64`, `print_u64`, `print_f64`, `print_f32`, `print_bool` and their `println_` forms (smaller number types widen to these), `read_line` (bytes that aren't valid UTF-8 become `?`). Natives: `write`, `read`. |
 
 ```
 fn main { mut io: Io } {
     let hi = "hello"                                   // [5]u8
-    io::println{ &io, s = ascii::of{ chars = &hi } }
+    io::println{ &io, s = utf8::of{ chars = &hi } }
     io::println_i64{ &io, n = 42 }
 }
 ```
