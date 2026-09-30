@@ -18,6 +18,7 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 | 6 | Checker | | |
 | 7 | Self-hosting fixpoint | | |
 | 8 | Decide ctxi's role | | |
+| 9 | Metaprogramming: build programs, attributes, compile-time consts | future | |
 
 ### Where we are
 
@@ -156,6 +157,16 @@ to live and a read-only type to have, which in turn needs read-only pointers and
    settled by making `utf8::String` the only text type. Decide after steps 1 and 2.
 4. **Const tables** (#12). Consts may hold literal views, e.g. `const KEYWORDS: [12][]u8 = [...]`.
    Emit large consts as static data instead of inlining them if a profile shows the copies.
+5. **Default field values.** A struct field may declare a default, `name: T = e`, where `e` is a
+   const expression (§14.1). A struct literal may leave out a field that has a default (§7.1).
+   Nothing is implicit: a `?T` field without `= null` must still be supplied. The dumper fills in
+   the omitted fields, so the IR and backend are unchanged. This comes before stage 6 so that the
+   ported checker has it from the start rather than adding it to both checkers, and before stage 9,
+   whose attributes are struct literals that would otherwise have to spell out every field.
+   **Open:** whether union variant payloads get defaults too (probably yes, the same rule), and
+   whether context fields do. Context fields would give default arguments, but the default belongs
+   to the declaration and not to the `fn{C}` type (§5), so a call through a function value would
+   still have to supply every field. Decide that separately.
 
 *Done when:* each step passes the test suite under both backends and `ctest.py --same-c`, and
 FRICTION.md #1 and #12 are struck through.
@@ -206,6 +217,76 @@ The native `ctxc` from stage 3, now with the ctxlang front end, compiles its own
 Choose one: keep ctxi as the executable reference, with every spec change landing in both
 implementations, or freeze it as the bootstrap for a pinned `ctxc` version. Bootstrapping from a
 committed `ctxc.c` would remove the Python dependency entirely.
+
+### 9. Metaprogramming — future
+
+The aim is code generation (serializers, for example) and build logic written in ctxlang, as with
+Zig's `build.zig` and Jai's `#run`, without macros and without making types compile-time values.
+Two facts make this cheaper here than in those languages:
+
+- **Capabilities already mark what is safe to run.** Every effect comes through the context (§1.3)
+  and user code can't construct a capability (§15.3). Code that needs no capability is
+  deterministic and hermetic by construction, so compile-time code needs no separate sandbox rules.
+- **The compiler is a ctxlang library after stage 7.** A program can import the lexer, parser and
+  checker and get a checked program as plain unions and structs, so reflection needs no builtins.
+
+Generated code is written out as real `.ctx` files and compiled in a later step, never spliced
+into the compile that is running. Errors in generated code point at files a person can open, and a
+generator can't observe its own output, which removes the fixed-point problem of generating code
+that changes the types being reflected on.
+
+Steps, each usable on its own:
+
+1. **Build programs.** `build.ctx` declares `fn build { mut b: Build, ... }`. It is compiled and
+   run with the existing pipeline before the program it describes. `Build` is a new capability
+   type whose natives record a build graph: executables, their source roots, and generated files
+   (`build::exe`, `build::gen_file`). Generated files go under `build/gen/` and join the program's
+   file list. A build program declares `Fs` or `Mem` only if it needs them, as `main` does.
+2. **Attributes, parser only.** `#path` or `#path{ field = e, ... }` on its own line before a
+   declaration, a struct field, a union variant or a context field. The parser keeps them in the
+   syntax tree and the checker ignores them. `#` is used rather than `@` because `@` means the
+   compiler acts (§13), knows every name and rejects unknown ones, while attributes are inert data
+   for generators. Compiler-level annotations, if any are added (`@inline`, `@export`), stay under
+   `@`. The `{ }` form is the language's own named-argument syntax, so there is no separate
+   attribute grammar as with Rust's `#[...]`.
+3. **Reflection: `build::check`.** Runs the front end on an executable's sources and gives the build
+   program the checked declarations as data: structs, unions, fields, layouts and attributes.
+   Needs stage 7, since before it the front end is Python and this would have to go through a
+   native.
+4. **Typed attributes.** `#name{ ... }` resolves `name` as a path to a struct (§10) and checks the
+   braces as a const struct literal of it (§7, §14.1). Bare `#name` requires a struct whose every
+   field has a default (3a step 5). The compiler still gives attributes no meaning; the check
+   catches typos such as `#jsno` or `rename_to =`, which would otherwise be dropped silently.
+   Generators receive attributes as typed values. A generator library declares its own:
+
+   ```
+   namespace json {
+       struct derive {}
+       struct field { rename: ?[]u8 = null, skip: bool = false }
+   }
+
+   #json::derive
+   struct User {
+       #json::field{ rename = "user_id" }
+       id: u64,
+       name: []u8,
+   }
+   ```
+
+5. **Compile-time consts.** A `const` initializer may call any function. No capability exists at
+   compile time, apart perhaps from a compile-time arena for allocation, so only effect-free code
+   can run there. ctxc evaluates it with an interpreter over the IR, which is monomorphized, typed
+   and laid out, so the interpreter is much smaller than ctxi. The result must hold no pointers
+   other than ones to static data, the same rule as 3a step 4. Uses: lookup tables, perfect-hash
+   keyword maps, precomputed tables for parsers.
+
+Not planned: generating declarations inside the compile that is running (Zig's `inline for` over
+fields with types as values, or Jai's `#insert`). It needs lazy analysis or a fixed-point loop in
+the checker, and generics would become compile-time values. Revisit only if steps 1–5 fall short
+on real code.
+
+*Done when:* a JSON generator in ctxlang derives `write` and `read` functions for
+`#json::derive` structs, and `examples/json` uses them for a typed round trip.
 
 ### Bootstrap chain
 
