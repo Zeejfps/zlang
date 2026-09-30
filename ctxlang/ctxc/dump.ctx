@@ -56,11 +56,11 @@ namespace dump {
         _ = utf8::push_u64{ b = &out, &heap, n = width }
         if t.nl { put{ &out, &heap, s = " nl" } }
         let k = t.kind
-        if k == tok::EOF {
+        if k == tok::Kind::eof {
             put{ &out, &heap, s = " eof" }
-        } else if k == tok::ERROR {
+        } else if k == tok::Kind::error {
             put{ &out, &heap, s = " error" }
-        } else if k == tok::IDENT {
+        } else if k == tok::Kind::ident {
             put{ &out, &heap, s = " id " }
             raw{ &out, &heap, s }
         } else if tok::is_keyword{ kind = k } {
@@ -69,18 +69,18 @@ namespace dump {
         } else if tok::is_op{ kind = k } {
             put{ &out, &heap, s = " op " }
             raw{ &out, &heap, s }
-        } else if k == tok::BUILTIN {
+        } else if k == tok::Kind::builtin {
             put{ &out, &heap, s = " builtin " }
             raw{ &out, &heap, s = s[1..] }
-        } else if k == tok::INT or k == tok::CHAR {
-            put{ &out, &heap, s = if k == tok::INT { " int " } else { " char " } }
+        } else if k == tok::Kind::int or k == tok::Kind::char {
+            put{ &out, &heap, s = if k == tok::Kind::int { " int " } else { " char " } }
             let v = lexer::int_value{ text = s }
             if v == null {
                 put{ &out, &heap, s = "toobig" }
             } else {
                 _ = utf8::push_u64{ b = &out, &heap, n = v }
             }
-        } else if k == tok::FLOAT {
+        } else if k == tok::Kind::float {
             put{ &out, &heap, s = " float " }
             _ = utf8::push_f64{ b = &out, &heap, n = lexer::float_value{ &heap, text = s } }
         } else {

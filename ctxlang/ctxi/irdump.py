@@ -5,7 +5,8 @@
 The IR is the contract between a front end (this module, later ctxc's own checker) and ctxc's
 backend. Everything the checker left implicit is explicit here: widening, T to ?T, function
 value conversions, narrowed locals, `..` forwarding, `mut` fields as pointers, generic
-instances, layouts and constant values. ctxc/ir.ctx reads it back and ctxc/ir_print.ctx prints
+instances, layouts and constant values. An enum is its base integer type, and a match on one is
+a `switch` on its value. ctxc/ir.ctx reads it back and ctxc/ir_print.ctx prints
 it; the two printers must agree byte for byte.
 
 Text
@@ -20,7 +21,7 @@ spaces. A block is `{`, then each statement on its own line indented two spaces 
 enclosing line, then for a value block `=> EXPR` on its own line, then `}` on its own line at
 the enclosing indent. An empty block is `{}`. Top-level items are one per line:
 
-    ctxir 4
+    ctxir 6
     (files [STR...])                     file names, in the order positions first use them; ""
                                          is a program read from a string
     (type ID TYPE)...                                       in id order
@@ -53,6 +54,8 @@ Statements:
         PAT = (VARIANT [BIND...])                         every PAT binds the same slots
         BIND = (SLOT FIELD BYREF)        BYREF 1: the slot gets the field's address
     (letelse E VARIANT [BIND...] VARIANT|_ [BIND...] BLOCK)
+    (switch E [CASE...])                 E has an integer type; runs the case that lists E's
+        CASE = ([N...]|_ BLOCK)                           value, or else the `_` case
 
 Expressions; each has its type T first:
     (int T N)  (float T F)  (bool T 0|1)  (str T STR)  (null T)
@@ -76,7 +79,7 @@ Expressions; each has its type T first:
     (fnref T FN)                                        or its fn type's field (dcall, dbind)
     (struct T [ARG...])  (variant T VARIANT [ARG...])  (array T [E...])  (repeat T E)
     (ifx T E BLOCK BLOCK)  (matchx T E THROUGH [ARM...])  value blocks; without `=>` a branch
-                                                        always leaves
+    (switchx T E [CASE...])                             always leaves
     (as T E POS)  (trunc T E)  (wrap T OP E E)  (cast T E)  (ptraddr T E)
 """
 
@@ -85,11 +88,11 @@ from .checker import NativeFn
 from .natives import _float_text, _shortest_f32
 from .runtime import Runtime, f32r
 from .types import (
-    Prim, Ptr, SliceT, Arr, Opt, StructT, UnionT, FnT, Cap, VOID, USIZE, BOOL, U8, prune, subst, tkey, tstr,
+    Prim, Ptr, SliceT, Arr, Opt, StructT, UnionT, EnumT, FnT, Cap, VOID, USIZE, BOOL, U8, prune, subst, tkey, tstr,
     qualname, struct_fields, variants_of, widens,
 )
 
-VERSION = 5
+VERSION = 6
 
 
 class Sym(str):
@@ -174,6 +177,8 @@ class Dumper:
 
     def tid(self, t):
         t = prune(t)
+        if isinstance(t, EnumT):
+            t = t.decl.base_t
         k = tkey(t)
         i = self.type_ids.get(k)
         if i is not None:
@@ -276,6 +281,8 @@ class Dumper:
         return [node('defer', self.block(s.body))]
 
     def s_Match(self, s):
+        if isinstance(s.utype, EnumT):
+            return [node('switch', self.ex(s.scrut), self.cases(s, self.block))]
         return [node('match', self.ex(s.scrut), int(s.through), self.arms(s, self.block))]
 
     def s_LetElse(self, s):
@@ -292,6 +299,12 @@ class Dumper:
             pats = [(vindex, self.binds(bvars)) for vindex, bvars in arm.alts] if arm.alts else NONE
             out.append((pats, body(arm.body)))
         return out
+
+    def cases(self, s, body):
+        """A match on an enum: each arm by the values of its variants."""
+        values = s.utype.decl.values
+        return [([values[vi] for vi, _ in arm.alts] if arm.alts else NONE, body(arm.body))
+                for arm in s.arms]
 
     def binds(self, bvars):
         return [(self.slot(v), fi, int(v.indirect)) for v, fi in bvars]
@@ -313,6 +326,8 @@ class Dumper:
         if isinstance(e, A.If):
             return node('if', self.ex(e.cond), self.value_block(e.then, None),
                         self.value_block(e.els, None))
+        if isinstance(e.utype, EnumT):
+            return node('switch', self.ex(e.scrut), self.cases(e, lambda b: self.value_block(b, None)))
         return node('match', self.ex(e.scrut), int(e.through),
                     self.arms(e, lambda b: self.value_block(b, None)))
 
@@ -372,6 +387,8 @@ class Dumper:
             return node('fnref', self.tid(t), self.fn_id(r[1], [self.T(a) for a in r[2]]))
         if k == 'const':
             return self.ex(r[1].expr)
+        if k == 'enumval':
+            return node('int', self.tid(t), t.decl.values[r[2]])
         return node('variant', self.tid(t), r[2], [])
 
     def var(self, v, pos):
@@ -495,6 +512,8 @@ class Dumper:
                     self.value_block(e.els, t))
 
     def e_Match(self, e, t):
+        if isinstance(e.utype, EnumT):
+            return node('switchx', self.tid(t), self.ex(e.scrut), self.cases(e, lambda b: self.value_block(b, t)))
         return node('matchx', self.tid(t), self.ex(e.scrut), int(e.through),
                     self.arms(e, lambda b: self.value_block(b, t)))
 
@@ -510,12 +529,27 @@ class Dumper:
         if n == 'slice':
             return node('struct', self.tid(t), [(0, self.ex(e.args[0])), (1, self.conv(e.args[1], USIZE))])
         if n == 'as':
+            src = self.T(e.args[0].ty)
+            if isinstance(t, EnumT):
+                return self.to_enum(e, src, t)
+            if isinstance(src, EnumT) and tkey(src.decl.base_t) == tkey(t):
+                return self.ex(e.args[0])
             return node('as', self.tid(t), self.ex(e.args[0]), *self.pos(e.pos))
         if n == 'trunc':
             return node('trunc', self.tid(t), self.ex(e.args[0]))
         if n in WRAP:
             return node('wrap', self.tid(t), Sym(WRAP[n]), self.ex(e.args[0]), self.ex(e.args[1]))
         raise AssertionError(f'@{n} in an expression')
+
+
+    def to_enum(self, e, src, t):
+        """`@as(E, n)`: a case for each variant whose value n's type can hold, which gives that
+        value, and a panic for any other."""
+        cases = [([v], Block([], node('int', self.tid(t), v), True))
+                 for v in t.decl.values if src.lo <= v <= src.hi]
+        msg = f'@as: no variant of {tstr(t)} has this value'.encode()
+        cases.append((NONE, Block([node('panic', *self.pos(e.pos), msg)], None, True)))
+        return node('switchx', self.tid(t), self.ex(e.args[0]), cases)
 
 
 def field_index(st, name):
@@ -694,6 +728,8 @@ class Verifier:
             self.labels = labels
         elif tag == 'match':
             self.arms(s[1], s[2], s[3], None)
+        elif tag == 'switch':
+            self.cases(s[1], s[2], None)
         elif tag == 'letelse':
             t = self.ex(s[1])
             self.binds(t, s[2], s[3], False)
@@ -716,6 +752,19 @@ class Verifier:
                     self.binds(t, v, binds, through)
                 self.expect(len({tuple(sorted(slot for slot, _, _ in binds)) for _, binds in pats}) == 1,
                             "an arm's patterns bind different slots")
+            self.block(body, result_t)
+
+    def cases(self, scrut, cases, result_t):
+        self.expect(self.is_int(self.ex(scrut)), 'switch on a non-integer')
+        seen = set()
+        for i, (values, body) in enumerate(cases):
+            if values == NONE:
+                self.expect(i == len(cases) - 1, 'the else case is not last')
+            else:
+                self.expect(len(values) > 0, 'a case without values')
+                for v in values:
+                    self.expect(v not in seen, f'value {v} in two cases')
+                    seen.add(v)
             self.block(body, result_t)
 
     def binds(self, t, v, binds, through):
@@ -864,6 +913,8 @@ class Verifier:
             self.block(e[4], t)
         elif tag == 'matchx':
             self.arms(e[2], e[3], e[4], t)
+        elif tag == 'switchx':
+            self.cases(e[2], e[3], t)
         elif tag == 'as':
             self.expect(self.is_num(self.ex(e[2])) and self.is_num(t), '@as')
         elif tag == 'trunc':

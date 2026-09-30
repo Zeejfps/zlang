@@ -17,7 +17,7 @@ from . import ast as A
 from .lexer import CompileError
 from .checker import NativeFn
 from .types import (
-    Prim, Ptr, SliceT, Arr, Opt, StructT, UnionT, FnT, Cap, VOID, USIZE, prune, subst, tkey, tstr,
+    Prim, Ptr, SliceT, Arr, Opt, StructT, UnionT, EnumT, FnT, Cap, VOID, USIZE, prune, subst, tkey, tstr,
     qualname,
     struct_fields, variants_of,
 )
@@ -270,6 +270,8 @@ class Runtime:
 
     def layout(self, t):
         t = prune(t)
+        if isinstance(t, EnumT):
+            return self.layout(t.decl.base_t)
         k = tkey(t)
         lay = self.layouts.get(k)
         if lay is not None:
@@ -336,6 +338,8 @@ class Runtime:
 
     def codec(self, t):
         t = prune(t)
+        if isinstance(t, EnumT):
+            t = t.decl.base_t
         if isinstance(t, Prim):
             return CODECS[t.name]
         if isinstance(t, (Ptr, FnT)):
@@ -611,6 +615,8 @@ class Compiler:
         return self.match(e, self.value_block)
 
     def match(self, s, compile_body):
+        if isinstance(s.utype, EnumT):
+            return self.enum_match(s, compile_body)
         rt = self.rt
         lay = rt.layout(self.T(s.utype))
         sv = self.expr(s.scrut)
@@ -650,6 +656,22 @@ class Compiler:
                 else:
                     st(fp + off, ld(v, foff))
             return body(fp)
+        return match
+
+    def enum_match(self, s, compile_body):
+        """A match on an enum: its arms by value, since an enum is its base integer."""
+        values = s.utype.decl.values
+        sv = self.expr(s.scrut)
+        table, other = {}, None
+        for arm in s.arms:
+            body = compile_body(arm.body)
+            if not arm.alts:
+                other = body
+            for vindex, _ in arm.alts:
+                table[values[vindex]] = body
+
+        def match(fp):
+            return table.get(sv(fp), other)(fp)
         return match
 
     def pattern_binds(self, lay, vindex, bvars, through):
@@ -840,6 +862,9 @@ class Compiler:
             return lambda fp: idx
         if k == 'const':
             val = self.rt.const_value(r[1])
+            return lambda fp: val
+        if k == 'enumval':
+            val = r[1].decl.values[r[2]]
             return lambda fp: val
         lay = self.rt.layout(self.T(e.ty))
         buf = bytearray(lay.size)
@@ -1162,6 +1187,17 @@ class Compiler:
         if n == 'as':
             src, dst = self.T(e.args[0].ty), self.T(e.targ_t)
             f = self.expr(e.args[0])
+            if isinstance(dst, EnumT):
+                ok, msg = frozenset(dst.decl.values), f'@as: no variant of {tstr(dst)} has this value'
+
+                def i2e(fp):
+                    v = f(fp)
+                    if v not in ok:
+                        panic(msg, pos)
+                    return v
+                return i2e
+            if isinstance(src, EnumT):
+                src = src.decl.base_t
             if dst.kind == 'float':
                 if dst.name == 'f32':
                     return lambda fp: f32r(float(f(fp)))

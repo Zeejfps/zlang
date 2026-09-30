@@ -40,6 +40,13 @@ class UnionDecl(Node):
         self.name, self.tparams, self.variants, self.pos = name, tparams, variants, pos
 
 
+class EnumDecl(Node):
+    def __init__(self, name, base, variants, pos):
+        # base: the type expression after `:`; variants: list of (name, value expr or None, pos)
+        self.name, self.base, self.variants, self.pos = name, base, variants, pos
+        self.tparams = []
+
+
 class TypeDecl(Node):
     def __init__(self, name, tparams, texpr, pos):
         self.name, self.tparams, self.texpr, self.pos = name, tparams, texpr, pos

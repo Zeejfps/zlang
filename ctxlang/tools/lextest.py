@@ -19,6 +19,7 @@ import glob
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -189,7 +190,7 @@ def main(argv):
                 want = dump(f.read())
         except UnicodeDecodeError:
             lines = have.splitlines()
-            eof = [line for line in lines if line.endswith(' eof')]
+            eof = [line for line in lines if re.fullmatch(r'\d+:\d+\+0( nl)? eof', line)]
             if len(eof) != 1 or not any(line.endswith(' error invalid UTF-8') for line in lines):
                 failed += 1
                 print(f'{label}: not UTF-8, and ctxc has no single eof or no invalid UTF-8 error')

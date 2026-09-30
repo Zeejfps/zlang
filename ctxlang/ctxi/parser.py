@@ -109,6 +109,8 @@ class Parser:
                 return self.struct_decl()
             if tok.val == 'union':
                 return self.union_decl()
+            if tok.val == 'enum':
+                return self.enum_decl()
             if tok.val == 'type':
                 return self.type_decl()
             if tok.val == 'const':
@@ -184,6 +186,25 @@ class Parser:
                 break
         self.expect_op('}')
         return A.UnionDecl(name, tps, variants, pos)
+
+    def enum_decl(self):
+        pos = self.next().pos
+        name = self.ident()
+        if self.is_op('('):
+            self.err('an enum cannot have generic parameters')
+        self.expect_op(':')
+        base = self.type()
+        self.expect_op('{')
+        variants = []
+        while not self.is_op('}'):
+            vpos = self.peek().pos
+            vname = self.ident()
+            value = self.expr() if self.accept_op('=') else None
+            variants.append((vname, value, vpos))
+            if not self.accept_op(','):
+                break
+        self.expect_op('}')
+        return A.EnumDecl(name, base, variants, pos)
 
     def type_decl(self):
         pos = self.next().pos

@@ -41,7 +41,8 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
 14. **ctxi call overhead** (implementation, not language): `slice::get`/`at` made about a million
     calls in one profile. Inlining trivial std accessors in ctxi would speed development.
     *Partly:* slice indexing is built in now, so those calls are gone.
-15. **No equality on payload-less unions.** `union Kind { ident, int, ... }` can only be taken
-    apart with `match`, so `t.kind == Kind::lbrace` doesn't work, and the lexer's token kinds
-    are `u8` consts (`tok::LBRACE`) that lose exhaustiveness checks. `==` on a union whose
-    variants have no payload would let the parser use a real union.
+15. ~~**No enums.** A union has no `==`, so the lexer's token kinds were `u8` consts
+    (`tok::LBRACE`) with no exhaustiveness checks, and a union's `u32` tag would have made each
+    token 4 bytes larger.~~ *Done:* `enum Kind: u8 { ... }` is an integer type with named values,
+    `==`, exhaustive `match` and `@as` to and from integers (spec §12, Enums). Unions stay sum
+    types. The lexer's kinds are `tok::Kind`.

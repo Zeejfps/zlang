@@ -11,80 +11,31 @@
 // token is always an eof token. Error positions are where the token starts, as in ctxi.
 
 namespace tok {
-    // Token kinds. Integers rather than a union, so that the parser can compare them with ==.
-    const EOF: u8 = 0
-    const ERROR: u8 = 1
-    const IDENT: u8 = 2
-    const INT: u8 = 3
-    const FLOAT: u8 = 4
-    const STR: u8 = 5
-    const CHAR: u8 = 6
-    const BUILTIN: u8 = 7          // @name
+    // Token kinds. Keywords are in the order of KEYWORDS, and operators in the order of OPS, so a
+    // table index gives the kind.
+    enum Kind: u8 {
+        eof, error, ident, int, float, str, char,
+        builtin,                    // @name
+        kw_fn, kw_struct, kw_union, kw_enum, kw_type, kw_const, kw_namespace, kw_let, kw_mut,
+        kw_if, kw_else, kw_while, kw_break, kw_continue, kw_match, kw_return, kw_defer,
+        kw_and, kw_or, kw_not, kw_true, kw_false, kw_null,
+        arrow,                      // ->
+        fat_arrow,                  // =>
+        colons,                     // ::
+        dots,                       // ..
+        eq, ne, le, ge, shl, shr,   // == != <= >= << >>
+        lbrace, rbrace, lparen, rparen, lbracket, rbracket, comma, semi, colon, dot,
+        assign,                     // =
+        lt, gt, plus, minus, star, slash, percent, amp, pipe, caret, question,
+    }
 
-    // Keywords, in the order of KEYWORDS.
-    const FN: u8 = 8
-    const STRUCT: u8 = 9
-    const UNION: u8 = 10
-    const TYPE: u8 = 11
-    const CONST: u8 = 12
-    const NAMESPACE: u8 = 13
-    const LET: u8 = 14
-    const MUT: u8 = 15
-    const IF: u8 = 16
-    const ELSE: u8 = 17
-    const WHILE: u8 = 18
-    const BREAK: u8 = 19
-    const CONTINUE: u8 = 20
-    const MATCH: u8 = 21
-    const RETURN: u8 = 22
-    const DEFER: u8 = 23
-    const AND: u8 = 24
-    const OR: u8 = 25
-    const NOT: u8 = 26
-    const TRUE: u8 = 27
-    const FALSE: u8 = 28
-    const NULL: u8 = 29
-
-    const KEYWORDS: [22][]u8 = [
-        "fn", "struct", "union", "type", "const", "namespace", "let", "mut",
-        "if", "else", "while", "break", "continue", "match", "return", "defer", "and", "or", "not",
-        "true", "false", "null",
+    const KEYWORDS: [23][]u8 = [
+        "fn", "struct", "union", "enum", "type", "const", "namespace", "let", "mut",
+        "if", "else", "while", "break", "continue", "match", "return", "defer",
+        "and", "or", "not", "true", "false", "null",
     ]
 
-    // Operators, in the order of OPS: two characters before one, so the longest match wins.
-    const ARROW: u8 = 30           // ->
-    const FAT_ARROW: u8 = 31       // =>
-    const COLONS: u8 = 32          // ::
-    const DOTS: u8 = 33            // ..
-    const EQ: u8 = 34              // ==
-    const NE: u8 = 35              // !=
-    const LE: u8 = 36              // <=
-    const GE: u8 = 37              // >=
-    const SHL: u8 = 38             // <<
-    const SHR: u8 = 39             // >>
-    const LBRACE: u8 = 40
-    const RBRACE: u8 = 41
-    const LPAREN: u8 = 42
-    const RPAREN: u8 = 43
-    const LBRACKET: u8 = 44
-    const RBRACKET: u8 = 45
-    const COMMA: u8 = 46
-    const SEMI: u8 = 47
-    const COLON: u8 = 48
-    const DOT: u8 = 49
-    const ASSIGN: u8 = 50          // =
-    const LT: u8 = 51
-    const GT: u8 = 52
-    const PLUS: u8 = 53
-    const MINUS: u8 = 54
-    const STAR: u8 = 55
-    const SLASH: u8 = 56
-    const PERCENT: u8 = 57
-    const AMP: u8 = 58
-    const PIPE: u8 = 59
-    const CARET: u8 = 60
-    const QUESTION: u8 = 61
-
+    // Two characters before one, so the longest match wins.
     const OPS: [32][]u8 = [
         "->", "=>", "::", "..", "==", "!=", "<=", ">=", "<<", ">>",
         "{", "}", "(", ")", "[", "]", ",", ";", ":", ".", "=", "<", ">",
@@ -92,13 +43,26 @@ namespace tok {
     ]
 
     struct Token {
-        kind: u8,
+        kind: Kind,
         nl:   bool,                // a newline comes before it
         span: source::Span,
     }
 
-    fn is_keyword { kind: u8 } -> bool { return kind >= FN and kind <= NULL }
-    fn is_op { kind: u8 } -> bool { return kind >= ARROW and kind <= QUESTION }
+    fn is_keyword { kind: Kind } -> bool {
+        let n = @as(u8, kind)
+        return n >= @as(u8, Kind::kw_fn) and n <= @as(u8, Kind::kw_null)
+    }
+
+    fn is_op { kind: Kind } -> bool {
+        return @as(u8, kind) >= @as(u8, Kind::arrow)
+    }
+
+    // The kind of KEYWORDS[i] or OPS[i].
+    fn keyword { i: usize } -> Kind { return @as(Kind, @as(usize, Kind::kw_fn) + i) }
+    fn op { i: usize } -> Kind { return @as(Kind, @as(usize, Kind::arrow) + i) }
+
+    // An operator's text.
+    fn op_text { kind: Kind } -> []u8 { return OPS[@as(usize, kind) - @as(usize, Kind::arrow)] }
 }
 
 namespace lexer {
@@ -142,7 +106,7 @@ namespace lexer {
             }
         }
         lx.nl = true
-        add{ &lx, kind = tok::EOF, start = lx.pos }
+        add{ &lx, kind = tok::Kind::eof, start = lx.pos }
         return Lexed{ tokens = list::items{ list = lx.tokens }, comments = list::items{ list = lx.comments } }
     }
 
@@ -162,36 +126,36 @@ namespace lexer {
             if lx.pos == start + 1 {
                 fail{ &lx, start, msg = "expected a builtin name after '@'" }
             } else {
-                add{ &lx, kind = tok::BUILTIN, start }
+                add{ &lx, kind = tok::Kind::builtin, start }
             }
         } else {
             let some{ value = k } = op{ text, i = start } else {
                 unexpected{ &lx }
                 return
             }
-            lx.pos = start + tok::OPS[k - tok::ARROW].len
+            lx.pos = start + tok::op_text{ kind = k }.len
             add{ &lx, kind = k, start }
         }
     }
 
-    fn keyword { word: []u8 } -> u8 {
-        if word.len > 9 or word[0] < 'a' { return tok::IDENT }
+    fn keyword { word: []u8 } -> tok::Kind {
+        if word.len > 9 or word[0] < 'a' { return tok::Kind::ident }
         let kws = tok::KEYWORDS
         let mut i: usize = 0
         while i < kws.len {
-            if slice::eq_bytes{ a = word, b = kws[i] } { return tok::FN + @trunc(u8, i) }
+            if slice::eq_bytes{ a = word, b = kws[i] } { return tok::keyword{ i } }
             i = i + 1
         }
-        return tok::IDENT
+        return tok::Kind::ident
     }
 
-    fn op { text: []u8, i: usize } -> ?u8 {
+    fn op { text: []u8, i: usize } -> ?tok::Kind {
         let ops = tok::OPS
         let mut k: usize = 0
         while k < ops.len {
             let o = ops[k]
             if i + o.len <= text.len and slice::eq_bytes{ a = text[i..i + o.len], b = o } {
-                return tok::ARROW + @trunc(u8, k)
+                return tok::op{ i = k }
             }
             k = k + 1
         }
@@ -204,7 +168,7 @@ namespace lexer {
         let text = lx.text
         let start = lx.pos
         let mut i = start
-        let mut kind = tok::INT
+        let mut kind = tok::Kind::int
         let mut ok = true
         let x = byte{ s = text, i = i + 1 }
         if text[i] == '0' and (x == 'x' or x == 'X' or x == 'b' or x == 'B') {
@@ -224,7 +188,7 @@ namespace lexer {
         } else {
             i = digits_end{ text, i, under = true }
             if byte{ s = text, i } == '.' and is_digit{ c = byte{ s = text, i = i + 1 } } {
-                kind = tok::FLOAT
+                kind = tok::Kind::float
                 i = digits_end{ text, i = i + 1, under = true }
             }
             let e = byte{ s = text, i }
@@ -233,7 +197,7 @@ namespace lexer {
                 let sign = byte{ s = text, i = j }
                 if sign == '+' or sign == '-' { j = j + 1 }
                 if is_digit{ c = byte{ s = text, i = j } } {
-                    kind = tok::FLOAT
+                    kind = tok::Kind::float
                     i = digits_end{ text, i = j, under = false }
                 }
             }
@@ -269,12 +233,19 @@ namespace lexer {
         let s = scan_literal{ text, start, quote }
         let some{ value = p } = s.problem else {
             lx.pos = s.end
-            add{ &lx, kind = if quote == '"' { tok::STR } else { tok::CHAR }, start }
+            add{ &lx, kind = if quote == '"' { tok::Kind::str } else { tok::Kind::char }, start }
             return
         }
         lx.pos = literal_end{ text, i = start + 1, quote }
         let msg = describe{ heap = lx.heap, text, p }
         fail{ &lx, start, msg }
+        // The rest of the error token must still be UTF-8. A bad byte that is the problem itself
+        // has been reported.
+        let skip = match p { non_ascii{ at } => { at } else => { start } }
+        let mut i = start + 1
+        while i < lx.pos {
+            i = if i == skip { i + 1 } else { skip_char{ &lx, i } }
+        }
     }
 
     fn scan_literal { text: []u8, start: usize, quote: u8 } -> Scanned {
@@ -468,7 +439,7 @@ namespace lexer {
     // ---- tokens and diagnostics
 
     // A token of `kind` from start to lx.pos.
-    fn add { mut lx: Lexer, kind: u8, start: usize } {
+    fn add { mut lx: Lexer, kind: tok::Kind, start: usize } {
         let t = tok::Token{ kind, nl = lx.nl, span = span{ lx, start, end = lx.pos } }
         if not list::push{ list = &lx.tokens, heap = lx.heap, item = t } { @panic("lexer: out of memory") }
         lx.nl = false
@@ -477,7 +448,7 @@ namespace lexer {
     // An error token from start to lx.pos, and its diagnostic.
     fn fail { mut lx: Lexer, start: usize, msg: utf8::String } {
         report{ &lx, start, end = lx.pos, msg }
-        add{ &lx, kind = tok::ERROR, start }
+        add{ &lx, kind = tok::Kind::error, start }
     }
 
     fn report { mut lx: Lexer, start: usize, end: usize, msg: utf8::String } {

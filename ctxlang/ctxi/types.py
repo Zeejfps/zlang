@@ -63,6 +63,14 @@ class UnionT(Type):
         self.decl, self.args = decl, tuple(args)
 
 
+class EnumT(Type):
+    """An enum: an integer type with named values. decl.base is its Prim, decl.values the value of
+    each variant, in order."""
+
+    def __init__(self, decl):
+        self.decl = decl
+
+
 class FnT(Type):
     def __init__(self, fields, ret, bound):
         self.fields = tuple(fields)   # (name, mut, type)
@@ -165,6 +173,8 @@ def tstr(t, muts=True):
         return '?' + tstr(t.elem, muts)
     if isinstance(t, Arr):
         return f'[{t.n}]{tstr(t.elem, muts)}'
+    if isinstance(t, EnumT):
+        return qualname(t.decl)
     if isinstance(t, (StructT, UnionT)):
         name = qualname(t.decl)
         if t.args:
@@ -266,6 +276,8 @@ def unify(a, b):
         return a.n == b.n and unify(a.elem, b.elem)
     if isinstance(a, (StructT, UnionT)):
         return a.decl is b.decl and all(unify(x, y) for x, y in zip(a.args, b.args))
+    if isinstance(a, EnumT):
+        return a.decl is b.decl
     if isinstance(a, FnT):
         if a.bound != b.bound or len(a.fields) != len(b.fields):
             return False
@@ -356,8 +368,10 @@ def struct_fields(t):
 
 
 def variants_of(t):
-    """[(name, [(field, type)] or None)] for a UnionT or Opt."""
+    """[(name, [(field, type)] or None)] for a UnionT, Opt or EnumT."""
     t = prune(t)
+    if isinstance(t, EnumT):
+        return [(n, None) for n, _, _ in t.decl.variants]
     if isinstance(t, Opt):
         return [('null', None), ('some', [('value', t.elem)])]
     d = t.decl
@@ -382,6 +396,8 @@ def tkey(t):
         return ('s', id(t.decl), tuple(tkey(a) for a in t.args))
     if isinstance(t, UnionT):
         return ('u', id(t.decl), tuple(tkey(a) for a in t.args))
+    if isinstance(t, EnumT):
+        return ('e', id(t.decl))
     if isinstance(t, FnT):
         return ('fn', t.bound, tuple(sorted((n, m, tkey(ft)) for n, m, ft in t.fields)), tkey(t.ret))
     if isinstance(t, Cap):

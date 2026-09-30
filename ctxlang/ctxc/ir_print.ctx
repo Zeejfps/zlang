@@ -298,6 +298,12 @@ namespace ir_print {
                 char{ &o, c = ' ' }
                 arm_list{ &o, arms, depth }
             }
+            switch{ scrut, cases } => {
+                text{ &o, a = "(switch " }
+                expr{ &o, e = scrut, depth }
+                char{ &o, c = ' ' }
+                case_list{ &o, cases, depth }
+            }
             let_else{ init, variant, binds, els_variant, els_binds, els } => {
                 text{ &o, a = "(letelse " }
                 expr{ &o, e = init, depth }
@@ -317,6 +323,34 @@ namespace ir_print {
     }
 
     // [(VARIANT|_ [BIND...] BLOCK)...]
+    fn case_list { mut o: Out, cases: []ir::Case, depth: u32 } {
+        char{ &o, c = '[' }
+        let mut i: usize = 0
+        while i < cases.len {
+            if i > 0 { char{ &o, c = ' ' } }
+            let c = cases[i]
+            char{ &o, c = '(' }
+            if c.values.len == 0 {
+                char{ &o, c = '_' }
+            } else {
+                char{ &o, c = '[' }
+                let mut j: usize = 0
+                while j < c.values.len {
+                    if j > 0 { char{ &o, c = ' ' } }
+                    if c.values[j].negative { char{ &o, c = '-' } }
+                    num{ &o, n = c.values[j].value }
+                    j = j + 1
+                }
+                char{ &o, c = ']' }
+            }
+            char{ &o, c = ' ' }
+            block{ &o, b = c.body, depth }
+            char{ &o, c = ')' }
+            i = i + 1
+        }
+        char{ &o, c = ']' }
+    }
+
     fn arm_list { mut o: Out, arms: []ir::Arm, depth: u32 } {
         char{ &o, c = '[' }
         let mut i = 0
@@ -488,6 +522,12 @@ namespace ir_print {
                 flag{ &o, b = through }
                 char{ &o, c = ' ' }
                 arm_list{ &o, arms, depth }
+            }
+            switchx{ scrut, cases } => {
+                head{ &o, e, a = "switchx" }
+                sub{ &o, e = scrut, depth }
+                char{ &o, c = ' ' }
+                case_list{ &o, cases, depth }
             }
             convert{ e = x, pos }     => { head{ &o, e, a = "as" }; sub{ &o, e = x, depth }; position{ &o, p = pos } }
             trunc{ e = x }            => { unary{ &o, a = "trunc", ty = e.ty, e = x, depth } }

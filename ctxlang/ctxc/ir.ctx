@@ -78,6 +78,13 @@ namespace ir {
     // A pattern binding: the slot gets payload field `field`, or its address if by_ref.
     struct Bind { slot: u32, field: u32, by_ref: bool }
 
+    // A switch case (a match on an enum): the body runs if the scrutinee has one of the values.
+    // values is empty for `else`.
+    struct Case { values: []Int, body: Block }
+
+    // An integer of any type: value is the magnitude.
+    struct Int { negative: bool, value: u64 }
+
     union Stmt {
         define{ slot: u32, init: Expr },                        // (let SLOT E)
         zero{ slot: u32 },
@@ -91,6 +98,7 @@ namespace ir {
         deferred{ body: Block },
         panic{ pos: Pos, msg: Bytes },
         choose{ scrut: Expr, through: bool, arms: []Arm },       // (match ...)
+        switch{ scrut: Expr, cases: []Case },
         let_else{ init: Expr, variant: u32, binds: []Bind,
                   els_variant: ?u32, els_binds: []Bind, els: Block },
     }
@@ -148,6 +156,7 @@ namespace ir {
         repeat{ elem: *Expr },
         ifx{ c: *Expr, then: Block, els: Block },
         matchx{ scrut: *Expr, through: bool, arms: []Arm },
+        switchx{ scrut: *Expr, cases: []Case },
         convert{ e: *Expr, pos: Pos },                          // (as T E POS)
         trunc{ e: *Expr },
         wrap{ op: ArithOp, a: *Expr, b: *Expr },

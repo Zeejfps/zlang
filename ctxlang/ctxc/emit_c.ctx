@@ -683,6 +683,15 @@ namespace emit {
                 arm_chain{ &e, arms, k, through, union_t = union_type{ e, t = scrut.ty, through }, res = null }
                 put{ &e, a = " }" }
             }
+            switch{ scrut, cases } => {
+                let k = fresh{ &e }
+                put{ &e, a = "{ " }
+                declare{ &e, t = scrut.ty, k }
+                expr{ &e, x = scrut }
+                put{ &e, a = ";" }
+                case_chain{ &e, cases, k, t = scrut.ty, res = null }
+                put{ &e, a = " }" }
+            }
             let_else{ init, variant, binds, els_variant, els_binds, els } => {
                 let k = fresh{ &e }
                 let u = init.ty
@@ -758,6 +767,49 @@ namespace emit {
         }
     }
 
+    // The cases of a switch on _tK, of integer type t: an if-else chain, as for a match.
+    fn case_chain { mut e: E, cases: []ir::Case, k: u32, t: ir::TypeId, res: ?u32 } {
+        let mut i: usize = 0
+        while i < cases.len {
+            let c = cases[i]
+            ch{ &e, c = ' ' }
+            if i > 0 { put{ &e, a = "else " } }
+            if c.values.len > 0 {
+                put{ &e, a = "if (" }
+                let mut j: usize = 0
+                while j < c.values.len {
+                    if j > 0 { put{ &e, a = " || " } }
+                    tmp{ &e, k }
+                    put{ &e, a = " == " }
+                    int_lit{ &e, t, n = c.values[j] }
+                    j = j + 1
+                }
+                put{ &e, a = ") " }
+            }
+            put{ &e, a = "{ " }
+            match res {
+                null          => { block{ &e, b = c.body } }
+                some{ value } => { value_block{ &e, b = c.body, res = value } }
+            }
+            put{ &e, a = " }" }
+            i = i + 1
+        }
+    }
+
+    // An integer literal of type t.
+    fn int_lit { mut e: E, t: ir::TypeId, n: ir::Int } {
+        cast_open{ &e, t }
+        if n.negative {
+            put{ &e, a = "(-(int64_t)" }
+            num{ &e, n = n.value - 1 }
+            put{ &e, a = "LL - 1)" }
+        } else {
+            num{ &e, n = n.value }
+            put{ &e, a = "ULL" }
+        }
+        put{ &e, a = "))" }
+    }
+
     // `_tK.tag == V`
     fn tag_is { mut e: E, k: u32, through: bool, variant: u32 } {
         tmp{ &e, k }
@@ -828,18 +880,7 @@ namespace emit {
 
     fn expr { mut e: E, x: ir::Expr } {
         match x.k {
-            int{ negative, value } => {
-                cast_open{ &e, t = x.ty }
-                if negative {
-                    put{ &e, a = "(-(int64_t)" }
-                    num{ &e, n = value - 1 }
-                    put{ &e, a = "LL - 1)" }
-                } else {
-                    num{ &e, n = value }
-                    put{ &e, a = "ULL" }
-                }
-                put{ &e, a = "))" }
-            }
+            int{ negative, value } => { int_lit{ &e, t = x.ty, n = ir::Int{ negative, value } } }
             float{ value } => {
                 cast_open{ &e, t = x.ty }
                 let mut buf: [32]u8
@@ -1014,6 +1055,19 @@ namespace emit {
                 expr{ &e, x = scrut.* }
                 ch{ &e, c = ';' }
                 arm_chain{ &e, arms, k, through, union_t = union_type{ e, t = scrut.ty, through }, res }
+                ch{ &e, c = ' ' }
+                tmp{ &e, k = res }
+                put{ &e, a = "; })" }
+            }
+            switchx{ scrut, cases } => {
+                let res = fresh{ &e }
+                let k = fresh{ &e }
+                put{ &e, a = "({ " }
+                result_var{ &e, t = x.ty, k = res }
+                declare{ &e, t = scrut.ty, k }
+                expr{ &e, x = scrut.* }
+                ch{ &e, c = ';' }
+                case_chain{ &e, cases, k, t = scrut.ty, res }
                 ch{ &e, c = ' ' }
                 tmp{ &e, k = res }
                 put{ &e, a = "; })" }

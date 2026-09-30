@@ -270,8 +270,9 @@ FRICTION.md #1 and #12 are struck through.
 
 `lexer.ctx` ports `ctxi/lexer.py` (about 500 lines, with `source.ctx` and `diag.ctx`). A token is
 a kind, a newline flag and a span, with no value: the parser reads a literal's value from its
-text (`lexer::int_value`, `float_value`, `char_value`, `str_value`). Kinds are `u8` consts in
-`tok`, not a union, because a union has no `==` (FRICTION.md #15). Comments go in a side list.
+text (`lexer::int_value`, `float_value`, `char_value`, `str_value`). Kinds are an enum,
+`tok::Kind: u8`: enums (spec §12) were added for this (FRICTION.md #15). An enum is its base
+integer type in the IR, and a `match` on one is a `switch` (IR version 6). Comments go in a side list.
 A problem becomes an error token plus a diagnostic, and lexing goes on. `source.ctx` has spans
 and line tables, and `diag.ctx` has the capped diagnostics list that the parser and checker will
 append to.
@@ -486,6 +487,7 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 | `[]T`, `s[i]`, `s[lo..hi]` | `struct { T *m_ptr; uint64_t m_len; }`; `ctx_idx`, `ctx_range` | Bounds checks panic as in ctxi. The runtime's natives see it as `ctx_slice`. |
 | struct | C struct, same field order | Checked with `_Static_assert` on `sizeof` and `offsetof`. |
 | union, `?T` | `struct { uint32_t tag; union { … } p; }` | Tag at 0, payload at `align_up(4, payload align)`. `null` is tag 0. |
+| enum | its base integer type | `match` becomes an if-else chain on the value (IR `switch`). |
 | `Io`, `Fs`, `Mem` | empty struct | Size 0 with GNU C, as in ctxi. |
 | `*T`, `q + n`, `q[i]` | `T*`, pointer arithmetic | Not checked. §12.7 calls a bad pointer UB. |
 | `a[i]` on arrays | index with a bounds check | Panics, as the spec requires. |

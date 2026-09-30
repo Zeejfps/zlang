@@ -4,7 +4,7 @@ Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound funct
 
 ## 1. Top level
 
-1. A program is a sequence of declarations: `fn`, `struct`, `union`, `type`, `const`, `namespace`.
+1. A program is a sequence of declarations: `fn`, `struct`, `union`, `enum`, `type`, `const`, `namespace`.
 2. There is no mutable state at top level. Top-level names may be referenced from anywhere.
 3. All effects (IO, memory, OS) reach a function only through its context.
 4. Source files are UTF-8. Names are ASCII: a letter or `_`, then letters, digits and `_`. Other characters may appear only in comments, which are `// to the end of the line` and `/* ... */` (not nested). String and character literals are ASCII too (§11 Literals).
@@ -121,7 +121,7 @@ match e {
 }
 ```
 
-1. The arms must be exhaustive. `else` matches every variant not listed, and must come last. `else` is an error if every variant is already listed.
+1. The scrutinee is a union, a `?T`, or an enum (§12, Enums). The arms must be exhaustive. `else` matches every variant not listed, and must come last. `else` is an error if every variant is already listed.
 2. Each variant appears in at most one arm, and at most once in it.
 3. An arm may list several patterns separated by `|`; its body runs for any of them. Every pattern must bind the same names, and each name must have the same type and be bound the same way (with or without `&`) in all of them. `else` can't be combined with other patterns.
 4. A pattern `variant{ f }` binds payload field `f` as a read-only local. `variant{ f = x }` binds it under the name `x` instead. A pattern may bind a subset of the fields.
@@ -172,12 +172,12 @@ name::item
 
 1. A namespace holds only top-level declaration kinds (§1). Namespaces may nest.
 2. Inside a namespace, its own items are referenced unqualified.
-3. `::` resolves namespace members and union variants. `.` resolves struct fields.
+3. `::` resolves namespace members and union and enum variants. `.` resolves struct fields.
 
 ### Name lookup
 
 1. Names are in one of two kinds:
-   - **paths:** namespaces, structs, unions, type aliases
+   - **paths:** namespaces, structs, unions, enums, type aliases
    - **values:** locals, context fields, functions, consts
 2. A name is looked up only among names of the kind its position requires:
    - the name before `::` is a path
@@ -300,7 +300,7 @@ Precedence, tightest first:
 2. Integer `+ - *` panic on overflow. `/` and `%` panic on a zero divisor. Use `@wrap_*` (§13) for wrapping arithmetic.
 3. `&`, `|` and `^` apply to two operands of the same integer type, after widening as in rule 1. They act on the two's complement bits and never panic.
 4. `a << n` and `a >> n` shift integer `a` by `n` bits. The result has `a`'s type. `n` may have any integer type and doesn't widen to or from `a`'s. A count below 0, or at or above `a`'s width in bits, panics. `<<` drops the bits shifted out, so it never overflows: `x << 1` wraps where `x * 2` panics. `>>` is arithmetic for signed types (it copies the sign bit) and logical for unsigned ones.
-5. `==` and `!=` work on numbers, `bool` and pointers (by address), and on `?T` against `null`. Other types have no built-in equality.
+5. `==` and `!=` work on numbers, `bool`, pointers (by address) and two values of one enum (§12, Enums), and on `?T` against `null`. Other types have no built-in equality.
 6. `and`, `or` and `not` take and give `bool`. Conditions must be `bool`.
 
 ### Widening
@@ -364,7 +364,7 @@ step  := .field | [index]
 | `[N]T` | every element zero, if `T` has a zero value |
 | `[]T`, `[]mut T` | the empty slice |
 | struct | every field zero, if every field type has a zero value |
-| `*T`, `*mut T`, user-defined unions, `fn{C} -> R`, `&fn{C} -> R`, capability types | none |
+| `*T`, `*mut T`, user-defined unions, enums, `fn{C} -> R`, `&fn{C} -> R`, capability types | none |
 
 4. Reading a variable before it is assigned is a compile error. There is no way to declare uninitialized memory.
 
@@ -379,6 +379,7 @@ step  := .field | [index]
 | `[]T` | read-only slice: a pointer to `T`s and a length. |
 | `[]mut T` | slice whose elements can be written. |
 | `?T` | optional (§8). `?*T` is a nullable pointer. |
+| `enum Name: T { ... }` | integer type with named values (below) |
 | `fn{C} -> R` | unbound function type (§5) |
 | `&fn{C} -> R` | bound function type (§5, §6) |
 | `type Name(G) = T` | alias |
@@ -398,6 +399,31 @@ step  := .field | [index]
 
 1. `a[i]` on an array is bounds-checked. An out-of-bounds index panics.
 2. `a.len` is `N`, of type `usize`.
+
+### Enums
+
+```
+enum Kind: u8 {
+    ident,                  // 0
+    number,                 // 1
+    lbrace = 40,
+    rbrace,                 // 41
+}
+let k = Kind::lbrace
+if k == Kind::rbrace { ... }
+let i = @as(usize, k)       // 40
+```
+
+1. An enum is an integer type with named values. `T`, its base type, is one of `i8`..`i64`, `u8`..`u64` and `usize`. An enum has `T`'s size, alignment and representation.
+2. Variants have no payload. The first variant's value is 0, and each later one's is one more than the variant before it, unless `= e` gives it a value. `e` is a compile-time integer constant (§14). It is an error if a value doesn't fit in `T`, or if two variants have the same value.
+3. An enum can't have generic parameters.
+4. `Name::v` is variant `v`'s value, of type `Name`. An enum converts implicitly to and from no other type (§11, Widening), and has no zero value (§11, Initialization).
+5. `==` and `!=` compare two values of the same enum. No other operator applies to enums.
+6. `match` takes an enum scrutinee as it takes a union one (§8, Match): arms list variants, the arms must be exhaustive, and patterns have no bindings. The scrutinee can't be a pointer to an enum: match on `p.*`. `let` with a pattern (§11, Let-else) doesn't apply to enums.
+7. `@as(U, x)` gives the value of enum `x` in integer type `U`, and panics if it doesn't fit. `@as(E, n)` gives the variant of enum `E` whose value is integer `n`, and panics if there is none (§13).
+8. A const may hold enum values (§14).
+
+An enum is for a closed set whose values matter: table indexes, file formats, a chosen size. A union whose variants have no payload is for a closed set whose values don't.
 
 ### Slices
 
@@ -421,7 +447,7 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 |---|---|---|
 | `@size_of(T)` | `usize` | The size of `T` in bytes. |
 | `@align_of(T)` | `usize` | The required alignment of `T`. A power of two. |
-| `@as(T, x)` | `T` | Converts number `x` to numeric type `T`. Panics if the value isn't representable in `T`. Float to integer rounds toward zero and panics on NaN. Integer to float rounds to nearest. |
+| `@as(T, x)` | `T` | Converts number `x` to numeric type `T`. Panics if the value isn't representable in `T`. Float to integer rounds toward zero and panics on NaN. Integer to float rounds to nearest. Also converts between an enum and an integer type (§12, Enums). |
 | `@trunc(T, x)` | `T` | Converts integer `x` to integer type `T`, keeping the low bits. |
 | `@cast(*U, q)`, `@cast(*mut U, q)` | the target | Reinterprets pointer `q`. Unchecked, except that a `*T` can't be cast to a `*mut U`. |
 | `@slice(p, n)` | `[]T`, or `[]mut T` for a `*mut T` | The slice of `n: usize` elements starting at pointer `p: *T`. Unchecked. |
@@ -431,7 +457,7 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 
 ## 14. Memory
 
-1. The only static memory is the bytes of string literal views (§11 Literals), which are read-only. `const NAME: T = e` declares a constant. `e` must be computable at compile time: literals, other consts, operators, `@size_of`, `@align_of`, and struct, union and array literals of these. `const` data is immutable and its location is unobservable: a const is a value, not a place, so `&C` is an error.
+1. The only static memory is the bytes of string literal views (§11 Literals), which are read-only. `const NAME: T = e` declares a constant. `e` must be computable at compile time: literals, other consts, enum values, operators, `@size_of`, `@align_of`, and struct, union and array literals of these. `const` data is immutable and its location is unobservable: a const is a value, not a place, so `&C` is an error.
 2. Locals and context fields live on the stack.
 3. Memory not on the stack comes from `mem::pages`, which needs the `Mem` capability (§15), or from an allocator function over memory the caller provides. It is accessed only through pointers and slices.
    - Allocators are byte-level: `alloc::Fn(S) = fn{ mut heap: S, mem: Bytes, new: usize, align: usize } -> ?Bytes`. The result must be aligned to `align`.

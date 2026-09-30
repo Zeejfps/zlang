@@ -569,6 +569,124 @@ fn main { mut io: Io } {
 """, '1257\n104\n102.5\n')
 
 
+ENUM = """
+enum Kind: u8 {
+    ident,
+    number,
+    lbrace = 40,
+    rbrace,
+}
+
+enum Sign: i8 { minus = -1, zero, plus }
+"""
+
+
+class Enums(Base):
+    def test_values_and_layout(self):
+        self.assertOutput(ENUM + """
+struct Tok { kind: Kind, len: u32 }
+
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = @as(u64, Kind::number) }
+    io::println_u64{ &io, n = @as(u64, Kind::rbrace) }
+    io::println_i64{ &io, n = @as(i64, Sign::minus) }
+    io::println_i64{ &io, n = @as(i64, Sign::plus) }
+    io::println_u64{ &io, n = @size_of(Kind) }
+    io::println_u64{ &io, n = @size_of(Tok) }
+    io::println_u64{ &io, n = @size_of(Sign) + @align_of(Sign) }
+}
+""", '1\n41\n-1\n1\n1\n8\n2\n')
+
+    def test_equality(self):
+        self.assertOutput(ENUM + """
+fn main { mut io: Io } {
+    let k = Kind::lbrace
+    io::print_bool{ &io, n = k == Kind::lbrace }
+    io::print_bool{ &io, n = k != Kind::lbrace }
+    io::println_bool{ &io, n = Kind::ident == Kind::number }
+}
+""", 'truefalsefalse\n')
+
+    def test_match(self):
+        self.assertOutput(ENUM + """
+fn name { k: Kind } -> utf8::String {
+    return match k {
+        ident => { "ident" }
+        lbrace | rbrace => { "brace" }
+        else => { "other" }
+    }
+}
+
+fn main { mut io: Io } {
+    io::println{ &io, s = name{ k = Kind::rbrace } }
+    io::println{ &io, s = name{ k = Kind::number } }
+    let s = Sign::minus
+    match s {
+        minus => { io::println{ &io, s = "minus" } }
+        zero | plus => { io::println{ &io, s = "not minus" } }
+    }
+}
+""", 'brace\nother\nminus\n')
+
+    def test_from_integer(self):
+        self.assertOutput(ENUM + """
+fn main { mut io: Io } {
+    let n: u32 = 41
+    let k = @as(Kind, n)
+    io::print_bool{ &io, n = k == Kind::rbrace }
+    io::println_bool{ &io, n = @as(Sign, -1) == Sign::minus }
+}
+""", 'truetrue\n')
+        self.assertPanic(ENUM + 'fn main {} { let n = 2\n let k = @as(Kind, n) }',
+                         '@as: no variant of Kind has this value')
+        self.assertPanic(ENUM + 'fn main {} { let n: u16 = 300\n let k = @as(Kind, n) }',
+                         '@as: no variant of Kind has this value')
+        self.assertPanic(ENUM + 'fn main {} { let n = @as(u8, Sign::minus) }',
+                         '@as: -1 is not representable in u8')
+
+    def test_consts(self):
+        self.assertOutput(ENUM + """
+const FIRST: Kind = Kind::lbrace
+const ORDER: [3]Kind = [Kind::rbrace, Kind::ident, Kind::number]
+const BASE: u8 = 200
+enum Big: u8 { a = BASE + 1, b, c = 2 * 3 }
+
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = @as(u64, ORDER[0]) + @as(u64, FIRST) }
+    io::println_u64{ &io, n = @as(u64, Big::b) + @as(u64, Big::c) }
+}
+""", '81\n208\n')
+
+    def test_errors(self):
+        for src, fragment in [
+            ('enum E: f64 { a }', 'enum `E` needs an integer base type, got f64'),
+            ('enum E: u8 { a, a }', 'duplicate variant `a`'),
+            ('enum E: u8 { a = 1, b = 0, c }', '`c` has the same value (1) as `a`'),
+            ('enum E: u8 { a = 255, b }', 'value 256 of `b` does not fit in u8'),
+            ('enum E(T): u8 { a }', 'an enum cannot have generic parameters'),
+            ('enum E: u8 { a = x }', 'an enum value must be a compile-time integer constant'),
+            (ENUM + 'fn f {} { let x = Kind::ident < Kind::number }', '`<` needs numbers, got Kind'),
+            (ENUM + 'fn f {} { let x = Kind::ident + Kind::number }', '`+` needs numbers, got Kind'),
+            (ENUM + 'fn f {} { let k: Kind = 3 }', 'expected Kind, got {integer}'),
+            (ENUM + 'fn f {} { let n: u8 = Kind::ident }', 'expected u8, got Kind'),
+            (ENUM + 'fn f {} { let x = Kind::ident == 0 }', 'cannot compare Kind with {integer}'),
+            (ENUM + 'fn f {} { let x = Kind::ident == Sign::zero }', 'cannot compare Kind with Sign'),
+            (ENUM + 'fn f { k: Kind } { match k { ident => {} number => {} } }',
+             "match isn't exhaustive: missing lbrace, rbrace"),
+            (ENUM + 'fn f { k: Kind } { match k { ident{ x } => {} else => {} } }',
+             'variant `ident` has no payload'),
+            (ENUM + 'fn f { k: *Kind } { match k { ident => {} else => {} } }',
+             'match cannot go through a pointer to an enum'),
+            (ENUM + 'fn f {} { let k = Kind::ident{} }', '`Kind::ident` is an enum value; write it without braces'),
+            (ENUM + 'fn f {} { let k = @as(Kind, 1.5) }', '@as to an enum takes an integer'),
+            (ENUM + 'fn f {} { let x = @as(f64, Kind::ident) }', '@as converts an enum to an integer type'),
+            (ENUM + 'fn f {} { let mut k: Kind\n let j = k }', '`k` may be read before it is assigned'),
+            (ENUM + 'fn f { k: Kind } { let ident = k else { return } }',
+             'a `let` pattern needs a union or optional value, got Kind'),
+        ]:
+            self.assertCompileError(src + '\nfn main {} {}', fragment)
+
+
 class GenericApplication(Base):
     def test_space_before_type_arguments(self):
         self.assertOutput("""

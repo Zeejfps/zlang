@@ -8,7 +8,7 @@ from . import ast as A
 from .lexer import CompileError
 from .parser import parse_type
 from .types import (
-    Prim, PRIMS, I32, USIZE, F64, BOOL, U8, Ptr, SliceT, Arr, Opt, StructT, UnionT, FnT, Cap,
+    Prim, PRIMS, I32, USIZE, F64, BOOL, U8, Ptr, SliceT, Arr, Opt, StructT, UnionT, EnumT, FnT, Cap,
     VOID, NULL, TParam, TVar, prune, subst, tstr, is_int, is_float, is_num, unify,
     fn_accepts, widens, contains_bound_fn, free_vars, struct_fields, variants_of, qualname,
 )
@@ -156,7 +156,7 @@ class Checker:
         # User code sees std names unqualified, and its own declarations shadow them.
         self.std = Namespace(None, self.universe)
         self.root = Namespace(None, self.std)
-        self.fns, self.structs, self.unions, self.aliases, self.consts = [], [], [], [], []
+        self.fns, self.structs, self.unions, self.enums, self.aliases, self.consts = [], [], [], [], [], []
         self.alias_stack = []
         self.const_stack = []
         self.main = None
@@ -191,6 +191,8 @@ class Checker:
             self.resolve_struct(d)
         for d in self.unions:
             self.resolve_union(d)
+        for d in self.enums:
+            self.resolve_enum(d)
         for d in self.aliases:
             if not d.tparams:
                 self.decl_type(d, [], d.pos, partial=False, allow_bound=True)
@@ -224,6 +226,8 @@ class Checker:
                     self.structs.append(d)
                 elif isinstance(d, A.UnionDecl):
                     self.unions.append(d)
+                elif isinstance(d, A.EnumDecl):
+                    self.enums.append(d)
                 else:
                     self.aliases.append(d)
 
@@ -335,6 +339,8 @@ class Checker:
             t = StructT(d, args)
         elif isinstance(d, A.UnionDecl):
             t = UnionT(d, args)
+        elif isinstance(d, A.EnumDecl):
+            t = EnumT(d)
         else:
             if d in self.alias_stack:
                 self.err(f'type alias `{d.name}` refers to itself', pos)
@@ -375,6 +381,28 @@ class Checker:
                 fs.append((name, self.rtype(te, d.ns, tps)))
             d.vtypes.append((v.name, fs))
 
+    def resolve_enum(self, d):
+        """The base type and each variant's value: the one given, or one more than the last."""
+        t = prune(self.rtype(d.base, d.ns, {}))
+        if not (isinstance(t, Prim) and t.kind == 'int'):
+            self.err(f'enum `{d.name}` needs an integer base type, got {tstr(t)}', d.base.pos)
+        d.base_t = t
+        d.values = []
+        names, by_value = set(), {}
+        nxt = 0
+        for name, e, pos in d.variants:
+            if name in names:
+                self.err(f'duplicate variant `{name}`', pos)
+            names.add(name)
+            v = nxt if e is None else self.const_int(e, d.ns, 'an enum value')
+            if not t.lo <= v <= t.hi:
+                self.err(f'value {v} of `{name}` does not fit in {t.name}', pos)
+            if v in by_value:
+                self.err(f'`{name}` has the same value ({v}) as `{by_value[v]}`', pos)
+            by_value[v] = name
+            d.values.append(v)
+            nxt = v + 1
+
     def resolve_sig(self, d):
         tps = dict(zip(d.tparams, d.tparam_objs))
         fields = []
@@ -385,12 +413,14 @@ class Checker:
         d.sig_fields = fields
         d.ret_t = self.rtype(d.ret, d.ns, tps) if d.ret else VOID
 
-    def const_int(self, e, ns):
-        """Evaluate a compile-time integer (array lengths)."""
+    def const_int(self, e, ns, what='array length'):
+        """Evaluate a compile-time integer (array lengths, enum values)."""
         if isinstance(e, A.IntLit):
             return e.val
+        if isinstance(e, A.Unary) and e.op == '-':
+            return -self.const_int(e.expr, ns, what)
         if isinstance(e, A.Binary) and e.op in ('+', '-', '*', '/', '%', '&', '|', '^', '<<', '>>'):
-            a, b = self.const_int(e.lhs, ns), self.const_int(e.rhs, ns)
+            a, b = self.const_int(e.lhs, ns, what), self.const_int(e.rhs, ns, what)
             if e.op in ('/', '%') and b == 0:
                 self.err('division by zero in constant', e.pos)
             if e.op in ('<<', '>>') and not 0 <= b < 64:
@@ -413,10 +443,10 @@ class Checker:
                 if d in self.const_stack:
                     self.err(f'const `{d.name}` refers to itself', e.pos)
                 self.const_stack.append(d)
-                v = self.const_int(d.expr, d.ns)
+                v = self.const_int(d.expr, d.ns, what)
                 self.const_stack.pop()
                 return v
-        self.err('array length must be a compile-time integer constant', e.pos)
+        self.err(f'{what} must be a compile-time integer constant', e.pos)
 
     # ---------------------------------------------------------------- bodies
 
@@ -458,7 +488,7 @@ class Checker:
               A.ArrayRep, A.Coerce, A.Path, A.Builtin, A.Braced)
         if not isinstance(e, ok):
             self.err('a const must be computable at compile time', e.pos)
-        if isinstance(e, A.Path) and e.ref[0] not in ('const', 'variant'):
+        if isinstance(e, A.Path) and e.ref[0] not in ('const', 'variant', 'enumval'):
             self.err('a const may only refer to other consts', e.pos)
         if isinstance(e, A.Builtin) and e.name not in ('size_of', 'align_of'):
             self.err(f'@{e.name} is not allowed in a const', e.pos)
@@ -903,8 +933,11 @@ class Checker:
         st = prune(self.expr(s.scrut))
         through = isinstance(st, Ptr)
         ut = prune(st.elem) if through else st
-        if not isinstance(ut, (UnionT, Opt)):
-            self.err(f'match needs a union or optional value, got {tstr(st)}', s.scrut.pos)
+        if through and isinstance(ut, EnumT):
+            self.err('match cannot go through a pointer to an enum; match on the value with `.*`',
+                     s.scrut.pos)
+        if not isinstance(ut, (UnionT, Opt, EnumT)):
+            self.err(f'match needs a union, enum or optional value, got {tstr(st)}', s.scrut.pos)
         s.through, s.utype = through, ut
         vs = variants_of(ut)
         names = [n for n, _ in vs]
@@ -1303,6 +1336,13 @@ class Checker:
                 if s.name not in names:
                     self.err(f'{tstr(t)} has no variant `{s.name}`', s.pos)
                 return ('variant', t, names.index(s.name))
+            if isinstance(t, EnumT) and last:
+                if s.targs is not None:
+                    self.err('a variant takes no type arguments', s.pos)
+                names = [n for n, _ in variants_of(t)]
+                if s.name not in names:
+                    self.err(f'{tstr(t)} has no variant `{s.name}`', s.pos)
+                return ('enumval', t, names.index(s.name))
             self.err(f'`{prev.name}` has no member `{s.name}`', s.pos)
         return ('path', d, segs[-1])
 
@@ -1347,6 +1387,8 @@ class Checker:
                 if isinstance(pe, UnionT) and pe.decl is ut.decl:
                     unify(ut, pe)
             return ut
+        if k == 'enumval':
+            return r[1]
         self.err(f'`{e.text()}` is a type, not a value', e.pos)
 
     # ---- braced: calls, binds, literals
@@ -1360,6 +1402,8 @@ class Checker:
                 return self.struct_lit(e, r[1], r[2], exp)
             if r[0] == 'variant':
                 return self.variant_lit(e, r[1], r[2], exp)
+            if r[0] == 'enumval':
+                self.err(f'`{c.text()}` is an enum value; write it without braces', e.pos)
             if r[0] == 'fn':
                 c.ty = self.fn_type(r[1], r[2])
                 e.call = ('static', r[1], r[2])
@@ -1537,7 +1581,7 @@ class Checker:
             t = self.operand_type(lt, rt, e)
             if t is None:
                 self.err(f'cannot compare {tstr(lt)} with {tstr(rt)}', e.pos)
-            if not (is_num(t) or t is BOOL or isinstance(t, Ptr)):
+            if not (is_num(t) or t is BOOL or isinstance(t, (Ptr, EnumT))):
                 self.err(f'{tstr(t)} has no built-in equality', e.pos)
             return BOOL
         if op in ('<', '<=', '>', '>='):
@@ -1691,9 +1735,18 @@ class Checker:
                 self.expr(args[0])
             return VOID
         if n == 'as':
+            tt = prune(e.targ_t)
+            if isinstance(tt, EnumT):
+                if not is_int(self.expr(args[0])):
+                    self.err(f'@as to an enum takes an integer, got {tstr(args[0].ty)}', args[0].pos)
+                return tt
+            if isinstance(prune(self.expr(args[0])), EnumT):
+                if not is_int(tt):
+                    self.err(f'@as converts an enum to an integer type, not {tstr(tt)}', e.pos)
+                return tt
             if not is_num(e.targ_t):
                 self.err(f'@as needs a numeric target type, got {tstr(e.targ_t)}', e.pos)
-            if not is_num(self.expr(args[0])):
+            if not is_num(args[0].ty):
                 self.err('@as converts numbers only', args[0].pos)
             return e.targ_t
         if n == 'trunc':

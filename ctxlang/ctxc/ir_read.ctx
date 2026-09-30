@@ -254,6 +254,9 @@ namespace ir_read {
             let scrut = expr{ &r }
             let through = flag{ &r }
             s = ir::Stmt::choose{ scrut, through, arms = arms{ &r } }
+        } else if is{ s = tag, lit = "switch" } {
+            let scrut = expr{ &r }
+            s = ir::Stmt::switch{ scrut, cases = cases{ &r } }
         } else if is{ s = tag, lit = "letelse" } {
             let init = expr{ &r }
             let variant = id32{ &r }
@@ -287,6 +290,29 @@ namespace ir_read {
             let body = block{ &r }
             expect{ &r, c = ')' }
             add{ &r, xs = &xs, item = ir::Arm{ pats, body } }
+        }
+        expect{ &r, c = ']' }
+        return list::items{ list = xs }
+    }
+
+    // [([N...]|_ BLOCK)...]
+    fn cases { mut r: Reader } -> []ir::Case {
+        expect{ &r, c = '[' }
+        let mut xs = list::new(ir::Case){ realloc = arena::alloc }
+        while more{ &r, close = ']' } {
+            expect{ &r, c = '(' }
+            let mut values = list::new(ir::Int){ realloc = arena::alloc }
+            if not none{ &r } {
+                expect{ &r, c = '[' }
+                while more{ &r, close = ']' } {
+                    let negative = eat{ &r, c = '-' }
+                    add{ &r, xs = &values, item = ir::Int{ negative, value = num{ &r } } }
+                }
+                expect{ &r, c = ']' }
+            }
+            let body = block{ &r }
+            expect{ &r, c = ')' }
+            add{ &r, xs = &xs, item = ir::Case{ values = list::items{ list = values }, body } }
         }
         expect{ &r, c = ']' }
         return list::items{ list = xs }
@@ -427,6 +453,9 @@ namespace ir_read {
             let scrut = sub{ &r }
             let through = flag{ &r }
             k = ir::ExprKind::matchx{ scrut, through, arms = arms{ &r } }
+        } else if is{ s = tag, lit = "switchx" } {
+            let scrut = sub{ &r }
+            k = ir::ExprKind::switchx{ scrut, cases = cases{ &r } }
         } else if is{ s = tag, lit = "dcall" } {
             let callee = sub{ &r }
             k = ir::ExprKind::dcall{ callee, args = args{ &r } }
