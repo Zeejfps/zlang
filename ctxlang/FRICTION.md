@@ -13,7 +13,8 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
    paths from a read-only root and in `while` bodies (spec §8 Optional). Mutable places and
    paths through a pointer or index still need a copy.
 3. **A local shadows a function.** After `let binds = ...`, `binds{...}` resolves to the local and
-   fails. Warn, or let calls skip non-function locals.
+   fails. Warn, or let calls skip non-function locals. The lexer renamed a local `span` to `s` to
+   stay clear of the function `span`.
 4. ~~**No shared match arms.** `a | b => { }` would collapse long runs of `x => { true }`.~~
    *Done:* spec §8 Match, rule 3; patterns in an arm may share bindings.
 5. ~~**No labeled break** out of nested loops; flags instead (§16 Q10).~~ *Done:* `name:` labels a
@@ -46,3 +47,17 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
     token 4 bytes larger.~~ *Done:* `enum Kind: u8 { ... }` is an integer type with named values,
     `==`, exhaustive `match` and `@as` to and from integers (spec §12, Enums). Unions stay sum
     types. The lexer's kinds are `tok::Kind`.
+16. **A parameter name can defeat punning.** `utf8::push`, `push_char` and `push_u64` call their
+    builder `b`, so a builder named `out` must be passed as `b = &out`, not `&out`. A std
+    convention (name a builder `b` everywhere, or name the field after its role) would help.
+17. **No `@min` or `@max`.** The lexer writes them out by hand. They could be std functions,
+    generic over integer types.
+18. **`fn main { ... }` without a context misparses.** The first braces are always the context,
+    so `fn main { let x = 1 }` fails with `expected a name, found 'let'`. Writing tests hit this
+    three times. The error could say that a function needs its context `{}` before the body.
+19. **Enum from an index is a chain of compares** (implementation). `@as(Kind, base + i)`, the
+    lexer's keyword and operator lookup, checks every variant in turn (62 for `tok::Kind`). An enum
+    whose values are contiguous could lower to one range check instead.
+20. **Indexing a const table copies the whole table** (implementation). `tok::OPS[i]` inlines
+    all 32 entries at each use, so the lexer copies the table into a local first. Emitting large
+    consts as static data (PLAN.md 3a step 4) would remove the copies.
