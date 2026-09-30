@@ -1,0 +1,108 @@
+// ctxc: the ctxlang compiler, written in ctxlang. A directory is one program: this file holds
+// the driver, ir.ctx the typed IR, ir_read.ctx and ir_print.ctx its text form.
+//
+//   python -m ctxi ctxc roundtrip FILE.ir      reads IR (from `python -m ctxi PROGRAM --ir`)
+//                                              and prints it back; the output must equal FILE.ir
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let roundtrip = "roundtrip"
+    if (args.len != 2 or not map::eq_bytes{ a = slice::get{ s = args, i = 0 }, b = slice::of(u8){ a = &roundtrip } }) {
+        let usage = "usage: ctxc roundtrip FILE.ir"
+        io::eprintln{ &io, s = ascii::of{ chars = &usage } }
+        return 2
+    }
+    let path = slice::get{ s = args, i = 1 }
+
+    // The file, its IR and the output all live in one arena over pages sized to the input.
+    let ok{ value = size } = fs::size{ &fs, path } else {
+        cannot{ &io, path, what = "cannot read" }
+        return 1
+    }
+    let some{ value = pages } = mem::pages{ &mem, size = 16777216 + @as(usize, size) * 24 } else {
+        cannot{ &io, path, what = "out of memory reading" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    let ok{ value = text } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } else {
+        cannot{ &io, path, what = "cannot read" }
+        return 1
+    }
+
+    let mut r = ir_read::reader{ text, heap = &heap }
+    let prog = ir_read::program{ &r }
+    if (r.failed) {
+        report{ &io, path, text, at = r.error_at, problem = r.error }
+        return 1
+    }
+
+    let mut o = ir_print::out{ heap = &heap, types = prog.types }
+    ir_print::program{ &o, p = prog }
+    io::write{ &io, to = io::Stream::out, bytes = list::items{ list = o.bytes } }
+    return 0
+}
+
+// "PATH: what"
+fn cannot(A) { mut io: Io, path: slice::Slice(u8), what: A } {
+    let msg = ascii::of{ chars = &what }
+    io::write{ &io, to = io::Stream::err, bytes = path }
+    let sep = ": "
+    io::eprint{ &io, s = ascii::of{ chars = &sep } }
+    io::eprintln{ &io, s = msg }
+}
+
+// "PATH:LINE:COL: error: PROBLEM" for a malformed IR file.
+fn report { mut io: Io, path: slice::Slice(u8), text: slice::Slice(u8), at: usize, problem: ir_read::Problem } {
+    let mut line: u64 = 1
+    let mut col: u64 = 1
+    let mut i: usize = 0
+    while (i < at and i < text.len) {
+        if (slice::get{ s = text, i } == '\n') {
+            line = line + 1
+            col = 1
+        } else {
+            col = col + 1
+        }
+        i = i + 1
+    }
+    let mut buf: [256]u8
+    let mut heap = arena::new{ buf = slice::of(u8){ a = &buf } }
+    let mut b = ascii::builder{ realloc = arena::alloc }
+    ascii::push_char{ &b, &heap, c = ':' }
+    ascii::push_u64{ &b, &heap, n = line }
+    ascii::push_char{ &b, &heap, c = ':' }
+    ascii::push_u64{ &b, &heap, n = col }
+    let sep = ": error: "
+    ascii::push{ &b, &heap, s = ascii::of{ chars = &sep } }
+    let expected = "expected "
+    let int = "an integer"
+    let large = "integer too large"
+    let symbol = "expected a symbol"
+    let string = "expected a string"
+    let escape = "invalid escape in string"
+    let float = "invalid float"
+    let tag = "unexpected tag"
+    let id = "type id out of order"
+    let trailing = "unexpected text after (main)"
+    match (problem) {
+        expected{ c } => {
+            ascii::push{ &b, &heap, s = ascii::of{ chars = &expected } }
+            ascii::push_char{ &b, &heap, c = '\'' }
+            ascii::push_char{ &b, &heap, c }
+            ascii::push_char{ &b, &heap, c = '\'' }
+        }
+        expected_int => {
+            ascii::push{ &b, &heap, s = ascii::of{ chars = &expected } }
+            ascii::push{ &b, &heap, s = ascii::of{ chars = &int } }
+        }
+        int_too_large   => { ascii::push{ &b, &heap, s = ascii::of{ chars = &large } } }
+        expected_symbol => { ascii::push{ &b, &heap, s = ascii::of{ chars = &symbol } } }
+        expected_string => { ascii::push{ &b, &heap, s = ascii::of{ chars = &string } } }
+        bad_escape      => { ascii::push{ &b, &heap, s = ascii::of{ chars = &escape } } }
+        bad_float       => { ascii::push{ &b, &heap, s = ascii::of{ chars = &float } } }
+        unknown_tag     => { ascii::push{ &b, &heap, s = ascii::of{ chars = &tag } } }
+        bad_id          => { ascii::push{ &b, &heap, s = ascii::of{ chars = &id } } }
+        trailing_text   => { ascii::push{ &b, &heap, s = ascii::of{ chars = &trailing } } }
+    }
+    io::write{ &io, to = io::Stream::err, bytes = path }
+    io::eprintln{ &io, s = ascii::view{ b } }
+}

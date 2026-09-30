@@ -1,0 +1,151 @@
+// The typed IR: what the front end hands the backend.
+//
+// A program is monomorphized, fully typed and has every implicit step made explicit (widening,
+// T to ?T, function value conversions, narrowed locals, `mut` fields as pointers). Types are
+// interned: two types are equal exactly when their ids are. The text form, its grammar and the
+// meaning of each node are specified in ctxi/irdump.py, which writes it; ir_read.ctx reads it
+// and ir_print.ctx writes it back. The two writers must agree byte for byte.
+//
+// Nothing here owns memory: a Program lives in the arena it was read into.
+
+namespace ir {
+    type Bytes = slice::Slice(u8)
+    type Heap = arena::Arena
+    type TypeId = u32
+
+    struct Program {
+        version: u64,
+        files:   slice::Slice(Bytes),       // positions index this; "" is a program read from a string
+        types:   slice::Slice(Type),        // indexed by TypeId
+        fns:     slice::Slice(Func),        // indexed by function id
+        main:    u32,
+    }
+
+    // A source position: 1-based line and column, and an index into Program.files.
+    struct Pos { line: u32, col: u32, file: u32 }
+
+    // ---- types
+
+    union Prim { i8, i16, i32, i64, u8, u16, u32, u64, usize, f32, f64, bool }
+
+    struct Field { name: Bytes, ty: TypeId, offset: u64 }
+
+    // A variant without a payload has null fields; one with an empty payload `v{}` has none.
+    struct Variant { name: Bytes, fields: ?slice::Slice(Field) }
+
+    // A function type's field or a function's context field. A `mut` one is passed as a pointer.
+    struct Param { name: Bytes, mutable: bool, ty: TypeId }
+
+    union Type {
+        prim{ p: Prim },
+        ptr{ elem: TypeId },
+        arr{ n: u64, elem: TypeId },
+        record{ name: Bytes, size: u64, align: u64, fields: slice::Slice(Field) },
+        // A union or optional: a u32 tag at offset 0, the payload at pay_off. null is tag 0.
+        tagged{ name: Bytes, size: u64, align: u64, pay_off: u64, variants: slice::Slice(Variant) },
+        // Fields sorted by name.
+        func{ bound: bool, params: slice::Slice(Param), ret: TypeId },
+        cap{ name: Bytes },
+        void,
+    }
+
+    // ---- functions
+
+    struct Local { name: Bytes, ty: TypeId }
+
+    // A native has no locals and an empty body. Params are in declaration order and take the
+    // first slots; a `mut` param's slot holds a pointer.
+    struct Func {
+        id:     u32,
+        name:   Bytes,
+        native: bool,
+        params: slice::Slice(Param),
+        ret:    TypeId,
+        locals: slice::Slice(Local),
+        body:   Block,
+    }
+
+    // A value block (a branch of an `if` or `match` expression) has a result unless every path
+    // through it leaves. A statement block never has one.
+    struct Block { stmts: slice::Slice(Stmt), result: ?*Expr }
+
+    // A match arm. variant is null for `else`.
+    struct Arm { variant: ?u32, binds: slice::Slice(Bind), body: Block }
+
+    // A pattern binding: the slot gets payload field `field`, or its address if by_ref.
+    struct Bind { slot: u32, field: u32, by_ref: bool }
+
+    union Stmt {
+        define{ slot: u32, init: Expr },                        // (let SLOT E)
+        zero{ slot: u32 },
+        assign{ place: Expr, value: Expr },                     // (set PLACE E)
+        eval{ e: Expr },                                        // (do E)
+        cond{ c: Expr, then: Block, els: ?Block },              // (if E BLOCK BLOCK|_)
+        loop{ c: Expr, body: Block },                           // (while E BLOCK)
+        brk,
+        cont,
+        ret{ value: ?Expr },
+        deferred{ body: Block },
+        panic{ pos: Pos, msg: Bytes },
+        choose{ scrut: Expr, through: bool, arms: slice::Slice(Arm) },       // (match ...)
+        let_else{ init: Expr, variant: u32, binds: slice::Slice(Bind),
+                  els_variant: ?u32, els_binds: slice::Slice(Bind), els: Block },
+    }
+
+    // ---- expressions
+
+    union ArithOp { add, sub, mul, div, rem }
+    union CmpOp { eq, ne, lt, le, gt, ge }
+
+    // A call's argument, a literal's field: `index` is the param, field or struct field.
+    struct Arg { index: u32, value: Expr }
+
+    struct Expr { ty: TypeId, k: ExprKind }
+
+    union ExprKind {
+        int{ negative: bool, value: u64 },                     // value is the magnitude
+        float{ value: f64 },                                    // an f32's value, if ty is f32
+        boolean{ value: bool },
+        str{ bytes: Bytes },
+        nil,                                                    // (null T)
+        local{ slot: u32 },
+        deref{ ptr: *Expr, pos: Pos },
+        field{ base: *Expr, index: u32 },
+        index{ base: *Expr, i: *Expr, pos: Pos },
+        payload{ base: *Expr, variant: u32, field: u32 },
+        addr{ place: *Expr },
+        seq{ first: *Expr, then: *Expr },
+        neg{ e: *Expr, pos: Pos },
+        lnot{ e: *Expr },                                       // (not T E)
+        land{ a: *Expr, b: *Expr },                             // (and T E E)
+        lor{ a: *Expr, b: *Expr },                              // (or T E E)
+        arith{ op: ArithOp, a: *Expr, b: *Expr, pos: Pos },
+        cmp{ op: CmpOp, a: *Expr, b: *Expr },
+        ptradd{ p: *Expr, n: *Expr },
+        isnull{ e: *Expr },
+        notnull{ e: *Expr },
+        widen{ e: *Expr },
+        some{ e: *Expr },
+        fnconv{ e: *Expr },
+        call{ callee: u32, args: slice::Slice(Arg) },
+        bind{ callee: u32, args: slice::Slice(Arg) },
+        dcall{ callee: *Expr, args: slice::Slice(Arg) },
+        dbind{ callee: *Expr, args: slice::Slice(Arg) },
+        fnref{ callee: u32 },
+        record{ items: slice::Slice(Arg) },                     // (struct T [ARG...])
+        variant{ index: u32, items: slice::Slice(Arg) },
+        array{ elems: slice::Slice(Expr) },
+        repeat{ elem: *Expr },
+        ifx{ c: *Expr, then: Block, els: Block },
+        matchx{ scrut: *Expr, through: bool, arms: slice::Slice(Arm) },
+        convert{ e: *Expr, pos: Pos },                          // (as T E POS)
+        trunc{ e: *Expr },
+        wrap{ op: ArithOp, a: *Expr, b: *Expr },
+        cast{ e: *Expr },
+        ptraddr{ e: *Expr },
+    }
+
+    fn type_of { p: Program, id: TypeId } -> Type {
+        return slice::get{ s = p.types, i = id }
+    }
+}

@@ -1,0 +1,609 @@
+// Writes an ir::Program in the IR's canonical text form (ctxi/irdump.py), byte for byte as
+// ctxi's dumper does.
+//
+//   let mut o = ir_print::out{ heap = &heap, types = prog.types }
+//   ir_print::program{ &o, p = prog }
+//   ... list::items{ list = o.bytes } ...
+
+namespace ir_print {
+    struct Out {
+        bytes: list::List(u8, ir::Heap),
+        heap:  *ir::Heap,
+        types: slice::Slice(ir::Type),      // a float literal's type says how to print it
+    }
+
+    fn out { heap: *ir::Heap, types: slice::Slice(ir::Type) } -> Out {
+        return Out{ bytes = list::new(u8){ realloc = arena::alloc }, heap, types }
+    }
+
+    fn program { mut o: Out, p: ir::Program } {
+        text{ &o, a = "ctxir " }
+        num{ &o, n = p.version }
+        text{ &o, a = "\n(files [" }
+        let mut i: usize = 0
+        while (i < p.files.len) {
+            if (i > 0) { char{ &o, c = ' ' } }
+            quote{ &o, b = slice::get{ s = p.files, i } }
+            i = i + 1
+        }
+        text{ &o, a = "])\n" }
+        i = 0
+        while (i < p.types.len) {
+            text{ &o, a = "(type " }
+            num{ &o, n = i }
+            char{ &o, c = ' ' }
+            type_def{ &o, t = slice::get{ s = p.types, i } }
+            text{ &o, a = ")\n" }
+            i = i + 1
+        }
+        i = 0
+        while (i < p.fns.len) {
+            function{ &o, f = slice::get{ s = p.fns, i } }
+            i = i + 1
+        }
+        text{ &o, a = "(main " }
+        num{ &o, n = p.main }
+        text{ &o, a = ")\n" }
+    }
+
+    fn type_def { mut o: Out, t: ir::Type } {
+        match (t) {
+            prim{ p } => {
+                text{ &o, a = "(prim " }
+                prim{ &o, p }
+            }
+            ptr{ elem } => {
+                text{ &o, a = "(ptr " }
+                num{ &o, n = elem }
+            }
+            arr{ n, elem } => {
+                text{ &o, a = "(arr " }
+                num{ &o, n }
+                char{ &o, c = ' ' }
+                num{ &o, n = elem }
+            }
+            record{ name, size, align, fields } => {
+                text{ &o, a = "(struct " }
+                quote{ &o, b = name }
+                char{ &o, c = ' ' }
+                num{ &o, n = size }
+                char{ &o, c = ' ' }
+                num{ &o, n = align }
+                char{ &o, c = ' ' }
+                field_list{ &o, fields }
+            }
+            tagged{ name, size, align, pay_off, variants } => {
+                text{ &o, a = "(union " }
+                quote{ &o, b = name }
+                char{ &o, c = ' ' }
+                num{ &o, n = size }
+                char{ &o, c = ' ' }
+                num{ &o, n = align }
+                char{ &o, c = ' ' }
+                num{ &o, n = pay_off }
+                text{ &o, a = " [" }
+                let mut i: usize = 0
+                while (i < variants.len) {
+                    if (i > 0) { char{ &o, c = ' ' } }
+                    let v = slice::get{ s = variants, i }
+                    char{ &o, c = '(' }
+                    quote{ &o, b = v.name }
+                    char{ &o, c = ' ' }
+                    match (v.fields) {
+                        null           => { char{ &o, c = '_' } }
+                        some{ value }  => { field_list{ &o, fields = value } }
+                    }
+                    char{ &o, c = ')' }
+                    i = i + 1
+                }
+                char{ &o, c = ']' }
+            }
+            func{ bound, params, ret } => {
+                text{ &o, a = "(fn " }
+                flag{ &o, b = bound }
+                char{ &o, c = ' ' }
+                param_list{ &o, params }
+                char{ &o, c = ' ' }
+                num{ &o, n = ret }
+            }
+            cap{ name } => {
+                text{ &o, a = "(cap " }
+                quote{ &o, b = name }
+            }
+            void => { text{ &o, a = "(void" } }
+        }
+        char{ &o, c = ')' }
+    }
+
+    fn prim { mut o: Out, p: ir::Prim } {
+        match (p) {
+            i8    => { text{ &o, a = "i8" } }
+            i16   => { text{ &o, a = "i16" } }
+            i32   => { text{ &o, a = "i32" } }
+            i64   => { text{ &o, a = "i64" } }
+            u8    => { text{ &o, a = "u8" } }
+            u16   => { text{ &o, a = "u16" } }
+            u32   => { text{ &o, a = "u32" } }
+            u64   => { text{ &o, a = "u64" } }
+            usize => { text{ &o, a = "usize" } }
+            f32   => { text{ &o, a = "f32" } }
+            f64   => { text{ &o, a = "f64" } }
+            bool  => { text{ &o, a = "bool" } }
+        }
+    }
+
+    // [(NAME T OFFSET)...]
+    fn field_list { mut o: Out, fields: slice::Slice(ir::Field) } {
+        char{ &o, c = '[' }
+        let mut i: usize = 0
+        while (i < fields.len) {
+            if (i > 0) { char{ &o, c = ' ' } }
+            let f = slice::get{ s = fields, i }
+            char{ &o, c = '(' }
+            quote{ &o, b = f.name }
+            char{ &o, c = ' ' }
+            num{ &o, n = f.ty }
+            char{ &o, c = ' ' }
+            num{ &o, n = f.offset }
+            char{ &o, c = ')' }
+            i = i + 1
+        }
+        char{ &o, c = ']' }
+    }
+
+    // [(NAME MUT T)...]
+    fn param_list { mut o: Out, params: slice::Slice(ir::Param) } {
+        char{ &o, c = '[' }
+        let mut i: usize = 0
+        while (i < params.len) {
+            if (i > 0) { char{ &o, c = ' ' } }
+            let p = slice::get{ s = params, i }
+            char{ &o, c = '(' }
+            quote{ &o, b = p.name }
+            char{ &o, c = ' ' }
+            flag{ &o, b = p.mutable }
+            char{ &o, c = ' ' }
+            num{ &o, n = p.ty }
+            char{ &o, c = ')' }
+            i = i + 1
+        }
+        char{ &o, c = ']' }
+    }
+
+    fn function { mut o: Out, f: ir::Func } {
+        if (f.native) { text{ &o, a = "(native " } } else { text{ &o, a = "(fn " } }
+        num{ &o, n = f.id }
+        char{ &o, c = ' ' }
+        quote{ &o, b = f.name }
+        char{ &o, c = ' ' }
+        param_list{ &o, params = f.params }
+        char{ &o, c = ' ' }
+        num{ &o, n = f.ret }
+        if (not f.native) {
+            text{ &o, a = " [" }
+            let mut i: usize = 0
+            while (i < f.locals.len) {
+                if (i > 0) { char{ &o, c = ' ' } }
+                let l = slice::get{ s = f.locals, i }
+                char{ &o, c = '(' }
+                quote{ &o, b = l.name }
+                char{ &o, c = ' ' }
+                num{ &o, n = l.ty }
+                char{ &o, c = ')' }
+                i = i + 1
+            }
+            text{ &o, a = "] " }
+            block{ &o, b = f.body, depth = 0 }
+        }
+        text{ &o, a = ")\n" }
+    }
+
+    // ---- statements
+
+    // Statements go on their own lines, indented one level deeper than the line the block opens on.
+    fn block { mut o: Out, b: ir::Block, depth: u32 } {
+        if (b.stmts.len == 0 and b.result == null) {
+            text{ &o, a = "{}" }
+            return
+        }
+        char{ &o, c = '{' }
+        let mut i: usize = 0
+        while (i < b.stmts.len) {
+            newline{ &o, depth = depth + 1 }
+            stmt{ &o, s = slice::get{ s = b.stmts, i }, depth = depth + 1 }
+            i = i + 1
+        }
+        let r = b.result
+        if (r != null) {
+            newline{ &o, depth = depth + 1 }
+            text{ &o, a = "=> " }
+            expr{ &o, e = r.*, depth = depth + 1 }
+        }
+        newline{ &o, depth }
+        char{ &o, c = '}' }
+    }
+
+    fn newline { mut o: Out, depth: u32 } {
+        char{ &o, c = '\n' }
+        let mut i: u32 = 0
+        while (i < depth) {
+            text{ &o, a = "  " }
+            i = i + 1
+        }
+    }
+
+    fn stmt { mut o: Out, s: ir::Stmt, depth: u32 } {
+        match (s) {
+            define{ slot, init } => {
+                text{ &o, a = "(let " }
+                num{ &o, n = slot }
+                char{ &o, c = ' ' }
+                expr{ &o, e = init, depth }
+            }
+            zero{ slot } => {
+                text{ &o, a = "(zero " }
+                num{ &o, n = slot }
+            }
+            assign{ place, value } => {
+                text{ &o, a = "(set " }
+                expr{ &o, e = place, depth }
+                char{ &o, c = ' ' }
+                expr{ &o, e = value, depth }
+            }
+            eval{ e } => {
+                text{ &o, a = "(do " }
+                expr{ &o, e, depth }
+            }
+            cond{ c, then, els } => {
+                text{ &o, a = "(if " }
+                expr{ &o, e = c, depth }
+                char{ &o, c = ' ' }
+                block{ &o, b = then, depth }
+                char{ &o, c = ' ' }
+                match (els) {
+                    null          => { char{ &o, c = '_' } }
+                    some{ value } => { block{ &o, b = value, depth } }
+                }
+            }
+            loop{ c, body } => {
+                text{ &o, a = "(while " }
+                expr{ &o, e = c, depth }
+                char{ &o, c = ' ' }
+                block{ &o, b = body, depth }
+            }
+            brk  => { text{ &o, a = "(break" } }
+            cont => { text{ &o, a = "(continue" } }
+            ret{ value } => {
+                text{ &o, a = "(return " }
+                match (value) {
+                    null          => { char{ &o, c = '_' } }
+                    some{ value } => { expr{ &o, e = value, depth } }
+                }
+            }
+            deferred{ body } => {
+                text{ &o, a = "(defer " }
+                block{ &o, b = body, depth }
+            }
+            panic{ pos, msg } => {
+                text{ &o, a = "(panic" }
+                position{ &o, p = pos }
+                char{ &o, c = ' ' }
+                quote{ &o, b = msg }
+            }
+            choose{ scrut, through, arms } => {
+                text{ &o, a = "(match " }
+                expr{ &o, e = scrut, depth }
+                char{ &o, c = ' ' }
+                flag{ &o, b = through }
+                char{ &o, c = ' ' }
+                arm_list{ &o, arms, depth }
+            }
+            let_else{ init, variant, binds, els_variant, els_binds, els } => {
+                text{ &o, a = "(letelse " }
+                expr{ &o, e = init, depth }
+                char{ &o, c = ' ' }
+                num{ &o, n = variant }
+                char{ &o, c = ' ' }
+                bind_list{ &o, binds }
+                char{ &o, c = ' ' }
+                opt_id{ &o, id = els_variant }
+                char{ &o, c = ' ' }
+                bind_list{ &o, binds = els_binds }
+                char{ &o, c = ' ' }
+                block{ &o, b = els, depth }
+            }
+        }
+        char{ &o, c = ')' }
+    }
+
+    // [(VARIANT|_ [BIND...] BLOCK)...]
+    fn arm_list { mut o: Out, arms: slice::Slice(ir::Arm), depth: u32 } {
+        char{ &o, c = '[' }
+        let mut i: usize = 0
+        while (i < arms.len) {
+            if (i > 0) { char{ &o, c = ' ' } }
+            let a = slice::get{ s = arms, i }
+            char{ &o, c = '(' }
+            opt_id{ &o, id = a.variant }
+            char{ &o, c = ' ' }
+            bind_list{ &o, binds = a.binds }
+            char{ &o, c = ' ' }
+            block{ &o, b = a.body, depth }
+            char{ &o, c = ')' }
+            i = i + 1
+        }
+        char{ &o, c = ']' }
+    }
+
+    // [(SLOT FIELD BYREF)...]
+    fn bind_list { mut o: Out, binds: slice::Slice(ir::Bind) } {
+        char{ &o, c = '[' }
+        let mut i: usize = 0
+        while (i < binds.len) {
+            if (i > 0) { char{ &o, c = ' ' } }
+            let b = slice::get{ s = binds, i }
+            char{ &o, c = '(' }
+            num{ &o, n = b.slot }
+            char{ &o, c = ' ' }
+            num{ &o, n = b.field }
+            char{ &o, c = ' ' }
+            flag{ &o, b = b.by_ref }
+            char{ &o, c = ')' }
+            i = i + 1
+        }
+        char{ &o, c = ']' }
+    }
+
+    // ---- expressions
+
+    fn expr { mut o: Out, e: ir::Expr, depth: u32 } {
+        char{ &o, c = '(' }
+        match (e.k) {
+            int{ negative, value }    => {
+                head{ &o, e, a = "int" }
+                char{ &o, c = ' ' }
+                if (negative) { char{ &o, c = '-' } }
+                num{ &o, n = value }
+            }
+            float{ value }            => { head{ &o, e, a = "float" }; char{ &o, c = ' ' }; float{ &o, v = value, ty = e.ty } }
+            boolean{ value }          => { head{ &o, e, a = "bool" }; char{ &o, c = ' ' }; flag{ &o, b = value } }
+            str{ bytes }              => { head{ &o, e, a = "str" }; char{ &o, c = ' ' }; quote{ &o, b = bytes } }
+            nil                       => { head{ &o, e, a = "null" } }
+            local{ slot }             => { head{ &o, e, a = "local" }; spaced{ &o, n = slot } }
+            deref{ ptr, pos }         => { head{ &o, e, a = "deref" }; sub{ &o, e = ptr, depth }; position{ &o, p = pos } }
+            field{ base, index }      => { head{ &o, e, a = "field" }; sub{ &o, e = base, depth }; spaced{ &o, n = index } }
+            index{ base, i, pos }     => { head{ &o, e, a = "index" }; sub{ &o, e = base, depth }; sub{ &o, e = i, depth }; position{ &o, p = pos } }
+            payload{ base, variant, field } => {
+                head{ &o, e, a = "payload" }
+                sub{ &o, e = base, depth }
+                spaced{ &o, n = variant }
+                spaced{ &o, n = field }
+            }
+            addr{ place }             => { head{ &o, e, a = "addr" }; sub{ &o, e = place, depth } }
+            seq{ first, then }        => { head{ &o, e, a = "seq" }; sub{ &o, e = first, depth }; sub{ &o, e = then, depth } }
+            neg{ e = x, pos }         => { head{ &o, e, a = "neg" }; sub{ &o, e = x, depth }; position{ &o, p = pos } }
+            lnot{ e = x }             => { unary{ &o, a = "not", ty = e.ty, e = x, depth } }
+            land{ a, b }              => { binary{ &o, tag = "and", ty = e.ty, a, b, depth } }
+            lor{ a, b }               => { binary{ &o, tag = "or", ty = e.ty, a, b, depth } }
+            arith{ op, a, b, pos }    => {
+                head{ &o, e, a = "arith" }
+                char{ &o, c = ' ' }
+                arith_op{ &o, op }
+                sub{ &o, e = a, depth }
+                sub{ &o, e = b, depth }
+                position{ &o, p = pos }
+            }
+            cmp{ op, a, b }           => {
+                head{ &o, e, a = "cmp" }
+                char{ &o, c = ' ' }
+                cmp_op{ &o, op }
+                sub{ &o, e = a, depth }
+                sub{ &o, e = b, depth }
+            }
+            ptradd{ p, n }            => { binary{ &o, tag = "ptradd", ty = e.ty, a = p, b = n, depth } }
+            isnull{ e = x }           => { unary{ &o, a = "isnull", ty = e.ty, e = x, depth } }
+            notnull{ e = x }          => { unary{ &o, a = "notnull", ty = e.ty, e = x, depth } }
+            widen{ e = x }            => { unary{ &o, a = "widen", ty = e.ty, e = x, depth } }
+            some{ e = x }             => { unary{ &o, a = "some", ty = e.ty, e = x, depth } }
+            fnconv{ e = x }           => { unary{ &o, a = "fnconv", ty = e.ty, e = x, depth } }
+            call{ callee, args }      => { head{ &o, e, a = "call" }; spaced{ &o, n = callee }; arg_list{ &o, args, depth } }
+            bind{ callee, args }      => { head{ &o, e, a = "bind" }; spaced{ &o, n = callee }; arg_list{ &o, args, depth } }
+            dcall{ callee, args }     => { head{ &o, e, a = "dcall" }; sub{ &o, e = callee, depth }; arg_list{ &o, args, depth } }
+            dbind{ callee, args }     => { head{ &o, e, a = "dbind" }; sub{ &o, e = callee, depth }; arg_list{ &o, args, depth } }
+            fnref{ callee }           => { head{ &o, e, a = "fnref" }; spaced{ &o, n = callee } }
+            record{ items }           => { head{ &o, e, a = "struct" }; arg_list{ &o, args = items, depth } }
+            variant{ index, items }   => { head{ &o, e, a = "variant" }; spaced{ &o, n = index }; arg_list{ &o, args = items, depth } }
+            array{ elems }            => {
+                head{ &o, e, a = "array" }
+                text{ &o, a = " [" }
+                let mut i: usize = 0
+                while (i < elems.len) {
+                    if (i > 0) { char{ &o, c = ' ' } }
+                    expr{ &o, e = slice::get{ s = elems, i }, depth }
+                    i = i + 1
+                }
+                char{ &o, c = ']' }
+            }
+            repeat{ elem }            => { unary{ &o, a = "repeat", ty = e.ty, e = elem, depth } }
+            ifx{ c, then, els }       => {
+                head{ &o, e, a = "ifx" }
+                sub{ &o, e = c, depth }
+                char{ &o, c = ' ' }
+                block{ &o, b = then, depth }
+                char{ &o, c = ' ' }
+                block{ &o, b = els, depth }
+            }
+            matchx{ scrut, through, arms } => {
+                head{ &o, e, a = "matchx" }
+                sub{ &o, e = scrut, depth }
+                char{ &o, c = ' ' }
+                flag{ &o, b = through }
+                char{ &o, c = ' ' }
+                arm_list{ &o, arms, depth }
+            }
+            convert{ e = x, pos }     => { head{ &o, e, a = "as" }; sub{ &o, e = x, depth }; position{ &o, p = pos } }
+            trunc{ e = x }            => { unary{ &o, a = "trunc", ty = e.ty, e = x, depth } }
+            wrap{ op, a, b }          => {
+                head{ &o, e, a = "wrap" }
+                char{ &o, c = ' ' }
+                arith_op{ &o, op }
+                sub{ &o, e = a, depth }
+                sub{ &o, e = b, depth }
+            }
+            cast{ e = x }             => { unary{ &o, a = "cast", ty = e.ty, e = x, depth } }
+            ptraddr{ e = x }          => { unary{ &o, a = "ptraddr", ty = e.ty, e = x, depth } }
+        }
+        char{ &o, c = ')' }
+    }
+
+    // `TAG T`, after the opening parenthesis.
+    fn head(A) { mut o: Out, e: ir::Expr, a: A } {
+        text{ &o, a }
+        spaced{ &o, n = e.ty }
+    }
+
+    // A space, then the expression e points to.
+    fn sub { mut o: Out, e: *ir::Expr, depth: u32 } {
+        char{ &o, c = ' ' }
+        expr{ &o, e = e.*, depth }
+    }
+
+    fn unary(A) { mut o: Out, a: A, ty: ir::TypeId, e: *ir::Expr, depth: u32 } {
+        text{ &o, a }
+        spaced{ &o, n = ty }
+        sub{ &o, e, depth }
+    }
+
+    fn binary(A) { mut o: Out, tag: A, ty: ir::TypeId, a: *ir::Expr, b: *ir::Expr, depth: u32 } {
+        text{ &o, a = tag }
+        spaced{ &o, n = ty }
+        sub{ &o, e = a, depth }
+        sub{ &o, e = b, depth }
+    }
+
+    // ` [(INDEX E)...]`
+    fn arg_list { mut o: Out, args: slice::Slice(ir::Arg), depth: u32 } {
+        text{ &o, a = " [" }
+        let mut i: usize = 0
+        while (i < args.len) {
+            if (i > 0) { char{ &o, c = ' ' } }
+            let a = slice::get{ s = args, i }
+            char{ &o, c = '(' }
+            num{ &o, n = a.index }
+            char{ &o, c = ' ' }
+            expr{ &o, e = a.value, depth }
+            char{ &o, c = ')' }
+            i = i + 1
+        }
+        char{ &o, c = ']' }
+    }
+
+    fn arith_op { mut o: Out, op: ir::ArithOp } {
+        match (op) {
+            add => { text{ &o, a = "add" } }
+            sub => { text{ &o, a = "sub" } }
+            mul => { text{ &o, a = "mul" } }
+            div => { text{ &o, a = "div" } }
+            rem => { text{ &o, a = "rem" } }
+        }
+    }
+
+    fn cmp_op { mut o: Out, op: ir::CmpOp } {
+        match (op) {
+            eq => { text{ &o, a = "eq" } }
+            ne => { text{ &o, a = "ne" } }
+            lt => { text{ &o, a = "lt" } }
+            le => { text{ &o, a = "le" } }
+            gt => { text{ &o, a = "gt" } }
+            ge => { text{ &o, a = "ge" } }
+        }
+    }
+
+    // ---- atoms
+
+    // ` LINE COL FILE`
+    fn position { mut o: Out, p: ir::Pos } {
+        spaced{ &o, n = p.line }
+        spaced{ &o, n = p.col }
+        spaced{ &o, n = p.file }
+    }
+
+    fn opt_id { mut o: Out, id: ?u32 } {
+        match (id) {
+            null          => { char{ &o, c = '_' } }
+            some{ value } => { num{ &o, n = value } }
+        }
+    }
+
+    fn flag { mut o: Out, b: bool } {
+        char{ &o, c = if (b) { '1' } else { '0' } }
+    }
+
+    // The shortest text that reads back as v, as an f32 if ty is f32.
+    fn float { mut o: Out, v: f64, ty: ir::TypeId } {
+        let mut buf: [32]u8
+        let into = slice::of(u8){ a = &buf }
+        let mut is32 = false
+        if (ty < o.types.len) {
+            is32 = match (slice::get{ s = o.types, i = ty }) {
+                prim{ p } => { match (p) { f32 => { true } else => { false } } }
+                else      => { false }
+            }
+        }
+        if (is32) {
+            bytes{ &o, b = ascii::fmt_f32{ n = @as(f32, v), into }.bytes }
+        } else {
+            bytes{ &o, b = ascii::fmt_f64{ n = v, into }.bytes }
+        }
+    }
+
+    // A string: printable ASCII other than `"` and `\` as is, every other byte as \xHH.
+    fn quote { mut o: Out, b: ir::Bytes } {
+        char{ &o, c = '"' }
+        let mut i: usize = 0
+        while (i < b.len) {
+            let c = slice::get{ s = b, i }
+            if (c >= 32 and c <= 126 and c != '"' and c != '\\') {
+                char{ &o, c }
+            } else {
+                char{ &o, c = '\\' }
+                char{ &o, c = 'x' }
+                char{ &o, c = hex{ d = c / 16 } }
+                char{ &o, c = hex{ d = c % 16 } }
+            }
+            i = i + 1
+        }
+        char{ &o, c = '"' }
+    }
+
+    fn hex { d: u8 } -> u8 {
+        if (d < 10) { return '0' + d }
+        return 'a' + d - 10
+    }
+
+    // A space, then n.
+    fn spaced { mut o: Out, n: u64 } {
+        char{ &o, c = ' ' }
+        num{ &o, n }
+    }
+
+    fn num { mut o: Out, n: u64 } {
+        let mut buf: [20]u8
+        bytes{ &o, b = ascii::fmt_u64{ n, into = slice::of(u8){ a = &buf } }.bytes }
+    }
+
+    fn text(A) { mut o: Out, a: A } {
+        bytes{ &o, b = slice::of(u8){ a = &a } }
+    }
+
+    fn char { mut o: Out, c: u8 } {
+        if (not list::push{ list = &o.bytes, heap = o.heap, item = c }) { @panic("ir_print: out of memory") }
+    }
+
+    fn bytes { mut o: Out, b: ir::Bytes } {
+        if (not list::reserve{ list = &o.bytes, heap = o.heap, extra = b.len }) { @panic("ir_print: out of memory") }
+        let len = o.bytes.len
+        slice::copy{ dst = slice::sub{ s = o.bytes.items, lo = len, hi = len + b.len }, src = b }
+        o.bytes.len = len + b.len
+    }
+}

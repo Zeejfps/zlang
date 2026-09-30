@@ -2311,6 +2311,100 @@ fn main { mut mem: Mem } { }
         self.assertEqual(out, '0.1 0.1 1e+100\n-2.53.0\n')
 
 
+class IRDump(Base):
+    """ctxi/irdump.py: the typed IR, and ctxc's reader and printer for it."""
+
+    def ir(self, src):
+        from ctxi.__main__ import load
+        from ctxi.irdump import verify
+        return verify(load(src))
+
+    def test_widening_is_explicit(self):
+        text = self.ir("""
+fn f { x: i64 } -> i64 { return x }
+fn main { mut io: Io } {
+    let a: i32 = 5
+    io::println_i64{ &io, n = f{ x = a } }
+}
+""")
+        self.assertRegex(text, r'\(call \d+ \d+ \[\(0 \(widen \d+ \(local \d+ 1\)\)\)\]\)')
+
+    def test_optional_and_narrowing(self):
+        text = self.ir("""
+fn main {} -> i32 {
+    let x: ?i32 = 5
+    if (x != null) { return x }
+    return 0
+}
+""")
+        self.assertIn('(let 0 (some ', text)
+        self.assertIn('(notnull ', text)
+        self.assertRegex(text, r'\(return \(payload \d+ \(local \d+ 0\) 1 0\)\)')
+
+    def test_function_conversion(self):
+        text = self.ir("""
+fn g { a: i32 } -> i32 { return a }
+fn main {} -> i32 {
+    let h: fn{ a: i32, b: i32 } -> i32 = g
+    return h{ a = 1, b = 2 }
+}
+""")
+        self.assertRegex(text, r'\(let 0 \(fnconv \d+ \(fnref \d+ 1\)\)\)')
+        self.assertIn('(dcall ', text)
+
+    def test_generic_instances(self):
+        text = self.ir("""
+fn id(T) { x: T } -> T { return x }
+fn main {} -> i32 {
+    let a = id{ x = 1 }
+    let b = id{ x = true }
+    return a
+}
+""")
+        self.assertIn('"id(i32)"', text)
+        self.assertIn('"id(bool)"', text)
+
+    def test_mut_field_is_a_pointer(self):
+        text = self.ir("""
+fn bump { mut n: i32 } { n = n + 1 }
+fn main {} -> i32 {
+    let mut n = 1
+    bump{ &n }
+    return n
+}
+""")
+        self.assertRegex(text, r'\(set \(deref \d+ \(local \d+ 0\) \d+ \d+ \d+\)')
+        self.assertIn('(addr ', text)
+
+    def test_examples_verify(self):
+        from ctxi.irdump import verify
+        from ctxi.__main__ import load_sources
+        for path in ('examples/list.ctx', 'examples/wordcount.ctx', 'examples/json'):
+            verify(load_sources(read_program(os.path.join(ROOT, path))))
+
+    def test_ctxc_roundtrip(self):
+        import tempfile
+        text = self.ir("""
+fn main { mut io: Io } -> i32 {
+    let s = "a \\"quoted\\" \\n line"
+    let x: f32 = 0.1
+    let y = -2.5
+    let n: i64 = -9223372036854775807 - 1
+    let o: ?i32 = 3
+    io::println_f64{ &io, n = x + y }
+    return if (n < 0) { 1 } else { match (o) { null => { 0 } some{ value } => { value } } }
+}
+""")
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 'p.ir')
+            with open(path, 'w', encoding='utf-8', newline='') as f:
+                f.write(text)
+            out = io.BytesIO()
+            code = run_sources(read_program(os.path.join(ROOT, 'ctxc')), out=out, args=['roundtrip', path])
+        self.assertEqual(code, 0)
+        self.assertEqual(out.getvalue().decode(), text)
+
+
 class WordCountExample(Base):
     def setUp(self):
         import tempfile

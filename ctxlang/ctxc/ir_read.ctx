@@ -1,0 +1,706 @@
+// Reads the IR's text form (ctxi/irdump.py) into an ir::Program.
+//
+//   let mut r = ir_read::reader{ text, heap = &heap }
+//   let prog = ir_read::program{ &r }
+//   if (r.failed) { ... r.error, r.error_at ... }
+//
+// Errors are sticky: the first one is recorded, and every read after it returns a placeholder
+// without consuming input, so callers don't check after each step. Strings without escapes are
+// views of `text`, so it must outlive the program. Everything else comes from `heap`.
+
+namespace ir_read {
+    union Problem {
+        expected{ c: u8 },          // this character
+        expected_int,
+        int_too_large,
+        expected_symbol,
+        expected_string,
+        bad_escape,
+        bad_float,
+        unknown_tag,                // a node whose tag isn't valid here
+        bad_id,                     // a type id out of order
+        trailing_text,
+    }
+
+    struct Reader {
+        text:     ir::Bytes,
+        pos:      usize,
+        heap:     *ir::Heap,
+        types:    slice::Slice(ir::Type),   // once they are read: a float's type says if it is f32
+        failed:   bool,
+        error:    Problem,
+        error_at: usize,
+    }
+
+    fn reader { text: ir::Bytes, heap: *ir::Heap } -> Reader {
+        return Reader{
+            text, pos = 0, heap, types = slice::empty(ir::Type){},
+            failed = false, error = Problem::trailing_text, error_at = 0,
+        }
+    }
+
+    // ---- the program
+
+    fn program { mut r: Reader } -> ir::Program {
+        word{ &r, w = "ctxir" }
+        let version = num{ &r }
+        expect{ &r, c = '(' }
+        word{ &r, w = "files" }
+        let files = strings{ &r }
+        expect{ &r, c = ')' }
+
+        let mut types = list::new(ir::Type){ realloc = arena::alloc }
+        let mut fns = list::new(ir::Func){ realloc = arena::alloc }
+        let mut main: u32 = 0
+        while (true) {
+            expect{ &r, c = '(' }
+            if (r.failed) { break }
+            let tag = sym{ &r }
+            if (is{ s = tag, lit = "type" }) {
+                if (id32{ &r } != types.len) { fail{ &r, problem = Problem::bad_id } }
+                add{ &r, xs = &types, item = type_def{ &r } }
+                r.types = list::items{ list = types }
+            } else if (is{ s = tag, lit = "fn" }) {
+                add{ &r, xs = &fns, item = function{ &r, native = false } }
+            } else if (is{ s = tag, lit = "native" }) {
+                add{ &r, xs = &fns, item = function{ &r, native = true } }
+            } else if (is{ s = tag, lit = "main" }) {
+                main = id32{ &r }
+                expect{ &r, c = ')' }
+                break
+            } else {
+                fail{ &r, problem = Problem::unknown_tag }
+            }
+            expect{ &r, c = ')' }
+        }
+        skip_space{ &r }
+        if (r.pos < r.text.len) { fail{ &r, problem = Problem::trailing_text } }
+        return ir::Program{ version, files, types = list::items{ list = types }, fns = list::items{ list = fns }, main }
+    }
+
+    // After `(type ID `: the type, up to its closing parenthesis.
+    fn type_def { mut r: Reader } -> ir::Type {
+        expect{ &r, c = '(' }
+        let tag = sym{ &r }
+        let mut t = ir::Type::void
+        if (is{ s = tag, lit = "prim" }) {
+            t = ir::Type::prim{ p = prim{ &r } }
+        } else if (is{ s = tag, lit = "ptr" }) {
+            t = ir::Type::ptr{ elem = id32{ &r } }
+        } else if (is{ s = tag, lit = "arr" }) {
+            let n = num{ &r }
+            t = ir::Type::arr{ n, elem = id32{ &r } }
+        } else if (is{ s = tag, lit = "struct" }) {
+            let name = string{ &r }
+            let size = num{ &r }
+            let align = num{ &r }
+            t = ir::Type::record{ name, size, align, fields = fields{ &r } }
+        } else if (is{ s = tag, lit = "union" }) {
+            let name = string{ &r }
+            let size = num{ &r }
+            let align = num{ &r }
+            let pay_off = num{ &r }
+            t = ir::Type::tagged{ name, size, align, pay_off, variants = variants{ &r } }
+        } else if (is{ s = tag, lit = "fn" }) {
+            let bound = flag{ &r }
+            let params = params{ &r }
+            t = ir::Type::func{ bound, params, ret = id32{ &r } }
+        } else if (is{ s = tag, lit = "cap" }) {
+            t = ir::Type::cap{ name = string{ &r } }
+        } else if (not is{ s = tag, lit = "void" }) {
+            fail{ &r, problem = Problem::unknown_tag }
+        }
+        expect{ &r, c = ')' }
+        return t
+    }
+
+    fn prim { mut r: Reader } -> ir::Prim {
+        let s = sym{ &r }
+        if (is{ s, lit = "i8" }) { return ir::Prim::i8 }
+        if (is{ s, lit = "i16" }) { return ir::Prim::i16 }
+        if (is{ s, lit = "i32" }) { return ir::Prim::i32 }
+        if (is{ s, lit = "i64" }) { return ir::Prim::i64 }
+        if (is{ s, lit = "u8" }) { return ir::Prim::u8 }
+        if (is{ s, lit = "u16" }) { return ir::Prim::u16 }
+        if (is{ s, lit = "u32" }) { return ir::Prim::u32 }
+        if (is{ s, lit = "u64" }) { return ir::Prim::u64 }
+        if (is{ s, lit = "usize" }) { return ir::Prim::usize }
+        if (is{ s, lit = "f32" }) { return ir::Prim::f32 }
+        if (is{ s, lit = "f64" }) { return ir::Prim::f64 }
+        if (not is{ s, lit = "bool" }) { fail{ &r, problem = Problem::unknown_tag } }
+        return ir::Prim::bool
+    }
+
+    // [(NAME T OFFSET)...]
+    fn fields { mut r: Reader } -> slice::Slice(ir::Field) {
+        expect{ &r, c = '[' }
+        let mut xs = list::new(ir::Field){ realloc = arena::alloc }
+        while (more{ &r, close = ']' }) {
+            expect{ &r, c = '(' }
+            let name = string{ &r }
+            let ty = id32{ &r }
+            let offset = num{ &r }
+            expect{ &r, c = ')' }
+            add{ &r, xs = &xs, item = ir::Field{ name, ty, offset } }
+        }
+        expect{ &r, c = ']' }
+        return list::items{ list = xs }
+    }
+
+    // [(NAME _) or (NAME [FIELD...])...]
+    fn variants { mut r: Reader } -> slice::Slice(ir::Variant) {
+        expect{ &r, c = '[' }
+        let mut xs = list::new(ir::Variant){ realloc = arena::alloc }
+        while (more{ &r, close = ']' }) {
+            expect{ &r, c = '(' }
+            let name = string{ &r }
+            let fs: ?slice::Slice(ir::Field) = if (none{ &r }) { null } else { fields{ &r } }
+            expect{ &r, c = ')' }
+            add{ &r, xs = &xs, item = ir::Variant{ name, fields = fs } }
+        }
+        expect{ &r, c = ']' }
+        return list::items{ list = xs }
+    }
+
+    // [(NAME MUT T)...]
+    fn params { mut r: Reader } -> slice::Slice(ir::Param) {
+        expect{ &r, c = '[' }
+        let mut xs = list::new(ir::Param){ realloc = arena::alloc }
+        while (more{ &r, close = ']' }) {
+            expect{ &r, c = '(' }
+            let name = string{ &r }
+            let mutable = flag{ &r }
+            let ty = id32{ &r }
+            expect{ &r, c = ')' }
+            add{ &r, xs = &xs, item = ir::Param{ name, mutable, ty } }
+        }
+        expect{ &r, c = ']' }
+        return list::items{ list = xs }
+    }
+
+    // After `(fn ` or `(native `, up to the closing parenthesis.
+    fn function { mut r: Reader, native: bool } -> ir::Func {
+        let id = id32{ &r }
+        let name = string{ &r }
+        let params = params{ &r }
+        let ret = id32{ &r }
+        if (native) {
+            return ir::Func{ id, name, native, params, ret, locals = slice::empty(ir::Local){}, body = empty_block{} }
+        }
+        expect{ &r, c = '[' }
+        let mut locals = list::new(ir::Local){ realloc = arena::alloc }
+        while (more{ &r, close = ']' }) {
+            expect{ &r, c = '(' }
+            let lname = string{ &r }
+            let ty = id32{ &r }
+            expect{ &r, c = ')' }
+            add{ &r, xs = &locals, item = ir::Local{ name = lname, ty } }
+        }
+        expect{ &r, c = ']' }
+        let body = block{ &r }
+        return ir::Func{ id, name, native, params, ret, locals = list::items{ list = locals }, body }
+    }
+
+    fn empty_block {} -> ir::Block {
+        return ir::Block{ stmts = slice::empty(ir::Stmt){}, result = null }
+    }
+
+    // ---- statements
+
+    // { STMT... } or { STMT... => EXPR }
+    fn block { mut r: Reader } -> ir::Block {
+        expect{ &r, c = '{' }
+        let mut stmts = list::new(ir::Stmt){ realloc = arena::alloc }
+        let mut result: ?*ir::Expr = null
+        while (more{ &r, close = '}' }) {
+            if (eat{ &r, c = '=' }) {
+                expect{ &r, c = '>' }
+                result = box{ &r, e = expr{ &r } }
+                break
+            }
+            add{ &r, xs = &stmts, item = stmt{ &r } }
+        }
+        expect{ &r, c = '}' }
+        return ir::Block{ stmts = list::items{ list = stmts }, result }
+    }
+
+    fn stmt { mut r: Reader } -> ir::Stmt {
+        expect{ &r, c = '(' }
+        let tag = sym{ &r }
+        let mut s = ir::Stmt::brk
+        if (is{ s = tag, lit = "let" }) {
+            let slot = id32{ &r }
+            s = ir::Stmt::define{ slot, init = expr{ &r } }
+        } else if (is{ s = tag, lit = "do" }) {
+            s = ir::Stmt::eval{ e = expr{ &r } }
+        } else if (is{ s = tag, lit = "set" }) {
+            let place = expr{ &r }
+            s = ir::Stmt::assign{ place, value = expr{ &r } }
+        } else if (is{ s = tag, lit = "if" }) {
+            let c = expr{ &r }
+            let then = block{ &r }
+            let els: ?ir::Block = if (none{ &r }) { null } else { block{ &r } }
+            s = ir::Stmt::cond{ c, then, els }
+        } else if (is{ s = tag, lit = "return" }) {
+            let value: ?ir::Expr = if (none{ &r }) { null } else { expr{ &r } }
+            s = ir::Stmt::ret{ value }
+        } else if (is{ s = tag, lit = "zero" }) {
+            s = ir::Stmt::zero{ slot = id32{ &r } }
+        } else if (is{ s = tag, lit = "while" }) {
+            let c = expr{ &r }
+            s = ir::Stmt::loop{ c, body = block{ &r } }
+        } else if (is{ s = tag, lit = "match" }) {
+            let scrut = expr{ &r }
+            let through = flag{ &r }
+            s = ir::Stmt::choose{ scrut, through, arms = arms{ &r } }
+        } else if (is{ s = tag, lit = "letelse" }) {
+            let init = expr{ &r }
+            let variant = id32{ &r }
+            let binds = bind_list{ &r }
+            let els_variant = opt_id{ &r }
+            let els_binds = bind_list{ &r }
+            s = ir::Stmt::let_else{ init, variant, binds, els_variant, els_binds, els = block{ &r } }
+        } else if (is{ s = tag, lit = "defer" }) {
+            s = ir::Stmt::deferred{ body = block{ &r } }
+        } else if (is{ s = tag, lit = "panic" }) {
+            let at = pos{ &r }
+            s = ir::Stmt::panic{ pos = at, msg = string{ &r } }
+        } else if (is{ s = tag, lit = "continue" }) {
+            s = ir::Stmt::cont
+        } else if (not is{ s = tag, lit = "break" }) {
+            fail{ &r, problem = Problem::unknown_tag }
+        }
+        expect{ &r, c = ')' }
+        return s
+    }
+
+    // [(VARIANT|_ [BIND...] BLOCK)...]
+    fn arms { mut r: Reader } -> slice::Slice(ir::Arm) {
+        expect{ &r, c = '[' }
+        let mut xs = list::new(ir::Arm){ realloc = arena::alloc }
+        while (more{ &r, close = ']' }) {
+            expect{ &r, c = '(' }
+            let variant = opt_id{ &r }
+            let binds = bind_list{ &r }
+            let body = block{ &r }
+            expect{ &r, c = ')' }
+            add{ &r, xs = &xs, item = ir::Arm{ variant, binds, body } }
+        }
+        expect{ &r, c = ']' }
+        return list::items{ list = xs }
+    }
+
+    // [(SLOT FIELD BYREF)...]
+    fn bind_list { mut r: Reader } -> slice::Slice(ir::Bind) {
+        expect{ &r, c = '[' }
+        let mut xs = list::new(ir::Bind){ realloc = arena::alloc }
+        while (more{ &r, close = ']' }) {
+            expect{ &r, c = '(' }
+            let slot = id32{ &r }
+            let field = id32{ &r }
+            let by_ref = flag{ &r }
+            expect{ &r, c = ')' }
+            add{ &r, xs = &xs, item = ir::Bind{ slot, field, by_ref } }
+        }
+        expect{ &r, c = ']' }
+        return list::items{ list = xs }
+    }
+
+    // ---- expressions
+
+    fn expr { mut r: Reader } -> ir::Expr {
+        expect{ &r, c = '(' }
+        let tag = sym{ &r }
+        let ty = id32{ &r }
+        let mut k = ir::ExprKind::nil
+        if (r.failed) {
+            return ir::Expr{ ty, k }
+        }
+        // Roughly by how often each appears.
+        if (is{ s = tag, lit = "local" }) {
+            k = ir::ExprKind::local{ slot = id32{ &r } }
+        } else if (is{ s = tag, lit = "call" }) {
+            let callee = id32{ &r }
+            k = ir::ExprKind::call{ callee, args = args{ &r } }
+        } else if (is{ s = tag, lit = "addr" }) {
+            k = ir::ExprKind::addr{ place = sub{ &r } }
+        } else if (is{ s = tag, lit = "deref" }) {
+            let ptr = sub{ &r }
+            k = ir::ExprKind::deref{ ptr, pos = pos{ &r } }
+        } else if (is{ s = tag, lit = "field" }) {
+            let base = sub{ &r }
+            k = ir::ExprKind::field{ base, index = id32{ &r } }
+        } else if (is{ s = tag, lit = "int" }) {
+            let negative = eat{ &r, c = '-' }
+            k = ir::ExprKind::int{ negative, value = num{ &r } }
+        } else if (is{ s = tag, lit = "cmp" }) {
+            let op = cmp_op{ &r }
+            let a = sub{ &r }
+            k = ir::ExprKind::cmp{ op, a, b = sub{ &r } }
+        } else if (is{ s = tag, lit = "arith" }) {
+            let op = arith_op{ &r }
+            let a = sub{ &r }
+            let b = sub{ &r }
+            k = ir::ExprKind::arith{ op, a, b, pos = pos{ &r } }
+        } else if (is{ s = tag, lit = "variant" }) {
+            let index = id32{ &r }
+            k = ir::ExprKind::variant{ index, items = args{ &r } }
+        } else if (is{ s = tag, lit = "struct" }) {
+            k = ir::ExprKind::record{ items = args{ &r } }
+        } else if (is{ s = tag, lit = "str" }) {
+            k = ir::ExprKind::str{ bytes = string{ &r } }
+        } else if (is{ s = tag, lit = "some" }) {
+            k = ir::ExprKind::some{ e = sub{ &r } }
+        } else if (is{ s = tag, lit = "widen" }) {
+            k = ir::ExprKind::widen{ e = sub{ &r } }
+        } else if (is{ s = tag, lit = "payload" }) {
+            let base = sub{ &r }
+            let variant = id32{ &r }
+            k = ir::ExprKind::payload{ base, variant, field = id32{ &r } }
+        } else if (is{ s = tag, lit = "index" }) {
+            let base = sub{ &r }
+            let i = sub{ &r }
+            k = ir::ExprKind::index{ base, i, pos = pos{ &r } }
+        } else if (is{ s = tag, lit = "null" }) {
+            k = ir::ExprKind::nil
+        } else if (is{ s = tag, lit = "bool" }) {
+            k = ir::ExprKind::boolean{ value = flag{ &r } }
+        } else if (is{ s = tag, lit = "isnull" }) {
+            k = ir::ExprKind::isnull{ e = sub{ &r } }
+        } else if (is{ s = tag, lit = "notnull" }) {
+            k = ir::ExprKind::notnull{ e = sub{ &r } }
+        } else if (is{ s = tag, lit = "not" }) {
+            k = ir::ExprKind::lnot{ e = sub{ &r } }
+        } else if (is{ s = tag, lit = "and" }) {
+            let a = sub{ &r }
+            k = ir::ExprKind::land{ a, b = sub{ &r } }
+        } else if (is{ s = tag, lit = "or" }) {
+            let a = sub{ &r }
+            k = ir::ExprKind::lor{ a, b = sub{ &r } }
+        } else if (is{ s = tag, lit = "ptradd" }) {
+            let p = sub{ &r }
+            k = ir::ExprKind::ptradd{ p, n = sub{ &r } }
+        } else if (is{ s = tag, lit = "fnref" }) {
+            k = ir::ExprKind::fnref{ callee = id32{ &r } }
+        } else if (is{ s = tag, lit = "ifx" }) {
+            let c = sub{ &r }
+            let then = block{ &r }
+            k = ir::ExprKind::ifx{ c, then, els = block{ &r } }
+        } else if (is{ s = tag, lit = "matchx" }) {
+            let scrut = sub{ &r }
+            let through = flag{ &r }
+            k = ir::ExprKind::matchx{ scrut, through, arms = arms{ &r } }
+        } else if (is{ s = tag, lit = "dcall" }) {
+            let callee = sub{ &r }
+            k = ir::ExprKind::dcall{ callee, args = args{ &r } }
+        } else if (is{ s = tag, lit = "as" }) {
+            let e = sub{ &r }
+            k = ir::ExprKind::convert{ e, pos = pos{ &r } }
+        } else if (is{ s = tag, lit = "neg" }) {
+            let e = sub{ &r }
+            k = ir::ExprKind::neg{ e, pos = pos{ &r } }
+        } else if (is{ s = tag, lit = "float" }) {
+            k = ir::ExprKind::float{ value = float{ &r, ty } }
+        } else if (is{ s = tag, lit = "array" }) {
+            k = ir::ExprKind::array{ elems = exprs{ &r } }
+        } else if (is{ s = tag, lit = "repeat" }) {
+            k = ir::ExprKind::repeat{ elem = sub{ &r } }
+        } else if (is{ s = tag, lit = "seq" }) {
+            let first = sub{ &r }
+            k = ir::ExprKind::seq{ first, then = sub{ &r } }
+        } else if (is{ s = tag, lit = "cast" }) {
+            k = ir::ExprKind::cast{ e = sub{ &r } }
+        } else if (is{ s = tag, lit = "ptraddr" }) {
+            k = ir::ExprKind::ptraddr{ e = sub{ &r } }
+        } else if (is{ s = tag, lit = "trunc" }) {
+            k = ir::ExprKind::trunc{ e = sub{ &r } }
+        } else if (is{ s = tag, lit = "wrap" }) {
+            let op = arith_op{ &r }
+            let a = sub{ &r }
+            k = ir::ExprKind::wrap{ op, a, b = sub{ &r } }
+        } else if (is{ s = tag, lit = "fnconv" }) {
+            k = ir::ExprKind::fnconv{ e = sub{ &r } }
+        } else if (is{ s = tag, lit = "bind" }) {
+            let callee = id32{ &r }
+            k = ir::ExprKind::bind{ callee, args = args{ &r } }
+        } else if (is{ s = tag, lit = "dbind" }) {
+            let callee = sub{ &r }
+            k = ir::ExprKind::dbind{ callee, args = args{ &r } }
+        } else {
+            fail{ &r, problem = Problem::unknown_tag }
+        }
+        expect{ &r, c = ')' }
+        return ir::Expr{ ty, k }
+    }
+
+    // An expression, on the heap.
+    fn sub { mut r: Reader } -> *ir::Expr {
+        return box{ &r, e = expr{ &r } }
+    }
+
+    fn box { mut r: Reader, e: ir::Expr } -> *ir::Expr {
+        let some{ value = p } = alloc::new{ realloc = arena::alloc, heap = r.heap, value = e } else {
+            @panic("ir_read: out of memory")
+        }
+        return p
+    }
+
+    // [E...]
+    fn exprs { mut r: Reader } -> slice::Slice(ir::Expr) {
+        expect{ &r, c = '[' }
+        let mut xs = list::new(ir::Expr){ realloc = arena::alloc }
+        while (more{ &r, close = ']' }) {
+            add{ &r, xs = &xs, item = expr{ &r } }
+        }
+        expect{ &r, c = ']' }
+        return list::items{ list = xs }
+    }
+
+    // [(INDEX E)...]
+    fn args { mut r: Reader } -> slice::Slice(ir::Arg) {
+        expect{ &r, c = '[' }
+        let mut xs = list::new(ir::Arg){ realloc = arena::alloc }
+        while (more{ &r, close = ']' }) {
+            expect{ &r, c = '(' }
+            let index = id32{ &r }
+            let value = expr{ &r }
+            expect{ &r, c = ')' }
+            add{ &r, xs = &xs, item = ir::Arg{ index, value } }
+        }
+        expect{ &r, c = ']' }
+        return list::items{ list = xs }
+    }
+
+    fn arith_op { mut r: Reader } -> ir::ArithOp {
+        let s = sym{ &r }
+        if (is{ s, lit = "add" }) { return ir::ArithOp::add }
+        if (is{ s, lit = "sub" }) { return ir::ArithOp::sub }
+        if (is{ s, lit = "mul" }) { return ir::ArithOp::mul }
+        if (is{ s, lit = "div" }) { return ir::ArithOp::div }
+        if (not is{ s, lit = "rem" }) { fail{ &r, problem = Problem::unknown_tag } }
+        return ir::ArithOp::rem
+    }
+
+    fn cmp_op { mut r: Reader } -> ir::CmpOp {
+        let s = sym{ &r }
+        if (is{ s, lit = "eq" }) { return ir::CmpOp::eq }
+        if (is{ s, lit = "ne" }) { return ir::CmpOp::ne }
+        if (is{ s, lit = "lt" }) { return ir::CmpOp::lt }
+        if (is{ s, lit = "le" }) { return ir::CmpOp::le }
+        if (is{ s, lit = "gt" }) { return ir::CmpOp::gt }
+        if (not is{ s, lit = "ge" }) { fail{ &r, problem = Problem::unknown_tag } }
+        return ir::CmpOp::ge
+    }
+
+    // A float literal of type `ty`: an f32 is read as an f32, so it rounds once.
+    fn float { mut r: Reader, ty: ir::TypeId } -> f64 {
+        skip_space{ &r }
+        let start = r.pos
+        while (r.pos < r.text.len and not ends_token{ c = slice::get{ s = r.text, i = r.pos } }) { r.pos = r.pos + 1 }
+        let text = ascii::from{ bytes = slice::sub{ s = r.text, lo = start, hi = r.pos } }
+        let mut is32 = false
+        if (ty < r.types.len) {
+            let prim{ p } = slice::get{ s = r.types, i = ty } else { return 0.0 }
+            is32 = match (p) { f32 => { true } else => { false } }
+        }
+        if (is32) {
+            let some{ value } = ascii::parse_f32{ s = text } else {
+                fail{ &r, problem = Problem::bad_float }
+                return 0.0
+            }
+            return value
+        }
+        let some{ value } = ascii::parse_f64{ s = text } else {
+            fail{ &r, problem = Problem::bad_float }
+            return 0.0
+        }
+        return value
+    }
+
+    // ---- atoms
+
+    fn pos { mut r: Reader } -> ir::Pos {
+        let line = id32{ &r }
+        let col = id32{ &r }
+        return ir::Pos{ line, col, file = id32{ &r } }
+    }
+
+    // [STR...]
+    fn strings { mut r: Reader } -> slice::Slice(ir::Bytes) {
+        expect{ &r, c = '[' }
+        let mut xs = list::new(ir::Bytes){ realloc = arena::alloc }
+        while (more{ &r, close = ']' }) {
+            add{ &r, xs = &xs, item = string{ &r } }
+        }
+        expect{ &r, c = ']' }
+        return list::items{ list = xs }
+    }
+
+    // "...": a view of the text, or a decoded copy if it has escapes.
+    fn string { mut r: Reader } -> ir::Bytes {
+        expect{ &r, c = '"' }
+        let start = r.pos
+        let mut escaped = false
+        while (r.pos < r.text.len) {
+            let c = slice::get{ s = r.text, i = r.pos }
+            if (c == '"') { break }
+            if (c == '\\') { escaped = true }
+            r.pos = r.pos + 1
+        }
+        let raw = slice::sub{ s = r.text, lo = start, hi = r.pos }
+        expect{ &r, c = '"' }
+        if (not escaped or r.failed) { return raw }
+
+        let mut out = list::new(u8){ realloc = arena::alloc }
+        let mut i: usize = 0
+        while (i < raw.len) {
+            let c = slice::get{ s = raw, i }
+            if (c != '\\') {
+                add{ &r, xs = &out, item = c }
+                i = i + 1
+                continue
+            }
+            if (i + 3 >= raw.len or slice::get{ s = raw, i = i + 1 } != 'x') {
+                fail{ &r, problem = Problem::bad_escape }
+                return raw
+            }
+            let some{ value = hi } = hex{ c = slice::get{ s = raw, i = i + 2 } } else {
+                fail{ &r, problem = Problem::bad_escape }
+                return raw
+            }
+            let some{ value = lo } = hex{ c = slice::get{ s = raw, i = i + 3 } } else {
+                fail{ &r, problem = Problem::bad_escape }
+                return raw
+            }
+            add{ &r, xs = &out, item = hi * 16 + lo }
+            i = i + 4
+        }
+        return list::items{ list = out }
+    }
+
+    fn hex { c: u8 } -> ?u8 {
+        if (c >= '0' and c <= '9') { return c - '0' }
+        if (c >= 'a' and c <= 'f') { return c - 'a' + 10 }
+        return null
+    }
+
+    // An unsigned decimal integer.
+    fn num { mut r: Reader } -> u64 {
+        skip_space{ &r }
+        let start = r.pos
+        let mut v: u64 = 0
+        while (r.pos < r.text.len) {
+            let c = slice::get{ s = r.text, i = r.pos }
+            if (c < '0' or c > '9') { break }
+            let d: u64 = c - '0'
+            if (v > (18446744073709551615 - d) / 10) {
+                fail{ &r, problem = Problem::int_too_large }
+                return 0
+            }
+            v = v * 10 + d
+            r.pos = r.pos + 1
+        }
+        if (r.pos == start) { fail{ &r, problem = Problem::expected_int } }
+        return v
+    }
+
+    // An id, slot or index: an integer that fits in a u32.
+    fn id32 { mut r: Reader } -> u32 {
+        let v = num{ &r }
+        if (v > 4294967295) {
+            fail{ &r, problem = Problem::int_too_large }
+            return 0
+        }
+        return @as(u32, v)
+    }
+
+    // `_`, or an id.
+    fn opt_id { mut r: Reader } -> ?u32 {
+        if (none{ &r }) { return null }
+        return id32{ &r }
+    }
+
+    // 0 or 1.
+    fn flag { mut r: Reader } -> bool {
+        let v = num{ &r }
+        if (v > 1) { fail{ &r, problem = Problem::expected_int } }
+        return v == 1
+    }
+
+    // Consumes `_` if it comes next, as a whole token.
+    fn none { mut r: Reader } -> bool {
+        skip_space{ &r }
+        if (r.failed or r.pos >= r.text.len or slice::get{ s = r.text, i = r.pos } != '_') { return false }
+        if (r.pos + 1 < r.text.len and is_ident{ c = slice::get{ s = r.text, i = r.pos + 1 } }) { return false }
+        r.pos = r.pos + 1
+        return true
+    }
+
+    fn sym { mut r: Reader } -> ir::Bytes {
+        skip_space{ &r }
+        let start = r.pos
+        while (r.pos < r.text.len and is_ident{ c = slice::get{ s = r.text, i = r.pos } }) { r.pos = r.pos + 1 }
+        if (r.pos == start) { fail{ &r, problem = Problem::expected_symbol } }
+        return slice::sub{ s = r.text, lo = start, hi = r.pos }
+    }
+
+    // A symbol that must be w.
+    fn word(A) { mut r: Reader, w: A } {
+        let s = sym{ &r }
+        if (not r.failed and not map::eq_bytes{ a = s, b = slice::of(u8){ a = &w } }) {
+            fail{ &r, problem = Problem::unknown_tag }
+        }
+    }
+
+    // Does symbol s spell the string literal `lit`?
+    fn is(A) { s: ir::Bytes, lit: A } -> bool {
+        return map::eq_bytes{ a = s, b = slice::of(u8){ a = &lit } }
+    }
+
+    fn is_ident { c: u8 } -> bool {
+        return (c >= 'a' and c <= 'z') or (c >= '0' and c <= '9') or c == '_'
+    }
+
+    fn ends_token { c: u8 } -> bool {
+        return c == ' ' or c == '\n' or c == ')' or c == ']' or c == '}' or c == '(' or c == '['
+    }
+
+    fn skip_space { mut r: Reader } {
+        while (r.pos < r.text.len) {
+            let c = slice::get{ s = r.text, i = r.pos }
+            if (c != ' ' and c != '\n' and c != '\r' and c != '\t') { break }
+            r.pos = r.pos + 1
+        }
+    }
+
+    // Is there another item before `close`? False after an error, which ends every list.
+    fn more { mut r: Reader, close: u8 } -> bool {
+        skip_space{ &r }
+        if (r.failed or r.pos >= r.text.len) { return false }
+        return slice::get{ s = r.text, i = r.pos } != close
+    }
+
+    // Consumes c if it comes next.
+    fn eat { mut r: Reader, c: u8 } -> bool {
+        skip_space{ &r }
+        if (r.failed or r.pos >= r.text.len or slice::get{ s = r.text, i = r.pos } != c) { return false }
+        r.pos = r.pos + 1
+        return true
+    }
+
+    fn expect { mut r: Reader, c: u8 } {
+        if (not eat{ &r, c }) { fail{ &r, problem = Problem::expected{ c } } }
+    }
+
+    // Records the first error.
+    fn fail { mut r: Reader, problem: Problem } {
+        if (r.failed) { return }
+        r.failed = true
+        r.error = problem
+        r.error_at = r.pos
+    }
+
+    fn add(T) { mut r: Reader, mut xs: list::List(T, ir::Heap), item: T } {
+        if (not list::push{ list = &xs, heap = r.heap, item }) { @panic("ir_read: out of memory") }
+    }
+}

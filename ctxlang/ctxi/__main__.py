@@ -1,6 +1,6 @@
 """ctxi: interpreter for ctxlang.
 
-    python -m ctxi PROGRAM [--check] [--stack BYTES] [args...] [-- args...]
+    python -m ctxi PROGRAM [--check | --ir] [--stack BYTES] [args...] [-- args...]
 
 PROGRAM is a .ctx file, or a directory whose .ctx files together make up one program.
 """
@@ -64,7 +64,11 @@ def run_source(src, file=None, **kw):
 
 def run_sources(sources, out=None, err=None, inp=None, stack_size=16 << 20, args=()):
     """Like run_source, for a program made of several (source, file) pairs."""
-    c = load_sources(sources)
+    return run_checked(load_sources(sources), out=out, err=err, inp=inp, stack_size=stack_size, args=args)
+
+
+def run_checked(c, out=None, err=None, inp=None, stack_size=16 << 20, args=()):
+    """Runs a program load_sources returned. It can run any number of times."""
     rt = Runtime(c, stack_size=stack_size, out=out, err=err, inp=inp)
     main = c.main
     cap = rt.push_bytes(bytes(16), 16)
@@ -109,6 +113,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog='ctxi', description='ctxlang interpreter')
     ap.add_argument('file', help='a .ctx file, or a directory of them')
     ap.add_argument('--check', action='store_true', help='only parse and type-check')
+    ap.add_argument('--ir', action='store_true', help="print the program's typed IR (ctxi/irdump.py)")
     ap.add_argument('--stack', type=int, default=16 << 20, help='stack size in bytes')
     ap.add_argument('args', nargs='*', help="the program's arguments, in main's `args`; "
                                             "put any that start with '-' after --")
@@ -127,6 +132,9 @@ def main(argv=None):
             sources = read_program(a.file)
             if a.check:
                 load_sources(sources)
+            elif a.ir:
+                from .irdump import dump
+                sys.stdout.buffer.write(dump(load_sources(sources)).encode())
             else:
                 result[0] = run_sources(sources, stack_size=a.stack, args=a.args)
         except CompileError as e:
