@@ -502,17 +502,16 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 
 ## 16. Open questions
 
-1. **Dangling pointers across calls:** the escape check (§14) is intraprocedural. Would inferred per-function summaries be worth it?
-2. ~~**Read-only pointers.**~~ Settled: `*T` is read-only and `*mut T` writable (§12), and `@cast` can't drop read-only-ness.
-3. **Allocator instance mismatch:** passing a different `S` instance of the same type isn't caught. Brands would close this.
-4. **Method sugar:** should `x.f{...}` mean `f{ first = &x, ... }`?
-5. **File = namespace:** should each file implicitly be a namespace?
-6. **Imports:** some form of `use list::List` to shorten long paths?
-7. **Variant shorthand:** should `.variant{...}` be allowed when the expected type is known?
-8. **Untagged unions:** needed for C interop? Or `@cast` only?
-9. **Large stack frames:** should the compiler error or warn above a size limit? (Page allocation is now the `Mem` capability, §15.) Should pages be freeable?
-10. ~~**Loop control.**~~ Settled: a `while` can be labeled, and `break name` and `continue name` act on it (§11, rule 10).
-11. ~~**Strings.**~~ Settled: `utf8::String` is the only text type, and `ascii` holds byte-level character tests (§17). A literal is a view where a `[]u8` or `utf8::String` is expected (§11 Literals).
+Settled questions are removed, and the rest keep their numbers.
+
+- **1. Dangling pointers across calls:** the escape check (§14) is intraprocedural. Would inferred per-function summaries be worth it?
+- **3. Allocator instance mismatch:** passing a different `S` instance of the same type isn't caught. Brands would close this.
+- **4. Method sugar:** should `x.f{...}` mean `f{ first = &x, ... }`?
+- **5. File = namespace:** should each file implicitly be a namespace?
+- **6. Imports:** some form of `use list::List` to shorten long paths?
+- **7. Variant shorthand:** should `.variant{...}` be allowed when the expected type is known?
+- **8. Untagged unions:** C-style unions, whose fields share storage with no tag, as C structs such as `SDL_Event` hold. Needed to match C layouts, or is `@cast` (§13) enough? Deferred until there is a C function interface: programs reach C only through the runtime's natives.
+- **9. Large stack frames:** should the compiler error or warn above a size limit? (Page allocation is now the `Mem` capability, §15.) Should pages be freeable?
 
 ## 17. Standard library
 

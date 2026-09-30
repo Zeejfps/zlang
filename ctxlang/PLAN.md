@@ -584,7 +584,7 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 
 - **Checker subtlety.** Literal inference that spans a whole function body, exclusivity and escape
   analysis have many edge cases. Mitigation: IR diffs on every sub-step, and error-fragment tests.
-- **Language friction.** ctxc pushes on method sugar (Q4), imports and files as namespaces (Q5, Q6),
-  ~~labeled `break` (Q10)~~ and ~~string literals as slices (Q11)~~. Each point of friction goes in
+- **Language friction.** ctxc pushes on method sugar (Q4), and imports and files as namespaces
+  (Q5, Q6). Each point of friction goes in
   [FRICTION.md](FRICTION.md) as evidence for these questions.
 - ~~**Stage 3 speed.**~~ The interpreted backend compiles ctxc in about 20s, so it wasn't a problem.
