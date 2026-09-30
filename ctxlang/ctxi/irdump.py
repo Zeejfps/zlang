@@ -20,7 +20,7 @@ spaces. A block is `{`, then each statement on its own line indented two spaces 
 enclosing line, then for a value block `=> EXPR` on its own line, then `}` on its own line at
 the enclosing indent. An empty block is `{}`. Top-level items are one per line:
 
-    ctxir 1
+    ctxir 2
     (files [STR...])                     file names, in the order positions first use them; ""
                                          is a program read from a string
     (type ID TYPE)...                                       in id order
@@ -45,7 +45,8 @@ Statements:
     (let SLOT E)  (zero SLOT)  (set PLACE E)  (do E)  (break)  (continue)  (return E|_)
     (if E BLOCK BLOCK|_)  (while E BLOCK)  (defer BLOCK)  (panic POS STR)
     (match E THROUGH [ARM...])           THROUGH 1: E is a pointer to the union
-        ARM = (VARIANT|_ [BIND...] BLOCK)                 `_` is the else arm
+        ARM = ([PAT...]|_ BLOCK)                          `_` is the else arm
+        PAT = (VARIANT [BIND...])                         every PAT binds the same slots
         BIND = (SLOT FIELD BYREF)        BYREF 1: the slot gets the field's address
     (letelse E VARIANT [BIND...] VARIANT|_ [BIND...] BLOCK)
 
@@ -81,7 +82,7 @@ from .types import (
     qualname, struct_fields, variants_of, widens,
 )
 
-VERSION = 1
+VERSION = 2
 
 
 class Sym(str):
@@ -280,8 +281,8 @@ class Dumper:
     def arms(self, s, body):
         out = []
         for arm in s.arms:
-            binds = self.binds(arm.bvars)
-            out.append((NONE if arm.vindex is None else arm.vindex, binds, body(arm.body)))
+            pats = [(vindex, self.binds(bvars)) for vindex, bvars in arm.alts] if arm.alts else NONE
+            out.append((pats, body(arm.body)))
         return out
 
     def binds(self, bvars):
@@ -656,9 +657,13 @@ class Verifier:
             self.expect(self.kind(t) == 'ptr', 'match through a non-pointer')
             t = self.types[t][1]
         self.expect(self.kind(t) == 'union', 'match on a non-union')
-        for v, binds, body in arms:
-            if v != NONE:
-                self.binds(t, v, binds, through)
+        for pats, body in arms:
+            if pats != NONE:
+                self.expect(len(pats) > 0, 'an arm without patterns')
+                for v, binds in pats:
+                    self.binds(t, v, binds, through)
+                self.expect(len({tuple(sorted(slot for slot, _, _ in binds)) for _, binds in pats}) == 1,
+                            "an arm's patterns bind different slots")
             self.block(body, result_t)
 
     def binds(self, t, v, binds, through):

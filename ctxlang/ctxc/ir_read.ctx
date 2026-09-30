@@ -274,17 +274,31 @@ namespace ir_read {
         return s
     }
 
-    // [(VARIANT|_ [BIND...] BLOCK)...]
+    // [([PAT...]|_ BLOCK)...]
     fn arms { mut r: Reader } -> slice::Slice(ir::Arm) {
         expect{ &r, c = '[' }
         let mut xs = list::new(ir::Arm){ realloc = arena::alloc }
         while (more{ &r, close = ']' }) {
             expect{ &r, c = '(' }
-            let variant = opt_id{ &r }
-            let binds = bind_list{ &r }
+            let pats = if (none{ &r }) { slice::empty(ir::Pat){} } else { pat_list{ &r } }
             let body = block{ &r }
             expect{ &r, c = ')' }
-            add{ &r, xs = &xs, item = ir::Arm{ variant, binds, body } }
+            add{ &r, xs = &xs, item = ir::Arm{ pats, body } }
+        }
+        expect{ &r, c = ']' }
+        return list::items{ list = xs }
+    }
+
+    // [(VARIANT [BIND...])...]
+    fn pat_list { mut r: Reader } -> slice::Slice(ir::Pat) {
+        expect{ &r, c = '[' }
+        let mut xs = list::new(ir::Pat){ realloc = arena::alloc }
+        while (more{ &r, close = ']' }) {
+            expect{ &r, c = '(' }
+            let variant = id32{ &r }
+            let binds = bind_list{ &r }
+            expect{ &r, c = ')' }
+            add{ &r, xs = &xs, item = ir::Pat{ variant, binds } }
         }
         expect{ &r, c = ']' }
         return list::items{ list = xs }

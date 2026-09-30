@@ -792,22 +792,26 @@ class Checker:
         body = self.value_block if value else self.branch_block
         s0 = self.save()
         for i, arm in enumerate(s.arms):
-            arm.bvars = []
-            if arm.variant is None:
+            arm.bvars, arm.alts = [], []
+            if not arm.pats:
                 if i != len(s.arms) - 1:
                     self.err('`else` must be the last arm', arm.pos)
                 if len(seen) == len(names):
                     self.err('`else` is unreachable: every variant is already listed', arm.pos)
                 has_else = True
-                arm.vindex = None
-            else:
-                if arm.variant not in names:
-                    self.err(f'{tstr(ut)} has no variant `{arm.variant}`', arm.pos)
-                if arm.variant in seen:
-                    self.err(f'variant `{arm.variant}` appears in more than one arm', arm.pos)
-                seen.append(arm.variant)
-                arm.vindex = names.index(arm.variant)
-                arm.bvars = self.pattern_vars(vs, arm.vindex, arm.binders, through, scrut_derived, arm.pos)
+            for variant, binders, ppos in arm.pats:
+                if variant not in names:
+                    self.err(f'{tstr(ut)} has no variant `{variant}`', ppos)
+                if variant in seen:
+                    self.err(f'variant `{variant}` appears in more than one arm', ppos)
+                seen.append(variant)
+                vindex = names.index(variant)
+                bvars = self.pattern_vars(vs, vindex, binders, through, scrut_derived, ppos)
+                if arm.alts:
+                    bvars = self.same_binds(arm.pats[0][0], arm.bvars, variant, bvars, ppos)
+                else:
+                    arm.bvars = bvars
+                arm.alts.append((vindex, bvars))
             self.st = State(set(s0.defs), set(s0.maybe), s0.dead)
             branches.append((arm.body, body(arm.body, [v for v, _ in arm.bvars], exp)))
             results.append(self.st)
@@ -819,6 +823,25 @@ class Checker:
         self.st = self.merge(results)
         if value:
             return self.join(s, branches, exp, may_leave)
+
+    def same_binds(self, first, fvars, variant, bvars, pos):
+        """Checks that a later pattern of an arm binds what its first pattern does, and returns its
+        bindings with the first pattern's locals, so each name has one slot."""
+        mine = {v.name: (v, fi) for v, fi in bvars}
+        out = []
+        for fv, _ in fvars:
+            if fv.name not in mine:
+                self.err(f'`{variant}` must bind `{fv.name}`, as `{first}` in the same arm does', pos)
+            v, fi = mine.pop(fv.name)
+            if not unify(v.ty, fv.ty):
+                self.err(f'`{fv.name}` is {tstr(fv.ty)} in `{first}` but {tstr(v.ty)} in `{variant}`', v.pos)
+            if v.indirect != fv.indirect:
+                self.err(f'`{fv.name}` must be bound with `&` in both `{first}` and `{variant}`, or in neither',
+                         v.pos)
+            out.append((fv, fi))
+        for name, (v, _) in mine.items():
+            self.err(f'`{variant}` binds `{name}`, which `{first}` in the same arm does not', v.pos)
+        return out
 
     def pattern_vars(self, vs, vindex, binders, through, derived, pos):
         """The (VarInfo, field index) pairs a pattern for variant vs[vindex] binds."""
@@ -921,7 +944,7 @@ class Checker:
         else:
             self.err('an expression statement must be a call', e.pos)
 
-    # ---- forbidden accesses inside `match (&p)` arms (§8.6)
+    # ---- forbidden accesses inside `match (&p)` arms (§8, Match, rule 7)
 
     def access_path(self, e):
         if isinstance(e, A.Path):

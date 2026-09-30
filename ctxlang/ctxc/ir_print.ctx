@@ -324,9 +324,23 @@ namespace ir_print {
             if (i > 0) { char{ &o, c = ' ' } }
             let a = slice::get{ s = arms, i }
             char{ &o, c = '(' }
-            opt_id{ &o, id = a.variant }
-            char{ &o, c = ' ' }
-            bind_list{ &o, binds = a.binds }
+            if (a.pats.len == 0) {
+                char{ &o, c = '_' }
+            } else {
+                char{ &o, c = '[' }
+                let mut j: usize = 0
+                while (j < a.pats.len) {
+                    if (j > 0) { char{ &o, c = ' ' } }
+                    let p = slice::get{ s = a.pats, i = j }
+                    char{ &o, c = '(' }
+                    num{ &o, n = p.variant }
+                    char{ &o, c = ' ' }
+                    bind_list{ &o, binds = p.binds }
+                    char{ &o, c = ')' }
+                    j = j + 1
+                }
+                char{ &o, c = ']' }
+            }
             char{ &o, c = ' ' }
             block{ &o, b = a.body, depth }
             char{ &o, c = ')' }

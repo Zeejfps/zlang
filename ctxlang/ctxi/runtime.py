@@ -600,14 +600,15 @@ class Compiler:
         other = None
         for arm in s.arms:
             save = self.off
-            binds = self.pattern_binds(lay, arm.vindex, arm.bvars, through)
+            for v, _ in arm.bvars:
+                self.alloc_var(v)
+            alts = [(vindex, self.pattern_binds(lay, vindex, bvars, through)) for vindex, bvars in arm.alts]
             body = compile_body(arm.body)
             self.off = save
-            entry = (binds, body)
-            if arm.vindex is None:
-                other = entry
-            else:
-                table[arm.vindex] = entry
+            if not arm.alts:
+                other = ((), body)
+            for vindex, binds in alts:
+                table[vindex] = (binds, body)
         pos = s.pos
         u64s = rt.u64_store
 
@@ -631,12 +632,12 @@ class Compiler:
         return match
 
     def pattern_binds(self, lay, vindex, bvars, through):
-        """Allocates a pattern's bindings. Returns how to fill them: (kind, slot, field offset,
-        load, store) for bind_fields."""
+        """How to fill a pattern's bindings, which must already have slots: (kind, slot, field
+        offset, load, store) for bind_fields."""
         rt = self.rt
         binds = []
         for v, fi in bvars:
-            off = self.alloc_var(v)
+            off = self.slots[v]
             _, ft, foff = lay.variants[vindex][1][fi]
             if through and v.indirect:
                 binds.append((0, off, foff, None, None))
@@ -650,10 +651,14 @@ class Compiler:
         lay = self.rt.layout(self.T(s.utype))
         sv = self.expr(s.init)
         save = self.off
+        for v, _ in s.els_bvars:
+            self.alloc_var(v)
         els_binds = self.pattern_binds(lay, s.els_vindex, s.els_bvars, False)
         els = self.block(s.els)
         self.off = save
-        binds = self.pattern_binds(lay, s.vindex, s.bvars, False)   # live to the end of the block
+        for v, _ in s.bvars:                                            # live to the end of the block
+            self.alloc_var(v)
+        binds = self.pattern_binds(lay, s.vindex, s.bvars, False)
         want = s.vindex
 
         def let_else(fp):

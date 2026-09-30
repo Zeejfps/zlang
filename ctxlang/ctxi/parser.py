@@ -422,12 +422,14 @@ class Parser:
         self.skip_semis()
         while not self.is_op('}'):
             apos = self.peek().pos
-            if self.accept_kw('else'):
-                variant, binders = None, []
-            else:
-                variant, binders = self.pattern()
+            pats = []
+            if not self.accept_kw('else'):
+                pats.append((*self.pattern(), apos))
+                while self.accept_op('|'):
+                    ppos = self.peek().pos
+                    pats.append((*self.pattern(), ppos))
             self.expect_op('=>')
-            arms.append(A.Arm(variant, binders, self.block(), apos))
+            arms.append(A.Arm(pats, self.block(), apos))
             self.accept_op(',')
             self.skip_semis()
         self.expect_op('}')

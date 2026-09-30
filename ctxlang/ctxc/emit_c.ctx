@@ -711,24 +711,47 @@ namespace emit {
             let a = slice::get{ s = arms, i }
             ch{ &e, c = ' ' }
             if (i > 0) { put{ &e, a = "else " } }
-            let some{ value = v } = a.variant else {
-                arm_body{ &e, a, k, through, union_t, variant = 0, res }
-                i = i + 1
-                continue
+            if (a.pats.len > 0) {
+                put{ &e, a = "if (" }
+                let mut j: usize = 0
+                while (j < a.pats.len) {
+                    if (j > 0) { put{ &e, a = " || " } }
+                    tag_is{ &e, k, through, variant = slice::get{ s = a.pats, i = j }.variant }
+                    j = j + 1
+                }
+                put{ &e, a = ") " }
             }
-            put{ &e, a = "if (" }
-            tmp{ &e, k }
-            if (through) { put{ &e, a = "->tag == " } } else { put{ &e, a = ".tag == " } }
-            num{ &e, n = v }
-            put{ &e, a = ") " }
-            arm_body{ &e, a, k, through, union_t, variant = v, res }
+            arm_body{ &e, a, k, through, union_t, res }
             i = i + 1
         }
     }
 
-    fn arm_body { mut e: E, a: ir::Arm, k: u32, through: bool, union_t: ir::TypeId, variant: u32, res: ?u32 } {
+    // `_tK.tag == V`
+    fn tag_is { mut e: E, k: u32, through: bool, variant: u32 } {
+        tmp{ &e, k }
+        if (through) { put{ &e, a = "->tag == " } } else { put{ &e, a = ".tag == " } }
+        num{ &e, n = variant }
+    }
+
+    // With several patterns, the bindings depend on which one matched.
+    fn arm_body { mut e: E, a: ir::Arm, k: u32, through: bool, union_t: ir::TypeId, res: ?u32 } {
         put{ &e, a = "{ " }
-        bind_all{ &e, binds = a.binds, k, through, union_t, variant }
+        if (a.pats.len == 1) {
+            let p = slice::get{ s = a.pats, i = 0 }
+            bind_all{ &e, binds = p.binds, k, through, union_t, variant = p.variant }
+        } else if (a.pats.len > 1 and slice::get{ s = a.pats, i = 0 }.binds.len > 0) {
+            let mut j: usize = 0
+            while (j < a.pats.len) {
+                let p = slice::get{ s = a.pats, i = j }
+                if (j > 0) { put{ &e, a = "else " } }
+                put{ &e, a = "if (" }
+                tag_is{ &e, k, through, variant = p.variant }
+                put{ &e, a = ") { " }
+                bind_all{ &e, binds = p.binds, k, through, union_t, variant = p.variant }
+                put{ &e, a = "} " }
+                j = j + 1
+            }
+        }
         match (res) {
             null          => { block{ &e, b = a.body } }
             some{ value } => { value_block{ &e, b = a.body, res = value } }
@@ -1657,34 +1680,16 @@ namespace emit {
     // nothing between writes memory.
     fn pure { e: E, x: ir::Expr } -> bool {
         return match (x.k) {
-            int       => { true }
-            float     => { true }
-            boolean   => { true }
-            str       => { true }
-            nil       => { true }
-            local     => { true }
-            fnref     => { true }
-            deref{ ptr }       => { pure{ e, x = ptr.* } }
-            field{ base }      => { pure{ e, x = base.* } }
-            payload{ base }    => { pure{ e, x = base.* } }
-            addr{ place }      => { pure{ e, x = place.* } }
-            seq{ first, then } => { pure{ e, x = first.* } and pure{ e, x = then.* } }
-            lnot{ e = a }      => { pure{ e, x = a.* } }
-            isnull{ e = a }    => { pure{ e, x = a.* } }
-            notnull{ e = a }   => { pure{ e, x = a.* } }
-            widen{ e = a }     => { pure{ e, x = a.* } }
-            some{ e = a }      => { pure{ e, x = a.* } }
-            cast{ e = a }      => { pure{ e, x = a.* } }
-            ptraddr{ e = a }   => { pure{ e, x = a.* } }
-            trunc{ e = a }     => { pure{ e, x = a.* } }
-            fnconv{ e = a }    => { pure{ e, x = a.* } }
-            repeat{ elem }     => { pure{ e, x = elem.* } }
-            land{ a, b }       => { pure{ e, x = a.* } and pure{ e, x = b.* } }
-            lor{ a, b }        => { pure{ e, x = a.* } and pure{ e, x = b.* } }
-            cmp{ a, b }        => { pure{ e, x = a.* } and pure{ e, x = b.* } }
-            bits{ a, b }       => { pure{ e, x = a.* } and pure{ e, x = b.* } }
-            ptradd{ p, n }     => { pure{ e, x = p.* } and pure{ e, x = n.* } }
-            wrap{ a, b }       => { pure{ e, x = a.* } and pure{ e, x = b.* } }
+            int | float | boolean | str | nil | local | fnref => { true }
+            deref{ ptr = a } | field{ base = a } | payload{ base = a } | addr{ place = a }
+            | lnot{ e = a } | isnull{ e = a } | notnull{ e = a } | widen{ e = a } | some{ e = a }
+            | cast{ e = a } | ptraddr{ e = a } | trunc{ e = a } | fnconv{ e = a } | repeat{ elem = a } => {
+                pure{ e, x = a.* }
+            }
+            seq{ first = a, then = b } | land{ a, b } | lor{ a, b } | cmp{ a, b } | bits{ a, b }
+            | ptradd{ p = a, n = b } | wrap{ a, b } => {
+                pure{ e, x = a.* } and pure{ e, x = b.* }
+            }
             arith{ a, b }      => { float_type{ e, t = x.ty } and pure{ e, x = a.* } and pure{ e, x = b.* } }
             neg{ e = a }       => { float_type{ e, t = x.ty } and pure{ e, x = a.* } }
             record{ items }    => { pure_args{ e, args = items } }
@@ -1714,12 +1719,7 @@ namespace emit {
     // The same value whenever it is computed, whatever else runs.
     fn constant { x: ir::Expr } -> bool {
         return match (x.k) {
-            int     => { true }
-            float   => { true }
-            boolean => { true }
-            str     => { true }
-            nil     => { true }
-            fnref   => { true }
+            int | float | boolean | str | nil | fnref => { true }
             addr{ place } => { fixed_place{ x = place.* } }
             else    => { false }
         }
@@ -1728,9 +1728,8 @@ namespace emit {
     // A place whose address doesn't depend on memory: a local, or a field or payload of one.
     fn fixed_place { x: ir::Expr } -> bool {
         return match (x.k) {
-            local            => { true }
-            field{ base }    => { fixed_place{ x = base.* } }
-            payload{ base }  => { fixed_place{ x = base.* } }
+            local                         => { true }
+            field{ base } | payload{ base } => { fixed_place{ x = base.* } }
             else             => { false }
         }
     }

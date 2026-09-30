@@ -12,6 +12,7 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
 3. **A local shadows a function.** After `let binds = ...`, `binds{...}` resolves to the local and
    fails. Warn, or let calls skip non-function locals.
 4. **No shared match arms.** `a | b => { }` would collapse long runs of `x => { true }`.
+   *Done:* spec §8 Match, rule 3; patterns in an arm may share bindings.
 5. **No labeled break** out of nested loops; flags instead (§16 Q10).
 6. **No shift or bitwise operators.** `256 << 20` becomes `268435456`; masks go through
    `@wrap_*`. Needed: `<< >> & | ^`. *Done:* spec §11 Expressions.

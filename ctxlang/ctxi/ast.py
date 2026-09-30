@@ -124,10 +124,11 @@ class While(Node):
 
 
 class Arm(Node):
-    def __init__(self, variant, binders, body, pos):
-        # variant: name or None for `else`; binders: list of (field, amp, pos, local), where
-        # local is the name the field is bound to: the field's own name unless renamed
-        self.variant, self.binders, self.body, self.pos = variant, binders, body, pos
+    def __init__(self, pats, body, pos):
+        # pats: the `|`-separated patterns, as (variant, binders, pos); empty for `else`.
+        # binders: list of (field, amp, pos, local), where local is the name the field is bound
+        # to: the field's own name unless renamed
+        self.pats, self.body, self.pos = pats, body, pos
 
 
 class Match(Node):

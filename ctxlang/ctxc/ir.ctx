@@ -69,8 +69,11 @@ namespace ir {
     // through it leaves. A statement block never has one.
     struct Block { stmts: slice::Slice(Stmt), result: ?*Expr }
 
-    // A match arm. variant is null for `else`.
-    struct Arm { variant: ?u32, binds: slice::Slice(Bind), body: Block }
+    // A match arm: the body runs for any of its patterns. pats is empty for `else`.
+    struct Arm { pats: slice::Slice(Pat), body: Block }
+
+    // One pattern of an arm. Every pattern of an arm binds the same slots.
+    struct Pat { variant: u32, binds: slice::Slice(Bind) }
 
     // A pattern binding: the slot gets payload field `field`, or its address if by_ref.
     struct Bind { slot: u32, field: u32, by_ref: bool }

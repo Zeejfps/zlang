@@ -113,20 +113,22 @@ union Name(Generics) {
 
 ```
 match (e) {
-    variant{ f, g } => { ... }
-    variant         => { ... }
-    else            => { ... }
+    variant{ f, g }           => { ... }
+    variant                   => { ... }
+    a{ x = n } | b{ y = n }   => { ... }
+    else                      => { ... }
 }
 ```
 
 1. The arms must be exhaustive. `else` matches every variant not listed, and must come last. `else` is an error if every variant is already listed.
-2. Each variant appears in at most one arm.
-3. A pattern `variant{ f }` binds payload field `f` as a read-only local. `variant{ f = x }` binds it under the name `x` instead. A pattern may bind a subset of the fields.
-4. If the scrutinee has type `*U` for a union `U`, the match goes through the pointer. In its arms, `&f` binds payload field `f` as a mutable place, and `&f = x` binds it as `x`.
-5. `&f` in a pattern is an error unless the scrutinee is a pointer.
-6. If the scrutinee is `&p`, no place that overlaps `p` (§3.1) may be accessed inside an arm except through that arm's bindings. For other pointer scrutinees this isn't checked.
-7. `match` is a statement, and can also be an expression (§11, If and match expressions).
-8. To take one variant apart and leave on any other, use `let` with a pattern (§11, Let-else).
+2. Each variant appears in at most one arm, and at most once in it.
+3. An arm may list several patterns separated by `|`; its body runs for any of them. Every pattern must bind the same names, and each name must have the same type and be bound the same way (with or without `&`) in all of them. `else` can't be combined with other patterns.
+4. A pattern `variant{ f }` binds payload field `f` as a read-only local. `variant{ f = x }` binds it under the name `x` instead. A pattern may bind a subset of the fields.
+5. If the scrutinee has type `*U` for a union `U`, the match goes through the pointer. In its arms, `&f` binds payload field `f` as a mutable place, and `&f = x` binds it as `x`.
+6. `&f` in a pattern is an error unless the scrutinee is a pointer.
+7. If the scrutinee is `&p`, no place that overlaps `p` (§3.1) may be accessed inside an arm except through that arm's bindings. For other pointer scrutinees this isn't checked.
+8. `match` is a statement, and can also be an expression (§11, If and match expressions).
+9. To take one variant apart and leave on any other, use `let` with a pattern (§11, Let-else).
 
 ### Optional
 

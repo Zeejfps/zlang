@@ -1391,6 +1391,105 @@ fn main { mut io: Io } {
 """, 'café=-7😀\n8\n')
 
 
+SHAPE = """
+union Shape { circle{ r: i32 }, square{ side: i32 }, rect{ w: i32, h: i32 }, dot, line }
+"""
+
+
+class SharedArms(Base):
+    def test_without_bindings(self):
+        self.assertOutput(SHAPE + """
+fn round { s: Shape } -> bool {
+    return match (s) {
+        circle | dot => { true }
+        else         => { false }
+    }
+}
+fn main { mut io: Io } {
+    io::println_bool{ &io, n = round{ s = Shape::dot } }
+    io::println_bool{ &io, n = round{ s = Shape::circle{ r = 1 } } }
+    io::println_bool{ &io, n = round{ s = Shape::line } }
+    let o: ?i32 = 3
+    match (o) { null | some => { io::println_i64{ &io, n = 1 } } }
+}
+""", 'true\ntrue\nfalse\n1\n')
+
+    def test_shared_bindings(self):
+        self.assertOutput(SHAPE + """
+fn size { s: Shape } -> i32 {
+    return match (s) {
+        circle{ r = n } | square{ side = n } => { n }
+        rect{ w, h }                         => { w * h }
+        dot
+        | line                               => { 0 }
+    }
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = size{ s = Shape::circle{ r = 7 } } }
+    io::println_i64{ &io, n = size{ s = Shape::square{ side = 4 } } }
+    io::println_i64{ &io, n = size{ s = Shape::rect{ w = 2, h = 3 } } }
+    io::println_i64{ &io, n = size{ s = Shape::line } }
+}
+""", '7\n4\n6\n0\n')
+
+    def test_shared_bindings_through_pointer(self):
+        self.assertOutput(SHAPE + """
+fn grow { s: *Shape } {
+    match (s) {
+        circle{ &r = n } | square{ &side = n } => { n = n + 1 }
+        else                                   => { }
+    }
+}
+fn main { mut io: Io } {
+    let mut s = Shape::square{ side = 4 }
+    grow{ s = &s }
+    let square{ side } = s else { @panic() }
+    io::println_i64{ &io, n = side }
+}
+""", '5\n')
+
+    def test_missing_binding(self):
+        self.assertCompileError(SHAPE + """
+fn f { s: Shape } -> i32 {
+    match (s) { circle{ r } | square => { return r } else => { return 0 } }
+}
+fn main { mut io: Io } { }
+""", '`square` must bind `r`, as `circle` in the same arm does')
+
+    def test_extra_binding(self):
+        self.assertCompileError(SHAPE + """
+fn f { s: Shape } -> i32 {
+    match (s) { circle{ r } | rect{ w = r, h } => { return r } else => { return 0 } }
+}
+fn main { mut io: Io } { }
+""", '`rect` binds `h`, which `circle` in the same arm does not')
+
+    def test_binding_types_differ(self):
+        self.assertCompileError("""
+union U { a{ x: i32 }, b{ x: u8 } }
+fn f { u: U } { match (u) { a{ x } | b{ x } => { } } }
+fn main { mut io: Io } { }
+""", '`x` is i32 in `a` but u8 in `b`')
+
+    def test_binding_modes_differ(self):
+        self.assertCompileError(SHAPE + """
+fn f { s: *Shape } { match (s) { circle{ &r } | square{ side = r } => { } else => { } } }
+fn main { mut io: Io } { }
+""", '`r` must be bound with `&` in both `circle` and `square`, or in neither')
+
+    def test_variant_repeated_in_arm(self):
+        self.assertCompileError(SHAPE + """
+fn f { s: Shape } { match (s) { dot | dot => { } else => { } } }
+fn main { mut io: Io } { }
+""", 'variant `dot` appears in more than one arm')
+
+    def test_else_cannot_be_shared(self):
+        self.assertCompileError(SHAPE + """
+fn f { s: Shape } { match (s) { dot | else => { } } }
+fn main { mut io: Io } { }
+""", "expected a name, found 'else'")
+
+
 class Expressions(Base):
     def test_if_expression(self):
         self.assertOutput("""
