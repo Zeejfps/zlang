@@ -372,6 +372,8 @@ namespace ir_read {
             k = ir::ExprKind::record{ items = args{ &r } }
         } else if is{ s = tag, lit = "str" } {
             k = ir::ExprKind::str{ bytes = string{ &r } }
+        } else if is{ s = tag, lit = "sbytes" } {
+            k = ir::ExprKind::sbytes{ bytes = string{ &r } }
         } else if is{ s = tag, lit = "some" } {
             k = ir::ExprKind::some{ e = sub{ &r } }
         } else if is{ s = tag, lit = "widen" } {
@@ -695,16 +697,16 @@ namespace ir_read {
     }
 
     // A symbol that must be w.
-    fn word(A) { mut r: Reader, w: A } {
+    fn word { mut r: Reader, w: []u8 } {
         let s = sym{ &r }
-        if not r.failed and not map::eq_bytes{ a = s, b = @slice(@cast(*u8, &w), @size_of(A)) } {
+        if not r.failed and not map::eq_bytes{ a = s, b = w } {
             fail{ &r, problem = Problem::unknown_tag }
         }
     }
 
-    // Does symbol s spell the string literal `lit`?
-    fn is(A) { s: ir::Bytes, lit: A } -> bool {
-        return map::eq_bytes{ a = s, b = @slice(@cast(*u8, &lit), @size_of(A)) }
+    // Does symbol s spell `lit`?
+    fn is { s: ir::Bytes, lit: []u8 } -> bool {
+        return map::eq_bytes{ a = s, b = lit }
     }
 
     fn is_ident { c: u8 } -> bool {

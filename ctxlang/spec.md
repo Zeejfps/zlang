@@ -301,7 +301,12 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 3. `true` and `false` are the `bool` values. `null` is described in §8.
 4. `[a, b, c]` is a `[3]T` array. Every element has type `T`.
 5. `[x; N]` is a `[N]T` array with every element a copy of `x`. `N` is a compile-time constant.
-6. A string literal `"..."` is a `[N]u8` array value holding its `N` bytes, with no terminator. Like any array it is a value, not a place: bind it to a local to take its address, which converts to a `[]u8`. `utf8::of` views it as text (§17).
+6. A string literal `"..."` holds `N` bytes, with no terminator. Its type depends on the type expected where it appears (also inside `?`):
+   - `[]u8`: a **view** of static read-only bytes that live for the whole program. `[]mut u8` is an error.
+   - `utf8::String` (§17): a view as above, as text. It is a compile error if the bytes aren't valid UTF-8.
+   - anything else, or nothing: a `[N]u8` array value. Like any array it is a value, not a place: bind it to a local to take its address.
+
+   In an `if` or `match` expression without an expected type, a branch that is a literal takes the type of another branch that is `[]u8` or `utf8::String`, or of another literal branch that became one. Otherwise, as in `let msg = match p { a => { "one" } b => { "three" } }`, each literal is an array and the lengths must agree; annotate the `let` to get views.
 7. A character literal `'a'` is an integer literal whose value is the character's byte.
 8. String and character literals hold ASCII characters only. Escapes: `\n`, `\t`, `\r`, `\0`, `\\`, `\"`, `\'`, and `\xNN` for any byte.
 
@@ -399,7 +404,7 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 
 ## 14. Memory
 
-1. There is no static memory. `const NAME: T = e` declares a constant. `e` must be computable at compile time: literals, other consts, operators, `@size_of`, `@align_of`, and struct, union and array literals of these. `const` data is immutable and its location is unobservable: a const is a value, not a place, so `&C` is an error.
+1. The only static memory is the bytes of string literal views (§11 Literals), which are read-only. `const NAME: T = e` declares a constant. `e` must be computable at compile time: literals, other consts, operators, `@size_of`, `@align_of`, and struct, union and array literals of these. `const` data is immutable and its location is unobservable: a const is a value, not a place, so `&C` is an error.
 2. Locals and context fields live on the stack.
 3. Memory not on the stack comes from `mem::pages`, which needs the `Mem` capability (§15), or from an allocator function over memory the caller provides. It is accessed only through pointers and slices.
    - Allocators are byte-level: `alloc::Fn(S) = fn{ mut heap: S, mem: Bytes, new: usize, align: usize } -> ?Bytes`. The result must be aligned to `align`.
@@ -422,7 +427,7 @@ The compiler checks, within each function, that the address of a local doesn't o
    - converting a `*[N]T` to a slice, slicing (`s[lo..hi]`), or `s.ptr`
    - a call, whose result is derived from everything its read-only arguments are derived from. Arguments passed to `mut` fields don't count.
 
-   Only values whose type contains a pointer carry this. `&fn` values follow §6 instead.
+   Only values whose type contains a pointer carry this. `&fn` values follow §6 instead. A string literal view is derived from nothing.
 3. It is a compile error to:
    - `return` a value derived from any local or read-only context field of the function
    - assign a value derived from `L` to a local declared in a scope outside `L`'s
@@ -454,7 +459,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 8. **Untagged unions:** needed for C interop? Or `@cast` only?
 9. **Large stack frames:** should the compiler error or warn above a size limit? (Page allocation is now the `Mem` capability, §15.) Should pages be freeable?
 10. **Loop control:** `break` and `continue` apply to the innermost loop. Are labels needed to leave an outer loop?
-11. **Strings:** literals are `[N]u8` values (§11). *Partly settled:* `utf8::String` is the only text type, and `ascii` holds byte-level character tests (§17). Should a literal be usable where a slice or a `utf8::String` is expected without first binding it to a local?
+11. ~~**Strings.**~~ Settled: `utf8::String` is the only text type, and `ascii` holds byte-level character tests (§17). A literal is a view where a `[]u8` or `utf8::String` is expected (§11 Literals).
 
 ## 17. Standard library
 
@@ -479,8 +484,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 
 ```
 fn main { mut io: Io } {
-    let hi = "hello"                                   // [5]u8
-    io::println{ &io, s = utf8::of{ chars = &hi } }
+    io::println{ &io, s = "hello" }                    // a utf8::String viewing static bytes
     io::println_i64{ &io, n = 42 }
 }
 ```

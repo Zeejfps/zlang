@@ -150,6 +150,8 @@ class Checker:
     def check(self):
         self.collect(self.std_decls, self.std)
         self.collect(self.decls, self.root)
+        utf8 = self.std.paths.get('utf8')
+        self.text_decl = utf8.paths.get('String') if isinstance(utf8, Namespace) else None
         for nf in self.natives:
             ns = self.std
             for part in nf.path:
@@ -690,6 +692,7 @@ class Checker:
             if may_leave:
                 return None
             self.err('no branch of this expression produces a value; use a statement instead', e.pos)
+        live = self.view_literals(live)
         types = [t for _, t in live]
         target = None
         if exp is not None and all(self.coerce(t, exp) is not None for t in types):
@@ -714,6 +717,27 @@ class Checker:
         for b, t in live:
             b.result = self.coerce_node(b.result, t, target)
         return target
+
+    def view_literals(self, live):
+        """Branches that are bare string literals, retyped as views when another branch is one:
+        `match p { a => { name } b => { "text" } }` gives a utf8::String when `name` is one."""
+        def is_lit(b):
+            return isinstance(b.result, A.StrLit) and b.result.view is None
+        hint = None
+        for b, t in live:
+            if isinstance(b.result, A.StrLit) and b.result.view is not None:
+                hint = t
+                break
+            if not is_lit(b):
+                u = prune(t)
+                u = prune(u.elem) if isinstance(u, Opt) else u
+                if (isinstance(u, SliceT) and prune(u.elem) is U8) or \
+                        (isinstance(u, StructT) and u.decl is self.text_decl):
+                    hint = t
+                    break
+        if hint is None:
+            return live
+        return [(b, self.expr(b.result, hint) if is_lit(b) else t) for b, t in live]
 
     def narrowing(self, cond):
         if not (isinstance(cond, A.Binary) and getattr(cond, 'nullcmp', False)):
@@ -1079,6 +1103,24 @@ class Checker:
         return TVar('float')
 
     def e_StrLit(self, e, exp):
+        # Where a []u8 or a utf8::String is expected (also inside ?), the literal is a view of
+        # static read-only bytes; otherwise it is a [N]u8 value.
+        e.view = None
+        want = prune(exp) if exp is not None else None
+        if isinstance(want, Opt):
+            want = prune(want.elem)
+        if isinstance(want, SliceT) and prune(want.elem) is U8:
+            if want.mut:
+                self.err('a string literal is read-only; it cannot be a []mut u8', e.pos)
+            e.view = 'bytes'
+            return SliceT(U8)
+        if isinstance(want, StructT) and want.decl is self.text_decl:
+            try:
+                bytes(e.val).decode('utf-8')
+            except UnicodeDecodeError as x:
+                self.err(f'string literal is not valid UTF-8 (byte {x.start})', e.pos)
+            e.view = 'text'
+            return want
         return Arr(len(e.val), U8)
 
     def e_BoolLit(self, e, exp):

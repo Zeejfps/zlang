@@ -455,13 +455,12 @@ namespace emit {
         num{ &e, n = f.id }
         ch{ &e, c = '(' }
         let mut i: usize = 0
-        let args = "args"
         while i < f.params.len {
             if i > 0 { put{ &e, a = ", " } }
             let q = f.params[i]
             if q.mutable {
                 put{ &e, a = "(void *)cap" }
-            } else if map::eq_bytes{ a = q.name, b = args[..] } {
+            } else if map::eq_bytes{ a = q.name, b = "args" } {
                 put{ &e, a = "CTX_BITCAST(" }
                 tn{ &e, t = q.ty }
                 put{ &e, a = ", ctx_args())" }
@@ -826,6 +825,15 @@ namespace emit {
                 }
                 put{ &e, a = "})" }
             }
+            sbytes{ bytes } => {
+                // A C string literal has static storage; its terminator isn't part of the view.
+                compound{ &e, t = x.ty }
+                put{ &e, a = " .m_ptr = (void *)" }
+                cstr{ &e, b = bytes }
+                put{ &e, a = ", .m_len = " }
+                num{ &e, n = bytes.len }
+                put{ &e, a = " })" }
+            }
             nil => {
                 compound{ &e, t = x.ty }
                 put{ &e, a = "0})" }
@@ -1016,7 +1024,7 @@ namespace emit {
         put{ &e, a = "))" }
     }
 
-    fn logical(A) { mut e: E, a: ir::Expr, op: A, b: ir::Expr } {
+    fn logical { mut e: E, a: ir::Expr, op: []u8, b: ir::Expr } {
         ch{ &e, c = '(' }
         expr{ &e, x = a }
         put{ &e, a = op }
@@ -1025,7 +1033,7 @@ namespace emit {
     }
 
     // `(A OP B)`, in ctxi's order.
-    fn infix(A) { mut e: E, a: ir::Expr, op: A, b: ir::Expr } {
+    fn infix { mut e: E, a: ir::Expr, op: []u8, b: ir::Expr } {
         let tt = temps2{ &e, a, b }
         ch{ &e, c = '(' }
         operand{ &e, x = a, tt, i = 0 }
@@ -1528,7 +1536,7 @@ namespace emit {
     }
 
     // `static R PREFIXK_code(ctx_fn *self, P a0, ...) {`
-    fn code_head(A) { mut e: E, prefix: A, k: u32, ret: ir::TypeId, params: []ir::Param } {
+    fn code_head { mut e: E, prefix: []u8, k: u32, ret: ir::TypeId, params: []ir::Param } {
         put{ &e, a = "static " }
         tn{ &e, t = ret }
         ch{ &e, c = ' ' }
@@ -1752,7 +1760,7 @@ namespace emit {
     // nothing between writes memory.
     fn pure { e: E, x: ir::Expr } -> bool {
         return match x.k {
-            int | float | boolean | str | nil | local | fnref => { true }
+            int | float | boolean | str | sbytes | nil | local | fnref => { true }
             deref{ ptr = a } | field{ base = a } | payload{ base = a } | addr{ place = a }
             | lnot{ e = a } | isnull{ e = a } | notnull{ e = a } | widen{ e = a } | some{ e = a }
             | cast{ e = a } | ptraddr{ e = a } | trunc{ e = a } | fnconv{ e = a } | repeat{ elem = a } => {
@@ -1791,7 +1799,7 @@ namespace emit {
     // The same value whenever it is computed, whatever else runs.
     fn constant { x: ir::Expr } -> bool {
         return match x.k {
-            int | float | boolean | str | nil | fnref => { true }
+            int | float | boolean | str | sbytes | nil | fnref => { true }
             addr{ place } => { fixed_place{ x = place.* } }
             else    => { false }
         }
@@ -1946,7 +1954,7 @@ namespace emit {
         }
     }
 
-    fn put(A) { mut e: E, a: A } {
+    fn put { mut e: E, a: []u8 } {
         ir_print::text{ o = &e.o, a }
     }
 

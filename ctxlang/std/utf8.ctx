@@ -9,10 +9,10 @@
 //       err{ error } => { return 1 }              // error.at is the offset of the bad byte
 //   }
 //
-// A string literal is viewed with `of`, which panics if it isn't valid:
+// A string literal where a String is expected is one, checked at compile time:
 //
-//   let hi = "hello"                        // a [5]u8 value
-//   let s = utf8::of{ chars = &hi }         // a utf8::String viewing it
+//   let s: utf8::String = "hello"
+//   io::println{ &io, s = "hi" }
 //
 // Offsets are in bytes. `len` is the length in bytes and `count` the number of characters. A
 // character is a Unicode code point, held in a u32. Functions that take an offset panic if it
@@ -38,7 +38,7 @@ namespace utf8 {
         return Result::ok{ value = String{ bytes } }
     }
 
-    // Views bytes as text, typically a string literal. Panics if they aren't valid.
+    // Views bytes as text. Panics if they aren't valid.
     fn of { chars: []u8 } -> String {
         return result::unwrap{ r = from{ bytes = chars } }
     }
@@ -500,10 +500,7 @@ namespace utf8 {
 
     // "inf", "-inf" or "nan".
     fn is_float_word { s: String } -> bool {
-        let inf = "inf"
-        let minus_inf = "-inf"
-        let nan = "nan"
-        return same{ a = s.bytes, b = &inf } or same{ a = s.bytes, b = &nan } or same{ a = s.bytes, b = &minus_inf }
+        return same{ a = s.bytes, b = "inf" } or same{ a = s.bytes, b = "nan" } or same{ a = s.bytes, b = "-inf" }
     }
 
     // An optional '-', digits, optionally '.' and digits, optionally 'e' or 'E', an optional sign

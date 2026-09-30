@@ -1115,6 +1115,73 @@ fn main { mut io: Io } { let mut a: [1]i32 = [1]; let s: [][]mut u8 = &a }
 """, 'expected [][]mut u8, got *mut [1]i32')
 
 
+class LiteralViews(Base):
+    """A string literal where a []u8 or a utf8::String is expected views static bytes."""
+
+    def test_views(self):
+        self.assertOutput(r"""
+struct Named { name: utf8::String }
+fn greet {} -> utf8::String {
+    return "from a function"
+}
+fn show { mut io: Io, b: []u8 } {
+    io::println_u64{ &io, n = b.len }
+}
+fn main { mut io: Io } {
+    io::println{ &io, s = "hello" }
+    io::println{ &io, s = greet{} }
+    show{ &io, b = "abc" }
+    show{ &io, b = "\xff" }
+    show{ &io, b = "" }
+    let o: ?[]u8 = "xy"
+    if o != null { io::println_u64{ &io, n = o.len } }
+    let n = Named{ name = "caf\xc3\xa9" }
+    io::println{ &io, s = n.name }
+    let arr = "four"
+    io::println_u64{ &io, n = arr.len + @size_of([4]u8) }
+}
+""", 'hello\nfrom a function\n3\n1\n0\n2\ncafé\n8\n')
+
+    def test_branches_follow_a_view(self):
+        self.assertOutput("""
+union Kind { a, b, c }
+fn name { k: Kind, other: utf8::String } -> utf8::String {
+    let s = match k {
+        a => { "first" }
+        b => { other }
+        c => { "third" }
+    }
+    return s
+}
+fn main { mut io: Io } {
+    io::println{ &io, s = name{ k = Kind::a, other = "x" } }
+    io::println{ &io, s = name{ k = Kind::b, other = "second" } }
+    let n = if true { "yes" } else { name{ k = Kind::c, other = "x" } }
+    io::println{ &io, s = n }
+}
+""", 'first\nsecond\nyes\n')
+
+    def test_same_literal_twice(self):
+        self.assertOutput("""
+fn view {} -> []u8 { return "same" }
+fn main { mut io: Io } {
+    io::println_bool{ &io, n = view{}.ptr == view{}.ptr }
+}
+""", 'true\n')
+
+    def test_mut_slice_rejected(self):
+        self.assertCompileError('fn f { b: []mut u8 } { }\nfn main { mut io: Io } { f{ b = "abc" } }',
+                                'a string literal is read-only')
+
+    def test_invalid_utf8_rejected(self):
+        self.assertCompileError(r'fn main { mut io: Io } { io::println{ &io, s = "ok\xc3" } }',
+                                'string literal is not valid UTF-8 (byte 2)')
+
+    def test_view_is_read_only(self):
+        self.assertCompileError('fn main { mut io: Io } {\n    let b: []u8 = "abc"\n    b[0] = 1\n}',
+                                'cannot write through []u8')
+
+
 class StdLib(Base):
     def test_hello(self):
         self.assertOutput("""
@@ -2907,6 +2974,16 @@ fn main {} -> i32 {
         self.assertRegex(text, r'\(set \(deref \d+ \(local \d+ 0\) \d+ \d+ \d+\)')
         self.assertIn('(addr ', text)
 
+    def test_literal_views(self):
+        text = self.ir("""
+fn main { mut io: Io } {
+    let b: []u8 = "abc"
+    io::println{ &io, s = "hi" }
+}
+""")
+        self.assertRegex(text, r'\(let 1 \(sbytes \d+ "abc"\)\)')
+        self.assertRegex(text, r'\(struct \d+ \[\(0 \(sbytes \d+ "hi"\)\)\]\)')
+
     def test_examples_verify(self):
         from ctxi.irdump import verify
         from ctxi.__main__ import load_sources
@@ -2918,6 +2995,7 @@ fn main {} -> i32 {
         text = self.ir("""
 fn main { mut io: Io } -> i32 {
     let s = "a \\"quoted\\" \\n line"
+    let v: []u8 = "a \\xff view"
     let x: f32 = 0.1
     let y = -2.5
     let n: i64 = -9223372036854775807 - 1
@@ -2956,6 +3034,20 @@ class CBackend(Base):
             results.append((out.getvalue().decode(), code))
         self.assertEqual(results[0], results[1])
         return results[0]
+
+    def test_literal_views(self):
+        out, code = self.both(r"""
+fn view {} -> []u8 { return "q\"?\\\x00\xff" }
+fn main { mut io: Io } -> i32 {
+    io::println{ &io, s = "caf\xc3\xa9" }
+    let v = view{}
+    io::println_u64{ &io, n = v.len }
+    io::println_u64{ &io, n = v[5] }
+    let e: []u8 = ""
+    return @as(i32, e.len)
+}
+""")
+        self.assertEqual((out, code), ('café\n6\n255\n', 0))
 
     def test_evaluation_order(self):
         out, _ = self.both("""

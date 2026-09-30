@@ -20,7 +20,7 @@ spaces. A block is `{`, then each statement on its own line indented two spaces 
 enclosing line, then for a value block `=> EXPR` on its own line, then `}` on its own line at
 the enclosing indent. An empty block is `{}`. Top-level items are one per line:
 
-    ctxir 3
+    ctxir 4
     (files [STR...])                     file names, in the order positions first use them; ""
                                          is a program read from a string
     (type ID TYPE)...                                       in id order
@@ -52,6 +52,7 @@ Statements:
 
 Expressions; each has its type T first:
     (int T N)  (float T F)  (bool T 0|1)  (str T STR)  (null T)
+    (sbytes T STR)                       a []u8 viewing static read-only bytes STR
     (local T SLOT)  (deref T E POS)  (field T E INDEX)  (index T E E POS)
     (payload T E VARIANT FIELD)          the field of a union known to hold VARIANT
     (sindex T E E POS)                   element of slice E, bounds-checked; a place
@@ -80,11 +81,11 @@ from .checker import NativeFn
 from .natives import _float_text, _shortest_f32
 from .runtime import Runtime, f32r
 from .types import (
-    Prim, Ptr, SliceT, Arr, Opt, StructT, UnionT, FnT, Cap, VOID, USIZE, BOOL, prune, subst, tkey, tstr,
+    Prim, Ptr, SliceT, Arr, Opt, StructT, UnionT, FnT, Cap, VOID, USIZE, BOOL, U8, prune, subst, tkey, tstr,
     qualname, struct_fields, variants_of, widens,
 )
 
-VERSION = 3
+VERSION = 4
 
 
 class Sym(str):
@@ -339,7 +340,13 @@ class Dumper:
         return node('float', self.tid(t), Sym(text))
 
     def e_StrLit(self, e, t):
-        return node('str', self.tid(t), bytes(e.val))
+        view = getattr(e, 'view', None)
+        if view is None:
+            return node('str', self.tid(t), bytes(e.val))
+        v = node('sbytes', self.tid(SliceT(U8)), bytes(e.val))
+        if view == 'text':
+            return node('struct', self.tid(t), [(0, v)])
+        return v
 
     def e_BoolLit(self, e, t):
         return node('bool', self.tid(t), int(e.val))
@@ -732,6 +739,9 @@ class Verifier:
         elif tag == 'str':
             d = self.types[t]
             self.expect(d[0] == 'arr' and d[1] == len(e[2]) and self.prim(d[2]) == 'u8', 'string type')
+        elif tag == 'sbytes':
+            se = self.slice_elem(t)
+            self.expect(se is not None and self.prim(se) == 'u8', 'sbytes type')
         elif tag == 'null':
             self.expect(self.is_opt(t), 'null type')
         elif tag == 'local':

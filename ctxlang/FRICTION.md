@@ -3,9 +3,10 @@
 Points that came up while writing ctxc in ctxlang (stages 0–2 of the self-hosting plan).
 Each one is evidence for a spec change; §16 numbers refer to spec.md's open questions.
 
-1. **String literals need a local.** Every literal is bound (`let x = "..."`) and passed as
+1. ~~**String literals need a local.** Every literal is bound (`let x = "..."`) and passed as
    `utf8::of{ chars = &x }`. The reader and emitter use a generic `put(A){ a = "..." }` to get
-   around it. Literals should work where a slice or string is expected (§16 Q11).
+   around it. Literals should work where a slice or string is expected (§16 Q11).~~
+   *Done:* a literal is a view where a `[]u8` or `utf8::String` is expected (spec §11 Literals).
 2. **Narrowing is narrow.** It works only for a lone `x != null` / `x == null` on a local: not
    through `and`/`or`, not on fields (`v.fields != null`). Code copies into locals or uses
    `let … else` instead.

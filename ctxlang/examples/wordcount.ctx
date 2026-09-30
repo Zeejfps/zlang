@@ -12,8 +12,7 @@ struct Top { word: utf8::String, count: i64 }
 
 fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     if args.len != 1 {
-        let usage = "usage: wordcount FILE"
-        io::eprintln{ &io, s = utf8::of{ chars = &usage } }
+        io::eprintln{ &io, s = "usage: wordcount FILE" }
         return 2
     }
     let path = args[0]
@@ -35,8 +34,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     let text = match utf8::from{ bytes } {
         ok{ value }  => { value }
         err{ error } => {
-            let msg = "not a UTF-8 text file"
-            io::eprintln{ &io, s = utf8::of{ chars = &msg } }
+            io::eprintln{ &io, s = "not a UTF-8 text file" }
             return 1
         }
     }
@@ -58,26 +56,21 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
         if seen != null {
             seen.* = seen.* + 1
         } else if not map::put{ m = &counts, &heap, key = word, value = 1 } {
-            let msg = "out of memory"
-            io::eprintln{ &io, s = utf8::of{ chars = &msg } }
+            io::eprintln{ &io, s = "out of memory" }
             return 1
         }
     }
 
-    let lines = "lines: "
-    io::print{ &io, s = utf8::of{ chars = &lines } }
+    io::print{ &io, s = "lines: " }
     io::println_u64{ &io, n = count_lines{ text } }
-    let w = "words: "
-    io::print{ &io, s = utf8::of{ chars = &w } }
+    io::print{ &io, s = "words: " }
     io::println_u64{ &io, n = words }
-    let d = "distinct: "
-    io::print{ &io, s = utf8::of{ chars = &d } }
+    io::print{ &io, s = "distinct: " }
     io::println_u64{ &io, n = map::len{ m = counts } }
 
     let top = most_common{ counts }
     if top != null {
-        let label = "most common: "
-        io::print{ &io, s = utf8::of{ chars = &label } }
+        io::print{ &io, s = "most common: " }
         io::print{ &io, s = top.word }
         io::put_char{ &io, c = ' ' }
         io::println_i64{ &io, n = top.count }
@@ -150,17 +143,12 @@ fn before { a: utf8::String, b: utf8::String } -> bool {
 
 fn report { mut io: Io, path: []u8, error: fs::Error } {
     io::write{ &io, to = io::Stream::err, bytes = path }       // a path is bytes, not always text
-    let not_found = ": no such file"
-    let denied = ": permission denied"
-    let dir = ": is a directory"
-    let oom = ": too large for the heap"
-    let other = ": cannot read"
-    let why = match error {
-        not_found         => { utf8::of{ chars = &not_found } }
-        permission_denied => { utf8::of{ chars = &denied } }
-        is_directory      => { utf8::of{ chars = &dir } }
-        out_of_memory     => { utf8::of{ chars = &oom } }
-        else              => { utf8::of{ chars = &other } }
+    let why: utf8::String = match error {
+        not_found         => { ": no such file" }
+        permission_denied => { ": permission denied" }
+        is_directory      => { ": is a directory" }
+        out_of_memory     => { ": too large for the heap" }
+        else              => { ": cannot read" }
     }
     io::eprintln{ &io, s = why }
 }

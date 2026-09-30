@@ -57,12 +57,9 @@ namespace parser {
             return Result::ok{ value = json::Value::string{ value } }
         }
         if c == '-' or ascii::is_digit{ c } { return parse_number{ &p } }
-        let t = "true"
-        let f = "false"
-        let n = "null"
-        if eat_word{ &p, w = utf8::of{ chars = &t } } { return Result::ok{ value = json::Value::boolean{ value = true } } }
-        if eat_word{ &p, w = utf8::of{ chars = &f } } { return Result::ok{ value = json::Value::boolean{ value = false } } }
-        if eat_word{ &p, w = utf8::of{ chars = &n } } { return Result::ok{ value = json::Value::nil } }
+        if eat_word{ &p, w = "true" } { return Result::ok{ value = json::Value::boolean{ value = true } } }
+        if eat_word{ &p, w = "false" } { return Result::ok{ value = json::Value::boolean{ value = false } } }
+        if eat_word{ &p, w = "null" } { return Result::ok{ value = json::Value::nil } }
         return fail{ at = p.pos, problem = Problem::expected_value }
     }
 

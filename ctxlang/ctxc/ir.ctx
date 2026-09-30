@@ -112,6 +112,7 @@ namespace ir {
         float{ value: f64 },                                    // an f32's value, if ty is f32
         boolean{ value: bool },
         str{ bytes: Bytes },
+        sbytes{ bytes: Bytes },                                 // a []u8 viewing static read-only bytes
         nil,                                                    // (null T)
         local{ slot: u32 },
         deref{ ptr: *Expr, pos: Pos },

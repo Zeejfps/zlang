@@ -168,6 +168,7 @@ class Runtime:
         self.streams = [out or sys.stdout, err or sys.stderr]
         self.inp = inp if inp is not None else sys.stdin.buffer
         self.files = {}           # handle -> open Python file, for std/fs.ctx
+        self.statics = {}         # string literal bytes -> their address, for literal views
         self.next_file = 1
         mem = self.mem
         self.u64_load = lambda a: U64.unpack_from(mem, a)[0]
@@ -208,6 +209,16 @@ class Runtime:
         except MemoryError:
             return 0
         self.end = len(self.mem)
+        return addr
+
+    def static_bytes(self, data):
+        """The address of a read-only copy of data, appended above everything else once."""
+        addr = self.statics.get(data)
+        if addr is None:
+            addr = self.end
+            self.mem.extend(data)
+            self.end = len(self.mem)
+            self.statics[data] = addr
         return addr
 
     def close_files(self):
@@ -781,7 +792,11 @@ class Compiler:
         return lambda fp: v
 
     def e_StrLit(self, e):
-        v = e.val
+        if getattr(e, 'view', None) is not None:
+            # A []u8, or a utf8::String, whose memory image is the same slice.
+            v = SLICE.pack(self.rt.static_bytes(bytes(e.val)), len(e.val))
+        else:
+            v = e.val
         return lambda fp: v
 
     def e_BoolLit(self, e):

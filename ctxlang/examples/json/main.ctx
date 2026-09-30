@@ -8,8 +8,7 @@
 
 fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     if args.len < 1 or args.len > 2 {
-        let usage = "usage: json FILE [PATH]"
-        io::eprintln{ &io, s = utf8::of{ chars = &usage } }
+        io::eprintln{ &io, s = "usage: json FILE [PATH]" }
         return 2
     }
     let path = args[0]
@@ -19,8 +18,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
 
     let ok{ value = bytes } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } else {
         io::write{ &io, to = io::Stream::err, bytes = path }
-        let msg = ": cannot read"
-        io::eprintln{ &io, s = utf8::of{ chars = &msg } }
+        io::eprintln{ &io, s = ": cannot read" }
         return 1
     }
 
@@ -37,8 +35,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
             err         => { null }
         }
         if found == null {
-            let msg = "no value at "
-            io::eprint{ &io, s = utf8::of{ chars = &msg } }
+            io::eprint{ &io, s = "no value at " }
             io::write{ &io, to = io::Stream::err, bytes = query }
             io::eprintln{ &io, s = utf8::empty{} }
             return 1
@@ -48,8 +45,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
 
     let out = printer::format{ &heap, realloc = arena::alloc, v, indent = 2 }
     if out == null {
-        let msg = "out of memory"
-        io::eprintln{ &io, s = utf8::of{ chars = &msg } }
+        io::eprintln{ &io, s = "out of memory" }
         return 1
     }
     io::println{ &io, s = out }
@@ -79,40 +75,26 @@ fn report { mut io: Io, path: []u8, text: []u8, error: parser::Error } {
     _ = utf8::push_u64{ &b, &heap, n = line }
     _ = utf8::push_char{ &b, &heap, c = ':' }
     _ = utf8::push_u64{ &b, &heap, n = col }
-    let sep = ": "
-    _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &sep } }
+    _ = utf8::push{ &b, &heap, s = ": " }
     io::eprint{ &io, s = utf8::view{ b } }
     describe{ &io, problem = error.problem }
 }
 
 fn describe { mut io: Io, problem: parser::Problem } {
-    let not_utf8 = "not UTF-8 text"
-    let end = "unexpected end of input"
-    let value = "expected a value"
-    let array = "expected ',' or ']'"
-    let object = "expected ',' or '}'"
-    let key = "expected a string key"
-    let colon = "expected ':'"
-    let number = "invalid number"
-    let escape = "invalid escape"
-    let control = "control character in string"
-    let deep = "nested too deeply"
-    let trailing = "unexpected text after the value"
-    let oom = "out of memory"
-    let msg = match problem {
-        not_utf8                  => { utf8::of{ chars = &not_utf8 } }
-        unexpected_end            => { utf8::of{ chars = &end } }
-        expected_value            => { utf8::of{ chars = &value } }
-        expected_comma_or_bracket => { utf8::of{ chars = &array } }
-        expected_comma_or_brace   => { utf8::of{ chars = &object } }
-        expected_key              => { utf8::of{ chars = &key } }
-        expected_colon            => { utf8::of{ chars = &colon } }
-        bad_number                => { utf8::of{ chars = &number } }
-        bad_escape                => { utf8::of{ chars = &escape } }
-        control_char              => { utf8::of{ chars = &control } }
-        too_deep                  => { utf8::of{ chars = &deep } }
-        trailing_text             => { utf8::of{ chars = &trailing } }
-        out_of_memory             => { utf8::of{ chars = &oom } }
+    let msg: utf8::String = match problem {
+        not_utf8                  => { "not UTF-8 text" }
+        unexpected_end            => { "unexpected end of input" }
+        expected_value            => { "expected a value" }
+        expected_comma_or_bracket => { "expected ',' or ']'" }
+        expected_comma_or_brace   => { "expected ',' or '}'" }
+        expected_key              => { "expected a string key" }
+        expected_colon            => { "expected ':'" }
+        bad_number                => { "invalid number" }
+        bad_escape                => { "invalid escape" }
+        control_char              => { "control character in string" }
+        too_deep                  => { "nested too deeply" }
+        trailing_text             => { "unexpected text after the value" }
+        out_of_memory             => { "out of memory" }
     }
     io::eprintln{ &io, s = msg }
 }

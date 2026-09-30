@@ -382,6 +382,7 @@ namespace ir_print {
             float{ value }            => { head{ &o, e, a = "float" }; char{ &o, c = ' ' }; float{ &o, v = value, ty = e.ty } }
             boolean{ value }          => { head{ &o, e, a = "bool" }; char{ &o, c = ' ' }; flag{ &o, b = value } }
             str{ bytes }              => { head{ &o, e, a = "str" }; char{ &o, c = ' ' }; quote{ &o, b = bytes } }
+            sbytes{ bytes }           => { head{ &o, e, a = "sbytes" }; char{ &o, c = ' ' }; quote{ &o, b = bytes } }
             nil                       => { head{ &o, e, a = "null" } }
             local{ slot }             => { head{ &o, e, a = "local" }; spaced{ &o, n = slot } }
             deref{ ptr, pos }         => { head{ &o, e, a = "deref" }; sub{ &o, e = ptr, depth }; position{ &o, p = pos } }
@@ -504,7 +505,7 @@ namespace ir_print {
     }
 
     // `TAG T`, after the opening parenthesis.
-    fn head(A) { mut o: Out, e: ir::Expr, a: A } {
+    fn head { mut o: Out, e: ir::Expr, a: []u8 } {
         text{ &o, a }
         spaced{ &o, n = e.ty }
     }
@@ -515,13 +516,13 @@ namespace ir_print {
         expr{ &o, e = e.*, depth }
     }
 
-    fn unary(A) { mut o: Out, a: A, ty: ir::TypeId, e: *ir::Expr, depth: u32 } {
+    fn unary { mut o: Out, a: []u8, ty: ir::TypeId, e: *ir::Expr, depth: u32 } {
         text{ &o, a }
         spaced{ &o, n = ty }
         sub{ &o, e, depth }
     }
 
-    fn binary(A) { mut o: Out, tag: A, ty: ir::TypeId, a: *ir::Expr, b: *ir::Expr, depth: u32 } {
+    fn binary { mut o: Out, tag: []u8, ty: ir::TypeId, a: *ir::Expr, b: *ir::Expr, depth: u32 } {
         text{ &o, a = tag }
         spaced{ &o, n = ty }
         sub{ &o, e = a, depth }
@@ -639,9 +640,8 @@ namespace ir_print {
         bytes{ &o, b = utf8::fmt_u64{ n, into = buf[..] }.bytes }
     }
 
-    // `a` is a string literal: a [N]u8 value.
-    fn text(A) { mut o: Out, a: A } {
-        bytes{ &o, b = @slice(@cast(*u8, &a), @size_of(A)) }
+    fn text { mut o: Out, a: []u8 } {
+        bytes{ &o, b = a }
     }
 
     fn char { mut o: Out, c: u8 } {

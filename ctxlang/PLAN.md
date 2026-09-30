@@ -151,10 +151,12 @@ to live and a read-only type to have, which in turn needs read-only pointers and
    `@cast` can no longer drop read-only-ness. In the IR a slice type is a struct of `ptr` and
    `len`, plus two nodes, `sindex` and `ssub` (IR version 3). `slice::` keeps `empty`, `cast`,
    `copy` and `fill`.
-3. **Literal views** (#1). A string literal converts to `[]u8` where one is expected, backed by
-   static read-only bytes, and is derived from no local (§14). Needs one new IR node for the bytes.
-   `utf8::String` is the only text type (`ascii` is byte-level character tests), so a literal
-   also converts to `utf8::String`, checked for valid UTF-8 at compile time.
+3. **Literal views** (#1) — *done.* `utf8::String` is the only text type (`ascii` is byte-level
+   character tests). A string literal where a `[]u8` or `utf8::String` is expected (also inside
+   `?`) views static read-only bytes and is derived from no local (§14); as a `utf8::String` it
+   is checked for valid UTF-8 at compile time. Elsewhere it is still a `[N]u8`. A literal branch
+   of an `if` or `match` follows a sibling branch that is a view. In the IR, `(sbytes T STR)`
+   (IR version 4); a `utf8::String` is a struct literal around one. C emits a string literal.
 4. **Const tables** (#12). Consts may hold literal views, e.g. `const KEYWORDS: [12][]u8 = [...]`.
    Emit large consts as static data instead of inlining them if a profile shows the copies.
 5. **Default field values.** A struct field may declare a default, `name: T = e`, where `e` is a

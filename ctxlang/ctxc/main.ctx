@@ -9,14 +9,11 @@
 // tools/ctxc.py runs the whole pipeline: IR, C and the C compiler.
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
-    let roundtrip = "roundtrip"
-    let c = "c"
     let mut to_c = false
-    if args.len == 3 and map::eq_bytes{ a = args[0], b = c[..] } {
+    if args.len == 3 and map::eq_bytes{ a = args[0], b = "c" } {
         to_c = true
-    } else if args.len != 2 or not map::eq_bytes{ a = args[0], b = roundtrip[..] } {
-        let usage = "usage: ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c"
-        io::eprintln{ &io, s = utf8::of{ chars = &usage } }
+    } else if args.len != 2 or not map::eq_bytes{ a = args[0], b = "roundtrip" } {
+        io::eprintln{ &io, s = "usage: ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c" }
         return 2
     }
     let path = args[1]
@@ -59,12 +56,10 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
 }
 
 // "PATH: what"
-fn cannot(A) { mut io: Io, path: []u8, what: A } {
-    let msg = utf8::of{ chars = @slice(@cast(*u8, &what), @size_of(A)) }
+fn cannot { mut io: Io, path: []u8, what: utf8::String } {
     io::write{ &io, to = io::Stream::err, bytes = path }
-    let sep = ": "
-    io::eprint{ &io, s = utf8::of{ chars = &sep } }
-    io::eprintln{ &io, s = msg }
+    io::eprint{ &io, s = ": " }
+    io::eprintln{ &io, s = what }
 }
 
 // "PATH:LINE:COL: error: PROBLEM" for a malformed IR file.
@@ -88,37 +83,24 @@ fn report { mut io: Io, path: []u8, text: []u8, at: usize, problem: ir_read::Pro
     _ = utf8::push_u64{ &b, &heap, n = line }
     _ = utf8::push_char{ &b, &heap, c = ':' }
     _ = utf8::push_u64{ &b, &heap, n = col }
-    let sep = ": error: "
-    _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &sep } }
-    let expected = "expected "
-    let int = "an integer"
-    let large = "integer too large"
-    let symbol = "expected a symbol"
-    let string = "expected a string"
-    let escape = "invalid escape in string"
-    let float = "invalid float"
-    let tag = "unexpected tag"
-    let id = "type id out of order"
-    let trailing = "unexpected text after (main)"
+    _ = utf8::push{ &b, &heap, s = ": error: " }
     match problem {
         expected{ c } => {
-            _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &expected } }
-            _ = utf8::push_char{ &b, &heap, c = '\'' }
+            _ = utf8::push{ &b, &heap, s = "expected '" }
             _ = utf8::push_char{ &b, &heap, c }
             _ = utf8::push_char{ &b, &heap, c = '\'' }
         }
         expected_int => {
-            _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &expected } }
-            _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &int } }
+            _ = utf8::push{ &b, &heap, s = "expected an integer" }
         }
-        int_too_large   => { _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &large } } }
-        expected_symbol => { _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &symbol } } }
-        expected_string => { _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &string } } }
-        bad_escape      => { _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &escape } } }
-        bad_float       => { _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &float } } }
-        unknown_tag     => { _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &tag } } }
-        bad_id          => { _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &id } } }
-        trailing_text   => { _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &trailing } } }
+        int_too_large   => { _ = utf8::push{ &b, &heap, s = "integer too large" } }
+        expected_symbol => { _ = utf8::push{ &b, &heap, s = "expected a symbol" } }
+        expected_string => { _ = utf8::push{ &b, &heap, s = "expected a string" } }
+        bad_escape      => { _ = utf8::push{ &b, &heap, s = "invalid escape in string" } }
+        bad_float       => { _ = utf8::push{ &b, &heap, s = "invalid float" } }
+        unknown_tag     => { _ = utf8::push{ &b, &heap, s = "unexpected tag" } }
+        bad_id          => { _ = utf8::push{ &b, &heap, s = "type id out of order" } }
+        trailing_text   => { _ = utf8::push{ &b, &heap, s = "unexpected text after (main)" } }
     }
     io::write{ &io, to = io::Stream::err, bytes = path }
     io::eprintln{ &io, s = utf8::view{ b } }

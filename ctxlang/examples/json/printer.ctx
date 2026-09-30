@@ -21,8 +21,8 @@ namespace printer {
 
     fn write_value(S) { mut w: Writer(S), mut heap: S, v: json::Value, depth: usize } {
         match v {
-            nil              => { put_ascii{ &w, &heap, s = "null" } }
-            boolean{ value } => { if value { put_ascii{ &w, &heap, s = "true" } } else { put_ascii{ &w, &heap, s = "false" } } }
+            nil              => { put{ &w, &heap, s = "null" } }
+            boolean{ value } => { if value { put{ &w, &heap, s = "true" } } else { put{ &w, &heap, s = "false" } } }
             number{ value }  => { write_number{ &w, &heap, n = value } }
             string{ value }  => { write_string{ &w, &heap, s = value } }
             array{ items }   => {
@@ -61,7 +61,7 @@ namespace printer {
 
     fn write_number(S) { mut w: Writer(S), mut heap: S, n: f64 } {
         if n != n or n > utf8::F64_MAX or n < -utf8::F64_MAX {
-            put_ascii{ &w, &heap, s = "null" }
+            put{ &w, &heap, s = "null" }
             return
         }
         if n > -EXACT and n < EXACT {
@@ -104,7 +104,7 @@ namespace printer {
         else if c == 12 { put_char{ &w, &heap, c = 'f' } }
         else {
             let hex = "0123456789abcdef"
-            put_ascii{ &w, &heap, s = "u00" }
+            put{ &w, &heap, s = "u00" }
             put_char{ &w, &heap, c = hex[c / 16] }
             put_char{ &w, &heap, c = hex[c % 16] }
         }
@@ -125,11 +125,6 @@ namespace printer {
 
     fn put(S) { mut w: Writer(S), mut heap: S, s: utf8::String } {
         if not utf8::push{ b = &w.out, &heap, s } { w.failed = true }
-    }
-
-    // `s` is an ASCII string literal.
-    fn put_ascii(S, A) { mut w: Writer(S), mut heap: S, s: A } {
-        put{ &w, &heap, s = utf8::of{ chars = @slice(@cast(*u8, &s), @size_of(A)) } }
     }
 
     fn put_char(S) { mut w: Writer(S), mut heap: S, c: u8 } {

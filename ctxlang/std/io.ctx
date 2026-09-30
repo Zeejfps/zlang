@@ -4,8 +4,7 @@
 // function can do IO only if its caller passes it down.
 //
 //   fn main { mut io: Io } {
-//       let hi = "hello, world"
-//       io::println{ &io, s = utf8::of{ chars = &hi } }
+//       io::println{ &io, s = "hello, world" }
 //       io::println_i64{ &io, n = 42 }
 //   }
 //
@@ -37,13 +36,11 @@ namespace io {
 
     fn eprintln { mut io: Io, s: utf8::String } {
         eprint{ &io, s }
-        let nl = "\n"
-        write{ &io, to = Stream::err, bytes = nl[..] }
+        write{ &io, to = Stream::err, bytes = "\n" }
     }
 
     fn newline { mut io: Io } {
-        let nl = "\n"
-        write{ &io, to = Stream::out, bytes = nl[..] }
+        write{ &io, to = Stream::out, bytes = "\n" }
     }
 
     // Writes one character. Panics if c isn't a Unicode scalar value.
@@ -79,11 +76,9 @@ namespace io {
 
     fn print_bool { mut io: Io, n: bool } {
         if n {
-            let t = "true"
-            print{ &io, s = utf8::of{ chars = &t } }
+            print{ &io, s = "true" }
         } else {
-            let f = "false"
-            print{ &io, s = utf8::of{ chars = &f } }
+            print{ &io, s = "false" }
         }
     }
 
