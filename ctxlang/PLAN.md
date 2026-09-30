@@ -12,11 +12,12 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 | 1 | Typed IR and the Python dumper | done | `cbba391` |
 | 2 | C backend and runtime | done | `5f236c1` |
 | 3 | First bootstrap: a native backend | done | `aa6a805` |
-| 3a | Language work before the lexer (below) | **next** | |
-| 4 | Lexer | | |
+| 3a | Language work before the lexer (below) | done | `2056bb4` |
+| 4 | Lexer | **next** | |
 | 5 | Parser | | |
 | 6 | Checker | | |
 | 7 | Self-hosting fixpoint | | |
+| 7a | Language server | | |
 | 8 | Decide ctxi's role | | |
 | 9 | Metaprogramming: build programs, attributes, compile-time consts | future | |
 
@@ -48,6 +49,9 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
   is the contract between checker and backend, and the diff target for the port.
 - **Differential testing throughout.** Tokens, syntax trees, IR, program output and compile errors
   are all compared against ctxi on the same corpus.
+- **The front end is built for an editor from the start.** It is a library that returns every
+  diagnostic and a queryable model of the program, not a pass that stops at the first error. See
+  [Editor support](#editor-support). ctxi stays a stop-at-first-error reference.
 
 ## Architecture
 
@@ -59,6 +63,9 @@ front end stands in for the ctxlang one.
 (std + program)                                  ^
                   ctxi front end (Python) ── irdump
 ```
+
+The ctxlang front end's result is an `Analysis`: every diagnostic, plus a semantic model that the
+language server (stage 7a) queries. IR is lowered from it only when there are no errors.
 
 ### Source layout
 
@@ -75,6 +82,96 @@ ctxi/cbackend.py                          IR → ctxc → cc; bootstraps the nat
 tools/ctxc.py                             driver: compiles a program to an executable
 tools/corpus.py  irtest.py  ctest.py      corpus, IR roundtrip, C backend differential tests
 ```
+
+## Editor support
+
+A language server (stage 7a) runs the front end on every edit, on code that is usually
+half-written, in a process that stays up for hours. Retrofitting that onto a compiler that stops at
+the first error, keeps only start positions and throws away what it learned means rewriting the
+front end, so stages 4–6 build these in from the start. ctxi is not changed: it stays the
+stop-at-first-error reference, and the differential tests compare against ctxc's *first*
+diagnostic (see Testing).
+
+**Front end as a library.** `check{ files } -> Analysis` takes source text, not paths, so an editor
+can pass unsaved buffers. It never exits or panics on bad input; `@panic` means a compiler bug. All
+of one analysis lives in one arena, which is dropped whole when the next edit arrives. There is no
+global mutable state. The driver's `build` is `check`, then IR, then C, and it stops after `check`
+if there are errors.
+
+**Positions.**
+- Every token and syntax node carries a span: file id plus start and end byte offsets. Lines and
+  columns are computed on demand from a per-file table of line starts. The lexer no longer counts
+  columns as it goes.
+- Error messages print columns in characters, as ctxi does. The language server converts offsets to
+  whatever the client negotiated: UTF-8 if it accepts `positionEncoding`, UTF-16 otherwise.
+- Nodes that the parser makes up during recovery get zero-width spans at the point where it
+  recovered.
+
+**Diagnostics.** A diagnostic is a severity, a primary span, a message and optional related spans
+with notes ("first borrowed here"). Phases append to one list, passed as a `mut diags` context field,
+rather than returning at the first error. The list is capped (100) so a broken file can't flood the
+client. Message text stays the interface that tests match on.
+
+**Lexer recovery.** A bad character, an unterminated literal or a bad escape becomes an error token
+plus a diagnostic, and lexing continues. An unterminated literal ends at the end of the line and an
+unterminated block comment at the end of the file.
+
+**Comments are kept.** The lexer records comments in a side list per file, not in the token stream,
+so the parser doesn't see them. Hover docs, a formatter and folding ranges need them later. They
+cost nothing now and are hard to recover afterwards. The doc-comment syntax is a separate spec
+decision.
+
+**Parser recovery.**
+- The tree has `error` variants in `Decl`, `Stmt`, `Expr` and `TypeExpr`. A missing name is a name
+  node flagged as missing, so `a.` parses as a field access with a missing field. Completion
+  depends on this.
+- After an error the parser skips to a synchronization point: a top-level keyword (`fn`, `struct`,
+  `union`, `type`, `const`, `namespace`), the next statement (a newline at the same brace depth,
+  §11.3), or the brace that closes the current block. It counts `{` `}` so one bad token doesn't
+  swallow the rest of the file.
+- A new error is reported only once the parser has consumed a token since the previous one, so a
+  single mistake doesn't produce a cascade.
+- Nesting depth is limited, and too deep is a diagnostic, not a stack overflow.
+
+**Checker recovery.**
+- An `error` type unifies with everything and never produces a message. An unresolved name, or an
+  `error` node from the parser, gets that type.
+- Each declaration and function body is checked on its own, and an error in one doesn't stop the
+  others. A missing `main` is a diagnostic, not a stop.
+- Flow and safety checks (6.4, 6.5) skip a function whose body already has type errors, since what
+  they would report is mostly noise.
+- IR is produced only when there are no errors.
+
+**The semantic model.** The checker's result is kept as data, not only lowered to IR. The IR is
+monomorphized with names resolved away, and ctxi already checks each generic body once with opaque
+type parameters (§9), which is the view an editor wants. The checker records:
+
+| Record | Serves |
+|---|---|
+| each name use → its declaration (the file and span of a local, field, variant, fn, type or namespace) | go to definition, references, rename, semantic tokens |
+| each expression's type, and a local's type at each use (after narrowing, §8) | hover, inlay hints |
+| each declaration: kind, name, span, signature text, and its namespace | document and workspace symbols, hover |
+| scopes: each block's locals, with the span where each one is live | completion of names |
+| the expected type at each `{` of a call or literal, and which fields a pun or `..` supplied | completion of field names, signature help, hover on `..` |
+
+These are side tables indexed by node id, not fields written into the tree as ctxi does (`e.ty`,
+`e.ref`). That keeps parsed trees read-only, so a file that didn't change, std in particular,
+doesn't have to be reparsed for each check.
+
+**Speed.** On every edit the server re-lexes and reparses the files that changed and rechecks the
+whole program. That is simple and probably fast enough: ctxc's backend compiles all of ctxc in
+0.2s, and the front end should take the same order of time. Measure it in stage 6, with a budget of
+about 100 ms for ctxc itself. Only if a profile says otherwise: skip unchanged function bodies, or check
+only up to the cursor for completion.
+
+**What is built during the port and what waits.** A change to the shape of the data or of the
+control flow is built during stages 4–6, because retrofitting it means rewriting the port. That
+covers spans, node ids, error nodes and recovery, comments kept on the side, the diagnostics list,
+side tables, per-declaration check state (stage 6), and lowering from any root. Anything that only
+*reads* those structures waits for the stage that needs it: the language server and its queries
+(7a), doc-comment syntax, reflection (9.3) and the compile-time evaluator (9.5). The diffs against
+ctxi still work, because on valid code the extra structure changes no dump, and on invalid code only
+the first diagnostic is compared.
 
 ## Stages
 
@@ -134,7 +231,7 @@ Python front end now feeds a native backend, and every program in the repo compi
 *Done when:* the native backend passes the stage 2 suite, and its C output for the corpus is
 byte-identical to the interpreted backend's (`tools/ctest.py --same-c`).
 
-### 3a. Language work before the lexer — next
+### 3a. Language work before the lexer — done
 
 The lexer is the first user of string literals as text and of keyword tables, so FRICTION.md #1
 (string literals need a local) and #12 (no const string tables) come first. Literals need somewhere
@@ -161,44 +258,58 @@ to live and a read-only type to have, which in turn needs read-only pointers and
    [...]`, as `[]u8` or `utf8::String`, also inside struct literals. This fell out of step 3 with
    no checker or IR change. Emit large consts as static data instead of inlining them if a
    profile shows the copies.
-5. **Default field values.** A struct field may declare a default, `name: T = e`, where `e` is a
-   const expression (§14.1). A struct literal may leave out a field that has a default (§7.1).
-   Nothing is implicit: a `?T` field without `= null` must still be supplied. The dumper fills in
-   the omitted fields, so the IR and backend are unchanged. This comes before stage 6 so that the
-   ported checker has it from the start rather than adding it to both checkers, and before stage 9,
-   whose attributes are struct literals that would otherwise have to spell out every field.
-   **Open:** whether union variant payloads get defaults too (probably yes, the same rule), and
-   whether context fields do. Context fields would give default arguments, but the default belongs
-   to the declaration and not to the `fn{C}` type (§5), so a call through a function value would
-   still have to supply every field. Decide that separately.
 
 *Done when:* each step passes the test suite under both backends and `ctest.py --same-c`, and
 FRICTION.md #1 and #12 are struck through.
 
 ### 4. Lexer (~500 ctxlang)
 
-Port `ctxi/lexer.py` using `utf8::Cursor`, which counts columns in characters as Python does.
-Positions (line, column, file) must match, because error messages depend on them.
+Port `ctxi/lexer.py`. Tokens carry byte-offset spans, the lexer keeps comments on the side and
+recovers from errors ([Editor support](#editor-support)). The token dump prints line and column
+in characters, computed from the line table, because error messages depend on them.
 
-*Done when:* token dumps match Python for all of `std/`, `examples/` and the corpus, including
-lexer errors.
+*Done when:* token dumps match Python for all of `std/`, `examples/` and the corpus, and each
+lexer-error test's first diagnostic matches ctxi's error.
 
 ### 5. Parser (~1,800 ctxlang)
 
-Port `ctxi/parser.py` into syntax-tree unions allocated from an arena. `examples/json/parser.ctx`
-shows the style: recursive descent and `let … else` error propagation. Newline sensitivity (§11.3)
-and the rule for generic application on the same line (§9.2) are where the two parsers are most
-likely to disagree.
+Port `ctxi/parser.py` into syntax-tree unions allocated from an arena. Every node gets an id and a
+span, and the tree has `error` variants. It recovers at synchronization points instead of
+returning at the first error ([Editor support](#editor-support)), so `examples/json/parser.ctx`'s
+`let … else` propagation is the wrong model for statements and declarations. It still fits inside
+one expression. Newline sensitivity (§11.3) and the rule for generic application on the same line
+(§9.2) are where the two parsers are most likely to disagree.
 
-*Done when:* syntax-tree dumps match Python across the corpus, and every syntax-error test gives the
-same message and position.
+*Done when:* syntax-tree dumps match Python across the corpus (the dump prints spans as line and
+column), every syntax-error test's first diagnostic has the same message and position, and the
+recovery test below passes on the parser.
 
 ### 6. Checker (~5,000 ctxlang, the largest risk)
 
-Port `checker.py` and `types.py`. The checker's output is the IR, so the dumper becomes the spec and
-the diff target. Work in sub-steps, each diffed on its own:
+Port `checker.py` and `types.py`. The IR is the diff target, so the dumper becomes the spec. The
+checker also produces the semantic model and recovers from errors with an `error` type ([Editor
+support](#editor-support)); neither is in ctxi. Results go in side tables by node id, not into the
+tree. Two structural choices serve compile-time consts (9.5), which have to check, lower and run
+code while the check is still going:
 
-1. Name resolution and namespaces (§10), declaration collection, type expressions, layout.
+- **Per-declaration check state.** Each declaration's entry in a side table says whether it is
+  unchecked, in progress or done, and holds its results (signature, body types, a const's value). A
+  checker entry point `ensure{ decl }` checks a declaration on demand if it isn't done yet. A
+  declaration reached while it is in progress is a cycle, reported with the path of the cycle. The
+  top-level passes run in ctxi's order and call the same `ensure`, so diagnostics still come out in
+  ctxi's order. On-demand checking only happens where the pass order would otherwise reach a
+  declaration before it has been checked. Before 9.5 there is one such case, and ctxi already
+  handles it ad hoc: an array length `[N]T` that names a const is evaluated while types are
+  resolved, with `const_stack` catching cycles (`checker.py` `const_int`). In ctxc this becomes
+  `ensure`.
+- **Lowering from any root.** Monomorphization and IR output start from a set of roots, not only
+  `main`: a const initializer, or later a test function. The IR for one root and what it reaches
+  can then be produced in the middle of a check.
+
+Work in sub-steps, each diffed on its own:
+
+1. Name resolution and namespaces (§10), declaration collection, type expressions, layout. The
+   name-use table and symbol list come from this step.
 2. Inference: type variables as arena nodes with union-find, integer and float literal defaulting
    (§11 Literals), generic application and inference (§9).
 3. Statements, expressions, calls, binds, `match`, `let … else`, narrowing (§8).
@@ -206,8 +317,9 @@ the diff target. Work in sub-steps, each diffed on its own:
 5. Safety checks: exclusivity (§3.1), escape analysis (§14), bound-function scope (§6).
 6. Monomorphization and IR output.
 
-*Done when:* IR matches the Python dump across the corpus, and every compile-error test produces a
-message containing the same fragment at the same position.
+*Done when:* IR matches the Python dump across the corpus, every compile-error test's first
+diagnostic contains the same fragment at the same position, the recovery test passes on the whole
+front end, and checking ctxc stays within the time budget.
 
 ### 7. Self-hosting fixpoint
 
@@ -215,6 +327,29 @@ The native `ctxc` from stage 3, now with the ctxlang front end, compiles its own
 `ctxc2` compiles the source again to `ctxc3`.
 
 *Done when:* `ctxc2.c` and `ctxc3.c` are byte-identical, and the full suite passes under `ctxc3`.
+
+### 7a. Language server
+
+`ctxls`, written in ctxlang, speaks LSP (JSON-RPC over stdin and stdout) and answers from the
+`Analysis` that stages 4–6 produce ([Editor support](#editor-support)). The JSON reader and writer
+grow out of `examples/json`.
+
+- **Features, in order:** diagnostics on open and change (with debouncing), go to definition, hover
+  (type and signature), document symbols, completion (names in scope, fields after `.`, context
+  fields inside `{`), references, rename, workspace symbols, semantic tokens, signature help, inlay
+  hints for inferred `let` types.
+- **Workspace.** A program is a directory of `.ctx` files plus std (§10). An open file joins the
+  program in its directory. Buffers the editor holds replace the text on disk.
+- **What std needs:** `io::read` of an exact byte count from stdin, because a message body has no
+  trailing newline and `read_line` won't do; `fs::list` to find a program's files (deferred at
+  stage 0); and writing raw bytes to stdout without a newline. A client that sends
+  `workspace/didChangeWatchedFiles` could stand in for `fs::list`.
+- **Robustness.** A panic kills the server, so the recovery test gates every release. A request
+  whose analysis fails for an internal reason returns an LSP error and doesn't take the session down
+  with it.
+
+*Done when:* VS Code, with a minimal client extension, shows diagnostics while you type, and go to
+definition, hover and completion work on `ctxc/` itself. The editor-query fixtures pass.
 
 ### 8. Decide ctxi's role
 
@@ -254,24 +389,26 @@ Steps, each usable on its own:
    `@`. The `{ }` form is the language's own named-argument syntax, so there is no separate
    attribute grammar as with Rust's `#[...]`.
 3. **Reflection: `build::check`.** Runs the front end on an executable's sources and gives the build
-   program the checked declarations as data: structs, unions, fields, layouts and attributes.
+   program the checked declarations as data: structs, unions, fields, layouts and attributes. That
+   data is the stage 6 `Analysis`, read-only trees plus side tables, so no separate reflection
+   format is needed.
    Needs stage 7, since before it the front end is Python and this would have to go through a
    native.
 4. **Typed attributes.** `#name{ ... }` resolves `name` as a path to a struct (§10) and checks the
-   braces as a const struct literal of it (§7, §14.1). Bare `#name` requires a struct whose every
-   field has a default (3a step 5). The compiler still gives attributes no meaning; the check
+   braces as a const struct literal of it (§7, §14.1). Bare `#name` requires a struct with no
+   fields. The compiler still gives attributes no meaning; the check
    catches typos such as `#jsno` or `rename_to =`, which would otherwise be dropped silently.
    Generators receive attributes as typed values. A generator library declares its own:
 
    ```
    namespace json {
        struct derive {}
-       struct field { rename: ?[]u8 = null, skip: bool = false }
+       struct field { rename: ?[]u8, skip: bool }
    }
 
    #json::derive
    struct User {
-       #json::field{ rename = "user_id" }
+       #json::field{ rename = "user_id", skip = false }
        id: u64,
        name: []u8,
    }
@@ -280,7 +417,13 @@ Steps, each usable on its own:
 5. **Compile-time consts.** A `const` initializer may call any function. No capability exists at
    compile time, apart perhaps from a compile-time arena for allocation, so only effect-free code
    can run there. ctxc evaluates it with an interpreter over the IR, which is monomorphized, typed
-   and laid out, so the interpreter is much smaller than ctxi. The result must hold no pointers
+   and laid out, so the interpreter is much smaller than ctxi. Checking the const calls `ensure` on
+   the functions it reaches, lowers from the initializer as the root, and runs that IR. All three
+   are stage 6 machinery, so this step adds the interpreter and a new caller, not a change to the
+   checker's structure. The value is cached in the const's check state, so the language server
+   doesn't re-run it on edits that don't touch its inputs. A const whose evaluation reaches itself
+   is a cycle error from `ensure`, and running out of fuel (a step limit) is a diagnostic, not a
+   hang. The result must hold no pointers
    other than ones to static data, the same rule as 3a step 4. Uses: lookup tables, perfect-hash
    keyword maps, precomputed tables for parsers.
 
@@ -341,7 +484,17 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 - **Front-end diffs.** Token, syntax-tree and IR dumps are compared byte for byte with Python on the
   whole corpus.
 - **Errors.** The compile-error tests match on a message fragment, so the ported checker has to
-  produce the same wording. Message text is part of the interface.
+  produce the same wording. Message text is part of the interface. ctxc reports diagnostics in the
+  order it finds them, running its phases and visiting files and declarations in ctxi's order, so
+  its first diagnostic is the one ctxi stops at. That first diagnostic is compared with ctxi.
+  Later ones are ctxc's own, and ctxc may report more than ctxi.
+- **Recovery** (`tools/recover.py`, from stage 5). Damage every file in the corpus: cut it at each
+  token boundary, and delete or duplicate single tokens. Run the front end on every result. It must
+  not panic, must report at least one diagnostic, must keep under the diagnostic cap, and on a cut
+  must still produce symbols for the declarations before the cut. This is the test that guards
+  editor use.
+- **Editor queries** (stage 7a). Fixture files mark positions (`/*^def*/`, `/*^hover*/`) and state
+  the expected answer, which covers the semantic model without a client.
 - **Float text.** `f64_digits` must copy Python's `repr` exactly: shortest round-trip digits,
   exponent form below `1e-4` and from `1e16`, and a `.0` suffix.
 
