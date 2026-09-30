@@ -140,20 +140,18 @@ namespace lexer {
 
     fn keyword { word: []u8 } -> tok::Kind {
         if word.len > 9 or word[0] < 'a' { return tok::Kind::ident }
-        let kws = tok::KEYWORDS
         let mut i: usize = 0
-        while i < kws.len {
-            if slice::eq_bytes{ a = word, b = kws[i] } { return tok::keyword{ i } }
+        while i < tok::KEYWORDS.len {
+            if slice::eq_bytes{ a = word, b = tok::KEYWORDS[i] } { return tok::keyword{ i } }
             i = i + 1
         }
         return tok::Kind::ident
     }
 
     fn op { text: []u8, i: usize } -> ?tok::Kind {
-        let ops = tok::OPS
         let mut k: usize = 0
-        while k < ops.len {
-            let o = ops[k]
+        while k < tok::OPS.len {
+            let o = tok::OPS[k]
             if i + o.len <= text.len and slice::eq_bytes{ a = text[i..i + o.len], b = o } {
                 return tok::op{ i = k }
             }

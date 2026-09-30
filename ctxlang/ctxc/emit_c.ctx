@@ -88,6 +88,11 @@ namespace emit {
         let head = e.o
         e.o = ir_print::out{ heap, types = p.types }
         i = 0
+        while i < p.consts.len {
+            const_def{ &e, id = @as(u32, i) }
+            i = i + 1
+        }
+        i = 0
         while i < p.fns.len {
             let f = p.fns[i]
             if f.native { native{ &e, f } } else { function{ &e, f } }
@@ -342,12 +347,52 @@ namespace emit {
 
     fn prototypes { mut e: E } {
         let mut i = 0
+        while i < e.p.consts.len {
+            put{ &e, a = "static " }
+            tn{ &e, t = e.p.consts[i].ty }
+            put{ &e, a = " *q" }
+            num{ &e, n = i }
+            put{ &e, a = "(void);\n" }
+            i = i + 1
+        }
+        i = 0
         while i < e.p.fns.len {
             signature{ &e, f = e.p.fns[i] }
             put{ &e, a = ";\n" }
             i = i + 1
         }
         ch{ &e, c = '\n' }
+    }
+
+    // Const N's accessor, which computes its value the first time it is called:
+    //   static tT qvN; static bool qdN;
+    //   static tT *qN(void) { if (!qdN) { qvN = VALUE; qdN = 1; } return &qvN; }
+    fn const_def { mut e: E, id: u32 } {
+        let c = e.p.consts[id]
+        e.temp = 0
+        put{ &e, a = "// " }
+        raw{ &e, b = c.name }
+        put{ &e, a = "\nstatic " }
+        tn{ &e, t = c.ty }
+        put{ &e, a = " qv" }
+        num{ &e, n = id }
+        put{ &e, a = "; static bool qd" }
+        num{ &e, n = id }
+        put{ &e, a = ";\nstatic " }
+        tn{ &e, t = c.ty }
+        put{ &e, a = " *q" }
+        num{ &e, n = id }
+        put{ &e, a = "(void) { if (!qd" }
+        num{ &e, n = id }
+        put{ &e, a = ") { qv" }
+        num{ &e, n = id }
+        put{ &e, a = " = " }
+        expr{ &e, x = c.value }
+        put{ &e, a = "; qd" }
+        num{ &e, n = id }
+        put{ &e, a = " = 1; } return &qv" }
+        num{ &e, n = id }
+        put{ &e, a = "; }\n\n" }
     }
 
     // `static R fN(P l0, ...)`
@@ -913,6 +958,11 @@ namespace emit {
                 put{ &e, a = "0})" }
             }
             local{ slot } => { local{ &e, slot } }
+            constref{ id } => {
+                put{ &e, a = "(*q" }
+                num{ &e, n = id }
+                put{ &e, a = "())" }
+            }
             deref{ ptr } => {
                 put{ &e, a = "(*" }
                 expr{ &e, x = ptr.* }
@@ -1903,8 +1953,8 @@ namespace emit {
 
     fn is_place { x: ir::Expr } -> bool {
         return match x.k {
-            local           => { true }
-            deref | sindex  => { true }
+            local | constref => { true }
+            deref | sindex   => { true }
             field{ base }   => { is_place{ x = base.* } }
             index{ base }   => { is_place{ x = base.* } }
             payload{ base } => { is_place{ x = base.* } }

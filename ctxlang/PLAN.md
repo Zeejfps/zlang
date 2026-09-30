@@ -37,6 +37,9 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 - 20 corpus programs read temporary files that the test suite deletes once it's done, so
   `ctest.py` skips them. `tools/corpus.py` should copy those files into the case directory.
 - The C backend prints no `in fn` stack trace with a panic (see Open decisions).
+- A const whose value panics (`[200 + 100]` as `[1]u8`) panics at runtime, not at compile time
+  as spec §14 implies, and the backends differ on when: ctxi when it compiles the function that
+  uses it, C on first use. Stage 6 folds consts in the checker, which makes it a compile error.
 - Linux has no large-stack link flag yet (`cbackend.stack_flags`). The main thread keeps its
   default stack (usually 8 MB), below the runtime's 16 MB check, so deep recursion segfaults instead of panicking.
 
@@ -260,8 +263,9 @@ to live and a read-only type to have, which in turn needs read-only pointers and
    (IR version 4); a `utf8::String` is a struct literal around one. C emits a string literal.
 4. **Const tables** (#12) — *done.* Consts may hold literal views, e.g. `const KEYWORDS: [12][]u8 =
    [...]`, as `[]u8` or `utf8::String`, also inside struct literals. This fell out of step 3 with
-   no checker or IR change. Emit large consts as static data instead of inlining them if a
-   profile shows the copies.
+   no checker or IR change. Each use of a const was still a copy of its initializer; since
+   stage 4, a const of array, struct or union type is an IR `const` item, kept in a static in C
+   and computed on first use (IR version 7).
 
 *Done when:* each step passes the test suite under both backends and `ctest.py --same-c`, and
 FRICTION.md #1 and #12 are struck through.
@@ -272,7 +276,8 @@ FRICTION.md #1 and #12 are struck through.
 a kind, a newline flag and a span, with no value: the parser reads a literal's value from its
 text (`lexer::int_value`, `float_value`, `char_value`, `str_value`). Kinds are an enum,
 `tok::Kind: u8`: enums (spec §12) were added for this (FRICTION.md #15). An enum is its base
-integer type in the IR, and a `match` on one is a `switch` (IR version 6). Comments go in a side list.
+integer type in the IR, and a `match` on one is a `switch` (IR version 6). The tables in `tok`
+led to consts as IR items (FRICTION.md #20, IR version 7). Comments go in a side list.
 A problem becomes an error token plus a diagnostic, and lexing goes on. `source.ctx` has spans
 and line tables, and `diag.ctx` has the capped diagnostics list that the parser and checker will
 append to.
@@ -342,6 +347,14 @@ Work in sub-steps, each diffed on its own:
 4. Flow checks: initialization, paths that must end, `defer` rules.
 5. Safety checks: exclusivity (§3.1), escape analysis (§14), bound-function scope (§6).
 6. Monomorphization and IR output.
+7. Const folding. The checker computes every const's value while checking it, as spec §14
+   requires, and reports overflow, division by zero, a bad shift count or an out-of-range
+   `@as` in an initializer as a compile error at the operation. A const item in the IR then holds
+   only literals (`int`, `float`, `bool`, `sbytes`, `null`, `struct`, `variant`, `array`), so
+   the C backend can emit it as a `static const` initializer in read-only data and drop the
+   `qN()` accessors. ctxi makes the same change first, since its IR is the diff target. The
+   value is kept in the const's check state, which compile-time consts (9.5) extend to any
+   initializer.
 
 *Done when:* IR matches the Python dump across the corpus, every compile-error test's first
 diagnostic contains the same fragment at the same position, the recovery test passes on the whole

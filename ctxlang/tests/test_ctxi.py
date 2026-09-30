@@ -687,6 +687,33 @@ fn main { mut io: Io } {
             self.assertCompileError(src + '\nfn main {} {}', fragment)
 
 
+class ConstData(Base):
+    """Consts of array, struct and union type are IR items that each use refers to."""
+
+    def test_tables(self):
+        self.assertOutput("""
+struct Point { x: i32, y: i32 }
+const ORIGIN: Point = Point{ x = 1, y = 2 }
+const POINTS: [3]Point = [ORIGIN, Point{ x = 3, y = 4 }, ORIGIN]
+const NAMES: [2]utf8::String = ["zero", "one"]
+const MAYBE: ?Point = ORIGIN
+const LIMIT: i32 = 10
+
+fn main { mut io: Io } {
+    let mut i: usize = 0
+    let mut sum = 0
+    while i < POINTS.len {
+        sum = sum + POINTS[i].x * LIMIT + POINTS[i].y
+        i = i + 1
+    }
+    io::println_i64{ &io, n = sum }
+    io::println{ &io, s = NAMES[1] }
+    let some{ value = p } = MAYBE else { return }
+    io::println_i64{ &io, n = p.y }
+}
+""", '58\none\n2\n')
+
+
 class GenericApplication(Base):
     def test_space_before_type_arguments(self):
         self.assertOutput("""

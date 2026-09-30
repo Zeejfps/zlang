@@ -6,7 +6,8 @@ The IR is the contract between a front end (this module, later ctxc's own checke
 backend. Everything the checker left implicit is explicit here: widening, T to ?T, function
 value conversions, narrowed locals, `..` forwarding, `mut` fields as pointers, generic
 instances, layouts and constant values. An enum is its base integer type, and a match on one is
-a `switch` on its value. ctxc/ir.ctx reads it back and ctxc/ir_print.ctx prints
+a `switch` on its value. A const of array, struct or union type is a top-level item that each use
+refers to; a scalar const is its value at each use. ctxc/ir.ctx reads it back and ctxc/ir_print.ctx prints
 it; the two printers must agree byte for byte.
 
 Text
@@ -21,10 +22,12 @@ spaces. A block is `{`, then each statement on its own line indented two spaces 
 enclosing line, then for a value block `=> EXPR` on its own line, then `}` on its own line at
 the enclosing indent. An empty block is `{}`. Top-level items are one per line:
 
-    ctxir 6
+    ctxir 7
     (files [STR...])                     file names, in the order positions first use them; ""
                                          is a program read from a string
     (type ID TYPE)...                                       in id order
+    (const ID NAME T E)...               an array, struct or union const, in id order; E is its
+                                         value, computed once, when a use first needs it
     (native ID NAME [PARAM...] RET)...                      functions, in id order
     (fn ID NAME [PARAM...] RET [LOCAL...] BLOCK)...
     (main ID)
@@ -61,6 +64,7 @@ Expressions; each has its type T first:
     (int T N)  (float T F)  (bool T 0|1)  (str T STR)  (null T)
     (sbytes T STR)                       a []u8 viewing static read-only bytes STR
     (local T SLOT)  (deref T E POS)  (field T E INDEX)  (index T E E POS)
+    (constref T ID)                      the value of const ID; reading part of it copies no more
     (payload T E VARIANT FIELD)          the field of a union known to hold VARIANT
     (sindex T E E POS)                   element of slice E, bounds-checked; a place
     (ssub T E LO HI|_ POS)               E[LO..HI], HI defaulting to E's length
@@ -92,7 +96,7 @@ from .types import (
     qualname, struct_fields, variants_of, widens,
 )
 
-VERSION = 6
+VERSION = 7
 
 
 class Sym(str):
@@ -122,6 +126,7 @@ class Dumper:
         self.rt = Runtime(checker, stack_size=0)
         self.type_ids, self.type_defs = {}, []
         self.fn_ids, self.fn_queue, self.fn_items = {}, [], []
+        self.const_ids, self.const_items = {}, []
         self.files = {}
 
     # ---- program
@@ -139,6 +144,8 @@ class Dumper:
         lines.append(fmt(node('files', [(f or '').encode() for f in files]), 0))
         for i, d in enumerate(self.type_defs):
             lines.append(fmt(node('type', i, d), 0))
+        for item in self.const_items:
+            lines.append(fmt(item, 0))
         for item in self.fn_items:
             lines.append(fmt(item, 0))
         lines.append(fmt(node('main', main), 0))
@@ -386,10 +393,22 @@ class Dumper:
         if k == 'fn':
             return node('fnref', self.tid(t), self.fn_id(r[1], [self.T(a) for a in r[2]]))
         if k == 'const':
+            if isinstance(t, (Arr, StructT, UnionT, Opt, SliceT)):
+                return node('constref', self.tid(t), self.const_id(r[1]))
             return self.ex(r[1].expr)
         if k == 'enumval':
             return node('int', self.tid(t), t.decl.values[r[2]])
         return node('variant', self.tid(t), r[2], [])
+
+    def const_id(self, d):
+        """The id of const d's item, dumping it the first time."""
+        i = self.const_ids.get(d)
+        if i is None:
+            i = self.const_ids[d] = len(self.const_items)
+            self.const_items.append(None)
+            t = self.T(d.cty)
+            self.const_items[i] = node('const', i, qualname(d).encode(), self.tid(t), self.conv(d.expr, t))
+        return i
 
     def var(self, v, pos):
         t = self.T(v.ty)
@@ -613,10 +632,15 @@ class Verifier:
     def __init__(self, d):
         self.types = d.type_defs
         self.sigs = {item[1]: (item[3], item[4]) for item in d.fn_items}     # params, ret
+        self.consts = d.const_items
         self.items = d.fn_items
         self.ptrs = {td[1]: i for i, td in enumerate(d.type_defs) if td[0] == 'ptr'}
 
     def run(self):
+        for c in self.consts:
+            self.fn, self.locals = f'const {c[2].decode()}', []
+            self.expect(self.kind(c[3]) in ('arr', 'struct', 'union'), 'const of a scalar type')
+            self.expect(self.ex(c[4]) == c[3], 'const value type')
         for item in self.items:
             if item[0] != 'fn':
                 continue
@@ -812,6 +836,8 @@ class Verifier:
             self.expect(self.is_opt(t), 'null type')
         elif tag == 'local':
             self.expect(self.locals[e[2]] == t, f'local {e[2]} type')
+        elif tag == 'constref':
+            self.expect(self.consts[e[2]][3] == t, f'constref {e[2]} type')
         elif tag == 'deref':
             self.expect(self.types[self.ex(e[2])] == ('ptr', t), 'deref of a non-pointer')
         elif tag == 'field':

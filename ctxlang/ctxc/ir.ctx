@@ -17,9 +17,13 @@ namespace ir {
         version: u64,
         files:   []Bytes,       // positions index this; "" is a program read from a string
         types:   []Type,        // indexed by TypeId
+        consts:  []Const,       // indexed by const id
         fns:     []Func,        // indexed by function id
         main:    u32,
     }
+
+    // A const of array, struct or union type. Its value is computed once, when first used.
+    struct Const { name: Bytes, ty: TypeId, value: Expr }
 
     // A source position: 1-based line and column, and an index into Program.files.
     struct Pos { line: u32, col: u32, file: u32 }
@@ -123,6 +127,7 @@ namespace ir {
         sbytes{ bytes: Bytes },                                 // a []u8 viewing static read-only bytes
         nil,                                                    // (null T)
         local{ slot: u32 },
+        constref{ id: u32 },                                    // the value of a Const
         deref{ ptr: *Expr, pos: Pos },
         field{ base: *Expr, index: u32 },
         index{ base: *Expr, i: *Expr, pos: Pos },

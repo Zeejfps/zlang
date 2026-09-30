@@ -58,6 +58,8 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
 19. **Enum from an index is a chain of compares** (implementation). `@as(Kind, base + i)`, the
     lexer's keyword and operator lookup, checks every variant in turn (62 for `tok::Kind`). An enum
     whose values are contiguous could lower to one range check instead.
-20. **Indexing a const table copies the whole table** (implementation). `tok::OPS[i]` inlines
-    all 32 entries at each use, so the lexer copies the table into a local first. Emitting large
-    consts as static data (PLAN.md 3a step 4) would remove the copies.
+20. ~~**Indexing a const table copies the whole table** (implementation). 3a step 4 made const
+    tables legal but left each use of a const a copy of its whole initializer, so `tok::OPS[i]`
+    rebuilt all 32 entries, and the lexer copied each table into a local first.~~ *Done:* a const
+    of array, struct or union type is an IR item that uses refer to, kept in a static in C, so
+    `tok::OPS[i]` reads one entry.

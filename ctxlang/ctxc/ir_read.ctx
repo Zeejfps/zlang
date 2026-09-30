@@ -50,6 +50,7 @@ namespace ir_read {
         expect{ &r, c = ')' }
 
         let mut types = list::new(ir::Type){ realloc = arena::alloc }
+        let mut consts = list::new(ir::Const){ realloc = arena::alloc }
         let mut fns = list::new(ir::Func){ realloc = arena::alloc }
         let mut main = 0
         while true {
@@ -60,6 +61,11 @@ namespace ir_read {
                 if id32{ &r } != types.len { fail{ &r, problem = Problem::bad_id } }
                 add{ &r, xs = &types, item = type_def{ &r } }
                 r.types = list::items{ list = types }
+            } else if is{ s = tag, lit = "const" } {
+                if id32{ &r } != consts.len { fail{ &r, problem = Problem::bad_id } }
+                let name = string{ &r }
+                let ty = id32{ &r }
+                add{ &r, xs = &consts, item = ir::Const{ name, ty, value = expr{ &r } } }
             } else if is{ s = tag, lit = "fn" } {
                 add{ &r, xs = &fns, item = function{ &r, native = false } }
             } else if is{ s = tag, lit = "native" } {
@@ -75,7 +81,10 @@ namespace ir_read {
         }
         skip_space{ &r }
         if r.pos < r.text.len { fail{ &r, problem = Problem::trailing_text } }
-        return ir::Program{ version, files, types = list::items{ list = types }, fns = list::items{ list = fns }, main }
+        return ir::Program{
+            version, files, types = list::items{ list = types }, consts = list::items{ list = consts },
+            fns = list::items{ list = fns }, main,
+        }
     }
 
     // After `(type ID `: the type, up to its closing parenthesis.
@@ -362,6 +371,8 @@ namespace ir_read {
         // Roughly by how often each appears.
         if is{ s = tag, lit = "local" } {
             k = ir::ExprKind::local{ slot = id32{ &r } }
+        } else if is{ s = tag, lit = "constref" } {
+            k = ir::ExprKind::constref{ id = id32{ &r } }
         } else if is{ s = tag, lit = "call" } {
             let callee = id32{ &r }
             k = ir::ExprKind::call{ callee, args = args{ &r } }

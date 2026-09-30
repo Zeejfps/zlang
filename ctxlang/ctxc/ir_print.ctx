@@ -37,6 +37,19 @@ namespace ir_print {
             i = i + 1
         }
         i = 0
+        while i < p.consts.len {
+            let c = p.consts[i]
+            text{ &o, a = "(const " }
+            num{ &o, n = i }
+            char{ &o, c = ' ' }
+            quote{ &o, b = c.name }
+            spaced{ &o, n = c.ty }
+            char{ &o, c = ' ' }
+            expr{ &o, e = c.value, depth = 0 }
+            text{ &o, a = ")\n" }
+            i = i + 1
+        }
+        i = 0
         while i < p.fns.len {
             function{ &o, f = p.fns[i] }
             i = i + 1
@@ -419,6 +432,7 @@ namespace ir_print {
             sbytes{ bytes }           => { head{ &o, e, a = "sbytes" }; char{ &o, c = ' ' }; quote{ &o, b = bytes } }
             nil                       => { head{ &o, e, a = "null" } }
             local{ slot }             => { head{ &o, e, a = "local" }; spaced{ &o, n = slot } }
+            constref{ id }            => { head{ &o, e, a = "constref" }; spaced{ &o, n = id } }
             deref{ ptr, pos }         => { head{ &o, e, a = "deref" }; sub{ &o, e = ptr, depth }; position{ &o, p = pos } }
             field{ base, index }      => { head{ &o, e, a = "field" }; sub{ &o, e = base, depth }; spaced{ &o, n = index } }
             index{ base, i, pos }     => { head{ &o, e, a = "index" }; sub{ &o, e = base, depth }; sub{ &o, e = i, depth }; position{ &o, p = pos } }
