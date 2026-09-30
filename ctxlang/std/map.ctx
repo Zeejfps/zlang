@@ -60,7 +60,7 @@ namespace map {
     }
 
     // Pointer to the value stored for key, or null. Invalidated by the next `put`.
-    fn at(K, V, S) { m: Map(K, V, S), key: K } -> ?*V {
+    fn at(K, V, S) { m: Map(K, V, S), key: K } -> ?*mut V {
         let i = find{ m, key }
         if i != null {
             match slice::at{ s = m.slots, i } {

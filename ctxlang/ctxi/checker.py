@@ -252,7 +252,7 @@ class Checker:
 
     def rtype(self, te, ns, tps, allow_bound=False):
         if isinstance(te, A.TPtr):
-            return Ptr(self.rtype(te.elem, ns, tps))
+            return Ptr(self.rtype(te.elem, ns, tps), te.mut)
         if isinstance(te, A.TOpt):
             return Opt(self.rtype(te.elem, ns, tps))
         if isinstance(te, A.TArr):
@@ -554,7 +554,8 @@ class Checker:
             lhs.ref = ('var', v)
             lhs.ty = v.ty
             if not v.mutable and not v.tracked:
-                self.err(f'cannot assign to `{v.name}`: it is read-only', lhs.pos)
+                why = 'bound through a read-only pointer' if v.indirect else 'read-only'
+                self.err(f'cannot assign to `{v.name}`: it is {why}', lhs.pos)
             s.rhs = self.expect(s.rhs, v.ty)
             if v.tracked and not v.mutable:
                 if v in self.st.maybe and not self.st.dead:
@@ -806,7 +807,8 @@ class Checker:
                     self.err(f'variant `{variant}` appears in more than one arm', ppos)
                 seen.append(variant)
                 vindex = names.index(variant)
-                bvars = self.pattern_vars(vs, vindex, binders, through, scrut_derived, ppos)
+                bvars = self.pattern_vars(vs, vindex, binders, st if through else None,
+                                          scrut_derived, ppos)
                 if arm.alts:
                     bvars = self.same_binds(arm.pats[0][0], arm.bvars, variant, bvars, ppos)
                 else:
@@ -844,7 +846,8 @@ class Checker:
         return out
 
     def pattern_vars(self, vs, vindex, binders, through, derived, pos):
-        """The (VarInfo, field index) pairs a pattern for variant vs[vindex] binds."""
+        """The (VarInfo, field index) pairs a pattern for variant vs[vindex] binds. through is the
+        scrutinee's pointer type if the match goes through one: `&f` is mutable only via `*mut`."""
         variant, fields = vs[vindex]
         if binders and fields is None:
             self.err(f'variant `{variant}` has no payload', pos)
@@ -860,7 +863,7 @@ class Checker:
             if amp and not through:
                 self.err(f'`&{field}` needs a pointer scrutinee', bpos)
             fi = fnames.index(field)
-            v = VarInfo(local, fields[fi][1], 'bind', amp, bpos)
+            v = VarInfo(local, fields[fi][1], 'bind', amp and through.mut, bpos)
             v.indirect = amp
             v.derived = derived
             out.append((v, fi))
@@ -881,7 +884,7 @@ class Checker:
             self.err(f'{tstr(t)} has no variant `{s.variant}`', s.pos)
         s.vindex = names.index(s.variant)
         derived = self.derives(s.init)
-        s.bvars = self.pattern_vars(vs, s.vindex, s.binders, False, derived, s.pos)
+        s.bvars = self.pattern_vars(vs, s.vindex, s.binders, None, derived, s.pos)
         s.els_vindex, s.els_bvars = None, []
         if s.els_variant is not None:
             others = [n for n in names if n != s.variant]
@@ -893,7 +896,7 @@ class Checker:
                 self.err(f"`else {s.els_variant}` would skip {', '.join(n for n in others if n != s.els_variant)}; "
                          f'a pattern after `else` must name the only other variant', s.els.pos)
             s.els_vindex = names.index(s.els_variant)
-            s.els_bvars = self.pattern_vars(vs, s.els_vindex, s.els_binders, False, derived, s.els.pos)
+            s.els_bvars = self.pattern_vars(vs, s.els_vindex, s.els_binders, None, derived, s.els.pos)
         s0 = self.save()
         self.block(s.els, [v for v, _ in s.els_bvars])
         if not self.st.dead:
@@ -1036,6 +1039,8 @@ class Checker:
         if a is NULL:
             return 'null' if isinstance(e, Opt) else None
         if isinstance(e, Opt):
+            if isinstance(a, Opt) and isinstance(prune(a.elem), Ptr) and widens(a.elem, e.elem):
+                return 'id'     # ?*mut T to ?*T: the same value
             if isinstance(a, Opt) or (isinstance(a, TVar) and a.kind == 'any'):
                 return 'id' if unify(a, e) else None
             return 'some' if unify(a, e.elem) or widens(a, e.elem) else None
@@ -1264,9 +1269,9 @@ class Checker:
             if isinstance(a, A.AddrOf):
                 at = self.expr(a)
                 self.check_mutable(a.expr)
-                a = self.coerce_node(a, at, Ptr(t))
+                a = self.coerce_node(a, at, Ptr(t, True))
             else:
-                a = self.expect(a, Ptr(t))
+                a = self.expect(a, Ptr(t, True))
         else:
             a = self.expect(a, t)
         return (name, mut, a)
@@ -1351,7 +1356,7 @@ class Checker:
     def e_AddrOf(self, e, exp):
         t = self.expr(e.expr)
         self.check_place(e.expr)
-        return Ptr(t)
+        return Ptr(t, self.place_mutable(e.expr))
 
     def e_Binary(self, e, exp):
         op = e.op
@@ -1550,11 +1555,25 @@ class Checker:
         if isinstance(e, A.Path):
             v = e.ref[1]
             if not v.mutable:
-                self.err(f'`{v.name}` is not a mutable place', e.pos)
+                why = ': it is bound through a read-only pointer' if v.indirect else ''
+                self.err(f'`{v.name}` is not a mutable place{why}', e.pos)
         elif isinstance(e, A.Field) and e.kind == 'field':
             self.check_mutable(e.base)
         elif isinstance(e, A.Index) and e.kind == 'arr':
             self.check_mutable(e.base)
+        elif not self.place_mutable(e):
+            self.err(f'cannot write through {tstr(e.ptr_ty)}; it needs to be a `*mut`', e.pos)
+
+    def place_mutable(self, e):
+        """Is place e mutable (§11 Places)? Through a deref, only if the pointer is `*mut`."""
+        if isinstance(e, A.Path):
+            return e.ref[1].mutable
+        if isinstance(e, A.Field) and e.kind == 'field':
+            return self.place_mutable(e.base)
+        if isinstance(e, A.Index) and e.kind == 'arr':
+            return self.place_mutable(e.base)
+        e.ptr_ty = prune(e.base.ty)
+        return e.ptr_ty.mut
 
     def place_path(self, e):
         """(root VarInfo, steps) for a place that doesn't go through a deref (§3.1.1)."""

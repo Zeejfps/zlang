@@ -12,7 +12,8 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 | 1 | Typed IR and the Python dumper | done | `cbba391` |
 | 2 | C backend and runtime | done | `5f236c1` |
 | 3 | First bootstrap: a native backend | done | `aa6a805` |
-| 4 | Lexer | **next** | |
+| 3a | Language work before the lexer (below) | **next** | |
+| 4 | Lexer | | |
 | 5 | Parser | | |
 | 6 | Checker | | |
 | 7 | Self-hosting fixpoint | | |
@@ -132,7 +133,33 @@ Python front end now feeds a native backend, and every program in the repo compi
 *Done when:* the native backend passes the stage 2 suite, and its C output for the corpus is
 byte-identical to the interpreted backend's (`tools/ctest.py --same-c`).
 
-### 4. Lexer — next (~500 ctxlang)
+### 3a. Language work before the lexer — next
+
+The lexer is the first user of string literals as text and of keyword tables, so FRICTION.md #1
+(string literals need a local) and #12 (no const string tables) come first. Literals need somewhere
+to live and a read-only type to have, which in turn needs read-only pointers and slices. In order:
+
+1. **Read-only pointers** (§16 Q2) — *done.* `*T` is read-only and `*mut T` is writable; `*mut T`
+   converts to `*T`, also inside `?`. `&p` is `*mut T` only if `p` is a mutable place. A place
+   through a deref is mutable only through a `*mut`. A `mut` field holds a `*mut T`. Checker only:
+   `tkey` erases mutability, so the IR and backend are unchanged. For now `slice::Slice` holds a
+   `?*mut T` and `@cast` may still drop read-only-ness (`slice::of` needs it); step 2 removes both.
+2. **Built-in slices.** `[]T` and `[]mut T`, with `.ptr` (never null; an empty slice holds a
+   placeholder address) and `.len`. `s[i]` is bounds-checked; `s.ptr[i]` stays the unchecked form.
+   `s[lo..hi]`, `s[lo..]`, `s[..hi]`. `*[N]T` converts to `[]T`. `@slice(p, n)` builds one from a
+   pointer. The dumper lowers slices to structs, bounds checks and `ptradd`, so the IR and backend
+   don't change. `slice::` keeps `copy`, `fill` and `cast`. Then sweep std, ctxc and the examples.
+3. **Literal views** (#1). A string literal converts to `[]u8` where one is expected, backed by
+   static read-only bytes, and is derived from no local (§14). Needs one new IR node for the bytes.
+   **Open:** whether literals also convert to `ascii::String` and `utf8::String`, or §16 Q11 is
+   settled by making `utf8::String` the only text type. Decide after steps 1 and 2.
+4. **Const tables** (#12). Consts may hold literal views, e.g. `const KEYWORDS: [12][]u8 = [...]`.
+   Emit large consts as static data instead of inlining them if a profile shows the copies.
+
+*Done when:* each step passes the test suite under both backends and `ctest.py --same-c`, and
+FRICTION.md #1 and #12 are struck through.
+
+### 4. Lexer (~500 ctxlang)
 
 Port `ctxi/lexer.py` using `ascii::Cursor`. Positions (line, column, file) must match, because
 error messages depend on them.

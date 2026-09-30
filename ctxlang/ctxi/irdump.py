@@ -192,7 +192,7 @@ class Dumper:
             return node('fn', int(t.bound), [(n.encode(), int(m), self.tid(ft)) for n, m, ft in fields],
                         self.tid(t.ret))
         lay = self.rt.layout(t)
-        name = tstr(t).encode()
+        name = tstr(t, muts=False).encode()
         if isinstance(t, StructT):
             return node('struct', name, lay.size, lay.align,
                         [(n.encode(), self.tid(ft), off) for n, ft, off in lay.fields])

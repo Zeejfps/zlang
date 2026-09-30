@@ -30,8 +30,10 @@ I32, USIZE, F64, BOOL, U8 = PRIMS['i32'], PRIMS['usize'], PRIMS['f64'], PRIMS['b
 
 
 class Ptr(Type):
-    def __init__(self, elem):
-        self.elem = elem
+    """`*T`, or `*mut T` when mut. Only the checker sees mut: tkey erases it."""
+
+    def __init__(self, elem, mut=False):
+        self.elem, self.mut = elem, mut
 
 
 class Arr(Type):
@@ -103,7 +105,7 @@ def prune(t):
 def zonk(t):
     t = prune(t)
     if isinstance(t, Ptr):
-        return Ptr(zonk(t.elem))
+        return Ptr(zonk(t.elem), t.mut)
     if isinstance(t, Opt):
         return Opt(zonk(t.elem))
     if isinstance(t, Arr):
@@ -125,7 +127,7 @@ def subst(t, m):
     if isinstance(t, TParam):
         return m.get(t, t)
     if isinstance(t, Ptr):
-        return Ptr(subst(t.elem, m))
+        return Ptr(subst(t.elem, m), t.mut)
     if isinstance(t, Opt):
         return Opt(subst(t.elem, m))
     if isinstance(t, Arr):
@@ -139,26 +141,27 @@ def subst(t, m):
     return t
 
 
-def tstr(t):
+def tstr(t, muts=True):
+    """t as source text. muts=False leaves out pointer mutability, as the IR does."""
     t = prune(t)
     if isinstance(t, Prim):
         return t.name
     if isinstance(t, Ptr):
-        return '*' + tstr(t.elem)
+        return ('*mut ' if t.mut and muts else '*') + tstr(t.elem, muts)
     if isinstance(t, Opt):
-        return '?' + tstr(t.elem)
+        return '?' + tstr(t.elem, muts)
     if isinstance(t, Arr):
-        return f'[{t.n}]{tstr(t.elem)}'
+        return f'[{t.n}]{tstr(t.elem, muts)}'
     if isinstance(t, (StructT, UnionT)):
         name = qualname(t.decl)
         if t.args:
-            return f"{name}({', '.join(tstr(a) for a in t.args)})"
+            return f"{name}({', '.join(tstr(a, muts) for a in t.args)})"
         return name
     if isinstance(t, FnT):
-        fs = ', '.join(f"{'mut ' if m else ''}{n}: {tstr(ft)}" for n, m, ft in t.fields)
+        fs = ', '.join(f"{'mut ' if m else ''}{n}: {tstr(ft, muts)}" for n, m, ft in t.fields)
         s = f"{'&' if t.bound else ''}fn{{ {fs} }}" if fs else f"{'&' if t.bound else ''}fn{{}}"
         if t.ret is not VOID:
-            s += ' -> ' + tstr(t.ret)
+            s += ' -> ' + tstr(t.ret, muts)
         return s
     if isinstance(t, Cap):
         return t.name
@@ -242,7 +245,9 @@ def unify(a, b):
         return _bind(b, a)
     if type(a) is not type(b):
         return False
-    if isinstance(a, (Ptr, Opt)):
+    if isinstance(a, Ptr):
+        return a.mut == b.mut and unify(a.elem, b.elem)
+    if isinstance(a, Opt):
         return unify(a.elem, b.elem)
     if isinstance(a, Arr):
         return a.n == b.n and unify(a.elem, b.elem)
@@ -266,9 +271,12 @@ def widens(a, b):
 
     Signed and unsigned integers widen to wider types of their own signedness, unsigned ones
     also to wider signed types. usize is assumed to be 32 to 64 bits: u8..u32 widen to it and
-    it widens to u64. f32 widens to f64. Integers never convert to floats implicitly.
+    it widens to u64. f32 widens to f64. Integers never convert to floats implicitly. A `*mut T`
+    converts to a `*T`.
     """
     a, b = prune(a), prune(b)
+    if isinstance(a, Ptr) and isinstance(b, Ptr):
+        return a.mut and not b.mut and unify(a.elem, b.elem)
     if not (isinstance(a, Prim) and isinstance(b, Prim)) or a is b:
         return False
     if a.kind == 'float' and b.kind == 'float':

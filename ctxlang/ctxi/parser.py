@@ -219,7 +219,8 @@ class Parser:
         tok = self.peek()
         pos = tok.pos
         if self.accept_op('*'):
-            return A.TPtr(self.type(), pos)
+            mut = self.accept_kw('mut')
+            return A.TPtr(self.type(), mut, pos)
         if self.accept_op('?'):
             return A.TOpt(self.type(), pos)
         if self.accept_op('['):

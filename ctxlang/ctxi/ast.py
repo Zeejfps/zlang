@@ -68,8 +68,8 @@ class TPath(Node):
 
 
 class TPtr(Node):
-    def __init__(self, elem, pos):
-        self.elem, self.pos = elem, pos
+    def __init__(self, elem, mut, pos):
+        self.elem, self.mut, self.pos = elem, mut, pos
 
 
 class TOpt(Node):

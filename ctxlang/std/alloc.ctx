@@ -28,7 +28,7 @@ namespace alloc {
     //   let some{ value = node } = alloc::new{ realloc = arena::alloc, &heap, value = Node{ ... } } else { ... }
     //
     // Null on allocation failure. T must not be zero-sized: there is no memory to point to.
-    fn new(T, S) { realloc: Fn(S), mut heap: S, value: T } -> ?*T {
+    fn new(T, S) { realloc: Fn(S), mut heap: S, value: T } -> ?*mut T {
         if @size_of(T) == 0 { @panic("alloc::new: T is zero-sized") }
         let some{ value = one } = resize(T, S){ realloc, &heap, mem = slice::empty(T){}, count = 1 } else { return null }
         let p = slice::at{ s = one, i = 0 }
@@ -37,7 +37,7 @@ namespace alloc {
     }
 
     // Frees a T from `new`.
-    fn free(T, S) { realloc: Fn(S), mut heap: S, p: *T } {
+    fn free(T, S) { realloc: Fn(S), mut heap: S, p: *mut T } {
         _ = resize(T, S){ realloc, &heap, mem = slice::from{ ptr = p, len = 1 }, count = 0 }
     }
 }

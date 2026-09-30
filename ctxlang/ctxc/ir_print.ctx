@@ -8,11 +8,11 @@
 namespace ir_print {
     struct Out {
         bytes: list::List(u8, ir::Heap),
-        heap:  *ir::Heap,
+        heap:  *mut ir::Heap,
         types: slice::Slice(ir::Type),      // a float literal's type says how to print it
     }
 
-    fn out { heap: *ir::Heap, types: slice::Slice(ir::Type) } -> Out {
+    fn out { heap: *mut ir::Heap, types: slice::Slice(ir::Type) } -> Out {
         return Out{ bytes = list::new(u8){ realloc = arena::alloc }, heap, types }
     }
 

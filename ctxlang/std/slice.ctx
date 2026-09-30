@@ -2,9 +2,9 @@
 
 namespace slice {
     // Zero value is the empty slice.
-    struct Slice(T) { ptr: ?*T, len: usize }
+    struct Slice(T) { ptr: ?*mut T, len: usize }
 
-    fn from(T) { ptr: *T, len: usize } -> Slice(T) {
+    fn from(T) { ptr: *mut T, len: usize } -> Slice(T) {
         return Slice{ ptr, len }
     }
 
@@ -13,7 +13,7 @@ namespace slice {
     //   let s = slice::of(u8){ a = &buf }
     fn of(T, A) { a: *A } -> Slice(T) {
         if @size_of(A) % @size_of(T) != 0 { @panic("slice::of: array size is not a multiple of T") }
-        return Slice{ ptr = @cast(*T, a), len = @size_of(A) / @size_of(T) }
+        return Slice{ ptr = @cast(*mut T, a), len = @size_of(A) / @size_of(T) }
     }
 
     fn empty(T) {} -> Slice(T) {
@@ -25,7 +25,7 @@ namespace slice {
     }
 
     // Bounds-checked pointer to element i.
-    fn at(T) { s: Slice(T), i: usize } -> *T {
+    fn at(T) { s: Slice(T), i: usize } -> *mut T {
         if i >= s.len { @panic("slice::at: index out of bounds") }
         let p = s.ptr
         if p != null { return p + i }
@@ -53,7 +53,7 @@ namespace slice {
         let bytes = s.len * @size_of(T)
         if bytes % @size_of(U) != 0 { @panic("slice::cast: byte length does not divide evenly") }
         let p = s.ptr
-        if p != null { return Slice{ ptr = @cast(*U, p), len = bytes / @size_of(U) } }
+        if p != null { return Slice{ ptr = @cast(*mut U, p), len = bytes / @size_of(U) } }
         return empty(U){}
     }
 

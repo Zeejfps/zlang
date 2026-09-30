@@ -848,7 +848,7 @@ fn main { mut io: Io } { let a: u32 = 4000000000; let b: u8 = 1; let c = a * b *
 
     def test_no_widening_through_pointers_or_optionals(self):
         self.assertCompileError('fn main { mut io: Io } { let mut a: i32 = 1; let p: *i64 = &a }',
-                                'expected *i64, got *i32')
+                                'expected *i64, got *mut i32')
         self.assertCompileError('fn main { mut io: Io } { let a: ?i32 = 1; let b: ?i64 = a }',
                                 'expected ?i64, got ?i32')
 
@@ -856,13 +856,124 @@ fn main { mut io: Io } { let a: u32 = 4000000000; let b: u8 = 1; let c = a * b *
         self.assertCompileError("""
 fn bump { mut n: i64 } { n = n + 1 }
 fn main { mut io: Io } { let mut a: i32 = 1; bump{ n = &a } }
-""", 'expected *i64, got *i32')
+""", 'expected *mut i64, got *mut i32')
 
 
 def run_io(src, stdin=b''):
     out, err = io.StringIO(), io.StringIO()
     run_source(src, out=out, err=err, inp=io.BytesIO(stdin))
     return out.getvalue(), err.getvalue()
+
+
+class ReadOnlyPointers(Base):
+    def test_addr_of_mutable_place_writes(self):
+        self.assertOutput("""
+struct P { x: i32 }
+fn set { p: *mut P, v: i32 } { p.x = v }
+fn main { mut io: Io } {
+    let mut a = P{ x = 1 }
+    set{ p = &a, v = 5 }
+    let q = &a.x
+    q.* = q.* + 1
+    io::println_i64{ &io, n = a.x }
+}
+""", '6\n')
+
+    def test_addr_of_read_only_place_is_read_only(self):
+        self.assertCompileError("""
+fn main { mut io: Io } { let a: i32 = 1; let p = &a; p.* = 2 }
+""", 'cannot write through *i32')
+        self.assertCompileError("""
+fn set { p: *mut i32 } { p.* = 1 }
+fn main { mut io: Io } { let a: i32 = 1; set{ p = &a } }
+""", 'expected *mut i32, got *i32')
+
+    def test_no_writes_through_read_only_pointer(self):
+        self.assertCompileError("""
+struct P { x: i32 }
+fn f { p: *P } { p.x = 1 }
+fn main { mut io: Io } { }
+""", 'cannot write through *P')
+        self.assertCompileError("""
+fn f { p: *[4]i32 } { p[0] = 1 }
+fn main { mut io: Io } { }
+""", 'cannot write through *[4]i32')
+        self.assertCompileError("""
+fn f { p: *i32 } { (p + 1).* = 1 }
+fn main { mut io: Io } { }
+""", 'cannot write through *i32')
+
+    def test_read_only_pointer_cannot_fill_mut_field(self):
+        self.assertCompileError("""
+fn bump { mut n: i32 } { n = n + 1 }
+fn f { p: *i32 } { bump{ n = p } }
+fn main { mut io: Io } { }
+""", 'expected *mut i32, got *i32')
+
+    def test_mut_converts_to_read_only(self):
+        self.assertOutput("""
+fn get { p: *i32 } -> i32 { return p.* }
+fn first { p: ?*i32 } -> i32 {
+    let some{ value } = p else { return 0 }
+    return value.*
+}
+fn main { mut io: Io } {
+    let mut a: i32 = 7
+    let p: *mut i32 = &a
+    let q: *i32 = p
+    let o: ?*mut i32 = p
+    io::println_i64{ &io, n = get{ p } + first{ p = o } + q.* }
+    io::println_bool{ &io, n = p == q }
+}
+""", '21\ntrue\n')
+
+    def test_read_only_does_not_convert_to_mut(self):
+        self.assertCompileError("""
+fn main { mut io: Io } { let a: i32 = 1; let p: *mut i32 = &a }
+""", 'expected *mut i32, got *i32')
+        self.assertCompileError("""
+fn main { mut io: Io } { let mut a: i32 = 1; let p: ?*i32 = &a; let q: ?*mut i32 = p }
+""", 'expected ?*mut i32, got ?*i32')
+
+    def test_generic_pointer_inference(self):
+        self.assertOutput("""
+fn get(T) { p: *T } -> T { return p.* }
+fn main { mut io: Io } {
+    let mut a: i32 = 4
+    io::println_i64{ &io, n = get{ p = &a } }
+}
+""", '4\n')
+
+    def test_match_through_read_only_pointer(self):
+        self.assertOutput(SHAPE + """
+fn size { s: *Shape } -> i32 {
+    match s {
+        circle{ &r } => { return r }
+        else         => { return 0 }
+    }
+}
+fn main { mut io: Io } {
+    let s = Shape::circle{ r = 3 }
+    io::println_i64{ &io, n = size{ s = &s } }
+}
+""", '3\n')
+        self.assertCompileError(SHAPE + """
+fn grow { s: *Shape } {
+    match s { circle{ &r } => { r = r + 1 } else => { } }
+}
+fn main { mut io: Io } { }
+""", 'cannot assign to `r`: it is bound through a read-only pointer')
+        self.assertCompileError(SHAPE + """
+fn main { mut io: Io } {
+    let s = Shape::circle{ r = 3 }
+    match &s { circle{ &r } => { r = 4 } else => { } }
+}
+""", 'bound through a read-only pointer')
+
+    def test_mut_pointer_type_text(self):
+        self.assertCompileError("""
+fn main { mut io: Io } { let mut a: i32 = 1; let p: **mut i32 = &a }
+""", 'expected **mut i32, got *mut i32')
 
 
 class StdLib(Base):
@@ -1527,7 +1638,7 @@ fn main { mut io: Io } {
 
     def test_shared_bindings_through_pointer(self):
         self.assertOutput(SHAPE + """
-fn grow { s: *Shape } {
+fn grow { s: *mut Shape } {
     match s {
         circle{ &r = n } | square{ &side = n } => { n = n + 1 }
         else                                   => { }
@@ -2524,7 +2635,7 @@ fn main { mut mem: Mem } { }
         out, _ = self.run_mem("""
     let some{ value = buf } = mem::pages{ &mem, size = 4096 } else { return 1 }
     let mut heap = arena::new{ buf }
-    let mut head: ?*Node = null
+    let mut head: ?*mut Node = null
     let mut i: i64 = 1
     while i <= 4 {
         let some{ value = n } = alloc::new{ realloc = arena::alloc, &heap, value = Node{ v = i, next = head } } else { return 2 }
@@ -2542,7 +2653,7 @@ fn main { mut mem: Mem } { }
     let some{ value = h } = head else { return 3 }
     alloc::free{ realloc = arena::alloc, &heap, p = h }
     return 0
-""", extra='struct Node { v: i64, next: ?*Node }\n')
+""", extra='struct Node { v: i64, next: ?*mut Node }\n')
         self.assertEqual(out, '4321\n')
 
     def test_alloc_new_out_of_memory(self):
@@ -2795,7 +2906,7 @@ fn main { mut io: Io } {
     def test_matches_and_optionals(self):
         out, code = self.both("""
 union Shape { circle{ r: f64 }, square{ side: f64 }, none }
-fn area { s: *Shape } -> f64 {
+fn area { s: *mut Shape } -> f64 {
     return match s {
         circle{ &r } => { r = r * 2.0; r }
         square{ side } => { side * side }

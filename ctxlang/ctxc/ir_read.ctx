@@ -25,14 +25,14 @@ namespace ir_read {
     struct Reader {
         text:     ir::Bytes,
         pos:      usize,
-        heap:     *ir::Heap,
+        heap:     *mut ir::Heap,
         types:    slice::Slice(ir::Type),   // once they are read: a float's type says if it is f32
         failed:   bool,
         error:    Problem,
         error_at: usize,
     }
 
-    fn reader { text: ir::Bytes, heap: *ir::Heap } -> Reader {
+    fn reader { text: ir::Bytes, heap: *mut ir::Heap } -> Reader {
         return Reader{
             text, pos = 0, heap, types = slice::empty(ir::Type){},
             failed = false, error = Problem::trailing_text, error_at = 0,

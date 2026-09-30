@@ -19,7 +19,7 @@ fn name(Generics) { field: T, mut field: T, ... } -> R { body }
 3. A function can't assign to a read-only field or any field or element of it. Memory reached through a pointer inside it is not part of it (§12, Pointers).
 4. `-> R` may be omitted. The function then returns no value.
 5. Two fields in one context can't share a name.
-6. A `mut x: T` field holds a `*T`. Inside the function, `x` is the place of type `T` it points to, and `&x` gives the `*T`.
+6. A `mut x: T` field holds a `*mut T`. Inside the function, `x` is the place of type `T` it points to, and `&x` gives the `*mut T`.
 
 ## 3. Calls
 
@@ -30,7 +30,7 @@ f{ a = expr, b = &place, c, &d, .. }
 1. A call is an expression of function type followed by `{ ... }`.
 2. Every context field of the callee must be supplied exactly once. Order doesn't matter.
 3. A read-only field of type `T` takes an expression of type `T`.
-4. A `mut` field of type `T` takes an expression of type `*T`. If the argument has the form `&p`, `p` must be a mutable place and §3.1 applies. Any other `*T` expression is accepted unchecked.
+4. A `mut` field of type `T` takes an expression of type `*mut T`. If the argument has the form `&p`, `p` must be a mutable place and §3.1 applies. Any other `*mut T` expression is accepted unchecked.
 5. Places and mutable places are defined in §11.
 6. Punning: `c` means `c = c`, and `&d` means `d = &d`.
 7. Forwarding: a trailing `..` supplies each remaining field `F` from the local or context field named `F`. Namespace and top-level names are not considered. It supplies `F = F` for a read-only field and `F = &F` for a `mut` field. It is an error if `F` isn't in scope, or if `F` is `mut` and the name isn't a mutable place.
@@ -124,7 +124,7 @@ match e {
 2. Each variant appears in at most one arm, and at most once in it.
 3. An arm may list several patterns separated by `|`; its body runs for any of them. Every pattern must bind the same names, and each name must have the same type and be bound the same way (with or without `&`) in all of them. `else` can't be combined with other patterns.
 4. A pattern `variant{ f }` binds payload field `f` as a read-only local. `variant{ f = x }` binds it under the name `x` instead. A pattern may bind a subset of the fields.
-5. If the scrutinee has type `*U` for a union `U`, the match goes through the pointer. In its arms, `&f` binds payload field `f` as a mutable place, and `&f = x` binds it as `x`.
+5. If the scrutinee has type `*U` or `*mut U` for a union `U`, the match goes through the pointer. In its arms, `&f` binds payload field `f` as a place, and `&f = x` binds it as `x`. The place is mutable only through a `*mut U`.
 6. `&f` in a pattern is an error unless the scrutinee is a pointer.
 7. If the scrutinee is `&p`, no place that overlaps `p` (§3.1) may be accessed inside an arm except through that arm's bindings. For other pointer scrutinees this isn't checked.
 8. `match` is a statement, and can also be an expression (§11, If and match expressions).
@@ -289,8 +289,9 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 | `f32` | `f64` |
 
 1. Widening applies wherever an expression of type `B` is expected: a read-only call argument, a struct or union field, an assignment, a `let` with a type, a `return`, and the `T` of an implicit `T` to `?T` conversion. It also applies between the operands of a binary operator (rules 1 and 3 above), but not to a shift count.
-2. Nothing else converts implicitly. In particular integers don't widen to floats, `usize` doesn't widen to a signed type, and `?A`, `*A` and `[N]A` don't convert to `?B`, `*B` and `[N]B`. A `mut` field's argument is a pointer, so its type must match exactly.
-3. `usize` is at least 32 and at most 64 bits wide on every target, which is what makes the `usize` rows lossless.
+2. A `*mut T` converts implicitly to `*T`, and a `?*mut T` to `?*T`, wherever rule 1 applies and between the operands of `==` and `!=`.
+3. Nothing else converts implicitly. In particular integers don't widen to floats, `usize` doesn't widen to a signed type, `*T` doesn't convert to `*mut T`, and `?A`, `*A` and `[N]A` don't convert to `?B`, `*B` and `[N]B`. A `mut` field's argument is a `*mut` pointer, so its type must match exactly.
+4. `usize` is at least 32 and at most 64 bits wide on every target, which is what makes the `usize` rows lossless.
 
 ### Literals
 
@@ -313,7 +314,7 @@ step  := .field | [index]
 
 1. For a pointer `q`, `q.f` and `q[i]` are places rooted at a deref (§12).
 2. A place **goes through a deref** if its root is `expr.*`.
-3. A place is **mutable** if it goes through a deref, or its root is a `let mut` local, a `mut` context field, or a `&f` match binding (§8).
+3. A place is **mutable** if its root is a `let mut` local, a `mut` context field, or a `&f` match binding through a `*mut` (§8), or if it goes through a deref of a `*mut` pointer: `q.*`, `q.f` or `q[i]` for `q: *mut T`.
 4. Every other place is read-only.
 
 ### Initialization
@@ -329,7 +330,7 @@ step  := .field | [index]
 | `?T` | `null` |
 | `[N]T` | every element zero, if `T` has a zero value |
 | struct | every field zero, if every field type has a zero value |
-| `*T`, user-defined unions, `fn{C} -> R`, `&fn{C} -> R`, capability types | none |
+| `*T`, `*mut T`, user-defined unions, `fn{C} -> R`, `&fn{C} -> R`, capability types | none |
 
 4. Reading a variable before it is assigned is a compile error. There is no way to declare uninitialized memory.
 
@@ -338,7 +339,8 @@ step  := .field | [index]
 | Syntax | Meaning |
 |---|---|
 | `i8..i64`, `u8..u64`, `usize`, `f32`, `f64`, `bool` | primitives |
-| `*T` | pointer to a `T`. Never null. |
+| `*T` | read-only pointer to a `T`. Never null. |
+| `*mut T` | pointer to a `T` that can be written through. Never null. |
 | `[N]T` | fixed array. `N` is a compile-time constant. |
 | `?T` | optional (§8). `?*T` is a nullable pointer. |
 | `fn{C} -> R` | unbound function type (§5) |
@@ -347,21 +349,21 @@ step  := .field | [index]
 
 ### Pointers
 
-1. `&p` is the address of place `p`, with type `*T`. It is allowed on any place.
+1. `&p` is the address of place `p`. It is allowed on any place. Its type is `*mut T` if `p` is a mutable place (§11), and `*T` otherwise.
 2. `q.*` is the place that pointer `q` points to.
 3. If `q` is a `*S` for a struct `S`, `q.f` means `q.*.f`.
-4. `q + n`, with `n: usize`, points `n` elements of `T` after `q`.
+4. `q + n`, with `n: usize`, points `n` elements of `T` after `q`. It has `q`'s type.
 5. `q[i]` means `(q + i).*`. It is not bounds-checked.
 6. Exception: if `q` is a `*[N]T`, `q[i]` means `q.*[i]` (bounds-checked) and `q.len` means `N`.
 7. Pointers aren't tracked. Using a pointer to memory that no longer exists, or outside its allocation, is undefined behaviour.
-8. Writes through a pointer aren't checked against read-only-ness. Every place that goes through a deref is mutable (§11).
+8. A place reached through a `*T` is read-only: assigning to it, or passing it as `&p` to a `mut` field, is an error. Through a `*mut T` it is mutable (§11).
 
 ### Arrays
 
 1. `a[i]` on an array is bounds-checked. An out-of-bounds index panics.
 2. `a.len` is `N`, of type `usize`.
 
-Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?*T, len: usize }` and bounds-checked functions on it (§17).
+Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?*mut T, len: usize }` and bounds-checked functions on it (§17).
 
 ## 13. Builtins
 
@@ -376,7 +378,7 @@ Slices are not built in. The standard library provides `slice::Slice(T) { ptr: ?
 | `@align_of(T)` | `usize` | The required alignment of `T`. A power of two. |
 | `@as(T, x)` | `T` | Converts number `x` to numeric type `T`. Panics if the value isn't representable in `T`. Float to integer rounds toward zero and panics on NaN. Integer to float rounds to nearest. |
 | `@trunc(T, x)` | `T` | Converts integer `x` to integer type `T`, keeping the low bits. |
-| `@cast(*U, q)` | `*U` | Reinterprets pointer `q`. Unchecked. |
+| `@cast(*U, q)`, `@cast(*mut U, q)` | the target | Reinterprets pointer `q`. Unchecked, including its mutability for now: casting a `*T` to a `*mut U` is allowed. |
 | `@addr(q)` | `usize` | The address of pointer `q` as an integer. |
 | `@wrap_add(a, b)`, `@wrap_sub(a, b)`, `@wrap_mul(a, b)` | type of `a` | Integer arithmetic that wraps instead of panicking. `a` and `b` have the same integer type. |
 | `@panic()`, `@panic("reason")` | none | Stops the program. Never returns. It ends a path for return and assignment checks. The reason must be a string literal. The runtime reports it with the panic's location, so no capability is needed. |
@@ -428,7 +430,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 ## 16. Open questions
 
 1. **Dangling pointers across calls:** the escape check (§14) is intraprocedural. Would inferred per-function summaries be worth it?
-2. **Read-only pointers:** `&x` on a read-only place gives a writable `*T`. Add `*mut T`?
+2. ~~**Read-only pointers.**~~ Settled: `*T` is read-only and `*mut T` writable (§12). Open: should `@cast` refuse to drop read-only-ness?
 3. **Allocator instance mismatch:** passing a different `S` instance of the same type isn't caught. Brands would close this.
 4. **Method sugar:** should `x.f{...}` mean `f{ first = &x, ... }`?
 5. **File = namespace:** should each file implicitly be a namespace?
@@ -451,7 +453,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 | `Args` | Declared at the top level: `type Args = slice::Slice(slice::Slice(u8))`, the type of `main`'s `args` (§15). |
 | `Result(T, E)` | Declared at the top level: `union Result(T, E) { ok{ value: T }, err{ error: E } }`. Namespace `result`: `is_ok`, `is_err`, `value`, `error`, `value_or`, `unwrap`, `ok_or`. |
 | `fs` | `File`, `Mode` (`read`, `write`, `append`, `create`), `Error`; `open`, `read`, `write`, `close`, `size`, `remove`, and `read_all` (into memory from an allocator) and `write_all`. Every function takes `mut fs: Fs` and reports failure as a `Result(T, fs::Error)` or `?fs::Error`. Natives: `sys_open`, `sys_read`, `sys_write`, `sys_close`, `sys_size`, `sys_remove`. |
-| `alloc` | `Bytes`, the allocator type `Fn(S)`, typed `resize(T, S)`, and `new(T, S)` and `free(T, S)` for one `T`: `new` returns a `?*T` holding the given `value` |
+| `alloc` | `Bytes`, the allocator type `Fn(S)`, typed `resize(T, S)`, and `new(T, S)` and `free(T, S)` for one `T`: `new` returns a `?*mut T` holding the given `value` |
 | `mem` | `pages`: at least `size` bytes of zeroed, page-aligned memory, as a `?alloc::Bytes`. Takes `mut mem: Mem`. Native: `sys_pages`. |
 | `arena` | `Arena`, a bump allocator: `new`, `alloc` (an `alloc::Fn(Arena)`), `reset`, `remaining` |
 | `list` | `List(T, S)`: `new`, `reserve`, `push`, `pop`, `get`, `set`, `at`, `items`, `clear`, `each`, `free` |
