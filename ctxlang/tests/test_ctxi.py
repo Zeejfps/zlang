@@ -644,6 +644,7 @@ class Parser(Base):
             ('@panic', 'expected \'(\' after @panic: @panic() or @panic("reason")', 3, 1),
             ('let x = @as(i32)', 'wrong number of arguments: @as(T, x)', 2, 20),
             ('let x = @size_of(i32, 1)', 'wrong number of arguments: @size_of(T)', 2, 27),
+            ('let x = @fmt(b)', 'wrong number of arguments: @fmt(b, "format", args...)', 2, 19),
         ]:
             self.assertParseError('fn main {} {\n    %s\n}' % body, msg, line, col)
 
@@ -1508,6 +1509,99 @@ fn main { mut io: Io } {
     def test_view_is_read_only(self):
         self.assertCompileError('fn main { mut io: Io } {\n    let b: []u8 = "abc"\n    b[0] = 1\n}',
                                 'cannot write through []u8')
+
+
+FMT_SETUP = """
+fn main { mut io: Io } {
+    let mut mem: [4096]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+%s
+    io::println{ &io, s = utf8::view{ b } }
+}
+"""
+
+
+class Fmt(Base):
+    def fmt(self, body, expected, extra=''):
+        self.assertOutput(extra + FMT_SETUP % body, expected + '\n')
+
+    def fmt_error(self, body, fragment, extra=''):
+        self.assertCompileError(extra + FMT_SETUP % body, fragment)
+
+    def test_holes(self):
+        self.fmt(r"""
+    let name = utf8::of{ chars = "caf\xc3\xa9" }
+    let small: u8 = 7
+    _ = @fmt(&b, "{} {} {} {} {} {}|{c}|{{}}|{}", -3, small, 1.5, true, name, @as(f32, 0.5), 'A', "lit")""",
+                 '-3 7 1.5 true caf\u00e9 0.5|A|{}|lit')
+
+    def test_widths_and_hex(self):
+        self.fmt(r"""
+    let name = utf8::of{ chars = "ab" }
+    _ = @fmt(&b, "[{5}][{05}][{05}][{x}][{08x}][{4}][{1}]", 42, 42, -42, 255, 48879, name, name)""",
+                 '[   42][00042][-0042][ff][0000beef][  ab][ab]')
+
+    def test_writer_function(self):
+        self.fmt("""
+    let d = Date{ y = 2026, m = 9, d = 30 }
+    _ = @fmt(&b, "due {}, or {}", write_iso{ d, _ }, write_us{ d, sep = '/', _ })""",
+                 'due 2026-09-30, or 09/30/2026', extra="""
+struct Date { y: u32, m: u32, d: u32 }
+fn write_iso { mut b: utf8::Builder(arena::Arena), d: Date } -> bool {
+    return @fmt(&b, "{04}-{02}-{02}", d.y, d.m, d.d)
+}
+fn write_us { mut out: utf8::Builder(arena::Arena), d: Date, sep: u8 } -> bool {
+    return @fmt(&out, "{02}{c}{02}{c}{}", d.m, sep, d.d, sep, d.y)
+}
+""")
+
+    def test_open_integer_types(self):
+        # The pushes are chosen once the body is checked, so `n` is still free to become a usize.
+        self.fmt("""
+    let mut n = 0
+    _ = @fmt(&b, "{}", n)
+    let xs: [2]usize = [1, 2]
+    while n < xs.len { n = n + 1 }
+    _ = @fmt(&b, " {}", n)""", '0 2')
+
+    def test_field_builder_and_result(self):
+        self.fmt("""
+    let mut w = W{ out = utf8::builder{ realloc = arena::alloc, &heap } }
+    let ok = @fmt(&w.out, "{}+{}", 1, 2)
+    _ = @fmt(&b, "{}", ok)
+    _ = utf8::push{ &b, s = utf8::view{ b = w.out } }""", 'true1+2', extra='struct W { out: utf8::Builder(arena::Arena) }\n')
+
+    def test_out_of_memory(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let mut mem: [8]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    io::println_bool{ &io, n = @fmt(&b, "{}", 1234) }
+    io::println_bool{ &io, n = @fmt(&b, "{} and more than eight bytes", 5) }
+}
+""", 'true\nfalse\n')
+
+    def test_errors(self):
+        for body, fragment in [
+            ('_ = @fmt(&b, "{} {}", 1)', 'the format has 2 holes but 1 argument follows it'),
+            ('_ = @fmt(&b, "x", 1, 2)', 'the format has 0 holes but 2 arguments follow it'),
+            ('let f = "{}"\n    _ = @fmt(&b, f, 1)', '@fmt takes its format as a string literal'),
+            ('_ = @fmt(&b, "{", 1)', 'the format has a `{` without a `}`'),
+            ('_ = @fmt(&b, "}")', 'the format has a `}` without a `{`'),
+            ('_ = @fmt(&b, "{y}", 1)', 'bad hole `{y}` in the format'),
+            ('let n: i32 = 1\n    _ = @fmt(&b, "{x}", n)', '`{x}` formats an unsigned integer, not i32'),
+            ('_ = @fmt(&b, "{4c}", 65)', '`{4c}`: a width applies to numbers and text'),
+            ('_ = @fmt(&b, "{4}", 1.5)', '`{4}`: a width applies to integers and utf8::String, not f64'),
+            ('_ = @fmt(&b, "{}", [1, 2])', "@fmt can't format [2]i32"),
+            ('let s: []u8 = "x"\n    _ = @fmt(&b, "{}", s)', "@fmt can't format []u8"),
+            ('let mut n: i32 = 1\n    _ = @fmt(&n, "x")','@fmt writes to a *mut utf8::Builder, got *mut i32'),
+            ('let bs: [1]utf8::Builder(arena::Arena) = [b]\n    _ = @fmt(&bs[0], "x")',
+             '@fmt takes its builder as `&b`, `&x.f` or a name'),
+            ('@fmt(&b, "x")', 'the result of `@fmt` (bool) is unused'),
+        ]:
+            self.fmt_error(body, fragment)
 
 
 class StdLib(Base):

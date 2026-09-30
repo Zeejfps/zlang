@@ -316,15 +316,12 @@ namespace lexer {
             not_one_char => { return "a character literal holds exactly one character" }
             non_ascii{ at } => {
                 if utf8::seq_len{ bytes = text, i = at } == 0 { return "invalid UTF-8" }
-                _ = utf8::push{ &b, s = "non-ASCII character " }
-                show_char{ &b, text, at }
-                _ = utf8::push{ &b, s = " in literal; use a \\x escape" }
+                _ = @fmt(&b, "non-ASCII character {} in literal; use a \\x escape", show_char{ text, at, _ })
             }
             unknown_escape{ at } => {
                 let n = utf8::seq_len{ bytes = text, i = at }
                 if n == 0 { return "invalid UTF-8" }
-                _ = utf8::push{ &b, s = "unknown escape \\" }
-                _ = utf8::push{ &b, s = utf8::String{ bytes = text[at..at + n] } }
+                _ = @fmt(&b, "unknown escape \\{}", utf8::String{ bytes = text[at..at + n] })
             }
         }
         return utf8::view{ b }
@@ -342,50 +339,38 @@ namespace lexer {
         }
         lx.pos = start + n
         let mut b = utf8::builder{ realloc = arena::alloc, heap = lx.heap }
-        _ = utf8::push{ &b, s = "unexpected character " }
-        show_char{ &b, text, at = start }
+        _ = @fmt(&b, "unexpected character {}", show_char{ text, at = start, _ })
         fail{ &lx, start, msg = utf8::view{ b } }
     }
 
     // A character in a message, as ctxi's show_char: 'c', '\xNN' for an ASCII control character,
     // and the code point after a non-ASCII one, which may be invisible. It must be valid UTF-8.
-    fn show_char { mut b: utf8::Builder(arena::Arena), text: []u8, at: usize } {
+    // A writer for @fmt: `show_char{ text, at, _ }`.
+    fn show_char { mut b: utf8::Builder(arena::Arena), text: []u8, at: usize } -> bool {
         let c = text[at]
-        if c < 32 or c == 127 {
-            _ = utf8::push{ &b, s = "'\\x" }
-            hex{ &b, n = c, width = 2, upper = false }
-            _ = utf8::push_char{ &b, c = '\'' }
-        } else if c == '\\' {
-            _ = utf8::push{ &b, s = "'\\\\'" }
-        } else if c < 128 {
-            _ = utf8::push_char{ &b, c = '\'' }
-            _ = utf8::push_char{ &b, c }
-            _ = utf8::push_char{ &b, c = '\'' }
-        } else {
-            let s = utf8::String{ bytes = text[at..at + utf8::seq_len{ bytes = text, i = at }] }
-            _ = utf8::push_char{ &b, c = '\'' }
-            _ = utf8::push{ &b, s }
-            _ = utf8::push{ &b, s = "' (U+" }
-            hex{ &b, n = utf8::decode{ s, i = 0 }.c, width = 4, upper = true }
-            _ = utf8::push_char{ &b, c = ')' }
-        }
+        if c < 32 or c == 127 { return @fmt(&b, "'\\x{02x}'", c) }
+        if c == '\\' { return @fmt(&b, "'\\\\'") }
+        if c < 128 { return @fmt(&b, "'{c}'", c) }
+        let s = utf8::String{ bytes = text[at..at + utf8::seq_len{ bytes = text, i = at }] }
+        return @fmt(&b, "'{}' (U+{})", s, upper_hex{ n = utf8::decode{ s, i = 0 }.c, _ })
     }
 
-    // n in hex, with at least `width` digits.
-    fn hex { mut b: utf8::Builder(arena::Arena), n: u32, width: u32, upper: bool } {
+    // n in uppercase hex, with at least 4 digits.
+    fn upper_hex { mut b: utf8::Builder(arena::Arena), n: u32 } -> bool {
         let mut digits: [8]u8
         let mut k: usize = 0
         let mut v = n
-        while v > 0 or k < width {
+        while v > 0 or k < 4 {
             let d = @trunc(u8, v % 16)
-            digits[k] = if d < 10 { '0' + d } else if upper { 'A' + d - 10 } else { 'a' + d - 10 }
+            digits[k] = if d < 10 { '0' + d } else { 'A' + d - 10 }
             v = v / 16
             k = k + 1
         }
         while k > 0 {
             k = k - 1
-            _ = utf8::push_char{ &b, c = digits[k] }
+            if not utf8::push_char{ &b, c = digits[k] } { return false }
         }
+        return true
     }
 
     // ---- comments

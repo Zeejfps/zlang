@@ -388,10 +388,8 @@ namespace parser {
         let ty: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::colon } { type_expr{ &p } } else { null }
         let init: ?syntax::Expr = if accept{ &p, k = tok::Kind::assign } { expr{ &p } } else { null }
         if ty == null and init == null {
-            let mut b = utf8::builder{ realloc = arena::alloc, heap = p.heap }
-            put{ &b, s = "`let " }
-            put{ &b, s = utf8::String{ bytes = name.text } }
-            put{ &b, s = "` needs a type or an initializer" }
+            let mut b = message{ p }
+            pushed{ ok = @fmt(&b, "`let {}` needs a type or an initializer", utf8::String{ bytes = name.text }) }
             fail_at{ &p, msg = utf8::view{ b }, t }
         }
         if init != null and ty == null and not mutable and is{ p, k = tok::Kind::kw_else } {
@@ -911,10 +909,12 @@ namespace parser {
     }
 
     // Every builtin's signature (spec §13). Type arguments come first, so the name alone says how
-    // to parse each argument. Value arguments from lo to hi.
+    // to parse each argument. Value arguments from lo to hi, where ANY means no limit.
     struct Builtin { name: []u8, types: u32, lo: u32, hi: u32, usage: utf8::String }
 
-    const BUILTINS: [11]Builtin = [
+    const ANY: u32 = 4294967295
+
+    const BUILTINS: [12]Builtin = [
         Builtin{ name = "size_of",  types = 1, lo = 0, hi = 0, usage = "@size_of(T)" },
         Builtin{ name = "align_of", types = 1, lo = 0, hi = 0, usage = "@align_of(T)" },
         Builtin{ name = "as",       types = 1, lo = 1, hi = 1, usage = "@as(T, x)" },
@@ -926,6 +926,7 @@ namespace parser {
         Builtin{ name = "wrap_sub", types = 0, lo = 2, hi = 2, usage = "@wrap_sub(a, b)" },
         Builtin{ name = "wrap_mul", types = 0, lo = 2, hi = 2, usage = "@wrap_mul(a, b)" },
         Builtin{ name = "panic",    types = 0, lo = 0, hi = 1, usage = "@panic() or @panic(\"reason\")" },
+        Builtin{ name = "fmt",      types = 0, lo = 2, hi = ANY, usage = "@fmt(b, \"format\", args...)" },
     ]
 
     fn builtin { mut p: Parser } -> syntax::Expr {
@@ -938,20 +939,15 @@ namespace parser {
         let mut n: usize = 0
         while n < BUILTINS.len and not slice::eq_bytes{ a = BUILTINS[n].name, b = name.text } { n = n + 1 }
         if n == BUILTINS.len {
-            let mut b = utf8::builder{ realloc = arena::alloc, heap = p.heap }
-            put{ &b, s = "unknown builtin `@" }
-            put{ &b, s = utf8::String{ bytes = name.text } }
-            put{ &b, s = "`" }
+            let mut b = message{ p }
+            pushed{ ok = @fmt(&b, "unknown builtin `@{}`", utf8::String{ bytes = name.text }) }
             fail_at{ &p, msg = utf8::view{ b }, t }
             return expr_from{ &p, start, k = syntax::ExprKind::error }
         }
         let sig = BUILTINS[n]
         if not is{ p, k = tok::Kind::lparen } {
-            let mut b = utf8::builder{ realloc = arena::alloc, heap = p.heap }
-            put{ &b, s = "expected '(' after @" }
-            put{ &b, s = utf8::String{ bytes = name.text } }
-            put{ &b, s = ": " }
-            put{ &b, s = sig.usage }
+            let mut b = message{ p }
+            pushed{ ok = @fmt(&b, "expected '(' after @{}: {}", utf8::String{ bytes = name.text }, sig.usage) }
             fail{ &p, msg = utf8::view{ b } }
             return expr_from{ &p, start, k = syntax::ExprKind::error }
         }
@@ -959,7 +955,7 @@ namespace parser {
         let mut targ: ?*syntax::TypeExpr = null
         let mut args = list::new(syntax::Expr){ realloc = arena::alloc, heap = p.heap }
         let mut count: u32 = 0
-        while count < sig.types + sig.hi and more{ p, close = tok::Kind::rparen } {
+        while (count < sig.types or count - sig.types < sig.hi) and more{ p, close = tok::Kind::rparen } {
             if count < sig.types {
                 targ = box{ &p, value = type_expr{ &p } }
             } else {
@@ -969,9 +965,8 @@ namespace parser {
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         if count < sig.types + sig.lo or not is{ p, k = tok::Kind::rparen } {
-            let mut b = utf8::builder{ realloc = arena::alloc, heap = p.heap }
-            put{ &b, s = "wrong number of arguments: " }
-            put{ &b, s = sig.usage }
+            let mut b = message{ p }
+            pushed{ ok = @fmt(&b, "wrong number of arguments: {}", sig.usage) }
             fail{ &p, msg = utf8::view{ b } }
         }
         skip{ &p }
@@ -1049,10 +1044,8 @@ namespace parser {
     // "expected WHAT, found TOKEN"
     fn expected { mut p: Parser, what: utf8::String } {
         if p.bad { return }
-        let mut b = utf8::builder{ realloc = arena::alloc, heap = p.heap }
-        put{ &b, s = "expected " }
-        put{ &b, s = what }
-        put{ &b, s = ", found " }
+        let mut b = message{ p }
+        pushed{ ok = @fmt(&b, "expected {}, found ", what) }
         expected_msg{ &p, msg = utf8::view{ b } }
     }
 
@@ -1060,20 +1053,22 @@ namespace parser {
     fn expected_msg { mut p: Parser, msg: utf8::String } {
         if p.bad { return }
         let t = p.toks[p.i]
-        let mut b = utf8::builder{ realloc = arena::alloc, heap = p.heap }
-        put{ &b, s = msg }
+        let mut b = message{ p }
         if t.kind == tok::Kind::eof {
-            put{ &b, s = "end of file" }
+            pushed{ ok = @fmt(&b, "{}end of file", msg) }
         } else {
-            put{ &b, s = "'" }
-            put{ &b, s = utf8::String{ bytes = text_of{ p, t } } }
-            put{ &b, s = "'" }
+            pushed{ ok = @fmt(&b, "{}'{}'", msg, utf8::String{ bytes = text_of{ p, t } }) }
         }
         fail{ &p, msg = utf8::view{ b } }
     }
 
-    fn put { mut b: utf8::Builder(arena::Arena), s: utf8::String } {
-        if not utf8::push{ &b, s } { @panic("parser: out of memory") }
+    // A builder for a message, from the parser's heap.
+    fn message { p: Parser } -> utf8::Builder(arena::Arena) {
+        return utf8::builder{ realloc = arena::alloc, heap = p.heap }
+    }
+
+    fn pushed { ok: bool } {
+        if not ok { @panic("parser: out of memory") }
     }
 
     // ---- tokens
@@ -1120,10 +1115,8 @@ namespace parser {
 
     fn expect { mut p: Parser, k: tok::Kind } {
         if accept{ &p, k } or p.bad { return }
-        let mut b = utf8::builder{ realloc = arena::alloc, heap = p.heap }
-        put{ &b, s = "expected '" }
-        put{ &b, s = utf8::String{ bytes = kind_text{ k } } }
-        put{ &b, s = "', found " }
+        let mut b = message{ p }
+        pushed{ ok = @fmt(&b, "expected '{}', found ", utf8::String{ bytes = kind_text{ k } }) }
         expected_msg{ &p, msg = utf8::view{ b } }
     }
 

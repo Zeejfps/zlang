@@ -1166,9 +1166,14 @@ class Compiler:
             return bytes(buf) * n
         return rep
 
+    def e_Checked(self, e):
+        return self.expr(e.inner)
+
     def e_Builtin(self, e):
         n = e.name
         pos = e.pos
+        if n == 'fmt':
+            return self.expr(e.fmt)
         if n in ('size_of', 'align_of'):
             lay = self.rt.layout(self.T(e.targ_t))
             v = lay.size if n == 'size_of' else lay.align

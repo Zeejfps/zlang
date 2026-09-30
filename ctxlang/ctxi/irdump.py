@@ -536,8 +536,13 @@ class Dumper:
         return node('matchx', self.tid(t), self.ex(e.scrut), int(e.through),
                     self.arms(e, lambda b: self.value_block(b, t)))
 
+    def e_Checked(self, e, t):
+        return self.ex(e.inner)
+
     def e_Builtin(self, e, t):
         n = e.name
+        if n == 'fmt':
+            return self.ex(e.fmt)
         if n in ('size_of', 'align_of'):
             lay = self.rt.layout(self.T(e.targ_t))
             return node('int', self.tid(t), lay.size if n == 'size_of' else lay.align)

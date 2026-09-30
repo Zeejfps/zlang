@@ -8,7 +8,8 @@ CMP_OPS = ('==', '!=', '<', '<=', '>', '>=')
 BIN_LEVELS = (('|',), ('^',), ('&',), ('<<', '>>'), ('+', '-'), ('*', '/', '%'))
 # Every builtin's signature (spec §13): (type arguments, value arguments, usage).
 # Type arguments always come first, so the name alone says how to parse each argument.
-# A (min, max) pair of value arguments means the trailing ones are optional.
+# A (min, max) pair of value arguments means the trailing ones are optional, and a max of None
+# that any number may follow.
 BUILTINS = {
     'size_of':  (1, 0, '@size_of(T)'),
     'align_of': (1, 0, '@align_of(T)'),
@@ -21,6 +22,7 @@ BUILTINS = {
     'wrap_sub': (0, 2, '@wrap_sub(a, b)'),
     'wrap_mul': (0, 2, '@wrap_mul(a, b)'),
     'panic':     (0, (0, 1), '@panic() or @panic("reason")'),
+    'fmt':      (0, (2, None), '@fmt(b, "format", args...)'),
 }
 
 
@@ -696,11 +698,12 @@ class Parser:
             self.err(f'unknown builtin `@{name}`', tok)
         ntypes, nvalues, usage = BUILTINS[name]
         lo, hi = nvalues if isinstance(nvalues, tuple) else (nvalues, nvalues)
+        most = ntypes + hi if hi is not None else float('inf')
         if not self.is_op('('):
             self.err(f"expected '(' after @{name}: {usage}")
         self.next()
         parts = []
-        while len(parts) < ntypes + hi and not self.is_op(')'):
+        while len(parts) < most and not self.is_op(')'):
             parts.append(self.type() if len(parts) < ntypes else self.expr())
             if not self.accept_op(','):
                 break

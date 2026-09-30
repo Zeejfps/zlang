@@ -440,7 +440,7 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 
 1. A name starting with `@` is a compiler builtin. User code can't declare such names.
 2. `@name(...)` is always a builtin call, never generic application (§9). The parentheses are required, even with no arguments.
-3. Each builtin has the fixed signature below. Type arguments always come before value arguments, so the builtin's name alone says whether each argument is parsed as a type or an expression.
+3. Each builtin has the signature below. Type arguments always come before value arguments, so the builtin's name alone says whether each argument is parsed as a type or an expression. Only `@fmt` takes any number of arguments.
 4. An unknown builtin, or a call with the wrong number of arguments, is a syntax error.
 
 | Signature | Result | Meaning |
@@ -454,6 +454,30 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 | `@addr(q)` | `usize` | The address of pointer `q` as an integer. |
 | `@wrap_add(a, b)`, `@wrap_sub(a, b)`, `@wrap_mul(a, b)` | type of `a` | Integer arithmetic that wraps instead of panicking. `a` and `b` have the same integer type. |
 | `@panic()`, `@panic("reason")` | none | Stops the program. Never returns. It ends a path for return and assignment checks. The reason must be a string literal. The runtime reports it with the panic's location, so no capability is needed. |
+| `@fmt(b, "format", args...)` | `bool` | Pushes text onto a `utf8::Builder` (below). |
+
+### Formatting
+
+```
+_ = @fmt(&b, "{}:{}: error: {}", line, col, msg)
+_ = @fmt(&b, "{08x} {5}|", addr, count)            // 0000beef    42|
+_ = @fmt(&b, "due {}", date::write_iso{ d, _ })     // a function writes the hole
+```
+
+1. `b` is a `*mut utf8::Builder(S)`, written `&p` for a name or a path of fields from one, or a name. It is used once for each piece of the format, so it can't contain a call or an index.
+2. The format must be a string literal. Its text is pushed as it is, except for holes: `{`, then optionally `0` and a width, then optionally `x` or `c`, then `}`. `{{` and `}}` stand for `{` and `}`. The holes take the remaining arguments in order, and their numbers must match.
+3. A hole pushes its argument according to the argument's type:
+   - an integer: in decimal, with a `-` if negative;
+   - `f32` or `f64`: as `utf8::push_f32` and `push_f64` do, the shortest text that reads back as the value;
+   - `bool`: `true` or `false`;
+   - `utf8::String`: its text. A string literal argument is a view (§11, Literals);
+   - a function value whose context is one `mut` field and that returns `bool`: the function is called with `b` in that field, and its result counts as the hole's. This is how a type is formatted: `write_iso{ d, _ }` binds everything but the builder (§4).
+
+   Anything else is an error. `{x}` takes an unsigned integer and writes it in lowercase hexadecimal; `{c}` takes an integer that converts to `u32` and writes it as a character (`utf8::push_char`).
+4. A width right-aligns an integer or a `utf8::String` in that many characters, padded with spaces, or with zeros after any `-` if the width starts with `0`. Wider text is written whole. A width doesn't apply to other types or to `{c}`.
+5. An integer whose type isn't known when the hole is checked keeps it open until the end of the enclosing body (§11, Literals). A `{x}` hole then makes it a `u64` and a `{c}` hole a `u32`; otherwise it takes its default.
+6. The result is `true` if every piece was pushed, and `false` at the first allocation failure, after which the builder holds the pieces before it and later arguments aren't evaluated. Like any call's result it must be used (§11.6).
+7. `@fmt` is short for the `utf8::push` calls it stands for, joined by `and`, and has no cost beyond them.
 
 ## 14. Memory
 
@@ -531,7 +555,7 @@ Settled questions are removed, and the rest keep their numbers.
 | `list` | `List(T, S)`: `new`, `reserve`, `push`, `pop`, `get`, `set`, `at`, `items`, `clear`, `each`, `free`. `new` takes the allocator's function and a pointer to its state, and the list keeps both, so it must not outlive the state (§14). |
 | `map` | `Map(K, V, S)`, a hash map that holds its allocator as a list does, and its key type's hash and equality functions: `new`, `len`, `has`, `get`, `at`, `put`, `remove`, `clear`, `free`, `next`, `each`. `hash_*` and `eq_*` for `i32`, `i64`, `u32`, `u64`, `usize`; `hash_bytes` for byte slices, with `slice::eq_bytes`; `hash_string` for `utf8::String`, with `utf8::eq`. |
 | `ascii` | Byte-level character tests and case for a `u8`: `is_digit`, `is_upper`, `is_lower`, `is_alpha`, `is_alnum`, `is_space`, `to_upper`, `to_lower`. Natives, used by `utf8`'s numbers: `f64_digits`, `f32_digits`, `f64_parse`, `f32_parse`. |
-| `utf8` | `String { bytes: []u8 }`, the text type: a non-owning view of valid UTF-8. Offsets are in bytes, and an offset inside a character panics; a character is a `u32` code point. `from` (checks the bytes, returning `Result(String, Invalid)` with the offset of the first bad byte), `of` (panics if invalid), `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`, `is_ascii`. Character tests and case (ASCII only). `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers, by character: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes and holds its allocator as a list does, with `push`, `push_char`, `push_i64`, `push_u64`, `push_f64`, `push_f32`, `view`, `clear`, `free`. |
+| `utf8` | `String { bytes: []u8 }`, the text type: a non-owning view of valid UTF-8. Offsets are in bytes, and an offset inside a character panics; a character is a `u32` code point. `from` (checks the bytes, returning `Result(String, Invalid)` with the offset of the first bad byte), `of` (panics if invalid), `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`, `is_ascii`. Character tests and case (ASCII only). `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers, by character: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes and holds its allocator as a list does, with `push`, `push_char`, `push_i64`, `push_u64`, `push_f64`, `push_f32`, `push_bool`, `view`, `clear`, `free`, and for `@fmt` (§13, Formatting) `push_padded`, `push_int`, `push_uint`, `push_hex`. `fmt_hex` writes an unsigned integer in hexadecimal into a buffer. |
 | `io` | `Stream`; `print`, `println`, `eprint`, `eprintln` for `utf8::String`, `newline`, `put_char` (one character), `print_i64`, `print_u64`, `print_f64`, `print_f32`, `print_bool` and their `println_` forms (smaller number types widen to these), `read_line` (bytes that aren't valid UTF-8 become `?`). Natives: `write`, `read`. |
 
 ```

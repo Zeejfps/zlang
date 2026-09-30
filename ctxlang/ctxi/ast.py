@@ -295,6 +295,14 @@ class Coerce(Node):
         self.expr, self.ty, self.pos = expr, ty, pos
 
 
+class Checked(Node):
+    """Inserted by the checker: an expression it has checked already, reused in code it makes
+    (the calls @fmt becomes). Its type is the inner expression's."""
+
+    def __init__(self, inner, pos):
+        self.inner, self.pos = inner, pos
+
+
 class ToSlice(Node):
     """Inserted by the checker: implicit *[N]T -> []T conversion."""
 

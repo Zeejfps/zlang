@@ -328,6 +328,29 @@ namespace utf8 {
         return String{ bytes = into[..total] }
     }
 
+    // n in lowercase hexadecimal, without a prefix. 16 bytes always fit.
+    fn fmt_hex { n: u64, into: []mut u8 } -> String {
+        let mut digits: [16]u8
+        let mut k: usize = 0
+        let mut v = n
+        while true {
+            let d = @trunc(u8, v % 16)
+            digits[k] = if d < 10 { '0' + d } else { 'a' + d - 10 }
+            k = k + 1
+            v = v / 16
+            if v == 0 { break }
+        }
+        if k > into.len { @panic("utf8::fmt_hex: buffer too small") }
+        let total = k
+        let mut out: usize = 0
+        while k > 0 {
+            k = k - 1
+            into[out] = digits[k]
+            out = out + 1
+        }
+        return String{ bytes = into[..total] }
+    }
+
     // Shortest text that reads back as n, e.g. "0.1", "3.0", "1e+100", "inf", "nan".
     // 32 bytes always fit.
     fn fmt_f64 { n: f64, into: []mut u8 } -> String {
@@ -476,6 +499,44 @@ namespace utf8 {
     fn push_f32(S) { mut b: Builder(S), n: f32 } -> bool {
         let mut buf: [32]u8
         return push{ &b, s = fmt_f32{ n, into = buf[..] } }
+    }
+
+    fn push_bool(S) { mut b: Builder(S), v: bool } -> bool {
+        return push{ &b, s = if v { "true" } else { "false" } }
+    }
+
+    // s right-aligned in `width` characters: padded with spaces, or with zeros after any `-` if
+    // `zero`. Wider text is pushed whole.
+    fn push_padded(S) { mut b: Builder(S), s: String, width: usize, zero: bool } -> bool {
+        let n = count{ s }
+        if n >= width { return push{ &b, s } }
+        let mut rest = s
+        if zero and s.bytes.len > 0 and s.bytes[0] == '-' {
+            if not push_char{ &b, c = '-' } { return false }
+            rest = sub{ s, lo = 1, hi = s.bytes.len }
+        }
+        let mut k = n
+        while k < width {
+            if not push_char{ &b, c = if zero { '0' } else { ' ' } } { return false }
+            k = k + 1
+        }
+        return push{ &b, s = rest }
+    }
+
+    // Integers padded as by push_padded, for `@fmt` holes with a width.
+    fn push_int(S) { mut b: Builder(S), n: i64, width: usize, zero: bool } -> bool {
+        let mut buf: [20]u8
+        return push_padded{ &b, s = fmt_i64{ n, into = buf[..] }, width, zero }
+    }
+
+    fn push_uint(S) { mut b: Builder(S), n: u64, width: usize, zero: bool } -> bool {
+        let mut buf: [20]u8
+        return push_padded{ &b, s = fmt_u64{ n, into = buf[..] }, width, zero }
+    }
+
+    fn push_hex(S) { mut b: Builder(S), n: u64, width: usize, zero: bool } -> bool {
+        let mut buf: [16]u8
+        return push_padded{ &b, s = fmt_hex{ n, into = buf[..] }, width, zero }
     }
 
     fn clear(S) { mut b: Builder(S) } {

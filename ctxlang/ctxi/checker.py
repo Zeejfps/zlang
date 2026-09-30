@@ -4,6 +4,8 @@ Generic bodies are checked once, with their type parameters as opaque TParams.
 The checker annotates the AST in place; the compiler reads those annotations.
 """
 
+import re
+
 from . import ast as A
 from .lexer import CompileError
 from .parser import parse_type
@@ -141,6 +143,7 @@ CHILDREN = {
     A.Arm: ('body',), A.Defer: ('body',), A.Return: ('expr',), A.ExprStmt: ('expr',), A.Unary: ('expr',),
     A.AddrOf: ('expr',), A.Binary: ('lhs', 'rhs'), A.ArrayLit: ('elems',),
     A.ArrayRep: ('elem',), A.Builtin: ('args',), A.Coerce: ('expr',), A.ToSlice: ('expr',),
+    A.Checked: ('inner',),
     A.Range: ('base', 'lo', 'hi'),
 }
 
@@ -175,6 +178,7 @@ class Checker:
         self.collect(self.decls, self.root)
         utf8 = self.std.paths.get('utf8')
         self.text_decl = utf8.paths.get('String') if isinstance(utf8, Namespace) else None
+        self.builder_decl = utf8.paths.get('Builder') if isinstance(utf8, Namespace) else None
         for nf in self.natives:
             ns = self.std
             for part in nf.path:
@@ -461,6 +465,7 @@ class Checker:
         self.st = State(set(), set(), False)
         self.lits = []
         self.gvars = []
+        self.fmts = []            # @fmt calls, made into pushes once literal types are known
 
     def check_fn(self, d):
         self.fn = d
@@ -504,10 +509,23 @@ class Checker:
                     self.const_ok(x)
 
     def finish(self):
+        # A hole's conversion settles an integer whose type is still open: `{x}` makes it a u64
+        # and `{c}` a u32 (a code point). Otherwise literals take their defaults.
+        for e, _, _ in self.fmts:
+            holes = iter(e.args[2:])
+            for kind, x in e.fmt_parts:
+                if kind == 'hole':
+                    h = next(holes)
+                    t = prune(h.ty)
+                    if isinstance(t, TVar) and t.kind == 'int' and x[2] in ('x', 'c'):
+                        unify(t, PRIMS['u64' if x[2] == 'x' else 'u32'])
         for lit in self.lits:
             t = prune(lit.ty)
             if isinstance(t, TVar):
                 unify(t, I32 if t.kind == 'int' else F64)
+        for e, ns, tps in self.fmts:
+            self.ns, self.tps = ns, tps
+            self.fmt_calls(e)
         for lit in self.lits:
             t = prune(lit.ty)
             if isinstance(lit, A.IntLit) and not (t.lo <= lit.val <= t.hi):
@@ -1259,6 +1277,9 @@ class Checker:
     def e_NullLit(self, e, exp):
         return NULL
 
+    def e_Checked(self, e, exp):
+        return e.inner.ty
+
     def e_Coerce(self, e, exp):
         return e.ty
 
@@ -1474,6 +1495,8 @@ class Checker:
     def check_exclusive(self, args, pos):
         refs = []
         for name, mut, a in args:
+            if isinstance(a, A.Checked):
+                a = a.inner
             if mut and isinstance(a, A.AddrOf):
                 pp = self.place_path(a.expr)
                 if pp:
@@ -1734,6 +1757,8 @@ class Checker:
                     self.err('@panic takes a string literal', args[0].pos)
                 self.expr(args[0])
             return VOID
+        if n == 'fmt':
+            return self.fmt(e)
         if n == 'as':
             tt = prune(e.targ_t)
             if isinstance(tt, EnumT):
@@ -1780,6 +1805,86 @@ class Checker:
         if not unify(lt, rt) or not is_int(lt):
             self.err(f'@{n} needs two integers of the same type', e.pos)
         return lt
+
+    # ---- @fmt(b, "format", args...) (spec §13): pushes onto a builder
+
+    def fmt(self, e):
+        b, f, holes = e.args[0], e.args[1], e.args[2:]
+        if not simple_place(b.expr if isinstance(b, A.AddrOf) else b):
+            self.err('@fmt takes its builder as `&b`, `&x.f` or a name: it is used once per piece', b.pos)
+        bt = prune(self.expr(b))
+        if not (isinstance(bt, Ptr) and bt.mut and isinstance(prune(bt.elem), StructT)
+                and prune(bt.elem).decl is self.builder_decl):
+            self.err(f'@fmt writes to a *mut utf8::Builder, got {tstr(bt)}', b.pos)
+        if not isinstance(f, A.StrLit):
+            self.err('@fmt takes its format as a string literal', f.pos)
+        e.fmt_parts = fmt_pieces(bytes(f.val), lambda msg: self.err(msg, f.pos))
+        n = sum(1 for kind, _ in e.fmt_parts if kind == 'hole')
+        if n != len(holes):
+            self.err(f'the format has {n} hole{"" if n == 1 else "s"} but {len(holes)} '
+                     f'argument{"" if len(holes) == 1 else "s"} follow{"s" if len(holes) == 1 else ""} it', e.pos)
+        for h in holes:
+            self.expr(h, self.text_type(h.pos) if isinstance(h, A.StrLit) else None)
+        self.fmts.append((e, self.ns, self.tps))
+        return BOOL
+
+    def text_type(self, pos):
+        return self.decl_type(self.text_decl, [], pos, partial=False)
+
+    def fmt_calls(self, e):
+        """The pushes an @fmt call stands for, joined by `and`, in e.fmt."""
+        b = A.Checked(e.args[0], e.args[0].pos)
+        holes = iter(e.args[2:])
+        calls = []
+        for kind, x in e.fmt_parts:
+            if kind == 'text':
+                calls.append(self.fmt_push(b, 'push', [('s', A.StrLit(x, e.args[1].pos))], e.pos))
+            else:
+                calls.append(self.fmt_hole(b, x, next(holes)))
+        out = A.BoolLit(True, e.pos) if not calls else calls[0]
+        for c in calls[1:]:
+            out = A.Binary('and', out, c, e.pos)
+        e.fmt = out
+        self.expr(out)
+
+    @staticmethod
+    def fmt_push(b, name, items, pos):
+        callee = A.Path([A.Seg('utf8', None, pos), A.Seg(name, None, pos)], pos)
+        return A.Braced(callee, [A.Item('b', b, pos)] + [A.Item(n, v, pos) for n, v in items], False, False, pos)
+
+    def fmt_hole(self, b, spec, h):
+        zero, width, conv = spec
+        t = prune(h.ty)
+        pos = h.pos
+        v = A.Checked(h, pos)
+        pad = [('width', A.IntLit(width or 0, pos)), ('zero', A.BoolLit(zero, pos))]
+        what = '{' + ('0' if zero else '') + (str(width) if width is not None else '') + conv + '}'
+        if conv == 'c':
+            if width is not None:
+                self.err(f'`{what}`: a width applies to numbers and text, not characters', pos)
+            return self.fmt_push(b, 'push_char', [('c', v)], pos)
+        if conv == 'x':
+            if not (is_int(t) and not t.signed):
+                self.err(f'`{what}` formats an unsigned integer, not {tstr(t)}', pos)
+            return self.fmt_push(b, 'push_hex', [('n', v)] + pad, pos)
+        if is_int(t):
+            if width is None:
+                return self.fmt_push(b, 'push_i64' if t.signed else 'push_u64', [('n', v)], pos)
+            return self.fmt_push(b, 'push_int' if t.signed else 'push_uint', [('n', v)] + pad, pos)
+        if isinstance(t, StructT) and t.decl is self.text_decl:
+            if width is None:
+                return self.fmt_push(b, 'push', [('s', v)], pos)
+            return self.fmt_push(b, 'push_padded', [('s', v)] + pad, pos)
+        if width is not None:
+            self.err(f'`{what}`: a width applies to integers and utf8::String, not {tstr(t)}', pos)
+        if is_float(t):
+            return self.fmt_push(b, 'push_f32' if t.name == 'f32' else 'push_f64', [('n', v)], pos)
+        if t is BOOL:
+            return self.fmt_push(b, 'push_bool', [('v', v)], pos)
+        if isinstance(t, FnT) and len(t.fields) == 1 and t.fields[0][1] and prune(t.ret) is BOOL:
+            return A.Braced(v, [A.Item(t.fields[0][0], b, pos)], False, False, pos)
+        self.err(f"@fmt can't format {tstr(t)}: give a utf8::String, a number, a bool, or a "
+                 f"function that writes to the builder", pos)
 
     # ---------------------------------------------------------------- places
 
@@ -1911,6 +2016,49 @@ class Checker:
                     out |= self.derives(b.result)
             return out
         return set()
+
+
+def simple_place(e):
+    """A name or a path of fields from one, which can be evaluated more than once."""
+    while isinstance(e, A.Field):
+        e = e.base
+    return isinstance(e, A.Path) and len(e.segs) == 1 and e.segs[0].targs is None
+
+
+def fmt_pieces(s, err):
+    """An @fmt format as ('text', bytes) and ('hole', (zero, width, conv)) pieces. A hole is
+    `{` then an optional `0`, width and `x` or `c`, then `}`; `{{` and `}}` are braces."""
+    out, text, i = [], bytearray(), 0
+    while i < len(s):
+        c = s[i:i + 1]
+        if c == b'{' and s[i + 1:i + 2] == b'{' or c == b'}' and s[i + 1:i + 2] == b'}':
+            text += c
+            i += 2
+        elif c == b'{':
+            j = s.find(b'}', i)
+            if j < 0:
+                err('the format has a `{` without a `}`; write `{{` for a brace')
+            m = re.fullmatch(rb'(0?)([0-9]*)([xc]?)', s[i + 1:j])
+            if m is None:
+                err(f'bad hole `{s[i:j + 1].decode("ascii", "replace")}` in the format: use `{{}}`, '
+                    f'`{{x}}`, `{{c}}` or a width such as `{{8}}` or `{{08x}}`')
+            if text:
+                out.append(('text', bytes(text)))
+                text = bytearray()
+            zero = m.group(1) == b'0' and m.group(2) != b''
+            width = int(m.group(2)) if m.group(2) else (0 if m.group(1) else None)
+            if width == 0 and not m.group(2):
+                width = None
+            out.append(('hole', (zero, width, m.group(3).decode())))
+            i = j + 1
+        elif c == b'}':
+            err('the format has a `}` without a `{`; write `}}` for a brace')
+        else:
+            text += c
+            i += 1
+    if text:
+        out.append(('text', bytes(text)))
+    return out
 
 
 def value_blocks(e):
