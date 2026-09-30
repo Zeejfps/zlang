@@ -1082,10 +1082,7 @@ namespace lower {
                     }
                     else => {}
                 }
-                match check::get_decl{ c = l.c.*, d = decl }.syn.k {
-                    constant{ value } => { return ex{ &l, e = value } }
-                    else => { @panic("lower: a const without a value") }
-                }
+                return value{ &l, v = const_val{ l, d = decl } }
             }
             enumval{ ty, index } => {
                 let d = enum_decl{ l, t = ty }
@@ -1126,13 +1123,62 @@ namespace lower {
         }
         let t = T{ &l, t = x.ty }
         let ty = tid{ &l, t }
-        let mut value = placeholder.value
-        match x.syn.k {
-            constant{ value = v } => { value = conv{ &l, e = v, to = t } }
-            else => {}
-        }
-        list::items{ list = l.consts }[i] = ir::Const{ name = x.qual, ty, value }
+        let v = value{ &l, v = const_val{ l, d } }
+        list::items{ list = l.consts }[i] = ir::Const{ name = x.qual, ty, value = v }
         return i
+    }
+
+    fn const_val { l: Lower, d: u32 } -> check::Val {
+        let v = map::get{ m = l.c.values, key = d }
+        if v == null { @panic("lower: a const without a value") }
+        return v
+    }
+
+    // A const's value, which the checker computed, as literals.
+    fn value { mut l: Lower, v: check::Val } -> ir::Expr {
+        match v {
+            int{ ty, negative, magnitude } => { return mk{ ty = tid{ &l, t = ty }, k = ir::ExprKind::int{ negative, value = magnitude } } }
+            float{ ty, value = x } => { return mk{ ty = tid{ &l, t = ty }, k = ir::ExprKind::float{ value = x } } }
+            boolean{ ty, value = x } => { return mk{ ty = tid{ &l, t = ty }, k = ir::ExprKind::boolean{ value = x } } }
+            str{ ty, bytes } => { return mk{ ty = tid{ &l, t = ty }, k = ir::ExprKind::str{ bytes } } }
+            sbytes{ ty, bytes } => { return mk{ ty = tid{ &l, t = ty }, k = ir::ExprKind::sbytes{ bytes } } }
+            nil{ ty } => { return mk{ ty = tid{ &l, t = ty }, k = ir::ExprKind::nil } }
+            record{ ty, fields } => {
+                let id = tid{ &l, t = ty }
+                return mk{ ty = id, k = ir::ExprKind::record{ items = value_args{ &l, xs = fields } } }
+            }
+            variant{ ty, index, fields } => {
+                let id = tid{ &l, t = ty }
+                return mk{ ty = id, k = ir::ExprKind::variant{ index, items = value_args{ &l, xs = fields } } }
+            }
+            array{ ty, elems } => {
+                let id = tid{ &l, t = ty }
+                let mut out = list::new(ir::Expr){ realloc = arena::alloc, heap = l.heap }
+                let mut i: usize = 0
+                while i < elems.len {
+                    let x = value{ &l, v = elems[i] }
+                    if not list::push{ list = &out, item = x } { @panic("lower: out of memory") }
+                    i = i + 1
+                }
+                return mk{ ty = id, k = ir::ExprKind::array{ elems = list::items{ list = out } } }
+            }
+            repeat{ ty, elem } => {
+                let id = tid{ &l, t = ty }
+                return mk{ ty = id, k = ir::ExprKind::repeat{ elem = box{ l, e = value{ &l, v = elem.* } } } }
+            }
+        }
+    }
+
+    // A struct's or variant's field values as ARGs, in field order.
+    fn value_args { mut l: Lower, xs: []check::Val } -> []ir::Arg {
+        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < xs.len {
+            let x = value{ &l, v = xs[i] }
+            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, i), value = x } }
+            i = i + 1
+        }
+        return list::items{ list = out }
     }
 
     fn field_ex { mut l: Lower, e: syntax::Expr, base: syntax::Expr, name: syntax::Name, t: Id } -> ir::Expr {

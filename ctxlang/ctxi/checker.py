@@ -4,6 +4,7 @@ Generic bodies are checked once, with their type parameters as opaque TParams.
 The checker annotates the AST in place; the compiler reads those annotations.
 """
 
+import math
 import re
 
 from . import ast as A
@@ -12,7 +13,7 @@ from .parser import parse_type
 from .types import (
     Prim, PRIMS, I32, USIZE, F64, BOOL, U8, Ptr, SliceT, Arr, Opt, StructT, UnionT, EnumT, FnT, Cap,
     VOID, NULL, TParam, TVar, prune, subst, tstr, is_int, is_float, is_num, unify,
-    fn_accepts, widens, contains_bound_fn, free_vars, struct_fields, variants_of, qualname,
+    fn_accepts, widens, contains_bound_fn, free_vars, struct_fields, variants_of, qualname, f32r,
 )
 
 
@@ -228,6 +229,7 @@ class Checker:
     def check_bodies(self):
         for d in self.consts:
             self.check_const(d)
+        self.fold_consts()
         for d in self.fns:
             self.check_fn(d)
         self.check_main()
@@ -505,6 +507,140 @@ class Checker:
         d.expr = self.expect(d.expr, d.cty)
         self.finish()
         self.const_ok(d.expr)
+
+    # ---- const values (§14): computed at compile time
+    #
+    # A value is a tuple, its kind then its type: ('int', T, n), ('float', T, x), ('bool', T, b),
+    # ('str', T, bytes) for a [N]u8, ('sbytes', T, bytes) for a view, ('null', T),
+    # ('struct', T, [value per field]), ('variant', T, index, [value per field]),
+    # ('array', T, [value per element]) and ('repeat', T, value). The operations are the
+    # runtime's, and what would panic at run time is a compile error at the operation.
+
+    def fold_consts(self):
+        from .runtime import Runtime
+        self.rt = Runtime(self, stack_size=0)
+        self.folding = []
+        for d in self.consts:
+            self.const_value(d, d.pos)
+
+    def const_value(self, d, pos):
+        v = getattr(d, 'value', None)
+        if v is not None:
+            return v
+        if d in self.folding:
+            self.err(f'const `{d.name}` refers to itself', pos)
+        self.folding.append(d)
+        d.value = self.fold_to(d.expr, d.cty)
+        self.folding.pop()
+        return d.value
+
+    def fold_to(self, e, t):
+        """e's value as a value of type t, which it widens to."""
+        v = self.fold(e)
+        t = prune(t)
+        if v[0] in ('int', 'float') and isinstance(t, (Prim, EnumT)):
+            return (v[0], t, v[2])
+        return v
+
+    def fold(self, e):
+        t = prune(e.ty)
+        if isinstance(e, A.IntLit):
+            return ('int', t, e.val)
+        if isinstance(e, A.FloatLit):
+            return ('float', t, f32r(e.val) if t.name == 'f32' else float(e.val))
+        if isinstance(e, A.BoolLit):
+            return ('bool', t, e.val)
+        if isinstance(e, A.NullLit):
+            return ('null', t)
+        if isinstance(e, A.StrLit):
+            if e.view is None:
+                return ('str', t, bytes(e.val))
+            view = ('sbytes', SliceT(U8), bytes(e.val))
+            return view if e.view == 'bytes' else ('struct', t, [view])
+        if isinstance(e, A.Coerce):
+            return ('variant', t, 1, [self.fold_to(e.expr, t.elem)])
+        if isinstance(e, A.Path):
+            k = e.ref[0]
+            if k == 'const':
+                return self.const_value(e.ref[1], e.pos)
+            if k == 'enumval':
+                return ('int', t, t.decl.values[e.ref[2]])
+            return ('variant', t, e.ref[2], [])
+        if isinstance(e, A.Braced):
+            if e.lit[0] == 'struct':
+                fields, vi = struct_fields(t), None
+            else:
+                vi = e.lit[2]
+                fields = variants_of(t)[vi][1]
+            given = {name: a for name, _, a in e.args}
+            vals = [self.fold_to(given[name], ft) for name, ft in fields]
+            return ('struct', t, vals) if vi is None else ('variant', t, vi, vals)
+        if isinstance(e, A.ArrayLit):
+            return ('array', t, [self.fold_to(x, t.elem) for x in e.elems])
+        if isinstance(e, A.ArrayRep):
+            return ('repeat', t, self.fold_to(e.elem, t.elem))
+        if isinstance(e, A.Builtin):
+            lay = self.rt.layout(e.targ_t)
+            return ('int', t, lay.size if e.name == 'size_of' else lay.align)
+        if isinstance(e, A.Unary):
+            v = self.fold(e.expr)
+            if e.op == 'not':
+                return ('bool', t, not v[2])
+            if v[0] == 'float':
+                return ('float', t, -v[2])
+            return self.fits(-v[2], t, e.pos)
+        return self.fold_binary(e, t)
+
+    def fold_binary(self, e, t):
+        op = e.op
+        if op in ('and', 'or'):
+            a = self.fold(e.lhs)[2]
+            if a == (op == 'or'):
+                return ('bool', t, a)
+            return ('bool', t, self.fold(e.rhs)[2])
+        if op in ('==', '!=') and e.nullcmp:
+            x = self.fold(e.rhs if isinstance(e.lhs, A.NullLit) else e.lhs)
+            return ('bool', t, (x[0] == 'null') == (op == '=='))
+        a, b = self.fold(e.lhs)[2], self.fold(e.rhs)[2]
+        if op in ('==', '!=', '<', '<=', '>', '>='):
+            r = {'==': a == b, '!=': a != b, '<': a < b, '<=': a <= b, '>': a > b, '>=': a >= b}[op]
+            return ('bool', t, r)
+        if t.kind == 'float':
+            if op == '/':
+                if b == 0:
+                    r = math.nan if a == 0 or a != a else math.copysign(math.inf, a) * math.copysign(1.0, b)
+                else:
+                    r = a / b
+            elif op == '%':
+                r = math.nan if b == 0 else math.fmod(a, b)
+            else:
+                r = {'+': a + b, '-': a - b, '*': a * b}[op]
+            return ('float', t, f32r(r) if t.name == 'f32' else r)
+        if op in ('&', '|', '^'):
+            return ('int', t, {'&': a & b, '|': a | b, '^': a ^ b}[op])
+        if op in ('<<', '>>'):
+            if b < 0 or b >= t.bits:
+                self.err('shift count out of range in constant', e.pos)
+            if op == '>>':
+                return ('int', t, a >> b)
+            v = (a << b) & ((1 << t.bits) - 1)
+            if t.signed and v >= 1 << (t.bits - 1):
+                v -= 1 << t.bits
+            return ('int', t, v)
+        if op in ('/', '%'):
+            if b == 0:
+                self.err('division by zero in constant', e.pos)
+            if op == '%':
+                m = abs(a) % abs(b)
+                return ('int', t, -m if a < 0 else m)
+            q = abs(a) // abs(b)
+            return self.fits(-q if (a < 0) != (b < 0) else q, t, e.pos)
+        return self.fits({'+': a + b, '-': a - b, '*': a * b}[op], t, e.pos)
+
+    def fits(self, v, t, pos):
+        if not t.lo <= v <= t.hi:
+            self.err('integer overflow in constant', pos)
+        return ('int', t, v)
 
     def const_ok(self, e):
         ok = (A.IntLit, A.FloatLit, A.StrLit, A.BoolLit, A.NullLit, A.Binary, A.Unary, A.ArrayLit,

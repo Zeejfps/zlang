@@ -22,7 +22,7 @@ namespace ir {
         main:    u32,
     }
 
-    // A const of array, struct or union type. Its value is computed once, when first used.
+    // A const of array, struct or union type. Its value is literals only: the checker computed it.
     struct Const { name: Bytes, ty: TypeId, value: Expr }
 
     // A source position: 1-based line and column, and an index into Program.files.

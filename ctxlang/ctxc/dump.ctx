@@ -908,6 +908,12 @@ namespace decls {
                     constant{ value } => { expr{ &out, c, e = value, depth = 1 } }
                     else => {}
                 }
+                let v = map::get{ m = c.values, key = i }
+                if v != null {
+                    dump::put{ &out, s = "  value " }
+                    value{ &out, c, v }
+                    dump::put{ &out, s = "\n" }
+                }
             }
             func => {
                 pushed{ ok = @fmt(&out, "fn {}", q) and tparams{ d, b = &out } and @fmt(&out, " ") and sig{ c, d, b = &out } and @fmt(&out, "\n") }
@@ -1271,6 +1277,77 @@ namespace decls {
             expr{ &out, c, e = kids[i], depth = d + 1 }
             i = i + 1
         }
+    }
+
+    // A const's value: `N:T` for a number, `"BYTES"` or `view "BYTES"`, `{V, ...}` for a struct,
+    // `I{V, ...}` for variant I, `[V, ...]` for an array and `[V; N]` for N copies.
+    fn value { mut out: Out, c: check::Checker, v: check::Val } {
+        match v {
+            int{ ty, negative, magnitude } => {
+                let sign: utf8::String = if negative { "-" } else { "" }
+                pushed{ ok = @fmt(&out, "{}{}:{}", sign, magnitude, check::tstr{ c, t = ty }) }
+            }
+            float{ ty, value } => {
+                let mut buf: [32]u8
+                let s = if ty == types::prim{ p = types::Prim::f32 } { utf8::fmt_f32{ n = @as(f32, value), into = buf[..] } } else { utf8::fmt_f64{ n = value, into = buf[..] } }
+                pushed{ ok = @fmt(&out, "{}:{}", s, check::tstr{ c, t = ty }) }
+            }
+            boolean{ value } => { dump::put{ &out, s = if value { "true" } else { "false" } } }
+            nil => { dump::put{ &out, s = "null" } }
+            str{ bytes } => { quote{ &out, b = bytes } }
+            sbytes{ bytes } => {
+                dump::put{ &out, s = "view " }
+                quote{ &out, b = bytes }
+            }
+            record{ fields } => {
+                dump::put{ &out, s = "{" }
+                values{ &out, c, xs = fields }
+                dump::put{ &out, s = "}" }
+            }
+            variant{ index, fields } => {
+                pushed{ ok = @fmt(&out, "{}{{", index) }
+                values{ &out, c, xs = fields }
+                dump::put{ &out, s = "}" }
+            }
+            array{ elems } => {
+                dump::put{ &out, s = "[" }
+                values{ &out, c, xs = elems }
+                dump::put{ &out, s = "]" }
+            }
+            repeat{ ty, elem } => {
+                dump::put{ &out, s = "[" }
+                value{ &out, c, v = elem.* }
+                let mut n: u64 = 0
+                match types::get{ s = c.ty, id = ty } { array{ n = k } => { n = k } else => {} }
+                pushed{ ok = @fmt(&out, "; {}]", n) }
+            }
+        }
+    }
+
+    fn values { mut out: Out, c: check::Checker, xs: []check::Val } {
+        let mut i: usize = 0
+        while i < xs.len {
+            if i > 0 { dump::put{ &out, s = ", " } }
+            value{ &out, c, v = xs[i] }
+            i = i + 1
+        }
+    }
+
+    // Bytes as the IR quotes them: printable ASCII other than `"` and `\` as is, every other
+    // byte as \xHH.
+    fn quote { mut out: Out, b: []u8 } {
+        dump::put{ &out, s = "\"" }
+        let mut i: usize = 0
+        while i < b.len {
+            let ch = b[i]
+            if ch >= 32 and ch <= 126 and ch != '"' and ch != '\\' {
+                dump::byte{ &out, c = ch }
+            } else {
+                pushed{ ok = @fmt(&out, "\\x{02x}", ch) }
+            }
+            i = i + 1
+        }
+        dump::put{ &out, s = "\"" }
     }
 
     fn indent { mut out: Out, depth: u32 } {

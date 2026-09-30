@@ -354,6 +354,16 @@ fn main { mut io: Io } {
 fn main { mut io: Io } { let a: i32 = 1; let b: u32 = 2; let c = a + b }
 """, 'incompatible types')
 
+    def test_float_remainder(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a = 7.5
+    let b: f32 = -7.5
+    io::println_f64{ &io, n = a % 2.0 }
+    io::println_f32{ &io, n = b % 2.0 }
+}
+""", "1.5\n-1.5\n")
+
     def test_structs_and_pointers(self):
         self.assertOutput("""
 struct P { x: i32, y: i32 }
@@ -832,11 +842,70 @@ class ConstInitializers(Base):
             'const A: [3]u8 = [7; 3]',
             'const A: usize = N\nconst N: u8 = 3',
             'const A: i64 = N\nconst N: u8 = 3',
-            'const A: i32 = 2147483647 + 1',
-            'const A: u32 = 5\nconst B: i64 = A * 3000000000',
             'const A: utf8::String = "ok"',
+            'const A: bool = false and 1 / 0 == 1',
+            'const A: i32 = -2147483648 % -1',
+            'const A: i8 = 64 << 1',
         ]:
             run(src + '\nfn main {} {}')
+
+    def test_folding(self):
+        """A const's value is computed at compile time (§14): what would panic at run time is a
+        compile error at the operation."""
+        for src, msg, line, col in [
+            ('const A: i32 = 2147483647 + 1', 'integer overflow in constant', 1, 27),
+            ('const A: u32 = 5\nconst B: i64 = A * 3000000000', 'integer overflow in constant', 2, 18),
+            ('const A: [1]u8 = [200 + 100]', 'integer overflow in constant', 1, 23),
+            ('const A: i32 = 1 / 0', 'division by zero in constant', 1, 18),
+            ('const A: u8 = 1 << 8', 'shift count out of range in constant', 1, 17),
+            ('const A: i8 = -(-128)', 'integer overflow in constant', 1, 15),
+            ('const A: i32 = B\nconst B: i32 = A', 'const `A` refers to itself', 2, 16),
+            ('const A: i64 = -9223372036854775807 - 1 - 1', 'integer overflow in constant', 1, 41),
+            ('const A: i32 = -2147483648 / -1', 'integer overflow in constant', 1, 28),
+            ('const A: u8 = 3 - 4', 'integer overflow in constant', 1, 17),
+            ('const A: i32 = 5 % 0', 'division by zero in constant', 1, 18),
+            ('const A: i64 = 1 >> 64', 'shift count out of range in constant', 1, 18),
+        ]:
+            self.assertConstError(src + '\nfn main {} {}', msg, line, col)
+
+    def test_non_finite(self):
+        """A float const may fold to an infinity or a NaN, which no literal can be."""
+        self.assertOutput("""
+const G: f64 = 1.0 / 0.0
+const M: f32 = -1.0 / 0.0
+const N: f64 = 0.0 / 0.0
+const A: [2]f64 = [G, N]
+fn main { mut io: Io } {
+    io::println_f64{ &io, n = G }
+    io::println_f32{ &io, n = M }
+    io::println_f64{ &io, n = N }
+    io::println_f64{ &io, n = A[0] }
+}
+""", "inf\n-inf\nnan\ninf\n")
+
+    def test_values(self):
+        """Folded values reach the program: a const's uses read what the checker computed."""
+        self.assertOutput("""
+struct P { a: u64, b: ?u8 }
+const N: u8 = 200
+const M: u64 = 1000000
+const W: u64 = M * 5000000 + N
+const F: f32 = 1.1 * 3.0
+const H: i32 = -7 / 2 + (-7 % 2) + (1 << 30) + (-8 >> 1)
+const K: i8 = 64 << 1
+const Q: P = P{ b = N - 1, a = W }
+const Z: [4]i64 = [N; 4]
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = W }
+    io::println_f64{ &io, n = F }
+    io::println_i64{ &io, n = H }
+    io::println_i64{ &io, n = K }
+    io::println_u64{ &io, n = Q.a }
+    let b = Q.b
+    if b != null { io::println_u64{ &io, n = b } }
+    io::println_i64{ &io, n = Z[3] }
+}
+""", "5000000000200\n3.3000001907348633\n1073741816\n-128\n5000000000200\n199\n200\n")
 
 
 class Bodies(Base):

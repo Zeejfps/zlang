@@ -15,7 +15,7 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 | 3a | Language work before the lexer (below) | done | `2056bb4` |
 | 4 | Lexer | done | |
 | 5 | Parser | done | |
-| 6 | Checker | **in progress**: sub-steps 1–6 done | |
+| 6 | Checker | **in progress**: sub-steps 1–7 done | |
 | 7 | Self-hosting fixpoint | | |
 | 7a | Language server | | |
 | 8 | Decide ctxi's role | | |
@@ -46,9 +46,6 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 - 20 corpus programs read temporary files that the test suite deletes once it's done, so
   `ctest.py` skips them. `tools/corpus.py` should copy those files into the case directory.
 - The C backend prints no `in fn` stack trace with a panic (see Open decisions).
-- A const whose value panics (`[200 + 100]` as `[1]u8`) panics at runtime, not at compile time
-  as spec §14 implies, and the backends differ on when: ctxi when it compiles the function that
-  uses it, C on first use. Stage 6 folds consts in the checker, which makes it a compile error.
 - Linux has no large-stack link flag yet (`cbackend.stack_flags`). The main thread keeps its
   default stack (usually 8 MB), below the runtime's 16 MB check, so deep recursion segfaults instead of panicking.
 
@@ -280,7 +277,8 @@ to live and a read-only type to have, which in turn needs read-only pointers and
    [...]`, as `[]u8` or `utf8::String`, also inside struct literals. This fell out of step 3 with
    no checker or IR change. Each use of a const was still a copy of its initializer; since
    stage 4, a const of array, struct or union type is an IR `const` item, kept in a static in C
-   and computed on first use (IR version 7).
+   (IR version 7); since stage 6 its value is folded by the checker and emitted as a
+   `static const` initializer.
 
 *Done when:* each step passes the test suite under both backends and `ctest.py --same-c`, and
 FRICTION.md #1 and #12 are resolved.
@@ -498,6 +496,22 @@ agree, ctxc's own 23,590 lines of IR (1,622 function instances) included. `ctxc 
 Checking and lowering ctxc, with printing the IR, takes about 260 ms natively. The remaining
 steps are sub-step 7 (const folding) and then feeding ctxc's own IR to its backend (stage 7).
 
+**Sub-step 7 — done.** Both checkers compute every const's value after checking every const's
+initializer, in declaration order, a const that another needs first. The operations are the
+runtime's, and what would panic at run time is a compile error at the operation: `integer
+overflow in constant`, `division by zero in constant` or `shift count out of range in constant`
+(`@as` isn't allowed in a const). A const that needs itself is `const X refers to itself`.
+`and` and `or` fold only what they would evaluate. ctxc keeps an integer as a sign and a
+magnitude, so every intermediate result of every integer type is exact, and folds floats as the
+runtime does, rounding each f32 result. The value is a tree of literals (`check::Val`, ctxi's
+`d.value`): besides the list above, `str` for a `[N]u8` and `repeat`, so `[0; 4096]` stays small;
+a `?T` holding a value is variant `some`. The IR's const items and every use of a scalar const
+hold those literals, and the decls dump gains each const's value, so a value is diffed even where
+no program uses it. The C backend emits a const as `static const tT qvN = VALUE;`, with a GNU
+range designator for `repeat`, and drops the `qN()` accessors. A float const can now be infinite
+or NaN, which C spells `INFINITY` and `NAN` (`math.h`, which ctxrt.h lacked: `%` on floats had
+never compiled to C).
+
 *Done when:* IR matches the Python dump across the corpus, every compile-error test's first
 diagnostic contains the same fragment at the same position, the recovery test passes on the whole
 front end, and checking ctxc stays within the time budget.
@@ -649,6 +663,7 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 | `fn{C} -> R` | pointer to a record whose first member is the code | Called with the record and the fields in name order. Conversion to a type with more fields wraps the value in an adapter. |
 | `&fn{C} -> R` | a bind record from `ctx_alloc` | Never freed, like ctxi. |
 | `defer` | copied to each exit | Innermost first. `return e` evaluates `e` into a temporary first. |
+| const of array, struct or union type | `static const qvN = VALUE;` | The checker folds the value to literals; `[x; N]` is a GNU range designator. A scalar const is its value at each use. |
 | `if`/`match` expressions | GNU statement expressions | A branch that leaves uses `return`, `break` or `continue`. |
 | argument order | temporaries | C leaves argument evaluation order unspecified; ctxi evaluates left to right. |
 | `@panic`, runtime panics | `ctx_panic(file, line, col, msg)` | Same `file:line:col: panic: msg` text, exit code 134. |

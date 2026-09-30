@@ -7,6 +7,7 @@
 #ifndef CTXRT_H
 #define CTXRT_H
 
+#include <math.h>               // fmod, for `%` on floats
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>

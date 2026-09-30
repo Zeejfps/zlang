@@ -7,7 +7,9 @@ backend. Everything the checker left implicit is explicit here: widening, T to ?
 value conversions, narrowed locals, `..` forwarding, `mut` fields as pointers, generic
 instances, layouts and constant values. An enum is its base integer type, and a match on one is
 a `switch` on its value. A const of array, struct or union type is a top-level item that each use
-refers to; a scalar const is its value at each use. ctxc/ir.ctx reads it back and ctxc/ir_print.ctx prints
+refers to; a scalar const is its value at each use. The checker computes every const's value, so
+a value is only literals: int, float, bool, str, sbytes, null, struct, variant (a ?T's `some` too),
+array and repeat, with a struct's or variant's fields in order. ctxc/ir.ctx reads it back and ctxc/ir_print.ctx prints
 it; the two printers must agree byte for byte.
 
 Text
@@ -27,7 +29,7 @@ the enclosing indent. An empty block is `{}`. Top-level items are one per line:
                                          is a program read from a string
     (type ID TYPE)...                                       in id order
     (const ID NAME T E)...               an array, struct or union const, in id order; E is its
-                                         value, computed once, when a use first needs it
+                                         value, made of literals only
     (native ID NAME [PARAM...] RET)...                      functions, in id order
     (fn ID NAME [PARAM...] RET [LOCAL...] BLOCK)...
     (main ID)
@@ -395,7 +397,7 @@ class Dumper:
         if k == 'const':
             if isinstance(t, (Arr, StructT, UnionT, Opt, SliceT)):
                 return node('constref', self.tid(t), self.const_id(r[1]))
-            return self.ex(r[1].expr)
+            return self.value(r[1].value)
         if k == 'enumval':
             return node('int', self.tid(t), t.decl.values[r[2]])
         return node('variant', self.tid(t), r[2], [])
@@ -407,8 +409,30 @@ class Dumper:
             i = self.const_ids[d] = len(self.const_items)
             self.const_items.append(None)
             t = self.T(d.cty)
-            self.const_items[i] = node('const', i, qualname(d).encode(), self.tid(t), self.conv(d.expr, t))
+            self.const_items[i] = node('const', i, qualname(d).encode(), self.tid(t), self.value(d.value))
         return i
+
+    def value(self, v):
+        """A const's value, which the checker computed (Checker.fold), as literals."""
+        kind, t = v[0], v[1]
+        if kind == 'int':
+            return node('int', self.tid(t), v[2])
+        if kind == 'float':
+            text = _shortest_f32(v[2]) if prune(t).name == 'f32' else repr(float(v[2]))
+            return node('float', self.tid(t), Sym(_float_text(text)))
+        if kind == 'bool':
+            return node('bool', self.tid(t), int(v[2]))
+        if kind in ('str', 'sbytes'):
+            return node(kind, self.tid(t), v[2])
+        if kind == 'null':
+            return node('null', self.tid(t))
+        if kind == 'struct':
+            return node('struct', self.tid(t), [(i, self.value(x)) for i, x in enumerate(v[2])])
+        if kind == 'variant':
+            return node('variant', self.tid(t), v[2], [(i, self.value(x)) for i, x in enumerate(v[3])])
+        if kind == 'array':
+            return node('array', self.tid(t), [self.value(x) for x in v[2]])
+        return node('repeat', self.tid(t), self.value(v[2]))
 
     def var(self, v, pos):
         t = self.T(v.ty)

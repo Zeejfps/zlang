@@ -20,6 +20,7 @@ natives. One line per item, children indented by two spaces:
     type NAME = T
     const NAME: T
       KIND T                                its initializer, one line per expression
+      value V                               its value, which the checker computed
     fn NAME(G) { FIELD: T, mut FIELD: T } [-> R]
       STMT                                  its body, one line per statement
     native NAME { ... } [-> R]
@@ -45,6 +46,11 @@ variants, `|`-separated, or `else`), then `bind [&]NAME: T` for each binding of 
 pattern, then its block. A branch of an `if` or `match` expression ends in `value` over the
 expression that gives its value, if it has one.
 
+A const's value V is written `N:T` for an integer or float of type T, `true` or `false`,
+`null`, `"BYTES"` for a [N]u8 and `view "BYTES"` for a view (bytes as in the IR's strings),
+`{V, ...}` for a struct's fields, `I{V, ...}` for variant I's, `[V, ...]` for an array's elements
+and `[V; N]` for N copies.
+
 If the checker stops at an error, the dump is only the error: `error FILE:LINE:COL MSG`.
 """
 
@@ -53,7 +59,9 @@ from .checker import Checker
 from .lexer import CompileError
 from .parser import parse
 from .runtime import Runtime
-from .types import StructT, UnionT, FnT, VOID, tstr, qualname, zonk
+from .irdump import quote
+from .natives import _float_text, _shortest_f32
+from .types import StructT, UnionT, FnT, VOID, tstr, qualname, zonk, prune
 
 
 def dump_sources(sources, std, natives):
@@ -68,6 +76,31 @@ def dump_sources(sources, std, natives):
     except CompileError as e:
         return error_line(e)
     return Dumper(c).run(std + decls)
+
+
+def value_text(v):
+    kind = v[0]
+    if kind in ('int', 'float'):
+        if kind == 'int':
+            n = str(v[2])
+        else:
+            n = _float_text(_shortest_f32(v[2]) if prune(v[1]).name == 'f32' else repr(float(v[2])))
+        return f'{n}:{tstr(v[1])}'
+    if kind == 'bool':
+        return 'true' if v[2] else 'false'
+    if kind == 'null':
+        return 'null'
+    if kind == 'str':
+        return quote(v[2])
+    if kind == 'sbytes':
+        return 'view ' + quote(v[2])
+    if kind == 'struct':
+        return '{' + ', '.join(value_text(x) for x in v[2]) + '}'
+    if kind == 'variant':
+        return f'{v[2]}{{' + ', '.join(value_text(x) for x in v[3]) + '}'
+    if kind == 'array':
+        return '[' + ', '.join(value_text(x) for x in v[2]) + ']'
+    return f'[{value_text(v[2])}; {prune(v[1]).n}]'
 
 
 def pushes(e):
@@ -135,6 +168,7 @@ class Dumper:
         elif isinstance(d, A.ConstDecl):
             self.out.append(f'const {name}: {tstr(d.cty)}\n')
             self.expr(d.expr, 1)
+            self.line(1, 'value ' + value_text(d.value))
         elif isinstance(d, A.FnDecl):
             self.out.append(f'fn {name}{g} {self.sig(d.sig_fields, d.ret_t)}\n')
             self.stmts(d.body.stmts, 1)

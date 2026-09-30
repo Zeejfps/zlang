@@ -153,6 +153,11 @@ namespace check {
         jump_ids:  map::Map(u64, u32, Heap),          // the id of the loop a jump targets
         label_ids: u32,                               // ids given in this body
         first_var: map::Map(u32, u32, Heap),          // a function's first local: its first context field
+        // Const values (§14): a const whose initializer checked is foldable, and its value is
+        // computed after every initializer has been checked.
+        foldable:  map::Map(u32, bool, Heap),
+        values:    map::Map(u32, Val, Heap),
+        folding:   list::List(u32, Heap),             // consts being computed, for cycles
         // The sets of Var.derived and Var.held.
         derived:   list::List([]u32, Heap),
         held:      list::List([]Place, Heap),
@@ -317,6 +322,9 @@ namespace check {
             jump_ids = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             label_ids = 0,
             first_var = map::new(u32, u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            foldable = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            values = map::new(u32, Val){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            folding = ids{ &heap },
             derived = list::new([]u32){ realloc = arena::alloc, &heap },
             held = list::new([]Place){ realloc = arena::alloc, &heap },
         }
@@ -347,6 +355,7 @@ namespace check {
     fn program { mut c: Checker } {
         declarations{ &c }
         each{ &c, xs = c.consts, what = Phase::const_values }
+        each{ &c, xs = c.consts, what = Phase::fold }
         each{ &c, xs = c.fns, what = Phase::bodies }
         check_main{ &c }
     }
@@ -372,7 +381,7 @@ namespace check {
         each{ &c, xs = c.natives, what = Phase::sigs }
     }
 
-    union Phase { structs, unions, enums, aliases, consts, sigs, const_values, bodies }
+    union Phase { structs, unions, enums, aliases, consts, sigs, const_values, fold, bodies }
 
     fn each { mut c: Checker, xs: list::List(u32, Heap), what: Phase } {
         let items = list::items{ list = xs }
@@ -388,6 +397,7 @@ namespace check {
                 sigs    => { resolve_sig{ &c, d } }
                 const_values => { check_const{ &c, d } }
                 bodies  => { check_fn{ &c, d } }
+                fold    => { _ = const_value{ &c, d, at = get_decl{ c, d }.syn.span } }
             }
             i = i + 1
         }
@@ -1345,6 +1355,7 @@ namespace check {
                 expect{ &c, e = value, t = x.ty }
                 finish{ &c }
                 if c.diags.errors == before { const_ok{ &c, e = value } }
+                if c.diags.errors == before { put_bool{ m = &c.foldable, k = d } }
             }
             else => {}
         }
@@ -1569,6 +1580,443 @@ namespace check {
         while i < xs.len {
             const_ok{ &c, e = xs[i] }
             i = i + 1
+        }
+    }
+
+    // ---- const values (§14), computed at compile time (ctxi's Checker.fold)
+    //
+    // The operations are the runtime's, and what would panic at run time is a compile error at
+    // the operation. An integer is a sign and a magnitude, so every value of every integer type
+    // fits, and an intermediate result too large for a u64 overflows every type.
+
+    union Val {
+        int{ ty: Id, negative: bool, magnitude: u64 },
+        float{ ty: Id, value: f64 },            // an f32's value is one an f32 holds
+        boolean{ ty: Id, value: bool },
+        str{ ty: Id, bytes: []u8 },             // a [N]u8
+        sbytes{ ty: Id, bytes: []u8 },          // a view of static bytes
+        nil{ ty: Id },
+        record{ ty: Id, fields: []Val },        // a struct's fields, in order
+        variant{ ty: Id, index: u32, fields: []Val },
+        array{ ty: Id, elems: []Val },
+        repeat{ ty: Id, elem: *Val },           // N copies, N from the array type
+    }
+
+    struct Num { negative: bool, magnitude: u64 }
+
+    fn put_bool { mut m: map::Map(u32, bool, Heap), k: u32 } {
+        if not map::put{ m = &m, key = k, value = true } { @panic("check: out of memory") }
+    }
+
+    // The value of const d, computed the first time it is needed; null if its initializer has
+    // an error, or computing it did. at is where it is needed, for a cycle.
+    fn const_value { mut c: Checker, d: u32, at: source::Span } -> ?Val {
+        let known = map::get{ m = c.values, key = d }
+        if known != null { return known }
+        if not map::has{ m = c.foldable, key = d } { return null }
+        let x = get_decl{ c, d }
+        if has_id{ xs = list::items{ list = c.folding }, n = d } {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "const `{}` refers to itself", str{ s = x.name.text }) }
+            error{ &c, at, msg = utf8::view{ b } }
+            return null
+        }
+        push{ xs = &c.folding, n = d }
+        let mut v: ?Val = null
+        match x.syn.k {
+            constant{ value } => { v = fold_to{ &c, e = value, t = x.ty } }
+            else => {}
+        }
+        _ = list::pop{ list = &c.folding }
+        let got = v
+        if got == null {
+            _ = map::remove{ m = &c.foldable, key = d }
+            return null
+        }
+        if not map::put{ m = &c.values, key = d, value = got } { @panic("check: out of memory") }
+        return got
+    }
+
+    // e's value, as a value of type t, which it widens to.
+    fn fold_to { mut c: Checker, e: syntax::Expr, t: Id } -> ?Val {
+        let v = fold{ &c, e }
+        if v == null { return null }
+        return retype{ c, v, t = types::prune{ s = c.ty, t } }
+    }
+
+    fn retype { c: Checker, v: Val, t: Id } -> Val {
+        let mut scalar = false
+        match types::get{ s = c.ty, id = t } { prim | enumeration => { scalar = true } else => {} }
+        if not scalar { return v }
+        match v {
+            int{ negative, magnitude } => { return Val::int{ ty = t, negative, magnitude } }
+            float{ value } => { return Val::float{ ty = t, value } }
+            else => { return v }
+        }
+    }
+
+    // e's value, inside the conversion the checker recorded for it.
+    fn fold { mut c: Checker, e: syntax::Expr } -> ?Val {
+        let conv = map::get{ m = c.convs, key = expr_key{ e } }
+        if conv != null {
+            match conv {
+                some{ to } => {
+                    let t = types::prune{ s = c.ty, t = to }
+                    let mut elem = types::ERROR
+                    match types::get{ s = c.ty, id = t } { opt{ elem = x } => { elem = x } else => {} }
+                    let inner = fold_node{ &c, e }
+                    if inner == null { return null }
+                    return Val::variant{ ty = t, index = 1, fields = one_val{ c, v = retype{ c, v = inner, t = types::prune{ s = c.ty, t = elem } } } }
+                }
+                else => { return null }
+            }
+        }
+        return fold_node{ &c, e }
+    }
+
+    fn one_val { c: Checker, v: Val } -> []Val {
+        let mut out = list::new(Val){ realloc = arena::alloc, heap = c.heap }
+        add_val{ xs = &out, v }
+        return list::items{ list = out }
+    }
+
+    fn add_val { mut xs: list::List(Val, Heap), v: Val } {
+        if not list::push{ list = &xs, item = v } { @panic("check: out of memory") }
+    }
+
+    fn fold_node { mut c: Checker, e: syntax::Expr } -> ?Val {
+        let t = types::prune{ s = c.ty, t = type_of_expr{ c, e } }
+        match e.k {
+            int{ negative, value } => {
+                let m = if value == null { 0 } else { value }
+                return Val::int{ ty = t, negative = negative and m != 0, magnitude = m }
+            }
+            float{ negative, value } => {
+                let v = if negative { -value } else { value }
+                return Val::float{ ty = t, value = if is_f32{ t } { f32r{ x = v } } else { v } }
+            }
+            boolean{ value } => { return Val::boolean{ ty = t, value } }
+            nil => { return Val::nil{ ty = t } }
+            str{ bytes } => {
+                match types::get{ s = c.ty, id = t } {
+                    array => { return Val::str{ ty = t, bytes } }
+                    slice => { return Val::sbytes{ ty = t, bytes } }
+                    else => {
+                        let view = Val::sbytes{ ty = types::slice{ s = &c.ty, elem = types::U8, mutable = false }, bytes }
+                        return Val::record{ ty = t, fields = one_val{ c, v = view } }
+                    }
+                }
+            }
+            path => {
+                let r = map::get{ m = c.refs, key = expr_key{ e } }
+                if r == null { return null }
+                match r {
+                    constant{ decl } => { return const_value{ &c, d = decl, at = expr_at{ e } } }
+                    enumval{ ty, index } => {
+                        match types::get{ s = c.ty, id = ty } {
+                            enumeration{ decl } => {
+                                let v = get_decl{ c, d = decl }.values[index]
+                                return Val::int{ ty = t, negative = v < 0, magnitude = magnitude{ v } }
+                            }
+                            else => { return null }
+                        }
+                    }
+                    variant{ index } => { return Val::variant{ ty = t, index, fields = slice::empty(Val){} } }
+                    else => { return null }
+                }
+            }
+            braced{ callee, items } => { return fold_literal{ &c, e, callee = callee.*, items, t } }
+            array{ elems } => {
+                let et = elem_type{ c, t }
+                let mut out = list::new(Val){ realloc = arena::alloc, heap = c.heap }
+                let mut i: usize = 0
+                while i < elems.len {
+                    let v = fold_to{ &c, e = elems[i], t = et }
+                    if v == null { return null }
+                    add_val{ xs = &out, v }
+                    i = i + 1
+                }
+                return Val::array{ ty = t, elems = list::items{ list = out } }
+            }
+            repeat{ elem } => {
+                let v = fold_to{ &c, e = elem.*, t = elem_type{ c, t } }
+                if v == null { return null }
+                let some{ value = p } = alloc::new{ realloc = arena::alloc, heap = c.heap, value = v } else { @panic("check: out of memory") }
+                return Val::repeat{ ty = t, elem = p }
+            }
+            builtin{ name, targ } => {
+                if targ == null { return null }
+                let te = targ.*
+                let tt = map::get{ m = c.type_of, key = key{ file = te.span.file, id = te.id } }
+                if tt == null { return null }
+                let lay = layout{ &c, t = types::prune{ s = c.ty, t = tt } }
+                if lay == null { return null }
+                let n = if slice::eq_bytes{ a = name.text, b = "size_of" } { lay.size } else { lay.align }
+                return Val::int{ ty = t, negative = false, magnitude = n }
+            }
+            lnot{ e = x } => {
+                let v = fold{ &c, e = x.* }
+                if v == null { return null }
+                return Val::boolean{ ty = t, value = not bool_of{ v } }
+            }
+            neg{ e = x } => {
+                let v = fold{ &c, e = x.* }
+                if v == null { return null }
+                match v {
+                    float{ value } => { return Val::float{ ty = t, value = -value } }
+                    else => {}
+                }
+                let n = num_of{ v }
+                return fits_in{ &c, n = Num{ negative = not n.negative and n.magnitude != 0, magnitude = n.magnitude }, t, at = expr_at{ e } }
+            }
+            binary{ op, a, b } => { return fold_binary{ &c, e, op, a = a.*, b = b.*, t } }
+            else => { return null }
+        }
+    }
+
+    // A struct or variant literal: its fields' values in the order of the fields.
+    fn fold_literal { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, t: Id } -> ?Val {
+        let mut fields = struct_fields{ &c, t }
+        let mut index = NONE
+        let r = map::get{ m = c.refs, key = expr_key{ e = callee } }
+        if r != null {
+            match r {
+                variant{ index = vi } => {
+                    index = vi
+                    let fs = variants_of{ &c, t }[vi].fields
+                    fields = if fs == null { slice::empty(types::Field){} } else { fs }
+                }
+                else => {}
+            }
+        }
+        let mut out = list::new(Val){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < fields.len {
+            let mut k = items.len
+            let mut found = NONE
+            while k > 0 {
+                k = k - 1
+                if slice::eq_bytes{ a = items[k].name.text, b = fields[i].name } {
+                    found = @as(u32, k)
+                    break
+                }
+            }
+            if found == NONE { return null }
+            let v = fold_to{ &c, e = items[found].value, t = fields[i].ty }
+            if v == null { return null }
+            add_val{ xs = &out, v }
+            i = i + 1
+        }
+        if index == NONE { return Val::record{ ty = t, fields = list::items{ list = out } } }
+        return Val::variant{ ty = t, index, fields = list::items{ list = out } }
+    }
+
+    fn fold_binary { mut c: Checker, e: syntax::Expr, op: tok::Kind, a: syntax::Expr, b: syntax::Expr, t: Id } -> ?Val {
+        let at = expr_at{ e }
+        if op == tok::Kind::kw_and or op == tok::Kind::kw_or {
+            // As at run time, the right side counts only if the left doesn't decide.
+            let x = fold{ &c, e = a }
+            if x == null { return null }
+            let l = bool_of{ v = x }
+            if l == (op == tok::Kind::kw_or) { return Val::boolean{ ty = t, value = l } }
+            let y = fold{ &c, e = b }
+            if y == null { return null }
+            return Val::boolean{ ty = t, value = bool_of{ v = y } }
+        }
+        let an = is_null{ e = a }
+        if (op == tok::Kind::eq or op == tok::Kind::ne) and (an or is_null{ e = b }) {
+            let x = fold{ &c, e = if an { b } else { a } }
+            if x == null { return null }
+            let null_now = match x { nil => { true } else => { false } }
+            return Val::boolean{ ty = t, value = null_now == (op == tok::Kind::eq) }
+        }
+        let x = fold{ &c, e = a }
+        if x == null { return null }
+        let y = fold{ &c, e = b }
+        if y == null { return null }
+        if op == tok::Kind::eq or op == tok::Kind::ne or op == tok::Kind::lt or op == tok::Kind::le or op == tok::Kind::gt or op == tok::Kind::ge {
+            return Val::boolean{ ty = t, value = compare{ op, x, y } }
+        }
+        if is_float_type{ c, t } {
+            let p = float_of{ v = x }
+            let q = float_of{ v = y }
+            let r = if op == tok::Kind::plus { p + q } else if op == tok::Kind::minus { p - q } else if op == tok::Kind::star { p * q } else if op == tok::Kind::slash { p / q } else { p % q }
+            return Val::float{ ty = t, value = if is_f32{ t } { f32r{ x = r } } else { r } }
+        }
+        let p = num_of{ v = x }
+        let q = num_of{ v = y }
+        let prim = types::prim_of{ s = c.ty, t }
+        if prim == null { return null }
+        if op == tok::Kind::amp or op == tok::Kind::pipe or op == tok::Kind::caret {
+            let u = bits_of{ n = p }
+            let v = bits_of{ n = q }
+            let r = if op == tok::Kind::amp { u & v } else if op == tok::Kind::pipe { u | v } else { u ^ v }
+            return int_val{ ty = t, n = from_bits{ x = r, signed = types::signed{ p = prim } } }
+        }
+        if op == tok::Kind::shl or op == tok::Kind::shr {
+            let w = @as(u64, types::bits{ p = prim })
+            if q.negative or q.magnitude >= w {
+                error{ &c, at, msg = "shift count out of range in constant" }
+                return null
+            }
+            let n = @as(u32, q.magnitude)
+            if op == tok::Kind::shr {
+                if types::signed{ p = prim } {
+                    let s = @trunc(i64, bits_of{ n = p }) >> n
+                    return int_val{ ty = t, n = from_bits{ x = @trunc(u64, s), signed = true } }
+                }
+                return int_val{ ty = t, n = Num{ negative = false, magnitude = p.magnitude >> n } }
+            }
+            let mut r = bits_of{ n = p } << n
+            if w < 64 { r = r & ((@as(u64, 1) << @as(u32, w)) - 1) }
+            if types::signed{ p = prim } and w < 64 and r >= @as(u64, 1) << @as(u32, w - 1) {
+                return int_val{ ty = t, n = Num{ negative = true, magnitude = (@as(u64, 1) << @as(u32, w)) - r } }
+            }
+            return int_val{ ty = t, n = from_bits{ x = r, signed = types::signed{ p = prim } and w == 64 } }
+        }
+        if op == tok::Kind::slash or op == tok::Kind::percent {
+            if q.magnitude == 0 {
+                error{ &c, at, msg = "division by zero in constant" }
+                return null
+            }
+            if op == tok::Kind::percent {
+                let m = p.magnitude % q.magnitude
+                return int_val{ ty = t, n = Num{ negative = p.negative and m != 0, magnitude = m } }
+            }
+            let d = p.magnitude / q.magnitude
+            return fits_in{ &c, n = Num{ negative = p.negative != q.negative and d != 0, magnitude = d }, t, at }
+        }
+        let r = if op == tok::Kind::plus { num_add{ a = p, b = q } } else if op == tok::Kind::minus { num_add{ a = p, b = num_neg{ n = q } } } else { num_mul{ a = p, b = q } }
+        if r == null {
+            error{ &c, at, msg = "integer overflow in constant" }
+            return null
+        }
+        return fits_in{ &c, n = r, t, at }
+    }
+
+    fn int_val { ty: Id, n: Num } -> Val {
+        return Val::int{ ty, negative = n.negative, magnitude = n.magnitude }
+    }
+
+    // n as a value of integer type t, after reporting at `at` that it doesn't fit.
+    fn fits_in { mut c: Checker, n: Num, t: Id, at: source::Span } -> ?Val {
+        let p = types::prim_of{ s = c.ty, t }
+        if p == null or not types::fits{ p, negative = n.negative, magnitude = n.magnitude } {
+            error{ &c, at, msg = "integer overflow in constant" }
+            return null
+        }
+        return int_val{ ty = t, n }
+    }
+
+    fn num_of { v: Val } -> Num {
+        match v {
+            int{ negative, magnitude } => { return Num{ negative, magnitude } }
+            else => { return Num{ negative = false, magnitude = 0 } }
+        }
+    }
+
+    fn float_of { v: Val } -> f64 {
+        match v {
+            float{ value } => { return value }
+            else => { return 0.0 }
+        }
+    }
+
+    fn bool_of { v: Val } -> bool {
+        match v {
+            boolean{ value } => { return value }
+            else => { return false }
+        }
+    }
+
+    fn num_neg { n: Num } -> Num {
+        return Num{ negative = not n.negative and n.magnitude != 0, magnitude = n.magnitude }
+    }
+
+    // a + b, or null if its magnitude is past a u64's.
+    fn num_add { a: Num, b: Num } -> ?Num {
+        if a.negative == b.negative {
+            let m = @wrap_add(a.magnitude, b.magnitude)
+            if m < a.magnitude { return null }
+            return Num{ negative = a.negative and m != 0, magnitude = m }
+        }
+        if a.magnitude >= b.magnitude {
+            let m = a.magnitude - b.magnitude
+            return Num{ negative = a.negative and m != 0, magnitude = m }
+        }
+        return Num{ negative = b.negative, magnitude = b.magnitude - a.magnitude }
+    }
+
+    fn num_mul { a: Num, b: Num } -> ?Num {
+        if a.magnitude != 0 and b.magnitude > 18446744073709551615 / a.magnitude { return null }
+        let m = a.magnitude * b.magnitude
+        return Num{ negative = a.negative != b.negative and m != 0, magnitude = m }
+    }
+
+    fn num_less { a: Num, b: Num } -> bool {
+        if a.negative != b.negative { return a.negative }
+        if a.negative { return a.magnitude > b.magnitude }
+        return a.magnitude < b.magnitude
+    }
+
+    // n's two's complement bits, which an integer of any type up to 64 bits has sign-extended.
+    fn bits_of { n: Num } -> u64 {
+        return if n.negative { @wrap_sub(0, n.magnitude) } else { n.magnitude }
+    }
+
+    fn from_bits { x: u64, signed: bool } -> Num {
+        if signed and x >= 9223372036854775808 { return Num{ negative = true, magnitude = @wrap_sub(0, x) } }
+        return Num{ negative = false, magnitude = x }
+    }
+
+    fn compare { op: tok::Kind, x: Val, y: Val } -> bool {
+        let mut less = false
+        let mut same = false
+        match x {
+            int => {
+                let p = num_of{ v = x }
+                let q = num_of{ v = y }
+                less = num_less{ a = p, b = q }
+                same = p.negative == q.negative and p.magnitude == q.magnitude
+            }
+            float{ value } => {
+                // IEEE: every comparison with a NaN is false, but != is true.
+                let q = float_of{ v = y }
+                if op == tok::Kind::eq { return value == q }
+                if op == tok::Kind::ne { return value != q }
+                if op == tok::Kind::lt { return value < q }
+                if op == tok::Kind::le { return value <= q }
+                if op == tok::Kind::gt { return value > q }
+                return value >= q
+            }
+            boolean{ value } => { same = value == bool_of{ v = y } }
+            else => {}
+        }
+        if op == tok::Kind::eq { return same }
+        if op == tok::Kind::ne { return not same }
+        if op == tok::Kind::lt { return less }
+        if op == tok::Kind::le { return less or same }
+        if op == tok::Kind::gt { return not less and not same }
+        return not less
+    }
+
+    fn is_float_type { c: Checker, t: Id } -> bool {
+        return types::is_float{ s = c.ty, t }
+    }
+
+    fn is_f32 { t: Id } -> bool {
+        return t == types::prim{ p = types::Prim::f32 }
+    }
+
+    // x rounded to the nearest f32, as an f32 operation's result is.
+    fn f32r { x: f64 } -> f64 {
+        return @as(f64, @as(f32, x))
+    }
+
+    fn elem_type { c: Checker, t: Id } -> Id {
+        match types::get{ s = c.ty, id = t } {
+            array{ elem } => { return types::prune{ s = c.ty, t = elem } }
+            else => { return types::ERROR }
         }
     }
 

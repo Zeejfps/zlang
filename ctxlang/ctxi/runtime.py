@@ -19,7 +19,7 @@ from .checker import NativeFn
 from .types import (
     Prim, Ptr, SliceT, Arr, Opt, StructT, UnionT, EnumT, FnT, Cap, VOID, USIZE, prune, subst, tkey, tstr,
     qualname,
-    struct_fields, variants_of,
+    struct_fields, variants_of, f32r,
 )
 
 GUARD = 64            # addresses below this are never valid
@@ -81,13 +81,6 @@ class Panic(Exception):
 
 def align_up(n, a):
     return (n + a - 1) // a * a
-
-
-def f32r(x):
-    try:
-        return F32.unpack(F32.pack(x))[0]
-    except OverflowError:
-        return math.copysign(math.inf, x)
 
 
 class Layout:

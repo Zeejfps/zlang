@@ -1,6 +1,18 @@
 """Semantic types, unification and substitution."""
 
 import itertools
+import math
+import struct
+
+F32 = struct.Struct('<f')
+
+
+def f32r(x):
+    """x rounded to the nearest f32, as an f32 operation's result is."""
+    try:
+        return F32.unpack(F32.pack(x))[0]
+    except OverflowError:
+        return math.copysign(math.inf, x)
 
 
 class Type:
