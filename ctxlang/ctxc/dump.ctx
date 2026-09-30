@@ -128,3 +128,620 @@ namespace dump {
         if not list::push{ list = &out.bytes, &heap, item = c } { @panic("dump: out of memory") }
     }
 }
+
+// A syntax tree, one node per line, children indented by two spaces (tools/parsetest.py writes the
+// same from ctxi's parser). A line starts with the node's position, except for `-` (an absent
+// optional child) and `else` (the other side of a let-else). Then the diagnostics, as for tokens.
+//
+//   1:1 fn main
+//     1:9 field mut io
+//       1:17 tpath
+//         1:17 seg Io
+//     -
+//     1:22 block
+namespace tree {
+    struct Dumper { out: *mut dump::Out, heap: *mut arena::Arena, text: []u8, lines: []u32, depth: u32 }
+
+    fn file { mut out: dump::Out, mut heap: arena::Arena, text: []u8, f: syntax::File, diags: diag::Diags } {
+        let lines = source::line_starts{ text, &heap }
+        let mut d = Dumper{ out = &out, heap = &heap, text, lines, depth = 0 }
+        let mut i: usize = 0
+        while i < f.decls.len {
+            decl{ &d, x = f.decls[i] }
+            i = i + 1
+        }
+        let ds = diag::items{ diags }
+        i = 0
+        while i < ds.len {
+            let g = ds[i]
+            dump::pos{ &out, &heap, p = source::position{ text, lines, offset = g.span.start } }
+            dump::put{ &out, &heap, s = " error " }
+            let mut k: usize = 0
+            while k < g.msg.bytes.len {
+                let c = g.msg.bytes[k]
+                if c == '\n' { dump::put{ &out, &heap, s = "\\n" } } else { dump::byte{ &out, &heap, c } }
+                k = k + 1
+            }
+            dump::put{ &out, &heap, s = "\n" }
+            i = i + 1
+        }
+    }
+
+    // ---- lines
+
+    // Starts a line at offset `at`.
+    fn start { mut d: Dumper, at: u32 } {
+        indent{ &d }
+        dump::pos{ out = d.out, heap = d.heap, p = source::position{ text = d.text, lines = d.lines, offset = at } }
+        put{ &d, s = " " }
+    }
+
+    fn indent { mut d: Dumper } {
+        let mut i: u32 = 0
+        while i < d.depth {
+            put{ &d, s = "  " }
+            i = i + 1
+        }
+    }
+
+    fn put { mut d: Dumper, s: utf8::String } {
+        dump::put{ out = d.out, heap = d.heap, s }
+    }
+
+    fn raw { mut d: Dumper, s: []u8 } {
+        dump::raw{ out = d.out, heap = d.heap, s }
+    }
+
+    fn end { mut d: Dumper } {
+        put{ &d, s = "\n" }
+    }
+
+    // A line holding `s` alone, at `at`.
+    fn line { mut d: Dumper, at: u32, s: utf8::String } {
+        start{ &d, at }
+        put{ &d, s }
+        end{ &d }
+    }
+
+    fn none { mut d: Dumper } {
+        indent{ &d }
+        put{ &d, s = "-\n" }
+    }
+
+    fn name { mut d: Dumper, n: syntax::Name } {
+        if n.text.len == 0 { put{ &d, s = "<missing>" } } else { raw{ &d, s = n.text } }
+    }
+
+    // `kind NAME(T,U)`
+    fn named { mut d: Dumper, at: u32, kind: utf8::String, n: syntax::Name, tparams: []syntax::Name } {
+        start{ &d, at }
+        put{ &d, s = kind }
+        put{ &d, s = " " }
+        name{ &d, n }
+        if tparams.len > 0 {
+            put{ &d, s = "(" }
+            let mut i: usize = 0
+            while i < tparams.len {
+                if i > 0 { put{ &d, s = "," } }
+                name{ &d, n = tparams[i] }
+                i = i + 1
+            }
+            put{ &d, s = ")" }
+        }
+        end{ &d }
+    }
+
+    // ---- declarations
+
+    fn decl { mut d: Dumper, x: syntax::Decl } {
+        let at = x.span.start
+        let untyped: []syntax::Name = slice::empty(syntax::Name){}
+        match x.k {
+            error => { line{ &d, at, s = "invalid" } }
+            func{ name = n, tparams, params, ret, body } => {
+                named{ &d, at, kind = "fn", n, tparams }
+                d.depth = d.depth + 1
+                param_list{ &d, xs = params }
+                opt_type{ &d, t = ret }
+                block{ &d, b = body }
+                d.depth = d.depth - 1
+            }
+            record{ name = n, tparams, fields } => {
+                named{ &d, at, kind = "struct", n, tparams }
+                d.depth = d.depth + 1
+                field_list{ &d, xs = fields }
+                d.depth = d.depth - 1
+            }
+            sum{ name = n, tparams, variants } => {
+                named{ &d, at, kind = "union", n, tparams }
+                d.depth = d.depth + 1
+                let mut i: usize = 0
+                while i < variants.len {
+                    let v = variants[i]
+                    start{ &d, at = v.span.start }
+                    put{ &d, s = "variant " }
+                    name{ &d, n = v.name }
+                    let fields = v.fields
+                    if fields != null { put{ &d, s = "{}" } }
+                    end{ &d }
+                    if fields != null {
+                        d.depth = d.depth + 1
+                        field_list{ &d, xs = fields }
+                        d.depth = d.depth - 1
+                    }
+                    i = i + 1
+                }
+                d.depth = d.depth - 1
+            }
+            enumeration{ name = n, base, variants } => {
+                named{ &d, at, kind = "enum", n, tparams = untyped }
+                d.depth = d.depth + 1
+                type_expr{ &d, t = base }
+                let mut i: usize = 0
+                while i < variants.len {
+                    let v = variants[i]
+                    start{ &d, at = v.span.start }
+                    put{ &d, s = "variant " }
+                    name{ &d, n = v.name }
+                    end{ &d }
+                    let value = v.value
+                    if value != null {
+                        d.depth = d.depth + 1
+                        expr{ &d, e = value }
+                        d.depth = d.depth - 1
+                    }
+                    i = i + 1
+                }
+                d.depth = d.depth - 1
+            }
+            alias{ name = n, tparams, ty } => {
+                named{ &d, at, kind = "type", n, tparams }
+                sub_type{ &d, t = ty }
+            }
+            constant{ name = n, ty, value } => {
+                named{ &d, at, kind = "const", n, tparams = untyped }
+                d.depth = d.depth + 1
+                type_expr{ &d, t = ty }
+                expr{ &d, e = value }
+                d.depth = d.depth - 1
+            }
+            space{ name = n, decls } => {
+                named{ &d, at, kind = "namespace", n, tparams = untyped }
+                d.depth = d.depth + 1
+                let mut i: usize = 0
+                while i < decls.len {
+                    decl{ &d, x = decls[i] }
+                    i = i + 1
+                }
+                d.depth = d.depth - 1
+            }
+        }
+    }
+
+    fn param_list { mut d: Dumper, xs: []syntax::Param } {
+        let mut i: usize = 0
+        while i < xs.len {
+            let f = xs[i]
+            start{ &d, at = f.span.start }
+            put{ &d, s = if f.mutable { "field mut " } else { "field " } }
+            name{ &d, n = f.name }
+            end{ &d }
+            sub_type{ &d, t = f.ty }
+            i = i + 1
+        }
+    }
+
+    fn field_list { mut d: Dumper, xs: []syntax::Field } {
+        let mut i: usize = 0
+        while i < xs.len {
+            let f = xs[i]
+            start{ &d, at = f.span.start }
+            put{ &d, s = "field " }
+            name{ &d, n = f.name }
+            end{ &d }
+            sub_type{ &d, t = f.ty }
+            i = i + 1
+        }
+    }
+
+    // ---- types
+
+    fn opt_type { mut d: Dumper, t: ?syntax::TypeExpr } {
+        if t == null { none{ &d } } else { type_expr{ &d, t } }
+    }
+
+    fn type_expr { mut d: Dumper, t: syntax::TypeExpr } {
+        let at = t.span.start
+        match t.k {
+            error => { line{ &d, at, s = "invalid" } }
+            path{ segs } => {
+                line{ &d, at, s = "tpath" }
+                seg_list{ &d, segs }
+            }
+            ptr{ mutable, elem } => {
+                line{ &d, at, s = if mutable { "tptr mut" } else { "tptr" } }
+                sub_type{ &d, t = elem.* }
+            }
+            opt{ elem } => {
+                line{ &d, at, s = "topt" }
+                sub_type{ &d, t = elem.* }
+            }
+            slice{ mutable, elem } => {
+                line{ &d, at, s = if mutable { "tslice mut" } else { "tslice" } }
+                sub_type{ &d, t = elem.* }
+            }
+            array{ n, elem } => {
+                line{ &d, at, s = "tarray" }
+                d.depth = d.depth + 1
+                expr{ &d, e = n.* }
+                type_expr{ &d, t = elem.* }
+                d.depth = d.depth - 1
+            }
+            func{ bound, params, ret } => {
+                line{ &d, at, s = if bound { "tfn bound" } else { "tfn" } }
+                d.depth = d.depth + 1
+                param_list{ &d, xs = params }
+                if ret == null { none{ &d } } else { type_expr{ &d, t = ret.* } }
+                d.depth = d.depth - 1
+            }
+        }
+    }
+
+    fn sub_type { mut d: Dumper, t: syntax::TypeExpr } {
+        d.depth = d.depth + 1
+        type_expr{ &d, t }
+        d.depth = d.depth - 1
+    }
+
+    // The segments of a path, one level down.
+    fn seg_list { mut d: Dumper, segs: []syntax::Seg } {
+        d.depth = d.depth + 1
+        let mut i: usize = 0
+        while i < segs.len {
+            let s = segs[i]
+            start{ &d, at = s.name.span.start }
+            put{ &d, s = "seg " }
+            name{ &d, n = s.name }
+            let targs = s.targs
+            if targs != null { put{ &d, s = "()" } }
+            end{ &d }
+            if targs != null {
+                d.depth = d.depth + 1
+                let mut k: usize = 0
+                while k < targs.len {
+                    type_expr{ &d, t = targs[k] }
+                    k = k + 1
+                }
+                d.depth = d.depth - 1
+            }
+            i = i + 1
+        }
+        d.depth = d.depth - 1
+    }
+
+    // ---- statements
+
+    fn block { mut d: Dumper, b: syntax::Block } {
+        line{ &d, at = b.span.start, s = "block" }
+        d.depth = d.depth + 1
+        let mut i: usize = 0
+        while i < b.stmts.len {
+            stmt{ &d, s = b.stmts[i] }
+            i = i + 1
+        }
+        d.depth = d.depth - 1
+    }
+
+    fn opt_expr { mut d: Dumper, e: ?syntax::Expr } {
+        if e == null { none{ &d } } else { expr{ &d, e } }
+    }
+
+    fn opt_sub { mut d: Dumper, e: ?*syntax::Expr } {
+        if e == null { none{ &d } } else { expr{ &d, e = e.* } }
+    }
+
+    fn binder_list { mut d: Dumper, xs: []syntax::Binder } {
+        let mut i: usize = 0
+        while i < xs.len {
+            let b = xs[i]
+            start{ &d, at = b.span.start }
+            put{ &d, s = if b.by_ref { "bind &" } else { "bind " } }
+            name{ &d, n = b.field }
+            let local = b.local
+            if local != null and not slice::eq_bytes{ a = local.text, b = b.field.text } {
+                put{ &d, s = " = " }
+                name{ &d, n = local }
+            }
+            end{ &d }
+            i = i + 1
+        }
+    }
+
+    // `word` or `word LABEL`
+    fn jump { mut d: Dumper, at: u32, word: utf8::String, label: ?syntax::Name } {
+        start{ &d, at }
+        put{ &d, s = word }
+        if label != null {
+            put{ &d, s = " " }
+            name{ &d, n = label }
+        }
+        end{ &d }
+    }
+
+    fn stmt { mut d: Dumper, s: syntax::Stmt } {
+        let at = s.span.start
+        match s.k {
+            error => { line{ &d, at, s = "invalid" } }
+            local{ mutable, name = n, ty, init } => {
+                start{ &d, at }
+                put{ &d, s = if mutable { "let mut " } else { "let " } }
+                name{ &d, n }
+                end{ &d }
+                d.depth = d.depth + 1
+                opt_type{ &d, t = ty }
+                opt_expr{ &d, e = init }
+                d.depth = d.depth - 1
+            }
+            let_else{ variant, binders, init, els_variant, els_binders, els } => {
+                start{ &d, at }
+                put{ &d, s = "letelse " }
+                name{ &d, n = variant }
+                end{ &d }
+                d.depth = d.depth + 1
+                binder_list{ &d, xs = binders }
+                expr{ &d, e = init }
+                indent{ &d }
+                put{ &d, s = "else" }
+                if els_variant != null {
+                    put{ &d, s = " " }
+                    name{ &d, n = els_variant }
+                }
+                end{ &d }
+                d.depth = d.depth + 1
+                binder_list{ &d, xs = els_binders }
+                d.depth = d.depth - 1
+                block{ &d, b = els }
+                d.depth = d.depth - 1
+            }
+            assign{ place, value } => {
+                line{ &d, at, s = "assign" }
+                d.depth = d.depth + 1
+                expr{ &d, e = place }
+                expr{ &d, e = value }
+                d.depth = d.depth - 1
+            }
+            eval{ e } => {
+                line{ &d, at, s = "do" }
+                sub{ &d, e }
+            }
+            discard{ e } => {
+                line{ &d, at, s = "discard" }
+                sub{ &d, e }
+            }
+            cond{ x } => { if_node{ &d, at, x } }
+            loop{ label, c, body } => {
+                start{ &d, at }
+                put{ &d, s = "while" }
+                if label != null {
+                    put{ &d, s = " " }
+                    name{ &d, n = label }
+                    put{ &d, s = " " }
+                    dump::pos{ out = d.out, heap = d.heap, p = source::position{ text = d.text, lines = d.lines, offset = label.span.start } }
+                }
+                end{ &d }
+                d.depth = d.depth + 1
+                expr{ &d, e = c }
+                block{ &d, b = body }
+                d.depth = d.depth - 1
+            }
+            choose{ x } => { match_node{ &d, at, x } }
+            ret{ value } => {
+                line{ &d, at, s = "return" }
+                if value != null { sub{ &d, e = value } }
+            }
+            brk{ label } => { jump{ &d, at, word = "break", label } }
+            cont{ label } => { jump{ &d, at, word = "continue", label } }
+            deferred{ body } => {
+                line{ &d, at, s = "defer" }
+                d.depth = d.depth + 1
+                block{ &d, b = body }
+                d.depth = d.depth - 1
+            }
+        }
+    }
+
+    fn if_node { mut d: Dumper, at: u32, x: syntax::If } {
+        line{ &d, at, s = "if" }
+        d.depth = d.depth + 1
+        expr{ &d, e = x.c.* }
+        block{ &d, b = x.then }
+        let els = x.els
+        if els == null { none{ &d } } else { block{ &d, b = els } }
+        d.depth = d.depth - 1
+    }
+
+    fn match_node { mut d: Dumper, at: u32, x: syntax::Match } {
+        line{ &d, at, s = "match" }
+        d.depth = d.depth + 1
+        expr{ &d, e = x.scrut.* }
+        let mut i: usize = 0
+        while i < x.arms.len {
+            let arm = x.arms[i]
+            line{ &d, at = arm.span.start, s = "arm" }
+            d.depth = d.depth + 1
+            let mut k: usize = 0
+            while k < arm.pats.len {
+                let pat = arm.pats[k]
+                start{ &d, at = pat.span.start }
+                put{ &d, s = "pat " }
+                name{ &d, n = pat.variant }
+                end{ &d }
+                d.depth = d.depth + 1
+                binder_list{ &d, xs = pat.binders }
+                d.depth = d.depth - 1
+                k = k + 1
+            }
+            block{ &d, b = arm.body }
+            d.depth = d.depth - 1
+            i = i + 1
+        }
+        d.depth = d.depth - 1
+    }
+
+    // ---- expressions
+
+    fn sub { mut d: Dumper, e: syntax::Expr } {
+        d.depth = d.depth + 1
+        expr{ &d, e }
+        d.depth = d.depth - 1
+    }
+
+    fn expr { mut d: Dumper, e: syntax::Expr } {
+        let at = e.at
+        match e.k {
+            error => { line{ &d, at, s = "invalid" } }
+            int{ negative, value } => {
+                start{ &d, at }
+                put{ &d, s = "int " }
+                if value == null {
+                    put{ &d, s = if negative { "-toobig" } else { "toobig" } }
+                } else {
+                    if negative and value != 0 { put{ &d, s = "-" } }
+                    _ = utf8::push_u64{ b = d.out, heap = d.heap, n = value }
+                }
+                end{ &d }
+            }
+            float{ negative, value } => {
+                start{ &d, at }
+                put{ &d, s = if negative { "float -" } else { "float " } }
+                _ = utf8::push_f64{ b = d.out, heap = d.heap, n = value }
+                end{ &d }
+            }
+            str{ bytes } => {
+                start{ &d, at }
+                put{ &d, s = "str \"" }
+                let mut i: usize = 0
+                while i < bytes.len {
+                    let c = bytes[i]
+                    if c >= 32 and c < 127 and c != '"' and c != '\\' {
+                        dump::byte{ out = d.out, heap = d.heap, c }
+                    } else {
+                        put{ &d, s = "\\x" }
+                        dump::byte{ out = d.out, heap = d.heap, c = dump::hex_digit{ n = c / 16 } }
+                        dump::byte{ out = d.out, heap = d.heap, c = dump::hex_digit{ n = c % 16 } }
+                    }
+                    i = i + 1
+                }
+                put{ &d, s = "\"" }
+                end{ &d }
+            }
+            boolean{ value } => { line{ &d, at, s = if value { "true" } else { "false" } } }
+            nil => { line{ &d, at, s = "null" } }
+            path{ segs } => {
+                line{ &d, at, s = "path" }
+                seg_list{ &d, segs }
+            }
+            field{ base, name = n } => {
+                start{ &d, at }
+                put{ &d, s = "dot " }
+                name{ &d, n }
+                end{ &d }
+                sub{ &d, e = base.* }
+            }
+            deref{ base } => {
+                line{ &d, at, s = "deref" }
+                sub{ &d, e = base.* }
+            }
+            index{ base, i } => {
+                line{ &d, at, s = "index" }
+                d.depth = d.depth + 1
+                expr{ &d, e = base.* }
+                expr{ &d, e = i.* }
+                d.depth = d.depth - 1
+            }
+            range{ base, lo, hi } => {
+                line{ &d, at, s = "range" }
+                d.depth = d.depth + 1
+                expr{ &d, e = base.* }
+                opt_sub{ &d, e = lo }
+                opt_sub{ &d, e = hi }
+                d.depth = d.depth - 1
+            }
+            braced{ callee, items, forward, bind } => {
+                start{ &d, at }
+                put{ &d, s = "braced" }
+                if forward { put{ &d, s = " .." } }
+                if bind { put{ &d, s = " _" } }
+                end{ &d }
+                d.depth = d.depth + 1
+                expr{ &d, e = callee.* }
+                let mut i: usize = 0
+                while i < items.len {
+                    let item = items[i]
+                    start{ &d, at = item.span.start }
+                    put{ &d, s = "item " }
+                    name{ &d, n = item.name }
+                    end{ &d }
+                    sub{ &d, e = item.value }
+                    i = i + 1
+                }
+                d.depth = d.depth - 1
+            }
+            neg{ e = x } => {
+                line{ &d, at, s = "neg" }
+                sub{ &d, e = x.* }
+            }
+            lnot{ e = x } => {
+                line{ &d, at, s = "not" }
+                sub{ &d, e = x.* }
+            }
+            addr{ e = x } => {
+                line{ &d, at, s = "addr" }
+                sub{ &d, e = x.* }
+            }
+            binary{ op, a, b } => {
+                start{ &d, at }
+                put{ &d, s = "binary " }
+                raw{ &d, s = parser::kind_text{ k = op } }
+                end{ &d }
+                d.depth = d.depth + 1
+                expr{ &d, e = a.* }
+                expr{ &d, e = b.* }
+                d.depth = d.depth - 1
+            }
+            array{ elems } => {
+                line{ &d, at, s = "array" }
+                d.depth = d.depth + 1
+                let mut i: usize = 0
+                while i < elems.len {
+                    expr{ &d, e = elems[i] }
+                    i = i + 1
+                }
+                d.depth = d.depth - 1
+            }
+            repeat{ elem, count } => {
+                line{ &d, at, s = "repeat" }
+                d.depth = d.depth + 1
+                expr{ &d, e = elem.* }
+                expr{ &d, e = count.* }
+                d.depth = d.depth - 1
+            }
+            builtin{ name = n, targ, args } => {
+                start{ &d, at }
+                put{ &d, s = "@" }
+                name{ &d, n }
+                end{ &d }
+                d.depth = d.depth + 1
+                if targ != null { type_expr{ &d, t = targ.* } }
+                let mut i: usize = 0
+                while i < args.len {
+                    expr{ &d, e = args[i] }
+                    i = i + 1
+                }
+                d.depth = d.depth - 1
+            }
+            ifx{ x } => { if_node{ &d, at, x } }
+            matchx{ x } => { match_node{ &d, at, x } }
+        }
+    }
+}

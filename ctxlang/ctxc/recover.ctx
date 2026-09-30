@@ -1,0 +1,499 @@
+// The recovery test (tools/recover.py drives it). An editor runs the front end on code that is
+// usually half-written, so the parser must survive any damage to a file:
+//
+//   ctxc recover FILE FROM TO [-v]
+//
+// For each token of FILE from index FROM up to TO, it lexes and parses three damaged copies: cut
+// short where the token starts, with the token deleted, and with it duplicated. Each copy must
+// parse without a panic, with fewer errors than the diagnostic cap and a well-formed tree:
+//
+// - every id below the file's count and used once,
+// - every span inside its parent's, and each expression's `at` inside its span.
+//
+// If FILE itself has no errors, then a copy cut inside a declaration that ends in `}` must report
+// an error, and every declaration that ends before the cut must still be there, with the same
+// kind, namespace, name and start.
+//
+// It prints a line for each copy that fails, then `done N` with the number of copies. With -v it
+// names each copy on stderr before parsing it, so the last one named is the one that crashed.
+
+namespace recover {
+    struct Symbol { kind: u8, path: []u8, span: source::Span, braced: bool }
+
+    type Symbols = list::List(Symbol, arena::Arena)
+
+    // Returns the number of copies that fail.
+    fn run { mut io: Io, mut heap: arena::Arena, path: []u8, text: []u8, from: usize, to: usize, verbose: bool } -> u32 {
+        let lines = source::line_starts{ text, &heap }
+        let mut diags = diag::new{}
+        let lexed = lexer::lex{ text, file = 0, &heap, &diags }
+        let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, &heap, &diags }
+        let clean = diags.errors == 0
+        let mut syms = list::new(Symbol){ realloc = arena::alloc }
+        collect{ &syms, &heap, prefix = text[..0], decls = tree.decls }
+        let symbols = list::items{ list = syms }
+        let toks = lexed.tokens
+        let mut widest: usize = 0
+        let mut i: usize = 0
+        while i < toks.len {
+            let w = @as(usize, toks[i].span.end - toks[i].span.start)
+            if w > widest { widest = w }
+            i = i + 1
+        }
+        let some{ value = buf } = alloc::resize{ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = text.len + widest + 1 } else {
+            @panic("recover: out of memory")
+        }
+        let mut count: u32 = 0
+        let mut failures: u32 = 0
+        let mark = heap.used
+        let mut j = from
+        let last = if to < toks.len - 1 { to } else { toks.len - 1 }      // not the eof token
+        while j < last {
+            let s = @as(usize, toks[j].span.start)
+            let e = @as(usize, toks[j].span.end)
+            let mut how: u8 = 0
+            while how < 3 {
+                heap.used = mark
+                let mut n: usize = 0
+                if how == 0 {
+                    n = put{ buf, at = 0, bytes = text[..s] }
+                } else if how == 1 {
+                    n = put{ buf, at = put{ buf, at = 0, bytes = text[..s] }, bytes = text[e..] }
+                } else {
+                    n = put{ buf, at = 0, bytes = text[..e] }
+                    buf[n] = ' '
+                    n = put{ buf, at = n + 1, bytes = text[s..] }
+                }
+                if verbose { say{ &io, how, j, err = true, path, text, lines, at = s } }
+                let problem = one{ &heap, text = buf[..n], cut = s, is_cut = how == 0, clean, symbols }
+                if problem != null {
+                    say{ &io, how, j, err = false, path, text, lines, at = s }
+                    io::println{ &io, s = problem }
+                    failures = failures + 1
+                }
+                count = count + 1
+                how = how + 1
+            }
+            j = j + 1
+        }
+        let mut b = utf8::builder{ realloc = arena::alloc }
+        _ = utf8::push{ &b, &heap, s = "done " }
+        _ = utf8::push_u64{ &b, &heap, n = count }
+        io::println{ &io, s = utf8::view{ b } }
+        return failures
+    }
+
+    // Copies bytes into buf at `at`, and returns where they end.
+    fn put { buf: []mut u8, at: usize, bytes: []u8 } -> usize {
+        slice::copy{ dst = buf[at..at + bytes.len], src = bytes }
+        return at + bytes.len
+    }
+
+    // "PATH: cut at L:C (token J): " on stdout, or the same line on stderr before a copy is parsed.
+    fn say { mut io: Io, how: u8, j: usize, err: bool, path: []u8, text: []u8, lines: []u32, at: usize } {
+        let mut mem: [512]u8
+        let mut heap = arena::new{ buf = mem[..] }
+        let mut b = utf8::builder{ realloc = arena::alloc }
+        _ = utf8::push{ &b, &heap, s = utf8::String{ bytes = path } }
+        _ = utf8::push{ &b, &heap, s = if how == 0 { ": cut at " } else if how == 1 { ": delete at " } else { ": duplicate at " } }
+        let p = source::position{ text, lines, offset = @as(u32, at) }
+        _ = utf8::push_u64{ &b, &heap, n = p.line }
+        _ = utf8::push_char{ &b, &heap, c = ':' }
+        _ = utf8::push_u64{ &b, &heap, n = p.col }
+        _ = utf8::push{ &b, &heap, s = " (token " }
+        _ = utf8::push_u64{ &b, &heap, n = j }
+        _ = utf8::push{ &b, &heap, s = "): " }
+        if err { io::eprintln{ &io, s = utf8::view{ b } } } else { io::print{ &io, s = utf8::view{ b } } }
+    }
+
+    // Parses one damaged copy and checks it, with what is known about the undamaged file: whether
+    // it had errors, and its declarations. A cut copy ends at `cut`.
+    fn one { mut heap: arena::Arena, text: []u8, cut: usize, is_cut: bool, clean: bool, symbols: []Symbol } -> ?utf8::String {
+        let mut diags = diag::new{}
+        let lexed = lexer::lex{ text, file = 0, &heap, &diags }
+        let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, &heap, &diags }
+        if diags.errors > diag::CAP { return "more errors than the cap" }
+        let some{ value = seen } = alloc::resize{ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, tree.ids) } else {
+            @panic("recover: out of memory")
+        }
+        slice::fill{ s = seen, v = 0 }
+        let mut c = Check{ ids = tree.ids, seen, problem = null }
+        let mut i: usize = 0
+        while i < tree.decls.len {
+            decl{ &c, x = tree.decls[i], lo = 0, hi = @as(u32, text.len) }
+            i = i + 1
+        }
+        if c.problem != null { return c.problem }
+        if not clean or not is_cut { return null }
+
+        let mut syms = list::new(Symbol){ realloc = arena::alloc }
+        collect{ &syms, &heap, prefix = text[..0], decls = tree.decls }
+        let have = list::items{ list = syms }
+        let mut k: usize = 0
+        i = 0
+        while i < symbols.len {
+            let s = symbols[i]
+            if @as(usize, s.span.start) < cut and cut < @as(usize, s.span.end) and s.braced and diags.errors == 0 {
+                return "no error for a cut inside a declaration"
+            }
+            if @as(usize, s.span.end) <= cut {
+                while k < have.len and not same{ a = have[k], b = s } { k = k + 1 }
+                if k == have.len { return "a declaration before the cut is missing" }
+            }
+            i = i + 1
+        }
+        return null
+    }
+
+    fn same { a: Symbol, b: Symbol } -> bool {
+        return a.kind == b.kind and a.span.start == b.span.start and slice::eq_bytes{ a = a.path, b = b.path }
+    }
+
+    // Every declaration, namespaces first, with its path.
+    fn collect { mut syms: Symbols, mut heap: arena::Arena, prefix: []u8, decls: []syntax::Decl } {
+        let mut i: usize = 0
+        while i < decls.len {
+            let d = decls[i]
+            let mut kind: u8 = 0
+            let mut n = syntax::Name{ id = 0, span = d.span, text = prefix[..0] }
+            let mut braced = true
+            let mut inner: []syntax::Decl = slice::empty(syntax::Decl){}
+            match d.k {
+                error => {}
+                func{ name } => { kind = 'f'; n = name }
+                record{ name } => { kind = 's'; n = name }
+                sum{ name } => { kind = 'u'; n = name }
+                enumeration{ name } => { kind = 'e'; n = name }
+                alias{ name } => { kind = 't'; n = name; braced = false }
+                constant{ name } => { kind = 'c'; n = name; braced = false }
+                space{ name, decls } => { kind = 'n'; n = name; inner = decls }
+            }
+            if kind != 0 {
+                let mut b = utf8::builder{ realloc = arena::alloc }
+                _ = utf8::push{ &b, &heap, s = utf8::String{ bytes = prefix } }
+                _ = utf8::push{ &b, &heap, s = "::" }
+                _ = utf8::push{ &b, &heap, s = utf8::String{ bytes = n.text } }
+                let path = utf8::view{ b }.bytes
+                if not list::push{ list = &syms, &heap, item = Symbol{ kind, path, span = d.span, braced } } {
+                    @panic("recover: out of memory")
+                }
+                collect{ &syms, &heap, prefix = path, decls = inner }
+            }
+            i = i + 1
+        }
+    }
+
+    // ---- the shape of a tree
+
+    struct Check { ids: u32, seen: []mut u8, problem: ?utf8::String }
+
+    fn fail { mut c: Check, msg: utf8::String } {
+        if c.problem == null { c.problem = msg }
+    }
+
+    // A span inside lo..hi.
+    fn within { mut c: Check, span: source::Span, lo: u32, hi: u32 } {
+        if span.start > span.end { fail{ &c, msg = "a span ends before it starts" } }
+        if span.start < lo or span.end > hi { fail{ &c, msg = "a span outside its parent's" } }
+    }
+
+    // A node with an id, inside lo..hi.
+    fn node { mut c: Check, id: u32, span: source::Span, lo: u32, hi: u32 } {
+        within{ &c, span, lo, hi }
+        if id >= c.ids {
+            fail{ &c, msg = "an id past the count" }
+            return
+        }
+        if c.seen[id] != 0 { fail{ &c, msg = "an id used twice" } }
+        c.seen[id] = 1
+    }
+
+    fn name { mut c: Check, n: syntax::Name, lo: u32, hi: u32 } {
+        node{ &c, id = n.id, span = n.span, lo, hi }
+    }
+
+    fn names { mut c: Check, xs: []syntax::Name, lo: u32, hi: u32 } {
+        let mut i: usize = 0
+        while i < xs.len {
+            name{ &c, n = xs[i], lo, hi }
+            i = i + 1
+        }
+    }
+
+    fn decl { mut c: Check, x: syntax::Decl, lo: u32, hi: u32 } {
+        node{ &c, id = x.id, span = x.span, lo, hi }
+        let a = x.span.start
+        let b = x.span.end
+        match x.k {
+            error => {}
+            func{ name = n, tparams, params, ret, body } => {
+                name{ &c, n, lo = a, hi = b }
+                names{ &c, xs = tparams, lo = a, hi = b }
+                param_list{ &c, xs = params, lo = a, hi = b }
+                if ret != null { type_expr{ &c, t = ret, lo = a, hi = b } }
+                block{ &c, x = body, lo = a, hi = b }
+            }
+            record{ name = n, tparams, fields } => {
+                name{ &c, n, lo = a, hi = b }
+                names{ &c, xs = tparams, lo = a, hi = b }
+                field_list{ &c, xs = fields, lo = a, hi = b }
+            }
+            sum{ name = n, tparams, variants } => {
+                name{ &c, n, lo = a, hi = b }
+                names{ &c, xs = tparams, lo = a, hi = b }
+                let mut i: usize = 0
+                while i < variants.len {
+                    let v = variants[i]
+                    within{ &c, span = v.span, lo = a, hi = b }
+                    name{ &c, n = v.name, lo = v.span.start, hi = v.span.end }
+                    let fields = v.fields
+                    if fields != null { field_list{ &c, xs = fields, lo = v.span.start, hi = v.span.end } }
+                    i = i + 1
+                }
+            }
+            enumeration{ name = n, base, variants } => {
+                name{ &c, n, lo = a, hi = b }
+                type_expr{ &c, t = base, lo = a, hi = b }
+                let mut i: usize = 0
+                while i < variants.len {
+                    let v = variants[i]
+                    within{ &c, span = v.span, lo = a, hi = b }
+                    name{ &c, n = v.name, lo = v.span.start, hi = v.span.end }
+                    let value = v.value
+                    if value != null { expr{ &c, e = value, lo = v.span.start, hi = v.span.end } }
+                    i = i + 1
+                }
+            }
+            alias{ name = n, tparams, ty } => {
+                name{ &c, n, lo = a, hi = b }
+                names{ &c, xs = tparams, lo = a, hi = b }
+                type_expr{ &c, t = ty, lo = a, hi = b }
+            }
+            constant{ name = n, ty, value } => {
+                name{ &c, n, lo = a, hi = b }
+                type_expr{ &c, t = ty, lo = a, hi = b }
+                expr{ &c, e = value, lo = a, hi = b }
+            }
+            space{ name = n, decls } => {
+                name{ &c, n, lo = a, hi = b }
+                let mut i: usize = 0
+                while i < decls.len {
+                    decl{ &c, x = decls[i], lo = a, hi = b }
+                    i = i + 1
+                }
+            }
+        }
+    }
+
+    fn param_list { mut c: Check, xs: []syntax::Param, lo: u32, hi: u32 } {
+        let mut i: usize = 0
+        while i < xs.len {
+            let f = xs[i]
+            within{ &c, span = f.span, lo, hi }
+            name{ &c, n = f.name, lo = f.span.start, hi = f.span.end }
+            type_expr{ &c, t = f.ty, lo = f.span.start, hi = f.span.end }
+            i = i + 1
+        }
+    }
+
+    fn field_list { mut c: Check, xs: []syntax::Field, lo: u32, hi: u32 } {
+        let mut i: usize = 0
+        while i < xs.len {
+            let f = xs[i]
+            within{ &c, span = f.span, lo, hi }
+            name{ &c, n = f.name, lo = f.span.start, hi = f.span.end }
+            type_expr{ &c, t = f.ty, lo = f.span.start, hi = f.span.end }
+            i = i + 1
+        }
+    }
+
+    fn type_expr { mut c: Check, t: syntax::TypeExpr, lo: u32, hi: u32 } {
+        node{ &c, id = t.id, span = t.span, lo, hi }
+        let a = t.span.start
+        let b = t.span.end
+        match t.k {
+            error => {}
+            path{ segs } => { seg_list{ &c, segs, lo = a, hi = b } }
+            ptr{ elem } => { type_expr{ &c, t = elem.*, lo = a, hi = b } }
+            opt{ elem } => { type_expr{ &c, t = elem.*, lo = a, hi = b } }
+            slice{ elem } => { type_expr{ &c, t = elem.*, lo = a, hi = b } }
+            array{ n, elem } => {
+                expr{ &c, e = n.*, lo = a, hi = b }
+                type_expr{ &c, t = elem.*, lo = a, hi = b }
+            }
+            func{ params, ret } => {
+                param_list{ &c, xs = params, lo = a, hi = b }
+                if ret != null { type_expr{ &c, t = ret.*, lo = a, hi = b } }
+            }
+        }
+    }
+
+    fn seg_list { mut c: Check, segs: []syntax::Seg, lo: u32, hi: u32 } {
+        let mut i: usize = 0
+        while i < segs.len {
+            let s = segs[i]
+            name{ &c, n = s.name, lo, hi }
+            let targs = s.targs
+            if targs != null {
+                let mut k: usize = 0
+                while k < targs.len {
+                    type_expr{ &c, t = targs[k], lo, hi }
+                    k = k + 1
+                }
+            }
+            i = i + 1
+        }
+    }
+
+    fn block { mut c: Check, x: syntax::Block, lo: u32, hi: u32 } {
+        node{ &c, id = x.id, span = x.span, lo, hi }
+        let mut i: usize = 0
+        while i < x.stmts.len {
+            stmt{ &c, s = x.stmts[i], lo = x.span.start, hi = x.span.end }
+            i = i + 1
+        }
+    }
+
+    fn binder_list { mut c: Check, xs: []syntax::Binder, lo: u32, hi: u32 } {
+        let mut i: usize = 0
+        while i < xs.len {
+            let x = xs[i]
+            within{ &c, span = x.span, lo, hi }
+            name{ &c, n = x.field, lo = x.span.start, hi = x.span.end }
+            let local = x.local
+            if local != null { name{ &c, n = local, lo = x.span.start, hi = x.span.end } }
+            i = i + 1
+        }
+    }
+
+    // A statement inside lo..hi. A loop's label is outside the loop's span but inside lo..hi.
+    fn stmt { mut c: Check, s: syntax::Stmt, lo: u32, hi: u32 } {
+        node{ &c, id = s.id, span = s.span, lo, hi }
+        let a = s.span.start
+        let b = s.span.end
+        match s.k {
+            error => {}
+            local{ name = n, ty, init } => {
+                name{ &c, n, lo = a, hi = b }
+                if ty != null { type_expr{ &c, t = ty, lo = a, hi = b } }
+                if init != null { expr{ &c, e = init, lo = a, hi = b } }
+            }
+            let_else{ variant, binders, init, els_variant, els_binders, els } => {
+                name{ &c, n = variant, lo = a, hi = b }
+                binder_list{ &c, xs = binders, lo = a, hi = b }
+                expr{ &c, e = init, lo = a, hi = b }
+                if els_variant != null { name{ &c, n = els_variant, lo = a, hi = b } }
+                binder_list{ &c, xs = els_binders, lo = a, hi = b }
+                block{ &c, x = els, lo = a, hi = b }
+            }
+            assign{ place, value } => {
+                expr{ &c, e = place, lo = a, hi = b }
+                expr{ &c, e = value, lo = a, hi = b }
+            }
+            eval{ e } => { expr{ &c, e, lo = a, hi = b } }
+            discard{ e } => { expr{ &c, e, lo = a, hi = b } }
+            cond{ x } => { if_node{ &c, x, lo = a, hi = b } }
+            loop{ label, c = cond, body } => {
+                if label != null { name{ &c, n = label, lo, hi } }
+                expr{ &c, e = cond, lo = a, hi = b }
+                block{ &c, x = body, lo = a, hi = b }
+            }
+            choose{ x } => { match_node{ &c, x, lo = a, hi = b } }
+            ret{ value } => { if value != null { expr{ &c, e = value, lo = a, hi = b } } }
+            brk{ label } => { if label != null { name{ &c, n = label, lo = a, hi = b } } }
+            cont{ label } => { if label != null { name{ &c, n = label, lo = a, hi = b } } }
+            deferred{ body } => { block{ &c, x = body, lo = a, hi = b } }
+        }
+    }
+
+    fn if_node { mut c: Check, x: syntax::If, lo: u32, hi: u32 } {
+        expr{ &c, e = x.c.*, lo, hi }
+        block{ &c, x = x.then, lo, hi }
+        let els = x.els
+        if els != null { block{ &c, x = els, lo, hi } }
+    }
+
+    fn match_node { mut c: Check, x: syntax::Match, lo: u32, hi: u32 } {
+        expr{ &c, e = x.scrut.*, lo, hi }
+        let mut i: usize = 0
+        while i < x.arms.len {
+            let arm = x.arms[i]
+            within{ &c, span = arm.span, lo, hi }
+            let mut k: usize = 0
+            while k < arm.pats.len {
+                let pat = arm.pats[k]
+                within{ &c, span = pat.span, lo = arm.span.start, hi = arm.span.end }
+                name{ &c, n = pat.variant, lo = pat.span.start, hi = pat.span.end }
+                binder_list{ &c, xs = pat.binders, lo = pat.span.start, hi = pat.span.end }
+                k = k + 1
+            }
+            block{ &c, x = arm.body, lo = arm.span.start, hi = arm.span.end }
+            i = i + 1
+        }
+    }
+
+    fn expr { mut c: Check, e: syntax::Expr, lo: u32, hi: u32 } {
+        node{ &c, id = e.id, span = e.span, lo, hi }
+        let a = e.span.start
+        let b = e.span.end
+        if e.at < a or e.at > b { fail{ &c, msg = "an expression's position outside its span" } }
+        match e.k {
+            error | int | float | str | boolean | nil => {}
+            path{ segs } => { seg_list{ &c, segs, lo = a, hi = b } }
+            field{ base, name = n } => {
+                expr{ &c, e = base.*, lo = a, hi = b }
+                name{ &c, n, lo = a, hi = b }
+            }
+            deref{ base } => { expr{ &c, e = base.*, lo = a, hi = b } }
+            index{ base, i } => {
+                expr{ &c, e = base.*, lo = a, hi = b }
+                expr{ &c, e = i.*, lo = a, hi = b }
+            }
+            range{ base, lo = x, hi = y } => {
+                expr{ &c, e = base.*, lo = a, hi = b }
+                if x != null { expr{ &c, e = x.*, lo = a, hi = b } }
+                if y != null { expr{ &c, e = y.*, lo = a, hi = b } }
+            }
+            braced{ callee, items } => {
+                expr{ &c, e = callee.*, lo = a, hi = b }
+                let mut i: usize = 0
+                while i < items.len {
+                    let item = items[i]
+                    within{ &c, span = item.span, lo = a, hi = b }
+                    name{ &c, n = item.name, lo = item.span.start, hi = item.span.end }
+                    expr{ &c, e = item.value, lo = item.span.start, hi = item.span.end }
+                    i = i + 1
+                }
+            }
+            neg{ e = x } => { expr{ &c, e = x.*, lo = a, hi = b } }
+            lnot{ e = x } => { expr{ &c, e = x.*, lo = a, hi = b } }
+            addr{ e = x } => { expr{ &c, e = x.*, lo = a, hi = b } }
+            binary{ a = x, b = y } => {
+                expr{ &c, e = x.*, lo = a, hi = b }
+                expr{ &c, e = y.*, lo = a, hi = b }
+            }
+            array{ elems } => {
+                let mut i: usize = 0
+                while i < elems.len {
+                    expr{ &c, e = elems[i], lo = a, hi = b }
+                    i = i + 1
+                }
+            }
+            repeat{ elem, count } => {
+                expr{ &c, e = elem.*, lo = a, hi = b }
+                expr{ &c, e = count.*, lo = a, hi = b }
+            }
+            builtin{ name = n, targ, args } => {
+                name{ &c, n, lo = a, hi = b }
+                if targ != null { type_expr{ &c, t = targ.*, lo = a, hi = b } }
+                let mut i: usize = 0
+                while i < args.len {
+                    expr{ &c, e = args[i], lo = a, hi = b }
+                    i = i + 1
+                }
+            }
+            ifx{ x } => { if_node{ &c, x, lo = a, hi = b } }
+            matchx{ x } => { match_node{ &c, x, lo = a, hi = b } }
+        }
+    }
+}

@@ -569,6 +569,95 @@ fn main { mut io: Io } {
 """, '1257\n104\n102.5\n')
 
 
+class Parser(Base):
+    """Every syntax error, at its exact position: tools/parsetest.py compares ctxc's first
+    diagnostic with each of them through the corpus."""
+
+    def assertParseError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_declarations(self):
+        for src, msg, line, col in [
+            ('fn main {} {}\n}', "expected a declaration, found '}'", 2, 1),
+            ('fn main {} {}\nlet x = 1', "expected a declaration, found 'let'", 2, 1),
+            ('fn {} {}', "expected a name, found '{'", 1, 4),
+            ('enum E(T): u8 { a }\nfn main {} {}', 'an enum cannot have generic parameters', 1, 7),
+            ('enum E { a }\nfn main {} {}', "expected ':', found '{'", 1, 8),
+            ('namespace n {\n    fn f {} {}\n', "expected '}' to close namespace", 3, 1),
+            ('struct S { a i32 }\nfn main {} {}', "expected ':', found 'i32'", 1, 14),
+            ('struct S { a: 5 }\nfn main {} {}', "expected a type, found '5'", 1, 15),
+            ('type T =\nfn main {} {}', "expected '{', found 'main'", 2, 4),
+            ('const N: i32 5\nfn main {} {}', "expected '=', found '5'", 1, 14),
+            ('fn f(T {} {}\nfn main {} {}', "expected ')', found '{'", 1, 8),
+            ('union U { a{ x: i32 } b }\nfn main {} {}', "expected '}', found 'b'", 1, 23),
+            ('fn main {} -> {}', "expected a type, found '{'", 1, 15),
+            ('fn main { mut io Io } {}', "expected ':', found 'Io'", 1, 18),
+        ]:
+            self.assertParseError(src, msg, line, col)
+
+    def test_statements(self):
+        for body, msg, line, col in [
+            ('let x = 1 let y = 2', "expected a newline or ';' after statement, found 'let'", 2, 15),
+            ('let _ = 1', '`_` is not a name: `_ = e` discards a value without declaring anything', 2, 5),
+            ('let x', '`let x` needs a type or an initializer', 2, 5),
+            ('defer let x = 1', '`defer` takes a call, an assignment, `_ = e` or a block', 2, 5),
+            ('outer: if true {}', "only a `while` can be labeled, found 'if'", 2, 12),
+            ('let some{ value } = x', 'a `let` with a pattern needs an `else`', 3, 1),
+            ('let null = x', 'a `let` with a pattern needs an `else`', 3, 1),
+            ('let ok{ value } = r else err{ e } {', "expected '}' to close block", 3, 2),
+            ('match x { a => {} b {} }', "expected '=>', found '}'", 2, 28),
+            ('match x { a{ v w } => {} }', "expected '}', found 'w'", 2, 20),
+            ('if x { } else y', "expected '{', found 'y'", 2, 19),
+            ('while x', "expected '{', found '}'", 3, 1),
+            ('break 5', "expected a newline or ';' after statement, found '5'", 2, 11),
+            ('return 1 2', "expected a newline or ';' after statement, found '2'", 2, 14),
+        ]:
+            self.assertParseError('fn main {} {\n    %s\n}' % body, msg, line, col)
+        self.assertParseError('fn main {} {\n    let x = 1\n', "expected '}' to close block", 3, 1)
+
+    def test_expressions(self):
+        for body, msg, line, col in [
+            ('let v = if true { 1 }', 'an `if` expression needs an `else`', 2, 13),
+            ('let b = 1 < 2 < 3', 'comparisons do not chain', 2, 19),
+            ('f{ .., a }', "'..' must be the last item", 2, 12),
+            ('f{ _, a }', "'_' must be the last item", 2, 11),
+            ('let x = )', "expected an expression, found ')'", 2, 13),
+            ('let x = a[1', "expected ']', found '}'", 3, 1),
+            ('let x = a.', "expected a name, found '}'", 3, 1),
+            ('let x = (1', "expected ')', found '}'", 3, 1),
+            ('let x = [1, 2', "expected ']', found '}'", 3, 1),
+            ('let x = [1; 2', "expected ']', found '}'", 3, 1),
+            ('let x = a.b(i32)', "expected a newline or ';' after statement, found '('", 2, 16),
+            ('let x = @nope(1)', 'unknown builtin `@nope`', 2, 13),
+            ('@panic', 'expected \'(\' after @panic: @panic() or @panic("reason")', 3, 1),
+            ('let x = @as(i32)', 'wrong number of arguments: @as(T, x)', 2, 20),
+            ('let x = @size_of(i32, 1)', 'wrong number of arguments: @size_of(T)', 2, 27),
+        ]:
+            self.assertParseError('fn main {} {\n    %s\n}' % body, msg, line, col)
+
+    def test_types(self):
+        for body, msg, line, col in [
+            ('let x: [3 = 1', "expected ']', found '='", 2, 15),
+            ('let x: *mut = 1', "expected a type, found '='", 2, 17),
+            ('let f: fn{ x } = g', "expected ':', found '}'", 2, 18),
+            ('let f: list::List(i32 = g', "expected ')', found '='", 2, 27),
+        ]:
+            self.assertParseError('fn main {} {\n    %s\n}' % body, msg, line, col)
+
+    def test_found(self):
+        # A token is described as it is written.
+        for body, found, col in [
+            ('let x = "a" "b"', '\'"b"\'', 17),
+            ('let x = 0x10 0x20', "'0x20'", 18),
+            ("let x = 'a' 2.50", "'2.50'", 17),
+            ('let x = 1 @size_of(i32)', "'@size_of'", 15),
+        ]:
+            self.assertParseError('fn main {} {\n    %s\n}' % body,
+                                  "expected a newline or ';' after statement, found " + found, 2, col)
+
+
 ENUM = """
 enum Kind: u8 {
     ident,

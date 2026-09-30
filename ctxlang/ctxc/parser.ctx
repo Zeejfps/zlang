@@ -1,0 +1,1204 @@
+// The parser: tokens to a syntax tree (syntax.ctx), a port of ctxi/parser.py.
+//
+//   let lexed = lexer::lex{ text, file, &heap, &diags }
+//   let tree = parser::parse{ text, file, tokens = lexed.tokens, &heap, &diags }
+//
+// Up to its first error it takes ctxi's path exactly, so it reports what ctxi reports, at the
+// same token. Then, instead of stopping, it recovers:
+//
+// - An error sets `bad`, and while it is set the parser sees the end of the file. Every loop
+//   ends, nothing more is consumed, and each parse function returns what it has, with error nodes
+//   and missing names for the rest. That unwinds to the nearest statement, match arm or
+//   declaration.
+// - There the parser skips to a synchronization point (sync), clears `bad` and goes on.
+// - An error is only reported if a token has been consumed since the last one, so one mistake
+//   makes one diagnostic. The lexer has already reported its error tokens: one where an
+//   expression or a type belongs becomes an error node, and anywhere else the parser fails there
+//   without a message.
+
+namespace parser {
+    // Deeper nesting of expressions, types or blocks is an error rather than a risk to the stack.
+    const MAX_DEPTH: u32 = 256
+
+    struct Parser {
+        text:    []u8,
+        file:    u32,
+        toks:    []tok::Token,         // ends with an eof token
+        i:       usize,
+        heap:    *mut arena::Arena,
+        diags:   *mut diag::Diags,
+        ids:     u32,
+        in_cond: bool,                 // in a condition or scrutinee, outside any brackets
+        depth:   u32,
+        bad:     bool,                 // an error, not yet recovered from
+        errored: bool,                 // an error has been reported, when the
+        err_at:  usize,                // parser was at this token
+    }
+
+    fn parse { text: []u8, file: u32, tokens: []tok::Token, mut heap: arena::Arena, mut diags: diag::Diags } -> syntax::File {
+        let mut p = Parser{
+            text, file, toks = tokens, i = 0, heap = &heap, diags = &diags, ids = 0,
+            in_cond = false, depth = 0, bad = false, errored = false, err_at = 0,
+        }
+        let decls = decl_list{ &p, top = true }
+        return syntax::File{ decls, ids = p.ids }
+    }
+
+    // ---- declarations
+
+    // Declarations up to the end of the file, or up to the `}` of a namespace.
+    fn decl_list { mut p: Parser, top: bool } -> []syntax::Decl {
+        let mut xs = list::new(syntax::Decl){ realloc = arena::alloc }
+        skip_semis{ &p }
+        while true {
+            if top {
+                if is{ p, k = tok::Kind::eof } { break }
+            } else if is{ p, k = tok::Kind::rbrace } {
+                break
+            } else if is{ p, k = tok::Kind::eof } {
+                fail{ &p, msg = "expected '}' to close namespace" }
+                break
+            }
+            let start = p.i
+            add{ &p, xs = &xs, item = decl{ &p } }
+            if p.bad {
+                sync{ &p, start, in_block = false, top }
+                if p.i == start { p.i = p.i + 1 }
+            }
+            skip_semis{ &p }
+        }
+        return list::items{ list = xs }
+    }
+
+    fn decl { mut p: Parser } -> syntax::Decl {
+        let start = p.i
+        let id = new_id{ &p }
+        let k = kind{ p, ahead = 0 }
+        let mut d = syntax::DeclKind::error
+        if k == tok::Kind::kw_fn {
+            skip{ &p }
+            let name = ident{ &p }
+            let tparams = tparams{ &p }
+            let params = ctx_fields{ &p }
+            let ret: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { type_expr{ &p } } else { null }
+            d = syntax::DeclKind::func{ name, tparams, params, ret, body = block{ &p } }
+        } else if k == tok::Kind::kw_struct {
+            skip{ &p }
+            let name = ident{ &p }
+            let tparams = tparams{ &p }
+            d = syntax::DeclKind::record{ name, tparams, fields = plain_fields{ &p } }
+        } else if k == tok::Kind::kw_union {
+            skip{ &p }
+            let name = ident{ &p }
+            let tparams = tparams{ &p }
+            d = syntax::DeclKind::sum{ name, tparams, variants = variants{ &p } }
+        } else if k == tok::Kind::kw_enum {
+            skip{ &p }
+            let name = ident{ &p }
+            if is{ p, k = tok::Kind::lparen } { fail{ &p, msg = "an enum cannot have generic parameters" } }
+            expect{ &p, k = tok::Kind::colon }
+            let base = type_expr{ &p }
+            d = syntax::DeclKind::enumeration{ name, base, variants = enum_variants{ &p } }
+        } else if k == tok::Kind::kw_type {
+            skip{ &p }
+            let name = ident{ &p }
+            let tparams = tparams{ &p }
+            expect{ &p, k = tok::Kind::assign }
+            d = syntax::DeclKind::alias{ name, tparams, ty = type_expr{ &p } }
+        } else if k == tok::Kind::kw_const {
+            skip{ &p }
+            let name = ident{ &p }
+            expect{ &p, k = tok::Kind::colon }
+            let ty = type_expr{ &p }
+            expect{ &p, k = tok::Kind::assign }
+            d = syntax::DeclKind::constant{ name, ty, value = expr{ &p } }
+        } else if k == tok::Kind::kw_namespace {
+            skip{ &p }
+            let name = ident{ &p }
+            expect{ &p, k = tok::Kind::lbrace }
+            let decls = decl_list{ &p, top = false }
+            expect{ &p, k = tok::Kind::rbrace }
+            d = syntax::DeclKind::space{ name, decls }
+        } else {
+            expected{ &p, what = "a declaration" }
+        }
+        return syntax::Decl{ id, span = span_from{ p, start }, k = d }
+    }
+
+    fn tparams { mut p: Parser } -> []syntax::Name {
+        let mut xs = list::new(syntax::Name){ realloc = arena::alloc }
+        if accept{ &p, k = tok::Kind::lparen } {
+            add{ &p, xs = &xs, item = ident{ &p } }
+            while accept{ &p, k = tok::Kind::comma } { add{ &p, xs = &xs, item = ident{ &p } } }
+            expect{ &p, k = tok::Kind::rparen }
+        }
+        return list::items{ list = xs }
+    }
+
+    // `{ mut name: T, ... }`, the context of a function or function type.
+    fn ctx_fields { mut p: Parser } -> []syntax::Param {
+        let mut xs = list::new(syntax::Param){ realloc = arena::alloc }
+        expect{ &p, k = tok::Kind::lbrace }
+        while more{ p, close = tok::Kind::rbrace } {
+            let start = p.i
+            let mutable = accept{ &p, k = tok::Kind::kw_mut }
+            let name = ident{ &p }
+            expect{ &p, k = tok::Kind::colon }
+            let ty = type_expr{ &p }
+            add{ &p, xs = &xs, item = syntax::Param{ span = span_from{ p, start }, mutable, name, ty } }
+            if not accept{ &p, k = tok::Kind::comma } { break }
+        }
+        expect{ &p, k = tok::Kind::rbrace }
+        return list::items{ list = xs }
+    }
+
+    // `{ name: T, ... }`, of a struct or a union variant.
+    fn plain_fields { mut p: Parser } -> []syntax::Field {
+        let mut xs = list::new(syntax::Field){ realloc = arena::alloc }
+        expect{ &p, k = tok::Kind::lbrace }
+        while more{ p, close = tok::Kind::rbrace } {
+            let start = p.i
+            let name = ident{ &p }
+            expect{ &p, k = tok::Kind::colon }
+            let ty = type_expr{ &p }
+            add{ &p, xs = &xs, item = syntax::Field{ span = span_from{ p, start }, name, ty } }
+            if not accept{ &p, k = tok::Kind::comma } { break }
+        }
+        expect{ &p, k = tok::Kind::rbrace }
+        return list::items{ list = xs }
+    }
+
+    fn variants { mut p: Parser } -> []syntax::Variant {
+        let mut xs = list::new(syntax::Variant){ realloc = arena::alloc }
+        expect{ &p, k = tok::Kind::lbrace }
+        while more{ p, close = tok::Kind::rbrace } {
+            let start = p.i
+            let name = ident{ &p }
+            let fields: ?[]syntax::Field = if is{ p, k = tok::Kind::lbrace } { plain_fields{ &p } } else { null }
+            add{ &p, xs = &xs, item = syntax::Variant{ span = span_from{ p, start }, name, fields } }
+            if not accept{ &p, k = tok::Kind::comma } { break }
+        }
+        expect{ &p, k = tok::Kind::rbrace }
+        return list::items{ list = xs }
+    }
+
+    fn enum_variants { mut p: Parser } -> []syntax::EnumVariant {
+        let mut xs = list::new(syntax::EnumVariant){ realloc = arena::alloc }
+        expect{ &p, k = tok::Kind::lbrace }
+        while more{ p, close = tok::Kind::rbrace } {
+            let start = p.i
+            let name = ident{ &p }
+            let value: ?syntax::Expr = if accept{ &p, k = tok::Kind::assign } { expr{ &p } } else { null }
+            add{ &p, xs = &xs, item = syntax::EnumVariant{ span = span_from{ p, start }, name, value } }
+            if not accept{ &p, k = tok::Kind::comma } { break }
+        }
+        expect{ &p, k = tok::Kind::rbrace }
+        return list::items{ list = xs }
+    }
+
+    // ---- types
+
+    fn type_expr { mut p: Parser } -> syntax::TypeExpr {
+        let start = p.i
+        let id = new_id{ &p }
+        if not enter{ &p } { return syntax::TypeExpr{ id, span = span_from{ p, start }, k = syntax::TypeKind::error } }
+        defer p.depth = p.depth - 1
+        let k = kind{ p, ahead = 0 }
+        let mut t = syntax::TypeKind::error
+        if k == tok::Kind::star {
+            skip{ &p }
+            let mutable = accept{ &p, k = tok::Kind::kw_mut }
+            t = syntax::TypeKind::ptr{ mutable, elem = box{ &p, value = type_expr{ &p } } }
+        } else if k == tok::Kind::question {
+            skip{ &p }
+            t = syntax::TypeKind::opt{ elem = box{ &p, value = type_expr{ &p } } }
+        } else if k == tok::Kind::lbracket {
+            skip{ &p }
+            if accept{ &p, k = tok::Kind::rbracket } {
+                let mutable = accept{ &p, k = tok::Kind::kw_mut }
+                t = syntax::TypeKind::slice{ mutable, elem = box{ &p, value = type_expr{ &p } } }
+            } else {
+                let n = box{ &p, value = expr{ &p } }
+                expect{ &p, k = tok::Kind::rbracket }
+                t = syntax::TypeKind::array{ n, elem = box{ &p, value = type_expr{ &p } } }
+            }
+        } else if k == tok::Kind::kw_fn or (k == tok::Kind::amp and kind{ p, ahead = 1 } == tok::Kind::kw_fn) {
+            let bound = accept{ &p, k = tok::Kind::amp }
+            skip{ &p }
+            let params = ctx_fields{ &p }
+            let ret: ?*syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { box{ &p, value = type_expr{ &p } } } else { null }
+            t = syntax::TypeKind::func{ bound, params, ret }
+        } else if k == tok::Kind::ident {
+            let mut segs = list::new(syntax::Seg){ realloc = arena::alloc }
+            add{ &p, xs = &segs, item = type_seg{ &p } }
+            while accept{ &p, k = tok::Kind::colons } { add{ &p, xs = &segs, item = type_seg{ &p } } }
+            t = syntax::TypeKind::path{ segs = list::items{ list = segs } }
+        } else if k == tok::Kind::error {
+            skip{ &p }
+        } else {
+            expected{ &p, what = "a type" }
+        }
+        return syntax::TypeExpr{ id, span = span_from{ p, start }, k = t }
+    }
+
+    fn type_seg { mut p: Parser } -> syntax::Seg {
+        let name = ident{ &p }
+        let targs: ?[]syntax::TypeExpr = if is{ p, k = tok::Kind::lparen } and not nl{ p } { type_list{ &p } } else { null }
+        return syntax::Seg{ name, targs }
+    }
+
+    // `(T, ...)`
+    fn type_list { mut p: Parser } -> []syntax::TypeExpr {
+        let mut xs = list::new(syntax::TypeExpr){ realloc = arena::alloc }
+        expect{ &p, k = tok::Kind::lparen }
+        while more{ p, close = tok::Kind::rparen } {
+            add{ &p, xs = &xs, item = type_expr{ &p } }
+            if not accept{ &p, k = tok::Kind::comma } { break }
+        }
+        expect{ &p, k = tok::Kind::rparen }
+        return list::items{ list = xs }
+    }
+
+    // ---- statements
+
+    fn block { mut p: Parser } -> syntax::Block {
+        let start = p.i
+        let id = new_id{ &p }
+        let mut xs = list::new(syntax::Stmt){ realloc = arena::alloc }
+        if not enter{ &p } { return syntax::Block{ id, span = span_from{ p, start }, stmts = list::items{ list = xs } } }
+        defer p.depth = p.depth - 1
+        expect{ &p, k = tok::Kind::lbrace }
+        skip_semis{ &p }
+        while not is{ p, k = tok::Kind::rbrace } {
+            if is{ p, k = tok::Kind::eof } {
+                fail{ &p, msg = "expected '}' to close block" }
+                break
+            }
+            let s = p.i
+            add{ &p, xs = &xs, item = stmt{ &p } }
+            if not p.bad and not (nl{ p } or is{ p, k = tok::Kind::semi } or is{ p, k = tok::Kind::rbrace }) {
+                expected{ &p, what = "a newline or ';' after statement" }
+            }
+            if p.bad {
+                sync{ &p, start = s, in_block = true, top = false }
+                if at_decl{ p } { break }
+            }
+            skip_semis{ &p }
+        }
+        expect{ &p, k = tok::Kind::rbrace }
+        return syntax::Block{ id, span = span_from{ p, start }, stmts = list::items{ list = xs } }
+    }
+
+    fn stmt { mut p: Parser } -> syntax::Stmt {
+        let mut start = p.i
+        let t = p.toks[p.i]
+        let id = new_id{ &p }
+        let k = kind{ p, ahead = 0 }
+        let mut s = syntax::StmtKind::error
+        if k == tok::Kind::kw_let {
+            return let_stmt{ &p, id }
+        } else if k == tok::Kind::kw_if {
+            s = syntax::StmtKind::cond{ x = if_node{ &p } }
+        } else if k == tok::Kind::kw_while {
+            s = while_stmt{ &p, label = null }
+        } else if k == tok::Kind::kw_match {
+            s = syntax::StmtKind::choose{ x = match_node{ &p } }
+        } else if k == tok::Kind::kw_break {
+            skip{ &p }
+            s = syntax::StmtKind::brk{ label = jump_label{ &p } }
+        } else if k == tok::Kind::kw_continue {
+            skip{ &p }
+            s = syntax::StmtKind::cont{ label = jump_label{ &p } }
+        } else if k == tok::Kind::kw_defer {
+            skip{ &p }
+            if is{ p, k = tok::Kind::lbrace } {
+                s = syntax::StmtKind::deferred{ body = block{ &p } }
+            } else {
+                let inner = stmt{ &p }
+                let ok = match inner.k { eval | discard | assign => { true } else => { false } }
+                if not ok { fail_at{ &p, msg = "`defer` takes a call, an assignment, `_ = e` or a block", t } }
+                s = syntax::StmtKind::deferred{ body = one{ &p, s = inner } }
+            }
+        } else if k == tok::Kind::kw_return {
+            skip{ &p }
+            if nl{ p } or is{ p, k = tok::Kind::rbrace } or is{ p, k = tok::Kind::semi } {
+                s = syntax::StmtKind::ret{ value = null }
+            } else {
+                s = syntax::StmtKind::ret{ value = expr{ &p } }
+            }
+        } else if k == tok::Kind::ident and kind{ p, ahead = 1 } == tok::Kind::colon {
+            // A loop label: `name:`, then the `while`, on the same line or the next. The
+            // statement starts at the `while`, as in ctxi.
+            let label = ident{ &p }
+            skip{ &p }
+            start = p.i
+            if is{ p, k = tok::Kind::kw_while } {
+                s = while_stmt{ &p, label }
+            } else {
+                expected_msg{ &p, msg = "only a `while` can be labeled, found " }
+            }
+        } else {
+            let e = expr{ &p }
+            if accept{ &p, k = tok::Kind::assign } {
+                if is_discard{ e } {
+                    s = syntax::StmtKind::discard{ e = expr{ &p } }
+                } else {
+                    s = syntax::StmtKind::assign{ place = e, value = expr{ &p } }
+                }
+            } else {
+                s = syntax::StmtKind::eval{ e }
+            }
+        }
+        return syntax::Stmt{ id, span = span_from{ p, start }, k = s }
+    }
+
+    // `_` alone, before the `=` of a discard.
+    fn is_discard { e: syntax::Expr } -> bool {
+        match e.k {
+            path{ segs } => {
+                return segs.len == 1 and segs[0].targs == null and slice::eq_bytes{ a = segs[0].name.text, b = "_" }
+            }
+            else => { return false }
+        }
+    }
+
+    // A block holding one statement, with the statement's span.
+    fn one { mut p: Parser, s: syntax::Stmt } -> syntax::Block {
+        let mut xs = list::new(syntax::Stmt){ realloc = arena::alloc }
+        add{ &p, xs = &xs, item = s }
+        return syntax::Block{ id = new_id{ &p }, span = s.span, stmts = list::items{ list = xs } }
+    }
+
+    fn let_stmt { mut p: Parser, id: u32 } -> syntax::Stmt {
+        let start = p.i
+        let t = take{ &p }
+        let mutable = accept{ &p, k = tok::Kind::kw_mut }
+        if not mutable and is{ p, k = tok::Kind::kw_null } {
+            let pat = pattern{ &p }
+            return let_else{ &p, id, start, variant = pat.variant, binders = pat.binders }
+        }
+        let name = ident{ &p }
+        if slice::eq_bytes{ a = name.text, b = "_" } {
+            fail_at{ &p, msg = "`_` is not a name: `_ = e` discards a value without declaring anything", t }
+        }
+        if not mutable and is{ p, k = tok::Kind::lbrace } {
+            let bs = binder_list{ &p }
+            return let_else{ &p, id, start, variant = name, binders = bs }
+        }
+        let ty: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::colon } { type_expr{ &p } } else { null }
+        let init: ?syntax::Expr = if accept{ &p, k = tok::Kind::assign } { expr{ &p } } else { null }
+        if ty == null and init == null {
+            let mut b = utf8::builder{ realloc = arena::alloc }
+            put{ &b, heap = p.heap, s = "`let " }
+            put{ &b, heap = p.heap, s = utf8::String{ bytes = name.text } }
+            put{ &b, heap = p.heap, s = "` needs a type or an initializer" }
+            fail_at{ &p, msg = utf8::view{ b }, t }
+        }
+        if init != null and ty == null and not mutable and is{ p, k = tok::Kind::kw_else } {
+            // `let variant = e else ...`
+            return let_else_tail{ &p, id, start, variant = name, binders = slice::empty(syntax::Binder){}, init }
+        }
+        return syntax::Stmt{ id, span = span_from{ p, start }, k = syntax::StmtKind::local{ mutable, name, ty, init } }
+    }
+
+    // `let variant{ binders } = init else ...`, after the pattern.
+    fn let_else { mut p: Parser, id: u32, start: usize, variant: syntax::Name, binders: []syntax::Binder } -> syntax::Stmt {
+        expect{ &p, k = tok::Kind::assign }
+        let init = expr{ &p }
+        if not is{ p, k = tok::Kind::kw_else } { fail{ &p, msg = "a `let` with a pattern needs an `else`" } }
+        return let_else_tail{ &p, id, start, variant, binders, init }
+    }
+
+    // From the `else`: an optional pattern for the other variant, then the block.
+    fn let_else_tail { mut p: Parser, id: u32, start: usize, variant: syntax::Name, binders: []syntax::Binder, init: syntax::Expr } -> syntax::Stmt {
+        expect{ &p, k = tok::Kind::kw_else }
+        let mut els_variant: ?syntax::Name = null
+        let mut els_binders: []syntax::Binder = slice::empty(syntax::Binder){}
+        if not is{ p, k = tok::Kind::lbrace } {
+            // `else v { ... }` binds nothing; `else v{ ... } { ... }` has bindings, then the block.
+            els_variant = if is{ p, k = tok::Kind::kw_null } { keyword_name{ &p } } else { ident{ &p } }
+            if braces_then_brace{ p } { els_binders = binder_list{ &p } }
+        }
+        let els = block{ &p }
+        let k = syntax::StmtKind::let_else{ variant, binders, init, els_variant, els_binders, els }
+        return syntax::Stmt{ id, span = span_from{ p, start }, k }
+    }
+
+    fn while_stmt { mut p: Parser, label: ?syntax::Name } -> syntax::StmtKind {
+        skip{ &p }
+        let c = cond_expr{ &p }
+        return syntax::StmtKind::loop{ label, c, body = block{ &p } }
+    }
+
+    // The label after `break` or `continue`, if one follows on the same line.
+    fn jump_label { mut p: Parser } -> ?syntax::Name {
+        if is{ p, k = tok::Kind::ident } and not nl{ p } { return ident{ &p } }
+        return null
+    }
+
+    // `variant` or `variant{ binders }`, where variant may be `null`.
+    fn pattern { mut p: Parser } -> syntax::Pattern {
+        let start = p.i
+        let variant = if is{ p, k = tok::Kind::kw_null } { keyword_name{ &p } } else { ident{ &p } }
+        let mut bs: []syntax::Binder = slice::empty(syntax::Binder){}
+        if is{ p, k = tok::Kind::lbrace } { bs = binder_list{ &p } }
+        return syntax::Pattern{ span = span_from{ p, start }, variant, binders = bs }
+    }
+
+    // `{ f, &g, h = x, &k = y }`: the payload fields a pattern binds.
+    fn binder_list { mut p: Parser } -> []syntax::Binder {
+        let mut xs = list::new(syntax::Binder){ realloc = arena::alloc }
+        expect{ &p, k = tok::Kind::lbrace }
+        while more{ p, close = tok::Kind::rbrace } {
+            let start = p.i
+            let by_ref = accept{ &p, k = tok::Kind::amp }
+            let field = ident{ &p }
+            let local: ?syntax::Name = if accept{ &p, k = tok::Kind::assign } { ident{ &p } } else { null }
+            add{ &p, xs = &xs, item = syntax::Binder{ span = span_from{ p, start }, by_ref, field, local } }
+            if not accept{ &p, k = tok::Kind::comma } { break }
+        }
+        expect{ &p, k = tok::Kind::rbrace }
+        return list::items{ list = xs }
+    }
+
+    // Whether the `{ ... }` starting here is followed by another `{`.
+    fn braces_then_brace { p: Parser } -> bool {
+        if not is{ p, k = tok::Kind::lbrace } { return false }
+        let mut depth: u32 = 0
+        let mut k = p.i
+        while p.toks[k].kind != tok::Kind::eof {
+            let x = p.toks[k].kind
+            if x == tok::Kind::lbrace {
+                depth = depth + 1
+            } else if x == tok::Kind::rbrace {
+                depth = depth - 1
+                if depth == 0 { return p.toks[k + 1].kind == tok::Kind::lbrace }
+            }
+            k = k + 1
+        }
+        return false
+    }
+
+    // The condition of an `if` or `while`, or a match scrutinee: an expression that ends where
+    // its block's `{` begins (brace_is_call).
+    fn cond_expr { mut p: Parser } -> syntax::Expr {
+        let saved = p.in_cond
+        p.in_cond = true
+        let e = or_expr{ &p }
+        p.in_cond = saved
+        return e
+    }
+
+    // In a condition, whether the `{` here begins a call or literal rather than the block:
+    // whether the token after its matching `}` is on the same line and could continue an
+    // expression.
+    fn brace_is_call { p: Parser } -> bool {
+        if p.bad { return false }
+        let mut depth: u32 = 0
+        let mut k = p.i
+        while p.toks[k].kind != tok::Kind::eof {
+            let x = p.toks[k].kind
+            if x == tok::Kind::lbrace {
+                depth = depth + 1
+            } else if x == tok::Kind::rbrace {
+                depth = depth - 1
+                if depth == 0 {
+                    let after = p.toks[k + 1]
+                    let a = after.kind
+                    if after.nl or a == tok::Kind::eof or a == tok::Kind::kw_else { return false }
+                    return not (a == tok::Kind::semi or a == tok::Kind::rbrace or a == tok::Kind::comma
+                                or a == tok::Kind::rparen or a == tok::Kind::rbracket)
+                }
+            }
+            k = k + 1
+        }
+        return false
+    }
+
+    fn if_node { mut p: Parser } -> syntax::If {
+        skip{ &p }
+        let c = box{ &p, value = cond_expr{ &p } }
+        let then = block{ &p }
+        let mut els: ?syntax::Block = null
+        if accept{ &p, k = tok::Kind::kw_else } {
+            if is{ p, k = tok::Kind::kw_if } {
+                let start = p.i
+                let id = new_id{ &p }
+                let x = if_node{ &p }
+                els = one{ &p, s = syntax::Stmt{ id, span = span_from{ p, start }, k = syntax::StmtKind::cond{ x } } }
+            } else {
+                els = block{ &p }
+            }
+        }
+        return syntax::If{ c, then, els }
+    }
+
+    // An `if` in expression position. `else` is required; `else if` nests another one.
+    fn if_expr { mut p: Parser } -> syntax::Expr {
+        let start = p.i
+        let id = new_id{ &p }
+        let t = take{ &p }
+        let c = box{ &p, value = cond_expr{ &p } }
+        let then = block{ &p }
+        if not accept{ &p, k = tok::Kind::kw_else } { fail_at{ &p, msg = "an `if` expression needs an `else`", t } }
+        let els = if is{ p, k = tok::Kind::kw_if } { else_if{ &p } } else { block{ &p } }
+        let k = syntax::ExprKind::ifx{ x = syntax::If{ c, then, els } }
+        return syntax::Expr{ id, span = span_from{ p, start }, at = start_of{ p, start }, k }
+    }
+
+    // `else if ...` in an expression: a block of the inner `if` alone.
+    fn else_if { mut p: Parser } -> syntax::Block {
+        let start = p.i
+        let id = new_id{ &p }
+        let e = if_expr{ &p }
+        return one{ &p, s = syntax::Stmt{ id, span = span_from{ p, start }, k = syntax::StmtKind::eval{ e } } }
+    }
+
+    fn match_node { mut p: Parser } -> syntax::Match {
+        skip{ &p }
+        let scrut = box{ &p, value = cond_expr{ &p } }
+        expect{ &p, k = tok::Kind::lbrace }
+        let mut arms = list::new(syntax::Arm){ realloc = arena::alloc }
+        skip_semis{ &p }
+        while more{ p, close = tok::Kind::rbrace } {
+            let start = p.i
+            let mut pats = list::new(syntax::Pattern){ realloc = arena::alloc }
+            if not accept{ &p, k = tok::Kind::kw_else } {
+                add{ &p, xs = &pats, item = pattern{ &p } }
+                while accept{ &p, k = tok::Kind::pipe } { add{ &p, xs = &pats, item = pattern{ &p } } }
+            }
+            expect{ &p, k = tok::Kind::fat_arrow }
+            let body = block{ &p }
+            add{ &p, xs = &arms, item = syntax::Arm{ span = span_from{ p, start }, pats = list::items{ list = pats }, body } }
+            _ = accept{ &p, k = tok::Kind::comma }
+            if p.bad {
+                sync{ &p, start, in_block = true, top = false }
+                if at_decl{ p } or is{ p, k = tok::Kind::eof } { break }
+            }
+            skip_semis{ &p }
+        }
+        expect{ &p, k = tok::Kind::rbrace }
+        return syntax::Match{ scrut, arms = list::items{ list = arms } }
+    }
+
+    // ---- expressions
+
+    fn expr { mut p: Parser } -> syntax::Expr {
+        let saved = p.in_cond
+        p.in_cond = false
+        let e = or_expr{ &p }
+        p.in_cond = saved
+        return e
+    }
+
+    fn or_expr { mut p: Parser } -> syntax::Expr {
+        let start = p.i
+        let mut e = and_expr{ &p }
+        while is{ p, k = tok::Kind::kw_or } {
+            let op = take{ &p }
+            let b = and_expr{ &p }
+            e = binary{ &p, start, op, a = e, b }
+        }
+        return e
+    }
+
+    fn and_expr { mut p: Parser } -> syntax::Expr {
+        let start = p.i
+        let mut e = cmp_expr{ &p }
+        while is{ p, k = tok::Kind::kw_and } {
+            let op = take{ &p }
+            let b = cmp_expr{ &p }
+            e = binary{ &p, start, op, a = e, b }
+        }
+        return e
+    }
+
+    fn cmp_expr { mut p: Parser } -> syntax::Expr {
+        let start = p.i
+        let mut e = bin_expr{ &p, level = 0 }
+        if is_cmp{ k = kind{ p, ahead = 0 } } {
+            let op = take{ &p }
+            let b = bin_expr{ &p, level = 0 }
+            e = binary{ &p, start, op, a = e, b }
+            if is_cmp{ k = kind{ p, ahead = 0 } } { fail{ &p, msg = "comparisons do not chain" } }
+        }
+        return e
+    }
+
+    fn is_cmp { k: tok::Kind } -> bool {
+        return k == tok::Kind::eq or k == tok::Kind::ne or k == tok::Kind::lt or k == tok::Kind::le
+               or k == tok::Kind::gt or k == tok::Kind::ge
+    }
+
+    // Binary operator levels between comparison and prefix, loosest first. All are left to right.
+    const LEVELS: u32 = 6
+
+    fn in_level { k: tok::Kind, level: u32 } -> bool {
+        if level == 0 { return k == tok::Kind::pipe }
+        if level == 1 { return k == tok::Kind::caret }
+        if level == 2 { return k == tok::Kind::amp }
+        if level == 3 { return k == tok::Kind::shl or k == tok::Kind::shr }
+        if level == 4 { return k == tok::Kind::plus or k == tok::Kind::minus }
+        return k == tok::Kind::star or k == tok::Kind::slash or k == tok::Kind::percent
+    }
+
+    // The operators of `level` and tighter.
+    fn bin_expr { mut p: Parser, level: u32 } -> syntax::Expr {
+        if level == LEVELS { return prefix{ &p } }
+        let start = p.i
+        let mut e = bin_expr{ &p, level = level + 1 }
+        while in_level{ k = kind{ p, ahead = 0 }, level } {
+            let op = take{ &p }
+            let b = bin_expr{ &p, level = level + 1 }
+            e = binary{ &p, start, op, a = e, b }
+        }
+        return e
+    }
+
+    fn binary { mut p: Parser, start: usize, op: tok::Token, a: syntax::Expr, b: syntax::Expr } -> syntax::Expr {
+        let x = box{ &p, value = a }
+        let k = syntax::ExprKind::binary{ op = op.kind, a = x, b = box{ &p, value = b } }
+        return syntax::Expr{ id = new_id{ &p }, span = span_from{ p, start }, at = op.span.start, k }
+    }
+
+    fn prefix { mut p: Parser } -> syntax::Expr {
+        let start = p.i
+        if not enter{ &p } { return error_expr{ &p, start } }
+        defer p.depth = p.depth - 1
+        let k = kind{ p, ahead = 0 }
+        if k == tok::Kind::amp {
+            skip{ &p }
+            let e = box{ &p, value = prefix{ &p } }
+            return expr_from{ &p, start, k = syntax::ExprKind::addr{ e } }
+        }
+        if k == tok::Kind::minus {
+            skip{ &p }
+            let mut inner = prefix{ &p }
+            // A literal takes the sign, unless it has one already.
+            let mut folded = true
+            match inner.k {
+                int{ negative, value } => {
+                    if negative { folded = false } else { inner.k = syntax::ExprKind::int{ negative = true, value } }
+                }
+                float{ negative, value } => {
+                    if negative { folded = false } else { inner.k = syntax::ExprKind::float{ negative = true, value } }
+                }
+                else => { folded = false }
+            }
+            if folded {
+                inner.span = span_from{ p, start }
+                inner.at = inner.span.start
+                return inner
+            }
+            let e = box{ &p, value = inner }
+            return expr_from{ &p, start, k = syntax::ExprKind::neg{ e } }
+        }
+        if k == tok::Kind::kw_not {
+            skip{ &p }
+            let e = box{ &p, value = prefix{ &p } }
+            return expr_from{ &p, start, k = syntax::ExprKind::lnot{ e } }
+        }
+        return postfix{ &p }
+    }
+
+    // An expression from `start` to here, at its start.
+    fn expr_from { mut p: Parser, start: usize, k: syntax::ExprKind } -> syntax::Expr {
+        return syntax::Expr{ id = new_id{ &p }, span = span_from{ p, start }, at = start_of{ p, start }, k }
+    }
+
+    fn postfix { mut p: Parser } -> syntax::Expr {
+        let start = p.i
+        let mut e = primary{ &p }
+        match e.k {
+            ifx | matchx => { return e }           // `if` and `match` expressions end at their `}`
+            path{ segs } => { e = path_tail{ &p, start, e, segs } }
+            else => {}
+        }
+        while true {
+            let t = p.toks[p.i]
+            let k = kind{ p, ahead = 0 }
+            if k == tok::Kind::dot {
+                skip{ &p }
+                let base = box{ &p, value = e }
+                if accept{ &p, k = tok::Kind::star } {
+                    e = at_op{ &p, start, op = t, k = syntax::ExprKind::deref{ base } }
+                } else {
+                    let name = ident{ &p }
+                    e = at_op{ &p, start, op = t, k = syntax::ExprKind::field{ base, name } }
+                }
+            } else if k == tok::Kind::lbracket and not t.nl {
+                skip{ &p }
+                let base = box{ &p, value = e }
+                if accept{ &p, k = tok::Kind::dots } {
+                    let hi = range_hi{ &p }
+                    e = at_op{ &p, start, op = t, k = syntax::ExprKind::range{ base, lo = null, hi } }
+                } else {
+                    let lo = box{ &p, value = expr{ &p } }
+                    if accept{ &p, k = tok::Kind::dots } {
+                        let hi = range_hi{ &p }
+                        e = at_op{ &p, start, op = t, k = syntax::ExprKind::range{ base, lo, hi } }
+                    } else {
+                        expect{ &p, k = tok::Kind::rbracket }
+                        e = at_op{ &p, start, op = t, k = syntax::ExprKind::index{ base, i = lo } }
+                    }
+                }
+            } else if k == tok::Kind::lbrace and not t.nl {
+                if p.in_cond and not brace_is_call{ p } { return e }
+                e = braced{ &p, start, callee = e }
+            } else {
+                return e
+            }
+        }
+        return e
+    }
+
+    // After `lo..`: the end of a range, if any, and its `]`.
+    fn range_hi { mut p: Parser } -> ?*syntax::Expr {
+        let mut hi: ?*syntax::Expr = null
+        if not is{ p, k = tok::Kind::rbracket } { hi = box{ &p, value = expr{ &p } } }
+        expect{ &p, k = tok::Kind::rbracket }
+        return hi
+    }
+
+    // A postfix expression from `start` to here, at its operator.
+    fn at_op { mut p: Parser, start: usize, op: tok::Token, k: syntax::ExprKind } -> syntax::Expr {
+        return syntax::Expr{ id = new_id{ &p }, span = span_from{ p, start }, at = op.span.start, k }
+    }
+
+    // The rest of a path: `::name` and generic arguments `(T, ...)` on the same line.
+    fn path_tail { mut p: Parser, start: usize, e: syntax::Expr, segs: []syntax::Seg } -> syntax::Expr {
+        if not is{ p, k = tok::Kind::colons } and not (is{ p, k = tok::Kind::lparen } and not nl{ p }) { return e }
+        let mut xs = list::new(syntax::Seg){ realloc = arena::alloc }
+        let mut i: usize = 0
+        while i < segs.len {
+            add{ &p, xs = &xs, item = segs[i] }
+            i = i + 1
+        }
+        while true {
+            if accept{ &p, k = tok::Kind::colons } {
+                add{ &p, xs = &xs, item = syntax::Seg{ name = ident{ &p }, targs = null } }
+            } else if is{ p, k = tok::Kind::lparen } and not nl{ p } and xs.items[xs.len - 1].targs == null {
+                let targs = type_list{ &p }
+                xs.items[xs.len - 1].targs = targs
+            } else {
+                break
+            }
+        }
+        return syntax::Expr{ id = e.id, span = span_from{ p, start }, at = e.at, k = syntax::ExprKind::path{ segs = list::items{ list = xs } } }
+    }
+
+    fn braced { mut p: Parser, start: usize, callee: syntax::Expr } -> syntax::Expr {
+        let t = take{ &p }
+        let c = box{ &p, value = callee }
+        let mut items = list::new(syntax::Item){ realloc = arena::alloc }
+        let mut forward = false
+        let mut bind = false
+        while more{ p, close = tok::Kind::rbrace } {
+            let it = p.toks[p.i]
+            if forward {
+                fail{ &p, msg = "'..' must be the last item" }
+                break
+            }
+            if bind {
+                fail{ &p, msg = "'_' must be the last item" }
+                break
+            }
+            let s = p.i
+            if accept{ &p, k = tok::Kind::dots } {
+                forward = true
+            } else if it.kind == tok::Kind::ident and slice::eq_bytes{ a = text_of{ p, t = it }, b = "_" } {
+                skip{ &p }
+                bind = true
+            } else if accept{ &p, k = tok::Kind::amp } {
+                let name = ident{ &p }
+                let path = name_path{ &p, name = again{ &p, n = name } }
+                let value = syntax::Expr{
+                    id = new_id{ &p }, span = span_from{ p, start = s }, at = it.span.start,
+                    k = syntax::ExprKind::addr{ e = box{ &p, value = path } },
+                }
+                add{ &p, xs = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = true } }
+            } else {
+                let name = ident{ &p }
+                if accept{ &p, k = tok::Kind::assign } {
+                    let value = expr{ &p }
+                    add{ &p, xs = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = false } }
+                } else {
+                    let value = name_path{ &p, name = again{ &p, n = name } }
+                    add{ &p, xs = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = true } }
+                }
+            }
+            if not accept{ &p, k = tok::Kind::comma } { break }
+        }
+        expect{ &p, k = tok::Kind::rbrace }
+        let k = syntax::ExprKind::braced{ callee = c, items = list::items{ list = items }, forward, bind }
+        return syntax::Expr{ id = new_id{ &p }, span = span_from{ p, start }, at = t.span.start, k }
+    }
+
+    // The same name as another node: a pun's item name and its value are two uses of it.
+    fn again { mut p: Parser, n: syntax::Name } -> syntax::Name {
+        return syntax::Name{ id = new_id{ &p }, span = n.span, text = n.text }
+    }
+
+    // A path of one name, where the name is.
+    fn name_path { mut p: Parser, name: syntax::Name } -> syntax::Expr {
+        let mut segs = list::new(syntax::Seg){ realloc = arena::alloc }
+        add{ &p, xs = &segs, item = syntax::Seg{ name, targs = null } }
+        let k = syntax::ExprKind::path{ segs = list::items{ list = segs } }
+        return syntax::Expr{ id = new_id{ &p }, span = name.span, at = name.span.start, k }
+    }
+
+    fn primary { mut p: Parser } -> syntax::Expr {
+        let start = p.i
+        let t = p.toks[p.i]
+        let k = kind{ p, ahead = 0 }
+        let mut e = syntax::ExprKind::error
+        if k == tok::Kind::int or k == tok::Kind::char {
+            skip{ &p }
+            e = syntax::ExprKind::int{ negative = false, value = lexer::int_value{ text = text_of{ p, t } } }
+        } else if k == tok::Kind::float {
+            skip{ &p }
+            e = syntax::ExprKind::float{ negative = false, value = lexer::float_value{ heap = p.heap, text = text_of{ p, t } } }
+        } else if k == tok::Kind::str {
+            skip{ &p }
+            e = syntax::ExprKind::str{ bytes = lexer::str_value{ heap = p.heap, text = text_of{ p, t } } }
+        } else if k == tok::Kind::ident {
+            return name_path{ &p, name = ident{ &p } }
+        } else if k == tok::Kind::kw_true or k == tok::Kind::kw_false {
+            skip{ &p }
+            e = syntax::ExprKind::boolean{ value = k == tok::Kind::kw_true }
+        } else if k == tok::Kind::kw_null {
+            skip{ &p }
+            e = syntax::ExprKind::nil
+        } else if k == tok::Kind::kw_if {
+            return if_expr{ &p }
+        } else if k == tok::Kind::kw_match {
+            let id = new_id{ &p }
+            let x = match_node{ &p }
+            return syntax::Expr{ id, span = span_from{ p, start }, at = t.span.start, k = syntax::ExprKind::matchx{ x } }
+        } else if k == tok::Kind::builtin {
+            return builtin{ &p }
+        } else if k == tok::Kind::lparen {
+            skip{ &p }
+            let mut inner = expr{ &p }
+            expect{ &p, k = tok::Kind::rparen }
+            inner.span = span_from{ p, start }
+            return inner
+        } else if k == tok::Kind::lbracket {
+            skip{ &p }
+            let mut elems = list::new(syntax::Expr){ realloc = arena::alloc }
+            if not accept{ &p, k = tok::Kind::rbracket } {
+                let first = expr{ &p }
+                if accept{ &p, k = tok::Kind::semi } {
+                    let elem = box{ &p, value = first }
+                    let count = box{ &p, value = expr{ &p } }
+                    expect{ &p, k = tok::Kind::rbracket }
+                    return expr_from{ &p, start, k = syntax::ExprKind::repeat{ elem, count } }
+                }
+                add{ &p, xs = &elems, item = first }
+                while accept{ &p, k = tok::Kind::comma } {
+                    if is{ p, k = tok::Kind::rbracket } { break }
+                    add{ &p, xs = &elems, item = expr{ &p } }
+                }
+                expect{ &p, k = tok::Kind::rbracket }
+            }
+            e = syntax::ExprKind::array{ elems = list::items{ list = elems } }
+        } else if k == tok::Kind::error {
+            skip{ &p }
+        } else {
+            expected{ &p, what = "an expression" }
+        }
+        return expr_from{ &p, start, k = e }
+    }
+
+    // Every builtin's signature (spec §13). Type arguments come first, so the name alone says how
+    // to parse each argument. Value arguments from lo to hi.
+    struct Builtin { name: []u8, types: u32, lo: u32, hi: u32, usage: utf8::String }
+
+    const BUILTINS: [11]Builtin = [
+        Builtin{ name = "size_of",  types = 1, lo = 0, hi = 0, usage = "@size_of(T)" },
+        Builtin{ name = "align_of", types = 1, lo = 0, hi = 0, usage = "@align_of(T)" },
+        Builtin{ name = "as",       types = 1, lo = 1, hi = 1, usage = "@as(T, x)" },
+        Builtin{ name = "trunc",    types = 1, lo = 1, hi = 1, usage = "@trunc(T, x)" },
+        Builtin{ name = "cast",     types = 1, lo = 1, hi = 1, usage = "@cast(*U, q)" },
+        Builtin{ name = "addr",     types = 0, lo = 1, hi = 1, usage = "@addr(q)" },
+        Builtin{ name = "slice",    types = 0, lo = 2, hi = 2, usage = "@slice(p, n)" },
+        Builtin{ name = "wrap_add", types = 0, lo = 2, hi = 2, usage = "@wrap_add(a, b)" },
+        Builtin{ name = "wrap_sub", types = 0, lo = 2, hi = 2, usage = "@wrap_sub(a, b)" },
+        Builtin{ name = "wrap_mul", types = 0, lo = 2, hi = 2, usage = "@wrap_mul(a, b)" },
+        Builtin{ name = "panic",    types = 0, lo = 0, hi = 1, usage = "@panic() or @panic(\"reason\")" },
+    ]
+
+    fn builtin { mut p: Parser } -> syntax::Expr {
+        let start = p.i
+        let t = take{ &p }
+        let name = syntax::Name{
+            id = new_id{ &p }, span = source::Span{ file = p.file, start = t.span.start + 1, end = t.span.end },
+            text = p.text[t.span.start + 1..t.span.end],
+        }
+        let mut n: usize = 0
+        while n < BUILTINS.len and not slice::eq_bytes{ a = BUILTINS[n].name, b = name.text } { n = n + 1 }
+        if n == BUILTINS.len {
+            let mut b = utf8::builder{ realloc = arena::alloc }
+            put{ &b, heap = p.heap, s = "unknown builtin `@" }
+            put{ &b, heap = p.heap, s = utf8::String{ bytes = name.text } }
+            put{ &b, heap = p.heap, s = "`" }
+            fail_at{ &p, msg = utf8::view{ b }, t }
+            return expr_from{ &p, start, k = syntax::ExprKind::error }
+        }
+        let sig = BUILTINS[n]
+        if not is{ p, k = tok::Kind::lparen } {
+            let mut b = utf8::builder{ realloc = arena::alloc }
+            put{ &b, heap = p.heap, s = "expected '(' after @" }
+            put{ &b, heap = p.heap, s = utf8::String{ bytes = name.text } }
+            put{ &b, heap = p.heap, s = ": " }
+            put{ &b, heap = p.heap, s = sig.usage }
+            fail{ &p, msg = utf8::view{ b } }
+            return expr_from{ &p, start, k = syntax::ExprKind::error }
+        }
+        skip{ &p }
+        let mut targ: ?*syntax::TypeExpr = null
+        let mut args = list::new(syntax::Expr){ realloc = arena::alloc }
+        let mut count: u32 = 0
+        while count < sig.types + sig.hi and more{ p, close = tok::Kind::rparen } {
+            if count < sig.types {
+                targ = box{ &p, value = type_expr{ &p } }
+            } else {
+                add{ &p, xs = &args, item = expr{ &p } }
+            }
+            count = count + 1
+            if not accept{ &p, k = tok::Kind::comma } { break }
+        }
+        if count < sig.types + sig.lo or not is{ p, k = tok::Kind::rparen } {
+            let mut b = utf8::builder{ realloc = arena::alloc }
+            put{ &b, heap = p.heap, s = "wrong number of arguments: " }
+            put{ &b, heap = p.heap, s = sig.usage }
+            fail{ &p, msg = utf8::view{ b } }
+        }
+        skip{ &p }
+        let k = syntax::ExprKind::builtin{ name, targ, args = list::items{ list = args } }
+        return expr_from{ &p, start, k }
+    }
+
+    fn error_expr { mut p: Parser, start: usize } -> syntax::Expr {
+        return expr_from{ &p, start, k = syntax::ExprKind::error }
+    }
+
+    // ---- recovery
+
+    // After an error in the statement, match arm or declaration that began at token `start`:
+    // skips to where the next one can begin, and clears `bad`. It counts brackets from `start`,
+    // and stops at the first token after the error that is
+    //
+    // - a declaration keyword that begins a line, whatever the count (a `}` may be missing),
+    // - for a statement or arm: the start of a line or a `;` with every bracket closed, or a `}`
+    //   that closes the enclosing block,
+    // - for a declaration in a namespace: a `}` that begins a line and closes the namespace,
+    // - or the end of the file.
+    fn sync { mut p: Parser, start: usize, in_block: bool, top: bool } {
+        let mut depth: u32 = 0
+        let mut k = start
+        while p.toks[k].kind != tok::Kind::eof {
+            let t = p.toks[k]
+            if k >= p.i {
+                if t.nl and is_decl_keyword{ k = t.kind } and (k > start or in_block) { break }
+                if k > start and depth == 0 {
+                    if in_block and (t.nl or t.kind == tok::Kind::semi or t.kind == tok::Kind::rbrace) { break }
+                    if not in_block and not top and t.nl and t.kind == tok::Kind::rbrace { break }
+                }
+            }
+            if t.kind == tok::Kind::lbrace or t.kind == tok::Kind::lparen or t.kind == tok::Kind::lbracket {
+                depth = depth + 1
+            } else if (t.kind == tok::Kind::rbrace or t.kind == tok::Kind::rparen or t.kind == tok::Kind::rbracket) and depth > 0 {
+                depth = depth - 1
+            }
+            k = k + 1
+        }
+        p.i = k
+        p.bad = false
+    }
+
+    fn is_decl_keyword { k: tok::Kind } -> bool {
+        return k == tok::Kind::kw_fn or k == tok::Kind::kw_struct or k == tok::Kind::kw_union
+               or k == tok::Kind::kw_enum or k == tok::Kind::kw_type or k == tok::Kind::kw_const
+               or k == tok::Kind::kw_namespace
+    }
+
+    // At a declaration keyword that begins a line: a block or match that reaches one after an
+    // error ends there, since its `}` is probably missing.
+    fn at_decl { p: Parser } -> bool {
+        let t = p.toks[p.i]
+        return t.nl and is_decl_keyword{ k = t.kind }
+    }
+
+    // Reports msg at the current token, unless recovering.
+    fn fail { mut p: Parser, msg: utf8::String } {
+        fail_at{ &p, msg, t = p.toks[p.i] }
+    }
+
+    // Reports msg at t, unless recovering, and starts recovering.
+    fn fail_at { mut p: Parser, msg: utf8::String, t: tok::Token } {
+        if p.bad { return }
+        p.bad = true
+        if p.errored and p.i <= p.err_at { return }      // nothing consumed since the last error
+        p.errored = true
+        p.err_at = p.i
+        if t.kind == tok::Kind::error { return }          // the lexer has reported it
+        diag::error{ diags = p.diags, heap = p.heap, span = t.span, msg }
+    }
+
+    // "expected WHAT, found TOKEN"
+    fn expected { mut p: Parser, what: utf8::String } {
+        if p.bad { return }
+        let mut b = utf8::builder{ realloc = arena::alloc }
+        put{ &b, heap = p.heap, s = "expected " }
+        put{ &b, heap = p.heap, s = what }
+        put{ &b, heap = p.heap, s = ", found " }
+        expected_msg{ &p, msg = utf8::view{ b } }
+    }
+
+    // msg, then the current token as ctxi describes it.
+    fn expected_msg { mut p: Parser, msg: utf8::String } {
+        if p.bad { return }
+        let t = p.toks[p.i]
+        let mut b = utf8::builder{ realloc = arena::alloc }
+        put{ &b, heap = p.heap, s = msg }
+        if t.kind == tok::Kind::eof {
+            put{ &b, heap = p.heap, s = "end of file" }
+        } else {
+            put{ &b, heap = p.heap, s = "'" }
+            put{ &b, heap = p.heap, s = utf8::String{ bytes = text_of{ p, t } } }
+            put{ &b, heap = p.heap, s = "'" }
+        }
+        fail{ &p, msg = utf8::view{ b } }
+    }
+
+    fn put { mut b: utf8::Builder(arena::Arena), mut heap: arena::Arena, s: utf8::String } {
+        if not utf8::push{ &b, &heap, s } { @panic("parser: out of memory") }
+    }
+
+    // ---- tokens
+
+    // The kind of the token `ahead` of the current one. While recovering, every token is eof.
+    fn kind { p: Parser, ahead: usize } -> tok::Kind {
+        if p.bad { return tok::Kind::eof }
+        let k = p.i + ahead
+        if k >= p.toks.len { return tok::Kind::eof }
+        return p.toks[k].kind
+    }
+
+    fn is { p: Parser, k: tok::Kind } -> bool {
+        return kind{ p, ahead = 0 } == k
+    }
+
+    // Whether a newline comes before the current token, as it does before the end of the file.
+    fn nl { p: Parser } -> bool {
+        return p.bad or p.toks[p.i].nl
+    }
+
+    // Whether a list closed by `close` goes on: at the end of the file it does, and the next
+    // item reports it.
+    fn more { p: Parser, close: tok::Kind } -> bool {
+        return not p.bad and not is{ p, k = close }
+    }
+
+    // Consumes the current token, unless it is the end of the file or the parser is recovering.
+    fn skip { mut p: Parser } {
+        if kind{ p, ahead = 0 } != tok::Kind::eof { p.i = p.i + 1 }
+    }
+
+    fn take { mut p: Parser } -> tok::Token {
+        let t = p.toks[p.i]
+        skip{ &p }
+        return t
+    }
+
+    fn accept { mut p: Parser, k: tok::Kind } -> bool {
+        if not is{ p, k } { return false }
+        skip{ &p }
+        return true
+    }
+
+    fn expect { mut p: Parser, k: tok::Kind } {
+        if accept{ &p, k } or p.bad { return }
+        let mut b = utf8::builder{ realloc = arena::alloc }
+        put{ &b, heap = p.heap, s = "expected '" }
+        put{ &b, heap = p.heap, s = utf8::String{ bytes = kind_text{ k } } }
+        put{ &b, heap = p.heap, s = "', found " }
+        expected_msg{ &p, msg = utf8::view{ b } }
+    }
+
+    // A keyword's or operator's text.
+    fn kind_text { k: tok::Kind } -> []u8 {
+        if tok::is_keyword{ kind = k } { return tok::KEYWORDS[@as(usize, k) - @as(usize, tok::Kind::kw_fn)] }
+        return tok::op_text{ kind = k }
+    }
+
+    fn skip_semis { mut p: Parser } {
+        while accept{ &p, k = tok::Kind::semi } {}
+    }
+
+    fn text_of { p: Parser, t: tok::Token } -> []u8 {
+        return p.text[t.span.start..t.span.end]
+    }
+
+    // A name, or a missing one where the name should have been.
+    fn ident { mut p: Parser } -> syntax::Name {
+        if is{ p, k = tok::Kind::ident } { return keyword_name{ &p } }
+        expected{ &p, what = "a name" }
+        let at = prev_end{ p }
+        return syntax::Name{ id = new_id{ &p }, span = source::Span{ file = p.file, start = at, end = at }, text = p.text[..0] }
+    }
+
+    // The current token as a name: an identifier, or `null` in a pattern.
+    fn keyword_name { mut p: Parser } -> syntax::Name {
+        let t = take{ &p }
+        return syntax::Name{ id = new_id{ &p }, span = t.span, text = text_of{ p, t } }
+    }
+
+    // ---- nodes
+
+    fn new_id { mut p: Parser } -> u32 {
+        let id = p.ids
+        p.ids = p.ids + 1
+        return id
+    }
+
+    // From token `start` to the last token consumed. Zero-width after the last token consumed
+    // if nothing has been since `start`.
+    fn span_from { p: Parser, start: usize } -> source::Span {
+        if p.i <= start {
+            let at = prev_end{ p }
+            return source::Span{ file = p.file, start = at, end = at }
+        }
+        return source::Span{ file = p.file, start = p.toks[start].span.start, end = p.toks[p.i - 1].span.end }
+    }
+
+    // Where a node from token `start` begins: see span_from.
+    fn start_of { p: Parser, start: usize } -> u32 {
+        return span_from{ p, start }.start
+    }
+
+    fn prev_end { p: Parser } -> u32 {
+        if p.i == 0 { return 0 }
+        return p.toks[p.i - 1].span.end
+    }
+
+    // Guards the stack: false, with a diagnostic, if nesting is too deep.
+    fn enter { mut p: Parser } -> bool {
+        if p.depth >= MAX_DEPTH {
+            fail{ &p, msg = "too deeply nested" }
+            return false
+        }
+        p.depth = p.depth + 1
+        return true
+    }
+
+    fn box(T) { mut p: Parser, value: T } -> *T {
+        let some{ value = x } = alloc::new{ realloc = arena::alloc, heap = p.heap, value } else { @panic("parser: out of memory") }
+        return x
+    }
+
+    fn add(T) { mut p: Parser, mut xs: list::List(T, arena::Arena), item: T } {
+        if not list::push{ list = &xs, heap = p.heap, item } { @panic("parser: out of memory") }
+    }
+}

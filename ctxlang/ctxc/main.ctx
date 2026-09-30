@@ -1,25 +1,33 @@
 // ctxc: the ctxlang compiler, written in ctxlang. A directory is one program: this file holds
-// the driver; source.ctx, diag.ctx and lexer.ctx the front end so far; ir.ctx the typed IR,
-// ir_read.ctx and ir_print.ctx its text form; emit_c.ctx the C backend; dump.ctx text dumps for
-// tests.
+// the driver; source.ctx, diag.ctx, lexer.ctx, syntax.ctx and parser.ctx the front end so far;
+// ir.ctx the typed IR, ir_read.ctx and ir_print.ctx its text form; emit_c.ctx the C backend;
+// dump.ctx text dumps for tests.
 //
 //   python -m ctxi ctxc roundtrip FILE.ir      reads IR (from `python -m ctxi PROGRAM --ir`)
 //                                              and prints it back; the output must equal FILE.ir
 //   python -m ctxi ctxc c FILE.ir OUT.c        writes the program as C, for ctxc/rt/ctxrt.c
 //   python -m ctxi ctxc tokens FILE...         prints each file's tokens (dump.ctx), each
 //                                              after a line `file FILE`
+//   python -m ctxi ctxc syntax FILE...         the same for each file's syntax tree
+//   python -m ctxi ctxc recover FILE FROM TO   the recovery test (recover.ctx)
 //
 // tools/ctxc.py runs the whole pipeline: IR, C and the C compiler.
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut to_c = false
     if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "tokens" } {
-        return tokens{ .. }
+        return dumps{ &io, &fs, &mem, args, trees = false }
+    }
+    if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "syntax" } {
+        return dumps{ &io, &fs, &mem, args, trees = true }
+    }
+    if args.len >= 4 and slice::eq_bytes{ a = args[0], b = "recover" } {
+        return recovery{ .. }
     }
     if args.len == 3 and slice::eq_bytes{ a = args[0], b = "c" } {
         to_c = true
     } else if args.len != 2 or not slice::eq_bytes{ a = args[0], b = "roundtrip" } {
-        io::eprintln{ &io, s = "usage: ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens FILE..." }
+        io::eprintln{ &io, s = "usage: ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO" }
         return 2
     }
     let path = args[1]
@@ -61,8 +69,9 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     return 0
 }
 
-// `ctxc tokens FILE...`: lexes each file on its own, in one arena that is reset between files.
-fn tokens { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+// `ctxc tokens FILE...` and `ctxc syntax FILE...`: lexes each file on its own, and parses it for
+// a tree, in one arena that is reset between files.
+fn dumps { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, trees: bool } -> i32 {
     let mut largest: u64 = 0
     let mut i: usize = 1
     while i < args.len {
@@ -92,11 +101,43 @@ fn tokens { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
         _ = utf8::push{ b = &out, &heap, s = "file " }
         _ = utf8::push{ b = &out, &heap, s = utf8::String{ bytes = path } }
         _ = utf8::push{ b = &out, &heap, s = "\n" }
-        dump::tokens{ &out, &heap, text, lexed, diags }
+        if trees {
+            let f = parser::parse{ text, file = 0, tokens = lexed.tokens, &heap, &diags }
+            tree::file{ &out, &heap, text, f, diags }
+        } else {
+            dump::tokens{ &out, &heap, text, lexed, diags }
+        }
         io::write{ &io, to = io::Stream::out, bytes = utf8::view{ b = out }.bytes }
         i = i + 1
     }
     return 0
+}
+
+// `ctxc recover FILE FROM TO [-v]`
+fn recovery { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let path = args[1]
+    let from = utf8::parse_u64{ s = utf8::String{ bytes = args[2] } }
+    let to = utf8::parse_u64{ s = utf8::String{ bytes = args[3] } }
+    if from == null or to == null {
+        io::eprintln{ &io, s = "usage: ctxc recover FILE FROM TO [-v]" }
+        return 2
+    }
+    let ok{ value = size } = fs::size{ &fs, path } else {
+        cannot{ &io, path, what = "cannot read" }
+        return 1
+    }
+    let some{ value = pages } = mem::pages{ &mem, size = 67108864 + @as(usize, size) * 256 } else {
+        io::eprintln{ &io, s = "out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    let ok{ value = text } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } else {
+        cannot{ &io, path, what = "cannot read" }
+        return 1
+    }
+    let verbose = args.len > 4 and slice::eq_bytes{ a = args[4], b = "-v" }
+    let failures = recover::run{ &io, &heap, path, text, from = @as(usize, from), to = @as(usize, to), verbose }
+    return if failures > 0 { 1 } else { 0 }
 }
 
 // "PATH: what"

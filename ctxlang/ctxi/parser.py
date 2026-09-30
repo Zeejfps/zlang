@@ -84,7 +84,7 @@ class Parser:
     def describe(tok):
         if tok.kind == 'eof':
             return 'end of file'
-        return f"'{tok.val}'"
+        return f"'{tok.text}'"
 
     def skip_semis(self):
         while self.accept_op(';'):
@@ -621,8 +621,9 @@ class Parser:
                 self.next()
                 bind = True
             elif self.accept_op('&'):
+                npos = self.peek().pos
                 name = self.ident()
-                items.append(A.Item(name, A.AddrOf(A.Path([A.Seg(name, None, tok.pos)], tok.pos), tok.pos), tok.pos))
+                items.append(A.Item(name, A.AddrOf(A.Path([A.Seg(name, None, npos)], npos), tok.pos), tok.pos))
             else:
                 name = self.ident()
                 if self.accept_op('='):

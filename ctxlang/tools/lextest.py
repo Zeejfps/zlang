@@ -123,9 +123,9 @@ def fuzz(todo, n):
     return out
 
 
-def run_ctxc(paths, interp):
-    """{path: dump} from one ctxc run over paths."""
-    args = ['tokens', *paths]
+def run_ctxc(paths, interp, command='tokens'):
+    """{path: dump} from one `ctxc COMMAND` run over paths."""
+    args = [command, *paths]
     if interp:
         from ctxi.cbackend import ctxc_program
         from ctxi.__main__ import interpret

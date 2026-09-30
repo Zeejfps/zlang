@@ -9,7 +9,7 @@ class CompileError(Exception):
 
 
 class Tok:
-    __slots__ = ('kind', 'val', 'line', 'col', 'nl', 'file', 'width')
+    __slots__ = ('kind', 'val', 'line', 'col', 'nl', 'file', 'width', 'text')
 
     def __init__(self, kind, val, line, col, nl):
         self.kind = kind   # 'id', 'kw', 'int', 'float', 'str', 'char', 'op', 'builtin', 'eof'
@@ -19,6 +19,7 @@ class Tok:
         self.nl = nl       # a newline precedes this token
         self.file = None
         self.width = 0     # in characters; a token never spans lines
+        self.text = ''     # as written in the source
 
     @property
     def pos(self):
@@ -219,6 +220,7 @@ def _lex(src, file, comments):
             else:
                 err(f'unexpected character {show_char(c)}')
         toks[-1].width = i - start
+        toks[-1].text = src[start:i]
         col += i - start
         nl = False
 

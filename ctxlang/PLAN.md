@@ -14,8 +14,8 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 | 3 | First bootstrap: a native backend | done | `aa6a805` |
 | 3a | Language work before the lexer (below) | done | `2056bb4` |
 | 4 | Lexer | done | |
-| 5 | Parser | **next** | |
-| 6 | Checker | | |
+| 5 | Parser | done | |
+| 6 | Checker | **next** | |
 | 7 | Self-hosting fixpoint | | |
 | 7a | Language server | | |
 | 8 | Decide ctxi's role | | |
@@ -26,10 +26,13 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 - The C backend runs a native `ctxc`. `ctxi/cbackend.py` bootstraps it into `build/ctxc` on first
   use (about 20s) and rebuilds it when ctxc, the runtime or std changes. ctxc compiles itself in
   0.2s. `CTX_CTXC=interp` runs the interpreted ctxc instead.
-- `CTX_BACKEND=c python -m unittest discover tests` passes all 300 tests.
-- `tools/ctest.py` passes 151 corpus programs, and skips 20 (below). `tools/ctest.py --same-c`:
-  native and interpreted ctxc write byte-identical C for all 171 programs and for ctxc itself.
-- `tools/lextest.py`: ctxc's token dumps match ctxi's for all 397 files (stage 4).
+- `CTX_BACKEND=c python -m unittest discover tests` passes all 312 tests.
+- `tools/ctest.py` passes 160 corpus programs, and skips 20 (below). `tools/ctest.py --same-c`:
+  native and interpreted ctxc write byte-identical C for all 180 programs and for ctxc itself.
+- `tools/lextest.py`: ctxc's token dumps match ctxi's for all 483 files (stage 4).
+- `tools/parsetest.py`: ctxc's syntax trees match ctxi's for the 392 files that parse, and the
+  first diagnostic matches for the 91 that don't (stage 5). `tools/recover.py`: all 333,900
+  damaged copies of the corpus's files parse and pass its checks.
 - Friction found while writing ctxc is logged in [FRICTION.md](FRICTION.md).
 
 ### Known gaps
@@ -78,16 +81,18 @@ ctxc/                  one multi-file program (every .ctx in the directory)
   main.ctx             driver: args → files → pipeline → out.c
   source.ctx  diag.ctx                    spans and line tables, the diagnostics list
   lexer.ctx  parser.ctx  syntax.ctx       front end (stages 4–5)
+  recover.ctx                             the recovery test's checks (tools/recover.py)
   types.ctx  check_*.ctx                  checker (stage 6)
   ir.ctx  ir_read.ctx  ir_print.ctx       IR, its reader and canonical printer
   emit_c.ctx                              backend (stage 2)
-  dump.ctx                                token (and later syntax-tree) dumps for the diffs
+  dump.ctx                                token and syntax-tree dumps for the diffs
 ctxc/rt/ctxrt.h ctxrt.c                   C runtime: panic, natives, startup
 ctxi/irdump.py                            Python → IR (stage 1)
 ctxi/cbackend.py                          IR → ctxc → cc; bootstraps the native ctxc (stage 3)
 tools/ctxc.py                             driver: compiles a program to an executable
 tools/corpus.py  irtest.py  ctest.py      corpus, IR roundtrip, C backend differential tests
-tools/lextest.py                          token dumps against ctxi's, and lexer fuzzing
+tools/lextest.py  parsetest.py            token and tree dumps against ctxi's, and fuzzing
+tools/recover.py                          the recovery test, in parallel over the corpus
 ```
 
 ## Editor support
@@ -302,18 +307,38 @@ ctxc alone rejects invalid UTF-8, which ctxi can't read at all. An int literal a
 lexer-error cases give the same first diagnostic (new `Lexer` tests put each error in the
 corpus). `--fuzz 20` agrees on 7,940 damaged files. Natively, all 397 files lex and dump in 0.6s.
 
-### 5. Parser (~1,800 ctxlang)
+### 5. Parser — done
 
-Port `ctxi/parser.py` into syntax-tree unions allocated from an arena. Every node gets an id and a
-span, and the tree has `error` variants. It recovers at synchronization points instead of
-returning at the first error ([Editor support](#editor-support)), so `examples/json/parser.ctx`'s
-`let … else` propagation is the wrong model for statements and declarations. It still fits inside
-one expression. Newline sensitivity (§11.3) and the rule for generic application on the same line
-(§9.2) are where the two parsers are most likely to disagree.
+`parser.ctx` ports `ctxi/parser.py` into the tree of `syntax.ctx` (about 1,200 and 140 lines).
+Nodes are structs holding a union of kinds, built as values and boxed into the arena when they
+become children. Every node has a span from its first token to its last, so parentheses count,
+and an expression also has `at`, the position ctxi gives it (the operator of a binary or postfix
+expression). Declarations, statements, expressions, types, blocks and names have ids, numbered
+per file for side tables. A pun `c` is two uses of the name, so its item and its value get
+different ids. Decl, Stmt, Expr and TypeExpr have `error` variants, and a missing name is one
+with empty text and a zero-width span.
 
-*Done when:* syntax-tree dumps match Python across the corpus (the dump prints spans as line and
-column), every syntax-error test's first diagnostic has the same message and position, and the
-recovery test below passes on the parser.
+Recovery ([Editor support](#editor-support)) needs no exceptions. An error sets `bad`, and while
+it is set the parser sees the end of the file, so every loop ends and every parse function
+returns what it has. That unwinds to the nearest statement, match arm or declaration, which skips
+to a synchronization point (`sync`) and goes on. An error is reported only if a token was
+consumed since the last one, and not at an error token, which the lexer has reported. Until its
+first error the parser takes ctxi's path exactly. Nesting deeper than 256 is `too deeply nested`.
+
+`ctxc syntax FILE...` prints tree dumps (`dump.ctx`), which `tools/parsetest.py` compares with
+dumps of ctxi's tree. The dump shows ctxi's positions, not spans, which ctxi doesn't have; the
+recovery test checks those instead. `parsetest.py --fuzz N` damages each file N ways at token
+boundaries and compares again.
+
+ctxi changed so that both parsers give the same messages:
+- `found X` quotes the token as written (`'0x10'`, `'"b"'`, `'@size_of'`). It used to quote the
+  token's value, so a string printed as `'b'b''`.
+- In a pun `&d`, the path `d` is at `d`, not at the `&`.
+
+*Done:* the dumps match for the 392 files of the corpus, `std/` and `ctxc/` that parse, and the
+first diagnostic matches for the 91 that don't (new `Parser` tests put each syntax error in the
+corpus). `--fuzz 20` agrees on 9,160 damaged files. The recovery test passes on all 333,900
+damaged copies. Natively, the 483 files lex and parse in 0.3s.
 
 ### 6. Checker (~5,000 ctxlang, the largest risk)
 
@@ -529,10 +554,12 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
   its first diagnostic is the one ctxi stops at. That first diagnostic is compared with ctxi.
   Later ones are ctxc's own, and ctxc may report more than ctxi.
 - **Recovery** (`tools/recover.py`, from stage 5). Damage every file in the corpus: cut it at each
-  token boundary, and delete or duplicate single tokens. Run the front end on every result. It must
-  not panic, must report at least one diagnostic, must keep under the diagnostic cap, and on a cut
-  must still produce symbols for the declarations before the cut. This is the test that guards
-  editor use.
+  token boundary, and delete or duplicate single tokens. Run the front end on every result, inside
+  ctxc (`ctxc recover`), in parallel chunks. It must not panic, must keep under the diagnostic
+  cap, and must build a well-formed tree: ids used once, and every span inside its parent's. A
+  cut inside a declaration that ends in `}` must report an error, and a cut must still produce
+  symbols for the declarations before it. Other damage can leave valid code, so it needn't report
+  anything. This is the test that guards editor use.
 - **Editor queries** (stage 7a). Fixture files mark positions (`/*^def*/`, `/*^hover*/`) and state
   the expected answer, which covers the semantic model without a client.
 - **Float text.** `f64_digits` must copy Python's `repr` exactly: shortest round-trip digits,

@@ -14,7 +14,9 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
    paths through a pointer or index still need a copy.
 3. **A local shadows a function.** After `let binds = ...`, `binds{...}` resolves to the local and
    fails. Warn, or let calls skip non-function locals. The lexer renamed a local `span` to `s` to
-   stay clear of the function `span`.
+   stay clear of the function `span`. Context fields and match bindings do it too: the parser's
+   `binders` function was renamed `binder_list` because a context field `binders` hid it, and the
+   dumps bind `name = n` in patterns to keep the `name` function visible.
 4. ~~**No shared match arms.** `a | b => { }` would collapse long runs of `x => { true }`.~~
    *Done:* spec §8 Match, rule 3; patterns in an arm may share bindings.
 5. ~~**No labeled break** out of nested loops; flags instead (§16 Q10).~~ *Done:* `name:` labels a
@@ -54,7 +56,8 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
     generic over integer types.
 18. **`fn main { ... }` without a context misparses.** The first braces are always the context,
     so `fn main { let x = 1 }` fails with `expected a name, found 'let'`. Writing tests hit this
-    three times. The error could say that a function needs its context `{}` before the body.
+    three times, and the parser's tests once more. The error could say that a function needs its
+    context `{}` before the body.
 19. **Enum from an index is a chain of compares** (implementation). `@as(Kind, base + i)`, the
     lexer's keyword and operator lookup, checks every variant in turn (62 for `tok::Kind`). An enum
     whose values are contiguous could lower to one range check instead.
@@ -63,3 +66,10 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
     rebuilt all 32 entries, and the lexer copied each table into a local first.~~ *Done:* a const
     of array, struct or union type is an IR item that uses refer to, kept in a static in C, so
     `tok::OPS[i]` reads one entry.
+21. **An inferred slice type is too mutable.** `let mut bs = list::items{ list = xs }` gives `bs`
+    the type `[]mut T`, so a later `bs = f{}` with a `[]T` result is an error. The parser annotates
+    such locals. Inferring the type from every assignment, as literals are (spec §11 Literals),
+    would fix it.
+22. **Building a message takes a line per piece.** `expected ')', found 'x'` is five `utf8::push`
+    calls on a builder, each with the heap. The parser and lexer have a dozen of these. A std
+    function joining a slice of strings, or a builder that holds its heap, would shorten them.

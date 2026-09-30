@@ -1,0 +1,135 @@
+// The syntax tree: what the parser (parser.ctx) makes of one file. It follows ctxi/ast.py, with
+// three additions for an editor:
+//
+// - Every node has a span: from the start of its first token to the end of its last, so an
+//   expression in parentheses includes them. An Expr also has `at`, where ctxi puts its position
+//   and where diagnostics about it point: the operator of a binary or postfix expression, and
+//   otherwise its start. For every other node the position is its span's start.
+// - Decls, statements, expressions, types, blocks and names have ids, numbered from 0 in each
+//   file, so that later phases can keep what they learn in side tables instead of in the tree.
+// - Decl, Stmt, Expr and TypeExpr have `error` variants for what didn't parse, and a Name can be
+//   missing. A node that the parser made up during recovery has a zero-width span where it
+//   recovered.
+//
+// Names and string literals without escapes are views of the source text, and everything else
+// lives in the parser's arena. Nothing in a tree is written after the parser returns it.
+
+namespace syntax {
+    type Span = source::Span
+
+    struct File { decls: []Decl, ids: u32 }        // ids: node ids are 0 to ids - 1
+
+    // A name as written. A missing one has empty text.
+    struct Name { id: u32, span: Span, text: []u8 }
+
+    // ---- declarations
+
+    struct Decl { id: u32, span: Span, k: DeclKind }
+
+    union DeclKind {
+        error,
+        func{ name: Name, tparams: []Name, params: []Param, ret: ?TypeExpr, body: Block },
+        record{ name: Name, tparams: []Name, fields: []Field },          // struct
+        sum{ name: Name, tparams: []Name, variants: []Variant },         // union
+        enumeration{ name: Name, base: TypeExpr, variants: []EnumVariant },
+        alias{ name: Name, tparams: []Name, ty: TypeExpr },               // type
+        constant{ name: Name, ty: TypeExpr, value: Expr },
+        space{ name: Name, decls: []Decl },                               // namespace
+    }
+
+    // A context field, of a function or a function type.
+    struct Param { span: Span, mutable: bool, name: Name, ty: TypeExpr }
+
+    // A struct field or a field of a union variant's payload.
+    struct Field { span: Span, name: Name, ty: TypeExpr }
+
+    // A variant without a payload has null fields, and `v{}` has none.
+    struct Variant { span: Span, name: Name, fields: ?[]Field }
+
+    struct EnumVariant { span: Span, name: Name, value: ?Expr }
+
+    // ---- types
+
+    struct TypeExpr { id: u32, span: Span, k: TypeKind }
+
+    union TypeKind {
+        error,
+        path{ segs: []Seg },
+        ptr{ mutable: bool, elem: *TypeExpr },
+        opt{ elem: *TypeExpr },
+        slice{ mutable: bool, elem: *TypeExpr },
+        array{ n: *Expr, elem: *TypeExpr },
+        func{ bound: bool, params: []Param, ret: ?*TypeExpr },
+    }
+
+    // One step of a path: `name` or `name(T, ...)`. `name()` has empty targs, not null ones.
+    struct Seg { name: Name, targs: ?[]TypeExpr }
+
+    // ---- statements
+
+    struct Block { id: u32, span: Span, stmts: []Stmt }
+
+    struct Stmt { id: u32, span: Span, k: StmtKind }
+
+    union StmtKind {
+        error,
+        local{ mutable: bool, name: Name, ty: ?TypeExpr, init: ?Expr },                // let
+        let_else{ variant: Name, binders: []Binder, init: Expr,
+                  els_variant: ?Name, els_binders: []Binder, els: Block },
+        assign{ place: Expr, value: Expr },
+        eval{ e: Expr },                                // an expression statement
+        discard{ e: Expr },                             // _ = e
+        cond{ x: If },
+        loop{ label: ?Name, c: Expr, body: Block },     // while; the label is outside the span
+        choose{ x: Match },                             // match
+        ret{ value: ?Expr },
+        brk{ label: ?Name },
+        cont{ label: ?Name },
+        deferred{ body: Block },                        // `defer s` has a block of s alone
+    }
+
+    // `else if` is an else block holding the next `if`.
+    struct If { c: *Expr, then: Block, els: ?Block }
+
+    struct Match { scrut: *Expr, arms: []Arm }
+
+    // pats is empty for `else`.
+    struct Arm { span: Span, pats: []Pattern, body: Block }
+
+    // `variant` or `variant{ binders }`, where the variant may be `null`.
+    struct Pattern { span: Span, variant: Name, binders: []Binder }
+
+    // `f`, `&f`, `f = x` or `&f = x`: the local is null unless it is renamed.
+    struct Binder { span: Span, by_ref: bool, field: Name, local: ?Name }
+
+    // ---- expressions
+
+    struct Expr { id: u32, span: Span, at: u32, k: ExprKind }
+
+    union ExprKind {
+        error,
+        int{ negative: bool, value: ?u64 },             // a char too; null if above u64
+        float{ negative: bool, value: f64 },            // negative only after folding `-`
+        str{ bytes: []u8 },
+        boolean{ value: bool },
+        nil,
+        path{ segs: []Seg },
+        field{ base: *Expr, name: Name },               // at the `.`
+        deref{ base: *Expr },                           // at the `.`
+        index{ base: *Expr, i: *Expr },                 // at the `[`
+        range{ base: *Expr, lo: ?*Expr, hi: ?*Expr },   // at the `[`
+        braced{ callee: *Expr, items: []Item, forward: bool, bind: bool },  // at the `{`
+        neg{ e: *Expr },
+        lnot{ e: *Expr },
+        addr{ e: *Expr },
+        binary{ op: tok::Kind, a: *Expr, b: *Expr },    // at the operator; `and`, `or` too
+        array{ elems: []Expr },
+        repeat{ elem: *Expr, count: *Expr },            // [elem; count]
+        builtin{ name: Name, targ: ?*TypeExpr, args: []Expr },   // the name without `@`
+        ifx{ x: If },
+        matchx{ x: Match },
+    }
+
+    // An item in braces. A pun `c` has the value `c`, and `&d` the value `&d`.
+    struct Item { span: Span, name: Name, value: Expr, pun: bool }
+}
