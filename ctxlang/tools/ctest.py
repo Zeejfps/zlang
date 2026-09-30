@@ -1,6 +1,6 @@
 """Differential test of the C backend over the corpus (tools/corpus.py).
 
-    python tools/ctest.py [CORPUS] [-j N] [-k SUBSTRING] [--same-c]
+    python tools/ctest.py [CORPUS] [-j N] [-k SUBSTRING] [--same-c | --ctxc EXE]
 
 Runs every program in the corpus that compiles through ctxc's C backend (ctxi/cbackend.py),
 with its recorded arguments and input, and compares standard output, the exit code and any
@@ -9,13 +9,22 @@ separately.
 
 With --same-c it instead checks the bootstrap: for every program, and for ctxc itself, the
 native ctxc must write the same C, byte for byte, as ctxc running under ctxi.
+
+With --ctxc EXE, ctxi takes no part: EXE compiles each program from source with `ctxc build`,
+its own front end and backend, and the programs that don't compile are tested too. The first
+error ctxc reports must be the one ctxi stopped at, with the same position. tools/fixpoint.py
+leaves the ctxc it builds from ctxc's own source in build/fixpoint.
 """
 
 import argparse
+import functools
+import glob
+import hashlib
 import io
 import json
 import multiprocessing
 import os
+import subprocess
 import sys
 import time
 
@@ -39,7 +48,31 @@ def load_case(d):
     return meta, sources
 
 
-def check(d):
+def ctxc_build(ctxc, d, meta):
+    """Compiles a case with `ctxc build`. Returns (executable, None), or (None, the first line
+    ctxc wrote to stderr) if the program has errors."""
+    from ctxi import cbackend
+    std = sorted(glob.glob(os.path.join(ROOT, 'std', '*.ctx')))
+    paths = [os.path.join(d, local) for _, local in meta['files']]
+    os.makedirs(cbackend.CACHE, exist_ok=True)
+    tmp_c = os.path.join(cbackend.CACHE, f'ctxc-{os.path.basename(d)}-{os.getpid()}.c')
+    r = subprocess.run([ctxc, 'build', tmp_c, *std, '--', *paths], capture_output=True,
+                       env=dict(os.environ, CTX_STACK=str(200 << 20)))
+    if r.returncode == 1 and not os.path.exists(tmp_c):
+        return None, r.stderr.decode('utf-8', 'replace').splitlines()[0]
+    if r.returncode != 0:
+        raise RuntimeError(f'ctxc build exited with {r.returncode}: {r.stderr.decode(errors="replace")[:400]}')
+    with open(tmp_c, 'rb') as f:
+        key = hashlib.sha256(cbackend.tree_hash().encode() + b'\0' + f.read()).hexdigest()[:24]
+    exe = os.path.join(cbackend.CACHE, 'ctxc-' + key + cbackend.EXE)
+    if os.path.exists(exe):
+        os.remove(tmp_c)
+    else:
+        cbackend.link(tmp_c, os.path.join(cbackend.CACHE, 'ctxc-' + key + '.c'), exe, 'program')
+    return exe, None
+
+
+def check(d, ctxc=None):
     """(name, status, detail): status is ok, diverges or fail."""
     from ctxi.__main__ import load_sources
     from ctxi import cbackend
@@ -53,9 +86,15 @@ def check(d):
     out, err = io.BytesIO(), io.BytesIO()
     got = {'kind': 'exit'}
     try:
-        got['code'] = cbackend.run(load_sources(sources), out=out, err=err,
-                                   inp=io.BytesIO(bytes.fromhex(meta['stdin'])), args=meta['args'],
-                                   timeout=60)
+        if ctxc is None:
+            exe = cbackend.build(load_sources(sources))
+        else:
+            exe, error = ctxc_build(ctxc, d, meta)
+            if want['kind'] == 'error' or error is not None:
+                return (name, *compile_error(d, meta, error))
+        got['code'] = cbackend.run_exe(exe, out=out, err=err,
+                                       inp=io.BytesIO(bytes.fromhex(meta['stdin'])), args=meta['args'],
+                                       timeout=60)
     except Panic as e:
         got = {'kind': 'panic', 'msg': e.msg}
     except Exception as e:
@@ -78,6 +117,24 @@ def check(d):
     if want['kind'] == 'panic' and any(m in want['msg'] for m in DIVERGENCES):
         return name, 'diverges', problems[0]
     return name, 'fail', '; '.join(problems)
+
+
+def compile_error(d, meta, error):
+    """(status, detail) for a program ctxi rejected: ctxc's first error must be ctxi's."""
+    want = meta['outcome']
+    if want['kind'] != 'error':
+        return 'fail', f'ctxc rejected it: {error}'
+    if error is None:
+        return 'fail', f"ctxc compiled it, but ctxi reported {want['msg']!r}"
+    where = ''
+    if want.get('pos'):
+        line, col, file = want['pos']
+        local = next((loc for f, loc in meta['files'] if f == file), meta['files'][0][1])
+        where = f'{os.path.join(d, local)}:{line}:{col}'
+    expect = f"{where}: error: {want['msg'].split(chr(10))[0]}"
+    if error == expect or (not where and error.endswith(expect)):
+        return 'ok', ''
+    return 'fail', f'expected {expect!r}, got {error!r}'
 
 
 def same_c(d):
@@ -113,12 +170,13 @@ def main(argv):
     ap.add_argument('-j', type=int, default=max(1, (os.cpu_count() or 2) - 1))
     ap.add_argument('-k', default='')
     ap.add_argument('--same-c', action='store_true')
+    ap.add_argument('--ctxc', help='compile with this ctxc, from source')
     a = ap.parse_args(argv)
     dirs = []
     for name in sorted(os.listdir(a.corpus)):
         d = os.path.join(a.corpus, name)
         meta, _ = load_case(d)
-        if meta['outcome']['kind'] != 'error' and a.k in name:
+        if (meta['outcome']['kind'] != 'error' or a.ctxc) and a.k in name:
             dirs.append(d)
     if a.same_c and a.k in 'ctxc':
         dirs.insert(0, 'ctxc')
@@ -128,7 +186,8 @@ def main(argv):
     print(f'native ctxc: {cbackend.native_ctxc()} ({time.time() - start:.0f}s)', flush=True)
     results = []
     with multiprocessing.Pool(a.j) as pool:
-        for r in pool.imap_unordered(same_c if a.same_c else check, dirs):
+        job = same_c if a.same_c else functools.partial(check, ctxc=a.ctxc and os.path.abspath(a.ctxc))
+        for r in pool.imap_unordered(job, dirs):
             results.append(r)
             if r[1] != 'ok':
                 print(f'{r[0]}: {r[1]}: {r[2]}', flush=True)

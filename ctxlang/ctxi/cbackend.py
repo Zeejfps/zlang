@@ -211,7 +211,12 @@ def run(checker, out=None, err=None, inp=None, stack_size=None, args=(), name='p
         timeout=None):
     """Like ctxi's run_checked, through the C backend. Raises subprocess.TimeoutExpired if the
     program runs longer than timeout seconds."""
-    exe = build(checker, name)
+    return run_exe(build(checker, name), out, err, inp, stack_size, args, name, timeout)
+
+
+def run_exe(exe, out=None, err=None, inp=None, stack_size=None, args=(), name='program',
+            timeout=None):
+    """Runs a built executable as run() does."""
     stdin = b''
     if inp is not None:
         data = inp.read()

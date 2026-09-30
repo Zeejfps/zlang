@@ -16,8 +16,11 @@
 //                                              bodies (dump.ctx, namespace decls)
 //   python -m ctxi ctxc ir STD... -- FILE...   checks the program and prints its IR, or its
 //                                              diagnostics if it has errors (lower.ctx)
+//   python -m ctxi ctxc build OUT.c STD... -- FILE...
+//                                              checks the program and writes it as C, or
+//                                              prints its errors and exits with 1
 //
-// tools/ctxc.py runs the whole pipeline: IR, C and the C compiler.
+// tools/ctxc.py runs the whole pipeline: ctxc build and the C compiler.
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut to_c = false
@@ -31,15 +34,18 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
         return recovery{ .. }
     }
     if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "decls" } {
-        return declarations{ ir = false, .. }
+        return declarations{ mode = Mode::decls, .. }
     }
     if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "ir" } {
-        return declarations{ ir = true, .. }
+        return declarations{ mode = Mode::ir, .. }
+    }
+    if args.len >= 2 and slice::eq_bytes{ a = args[0], b = "build" } {
+        return declarations{ mode = Mode::build, .. }
     }
     if args.len == 3 and slice::eq_bytes{ a = args[0], b = "c" } {
         to_c = true
     } else if args.len != 2 or not slice::eq_bytes{ a = args[0], b = "roundtrip" } {
-        io::eprintln{ &io, s = "usage: ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO | ctxc decls STD... -- FILE..." }
+        io::eprintln{ &io, s = "usage: ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO | ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE..." }
         return 2
     }
     let path = args[1]
@@ -125,12 +131,17 @@ fn dumps { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, trees: bool } -> i3
     return 0
 }
 
+// What `declarations` does with the checked program.
+enum Mode: u8 { decls, ir, build }
+
 // `ctxc decls STD... -- FILE...`: lexes and parses every file, then checks the program, all in
-// one arena. With ir, `ctxc ir ...`: prints the program's IR instead, if it has no errors.
-fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, ir: bool } -> i32 {
+// one arena. `ctxc ir ...` prints the program's IR instead, if it has no errors, and
+// `ctxc build OUT.c ...` writes it as C.
+fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, mode: Mode } -> i32 {
+    let first: usize = if mode == Mode::build { 2 } else { 1 }
     let mut total: u64 = 0
     let mut split: usize = 0
-    let mut i: usize = 1
+    let mut i = first
     while i < args.len {
         if slice::eq_bytes{ a = args[i], b = "--" } {
             split = i
@@ -144,17 +155,17 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, ir: bool } -
         i = i + 1
     }
     if split == 0 {
-        io::eprintln{ &io, s = "usage: ctxc decls|ir STD... -- FILE..." }
+        io::eprintln{ &io, s = "usage: ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE..." }
         return 2
     }
-    let some{ value = pages } = mem::pages{ &mem, size = 67108864 + @as(usize, total) * 256 } else {
+    let some{ value = pages } = mem::pages{ &mem, size = 67108864 + @as(usize, total) * 512 } else {
         io::eprintln{ &io, s = "out of memory" }
         return 1
     }
     let mut heap = arena::new{ buf = pages }
     let mut diags = diag::new{ &heap }
     let mut files = list::new(check::File){ realloc = arena::alloc, &heap }
-    i = 1
+    i = first
     while i < args.len {
         if i != split {
             let path = args[i]
@@ -167,9 +178,29 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, ir: bool } -
         i = i + 1
     }
     add_file{ &files, &heap, &diags, name = "<natives>", text = check::natives_source{ &heap } }
-    let mut c = check::new{ files = list::items{ list = files }, std_files = split - 1, &heap, &diags }
+    let mut c = check::new{ files = list::items{ list = files }, std_files = split - first, &heap, &diags }
     check::program{ &c }
-    if ir {
+    if mode == Mode::build {
+        if diags.errors == 0 {
+            let out = args[1]
+            let code = emit::program{ heap = &heap, p = lower::program{ &c } }
+            let ok = fs::write_all{ &fs, path = out, bytes = code } else {
+                cannot{ &io, path = out, what = "cannot write" }
+                return 1
+            }
+            return 0
+        }
+        let mut errs = utf8::builder{ realloc = arena::alloc, &heap }
+        let ds = diag::items{ diags }
+        let mut k: usize = 0
+        while k < ds.len {
+            error{ out = &errs, c, d = ds[k] }
+            k = k + 1
+        }
+        io::write{ &io, to = io::Stream::err, bytes = utf8::view{ b = errs }.bytes }
+        return 1
+    }
+    if mode == Mode::ir {
         if diags.errors == 0 {
             let p = lower::program{ &c }
             let mut o = ir_print::out{ heap = &heap, types = p.types }
@@ -191,6 +222,21 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, ir: bool } -
     decls::file{ &out, &c }
     io::write{ &io, to = io::Stream::out, bytes = utf8::view{ b = out }.bytes }
     return 0
+}
+
+// "PATH:LINE:COL: error: MESSAGE", as ctxi prints a compile error. An error about the whole
+// program, such as a missing `main`, is at the start of its first file.
+fn error { mut out: utf8::Builder(arena::Arena), c: check::Checker, d: diag::Diag } {
+    if d.span.file == check::NO_FILE {
+        _ = @fmt(&out, "{}:1:1", check::str{ s = c.files[c.std_files].name })
+    } else {
+        let f = c.files[d.span.file]
+        let p = source::position{ text = f.text, lines = f.lines, offset = d.span.start }
+        _ = @fmt(&out, "{}:{}:{}", check::str{ s = f.name }, p.line, p.col)
+    }
+    _ = utf8::push{ b = &out, s = ": error: " }
+    _ = utf8::push{ b = &out, s = d.msg }
+    _ = utf8::push{ b = &out, s = "\n" }
 }
 
 // Lexes and parses a file into the program's list, where its index is its file id.

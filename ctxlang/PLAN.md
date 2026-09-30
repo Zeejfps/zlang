@@ -15,8 +15,8 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 | 3a | Language work before the lexer (below) | done | `2056bb4` |
 | 4 | Lexer | done | |
 | 5 | Parser | done | |
-| 6 | Checker | **in progress**: sub-steps 1–7 done | |
-| 7 | Self-hosting fixpoint | | |
+| 6 | Checker | done | `7f11079` |
+| 7 | Self-hosting fixpoint | done | |
 | 7a | Language server | | |
 | 8 | Decide ctxi's role | | |
 | 9 | Metaprogramming: build programs, attributes, compile-time consts | future | |
@@ -39,9 +39,20 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
   check ctxi makes. The checker runs without a panic on 15,840 damaged files.
 - `tools/irdiff.py`: ctxc's own front end lowers every corpus program that compiles to IR
   identical to ctxi's, byte for byte: all 257, ctxc itself included (stage 6, sub-step 6).
+- `ctxc build OUT.c STD... -- FILE...` compiles a program from source to C in one process, with
+  ctxc's own front end and backend; `tools/ctxc.py` drives it. `tools/fixpoint.py`: ctxc built by
+  itself, twice, writes byte-identical C, and the same C as from ctxi's IR (stage 7).
+  `tools/ctest.py --ctxc build/fixpoint/ctxc3.exe` compiles all 739 corpus programs from source
+  with that ctxc, with no Python front end: programs that compile behave as under ctxi, and for
+  the 498 that don't, the first error is ctxi's, at the same position.
 - Friction found while writing ctxc is logged in [FRICTION.md](FRICTION.md).
 
 ### Known gaps
+
+- ctxi is still the bootstrap: `cbackend.native_ctxc()` builds the first ctxc from ctxi's IR, and
+  `CTX_BACKEND=c` still takes its IR from ctxi. Stage 8 decides what replaces it.
+- The front end is over its budget: checking and lowering ctxc takes about 215 ms natively,
+  against 100 ms for the check alone. It hasn't been profiled.
 
 - 20 corpus programs read temporary files that the test suite deletes once it's done, so
   `ctest.py` skips them. `tools/corpus.py` should copy those files into the case directory.
@@ -94,12 +105,13 @@ ctxc/rt/ctxrt.h ctxrt.c                   C runtime: panic, natives, startup
 ctxi/irdump.py                            Python → IR (stage 1)
 ctxi/declsdump.py                         Python's checked declarations, for checktest (stage 6)
 ctxi/cbackend.py                          IR → ctxc → cc; bootstraps the native ctxc (stage 3)
-tools/ctxc.py                             driver: compiles a program to an executable
+tools/ctxc.py                             driver: ctxc build, then cc, to an executable
 tools/corpus.py  irtest.py  ctest.py      corpus, IR roundtrip, C backend differential tests
 tools/lextest.py  parsetest.py            token and tree dumps against ctxi's, and fuzzing
 tools/recover.py                          the recovery test, in parallel over the corpus
 tools/checktest.py                        checked-program dumps against ctxi's (stage 6)
 tools/irdiff.py                           ctxc's IR against ctxi's (stage 6)
+tools/fixpoint.py                         ctxc built by itself, twice (stage 7)
 ```
 
 ## Editor support
@@ -522,6 +534,21 @@ The native `ctxc` from stage 3, now with the ctxlang front end, compiles its own
 `ctxc2` compiles the source again to `ctxc3`.
 
 *Done when:* `ctxc2.c` and `ctxc3.c` are byte-identical, and the full suite passes under `ctxc3`.
+
+**Done.** `ctxc build OUT.c STD... -- FILE...` lexes, parses, checks, lowers and emits C in one
+process, and prints every error as ctxi prints its one (`PATH:LINE:COL: error: MESSAGE`; an error
+about the whole program, such as a missing `main`, is at 1:1 of the first file). `tools/ctxc.py`
+now runs it instead of ctxi's front end. `tools/fixpoint.py` builds ctxc1 from ctxi's IR, then
+ctxc2 and ctxc3 with `ctxc build`: `ctxc2.c` and `ctxc3.c` are identical, and both are identical
+to the C that ctxc1 writes from ctxi's IR, since both front ends lower ctxc to the same IR. The
+first try matched. `ctxc build` on ctxc takes about 220 ms, and gcc about 6 s on the 1.8 MB of C
+it writes, so gcc is now most of a build.
+
+The suite under ctxc3 is the corpus, which records every program the tests run:
+`tools/ctest.py --ctxc build/fixpoint/ctxc3.exe` compiles each from source with `ctxc build` alone
+and runs it. All 739 pass (20 skipped, as above), including the 498 compile-error cases, whose
+first error must be ctxi's at the same position. The unit tests themselves still check with ctxi
+first, so `CTX_BACKEND=c` doesn't exercise ctxc's front end.
 
 ### 7a. Language server
 
