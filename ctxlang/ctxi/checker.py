@@ -118,6 +118,17 @@ def fact_meet(a, b):
     return [f for f in a if f[0] in keys]
 
 
+def in_order(vs):
+    """Locals in the order of their declarations, so that a message about one of several names
+    the same one every time (sets of VarInfo iterate in an arbitrary order)."""
+    return sorted(vs, key=lambda v: v.pos[:2])
+
+
+def places_in_order(ps):
+    """Places ordered by their roots' declarations, then their steps."""
+    return sorted(ps, key=lambda p: (p[0].pos[:2], p[1]))
+
+
 def place_str(p):
     s = p[0].name
     for st in p[1]:
@@ -670,19 +681,19 @@ class Checker:
         ds = self.derives(rhs)
         if not ds:
             return
-        name = next(iter(ds)).name
+        name = in_order(ds)[0].name
         if through_deref:
             self.err(f'cannot store the address of local `{name}` through a pointer', pos)
         root = pp[0]
         if root.indirect:
             self.err(f'cannot store the address of local `{name}` in `{root.name}`, which belongs to the caller', pos)
-        for L in ds:
+        for L in in_order(ds):
             if root.depth < L.depth:
                 self.err(f'`{root.name}` outlives local `{L.name}` whose address it would hold', pos)
         root.derived |= ds
 
     def check_bound_scope(self, v, held, pos):
-        for root, _ in held:
+        for root, _ in places_in_order(held):
             if v.depth < root.depth:
                 self.err(f'bound function stored in `{v.name}` holds `{root.name}`, '
                          f'which does not live as long', pos)
@@ -749,11 +760,11 @@ class Checker:
             b.result = e
         if b.result is not None and t is not None:
             e = b.result
-            for L in self.derives(e):
+            for L in in_order(self.derives(e)):
                 if L.depth == self.depth:
                     self.err(f'the value of this branch holds the address of local `{L.name}`, '
                              f'which ends with the branch', e.pos)
-            for root, _ in self.held_of(e):
+            for root, _ in places_in_order(self.held_of(e)):
                 if root.depth == self.depth:
                     self.err(f'the value of this branch holds `{root.name}`, which ends with the branch',
                              e.pos)
@@ -907,7 +918,7 @@ class Checker:
         for back in [self.st] + conts:
             if back.dead:
                 continue
-            for v in back.maybe - s0.maybe:
+            for v in in_order(back.maybe - s0.maybe):
                 if v.tracked and not v.mutable and v.loop_depth <= self.loop_depth:
                     self.err(f'`{v.name}` may be assigned more than once: it is assigned in a loop '
                              f'that can repeat; declare it with `let mut`', s.pos)
@@ -1096,7 +1107,7 @@ class Checker:
         self.block(s.body)
         self.defers -= 1
         self.loops = loops
-        for v in self.st.maybe - s0.maybe:
+        for v in in_order(self.st.maybe - s0.maybe):
             if v.tracked and not v.mutable:
                 self.err(f'cannot assign `{v.name}` in a defer: declare it with `let mut`', s.pos)
         self.st = s0
@@ -1113,7 +1124,7 @@ class Checker:
             s.expr = self.expect(s.expr, self.ret)
             ds = self.derives(s.expr)
             if ds:
-                self.err(f'returned value holds the address of local `{next(iter(ds)).name}`', s.pos)
+                self.err(f'returned value holds the address of local `{in_order(ds)[0].name}`', s.pos)
         self.st.dead = True
 
     def s_ExprStmt(self, s):
@@ -1519,7 +1530,7 @@ class Checker:
                     refs.append((pp, None))
             elif not mut:
                 holder = a.segs[0].name if isinstance(a, A.Path) else name
-                for pp in self.held_of(a):
+                for pp in places_in_order(self.held_of(a)):
                     refs.append((pp, holder))
         for i in range(len(refs)):
             for j in range(i + 1, len(refs)):

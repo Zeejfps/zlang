@@ -7,10 +7,6 @@ dumps of the checked declarations and bodies (ctxi/declsdump.py describes the fo
 ctxi checks a program, ctxc's dump must match byte for byte and ctxc must report nothing. Where
 ctxi stops at an error, ctxc's first diagnostic must have the same file, position and message.
 
-ctxc doesn't make every check of ctxi's yet (PENDING, by PLAN.md's sub-steps of stage 6). Where
-ctxi stops at one of those and ctxc's first diagnostic is a different one, the program is
-skipped, since ctxi never reached what ctxc reports.
-
 ctxc runs natively (ctxi/cbackend.py builds it), one process per program, JOBS at a time.
 """
 
@@ -29,13 +25,6 @@ sys.path.insert(0, ROOT)
 from ctxi.__main__ import std_decls  # noqa: E402
 from ctxi.declsdump import dump_sources  # noqa: E402
 from ctxi.natives import natives  # noqa: E402
-
-# Fragments of ctxi's messages for the checks ctxc doesn't make yet.
-PENDING = (
-    # sub-step 5: exclusivity, escape analysis and bound-function scope
-    'mut references to', 'overlaps a place held by', 'overlaps the match scrutinee',
-    'the address of local', 'outlives local', 'bound function stored in', 'the value of this branch holds',
-)
 
 STD = sorted(os.path.relpath(p, ROOT).replace(os.sep, '/') for p in glob.glob(os.path.join(ROOT, 'std', '*.ctx')))
 
@@ -98,7 +87,7 @@ def main(argv):
     start = time.time()
     with ThreadPoolExecutor(int(opts.get('-j', os.cpu_count() or 4))) as pool:
         got = list(pool.map(lambda c: run_ctxc(exe, c[1]), todo))
-    checked = errors = failed = skipped = 0
+    checked = errors = failed = 0
     for (label, files), (have, crash) in zip(todo, got):
         if have is None:
             failed += 1
@@ -110,11 +99,6 @@ def main(argv):
                 srcs.append((f.read(), name or None))
         want = dump_sources(srcs, pickle.loads(std), nat)
         first = first_error(have)
-        if want.startswith('error ') and first != want and any(p in want for p in PENDING):
-            skipped += 1
-            if verbose:
-                print(f'{label}: skipped: {want.strip()}')
-            continue
         if want.startswith('error '):
             errors += 1
             if first != want:
@@ -127,8 +111,8 @@ def main(argv):
             if have != want:
                 failed += 1
                 print(f'{label}: {diff(want, have)}')
-    print(f'{len(todo) - failed - skipped}/{len(todo)} programs agree ({checked} checked, {errors} errors, '
-          f'{skipped} skipped) in {time.time() - start:.1f}s')
+    print(f'{len(todo) - failed}/{len(todo)} programs agree ({checked} checked, {errors} errors) '
+          f'in {time.time() - start:.1f}s')
     return 1 if failed else 0
 
 

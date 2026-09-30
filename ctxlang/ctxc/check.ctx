@@ -1,8 +1,9 @@
 // The checker, a port of ctxi/checker.py. So far: collecting declarations into namespaces,
 // resolving the types in their signatures (§10, §12), enum values and array lengths, layouts,
 // const initializers, function bodies with their statements, expressions, calls, binds,
-// `match`, `let ... else` and narrowing (§8), and the rules for `main` (§15). Definite
-// initialization and the safety checks come next (PLAN.md stage 6).
+// `match`, `let ... else` and narrowing (§8), definite initialization (§11), the safety checks
+// (exclusivity §3.1, escape analysis §14, bound-function scope §6), and the rules for `main`
+// (§15). Monomorphization and IR come next (PLAN.md stage 6).
 //
 //   let mut c = check::new{ files, std_files, &heap, &diags }
 //   check::program{ &c }
@@ -145,6 +146,10 @@ namespace check {
         local_of:  map::Map(u64, u32, Heap),          // the local a `let` or a binder's field declares
         forwards:  map::Map(u64, []Forward, Heap),    // what `..` supplies to a call
         pieces:    map::Map(u64, []mut Piece, Heap),  // an @fmt's format
+        holds:     map::Map(u64, []Place, Heap),      // the places a bind holds
+        // The sets of Var.derived and Var.held.
+        derived:   list::List([]u32, Heap),
+        held:      list::List([]Place, Heap),
     }
 
     // A local, context field or match binding, or a narrowed view of one (ctxi's VarInfo).
@@ -161,6 +166,12 @@ namespace check {
         depth:      u32,
         loop_depth: u32,
         at:         source::Span,
+        // For the safety checks: the locals whose addresses its value may hold (§14) and the
+        // places a `&fn` in it holds (§3.1), as indexes into Checker.derived and .held. As in
+        // ctxi, a narrowed view shares its local's set, the bindings of a pattern share one,
+        // and a set grows in place.
+        derived:    u32,
+        held:       u32,
     }
 
     // What a scope holds: a local by name, or the narrowed type of a path of struct fields
@@ -186,7 +197,7 @@ namespace check {
 
     // A field that `..` supplies: the local of the same name, as `&name` for a `mut` field. ty is
     // the local's type, arg the argument's.
-    struct Forward { name: []u8, mutable: bool, ty: Id, arg: Id, conv: ?Conv }
+    struct Forward { name: []u8, var: u32, mutable: bool, ty: Id, arg: Id, conv: ?Conv }
 
     // A piece of an @fmt format: text, or a hole, `{` then an optional `0` and width, then `x`,
     // `c` or neither (conv 0). push names the utf8 function it becomes, or is `call` for a
@@ -295,6 +306,9 @@ namespace check {
             local_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             forwards = map::new(u64, []Forward){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             pieces = map::new(u64, []mut Piece){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            holds = map::new(u64, []Place){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            derived = list::new([]u32){ realloc = arena::alloc, &heap },
+            held = list::new([]Place){ realloc = arena::alloc, &heap },
         }
         _ = space{ &c, name = "", parent = NONE }
         _ = space{ &c, name = "", parent = UNIVERSE }
@@ -1553,6 +1567,8 @@ namespace check {
         let item = Var{
             name, ty, kind, mutable, indirect = false, tracked = false, narrow_of = NONE,
             depth = c.depth, loop_depth = c.loop_depth, at,
+            derived = new_derived{ &c, xs = slice::empty(u32){} },
+            held = new_held{ &c, xs = slice::empty(Place){} },
         }
         if not list::push{ list = &c.vars, item } { @panic("check: out of memory") }
         return v
@@ -1804,7 +1820,8 @@ namespace check {
     // A tracked local that `since` doesn't have as maybe assigned but `now` does, and that may
     // be assigned only once: declared with `let`, outside loops deeper than max_loop. NONE if
     // there is none.
-    fn assigned_since { c: Checker, now: []u32, since: []u32, max_loop: u32 } -> u32 {
+    fn assigned_since { c: Checker, vars: []u32, since: []u32, max_loop: u32 } -> u32 {
+        let now = vars_in_order{ c, xs = vars }
         let mut i: usize = 0
         while i < now.len {
             let x = get_var{ c, v = now[i] }
@@ -1858,7 +1875,7 @@ namespace check {
                 block{ &c, b = body }
                 c.defers = c.defers - 1
                 c.loop_base = base
-                let v = assigned_since{ c, now = c.maybe, since = s0.maybe, max_loop = 4294967295 }
+                let v = assigned_since{ c, vars = c.maybe, since = s0.maybe, max_loop = 4294967295 }
                 if v != NONE {
                     let mut b = message{ c }
                     pushed{ ok = @fmt(&b, "cannot assign `{}` in a defer: declare it with `let mut`", str{ s = get_var{ c, v }.name }) }
@@ -1878,9 +1895,21 @@ namespace check {
             t = value_type{ &c, e = init }
         }
         let v = new_var{ &c, name = name.text, ty = t, kind = VarKind::local, mutable, at = s.span }
-        if init == null and not (mutable and has_zero{ &c, t, depth = 0 }) { list::at{ list = c.vars, i = v }.tracked = true }
+        let mut held: []Place = slice::empty(Place){}
+        if init == null {
+            if not (mutable and has_zero{ &c, t, depth = 0 }) { list::at{ list = c.vars, i = v }.tracked = true }
+        } else {
+            let ds = derives{ &c, e = init }
+            held = held_of{ c, e = init }
+            let d = new_derived{ &c, xs = ds }
+            let h = new_held{ &c, xs = held }
+            let at = list::at{ list = c.vars, i = v }
+            at.derived = d
+            at.held = h
+        }
         declare_var{ &c, v }
         put_local{ &c, key = stmt_key{ s }, v }
+        if held.len > 0 { check_bound_scope{ &c, v, places = held, at = s.span } }
     }
 
     fn assign { mut c: Checker, place: syntax::Expr, value: syntax::Expr, at: source::Span } {
@@ -1915,11 +1944,24 @@ namespace check {
                 c.defs = set_add{ c, xs = c.defs, n = v }
                 c.maybe = set_add{ c, xs = c.maybe, n = v }
             }
+            check_store{ &c, root = v, through = false, rhs = value, at }
+            match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = x.ty } } {
+                func{ bound } => {
+                    if bound {
+                        let held = held_of{ c, e = value }
+                        add_held{ &c, v, xs = held }
+                        check_bound_scope{ &c, v, places = held, at }
+                    }
+                }
+                else => {}
+            }
             return
         }
         let lt = expr{ &c, e = place, exp = types::NO_TYPE }
         check_mutable{ &c, e = place }
         expect{ &c, e = value, t = lt }
+        let p = place_path{ c, e = place }
+        check_store{ &c, root = if p == null { NONE } else { p.root }, through = p == null, rhs = value, at }
     }
 
     // A statement of an expression alone: a call or a builtin that returns nothing.
@@ -1966,6 +2008,13 @@ namespace check {
             _ = expr{ &c, e = value, exp = types::NO_TYPE }
         } else {
             expect{ &c, e = value, t = c.ret }
+            let found = derives{ &c, e = value }
+            if found.len > 0 {
+                let ds = vars_in_order{ c, xs = found }
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "returned value holds the address of local `{}`", str{ s = get_var{ c, v = ds[0] }.name }) }
+                flow_error{ &c, at, msg = utf8::view{ b } }
+            }
         }
         c.dead = true
     }
@@ -2048,7 +2097,7 @@ namespace check {
         while i <= conts.len {
             let back = if i == 0 { save{ c } } else { conts[i - 1] }
             if not back.dead {
-                let v = assigned_since{ c, now = back.maybe, since = s0.maybe, max_loop = c.loop_depth }
+                let v = assigned_since{ c, vars = back.maybe, since = s0.maybe, max_loop = c.loop_depth }
                 if v != NONE {
                     let mut b = message{ c }
                     pushed{ ok = @fmt(&b, "`{}` may be assigned more than once: it is assigned in a loop that can repeat; declare it with `let mut`", str{ s = get_var{ c, v }.name }) }
@@ -2160,12 +2209,45 @@ namespace check {
             }
             none => {}
         }
-        if not (has and t != types::NO_TYPE) and not c.dead {
+        if has and t != types::NO_TYPE {
+            branch_escape{ &c, v }
+        } else if not c.dead {
             error{ &c, at = b.span, msg = "this branch must end in a value, or leave with `return`, `break`, `continue` or `@panic()`" }
         }
         close{ &c }
         if c.dead and not entry { t = types::NO_TYPE }
         return Branch{ t, value = v }
+    }
+
+    // A branch's value must not hold the address of a local of the branch, or a bound function
+    // holding one (§11, If and match expressions, rule 8).
+    fn branch_escape { mut c: Checker, v: Value } {
+        let at = match v { expr{ e } => { expr_at{ e } } nested{ s } => { s.span } none => { nowhere{} } }
+        let found = derives_value{ &c, v }
+        let ds = vars_in_order{ c, xs = found }
+        let mut i: usize = 0
+        while i < ds.len {
+            let l = get_var{ c, v = ds[i] }
+            if l.depth == c.depth {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "the value of this branch holds the address of local `{}`, which ends with the branch", str{ s = l.name }) }
+                flow_error{ &c, at, msg = utf8::view{ b } }
+                return
+            }
+            i = i + 1
+        }
+        let hs = places_in_order{ c, xs = held_value{ c, v } }
+        i = 0
+        while i < hs.len {
+            let r = get_var{ c, v = hs[i].root }
+            if r.depth == c.depth {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "the value of this branch holds `{}`, which ends with the branch", str{ s = r.name }) }
+                flow_error{ &c, at, msg = utf8::view{ b } }
+                return
+            }
+            i = i + 1
+        }
     }
 
     // What gives a branch its value, if s is its last statement.
@@ -2379,6 +2461,9 @@ namespace check {
             ok = false
         }
         let vs: []Variant = if ok { variants_of{ &c, t = ut } } else { slice::empty(Variant){} }
+        // With `match &p`, nothing in the arms may reach p but their bindings.
+        let forb: ?Place = match scrut.k { addr{ e = inner } => { place_path{ c, e = inner.* } } else => { null } }
+        let scrut_derived = new_derived{ &c, xs = if through { no_vars{} } else { derives{ &c, e = scrut } } }
         let s0 = save{ c }
         let mut seen = list::new(u32){ realloc = arena::alloc, heap = c.heap }
         let mut has_else = false
@@ -2418,7 +2503,7 @@ namespace check {
                     push{ xs = &seen, n = vi }
                 }
                 let fields: ?[]types::Field = if known { vs[vi].fields } else { null }
-                let bv = pattern_vars{ &c, variant = p.variant.text, known, fields, binders = p.binders, through, ptr_mut, at = p.span }
+                let bv = pattern_vars{ &c, variant = p.variant.text, known, fields, binders = p.binders, through, ptr_mut, derived = scrut_derived, at = p.span }
                 if k == 0 {
                     first = bv
                     first_name = p.variant.text
@@ -2430,6 +2515,7 @@ namespace check {
             restore{ &c, s = s0 }
             add_branch{ xs = &bs, b = branch{ &c, b = arm.body, vars = first, facts = slice::empty(Fact){}, exp, value } }
             add_state{ xs = &results, s = save{ c } }
+            if forb != null { scan_stmts{ &c, sc = Scan{ forb, via = binding_names{ c, vars = first } }, xs = arm.body.stmts } }
             i = i + 1
         }
         if ok and not has_else and seen.len < vs.len {
@@ -2451,6 +2537,19 @@ namespace check {
         restore{ &c, s = merge{ c, xs = list::items{ list = results } } }
         if value { return join{ &c, at, bs = list::items{ list = bs }, exp, may_leave } }
         return types::NO_TYPE
+    }
+
+    // "`a`, `b`", or "the arm bindings" if there are none.
+    fn binding_names { c: Checker, vars: []u32 } -> utf8::String {
+        if vars.len == 0 { return "the arm bindings" }
+        let mut b = message{ c }
+        let mut i: usize = 0
+        while i < vars.len {
+            if i > 0 { pushed{ ok = utf8::push{ &b, s = ", " } } }
+            pushed{ ok = @fmt(&b, "`{}`", str{ s = get_var{ c, v = vars[i] }.name }) }
+            i = i + 1
+        }
+        return utf8::view{ b }
     }
 
     fn has_variants { c: Checker, t: Id } -> bool {
@@ -2481,7 +2580,7 @@ namespace check {
     // The locals a pattern for a variant binds. fields are the variant's payload, if it is
     // known. Through a pointer scrutinee, `&f` binds the field as a place, mutable through a
     // `*mut`.
-    fn pattern_vars { mut c: Checker, variant: []u8, known: bool, fields: ?[]types::Field, binders: []syntax::Binder, through: bool, ptr_mut: bool, at: source::Span } -> []u32 {
+    fn pattern_vars { mut c: Checker, variant: []u8, known: bool, fields: ?[]types::Field, binders: []syntax::Binder, through: bool, ptr_mut: bool, derived: u32, at: source::Span } -> []u32 {
         let mut out = list::new(u32){ realloc = arena::alloc, heap = c.heap }
         if known and binders.len > 0 and fields == null {
             let mut b = message{ c }
@@ -2518,7 +2617,9 @@ namespace check {
             let local = bd.local
             let name = if local == null { field } else { local.text }
             let v = new_var{ &c, name, ty = ft, kind = VarKind::bind, mutable = bd.by_ref and ptr_mut, at = bd.span }
-            list::at{ list = c.vars, i = v }.indirect = bd.by_ref
+            let at_v = list::at{ list = c.vars, i = v }
+            at_v.indirect = bd.by_ref
+            at_v.derived = derived
             put_local{ &c, key = name_key{ n = bd.field }, v }
             push{ xs = &out, n = v }
             i = i + 1
@@ -2628,7 +2729,8 @@ namespace check {
             known = false
         }
         let fields: ?[]types::Field = if known { vs[vi].fields } else { null }
-        let bvars = pattern_vars{ &c, variant = variant.text, known, fields, binders, through = false, ptr_mut = false, at = s.span }
+        let derived = new_derived{ &c, xs = derives{ &c, e = init } }
+        let bvars = pattern_vars{ &c, variant = variant.text, known, fields, binders, through = false, ptr_mut = false, derived, at = s.span }
         let mut evars: []u32 = slice::empty(u32){}
         if els_variant != null {
             let ev = els_variant.text
@@ -2661,7 +2763,7 @@ namespace check {
                 error{ &c, at = els.span, msg = utf8::view{ b } }
             }
             let efields: ?[]types::Field = if eknown { vs[evi].fields } else { null }
-            evars = pattern_vars{ &c, variant = ev, known = eknown, fields = efields, binders = els_binders, through = false, ptr_mut = false, at = els.span }
+            evars = pattern_vars{ &c, variant = ev, known = eknown, fields = efields, binders = els_binders, through = false, ptr_mut = false, derived, at = els.span }
         }
         let s0 = save{ c }
         open{ &c }
@@ -2820,7 +2922,9 @@ namespace check {
             } else {
                 let name = get_var{ c, v = f.var }.name
                 let nv = new_var{ &c, name, ty = f.ty, kind = VarKind::narrow, mutable = false, at = f.at }
-                list::at{ list = c.vars, i = nv }.narrow_of = f.var
+                let at = list::at{ list = c.vars, i = nv }
+                at.narrow_of = f.var
+                at.derived = get_var{ c, v = f.var }.derived
                 if after_if { bind_name{ &c, name, var = nv } } else { declare_var{ &c, v = nv } }
             }
             i = i + 1
@@ -3005,6 +3109,793 @@ namespace check {
             deref{ base } => { return types::prune{ s = c.ty, t = type_of_expr{ c, e = base.* } } }
             else => { return types::ERROR }
         }
+    }
+
+    // ---- safety: escape analysis (§14), bound-function scope (§6) and exclusivity (§3.1)
+
+    fn new_derived { mut c: Checker, xs: []u32 } -> u32 {
+        let i = @as(u32, c.derived.len)
+        if not list::push{ list = &c.derived, item = xs } { @panic("check: out of memory") }
+        return i
+    }
+
+    fn new_held { mut c: Checker, xs: []Place } -> u32 {
+        let i = @as(u32, c.held.len)
+        if not list::push{ list = &c.held, item = xs } { @panic("check: out of memory") }
+        return i
+    }
+
+    fn derived_of { c: Checker, v: u32 } -> []u32 {
+        return list::items{ list = c.derived }[get_var{ c, v }.derived]
+    }
+
+    fn held_by { c: Checker, v: u32 } -> []Place {
+        return list::items{ list = c.held }[get_var{ c, v }.held]
+    }
+
+    fn add_derived { mut c: Checker, v: u32, xs: []u32 } {
+        let i = get_var{ c, v }.derived
+        let now = set_union{ c, a = list::items{ list = c.derived }[i], b = xs }
+        list::items{ list = c.derived }[i] = now
+    }
+
+    fn add_held { mut c: Checker, v: u32, xs: []Place } {
+        let i = get_var{ c, v }.held
+        let now = place_union{ c, a = list::items{ list = c.held }[i], b = xs }
+        list::items{ list = c.held }[i] = now
+    }
+
+    // The places of a, then those of b that a doesn't have.
+    fn place_union { c: Checker, a: []Place, b: []Place } -> []Place {
+        let mut out = list::new(Place){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < a.len + b.len {
+            let p = if i < a.len { a[i] } else { b[i - a.len] }
+            let xs: []Place = list::items{ list = out }
+            let mut have = false
+            let mut k: usize = 0
+            while k < xs.len {
+                if xs[k].root == p.root and same_steps{ a = xs[k].steps, b = p.steps } { have = true }
+                k = k + 1
+            }
+            if not have { add_place{ xs = &out, p } }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    fn add_place { mut xs: list::List(Place, Heap), p: Place } {
+        if not list::push{ list = &xs, item = p } { @panic("check: out of memory") }
+    }
+
+    // Whether a value of type t can hold a pointer: only such values carry where they point.
+    fn contains_ptr { mut c: Checker, t: Id, seen: []u32 } -> bool {
+        if t == types::NO_TYPE { return false }
+        let x = types::prune{ s = c.ty, t }
+        match types::get{ s = c.ty, id = x } {
+            ptr | slice | param => { return true }
+            opt{ elem } => { return contains_ptr{ &c, t = elem, seen } }
+            array{ elem } => { return contains_ptr{ &c, t = elem, seen } }
+            record{ decl } => {
+                if has_id{ xs = seen, n = decl } { return false }
+                let inner = set_add{ c, xs = seen, n = decl }
+                let fs = struct_fields{ &c, t = x }
+                let mut i: usize = 0
+                while i < fs.len {
+                    if contains_ptr{ &c, t = fs[i].ty, seen = inner } { return true }
+                    i = i + 1
+                }
+                return false
+            }
+            sum{ decl } => {
+                if has_id{ xs = seen, n = decl } { return false }
+                let inner = set_add{ c, xs = seen, n = decl }
+                let vs = variants_of{ &c, t = x }
+                let mut i: usize = 0
+                while i < vs.len {
+                    let fs = vs[i].fields
+                    if fs != null {
+                        let mut j: usize = 0
+                        while j < fs.len {
+                            if contains_ptr{ &c, t = fs[j].ty, seen = inner } { return true }
+                            j = j + 1
+                        }
+                    }
+                    i = i + 1
+                }
+                return false
+            }
+            else => { return false }
+        }
+    }
+
+    // The type e's value has after any conversion.
+    fn value_ty { c: Checker, k: u64 } -> Id {
+        let conv = map::get{ m = c.convs, key = k }
+        if conv != null {
+            match conv {
+                some{ to } => { return to }
+                slice{ to } => { return to }
+                addr_slice{ to } => { return to }
+            }
+        }
+        let t = map::get{ m = c.expr_ty, key = k }
+        return if t == null { types::NO_TYPE } else { t }
+    }
+
+    fn no_vars {} -> []u32 {
+        return slice::empty(u32){}
+    }
+
+    // The locals whose addresses e's value may hold (ctxi's derives).
+    fn derives { mut c: Checker, e: syntax::Expr } -> []u32 {
+        if not contains_ptr{ &c, t = value_ty{ c, k = expr_key{ e } }, seen = no_vars{} } { return no_vars{} }
+        return derives_raw{ &c, e }
+    }
+
+    fn derives_raw { mut c: Checker, e: syntax::Expr } -> []u32 {
+        let conv = map::get{ m = c.convs, key = expr_key{ e } }
+        if conv != null {
+            match conv { addr_slice => { return derive_addr{ &c, x = e } } else => {} }
+        }
+        match e.k {
+            addr{ e = x } => { return derive_addr{ &c, x = x.* } }
+            path => {
+                let r = map::get{ m = c.refs, key = expr_key{ e } }
+                if r != null {
+                    match r { local{ var } => { return derived_of{ c, v = var } } else => {} }
+                }
+            }
+            range{ base } => { return derives_raw{ &c, e = base.* } }
+            field{ base } => {
+                if access_is{ c, e, a = Access::sptr } or access_is{ c, e, a = Access::field } { return derives_raw{ &c, e = base.* } }
+            }
+            index{ base } => {
+                if access_is{ c, e, a = Access::arr } { return derives_raw{ &c, e = base.* } }
+            }
+            builtin{ name, args } => {
+                if args.len > 0 and (slice::eq_bytes{ a = name.text, b = "slice" } or slice::eq_bytes{ a = name.text, b = "cast" }) {
+                    return derives_raw{ &c, e = args[0] }
+                }
+            }
+            braced{ items, bind } => {
+                let lit = map::get{ m = c.literal, key = expr_key{ e } }
+                let is_lit = lit != null and lit
+                if bind and not is_lit { return no_vars{} }
+                let fields = callee_fields{ c, e }
+                let mut out = no_vars{}
+                let mut i: usize = 0
+                while i < items.len {
+                    if is_lit or not field_is_mut{ fields, name = items[i].name.text } {
+                        out = set_union{ c, a = out, b = derives{ &c, e = items[i].value } }
+                    }
+                    i = i + 1
+                }
+                let fw = map::get{ m = c.forwards, key = expr_key{ e } }
+                if fw != null {
+                    i = 0
+                    while i < fw.len {
+                        let f = fw[i]
+                        if not f.mutable {
+                            let conv_to = if f.conv == null { f.ty } else { conv_target{ conv = f.conv } }
+                            if contains_ptr{ &c, t = conv_to, seen = no_vars{} } { out = set_union{ c, a = out, b = derived_of{ c, v = f.var } } }
+                        }
+                        i = i + 1
+                    }
+                }
+                return out
+            }
+            binary{ op, a } => {
+                if is_arith{ op } {
+                    match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = a.* } } } {
+                        ptr => { return derives_raw{ &c, e = a.* } }
+                        else => {}
+                    }
+                }
+            }
+            array{ elems } => {
+                let mut out = no_vars{}
+                let mut i: usize = 0
+                while i < elems.len {
+                    out = set_union{ c, a = out, b = derives{ &c, e = elems[i] } }
+                    i = i + 1
+                }
+                return out
+            }
+            repeat{ elem } => { return derives{ &c, e = elem.* } }
+            ifx{ x } => { return derives_if{ &c, x } }
+            matchx{ x } => { return derives_match{ &c, x } }
+            else => {}
+        }
+        return no_vars{}
+    }
+
+    fn conv_target { conv: ?Conv } -> Id {
+        if conv == null { return types::NO_TYPE }
+        match conv {
+            some{ to } => { return to }
+            slice{ to } => { return to }
+            addr_slice{ to } => { return to }
+        }
+    }
+
+    // The operators whose left side may be a pointer, for pointer arithmetic.
+    fn is_arith { op: tok::Kind } -> bool {
+        return op == tok::Kind::plus or op == tok::Kind::minus or op == tok::Kind::star or op == tok::Kind::slash
+            or op == tok::Kind::percent or op == tok::Kind::amp or op == tok::Kind::pipe or op == tok::Kind::caret
+    }
+
+    // The context fields of the function a call calls.
+    fn callee_fields { c: Checker, e: syntax::Expr } -> []types::Field {
+        match e.k {
+            braced{ callee } => {
+                match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = callee.* } } } {
+                    func{ fields } => { return fields }
+                    else => {}
+                }
+            }
+            else => {}
+        }
+        return slice::empty(types::Field){}
+    }
+
+    fn field_is_mut { fields: []types::Field, name: []u8 } -> bool {
+        let f = types::find_field{ fields, name }
+        return f != null and f.mutable
+    }
+
+    // `&x`: a stack pointer to x's root local, unless it points into the caller; through a
+    // deref, whatever the pointer is derived from.
+    fn derive_addr { mut c: Checker, x: syntax::Expr } -> []u32 {
+        let p = place_path{ c, e = x }
+        if p != null {
+            if get_var{ c, v = p.root }.indirect { return no_vars{} }
+            return set_add{ c, xs = no_vars{}, n = p.root }
+        }
+        let mut b = x
+        while access_is{ c, e = b, a = Access::field } or access_is{ c, e = b, a = Access::arr } {
+            match b.k {
+                field{ base } => { b = base.* }
+                index{ base } => { b = base.* }
+                else => { return no_vars{} }
+            }
+        }
+        match b.k {
+            field{ base } => { return derives_raw{ &c, e = base.* } }
+            index{ base } => { return derives_raw{ &c, e = base.* } }
+            deref{ base } => { return derives_raw{ &c, e = base.* } }
+            else => { return no_vars{} }
+        }
+    }
+
+    fn derives_if { mut c: Checker, x: syntax::If } -> []u32 {
+        let mut out = derives_block{ &c, b = x.then }
+        let els = x.els
+        if els != null { out = set_union{ c, a = out, b = derives_block{ &c, b = els } } }
+        return out
+    }
+
+    fn derives_match { mut c: Checker, x: syntax::Match } -> []u32 {
+        let mut out = no_vars{}
+        let mut i: usize = 0
+        while i < x.arms.len {
+            out = set_union{ c, a = out, b = derives_block{ &c, b = x.arms[i].body } }
+            i = i + 1
+        }
+        return out
+    }
+
+    // What the value of a branch of an `if` or `match` expression is derived from.
+    fn derives_block { mut c: Checker, b: syntax::Block } -> []u32 {
+        if b.stmts.len == 0 { return no_vars{} }
+        return derives_value{ &c, v = branch_value{ s = b.stmts[b.stmts.len - 1] } }
+    }
+
+    fn derives_value { mut c: Checker, v: Value } -> []u32 {
+        match v {
+            expr{ e } => { return derives{ &c, e } }
+            nested{ s } => {
+                if not contains_ptr{ &c, t = value_ty{ c, k = stmt_key{ s } }, seen = no_vars{} } { return no_vars{} }
+                match s.k {
+                    cond{ x } => { return derives_if{ &c, x } }
+                    choose{ x } => { return derives_match{ &c, x } }
+                    else => {}
+                }
+            }
+            none => {}
+        }
+        return no_vars{}
+    }
+
+    // The places a `&fn` value holds: a `&fn` local's, a bind's, or those of the branches of an
+    // `if` or `match` expression.
+    fn held_of { c: Checker, e: syntax::Expr } -> []Place {
+        let none: []Place = slice::empty(Place){}
+        if map::get{ m = c.convs, key = expr_key{ e } } != null { return none }
+        match e.k {
+            path => {
+                let r = map::get{ m = c.refs, key = expr_key{ e } }
+                if r != null {
+                    match r { local{ var } => { return held_by{ c, v = var } } else => {} }
+                }
+            }
+            braced{ bind } => {
+                if bind {
+                    let h = map::get{ m = c.holds, key = expr_key{ e } }
+                    if h != null { return h }
+                }
+            }
+            ifx{ x } => {
+                let mut out = held_block{ c, b = x.then }
+                let els = x.els
+                if els != null { out = place_concat{ c, a = out, b = held_block{ c, b = els } } }
+                return out
+            }
+            matchx{ x } => {
+                let mut out = none
+                let mut i: usize = 0
+                while i < x.arms.len {
+                    out = place_concat{ c, a = out, b = held_block{ c, b = x.arms[i].body } }
+                    i = i + 1
+                }
+                return out
+            }
+            else => {}
+        }
+        return none
+    }
+
+    fn held_block { c: Checker, b: syntax::Block } -> []Place {
+        if b.stmts.len == 0 { return slice::empty(Place){} }
+        return held_value{ c, v = branch_value{ s = b.stmts[b.stmts.len - 1] } }
+    }
+
+    fn held_value { c: Checker, v: Value } -> []Place {
+        let none: []Place = slice::empty(Place){}
+        match v {
+            expr{ e } => { return held_of{ c, e } }
+            nested{ s } => {
+                if map::get{ m = c.convs, key = stmt_key{ s } } != null { return none }
+                match s.k {
+                    cond{ x } => {
+                        let mut out = held_block{ c, b = x.then }
+                        let els = x.els
+                        if els != null { out = place_concat{ c, a = out, b = held_block{ c, b = els } } }
+                        return out
+                    }
+                    choose{ x } => {
+                        let mut out = none
+                        let mut i: usize = 0
+                        while i < x.arms.len {
+                            out = place_concat{ c, a = out, b = held_block{ c, b = x.arms[i].body } }
+                            i = i + 1
+                        }
+                        return out
+                    }
+                    else => {}
+                }
+            }
+            none => {}
+        }
+        return none
+    }
+
+    fn place_concat { c: Checker, a: []Place, b: []Place } -> []Place {
+        if b.len == 0 { return a }
+        let mut out = list::new(Place){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < a.len + b.len {
+            add_place{ xs = &out, p = if i < a.len { a[i] } else { b[i - a.len] } }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // Locals in the order of their declarations, so that a message about one of several names
+    // the one ctxi names.
+    fn vars_in_order { c: Checker, xs: []u32 } -> []u32 {
+        let mut out = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < xs.len {
+            push{ xs = &out, n = xs[i] }
+            let ys = list::items{ list = out }
+            let mut k = ys.len - 1
+            while k > 0 and get_var{ c, v = ys[k] }.at.start < get_var{ c, v = ys[k - 1] }.at.start {
+                let t = ys[k]
+                ys[k] = ys[k - 1]
+                ys[k - 1] = t
+                k = k - 1
+            }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // Places ordered by their roots' declarations, then by their steps: a field before an index,
+    // fields by name, a prefix first.
+    fn places_in_order { c: Checker, xs: []Place } -> []Place {
+        let mut out = list::new(Place){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < xs.len {
+            add_place{ xs = &out, p = xs[i] }
+            let ys = list::items{ list = out }
+            let mut k = ys.len - 1
+            while k > 0 and place_less{ c, a = ys[k], b = ys[k - 1] } {
+                let t = ys[k]
+                ys[k] = ys[k - 1]
+                ys[k - 1] = t
+                k = k - 1
+            }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    fn place_less { c: Checker, a: Place, b: Place } -> bool {
+        let ra = get_var{ c, v = a.root }.at.start
+        let rb = get_var{ c, v = b.root }.at.start
+        if ra != rb { return ra < rb }
+        let mut i: usize = 0
+        while i < a.steps.len and i < b.steps.len {
+            let x = a.steps[i]
+            let y = b.steps[i]
+            let xi = slice::eq_bytes{ a = x, b = "[" }
+            let yi = slice::eq_bytes{ a = y, b = "[" }
+            if xi != yi { return yi }
+            if not xi and not slice::eq_bytes{ a = x, b = y } { return bytes_less{ a = x, b = y } }
+            i = i + 1
+        }
+        return a.steps.len < b.steps.len
+    }
+
+    fn bytes_less { a: []u8, b: []u8 } -> bool {
+        let mut i: usize = 0
+        while i < a.len and i < b.len {
+            if a[i] != b[i] { return a[i] < b[i] }
+            i = i + 1
+        }
+        return a.len < b.len
+    }
+
+    // A store of rhs into a place rooted at local root, or through a pointer (through). The
+    // place can't hold the address of a local that ends before it, or that is the caller's.
+    fn check_store { mut c: Checker, root: u32, through: bool, rhs: syntax::Expr, at: source::Span } {
+        let found = derives{ &c, e = rhs }
+        if found.len == 0 { return }
+        let ds = vars_in_order{ c, xs = found }
+        let name = get_var{ c, v = ds[0] }.name
+        if through {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "cannot store the address of local `{}` through a pointer", str{ s = name }) }
+            flow_error{ &c, at, msg = utf8::view{ b } }
+            return
+        }
+        let r = get_var{ c, v = root }
+        if r.indirect {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "cannot store the address of local `{}` in `{}`, which belongs to the caller", str{ s = name }, str{ s = r.name }) }
+            flow_error{ &c, at, msg = utf8::view{ b } }
+            return
+        }
+        let mut i: usize = 0
+        while i < ds.len {
+            let l = get_var{ c, v = ds[i] }
+            if r.depth < l.depth {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`{}` outlives local `{}` whose address it would hold", str{ s = r.name }, str{ s = l.name }) }
+                flow_error{ &c, at, msg = utf8::view{ b } }
+                return
+            }
+            i = i + 1
+        }
+        add_derived{ &c, v = root, xs = ds }
+    }
+
+    // A bound function stored in local v can't hold a place that ends before v does (§6).
+    fn check_bound_scope { mut c: Checker, v: u32, places: []Place, at: source::Span } {
+        let held = places_in_order{ c, xs = places }
+        let x = get_var{ c, v }
+        let mut i: usize = 0
+        while i < held.len {
+            let r = get_var{ c, v = held[i].root }
+            if x.depth < r.depth {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "bound function stored in `{}` holds `{}`, which does not live as long", str{ s = x.name }, str{ s = r.name }) }
+                flow_error{ &c, at, msg = utf8::view{ b } }
+                return
+            }
+            i = i + 1
+        }
+    }
+
+    // A call's mut references, `&p` for a `mut` field (holder empty), and the places held by its
+    // bound-function arguments (holder names the argument), which must not overlap (§3.1).
+    struct HeldRef { p: Place, holder: []u8 }
+
+    fn check_exclusive { mut c: Checker, e: syntax::Expr, items: []syntax::Item, fields: []types::Field } -> []Place {
+        let mut refs = list::new(HeldRef){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < items.len {
+            let it = items[i]
+            let f = types::find_field{ fields, name = it.name.text }
+            if f != null {
+                if f.mutable {
+                    match it.value.k {
+                        addr{ e = x } => {
+                            let p = place_path{ c, e = x.* }
+                            if p != null { add_ref{ xs = &refs, r = HeldRef{ p, holder = "" } } }
+                        }
+                        else => {}
+                    }
+                } else {
+                    let holder = match it.value.k {
+                        path{ segs } => { if map::get{ m = c.convs, key = expr_key{ e = it.value } } == null { segs[0].name.text } else { it.name.text } }
+                        else => { it.name.text }
+                    }
+                    held_refs{ xs = &refs, c, places = held_of{ c, e = it.value }, holder }
+                }
+            }
+            i = i + 1
+        }
+        let fw = map::get{ m = c.forwards, key = expr_key{ e } }
+        if fw != null {
+            i = 0
+            while i < fw.len {
+                let f = fw[i]
+                if f.mutable {
+                    add_ref{ xs = &refs, r = HeldRef{ p = Place{ root = root_var{ c, v = f.var }, steps = slice::empty([]u8){} }, holder = "" } }
+                } else if f.conv == null {
+                    held_refs{ xs = &refs, c, places = held_by{ c, v = f.var }, holder = f.name }
+                }
+                i = i + 1
+            }
+        }
+        let rs = list::items{ list = refs }
+        i = 0
+        while i < rs.len {
+            let mut j = i + 1
+            while j < rs.len {
+                let a = rs[i]
+                let b = rs[j]
+                if overlap{ p = a.p, q = b.p } {
+                    let mut m = message{ c }
+                    if a.holder.len == 0 and b.holder.len == 0 {
+                        pushed{ ok = @fmt(&m, "two mut references to `{}` in one call", place_str{ c, p = a.p }) }
+                    } else {
+                        let holder = if b.holder.len > 0 { b.holder } else { a.holder }
+                        let place = if a.holder.len == 0 { a.p } else { b.p }
+                        pushed{ ok = @fmt(&m, "`{}` overlaps a place held by `{}`", place_str{ c, p = place }, str{ s = holder }) }
+                    }
+                    flow_error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
+                    return places_of{ c, rs }
+                }
+                j = j + 1
+            }
+            i = i + 1
+        }
+        return places_of{ c, rs }
+    }
+
+    fn add_ref { mut xs: list::List(HeldRef, Heap), r: HeldRef } {
+        if not list::push{ list = &xs, item = r } { @panic("check: out of memory") }
+    }
+
+    fn held_refs { mut xs: list::List(HeldRef, Heap), c: Checker, places: []Place, holder: []u8 } {
+        let ps = places_in_order{ c, xs = places }
+        let mut i: usize = 0
+        while i < ps.len {
+            add_ref{ &xs, r = HeldRef{ p = ps[i], holder } }
+            i = i + 1
+        }
+    }
+
+    fn places_of { c: Checker, rs: []HeldRef } -> []Place {
+        let mut out = list::new(Place){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < rs.len {
+            add_place{ xs = &out, p = rs[i].p }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // Two places overlap if one's steps are a prefix of the other's, from the same root. Any two
+    // index steps count as the same.
+    fn overlap { p: Place, q: Place } -> bool {
+        if p.root != q.root { return false }
+        let mut i: usize = 0
+        while i < p.steps.len and i < q.steps.len {
+            if not slice::eq_bytes{ a = p.steps[i], b = q.steps[i] } { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // `a.b[_]`
+    fn place_str { c: Checker, p: Place } -> utf8::String {
+        let mut b = message{ c }
+        let mut ok = utf8::push{ &b, s = str{ s = get_var{ c, v = p.root }.name } }
+        let mut i: usize = 0
+        while i < p.steps.len {
+            if slice::eq_bytes{ a = p.steps[i], b = "[" } {
+                ok = ok and utf8::push{ &b, s = "[_]" }
+            } else {
+                ok = ok and utf8::push{ &b, s = "." } and utf8::push{ &b, s = str{ s = p.steps[i] } }
+            }
+            i = i + 1
+        }
+        pushed{ ok }
+        return utf8::view{ b }
+    }
+
+    // ---- accesses inside the arms of `match &p` (§8, Match, rule 7): none may overlap p except
+    // through the arm's bindings.
+
+    struct Scan { forb: Place, via: utf8::String }
+
+    fn scan_stmts { mut c: Checker, sc: Scan, xs: []syntax::Stmt } {
+        let mut i: usize = 0
+        while i < xs.len {
+            scan_stmt{ &c, sc, s = xs[i] }
+            i = i + 1
+        }
+    }
+
+    fn scan_stmt { mut c: Checker, sc: Scan, s: syntax::Stmt } {
+        match s.k {
+            local{ init } => { if init != null { scan{ &c, sc, e = init } } }
+            let_else{ init, els } => {
+                scan{ &c, sc, e = init }
+                scan_stmts{ &c, sc, xs = els.stmts }
+            }
+            assign{ place, value } => {
+                scan{ &c, sc, e = place }
+                scan{ &c, sc, e = value }
+            }
+            eval{ e } => { scan{ &c, sc, e } }
+            discard{ e } => { scan{ &c, sc, e } }
+            cond{ x } => { scan_if{ &c, sc, x } }
+            loop{ c = cond, body } => {
+                scan{ &c, sc, e = cond }
+                scan_stmts{ &c, sc, xs = body.stmts }
+            }
+            choose{ x } => { scan_match{ &c, sc, x } }
+            ret{ value } => { if value != null { scan{ &c, sc, e = value } } }
+            deferred{ body } => { scan_stmts{ &c, sc, xs = body.stmts } }
+            else => {}
+        }
+    }
+
+    fn scan_if { mut c: Checker, sc: Scan, x: syntax::If } {
+        scan{ &c, sc, e = x.c.* }
+        scan_stmts{ &c, sc, xs = x.then.stmts }
+        let els = x.els
+        if els != null { scan_stmts{ &c, sc, xs = els.stmts } }
+    }
+
+    fn scan_match { mut c: Checker, sc: Scan, x: syntax::Match } {
+        scan{ &c, sc, e = x.scrut.* }
+        let mut i: usize = 0
+        while i < x.arms.len {
+            scan_stmts{ &c, sc, xs = x.arms[i].body.stmts }
+            i = i + 1
+        }
+    }
+
+    fn scan_list { mut c: Checker, sc: Scan, xs: []syntax::Expr } {
+        let mut i: usize = 0
+        while i < xs.len {
+            scan{ &c, sc, e = xs[i] }
+            i = i + 1
+        }
+    }
+
+    fn scan { mut c: Checker, sc: Scan, e: syntax::Expr } {
+        match e.k {
+            path | field | index | deref => {
+                let ap = access_path{ c, e }
+                if ap != null and overlap{ p = ap, q = sc.forb } { forbidden{ &c, sc, at = expr_at{ e } } }
+                let mut n = e
+                while true {
+                    match n.k {
+                        field{ base } => { n = base.* }
+                        deref{ base } => { n = base.* }
+                        index{ base, i } => {
+                            scan{ &c, sc, e = i.* }
+                            n = base.*
+                        }
+                        else => { break }
+                    }
+                }
+                match n.k { path => {} else => { scan{ &c, sc, e = n } } }
+            }
+            braced{ callee, items } => {
+                let mut scan_callee = true
+                match callee.k {
+                    path => {
+                        let r = map::get{ m = c.refs, key = expr_key{ e = callee.* } }
+                        scan_callee = false
+                        if r != null {
+                            match r { local => { scan_callee = true } else => {} }
+                        }
+                    }
+                    else => {}
+                }
+                if scan_callee { scan{ &c, sc, e = callee.* } }
+                let mut i: usize = 0
+                while i < items.len {
+                    scan{ &c, sc, e = items[i].value }
+                    i = i + 1
+                }
+                // What `..` supplies is a use of each local it names.
+                let fw = map::get{ m = c.forwards, key = expr_key{ e } }
+                if fw != null {
+                    i = 0
+                    while i < fw.len {
+                        let p = Place{ root = root_var{ c, v = fw[i].var }, steps = slice::empty([]u8){} }
+                        if overlap{ p, q = sc.forb } { forbidden{ &c, sc, at = expr_at{ e } } }
+                        i = i + 1
+                    }
+                }
+            }
+            neg{ e = x } => { scan{ &c, sc, e = x.* } }
+            lnot{ e = x } => { scan{ &c, sc, e = x.* } }
+            addr{ e = x } => { scan{ &c, sc, e = x.* } }
+            binary{ a, b } => {
+                scan{ &c, sc, e = a.* }
+                scan{ &c, sc, e = b.* }
+            }
+            array{ elems } => { scan_list{ &c, sc, xs = elems } }
+            repeat{ elem } => { scan{ &c, sc, e = elem.* } }
+            builtin{ args } => { scan_list{ &c, sc, xs = args } }
+            range{ base, lo, hi } => {
+                scan{ &c, sc, e = base.* }
+                if lo != null { scan{ &c, sc, e = lo.* } }
+                if hi != null { scan{ &c, sc, e = hi.* } }
+            }
+            ifx{ x } => { scan_if{ &c, sc, x } }
+            matchx{ x } => { scan_match{ &c, sc, x } }
+            else => {}
+        }
+    }
+
+    fn forbidden { mut c: Checker, sc: Scan, at: source::Span } {
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "{} overlaps the match scrutinee; access it only through {}", place_str{ c, p = sc.forb }, sc.via) }
+        flow_error{ &c, at, msg = utf8::view{ b } }
+    }
+
+    // The place an access reads, as far as it is known: through a pointer or slice, the place
+    // of the pointer (ctxi's access_path).
+    fn access_path { c: Checker, e: syntax::Expr } -> ?Place {
+        match e.k {
+            path => {
+                let r = map::get{ m = c.refs, key = expr_key{ e } }
+                if r != null {
+                    match r {
+                        local{ var } => { return Place{ root = root_var{ c, v = var }, steps = slice::empty([]u8){} } }
+                        else => {}
+                    }
+                }
+            }
+            field{ base, name } => {
+                let ap = access_path{ c, e = base.* }
+                if ap != null and access_is{ c, e, a = Access::field } {
+                    return Place{ root = ap.root, steps = add_step{ c, steps = ap.steps, step = name.text } }
+                }
+                return ap
+            }
+            index{ base } => {
+                let ap = access_path{ c, e = base.* }
+                if ap != null and access_is{ c, e, a = Access::arr } {
+                    return Place{ root = ap.root, steps = add_step{ c, steps = ap.steps, step = "[" } }
+                }
+                return ap
+            }
+            deref{ base } => { return access_path{ c, e = base.* } }
+            else => {}
+        }
+        return null
     }
 
     // ---- expressions (ctxi's e_* methods)
@@ -3832,7 +4723,11 @@ namespace check {
             pushed{ ok = @fmt(&m, "call to `{}` is missing ", name) and names{ fields = gone, b = &m } }
             error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
         }
-        if bind { return types::func{ s = &c.ty, fields = gone, ret, bound = true } }
+        let refs = check_exclusive{ &c, e, items, fields }
+        if bind {
+            if not map::put{ m = &c.holds, key = expr_key{ e }, value = refs } { @panic("check: out of memory") }
+            return types::func{ s = &c.ty, fields = gone, ret, bound = true }
+        }
         return ret
     }
 
@@ -3850,10 +4745,10 @@ namespace check {
             }
             let want = types::ptr{ s = &c.ty, elem = f.ty, mutable = true }
             let how = convert{ &c, a = arg, t = want, pos = at }
-            return Forward{ name = f.name, mutable = true, ty = x.ty, arg, conv = conv_of{ how, t = want } }
+            return Forward{ name = f.name, var = v, mutable = true, ty = x.ty, arg, conv = conv_of{ how, t = want } }
         }
         let how = convert{ &c, a = x.ty, t = f.ty, pos = at }
-        return Forward{ name = f.name, mutable = false, ty = x.ty, arg = x.ty, conv = conv_of{ how, t = f.ty } }
+        return Forward{ name = f.name, var = v, mutable = false, ty = x.ty, arg = x.ty, conv = conv_of{ how, t = f.ty } }
     }
 
     // "`a`, `b`"

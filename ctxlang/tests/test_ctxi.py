@@ -1186,6 +1186,93 @@ class Initialization(Base):
             run(src + '\nfn main {} {}')
 
 
+class Safety(Base):
+    """Exclusivity (§3.1), escape analysis (§14) and bound-function scope (§6), the ctxc
+    checker's sub-step 5: every error at its exact position, for tools/checktest.py through the
+    corpus. Where a value is derived from several locals, the message names the first declared."""
+
+    def assertSafetyError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_errors(self):
+        for src, msg, line, col in [
+            ('struct P { a: i32, b: i32 }\nfn g { mut x: i32, mut y: i32 } {}\nfn f {} {\n    let mut p = P{ a = 1, b = 2 }\n    g{ x = &p.a, y = &p.a }\n}',
+             'two mut references to `p.a` in one call', 5, 6),
+            ('fn g { mut x: [2]i32, mut y: i32 } {}\nfn f {} {\n    let mut a = [1, 2]\n    g{ x = &a, y = &a[1] }\n}',
+             'two mut references to `a` in one call', 4, 6),
+            ('fn g { mut x: i32, mut y: i32 } {}\nfn f { mut x: i32 } {\n    g{ &x, y = &x }\n}',
+             'two mut references to `x` in one call', 3, 6),
+            ('fn g { mut x: i32, mut y: i32 } {}\nfn f { mut x: i32, mut y: i32 } {\n    g{ &x, .. }\n    g{ y = &x, .. }\n}',
+             'two mut references to `x` in one call', 4, 6),
+            ('fn inc { mut n: i32 } { n = n + 1 }\nfn g { mut n: i32, f: &fn{} } {}\nfn f {} {\n    let mut n = 0\n    let h = inc{ &n, _ }\n    g{ &n, f = h }\n}',
+             '`n` overlaps a place held by `h`', 6, 6),
+            ('fn inc { mut n: i32 } { n = n + 1 }\nfn g { mut n: i32, h: &fn{} } {}\nfn f {} {\n    let mut n = 0\n    let h = inc{ &n, _ }\n    g{ &n, .. }\n}',
+             '`n` overlaps a place held by `h`', 6, 6),
+            ('fn inc { mut n: i32 } { n = n + 1 }\nfn g { mut n: i32, f: &fn{} } {}\nfn f {} {\n    let mut n = 0\n    g{ &n, f = inc{ &n, _ } }\n}',
+             '`n` overlaps a place held by `f`', 5, 6),
+            ('fn two { mut a: i32, mut b: i32 } {}\nfn f {} {\n    let mut n = 0\n    let h = two{ a = &n, b = &n, _ }\n}',
+             'two mut references to `n` in one call', 4, 16),
+            ('union U { a{ x: i32 }, b }\nfn f { mut u: U } {\n    match &u {\n        a{ &x } => { u = U::b }\n        b => {}\n    }\n}',
+             'u overlaps the match scrutinee; access it only through `x`', 4, 22),
+            ('union U { a{ x: i32 }, b }\nfn g { u: U } {}\nfn f { mut u: U } {\n    match &u {\n        a => { g{ u = u } }\n        b => {}\n    }\n}',
+             'u overlaps the match scrutinee; access it only through the arm bindings', 5, 23),
+            ('union U { a{ x: i32 }, b }\nfn g { u: U } {}\nfn f { mut u: U } {\n    match &u {\n        a{ &x } => { g{ .. } }\n        b => {}\n    }\n}',
+             'u overlaps the match scrutinee; access it only through `x`', 5, 23),
+            ('struct S { u: U, n: i32 }\nunion U { a{ x: i32 }, b }\nfn f { mut s: S } {\n    match &s.u {\n        a{ &x } => { x = s.n; s.u = U::b }\n        b => {}\n    }\n}',
+             's.u overlaps the match scrutinee; access it only through `x`', 5, 32),
+            ('fn f {} -> *i32 {\n    let x = 1\n    return &x\n}',
+             'returned value holds the address of local `x`', 3, 5),
+            ('fn f { c: bool } -> *i32 {\n    let x = 1\n    let y = 2\n    let p = if c { &x } else { &y }\n    return p\n}',
+             'returned value holds the address of local `x`', 5, 5),
+            ('fn id { p: *i32 } -> *i32 { return p }\nfn f {} -> *i32 {\n    let x = 1\n    return id{ p = &x }\n}',
+             'returned value holds the address of local `x`', 4, 5),
+            ('fn f {} -> []i32 {\n    let a = [1, 2]\n    return a[..]\n}',
+             'returned value holds the address of local `a`', 3, 5),
+            ('fn f {} -> *u8 {\n    let a = [1, 2]\n    return @cast(*u8, &a) + 1\n}',
+             'returned value holds the address of local `a`', 3, 5),
+            ('fn f {} -> ?*i32 {\n    let x = 1\n    return &x\n}',
+             'returned value holds the address of local `x`', 3, 5),
+            ('fn f { x: i32 } -> *i32 {\n    return &x\n}',
+             'returned value holds the address of local `x`', 2, 5),
+            ('struct B { p: *i32 }\nfn f {} -> B {\n    let x = 1\n    return B{ p = &x }\n}',
+             'returned value holds the address of local `x`', 4, 5),
+            ('fn f { mut out: *i32 } {\n    let x = 1\n    out = &x\n}',
+             'cannot store the address of local `x` in `out`, which belongs to the caller', 3, 5),
+            ('fn f { q: *mut *i32 } {\n    let x = 1\n    q.* = &x\n}',
+             'cannot store the address of local `x` through a pointer', 3, 5),
+            ('fn f {} {\n    let mut p: *i32\n    let a = 1\n    p = &a\n    if true {\n        let x = 1\n        p = &x\n    }\n}',
+             '`p` outlives local `x` whose address it would hold', 7, 9),
+            ('fn f {} {\n    let a = 1\n    let mut p = &a\n    if true {\n        let x = 1\n        let q = &x\n        p = q\n    }\n}',
+             '`p` outlives local `x` whose address it would hold', 7, 9),
+            ('fn f { c: bool } -> i32 {\n    let y = 0\n    let p = if c { let x = 1; &x } else { &y }\n    return p.*\n}',
+             'the value of this branch holds the address of local `x`, which ends with the branch', 3, 31),
+            ('fn inc { mut n: i32 } { n = n + 1 }\nfn f { c: bool } {\n    let mut m = 0\n    let h = if c { let mut n = 0; inc{ &n, _ } } else { inc{ n = &m, _ } }\n}',
+             'the value of this branch holds `n`, which ends with the branch', 4, 38),
+            ('fn inc { mut n: i32 } { n = n + 1 }\nfn f {} {\n    let mut m = 0\n    let mut h = inc{ n = &m, _ }\n    if true {\n        let mut n = 0\n        h = inc{ &n, _ }\n    }\n}',
+             'bound function stored in `h` holds `n`, which does not live as long', 7, 9),
+            ('fn inc { mut n: i32 } { n = n + 1 }\nfn f {} {\n    let mut m = 0\n    let mut h: &fn{} = inc{ n = &m, _ }\n    while true {\n        let mut n = 0\n        let k = inc{ &n, _ }\n        h = k\n        break\n    }\n}',
+             'bound function stored in `h` holds `n`, which does not live as long', 8, 9),
+            ('union U { a{ x: i32 }, b }\nfn f { mut u: U } {\n    match &u {\n        a{ &x } => { x = 3 }\n        b => { u = U::b }\n    }\n}',
+             'u overlaps the match scrutinee; access it only through the arm bindings', 5, 16),
+        ]:
+            self.assertSafetyError(src + '\nfn main {} {}', msg, line, col)
+
+    def test_checks(self):
+        for src in [
+            'fn g { mut x: i32, y: i32 } {}\nfn f {} {\n    let mut n = 0\n    g{ x = &n, y = n }\n}',
+            'struct P { a: i32, b: i32 }\nfn g { mut x: i32, mut y: i32 } {}\nfn f {} {\n    let mut p = P{ a = 1, b = 2 }\n    g{ x = &p.a, y = &p.b }\n}',
+            'fn f { p: *i32 } -> *i32 {\n    let q = p\n    return q\n}',
+            'fn f { mut n: i32 } -> *mut i32 {\n    return &n\n}',
+            'fn f {} -> i32 {\n    let x = 1\n    let p = &x\n    return p.*\n}',
+            'fn inc { mut n: i32 } { n = n + 1 }\nfn f {} {\n    let mut n = 0\n    let h = inc{ &n, _ }\n    h{}\n}',
+            'fn f { c: bool } -> i32 {\n    let x = 1\n    let p = if c { &x } else { &x }\n    return p.*\n}',
+            'fn f {} -> []u8 {\n    return "static"\n}',
+        ]:
+            run(src + '\nfn main {} {}')
+
+
 class Enums(Base):
     def test_values_and_layout(self):
         self.assertOutput(ENUM + """
