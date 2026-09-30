@@ -1169,6 +1169,26 @@ fn main { mut io: Io } {
 }
 """, 'true\n')
 
+    def test_const_tables(self):
+        self.assertOutput("""
+namespace kw {
+    const WORDS: [3][]u8 = ["fn", "let", "match"]
+    const NAMES: [2]utf8::String = ["zero", "one"]
+    const COPY: [3][]u8 = WORDS
+    struct Entry { name: utf8::String, arity: i32 }
+    const ENTRIES: [2]Entry = [Entry{ name = "add", arity = 2 }, Entry{ name = "neg", arity = 1 }]
+}
+fn name { i: usize } -> utf8::String { return kw::NAMES[i] }
+fn main { mut io: Io } {
+    let mut i: usize = 0
+    while i < kw::WORDS.len { io::println_u64{ &io, n = kw::WORDS[i].len }; i = i + 1 }
+    io::println{ &io, s = name{ i = 1 } }
+    io::println_u64{ &io, n = kw::COPY[0].len }
+    io::println{ &io, s = kw::ENTRIES[1].name }
+    io::println_i64{ &io, n = kw::ENTRIES[0].arity }
+}
+""", '2\n3\n5\none\n2\nneg\n2\n')
+
     def test_mut_slice_rejected(self):
         self.assertCompileError('fn f { b: []mut u8 } { }\nfn main { mut io: Io } { f{ b = "abc" } }',
                                 'a string literal is read-only')
@@ -3048,6 +3068,17 @@ fn main { mut io: Io } -> i32 {
 }
 """)
         self.assertEqual((out, code), ('café\n6\n255\n', 0))
+
+    def test_const_tables(self):
+        out, code = self.both("""
+const WORDS: [3][]u8 = ["fn", "let", "match"]
+const NAMES: [2]utf8::String = ["zero", "caf\\xc3\\xa9"]
+fn main { mut io: Io } -> i32 {
+    io::println{ &io, s = NAMES[1] }
+    return @as(i32, WORDS[2].len)
+}
+""")
+        self.assertEqual((out, code), ('café\n', 5))
 
     def test_evaluation_order(self):
         out, _ = self.both("""

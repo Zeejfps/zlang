@@ -28,7 +28,8 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
     `slice::get{ s = xs, i }` is now `xs[i]`; `list::` and `map::` calls remain.
 11. **Float-to-float `@as` reads as fallible.** It never panics, but looks like it might. A
     separate conversion, or saying so in §13.
-12. **No const string or byte tables** in namespaces without a local (keywords, names). Ties to 1.
+12. ~~**No const string or byte tables** in namespaces without a local (keywords, names). Ties to 1.~~
+    *Done:* a const may hold literal views, e.g. `const KEYWORDS: [2][]u8 = ["fn", "let"]` (spec §14).
 13. ~~**No must-use results.** Dropping the `bool` from `list::push` is silent.~~ *Done:* every
     result must be used or dropped with `_ = e` (spec §11.6).
 14. **ctxi call overhead** (implementation, not language): `slice::get`/`at` made about a million

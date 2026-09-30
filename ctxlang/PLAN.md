@@ -157,8 +157,10 @@ to live and a read-only type to have, which in turn needs read-only pointers and
    is checked for valid UTF-8 at compile time. Elsewhere it is still a `[N]u8`. A literal branch
    of an `if` or `match` follows a sibling branch that is a view. In the IR, `(sbytes T STR)`
    (IR version 4); a `utf8::String` is a struct literal around one. C emits a string literal.
-4. **Const tables** (#12). Consts may hold literal views, e.g. `const KEYWORDS: [12][]u8 = [...]`.
-   Emit large consts as static data instead of inlining them if a profile shows the copies.
+4. **Const tables** (#12) — *done.* Consts may hold literal views, e.g. `const KEYWORDS: [12][]u8 =
+   [...]`, as `[]u8` or `utf8::String`, also inside struct literals. This fell out of step 3 with
+   no checker or IR change. Emit large consts as static data instead of inlining them if a
+   profile shows the copies.
 5. **Default field values.** A struct field may declare a default, `name: T = e`, where `e` is a
    const expression (§14.1). A struct literal may leave out a field that has a default (§7.1).
    Nothing is implicit: a `?T` field without `= null` must still be supplied. The dumper fills in
