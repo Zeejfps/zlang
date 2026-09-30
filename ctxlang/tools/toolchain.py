@@ -151,7 +151,7 @@ def native_ctxc():
                 same = f.read() == g.read()
             if same:
                 os.remove(tmp)
-                shutil.copyfile(seed, exe)
+                shutil.copy2(seed, exe)
             else:
                 link(tmp, os.path.splitext(exe)[0] + '.c', exe, 'ctxc')
         _native = exe
