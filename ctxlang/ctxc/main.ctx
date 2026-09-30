@@ -1,19 +1,25 @@
 // ctxc: the ctxlang compiler, written in ctxlang. A directory is one program: this file holds
-// the driver, ir.ctx the typed IR, ir_read.ctx and ir_print.ctx its text form, emit_c.ctx the
-// C backend.
+// the driver; source.ctx, diag.ctx and lexer.ctx the front end so far; ir.ctx the typed IR,
+// ir_read.ctx and ir_print.ctx its text form; emit_c.ctx the C backend; dump.ctx text dumps for
+// tests.
 //
 //   python -m ctxi ctxc roundtrip FILE.ir      reads IR (from `python -m ctxi PROGRAM --ir`)
 //                                              and prints it back; the output must equal FILE.ir
 //   python -m ctxi ctxc c FILE.ir OUT.c        writes the program as C, for ctxc/rt/ctxrt.c
+//   python -m ctxi ctxc tokens FILE...         prints each file's tokens (dump.ctx), each
+//                                              after a line `file FILE`
 //
 // tools/ctxc.py runs the whole pipeline: IR, C and the C compiler.
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut to_c = false
+    if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "tokens" } {
+        return tokens{ .. }
+    }
     if args.len == 3 and slice::eq_bytes{ a = args[0], b = "c" } {
         to_c = true
     } else if args.len != 2 or not slice::eq_bytes{ a = args[0], b = "roundtrip" } {
-        io::eprintln{ &io, s = "usage: ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c" }
+        io::eprintln{ &io, s = "usage: ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens FILE..." }
         return 2
     }
     let path = args[1]
@@ -52,6 +58,44 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut o = ir_print::out{ heap = &heap, types = prog.types }
     ir_print::program{ &o, p = prog }
     io::write{ &io, to = io::Stream::out, bytes = list::items{ list = o.bytes } }
+    return 0
+}
+
+// `ctxc tokens FILE...`: lexes each file on its own, in one arena that is reset between files.
+fn tokens { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let mut largest: u64 = 0
+    let mut i: usize = 1
+    while i < args.len {
+        let ok{ value = size } = fs::size{ &fs, path = args[i] } else {
+            cannot{ &io, path = args[i], what = "cannot read" }
+            return 1
+        }
+        if size > largest { largest = size }
+        i = i + 1
+    }
+    let some{ value = pages } = mem::pages{ &mem, size = 16777216 + @as(usize, largest) * 128 } else {
+        io::eprintln{ &io, s = "out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    i = 1
+    while i < args.len {
+        arena::reset{ &heap }
+        let path = args[i]
+        let ok{ value = text } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } else {
+            cannot{ &io, path, what = "cannot read" }
+            return 1
+        }
+        let mut diags = diag::new{}
+        let lexed = lexer::lex{ text, file = 0, &heap, &diags }
+        let mut out = utf8::builder{ realloc = arena::alloc }
+        _ = utf8::push{ b = &out, &heap, s = "file " }
+        _ = utf8::push{ b = &out, &heap, s = utf8::String{ bytes = path } }
+        _ = utf8::push{ b = &out, &heap, s = "\n" }
+        dump::tokens{ &out, &heap, text, lexed, diags }
+        io::write{ &io, to = io::Stream::out, bytes = utf8::view{ b = out }.bytes }
+        i = i + 1
+    }
     return 0
 }
 

@@ -1,0 +1,590 @@
+// The lexer: source text to tokens, a port of ctxi/lexer.py.
+//
+//   let lexed = lexer::lex{ text, file = 0, &heap, &diags }
+//
+// Tokens carry byte-offset spans and no values: the parser reads a literal's value from its text
+// with int_value, float_value, char_value and str_value. Comments don't become tokens. Their
+// spans go in a side list, for hover docs and folding ranges later.
+//
+// A problem becomes an error token and a diagnostic, and lexing goes on. An unterminated literal
+// ends at the end of its line, and an unterminated block comment at the end of the file. The last
+// token is always an eof token. Error positions are where the token starts, as in ctxi.
+
+namespace tok {
+    // Token kinds. Integers rather than a union, so that the parser can compare them with ==.
+    const EOF: u8 = 0
+    const ERROR: u8 = 1
+    const IDENT: u8 = 2
+    const INT: u8 = 3
+    const FLOAT: u8 = 4
+    const STR: u8 = 5
+    const CHAR: u8 = 6
+    const BUILTIN: u8 = 7          // @name
+
+    // Keywords, in the order of KEYWORDS.
+    const FN: u8 = 8
+    const STRUCT: u8 = 9
+    const UNION: u8 = 10
+    const TYPE: u8 = 11
+    const CONST: u8 = 12
+    const NAMESPACE: u8 = 13
+    const LET: u8 = 14
+    const MUT: u8 = 15
+    const IF: u8 = 16
+    const ELSE: u8 = 17
+    const WHILE: u8 = 18
+    const BREAK: u8 = 19
+    const CONTINUE: u8 = 20
+    const MATCH: u8 = 21
+    const RETURN: u8 = 22
+    const DEFER: u8 = 23
+    const AND: u8 = 24
+    const OR: u8 = 25
+    const NOT: u8 = 26
+    const TRUE: u8 = 27
+    const FALSE: u8 = 28
+    const NULL: u8 = 29
+
+    const KEYWORDS: [22][]u8 = [
+        "fn", "struct", "union", "type", "const", "namespace", "let", "mut",
+        "if", "else", "while", "break", "continue", "match", "return", "defer", "and", "or", "not",
+        "true", "false", "null",
+    ]
+
+    // Operators, in the order of OPS: two characters before one, so the longest match wins.
+    const ARROW: u8 = 30           // ->
+    const FAT_ARROW: u8 = 31       // =>
+    const COLONS: u8 = 32          // ::
+    const DOTS: u8 = 33            // ..
+    const EQ: u8 = 34              // ==
+    const NE: u8 = 35              // !=
+    const LE: u8 = 36              // <=
+    const GE: u8 = 37              // >=
+    const SHL: u8 = 38             // <<
+    const SHR: u8 = 39             // >>
+    const LBRACE: u8 = 40
+    const RBRACE: u8 = 41
+    const LPAREN: u8 = 42
+    const RPAREN: u8 = 43
+    const LBRACKET: u8 = 44
+    const RBRACKET: u8 = 45
+    const COMMA: u8 = 46
+    const SEMI: u8 = 47
+    const COLON: u8 = 48
+    const DOT: u8 = 49
+    const ASSIGN: u8 = 50          // =
+    const LT: u8 = 51
+    const GT: u8 = 52
+    const PLUS: u8 = 53
+    const MINUS: u8 = 54
+    const STAR: u8 = 55
+    const SLASH: u8 = 56
+    const PERCENT: u8 = 57
+    const AMP: u8 = 58
+    const PIPE: u8 = 59
+    const CARET: u8 = 60
+    const QUESTION: u8 = 61
+
+    const OPS: [32][]u8 = [
+        "->", "=>", "::", "..", "==", "!=", "<=", ">=", "<<", ">>",
+        "{", "}", "(", ")", "[", "]", ",", ";", ":", ".", "=", "<", ">",
+        "+", "-", "*", "/", "%", "&", "|", "^", "?",
+    ]
+
+    struct Token {
+        kind: u8,
+        nl:   bool,                // a newline comes before it
+        span: source::Span,
+    }
+
+    fn is_keyword { kind: u8 } -> bool { return kind >= FN and kind <= NULL }
+    fn is_op { kind: u8 } -> bool { return kind >= ARROW and kind <= QUESTION }
+}
+
+namespace lexer {
+    struct Lexed { tokens: []tok::Token, comments: []source::Span }
+
+    struct Lexer {
+        text:     []u8,
+        file:     u32,
+        pos:      usize,
+        nl:       bool,            // a newline since the last token
+        heap:     *mut arena::Arena,
+        diags:    *mut diag::Diags,
+        tokens:   list::List(tok::Token, arena::Arena),
+        comments: list::List(source::Span, arena::Arena),
+    }
+
+    fn lex { text: []u8, file: u32, mut heap: arena::Arena, mut diags: diag::Diags } -> Lexed {
+        let mut lx = Lexer{
+            text, file, pos = 0, nl = true, heap = &heap, diags = &diags,
+            tokens = list::new(tok::Token){ realloc = arena::alloc },
+            comments = list::new(source::Span){ realloc = arena::alloc },
+        }
+        if text.len > source::MAX_SIZE {
+            report{ &lx, start = 0, end = 0, msg = "file too large" }
+            lx.text = text[..0]
+        }
+        while lx.pos < lx.text.len {
+            let c = lx.text[lx.pos]
+            let next = byte{ s = lx.text, i = lx.pos + 1 }
+            if c == '\n' {
+                lx.pos = lx.pos + 1
+                lx.nl = true
+            } else if c == ' ' or c == '\t' or c == '\r' {
+                lx.pos = lx.pos + 1
+            } else if c == '/' and next == '/' {
+                line_comment{ &lx }
+            } else if c == '/' and next == '*' {
+                block_comment{ &lx }
+            } else {
+                token{ &lx }
+            }
+        }
+        lx.nl = true
+        add{ &lx, kind = tok::EOF, start = lx.pos }
+        return Lexed{ tokens = list::items{ list = lx.tokens }, comments = list::items{ list = lx.comments } }
+    }
+
+    fn token { mut lx: Lexer } {
+        let text = lx.text
+        let start = lx.pos
+        let c = text[start]
+        if is_alpha{ c } {
+            lx.pos = word_end{ text, i = start + 1 }
+            add{ &lx, kind = keyword{ word = text[start..lx.pos] }, start }
+        } else if is_digit{ c } {
+            number{ &lx }
+        } else if c == '"' or c == '\'' {
+            literal{ &lx, quote = c }
+        } else if c == '@' {
+            lx.pos = word_end{ text, i = start + 1 }
+            if lx.pos == start + 1 {
+                fail{ &lx, start, msg = "expected a builtin name after '@'" }
+            } else {
+                add{ &lx, kind = tok::BUILTIN, start }
+            }
+        } else {
+            let some{ value = k } = op{ text, i = start } else {
+                unexpected{ &lx }
+                return
+            }
+            lx.pos = start + tok::OPS[k - tok::ARROW].len
+            add{ &lx, kind = k, start }
+        }
+    }
+
+    fn keyword { word: []u8 } -> u8 {
+        if word.len > 9 or word[0] < 'a' { return tok::IDENT }
+        let kws = tok::KEYWORDS
+        let mut i: usize = 0
+        while i < kws.len {
+            if slice::eq_bytes{ a = word, b = kws[i] } { return tok::FN + @trunc(u8, i) }
+            i = i + 1
+        }
+        return tok::IDENT
+    }
+
+    fn op { text: []u8, i: usize } -> ?u8 {
+        let ops = tok::OPS
+        let mut k: usize = 0
+        while k < ops.len {
+            let o = ops[k]
+            if i + o.len <= text.len and slice::eq_bytes{ a = text[i..i + o.len], b = o } {
+                return tok::ARROW + @trunc(u8, k)
+            }
+            k = k + 1
+        }
+        return null
+    }
+
+    // 42, 1_000, 0x1F, 0b101, 1.5, 2e-3. A letter right after one makes it invalid, and the rest
+    // of the word joins the error token.
+    fn number { mut lx: Lexer } {
+        let text = lx.text
+        let start = lx.pos
+        let mut i = start
+        let mut kind = tok::INT
+        let mut ok = true
+        let x = byte{ s = text, i = i + 1 }
+        if text[i] == '0' and (x == 'x' or x == 'X' or x == 'b' or x == 'B') {
+            let hex = x == 'x' or x == 'X'
+            i = i + 2
+            let mut digits: usize = 0
+            while true {
+                let d = byte{ s = text, i }
+                if (hex and is_hex{ c = d }) or (not hex and (d == '0' or d == '1')) {
+                    digits = digits + 1
+                } else if d != '_' {
+                    break
+                }
+                i = i + 1
+            }
+            ok = digits > 0
+        } else {
+            i = digits_end{ text, i, under = true }
+            if byte{ s = text, i } == '.' and is_digit{ c = byte{ s = text, i = i + 1 } } {
+                kind = tok::FLOAT
+                i = digits_end{ text, i = i + 1, under = true }
+            }
+            let e = byte{ s = text, i }
+            if e == 'e' or e == 'E' {
+                let mut j = i + 1
+                let sign = byte{ s = text, i = j }
+                if sign == '+' or sign == '-' { j = j + 1 }
+                if is_digit{ c = byte{ s = text, i = j } } {
+                    kind = tok::FLOAT
+                    i = digits_end{ text, i = j, under = false }
+                }
+            }
+        }
+        if is_alpha{ c = byte{ s = text, i } } { ok = false }
+        if not ok {
+            lx.pos = word_end{ text, i }
+            fail{ &lx, start, msg = "invalid number literal" }
+            return
+        }
+        lx.pos = i
+        add{ &lx, kind, start }
+    }
+
+    // What is wrong with a string or character literal.
+    union Problem {
+        unterminated,
+        non_ascii{ at: usize },        // a byte above 127, which may start invalid UTF-8
+        bad_hex,                        // \x without two hex digits
+        unknown_escape{ at: usize },   // the character after the backslash
+        not_one_char,
+    }
+
+    // A literal from its opening quote: where it ends (after the closing quote), or its problem.
+    struct Scanned { end: usize, problem: ?Problem }
+
+    // One character of a literal at j: the offset after it, or its problem.
+    struct CharAt { next: usize, problem: ?Problem }
+
+    fn literal { mut lx: Lexer, quote: u8 } {
+        let text = lx.text
+        let start = lx.pos
+        let s = scan_literal{ text, start, quote }
+        let some{ value = p } = s.problem else {
+            lx.pos = s.end
+            add{ &lx, kind = if quote == '"' { tok::STR } else { tok::CHAR }, start }
+            return
+        }
+        lx.pos = literal_end{ text, i = start + 1, quote }
+        let msg = describe{ heap = lx.heap, text, p }
+        fail{ &lx, start, msg }
+    }
+
+    fn scan_literal { text: []u8, start: usize, quote: u8 } -> Scanned {
+        let mut j = start + 1
+        if quote == '"' {
+            while byte{ s = text, i = j } != '"' {
+                let c = char_at{ text, j }
+                if c.problem != null { return Scanned{ end = j, problem = c.problem } }
+                j = c.next
+            }
+            return Scanned{ end = j + 1, problem = null }
+        }
+        if byte{ s = text, i = j } == '\'' {           // '' or ''': a quote must be escaped
+            return Scanned{ end = j, problem = Problem::not_one_char }
+        }
+        let c = char_at{ text, j }
+        if c.problem != null { return Scanned{ end = j, problem = c.problem } }
+        if byte{ s = text, i = c.next } != '\'' { return Scanned{ end = j, problem = Problem::not_one_char } }
+        return Scanned{ end = c.next + 1, problem = null }
+    }
+
+    fn char_at { text: []u8, j: usize } -> CharAt {
+        if j >= text.len or text[j] == '\n' { return CharAt{ next = j, problem = Problem::unterminated } }
+        let c = text[j]
+        if c != '\\' {
+            if c >= 128 { return CharAt{ next = j, problem = Problem::non_ascii{ at = j } } }
+            return CharAt{ next = j + 1, problem = null }
+        }
+        if j + 1 >= text.len { return CharAt{ next = j, problem = Problem::unterminated } }
+        let e = text[j + 1]
+        if escape{ e } != null { return CharAt{ next = j + 2, problem = null } }
+        if e == 'x' {
+            if is_hex{ c = byte{ s = text, i = j + 2 } } and is_hex{ c = byte{ s = text, i = j + 3 } } {
+                return CharAt{ next = j + 4, problem = null }
+            }
+            return CharAt{ next = j, problem = Problem::bad_hex }
+        }
+        return CharAt{ next = j, problem = Problem::unknown_escape{ at = j + 1 } }
+    }
+
+    // The byte an escape letter stands for, as in \n.
+    fn escape { e: u8 } -> ?u8 {
+        if e == 'n' { return '\n' }
+        if e == 't' { return '\t' }
+        if e == 'r' { return '\r' }
+        if e == '0' { return 0 }
+        if e == '\\' or e == '"' or e == '\'' { return e }
+        return null
+    }
+
+    // Where a bad literal's error token ends: after its closing quote, or at the end of the line.
+    fn literal_end { text: []u8, i: usize, quote: u8 } -> usize {
+        let mut j = i
+        while j < text.len and text[j] != '\n' {
+            if text[j] == quote { return j + 1 }
+            if text[j] == '\\' and byte{ s = text, i = j + 1 } != '\n' {
+                j = j + 1
+            }
+            j = j + 1
+        }
+        if j > text.len { return text.len }            // a backslash at the very end
+        return j
+    }
+
+    fn describe { mut heap: arena::Arena, text: []u8, p: Problem } -> utf8::String {
+        let mut b = utf8::builder{ realloc = arena::alloc }
+        match p {
+            unterminated => { return "unterminated literal" }
+            bad_hex => { return "\\x needs two hex digits" }
+            not_one_char => { return "a character literal holds exactly one character" }
+            non_ascii{ at } => {
+                if utf8::seq_len{ bytes = text, i = at } == 0 { return "invalid UTF-8" }
+                _ = utf8::push{ &b, &heap, s = "non-ASCII character " }
+                show_char{ &b, &heap, text, at }
+                _ = utf8::push{ &b, &heap, s = " in literal; use a \\x escape" }
+            }
+            unknown_escape{ at } => {
+                let n = utf8::seq_len{ bytes = text, i = at }
+                if n == 0 { return "invalid UTF-8" }
+                _ = utf8::push{ &b, &heap, s = "unknown escape \\" }
+                _ = utf8::push{ &b, &heap, s = utf8::String{ bytes = text[at..at + n] } }
+            }
+        }
+        return utf8::view{ b }
+    }
+
+    // A character outside any token.
+    fn unexpected { mut lx: Lexer } {
+        let text = lx.text
+        let start = lx.pos
+        let n = utf8::seq_len{ bytes = text, i = start }
+        if n == 0 {
+            lx.pos = start + 1
+            fail{ &lx, start, msg = "invalid UTF-8" }
+            return
+        }
+        lx.pos = start + n
+        let mut b = utf8::builder{ realloc = arena::alloc }
+        _ = utf8::push{ &b, heap = lx.heap, s = "unexpected character " }
+        show_char{ &b, heap = lx.heap, text, at = start }
+        fail{ &lx, start, msg = utf8::view{ b } }
+    }
+
+    // A character in a message, as ctxi's show_char: 'c', '\xNN' for an ASCII control character,
+    // and the code point after a non-ASCII one, which may be invisible. It must be valid UTF-8.
+    fn show_char { mut b: utf8::Builder(arena::Arena), mut heap: arena::Arena, text: []u8, at: usize } {
+        let c = text[at]
+        if c < 32 or c == 127 {
+            _ = utf8::push{ &b, &heap, s = "'\\x" }
+            hex{ &b, &heap, n = c, width = 2, upper = false }
+            _ = utf8::push_char{ &b, &heap, c = '\'' }
+        } else if c == '\\' {
+            _ = utf8::push{ &b, &heap, s = "'\\\\'" }
+        } else if c < 128 {
+            _ = utf8::push_char{ &b, &heap, c = '\'' }
+            _ = utf8::push_char{ &b, &heap, c }
+            _ = utf8::push_char{ &b, &heap, c = '\'' }
+        } else {
+            let s = utf8::String{ bytes = text[at..at + utf8::seq_len{ bytes = text, i = at }] }
+            _ = utf8::push_char{ &b, &heap, c = '\'' }
+            _ = utf8::push{ &b, &heap, s }
+            _ = utf8::push{ &b, &heap, s = "' (U+" }
+            hex{ &b, &heap, n = utf8::decode{ s, i = 0 }.c, width = 4, upper = true }
+            _ = utf8::push_char{ &b, &heap, c = ')' }
+        }
+    }
+
+    // n in hex, with at least `width` digits.
+    fn hex { mut b: utf8::Builder(arena::Arena), mut heap: arena::Arena, n: u32, width: u32, upper: bool } {
+        let mut digits: [8]u8
+        let mut k: usize = 0
+        let mut v = n
+        while v > 0 or k < width {
+            let d = @trunc(u8, v % 16)
+            digits[k] = if d < 10 { '0' + d } else if upper { 'A' + d - 10 } else { 'a' + d - 10 }
+            v = v / 16
+            k = k + 1
+        }
+        while k > 0 {
+            k = k - 1
+            _ = utf8::push_char{ &b, &heap, c = digits[k] }
+        }
+    }
+
+    // ---- comments
+
+    fn line_comment { mut lx: Lexer } {
+        let start = lx.pos
+        let mut i = start
+        while i < lx.text.len and lx.text[i] != '\n' { i = skip_char{ &lx, i } }
+        lx.pos = i
+        comment{ &lx, start }
+    }
+
+    // Block comments don't nest.
+    fn block_comment { mut lx: Lexer } {
+        let start = lx.pos
+        let mut i = start + 2
+        while true {
+            if i >= lx.text.len {
+                report{ &lx, start, end = start + 2, msg = "unterminated block comment" }
+                break
+            }
+            if lx.text[i] == '*' and byte{ s = lx.text, i = i + 1 } == '/' {
+                i = i + 2
+                break
+            }
+            if lx.text[i] == '\n' { lx.nl = true }
+            i = skip_char{ &lx, i }
+        }
+        lx.pos = i
+        comment{ &lx, start }
+    }
+
+    fn comment { mut lx: Lexer, start: usize } {
+        let s = span{ lx, start, end = lx.pos }
+        if not list::push{ list = &lx.comments, heap = lx.heap, item = s } { @panic("lexer: out of memory") }
+    }
+
+    // The offset after the character at i, reporting it if it isn't valid UTF-8.
+    fn skip_char { mut lx: Lexer, i: usize } -> usize {
+        if lx.text[i] < 128 { return i + 1 }
+        let n = utf8::seq_len{ bytes = lx.text, i }
+        if n == 0 {
+            report{ &lx, start = i, end = i + 1, msg = "invalid UTF-8" }
+            return i + 1
+        }
+        return i + n
+    }
+
+    // ---- tokens and diagnostics
+
+    // A token of `kind` from start to lx.pos.
+    fn add { mut lx: Lexer, kind: u8, start: usize } {
+        let t = tok::Token{ kind, nl = lx.nl, span = span{ lx, start, end = lx.pos } }
+        if not list::push{ list = &lx.tokens, heap = lx.heap, item = t } { @panic("lexer: out of memory") }
+        lx.nl = false
+    }
+
+    // An error token from start to lx.pos, and its diagnostic.
+    fn fail { mut lx: Lexer, start: usize, msg: utf8::String } {
+        report{ &lx, start, end = lx.pos, msg }
+        add{ &lx, kind = tok::ERROR, start }
+    }
+
+    fn report { mut lx: Lexer, start: usize, end: usize, msg: utf8::String } {
+        diag::error{ diags = lx.diags, heap = lx.heap, span = span{ lx, start, end }, msg }
+    }
+
+    fn span { lx: Lexer, start: usize, end: usize } -> source::Span {
+        return source::Span{ file = lx.file, start = @as(u32, start), end = @as(u32, end) }
+    }
+
+    // ---- characters
+
+    // The byte at i, or 0 past the end.
+    fn byte { s: []u8, i: usize } -> u8 {
+        if i >= s.len { return 0 }
+        return s[i]
+    }
+
+    // Letters and digits are ASCII only.
+    fn is_alpha { c: u8 } -> bool { return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_' }
+    fn is_digit { c: u8 } -> bool { return c >= '0' and c <= '9' }
+    fn is_alnum { c: u8 } -> bool { return is_alpha{ c } or is_digit{ c } }
+    fn is_hex { c: u8 } -> bool { return is_digit{ c } or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F') }
+
+    fn word_end { text: []u8, i: usize } -> usize {
+        let mut j = i
+        while j < text.len and is_alnum{ c = text[j] } { j = j + 1 }
+        return j
+    }
+
+    fn digits_end { text: []u8, i: usize, under: bool } -> usize {
+        let mut j = i
+        while j < text.len and (is_digit{ c = text[j] } or (under and text[j] == '_')) { j = j + 1 }
+        return j
+    }
+
+    // ---- values, from the text of a valid token
+
+    // An int or char token's value, or null if it doesn't fit in a u64.
+    fn int_value { text: []u8 } -> ?u64 {
+        if text[0] == '\'' { return char_value{ text } }
+        let mut base: u64 = 10
+        let mut i: usize = 0
+        if text.len > 2 and text[0] == '0' and (text[1] == 'x' or text[1] == 'X') {
+            base = 16
+            i = 2
+        } else if text.len > 2 and text[0] == '0' and (text[1] == 'b' or text[1] == 'B') {
+            base = 2
+            i = 2
+        }
+        let mut v: u64 = 0
+        while i < text.len {
+            let c = text[i]
+            i = i + 1
+            if c == '_' { continue }
+            let d: u64 = if is_digit{ c } { c - '0' } else if c >= 'a' { c - 'a' + 10 } else { c - 'A' + 10 }
+            if v > (18446744073709551615 - d) / base { return null }
+            v = v * base + d
+        }
+        return v
+    }
+
+    fn float_value { mut heap: arena::Arena, text: []u8 } -> f64 {
+        let mut b = utf8::builder{ realloc = arena::alloc }
+        let mut i: usize = 0
+        while i < text.len {
+            if text[i] != '_' { _ = utf8::push_char{ &b, &heap, c = text[i] } }
+            i = i + 1
+        }
+        return ascii::f64_parse{ text = utf8::view{ b }.bytes }
+    }
+
+    fn char_value { text: []u8 } -> u8 {
+        return decode_char{ text, j = 1 }.b
+    }
+
+    // A string token's bytes, with escapes decoded. A view of text if it has no escapes.
+    fn str_value { mut heap: arena::Arena, text: []u8 } -> []u8 {
+        let body = text[1..text.len - 1]
+        let mut i: usize = 0
+        while i < body.len and body[i] != '\\' { i = i + 1 }
+        if i == body.len { return body }
+        let mut xs = list::new(u8){ realloc = arena::alloc }
+        let mut j: usize = 0
+        while j < body.len {
+            let d = decode_char{ text = body, j }
+            if not list::push{ list = &xs, &heap, item = d.b } { @panic("lexer: out of memory") }
+            j = d.next
+        }
+        return list::items{ list = xs }
+    }
+
+    struct Char { b: u8, next: usize }
+
+    // The byte of the valid, possibly escaped, character at j.
+    fn decode_char { text: []u8, j: usize } -> Char {
+        if text[j] != '\\' { return Char{ b = text[j], next = j + 1 } }
+        let e = text[j + 1]
+        let some{ value = b } = escape{ e } else {
+            return Char{ b = hex_digit{ c = text[j + 2] } * 16 + hex_digit{ c = text[j + 3] }, next = j + 4 }
+        }
+        return Char{ b, next = j + 2 }
+    }
+
+    fn hex_digit { c: u8 } -> u8 {
+        if is_digit{ c } { return c - '0' }
+        if c >= 'a' { return c - 'a' + 10 }
+        return c - 'A' + 10
+    }
+}

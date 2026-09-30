@@ -1,0 +1,41 @@
+// Diagnostics. The front end reports every problem it finds instead of stopping at the first:
+// each phase appends to one Diags, passed down as a `mut diags` context field. Message text is
+// the interface tests match on, so it follows ctxi's wording.
+
+namespace diag {
+    union Severity { error, warning }
+
+    // A related place, such as where something was first borrowed.
+    struct Note { span: source::Span, msg: utf8::String }
+
+    struct Diag { severity: Severity, span: source::Span, msg: utf8::String, notes: []Note }
+
+    // At most CAP are kept, so a broken file can't flood an editor. `dropped` counts the rest.
+    const CAP: usize = 100
+
+    struct Diags { items: list::List(Diag, arena::Arena), errors: usize, dropped: usize }
+
+    fn new {} -> Diags {
+        return Diags{ items = list::new(Diag){ realloc = arena::alloc }, errors = 0, dropped = 0 }
+    }
+
+    fn error { mut diags: Diags, mut heap: arena::Arena, span: source::Span, msg: utf8::String } {
+        add{ &diags, &heap, d = Diag{ severity = Severity::error, span, msg, notes = slice::empty(Note){} } }
+    }
+
+    fn add { mut diags: Diags, mut heap: arena::Arena, d: Diag } {
+        match d.severity {
+            error => { diags.errors = diags.errors + 1 }
+            warning => {}
+        }
+        if diags.items.len >= CAP {
+            diags.dropped = diags.dropped + 1
+            return
+        }
+        if not list::push{ list = &diags.items, &heap, item = d } { @panic("diag: out of memory") }
+    }
+
+    fn items { diags: Diags } -> []Diag {
+        return list::items{ list = diags.items }
+    }
+}

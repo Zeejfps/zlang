@@ -13,8 +13,8 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 | 2 | C backend and runtime | done | `5f236c1` |
 | 3 | First bootstrap: a native backend | done | `aa6a805` |
 | 3a | Language work before the lexer (below) | done | `2056bb4` |
-| 4 | Lexer | **next** | |
-| 5 | Parser | | |
+| 4 | Lexer | done | |
+| 5 | Parser | **next** | |
 | 6 | Checker | | |
 | 7 | Self-hosting fixpoint | | |
 | 7a | Language server | | |
@@ -26,9 +26,10 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 - The C backend runs a native `ctxc`. `ctxi/cbackend.py` bootstraps it into `build/ctxc` on first
   use (about 20s) and rebuilds it when ctxc, the runtime or std changes. ctxc compiles itself in
   0.2s. `CTX_CTXC=interp` runs the interpreted ctxc instead.
-- `CTX_BACKEND=c python -m unittest discover tests` passes all 215 tests.
-- `tools/ctest.py` passes 110 corpus programs, and skips 20 (below). `tools/ctest.py --same-c`:
-  native and interpreted ctxc write byte-identical C for all 130 programs and for ctxc itself.
+- `CTX_BACKEND=c python -m unittest discover tests` passes all 300 tests.
+- `tools/ctest.py` passes 151 corpus programs, and skips 20 (below). `tools/ctest.py --same-c`:
+  native and interpreted ctxc write byte-identical C for all 171 programs and for ctxc itself.
+- `tools/lextest.py`: ctxc's token dumps match ctxi's for all 397 files (stage 4).
 - Friction found while writing ctxc is logged in [FRICTION.md](FRICTION.md).
 
 ### Known gaps
@@ -72,15 +73,18 @@ language server (stage 7a) queries. IR is lowered from it only when there are no
 ```
 ctxc/                  one multi-file program (every .ctx in the directory)
   main.ctx             driver: args → files → pipeline → out.c
+  source.ctx  diag.ctx                    spans and line tables, the diagnostics list
   lexer.ctx  parser.ctx  syntax.ctx       front end (stages 4–5)
   types.ctx  check_*.ctx                  checker (stage 6)
   ir.ctx  ir_read.ctx  ir_print.ctx       IR, its reader and canonical printer
   emit_c.ctx                              backend (stage 2)
+  dump.ctx                                token (and later syntax-tree) dumps for the diffs
 ctxc/rt/ctxrt.h ctxrt.c                   C runtime: panic, natives, startup
 ctxi/irdump.py                            Python → IR (stage 1)
 ctxi/cbackend.py                          IR → ctxc → cc; bootstraps the native ctxc (stage 3)
 tools/ctxc.py                             driver: compiles a program to an executable
 tools/corpus.py  irtest.py  ctest.py      corpus, IR roundtrip, C backend differential tests
+tools/lextest.py                          token dumps against ctxi's, and lexer fuzzing
 ```
 
 ## Editor support
@@ -262,14 +266,35 @@ to live and a read-only type to have, which in turn needs read-only pointers and
 *Done when:* each step passes the test suite under both backends and `ctest.py --same-c`, and
 FRICTION.md #1 and #12 are struck through.
 
-### 4. Lexer (~500 ctxlang)
+### 4. Lexer — done
 
-Port `ctxi/lexer.py`. Tokens carry byte-offset spans, the lexer keeps comments on the side and
-recovers from errors ([Editor support](#editor-support)). The token dump prints line and column
-in characters, computed from the line table, because error messages depend on them.
+`lexer.ctx` ports `ctxi/lexer.py` (about 500 lines, with `source.ctx` and `diag.ctx`). A token is
+a kind, a newline flag and a span, with no value: the parser reads a literal's value from its
+text (`lexer::int_value`, `float_value`, `char_value`, `str_value`). Kinds are `u8` consts in
+`tok`, not a union, because a union has no `==` (FRICTION.md #15). Comments go in a side list.
+A problem becomes an error token plus a diagnostic, and lexing goes on. `source.ctx` has spans
+and line tables, and `diag.ctx` has the capped diagnostics list that the parser and checker will
+append to.
 
-*Done when:* token dumps match Python for all of `std/`, `examples/` and the corpus, and each
-lexer-error test's first diagnostic matches ctxi's error.
+`ctxc tokens FILE...` prints a dump (`dump.ctx`), and `tools/lextest.py` compares it with ctxi's.
+It also has a `--fuzz N` mode, which damages each file N ways and compares again.
+
+ctxi changed to give both lexers one exact definition:
+- Names and digits are ASCII only (spec §1). `str.isalpha` had let `café` be a name, and
+  `1²` crashed ctxi.
+- `0x` or `0b` with no digits is `invalid number literal` instead of a crash.
+- `''` and `'''` are errors: a quote inside a character literal must be escaped.
+- A bad character is shown by `show_char`: `'c'`, `'\x01'`, and for non-ASCII `'é' (U+00E9)`,
+  because the character may be invisible (a BOM, a zero-width space).
+- The end of a file after a trailing `// comment` is now at the end, not at the comment's start.
+- Tokens record their width, and `lex` can collect comments, for the dump.
+
+ctxc alone rejects invalid UTF-8, which ctxi can't read at all. An int literal above `u64` is
+`toobig` in the dump; the checker will need its own message for it (ctxi prints the value).
+
+*Done:* the dumps match for all 397 files of the corpus, `std/` and `ctxc/`, and all 25
+lexer-error cases give the same first diagnostic (new `Lexer` tests put each error in the
+corpus). `--fuzz 20` agrees on 7,940 damaged files. Natively, all 397 files lex and dump in 0.6s.
 
 ### 5. Parser (~1,800 ctxlang)
 

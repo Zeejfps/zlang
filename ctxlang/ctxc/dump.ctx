@@ -1,0 +1,130 @@
+// Text dumps of the front end's results, for differential tests against ctxi (tools/lextest.py
+// writes the same format from ctxi's lexer). One line per token, then per comment, then per
+// diagnostic, with positions as LINE:COL and widths in characters:
+//
+//   1:1+2 nl kw fn                 a token: position, width, nl if a newline comes before it,
+//   1:9+1 op {                     then its class and value
+//   3:5-4:7 comment
+//   5:1 error unterminated literal
+
+namespace dump {
+    type Out = utf8::Builder(arena::Arena)
+
+    fn tokens { mut out: Out, mut heap: arena::Arena, text: []u8, lexed: lexer::Lexed, diags: diag::Diags } {
+        let lines = source::line_starts{ text, &heap }
+        let mut i: usize = 0
+        while i < lexed.tokens.len {
+            token{ &out, &heap, text, lines, t = lexed.tokens[i] }
+            i = i + 1
+        }
+        i = 0
+        while i < lexed.comments.len {
+            let s = lexed.comments[i]
+            pos{ &out, &heap, p = source::position{ text, lines, offset = s.start } }
+            put{ &out, &heap, s = "-" }
+            pos{ &out, &heap, p = source::position{ text, lines, offset = s.end } }
+            put{ &out, &heap, s = " comment\n" }
+            i = i + 1
+        }
+        let ds = diag::items{ diags }
+        i = 0
+        while i < ds.len {
+            let d = ds[i]
+            pos{ &out, &heap, p = source::position{ text, lines, offset = d.span.start } }
+            put{ &out, &heap, s = " error " }
+            let mut k: usize = 0
+            while k < d.msg.bytes.len {
+                let c = d.msg.bytes[k]
+                if c == '\n' { put{ &out, &heap, s = "\\n" } } else { byte{ &out, &heap, c } }
+                k = k + 1
+            }
+            put{ &out, &heap, s = "\n" }
+            i = i + 1
+        }
+    }
+
+    fn token { mut out: Out, mut heap: arena::Arena, text: []u8, lines: []u32, t: tok::Token } {
+        let s = text[t.span.start..t.span.end]
+        pos{ &out, &heap, p = source::position{ text, lines, offset = t.span.start } }
+        put{ &out, &heap, s = "+" }
+        let mut width: u64 = 0
+        let mut i: usize = 0
+        while i < s.len {
+            if not utf8::is_cont{ b = s[i] } { width = width + 1 }
+            i = i + 1
+        }
+        _ = utf8::push_u64{ b = &out, &heap, n = width }
+        if t.nl { put{ &out, &heap, s = " nl" } }
+        let k = t.kind
+        if k == tok::EOF {
+            put{ &out, &heap, s = " eof" }
+        } else if k == tok::ERROR {
+            put{ &out, &heap, s = " error" }
+        } else if k == tok::IDENT {
+            put{ &out, &heap, s = " id " }
+            raw{ &out, &heap, s }
+        } else if tok::is_keyword{ kind = k } {
+            put{ &out, &heap, s = " kw " }
+            raw{ &out, &heap, s }
+        } else if tok::is_op{ kind = k } {
+            put{ &out, &heap, s = " op " }
+            raw{ &out, &heap, s }
+        } else if k == tok::BUILTIN {
+            put{ &out, &heap, s = " builtin " }
+            raw{ &out, &heap, s = s[1..] }
+        } else if k == tok::INT or k == tok::CHAR {
+            put{ &out, &heap, s = if k == tok::INT { " int " } else { " char " } }
+            let v = lexer::int_value{ text = s }
+            if v == null {
+                put{ &out, &heap, s = "toobig" }
+            } else {
+                _ = utf8::push_u64{ b = &out, &heap, n = v }
+            }
+        } else if k == tok::FLOAT {
+            put{ &out, &heap, s = " float " }
+            _ = utf8::push_f64{ b = &out, &heap, n = lexer::float_value{ &heap, text = s } }
+        } else {
+            put{ &out, &heap, s = " str \"" }
+            let bytes = lexer::str_value{ &heap, text = s }
+            i = 0
+            while i < bytes.len {
+                let c = bytes[i]
+                if c >= 32 and c < 127 and c != '"' and c != '\\' {
+                    byte{ &out, &heap, c }
+                } else {
+                    put{ &out, &heap, s = "\\x" }
+                    byte{ &out, &heap, c = hex_digit{ n = c / 16 } }
+                    byte{ &out, &heap, c = hex_digit{ n = c % 16 } }
+                }
+                i = i + 1
+            }
+            put{ &out, &heap, s = "\"" }
+        }
+        put{ &out, &heap, s = "\n" }
+    }
+
+    fn pos { mut out: Out, mut heap: arena::Arena, p: source::Pos } {
+        _ = utf8::push_u64{ b = &out, &heap, n = p.line }
+        put{ &out, &heap, s = ":" }
+        _ = utf8::push_u64{ b = &out, &heap, n = p.col }
+    }
+
+    fn hex_digit { n: u8 } -> u8 {
+        if n < 10 { return '0' + n }
+        return 'a' + n - 10
+    }
+
+    fn put { mut out: Out, mut heap: arena::Arena, s: utf8::String } {
+        if not utf8::push{ b = &out, &heap, s } { @panic("dump: out of memory") }
+    }
+
+    // Source bytes, which the lexer has checked are valid UTF-8 wherever it made a token.
+    fn raw { mut out: Out, mut heap: arena::Arena, s: []u8 } {
+        put{ &out, &heap, s = utf8::String{ bytes = s } }
+    }
+
+    // One byte, which may be part of a character.
+    fn byte { mut out: Out, mut heap: arena::Arena, c: u8 } {
+        if not list::push{ list = &out.bytes, &heap, item = c } { @panic("dump: out of memory") }
+    }
+}

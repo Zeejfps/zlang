@@ -515,6 +515,60 @@ fn main { mut io: Io } { let x = r{ n = 0 } }
 """, out=io.StringIO(), stack_size=1 << 20)
 
 
+class Lexer(Base):
+    def assertLexError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_literals(self):
+        for src, msg, line, col in [
+            ('fn main {\n    let s = "abc\n}', 'unterminated literal', 2, 13),
+            ('fn main { let s = "abc\\', 'unterminated literal', 1, 19),
+            ("fn main { let c = 'a }", 'a character literal holds exactly one character', 1, 19),
+            ("fn main { let c = 'ab' }", 'a character literal holds exactly one character', 1, 19),
+            ("fn main { let c = '' }", 'a character literal holds exactly one character', 1, 19),
+            ("fn main { let c = ''' }", 'a character literal holds exactly one character', 1, 19),
+            ('fn main { let s = "\\q" }', 'unknown escape \\q', 1, 19),
+            ('fn main { let s = "\\x4" }', '\\x needs two hex digits', 1, 19),
+            ('fn main { let s = "\\xZZ" }', '\\x needs two hex digits', 1, 19),
+            ('fn main { let s = "café" }',
+             "non-ASCII character 'é' (U+00E9) in literal; use a \\x escape", 1, 19),
+        ]:
+            self.assertLexError(src, msg, line, col)
+
+    def test_numbers(self):
+        for src in ['12ab', '0x', '0b', '0x_', '1.5e3x', '0x1g']:
+            self.assertLexError(f'fn main {{ let n = {src} }}', 'invalid number literal', 1, 19)
+
+    def test_characters(self):
+        for src, msg, col in [
+            ('fn main { let n = 1 # 2 }', "unexpected character '#'", 21),
+            ('fn main { let n = \x01 }', "unexpected character '\\x01'", 19),
+            ('fn main { let n = \\ }', "unexpected character '\\\\'", 19),
+            ('fn main { let café = 1 }', "unexpected character 'é' (U+00E9)", 18),
+            ('fn main { let n = 1² }', "unexpected character '²' (U+00B2)", 20),   # not a digit
+            ('﻿fn main {}', "unexpected character '﻿' (U+FEFF)", 1),
+            ('fn main { @ size_of(i32) }', "expected a builtin name after '@'", 11),
+        ]:
+            self.assertLexError(src, msg, 1, col)
+
+    def test_comments(self):
+        self.assertLexError('fn main {}\n/* never\nclosed', 'unterminated block comment', 2, 1)
+        # The end of the file is after a trailing comment, not at its start.
+        self.assertLexError('fn main { // open', 'expected a name, found end of file', 1, 18)
+        self.assertOutput('// café ☃\nfn main { mut io: Io } { /* é\n */ io::println_i64{ &io, n = 1 } }', '1\n')
+
+    def test_values(self):
+        self.assertOutput(r"""
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = 0x_ff + 0b1_0 + 1_000 }
+    io::println_u64{ &io, n = '\'' + '\x41' }
+    io::println_f64{ &io, n = 1_0.2_5e1 }
+}
+""", '1257\n104\n102.5\n')
+
+
 class GenericApplication(Base):
     def test_space_before_type_arguments(self):
         self.assertOutput("""

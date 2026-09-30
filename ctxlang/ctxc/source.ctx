@@ -1,0 +1,47 @@
+// Source files and positions. Tokens and syntax nodes carry a Span of byte offsets. Lines and
+// columns are computed only when they are shown, from a table of line starts, with columns
+// counted in characters as ctxi counts them.
+
+namespace source {
+    // Bytes start up to end of a file: an index into the program's list of files.
+    struct Span { file: u32, start: u32, end: u32 }
+
+    // 1-based.
+    struct Pos { line: u32, col: u32 }
+
+    // The largest file a Span can address.
+    const MAX_SIZE: usize = 4294967295
+
+    // The offset of each line's first byte: 0, then the byte after each '\n'.
+    fn line_starts { text: []u8, mut heap: arena::Arena } -> []u32 {
+        let mut xs = list::new(u32){ realloc = arena::alloc }
+        add{ &xs, &heap, n = 0 }
+        let mut i: usize = 0
+        while i < text.len {
+            if text[i] == '\n' { add{ &xs, &heap, n = @as(u32, i + 1) } }
+            i = i + 1
+        }
+        return list::items{ list = xs }
+    }
+
+    // The line and column of offset, which may be text.len: the end of the file.
+    fn position { text: []u8, lines: []u32, offset: u32 } -> Pos {
+        let mut lo: usize = 0                 // lines[lo] <= offset < lines[hi]
+        let mut hi = lines.len
+        while hi - lo > 1 {
+            let mid = lo + (hi - lo) / 2
+            if lines[mid] <= offset { lo = mid } else { hi = mid }
+        }
+        let mut col: u32 = 1
+        let mut i: usize = lines[lo]
+        while i < offset {
+            if not utf8::is_cont{ b = text[i] } { col = col + 1 }
+            i = i + 1
+        }
+        return Pos{ line = @as(u32, lo + 1), col }
+    }
+
+    fn add { mut xs: list::List(u32, arena::Arena), mut heap: arena::Arena, n: u32 } {
+        if not list::push{ list = &xs, &heap, item = n } { @panic("source: out of memory") }
+    }
+}

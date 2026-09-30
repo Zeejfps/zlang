@@ -41,3 +41,7 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
 14. **ctxi call overhead** (implementation, not language): `slice::get`/`at` made about a million
     calls in one profile. Inlining trivial std accessors in ctxi would speed development.
     *Partly:* slice indexing is built in now, so those calls are gone.
+15. **No equality on payload-less unions.** `union Kind { ident, int, ... }` can only be taken
+    apart with `match`, so `t.kind == Kind::lbrace` doesn't work, and the lexer's token kinds
+    are `u8` consts (`tok::LBRACE`) that lose exhaustiveness checks. `==` on a union whose
+    variants have no payload would let the parser use a real union.

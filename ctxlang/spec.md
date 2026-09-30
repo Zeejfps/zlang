@@ -7,6 +7,7 @@ Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound funct
 1. A program is a sequence of declarations: `fn`, `struct`, `union`, `type`, `const`, `namespace`.
 2. There is no mutable state at top level. Top-level names may be referenced from anywhere.
 3. All effects (IO, memory, OS) reach a function only through its context.
+4. Source files are UTF-8. Names are ASCII: a letter or `_`, then letters, digits and `_`. Other characters may appear only in comments, which are `// to the end of the line` and `/* ... */` (not nested). String and character literals are ASCII too (§11 Literals).
 
 ## 2. Functions and contexts
 
