@@ -64,9 +64,9 @@ fn cannot { mut io: Io, path: []u8, what: utf8::String } {
 
 // "PATH:LINE:COL: error: PROBLEM" for a malformed IR file.
 fn report { mut io: Io, path: []u8, text: []u8, at: usize, problem: ir_read::Problem } {
-    let mut line: u64 = 1
-    let mut col: u64 = 1
-    let mut i: usize = 0
+    let mut line = 1
+    let mut col = 1
+    let mut i = 0
     while i < at and i < text.len {
         if text[i] == '\n' {
             line = line + 1

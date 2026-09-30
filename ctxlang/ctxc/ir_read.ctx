@@ -51,7 +51,7 @@ namespace ir_read {
 
         let mut types = list::new(ir::Type){ realloc = arena::alloc }
         let mut fns = list::new(ir::Func){ realloc = arena::alloc }
-        let mut main: u32 = 0
+        let mut main = 0
         while true {
             expect{ &r, c = '(' }
             if r.failed { break }
@@ -607,7 +607,7 @@ namespace ir_read {
         if not escaped or r.failed { return raw }
 
         let mut out = list::new(u8){ realloc = arena::alloc }
-        let mut i: usize = 0
+        let mut i = 0
         while i < raw.len {
             let c = raw[i]
             if c != '\\' {
@@ -643,7 +643,7 @@ namespace ir_read {
     fn num { mut r: Reader } -> u64 {
         skip_space{ &r }
         let start = r.pos
-        let mut v: u64 = 0
+        let mut v = 0
         while r.pos < r.text.len {
             let c = r.text[r.pos]
             if c < '0' or c > '9' { break }

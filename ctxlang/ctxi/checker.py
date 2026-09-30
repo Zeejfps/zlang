@@ -123,6 +123,17 @@ def place_str(p):
     return s
 
 
+def fixed_by(t):
+    """Why a literal of type t has its type: the operand it was combined with, if one fixed it."""
+    while isinstance(t, TVar):
+        e = getattr(t, 'fixed_by', None)
+        if e is not None:
+            what = f'`{e.text()}`' if isinstance(e, A.Path) else 'the operand'
+            return f', which it gets from {what} at {e.pos[0]}:{e.pos[1]}'
+        t = t.ref
+    return ''
+
+
 # Children to visit when scanning an arm body for forbidden accesses.
 CHILDREN = {
     A.Block: ('stmts',), A.Let: ('init',), A.LetElse: ('init', 'els'), A.Assign: ('lhs', 'rhs'),
@@ -470,7 +481,7 @@ class Checker:
         for lit in self.lits:
             t = prune(lit.ty)
             if isinstance(lit, A.IntLit) and not (t.lo <= lit.val <= t.hi):
-                self.err(f'literal {lit.val} does not fit in {t.name}', lit.pos)
+                self.err(f'literal {lit.val} does not fit in {t.name}{fixed_by(lit.ty)}', lit.pos)
         for v, desc, pos in self.gvars:
             if free_vars(v, []):
                 self.err(f'cannot infer {desc}', pos)
@@ -1523,7 +1534,7 @@ class Checker:
             e.nullcmp = False
             lt = self.expr(e.lhs)
             rt = self.expr(e.rhs, lt)
-            t = self.operand_type(lt, rt)
+            t = self.operand_type(lt, rt, e)
             if t is None:
                 self.err(f'cannot compare {tstr(lt)} with {tstr(rt)}', e.pos)
             if not (is_num(t) or t is BOOL or isinstance(t, Ptr)):
@@ -1532,7 +1543,7 @@ class Checker:
         if op in ('<', '<=', '>', '>='):
             lt = self.expr(e.lhs)
             rt = self.expr(e.rhs, lt)
-            t = self.operand_type(lt, rt)
+            t = self.operand_type(lt, rt, e)
             if t is None:
                 self.err(f'cannot compare {tstr(lt)} with {tstr(rt)}', e.pos)
             if not is_num(t):
@@ -1557,7 +1568,7 @@ class Checker:
             return plt
         e.ptrarith = False
         rt = self.expr(e.rhs, lt)
-        t = self.operand_type(lt, rt)
+        t = self.operand_type(lt, rt, e)
         if t is None:
             self.err(f'operands of `{op}` have incompatible types: {tstr(lt)} and {tstr(rt)}; '
                      f'convert one with @as', e.pos)
@@ -1569,8 +1580,15 @@ class Checker:
         return t
 
     @staticmethod
-    def operand_type(lt, rt):
-        """The common type of two operands: equal types, or the one the other widens to."""
+    def operand_type(lt, rt, e=None):
+        """The common type of two operands: equal types, or the one the other widens to.
+
+        A literal's type that the other operand fixes remembers that operand, for finish()."""
+        pl, pr = prune(lt), prune(rt)
+        if e is not None and isinstance(pl, TVar) and isinstance(pr, Prim):
+            pl.fixed_by = e.rhs
+        if e is not None and isinstance(pr, TVar) and isinstance(pl, Prim):
+            pr.fixed_by = e.lhs
         if unify(lt, rt):
             return prune(lt)
         if widens(rt, lt):

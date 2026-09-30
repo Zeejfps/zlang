@@ -24,8 +24,11 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
    heap is threaded separately. Split borrows, or a pattern for it.
 8. ~~**Parentheses around `if` / `while` conditions** are noise when braces are required.~~
    *Done:* dropped for conditions and scrutinees (spec §11.1–2).
-9. **Integer literals default to i32.** `let mut i = 0` compared with a `usize` length is an error;
-   many `: usize` annotations follow. Infer from use.
+9. ~~**Integer literals default to i32.** `let mut i = 0` compared with a `usize` length is an
+   error.~~ *Done:* it never was; a literal is inferred from every use (spec §11 Literals), and
+   56 of ctxc's 61 integer `let` annotations were redundant. Operands, not the expected type, set
+   arithmetic width, so in `1000 + b` with `b: u8` the literal is a `u8`; widen `b` first. The
+   error names the operand the literal took its type from.
 10. **No methods** (§16 Q4). `slice::get{ s = xs, i }` and `list::push{ list = &xs, heap, item }`
     everywhere; `xs.get{ i }` would shrink code a lot. *Partly:* slices are built in (spec §12), so
     `slice::get{ s = xs, i }` is now `xs[i]`; `list::` and `map::` calls remain.

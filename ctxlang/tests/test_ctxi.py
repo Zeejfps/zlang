@@ -329,6 +329,16 @@ fn main { mut io: Io } { let x: i32 = 300; io::println_u64{ &io, n = @as(u8, x) 
     def test_literal_range(self):
         self.assertCompileError('fn main { mut io: Io } { let x: u8 = 300 }', 'does not fit in u8')
 
+    def test_literal_range_names_the_operand(self):
+        self.assertCompileError("""
+fn main { mut io: Io } {
+    let b: u8 = 3
+    let mut x = 0
+    x = 1000
+    io::println_u64{ &io, n = x + b }
+}
+""", 'literal 1000 does not fit in u8, which it gets from `b` at 6:35')
+
     def test_mixed_types(self):
         self.assertCompileError("""
 fn main { mut io: Io } { let a: i32 = 1; let b: u32 = 2; let c = a + b }

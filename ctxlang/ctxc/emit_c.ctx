@@ -61,7 +61,7 @@ namespace emit {
             adapters = list::new(Pair){ realloc = arena::alloc },
             marks = list::new(u8){ realloc = arena::alloc },
         }
-        let mut i: usize = 0
+        let mut i = 0
         while i < p.fns.len {
             add{ xs = &e.thunks, heap = e.heap, item = false }
             i = i + 1
@@ -105,7 +105,7 @@ namespace emit {
 
     fn types { mut e: E } {
         let n = e.p.types.len
-        let mut i: usize = 0
+        let mut i = 0
         while i < n { typedef{ &e, id = @as(u32, i) }; i = i + 1 }
         ch{ &e, c = '\n' }
         i = 0
@@ -119,7 +119,7 @@ namespace emit {
             put{ &e, a = " (*c" }
             num{ &e, n = i }
             put{ &e, a = ")(ctx_fn *" }
-            let mut j: usize = 0
+            let mut j = 0
             while j < params.len {
                 put{ &e, a = ", " }
                 param_type{ &e, q = params[j] }
@@ -207,7 +207,7 @@ namespace emit {
                 put{ &e, a = "};\n" }
             }
             tagged{ variants } => {
-                let mut i: usize = 0
+                let mut i = 0
                 let mut payload = false
                 while i < variants.len {
                     let fs = variants[i].fields
@@ -246,7 +246,7 @@ namespace emit {
     }
 
     fn define_fields { mut e: E, fields: []ir::Field } {
-        let mut i: usize = 0
+        let mut i = 0
         while i < fields.len {
             define{ &e, id = fields[i].ty }
             i = i + 1
@@ -260,7 +260,7 @@ namespace emit {
     }
 
     fn members { mut e: E, fields: []ir::Field } {
-        let mut i: usize = 0
+        let mut i = 0
         while i < fields.len {
             let f = fields[i]
             tn{ &e, t = f.ty }
@@ -276,7 +276,7 @@ namespace emit {
         match ty{ e, id } {
             record{ size, align, fields } => {
                 size_assert{ &e, id, size, align }
-                let mut i: usize = 0
+                let mut i = 0
                 while i < fields.len {
                     let f = fields[i]
                     offset_assert{ &e, id, variant = null, f }
@@ -285,11 +285,11 @@ namespace emit {
             }
             tagged{ size, align, variants } => {
                 size_assert{ &e, id, size, align }
-                let mut i: usize = 0
+                let mut i = 0
                 while i < variants.len {
                     let v = variants[i]
                     let some{ value = fields } = v.fields else { i = i + 1; continue }
-                    let mut j: usize = 0
+                    let mut j = 0
                     while j < fields.len {
                         offset_assert{ &e, id, variant = @as(u32, i), f = fields[j] }
                         j = j + 1
@@ -341,7 +341,7 @@ namespace emit {
     // ---- functions
 
     fn prototypes { mut e: E } {
-        let mut i: usize = 0
+        let mut i = 0
         while i < e.p.fns.len {
             signature{ &e, f = e.p.fns[i] }
             put{ &e, a = ";\n" }
@@ -358,7 +358,7 @@ namespace emit {
         num{ &e, n = f.id }
         ch{ &e, c = '(' }
         if f.params.len == 0 { put{ &e, a = "void" } }
-        let mut i: usize = 0
+        let mut i = 0
         while i < f.params.len {
             if i > 0 { put{ &e, a = ", " } }
             if f.native {
@@ -387,7 +387,7 @@ namespace emit {
             put{ &e, a = ", " }
         }
         put{ &e, a = "ctx_n_" }
-        let mut i: usize = 0
+        let mut i = 0
         while i < f.name.len {
             let c = f.name[i]
             if c == ':' {
@@ -458,7 +458,7 @@ namespace emit {
         ch{ &e, c = 'f' }
         num{ &e, n = f.id }
         ch{ &e, c = '(' }
-        let mut i: usize = 0
+        let mut i = 0
         while i < f.params.len {
             if i > 0 { put{ &e, a = ", " } }
             let q = f.params[i]
@@ -486,7 +486,7 @@ namespace emit {
     fn block { mut e: E, b: ir::Block } {
         ch{ &e, c = '{' }
         open_block{ &e }
-        let mut i: usize = 0
+        let mut i = 0
         while i < b.stmts.len {
             nl{ &e }
             stmt{ &e, s = b.stmts[i] }
@@ -500,7 +500,7 @@ namespace emit {
     fn value_block { mut e: E, b: ir::Block, res: u32 } {
         ch{ &e, c = '{' }
         open_block{ &e }
-        let mut i: usize = 0
+        let mut i = 0
         while i < b.stmts.len {
             nl{ &e }
             stmt{ &e, s = b.stmts[i] }
@@ -738,14 +738,14 @@ namespace emit {
     // The arms of a match on _tK: an if-else chain, since `break` inside a C switch would leave
     // the switch, not the loop. With res, each arm is a value block into _tRES.
     fn arm_chain { mut e: E, arms: []ir::Arm, k: u32, through: bool, union_t: ir::TypeId, res: ?u32 } {
-        let mut i: usize = 0
+        let mut i = 0
         while i < arms.len {
             let a = arms[i]
             ch{ &e, c = ' ' }
             if i > 0 { put{ &e, a = "else " } }
             if a.pats.len > 0 {
                 put{ &e, a = "if (" }
-                let mut j: usize = 0
+                let mut j = 0
                 while j < a.pats.len {
                     if j > 0 { put{ &e, a = " || " } }
                     tag_is{ &e, k, through, variant = a.pats[j].variant }
@@ -772,7 +772,7 @@ namespace emit {
             let p = a.pats[0]
             bind_all{ &e, binds = p.binds, k, through, union_t, variant = p.variant }
         } else if a.pats.len > 1 and a.pats[0].binds.len > 0 {
-            let mut j: usize = 0
+            let mut j = 0
             while j < a.pats.len {
                 let p = a.pats[j]
                 if j > 0 { put{ &e, a = "else " } }
@@ -793,7 +793,7 @@ namespace emit {
 
     // Each binding's slot gets its field of variant `variant` of _tK, or the field's address.
     fn bind_all { mut e: E, binds: []ir::Bind, k: u32, through: bool, union_t: ir::TypeId, variant: u32 } {
-        let mut i: usize = 0
+        let mut i = 0
         while i < binds.len {
             let b = binds[i]
             local{ &e, slot = b.slot }
@@ -1353,7 +1353,7 @@ namespace emit {
             }
             else => { @panic("emit: literal of a non-struct") }
         }
-        let mut i: usize = 0
+        let mut i = 0
         while i < items.len {
             let a = items[i]
             put{ &e, a = " .m_" }
@@ -1373,7 +1373,7 @@ namespace emit {
         compound{ &e, t }
         if elems.len > 0 {
             put{ &e, a = "{ " }
-            let mut i: usize = 0
+            let mut i = 0
             while i < elems.len {
                 if i > 0 { put{ &e, a = ", " } }
                 operand{ &e, x = elems[i], tt, i = @as(u32, i) }
@@ -1424,10 +1424,10 @@ namespace emit {
 
     // The args, by parameter index 0..n.
     fn in_order { mut e: E, args: []ir::Arg, n: usize, tt: Temps } {
-        let mut j: usize = 0
+        let mut j = 0
         while j < n {
             if j > 0 { put{ &e, a = ", " } }
-            let mut i: usize = 0
+            let mut i = 0
             while i < args.len {
                 let a = args[i]
                 if a.index == j { operand{ &e, x = a.value, tt, i = @as(u32, i) } }
@@ -1516,7 +1516,7 @@ namespace emit {
         num{ &e, n = k }
         put{ &e, a = " { ctx_fn base; " }
         if inner { put{ &e, a = "ctx_fn *inner; " } }
-        let mut i: usize = 0
+        let mut i = 0
         while i < args.len {
             let a = args[i]
             tn{ &e, t = a.value.ty }
@@ -1552,7 +1552,7 @@ namespace emit {
             }
             null => {}
         }
-        let mut i: usize = 0
+        let mut i = 0
         while i < args.len {
             let a = args[i]
             tmp{ &e, k = kr }
@@ -1576,7 +1576,7 @@ namespace emit {
         put{ &e, a = prefix }
         num{ &e, n = k }
         put{ &e, a = "_code(ctx_fn *self" }
-        let mut i: usize = 0
+        let mut i = 0
         while i < params.len {
             put{ &e, a = ", " }
             param_type{ &e, q = params[i] }
@@ -1589,11 +1589,11 @@ namespace emit {
 
     // The target's params in order: a captured arg (s->cJ) or the code's param of the same name.
     fn forward { mut e: E, target: []ir::Param, args: []ir::Arg, given: []ir::Param } {
-        let mut j: usize = 0
+        let mut j = 0
         while j < target.len {
             if j > 0 { put{ &e, a = ", " } }
             let mut captured = false
-            let mut i: usize = 0
+            let mut i = 0
             while i < args.len {
                 if args[i].index == j { captured = true }
                 i = i + 1
@@ -1610,7 +1610,7 @@ namespace emit {
 
     // `aI` for the param named `name`.
     fn by_name { mut e: E, name: ir::Bytes, params: []ir::Param } {
-        let mut i: usize = 0
+        let mut i = 0
         while i < params.len {
             if slice::eq_bytes{ a = params[i].name, b = name } {
                 ch{ &e, c = 'a' }
@@ -1653,7 +1653,7 @@ namespace emit {
             expr{ &e, x = a }
             return
         }
-        let mut k: usize = 0
+        let mut k = 0
         while k < e.adapters.len {
             let q = list::items{ list = e.adapters }[k]
             if q.from == a.ty and q.to == to { break }
@@ -1682,7 +1682,7 @@ namespace emit {
 
     fn same_params { a: []ir::Param, b: []ir::Param } -> bool {
         if a.len != b.len { return false }
-        let mut i: usize = 0
+        let mut i = 0
         while i < a.len {
             let x = a[i]
             let y = b[i]
@@ -1725,7 +1725,7 @@ namespace emit {
     fn temps_args { mut e: E, args: []ir::Arg } -> Temps {
         let mut effects: usize = 0
         let mut vars: usize = 0
-        let mut i: usize = 0
+        let mut i = 0
         while i < args.len {
             let x = args[i].value
             if not pure{ e, x } { effects = effects + 1 }
@@ -1750,7 +1750,7 @@ namespace emit {
     fn temps_list { mut e: E, xs: []ir::Expr } -> Temps {
         let mut effects: usize = 0
         let mut vars: usize = 0
-        let mut i: usize = 0
+        let mut i = 0
         while i < xs.len {
             let x = xs[i]
             if not pure{ e, x } { effects = effects + 1 }
@@ -1808,7 +1808,7 @@ namespace emit {
             record{ items }    => { pure_args{ e, args = items } }
             variant{ items }   => { pure_args{ e, args = items } }
             array{ elems }     => {
-                let mut i: usize = 0
+                let mut i = 0
                 let mut ok = true
                 while i < elems.len {
                     if not pure{ e, x = elems[i] } { ok = false }
@@ -1821,7 +1821,7 @@ namespace emit {
     }
 
     fn pure_args { e: E, args: []ir::Arg } -> bool {
-        let mut i: usize = 0
+        let mut i = 0
         while i < args.len {
             if not pure{ e, x = args[i].value } { return false }
             i = i + 1
@@ -1962,7 +1962,7 @@ namespace emit {
     // A C string literal: printable ASCII as is, except `"`, `\` and `?`; other bytes as octal.
     fn cstr { mut e: E, b: ir::Bytes } {
         ch{ &e, c = '"' }
-        let mut i: usize = 0
+        let mut i = 0
         while i < b.len {
             let c = b[i]
             if c >= 32 and c <= 126 and c != '"' and c != '\\' and c != '?' {
@@ -1980,7 +1980,7 @@ namespace emit {
 
     fn nl { mut e: E } {
         ch{ &e, c = '\n' }
-        let mut i: u32 = 0
+        let mut i = 0
         while i < e.depth {
             put{ &e, a = "    " }
             i = i + 1

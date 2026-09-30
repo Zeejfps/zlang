@@ -20,7 +20,7 @@ namespace ir_print {
         text{ &o, a = "ctxir " }
         num{ &o, n = p.version }
         text{ &o, a = "\n(files [" }
-        let mut i: usize = 0
+        let mut i = 0
         while i < p.files.len {
             if i > 0 { char{ &o, c = ' ' } }
             quote{ &o, b = p.files[i] }
@@ -82,7 +82,7 @@ namespace ir_print {
                 char{ &o, c = ' ' }
                 num{ &o, n = pay_off }
                 text{ &o, a = " [" }
-                let mut i: usize = 0
+                let mut i = 0
                 while i < variants.len {
                     if i > 0 { char{ &o, c = ' ' } }
                     let v = variants[i]
@@ -135,7 +135,7 @@ namespace ir_print {
     // [(NAME T OFFSET)...]
     fn field_list { mut o: Out, fields: []ir::Field } {
         char{ &o, c = '[' }
-        let mut i: usize = 0
+        let mut i = 0
         while i < fields.len {
             if i > 0 { char{ &o, c = ' ' } }
             let f = fields[i]
@@ -154,7 +154,7 @@ namespace ir_print {
     // [(NAME MUT T)...]
     fn param_list { mut o: Out, params: []ir::Param } {
         char{ &o, c = '[' }
-        let mut i: usize = 0
+        let mut i = 0
         while i < params.len {
             if i > 0 { char{ &o, c = ' ' } }
             let p = params[i]
@@ -181,7 +181,7 @@ namespace ir_print {
         num{ &o, n = f.ret }
         if not f.native {
             text{ &o, a = " [" }
-            let mut i: usize = 0
+            let mut i = 0
             while i < f.locals.len {
                 if i > 0 { char{ &o, c = ' ' } }
                 let l = f.locals[i]
@@ -207,7 +207,7 @@ namespace ir_print {
             return
         }
         char{ &o, c = '{' }
-        let mut i: usize = 0
+        let mut i = 0
         while i < b.stmts.len {
             newline{ &o, depth = depth + 1 }
             stmt{ &o, s = b.stmts[i], depth = depth + 1 }
@@ -224,7 +224,7 @@ namespace ir_print {
 
     fn newline { mut o: Out, depth: u32 } {
         char{ &o, c = '\n' }
-        let mut i: u32 = 0
+        let mut i = 0
         while i < depth {
             text{ &o, a = "  " }
             i = i + 1
@@ -319,7 +319,7 @@ namespace ir_print {
     // [(VARIANT|_ [BIND...] BLOCK)...]
     fn arm_list { mut o: Out, arms: []ir::Arm, depth: u32 } {
         char{ &o, c = '[' }
-        let mut i: usize = 0
+        let mut i = 0
         while i < arms.len {
             if i > 0 { char{ &o, c = ' ' } }
             let a = arms[i]
@@ -328,7 +328,7 @@ namespace ir_print {
                 char{ &o, c = '_' }
             } else {
                 char{ &o, c = '[' }
-                let mut j: usize = 0
+                let mut j = 0
                 while j < a.pats.len {
                     if j > 0 { char{ &o, c = ' ' } }
                     let p = a.pats[j]
@@ -352,7 +352,7 @@ namespace ir_print {
     // [(SLOT FIELD BYREF)...]
     fn bind_list { mut o: Out, binds: []ir::Bind } {
         char{ &o, c = '[' }
-        let mut i: usize = 0
+        let mut i = 0
         while i < binds.len {
             if i > 0 { char{ &o, c = ' ' } }
             let b = binds[i]
@@ -464,7 +464,7 @@ namespace ir_print {
             array{ elems }            => {
                 head{ &o, e, a = "array" }
                 text{ &o, a = " [" }
-                let mut i: usize = 0
+                let mut i = 0
                 while i < elems.len {
                     if i > 0 { char{ &o, c = ' ' } }
                     expr{ &o, e = elems[i], depth }
@@ -532,7 +532,7 @@ namespace ir_print {
     // ` [(INDEX E)...]`
     fn arg_list { mut o: Out, args: []ir::Arg, depth: u32 } {
         text{ &o, a = " [" }
-        let mut i: usize = 0
+        let mut i = 0
         while i < args.len {
             if i > 0 { char{ &o, c = ' ' } }
             let a = args[i]
@@ -608,7 +608,7 @@ namespace ir_print {
     // A string: printable ASCII other than `"` and `\` as is, every other byte as \xHH.
     fn quote { mut o: Out, b: ir::Bytes } {
         char{ &o, c = '"' }
-        let mut i: usize = 0
+        let mut i = 0
         while i < b.len {
             let c = b[i]
             if c >= 32 and c <= 126 and c != '"' and c != '\\' {
