@@ -15,15 +15,15 @@ namespace diag {
 
     struct Diags { items: list::List(Diag, arena::Arena), errors: usize, dropped: usize }
 
-    fn new {} -> Diags {
-        return Diags{ items = list::new(Diag){ realloc = arena::alloc }, errors = 0, dropped = 0 }
+    fn new { heap: *mut arena::Arena } -> Diags {
+        return Diags{ items = list::new(Diag){ realloc = arena::alloc, heap }, errors = 0, dropped = 0 }
     }
 
-    fn error { mut diags: Diags, mut heap: arena::Arena, span: source::Span, msg: utf8::String } {
-        add{ &diags, &heap, d = Diag{ severity = Severity::error, span, msg, notes = slice::empty(Note){} } }
+    fn error { mut diags: Diags, span: source::Span, msg: utf8::String } {
+        add{ &diags, d = Diag{ severity = Severity::error, span, msg, notes = slice::empty(Note){} } }
     }
 
-    fn add { mut diags: Diags, mut heap: arena::Arena, d: Diag } {
+    fn add { mut diags: Diags, d: Diag } {
         match d.severity {
             error => { diags.errors = diags.errors + 1 }
             warning => {}
@@ -32,7 +32,7 @@ namespace diag {
             diags.dropped = diags.dropped + 1
             return
         }
-        if not list::push{ list = &diags.items, &heap, item = d } { @panic("diag: out of memory") }
+        if not list::push{ list = &diags.items, item = d } { @panic("diag: out of memory") }
     }
 
     fn items { diags: Diags } -> []Diag {

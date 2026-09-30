@@ -425,15 +425,15 @@ namespace utf8 {
 
     // A growable string that owns its bytes, allocated like a list. Free it with `free`.
     //
-    //   let mut b = utf8::builder{ realloc = arena::alloc }
-    //   _ = utf8::push{ &b, &heap, s = name }
-    //   _ = utf8::push_i64{ &b, &heap, n = 42 }
-    //   _ = utf8::push_char{ &b, &heap, c = 233 }        // U+00E9, e with an acute accent
+    //   let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    //   _ = utf8::push{ &b, s = name }
+    //   _ = utf8::push_i64{ &b, n = 42 }
+    //   _ = utf8::push_char{ &b, c = 233 }        // U+00E9, e with an acute accent
     //   io::println{ &io, s = utf8::view{ b } }
     struct Builder(S) { bytes: list::List(u8, S) }
 
-    fn builder(S) { realloc: alloc::Fn(S) } -> Builder(S) {
-        return Builder{ bytes = list::new(u8){ realloc } }
+    fn builder(S) { realloc: alloc::Fn(S), heap: *mut S } -> Builder(S) {
+        return Builder{ bytes = list::new(u8){ realloc, heap } }
     }
 
     // The text so far. Invalidated by the next push.
@@ -442,48 +442,48 @@ namespace utf8 {
     }
 
     // Each push returns false on allocation failure.
-    fn push(S) { mut b: Builder(S), mut heap: S, s: String } -> bool {
-        if not list::reserve{ list = &b.bytes, &heap, extra = s.bytes.len } { return false }
+    fn push(S) { mut b: Builder(S), s: String } -> bool {
+        if not list::reserve{ list = &b.bytes, extra = s.bytes.len } { return false }
         let mut i: usize = 0
         while i < s.bytes.len {
-            _ = list::push{ list = &b.bytes, &heap, item = s.bytes[i] }
+            _ = list::push{ list = &b.bytes, item = s.bytes[i] }
             i = i + 1
         }
         return true
     }
 
     // Panics if c isn't a scalar value.
-    fn push_char(S) { mut b: Builder(S), mut heap: S, c: u32 } -> bool {
+    fn push_char(S) { mut b: Builder(S), c: u32 } -> bool {
         let mut buf: [4]u8
-        return push{ &b, &heap, s = encode{ c, into = buf[..] } }
+        return push{ &b, s = encode{ c, into = buf[..] } }
     }
 
-    fn push_i64(S) { mut b: Builder(S), mut heap: S, n: i64 } -> bool {
+    fn push_i64(S) { mut b: Builder(S), n: i64 } -> bool {
         let mut buf: [20]u8
-        return push{ &b, &heap, s = fmt_i64{ n, into = buf[..] } }
+        return push{ &b, s = fmt_i64{ n, into = buf[..] } }
     }
 
-    fn push_u64(S) { mut b: Builder(S), mut heap: S, n: u64 } -> bool {
+    fn push_u64(S) { mut b: Builder(S), n: u64 } -> bool {
         let mut buf: [20]u8
-        return push{ &b, &heap, s = fmt_u64{ n, into = buf[..] } }
+        return push{ &b, s = fmt_u64{ n, into = buf[..] } }
     }
 
-    fn push_f64(S) { mut b: Builder(S), mut heap: S, n: f64 } -> bool {
+    fn push_f64(S) { mut b: Builder(S), n: f64 } -> bool {
         let mut buf: [32]u8
-        return push{ &b, &heap, s = fmt_f64{ n, into = buf[..] } }
+        return push{ &b, s = fmt_f64{ n, into = buf[..] } }
     }
 
-    fn push_f32(S) { mut b: Builder(S), mut heap: S, n: f32 } -> bool {
+    fn push_f32(S) { mut b: Builder(S), n: f32 } -> bool {
         let mut buf: [32]u8
-        return push{ &b, &heap, s = fmt_f32{ n, into = buf[..] } }
+        return push{ &b, s = fmt_f32{ n, into = buf[..] } }
     }
 
     fn clear(S) { mut b: Builder(S) } {
         list::clear{ list = &b.bytes }
     }
 
-    fn free(S) { mut b: Builder(S), mut heap: S } {
-        list::free{ list = &b.bytes, &heap }
+    fn free(S) { mut b: Builder(S) } {
+        list::free{ list = &b.bytes }
     }
 
     // ---- internals

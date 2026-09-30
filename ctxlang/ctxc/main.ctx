@@ -95,12 +95,12 @@ fn dumps { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, trees: bool } -> i3
             cannot{ &io, path, what = "cannot read" }
             return 1
         }
-        let mut diags = diag::new{}
+        let mut diags = diag::new{ &heap }
         let lexed = lexer::lex{ text, file = 0, &heap, &diags }
-        let mut out = utf8::builder{ realloc = arena::alloc }
-        _ = utf8::push{ b = &out, &heap, s = "file " }
-        _ = utf8::push{ b = &out, &heap, s = utf8::String{ bytes = path } }
-        _ = utf8::push{ b = &out, &heap, s = "\n" }
+        let mut out = utf8::builder{ realloc = arena::alloc, &heap }
+        _ = utf8::push{ b = &out, s = "file " }
+        _ = utf8::push{ b = &out, s = utf8::String{ bytes = path } }
+        _ = utf8::push{ b = &out, s = "\n" }
         if trees {
             let f = parser::parse{ text, file = 0, tokens = lexed.tokens, &heap, &diags }
             tree::file{ &out, &heap, text, f, diags }
@@ -163,29 +163,29 @@ fn report { mut io: Io, path: []u8, text: []u8, at: usize, problem: ir_read::Pro
     }
     let mut buf: [256]u8
     let mut heap = arena::new{ buf = buf[..] }
-    let mut b = utf8::builder{ realloc = arena::alloc }
-    _ = utf8::push_char{ &b, &heap, c = ':' }
-    _ = utf8::push_u64{ &b, &heap, n = line }
-    _ = utf8::push_char{ &b, &heap, c = ':' }
-    _ = utf8::push_u64{ &b, &heap, n = col }
-    _ = utf8::push{ &b, &heap, s = ": error: " }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    _ = utf8::push_char{ &b, c = ':' }
+    _ = utf8::push_u64{ &b, n = line }
+    _ = utf8::push_char{ &b, c = ':' }
+    _ = utf8::push_u64{ &b, n = col }
+    _ = utf8::push{ &b, s = ": error: " }
     match problem {
         expected{ c } => {
-            _ = utf8::push{ &b, &heap, s = "expected '" }
-            _ = utf8::push_char{ &b, &heap, c }
-            _ = utf8::push_char{ &b, &heap, c = '\'' }
+            _ = utf8::push{ &b, s = "expected '" }
+            _ = utf8::push_char{ &b, c }
+            _ = utf8::push_char{ &b, c = '\'' }
         }
         expected_int => {
-            _ = utf8::push{ &b, &heap, s = "expected an integer" }
+            _ = utf8::push{ &b, s = "expected an integer" }
         }
-        int_too_large   => { _ = utf8::push{ &b, &heap, s = "integer too large" } }
-        expected_symbol => { _ = utf8::push{ &b, &heap, s = "expected a symbol" } }
-        expected_string => { _ = utf8::push{ &b, &heap, s = "expected a string" } }
-        bad_escape      => { _ = utf8::push{ &b, &heap, s = "invalid escape in string" } }
-        bad_float       => { _ = utf8::push{ &b, &heap, s = "invalid float" } }
-        unknown_tag     => { _ = utf8::push{ &b, &heap, s = "unexpected tag" } }
-        bad_id          => { _ = utf8::push{ &b, &heap, s = "type id out of order" } }
-        trailing_text   => { _ = utf8::push{ &b, &heap, s = "unexpected text after (main)" } }
+        int_too_large   => { _ = utf8::push{ &b, s = "integer too large" } }
+        expected_symbol => { _ = utf8::push{ &b, s = "expected a symbol" } }
+        expected_string => { _ = utf8::push{ &b, s = "expected a string" } }
+        bad_escape      => { _ = utf8::push{ &b, s = "invalid escape in string" } }
+        bad_float       => { _ = utf8::push{ &b, s = "invalid float" } }
+        unknown_tag     => { _ = utf8::push{ &b, s = "unexpected tag" } }
+        bad_id          => { _ = utf8::push{ &b, s = "type id out of order" } }
+        trailing_text   => { _ = utf8::push{ &b, s = "unexpected text after (main)" } }
     }
     io::write{ &io, to = io::Stream::err, bytes = path }
     io::eprintln{ &io, s = utf8::view{ b } }

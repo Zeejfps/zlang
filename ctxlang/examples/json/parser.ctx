@@ -67,12 +67,12 @@ namespace parser {
     fn parse_array(S) { mut p: Parser(S), mut heap: S } -> Result(json::Value, Error) {
         if not enter{ &p } { return fail{ at = p.pos, problem = Problem::too_deep } }
         defer p.depth = p.depth - 1
-        let mut items = list::new(json::Value){ realloc = p.realloc }
+        let mut items = list::new(json::Value){ realloc = p.realloc, &heap }
         skip_space{ &p }
         if not eat{ &p, c = ']' } {
             while true {
                 let ok{ value } = parse_value{ .. } else err{ error } { return Result::err{ error } }
-                if not list::push{ list = &items, &heap, item = value } {
+                if not list::push{ list = &items, item = value } {
                     return fail{ at = p.pos, problem = Problem::out_of_memory }
                 }
                 skip_space{ &p }
@@ -87,7 +87,7 @@ namespace parser {
     fn parse_object(S) { mut p: Parser(S), mut heap: S } -> Result(json::Value, Error) {
         if not enter{ &p } { return fail{ at = p.pos, problem = Problem::too_deep } }
         defer p.depth = p.depth - 1
-        let mut members = list::new(json::Member){ realloc = p.realloc }
+        let mut members = list::new(json::Member){ realloc = p.realloc, &heap }
         skip_space{ &p }
         if not eat{ &p, c = '}' } {
             while true {
@@ -97,7 +97,7 @@ namespace parser {
                 skip_space{ &p }
                 if not eat{ &p, c = ':' } { return fail{ at = p.pos, problem = Problem::expected_colon } }
                 let ok{ value } = parse_value{ .. } else err{ error } { return Result::err{ error } }
-                if not list::push{ list = &members, &heap, item = json::Member{ key, value } } {
+                if not list::push{ list = &members, item = json::Member{ key, value } } {
                     return fail{ at = p.pos, problem = Problem::out_of_memory }
                 }
                 skip_space{ &p }
@@ -112,7 +112,7 @@ namespace parser {
     // a copy, built from the runs of plain text between them.
     fn parse_string(S) { mut p: Parser(S), mut heap: S } -> Result(utf8::String, Error) {
         p.pos = p.pos + 1
-        let mut b = utf8::builder{ realloc = p.realloc }
+        let mut b = utf8::builder{ realloc = p.realloc, &heap }
         let mut copied = false
         while true {
             // The run ends at an ASCII byte, so both ends are character boundaries.
@@ -127,14 +127,14 @@ namespace parser {
                 p.pos = p.pos + 1
                 return Result::ok{ value = run }
             }
-            if not utf8::push{ &b, &heap, s = run } { return fail{ at = p.pos, problem = Problem::out_of_memory } }
+            if not utf8::push{ &b, s = run } { return fail{ at = p.pos, problem = Problem::out_of_memory } }
             if c == '"' {
                 p.pos = p.pos + 1
                 return Result::ok{ value = utf8::view{ b } }
             }
             // c is '\\'
             let ok{ value = ch } = parse_escape{ &p } else err{ error } { return Result::err{ error } }
-            if not utf8::push_char{ &b, &heap, c = ch } { return fail{ at = p.pos, problem = Problem::out_of_memory } }
+            if not utf8::push_char{ &b, c = ch } { return fail{ at = p.pos, problem = Problem::out_of_memory } }
             copied = true
         }
     }

@@ -5,13 +5,13 @@
 // `slice::eq_bytes` for []u8.
 //
 //   let mut ages = map::new(utf8::String, i64){
-//       realloc = arena::alloc, hash = map::hash_string, eq = utf8::eq,
+//       realloc = arena::alloc, &heap, hash = map::hash_string, eq = utf8::eq,
 //   }
-//   if not map::put{ m = &ages, &heap, key = name, value = 42 } { @panic("out of memory") }
+//   if not map::put{ m = &ages, key = name, value = 42 } { @panic("out of memory") }
 //   let age = map::get{ m = ages, key = name }       // ?i64
 //
 // A map copies its keys but not memory they point to: the bytes of an utf8::String key must
-// outlive its entry.
+// outlive its entry. A map keeps a pointer to its allocator's state, as a list does.
 //
 // Open addressing with linear probing. `remove` leaves a marker that `put` reuses and the next
 // rehash drops.
@@ -31,14 +31,15 @@ namespace map {
         len:     usize,                    // full slots
         used:    usize,                    // full and removed slots
         realloc: alloc::Fn(S),
+        heap:    *mut S,                   // the allocator's state
         hash:    Hash(K),
         eq:      Eq(K),
     }
 
     struct Entry(K, V) { key: K, value: V }
 
-    fn new(K, V, S) { realloc: alloc::Fn(S), hash: Hash(K), eq: Eq(K) } -> Map(K, V, S) {
-        return Map{ slots = slice::empty(Slot(K, V)){}, len = 0, used = 0, realloc, hash, eq }
+    fn new(K, V, S) { realloc: alloc::Fn(S), heap: *mut S, hash: Hash(K), eq: Eq(K) } -> Map(K, V, S) {
+        return Map{ slots = slice::empty(Slot(K, V)){}, len = 0, used = 0, realloc, heap, hash, eq }
     }
 
     fn len(K, V, S) { m: Map(K, V, S) } -> usize {
@@ -73,14 +74,14 @@ namespace map {
     }
 
     // Inserts key, or replaces its value. Returns false on allocation failure, leaving m unchanged.
-    fn put(K, V, S) { mut m: Map(K, V, S), mut heap: S, key: K, value: V } -> bool {
+    fn put(K, V, S) { mut m: Map(K, V, S), key: K, value: V } -> bool {
         let found = find{ m, key }
         if found != null {
             m.slots[found] = Slot::full{ k = key, v = value }
             return true
         }
         if (m.used + 1) * 4 > m.slots.len * 3 {         // keep the load at most 3/4
-            if not rehash{ .. } { return false }        // `..` forwards &m, &heap
+            if not rehash{ &m } { return false }
         }
         let i = free_slot{ m, key }
         match m.slots[i] {
@@ -114,8 +115,8 @@ namespace map {
         m.used = 0
     }
 
-    fn free(K, V, S) { mut m: Map(K, V, S), mut heap: S } {
-        _ = alloc::resize{ realloc = m.realloc, &heap, mem = m.slots, count = 0 }
+    fn free(K, V, S) { mut m: Map(K, V, S) } {
+        _ = alloc::resize{ realloc = m.realloc, heap = m.heap, mem = m.slots, count = 0 }
         m.slots = slice::empty(Slot(K, V)){}
         m.len = 0
         m.used = 0
@@ -223,11 +224,11 @@ namespace map {
 
     // Moves every entry into a new table with room for one more at a load of at most 1/2, and
     // drops removed slots. Returns false on allocation failure, leaving m unchanged.
-    fn rehash(K, V, S) { mut m: Map(K, V, S), mut heap: S } -> bool {
+    fn rehash(K, V, S) { mut m: Map(K, V, S) } -> bool {
         let mut cap: usize = 8
         while (m.len + 1) * 2 > cap { cap = cap * 2 }
         let fresh = alloc::resize{
-            realloc = m.realloc, &heap, mem = slice::empty(Slot(K, V)){}, count = cap,
+            realloc = m.realloc, heap = m.heap, mem = slice::empty(Slot(K, V)){}, count = cap,
         }
         let old = m.slots
         match fresh {
@@ -245,7 +246,7 @@ namespace map {
             }
             i = i + 1
         }
-        _ = alloc::resize{ realloc = m.realloc, &heap, mem = old, count = 0 }
+        _ = alloc::resize{ realloc = m.realloc, heap = m.heap, mem = old, count = 0 }
         return true
     }
 }

@@ -82,8 +82,8 @@ namespace lexer {
     fn lex { text: []u8, file: u32, mut heap: arena::Arena, mut diags: diag::Diags } -> Lexed {
         let mut lx = Lexer{
             text, file, pos = 0, nl = true, heap = &heap, diags = &diags,
-            tokens = list::new(tok::Token){ realloc = arena::alloc },
-            comments = list::new(source::Span){ realloc = arena::alloc },
+            tokens = list::new(tok::Token){ realloc = arena::alloc, &heap },
+            comments = list::new(source::Span){ realloc = arena::alloc, &heap },
         }
         if text.len > source::MAX_SIZE {
             report{ &lx, start = 0, end = 0, msg = "file too large" }
@@ -309,22 +309,22 @@ namespace lexer {
     }
 
     fn describe { mut heap: arena::Arena, text: []u8, p: Problem } -> utf8::String {
-        let mut b = utf8::builder{ realloc = arena::alloc }
+        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
         match p {
             unterminated => { return "unterminated literal" }
             bad_hex => { return "\\x needs two hex digits" }
             not_one_char => { return "a character literal holds exactly one character" }
             non_ascii{ at } => {
                 if utf8::seq_len{ bytes = text, i = at } == 0 { return "invalid UTF-8" }
-                _ = utf8::push{ &b, &heap, s = "non-ASCII character " }
-                show_char{ &b, &heap, text, at }
-                _ = utf8::push{ &b, &heap, s = " in literal; use a \\x escape" }
+                _ = utf8::push{ &b, s = "non-ASCII character " }
+                show_char{ &b, text, at }
+                _ = utf8::push{ &b, s = " in literal; use a \\x escape" }
             }
             unknown_escape{ at } => {
                 let n = utf8::seq_len{ bytes = text, i = at }
                 if n == 0 { return "invalid UTF-8" }
-                _ = utf8::push{ &b, &heap, s = "unknown escape \\" }
-                _ = utf8::push{ &b, &heap, s = utf8::String{ bytes = text[at..at + n] } }
+                _ = utf8::push{ &b, s = "unknown escape \\" }
+                _ = utf8::push{ &b, s = utf8::String{ bytes = text[at..at + n] } }
             }
         }
         return utf8::view{ b }
@@ -341,38 +341,38 @@ namespace lexer {
             return
         }
         lx.pos = start + n
-        let mut b = utf8::builder{ realloc = arena::alloc }
-        _ = utf8::push{ &b, heap = lx.heap, s = "unexpected character " }
-        show_char{ &b, heap = lx.heap, text, at = start }
+        let mut b = utf8::builder{ realloc = arena::alloc, heap = lx.heap }
+        _ = utf8::push{ &b, s = "unexpected character " }
+        show_char{ &b, text, at = start }
         fail{ &lx, start, msg = utf8::view{ b } }
     }
 
     // A character in a message, as ctxi's show_char: 'c', '\xNN' for an ASCII control character,
     // and the code point after a non-ASCII one, which may be invisible. It must be valid UTF-8.
-    fn show_char { mut b: utf8::Builder(arena::Arena), mut heap: arena::Arena, text: []u8, at: usize } {
+    fn show_char { mut b: utf8::Builder(arena::Arena), text: []u8, at: usize } {
         let c = text[at]
         if c < 32 or c == 127 {
-            _ = utf8::push{ &b, &heap, s = "'\\x" }
-            hex{ &b, &heap, n = c, width = 2, upper = false }
-            _ = utf8::push_char{ &b, &heap, c = '\'' }
+            _ = utf8::push{ &b, s = "'\\x" }
+            hex{ &b, n = c, width = 2, upper = false }
+            _ = utf8::push_char{ &b, c = '\'' }
         } else if c == '\\' {
-            _ = utf8::push{ &b, &heap, s = "'\\\\'" }
+            _ = utf8::push{ &b, s = "'\\\\'" }
         } else if c < 128 {
-            _ = utf8::push_char{ &b, &heap, c = '\'' }
-            _ = utf8::push_char{ &b, &heap, c }
-            _ = utf8::push_char{ &b, &heap, c = '\'' }
+            _ = utf8::push_char{ &b, c = '\'' }
+            _ = utf8::push_char{ &b, c }
+            _ = utf8::push_char{ &b, c = '\'' }
         } else {
             let s = utf8::String{ bytes = text[at..at + utf8::seq_len{ bytes = text, i = at }] }
-            _ = utf8::push_char{ &b, &heap, c = '\'' }
-            _ = utf8::push{ &b, &heap, s }
-            _ = utf8::push{ &b, &heap, s = "' (U+" }
-            hex{ &b, &heap, n = utf8::decode{ s, i = 0 }.c, width = 4, upper = true }
-            _ = utf8::push_char{ &b, &heap, c = ')' }
+            _ = utf8::push_char{ &b, c = '\'' }
+            _ = utf8::push{ &b, s }
+            _ = utf8::push{ &b, s = "' (U+" }
+            hex{ &b, n = utf8::decode{ s, i = 0 }.c, width = 4, upper = true }
+            _ = utf8::push_char{ &b, c = ')' }
         }
     }
 
     // n in hex, with at least `width` digits.
-    fn hex { mut b: utf8::Builder(arena::Arena), mut heap: arena::Arena, n: u32, width: u32, upper: bool } {
+    fn hex { mut b: utf8::Builder(arena::Arena), n: u32, width: u32, upper: bool } {
         let mut digits: [8]u8
         let mut k: usize = 0
         let mut v = n
@@ -384,7 +384,7 @@ namespace lexer {
         }
         while k > 0 {
             k = k - 1
-            _ = utf8::push_char{ &b, &heap, c = digits[k] }
+            _ = utf8::push_char{ &b, c = digits[k] }
         }
     }
 
@@ -420,7 +420,7 @@ namespace lexer {
 
     fn comment { mut lx: Lexer, start: usize } {
         let s = span{ lx, start, end = lx.pos }
-        if not list::push{ list = &lx.comments, heap = lx.heap, item = s } { @panic("lexer: out of memory") }
+        if not list::push{ list = &lx.comments, item = s } { @panic("lexer: out of memory") }
     }
 
     // The offset after the character at i, reporting it if it isn't valid UTF-8.
@@ -439,7 +439,7 @@ namespace lexer {
     // A token of `kind` from start to lx.pos.
     fn add { mut lx: Lexer, kind: tok::Kind, start: usize } {
         let t = tok::Token{ kind, nl = lx.nl, span = span{ lx, start, end = lx.pos } }
-        if not list::push{ list = &lx.tokens, heap = lx.heap, item = t } { @panic("lexer: out of memory") }
+        if not list::push{ list = &lx.tokens, item = t } { @panic("lexer: out of memory") }
         lx.nl = false
     }
 
@@ -450,7 +450,7 @@ namespace lexer {
     }
 
     fn report { mut lx: Lexer, start: usize, end: usize, msg: utf8::String } {
-        diag::error{ diags = lx.diags, heap = lx.heap, span = span{ lx, start, end }, msg }
+        diag::error{ diags = lx.diags, span = span{ lx, start, end }, msg }
     }
 
     fn span { lx: Lexer, start: usize, end: usize } -> source::Span {
@@ -510,10 +510,10 @@ namespace lexer {
     }
 
     fn float_value { mut heap: arena::Arena, text: []u8 } -> f64 {
-        let mut b = utf8::builder{ realloc = arena::alloc }
+        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
         let mut i: usize = 0
         while i < text.len {
-            if text[i] != '_' { _ = utf8::push_char{ &b, &heap, c = text[i] } }
+            if text[i] != '_' { _ = utf8::push_char{ &b, c = text[i] } }
             i = i + 1
         }
         return ascii::f64_parse{ text = utf8::view{ b }.bytes }
@@ -529,11 +529,11 @@ namespace lexer {
         let mut i: usize = 0
         while i < body.len and body[i] != '\\' { i = i + 1 }
         if i == body.len { return body }
-        let mut xs = list::new(u8){ realloc = arena::alloc }
+        let mut xs = list::new(u8){ realloc = arena::alloc, &heap }
         let mut j: usize = 0
         while j < body.len {
             let d = decode_char{ text = body, j }
-            if not list::push{ list = &xs, &heap, item = d.b } { @panic("lexer: out of memory") }
+            if not list::push{ list = &xs, item = d.b } { @panic("lexer: out of memory") }
             j = d.next
         }
         return list::items{ list = xs }

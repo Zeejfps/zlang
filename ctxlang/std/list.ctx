@@ -1,19 +1,25 @@
 // std: list. A growable list, generic over the element type T and the allocator state S.
+//
+//   let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
+//   if not list::push{ list = &xs, item = 42 } { @panic("out of memory") }
+//
+// A list keeps a pointer to its allocator's state, so it always allocates from the same state,
+// and it must not outlive it.
 
 namespace list {
     struct List(T, S) {
         items:   []mut T,           // capacity is items.len
         len:     usize,
         realloc: alloc::Fn(S),      // `fn`, not `&fn`: a bound function can't be stored here
-        // The heap is NOT stored here. Every call that allocates takes it via its context.
+        heap:    *mut S,            // the allocator's state
     }
 
-    fn new(T, S) { realloc: alloc::Fn(S) } -> List(T, S) {
-        return List{ items = slice::empty(T){}, len = 0, realloc }
+    fn new(T, S) { realloc: alloc::Fn(S), heap: *mut S } -> List(T, S) {
+        return List{ items = slice::empty(T){}, len = 0, realloc, heap }
     }
 
     // Ensures room for `extra` more items. Returns false on allocation failure.
-    fn reserve(T, S) { mut list: List(T, S), mut heap: S, extra: usize } -> bool {
+    fn reserve(T, S) { mut list: List(T, S), extra: usize } -> bool {
         let need = list.len + extra
         if need <= list.items.len { return true }
 
@@ -21,7 +27,7 @@ namespace list {
         if cap == 0 { cap = 4 }
         while cap < need { cap = cap * 2 }
 
-        let items = alloc::resize{ realloc = list.realloc, &heap, mem = list.items, count = cap }
+        let items = alloc::resize{ realloc = list.realloc, heap = list.heap, mem = list.items, count = cap }
         match items {
             null          => { return false }
             some{ value } => { list.items = value }
@@ -30,8 +36,8 @@ namespace list {
     }
 
     // Returns false on allocation failure.
-    fn push(T, S) { mut list: List(T, S), mut heap: S, item: T } -> bool {
-        if not reserve{ extra = 1, .. } { return false }   // `..` forwards &list, &heap
+    fn push(T, S) { mut list: List(T, S), item: T } -> bool {
+        if not reserve{ extra = 1, .. } { return false }   // `..` forwards &list
         list.items[list.len] = item
         list.len = list.len + 1
         return true
@@ -43,7 +49,6 @@ namespace list {
         return list.items[list.len]    // T converts to ?T
     }
 
-    // Needs no heap, so it can't allocate.
     fn get(T, S) { list: List(T, S), i: usize } -> ?T {
         if i >= list.len { return null }
         return list.items[i]
@@ -79,8 +84,8 @@ namespace list {
         }
     }
 
-    fn free(T, S) { mut list: List(T, S), mut heap: S } {
-        _ = alloc::resize{ realloc = list.realloc, &heap, mem = list.items, count = 0 }
+    fn free(T, S) { mut list: List(T, S) } {
+        _ = alloc::resize{ realloc = list.realloc, heap = list.heap, mem = list.items, count = 0 }
         list.items = slice::empty(T){}
         list.len = 0
     }

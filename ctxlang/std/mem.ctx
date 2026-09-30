@@ -7,7 +7,7 @@
 //   fn main { mut io: Io, mut mem: Mem } -> i32 {
 //       let some{ value = buf } = mem::pages{ &mem, size = 67108864 } else { return 1 }   // 64 MiB
 //       let mut heap = arena::new{ buf }
-//       let mut xs = list::new(i32){ realloc = arena::alloc }
+//       let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
 //       ...
 //   }
 //

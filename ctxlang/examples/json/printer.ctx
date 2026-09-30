@@ -13,45 +13,45 @@ namespace printer {
 
     // The text, allocated from heap, or null on allocation failure.
     fn format(S) { mut heap: S, realloc: alloc::Fn(S), v: json::Value, indent: usize } -> ?utf8::String {
-        let mut w = Writer{ out = utf8::builder{ realloc }, indent, failed = false }
-        write_value{ &w, &heap, v, depth = 0 }
+        let mut w = Writer{ out = utf8::builder{ realloc, &heap }, indent, failed = false }
+        write_value{ &w, v, depth = 0 }
         if w.failed { return null }
         return utf8::view{ b = w.out }
     }
 
-    fn write_value(S) { mut w: Writer(S), mut heap: S, v: json::Value, depth: usize } {
+    fn write_value(S) { mut w: Writer(S), v: json::Value, depth: usize } {
         match v {
-            nil              => { put{ &w, &heap, s = "null" } }
-            boolean{ value } => { if value { put{ &w, &heap, s = "true" } } else { put{ &w, &heap, s = "false" } } }
-            number{ value }  => { write_number{ &w, &heap, n = value } }
-            string{ value }  => { write_string{ &w, &heap, s = value } }
+            nil              => { put{ &w, s = "null" } }
+            boolean{ value } => { if value { put{ &w, s = "true" } } else { put{ &w, s = "false" } } }
+            number{ value }  => { write_number{ &w, n = value } }
+            string{ value }  => { write_string{ &w, s = value } }
             array{ items }   => {
-                put_char{ &w, &heap, c = '[' }
+                put_char{ &w, c = '[' }
                 let mut i: usize = 0
                 while i < items.len {
-                    if i > 0 { put_char{ &w, &heap, c = ',' } }
-                    newline{ &w, &heap, depth = depth + 1 }
-                    write_value{ &w, &heap, v = items[i], depth = depth + 1 }
+                    if i > 0 { put_char{ &w, c = ',' } }
+                    newline{ &w, depth = depth + 1 }
+                    write_value{ &w, v = items[i], depth = depth + 1 }
                     i = i + 1
                 }
-                if items.len > 0 { newline{ &w, &heap, depth } }
-                put_char{ &w, &heap, c = ']' }
+                if items.len > 0 { newline{ &w, depth } }
+                put_char{ &w, c = ']' }
             }
             object{ members } => {
-                put_char{ &w, &heap, c = '{' }
+                put_char{ &w, c = '{' }
                 let mut i: usize = 0
                 while i < members.len {
                     let m = members[i]
-                    if i > 0 { put_char{ &w, &heap, c = ',' } }
-                    newline{ &w, &heap, depth = depth + 1 }
-                    write_string{ &w, &heap, s = m.key }
-                    put_char{ &w, &heap, c = ':' }
-                    if w.indent > 0 { put_char{ &w, &heap, c = ' ' } }
-                    write_value{ &w, &heap, v = m.value, depth = depth + 1 }
+                    if i > 0 { put_char{ &w, c = ',' } }
+                    newline{ &w, depth = depth + 1 }
+                    write_string{ &w, s = m.key }
+                    put_char{ &w, c = ':' }
+                    if w.indent > 0 { put_char{ &w, c = ' ' } }
+                    write_value{ &w, v = m.value, depth = depth + 1 }
                     i = i + 1
                 }
-                if members.len > 0 { newline{ &w, &heap, depth } }
-                put_char{ &w, &heap, c = '}' }
+                if members.len > 0 { newline{ &w, depth } }
+                put_char{ &w, c = '}' }
             }
         }
     }
@@ -59,75 +59,75 @@ namespace printer {
     // 2^53: every whole number below it in magnitude is exact in an f64.
     const EXACT: f64 = 9007199254740992.0
 
-    fn write_number(S) { mut w: Writer(S), mut heap: S, n: f64 } {
+    fn write_number(S) { mut w: Writer(S), n: f64 } {
         if n != n or n > utf8::F64_MAX or n < -utf8::F64_MAX {
-            put{ &w, &heap, s = "null" }
+            put{ &w, s = "null" }
             return
         }
         if n > -EXACT and n < EXACT {
             let whole = @as(i64, n)                         // rounds toward zero
             if @as(f64, whole) == n {
-                if not utf8::push_i64{ b = &w.out, &heap, n = whole } { w.failed = true }
+                if not utf8::push_i64{ b = &w.out, n = whole } { w.failed = true }
                 return
             }
         }
         let mut buf: [32]u8
         let text = utf8::fmt_f64{ n, into = buf[..] }
-        if not utf8::push{ b = &w.out, &heap, s = text } { w.failed = true }
+        if not utf8::push{ b = &w.out, s = text } { w.failed = true }
     }
 
     // Quoted, escaping '"', '\\' and control characters. Everything else, including non-ASCII
     // text, is written as is, in runs between the characters that need escaping.
-    fn write_string(S) { mut w: Writer(S), mut heap: S, s: utf8::String } {
-        put_char{ &w, &heap, c = '"' }
+    fn write_string(S) { mut w: Writer(S), s: utf8::String } {
+        put_char{ &w, c = '"' }
         let bytes = s.bytes
         let mut i: usize = 0
         while i < bytes.len {
             let lo = i
             while i < bytes.len and parser::plain{ c = bytes[i] } { i = i + 1 }
-            put{ &w, &heap, s = utf8::sub{ s, lo, hi = i } }
+            put{ &w, s = utf8::sub{ s, lo, hi = i } }
             if i < bytes.len {
-                write_escape{ &w, &heap, c = bytes[i] }
+                write_escape{ &w, c = bytes[i] }
                 i = i + 1
             }
         }
-        put_char{ &w, &heap, c = '"' }
+        put_char{ &w, c = '"' }
     }
 
-    fn write_escape(S) { mut w: Writer(S), mut heap: S, c: u8 } {
-        put_char{ &w, &heap, c = '\\' }
-        if c == '"' or c == '\\' { put_char{ &w, &heap, c } }
-        else if c == '\n' { put_char{ &w, &heap, c = 'n' } }
-        else if c == '\r' { put_char{ &w, &heap, c = 'r' } }
-        else if c == '\t' { put_char{ &w, &heap, c = 't' } }
-        else if c == 8 { put_char{ &w, &heap, c = 'b' } }
-        else if c == 12 { put_char{ &w, &heap, c = 'f' } }
+    fn write_escape(S) { mut w: Writer(S), c: u8 } {
+        put_char{ &w, c = '\\' }
+        if c == '"' or c == '\\' { put_char{ &w, c } }
+        else if c == '\n' { put_char{ &w, c = 'n' } }
+        else if c == '\r' { put_char{ &w, c = 'r' } }
+        else if c == '\t' { put_char{ &w, c = 't' } }
+        else if c == 8 { put_char{ &w, c = 'b' } }
+        else if c == 12 { put_char{ &w, c = 'f' } }
         else {
             let hex = "0123456789abcdef"
-            put{ &w, &heap, s = "u00" }
-            put_char{ &w, &heap, c = hex[c / 16] }
-            put_char{ &w, &heap, c = hex[c % 16] }
+            put{ &w, s = "u00" }
+            put_char{ &w, c = hex[c / 16] }
+            put_char{ &w, c = hex[c % 16] }
         }
     }
 
     // A line break and the indentation for depth; nothing when writing on one line.
-    fn newline(S) { mut w: Writer(S), mut heap: S, depth: usize } {
+    fn newline(S) { mut w: Writer(S), depth: usize } {
         if w.indent == 0 { return }
-        put_char{ &w, &heap, c = '\n' }
+        put_char{ &w, c = '\n' }
         let mut k: usize = 0
         while k < depth * w.indent {
-            put_char{ &w, &heap, c = ' ' }
+            put_char{ &w, c = ' ' }
             k = k + 1
         }
     }
 
     // ---- output
 
-    fn put(S) { mut w: Writer(S), mut heap: S, s: utf8::String } {
-        if not utf8::push{ b = &w.out, &heap, s } { w.failed = true }
+    fn put(S) { mut w: Writer(S), s: utf8::String } {
+        if not utf8::push{ b = &w.out, s } { w.failed = true }
     }
 
-    fn put_char(S) { mut w: Writer(S), mut heap: S, c: u8 } {
-        if not utf8::push_char{ b = &w.out, &heap, c } { w.failed = true }
+    fn put_char(S) { mut w: Writer(S), c: u8 } {
+        if not utf8::push_char{ b = &w.out, c } { w.failed = true }
     }
 }

@@ -25,11 +25,11 @@ namespace recover {
     // Returns the number of copies that fail.
     fn run { mut io: Io, mut heap: arena::Arena, path: []u8, text: []u8, from: usize, to: usize, verbose: bool } -> u32 {
         let lines = source::line_starts{ text, &heap }
-        let mut diags = diag::new{}
+        let mut diags = diag::new{ &heap }
         let lexed = lexer::lex{ text, file = 0, &heap, &diags }
         let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, &heap, &diags }
         let clean = diags.errors == 0
-        let mut syms = list::new(Symbol){ realloc = arena::alloc }
+        let mut syms = list::new(Symbol){ realloc = arena::alloc, &heap }
         collect{ &syms, &heap, prefix = text[..0], decls = tree.decls }
         let symbols = list::items{ list = syms }
         let toks = lexed.tokens
@@ -76,9 +76,9 @@ namespace recover {
             }
             j = j + 1
         }
-        let mut b = utf8::builder{ realloc = arena::alloc }
-        _ = utf8::push{ &b, &heap, s = "done " }
-        _ = utf8::push_u64{ &b, &heap, n = count }
+        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+        _ = utf8::push{ &b, s = "done " }
+        _ = utf8::push_u64{ &b, n = count }
         io::println{ &io, s = utf8::view{ b } }
         return failures
     }
@@ -93,23 +93,23 @@ namespace recover {
     fn say { mut io: Io, how: u8, j: usize, err: bool, path: []u8, text: []u8, lines: []u32, at: usize } {
         let mut mem: [512]u8
         let mut heap = arena::new{ buf = mem[..] }
-        let mut b = utf8::builder{ realloc = arena::alloc }
-        _ = utf8::push{ &b, &heap, s = utf8::String{ bytes = path } }
-        _ = utf8::push{ &b, &heap, s = if how == 0 { ": cut at " } else if how == 1 { ": delete at " } else { ": duplicate at " } }
+        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+        _ = utf8::push{ &b, s = utf8::String{ bytes = path } }
+        _ = utf8::push{ &b, s = if how == 0 { ": cut at " } else if how == 1 { ": delete at " } else { ": duplicate at " } }
         let p = source::position{ text, lines, offset = @as(u32, at) }
-        _ = utf8::push_u64{ &b, &heap, n = p.line }
-        _ = utf8::push_char{ &b, &heap, c = ':' }
-        _ = utf8::push_u64{ &b, &heap, n = p.col }
-        _ = utf8::push{ &b, &heap, s = " (token " }
-        _ = utf8::push_u64{ &b, &heap, n = j }
-        _ = utf8::push{ &b, &heap, s = "): " }
+        _ = utf8::push_u64{ &b, n = p.line }
+        _ = utf8::push_char{ &b, c = ':' }
+        _ = utf8::push_u64{ &b, n = p.col }
+        _ = utf8::push{ &b, s = " (token " }
+        _ = utf8::push_u64{ &b, n = j }
+        _ = utf8::push{ &b, s = "): " }
         if err { io::eprintln{ &io, s = utf8::view{ b } } } else { io::print{ &io, s = utf8::view{ b } } }
     }
 
     // Parses one damaged copy and checks it, with what is known about the undamaged file: whether
     // it had errors, and its declarations. A cut copy ends at `cut`.
     fn one { mut heap: arena::Arena, text: []u8, cut: usize, is_cut: bool, clean: bool, symbols: []Symbol } -> ?utf8::String {
-        let mut diags = diag::new{}
+        let mut diags = diag::new{ &heap }
         let lexed = lexer::lex{ text, file = 0, &heap, &diags }
         let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, &heap, &diags }
         if diags.errors > diag::CAP { return "more errors than the cap" }
@@ -126,7 +126,7 @@ namespace recover {
         if c.problem != null { return c.problem }
         if not clean or not is_cut { return null }
 
-        let mut syms = list::new(Symbol){ realloc = arena::alloc }
+        let mut syms = list::new(Symbol){ realloc = arena::alloc, &heap }
         collect{ &syms, &heap, prefix = text[..0], decls = tree.decls }
         let have = list::items{ list = syms }
         let mut k: usize = 0
@@ -169,12 +169,12 @@ namespace recover {
                 space{ name, decls } => { kind = 'n'; n = name; inner = decls }
             }
             if kind != 0 {
-                let mut b = utf8::builder{ realloc = arena::alloc }
-                _ = utf8::push{ &b, &heap, s = utf8::String{ bytes = prefix } }
-                _ = utf8::push{ &b, &heap, s = "::" }
-                _ = utf8::push{ &b, &heap, s = utf8::String{ bytes = n.text } }
+                let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+                _ = utf8::push{ &b, s = utf8::String{ bytes = prefix } }
+                _ = utf8::push{ &b, s = "::" }
+                _ = utf8::push{ &b, s = utf8::String{ bytes = n.text } }
                 let path = utf8::view{ b }.bytes
-                if not list::push{ list = &syms, &heap, item = Symbol{ kind, path, span = d.span, braced } } {
+                if not list::push{ list = &syms, item = Symbol{ kind, path, span = d.span, braced } } {
                     @panic("recover: out of memory")
                 }
                 collect{ &syms, &heap, prefix = path, decls = inner }

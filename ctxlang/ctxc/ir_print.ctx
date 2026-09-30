@@ -8,12 +8,11 @@
 namespace ir_print {
     struct Out {
         bytes: list::List(u8, ir::Heap),
-        heap:  *mut ir::Heap,
         types: []ir::Type,      // a float literal's type says how to print it
     }
 
     fn out { heap: *mut ir::Heap, types: []ir::Type } -> Out {
-        return Out{ bytes = list::new(u8){ realloc = arena::alloc }, heap, types }
+        return Out{ bytes = list::new(u8){ realloc = arena::alloc, heap }, types }
     }
 
     fn program { mut o: Out, p: ir::Program } {
@@ -704,11 +703,11 @@ namespace ir_print {
     }
 
     fn char { mut o: Out, c: u8 } {
-        if not list::push{ list = &o.bytes, heap = o.heap, item = c } { @panic("ir_print: out of memory") }
+        if not list::push{ list = &o.bytes, item = c } { @panic("ir_print: out of memory") }
     }
 
     fn bytes { mut o: Out, b: ir::Bytes } {
-        if not list::reserve{ list = &o.bytes, heap = o.heap, extra = b.len } { @panic("ir_print: out of memory") }
+        if not list::reserve{ list = &o.bytes, extra = b.len } { @panic("ir_print: out of memory") }
         let len = o.bytes.len
         slice::copy{ dst = o.bytes.items[len..len + b.len], src = b }
         o.bytes.len = len + b.len

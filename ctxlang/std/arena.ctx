@@ -2,7 +2,7 @@
 //
 //   let mut mem: [4096]u8
 //   let mut heap = arena::new{ buf = mem[..] }
-//   let mut xs = list::new(i32){ realloc = arena::alloc }
+//   let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
 
 namespace arena {
     struct Arena { buf: alloc::Bytes, used: usize }

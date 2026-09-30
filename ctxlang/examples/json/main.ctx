@@ -69,13 +69,13 @@ fn report { mut io: Io, path: []u8, text: []u8, error: parser::Error } {
     }
     io::write{ &io, to = io::Stream::err, bytes = path }
     let mut buf: [48]u8
-    let mut b = utf8::builder{ realloc = arena::alloc }
     let mut heap = arena::new{ buf = buf[..] }
-    _ = utf8::push_char{ &b, &heap, c = ':' }
-    _ = utf8::push_u64{ &b, &heap, n = line }
-    _ = utf8::push_char{ &b, &heap, c = ':' }
-    _ = utf8::push_u64{ &b, &heap, n = col }
-    _ = utf8::push{ &b, &heap, s = ": " }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    _ = utf8::push_char{ &b, c = ':' }
+    _ = utf8::push_u64{ &b, n = line }
+    _ = utf8::push_char{ &b, c = ':' }
+    _ = utf8::push_u64{ &b, n = col }
+    _ = utf8::push{ &b, s = ": " }
     io::eprint{ &io, s = utf8::view{ b } }
     describe{ &io, problem = error.problem }
 }

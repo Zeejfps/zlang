@@ -21,7 +21,7 @@ MAIN_SETUP = """
 fn main { mut io: Io } {
     let mut mem: [4096]u8
     let mut heap = arena::Arena{ buf = @slice(&mem[0], mem.len), used = 0 }
-    let mut nums = list::new(i32){ realloc = arena::alloc }
+    let mut nums = list::new(i32){ realloc = arena::alloc, &heap }
     let mut total = 0
 %s
 }
@@ -62,7 +62,17 @@ class ListExample(Base):
     def test_wrong_heap_type(self):
         self.lib_error("""
     let mut m = 1
-    _ = list::push{ list = &nums, heap = &m, item = 1 }""", 'expected')
+    let xs = list::new(i32){ realloc = arena::alloc, heap = &m }""", 'expected')
+
+    def test_list_outlives_heap(self):
+        # A list holds a pointer to its allocator's state, so it can't outlive a local one.
+        self.assertCompileError("""
+fn make {} -> list::List(i32, arena::Arena) {
+    let mut heap = arena::new{ buf = slice::empty(u8){} }
+    return list::new(i32){ realloc = arena::alloc, &heap }
+}
+fn main {} { _ = make{} }
+""", 'returned value holds the address of local `heap`')
 
     def test_fn_needs_more_context(self):
         self.lib_error('    list::each{ list = nums, f = print_item }', "needs `mut io`")
@@ -78,7 +88,7 @@ class ListExample(Base):
     def test_bound_as_allocator(self):
         extra = ('fn log_to { mut log: Io, mut heap: arena::Arena, mem: alloc::Bytes, new: usize, '
                  'align: usize } -> ?alloc::Bytes { return null }\n')
-        self.lib_error('    let l = list::new(i32){ realloc = log_to{ log = &io, _ } }', 'got &fn', extra)
+        self.lib_error('    let l = list::new(i32){ realloc = log_to{ log = &io, _ }, &heap }', 'got &fn', extra)
 
     def test_not_exhaustive(self):
         self.lib_error("""
@@ -142,7 +152,7 @@ class ListExample(Base):
         self.assertOutput(LIB + MAIN_SETUP % """
     let mut mem2: [256]u8
     let mut other = arena::Arena{ buf = @slice(&mem2[0], mem2.len), used = 0 }
-    _ = list::push{ list = &nums, heap = &other, item = 1 }
+    _ = list::push{ list = &nums, item = 1 }
     io::println_u64{ &io, n = nums.len }""", '1\n')
 
 
@@ -1592,15 +1602,15 @@ fn main { mut io: Io } {
 fn main { mut io: Io } {
     let mut mem: [1024]u8
     let mut heap = arena::new{ buf = mem[..] }
-    let mut b = utf8::builder{ realloc = arena::alloc }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
     let name = "count"
-    _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &name } }
-    _ = utf8::push_char{ &b, &heap, c = '=' }
-    _ = utf8::push_i64{ &b, &heap, n = -1234567 }
-    _ = utf8::push_char{ &b, &heap, c = ' ' }
-    _ = utf8::push_u64{ &b, &heap, n = 99 }
+    _ = utf8::push{ &b, s = utf8::of{ chars = &name } }
+    _ = utf8::push_char{ &b, c = '=' }
+    _ = utf8::push_i64{ &b, n = -1234567 }
+    _ = utf8::push_char{ &b, c = ' ' }
+    _ = utf8::push_u64{ &b, n = 99 }
     io::println{ &io, s = utf8::view{ b } }
-    utf8::free{ &b, &heap }
+    utf8::free{ &b}
     io::println_u64{ &io, n = utf8::len{ s = utf8::view{ b } } }
 }
 """, 'count=-1234567 99\n0\n')
@@ -1820,7 +1830,7 @@ MAP_SETUP = """
 fn main { mut io: Io } {
     let mut mem: [262144]u8
     let mut heap = arena::new{ buf = mem[..] }
-    let mut m = map::new(i32, i64){ realloc = arena::alloc, hash = map::hash_i32, eq = map::eq_i32 }
+    let mut m = map::new(i32, i64){ realloc = arena::alloc, &heap, hash = map::hash_i32, eq = map::eq_i32 }
 %s
 }
 """
@@ -1834,7 +1844,7 @@ class Map(Base):
         self.run_map("""
     let mut i = 0
     while i < 1000 {
-        _ = map::put{ &m, &heap, key = i * 7, value = i }
+        _ = map::put{ &m, key = i * 7, value = i }
         i = i + 1
     }
     io::println_u64{ &io, n = map::len{ m } }
@@ -1851,8 +1861,8 @@ class Map(Base):
 
     def test_replace_and_at(self):
         self.run_map("""
-    _ = map::put{ &m, &heap, key = -5, value = 1 }
-    _ = map::put{ &m, &heap, key = -5, value = 2 }
+    _ = map::put{ &m, key = -5, value = 1 }
+    _ = map::put{ &m, key = -5, value = 2 }
     io::println_u64{ &io, n = map::len{ m } }
     let p = map::at{ m, key = -5 }
     if p != null { p.* = p.* + 40 }
@@ -1865,7 +1875,7 @@ class Map(Base):
         self.run_map("""
     let mut i = 0
     while i < 50 {
-        _ = map::put{ &m, &heap, key = i, value = i }
+        _ = map::put{ &m, key = i, value = i }
         i = i + 1
     }
     i = 0
@@ -1881,7 +1891,7 @@ class Map(Base):
     // Churn: removed slots are reused or dropped, so the table doesn't fill with them.
     i = 0
     while i < 2000 {
-        _ = map::put{ &m, &heap, key = 100, value = i }
+        _ = map::put{ &m, key = 100, value = i }
         _ = map::remove{ &m, key = 100 }
         i = i + 1
     }
@@ -1895,7 +1905,7 @@ fn add { mut total: i64, key: i32, value: i64 } { total = total + value }
 """ + MAP_SETUP % """
     let mut i = 1
     while i <= 10 {
-        _ = map::put{ &m, &heap, key = i, value = i * 100 }
+        _ = map::put{ &m, key = i, value = i * 100 }
         i = i + 1
     }
     let mut keys: i32 = 0
@@ -1922,7 +1932,7 @@ fn main { mut io: Io } {
     let mut mem: [8192]u8
     let mut heap = arena::new{ buf = mem[..] }
     let mut counts = map::new(utf8::String, i32){
-        realloc = arena::alloc, hash = map::hash_string, eq = utf8::eq,
+        realloc = arena::alloc, &heap, hash = map::hash_string, eq = utf8::eq,
     }
     let text = "the cat and the dog and the bird"
     let mut cur = utf8::cursor{ s = utf8::of{ chars = &text } }
@@ -1932,7 +1942,7 @@ fn main { mut io: Io } {
         if p != null {
             p.* = p.* + 1
         } else {
-            _ = map::put{ m = &counts, &heap, key = word, value = 1 }
+            _ = map::put{ m = &counts, key = word, value = 1 }
         }
         utf8::skip_space{ &cur }
     }
@@ -1945,14 +1955,14 @@ fn main { mut io: Io } {
 
     def test_clear_and_free(self):
         self.run_map("""
-    _ = map::put{ &m, &heap, key = 1, value = 1 }
-    _ = map::put{ &m, &heap, key = 2, value = 2 }
+    _ = map::put{ &m, key = 1, value = 1 }
+    _ = map::put{ &m, key = 2, value = 2 }
     map::clear{ &m }
     io::println_u64{ &io, n = map::len{ m } }
     io::println_bool{ &io, n = map::has{ m, key = 1 } }
-    _ = map::put{ &m, &heap, key = 3, value = 3 }
+    _ = map::put{ &m, key = 3, value = 3 }
     io::println_u64{ &io, n = map::len{ m } }
-    map::free{ &m, &heap }
+    map::free{ &m}
     io::println_u64{ &io, n = m.slots.len }
     io::println_bool{ &io, n = map::get{ m, key = 3 } == null }
 """, '0\nfalse\n1\n0\ntrue\n')
@@ -1962,11 +1972,11 @@ fn main { mut io: Io } {
 fn main { mut io: Io } {
     let mut mem: [256]u8
     let mut heap = arena::new{ buf = mem[..] }
-    let mut m = map::new(u64, u64){ realloc = arena::alloc, hash = map::hash_u64, eq = map::eq_u64 }
+    let mut m = map::new(u64, u64){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 }
     let mut i: u64 = 0
     let mut ok = true
     while ok {
-        ok = map::put{ &m, &heap, key = i, value = i }
+        ok = map::put{ &m, key = i, value = i }
         if ok { i = i + 1 }
     }
     io::println_u64{ &io, n = i }
@@ -1978,7 +1988,9 @@ fn main { mut io: Io } {
     def test_key_needs_matching_hash(self):
         self.assertCompileError("""
 fn main { mut io: Io } {
-    let m = map::new(i32, i32){ realloc = arena::alloc, hash = map::hash_i64, eq = map::eq_i32 }
+    let mut mem: [64]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let m = map::new(i32, i32){ realloc = arena::alloc, &heap, hash = map::hash_i64, eq = map::eq_i32 }
 }
 """, 'expected')
 
@@ -2110,16 +2122,16 @@ fn opt { mut io: Io, n: ?u32 } {
 fn main { mut io: Io } {
     let mut mem: [1024]u8
     let mut heap = arena::new{ buf = mem[..] }
-    let mut b = utf8::builder{ realloc = arena::alloc }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
     let name = "caf"
-    _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &name } }
-    _ = utf8::push_char{ &b, &heap, c = 233 }
-    _ = utf8::push_char{ &b, &heap, c = '=' }
-    _ = utf8::push_i64{ &b, &heap, n = -7 }
-    _ = utf8::push_char{ &b, &heap, c = 128512 }
+    _ = utf8::push{ &b, s = utf8::of{ chars = &name } }
+    _ = utf8::push_char{ &b, c = 233 }
+    _ = utf8::push_char{ &b, c = '=' }
+    _ = utf8::push_i64{ &b, n = -7 }
+    _ = utf8::push_char{ &b, c = 128512 }
     io::println{ &io, s = utf8::view{ b } }
     io::println_u64{ &io, n = utf8::count{ s = utf8::view{ b } } }
-    utf8::free{ &b, &heap }
+    utf8::free{ &b}
 }
 """, 'café=-7😀\n8\n')
 
@@ -3061,11 +3073,11 @@ fn main { mut io: Io } {
     def test_free_list(self):
         self.assertOutput("""
 fn total { mut heap: arena::Arena, n: i32 } -> i64 {
-    let mut xs = list::new(i32){ realloc = arena::alloc }
-    defer list::free{ list = &xs, &heap }
+    let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
+    defer list::free{ list = &xs}
     let mut i = 0
     while i < n {
-        if not list::push{ list = &xs, &heap, item = i } { return -1 }
+        if not list::push{ list = &xs, item = i } { return -1 }
         i = i + 1
     }
     let mut sum: i64 = 0
@@ -3446,16 +3458,16 @@ fn main { mut mem: Mem } { }
         out, _ = self.run_mem("""
     let some{ value = buf } = mem::pages{ &mem, size = 4096 } else { return 1 }
     let mut heap = arena::new{ buf }
-    let mut b = utf8::builder{ realloc = arena::alloc }
-    _ = utf8::push_f64{ &b, &heap, n = 0.1 }
-    _ = utf8::push_char{ &b, &heap, c = ' ' }
-    _ = utf8::push_f32{ &b, &heap, n = 0.1 }
-    _ = utf8::push_char{ &b, &heap, c = ' ' }
-    _ = utf8::push_f64{ &b, &heap, n = 1e100 }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    _ = utf8::push_f64{ &b, n = 0.1 }
+    _ = utf8::push_char{ &b, c = ' ' }
+    _ = utf8::push_f32{ &b, n = 0.1 }
+    _ = utf8::push_char{ &b, c = ' ' }
+    _ = utf8::push_f64{ &b, n = 1e100 }
     io::println{ &io, s = utf8::view{ b } }
-    let mut u = utf8::builder{ realloc = arena::alloc }
-    _ = utf8::push_f64{ b = &u, &heap, n = -2.5 }
-    _ = utf8::push_f32{ b = &u, &heap, n = 3.0 }
+    let mut u = utf8::builder{ realloc = arena::alloc, &heap }
+    _ = utf8::push_f64{ b = &u, n = -2.5 }
+    _ = utf8::push_f32{ b = &u, n = 3.0 }
     io::println{ &io, s = utf8::view{ b = u } }
     return 0
 """)

@@ -20,93 +20,93 @@ namespace dump {
         i = 0
         while i < lexed.comments.len {
             let s = lexed.comments[i]
-            pos{ &out, &heap, p = source::position{ text, lines, offset = s.start } }
-            put{ &out, &heap, s = "-" }
-            pos{ &out, &heap, p = source::position{ text, lines, offset = s.end } }
-            put{ &out, &heap, s = " comment\n" }
+            pos{ &out, p = source::position{ text, lines, offset = s.start } }
+            put{ &out, s = "-" }
+            pos{ &out, p = source::position{ text, lines, offset = s.end } }
+            put{ &out, s = " comment\n" }
             i = i + 1
         }
         let ds = diag::items{ diags }
         i = 0
         while i < ds.len {
             let d = ds[i]
-            pos{ &out, &heap, p = source::position{ text, lines, offset = d.span.start } }
-            put{ &out, &heap, s = " error " }
+            pos{ &out, p = source::position{ text, lines, offset = d.span.start } }
+            put{ &out, s = " error " }
             let mut k: usize = 0
             while k < d.msg.bytes.len {
                 let c = d.msg.bytes[k]
-                if c == '\n' { put{ &out, &heap, s = "\\n" } } else { byte{ &out, &heap, c } }
+                if c == '\n' { put{ &out, s = "\\n" } } else { byte{ &out, c } }
                 k = k + 1
             }
-            put{ &out, &heap, s = "\n" }
+            put{ &out, s = "\n" }
             i = i + 1
         }
     }
 
     fn token { mut out: Out, mut heap: arena::Arena, text: []u8, lines: []u32, t: tok::Token } {
         let s = text[t.span.start..t.span.end]
-        pos{ &out, &heap, p = source::position{ text, lines, offset = t.span.start } }
-        put{ &out, &heap, s = "+" }
+        pos{ &out, p = source::position{ text, lines, offset = t.span.start } }
+        put{ &out, s = "+" }
         let mut width: u64 = 0
         let mut i: usize = 0
         while i < s.len {
             if not utf8::is_cont{ b = s[i] } { width = width + 1 }
             i = i + 1
         }
-        _ = utf8::push_u64{ b = &out, &heap, n = width }
-        if t.nl { put{ &out, &heap, s = " nl" } }
+        _ = utf8::push_u64{ b = &out, n = width }
+        if t.nl { put{ &out, s = " nl" } }
         let k = t.kind
         if k == tok::Kind::eof {
-            put{ &out, &heap, s = " eof" }
+            put{ &out, s = " eof" }
         } else if k == tok::Kind::error {
-            put{ &out, &heap, s = " error" }
+            put{ &out, s = " error" }
         } else if k == tok::Kind::ident {
-            put{ &out, &heap, s = " id " }
-            raw{ &out, &heap, s }
+            put{ &out, s = " id " }
+            raw{ &out, s }
         } else if tok::is_keyword{ kind = k } {
-            put{ &out, &heap, s = " kw " }
-            raw{ &out, &heap, s }
+            put{ &out, s = " kw " }
+            raw{ &out, s }
         } else if tok::is_op{ kind = k } {
-            put{ &out, &heap, s = " op " }
-            raw{ &out, &heap, s }
+            put{ &out, s = " op " }
+            raw{ &out, s }
         } else if k == tok::Kind::builtin {
-            put{ &out, &heap, s = " builtin " }
-            raw{ &out, &heap, s = s[1..] }
+            put{ &out, s = " builtin " }
+            raw{ &out, s = s[1..] }
         } else if k == tok::Kind::int or k == tok::Kind::char {
-            put{ &out, &heap, s = if k == tok::Kind::int { " int " } else { " char " } }
+            put{ &out, s = if k == tok::Kind::int { " int " } else { " char " } }
             let v = lexer::int_value{ text = s }
             if v == null {
-                put{ &out, &heap, s = "toobig" }
+                put{ &out, s = "toobig" }
             } else {
-                _ = utf8::push_u64{ b = &out, &heap, n = v }
+                _ = utf8::push_u64{ b = &out, n = v }
             }
         } else if k == tok::Kind::float {
-            put{ &out, &heap, s = " float " }
-            _ = utf8::push_f64{ b = &out, &heap, n = lexer::float_value{ &heap, text = s } }
+            put{ &out, s = " float " }
+            _ = utf8::push_f64{ b = &out, n = lexer::float_value{ &heap, text = s } }
         } else {
-            put{ &out, &heap, s = " str \"" }
+            put{ &out, s = " str \"" }
             let bytes = lexer::str_value{ &heap, text = s }
             i = 0
             while i < bytes.len {
                 let c = bytes[i]
                 if c >= 32 and c < 127 and c != '"' and c != '\\' {
-                    byte{ &out, &heap, c }
+                    byte{ &out, c }
                 } else {
-                    put{ &out, &heap, s = "\\x" }
-                    byte{ &out, &heap, c = hex_digit{ n = c / 16 } }
-                    byte{ &out, &heap, c = hex_digit{ n = c % 16 } }
+                    put{ &out, s = "\\x" }
+                    byte{ &out, c = hex_digit{ n = c / 16 } }
+                    byte{ &out, c = hex_digit{ n = c % 16 } }
                 }
                 i = i + 1
             }
-            put{ &out, &heap, s = "\"" }
+            put{ &out, s = "\"" }
         }
-        put{ &out, &heap, s = "\n" }
+        put{ &out, s = "\n" }
     }
 
-    fn pos { mut out: Out, mut heap: arena::Arena, p: source::Pos } {
-        _ = utf8::push_u64{ b = &out, &heap, n = p.line }
-        put{ &out, &heap, s = ":" }
-        _ = utf8::push_u64{ b = &out, &heap, n = p.col }
+    fn pos { mut out: Out, p: source::Pos } {
+        _ = utf8::push_u64{ b = &out, n = p.line }
+        put{ &out, s = ":" }
+        _ = utf8::push_u64{ b = &out, n = p.col }
     }
 
     fn hex_digit { n: u8 } -> u8 {
@@ -114,18 +114,18 @@ namespace dump {
         return 'a' + n - 10
     }
 
-    fn put { mut out: Out, mut heap: arena::Arena, s: utf8::String } {
-        if not utf8::push{ b = &out, &heap, s } { @panic("dump: out of memory") }
+    fn put { mut out: Out, s: utf8::String } {
+        if not utf8::push{ b = &out, s } { @panic("dump: out of memory") }
     }
 
     // Source bytes, which the lexer has checked are valid UTF-8 wherever it made a token.
-    fn raw { mut out: Out, mut heap: arena::Arena, s: []u8 } {
-        put{ &out, &heap, s = utf8::String{ bytes = s } }
+    fn raw { mut out: Out, s: []u8 } {
+        put{ &out, s = utf8::String{ bytes = s } }
     }
 
     // One byte, which may be part of a character.
-    fn byte { mut out: Out, mut heap: arena::Arena, c: u8 } {
-        if not list::push{ list = &out.bytes, &heap, item = c } { @panic("dump: out of memory") }
+    fn byte { mut out: Out, c: u8 } {
+        if not list::push{ list = &out.bytes, item = c } { @panic("dump: out of memory") }
     }
 }
 
@@ -140,11 +140,11 @@ namespace dump {
 //     -
 //     1:22 block
 namespace tree {
-    struct Dumper { out: *mut dump::Out, heap: *mut arena::Arena, text: []u8, lines: []u32, depth: u32 }
+    struct Dumper { out: *mut dump::Out, text: []u8, lines: []u32, depth: u32 }
 
     fn file { mut out: dump::Out, mut heap: arena::Arena, text: []u8, f: syntax::File, diags: diag::Diags } {
         let lines = source::line_starts{ text, &heap }
-        let mut d = Dumper{ out = &out, heap = &heap, text, lines, depth = 0 }
+        let mut d = Dumper{ out = &out, text, lines, depth = 0 }
         let mut i: usize = 0
         while i < f.decls.len {
             decl{ &d, x = f.decls[i] }
@@ -154,15 +154,15 @@ namespace tree {
         i = 0
         while i < ds.len {
             let g = ds[i]
-            dump::pos{ &out, &heap, p = source::position{ text, lines, offset = g.span.start } }
-            dump::put{ &out, &heap, s = " error " }
+            dump::pos{ &out, p = source::position{ text, lines, offset = g.span.start } }
+            dump::put{ &out, s = " error " }
             let mut k: usize = 0
             while k < g.msg.bytes.len {
                 let c = g.msg.bytes[k]
-                if c == '\n' { dump::put{ &out, &heap, s = "\\n" } } else { dump::byte{ &out, &heap, c } }
+                if c == '\n' { dump::put{ &out, s = "\\n" } } else { dump::byte{ &out, c } }
                 k = k + 1
             }
-            dump::put{ &out, &heap, s = "\n" }
+            dump::put{ &out, s = "\n" }
             i = i + 1
         }
     }
@@ -172,7 +172,7 @@ namespace tree {
     // Starts a line at offset `at`.
     fn start { mut d: Dumper, at: u32 } {
         indent{ &d }
-        dump::pos{ out = d.out, heap = d.heap, p = source::position{ text = d.text, lines = d.lines, offset = at } }
+        dump::pos{ out = d.out, p = source::position{ text = d.text, lines = d.lines, offset = at } }
         put{ &d, s = " " }
     }
 
@@ -185,11 +185,11 @@ namespace tree {
     }
 
     fn put { mut d: Dumper, s: utf8::String } {
-        dump::put{ out = d.out, heap = d.heap, s }
+        dump::put{ out = d.out, s }
     }
 
     fn raw { mut d: Dumper, s: []u8 } {
-        dump::raw{ out = d.out, heap = d.heap, s }
+        dump::raw{ out = d.out, s }
     }
 
     fn end { mut d: Dumper } {
@@ -526,7 +526,7 @@ namespace tree {
                     put{ &d, s = " " }
                     name{ &d, n = label }
                     put{ &d, s = " " }
-                    dump::pos{ out = d.out, heap = d.heap, p = source::position{ text = d.text, lines = d.lines, offset = label.span.start } }
+                    dump::pos{ out = d.out, p = source::position{ text = d.text, lines = d.lines, offset = label.span.start } }
                 }
                 end{ &d }
                 d.depth = d.depth + 1
@@ -607,14 +607,14 @@ namespace tree {
                     put{ &d, s = if negative { "-toobig" } else { "toobig" } }
                 } else {
                     if negative and value != 0 { put{ &d, s = "-" } }
-                    _ = utf8::push_u64{ b = d.out, heap = d.heap, n = value }
+                    _ = utf8::push_u64{ b = d.out, n = value }
                 }
                 end{ &d }
             }
             float{ negative, value } => {
                 start{ &d, at }
                 put{ &d, s = if negative { "float -" } else { "float " } }
-                _ = utf8::push_f64{ b = d.out, heap = d.heap, n = value }
+                _ = utf8::push_f64{ b = d.out, n = value }
                 end{ &d }
             }
             str{ bytes } => {
@@ -624,11 +624,11 @@ namespace tree {
                 while i < bytes.len {
                     let c = bytes[i]
                     if c >= 32 and c < 127 and c != '"' and c != '\\' {
-                        dump::byte{ out = d.out, heap = d.heap, c }
+                        dump::byte{ out = d.out, c }
                     } else {
                         put{ &d, s = "\\x" }
-                        dump::byte{ out = d.out, heap = d.heap, c = dump::hex_digit{ n = c / 16 } }
-                        dump::byte{ out = d.out, heap = d.heap, c = dump::hex_digit{ n = c % 16 } }
+                        dump::byte{ out = d.out, c = dump::hex_digit{ n = c / 16 } }
+                        dump::byte{ out = d.out, c = dump::hex_digit{ n = c % 16 } }
                     }
                     i = i + 1
                 }

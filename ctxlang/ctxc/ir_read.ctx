@@ -49,9 +49,9 @@ namespace ir_read {
         let files = strings{ &r }
         expect{ &r, c = ')' }
 
-        let mut types = list::new(ir::Type){ realloc = arena::alloc }
-        let mut consts = list::new(ir::Const){ realloc = arena::alloc }
-        let mut fns = list::new(ir::Func){ realloc = arena::alloc }
+        let mut types = list::new(ir::Type){ realloc = arena::alloc, heap = r.heap }
+        let mut consts = list::new(ir::Const){ realloc = arena::alloc, heap = r.heap }
+        let mut fns = list::new(ir::Func){ realloc = arena::alloc, heap = r.heap }
         let mut main = 0
         while true {
             expect{ &r, c = '(' }
@@ -143,7 +143,7 @@ namespace ir_read {
     // [(NAME T OFFSET)...]
     fn fields { mut r: Reader } -> []ir::Field {
         expect{ &r, c = '[' }
-        let mut xs = list::new(ir::Field){ realloc = arena::alloc }
+        let mut xs = list::new(ir::Field){ realloc = arena::alloc, heap = r.heap }
         while more{ &r, close = ']' } {
             expect{ &r, c = '(' }
             let name = string{ &r }
@@ -159,7 +159,7 @@ namespace ir_read {
     // [(NAME _) or (NAME [FIELD...])...]
     fn variants { mut r: Reader } -> []ir::Variant {
         expect{ &r, c = '[' }
-        let mut xs = list::new(ir::Variant){ realloc = arena::alloc }
+        let mut xs = list::new(ir::Variant){ realloc = arena::alloc, heap = r.heap }
         while more{ &r, close = ']' } {
             expect{ &r, c = '(' }
             let name = string{ &r }
@@ -174,7 +174,7 @@ namespace ir_read {
     // [(NAME MUT T)...]
     fn params { mut r: Reader } -> []ir::Param {
         expect{ &r, c = '[' }
-        let mut xs = list::new(ir::Param){ realloc = arena::alloc }
+        let mut xs = list::new(ir::Param){ realloc = arena::alloc, heap = r.heap }
         while more{ &r, close = ']' } {
             expect{ &r, c = '(' }
             let name = string{ &r }
@@ -197,7 +197,7 @@ namespace ir_read {
             return ir::Func{ id, name, native, params, ret, locals = slice::empty(ir::Local){}, body = empty_block{} }
         }
         expect{ &r, c = '[' }
-        let mut locals = list::new(ir::Local){ realloc = arena::alloc }
+        let mut locals = list::new(ir::Local){ realloc = arena::alloc, heap = r.heap }
         while more{ &r, close = ']' } {
             expect{ &r, c = '(' }
             let lname = string{ &r }
@@ -219,7 +219,7 @@ namespace ir_read {
     // { STMT... } or { STMT... => EXPR }
     fn block { mut r: Reader } -> ir::Block {
         expect{ &r, c = '{' }
-        let mut stmts = list::new(ir::Stmt){ realloc = arena::alloc }
+        let mut stmts = list::new(ir::Stmt){ realloc = arena::alloc, heap = r.heap }
         let mut result: ?*ir::Expr = null
         while more{ &r, close = '}' } {
             if eat{ &r, c = '=' } {
@@ -292,7 +292,7 @@ namespace ir_read {
     // [([PAT...]|_ BLOCK)...]
     fn arms { mut r: Reader } -> []ir::Arm {
         expect{ &r, c = '[' }
-        let mut xs = list::new(ir::Arm){ realloc = arena::alloc }
+        let mut xs = list::new(ir::Arm){ realloc = arena::alloc, heap = r.heap }
         while more{ &r, close = ']' } {
             expect{ &r, c = '(' }
             let pats = if none{ &r } { slice::empty(ir::Pat){} } else { pat_list{ &r } }
@@ -307,10 +307,10 @@ namespace ir_read {
     // [([N...]|_ BLOCK)...]
     fn cases { mut r: Reader } -> []ir::Case {
         expect{ &r, c = '[' }
-        let mut xs = list::new(ir::Case){ realloc = arena::alloc }
+        let mut xs = list::new(ir::Case){ realloc = arena::alloc, heap = r.heap }
         while more{ &r, close = ']' } {
             expect{ &r, c = '(' }
-            let mut values = list::new(ir::Int){ realloc = arena::alloc }
+            let mut values = list::new(ir::Int){ realloc = arena::alloc, heap = r.heap }
             if not none{ &r } {
                 expect{ &r, c = '[' }
                 while more{ &r, close = ']' } {
@@ -330,7 +330,7 @@ namespace ir_read {
     // [(VARIANT [BIND...])...]
     fn pat_list { mut r: Reader } -> []ir::Pat {
         expect{ &r, c = '[' }
-        let mut xs = list::new(ir::Pat){ realloc = arena::alloc }
+        let mut xs = list::new(ir::Pat){ realloc = arena::alloc, heap = r.heap }
         while more{ &r, close = ']' } {
             expect{ &r, c = '(' }
             let variant = id32{ &r }
@@ -345,7 +345,7 @@ namespace ir_read {
     // [(SLOT FIELD BYREF)...]
     fn bind_list { mut r: Reader } -> []ir::Bind {
         expect{ &r, c = '[' }
-        let mut xs = list::new(ir::Bind){ realloc = arena::alloc }
+        let mut xs = list::new(ir::Bind){ realloc = arena::alloc, heap = r.heap }
         while more{ &r, close = ']' } {
             expect{ &r, c = '(' }
             let slot = id32{ &r }
@@ -525,7 +525,7 @@ namespace ir_read {
     // [E...]
     fn exprs { mut r: Reader } -> []ir::Expr {
         expect{ &r, c = '[' }
-        let mut xs = list::new(ir::Expr){ realloc = arena::alloc }
+        let mut xs = list::new(ir::Expr){ realloc = arena::alloc, heap = r.heap }
         while more{ &r, close = ']' } {
             add{ &r, xs = &xs, item = expr{ &r } }
         }
@@ -536,7 +536,7 @@ namespace ir_read {
     // [(INDEX E)...]
     fn args { mut r: Reader } -> []ir::Arg {
         expect{ &r, c = '[' }
-        let mut xs = list::new(ir::Arg){ realloc = arena::alloc }
+        let mut xs = list::new(ir::Arg){ realloc = arena::alloc, heap = r.heap }
         while more{ &r, close = ']' } {
             expect{ &r, c = '(' }
             let index = id32{ &r }
@@ -623,7 +623,7 @@ namespace ir_read {
     // [STR...]
     fn strings { mut r: Reader } -> []ir::Bytes {
         expect{ &r, c = '[' }
-        let mut xs = list::new(ir::Bytes){ realloc = arena::alloc }
+        let mut xs = list::new(ir::Bytes){ realloc = arena::alloc, heap = r.heap }
         while more{ &r, close = ']' } {
             add{ &r, xs = &xs, item = string{ &r } }
         }
@@ -646,7 +646,7 @@ namespace ir_read {
         expect{ &r, c = '"' }
         if not escaped or r.failed { return raw }
 
-        let mut out = list::new(u8){ realloc = arena::alloc }
+        let mut out = list::new(u8){ realloc = arena::alloc, heap = r.heap }
         let mut i = 0
         while i < raw.len {
             let c = raw[i]
@@ -803,6 +803,6 @@ namespace ir_read {
     }
 
     fn add(T) { mut r: Reader, mut xs: list::List(T, ir::Heap), item: T } {
-        if not list::push{ list = &xs, heap = r.heap, item } { @panic("ir_read: out of memory") }
+        if not list::push{ list = &xs, item } { @panic("ir_read: out of memory") }
     }
 }

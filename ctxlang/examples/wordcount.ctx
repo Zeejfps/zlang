@@ -41,9 +41,9 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
 
     // Keys are views into `bytes`, which outlives the map: defers run in reverse order.
     let mut counts = map::new(utf8::String, i64){
-        realloc = arena::alloc, hash = map::hash_string, eq = utf8::eq,
+        realloc = arena::alloc, &heap, hash = map::hash_string, eq = utf8::eq,
     }
-    defer map::free{ m = &counts, &heap }
+    defer map::free{ m = &counts}
 
     let mut words: u64 = 0
     let mut cur = utf8::cursor{ s = text }
@@ -55,7 +55,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
         let seen = map::at{ m = counts, key = word }            // ?*i64
         if seen != null {
             seen.* = seen.* + 1
-        } else if not map::put{ m = &counts, &heap, key = word, value = 1 } {
+        } else if not map::put{ m = &counts, key = word, value = 1 } {
             io::eprintln{ &io, s = "out of memory" }
             return 1
         }

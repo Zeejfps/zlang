@@ -48,7 +48,7 @@ namespace parser {
 
     // Declarations up to the end of the file, or up to the `}` of a namespace.
     fn decl_list { mut p: Parser, top: bool } -> []syntax::Decl {
-        let mut xs = list::new(syntax::Decl){ realloc = arena::alloc }
+        let mut xs = list::new(syntax::Decl){ realloc = arena::alloc, heap = p.heap }
         skip_semis{ &p }
         while true {
             if top {
@@ -126,7 +126,7 @@ namespace parser {
     }
 
     fn tparams { mut p: Parser } -> []syntax::Name {
-        let mut xs = list::new(syntax::Name){ realloc = arena::alloc }
+        let mut xs = list::new(syntax::Name){ realloc = arena::alloc, heap = p.heap }
         if accept{ &p, k = tok::Kind::lparen } {
             add{ &p, xs = &xs, item = ident{ &p } }
             while accept{ &p, k = tok::Kind::comma } { add{ &p, xs = &xs, item = ident{ &p } } }
@@ -137,7 +137,7 @@ namespace parser {
 
     // `{ mut name: T, ... }`, the context of a function or function type.
     fn ctx_fields { mut p: Parser } -> []syntax::Param {
-        let mut xs = list::new(syntax::Param){ realloc = arena::alloc }
+        let mut xs = list::new(syntax::Param){ realloc = arena::alloc, heap = p.heap }
         expect{ &p, k = tok::Kind::lbrace }
         while more{ p, close = tok::Kind::rbrace } {
             let start = p.i
@@ -154,7 +154,7 @@ namespace parser {
 
     // `{ name: T, ... }`, of a struct or a union variant.
     fn plain_fields { mut p: Parser } -> []syntax::Field {
-        let mut xs = list::new(syntax::Field){ realloc = arena::alloc }
+        let mut xs = list::new(syntax::Field){ realloc = arena::alloc, heap = p.heap }
         expect{ &p, k = tok::Kind::lbrace }
         while more{ p, close = tok::Kind::rbrace } {
             let start = p.i
@@ -169,7 +169,7 @@ namespace parser {
     }
 
     fn variants { mut p: Parser } -> []syntax::Variant {
-        let mut xs = list::new(syntax::Variant){ realloc = arena::alloc }
+        let mut xs = list::new(syntax::Variant){ realloc = arena::alloc, heap = p.heap }
         expect{ &p, k = tok::Kind::lbrace }
         while more{ p, close = tok::Kind::rbrace } {
             let start = p.i
@@ -183,7 +183,7 @@ namespace parser {
     }
 
     fn enum_variants { mut p: Parser } -> []syntax::EnumVariant {
-        let mut xs = list::new(syntax::EnumVariant){ realloc = arena::alloc }
+        let mut xs = list::new(syntax::EnumVariant){ realloc = arena::alloc, heap = p.heap }
         expect{ &p, k = tok::Kind::lbrace }
         while more{ p, close = tok::Kind::rbrace } {
             let start = p.i
@@ -229,7 +229,7 @@ namespace parser {
             let ret: ?*syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { box{ &p, value = type_expr{ &p } } } else { null }
             t = syntax::TypeKind::func{ bound, params, ret }
         } else if k == tok::Kind::ident {
-            let mut segs = list::new(syntax::Seg){ realloc = arena::alloc }
+            let mut segs = list::new(syntax::Seg){ realloc = arena::alloc, heap = p.heap }
             add{ &p, xs = &segs, item = type_seg{ &p } }
             while accept{ &p, k = tok::Kind::colons } { add{ &p, xs = &segs, item = type_seg{ &p } } }
             t = syntax::TypeKind::path{ segs = list::items{ list = segs } }
@@ -249,7 +249,7 @@ namespace parser {
 
     // `(T, ...)`
     fn type_list { mut p: Parser } -> []syntax::TypeExpr {
-        let mut xs = list::new(syntax::TypeExpr){ realloc = arena::alloc }
+        let mut xs = list::new(syntax::TypeExpr){ realloc = arena::alloc, heap = p.heap }
         expect{ &p, k = tok::Kind::lparen }
         while more{ p, close = tok::Kind::rparen } {
             add{ &p, xs = &xs, item = type_expr{ &p } }
@@ -264,7 +264,7 @@ namespace parser {
     fn block { mut p: Parser } -> syntax::Block {
         let start = p.i
         let id = new_id{ &p }
-        let mut xs = list::new(syntax::Stmt){ realloc = arena::alloc }
+        let mut xs = list::new(syntax::Stmt){ realloc = arena::alloc, heap = p.heap }
         if not enter{ &p } { return syntax::Block{ id, span = span_from{ p, start }, stmts = list::items{ list = xs } } }
         defer p.depth = p.depth - 1
         expect{ &p, k = tok::Kind::lbrace }
@@ -364,7 +364,7 @@ namespace parser {
 
     // A block holding one statement, with the statement's span.
     fn one { mut p: Parser, s: syntax::Stmt } -> syntax::Block {
-        let mut xs = list::new(syntax::Stmt){ realloc = arena::alloc }
+        let mut xs = list::new(syntax::Stmt){ realloc = arena::alloc, heap = p.heap }
         add{ &p, xs = &xs, item = s }
         return syntax::Block{ id = new_id{ &p }, span = s.span, stmts = list::items{ list = xs } }
     }
@@ -388,10 +388,10 @@ namespace parser {
         let ty: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::colon } { type_expr{ &p } } else { null }
         let init: ?syntax::Expr = if accept{ &p, k = tok::Kind::assign } { expr{ &p } } else { null }
         if ty == null and init == null {
-            let mut b = utf8::builder{ realloc = arena::alloc }
-            put{ &b, heap = p.heap, s = "`let " }
-            put{ &b, heap = p.heap, s = utf8::String{ bytes = name.text } }
-            put{ &b, heap = p.heap, s = "` needs a type or an initializer" }
+            let mut b = utf8::builder{ realloc = arena::alloc, heap = p.heap }
+            put{ &b, s = "`let " }
+            put{ &b, s = utf8::String{ bytes = name.text } }
+            put{ &b, s = "` needs a type or an initializer" }
             fail_at{ &p, msg = utf8::view{ b }, t }
         }
         if init != null and ty == null and not mutable and is{ p, k = tok::Kind::kw_else } {
@@ -447,7 +447,7 @@ namespace parser {
 
     // `{ f, &g, h = x, &k = y }`: the payload fields a pattern binds.
     fn binder_list { mut p: Parser } -> []syntax::Binder {
-        let mut xs = list::new(syntax::Binder){ realloc = arena::alloc }
+        let mut xs = list::new(syntax::Binder){ realloc = arena::alloc, heap = p.heap }
         expect{ &p, k = tok::Kind::lbrace }
         while more{ p, close = tok::Kind::rbrace } {
             let start = p.i
@@ -558,11 +558,11 @@ namespace parser {
         skip{ &p }
         let scrut = box{ &p, value = cond_expr{ &p } }
         expect{ &p, k = tok::Kind::lbrace }
-        let mut arms = list::new(syntax::Arm){ realloc = arena::alloc }
+        let mut arms = list::new(syntax::Arm){ realloc = arena::alloc, heap = p.heap }
         skip_semis{ &p }
         while more{ p, close = tok::Kind::rbrace } {
             let start = p.i
-            let mut pats = list::new(syntax::Pattern){ realloc = arena::alloc }
+            let mut pats = list::new(syntax::Pattern){ realloc = arena::alloc, heap = p.heap }
             if not accept{ &p, k = tok::Kind::kw_else } {
                 add{ &p, xs = &pats, item = pattern{ &p } }
                 while accept{ &p, k = tok::Kind::pipe } { add{ &p, xs = &pats, item = pattern{ &p } } }
@@ -768,7 +768,7 @@ namespace parser {
     // The rest of a path: `::name` and generic arguments `(T, ...)` on the same line.
     fn path_tail { mut p: Parser, start: usize, e: syntax::Expr, segs: []syntax::Seg } -> syntax::Expr {
         if not is{ p, k = tok::Kind::colons } and not (is{ p, k = tok::Kind::lparen } and not nl{ p }) { return e }
-        let mut xs = list::new(syntax::Seg){ realloc = arena::alloc }
+        let mut xs = list::new(syntax::Seg){ realloc = arena::alloc, heap = p.heap }
         let mut i: usize = 0
         while i < segs.len {
             add{ &p, xs = &xs, item = segs[i] }
@@ -790,7 +790,7 @@ namespace parser {
     fn braced { mut p: Parser, start: usize, callee: syntax::Expr } -> syntax::Expr {
         let t = take{ &p }
         let c = box{ &p, value = callee }
-        let mut items = list::new(syntax::Item){ realloc = arena::alloc }
+        let mut items = list::new(syntax::Item){ realloc = arena::alloc, heap = p.heap }
         let mut forward = false
         let mut bind = false
         while more{ p, close = tok::Kind::rbrace } {
@@ -841,7 +841,7 @@ namespace parser {
 
     // A path of one name, where the name is.
     fn name_path { mut p: Parser, name: syntax::Name } -> syntax::Expr {
-        let mut segs = list::new(syntax::Seg){ realloc = arena::alloc }
+        let mut segs = list::new(syntax::Seg){ realloc = arena::alloc, heap = p.heap }
         add{ &p, xs = &segs, item = syntax::Seg{ name, targs = null } }
         let k = syntax::ExprKind::path{ segs = list::items{ list = segs } }
         return syntax::Expr{ id = new_id{ &p }, span = name.span, at = name.span.start, k }
@@ -885,7 +885,7 @@ namespace parser {
             return inner
         } else if k == tok::Kind::lbracket {
             skip{ &p }
-            let mut elems = list::new(syntax::Expr){ realloc = arena::alloc }
+            let mut elems = list::new(syntax::Expr){ realloc = arena::alloc, heap = p.heap }
             if not accept{ &p, k = tok::Kind::rbracket } {
                 let first = expr{ &p }
                 if accept{ &p, k = tok::Kind::semi } {
@@ -938,26 +938,26 @@ namespace parser {
         let mut n: usize = 0
         while n < BUILTINS.len and not slice::eq_bytes{ a = BUILTINS[n].name, b = name.text } { n = n + 1 }
         if n == BUILTINS.len {
-            let mut b = utf8::builder{ realloc = arena::alloc }
-            put{ &b, heap = p.heap, s = "unknown builtin `@" }
-            put{ &b, heap = p.heap, s = utf8::String{ bytes = name.text } }
-            put{ &b, heap = p.heap, s = "`" }
+            let mut b = utf8::builder{ realloc = arena::alloc, heap = p.heap }
+            put{ &b, s = "unknown builtin `@" }
+            put{ &b, s = utf8::String{ bytes = name.text } }
+            put{ &b, s = "`" }
             fail_at{ &p, msg = utf8::view{ b }, t }
             return expr_from{ &p, start, k = syntax::ExprKind::error }
         }
         let sig = BUILTINS[n]
         if not is{ p, k = tok::Kind::lparen } {
-            let mut b = utf8::builder{ realloc = arena::alloc }
-            put{ &b, heap = p.heap, s = "expected '(' after @" }
-            put{ &b, heap = p.heap, s = utf8::String{ bytes = name.text } }
-            put{ &b, heap = p.heap, s = ": " }
-            put{ &b, heap = p.heap, s = sig.usage }
+            let mut b = utf8::builder{ realloc = arena::alloc, heap = p.heap }
+            put{ &b, s = "expected '(' after @" }
+            put{ &b, s = utf8::String{ bytes = name.text } }
+            put{ &b, s = ": " }
+            put{ &b, s = sig.usage }
             fail{ &p, msg = utf8::view{ b } }
             return expr_from{ &p, start, k = syntax::ExprKind::error }
         }
         skip{ &p }
         let mut targ: ?*syntax::TypeExpr = null
-        let mut args = list::new(syntax::Expr){ realloc = arena::alloc }
+        let mut args = list::new(syntax::Expr){ realloc = arena::alloc, heap = p.heap }
         let mut count: u32 = 0
         while count < sig.types + sig.hi and more{ p, close = tok::Kind::rparen } {
             if count < sig.types {
@@ -969,9 +969,9 @@ namespace parser {
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         if count < sig.types + sig.lo or not is{ p, k = tok::Kind::rparen } {
-            let mut b = utf8::builder{ realloc = arena::alloc }
-            put{ &b, heap = p.heap, s = "wrong number of arguments: " }
-            put{ &b, heap = p.heap, s = sig.usage }
+            let mut b = utf8::builder{ realloc = arena::alloc, heap = p.heap }
+            put{ &b, s = "wrong number of arguments: " }
+            put{ &b, s = sig.usage }
             fail{ &p, msg = utf8::view{ b } }
         }
         skip{ &p }
@@ -1043,16 +1043,16 @@ namespace parser {
         p.errored = true
         p.err_at = p.i
         if t.kind == tok::Kind::error { return }          // the lexer has reported it
-        diag::error{ diags = p.diags, heap = p.heap, span = t.span, msg }
+        diag::error{ diags = p.diags, span = t.span, msg }
     }
 
     // "expected WHAT, found TOKEN"
     fn expected { mut p: Parser, what: utf8::String } {
         if p.bad { return }
-        let mut b = utf8::builder{ realloc = arena::alloc }
-        put{ &b, heap = p.heap, s = "expected " }
-        put{ &b, heap = p.heap, s = what }
-        put{ &b, heap = p.heap, s = ", found " }
+        let mut b = utf8::builder{ realloc = arena::alloc, heap = p.heap }
+        put{ &b, s = "expected " }
+        put{ &b, s = what }
+        put{ &b, s = ", found " }
         expected_msg{ &p, msg = utf8::view{ b } }
     }
 
@@ -1060,20 +1060,20 @@ namespace parser {
     fn expected_msg { mut p: Parser, msg: utf8::String } {
         if p.bad { return }
         let t = p.toks[p.i]
-        let mut b = utf8::builder{ realloc = arena::alloc }
-        put{ &b, heap = p.heap, s = msg }
+        let mut b = utf8::builder{ realloc = arena::alloc, heap = p.heap }
+        put{ &b, s = msg }
         if t.kind == tok::Kind::eof {
-            put{ &b, heap = p.heap, s = "end of file" }
+            put{ &b, s = "end of file" }
         } else {
-            put{ &b, heap = p.heap, s = "'" }
-            put{ &b, heap = p.heap, s = utf8::String{ bytes = text_of{ p, t } } }
-            put{ &b, heap = p.heap, s = "'" }
+            put{ &b, s = "'" }
+            put{ &b, s = utf8::String{ bytes = text_of{ p, t } } }
+            put{ &b, s = "'" }
         }
         fail{ &p, msg = utf8::view{ b } }
     }
 
-    fn put { mut b: utf8::Builder(arena::Arena), mut heap: arena::Arena, s: utf8::String } {
-        if not utf8::push{ &b, &heap, s } { @panic("parser: out of memory") }
+    fn put { mut b: utf8::Builder(arena::Arena), s: utf8::String } {
+        if not utf8::push{ &b, s } { @panic("parser: out of memory") }
     }
 
     // ---- tokens
@@ -1120,10 +1120,10 @@ namespace parser {
 
     fn expect { mut p: Parser, k: tok::Kind } {
         if accept{ &p, k } or p.bad { return }
-        let mut b = utf8::builder{ realloc = arena::alloc }
-        put{ &b, heap = p.heap, s = "expected '" }
-        put{ &b, heap = p.heap, s = utf8::String{ bytes = kind_text{ k } } }
-        put{ &b, heap = p.heap, s = "', found " }
+        let mut b = utf8::builder{ realloc = arena::alloc, heap = p.heap }
+        put{ &b, s = "expected '" }
+        put{ &b, s = utf8::String{ bytes = kind_text{ k } } }
+        put{ &b, s = "', found " }
         expected_msg{ &p, msg = utf8::view{ b } }
     }
 
@@ -1199,6 +1199,6 @@ namespace parser {
     }
 
     fn add(T) { mut p: Parser, mut xs: list::List(T, arena::Arena), item: T } {
-        if not list::push{ list = &xs, heap = p.heap, item } { @panic("parser: out of memory") }
+        if not list::push{ list = &xs, item } { @panic("parser: out of memory") }
     }
 }

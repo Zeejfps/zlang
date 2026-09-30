@@ -36,5 +36,7 @@ numbers, which PLAN.md and commit messages cite; git history has the resolved on
   such locals. Inferring the type from every assignment, as literals are (spec §11 Literals),
   would fix it.
 - **22. Building a message takes a line per piece.** `expected ')', found 'x'` is five `utf8::push`
-  calls on a builder, each with the heap. The parser and lexer have a dozen of these. A std
-  function joining a slice of strings, or a builder that holds its heap, would shorten them.
+  calls on a builder. The parser and lexer have a dozen of these. *Partly:* a builder holds its
+  allocator's state now, as lists and maps do, so the calls no longer pass the heap. A std
+  function joining a slice of strings would shorten them further, but an array literal can't be
+  passed where a slice is expected, so it needs a named local array first.
