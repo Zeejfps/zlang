@@ -79,6 +79,11 @@ namespace parser {
             skip{ &p }
             let name = ident{ &p }
             let tparams = tparams{ &p }
+            if body_as_context{ p } {
+                let mut b = message{ p }
+                pushed{ ok = @fmt(&b, "a function's context comes before its body: write `fn {} {{}} {{ ... }}`", utf8::String{ bytes = name.text }) }
+                fail{ &p, msg = utf8::view{ b } }
+            }
             let params = ctx_fields{ &p }
             let ret: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { type_expr{ &p } } else { null }
             d = syntax::DeclKind::func{ name, tparams, params, ret, body = block{ &p } }
@@ -123,6 +128,34 @@ namespace parser {
             expected{ &p, what = "a declaration" }
         }
         return syntax::Decl{ id, span = span_from{ p, start }, k = d }
+    }
+
+    // Whether the `{ ... }` here, where a function's context belongs, is its body instead: it
+    // doesn't start like a context (`}`, `mut` or `name:`), it is closed, and neither a body nor
+    // `->` follows it.
+    fn body_as_context { p: Parser } -> bool {
+        if not is{ p, k = tok::Kind::lbrace } { return false }
+        let first = kind{ p, ahead = 1 }
+        if first == tok::Kind::rbrace or first == tok::Kind::kw_mut
+           or (first == tok::Kind::ident and kind{ p, ahead = 2 } == tok::Kind::colon) {
+            return false
+        }
+        let mut depth: u32 = 0
+        let mut k = p.i
+        while p.toks[k].kind != tok::Kind::eof {
+            let x = p.toks[k].kind
+            if x == tok::Kind::lbrace {
+                depth = depth + 1
+            } else if x == tok::Kind::rbrace {
+                depth = depth - 1
+                if depth == 0 {
+                    let after = p.toks[k + 1].kind
+                    return not (after == tok::Kind::lbrace or after == tok::Kind::arrow)
+                }
+            }
+            k = k + 1
+        }
+        return false            // unclosed: no telling what it was meant to be
     }
 
     fn tparams { mut p: Parser } -> []syntax::Name {

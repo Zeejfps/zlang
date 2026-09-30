@@ -604,6 +604,13 @@ class Parser(Base):
             ('union U { a{ x: i32 } b }\nfn main {} {}', "expected '}', found 'b'", 1, 23),
             ('fn main {} -> {}', "expected a type, found '{'", 1, 15),
             ('fn main { mut io Io } {}', "expected ':', found 'Io'", 1, 18),
+            # The first braces are the context: a body there gets its own message, a context
+            # with a typo doesn't.
+            ('fn main { let x = 1 }', "a function's context comes before its body: write `fn main {} { ... }`", 1, 9),
+            ('fn main {\n    run{ n = 1 }\n}\nfn run { n: i32 } {}',
+             "a function's context comes before its body: write `fn main {} { ... }`", 1, 9),
+            ('fn f { a i32 } {}\nfn main {} {}', "expected ':', found 'i32'", 1, 10),
+            ('fn main {} {}\nfn f { a: i32 }', "expected '{', found end of file", 2, 16),
         ]:
             self.assertParseError(src, msg, line, col)
 
@@ -812,6 +819,55 @@ fn main { mut io: Io } {
     io::println_i64{ &io, n = p.y }
 }
 """, '58\none\n2\n')
+
+
+class CallLookup(Base):
+    """In a call or literal, a local that doesn't hold a function doesn't hide a function or type
+    of the same name (spec §10, Name lookup, rule 6)."""
+
+    def test_local_named_like_function(self):
+        self.assertOutput("""
+fn binders {} -> i32 { return 7 }
+fn twice { n: i32 } -> i32 { return n * 2 }
+fn main { mut io: Io } {
+    let binders = binders{}
+    let twice = 3
+    io::println_i64{ &io, n = binders + twice{ n = twice } }
+}
+""", '13\n')
+
+    def test_context_field_and_binding(self):
+        self.assertOutput("""
+struct span { a: i32 }
+union U { one{ name: i32 } }
+fn name { x: i32 } -> i32 { return x + 1 }
+fn show { mut io: Io, name: i32 } {
+    match U::one{ name = 40 } {
+        one{ name = n } => { io::println_i64{ &io, n = name{ x = n } + name } }
+    }
+    let span = span{ a = name }
+    io::println_i64{ &io, n = span.a }
+}
+fn main { mut io: Io } { show{ &io, name = 1 } }
+""", '42\n1\n')
+
+    def test_function_local_still_shadows(self):
+        self.assertOutput("""
+fn f {} -> i32 { return 1 }
+fn g {} -> i32 { return 2 }
+fn main { mut io: Io } {
+    let f = g
+    io::println_i64{ &io, n = f{} }
+}
+""", '2\n')
+
+    def test_nothing_else_to_call(self):
+        self.assertCompileError("""
+fn main {} {
+    let n = 1
+    _ = n{}
+}
+""", '`n` has type {integer} and cannot be called')
 
 
 class GenericApplication(Base):

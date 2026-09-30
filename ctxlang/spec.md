@@ -186,6 +186,7 @@ name::item
 3. Lookup goes from the innermost scope outward: block locals, then context fields, then enclosing namespaces, then top level. The first match of the required kind wins.
 4. A path and a value may share a name in the same scope. Two paths or two values may not.
 5. A value in an inner scope shadows a value of the same name in an outer scope.
+6. In a call or literal `f{ ... }`, a local or context field `f` that doesn't hold a function doesn't hide an outer name: lookup goes on outward for a function value, then for a path. `let binders = binders{}` calls the function `binders`. If nothing else matches, the local is the callee, and the call is an error.
 
 ## 11. Statements and control flow
 

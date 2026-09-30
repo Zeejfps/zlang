@@ -149,10 +149,32 @@ class Parser:
         pos = self.next().pos
         name = self.ident()
         tps = self.tparams()
+        if self.body_as_context():
+            self.err(f"a function's context comes before its body: write `fn {name} {{}} {{ ... }}`")
         fields = self.ctx_fields()
         ret = self.type() if self.accept_op('->') else None
         body = self.block()
         return A.FnDecl(name, tps, fields, ret, body, pos)
+
+    def body_as_context(self):
+        """Whether the `{ ... }` here, where a function's context belongs, is its body instead:
+        it doesn't start like a context (`}`, `mut` or `name:`), it is closed, and neither a body
+        nor `->` follows it."""
+        if not self.is_op('{'):
+            return False
+        t = self.peek(1)
+        if self.is_op('}', 1) or self.is_kw('mut', 1) or (t.kind == 'id' and self.is_op(':', 2)):
+            return False
+        depth, k = 0, 0
+        while self.peek(k).kind != 'eof':
+            if self.is_op('{', k):
+                depth += 1
+            elif self.is_op('}', k):
+                depth -= 1
+                if depth == 0:
+                    return not (self.is_op('{', k + 1) or self.is_op('->', k + 1))
+            k += 1
+        return False        # unclosed: no telling what it was meant to be
 
     def plain_fields(self):
         self.expect_op('{')

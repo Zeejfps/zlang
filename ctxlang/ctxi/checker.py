@@ -557,9 +557,9 @@ class Checker:
         v.loop_depth = self.loop_depth
         scope[v.name] = v
 
-    def lookup_local(self, name):
+    def lookup_local(self, name, callable_only=False):
         for scope in reversed(self.scopes):
-            if name in scope:
+            if name in scope and (not callable_only or isinstance(prune(scope[name].ty), FnT)):
                 return scope[name]
         return None
 
@@ -1321,11 +1321,20 @@ class Checker:
             return None
         return [self.rtype(a, self.ns, self.tps) for a in seg.targs]
 
-    def resolve_path(self, e):
+    def resolve_path(self, e, call=False):
+        """What a path names. In a call or literal (`call`), a local that doesn't hold a function
+        is passed over for an outer local, a function or a type of the same name (§10)."""
         segs = e.segs
         s0 = segs[0]
         if len(segs) == 1:
             v = self.lookup_local(s0.name)
+            if v is not None and call and not isinstance(prune(v.ty), FnT):
+                alt = self.lookup_local(s0.name, callable_only=True)
+                if alt is None and (self.lookup_value_global(self.ns, s0.name) is not None
+                                    or self.lookup_path_opt(self.ns, s0.name) is not None):
+                    v = None
+                elif alt is not None:
+                    v = alt
             if v is not None:
                 if s0.targs is not None:
                     self.err(f'`{s0.name}` is not generic', s0.pos)
@@ -1417,7 +1426,7 @@ class Checker:
     def e_Braced(self, e, exp):
         c = e.callee
         if isinstance(c, A.Path):
-            r = self.resolve_path(c)
+            r = self.resolve_path(c, call=True)
             c.ref = r
             if r[0] == 'path':
                 return self.struct_lit(e, r[1], r[2], exp)
