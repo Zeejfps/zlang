@@ -1,5 +1,5 @@
-// Text dumps of the front end's results, for differential tests against ctxi (tools/lextest.py
-// writes the same format from ctxi's lexer). One line per token, then per comment, then per
+// Text dumps of the front end's results, first written for differential tests against ctxi, the
+// Python front end (removed in stage 8). One line per token, then per comment, then per
 // diagnostic, with positions as LINE:COL and widths in characters:
 //
 //   1:1+2 nl kw fn                 a token: position, width, nl if a newline comes before it,
@@ -129,9 +129,9 @@ namespace dump {
     }
 }
 
-// A syntax tree, one node per line, children indented by two spaces (tools/parsetest.py writes the
-// same from ctxi's parser). A line starts with the node's position, except for `-` (an absent
-// optional child) and `else` (the other side of a let-else). Then the diagnostics, as for tokens.
+// A syntax tree, one node per line, children indented by two spaces. A line starts with the
+// node's position, except for `-` (an absent optional child) and `else` (the other side of a
+// let-else). Then the diagnostics, as for tokens.
 //
 //   1:1 fn main
 //     1:9 field mut io
@@ -746,8 +746,7 @@ namespace tree {
     }
 }
 
-// The checked program, as ctxi/declsdump.py writes it (tools/checktest.py compares the two):
-// the diagnostics first, as `error FILE:LINE:COL MSG`, then one line per declaration, in the
+// The checked program: the diagnostics first, as `error FILE:LINE:COL MSG`, then one line per declaration, in the
 // files' order and into namespaces, with const initializers and function bodies under theirs,
 // then the natives, then `main` if it is valid.
 //

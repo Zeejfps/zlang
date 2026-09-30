@@ -2,9 +2,10 @@
 //
 // A program is monomorphized, fully typed and has every implicit step made explicit (widening,
 // T to ?T, function value conversions, narrowed locals, `mut` fields as pointers). Types are
-// interned: two types are equal exactly when their ids are. The text form, its grammar and the
-// meaning of each node are specified in ctxi/irdump.py, which writes it; ir_read.ctx reads it
-// and ir_print.ctx writes it back. The two writers must agree byte for byte.
+// interned: two types are equal exactly when their ids are. lower.ctx builds a Program from the
+// checked program; ir_print.ctx writes its text form and ir_read.ctx reads it back. The text
+// form was first specified by ctxi/irdump.py, the Python front end's writer (removed in stage 8,
+// see PLAN.md).
 //
 // Nothing here owns memory: a Program lives in the arena it was read into.
 

@@ -2,9 +2,10 @@
 
     python tools/corpus.py [OUT]            OUT defaults to build/corpus
 
-Runs tests/test_ctxi.py with ctxi's run_sources wrapped, so each program is recorded with its
-arguments and standard input, and with what ctxi made of it: output, exit code, panic or compile
-error. std/ and examples/ are added as programs of their own. Each case is a directory:
+Runs tests/test_ctxlang.py with the toolchain's run_sources wrapped, so each program is recorded
+with its arguments and standard input, and with what ctxc made of it: output, exit code, panic or
+compile error. std/ and examples/ are added as programs of their own. tools/recover.py damages
+the corpus's files. Each case is a directory:
 
     OUT/0001/case.json          {"files": [...], "args": [...], "stdin": hex, "outcome": {...}}
     OUT/0001/<file>             each source file, under the name its positions use
@@ -22,11 +23,10 @@ import sys
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.join(ROOT, 'tools'))
 
-import ctxi.__main__ as M  # noqa: E402
-from ctxi.lexer import CompileError  # noqa: E402
-from ctxi.runtime import Panic  # noqa: E402
+import toolchain as M  # noqa: E402
+from toolchain import CompileError, Panic  # noqa: E402
 
 cases = {}
 original = M.run_sources
@@ -38,7 +38,7 @@ def pos_json(pos):
     return [pos[0], pos[1], pos[2] if len(pos) > 2 else None]
 
 
-def recording(sources, out=None, err=None, inp=None, stack_size=16 << 20, args=()):
+def recording(sources, out=None, err=None, inp=None, stack_size=16 << 20, args=(), timeout=None):
     """run_sources, recording the program and its outcome. Behaves exactly like the original."""
     stdin = b''
     if inp is not None:
@@ -53,7 +53,7 @@ def recording(sources, out=None, err=None, inp=None, stack_size=16 << 20, args=(
         'outcome': {'kind': 'crash'},
     }
     try:
-        code = original(sources, out=o, err=e, inp=inp, stack_size=stack_size, args=args)
+        code = original(sources, out=o, err=e, inp=inp, stack_size=stack_size, args=args, timeout=timeout)
         case['outcome'] = {'kind': 'exit', 'code': code}
         return code
     except CompileError as ex:
@@ -61,9 +61,6 @@ def recording(sources, out=None, err=None, inp=None, stack_size=16 << 20, args=(
         raise
     except Panic as ex:
         case['outcome'] = {'kind': 'panic', 'msg': ex.msg, 'pos': pos_json(ex.pos)}
-        raise
-    except RecursionError:
-        case['outcome'] = {'kind': 'panic', 'msg': 'stack overflow', 'pos': None}
         raise
     finally:
         case['outcome']['stdout'] = o.getvalue().hex()
@@ -102,20 +99,20 @@ def std_and_examples():
     for srcs in progs:
         try:
             recording(srcs, out=io.StringIO(), err=io.StringIO(), inp=io.BytesIO(b''))
-        except (CompileError, Panic, RecursionError):
+        except (CompileError, Panic):
             pass
 
 
 def main(argv):
     out_dir = argv[0] if argv else os.path.join(ROOT, 'build', 'corpus')
     M.run_sources = recording
-    sys.modules.pop('test_ctxi', None)
+    sys.modules.pop('test_ctxlang', None)
     sys.path.insert(0, os.path.join(ROOT, 'tests'))
-    import test_ctxi  # noqa: E402  (binds the wrapped run_sources)
+    import test_ctxlang  # noqa: E402  (binds the wrapped run_sources)
     old = os.getcwd()
     os.chdir(ROOT)                     # tests read examples/ by relative path in places
     try:
-        suite = unittest.defaultTestLoader.loadTestsFromModule(test_ctxi)
+        suite = unittest.defaultTestLoader.loadTestsFromModule(test_ctxlang)
         result = unittest.TextTestRunner(stream=io.StringIO(), verbosity=0).run(suite)
         std_and_examples()
     finally:

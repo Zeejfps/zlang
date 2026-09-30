@@ -1,24 +1,29 @@
-"""Compiles a ctxlang program to a native executable through ctxc's C backend.
+"""Compiles a ctxlang program to a native executable, and runs it.
 
     python tools/ctxc.py PROGRAM [-o EXE] [--c FILE.c] [--run [args...]]
 
-PROGRAM is a .ctx file or a directory, as for ctxi. The pipeline: a native ctxc (bootstrapped
-into build/ctxc on first use) checks the program and writes C with `ctxc build`, and gcc (or zig
-cc, with CTX_CC=zig) builds it with ctxc/rt/ctxrt.c. Builds are cached in build/cbackend.
+PROGRAM is a .ctx file or a directory of them. A native ctxc (tools/toolchain.py builds it from
+bootstrap/ctxc.c on first use) checks the program and writes C with `ctxc build`, and gcc or
+clang (or zig cc, with CTX_CC=zig) builds it with ctxc/rt/ctxrt.c. Builds are cached in
+build/cbackend. Errors are printed as `PATH:LINE:COL: error: MESSAGE`.
+
+Without Python, the same is:
+
+    ctxc build OUT.c std/*.ctx -- PROGRAM.ctx...
+    cc -std=gnu11 -O1 -fwrapv -fno-optimize-sibling-calls -Ictxc/rt OUT.c ctxc/rt/ctxrt.c -lm
 """
 
 import argparse
 import glob
-import hashlib
 import os
 import shutil
 import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.join(ROOT, 'tools'))
 
-from ctxi import cbackend  # noqa: E402
+import toolchain  # noqa: E402
 
 
 def main(argv):
@@ -28,8 +33,17 @@ def main(argv):
     ap.add_argument('--c', dest='c', help='also copy the generated C here')
     ap.add_argument('--run', nargs=argparse.REMAINDER, help='run it, with these arguments')
     a = ap.parse_args(argv)
-    exe = build(a.program)
-    if exe is None:
+    if os.path.isdir(a.program):
+        files = sorted(glob.glob(os.path.join(a.program, '*.ctx')))
+        if not files:
+            print(f'{a.program}: error: no .ctx files in directory', file=sys.stderr)
+            return 1
+    else:
+        files = [a.program]
+    try:
+        exe = toolchain.build_files(files, cwd=os.getcwd(), name=a.program)
+    except toolchain.CompileError as e:
+        sys.stderr.write(e.text)
         return 1
     if a.c:
         shutil.copyfile(os.path.splitext(exe)[0] + '.c', a.c)
@@ -41,33 +55,6 @@ def main(argv):
     if not a.out:
         print(exe)
     return 0
-
-
-def build(program):
-    """The path of an executable for program, or None if ctxc reported errors."""
-    if os.path.isdir(program):
-        files = sorted(glob.glob(os.path.join(program, '*.ctx')))
-        if not files:
-            print(f'{program}: error: no .ctx files in directory', file=sys.stderr)
-            return None
-    else:
-        files = [program]
-    std = sorted(glob.glob(os.path.join(ROOT, 'std', '*.ctx')))
-    os.makedirs(cbackend.CACHE, exist_ok=True)
-    tmp_c = os.path.join(cbackend.CACHE, f'build-{os.getpid()}.c')
-    r = subprocess.run([cbackend.native_ctxc(), 'build', tmp_c, *std, '--', *files],
-                       env=dict(os.environ, CTX_STACK=str(200 << 20)))
-    if r.returncode != 0:
-        return None
-    with open(tmp_c, 'rb') as f:
-        text = f.read()
-    key = hashlib.sha256(cbackend.tree_hash().encode() + b'\0' + program.encode() + b'\0' + text).hexdigest()[:24]
-    exe = os.path.join(cbackend.CACHE, key + cbackend.EXE)
-    if os.path.exists(exe):
-        os.remove(tmp_c)
-    else:
-        cbackend.link(tmp_c, os.path.join(cbackend.CACHE, key + '.c'), exe, program)
-    return exe
 
 
 if __name__ == '__main__':

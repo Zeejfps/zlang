@@ -1,4 +1,4 @@
-"""Tests for the ctxlang interpreter.  Run:  python -m unittest discover tests"""
+"""Tests for ctxlang, through the native ctxc (tools/toolchain.py).  Run:  python -m unittest discover tests"""
 
 import io
 import os
@@ -7,11 +7,9 @@ import sys
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.join(ROOT, 'tools'))
 
-from ctxi.__main__ import read_program, run_source, run_sources  # noqa: E402
-from ctxi.lexer import CompileError  # noqa: E402
-from ctxi.runtime import Panic  # noqa: E402
+from toolchain import CompileError, Panic, read_program, run_source, run_sources  # noqa: E402
 
 with open(os.path.join(ROOT, 'examples', 'list.ctx'), encoding='utf-8') as f:
     LIST_SRC = f.read()
@@ -4279,12 +4277,11 @@ fn main { mut mem: Mem } { }
 
 
 class IRDump(Base):
-    """ctxi/irdump.py: the typed IR, and ctxc's reader and printer for it."""
+    """The typed IR (`ctxc ir`), and ctxc's reader and printer for it."""
 
     def ir(self, src):
-        from ctxi.__main__ import load
-        from ctxi.irdump import verify
-        return verify(load(src))
+        from toolchain import ir_sources
+        return ir_sources([(src, None)])
 
     def test_widening_is_explicit(self):
         text = self.ir("""
@@ -4372,11 +4369,10 @@ fn main { mut io: Io } {
         self.assertIn('(break)', text)
         self.assertRegex(text, r'\n    \} 1\)\n  \} 2\)')
 
-    def test_examples_verify(self):
-        from ctxi.irdump import verify
-        from ctxi.__main__ import load_sources
+    def test_examples_lower(self):
+        from toolchain import ir_sources
         for path in ('examples/list.ctx', 'examples/wordcount.ctx', 'examples/json'):
-            verify(load_sources(read_program(os.path.join(ROOT, path))))
+            self.assertIn('(main ', ir_sources(read_program(os.path.join(ROOT, path))))
 
     def test_ctxc_roundtrip(self):
         import tempfile
@@ -4396,32 +4392,26 @@ fn main { mut io: Io } -> i32 {
             path = os.path.join(d, 'p.ir')
             with open(path, 'w', encoding='utf-8', newline='') as f:
                 f.write(text)
-            out = io.BytesIO()
-            code = run_sources(read_program(os.path.join(ROOT, 'ctxc')), out=out, args=['roundtrip', path])
-        self.assertEqual(code, 0)
-        self.assertEqual(out.getvalue().decode(), text)
+            import subprocess
+            from toolchain import native_ctxc
+            r = subprocess.run([native_ctxc(), 'roundtrip', path], capture_output=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.decode(), text)
 
 
 @unittest.skipUnless(shutil.which('gcc') or shutil.which('zig'), 'needs a C compiler')
 class CBackend(Base):
-    """ctxc's C backend (ctxi/cbackend.py) agrees with the interpreter on programs that stress it.
-
-    `CTX_BACKEND=c python -m unittest discover tests` runs every other test through it too."""
+    """Programs that stress the C backend: evaluation order, defer, function values, numbers."""
 
     def both(self, src, args=(), stdin=b''):
-        """(output, exit code or panic message) from ctxi and from the C backend: equal."""
-        from ctxi.__main__ import load, interpret
-        from ctxi import cbackend
-        results = []
-        for runner in (interpret, cbackend.run):
-            out = io.BytesIO()
-            try:
-                code = runner(load(src), out=out, args=list(args), inp=io.BytesIO(stdin))
-            except Panic as e:
-                code = 'panic: ' + e.msg
-            results.append((out.getvalue().decode(), code))
-        self.assertEqual(results[0], results[1])
-        return results[0]
+        """(output, exit code or panic message). The expected values are what ctxi, the Python
+        interpreter that was the reference until stage 8, gave."""
+        out = io.BytesIO()
+        try:
+            code = run_source(src, out=out, args=list(args), inp=io.BytesIO(stdin))
+        except Panic as e:
+            code = 'panic: ' + e.msg
+        return out.getvalue().decode(), code
 
     def test_literal_views(self):
         out, code = self.both(r"""

@@ -1,6 +1,6 @@
 # ctxlang: spec draft
 
-Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound functions), [examples/wordcount.ctx](examples/wordcount.ctx) (files, arguments, maps), [examples/json](examples/json) (a JSON parser and printer, as a program of several files: `python -m ctxi examples/json FILE`).
+Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound functions), [examples/wordcount.ctx](examples/wordcount.ctx) (files, arguments, maps), [examples/json](examples/json) (a JSON parser and printer, as a program of several files: `python tools/ctxc.py examples/json --run FILE`).
 
 ## 1. Top level
 

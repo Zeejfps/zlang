@@ -1,6 +1,6 @@
 // Counts the words in a file:
 //
-//   python -m ctxi examples/wordcount.ctx notes.txt
+//   python tools/ctxc.py examples/wordcount.ctx --run notes.txt
 //
 // Uses command-line arguments and files (std/fs.ctx), main's exit code, a hash map
 // (std/map.ctx), UTF-8 text and utf8::Cursor for scanning, Result, and defer.

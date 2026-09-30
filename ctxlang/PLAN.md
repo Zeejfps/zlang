@@ -1,8 +1,10 @@
 # ctxc: a ctxlang compiler written in ctxlang
 
-`ctxc` is a compiler written in ctxlang that emits C. The Python interpreter `ctxi` becomes the
-bootstrap and the reference implementation. The backend comes first, fed by a typed IR that `ctxi`
-dumps. The front end is then ported piece by piece and diffed against Python at every step.
+`ctxc` is a compiler written in ctxlang that emits C. It began as a backend fed by `ctxi`, a Python
+interpreter and front end, and replaced ctxi piece by piece, diffed against it at every step.
+Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctxc from
+`bootstrap/ctxc.c` with nothing but a C compiler. ctxi's last version is in git history, at
+`8436f4d`.
 
 ## Status
 
@@ -16,73 +18,71 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 | 4 | Lexer | done | |
 | 5 | Parser | done | |
 | 6 | Checker | done | `7f11079` |
-| 7 | Self-hosting fixpoint | done | |
+| 7 | Self-hosting fixpoint | done | `8436f4d` |
 | 7a | Language server | | |
-| 8 | Decide ctxi's role | | |
+| 8 | Decide ctxi's role: removed, ctxc bootstraps from committed C | done | |
 | 9 | Metaprogramming: build programs, attributes, compile-time consts | future | |
 
 ### Where we are
 
-- The C backend runs a native `ctxc`. `ctxi/cbackend.py` bootstraps it into `build/ctxc` on first
-  use (about 20s) and rebuilds it when ctxc, the runtime or std changes. ctxc compiles itself in
-  0.2s. `CTX_CTXC=interp` runs the interpreted ctxc instead.
-- `CTX_BACKEND=c python -m unittest discover tests` passes all 336 tests.
-- `tools/ctest.py` passes 171 corpus programs, and skips 20 (below). `tools/ctest.py --same-c`:
-  native and interpreted ctxc write byte-identical C for all 180 programs and for ctxc itself.
-- `tools/lextest.py`: ctxc's token dumps match ctxi's for all 483 files (stage 4).
-- `tools/parsetest.py`: ctxc's syntax trees match ctxi's for the 392 files that parse, and the
-  first diagnostic matches for the 91 that don't (stage 5). `tools/recover.py`: all 333,900
-  damaged copies of the corpus's files parse and pass its checks.
-- `tools/checktest.py`: ctxc's dump of the checked declarations, const initializers and function
-  bodies matches ctxi's (`--decls`) for all 257 corpus programs that check, and the first
-  diagnostic matches for all 486 that don't (stage 6, sub-steps 1–5): ctxc now makes every
-  check ctxi makes. The checker runs without a panic on 15,840 damaged files.
-- `tools/irdiff.py`: ctxc's own front end lowers every corpus program that compiles to IR
-  identical to ctxi's, byte for byte: all 257, ctxc itself included (stage 6, sub-step 6).
-- `ctxc build OUT.c STD... -- FILE...` compiles a program from source to C in one process, with
-  ctxc's own front end and backend; `tools/ctxc.py` drives it. `tools/fixpoint.py`: ctxc built by
-  itself, twice, writes byte-identical C, and the same C as from ctxi's IR (stage 7).
-  `tools/ctest.py --ctxc build/fixpoint/ctxc3.exe` compiles all 739 corpus programs from source
-  with that ctxc, with no Python front end: programs that compile behave as under ctxi, and for
-  the 498 that don't, the first error is ctxi's, at the same position.
+- `bootstrap/ctxc.c` is ctxc as C. `tools/toolchain.py` compiles it to a seed, and the seed
+  compiles ctxc's current source into `build/ctxc` (about 7 s the first time, cached after).
+  Without Python: `cc -std=gnu11 -O1 -fwrapv -fno-optimize-sibling-calls -Ictxc/rt
+  bootstrap/ctxc.c ctxc/rt/ctxrt.c -lm -o ctxc`, then `ctxc build OUT.c std/*.ctx -- FILE...`.
+- `python -m unittest discover tests` runs all 340 tests through the native ctxc: each program is
+  compiled with `ctxc build`, built with cc and run. They pass on Windows (gcc) and Linux (gcc).
+  The bootstrap also builds for macOS (arm64 and x86_64, with `zig cc`), not yet run there.
+- `tools/fixpoint.py`: ctxc built by itself, twice, writes byte-identical C, the same as the
+  bootstrap's, on Windows and Linux, with gcc and with clang.
+- `tools/recover.py`: every damaged copy of the corpus's files parses and passes its checks.
+- `python tools/ctxc.py PROGRAM --run [args...]` compiles and runs a program (it replaces
+  `python -m ctxi PROGRAM`).
+- ctxc compiles itself in about 0.25 s; cc then takes about 6 s on the 1.8 MB of C.
 - Friction found while writing ctxc is logged in [FRICTION.md](FRICTION.md).
+
+### Changing the language
+
+ctxc's source may use only what the bootstrap's ctxc understands. A new feature lands in two
+steps: first in ctxc, without ctxc using it (the bootstrap compiles that source, and the result
+understands the feature); then `python tools/fixpoint.py --update` refreshes `bootstrap/ctxc.c`,
+and ctxc's source may use it. Removing a feature goes the other way round: stop using it, refresh
+the bootstrap, then remove it. Refresh the bootstrap whenever a change to ctxc lands, so a fresh
+checkout builds the current compiler in one step; `fixpoint.py` says when it is out of date.
 
 ### Known gaps
 
-- ctxi is still the bootstrap: `cbackend.native_ctxc()` builds the first ctxc from ctxi's IR, and
-  `CTX_BACKEND=c` still takes its IR from ctxi. Stage 8 decides what replaces it.
 - The front end is over its budget: checking and lowering ctxc takes about 215 ms natively,
   against 100 ms for the check alone. It hasn't been profiled.
-
-- 20 corpus programs read temporary files that the test suite deletes once it's done, so
-  `ctest.py` skips them. `tools/corpus.py` should copy those files into the case directory.
 - The C backend prints no `in fn` stack trace with a panic (see Open decisions).
-- Linux has no large-stack link flag yet (`cbackend.stack_flags`). The main thread keeps its
-  default stack (usually 8 MB), below the runtime's 16 MB check, so deep recursion segfaults instead of panicking.
+- 20 corpus programs read temporary files that the test suite deletes once it's done.
+  `tools/corpus.py` should copy those files into the case directory.
+- There is no second implementation to diff against any more. New checks are covered by the
+  unit tests' expected outputs and error fragments alone.
+- `ctxc build` needs std's files listed on the command line, since std has no `fs::list` yet.
 
 ## Key decisions
 
 - **Target C, not an interpreter.** An interpreter running inside ctxi would stack two interpreters.
   C gives native speed, and ctxlang has no GC or exceptions to translate.
-- **Backend before front end.** A Python IR dump lets the C backend run the whole test corpus before
-  the checker, the hardest part, is ported.
+- **Backend before front end.** A Python IR dump let the C backend run the whole test corpus before
+  the checker, the hardest part, was ported.
 - **Typed IR as the seam.** The IR is monomorphized, fully typed and has a canonical text form. It
-  is the contract between checker and backend, and the diff target for the port.
-- **Differential testing throughout.** Tokens, syntax trees, IR, program output and compile errors
-  are all compared against ctxi on the same corpus.
+  is the contract between checker and backend, and was the diff target for the port.
+- **Differential testing during the port.** Tokens, syntax trees, IR, program output and compile
+  errors were all compared against ctxi on the same corpus until ctxc matched it everywhere.
 - **The front end is built for an editor from the start.** It is a library that returns every
   diagnostic and a queryable model of the program, not a pass that stops at the first error. See
-  [Editor support](#editor-support). ctxi stays a stop-at-first-error reference.
+  [Editor support](#editor-support).
+- **Bootstrap from committed C** (stage 8). ctxc's own output, not a second implementation, is
+  what builds ctxc, so the language has one implementation.
 
 ## Architecture
 
-The compiler is a pipeline over one program: std plus the user's files. Until stage 6 the Python
-front end stands in for the ctxlang one.
+The compiler is a pipeline over one program: std plus the user's files.
 
 ```
 .ctx files ──> lexer ──> parser ──> checker ──> typed IR ──> C emitter ──> out.c + ctxrt.c ──> cc ──> exe
-(std + program)                                  ^
-                  ctxi front end (Python) ── irdump
+(std + program)
 ```
 
 The ctxlang front end's result is an `Analysis`: every diagnostic, plus a semantic model that the
@@ -100,18 +100,15 @@ ctxc/                  one multi-file program (every .ctx in the directory)
   lower.ctx                               the checked program as IR: monomorphized (stage 6)
   ir.ctx  ir_read.ctx  ir_print.ctx       IR, its reader and canonical printer
   emit_c.ctx                              backend (stage 2)
-  dump.ctx                                token, syntax-tree and checked-program dumps for the diffs
+  dump.ctx                                token, syntax-tree and checked-program dumps
 ctxc/rt/ctxrt.h ctxrt.c                   C runtime: panic, natives, startup
-ctxi/irdump.py                            Python → IR (stage 1)
-ctxi/declsdump.py                         Python's checked declarations, for checktest (stage 6)
-ctxi/cbackend.py                          IR → ctxc → cc; bootstraps the native ctxc (stage 3)
+bootstrap/ctxc.c                          ctxc as C, for building it with only a C compiler (stage 8)
+tools/toolchain.py                        builds ctxc from the bootstrap; builds and runs programs
 tools/ctxc.py                             driver: ctxc build, then cc, to an executable
-tools/corpus.py  irtest.py  ctest.py      corpus, IR roundtrip, C backend differential tests
-tools/lextest.py  parsetest.py            token and tree dumps against ctxi's, and fuzzing
+tools/fixpoint.py                         ctxc built by itself, twice; --update refreshes the bootstrap
+tools/corpus.py                           every program the tests run, with its outcome
 tools/recover.py                          the recovery test, in parallel over the corpus
-tools/checktest.py                        checked-program dumps against ctxi's (stage 6)
-tools/irdiff.py                           ctxc's IR against ctxi's (stage 6)
-tools/fixpoint.py                         ctxc built by itself, twice (stage 7)
+tests/test_ctxlang.py                     the test suite, through the native ctxc
 ```
 
 ## Editor support
@@ -119,8 +116,8 @@ tools/fixpoint.py                         ctxc built by itself, twice (stage 7)
 A language server (stage 7a) runs the front end on every edit, on code that is usually
 half-written, in a process that stays up for hours. Retrofitting that onto a compiler that stops at
 the first error, keeps only start positions and throws away what it learned means rewriting the
-front end, so stages 4–6 build these in from the start. ctxi is not changed: it stays the
-stop-at-first-error reference, and the differential tests compare against ctxc's *first*
+front end, so stages 4–6 build these in from the start. ctxi was not changed: it stayed the
+stop-at-first-error reference, and the differential tests compared against ctxc's *first*
 diagnostic (see Testing).
 
 **Front end as a library.** `check{ files } -> Analysis` takes source text, not paths, so an editor
@@ -573,11 +570,36 @@ grow out of `examples/json`.
 *Done when:* VS Code, with a minimal client extension, shows diagnostics while you type, and go to
 definition, hover and completion work on `ctxc/` itself. The editor-query fixtures pass.
 
-### 8. Decide ctxi's role
+### 8. Decide ctxi's role — done: removed
 
-Choose one: keep ctxi as the executable reference, with every spec change landing in both
-implementations, or freeze it as the bootstrap for a pinned `ctxc` version. Bootstrapping from a
-committed `ctxc.c` would remove the Python dependency entirely.
+The choice was between keeping ctxi as the executable reference, with every spec change landing
+in both implementations, and freezing it as the bootstrap for a pinned ctxc. Neither: ctxi is
+deleted, and ctxc bootstraps from its own C, committed as `bootstrap/ctxc.c`. Writing every
+language change twice, stage 9's compile-time evaluator included, would cost more than the
+second implementation catches now that ctxc matches it on the whole corpus. Its last version is
+at `8436f4d`.
+
+- **The bootstrap.** `bootstrap/ctxc.c` is `ctxc build`'s output for ctxc, with files named by
+  relative `/` paths, so it is the same on every platform (`.gitattributes` keeps it LF).
+  `tools/toolchain.py` compiles it to a seed, and the seed compiles the current source; if that
+  gives the bootstrap's C again, the seed is used as it is. `fixpoint.py --update` refreshes it
+  (see [Changing the language](#changing-the-language)).
+- **The tests.** `tests/test_ctxlang.py` (was `test_ctxi.py`) runs every program through
+  `tools/toolchain.py`: written under `build/progs`, compiled with `ctxc build`, built with cc
+  and run, with ctxc's first error raised as `CompileError` and a panic as `Panic`, as ctxi's
+  API did. The tests that compared ctxi with the C backend now check the values ctxi gave, which
+  they already stated. The IR tests read `ctxc ir`.
+- **Tools removed**, as they diffed against ctxi or profiled it: `checktest`, `irdiff`,
+  `irtest`, `lextest`, `parsetest`, `ctest` and `profile`. `corpus.py` records through the
+  toolchain; `recover.py` still damages the corpus's files. ctxc's `tokens`, `syntax`, `decls`,
+  `roundtrip` and `c` commands stay, for debugging.
+- **Linux stacks.** A program on Linux raises `RLIMIT_STACK` to 256 MiB and runs itself again
+  (`ctxrt.c` `reserve_stack`), since Linux has no link flag for the main thread's stack. Deep
+  recursion now panics with `stack overflow` there, as on Windows and macOS.
+
+*Done:* all 340 tests pass through ctxc on Windows and on Linux (WSL, gcc 13). The fixpoint
+holds on both, and ctxc built with clang (`zig cc`) writes the same C. The bootstrap compiles
+and links for macOS arm64 and x86_64 with `zig cc`, but hasn't run there.
 
 ### 9. Metaprogramming — future
 
@@ -665,6 +687,7 @@ on real code.
 | Stage 3 | ctxi (Python) | ctxlang interpreted by ctxi | `ctxc.c`, a native backend |
 | Stages 3–6 | ctxi (Python) | native | C for any program |
 | Stage 7 | ctxc (native) | native | `ctxc2`, then `ctxc3`; their C output must be identical |
+| Stage 8 on | ctxc from `bootstrap/ctxc.c` | native | the current ctxc, then any program |
 
 ## How ctxlang maps to C
 
@@ -694,24 +717,26 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 | `if`/`match` expressions | GNU statement expressions | A branch that leaves uses `return`, `break` or `continue`. |
 | argument order | temporaries | C leaves argument evaluation order unspecified; ctxi evaluates left to right. |
 | `@panic`, runtime panics | `ctx_panic(file, line, col, msg)` | Same `file:line:col: panic: msg` text, exit code 134. |
-| stack overflow | check in each function prologue | Compares the frame address to a limit set at startup (16 MB, or `CTX_STACK`). Linked with a 256 MB stack on Windows and macOS. No sibling calls, so every call takes a frame. |
+| stack overflow | check in each function prologue | Compares the frame address to a limit set at startup (16 MB, or `CTX_STACK`). Linked with a 256 MB stack on Windows and macOS; on Linux, raises `RLIMIT_STACK` to 256 MB and runs itself again. No sibling calls, so every call takes a frame. |
 
 ## Testing
 
-- **Corpus.** `tools/corpus.py` records every program the tests run, with its expected output, exit
-  code, panic or error, plus `std/` and `examples/`, into `build/corpus`. Every stage checks against
-  it.
-- **Backend switch.** `CTX_BACKEND=c` sends `run_source` through ctxc and cc, so the existing tests
-  run unchanged against both implementations.
-- **Expected divergences** (`tools/ctest.py` `DIVERGENCES`): `invalid memory access` (UB in C), the
-  `in fn` lines of a panic's stack trace, and the exact point where the stack overflows.
-- **Front-end diffs.** Token, syntax-tree and IR dumps are compared byte for byte with Python on the
-  whole corpus.
-- **Errors.** The compile-error tests match on a message fragment, so the ported checker has to
-  produce the same wording. Message text is part of the interface. ctxc reports diagnostics in the
-  order it finds them, running its phases and visiting files and declarations in ctxi's order, so
-  its first diagnostic is the one ctxi stops at. That first diagnostic is compared with ctxi.
-  Later ones are ctxc's own, and ctxc may report more than ctxi.
+Until stage 8 every stage was diffed against ctxi: tokens, syntax trees and IR byte for byte, and
+program output and first diagnostics over the corpus (`ctest`, `lextest`, `parsetest`,
+`checktest`, `irdiff`, now removed). Since then:
+
+- **The suite.** `python -m unittest discover tests` runs every program through the native ctxc
+  and cc (`tools/toolchain.py`), and checks its output, exit code, panic or first error.
+- **Errors.** The compile-error tests match on a message fragment, or the message and position
+  exactly, so message text is part of the interface. ctxc reports diagnostics in the order it
+  finds them, running its phases and visiting files and declarations in ctxi's order, so its
+  first diagnostic is the one ctxi stopped at. The tests see the first; ctxc may report more.
+- **Fixpoint** (`tools/fixpoint.py`). ctxc built by itself must write the same C twice, and the
+  bootstrap must be current.
+- **Corpus.** `tools/corpus.py` records every program the tests run, with its output, exit code,
+  panic or error, plus `std/` and `examples/`, into `build/corpus`, for the recovery test.
+- **C's undefined behaviour.** `invalid memory access`, which ctxi caught, is undefined behaviour
+  in C. The panic stack trace ctxi printed isn't printed.
 - **Recovery** (`tools/recover.py`, from stage 5). Damage every file in the corpus: cut it at each
   token boundary, and delete or duplicate single tokens. Run the front end on every result, inside
   ctxc (`ctxc recover`), in parallel chunks. It must not panic, must keep under the diagnostic
@@ -726,9 +751,9 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 
 ## Open decisions
 
-- **Freezing the spec during the checker port.** **Settled:** the spec is frozen for stage 6. No
-  language changes until the IR diffs match across the corpus; a bug fix in ctxi lands in both
-  checkers.
+- **Freezing the spec during the checker port.** **Settled, and over:** the spec was frozen for
+  stage 6, until the IR diffs matched across the corpus. Since stage 8 a change lands in ctxc
+  alone.
 - **Panic stack traces.** ctxi prints the function frames with each panic. Doing this in C needs a
   shadow stack, which costs time on every call. *Recommendation:* a debug flag, off by default.
   **Deferred;** the C backend prints no trace.
@@ -742,7 +767,10 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 ## Risks
 
 - **Checker subtlety.** Literal inference that spans a whole function body, exclusivity and escape
-  analysis have many edge cases. Mitigation: IR diffs on every sub-step, and error-fragment tests.
+  analysis have many edge cases. Mitigation: IR diffs on every sub-step until stage 8, and
+  error-fragment tests.
+- **One implementation.** With ctxi gone, a checker bug that the tests don't state goes
+  unnoticed. Mitigation: a test for every language change, with its expected output or error.
 - **Language friction.** ctxc pushes on method sugar (Q4), and imports and files as namespaces
   (Q5, Q6). Each point of friction goes in
   [FRICTION.md](FRICTION.md) as evidence for these questions.

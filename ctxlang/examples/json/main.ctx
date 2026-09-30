@@ -1,7 +1,7 @@
 // Pretty-prints a JSON file, or the part of it at a dotted path:
 //
-//   python -m ctxi examples/json examples/json/sample.json
-//   python -m ctxi examples/json examples/json/sample.json users.0.name
+//   python tools/ctxc.py examples/json --run examples/json/sample.json
+//   python tools/ctxc.py examples/json --run examples/json/sample.json users.0.name
 //
 // A directory is one program: this file holds main, value.ctx the data model (namespace json),
 // parser.ctx the parser, and printer.ctx the writer.

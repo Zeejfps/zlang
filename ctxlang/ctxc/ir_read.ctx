@@ -1,4 +1,4 @@
-// Reads the IR's text form (ctxi/irdump.py) into an ir::Program.
+// Reads the IR's text form (ir_print.ctx writes it) into an ir::Program.
 //
 //   let mut r = ir_read::reader{ text, heap = &heap }
 //   let prog = ir_read::program{ &r }

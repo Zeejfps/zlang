@@ -3,24 +3,23 @@
 // the front end; lower.ctx the checked program as IR; ir.ctx the typed IR, ir_read.ctx and
 // ir_print.ctx its text form; emit_c.ctx the C backend; dump.ctx text dumps for tests.
 //
-//   python -m ctxi ctxc roundtrip FILE.ir      reads IR (from `python -m ctxi PROGRAM --ir`)
-//                                              and prints it back; the output must equal FILE.ir
-//   python -m ctxi ctxc c FILE.ir OUT.c        writes the program as C, for ctxc/rt/ctxrt.c
-//   python -m ctxi ctxc tokens FILE...         prints each file's tokens (dump.ctx), each
-//                                              after a line `file FILE`
-//   python -m ctxi ctxc syntax FILE...         the same for each file's syntax tree
-//   python -m ctxi ctxc recover FILE FROM TO   the recovery test (recover.ctx)
-//   python -m ctxi ctxc decls STD... -- FILE...
-//                                              checks the program of FILE..., with std's
-//                                              files STD..., and prints its declarations and
-//                                              bodies (dump.ctx, namespace decls)
-//   python -m ctxi ctxc ir STD... -- FILE...   checks the program and prints its IR, or its
-//                                              diagnostics if it has errors (lower.ctx)
-//   python -m ctxi ctxc build OUT.c STD... -- FILE...
-//                                              checks the program and writes it as C, or
-//                                              prints its errors and exits with 1
+//   ctxc build OUT.c STD... -- FILE...          checks the program of FILE..., with std's files
+//                                               STD..., and writes it as C, for ctxc/rt/ctxrt.c;
+//                                               or prints its errors and exits with 1
+//   ctxc ir STD... -- FILE...                   checks the program and prints its IR, or its
+//                                               diagnostics if it has errors (lower.ctx)
+//   ctxc roundtrip FILE.ir                      reads IR (from `ctxc ir`) and prints it back;
+//                                               the output must equal FILE.ir
+//   ctxc c FILE.ir OUT.c                        writes an IR file's program as C
+//   ctxc tokens FILE...                         prints each file's tokens (dump.ctx), each
+//                                               after a line `file FILE`
+//   ctxc syntax FILE...                         the same for each file's syntax tree
+//   ctxc recover FILE FROM TO                   the recovery test (recover.ctx)
+//   ctxc decls STD... -- FILE...                checks the program and prints its declarations
+//                                               and bodies (dump.ctx, namespace decls)
 //
-// tools/ctxc.py runs the whole pipeline: ctxc build and the C compiler.
+// tools/ctxc.py runs the whole pipeline: ctxc build and the C compiler. bootstrap/ctxc.c is
+// this program as C, for building ctxc with only a C compiler (tools/toolchain.py).
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut to_c = false
@@ -224,7 +223,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, mode: Mode }
     return 0
 }
 
-// "PATH:LINE:COL: error: MESSAGE", as ctxi prints a compile error. An error about the whole
+// "PATH:LINE:COL: error: MESSAGE". An error about the whole
 // program, such as a missing `main`, is at the start of its first file.
 fn error { mut out: utf8::Builder(arena::Arena), c: check::Checker, d: diag::Diag } {
     if d.span.file == check::NO_FILE {

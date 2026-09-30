@@ -11,7 +11,9 @@ With --sample N, only every Nth token is damaged, for a quicker run.
 """
 
 import concurrent.futures
+import glob
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -21,10 +23,25 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 
-from ctxi.cbackend import native_ctxc  # noqa: E402
-from lextest import files  # noqa: E402
+from toolchain import native_ctxc  # noqa: E402
 
 WORK = 200_000_000    # bytes to parse per chunk: copies times the file's size
+
+
+def files(corpus, k):
+    """(label, path) for each file of the corpus, std/ and ctxc/."""
+    out = []
+    if os.path.isdir(corpus):
+        for name in sorted(os.listdir(corpus)):
+            d = os.path.join(corpus, name)
+            with open(os.path.join(d, 'case.json'), encoding='utf-8') as f:
+                meta = json.load(f)
+            for _, local in meta['files']:
+                out.append((f'{name}/{local}', os.path.join(d, local)))
+    for sub in ('std', 'ctxc'):
+        for p in sorted(glob.glob(os.path.join(ROOT, sub, '*.ctx'))):
+            out.append((os.path.relpath(p, ROOT).replace(os.sep, '/'), p))
+    return [(label, p) for label, p in out if k in label]
 
 
 def token_count(path):

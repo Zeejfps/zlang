@@ -17,6 +17,7 @@
 #define ctx_strtod __mingw_strtod     // correctly rounded, unlike msvcrt's
 #define ctx_strtof __mingw_strtof
 #else
+#include <sys/resource.h>
 #include <unistd.h>
 #define ctx_strtod strtod
 #define ctx_strtof strtof
@@ -462,14 +463,37 @@ ctx_slice ctx_n_mem_sys_pages(void *mem, uint64_t size) {
 static int arg_count;
 static char **arg_values;
 
+#ifdef __linux__
+// Linux has no link flag for the main thread's stack: its size is RLIMIT_STACK, usually 8 MiB,
+// below the 16 MiB check, so deep recursion would crash instead of panicking. The limit is
+// raised to what Windows and macOS executables reserve, and the program runs itself again, since
+// the kernel places the stack's neighbours when it starts a program. Once the limit is high
+// enough, or can't be raised, this does nothing.
+#define STACK_RESERVE (256ull << 20)
+static void reserve_stack(char **argv) {
+    struct rlimit rl;
+    if (getrlimit(RLIMIT_STACK, &rl) != 0 || rl.rlim_cur == RLIM_INFINITY || rl.rlim_cur >= STACK_RESERVE)
+        return;
+    rlim_t want = STACK_RESERVE;
+    if (rl.rlim_max != RLIM_INFINITY && want > rl.rlim_max) want = rl.rlim_max;
+    if (want <= rl.rlim_cur) return;
+    rl.rlim_cur = want;
+    if (setrlimit(RLIMIT_STACK, &rl) != 0) return;
+    execv("/proc/self/exe", argv);          // returns only if it failed; carry on as we are
+}
+#endif
+
 void ctx_init(const char *const *table, uint32_t n, const char *program, int argc, char **argv) {
+#ifdef __linux__
+    reserve_stack(argv);
+#endif
     program_name = program;
     arg_count = argc;
     arg_values = argv;
     ctx_files = table;
     ctx_nfiles = n;
     // The stack is ctxi's size, 16 MiB, or CTX_STACK bytes. The executable reserves far more
-    // (ctxi/cbackend.py), so a frame that crosses the limit still has room to reach the check.
+    // (tools/toolchain.py), so a frame that crosses the limit still has room to reach the check.
     char here;
     uint64_t size = 16 << 20;
     const char *env = getenv("CTX_STACK");

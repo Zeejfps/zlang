@@ -1,5 +1,4 @@
-// Writes an ir::Program in the IR's canonical text form (ctxi/irdump.py), byte for byte as
-// ctxi's dumper does.
+// Writes an ir::Program in the IR's canonical text form, which ir_read.ctx reads.
 //
 //   let mut o = ir_print::out{ heap = &heap, types = prog.types }
 //   ir_print::program{ &o, p = prog }
