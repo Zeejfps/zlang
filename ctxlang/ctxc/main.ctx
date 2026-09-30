@@ -11,9 +11,9 @@
 //   python -m ctxi ctxc syntax FILE...         the same for each file's syntax tree
 //   python -m ctxi ctxc recover FILE FROM TO   the recovery test (recover.ctx)
 //   python -m ctxi ctxc decls STD... -- FILE...
-//                                              checks the declarations of the program of
-//                                              FILE..., with std's files STD..., and prints
-//                                              them (dump.ctx, namespace decls)
+//                                              checks the program of FILE..., with std's
+//                                              files STD..., and prints its declarations and
+//                                              bodies (dump.ctx, namespace decls)
 //
 // tools/ctxc.py runs the whole pipeline: IR, C and the C compiler.
 
@@ -120,8 +120,8 @@ fn dumps { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, trees: bool } -> i3
     return 0
 }
 
-// `ctxc decls STD... -- FILE...`: lexes and parses every file, then checks the declarations of
-// the program, all in one arena.
+// `ctxc decls STD... -- FILE...`: lexes and parses every file, then checks the program, all in
+// one arena.
 fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut total: u64 = 0
     let mut split: usize = 0
@@ -163,7 +163,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     }
     add_file{ &files, &heap, &diags, name = "<natives>", text = check::natives_source{ &heap } }
     let mut c = check::new{ files = list::items{ list = files }, std_files = split - 1, &heap, &diags }
-    check::declarations{ &c }
+    check::program{ &c }
     let mut out = utf8::builder{ realloc = arena::alloc, &heap }
     decls::file{ &out, &c }
     io::write{ &io, to = io::Stream::out, bytes = utf8::view{ b = out }.bytes }

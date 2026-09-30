@@ -746,9 +746,10 @@ namespace tree {
     }
 }
 
-// The checked declarations, as ctxi/declsdump.py writes them (tools/checktest.py compares the
-// two): the diagnostics first, as `error FILE:LINE:COL MSG`, then one line per declaration, in
-// the files' order and into namespaces, then the natives, then `main` if it is valid.
+// The checked program, as ctxi/declsdump.py writes it (tools/checktest.py compares the two):
+// the diagnostics first, as `error FILE:LINE:COL MSG`, then one line per declaration, in the
+// files' order and into namespaces, with const initializers and function bodies under theirs,
+// then the natives, then `main` if it is valid.
 //
 //   struct arena::Arena 24 8
 //     buf: []mut u8 @0
@@ -910,31 +911,297 @@ namespace decls {
             }
             func => {
                 pushed{ ok = @fmt(&out, "fn {}", q) and tparams{ d, b = &out } and @fmt(&out, " ") and sig{ c, d, b = &out } and @fmt(&out, "\n") }
+                match d.syn.k {
+                    func{ body } => { stmts{ &out, c, xs = body.stmts, depth = 1 } }
+                    else => {}
+                }
             }
             native => {}
         }
     }
 
-    // An initializer: a line per expression, `KIND TYPE`, children indented under it.
-    fn expr { mut out: Out, c: check::Checker, e: syntax::Expr, depth: u32 } {
-        let conv = map::get{ m = c.convs, key = check::expr_key{ e } }
-        let mut d = depth
-        if conv != null {
-            indent{ &out, depth = d }
-            match conv {
-                some{ to } => { pushed{ ok = @fmt(&out, "some {}\n", check::tstr{ c, t = to }) } }
-                slice{ to } => { pushed{ ok = @fmt(&out, "slice {}\n", check::tstr{ c, t = to }) } }
-            }
-            d = d + 1
+    // ---- bodies: a line per statement, children indented under it
+
+    fn stmts { mut out: Out, c: check::Checker, xs: []syntax::Stmt, depth: u32 } {
+        let mut i: usize = 0
+        while i < xs.len {
+            stmt{ &out, c, s = xs[i], depth }
+            i = i + 1
         }
+    }
+
+    fn line { mut out: Out, depth: u32, s: utf8::String } {
+        indent{ &out, depth }
+        pushed{ ok = @fmt(&out, "{}\n", s) }
+    }
+
+    // `word` or `word LABEL`
+    fn labeled { mut out: Out, depth: u32, word: utf8::String, label: ?syntax::Name } {
+        indent{ &out, depth }
+        dump::put{ &out, s = word }
+        if label != null { pushed{ ok = @fmt(&out, " {}", check::str{ s = label.text }) } }
+        dump::put{ &out, s = "\n" }
+    }
+
+    fn stmt { mut out: Out, c: check::Checker, s: syntax::Stmt, depth: u32 } {
+        let d = depth + 1
+        match s.k {
+            error => { line{ &out, depth, s = "error" } }
+            local{ mutable, name, init } => {
+                indent{ &out, depth }
+                let m: utf8::String = if mutable { "mut " } else { "" }
+                pushed{ ok = @fmt(&out, "let {}{}: {}\n", m, check::str{ s = name.text }, local_ty{ c, k = check::stmt_key{ s } }) }
+                if init != null { expr{ &out, c, e = init, depth = d } }
+            }
+            let_else{ variant, binders, init, els_variant, els_binders, els } => {
+                indent{ &out, depth }
+                pushed{ ok = @fmt(&out, "letelse {}\n", check::str{ s = variant.text }) }
+                expr{ &out, c, e = init, depth = d }
+                binds{ &out, c, xs = binders, depth = d }
+                labeled{ &out, depth = d, word = "else", label = els_variant }
+                binds{ &out, c, xs = els_binders, depth = d + 1 }
+                stmts{ &out, c, xs = els.stmts, depth = d + 1 }
+            }
+            assign{ place, value } => {
+                line{ &out, depth, s = "assign" }
+                expr{ &out, c, e = place, depth = d }
+                expr{ &out, c, e = value, depth = d }
+            }
+            eval{ e } => {
+                line{ &out, depth, s = "eval" }
+                expr{ &out, c, e, depth = d }
+            }
+            discard{ e } => {
+                line{ &out, depth, s = "discard" }
+                expr{ &out, c, e, depth = d }
+            }
+            cond{ x } => {
+                line{ &out, depth, s = "if" }
+                if_parts{ &out, c, x, depth = d, value = false }
+            }
+            loop{ label, c = cond, body } => {
+                labeled{ &out, depth, word = "while", label }
+                expr{ &out, c, e = cond, depth = d }
+                line{ &out, depth = d, s = "do" }
+                stmts{ &out, c, xs = body.stmts, depth = d + 1 }
+            }
+            choose{ x } => {
+                line{ &out, depth, s = "match" }
+                match_parts{ &out, c, x, depth = d, value = false }
+            }
+            ret{ value } => {
+                line{ &out, depth, s = "return" }
+                if value != null { expr{ &out, c, e = value, depth = d } }
+            }
+            brk{ label } => { labeled{ &out, depth, word = "break", label } }
+            cont{ label } => { labeled{ &out, depth, word = "continue", label } }
+            deferred{ body } => {
+                line{ &out, depth, s = "defer" }
+                stmts{ &out, c, xs = body.stmts, depth = d }
+            }
+        }
+    }
+
+    // The type of the local a `let` or a binder declares.
+    fn local_ty { c: check::Checker, k: u64 } -> utf8::String {
+        let v = map::get{ m = c.local_of, key = k }
+        if v == null { return "none" }
+        return check::tstr{ c, t = check::get_var{ c, v }.ty }
+    }
+
+    // `bind [&]NAME: T` for each binding of a pattern.
+    fn binds { mut out: Out, c: check::Checker, xs: []syntax::Binder, depth: u32 } {
+        let mut i: usize = 0
+        while i < xs.len {
+            let v = map::get{ m = c.local_of, key = check::name_key{ n = xs[i].field } }
+            if v != null {
+                let x = check::get_var{ c, v }
+                indent{ &out, depth }
+                let amp: utf8::String = if x.indirect { "&" } else { "" }
+                pushed{ ok = @fmt(&out, "bind {}{}: {}\n", amp, check::str{ s = x.name }, check::tstr{ c, t = x.ty }) }
+            }
+            i = i + 1
+        }
+    }
+
+    fn if_parts { mut out: Out, c: check::Checker, x: syntax::If, depth: u32, value: bool } {
+        expr{ &out, c, e = x.c.*, depth }
+        line{ &out, depth, s = "then" }
+        block{ &out, c, b = x.then, depth = depth + 1, value }
+        let els = x.els
+        if els != null {
+            line{ &out, depth, s = "else" }
+            block{ &out, c, b = els, depth = depth + 1, value }
+        }
+    }
+
+    fn match_parts { mut out: Out, c: check::Checker, x: syntax::Match, depth: u32, value: bool } {
+        expr{ &out, c, e = x.scrut.*, depth }
+        let mut i: usize = 0
+        while i < x.arms.len {
+            let arm = x.arms[i]
+            indent{ &out, depth }
+            dump::put{ &out, s = "arm " }
+            if arm.pats.len == 0 { dump::put{ &out, s = "else" } }
+            let mut k: usize = 0
+            while k < arm.pats.len {
+                if k > 0 { dump::put{ &out, s = " | " } }
+                dump::put{ &out, s = check::str{ s = arm.pats[k].variant.text } }
+                k = k + 1
+            }
+            dump::put{ &out, s = "\n" }
+            if arm.pats.len > 0 { binds{ &out, c, xs = arm.pats[0].binders, depth = depth + 1 } }
+            block{ &out, c, b = arm.body, depth = depth + 1, value }
+            i = i + 1
+        }
+    }
+
+    // A block of an `if` or `match`. A branch of an expression (value) ends in `value` over what
+    // gives it its value, if anything does.
+    fn block { mut out: Out, c: check::Checker, b: syntax::Block, depth: u32, value: bool } {
+        let xs = b.stmts
+        if not value or xs.len == 0 {
+            stmts{ &out, c, xs, depth }
+            return
+        }
+        match check::branch_value{ s = xs[xs.len - 1] } {
+            none => { stmts{ &out, c, xs, depth } }
+            expr{ e } => {
+                stmts{ &out, c, xs = xs[..xs.len - 1], depth }
+                line{ &out, depth, s = "value" }
+                expr{ &out, c, e, depth = depth + 1 }
+            }
+            nested{ s } => {
+                stmts{ &out, c, xs = xs[..xs.len - 1], depth }
+                line{ &out, depth, s = "value" }
+                let k = check::stmt_key{ s }
+                let d = wrap{ &out, c, k, depth = depth + 1 }
+                match s.k {
+                    cond{ x } => {
+                        indent{ &out, depth = d }
+                        pushed{ ok = @fmt(&out, "if {}\n", ty_at{ c, k }) }
+                        if_parts{ &out, c, x, depth = d + 1, value = true }
+                    }
+                    choose{ x } => {
+                        indent{ &out, depth = d }
+                        pushed{ ok = @fmt(&out, "match {}\n", ty_at{ c, k }) }
+                        match_parts{ &out, c, x, depth = d + 1, value = true }
+                    }
+                    else => {}
+                }
+            }
+        }
+    }
+
+    // The type recorded for the expression (or branch value) with key k, or `none`.
+    fn ty_at { c: check::Checker, k: u64 } -> utf8::String {
+        let t = map::get{ m = c.expr_ty, key = k }
+        if t == null or t == types::NO_TYPE { return "none" }
+        return check::tstr{ c, t }
+    }
+
+    // The conversion of the value with key k, if it has one, as the lines around it. Returns the
+    // depth of the value itself.
+    fn wrap { mut out: Out, c: check::Checker, k: u64, depth: u32 } -> u32 {
+        let conv = map::get{ m = c.convs, key = k }
+        if conv == null { return depth }
+        indent{ &out, depth }
+        match conv {
+            some{ to } => {
+                pushed{ ok = @fmt(&out, "some {}\n", check::tstr{ c, t = to }) }
+                return depth + 1
+            }
+            slice{ to } => {
+                pushed{ ok = @fmt(&out, "slice {}\n", check::tstr{ c, t = to }) }
+                return depth + 1
+            }
+            addr_slice{ ptr, to } => {
+                pushed{ ok = @fmt(&out, "slice {}\n", check::tstr{ c, t = to }) }
+                indent{ &out, depth = depth + 1 }
+                pushed{ ok = @fmt(&out, "addr {}\n", check::tstr{ c, t = ptr }) }
+                return depth + 2
+            }
+        }
+    }
+
+    // What `..` supplied to a call: `path T`, under `addr` for a `mut` field.
+    fn forwards { mut out: Out, c: check::Checker, e: syntax::Expr, depth: u32 } {
+        let fw = map::get{ m = c.forwards, key = check::expr_key{ e } }
+        if fw == null { return }
+        let mut i: usize = 0
+        while i < fw.len {
+            let f = fw[i]
+            let mut d = depth
+            let conv = f.conv
+            if conv != null {
+                indent{ &out, depth = d }
+                match conv {
+                    some{ to } => { pushed{ ok = @fmt(&out, "some {}\n", check::tstr{ c, t = to }) } }
+                    slice{ to } => { pushed{ ok = @fmt(&out, "slice {}\n", check::tstr{ c, t = to }) } }
+                    addr_slice{ to } => { pushed{ ok = @fmt(&out, "slice {}\n", check::tstr{ c, t = to }) } }
+                }
+                d = d + 1
+            }
+            if f.mutable {
+                indent{ &out, depth = d }
+                pushed{ ok = @fmt(&out, "addr {}\n", check::tstr{ c, t = f.arg }) }
+                d = d + 1
+            }
+            indent{ &out, depth = d }
+            pushed{ ok = @fmt(&out, "path {}\n", check::tstr{ c, t = f.ty }) }
+            i = i + 1
+        }
+    }
+
+    // An expression: a line `KIND TYPE`, children indented under it.
+    fn expr { mut out: Out, c: check::Checker, e: syntax::Expr, depth: u32 } {
+        let k = check::expr_key{ e }
+        let d = wrap{ &out, c, k, depth }
         indent{ &out, depth = d }
-        let t = check::tstr{ c, t = check::type_of_expr{ c, e } }
+        let t = ty_at{ c, k }
         let none = slice::empty(syntax::Expr){}
         let mut kids: []syntax::Expr = none
         let mut head: utf8::String = "?"
         let mut one: ?syntax::Expr = null
         let mut two: ?syntax::Expr = null
         match e.k {
+            field{ base, name } => {
+                pushed{ ok = @fmt(&out, "field {} {}\n", check::str{ s = name.text }, t) }
+                expr{ &out, c, e = base.*, depth = d + 1 }
+                return
+            }
+            deref{ base } => {
+                head = "deref"
+                one = base.*
+            }
+            index{ base, i } => {
+                head = "index"
+                one = base.*
+                two = i.*
+            }
+            range{ base, lo, hi } => {
+                let l: utf8::String = if lo != null { "lo" } else { "" }
+                let h: utf8::String = if hi != null { "hi" } else { "" }
+                pushed{ ok = @fmt(&out, "range {}..{} {}\n", l, h, t) }
+                expr{ &out, c, e = base.*, depth = d + 1 }
+                if lo != null { expr{ &out, c, e = lo.*, depth = d + 1 } }
+                if hi != null { expr{ &out, c, e = hi.*, depth = d + 1 } }
+                return
+            }
+            addr{ e = x } => {
+                head = "addr"
+                one = x.*
+            }
+            ifx{ x } => {
+                pushed{ ok = @fmt(&out, "if {}\n", t) }
+                if_parts{ &out, c, x, depth = d + 1, value = true }
+                return
+            }
+            matchx{ x } => {
+                pushed{ ok = @fmt(&out, "match {}\n", t) }
+                match_parts{ &out, c, x, depth = d + 1, value = true }
+                return
+            }
             int => { head = "int" }
             float => { head = "float" }
             str => { head = "str" }
@@ -956,6 +1223,7 @@ namespace decls {
                     expr{ &out, c, e = items[i].value, depth = d + 1 }
                     i = i + 1
                 }
+                forwards{ &out, c, e, depth = d + 1 }
                 return
             }
             neg{ e = x } => {
@@ -979,6 +1247,16 @@ namespace decls {
                     expr{ &out, c, e = args[i], depth = d + 1 }
                     i = i + 1
                 }
+                // An @fmt's pushes, one per piece of its format.
+                let ps = map::get{ m = c.pieces, key = k }
+                if ps != null {
+                    i = 0
+                    while i < ps.len {
+                        indent{ &out, depth = d + 1 }
+                        pushed{ ok = @fmt(&out, "fmt {}\n", check::str{ s = ps[i].push }) }
+                        i = i + 1
+                    }
+                }
                 return
             }
             else => {}
@@ -986,6 +1264,8 @@ namespace decls {
         pushed{ ok = @fmt(&out, "{} {}\n", head, t) }
         let x = one
         if x != null { expr{ &out, c, e = x, depth = d + 1 } }
+        let y = two
+        if y != null { expr{ &out, c, e = y, depth = d + 1 } }
         let mut i: usize = 0
         while i < kids.len {
             expr{ &out, c, e = kids[i], depth = d + 1 }

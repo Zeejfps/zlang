@@ -60,3 +60,7 @@ numbers, which PLAN.md and commit messages cite; git history has the resolved on
   before plain arguments, would have caught eight such calls.
 - **32. An empty slice is inferred as `[]mut`** (again #21). `let mut fields =
   slice::empty(types::Field){}` can't later take a `[]types::Field`.
+- **33. An optional can't be compared with a value.** `map::get{ m = c.access, key } ==
+  Access::field` is an error, so it takes a local and `x != null and x == Access::field`
+  (`check::access_is`). With #23, a `let mut` optional needs a copy even for that. `==` between
+  `?T` and `T` meaning "is some and equal" would do.

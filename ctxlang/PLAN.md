@@ -15,7 +15,7 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 | 3a | Language work before the lexer (below) | done | `2056bb4` |
 | 4 | Lexer | done | |
 | 5 | Parser | done | |
-| 6 | Checker | **in progress**: sub-steps 1–2 done | |
+| 6 | Checker | **in progress**: sub-steps 1–3 done | |
 | 7 | Self-hosting fixpoint | | |
 | 7a | Language server | | |
 | 8 | Decide ctxi's role | | |
@@ -26,17 +26,17 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 - The C backend runs a native `ctxc`. `ctxi/cbackend.py` bootstraps it into `build/ctxc` on first
   use (about 20s) and rebuilds it when ctxc, the runtime or std changes. ctxc compiles itself in
   0.2s. `CTX_CTXC=interp` runs the interpreted ctxc instead.
-- `CTX_BACKEND=c python -m unittest discover tests` passes all 312 tests.
+- `CTX_BACKEND=c python -m unittest discover tests` passes all 332 tests.
 - `tools/ctest.py` passes 171 corpus programs, and skips 20 (below). `tools/ctest.py --same-c`:
   native and interpreted ctxc write byte-identical C for all 180 programs and for ctxc itself.
 - `tools/lextest.py`: ctxc's token dumps match ctxi's for all 483 files (stage 4).
 - `tools/parsetest.py`: ctxc's syntax trees match ctxi's for the 392 files that parse, and the
   first diagnostic matches for the 91 that don't (stage 5). `tools/recover.py`: all 333,900
   damaged copies of the corpus's files parse and pass its checks.
-- `tools/checktest.py`: ctxc's dump of the checked declarations and const initializers matches
-  ctxi's (`--decls`) for all 355 corpus programs whose declarations check, and the first
-  diagnostic matches for the 186 that don't (stage 6, sub-steps 1–2). The checker runs without a
-  panic on 10,760 damaged files.
+- `tools/checktest.py`: ctxc's dump of the checked declarations, const initializers and function
+  bodies matches ctxi's (`--decls`) for all 240 corpus programs that check, and the first
+  diagnostic matches for 421 of the 442 that don't; the other 21 stop at a check of sub-steps 4–5
+  (stage 6, sub-steps 1–3). The checker runs without a panic on 14,580 damaged files.
 - Friction found while writing ctxc is logged in [FRICTION.md](FRICTION.md).
 
 ### Known gaps
@@ -374,8 +374,9 @@ Work in sub-steps, each diffed on its own:
    name-use table and symbol list come from this step.
 2. Inference: type variables as arena nodes with union-find, integer and float literal defaulting
    (§11 Literals), generic application and inference (§9).
-3. Statements, expressions, calls, binds, `match`, `let … else`, narrowing (§8).
-4. Flow checks: initialization, paths that must end, `defer` rules.
+3. Statements, expressions, calls, binds, `match`, `let … else`, narrowing (§8), with the paths
+   that must end and the `defer` rules on jumps and `return`.
+4. Flow checks: definite initialization (§11, Initialization), in loops and `defer` too.
 5. Safety checks: exclusivity (§3.1), escape analysis (§14), bound-function scope (§6).
 6. Monomorphization and IR output.
 7. Const folding. The checker computes every const's value while checking it, as spec §14
@@ -426,6 +427,30 @@ and the other builtins except `@fmt`, then §14's rule for what a const may hold
 each initializer a line per expression with its type. What bodies need and consts can't reach
 (`&`, ranges, `if` and `match` expressions, `@fmt`) reports `(ctxc) not yet checked`, which
 checktest counts as skipped. The `ConstInitializers` tests put every const error in the corpus.
+
+**Sub-step 3 — done.** Function bodies: statements, locals, context fields and match bindings,
+paths to locals (with §10's rule for a local that isn't a function in a call), calls with `&p`
+for `mut` fields and `..` forwarding, binds, places and their mutability, fields, indexes,
+ranges, `&`, `if` and `match` as statements and expressions (with ctxi's `join` and literal
+views), `let … else`, labeled loops, `defer`, `@fmt` and narrowing: facts through `and`, `or`
+and `not`, on locals and field paths, in branches, `while` bodies and after an `if` that leaves.
+Locals are a list of `Var`s, and scopes a list of bindings with a mark where each scope starts;
+a scope keeps only its latest binding of a name, as ctxi's dict per scope does. Narrowing needs
+to know where a path ends, so the flow state that says so (`dead`) came with this step, and with
+it the checks that use nothing else: paths that must end in `return`, a branch that must end in
+a value, a `let … else` that must leave, and the `defer` rules for `return` and jumps. New side
+tables: the local each `let` and binder declares, how each field or index reaches its value, a
+narrowed field's `?T`, what `..` supplied, and each `@fmt`'s pieces with the push each becomes.
+
+The dump gives every function body a line per statement and expression (`ctxi/declsdump.py`
+describes it). ctxi's checker rewrites the tree it checks, so checktest gives each program its
+own copy of std. Where ctxi stops at a sub-step 4 or 5 check that ctxc doesn't make yet,
+checktest skips the program (`PENDING`). The `Bodies` tests put every error of this step in the
+corpus.
+
+Natively, lexing, parsing and checking all of ctxc with std takes about 130 ms, up from 80 ms for
+the declarations alone, so bodies are already past the 100 ms budget for the whole front end.
+Profile before sub-steps 4–5 add their passes.
 
 *Done when:* IR matches the Python dump across the corpus, every compile-error test's first
 diagnostic contains the same fragment at the same position, the recovery test passes on the whole

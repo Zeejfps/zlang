@@ -1,17 +1,20 @@
 // The checker, a port of ctxi/checker.py. So far: collecting declarations into namespaces,
 // resolving the types in their signatures (§10, §12), enum values and array lengths, layouts,
-// and the rules for `main` (§15). Bodies come next (PLAN.md stage 6).
+// const initializers, function bodies with their statements, expressions, calls, binds,
+// `match`, `let ... else` and narrowing (§8), and the rules for `main` (§15). Definite
+// initialization and the safety checks come next (PLAN.md stage 6).
 //
 //   let mut c = check::new{ files, std_files, &heap, &diags }
-//   check::declarations{ &c }
+//   check::program{ &c }
 //
 // It reports what ctxi reports, in the same order: the phases run as ctxi's do, over the files
 // and declarations in ctxi's order. Instead of stopping at an error it goes on, with the error
 // type (types::ERROR) where a type couldn't be resolved, and reports each message once.
 //
 // What it learns goes in side tables keyed by a node's file and id, not into the tree: the
-// declaration each syntax declaration became, what each name in a type refers to, and each type
-// expression's type.
+// declaration each syntax declaration became, what each name refers to, each type expression's
+// and expression's type, the local each `let` and binder declares, and the conversions ctxi
+// writes into its tree as nodes.
 
 namespace check {
     type Heap = arena::Arena
@@ -76,6 +79,7 @@ namespace check {
         prim{ p: types::Prim },
         cap{ c: types::Cap },
         param{ decl: u32, index: u32 },
+        local{ var: u32 },
     }
 
     // Where a type expression is resolved: a namespace, and the generic parameters in scope,
@@ -111,27 +115,96 @@ namespace check {
         busy:      map::Map(Id, bool, Heap),     // layouts being computed
         main:      u32,                          // NONE unless `main` is valid
         text_decl: u32,                          // utf8::String, or NONE
-        // The body being checked: a const's initializer, so far.
+        builder_decl: u32,                       // utf8::Builder, or NONE
+        // The body being checked: a const's initializer or a function's body.
         sc:        Scope,
         ret:       Id,
         lits:      list::List(syntax::Expr, Heap),    // literals, whose types are settled at the end
         gvars:     list::List(GVar, Heap),            // generic arguments to infer
-        // Side tables for expressions, keyed by key{ file, id }.
-        expr_ty:   map::Map(u64, Id, Heap),           // an expression's type
+        fmts:      list::List(syntax::Expr, Heap),    // @fmt calls, whose pushes are settled at the end
+        vars:      list::List(Var, Heap),             // the locals of every body, by index
+        scope:     list::List(Binding, Heap),         // what is in scope, innermost last
+        marks:     list::List(usize, Heap),           // where each open scope starts in `scope`
+        depth:     u32,                               // open scopes, less the context's
+        loop_depth: u32,
+        loops:     list::List(Loop, Heap),            // the enclosing loops, innermost last
+        loop_base: usize,                             // loops[..loop_base] are outside the defer
+        defers:    u32,                               // `defer` bodies around the statement
+        dead:      bool,                              // the path has ended (ctxi's State.dead)
+        // Side tables for expressions and statements, keyed by key{ file, id }.
+        expr_ty:   map::Map(u64, Id, Heap),           // an expression's type; a branch value's too
         convs:     map::Map(u64, Conv, Heap),         // an implicit conversion of its value
         refs:      map::Map(u64, PathRef, Heap),      // what a path (or a callee) names
         literal:   map::Map(u64, bool, Heap),         // braces: a literal (true) or a call
+        access:    map::Map(u64, Access, Heap),       // how a field or index reaches its value
+        narrowed:  map::Map(u64, Id, Heap),           // a narrowed field's own ?T
+        local_of:  map::Map(u64, u32, Heap),          // the local a `let` or a binder's field declares
+        forwards:  map::Map(u64, []Forward, Heap),    // what `..` supplies to a call
+        pieces:    map::Map(u64, []mut Piece, Heap),  // an @fmt's format
     }
+
+    // A local, context field or match binding, or a narrowed view of one (ctxi's VarInfo).
+    enum VarKind: u8 { ctx, local, bind, narrow }
+
+    struct Var {
+        name:       []u8,
+        ty:         Id,
+        kind:       VarKind,
+        mutable:    bool,
+        indirect:   bool,           // it holds a pointer to the place: a `mut` field, a `&f` binding
+        tracked:    bool,           // `let x: T` without a value, which must be assigned before use
+        narrow_of:  u32,            // what a narrowed view narrows, or NONE
+        depth:      u32,
+        loop_depth: u32,
+        at:         source::Span,
+    }
+
+    // What a scope holds: a local by name, or the narrowed type of a path of struct fields
+    // (`a.b.c`) from a local.
+    union Binding {
+        local{ name: []u8, var: u32 },
+        path{ root: u32, steps: [][]u8, ty: Id },
+    }
+
+    // An enclosing loop. broken: a `break` that leaves it is reachable.
+    struct Loop { label: []u8, broken: bool }
+
+    // How a field, index or `.len` expression reaches its value (ctxi's Field.kind and
+    // Index.kind): through a pointer (p), in an array or slice (s).
+    enum Access: u8 { field, pfield, plen, len, slen, sptr, arr, slice, parr, ptr }
+
+    // A field that `..` supplies: the local of the same name, as `&name` for a `mut` field. ty is
+    // the local's type, arg the argument's.
+    struct Forward { name: []u8, mutable: bool, ty: Id, arg: Id, conv: ?Conv }
+
+    // A piece of an @fmt format: text, or a hole, `{` then an optional `0` and width, then `x`,
+    // `c` or neither (conv 0). push names the utf8 function it becomes, or is `call` for a
+    // function that writes to the builder; it is known once the body is finished.
+    struct Piece { hole: bool, text: []u8, zero: bool, width: ?u64, digits: []u8, conv: u8, push: []u8 }
+
+    // What narrows when a condition is true or false (§8): a local (var) or a path of struct
+    // fields from one (root, with var NONE), narrowed to ty.
+    struct Fact { var: u32, root: u32, steps: [][]u8, ty: Id, at: source::Span }
+
+    struct Facts { yes: []Fact, no: []Fact }
+
+    // A branch of an `if` or `match` expression: the type of its value, or NO_TYPE if it has
+    // none or leaves, and the expression (or nested `if` or `match`) that gives it.
+    struct Branch { t: Id, value: Value }
+
+    union Value { none, expr{ e: syntax::Expr }, nested{ s: syntax::Stmt } }
 
     // A generic argument left to inference, and how to describe it if inference fails.
     struct GVar { v: Id, param: []u8, owner: []u8, at: source::Span }
 
     // An implicit conversion, spelled out in ctxi's tree as a Coerce (to ?T) or ToSlice node. A
-    // `null` takes its optional type, and widening is left for the IR.
-    union Conv { some{ to: Id }, slice{ to: Id } }
+    // `null` takes its optional type, and widening is left for the IR. An array sliced with
+    // `a[lo..hi]` is sliced through its address, a pointer of type ptr.
+    union Conv { some{ to: Id }, slice{ to: Id }, addr_slice{ ptr: Id, to: Id } }
 
     // What a path in an expression names.
     union PathRef {
+        local{ var: u32 },
         func{ decl: u32, targs: []Id },
         constant{ decl: u32 },
         variant{ ty: Id, index: u32 },
@@ -189,14 +262,27 @@ namespace check {
             busy = map::new(Id, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             main = NONE,
             text_decl = NONE,
+            builder_decl = NONE,
             sc = Scope{ ns = ROOT, owner = NONE, names = no_names{}, args = slice::empty(Id){} },
             ret = types::VOID,
             lits = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
             gvars = list::new(GVar){ realloc = arena::alloc, &heap },
+            fmts = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
+            vars = list::new(Var){ realloc = arena::alloc, &heap },
+            scope = list::new(Binding){ realloc = arena::alloc, &heap },
+            marks = list::new(usize){ realloc = arena::alloc, &heap },
+            depth = 0, loop_depth = 0,
+            loops = list::new(Loop){ realloc = arena::alloc, &heap },
+            loop_base = 0, defers = 0, dead = false,
             expr_ty = map::new(u64, Id){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             convs = map::new(u64, Conv){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             refs = map::new(u64, PathRef){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             literal = map::new(u64, bool){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            access = map::new(u64, Access){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            narrowed = map::new(u64, Id){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            local_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            forwards = map::new(u64, []Forward){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            pieces = map::new(u64, []mut Piece){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
         }
         _ = space{ &c, name = "", parent = NONE }
         _ = space{ &c, name = "", parent = UNIVERSE }
@@ -220,7 +306,14 @@ namespace check {
         return list::new(u32){ realloc = arena::alloc, &heap }
     }
 
-    // ---- the declaration phases (ctxi's Checker.check_decls, then check_main)
+    // ---- the phases (ctxi's Checker.check: check_decls, then check_bodies)
+
+    fn program { mut c: Checker } {
+        declarations{ &c }
+        each{ &c, xs = c.consts, what = Phase::const_values }
+        each{ &c, xs = c.fns, what = Phase::bodies }
+        check_main{ &c }
+    }
 
     fn declarations { mut c: Checker } {
         let mut f: usize = 0
@@ -230,6 +323,7 @@ namespace check {
         }
         declare_natives{ &c }
         c.text_decl = std_decl{ c, space = "utf8", name = "String" }
+        c.builder_decl = std_decl{ c, space = "utf8", name = "Builder" }
         generic_params{ &c, xs = c.structs }
         generic_params{ &c, xs = c.unions }
         generic_params{ &c, xs = c.fns }
@@ -240,11 +334,9 @@ namespace check {
         each{ &c, xs = c.consts, what = Phase::consts }
         each{ &c, xs = c.fns, what = Phase::sigs }
         each{ &c, xs = c.natives, what = Phase::sigs }
-        each{ &c, xs = c.consts, what = Phase::const_values }
-        check_main{ &c }
     }
 
-    union Phase { structs, unions, enums, aliases, consts, sigs, const_values }
+    union Phase { structs, unions, enums, aliases, consts, sigs, const_values, bodies }
 
     fn each { mut c: Checker, xs: list::List(u32, Heap), what: Phase } {
         let items = list::items{ list = xs }
@@ -259,6 +351,7 @@ namespace check {
                 consts  => { resolve_const{ &c, d } }
                 sigs    => { resolve_sig{ &c, d } }
                 const_values => { check_const{ &c, d } }
+                bodies  => { check_fn{ &c, d } }
             }
             i = i + 1
         }
@@ -1205,7 +1298,7 @@ namespace check {
         return ok and utf8::push{ &b, s = ")" }
     }
 
-    // ---- bodies: a const's initializer, so far (ctxi's check_const)
+    // ---- bodies: const initializers and functions (ctxi's check_const and check_fn)
 
     fn check_const { mut c: Checker, d: u32 } {
         let x = get_decl{ c, d }
@@ -1221,18 +1314,62 @@ namespace check {
         }
     }
 
+    // A function's body, with its context fields in the outermost scope.
+    fn check_fn { mut c: Checker, d: u32 } {
+        let x = get_decl{ c, d }
+        match x.syn.k {
+            func{ params, body } => {
+                begin_body{ &c, sc = own_scope{ &c, d }, ret = x.ret }
+                let mut i: usize = 0
+                while i < x.fields.len and i < params.len {
+                    let f = x.fields[i]
+                    let v = new_var{ &c, name = f.name, ty = f.ty, kind = VarKind::ctx, mutable = f.mutable, at = params[i].span }
+                    list::at{ list = c.vars, i = v }.indirect = f.mutable
+                    bind_name{ &c, name = f.name, var = v }
+                    i = i + 1
+                }
+                block{ &c, b = body }
+                if x.ret != types::VOID and x.ret != types::ERROR and not c.dead {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "`{}` must end every path in `return` or `@panic()`", str{ s = x.name.text }) }
+                    error{ &c, at = x.syn.span, msg = utf8::view{ b } }
+                }
+                finish{ &c }
+            }
+            else => {}
+        }
+    }
+
     fn begin_body { mut c: Checker, sc: Scope, ret: Id } {
         c.sc = sc
         c.ret = ret
         list::clear{ list = &c.lits }
         list::clear{ list = &c.gvars }
+        list::clear{ list = &c.fmts }
+        list::clear{ list = &c.scope }
+        list::clear{ list = &c.marks }
+        list::clear{ list = &c.loops }
+        add_mark{ &c, n = 0 }
+        c.depth = 0
+        c.loop_depth = 0
+        c.loop_base = 0
+        c.defers = 0
+        c.dead = false
     }
 
     // Settles the body's literals: those whose type nothing fixed get the defaults, i32 and
-    // f64, and each integer must fit its type. Then every generic argument must be known.
+    // f64, and each integer must fit its type. An @fmt hole settles an integer first: `{x}`
+    // makes it a u64 and `{c}` a u32 (a code point). The @fmt calls then become their pushes.
+    // Last, every generic argument must be known.
     fn finish { mut c: Checker } {
-        let lits = list::items{ list = c.lits }
+        let fs = list::items{ list = c.fmts }
         let mut i: usize = 0
+        while i < fs.len {
+            open_holes{ &c, e = fs[i] }
+            i = i + 1
+        }
+        let lits = list::items{ list = c.lits }
+        i = 0
         while i < lits.len {
             let t = type_of_expr{ c, e = lits[i] }
             let v = types::unbound{ s = c.ty, t }
@@ -1240,6 +1377,11 @@ namespace check {
                 let float = types::var_of{ s = c.ty, n = v }.kind == types::VarKind::float
                 _ = types::unify{ s = &c.ty, a = t, b = if float { types::prim{ p = types::Prim::f64 } } else { types::I32 } }
             }
+            i = i + 1
+        }
+        i = 0
+        while i < fs.len {
+            fmt_calls{ &c, e = fs[i] }
             i = i + 1
         }
         i = 0
@@ -1259,6 +1401,11 @@ namespace check {
                 }
                 else => {}
             }
+            i = i + 1
+        }
+        i = 0
+        while i < fs.len {
+            fmt_widths{ &c, e = fs[i] }
             i = i + 1
         }
         let gs = list::items{ list = c.gvars }
@@ -1383,6 +1530,1298 @@ namespace check {
         }
     }
 
+    // ---- scopes and locals (ctxi's scopes, VarInfo and declare)
+
+    fn new_var { mut c: Checker, name: []u8, ty: Id, kind: VarKind, mutable: bool, at: source::Span } -> u32 {
+        let v = @as(u32, c.vars.len)
+        let item = Var{
+            name, ty, kind, mutable, indirect = false, tracked = false, narrow_of = NONE,
+            depth = c.depth, loop_depth = c.loop_depth, at,
+        }
+        if not list::push{ list = &c.vars, item } { @panic("check: out of memory") }
+        return v
+    }
+
+    fn get_var { c: Checker, v: u32 } -> Var {
+        return list::items{ list = c.vars }[v]
+    }
+
+    // What narrowed view v is a view of, through any number of narrowings.
+    fn root_var { c: Checker, v: u32 } -> u32 {
+        let mut x = v
+        while get_var{ c, v = x }.narrow_of != NONE { x = get_var{ c, v = x }.narrow_of }
+        return x
+    }
+
+    fn open { mut c: Checker } {
+        add_mark{ &c, n = c.scope.len }
+        c.depth = c.depth + 1
+    }
+
+    fn close { mut c: Checker } {
+        let m = list::pop{ list = &c.marks }
+        if m != null { c.scope.len = m }
+        c.depth = c.depth - 1
+    }
+
+    fn add_mark { mut c: Checker, n: usize } {
+        if not list::push{ list = &c.marks, item = n } { @panic("check: out of memory") }
+    }
+
+    fn add_binding { mut c: Checker, b: Binding } {
+        if not list::push{ list = &c.scope, item = b } { @panic("check: out of memory") }
+    }
+
+    // Puts local var in the innermost scope as `name`, over any earlier one there.
+    fn bind_name { mut c: Checker, name: []u8, var: u32 } {
+        add_binding{ &c, b = Binding::local{ name, var } }
+    }
+
+    // Declares local v in the innermost scope. Only a narrowed view of a local from an outer
+    // scope, made by narrowing after an `if`, may already have its name there.
+    fn declare_var { mut c: Checker, v: u32 } {
+        let x = get_var{ c, v }
+        let old = in_scope{ c, name = x.name }
+        if old != NONE and x.name.len > 0 {
+            let o = get_var{ c, v = old }
+            if not (o.kind == VarKind::narrow and get_var{ c, v = root_var{ c, v = old } }.depth < c.depth) {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`{}` is already declared in this scope", str{ s = x.name }) }
+                error{ &c, at = x.at, msg = utf8::view{ b } }
+            }
+        }
+        let at = list::at{ list = c.vars, i = v }
+        at.depth = c.depth
+        at.loop_depth = c.loop_depth
+        bind_name{ &c, name = x.name, var = v }
+    }
+
+    fn declare_all { mut c: Checker, vars: []u32 } {
+        let mut i: usize = 0
+        while i < vars.len {
+            declare_var{ &c, v = vars[i] }
+            i = i + 1
+        }
+    }
+
+    // The local the innermost scope has as `name`, or NONE.
+    fn in_scope { c: Checker, name: []u8 } -> u32 {
+        let xs = list::items{ list = c.scope }
+        let marks = list::items{ list = c.marks }
+        let start = if marks.len == 0 { 0 } else { marks[marks.len - 1] }
+        let mut i = xs.len
+        while i > start {
+            i = i - 1
+            match xs[i] {
+                local{ name = n, var } => { if slice::eq_bytes{ a = n, b = name } { return var } }
+                path => {}
+            }
+        }
+        return NONE
+    }
+
+    // The local named `name`, innermost scope first, or NONE (ctxi's lookup_local). A scope
+    // holds only its latest local of a name. With callable, only one that holds a function
+    // counts.
+    fn lookup_local { c: Checker, name: []u8, callable: bool } -> u32 {
+        let xs = list::items{ list = c.scope }
+        let marks = list::items{ list = c.marks }
+        let mut s = marks.len
+        let mut end = xs.len
+        while s > 0 {
+            s = s - 1
+            let start = marks[s]
+            let mut i = end
+            while i > start {
+                i = i - 1
+                let mut found = NONE
+                match xs[i] {
+                    local{ name = n, var } => { if slice::eq_bytes{ a = n, b = name } { found = var } }
+                    path => {}
+                }
+                if found != NONE {
+                    if not callable or is_fn{ c, t = get_var{ c, v = found }.ty } { return found }
+                    break
+                }
+            }
+            end = start
+        }
+        return NONE
+    }
+
+    fn is_fn { c: Checker, t: Id } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { func => { return true } else => { return false } }
+    }
+
+    // The local a name in an expression refers to, or NONE. In a call or literal, a local that
+    // doesn't hold a function gives way to an outer one that does, or else to a function or
+    // type of the same name (§10).
+    fn local_named { c: Checker, name: []u8, call: bool } -> u32 {
+        let v = lookup_local{ c, name, callable = false }
+        if v == NONE or not call or is_fn{ c, t = get_var{ c, v }.ty } { return v }
+        let alt = lookup_local{ c, name, callable = true }
+        if alt != NONE { return alt }
+        if lookup_value{ c, ns = c.sc.ns, name } != null or lookup_path{ c, ns = c.sc.ns, name } != null { return NONE }
+        return v
+    }
+
+    fn put_local { mut c: Checker, key: u64, v: u32 } {
+        if not map::put{ m = &c.local_of, key, value = v } { @panic("check: out of memory") }
+    }
+
+    fn stmt_key { s: syntax::Stmt } -> u64 {
+        return key{ file = s.span.file, id = s.id }
+    }
+
+    fn name_key { n: syntax::Name } -> u64 {
+        return key{ file = n.span.file, id = n.id }
+    }
+
+    // Whether t has a zero value (§11, Initialization). depth stops a struct that holds itself.
+    fn has_zero { mut c: Checker, t: Id, depth: u32 } -> bool {
+        if depth > 64 { return false }
+        let x = types::prune{ s = c.ty, t }
+        match types::get{ s = c.ty, id = x } {
+            error | prim | opt | slice => { return true }
+            array{ elem } => { return has_zero{ &c, t = elem, depth = depth + 1 } }
+            record => {
+                let fs = struct_fields{ &c, t = x }
+                let mut i: usize = 0
+                while i < fs.len {
+                    if not has_zero{ &c, t = fs[i].ty, depth = depth + 1 } { return false }
+                    i = i + 1
+                }
+                return true
+            }
+            else => { return false }
+        }
+    }
+
+    // ---- statements (ctxi's s_* methods)
+
+    fn block { mut c: Checker, b: syntax::Block } {
+        open{ &c }
+        stmts{ &c, xs = b.stmts }
+        close{ &c }
+    }
+
+    fn stmts { mut c: Checker, xs: []syntax::Stmt } {
+        let mut i: usize = 0
+        while i < xs.len {
+            stmt{ &c, s = xs[i] }
+            i = i + 1
+        }
+    }
+
+    fn stmt { mut c: Checker, s: syntax::Stmt } {
+        match s.k {
+            error => {}
+            local{ mutable, name, ty, init } => { let_stmt{ &c, s, mutable, name, ty, init } }
+            let_else{ variant, binders, init, els_variant, els_binders, els } => {
+                let_else{ &c, s, variant, binders, init, els_variant, els_binders, els }
+            }
+            assign{ place, value } => { assign{ &c, place, value } }
+            eval{ e } => { eval_stmt{ &c, e } }
+            discard{ e } => {
+                if typed{ &c, e } == types::VOID { error{ &c, at = expr_at{ e }, msg = "nothing to discard: this returns no value" } }
+            }
+            cond{ x } => { _ = check_if{ &c, x, at = s.span, exp = types::NO_TYPE, value = false, may_leave = false } }
+            loop{ label, c = cond, body } => { while_stmt{ &c, label, cond, body } }
+            choose{ x } => { _ = check_match{ &c, x, at = s.span, exp = types::NO_TYPE, value = false, may_leave = false } }
+            ret{ value } => { return_stmt{ &c, value, at = s.span } }
+            brk{ label } => { jump{ &c, word = "break", label, at = s.span } }
+            cont{ label } => { jump{ &c, word = "continue", label, at = s.span } }
+            deferred{ body } => {
+                // Checked where it is, but it runs later, so the path goes on as before it. A
+                // jump in it sees only the loops inside it.
+                let s0 = c.dead
+                let base = c.loop_base
+                c.loop_base = c.loops.len
+                c.defers = c.defers + 1
+                block{ &c, b = body }
+                c.defers = c.defers - 1
+                c.loop_base = base
+                c.dead = s0
+            }
+        }
+    }
+
+    fn let_stmt { mut c: Checker, s: syntax::Stmt, mutable: bool, name: syntax::Name, ty: ?syntax::TypeExpr, init: ?syntax::Expr } {
+        let mut t = types::ERROR
+        if ty != null {
+            t = rtype{ &c, te = ty, sc = c.sc, allow_bound = true }
+            if init != null { expect{ &c, e = init, t } }
+        } else if init != null {
+            t = value_type{ &c, e = init }
+        }
+        let v = new_var{ &c, name = name.text, ty = t, kind = VarKind::local, mutable, at = s.span }
+        if init == null and not (mutable and has_zero{ &c, t, depth = 0 }) { list::at{ list = c.vars, i = v }.tracked = true }
+        declare_var{ &c, v }
+        put_local{ &c, key = stmt_key{ s }, v }
+    }
+
+    fn assign { mut c: Checker, place: syntax::Expr, value: syntax::Expr } {
+        let mut v = NONE
+        match place.k {
+            path{ segs } => {
+                let s0 = segs[0]
+                if segs.len == 1 and s0.targs == null and s0.name.text.len > 0 {
+                    v = lookup_local{ c, name = s0.name.text, callable = false }
+                    if v != NONE { use{ &c, n = s0.name, r = Ref::local{ var = v } } }
+                }
+            }
+            else => {}
+        }
+        if v != NONE {
+            let x = get_var{ c, v }
+            put_ref{ &c, e = place, r = PathRef::local{ var = v } }
+            set_type{ &c, e = place, t = x.ty }
+            if not x.mutable and not x.tracked {
+                let why: utf8::String = if x.indirect { "bound through a read-only pointer" } else { "read-only" }
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "cannot assign to `{}`: it is {}", str{ s = x.name }, why) }
+                error{ &c, at = expr_at{ e = place }, msg = utf8::view{ b } }
+            }
+            expect{ &c, e = value, t = x.ty }
+            return
+        }
+        let lt = expr{ &c, e = place, exp = types::NO_TYPE }
+        check_mutable{ &c, e = place }
+        expect{ &c, e = value, t = lt }
+    }
+
+    // A statement of an expression alone: a call or a builtin that returns nothing.
+    fn eval_stmt { mut c: Checker, e: syntax::Expr } {
+        let mut name = str{ s = "this call" }
+        let mut t = types::ERROR
+        match e.k {
+            error => { return }
+            braced{ callee } => {
+                t = typed{ &c, e }
+                let lit = map::get{ m = c.literal, key = expr_key{ e } }
+                if lit != null and lit {
+                    error{ &c, at = expr_at{ e }, msg = "an expression statement must be a call" }
+                    return
+                }
+                match callee.k { path{ segs } => { name = path_text{ c, segs } } else => {} }
+            }
+            builtin{ name = n } => {
+                t = typed{ &c, e }
+                if slice::eq_bytes{ a = n.text, b = "panic" } { c.dead = true }
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "@{}", str{ s = n.text }) }
+                name = utf8::view{ b }
+            }
+            else => {
+                error{ &c, at = expr_at{ e }, msg = "an expression statement must be a call" }
+                _ = expr{ &c, e, exp = types::NO_TYPE }
+                return
+            }
+        }
+        if t != types::VOID and t != types::ERROR {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "the result of `{}` ({}) is unused: use it, or discard it with `_ = ...`", name, tstr{ c, t }) }
+            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+        }
+    }
+
+    fn return_stmt { mut c: Checker, value: ?syntax::Expr, at: source::Span } {
+        if c.defers > 0 { error{ &c, at, msg = "cannot `return` from a defer" } }
+        if value == null {
+            if c.ret != types::VOID and c.ret != types::ERROR { error{ &c, at, msg = "`return` needs a value here" } }
+        } else if c.ret == types::VOID {
+            error{ &c, at, msg = "this function has no return type" }
+            _ = expr{ &c, e = value, exp = types::NO_TYPE }
+        } else {
+            expect{ &c, e = value, t = c.ret }
+        }
+        c.dead = true
+    }
+
+    // `break` or `continue`, with the loop it leaves.
+    fn jump { mut c: Checker, word: utf8::String, label: ?syntax::Name, at: source::Span } {
+        let in_defer: utf8::String = if c.defers > 0 { " in this defer" } else { "" }
+        if c.loops.len == c.loop_base {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "`{}` outside a loop{}", word, in_defer) }
+            error{ &c, at, msg = utf8::view{ b } }
+            c.dead = true
+            return
+        }
+        let mut target = c.loops.len - 1
+        if label != null {
+            let loops = list::items{ list = c.loops }
+            let mut found = false
+            let mut i = loops.len
+            while i > c.loop_base {
+                i = i - 1
+                if slice::eq_bytes{ a = loops[i].label, b = label.text } {
+                    target = i
+                    found = true
+                    break
+                }
+            }
+            if not found {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "no enclosing loop is labeled `{}`{}", str{ s = label.text }, in_defer) }
+                error{ &c, at, msg = utf8::view{ b } }
+                c.dead = true
+                return
+            }
+        }
+        if slice::eq_bytes{ a = word.bytes, b = "break" } and not c.dead { list::at{ list = c.loops, i = target }.broken = true }
+        c.dead = true
+    }
+
+    fn while_stmt { mut c: Checker, label: ?syntax::Name, cond: syntax::Expr, body: syntax::Block } {
+        let mut name: []u8 = ""
+        if label != null {
+            name = label.text
+            let loops = list::items{ list = c.loops }
+            let mut i = c.loop_base
+            while i < loops.len {
+                if name.len > 0 and slice::eq_bytes{ a = loops[i].label, b = name } {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "loop label `{}` is already used by an enclosing loop", str{ s = name }) }
+                    error{ &c, at = label.span, msg = utf8::view{ b } }
+                    break
+                }
+                i = i + 1
+            }
+        }
+        expect{ &c, e = cond, t = types::BOOL }
+        let s0 = c.dead
+        let f = facts{ c, e = cond }
+        if not list::push{ list = &c.loops, item = Loop{ label = name, broken = false } } { @panic("check: out of memory") }
+        c.loop_depth = c.loop_depth + 1
+        open{ &c }
+        assume{ &c, facts = f.yes, after_if = false }
+        stmts{ &c, xs = body.stmts }
+        close{ &c }
+        c.loop_depth = c.loop_depth - 1
+        let l = list::pop{ list = &c.loops }
+        let mut forever = false
+        match cond.k { boolean{ value } => { forever = value } else => {} }
+        // `while true` leaves only through a break; without one it ends the path.
+        c.dead = s0 or (forever and (l == null or not l.broken))
+    }
+
+    // ---- `if` and `match`, as statements and as expressions
+
+    // An `if`. As an expression (value), its type, or NO_TYPE if every branch leaves and that
+    // is allowed (may_leave, for one that is the value of an enclosing branch).
+    fn check_if { mut c: Checker, x: syntax::If, at: source::Span, exp: Id, value: bool, may_leave: bool } -> Id {
+        let cond = x.c.*
+        expect{ &c, e = cond, t = types::BOOL }
+        let f = facts{ c, e = cond }
+        let s0 = c.dead
+        let none = slice::empty(u32){}
+        let mut bs = list::new(Branch){ realloc = arena::alloc, heap = c.heap }
+        add_branch{ xs = &bs, b = branch{ &c, b = x.then, vars = none, facts = f.yes, exp, value } }
+        let d1 = c.dead
+        c.dead = s0
+        let els = x.els
+        if els != null { add_branch{ xs = &bs, b = branch{ &c, b = els, vars = none, facts = f.no, exp, value } } }
+        let d2 = c.dead
+        c.dead = d1 and d2
+        if value { return join{ &c, at, bs = list::items{ list = bs }, exp, may_leave } }
+        if not s0 {
+            // If one branch always leaves, what the other assumes holds to the end of the block.
+            if d1 { assume{ &c, facts = f.no, after_if = true } }
+            if els != null and d2 { assume{ &c, facts = f.yes, after_if = true } }
+        }
+        return types::NO_TYPE
+    }
+
+    fn add_branch { mut xs: list::List(Branch, Heap), b: Branch } {
+        if not list::push{ list = &xs, item = b } { @panic("check: out of memory") }
+    }
+
+    // A block of an `if` or `match`, which starts with vars declared or facts assumed.
+    fn branch { mut c: Checker, b: syntax::Block, vars: []u32, facts: []Fact, exp: Id, value: bool } -> Branch {
+        if value { return value_block{ &c, b, vars, facts, exp } }
+        open{ &c }
+        declare_all{ &c, vars }
+        assume{ &c, facts, after_if = false }
+        stmts{ &c, xs = b.stmts }
+        close{ &c }
+        return Branch{ t = types::NO_TYPE, value = Value::none }
+    }
+
+    // A branch of an `if` or `match` expression: its last statement gives its value. A trailing
+    // `if` with an `else`, or `match`, is itself the value, unless every one of its branches
+    // leaves. Its type is NO_TYPE if the branch never finishes.
+    fn value_block { mut c: Checker, b: syntax::Block, vars: []u32, facts: []Fact, exp: Id } -> Branch {
+        let entry = c.dead
+        open{ &c }
+        declare_all{ &c, vars }
+        assume{ &c, facts, after_if = false }
+        let xs = b.stmts
+        let v = if xs.len == 0 { Value::none } else { branch_value{ s = xs[xs.len - 1] } }
+        let has = match v { none => { false } else => { true } }
+        stmts{ &c, xs = if has { xs[..xs.len - 1] } else { xs } }
+        let mut t = types::NO_TYPE
+        match v {
+            nested{ s } => {
+                t = nested_value{ &c, s, exp }
+                if t != types::NO_TYPE { put_type{ &c, k = stmt_key{ s }, t } }
+            }
+            expr{ e } => {
+                t = expr{ &c, e, exp }
+                if t == types::VOID {
+                    error{ &c, at = expr_at{ e }, msg = "this branch has no value: its last expression returns nothing" }
+                    t = types::ERROR
+                }
+            }
+            none => {}
+        }
+        if not (has and t != types::NO_TYPE) and not c.dead {
+            error{ &c, at = b.span, msg = "this branch must end in a value, or leave with `return`, `break`, `continue` or `@panic()`" }
+        }
+        close{ &c }
+        if c.dead and not entry { t = types::NO_TYPE }
+        return Branch{ t, value = v }
+    }
+
+    // What gives a branch its value, if s is its last statement.
+    fn branch_value { s: syntax::Stmt } -> Value {
+        match s.k {
+            choose => { return Value::nested{ s } }
+            cond{ x } => { if x.els != null { return Value::nested{ s } } }
+            eval{ e } => {
+                match e.k {
+                    builtin{ name } => { if slice::eq_bytes{ a = name.text, b = "panic" } { return Value::none } }
+                    else => {}
+                }
+                return Value::expr{ e }
+            }
+            else => {}
+        }
+        return Value::none
+    }
+
+    fn nested_value { mut c: Checker, s: syntax::Stmt, exp: Id } -> Id {
+        match s.k {
+            cond{ x } => { return check_if{ &c, x, at = s.span, exp, value = true, may_leave = true } }
+            choose{ x } => { return check_match{ &c, x, at = s.span, exp, value = true, may_leave = true } }
+            else => { return types::NO_TYPE }
+        }
+    }
+
+    fn put_type { mut c: Checker, k: u64, t: Id } {
+        if not map::put{ m = &c.expr_ty, key = k, value = t } { @panic("check: out of memory") }
+    }
+
+    // The type of an `if` or `match` expression, from its branches: with an expected type that
+    // every branch converts to, that type. Otherwise the first branch type that every other
+    // converts to (widening, `null` and T to ?T). Each branch's value is converted to it.
+    fn join { mut c: Checker, at: source::Span, bs: []mut Branch, exp: Id, may_leave: bool } -> Id {
+        let mut live: usize = 0
+        let mut first = NONE
+        let mut i: usize = 0
+        while i < bs.len {
+            if bs[i].t != types::NO_TYPE {
+                if first == NONE { first = @as(u32, i) }
+                live = live + 1
+            }
+            i = i + 1
+        }
+        if live == 0 {
+            if may_leave { return types::NO_TYPE }
+            error{ &c, at, msg = "no branch of this expression produces a value; use a statement instead" }
+            return types::ERROR
+        }
+        view_literals{ &c, bs }
+        let mut target = types::NO_TYPE
+        if exp != types::NO_TYPE and all_convert{ &c, bs, t = exp } {
+            target = exp
+        } else {
+            let mut has_null = false
+            i = 0
+            while i < bs.len {
+                if bs[i].t != types::NO_TYPE and types::prune{ s = c.ty, t = bs[i].t } == types::NULL { has_null = true }
+                i = i + 1
+            }
+            i = 0
+            while i < bs.len and target == types::NO_TYPE {
+                if bs[i].t != types::NO_TYPE {
+                    let mut cand = types::prune{ s = c.ty, t = bs[i].t }
+                    if cand != types::NULL {
+                        if has_null and not is_opt{ c, t = cand } { cand = types::opt{ s = &c.ty, elem = cand } }
+                        if all_convert{ &c, bs, t = cand } { target = cand }
+                    }
+                }
+                i = i + 1
+            }
+            if target == types::NO_TYPE {
+                let mut all_null = true
+                i = 0
+                while i < bs.len {
+                    if bs[i].t != types::NO_TYPE and types::prune{ s = c.ty, t = bs[i].t } != types::NULL { all_null = false }
+                    i = i + 1
+                }
+                if all_null { return types::NULL }
+                let a = bs[first].t
+                let mut other = types::NO_TYPE
+                i = @as(usize, first) + 1
+                while i < bs.len {
+                    if bs[i].t != types::NO_TYPE {
+                        let ok = coerce{ &c, a = bs[i].t, e = a }
+                        match ok { fail => { other = bs[i].t } else => {} }
+                        if other != types::NO_TYPE { break }
+                    }
+                    i = i + 1
+                }
+                if other == types::NO_TYPE { other = a }
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "branches have different types: {} and {}", tstr{ c, t = a }, tstr{ c, t = other }) }
+                error{ &c, at, msg = utf8::view{ b } }
+                return types::ERROR
+            }
+        }
+        i = 0
+        while i < bs.len {
+            let br = bs[i]
+            if br.t != types::NO_TYPE {
+                match br.value {
+                    expr{ e } => { coerce_node{ &c, e, at = br.t, t = target } }
+                    nested{ s } => { coerce_key{ &c, k = stmt_key{ s }, pos = s.span, a = br.t, t = target } }
+                    none => {}
+                }
+            }
+            i = i + 1
+        }
+        return target
+    }
+
+    // Whether every branch with a value converts to t, trying them in order.
+    fn all_convert { mut c: Checker, bs: []mut Branch, t: Id } -> bool {
+        let mut i: usize = 0
+        while i < bs.len {
+            if bs[i].t != types::NO_TYPE {
+                match coerce{ &c, a = bs[i].t, e = t } { fail => { return false } else => {} }
+            }
+            i = i + 1
+        }
+        return true
+    }
+
+    fn is_opt { c: Checker, t: Id } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { opt => { return true } else => { return false } }
+    }
+
+    // Branches that are bare string literals, retyped as views when another branch is one:
+    // `match p { a => { name } b => { "text" } }` gives a utf8::String when `name` is one.
+    fn view_literals { mut c: Checker, bs: []mut Branch } {
+        let mut hint = types::NO_TYPE
+        let mut i: usize = 0
+        while i < bs.len and hint == types::NO_TYPE {
+            let br = bs[i]
+            if br.t != types::NO_TYPE {
+                let lit = literal_kind{ c, v = br.value }
+                if lit == 2 {
+                    hint = br.t
+                } else if lit == 0 {
+                    let mut u = types::prune{ s = c.ty, t = br.t }
+                    match types::get{ s = c.ty, id = u } { opt{ elem } => { u = types::prune{ s = c.ty, t = elem } } else => {} }
+                    match types::get{ s = c.ty, id = u } {
+                        slice{ elem } => { if types::prune{ s = c.ty, t = elem } == types::U8 { hint = br.t } }
+                        record{ decl } => { if decl == c.text_decl { hint = br.t } }
+                        else => {}
+                    }
+                }
+            }
+            i = i + 1
+        }
+        if hint == types::NO_TYPE { return }
+        i = 0
+        while i < bs.len {
+            let br = bs[i]
+            if br.t != types::NO_TYPE and literal_kind{ c, v = br.value } == 1 {
+                match br.value {
+                    expr{ e } => { bs[i].t = expr{ &c, e, exp = hint } }
+                    else => {}
+                }
+            }
+            i = i + 1
+        }
+    }
+
+    // 1 if a branch's value is a string literal that became an array, 2 if one that became a
+    // view, 0 if it isn't one.
+    fn literal_kind { c: Checker, v: Value } -> u32 {
+        match v {
+            expr{ e } => {
+                match e.k {
+                    str => {
+                        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e } } } {
+                            array => { return 1 }
+                            else => { return 2 }
+                        }
+                    }
+                    else => {}
+                }
+            }
+            else => {}
+        }
+        return 0
+    }
+
+    // A `match` (§8, Match), through a pointer if the scrutinee is one. As an expression (value),
+    // its type as for check_if.
+    fn check_match { mut c: Checker, x: syntax::Match, at: source::Span, exp: Id, value: bool, may_leave: bool } -> Id {
+        let scrut = x.scrut.*
+        let st = typed{ &c, e = scrut }
+        let mut ut = st
+        let mut through = false
+        let mut ptr_mut = false
+        match types::get{ s = c.ty, id = st } {
+            ptr{ elem, mutable } => {
+                through = true
+                ptr_mut = mutable
+                ut = types::prune{ s = c.ty, t = elem }
+            }
+            else => {}
+        }
+        let mut ok = st != types::ERROR and ut != types::ERROR
+        if ok and through and is_enum{ c, t = ut } {
+            error{ &c, at = expr_at{ e = scrut }, msg = "match cannot go through a pointer to an enum; match on the value with `.*`" }
+            ok = false
+        } else if ok and not has_variants{ c, t = ut } {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "match needs a union, enum or optional value, got {}", tstr{ c, t = st }) }
+            error{ &c, at = expr_at{ e = scrut }, msg = utf8::view{ b } }
+            ok = false
+        }
+        let vs: []Variant = if ok { variants_of{ &c, t = ut } } else { slice::empty(Variant){} }
+        let s0 = c.dead
+        let mut seen = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let mut has_else = false
+        let mut all_dead = true
+        let mut bs = list::new(Branch){ realloc = arena::alloc, heap = c.heap }
+        let arms = x.arms
+        let mut i: usize = 0
+        while i < arms.len {
+            let arm = arms[i]
+            let mut first: []u32 = slice::empty(u32){}
+            let mut first_name: []u8 = ""
+            if arm.pats.len == 0 {
+                if i != arms.len - 1 {
+                    error{ &c, at = arm.span, msg = "`else` must be the last arm" }
+                } else if ok and seen.len == vs.len {
+                    error{ &c, at = arm.span, msg = "`else` is unreachable: every variant is already listed" }
+                }
+                has_else = true
+            }
+            let mut k: usize = 0
+            while k < arm.pats.len {
+                let p = arm.pats[k]
+                let vi = variant_index{ vs, name = p.variant.text }
+                let mut known = ok
+                if ok and vi == NONE {
+                    if p.variant.text.len > 0 {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "{} has no variant `{}`", tstr{ c, t = ut }, str{ s = p.variant.text }) }
+                        error{ &c, at = p.span, msg = utf8::view{ b } }
+                    }
+                    known = false
+                } else if ok and has_id{ xs = list::items{ list = seen }, n = vi } {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "variant `{}` appears in more than one arm", str{ s = p.variant.text }) }
+                    error{ &c, at = p.span, msg = utf8::view{ b } }
+                } else if ok {
+                    push{ xs = &seen, n = vi }
+                }
+                let fields: ?[]types::Field = if known { vs[vi].fields } else { null }
+                let bv = pattern_vars{ &c, variant = p.variant.text, known, fields, binders = p.binders, through, ptr_mut, at = p.span }
+                if k == 0 {
+                    first = bv
+                    first_name = p.variant.text
+                } else {
+                    same_binds{ &c, first_name, first, variant = p.variant.text, mine = bv, binders = p.binders, at = p.span }
+                }
+                k = k + 1
+            }
+            c.dead = s0
+            add_branch{ xs = &bs, b = branch{ &c, b = arm.body, vars = first, facts = slice::empty(Fact){}, exp, value } }
+            all_dead = all_dead and c.dead
+            i = i + 1
+        }
+        if ok and not has_else and seen.len < vs.len {
+            let mut b = message{ c }
+            let mut okb = utf8::push{ &b, s = "match isn't exhaustive: missing " }
+            let mut n: usize = 0
+            let mut j: usize = 0
+            while j < vs.len {
+                if not has_id{ xs = list::items{ list = seen }, n = @as(u32, j) } {
+                    if n > 0 { okb = okb and utf8::push{ &b, s = ", " } }
+                    okb = okb and utf8::push{ &b, s = str{ s = vs[j].name } }
+                    n = n + 1
+                }
+                j = j + 1
+            }
+            pushed{ ok = okb }
+            error{ &c, at, msg = utf8::view{ b } }
+        }
+        c.dead = all_dead
+        if value { return join{ &c, at, bs = list::items{ list = bs }, exp, may_leave } }
+        return types::NO_TYPE
+    }
+
+    fn has_variants { c: Checker, t: Id } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            sum | opt | enumeration => { return true }
+            else => { return false }
+        }
+    }
+
+    fn variant_index { vs: []Variant, name: []u8 } -> u32 {
+        let mut i: usize = 0
+        while i < vs.len {
+            if slice::eq_bytes{ a = vs[i].name, b = name } { return @as(u32, i) }
+            i = i + 1
+        }
+        return NONE
+    }
+
+    fn has_id { xs: []u32, n: u32 } -> bool {
+        let mut i: usize = 0
+        while i < xs.len {
+            if xs[i] == n { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // The locals a pattern for a variant binds. fields are the variant's payload, if it is
+    // known. Through a pointer scrutinee, `&f` binds the field as a place, mutable through a
+    // `*mut`.
+    fn pattern_vars { mut c: Checker, variant: []u8, known: bool, fields: ?[]types::Field, binders: []syntax::Binder, through: bool, ptr_mut: bool, at: source::Span } -> []u32 {
+        let mut out = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        if known and binders.len > 0 and fields == null {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "variant `{}` has no payload", str{ s = variant }) }
+            error{ &c, at, msg = utf8::view{ b } }
+        }
+        let mut i: usize = 0
+        while i < binders.len {
+            let bd = binders[i]
+            let field = bd.field.text
+            let mut ft = types::ERROR
+            if known and fields != null {
+                let f = types::find_field{ fields, name = field }
+                if f == null {
+                    if field.len > 0 {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "variant `{}` has no field `{}`", str{ s = variant }, str{ s = field }) }
+                        error{ &c, at = bd.span, msg = utf8::view{ b } }
+                    }
+                } else {
+                    ft = f.ty
+                    if bound_before{ binders, i } {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "`{}` is bound twice", str{ s = field }) }
+                        error{ &c, at = bd.span, msg = utf8::view{ b } }
+                    }
+                }
+            }
+            if known and bd.by_ref and not through {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`&{}` needs a pointer scrutinee", str{ s = field }) }
+                error{ &c, at = bd.span, msg = utf8::view{ b } }
+            }
+            let local = bd.local
+            let name = if local == null { field } else { local.text }
+            let v = new_var{ &c, name, ty = ft, kind = VarKind::bind, mutable = bd.by_ref and ptr_mut, at = bd.span }
+            list::at{ list = c.vars, i = v }.indirect = bd.by_ref
+            put_local{ &c, key = name_key{ n = bd.field }, v }
+            push{ xs = &out, n = v }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // Whether binders[i]'s field is bound earlier in the pattern.
+    fn bound_before { binders: []syntax::Binder, i: usize } -> bool {
+        let mut k: usize = 0
+        while k < i {
+            if slice::eq_bytes{ a = binders[k].field.text, b = binders[i].field.text } { return true }
+            k = k + 1
+        }
+        return false
+    }
+
+    // A later pattern of an arm must bind what its first pattern does, each name with the same
+    // type and bound the same way. Each of its names then refers to the first pattern's local.
+    fn same_binds { mut c: Checker, first_name: []u8, first: []u32, variant: []u8, mine: []u32, binders: []syntax::Binder, at: source::Span } {
+        let mut used = list::new(bool){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < mine.len {
+            if not list::push{ list = &used, item = false } { @panic("check: out of memory") }
+            i = i + 1
+        }
+        let flags = list::items{ list = used }
+        i = 0
+        while i < first.len {
+            let fv = get_var{ c, v = first[i] }
+            let mut j = mine.len
+            let mut found = NONE
+            while j > 0 {
+                j = j - 1
+                if not flags[j] and slice::eq_bytes{ a = get_var{ c, v = mine[j] }.name, b = fv.name } {
+                    found = @as(u32, j)
+                    break
+                }
+            }
+            if found == NONE {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`{}` must bind `{}`, as `{}` in the same arm does", str{ s = variant }, str{ s = fv.name }, str{ s = first_name }) }
+                error{ &c, at, msg = utf8::view{ b } }
+            } else {
+                let mut k: usize = 0
+                while k < mine.len {
+                    if slice::eq_bytes{ a = get_var{ c, v = mine[k] }.name, b = fv.name } { flags[k] = true }
+                    k = k + 1
+                }
+                let v = get_var{ c, v = mine[found] }
+                if not types::unify{ s = &c.ty, a = v.ty, b = fv.ty } {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "`{}` is {} in `{}` but {} in `{}`", str{ s = fv.name }, tstr{ c, t = fv.ty }, str{ s = first_name }, tstr{ c, t = v.ty }, str{ s = variant }) }
+                    error{ &c, at = v.at, msg = utf8::view{ b } }
+                } else if v.indirect != fv.indirect {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "`{}` must be bound with `&` in both `{}` and `{}`, or in neither", str{ s = fv.name }, str{ s = first_name }, str{ s = variant }) }
+                    error{ &c, at = v.at, msg = utf8::view{ b } }
+                }
+                put_local{ &c, key = name_key{ n = binders[found].field }, v = first[i] }
+            }
+            i = i + 1
+        }
+        i = 0
+        while i < mine.len {
+            if not flags[i] {
+                let v = get_var{ c, v = mine[i] }
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`{}` binds `{}`, which `{}` in the same arm does not", str{ s = variant }, str{ s = v.name }, str{ s = first_name }) }
+                error{ &c, at = v.at, msg = utf8::view{ b } }
+                return
+            }
+            i = i + 1
+        }
+    }
+
+    // `let variant{ ... } = e else { ... }`: the bindings live on in the enclosing block, and
+    // the else block, which runs for every other variant, must leave (§11, Let-else).
+    fn let_else { mut c: Checker, s: syntax::Stmt, variant: syntax::Name, binders: []syntax::Binder, init: syntax::Expr, els_variant: ?syntax::Name, els_binders: []syntax::Binder, els: syntax::Block } {
+        let vt = value_type{ &c, e = init }
+        let t = types::prune{ s = c.ty, t = vt }
+        let mut ok = t != types::ERROR
+        match types::get{ s = c.ty, id = t } {
+            ptr => {
+                error{ &c, at = expr_at{ e = init }, msg = "a `let` pattern cannot match through a pointer; use `match`" }
+                ok = false
+            }
+            sum | opt => {}
+            else => {
+                if ok {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "a `let` pattern needs a union or optional value, got {}", tstr{ c, t }) }
+                    error{ &c, at = expr_at{ e = init }, msg = utf8::view{ b } }
+                    ok = false
+                }
+            }
+        }
+        let vs: []Variant = if ok { variants_of{ &c, t } } else { slice::empty(Variant){} }
+        let vi = variant_index{ vs, name = variant.text }
+        let mut known = ok
+        if ok and vi == NONE {
+            if variant.text.len > 0 {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "{} has no variant `{}`", tstr{ c, t }, str{ s = variant.text }) }
+                error{ &c, at = s.span, msg = utf8::view{ b } }
+            }
+            known = false
+        }
+        let fields: ?[]types::Field = if known { vs[vi].fields } else { null }
+        let bvars = pattern_vars{ &c, variant = variant.text, known, fields, binders, through = false, ptr_mut = false, at = s.span }
+        let mut evars: []u32 = slice::empty(u32){}
+        if els_variant != null {
+            let ev = els_variant.text
+            let evi = variant_index{ vs, name = ev }
+            let mut eknown = known and evi != NONE
+            if known and evi == NONE {
+                if ev.len > 0 {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "{} has no variant `{}`", tstr{ c, t }, str{ s = ev }) }
+                    error{ &c, at = els.span, msg = utf8::view{ b } }
+                }
+            } else if known and slice::eq_bytes{ a = ev, b = variant.text } {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "variant `{}` appears on both sides of the `else`", str{ s = variant.text }) }
+                error{ &c, at = els.span, msg = utf8::view{ b } }
+            } else if known and vs.len != 2 {
+                let mut b = message{ c }
+                let mut okb = @fmt(&b, "`else {}` would skip ", str{ s = ev })
+                let mut n: usize = 0
+                let mut j: usize = 0
+                while j < vs.len {
+                    if not slice::eq_bytes{ a = vs[j].name, b = variant.text } and not slice::eq_bytes{ a = vs[j].name, b = ev } {
+                        if n > 0 { okb = okb and utf8::push{ &b, s = ", " } }
+                        okb = okb and utf8::push{ &b, s = str{ s = vs[j].name } }
+                        n = n + 1
+                    }
+                    j = j + 1
+                }
+                pushed{ ok = okb and utf8::push{ &b, s = "; a pattern after `else` must name the only other variant" } }
+                error{ &c, at = els.span, msg = utf8::view{ b } }
+            }
+            let efields: ?[]types::Field = if eknown { vs[evi].fields } else { null }
+            evars = pattern_vars{ &c, variant = ev, known = eknown, fields = efields, binders = els_binders, through = false, ptr_mut = false, at = els.span }
+        }
+        let s0 = c.dead
+        open{ &c }
+        declare_all{ &c, vars = evars }
+        stmts{ &c, xs = els.stmts }
+        close{ &c }
+        if not c.dead {
+            error{ &c, at = els.span, msg = "the `else` of a `let` pattern must leave: end it with `return`, `break`, `continue` or `@panic()`" }
+        }
+        c.dead = s0
+        declare_all{ &c, vars = bvars }
+    }
+
+    // ---- narrowing (§8, Optional)
+
+    // What the checked condition e narrows when it is true and when it is false.
+    fn facts { c: Checker, e: syntax::Expr } -> Facts {
+        let none = slice::empty(Fact){}
+        match e.k {
+            lnot{ e = x } => {
+                let f = facts{ c, e = x.* }
+                return Facts{ yes = f.no, no = f.yes }
+            }
+            binary{ op, a, b } => {
+                if op == tok::Kind::kw_and or op == tok::Kind::kw_or {
+                    let f1 = facts{ c, e = a.* }
+                    let f2 = facts{ c, e = b.* }
+                    if op == tok::Kind::kw_and {
+                        return Facts{ yes = fact_union{ c, a = f1.yes, b = f2.yes }, no = fact_meet{ c, a = f1.no, b = f2.no } }
+                    }
+                    return Facts{ yes = fact_meet{ c, a = f1.yes, b = f2.yes }, no = fact_union{ c, a = f1.no, b = f2.no } }
+                }
+                let an = is_null{ e = a.* }
+                if (op == tok::Kind::eq or op == tok::Kind::ne) and an != is_null{ e = b.* } {
+                    let f = fact{ c, e = if an { b.* } else { a.* } }
+                    if f == null { return Facts{ yes = none, no = none } }
+                    let mut one = list::new(Fact){ realloc = arena::alloc, heap = c.heap }
+                    add_fact{ xs = &one, f }
+                    let xs: []Fact = list::items{ list = one }
+                    if op == tok::Kind::ne { return Facts{ yes = xs, no = none } }
+                    return Facts{ yes = none, no = xs }
+                }
+            }
+            else => {}
+        }
+        return Facts{ yes = none, no = none }
+    }
+
+    // The fact that e is not null, if e can be narrowed: a read-only local or context field,
+    // or a path of struct fields from one.
+    fn fact { c: Checker, e: syntax::Expr } -> ?Fact {
+        let t = types::prune{ s = c.ty, t = type_of_expr{ c, e } }
+        let mut elem = types::NO_TYPE
+        match types::get{ s = c.ty, id = t } { opt{ elem = x } => { elem = x } else => { return null } }
+        match e.k {
+            path => {
+                let r = map::get{ m = c.refs, key = expr_key{ e } }
+                if r != null {
+                    match r {
+                        local{ var } => {
+                            if get_var{ c, v = var }.mutable { return null }
+                            return Fact{ var, root = NONE, steps = slice::empty([]u8){}, ty = elem, at = expr_at{ e } }
+                        }
+                        else => {}
+                    }
+                }
+            }
+            field => {
+                if access_is{ c, e, a = Access::field } {
+                    let p = place_path{ c, e }
+                    if p != null {
+                        let root = get_var{ c, v = p.root }
+                        if not root.mutable and not root.indirect and all_fields{ steps = p.steps } {
+                            return Fact{ var = NONE, root = p.root, steps = p.steps, ty = elem, at = expr_at{ e } }
+                        }
+                    }
+                }
+            }
+            else => {}
+        }
+        return null
+    }
+
+    fn add_fact { mut xs: list::List(Fact, Heap), f: Fact } {
+        if not list::push{ list = &xs, item = f } { @panic("check: out of memory") }
+    }
+
+    fn all_fields { steps: [][]u8 } -> bool {
+        let mut i: usize = 0
+        while i < steps.len {
+            if slice::eq_bytes{ a = steps[i], b = "[" } { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // Facts of a, then those of b whose local or path a doesn't have.
+    fn fact_union { c: Checker, a: []Fact, b: []Fact } -> []Fact {
+        let mut out = list::new(Fact){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < a.len {
+            add_fact{ xs = &out, f = a[i] }
+            i = i + 1
+        }
+        i = 0
+        while i < b.len {
+            if not has_fact{ xs = a, f = b[i] } { add_fact{ xs = &out, f = b[i] } }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // Facts of a whose local or path b also has.
+    fn fact_meet { c: Checker, a: []Fact, b: []Fact } -> []Fact {
+        let mut out = list::new(Fact){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < a.len {
+            if has_fact{ xs = b, f = a[i] } { add_fact{ xs = &out, f = a[i] } }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    fn has_fact { xs: []Fact, f: Fact } -> bool {
+        let mut i: usize = 0
+        while i < xs.len {
+            let g = xs[i]
+            if f.var != NONE or g.var != NONE {
+                if f.var == g.var { return true }
+            } else if f.root == g.root and same_steps{ a = f.steps, b = g.steps } {
+                return true
+            }
+            i = i + 1
+        }
+        return false
+    }
+
+    fn same_steps { a: [][]u8, b: [][]u8 } -> bool {
+        if a.len != b.len { return false }
+        let mut i: usize = 0
+        while i < a.len {
+            if not slice::eq_bytes{ a = a[i], b = b[i] } { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // Narrows each fact's local or path in the innermost scope. After an `if`, a local's
+    // narrowed view replaces it there, or shadows it if it is from an outer scope.
+    fn assume { mut c: Checker, facts: []Fact, after_if: bool } {
+        let mut i: usize = 0
+        while i < facts.len {
+            let f = facts[i]
+            if f.var == NONE {
+                add_binding{ &c, b = Binding::path{ root = f.root, steps = f.steps, ty = f.ty } }
+            } else {
+                let name = get_var{ c, v = f.var }.name
+                let nv = new_var{ &c, name, ty = f.ty, kind = VarKind::narrow, mutable = false, at = f.at }
+                list::at{ list = c.vars, i = nv }.narrow_of = f.var
+                if after_if { bind_name{ &c, name, var = nv } } else { declare_var{ &c, v = nv } }
+            }
+            i = i + 1
+        }
+    }
+
+    // A place that doesn't go through a deref (§3.1): its root local, and its steps, a field's
+    // name or `[` for an index.
+    struct Place { root: u32, steps: [][]u8 }
+
+    fn place_path { c: Checker, e: syntax::Expr } -> ?Place {
+        match e.k {
+            path => {
+                let r = map::get{ m = c.refs, key = expr_key{ e } }
+                if r != null {
+                    match r {
+                        local{ var } => { return Place{ root = root_var{ c, v = var }, steps = slice::empty([]u8){} } }
+                        else => {}
+                    }
+                }
+            }
+            field{ base, name } => {
+                if access_is{ c, e, a = Access::field } {
+                    let p = place_path{ c, e = base.* }
+                    if p != null { return Place{ root = p.root, steps = add_step{ c, steps = p.steps, step = name.text } } }
+                }
+            }
+            index{ base } => {
+                if access_is{ c, e, a = Access::arr } {
+                    let p = place_path{ c, e = base.* }
+                    if p != null { return Place{ root = p.root, steps = add_step{ c, steps = p.steps, step = "[" } } }
+                }
+            }
+            else => {}
+        }
+        return null
+    }
+
+    fn add_step { c: Checker, steps: [][]u8, step: []u8 } -> [][]u8 {
+        let mut out = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i <= steps.len {
+            let s = if i < steps.len { steps[i] } else { step }
+            if not list::push{ list = &out, item = s } { @panic("check: out of memory") }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // The narrowed type of field path e, or NO_TYPE.
+    fn narrowed_path { c: Checker, e: syntax::Expr } -> Id {
+        let p = place_path{ c, e }
+        if p == null { return types::NO_TYPE }
+        let xs = list::items{ list = c.scope }
+        let mut i = xs.len
+        while i > 0 {
+            i = i - 1
+            match xs[i] {
+                path{ root, steps, ty } => { if root == p.root and same_steps{ a = steps, b = p.steps } { return ty } }
+                local => {}
+            }
+        }
+        return types::NO_TYPE
+    }
+
+    fn access_is { c: Checker, e: syntax::Expr, a: Access } -> bool {
+        let x = map::get{ m = c.access, key = expr_key{ e } }
+        return x != null and x == a
+    }
+
+    fn put_access { mut c: Checker, e: syntax::Expr, a: Access } {
+        if not map::put{ m = &c.access, key = expr_key{ e }, value = a } { @panic("check: out of memory") }
+    }
+
+    // ---- places (§11, Places)
+
+    // Checks that e is a place, and says whether it is (after reporting it if not).
+    fn check_place { mut c: Checker, e: syntax::Expr } -> bool {
+        let mut msg = str{ s = "" }
+        match e.k {
+            error | deref => { return true }
+            path{ segs } => {
+                let r = map::get{ m = c.refs, key = expr_key{ e } }
+                if r == null { return true }       // it didn't resolve, which is reported
+                let what: utf8::String = match r { local => { "" } constant => { "a const, not a place" } else => { "not a place" } }
+                if what.bytes.len == 0 { return true }
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`{}` is {}", path_text{ c, segs }, what) }
+                msg = utf8::view{ b }
+            }
+            field{ base, name } => {
+                let a = map::get{ m = c.access, key = expr_key{ e } }
+                if a == null { return true }
+                if a == Access::field { return check_place{ &c, e = base.* } }
+                if a == Access::pfield { return true }
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`.{}` is not a place", str{ s = name.text }) }
+                msg = utf8::view{ b }
+            }
+            index{ base } => {
+                if access_is{ c, e, a = Access::arr } { return check_place{ &c, e = base.* } }
+                return true
+            }
+            else => { msg = "expression is not a place" }
+        }
+        error{ &c, at = expr_at{ e }, msg }
+        return false
+    }
+
+    fn check_mutable { mut c: Checker, e: syntax::Expr } {
+        if not check_place{ &c, e } { return }
+        match e.k {
+            error => { return }
+            path => {
+                let r = map::get{ m = c.refs, key = expr_key{ e } }
+                if r == null { return }
+                match r {
+                    local{ var } => {
+                        let v = get_var{ c, v = var }
+                        if not v.mutable {
+                            let why: utf8::String = if v.indirect { ": it is bound through a read-only pointer" } else { "" }
+                            let mut b = message{ c }
+                            pushed{ ok = @fmt(&b, "`{}` is not a mutable place{}", str{ s = v.name }, why) }
+                            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                        }
+                    }
+                    else => {}
+                }
+                return
+            }
+            field{ base } => {
+                if access_is{ c, e, a = Access::field } {
+                    check_mutable{ &c, e = base.* }
+                    return
+                }
+            }
+            index{ base } => {
+                if access_is{ c, e, a = Access::arr } {
+                    check_mutable{ &c, e = base.* }
+                    return
+                }
+            }
+            else => {}
+        }
+        if not place_mutable{ c, e } {
+            let pt = pointer_of{ c, e }
+            let want: utf8::String = match types::get{ s = c.ty, id = pt } { slice => { "[]mut" } else => { "*mut" } }
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "cannot write through {}; it needs to be a `{}`", tstr{ c, t = pt }, want) }
+            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+        }
+    }
+
+    // Whether place e is mutable (§11, Places): through a deref, only through a `*mut` or a
+    // `[]mut`.
+    fn place_mutable { c: Checker, e: syntax::Expr } -> bool {
+        match e.k {
+            path => {
+                let r = map::get{ m = c.refs, key = expr_key{ e } }
+                if r != null {
+                    match r { local{ var } => { return get_var{ c, v = var }.mutable } else => {} }
+                }
+                return true
+            }
+            field{ base } => { if access_is{ c, e, a = Access::field } { return place_mutable{ c, e = base.* } } }
+            index{ base } => { if access_is{ c, e, a = Access::arr } { return place_mutable{ c, e = base.* } } }
+            deref => {}
+            else => { return true }
+        }
+        match types::get{ s = c.ty, id = pointer_of{ c, e } } {
+            ptr{ mutable } => { return mutable }
+            slice{ mutable } => { return mutable }
+            else => { return true }
+        }
+    }
+
+    // The pointer or slice a place through a deref goes through: the type of its base.
+    fn pointer_of { c: Checker, e: syntax::Expr } -> Id {
+        match e.k {
+            field{ base } => { return types::prune{ s = c.ty, t = type_of_expr{ c, e = base.* } } }
+            index{ base } => { return types::prune{ s = c.ty, t = type_of_expr{ c, e = base.* } } }
+            deref{ base } => { return types::prune{ s = c.ty, t = type_of_expr{ c, e = base.* } } }
+            else => { return types::ERROR }
+        }
+    }
+
     // ---- expressions (ctxi's e_* methods)
 
     fn expr_key { e: syntax::Expr } -> u64 {
@@ -1421,25 +2860,52 @@ namespace check {
     }
 
     fn coerce_node { mut c: Checker, e: syntax::Expr, at: Id, t: Id } {
-        if at == types::VOID {
-            error{ &c, at = expr_at{ e }, msg = "expression has no value" }
-            return
-        }
-        match coerce{ &c, a = at, e = t } {
-            fail => {
-                let mut b = message{ c }
-                pushed{ ok = mismatch{ &c, a = at, e = t, &b } }
-                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
-            }
-            same => {}
-            some => { put_conv{ &c, e, conv = Conv::some{ to = t } } }
-            to_slice => { put_conv{ &c, e, conv = Conv::slice{ to = t } } }
-            to_null => { set_type{ &c, e, t } }
+        coerce_key{ &c, k = expr_key{ e }, pos = expr_at{ e }, a = at, t }
+    }
+
+    // Converts the value with key k, of type a, to t, and records how. pos is where it is.
+    fn coerce_key { mut c: Checker, k: u64, pos: source::Span, a: Id, t: Id } {
+        match convert{ &c, a, t, pos } {
+            fail | same => {}
+            some => { put_conv_key{ &c, k, conv = Conv::some{ to = t } } }
+            to_slice => { put_conv_key{ &c, k, conv = Conv::slice{ to = t } } }
+            to_null => { put_type{ &c, k, t } }
         }
     }
 
+    // How a value of type a converts to t, after reporting at pos that it doesn't.
+    fn convert { mut c: Checker, a: Id, t: Id, pos: source::Span } -> Coercion {
+        if a == types::VOID {
+            error{ &c, at = pos, msg = "expression has no value" }
+            return Coercion::fail
+        }
+        let how = coerce{ &c, a, e = t }
+        match how {
+            fail => {
+                let mut b = message{ c }
+                pushed{ ok = mismatch{ &c, a, e = t, &b } }
+                error{ &c, at = pos, msg = utf8::view{ b } }
+            }
+            else => {}
+        }
+        return how
+    }
+
     fn put_conv { mut c: Checker, e: syntax::Expr, conv: Conv } {
-        if not map::put{ m = &c.convs, key = expr_key{ e }, value = conv } { @panic("check: out of memory") }
+        put_conv_key{ &c, k = expr_key{ e }, conv }
+    }
+
+    fn put_conv_key { mut c: Checker, k: u64, conv: Conv } {
+        if not map::put{ m = &c.convs, key = k, value = conv } { @panic("check: out of memory") }
+    }
+
+    // A conversion as recorded, for a value that has no node.
+    fn conv_of { how: Coercion, t: Id } -> ?Conv {
+        match how {
+            some => { return Conv::some{ to = t } }
+            to_slice => { return Conv::slice{ to = t } }
+            else => { return null }
+        }
     }
 
     union Coercion { fail, same, some, to_slice, to_null }
@@ -1604,12 +3070,24 @@ namespace check {
                 let bt = typed{ &c, e = base.* }
                 expect{ &c, e = i.*, t = types::USIZE }
                 match types::get{ s = c.ty, id = bt } {
-                    array{ elem } => { return elem }
-                    slice{ elem } => { return elem }
+                    array{ elem } => {
+                        put_access{ &c, e, a = Access::arr }
+                        return elem
+                    }
+                    slice{ elem } => {
+                        put_access{ &c, e, a = Access::slice }
+                        return elem
+                    }
                     ptr{ elem } => {
                         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } {
-                            array{ elem = inner } => { return inner }
-                            else => { return elem }
+                            array{ elem = inner } => {
+                                put_access{ &c, e, a = Access::parr }
+                                return inner
+                            }
+                            else => {
+                                put_access{ &c, e, a = Access::ptr }
+                                return elem
+                            }
                         }
                     }
                     error => { return types::ERROR }
@@ -1621,20 +3099,65 @@ namespace check {
                     }
                 }
             }
-            range => { return unsupported{ &c, e, what = "a range" } }
-            addr => { return unsupported{ &c, e, what = "`&`" } }
-            ifx => { return unsupported{ &c, e, what = "an `if` expression" } }
-            matchx => { return unsupported{ &c, e, what = "a `match` expression" } }
+            range{ base, lo, hi } => { return range_expr{ &c, e, base = base.*, lo, hi } }
+            addr{ e = x } => {
+                let t = expr{ &c, e = x.*, exp = types::NO_TYPE }
+                if not check_place{ &c, e = x.* } { return types::ERROR }
+                let m = place_mutable{ c, e = x.* }
+                return types::ptr{ s = &c.ty, elem = t, mutable = m }
+            }
+            ifx{ x } => { return check_if{ &c, x, at = expr_at{ e }, exp, value = true, may_leave = false } }
+            matchx{ x } => { return check_match{ &c, x, at = expr_at{ e }, exp, value = true, may_leave = false } }
         }
     }
 
-    // Marks what this port can't check yet, so tools/checktest.py can tell it from a real
-    // difference.
-    fn unsupported { mut c: Checker, e: syntax::Expr, what: utf8::String } -> Id {
-        let mut b = message{ c }
-        pushed{ ok = @fmt(&b, "(ctxc) not yet checked: {}", what) }
-        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
-        return types::ERROR
+    // `base[lo..hi]`. An array place is sliced through its address, a `*[N]T` directly.
+    fn range_expr { mut c: Checker, e: syntax::Expr, base: syntax::Expr, lo: ?*syntax::Expr, hi: ?*syntax::Expr } -> Id {
+        let mut bt = typed{ &c, e = base }
+        let mut addr = types::NO_TYPE
+        let mut ok = true
+        match types::get{ s = c.ty, id = bt } {
+            array => {
+                if check_place{ &c, e = base } {
+                    let m = place_mutable{ c, e = base }
+                    addr = types::ptr{ s = &c.ty, elem = bt, mutable = m }
+                    bt = addr
+                } else {
+                    ok = false
+                }
+            }
+            else => {}
+        }
+        match types::get{ s = c.ty, id = bt } {
+            ptr{ elem, mutable } => {
+                match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } {
+                    array{ elem = ae } => {
+                        let st = types::slice{ s = &c.ty, elem = ae, mutable }
+                        put_conv{ &c, e = base, conv = if addr == types::NO_TYPE { Conv::slice{ to = st } } else { Conv::addr_slice{ ptr = addr, to = st } } }
+                        bt = st
+                    }
+                    else => {}
+                }
+            }
+            else => {}
+        }
+        let mut t = bt
+        if not ok {
+            t = types::ERROR
+        } else {
+            match types::get{ s = c.ty, id = bt } {
+                slice | error => {}
+                else => {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "cannot slice {}", tstr{ c, t = bt }) }
+                    error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                    t = types::ERROR
+                }
+            }
+        }
+        if lo != null { expect{ &c, e = lo.*, t = types::USIZE } }
+        if hi != null { expect{ &c, e = hi.*, t = types::USIZE } }
+        return t
     }
 
     // The type of e, pruned, with no expected type. (Pruning in the same call would copy the store
@@ -1719,6 +3242,7 @@ namespace check {
         let r = resolve_path{ &c, e, segs, call = false }
         if r == null { return types::ERROR }
         match r {
+            local{ var } => { return get_var{ c, v = var }.ty }
             func{ decl, targs } => { return fn_type{ &c, d = decl, targs } }
             constant{ decl } => { return get_decl{ c, d = decl }.ty }
             variant{ ty, index } => {
@@ -1780,17 +3304,30 @@ namespace check {
     // (`call`), a local that doesn't hold a function would be passed over (§10).
     fn resolve_path { mut c: Checker, e: syntax::Expr, segs: []syntax::Seg, call: bool } -> ?PathRef {
         if missing{ segs } { return null }
-        let r = resolve_segs{ &c, segs }
-        if r != null {
-            if not map::put{ m = &c.refs, key = expr_key{ e }, value = r } { @panic("check: out of memory") }
-        }
+        let r = resolve_segs{ &c, segs, call }
+        if r != null { put_ref{ &c, e, r } }
         return r
     }
 
-    fn resolve_segs { mut c: Checker, segs: []syntax::Seg } -> ?PathRef {
+    fn put_ref { mut c: Checker, e: syntax::Expr, r: PathRef } {
+        if not map::put{ m = &c.refs, key = expr_key{ e }, value = r } { @panic("check: out of memory") }
+    }
+
+    fn resolve_segs { mut c: Checker, segs: []syntax::Seg, call: bool } -> ?PathRef {
         let ns = c.sc.ns
         let s0 = segs[0]
         if segs.len == 1 {
+            let v = local_named{ c, name = s0.name.text, call }
+            if v != NONE {
+                if s0.targs != null {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "`{}` is not generic", str{ s = s0.name.text }) }
+                    error{ &c, at = s0.name.span, msg = utf8::view{ b } }
+                    return null
+                }
+                use{ &c, n = s0.name, r = Ref::local{ var = v } }
+                return PathRef::local{ var = v }
+            }
             let g = lookup_value{ c, ns, name = s0.name.text }
             if g != null {
                 refer{ &c, n = s0.name, e = g }
@@ -1979,6 +3516,7 @@ namespace check {
                     }
                     func{ decl, targs } => { ct = fn_type{ &c, d = decl, targs } }
                     constant{ decl } => { ct = get_decl{ c, d = decl }.ty }
+                    local{ var } => { ct = get_var{ c, v = var }.ty }
                 }
                 set_type{ &c, e = callee, t = ct }
             }
@@ -2057,9 +3595,15 @@ namespace check {
             let f = types::find_field{ fields, name = it.name.text }
             if f != null {
                 if f.mutable {
+                    let want = types::ptr{ s = &c.ty, elem = f.ty, mutable = true }
                     match it.value.k {
-                        addr => { _ = unsupported{ &c, e = it.value, what = "`&` for a `mut` field" } }
-                        else => { expect{ &c, e = it.value, t = types::ptr{ s = &c.ty, elem = f.ty, mutable = true } } }
+                        addr{ e = x } => {
+                            // `&p`: p must be a mutable place.
+                            let at = expr{ &c, e = it.value, exp = types::NO_TYPE }
+                            check_mutable{ &c, e = x.* }
+                            coerce_node{ &c, e = it.value, at, t = want }
+                        }
+                        else => { expect{ &c, e = it.value, t = want } }
                     }
                 } else {
                     expect{ &c, e = it.value, t = f.ty }
@@ -2068,19 +3612,28 @@ namespace check {
             i = i + 1
         }
         let mut missing = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        let mut fwd = list::new(Forward){ realloc = arena::alloc, heap = c.heap }
         i = 0
         while i < fields.len {
             let f = fields[i]
             if not given{ items, name = f.name } {
                 if forward {
-                    let mut m = message{ c }
-                    pushed{ ok = @fmt(&m, "`..` cannot supply `{}`: no local or context field named `{}`", str{ s = f.name }, str{ s = f.name }) }
-                    error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
+                    let v = lookup_local{ c, name = f.name, callable = false }
+                    if v == NONE {
+                        let mut m = message{ c }
+                        pushed{ ok = @fmt(&m, "`..` cannot supply `{}`: no local or context field named `{}`", str{ s = f.name }, str{ s = f.name }) }
+                        error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
+                    } else if not list::push{ list = &fwd, item = forwarded{ &c, f, v, at = expr_at{ e } } } {
+                        @panic("check: out of memory")
+                    }
                 } else {
                     add_field{ xs = &missing, f }
                 }
             }
             i = i + 1
+        }
+        if fwd.len > 0 {
+            if not map::put{ m = &c.forwards, key = expr_key{ e }, value = list::items{ list = fwd } } { @panic("check: out of memory") }
         }
         let gone = list::items{ list = missing }
         if gone.len > 0 and not bind and not forward {
@@ -2090,6 +3643,25 @@ namespace check {
         }
         if bind { return types::func{ s = &c.ty, fields = gone, ret, bound = true } }
         return ret
+    }
+
+    // What `..` supplies for field f: local v, or `&v` if f is `mut` (§3, rule 7).
+    fn forwarded { mut c: Checker, f: types::Field, v: u32, at: source::Span } -> Forward {
+        let x = get_var{ c, v }
+        if f.mutable {
+            let arg = types::ptr{ s = &c.ty, elem = x.ty, mutable = x.mutable }
+            if not x.mutable {
+                let why: utf8::String = if x.indirect { ": it is bound through a read-only pointer" } else { "" }
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`{}` is not a mutable place{}", str{ s = x.name }, why) }
+                error{ &c, at, msg = utf8::view{ b } }
+            }
+            let want = types::ptr{ s = &c.ty, elem = f.ty, mutable = true }
+            let how = convert{ &c, a = arg, t = want, pos = at }
+            return Forward{ name = f.name, mutable = true, ty = x.ty, arg, conv = conv_of{ how, t = want } }
+        }
+        let how = convert{ &c, a = x.ty, t = f.ty, pos = at }
+        return Forward{ name = f.name, mutable = false, ty = x.ty, arg = x.ty, conv = conv_of{ how, t = f.ty } }
     }
 
     // "`a`, `b`"
@@ -2174,7 +3746,12 @@ namespace check {
         let opname = str{ s = parser::kind_text{ k = op } }
         if op == tok::Kind::kw_and or op == tok::Kind::kw_or {
             expect{ &c, e = a, t = types::BOOL }
+            // The right side runs only if the left is true (`and`) or false (`or`).
+            open{ &c }
+            let f = facts{ c, e = a }
+            assume{ &c, facts = if op == tok::Kind::kw_and { f.yes } else { f.no }, after_if = false }
             expect{ &c, e = b, t = types::BOOL }
+            close{ &c }
             return types::BOOL
         }
         if op == tok::Kind::eq or op == tok::Kind::ne {
@@ -2349,16 +3926,46 @@ namespace check {
             ptr{ elem } => {
                 let inner = types::prune{ s = c.ty, t = elem }
                 match types::get{ s = c.ty, id = inner } {
-                    record => { return field_type{ &c, st = inner, e, name } }
-                    array => { if is_len { return types::USIZE } }
+                    record => {
+                        put_access{ &c, e, a = Access::pfield }
+                        return field_type{ &c, st = inner, e, name }
+                    }
+                    array => {
+                        if is_len {
+                            put_access{ &c, e, a = Access::plen }
+                            return types::USIZE
+                        }
+                    }
                     else => {}
                 }
             }
-            record => { return field_type{ &c, st = bt, e, name } }
-            array => { if is_len { return types::USIZE } }
+            record => {
+                put_access{ &c, e, a = Access::field }
+                let ft = field_type{ &c, st = bt, e, name }
+                if ft == types::ERROR { return ft }
+                // A narrowed field path (§8): the expression is the ?T field's payload.
+                let nt = narrowed_path{ c, e }
+                if nt != types::NO_TYPE {
+                    if not map::put{ m = &c.narrowed, key = expr_key{ e }, value = ft } { @panic("check: out of memory") }
+                    return nt
+                }
+                return ft
+            }
+            array => {
+                if is_len {
+                    put_access{ &c, e, a = Access::len }
+                    return types::USIZE
+                }
+            }
             slice{ elem, mutable } => {
-                if is_len { return types::USIZE }
-                if slice::eq_bytes{ a = name.text, b = "ptr" } { return types::ptr{ s = &c.ty, elem, mutable } }
+                if is_len {
+                    put_access{ &c, e, a = Access::slen }
+                    return types::USIZE
+                }
+                if slice::eq_bytes{ a = name.text, b = "ptr" } {
+                    put_access{ &c, e, a = Access::sptr }
+                    return types::ptr{ s = &c.ty, elem, mutable }
+                }
             }
             var => {
                 let mut b = message{ c }
@@ -2392,6 +3999,10 @@ namespace check {
         if targ != null { tt = rtype{ &c, te = targ.*, sc = c.sc, allow_bound = false } }
         let n = name.text
         if slice::eq_bytes{ a = n, b = "size_of" } or slice::eq_bytes{ a = n, b = "align_of" } { return types::USIZE }
+        // After a syntax error, a builtin may lack arguments the parser has reported missing.
+        let typed_arg = slice::eq_bytes{ a = n, b = "as" } or slice::eq_bytes{ a = n, b = "trunc" } or slice::eq_bytes{ a = n, b = "cast" }
+        let need: usize = if typed_arg or slice::eq_bytes{ a = n, b = "addr" } { 1 } else if slice::eq_bytes{ a = n, b = "panic" } or slice::eq_bytes{ a = n, b = "fmt" } { 0 } else { 2 }
+        if args.len < need or (typed_arg and targ == null) { return types::ERROR }
         if slice::eq_bytes{ a = n, b = "panic" } {
             if args.len > 0 {
                 match args[0].k {
@@ -2402,7 +4013,7 @@ namespace check {
             }
             return types::VOID
         }
-        if slice::eq_bytes{ a = n, b = "fmt" } { return unsupported{ &c, e, what = "@fmt" } }
+        if slice::eq_bytes{ a = n, b = "fmt" } { return fmt_builtin{ &c, e, args } }
         if slice::eq_bytes{ a = n, b = "as" } {
             let x = args[0]
             let src = typed{ &c, e = x }
@@ -2507,6 +4118,384 @@ namespace check {
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { enumeration => { return true } else => { return false } }
     }
 
+    // ---- @fmt(b, "format", args...) (§13, Formatting): pushes onto a builder
+
+    fn fmt_builtin { mut c: Checker, e: syntax::Expr, args: []syntax::Expr } -> Id {
+        if args.len < 2 { return types::BOOL }         // the parser has reported it
+        let b = args[0]
+        let f = args[1]
+        let mut ok = true
+        let inner = match b.k { addr{ e = x } => { x.* } else => { b } }
+        if not simple_place{ e = inner } {
+            error{ &c, at = expr_at{ e = b }, msg = "@fmt takes its builder as `&b`, `&x.f` or a name: it is used once per piece" }
+            ok = false
+        }
+        let bt = typed{ &c, e = b }
+        if not is_builder_ptr{ c, t = bt } {
+            if bt != types::ERROR {
+                let mut m = message{ c }
+                pushed{ ok = @fmt(&m, "@fmt writes to a *mut utf8::Builder, got {}", tstr{ c, t = bt }) }
+                error{ &c, at = expr_at{ e = b }, msg = utf8::view{ b = m } }
+            }
+            ok = false
+        }
+        let ps: ?[]mut Piece = match f.k {
+            str{ bytes } => { fmt_pieces{ &c, s = bytes, at = expr_at{ e = f } } }
+            error => { null }
+            else => {
+                error{ &c, at = expr_at{ e = f }, msg = "@fmt takes its format as a string literal" }
+                null
+            }
+        }
+        let holes = args[2..]
+        if ps == null {
+            ok = false
+        } else {
+            let mut n: usize = 0
+            let mut i: usize = 0
+            while i < ps.len {
+                if ps[i].hole { n = n + 1 }
+                i = i + 1
+            }
+            if n != holes.len {
+                let s1: utf8::String = if n == 1 { "" } else { "s" }
+                let s2: utf8::String = if holes.len == 1 { "" } else { "s" }
+                let s3: utf8::String = if holes.len == 1 { "s" } else { "" }
+                let mut m = message{ c }
+                pushed{ ok = @fmt(&m, "the format has {} hole{} but {} argument{} follow{} it", n, s1, holes.len, s2, s3) }
+                error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
+                ok = false
+            }
+        }
+        let mut i: usize = 0
+        while i < holes.len {
+            let h = holes[i]
+            let want = match h.k { str => { text_type{ &c } } else => { types::NO_TYPE } }
+            _ = expr{ &c, e = h, exp = want }
+            i = i + 1
+        }
+        if ok and ps != null {
+            if not map::put{ m = &c.pieces, key = expr_key{ e }, value = ps } or not list::push{ list = &c.fmts, item = e } {
+                @panic("check: out of memory")
+            }
+        }
+        return types::BOOL
+    }
+
+    // A name, or a path of fields from one: it can be evaluated more than once.
+    fn simple_place { e: syntax::Expr } -> bool {
+        let mut x = e
+        while true {
+            match x.k {
+                field{ base } => { x = base.* }
+                path{ segs } => { return segs.len == 1 and segs[0].targs == null }
+                else => { return false }
+            }
+        }
+        return false
+    }
+
+    fn is_builder_ptr { c: Checker, t: Id } -> bool {
+        match types::get{ s = c.ty, id = t } {
+            ptr{ elem, mutable } => {
+                if not mutable { return false }
+                match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } {
+                    record{ decl } => { return decl == c.builder_decl and decl != NONE }
+                    else => { return false }
+                }
+            }
+            else => { return false }
+        }
+    }
+
+    fn text_type { mut c: Checker } -> Id {
+        if c.text_decl == NONE { return types::ERROR }
+        return types::record{ s = &c.ty, decl = c.text_decl, args = slice::empty(Id){} }
+    }
+
+    // The pieces of a format: text as it is, except that `{{` and `}}` stand for braces, and
+    // holes, `{` then optionally `0` and a width, then optionally `x` or `c`, then `}`. Null
+    // after reporting at `at` what is wrong with it.
+    fn fmt_pieces { mut c: Checker, s: []u8, at: source::Span } -> ?[]mut Piece {
+        let mut out = list::new(Piece){ realloc = arena::alloc, heap = c.heap }
+        let mut text = list::new(u8){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < s.len {
+            let ch = s[i]
+            let next: u8 = if i + 1 < s.len { s[i + 1] } else { 0 }
+            if (ch == '{' and next == '{') or (ch == '}' and next == '}') {
+                push_byte{ xs = &text, n = ch }
+                i = i + 2
+            } else if ch == '{' {
+                let mut j = i + 1
+                while j < s.len and s[j] != '}' { j = j + 1 }
+                if j >= s.len {
+                    error{ &c, at, msg = "the format has a `{` without a `}`; write `{{` for a brace" }
+                    return null
+                }
+                let mut k = i + 1
+                let lead = k < j and s[k] == '0'
+                if lead { k = k + 1 }
+                let ds = k
+                while k < j and s[k] >= '0' and s[k] <= '9' { k = k + 1 }
+                let digits = s[ds..k]
+                let mut conv: u8 = 0
+                if k < j and (s[k] == 'x' or s[k] == 'c') {
+                    conv = s[k]
+                    k = k + 1
+                }
+                if k != j {
+                    let mut m = message{ c }
+                    let mut okm = utf8::push{ b = &m, s = "bad hole `" }
+                    let mut q = i
+                    while q <= j {
+                        let code: u32 = if s[q] < 128 { s[q] } else { 65533 }      // as ctxi's "replace"
+                        okm = okm and utf8::push_char{ b = &m, c = code }
+                        q = q + 1
+                    }
+                    pushed{ ok = okm and utf8::push{ b = &m, s = "` in the format: use `{}`, `{x}`, `{c}` or a width such as `{8}` or `{08x}`" } }
+                    error{ &c, at, msg = utf8::view{ b = m } }
+                    return null
+                }
+                if text.len > 0 {
+                    add_piece{ xs = &out, p = Piece{ hole = false, text = list::items{ list = text }, zero = false, width = null, digits = "", conv = 0, push = "" } }
+                    text = list::new(u8){ realloc = arena::alloc, heap = c.heap }
+                }
+                let width: ?u64 = if digits.len > 0 { utf8::parse_u64{ s = str{ s = digits } } } else { null }
+                add_piece{ xs = &out, p = Piece{ hole = true, text = "", zero = lead and digits.len > 0, width, digits, conv, push = "" } }
+                i = j + 1
+            } else if ch == '}' {
+                error{ &c, at, msg = "the format has a `}` without a `{`; write `}}` for a brace" }
+                return null
+            } else {
+                push_byte{ xs = &text, n = ch }
+                i = i + 1
+            }
+        }
+        if text.len > 0 {
+            add_piece{ xs = &out, p = Piece{ hole = false, text = list::items{ list = text }, zero = false, width = null, digits = "", conv = 0, push = "" } }
+        }
+        return list::items{ list = out }
+    }
+
+    fn push_byte { mut xs: list::List(u8, Heap), n: u8 } {
+        if not list::push{ list = &xs, item = n } { @panic("check: out of memory") }
+    }
+
+    fn add_piece { mut xs: list::List(Piece, Heap), p: Piece } {
+        if not list::push{ list = &xs, item = p } { @panic("check: out of memory") }
+    }
+
+    fn fmt_args { e: syntax::Expr } -> []syntax::Expr {
+        match e.k {
+            builtin{ args } => { return args }
+            else => { return slice::empty(syntax::Expr){} }
+        }
+    }
+
+    // A `{x}` or `{c}` hole settles an integer literal whose type is still open.
+    fn open_holes { mut c: Checker, e: syntax::Expr } {
+        let ps = map::get{ m = c.pieces, key = expr_key{ e } }
+        if ps == null { return }
+        let args = fmt_args{ e }
+        let mut h: usize = 2
+        let mut i: usize = 0
+        while i < ps.len {
+            let p = ps[i]
+            if p.hole {
+                if p.conv != 0 {
+                    let t = type_of_expr{ c, e = args[h] }
+                    let v = types::unbound{ s = c.ty, t }
+                    if v != null and types::var_of{ s = c.ty, n = v }.kind == types::VarKind::int {
+                        _ = types::unify{ s = &c.ty, a = t, b = types::prim{ p = if p.conv == 'x' { types::Prim::u64 } else { types::Prim::u32 } } }
+                    }
+                }
+                h = h + 1
+            }
+            i = i + 1
+        }
+    }
+
+    // The pushes an @fmt stands for (ctxi's fmt_calls): each hole's by its argument's type,
+    // then each push checked as the call it is.
+    fn fmt_calls { mut c: Checker, e: syntax::Expr } {
+        let found = map::get{ m = c.pieces, key = expr_key{ e } }
+        if found == null { return }
+        let ps = found
+        let args = fmt_args{ e }
+        let mut h: usize = 2
+        let mut i: usize = 0
+        while i < ps.len {
+            if ps[i].hole {
+                let push = fmt_hole{ &c, p = ps[i], x = args[h] }
+                if push.len == 0 { return }
+                ps[i].push = push
+                h = h + 1
+            } else {
+                ps[i].push = "push"
+            }
+            i = i + 1
+        }
+        let b = args[0]
+        let bt = type_of_expr{ c, e = b }
+        h = 2
+        i = 0
+        while i < ps.len {
+            let p = ps[i]
+            if not p.hole {
+                match utf8::from{ bytes = p.text } {
+                    err{ error = bad } => {
+                        let mut m = message{ c }
+                        pushed{ ok = @fmt(&m, "string literal is not valid UTF-8 (byte {})", bad.at) }
+                        error{ &c, at = expr_at{ e = args[1] }, msg = utf8::view{ b = m } }
+                    }
+                    ok => {}
+                }
+            } else {
+                let x = args[h]
+                h = h + 1
+                if slice::eq_bytes{ a = p.push, b = "call" } {
+                    match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = x } } } {
+                        func{ fields } => {
+                            let want = types::ptr{ s = &c.ty, elem = fields[0].ty, mutable = true }
+                            _ = convert{ &c, a = bt, t = want, pos = expr_at{ e = b } }
+                        }
+                        else => {}
+                    }
+                } else {
+                    let pt = push_param{ &c, push = p.push }
+                    if pt != types::NO_TYPE { _ = convert{ &c, a = type_of_expr{ c, e = x }, t = pt, pos = expr_at{ e = x } } }
+                }
+            }
+            i = i + 1
+        }
+    }
+
+    // The utf8 function hole piece p pushes argument x with, or "" after reporting why x can't
+    // be formatted so (ctxi's fmt_hole). "call" is a function that writes to the builder.
+    fn fmt_hole { mut c: Checker, p: Piece, x: syntax::Expr } -> []u8 {
+        let t = types::prune{ s = c.ty, t = type_of_expr{ c, e = x } }
+        if t == types::ERROR { return "" }
+        let at = expr_at{ e = x }
+        let has_width = p.digits.len > 0
+        let mut w = message{ c }
+        let mut okw = utf8::push{ b = &w, s = if p.zero { "{0" } else { "{" } }
+        if has_width { okw = okw and utf8::push{ b = &w, s = str{ s = width_text{ p } } } }
+        if p.conv != 0 { okw = okw and utf8::push_char{ b = &w, c = p.conv } }
+        pushed{ ok = okw and utf8::push{ b = &w, s = "}" } }
+        let what = utf8::view{ b = w }
+        let pr = types::prim_of{ s = c.ty, t }
+        let is_int = types::is_int{ s = c.ty, t }
+        let signed = pr != null and types::signed{ p = pr }
+        if p.conv == 'c' {
+            if has_width {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`{}`: a width applies to numbers and text, not characters", what) }
+                error{ &c, at, msg = utf8::view{ b } }
+                return ""
+            }
+            return "push_char"
+        }
+        if p.conv == 'x' {
+            if not (is_int and not signed) {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`{}` formats an unsigned integer, not {}", what, tstr{ c, t }) }
+                error{ &c, at, msg = utf8::view{ b } }
+                return ""
+            }
+            return "push_hex"
+        }
+        if is_int {
+            if not has_width { return if signed { "push_i64" } else { "push_u64" } }
+            return if signed { "push_int" } else { "push_uint" }
+        }
+        match types::get{ s = c.ty, id = t } {
+            record{ decl } => {
+                if decl == c.text_decl { return if has_width { "push_padded" } else { "push" } }
+            }
+            else => {}
+        }
+        if has_width {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "`{}`: a width applies to integers and utf8::String, not {}", what, tstr{ c, t }) }
+            error{ &c, at, msg = utf8::view{ b } }
+            return ""
+        }
+        if types::is_float{ s = c.ty, t } { return if t == types::prim{ p = types::Prim::f32 } { "push_f32" } else { "push_f64" } }
+        if t == types::BOOL { return "push_bool" }
+        match types::get{ s = c.ty, id = t } {
+            func{ fields, ret } => {
+                if fields.len == 1 and fields[0].mutable and types::prune{ s = c.ty, t = ret } == types::BOOL { return "call" }
+            }
+            else => {}
+        }
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "@fmt can't format {}: give a utf8::String, a number, a bool, or a function that writes to the builder", tstr{ c, t }) }
+        error{ &c, at, msg = utf8::view{ b } }
+        return ""
+    }
+
+    // A hole's width as a number: its digits without leading zeros.
+    fn width_text { p: Piece } -> []u8 {
+        let d = p.digits
+        let mut i: usize = 0
+        while i + 1 < d.len and d[i] == '0' { i = i + 1 }
+        return d[i..]
+    }
+
+    // The type of the argument a utf8 push function takes the value in, or NO_TYPE.
+    fn push_param { mut c: Checker, push: []u8 } -> Id {
+        let field: []u8 = if slice::eq_bytes{ a = push, b = "push" } or slice::eq_bytes{ a = push, b = "push_padded" } {
+            "s"
+        } else if slice::eq_bytes{ a = push, b = "push_char" } {
+            "c"
+        } else if slice::eq_bytes{ a = push, b = "push_bool" } {
+            "v"
+        } else {
+            "n"
+        }
+        let sp = lookup_path{ c, ns = c.sc.ns, name = "utf8" }
+        if sp == null { return types::NO_TYPE }
+        match sp {
+            space{ ns } => {
+                let d = map::get{ m = get_space{ c, ns }.values, key = push }
+                if d == null { return types::NO_TYPE }
+                match d {
+                    decl{ i } => {
+                        let f = types::find_field{ fields = get_decl{ c, d = i }.fields, name = field }
+                        if f != null { return f.ty }
+                    }
+                    else => {}
+                }
+            }
+            else => {}
+        }
+        return types::NO_TYPE
+    }
+
+    // A width too large for a usize, as a literal that doesn't fit.
+    fn fmt_widths { mut c: Checker, e: syntax::Expr } {
+        let ps = map::get{ m = c.pieces, key = expr_key{ e } }
+        if ps == null { return }
+        let args = fmt_args{ e }
+        let mut h: usize = 2
+        let mut i: usize = 0
+        while i < ps.len {
+            let p = ps[i]
+            if p.hole {
+                let padded = slice::eq_bytes{ a = p.push, b = "push_hex" } or slice::eq_bytes{ a = p.push, b = "push_int" }
+                    or slice::eq_bytes{ a = p.push, b = "push_uint" } or slice::eq_bytes{ a = p.push, b = "push_padded" }
+                if padded and p.digits.len > 0 and p.width == null {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "literal {} does not fit in usize", str{ s = width_text{ p } }) }
+                    error{ &c, at = expr_at{ e = args[h] }, msg = utf8::view{ b } }
+                }
+                h = h + 1
+            }
+            i = i + 1
+        }
+    }
+
     // ---- the fields of declared types
 
     // The type a non-generic struct or union declaration declares.
@@ -2524,10 +4513,18 @@ namespace check {
         }
     }
 
-    // A union's or optional's variants, with generic arguments in place.
+    // A union's or optional's variants, with generic arguments in place, or an enum's.
     fn variants_of { mut c: Checker, t: Id } -> []Variant {
         let mut out = list::new(Variant){ realloc = arena::alloc, heap = c.heap }
         match types::get{ s = c.ty, id = t } {
+            enumeration{ decl } => {
+                let names = enum_names{ c, d = decl }
+                let mut i: usize = 0
+                while i < names.len {
+                    add_variant{ xs = &out, v = Variant{ name = names[i], fields = null } }
+                    i = i + 1
+                }
+            }
             opt{ elem } => {
                 add_variant{ xs = &out, v = Variant{ name = "null", fields = null } }
                 let mut fs = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
