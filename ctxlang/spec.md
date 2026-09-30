@@ -112,7 +112,7 @@ union Name(Generics) {
 ### Match
 
 ```
-match (e) {
+match e {
     variant{ f, g }           => { ... }
     variant                   => { ... }
     a{ x = n } | b{ y = n }   => { ... }
@@ -134,12 +134,12 @@ match (e) {
 
 1. `?T` is a built-in union with variants `null` and `some{ value: T }`.
 2. `null` is a value of every `?T`. An expression of type `T` converts implicitly to `?T` as `some{ value = expr }`.
-3. Narrowing: in `if (x != null) { B }`, `x` has type `T` in `B`. In `if (x == null) { } else { B }`, `x` has type `T` in `B`. `x` must be a `let` local or a read-only context field. To narrow a mutable one, copy it first (`let y = x`) or `match` on it.
-4. Narrowing after an `if` statement: if the branch where `x` is null always leaves (it ends a path, §11.7, 8, 9), `x` has type `T` from after the `if` to the end of the enclosing block. That branch is the `{ }` of `if (x == null) { }`, or the `else` of `if (x != null) { } else { }`. `x` must be as in rule 3. A `let x` in that same block is an error if `x` was declared there, and shadows it otherwise.
+3. Narrowing: in `if x != null { B }`, `x` has type `T` in `B`. In `if x == null { } else { B }`, `x` has type `T` in `B`. `x` must be a `let` local or a read-only context field. To narrow a mutable one, copy it first (`let y = x`) or `match` on it.
+4. Narrowing after an `if` statement: if the branch where `x` is null always leaves (it ends a path, §11.7, 8, 9), `x` has type `T` from after the `if` to the end of the enclosing block. That branch is the `{ }` of `if x == null { }`, or the `else` of `if x != null { } else { }`. `x` must be as in rule 3. A `let x` in that same block is an error if `x` was declared there, and shadows it otherwise.
 
 ```
 let d = hex_digit{ c }            // ?u32
-if (d == null) { return null }
+if d == null { return null }
 v = v * 16 + d                    // d: u32
 ```
 
@@ -181,26 +181,26 @@ let x = e      let mut x = e      let x: T = e      let x: T      let mut x: T
 let variant{ f, g = y } = e else { }      let ok{ value } = e else err{ error } { }
 x = e
 _ = e
-if (e) { } else if (e) { } else { }
-while (e) { }
+if e { } else if e { } else { }
+while e { }
 break
 continue
-match (e) { ... }
+match e { ... }
 return e
 return
 defer f{ ... }      defer x = e      defer _ = e      defer { }
 f{ ... }
 ```
 
-1. Conditions and match scrutinees are always in parentheses.
-2. `{` after the `)` of a condition or scrutinee, after `else`, or after `=>` begins a block. `{` after any other expression begins a call or literal. In a let-else, `{` after the `else`'s variant holds its pattern if another `{` follows its `}`, and is the block otherwise.
+1. Conditions and match scrutinees need no parentheses: the block's `{` ends them. Parentheses are allowed, as around any expression.
+2. `{` after `else` or `=>` begins a block. In a condition or scrutinee, outside any brackets, a `{` after an expression begins a call or literal only if the token after its matching `}` is on the same line and isn't `else`, `;`, `,`, `}`, `)` or `]`. Otherwise it begins the block: in `if ok{ r } { }` the first `{` is a call and the second the block, and in `if done { }` the `{` is the block. So a condition that goes on to the next line must break after an operator, not right after a call's `}`. Everywhere else, `{` after an expression begins a call or literal. In a let-else, `{` after the `else`'s variant holds its pattern if another `{` follows its `}`, and is the block otherwise.
 3. Statements are separated by newlines or `;`. A postfix `{`, `[` or `(` must be on the same line as the expression before it.
 4. Every block is a scope. A `let` is visible from its declaration to the end of its block.
 5. In `x = e`, `x` must be a mutable place.
 6. An expression statement must be a call or a builtin call that returns nothing. A call that returns a value is an error as a statement: use the value, or discard it explicitly with `_ = e`. `_ = e` evaluates any expression `e` that has a value, and drops it; `_` is not a name and can't be declared. The exception is the last statement of a branch of an `if` or `match` expression, which gives the branch its value (below).
 7. `return` without a value is only allowed in a function with no `-> R`. In a function with `-> R`, every path must end in `return e` or `@panic()`.
 8. `break` leaves the innermost enclosing `while`. `continue` skips the rest of its body and goes to its next condition check. Both are errors outside a loop, and both end a path.
-9. `while (true)` without a `break` that leaves it ends a path, like `return`.
+9. `while true` without a `break` that leaves it ends a path, like `return`.
 
 ### Let-else
 
@@ -234,8 +234,8 @@ defer list::free{ list = &xs, &heap }
 ### If and match expressions
 
 ```
-let sign = if (n < 0) { -1 } else if (n == 0) { 0 } else { 1 }
-let v = match (parse{ s }) {
+let sign = if n < 0 { -1 } else if n == 0 { 0 } else { 1 }
+let v = match parse{ s } {
     ok{ value }  => { value }
     err{ error } => { return Result::err{ error } }
 }

@@ -27,6 +27,7 @@ class Parser:
     def __init__(self, toks):
         self.t = toks
         self.i = 0
+        self.in_cond = False    # parsing a condition or scrutinee, outside any brackets
 
     # ---- token helpers ----
 
@@ -299,7 +300,7 @@ class Parser:
                 return self.if_stmt()
             if tok.val == 'while':
                 self.next()
-                cond = self.paren_expr()
+                cond = self.cond_expr()
                 return A.While(cond, self.block(), pos)
             if tok.val == 'match':
                 return self.match_stmt()
@@ -385,15 +386,36 @@ class Parser:
         self.expect_op('}')
         return binders
 
-    def paren_expr(self):
-        self.expect_op('(')
-        e = self.expr()
-        self.expect_op(')')
-        return e
+    def cond_expr(self):
+        """The condition of an `if` or `while`, or a match scrutinee: an expression that ends
+        where its block's `{` begins (brace_is_call)."""
+        saved, self.in_cond = self.in_cond, True
+        try:
+            return self.or_expr()
+        finally:
+            self.in_cond = saved
+
+    def brace_is_call(self):
+        """In a condition, whether the `{` here begins a call or literal rather than the block:
+        whether the token after its matching `}` is on the same line and could continue an
+        expression."""
+        depth, k = 0, 0
+        while self.peek(k).kind != 'eof':
+            if self.is_op('{', k):
+                depth += 1
+            elif self.is_op('}', k):
+                depth -= 1
+                if depth == 0:
+                    after = self.peek(k + 1)
+                    if after.nl or after.kind == 'eof' or self.is_kw('else', k + 1):
+                        return False
+                    return not (after.kind == 'op' and after.val in (';', '}', ',', ')', ']'))
+            k += 1
+        return False
 
     def if_stmt(self):
         pos = self.next().pos
-        cond = self.paren_expr()
+        cond = self.cond_expr()
         then = self.block()
         els = None
         if self.accept_kw('else'):
@@ -407,7 +429,7 @@ class Parser:
     def if_expr(self):
         """An `if` in expression position. `else` is required; `else if` nests another one."""
         tok = self.next()
-        cond = self.paren_expr()
+        cond = self.cond_expr()
         then = self.block()
         if not self.accept_kw('else'):
             self.err("an `if` expression needs an `else`", tok)
@@ -420,7 +442,7 @@ class Parser:
 
     def match_stmt(self):
         pos = self.next().pos
-        scrut = self.paren_expr()
+        scrut = self.cond_expr()
         self.expect_op('{')
         arms = []
         self.skip_semis()
@@ -442,7 +464,11 @@ class Parser:
     # ---- expressions ----
 
     def expr(self):
-        return self.or_expr()
+        saved, self.in_cond = self.in_cond, False
+        try:
+            return self.or_expr()
+        finally:
+            self.in_cond = saved
 
     def or_expr(self):
         e = self.and_expr()
@@ -526,6 +552,8 @@ class Parser:
                 self.expect_op(']')
                 e = A.Index(e, idx, tok.pos)
             elif v == '{' and not tok.nl:
+                if self.in_cond and not self.brace_is_call():
+                    return e
                 e = self.braced(e)
             else:
                 return e

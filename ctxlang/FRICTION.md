@@ -19,6 +19,7 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
 7. **Exclusivity blocks "context plus one field".** `f{ &e, xs = &e.list }` is rejected, so the
    heap is threaded separately. Split borrows, or a pattern for it.
 8. **Parentheses around `if` / `while` conditions** are noise when braces are required.
+   *Done:* dropped for conditions and scrutinees (spec §11.1–2).
 9. **Integer literals default to i32.** `let mut i = 0` compared with a `usize` length is an error;
    many `: usize` annotations follow. Infer from use.
 10. **No methods** (§16 Q4). `slice::get{ s = xs, i }` and `list::push{ list = &xs, heap, item }`

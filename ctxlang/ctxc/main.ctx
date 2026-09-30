@@ -12,9 +12,9 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let roundtrip = "roundtrip"
     let c = "c"
     let mut to_c = false
-    if (args.len == 3 and map::eq_bytes{ a = slice::get{ s = args, i = 0 }, b = slice::of(u8){ a = &c } }) {
+    if args.len == 3 and map::eq_bytes{ a = slice::get{ s = args, i = 0 }, b = slice::of(u8){ a = &c } } {
         to_c = true
-    } else if (args.len != 2 or not map::eq_bytes{ a = slice::get{ s = args, i = 0 }, b = slice::of(u8){ a = &roundtrip } }) {
+    } else if args.len != 2 or not map::eq_bytes{ a = slice::get{ s = args, i = 0 }, b = slice::of(u8){ a = &roundtrip } } {
         let usage = "usage: ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c"
         io::eprintln{ &io, s = ascii::of{ chars = &usage } }
         return 2
@@ -38,12 +38,12 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
 
     let mut r = ir_read::reader{ text, heap = &heap }
     let prog = ir_read::program{ &r }
-    if (r.failed) {
+    if r.failed {
         report{ &io, path, text, at = r.error_at, problem = r.error }
         return 1
     }
 
-    if (to_c) {
+    if to_c {
         let out = slice::get{ s = args, i = 2 }
         let code = emit::program{ heap = &heap, p = prog }
         let ok = fs::write_all{ &fs, path = out, bytes = code } else {
@@ -72,8 +72,8 @@ fn report { mut io: Io, path: slice::Slice(u8), text: slice::Slice(u8), at: usiz
     let mut line: u64 = 1
     let mut col: u64 = 1
     let mut i: usize = 0
-    while (i < at and i < text.len) {
-        if (slice::get{ s = text, i } == '\n') {
+    while i < at and i < text.len {
+        if slice::get{ s = text, i } == '\n' {
             line = line + 1
             col = 1
         } else {
@@ -100,7 +100,7 @@ fn report { mut io: Io, path: slice::Slice(u8), text: slice::Slice(u8), at: usiz
     let tag = "unexpected tag"
     let id = "type id out of order"
     let trailing = "unexpected text after (main)"
-    match (problem) {
+    match problem {
         expected{ c } => {
             _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &expected } }
             _ = ascii::push_char{ &b, &heap, c = '\'' }

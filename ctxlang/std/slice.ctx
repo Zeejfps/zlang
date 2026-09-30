@@ -12,7 +12,7 @@ namespace slice {
     //   let mut buf: [64]u8
     //   let s = slice::of(u8){ a = &buf }
     fn of(T, A) { a: *A } -> Slice(T) {
-        if (@size_of(A) % @size_of(T) != 0) { @panic("slice::of: array size is not a multiple of T") }
+        if @size_of(A) % @size_of(T) != 0 { @panic("slice::of: array size is not a multiple of T") }
         return Slice{ ptr = @cast(*T, a), len = @size_of(A) / @size_of(T) }
     }
 
@@ -26,9 +26,9 @@ namespace slice {
 
     // Bounds-checked pointer to element i.
     fn at(T) { s: Slice(T), i: usize } -> *T {
-        if (i >= s.len) { @panic("slice::at: index out of bounds") }
+        if i >= s.len { @panic("slice::at: index out of bounds") }
         let p = s.ptr
-        if (p != null) { return p + i }
+        if p != null { return p + i }
         @panic("slice::at: non-empty slice has a null pointer")
     }
 
@@ -42,29 +42,29 @@ namespace slice {
 
     // Elements lo up to but not including hi.
     fn sub(T) { s: Slice(T), lo: usize, hi: usize } -> Slice(T) {
-        if (lo > hi or hi > s.len) { @panic("slice::sub: range out of bounds") }
+        if lo > hi or hi > s.len { @panic("slice::sub: range out of bounds") }
         let p = s.ptr
-        if (p != null) { return Slice{ ptr = p + lo, len = hi - lo } }
+        if p != null { return Slice{ ptr = p + lo, len = hi - lo } }
         return empty(T){}
     }
 
     // Reinterprets the elements. Panics if the byte length doesn't divide evenly. Alignment is unchecked.
     fn cast(T, U) { s: Slice(T) } -> Slice(U) {
         let bytes = s.len * @size_of(T)
-        if (bytes % @size_of(U) != 0) { @panic("slice::cast: byte length does not divide evenly") }
+        if bytes % @size_of(U) != 0 { @panic("slice::cast: byte length does not divide evenly") }
         let p = s.ptr
-        if (p != null) { return Slice{ ptr = @cast(*U, p), len = bytes / @size_of(U) } }
+        if p != null { return Slice{ ptr = @cast(*U, p), len = bytes / @size_of(U) } }
         return empty(U){}
     }
 
     // Copies all of src into the start of dst. Panics if dst is shorter.
     fn copy(T) { dst: Slice(T), src: Slice(T) } {
-        if (dst.len < src.len) { @panic("slice::copy: destination is shorter than source") }
+        if dst.len < src.len { @panic("slice::copy: destination is shorter than source") }
         // The check above covers every index, so the loop indexes the pointers directly.
         let some{ value = d } = dst.ptr else { return }
         let some{ value = from } = src.ptr else { return }
         let mut i: usize = 0
-        while (i < src.len) {
+        while i < src.len {
             d[i] = from[i]
             i = i + 1
         }
@@ -74,7 +74,7 @@ namespace slice {
     fn fill(T) { s: Slice(T), v: T } {
         let some{ value = p } = s.ptr else { return }
         let mut i: usize = 0
-        while (i < s.len) {
+        while i < s.len {
             p[i] = v
             i = i + 1
         }

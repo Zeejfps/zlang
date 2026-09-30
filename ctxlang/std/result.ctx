@@ -5,11 +5,11 @@
 //   union ParseError { empty, bad_digit{ at: usize } }
 //
 //   fn parse_pair { a: ascii::String, b: ascii::String } -> Result(Pair, ParseError) {
-//       let x = match (parse_one{ s = a }) {
+//       let x = match parse_one{ s = a } {
 //           ok{ value }  => { value }
 //           err{ error } => { return Result::err{ error } }
 //       }
-//       let y = match (parse_one{ s = b }) {
+//       let y = match parse_one{ s = b } {
 //           ok{ value }  => { value }
 //           err{ error } => { return Result::err{ error } }
 //       }
@@ -25,7 +25,7 @@ union Result(T, E) {
 
 namespace result {
     fn is_ok(T, E) { r: Result(T, E) } -> bool {
-        return match (r) { ok => { true } err => { false } }
+        return match r { ok => { true } err => { false } }
     }
 
     fn is_err(T, E) { r: Result(T, E) } -> bool {
@@ -34,27 +34,27 @@ namespace result {
 
     // The value, or null if r is an error.
     fn value(T, E) { r: Result(T, E) } -> ?T {
-        return match (r) { ok{ value } => { value } err => { null } }
+        return match r { ok{ value } => { value } err => { null } }
     }
 
     // The error, or null if r is a value.
     fn error(T, E) { r: Result(T, E) } -> ?E {
-        return match (r) { ok => { null } err{ error } => { error } }
+        return match r { ok => { null } err{ error } => { error } }
     }
 
     // The value, or `default` if r is an error.
     fn value_or(T, E) { r: Result(T, E), default: T } -> T {
-        return match (r) { ok{ value } => { value } err => { default } }
+        return match r { ok{ value } => { value } err => { default } }
     }
 
     // The value. Panics if r is an error.
     fn unwrap(T, E) { r: Result(T, E) } -> T {
-        return match (r) { ok{ value } => { value } err => { @panic("result::unwrap: result is an error") } }
+        return match r { ok{ value } => { value } err => { @panic("result::unwrap: result is an error") } }
     }
 
     // `o`'s value, or `error` if o is null.
     fn ok_or(T, E) { o: ?T, error: E } -> Result(T, E) {
-        return match (o) {
+        return match o {
             null          => { Result::err{ error } }
             some{ value } => { Result::ok{ value } }
         }

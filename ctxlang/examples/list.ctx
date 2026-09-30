@@ -10,7 +10,7 @@ union Event {
 // Applies one event to the list. Returns false on allocation failure.
 // `match` is an expression here: each arm's last expression is its value.
 fn apply(S) { mut nums: list::List(i32, S), mut heap: S, ev: Event } -> bool {
-    return match (ev) {
+    return match ev {
         push{ value } => { list::push{ list = &nums, item = value, .. } }
         pop           => { _ = list::pop{ list = &nums }; true }
         clear         => { list::clear{ list = &nums }; true }
@@ -20,8 +20,8 @@ fn apply(S) { mut nums: list::List(i32, S), mut heap: S, ev: Event } -> bool {
 // Mutates payloads in place by matching through a pointer.
 fn scale_pushes(S) { mut events: list::List(Event, S), by: i32 } {
     let mut i = 0
-    while (i < events.len) {
-        match (list::at{ list = events, i }) {          // *Event
+    while i < events.len {
+        match list::at{ list = events, i } {          // *Event
             push{ &value } => { value = value * by }
             else           => { }
         }
@@ -44,7 +44,7 @@ fn main { mut io: Io } {
     let mut events = list::new(Event){ realloc = arena::alloc }    // S = arena::Arena is inferred
     defer list::free{ list = &events, .. }     // runs when main exits, including the early return
     let mut i = 1
-    while (i <= 5) {
+    while i <= 5 {
         _ = list::push{ list = &events, item = Event::push{ value = i }, .. }   // `..` supplies &heap
         i = i + 1
     }
@@ -54,9 +54,9 @@ fn main { mut io: Io } {
     let mut nums = list::new(i32){ realloc = arena::alloc }
     defer list::free{ list = &nums, .. }       // deferred frees run in reverse: nums, then events
     let mut j = 0
-    while (j < events.len) {
+    while j < events.len {
         let ev = slice::get{ s = events.items, i = j }
-        if (not apply{ &nums, ev, .. }) { return }
+        if not apply{ &nums, ev, .. } { return }
         j = j + 1
     }
 
@@ -68,11 +68,11 @@ fn main { mut io: Io } {
     io::println_i64{ &io, n = total }
 
     // An `if` expression needs an `else`, so `last` is assigned on every path.
-    let last = if (total > 100) { Event::clear } else { Event::pop }
+    let last = if total > 100 { Event::clear } else { Event::pop }
     _ = apply{ &nums, ev = last, .. }
 
     let first = list::get{ list = nums, i = 0 }                     // ?i32
-    io::println_i64{ &io, n = if (first != null) { first } else { -1 } }   // narrowed to i32
+    io::println_i64{ &io, n = if first != null { first } else { -1 } }   // narrowed to i32
 
     let h = &heap                  // raw *arena::Arena
     arena::reset{ heap = h }       // a mut field given a raw pointer: exclusivity not checked

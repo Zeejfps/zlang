@@ -83,7 +83,7 @@ class ListExample(Base):
     def test_not_exhaustive(self):
         self.lib_error("""
     let ev = Event::pop
-    match (ev) { push{ value } => { } }""", "match isn't exhaustive: missing pop, clear")
+    match ev { push{ value } => { } }""", "match isn't exhaustive: missing pop, clear")
 
     def test_optional_not_unwrapped(self):
         self.lib_error('    io::println_i64{ &io, n = list::get{ list = nums, i = 0 } }',
@@ -96,7 +96,7 @@ class ListExample(Base):
     def test_match_scrutinee_overlap(self):
         self.lib_error("""
     let mut ev = Event::push{ value = 1 }
-    match (&ev) {
+    match &ev {
         push{ &value } => { ev = Event::pop; value = 2 }
         else           => { }
     }""", 'ev overlaps the match scrutinee; access it only through `value`')
@@ -104,11 +104,11 @@ class ListExample(Base):
     def test_match_scrutinee_binding_ok(self):
         self.assertOutput(LIB + MAIN_SETUP % """
     let mut ev = Event::push{ value = 1 }
-    match (&ev) {
+    match &ev {
         push{ &value } => { value = 7 }
         else           => { }
     }
-    match (ev) {
+    match ev {
         push{ value } => { io::println_i64{ &io, n = value } }
         else          => { }
     }""", '7\n')
@@ -116,7 +116,7 @@ class ListExample(Base):
     def test_maybe_unassigned(self):
         self.lib_error("""
     let ev: Event
-    if (total > 100) { ev = Event::clear }
+    if total > 100 { ev = Event::clear }
     apply{ &nums, ev, .. }""", '`ev` may be read before it is assigned')
 
     def test_held_overlap(self):
@@ -136,7 +136,7 @@ class ListExample(Base):
     def test_mutable_not_narrowed(self):
         self.lib_error("""
     let mut maybe = list::get{ list = nums, i = 0 }
-    if (maybe != null) { io::println_i64{ &io, n = maybe } }""", 'expected i64, got ?i32')
+    if maybe != null { io::println_i64{ &io, n = maybe } }""", 'expected i64, got ?i32')
 
     def test_not_caught_wrong_instance(self):
         self.assertOutput(LIB + MAIN_SETUP % """
@@ -150,14 +150,14 @@ class Basics(Base):
     def test_arith_and_loops(self):
         self.assertOutput("""
 fn fib { n: u64 } -> u64 {
-    if (n < 2) { return n }
+    if n < 2 { return n }
     return fib{ n = n - 1 } + fib{ n = n - 2 }
 }
 fn main { mut io: Io } {
     io::println_u64{ &io, n = fib{ n = 20 } }
     let mut i = 0
     let mut s: i64
-    while (i < 10) { s = s + @as(i64, i); i = i + 1 }
+    while i < 10 { s = s + @as(i64, i); i = i + 1 }
     io::println_i64{ &io, n = s }
     io::println_i64{ &io, n = -7 / 2 }
     io::println_i64{ &io, n = -7 % 2 }
@@ -170,7 +170,7 @@ fn main { mut io: Io } {
         self.assertPanic("""
 fn main { mut io: Io } {
     let mut x: u8 = 250
-    while (true) { x = x + 1 }
+    while true { x = x + 1 }
 }
 """, 'integer overflow')
 
@@ -211,8 +211,8 @@ fn main { mut io: Io } {
     def test_panic_reason_ends_a_path(self):
         self.assertOutput("""
 fn pick { n: i32 } -> i32 {
-    let r = if (n == 1) { 10 } else { @panic("unexpected n") }
-    if (n > 0) { return r }
+    let r = if n == 1 { 10 } else { @panic("unexpected n") }
+    if n > 0 { return r }
     @panic("n must be positive")
 }
 fn main { mut io: Io } { io::println_i64{ &io, n = pick{ n = 1 } } }
@@ -383,7 +383,7 @@ fn main { mut io: Io } { f{ .. } }
 
     def test_missing_return(self):
         self.assertCompileError("""
-fn f { a: i32 } -> i32 { if (a > 0) { return 1 } }
+fn f { a: i32 } -> i32 { if a > 0 { return 1 } }
 fn main { mut io: Io } { }
 """, 'must end every path')
 
@@ -396,11 +396,11 @@ fn main { mut io: Io } { let x: i32; x = 1; x = 2 }
         self.assertOutput("""
 union Result(T) { ok{ value: T }, err{ code: i32 } }
 fn half { n: i32 } -> Result(i32) {
-    if (n % 2 != 0) { return Result::err{ code = n } }
+    if n % 2 != 0 { return Result::err{ code = n } }
     return Result::ok{ value = n / 2 }
 }
 fn show { mut io: Io, r: Result(i32) } {
-    match (r) {
+    match r {
         ok{ value } => { io::println_i64{ &io, n = value } }
         err{ code } => { io::println_i64{ &io, n = -code } }
     }
@@ -410,9 +410,9 @@ fn main { mut io: Io } {
     show{ &io, r = half{ n = 10 } }
     show{ &io, r = half{ n = 7 } }
     let f = first{ a = [4, 5, 6] }
-    if (f == null) { } else { io::println_i64{ &io, n = f } }
+    if f == null { } else { io::println_i64{ &io, n = f } }
     let none: ?i32 = null
-    match (none) {
+    match none {
         null => { io::println_i64{ &io, n = 0 } }
         some{ value } => { io::println_i64{ &io, n = value } }
     }
@@ -443,7 +443,7 @@ fn count { mut n: i32, by: i32 } { n = n + by }
 fn main { mut io: Io } {
     let mut c = 0
     let mut f = count{ n = &c, _ }
-    if (true) {
+    if true {
         let mut d = 0
         f = count{ n = &d, _ }
     }
@@ -455,7 +455,7 @@ fn main { mut io: Io } {
 fn main { mut io: Io } {
     let mut x: i32 = 1
     let mut p = &x
-    if (true) {
+    if true {
         let mut y: i32 = 2
         p = &y
     }
@@ -494,7 +494,7 @@ fn main { mut io: Io } { let p = &C }
     def test_else_unreachable(self):
         self.assertCompileError("""
 union U { a, b }
-fn main { mut io: Io } { let u = U::a; match (u) { a => { } b => { } else => { } } }
+fn main { mut io: Io } { let u = U::a; match u { a => { } b => { } else => { } } }
 """, 'unreachable')
 
     def test_recursion_stack_overflow(self):
@@ -548,7 +548,7 @@ fn main { mut io: Io } { let x: u8 = 1; @wrap_add(x, x) }
     def test_dropped_in_statement_branch(self):
         self.assertCompileError("""
 fn two {} -> i32 { return 2 }
-fn main { mut io: Io } { if (true) { two{} } }
+fn main { mut io: Io } { if true { two{} } }
 """, 'the result of `two` (i32) is unused')
 
     def test_discard(self):
@@ -557,7 +557,7 @@ fn say { mut io: Io, n: i64 } -> i64 { io::println_i64{ &io, n }; return n }
 fn main { mut io: Io } {
     _ = say{ &io, n = 1 }
     defer _ = say{ &io, n = 3 }
-    let x = if (true) { _ = say{ &io, n = 2 }; 5 } else { 6 }
+    let x = if true { _ = say{ &io, n = 2 }; 5 } else { 6 }
     _ = x + 1
 }
 """, '1\n2\n3\n')
@@ -571,13 +571,59 @@ fn main { mut io: Io } { _ = nothing{} }
     def test_discard_is_not_a_branch_value(self):
         self.assertCompileError("""
 fn two {} -> i32 { return 2 }
-fn main { mut io: Io } { let x = if (true) { _ = two{} } else { 1 } }
+fn main { mut io: Io } { let x = if true { _ = two{} } else { 1 } }
 """, 'this branch must end in a value')
 
     def test_underscore_is_not_a_name(self):
         self.assertCompileError("""
 fn main { mut io: Io } { let _ = 1 }
 """, '`_` is not a name')
+
+
+class Conditions(Base):
+    def test_condition_forms(self):
+        self.assertOutput("""
+fn even { n: i32 } -> bool { return n % 2 == 0 }
+fn main { mut io: Io } {
+    let done = true
+    if done { io::println_i64{ &io, n = 1 } }
+    if even{ n = 4 } { io::println_i64{ &io, n = 2 } }
+    if not even{ n = 3 } and even{ n = 2 } { io::println_i64{ &io, n = 3 } }
+    if even{ n = 1 } { } else if even{ n = 6 } { io::println_i64{ &io, n = 4 } }
+    let mut i = 0
+    while i < 3 and not even{ n = 7 } { i = i + 1 }
+    io::println_i64{ &io, n = i }
+    let v = if even{ n = 2 } { 10 } else { 20 }
+    io::println_i64{ &io, n = v }
+    if (done) { io::println_i64{ &io, n = 6 } }
+    if even{ n = 2 } and
+       even{ n = 4 } {
+        io::println_i64{ &io, n = 7 }
+    }
+}
+""", '1\n2\n3\n4\n3\n10\n6\n7\n')
+
+    def test_match_on_call(self):
+        self.assertOutput("""
+fn pick { n: i32 } -> ?i32 { if n > 0 { return n } else { return null } }
+fn main { mut io: Io } {
+    match pick{ n = 5 } {
+        some{ value } => { io::println_i64{ &io, n = value } }
+        null          => { }
+    }
+    let k = match pick{ n = -1 } { some{ value } => { value } null => { 0 } }
+    io::println_i64{ &io, n = k }
+}
+""", '5\n0\n')
+
+    def test_if_expression_in_call_in_condition(self):
+        self.assertOutput("""
+fn even { n: i32 } -> bool { return n % 2 == 0 }
+fn main { mut io: Io } {
+    let a = 3
+    if even{ n = if a > 2 { 4 } else { 5 } } { io::println_i64{ &io, n = 1 } }
+}
+""", '1\n')
 
 
 class Builtins(Base):
@@ -617,20 +663,20 @@ class LoopControl(Base):
 fn first_even { a: [5]i32 } -> ?usize {
     let mut i: usize = 0
     let mut found: ?usize = null
-    while (i < a.len) {
-        if (a[i] % 2 == 0) { found = i; break }
+    while i < a.len {
+        if a[i] % 2 == 0 { found = i; break }
         i = i + 1
     }
     return found
 }
 fn main { mut io: Io } {
     let r = first_even{ a = [1, 3, 8, 5, 6] }
-    if (r != null) { io::println_u64{ &io, n = r } }
+    if r != null { io::println_u64{ &io, n = r } }
     let mut sum = 0
     let mut i = 0
-    while (i < 10) {
+    while i < 10 {
         i = i + 1
-        if (i % 2 == 1) { continue }
+        if i % 2 == 1 { continue }
         sum = sum + i
     }
     io::println_i64{ &io, n = sum }
@@ -642,11 +688,11 @@ fn main { mut io: Io } {
 fn main { mut io: Io } {
     let mut i = 0
     let mut hits = 0
-    while (i < 3) {
+    while i < 3 {
         let mut j = 0
-        while (true) {
+        while true {
             j = j + 1
-            if (j == 4) { break }
+            if j == 4 { break }
             hits = hits + 1
         }
         i = i + 1
@@ -662,8 +708,8 @@ fn main { mut io: Io } {
     let cmds = [Cmd::add{ n = 2 }, Cmd::add{ n = 5 }, Cmd::stop, Cmd::add{ n = 100 }]
     let mut total = 0
     let mut i: usize = 0
-    while (i < cmds.len) {
-        match (cmds[i]) {
+    while i < cmds.len {
+        match cmds[i] {
             add{ n } => { total = total + n }
             stop     => { break }
         }
@@ -681,9 +727,9 @@ fn main { mut io: Io } {
         self.assertOutput("""
 fn spin {} -> i32 {
     let mut n = 0
-    while (true) {
+    while true {
         n = n + 1
-        if (n < 10) { continue }
+        if n < 10 { continue }
         return n
     }
 }
@@ -692,7 +738,7 @@ fn main { mut io: Io } { io::println_i64{ &io, n = spin{} } }
 
     def test_loop_with_break_needs_return(self):
         self.assertCompileError("""
-fn f {} -> i32 { while (true) { break } }
+fn f {} -> i32 { while true { break } }
 fn main { mut io: Io } { }
 """, 'must end every path')
 
@@ -700,7 +746,7 @@ fn main { mut io: Io } { }
         self.assertOutput("""
 fn main { mut io: Io } {
     let x: i32
-    while (true) { x = 7; break }
+    while true { x = 7; break }
     io::println_i64{ &io, n = x }
 }
 """, '7\n')
@@ -710,7 +756,7 @@ fn main { mut io: Io } {
 fn main { mut io: Io } {
     let x: i32
     let mut i = 0
-    while (i < 3) { x = i; i = i + 1 }
+    while i < 3 { x = i; i = i + 1 }
 }
 """, 'assigned in a loop that can repeat')
 
@@ -718,7 +764,7 @@ fn main { mut io: Io } {
         self.assertCompileError("""
 fn main { mut io: Io } {
     let x: i32
-    while (true) { x = 1; continue }
+    while true { x = 1; continue }
 }
 """, 'assigned in a loop that can repeat')
 
@@ -742,7 +788,7 @@ fn main { mut io: Io } {
     let s = S{ big = a }
     io::println_i64{ &io, n = s.big }
     let o: ?i64 = b
-    if (o != null) { io::println_i64{ &io, n = o } }
+    if o != null { io::println_i64{ &io, n = o } }
     let mut w: i64 = 0
     w = c
     io::println_i64{ &io, n = w }
@@ -863,7 +909,7 @@ fn main { mut io: Io } {
     def test_parse(self):
         self.assertOutput("""
 fn show { mut io: Io, r: ?i64 } {
-    match (r) {
+    match r {
         null => { io::println_i64{ &io, n = 0 } }
         some{ value } => { io::println_i64{ &io, n = value } }
     }
@@ -897,7 +943,7 @@ fn main { mut io: Io } {
     io::println_bool{ &io, n = ascii::ends_with{ s, suffix = ascii::of{ chars = &rld } } }
     io::println_bool{ &io, n = ascii::eq{ a = s, b = ascii::of{ chars = &hel } } }
     let comma = ascii::find{ s, c = ',' }
-    if (comma != null) {
+    if comma != null {
         io::println{ &io, s = ascii::sub{ s, lo = 0, hi = comma } }
     }
     io::put_char{ &io, c = ascii::to_upper{ c = 'q' } }
@@ -930,13 +976,13 @@ fn main { mut io: Io } {
     let mut buf: [8]u8
     let mut total: i64 = 0
     let mut more = true
-    while (more) {
+    while more {
         let line = io::read_line{ &io, into = slice::of(u8){ a = &buf } }
-        if (line == null) {
+        if line == null {
             more = false
         } else {
             let n = ascii::parse_i64{ s = ascii::trim{ s = line } }
-            if (n != null) { total = total + n }
+            if n != null { total = total + n }
             io::println{ &io, s = line }
         }
     }
@@ -948,13 +994,13 @@ fn main { mut io: Io } {
     def test_parse_float(self):
         self.assertOutput("""
 fn show { mut io: Io, r: ?f64 } {
-    match (r) {
+    match r {
         null => { io::println_bool{ &io, n = false } }
         some{ value } => { io::println_f64{ &io, n = value } }
     }
 }
 fn show32 { mut io: Io, r: ?f32 } {
-    match (r) {
+    match r {
         null => { io::println_bool{ &io, n = false } }
         some{ value } => { io::println_f32{ &io, n = value } }
     }
@@ -996,10 +1042,10 @@ fn main { mut io: Io } {
     let xs = [0.1, -2.5e-300, 1.7976931348623157e308, 5e-324, 123456.789]
     let mut buf: [32]u8
     let mut i: usize = 0
-    while (i < xs.len) {
+    while i < xs.len {
         let text = ascii::fmt_f64{ n = xs[i], into = slice::of(u8){ a = &buf } }
         let back = ascii::parse_f64{ s = text }
-        if (back != null) { io::println_bool{ &io, n = back == xs[i] } }
+        if back != null { io::println_bool{ &io, n = back == xs[i] } }
         i = i + 1
     }
 }
@@ -1019,16 +1065,16 @@ fn main { mut io: Io } {
     io::println_bool{ &io, n = ascii::eat{ &cur, ch = '=' } }
     ascii::skip_space{ &cur }
     let n = ascii::parse_i64{ s = ascii::take_while{ &cur, f = ascii::is_digit } }
-    if (n != null) { io::println_i64{ &io, n } }
+    if n != null { io::println_i64{ &io, n } }
     ascii::skip_space{ &cur }
     let c = ascii::peek_at{ cur, ahead = 1 }
-    if (c != null) { io::put_char{ &io, c } }
+    if c != null { io::put_char{ &io, c } }
     let arrow = "->"
     io::println_bool{ &io, n = ascii::eat_str{ &cur, s = ascii::of{ chars = &arrow } } }
     io::println{ &io, s = ascii::rest{ cur } }
     _ = ascii::bump{ &cur }
     let y = ascii::bump{ &cur }
-    if (y != null) { io::put_char{ &io, c = y } }
+    if y != null { io::put_char{ &io, c = y } }
     io::println_bool{ &io, n = ascii::done{ cur } }
     io::println_bool{ &io, n = ascii::bump{ &cur } == null and ascii::peek{ cur } == null }
 }
@@ -1040,14 +1086,14 @@ fn main { mut io: Io } {
     let kv = "key=val=ue"
     let s = ascii::of{ chars = &kv }
     let sp = ascii::split_once{ s, c = '=' }
-    if (sp != null) {
+    if sp != null {
         io::println{ &io, s = sp.head }
         io::println{ &io, s = sp.tail }
     }
     io::println_bool{ &io, n = ascii::split_once{ s, c = ';' } == null }
     let val = "val"
     let at = ascii::find_str{ s, needle = ascii::of{ chars = &val } }
-    if (at != null) { io::println_u64{ &io, n = at } }
+    if at != null { io::println_u64{ &io, n = at } }
     let long = "key=val=ue!"
     io::println_bool{ &io, n = ascii::find_str{ s, needle = ascii::of{ chars = &long } } == null }
     let padded = "  x  "
@@ -1145,16 +1191,16 @@ class Map(Base):
     def test_put_get_grow(self):
         self.run_map("""
     let mut i = 0
-    while (i < 1000) {
+    while i < 1000 {
         _ = map::put{ &m, &heap, key = i * 7, value = i }
         i = i + 1
     }
     io::println_u64{ &io, n = map::len{ m } }
     let mut sum: i64 = 0
     i = 0
-    while (i < 1000) {
+    while i < 1000 {
         let v = map::get{ m, key = i * 7 }
-        if (v != null) { sum = sum + v }
+        if v != null { sum = sum + v }
         i = i + 1
     }
     io::println_i64{ &io, n = sum }
@@ -1167,32 +1213,32 @@ class Map(Base):
     _ = map::put{ &m, &heap, key = -5, value = 2 }
     io::println_u64{ &io, n = map::len{ m } }
     let p = map::at{ m, key = -5 }
-    if (p != null) { p.* = p.* + 40 }
+    if p != null { p.* = p.* + 40 }
     let v = map::get{ m, key = -5 }
-    if (v != null) { io::println_i64{ &io, n = v } }
+    if v != null { io::println_i64{ &io, n = v } }
     io::println_bool{ &io, n = map::at{ m, key = 6 } == null }
 """, '1\n42\ntrue\n')
 
     def test_remove(self):
         self.run_map("""
     let mut i = 0
-    while (i < 50) {
+    while i < 50 {
         _ = map::put{ &m, &heap, key = i, value = i }
         i = i + 1
     }
     i = 0
-    while (i < 50) {
-        if (i % 2 == 0) { _ = map::remove{ &m, key = i } }
+    while i < 50 {
+        if i % 2 == 0 { _ = map::remove{ &m, key = i } }
         i = i + 1
     }
     io::println_u64{ &io, n = map::len{ m } }
     io::println_bool{ &io, n = map::remove{ &m, key = 4 } == null }
     let r = map::remove{ &m, key = 7 }
-    if (r != null) { io::println_i64{ &io, n = r } }
+    if r != null { io::println_i64{ &io, n = r } }
     io::println_bool{ &io, n = map::has{ m, key = 9 } and not map::has{ m, key = 10 } }
     // Churn: removed slots are reused or dropped, so the table doesn't fill with them.
     i = 0
-    while (i < 2000) {
+    while i < 2000 {
         _ = map::put{ &m, &heap, key = 100, value = i }
         _ = map::remove{ &m, key = 100 }
         i = i + 1
@@ -1206,18 +1252,18 @@ class Map(Base):
 fn add { mut total: i64, key: i32, value: i64 } { total = total + value }
 """ + MAP_SETUP % """
     let mut i = 1
-    while (i <= 10) {
+    while i <= 10 {
         _ = map::put{ &m, &heap, key = i, value = i * 100 }
         i = i + 1
     }
     let mut keys: i32 = 0
     let mut cursor: usize = 0
-    while (true) {
-        match (map::next{ m, &cursor }) {
+    while true {
+        match map::next{ m, &cursor } {
             null => { break }
             some{ value } => {
                 keys = keys + value.key
-                if (value.key % 2 == 0) { _ = map::remove{ &m, key = value.key } }
+                if value.key % 2 == 0 { _ = map::remove{ &m, key = value.key } }
             }
         }
     }
@@ -1238,10 +1284,10 @@ fn main { mut io: Io } {
     }
     let text = "the cat and the dog and the bird"
     let mut cur = ascii::cursor{ s = ascii::of{ chars = &text } }
-    while (not ascii::done{ cur }) {
+    while not ascii::done{ cur } {
         let word = ascii::take_while{ &cur, f = ascii::is_alpha }
         let p = map::at{ m = counts, key = word }
-        if (p != null) {
+        if p != null {
             p.* = p.* + 1
         } else {
             _ = map::put{ m = &counts, &heap, key = word, value = 1 }
@@ -1251,7 +1297,7 @@ fn main { mut io: Io } {
     io::println_u64{ &io, n = map::len{ m = counts } }
     let the = "the"
     let n = map::get{ m = counts, key = ascii::of{ chars = &the } }
-    if (n != null) { io::println_i64{ &io, n } }
+    if n != null { io::println_i64{ &io, n } }
 }
 """, '5\n3\n')
 
@@ -1277,9 +1323,9 @@ fn main { mut io: Io } {
     let mut m = map::new(u64, u64){ realloc = arena::alloc, hash = map::hash_u64, eq = map::eq_u64 }
     let mut i: u64 = 0
     let mut ok = true
-    while (ok) {
+    while ok {
         ok = map::put{ &m, &heap, key = i, value = i }
-        if (ok) { i = i + 1 }
+        if ok { i = i + 1 }
     }
     io::println_u64{ &io, n = i }
     io::println_u64{ &io, n = map::len{ m } }
@@ -1320,18 +1366,18 @@ fn main { mut io: Io } {
     let bang = "\xf0\x9f\x98\x80!"
     io::println_bool{ &io, n = utf8::ends_with{ s, suffix = utf8::of{ chars = &bang } } }
     let sp = utf8::split_once{ s, c = 8364 }
-    if (sp != null) {
+    if sp != null {
         io::println_utf8{ &io, s = sp.head }
         io::println_utf8{ &io, s = sp.tail }
     }
     io::println_bool{ &io, n = utf8::to_ascii{ s } == null }
     let hi = "  hi\t"
     let a = utf8::to_ascii{ s = utf8::trim{ s = utf8::of{ chars = &hi } } }
-    if (a != null) { io::println{ &io, s = a } }
+    if a != null { io::println{ &io, s = a } }
     io::eprintln_utf8{ &io, s = utf8::sub{ s, lo = 0, hi = 5 } }
 }
 fn opt { mut io: Io, n: ?usize } {
-    match (n) {
+    match n {
         null          => { io::println_i64{ &io, n = -1 } }
         some{ value } => { io::println_u64{ &io, n = value } }
     }
@@ -1352,7 +1398,7 @@ fn opt { mut io: Io, n: ?usize } {
                        for i, (lit, _) in enumerate(cases))
         src = """
 fn check { mut io: Io, bytes: slice::Slice(u8) } {
-    match (utf8::from{ bytes }) {
+    match utf8::from{ bytes } {
         ok{ value }  => { io::println_i64{ &io, n = -1 } }
         err{ error } => { io::println_u64{ &io, n = error.at } }
     }
@@ -1412,7 +1458,7 @@ fn main { mut io: Io } {
 }
 fn not_eq { c: u32 } -> bool { return c != '=' }
 fn opt { mut io: Io, n: ?u32 } {
-    match (n) {
+    match n {
         null          => { io::println_i64{ &io, n = -1 } }
         some{ value } => { io::println_u64{ &io, n = value } }
     }
@@ -1447,7 +1493,7 @@ class SharedArms(Base):
     def test_without_bindings(self):
         self.assertOutput(SHAPE + """
 fn round { s: Shape } -> bool {
-    return match (s) {
+    return match s {
         circle | dot => { true }
         else         => { false }
     }
@@ -1457,14 +1503,14 @@ fn main { mut io: Io } {
     io::println_bool{ &io, n = round{ s = Shape::circle{ r = 1 } } }
     io::println_bool{ &io, n = round{ s = Shape::line } }
     let o: ?i32 = 3
-    match (o) { null | some => { io::println_i64{ &io, n = 1 } } }
+    match o { null | some => { io::println_i64{ &io, n = 1 } } }
 }
 """, 'true\ntrue\nfalse\n1\n')
 
     def test_shared_bindings(self):
         self.assertOutput(SHAPE + """
 fn size { s: Shape } -> i32 {
-    return match (s) {
+    return match s {
         circle{ r = n } | square{ side = n } => { n }
         rect{ w, h }                         => { w * h }
         dot
@@ -1482,7 +1528,7 @@ fn main { mut io: Io } {
     def test_shared_bindings_through_pointer(self):
         self.assertOutput(SHAPE + """
 fn grow { s: *Shape } {
-    match (s) {
+    match s {
         circle{ &r = n } | square{ &side = n } => { n = n + 1 }
         else                                   => { }
     }
@@ -1498,7 +1544,7 @@ fn main { mut io: Io } {
     def test_missing_binding(self):
         self.assertCompileError(SHAPE + """
 fn f { s: Shape } -> i32 {
-    match (s) { circle{ r } | square => { return r } else => { return 0 } }
+    match s { circle{ r } | square => { return r } else => { return 0 } }
 }
 fn main { mut io: Io } { }
 """, '`square` must bind `r`, as `circle` in the same arm does')
@@ -1506,7 +1552,7 @@ fn main { mut io: Io } { }
     def test_extra_binding(self):
         self.assertCompileError(SHAPE + """
 fn f { s: Shape } -> i32 {
-    match (s) { circle{ r } | rect{ w = r, h } => { return r } else => { return 0 } }
+    match s { circle{ r } | rect{ w = r, h } => { return r } else => { return 0 } }
 }
 fn main { mut io: Io } { }
 """, '`rect` binds `h`, which `circle` in the same arm does not')
@@ -1514,25 +1560,25 @@ fn main { mut io: Io } { }
     def test_binding_types_differ(self):
         self.assertCompileError("""
 union U { a{ x: i32 }, b{ x: u8 } }
-fn f { u: U } { match (u) { a{ x } | b{ x } => { } } }
+fn f { u: U } { match u { a{ x } | b{ x } => { } } }
 fn main { mut io: Io } { }
 """, '`x` is i32 in `a` but u8 in `b`')
 
     def test_binding_modes_differ(self):
         self.assertCompileError(SHAPE + """
-fn f { s: *Shape } { match (s) { circle{ &r } | square{ side = r } => { } else => { } } }
+fn f { s: *Shape } { match s { circle{ &r } | square{ side = r } => { } else => { } } }
 fn main { mut io: Io } { }
 """, '`r` must be bound with `&` in both `circle` and `square`, or in neither')
 
     def test_variant_repeated_in_arm(self):
         self.assertCompileError(SHAPE + """
-fn f { s: Shape } { match (s) { dot | dot => { } else => { } } }
+fn f { s: Shape } { match s { dot | dot => { } else => { } } }
 fn main { mut io: Io } { }
 """, 'variant `dot` appears in more than one arm')
 
     def test_else_cannot_be_shared(self):
         self.assertCompileError(SHAPE + """
-fn f { s: Shape } { match (s) { dot | else => { } } }
+fn f { s: Shape } { match s { dot | else => { } } }
 fn main { mut io: Io } { }
 """, "expected a name, found 'else'")
 
@@ -1541,19 +1587,19 @@ class Expressions(Base):
     def test_if_expression(self):
         self.assertOutput("""
 fn sign { n: i64 } -> i64 {
-    return if (n < 0) { -1 } else if (n == 0) { 0 } else { 1 }
+    return if n < 0 { -1 } else if n == 0 { 0 } else { 1 }
 }
 fn main { mut io: Io } {
     io::println_i64{ &io, n = sign{ n = -5 } + sign{ n = 0 } * 10 + sign{ n = 9 } * 100 }
     let n = 4
-    let v = if (n > 3) {
+    let v = if n > 3 {
         let doubled = n * 2
         doubled + 1
     } else {
         0
     }
     io::println_i64{ &io, n = v }
-    io::println_i64{ &io, n = if (n == 4) { 10 } else { 20 } + 1 }
+    io::println_i64{ &io, n = if n == 4 { 10 } else { 20 } + 1 }
 }
 """, '99\n9\n11\n')
 
@@ -1561,7 +1607,7 @@ fn main { mut io: Io } {
         self.assertOutput("""
 union Shape { circle{ r: i64 }, square{ side: i64 }, point }
 fn area { s: Shape } -> i64 {
-    return match (s) {
+    return match s {
         circle{ r }    => { 3 * r * r }
         square{ side } => { side * side }
         point          => { 0 }
@@ -1571,7 +1617,7 @@ fn main { mut io: Io } {
     io::println_i64{ &io, n = area{ s = Shape::circle{ r = 2 } } }
     io::println_i64{ &io, n = area{ s = Shape::square{ side = 5 } } }
     let o: ?i32 = 7
-    let x = match (o) { null => { 0 } some{ value } => { value } }
+    let x = match o { null => { 0 } some{ value } => { value } }
     io::println_i64{ &io, n = x }
 }
 """, '12\n25\n7\n')
@@ -1580,11 +1626,11 @@ fn main { mut io: Io } {
         self.assertOutput("""
 fn main { mut io: Io } {
     let small: u8 = 3
-    let w = if (true) { small } else { 100 }      // the literal becomes u8
-    let wide: i64 = if (false) { small } else { -1 }
-    let o: ?i32 = if (false) { 5 } else { null }
-    let p = if (true) { 5 } else { null }           // joins to ?i32
-    let f: f64 = if (true) { 1.5 } else { 2.0 }
+    let w = if true { small } else { 100 }      // the literal becomes u8
+    let wide: i64 = if false { small } else { -1 }
+    let o: ?i32 = if false { 5 } else { null }
+    let p = if true { 5 } else { null }           // joins to ?i32
+    let f: f64 = if true { 1.5 } else { 2.0 }
     io::println_u64{ &io, n = w }
     io::println_i64{ &io, n = wide }
     io::println_bool{ &io, n = o == null }
@@ -1597,8 +1643,8 @@ fn main { mut io: Io } {
         self.assertOutput("""
 fn main { mut io: Io } {
     let o = ascii::parse_i64{ s = ascii::empty{} }
-    let x = if (o != null) { o } else { 42 }
-    let y = if (o == null) { 1 } else { o }
+    let x = if o != null { o } else { 42 }
+    let y = if o == null { 1 } else { o }
     io::println_i64{ &io, n = x + y }
 }
 """, '43\n')
@@ -1608,22 +1654,22 @@ fn main { mut io: Io } {
 fn first_even { xs: [5]i64 } -> i64 {
     let mut i: usize = 0
     let mut found: i64 = -1
-    while (i < xs.len) {
-        let x = if (xs[i] % 2 == 0) { xs[i] } else { i = i + 1; continue }
+    while i < xs.len {
+        let x = if xs[i] % 2 == 0 { xs[i] } else { i = i + 1; continue }
         found = x
         break
     }
     return found
 }
 fn pick { o: ?i64 } -> i64 {
-    let v = match (o) { null => { return -1 } some{ value } => { value } }
+    let v = match o { null => { return -1 } some{ value } => { value } }
     return v * 10
 }
 fn main { mut io: Io } {
     io::println_i64{ &io, n = first_even{ xs = [1, 3, 8, 5, 6] } }
     io::println_i64{ &io, n = pick{ o = 4 } }
     io::println_i64{ &io, n = pick{ o = null } }
-    let n = match (ascii::parse_i64{ s = ascii::empty{} }) {
+    let n = match ascii::parse_i64{ s = ascii::empty{} } {
         null => { 0 }
         some{ value } => { value }
     }
@@ -1634,17 +1680,17 @@ fn main { mut io: Io } {
     def test_nested_branches(self):
         self.assertOutput("""
 fn f { c: bool } -> i32 {
-    let x = if (c) { if (c) { return 1 } else { return 2 } } else { 3 }
+    let x = if c { if c { return 1 } else { return 2 } } else { 3 }
     return x
 }
 fn main { mut io: Io } {
     io::println_i64{ &io, n = f{ c = true } }
     io::println_i64{ &io, n = f{ c = false } }
     let o: ?i32 = 4
-    let y = if (true) {
-        match (o) {
+    let y = if true {
+        match o {
             null => { 0 }
-            some{ value } => { if (value > 3) { 30 } else { 3 } }
+            some{ value } => { if value > 3 { 30 } else { 3 } }
         }
     } else {
         1
@@ -1657,15 +1703,15 @@ fn main { mut io: Io } {
         self.assertPanic("""
 fn main { mut io: Io } {
     let o: ?i32 = null
-    let x = match (o) { null => { @panic() } some{ value } => { value } }
+    let x = match o { null => { @panic() } some{ value } => { value } }
 }
 """, '@panic()')
 
     def test_if_statement_unchanged(self):
         self.assertOutput("""
 fn main { mut io: Io } {
-    if (true) { io::println_i64{ &io, n = 1 } }
-    match (ascii::parse_i64{ s = ascii::empty{} }) {
+    if true { io::println_i64{ &io, n = 1 } }
+    match ascii::parse_i64{ s = ascii::empty{} } {
         null => { io::println_i64{ &io, n = 2 } }
         else => { }
     }
@@ -1673,26 +1719,26 @@ fn main { mut io: Io } {
 """, '1\n2\n')
 
     def test_needs_else(self):
-        self.assertCompileError('fn main { mut io: Io } { let x = if (true) { 1 } }',
+        self.assertCompileError('fn main { mut io: Io } { let x = if true { 1 } }',
                                 'needs an `else`')
 
     def test_branch_types_differ(self):
-        self.assertCompileError('fn main { mut io: Io } { let x = if (true) { 1 } else { true } }',
+        self.assertCompileError('fn main { mut io: Io } { let x = if true { 1 } else { true } }',
                                 'branches have different types')
 
     def test_branch_without_value(self):
-        self.assertCompileError('fn main { mut io: Io } { let x = if (true) { let a = 1 } else { 1 } }',
+        self.assertCompileError('fn main { mut io: Io } { let x = if true { let a = 1 } else { 1 } }',
                                 'must end in a value')
 
     def test_void_branch(self):
         self.assertCompileError(
-            'fn main { mut io: Io } { let x = if (true) { io::newline{ &io } } else { 1 } }',
+            'fn main { mut io: Io } { let x = if true { io::newline{ &io } } else { 1 } }',
             'has no value')
 
     def test_no_branch_produces_value(self):
         self.assertCompileError("""
 fn f {} -> i32 {
-    let x = if (true) { return 1 } else { return 2 }
+    let x = if true { return 1 } else { return 2 }
     return x
 }
 fn main { mut io: Io } { }
@@ -1701,7 +1747,7 @@ fn main { mut io: Io } { }
     def test_branch_escape(self):
         self.assertCompileError("""
 fn main { mut io: Io } {
-    let p = if (true) { let y = 1; &y } else { let z = 2; &z }
+    let p = if true { let y = 1; &y } else { let z = 2; &z }
 }
 """, 'holds the address of local `y`')
 
@@ -1709,7 +1755,7 @@ fn main { mut io: Io } {
         self.assertCompileError("""
 fn g { mut a: i32, b: i32 } { }
 fn main { mut io: Io } {
-    let h = if (true) { let mut y = 0; g{ a = &y, _ } } else { let mut z = 0; g{ a = &z, _ } }
+    let h = if true { let mut y = 0; g{ a = &y, _ } } else { let mut z = 0; g{ a = &z, _ } }
 }
 """, 'holds `y`')
 
@@ -1718,7 +1764,7 @@ fn main { mut io: Io } {
 fn main { mut io: Io } {
     let a = 1
     let b = 2
-    let p = if (true) { &a } else { &b }
+    let p = if true { &a } else { &b }
     io::println_i64{ &io, n = p.* }
 }
 """, '1\n')
@@ -1727,7 +1773,7 @@ fn main { mut io: Io } {
         self.assertCompileError("""
 fn f {} -> *i32 {
     let a = 1
-    return if (true) { &a } else { &a }
+    return if true { &a } else { &a }
 }
 fn main { mut io: Io } { }
 """, 'returned value holds the address of local `a`')
@@ -1738,10 +1784,10 @@ class ResultType(Base):
         self.assertOutput("""
 union ParseError { empty, bad{ at: usize } }
 fn parse_one { s: ascii::String } -> Result(i64, ParseError) {
-    if (ascii::len{ s } == 0) { return Result::err{ error = ParseError::empty } }
+    if ascii::len{ s } == 0 { return Result::err{ error = ParseError::empty } }
     let mut i: usize = 0
-    while (i < ascii::len{ s }) {
-        if (not ascii::is_digit{ c = ascii::at{ s, i } }) {
+    while i < ascii::len{ s } {
+        if not ascii::is_digit{ c = ascii::at{ s, i } } {
             return Result::err{ error = ParseError::bad{ at = i } }
         }
         i = i + 1
@@ -1749,24 +1795,24 @@ fn parse_one { s: ascii::String } -> Result(i64, ParseError) {
     return result::ok_or{ o = ascii::parse_i64{ s }, error = ParseError::bad{ at = 0 } }
 }
 fn sum { s: ascii::String } -> Result(i64, ParseError) {
-    let parts = match (ascii::split_once{ s, c = ',' }) {
+    let parts = match ascii::split_once{ s, c = ',' } {
         null          => { return Result::err{ error = ParseError::empty } }
         some{ value } => { value }
     }
-    let x = match (parse_one{ s = parts.head }) {
+    let x = match parse_one{ s = parts.head } {
         ok{ value }  => { value }
         err{ error } => { return Result::err{ error } }
     }
-    let y = match (parse_one{ s = parts.tail }) {
+    let y = match parse_one{ s = parts.tail } {
         ok{ value }  => { value }
         err{ error } => { return Result::err{ error } }
     }
     return Result::ok{ value = x + y }
 }
 fn report { mut io: Io, r: Result(i64, ParseError) } {
-    let code = match (r) {
+    let code = match r {
         ok{ value }  => { value }
-        err{ error } => { match (error) { empty => { -1 } bad{ at } => { -100 - @as(i64, at) } } }
+        err{ error } => { match error { empty => { -1 } bad{ at } => { -100 - @as(i64, at) } } }
     }
     io::println_i64{ &io, n = code }
 }
@@ -1790,7 +1836,7 @@ fn main { mut io: Io } {
     io::println_i64{ &io, n = result::value_or{ r = bad, default = 9 } }
     io::println_bool{ &io, n = result::value{ r = bad } == null }
     let e = result::error{ r = bad }
-    if (e != null) { io::println_bool{ &io, n = e } }
+    if e != null { io::println_bool{ &io, n = e } }
     let none: ?i32 = null
     io::println_bool{ &io, n = result::is_err{ r = result::ok_or{ o = none, error = false } } }
 }
@@ -1817,7 +1863,7 @@ class NarrowingAfterIf(Base):
     def test_then_leaves(self):
         self.assertOutput("""
 fn f { x: ?i32 } -> i32 {
-    if (x == null) { return -1 }
+    if x == null { return -1 }
     return x + 1
 }
 fn main { mut io: Io } {
@@ -1830,7 +1876,7 @@ fn main { mut io: Io } {
         self.assertOutput("""
 fn f { x: ?i32 } -> i32 {
     let y = x
-    if (y != null) { } else { return -1 }
+    if y != null { } else { return -1 }
     return y * 2
 }
 fn main { mut io: Io } {
@@ -1844,10 +1890,10 @@ fn main { mut io: Io } {
 fn main { mut io: Io } {
     let xs: [3]?i32 = [1, null, 3]
     let mut i: usize = 0
-    while (i < xs.len) {
+    while i < xs.len {
         let x = xs[i]
         i = i + 1
-        if (x == null) { continue }
+        if x == null { continue }
         io::println_i64{ &io, n = x }
     }
 }
@@ -1856,8 +1902,8 @@ fn main { mut io: Io } {
     def test_ends_with_the_block(self):
         self.assertCompileError("""
 fn f { x: ?i32 } -> i32 {
-    if (true) {
-        if (x == null) { return 0 }
+    if true {
+        if x == null { return 0 }
     }
     return x
 }
@@ -1868,7 +1914,7 @@ fn main {} { }
         self.assertCompileError("""
 fn main { mut io: Io } {
     let x: ?i32 = 1
-    if (x == null) { io::println_i64{ &io, n = 0 } }
+    if x == null { io::println_i64{ &io, n = 0 } }
     let y = x + 1
 }
 """, 'incompatible types')
@@ -1877,7 +1923,7 @@ fn main { mut io: Io } {
         self.assertCompileError("""
 fn main { mut io: Io } {
     let x: ?i32 = 1
-    if (x != null) { return }
+    if x != null { return }
     let y = x + 1
 }
 """, 'incompatible types')
@@ -1886,7 +1932,7 @@ fn main { mut io: Io } {
         self.assertCompileError("""
 fn main { mut io: Io } {
     let mut x: ?i32 = 1
-    if (x == null) { return }
+    if x == null { return }
     let y = x + 1
 }
 """, 'incompatible types')
@@ -1894,7 +1940,7 @@ fn main { mut io: Io } {
     def test_outer_variable_can_be_shadowed(self):
         self.assertOutput("""
 fn f { x: ?i32 } -> i32 {
-    if (x == null) { return 0 }
+    if x == null { return 0 }
     let x = x * 10
     return x
 }
@@ -1905,7 +1951,7 @@ fn main { mut io: Io } { io::println_i64{ &io, n = f{ x = 7 } } }
         self.assertCompileError("""
 fn main {} {
     let x: ?i32 = 1
-    if (x == null) { return }
+    if x == null { return }
     let x = 2
 }
 """, 'already declared')
@@ -1917,8 +1963,8 @@ class LetElse(Base):
     SRC = """
 union E { odd{ n: i32 }, negative }
 fn half { n: i32 } -> Result(i32, E) {
-    if (n < 0) { return Result::err{ error = E::negative } }
-    if (n % 2 != 0) { return Result::err{ error = E::odd{ n } } }
+    if n < 0 { return Result::err{ error = E::negative } }
+    if n % 2 != 0 { return Result::err{ error = E::odd{ n } } }
     return Result::ok{ value = n / 2 }
 }
 """
@@ -1950,7 +1996,7 @@ fn main { mut io: Io } {
 fn main { mut io: Io } {
     let xs: [3]?i32 = [1, null, 3]
     let mut i: usize = 0
-    while (i < xs.len) {
+    while i < xs.len {
         let x = xs[i]
         i = i + 1
         let some{ value = v } = x else { io::println_i64{ &io, n = 0 }; continue }
@@ -1988,8 +2034,8 @@ fn main { mut io: Io } {
 union P { pt{ x: i32, y: i32 } }
 fn main { mut io: Io } {
     let mut p = P::pt{ x = 1, y = 2 }
-    match (&p) { pt{ &x = a, y = b } => { a = a + b } }
-    match (p) { pt{ x = a } => { io::println_i64{ &io, n = a } } }
+    match &p { pt{ &x = a, y = b } => { a = a + b } }
+    match p { pt{ x = a } => { io::println_i64{ &io, n = a } } }
 }
 """, '3\n')
 
@@ -2084,7 +2130,7 @@ fn say { mut io: Io, n: i64 } { io::println_i64{ &io, n } }
 fn early { mut io: Io, stop: bool } -> i64 {
     defer say{ &io, n = 1 }
     defer { say{ &io, n = 2 }; say{ &io, n = 3 } }
-    if (stop) { return 10 }
+    if stop { return 10 }
     say{ &io, n = 4 }
     return 20
 }
@@ -2098,7 +2144,7 @@ fn main { mut io: Io } {
         self.assertOutput("""
 fn say { mut io: Io, n: i64 } { io::println_i64{ &io, n } }
 fn main { mut io: Io } {
-    if (true) {
+    if true {
         defer say{ &io, n = 1 }
         say{ &io, n = 2 }
     }
@@ -2111,11 +2157,11 @@ fn main { mut io: Io } {
 fn say { mut io: Io, n: i64 } { io::println_i64{ &io, n } }
 fn main { mut io: Io } {
     let mut i = 0
-    while (i < 3) {
+    while i < 3 {
         defer say{ &io, n = 100 + i }     // evaluated at exit, after i changes
         i = i + 1
-        if (i == 2) { continue }
-        if (i == 3) { break }
+        if i == 2 { continue }
+        if i == 3 { break }
         say{ &io, n = i }
     }
 }
@@ -2125,7 +2171,7 @@ fn main { mut io: Io } {
         self.assertOutput("""
 fn say { mut io: Io, n: i64 } { io::println_i64{ &io, n } }
 fn branch { mut io: Io, o: ?i64 } -> i64 {
-    let v = match (o) {
+    let v = match o {
         null => { defer say{ &io, n = -1 }; return 0 }
         some{ value } => { defer say{ &io, n = -2 }; value * 2 }
     }
@@ -2143,13 +2189,13 @@ fn total { mut heap: arena::Arena, n: i32 } -> i64 {
     let mut xs = list::new(i32){ realloc = arena::alloc }
     defer list::free{ list = &xs, &heap }
     let mut i = 0
-    while (i < n) {
-        if (not list::push{ list = &xs, &heap, item = i }) { return -1 }
+    while i < n {
+        if not list::push{ list = &xs, &heap, item = i } { return -1 }
         i = i + 1
     }
     let mut sum: i64 = 0
     let mut j: usize = 0
-    while (j < xs.len) {
+    while j < xs.len {
         sum = sum + list::at{ list = xs, i = j }.*
         j = j + 1
     }
@@ -2169,9 +2215,9 @@ fn main { mut io: Io } {
     defer n = n + 1
     defer {
         let mut i = 0
-        while (true) {
+        while true {
             i = i + 1
-            if (i == 3) { break }
+            if i == 3 { break }
         }
         io::println_i64{ &io, n = n + i }
     }
@@ -2199,7 +2245,7 @@ fn main { mut io: Io } { }
 """, 'cannot `return` from a defer')
 
     def test_no_break_out(self):
-        self.assertCompileError('fn main { mut io: Io } { while (true) { defer { break } } }',
+        self.assertCompileError('fn main { mut io: Io } { while true { defer { break } } }',
                                 '`break` outside a loop in this defer')
 
     def test_no_assign_once_local(self):
@@ -2232,7 +2278,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
 def show_error():
     return """
 fn show { mut io: Io, e: fs::Error } {
-    let code = match (e) {
+    let code = match e {
         not_found => { 1 } permission_denied => { 2 } is_directory => { 3 } exists => { 4 }
         not_directory => { 5 } bad_file => { 6 } out_of_memory => { 7 } other => { 8 }
     }
@@ -2263,7 +2309,7 @@ class Fs(Base):
         with open(src, 'wb') as f:
             f.write(b'hello\nfrom a file\n')
         out, code = self.run_fs("""
-    let text = match (fs::read_all{ &fs, &heap, realloc = arena::alloc, path = slice::get{ s = args, i = 0 } }) {
+    let text = match fs::read_all{ &fs, &heap, realloc = arena::alloc, path = slice::get{ s = args, i = 0 } } {
         ok{ value }  => { value }
         err{ error } => { return 1 }
     }
@@ -2288,7 +2334,7 @@ class Fs(Base):
     io::println_u64{ &io, n = a.len }
     let mut sum: u64 = 0
     let mut i: usize = 0
-    while (i < a.len) {
+    while i < a.len {
         sum = sum + slice::get{ s = a, i }
         i = i + 1
     }
@@ -2308,7 +2354,7 @@ class Fs(Base):
     _ = fs::write{ &fs, file = w, bytes = slice::of(u8){ a = &a } }
     io::println_bool{ &io, n = fs::close{ &fs, file = w } == null }
     let x = fs::open{ &fs, path, mode = fs::Mode::append }
-    if (result::is_ok{ r = x }) {
+    if result::is_ok{ r = x } {
         let d = "de"
         _ = fs::write{ &fs, file = result::unwrap{ r = x }, bytes = slice::of(u8){ a = &d } }
     }
@@ -2316,9 +2362,9 @@ class Fs(Base):
     defer _ = fs::close{ &fs, file = r }
     let mut buf: [2]u8
     let mut total: usize = 0
-    while (true) {
+    while true {
         let n = result::unwrap{ r = fs::read{ &fs, file = r, into = slice::of(u8){ a = &buf } } }
-        if (n == 0) { break }
+        if n == 0 { break }
         io::print{ &io, s = ascii::from{ bytes = slice::sub{ s = slice::of(u8){ a = &buf }, lo = 0, hi = n } } }
         total = total + n
     }
@@ -2337,22 +2383,22 @@ class Fs(Base):
     let dir = slice::get{ s = args, i = 2 }
     let nested = slice::get{ s = args, i = 3 }
     let e1 = result::error{ r = fs::open{ &fs, path = missing, mode = fs::Mode::read } }
-    if (e1 != null) { show{ &io, e = e1 } }
+    if e1 != null { show{ &io, e = e1 } }
     let e2 = result::error{ r = fs::open{ &fs, path = there, mode = fs::Mode::create } }
-    if (e2 != null) { show{ &io, e = e2 } }
+    if e2 != null { show{ &io, e = e2 } }
     let e3 = result::error{ r = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = dir } }
-    if (e3 != null) { show{ &io, e = e3 } }
+    if e3 != null { show{ &io, e = e3 } }
     let e4 = fs::close{ &fs, file = fs::File{ id = 999 } }
-    if (e4 != null) { show{ &io, e = e4 } }
+    if e4 != null { show{ &io, e = e4 } }
     let e5 = fs::remove{ &fs, path = missing }
-    if (e5 != null) { show{ &io, e = e5 } }
+    if e5 != null { show{ &io, e = e5 } }
     io::println_bool{ &io, n = fs::remove{ &fs, path = there } == null }
     io::println_bool{ &io, n = result::is_err{ r = fs::size{ &fs, path = there } } }
     let e6 = result::error{ r = fs::open{ &fs, path = nested, mode = fs::Mode::write } }
-    if (e6 != null) { show{ &io, e = e6 } }
+    if e6 != null { show{ &io, e = e6 } }
     let empty = slice::empty(u8){}
     let e7 = result::error{ r = fs::size{ &fs, path = empty } }
-    if (e7 != null) { show{ &io, e = e7 } }
+    if e7 != null { show{ &io, e = e7 } }
     return 0
 """, [existing, missing, self.dir, os.path.join(self.dir, 'no_such_dir', 'x.txt')], show_error())
         self.assertEqual(out, '1\n4\n3\n6\n1\ntrue\ntrue\n1\n1\n')
@@ -2365,7 +2411,7 @@ class Fs(Base):
     let mut small: [100]u8
     let mut tiny = arena::new{ buf = slice::of(u8){ a = &small } }
     let e = result::error{ r = fs::read_all{ &fs, heap = &tiny, realloc = arena::alloc, path = slice::get{ s = args, i = 0 } } }
-    if (e != null) { show{ &io, e } }
+    if e != null { show{ &io, e } }
     return 0
 """, [p], show_error())
         self.assertEqual(out, '7\n')
@@ -2454,7 +2500,7 @@ class Mem(Base):
         out, _ = self.run_mem("""
     let some{ value = z } = mem::pages{ &mem, size = 0 } else { return 1 }
     io::println_u64{ &io, n = z.len }
-    if (mem::pages{ &mem, size = 1099511627776 } == null) { io::println_i64{ &io, n = -1 } }
+    if mem::pages{ &mem, size = 1099511627776 } == null { io::println_i64{ &io, n = -1 } }
     return 0
 """)
         self.assertEqual(out, '0\n-1\n')
@@ -2480,14 +2526,14 @@ fn main { mut mem: Mem } { }
     let mut heap = arena::new{ buf }
     let mut head: ?*Node = null
     let mut i: i64 = 1
-    while (i <= 4) {
+    while i <= 4 {
         let some{ value = n } = alloc::new{ realloc = arena::alloc, &heap, value = Node{ v = i, next = head } } else { return 2 }
         head = n
         i = i + 1
     }
     let mut total: i64 = 0
     let mut cur = head
-    while (true) {
+    while true {
         let some{ value = n } = cur else { break }
         total = total * 10 + n.v
         cur = n.next
@@ -2563,7 +2609,7 @@ fn main { mut io: Io } {
         text = self.ir("""
 fn main {} -> i32 {
     let x: ?i32 = 5
-    if (x != null) { return x }
+    if x != null { return x }
     return 0
 }
 """)
@@ -2676,13 +2722,13 @@ fn main { mut io: Io } {
 fn f { mut io: Io, n: i32 } -> i32 {
     defer io::println_i64{ &io, n = 100 }
     let mut i = 0
-    while (true) {
+    while true {
         defer io::println_i64{ &io, n = i }
         i = i + 1
-        if (i == 2) { continue }
-        if (i == 3) { break }
+        if i == 2 { continue }
+        if i == 3 { break }
     }
-    let v = if (n > 0) { return n } else { 7 }
+    let v = if n > 0 { return n } else { 7 }
     return v
 }
 fn main { mut io: Io } {
@@ -2750,14 +2796,14 @@ fn main { mut io: Io } {
         out, code = self.both("""
 union Shape { circle{ r: f64 }, square{ side: f64 }, none }
 fn area { s: *Shape } -> f64 {
-    return match (s) {
+    return match s {
         circle{ &r } => { r = r * 2.0; r }
         square{ side } => { side * side }
         else => { 0.0 }
     }
 }
 fn first { xs: slice::Slice(i32) } -> ?i32 {
-    if (xs.len == 0) { return null }
+    if xs.len == 0 { return null }
     return slice::get{ s = xs, i = 0 }
 }
 fn main { mut io: Io, args: Args } -> i32 {

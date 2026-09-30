@@ -22,18 +22,18 @@ namespace json {
     fn get { v: Value, key: utf8::String } -> ?Value {
         let object{ members } = v else { return null }
         let mut i = members.len
-        while (i > 0) {
+        while i > 0 {
             i = i - 1
             let m = slice::get{ s = members, i }
-            if (utf8::eq{ a = m.key, b = key }) { return m.value }
+            if utf8::eq{ a = m.key, b = key } { return m.value }
         }
         return null
     }
 
     // Item i of an array, or null if v isn't an array or is too short.
     fn index { v: Value, i: usize } -> ?Value {
-        return match (v) {
-            array{ items } => { if (i < items.len) { slice::get{ s = items, i } } else { null } }
+        return match v {
+            array{ items } => { if i < items.len { slice::get{ s = items, i } } else { null } }
             else           => { null }
         }
     }
@@ -43,19 +43,19 @@ namespace json {
     fn lookup { v: Value, path: utf8::String } -> ?Value {
         let mut here = v
         let mut rest = path
-        while (utf8::len{ s = rest } > 0) {
+        while utf8::len{ s = rest } > 0 {
             let mut seg = rest
             rest = utf8::empty{}
             let split = utf8::split_once{ s = seg, c = '.' }
-            if (split != null) {
+            if split != null {
                 seg = split.head
                 rest = split.tail
             }
-            let next = match (here) {
+            let next = match here {
                 array => { index_by{ v = here, seg } }
                 else  => { get{ v = here, key = seg } }
             }
-            if (next == null) { return null }
+            if next == null { return null }
             here = next
         }
         return here
@@ -64,10 +64,10 @@ namespace json {
     // Indexes an array by a segment of lookup's path. Null unless seg is all digits.
     fn index_by { v: Value, seg: utf8::String } -> ?Value {
         let digits = utf8::to_ascii{ s = seg }
-        if (digits == null) { return null }
+        if digits == null { return null }
         let n = ascii::parse_u64{ s = digits }
-        if (n == null) { return null }
-        if (n > 4294967295) { return null }                 // any real index fits in a u32
+        if n == null { return null }
+        if n > 4294967295 { return null }                 // any real index fits in a u32
         return index{ v, i = @as(usize, n) }
     }
 }

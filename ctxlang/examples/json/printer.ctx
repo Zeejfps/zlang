@@ -15,42 +15,42 @@ namespace printer {
     fn format(S) { mut heap: S, realloc: alloc::Fn(S), v: json::Value, indent: usize } -> ?utf8::String {
         let mut w = Writer{ out = utf8::builder{ realloc }, indent, failed = false }
         write_value{ &w, &heap, v, depth = 0 }
-        if (w.failed) { return null }
+        if w.failed { return null }
         return utf8::view{ b = w.out }
     }
 
     fn write_value(S) { mut w: Writer(S), mut heap: S, v: json::Value, depth: usize } {
-        match (v) {
+        match v {
             nil              => { put_ascii{ &w, &heap, s = "null" } }
-            boolean{ value } => { if (value) { put_ascii{ &w, &heap, s = "true" } } else { put_ascii{ &w, &heap, s = "false" } } }
+            boolean{ value } => { if value { put_ascii{ &w, &heap, s = "true" } } else { put_ascii{ &w, &heap, s = "false" } } }
             number{ value }  => { write_number{ &w, &heap, n = value } }
             string{ value }  => { write_string{ &w, &heap, s = value } }
             array{ items }   => {
                 put_char{ &w, &heap, c = '[' }
                 let mut i: usize = 0
-                while (i < items.len) {
-                    if (i > 0) { put_char{ &w, &heap, c = ',' } }
+                while i < items.len {
+                    if i > 0 { put_char{ &w, &heap, c = ',' } }
                     newline{ &w, &heap, depth = depth + 1 }
                     write_value{ &w, &heap, v = slice::get{ s = items, i }, depth = depth + 1 }
                     i = i + 1
                 }
-                if (items.len > 0) { newline{ &w, &heap, depth } }
+                if items.len > 0 { newline{ &w, &heap, depth } }
                 put_char{ &w, &heap, c = ']' }
             }
             object{ members } => {
                 put_char{ &w, &heap, c = '{' }
                 let mut i: usize = 0
-                while (i < members.len) {
+                while i < members.len {
                     let m = slice::get{ s = members, i }
-                    if (i > 0) { put_char{ &w, &heap, c = ',' } }
+                    if i > 0 { put_char{ &w, &heap, c = ',' } }
                     newline{ &w, &heap, depth = depth + 1 }
                     write_string{ &w, &heap, s = m.key }
                     put_char{ &w, &heap, c = ':' }
-                    if (w.indent > 0) { put_char{ &w, &heap, c = ' ' } }
+                    if w.indent > 0 { put_char{ &w, &heap, c = ' ' } }
                     write_value{ &w, &heap, v = m.value, depth = depth + 1 }
                     i = i + 1
                 }
-                if (members.len > 0) { newline{ &w, &heap, depth } }
+                if members.len > 0 { newline{ &w, &heap, depth } }
                 put_char{ &w, &heap, c = '}' }
             }
         }
@@ -60,20 +60,20 @@ namespace printer {
     const EXACT: f64 = 9007199254740992.0
 
     fn write_number(S) { mut w: Writer(S), mut heap: S, n: f64 } {
-        if (n != n or n > ascii::F64_MAX or n < -ascii::F64_MAX) {
+        if n != n or n > ascii::F64_MAX or n < -ascii::F64_MAX {
             put_ascii{ &w, &heap, s = "null" }
             return
         }
-        if (n > -EXACT and n < EXACT) {
+        if n > -EXACT and n < EXACT {
             let whole = @as(i64, n)                         // rounds toward zero
-            if (@as(f64, whole) == n) {
-                if (not utf8::push_i64{ b = &w.out, &heap, n = whole }) { w.failed = true }
+            if @as(f64, whole) == n {
+                if not utf8::push_i64{ b = &w.out, &heap, n = whole } { w.failed = true }
                 return
             }
         }
         let mut buf: [32]u8
         let text = ascii::fmt_f64{ n, into = slice::of(u8){ a = &buf } }
-        if (not utf8::push{ b = &w.out, &heap, s = utf8::from_ascii{ s = text } }) { w.failed = true }
+        if not utf8::push{ b = &w.out, &heap, s = utf8::from_ascii{ s = text } } { w.failed = true }
     }
 
     // Quoted, escaping '"', '\\' and control characters. Everything else, including non-ASCII
@@ -82,11 +82,11 @@ namespace printer {
         put_char{ &w, &heap, c = '"' }
         let bytes = s.bytes
         let mut i: usize = 0
-        while (i < bytes.len) {
+        while i < bytes.len {
             let lo = i
-            while (i < bytes.len and parser::plain{ c = slice::get{ s = bytes, i } }) { i = i + 1 }
+            while i < bytes.len and parser::plain{ c = slice::get{ s = bytes, i } } { i = i + 1 }
             put{ &w, &heap, s = utf8::sub{ s, lo, hi = i } }
-            if (i < bytes.len) {
+            if i < bytes.len {
                 write_escape{ &w, &heap, c = slice::get{ s = bytes, i } }
                 i = i + 1
             }
@@ -96,12 +96,12 @@ namespace printer {
 
     fn write_escape(S) { mut w: Writer(S), mut heap: S, c: u8 } {
         put_char{ &w, &heap, c = '\\' }
-        if (c == '"' or c == '\\') { put_char{ &w, &heap, c } }
-        else if (c == '\n') { put_char{ &w, &heap, c = 'n' } }
-        else if (c == '\r') { put_char{ &w, &heap, c = 'r' } }
-        else if (c == '\t') { put_char{ &w, &heap, c = 't' } }
-        else if (c == 8) { put_char{ &w, &heap, c = 'b' } }
-        else if (c == 12) { put_char{ &w, &heap, c = 'f' } }
+        if c == '"' or c == '\\' { put_char{ &w, &heap, c } }
+        else if c == '\n' { put_char{ &w, &heap, c = 'n' } }
+        else if c == '\r' { put_char{ &w, &heap, c = 'r' } }
+        else if c == '\t' { put_char{ &w, &heap, c = 't' } }
+        else if c == 8 { put_char{ &w, &heap, c = 'b' } }
+        else if c == 12 { put_char{ &w, &heap, c = 'f' } }
         else {
             let hex = "0123456789abcdef"
             put_ascii{ &w, &heap, s = "u00" }
@@ -112,10 +112,10 @@ namespace printer {
 
     // A line break and the indentation for depth; nothing when writing on one line.
     fn newline(S) { mut w: Writer(S), mut heap: S, depth: usize } {
-        if (w.indent == 0) { return }
+        if w.indent == 0 { return }
         put_char{ &w, &heap, c = '\n' }
         let mut k: usize = 0
-        while (k < depth * w.indent) {
+        while k < depth * w.indent {
             put_char{ &w, &heap, c = ' ' }
             k = k + 1
         }
@@ -124,7 +124,7 @@ namespace printer {
     // ---- output
 
     fn put(S) { mut w: Writer(S), mut heap: S, s: utf8::String } {
-        if (not utf8::push{ b = &w.out, &heap, s }) { w.failed = true }
+        if not utf8::push{ b = &w.out, &heap, s } { w.failed = true }
     }
 
     // `s` is an ASCII string literal.
@@ -133,6 +133,6 @@ namespace printer {
     }
 
     fn put_char(S) { mut w: Writer(S), mut heap: S, c: u8 } {
-        if (not utf8::push_char{ b = &w.out, &heap, c }) { w.failed = true }
+        if not utf8::push_char{ b = &w.out, &heap, c } { w.failed = true }
     }
 }

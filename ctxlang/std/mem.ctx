@@ -20,9 +20,9 @@ namespace mem {
     // At least `size` bytes of zeroed, page-aligned memory. They stay valid until the program ends.
     // Null if there isn't enough memory. Asking for 0 bytes gives an empty slice.
     fn pages { mut mem: Mem, size: usize } -> ?alloc::Bytes {
-        if (size == 0) { return slice::empty(u8){} }
+        if size == 0 { return slice::empty(u8){} }
         let got = sys_pages{ &mem, size }
-        if (got.len == 0) { return null }
+        if got.len == 0 { return null }
         return got
     }
 }

@@ -21,14 +21,14 @@ namespace ir_print {
         num{ &o, n = p.version }
         text{ &o, a = "\n(files [" }
         let mut i: usize = 0
-        while (i < p.files.len) {
-            if (i > 0) { char{ &o, c = ' ' } }
+        while i < p.files.len {
+            if i > 0 { char{ &o, c = ' ' } }
             quote{ &o, b = slice::get{ s = p.files, i } }
             i = i + 1
         }
         text{ &o, a = "])\n" }
         i = 0
-        while (i < p.types.len) {
+        while i < p.types.len {
             text{ &o, a = "(type " }
             num{ &o, n = i }
             char{ &o, c = ' ' }
@@ -37,7 +37,7 @@ namespace ir_print {
             i = i + 1
         }
         i = 0
-        while (i < p.fns.len) {
+        while i < p.fns.len {
             function{ &o, f = slice::get{ s = p.fns, i } }
             i = i + 1
         }
@@ -47,7 +47,7 @@ namespace ir_print {
     }
 
     fn type_def { mut o: Out, t: ir::Type } {
-        match (t) {
+        match t {
             prim{ p } => {
                 text{ &o, a = "(prim " }
                 prim{ &o, p }
@@ -83,13 +83,13 @@ namespace ir_print {
                 num{ &o, n = pay_off }
                 text{ &o, a = " [" }
                 let mut i: usize = 0
-                while (i < variants.len) {
-                    if (i > 0) { char{ &o, c = ' ' } }
+                while i < variants.len {
+                    if i > 0 { char{ &o, c = ' ' } }
                     let v = slice::get{ s = variants, i }
                     char{ &o, c = '(' }
                     quote{ &o, b = v.name }
                     char{ &o, c = ' ' }
-                    match (v.fields) {
+                    match v.fields {
                         null           => { char{ &o, c = '_' } }
                         some{ value }  => { field_list{ &o, fields = value } }
                     }
@@ -116,7 +116,7 @@ namespace ir_print {
     }
 
     fn prim { mut o: Out, p: ir::Prim } {
-        match (p) {
+        match p {
             i8    => { text{ &o, a = "i8" } }
             i16   => { text{ &o, a = "i16" } }
             i32   => { text{ &o, a = "i32" } }
@@ -136,8 +136,8 @@ namespace ir_print {
     fn field_list { mut o: Out, fields: slice::Slice(ir::Field) } {
         char{ &o, c = '[' }
         let mut i: usize = 0
-        while (i < fields.len) {
-            if (i > 0) { char{ &o, c = ' ' } }
+        while i < fields.len {
+            if i > 0 { char{ &o, c = ' ' } }
             let f = slice::get{ s = fields, i }
             char{ &o, c = '(' }
             quote{ &o, b = f.name }
@@ -155,8 +155,8 @@ namespace ir_print {
     fn param_list { mut o: Out, params: slice::Slice(ir::Param) } {
         char{ &o, c = '[' }
         let mut i: usize = 0
-        while (i < params.len) {
-            if (i > 0) { char{ &o, c = ' ' } }
+        while i < params.len {
+            if i > 0 { char{ &o, c = ' ' } }
             let p = slice::get{ s = params, i }
             char{ &o, c = '(' }
             quote{ &o, b = p.name }
@@ -171,7 +171,7 @@ namespace ir_print {
     }
 
     fn function { mut o: Out, f: ir::Func } {
-        if (f.native) { text{ &o, a = "(native " } } else { text{ &o, a = "(fn " } }
+        if f.native { text{ &o, a = "(native " } } else { text{ &o, a = "(fn " } }
         num{ &o, n = f.id }
         char{ &o, c = ' ' }
         quote{ &o, b = f.name }
@@ -179,11 +179,11 @@ namespace ir_print {
         param_list{ &o, params = f.params }
         char{ &o, c = ' ' }
         num{ &o, n = f.ret }
-        if (not f.native) {
+        if not f.native {
             text{ &o, a = " [" }
             let mut i: usize = 0
-            while (i < f.locals.len) {
-                if (i > 0) { char{ &o, c = ' ' } }
+            while i < f.locals.len {
+                if i > 0 { char{ &o, c = ' ' } }
                 let l = slice::get{ s = f.locals, i }
                 char{ &o, c = '(' }
                 quote{ &o, b = l.name }
@@ -202,19 +202,19 @@ namespace ir_print {
 
     // Statements go on their own lines, indented one level deeper than the line the block opens on.
     fn block { mut o: Out, b: ir::Block, depth: u32 } {
-        if (b.stmts.len == 0 and b.result == null) {
+        if b.stmts.len == 0 and b.result == null {
             text{ &o, a = "{}" }
             return
         }
         char{ &o, c = '{' }
         let mut i: usize = 0
-        while (i < b.stmts.len) {
+        while i < b.stmts.len {
             newline{ &o, depth = depth + 1 }
             stmt{ &o, s = slice::get{ s = b.stmts, i }, depth = depth + 1 }
             i = i + 1
         }
         let r = b.result
-        if (r != null) {
+        if r != null {
             newline{ &o, depth = depth + 1 }
             text{ &o, a = "=> " }
             expr{ &o, e = r.*, depth = depth + 1 }
@@ -226,14 +226,14 @@ namespace ir_print {
     fn newline { mut o: Out, depth: u32 } {
         char{ &o, c = '\n' }
         let mut i: u32 = 0
-        while (i < depth) {
+        while i < depth {
             text{ &o, a = "  " }
             i = i + 1
         }
     }
 
     fn stmt { mut o: Out, s: ir::Stmt, depth: u32 } {
-        match (s) {
+        match s {
             define{ slot, init } => {
                 text{ &o, a = "(let " }
                 num{ &o, n = slot }
@@ -260,7 +260,7 @@ namespace ir_print {
                 char{ &o, c = ' ' }
                 block{ &o, b = then, depth }
                 char{ &o, c = ' ' }
-                match (els) {
+                match els {
                     null          => { char{ &o, c = '_' } }
                     some{ value } => { block{ &o, b = value, depth } }
                 }
@@ -275,7 +275,7 @@ namespace ir_print {
             cont => { text{ &o, a = "(continue" } }
             ret{ value } => {
                 text{ &o, a = "(return " }
-                match (value) {
+                match value {
                     null          => { char{ &o, c = '_' } }
                     some{ value } => { expr{ &o, e = value, depth } }
                 }
@@ -320,17 +320,17 @@ namespace ir_print {
     fn arm_list { mut o: Out, arms: slice::Slice(ir::Arm), depth: u32 } {
         char{ &o, c = '[' }
         let mut i: usize = 0
-        while (i < arms.len) {
-            if (i > 0) { char{ &o, c = ' ' } }
+        while i < arms.len {
+            if i > 0 { char{ &o, c = ' ' } }
             let a = slice::get{ s = arms, i }
             char{ &o, c = '(' }
-            if (a.pats.len == 0) {
+            if a.pats.len == 0 {
                 char{ &o, c = '_' }
             } else {
                 char{ &o, c = '[' }
                 let mut j: usize = 0
-                while (j < a.pats.len) {
-                    if (j > 0) { char{ &o, c = ' ' } }
+                while j < a.pats.len {
+                    if j > 0 { char{ &o, c = ' ' } }
                     let p = slice::get{ s = a.pats, i = j }
                     char{ &o, c = '(' }
                     num{ &o, n = p.variant }
@@ -353,8 +353,8 @@ namespace ir_print {
     fn bind_list { mut o: Out, binds: slice::Slice(ir::Bind) } {
         char{ &o, c = '[' }
         let mut i: usize = 0
-        while (i < binds.len) {
-            if (i > 0) { char{ &o, c = ' ' } }
+        while i < binds.len {
+            if i > 0 { char{ &o, c = ' ' } }
             let b = slice::get{ s = binds, i }
             char{ &o, c = '(' }
             num{ &o, n = b.slot }
@@ -372,11 +372,11 @@ namespace ir_print {
 
     fn expr { mut o: Out, e: ir::Expr, depth: u32 } {
         char{ &o, c = '(' }
-        match (e.k) {
+        match e.k {
             int{ negative, value }    => {
                 head{ &o, e, a = "int" }
                 char{ &o, c = ' ' }
-                if (negative) { char{ &o, c = '-' } }
+                if negative { char{ &o, c = '-' } }
                 num{ &o, n = value }
             }
             float{ value }            => { head{ &o, e, a = "float" }; char{ &o, c = ' ' }; float{ &o, v = value, ty = e.ty } }
@@ -410,7 +410,7 @@ namespace ir_print {
             bits{ op, a, b }          => {
                 head{ &o, e, a = "bits" }
                 char{ &o, c = ' ' }
-                match (op) {
+                match op {
                     bit_and => { text{ &o, a = "and" } }
                     bit_or  => { text{ &o, a = "or" } }
                     bit_xor => { text{ &o, a = "xor" } }
@@ -421,7 +421,7 @@ namespace ir_print {
             shift{ op, a, b, pos }    => {
                 head{ &o, e, a = "shift" }
                 char{ &o, c = ' ' }
-                match (op) {
+                match op {
                     shl => { text{ &o, a = "shl" } }
                     shr => { text{ &o, a = "shr" } }
                 }
@@ -453,8 +453,8 @@ namespace ir_print {
                 head{ &o, e, a = "array" }
                 text{ &o, a = " [" }
                 let mut i: usize = 0
-                while (i < elems.len) {
-                    if (i > 0) { char{ &o, c = ' ' } }
+                while i < elems.len {
+                    if i > 0 { char{ &o, c = ' ' } }
                     expr{ &o, e = slice::get{ s = elems, i }, depth }
                     i = i + 1
                 }
@@ -521,8 +521,8 @@ namespace ir_print {
     fn arg_list { mut o: Out, args: slice::Slice(ir::Arg), depth: u32 } {
         text{ &o, a = " [" }
         let mut i: usize = 0
-        while (i < args.len) {
-            if (i > 0) { char{ &o, c = ' ' } }
+        while i < args.len {
+            if i > 0 { char{ &o, c = ' ' } }
             let a = slice::get{ s = args, i }
             char{ &o, c = '(' }
             num{ &o, n = a.index }
@@ -535,7 +535,7 @@ namespace ir_print {
     }
 
     fn arith_op { mut o: Out, op: ir::ArithOp } {
-        match (op) {
+        match op {
             add => { text{ &o, a = "add" } }
             sub => { text{ &o, a = "sub" } }
             mul => { text{ &o, a = "mul" } }
@@ -545,7 +545,7 @@ namespace ir_print {
     }
 
     fn cmp_op { mut o: Out, op: ir::CmpOp } {
-        match (op) {
+        match op {
             eq => { text{ &o, a = "eq" } }
             ne => { text{ &o, a = "ne" } }
             lt => { text{ &o, a = "lt" } }
@@ -565,14 +565,14 @@ namespace ir_print {
     }
 
     fn opt_id { mut o: Out, id: ?u32 } {
-        match (id) {
+        match id {
             null          => { char{ &o, c = '_' } }
             some{ value } => { num{ &o, n = value } }
         }
     }
 
     fn flag { mut o: Out, b: bool } {
-        char{ &o, c = if (b) { '1' } else { '0' } }
+        char{ &o, c = if b { '1' } else { '0' } }
     }
 
     // The shortest text that reads back as v, as an f32 if ty is f32.
@@ -580,13 +580,13 @@ namespace ir_print {
         let mut buf: [32]u8
         let into = slice::of(u8){ a = &buf }
         let mut is32 = false
-        if (ty < o.types.len) {
-            is32 = match (slice::get{ s = o.types, i = ty }) {
-                prim{ p } => { match (p) { f32 => { true } else => { false } } }
+        if ty < o.types.len {
+            is32 = match slice::get{ s = o.types, i = ty } {
+                prim{ p } => { match p { f32 => { true } else => { false } } }
                 else      => { false }
             }
         }
-        if (is32) {
+        if is32 {
             bytes{ &o, b = ascii::fmt_f32{ n = @as(f32, v), into }.bytes }
         } else {
             bytes{ &o, b = ascii::fmt_f64{ n = v, into }.bytes }
@@ -597,9 +597,9 @@ namespace ir_print {
     fn quote { mut o: Out, b: ir::Bytes } {
         char{ &o, c = '"' }
         let mut i: usize = 0
-        while (i < b.len) {
+        while i < b.len {
             let c = slice::get{ s = b, i }
-            if (c >= 32 and c <= 126 and c != '"' and c != '\\') {
+            if c >= 32 and c <= 126 and c != '"' and c != '\\' {
                 char{ &o, c }
             } else {
                 char{ &o, c = '\\' }
@@ -613,7 +613,7 @@ namespace ir_print {
     }
 
     fn hex { d: u8 } -> u8 {
-        if (d < 10) { return '0' + d }
+        if d < 10 { return '0' + d }
         return 'a' + d - 10
     }
 
@@ -633,11 +633,11 @@ namespace ir_print {
     }
 
     fn char { mut o: Out, c: u8 } {
-        if (not list::push{ list = &o.bytes, heap = o.heap, item = c }) { @panic("ir_print: out of memory") }
+        if not list::push{ list = &o.bytes, heap = o.heap, item = c } { @panic("ir_print: out of memory") }
     }
 
     fn bytes { mut o: Out, b: ir::Bytes } {
-        if (not list::reserve{ list = &o.bytes, heap = o.heap, extra = b.len }) { @panic("ir_print: out of memory") }
+        if not list::reserve{ list = &o.bytes, heap = o.heap, extra = b.len } { @panic("ir_print: out of memory") }
         let len = o.bytes.len
         slice::copy{ dst = slice::sub{ s = o.bytes.items, lo = len, hi = len + b.len }, src = b }
         o.bytes.len = len + b.len

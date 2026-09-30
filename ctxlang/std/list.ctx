@@ -15,14 +15,14 @@ namespace list {
     // Ensures room for `extra` more items. Returns false on allocation failure.
     fn reserve(T, S) { mut list: List(T, S), mut heap: S, extra: usize } -> bool {
         let need = list.len + extra
-        if (need <= list.items.len) { return true }
+        if need <= list.items.len { return true }
 
         let mut cap = list.items.len
-        if (cap == 0) { cap = 4 }
-        while (cap < need) { cap = cap * 2 }
+        if cap == 0 { cap = 4 }
+        while cap < need { cap = cap * 2 }
 
         let items = alloc::resize{ realloc = list.realloc, &heap, mem = list.items, count = cap }
-        match (items) {
+        match items {
             null          => { return false }
             some{ value } => { list.items = value }
         }
@@ -31,33 +31,33 @@ namespace list {
 
     // Returns false on allocation failure.
     fn push(T, S) { mut list: List(T, S), mut heap: S, item: T } -> bool {
-        if (not reserve{ extra = 1, .. }) { return false }   // `..` forwards &list, &heap
+        if not reserve{ extra = 1, .. } { return false }   // `..` forwards &list, &heap
         slice::set{ s = list.items, i = list.len, v = item }
         list.len = list.len + 1
         return true
     }
 
     fn pop(T, S) { mut list: List(T, S) } -> ?T {
-        if (list.len == 0) { return null }
+        if list.len == 0 { return null }
         list.len = list.len - 1
         return slice::get{ s = list.items, i = list.len }    // T converts to ?T
     }
 
     // Needs no heap, so it can't allocate.
     fn get(T, S) { list: List(T, S), i: usize } -> ?T {
-        if (i >= list.len) { return null }
+        if i >= list.len { return null }
         return slice::get{ s = list.items, i }
     }
 
     fn set(T, S) { mut list: List(T, S), i: usize, item: T } -> bool {
-        if (i >= list.len) { return false }
+        if i >= list.len { return false }
         slice::set{ s = list.items, i, v = item }
         return true
     }
 
     // Bounds-checked against len, not capacity.
     fn at(T, S) { list: List(T, S), i: usize } -> *T {
-        if (i >= list.len) { @panic("list::at: index out of bounds") }
+        if i >= list.len { @panic("list::at: index out of bounds") }
         return slice::at{ s = list.items, i }
     }
 
@@ -73,7 +73,7 @@ namespace list {
     // `&fn` accepts both bound and unbound functions.
     fn each(T, S) { list: List(T, S), f: &fn{ item: T } } {
         let mut i: usize = 0
-        while (i < list.len) {
+        while i < list.len {
             f{ item = slice::get{ s = list.items, i } }
             i = i + 1
         }

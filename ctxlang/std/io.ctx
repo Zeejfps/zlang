@@ -97,7 +97,7 @@ namespace io {
     }
 
     fn print_bool { mut io: Io, n: bool } {
-        if (n) {
+        if n {
             let t = "true"
             print{ &io, s = ascii::of{ chars = &t } }
         } else {
@@ -118,18 +118,18 @@ namespace io {
     // A line longer than `into` comes back in pieces. Non-ASCII bytes become '?'.
     fn read_line { mut io: Io, into: slice::Slice(u8) } -> ?ascii::String {
         let mut n: usize = 0
-        while (n < into.len) {
+        while n < into.len {
             let one = slice::sub{ s = into, lo = n, hi = n + 1 }
-            if (read{ &io, into = one } == 0) {
-                if (n == 0) { return null }
+            if read{ &io, into = one } == 0 {
+                if n == 0 { return null }
                 break
             }
             let c = slice::get{ s = one, i = 0 }
-            if (c == '\n') {
-                if (n > 0 and slice::get{ s = into, i = n - 1 } == '\r') { n = n - 1 }
+            if c == '\n' {
+                if n > 0 and slice::get{ s = into, i = n - 1 } == '\r' { n = n - 1 }
                 break
             }
-            if (c > 127) { slice::set{ s = one, i = 0, v = '?' } }
+            if c > 127 { slice::set{ s = one, i = 0, v = '?' } }
             n = n + 1
         }
         return ascii::from{ bytes = slice::sub{ s = into, lo = 0, hi = n } }

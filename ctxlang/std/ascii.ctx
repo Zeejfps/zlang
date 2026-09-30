@@ -18,8 +18,8 @@ namespace ascii {
     // Panics if any byte isn't ASCII.
     fn from { bytes: slice::Slice(u8) } -> String {
         let mut i: usize = 0
-        while (i < bytes.len) {
-            if (slice::get{ s = bytes, i } > 127) { @panic("ascii::from: byte is not ASCII") }
+        while i < bytes.len {
+            if slice::get{ s = bytes, i } > 127 { @panic("ascii::from: byte is not ASCII") }
             i = i + 1
         }
         return String{ bytes }
@@ -49,31 +49,31 @@ namespace ascii {
     }
 
     fn eq { a: String, b: String } -> bool {
-        if (a.bytes.len != b.bytes.len) { return false }
+        if a.bytes.len != b.bytes.len { return false }
         let mut i: usize = 0
-        while (i < a.bytes.len) {
-            if (at{ s = a, i } != at{ s = b, i }) { return false }
+        while i < a.bytes.len {
+            if at{ s = a, i } != at{ s = b, i } { return false }
             i = i + 1
         }
         return true
     }
 
     fn starts_with { s: String, prefix: String } -> bool {
-        if (prefix.bytes.len > s.bytes.len) { return false }
+        if prefix.bytes.len > s.bytes.len { return false }
         return eq{ a = sub{ s, lo = 0, hi = prefix.bytes.len }, b = prefix }
     }
 
     fn ends_with { s: String, suffix: String } -> bool {
         let n = s.bytes.len
-        if (suffix.bytes.len > n) { return false }
+        if suffix.bytes.len > n { return false }
         return eq{ a = sub{ s, lo = n - suffix.bytes.len, hi = n }, b = suffix }
     }
 
     // Index of the first `c`, or null.
     fn find { s: String, c: u8 } -> ?usize {
         let mut i: usize = 0
-        while (i < s.bytes.len) {
-            if (at{ s, i } == c) { return i }
+        while i < s.bytes.len {
+            if at{ s, i } == c { return i }
             i = i + 1
         }
         return null
@@ -82,10 +82,10 @@ namespace ascii {
     // Index of the first occurrence of `needle`, or null. An empty needle is found at 0.
     fn find_str { s: String, needle: String } -> ?usize {
         let n = needle.bytes.len
-        if (n > s.bytes.len) { return null }
+        if n > s.bytes.len { return null }
         let mut i: usize = 0
-        while (i + n <= s.bytes.len) {
-            if (eq{ a = sub{ s, lo = i, hi = i + n }, b = needle }) { return i }
+        while i + n <= s.bytes.len {
+            if eq{ a = sub{ s, lo = i, hi = i + n }, b = needle } { return i }
             i = i + 1
         }
         return null
@@ -97,7 +97,7 @@ namespace ascii {
 
     fn split_once { s: String, c: u8 } -> ?Split {
         let i = find{ s, c }
-        if (i != null) {
+        if i != null {
             return Split{ head = sub{ s, lo = 0, hi = i }, tail = sub{ s, lo = i + 1, hi = s.bytes.len } }
         }
         return null
@@ -110,13 +110,13 @@ namespace ascii {
 
     fn trim_start { s: String } -> String {
         let mut lo: usize = 0
-        while (lo < s.bytes.len and is_space{ c = at{ s, i = lo } }) { lo = lo + 1 }
+        while lo < s.bytes.len and is_space{ c = at{ s, i = lo } } { lo = lo + 1 }
         return sub{ s, lo, hi = s.bytes.len }
     }
 
     fn trim_end { s: String } -> String {
         let mut hi = s.bytes.len
-        while (hi > 0 and is_space{ c = at{ s, i = hi - 1 } }) { hi = hi - 1 }
+        while hi > 0 and is_space{ c = at{ s, i = hi - 1 } } { hi = hi - 1 }
         return sub{ s, lo = 0, hi }
     }
 
@@ -130,12 +130,12 @@ namespace ascii {
     fn is_space { c: u8 } -> bool { return c == ' ' or c == '\t' or c == '\n' or c == '\r' }
 
     fn to_upper { c: u8 } -> u8 {
-        if (is_lower{ c }) { return c - 32 }
+        if is_lower{ c } { return c - 32 }
         return c
     }
 
     fn to_lower { c: u8 } -> u8 {
-        if (is_upper{ c }) { return c + 32 }
+        if is_upper{ c } { return c + 32 }
         return c
     }
 
@@ -144,41 +144,41 @@ namespace ascii {
     // Parses an optional '-' followed by decimal digits. Null if malformed or out of range.
     fn parse_i64 { s: String } -> ?i64 {
         let n = s.bytes.len
-        if (n == 0) { return null }
+        if n == 0 { return null }
         let mut i: usize = 0
         let neg = at{ s, i = 0 } == '-'
-        if (neg) {
-            if (n == 1) { return null }
+        if neg {
+            if n == 1 { return null }
             i = 1
         }
         // Accumulate negatively so that i64's minimum is reachable.
         let min: i64 = -9223372036854775808
         let mut v: i64 = 0
-        while (i < n) {
+        while i < n {
             let c = at{ s, i }
-            if (not is_digit{ c }) { return null }
+            if not is_digit{ c } { return null }
             let d = @as(i64, c - '0')
-            if (v < (min + d) / 10) { return null }
+            if v < (min + d) / 10 { return null }
             v = v * 10 - d
             i = i + 1
         }
-        if (neg) { return v }
-        if (v == min) { return null }
+        if neg { return v }
+        if v == min { return null }
         return -v
     }
 
     // Parses decimal digits. Null if malformed or out of range.
     fn parse_u64 { s: String } -> ?u64 {
         let n = s.bytes.len
-        if (n == 0) { return null }
+        if n == 0 { return null }
         let max: u64 = 18446744073709551615
         let mut v: u64 = 0
         let mut i: usize = 0
-        while (i < n) {
+        while i < n {
             let c = at{ s, i }
-            if (not is_digit{ c }) { return null }
+            if not is_digit{ c } { return null }
             let d = @as(u64, c - '0')
-            if (v > (max - d) / 10) { return null }
+            if v > (max - d) / 10 { return null }
             v = v * 10 + d
             i = i + 1
         }
@@ -192,19 +192,19 @@ namespace ascii {
     // "nan", so that it reads back everything fmt_f64 writes. Rounds to the nearest f64. Null if
     // malformed, or if a number is too large for f64.
     fn parse_f64 { s: String } -> ?f64 {
-        if (is_float_word{ s }) { return f64_parse{ text = s.bytes } }
-        if (not is_float_number{ s }) { return null }
+        if is_float_word{ s } { return f64_parse{ text = s.bytes } }
+        if not is_float_number{ s } { return null }
         let v = f64_parse{ text = s.bytes }
-        if (v > F64_MAX or v < -F64_MAX) { return null }
+        if v > F64_MAX or v < -F64_MAX { return null }
         return v
     }
 
     // Like parse_f64, rounding once, directly to the nearest f32.
     fn parse_f32 { s: String } -> ?f32 {
-        if (is_float_word{ s }) { return f32_parse{ text = s.bytes } }
-        if (not is_float_number{ s }) { return null }
+        if is_float_word{ s } { return f32_parse{ text = s.bytes } }
+        if not is_float_number{ s } { return null }
         let v = f32_parse{ text = s.bytes }
-        if (v > F32_MAX or v < -F32_MAX) { return null }
+        if v > F32_MAX or v < -F32_MAX { return null }
         return v
     }
 
@@ -213,7 +213,7 @@ namespace ascii {
         let inf = "inf"
         let minus_inf = "-inf"
         let nan = "nan"
-        if (eq{ a = s, b = of{ chars = &inf } } or eq{ a = s, b = of{ chars = &nan } }) { return true }
+        if eq{ a = s, b = of{ chars = &inf } } or eq{ a = s, b = of{ chars = &nan } } { return true }
         return eq{ a = s, b = of{ chars = &minus_inf } }
     }
 
@@ -222,13 +222,13 @@ namespace ascii {
     fn is_float_number { s: String } -> bool {
         let mut cur = cursor{ s }
         _ = eat{ &cur, ch = '-' }
-        if (take_while{ &cur, f = is_digit }.bytes.len == 0) { return false }
-        if (eat{ &cur, ch = '.' }) {
-            if (take_while{ &cur, f = is_digit }.bytes.len == 0) { return false }
+        if take_while{ &cur, f = is_digit }.bytes.len == 0 { return false }
+        if eat{ &cur, ch = '.' } {
+            if take_while{ &cur, f = is_digit }.bytes.len == 0 { return false }
         }
-        if (eat{ &cur, ch = 'e' } or eat{ &cur, ch = 'E' }) {
-            if (not eat{ &cur, ch = '+' }) { _ = eat{ &cur, ch = '-' } }
-            if (take_while{ &cur, f = is_digit }.bytes.len == 0) { return false }
+        if eat{ &cur, ch = 'e' } or eat{ &cur, ch = 'E' } {
+            if not eat{ &cur, ch = '+' } { _ = eat{ &cur, ch = '-' } }
+            if take_while{ &cur, f = is_digit }.bytes.len == 0 { return false }
         }
         return done{ cur }
     }
@@ -239,21 +239,21 @@ namespace ascii {
         let mut digits: [20]u8
         let mut k: usize = 0
         let mut v = n
-        if (v > 0) { v = -v }                     // work in negatives so i64's minimum fits
-        while (true) {
+        if v > 0 { v = -v }                     // work in negatives so i64's minimum fits
+        while true {
             digits[k] = '0' + @as(u8, -(v % 10))
             k = k + 1
             v = v / 10
-            if (v == 0) { break }
+            if v == 0 { break }
         }
         let mut out: usize = 0
-        if (n < 0) {
+        if n < 0 {
             slice::set{ s = into, i = 0, v = '-' }
             out = 1
         }
         let total = out + k
-        if (total > into.len) { @panic("ascii::fmt_i64: buffer too small") }
-        while (k > 0) {
+        if total > into.len { @panic("ascii::fmt_i64: buffer too small") }
+        while k > 0 {
             k = k - 1
             slice::set{ s = into, i = out, v = digits[k] }
             out = out + 1
@@ -266,16 +266,16 @@ namespace ascii {
         let mut digits: [20]u8
         let mut k: usize = 0
         let mut v = n
-        while (true) {
+        while true {
             digits[k] = '0' + @trunc(u8, v % 10)
             k = k + 1
             v = v / 10
-            if (v == 0) { break }
+            if v == 0 { break }
         }
-        if (k > into.len) { @panic("ascii::fmt_u64: buffer too small") }
+        if k > into.len { @panic("ascii::fmt_u64: buffer too small") }
         let total = k
         let mut out: usize = 0
-        while (k > 0) {
+        while k > 0 {
             k = k - 1
             slice::set{ s = into, i = out, v = digits[k] }
             out = out + 1
@@ -300,7 +300,7 @@ namespace ascii {
     //   let mut cur = ascii::cursor{ s = line }
     //   ascii::skip_space{ &cur }
     //   let name = ascii::take_while{ &cur, f = ascii::is_alpha }
-    //   if (ascii::eat{ &cur, ch = '=' }) { ... }
+    //   if ascii::eat{ &cur, ch = '=' } { ... }
     struct Cursor { s: String, pos: usize }
 
     fn cursor { s: String } -> Cursor {
@@ -324,27 +324,27 @@ namespace ascii {
     // The character `ahead` places past the next one, or null past the end.
     fn peek_at { cur: Cursor, ahead: usize } -> ?u8 {
         let i = cur.pos + ahead
-        if (i >= cur.s.bytes.len) { return null }
+        if i >= cur.s.bytes.len { return null }
         return at{ s = cur.s, i }
     }
 
     // Consumes and returns the next character, or null at the end.
     fn bump { mut cur: Cursor } -> ?u8 {
-        if (done{ cur }) { return null }
+        if done{ cur } { return null }
         cur.pos = cur.pos + 1
         return at{ s = cur.s, i = cur.pos - 1 }
     }
 
     // Consumes `ch` if it is next.
     fn eat { mut cur: Cursor, ch: u8 } -> bool {
-        if (done{ cur } or at{ s = cur.s, i = cur.pos } != ch) { return false }
+        if done{ cur } or at{ s = cur.s, i = cur.pos } != ch { return false }
         cur.pos = cur.pos + 1
         return true
     }
 
     // Consumes `s` if the unread text starts with it.
     fn eat_str { mut cur: Cursor, s: String } -> bool {
-        if (not starts_with{ s = rest{ cur }, prefix = s }) { return false }
+        if not starts_with{ s = rest{ cur }, prefix = s } { return false }
         cur.pos = cur.pos + s.bytes.len
         return true
     }
@@ -353,7 +353,7 @@ namespace ascii {
     // such as `ascii::is_digit`.
     fn take_while { mut cur: Cursor, f: &fn{ c: u8 } -> bool } -> String {
         let lo = cur.pos
-        while (not done{ cur } and f{ c = at{ s = cur.s, i = cur.pos } }) { cur.pos = cur.pos + 1 }
+        while not done{ cur } and f{ c = at{ s = cur.s, i = cur.pos } } { cur.pos = cur.pos + 1 }
         return sub{ s = cur.s, lo, hi = cur.pos }
     }
 
@@ -382,9 +382,9 @@ namespace ascii {
 
     // Each push returns false on allocation failure.
     fn push(S) { mut b: Builder(S), mut heap: S, s: String } -> bool {
-        if (not list::reserve{ list = &b.chars, &heap, extra = s.bytes.len }) { return false }
+        if not list::reserve{ list = &b.chars, &heap, extra = s.bytes.len } { return false }
         let mut i: usize = 0
-        while (i < s.bytes.len) {
+        while i < s.bytes.len {
             _ = list::push{ list = &b.chars, &heap, item = at{ s, i } }
             i = i + 1
         }
@@ -393,7 +393,7 @@ namespace ascii {
 
     // Panics if c isn't ASCII.
     fn push_char(S) { mut b: Builder(S), mut heap: S, c: u8 } -> bool {
-        if (c > 127) { @panic("ascii::push_char: character is not ASCII") }
+        if c > 127 { @panic("ascii::push_char: character is not ASCII") }
         return list::push{ list = &b.chars, &heap, item = c }
     }
 

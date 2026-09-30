@@ -750,7 +750,7 @@ class Checker:
         for b in breaks + conts:
             maybe |= b.maybe
         if isinstance(s.cond, A.BoolLit) and s.cond.val:
-            # `while (true)` exits only through a break; without one it ends the path.
+            # `while true` exits only through a break; without one it ends the path.
             after = self.merge(breaks) if breaks else State(set(s0.defs), set(), True)
             self.st = State(after.defs, maybe, s0.dead or after.dead)
         else:
@@ -953,7 +953,7 @@ class Checker:
             self.err(f'the result of `{name}` ({tstr(t)}) is unused: use it, or discard it with `_ = ...`',
                      e.pos)
 
-    # ---- forbidden accesses inside `match (&p)` arms (§8, Match, rule 7)
+    # ---- forbidden accesses inside `match &p` arms (§8, Match, rule 7)
 
     def access_path(self, e):
         if isinstance(e, A.Path):
