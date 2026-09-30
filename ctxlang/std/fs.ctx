@@ -98,7 +98,7 @@ namespace fs {
             ok{ value }  => { value }
             err{ error } => { return Result::err{ error } }
         }
-        defer close{ &fs, file }
+        defer _ = close{ &fs, file }
 
         let mut buf = slice::empty(u8){}
         let mut n: usize = 0
@@ -107,7 +107,7 @@ namespace fs {
                 let cap: usize = if (buf.len == 0) { 4096 } else { buf.len * 2 }
                 buf = match (realloc{ &heap, mem = buf, new = cap, align = 1 }) {
                     null => {
-                        realloc{ &heap, mem = buf, new = 0, align = 1 }
+                        _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
                         return Result::err{ error = Error::out_of_memory }
                     }
                     some{ value } => { value }
@@ -116,7 +116,7 @@ namespace fs {
             let got = match (read{ &fs, file, into = slice::sub{ s = buf, lo = n, hi = buf.len } }) {
                 ok{ value }  => { value }
                 err{ error } => {
-                    realloc{ &heap, mem = buf, new = 0, align = 1 }
+                    _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
                     return Result::err{ error }
                 }
             }
@@ -135,7 +135,7 @@ namespace fs {
             ok{ value }  => { value }
             err{ error } => { return Result::err{ error } }
         }
-        defer close{ &fs, file }
+        defer _ = close{ &fs, file }
         return write{ &fs, file, bytes }
     }
 

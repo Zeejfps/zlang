@@ -275,7 +275,7 @@ namespace utf8 {
     }
 
     fn skip_space { mut cur: Cursor } {
-        take_while{ &cur, f = is_space }
+        _ = take_while{ &cur, f = is_space }
     }
 
     // ---- building strings
@@ -283,8 +283,8 @@ namespace utf8 {
     // A growable string that owns its bytes, allocated like a list. Free it with `free`.
     //
     //   let mut b = utf8::builder{ realloc = arena::alloc }
-    //   utf8::push{ &b, &heap, s = name }
-    //   utf8::push_char{ &b, &heap, c = 233 }            // U+00E9, e with an acute accent
+    //   _ = utf8::push{ &b, &heap, s = name }
+    //   _ = utf8::push_char{ &b, &heap, c = 233 }        // U+00E9, e with an acute accent
     //   io::println_utf8{ &io, s = utf8::view{ b } }
     struct Builder(S) { bytes: list::List(u8, S) }
 
@@ -302,7 +302,7 @@ namespace utf8 {
         if (not list::reserve{ list = &b.bytes, &heap, extra = s.bytes.len }) { return false }
         let mut i: usize = 0
         while (i < s.bytes.len) {
-            list::push{ list = &b.bytes, &heap, item = slice::get{ s = s.bytes, i } }
+            _ = list::push{ list = &b.bytes, &heap, item = slice::get{ s = s.bytes, i } }
             i = i + 1
         }
         return true

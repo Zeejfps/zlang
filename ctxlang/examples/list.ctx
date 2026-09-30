@@ -12,7 +12,7 @@ union Event {
 fn apply(S) { mut nums: list::List(i32, S), mut heap: S, ev: Event } -> bool {
     return match (ev) {
         push{ value } => { list::push{ list = &nums, item = value, .. } }
-        pop           => { list::pop{ list = &nums }; true }
+        pop           => { _ = list::pop{ list = &nums }; true }
         clear         => { list::clear{ list = &nums }; true }
     }
 }
@@ -45,10 +45,10 @@ fn main { mut io: Io } {
     defer list::free{ list = &events, .. }     // runs when main exits, including the early return
     let mut i = 1
     while (i <= 5) {
-        list::push{ list = &events, item = Event::push{ value = i }, .. }   // `..` supplies &heap
+        _ = list::push{ list = &events, item = Event::push{ value = i }, .. }   // `..` supplies &heap
         i = i + 1
     }
-    list::push{ list = &events, item = Event::pop, .. }
+    _ = list::push{ list = &events, item = Event::pop, .. }
     scale_pushes{ &events, by = 10 }
 
     let mut nums = list::new(i32){ realloc = arena::alloc }
@@ -69,7 +69,7 @@ fn main { mut io: Io } {
 
     // An `if` expression needs an `else`, so `last` is assigned on every path.
     let last = if (total > 100) { Event::clear } else { Event::pop }
-    apply{ &nums, ev = last, .. }
+    _ = apply{ &nums, ev = last, .. }
 
     let first = list::get{ list = nums, i = 0 }                     // ?i32
     io::println_i64{ &io, n = if (first != null) { first } else { -1 } }   // narrowed to i32

@@ -38,6 +38,6 @@ namespace alloc {
 
     // Frees a T from `new`.
     fn free(T, S) { realloc: Fn(S), mut heap: S, p: *T } {
-        resize(T, S){ realloc, &heap, mem = slice::from{ ptr = p, len = 1 }, count = 0 }
+        _ = resize(T, S){ realloc, &heap, mem = slice::from{ ptr = p, len = 1 }, count = 0 }
     }
 }

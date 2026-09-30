@@ -29,7 +29,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
             return 1
         }
     }
-    defer alloc::resize{ realloc = arena::alloc, &heap, mem = bytes, count = 0 }
+    defer _ = alloc::resize{ realloc = arena::alloc, &heap, mem = bytes, count = 0 }
 
     lowercase{ bytes }
     let text = match (utf8::from{ bytes }) {
@@ -50,7 +50,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     let mut words: u64 = 0
     let mut cur = utf8::cursor{ s = text }
     while (not utf8::done{ cur }) {
-        utf8::take_while{ &cur, f = not_letter }
+        _ = utf8::take_while{ &cur, f = not_letter }
         let word = utf8::take_while{ &cur, f = is_letter }
         if (utf8::len{ s = word } == 0) { continue }
         words = words + 1

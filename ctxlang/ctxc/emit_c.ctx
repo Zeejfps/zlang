@@ -620,7 +620,7 @@ namespace emit {
                 put{ &e, a = ") " }
                 push_scope{ &e, s = Scope::loop }
                 block{ &e, b = body }
-                list::pop{ list = &e.scopes }
+                _ = list::pop{ list = &e.scopes }
             }
             brk => {
                 defers{ &e, stop = Stop::loop }

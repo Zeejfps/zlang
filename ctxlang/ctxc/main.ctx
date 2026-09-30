@@ -84,12 +84,12 @@ fn report { mut io: Io, path: slice::Slice(u8), text: slice::Slice(u8), at: usiz
     let mut buf: [256]u8
     let mut heap = arena::new{ buf = slice::of(u8){ a = &buf } }
     let mut b = ascii::builder{ realloc = arena::alloc }
-    ascii::push_char{ &b, &heap, c = ':' }
-    ascii::push_u64{ &b, &heap, n = line }
-    ascii::push_char{ &b, &heap, c = ':' }
-    ascii::push_u64{ &b, &heap, n = col }
+    _ = ascii::push_char{ &b, &heap, c = ':' }
+    _ = ascii::push_u64{ &b, &heap, n = line }
+    _ = ascii::push_char{ &b, &heap, c = ':' }
+    _ = ascii::push_u64{ &b, &heap, n = col }
     let sep = ": error: "
-    ascii::push{ &b, &heap, s = ascii::of{ chars = &sep } }
+    _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &sep } }
     let expected = "expected "
     let int = "an integer"
     let large = "integer too large"
@@ -102,23 +102,23 @@ fn report { mut io: Io, path: slice::Slice(u8), text: slice::Slice(u8), at: usiz
     let trailing = "unexpected text after (main)"
     match (problem) {
         expected{ c } => {
-            ascii::push{ &b, &heap, s = ascii::of{ chars = &expected } }
-            ascii::push_char{ &b, &heap, c = '\'' }
-            ascii::push_char{ &b, &heap, c }
-            ascii::push_char{ &b, &heap, c = '\'' }
+            _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &expected } }
+            _ = ascii::push_char{ &b, &heap, c = '\'' }
+            _ = ascii::push_char{ &b, &heap, c }
+            _ = ascii::push_char{ &b, &heap, c = '\'' }
         }
         expected_int => {
-            ascii::push{ &b, &heap, s = ascii::of{ chars = &expected } }
-            ascii::push{ &b, &heap, s = ascii::of{ chars = &int } }
+            _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &expected } }
+            _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &int } }
         }
-        int_too_large   => { ascii::push{ &b, &heap, s = ascii::of{ chars = &large } } }
-        expected_symbol => { ascii::push{ &b, &heap, s = ascii::of{ chars = &symbol } } }
-        expected_string => { ascii::push{ &b, &heap, s = ascii::of{ chars = &string } } }
-        bad_escape      => { ascii::push{ &b, &heap, s = ascii::of{ chars = &escape } } }
-        bad_float       => { ascii::push{ &b, &heap, s = ascii::of{ chars = &float } } }
-        unknown_tag     => { ascii::push{ &b, &heap, s = ascii::of{ chars = &tag } } }
-        bad_id          => { ascii::push{ &b, &heap, s = ascii::of{ chars = &id } } }
-        trailing_text   => { ascii::push{ &b, &heap, s = ascii::of{ chars = &trailing } } }
+        int_too_large   => { _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &large } } }
+        expected_symbol => { _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &symbol } } }
+        expected_string => { _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &string } } }
+        bad_escape      => { _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &escape } } }
+        bad_float       => { _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &float } } }
+        unknown_tag     => { _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &tag } } }
+        bad_id          => { _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &id } } }
+        trailing_text   => { _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &trailing } } }
     }
     io::write{ &io, to = io::Stream::err, bytes = path }
     io::eprintln{ &io, s = ascii::view{ b } }

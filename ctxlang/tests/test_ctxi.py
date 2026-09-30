@@ -62,7 +62,7 @@ class ListExample(Base):
     def test_wrong_heap_type(self):
         self.lib_error("""
     let mut m = 1
-    list::push{ list = &nums, heap = &m, item = 1 }""", 'expected')
+    _ = list::push{ list = &nums, heap = &m, item = 1 }""", 'expected')
 
     def test_fn_needs_more_context(self):
         self.lib_error('    list::each{ list = nums, f = print_item }', "needs `mut io`")
@@ -142,7 +142,7 @@ class ListExample(Base):
         self.assertOutput(LIB + MAIN_SETUP % """
     let mut mem2: [256]u8
     let mut other = arena::Arena{ buf = slice::from{ ptr = &mem2[0], len = mem2.len }, used = 0 }
-    list::push{ list = &nums, heap = &other, item = 1 }
+    _ = list::push{ list = &nums, heap = &other, item = 1 }
     io::println_u64{ &io, n = nums.len }""", '1\n')
 
 
@@ -533,6 +533,53 @@ fn main { mut io: Io } {
 """)
 
 
+class UnusedResults(Base):
+    def test_dropped_result_is_an_error(self):
+        self.assertCompileError("""
+fn two {} -> i32 { return 2 }
+fn main { mut io: Io } { two{} }
+""", 'the result of `two` (i32) is unused: use it, or discard it with `_ = ...`')
+
+    def test_dropped_builtin_result_is_an_error(self):
+        self.assertCompileError("""
+fn main { mut io: Io } { let x: u8 = 1; @wrap_add(x, x) }
+""", 'the result of `@wrap_add` (u8) is unused')
+
+    def test_dropped_in_statement_branch(self):
+        self.assertCompileError("""
+fn two {} -> i32 { return 2 }
+fn main { mut io: Io } { if (true) { two{} } }
+""", 'the result of `two` (i32) is unused')
+
+    def test_discard(self):
+        self.assertOutput("""
+fn say { mut io: Io, n: i64 } -> i64 { io::println_i64{ &io, n }; return n }
+fn main { mut io: Io } {
+    _ = say{ &io, n = 1 }
+    defer _ = say{ &io, n = 3 }
+    let x = if (true) { _ = say{ &io, n = 2 }; 5 } else { 6 }
+    _ = x + 1
+}
+""", '1\n2\n3\n')
+
+    def test_discard_needs_a_value(self):
+        self.assertCompileError("""
+fn nothing {} { }
+fn main { mut io: Io } { _ = nothing{} }
+""", 'nothing to discard: this returns no value')
+
+    def test_discard_is_not_a_branch_value(self):
+        self.assertCompileError("""
+fn two {} -> i32 { return 2 }
+fn main { mut io: Io } { let x = if (true) { _ = two{} } else { 1 } }
+""", 'this branch must end in a value')
+
+    def test_underscore_is_not_a_name(self):
+        self.assertCompileError("""
+fn main { mut io: Io } { let _ = 1 }
+""", '`_` is not a name')
+
+
 class Builtins(Base):
     def test_unknown_builtin(self):
         self.assertCompileError('fn main { mut io: Io } { let x = @nope(1) }', 'unknown builtin `@nope`')
@@ -866,11 +913,11 @@ fn main { mut io: Io } {
     let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
     let mut b = ascii::builder{ realloc = arena::alloc }
     let name = "count"
-    ascii::push{ &b, &heap, s = ascii::of{ chars = &name } }
-    ascii::push_char{ &b, &heap, c = '=' }
-    ascii::push_i64{ &b, &heap, n = -1234567 }
-    ascii::push_char{ &b, &heap, c = ' ' }
-    ascii::push_u64{ &b, &heap, n = 99 }
+    _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &name } }
+    _ = ascii::push_char{ &b, &heap, c = '=' }
+    _ = ascii::push_i64{ &b, &heap, n = -1234567 }
+    _ = ascii::push_char{ &b, &heap, c = ' ' }
+    _ = ascii::push_u64{ &b, &heap, n = 99 }
     io::println{ &io, s = ascii::view{ b } }
     ascii::free{ &b, &heap }
     io::println_u64{ &io, n = ascii::len{ s = ascii::view{ b } } }
@@ -979,7 +1026,7 @@ fn main { mut io: Io } {
     let arrow = "->"
     io::println_bool{ &io, n = ascii::eat_str{ &cur, s = ascii::of{ chars = &arrow } } }
     io::println{ &io, s = ascii::rest{ cur } }
-    ascii::bump{ &cur }
+    _ = ascii::bump{ &cur }
     let y = ascii::bump{ &cur }
     if (y != null) { io::put_char{ &io, c = y } }
     io::println_bool{ &io, n = ascii::done{ cur } }
@@ -1099,7 +1146,7 @@ class Map(Base):
         self.run_map("""
     let mut i = 0
     while (i < 1000) {
-        map::put{ &m, &heap, key = i * 7, value = i }
+        _ = map::put{ &m, &heap, key = i * 7, value = i }
         i = i + 1
     }
     io::println_u64{ &io, n = map::len{ m } }
@@ -1116,8 +1163,8 @@ class Map(Base):
 
     def test_replace_and_at(self):
         self.run_map("""
-    map::put{ &m, &heap, key = -5, value = 1 }
-    map::put{ &m, &heap, key = -5, value = 2 }
+    _ = map::put{ &m, &heap, key = -5, value = 1 }
+    _ = map::put{ &m, &heap, key = -5, value = 2 }
     io::println_u64{ &io, n = map::len{ m } }
     let p = map::at{ m, key = -5 }
     if (p != null) { p.* = p.* + 40 }
@@ -1130,12 +1177,12 @@ class Map(Base):
         self.run_map("""
     let mut i = 0
     while (i < 50) {
-        map::put{ &m, &heap, key = i, value = i }
+        _ = map::put{ &m, &heap, key = i, value = i }
         i = i + 1
     }
     i = 0
     while (i < 50) {
-        if (i % 2 == 0) { map::remove{ &m, key = i } }
+        if (i % 2 == 0) { _ = map::remove{ &m, key = i } }
         i = i + 1
     }
     io::println_u64{ &io, n = map::len{ m } }
@@ -1146,8 +1193,8 @@ class Map(Base):
     // Churn: removed slots are reused or dropped, so the table doesn't fill with them.
     i = 0
     while (i < 2000) {
-        map::put{ &m, &heap, key = 100, value = i }
-        map::remove{ &m, key = 100 }
+        _ = map::put{ &m, &heap, key = 100, value = i }
+        _ = map::remove{ &m, key = 100 }
         i = i + 1
     }
     io::println_u64{ &io, n = map::len{ m } }
@@ -1160,7 +1207,7 @@ fn add { mut total: i64, key: i32, value: i64 } { total = total + value }
 """ + MAP_SETUP % """
     let mut i = 1
     while (i <= 10) {
-        map::put{ &m, &heap, key = i, value = i * 100 }
+        _ = map::put{ &m, &heap, key = i, value = i * 100 }
         i = i + 1
     }
     let mut keys: i32 = 0
@@ -1170,7 +1217,7 @@ fn add { mut total: i64, key: i32, value: i64 } { total = total + value }
             null => { break }
             some{ value } => {
                 keys = keys + value.key
-                if (value.key % 2 == 0) { map::remove{ &m, key = value.key } }
+                if (value.key % 2 == 0) { _ = map::remove{ &m, key = value.key } }
             }
         }
     }
@@ -1197,7 +1244,7 @@ fn main { mut io: Io } {
         if (p != null) {
             p.* = p.* + 1
         } else {
-            map::put{ m = &counts, &heap, key = word, value = 1 }
+            _ = map::put{ m = &counts, &heap, key = word, value = 1 }
         }
         ascii::skip_space{ &cur }
     }
@@ -1210,12 +1257,12 @@ fn main { mut io: Io } {
 
     def test_clear_and_free(self):
         self.run_map("""
-    map::put{ &m, &heap, key = 1, value = 1 }
-    map::put{ &m, &heap, key = 2, value = 2 }
+    _ = map::put{ &m, &heap, key = 1, value = 1 }
+    _ = map::put{ &m, &heap, key = 2, value = 2 }
     map::clear{ &m }
     io::println_u64{ &io, n = map::len{ m } }
     io::println_bool{ &io, n = map::has{ m, key = 1 } }
-    map::put{ &m, &heap, key = 3, value = 3 }
+    _ = map::put{ &m, &heap, key = 3, value = 3 }
     io::println_u64{ &io, n = map::len{ m } }
     map::free{ &m, &heap }
     io::println_u64{ &io, n = m.slots.len }
@@ -1379,11 +1426,11 @@ fn main { mut io: Io } {
     let mut heap = arena::new{ buf = slice::of(u8){ a = &mem } }
     let mut b = utf8::builder{ realloc = arena::alloc }
     let name = "caf"
-    utf8::push{ &b, &heap, s = utf8::of{ chars = &name } }
-    utf8::push_char{ &b, &heap, c = 233 }
-    utf8::push_char{ &b, &heap, c = '=' }
-    utf8::push_i64{ &b, &heap, n = -7 }
-    utf8::push_char{ &b, &heap, c = 128512 }
+    _ = utf8::push{ &b, &heap, s = utf8::of{ chars = &name } }
+    _ = utf8::push_char{ &b, &heap, c = 233 }
+    _ = utf8::push_char{ &b, &heap, c = '=' }
+    _ = utf8::push_i64{ &b, &heap, n = -7 }
+    _ = utf8::push_char{ &b, &heap, c = 128512 }
     io::println_utf8{ &io, s = utf8::view{ b } }
     io::println_u64{ &io, n = utf8::count{ s = utf8::view{ b } } }
     utf8::free{ &b, &heap }
@@ -2170,7 +2217,7 @@ fn main { mut io: Io } {
 
     def test_takes_call_assignment_or_block(self):
         self.assertCompileError('fn main { mut io: Io } { defer let x = 1 }',
-                                '`defer` takes a call, an assignment or a block')
+                                '`defer` takes a call, an assignment, `_ = e` or a block')
 
 
 FS_MAIN = """
@@ -2258,15 +2305,15 @@ class Fs(Base):
     let path = slice::get{ s = args, i = 0 }
     let w = result::unwrap{ r = fs::open{ &fs, path, mode = fs::Mode::create } }
     let a = "abc"
-    fs::write{ &fs, file = w, bytes = slice::of(u8){ a = &a } }
+    _ = fs::write{ &fs, file = w, bytes = slice::of(u8){ a = &a } }
     io::println_bool{ &io, n = fs::close{ &fs, file = w } == null }
     let x = fs::open{ &fs, path, mode = fs::Mode::append }
     if (result::is_ok{ r = x }) {
         let d = "de"
-        fs::write{ &fs, file = result::unwrap{ r = x }, bytes = slice::of(u8){ a = &d } }
+        _ = fs::write{ &fs, file = result::unwrap{ r = x }, bytes = slice::of(u8){ a = &d } }
     }
     let r = result::unwrap{ r = fs::open{ &fs, path, mode = fs::Mode::read } }
-    defer fs::close{ &fs, file = r }
+    defer _ = fs::close{ &fs, file = r }
     let mut buf: [2]u8
     let mut total: usize = 0
     while (true) {
@@ -2416,7 +2463,7 @@ class Mem(Base):
         # Memory from pages doesn't extend the stack: deep recursion still overflows.
         with self.assertRaises(Panic) as cm:
             self.run_mem("""
-    mem::pages{ &mem, size = 67108864 }
+    _ = mem::pages{ &mem, size = 67108864 }
     return down{ n = 0 }
 """, extra='fn down { n: i32 } -> i32 { let big: [1048576]u8 = [0; 1048576]; if (n == 20) { return 0 }; return down{ n = n + 1 } + @as(i32, big[@as(usize, n)]) }\n')
         self.assertIn('stack overflow', cm.exception.msg)
@@ -2469,7 +2516,7 @@ fn main { mut mem: Mem } { }
             self.run_mem("""
     let mut buf: [16]u8
     let mut heap = arena::new{ buf = slice::of(u8){ a = &buf } }
-    alloc::new{ realloc = arena::alloc, &heap, value = Empty{} }
+    _ = alloc::new{ realloc = arena::alloc, &heap, value = Empty{} }
     return 0
 """, extra='struct Empty {}\n')
         self.assertIn('alloc::new: T is zero-sized', cm.exception.msg)
@@ -2479,15 +2526,15 @@ fn main { mut mem: Mem } { }
     let some{ value = buf } = mem::pages{ &mem, size = 4096 } else { return 1 }
     let mut heap = arena::new{ buf }
     let mut b = ascii::builder{ realloc = arena::alloc }
-    ascii::push_f64{ &b, &heap, n = 0.1 }
-    ascii::push_char{ &b, &heap, c = ' ' }
-    ascii::push_f32{ &b, &heap, n = 0.1 }
-    ascii::push_char{ &b, &heap, c = ' ' }
-    ascii::push_f64{ &b, &heap, n = 1e100 }
+    _ = ascii::push_f64{ &b, &heap, n = 0.1 }
+    _ = ascii::push_char{ &b, &heap, c = ' ' }
+    _ = ascii::push_f32{ &b, &heap, n = 0.1 }
+    _ = ascii::push_char{ &b, &heap, c = ' ' }
+    _ = ascii::push_f64{ &b, &heap, n = 1e100 }
     io::println{ &io, s = ascii::view{ b } }
     let mut u = utf8::builder{ realloc = arena::alloc }
-    utf8::push_f64{ b = &u, &heap, n = -2.5 }
-    utf8::push_f32{ b = &u, &heap, n = 3.0 }
+    _ = utf8::push_f64{ b = &u, &heap, n = -2.5 }
+    _ = utf8::push_f32{ b = &u, &heap, n = 3.0 }
     io::println_utf8{ &io, s = utf8::view{ b = u } }
     return 0
 """)

@@ -180,6 +180,7 @@ name::item
 let x = e      let mut x = e      let x: T = e      let x: T      let mut x: T
 let variant{ f, g = y } = e else { }      let ok{ value } = e else err{ error } { }
 x = e
+_ = e
 if (e) { } else if (e) { } else { }
 while (e) { }
 break
@@ -187,7 +188,7 @@ continue
 match (e) { ... }
 return e
 return
-defer f{ ... }      defer x = e      defer { }
+defer f{ ... }      defer x = e      defer _ = e      defer { }
 f{ ... }
 ```
 
@@ -196,7 +197,7 @@ f{ ... }
 3. Statements are separated by newlines or `;`. A postfix `{`, `[` or `(` must be on the same line as the expression before it.
 4. Every block is a scope. A `let` is visible from its declaration to the end of its block.
 5. In `x = e`, `x` must be a mutable place.
-6. An expression statement must be a call or a builtin call. Its result is discarded. The exception is the last statement of a branch of an `if` or `match` expression, which gives the branch its value (below).
+6. An expression statement must be a call or a builtin call that returns nothing. A call that returns a value is an error as a statement: use the value, or discard it explicitly with `_ = e`. `_ = e` evaluates any expression `e` that has a value, and drops it; `_` is not a name and can't be declared. The exception is the last statement of a branch of an `if` or `match` expression, which gives the branch its value (below).
 7. `return` without a value is only allowed in a function with no `-> R`. In a function with `-> R`, every path must end in `return e` or `@panic()`.
 8. `break` leaves the innermost enclosing `while`. `continue` skips the rest of its body and goes to its next condition check. Both are errors outside a loop, and both end a path.
 9. `while (true)` without a `break` that leaves it ends a path, like `return`.
@@ -222,7 +223,7 @@ let mut xs = list::new(i32){ realloc = arena::alloc }
 defer list::free{ list = &xs, &heap }
 ```
 
-1. `defer` takes a call, an assignment or a block. Its body runs when the enclosing block exits: at its end, or through `return`, `break`, `continue`, or a branch of an `if` or `match` expression leaving (§11, If and match expressions).
+1. `defer` takes a call, an assignment, a discard (`_ = e`) or a block. Its body runs when the enclosing block exits: at its end, or through `return`, `break`, `continue`, or a branch of an `if` or `match` expression leaving (§11, If and match expressions).
 2. A block's deferred bodies run in reverse order of their `defer` statements. Only `defer` statements that were reached run.
 3. The body is evaluated when it runs, not at the `defer`: `defer say{ n = i }` sees the value `i` has at exit. A `return e` evaluates `e` before deferred bodies run.
 4. A `defer` inside a loop body runs at the end of each iteration that reached it.

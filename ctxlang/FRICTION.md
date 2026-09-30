@@ -26,6 +26,7 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
 11. **Float-to-float `@as` reads as fallible.** It never panics, but looks like it might. A
     separate conversion, or saying so in §13.
 12. **No const string or byte tables** in namespaces without a local (keywords, names). Ties to 1.
-13. **No must-use results.** Dropping the `bool` from `list::push` is silent.
+13. **No must-use results.** Dropping the `bool` from `list::push` is silent. *Done:* every
+    result must be used or dropped with `_ = e` (spec §11.6).
 14. **ctxi call overhead** (implementation, not language): `slice::get`/`at` made about a million
     calls in one profile. Inlining trivial std accessors in ctxi would speed development.

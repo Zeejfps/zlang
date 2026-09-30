@@ -641,7 +641,7 @@ class Checker:
         stmts = b.stmts
         last = stmts[-1] if stmts else None
         nested = isinstance(last, A.Match) or (isinstance(last, A.If) and last.els is not None)
-        valued = nested or (isinstance(last, A.ExprStmt)
+        valued = nested or (isinstance(last, A.ExprStmt) and not last.discard
                             and not (isinstance(last.expr, A.Builtin) and last.expr.name == 'panic'))
         for st in (stmts[:-1] if valued else stmts):
             self.stmt(st)
@@ -933,16 +933,25 @@ class Checker:
 
     def s_ExprStmt(self, s):
         e = s.expr
+        if s.discard:
+            if prune(self.expr(e)) is VOID:
+                self.err('nothing to discard: this returns no value', e.pos)
+            return
         if isinstance(e, A.Braced):
-            self.expr(e)
+            t = self.expr(e)
             if not hasattr(e, 'call'):
                 self.err('an expression statement must be a call', e.pos)
+            name = e.callee.text() if isinstance(e.callee, A.Path) else 'this call'
         elif isinstance(e, A.Builtin):
-            self.expr(e)
+            t = self.expr(e)
             if e.name == 'panic':
                 self.st.dead = True
+            name = f'@{e.name}'
         else:
             self.err('an expression statement must be a call', e.pos)
+        if prune(t) is not VOID:
+            self.err(f'the result of `{name}` ({tstr(t)}) is unused: use it, or discard it with `_ = ...`',
+                     e.pos)
 
     # ---- forbidden accesses inside `match (&p)` arms (§8, Match, rule 7)
 

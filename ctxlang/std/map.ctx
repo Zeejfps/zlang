@@ -6,7 +6,7 @@
 //   let mut ages = map::new(ascii::String, i64){
 //       realloc = arena::alloc, hash = map::hash_string, eq = ascii::eq,
 //   }
-//   map::put{ m = &ages, &heap, key = name, value = 42 }
+//   if (not map::put{ m = &ages, &heap, key = name, value = 42 }) { @panic("out of memory") }
 //   let age = map::get{ m = ages, key = name }       // ?i64
 //
 // A map copies its keys but not memory they point to: the bytes of an ascii::String key must
@@ -114,7 +114,7 @@ namespace map {
     }
 
     fn free(K, V, S) { mut m: Map(K, V, S), mut heap: S } {
-        alloc::resize{ realloc = m.realloc, &heap, mem = m.slots, count = 0 }   // result discarded
+        _ = alloc::resize{ realloc = m.realloc, &heap, mem = m.slots, count = 0 }
         m.slots = slice::empty(Slot(K, V)){}
         m.len = 0
         m.used = 0
@@ -252,7 +252,7 @@ namespace map {
             }
             i = i + 1
         }
-        alloc::resize{ realloc = m.realloc, &heap, mem = old, count = 0 }
+        _ = alloc::resize{ realloc = m.realloc, &heap, mem = old, count = 0 }
         return true
     }
 }

@@ -221,13 +221,13 @@ namespace ascii {
     // and digits.
     fn is_float_number { s: String } -> bool {
         let mut cur = cursor{ s }
-        eat{ &cur, ch = '-' }
+        _ = eat{ &cur, ch = '-' }
         if (take_while{ &cur, f = is_digit }.bytes.len == 0) { return false }
         if (eat{ &cur, ch = '.' }) {
             if (take_while{ &cur, f = is_digit }.bytes.len == 0) { return false }
         }
         if (eat{ &cur, ch = 'e' } or eat{ &cur, ch = 'E' }) {
-            if (not eat{ &cur, ch = '+' }) { eat{ &cur, ch = '-' } }
+            if (not eat{ &cur, ch = '+' }) { _ = eat{ &cur, ch = '-' } }
             if (take_while{ &cur, f = is_digit }.bytes.len == 0) { return false }
         }
         return done{ cur }
@@ -358,7 +358,7 @@ namespace ascii {
     }
 
     fn skip_space { mut cur: Cursor } {
-        take_while{ &cur, f = is_space }
+        _ = take_while{ &cur, f = is_space }
     }
 
     // ---- building strings
@@ -366,8 +366,8 @@ namespace ascii {
     // A growable string that owns its bytes, allocated like a list. Free it with `free`.
     //
     //   let mut b = ascii::builder{ realloc = arena::alloc }
-    //   ascii::push{ &b, &heap, s = name }
-    //   ascii::push_i64{ &b, &heap, n = 42 }
+    //   _ = ascii::push{ &b, &heap, s = name }
+    //   _ = ascii::push_i64{ &b, &heap, n = 42 }
     //   io::println{ &io, s = ascii::view{ b } }
     struct Builder(S) { chars: list::List(u8, S) }
 
@@ -385,7 +385,7 @@ namespace ascii {
         if (not list::reserve{ list = &b.chars, &heap, extra = s.bytes.len }) { return false }
         let mut i: usize = 0
         while (i < s.bytes.len) {
-            list::push{ list = &b.chars, &heap, item = at{ s, i } }
+            _ = list::push{ list = &b.chars, &heap, item = at{ s, i } }
             i = i + 1
         }
         return true

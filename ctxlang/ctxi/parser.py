@@ -284,6 +284,8 @@ class Parser:
                 if not mut and self.is_kw('null'):
                     return self.let_else(pos, *self.pattern())
                 name = self.ident()
+                if name == '_':
+                    self.err('`_` is not a name: `_ = e` discards a value without declaring anything', tok)
                 if not mut and self.is_op('{'):
                     return self.let_else(pos, name, self.binders())
                 texpr = self.type() if self.accept_op(':') else None
@@ -313,7 +315,7 @@ class Parser:
                     return A.Defer(self.block(), pos)
                 inner = self.stmt()
                 if not isinstance(inner, (A.ExprStmt, A.Assign)):
-                    self.err('`defer` takes a call, an assignment or a block', tok)
+                    self.err('`defer` takes a call, an assignment, `_ = e` or a block', tok)
                 return A.Defer(A.Block([inner], inner.pos), pos)
             if tok.val == 'return':
                 self.next()
@@ -324,6 +326,8 @@ class Parser:
         e = self.expr()
         if self.is_op('='):
             self.next()
+            if isinstance(e, A.Path) and len(e.segs) == 1 and e.segs[0].name == '_' and e.segs[0].targs is None:
+                return A.ExprStmt(self.expr(), pos, discard=True)
             return A.Assign(e, self.expr(), pos)
         return A.ExprStmt(e, pos)
 

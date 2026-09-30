@@ -80,7 +80,7 @@ namespace list {
     }
 
     fn free(T, S) { mut list: List(T, S), mut heap: S } {
-        alloc::resize{ realloc = list.realloc, &heap, mem = list.items, count = 0 }   // result discarded
+        _ = alloc::resize{ realloc = list.realloc, &heap, mem = list.items, count = 0 }
         list.items = slice::empty(T){}
         list.len = 0
     }

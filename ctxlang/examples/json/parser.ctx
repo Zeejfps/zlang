@@ -198,7 +198,7 @@ namespace parser {
     // At '-' or a digit:  -? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?
     fn parse_number(S) { mut p: Parser(S) } -> Result(json::Value, Error) {
         let start = p.pos
-        eat{ &p, c = '-' }
+        _ = eat{ &p, c = '-' }
         if (eat{ &p, c = '0' }) {
             let next = peek{ p }
             if (next != null) {
@@ -211,7 +211,7 @@ namespace parser {
             if (digits{ &p } == 0) { return fail{ at = start, problem = Problem::bad_number } }
         }
         if (eat{ &p, c = 'e' } or eat{ &p, c = 'E' }) {
-            if (not eat{ &p, c = '+' }) { eat{ &p, c = '-' } }
+            if (not eat{ &p, c = '+' }) { _ = eat{ &p, c = '-' } }
             if (digits{ &p } == 0) { return fail{ at = start, problem = Problem::bad_number } }
         }
         // Everything consumed is ASCII, and valid syntax for parse_f64.

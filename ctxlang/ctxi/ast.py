@@ -159,8 +159,10 @@ class Defer(Node):
 
 
 class ExprStmt(Node):
-    def __init__(self, expr, pos):
-        self.expr, self.pos = expr, pos
+    """A call statement, or `_ = expr` (discard) that evaluates any expression and drops it."""
+
+    def __init__(self, expr, pos, discard=False):
+        self.expr, self.pos, self.discard = expr, pos, discard
 
 
 # ---- expressions ----

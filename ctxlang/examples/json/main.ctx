@@ -75,12 +75,12 @@ fn report { mut io: Io, path: slice::Slice(u8), text: slice::Slice(u8), error: p
     let mut buf: [48]u8
     let mut b = ascii::builder{ realloc = arena::alloc }
     let mut heap = arena::new{ buf = slice::of(u8){ a = &buf } }
-    ascii::push_char{ &b, &heap, c = ':' }
-    ascii::push_u64{ &b, &heap, n = line }
-    ascii::push_char{ &b, &heap, c = ':' }
-    ascii::push_u64{ &b, &heap, n = col }
+    _ = ascii::push_char{ &b, &heap, c = ':' }
+    _ = ascii::push_u64{ &b, &heap, n = line }
+    _ = ascii::push_char{ &b, &heap, c = ':' }
+    _ = ascii::push_u64{ &b, &heap, n = col }
     let sep = ": "
-    ascii::push{ &b, &heap, s = ascii::of{ chars = &sep } }
+    _ = ascii::push{ &b, &heap, s = ascii::of{ chars = &sep } }
     io::eprint{ &io, s = ascii::view{ b } }
     describe{ &io, problem = error.problem }
 }
