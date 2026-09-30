@@ -42,8 +42,12 @@ Types (ids are assigned in the order the dumper first meets them):
     (fn BOUND [(STR MUT T)...] RET)      fields sorted by name
 
 Statements:
-    (let SLOT E)  (zero SLOT)  (set PLACE E)  (do E)  (break)  (continue)  (return E|_)
+    (let SLOT E)  (zero SLOT)  (set PLACE E)  (do E)  (return E|_)
     (if E BLOCK BLOCK|_)  (while E BLOCK)  (defer BLOCK)  (panic POS STR)
+    (break)  (continue)                  leave or repeat the innermost loop
+    (while E BLOCK L)  (break L)  (continue L)
+                                         L (1, 2, ... in each function) names a loop that a
+                                         break or continue in an inner loop leaves or repeats
     (match E THROUGH [ARM...])           THROUGH 1: E is a pointer to the union
         ARM = ([PAT...]|_ BLOCK)                          `_` is the else arm
         PAT = (VARIANT [BIND...])                         every PAT binds the same slots
@@ -85,7 +89,7 @@ from .types import (
     qualname, struct_fields, variants_of, widens,
 )
 
-VERSION = 4
+VERSION = 5
 
 
 class Sym(str):
@@ -254,13 +258,14 @@ class Dumper:
         return [node('if', self.ex(s.cond), self.block(s.then), els)]
 
     def s_While(self, s):
-        return [node('while', self.ex(s.cond), self.block(s.body))]
+        w = node('while', self.ex(s.cond), self.block(s.body))
+        return [w if s.label_id is None else w + (s.label_id,)]
 
     def s_Break(self, s):
-        return [node('break')]
+        return [node('break') if s.target is None else node('break', s.target.label_id)]
 
     def s_Continue(self, s):
-        return [node('continue')]
+        return [node('continue') if s.target is None else node('continue', s.target.label_id)]
 
     def s_Return(self, s):
         if s.expr is None:
@@ -586,6 +591,7 @@ class Verifier:
             self.ret = item[4]
             for i, (_, mut, t) in enumerate(item[3]):
                 self.expect(self.locals[i] == (self.ptrs.get(t) if mut else t), f'param {i} slot type')
+            self.labels = []
             self.block(item[6])
 
     # ---- helpers
@@ -669,7 +675,13 @@ class Verifier:
                 self.block(s[3])
         elif tag == 'while':
             self.expect(self.is_bool(self.ex(s[1])), 'while condition')
+            label = s[3] if len(s) > 3 else None
+            self.expect(label is None or label not in self.labels, f'loop label {label} reused')
+            self.labels.append(label)
             self.block(s[2])
+            self.labels.pop()
+        elif tag in ('break', 'continue') and len(s) > 1:
+            self.expect(s[1] in self.labels[:-1], f'{tag} {s[1]}: no enclosing outer loop has it')
         elif tag == 'return':
             if s[1] == NONE:
                 self.expect(self.kind(self.ret) == 'void', 'return without a value')
@@ -677,7 +689,9 @@ class Verifier:
                 got = self.ex(s[1])
                 self.expect(got == self.ret, f'return type {got} vs {self.ret}')
         elif tag == 'defer':
+            labels, self.labels = self.labels, []       # a jump can't leave a defer body
             self.block(s[1])
+            self.labels = labels
         elif tag == 'match':
             self.arms(s[1], s[2], s[3], None)
         elif tag == 'letelse':

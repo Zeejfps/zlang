@@ -124,8 +124,9 @@ class If(Node):
 
 
 class While(Node):
-    def __init__(self, cond, body, pos):
-        self.cond, self.body, self.pos = cond, body, pos
+    def __init__(self, cond, body, pos, label=None):
+        self.cond, self.body, self.pos, self.label = cond, body, pos, label
+        self.label_id = None      # set by the checker if a jump from an inner loop targets it
 
 
 class Arm(Node):
@@ -147,13 +148,15 @@ class Return(Node):
 
 
 class Break(Node):
-    def __init__(self, pos):
-        self.pos = pos
+    def __init__(self, pos, label=None):
+        self.pos, self.label = pos, label
+        self.target = None        # set by the checker: the While it leaves, if not the innermost
 
 
 class Continue(Node):
-    def __init__(self, pos):
-        self.pos = pos
+    def __init__(self, pos, label=None):
+        self.pos, self.label = pos, label
+        self.target = None        # as for Break
 
 
 class Defer(Node):

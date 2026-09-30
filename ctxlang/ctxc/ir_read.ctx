@@ -227,7 +227,7 @@ namespace ir_read {
     fn stmt { mut r: Reader } -> ir::Stmt {
         expect{ &r, c = '(' }
         let tag = sym{ &r }
-        let mut s = ir::Stmt::brk
+        let mut s = ir::Stmt::brk{ label = null }
         if is{ s = tag, lit = "let" } {
             let slot = id32{ &r }
             s = ir::Stmt::define{ slot, init = expr{ &r } }
@@ -248,7 +248,8 @@ namespace ir_read {
             s = ir::Stmt::zero{ slot = id32{ &r } }
         } else if is{ s = tag, lit = "while" } {
             let c = expr{ &r }
-            s = ir::Stmt::loop{ c, body = block{ &r } }
+            let body = block{ &r }
+            s = ir::Stmt::loop{ c, body, label = label{ &r } }
         } else if is{ s = tag, lit = "match" } {
             let scrut = expr{ &r }
             let through = flag{ &r }
@@ -266,8 +267,10 @@ namespace ir_read {
             let at = pos{ &r }
             s = ir::Stmt::panic{ pos = at, msg = string{ &r } }
         } else if is{ s = tag, lit = "continue" } {
-            s = ir::Stmt::cont
-        } else if not is{ s = tag, lit = "break" } {
+            s = ir::Stmt::cont{ label = label{ &r } }
+        } else if is{ s = tag, lit = "break" } {
+            s = ir::Stmt::brk{ label = label{ &r } }
+        } else {
             fail{ &r, problem = Problem::unknown_tag }
         }
         expect{ &r, c = ')' }
@@ -664,6 +667,13 @@ namespace ir_read {
             return 0
         }
         return @as(u32, v)
+    }
+
+    // A loop label: an id before the closing `)`, if there is one.
+    fn label { mut r: Reader } -> ?u32 {
+        skip_space{ &r }
+        if r.failed or r.pos >= r.text.len or r.text[r.pos] == ')' { return null }
+        return id32{ &r }
     }
 
     // `_`, or an id.

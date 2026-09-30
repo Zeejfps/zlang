@@ -414,7 +414,8 @@ class Checker:
         self.scopes = [{}]
         self.depth = 0
         self.loop_depth = 0
-        self.loops = []
+        self.loops = []           # (breaks, continues, While) of each enclosing loop
+        self.label_ids = 0        # loops given an id in this body (a jump from an inner loop)
         self.defers = 0           # how many `defer` bodies enclose the current statement
         self.st = State(set(), set(), False)
         self.lits = []
@@ -822,10 +823,15 @@ class Checker:
         return None
 
     def s_While(self, s):
+        if s.label is not None:
+            name, pos = s.label
+            if any(w.label is not None and w.label[0] == name for _, _, w in self.loops):
+                self.err(f'loop label `{name}` is already used by an enclosing loop', pos)
+        s.label_id = None
         s.cond = self.expect(s.cond, BOOL)
         s0 = self.save()
         breaks, conts = [], []
-        self.loops.append((breaks, conts))
+        self.loops.append((breaks, conts, s))
         self.loop_depth += 1
         self.block(s.body, self.facts(s.cond)[0])
         self.loop_depth -= 1
@@ -850,16 +856,31 @@ class Checker:
             self.st = State(s0.defs, maybe, s0.dead)
 
     def s_Break(self, s):
-        if not self.loops:
-            self.err('`break` outside a loop' + (' in this defer' if self.defers else ''), s.pos)
-        self.loops[-1][0].append(self.save())
+        self.loops[self.jump_target(s, 'break')][0].append(self.save())
         self.st.dead = True
 
     def s_Continue(self, s):
-        if not self.loops:
-            self.err('`continue` outside a loop' + (' in this defer' if self.defers else ''), s.pos)
-        self.loops[-1][1].append(self.save())
+        self.loops[self.jump_target(s, 'continue')][1].append(self.save())
         self.st.dead = True
+
+    def jump_target(self, s, word):
+        """The index in self.loops of the loop a break or continue leaves."""
+        in_defer = ' in this defer' if self.defers else ''
+        if not self.loops:
+            self.err(f'`{word}` outside a loop{in_defer}', s.pos)
+        s.target = None
+        if s.label is None:
+            return -1
+        for i in range(len(self.loops) - 1, -1, -1):
+            w = self.loops[i][2]
+            if w.label is not None and w.label[0] == s.label:
+                if i < len(self.loops) - 1:         # not the innermost loop: it needs an id
+                    if w.label_id is None:
+                        self.label_ids += 1
+                        w.label_id = self.label_ids
+                    s.target = w
+                return i
+        self.err(f'no enclosing loop is labeled `{s.label}`{in_defer}', s.pos)
 
     def s_Match(self, s):
         self.check_match(s, None, False)

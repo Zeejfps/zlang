@@ -195,8 +195,9 @@ x = e
 _ = e
 if e { } else if e { } else { }
 while e { }
-break
-continue
+label: while e { }
+break      break label
+continue   continue label
 match e { ... }
 return e
 return
@@ -213,6 +214,19 @@ f{ ... }
 7. `return` without a value is only allowed in a function with no `-> R`. In a function with `-> R`, every path must end in `return e` or `@panic()`.
 8. `break` leaves the innermost enclosing `while`. `continue` skips the rest of its body and goes to its next condition check. Both are errors outside a loop, and both end a path.
 9. `while true` without a `break` that leaves it ends a path, like `return`.
+10. Labels: `name:` before a `while`, on the same line or the line above, labels it. Only a `while` can be labeled. `break name` and `continue name` act on the enclosing loop labeled `name` instead of the innermost one, leaving any loops in between. It is an error if no enclosing loop has that label, or if a loop is labeled with a name an enclosing loop already uses. A jump in a `defer` body sees only the loops inside that body (§11, Defer). Deferred bodies run for every block the jump leaves, innermost first.
+
+```
+rows:
+while r < n {
+    let mut c = 0
+    while c < n {
+        if grid[r][c] == want { break rows }
+        c = c + 1
+    }
+    r = r + 1
+}
+```
 
 ### Let-else
 
@@ -470,7 +484,7 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
 7. **Variant shorthand:** should `.variant{...}` be allowed when the expected type is known?
 8. **Untagged unions:** needed for C interop? Or `@cast` only?
 9. **Large stack frames:** should the compiler error or warn above a size limit? (Page allocation is now the `Mem` capability, §15.) Should pages be freeable?
-10. **Loop control:** `break` and `continue` apply to the innermost loop. Are labels needed to leave an outer loop?
+10. ~~**Loop control.**~~ Settled: a `while` can be labeled, and `break name` and `continue name` act on it (§11, rule 10).
 11. ~~**Strings.**~~ Settled: `utf8::String` is the only text type, and `ascii` holds byte-level character tests (§17). A literal is a view where a `[]u8` or `utf8::String` is expected (§11 Literals).
 
 ## 17. Standard library

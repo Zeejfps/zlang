@@ -2403,6 +2403,137 @@ fn main {} { }
 """, 'expected i32, got ?i32')
 
 
+class LabeledLoops(Base):
+    """§11 Statements: `break L` and `continue L` leave or repeat the enclosing loop labeled L."""
+
+    def test_break_and_continue(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let mut i = 0
+    outer:
+    while i < 4 {
+        i = i + 1
+        let mut j = 0
+        while j < 4 {
+            j = j + 1
+            if j == 2 { continue outer }
+            if i == 3 { break outer }
+            io::println_i64{ &io, n = i * 10 + j }
+        }
+    }
+    io::println_i64{ &io, n = i }
+}
+""", '11\n21\n3\n')
+
+    def test_label_on_the_same_line_and_innermost(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let mut n = 0
+    a: while true {
+        n = n + 1
+        if n == 3 { break a }
+    }
+    io::println_i64{ &io, n }
+}
+""", '3\n')
+
+    def test_three_levels_and_defers(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let mut i = 0
+    top:
+    while i < 3 {
+        i = i + 1
+        defer { io::println_i64{ &io, n = -i } }
+        while true {
+            defer { io::println_i64{ &io, n = 100 } }
+            while true {
+                if i == 2 { break top }
+                continue top
+            }
+        }
+    }
+}
+""", '100\n-1\n100\n-2\n')
+
+    def test_break_out_of_while_true(self):
+        self.assertOutput("""
+fn find { xs: [3][3]i32, want: i32 } -> i32 {
+    let mut found: i32
+    let mut r: usize = 0
+    rows:
+    while true {
+        let mut c: usize = 0
+        while true {
+            if xs[r][c] == want { found = @as(i32, r * 3 + c); break rows }
+            c = c + 1
+            if c == 3 { break }
+        }
+        r = r + 1
+        if r == 3 { found = -1; break }
+    }
+    return found
+}
+fn main { mut io: Io } {
+    let xs = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    io::println_i64{ &io, n = find{ xs, want = 6 } }
+    io::println_i64{ &io, n = find{ xs, want = 0 } }
+}
+""", '5\n-1\n')
+
+    def test_from_an_if_expression(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let mut i = 0
+    outer:
+    while i < 10 {
+        i = i + 1
+        while true {
+            let d = if i < 3 { i * 2 } else { break outer }
+            io::println_i64{ &io, n = d }
+            break
+        }
+    }
+    io::println_i64{ &io, n = i }
+}
+""", '2\n4\n3\n')
+
+    def test_sibling_loops_share_a_label(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    a: while true { break a }
+    a: while true { break a }
+    io::println_i64{ &io, n = 1 }
+}
+""", '1\n')
+
+    def test_unknown_label(self):
+        self.assertCompileError('fn main {} { while true { break nope } }',
+                                'no enclosing loop is labeled `nope`')
+
+    def test_label_reused_by_nested_loop(self):
+        self.assertCompileError("""
+fn main {} {
+    a: while true {
+        a: while true { break a }
+    }
+}
+""", 'loop label `a` is already used by an enclosing loop')
+
+    def test_only_while_is_labeled(self):
+        self.assertCompileError('fn main {} {\n    a: if true { }\n}', 'only a `while` can be labeled')
+
+    def test_defer_cannot_leave_through_a_label(self):
+        self.assertCompileError("""
+fn main {} {
+    a: while true {
+        defer { while true { break a } }
+        break
+    }
+}
+""", 'no enclosing loop is labeled `a` in this defer')
+
+
 class LetElse(Base):
     """§11 Let-else: `let variant{ ... } = e else { ... }`."""
 
@@ -3108,6 +3239,25 @@ fn main { mut io: Io } {
         self.assertRegex(text, r'\(let 1 \(sbytes \d+ "abc"\)\)')
         self.assertRegex(text, r'\(struct \d+ \[\(0 \(sbytes \d+ "hi"\)\)\]\)')
 
+    def test_loop_labels(self):
+        text = self.ir("""
+fn main { mut io: Io } {
+    a: while true {
+        b: while true {
+            while true { continue b }
+            if true { break b }
+            break a
+        }
+    }
+}
+""")
+        # A loop gets an id only if an inner loop's jump leaves or repeats it; a labeled jump to
+        # the innermost loop is plain.
+        self.assertIn('(continue 1)', text)
+        self.assertIn('(break 2)', text)
+        self.assertIn('(break)', text)
+        self.assertRegex(text, r'\n    \} 1\)\n  \} 2\)')
+
     def test_examples_verify(self):
         from ctxi.irdump import verify
         from ctxi.__main__ import load_sources
@@ -3203,6 +3353,41 @@ fn main { mut io: Io } -> i32 {
 }
 """)
         self.assertEqual((out, code), ('10\n0\n', 4))
+
+    def test_labeled_loops(self):
+        out, code = self.both("""
+fn main { mut io: Io } -> i32 {
+    let mut i = 0
+    let mut hits = 0
+    outer:
+    while i < 5 {
+        i = i + 1
+        defer {
+            // copied to each exit of the body: its labels must not clash
+            let mut k = 0
+            inner: while true { while true { k = k + 1; if k == 2 { break inner } } }
+            hits = hits + 100 * k / 2
+        }
+        let mut j = 0
+        while j < 5 {
+            j = j + 1
+            if j == 2 { continue outer }
+            if i == 4 { break outer }
+            hits = hits + 1
+        }
+    }
+    io::println_i64{ &io, n = hits }
+    let d = if hits > 0 { 1 } else { 2 }
+    top: while true {
+        while true {
+            let v = if d == 1 { break top } else { 5 }
+            return v
+        }
+    }
+    return i
+}
+""")
+        self.assertEqual((out, code), ('403\n', 4))
 
     def test_evaluation_order(self):
         out, _ = self.both("""

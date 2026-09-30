@@ -16,7 +16,8 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
    fails. Warn, or let calls skip non-function locals.
 4. ~~**No shared match arms.** `a | b => { }` would collapse long runs of `x => { true }`.~~
    *Done:* spec §8 Match, rule 3; patterns in an arm may share bindings.
-5. **No labeled break** out of nested loops; flags instead (§16 Q10).
+5. ~~**No labeled break** out of nested loops; flags instead (§16 Q10).~~ *Done:* `name:` labels a
+   `while`, and `break name` / `continue name` act on it (spec §11, rule 10).
 6. ~~**No shift or bitwise operators.** `256 << 20` becomes `268435456`; masks go through
    `@wrap_*`. Needed: `<< >> & | ^`.~~ *Done:* spec §11 Expressions.
 7. **Exclusivity blocks "context plus one field".** `f{ &e, xs = &e.list }` is rejected, so the

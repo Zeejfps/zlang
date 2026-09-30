@@ -34,6 +34,14 @@ BREAK = object()
 CONTINUE = object()
 
 
+class Jump:
+    """The signal of a labeled break or continue that leaves or repeats an outer loop."""
+    __slots__ = ('loop', 'repeat')
+
+    def __init__(self, loop, repeat):
+        self.loop, self.repeat = loop, repeat
+
+
 class Value:
     """The signal a value block's last expression returns: the block's value."""
     __slots__ = ('v',)
@@ -579,15 +587,22 @@ class Compiler:
                 if r is not None:
                     if r is BREAK:
                         return None
-                    if r is not CONTINUE:
-                        return r
+                    if r is CONTINUE:
+                        continue
+                    if type(r) is Jump and r.loop is s:
+                        if r.repeat:
+                            continue
+                        return None
+                    return r
         return loop
 
     def s_Break(self, s):
-        return lambda fp: BREAK
+        sig = BREAK if s.target is None else Jump(s.target, False)
+        return lambda fp: sig
 
     def s_Continue(self, s):
-        return lambda fp: CONTINUE
+        sig = CONTINUE if s.target is None else Jump(s.target, True)
+        return lambda fp: sig
 
     def s_Match(self, s):
         return self.match(s, self.block)

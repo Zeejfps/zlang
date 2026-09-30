@@ -304,17 +304,15 @@ class Parser:
             if tok.val == 'if':
                 return self.if_stmt()
             if tok.val == 'while':
-                self.next()
-                cond = self.cond_expr()
-                return A.While(cond, self.block(), pos)
+                return self.while_stmt(None)
             if tok.val == 'match':
                 return self.match_stmt()
             if tok.val == 'break':
                 self.next()
-                return A.Break(pos)
+                return A.Break(pos, self.jump_label())
             if tok.val == 'continue':
                 self.next()
-                return A.Continue(pos)
+                return A.Continue(pos, self.jump_label())
             if tok.val == 'defer':
                 self.next()
                 if self.is_op('{'):
@@ -329,6 +327,13 @@ class Parser:
                 if nxt.nl or self.is_op('}') or self.is_op(';'):
                     return A.Return(None, pos)
                 return A.Return(self.expr(), pos)
+        if tok.kind == 'id' and self.is_op(':', 1):
+            # A loop label: `name:`, then the `while`, on the same line or the next.
+            self.next()
+            self.next()
+            if not self.is_kw('while'):
+                self.err(f"only a `while` can be labeled, found {self.describe(self.peek())}")
+            return self.while_stmt((tok.val, pos))
         e = self.expr()
         if self.is_op('='):
             self.next()
@@ -336,6 +341,19 @@ class Parser:
                 return A.ExprStmt(self.expr(), pos, discard=True)
             return A.Assign(e, self.expr(), pos)
         return A.ExprStmt(e, pos)
+
+    def while_stmt(self, label):
+        pos = self.next().pos
+        cond = self.cond_expr()
+        return A.While(cond, self.block(), pos, label)
+
+    def jump_label(self):
+        """The label after `break` or `continue`, if one follows on the same line."""
+        tok = self.peek()
+        if tok.kind == 'id' and not tok.nl:
+            self.next()
+            return tok.val
+        return None
 
     def let_else(self, pos, variant, binders):
         """`let variant{ binders } = init else ...`, after the pattern."""

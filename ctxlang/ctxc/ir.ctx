@@ -84,9 +84,9 @@ namespace ir {
         assign{ place: Expr, value: Expr },                     // (set PLACE E)
         eval{ e: Expr },                                        // (do E)
         cond{ c: Expr, then: Block, els: ?Block },              // (if E BLOCK BLOCK|_)
-        loop{ c: Expr, body: Block },                           // (while E BLOCK)
-        brk,
-        cont,
+        loop{ c: Expr, body: Block, label: ?u32 },              // (while E BLOCK L?)
+        brk{ label: ?u32 },                                     // (break L?)
+        cont{ label: ?u32 },                                    // (continue L?)
         ret{ value: ?Expr },
         deferred{ body: Block },
         panic{ pos: Pos, msg: Bytes },

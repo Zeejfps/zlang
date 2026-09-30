@@ -17,13 +17,17 @@
 //                `if` and `match` expressions are statement expressions too; a branch that
 //                leaves jumps out of it with return, break or continue.
 //   defer        each deferred body is copied to every exit of its block, innermost first.
+//   loop labels  a loop with label L (one an inner break or continue leaves) is wrapped in a
+//                block with local labels: `{ __label__ _contL, _brkL; _contL: while (...) {...}
+//                _brkL:; }`, so copies of it made by defer don't clash. `continue L` jumps to
+//                _contL, which checks the condition again.
 //   panics       ctx_panic and checked helpers in ctxrt.h, with the IR's positions.
 
 namespace emit {
     type Out = ir_print::Out
 
-    union Scope { block, loop, deferred{ body: ir::Block } }
-    union Stop { block, loop, function }
+    union Scope { block, loop{ label: ?u32 }, deferred{ body: ir::Block } }
+    union Stop { block, loop, label{ id: u32 }, function }
 
     // An adapter from function type `from` to `to`, emitted as aK.
     struct Pair { from: ir::TypeId, to: ir::TypeId }
@@ -545,9 +549,31 @@ namespace emit {
                     block{ &e, b = body }
                 }
                 block => { match stop { block => { return } else => {} } }
-                loop  => { match stop { loop => { return } else => {} } }
+                loop{ label } => {
+                    match stop {
+                        loop => { return }
+                        label{ id } => { if label != null and label == id { return } }
+                        else => {}
+                    }
+                }
             }
         }
+    }
+
+    // break or continue: to the innermost loop, or to the loop with `label` through a goto.
+    fn jump { mut e: E, label: ?u32, word: []u8, target: []u8 } {
+        if label == null {
+            defers{ &e, stop = Stop::loop }
+            put{ &e, a = " " }
+            put{ &e, a = word }
+            put{ &e, a = ";" }
+            return
+        }
+        defers{ &e, stop = Stop::label{ id = label } }
+        put{ &e, a = " goto " }
+        put{ &e, a = target }
+        num{ &e, n = label }
+        put{ &e, a = ";" }
     }
 
     fn has_defers { e: E, stop: Stop } -> bool {
@@ -557,7 +583,7 @@ namespace emit {
             match list::items{ list = e.scopes }[i] {
                 deferred => { return true }
                 block    => { match stop { block => { return false } else => {} } }
-                loop     => { match stop { loop => { return false } else => {} } }
+                loop     => { match stop { loop | label => { return false } else => {} } }
             }
         }
         return false
@@ -612,22 +638,30 @@ namespace emit {
                     block{ &e, b = els }
                 }
             }
-            loop{ c, body } => {
+            loop{ c, body, label } => {
+                if label != null {
+                    put{ &e, a = "{ __label__ _cont" }
+                    num{ &e, n = label }
+                    put{ &e, a = ", _brk" }
+                    num{ &e, n = label }
+                    put{ &e, a = "; _cont" }
+                    num{ &e, n = label }
+                    put{ &e, a = ": " }
+                }
                 put{ &e, a = "while (" }
                 expr{ &e, x = c }
                 put{ &e, a = ") " }
-                push_scope{ &e, s = Scope::loop }
+                push_scope{ &e, s = Scope::loop{ label } }
                 block{ &e, b = body }
                 _ = list::pop{ list = &e.scopes }
+                if label != null {
+                    put{ &e, a = " _brk" }
+                    num{ &e, n = label }
+                    put{ &e, a = ":; }" }
+                }
             }
-            brk => {
-                defers{ &e, stop = Stop::loop }
-                put{ &e, a = " break;" }
-            }
-            cont => {
-                defers{ &e, stop = Stop::loop }
-                put{ &e, a = " continue;" }
-            }
+            brk{ label } => { jump{ &e, label, word = "break", target = "_brk" } }
+            cont{ label } => { jump{ &e, label, word = "continue", target = "_cont" } }
             ret{ value } => { ret{ &e, value } }
             deferred{ body } => {
                 push_scope{ &e, s = Scope::deferred{ body } }

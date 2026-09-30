@@ -264,14 +264,15 @@ namespace ir_print {
                     some{ value } => { block{ &o, b = value, depth } }
                 }
             }
-            loop{ c, body } => {
+            loop{ c, body, label } => {
                 text{ &o, a = "(while " }
                 expr{ &o, e = c, depth }
                 char{ &o, c = ' ' }
                 block{ &o, b = body, depth }
+                label_of{ &o, label }
             }
-            brk  => { text{ &o, a = "(break" } }
-            cont => { text{ &o, a = "(continue" } }
+            brk{ label }  => { text{ &o, a = "(break" }; label_of{ &o, label } }
+            cont{ label } => { text{ &o, a = "(continue" }; label_of{ &o, label } }
             ret{ value } => {
                 text{ &o, a = "(return " }
                 match value {
@@ -632,6 +633,11 @@ namespace ir_print {
     fn spaced { mut o: Out, n: u64 } {
         char{ &o, c = ' ' }
         num{ &o, n }
+    }
+
+    // A loop label, if there is one: a space, then its id.
+    fn label_of { mut o: Out, label: ?u32 } {
+        if label != null { spaced{ &o, n = label } }
     }
 
     fn num { mut o: Out, n: u64 } {
