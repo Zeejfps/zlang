@@ -67,8 +67,19 @@ def run_sources(sources, out=None, err=None, inp=None, stack_size=16 << 20, args
     return run_checked(load_sources(sources), out=out, err=err, inp=inp, stack_size=stack_size, args=args)
 
 
-def run_checked(c, out=None, err=None, inp=None, stack_size=16 << 20, args=()):
-    """Runs a program load_sources returned. It can run any number of times."""
+def run_checked(c, out=None, err=None, inp=None, stack_size=16 << 20, args=(), name='program'):
+    """Runs a program load_sources returned. It can run any number of times.
+
+    With CTX_BACKEND=c in the environment, it runs through ctxc's C backend (ctxi/cbackend.py).
+    """
+    if os.environ.get('CTX_BACKEND') == 'c':
+        from . import cbackend
+        return cbackend.run(c, out=out, err=err, inp=inp, stack_size=stack_size, args=args, name=name)
+    return interpret(c, out=out, err=err, inp=inp, stack_size=stack_size, args=args)
+
+
+def interpret(c, out=None, err=None, inp=None, stack_size=16 << 20, args=()):
+    """run_checked, always with the interpreter."""
     rt = Runtime(c, stack_size=stack_size, out=out, err=err, inp=inp)
     main = c.main
     cap = rt.push_bytes(bytes(16), 16)
@@ -136,7 +147,7 @@ def main(argv=None):
                 from .irdump import dump
                 sys.stdout.buffer.write(dump(load_sources(sources)).encode())
             else:
-                result[0] = run_sources(sources, stack_size=a.stack, args=a.args)
+                result[0] = run_checked(load_sources(sources), stack_size=a.stack, args=a.args, name=a.file)
         except CompileError as e:
             sys.stdout.flush()
             print(f'{fmt_pos(a.file, e.pos)}: error: {e.msg}', file=sys.stderr)

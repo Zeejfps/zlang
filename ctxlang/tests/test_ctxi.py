@@ -2,6 +2,7 @@
 
 import io
 import os
+import shutil
 import sys
 import unittest
 
@@ -2235,7 +2236,7 @@ class Mem(Base):
             self.run_mem("""
     mem::pages{ &mem, size = 67108864 }
     return down{ n = 0 }
-""", extra='fn down { n: i32 } -> i32 { let big: [1048576]u8 = [0; 1048576]; if (n == 20) { return 0 }; return down{ n = n + 1 } }\n')
+""", extra='fn down { n: i32 } -> i32 { let big: [1048576]u8 = [0; 1048576]; if (n == 20) { return 0 }; return down{ n = n + 1 } + @as(i32, big[@as(usize, n)]) }\n')
         self.assertIn('stack overflow', cm.exception.msg)
 
     def test_pages_need_capability(self):
@@ -2403,6 +2404,146 @@ fn main { mut io: Io } -> i32 {
             code = run_sources(read_program(os.path.join(ROOT, 'ctxc')), out=out, args=['roundtrip', path])
         self.assertEqual(code, 0)
         self.assertEqual(out.getvalue().decode(), text)
+
+
+@unittest.skipUnless(shutil.which('gcc') or shutil.which('zig'), 'needs a C compiler')
+class CBackend(Base):
+    """ctxc's C backend (ctxi/cbackend.py) agrees with the interpreter on programs that stress it.
+
+    `CTX_BACKEND=c python -m unittest discover tests` runs every other test through it too."""
+
+    def both(self, src, args=(), stdin=b''):
+        """(output, exit code or panic message) from ctxi and from the C backend: equal."""
+        from ctxi.__main__ import load, interpret
+        from ctxi import cbackend
+        results = []
+        for runner in (interpret, cbackend.run):
+            out = io.BytesIO()
+            try:
+                code = runner(load(src), out=out, args=list(args), inp=io.BytesIO(stdin))
+            except Panic as e:
+                code = 'panic: ' + e.msg
+            results.append((out.getvalue().decode(), code))
+        self.assertEqual(results[0], results[1])
+        return results[0]
+
+    def test_evaluation_order(self):
+        out, _ = self.both("""
+fn bump { mut n: i32 } -> i32 { n = n + 1; return n }
+fn pair { a: i32, b: i32 } -> i32 { return a * 10 + b }
+fn main { mut io: Io } {
+    let mut x = 1
+    io::println_i64{ &io, n = x + bump{ n = &x } }             // 1 + 2
+    io::println_i64{ &io, n = pair{ b = bump{ n = &x }, a = bump{ n = &x } } }
+    let mut a = [0, 0, 0]
+    a[@as(usize, bump{ n = &x } - 5)] = bump{ n = &x }             // value first, then the place
+    io::println_i64{ &io, n = a[1] * 100 + a[2] }
+}
+""")
+        self.assertEqual(out, '3\n43\n500\n')
+
+    def test_defer_on_every_exit(self):
+        out, _ = self.both("""
+fn f { mut io: Io, n: i32 } -> i32 {
+    defer io::println_i64{ &io, n = 100 }
+    let mut i = 0
+    while (true) {
+        defer io::println_i64{ &io, n = i }
+        i = i + 1
+        if (i == 2) { continue }
+        if (i == 3) { break }
+    }
+    let v = if (n > 0) { return n } else { 7 }
+    return v
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = f{ &io, n = 5 } }
+    io::println_i64{ &io, n = f{ &io, n = 0 } }
+}
+""")
+        self.assertEqual(out, '1\n2\n3\n100\n5\n1\n2\n3\n100\n7\n')
+
+    def test_function_values(self):
+        out, _ = self.both("""
+fn add { a: i32, b: i32 } -> i32 { return a + b }
+fn one { a: i32 } -> i32 { return a }
+fn apply { f: &fn{ a: i32 } -> i32, a: i32 } -> i32 { return f{ a } }
+fn wide { f: fn{ a: i32, b: i32 } -> i32 } -> i32 { return f{ a = 3, b = 4 } }
+fn main { mut io: Io } {
+    let add2 = add{ b = 2, _ }
+    io::println_i64{ &io, n = apply{ f = add2, a = 5 } }
+    io::println_i64{ &io, n = apply{ f = one, a = 6 } }
+    io::println_i64{ &io, n = wide{ f = one } }
+    let g: fn{ a: i32, b: i32 } -> i32 = add
+    let h = g{ a = 1, _ }
+    io::println_i64{ &io, n = h{ b = 9 } }
+}
+""")
+        self.assertEqual(out, '7\n6\n3\n10\n')
+
+    def test_numbers(self):
+        out, _ = self.both("""
+fn main { mut io: Io } {
+    let x: f32 = 0.1
+    io::println_f32{ &io, n = x }
+    io::println_f64{ &io, n = x }
+    io::println_f64{ &io, n = 1e16 }
+    io::println_f64{ &io, n = 0.0001 }
+    io::println_f64{ &io, n = 0.00001 }
+    io::println_f64{ &io, n = -2.5 / 0.0 }
+    let big: i64 = -9223372036854775807 - 1
+    io::println_i64{ &io, n = big % -1 }
+    io::println_i64{ &io, n = -7 / 2 }
+    io::println_u64{ &io, n = @wrap_mul(@as(u64, 3), 18446744073709551615) }
+    io::println_i64{ &io, n = @trunc(i8, 300) }
+    io::println_i64{ &io, n = @as(i64, 2.9) }
+}
+""")
+        self.assertEqual(out, '0.1\n0.10000000149011612\n1e+16\n0.0001\n1e-05\n-inf\n0\n-3\n'
+                              '18446744073709551613\n44\n2\n')
+
+    def test_panics(self):
+        for body, msg in [
+            ('let a = [1, 2]\n    let i: usize = 2\n    io::println_i64{ &io, n = a[i] }',
+             'index 2 out of bounds for length 2'),
+            ('let x: i32 = 2147483647\n    io::println_i64{ &io, n = x + 1 }', 'integer overflow'),
+            ('let z = 0\n    io::println_i64{ &io, n = 1 / z }', 'division by zero'),
+            ('let f = 1e300\n    io::println_i64{ &io, n = @as(i32, f) }',
+             '@as: 1e+300 is not representable in i32'),
+            ('let n: i64 = -1\n    io::println_u64{ &io, n = @as(u32, n) }', '@as: -1 is not representable in u32'),
+            ('@panic("bad \\"thing\\"")', 'bad "thing"'),
+        ]:
+            with self.subTest(msg=msg):
+                _, code = self.both('fn main { mut io: Io } {\n    %s\n}\n' % body)
+                self.assertEqual(code, 'panic: ' + msg)
+
+    def test_matches_and_optionals(self):
+        out, code = self.both("""
+union Shape { circle{ r: f64 }, square{ side: f64 }, none }
+fn area { s: *Shape } -> f64 {
+    return match (s) {
+        circle{ &r } => { r = r * 2.0; r }
+        square{ side } => { side * side }
+        else => { 0.0 }
+    }
+}
+fn first { xs: slice::Slice(i32) } -> ?i32 {
+    if (xs.len == 0) { return null }
+    return slice::get{ s = xs, i = 0 }
+}
+fn main { mut io: Io, args: Args } -> i32 {
+    let mut c = Shape::circle{ r = 1.5 }
+    io::println_f64{ &io, n = area{ s = &c } }
+    io::println_f64{ &io, n = area{ s = &c } }
+    let mut sq = Shape::square{ side = 3.0 }
+    io::println_f64{ &io, n = area{ s = &sq } }
+    let mut nums = [4, 5]
+    let some{ value } = first{ xs = slice::of(i32){ a = &nums } } else { return 1 }
+    let null = first{ xs = slice::empty(i32){} } else { return 2 }
+    return value + @as(i32, args.len)
+}
+""", args=['x', 'y'])
+        self.assertEqual((out, code), ('3.0\n6.0\n9.0\n', 6))
 
 
 class WordCountExample(Base):

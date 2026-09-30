@@ -1,13 +1,21 @@
 // ctxc: the ctxlang compiler, written in ctxlang. A directory is one program: this file holds
-// the driver, ir.ctx the typed IR, ir_read.ctx and ir_print.ctx its text form.
+// the driver, ir.ctx the typed IR, ir_read.ctx and ir_print.ctx its text form, emit_c.ctx the
+// C backend.
 //
 //   python -m ctxi ctxc roundtrip FILE.ir      reads IR (from `python -m ctxi PROGRAM --ir`)
 //                                              and prints it back; the output must equal FILE.ir
+//   python -m ctxi ctxc c FILE.ir OUT.c        writes the program as C, for ctxc/rt/ctxrt.c
+//
+// tools/ctxc.py runs the whole pipeline: IR, C and the C compiler.
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let roundtrip = "roundtrip"
-    if (args.len != 2 or not map::eq_bytes{ a = slice::get{ s = args, i = 0 }, b = slice::of(u8){ a = &roundtrip } }) {
-        let usage = "usage: ctxc roundtrip FILE.ir"
+    let c = "c"
+    let mut to_c = false
+    if (args.len == 3 and map::eq_bytes{ a = slice::get{ s = args, i = 0 }, b = slice::of(u8){ a = &c } }) {
+        to_c = true
+    } else if (args.len != 2 or not map::eq_bytes{ a = slice::get{ s = args, i = 0 }, b = slice::of(u8){ a = &roundtrip } }) {
+        let usage = "usage: ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c"
         io::eprintln{ &io, s = ascii::of{ chars = &usage } }
         return 2
     }
@@ -18,7 +26,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
         cannot{ &io, path, what = "cannot read" }
         return 1
     }
-    let some{ value = pages } = mem::pages{ &mem, size = 16777216 + @as(usize, size) * 24 } else {
+    let some{ value = pages } = mem::pages{ &mem, size = 16777216 + @as(usize, size) * 32 } else {
         cannot{ &io, path, what = "out of memory reading" }
         return 1
     }
@@ -35,6 +43,15 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
         return 1
     }
 
+    if (to_c) {
+        let out = slice::get{ s = args, i = 2 }
+        let code = emit::program{ heap = &heap, p = prog }
+        let ok = fs::write_all{ &fs, path = out, bytes = code } else {
+            cannot{ &io, path = out, what = "cannot write" }
+            return 1
+        }
+        return 0
+    }
     let mut o = ir_print::out{ heap = &heap, types = prog.types }
     ir_print::program{ &o, p = prog }
     io::write{ &io, to = io::Stream::out, bytes = list::items{ list = o.bytes } }
