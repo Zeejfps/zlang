@@ -3,8 +3,8 @@
     python tools/ctxc.py PROGRAM [-o EXE] [--c FILE.c] [--run [args...]]
 
 PROGRAM is a .ctx file or a directory, as for ctxi. The pipeline: ctxi checks the program and
-dumps its IR, ctxc (running under ctxi) writes C, and gcc (or zig cc, with CTX_CC=zig) builds it
-with ctxc/rt/ctxrt.c. Builds are cached in build/cbackend.
+dumps its IR, a native ctxc (bootstrapped into build/ctxc on first use) writes C, and gcc (or zig
+cc, with CTX_CC=zig) builds it with ctxc/rt/ctxrt.c. Builds are cached in build/cbackend.
 """
 
 import argparse
@@ -37,7 +37,7 @@ def main(argv):
     if a.c:
         shutil.copyfile(os.path.splitext(exe)[0] + '.c', a.c)
     if a.out:
-        shutil.copyfile(exe, a.out)
+        shutil.copy(exe, a.out)
         exe = a.out
     if a.run is not None:
         return subprocess.run([exe, *a.run]).returncode
