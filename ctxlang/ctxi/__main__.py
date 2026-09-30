@@ -1,6 +1,6 @@
 """ctxi: interpreter for ctxlang.
 
-    python -m ctxi PROGRAM [--check | --ir] [--stack BYTES] [args...] [-- args...]
+    python -m ctxi PROGRAM [--check | --ir | --decls] [--stack BYTES] [args...] [-- args...]
 
 PROGRAM is a .ctx file, or a directory whose .ctx files together make up one program.
 """
@@ -121,6 +121,7 @@ def main(argv=None):
     ap.add_argument('file', help='a .ctx file, or a directory of them')
     ap.add_argument('--check', action='store_true', help='only parse and type-check')
     ap.add_argument('--ir', action='store_true', help="print the program's typed IR (ctxi/irdump.py)")
+    ap.add_argument('--decls', action='store_true', help="print the program's checked declarations (ctxi/declsdump.py)")
     ap.add_argument('--stack', type=int, default=16 << 20, help='stack size in bytes')
     ap.add_argument('args', nargs='*', help="the program's arguments, in main's `args`; "
                                             "put any that start with '-' after --")
@@ -139,6 +140,9 @@ def main(argv=None):
             sources = read_program(a.file)
             if a.check:
                 load_sources(sources)
+            elif a.decls:
+                from .declsdump import dump_sources
+                sys.stdout.buffer.write(dump_sources(sources, std_decls(), natives()).encode())
             elif a.ir:
                 from .irdump import dump
                 sys.stdout.buffer.write(dump(load_sources(sources)).encode())

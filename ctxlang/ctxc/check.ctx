@@ -1,0 +1,1364 @@
+// The checker, a port of ctxi/checker.py. So far: collecting declarations into namespaces,
+// resolving the types in their signatures (§10, §12), enum values and array lengths, layouts,
+// and the rules for `main` (§15). Bodies come next (PLAN.md stage 6).
+//
+//   let mut c = check::new{ files, std_files, &heap, &diags }
+//   check::declarations{ &c }
+//
+// It reports what ctxi reports, in the same order: the phases run as ctxi's do, over the files
+// and declarations in ctxi's order. Instead of stopping at an error it goes on, with the error
+// type (types::ERROR) where a type couldn't be resolved, and reports each message once.
+//
+// What it learns goes in side tables keyed by a node's file and id, not into the tree: the
+// declaration each syntax declaration became, what each name in a type refers to, and each type
+// expression's type.
+
+namespace check {
+    type Heap = arena::Arena
+    type Id = types::Id
+
+    const NONE: u32 = 4294967295
+
+    // A diagnostic about the program as a whole, such as a missing `main`, has this file and is
+    // shown at 1:1.
+    const NO_FILE: u32 = 4294967295
+
+    // The namespaces every program has. Universe holds the primitives and capabilities, std the
+    // standard library's top level, and root the program's own, which sees std's names.
+    const UNIVERSE: u32 = 0
+    const STD: u32 = 1
+    const ROOT: u32 = 2
+
+    // A source file: std's files come first, then the program's, then the natives' signatures.
+    struct File { name: []u8, text: []u8, lines: []u32, tree: syntax::File }
+
+    enum Kind: u8 { func, record, sum, enumeration, alias, constant, native }
+
+    // A union variant, resolved. A variant without a payload has null fields.
+    struct Variant { name: []u8, fields: ?[]types::Field }
+
+    // A declaration: what the checker knows of it. fields are a struct's fields or a function's
+    // context, ty a const's type, an enum's base or a non-generic alias's type.
+    struct Decl {
+        kind:     Kind,
+        name:     syntax::Name,
+        ns:       u32,
+        qual:     []u8,                 // the name with its namespaces, as messages show it
+        syn:      syntax::Decl,
+        tparams:  []syntax::Name,
+        fields:   []types::Field,
+        variants: []Variant,
+        ret:      Id,
+        ty:       Id,
+        values:   []i64,                // an enum's, one per variant
+    }
+
+    // What a name in a path refers to.
+    union Entry {
+        space{ ns: u32 },
+        decl{ i: u32 },
+        prim{ p: types::Prim },
+        cap{ c: types::Cap },
+    }
+
+    struct Space {
+        name:   []u8,
+        qual:   []u8,
+        parent: u32,                         // NONE for the universe
+        paths:  map::Map([]u8, Entry, Heap),  // namespaces and types
+        values: map::Map([]u8, Entry, Heap),  // functions and consts
+    }
+
+    // A use of a name, for the side table: what it resolved to.
+    union Ref {
+        space{ ns: u32 },
+        decl{ i: u32 },
+        prim{ p: types::Prim },
+        cap{ c: types::Cap },
+        param{ decl: u32, index: u32 },
+    }
+
+    // Where a type expression is resolved: a namespace, and the generic parameters in scope,
+    // with the types they stand for. owner declares them.
+    struct Scope { ns: u32, owner: u32, names: []syntax::Name, args: []Id }
+
+    struct Layout { size: u64, align: u64 }
+
+    struct Checker {
+        heap:      *mut Heap,
+        diags:     *mut diag::Diags,
+        files:     []File,
+        std_files: usize,               // files[..std_files] are std's
+        ty:        types::Store,
+        spaces:    list::List(Space, Heap),
+        decls:     list::List(Decl, Heap),
+        // Declarations of each kind, in the order ctxi checks them.
+        structs:   list::List(u32, Heap),
+        unions:    list::List(u32, Heap),
+        enums:     list::List(u32, Heap),
+        aliases:   list::List(u32, Heap),
+        consts:    list::List(u32, Heap),
+        fns:       list::List(u32, Heap),
+        natives:   list::List(u32, Heap),
+        alias_stack: list::List(u32, Heap),
+        const_stack: list::List(u32, Heap),
+        // Side tables, keyed by key{ file, id }.
+        decl_of:   map::Map(u64, u32, Heap),     // a syntax declaration's Decl
+        space_of:  map::Map(u64, u32, Heap),     // a namespace declaration's Space
+        uses:      map::Map(u64, Ref, Heap),     // a Name's referent
+        type_of:   map::Map(u64, Id, Heap),      // a TypeExpr's type
+        layouts:   map::Map(Id, Layout, Heap),
+        busy:      map::Map(Id, bool, Heap),     // layouts being computed
+        main:      u32,                          // NONE unless `main` is valid
+    }
+
+    // The natives, functions the runtime provides (ctxi/natives.py), as source: each is declared
+    // in the std namespace of the same index.
+    const NATIVE_SPACES: [13][]u8 = [
+        "io", "io", "ascii", "ascii", "fs", "fs", "fs", "fs", "fs", "fs", "mem", "ascii", "ascii",
+    ]
+
+    const NATIVES: [13][]u8 = [
+        "fn write { mut io: Io, to: Stream, bytes: []u8 } {}",
+        "fn read { mut io: Io, into: []mut u8 } -> usize {}",
+        "fn f64_digits { n: f64, into: []mut u8 } -> usize {}",
+        "fn f32_digits { n: f32, into: []mut u8 } -> usize {}",
+        "fn sys_open { mut fs: Fs, path: []u8, mode: u8 } -> i64 {}",
+        "fn sys_read { mut fs: Fs, file: u32, into: []mut u8 } -> i64 {}",
+        "fn sys_write { mut fs: Fs, file: u32, bytes: []u8 } -> i64 {}",
+        "fn sys_close { mut fs: Fs, file: u32 } -> i64 {}",
+        "fn sys_size { mut fs: Fs, path: []u8 } -> i64 {}",
+        "fn sys_remove { mut fs: Fs, path: []u8 } -> i64 {}",
+        "fn sys_pages { mut mem: Mem, size: usize } -> []mut u8 {}",
+        "fn f64_parse { text: []u8 } -> f64 {}",
+        "fn f32_parse { text: []u8 } -> f32 {}",
+    ]
+
+    // The natives' source, one per line, to be parsed as the last file.
+    fn natives_source { mut heap: Heap } -> []u8 {
+        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+        let mut i: usize = 0
+        while i < NATIVES.len {
+            pushed{ ok = utf8::push{ &b, s = utf8::String{ bytes = NATIVES[i] } } and utf8::push{ &b, s = "\n" } }
+            i = i + 1
+        }
+        return utf8::view{ b }.bytes
+    }
+
+    fn new { files: []File, std_files: usize, mut heap: Heap, mut diags: diag::Diags } -> Checker {
+        let mut c = Checker{
+            heap = &heap, diags = &diags, files, std_files,
+            ty = types::store{ &heap },
+            spaces = list::new(Space){ realloc = arena::alloc, &heap },
+            decls = list::new(Decl){ realloc = arena::alloc, &heap },
+            structs = ids{ &heap }, unions = ids{ &heap }, enums = ids{ &heap }, aliases = ids{ &heap },
+            consts = ids{ &heap }, fns = ids{ &heap }, natives = ids{ &heap },
+            alias_stack = ids{ &heap }, const_stack = ids{ &heap },
+            decl_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            space_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            uses = map::new(u64, Ref){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            type_of = map::new(u64, Id){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            layouts = map::new(Id, Layout){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            busy = map::new(Id, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            main = NONE,
+        }
+        _ = space{ &c, name = "", parent = NONE }
+        _ = space{ &c, name = "", parent = UNIVERSE }
+        _ = space{ &c, name = "", parent = STD }
+        let mut i: usize = 0
+        while i < types::PRIM_NAMES.len {
+            let p = @as(types::Prim, i)
+            put_name{ &c, ns = UNIVERSE, values = false, name = types::PRIM_NAMES[i], e = Entry::prim{ p } }
+            i = i + 1
+        }
+        i = 0
+        while i < types::CAP_NAMES.len {
+            let cp = @as(types::Cap, i)
+            put_name{ &c, ns = UNIVERSE, values = false, name = types::CAP_NAMES[i], e = Entry::cap{ c = cp } }
+            i = i + 1
+        }
+        return c
+    }
+
+    fn ids { mut heap: Heap } -> list::List(u32, Heap) {
+        return list::new(u32){ realloc = arena::alloc, &heap }
+    }
+
+    // ---- the declaration phases (ctxi's Checker.check_decls, then check_main)
+
+    fn declarations { mut c: Checker } {
+        let mut f: usize = 0
+        while f < c.files.len - 1 {
+            collect{ &c, file = @as(u32, f), decls = c.files[f].tree.decls, ns = if f < c.std_files { STD } else { ROOT } }
+            f = f + 1
+        }
+        declare_natives{ &c }
+        generic_params{ &c, xs = c.structs }
+        generic_params{ &c, xs = c.unions }
+        generic_params{ &c, xs = c.fns }
+        each{ &c, xs = c.structs, what = Phase::structs }
+        each{ &c, xs = c.unions, what = Phase::unions }
+        each{ &c, xs = c.enums, what = Phase::enums }
+        each{ &c, xs = c.aliases, what = Phase::aliases }
+        each{ &c, xs = c.consts, what = Phase::consts }
+        each{ &c, xs = c.fns, what = Phase::sigs }
+        each{ &c, xs = c.natives, what = Phase::sigs }
+        check_main{ &c }
+    }
+
+    union Phase { structs, unions, enums, aliases, consts, sigs }
+
+    fn each { mut c: Checker, xs: list::List(u32, Heap), what: Phase } {
+        let items = list::items{ list = xs }
+        let mut i: usize = 0
+        while i < items.len {
+            let d = items[i]
+            match what {
+                structs => { resolve_struct{ &c, d } }
+                unions  => { resolve_union{ &c, d } }
+                enums   => { resolve_enum{ &c, d } }
+                aliases => { resolve_alias{ &c, d } }
+                consts  => { resolve_const{ &c, d } }
+                sigs    => { resolve_sig{ &c, d } }
+            }
+            i = i + 1
+        }
+    }
+
+    fn collect { mut c: Checker, file: u32, decls: []syntax::Decl, ns: u32 } {
+        let mut i: usize = 0
+        while i < decls.len {
+            let x = decls[i]
+            match x.k {
+                error => {}
+                func{ name, tparams } => {
+                    let d = declare{ &c, kind = Kind::func, x, file, name, tparams, ns }
+                    add_name{ &c, ns, values = true, name, e = Entry::decl{ i = d }, at = x.span }
+                    push{ xs = &c.fns, n = d }
+                }
+                constant{ name } => {
+                    let d = declare{ &c, kind = Kind::constant, x, file, name, tparams = no_names{}, ns }
+                    add_name{ &c, ns, values = true, name, e = Entry::decl{ i = d }, at = x.span }
+                    push{ xs = &c.consts, n = d }
+                }
+                record{ name, tparams } => {
+                    let d = declare{ &c, kind = Kind::record, x, file, name, tparams, ns }
+                    add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
+                    push{ xs = &c.structs, n = d }
+                }
+                sum{ name, tparams } => {
+                    let d = declare{ &c, kind = Kind::sum, x, file, name, tparams, ns }
+                    add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
+                    push{ xs = &c.unions, n = d }
+                }
+                enumeration{ name } => {
+                    let d = declare{ &c, kind = Kind::enumeration, x, file, name, tparams = no_names{}, ns }
+                    add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
+                    push{ xs = &c.enums, n = d }
+                }
+                alias{ name, tparams } => {
+                    let d = declare{ &c, kind = Kind::alias, x, file, name, tparams, ns }
+                    add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
+                    push{ xs = &c.aliases, n = d }
+                }
+                space{ name, decls = inner } => {
+                    let child = space{ &c, name = name.text, parent = ns }
+                    if not map::put{ m = &c.space_of, key = key{ file, id = x.id }, value = child } { @panic("check: out of memory") }
+                    add_name{ &c, ns, values = false, name, e = Entry::space{ ns = child }, at = x.span }
+                    collect{ &c, file, decls = inner, ns = child }
+                }
+            }
+            i = i + 1
+        }
+    }
+
+    fn no_names {} -> []syntax::Name {
+        return slice::empty(syntax::Name){}
+    }
+
+    fn declare { mut c: Checker, kind: Kind, x: syntax::Decl, file: u32, name: syntax::Name, tparams: []syntax::Name, ns: u32 } -> u32 {
+        let d = @as(u32, c.decls.len)
+        let item = Decl{
+            kind, name, ns, qual = qualify{ c, ns, name = name.text }, syn = x, tparams,
+            fields = slice::empty(types::Field){}, variants = slice::empty(Variant){},
+            ret = types::VOID, ty = types::ERROR, values = slice::empty(i64){},
+        }
+        if not list::push{ list = &c.decls, item } or not map::put{ m = &c.decl_of, key = key{ file, id = x.id }, value = d } {
+            @panic("check: out of memory")
+        }
+        return d
+    }
+
+    fn space { mut c: Checker, name: []u8, parent: u32 } -> u32 {
+        let ns = @as(u32, c.spaces.len)
+        let qual = if parent == NONE { name } else { qualify{ c, ns = parent, name } }
+        let item = Space{
+            name, qual, parent,
+            paths = map::new([]u8, Entry){ realloc = arena::alloc, heap = c.heap, hash = map::hash_bytes, eq = slice::eq_bytes },
+            values = map::new([]u8, Entry){ realloc = arena::alloc, heap = c.heap, hash = map::hash_bytes, eq = slice::eq_bytes },
+        }
+        if not list::push{ list = &c.spaces, item } { @panic("check: out of memory") }
+        return ns
+    }
+
+    // name inside namespace ns, as `a::b::name`. The top-level namespaces have no name.
+    fn qualify { c: Checker, ns: u32, name: []u8 } -> []u8 {
+        let prefix = get_space{ c, ns }.qual
+        if prefix.len == 0 { return name }
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "{}::{}", str{ s = prefix }, str{ s = name }) }
+        return utf8::view{ b }.bytes
+    }
+
+    fn add_name { mut c: Checker, ns: u32, values: bool, name: syntax::Name, e: Entry, at: source::Span } {
+        if name.text.len == 0 { return }          // missing: the parser has reported it
+        let sp = get_space{ c, ns }
+        let table = if values { sp.values } else { sp.paths }
+        if map::has{ m = table, key = name.text } {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "`{}` is already declared in this scope", str{ s = name.text }) }
+            error{ &c, at, msg = utf8::view{ b } }
+            return
+        }
+        put_name{ &c, ns, values, name = name.text, e }
+    }
+
+    fn put_name { mut c: Checker, ns: u32, values: bool, name: []u8, e: Entry } {
+        let sp = list::at{ list = c.spaces, i = ns }
+        let ok = if values { map::put{ m = &sp.values, key = name, value = e } } else { map::put{ m = &sp.paths, key = name, value = e } }
+        if not ok { @panic("check: out of memory") }
+    }
+
+    // Each native goes into its std namespace, as a function that has only a signature.
+    fn declare_natives { mut c: Checker } {
+        let file = @as(u32, c.files.len - 1)
+        let decls = c.files[file].tree.decls
+        let mut i: usize = 0
+        while i < decls.len {
+            let x = decls[i]
+            match x.k {
+                func{ name } => {
+                    let found = map::get{ m = get_space{ c, ns = STD }.paths, key = NATIVE_SPACES[i] }
+                    let mut ns = STD
+                    if found != null {
+                        match found { space{ ns = n } => { ns = n } else => {} }
+                    }
+                    if ns == STD {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "native `{}::{}` has no std namespace", str{ s = NATIVE_SPACES[i] }, str{ s = name.text }) }
+                        error{ &c, at = nowhere{}, msg = utf8::view{ b } }
+                    }
+                    let d = declare{ &c, kind = Kind::native, x, file, name, tparams = no_names{}, ns }
+                    add_name{ &c, ns, values = true, name, e = Entry::decl{ i = d }, at = x.span }
+                    push{ xs = &c.natives, n = d }
+                }
+                else => { @panic("check: a native must be a function") }
+            }
+            i = i + 1
+        }
+    }
+
+    fn generic_params { mut c: Checker, xs: list::List(u32, Heap) } {
+        let items = list::items{ list = xs }
+        let mut i: usize = 0
+        while i < items.len {
+            let d = get_decl{ c, d = items[i] }
+            let ps = d.tparams
+            let mut dup = false
+            let mut j: usize = 0
+            while j < ps.len {
+                let mut k: usize = 0
+                while k < j {
+                    if slice::eq_bytes{ a = ps[j].text, b = ps[k].text } { dup = true }
+                    k = k + 1
+                }
+                j = j + 1
+            }
+            if dup {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "duplicate generic parameter in `{}`", str{ s = d.name.text }) }
+                error{ &c, at = d.syn.span, msg = utf8::view{ b } }
+            }
+            i = i + 1
+        }
+    }
+
+    // The scope of declaration d's own generic parameters, each standing for itself.
+    fn own_scope { mut c: Checker, d: u32 } -> Scope {
+        let x = get_decl{ c, d }
+        let mut args = list::new(Id){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < x.tparams.len {
+            push{ xs = &args, n = types::intern{ s = &c.ty, t = types::Type::param{ decl = d, index = @as(u32, i) } } }
+            i = i + 1
+        }
+        return Scope{ ns = x.ns, owner = d, names = x.tparams, args = list::items{ list = args } }
+    }
+
+    fn resolve_struct { mut c: Checker, d: u32 } {
+        let x = get_decl{ c, d }
+        let sc = own_scope{ &c, d }
+        let mut out = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        match x.syn.k {
+            record{ fields } => {
+                let mut i: usize = 0
+                while i < fields.len {
+                    let f = fields[i]
+                    if seen_field{ fields, i } { duplicate{ &c, what = "field", name = f.name, at = f.span } }
+                    let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
+                    add_field{ xs = &out, f = types::Field{ name = f.name.text, mutable = false, ty = t } }
+                    i = i + 1
+                }
+            }
+            else => {}
+        }
+        list::at{ list = c.decls, i = d }.fields = list::items{ list = out }
+    }
+
+    fn resolve_union { mut c: Checker, d: u32 } {
+        let x = get_decl{ c, d }
+        let sc = own_scope{ &c, d }
+        let mut out = list::new(Variant){ realloc = arena::alloc, heap = c.heap }
+        match x.syn.k {
+            sum{ variants } => {
+                let mut i: usize = 0
+                while i < variants.len {
+                    let v = variants[i]
+                    let mut k: usize = 0
+                    while k < i {
+                        if slice::eq_bytes{ a = variants[k].name.text, b = v.name.text } and v.name.text.len > 0 {
+                            duplicate{ &c, what = "variant", name = v.name, at = v.span }
+                            break
+                        }
+                        k = k + 1
+                    }
+                    let vfields = v.fields
+                    if vfields == null {
+                        add_variant{ xs = &out, v = Variant{ name = v.name.text, fields = null } }
+                    } else {
+                        let mut fs = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+                        let mut j: usize = 0
+                        while j < vfields.len {
+                            let f = vfields[j]
+                            if seen_field{ fields = vfields, i = j } { duplicate{ &c, what = "field", name = f.name, at = f.span } }
+                            let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
+                            add_field{ xs = &fs, f = types::Field{ name = f.name.text, mutable = false, ty = t } }
+                            j = j + 1
+                        }
+                        add_variant{ xs = &out, v = Variant{ name = v.name.text, fields = list::items{ list = fs } } }
+                    }
+                    i = i + 1
+                }
+            }
+            else => {}
+        }
+        list::at{ list = c.decls, i = d }.variants = list::items{ list = out }
+    }
+
+    // Whether fields[i]'s name comes earlier in fields.
+    fn seen_field { fields: []syntax::Field, i: usize } -> bool {
+        if fields[i].name.text.len == 0 { return false }
+        let mut k: usize = 0
+        while k < i {
+            if slice::eq_bytes{ a = fields[k].name.text, b = fields[i].name.text } { return true }
+            k = k + 1
+        }
+        return false
+    }
+
+    // "duplicate field `a`"
+    fn duplicate { mut c: Checker, what: utf8::String, name: syntax::Name, at: source::Span } {
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "duplicate {} `{}`", what, str{ s = name.text }) }
+        error{ &c, at, msg = utf8::view{ b } }
+    }
+
+    // The base type, and each variant's value: the one given, or one more than the last.
+    fn resolve_enum { mut c: Checker, d: u32 } {
+        let x = get_decl{ c, d }
+        let empty = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }
+        let mut values = list::new(i64){ realloc = arena::alloc, heap = c.heap }
+        match x.syn.k {
+            enumeration{ base, variants } => {
+                let mut t = rtype{ &c, te = base, sc = empty, allow_bound = false }
+                if t != types::ERROR and not types::is_int{ s = c.ty, t } {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "enum `{}` needs an integer base type, got {}", str{ s = x.name.text }, tstr{ c, t }) }
+                    error{ &c, at = base.span, msg = utf8::view{ b } }
+                    t = types::ERROR
+                }
+                list::at{ list = c.decls, i = d }.ty = t
+                let mut next: ?i64 = 0
+                let mut i: usize = 0
+                while i < variants.len {
+                    let v = variants[i]
+                    let mut k: usize = 0
+                    while k < i {
+                        if slice::eq_bytes{ a = variants[k].name.text, b = v.name.text } and v.name.text.len > 0 {
+                            duplicate{ &c, what = "variant", name = v.name, at = v.span }
+                            break
+                        }
+                        k = k + 1
+                    }
+                    let given = v.value
+                    let value = if given == null { next } else { const_int{ &c, e = given, ns = x.ns, what = "an enum value" } }
+                    next = null
+                    if value != null {
+                        if t != types::ERROR { enum_value{ &c, t, name = v.name, value, at = v.span, variants, before = list::items{ list = values } } }
+                        if value < 9223372036854775807 { next = value + 1 }
+                    }
+                    push_i64{ xs = &values, n = if value == null { 0 } else { value } }
+                    i = i + 1
+                }
+            }
+            else => {}
+        }
+        list::at{ list = c.decls, i = d }.values = list::items{ list = values }
+    }
+
+    // Checks that enum value `value` of variant `name` fits t and that no earlier one has it.
+    fn enum_value { mut c: Checker, t: Id, name: syntax::Name, value: i64, at: source::Span, variants: []syntax::EnumVariant, before: []i64 } {
+        let p = @as(types::Prim, t - types::FIRST_PRIM)
+        if not types::fits{ p, negative = value < 0, magnitude = magnitude{ v = value } } {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "value {} of `{}` does not fit in {}", value, str{ s = name.text }, tstr{ c, t }) }
+            error{ &c, at, msg = utf8::view{ b } }
+        }
+        let mut k: usize = 0
+        while k < before.len {
+            if before[k] == value {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`{}` has the same value ({}) as `{}`", str{ s = name.text }, value, str{ s = variants[k].name.text }) }
+                error{ &c, at, msg = utf8::view{ b } }
+                return
+            }
+            k = k + 1
+        }
+    }
+
+    fn magnitude { v: i64 } -> u64 {
+        if v >= 0 { return @as(u64, v) }
+        return @as(u64, -(v + 1)) + 1
+    }
+
+    // A generic alias is resolved where it is used; a plain one here, for its errors.
+    fn resolve_alias { mut c: Checker, d: u32 } {
+        let x = get_decl{ c, d }
+        if x.tparams.len > 0 { return }
+        let t = decl_type{ &c, e = Entry::decl{ i = d }, name = x.name, args = null, at = x.syn.span, allow_bound = true }
+        list::at{ list = c.decls, i = d }.ty = t
+    }
+
+    fn resolve_const { mut c: Checker, d: u32 } {
+        let x = get_decl{ c, d }
+        match x.syn.k {
+            constant{ ty } => {
+                let empty = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }
+                let t = rtype{ &c, te = ty, sc = empty, allow_bound = false }
+                list::at{ list = c.decls, i = d }.ty = t
+            }
+            else => {}
+        }
+    }
+
+    // A function's (or a native's) context fields and return type.
+    fn resolve_sig { mut c: Checker, d: u32 } {
+        let x = get_decl{ c, d }
+        let sc = own_scope{ &c, d }
+        match x.syn.k {
+            func{ params, ret } => {
+                let fields = context{ &c, params, sc }
+                let mut r = types::VOID
+                if ret != null { r = rtype{ &c, te = ret, sc, allow_bound = false } }
+                let at = list::at{ list = c.decls, i = d }
+                at.fields = fields
+                at.ret = r
+            }
+            else => {}
+        }
+    }
+
+    // The fields of a context, `{ mut name: T, ... }`, of a function or a function type.
+    fn context { mut c: Checker, params: []syntax::Param, sc: Scope } -> []types::Field {
+        let mut out = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < params.len {
+            let f = params[i]
+            let mut k: usize = 0
+            while k < i {
+                if slice::eq_bytes{ a = params[k].name.text, b = f.name.text } and f.name.text.len > 0 {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "duplicate context field `{}`", str{ s = f.name.text }) }
+                    error{ &c, at = f.span, msg = utf8::view{ b } }
+                    break
+                }
+                k = k + 1
+            }
+            let t = rtype{ &c, te = f.ty, sc, allow_bound = not f.mutable }
+            add_field{ xs = &out, f = types::Field{ name = f.name.text, mutable = f.mutable, ty = t } }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // §15: `main` exists, isn't generic, returns i32 or nothing, and takes capabilities and
+    // `args`.
+    fn check_main { mut c: Checker } {
+        let found = map::get{ m = get_space{ c, ns = ROOT }.values, key = "main" }
+        let mut m = NONE
+        if found != null {
+            match found { decl{ i } => { if get_decl{ c, d = i }.kind == Kind::func { m = i } } else => {} }
+        }
+        if m == NONE {
+            error{ &c, at = nowhere{}, msg = "no `fn main` entry point" }
+            return
+        }
+        let x = get_decl{ c, d = m }
+        let at = x.syn.span
+        let bad = c.diags.errors
+        if x.tparams.len > 0 { error{ &c, at, msg = "`main` cannot be generic" } }
+        if x.ret != types::VOID and x.ret != types::I32 and x.ret != types::ERROR {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "`main` can only return i32 (the exit code), not {}", tstr{ c, t = x.ret }) }
+            error{ &c, at, msg = utf8::view{ b } }
+        }
+        let args_t = std_type{ &c, name = "Args" }
+        let mut i: usize = 0
+        while i < x.fields.len {
+            let f = x.fields[i]
+            let t = f.ty
+            if slice::eq_bytes{ a = f.name, b = "args" } and not f.mutable {
+                if t != args_t and t != types::ERROR and args_t != types::ERROR {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "`main` context field `args` must have type Args, got {}", tstr{ c, t }) }
+                    error{ &c, at, msg = utf8::view{ b } }
+                }
+            } else if t != types::ERROR {
+                match types::get{ s = c.ty, id = t } {
+                    cap => {}
+                    else => {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "`main` context field `{}` must have a capability type (Io, Fs, Mem) or be `args: Args`, got {}", str{ s = f.name }, tstr{ c, t }) }
+                        error{ &c, at, msg = utf8::view{ b } }
+                    }
+                }
+            }
+            i = i + 1
+        }
+        if c.diags.errors == bad { c.main = m }
+    }
+
+    // A type std declares at its top level, such as `Args`.
+    fn std_type { mut c: Checker, name: []u8 } -> Id {
+        let e = lookup_path{ c, ns = STD, name }
+        if e == null { return types::ERROR }
+        let n = syntax::Name{ id = NONE, span = nowhere{}, text = name }
+        return decl_type{ &c, e, name = n, args = null, at = nowhere{}, allow_bound = false }
+    }
+
+    // ---- type expressions
+
+    fn rtype { mut c: Checker, te: syntax::TypeExpr, sc: Scope, allow_bound: bool } -> Id {
+        let t = resolve{ &c, te, sc, allow_bound }
+        if not map::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = t } { @panic("check: out of memory") }
+        return t
+    }
+
+    fn resolve { mut c: Checker, te: syntax::TypeExpr, sc: Scope, allow_bound: bool } -> Id {
+        match te.k {
+            error => { return types::ERROR }
+            path{ segs } => { return path_type{ &c, segs, sc, allow_bound } }
+            ptr{ mutable, elem } => {
+                let t = rtype{ &c, te = elem.*, sc, allow_bound = false }
+                return types::ptr{ s = &c.ty, elem = t, mutable }
+            }
+            opt{ elem } => {
+                let t = rtype{ &c, te = elem.*, sc, allow_bound = false }
+                return types::opt{ s = &c.ty, elem = t }
+            }
+            slice{ mutable, elem } => {
+                let t = rtype{ &c, te = elem.*, sc, allow_bound = false }
+                return types::slice{ s = &c.ty, elem = t, mutable }
+            }
+            array{ n, elem } => {
+                let len = const_int{ &c, e = n.*, ns = sc.ns, what = "array length" }
+                let mut ok = len != null
+                if len != null and len < 0 {
+                    error{ &c, at = te.span, msg = "array length must not be negative" }
+                    ok = false
+                }
+                let t = rtype{ &c, te = elem.*, sc, allow_bound = false }
+                if len == null or not ok { return types::ERROR }
+                return types::array{ s = &c.ty, n = @as(u64, len), elem = t }
+            }
+            func{ bound, params, ret } => {
+                let fields = context{ &c, params, sc }
+                let mut r = types::VOID
+                if ret != null { r = rtype{ &c, te = ret.*, sc, allow_bound = false } }
+                if bound and not allow_bound {
+                    error{ &c, at = te.span, msg = "`&fn` can only be the type of a local or a read-only context field" }
+                    return types::ERROR
+                }
+                return types::func{ s = &c.ty, fields, ret = r, bound }
+            }
+        }
+    }
+
+    fn path_type { mut c: Checker, segs: []syntax::Seg, sc: Scope, allow_bound: bool } -> Id {
+        let s0 = segs[0]
+        if missing{ segs } { return types::ERROR }
+        if segs.len == 1 {
+            let mut k: usize = 0
+            while k < sc.names.len {
+                if slice::eq_bytes{ a = sc.names[k].text, b = s0.name.text } {
+                    use{ &c, n = s0.name, r = Ref::param{ decl = sc.owner, index = @as(u32, k) } }
+                    if s0.targs != null {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "generic parameter `{}` takes no type arguments", str{ s = s0.name.text }) }
+                        error{ &c, at = s0.name.span, msg = utf8::view{ b } }
+                        return types::ERROR
+                    }
+                    return sc.args[k]
+                }
+                k = k + 1
+            }
+        }
+        let first = lookup_path{ c, ns = sc.ns, name = s0.name.text }
+        if first == null {
+            unknown{ &c, n = s0.name }
+            return types::ERROR
+        }
+        let mut e = first
+        refer{ &c, n = s0.name, e }
+        let mut i: usize = 1
+        while i < segs.len {
+            let prev = segs[i - 1]
+            let s = segs[i]
+            let mut inner = NONE
+            match e { space{ ns } => { inner = ns } else => {} }
+            if prev.targs != null or inner == NONE {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`{}` is not a namespace", str{ s = prev.name.text }) }
+                error{ &c, at = prev.name.span, msg = utf8::view{ b } }
+                return types::ERROR
+            }
+            let next = map::get{ m = get_space{ c, ns = inner }.paths, key = s.name.text }
+            if next == null {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "no type or namespace `{}` in `{}`", str{ s = s.name.text }, str{ s = prev.name.text }) }
+                error{ &c, at = s.name.span, msg = utf8::view{ b } }
+                return types::ERROR
+            }
+            e = next
+            refer{ &c, n = s.name, e }
+            i = i + 1
+        }
+        let last = segs[segs.len - 1]
+        let targs = last.targs
+        let mut args: ?[]Id = null
+        if targs != null {
+            let mut xs = list::new(Id){ realloc = arena::alloc, heap = c.heap }
+            let mut k: usize = 0
+            while k < targs.len {
+                push{ xs = &xs, n = rtype{ &c, te = targs[k], sc, allow_bound = false } }
+                k = k + 1
+            }
+            args = list::items{ list = xs }
+        }
+        return decl_type{ &c, e, name = last.name, args, at = last.name.span, allow_bound }
+    }
+
+    // Whether a path has a missing name, which the parser has reported.
+    fn missing { segs: []syntax::Seg } -> bool {
+        let mut i: usize = 0
+        while i < segs.len {
+            if segs[i].name.text.len == 0 { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    fn unknown { mut c: Checker, n: syntax::Name } {
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "unknown type or namespace `{}`", str{ s = n.text }) }
+        error{ &c, at = n.span, msg = utf8::view{ b } }
+    }
+
+    // The type that path entry e names, with args if it was given any.
+    fn decl_type { mut c: Checker, e: Entry, name: syntax::Name, args: ?[]Id, at: source::Span, allow_bound: bool } -> Id {
+        let given: usize = if args == null { 0 } else { args.len }
+        match e {
+            prim{ p } => {
+                if given > 0 { no_targs{ &c, what = types::PRIM_NAMES[@as(usize, p)], at } }
+                return types::prim{ p }
+            }
+            cap{ c = k } => {
+                if given > 0 { no_targs{ &c, what = types::CAP_NAMES[@as(usize, k)], at } }
+                return types::cap{ c = k }
+            }
+            space{ ns } => {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "namespace `{}` used as a type", str{ s = get_space{ c, ns }.name }) }
+                error{ &c, at, msg = utf8::view{ b } }
+                return types::ERROR
+            }
+            decl{ i } => {
+                let x = get_decl{ c, d = i }
+                let n = x.tparams.len
+                if given != n {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "`{}` expects {} type argument(s), got {}", str{ s = x.name.text }, n, given) }
+                    error{ &c, at, msg = utf8::view{ b } }
+                    return types::ERROR
+                }
+                let xs: []Id = if args == null { slice::empty(Id){} } else { args }
+                match x.kind {
+                    record => { return types::record{ s = &c.ty, decl = i, args = xs } }
+                    sum => { return types::sum{ s = &c.ty, decl = i, args = xs } }
+                    enumeration => { return types::intern{ s = &c.ty, t = types::Type::enumeration{ decl = i } } }
+                    alias => {
+                        let items = list::items{ list = c.alias_stack }
+                        let mut k: usize = 0
+                        while k < items.len {
+                            if items[k] == i {
+                                let mut b = message{ c }
+                                pushed{ ok = @fmt(&b, "type alias `{}` refers to itself", str{ s = x.name.text }) }
+                                error{ &c, at, msg = utf8::view{ b } }
+                                return types::ERROR
+                            }
+                            k = k + 1
+                        }
+                        push{ xs = &c.alias_stack, n = i }
+                        let mut t = types::ERROR
+                        match x.syn.k {
+                            alias{ ty } => {
+                                t = rtype{ &c, te = ty, sc = Scope{ ns = x.ns, owner = i, names = x.tparams, args = xs }, allow_bound }
+                            }
+                            else => {}
+                        }
+                        _ = list::pop{ list = &c.alias_stack }
+                        return t
+                    }
+                    else => { @panic("check: a value in a path table") }
+                }
+            }
+        }
+    }
+
+    fn no_targs { mut c: Checker, what: []u8, at: source::Span } {
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "`{}` takes no type arguments", str{ s = what }) }
+        error{ &c, at, msg = utf8::view{ b } }
+    }
+
+    // ---- compile-time integers: array lengths and enum values (ctxi's const_int)
+
+    // The value of e, or null after reporting why it has none. `what` names what it is for.
+    fn const_int { mut c: Checker, e: syntax::Expr, ns: u32, what: utf8::String } -> ?i64 {
+        let at = expr_at{ e }
+        match e.k {
+            error => { return null }
+            int{ negative, value } => {
+                if value == null or value > 9223372036854775808 or (value == 9223372036854775808 and not negative) {
+                    too_large{ &c, at }
+                    return null
+                }
+                if value == 9223372036854775808 { return -9223372036854775807 - 1 }
+                let v = @as(i64, value)
+                return if negative { -v } else { v }
+            }
+            neg{ e = inner } => {
+                let v = const_int{ &c, e = inner.*, ns, what }
+                if v == null { return null }
+                if v == -9223372036854775807 - 1 {
+                    too_large{ &c, at }
+                    return null
+                }
+                return -v
+            }
+            binary{ op, a, b } => {
+                if is_const_op{ op } {
+                    let x = const_int{ &c, e = a.*, ns, what }
+                    let y = const_int{ &c, e = b.*, ns, what }
+                    if x == null or y == null { return null }
+                    return arith{ &c, op, x, y, at }
+                }
+            }
+            path{ segs } => {
+                let d = const_decl{ &c, segs, ns, at }
+                if d != null and d != NONE {
+                    let x = get_decl{ c, d }
+                    let items = list::items{ list = c.const_stack }
+                    let mut k: usize = 0
+                    while k < items.len {
+                        if items[k] == d {
+                            let mut b = message{ c }
+                            pushed{ ok = @fmt(&b, "const `{}` refers to itself", str{ s = x.name.text }) }
+                            error{ &c, at, msg = utf8::view{ b } }
+                            return null
+                        }
+                        k = k + 1
+                    }
+                    let mut v: ?i64 = null
+                    match x.syn.k {
+                        constant{ value } => {
+                            push{ xs = &c.const_stack, n = d }
+                            v = const_int{ &c, e = value, ns = x.ns, what }
+                            _ = list::pop{ list = &c.const_stack }
+                        }
+                        else => {}
+                    }
+                    return v
+                }
+                if d == null { return null }
+            }
+            else => {}
+        }
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "{} must be a compile-time integer constant", what) }
+        error{ &c, at, msg = utf8::view{ b } }
+        return null
+    }
+
+    fn too_large { mut c: Checker, at: source::Span } {
+        error{ &c, at, msg = "integer constant is too large" }
+    }
+
+    fn is_const_op { op: tok::Kind } -> bool {
+        return op == tok::Kind::plus or op == tok::Kind::minus or op == tok::Kind::star or op == tok::Kind::slash
+            or op == tok::Kind::percent or op == tok::Kind::amp or op == tok::Kind::pipe or op == tok::Kind::caret
+            or op == tok::Kind::shl or op == tok::Kind::shr
+    }
+
+    fn arith { mut c: Checker, op: tok::Kind, x: i64, y: i64, at: source::Span } -> ?i64 {
+        let min: i64 = -9223372036854775807 - 1
+        if op == tok::Kind::slash or op == tok::Kind::percent {
+            if y == 0 {
+                error{ &c, at, msg = "division by zero in constant" }
+                return null
+            }
+            if x == min and y == -1 {
+                if op == tok::Kind::percent { return 0 }
+                too_large{ &c, at }
+                return null
+            }
+            return if op == tok::Kind::slash { x / y } else { x % y }
+        }
+        if op == tok::Kind::shl or op == tok::Kind::shr {
+            if y < 0 or y >= 64 {
+                error{ &c, at, msg = "shift count out of range in constant" }
+                return null
+            }
+            return if op == tok::Kind::shl { x << y } else { x >> y }
+        }
+        if op == tok::Kind::amp { return x & y }
+        if op == tok::Kind::pipe { return x | y }
+        if op == tok::Kind::caret { return x ^ y }
+        let r = if op == tok::Kind::plus { @wrap_add(x, y) } else if op == tok::Kind::minus { @wrap_sub(x, y) } else { @wrap_mul(x, y) }
+        let over = if op == tok::Kind::plus {
+            (x >= 0) == (y >= 0) and (r >= 0) != (x >= 0)
+        } else if op == tok::Kind::minus {
+            (x >= 0) != (y >= 0) and (r >= 0) != (x >= 0)
+        } else {
+            x != 0 and ((x == -1 and y == min) or (y == min and x != 1) or r / x != y)
+        }
+        if over {
+            too_large{ &c, at }
+            return null
+        }
+        return r
+    }
+
+    // The const a path names: its Decl, NONE if it names something else, or null after an
+    // error. As in ctxi, a name is looked up among values and a longer path through namespaces.
+    fn const_decl { mut c: Checker, segs: []syntax::Seg, ns: u32, at: source::Span } -> ?u32 {
+        if missing{ segs } { return null }
+        let last = segs[segs.len - 1]
+        let mut found: ?Entry = null
+        if segs.len == 1 {
+            found = lookup_value{ c, ns, name = last.name.text }
+        } else {
+            let first = lookup_path{ c, ns, name = segs[0].name.text }
+            if first == null {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "unknown type or namespace `{}`", str{ s = segs[0].name.text }) }
+                error{ &c, at, msg = utf8::view{ b } }
+                return null
+            }
+            let mut p: ?Entry = first
+            let mut i: usize = 1
+            while i < segs.len - 1 {
+                let mut inner = NONE
+                let q = p
+                if q != null {
+                    match q { space{ ns = n } => { inner = n } else => {} }
+                }
+                p = if inner == NONE { null } else { map::get{ m = get_space{ c, ns = inner }.paths, key = segs[i].name.text } }
+                i = i + 1
+            }
+            let q = p
+            if q != null {
+                match q {
+                    space{ ns = n } => { found = map::get{ m = get_space{ c, ns = n }.values, key = last.name.text } }
+                    else => {}
+                }
+            }
+        }
+        let f = found
+        if f == null { return NONE }
+        match f {
+            decl{ i } => {
+                if get_decl{ c, d = i }.kind == Kind::constant {
+                    use{ &c, n = last.name, r = Ref::decl{ i } }
+                    return i
+                }
+            }
+            else => {}
+        }
+        return NONE
+    }
+
+    // ---- lookup
+
+    // A namespace or type, from namespace ns outward.
+    fn lookup_path { c: Checker, ns: u32, name: []u8 } -> ?Entry {
+        let mut n = ns
+        while n != NONE {
+            let sp = get_space{ c, ns = n }
+            let e = map::get{ m = sp.paths, key = name }
+            if e != null { return e }
+            n = sp.parent
+        }
+        return null
+    }
+
+    // A function or const, from namespace ns outward.
+    fn lookup_value { c: Checker, ns: u32, name: []u8 } -> ?Entry {
+        let mut n = ns
+        while n != NONE {
+            let sp = get_space{ c, ns = n }
+            let e = map::get{ m = sp.values, key = name }
+            if e != null { return e }
+            n = sp.parent
+        }
+        return null
+    }
+
+    // Records what name n refers to.
+    fn use { mut c: Checker, n: syntax::Name, r: Ref } {
+        if n.id == NONE { return }
+        if not map::put{ m = &c.uses, key = key{ file = n.span.file, id = n.id }, value = r } { @panic("check: out of memory") }
+    }
+
+    fn refer { mut c: Checker, n: syntax::Name, e: Entry } {
+        match e {
+            space{ ns } => { use{ &c, n, r = Ref::space{ ns } } }
+            decl{ i } => { use{ &c, n, r = Ref::decl{ i } } }
+            prim{ p } => { use{ &c, n, r = Ref::prim{ p } } }
+            cap{ c = k } => { use{ &c, n, r = Ref::cap{ c = k } } }
+        }
+    }
+
+    fn key { file: u32, id: u32 } -> u64 {
+        return (@as(u64, file) << 32) | id
+    }
+
+    fn get_space { c: Checker, ns: u32 } -> Space {
+        return list::items{ list = c.spaces }[ns]
+    }
+
+    fn get_decl { c: Checker, d: u32 } -> Decl {
+        return list::items{ list = c.decls }[d]
+    }
+
+    // ---- types as text (ctxi's tstr)
+
+    fn tstr { c: Checker, t: Id } -> utf8::String {
+        let mut b = message{ c }
+        pushed{ ok = write_type{ c, t, &b } }
+        return utf8::view{ b }
+    }
+
+    fn write_type { c: Checker, t: Id, mut b: utf8::Builder(Heap) } -> bool {
+        match types::get{ s = c.ty, id = t } {
+            error => { return utf8::push{ &b, s = "{error}" } }
+            void => { return utf8::push{ &b, s = "no value" } }
+            nil => { return utf8::push{ &b, s = "null" } }
+            prim{ p } => { return utf8::push{ &b, s = str{ s = types::PRIM_NAMES[@as(usize, p)] } } }
+            cap{ c = k } => { return utf8::push{ &b, s = str{ s = types::CAP_NAMES[@as(usize, k)] } } }
+            ptr{ elem, mutable } => {
+                return utf8::push{ &b, s = if mutable { "*mut " } else { "*" } } and write_type{ c, t = elem, &b }
+            }
+            slice{ elem, mutable } => {
+                return utf8::push{ &b, s = if mutable { "[]mut " } else { "[]" } } and write_type{ c, t = elem, &b }
+            }
+            array{ n, elem } => { return @fmt(&b, "[{}]", n) and write_type{ c, t = elem, &b } }
+            opt{ elem } => { return utf8::push{ &b, s = "?" } and write_type{ c, t = elem, &b } }
+            enumeration{ decl } => { return utf8::push{ &b, s = str{ s = get_decl{ c, d = decl }.qual } } }
+            record{ decl, args } => { return generic{ c, decl, args, &b } }
+            sum{ decl, args } => { return generic{ c, decl, args, &b } }
+            func{ fields, ret, bound } => {
+                let mut ok = utf8::push{ &b, s = if bound { "&fn{" } else { "fn{" } }
+                let mut i: usize = 0
+                while i < fields.len {
+                    let f = fields[i]
+                    ok = ok and utf8::push{ &b, s = if i == 0 { " " } else { ", " } }
+                        and utf8::push{ &b, s = if f.mutable { "mut " } else { "" } }
+                        and @fmt(&b, "{}: ", str{ s = f.name }) and write_type{ c, t = f.ty, &b }
+                    i = i + 1
+                }
+                if fields.len > 0 { ok = ok and utf8::push{ &b, s = " " } }
+                ok = ok and utf8::push{ &b, s = "}" }
+                if ret != types::VOID { ok = ok and utf8::push{ &b, s = " -> " } and write_type{ c, t = ret, &b } }
+                return ok
+            }
+            param{ decl, index } => { return utf8::push{ &b, s = str{ s = get_decl{ c, d = decl }.tparams[index].text } } }
+        }
+    }
+
+    // `name(A, B)`, or `name` without arguments.
+    fn generic { c: Checker, decl: u32, args: []Id, mut b: utf8::Builder(Heap) } -> bool {
+        let mut ok = utf8::push{ &b, s = str{ s = get_decl{ c, d = decl }.qual } }
+        if args.len == 0 { return ok }
+        ok = ok and utf8::push{ &b, s = "(" }
+        let mut i: usize = 0
+        while i < args.len {
+            if i > 0 { ok = ok and utf8::push{ &b, s = ", " } }
+            ok = ok and write_type{ c, t = args[i], &b }
+            i = i + 1
+        }
+        return ok and utf8::push{ &b, s = ")" }
+    }
+
+    // ---- the fields of declared types
+
+    // The type a non-generic struct or union declaration declares.
+    fn types_of_decl { mut c: Checker, d: u32 } -> Id {
+        let none = slice::empty(Id){}
+        if get_decl{ c, d }.kind == Kind::record { return types::record{ s = &c.ty, decl = d, args = none } }
+        return types::sum{ s = &c.ty, decl = d, args = none }
+    }
+
+    // A struct type's fields, with its generic arguments in place.
+    fn struct_fields { mut c: Checker, t: Id } -> []types::Field {
+        match types::get{ s = c.ty, id = t } {
+            record{ decl, args } => { return subst_fields{ &c, fields = get_decl{ c, d = decl }.fields, decl, args } }
+            else => { return slice::empty(types::Field){} }
+        }
+    }
+
+    // A union's or optional's variants, with generic arguments in place.
+    fn variants_of { mut c: Checker, t: Id } -> []Variant {
+        let mut out = list::new(Variant){ realloc = arena::alloc, heap = c.heap }
+        match types::get{ s = c.ty, id = t } {
+            opt{ elem } => {
+                add_variant{ xs = &out, v = Variant{ name = "null", fields = null } }
+                let mut fs = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+                add_field{ xs = &fs, f = types::Field{ name = "value", mutable = false, ty = elem } }
+                add_variant{ xs = &out, v = Variant{ name = "some", fields = list::items{ list = fs } } }
+            }
+            sum{ decl, args } => {
+                let vs = get_decl{ c, d = decl }.variants
+                let mut i: usize = 0
+                while i < vs.len {
+                    let v = vs[i]
+                    let fs = v.fields
+                    if fs == null {
+                        add_variant{ xs = &out, v }
+                    } else {
+                        add_variant{ xs = &out, v = Variant{ name = v.name, fields = subst_fields{ &c, fields = fs, decl, args } } }
+                    }
+                    i = i + 1
+                }
+            }
+            else => {}
+        }
+        return list::items{ list = out }
+    }
+
+    fn subst_fields { mut c: Checker, fields: []types::Field, decl: u32, args: []Id } -> []types::Field {
+        if args.len == 0 { return fields }
+        let mut out = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < fields.len {
+            let f = fields[i]
+            add_field{ xs = &out, f = types::Field{ name = f.name, mutable = f.mutable, ty = types::subst{ s = &c.ty, t = f.ty, decl, args } } }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // ---- layout (ctxi's Runtime.layout)
+
+    // The size and alignment of t, or null if it has none: it is generic, erroneous, or of
+    // infinite size.
+    fn layout { mut c: Checker, t: Id } -> ?Layout {
+        let known = map::get{ m = c.layouts, key = t }
+        if known != null { return known }
+        if map::has{ m = c.busy, key = t } { return null }
+        if not map::put{ m = &c.busy, key = t, value = true } { @panic("check: out of memory") }
+        let lay = compute{ &c, t }
+        _ = map::remove{ m = &c.busy, key = t }
+        if lay != null {
+            if not map::put{ m = &c.layouts, key = t, value = lay } { @panic("check: out of memory") }
+        }
+        return lay
+    }
+
+    fn compute { mut c: Checker, t: Id } -> ?Layout {
+        match types::get{ s = c.ty, id = t } {
+            prim{ p } => {
+                let n = @as(u64, types::bits{ p } / 8)
+                return Layout{ size = n, align = n }
+            }
+            ptr | func => { return Layout{ size = 8, align = 8 } }
+            slice => { return Layout{ size = 16, align = 8 } }
+            cap | void => { return Layout{ size = 0, align = 1 } }
+            enumeration{ decl } => { return layout{ &c, t = get_decl{ c, d = decl }.ty } }
+            array{ n, elem } => {
+                let el = layout{ &c, t = elem }
+                if el == null { return null }
+                if el.size != 0 and n > 18446744073709551615 / el.size { return null }
+                return Layout{ size = n * el.size, align = el.align }
+            }
+            record => {
+                let offs = struct_offsets{ &c, t }
+                if offs == null { return null }
+                return offs.layout
+            }
+            opt | sum => {
+                let u = union_offsets{ &c, t }
+                if u == null { return null }
+                return u.layout
+            }
+            else => { return null }
+        }
+    }
+
+    // A struct's layout and the offset of each field.
+    struct Offsets { layout: Layout, offs: []u64 }
+
+    fn struct_offsets { mut c: Checker, t: Id } -> ?Offsets {
+        let fields = struct_fields{ &c, t }
+        let mut offs = list::new(u64){ realloc = arena::alloc, heap = c.heap }
+        let mut off: u64 = 0
+        let mut al: u64 = 1
+        let mut i: usize = 0
+        while i < fields.len {
+            let fl = layout{ &c, t = fields[i].ty }
+            if fl == null { return null }
+            off = align_up{ n = off, a = fl.align }
+            push_u64{ xs = &offs, n = off }
+            off = off + fl.size
+            if fl.align > al { al = fl.align }
+            i = i + 1
+        }
+        return Offsets{ layout = Layout{ size = align_up{ n = off, a = al }, align = al }, offs = list::items{ list = offs } }
+    }
+
+    // A union's layout: the tag is a u32 at 0, and the payload at pay_off. offs holds each
+    // variant's field offsets, from the start of the union.
+    struct UnionOffsets { layout: Layout, pay_off: u64, offs: [][]mut u64 }
+
+    fn union_offsets { mut c: Checker, t: Id } -> ?UnionOffsets {
+        let vs = variants_of{ &c, t }
+        let mut rel = list::new([]mut u64){ realloc = arena::alloc, heap = c.heap }
+        let mut pal: u64 = 1
+        let mut psize: u64 = 0
+        let mut i: usize = 0
+        while i < vs.len {
+            let fs = vs[i].fields
+            let mut offs = list::new(u64){ realloc = arena::alloc, heap = c.heap }
+            if fs != null {
+                let mut off: u64 = 0
+                let mut j: usize = 0
+                while j < fs.len {
+                    let fl = layout{ &c, t = fs[j].ty }
+                    if fl == null { return null }
+                    off = align_up{ n = off, a = fl.align }
+                    push_u64{ xs = &offs, n = off }
+                    off = off + fl.size
+                    if fl.align > pal { pal = fl.align }
+                    j = j + 1
+                }
+                if off > psize { psize = off }
+            }
+            if not list::push{ list = &rel, item = list::items{ list = offs } } { @panic("check: out of memory") }
+            i = i + 1
+        }
+        let al: u64 = if pal > 4 { pal } else { 4 }
+        let pay = align_up{ n = 4, a = pal }
+        let all = list::items{ list = rel }
+        i = 0
+        while i < all.len {
+            let xs = all[i]
+            let mut j: usize = 0
+            while j < xs.len {
+                xs[j] = xs[j] + pay
+                j = j + 1
+            }
+            i = i + 1
+        }
+        return UnionOffsets{ layout = Layout{ size = align_up{ n = pay + psize, a = al }, align = al }, pay_off = pay, offs = all }
+    }
+
+    fn align_up { n: u64, a: u64 } -> u64 {
+        return (n + a - 1) / a * a
+    }
+
+    // ---- diagnostics
+
+    // Reports msg at the start of span at, unless the same message is already there: a type
+    // alias is resolved at each use, and its errors would repeat.
+    fn error { mut c: Checker, at: source::Span, msg: utf8::String } {
+        let ds = diag::items{ diags = c.diags.* }
+        let mut i: usize = 0
+        while i < ds.len {
+            let d = ds[i]
+            if d.span.file == at.file and d.span.start == at.start and utf8::eq{ a = d.msg, b = msg } { return }
+            i = i + 1
+        }
+        diag::error{ diags = c.diags, span = at, msg }
+    }
+
+    fn nowhere {} -> source::Span {
+        return source::Span{ file = NO_FILE, start = 0, end = 0 }
+    }
+
+    // Where diagnostics about expression e point: its `at`.
+    fn expr_at { e: syntax::Expr } -> source::Span {
+        return source::Span{ file = e.span.file, start = e.at, end = e.span.end }
+    }
+
+    fn message { c: Checker } -> utf8::Builder(Heap) {
+        return utf8::builder{ realloc = arena::alloc, heap = c.heap }
+    }
+
+    fn str { s: []u8 } -> utf8::String {
+        return utf8::String{ bytes = s }
+    }
+
+    fn pushed { ok: bool } {
+        if not ok { @panic("check: out of memory") }
+    }
+
+    fn push { mut xs: list::List(u32, Heap), n: u32 } {
+        if not list::push{ list = &xs, item = n } { @panic("check: out of memory") }
+    }
+
+    fn push_i64 { mut xs: list::List(i64, Heap), n: i64 } {
+        if not list::push{ list = &xs, item = n } { @panic("check: out of memory") }
+    }
+
+    fn push_u64 { mut xs: list::List(u64, Heap), n: u64 } {
+        if not list::push{ list = &xs, item = n } { @panic("check: out of memory") }
+    }
+
+    fn add_field { mut xs: list::List(types::Field, Heap), f: types::Field } {
+        if not list::push{ list = &xs, item = f } { @panic("check: out of memory") }
+    }
+
+    fn add_variant { mut xs: list::List(Variant, Heap), v: Variant } {
+        if not list::push{ list = &xs, item = v } { @panic("check: out of memory") }
+    }
+}

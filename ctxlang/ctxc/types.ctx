@@ -1,0 +1,329 @@
+// Semantic types, a port of the data half of ctxi/types.py. The checker's half (printing,
+// layout, fields of a declared type) needs its declarations and lives in check.ctx.
+//
+// Types are interned in a Store: each distinct type has one Id, so two types are equal exactly
+// when their ids are. Ids for the error type, `no value`, `null`, the primitives and the
+// capabilities are fixed (the consts below); every other id comes from `intern`.
+//
+// The error type stands for a type that couldn't be resolved. It is equal to itself only, but
+// the checker accepts it wherever a type is expected and reports nothing more about it, so one
+// mistake gives one message.
+
+namespace types {
+    type Id = u32
+    type Heap = arena::Arena
+
+    enum Prim: u8 { i8, i16, i32, i64, u8, u16, u32, u64, usize, f32, f64, bool }
+
+    const PRIM_NAMES: [12][]u8 = [
+        "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "f32", "f64", "bool",
+    ]
+
+    enum Cap: u8 { io, fs, mem }
+
+    const CAP_NAMES: [3][]u8 = ["Io", "Fs", "Mem"]
+
+    const ERROR: Id = 0
+    const VOID: Id = 1
+    const NULL: Id = 2
+    const FIRST_PRIM: Id = 3             // Prim p has id FIRST_PRIM + p
+    const FIRST_CAP: Id = 15             // Cap c has id FIRST_CAP + c
+    const I32: Id = 5
+    const U8: Id = 7
+    const USIZE: Id = 11
+    const BOOL: Id = 14
+
+    // A context field of a function type, in declaration order.
+    struct Field { name: []u8, mutable: bool, ty: Id }
+
+    // decl indexes the checker's table of declarations (check::Decl).
+    union Type {
+        error,
+        void,                                   // what a function without `-> R` returns
+        nil,                                    // the type of `null` before it meets a ?T
+        prim{ p: Prim },
+        cap{ c: Cap },
+        ptr{ elem: Id, mutable: bool },
+        slice{ elem: Id, mutable: bool },
+        array{ n: u64, elem: Id },
+        opt{ elem: Id },
+        record{ decl: u32, args: []Id },        // a struct
+        sum{ decl: u32, args: []Id },           // a union
+        enumeration{ decl: u32 },
+        func{ fields: []Field, ret: Id, bound: bool },
+        param{ decl: u32, index: u32 },         // generic parameter `index` of decl, opaque
+    }
+
+    struct Store {
+        heap:  *mut Heap,
+        items: list::List(Type, Heap),          // indexed by Id
+        index: map::Map(Type, Id, Heap),
+    }
+
+    fn store { mut heap: Heap } -> Store {
+        let mut s = Store{
+            heap = &heap,
+            items = list::new(Type){ realloc = arena::alloc, &heap },
+            index = map::new(Type, Id){ realloc = arena::alloc, &heap, hash, eq },
+        }
+        _ = intern{ &s, t = Type::error }
+        _ = intern{ &s, t = Type::void }
+        _ = intern{ &s, t = Type::nil }
+        let mut i: usize = 0
+        while i < PRIM_NAMES.len {
+            _ = intern{ &s, t = Type::prim{ p = @as(Prim, i) } }
+            i = i + 1
+        }
+        i = 0
+        while i < CAP_NAMES.len {
+            _ = intern{ &s, t = Type::cap{ c = @as(Cap, i) } }
+            i = i + 1
+        }
+        return s
+    }
+
+    // The id of t, which gets a new one if no equal type has one yet.
+    fn intern { mut s: Store, t: Type } -> Id {
+        let known = map::get{ m = s.index, key = t }
+        if known != null { return known }
+        let id = @as(Id, s.items.len)
+        if not list::push{ list = &s.items, item = t } or not map::put{ m = &s.index, key = t, value = id } {
+            @panic("types: out of memory")
+        }
+        return id
+    }
+
+    fn get { s: Store, id: Id } -> Type {
+        return list::items{ list = s.items }[id]
+    }
+
+    fn prim { p: Prim } -> Id { return FIRST_PRIM + @as(Id, p) }
+    fn cap { c: Cap } -> Id { return FIRST_CAP + @as(Id, c) }
+
+    // ---- building
+
+    fn ptr { mut s: Store, elem: Id, mutable: bool } -> Id {
+        return intern{ &s, t = Type::ptr{ elem, mutable } }
+    }
+
+    fn slice { mut s: Store, elem: Id, mutable: bool } -> Id {
+        return intern{ &s, t = Type::slice{ elem, mutable } }
+    }
+
+    fn opt { mut s: Store, elem: Id } -> Id {
+        return intern{ &s, t = Type::opt{ elem } }
+    }
+
+    fn array { mut s: Store, n: u64, elem: Id } -> Id {
+        return intern{ &s, t = Type::array{ n, elem } }
+    }
+
+    // The type of a function with fields and ret, a copy of which the store keeps.
+    fn func { mut s: Store, fields: []Field, ret: Id, bound: bool } -> Id {
+        return intern{ &s, t = Type::func{ fields = copy(Field){ s, xs = fields }, ret, bound } }
+    }
+
+    fn record { mut s: Store, decl: u32, args: []Id } -> Id {
+        return intern{ &s, t = Type::record{ decl, args = copy(Id){ s, xs = args } } }
+    }
+
+    fn sum { mut s: Store, decl: u32, args: []Id } -> Id {
+        return intern{ &s, t = Type::sum{ decl, args = copy(Id){ s, xs = args } } }
+    }
+
+    fn copy(T) { s: Store, xs: []T } -> []T {
+        if xs.len == 0 { return xs }
+        let some{ value = out } = alloc::resize(T){ realloc = arena::alloc, heap = s.heap, mem = slice::empty(T){}, count = xs.len } else {
+            @panic("types: out of memory")
+        }
+        slice::copy{ dst = out, src = xs }
+        return out
+    }
+
+    // t with generic parameter i of decl replaced by args[i].
+    fn subst { mut s: Store, t: Id, decl: u32, args: []Id } -> Id {
+        match get{ s, id = t } {
+            param{ decl = d, index } => {
+                if d == decl and index < args.len { return args[index] }
+                return t
+            }
+            ptr{ elem, mutable } => { return ptr{ &s, elem = subst{ &s, t = elem, decl, args }, mutable } }
+            slice{ elem, mutable } => { return slice{ &s, elem = subst{ &s, t = elem, decl, args }, mutable } }
+            opt{ elem } => { return opt{ &s, elem = subst{ &s, t = elem, decl, args } } }
+            array{ n, elem } => { return array{ &s, n, elem = subst{ &s, t = elem, decl, args } } }
+            record{ decl = d, args = xs } => {
+                return record{ &s, decl = d, args = subst_all{ &s, ts = xs, decl, args } }
+            }
+            sum{ decl = d, args = xs } => {
+                return sum{ &s, decl = d, args = subst_all{ &s, ts = xs, decl, args } }
+            }
+            func{ fields, ret, bound } => {
+                let mut fs = list::new(Field){ realloc = arena::alloc, heap = s.heap }
+                let mut i: usize = 0
+                while i < fields.len {
+                    let f = fields[i]
+                    add{ xs = &fs, item = Field{ name = f.name, mutable = f.mutable, ty = subst{ &s, t = f.ty, decl, args } } }
+                    i = i + 1
+                }
+                return func{ &s, fields = list::items{ list = fs }, ret = subst{ &s, t = ret, decl, args }, bound }
+            }
+            else => { return t }
+        }
+    }
+
+    fn subst_all { mut s: Store, ts: []Id, decl: u32, args: []Id } -> []Id {
+        let mut out = list::new(Id){ realloc = arena::alloc, heap = s.heap }
+        let mut i: usize = 0
+        while i < ts.len {
+            add{ xs = &out, item = subst{ &s, t = ts[i], decl, args } }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    fn add(T) { mut xs: list::List(T, Heap), item: T } {
+        if not list::push{ list = &xs, item } { @panic("types: out of memory") }
+    }
+
+    // ---- questions
+
+    fn is_int { s: Store, t: Id } -> bool {
+        return t >= FIRST_PRIM and t <= prim{ p = Prim::usize }
+    }
+
+    fn is_float { s: Store, t: Id } -> bool {
+        return t == prim{ p = Prim::f32 } or t == prim{ p = Prim::f64 }
+    }
+
+    // The width in bits of a primitive, and whether it is signed.
+    fn bits { p: Prim } -> u32 {
+        match p {
+            i8 | u8 | bool => { return 8 }
+            i16 | u16 => { return 16 }
+            i32 | u32 | f32 => { return 32 }
+            else => { return 64 }
+        }
+    }
+
+    fn signed { p: Prim } -> bool {
+        match p {
+            i8 | i16 | i32 | i64 | f32 | f64 => { return true }
+            else => { return false }
+        }
+    }
+
+    // Whether integer value v, of magnitude and sign, fits in integer type p.
+    fn fits { p: Prim, negative: bool, magnitude: u64 } -> bool {
+        let b = bits{ p }
+        if signed{ p } {
+            let limit = @as(u64, 1) << (b - 1)        // -limit ..= limit - 1
+            return if negative { magnitude <= limit } else { magnitude < limit }
+        }
+        if negative { return magnitude == 0 }
+        return b == 64 or magnitude < @as(u64, 1) << b
+    }
+
+    // ---- interning
+
+    fn hash { key: Type } -> u64 {
+        match key {
+            error => { return 1 }
+            void => { return 2 }
+            nil => { return 3 }
+            prim{ p } => { return mix{ h = 4, n = @as(u64, p) } }
+            cap{ c } => { return mix{ h = 5, n = @as(u64, c) } }
+            ptr{ elem, mutable } => { return mix{ h = mix{ h = 6, n = elem }, n = flag{ b = mutable } } }
+            slice{ elem, mutable } => { return mix{ h = mix{ h = 7, n = elem }, n = flag{ b = mutable } } }
+            array{ n, elem } => { return mix{ h = mix{ h = 8, n }, n = elem } }
+            opt{ elem } => { return mix{ h = 9, n = elem } }
+            record{ decl, args } => { return mix_ids{ h = mix{ h = 10, n = decl }, ids = args } }
+            sum{ decl, args } => { return mix_ids{ h = mix{ h = 11, n = decl }, ids = args } }
+            enumeration{ decl } => { return mix{ h = 12, n = decl } }
+            func{ fields, ret, bound } => {
+                let mut h = mix{ h = mix{ h = 13, n = ret }, n = flag{ b = bound } }
+                let mut i: usize = 0
+                while i < fields.len {
+                    let f = fields[i]
+                    h = mix{ h = mix{ h = mix{ h, n = map::hash_bytes{ key = f.name } }, n = flag{ b = f.mutable } }, n = f.ty }
+                    i = i + 1
+                }
+                return h
+            }
+            param{ decl, index } => { return mix{ h = mix{ h = 14, n = decl }, n = index } }
+        }
+    }
+
+    fn mix { h: u64, n: u64 } -> u64 {
+        return @wrap_mul(h ^ n, 1099511628211) ^ (h >> 29)
+    }
+
+    fn flag { b: bool } -> u64 { return if b { 1 } else { 0 } }
+
+    fn mix_ids { h: u64, ids: []Id } -> u64 {
+        let mut x = mix{ h, n = ids.len }
+        let mut i: usize = 0
+        while i < ids.len {
+            x = mix{ h = x, n = ids[i] }
+            i = i + 1
+        }
+        return x
+    }
+
+    fn eq { a: Type, b: Type } -> bool {
+        match a {
+            error => { match b { error => { return true } else => { return false } } }
+            void => { match b { void => { return true } else => { return false } } }
+            nil => { match b { nil => { return true } else => { return false } } }
+            prim{ p } => { match b { prim{ p = q } => { return p == q } else => { return false } } }
+            cap{ c } => { match b { cap{ c = d } => { return c == d } else => { return false } } }
+            ptr{ elem, mutable } => {
+                match b { ptr{ elem = e, mutable = m } => { return elem == e and mutable == m } else => { return false } }
+            }
+            slice{ elem, mutable } => {
+                match b { slice{ elem = e, mutable = m } => { return elem == e and mutable == m } else => { return false } }
+            }
+            array{ n, elem } => {
+                match b { array{ n = k, elem = e } => { return n == k and elem == e } else => { return false } }
+            }
+            opt{ elem } => { match b { opt{ elem = e } => { return elem == e } else => { return false } } }
+            record{ decl, args } => {
+                match b { record{ decl = d, args = xs } => { return decl == d and same_ids{ a = args, b = xs } } else => { return false } }
+            }
+            sum{ decl, args } => {
+                match b { sum{ decl = d, args = xs } => { return decl == d and same_ids{ a = args, b = xs } } else => { return false } }
+            }
+            enumeration{ decl } => { match b { enumeration{ decl = d } => { return decl == d } else => { return false } } }
+            func{ fields, ret, bound } => {
+                match b {
+                    func{ fields = fs, ret = r, bound = bd } => {
+                        if ret != r or bound != bd or fields.len != fs.len { return false }
+                        let mut i: usize = 0
+                        while i < fields.len {
+                            let f = fields[i]
+                            let g = fs[i]
+                            if f.ty != g.ty or f.mutable != g.mutable or not slice::eq_bytes{ a = f.name, b = g.name } {
+                                return false
+                            }
+                            i = i + 1
+                        }
+                        return true
+                    }
+                    else => { return false }
+                }
+            }
+            param{ decl, index } => {
+                match b { param{ decl = d, index = k } => { return decl == d and index == k } else => { return false } }
+            }
+        }
+    }
+
+    fn same_ids { a: []Id, b: []Id } -> bool {
+        if a.len != b.len { return false }
+        let mut i: usize = 0
+        while i < a.len {
+            if a[i] != b[i] { return false }
+            i = i + 1
+        }
+        return true
+    }
+}

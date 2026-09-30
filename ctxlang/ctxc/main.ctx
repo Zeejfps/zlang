@@ -10,6 +10,10 @@
 //                                              after a line `file FILE`
 //   python -m ctxi ctxc syntax FILE...         the same for each file's syntax tree
 //   python -m ctxi ctxc recover FILE FROM TO   the recovery test (recover.ctx)
+//   python -m ctxi ctxc decls STD... -- FILE...
+//                                              checks the declarations of the program of
+//                                              FILE..., with std's files STD..., and prints
+//                                              them (dump.ctx, namespace decls)
 //
 // tools/ctxc.py runs the whole pipeline: IR, C and the C compiler.
 
@@ -24,10 +28,13 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     if args.len >= 4 and slice::eq_bytes{ a = args[0], b = "recover" } {
         return recovery{ .. }
     }
+    if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "decls" } {
+        return declarations{ .. }
+    }
     if args.len == 3 and slice::eq_bytes{ a = args[0], b = "c" } {
         to_c = true
     } else if args.len != 2 or not slice::eq_bytes{ a = args[0], b = "roundtrip" } {
-        io::eprintln{ &io, s = "usage: ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO" }
+        io::eprintln{ &io, s = "usage: ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO | ctxc decls STD... -- FILE..." }
         return 2
     }
     let path = args[1]
@@ -111,6 +118,65 @@ fn dumps { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, trees: bool } -> i3
         i = i + 1
     }
     return 0
+}
+
+// `ctxc decls STD... -- FILE...`: lexes and parses every file, then checks the declarations of
+// the program, all in one arena.
+fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let mut total: u64 = 0
+    let mut split: usize = 0
+    let mut i: usize = 1
+    while i < args.len {
+        if slice::eq_bytes{ a = args[i], b = "--" } {
+            split = i
+        } else {
+            let ok{ value = size } = fs::size{ &fs, path = args[i] } else {
+                cannot{ &io, path = args[i], what = "cannot read" }
+                return 1
+            }
+            total = total + size
+        }
+        i = i + 1
+    }
+    if split == 0 {
+        io::eprintln{ &io, s = "usage: ctxc decls STD... -- FILE..." }
+        return 2
+    }
+    let some{ value = pages } = mem::pages{ &mem, size = 67108864 + @as(usize, total) * 256 } else {
+        io::eprintln{ &io, s = "out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    let mut diags = diag::new{ &heap }
+    let mut files = list::new(check::File){ realloc = arena::alloc, &heap }
+    i = 1
+    while i < args.len {
+        if i != split {
+            let path = args[i]
+            let ok{ value = text } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } else {
+                cannot{ &io, path, what = "cannot read" }
+                return 1
+            }
+            add_file{ &files, &heap, &diags, name = path, text }
+        }
+        i = i + 1
+    }
+    add_file{ &files, &heap, &diags, name = "<natives>", text = check::natives_source{ &heap } }
+    let mut c = check::new{ files = list::items{ list = files }, std_files = split - 1, &heap, &diags }
+    check::declarations{ &c }
+    let mut out = utf8::builder{ realloc = arena::alloc, &heap }
+    decls::file{ &out, &c }
+    io::write{ &io, to = io::Stream::out, bytes = utf8::view{ b = out }.bytes }
+    return 0
+}
+
+// Lexes and parses a file into the program's list, where its index is its file id.
+fn add_file { mut files: list::List(check::File, arena::Arena), mut heap: arena::Arena, mut diags: diag::Diags, name: []u8, text: []u8 } {
+    let file = @as(u32, files.len)
+    let lexed = lexer::lex{ text, file, &heap, &diags }
+    let tree = parser::parse{ text, file, tokens = lexed.tokens, &heap, &diags }
+    let lines = source::line_starts{ text, &heap }
+    if not list::push{ list = &files, item = check::File{ name, text, lines, tree } } { @panic("ctxc: out of memory") }
 }
 
 // `ctxc recover FILE FROM TO [-v]`

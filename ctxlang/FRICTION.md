@@ -27,3 +27,28 @@ numbers, which PLAN.md and commit messages cite; git history has the resolved on
   the type `[]mut T`, so a later `bs = f{}` with a `[]T` result is an error. The parser annotates
   such locals. Inferring the type from every assignment, as literals are (spec §11 Literals),
   would fix it.
+- **22. No structural equality or hashing.** Interning types in a `map::Map` keyed by a union
+  took a hand-written `hash` and `eq` (`types.ctx`, about 90 lines). `eq` is a match inside a
+  match for each variant. Derived `==` for structs and unions without pointers, or a builtin
+  `@hash`, would remove this.
+- **23. Narrowing skips `let mut` locals** (spec §8). A `?T` local that a loop reassigns has to be
+  copied (`let q = p`) before it can be narrowed or matched (`check::const_decl`).
+- **24. A `?Union` takes two steps to match.** `map::get` returns `?Entry`, so code tests for
+  `null` and then matches the value. A pattern that goes through `some`, or `match` arms that
+  list a `?U`'s variants next to `null`, would take one.
+- **25. A diagnostic takes three lines.** `let mut b = message{ c }`, then
+  `pushed{ ok = @fmt(&b, ...) }`, then `error{ &c, at, msg = utf8::view{ b } }`: 24 times in
+  `check.ctx`. `@fmt` can't produce a `utf8::String` in an expression.
+- **26. Allocation failure everywhere.** Each `list::push` or `map::put` needs
+  `if not ... { @panic(...) }`, so every module grows its own `push`/`add` wrappers
+  (`check.ctx` has six). An arena that can't fail, or a std `must` helper, would help.
+- **27. No checked arithmetic.** Const folding detects i64 overflow by hand, with `@wrap_*` and
+  sign tests (`check::arith`). `@checked_add` and the like, returning `?T`, would do it, and
+  stage 6 step 7 needs the same for every const.
+- **28. `null` can't name a variant.** A union for types can't have a `null` variant, so it is
+  `nil` (`types::Type`, and `syntax::ExprKind` before it).
+- **29. An `if` of literals has no type as a `@fmt` hole** (spec §11 Literals). `@fmt(&b, "{}",
+  if m { "mut " } else { "" })` makes two arrays of different lengths. The hole needs a typed
+  `let` first. A hole could expect a `utf8::String`, as a bare literal hole already does.
+- **30. ctxi takes the first `--`** (implementation). `python -m ctxi ctxc decls STD -- FILE`
+  loses the `--`, so it has to be `ctxc -- decls STD -- FILE`.

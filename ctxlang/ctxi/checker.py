@@ -174,6 +174,11 @@ class Checker:
     # ---------------------------------------------------------------- program
 
     def check(self):
+        self.check_decls()
+        self.check_bodies()
+
+    def check_decls(self):
+        """Collects every declaration and resolves the types in their signatures."""
         self.collect(self.std_decls, self.std)
         self.collect(self.decls, self.root)
         utf8 = self.std.paths.get('utf8')
@@ -208,6 +213,8 @@ class Checker:
             nf.sig_fields = [(n, m, self.rtype(parse_type(src), nf.ns, {}, allow_bound=not m))
                              for n, m, src in nf.field_src]
             nf.ret_t = self.rtype(parse_type(nf.ret_src), nf.ns, {}) if nf.ret_src else VOID
+
+    def check_bodies(self):
         for d in self.consts:
             self.check_const(d)
         for d in self.fns:

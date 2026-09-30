@@ -688,6 +688,89 @@ enum Sign: i8 { minus = -1, zero, plus }
 """
 
 
+class Declarations(Base):
+    """Every error in declarations, at its exact position: tools/checktest.py compares ctxc's
+    first diagnostic with each of them through the corpus."""
+
+    def assertDeclError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_names(self):
+        for src, msg, line, col in [
+            ('struct S {}\nstruct S {}', '`S` is already declared in this scope', 2, 1),
+            ('fn f {} {}\nconst f: i32 = 1', '`f` is already declared in this scope', 2, 1),
+            ('namespace n {}\nstruct n {}', '`n` is already declared in this scope', 2, 1),
+            ('namespace n { struct A {} }\nnamespace n { struct B {} }', '`n` is already declared in this scope', 2, 1),
+            ('struct S(T, T) { a: T }', 'duplicate generic parameter in `S`', 1, 1),
+            ('fn f(T, T) {} {}', 'duplicate generic parameter in `f`', 1, 1),
+            ('struct S { a: Nope }', 'unknown type or namespace `Nope`', 1, 15),
+            ('struct S { a: i32::x }', '`i32` is not a namespace', 1, 15),
+            ('namespace n {}\nstruct S { a: n::Nope }', 'no type or namespace `Nope` in `n`', 2, 18),
+            ('namespace n {}\nstruct S { a: n }', 'namespace `n` used as a type', 2, 15),
+            ('fn f {} {}\nstruct S { a: f }', 'unknown type or namespace `f`', 2, 15),
+        ]:
+            self.assertDeclError(src + '\nfn main {} {}', msg, line, col)
+
+    def test_types(self):
+        for src, msg, line, col in [
+            ('struct S { a: [0 - 1]u8 }', 'array length must not be negative', 1, 15),
+            ('type F = fn{ a: i32, a: i32 }', 'duplicate context field `a`', 1, 22),
+            ('fn f { a: i32, a: u8 } {}', 'duplicate context field `a`', 1, 16),
+            ('struct S { f: &fn{} }', '`&fn` can only be the type of a local or a read-only context field', 1, 15),
+            ('fn f { mut g: &fn{} } {}', '`&fn` can only be the type of a local or a read-only context field', 1, 15),
+            ('fn f {} -> &fn{} {}', '`&fn` can only be the type of a local or a read-only context field', 1, 12),
+            ('type F = &fn{}\nstruct S { f: F }', '`&fn` can only be the type of a local or a read-only context field', 1, 10),
+            ('struct S(T) { a: T(i32) }', 'generic parameter `T` takes no type arguments', 1, 18),
+            ('struct S { a: i32(u8) }', '`i32` takes no type arguments', 1, 15),
+            ('struct S { a: Io(u8) }', '`Io` takes no type arguments', 1, 15),
+            ('struct P(T) { a: T }\nstruct S { a: P }', '`P` expects 1 type argument(s), got 0', 2, 15),
+            ('struct P(T) { a: T }\nstruct S { a: P(i32, u8) }', '`P` expects 1 type argument(s), got 2', 2, 15),
+            ('type A = B\ntype B = A', 'type alias `A` refers to itself', 2, 10),
+            ('type A = A', 'type alias `A` refers to itself', 1, 10),
+            ('type A(T) = T(i32)\nstruct S { a: A(u8) }', 'generic parameter `T` takes no type arguments', 1, 13),
+            ('struct S { a: i32, a: u8 }', 'duplicate field `a`', 1, 20),
+            ('union U { a, a }', 'duplicate variant `a`', 1, 14),
+            ('union U { a{ x: i32, x: u8 } }', 'duplicate field `x`', 1, 22),
+            ('const C: Nope = 1', 'unknown type or namespace `Nope`', 1, 10),
+        ]:
+            self.assertDeclError(src + '\nfn main {} {}', msg, line, col)
+
+    def test_constants(self):
+        for src, msg, line, col in [
+            ('struct S { a: [1 / 0]u8 }', 'division by zero in constant', 1, 18),
+            ('struct S { a: [1 % 0]u8 }', 'division by zero in constant', 1, 18),
+            ('struct S { a: [1 << 64]u8 }', 'shift count out of range in constant', 1, 18),
+            ('const N: usize = N\nstruct S { a: [N]u8 }', 'const `N` refers to itself', 1, 18),
+            ('const N: usize = M\nconst M: usize = N\nstruct S { a: [N]u8 }', 'const `N` refers to itself', 2, 18),
+            ('struct S { a: [x]u8 }', 'array length must be a compile-time integer constant', 1, 16),
+            ('struct S { a: [1.5]u8 }', 'array length must be a compile-time integer constant', 1, 16),
+            ('namespace n { const N: usize = 2 }\nstruct S { a: [n::N * 3 - 1]u8 }\nconst B: [5]u8 = [0; 5]\nfn f { s: S } { let b: [5]u8 = s.a }', None, 0, 0),
+            ('struct S { a: [nope::N]u8 }', 'unknown type or namespace `nope`', 1, 16),
+            ('enum E: u8 { a = n::N }\nnamespace n { const N: u8 = 300 }', 'value 300 of `a` does not fit in u8', 1, 14),
+        ]:
+            if msg is None:
+                run(src + '\nfn main {} {}')
+            else:
+                self.assertDeclError(src + '\nfn main {} {}', msg, line, col)
+
+    def test_main(self):
+        for src, msg, line, col in [
+            ('', 'no `fn main` entry point', 1, 1),
+            ('const main: i32 = 1', 'no `fn main` entry point', 1, 1),
+            ('fn main(T) {} {}', '`main` cannot be generic', 1, 1),
+            ('fn f {} {}\nfn main {} -> i64 { return 0 }', '`main` can only return i32 (the exit code), not i64', 2, 1),
+            ('fn main { args: []u8 } {}', '`main` context field `args` must have type Args, got []u8', 1, 1),
+            ('fn main { n: i32 } {}',
+             '`main` context field `n` must have a capability type (Io, Fs, Mem) or be `args: Args`, got i32', 1, 1),
+            ('fn main { mut args: Args } {}',
+             '`main` context field `args` must have a capability type (Io, Fs, Mem) or be `args: Args`, got [][]u8', 1, 1),
+        ]:
+            self.assertDeclError(src, msg, line, col)
+        run('fn main { args: [][]u8, mut io: Io, fs: Fs, mut mem: Mem } -> i32 { return 0 }')
+
+
 class Enums(Base):
     def test_values_and_layout(self):
         self.assertOutput(ENUM + """

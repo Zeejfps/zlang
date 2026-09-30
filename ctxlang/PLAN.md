@@ -15,7 +15,7 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
 | 3a | Language work before the lexer (below) | done | `2056bb4` |
 | 4 | Lexer | done | |
 | 5 | Parser | done | |
-| 6 | Checker | **next** | |
+| 6 | Checker | **in progress**: sub-step 1 done | |
 | 7 | Self-hosting fixpoint | | |
 | 7a | Language server | | |
 | 8 | Decide ctxi's role | | |
@@ -27,12 +27,15 @@ dumps. The front end is then ported piece by piece and diffed against Python at 
   use (about 20s) and rebuilds it when ctxc, the runtime or std changes. ctxc compiles itself in
   0.2s. `CTX_CTXC=interp` runs the interpreted ctxc instead.
 - `CTX_BACKEND=c python -m unittest discover tests` passes all 312 tests.
-- `tools/ctest.py` passes 160 corpus programs, and skips 20 (below). `tools/ctest.py --same-c`:
+- `tools/ctest.py` passes 171 corpus programs, and skips 20 (below). `tools/ctest.py --same-c`:
   native and interpreted ctxc write byte-identical C for all 180 programs and for ctxc itself.
 - `tools/lextest.py`: ctxc's token dumps match ctxi's for all 483 files (stage 4).
 - `tools/parsetest.py`: ctxc's syntax trees match ctxi's for the 392 files that parse, and the
   first diagnostic matches for the 91 that don't (stage 5). `tools/recover.py`: all 333,900
   damaged copies of the corpus's files parse and pass its checks.
+- `tools/checktest.py`: ctxc's dump of the checked declarations matches ctxi's (`--decls`) for all
+  341 corpus programs whose declarations check, and the first diagnostic matches for the 152 that
+  don't (stage 6, sub-step 1). The checker runs without a panic on 10,760 damaged files.
 - Friction found while writing ctxc is logged in [FRICTION.md](FRICTION.md).
 
 ### Known gaps
@@ -82,17 +85,19 @@ ctxc/                  one multi-file program (every .ctx in the directory)
   source.ctx  diag.ctx                    spans and line tables, the diagnostics list
   lexer.ctx  parser.ctx  syntax.ctx       front end (stages 4–5)
   recover.ctx                             the recovery test's checks (tools/recover.py)
-  types.ctx  check_*.ctx                  checker (stage 6)
+  types.ctx  check.ctx                    checker (stage 6): interned types; declarations
   ir.ctx  ir_read.ctx  ir_print.ctx       IR, its reader and canonical printer
   emit_c.ctx                              backend (stage 2)
-  dump.ctx                                token and syntax-tree dumps for the diffs
+  dump.ctx                                token, syntax-tree and declaration dumps for the diffs
 ctxc/rt/ctxrt.h ctxrt.c                   C runtime: panic, natives, startup
 ctxi/irdump.py                            Python → IR (stage 1)
+ctxi/declsdump.py                         Python's checked declarations, for checktest (stage 6)
 ctxi/cbackend.py                          IR → ctxc → cc; bootstraps the native ctxc (stage 3)
 tools/ctxc.py                             driver: compiles a program to an executable
 tools/corpus.py  irtest.py  ctest.py      corpus, IR roundtrip, C backend differential tests
 tools/lextest.py  parsetest.py            token and tree dumps against ctxi's, and fuzzing
 tools/recover.py                          the recovery test, in parallel over the corpus
+tools/checktest.py                        declaration dumps against ctxi's (stage 6)
 ```
 
 ## Editor support
@@ -381,6 +386,30 @@ Work in sub-steps, each diffed on its own:
    value is kept in the const's check state, which compile-time consts (9.5) extend to any
    initializer.
 
+Until sub-step 6 there is no IR to diff, so the diff target is a dump of the checked
+declarations (`python -m ctxi PROGRAM --decls`, `ctxi/declsdump.py`; `ctxc decls STD... --
+FILE...`; `tools/checktest.py`), plus the first diagnostic. The dump grows with each sub-step.
+The `Declarations` tests put every error of the declaration phases in the corpus, at its exact
+position.
+
+ctxi checks types, flow and safety in one pass over a body, so its first diagnostic in a body can
+be a flow or safety error that comes before a type error. To report the same first diagnostic,
+ctxc keeps them in one pass too, in ctxi's order, and a flow or safety check is skipped only
+once the body has had a type error.
+
+**Sub-step 1 — done.** `types.ctx` interns types: an `Id` per distinct type, so equality is id
+equality, with fixed ids for the error type, the primitives and the capabilities, and
+substitution of generic arguments. `check.ctx` collects declarations into namespaces (universe,
+std, root) and resolves struct fields, union payloads, enum bases and values, aliases, const
+types, signatures and the natives' signatures, which it parses from source like any function.
+It then checks `main`, and computes layouts as ctxi's runtime does. The phases run in ctxi's
+order (`Checker.check_decls`, split from `check`). An unresolved type becomes `types::ERROR`, and
+a message repeated at the same place (a type alias is resolved at each use) is reported once.
+Side tables record each syntax declaration's `Decl`, each namespace's `Space`, what each name in
+a type refers to and each type expression's type. Array lengths and enum values are computed in
+i64, and a value that doesn't fit is `integer constant is too large`; ctxi's integers have no
+limit. Checking the declarations of all of ctxc, with lexing and parsing, takes 0.1s natively.
+
 *Done when:* IR matches the Python dump across the corpus, every compile-error test's first
 diagnostic contains the same fragment at the same position, the recovery test passes on the whole
 front end, and checking ctxc stays within the time budget.
@@ -567,9 +596,9 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 
 ## Open decisions
 
-- **Freezing the spec during the checker port.** Every feature added during stage 6 has to be
-  written twice. *Recommendation:* freeze the spec for stage 6, or require each feature commit to
-  update both checkers. **Open; decide before stage 6.**
+- **Freezing the spec during the checker port.** **Settled:** the spec is frozen for stage 6. No
+  language changes until the IR diffs match across the corpus; a bug fix in ctxi lands in both
+  checkers.
 - **Panic stack traces.** ctxi prints the function frames with each panic. Doing this in C needs a
   shadow stack, which costs time on every call. *Recommendation:* a debug flag, off by default.
   **Deferred;** the C backend prints no trace.

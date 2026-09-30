@@ -745,3 +745,201 @@ namespace tree {
         }
     }
 }
+
+// The checked declarations, as ctxi/declsdump.py writes them (tools/checktest.py compares the
+// two): the diagnostics first, as `error FILE:LINE:COL MSG`, then one line per declaration, in
+// the files' order and into namespaces, then the natives, then `main` if it is valid.
+//
+//   struct arena::Arena 24 8
+//     buf: []mut u8 @0
+//   fn arena::new { buf: []mut u8 } -> arena::Arena
+namespace decls {
+    type Out = dump::Out
+
+    fn file { mut out: Out, mut c: check::Checker } {
+        let ds = diag::items{ diags = c.diags.* }
+        let mut i: usize = 0
+        while i < ds.len {
+            diagnostic{ &out, c, d = ds[i] }
+            i = i + 1
+        }
+        let mut f: usize = 0
+        while f < c.files.len - 1 {
+            list_decls{ &out, &c, file = @as(u32, f), xs = c.files[f].tree.decls }
+            f = f + 1
+        }
+        let natives = list::items{ list = c.natives }
+        i = 0
+        while i < natives.len {
+            let d = check::get_decl{ c, d = natives[i] }
+            pushed{ ok = @fmt(&out, "native {} ", check::str{ s = d.qual }) and sig{ c, d, b = &out } and @fmt(&out, "\n") }
+            i = i + 1
+        }
+        if c.main != check::NONE { dump::put{ &out, s = "main\n" } }
+    }
+
+    fn diagnostic { mut out: Out, c: check::Checker, d: diag::Diag } {
+        let mut ok = true
+        if d.span.file == check::NO_FILE {
+            ok = @fmt(&out, "error :1:1 ")
+        } else {
+            let f = c.files[d.span.file]
+            let p = source::position{ text = f.text, lines = f.lines, offset = d.span.start }
+            ok = @fmt(&out, "error {}:{}:{} ", check::str{ s = f.name }, p.line, p.col)
+        }
+        pushed{ ok }
+        let mut k: usize = 0
+        while k < d.msg.bytes.len {
+            let ch = d.msg.bytes[k]
+            if ch == 10 { dump::put{ &out, s = "\\n" } } else { dump::byte{ &out, c = ch } }
+            k = k + 1
+        }
+        dump::put{ &out, s = "\n" }
+    }
+
+    fn list_decls { mut out: Out, mut c: check::Checker, file: u32, xs: []syntax::Decl } {
+        let mut i: usize = 0
+        while i < xs.len {
+            let x = xs[i]
+            let key = check::key{ file, id = x.id }
+            match x.k {
+                space{ decls } => {
+                    let ns = map::get{ m = c.space_of, key }
+                    if ns != null {
+                        pushed{ ok = @fmt(&out, "namespace {}\n", check::str{ s = check::get_space{ c, ns }.qual }) }
+                    }
+                    list_decls{ &out, &c, file, xs = decls }
+                }
+                else => {
+                    let d = map::get{ m = c.decl_of, key }
+                    if d != null { decl{ &out, &c, i = d } }
+                }
+            }
+            i = i + 1
+        }
+    }
+
+    fn decl { mut out: Out, mut c: check::Checker, i: u32 } {
+        let d = check::get_decl{ c, d = i }
+        let q = check::str{ s = d.qual }
+        let generic = d.tparams.len > 0
+        match d.kind {
+            record => {
+                pushed{ ok = @fmt(&out, "struct {}", q) and tparams{ d, b = &out } }
+                let t = check::types_of_decl{ &c, d = i }
+                let mut offs: []u64 = slice::empty(u64){}
+                if not generic {
+                    let o = check::struct_offsets{ &c, t }
+                    if o == null {
+                        dump::put{ &out, s = " ?" }
+                    } else {
+                        pushed{ ok = @fmt(&out, " {} {}", o.layout.size, o.layout.align) }
+                        offs = o.offs
+                    }
+                }
+                dump::put{ &out, s = "\n" }
+                let mut j: usize = 0
+                while j < d.fields.len {
+                    let f = d.fields[j]
+                    pushed{ ok = @fmt(&out, "  {}: {}", check::str{ s = f.name }, check::tstr{ c, t = f.ty }) }
+                    if j < offs.len { pushed{ ok = @fmt(&out, " @{}", offs[j]) } }
+                    dump::put{ &out, s = "\n" }
+                    j = j + 1
+                }
+            }
+            sum => {
+                pushed{ ok = @fmt(&out, "union {}", q) and tparams{ d, b = &out } }
+                let t = check::types_of_decl{ &c, d = i }
+                let mut offs: [][]mut u64 = slice::empty([]mut u64){}
+                if not generic {
+                    let o = check::union_offsets{ &c, t }
+                    if o == null {
+                        dump::put{ &out, s = " ?" }
+                    } else {
+                        pushed{ ok = @fmt(&out, " {} {} {}", o.layout.size, o.layout.align, o.pay_off) }
+                        offs = o.offs
+                    }
+                }
+                dump::put{ &out, s = "\n" }
+                let mut j: usize = 0
+                while j < d.variants.len {
+                    let v = d.variants[j]
+                    pushed{ ok = @fmt(&out, "  {}", check::str{ s = v.name }) }
+                    let fs = v.fields
+                    if fs != null {
+                        dump::put{ &out, s = if fs.len == 0 { "{}" } else { "{ " } }
+                        let mut k: usize = 0
+                        while k < fs.len {
+                            if k > 0 { dump::put{ &out, s = ", " } }
+                            pushed{ ok = @fmt(&out, "{}: {}", check::str{ s = fs[k].name }, check::tstr{ c, t = fs[k].ty }) }
+                            if j < offs.len and k < offs[j].len { pushed{ ok = @fmt(&out, " @{}", offs[j][k]) } }
+                            k = k + 1
+                        }
+                        if fs.len > 0 { dump::put{ &out, s = " }" } }
+                    }
+                    dump::put{ &out, s = "\n" }
+                    j = j + 1
+                }
+            }
+            enumeration => {
+                pushed{ ok = @fmt(&out, "enum {}: {}\n", q, check::tstr{ c, t = d.ty }) }
+                match d.syn.k {
+                    enumeration{ variants } => {
+                        let mut j: usize = 0
+                        while j < variants.len and j < d.values.len {
+                            pushed{ ok = @fmt(&out, "  {} = {}\n", check::str{ s = variants[j].name.text }, d.values[j]) }
+                            j = j + 1
+                        }
+                    }
+                    else => {}
+                }
+            }
+            alias => {
+                if generic {
+                    pushed{ ok = @fmt(&out, "type {}", q) and tparams{ d, b = &out } and @fmt(&out, "\n") }
+                } else {
+                    pushed{ ok = @fmt(&out, "type {} = {}\n", q, check::tstr{ c, t = d.ty }) }
+                }
+            }
+            constant => { pushed{ ok = @fmt(&out, "const {}: {}\n", q, check::tstr{ c, t = d.ty }) } }
+            func => {
+                pushed{ ok = @fmt(&out, "fn {}", q) and tparams{ d, b = &out } and @fmt(&out, " ") and sig{ c, d, b = &out } and @fmt(&out, "\n") }
+            }
+            native => {}
+        }
+    }
+
+    // `(T, S)` after a generic declaration's name.
+    fn tparams { d: check::Decl, mut b: Out } -> bool {
+        if d.tparams.len == 0 { return true }
+        let mut ok = utf8::push{ &b, s = "(" }
+        let mut i: usize = 0
+        while i < d.tparams.len {
+            if i > 0 { ok = ok and utf8::push{ &b, s = ", " } }
+            ok = ok and utf8::push{ &b, s = check::str{ s = d.tparams[i].text } }
+            i = i + 1
+        }
+        return ok and utf8::push{ &b, s = ")" }
+    }
+
+    // `{ mut io: Io, n: i64 } -> R`
+    fn sig { c: check::Checker, d: check::Decl, mut b: Out } -> bool {
+        let mut ok = utf8::push{ &b, s = "{" }
+        let mut i: usize = 0
+        while i < d.fields.len {
+            let f = d.fields[i]
+            ok = ok and utf8::push{ &b, s = if i == 0 { " " } else { ", " } }
+            let m: utf8::String = if f.mutable { "mut " } else { "" }
+            ok = ok and @fmt(&b, "{}{}: ", m, check::str{ s = f.name }) and check::write_type{ c, t = f.ty, &b }
+            i = i + 1
+        }
+        if d.fields.len > 0 { ok = ok and utf8::push{ &b, s = " " } }
+        ok = ok and utf8::push{ &b, s = "}" }
+        if d.ret != types::VOID { ok = ok and utf8::push{ &b, s = " -> " } and check::write_type{ c, t = d.ret, &b } }
+        return ok
+    }
+
+    fn pushed { ok: bool } {
+        if not ok { @panic("dump: out of memory") }
+    }
+}
