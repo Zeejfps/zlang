@@ -361,12 +361,16 @@ class Checker:
         """Evaluate a compile-time integer (array lengths)."""
         if isinstance(e, A.IntLit):
             return e.val
-        if isinstance(e, A.Binary) and e.op in ('+', '-', '*', '/', '%'):
+        if isinstance(e, A.Binary) and e.op in ('+', '-', '*', '/', '%', '&', '|', '^', '<<', '>>'):
             a, b = self.const_int(e.lhs, ns), self.const_int(e.rhs, ns)
             if e.op in ('/', '%') and b == 0:
                 self.err('division by zero in constant', e.pos)
+            if e.op in ('<<', '>>') and not 0 <= b < 64:
+                self.err('shift count out of range in constant', e.pos)
             return {'+': lambda: a + b, '-': lambda: a - b, '*': lambda: a * b,
-                    '/': lambda: int(a / b), '%': lambda: a - b * int(a / b)}[e.op]()
+                    '/': lambda: int(a / b), '%': lambda: a - b * int(a / b),
+                    '&': lambda: a & b, '|': lambda: a | b, '^': lambda: a ^ b,
+                    '<<': lambda: a << b, '>>': lambda: a >> b}[e.op]()
         if isinstance(e, A.Path):
             d = None
             if len(e.segs) == 1:
@@ -1353,6 +1357,15 @@ class Checker:
             if not is_num(t):
                 self.err(f'`{op}` needs numbers, got {tstr(t)}', e.pos)
             return BOOL
+        if op in ('<<', '>>'):
+            e.ptrarith = False
+            t = self.expr(e.lhs, exp)
+            if not is_int(t):
+                self.err(f'`{op}` needs an integer to shift, got {tstr(t)}', e.pos)
+            ct = self.expr(e.rhs)
+            if not is_int(ct):
+                self.err(f'a shift count must be an integer, got {tstr(ct)}', e.pos)
+            return t
         lt = self.expr(e.lhs, exp)
         plt = prune(lt)
         if isinstance(plt, Ptr):
@@ -1367,7 +1380,10 @@ class Checker:
         if t is None:
             self.err(f'operands of `{op}` have incompatible types: {tstr(lt)} and {tstr(rt)}; '
                      f'convert one with @as', e.pos)
-        if not is_num(t):
+        if op in ('&', '|', '^'):
+            if not is_int(t):
+                self.err(f'`{op}` needs integers, got {tstr(t)}', e.pos)
+        elif not is_num(t):
             self.err(f'`{op}` needs numbers, got {tstr(t)}', e.pos)
         return t
 

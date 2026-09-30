@@ -342,6 +342,15 @@ namespace ir_read {
             let a = sub{ &r }
             let b = sub{ &r }
             k = ir::ExprKind::arith{ op, a, b, pos = pos{ &r } }
+        } else if (is{ s = tag, lit = "bits" }) {
+            let op = bit_op{ &r }
+            let a = sub{ &r }
+            k = ir::ExprKind::bits{ op, a, b = sub{ &r } }
+        } else if (is{ s = tag, lit = "shift" }) {
+            let op = shift_op{ &r }
+            let a = sub{ &r }
+            let b = sub{ &r }
+            k = ir::ExprKind::shift{ op, a, b, pos = pos{ &r } }
         } else if (is{ s = tag, lit = "variant" }) {
             let index = id32{ &r }
             k = ir::ExprKind::variant{ index, items = args{ &r } }
@@ -479,6 +488,21 @@ namespace ir_read {
         if (is{ s, lit = "div" }) { return ir::ArithOp::div }
         if (not is{ s, lit = "rem" }) { fail{ &r, problem = Problem::unknown_tag } }
         return ir::ArithOp::rem
+    }
+
+    fn bit_op { mut r: Reader } -> ir::BitOp {
+        let s = sym{ &r }
+        if (is{ s, lit = "and" }) { return ir::BitOp::bit_and }
+        if (is{ s, lit = "or" }) { return ir::BitOp::bit_or }
+        if (not is{ s, lit = "xor" }) { fail{ &r, problem = Problem::unknown_tag } }
+        return ir::BitOp::bit_xor
+    }
+
+    fn shift_op { mut r: Reader } -> ir::ShiftOp {
+        let s = sym{ &r }
+        if (is{ s, lit = "shl" }) { return ir::ShiftOp::shl }
+        if (not is{ s, lit = "shr" }) { fail{ &r, problem = Problem::unknown_tag } }
+        return ir::ShiftOp::shr
     }
 
     fn cmp_op { mut r: Reader } -> ir::CmpOp {

@@ -57,6 +57,9 @@ Expressions; each has its type T first:
     (seq T E E)                          evaluates the first, then gives the second
     (neg T E POS)  (not T E)  (and T E E)  (or T E E)
     (arith T OP E E POS)                 OP: add sub mul div rem; operands have type T
+    (bits T OP E E)                      OP: and or xor; operands have integer type T
+    (shift T OP E E POS)                 OP: shl shr; the first operand has type T, the count
+                                         any integer type
     (cmp T OP E E)                       OP: eq ne lt le gt ge; operands have one type
     (ptradd T E E)  (isnull T E)  (notnull T E)
     (widen T E)  (some T E)  (fnconv T E)
@@ -92,6 +95,8 @@ class Block:
 
 NONE = Sym('_')
 ARITH = {'+': 'add', '-': 'sub', '*': 'mul', '/': 'div', '%': 'rem'}
+BITS = {'&': 'and', '|': 'or', '^': 'xor'}
+SHIFT = {'<<': 'shl', '>>': 'shr'}
 CMP = {'==': 'eq', '!=': 'ne', '<': 'lt', '<=': 'le', '>': 'gt', '>=': 'ge'}
 WRAP = {'wrap_add': 'add', 'wrap_sub': 'sub', 'wrap_mul': 'mul'}
 
@@ -411,6 +416,11 @@ class Dumper:
             return node('cmp', self.tid(t), Sym(CMP[op]), self.conv(e.lhs, common), self.conv(e.rhs, common))
         if e.ptrarith:
             return node('ptradd', self.tid(t), self.ex(e.lhs), self.conv(e.rhs, USIZE))
+        if op in BITS:
+            return node('bits', self.tid(t), Sym(BITS[op]), self.conv(e.lhs, t), self.conv(e.rhs, t))
+        if op in SHIFT:
+            return node('shift', self.tid(t), Sym(SHIFT[op]), self.conv(e.lhs, t), self.ex(e.rhs),
+                        *self.pos(e.pos))
         return node('arith', self.tid(t), Sym(ARITH[op]), self.conv(e.lhs, t), self.conv(e.rhs, t),
                     *self.pos(e.pos))
 
@@ -719,6 +729,12 @@ class Verifier:
         elif tag == 'arith':
             a, b = self.ex(e[3]), self.ex(e[4])
             self.expect(self.is_num(t) and a == t and b == t, f'arith operands {a} {b} vs {t}')
+        elif tag == 'bits':
+            a, b = self.ex(e[3]), self.ex(e[4])
+            self.expect(self.is_int(t) and a == t and b == t, f'bits operands {a} {b} vs {t}')
+        elif tag == 'shift':
+            a, b = self.ex(e[3]), self.ex(e[4])
+            self.expect(self.is_int(t) and a == t and self.is_int(b), f'shift operands {a} {b} vs {t}')
         elif tag == 'cmp':
             a, b = self.ex(e[3]), self.ex(e[4])
             self.expect(self.is_bool(t) and a == b, f'cmp operands {a} {b}')

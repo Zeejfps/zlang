@@ -393,6 +393,28 @@ namespace ir_print {
                 sub{ &o, e = b, depth }
                 position{ &o, p = pos }
             }
+            bits{ op, a, b }          => {
+                head{ &o, e, a = "bits" }
+                char{ &o, c = ' ' }
+                match (op) {
+                    bit_and => { text{ &o, a = "and" } }
+                    bit_or  => { text{ &o, a = "or" } }
+                    bit_xor => { text{ &o, a = "xor" } }
+                }
+                sub{ &o, e = a, depth }
+                sub{ &o, e = b, depth }
+            }
+            shift{ op, a, b, pos }    => {
+                head{ &o, e, a = "shift" }
+                char{ &o, c = ' ' }
+                match (op) {
+                    shl => { text{ &o, a = "shl" } }
+                    shr => { text{ &o, a = "shr" } }
+                }
+                sub{ &o, e = a, depth }
+                sub{ &o, e = b, depth }
+                position{ &o, p = pos }
+            }
             cmp{ op, a, b }           => {
                 head{ &o, e, a = "cmp" }
                 char{ &o, c = ' ' }

@@ -226,6 +226,89 @@ fn main { mut io: Io } {
 }
 """, '@panic takes a string literal')
 
+    def test_bitwise(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a: u32 = 0xF0
+    io::println_u64{ &io, n = a & 0x3C }
+    io::println_u64{ &io, n = a | 0x0F }
+    io::println_u64{ &io, n = a ^ 0xFF }
+    let b: i8 = -6
+    io::println_i64{ &io, n = b & 0x0F }
+    io::println_i64{ &io, n = b ^ -1 }
+    let c: u8 = 3
+    io::println_u64{ &io, n = a | c }
+}
+""", '48\n255\n15\n10\n5\n243\n')
+
+    def test_shifts(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a: u32 = 0xF0
+    let n: usize = 24
+    io::println_u64{ &io, n = a << n }
+    io::println_u64{ &io, n = a << 28 }
+    io::println_u64{ &io, n = a >> 4 }
+    let one: i8 = 1
+    io::println_i64{ &io, n = one << 7 }
+    let b: i8 = -128
+    io::println_i64{ &io, n = b >> 7 }
+    let big: u64 = 256 << 20
+    io::println_u64{ &io, n = big }
+}
+""", '4026531840\n0\n15\n-128\n-1\n268435456\n')
+
+    def test_bitwise_precedence(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = 1 | 2 ^ 3 & 4 << 1 }
+    io::println_i64{ &io, n = 1 << 2 + 1 }
+    io::println_bool{ &io, n = 6 & 1 == 0 }
+    io::println_i64{ &io, n = (1 | 2) ^ 3 }
+}
+""", '3\n8\ntrue\n0\n')
+
+    def test_shift_count_too_big_panics(self):
+        self.assertPanic("""
+fn main { mut io: Io } {
+    let x: u32 = 1
+    let n: u8 = 32
+    io::println_u64{ &io, n = x << n }
+}
+""", 'shift count 32 out of range for a 32-bit integer')
+
+    def test_shift_count_negative_panics(self):
+        self.assertPanic("""
+fn main { mut io: Io } {
+    let x: i64 = 1
+    let n = -1
+    io::println_i64{ &io, n = x >> n }
+}
+""", 'shift count -1 out of range for a 64-bit integer')
+
+    def test_bitwise_needs_integers(self):
+        self.assertCompileError("""
+fn main { mut io: Io } { let x = 1.5 & 2.0 }
+""", '`&` needs integers, got {float}')
+        self.assertCompileError("""
+fn main { mut io: Io } { let x = true | false }
+""", '`|` needs integers, got bool')
+        self.assertCompileError("""
+fn main { mut io: Io } { let x = 1.5 << 2 }
+""", '`<<` needs an integer to shift, got {float}')
+        self.assertCompileError("""
+fn main { mut io: Io } { let x = 1 >> 2.0 }
+""", 'a shift count must be an integer, got {float}')
+
+    def test_bitwise_in_array_length(self):
+        self.assertOutput("""
+const K: usize = 1 << 3
+fn main { mut io: Io } {
+    let mut a: [K | 1]u8
+    io::println_u64{ &io, n = a.len }
+}
+""", '9\n')
+
     def test_wrap_and_trunc(self):
         self.assertOutput("""
 fn main { mut io: Io } {

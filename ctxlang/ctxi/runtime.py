@@ -915,7 +915,28 @@ class Compiler:
             return lambda fp: l(fp) + r(fp) * es
         if t.kind == 'float':
             return self.float_op(op, l, r, t.name == 'f32')
+        if op in ('&', '|', '^', '<<', '>>'):
+            return self.bit_op(op, l, r, t, pos)
         return self.int_op(op, l, r, t.lo, t.hi, pos)
+
+    def bit_op(self, op, l, r, t, pos):
+        if op == '&':
+            return lambda fp: l(fp) & r(fp)
+        if op == '|':
+            return lambda fp: l(fp) | r(fp)
+        if op == '^':
+            return lambda fp: l(fp) ^ r(fp)
+        bits = t.bits
+        wrap = self.wrapper(t)
+
+        def count(fp):
+            n = r(fp)
+            if n < 0 or n >= bits:
+                panic(f'shift count {n} out of range for a {bits}-bit integer', pos)
+            return n
+        if op == '<<':
+            return lambda fp: wrap(l(fp) << count(fp))
+        return lambda fp: l(fp) >> count(fp)
 
     @staticmethod
     def int_op(op, l, r, lo, hi, pos):

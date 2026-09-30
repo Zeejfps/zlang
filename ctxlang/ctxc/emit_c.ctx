@@ -864,6 +864,16 @@ namespace emit {
             land{ a, b } => { logical{ &e, a = a.*, op = " && ", b = b.* } }
             lor{ a, b }  => { logical{ &e, a = a.*, op = " || ", b = b.* } }
             arith{ op, a, b, pos } => { arith{ &e, t = x.ty, op, a = a.*, b = b.*, pos } }
+            bits{ op, a, b } => {
+                cast_open{ &e, t = x.ty }
+                match (op) {
+                    bit_and => { infix{ &e, a = a.*, op = " & ", b = b.* } }
+                    bit_or  => { infix{ &e, a = a.*, op = " | ", b = b.* } }
+                    bit_xor => { infix{ &e, a = a.*, op = " ^ ", b = b.* } }
+                }
+                put{ &e, a = "))" }
+            }
+            shift{ op, a, b, pos } => { shift{ &e, t = x.ty, op, a = a.*, b = b.*, pos } }
             cmp{ op, a, b } => {
                 let text = match (op) {
                     eq => { 0 } ne => { 1 } lt => { 2 } le => { 3 } gt => { 4 } ge => { 5 }
@@ -1038,6 +1048,40 @@ namespace emit {
         position{ &e, p = pos }
         ch{ &e, c = ')' }
         close_temps{ &e, tt }
+    }
+
+    // `((tT)((uint64_t)A << ctx_shcount_i(B, BITS, pos)))`: shl in unsigned arithmetic, so the bits
+    // shifted out are dropped; shr is C's, which is arithmetic for a signed A with gcc and clang.
+    fn shift { mut e: E, t: ir::TypeId, op: ir::ShiftOp, a: ir::Expr, b: ir::Expr, pos: ir::Pos } {
+        let some{ value = p } = prim_of{ e, t } else { @panic("emit: shift of a non-integer") }
+        let some{ value = cp } = prim_of{ e, t = b.ty } else { @panic("emit: shift count of a non-integer") }
+        let tt = temps2{ &e, a, b }
+        cast_open{ &e, t }
+        match (op) {
+            shl => {
+                put{ &e, a = "(uint64_t)" }
+                operand{ &e, x = a, tt, i = 0 }
+                put{ &e, a = " << " }
+            }
+            shr => {
+                operand{ &e, x = a, tt, i = 0 }
+                put{ &e, a = " >> " }
+            }
+        }
+        if (is_signed{ p = cp }) { put{ &e, a = "ctx_shcount_i(" } } else { put{ &e, a = "ctx_shcount_u(" } }
+        operand{ &e, x = b, tt, i = 1 }
+        put{ &e, a = ", " }
+        num{ &e, n = bit_width{ p } }
+        put{ &e, a = ", " }
+        position{ &e, p = pos }
+        put{ &e, a = ")))" }
+        close_temps{ &e, tt }
+    }
+
+    fn bit_width { p: ir::Prim } -> u64 {
+        return match (p) {
+            i8 => { 8 } u8 => { 8 } i16 => { 16 } u16 => { 16 } i32 => { 32 } u32 => { 32 } else => { 64 }
+        }
     }
 
     // `(B).a[ctx_idx(I, N, pos)]`, with the base before the index.
@@ -1638,6 +1682,7 @@ namespace emit {
             land{ a, b }       => { pure{ e, x = a.* } and pure{ e, x = b.* } }
             lor{ a, b }        => { pure{ e, x = a.* } and pure{ e, x = b.* } }
             cmp{ a, b }        => { pure{ e, x = a.* } and pure{ e, x = b.* } }
+            bits{ a, b }       => { pure{ e, x = a.* } and pure{ e, x = b.* } }
             ptradd{ p, n }     => { pure{ e, x = p.* } and pure{ e, x = n.* } }
             wrap{ a, b }       => { pure{ e, x = a.* } and pure{ e, x = b.* } }
             arith{ a, b }      => { float_type{ e, t = x.ty } and pure{ e, x = a.* } and pure{ e, x = b.* } }

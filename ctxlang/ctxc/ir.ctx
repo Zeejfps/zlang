@@ -95,6 +95,8 @@ namespace ir {
     // ---- expressions
 
     union ArithOp { add, sub, mul, div, rem }
+    union BitOp { bit_and, bit_or, bit_xor }                    // (bits T and|or|xor E E)
+    union ShiftOp { shl, shr }
     union CmpOp { eq, ne, lt, le, gt, ge }
 
     // A call's argument, a literal's field: `index` is the param, field or struct field.
@@ -120,6 +122,8 @@ namespace ir {
         land{ a: *Expr, b: *Expr },                             // (and T E E)
         lor{ a: *Expr, b: *Expr },                              // (or T E E)
         arith{ op: ArithOp, a: *Expr, b: *Expr, pos: Pos },
+        bits{ op: BitOp, a: *Expr, b: *Expr },
+        shift{ op: ShiftOp, a: *Expr, b: *Expr, pos: Pos },     // b: any integer type
         cmp{ op: CmpOp, a: *Expr, b: *Expr },
         ptradd{ p: *Expr, n: *Expr },
         isnull{ e: *Expr },

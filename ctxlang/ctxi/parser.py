@@ -4,6 +4,8 @@ from .lexer import CompileError, lex
 from . import ast as A
 
 CMP_OPS = ('==', '!=', '<', '<=', '>', '>=')
+# Binary operator levels between comparison and prefix, loosest first. All are left to right.
+BIN_LEVELS = (('|',), ('^',), ('&',), ('<<', '>>'), ('+', '-'), ('*', '/', '%'))
 # Every builtin's signature (spec §13): (type arguments, value arguments, usage).
 # Type arguments always come first, so the name alone says how to parse each argument.
 # A (min, max) pair of value arguments means the trailing ones are optional.
@@ -451,33 +453,27 @@ class Parser:
         return e
 
     def cmp_expr(self):
-        e = self.add_expr()
+        e = self.bin_expr(0)
         tok = self.peek()
         if tok.kind == 'op' and tok.val in CMP_OPS:
             self.next()
-            e = A.Binary(tok.val, e, self.add_expr(), tok.pos)
+            e = A.Binary(tok.val, e, self.bin_expr(0), tok.pos)
             nxt = self.peek()
             if nxt.kind == 'op' and nxt.val in CMP_OPS:
                 self.err('comparisons do not chain', nxt)
         return e
 
-    def add_expr(self):
-        e = self.mul_expr()
+    def bin_expr(self, level):
+        """The operators of BIN_LEVELS[level] and tighter."""
+        if level == len(BIN_LEVELS):
+            return self.prefix()
+        ops = BIN_LEVELS[level]
+        e = self.bin_expr(level + 1)
         while True:
             tok = self.peek()
-            if tok.kind == 'op' and tok.val in ('+', '-'):
+            if tok.kind == 'op' and tok.val in ops:
                 self.next()
-                e = A.Binary(tok.val, e, self.mul_expr(), tok.pos)
-            else:
-                return e
-
-    def mul_expr(self):
-        e = self.prefix()
-        while True:
-            tok = self.peek()
-            if tok.kind == 'op' and tok.val in ('*', '/', '%'):
-                self.next()
-                e = A.Binary(tok.val, e, self.prefix(), tok.pos)
+                e = A.Binary(tok.val, e, self.bin_expr(level + 1), tok.pos)
             else:
                 return e
 

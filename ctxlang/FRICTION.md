@@ -14,7 +14,7 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
 4. **No shared match arms.** `a | b => { }` would collapse long runs of `x => { true }`.
 5. **No labeled break** out of nested loops; flags instead (§16 Q10).
 6. **No shift or bitwise operators.** `256 << 20` becomes `268435456`; masks go through
-   `@wrap_*`. Needed: `<< >> & | ^`.
+   `@wrap_*`. Needed: `<< >> & | ^`. *Done:* spec §11 Expressions.
 7. **Exclusivity blocks "context plus one field".** `f{ &e, xs = &e.list }` is rejected, so the
    heap is threaded separately. Split borrows, or a pattern for it.
 8. **Parentheses around `if` / `while` conditions** are noise when braces are required.

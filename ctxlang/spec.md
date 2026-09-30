@@ -258,14 +258,20 @@ Precedence, tightest first:
 | prefix | `&` `-` `not` | |
 | multiplicative | `*` `/` `%` | left to right |
 | additive | `+` `-` | left to right |
+| shift | `<<` `>>` | left to right |
+| bitwise and | `&` | left to right |
+| bitwise xor | `^` | left to right |
+| bitwise or | `\|` | left to right |
 | comparison | `==` `!=` `<` `<=` `>` `>=` | don't chain: `a < b < c` is an error |
 | and | `and` | short-circuit |
 | or | `or` | short-circuit |
 
 1. Arithmetic and comparison apply to two operands of the same numeric type, after widening (below). If the operand types differ, the one that widens to the other is converted. If neither widens to the other, it is an error. Use `@as` or `@trunc` (§13).
 2. Integer `+ - *` panic on overflow. `/` and `%` panic on a zero divisor. Use `@wrap_*` (§13) for wrapping arithmetic.
-3. `==` and `!=` work on numbers, `bool` and pointers (by address), and on `?T` against `null`. Other types have no built-in equality.
-4. `and`, `or` and `not` take and give `bool`. Conditions must be `bool`.
+3. `&`, `|` and `^` apply to two operands of the same integer type, after widening as in rule 1. They act on the two's complement bits and never panic.
+4. `a << n` and `a >> n` shift integer `a` by `n` bits. The result has `a`'s type. `n` may have any integer type and doesn't widen to or from `a`'s. A count below 0, or at or above `a`'s width in bits, panics. `<<` drops the bits shifted out, so it never overflows: `x << 1` wraps where `x * 2` panics. `>>` is arithmetic for signed types (it copies the sign bit) and logical for unsigned ones.
+5. `==` and `!=` work on numbers, `bool` and pointers (by address), and on `?T` against `null`. Other types have no built-in equality.
+6. `and`, `or` and `not` take and give `bool`. Conditions must be `bool`.
 
 ### Widening
 
@@ -279,7 +285,7 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 | `usize` | `u64` |
 | `f32` | `f64` |
 
-1. Widening applies wherever an expression of type `B` is expected: a read-only call argument, a struct or union field, an assignment, a `let` with a type, a `return`, and the `T` of an implicit `T` to `?T` conversion. It also applies between the operands of a binary operator (rule 1 above).
+1. Widening applies wherever an expression of type `B` is expected: a read-only call argument, a struct or union field, an assignment, a `let` with a type, a `return`, and the `T` of an implicit `T` to `?T` conversion. It also applies between the operands of a binary operator (rules 1 and 3 above), but not to a shift count.
 2. Nothing else converts implicitly. In particular integers don't widen to floats, `usize` doesn't widen to a signed type, and `?A`, `*A` and `[N]A` don't convert to `?B`, `*B` and `[N]B`. A `mut` field's argument is a pointer, so its type must match exactly.
 3. `usize` is at least 32 and at most 64 bits wide on every target, which is what makes the `usize` rows lossless.
 

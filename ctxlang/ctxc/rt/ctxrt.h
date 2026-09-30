@@ -91,6 +91,18 @@ CTX_INT_OPS(uint16_t, u16, 0, 0)
 CTX_INT_OPS(uint32_t, u32, 0, 0)
 CTX_INT_OPS(uint64_t, u64, 0, 0)
 
+// A shift count, checked against the width of the value shifted.
+static inline int ctx_shcount_i(int64_t n, int bits, CTX_POS) {
+    if (n < 0 || n >= bits) ctx_panic_fmt(line, col, file, "shift count %lld out of range for a %d-bit integer",
+                                          (long long)n, bits);
+    return (int)n;
+}
+static inline int ctx_shcount_u(uint64_t n, int bits, CTX_POS) {
+    if (n >= (uint64_t)bits) ctx_panic_fmt(line, col, file, "shift count %llu out of range for a %d-bit integer",
+                                           (unsigned long long)n, bits);
+    return (int)n;
+}
+
 // An array index, checked against the length.
 static inline uint64_t ctx_idx(uint64_t i, uint64_t n, CTX_POS) {
     if (i >= n) ctx_panic_fmt(line, col, file, "index %llu out of bounds for length %llu",
