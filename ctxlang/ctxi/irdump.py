@@ -381,6 +381,9 @@ class Dumper:
     def e_Field(self, e, t):
         bt = self.T(e.base.ty)
         if e.kind == 'field':
+            if e.narrow is not None:
+                f = node('field', self.tid(self.T(e.narrow)), self.ex(e.base), field_index(bt, e.name))
+                return node('payload', self.tid(t), f, 1, 0)
             return node('field', self.tid(t), self.ex(e.base), field_index(bt, e.name))
         if e.kind == 'pfield':
             base = node('deref', self.tid(bt.elem), self.ex(e.base), *self.pos(e.pos))

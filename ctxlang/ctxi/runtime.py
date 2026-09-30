@@ -725,6 +725,8 @@ class Compiler:
                 if bp is None:
                     return None
                 off = self.rt.layout(self.T(e.base.ty)).offs[e.name]
+                if e.narrow is not None:        # the payload of a narrowed ?T field
+                    off += self.rt.layout(self.T(e.narrow)).variants[1][1][0][2]
                 return lambda fp: bp(fp) + off
             if e.kind == 'pfield':
                 bv = self.expr(e.base)

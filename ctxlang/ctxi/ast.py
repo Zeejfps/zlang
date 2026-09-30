@@ -215,6 +215,7 @@ class Path(Node):
 class Field(Node):
     def __init__(self, base, name, pos):
         self.base, self.name, self.pos = base, name, pos
+        self.narrow = None     # set by the checker: the ?T type of a narrowed field
 
 
 class Deref(Node):

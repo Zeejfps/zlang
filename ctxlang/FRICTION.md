@@ -7,9 +7,11 @@ Each one is evidence for a spec change; §16 numbers refer to spec.md's open que
    `utf8::of{ chars = &x }`. The reader and emitter use a generic `put(A){ a = "..." }` to get
    around it. Literals should work where a slice or string is expected (§16 Q11).~~
    *Done:* a literal is a view where a `[]u8` or `utf8::String` is expected (spec §11 Literals).
-2. **Narrowing is narrow.** It works only for a lone `x != null` / `x == null` on a local: not
+2. ~~**Narrowing is narrow.** It works only for a lone `x != null` / `x == null` on a local: not
    through `and`/`or`, not on fields (`v.fields != null`). Code copies into locals or uses
-   `let … else` instead.
+   `let … else` instead.~~ *Done:* narrowing goes through `and`, `or` and `not`, applies to field
+   paths from a read-only root and in `while` bodies (spec §8 Optional). Mutable places and
+   paths through a pointer or index still need a copy.
 3. **A local shadows a function.** After `let binds = ...`, `binds{...}` resolves to the local and
    fails. Warn, or let calls skip non-function locals.
 4. ~~**No shared match arms.** `a | b => { }` would collapse long runs of `x => { true }`.~~

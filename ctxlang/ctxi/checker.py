@@ -104,6 +104,18 @@ def overlap(p, q):
     return all(a == b for a, b in zip(p[1], q[1]))
 
 
+def fact_union(a, b):
+    """Facts from a, then those of b that a doesn't already have (by key)."""
+    keys = {f[0] for f in a}
+    return a + [f for f in b if f[0] not in keys]
+
+
+def fact_meet(a, b):
+    """Facts of a whose key b also has."""
+    keys = {f[0] for f in b}
+    return [f for f in a if f[0] in keys]
+
+
 def place_str(p):
     s = p[0].name
     for st in p[1]:
@@ -511,10 +523,17 @@ class Checker:
 
     # ---- statements
 
+    def enter(self, extra):
+        """Declare a new block's match bindings (VarInfo) or narrowing facts (from `facts`)."""
+        for v in extra:
+            if isinstance(v, VarInfo):
+                self.declare(v)
+            else:
+                self.assume([v])
+
     def block(self, b, extra=()):
         self.push()
-        for v in extra:
-            self.declare(v)
+        self.enter(extra)
         for s in b.stmts:
             self.stmt(s)
         self.pop()
@@ -609,26 +628,25 @@ class Checker:
 
     def check_if(self, s, exp, value, may_leave=False):
         s.cond = self.expect(s.cond, BOOL)
-        nar = self.narrowing(s.cond)
+        when_true, when_false = self.facts(s.cond)
         s0 = self.save()
         body = self.value_block if value else self.branch_block
-        t1 = body(s.then, [nar[1]] if nar and nar[0] == '!=' else (), exp)
+        t1 = body(s.then, when_true, exp)
         s1 = self.st
         self.st = State(set(s0.defs), set(s0.maybe), s0.dead)
         t2 = None
         if s.els is not None:
-            t2 = body(s.els, [nar[1]] if nar and nar[0] == '==' else (), exp)
+            t2 = body(s.els, when_false, exp)
         s2 = self.st
         self.st = self.merge([s1, s2])
         if value:
             return self.join(s, [(s.then, t1), (s.els, t2)], exp, may_leave)
-        if nar and not s0.dead:
-            # If the branch where x is null always leaves, x stays narrowed to the end of the block.
-            null_branch = s1 if nar[0] == '==' else (s2 if s.els is not None else None)
-            if null_branch is not None and null_branch.dead:
-                nv = self.narrowing(s.cond)[1]
-                nv.depth, nv.loop_depth = self.depth, self.loop_depth
-                self.scopes[-1][nv.name] = nv       # replaces x, or shadows it if x is outer
+        if not s0.dead:
+            # If one branch always leaves, what the other assumes holds to the end of the block.
+            if s1.dead:
+                self.assume(when_false, after_if=True)
+            if s.els is not None and s2.dead:
+                self.assume(when_true, after_if=True)
 
     def branch_block(self, b, extra, exp):
         self.block(b, extra)
@@ -642,8 +660,7 @@ class Checker:
         """
         entry_dead = self.st.dead
         self.push()
-        for v in extra:
-            self.declare(v)
+        self.enter(extra)
         stmts = b.stmts
         last = stmts[-1] if stmts else None
         nested = isinstance(last, A.Match) or (isinstance(last, A.If) and last.els is not None)
@@ -739,22 +756,70 @@ class Checker:
             return live
         return [(b, self.expr(b.result, hint) if is_lit(b) else t) for b, t in live]
 
-    def narrowing(self, cond):
-        if not (isinstance(cond, A.Binary) and getattr(cond, 'nullcmp', False)):
-            return None
-        x = cond.rhs if isinstance(cond.lhs, A.NullLit) else cond.lhs
-        if not (isinstance(x, A.Path) and x.ref[0] == 'var'):
-            return None
-        v = x.ref[1]
-        if v.mutable:
-            return None
-        t = prune(v.ty)
+    # ---- narrowing (§8, Optional)
+
+    def facts(self, c):
+        """(when true, when false): what the checked condition c narrows in each case.
+
+        A fact is (key, T, pos, var): the key names a local or a field path, T is what it narrows
+        to, and var is the VarInfo for a local (None for a path).
+        """
+        if isinstance(c, A.Unary) and c.op == 'not':
+            t, f = self.facts(c.expr)
+            return f, t
+        if isinstance(c, A.Binary) and c.op in ('and', 'or'):
+            t1, f1 = self.facts(c.lhs)
+            t2, f2 = self.facts(c.rhs)
+            if c.op == 'and':
+                return fact_union(t1, t2), fact_meet(f1, f2)
+            return fact_meet(t1, t2), fact_union(f1, f2)
+        if isinstance(c, A.Binary) and getattr(c, 'nullcmp', False):
+            f = self.fact(c.rhs if isinstance(c.lhs, A.NullLit) else c.lhs)
+            if f is None:
+                return [], []
+            return ([f], []) if c.op == '!=' else ([], [f])
+        return [], []
+
+    def fact(self, x):
+        """The fact that x is not null, if x can be narrowed: a read-only local or context field,
+        or a field path from one through struct fields only."""
+        t = prune(x.ty)
         if not isinstance(t, Opt):
             return None
-        nv = VarInfo(v.name, t.elem, 'narrow', False, x.pos)
-        nv.narrow_of = v
-        nv.derived = v.derived
-        return (cond.op, nv)
+        if isinstance(x, A.Path) and x.ref[0] == 'var':
+            v = x.ref[1]
+            return None if v.mutable else (('var', v), t.elem, x.pos, v)
+        if isinstance(x, A.Field) and x.kind == 'field':
+            p = self.place_path(x)
+            if p and not p[0].mutable and not p[0].indirect and all(s[0] == 'f' for s in p[1]):
+                return (('path', p[0], p[1]), t.elem, x.pos, None)
+        return None
+
+    def assume(self, facts, after_if=False):
+        """Narrow each fact's local or path in the innermost scope."""
+        for key, t, pos, v in facts:
+            if key[0] == 'path':
+                self.scopes[-1][key] = t
+                continue
+            nv = VarInfo(v.name, t, 'narrow', False, pos)
+            nv.narrow_of = v
+            nv.derived = v.derived
+            if after_if:
+                nv.depth, nv.loop_depth = self.depth, self.loop_depth
+                self.scopes[-1][nv.name] = nv       # replaces x, or shadows it if x is outer
+            else:
+                self.declare(nv)
+
+    def narrowed_path(self, e):
+        """The narrowed type of field path e, or None."""
+        p = self.place_path(e)
+        if p is None:
+            return None
+        key = ('path', p[0], p[1])
+        for scope in reversed(self.scopes):
+            if key in scope:
+                return scope[key]
+        return None
 
     def s_While(self, s):
         s.cond = self.expect(s.cond, BOOL)
@@ -762,7 +827,7 @@ class Checker:
         breaks, conts = [], []
         self.loops.append((breaks, conts))
         self.loop_depth += 1
-        self.block(s.body)
+        self.block(s.body, self.facts(s.cond)[0])
         self.loop_depth -= 1
         self.loops.pop()
         # A read-only `let x: T` declared outside the loop must not be assigned on a path that
@@ -1416,7 +1481,11 @@ class Checker:
         op = e.op
         if op in ('and', 'or'):
             e.lhs = self.expect(e.lhs, BOOL)
+            # The right side runs only if the left is true (`and`) or false (`or`).
+            self.push()
+            self.assume(self.facts(e.lhs)[0 if op == 'and' else 1])
             e.rhs = self.expect(e.rhs, BOOL)
+            self.pop()
             return BOOL
         if op in ('==', '!='):
             ln, rn = isinstance(e.lhs, A.NullLit), isinstance(e.rhs, A.NullLit)
@@ -1492,6 +1561,7 @@ class Checker:
     # ---- postfix
 
     def e_Field(self, e, exp):
+        e.narrow = None
         bt = prune(self.expr(e.base))
         if isinstance(bt, Ptr):
             inner = prune(bt.elem)
@@ -1503,7 +1573,12 @@ class Checker:
                 return USIZE
         elif isinstance(bt, StructT):
             e.kind = 'field'
-            return self.field_type(bt, e)
+            ft = self.field_type(bt, e)
+            nt = self.narrowed_path(e)
+            if nt is not None:
+                e.narrow = ft       # the ?T field; the expression is its payload
+                return nt
+            return ft
         elif isinstance(bt, Arr) and e.name == 'len':
             e.kind = 'len'
             return USIZE

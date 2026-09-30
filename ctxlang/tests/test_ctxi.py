@@ -2299,6 +2299,110 @@ fn main {} {
 """, 'already declared')
 
 
+class NarrowingConditions(Base):
+    """§8 Optional: narrowing through `and`, `or` and `not`, of field paths, and in `while`."""
+
+    def test_and_or_not(self):
+        self.assertOutput("""
+fn both { a: ?i32, b: ?i32 } -> i32 {
+    if a != null and b != null { return a + b }
+    return 0
+}
+fn big { a: ?i32 } -> bool { return a == null or a > 3 }
+fn inv { a: ?i32 } -> i32 {
+    if not (a == null) { return a }
+    return -1
+}
+fn after { a: ?i32, b: ?i32 } -> i32 {
+    if a == null or b == null { return 0 }
+    return a * b
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = both{ a = 2, b = 3 } }
+    io::println_i64{ &io, n = both{ a = 2, b = null } }
+    io::println_bool{ &io, n = big{ a = null } }
+    io::println_bool{ &io, n = big{ a = 2 } }
+    io::println_i64{ &io, n = inv{ a = 7 } }
+    io::println_i64{ &io, n = after{ a = 4, b = 5 } }
+    io::println_i64{ &io, n = after{ a = null, b = 5 } }
+}
+""", '5\n0\ntrue\nfalse\n7\n20\n0\n')
+
+    def test_fields(self):
+        self.assertOutput("""
+struct Inner { tag: ?i32 }
+struct Node { kids: ?[]i32, inner: Inner }
+fn first { n: Node } -> i32 {
+    if n.kids != null and n.kids.len > 0 { return n.kids[0] }
+    return -1
+}
+fn tag { o: ?Node } -> i32 {
+    if o == null or o.inner.tag == null { return 0 }
+    let p = &o.inner.tag
+    return o.inner.tag + p.*
+}
+fn main { mut io: Io } {
+    let ks = [3, 4]
+    let n = Node{ kids = ks[..], inner = Inner{ tag = 5 } }
+    io::println_i64{ &io, n = first{ n } }
+    io::println_i64{ &io, n = first{ n = Node{ kids = null, inner = Inner{ tag = null } } } }
+    io::println_i64{ &io, n = tag{ o = n } }
+    io::println_i64{ &io, n = tag{ o = null } }
+}
+""", '3\n-1\n10\n0\n')
+
+    def test_while(self):
+        self.assertOutput("""
+struct S { limit: ?i32 }
+fn count { s: S } -> i32 {
+    let mut n = 0
+    while s.limit != null and n < s.limit { n = n + 1 }
+    return n
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = count{ s = S{ limit = 4 } } }
+    io::println_i64{ &io, n = count{ s = S{ limit = null } } }
+}
+""", '4\n0\n')
+
+    def test_or_does_not_narrow_when_true(self):
+        self.assertCompileError("""
+fn f { a: ?i32, b: ?i32 } -> i32 {
+    if a != null or b != null { return a }
+    return 0
+}
+fn main {} { }
+""", 'expected i32, got ?i32')
+
+    def test_and_does_not_narrow_after_when_false_may_finish(self):
+        self.assertCompileError("""
+fn f { a: ?i32 } -> i32 {
+    if a != null and a > 0 { }
+    return a
+}
+fn main {} { }
+""", 'expected i32, got ?i32')
+
+    def test_mutable_field_not_narrowed(self):
+        self.assertCompileError("""
+struct S { a: ?i32 }
+fn main { mut io: Io } {
+    let mut s = S{ a = 1 }
+    if s.a != null { io::println_i64{ &io, n = s.a } }
+}
+""", 'expected i64, got ?i32')
+
+    def test_field_through_pointer_not_narrowed(self):
+        self.assertCompileError("""
+struct S { a: ?i32 }
+fn f { p: *S } -> i32 {
+    if p.a != null { return p.a }
+    return 0
+}
+fn main {} { }
+""", 'expected i32, got ?i32')
+
+
 class LetElse(Base):
     """§11 Let-else: `let variant{ ... } = e else { ... }`."""
 
@@ -3079,6 +3183,26 @@ fn main { mut io: Io } -> i32 {
 }
 """)
         self.assertEqual((out, code), ('café\n', 5))
+
+    def test_narrowed_fields(self):
+        out, code = self.both("""
+struct Inner { tag: ?i64 }
+struct Node { kids: ?[]i32, inner: Inner }
+fn tag { o: ?Node } -> i64 {
+    if o == null or o.inner.tag == null { return 0 }
+    let p = &o.inner.tag
+    return o.inner.tag + p.*
+}
+fn main { mut io: Io } -> i32 {
+    let ks = [3, 4]
+    let n = Node{ kids = ks[..], inner = Inner{ tag = 5 } }
+    io::println_i64{ &io, n = tag{ o = n } }
+    io::println_i64{ &io, n = tag{ o = null } }
+    if n.kids == null { return 1 }
+    return n.kids[1]
+}
+""")
+        self.assertEqual((out, code), ('10\n0\n', 4))
 
     def test_evaluation_order(self):
         out, _ = self.both("""

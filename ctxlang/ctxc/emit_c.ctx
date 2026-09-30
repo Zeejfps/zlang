@@ -502,12 +502,11 @@ namespace emit {
             stmt{ &e, s = b.stmts[i] }
             i = i + 1
         }
-        let r = b.result
-        if r != null {
+        if b.result != null {
             nl{ &e }
             tmp{ &e, k = res }
             put{ &e, a = " = " }
-            expr{ &e, x = r.* }
+            expr{ &e, x = b.result.* }
             ch{ &e, c = ';' }
         }
         close_block{ &e }

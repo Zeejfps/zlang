@@ -134,13 +134,25 @@ match e {
 
 1. `?T` is a built-in union with variants `null` and `some{ value: T }`.
 2. `null` is a value of every `?T`. An expression of type `T` converts implicitly to `?T` as `some{ value = expr }`.
-3. Narrowing: in `if x != null { B }`, `x` has type `T` in `B`. In `if x == null { } else { B }`, `x` has type `T` in `B`. `x` must be a `let` local or a read-only context field. To narrow a mutable one, copy it first (`let y = x`) or `match` on it.
-4. Narrowing after an `if` statement: if the branch where `x` is null always leaves (it ends a path, §11.7, 8, 9), `x` has type `T` from after the `if` to the end of the enclosing block. That branch is the `{ }` of `if x == null { }`, or the `else` of `if x != null { } else { }`. `x` must be as in rule 3. A `let x` in that same block is an error if `x` was declared there, and shadows it otherwise.
+3. Narrowing: where an `x` of type `?T` is known not to be null, it has type `T`. `x` must be a `let` local or a read-only context field, or a path of struct fields from one, such as `v.a.b` (not through a pointer, `.*` or an index). To narrow a mutable one, copy it first (`let y = x`) or `match` on it.
+4. A condition narrows some `x`s when it is true and some when it is false:
+   - `x != null` narrows `x` when true; `x == null` narrows `x` when false.
+   - `not c` swaps what `c` narrows when true and when false.
+   - `a and b` narrows, when true, what `a` or `b` narrows when true; when false, what both narrow when false.
+   - `a or b` narrows, when true, what both narrow when true; when false, what `a` or `b` narrows when false.
+   - Any other condition narrows nothing.
+5. Where narrowing holds:
+   - In `a and b`, what `a` narrows when true holds in `b`. In `a or b`, what `a` narrows when false holds in `b`.
+   - In `if c { B1 } else { B2 }`, what `c` narrows when true holds in `B1`, and when false in `B2`. In `while c { B }`, what `c` narrows when true holds in `B`.
+   - After an `if` statement: if one branch always leaves (it ends a path, §11.7, 8, 9), the other branch's narrowing holds from after the `if` to the end of the enclosing block. Without an `else`, that is what `c` narrows when false, if the `{ }` leaves. A `let x` in that same block is an error if `x` was declared there, and shadows it otherwise.
 
 ```
 let d = hex_digit{ c }            // ?u32
 if d == null { return null }
 v = v * 16 + d                    // d: u32
+
+if o == null or o.name == null { return }
+print{ s = o.name }               // o: Obj, o.name: utf8::String
 ```
 
 ## 9. Generics
