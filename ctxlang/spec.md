@@ -146,6 +146,7 @@ match e {
    - In `a and b`, what `a` narrows when true holds in `b`. In `a or b`, what `a` narrows when false holds in `b`.
    - In `if c { B1 } else { B2 }`, what `c` narrows when true holds in `B1`, and when false in `B2`. In `while c { B }`, what `c` narrows when true holds in `B`.
    - After an `if` statement: if one branch always leaves (it ends a path, §11.7, 8, 9), the other branch's narrowing holds from after the `if` to the end of the enclosing block. Without an `else`, that is what `c` narrows when false, if the `{ }` leaves. A `let x` in that same block is an error if `x` was declared there, and shadows it otherwise.
+6. Representation: `?*T` and `?*mut T` are a pointer, the size of one, with `null` the address 0. A pointer is never null (§12), so no tag is needed, and the layout is C's nullable pointer, which is what lets one cross into C (§18). Every other `?T`, `??*T` included, holds a tag and its payload.
 
 ```
 let d = hex_digit{ c }            // ?u32
@@ -599,7 +600,7 @@ extern fn glfwPollEvents { mut glfw: Glfw }      // a capability says who may ca
 1. `extern fn name { context } -> R` declares a function that C provides. It has no body and no generic parameters.
 2. It calls the C symbol `name`, or the one `#c::symbol{ name = "..." }` gives. The symbol must be a C identifier.
 3. Its context fields are C's parameters in the order they are declared. A field with a capability type (§15) isn't passed: it only says who may call the function. A `mut` field of type `T` is passed as a `T*`.
-4. A field or result may have a numeric type, `bool`, an enum (as its base type), a pointer (as a C pointer), a slice (as a struct of `ptr` and `len`) or a struct (as a C struct of the same layout). Other types are an error.
+4. A field or result may have a numeric type, `bool`, an enum (as its base type), a pointer (as a C pointer), a `?*T` or `?*mut T` (as a C pointer, with `null` as `NULL`: §8, Optional, rule 6), a slice (as a struct of `ptr` and `len`) or a struct (as a C struct of the same layout). Other types are an error, other optionals included.
 5. Every call goes through a declaration of the symbol made for that function, so it can't clash with the declaration of the same symbol in a C header. Nothing checks the declaration against C's: a wrong one is undefined behaviour.
 6. An extern fn is called like any function and is a value of type `fn{C} -> R`.
 7. Every program is linked with the C library and the math library.

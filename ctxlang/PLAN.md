@@ -45,7 +45,7 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
   now that `proc::run` and `fs::list` exist.
 - `bootstrap/ctxc.c` is ctxc as C. `tools/toolchain.py` compiles it to a seed, and the seed
   compiles ctxc's current source into `build/ctxc` (about 7 s the first time, cached after).
-- `python -m unittest discover tests` runs all 365 tests through the native ctxc: each program is
+- `python -m unittest discover tests` runs all 369 tests through the native ctxc: each program is
   compiled with `ctxc build`, built with cc and run. They pass on Windows (gcc), Linux (gcc) and
   macOS arm64 (Apple clang).
 - `tools/fixpoint.py`: ctxc built by itself, twice, writes byte-identical C, the same as the
@@ -752,7 +752,14 @@ Increments, each landing with tests and a refreshed bootstrap:
    `if`s and `match`es (`build::os`). A binding carries its link requirements as a function its
    users' build programs call (`glfw::link{ &b, exe }`), as a Zig module does. Later, a mode that
    loads a library at run time, where the capability means "it loaded".
-5. **`?*T` as a nullable C pointer**, so C's `NULL` crosses as `null`.
+5. **`?*T` as a nullable C pointer** — *done.* `?*T` and `?*mut T` are now the pointer itself,
+   8 bytes with `null` the address 0 (a `*T` is never null), so C's `NULL` crosses as `null`,
+   in extern fields and results and in structs passed to C. The language didn't change: the
+   checker's layout gives a `?*T` a pointer's size, and the IR has a type for it, `(nptr PTR)`
+   (IR version 10), still an optional with variants `null` and `some{ value }`, whose payload is
+   the pointer itself. The backend tests and builds it as a pointer (`p == 0`, `(tN)(p)`).
+   `??*T` stays tagged, around the 8-byte `?*T`. The GLFW example's handles are
+   `?*mut Window` now, not addresses as `usize`.
 6. **The rest, one at a time:** C function pointers (GL and Vulkan load functions at run time),
    null-terminated strings, untagged unions (§16 Q8), callbacks from C.
 7. **A smaller runtime: std over the OS's C functions.** std's `io`, `fs` and `mem` call
@@ -816,6 +823,7 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 | `[]T`, `s[i]`, `s[lo..hi]` | `struct { T *m_ptr; uint64_t m_len; }`; `ctx_idx`, `ctx_range` | Bounds checks panic as in ctxi. The runtime's C functions see it as `ctx_slice`. |
 | struct | C struct, same field order | Checked with `_Static_assert` on `sizeof` and `offsetof`. |
 | union, `?T` | `struct { uint32_t tag; union { … } p; }` | Tag at 0, payload at `align_up(4, payload align)`. `null` is tag 0. |
+| `?*T`, `?*mut T` | `T*` | `null` is 0. IR type `nptr`. |
 | enum | its base integer type | `match` becomes an if-else chain on the value (IR `switch`). |
 | `Io`, `Fs`, `Mem` | empty struct | Size 0 with GNU C, as in ctxi. |
 | `*T`, `q + n`, `q[i]` | `T*`, pointer arithmetic | Not checked. §12.7 calls a bad pointer UB. |

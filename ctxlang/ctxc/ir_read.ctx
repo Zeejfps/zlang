@@ -114,6 +114,8 @@ namespace ir_read {
             let bound = flag{ &r }
             let params = params{ &r }
             t = ir::Type::func{ bound, params, ret = id32{ &r } }
+        } else if is{ s = tag, lit = "nptr" } {
+            t = ir::Type::nptr{ ptr = id32{ &r } }
         } else if is{ s = tag, lit = "cap" } {
             t = ir::Type::cap{ name = string{ &r } }
         } else if not is{ s = tag, lit = "void" } {

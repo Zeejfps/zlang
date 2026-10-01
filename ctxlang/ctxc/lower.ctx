@@ -14,7 +14,7 @@ namespace lower {
     type Id = types::Id
 
     const NONE: u32 = 4294967295
-    const VERSION: u64 = 9
+    const VERSION: u64 = 10
 
     // A function instance: a declaration and its generic arguments.
     struct Inst { decl: u32, targs: []Id }
@@ -314,6 +314,19 @@ namespace lower {
                 }
                 return ir::Type::record{ name, size = offs.layout.size, align = offs.layout.align, fields = list::items{ list = fs } }
             }
+            opt{ elem } => {
+                if check::nullable_ptr{ c = l.c.*, t } { return ir::Type::nptr{ ptr = tid{ &l, t = elem } } }
+                return tagged{ &l, t }
+            }
+            sum => { return tagged{ &l, t } }
+            else => { @panic("lower: a type that isn't concrete") }
+        }
+        return ir::Type::void
+    }
+
+    // A union's or optional's IR type: its tag, payload offset and variants.
+    fn tagged { mut l: Lower, t: Id } -> ir::Type {
+        match types::get{ s = l.c.ty, id = t } {
             opt | sum => {
                 let u = check::union_offsets{ c = l.c, t }
                 if u == null { @panic("lower: a union without a layout") }

@@ -5,8 +5,9 @@
 // Mapping (the plan's table):
 //   types        each TypeId is a typedef tN. [N]T is struct { T a[N]; }, so arrays copy as values;
 //                a struct is a C struct with fields m_NAME; a union or ?T is
-//                struct { uint32_t tag; union { struct {...} vI; ... } p; }. Layouts are checked
-//                against the IR's with _Static_assert.
+//                struct { uint32_t tag; union { struct {...} vI; ... } p; }, except a ?*T, which
+//                is the pointer itself, null being 0. Layouts are checked against the IR's with
+//                _Static_assert.
 //   functions    fN. Slot i is lI; a `mut` param's slot is a pointer.
 //   extern fns   fN calls xN, a prototype whose assembler name is the C symbol, so that no
 //                header's declaration of the symbol can clash with it. Capabilities aren't
@@ -165,6 +166,12 @@ namespace emit {
                 put{ &e, a = "typedef " }
                 tn{ &e, t = elem }
                 put{ &e, a = " *" }
+            }
+            nptr{ ptr } => {
+                typedef{ &e, id = ptr }
+                put{ &e, a = "typedef " }
+                tn{ &e, t = ptr }
+                ch{ &e, c = ' ' }
             }
             func => { put{ &e, a = "typedef ctx_fn *" } }
             void => { put{ &e, a = "typedef void " } }
@@ -730,10 +737,8 @@ namespace emit {
                 put{ &e, a = "{ " }
                 declare{ &e, t = u, k }
                 expr{ &e, x = init }
-                put{ &e, a = "; if (" }
-                tmp{ &e, k }
-                put{ &e, a = ".tag != " }
-                num{ &e, n = variant }
+                put{ &e, a = "; if (!" }
+                tag_is{ &e, k, through = false, union_t = u, variant }
                 put{ &e, a = ") { " }
                 if els_variant != null {
                     bind_all{ &e, binds = els_binds, k, through = false, union_t = u, variant = els_variant }
@@ -789,7 +794,7 @@ namespace emit {
                 let mut j = 0
                 while j < a.pats.len {
                     if j > 0 { put{ &e, a = " || " } }
-                    tag_is{ &e, k, through, variant = a.pats[j].variant }
+                    tag_is{ &e, k, through, union_t, variant = a.pats[j].variant }
                     j = j + 1
                 }
                 put{ &e, a = ") " }
@@ -842,11 +847,23 @@ namespace emit {
         put{ &e, a = "))" }
     }
 
-    // `_tK.tag == V`
-    fn tag_is { mut e: E, k: u32, through: bool, variant: u32 } {
+    // `(_tK.tag == V)`, or for a ?*T `(_tK == 0)` or `(_tK != 0)`
+    fn tag_is { mut e: E, k: u32, through: bool, union_t: ir::TypeId, variant: u32 } {
+        ch{ &e, c = '(' }
+        if is_nptr{ e, t = union_t } {
+            if through { put{ &e, a = "*" } }
+            tmp{ &e, k }
+            put{ &e, a = if variant == 0 { " == 0)" } else { " != 0)" } }
+            return
+        }
         tmp{ &e, k }
         if through { put{ &e, a = "->tag == " } } else { put{ &e, a = ".tag == " } }
         num{ &e, n = variant }
+        ch{ &e, c = ')' }
+    }
+
+    fn is_nptr { e: E, t: ir::TypeId } -> bool {
+        match ty{ e, id = t } { nptr => { return true } else => { return false } }
     }
 
     // With several patterns, the bindings depend on which one matched.
@@ -861,7 +878,7 @@ namespace emit {
                 let p = a.pats[j]
                 if j > 0 { put{ &e, a = "else " } }
                 put{ &e, a = "if (" }
-                tag_is{ &e, k, through, variant = p.variant }
+                tag_is{ &e, k, through, union_t, variant = p.variant }
                 put{ &e, a = ") { " }
                 bind_all{ &e, binds = p.binds, k, through, union_t, variant = p.variant }
                 put{ &e, a = "} " }
@@ -883,9 +900,16 @@ namespace emit {
             local{ &e, slot = b.slot }
             put{ &e, a = " = " }
             if b.by_ref { ch{ &e, c = '&' } }
-            tmp{ &e, k }
-            if through { put{ &e, a = "->" } } else { ch{ &e, c = '.' } }
-            payload_member{ &e, union_t, variant, field = b.field }
+            if is_nptr{ e, t = union_t } {
+                // the payload is the pointer itself
+                if through { put{ &e, a = "(*" } }
+                tmp{ &e, k }
+                if through { ch{ &e, c = ')' } }
+            } else {
+                tmp{ &e, k }
+                if through { put{ &e, a = "->" } } else { ch{ &e, c = '.' } }
+                payload_member{ &e, union_t, variant, field = b.field }
+            }
             put{ &e, a = "; " }
             i = i + 1
         }
@@ -950,8 +974,13 @@ namespace emit {
                 put{ &e, a = " })" }
             }
             nil => {
-                compound{ &e, t = x.ty }
-                put{ &e, a = "0})" }
+                if is_nptr{ e, t = x.ty } {
+                    cast_open{ &e, t = x.ty }
+                    put{ &e, a = "0))" }
+                } else {
+                    compound{ &e, t = x.ty }
+                    put{ &e, a = "0})" }
+                }
             }
             local{ slot } => { local{ &e, slot } }
             constref{ id } => {
@@ -976,8 +1005,12 @@ namespace emit {
             payload{ base, variant, field } => {
                 ch{ &e, c = '(' }
                 expr{ &e, x = base.* }
-                put{ &e, a = ")." }
-                payload_member{ &e, union_t = base.ty, variant, field }
+                if is_nptr{ e, t = base.ty } {
+                    ch{ &e, c = ')' }
+                } else {
+                    put{ &e, a = ")." }
+                    payload_member{ &e, union_t = base.ty, variant, field }
+                }
             }
             addr{ place } => {
                 put{ &e, a = "(&" }
@@ -1041,12 +1074,12 @@ namespace emit {
             isnull{ e = a } => {
                 put{ &e, a = "((" }
                 expr{ &e, x = a.* }
-                put{ &e, a = ").tag == 0)" }
+                put{ &e, a = if is_nptr{ e, t = a.ty } { ") == 0)" } else { ").tag == 0)" } }
             }
             notnull{ e = a } => {
                 put{ &e, a = "((" }
                 expr{ &e, x = a.* }
-                put{ &e, a = ").tag != 0)" }
+                put{ &e, a = if is_nptr{ e, t = a.ty } { ") != 0)" } else { ").tag != 0)" } }
             }
             widen{ e = a } => { convert_to{ &e, t = x.ty, a = a.* } }
             trunc{ e = a } => { convert_to{ &e, t = x.ty, a = a.* } }
@@ -1057,10 +1090,14 @@ namespace emit {
                 put{ &e, a = "))" }
             }
             some{ e = a } => {
-                compound{ &e, t = x.ty }
-                put{ &e, a = " .tag = 1, .p.v1.m_value = " }
-                expr{ &e, x = a.* }
-                put{ &e, a = " })" }
+                if is_nptr{ e, t = x.ty } {
+                    convert_to{ &e, t = x.ty, a = a.* }
+                } else {
+                    compound{ &e, t = x.ty }
+                    put{ &e, a = " .tag = 1, .p.v1.m_value = " }
+                    expr{ &e, x = a.* }
+                    put{ &e, a = " })" }
+                }
             }
             fnconv{ e = a } => { fnconv{ &e, to = x.ty, a = a.* } }
             call{ callee, args } => { call{ &e, callee, args } }
@@ -1431,6 +1468,13 @@ namespace emit {
 
     // A struct or variant literal.
     fn literal { mut e: E, t: ir::TypeId, variant: ?u32, items: []ir::Arg } {
+        if is_nptr{ e, t } {
+            // `null` is 0; `some{ value = p }` is p
+            cast_open{ &e, t }
+            if items.len == 1 { expr{ &e, x = items[0].value } } else { ch{ &e, c = '0' } }
+            put{ &e, a = "))" }
+            return
+        }
         let tt = temps_args{ &e, args = items }
         compound{ &e, t }
         let mut names: []ir::Field

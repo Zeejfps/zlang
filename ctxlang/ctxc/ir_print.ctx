@@ -117,6 +117,10 @@ namespace ir_print {
                 char{ &o, c = ' ' }
                 num{ &o, n = ret }
             }
+            nptr{ ptr } => {
+                text{ &o, a = "(nptr " }
+                num{ &o, n = ptr }
+            }
             cap{ name } => {
                 text{ &o, a = "(cap " }
                 quote{ &o, b = name }

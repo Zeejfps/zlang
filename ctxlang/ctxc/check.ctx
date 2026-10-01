@@ -720,6 +720,7 @@ namespace check {
     fn c_compatible { c: Checker, t: Id } -> bool {
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
             error | prim | cap | enumeration | ptr | slice | record => { return true }
+            opt => { return nullable_ptr{ c, t } }
             else => { return false }
         }
     }
@@ -6284,11 +6285,23 @@ namespace check {
                 return offs.layout
             }
             opt | sum => {
+                if nullable_ptr{ c, t } { return Layout{ size = 8, align = 8 } }
                 let u = union_offsets{ &c, t }
                 if u == null { return null }
                 return u.layout
             }
             else => { return null }
+        }
+    }
+
+    // Whether t is a `?*T` or `?*mut T`, which is a pointer whose null is the address 0: a `*T`
+    // is never null (§12), so the tag isn't needed, and the layout is C's.
+    fn nullable_ptr { c: Checker, t: Id } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            opt{ elem } => {
+                match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } { ptr => { return true } else => { return false } }
+            }
+            else => { return false }
         }
     }
 

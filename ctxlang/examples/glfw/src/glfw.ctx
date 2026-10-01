@@ -1,19 +1,20 @@
 // A small binding of GLFW 3 (https://www.glfw.org): what main.ctx uses.
 //
-// Until optional pointers cross into C (PLAN.md stage 10.5), a window is its address as a usize,
-// and 0 is NULL. A title is a []u8 that ends in a zero byte.
+// GLFW's handles are opaque: a window is only ever a *mut Window, and C's NULL is null, since a
+// ?*T is a C pointer (spec §8). A title is a []u8 that ends in a zero byte.
 namespace glfw {
     // Permission to call GLFW.
     capability Glfw
 
-    struct Window { handle: usize }
+    struct Window {}
+    struct Monitor {}
 
     extern fn glfwInit { mut glfw: Glfw } -> i32
     extern fn glfwTerminate { mut glfw: Glfw }
     extern fn glfwGetVersion { mut glfw: Glfw, mut major: i32, mut minor: i32, mut rev: i32 }
-    extern fn glfwCreateWindow { mut glfw: Glfw, width: i32, height: i32, title: *u8, monitor: usize, share: usize } -> usize
-    extern fn glfwDestroyWindow { mut glfw: Glfw, window: usize }
-    extern fn glfwWindowShouldClose { mut glfw: Glfw, window: usize } -> i32
+    extern fn glfwCreateWindow { mut glfw: Glfw, width: i32, height: i32, title: *u8, monitor: ?*mut Monitor, share: ?*mut Window } -> ?*mut Window
+    extern fn glfwDestroyWindow { mut glfw: Glfw, window: *mut Window }
+    extern fn glfwWindowShouldClose { mut glfw: Glfw, window: *mut Window } -> i32
     extern fn glfwPollEvents { mut glfw: Glfw }
     extern fn glfwGetTime { mut glfw: Glfw } -> f64
 
@@ -22,17 +23,15 @@ namespace glfw {
     fn terminate { mut glfw: Glfw } { glfwTerminate{ &glfw } }
 
     // A window, or null if GLFW couldn't make one.
-    fn create_window { mut glfw: Glfw, width: i32, height: i32, title: []u8 } -> ?Window {
+    fn create_window { mut glfw: Glfw, width: i32, height: i32, title: []u8 } -> ?*mut Window {
         if title.len == 0 or title[title.len - 1] != 0 { @panic("glfw: a title must end in a zero byte") }
-        let h = glfwCreateWindow{ &glfw, width, height, title = title.ptr, monitor = 0, share = 0 }
-        if h == 0 { return null }
-        return Window{ handle = h }
+        return glfwCreateWindow{ &glfw, width, height, title = title.ptr, monitor = null, share = null }
     }
 
-    fn destroy_window { mut glfw: Glfw, window: Window } { glfwDestroyWindow{ &glfw, window = window.handle } }
+    fn destroy_window { mut glfw: Glfw, window: *mut Window } { glfwDestroyWindow{ &glfw, window } }
 
-    fn should_close { mut glfw: Glfw, window: Window } -> bool {
-        return glfwWindowShouldClose{ &glfw, window = window.handle } != 0
+    fn should_close { mut glfw: Glfw, window: *mut Window } -> bool {
+        return glfwWindowShouldClose{ &glfw, window } != 0
     }
 
     fn poll_events { mut glfw: Glfw } { glfwPollEvents{ &glfw } }

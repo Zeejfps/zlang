@@ -4800,6 +4800,95 @@ fn main { mut io: Io } {
 """, "1\n")
 
 
+class NullablePointers(Base):
+    """`?*T` is a plain pointer whose null is the address 0 (spec §8, Optional), so it has C's
+    layout and crosses into C (§18)."""
+
+    def test_layout(self):
+        self.assertOutput("""
+struct S { a: u8, p: ?*i32 }
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = @size_of(?*i32) }
+    io::println_u64{ &io, n = @align_of(?*mut i32) }
+    io::println_u64{ &io, n = @size_of(S) }
+    io::println_u64{ &io, n = @size_of(??*i32) }
+    io::println_u64{ &io, n = @size_of(?[]u8) }
+}
+""", "8\n8\n16\n16\n24\n")
+
+    def test_operations(self):
+        self.assertOutput("""
+struct Node { v: i32, next: ?*Node }
+struct Holder { p: ?*i32 }
+const EMPTY: Holder = Holder{ p = null }
+const NOTHING: ?*i32 = null
+
+fn first { n: ?*Node } -> i32 {
+    let some{ value = p } = n else { return -1 }
+    return p.v
+}
+fn describe { n: ?*Node } -> i32 {
+    return match n {
+        null          => { 0 }
+        some{ value } => { value.v }
+    }
+}
+fn pick { take: bool, p: *Node } -> ?*Node {
+    if take { return p }
+    return null
+}
+fn apply { f: fn{ n: ?*Node } -> i32, n: ?*Node } -> i32 { return f{ n } }
+
+fn main { mut io: Io } {
+    let a = Node{ v = 5, next = null }
+    let b = Node{ v = 7, next = &a }
+    io::println_i64{ &io, n = first{ n = &b } }
+    io::println_i64{ &io, n = first{ n = null } }
+    io::println_i64{ &io, n = describe{ n = b.next } }
+    io::println_i64{ &io, n = describe{ n = a.next } }
+    io::println_bool{ &io, n = pick{ take = false, p = &a } == null }
+    let x = pick{ take = true, p = &b }
+    if x != null { io::println_i64{ &io, n = x.v } }
+    io::println_i64{ &io, n = apply{ f = describe, n = &a } }
+    io::println_bool{ &io, n = EMPTY.p == null and NOTHING == null }
+
+    // through a pointer: the binding is the place of the pointer itself
+    let mut m: ?*Node = &a
+    match &m {
+        some{ &value } => { io::println_i64{ &io, n = value.*.v } }
+        null           => {}
+    }
+
+    // an optional of a nullable pointer stays tagged around it
+    let q: ??*Node = null
+    io::println_bool{ &io, n = q == null }
+}
+""", "7\n-1\n5\n0\ntrue\n7\n5\ntrue\n5\ntrue\n")
+
+    def test_extern_round_trip(self):
+        self.assertOutput("""
+extern fn strchr { s: *u8, c: i32 } -> ?*u8
+extern fn strtol { s: *u8, end: ?*mut *u8, base: i32 } -> i64
+
+fn main { mut io: Io } {
+    let s: []u8 = "hello\\0"
+    let hit = strchr{ s = s.ptr, c = 'l' }
+    if hit != null { io::println_u64{ &io, n = @addr(hit) - @addr(s.ptr) } }
+    io::println_bool{ &io, n = strchr{ s = s.ptr, c = 'z' } == null }
+    let n: []u8 = "42xyz\\0"
+    io::println_i64{ &io, n = strtol{ s = n.ptr, end = null, base = 10 } }
+    let mut end: *u8 = n.ptr
+    _ = strtol{ s = n.ptr, end = &end, base = 10 }
+    io::println_u64{ &io, n = @addr(end) - @addr(n.ptr) }
+}
+""", "2\ntrue\n42\n2\n")
+
+    def test_other_optionals_still_cannot_cross(self):
+        with self.assertRaises(CompileError) as cm:
+            run('extern fn f { s: ?[]u8 }\nfn main {} {}')
+        self.assertIn("which C has no equivalent of", cm.exception.msg)
+
+
 class Capabilities(Base):
     """`capability Name` (spec §15): permission that only `main` receives and passes down."""
 

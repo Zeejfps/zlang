@@ -48,6 +48,9 @@ namespace ir {
         record{ name: Bytes, size: u64, align: u64, fields: []Field },
         // A union or optional: a u32 tag at offset 0, the payload at pay_off. null is tag 0.
         tagged{ name: Bytes, size: u64, align: u64, pay_off: u64, variants: []Variant },
+        // A `?*T`: the pointer of type ptr itself, with null the address 0. It is an optional,
+        // with variant 0 `null` and variant 1 `some{ value }`, whose payload is the pointer.
+        nptr{ ptr: TypeId },
         // Fields sorted by name.
         func{ bound: bool, params: []Param, ret: TypeId },
         cap{ name: Bytes },
