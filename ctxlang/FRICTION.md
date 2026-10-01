@@ -58,9 +58,17 @@ numbers, which PLAN.md and commit messages cite; git history has the resolved on
   §3.1 only checks overlap between arguments of one call, not a `&c` inside a nested one. The
   fix is a local first (`check::typed`). A rule that rejects this, or evaluates nested calls
   before plain arguments, would have caught eight such calls.
-- **19. An empty slice is inferred as `[]mut`** (again #21). `let mut fields =
+- **19. An empty slice is inferred as `[]mut`** (again #8). `let mut fields =
   slice::empty(types::Field){}` can't later take a `[]types::Field`.
 - **20. An optional can't be compared with a value.** `map::get{ m = c.access, key } ==
   Access::field` is an error, so it takes a local and `x != null and x == Access::field`
-  (`check::access_is`). With #23, a `let mut` optional needs a copy even for that. `==` between
+  (`check::access_is`). With #10, a `let mut` optional needs a copy even for that. `==` between
   `?T` and `T` meaning "is some and equal" would do. *Planned:* PLAN.md stage 11.
+- **21. A pattern can't bind a mutable local.** Calling through a capability's field needs a
+  mutable capability, and `let ... else` bindings are read-only (spec §11, Let-else), so
+  examples/glfw takes `let some{ value = loaded } = gl::load{ &glfw } else { ... }` and then
+  `let mut gl = loaded`. `let some{ value = mut gl } = ...` would take one.
+- **22. A loaded function's type is written twice.** `capability Gl` declares each field's
+  `extern fn{...}` type, and `gl::load` writes it again in the `@cast` that fills the field
+  (examples/glfw). A `@cast` that takes its target from the type expected, as a literal does
+  (spec §11 Literals), would write it once; a full GL binding has hundreds of them.
