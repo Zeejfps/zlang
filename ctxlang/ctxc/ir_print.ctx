@@ -182,11 +182,22 @@ namespace ir_print {
     }
 
     fn function { mut o: Out, f: ir::Func } {
-        if f.native { text{ &o, a = "(native " } } else { text{ &o, a = "(fn " } }
+        let external = f.symbol.len > 0
+        if external {
+            text{ &o, a = "(extern " }
+        } else if f.native {
+            text{ &o, a = "(native " }
+        } else {
+            text{ &o, a = "(fn " }
+        }
         num{ &o, n = f.id }
         char{ &o, c = ' ' }
         quote{ &o, b = f.name }
         char{ &o, c = ' ' }
+        if external {
+            quote{ &o, b = f.symbol }
+            char{ &o, c = ' ' }
+        }
         param_list{ &o, params = f.params }
         char{ &o, c = ' ' }
         num{ &o, n = f.ret }

@@ -55,6 +55,7 @@ namespace check {
         ret:      Id,
         ty:       Id,
         values:   []i64,                // an enum's, one per variant
+        symbol:   []u8,                 // an extern fn's C symbol
     }
 
     // What a name in a path refers to.
@@ -356,6 +357,7 @@ namespace check {
         declarations{ &c }
         each{ &c, xs = c.consts, what = Phase::const_values }
         each{ &c, xs = c.consts, what = Phase::fold }
+        attributes{ &c }
         each{ &c, xs = c.fns, what = Phase::bodies }
         check_main{ &c }
     }
@@ -409,10 +411,15 @@ namespace check {
             let x = decls[i]
             match x.k {
                 error => {}
-                func{ name, tparams } => {
-                    let d = declare{ &c, kind = Kind::func, x, file, name, tparams, ns }
+                func{ name, tparams, external } => {
+                    let d = declare{ &c, kind = if external { Kind::native } else { Kind::func }, x, file, name, tparams, ns }
                     add_name{ &c, ns, values = true, name, e = Entry::decl{ i = d }, at = x.span }
-                    push{ xs = &c.fns, n = d }
+                    if external {
+                        list::at{ list = c.decls, i = d }.symbol = name.text
+                        push{ xs = &c.natives, n = d }
+                    } else {
+                        push{ xs = &c.fns, n = d }
+                    }
                 }
                 constant{ name } => {
                     let d = declare{ &c, kind = Kind::constant, x, file, name, tparams = no_names{}, ns }
@@ -459,7 +466,7 @@ namespace check {
         let item = Decl{
             kind, name, ns, qual = qualify{ c, ns, name = name.text }, syn = x, tparams,
             fields = slice::empty(types::Field){}, variants = slice::empty(Variant){},
-            ret = types::VOID, ty = types::ERROR, values = slice::empty(i64){},
+            ret = types::VOID, ty = types::ERROR, values = slice::empty(i64){}, symbol = "",
         }
         if not list::push{ list = &c.decls, item } or not map::put{ m = &c.decl_of, key = key{ file, id = x.id }, value = d } {
             @panic("check: out of memory")
@@ -744,15 +751,43 @@ namespace check {
         let x = get_decl{ c, d }
         let sc = own_scope{ &c, d }
         match x.syn.k {
-            func{ params, ret } => {
+            func{ params, ret, external } => {
                 let fields = context{ &c, params, sc }
                 let mut r = types::VOID
                 if ret != null { r = rtype{ &c, te = ret, sc, allow_bound = false } }
                 let at = list::at{ list = c.decls, i = d }
                 at.fields = fields
                 at.ret = r
+                if external { extern_sig{ &c, x, params, ret, fields, r } }
             }
             else => {}
+        }
+    }
+
+    // §18: an extern fn passes and returns only what C has: numbers, bool, enums, pointers,
+    // slices and structs. Capability fields aren't passed.
+    fn extern_sig { mut c: Checker, x: Decl, params: []syntax::Param, ret: ?syntax::TypeExpr, fields: []types::Field, r: Id } {
+        let mut i: usize = 0
+        while i < fields.len and i < params.len {
+            let f = fields[i]
+            if not c_compatible{ c, t = f.ty } {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "extern fn `{}` can't pass `{}` to C: it has type {}, which C has no equivalent of", str{ s = x.name.text }, str{ s = f.name }, tstr{ c, t = f.ty }) }
+                error{ &c, at = params[i].span, msg = utf8::view{ b } }
+            }
+            i = i + 1
+        }
+        if ret != null and r != types::VOID and not c_compatible{ c, t = r } {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "extern fn `{}` can't return {}: C has no equivalent of it", str{ s = x.name.text }, tstr{ c, t = r }) }
+            error{ &c, at = ret.span, msg = utf8::view{ b } }
+        }
+    }
+
+    fn c_compatible { c: Checker, t: Id } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            error | prim | cap | enumeration | ptr | slice | record => { return true }
+            else => { return false }
         }
     }
 
@@ -824,6 +859,114 @@ namespace check {
             i = i + 1
         }
         if c.diags.errors == bad { c.main = m }
+    }
+
+    // ---- attributes (§18; stage 9 gives them to generators)
+
+    // Every declaration's attributes, each checked as a const literal of the struct it names.
+    // The compiler acts on std's `c::symbol` and ignores the rest.
+    fn attributes { mut c: Checker } {
+        let mut f: usize = 0
+        while f < c.files.len - 1 {
+            attribute_list{ &c, file = @as(u32, f), decls = c.files[f].tree.decls, ns = if f < c.std_files { STD } else { ROOT } }
+            f = f + 1
+        }
+    }
+
+    fn attribute_list { mut c: Checker, file: u32, decls: []syntax::Decl, ns: u32 } {
+        let symbol_decl = std_decl{ c, space = "c", name = "symbol" }
+        let mut i: usize = 0
+        while i < decls.len {
+            let x = decls[i]
+            let mut seen = false
+            let mut k: usize = 0
+            while k < x.attrs.len {
+                let a = x.attrs[k]
+                let v = attribute{ &c, a, ns }
+                if v != null and symbol_decl != NONE {
+                    match v {
+                        record{ ty, fields } => {
+                            if record_decl{ c, t = ty } == symbol_decl {
+                                symbol_attr{ &c, x, file, a, fields, seen }
+                                seen = true
+                            }
+                        }
+                        else => {}
+                    }
+                }
+                k = k + 1
+            }
+            match x.k {
+                space{ decls = inner } => {
+                    let child = map::get{ m = c.space_of, key = key{ file, id = x.id } }
+                    if child != null { attribute_list{ &c, file, decls = inner, ns = child } }
+                }
+                else => {}
+            }
+            i = i + 1
+        }
+    }
+
+    // An attribute's value: a const literal of a struct (§14), or null after reporting why not.
+    fn attribute { mut c: Checker, a: syntax::Attr, ns: u32 } -> ?Val {
+        begin_body{ &c, sc = Scope{ ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }, ret = types::VOID }
+        let before = c.diags.errors
+        let t = expr{ &c, e = a.value, exp = types::NO_TYPE }
+        finish{ &c }
+        if c.diags.errors != before { return null }
+        let lit = map::get{ m = c.literal, key = expr_key{ e = a.value } }
+        if lit == null or not lit or record_decl{ c, t } == NONE {
+            error{ &c, at = expr_at{ e = a.value }, msg = "an attribute must be a struct literal" }
+            return null
+        }
+        const_ok{ &c, e = a.value }
+        if c.diags.errors != before { return null }
+        return fold{ &c, e = a.value }
+    }
+
+    // `#c::symbol{ name }` on an extern fn: the C symbol it calls.
+    fn symbol_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, fields: []Val, seen: bool } {
+        let mut external = false
+        match x.k { func{ external = e } => { external = e } else => {} }
+        if not external {
+            error{ &c, at = a.span, msg = "`c::symbol` applies only to an extern fn" }
+            return
+        }
+        if seen {
+            error{ &c, at = a.span, msg = "duplicate `c::symbol` attribute" }
+            return
+        }
+        let mut name: []u8 = ""
+        if fields.len == 1 {
+            match fields[0] { sbytes{ bytes } => { name = bytes } else => {} }
+        }
+        if not c_ident{ s = name } {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "`{}` is not a C identifier", str{ s = name }) }
+            error{ &c, at = a.span, msg = utf8::view{ b } }
+            return
+        }
+        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } }
+        if d != null { list::at{ list = c.decls, i = d }.symbol = name }
+    }
+
+    // A letter or `_`, then letters, digits and `_`.
+    fn c_ident { s: []u8 } -> bool {
+        if s.len == 0 or ascii::is_digit{ c = s[0] } { return false }
+        let mut i: usize = 0
+        while i < s.len {
+            if not ascii::is_alnum{ c = s[i] } and s[i] != '_' { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // The struct declaration of type t, or NONE if it isn't a struct.
+    fn record_decl { c: Checker, t: Id } -> u32 {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            record{ decl } => { return decl }
+            else => { return NONE }
+        }
     }
 
     // The declaration std's namespace `space` has as `name`, or NONE.

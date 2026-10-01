@@ -8,6 +8,9 @@
 //                struct { uint32_t tag; union { struct {...} vI; ... } p; }. Layouts are checked
 //                against the IR's with _Static_assert.
 //   functions    fN. Slot i is lI; a `mut` param's slot is a pointer.
+//   extern fns   fN calls xN, a prototype whose assembler name is the C symbol, so that no
+//                header's declaration of the symbol can clash with it. Capabilities aren't
+//                passed; a `mut` field's pointer is.
 //   consts       static const qvN, initialized with the literals of its value.
 //   fn values    ctx_fn*: a record whose first member is the code, called with the record and
 //                the function type's fields in name order. fnref gives a static record per
@@ -96,7 +99,7 @@ namespace emit {
         i = 0
         while i < p.fns.len {
             let f = p.fns[i]
-            if f.native { native{ &e, f } } else { function{ &e, f } }
+            if f.symbol.len > 0 { external{ &e, f } } else if f.native { native{ &e, f } } else { function{ &e, f } }
             i = i + 1
         }
         entry{ &e }
@@ -440,6 +443,54 @@ namespace emit {
         }
         if slice_ret { ch{ &e, c = ')' } }
         put{ &e, a = ");\n}\n\n" }
+    }
+
+    //   extern R xN(P...) __asm__(CTX_SYMBOL("symbol"));
+    //   static R fN(...) { return xN(l0, l2); }
+    fn external { mut e: E, f: ir::Func } {
+        put{ &e, a = "// " }
+        raw{ &e, b = f.name }
+        put{ &e, a = "\nextern " }
+        tn{ &e, t = f.ret }
+        put{ &e, a = " x" }
+        num{ &e, n = f.id }
+        ch{ &e, c = '(' }
+        let mut first = true
+        let mut i = 0
+        while i < f.params.len {
+            if not is_cap{ e, t = f.params[i].ty } {
+                if not first { put{ &e, a = ", " } }
+                param_type{ &e, q = f.params[i] }
+                first = false
+            }
+            i = i + 1
+        }
+        if first { put{ &e, a = "void" } }
+        put{ &e, a = ") __asm__(CTX_SYMBOL(" }
+        cstr{ &e, b = f.symbol }
+        put{ &e, a = "));\n" }
+        signature{ &e, f }
+        put{ &e, a = " {\n    " }
+        if not is_void{ e, t = f.ret } { put{ &e, a = "return " } }
+        ch{ &e, c = 'x' }
+        num{ &e, n = f.id }
+        ch{ &e, c = '(' }
+        first = true
+        i = 0
+        while i < f.params.len {
+            if not is_cap{ e, t = f.params[i].ty } {
+                if not first { put{ &e, a = ", " } }
+                ch{ &e, c = 'l' }
+                num{ &e, n = i }
+                first = false
+            }
+            i = i + 1
+        }
+        put{ &e, a = ");\n}\n\n" }
+    }
+
+    fn is_cap { e: E, t: ir::TypeId } -> bool {
+        match ty{ e, id = t } { cap => { return true } else => { return false } }
     }
 
     fn function { mut e: E, f: ir::Func } {

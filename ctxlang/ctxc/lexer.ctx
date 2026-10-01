@@ -18,7 +18,7 @@ namespace tok {
         builtin,                    // @name
         kw_fn, kw_struct, kw_union, kw_enum, kw_type, kw_const, kw_namespace, kw_let, kw_mut,
         kw_if, kw_else, kw_while, kw_break, kw_continue, kw_match, kw_return, kw_defer,
-        kw_and, kw_or, kw_not, kw_true, kw_false, kw_null,
+        kw_and, kw_or, kw_not, kw_true, kw_false, kw_null, kw_extern,
         arrow,                      // ->
         fat_arrow,                  // =>
         colons,                     // ::
@@ -27,19 +27,20 @@ namespace tok {
         lbrace, rbrace, lparen, rparen, lbracket, rbracket, comma, semi, colon, dot,
         assign,                     // =
         lt, gt, plus, minus, star, slash, percent, amp, pipe, caret, question,
+        hash,                       // # before an attribute
     }
 
-    const KEYWORDS: [23][]u8 = [
+    const KEYWORDS: [24][]u8 = [
         "fn", "struct", "union", "enum", "type", "const", "namespace", "let", "mut",
         "if", "else", "while", "break", "continue", "match", "return", "defer",
-        "and", "or", "not", "true", "false", "null",
+        "and", "or", "not", "true", "false", "null", "extern",
     ]
 
     // Two characters before one, so the longest match wins.
-    const OPS: [32][]u8 = [
+    const OPS: [33][]u8 = [
         "->", "=>", "::", "..", "==", "!=", "<=", ">=", "<<", ">>",
         "{", "}", "(", ")", "[", "]", ",", ";", ":", ".", "=", "<", ">",
-        "+", "-", "*", "/", "%", "&", "|", "^", "?",
+        "+", "-", "*", "/", "%", "&", "|", "^", "?", "#",
     ]
 
     struct Token {
@@ -50,7 +51,7 @@ namespace tok {
 
     fn is_keyword { kind: Kind } -> bool {
         let n = @as(u8, kind)
-        return n >= @as(u8, Kind::kw_fn) and n <= @as(u8, Kind::kw_null)
+        return n >= @as(u8, Kind::kw_fn) and n <= @as(u8, Kind::kw_extern)
     }
 
     fn is_op { kind: Kind } -> bool {

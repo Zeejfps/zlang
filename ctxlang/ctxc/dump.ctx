@@ -236,14 +236,22 @@ namespace tree {
     fn decl { mut d: Dumper, x: syntax::Decl } {
         let at = x.span.start
         let untyped: []syntax::Name = slice::empty(syntax::Name){}
+        let mut i: usize = 0
+        while i < x.attrs.len {
+            line{ &d, at = x.attrs[i].span.start, s = "attr" }
+            d.depth = d.depth + 1
+            expr{ &d, e = x.attrs[i].value }
+            d.depth = d.depth - 1
+            i = i + 1
+        }
         match x.k {
             error => { line{ &d, at, s = "invalid" } }
-            func{ name = n, tparams, params, ret, body } => {
-                named{ &d, at, kind = "fn", n, tparams }
+            func{ name = n, tparams, params, ret, body, external } => {
+                named{ &d, at, kind = if external { "extern fn" } else { "fn" }, n, tparams }
                 d.depth = d.depth + 1
                 param_list{ &d, xs = params }
                 opt_type{ &d, t = ret }
-                block{ &d, b = body }
+                if not external { block{ &d, b = body } }
                 d.depth = d.depth - 1
             }
             record{ name = n, tparams, fields } => {

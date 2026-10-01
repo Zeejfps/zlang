@@ -160,7 +160,7 @@ namespace recover {
             let mut inner: []syntax::Decl = slice::empty(syntax::Decl){}
             match d.k {
                 error => {}
-                func{ name } => { kind = 'f'; n = name }
+                func{ name, external } => { kind = 'f'; n = name; braced = not external }
                 record{ name } => { kind = 's'; n = name }
                 sum{ name } => { kind = 'u'; n = name }
                 enumeration{ name } => { kind = 'e'; n = name }
@@ -221,6 +221,14 @@ namespace recover {
     }
 
     fn decl { mut c: Check, x: syntax::Decl, lo: u32, hi: u32 } {
+        let mut i: usize = 0
+        while i < x.attrs.len {
+            let at = x.attrs[i]
+            within{ &c, span = at.span, lo, hi }
+            if at.span.end > x.span.start { fail{ &c, msg = "an attribute after its declaration's start" } }
+            expr{ &c, e = at.value, lo = at.span.start, hi = at.span.end }
+            i = i + 1
+        }
         node{ &c, id = x.id, span = x.span, lo, hi }
         let a = x.span.start
         let b = x.span.end

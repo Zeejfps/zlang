@@ -561,7 +561,7 @@ class Lexer(Base):
 
     def test_characters(self):
         for src, msg, col in [
-            ('fn main { let n = 1 # 2 }', "unexpected character '#'", 21),
+            ('fn main { let n = 1 $ 2 }', "unexpected character '$'", 21),
             ('fn main { let n = \x01 }', "unexpected character '\\x01'", 19),
             ('fn main { let n = \\ }', "unexpected character '\\\\'", 19),
             ('fn main { let café = 1 }', "unexpected character 'é' (U+00E9)", 18),
@@ -4639,6 +4639,140 @@ fn main { mut io: Io, args: Args } -> i32 {
 }
 """, args=['x', 'y'])
         self.assertEqual((out, code), ('3.0\n6.0\n9.0\n', 6))
+
+
+class ExternFns(Base):
+    """`extern fn` and attributes (spec §18): C functions called through the C library, which
+    every program links."""
+
+    def assertExternError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_calls(self):
+        self.assertOutput("""
+struct DivT { quot: i32, rem: i32 }
+
+#c::symbol{ name = "labs" }
+extern fn long_abs { n: i64 } -> i64
+extern fn strlen { s: *u8 } -> usize
+extern fn frexp { x: f64, mut exp: i32 } -> f64
+extern fn div { numer: i32, denom: i32 } -> DivT
+
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = long_abs{ n = -42 } }
+    let s: []u8 = "hello\\0"
+    io::println_u64{ &io, n = strlen{ s = s.ptr } }
+    let mut e: i32 = 0
+    io::println_f64{ &io, n = frexp{ x = 8.0, exp = &e } }
+    io::println_i64{ &io, n = e }
+    let d = div{ numer = 17, denom = 5 }
+    io::println_i64{ &io, n = d.quot * 10 + d.rem }
+}
+""", "42\n5\n0.5\n4\n32\n")
+
+    def test_capabilities_are_not_passed(self):
+        # abs takes one int: the capability only says who may call it.
+        self.assertOutput("""
+extern fn abs { mut io: Io, n: i32 } -> i32
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = abs{ &io, n = -7 } }
+}
+""", "7\n")
+
+    def test_in_a_namespace_and_as_a_value(self):
+        self.assertOutput("""
+namespace cmath {
+    #c::symbol{ name = "sqrt" }
+    extern fn root { x: f64 } -> f64
+}
+fn apply { f: fn{ x: f64 } -> f64, x: f64 } -> f64 { return f{ x } }
+fn main { mut io: Io } {
+    io::println_f64{ &io, n = apply{ f = cmath::root, x = 16.0 } }
+}
+""", "4.0\n")
+
+    def test_same_symbol_as_a_header(self):
+        # The prototype has its own C name, so a signature that differs from string.h's doesn't
+        # clash with it.
+        self.assertOutput("""
+extern fn memset { dst: *mut u8, value: i32, n: usize } -> *mut u8
+fn main { mut io: Io } {
+    let mut buf: [4]u8 = [0; 4]
+    _ = memset{ dst = &buf[0], value = 7, n = 3 }
+    io::println_i64{ &io, n = buf[0] + buf[2] + buf[3] }
+}
+""", "14\n")
+
+    def test_ir(self):
+        from toolchain import ir_sources
+        text = ir_sources([("""
+#c::symbol{ name = "labs" }
+extern fn long_abs { n: i64 } -> i64
+fn main {} -> i32 { return @trunc(i32, long_abs{ n = 3 }) }
+""", None)])
+        self.assertRegex(text, r'\(extern \d+ "long_abs" "labs" \[\("n" 0 \d+\)\] \d+\)')
+
+    def test_syntax_errors(self):
+        for src, msg, line, col in [
+            ('extern fn f(T) { x: T }\nfn main {} {}', 'an extern fn cannot have generic parameters', 1, 12),
+            ('extern fn f { x: i32 } {}\nfn main {} {}', 'an extern fn has no body: C provides it', 1, 24),
+            ('extern f {}\nfn main {} {}', "expected 'fn', found 'f'", 1, 8),
+            ('#5\nfn main {} {}', "expected a struct name after '#', found '5'", 1, 2),
+            ('#a.b\nfn main {} {}', 'an attribute is a struct name or a struct literal', 1, 2),
+            ('#S{ .. }\nfn main {} {}', 'an attribute is a struct name or a struct literal', 1, 2),
+            ('#c::symbol{ name = "a" } fn f {} {}\nfn main {} {}',
+             'an attribute goes on its own line, before a declaration', 1, 26),
+            ('fn main {} {}\n#c::symbol{ name = "a" }\n', 'expected a declaration after an attribute, found end of file', 3, 1),
+        ]:
+            self.assertExternError(src, msg, line, col)
+
+    def test_signature_errors(self):
+        for src, msg, line, col in [
+            ('extern fn f { x: ?i32 }\nfn main {} {}',
+             "extern fn `f` can't pass `x` to C: it has type ?i32, which C has no equivalent of", 1, 15),
+            ('extern fn f { g: fn{} }\nfn main {} {}',
+             "extern fn `f` can't pass `g` to C: it has type fn{}, which C has no equivalent of", 1, 15),
+            ('extern fn f { a: [4]u8 }\nfn main {} {}',
+             "extern fn `f` can't pass `a` to C: it has type [4]u8, which C has no equivalent of", 1, 15),
+            ('union U { a, b }\nextern fn f {} -> U\nfn main {} {}',
+             "extern fn `f` can't return U: C has no equivalent of it", 2, 19),
+        ]:
+            self.assertExternError(src, msg, line, col)
+
+    def test_attribute_errors(self):
+        for src, msg, line, col in [
+            ('#c::symbol{ name = "x" }\nfn f {} {}\nfn main {} {}', '`c::symbol` applies only to an extern fn', 1, 1),
+            ('#c::symbol{ name = "1x" }\nextern fn f {}\nfn main {} {}', '`1x` is not a C identifier', 1, 1),
+            ('#c::symbol{ name = "" }\nextern fn f {}\nfn main {} {}', '`` is not a C identifier', 1, 1),
+            ('#c::symbol{ name = "a" }\n#c::symbol{ name = "b" }\nextern fn f {}\nfn main {} {}',
+             'duplicate `c::symbol` attribute', 2, 1),
+            ('#c::symbol\nextern fn f {}\nfn main {} {}', 'struct `symbol` is missing `name`', 1, 2),
+            ('#c::symbol{ nme = "a" }\nextern fn f {}\nfn main {} {}', 'struct `symbol` has no field `nme`', 1, 13),
+            ('union U { a{ x: i32 } }\n#U::a{ x = 1 }\nfn main {} {}', 'an attribute must be a struct literal', 2, 6),
+            ('fn g {} -> i32 { return 1 }\nstruct S { x: i32 }\n#S{ x = g{} }\nfn main {} {}',
+             'a const cannot call a function', 3, 10),
+        ]:
+            self.assertExternError(src, msg, line, col)
+
+    def test_attributes_are_data(self):
+        # Any struct can be an attribute, on any declaration; the compiler checks it and ignores
+        # it.
+        self.assertOutput("""
+struct Tag {}
+struct Rename { to: []u8, n: i32 }
+const N: i32 = 3
+namespace n {
+    #Tag
+    struct S { x: i32 }
+}
+#Rename{ to = "x", n = N + 1 }
+#Tag
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = 1 }
+}
+""", "1\n")
 
 
 class WordCountExample(Base):

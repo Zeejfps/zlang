@@ -4,7 +4,7 @@ Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound funct
 
 ## 1. Top level
 
-1. A program is a sequence of declarations: `fn`, `struct`, `union`, `enum`, `type`, `const`, `namespace`.
+1. A program is a sequence of declarations: `fn`, `extern fn` (§18), `struct`, `union`, `enum`, `type`, `const`, `namespace`. Any declaration may have attributes (§18).
 2. There is no mutable state at top level. Top-level names may be referenced from anywhere.
 3. All effects (IO, memory, OS) reach a function only through its context.
 4. Source files are UTF-8. Names are ASCII: a letter or `_`, then letters, digits and `_`. Other characters may appear only in comments, which are `// to the end of the line` and `/* ... */` (not nested). String and character literals are ASCII too (§11 Literals).
@@ -547,6 +547,7 @@ Settled questions are removed, and the rest keep their numbers.
 | Namespace | Contents |
 |---|---|
 | `slice` | Helpers for built-in slices (§12): `empty`, `cast`, `copy`, `fill`, `eq_bytes` |
+| `c` | Attributes for calling C (§18): `symbol { name: []u8 }`. |
 | `Args` | Declared at the top level: `type Args = [][]u8`, the type of `main`'s `args` (§15). |
 | `Result(T, E)` | Declared at the top level: `union Result(T, E) { ok{ value: T }, err{ error: E } }`. Namespace `result`: `is_ok`, `is_err`, `value`, `error`, `value_or`, `unwrap`, `ok_or`. |
 | `fs` | `File`, `Mode` (`read`, `write`, `append`, `create`), `Error`; `open`, `read`, `write`, `close`, `size`, `remove`, and `read_all` (into memory from an allocator) and `write_all`. Every function takes `mut fs: Fs` and reports failure as a `Result(T, fs::Error)` or `?fs::Error`. Natives: `sys_open`, `sys_read`, `sys_write`, `sys_close`, `sys_size`, `sys_remove`. |
@@ -565,3 +566,31 @@ fn main { mut io: Io } {
     io::println_i64{ &io, n = 42 }
 }
 ```
+
+## 18. C functions and attributes
+
+```
+#c::symbol{ name = "labs" }
+extern fn long_abs { n: i64 } -> i64
+
+extern fn frexp { x: f64, mut exp: i32 } -> f64
+extern fn glfwPollEvents { mut glfw: Glfw }      // a capability says who may call it
+```
+
+### Attributes
+
+1. `#path` or `#path{ field = e, ... }`, on its own line before a declaration, is an **attribute** of it. A declaration may have several.
+2. `path` names a struct, and the braces are a literal of it, checked as a const's initializer is (§14): its value is computed at compile time. `#path` alone means `#path{}`.
+3. Attributes are data. The compiler acts on those of std's `c` namespace and ignores the rest; a program can read them later (PLAN.md, stage 9).
+
+### Extern functions
+
+1. `extern fn name { context } -> R` declares a function that C provides. It has no body and no generic parameters.
+2. It calls the C symbol `name`, or the one `#c::symbol{ name = "..." }` gives. The symbol must be a C identifier.
+3. Its context fields are C's parameters in the order they are declared. A field with a capability type (§15) isn't passed: it only says who may call the function. A `mut` field of type `T` is passed as a `T*`.
+4. A field or result may have a numeric type, `bool`, an enum (as its base type), a pointer (as a C pointer), a slice (as a struct of `ptr` and `len`) or a struct (as a C struct of the same layout). Other types are an error.
+5. Every call goes through a declaration of the symbol made for that function, so it can't clash with the declaration of the same symbol in a C header. Nothing checks the declaration against C's: a wrong one is undefined behaviour.
+6. An extern fn is called like any function and is a value of type `fn{C} -> R`.
+7. Every program is linked with the C library and the math library.
+
+8. §1.3 holds by declaration: an extern fn that reaches IO, the OS or memory outside its pointer arguments must take a capability for it. One without a capability field, such as `sqrt`, promises to be pure. The compiler can't check either.

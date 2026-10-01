@@ -59,11 +59,13 @@ namespace ir {
     struct Local { name: Bytes, ty: TypeId }
 
     // A native has no locals and an empty body. Params are in declaration order and take the
-    // first slots; a `mut` param's slot holds a pointer.
+    // first slots; a `mut` param's slot holds a pointer. An extern fn is a native with a symbol:
+    // the C function it calls.
     struct Func {
         id:     u32,
         name:   Bytes,
         native: bool,
+        symbol: Bytes,
         params: []Param,
         ret:    TypeId,
         locals: []Local,

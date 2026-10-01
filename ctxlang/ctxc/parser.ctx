@@ -71,11 +71,14 @@ namespace parser {
     }
 
     fn decl { mut p: Parser } -> syntax::Decl {
+        let attrs = attributes{ &p }
         let start = p.i
         let id = new_id{ &p }
         let k = kind{ p, ahead = 0 }
         let mut d = syntax::DeclKind::error
-        if k == tok::Kind::kw_fn {
+        if p.bad {
+            // a bad attribute: the declaration is skipped with it
+        } else if k == tok::Kind::kw_fn {
             skip{ &p }
             let name = ident{ &p }
             let tparams = tparams{ &p }
@@ -86,7 +89,18 @@ namespace parser {
             }
             let params = ctx_fields{ &p }
             let ret: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { type_expr{ &p } } else { null }
-            d = syntax::DeclKind::func{ name, tparams, params, ret, body = block{ &p } }
+            d = syntax::DeclKind::func{ name, tparams, params, ret, body = block{ &p }, external = false }
+        } else if k == tok::Kind::kw_extern {
+            skip{ &p }
+            expect{ &p, k = tok::Kind::kw_fn }
+            let name = ident{ &p }
+            if is{ p, k = tok::Kind::lparen } { fail{ &p, msg = "an extern fn cannot have generic parameters" } }
+            let params = ctx_fields{ &p }
+            let ret: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { type_expr{ &p } } else { null }
+            if is{ p, k = tok::Kind::lbrace } and not nl{ p } { fail{ &p, msg = "an extern fn has no body: C provides it" } }
+            let at = prev_end{ p }
+            let body = syntax::Block{ id = new_id{ &p }, span = source::Span{ file = p.file, start = at, end = at }, stmts = slice::empty(syntax::Stmt){} }
+            d = syntax::DeclKind::func{ name, tparams = slice::empty(syntax::Name){}, params, ret, body, external = true }
         } else if k == tok::Kind::kw_struct {
             skip{ &p }
             let name = ident{ &p }
@@ -127,7 +141,49 @@ namespace parser {
         } else {
             expected{ &p, what = "a declaration" }
         }
-        return syntax::Decl{ id, span = span_from{ p, start }, k = d }
+        return syntax::Decl{ id, span = span_from{ p, start }, attrs, k = d }
+    }
+
+    // The attributes before a declaration: `#path` or `#path{ field = value, ... }`, each on its
+    // own line. A bare `#path` gets empty braces, so every attribute is a literal.
+    fn attributes { mut p: Parser } -> []syntax::Attr {
+        let mut xs = list::new(syntax::Attr){ realloc = arena::alloc, heap = p.heap }
+        while is{ p, k = tok::Kind::hash } and not p.bad {
+            let start = p.i
+            skip{ &p }
+            if not is{ p, k = tok::Kind::ident } {
+                expected{ &p, what = "a struct name after '#'" }
+                break
+            }
+            let e = postfix{ &p }
+            if p.bad { break }
+            let mut value = e
+            let mut ok = false
+            match e.k {
+                path => {
+                    let k = syntax::ExprKind::braced{ callee = box{ &p, value = e }, items = slice::empty(syntax::Item){}, forward = false, bind = false }
+                    value = syntax::Expr{ id = new_id{ &p }, span = e.span, at = e.span.start, k }
+                    ok = true
+                }
+                braced{ callee, forward, bind } => {
+                    match callee.k { path => { ok = not forward and not bind } else => {} }
+                }
+                else => {}
+            }
+            if not ok {
+                fail_at{ &p, msg = "an attribute is a struct name or a struct literal", t = p.toks[start + 1] }
+                break
+            }
+            if not nl{ p } {
+                fail{ &p, msg = "an attribute goes on its own line, before a declaration" }
+                break
+            }
+            add{ &p, xs = &xs, item = syntax::Attr{ span = span_from{ p, start }, value } }
+        }
+        if xs.len > 0 and not p.bad and not is_decl_start{ k = kind{ p, ahead = 0 } } {
+            expected{ &p, what = "a declaration after an attribute" }
+        }
+        return list::items{ list = xs }
     }
 
     // Whether the `{ ... }` here, where a function's context belongs, is its body instead: it
@@ -1045,10 +1101,15 @@ namespace parser {
         p.bad = false
     }
 
+    // A token that can begin a declaration, at the start of a line, for recovery.
     fn is_decl_keyword { k: tok::Kind } -> bool {
+        return is_decl_start{ k } or k == tok::Kind::hash
+    }
+
+    fn is_decl_start { k: tok::Kind } -> bool {
         return k == tok::Kind::kw_fn or k == tok::Kind::kw_struct or k == tok::Kind::kw_union
                or k == tok::Kind::kw_enum or k == tok::Kind::kw_type or k == tok::Kind::kw_const
-               or k == tok::Kind::kw_namespace
+               or k == tok::Kind::kw_namespace or k == tok::Kind::kw_extern
     }
 
     // At a declaration keyword that begins a line: a block or match that reaches one after an

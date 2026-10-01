@@ -70,6 +70,8 @@ namespace ir_read {
                 add{ &r, xs = &fns, item = function{ &r, native = false } }
             } else if is{ s = tag, lit = "native" } {
                 add{ &r, xs = &fns, item = function{ &r, native = true } }
+            } else if is{ s = tag, lit = "extern" } {
+                add{ &r, xs = &fns, item = extern_fn{ &r } }
             } else if is{ s = tag, lit = "main" } {
                 main = id32{ &r }
                 expect{ &r, c = ')' }
@@ -187,6 +189,16 @@ namespace ir_read {
         return list::items{ list = xs }
     }
 
+    // After `(extern `, up to the closing parenthesis.
+    fn extern_fn { mut r: Reader } -> ir::Func {
+        let id = id32{ &r }
+        let name = string{ &r }
+        let symbol = string{ &r }
+        let params = params{ &r }
+        let ret = id32{ &r }
+        return ir::Func{ id, name, native = true, symbol, params, ret, locals = slice::empty(ir::Local){}, body = empty_block{} }
+    }
+
     // After `(fn ` or `(native `, up to the closing parenthesis.
     fn function { mut r: Reader, native: bool } -> ir::Func {
         let id = id32{ &r }
@@ -194,7 +206,7 @@ namespace ir_read {
         let params = params{ &r }
         let ret = id32{ &r }
         if native {
-            return ir::Func{ id, name, native, params, ret, locals = slice::empty(ir::Local){}, body = empty_block{} }
+            return ir::Func{ id, name, native, symbol = "", params, ret, locals = slice::empty(ir::Local){}, body = empty_block{} }
         }
         expect{ &r, c = '[' }
         let mut locals = list::new(ir::Local){ realloc = arena::alloc, heap = r.heap }
@@ -207,7 +219,7 @@ namespace ir_read {
         }
         expect{ &r, c = ']' }
         let body = block{ &r }
-        return ir::Func{ id, name, native, params, ret, locals = list::items{ list = locals }, body }
+        return ir::Func{ id, name, native, symbol = "", params, ret, locals = list::items{ list = locals }, body }
     }
 
     fn empty_block {} -> ir::Block {

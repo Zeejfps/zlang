@@ -43,6 +43,11 @@ void ctx_init(const char *const *files, uint32_t nfiles, const char *program, in
 ctx_slice ctx_args(void);                  // main's `args`: a [][]u8 of UTF-8 bytes
 int ctx_exit(int32_t code);                // flushes output, closes files; returns code
 
+// The assembler name of C symbol `name`, a string literal, for an extern fn's prototype.
+#define CTX_STR_(x) #x
+#define CTX_STR(x) CTX_STR_(x)
+#define CTX_SYMBOL(name) CTX_STR(__USER_LABEL_PREFIX__) name
+
 #define CTX_BITCAST(T, x) ({ __typeof__(x) _bc_v = (x); T _bc_r; \
     _Static_assert(sizeof(_bc_r) == sizeof(_bc_v), "bitcast size"); memcpy(&_bc_r, &_bc_v, sizeof _bc_r); _bc_r; })
 

@@ -24,11 +24,18 @@ namespace syntax {
 
     // ---- declarations
 
-    struct Decl { id: u32, span: Span, k: DeclKind }
+    // A declaration's span starts at its keyword: its attributes, on the lines before it, have
+    // their own.
+    struct Decl { id: u32, span: Span, attrs: []Attr, k: DeclKind }
+
+    // `#path` or `#path{ field = value, ... }` on its own line. value is always a braced literal:
+    // the parser gives a bare `#path` empty braces.
+    struct Attr { span: Span, value: Expr }
 
     union DeclKind {
         error,
-        func{ name: Name, tparams: []Name, params: []Param, ret: ?TypeExpr, body: Block },
+        // An extern fn has no tparams and an empty body, where its declaration ends.
+        func{ name: Name, tparams: []Name, params: []Param, ret: ?TypeExpr, body: Block, external: bool },
         record{ name: Name, tparams: []Name, fields: []Field },          // struct
         sum{ name: Name, tparams: []Name, variants: []Variant },         // union
         enumeration{ name: Name, base: TypeExpr, variants: []EnumVariant },

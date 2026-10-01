@@ -14,7 +14,7 @@ namespace lower {
     type Id = types::Id
 
     const NONE: u32 = 4294967295
-    const VERSION: u64 = 7
+    const VERSION: u64 = 8
 
     // A function instance: a declaration and its generic arguments.
     struct Inst { decl: u32, targs: []Id }
@@ -119,7 +119,7 @@ namespace lower {
         let ret = tid{ &l, t = x.ret }
         let none = slice::empty(ir::Stmt){}
         return ir::Func{
-            id, name = x.qual, native = true, params, ret,
+            id, name = x.qual, native = true, symbol = x.symbol, params, ret,
             locals = slice::empty(ir::Local){}, body = ir::Block{ stmts = none, result = null },
         }
     }
@@ -173,7 +173,7 @@ namespace lower {
         }
         let ret = tid{ &l, t = l.ret }
         return ir::Func{
-            id, name, native = false, params = list::items{ list = params }, ret,
+            id, name, native = false, symbol = "", params = list::items{ list = params }, ret,
             locals = list::items{ list = l.locals }, body,
         }
     }

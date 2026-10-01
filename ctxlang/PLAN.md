@@ -21,7 +21,8 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
 | 7 | Self-hosting fixpoint | done | `8436f4d` |
 | 7a | Language server | | |
 | 8 | Decide ctxi's role: removed, ctxc bootstraps from committed C | done | |
-| 9 | Metaprogramming: build programs, attributes, compile-time consts | future | |
+| 9 | Metaprogramming: build programs, attributes, compile-time consts | future (attributes: done, in 10.1) | |
+| 10 | C interop: extern fns, capabilities, linking | in progress | |
 
 ### Where we are
 
@@ -30,8 +31,8 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
   Without Python: `cc -std=gnu11 -O1 -fwrapv -fno-optimize-sibling-calls -Ictxc/rt
   bootstrap/ctxc.c ctxc/rt/ctxrt.c -lm -o ctxc`, then `ctxc build OUT.c std/*.ctx -- FILE...`.
 - `python -m unittest discover tests` runs all 340 tests through the native ctxc: each program is
-  compiled with `ctxc build`, built with cc and run. They pass on Windows (gcc) and Linux (gcc).
-  The bootstrap also builds for macOS (arm64 and x86_64, with `zig cc`), not yet run there.
+  compiled with `ctxc build`, built with cc and run. They pass on Windows (gcc), Linux (gcc) and
+  macOS arm64 (Apple clang).
 - `tools/fixpoint.py`: ctxc built by itself, twice, writes byte-identical C, the same as the
   bootstrap's, on Windows and Linux, with gcc and with clang.
 - `tools/recover.py`: every damaged copy of the corpus's files parses and passes its checks.
@@ -625,7 +626,7 @@ Steps, each usable on its own:
    type whose natives record a build graph: executables, their source roots, and generated files
    (`build::exe`, `build::gen_file`). Generated files go under `build/gen/` and join the program's
    file list. A build program declares `Fs` or `Mem` only if it needs them, as `main` does.
-2. **Attributes, parser only.** `#path` or `#path{ field = e, ... }` on its own line before a
+2. **Attributes, parser only.** *Done with step 4, in stage 10.1, on declarations only so far. Stage 10 amends "inert": the compiler acts on the attributes of std's `c` namespace.* `#path` or `#path{ field = e, ... }` on its own line before a
    declaration, a struct field, a union variant or a context field. The parser keeps them in the
    syntax tree and the checker ignores them. `#` is used rather than `@` because `@` means the
    compiler acts (§13), knows every name and rejects unknown ones, while attributes are inert data
@@ -638,7 +639,7 @@ Steps, each usable on its own:
    format is needed.
    Needs stage 7, since before it the front end is Python and this would have to go through a
    native.
-4. **Typed attributes.** `#name{ ... }` resolves `name` as a path to a struct (§10) and checks the
+4. **Typed attributes.** *Done in stage 10.1.* `#name{ ... }` resolves `name` as a path to a struct (§10) and checks the
    braces as a const struct literal of it (§7, §14.1). Bare `#name` requires a struct with no
    fields. The compiler still gives attributes no meaning; the check
    catches typos such as `#jsno` or `rename_to =`, which would otherwise be dropped silently.
@@ -678,6 +679,47 @@ on real code.
 
 *Done when:* a JSON generator in ctxlang derives `write` and `read` functions for
 `#json::derive` structs, and `examples/json` uses them for a typed round trip.
+
+### 10. C interop — in progress
+
+The goal is real programs over C libraries: OpenGL or Vulkan rendering, windowing, audio. The
+language provides the mechanism; how a library's binding is shaped is up to the binding.
+
+C is reached the way every effect is (§1.3): through capabilities. A C function is declared as an
+`extern fn`, and one with effects takes a capability field, which says who may call it and isn't
+passed to C. That keeps a signature's promise of what a function can touch, and keeps stage 9's
+premise that code needing no capability can run at compile time. A capability is authority that
+can be audited, not a sandbox: code holding one can still corrupt memory through C.
+
+Metadata about the C side (the symbol, later the library and how to load it) is attributes:
+structs in std's `c` namespace, checked as const literals (stage 9 steps 2 and 4, brought forward
+for this). They are typed, so a typo is an error, and a new option is a new field, not grammar.
+
+Increments, each landing with tests and a refreshed bootstrap:
+
+1. **`extern fn` and attributes** — *done.* `#path{ ... }` before any declaration, checked as a
+   const literal of the struct `path` names. `extern fn name { context } -> R` calls C symbol
+   `name`, or the one `#c::symbol{ name }` gives. Context fields are C's parameters in declaration
+   order; capability fields are dropped; a `mut` field passes a pointer. Fields and results are
+   limited to numbers, `bool`, enums, pointers, slices and structs. In the IR an extern is
+   `(extern ID NAME SYMBOL PARAMS RET)` (IR version 8). The C backend declares each extern as
+   `xN` with an assembler name (`__asm__(CTX_SYMBOL("sym"))`), so a header that declares the
+   same symbol with other C types can't clash with it, and `fN` calls it.
+2. **The runtime's natives as externs.** The 13 natives in `check.ctx`'s table move into std as
+   extern fns over runtime functions without capability parameters, and the table goes.
+   `io::Stream` becomes an enum, since a union can't cross into C.
+3. **Capability types declared in source.** `Io`, `Fs` and `Mem` become std declarations, `main`
+   accepts any capability type, and a namespace can construct its own capabilities, so a binding
+   can derive one from another (a window from a library, a GL context from a window).
+4. **Linking.** `#c::library{ ... }` on a namespace names the library its externs come from, per
+   platform. `ctxc build` reports what to link and the driver passes it to cc. Later, a mode that
+   loads the library at run time, where the capability means "it loaded".
+5. **`?*T` as a nullable C pointer**, so C's `NULL` crosses as `null`.
+6. **The rest, one at a time:** C function pointers (GL and Vulkan load functions at run time),
+   null-terminated strings, untagged unions (§16 Q8), callbacks from C.
+
+*Done when:* a program opens a window and draws with OpenGL through a binding written in
+ctxlang.
 
 ### Bootstrap chain
 

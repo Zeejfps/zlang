@@ -57,7 +57,8 @@ def read(path):
 
 def first_difference(a, b):
     i = next((k for k in range(min(len(a), len(b))) if a[k] != b[k]), min(len(a), len(b)))
-    return f'first difference at byte {i}, line {a.count(b"\n", 0, i) + 1}'
+    line = a.count(b'\n', 0, i) + 1
+    return f'first difference at byte {i}, line {line}'
 
 
 def main(argv):

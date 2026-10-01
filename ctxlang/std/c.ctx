@@ -1,0 +1,12 @@
+// std: c. Attributes for calling C (spec §18).
+//
+// An extern fn is a function that C provides. Its context fields are C's parameters in the order
+// they are declared, and capability fields aren't passed: they only say who may call it.
+//
+//   #c::symbol{ name = "labs" }
+//   extern fn long_abs { n: i64 } -> i64      // C's labs; without the attribute, `long_abs`
+
+namespace c {
+    // The C symbol an extern fn calls, when it isn't the fn's own name.
+    struct symbol { name: []u8 }
+}
