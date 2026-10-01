@@ -40,25 +40,23 @@ namespace c {
         return @slice(s.ptr, len{ s })
     }
 
-    union CopyError {
-        has_nul{ at: usize },       // C would end the string at this byte
-        out_of_memory,
-    }
+    error has_nul{ at: usize }      // C would end the string at this byte
+    error out_of_memory
 
     // A String holding a copy of `bytes` and a NUL, from the allocator: for text built at run
     // time. It lives as long as the allocator's memory, as with an arena; a String is read-only,
     // so it can't be given back on its own.
-    fn copy(S) { realloc: alloc::Fn(S), mut heap: S, bytes: []u8 } -> Result(String, CopyError) {
+    fn copy(S) { realloc: alloc::Fn(S), mut heap: S, bytes: []u8 } -> !String {
         let mut i: usize = 0
         while i < bytes.len {
-            if bytes[i] == 0 { return Result::err{ error = CopyError::has_nul{ at = i } } }
+            if bytes[i] == 0 { return has_nul{ at = i } }
             i = i + 1
         }
         let mem = alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = bytes.len + 1 } ifnull {
-            return Result::err{ error = CopyError::out_of_memory }
+            return out_of_memory
         }
         slice::copy(u8){ dst = mem[..bytes.len], src = bytes }
         mem[bytes.len] = 0
-        return Result::ok{ value = String{ ptr = mem.ptr } }
+        return String{ ptr = mem.ptr }
     }
 }

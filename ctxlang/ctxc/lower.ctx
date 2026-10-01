@@ -928,7 +928,7 @@ namespace lower {
         return mk{ ty, k = ir::ExprKind::matchx{ scrut = box{ l, e = x }, through = false, arms = list::items{ list = out } } }
     }
 
-    // Result x, of type frm, as a result of type `to` with the same value type and errors that
+    // A result x, of type frm, as a result of type `to` with the same value type and errors that
     // hold frm's.
     fn res_remap { mut l: Lower, x: ir::Expr, frm: Id, to: Id } -> ir::Expr {
         let res{ ok, errs = fe } = types::get{ s = l.c.ty, id = frm } else { @panic("lower: not a result") }

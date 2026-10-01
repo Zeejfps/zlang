@@ -3,7 +3,7 @@
 //   python tools/ctxc.py examples/wordcount.ctx --run notes.txt
 //
 // Uses command-line arguments and files (std/fs.ctx), main's exit code, a hash map
-// (std/map.ctx), UTF-8 text and utf8::Cursor for scanning, Result, and defer.
+// (std/map.ctx), UTF-8 text and utf8::Cursor for scanning, errors (`!T`), and defer.
 //
 // A word is a run of letters. std recognizes only ASCII letters (it has no Unicode tables), so
 // every non-ASCII character counts as a letter here: "café" is one word.
@@ -20,23 +20,17 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     let mut mem: [1048576]u8                                  // the heap: 1 MiB on the stack
     let mut heap = arena::new{ buf = mem[..] }
 
-    // `match` gives the file's bytes, or leaves main with an exit code.
-    let bytes = match fs::read_all{ &fs, &heap, realloc = arena::alloc, path } {
-        ok{ value }  => { value }
-        err{ error } => {
-            report{ &io, path, error }
-            return 1
-        }
+    // `iferr` gives the file's bytes, or leaves main with an exit code.
+    let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr err{ error } {
+        report{ &io, path, error }
+        return 1
     }
     defer _ = alloc::resize{ realloc = arena::alloc, &heap, mem = bytes, count = 0 }
 
     lowercase{ bytes }
-    let text = match utf8::from{ bytes } {
-        ok{ value }  => { value }
-        err{ error } => {
-            io::eprintln{ &io, s = "not a UTF-8 text file" }
-            return 1
-        }
+    let text = utf8::from{ bytes } iferr {
+        io::eprintln{ &io, s = "not a UTF-8 text file" }
+        return 1
     }
 
     // Keys are views into `bytes`, which outlives the map: defers run in reverse order.
@@ -138,14 +132,14 @@ fn before { a: utf8::String, b: utf8::String } -> bool {
     return a.bytes.len < b.bytes.len
 }
 
-fn report { mut io: Io, path: []u8, error: fs::Error } {
+fn report { mut io: Io, path: []u8, error: error } {          // `error`: any error
     io::write{ &io, to = io::Stream::err, bytes = path }       // a path is bytes, not always text
     let why: utf8::String = match error {
-        not_found         => { ": no such file" }
-        permission_denied => { ": permission denied" }
-        is_directory      => { ": is a directory" }
-        out_of_memory     => { ": too large for the heap" }
-        else              => { ": cannot read" }
+        fs::not_found         => { ": no such file" }
+        fs::permission_denied => { ": permission denied" }
+        fs::is_directory      => { ": is a directory" }
+        fs::out_of_memory     => { ": too large for the heap" }
+        else                  => { ": cannot read" }
     }
     io::eprintln{ &io, s = why }
 }

@@ -2913,8 +2913,8 @@ fn opt { mut io: Io, n: ?usize } {
         src = """
 fn check { mut io: Io, bytes: []u8 } {
     match utf8::from{ bytes } {
-        ok{ value }  => { io::println_i64{ &io, n = -1 } }
-        err{ error } => { io::println_u64{ &io, n = error.at } }
+        ok                  => { io::println_i64{ &io, n = -1 } }
+        utf8::invalid{ at } => { io::println_u64{ &io, n = at } }
     }
 }
 fn main { mut io: Io } {
@@ -2951,7 +2951,7 @@ fn main { mut io: Io } {
     let bad = "\xff"
     let s = utf8::of{ chars = &bad }
 }
-""", 'result::unwrap: result is an error')
+""", "utf8::of: the bytes aren't valid UTF-8")
 
     def test_cursor(self):
         self.assertOutput(r"""
@@ -3294,39 +3294,31 @@ fn main { mut io: Io } { }
 
 
 class ResultType(Base):
+    """std's Result(T, E) gave way to `!T` (spec §8, Errors): its test of passing errors up."""
+
     def test_propagation(self):
         self.assertOutput("""
-union ParseError { empty, bad{ at: usize } }
-fn parse_one { s: utf8::String } -> Result(i64, ParseError) {
-    if utf8::len{ s } == 0 { return Result::err{ error = ParseError::empty } }
+error empty
+error bad{ at: usize }
+fn parse_one { s: utf8::String } -> !i64 {
+    if utf8::len{ s } == 0 { return empty }
     let mut i: usize = 0
     while i < utf8::len{ s } {
-        if not utf8::is_digit{ c = utf8::at{ s, i } } {
-            return Result::err{ error = ParseError::bad{ at = i } }
-        }
+        if not utf8::is_digit{ c = utf8::at{ s, i } } { return bad{ at = i } }
         i = i + 1
     }
-    return result::ok_or{ o = utf8::parse_i64{ s }, error = ParseError::bad{ at = 0 } }
+    return utf8::parse_i64{ s } ifnull { return bad{ at = 0 } }
 }
-fn sum { s: utf8::String } -> Result(i64, ParseError) {
-    let parts = match utf8::split_once{ s, c = ',' } {
-        null          => { return Result::err{ error = ParseError::empty } }
-        some{ value } => { value }
-    }
-    let x = match parse_one{ s = parts.head } {
-        ok{ value }  => { value }
-        err{ error } => { return Result::err{ error } }
-    }
-    let y = match parse_one{ s = parts.tail } {
-        ok{ value }  => { value }
-        err{ error } => { return Result::err{ error } }
-    }
-    return Result::ok{ value = x + y }
+fn sum { s: utf8::String } -> !i64 {
+    let parts = utf8::split_once{ s, c = ',' } ifnull { return empty }
+    let x = try parse_one{ s = parts.head }
+    let y = try parse_one{ s = parts.tail }
+    return x + y
 }
-fn report { mut io: Io, r: Result(i64, ParseError) } {
+fn report { mut io: Io, r: !i64 } {
     let code = match r {
         ok{ value }  => { value }
-        err{ error } => { match error { empty => { -1 } bad{ at } => { -100 - @as(i64, at) } } }
+        err{ error } => { match error { empty => { -1 } bad{ at } => { -100 - @as(i64, at) } else => { -2 } } }
     }
     io::println_i64{ &io, n = code }
 }
@@ -3340,36 +3332,11 @@ fn main { mut io: Io } {
 }
 """, '42\n-101\n-1\n')
 
-    def test_helpers(self):
-        self.assertOutput("""
-fn main { mut io: Io } {
-    let good: Result(i32, bool) = Result::ok{ value = 5 }
-    let bad: Result(i32, bool) = Result::err{ error = true }
-    io::println_bool{ &io, n = result::is_ok{ r = good } and result::is_err{ r = bad } }
-    io::println_i64{ &io, n = result::unwrap{ r = good } }
-    io::println_i64{ &io, n = result::value_or{ r = bad, default = 9 } }
-    io::println_bool{ &io, n = result::value{ r = bad } == null }
-    let e = result::error{ r = bad }
-    if e != null { io::println_bool{ &io, n = e } }
-    let none: ?i32 = null
-    io::println_bool{ &io, n = result::is_err{ r = result::ok_or{ o = none, error = false } } }
-}
-""", 'true\n5\n9\ntrue\ntrue\ntrue\n')
-
-    def test_unwrap_panics(self):
-        self.assertPanic("""
-fn main { mut io: Io } {
-    let bad: Result(i32, bool) = Result::err{ error = true }
-    let x = result::unwrap{ r = bad }
-}
-""", 'result::unwrap: result is an error')
-
-    def test_user_result_shadows_std(self):
+    def test_result_is_a_free_name(self):
         self.assertOutput("""
 struct Result { n: i32 }
 fn main { mut io: Io } { io::println_i64{ &io, n = Result{ n = 3 }.n } }
 """, '3\n')
-
 
 class NarrowingAfterIf(Base):
     """§8 Optional: an `if` whose null branch leaves narrows x for the rest of the block."""
@@ -3710,6 +3677,7 @@ class LetElse(Base):
     """§11 Let-else: `let variant{ ... } = e else { ... }`."""
 
     SRC = """
+union Result(T, E) { ok{ value: T }, err{ error: E } }
 union E { odd{ n: i32 }, negative }
 fn half { n: i32 } -> Result(i32, E) {
     if n < 0 { return Result::err{ error = E::negative } }
@@ -3756,6 +3724,7 @@ fn main { mut io: Io } {
 
     def test_variant_without_bindings(self):
         self.assertOutput("""
+union Result(T, E) { ok{ value: T }, err{ error: E } }
 fn main { mut io: Io } {
     let x: ?i32 = null
     let null = x else { @panic() }
@@ -4505,10 +4474,11 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
 
 def show_error():
     return """
-fn show { mut io: Io, e: fs::Error } {
+fn show { mut io: Io, e: error } {
     let code = match e {
-        not_found => { 1 } permission_denied => { 2 } is_directory => { 3 } exists => { 4 }
-        not_directory => { 5 } bad_file => { 6 } out_of_memory => { 7 } other => { 8 }
+        fs::not_found => { 1 } fs::permission_denied => { 2 } fs::is_directory => { 3 } fs::exists => { 4 }
+        fs::not_directory => { 5 } fs::bad_file => { 6 } fs::out_of_memory => { 7 } fs::other => { 8 }
+        else => { 9 }
     }
     io::println_i64{ &io, n = code }
 }
@@ -4537,22 +4507,19 @@ class Fs(Base):
             with open(self.path(name), 'w') as f:
                 f.write('x')
         out, code = self.run_fs("""
-    let made = fs::make_dir{ &fs, path = args[1] }
-    io::println_bool{ &io, n = made == null }
-    let again = fs::make_dir{ &fs, path = args[1] }
-    io::println_bool{ &io, n = again != null }
-    let names = match fs::list{ &fs, &heap, realloc = arena::alloc, path = args[0] } {
-        ok{ value }  => { value }
-        err{ error } => { return 1 }
-    }
+    io::println_bool{ &io, n = match fs::make_dir{ &fs, path = args[1] } { ok => { true } err => { false } } }
+    let again = match fs::make_dir{ &fs, path = args[1] } { ok => { false } fs::exists => { true } else => { false } }
+    io::println_bool{ &io, n = again }
+    let names = fs::list{ &fs, &heap, realloc = arena::alloc, path = args[0] } iferr { return 1 }
     let mut i: usize = 0
     while i < names.len {
         io::println{ &io, s = utf8::of{ chars = names[i] } }
         i = i + 1
     }
     match fs::list{ &fs, &heap, realloc = arena::alloc, path = args[2] } {
-        ok => { return 2 }
-        err{ error } => { match error { not_found => { return 0 } else => { return 3 } } }
+        ok            => { return 2 }
+        fs::not_found => { return 0 }
+        else          => { return 3 }
     }
 """, [self.dir, self.path('sub'), self.path('missing')])
         self.assertEqual((out, code), ('true\ntrue\na.ctx\nb.txt\nc\nsub\n', 0))
@@ -4562,14 +4529,10 @@ class Fs(Base):
         with open(src, 'wb') as f:
             f.write(b'hello\nfrom a file\n')
         out, code = self.run_fs("""
-    let text = match fs::read_all{ &fs, &heap, realloc = arena::alloc, path = args[0] } {
-        ok{ value }  => { value }
-        err{ error } => { return 1 }
-    }
+    let text = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = args[0] } iferr { return 1 }
     io::print{ &io, s = utf8::of{ chars = text } }
-    let wrote = fs::write_all{ &fs, path = args[1], bytes = text }
-    io::println_u64{ &io, n = result::unwrap{ r = wrote } }
-    io::println_u64{ &io, n = result::unwrap{ r = fs::size{ &fs, path = args[1] } } }
+    io::println_u64{ &io, n = fs::write_all{ &fs, path = args[1], bytes = text } iferr { return 2 } }
+    io::println_u64{ &io, n = fs::size{ &fs, path = args[1] } iferr { return 3 } }
     return 0
 """, [src, dst])
         self.assertEqual((out, code), ('hello\nfrom a file\n18\n18\n', 0))
@@ -4583,7 +4546,7 @@ class Fs(Base):
             f.write(data)
         open(empty, 'wb').close()
         out, _ = self.run_fs("""
-    let a = result::unwrap{ r = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = args[0] } }
+    let a = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = args[0] } iferr { return 1 }
     io::println_u64{ &io, n = a.len }
     let mut sum: u64 = 0
     let mut i: usize = 0
@@ -4592,7 +4555,7 @@ class Fs(Base):
         i = i + 1
     }
     io::println_u64{ &io, n = sum }
-    let b = result::unwrap{ r = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = args[1] } }
+    let b = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = args[1] } iferr { return 1 }
     io::println_u64{ &io, n = b.len }
     return 0
 """, [big, empty])
@@ -4602,21 +4565,23 @@ class Fs(Base):
         p = self.path('f.txt')
         out, _ = self.run_fs("""
     let path = args[0]
-    let w = result::unwrap{ r = fs::open{ &fs, path, mode = fs::Mode::create } }
+    let w = fs::open{ &fs, path, mode = fs::Mode::create } iferr { return 1 }
     let a = "abc"
     _ = fs::write{ &fs, file = w, bytes = a[..] }
-    io::println_bool{ &io, n = fs::close{ &fs, file = w } == null }
-    let x = fs::open{ &fs, path, mode = fs::Mode::append }
-    if result::is_ok{ r = x } {
-        let d = "de"
-        _ = fs::write{ &fs, file = result::unwrap{ r = x }, bytes = d[..] }
+    io::println_bool{ &io, n = match fs::close{ &fs, file = w } { ok => { true } err => { false } } }
+    match fs::open{ &fs, path, mode = fs::Mode::append } {
+        ok{ value } => {
+            let d = "de"
+            _ = fs::write{ &fs, file = value, bytes = d[..] }
+        }
+        err => {}
     }
-    let r = result::unwrap{ r = fs::open{ &fs, path, mode = fs::Mode::read } }
+    let r = fs::open{ &fs, path, mode = fs::Mode::read } iferr { return 1 }
     defer _ = fs::close{ &fs, file = r }
     let mut buf: [2]u8
     let mut total: usize = 0
     while true {
-        let n = result::unwrap{ r = fs::read{ &fs, file = r, into = buf[..] } }
+        let n = fs::read{ &fs, file = r, into = buf[..] } iferr { return 1 }
         if n == 0 { break }
         io::print{ &io, s = utf8::of{ chars = buf[..][..n] } }
         total = total + n
@@ -4635,23 +4600,16 @@ class Fs(Base):
     let missing = args[1]
     let dir = args[2]
     let nested = args[3]
-    let e1 = result::error{ r = fs::open{ &fs, path = missing, mode = fs::Mode::read } }
-    if e1 != null { show{ &io, e = e1 } }
-    let e2 = result::error{ r = fs::open{ &fs, path = there, mode = fs::Mode::create } }
-    if e2 != null { show{ &io, e = e2 } }
-    let e3 = result::error{ r = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = dir } }
-    if e3 != null { show{ &io, e = e3 } }
-    let e4 = fs::close{ &fs, file = fs::File{ id = 999 } }
-    if e4 != null { show{ &io, e = e4 } }
-    let e5 = fs::remove{ &fs, path = missing }
-    if e5 != null { show{ &io, e = e5 } }
-    io::println_bool{ &io, n = fs::remove{ &fs, path = there } == null }
-    io::println_bool{ &io, n = result::is_err{ r = fs::size{ &fs, path = there } } }
-    let e6 = result::error{ r = fs::open{ &fs, path = nested, mode = fs::Mode::write } }
-    if e6 != null { show{ &io, e = e6 } }
+    match fs::open{ &fs, path = missing, mode = fs::Mode::read } { ok => {} err{ error } => { show{ &io, e = error } } }
+    match fs::open{ &fs, path = there, mode = fs::Mode::create } { ok => {} err{ error } => { show{ &io, e = error } } }
+    match fs::read_all{ &fs, &heap, realloc = arena::alloc, path = dir } { ok => {} err{ error } => { show{ &io, e = error } } }
+    fs::close{ &fs, file = fs::File{ id = 999 } } iferr err{ error } { show{ &io, e = error } }
+    fs::remove{ &fs, path = missing } iferr err{ error } { show{ &io, e = error } }
+    io::println_bool{ &io, n = match fs::remove{ &fs, path = there } { ok => { true } err => { false } } }
+    io::println_bool{ &io, n = match fs::size{ &fs, path = there } { ok => { false } err => { true } } }
+    match fs::open{ &fs, path = nested, mode = fs::Mode::write } { ok => {} err{ error } => { show{ &io, e = error } } }
     let empty = slice::empty(u8){}
-    let e7 = result::error{ r = fs::size{ &fs, path = empty } }
-    if e7 != null { show{ &io, e = e7 } }
+    match fs::size{ &fs, path = empty } { ok => {} err{ error } => { show{ &io, e = error } } }
     return 0
 """, [existing, missing, self.dir, os.path.join(self.dir, 'no_such_dir', 'x.txt')], show_error())
         self.assertEqual(out, '1\n4\n3\n6\n1\ntrue\ntrue\n1\n1\n')
@@ -4663,8 +4621,7 @@ class Fs(Base):
         out, _ = self.run_fs("""
     let mut small: [100]u8
     let mut tiny = arena::new{ buf = small[..] }
-    let e = result::error{ r = fs::read_all{ &fs, heap = &tiny, realloc = arena::alloc, path = args[0] } }
-    if e != null { show{ &io, e } }
+    match fs::read_all{ &fs, heap = &tiny, realloc = arena::alloc, path = args[0] } { ok => {} err{ error } => { show{ &io, e = error } } }
     return 0
 """, [p], show_error())
         self.assertEqual(out, '7\n')
@@ -5824,8 +5781,9 @@ class Proc(Base):
         out, code = self.run_proc("""
     _ = list::push{ list = &argv, item = "ctx-no-such-program-anywhere" }
     match proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} } {
-        ok           => { return 1 }
-        err{ error } => { match error { not_found => { return 0 } else => { return 2 } } }
+        ok              => { return 1 }
+        proc::not_found => { return 0 }
+        else            => { return 2 }
     }
 """)
         self.assertEqual(code, 0)
@@ -6451,15 +6409,16 @@ fn main { mut io: Io } {
         ok => {}
         err{ error } => {
             match error {
-                has_nul{ at } => { io::println_u64{ &io, n = at } }
-                out_of_memory => { io::println{ &io, s = "oom" } }
+                c::has_nul{ at } => { io::println_u64{ &io, n = at } }
+                c::out_of_memory => { io::println{ &io, s = "oom" } }
             }
         }
     }
     let big: []u8 = "this does not fit in what is left"
     match c::copy{ realloc = arena::alloc, &heap, bytes = big } {
-        ok => {}
-        err{ error } => { match error { has_nul => {} out_of_memory => { io::println{ &io, s = "oom" } } } }
+        ok               => {}
+        c::has_nul       => {}
+        c::out_of_memory => { io::println{ &io, s = "oom" } }
     }
 }
 """, "3\nabc\n0\n5\n1\noom\n")

@@ -23,7 +23,7 @@ C compiler. ctxi's last version is in git history, at `8436f4d`.
 | 8 | Decide ctxi's role: removed, ctxc bootstraps from committed C | done | |
 | 9 | Metaprogramming: build programs, attributes, compile-time consts | step 1 done (for 10.4); attributes done in 10.1 | |
 | 10 | C interop: extern fns, capabilities, linking; std's io and mem over the OS (10.7) | in progress | |
-| 11 | Optionals and errors: `!T` with inferred error sets, `ifnull`, `iferr`, `try`, flat `match` arms, `?T == T` | in progress: `ifnull` and errors done; std still on `Result` | |
+| 11 | Optionals and errors: `!T` with inferred error sets, `ifnull`, `iferr`, `try`, flat `match` arms, `?T == T` | in progress: `ifnull` and errors done, `Result` removed | |
 
 ### Where we are
 
@@ -792,8 +792,8 @@ Increments, each landing with tests and a refreshed bootstrap:
      which every 64-bit C ABI we target passes and returns exactly as the pointer. `?c::String` is
      an `nptr` whose payload is the struct, so it is a nullable `const char *` everywhere, in
      structs passed to C too. `c::len` is a loop in ctxlang (pure, no libc), `c::bytes` a view, and
-     `c::copy` copies bytes and a NUL from an allocator, failing with `CopyError::has_nul{ at }` or
-     `out_of_memory`; there is no `free`, since a `c::String` is read-only and can't give its
+     `c::copy` copies bytes and a NUL from an allocator, failing with `c::has_nul{ at }` or
+     `c::out_of_memory`; there is no `free`, since a `c::String` is read-only and can't give its
      memory back. examples/glfw and examples/sdl take titles and names as `c::String` literals, and
      sdl prints `SDL_GetError`.
    - **C function pointers** — *done.* `extern fn{ fields } -> R` is C's `R (*)(...)`: fields in
@@ -919,7 +919,7 @@ ctxlang.
 ### 11. Optionals and errors — next language item
 
 Two built-in kinds of "maybe": `?T` (§8) and, new here, `!T`, a value or an error from a set the
-compiler works out. Today errors are std's `Result(T, E)`, an ordinary union: every function picks
+compiler works out. Errors were std's `Result(T, E)`, an ordinary union: every function picked
 its own `E`, and an operator for it would tie the language to a std type. Unwrapping either kind
 is the commonest thing done with one, and the pattern form is heavy for it: `let some{ value = p }
 = e else { return 1 }`. FRICTION.md #11 and #20 are the same pain from other sides.
@@ -983,9 +983,10 @@ match load{ &fs, path } {
    `err{ error }` arm then takes the errors not listed, with the error bound, which a bare `else`
    can't.
 6. An `@fmt` hole prints an error's full name (`fs::not_found`), with its payload.
-7. Replaces std's `Result(T, E)` and the `result` namespace. Migration: std (about 20 uses, `fs`
-   mostly, whose `Error` union becomes `error` declarations), ctxc (1), examples (8), tests (35), in
-   the two steps of [Changing the language](#changing-the-language).
+7. Replaces std's `Result(T, E)` and the `result` namespace. *Done:* `fs`'s and `proc`'s `Error`
+   unions, `utf8::Invalid` and `c::CopyError` became `error` declarations, each module decoding the
+   runtime's status with a generic `failed(T) -> !T`; ctxc's driver, the examples and the tests
+   moved over, and `std/result.ctx` is gone.
 
 Precedent: Zig infers error sets for `!T` but its errors carry no data; Rust's typed enums carry
 data but need an enum and conversions per module, and `anyhow` erases the type to avoid that;
@@ -1012,9 +1013,8 @@ binds tighter than comparison and looser than `|`, as Swift's `??` and Kotlin's 
 groups right to left, so `a ifnull b ifnull 0` reads as a fallback chain. `iferr` should take the
 same shape, with an `err{ error }` arm.
 
-**Errors, as built** (spec §8, Errors). The first step of [Changing the language](#changing-the-language):
-ctxc understands them and the tests use them, but std, the examples and ctxc itself still use
-`Result`.
+**Errors, as built** (spec §8, Errors), in the two steps of [Changing the language](#changing-the-language):
+ctxc learned them, then std, the examples, the tests and ctxc itself moved off `Result`.
 
 - *Syntax.* `error name` or `error name{ fields }` is a declaration where `error` begins one and a
   name follows, so `error` stays a name everywhere else (`err{ error }`, ctxc's own `fn error`).

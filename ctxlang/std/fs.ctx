@@ -7,22 +7,20 @@
 //       let mut mem: [65536]u8
 //       let mut heap = arena::new{ buf = mem[..] }
 //       let path = args[0]
-//       let text = match fs::read_all{ &fs, &heap, realloc = arena::alloc, path } {
-//           ok{ value }  => { value }
-//           err{ error } => { return 1 }
-//       }
+//       let text = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr { return 1 }
 //       io::println{ &io, s = utf8::of{ chars = text } }
 //       return 0
 //   }
 //
-// Paths are bytes, relative to the working directory the program was started in.
+// Paths are bytes, relative to the working directory the program was started in. A function
+// fails with the errors below that its body can produce (spec §8, Errors).
 //
 // Permission to use the filesystem.
 capability Fs
 
 namespace fs {
     // ---- the runtime's (ctxrt.c). Each returns a status: >= 0 is the result, < 0 an error
-    // code that `error_of` decodes.
+    // code that `failed` decodes.
 
     #c::symbol{ name = "ctx_fs_sys_open" }
     extern fn sys_open { mut fs: Fs, path: []u8, mode: u8 } -> i64             // a file id
@@ -43,85 +41,83 @@ namespace fs {
     #c::symbol{ name = "ctx_fs_sys_make_dir" }
     extern fn sys_make_dir { mut fs: Fs, path: []u8 } -> i64
 
-    union Error {
-        not_found,
-        permission_denied,
-        is_directory,
-        exists,             // open with Mode::create, and the file is already there
-        not_directory,      // a directory in the path is a file
-        bad_file,           // the file is closed
-        out_of_memory,      // read_all's allocator failed
-        other{ code: i64 }, // the OS's error number
-    }
+    error not_found
+    error permission_denied
+    error is_directory
+    error exists                // open with Mode::create, and the file is already there
+    error not_directory         // a directory in the path is a file
+    error bad_file              // the file is closed
+    error out_of_memory         // read_all's or list's allocator failed
+    error other{ code: i64 }    // the OS's error number
 
     union Mode {
         read,       // an existing file
         write,      // creates the file, or empties an existing one
         append,     // creates the file, or writes after its end
-        create,     // creates the file; Error::exists if it is already there
+        create,     // creates the file; fails with `exists` if it is already there
     }
 
     struct File { id: u32 }
 
-    fn open { mut fs: Fs, path: []u8, mode: Mode } -> Result(File, Error) {
+    fn open { mut fs: Fs, path: []u8, mode: Mode } -> !File {
         let m: u8 = match mode { read => { 0 } write => { 1 } append => { 2 } create => { 3 } }
         let r = sys_open{ &fs, path, mode = m }
-        if r < 0 { return Result::err{ error = error_of{ code = r } } }
-        return Result::ok{ value = File{ id = @as(u32, r) } }
+        if r < 0 { return failed{ code = r } }
+        return File{ id = @as(u32, r) }
     }
 
     // Reads at most into.len bytes into `into`. Returns how many; 0 at the end of the file.
-    fn read { mut fs: Fs, file: File, into: []mut u8 } -> Result(usize, Error) {
+    fn read { mut fs: Fs, file: File, into: []mut u8 } -> !usize {
         let r = sys_read{ &fs, file = file.id, into }
-        if r < 0 { return Result::err{ error = error_of{ code = r } } }
-        return Result::ok{ value = @as(usize, r) }
+        if r < 0 { return failed{ code = r } }
+        return @as(usize, r)
     }
 
     // Writes all of `bytes`.
-    fn write { mut fs: Fs, file: File, bytes: []u8 } -> Result(usize, Error) {
+    fn write { mut fs: Fs, file: File, bytes: []u8 } -> !usize {
         let mut done: usize = 0
         while done < bytes.len {
             let r = sys_write{ &fs, file = file.id, bytes = bytes[done..bytes.len] }
-            if r < 0 { return Result::err{ error = error_of{ code = r } } }
+            if r < 0 { return failed{ code = r } }
             done = done + @as(usize, r)
         }
-        return Result::ok{ value = done }
+        return done
     }
 
-    // Null on success. Files still open when the program ends are closed then.
-    fn close { mut fs: Fs, file: File } -> ?Error {
+    // Files still open when the program ends are closed then.
+    fn close { mut fs: Fs, file: File } -> ! {
         let r = sys_close{ &fs, file = file.id }
-        return if r < 0 { error_of{ code = r } } else { null }
+        if r < 0 { return failed{ code = r } }
     }
 
     // The size of the file at `path`, in bytes.
-    fn size { mut fs: Fs, path: []u8 } -> Result(u64, Error) {
+    fn size { mut fs: Fs, path: []u8 } -> !u64 {
         let r = sys_size{ &fs, path }
-        if r < 0 { return Result::err{ error = error_of{ code = r } } }
-        return Result::ok{ value = @as(u64, r) }
+        if r < 0 { return failed{ code = r } }
+        return @as(u64, r)
     }
 
-    // Deletes the file at `path`. Null on success.
-    fn remove { mut fs: Fs, path: []u8 } -> ?Error {
+    // Deletes the file at `path`.
+    fn remove { mut fs: Fs, path: []u8 } -> ! {
         let r = sys_remove{ &fs, path }
-        return if r < 0 { error_of{ code = r } } else { null }
+        if r < 0 { return failed{ code = r } }
     }
 
-    // Creates directory `path`. Null on success; Error::exists if something is there already.
-    fn make_dir { mut fs: Fs, path: []u8 } -> ?Error {
+    // Creates directory `path`; fails with `exists` if something is there already.
+    fn make_dir { mut fs: Fs, path: []u8 } -> ! {
         let r = sys_make_dir{ &fs, path }
-        return if r < 0 { error_of{ code = r } } else { null }
+        if r < 0 { return failed{ code = r } }
     }
 
     // The names of directory `path`'s entries, without "." and "..", sorted by their bytes. They
     // are in memory from `realloc`, in two allocations: the names' bytes, and the slice of them.
-    fn list(S) { mut fs: Fs, mut heap: S, realloc: alloc::Fn(S), path: []u8 } -> Result([][]u8, Error) {
+    fn list(S) { mut fs: Fs, mut heap: S, realloc: alloc::Fn(S), path: []u8 } -> ![][]u8 {
         let mut buf = slice::empty(u8){}
         while true {
             let r = sys_list{ &fs, path, into = buf }
             if r < 0 {
                 _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
-                return Result::err{ error = error_of{ code = r } }
+                return failed{ code = r }
             }
             let n = @as(usize, r)
             if n <= buf.len {
@@ -132,7 +128,7 @@ namespace fs {
             buf = match realloc{ &heap, mem = buf, new = n, align = 1 } {
                 null => {
                     _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
-                    return Result::err{ error = Error::out_of_memory }
+                    return out_of_memory
                 }
                 some{ value } => { value }
             }
@@ -145,7 +141,7 @@ namespace fs {
         }
         let names = alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count } ifnull {
             _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
-            return Result::err{ error = Error::out_of_memory }
+            return out_of_memory
         }
         let mut start: usize = 0
         let mut k: usize = 0
@@ -158,16 +154,13 @@ namespace fs {
             }
             i = i + 1
         }
-        return Result::ok{ value = names }
+        return names
     }
 
     // Reads the whole file at `path` into memory from `realloc`. The caller owns the result:
     // free it with `alloc::resize(u8, S){ realloc, &heap, mem = bytes, count = 0 }`.
-    fn read_all(S) { mut fs: Fs, mut heap: S, realloc: alloc::Fn(S), path: []u8 } -> Result(alloc::Bytes, Error) {
-        let file = match open{ &fs, path, mode = Mode::read } {
-            ok{ value }  => { value }
-            err{ error } => { return Result::err{ error } }
-        }
+    fn read_all(S) { mut fs: Fs, mut heap: S, realloc: alloc::Fn(S), path: []u8 } -> !alloc::Bytes {
+        let file = try open{ &fs, path, mode = Mode::read }
         defer _ = close{ &fs, file }
 
         let mut buf = slice::empty(u8){}
@@ -178,45 +171,39 @@ namespace fs {
                 buf = match realloc{ &heap, mem = buf, new = cap, align = 1 } {
                     null => {
                         _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
-                        return Result::err{ error = Error::out_of_memory }
+                        return out_of_memory
                     }
                     some{ value } => { value }
                 }
             }
-            let got = match read{ &fs, file, into = buf[n..buf.len] } {
-                ok{ value }  => { value }
-                err{ error } => {
-                    _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
-                    return Result::err{ error }
-                }
+            let got = read{ &fs, file, into = buf[n..buf.len] } iferr err{ error } {
+                _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
+                return error
             }
             if got == 0 { break }
             n = n + got
         }
         // Shrink to the contents, so that freeing the result frees the whole allocation.
         let exact = realloc{ &heap, mem = buf, new = n, align = 1 }
-        if exact != null { return Result::ok{ value = exact } }
-        return Result::ok{ value = buf[..n] }
+        if exact != null { return exact }
+        return buf[..n]
     }
 
     // Creates or empties the file at `path` and writes `bytes` to it.
-    fn write_all { mut fs: Fs, path: []u8, bytes: []u8 } -> Result(usize, Error) {
-        let file = match open{ &fs, path, mode = Mode::write } {
-            ok{ value }  => { value }
-            err{ error } => { return Result::err{ error } }
-        }
+    fn write_all { mut fs: Fs, path: []u8, bytes: []u8 } -> !usize {
+        let file = try open{ &fs, path, mode = Mode::write }
         defer _ = close{ &fs, file }
         return write{ &fs, file, bytes }
     }
 
-    // The Error for a native's negative status.
-    fn error_of { code: i64 } -> Error {
-        if code == -1 { return Error::not_found }
-        if code == -2 { return Error::permission_denied }
-        if code == -3 { return Error::is_directory }
-        if code == -4 { return Error::exists }
-        if code == -5 { return Error::not_directory }
-        if code == -6 { return Error::bad_file }
-        return Error::other{ code = -1000 - code }
+    // The error for a native's negative status, as a failed result of any type.
+    fn failed(T) { code: i64 } -> !T {
+        if code == -1 { return not_found }
+        if code == -2 { return permission_denied }
+        if code == -3 { return is_directory }
+        if code == -4 { return exists }
+        if code == -5 { return not_directory }
+        if code == -6 { return bad_file }
+        return other{ code = -1000 - code }
     }
 }

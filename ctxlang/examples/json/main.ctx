@@ -22,8 +22,8 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
         return 1
     }
 
-    let ok{ value = doc } = parser::parse{ &heap, realloc = arena::alloc, text = bytes } else err{ error } {
-        report{ &io, path, text = bytes, error }
+    let doc = parser::parse{ &heap, realloc = arena::alloc, text = bytes } iferr err{ error } {
+        match error { parser::invalid{ problem, at } => { report{ &io, path, text = bytes, problem, at } } }
         return 1
     }
 
@@ -53,11 +53,11 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
 }
 
 // Prints "FILE:LINE:COLUMN: message" to standard error. The column counts characters.
-fn report { mut io: Io, path: []u8, text: []u8, error: parser::Error } {
+fn report { mut io: Io, path: []u8, text: []u8, problem: parser::Problem, at: usize } {
     let mut line: u64 = 1
     let mut col: u64 = 1
     let mut i: usize = 0
-    while i < error.at {
+    while i < at {
         let c = text[i]
         if c == '\n' {
             line = line + 1
@@ -77,7 +77,7 @@ fn report { mut io: Io, path: []u8, text: []u8, error: parser::Error } {
     _ = utf8::push_u64{ &b, n = col }
     _ = utf8::push{ &b, s = ": " }
     io::eprint{ &io, s = utf8::view{ b } }
-    describe{ &io, problem = error.problem }
+    describe{ &io, problem }
 }
 
 fn describe { mut io: Io, problem: parser::Problem } {

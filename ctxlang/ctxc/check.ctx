@@ -5604,12 +5604,12 @@ namespace check {
                 record{ decl } => {
                     if decl == c.text_decl {
                         match utf8::from{ bytes } {
-                            err{ error = bad } => {
+                            ok => {}
+                            utf8::invalid{ at = bad } => {
                                 let mut b = message{ c }
-                                pushed{ ok = @fmt(&b, "string literal is not valid UTF-8 (byte {})", bad.at) }
+                                pushed{ ok = @fmt(&b, "string literal is not valid UTF-8 (byte {})", bad) }
                                 error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
                             }
-                            ok => {}
                         }
                         return want
                     }
@@ -7079,12 +7079,12 @@ namespace check {
             let p = ps[i]
             if not p.hole {
                 match utf8::from{ bytes = p.text } {
-                    err{ error = bad } => {
+                    ok => {}
+                    utf8::invalid{ at = bad } => {
                         let mut m = message{ c }
-                        pushed{ ok = @fmt(&m, "string literal is not valid UTF-8 (byte {})", bad.at) }
+                        pushed{ ok = @fmt(&m, "string literal is not valid UTF-8 (byte {})", bad) }
                         error{ &c, at = expr_at{ e = args[1] }, msg = utf8::view{ b = m } }
                     }
-                    ok => {}
                 }
             } else {
                 let x = args[h]

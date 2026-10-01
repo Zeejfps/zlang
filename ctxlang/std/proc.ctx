@@ -8,21 +8,16 @@
 //       let mut heap = arena::new{ buf = buf[..] }
 //       let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
 //       _ = list::push{ list = &argv, item = "cc" } and list::push{ list = &argv, item = "--version" }
-//       return match proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} } {
-//           ok{ value }  => { value }          // cc's exit code
-//           err{ error } => { 127 }
-//       }
+//       return proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} } iferr { 127 }
 //   }
 
 // Permission to start programs and to read this program's environment.
 capability Proc
 
 namespace proc {
-    union Error {
-        not_found,          // no such program, on PATH or at the path given
-        permission_denied,
-        other{ code: i64 }, // the OS's error number
-    }
+    error not_found             // no such program, on PATH or at the path given
+    error permission_denied
+    error other{ code: i64 }    // the OS's error number
 
     // ---- the runtime's (ctxrt.c)
 
@@ -47,11 +42,11 @@ namespace proc {
     // environment plus `env`'s "KEY=VALUE" entries, each replacing an entry of the same key, and
     // shares its standard input, output and error. Returns the program's exit code; one that a
     // signal N killed has 128 + N, as a shell says.
-    fn run { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> Result(i32, Error) {
+    fn run { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> !i32 {
         let mut code: i32 = 0
         let r = sys_run{ &proc, argv, env, code = &code }
-        if r < 0 { return Result::err{ error = error_of{ code = r } } }
-        return Result::ok{ value = code }
+        if r < 0 { return failed{ code = r } }
+        return code
     }
 
     // The value of environment variable `name`, or null if it isn't set. It lives until the
@@ -62,10 +57,10 @@ namespace proc {
         return value
     }
 
-    // The Error for the runtime's negative status, as fs::error_of reads it.
-    fn error_of { code: i64 } -> Error {
-        if code == -1 { return Error::not_found }
-        if code == -2 { return Error::permission_denied }
-        return Error::other{ code = -1000 - code }
+    // The error for the runtime's negative status, as fs::failed reads it.
+    fn failed(T) { code: i64 } -> !T {
+        if code == -1 { return not_found }
+        if code == -2 { return permission_denied }
+        return other{ code = -1000 - code }
     }
 }

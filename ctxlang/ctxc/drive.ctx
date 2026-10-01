@@ -118,8 +118,8 @@ namespace drive {
         if ran != 0 { return ran }
         let text = match fs::read_all{ &fs, &heap, realloc = arena::alloc, path = graph } {
             ok{ value } => { value }
-            err{ error } => {
-                match error { not_found => { return 0 } else => {} }       // it described nothing
+            fs::not_found => { return 0 }       // it described nothing
+            err => {
                 cannot{ &io, path = graph, what = "cannot read" }
                 return 1
             }
@@ -222,14 +222,14 @@ namespace drive {
     }
 
     // A program's exit code, or 1 after saying why it didn't start.
-    fn started { mut io: Io, r: Result(i32, proc::Error), what: []u8 } -> i32 {
+    fn started { mut io: Io, r: !i32, what: []u8 } -> i32 {
         match r {
             ok{ value } => { return value }
             err{ error } => {
                 match error {
-                    not_found => { cannot{ &io, path = what, what = "no such program (set CTX_CC for another C compiler)" } }
-                    permission_denied => { cannot{ &io, path = what, what = "permission denied" } }
-                    other => { cannot{ &io, path = what, what = "cannot start" } }
+                    proc::not_found => { cannot{ &io, path = what, what = "no such program (set CTX_CC for another C compiler)" } }
+                    proc::permission_denied => { cannot{ &io, path = what, what = "permission denied" } }
+                    else => { cannot{ &io, path = what, what = "cannot start" } }
                 }
                 return 1
             }
@@ -363,15 +363,18 @@ namespace drive {
     fn kind_of { mut fs: Fs, path: []u8 } -> u8 {
         match fs::size{ &fs, path } {
             ok => { return 1 }
-            err{ error } => { match error { is_directory => { return 2 } else => { return 0 } } }
+            fs::is_directory => { return 2 }
+            else => { return 0 }
         }
     }
 
     // Creates directory path unless it is there; false after saying why it can't.
     fn made { mut io: Io, mut fs: Fs, path: []u8 } -> bool {
-        let e = fs::make_dir{ &fs, path }
-        if e == null { return true }
-        match e { exists => { return true } else => {} }
+        match fs::make_dir{ &fs, path } {
+            ok => { return true }
+            fs::exists => { return true }
+            else => {}
+        }
         cannot{ &io, path, what = "cannot create directory" }
         return false
     }

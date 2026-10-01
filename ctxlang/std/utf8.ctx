@@ -4,9 +4,8 @@
 // doesn't own its memory. Input that might not be valid, such as a file, goes through `from`,
 // which checks it once:
 //
-//   let text = match utf8::from{ bytes } {
-//       ok{ value }  => { value }
-//       err{ error } => { return 1 }              // error.at is the offset of the bad byte
+//   let text = utf8::from{ bytes } iferr err{ error } {
+//       return 1                                  // utf8::invalid{ at }: the offset of the bad byte
 //   }
 //
 // A string literal where a String is expected is one, checked at compile time:
@@ -26,21 +25,21 @@ namespace utf8 {
     struct String { bytes: []u8 }
 
     // Where the first invalid byte sequence starts.
-    struct Invalid { at: usize }
+    error invalid{ at: usize }
 
-    fn from { bytes: []u8 } -> Result(String, Invalid) {
+    fn from { bytes: []u8 } -> !String {
         let mut i: usize = 0
         while i < bytes.len {
             let n = seq_len{ bytes, i }
-            if n == 0 { return Result::err{ error = Invalid{ at = i } } }
+            if n == 0 { return invalid{ at = i } }
             i = i + n
         }
-        return Result::ok{ value = String{ bytes } }
+        return String{ bytes }
     }
 
     // Views bytes as text. Panics if they aren't valid.
     fn of { chars: []u8 } -> String {
-        return result::unwrap{ r = from{ bytes = chars } }
+        return from{ bytes = chars } iferr { @panic("utf8::of: the bytes aren't valid UTF-8") }
     }
 
     fn empty {} -> String {

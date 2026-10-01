@@ -1,7 +1,7 @@
 // A JSON parser (RFC 8259), by recursive descent.
 //
-//   let ok{ value = v } = parser::parse{ &heap, realloc = arena::alloc, text = bytes } else err{ error } {
-//       ...                                    // error.at is a byte offset into text
+//   let v = parser::parse{ &heap, realloc = arena::alloc, text = bytes } iferr err{ error } {
+//       ...                                    // parser::invalid{ problem, at }: at is a byte offset into text
 //   }
 //
 // The input must be UTF-8. Strings without escapes are views of it, so it must outlive the tree.
@@ -25,7 +25,8 @@ namespace parser {
         out_of_memory,
     }
 
-    struct Error { problem: Problem, at: usize }
+    // The input isn't JSON: what is wrong, at a byte offset into it.
+    error invalid{ problem: Problem, at: usize }
 
     // Deeper nesting is rejected rather than risk the stack.
     const MAX_DEPTH: u32 = 256
@@ -37,41 +38,44 @@ namespace parser {
         realloc: alloc::Fn(S),
     }
 
-    fn parse(S) { mut heap: S, realloc: alloc::Fn(S), text: []u8 } -> Result(json::Value, Error) {
-        let ok = utf8::from{ bytes = text } else err{ error } { return fail{ at = error.at, problem = Problem::not_utf8 } }
+    fn parse(S) { mut heap: S, realloc: alloc::Fn(S), text: []u8 } -> !json::Value {
+        match utf8::from{ bytes = text } {
+            ok => {}
+            utf8::invalid{ at } => { return fail{ at, problem = Problem::not_utf8 } }
+        }
         let mut p = Parser{ text, pos = 0, depth = 0, realloc }
-        let ok{ value } = parse_value{ &p, &heap } else err{ error } { return Result::err{ error } }
+        let value = try parse_value{ &p, &heap }
         skip_space{ &p }
         if p.pos < text.len { return fail{ at = p.pos, problem = Problem::trailing_text } }
-        return Result::ok{ value }
+        return value
     }
 
-    fn parse_value(S) { mut p: Parser(S), mut heap: S } -> Result(json::Value, Error) {
+    fn parse_value(S) { mut p: Parser(S), mut heap: S } -> !json::Value {
         skip_space{ &p }
         let c = peek{ p }
         if c == null { return fail{ at = p.pos, problem = Problem::unexpected_end } }
         if c == '{' { return parse_object{ .. } }
         if c == '[' { return parse_array{ .. } }
         if c == '"' {
-            let ok{ value } = parse_string{ .. } else err{ error } { return Result::err{ error } }
-            return Result::ok{ value = json::Value::string{ value } }
+            let value = try parse_string{ .. }
+            return json::Value::string{ value }
         }
         if c == '-' or ascii::is_digit{ c } { return parse_number{ &p } }
-        if eat_word{ &p, w = "true" } { return Result::ok{ value = json::Value::boolean{ value = true } } }
-        if eat_word{ &p, w = "false" } { return Result::ok{ value = json::Value::boolean{ value = false } } }
-        if eat_word{ &p, w = "null" } { return Result::ok{ value = json::Value::nil } }
+        if eat_word{ &p, w = "true" } { return json::Value::boolean{ value = true } }
+        if eat_word{ &p, w = "false" } { return json::Value::boolean{ value = false } }
+        if eat_word{ &p, w = "null" } { return json::Value::nil }
         return fail{ at = p.pos, problem = Problem::expected_value }
     }
 
     // At '['.
-    fn parse_array(S) { mut p: Parser(S), mut heap: S } -> Result(json::Value, Error) {
+    fn parse_array(S) { mut p: Parser(S), mut heap: S } -> !json::Value {
         if not enter{ &p } { return fail{ at = p.pos, problem = Problem::too_deep } }
         defer p.depth = p.depth - 1
         let mut items = list::new(json::Value){ realloc = p.realloc, &heap }
         skip_space{ &p }
         if not eat{ &p, c = ']' } {
             while true {
-                let ok{ value } = parse_value{ .. } else err{ error } { return Result::err{ error } }
+                let value = try parse_value{ .. }
                 if not list::push{ list = &items, item = value } {
                     return fail{ at = p.pos, problem = Problem::out_of_memory }
                 }
@@ -80,11 +84,11 @@ namespace parser {
                 if not eat{ &p, c = ',' } { return fail{ at = p.pos, problem = Problem::expected_comma_or_bracket } }
             }
         }
-        return Result::ok{ value = json::Value::array{ items = list::items{ list = items } } }
+        return json::Value::array{ items = list::items{ list = items } }
     }
 
     // At '{'.
-    fn parse_object(S) { mut p: Parser(S), mut heap: S } -> Result(json::Value, Error) {
+    fn parse_object(S) { mut p: Parser(S), mut heap: S } -> !json::Value {
         if not enter{ &p } { return fail{ at = p.pos, problem = Problem::too_deep } }
         defer p.depth = p.depth - 1
         let mut members = list::new(json::Member){ realloc = p.realloc, &heap }
@@ -93,10 +97,10 @@ namespace parser {
             while true {
                 skip_space{ &p }
                 if not next_is{ p, c = '"' } { return fail{ at = p.pos, problem = Problem::expected_key } }
-                let ok{ value = key } = parse_string{ .. } else err{ error } { return Result::err{ error } }
+                let key = try parse_string{ .. }
                 skip_space{ &p }
                 if not eat{ &p, c = ':' } { return fail{ at = p.pos, problem = Problem::expected_colon } }
-                let ok{ value } = parse_value{ .. } else err{ error } { return Result::err{ error } }
+                let value = try parse_value{ .. }
                 if not list::push{ list = &members, item = json::Member{ key, value } } {
                     return fail{ at = p.pos, problem = Problem::out_of_memory }
                 }
@@ -105,12 +109,12 @@ namespace parser {
                 if not eat{ &p, c = ',' } { return fail{ at = p.pos, problem = Problem::expected_comma_or_brace } }
             }
         }
-        return Result::ok{ value = json::Value::object{ members = list::items{ list = members } } }
+        return json::Value::object{ members = list::items{ list = members } }
     }
 
     // At '"'. A string without escapes is a view of the input; one with escapes is decoded into
     // a copy, built from the runs of plain text between them.
-    fn parse_string(S) { mut p: Parser(S), mut heap: S } -> Result(utf8::String, Error) {
+    fn parse_string(S) { mut p: Parser(S), mut heap: S } -> !utf8::String {
         p.pos = p.pos + 1
         let mut b = utf8::builder{ realloc = p.realloc, &heap }
         let mut copied = false
@@ -125,15 +129,15 @@ namespace parser {
             if c < 32 { return fail{ at = p.pos, problem = Problem::control_char } }
             if c == '"' and not copied {
                 p.pos = p.pos + 1
-                return Result::ok{ value = run }
+                return run
             }
             if not utf8::push{ &b, s = run } { return fail{ at = p.pos, problem = Problem::out_of_memory } }
             if c == '"' {
                 p.pos = p.pos + 1
-                return Result::ok{ value = utf8::view{ b } }
+                return utf8::view{ b }
             }
             // c is '\\'
-            let ok{ value = ch } = parse_escape{ &p } else err{ error } { return Result::err{ error } }
+            let ch = try parse_escape{ &p }
             if not utf8::push_char{ &b, c = ch } { return fail{ at = p.pos, problem = Problem::out_of_memory } }
             copied = true
         }
@@ -146,28 +150,28 @@ namespace parser {
 
     // At '\\'. Returns the character the escape stands for. A \u escape for a UTF-16 high
     // surrogate must be followed by one for a low surrogate; together they are one character.
-    fn parse_escape(S) { mut p: Parser(S) } -> Result(u32, Error) {
+    fn parse_escape(S) { mut p: Parser(S) } -> !u32 {
         let at = p.pos
         p.pos = p.pos + 1
         let c = bump{ &p }
         if c == null { return fail{ at = p.pos, problem = Problem::unexpected_end } }
-        if c == '"' or c == '\\' or c == '/' { return Result::ok{ value = c } }
-        if c == 'b' { return Result::ok{ value = 8 } }
-        if c == 'f' { return Result::ok{ value = 12 } }
-        if c == 'n' { return Result::ok{ value = '\n' } }
-        if c == 'r' { return Result::ok{ value = '\r' } }
-        if c == 't' { return Result::ok{ value = '\t' } }
+        if c == '"' or c == '\\' or c == '/' { return c }
+        if c == 'b' { return 8 }
+        if c == 'f' { return 12 }
+        if c == 'n' { return '\n' }
+        if c == 'r' { return '\r' }
+        if c == 't' { return '\t' }
         if c != 'u' { return fail{ at, problem = Problem::bad_escape } }
 
         let hi = hex4{ &p }
         if hi == null { return fail{ at, problem = Problem::bad_escape } }
-        if hi < 55296 or hi > 57343 { return Result::ok{ value = hi } }      // not U+D800..U+DFFF
+        if hi < 55296 or hi > 57343 { return hi }      // not U+D800..U+DFFF
         if hi > 56319 { return fail{ at, problem = Problem::bad_escape } }  // a lone low surrogate
         if not eat{ &p, c = '\\' } or not eat{ &p, c = 'u' } { return fail{ at, problem = Problem::bad_escape } }
         let lo = hex4{ &p }
         if lo == null { return fail{ at, problem = Problem::bad_escape } }
         if lo < 56320 or lo > 57343 { return fail{ at, problem = Problem::bad_escape } }
-        return Result::ok{ value = 65536 + (hi - 55296) * 1024 + (lo - 56320) }
+        return 65536 + (hi - 55296) * 1024 + (lo - 56320)
     }
 
     // Four hex digits, or null.
@@ -193,7 +197,7 @@ namespace parser {
     }
 
     // At '-' or a digit:  -? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?
-    fn parse_number(S) { mut p: Parser(S) } -> Result(json::Value, Error) {
+    fn parse_number(S) { mut p: Parser(S) } -> !json::Value {
         let start = p.pos
         _ = eat{ &p, c = '-' }
         if eat{ &p, c = '0' } {
@@ -215,14 +219,14 @@ namespace parser {
         let text = utf8::String{ bytes = p.text[start..p.pos] }
         return match utf8::parse_f64{ s = text } {
             null          => { fail{ at = start, problem = Problem::bad_number } }      // beyond f64
-            some{ value } => { Result::ok{ value = json::Value::number{ value } } }
+            some{ value } => { json::Value::number{ value } }
         }
     }
 
     // ---- scanning
 
-    fn fail(T) { at: usize, problem: Problem } -> Result(T, Error) {
-        return Result::err{ error = Error{ problem, at } }
+    fn fail(T) { at: usize, problem: Problem } -> !T {
+        return invalid{ problem, at }
     }
 
     // Counts a level of nesting. False if that is too deep.
