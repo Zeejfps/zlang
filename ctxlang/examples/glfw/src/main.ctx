@@ -22,6 +22,12 @@ fn print_version { mut io: Io, mut gl: gl::Gl1_1 } {
     io::println_i64{ &io, n = gl::version{ &gl } }
 }
 
+// Pushes C string s, for an @fmt hole, or `?` if it isn't valid UTF-8.
+fn write_c { s: c::String, mut b: utf8::Builder(arena::Arena) } -> bool {
+    let text = utf8::from{ bytes = c::bytes{ s } } iferr { return utf8::push{ &b, s = "?" } }
+    return utf8::push{ &b, s = text }
+}
+
 fn main { mut io: Io, mut glfw: glfw::Glfw } -> i32 {
     if not glfw::init{ &glfw } {
         io::eprintln{ &io, s = "glfw: init failed" }
@@ -53,7 +59,7 @@ fn main { mut io: Io, mut glfw: glfw::Glfw } -> i32 {
         let mut b = utf8::builder{ realloc = arena::alloc, &heap }
         let ok = match error {
             gl::too_old{ have, need } => { @fmt(&b, "gl: the context's OpenGL is {}.{}; this needs {}.{}", have / 10, have % 10, need / 10, need % 10) }
-            gl::missing{ name } => { @fmt(&b, "gl: {} didn't load", name) }
+            gl::missing{ name } => { @fmt(&b, "gl: {} didn't load", write_c{ s = name, _ }) }
         }
         if ok { io::eprintln{ &io, s = utf8::view{ b } } }
         return 1

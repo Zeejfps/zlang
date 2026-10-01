@@ -1032,16 +1032,24 @@ ctxc learned them, then std, the examples, the tests and ctxc itself moved off `
   errors, the functions whose sets it takes, any). After the bodies, `infer_sets` repeats over the
   functions until no set grows, and `finish_matches` checks each match on errors against its set:
   a listed error must be one it can be, and without `else` or `err` every one must be listed.
-- *Payloads hold no pointers.* An error passes up past frames that end, and the escape check
-  (§14) runs while the sets are still unknown, so a payload holding a pointer would have to be
-  assumed to hold one wherever any error might. Values only: std's and the examples' errors carry
-  codes and offsets. Text that names something, such as a function that didn't load, is a
-  `static::String`: a literal's bytes, valid UTF-8 without a NUL and with one after them, which
-  only a literal or a const makes, so the escape check counts it as holding no pointer. It
-  converts to a `utf8::String` and a `c::String` (views of the same bytes), so one name serves a
-  C call and an error. Considered instead: relaxing the rule and holding back each escape error
-  that depends on an error set until the sets are inferred, which would allow payloads that
-  point into a caller's data; offsets serve that so far.
+- *Payloads may hold pointers; the escape check waits for the sets.* An error passes up past
+  frames that end, so the escape check (§14) treats it as any value: returning one derived from a
+  local, or passing one up with `try` (which returns it), is an error. Only `!T` and errors are
+  kept out of payloads. The check runs while the bodies are checked, before the sets are
+  inferred, so `contains_ptr` takes a function's error type to hold a pointer if any error of
+  the program has a payload that does: derivations stay sound. Where an escape error is found
+  (`return_stmt`, `check_store`, `branch_escape`, `try_expr`), `escape_error` reports it at once
+  if the value's type holds a pointer for certain (outside error types, or in an error type whose
+  set is known: one error, an `eset`, any error), and otherwise records it as an `Escape`, with
+  whether flow errors were reported in its body then (as `flow_error` decides); after
+  `infer_sets`, `finish_escapes` reports each whose type holds a pointer now that the sets are
+  known. So `try parse{ s = buf[..] }` is an error only if parse's set has an error whose payload
+  holds a pointer. The holes of the escape check (§14 rule 4) are holes for errors too: a callee
+  that stores a read-only pointer argument through a `mut` field can put it in an error as well.
+  Tried first: payloads held values only, and text that names something, such as a GL function
+  that didn't load, was a `static::String`, a literal's bytes that a payload could hold. It was a
+  type for one use, with its own conversions to `utf8::String` and `c::String`; with the check
+  deferred, the GL example's `missing{ name: c::String }` holds the literal it looked up.
 - *Lowering.* No new IR. `!T` is a tagged union of `ok` and `err{ error }`, and an error type the
   tagged union of its set (normalized to `eset`, so equal sets are one IR type). A conversion into
   a larger set is a match that renumbers; `try` is a match whose `err` arm returns; errors listed

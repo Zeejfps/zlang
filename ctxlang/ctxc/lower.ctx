@@ -1208,20 +1208,6 @@ namespace lower {
                     else => {}
                 }
             }
-            record{ decl } => {
-                // A static::String as a utf8::String (its bytes) or a c::String (their pointer).
-                if decl == l.c.static_decl {
-                    let st = check::struct_fields{ c = l.c, t = a }[0].ty
-                    let bytes = mk{ ty = tid{ &l, t = st }, k = ir::ExprKind::field{ base = box{ l, e = x }, index = 0 } }
-                    let to_c = check::record_decl{ c = l.c.*, t = b } == l.c.cstr_decl
-                    let v = if to_c {
-                        mk{ ty = tid{ &l, t = types::ptr{ s = &l.c.ty, elem = types::U8, mutable = false } }, k = ir::ExprKind::field{ base = box{ l, e = bytes }, index = 0 } }
-                    } else {
-                        bytes
-                    }
-                    return mk{ ty = tid{ &l, t = b }, k = ir::ExprKind::record{ items = one_arg{ l, v } } }
-                }
-            }
             ptr{ elem = pa } => {
                 match get{ l, t = b } {
                     ptr{ elem = pb } => {
@@ -2185,8 +2171,7 @@ namespace lower {
             if p == types::Prim::f64 { return "push_f64" }
             return if types::signed{ p } { "push_i64" } else { "push_u64" }
         }
-        let d = check::record_decl{ c = l.c.*, t = x }
-        if d != NONE and (d == l.c.text_decl or d == l.c.static_decl) { return "push" }
+        if check::record_decl{ c = l.c.*, t = x } == l.c.text_decl and l.c.text_decl != NONE { return "push" }
         return ""
     }
 

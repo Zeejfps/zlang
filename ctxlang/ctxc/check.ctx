@@ -126,7 +126,6 @@ namespace check {
         main:      u32,                          // NONE unless `main` is valid
         text_decl: u32,                          // utf8::String, or NONE
         cstr_decl: u32,                          // c::String, or NONE
-        static_decl: u32,                        // static::String, or NONE
         builder_decl: u32,                       // utf8::Builder, or NONE
         calling:   u64,                          // the callee being checked, whose field may be a capability's
         // The body being checked: a const's initializer or a function's body.
@@ -182,6 +181,8 @@ namespace check {
         sets:      map::Map(u32, []u32, Heap),        // by function, once inferred
         pending:   list::List(Pending, Heap),         // matches on errors, finished once they are
         pat_errs:  map::Map(u64, u32, Heap),          // the error a pattern names, by its name's key
+        escapes:   list::List(Escape, Heap),          // escape errors that wait on the sets
+        ptr_faults: bool,                             // whether some error's payload holds a pointer
     }
 
     // What flows into a function's error set: the errors it returns (atoms), the functions whose
@@ -191,6 +192,11 @@ namespace check {
     // A match on errors, whose arms are checked against the set once it is inferred: the errors
     // it lists, where, and the arm that takes the rest (`else` or `err`), if any.
     struct Pending { at: source::Span, errs: Id, listed: []u32, spans: []source::Span, rest: ?source::Span, rest_word: []u8 }
+
+    // An escape error (§14) about a value of type t that only a function's error set, unknown
+    // while the bodies are checked, can make real: reported once the sets are inferred if t then
+    // holds a pointer, and if flow errors were reported in its body when it was found.
+    struct Escape { t: Id, at: source::Span, msg: utf8::String, report: bool }
 
     // A local, context field or match binding, or a narrowed view of one (ctxi's VarInfo).
     enum VarKind: u8 { ctx, local, bind, narrow }
@@ -294,7 +300,6 @@ namespace check {
             main = NONE,
             text_decl = NONE,
             cstr_decl = NONE,
-            static_decl = NONE,
             builder_decl = NONE,
             calling = NO_CALLEE,
             sc = Scope{ ns = ROOT, owner = NONE, names = no_names{}, args = slice::empty(Id){} },
@@ -335,6 +340,8 @@ namespace check {
             sets = map::new(u32, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             pending = list::new(Pending){ realloc = arena::alloc, &heap },
             pat_errs = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            escapes = list::new(Escape){ realloc = arena::alloc, &heap },
+            ptr_faults = false,
         }
         _ = space{ &c, name = "", parent = NONE }
         _ = space{ &c, name = "", parent = UNIVERSE }
@@ -363,6 +370,7 @@ namespace check {
         each{ &c, xs = c.fns, what = Phase::bodies }
         infer_sets{ &c }
         finish_matches{ &c }
+        finish_escapes{ &c }
         check_main{ &c }
     }
 
@@ -374,7 +382,6 @@ namespace check {
         }
         c.text_decl = std_decl{ c, space = "utf8", name = "String" }
         c.cstr_decl = std_decl{ c, space = "c", name = "String" }
-        c.static_decl = std_decl{ c, space = "static", name = "String" }
         c.builder_decl = std_decl{ c, space = "utf8", name = "Builder" }
         generic_params{ &c, xs = c.structs }
         generic_params{ &c, xs = c.unions }
@@ -388,6 +395,7 @@ namespace check {
         each{ &c, xs = c.consts, what = Phase::consts }
         each{ &c, xs = c.fns, what = Phase::sigs }
         each{ &c, xs = c.externs, what = Phase::sigs }
+        c.ptr_faults = faults_hold_ptr{ &c, ds = list::items{ list = c.faults } }
     }
 
     union Phase { structs, faults, caps, unions, enums, aliases, consts, sigs, const_values, fold, bodies }
@@ -609,9 +617,9 @@ namespace check {
                     let f = fields[i]
                     if seen_field{ fields, i } { duplicate{ &c, what = "field", name = f.name, at = f.span } }
                     let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
-                    if contains_ptr{ &c, t, seen = no_vars{} } or holds_fail{ &c, t, depth = 0 } {
+                    if holds_fail{ &c, t, depth = 0 } {
                         let mut b = message{ c }
-                        pushed{ ok = @fmt(&b, "error `{}`'s field `{}` can't hold {}: an error is passed up past frames that end, so its payload holds values, not pointers, slices or other errors", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t }) }
+                        pushed{ ok = @fmt(&b, "error `{}`'s field `{}` can't hold {}: a payload holds no `!T` or error", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t }) }
                         error{ &c, at = f.span, msg = utf8::view{ b } }
                     }
                     add_field{ xs = &out, f = types::Field{ name = f.name.text, mutable = false, ty = t } }
@@ -1101,8 +1109,7 @@ namespace check {
 
     fn c_compatible { c: Checker, t: Id } -> bool {
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
-            record{ decl } => { return decl != c.static_decl or decl == NONE }    // C passes a c::String
-            error | prim | cap | enumeration | ptr | slice => { return true }
+            error | prim | cap | enumeration | ptr | slice | record => { return true }
             opt => { return nullable_ptr{ c, t } }
             func{ external } => { return external }
             else => { return false }
@@ -2798,8 +2805,7 @@ namespace check {
         match types::get{ s = c.ty, id = x } {
             error | prim | opt | slice => { return true }
             array{ elem } => { return has_zero{ &c, t = elem, depth = depth + 1 } }
-            record{ decl } => {
-                if decl == c.static_decl { return false }        // an empty view has no NUL after it
+            record => {
                 let fs = struct_fields{ &c, t = x }
                 let mut i: usize = 0
                 while i < fs.len {
@@ -3129,7 +3135,7 @@ namespace check {
                 let ds = vars_in_order{ c, xs = found }
                 let mut b = message{ c }
                 pushed{ ok = @fmt(&b, "returned value holds the address of local `{}`", str{ s = get_var{ c, v = ds[0] }.name }) }
-                flow_error{ &c, at, msg = utf8::view{ b } }
+                escape_error{ &c, t = value_ty{ c, k = expr_key{ e = value } }, at, msg = utf8::view{ b } }
             }
         }
         c.dead = true
@@ -3355,6 +3361,7 @@ namespace check {
     // holding one (§11, If and match expressions, rule 8).
     fn branch_escape { mut c: Checker, v: Value } {
         let at = match v { expr{ e } => { expr_at{ e } } nested{ s } => { s.span } none => { nowhere{} } }
+        let t = match v { expr{ e } => { value_ty{ c, k = expr_key{ e } } } nested{ s } => { value_ty{ c, k = stmt_key{ s } } } none => { types::NO_TYPE } }
         let found = derives_value{ &c, v }
         let ds = vars_in_order{ c, xs = found }
         let mut i: usize = 0
@@ -3363,7 +3370,7 @@ namespace check {
             if l.depth == c.depth {
                 let mut b = message{ c }
                 pushed{ ok = @fmt(&b, "the value of this branch holds the address of local `{}`, which ends with the branch", str{ s = l.name }) }
-                flow_error{ &c, at, msg = utf8::view{ b } }
+                escape_error{ &c, t, at, msg = utf8::view{ b } }
                 return
             }
             i = i + 1
@@ -3525,7 +3532,7 @@ namespace check {
                     match types::get{ s = c.ty, id = u } { opt{ elem } => { u = types::prune{ s = c.ty, t = elem } } else => {} }
                     match types::get{ s = c.ty, id = u } {
                         slice{ elem } => { if types::prune{ s = c.ty, t = elem } == types::U8 { hint = br.t } }
-                        record{ decl } => { if decl == c.text_decl or decl == c.cstr_decl or decl == c.static_decl { hint = br.t } }
+                        record{ decl } => { if decl == c.text_decl or decl == c.cstr_decl { hint = br.t } }
                         else => {}
                     }
                 }
@@ -4333,20 +4340,27 @@ namespace check {
 
     // Whether a value of type t can hold a pointer: only such values carry where they point.
     fn contains_ptr { mut c: Checker, t: Id, seen: []u32 } -> bool {
+        return holds_ptr{ &c, t, seen, unknown = true }
+    }
+
+    // Whether t can hold a pointer. An error type holds one if an error of its set has a payload
+    // that does (§8, Errors). A function's set is unknown until infer_sets: until then, with
+    // unknown, it counts as holding one if any error of the program does, which keeps what values
+    // are derived from sound, and without, as holding none, which leaves what is certain.
+    fn holds_ptr { mut c: Checker, t: Id, seen: []u32, unknown: bool } -> bool {
         if t == types::NO_TYPE { return false }
         let x = types::prune{ s = c.ty, t }
         match types::get{ s = c.ty, id = x } {
             ptr | slice | param => { return true }
-            opt{ elem } => { return contains_ptr{ &c, t = elem, seen } }
-            array{ elem } => { return contains_ptr{ &c, t = elem, seen } }
+            opt{ elem } => { return holds_ptr{ &c, t = elem, seen, unknown } }
+            array{ elem } => { return holds_ptr{ &c, t = elem, seen, unknown } }
             record{ decl } => {
                 if has_id{ xs = seen, n = decl } { return false }
-                if decl == c.static_decl { return false }        // static bytes outlive every local
                 let inner = set_add{ c, xs = seen, n = decl }
                 let fs = struct_fields{ &c, t = x }
                 let mut i: usize = 0
                 while i < fs.len {
-                    if contains_ptr{ &c, t = fs[i].ty, seen = inner } { return true }
+                    if holds_ptr{ &c, t = fs[i].ty, seen = inner, unknown } { return true }
                     i = i + 1
                 }
                 return false
@@ -4361,7 +4375,7 @@ namespace check {
                     if fs != null {
                         let mut j: usize = 0
                         while j < fs.len {
-                            if contains_ptr{ &c, t = fs[j].ty, seen = inner } { return true }
+                            if holds_ptr{ &c, t = fs[j].ty, seen = inner, unknown } { return true }
                             j = j + 1
                         }
                     }
@@ -4369,9 +4383,56 @@ namespace check {
                 }
                 return false
             }
-            // An error's payload holds no pointers (resolve_fault).
-            res{ ok } => { return contains_ptr{ &c, t = ok, seen } }
+            res{ ok, errs } => { return holds_ptr{ &c, t = ok, seen, unknown } or holds_ptr{ &c, t = errs, seen, unknown } }
+            errs{ owner, one } => {
+                if one != NONE { return faults_hold_ptr{ &c, ds = one_id{ c, n = one } } }
+                if owner == NONE { return c.ptr_faults }        // any error
+                let set = map::get{ m = c.sets, key = owner }
+                if set != null { return faults_hold_ptr{ &c, ds = set } }
+                return unknown and c.ptr_faults
+            }
+            eset{ errs } => { return faults_hold_ptr{ &c, ds = errs } }
             else => { return false }
+        }
+    }
+
+    // Whether one of errors ds has a payload that can hold a pointer. A payload holds no error
+    // (resolve_fault), so this doesn't come back to one.
+    fn faults_hold_ptr { mut c: Checker, ds: []u32 } -> bool {
+        let mut i: usize = 0
+        while i < ds.len {
+            let fs = get_decl{ c, d = ds[i] }.fields
+            let mut j: usize = 0
+            while j < fs.len {
+                if contains_ptr{ &c, t = fs[j].ty, seen = no_vars{} } { return true }
+                j = j + 1
+            }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Reports an escape error (§14) about a value of type t: now if t holds a pointer for certain,
+    // or, if only a function's error set can make it hold one, once the sets are inferred
+    // (finish_escapes).
+    fn escape_error { mut c: Checker, t: Id, at: source::Span, msg: utf8::String } {
+        if holds_ptr{ &c, t, seen = no_vars{}, unknown = false } {
+            flow_error{ &c, at, msg }
+            return
+        }
+        let report = c.diags.errors == c.body_errors + c.flow_errors        // as flow_error decides
+        if not list::push{ list = &c.escapes, item = Escape{ t, at, msg, report } } { @panic("check: out of memory") }
+    }
+
+    // The escape errors that waited on the sets: each is real if its value's type holds a pointer
+    // now that they are known.
+    fn finish_escapes { mut c: Checker } {
+        let xs = list::items{ list = c.escapes }
+        let mut i: usize = 0
+        while i < xs.len {
+            let x = xs[i]
+            if x.report and holds_ptr{ &c, t = x.t, seen = no_vars{}, unknown = false } { error{ &c, at = x.at, msg = x.msg } }
+            i = i + 1
         }
     }
 
@@ -4733,19 +4794,20 @@ namespace check {
     fn check_store { mut c: Checker, root: u32, through: bool, rhs: syntax::Expr, at: source::Span } {
         let found = derives{ &c, e = rhs }
         if found.len == 0 { return }
+        let t = value_ty{ c, k = expr_key{ e = rhs } }
         let ds = vars_in_order{ c, xs = found }
         let name = get_var{ c, v = ds[0] }.name
         if through {
             let mut b = message{ c }
             pushed{ ok = @fmt(&b, "cannot store the address of local `{}` through a pointer", str{ s = name }) }
-            flow_error{ &c, at, msg = utf8::view{ b } }
+            escape_error{ &c, t, at, msg = utf8::view{ b } }
             return
         }
         let r = get_var{ c, v = root }
         if r.indirect {
             let mut b = message{ c }
             pushed{ ok = @fmt(&b, "cannot store the address of local `{}` in `{}`, which belongs to the caller", str{ s = name }, str{ s = r.name }) }
-            flow_error{ &c, at, msg = utf8::view{ b } }
+            escape_error{ &c, t, at, msg = utf8::view{ b } }
             return
         }
         let mut i: usize = 0
@@ -4754,7 +4816,7 @@ namespace check {
             if r.depth < l.depth {
                 let mut b = message{ c }
                 pushed{ ok = @fmt(&b, "`{}` outlives local `{}` whose address it would hold", str{ s = r.name }, str{ s = l.name }) }
-                flow_error{ &c, at, msg = utf8::view{ b } }
+                escape_error{ &c, t, at, msg = utf8::view{ b } }
                 return
             }
             i = i + 1
@@ -5276,7 +5338,7 @@ namespace check {
                     }
                     else => {}
                 }
-                if types::unify{ s = &c.ty, a = x, b = ee } or types::widens{ s = &c.ty, a = x, b = ee } or includes_cap{ c, a = x, b = ee } or static_text{ c, a = x, b = ee } { return Coercion::some }
+                if types::unify{ s = &c.ty, a = x, b = ee } or types::widens{ s = &c.ty, a = x, b = ee } or includes_cap{ c, a = x, b = ee } { return Coercion::some }
                 return Coercion::fail
             }
             cap => {
@@ -5297,16 +5359,8 @@ namespace check {
             }
             else => {}
         }
-        if types::unify{ s = &c.ty, a = x, b = y } or types::widens{ s = &c.ty, a = x, b = y } or static_text{ c, a = x, b = y } { return Coercion::same }
+        if types::unify{ s = &c.ty, a = x, b = y } or types::widens{ s = &c.ty, a = x, b = y } { return Coercion::same }
         return Coercion::fail
-    }
-
-    // Whether a is a static::String and b a utf8::String or a c::String, which it converts to:
-    // a view of the same bytes, whose NUL is already after them.
-    fn static_text { c: Checker, a: Id, b: Id } -> bool {
-        if c.static_decl == NONE or record_decl{ c, t = a } != c.static_decl { return false }
-        let d = record_decl{ c, t = b }
-        return d != NONE and (d == c.text_decl or d == c.cstr_decl)
     }
 
     // §5: whether function type g is accepted where s is expected, bound-ness aside.
@@ -5513,6 +5567,16 @@ namespace check {
             error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
             return ok
         }
+        // Like `return`, `try` can't hand the caller an error that holds the address of a local.
+        if contains_ptr{ &c, t = errs, seen = no_vars{} } {
+            let found = derives_raw{ &c, e = x }
+            if found.len > 0 {
+                let ds = vars_in_order{ c, xs = found }
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`try` would return an error that may hold the address of local `{}`", str{ s = get_var{ c, v = ds[0] }.name }) }
+                escape_error{ &c, t = errs, at = expr_at{ e }, msg = utf8::view{ b } }
+            }
+        }
         _ = flows{ &c, from = errs, into = own }
         return ok
     }
@@ -5633,29 +5697,6 @@ namespace check {
                             if bytes[k] == 0 {
                                 let mut b = message{ c }
                                 pushed{ ok = @fmt(&b, "a C string literal can't hold a NUL byte (byte {}): C would end the string there", k) }
-                                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
-                                break
-                            }
-                            k = k + 1
-                        }
-                        return want
-                    }
-                    if decl == c.static_decl and decl != NONE {
-                        // Both a utf8::String and a c::String: valid UTF-8, and no NUL.
-                        match utf8::from{ bytes } {
-                            ok => {}
-                            utf8::invalid{ at = bad } => {
-                                let mut b = message{ c }
-                                pushed{ ok = @fmt(&b, "string literal is not valid UTF-8 (byte {})", bad) }
-                                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
-                                return want
-                            }
-                        }
-                        let mut k: usize = 0
-                        while k < bytes.len {
-                            if bytes[k] == 0 {
-                                let mut b = message{ c }
-                                pushed{ ok = @fmt(&b, "a static::String can't hold a NUL byte (byte {}): as a c::String, C would end it there", k) }
                                 error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
                                 break
                             }
@@ -6254,10 +6295,6 @@ namespace check {
             let mut b = message{ c }
             pushed{ ok = @fmt(&b, "`{}` is not a struct", str{ s = seg.name.text }) }
             error{ &c, at = seg.name.span, msg = utf8::view{ b } }
-            return types::ERROR
-        }
-        if decl == c.static_decl {
-            error{ &c, at = seg.name.span, msg = "a static::String comes only from a string literal, or a const holding one" }
             return types::ERROR
         }
         same_decl{ &c, t, exp }
@@ -7187,7 +7224,7 @@ namespace check {
         }
         match types::get{ s = c.ty, id = t } {
             record{ decl } => {
-                if decl == c.text_decl or (decl == c.static_decl and decl != NONE) { return if has_width { "push_padded" } else { "push" } }
+                if decl == c.text_decl { return if has_width { "push_padded" } else { "push" } }
             }
             else => {}
         }

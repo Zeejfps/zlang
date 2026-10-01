@@ -12,7 +12,7 @@
 // A loader fails with an error that says why (spec §8, Errors): `too_old` or `missing`.
 namespace gl {
     error too_old{ have: i32, need: i32 }       // versions as major * 10 + minor
-    error missing{ name: static::String }       // a function the version has that wasn't found
+    error missing{ name: c::String }            // a function the version has that wasn't found
     error no_legacy                             // the context dropped the fixed-function functions
 
     capability Gl1_1 {
@@ -67,9 +67,9 @@ namespace gl {
     fn load_3_0 { get_proc: &fn{ name: c::String } -> ?extern fn{} } -> !Gl3_0 { return fns_3_0{ get_proc, at_least = 30 } }
     fn load_3_3 { get_proc: &fn{ name: c::String } -> ?extern fn{} } -> !Gl3_3 { return fns_3_3{ get_proc, at_least = 33 } }
 
-    // get_proc's function `name`. The name is a C string for get_proc and text in the error,
-    // written once.
-    fn proc { get_proc: &fn{ name: c::String } -> ?extern fn{}, name: static::String } -> !extern fn{} {
+    // get_proc's function `name`. The name is written once, a literal that serves get_proc and
+    // the error.
+    fn proc { get_proc: &fn{ name: c::String } -> ?extern fn{}, name: c::String } -> !extern fn{} {
         return get_proc{ name } ifnull { return missing{ name } }
     }
 
