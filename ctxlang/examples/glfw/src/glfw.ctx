@@ -22,6 +22,17 @@ namespace glfw {
     extern fn glfwSwapBuffers { mut glfw: Glfw, window: *mut Window }
     // GLFWglproc: the address of a GL function, as a C function pointer of no particular type.
     extern fn glfwGetProcAddress { mut glfw: Glfw, name: c::String } -> ?extern fn{}
+    extern fn glfwSetWindowShouldClose { mut glfw: Glfw, window: *mut Window, value: i32 }
+    extern fn glfwSetWindowUserPointer { mut glfw: Glfw, window: *mut Window, pointer: ?*mut u8 }
+    extern fn glfwGetWindowUserPointer { mut glfw: Glfw, window: *mut Window } -> ?*mut u8
+
+    // GLFWkeyfun. GLFW calls it only within poll_events, so it may take the Glfw capability: a
+    // `#c::callback` fn of these fields, or fewer (spec §18, Callbacks).
+    type KeyFn = extern fn{ mut glfw: Glfw, window: *mut Window, key: i32, scancode: i32, action: i32, mods: i32 }
+    extern fn glfwSetKeyCallback { mut glfw: Glfw, window: *mut Window, callback: ?KeyFn } -> ?KeyFn
+
+    const PRESS: i32 = 1
+    const KEY_ESCAPE: i32 = 256
 
     fn init { mut glfw: Glfw } -> bool { return glfwInit{ &glfw } != 0 }
 
@@ -47,6 +58,21 @@ namespace glfw {
     fn make_current { mut glfw: Glfw, window: *mut Window } { glfwMakeContextCurrent{ &glfw, window } }
 
     fn swap_buffers { mut glfw: Glfw, window: *mut Window } { glfwSwapBuffers{ &glfw, window } }
+
+    fn set_should_close { mut glfw: Glfw, window: *mut Window } { glfwSetWindowShouldClose{ &glfw, window, value = 1 } }
+
+    // A pointer GLFW keeps for the window, for callbacks to find their state by.
+    fn set_user_pointer { mut glfw: Glfw, window: *mut Window, pointer: ?*mut u8 } {
+        glfwSetWindowUserPointer{ &glfw, window, pointer }
+    }
+
+    fn user_pointer { mut glfw: Glfw, window: *mut Window } -> ?*mut u8 {
+        return glfwGetWindowUserPointer{ &glfw, window }
+    }
+
+    fn set_key_callback { mut glfw: Glfw, window: *mut Window, callback: ?KeyFn } {
+        _ = glfwSetKeyCallback{ &glfw, window, callback }
+    }
 
     // The GL function `name` of the current context, or null.
     fn proc_address { mut glfw: Glfw, name: c::String } -> ?extern fn{} {

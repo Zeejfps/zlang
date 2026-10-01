@@ -14,7 +14,7 @@ namespace lower {
     type Id = types::Id
 
     const NONE: u32 = 4294967295
-    const VERSION: u64 = 13
+    const VERSION: u64 = 14
 
     // A function instance: a declaration and its generic arguments.
     struct Inst { decl: u32, targs: []Id }

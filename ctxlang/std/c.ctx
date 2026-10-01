@@ -13,6 +13,16 @@ namespace c {
     // The C symbol an extern fn calls, when it isn't the fn's own name.
     struct symbol { name: []u8 }
 
+    // On a fn: C may call it. Where an extern fn type is expected, the fn is a C function that
+    // calls it, so a C library can take it as a callback. Its fields need only be among the
+    // type's, and the capabilities among them are supplied without C passing them. C must call
+    // it on the thread that called into C.
+    //
+    //   #c::callback
+    //   fn on_key { window: *mut Window, key: i32 } { ... }
+    //   glfwSetKeyCallback{ &glfw, window, cb = on_key }
+    struct callback {}
+
     // A NUL-terminated string, as C's `const char *`: read-only, and not owned by its holder. A
     // string literal where one is expected is static bytes with a NUL after them (§11). C takes
     // and returns it as a plain pointer, and `?String` as one that may be NULL.

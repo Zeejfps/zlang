@@ -56,6 +56,7 @@ namespace check {
         ty:       Id,
         values:   []i64,                // an enum's, one per variant
         symbol:   []u8,                 // an extern fn's C symbol
+        callback: bool,                 // a fn with `#c::callback`: C may call it (§18)
     }
 
     // What a name in a path refers to.
@@ -432,6 +433,7 @@ namespace check {
             kind, name, ns, qual = qualify{ c, ns, name = name.text }, syn = x, tparams,
             fields = slice::empty(types::Field){}, variants = slice::empty(Variant){},
             ret = types::VOID, ty = types::ERROR, values = slice::empty(i64){}, symbol = "",
+            callback = false,
         }
         if not list::push{ list = &c.decls, item } or not map::put{ m = &c.decl_of, key = key{ file, id = x.id }, value = d } {
             @panic("check: out of memory")
@@ -840,7 +842,7 @@ namespace check {
     // ---- attributes (§18; stage 9 gives them to generators)
 
     // Every declaration's attributes, each checked as a const literal of the struct it names.
-    // The compiler acts on std's `c::symbol` and ignores the rest.
+    // The compiler acts on std's `c::symbol` and `c::callback` and ignores the rest.
     fn attributes { mut c: Checker } {
         let mut f: usize = 0
         while f < c.files.len {
@@ -851,20 +853,27 @@ namespace check {
 
     fn attribute_list { mut c: Checker, file: u32, decls: []syntax::Decl, ns: u32 } {
         let symbol_decl = std_decl{ c, space = "c", name = "symbol" }
+        let callback_decl = std_decl{ c, space = "c", name = "callback" }
         let mut i: usize = 0
         while i < decls.len {
             let x = decls[i]
             let mut seen = false
+            let mut seen_callback = false
             let mut k: usize = 0
             while k < x.attrs.len {
                 let a = x.attrs[k]
                 let v = attribute{ &c, a, ns }
-                if v != null and symbol_decl != NONE {
+                if v != null {
                     match v {
                         record{ ty, fields } => {
-                            if record_decl{ c, t = ty } == symbol_decl {
+                            let rd = record_decl{ c, t = ty }
+                            if rd == NONE {
+                            } else if rd == symbol_decl {
                                 symbol_attr{ &c, x, file, a, fields, seen }
                                 seen = true
+                            } else if rd == callback_decl {
+                                callback_attr{ &c, x, file, a, seen = seen_callback }
+                                seen_callback = true
                             }
                         }
                         else => {}
@@ -924,6 +933,36 @@ namespace check {
         }
         let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } }
         if d != null { list::at{ list = c.decls, i = d }.symbol = name }
+    }
+
+    // `#c::callback` on a fn: C may call it through a pointer, so it converts to an extern fn
+    // type (§12, C function pointers) whose fields include its own. Its fields and result must
+    // have C equivalents, and it can't be generic: C's pointer is to one function.
+    fn callback_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, seen: bool } {
+        let func{ tparams, params, ret, external } = x.k else {
+            error{ &c, at = a.span, msg = "`c::callback` applies only to a fn" }
+            return
+        }
+        if external {
+            error{ &c, at = a.span, msg = "`c::callback` applies only to a fn with a body, not an extern fn" }
+            return
+        }
+        if seen {
+            error{ &c, at = a.span, msg = "duplicate `c::callback` attribute" }
+            return
+        }
+        if tparams.len > 0 {
+            error{ &c, at = a.span, msg = "a `c::callback` fn can't be generic" }
+            return
+        }
+        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } }
+        if d == null { return }
+        let at = list::at{ list = c.decls, i = d }
+        at.callback = true
+        let mut what = message{ c }
+        pushed{ ok = @fmt(&what, "callback `{}`", str{ s = at.name.text }) }
+        let ret_at: ?source::Span = if ret == null { null } else { ret.span }
+        c_signature{ &c, what = utf8::view{ b = what }, params, ret_at, fields = at.fields, r = at.ret }
     }
 
     // A letter or `_`, then letters, digits and `_`.
@@ -4726,7 +4765,7 @@ namespace check {
                 match types::get{ s = c.ty, id = y } {
                     func{ fields = ef, bound = eb, external = ee } => {
                         if ee and not ae {
-                            return @fmt(&b, "a ctxlang function can't be passed as a C function pointer (") and write_type{ c, t = y, &b } and @fmt(&b, "): only an extern fn can")
+                            return @fmt(&b, "a ctxlang function can't be passed as a C function pointer (") and write_type{ c, t = y, &b } and @fmt(&b, "): only an extern fn or a `#c::callback` fn can")
                         }
                         if ae and not ee {
                             return @fmt(&b, "a C function pointer (") and write_type{ c, t = x, &b } and @fmt(&b, ") can't be used as a ctxlang ") and write_type{ c, t = y, &b }
@@ -5035,14 +5074,20 @@ namespace check {
     }
 
     // A named extern fn where a C function pointer (or `?` one) is expected: its own address,
-    // of the extern fn type of its declaration. NO_TYPE otherwise.
+    // of the extern fn type of its declaration. A `#c::callback` fn there is a C function that
+    // calls it, of the expected type if the fn accepts its fields (§5), or of its own fields in
+    // their order if not, which the conversion then reports. NO_TYPE otherwise.
     fn c_fn_value { mut c: Checker, d: u32, exp: Id } -> Id {
         let x = get_decl{ c, d }
-        if x.kind != Kind::external or exp == types::NO_TYPE { return types::NO_TYPE }
+        if (x.kind != Kind::external and not x.callback) or exp == types::NO_TYPE { return types::NO_TYPE }
         let mut want = types::prune{ s = c.ty, t = exp }
         match types::get{ s = c.ty, id = want } { opt{ elem } => { want = types::prune{ s = c.ty, t = elem } } else => {} }
         match types::get{ s = c.ty, id = want } {
             func{ external } => {
+                if external and x.callback {
+                    let own = types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = false }
+                    if fn_accepts{ &c, g = own, s = want } { return want }
+                }
                 if external { return types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = true } }
             }
             else => {}

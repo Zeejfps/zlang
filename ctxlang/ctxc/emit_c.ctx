@@ -14,7 +14,8 @@
 //                passed; a `mut` field's pointer is.
 //   C fn types   an extern fn{...} type is a C function pointer typedef, called directly, with
 //                the same rules for capabilities and `mut` fields; a named extern fn as its
-//                value is xN.
+//                value is xN. A `#c::callback` fn as one is kK, a C function with the type's
+//                params that calls fN, supplying the capabilities C doesn't pass.
 //   consts       static const qvN, initialized with the literals of its value.
 //   fn values    ctx_fn*: a record whose first member is the code, called with the record and
 //                the function type's fields in name order. fnref gives a static record per
@@ -40,6 +41,9 @@ namespace emit {
     // An adapter from function type `from` to `to`, emitted as aK.
     struct Pair { from: ir::TypeId, to: ir::TypeId }
 
+    // A C function kK calling function callee, of C function type ty.
+    struct Callback { callee: u32, ty: ir::TypeId }
+
     struct E {
         p:        ir::Program,
         o:        Out,                              // where text goes now
@@ -51,6 +55,7 @@ namespace emit {
         scopes:   list::List(Scope, ir::Heap),
         thunks:   list::List(bool, ir::Heap),       // by function id: hN and gN emitted
         adapters: list::List(Pair, ir::Heap),
+        callbacks: list::List(Callback, ir::Heap),
         marks:    list::List(u8, ir::Heap),         // by type id: 1 typedef'd, 2 defined
         static_init: bool,                          // writing a const's static initializer
     }
@@ -66,6 +71,7 @@ namespace emit {
             scopes = list::new(Scope){ realloc = arena::alloc, heap },
             thunks = list::new(bool){ realloc = arena::alloc, heap },
             adapters = list::new(Pair){ realloc = arena::alloc, heap },
+            callbacks = list::new(Callback){ realloc = arena::alloc, heap },
             marks = list::new(u8){ realloc = arena::alloc, heap },
             static_init = false,
         }
@@ -1211,8 +1217,14 @@ namespace emit {
             dbind{ callee, args } => { dbind{ &e, t = x.ty, callee = callee.*, args } }
             fnref{ callee } => {
                 if is_cfn{ e, t = x.ty } {
-                    ch{ &e, c = 'x' }                   // a named extern fn as a C function pointer
-                    num{ &e, n = callee }
+                    if e.p.fns[callee].symbol.len > 0 {
+                        ch{ &e, c = 'x' }               // a named extern fn as a C function pointer
+                        num{ &e, n = callee }
+                    } else {
+                        let k = callback{ &e, callee, t = x.ty }
+                        ch{ &e, c = 'k' }               // a callback: the C function calling it
+                        num{ &e, n = k }
+                    }
                     return
                 }
                 thunk{ &e, callee, t = x.ty }
@@ -1951,6 +1963,75 @@ namespace emit {
         num{ &e, n = callee }
         put{ &e, a = "_code };\n\n" }
         to_aux{ &e }
+    }
+
+    // kK, a C function of C function type t that calls function callee: C's params, without
+    // capabilities, by name to fN's, which supplies the capabilities itself (§18). Returns K.
+    //   static R kK(P a1, ...) { static char cap[1]; return fN((void *)cap, a1, (tC){}); }
+    fn callback { mut e: E, callee: u32, t: ir::TypeId } -> u32 {
+        let mut k = 0
+        while k < e.callbacks.len {
+            let q = list::items{ list = e.callbacks }[k]
+            if q.callee == callee and q.ty == t { return @as(u32, k) }
+            k = k + 1
+        }
+        add{ xs = &e.callbacks, item = Callback{ callee, ty = t } }
+        let f = e.p.fns[callee]
+        let cfn{ params, ret } = ty{ e, id = t } else { @panic("emit: a callback of a non-C function type") }
+        to_aux{ &e }
+        put{ &e, a = "// callback " }
+        raw{ &e, b = f.name }
+        put{ &e, a = "\nstatic " }
+        tn{ &e, t = ret }
+        put{ &e, a = " k" }
+        num{ &e, n = k }
+        ch{ &e, c = '(' }
+        let mut first = true
+        let mut i = 0
+        while i < params.len {
+            if not is_cap{ e, t = params[i].ty } {
+                if not first { put{ &e, a = ", " } }
+                param_type{ &e, q = params[i] }
+                put{ &e, a = " a" }
+                num{ &e, n = i }
+                first = false
+            }
+            i = i + 1
+        }
+        if first { put{ &e, a = "void" } }
+        put{ &e, a = ") {\n    " }
+        i = 0
+        while i < f.params.len {
+            if f.params[i].mutable and is_cap{ e, t = f.params[i].ty } {
+                put{ &e, a = "static char cap[1];\n    " }
+                break
+            }
+            i = i + 1
+        }
+        if not is_void{ e, t = ret } { put{ &e, a = "return " } }
+        ch{ &e, c = 'f' }
+        num{ &e, n = callee }
+        ch{ &e, c = '(' }
+        let mut j = 0
+        while j < f.params.len {
+            if j > 0 { put{ &e, a = ", " } }
+            let q = f.params[j]
+            if is_cap{ e, t = q.ty } {
+                if q.mutable {
+                    put{ &e, a = "(void *)cap" }
+                } else {
+                    ch{ &e, c = '(' }
+                    tn{ &e, t = q.ty }
+                    put{ &e, a = "){}" }
+                }
+            } else {
+                by_name{ &e, name = q.name, params }
+            }
+            j = j + 1
+        }
+        put{ &e, a = ");\n}\n\n" }
+        to_aux{ &e }
+        return @as(u32, k)
     }
 
     // A function value of type `from` as type `to`. The same fields need nothing; more fields

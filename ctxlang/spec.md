@@ -443,8 +443,8 @@ let sub: Op = lib::sub                    // a named extern fn: its C symbol's a
 1. `extern fn{C} -> R` is a pointer to a C function, as C's `R (*)(...)`: 8 bytes, never null. Its fields are C's parameters in the order they are written, so two such types are the same only if they have the same fields, in the same order, with the same names, types and mutability, and the same result.
 2. Its fields and result follow an extern fn's rules (§18): only types with C equivalents, a capability field isn't passed, and a `mut` field passes a pointer.
 3. It is called like any function (§3), with every field supplied; it can't be bound (§4).
-4. A value comes from `@cast(extern fn{C} -> R, p)`, for a pointer `p` (§13), or from a named extern fn where that type is expected: the address of its C symbol. `@cast(*U, f)` gives the address back.
-5. A ctxlang function value (`fn{C} -> R`) doesn't convert to an extern fn type, nor the other way.
+4. A value comes from `@cast(extern fn{C} -> R, p)`, for a pointer `p` (§13), from a named extern fn where that type is expected (the address of its C symbol), or from a named `#c::callback` fn there (a C function that calls it, §18 Callbacks). `@cast(*U, f)` gives the address back.
+5. A ctxlang function value (`fn{C} -> R`) doesn't convert to an extern fn type, nor the other way. Only a callback's name does, as rule 4 says.
 6. `?extern fn{C} -> R` is a C function pointer that may be `NULL`, as `?*T` is (§8, Optional, rule 6).
 7. It holds no addresses of places: as a `fn` value, it may be stored and returned anywhere.
 
@@ -561,7 +561,7 @@ fn main { mut io: Io, mut fs: Fs, mut glfw: Glfw, args: Args } -> i32 { ... }
 ```
 
 1. `capability Name` declares a **capability type**: permission to have some effect (§1.3). It has no fields, no generic parameters and no zero value, and takes no space.
-2. Nothing can construct a capability: `Name{}` is an error. The only ones are those `main` receives, which it passes down to the functions that need them.
+2. Nothing can construct a capability: `Name{}` is an error. The only ones are those `main` receives, which it passes down to the functions that need them, and those a callback receives when C calls it (§18 Callbacks), on the binding's word that C calls it only while they are held.
 3. std declares `Io` (console, §17 `io`), `Fs` (files, §17 `fs`), `Mem` (memory beyond the stack, §17 `mem`), `Proc` (other programs and the environment, §17 `proc`) and `Build` (a build program's, §19). A binding of a C library declares its own, and its extern fns with effects take it (§18).
 4. A capability is permission for code that follows the rules, not a sandbox: a pointer `@cast` (§13) can forge one, as it can corrupt any memory.
 
@@ -630,7 +630,7 @@ extern fn glfwPollEvents { mut glfw: Glfw }      // a capability says who may ca
 
 1. `#path` or `#path{ field = e, ... }`, on its own line before a declaration, is an **attribute** of it. A declaration may have several.
 2. `path` names a struct, and the braces are a literal of it, checked as a const's initializer is (§14): its value is computed at compile time. `#path` alone means `#path{}`.
-3. Attributes are data. The compiler acts on those of std's `c` namespace and ignores the rest; a program can read them later (PLAN.md, stage 9).
+3. Attributes are data. The compiler acts on those of std's `c` namespace (`c::symbol`, `c::callback`) and ignores the rest; a program can read them later (PLAN.md, stage 9).
 
 ### Extern functions
 
@@ -644,6 +644,26 @@ extern fn glfwPollEvents { mut glfw: Glfw }      // a capability says who may ca
 7. Every program is linked with the C library and the math library.
 
 8. §1.3 holds by declaration: an extern fn that reaches IO, the OS or memory outside its pointer arguments must take a capability for it. One without a capability field, such as `sqrt`, promises to be pure. The compiler can't check either.
+
+### Callbacks
+
+```
+type KeyFn = extern fn{ mut glfw: Glfw, window: *mut Window, key: i32, scancode: i32, action: i32, mods: i32 }
+extern fn glfwSetKeyCallback { mut glfw: Glfw, window: *mut Window, cb: ?KeyFn } -> ?KeyFn
+
+#c::callback
+fn on_key { window: *mut Window, key: i32, action: i32 } { ... }
+
+_ = glfwSetKeyCallback{ &glfw, window, cb = on_key }
+```
+
+1. `#c::callback` on a fn lets C call it. The fn has a body and no generic parameters, and its fields and result follow an extern fn's rules (rule 4 above).
+2. Where an extern fn type `extern fn{Cs} -> Rs` is expected (or its `?`), the callback's name is a C function of that type, which calls it. The callback must be accepted where `fn{Cs} -> Rs` is (§5): each of its fields is one of `Cs`, with the same type and mutability, and its result is `Rs`. Fields of `Cs` it doesn't take are dropped, and the order of its own fields doesn't matter.
+3. Only the name converts. A function value, a bind or a callback stored in a local doesn't (§12, C function pointers, rule 5).
+4. C doesn't pass capability fields (rule 3 above), so the callback receives them without C passing them. Declaring a capability in a callback type is the binding's promise that C calls it only while that capability is held: for GLFW, within the call that polls events. The compiler can't check it.
+5. State reaches a callback through C: a pointer the library hands back (a `void *` user pointer, typed as the binding chooses), or a `mut` field, which is C's pointer.
+6. C must call a callback on the thread that called into C. Calling it from another thread is undefined behaviour.
+7. A callback is still a fn: ctxlang code may call it, and use it as a `fn` value.
 
 ## 19. Build programs
 

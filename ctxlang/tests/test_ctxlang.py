@@ -5179,20 +5179,8 @@ fn build { mut b: Build } {
         self.assertOutput('fn build {} -> i32 { return 7 }\nfn main { mut io: Io } { io::println_i64{ &io, n = build{} } }', '7\n')
 
 
-class CFunctionPointers(Base):
-    """`extern fn{...} -> R`, a C function pointer (spec §12, §18): from an address with @cast,
-    from a named extern fn, called with its fields in C's order."""
-
-    LIB_C = """
-#include <stdint.h>
-static int32_t add(int32_t a, int32_t b) { return a + b; }
-static int32_t mul(int32_t a, int32_t b) { return a * b; }
-void *ctxtest_op(int32_t which) { return which == 0 ? (void *)add : which == 1 ? (void *)mul : (void *)0; }
-int32_t (*ctxtest_op_typed(int32_t which))(int32_t, int32_t) { return which == 0 ? add : which == 1 ? mul : 0; }
-int32_t ctxtest_apply(int32_t (*f)(int32_t, int32_t), int32_t a, int32_t b) { return f(a, b); }
-int32_t ctxtest_sub(int32_t a, int32_t b) { return a - b; }
-void ctxtest_out(int32_t (*f)(int32_t, int32_t), int32_t *out) { *out = f(20, 22); }
-"""
+class CLib(Base):
+    """A program over a small C library: LIB_C as libctxtest.a, HEAD before each main."""
 
     BUILD = """
 fn build { mut b: Build } {
@@ -5200,15 +5188,6 @@ fn build { mut b: Build } {
     build::lib_path{ &b, exe, path = "lib" }
     build::link{ &b, exe, lib = "ctxtest" }
 }
-"""
-
-    HEAD = """
-type Op = extern fn{ a: i32, b: i32 } -> i32
-extern fn ctxtest_op { which: i32 } -> ?*u8
-extern fn ctxtest_op_typed { which: i32 } -> ?Op
-extern fn ctxtest_apply { f: Op, a: i32, b: i32 } -> i32
-extern fn ctxtest_sub { a: i32, b: i32 } -> i32
-extern fn ctxtest_out { f: Op, mut out: i32 }
 """
 
     def run_with_lib(self, main):
@@ -5237,6 +5216,31 @@ extern fn ctxtest_out { f: Op, mut out: i32 }
         with self.assertRaises(CompileError) as cm:
             run(src)
         self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+
+class CFunctionPointers(CLib):
+    """`extern fn{...} -> R`, a C function pointer (spec §12, §18): from an address with @cast,
+    from a named extern fn, called with its fields in C's order."""
+
+    LIB_C = """
+#include <stdint.h>
+static int32_t add(int32_t a, int32_t b) { return a + b; }
+static int32_t mul(int32_t a, int32_t b) { return a * b; }
+void *ctxtest_op(int32_t which) { return which == 0 ? (void *)add : which == 1 ? (void *)mul : (void *)0; }
+int32_t (*ctxtest_op_typed(int32_t which))(int32_t, int32_t) { return which == 0 ? add : which == 1 ? mul : 0; }
+int32_t ctxtest_apply(int32_t (*f)(int32_t, int32_t), int32_t a, int32_t b) { return f(a, b); }
+int32_t ctxtest_sub(int32_t a, int32_t b) { return a - b; }
+void ctxtest_out(int32_t (*f)(int32_t, int32_t), int32_t *out) { *out = f(20, 22); }
+"""
+
+    HEAD = """
+type Op = extern fn{ a: i32, b: i32 } -> i32
+extern fn ctxtest_op { which: i32 } -> ?*u8
+extern fn ctxtest_op_typed { which: i32 } -> ?Op
+extern fn ctxtest_apply { f: Op, a: i32, b: i32 } -> i32
+extern fn ctxtest_sub { a: i32, b: i32 } -> i32
+extern fn ctxtest_out { f: Op, mut out: i32 }
+"""
 
     def test_from_an_address_and_in_a_struct(self):
         self.assertEqual(self.run_with_lib("""
@@ -5295,7 +5299,7 @@ fn main { mut io: Io } {
              "an extern fn type can't return [4]u8: C has no equivalent of it", 1, 30),
             (h + 'fn main {} { let f: extern fn{ n: i64 } -> i64 = labs\n  _ = f{ m = 1 } }', '`f` has no field `m`', 3, 10),
             ('fn g { n: i64 } -> i64 { return n }\nfn main {} { let f: extern fn{ n: i64 } -> i64 = g }',
-             "a ctxlang function can't be passed as a C function pointer (extern fn{ n: i64 } -> i64): only an extern fn can", 2, 50),
+             "a ctxlang function can't be passed as a C function pointer (extern fn{ n: i64 } -> i64): only an extern fn or a `#c::callback` fn can", 2, 50),
             (h + 'fn main {} { let h: extern fn{ n: i64 } -> i64 = labs\n  let k: fn{ n: i64 } -> i64 = h }',
              "a C function pointer (extern fn{ n: i64 } -> i64) can't be used as a ctxlang fn{ n: i64 } -> i64", 3, 32),
             (h + 'fn main {} { let f: extern fn{ n: i32 } -> i64 = labs }',
@@ -5314,6 +5318,117 @@ fn main { mut io: Io } {
     def test_type_identity_is_ordered(self):
         self.assertCfnError('extern fn f { a: i32, b: i32 }\nfn main {} { let g: extern fn{ b: i32, a: i32 } = f }',
             'expected extern fn{ b: i32, a: i32 }, got extern fn{ a: i32, b: i32 }', 2, 51)
+
+
+class Callbacks(CLib):
+    """`#c::callback` (spec §12, §18): a ctxlang fn that C calls through a pointer, converted
+    where an extern fn type is expected."""
+
+    LIB_C = """
+#include <stdint.h>
+int32_t ctxtest_apply(int32_t (*f)(int32_t, int32_t), int32_t a, int32_t b) { return f(a, b); }
+void ctxtest_each(void (*f)(int64_t *, int32_t), int64_t *user, int32_t n) {
+    for (int32_t i = 1; i <= n; i++) f(user, i);
+}
+typedef struct { int32_t x, y; } P;
+P ctxtest_swap(P (*f)(P), P p) { return f(p); }
+"""
+
+    HEAD = """
+type Op = extern fn{ a: i32, b: i32 } -> i32
+extern fn ctxtest_apply { f: Op, a: i32, b: i32 } -> i32
+extern fn ctxtest_each { f: extern fn{ mut total: i64, i: i32 }, mut total: i64, n: i32 }
+"""
+
+    def test_qsort(self):
+        self.assertOutput("""
+extern fn qsort { base: *mut u8, n: usize, size: usize, cmp: extern fn{ a: *u8, b: *u8 } -> i32 }
+
+#c::callback
+fn descending { a: *u8, b: *u8 } -> i32 {
+    let x = @cast(*i32, a).*
+    let y = @cast(*i32, b).*
+    return if x < y { 1 } else if x > y { -1 } else { 0 }
+}
+
+fn main { mut io: Io } {
+    let mut xs: [5]i32 = [3, 1, 4, 1, 5]
+    qsort{ base = @cast(*mut u8, &xs), n = 5, size = 4, cmp = descending }
+    let mut i: usize = 0
+    while i < 5 { io::println_i64{ &io, n = xs[i] }; i = i + 1 }
+}
+""", "5\n4\n3\n1\n1\n")
+
+    def test_called_from_c(self):
+        self.assertEqual(self.run_with_lib("""
+#c::symbol{ name = "ctxtest_apply" }
+extern fn apply_io { f: extern fn{ mut io: Io, a: i32, b: i32 } -> i32, a: i32, b: i32 } -> i32
+
+struct P { x: i32, y: i32 }
+#c::symbol{ name = "ctxtest_swap" }
+extern fn swap_via { f: extern fn{ p: P } -> P, p: P } -> P
+
+// Fields of the type it doesn't take are dropped: this one ignores `a`.
+#c::callback
+fn twice { b: i32 } -> i32 { return b * 2 }
+
+#c::callback
+fn sub { a: i32, b: i32 } -> i32 { return a - b }
+
+// A capability in the type is supplied, not passed by C.
+#c::callback
+fn noisy { mut io: Io, a: i32, b: i32 } -> i32 {
+    io::println_i64{ &io, n = a }
+    return a + b
+}
+
+// A `mut` field is C's pointer: here, the user data.
+#c::callback
+fn add_to { mut total: i64, i: i32 } { total = total + @as(i64, i) }
+
+#c::callback
+fn swap { p: P } -> P { return P{ x = p.y, y = p.x } }
+
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = ctxtest_apply{ f = twice, a = 100, b = 21 } }
+    io::println_i64{ &io, n = ctxtest_apply{ f = sub, a = 10, b = 4 } }
+    let op: Op = sub
+    let maybe: ?Op = twice
+    if maybe != null { io::println_i64{ &io, n = maybe{ a = 0, b = 5 } } }
+    io::println_i64{ &io, n = op{ a = 1, b = 3 } }
+    io::println_i64{ &io, n = apply_io{ f = noisy, a = 7, b = 8 } }
+    let mut total: i64 = 0
+    ctxtest_each{ f = add_to, &total, n = 4 }
+    io::println_i64{ &io, n = total }
+    let q = swap_via{ f = swap, p = P{ x = 1, y = 2 } }
+    io::println_i64{ &io, n = q.x * 10 + q.y }
+    // Still an ordinary fn to ctxlang.
+    io::println_i64{ &io, n = sub{ a = 3, b = 1 } }
+}
+"""), "42\n6\n10\n-2\n7\n15\n10\n21\n2\n")
+
+    def test_errors(self):
+        for src, msg, line, col in [
+            ('#c::callback\nextern fn f { n: i64 }\nfn main {} {}',
+             '`c::callback` applies only to a fn with a body, not an extern fn', 1, 1),
+            ('#c::callback\nstruct S {}\nfn main {} {}', '`c::callback` applies only to a fn', 1, 1),
+            ('#c::callback\n#c::callback\nfn f {} {}\nfn main {} {}', 'duplicate `c::callback` attribute', 2, 1),
+            ('#c::callback\nfn f(T) { x: T } {}\nfn main {} {}', "a `c::callback` fn can't be generic", 1, 1),
+            ('#c::callback\nfn f { x: ?i32 } {}\nfn main {} {}',
+             "callback `f` can't pass `x` to C: it has type ?i32, which C has no equivalent of", 2, 8),
+            ('#c::callback\nfn f {} -> [2]u8 { return [0, 0] }\nfn main {} {}',
+             "callback `f` can't return [2]u8: C has no equivalent of it", 2, 12),
+            ('#c::callback\nfn g { m: i64 } -> i64 { return m }\nfn main {} { let f: extern fn{ n: i64 } -> i64 = g }',
+             'expected extern fn{ n: i64 } -> i64, got extern fn{ m: i64 } -> i64', 3, 50),
+            ('#c::callback\nfn g { n: i64 } {}\nfn main {} { let f: extern fn{ n: i64 } -> i64 = g }',
+             'expected extern fn{ n: i64 } -> i64, got extern fn{ n: i64 }', 3, 50),
+            ('#c::callback\nfn g { mut n: i64 } {}\nfn main {} { let f: extern fn{ n: i64 } = g }',
+             'expected extern fn{ n: i64 }, got extern fn{ mut n: i64 }', 3, 43),
+            # Only the name converts: a fn value has no C function behind it.
+            ('#c::callback\nfn g { n: i64 } {}\nfn main {} { let h = g\n  let f: extern fn{ n: i64 } = h }',
+             "a ctxlang function can't be passed as a C function pointer (extern fn{ n: i64 }): only an extern fn or a `#c::callback` fn can", 4, 32),
+        ]:
+            self.assertCfnError(src, msg, line, col)
 
 
 class UntaggedUnions(Base):

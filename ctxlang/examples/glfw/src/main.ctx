@@ -1,5 +1,20 @@
-// Opens a window for two seconds, or until it is closed, through the GLFW binding in glfw.ctx,
-// and fills it with a colour that fades, through the GL functions gl.ctx looks up.
+// Opens a window for two seconds, or until it is closed or Escape is pressed, through the GLFW
+// binding in glfw.ctx, and fills it with a colour that fades, through the GL functions gl.ctx
+// looks up.
+
+// What the key callback records, for main to report.
+struct App { keys: i64 }
+
+// GLFW calls this from poll_events. It finds the App through the window's user pointer.
+#c::callback
+fn on_key { mut glfw: glfw::Glfw, window: *mut glfw::Window, key: i32, action: i32 } {
+    if action != glfw::PRESS { return }
+    let some{ value = p } = glfw::user_pointer{ &glfw, window } else { return }
+    let app = @cast(*mut App, p)
+    app.*.keys = app.*.keys + 1
+    if key == glfw::KEY_ESCAPE { glfw::set_should_close{ &glfw, window } }
+}
+
 fn main { mut io: Io, mut glfw: glfw::Glfw, mut gl: gl::Gl } -> i32 {
     if not glfw::init{ &glfw } {
         io::eprintln{ &io, s = "glfw: init failed" }
@@ -28,6 +43,9 @@ fn main { mut io: Io, mut glfw: glfw::Glfw, mut gl: gl::Gl } -> i32 {
         io::eprintln{ &io, s = "gl: functions missing" }
         return 1
     }
+    let mut app = App{ keys = 0 }
+    glfw::set_user_pointer{ &glfw, window, pointer = @cast(*mut u8, &app) }
+    glfw::set_key_callback{ &glfw, window, callback = on_key }
     io::println{ &io, s = "window open" }
     while not glfw::should_close{ &glfw, window } and glfw::time{ &glfw } < 2.0 {
         let t = @trunc(i32, @as(i64, glfw::time{ &glfw } * 1000.0))
@@ -37,6 +55,8 @@ fn main { mut io: Io, mut glfw: glfw::Glfw, mut gl: gl::Gl } -> i32 {
         glfw::swap_buffers{ &glfw, window }
         glfw::poll_events{ &glfw }
     }
-    io::println{ &io, s = "window closed" }
+    io::print{ &io, s = "window closed after " }
+    io::print_i64{ &io, n = app.keys }
+    io::println{ &io, s = " key presses" }
     return 0
 }

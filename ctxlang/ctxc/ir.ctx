@@ -163,7 +163,7 @@ namespace ir {
         bind{ callee: u32, args: []Arg },
         dcall{ callee: *Expr, args: []Arg },
         dbind{ callee: *Expr, args: []Arg },
-        fnref{ callee: u32 },
+        fnref{ callee: u32 },                       // of a cfn type: an extern fn, or a C function calling a callback
         record{ items: []Arg },                     // (struct T [ARG...])
         variant{ index: u32, items: []Arg },
         array{ elems: []Expr },

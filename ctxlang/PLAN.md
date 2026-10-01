@@ -46,7 +46,7 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
   now that `proc::run` and `fs::list` exist.
 - `bootstrap/ctxc.c` is ctxc as C. `tools/toolchain.py` compiles it to a seed, and the seed
   compiles ctxc's current source into `build/ctxc` (about 7 s the first time, cached after).
-- `python -m unittest discover tests` runs all 383 tests through the native ctxc: each program is
+- `python -m unittest discover tests` runs all 386 tests through the native ctxc: each program is
   compiled with `ctxc build`, built with cc and run. They pass on Windows (gcc), Linux (gcc) and
   macOS arm64 (Apple clang).
 - `tools/fixpoint.py`: ctxc built by itself, twice, writes byte-identical C, the same as the
@@ -762,7 +762,22 @@ Increments, each landing with tests and a refreshed bootstrap:
    `??*T` stays tagged, around the 8-byte `?*T`. The GLFW example's handles are
    `?*mut Window` now, not addresses as `usize`.
 6. **The rest, one at a time:** C function pointers (*done*, below), untagged unions (*done*,
-   below), null-terminated strings (*done*, below), callbacks from C.
+   below), null-terminated strings (*done*, below), callbacks from C (*done*, below).
+   - **Callbacks from C** — *done.* `#c::callback` on a fn lets C call it: where an `extern
+     fn{...}` type is expected, its name is a C function of that type that calls it, if the fn
+     is accepted by §5's rule (its fields among the type's, so it may ignore some). The attribute
+     is required, so that a fn's author opts in: a callback runs on C's schedule, receives
+     capabilities C didn't pass, and usually reaches its state by casting a `void *`. Only the
+     name converts: a C function pointer has no slot for a bound function's record, and C may
+     keep it forever. Capability fields in the type are the binding's promise that C calls it
+     while they are held (as GLFW does within `glfwPollEvents`), so the callback gets only those
+     the binding's type lists; it records what happened in its state, and the main loop acts on
+     it. C must call it on the thread that called into C, since the stack limit and the
+     runtime's stdout buffer are global; threads would need a `_Thread_local` limit and an
+     entry thunk. Panics need nothing: `ctx_panic` exits without unwinding. In the IR it is
+     `fnref` of a function with a body at a `cfn` type (version 14); in C, `kK`, a static C
+     function with the type's params that calls `fN` by name, supplying capabilities itself.
+     Later: `#c::export{ name }`, for a public symbol, over the same thunk.
    - **Null-terminated strings** — *done.* `c::String { ptr: *u8 }` in std/c.ctx is C's `const
      char *`. The checker knows it (`cstr_decl`, as `text_decl` is utf8::String): a literal where
      one is expected is static bytes with a NUL (C's own string-literal terminator), and a `\0`
@@ -970,7 +985,7 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 | `?*T`, `?*mut T` | `T*` | `null` is 0. IR type `nptr`. |
 | `c::String`, `?c::String` | `struct { uint8_t *m_ptr; }`, and the same under a typedef | Passed to C by value, which 64-bit C ABIs pass and return as the pointer; a literal is `((uint8_t *)"...")`, NUL-terminated by C. `?c::String` is null when `m_ptr` is 0. |
 | `extern union` | C `union` | Every field at offset 0. IR `(cunion ...)`. A literal zeroes the other bytes with `memset`. |
-| `extern fn{C} -> R`, and its `?` | `R (*)(P...)`, capabilities dropped | IR type `cfn`, params in order; `null` is 0. A named extern fn as a value is `xN`. |
+| `extern fn{C} -> R`, and its `?` | `R (*)(P...)`, capabilities dropped | IR type `cfn`, params in order; `null` is 0. A named extern fn as a value is `xN`; a `#c::callback` fn is `kK`, a C function calling `fN`. |
 | enum | its base integer type | `match` becomes an if-else chain on the value (IR `switch`). |
 | `Io`, `Fs`, `Mem` | empty struct | Size 0 with GNU C, as in ctxi. |
 | `*T`, `q + n`, `q[i]` | `T*`, pointer arithmetic | Not checked. §12.7 calls a bad pointer UB. |
