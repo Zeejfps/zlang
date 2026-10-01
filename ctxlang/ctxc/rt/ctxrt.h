@@ -151,7 +151,9 @@ int64_t ctx_fs_sys_remove(ctx_slice path);
 int64_t ctx_fs_sys_list(ctx_slice path, ctx_slice into);
 int64_t ctx_fs_sys_make_dir(ctx_slice path);
 int64_t ctx_proc_run(ctx_slice argv, ctx_slice env, int32_t *code);
+#ifdef _WIN32
 bool ctx_proc_env(ctx_slice name, ctx_slice *value);
+#endif
 ctx_slice ctx_proc_exe_path(void);
 
 typedef struct { uint32_t id; } ctx_build_exe;            // build::Exe

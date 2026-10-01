@@ -688,8 +688,9 @@ int64_t ctx_proc_run(ctx_slice argv, ctx_slice env, int32_t *code) {
 }
 
 // Environment variable `name` into *value, which lives until the program ends. 0 if it isn't set.
-bool ctx_proc_env(ctx_slice name, ctx_slice *value) {
+// Windows' only: elsewhere std reads C's environ itself (std/os/posix).
 #ifdef _WIN32
+bool ctx_proc_env(ctx_slice name, ctx_slice *value) {
     wchar_t *w = widen(name.ptr ? name.ptr : "", name.len);
     const wchar_t *v = _wgetenv(w);
     free(w);
@@ -699,15 +700,8 @@ bool ctx_proc_env(ctx_slice name, ctx_slice *value) {
     WideCharToMultiByte(CP_UTF8, 0, v, -1, u, n, NULL, NULL);
     *value = (ctx_slice){ u, (uint64_t)(n - 1) };
     return 1;
-#else
-    char *p = c_string(name);
-    const char *v = getenv(p);
-    free(p);
-    if (!v) return 0;
-    *value = (ctx_slice){ (void *)v, strlen(v) };
-    return 1;
-#endif
 }
+#endif
 
 // The absolute path of this program's executable; empty if the OS won't say.
 #ifdef __APPLE__

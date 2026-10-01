@@ -51,6 +51,7 @@ namespace ir_read {
 
         let mut types = list::new(ir::Type){ realloc = arena::alloc, heap = r.heap }
         let mut consts = list::new(ir::Const){ realloc = arena::alloc, heap = r.heap }
+        let mut vars = list::new(ir::Var){ realloc = arena::alloc, heap = r.heap }
         let mut fns = list::new(ir::Func){ realloc = arena::alloc, heap = r.heap }
         let mut main = 0
         while true {
@@ -66,6 +67,11 @@ namespace ir_read {
                 let name = string{ &r }
                 let ty = id32{ &r }
                 add{ &r, xs = &consts, item = ir::Const{ name, ty, value = expr{ &r } } }
+            } else if is{ s = tag, lit = "var" } {
+                if id32{ &r } != vars.len { fail{ &r, problem = Problem::bad_id } }
+                let name = string{ &r }
+                let symbol = string{ &r }
+                add{ &r, xs = &vars, item = ir::Var{ name, symbol, ty = id32{ &r } } }
             } else if is{ s = tag, lit = "fn" } {
                 add{ &r, xs = &fns, item = function{ &r } }
             } else if is{ s = tag, lit = "extern" } {
@@ -83,7 +89,7 @@ namespace ir_read {
         if r.pos < r.text.len { fail{ &r, problem = Problem::trailing_text } }
         return ir::Program{
             version, files, types = list::items{ list = types }, consts = list::items{ list = consts },
-            fns = list::items{ list = fns }, main,
+            vars = list::items{ list = vars }, fns = list::items{ list = fns }, main,
         }
     }
 
@@ -394,6 +400,8 @@ namespace ir_read {
             k = ir::ExprKind::local{ slot = id32{ &r } }
         } else if is{ s = tag, lit = "constref" } {
             k = ir::ExprKind::constref{ id = id32{ &r } }
+        } else if is{ s = tag, lit = "cvar" } {
+            k = ir::ExprKind::cvar{ id = id32{ &r } }
         } else if is{ s = tag, lit = "call" } {
             let callee = id32{ &r }
             k = ir::ExprKind::call{ callee, args = args{ &r } }

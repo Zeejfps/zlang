@@ -19,12 +19,16 @@ namespace ir {
         files:   []Bytes,       // positions index this; "" is a program read from a string
         types:   []Type,        // indexed by TypeId
         consts:  []Const,       // indexed by const id
+        vars:    []Var,         // indexed by C variable id
         fns:     []Func,        // indexed by function id
         main:    u32,
     }
 
     // A const of array, struct or union type. Its value is literals only: the checker computed it.
     struct Const { name: Bytes, ty: TypeId, value: Expr }
+
+    // A C variable that a capability names (§15): the C symbol, of type ty.
+    struct Var { name: Bytes, symbol: Bytes, ty: TypeId }
 
     // A source position: 1-based line and column, and an index into Program.files.
     struct Pos { line: u32, col: u32, file: u32 }
@@ -138,6 +142,7 @@ namespace ir {
         nil,                                                    // (null T)
         local{ slot: u32 },
         constref{ id: u32 },                                    // the value of a Const
+        cvar{ id: u32 },                                        // the value of a Var
         deref{ ptr: *Expr, pos: Pos },
         field{ base: *Expr, index: u32 },
         index{ base: *Expr, i: *Expr, pos: Pos },

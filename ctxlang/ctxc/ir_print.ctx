@@ -48,6 +48,19 @@ namespace ir_print {
             i = i + 1
         }
         i = 0
+        while i < p.vars.len {
+            let v = p.vars[i]
+            text{ &o, a = "(var " }
+            num{ &o, n = i }
+            char{ &o, c = ' ' }
+            quote{ &o, b = v.name }
+            char{ &o, c = ' ' }
+            quote{ &o, b = v.symbol }
+            spaced{ &o, n = v.ty }
+            text{ &o, a = ")\n" }
+            i = i + 1
+        }
+        i = 0
         while i < p.fns.len {
             function{ &o, f = p.fns[i] }
             i = i + 1
@@ -455,6 +468,7 @@ namespace ir_print {
             nil                       => { head{ &o, e, a = "null" } }
             local{ slot }             => { head{ &o, e, a = "local" }; spaced{ &o, n = slot } }
             constref{ id }            => { head{ &o, e, a = "constref" }; spaced{ &o, n = id } }
+            cvar{ id }                => { head{ &o, e, a = "cvar" }; spaced{ &o, n = id } }
             deref{ ptr, pos }         => { head{ &o, e, a = "deref" }; sub{ &o, e = ptr, depth }; position{ &o, p = pos } }
             field{ base, index }      => { head{ &o, e, a = "field" }; sub{ &o, e = base, depth }; spaced{ &o, n = index } }
             index{ base, i, pos }     => { head{ &o, e, a = "index" }; sub{ &o, e = base, depth }; sub{ &o, e = i, depth }; position{ &o, p = pos } }

@@ -11,8 +11,9 @@
 //       return proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} } iferr { 127 }
 //   }
 
-// Permission to start programs and to read this program's environment.
-capability Proc
+// Permission to start programs and to read this program's environment. It includes what its
+// platform's layer needs for that, os::Proc (std/os), such as C's environ.
+capability Proc { ..os::Proc }
 
 namespace proc {
     error not_found             // no such program, on PATH or at the path given
@@ -23,9 +24,6 @@ namespace proc {
 
     #c::symbol{ name = "ctx_proc_run" }
     extern fn sys_run { mut proc: Proc, argv: [][]u8, env: [][]u8, mut code: i32 } -> i64
-
-    #c::symbol{ name = "ctx_proc_env" }
-    extern fn sys_env { mut proc: Proc, name: []u8, mut value: []u8 } -> bool
 
     // The absolute path of this program's executable; empty if the OS won't say.
     #c::symbol{ name = "ctx_proc_exe_path" }
@@ -52,9 +50,7 @@ namespace proc {
     // The value of environment variable `name`, or null if it isn't set. It lives until the
     // program ends.
     fn env { mut proc: Proc, name: []u8 } -> ?[]u8 {
-        let mut value: []u8 = slice::empty(u8){}
-        if not sys_env{ &proc, name, value = &value } { return null }
-        return value
+        return os::env{ &proc, name }
     }
 
     // The error for the runtime's negative status, as fs::failed reads it.

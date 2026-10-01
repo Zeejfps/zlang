@@ -1,8 +1,14 @@
-// std: os on Linux and macOS. The platform's layer (spec §17): what io and mem need from the
-// operating system, over libc's write, read, aligned_alloc and memset. Every layer declares the
-// same functions; std/os/windows is Windows', and a build compiles one.
+// std: os on Linux and macOS. The platform's layer (spec §17): what io, mem and proc need from
+// the operating system, over libc's write, read, aligned_alloc and memset, and its environ.
+// Every layer declares the same functions; std/os/windows is Windows', and a build compiles one.
 
 namespace os {
+    // What std's Proc holds on this platform: C's `char **environ`, the "KEY=VALUE" strings of
+    // this program's environment, ending with null.
+    capability Proc {
+        extern environ: ?*?c::String,
+    }
+
     #c::symbol{ name = "write" }
     extern fn c_write { mut io: Io, fd: i32, buf: *u8, count: usize } -> i64
 
@@ -32,5 +38,20 @@ namespace os {
         let p = aligned_alloc{ &mem, alignment = mem::PAGE, size } ifnull { return null }
         _ = memset{ &mem, dst = p, byte = 0, count = size }
         return p
+    }
+
+    // The value of environment variable `name`, or null if it isn't set: a view of environ's
+    // own text, which lives until the program ends.
+    fn env { mut proc: Proc, name: []u8 } -> ?[]u8 {
+        let entries = proc.environ ifnull { return null }
+        let mut i: usize = 0
+        while true {
+            let entry = c::bytes{ s = entries[i] ifnull { return null } }
+            if entry.len > name.len and entry[name.len] == '=' and slice::eq_bytes{ a = entry[..name.len], b = name } {
+                return entry[name.len + 1..]
+            }
+            i = i + 1
+        }
+        return null
     }
 }

@@ -61,7 +61,12 @@ namespace check {
         symbol:   []u8,                 // an extern fn's C symbol
         callback: bool,                 // a fn with `#c::callback`: C may call it (§18)
         includes: []u32,                // what a capability includes, directly or not (§15)
+        vars:     []CVar,               // a capability's C variables, its own and included ones
     }
+
+    // A capability's C variable (§15): `extern name: T` reads the C symbol `name`. owner is the
+    // capability that declares it, and only a function of owner's namespace may read it.
+    struct CVar { name: []u8, ty: Id, owner: u32 }
 
     // What a name in a path refers to.
     union Entry {
@@ -238,8 +243,9 @@ namespace check {
     struct State { defs: []u32, maybe: []u32, dead: bool }
 
     // How a field, index or `.len` expression reaches its value (ctxi's Field.kind and
-    // Index.kind): through a pointer (p), in an array or slice (s).
-    enum Access: u8 { field, pfield, plen, len, slen, sptr, arr, slice, parr, ptr }
+    // Index.kind): through a pointer (p), in an array or slice (s). cvar is a capability's C
+    // variable (§15), read through the capability or a pointer to it.
+    enum Access: u8 { field, pfield, plen, len, slen, sptr, arr, slice, parr, ptr, cvar }
 
     // A field that `..` supplies: the local of the same name, as `&name` for a `mut` field. ty is
     // the local's type, arg the argument's.
@@ -499,7 +505,7 @@ namespace check {
             kind, name, ns, qual = qualify{ c, ns, name = name.text }, syn = x, tparams,
             fields = slice::empty(types::Field){}, variants = slice::empty(Variant){},
             ret = types::VOID, ty = types::ERROR, values = slice::empty(i64){}, symbol = "",
-            callback = false, includes = slice::empty(u32){},
+            callback = false, includes = slice::empty(u32){}, vars = slice::empty(CVar){},
         }
         if not list::push{ list = &c.decls, item } or not map::put{ m = &c.decl_of, key = key{ file, id = x.id }, value = d } {
             @panic("check: out of memory")
@@ -676,14 +682,21 @@ namespace check {
 
     // §15: a capability's fields are C function pointers, called through it (§12, C function
     // pointers). A `?extern fn` would have to be read to be unwrapped, which a field can't be.
-    // `..Name` puts another's fields where it stands, so that one is resolved first, on demand.
+    // `extern name: T` is a C variable instead, which takes no space in it. `..Name` puts
+    // another's fields and variables where it stands, so that one is resolved first, on demand.
+    // A capability with fields may include only others with fields: a function of its namespace
+    // makes one, and could otherwise give away the permission of one that only `main` receives.
     fn resolve_cap { mut c: Checker, d: u32 } {
         if map::has{ m = c.caps_done, key = d } { return }
         let x = get_decl{ c, d }
         let sc = own_scope{ &c, d }
         let mut out = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
         let mut from = list::new(u32){ realloc = arena::alloc, heap = c.heap }    // each field's inclusion, or NONE
+        let mut vars = list::new(CVar){ realloc = arena::alloc, heap = c.heap }
+        let mut vfrom = list::new(u32){ realloc = arena::alloc, heap = c.heap }   // each variable's inclusion, or NONE
         let mut incl = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let mut bare = NONE                     // the first capability without fields included
+        let mut bare_at = x.syn.span
         push{ xs = &c.cap_stack, n = d }
         match x.syn.k {
             cap{ fields = fs, includes } => {
@@ -692,11 +705,20 @@ namespace check {
                 let mut i: usize = 0
                 while i <= fields.len {
                     while j < includes.len and includes[j].at == i {
-                        include_cap{ &c, d, inc = includes[j], sc, out = &out, from = &from, incl = &incl }
+                        let y = include_cap{ &c, d, inc = includes[j], sc, out = &out, from = &from, vars = &vars, vfrom = &vfrom, incl = &incl }
+                        if y != NONE and bare == NONE and get_decl{ c, d = y }.fields.len == 0 {
+                            bare = y
+                            bare_at = includes[j].span
+                        }
                         j = j + 1
                     }
                     if i == fields.len { break }
                     let f = fields[i]
+                    if f.external {
+                        add_cvar{ &c, d, f, sc, out = list::items{ list = out }, from = list::items{ list = from }, vars = &vars, vfrom = &vfrom }
+                        i = i + 1
+                        continue
+                    }
                     let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
                     let mut ok = t == types::ERROR
                     match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { func{ external } => { ok = external } else => {} }
@@ -705,17 +727,8 @@ namespace check {
                         pushed{ ok = @fmt(&b, "capability `{}`'s field `{}` must be a C function pointer, `extern fn{{ ... }}`, not {}", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t }) }
                         error{ &c, at = f.span, msg = utf8::view{ b } }
                     }
-                    let k = types::field_index{ fields = list::items{ list = out }, name = f.name.text }
-                    if k != null and f.name.text.len > 0 {
-                        let came = list::items{ list = from }[k]
-                        if came == NONE {
-                            duplicate{ &c, what = "field", name = f.name, at = f.span }
-                        } else {
-                            let mut b = message{ c }
-                            pushed{ ok = @fmt(&b, "capability `{}` declares `{}`, which it includes from `{}`", str{ s = x.name.text }, str{ s = f.name.text }, str{ s = get_decl{ c, d = came }.name.text }) }
-                            error{ &c, at = f.span, msg = utf8::view{ b } }
-                        }
-                    }
+                    let came = cap_member{ out = list::items{ list = out }, from = list::items{ list = from }, vars = list::items{ list = vars }, vfrom = list::items{ list = vfrom }, name = f.name.text }
+                    if came != null and f.name.text.len > 0 { cap_clash{ &c, x, name = f.name, at = f.span, came } }
                     add_field{ xs = &out, f = types::Field{ name = f.name.text, mutable = false, ty = t } }
                     push{ xs = &from, n = NONE }
                     i = i + 1
@@ -723,33 +736,85 @@ namespace check {
             }
             else => {}
         }
+        if out.len > 0 and bare != NONE {
+            let y = get_decl{ c, d = bare }
+            let why: utf8::String = if y.vars.len > 0 { "it has only C variables" } else { "it has no fields" }
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "capability `{}` can't include `{}`: {}", str{ s = x.name.text }, str{ s = y.name.text }, why) }
+            error{ &c, at = bare_at, msg = utf8::view{ b } }
+        }
         _ = list::pop{ list = &c.cap_stack }
         put_bool{ m = &c.caps_done, k = d }
         list::at{ list = c.decls, i = d }.fields = list::items{ list = out }
+        list::at{ list = c.decls, i = d }.vars = list::items{ list = vars }
         list::at{ list = c.decls, i = d }.includes = list::items{ list = incl }
     }
 
-    // `..Name` in capability d's braces: Name's fields, which must each reach d once. from
-    // records the inclusion each came through, and incl gains Name and what Name includes.
-    fn include_cap { mut c: Checker, d: u32, inc: syntax::Include, sc: Scope, mut out: list::List(types::Field, Heap), mut from: list::List(u32, Heap), mut incl: list::List(u32, Heap) } {
+    // `extern name: T` in capability d's braces (§15): the C variable `name`, of a type C has.
+    fn add_cvar { mut c: Checker, d: u32, f: syntax::Field, sc: Scope, out: []types::Field, from: []u32, mut vars: list::List(CVar, Heap), mut vfrom: list::List(u32, Heap) } {
+        let x = get_decl{ c, d }
+        let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
+        if not c_variable{ c, t } {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "capability `{}`'s C variable `{}` can't have type {}: C has no equivalent of it", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t }) }
+            error{ &c, at = f.span, msg = utf8::view{ b } }
+        }
+        let came = cap_member{ out, from, vars = list::items{ list = vars }, vfrom = list::items{ list = vfrom }, name = f.name.text }
+        if came != null and f.name.text.len > 0 { cap_clash{ &c, x, name = f.name, at = f.span, came } }
+        if not list::push{ list = &vars, item = CVar{ name = f.name.text, ty = t, owner = d } } { @panic("check: out of memory") }
+        push{ xs = &vfrom, n = NONE }
+    }
+
+    // A C variable's type: one C has, stored as C stores it. A slice is a pair only ctxlang
+    // makes, and a capability isn't stored at all.
+    fn c_variable { c: Checker, t: Id } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            error | prim | enumeration | ptr | record => { return true }
+            opt => { return nullable_ptr{ c, t } }
+            func{ external } => { return external }
+            else => { return false }
+        }
+    }
+
+    // Where a capability being resolved already has a field or C variable `name` from: NONE if
+    // it declares it itself, else the capability it includes it through; null if it has none.
+    fn cap_member { out: []types::Field, from: []u32, vars: []CVar, vfrom: []u32, name: []u8 } -> ?u32 {
+        let k = types::field_index{ fields = out, name }
+        if k != null { return from[k] }
+        let mut i: usize = 0
+        while i < vars.len {
+            if slice::eq_bytes{ a = vars[i].name, b = name } { return vfrom[i] }
+            i = i + 1
+        }
+        return null
+    }
+
+    // Capability x declares `name`, which it already has: from itself (came is NONE) or from
+    // the capability it includes it through.
+    fn cap_clash { mut c: Checker, x: Decl, name: syntax::Name, at: source::Span, came: u32 } {
+        if came == NONE {
+            duplicate{ &c, what = "field", name, at }
+            return
+        }
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "capability `{}` declares `{}`, which it includes from `{}`", str{ s = x.name.text }, str{ s = name.text }, str{ s = get_decl{ c, d = came }.name.text }) }
+        error{ &c, at, msg = utf8::view{ b } }
+    }
+
+    // `..Name` in capability d's braces: Name's fields and C variables, which must each reach d
+    // once. from and vfrom record the inclusion each came through, and incl gains Name and what
+    // Name includes. Returns Name's declaration, or NONE if it isn't a capability.
+    fn include_cap { mut c: Checker, d: u32, inc: syntax::Include, sc: Scope, mut out: list::List(types::Field, Heap), mut from: list::List(u32, Heap), mut vars: list::List(CVar, Heap), mut vfrom: list::List(u32, Heap), mut incl: list::List(u32, Heap) } -> u32 {
         let x = get_decl{ c, d }
         let t = rtype{ &c, te = inc.ty, sc, allow_bound = false }
-        if t == types::ERROR { return }
+        if t == types::ERROR { return NONE }
         let mut i = NONE
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { cap{ decl } => { i = decl } else => {} }
-        let mut braced = false
-        if i != NONE {
-            match get_decl{ c, d = i }.syn.k { cap{ fields } => { braced = fields != null } else => {} }
-        }
-        if not braced {
+        if i == NONE {
             let mut b = message{ c }
-            if i == NONE {
-                pushed{ ok = @fmt(&b, "capability `{}` can only include a capability with fields, not {}", str{ s = x.name.text }, tstr{ c, t }) }
-            } else {
-                pushed{ ok = @fmt(&b, "capability `{}` can't include `{}`: it has no fields", str{ s = x.name.text }, tstr{ c, t }) }
-            }
+            pushed{ ok = @fmt(&b, "capability `{}` can only include a capability, not {}", str{ s = x.name.text }, tstr{ c, t }) }
             error{ &c, at = inc.span, msg = utf8::view{ b } }
-            return
+            return NONE
         }
         // A cycle: Name is still being resolved, d through the ones after it.
         let stack = list::items{ list = c.cap_stack }
@@ -766,21 +831,28 @@ namespace check {
             }
             pushed{ ok }
             error{ &c, at = inc.span, msg = utf8::view{ b } }
-            return
+            return NONE
         }
-        resolve_cap{ &c, d = i }
+        let mut braced = false
+        match get_decl{ c, d = i }.syn.k { cap{ fields } => { braced = fields != null } else => {} }
+        if braced { resolve_cap{ &c, d = i } }
         let y = get_decl{ c, d = i }
         let mut clash = false
         let mut f: usize = 0
-        while f < y.fields.len {
-            let name = y.fields[f].name
-            let at = types::field_index{ fields = list::items{ list = out }, name }
-            if at == null {
-                add_field{ xs = &out, f = y.fields[f] }
-                push{ xs = &from, n = i }
+        while f < y.fields.len + y.vars.len {
+            let field = f < y.fields.len
+            let name = if field { y.fields[f].name } else { y.vars[f - y.fields.len].name }
+            let came = cap_member{ out = list::items{ list = out }, from = list::items{ list = from }, vars = list::items{ list = vars }, vfrom = list::items{ list = vfrom }, name }
+            if came == null {
+                if field {
+                    add_field{ xs = &out, f = y.fields[f] }
+                    push{ xs = &from, n = i }
+                } else {
+                    if not list::push{ list = &vars, item = y.vars[f - y.fields.len] } { @panic("check: out of memory") }
+                    push{ xs = &vfrom, n = i }
+                }
             } else if not clash and name.len > 0 {
                 clash = true
-                let came = list::items{ list = from }[at]
                 let mut b = message{ c }
                 if came == NONE {
                     pushed{ ok = @fmt(&b, "capability `{}` declares `{}`, which it includes from `{}`", str{ s = x.name.text }, str{ s = name }, str{ s = y.name.text }) }
@@ -797,6 +869,7 @@ namespace check {
             push{ xs = &incl, n = y.includes[n] }
             n = n + 1
         }
+        return i
     }
 
     // Whether a is a capability that includes capability b, directly or through others, and so
@@ -6674,6 +6747,8 @@ namespace check {
                         return field_type{ &c, st = inner, e, name }
                     }
                     cap => {
+                        let v = cap_var{ c, t = inner, name = name.text }
+                        if v != null { return read_cvar{ &c, e, v } }
                         if loaded_cap{ c, t = inner } {
                             put_access{ &c, e, a = Access::pfield }
                             return cap_field{ &c, st = inner, e, name }
@@ -6689,6 +6764,8 @@ namespace check {
                 }
             }
             cap => {
+                let v = cap_var{ c, t = bt, name = name.text }
+                if v != null { return read_cvar{ &c, e, v } }
                 if loaded_cap{ c, t = bt } {
                     put_access{ &c, e, a = Access::field }
                     return cap_field{ &c, st = bt, e, name }
@@ -6749,6 +6826,42 @@ namespace check {
             error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
         }
         return ft
+    }
+
+    // Capability t's C variable `name` (§15), its own or one it includes, or null.
+    fn cap_var { c: Checker, t: Id, name: []u8 } -> ?CVar {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            cap{ decl } => {
+                let vs = get_decl{ c, d = decl }.vars
+                let mut i: usize = 0
+                while i < vs.len {
+                    if slice::eq_bytes{ a = vs[i].name, b = name } { return vs[i] }
+                    i = i + 1
+                }
+            }
+            else => {}
+        }
+        return null
+    }
+
+    // A read of a capability's C variable v (§15). Only a function of the namespace that
+    // declares v's capability may read it, so that namespace wraps it for everyone else. It is
+    // the variable's value, not a place: neither assigned nor addressed.
+    fn read_cvar { mut c: Checker, e: syntax::Expr, v: CVar } -> Id {
+        put_access{ &c, e, a = Access::cvar }
+        let x = get_decl{ c, d = v.owner }
+        let f = c.fn_decl
+        if f == NONE or get_decl{ c, d = f }.kind != Kind::func or get_decl{ c, d = f }.ns != x.ns {
+            let qual = get_space{ c, ns = x.ns }.qual
+            let mut b = message{ c }
+            if qual.len == 0 {
+                pushed{ ok = @fmt(&b, "`{}` is a C variable of capability `{}`: only a function at the top level, which declares it, can read it", str{ s = v.name }, str{ s = x.name.text }) }
+            } else {
+                pushed{ ok = @fmt(&b, "`{}` is a C variable of capability `{}`: only a function of namespace `{}`, which declares it, can read it", str{ s = v.name }, str{ s = x.name.text }, str{ s = qual }) }
+            }
+            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+        }
+        return v.ty
     }
 
     // Whether e is a capability with fields, or a pointer to one.

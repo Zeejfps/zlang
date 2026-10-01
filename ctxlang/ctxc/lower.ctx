@@ -14,7 +14,7 @@ namespace lower {
     type Id = types::Id
 
     const NONE: u32 = 4294967295
-    const VERSION: u64 = 16
+    const VERSION: u64 = 17
 
     // A function instance: a declaration and its generic arguments.
     struct Inst { decl: u32, targs: []Id }
@@ -29,6 +29,8 @@ namespace lower {
         fns:       list::List(ir::Func, Heap),
         consts:    list::List(ir::Const, Heap),
         const_ids: map::Map(u32, u32, Heap),       // by the const's Decl
+        vars:      list::List(ir::Var, Heap),
+        var_owners: list::List(u32, Heap),         // each var's capability Decl, which with its name finds it
         files:     list::List([]u8, Heap),
         file_ids:  map::Map(u32, u32, Heap),       // by the checker's file index
         // The function being lowered: its instance, and its locals' slots.
@@ -49,6 +51,8 @@ namespace lower {
             fns = list::new(ir::Func){ realloc = arena::alloc, heap = c.heap },
             consts = list::new(ir::Const){ realloc = arena::alloc, heap = c.heap },
             const_ids = map::new(u32, u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 },
+            vars = list::new(ir::Var){ realloc = arena::alloc, heap = c.heap },
+            var_owners = list::new(u32){ realloc = arena::alloc, heap = c.heap },
             files = list::new([]u8){ realloc = arena::alloc, heap = c.heap },
             file_ids = map::new(u32, u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 },
             decl = NONE, targs = no_ids{}, ret = types::VOID,
@@ -72,6 +76,7 @@ namespace lower {
             files = list::items{ list = l.files },
             types = list::items{ list = l.types },
             consts = list::items{ list = l.consts },
+            vars = list::items{ list = l.vars },
             fns = list::items{ list = l.fns },
             main,
         }
@@ -1554,6 +1559,26 @@ namespace lower {
         return i
     }
 
+    // The id of C variable `name` (§15) of capability t, or of the one t points to, given the
+    // first time it is met.
+    fn var_id { mut l: Lower, t: Id, name: []u8 } -> u32 {
+        let mut ct = t
+        match get{ l, t } { ptr{ elem } => { ct = elem } else => {} }
+        let v = check::cap_var{ c = l.c.*, t = ct, name } ifnull { @panic("lower: no such C variable") }
+        let vs = list::items{ list = l.vars }
+        let owners = list::items{ list = l.var_owners }
+        let mut i: usize = 0
+        while i < vs.len {
+            if owners[i] == v.owner and slice::eq_bytes{ a = vs[i].name, b = name } { return @as(u32, i) }
+            i = i + 1
+        }
+        let ty = tid{ &l, t = T{ &l, t = v.ty } }
+        if not list::push{ list = &l.vars, item = ir::Var{ name = v.name, symbol = v.name, ty } } or not list::push{ list = &l.var_owners, item = v.owner } {
+            @panic("lower: out of memory")
+        }
+        return @as(u32, vs.len)
+    }
+
     fn const_val { l: Lower, d: u32 } -> check::Val {
         let v = map::get{ m = l.c.values, key = d }
         if v == null { @panic("lower: a const without a value") }
@@ -1629,6 +1654,14 @@ namespace lower {
             let d = mk{ ty = et, k = ir::ExprKind::deref{ ptr = box{ l, e = b }, pos = epos{ &l, e } } }
             let ty = tid{ &l, t }
             return mk{ ty, k = ir::ExprKind::field{ base = box{ l, e = d }, index = field_index{ &l, t = elem, name = name.text } } }
+        }
+        // A capability's C variable: its value, after evaluating the base unless it is a name.
+        if check::access_is{ c = l.c.*, e, a = check::Access::cvar } {
+            let ty = tid{ &l, t }
+            let v = mk{ ty, k = ir::ExprKind::cvar{ id = var_id{ &l, t = bt, name = name.text } } }
+            match base.k { path => { return v } else => {} }
+            let b = ex{ &l, e = base }
+            return mk{ ty, k = ir::ExprKind::seq{ first = box{ l, e = b }, then = box{ l, e = v } } }
         }
         let is_ptr = check::access_is{ c = l.c.*, e, a = check::Access::sptr }
         if is_ptr or check::access_is{ c = l.c.*, e, a = check::Access::slen } {

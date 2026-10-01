@@ -1,8 +1,17 @@
-// std: os on Windows. The platform's layer (spec §17): what io and mem need from the operating
-// system, over the C runtime's _write and _read and the kernel's VirtualAlloc. Every layer
-// declares the same functions; std/os/posix is Linux's and macOS's, and a build compiles one.
+// std: os on Windows. The platform's layer (spec §17): what io, mem and proc need from the
+// operating system, over the C runtime's _write and _read, the kernel's VirtualAlloc, and the
+// runtime's ctx_proc_env. Every layer declares the same functions; std/os/posix is Linux's and
+// macOS's, and a build compiles one.
 
 namespace os {
+    // What std's Proc holds on this platform: nothing, since Windows reaches the environment
+    // through functions.
+    capability Proc
+
+    // The runtime's (ctxrt.c), which converts from UTF-16.
+    #c::symbol{ name = "ctx_proc_env" }
+    extern fn sys_env { mut proc: Proc, name: []u8, mut value: []u8 } -> bool
+
     // _write and _read take an unsigned int count and return an int: at most this many a call.
     const CHUNK: usize = 1073741824
 
@@ -38,5 +47,13 @@ namespace os {
     // memory.
     fn pages { mut mem: Mem, size: usize } -> ?*mut u8 {
         return VirtualAlloc{ &mem, address = null, size, kind = MEM_COMMIT | MEM_RESERVE, protect = PAGE_READWRITE }
+    }
+
+    // The value of environment variable `name`, or null if it isn't set. It lives until the
+    // program ends.
+    fn env { mut proc: Proc, name: []u8 } -> ?[]u8 {
+        let mut value: []u8 = slice::empty(u8){}
+        if not sys_env{ &proc, name, value = &value } { return null }
+        return value
     }
 }

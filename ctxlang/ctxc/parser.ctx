@@ -277,14 +277,15 @@ namespace parser {
             let name = ident{ &p }
             expect{ &p, k = tok::Kind::colon }
             let ty = type_expr{ &p }
-            add{ &p, xs = &xs, item = syntax::Field{ span = span_from{ p, start }, name, ty } }
+            add{ &p, xs = &xs, item = syntax::Field{ span = span_from{ p, start }, name, ty, external = false } }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         expect{ &p, k = tok::Kind::rbrace }
         return list::items{ list = xs }
     }
 
-    // A capability's `{ name: T, ..Name, ... }`: its fields, and in includes each `..Name`.
+    // A capability's `{ name: T, extern name: T, ..Name, ... }`: its fields, C variables among
+    // them, and in includes each `..Name`.
     fn cap_fields { mut p: Parser, mut includes: list::List(syntax::Include, arena::Arena) } -> []syntax::Field {
         let mut xs = list::new(syntax::Field){ realloc = arena::alloc, heap = p.heap }
         expect{ &p, k = tok::Kind::lbrace }
@@ -294,10 +295,11 @@ namespace parser {
                 let ty = type_expr{ &p }
                 add{ &p, xs = &includes, item = syntax::Include{ span = span_from{ p, start }, ty, at = xs.len } }
             } else {
+                let external = accept{ &p, k = tok::Kind::kw_extern }
                 let name = ident{ &p }
                 expect{ &p, k = tok::Kind::colon }
                 let ty = type_expr{ &p }
-                add{ &p, xs = &xs, item = syntax::Field{ span = span_from{ p, start }, name, ty } }
+                add{ &p, xs = &xs, item = syntax::Field{ span = span_from{ p, start }, name, ty, external } }
             }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }

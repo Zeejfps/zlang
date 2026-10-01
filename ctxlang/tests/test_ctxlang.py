@@ -5730,9 +5730,12 @@ fn main { mut l: m::L } -> i32 {
             # no cycles
             ('capability P { ..P }\nfn main {} {}', 'capability `P` includes itself', 1, 16),
             ('capability P { ..Q, f: extern fn{} }\ncapability Q { ..P }\nfn main {} {}', 'capability `P` includes itself, through `Q`', 2, 16),
-            # only a capability with fields
-            ('capability L\ncapability X { ..L }\nfn main {} {}', "capability `X` can't include `L`: it has no fields", 2, 16),
-            ('struct S { a: i32 }\ncapability X { ..S }\nfn main {} {}', 'capability `X` can only include a capability with fields, not S', 2, 16),
+            # only a capability, and in one with fields only one with fields
+            ('capability L\ncapability X { f: extern fn{}, ..L }\nfn main {} {}', "capability `X` can't include `L`: it has no fields", 2, 32),
+            ('capability L\ncapability X { ..L, f: extern fn{} }\nfn main {} {}', "capability `X` can't include `L`: it has no fields", 2, 16),
+            (CAP_CHAIN + 'capability L\ncapability X { ..m::A, ..L }\nfn main {} {}', "capability `X` can't include `L`: it has no fields", 17, 24),
+            ('capability V { extern opterr: i32 }\ncapability X { f: extern fn{}, ..V }\nfn main {} {}', "capability `X` can't include `V`: it has only C variables", 2, 32),
+            ('struct S { a: i32 }\ncapability X { ..S }\nfn main {} {}', 'capability `X` can only include a capability, not S', 2, 16),
             # it converts only to what it includes
             (CAP_CHAIN + 'fn need { mut b: m::B } {}\nfn main { mut l: m::L } { let mut a = m::load_a{ &l }\n    need{ b = &a } }', 'expected *mut B, got *mut A', 18, 15),
             (CAP_CHAIN + 'fn main { mut l: m::L } { let a = m::load_a{ &l }\n    let b: m::B = a }', 'expected B, got A', 17, 19),
@@ -5776,6 +5779,91 @@ fn main { mut io: Io, mut l: m::L } -> i32 {
     return 0
 }
 """, "2\n")
+
+    def test_c_variables(self):
+        # `extern name: T` in a capability is the C variable `name` (spec §15): getopt's here,
+        # which every libc has. A function of the namespace that declares it reads it through
+        # the capability, or a pointer to one; it takes no space, so a capability with only
+        # variables is one `main` receives. One without fields may be included by one that has
+        # none either, and converts to it, so another namespace can hold a platform's.
+        self.assertOutput("""
+namespace getopt {
+    capability Opts {
+        extern opterr: i32,
+        extern optind: i32,
+    }
+    fn errors_on { mut o: Opts } -> bool { return o.opterr != 0 }
+    fn index { p: *Opts } -> i32 { return p.optind }
+}
+
+namespace m {
+    capability L
+    #c::symbol{ name = "llabs" }
+    extern fn abs { n: i64 } -> i64
+    capability M { f: extern fn{ n: i64 } -> i64, extern optind: i32 }
+    fn load { mut l: L } -> M { return M{ f = abs } }
+    fn next { mut x: M } -> i64 { return x.f{ n = -10 } + @as(i64, x.optind) }
+}
+
+capability Bare
+capability Mine { ..getopt::Opts, ..Bare }
+
+fn bare { mut b: Bare } -> i32 { return 3 }
+
+fn main { mut io: Io, mut o: getopt::Opts, mut mine: Mine, mut l: m::L } -> i32 {
+    io::println_bool{ &io, n = getopt::errors_on{ &o } }
+    io::println_i64{ &io, n = getopt::index{ p = &o } }
+    io::println_bool{ &io, n = getopt::errors_on{ o = &mine } }
+    io::println_i64{ &io, n = bare{ b = &mine } }
+    let mut x = m::load{ &l }
+    io::println_i64{ &io, n = m::next{ &x } }
+    io::println_u64{ &io, n = @size_of(getopt::Opts) + @size_of(Mine) + @size_of(m::M) }
+    return 0
+}
+""", "true\n1\ntrue\n3\n11\n8\n")
+
+    def test_c_variable_ir(self):
+        # A variable is an item, declared once however many capabilities read it, and a read is
+        # its value.
+        from toolchain import ir_sources
+        text = ir_sources([("""
+namespace g {
+    capability O { extern optind: i32 }
+    fn a { mut o: O } -> i32 { return o.optind }
+    fn b { p: *O } -> i32 { return p.optind }
+}
+fn main { mut o: g::O } -> i32 { return g::a{ &o } + g::b{ p = &o } }
+""", None)])
+        self.assertRegex(text, r'\(var 0 "optind" "optind" \d+\)')
+        self.assertNotIn('(var 1', text)
+        self.assertEqual(text.count('(cvar '), 2)
+
+    def test_c_variable_errors(self):
+        for src, msg, line, col in [
+            # read only by a function of the namespace that declares the capability
+            ('namespace g { capability O { extern opterr: i32 } }\nfn main { mut o: g::O } -> i32 { return o.opterr }',
+             '`opterr` is a C variable of capability `O`: only a function of namespace `g`, which declares it, can read it', 2, 42),
+            ('capability O { extern opterr: i32 }\nnamespace q { fn f { mut o: O } -> i32 { return o.opterr } }\nfn main {} {}',
+             '`opterr` is a C variable of capability `O`: only a function at the top level, which declares it, can read it', 2, 50),
+            ('namespace g { capability O { extern opterr: i32 } }\ncapability X { ..g::O }\nfn main { mut x: X } -> i32 { return x.opterr }',
+             '`opterr` is a C variable of capability `O`: only a function of namespace `g`, which declares it, can read it', 3, 39),
+            # its value, not a place
+            ('capability O { extern opterr: i32 }\nfn main { mut o: O } { o.opterr = 1 }', '`.opterr` is not a place', 2, 25),
+            ('capability O { extern opterr: i32 }\nfn main { mut o: O } { let p = &o.opterr }', '`.opterr` is not a place', 2, 34),
+            # of a type C stores
+            ('capability O { extern x: []u8 }\nfn main {} {}', "capability `O`'s C variable `x` can't have type []u8: C has no equivalent of it", 1, 16),
+            ('capability O { extern x: Io }\nfn main {} {}', "capability `O`'s C variable `x` can't have type Io: C has no equivalent of it", 1, 16),
+            ('capability O { extern x: fn{} }\nfn main {} {}', "capability `O`'s C variable `x` can't have type fn{}: C has no equivalent of it", 1, 16),
+            # one name, once
+            ('capability O { extern x: i32, x: extern fn{} }\nfn main {} {}', 'duplicate field `x`', 1, 31),
+            ('capability O { extern x: i32, extern x: i32 }\nfn main {} {}', 'duplicate field `x`', 1, 31),
+            ('capability V { extern x: i32 }\ncapability O { ..V, extern x: i32 }\nfn main {} {}', 'capability `O` declares `x`, which it includes from `V`', 2, 21),
+            ('capability V { extern x: i32 }\ncapability W { extern x: i32 }\ncapability O { ..V, ..W }\nfn main {} {}',
+             'capability `O` includes `x` twice: from `V` and from `W`', 3, 21),
+            # `extern` marks a capability's field only
+            ('struct S { extern x: i32 }\nfn main {} {}', "expected a name, found 'extern'", 1, 12),
+        ]:
+            self.assertCapError(src, msg, line, col)
 
 
 # A capability with fields, M, and the function of its namespace that makes one.

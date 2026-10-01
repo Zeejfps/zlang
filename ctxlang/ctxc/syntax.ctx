@@ -53,8 +53,9 @@ namespace syntax {
     // A context field, of a function or a function type.
     struct Param { span: Span, mutable: bool, name: Name, ty: TypeExpr }
 
-    // A struct field or a field of a union variant's payload.
-    struct Field { span: Span, name: Name, ty: TypeExpr }
+    // A struct field or a field of a union variant's payload. In a capability's braces, an
+    // external one, `extern name: T`, is a C variable (§15).
+    struct Field { span: Span, name: Name, ty: TypeExpr, external: bool }
 
     // A variant without a payload has null fields, and `v{}` has none.
     struct Variant { span: Span, name: Name, fields: ?[]Field }

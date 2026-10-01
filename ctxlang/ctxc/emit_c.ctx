@@ -17,6 +17,7 @@
 //                value is xN. A `#c::callback` fn as one is kK, a C function with the type's
 //                params that calls fN, supplying the capabilities C doesn't pass.
 //   consts       static const qvN, initialized with the literals of its value.
+//   C variables  xvN, declared with the C symbol as its assembler name, as an extern fn is.
 //   fn values    ctx_fn*: a record whose first member is the code, called with the record and
 //                the function type's fields in name order. fnref gives a static record per
 //                function (gN, code hN); a bind allocates one (struct bK); a conversion to a
@@ -410,6 +411,11 @@ namespace emit {
 
     fn prototypes { mut e: E } {
         let mut i = 0
+        while i < e.p.vars.len {
+            c_variable{ &e, id = @as(u32, i) }
+            i = i + 1
+        }
+        i = 0
         while i < e.p.fns.len {
             let f = e.p.fns[i]
             if f.symbol.len > 0 { c_prototype{ &e, f } }
@@ -430,6 +436,18 @@ namespace emit {
         c_params{ &e, params = f.params }
         put{ &e, a = ") __asm__(CTX_SYMBOL(" }
         cstr{ &e, b = f.symbol }
+        put{ &e, a = "));\n" }
+    }
+
+    //   extern T xvN __asm__(CTX_SYMBOL("symbol"));
+    fn c_variable { mut e: E, id: u32 } {
+        let v = e.p.vars[id]
+        put{ &e, a = "extern " }
+        tn{ &e, t = v.ty }
+        put{ &e, a = " xv" }
+        num{ &e, n = id }
+        put{ &e, a = " __asm__(CTX_SYMBOL(" }
+        cstr{ &e, b = v.symbol }
         put{ &e, a = "));\n" }
     }
 
@@ -1111,6 +1129,10 @@ namespace emit {
             local{ slot } => { local{ &e, slot } }
             constref{ id } => {
                 put{ &e, a = "qv" }
+                num{ &e, n = id }
+            }
+            cvar{ id } => {
+                put{ &e, a = "xv" }
                 num{ &e, n = id }
             }
             deref{ ptr } => {

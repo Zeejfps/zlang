@@ -378,7 +378,7 @@ namespace tree {
         while i < xs.len {
             let f = xs[i]
             start{ &d, at = f.span.start }
-            put{ &d, s = "field " }
+            put{ &d, s = if f.external { "extern field " } else { "field " } }
             name{ &d, n = f.name }
             end{ &d }
             sub_type{ &d, t = f.ty }
@@ -1000,6 +1000,12 @@ namespace decls {
                     pushed{ ok = @fmt(&out, "  {}: {}", check::str{ s = f.name }, check::tstr{ c, t = f.ty }) }
                     if o != null and j < o.offs.len { pushed{ ok = @fmt(&out, " @{}", o.offs[j]) } }
                     dump::put{ &out, s = "\n" }
+                    j = j + 1
+                }
+                j = 0
+                while j < d.vars.len {
+                    let v = d.vars[j]
+                    pushed{ ok = @fmt(&out, "  extern {}: {}\n", check::str{ s = v.name }, check::tstr{ c, t = v.ty }) }
                     j = j + 1
                 }
             }
