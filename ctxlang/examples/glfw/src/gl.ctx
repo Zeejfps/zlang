@@ -18,8 +18,8 @@ namespace gl {
         let some{ value = clear_color } = get_proc{ name = "glClearColor" } else { return null }
         let some{ value = clear } = get_proc{ name = "glClear" } else { return null }
         return Gl{
-            clear_color = @cast(extern fn{ r: f32, g: f32, b: f32, a: f32 }, clear_color),
-            clear = @cast(extern fn{ mask: u32 }, clear),
+            clear_color = @cast(_, clear_color),
+            clear = @cast(_, clear),
         }
     }
 }

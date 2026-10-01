@@ -68,7 +68,3 @@ numbers, which PLAN.md and commit messages cite; git history has the resolved on
   mutable capability, and `let ... else` bindings are read-only (spec §11, Let-else), so
   examples/glfw takes `let some{ value = loaded } = gl::load{ ... } else { ... }` and then
   `let mut gl = loaded`. `let some{ value = mut gl } = ...` would take one.
-- **22. A loaded function's type is written twice.** `capability Gl` declares each field's
-  `extern fn{...}` type, and `gl::load` writes it again in the `@cast` that fills the field
-  (examples/glfw). A `@cast` that takes its target from the type expected, as a literal does
-  (spec §11 Literals), would write it once; a full GL binding has hundreds of them.

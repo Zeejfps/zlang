@@ -1673,6 +1673,53 @@ fn main { mut io: Io } {
     def test_value_argument_parsed_as_expression(self):
         self.assertCompileError('fn main { mut io: Io } { let x = @addr(i32) }', '`i32` is a type, not a value')
 
+    def test_type_argument_from_the_type_expected(self):
+        # `_` is the type expected: a local's, an assignment's, a field's, a return type, the
+        # other operand's, and an optional's payload.
+        self.assertOutput("""
+#c::symbol{ name = "llabs" }
+extern fn long_abs { n: i64 } -> i64
+type Abs = extern fn{ n: i64 } -> i64
+struct Fns { abs: Abs }
+
+fn small { n: i32 } -> i32 { return n }
+fn back { p: *u8 } -> ?Abs { return @cast(_, p) }
+
+fn main { mut io: Io } -> i32 {
+    let f: Abs = long_abs
+    let p: *u8 = @cast(_, f)
+    let mut g: Abs = long_abs
+    g = @cast(_, p)
+    let fns = Fns{ abs = @cast(_, p) }
+    let big: i64 = 300
+    let a: i32 = @as(_, big)
+    let o: ?i16 = @as(_, big)
+    let t: u8 = @trunc(_, big)
+    let some{ value = h } = back{ p } else { return 1 }
+    let some{ value = s } = o else { return 1 }
+    io::println_i64{ &io, n = g{ n = -4 } + fns.abs{ n = -2 } + h{ n = -1 } }
+    io::println_i64{ &io, n = small{ n = @as(_, big) } + a + 1 }
+    io::println_i64{ &io, n = @as(i64, t) + s }
+    return 0
+}
+""", '7\n601\n344\n')
+
+    def test_type_argument_from_the_type_expected_errors(self):
+        no_type = 'takes the type expected here, and nothing here expects one: write the type'
+        elsewhere = '`_` is a type only as the type argument of @as, @trunc or @cast, where it is the type expected'
+        for src, msg in [
+            ('fn main {} { let big: i64 = 3\n    let x = @as(_, big) }', '@as(_, ...) ' + no_type),
+            ('fn main {} { let big: i64 = 3\n    if @trunc(_, big) == 3 {} }', '@trunc(_, ...) ' + no_type),
+            ('fn main {} { let x: u8 = 3\n    let p = @cast(_, &x) }', '@cast(_, ...) ' + no_type),
+            # a generic parameter not yet inferred isn't a type expected
+            ('fn id(T) { x: T } -> T { return x }\nfn main {} { let big: i64 = 3\n    _ = id{ x = @as(_, big) } }', '@as(_, ...) ' + no_type),
+            ('fn main {} { let x: u8 = 3\n    let s: []u8 = @cast(_, &x) }', '@cast needs a pointer or extern fn target type, got []u8'),
+            ('fn main {} { let x: _ = 1 }', elsewhere),
+            ('fn main {} { let n = @size_of(_) }', elsewhere),
+            ('fn f { x: ?_ } {}\nfn main {} {}', elsewhere),
+        ]:
+            self.assertCompileError(src, msg)
+
 
 class LoopControl(Base):
     def test_break_and_continue(self):

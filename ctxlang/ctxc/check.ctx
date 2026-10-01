@@ -1161,6 +1161,10 @@ namespace check {
         }
         let first = lookup_path{ c, ns = sc.ns, name = s0.name.text }
         if first == null {
+            if segs.len == 1 and is_infer{ segs } {
+                error{ &c, at = s0.name.span, msg = "`_` is a type only as the type argument of @as, @trunc or @cast, where it is the type expected" }
+                return types::ERROR
+            }
             unknown{ &c, n = s0.name }
             return types::ERROR
         }
@@ -6020,14 +6024,49 @@ namespace check {
 
     // ---- builtins (the parser has checked each name and its number of arguments)
 
+    // `_` alone: as the type argument of @as, @trunc or @cast, the type expected (§13).
+    fn is_infer { segs: []syntax::Seg } -> bool {
+        return segs.len == 1 and segs[0].targs == null and slice::eq_bytes{ a = segs[0].name.text, b = "_" }
+    }
+
+    // The type `_` stands for in @as, @trunc or @cast: the type expected, or its payload if that
+    // is optional, as for a string literal (§11 Literals).
+    fn expected_targ { mut c: Checker, name: []u8, exp: Id, at: source::Span } -> Id {
+        if exp != types::NO_TYPE {
+            let mut want = types::prune{ s = c.ty, t = exp }
+            match types::get{ s = c.ty, id = want } {
+                opt{ elem } => { want = types::prune{ s = c.ty, t = elem } }
+                else => {}
+            }
+            match types::get{ s = c.ty, id = want } {
+                var => {}
+                error => { return types::ERROR }
+                else => { return want }
+            }
+        }
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "@{}(_, ...) takes the type expected here, and nothing here expects one: write the type", str{ s = name }) }
+        error{ &c, at, msg = utf8::view{ b } }
+        return types::ERROR
+    }
+
     fn builtin { mut c: Checker, e: syntax::Expr, name: syntax::Name, targ: ?*syntax::TypeExpr, args: []syntax::Expr, exp: Id } -> Id {
         let at = expr_at{ e }
-        let mut tt = types::NO_TYPE
-        if targ != null { tt = rtype{ &c, te = targ.*, sc = c.sc, allow_bound = false } }
         let n = name.text
+        let typed_arg = slice::eq_bytes{ a = n, b = "as" } or slice::eq_bytes{ a = n, b = "trunc" } or slice::eq_bytes{ a = n, b = "cast" }
+        let mut tt = types::NO_TYPE
+        if targ != null {
+            let te = targ.*
+            let infer = match te.k { path{ segs } => { is_infer{ segs } } else => { false } }
+            if infer and typed_arg {
+                tt = expected_targ{ &c, name = n, exp, at = te.span }
+                if not map::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = tt } { @panic("check: out of memory") }
+            } else {
+                tt = rtype{ &c, te, sc = c.sc, allow_bound = false }
+            }
+        }
         if slice::eq_bytes{ a = n, b = "size_of" } or slice::eq_bytes{ a = n, b = "align_of" } { return types::USIZE }
         // After a syntax error, a builtin may lack arguments the parser has reported missing.
-        let typed_arg = slice::eq_bytes{ a = n, b = "as" } or slice::eq_bytes{ a = n, b = "trunc" } or slice::eq_bytes{ a = n, b = "cast" }
         let need: usize = if typed_arg or slice::eq_bytes{ a = n, b = "addr" } { 1 } else if slice::eq_bytes{ a = n, b = "panic" } or slice::eq_bytes{ a = n, b = "fmt" } { 0 } else { 2 }
         if args.len < need or (typed_arg and targ == null) { return types::ERROR }
         if slice::eq_bytes{ a = n, b = "panic" } {

@@ -836,6 +836,11 @@ Increments, each landing with tests and a refreshed bootstrap:
      C declares a `union`, and a literal is `({ tN t; memset(&t, 0, sizeof t); t.m_f = v; t; })`
      since C leaves a union literal's other bytes unspecified. examples/sdl reads SDL2's
      `SDL_Event` through one.
+   - **Inferred type arguments** — *done* (FRICTION #22). `@as`, `@trunc` and `@cast` take `_`
+     for their type, the type expected there (spec §13, rule 5), so a binding's `load` writes
+     each function's type once, in the capability: `clear = @cast(_, clear)`. The parser
+     already read `_` as a type path; the checker takes the expected type, as a string literal
+     does, and records it as the type argument's, and lowering is unchanged.
 7. **A smaller runtime: std over the OS's C functions** — *io and mem done.* std's `io`, `fs`
    and `mem` called `ctx_io_write` and the rest, thin C wrappers over libc and the OS. They move
    into ctxlang, one at a time, over externs to the OS itself, and the runtime keeps only what

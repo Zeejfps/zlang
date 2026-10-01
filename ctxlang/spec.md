@@ -482,6 +482,7 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 2. `@name(...)` is always a builtin call, never generic application (§9). The parentheses are required, even with no arguments.
 3. Each builtin has the signature below. Type arguments always come before value arguments, so the builtin's name alone says whether each argument is parsed as a type or an expression. Only `@fmt` takes any number of arguments.
 4. An unknown builtin, or a call with the wrong number of arguments, is a syntax error.
+5. The type argument of `@as`, `@trunc` or `@cast` may be `_`: the type expected where the call appears (§11 Literals), or its payload if that is optional. In `Gl{ clear = @cast(_, p) }` it is the field's type, and in `let n: i32 = @as(_, big)` the local's. It is an error where nothing expects a type, as in `let n = @as(_, big)`. `_` is a type nowhere else.
 
 | Signature | Result | Meaning |
 |---|---|---|
