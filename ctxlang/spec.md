@@ -593,7 +593,7 @@ Settled questions are removed, and the rest keep their numbers.
 - **6. Imports:** some form of `use list::List` to shorten long paths?
 - **7. Variant shorthand:** should `.variant{...}` be allowed when the expected type is known?
 - **9. Large stack frames:** should the compiler error or warn above a size limit? (Page allocation is now the `Mem` capability, §15.) Should pages be freeable?
-- **10. Capabilities with fields (§15, rules 5 to 8):** maybe we don't need them. examples/glfw holds GL's functions in plain structs instead, each function's type taking a capability without fields (`clear: extern fn{ mut gl: Gl, mask: u32 }`), as GLFW's extern fns take `Glfw`. That costs a `&gl` in every call, and gives up only "holding one means its functions were found", which a `@cast` can forge anyway (rule 4). If nothing else needs them, rules 5 to 8 and their checks can go.
+- **10. Capabilities with fields (§15, rules 5 to 8):** maybe we don't need them. examples/glfw holds GL's functions in plain structs instead, each function's type taking a capability without fields (`clear: extern fn{ mut glctx: Gl, mask: u32 }`), as GLFW's extern fns take `Glfw`. That costs a `&glctx` in every call, and gives up only "holding one means its functions were found", which a `@cast` can forge anyway (rule 4). If nothing else needs them, rules 5 to 8 and their checks can go.
 
 ## 17. Standard library
 
