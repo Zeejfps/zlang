@@ -1,6 +1,6 @@
 // Opens a window for two seconds, or until it is closed or Escape is pressed, through the GLFW
 // binding in glfw.ctx, and fills it with a colour that fades, through the GL functions gl.ctx
-// looks up into its `Gl` capability.
+// looks up.
 
 // What the key callback records, for main to report.
 struct App { keys: i64 }
@@ -15,7 +15,14 @@ fn on_key { mut glfw: glfw::Glfw, window: *mut glfw::Window, key: i32, action: i
     if key == glfw::KEY_ESCAPE { glfw::set_should_close{ &glfw, window } }
 }
 
-fn main { mut io: Io, mut glfw: glfw::Glfw, mut glctx: gl::Gl } -> i32 {
+// Prints the context's GL version. It calls only 1.1's functions, so it takes a Gl1_1, which
+// main's Gl2_0 includes.
+fn print_version { mut io: Io, mut gl: gl::Gl1_1 } {
+    io::print{ &io, s = "GL version " }
+    io::println_i64{ &io, n = gl::version{ &gl } }
+}
+
+fn main { mut io: Io, mut glfw: glfw::Glfw } -> i32 {
     if not glfw::init{ &glfw } {
         io::eprintln{ &io, s = "glfw: init failed" }
         return 1
@@ -39,12 +46,11 @@ fn main { mut io: Io, mut glfw: glfw::Glfw, mut glctx: gl::Gl } -> i32 {
     }
     defer glfw::destroy_window{ &glfw, window }
     glfw::make_current{ &glfw, window }
-    let gl = gl::load_2_0{ get_proc = glfw::proc_address{ &glfw, _ }, &glctx } ifnull {
+    let mut gl = gl::load_2_0{ get_proc = glfw::proc_address{ &glfw, _ } } ifnull {
         io::eprintln{ &io, s = "gl: version 2.0 or its functions missing" }
         return 1
     }
-    io::print{ &io, s = "GL version " }
-    io::println_i64{ &io, n = gl::version{ &glctx, v1_1 = gl.v1_1 } }
+    print_version{ &io, &gl }
     let mut app = App{ keys = 0 }
     glfw::set_user_pointer{ &glfw, window, pointer = @cast(*mut u8, &app) }
     glfw::set_key_callback{ &glfw, window, callback = on_key }
@@ -52,8 +58,8 @@ fn main { mut io: Io, mut glfw: glfw::Glfw, mut glctx: gl::Gl } -> i32 {
     while not glfw::should_close{ &glfw, window } and glfw::time{ &glfw } < 2.0 {
         let t = @trunc(i32, @as(i64, glfw::time{ &glfw } * 1000.0))
         let fade = @as(f32, t) / 2000.0
-        gl.v1_1.clear_color{ &glctx, r = 0.1, g = 0.3 + 0.5 * fade, b = 0.6, a = 1.0 }
-        gl.v1_1.clear{ &glctx, mask = gl::COLOR_BUFFER_BIT }
+        gl.clear_color{ r = 0.1, g = 0.3 + 0.5 * fade, b = 0.6, a = 1.0 }
+        gl.clear{ mask = gl::COLOR_BUFFER_BIT }
         glfw::swap_buffers{ &glfw, window }
         glfw::poll_events{ &glfw }
     }

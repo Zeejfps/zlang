@@ -826,6 +826,25 @@ Increments, each landing with tests and a refreshed bootstrap:
      15); in C it is a struct of function pointers, and a call through a field is a call of the
      pointer. examples/glfw's `Gl` holds glClearColor and glClear, and `main` no longer receives
      a `Gl` from the runtime before a context exists.
+   - **Capability inclusion** — *done.* `capability Gl2_0 { ..Gl1_1, use_program: ... }` has
+     Gl1_1's fields where `..Gl1_1` stands, and so those Gl1_1 includes: a binding declares each
+     GL version as the one before plus what it added, and a function takes the version it calls,
+     `fn draw { mut gl: gl::Gl2_0 }`, to which a `&gl` of a Gl3_3 converts. A capability
+     converts to one it includes as a value (a copy, since its fields never change) and at a
+     `mut` field, where the callee gets the pointer itself if the included fields come first, or
+     else the address of a copy in a local. Other pointers don't convert, since that copy
+     mustn't outlive the call. The copy is only the same as the original because neither
+     changes: a field can't be assigned (rule 7), and neither can a whole capability or a value
+     holding one (rule 8), but for a `let x: T`'s one assignment; otherwise a callee's `a = b`
+     would reach the original or miss it depending on field order. C is built with
+     `-fno-strict-aliasing`, since the callee reads a B through an A pointer (and `@cast` reads
+     memory as another type anyway). A literal may spread one it includes, `Gl3_3{ ..base, ... }`, so
+     each loader builds on the one before; a spread is only where a literal may be (rule 6), so
+     no field is read outside the namespace. A field reaching a capability twice, as through a
+     diamond, and a cycle are errors. In the IR, `(with T SLOT INIT BODY)` sets a local that
+     lowering adds, then gives BODY (version 16): a copy and a spread read their source once
+     through one. examples/glfw's gl.ctx is `Gl1_1` to `Gl3_3` this way, after a detour through
+     plain structs under a field-less `Gl`, which cost a `&glctx` in every call.
    - **Untagged unions** — *done* (§16 Q8, closed). `extern union Name { f: T, ... }` is C's
      union: every field at offset 0, size the largest rounded to the largest alignment. Fields
      read and write as a struct's; no `match` or `let … else` (no tag); a literal sets exactly
@@ -1022,7 +1041,7 @@ Q4). Optional chaining (`a?.b`) needs no lambdas, but nothing in FRICTION.md ask
 
 C11 with GNU extensions (overflow builtins, empty structs, statement expressions), built with gcc
 (MinGW on Windows), Apple clang on macOS, or `zig cc` (`CTX_CC=zig`). Flags: `-std=gnu11 -O1 -w
--fwrapv -fno-optimize-sibling-calls`. Layout follows ctxi's exactly.
+-fwrapv -fno-optimize-sibling-calls -fno-strict-aliasing`. Layout follows ctxi's exactly.
 
 | ctxlang | C | Notes |
 |---|---|---|

@@ -518,9 +518,15 @@ namespace types {
     }
 
     fn find_field { fields: []Field, name: []u8 } -> ?Field {
+        let i = field_index{ fields, name } ifnull { return null }
+        return fields[i]
+    }
+
+    // The index of the field named name, or null.
+    fn field_index { fields: []Field, name: []u8 } -> ?usize {
         let mut i: usize = 0
         while i < fields.len {
-            if slice::eq_bytes{ a = fields[i].name, b = name } { return fields[i] }
+            if slice::eq_bytes{ a = fields[i].name, b = name } { return i }
             i = i + 1
         }
         return null

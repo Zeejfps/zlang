@@ -60,6 +60,7 @@ namespace check {
         values:   []i64,                // an enum's, one per variant
         symbol:   []u8,                 // an extern fn's C symbol
         callback: bool,                 // a fn with `#c::callback`: C may call it (§18)
+        includes: []u32,                // what a capability includes, directly or not (§15)
     }
 
     // What a name in a path refers to.
@@ -109,6 +110,8 @@ namespace check {
         fns:       list::List(u32, Heap),
         externs:   list::List(u32, Heap),
         caps:      list::List(u32, Heap),          // capabilities with fields
+        caps_done: map::Map(u32, bool, Heap),      // those whose fields are resolved
+        cap_stack: list::List(u32, Heap),          // those being resolved, for a cycle of inclusions
         alias_stack: list::List(u32, Heap),
         const_stack: list::List(u32, Heap),
         // Side tables, keyed by key{ file, id }.
@@ -147,6 +150,7 @@ namespace check {
         convs:     map::Map(u64, Conv, Heap),         // an implicit conversion of its value
         refs:      map::Map(u64, PathRef, Heap),      // what a path (or a callee) names
         literal:   map::Map(u64, bool, Heap),         // braces: a literal (true) or a call
+        spreads:   map::Map(u64, bool, Heap),         // braces whose `..e`s are checked
         access:    map::Map(u64, Access, Heap),       // how a field or index reaches its value
         narrowed:  map::Map(u64, Id, Heap),           // a narrowed field's own ?T
         local_of:  map::Map(u64, u32, Heap),          // the local a `let` or a binder's field declares
@@ -259,7 +263,8 @@ namespace check {
             decls = list::new(Decl){ realloc = arena::alloc, &heap },
             structs = ids{ &heap }, unions = ids{ &heap }, enums = ids{ &heap }, aliases = ids{ &heap },
             consts = ids{ &heap }, fns = ids{ &heap }, externs = ids{ &heap }, caps = ids{ &heap },
-            alias_stack = ids{ &heap }, const_stack = ids{ &heap },
+            caps_done = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            cap_stack = ids{ &heap }, alias_stack = ids{ &heap }, const_stack = ids{ &heap },
             decl_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             space_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             uses = map::new(u64, Ref){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
@@ -287,6 +292,7 @@ namespace check {
             convs = map::new(u64, Conv){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             refs = map::new(u64, PathRef){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             literal = map::new(u64, bool){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            spreads = map::new(u64, bool){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             access = map::new(u64, Access){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             narrowed = map::new(u64, Id){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             local_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
@@ -442,7 +448,7 @@ namespace check {
             kind, name, ns, qual = qualify{ c, ns, name = name.text }, syn = x, tparams,
             fields = slice::empty(types::Field){}, variants = slice::empty(Variant){},
             ret = types::VOID, ty = types::ERROR, values = slice::empty(i64){}, symbol = "",
-            callback = false,
+            callback = false, includes = slice::empty(u32){},
         }
         if not list::push{ list = &c.decls, item } or not map::put{ m = &c.decl_of, key = key{ file, id = x.id }, value = d } {
             @panic("check: out of memory")
@@ -549,17 +555,27 @@ namespace check {
 
     // §15: a capability's fields are C function pointers, called through it (§12, C function
     // pointers). A `?extern fn` would have to be read to be unwrapped, which a field can't be.
+    // `..Name` puts another's fields where it stands, so that one is resolved first, on demand.
     fn resolve_cap { mut c: Checker, d: u32 } {
+        if map::has{ m = c.caps_done, key = d } { return }
         let x = get_decl{ c, d }
         let sc = own_scope{ &c, d }
         let mut out = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        let mut from = list::new(u32){ realloc = arena::alloc, heap = c.heap }    // each field's inclusion, or NONE
+        let mut incl = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        push{ xs = &c.cap_stack, n = d }
         match x.syn.k {
-            cap{ fields = fs } => {
-                let fields = fs ifnull { return }
+            cap{ fields = fs, includes } => {
+                let fields = fs ifnull { slice::empty(syntax::Field){} }
+                let mut j: usize = 0
                 let mut i: usize = 0
-                while i < fields.len {
+                while i <= fields.len {
+                    while j < includes.len and includes[j].at == i {
+                        include_cap{ &c, d, inc = includes[j], sc, out = &out, from = &from, incl = &incl }
+                        j = j + 1
+                    }
+                    if i == fields.len { break }
                     let f = fields[i]
-                    if seen_field{ fields, i } { duplicate{ &c, what = "field", name = f.name, at = f.span } }
                     let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
                     let mut ok = t == types::ERROR
                     match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { func{ external } => { ok = external } else => {} }
@@ -568,13 +584,147 @@ namespace check {
                         pushed{ ok = @fmt(&b, "capability `{}`'s field `{}` must be a C function pointer, `extern fn{{ ... }}`, not {}", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t }) }
                         error{ &c, at = f.span, msg = utf8::view{ b } }
                     }
+                    let k = types::field_index{ fields = list::items{ list = out }, name = f.name.text }
+                    if k != null and f.name.text.len > 0 {
+                        let came = list::items{ list = from }[k]
+                        if came == NONE {
+                            duplicate{ &c, what = "field", name = f.name, at = f.span }
+                        } else {
+                            let mut b = message{ c }
+                            pushed{ ok = @fmt(&b, "capability `{}` declares `{}`, which it includes from `{}`", str{ s = x.name.text }, str{ s = f.name.text }, str{ s = get_decl{ c, d = came }.name.text }) }
+                            error{ &c, at = f.span, msg = utf8::view{ b } }
+                        }
+                    }
                     add_field{ xs = &out, f = types::Field{ name = f.name.text, mutable = false, ty = t } }
+                    push{ xs = &from, n = NONE }
                     i = i + 1
                 }
             }
             else => {}
         }
+        _ = list::pop{ list = &c.cap_stack }
+        put_bool{ m = &c.caps_done, k = d }
         list::at{ list = c.decls, i = d }.fields = list::items{ list = out }
+        list::at{ list = c.decls, i = d }.includes = list::items{ list = incl }
+    }
+
+    // `..Name` in capability d's braces: Name's fields, which must each reach d once. from
+    // records the inclusion each came through, and incl gains Name and what Name includes.
+    fn include_cap { mut c: Checker, d: u32, inc: syntax::Include, sc: Scope, mut out: list::List(types::Field, Heap), mut from: list::List(u32, Heap), mut incl: list::List(u32, Heap) } {
+        let x = get_decl{ c, d }
+        let t = rtype{ &c, te = inc.ty, sc, allow_bound = false }
+        if t == types::ERROR { return }
+        let mut i = NONE
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { cap{ decl } => { i = decl } else => {} }
+        let mut braced = false
+        if i != NONE {
+            match get_decl{ c, d = i }.syn.k { cap{ fields } => { braced = fields != null } else => {} }
+        }
+        if not braced {
+            let mut b = message{ c }
+            if i == NONE {
+                pushed{ ok = @fmt(&b, "capability `{}` can only include a capability with fields, not {}", str{ s = x.name.text }, tstr{ c, t }) }
+            } else {
+                pushed{ ok = @fmt(&b, "capability `{}` can't include `{}`: it has no fields", str{ s = x.name.text }, tstr{ c, t }) }
+            }
+            error{ &c, at = inc.span, msg = utf8::view{ b } }
+            return
+        }
+        // A cycle: Name is still being resolved, d through the ones after it.
+        let stack = list::items{ list = c.cap_stack }
+        let mut k: usize = 0
+        while k < stack.len and stack[k] != i { k = k + 1 }
+        if k < stack.len {
+            let mut b = message{ c }
+            let mut ok = @fmt(&b, "capability `{}` includes itself", str{ s = get_decl{ c, d = i }.name.text })
+            let mut n = k + 1
+            while n < stack.len {
+                let sep: utf8::String = if n == k + 1 { ", through " } else { ", " }
+                ok = ok and @fmt(&b, "{}`{}`", sep, str{ s = get_decl{ c, d = stack[n] }.name.text })
+                n = n + 1
+            }
+            pushed{ ok }
+            error{ &c, at = inc.span, msg = utf8::view{ b } }
+            return
+        }
+        resolve_cap{ &c, d = i }
+        let y = get_decl{ c, d = i }
+        let mut clash = false
+        let mut f: usize = 0
+        while f < y.fields.len {
+            let name = y.fields[f].name
+            let at = types::field_index{ fields = list::items{ list = out }, name }
+            if at == null {
+                add_field{ xs = &out, f = y.fields[f] }
+                push{ xs = &from, n = i }
+            } else if not clash and name.len > 0 {
+                clash = true
+                let came = list::items{ list = from }[at]
+                let mut b = message{ c }
+                if came == NONE {
+                    pushed{ ok = @fmt(&b, "capability `{}` declares `{}`, which it includes from `{}`", str{ s = x.name.text }, str{ s = name }, str{ s = y.name.text }) }
+                } else {
+                    pushed{ ok = @fmt(&b, "capability `{}` includes `{}` twice: from `{}` and from `{}`", str{ s = x.name.text }, str{ s = name }, str{ s = get_decl{ c, d = came }.name.text }, str{ s = y.name.text }) }
+                }
+                error{ &c, at = inc.span, msg = utf8::view{ b } }
+            }
+            f = f + 1
+        }
+        push{ xs = &incl, n = i }
+        let mut n: usize = 0
+        while n < y.includes.len {
+            push{ xs = &incl, n = y.includes[n] }
+            n = n + 1
+        }
+    }
+
+    // Whether a is a capability that includes capability b, directly or through others, and so
+    // converts to it (§15): a copy, since a capability's fields never change.
+    fn includes_cap { c: Checker, a: Id, b: Id } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = a } } {
+            cap{ decl = x } => {
+                match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = b } } {
+                    cap{ decl = y } => { return has_id{ xs = get_decl{ c, d = x }.includes, n = y } }
+                    else => { return false }
+                }
+            }
+            else => { return false }
+        }
+    }
+
+    // Whether pointer type a points to a capability that includes the one b points to, as a
+    // `mut` field's argument may (§15): `&gl` for `mut gl: Gl2_0`, with `gl: Gl3_3`.
+    fn includes_cap_ptr { c: Checker, a: Id, b: Id } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = a } } {
+            ptr{ elem = x, mutable = m } => {
+                match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = b } } {
+                    ptr{ elem = y, mutable = n } => { return (m or not n) and includes_cap{ c, a = x, b = y } }
+                    else => { return false }
+                }
+            }
+            else => { return false }
+        }
+    }
+
+    // Whether capability b's fields are the first of capability a's, as when a's first item is
+    // `..B`: then a pointer to an a is one to a b.
+    fn cap_prefix { c: Checker, a: Id, b: Id } -> bool {
+        let fa = cap_fields{ c, t = a }
+        let fb = cap_fields{ c, t = b }
+        if fb.len > fa.len { return false }
+        let mut i: usize = 0
+        while i < fb.len {
+            if not slice::eq_bytes{ a = fa[i].name, b = fb[i].name } { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    fn cap_fields { c: Checker, t: Id } -> []types::Field {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            cap{ decl } => { return get_decl{ c, d = decl }.fields }
+            else => { return slice::empty(types::Field){} }
+        }
     }
 
     // Whether t is a capability with fields (§15), which only a function of its namespace can
@@ -584,6 +734,49 @@ namespace check {
             cap{ decl } => { return get_decl{ c, d = decl }.fields.len > 0 }
             else => { return false }
         }
+    }
+
+    // Whether a value of type t is or holds a capability with fields, as a field, an element or
+    // a payload. A place of such a type is assigned only once (§15): a `mut` field may have been
+    // given a copy of the capability, which replacing it would leave behind.
+    fn holds_cap { mut c: Checker, t: Id, depth: u32 } -> bool {
+        if depth > 64 { return false }
+        let x = types::prune{ s = c.ty, t }
+        if loaded_cap{ c, t = x } { return true }
+        match types::get{ s = c.ty, id = x } {
+            array{ elem } | opt{ elem } => { return holds_cap{ &c, t = elem, depth = depth + 1 } }
+            record => { return fields_hold_cap{ &c, fields = struct_fields{ &c, t = x }, depth } }
+            sum => {
+                let vs = variants_of{ &c, t = x }
+                let mut i: usize = 0
+                while i < vs.len {
+                    let fs = vs[i].fields ifnull { slice::empty(types::Field){} }
+                    if fields_hold_cap{ &c, fields = fs, depth } { return true }
+                    i = i + 1
+                }
+                return false
+            }
+            else => { return false }
+        }
+    }
+
+    fn fields_hold_cap { mut c: Checker, fields: []types::Field, depth: u32 } -> bool {
+        let mut i: usize = 0
+        while i < fields.len {
+            if holds_cap{ &c, t = fields[i].ty, depth = depth + 1 } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // An assignment to a place of type t, which mustn't replace a capability with fields unless
+    // it is the one assignment of a `let x: T` (once).
+    fn check_cap_assign { mut c: Checker, t: Id, once: bool, at: source::Span } {
+        if once or not holds_cap{ &c, t, depth = 0 } { return }
+        let what: utf8::String = if loaded_cap{ c, t } { "is" } else { "holds" }
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "cannot assign {}, which {} a capability with fields: one is never replaced, only declared with its value or assigned once to a `let x: T`", tstr{ c, t }, what) }
+        error{ &c, at, msg = utf8::view{ b } }
     }
 
     // The first of fields with a capability with fields, or null.
@@ -2650,6 +2843,7 @@ namespace check {
                 error{ &c, at = expr_at{ e = place }, msg = utf8::view{ b } }
             }
             expect{ &c, e = value, t = x.ty }
+            check_cap_assign{ &c, t = x.ty, once = x.tracked and not x.mutable, at = expr_at{ e = place } }
             if x.tracked {
                 if not x.mutable and has_id{ xs = c.maybe, n = v } and not c.dead {
                     let mut b = message{ c }
@@ -2675,6 +2869,7 @@ namespace check {
         let lt = expr{ &c, e = place, exp = types::NO_TYPE }
         check_mutable{ &c, e = place }
         expect{ &c, e = value, t = lt }
+        check_cap_assign{ &c, t = lt, once = false, at = expr_at{ e = place } }
         let p = place_path{ c, e = place }
         check_store{ &c, root = if p == null { NONE } else { p.root }, through = p == null, rhs = value, at }
     }
@@ -4793,8 +4988,11 @@ namespace check {
                     }
                     else => {}
                 }
-                if types::unify{ s = &c.ty, a = x, b = ee } or types::widens{ s = &c.ty, a = x, b = ee } { return Coercion::some }
+                if types::unify{ s = &c.ty, a = x, b = ee } or types::widens{ s = &c.ty, a = x, b = ee } or includes_cap{ c, a = x, b = ee } { return Coercion::some }
                 return Coercion::fail
+            }
+            cap => {
+                if includes_cap{ c, a = x, b = y } { return Coercion::same }
             }
             func{ bound = eb, external = ee } => {
                 match tx {
@@ -5398,7 +5596,16 @@ namespace check {
 
     // ---- braces: calls, binds and literals
 
+    // Braces after callee: a call, a bind or a literal. `..e` supplies fields only in a
+    // capability's literal (§15). Each kind checks its spreads before its other items, and
+    // those of braces that turned out to be none, or an error, are checked here.
     fn braced { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, forward: bool, bind: bool, exp: Id } -> Id {
+        let t = braced_as{ &c, e, callee, items, forward, bind, exp }
+        if not map::has{ m = c.spreads, key = expr_key{ e } } { no_spread{ &c, e, items } }
+        return t
+    }
+
+    fn braced_as { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, forward: bool, bind: bool, exp: Id } -> Id {
         let mut ct = types::ERROR
         let mut name = str{ s = "function" }
         match callee.k {
@@ -5457,7 +5664,9 @@ namespace check {
         let mut i: usize = 0
         while i < items.len {
             let it = items[i]
-            if types::find_field{ fields, name = it.name.text } == null {
+            if it.spread {
+                // a capability literal's, which cap_lit checks
+            } else if types::find_field{ fields, name = it.name.text } == null {
                 let mut b = message{ c }
                 pushed{ ok = @fmt(&b, "{} has no field `{}`", what, str{ s = it.name.text }) }
                 error{ &c, at = it.span, msg = utf8::view{ b } }
@@ -5477,6 +5686,26 @@ namespace check {
         }
     }
 
+    // Each `..e` of braces e that aren't a capability's literal: an error.
+    fn no_spread { mut c: Checker, e: syntax::Expr, items: []syntax::Item } {
+        spreads_checked{ &c, e }
+        let mut i: usize = 0
+        while i < items.len {
+            let it = items[i]
+            if it.spread {
+                _ = expr{ &c, e = it.value, exp = types::NO_TYPE }
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`..{}` is allowed only in a capability's literal", str{ s = source_text{ c, span = it.value.span } }) }
+                error{ &c, at = it.span, msg = utf8::view{ b } }
+            }
+            i = i + 1
+        }
+    }
+
+    fn spreads_checked { mut c: Checker, e: syntax::Expr } {
+        if not map::put{ m = &c.spreads, key = expr_key{ e }, value = true } { @panic("check: out of memory") }
+    }
+
     fn given { items: []syntax::Item, name: []u8 } -> bool {
         let mut i: usize = 0
         while i < items.len {
@@ -5489,6 +5718,7 @@ namespace check {
     // A call or a bind of function type ft (ctxi's call_args).
     fn call_args { mut c: Checker, e: syntax::Expr, ft: Id, name: utf8::String, items: []syntax::Item, forward: bool, bind: bool } -> Id {
         set_literal{ &c, e, is = false }
+        no_spread{ &c, e, items }
         let mut fields: []types::Field = slice::empty(types::Field){}
         let mut ret = types::VOID
         match types::get{ s = c.ty, id = ft } {
@@ -5517,9 +5747,9 @@ namespace check {
                             // `&p`: p must be a mutable place.
                             let at = expr{ &c, e = it.value, exp = types::NO_TYPE }
                             check_mutable{ &c, e = x.* }
-                            coerce_node{ &c, e = it.value, at, t = want }
+                            mut_arg{ &c, e = it.value, at, t = want }
                         }
-                        else => { expect{ &c, e = it.value, t = want } }
+                        else => { mut_arg{ &c, e = it.value, at = expr{ &c, e = it.value, exp = want }, t = want } }
                     }
                 } else {
                     expect{ &c, e = it.value, t = f.ty }
@@ -5565,6 +5795,12 @@ namespace check {
         return ret
     }
 
+    // A `mut` field's argument, of type at where t is wanted: the types match, or at points to a
+    // capability that includes the one t points to (§15).
+    fn mut_arg { mut c: Checker, e: syntax::Expr, at: Id, t: Id } {
+        if not includes_cap_ptr{ c, a = at, b = t } { coerce_node{ &c, e, at, t } }
+    }
+
     // What `..` supplies for field f: local v, or `&v` if f is `mut` (§3, rule 7).
     fn forwarded { mut c: Checker, f: types::Field, v: u32, at: source::Span } -> Forward {
         check_read{ &c, v, at }
@@ -5578,7 +5814,7 @@ namespace check {
                 error{ &c, at, msg = utf8::view{ b } }
             }
             let want = types::ptr{ s = &c.ty, elem = f.ty, mutable = true }
-            let how = convert{ &c, a = arg, t = want, pos = at }
+            let how = if includes_cap_ptr{ c, a = arg, b = want } { Coercion::same } else { convert{ &c, a = arg, t = want, pos = at } }
             return Forward{ name = f.name, var = v, mutable = true, ty = x.ty, arg, conv = conv_of{ how, t = want } }
         }
         let how = convert{ &c, a = x.ty, t = f.ty, pos = at }
@@ -5622,19 +5858,21 @@ namespace check {
             return types::ERROR
         }
         same_decl{ &c, t, exp }
+        no_spread{ &c, e, items }
         let mut b = message{ c }
         if is_untagged{ c, d = decl } {
             pushed{ ok = @fmt(&b, "extern union `{}`", str{ s = get_decl{ c, d = decl }.name.text }) }
             return untagged_lit{ &c, e, t, fields = struct_fields{ &c, t }, what = utf8::view{ b }, items, forward, bind }
         }
         pushed{ ok = @fmt(&b, "struct `{}`", str{ s = get_decl{ c, d = decl }.name.text }) }
-        return fields_lit{ &c, e, t, fields = struct_fields{ &c, t }, what = utf8::view{ b }, items, forward, bind }
+        return fields_lit{ &c, e, t, fields = struct_fields{ &c, t }, what = utf8::view{ b }, items, spread = slice::empty(types::Field){}, forward, bind }
     }
 
     // A capability with fields (§15): only a function of the namespace that declares it, which
     // isn't pure, can make one, so code that holds no capability can't. Effects reach a function
     // through a capability or a bound function, which may hold one (§1.3).
     fn cap_lit { mut c: Checker, e: syntax::Expr, t: Id, decl: u32, seg: syntax::Seg, items: []syntax::Item, forward: bool, bind: bool, exp: Id } -> Id {
+        spreads_checked{ &c, e }
         let x = get_decl{ c, d = decl }
         let owner = c.sc.owner
         let in_fn = owner != NONE and get_decl{ c, d = owner }.kind == Kind::func
@@ -5667,9 +5905,41 @@ namespace check {
             return types::ERROR
         }
         same_decl{ &c, t, exp }
+        // `..e` supplies the fields of a capability t includes, each once.
+        let mut spread = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        i = 0
+        while i < items.len {
+            let it = items[i]
+            if it.spread {
+                let st = expr{ &c, e = it.value, exp = types::NO_TYPE }
+                if includes_cap{ c, a = t, b = st } {
+                    let sf = cap_fields{ c, t = st }
+                    let mut k: usize = 0
+                    while k < sf.len {
+                        if given{ items, name = sf[k].name } or types::find_field{ fields = list::items{ list = spread }, name = sf[k].name } != null {
+                            let mut b = message{ c }
+                            pushed{ ok = @fmt(&b, "`{}` is supplied more than once", str{ s = sf[k].name }) }
+                            error{ &c, at = it.span, msg = utf8::view{ b } }
+                            break
+                        }
+                        k = k + 1
+                    }
+                    k = 0
+                    while k < sf.len {
+                        add_field{ xs = &spread, f = sf[k] }
+                        k = k + 1
+                    }
+                } else if types::prune{ s = c.ty, t = st } != types::ERROR {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "`..{}` has type {}, which capability `{}` doesn't include", str{ s = source_text{ c, span = it.value.span } }, tstr{ c, t = st }, str{ s = x.name.text }) }
+                    error{ &c, at = expr_at{ e = it.value }, msg = utf8::view{ b } }
+                }
+            }
+            i = i + 1
+        }
         let mut b = message{ c }
         pushed{ ok = @fmt(&b, "capability `{}`", str{ s = x.name.text }) }
-        return fields_lit{ &c, e, t, fields = x.fields, what = utf8::view{ b }, items, forward, bind }
+        return fields_lit{ &c, e, t, fields = x.fields, what = utf8::view{ b }, items, spread = list::items{ list = spread }, forward, bind }
     }
 
     // An extern union's literal (§12, Untagged unions) sets exactly one field; the rest of its
@@ -5707,12 +5977,14 @@ namespace check {
             return types::ERROR
         }
         same_decl{ &c, t = ut, exp }
+        no_spread{ &c, e, items }
         let mut b = message{ c }
         pushed{ ok = @fmt(&b, "variant `{}`", str{ s = v.name }) }
-        return fields_lit{ &c, e, t = ut, fields, what = utf8::view{ b }, items, forward, bind }
+        return fields_lit{ &c, e, t = ut, fields, what = utf8::view{ b }, items, spread = slice::empty(types::Field){}, forward, bind }
     }
 
-    fn fields_lit { mut c: Checker, e: syntax::Expr, t: Id, fields: []types::Field, what: utf8::String, items: []syntax::Item, forward: bool, bind: bool } -> Id {
+    // A literal's items, and the fields its spreads supply (a capability's, §15).
+    fn fields_lit { mut c: Checker, e: syntax::Expr, t: Id, fields: []types::Field, what: utf8::String, items: []syntax::Item, spread: []types::Field, forward: bool, bind: bool } -> Id {
         set_literal{ &c, e, is = true }
         if forward or bind {
             let word: utf8::String = if forward { ".." } else { "_" }
@@ -5724,7 +5996,9 @@ namespace check {
         let mut missing = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
         let mut i: usize = 0
         while i < fields.len {
-            if not given{ items, name = fields[i].name } { add_field{ xs = &missing, f = fields[i] } }
+            if not given{ items, name = fields[i].name } and types::find_field{ fields = spread, name = fields[i].name } == null {
+                add_field{ xs = &missing, f = fields[i] }
+            }
             i = i + 1
         }
         let gone = list::items{ list = missing }

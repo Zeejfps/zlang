@@ -313,13 +313,27 @@ namespace tree {
                 expr{ &d, e = value }
                 d.depth = d.depth - 1
             }
-            cap{ name = n, fields } => {
+            cap{ name = n, fields, includes } => {
                 named{ &d, at, kind = "capability", n, tparams = untyped }
                 if fields == null {
                     end{ &d }
                 } else {
+                    // Each `..Name` where it stands among the fields, which sets the layout.
                     d.depth = d.depth + 1
-                    field_list{ &d, xs = fields }
+                    let mut j: usize = 0
+                    let mut i: usize = 0
+                    while i <= fields.len {
+                        while j < includes.len and includes[j].at == i {
+                            start{ &d, at = includes[j].span.start }
+                            put{ &d, s = "include" }
+                            end{ &d }
+                            sub_type{ &d, t = includes[j].ty }
+                            j = j + 1
+                        }
+                        if i == fields.len { break }
+                        field_list{ &d, xs = fields[i..i + 1] }
+                        i = i + 1
+                    }
                     d.depth = d.depth - 1
                 }
             }
@@ -697,8 +711,12 @@ namespace tree {
                 while i < items.len {
                     let item = items[i]
                     start{ &d, at = item.span.start }
-                    put{ &d, s = "item " }
-                    name{ &d, n = item.name }
+                    if item.spread {
+                        put{ &d, s = "spread" }
+                    } else {
+                        put{ &d, s = "item " }
+                        name{ &d, n = item.name }
+                    }
                     end{ &d }
                     sub{ &d, e = item.value }
                     i = i + 1

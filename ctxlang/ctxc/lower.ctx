@@ -14,7 +14,7 @@ namespace lower {
     type Id = types::Id
 
     const NONE: u32 = 4294967295
-    const VERSION: u64 = 15
+    const VERSION: u64 = 16
 
     // A function instance: a declaration and its generic arguments.
     struct Inst { decl: u32, targs: []Id }
@@ -788,7 +788,7 @@ namespace lower {
                     return ir::Block{ stmts = list::items{ list = out }, result = null }
                 }
                 let r = nested_full{ &l, s }
-                let x = coerce{ &l, x = r, frm = T{ &l, t = check::value_ty{ c = l.c.*, k = check::stmt_key{ s } } }, to = T{ &l, t } }
+                let x = coerce{ &l, x = r, frm = T{ &l, t = check::value_ty{ c = l.c.*, k = check::stmt_key{ s } } }, to = T{ &l, t }, at = s.span }
                 return ir::Block{ stmts = list::items{ list = out }, result = box{ l, e = x } }
             }
             expr{ e } => {
@@ -822,7 +822,7 @@ namespace lower {
         if conv != null {
             match conv {
                 some{ to } => {
-                    let inner = coerce{ &l, x = nested{ &l, s }, frm = T{ &l, t = check::type_of_key{ c = l.c.*, k } }, to = opt_elem{ l, t = T{ &l, t = to } } }
+                    let inner = coerce{ &l, x = nested{ &l, s }, frm = T{ &l, t = check::type_of_key{ c = l.c.*, k } }, to = opt_elem{ l, t = T{ &l, t = to } }, at = s.span }
                     return mk{ ty = tid{ &l, t = T{ &l, t = to } }, k = ir::ExprKind::some{ e = box{ l, e = inner } } }
                 }
                 else => {}
@@ -888,10 +888,11 @@ namespace lower {
     // e converted to type `to`, as the checker allowed implicitly.
     fn conv { mut l: Lower, e: syntax::Expr, to: Id } -> ir::Expr {
         let x = ex{ &l, e }
-        return coerce{ &l, x, frm = after{ &l, e }, to = T{ &l, t = to } }
+        return coerce{ &l, x, frm = after{ &l, e }, to = T{ &l, t = to }, at = check::expr_at{ e } }
     }
 
-    fn coerce { mut l: Lower, x: ir::Expr, frm: Id, to: Id } -> ir::Expr {
+    // x, of type frm, as a `to`; at is where it is.
+    fn coerce { mut l: Lower, x: ir::Expr, frm: Id, to: Id, at: source::Span } -> ir::Expr {
         if norm{ &l, t = frm } == norm{ &l, t = to } { return x }
         let a = types::prune{ s = l.c.ty, t = frm }
         let b = types::prune{ s = l.c.ty, t = to }
@@ -905,9 +906,98 @@ namespace lower {
                     else => {}
                 }
             }
+            cap => {
+                match get{ l, t = b } {
+                    cap => { return cap_copy{ &l, x, frm = a, to = b } }
+                    else => {}
+                }
+            }
+            ptr{ elem = pa } => {
+                match get{ l, t = b } {
+                    ptr{ elem = pb } => {
+                        match get{ l, t = pa } { cap => { return cap_ptr{ &l, x, frm = pa, to = pb, pt = b, at } } else => {} }
+                    }
+                    else => {}
+                }
+            }
             else => {}
         }
         @panic("lower: no implicit conversion")
+    }
+
+    // Capability x, of type frm, as the capability `to` it includes (§15): a `to` of the same
+    // functions, read from x once.
+    fn cap_copy { mut l: Lower, x: ir::Expr, frm: Id, to: Id } -> ir::Expr {
+        let ty = tid{ &l, t = to }
+        let names = check::cap_fields{ c = l.c.*, t = to }
+        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        if plain{ x } {
+            cap_args{ &l, src = x, frm, names, into = names, out = &out }
+            return mk{ ty, k = ir::ExprKind::record{ items = list::items{ list = out } } }
+        }
+        let s = temp{ &l, ty = x.ty }
+        cap_args{ &l, src = mk{ ty = x.ty, k = ir::ExprKind::local{ slot = s } }, frm, names, into = names, out = &out }
+        let lit = mk{ ty, k = ir::ExprKind::record{ items = list::items{ list = out } } }
+        return mk{ ty, k = ir::ExprKind::with{ slot = s, init = box{ l, e = x }, body = box{ l, e = lit } } }
+    }
+
+    // Pointer x to a capability frm as a pointer, of type pt, to the capability `to` it includes,
+    // as a `mut` field takes it (§15): x itself if to's fields are the first of frm's, and
+    // otherwise the address of a new local, a `to` with x's functions.
+    fn cap_ptr { mut l: Lower, x: ir::Expr, frm: Id, to: Id, pt: Id, at: source::Span } -> ir::Expr {
+        let ty = tid{ &l, t = pt }
+        if check::cap_prefix{ c = l.c.*, a = frm, b = to } { return mk{ ty, k = ir::ExprKind::cast{ e = box{ l, e = x } } } }
+        let mut p = x
+        let mut ps = NONE
+        if not plain{ x } {
+            ps = temp{ &l, ty = x.ty }
+            p = mk{ ty = x.ty, k = ir::ExprKind::local{ slot = ps } }
+        }
+        let src = mk{ ty = tid{ &l, t = frm }, k = ir::ExprKind::deref{ ptr = box{ l, e = p }, pos = pos{ &l, at } } }
+        let names = check::cap_fields{ c = l.c.*, t = to }
+        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        cap_args{ &l, src, frm, names, into = names, out = &out }
+        let ct = tid{ &l, t = to }
+        let s = temp{ &l, ty = ct }
+        let lit = mk{ ty = ct, k = ir::ExprKind::record{ items = list::items{ list = out } } }
+        let v = mk{ ty = ct, k = ir::ExprKind::local{ slot = s } }
+        let a = mk{ ty, k = ir::ExprKind::addr{ place = box{ l, e = v } } }
+        let r = mk{ ty, k = ir::ExprKind::with{ slot = s, init = box{ l, e = lit }, body = box{ l, e = a } } }
+        if ps == NONE { return r }
+        return mk{ ty, k = ir::ExprKind::with{ slot = ps, init = box{ l, e = x }, body = box{ l, e = r } } }
+    }
+
+    // An item of a literal of a capability with fields `into` for each field in names: the
+    // field of that name of src, a capability of type frm.
+    fn cap_args { mut l: Lower, src: ir::Expr, frm: Id, names: []types::Field, into: []types::Field, mut out: list::List(ir::Arg, Heap) } {
+        let from = check::cap_fields{ c = l.c.*, t = frm }
+        let mut i: usize = 0
+        while i < names.len {
+            let ft = tid{ &l, t = names[i].ty }
+            let j = field_pos{ fields = from, name = names[i].name }
+            let v = mk{ ty = ft, k = ir::ExprKind::field{ base = box{ l, e = src }, index = @as(u32, j) } }
+            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, field_pos{ fields = into, name = names[i].name }), value = v } }
+            i = i + 1
+        }
+    }
+
+    // A local that lowering adds, of IR type ty, named `_`, which no local in the source is.
+    fn temp { mut l: Lower, ty: u32 } -> u32 {
+        let s = @as(u32, l.locals.len)
+        if not list::push{ list = &l.locals, item = ir::Local{ name = "_", ty } } { @panic("lower: out of memory") }
+        return s
+    }
+
+    // Whether x is a place reached without effects, as a local, a `mut` field or a field of one
+    // is: reading it twice reads the same value.
+    fn plain { x: ir::Expr } -> bool {
+        match x.k {
+            local => { return true }
+            deref{ ptr } => { return plain{ x = ptr.* } }
+            addr{ place } => { return plain{ x = place.* } }
+            field{ base } => { return plain{ x = base.* } }
+            else => { return false }
+        }
     }
 
     // e as ctxi's tree has it: the node, inside the conversion the checker recorded for it.
@@ -917,7 +1007,7 @@ namespace lower {
         match conv {
             some{ to } => {
                 let t = T{ &l, t = to }
-                let inner = coerce{ &l, x = node{ &l, e }, frm = T{ &l, t = check::type_of_expr{ c = l.c.*, e } }, to = opt_elem{ l, t } }
+                let inner = coerce{ &l, x = node{ &l, e }, frm = T{ &l, t = check::type_of_expr{ c = l.c.*, e } }, to = opt_elem{ l, t }, at = check::expr_at{ e } }
                 return mk{ ty = tid{ &l, t }, k = ir::ExprKind::some{ e = box{ l, e = inner } } }
             }
             slice{ to } => {
@@ -1394,6 +1484,7 @@ namespace lower {
             }
             let fields = check::struct_fields{ c = l.c, t = types::prune{ s = l.c.ty, t } }
             let ty = tid{ &l, t }
+            if has_spread{ items } { return spread_lit{ &l, e, items, fields, ty } }
             return mk{ ty, k = ir::ExprKind::record{ items = item_args{ &l, e, items, fields, ptrs = false } } }
         }
         if r != null {
@@ -1424,15 +1515,64 @@ namespace lower {
         return mk{ ty, k = ir::ExprKind::dcall{ callee = box{ l, e = c }, args } }
     }
 
-    // The ARGs of a literal's or call's items, then of what `..` supplies: each converted to its
-    // field's type, a pointer to it for a call's `mut` field (ptrs).
+    fn has_spread { items: []syntax::Item } -> bool {
+        let mut i: usize = 0
+        while i < items.len {
+            if items[i].spread { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // A capability's literal with spreads (§15): each `..e` gives the fields of e's capability,
+    // read from e, which a new local holds first unless it is a plain place. Those are set
+    // before the literal's other items are evaluated.
+    fn spread_lit { mut l: Lower, e: syntax::Expr, items: []syntax::Item, fields: []types::Field, ty: u32 } -> ir::Expr {
+        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        let mut slots = list::new(u32){ realloc = arena::alloc, heap = l.heap }
+        let mut inits = list::new(ir::Expr){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < items.len {
+            if items[i].spread {
+                let st = T{ &l, t = check::type_of_expr{ c = l.c.*, e = items[i].value } }
+                let mut src = ex{ &l, e = items[i].value }
+                if not plain{ x = src } {
+                    let s = temp{ &l, ty = src.ty }
+                    if not list::push{ list = &slots, item = s } or not list::push{ list = &inits, item = src } { @panic("lower: out of memory") }
+                    src = mk{ ty = src.ty, k = ir::ExprKind::local{ slot = s } }
+                }
+                cap_args{ &l, src, frm = st, names = check::cap_fields{ c = l.c.*, t = st }, into = fields, out = &out }
+            }
+            i = i + 1
+        }
+        let named = item_args{ &l, e, items, fields, ptrs = false }
+        i = 0
+        while i < named.len {
+            add_arg{ xs = &out, a = named[i] }
+            i = i + 1
+        }
+        let mut r = mk{ ty, k = ir::ExprKind::record{ items = list::items{ list = out } } }
+        let ss = list::items{ list = slots }
+        let xs = list::items{ list = inits }
+        let mut k = ss.len
+        while k > 0 {
+            k = k - 1
+            r = mk{ ty, k = ir::ExprKind::with{ slot = ss[k], init = box{ l, e = xs[k] }, body = box{ l, e = r } } }
+        }
+        return r
+    }
+
+    // The ARGs of a literal's or call's items but its spreads, then of what `..` supplies: each
+    // converted to its field's type, a pointer to it for a call's `mut` field (ptrs).
     fn item_args { mut l: Lower, e: syntax::Expr, items: []syntax::Item, fields: []types::Field, ptrs: bool } -> []ir::Arg {
         let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
         let mut i: usize = 0
         while i < items.len {
-            let fi = field_pos{ fields, name = items[i].name.text }
-            let x = conv{ &l, e = items[i].value, to = arg_type{ &l, f = fields[fi], ptrs } }
-            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, fi), value = x } }
+            if not items[i].spread {
+                let fi = field_pos{ fields, name = items[i].name.text }
+                let x = conv{ &l, e = items[i].value, to = arg_type{ &l, f = fields[fi], ptrs } }
+                add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, fi), value = x } }
+            }
             i = i + 1
         }
         let fw = map::get{ m = l.c.forwards, key = check::expr_key{ e } }
@@ -1456,12 +1596,7 @@ namespace lower {
     }
 
     fn field_pos { fields: []types::Field, name: []u8 } -> usize {
-        let mut i: usize = 0
-        while i < fields.len {
-            if slice::eq_bytes{ a = fields[i].name, b = name } { return i }
-            i = i + 1
-        }
-        @panic("lower: an argument for no field")
+        return types::field_index{ fields, name } ifnull { @panic("lower: an argument for no field") }
     }
 
     // What `..` supplies: the local of the field's name, or its address for a `mut` field, as
@@ -1482,14 +1617,14 @@ namespace lower {
             match conv {
                 some{ to = st } => {
                     let t = T{ &l, t = st }
-                    let inner = coerce{ &l, x, frm = xt, to = opt_elem{ l, t } }
+                    let inner = coerce{ &l, x, frm = xt, to = opt_elem{ l, t }, at }
                     x = mk{ ty = tid{ &l, t }, k = ir::ExprKind::some{ e = box{ l, e = inner } } }
                     xt = t
                 }
                 else => { @panic("lower: a forwarded slice") }
             }
         }
-        return coerce{ &l, x, frm = xt, to = T{ &l, t = to } }
+        return coerce{ &l, x, frm = xt, to = T{ &l, t = to }, at }
     }
 
     // ---- builtins
@@ -1630,7 +1765,7 @@ namespace lower {
             match get{ l, t = ft } { func{ fields = fs } => { fields = sorted_fields{ l, fields = fs } } else => {} }
             let ty = tid{ &l, t = types::BOOL }
             let c = ex{ &l, e = hole }
-            let bx = coerce{ &l, x = ex{ &l, e = b }, frm = bt, to = types::ptr{ s = &l.c.ty, elem = fields[0].ty, mutable = false } }
+            let bx = coerce{ &l, x = ex{ &l, e = b }, frm = bt, to = types::ptr{ s = &l.c.ty, elem = fields[0].ty, mutable = false }, at = check::expr_at{ e = b } }
             let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
             add_arg{ xs = &out, a = ir::Arg{ index = 0, value = bx } }
             return mk{ ty, k = ir::ExprKind::dcall{ callee = box{ l, e = c }, args = list::items{ list = out } } }
@@ -1646,7 +1781,7 @@ namespace lower {
         let ty = tid{ &l, t = types::BOOL }
         let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
         let bi = field_pos{ fields, name = "b" }
-        let bv = coerce{ &l, x = ex{ &l, e = b }, frm = bt, to = arg_type{ &l, f = fields[bi], ptrs = true } }
+        let bv = coerce{ &l, x = ex{ &l, e = b }, frm = bt, to = arg_type{ &l, f = fields[bi], ptrs = true }, at = check::expr_at{ e = b } }
         add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, bi), value = bv } }
         if not p.hole {
             let si = field_pos{ fields, name = "s" }

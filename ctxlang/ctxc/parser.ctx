@@ -142,13 +142,14 @@ namespace parser {
             let name = ident{ &p }
             if is{ p, k = tok::Kind::lparen } and not nl{ p } { fail{ &p, msg = "a capability cannot have generic parameters" } }
             let mut fields: ?[]syntax::Field = null
+            let mut includes = list::new(syntax::Include){ realloc = arena::alloc, heap = p.heap }
             if is{ p, k = tok::Kind::lbrace } and not nl{ p } {
                 let open = p.i
-                let fs = plain_fields{ &p }
-                if fs.len == 0 and not p.bad { fail_at{ &p, msg = "a capability without fields has no braces: write `capability Name`", t = p.toks[open] } }
+                let fs = cap_fields{ &p, includes = &includes }
+                if fs.len == 0 and includes.len == 0 and not p.bad { fail_at{ &p, msg = "a capability without fields has no braces: write `capability Name`", t = p.toks[open] } }
                 fields = fs
             }
-            d = syntax::DeclKind::cap{ name, fields }
+            d = syntax::DeclKind::cap{ name, fields, includes = list::items{ list = includes } }
         } else if k == tok::Kind::kw_namespace {
             skip{ &p }
             let name = ident{ &p }
@@ -269,6 +270,27 @@ namespace parser {
             expect{ &p, k = tok::Kind::colon }
             let ty = type_expr{ &p }
             add{ &p, xs = &xs, item = syntax::Field{ span = span_from{ p, start }, name, ty } }
+            if not accept{ &p, k = tok::Kind::comma } { break }
+        }
+        expect{ &p, k = tok::Kind::rbrace }
+        return list::items{ list = xs }
+    }
+
+    // A capability's `{ name: T, ..Name, ... }`: its fields, and in includes each `..Name`.
+    fn cap_fields { mut p: Parser, mut includes: list::List(syntax::Include, arena::Arena) } -> []syntax::Field {
+        let mut xs = list::new(syntax::Field){ realloc = arena::alloc, heap = p.heap }
+        expect{ &p, k = tok::Kind::lbrace }
+        while more{ p, close = tok::Kind::rbrace } {
+            let start = p.i
+            if accept{ &p, k = tok::Kind::dots } {
+                let ty = type_expr{ &p }
+                add{ &p, xs = &includes, item = syntax::Include{ span = span_from{ p, start }, ty, at = xs.len } }
+            } else {
+                let name = ident{ &p }
+                expect{ &p, k = tok::Kind::colon }
+                let ty = type_expr{ &p }
+                add{ &p, xs = &xs, item = syntax::Field{ span = span_from{ p, start }, name, ty } }
+            }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         expect{ &p, k = tok::Kind::rbrace }
@@ -952,7 +974,14 @@ namespace parser {
             }
             let s = p.i
             if accept{ &p, k = tok::Kind::dots } {
-                forward = true
+                if is{ p, k = tok::Kind::rbrace } or is{ p, k = tok::Kind::comma } {
+                    forward = true
+                } else {
+                    // `..e`: a spread
+                    let name = syntax::Name{ id = new_id{ &p }, span = source::Span{ file = p.file, start = it.span.start, end = it.span.start }, text = p.text[..0] }
+                    let value = expr{ &p }
+                    add{ &p, xs = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = false, spread = true } }
+                }
             } else if it.kind == tok::Kind::ident and slice::eq_bytes{ a = text_of{ p, t = it }, b = "_" } {
                 skip{ &p }
                 bind = true
@@ -963,15 +992,15 @@ namespace parser {
                     id = new_id{ &p }, span = span_from{ p, start = s }, at = it.span.start,
                     k = syntax::ExprKind::addr{ e = box{ &p, value = path } },
                 }
-                add{ &p, xs = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = true } }
+                add{ &p, xs = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = true, spread = false } }
             } else {
                 let name = ident{ &p }
                 if accept{ &p, k = tok::Kind::assign } {
                     let value = expr{ &p }
-                    add{ &p, xs = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = false } }
+                    add{ &p, xs = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = false, spread = false } }
                 } else {
                     let value = name_path{ &p, name = again{ &p, n = name } }
-                    add{ &p, xs = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = true } }
+                    add{ &p, xs = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = true, spread = false } }
                 }
             }
             if not accept{ &p, k = tok::Kind::comma } { break }

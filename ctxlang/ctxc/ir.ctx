@@ -146,6 +146,7 @@ namespace ir {
         payload{ base: *Expr, variant: u32, field: u32 },
         addr{ place: *Expr },
         seq{ first: *Expr, then: *Expr },
+        with{ slot: u32, init: *Expr, body: *Expr },            // (with T SLOT INIT BODY): body, after slot = init
         neg{ e: *Expr, pos: Pos },
         lnot{ e: *Expr },                                       // (not T E)
         land{ a: *Expr, b: *Expr },                             // (and T E E)

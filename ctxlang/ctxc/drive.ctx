@@ -19,7 +19,7 @@ namespace drive {
     type Heap = arena::Arena
     type Strs = list::List([]u8, Heap)
 
-    const CFLAGS: [5][]u8 = ["-std=gnu11", "-O1", "-w", "-fwrapv", "-fno-optimize-sibling-calls"]
+    const CFLAGS: [6][]u8 = ["-std=gnu11", "-O1", "-w", "-fwrapv", "-fno-optimize-sibling-calls", "-fno-strict-aliasing"]
 
     // Where things are, and what the C compiler is and the environment entries it runs with.
     struct Driver { home: []u8, work: []u8, std: [][]u8, os: build::Os, cc: [][]u8, cc_env: [][]u8 }

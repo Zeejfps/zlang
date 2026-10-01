@@ -42,8 +42,12 @@ namespace syntax {
         alias{ name: Name, tparams: []Name, ty: TypeExpr },               // type
         constant{ name: Name, ty: TypeExpr, value: Expr },
         space{ name: Name, decls: []Decl },                               // namespace
-        cap{ name: Name, fields: ?[]Field },                               // capability; fields null without braces
+        cap{ name: Name, fields: ?[]Field, includes: []Include },          // capability; fields null without braces
     }
+
+    // `..Name` among a capability's fields (§15): the fields before it in the braces are
+    // fields[..at].
+    struct Include { span: Span, ty: TypeExpr, at: usize }
 
     // A context field, of a function or a function type.
     struct Param { span: Span, mutable: bool, name: Name, ty: TypeExpr }
@@ -141,6 +145,7 @@ namespace syntax {
         matchx{ x: Match },                             // `ifnull` too, at the `ifnull`
     }
 
-    // An item in braces. A pun `c` has the value `c`, and `&d` the value `&d`.
-    struct Item { span: Span, name: Name, value: Expr, pun: bool }
+    // An item in braces. A pun `c` has the value `c`, and `&d` the value `&d`. A spread `..e`
+    // has the value e and a missing name, zero-width at the `..`.
+    struct Item { span: Span, name: Name, value: Expr, pun: bool, spread: bool }
 }

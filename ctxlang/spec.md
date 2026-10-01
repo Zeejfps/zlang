@@ -31,7 +31,7 @@ f{ a = expr, b = &place, c, &d, .. }
 1. A call is an expression of function type followed by `{ ... }`.
 2. Every context field of the callee must be supplied exactly once. Order doesn't matter.
 3. A read-only field of type `T` takes an expression of type `T`.
-4. A `mut` field of type `T` takes an expression of type `*mut T`. If the argument has the form `&p`, `p` must be a mutable place and §3.1 applies. Any other `*mut T` expression is accepted unchecked.
+4. A `mut` field of type `T` takes an expression of type `*mut T`. If the argument has the form `&p`, `p` must be a mutable place and §3.1 applies. Any other `*mut T` expression is accepted unchecked. For a capability `T`, a pointer to one that includes it is accepted too (§15, rule 10).
 5. Places and mutable places are defined in §11.
 6. Punning: `c` means `c = c`, and `&d` means `d = &d`.
 7. Forwarding: a trailing `..` supplies each remaining field `F` from the local or context field named `F`. Namespace and top-level names are not considered. It supplies `F = F` for a read-only field and `F = &F` for a `mut` field. It is an error if `F` isn't in scope, or if `F` is `mut` and the name isn't a mutable place.
@@ -325,8 +325,9 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 1. Widening applies wherever an expression of type `B` is expected: a read-only call argument, a struct or union field, an assignment, a `let` with a type, a `return`, and the `T` of an implicit `T` to `?T` conversion. It also applies between the operands of a binary operator (rules 1 and 3 above), but not to a shift count.
 2. A `*mut T` converts implicitly to `*T`, a `[]mut T` to `[]T`, and a `?*mut T` or `?[]mut T` to `?*T` or `?[]T`, wherever rule 1 applies and between the operands of `==` and `!=`.
 3. Wherever rule 1 applies, a `*[N]T` converts implicitly to a `[]T`, and a `*mut [N]T` to a `[]mut T` or `[]T`: the slice of the whole array.
-4. Nothing else converts implicitly. In particular integers don't widen to floats, `usize` doesn't widen to a signed type, `*T` doesn't convert to `*mut T` nor `[]T` to `[]mut T`, and `?A`, `*A` and `[N]A` don't convert to `?B`, `*B` and `[N]B`. A `mut` field's argument is a `*mut` pointer, so its type must match exactly.
-5. `usize` is at least 32 and at most 64 bits wide on every target, which is what makes the `usize` rows lossless.
+4. Wherever rule 1 applies, a capability converts implicitly to one it includes (§15, rule 10).
+5. Nothing else converts implicitly. In particular integers don't widen to floats, `usize` doesn't widen to a signed type, `*T` doesn't convert to `*mut T` nor `[]T` to `[]mut T`, and `?A`, `*A` and `[N]A` don't convert to `?B`, `*B` and `[N]B`. A `mut` field's argument is a `*mut` pointer, so its type must match exactly, except that it may point to a capability that includes the field's (§15, rule 10).
+6. `usize` is at least 32 and at most 64 bits wide on every target, which is what makes the `usize` rows lossless.
 
 ### Literals
 
@@ -487,7 +488,7 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 2. `@name(...)` is always a builtin call, never generic application (§9). The parentheses are required, even with no arguments.
 3. Each builtin has the signature below. Type arguments always come before value arguments, so the builtin's name alone says whether each argument is parsed as a type or an expression. Only `@fmt` takes any number of arguments.
 4. An unknown builtin, or a call with the wrong number of arguments, is a syntax error.
-5. The type argument of `@as`, `@trunc` or `@cast` may be `_`: the type expected where the call appears (§11 Literals), or its payload if that is optional. In `Fns{ clear = @cast(_, p) }` it is the field's type, and in `let n: i32 = @as(_, big)` the local's. It is an error where nothing expects a type, as in `let n = @as(_, big)`. `_` is a type nowhere else.
+5. The type argument of `@as`, `@trunc` or `@cast` may be `_`: the type expected where the call appears (§11 Literals), or its payload if that is optional. In `Gl1_1{ clear = @cast(_, p) }` it is the field's type, and in `let n: i32 = @as(_, big)` the local's. It is an error where nothing expects a type, as in `let n = @as(_, big)`. `_` is a type nowhere else.
 
 | Signature | Result | Meaning |
 |---|---|---|
@@ -563,17 +564,30 @@ The compiler checks, within each function, that the address of a local doesn't o
 ```
 capability Glfw                                   // permission to call a C library (§18)
 
+namespace gl {
+    capability Gl1_1 { clear: extern fn{ mask: u32 } }                    // permission to call OpenGL: its functions
+    capability Gl2_0 { ..Gl1_1, use_program: extern fn{ program: u32 } }  // 1.1's, and those 2.0 added
+}
+
 fn main { mut io: Io, mut fs: Fs, mut glfw: Glfw, args: Args } -> i32 { ... }
+
+fn clear { mut gl: gl::Gl1_1 } { gl.clear{ mask = gl::COLOR_BUFFER_BIT } }  // a call through it
+
+let mut gl = gl::load_2_0{ get_proc = glfw::proc_address{ &glfw, _ } } ifnull { return 1 }   // only gl's functions make one
+clear{ &gl }                                      // a Gl2_0 includes a Gl1_1
 ```
 
 1. `capability Name` declares a **capability type**: permission to have some effect (§1.3). It has no generic parameters and no zero value. Without fields it takes no space; with them (rule 5) it is a struct of C functions.
 2. Nothing can construct a capability without fields: `Name{}` is an error. The only ones are those `main` receives, which it passes down to the functions that need them, and those a callback receives when C calls it (§18 Callbacks), on the binding's word that C calls it only while they are held.
 3. std declares `Io` (console, §17 `io`), `Fs` (files, §17 `fs`), `Mem` (memory beyond the stack, §17 `mem`), `Proc` (other programs and the environment, §17 `proc`) and `Build` (a build program's, §19). A binding of a C library declares its own, and its extern fns with effects take it (§18).
 4. A capability is permission for code that follows the rules, not a sandbox: a pointer `@cast` (§13) can forge one, as it can corrupt any memory.
-5. `capability Name { field: extern fn{C} -> R, ... }` declares one with **fields**: C functions it holds, such as a library's looked up at run time. Each field is a C function pointer (§12), never null; a `?extern fn` isn't allowed, since unwrapping it would read the field (rule 7). Its layout is a struct's. Rules 5 to 8 may not be needed: §16, question 10.
+5. `capability Name { field: extern fn{C} -> R, ... }` declares one with **fields**: C functions it holds, such as a library's looked up at run time. Each field is a C function pointer (§12), never null; a `?extern fn` isn't allowed, since unwrapping it would read the field (rule 7). Its layout is a struct's.
 6. Only a function declared directly in the namespace that declares it, whose context holds a capability or a bound function (`&fn`, §6), can construct one, with a literal (`Name{ field = f, ... }`, §7). Holding one means that function made it. These are how effects reach a function (§1.3): a bound function may hold a capability, as a loader bound to a library's does (`glfw::proc_address{ &glfw, _ }`), so a binding can take one without naming the library it comes from. Code that holds no capability has none to bind a loader to. A loader that holds none can't look a function up: short of a `@cast` (rule 4), it returns `null` or a named function of the type it returns, which is pure if that type takes no capability (§18).
 7. Its fields can only be called: `x.f{ ... }` calls the function field `f` holds, and `x` must be a mutable place, as for passing it to a `mut` field (§3); through a `*mut` to one, `p.f{ ... }` calls it too. Holding `x` is the permission, so the field's type needs no capability field. Reading a field as a value (`let g = x.f`, passing, comparing, casting or taking its address) or assigning one is an error: it would reach code whose signature doesn't name the capability.
-8. One may be a local, a function's field, a result or an optional's payload, and copies as a struct does. Neither the runtime nor C can make one, so `main` can't take one (Entry point, rule 2), nor can a callback (§18 Callbacks, rule 4). An extern fn may take one as any capability: it isn't passed to C.
+8. One may be a local, a function's field, a result or an optional's payload, and copies as a struct does, but is never replaced: assigning to a place that is or holds one, as a field, an element or a payload, is an error, except the one assignment of a `let x: T` (§11, Initialization). So the functions a capability holds never change, and a copy of it is the same as it (rule 10). Neither the runtime nor C can make one, so `main` can't take one (Entry point, rule 2), nor can a callback (§18 Callbacks, rule 4). An extern fn may take one as any capability: it isn't passed to C.
+9. `..Name` among a capability's fields **includes** `Name`, a capability with fields: it has `Name`'s fields where `..Name` stands, so through `Name` it has those of what `Name` includes. Its own fields and any number of inclusions may come in any order: `capability MyGl { ..Gl3_3, ..ArbDebug }`. A field reaches a capability only once: one of its own that an included one has, or one that two included ones share, as with both `..Gl3_0` and `..Gl2_0` when `Gl3_0` includes `Gl2_0`, is an error. So is including itself, directly or not, or including a capability without fields.
+10. A capability converts implicitly to one it includes, directly or not, wherever §11 Widening rule 1 applies: a copy of the functions they share, which rules 7 and 8 keep from changing. A `mut` field of the included type takes a pointer to the including one (§3, rule 4): `draw{ &gl }` for `draw { mut gl: Gl2_0 }` with `gl: Gl3_3`, which §3.1 treats as any `&gl`. If the included one's fields are the first of its own, as when `..Gl2_0` is the first item of `Gl3_3` or of its first inclusion, the callee gets that pointer; otherwise it gets the address of a copy of them, which no program can tell apart from it, since neither changes. Structs, other pointers and `?A` don't convert this way (§11, Widening, rule 5).
+11. In a capability's literal, where rule 6 allows one, `..e` supplies from `e` the fields of `e`'s type, which must be a capability the literal's includes: `Gl3_3{ ..base, vertex_attrib_divisor = @cast(_, p), gen_samplers = @cast(_, q) }`. Every field is still supplied exactly once, by a spread or by name. `e` is evaluated before the other items. `..e` in any other braces is an error.
 
 ### Entry point
 
@@ -593,7 +607,6 @@ Settled questions are removed, and the rest keep their numbers.
 - **6. Imports:** some form of `use list::List` to shorten long paths?
 - **7. Variant shorthand:** should `.variant{...}` be allowed when the expected type is known?
 - **9. Large stack frames:** should the compiler error or warn above a size limit? (Page allocation is now the `Mem` capability, §15.) Should pages be freeable?
-- **10. Capabilities with fields (§15, rules 5 to 8):** maybe we don't need them. examples/glfw holds GL's functions in plain structs instead, each function's type taking a capability without fields (`clear: extern fn{ mut glctx: Gl, mask: u32 }`), as GLFW's extern fns take `Glfw`. That costs a `&glctx` in every call, and gives up only "holding one means its functions were found", which a `@cast` can forge anyway (rule 4). If nothing else needs them, rules 5 to 8 and their checks can go.
 
 ## 17. Standard library
 

@@ -508,6 +508,10 @@ namespace ir_read {
         } else if is{ s = tag, lit = "seq" } {
             let first = sub{ &r }
             k = ir::ExprKind::seq{ first, then = sub{ &r } }
+        } else if is{ s = tag, lit = "with" } {
+            let slot = id32{ &r }
+            let init = sub{ &r }
+            k = ir::ExprKind::with{ slot, init, body = sub{ &r } }
         } else if is{ s = tag, lit = "cast" } {
             k = ir::ExprKind::cast{ e = sub{ &r } }
         } else if is{ s = tag, lit = "ptraddr" } {

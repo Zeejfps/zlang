@@ -1149,6 +1149,15 @@ namespace emit {
                 expr{ &e, x = then.* }
                 put{ &e, a = "; })" }
             }
+            with{ slot, init, body } => {
+                put{ &e, a = "({ " }
+                local{ &e, slot }
+                put{ &e, a = " = " }
+                expr{ &e, x = init.* }
+                put{ &e, a = "; " }
+                expr{ &e, x = body.* }
+                put{ &e, a = "; })" }
+            }
             neg{ e = a, pos } => {
                 let p = prim_of{ e, t = x.ty } ifnull { @panic("emit: neg of a non-number") }
                 if is_float{ p } {

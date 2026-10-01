@@ -5334,6 +5334,112 @@ fn main { mut io: Io, mut l: m::L } {
 }
 """, "8\n")
 
+    def test_inclusion(self):
+        # `..A` gives a capability A's fields where it stands (spec §15), and it converts to A:
+        # a `mut` field takes a pointer to it, as is when A's fields come first (B's `..A`) and
+        # as a copy when they don't (C's), and a value converts too. A literal of one made in
+        # its namespace may spread one it includes.
+        self.assertOutput(CAP_CHAIN + """
+fn mag { mut a: m::A, n: i64 } -> i64 { return a.abs{ n } }
+fn size { mut b: m::B, s: c::String } -> usize { return b.len{ s } }
+fn via { p: *mut m::C } -> i64 { return mag{ a = p, n = -8 } }
+fn fwd { mut a: m::C, n: i64 } -> i64 { return mag{ .. } }
+fn first { a: m::A } -> ?m::A { return a }
+
+fn main { mut io: Io, mut l: m::L } -> i32 {
+    let mut b = m::load_b{ &l }
+    let mut c = m::load_c{ &l }
+    io::println_i64{ &io, n = b.abs{ n = -1 } + c.abs{ n = -2 } }
+    io::println_u64{ &io, n = b.len{ s = "four" } + c.len{ s = "five!" } }
+    io::println_i64{ &io, n = @as(i64, c.int{ s = "42" }) }
+    io::println_i64{ &io, n = mag{ a = &b, n = -3 } }
+    io::println_i64{ &io, n = mag{ a = &c, n = -4 } }
+    io::println_u64{ &io, n = size{ b = &c, s = "seven!!" } }
+    io::println_i64{ &io, n = via{ p = &c } }
+    io::println_i64{ &io, n = fwd{ a = &c, n = -9 } }
+    let mut a: m::A = c
+    let mut a2 = first{ a = b } ifnull { return 1 }
+    io::println_i64{ &io, n = a.abs{ n = -5 } + a2.abs{ n = -6 } }
+    io::println_u64{ &io, n = @size_of(m::B) + @size_of(m::C) }
+    return 0
+}
+""", "3\n9\n42\n3\n4\n7\n8\n9\n11\n40\n")
+
+    def test_inclusion_ir(self):
+        # A pointer to a B is one to an A; to pass a C as an A, its function is copied into a
+        # local, `with` sets it, and its address is passed.
+        from toolchain import ir_sources
+        text = ir_sources([(CAP_CHAIN + """
+fn mag { mut a: m::A } -> i64 { return a.abs{ n = -1 } }
+fn main { mut l: m::L } -> i32 {
+    let mut b = m::load_b{ &l }
+    let mut c = m::load_c{ &l }
+    return @trunc(i32, mag{ a = &b } + mag{ a = &c })
+}""", None)])
+        self.assertRegex(text, r'\(cap "m::C" 24 8 \[\("int" \d+ 0\) \("abs" \d+ 8\) \("len" \d+ 16\)\]\)')
+        self.assertRegex(text, r'\(0 \(cast \d+ \(addr \d+ \(local \d+ 1\)\)\)\)')
+        self.assertRegex(text, r'\(0 \(with \d+ 3 \(struct \d+ \[\(0 \(field \d+ \(deref \d+ \(addr \d+ \(local \d+ 2\)\) [^)]*\) 1\)\)\]\) \(addr \d+ \(local \d+ 3\)\)\)\)')
+
+    def test_inclusion_errors(self):
+        for src, msg, line, col in [
+            # a field reaches a capability once
+            (CAP_CHAIN + 'capability X { ..m::A, abs: extern fn{ n: i64 } -> i64 }\nfn main {} {}',
+             'capability `X` declares `abs`, which it includes from `A`', 16, 24),
+            (CAP_CHAIN + 'capability X { abs: extern fn{ n: i64 } -> i64, ..m::A }\nfn main {} {}',
+             'capability `X` declares `abs`, which it includes from `A`', 16, 49),
+            (CAP_CHAIN + 'capability Y { abs: extern fn{ n: i64 } -> i64 }\ncapability X { ..m::A, ..Y }\nfn main {} {}',
+             'capability `X` includes `abs` twice: from `A` and from `Y`', 17, 24),
+            (CAP_CHAIN + 'capability X { ..m::B, ..m::A }\nfn main {} {}', 'capability `X` includes `abs` twice: from `B` and from `A`', 16, 24),
+            # no cycles
+            ('capability P { ..P }\nfn main {} {}', 'capability `P` includes itself', 1, 16),
+            ('capability P { ..Q, f: extern fn{} }\ncapability Q { ..P }\nfn main {} {}', 'capability `P` includes itself, through `Q`', 2, 16),
+            # only a capability with fields
+            ('capability L\ncapability X { ..L }\nfn main {} {}', "capability `X` can't include `L`: it has no fields", 2, 16),
+            ('struct S { a: i32 }\ncapability X { ..S }\nfn main {} {}', 'capability `X` can only include a capability with fields, not S', 2, 16),
+            # it converts only to what it includes
+            (CAP_CHAIN + 'fn need { mut b: m::B } {}\nfn main { mut l: m::L } { let mut a = m::load_a{ &l }\n    need{ b = &a } }', 'expected *mut B, got *mut A', 18, 15),
+            (CAP_CHAIN + 'fn main { mut l: m::L } { let a = m::load_a{ &l }\n    let b: m::B = a }', 'expected B, got A', 17, 19),
+            (CAP_CHAIN + 'fn main { mut l: m::L } { let mut a = m::load_a{ &l }\n    let p: *mut m::A = &a\n    let q: *mut m::B = p }', 'expected *mut B, got *mut A', 18, 24),
+            # a spread is only where a literal may be, of one the literal's capability includes,
+            # and supplies its fields once
+            (CAP_CHAIN + 'fn main { mut l: m::L } { let a = m::load_a{ &l }\n    let b = m::B{ ..a, len = m::len } }',
+             'capability `B` can only be made by a function of namespace `m`, which declares it', 17, 16),
+            (CAP_CHAIN.replace('    fn load_b', '    fn bad { mut l: L } -> B { return B{ ..load_b{ &l }, len } }\n    fn load_b') + 'fn main {} {}',
+             "`..load_b{ &l }` has type B, which capability `B` doesn't include", 13, 50),
+            (CAP_CHAIN.replace('    fn load_b', '    fn bad { mut l: L } -> B { return B{ ..load_a{ &l }, abs, len } }\n    fn load_b') + 'fn main {} {}',
+             '`abs` is supplied more than once', 13, 42),
+            (CAP_CHAIN.replace('    fn load_b', '    fn bad { mut l: L } -> B { return B{ ..load_a{ &l } } }\n    fn load_b') + 'fn main {} {}',
+             'capability `B` is missing `len`', 13, 40),
+            (CAP_CHAIN + 'fn f { a: m::A } {}\nfn main { mut l: m::L } { let a = m::load_a{ &l }\n    f{ ..a } }', "`..a` is allowed only in a capability's literal", 18, 8),
+            ('struct S { a: i32 }\nfn main {} { let s = S{ a = 1 }\n    let t = S{ ..s } }', "`..s` is allowed only in a capability's literal", 3, 16),
+            # one is never replaced, whole or inside another value: a `mut` field may hold a copy
+            (CAP_CHAIN + 'fn set { mut a: m::A, b: m::A } { a = b }\nfn main {} {}',
+             'cannot assign A, which is a capability with fields: one is never replaced, only declared with its value or assigned once to a `let x: T`', 16, 35),
+            (CAP_CHAIN + 'fn main { mut l: m::L } { let mut c = m::load_c{ &l }\n    c = m::load_c{ &l } }',
+             'cannot assign C, which is a capability with fields: one is never replaced, only declared with its value or assigned once to a `let x: T`', 17, 5),
+            (CAP_CHAIN + 'struct H { c: m::C, n: i32 }\nfn bump { mut h: H } { h = h }\nfn main {} {}',
+             'cannot assign H, which holds a capability with fields: one is never replaced, only declared with its value or assigned once to a `let x: T`', 17, 24),
+            (CAP_CHAIN + 'fn main { mut l: m::L } { let mut o: ?m::A = null\n    o = m::load_a{ &l } }',
+             'cannot assign ?A, which holds a capability with fields: one is never replaced, only declared with its value or assigned once to a `let x: T`', 17, 5),
+        ]:
+            self.assertCapError(src, msg, line, col)
+
+    def test_capability_assigned_once(self):
+        # A `let x: T` of a capability is assigned once, and a value holding one may still have
+        # its other fields assigned (spec §15, rule 8).
+        self.assertOutput(CAP_CHAIN + """
+struct H { c: m::C, n: i64 }
+fn main { mut io: Io, mut l: m::L } -> i32 {
+    let a: m::A
+    if true { a = m::load_a{ &l } } else { a = m::load_c{ &l } }
+    let mut h = H{ c = m::load_c{ &l }, n = -1 }
+    h.n = h.n - 1
+    let mut b = a
+    io::println_i64{ &io, n = b.abs{ n = h.n } }
+    return 0
+}
+""", "2\n")
+
 
 # A capability with fields, M, and the function of its namespace that makes one.
 CAP_FIELDS = """namespace m {
@@ -5342,6 +5448,26 @@ CAP_FIELDS = """namespace m {
     #c::symbol{ name = "llabs" }
     extern fn abs { n: i64 } -> i64
     fn load { mut l: L } -> M { return M{ f = abs } }
+}
+"""
+
+
+# Capabilities that include others: B includes A first, so an A's fields begin a B's, and C
+# includes B after a field of its own.
+CAP_CHAIN = """namespace m {
+    capability L
+    #c::symbol{ name = "llabs" }
+    extern fn abs { n: i64 } -> i64
+    #c::symbol{ name = "strlen" }
+    extern fn len { s: c::String } -> usize
+    #c::symbol{ name = "atoi" }
+    extern fn int { s: c::String } -> i32
+    capability A { abs: extern fn{ n: i64 } -> i64 }
+    capability B { ..A, len: extern fn{ s: c::String } -> usize }
+    capability C { int: extern fn{ s: c::String } -> i32, ..B }
+    fn load_a { mut l: L } -> A { return A{ abs } }
+    fn load_b { mut l: L } -> B { return B{ ..load_a{ &l }, len } }
+    fn load_c { mut l: L } -> C { return C{ int, ..load_b{ &l } } }
 }
 """
 

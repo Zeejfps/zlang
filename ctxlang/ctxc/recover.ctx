@@ -133,7 +133,7 @@ namespace recover {
         i = 0
         while i < symbols.len {
             let s = symbols[i]
-            if @as(usize, s.span.start) < cut and cut < @as(usize, s.span.end) and s.braced and diags.errors == 0 {
+            if @as(usize, s.span.start) < cut and cut < @as(usize, s.span.end) and s.braced and diags.errors == 0 and not fieldless{ have, s } {
                 return "no error for a cut inside a declaration"
             }
             if @as(usize, s.span.end) <= cut {
@@ -143,6 +143,16 @@ namespace recover {
             i = i + 1
         }
         return null
+    }
+
+    // Whether a capability with fields, s, is one without in have: cut before its braces.
+    fn fieldless { have: []Symbol, s: Symbol } -> bool {
+        let mut i: usize = 0
+        while i < have.len {
+            if have[i].kind == 'k' and not have[i].braced and same{ a = have[i], b = s } { return true }
+            i = i + 1
+        }
+        return false
     }
 
     fn same { a: Symbol, b: Symbol } -> bool {
@@ -283,9 +293,15 @@ namespace recover {
                 type_expr{ &c, t = ty, lo = a, hi = b }
                 expr{ &c, e = value, lo = a, hi = b }
             }
-            cap{ name = n, fields } => {
+            cap{ name = n, fields, includes } => {
                 name{ &c, n, lo = a, hi = b }
                 if fields != null { field_list{ &c, xs = fields, lo = a, hi = b } }
+                let mut i: usize = 0
+                while i < includes.len {
+                    within{ &c, span = includes[i].span, lo = a, hi = b }
+                    type_expr{ &c, t = includes[i].ty, lo = includes[i].span.start, hi = includes[i].span.end }
+                    i = i + 1
+                }
             }
             space{ name = n, decls } => {
                 name{ &c, n, lo = a, hi = b }

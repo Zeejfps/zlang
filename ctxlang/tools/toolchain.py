@@ -43,8 +43,10 @@ NATIVE = os.path.join(ROOT, 'build', 'ctxc')
 STACK = 256 << 20         # reserved; ctxrt.c checks against CTX_STACK, at most 200 MiB
 CTXC_STACK = str(200 << 20)
 # No sibling calls: clang makes them at -O1, and a call must take a frame for unbounded
-# recursion to overflow the stack rather than loop forever.
-CFLAGS = ['-std=gnu11', '-O1', '-w', '-fwrapv', '-fno-optimize-sibling-calls']
+# recursion to overflow the stack rather than loop forever. No strict aliasing: @cast reads memory
+# as another type than it was written as, and so does a pointer to a capability passed as one it
+# includes, which clang's type-based alias analysis (on at -O1) may assume it doesn't.
+CFLAGS = ['-std=gnu11', '-O1', '-w', '-fwrapv', '-fno-optimize-sibling-calls', '-fno-strict-aliasing']
 EXE = '.exe' if os.name == 'nt' else ''
 
 _lock = threading.Lock()

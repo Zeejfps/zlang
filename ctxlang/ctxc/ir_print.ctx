@@ -477,6 +477,7 @@ namespace ir_print {
             }
             addr{ place }             => { head{ &o, e, a = "addr" }; sub{ &o, e = place, depth } }
             seq{ first, then }        => { head{ &o, e, a = "seq" }; sub{ &o, e = first, depth }; sub{ &o, e = then, depth } }
+            with{ slot, init, body }  => { head{ &o, e, a = "with" }; spaced{ &o, n = slot }; sub{ &o, e = init, depth }; sub{ &o, e = body, depth } }
             neg{ e = x, pos }         => { head{ &o, e, a = "neg" }; sub{ &o, e = x, depth }; position{ &o, p = pos } }
             lnot{ e = x }             => { unary{ &o, a = "not", ty = e.ty, e = x, depth } }
             land{ a, b }              => { binary{ &o, tag = "and", ty = e.ty, a, b, depth } }
