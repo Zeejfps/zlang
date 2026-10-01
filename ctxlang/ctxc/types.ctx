@@ -2,8 +2,8 @@
 // layout, fields of a declared type) needs its declarations and lives in check.ctx.
 //
 // Types are interned in a Store: each distinct type has one Id, so two types are equal exactly
-// when their ids are. Ids for the error type, `no value`, `null`, the primitives and the
-// capabilities are fixed (the consts below); every other id comes from `intern`.
+// when their ids are. Ids for the error type, `no value`, `null` and the primitives are fixed
+// (the consts below); every other id comes from `intern`.
 //
 // The error type stands for a type that couldn't be resolved. It is equal to itself only, but
 // the checker accepts it wherever a type is expected and reports nothing more about it, so one
@@ -19,15 +19,10 @@ namespace types {
         "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "f32", "f64", "bool",
     ]
 
-    enum Cap: u8 { io, fs, mem }
-
-    const CAP_NAMES: [3][]u8 = ["Io", "Fs", "Mem"]
-
     const ERROR: Id = 0
     const VOID: Id = 1
     const NULL: Id = 2
     const FIRST_PRIM: Id = 3             // Prim p has id FIRST_PRIM + p
-    const FIRST_CAP: Id = 15             // Cap c has id FIRST_CAP + c
     const I32: Id = 5
     const U8: Id = 7
     const USIZE: Id = 11
@@ -42,7 +37,7 @@ namespace types {
         void,                                   // what a function without `-> R` returns
         nil,                                    // the type of `null` before it meets a ?T
         prim{ p: Prim },
-        cap{ c: Cap },
+        cap{ decl: u32 },                       // a capability
         ptr{ elem: Id, mutable: bool },
         slice{ elem: Id, mutable: bool },
         array{ n: u64, elem: Id },
@@ -88,11 +83,6 @@ namespace types {
             _ = intern{ &s, t = Type::prim{ p = @as(Prim, i) } }
             i = i + 1
         }
-        i = 0
-        while i < CAP_NAMES.len {
-            _ = intern{ &s, t = Type::cap{ c = @as(Cap, i) } }
-            i = i + 1
-        }
         return s
     }
 
@@ -112,7 +102,7 @@ namespace types {
     }
 
     fn prim { p: Prim } -> Id { return FIRST_PRIM + @as(Id, p) }
-    fn cap { c: Cap } -> Id { return FIRST_CAP + @as(Id, c) }
+    fn cap { mut s: Store, decl: u32 } -> Id { return intern{ &s, t = Type::cap{ decl } } }
 
     // ---- building
 
@@ -245,7 +235,7 @@ namespace types {
             void => { return 2 }
             nil => { return 3 }
             prim{ p } => { return mix{ h = 4, n = @as(u64, p) } }
-            cap{ c } => { return mix{ h = 5, n = @as(u64, c) } }
+            cap{ decl } => { return mix{ h = 5, n = decl } }
             ptr{ elem, mutable } => { return mix{ h = mix{ h = 6, n = elem }, n = flag{ b = mutable } } }
             slice{ elem, mutable } => { return mix{ h = mix{ h = 7, n = elem }, n = flag{ b = mutable } } }
             array{ n, elem } => { return mix{ h = mix{ h = 8, n }, n = elem } }
@@ -290,7 +280,7 @@ namespace types {
             void => { match b { void => { return true } else => { return false } } }
             nil => { match b { nil => { return true } else => { return false } } }
             prim{ p } => { match b { prim{ p = q } => { return p == q } else => { return false } } }
-            cap{ c } => { match b { cap{ c = d } => { return c == d } else => { return false } } }
+            cap{ decl } => { match b { cap{ decl = d } => { return decl == d } else => { return false } } }
             ptr{ elem, mutable } => {
                 match b { ptr{ elem = e, mutable = m } => { return elem == e and mutable == m } else => { return false } }
             }

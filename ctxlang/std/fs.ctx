@@ -17,6 +17,9 @@
 //
 // Paths are bytes, relative to the working directory the program was started in.
 //
+// Permission to use the filesystem.
+capability Fs
+
 namespace fs {
     // ---- the runtime's (ctxrt.c). Each returns a status: >= 0 is the result, < 0 an error
     // code that `error_of` decodes.

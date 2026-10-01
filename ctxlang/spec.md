@@ -4,7 +4,7 @@ Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound funct
 
 ## 1. Top level
 
-1. A program is a sequence of declarations: `fn`, `extern fn` (§18), `struct`, `union`, `enum`, `type`, `const`, `namespace`. Any declaration may have attributes (§18).
+1. A program is a sequence of declarations: `fn`, `extern fn` (§18), `struct`, `union`, `enum`, `type`, `const`, `capability` (§15), `namespace`. Any declaration may have attributes (§18).
 2. There is no mutable state at top level. Top-level names may be referenced from anywhere.
 3. All effects (IO, memory, OS) reach a function only through its context.
 4. Source files are UTF-8. Names are ASCII: a letter or `_`, then letters, digits and `_`. Other characters may appear only in comments, which are `// to the end of the line` and `/* ... */` (not nested). String and character literals are ASCII too (§11 Literals).
@@ -513,17 +513,25 @@ The compiler checks, within each function, that the address of a local doesn't o
    - assign a value derived from `L` to a place that goes through a deref
 4. Not checked: a callee storing a read-only pointer argument through its own `mut` field, and a pointer returned from a `&p` passed to a `mut` field. These remain undefined behaviour if the memory no longer exists (§12).
 
-## 15. Entry point
+## 15. Capabilities and the entry point
 
 ```
-fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 { ... }
+capability Glfw                                   // permission to call a C library (§18)
+
+fn main { mut io: Io, mut fs: Fs, mut glfw: Glfw, args: Args } -> i32 { ... }
 ```
+
+1. `capability Name` declares a **capability type**: permission to have some effect (§1.3). It has no fields, no generic parameters and no zero value, and takes no space.
+2. Nothing can construct a capability: `Name{}` is an error. The only ones are those `main` receives, which it passes down to the functions that need them.
+3. std declares `Io` (console, §17 `io`), `Fs` (files, §17 `fs`) and `Mem` (memory beyond the stack, §17 `mem`). A binding of a C library declares its own, and its extern fns with effects take it (§18).
+4. A capability is permission for code that follows the rules, not a sandbox: a pointer `@cast` (§13) can forge one, as it can corrupt any memory.
+
+### Entry point
 
 1. `fn main { ... }` is the entry point.
-2. Every field of `main` must have a **capability type**, except a read-only field `args`. The runtime supplies them. A program declares only the ones it uses.
-3. User code can't construct capability types. Current capability types: `Io` (console, §17 `io`), `Fs` (files, §17 `fs`) and `Mem` (memory beyond the stack, §17 `mem`).
-4. `args: Args` holds the command-line arguments that follow the program, as bytes. `Args` is a top-level std alias for `[][]u8` (§17), so either spelling is accepted.
-5. `main` may return `i32`: the program's exit code. Without a return type it exits with 0.
+2. Every field of `main` must have a capability type, except a read-only field `args`. The runtime supplies them. A program declares only the ones it uses.
+3. `args: Args` holds the command-line arguments that follow the program, as bytes. `Args` is a top-level std alias for `[][]u8` (§17), so either spelling is accepted.
+4. `main` may return `i32`: the program's exit code. Without a return type it exits with 0.
 
 ## 16. Open questions
 
@@ -549,6 +557,7 @@ Settled questions are removed, and the rest keep their numbers.
 | `slice` | Helpers for built-in slices (§12): `empty`, `cast`, `copy`, `fill`, `eq_bytes` |
 | `c` | Attributes for calling C (§18): `symbol { name: []u8 }`. |
 | `Args` | Declared at the top level: `type Args = [][]u8`, the type of `main`'s `args` (§15). |
+| `Io`, `Fs`, `Mem` | Declared at the top level: `capability Io` and so on (§15), in `io.ctx`, `fs.ctx` and `mem.ctx`. |
 | `Result(T, E)` | Declared at the top level: `union Result(T, E) { ok{ value: T }, err{ error: E } }`. Namespace `result`: `is_ok`, `is_err`, `value`, `error`, `value_or`, `unwrap`, `ok_or`. |
 | `fs` | `File`, `Mode` (`read`, `write`, `append`, `create`), `Error`; `open`, `read`, `write`, `close`, `size`, `remove`, and `read_all` (into memory from an allocator) and `write_all`. Every function takes `mut fs: Fs` and reports failure as a `Result(T, fs::Error)` or `?fs::Error`. Extern fns: `sys_open`, `sys_read`, `sys_write`, `sys_close`, `sys_size`, `sys_remove`. |
 | `alloc` | `Bytes` (`[]mut u8`), the allocator type `Fn(S)`, typed `resize(T, S)`, and `new(T, S)` and `free(T, S)` for one `T`: `new` returns a `?*mut T` holding the given `value` |

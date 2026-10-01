@@ -30,7 +30,7 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
   compiles ctxc's current source into `build/ctxc` (about 7 s the first time, cached after).
   Without Python: `cc -std=gnu11 -O1 -fwrapv -fno-optimize-sibling-calls -Ictxc/rt
   bootstrap/ctxc.c ctxc/rt/ctxrt.c -lm -o ctxc`, then `ctxc build OUT.c std/*.ctx -- FILE...`.
-- `python -m unittest discover tests` runs all 349 tests through the native ctxc: each program is
+- `python -m unittest discover tests` runs all 352 tests through the native ctxc: each program is
   compiled with `ctxc build`, built with cc and run. They pass on Windows (gcc), Linux (gcc) and
   macOS arm64 (Apple clang).
 - `tools/fixpoint.py`: ctxc built by itself, twice, writes byte-identical C, the same as the
@@ -709,15 +709,37 @@ Increments, each landing with tests and a refreshed bootstrap:
    into std as extern fns over `ctx_io_write` and the rest, which take no capability parameter,
    and the table and its `<natives>` file are gone. `io::Stream` is an enum, since a union can't
    cross into C. The IR has no `(native ...)` any more (IR version 9).
-3. **Capability types declared in source.** `Io`, `Fs` and `Mem` become std declarations, `main`
-   accepts any capability type, and a namespace can construct its own capabilities, so a binding
-   can derive one from another (a window from a library, a GL context from a window).
+3. **Capability types declared in source** — *done.* `capability Name` declares one: no fields,
+   no zero value, size 0, and nothing can construct it, so the only ones are those `main`
+   receives. `Io`, `Fs` and `Mem` are std's declarations, and a binding declares its own (one per
+   library, say). Handles such as windows or buffers are plain structs, as `fs::File` is: the
+   capability is the permission, the struct is data. Capabilities with fields, which a binding
+   would construct from another (a GL context from a window), wait until a binding needs them.
 4. **Linking.** `#c::library{ ... }` on a namespace names the library its externs come from, per
    platform. `ctxc build` reports what to link and the driver passes it to cc. Later, a mode that
    loads the library at run time, where the capability means "it loaded".
 5. **`?*T` as a nullable C pointer**, so C's `NULL` crosses as `null`.
 6. **The rest, one at a time:** C function pointers (GL and Vulkan load functions at run time),
    null-terminated strings, untagged unions (§16 Q8), callbacks from C.
+7. **A smaller runtime: std over the OS's C functions.** std's `io`, `fs` and `mem` call
+   `ctx_io_write` and the rest, thin C wrappers over libc and the OS. They move into ctxlang, one
+   at a time, over externs to the OS itself, and the runtime keeps only what has to be C:
+   startup, panics, the stack check, and small helpers such as reading `errno` (a macro, not a
+   symbol). This is the FFI's own test.
+   - **Platforms.** A capability type stays one type; what differs per platform is the namespace
+     of functions that take it. `fs.windows.ctx` (`_wopen`, UTF-16 paths) and `fs.posix.ctx`
+     (`open`) both declare `namespace fs` with the same signatures, and the build compiles one.
+     A call is a direct call: no interface, no dispatch. Until stage 9's build programs, ctxc
+     picks the files by a name convention and `--target`.
+   - **Keeping platforms in step.** A build checks only its own files, so `ctxc check --target X`
+     checks any platform's file set from any machine (checking needs no C compiler).
+   - **The bootstrap.** `bootstrap/ctxc.c` is the same on every platform only because ctxc
+     reaches the OS through the runtime. Once std's files differ by platform, ctxc's C does too:
+     either one bootstrap per platform, or a small portable layer kept under what ctxc uses.
+     Decide before the first platform file.
+   - **Needs:** externs chosen per platform (step 4), and the state the runtime shares with
+     panics (buffered stdout, which a panic flushes) moved or exposed. Float formatting and
+     parsing (shortest round-trip text) may stay in C.
 
 *Done when:* a program opens a window and draws with OpenGL through a binding written in
 ctxlang.

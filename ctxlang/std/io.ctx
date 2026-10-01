@@ -10,6 +10,9 @@
 //
 // print* functions write their value only. println* functions add a newline.
 
+// Permission to use the console.
+capability Io
+
 namespace io {
     enum Stream: u32 { out, err }
 

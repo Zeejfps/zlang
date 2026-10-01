@@ -313,6 +313,10 @@ namespace tree {
                 expr{ &d, e = value }
                 d.depth = d.depth - 1
             }
+            cap{ name = n } => {
+                named{ &d, at, kind = "capability", n, tparams = untyped }
+                end{ &d }
+            }
             space{ name = n, decls } => {
                 named{ &d, at, kind = "namespace", n, tparams = untyped }
                 d.depth = d.depth + 1
@@ -922,6 +926,7 @@ namespace decls {
                     else => {}
                 }
             }
+            cap => { pushed{ ok = @fmt(&out, "capability {}\n", q) } }
             external => {
                 pushed{ ok = @fmt(&out, "extern fn {} = {} ", q, check::str{ s = d.symbol }) and sig{ c, d, b = &out } and @fmt(&out, "\n") }
             }

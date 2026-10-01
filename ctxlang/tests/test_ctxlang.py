@@ -771,9 +771,9 @@ class Declarations(Base):
             ('fn f {} {}\nfn main {} -> i64 { return 0 }', '`main` can only return i32 (the exit code), not i64', 2, 1),
             ('fn main { args: []u8 } {}', '`main` context field `args` must have type Args, got []u8', 1, 1),
             ('fn main { n: i32 } {}',
-             '`main` context field `n` must have a capability type (Io, Fs, Mem) or be `args: Args`, got i32', 1, 1),
+             '`main` context field `n` must have a capability type or be `args: Args`, got i32', 1, 1),
             ('fn main { mut args: Args } {}',
-             '`main` context field `args` must have a capability type (Io, Fs, Mem) or be `args: Args`, got [][]u8', 1, 1),
+             '`main` context field `args` must have a capability type or be `args: Args`, got [][]u8', 1, 1),
         ]:
             self.assertDeclError(src, msg, line, col)
         run('fn main { args: [][]u8, mut io: Io, fs: Fs, mut mem: Mem } -> i32 { return 0 }')
@@ -4137,7 +4137,7 @@ class Fs(Base):
         self.assertEqual(run_source(src, out=io.StringIO()), 0)
 
     def test_main_field_must_be_capability(self):
-        self.assertCompileError('fn main { n: i32 } { }', 'must have a capability type (Io, Fs, Mem)')
+        self.assertCompileError('fn main { n: i32 } { }', 'must have a capability type')
 
     def test_fs_needs_capability(self):
         self.assertCompileError("""
@@ -4773,6 +4773,53 @@ fn main { mut io: Io } {
     io::println_i64{ &io, n = 1 }
 }
 """, "1\n")
+
+
+class Capabilities(Base):
+    """`capability Name` (spec §15): permission that only `main` receives and passes down."""
+
+    def assertCapError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_declared_capability_gates_an_extern(self):
+        self.assertOutput("""
+namespace clib {
+    // Permission to call the C library's math.
+    capability Lib
+
+    #c::symbol{ name = "labs" }
+    extern fn long_abs { mut lib: Lib, n: i64 } -> i64
+}
+
+fn magnitude { mut lib: clib::Lib, n: i64 } -> i64 {
+    return clib::long_abs{ &lib, n }
+}
+
+fn main { mut io: Io, mut lib: clib::Lib } {
+    io::println_i64{ &io, n = magnitude{ &lib, n = -12 } }
+}
+""", "12\n")
+
+    def test_std_capabilities_are_declarations(self):
+        # Io is std's `capability Io`; a program's own declaration of the name shadows it.
+        self.assertOutput("""
+capability Io
+fn main { mut io: Io, mut fs: Fs } -> i32 { return @as(i32, @size_of(Io)) + 3 }
+""", "")
+
+    def test_errors(self):
+        for src, msg, line, col in [
+            ('capability C\nfn main {} { let c = C{} }', '`C` is a capability: only `main` receives one, from the runtime', 2, 22),
+            ('fn main {} { let x = Io{} }', '`Io` is a capability: only `main` receives one, from the runtime', 1, 22),
+            ('capability C { x: i32 }\nfn main {} {}', 'a capability has no fields: it is only permission', 1, 14),
+            ('capability C(T)\nfn main {} {}', 'a capability cannot have generic parameters', 1, 13),
+            ('capability C\nstruct S { a: C(u8) }\nfn main {} {}', '`C` takes no type arguments', 2, 15),
+            ('capability C\ncapability C\nfn main {} {}', '`C` is already declared in this scope', 2, 1),
+            ('capability C\nfn main {} { let c: C\n    f{ c } }\nfn f { c: C } {}', '`c` may be read before it is assigned', 3, 8),
+        ]:
+            self.assertCapError(src, msg, line, col)
 
 
 class WordCountExample(Base):

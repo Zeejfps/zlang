@@ -277,7 +277,7 @@ namespace lower {
             prim{ p } => { return ir::Type::prim{ p = ir_prim{ p } } }
             ptr{ elem } => { return ir::Type::ptr{ elem = tid{ &l, t = elem } } }
             array{ n, elem } => { return ir::Type::arr{ n, elem = tid{ &l, t = elem } } }
-            cap{ c = k } => { return ir::Type::cap{ name = types::CAP_NAMES[@as(usize, k)] } }
+            cap{ decl } => { return ir::Type::cap{ name = check::get_decl{ c = l.c.*, d = decl }.qual } }
             void => { return ir::Type::void }
             func{ fields, ret, bound } => {
                 let sorted = sorted_fields{ l, fields }

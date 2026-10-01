@@ -167,6 +167,7 @@ namespace recover {
                 alias{ name } => { kind = 't'; n = name; braced = false }
                 constant{ name } => { kind = 'c'; n = name; braced = false }
                 space{ name, decls } => { kind = 'n'; n = name; inner = decls }
+                cap{ name } => { kind = 'k'; n = name; braced = false }
             }
             if kind != 0 {
                 let mut b = utf8::builder{ realloc = arena::alloc, &heap }
@@ -282,6 +283,7 @@ namespace recover {
                 type_expr{ &c, t = ty, lo = a, hi = b }
                 expr{ &c, e = value, lo = a, hi = b }
             }
+            cap{ name = n } => { name{ &c, n, lo = a, hi = b } }
             space{ name = n, decls } => {
                 name{ &c, n, lo = a, hi = b }
                 let mut i: usize = 0

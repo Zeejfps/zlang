@@ -131,6 +131,12 @@ namespace parser {
             let ty = type_expr{ &p }
             expect{ &p, k = tok::Kind::assign }
             d = syntax::DeclKind::constant{ name, ty, value = expr{ &p } }
+        } else if k == tok::Kind::kw_capability {
+            skip{ &p }
+            let name = ident{ &p }
+            if is{ p, k = tok::Kind::lbrace } and not nl{ p } { fail{ &p, msg = "a capability has no fields: it is only permission" } }
+            if is{ p, k = tok::Kind::lparen } and not nl{ p } { fail{ &p, msg = "a capability cannot have generic parameters" } }
+            d = syntax::DeclKind::cap{ name }
         } else if k == tok::Kind::kw_namespace {
             skip{ &p }
             let name = ident{ &p }
@@ -1109,7 +1115,7 @@ namespace parser {
     fn is_decl_start { k: tok::Kind } -> bool {
         return k == tok::Kind::kw_fn or k == tok::Kind::kw_struct or k == tok::Kind::kw_union
                or k == tok::Kind::kw_enum or k == tok::Kind::kw_type or k == tok::Kind::kw_const
-               or k == tok::Kind::kw_namespace or k == tok::Kind::kw_extern
+               or k == tok::Kind::kw_namespace or k == tok::Kind::kw_extern or k == tok::Kind::kw_capability
     }
 
     // At a declaration keyword that begins a line: a block or match that reaches one after an

@@ -11,6 +11,9 @@
 //       ...
 //   }
 
+// Permission to take memory from the system.
+capability Mem
+
 namespace mem {
     // The runtime's (ctxrt.c): `size` rounded up to a multiple of the page size, zeroed and
     // page-aligned. Empty if `size` is 0 or there isn't enough memory.

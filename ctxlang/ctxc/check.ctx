@@ -36,7 +36,7 @@ namespace check {
     // A source file: std's files come first, then the program's.
     struct File { name: []u8, text: []u8, lines: []u32, tree: syntax::File }
 
-    enum Kind: u8 { func, record, sum, enumeration, alias, constant, external }
+    enum Kind: u8 { func, record, sum, enumeration, alias, constant, external, cap }
 
     // A union variant, resolved. A variant without a payload has null fields.
     struct Variant { name: []u8, fields: ?[]types::Field }
@@ -63,7 +63,6 @@ namespace check {
         space{ ns: u32 },
         decl{ i: u32 },
         prim{ p: types::Prim },
-        cap{ c: types::Cap },
     }
 
     struct Space {
@@ -79,7 +78,6 @@ namespace check {
         space{ ns: u32 },
         decl{ i: u32 },
         prim{ p: types::Prim },
-        cap{ c: types::Cap },
         param{ decl: u32, index: u32 },
         local{ var: u32 },
     }
@@ -305,12 +303,6 @@ namespace check {
             put_name{ &c, ns = UNIVERSE, values = false, name = types::PRIM_NAMES[i], e = Entry::prim{ p } }
             i = i + 1
         }
-        i = 0
-        while i < types::CAP_NAMES.len {
-            let cp = @as(types::Cap, i)
-            put_name{ &c, ns = UNIVERSE, values = false, name = types::CAP_NAMES[i], e = Entry::cap{ c = cp } }
-            i = i + 1
-        }
         return c
     }
 
@@ -411,6 +403,10 @@ namespace check {
                     let d = declare{ &c, kind = Kind::alias, x, file, name, tparams, ns }
                     add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
                     push{ xs = &c.aliases, n = d }
+                }
+                cap{ name } => {
+                    let d = declare{ &c, kind = Kind::cap, x, file, name, tparams = no_names{}, ns }
+                    add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
                 }
                 space{ name, decls = inner } => {
                     let child = space{ &c, name = name.text, parent = ns }
@@ -788,7 +784,7 @@ namespace check {
                     cap => {}
                     else => {
                         let mut b = message{ c }
-                        pushed{ ok = @fmt(&b, "`main` context field `{}` must have a capability type (Io, Fs, Mem) or be `args: Args`, got {}", str{ s = f.name }, tstr{ c, t }) }
+                        pushed{ ok = @fmt(&b, "`main` context field `{}` must have a capability type or be `args: Args`, got {}", str{ s = f.name }, tstr{ c, t }) }
                         error{ &c, at, msg = utf8::view{ b } }
                     }
                 }
@@ -1066,10 +1062,6 @@ namespace check {
                 if given > 0 { no_targs{ &c, what = types::PRIM_NAMES[@as(usize, p)], at } }
                 return types::prim{ p }
             }
-            cap{ c = k } => {
-                if given > 0 { no_targs{ &c, what = types::CAP_NAMES[@as(usize, k)], at } }
-                return types::cap{ c = k }
-            }
             space{ ns } => {
                 let mut b = message{ c }
                 pushed{ ok = @fmt(&b, "namespace `{}` used as a type", str{ s = get_space{ c, ns }.name }) }
@@ -1078,6 +1070,10 @@ namespace check {
             }
             decl{ i } => {
                 let x = get_decl{ c, d = i }
+                if x.kind == Kind::cap {
+                    if given > 0 { no_targs{ &c, what = x.name.text, at } }
+                    return types::cap{ s = &c.ty, decl = i }
+                }
                 let n = x.tparams.len
                 if given > n or (given < n and not partial) {
                     let mut b = message{ c }
@@ -1342,7 +1338,6 @@ namespace check {
             space{ ns } => { use{ &c, n, r = Ref::space{ ns } } }
             decl{ i } => { use{ &c, n, r = Ref::decl{ i } } }
             prim{ p } => { use{ &c, n, r = Ref::prim{ p } } }
-            cap{ c = k } => { use{ &c, n, r = Ref::cap{ c = k } } }
         }
     }
 
@@ -1379,7 +1374,7 @@ namespace check {
             void => { return utf8::push{ &b, s = "no value" } }
             nil => { return utf8::push{ &b, s = "null" } }
             prim{ p } => { return utf8::push{ &b, s = str{ s = types::PRIM_NAMES[@as(usize, p)] } } }
-            cap{ c = k } => { return utf8::push{ &b, s = str{ s = types::CAP_NAMES[@as(usize, k)] } } }
+            cap{ decl } => { return utf8::push{ &b, s = str{ s = get_decl{ c, d = decl }.name.text } } }
             ptr{ elem, mutable } => {
                 return utf8::push{ &b, s = if mutable { "*mut " } else { "*" } } and write_type{ c, t = elem, &b }
             }
@@ -5331,7 +5326,16 @@ namespace check {
         let t = types::prune{ s = c.ty, t = dt }
         if t == types::ERROR { return types::ERROR }
         let mut decl = NONE
-        match types::get{ s = c.ty, id = t } { record{ decl = x } => { decl = x } else => {} }
+        match types::get{ s = c.ty, id = t } {
+            record{ decl = x } => { decl = x }
+            cap => {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`{}` is a capability: only `main` receives one, from the runtime", str{ s = seg.name.text }) }
+                error{ &c, at = seg.name.span, msg = utf8::view{ b } }
+                return types::ERROR
+            }
+            else => {}
+        }
         if decl == NONE {
             let mut b = message{ c }
             pushed{ ok = @fmt(&b, "`{}` is not a struct", str{ s = seg.name.text }) }
