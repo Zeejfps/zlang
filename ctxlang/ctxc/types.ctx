@@ -45,7 +45,10 @@ namespace types {
         record{ decl: u32, args: []Id },        // a struct
         sum{ decl: u32, args: []Id },           // a union
         enumeration{ decl: u32 },
-        func{ fields: []Field, ret: Id, bound: bool },
+        // A function type. An external one, `extern fn{...}`, is a C function pointer: its
+        // fields are C's parameters in order, so order is part of its identity, and it is never
+        // bound.
+        func{ fields: []Field, ret: Id, bound: bool, external: bool },
         param{ decl: u32, index: u32 },         // generic parameter `index` of decl, opaque
         var{ n: u32 },                          // inference variable n (Store.vars)
     }
@@ -123,8 +126,8 @@ namespace types {
     }
 
     // The type of a function with fields and ret, a copy of which the store keeps.
-    fn func { mut s: Store, fields: []Field, ret: Id, bound: bool } -> Id {
-        return intern{ &s, t = Type::func{ fields = copy(Field){ s, xs = fields }, ret, bound } }
+    fn func { mut s: Store, fields: []Field, ret: Id, bound: bool, external: bool } -> Id {
+        return intern{ &s, t = Type::func{ fields = copy(Field){ s, xs = fields }, ret, bound, external } }
     }
 
     fn record { mut s: Store, decl: u32, args: []Id } -> Id {
@@ -161,7 +164,7 @@ namespace types {
             sum{ decl = d, args = xs } => {
                 return sum{ &s, decl = d, args = subst_all{ &s, ts = xs, decl, args } }
             }
-            func{ fields, ret, bound } => {
+            func{ fields, ret, bound, external } => {
                 let mut fs = list::new(Field){ realloc = arena::alloc, heap = s.heap }
                 let mut i: usize = 0
                 while i < fields.len {
@@ -169,7 +172,7 @@ namespace types {
                     add{ xs = &fs, item = Field{ name = f.name, mutable = f.mutable, ty = subst{ &s, t = f.ty, decl, args } } }
                     i = i + 1
                 }
-                return func{ &s, fields = list::items{ list = fs }, ret = subst{ &s, t = ret, decl, args }, bound }
+                return func{ &s, fields = list::items{ list = fs }, ret = subst{ &s, t = ret, decl, args }, bound, external }
             }
             else => { return t }
         }
@@ -243,8 +246,8 @@ namespace types {
             record{ decl, args } => { return mix_ids{ h = mix{ h = 10, n = decl }, ids = args } }
             sum{ decl, args } => { return mix_ids{ h = mix{ h = 11, n = decl }, ids = args } }
             enumeration{ decl } => { return mix{ h = 12, n = decl } }
-            func{ fields, ret, bound } => {
-                let mut h = mix{ h = mix{ h = 13, n = ret }, n = flag{ b = bound } }
+            func{ fields, ret, bound, external } => {
+                let mut h = mix{ h = mix{ h = mix{ h = 13, n = ret }, n = flag{ b = bound } }, n = flag{ b = external } }
                 let mut i: usize = 0
                 while i < fields.len {
                     let f = fields[i]
@@ -298,10 +301,10 @@ namespace types {
                 match b { sum{ decl = d, args = xs } => { return decl == d and same_ids{ a = args, b = xs } } else => { return false } }
             }
             enumeration{ decl } => { match b { enumeration{ decl = d } => { return decl == d } else => { return false } } }
-            func{ fields, ret, bound } => {
+            func{ fields, ret, bound, external } => {
                 match b {
-                    func{ fields = fs, ret = r, bound = bd } => {
-                        if ret != r or bound != bd or fields.len != fs.len { return false }
+                    func{ fields = fs, ret = r, bound = bd, external = ex } => {
+                        if ret != r or bound != bd or external != ex or fields.len != fs.len { return false }
                         let mut i: usize = 0
                         while i < fields.len {
                             let f = fields[i]
@@ -369,7 +372,7 @@ namespace types {
             array{ n, elem } => { return array{ &s, n, elem = zonk{ &s, t = elem } } }
             record{ decl, args } => { return record{ &s, decl, args = zonk_all{ &s, ts = args } } }
             sum{ decl, args } => { return sum{ &s, decl, args = zonk_all{ &s, ts = args } } }
-            func{ fields, ret, bound } => {
+            func{ fields, ret, bound, external } => {
                 let mut fs = list::new(Field){ realloc = arena::alloc, heap = s.heap }
                 let mut i: usize = 0
                 while i < fields.len {
@@ -377,7 +380,7 @@ namespace types {
                     add{ xs = &fs, item = Field{ name = f.name, mutable = f.mutable, ty = zonk{ &s, t = f.ty } } }
                     i = i + 1
                 }
-                return func{ &s, fields = list::items{ list = fs }, ret = zonk{ &s, t = ret }, bound }
+                return func{ &s, fields = list::items{ list = fs }, ret = zonk{ &s, t = ret }, bound, external }
             }
             else => { return x }
         }
@@ -482,15 +485,17 @@ namespace types {
             sum{ decl, args } => {
                 match tb { sum{ decl = d, args = xs } => { return decl == d and unify_all{ &s, a = args, b = xs } } else => { return false } }
             }
-            func{ fields, ret, bound } => {
+            func{ fields, ret, bound, external } => {
                 match tb {
-                    func{ fields = fs, ret = r, bound = bd } => {
-                        if bound != bd or fields.len != fs.len { return false }
+                    func{ fields = fs, ret = r, bound = bd, external = ex } => {
+                        if bound != bd or external != ex or fields.len != fs.len { return false }
                         let mut i: usize = 0
                         while i < fields.len {
                             let f = fields[i]
-                            let g = find_field{ fields = fs, name = f.name }
+                            // A C function's fields pair up in order; a ctxlang function's by name.
+                            let g: ?Field = if external { fs[i] } else { find_field{ fields = fs, name = f.name } }
                             if g == null or g.mutable != f.mutable or not unify{ &s, a = f.ty, b = g.ty } { return false }
+                            if external and not slice::eq_bytes{ a = f.name, b = g.name } { return false }
                             i = i + 1
                         }
                         return unify{ &s, a = ret, b = r }

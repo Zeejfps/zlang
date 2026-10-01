@@ -53,6 +53,8 @@ namespace ir {
         nptr{ ptr: TypeId },
         // Fields sorted by name.
         func{ bound: bool, params: []Param, ret: TypeId },
+        // A C function pointer (`extern fn{...}`): params in declaration order, which is C's.
+        cfn{ params: []Param, ret: TypeId },
         cap{ name: Bytes },
         void,
     }

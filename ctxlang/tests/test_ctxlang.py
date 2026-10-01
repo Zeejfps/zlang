@@ -1075,9 +1075,9 @@ class Bodies(Base):
             ('fn f {} {\n    let n = @trunc(u8, 1.5)\n}',
              '@trunc converts integers only', 2, 24),
             ('fn f { p: *i32 } {\n    let q = @cast(i32, p)\n}',
-             '@cast needs a pointer target type, got i32', 2, 13),
+             '@cast needs a pointer or extern fn target type, got i32', 2, 13),
             ('fn f { n: i32 } {\n    let q = @cast(*u8, n)\n}',
-             '@cast needs a pointer argument', 2, 24),
+             '@cast needs a pointer or extern fn argument', 2, 24),
             ('fn f { p: *i32 } {\n    let q = @cast(*mut u8, p)\n}',
              '@cast cannot make *i32 writable', 2, 28),
             ('fn f { n: i32 } {\n    let s = @slice(n, 1)\n}',
@@ -5177,6 +5177,143 @@ fn build { mut b: Build } {
         self.assertCompileError('fn build {} -> u8 { return 1 }', '`build` can only return i32 (the exit code), not u8')
         # With a `main`, `build` is an ordinary function.
         self.assertOutput('fn build {} -> i32 { return 7 }\nfn main { mut io: Io } { io::println_i64{ &io, n = build{} } }', '7\n')
+
+
+class CFunctionPointers(Base):
+    """`extern fn{...} -> R`, a C function pointer (spec §12, §18): from an address with @cast,
+    from a named extern fn, called with its fields in C's order."""
+
+    LIB_C = """
+#include <stdint.h>
+static int32_t add(int32_t a, int32_t b) { return a + b; }
+static int32_t mul(int32_t a, int32_t b) { return a * b; }
+void *ctxtest_op(int32_t which) { return which == 0 ? (void *)add : which == 1 ? (void *)mul : (void *)0; }
+int32_t (*ctxtest_op_typed(int32_t which))(int32_t, int32_t) { return which == 0 ? add : which == 1 ? mul : 0; }
+int32_t ctxtest_apply(int32_t (*f)(int32_t, int32_t), int32_t a, int32_t b) { return f(a, b); }
+int32_t ctxtest_sub(int32_t a, int32_t b) { return a - b; }
+void ctxtest_out(int32_t (*f)(int32_t, int32_t), int32_t *out) { *out = f(20, 22); }
+"""
+
+    BUILD = """
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "cfn", root = "src" }
+    build::lib_path{ &b, exe, path = "lib" }
+    build::link{ &b, exe, lib = "ctxtest" }
+}
+"""
+
+    HEAD = """
+type Op = extern fn{ a: i32, b: i32 } -> i32
+extern fn ctxtest_op { which: i32 } -> ?*u8
+extern fn ctxtest_op_typed { which: i32 } -> ?Op
+extern fn ctxtest_apply { f: Op, a: i32, b: i32 } -> i32
+extern fn ctxtest_sub { a: i32, b: i32 } -> i32
+extern fn ctxtest_out { f: Op, mut out: i32 }
+"""
+
+    def run_with_lib(self, main):
+        import subprocess
+        import tempfile
+        from toolchain import build_project, compiler, run_exe
+        if shutil.which('ar') is None:
+            self.skipTest('no ar')
+        d = tempfile.mkdtemp(prefix='ctxcfn-', dir=os.path.join(ROOT, 'build'))
+        self.addCleanup(shutil.rmtree, d, True)
+        for name, text in [('lib/op.c', self.LIB_C), ('build.ctx', self.BUILD), ('src/main.ctx', self.HEAD + main)]:
+            path = os.path.join(d, name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', encoding='utf-8', newline='') as f:
+                f.write(text)
+        cc, env = compiler()
+        lib = os.path.join(d, 'lib')
+        subprocess.run(cc + ['-c', os.path.join(lib, 'op.c'), '-o', os.path.join(lib, 'op.o')], check=True, env=env)
+        subprocess.run(['ar', 'rcs', os.path.join(lib, 'libctxtest.a'), os.path.join(lib, 'op.o')], check=True)
+        [(_, exe)] = build_project(d)
+        out = io.StringIO()
+        run_exe(exe, out=out)
+        return out.getvalue()
+
+    def assertCfnError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_from_an_address_and_in_a_struct(self):
+        self.assertEqual(self.run_with_lib("""
+capability Lib
+struct Ops { add: Op, gated: extern fn{ mut lib: Lib, a: i32, b: i32 } -> i32 }
+fn main { mut io: Io, mut lib: Lib } {
+    let some{ value = p } = ctxtest_op{ which = 0 } else { return }
+    let add = @cast(Op, p)
+    io::println_i64{ &io, n = add{ a = 2, b = 3 } }
+    // Fields go to C in declaration order, whatever order they are written in.
+    let ops = Ops{ add, gated = @cast(extern fn{ mut lib: Lib, a: i32, b: i32 } -> i32, p) }
+    io::println_i64{ &io, n = ops.add{ b = 10, a = 4 } }
+    io::println_i64{ &io, n = ops.gated{ &lib, a = 1, b = 1 } }
+    let back = @cast(*u8, add)
+    io::println_bool{ &io, n = @addr(back) == @addr(p) }
+}
+"""), "5\n14\n2\ntrue\n")
+
+    def test_nullable(self):
+        self.assertEqual(self.run_with_lib("""
+fn main { mut io: Io } {
+    let m = ctxtest_op_typed{ which = 1 }
+    if m != null { io::println_i64{ &io, n = m{ a = 6, b = 7 } } }
+    let none = ctxtest_op_typed{ which = 5 }
+    if none == null { io::println{ &io, s = "null" } }
+    let some{ value = add } = ctxtest_op_typed{ which = 0 } else { return }
+    io::println_i64{ &io, n = add{ a = 1, b = 2 } }
+    match ctxtest_op_typed{ which = 1 } {
+        null => { io::println{ &io, s = "missing" } }
+        some{ value = mul } => { io::println_i64{ &io, n = mul{ a = 3, b = 3 } } }
+    }
+    io::println_i64{ &io, n = @as(i64, @size_of(?Op)) }
+}
+"""), "42\nnull\n3\n9\n8\n")
+
+    def test_named_extern_as_a_value(self):
+        self.assertEqual(self.run_with_lib("""
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = ctxtest_apply{ f = ctxtest_sub, a = 10, b = 4 } }
+    let sub: Op = ctxtest_sub
+    io::println_i64{ &io, n = ctxtest_apply{ f = sub, a = 1, b = 4 } }
+    let mut got: i32 = 0
+    ctxtest_out{ f = sub, out = &got }
+    io::println_i64{ &io, n = got }
+    let maybe: ?Op = ctxtest_sub
+    if maybe != null { io::println_i64{ &io, n = maybe{ a = 9, b = 9 } } }
+}
+"""), "6\n-3\n-2\n0\n")
+
+    def test_errors(self):
+        h = 'extern fn labs { n: i64 } -> i64\n'
+        for src, msg, line, col in [
+            ('struct S { f: extern fn{ x: ?i32 } }\nfn main {} {}',
+             "an extern fn type can't pass `x` to C: it has type ?i32, which C has no equivalent of", 1, 26),
+            ('struct S { f: extern fn{} -> [4]u8 }\nfn main {} {}',
+             "an extern fn type can't return [4]u8: C has no equivalent of it", 1, 30),
+            (h + 'fn main {} { let f: extern fn{ n: i64 } -> i64 = labs\n  _ = f{ m = 1 } }', '`f` has no field `m`', 3, 10),
+            ('fn g { n: i64 } -> i64 { return n }\nfn main {} { let f: extern fn{ n: i64 } -> i64 = g }',
+             "a ctxlang function can't be passed as a C function pointer (extern fn{ n: i64 } -> i64): only an extern fn can", 2, 50),
+            (h + 'fn main {} { let h: extern fn{ n: i64 } -> i64 = labs\n  let k: fn{ n: i64 } -> i64 = h }',
+             "a C function pointer (extern fn{ n: i64 } -> i64) can't be used as a ctxlang fn{ n: i64 } -> i64", 3, 32),
+            (h + 'fn main {} { let f: extern fn{ n: i32 } -> i64 = labs }',
+             'expected extern fn{ n: i32 } -> i64, got extern fn{ n: i64 } -> i64', 2, 50),
+            (h + 'fn main {} { let f: extern fn{ n: i64 } -> i64 = labs\n  let g = f{ _ } }',
+             "a C function pointer can't be bound with `_`: call it with every field", 3, 12),
+            ('fn main {} { let x: i32 = 5\n  let f = @cast(extern fn{}, x) }', '@cast needs a pointer or extern fn argument', 2, 30),
+            ('fn main {} { let p: ?*u8 = null\n  let f = @cast(extern fn{}, p) }',
+             "@cast needs a value that isn't null: check the optional first", 2, 30),
+            ('fn g {} {}\nfn main {} { let f = @cast(*u8, g) }',
+             "@cast can't take a ctxlang function: only a pointer or an extern fn value", 2, 33),
+            ('fn main {} { let f = @cast(fn{}, 0) }', '@cast needs a pointer or extern fn target type, got fn{}', 1, 22),
+        ]:
+            self.assertCfnError(src, msg, line, col)
+
+    def test_type_identity_is_ordered(self):
+        self.assertCfnError('extern fn f { a: i32, b: i32 }\nfn main {} { let g: extern fn{ b: i32, a: i32 } = f }',
+            'expected extern fn{ b: i32, a: i32 }, got extern fn{ a: i32, b: i32 }', 2, 51)
 
 
 class WordCountExample(Base):

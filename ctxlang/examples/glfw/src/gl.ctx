@@ -1,0 +1,21 @@
+// The two OpenGL functions main.ctx draws with, looked up at run time through GLFW, as GL has to
+// be on Windows beyond version 1.1. Each is a C function pointer (spec §12, C function
+// pointers) whose `mut gl: Gl` field says who may call it and isn't passed to C.
+namespace gl {
+    // Permission to call OpenGL.
+    capability Gl
+
+    const COLOR_BUFFER_BIT: u32 = 16384           // GL_COLOR_BUFFER_BIT
+
+    type ClearColor = extern fn{ mut gl: Gl, r: f32, g: f32, b: f32, a: f32 }
+    type Clear = extern fn{ mut gl: Gl, mask: u32 }
+
+    struct Procs { clear_color: ClearColor, clear: Clear }
+
+    // The functions, from the context current on this thread; null if one is missing.
+    fn load { mut glfw: glfw::Glfw } -> ?Procs {
+        let some{ value = clear_color } = glfw::proc_address{ &glfw, name = "glClearColor\0" } else { return null }
+        let some{ value = clear } = glfw::proc_address{ &glfw, name = "glClear\0" } else { return null }
+        return Procs{ clear_color = @cast(ClearColor, clear_color), clear = @cast(Clear, clear) }
+    }
+}

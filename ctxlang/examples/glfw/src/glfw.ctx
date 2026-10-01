@@ -17,6 +17,10 @@ namespace glfw {
     extern fn glfwWindowShouldClose { mut glfw: Glfw, window: *mut Window } -> i32
     extern fn glfwPollEvents { mut glfw: Glfw }
     extern fn glfwGetTime { mut glfw: Glfw } -> f64
+    extern fn glfwMakeContextCurrent { mut glfw: Glfw, window: *mut Window }
+    extern fn glfwSwapBuffers { mut glfw: Glfw, window: *mut Window }
+    // GLFWglproc: the address of a GL function, as a C function pointer of no particular type.
+    extern fn glfwGetProcAddress { mut glfw: Glfw, name: *u8 } -> ?extern fn{}
 
     fn init { mut glfw: Glfw } -> bool { return glfwInit{ &glfw } != 0 }
 
@@ -38,4 +42,15 @@ namespace glfw {
 
     // Seconds since init.
     fn time { mut glfw: Glfw } -> f64 { return glfwGetTime{ &glfw } }
+
+    // Makes the window's GL context the current one, which GL calls and proc_address need.
+    fn make_current { mut glfw: Glfw, window: *mut Window } { glfwMakeContextCurrent{ &glfw, window } }
+
+    fn swap_buffers { mut glfw: Glfw, window: *mut Window } { glfwSwapBuffers{ &glfw, window } }
+
+    // The GL function `name` (ending in a zero byte) of the current context, or null.
+    fn proc_address { mut glfw: Glfw, name: []u8 } -> ?extern fn{} {
+        if name.len == 0 or name[name.len - 1] != 0 { @panic("glfw: a name must end in a zero byte") }
+        return glfwGetProcAddress{ &glfw, name = name.ptr }
+    }
 }

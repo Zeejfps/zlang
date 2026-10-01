@@ -389,8 +389,8 @@ namespace tree {
                 type_expr{ &d, t = elem.* }
                 d.depth = d.depth - 1
             }
-            func{ bound, params, ret } => {
-                line{ &d, at, s = if bound { "tfn bound" } else { "tfn" } }
+            func{ bound, params, ret, external } => {
+                line{ &d, at, s = if bound { "tfn bound" } else if external { "tfn extern" } else { "tfn" } }
                 d.depth = d.depth + 1
                 param_list{ &d, xs = params }
                 if ret == null { none{ &d } } else { type_expr{ &d, t = ret.* } }

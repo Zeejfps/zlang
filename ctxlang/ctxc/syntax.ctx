@@ -67,7 +67,7 @@ namespace syntax {
         opt{ elem: *TypeExpr },
         slice{ mutable: bool, elem: *TypeExpr },
         array{ n: *Expr, elem: *TypeExpr },
-        func{ bound: bool, params: []Param, ret: ?*TypeExpr },
+        func{ bound: bool, params: []Param, ret: ?*TypeExpr, external: bool },   // external: `extern fn{...}`
     }
 
     // One step of a path: `name` or `name(T, ...)`. `name()` has empty targs, not null ones.

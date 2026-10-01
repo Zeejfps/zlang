@@ -317,12 +317,14 @@ namespace parser {
                 expect{ &p, k = tok::Kind::rbracket }
                 t = syntax::TypeKind::array{ n, elem = box{ &p, value = type_expr{ &p } } }
             }
-        } else if k == tok::Kind::kw_fn or (k == tok::Kind::amp and kind{ p, ahead = 1 } == tok::Kind::kw_fn) {
+        } else if k == tok::Kind::kw_fn or (k == tok::Kind::amp and kind{ p, ahead = 1 } == tok::Kind::kw_fn)
+                  or (k == tok::Kind::kw_extern and kind{ p, ahead = 1 } == tok::Kind::kw_fn) {
             let bound = accept{ &p, k = tok::Kind::amp }
+            let external = accept{ &p, k = tok::Kind::kw_extern }
             skip{ &p }
             let params = ctx_fields{ &p }
             let ret: ?*syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { box{ &p, value = type_expr{ &p } } } else { null }
-            t = syntax::TypeKind::func{ bound, params, ret }
+            t = syntax::TypeKind::func{ bound, params, ret, external }
         } else if k == tok::Kind::ident {
             let mut segs = list::new(syntax::Seg){ realloc = arena::alloc, heap = p.heap }
             add{ &p, xs = &segs, item = type_seg{ &p } }

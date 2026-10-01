@@ -1,5 +1,6 @@
-// Opens a window for two seconds, or until it is closed, through the GLFW binding in glfw.ctx.
-fn main { mut io: Io, mut glfw: glfw::Glfw } -> i32 {
+// Opens a window for two seconds, or until it is closed, through the GLFW binding in glfw.ctx,
+// and fills it with a colour that fades, through the GL functions gl.ctx looks up.
+fn main { mut io: Io, mut glfw: glfw::Glfw, mut gl: gl::Gl } -> i32 {
     if not glfw::init{ &glfw } {
         io::eprintln{ &io, s = "glfw: init failed" }
         return 1
@@ -22,8 +23,18 @@ fn main { mut io: Io, mut glfw: glfw::Glfw } -> i32 {
         return 1
     }
     defer glfw::destroy_window{ &glfw, window }
+    glfw::make_current{ &glfw, window }
+    let some{ value = procs } = gl::load{ &glfw } else {
+        io::eprintln{ &io, s = "gl: functions missing" }
+        return 1
+    }
     io::println{ &io, s = "window open" }
     while not glfw::should_close{ &glfw, window } and glfw::time{ &glfw } < 2.0 {
+        let t = @trunc(i32, @as(i64, glfw::time{ &glfw } * 1000.0))
+        let fade = @as(f32, t) / 2000.0
+        procs.clear_color{ &gl, r = 0.1, g = 0.3 + 0.5 * fade, b = 0.6, a = 1.0 }
+        procs.clear{ &gl, mask = gl::COLOR_BUFFER_BIT }
+        glfw::swap_buffers{ &glfw, window }
         glfw::poll_events{ &glfw }
     }
     io::println{ &io, s = "window closed" }

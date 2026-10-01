@@ -700,20 +700,29 @@ namespace check {
     // §18: an extern fn passes and returns only what C has: numbers, bool, enums, pointers,
     // slices and structs. Capability fields aren't passed.
     fn extern_sig { mut c: Checker, x: Decl, params: []syntax::Param, ret: ?syntax::TypeExpr, fields: []types::Field, r: Id } {
+        let mut what = message{ c }
+        pushed{ ok = @fmt(&what, "extern fn `{}`", str{ s = x.name.text }) }
+        let ret_at: ?source::Span = if ret == null { null } else { ret.span }
+        c_signature{ &c, what = utf8::view{ b = what }, params, ret_at, fields, r }
+    }
+
+    // The fields and result of what C calls (`what`: an extern fn or an extern fn type) must
+    // have C equivalents.
+    fn c_signature { mut c: Checker, what: utf8::String, params: []syntax::Param, ret_at: ?source::Span, fields: []types::Field, r: Id } {
         let mut i: usize = 0
         while i < fields.len and i < params.len {
             let f = fields[i]
             if not c_compatible{ c, t = f.ty } {
                 let mut b = message{ c }
-                pushed{ ok = @fmt(&b, "extern fn `{}` can't pass `{}` to C: it has type {}, which C has no equivalent of", str{ s = x.name.text }, str{ s = f.name }, tstr{ c, t = f.ty }) }
+                pushed{ ok = @fmt(&b, "{} can't pass `{}` to C: it has type {}, which C has no equivalent of", what, str{ s = f.name }, tstr{ c, t = f.ty }) }
                 error{ &c, at = params[i].span, msg = utf8::view{ b } }
             }
             i = i + 1
         }
-        if ret != null and r != types::VOID and not c_compatible{ c, t = r } {
+        if ret_at != null and r != types::VOID and not c_compatible{ c, t = r } {
             let mut b = message{ c }
-            pushed{ ok = @fmt(&b, "extern fn `{}` can't return {}: C has no equivalent of it", str{ s = x.name.text }, tstr{ c, t = r }) }
-            error{ &c, at = ret.span, msg = utf8::view{ b } }
+            pushed{ ok = @fmt(&b, "{} can't return {}: C has no equivalent of it", what, tstr{ c, t = r }) }
+            error{ &c, at = ret_at, msg = utf8::view{ b } }
         }
     }
 
@@ -721,6 +730,7 @@ namespace check {
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
             error | prim | cap | enumeration | ptr | slice | record => { return true }
             opt => { return nullable_ptr{ c, t } }
+            func{ external } => { return external }
             else => { return false }
         }
     }
@@ -989,7 +999,7 @@ namespace check {
                 if len == null or not ok { return types::ERROR }
                 return types::array{ s = &c.ty, n = @as(u64, len), elem = t }
             }
-            func{ bound, params, ret } => {
+            func{ bound, params, ret, external } => {
                 let fields = context{ &c, params, sc }
                 let mut r = types::VOID
                 if ret != null { r = rtype{ &c, te = ret.*, sc, allow_bound = false } }
@@ -997,7 +1007,11 @@ namespace check {
                     error{ &c, at = te.span, msg = "`&fn` can only be the type of a local or a read-only context field" }
                     return types::ERROR
                 }
-                return types::func{ s = &c.ty, fields, ret = r, bound }
+                if external {
+                    let ret_at: ?source::Span = if ret == null { null } else { ret.span }
+                    c_signature{ &c, what = "an extern fn type", params, ret_at, fields, r }
+                }
+                return types::func{ s = &c.ty, fields, ret = r, bound, external }
             }
         }
     }
@@ -1416,8 +1430,8 @@ namespace check {
             enumeration{ decl } => { return utf8::push{ &b, s = str{ s = get_decl{ c, d = decl }.qual } } }
             record{ decl, args } => { return generic{ c, decl, args, &b } }
             sum{ decl, args } => { return generic{ c, decl, args, &b } }
-            func{ fields, ret, bound } => {
-                let mut ok = utf8::push{ &b, s = if bound { "&fn{" } else { "fn{" } }
+            func{ fields, ret, bound, external } => {
+                let mut ok = utf8::push{ &b, s = if bound { "&fn{" } else if external { "extern fn{" } else { "fn{" } }
                 let mut i: usize = 0
                 while i < fields.len {
                     let f = fields[i]
@@ -4619,9 +4633,13 @@ namespace check {
                 if types::unify{ s = &c.ty, a = x, b = ee } or types::widens{ s = &c.ty, a = x, b = ee } { return Coercion::some }
                 return Coercion::fail
             }
-            func{ bound = eb } => {
+            func{ bound = eb, external = ee } => {
                 match tx {
-                    func{ bound = ab } => {
+                    func{ bound = ab, external = ae } => {
+                        // A C function pointer and a ctxlang function value don't convert either
+                        // way; two C function types must be the same.
+                        if ae != ee { return Coercion::fail }
+                        if ee { return if types::unify{ s = &c.ty, a = x, b = y } { Coercion::same } else { Coercion::fail } }
                         if ab and not eb { return Coercion::fail }
                         return if fn_accepts{ &c, g = x, s = y } { Coercion::same } else { Coercion::fail }
                     }
@@ -4660,10 +4678,16 @@ namespace check {
         let x = types::prune{ s = c.ty, t = a }
         let y = types::prune{ s = c.ty, t = e }
         match types::get{ s = c.ty, id = x } {
-            func{ fields = af, bound = ab } => {
+            func{ fields = af, bound = ab, external = ae } => {
                 match types::get{ s = c.ty, id = y } {
-                    func{ fields = ef, bound = eb } => {
-                        if not (ab and not eb) {
+                    func{ fields = ef, bound = eb, external = ee } => {
+                        if ee and not ae {
+                            return @fmt(&b, "a ctxlang function can't be passed as a C function pointer (") and write_type{ c, t = y, &b } and @fmt(&b, "): only an extern fn can")
+                        }
+                        if ae and not ee {
+                            return @fmt(&b, "a C function pointer (") and write_type{ c, t = x, &b } and @fmt(&b, ") can't be used as a ctxlang ") and write_type{ c, t = y, &b }
+                        }
+                        if not (ab and not eb) and not ae {
                             let mut i: usize = 0
                             while i < af.len {
                                 let f = af[i]
@@ -4910,7 +4934,11 @@ namespace check {
                 check_read{ &c, v = var, at = expr_at{ e } }
                 return get_var{ c, v = var }.ty
             }
-            func{ decl, targs } => { return fn_type{ &c, d = decl, targs } }
+            func{ decl, targs } => {
+                let ct = c_fn_value{ &c, d = decl, exp }
+                if ct != types::NO_TYPE { return ct }
+                return fn_type{ &c, d = decl, targs }
+            }
             constant{ decl } => { return get_decl{ c, d = decl }.ty }
             variant{ ty, index } => {
                 let v = variants_of{ &c, t = ty }[index]
@@ -4948,11 +4976,27 @@ namespace check {
         }
     }
 
+    // A named extern fn where a C function pointer (or `?` one) is expected: its own address,
+    // of the extern fn type of its declaration. NO_TYPE otherwise.
+    fn c_fn_value { mut c: Checker, d: u32, exp: Id } -> Id {
+        let x = get_decl{ c, d }
+        if x.kind != Kind::external or exp == types::NO_TYPE { return types::NO_TYPE }
+        let mut want = types::prune{ s = c.ty, t = exp }
+        match types::get{ s = c.ty, id = want } { opt{ elem } => { want = types::prune{ s = c.ty, t = elem } } else => {} }
+        match types::get{ s = c.ty, id = want } {
+            func{ external } => {
+                if external { return types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = true } }
+            }
+            else => {}
+        }
+        return types::NO_TYPE
+    }
+
     fn fn_type { mut c: Checker, d: u32, targs: []Id } -> Id {
         let x = get_decl{ c, d }
         let fields = subst_fields{ &c, fields = x.fields, decl = d, args = targs }
         let ret = if targs.len == 0 { x.ret } else { types::subst{ s = &c.ty, t = x.ret, decl = d, args = targs } }
-        return types::func{ s = &c.ty, fields, ret, bound = false }
+        return types::func{ s = &c.ty, fields, ret, bound = false, external = false }
     }
 
     fn targs_of { mut c: Checker, seg: syntax::Seg } -> ?[]Id {
@@ -5250,9 +5294,13 @@ namespace check {
         let mut fields: []types::Field = slice::empty(types::Field){}
         let mut ret = types::VOID
         match types::get{ s = c.ty, id = ft } {
-            func{ fields = fs, ret = r } => {
+            func{ fields = fs, ret = r, external } => {
                 fields = fs
                 ret = r
+                if bind and external {
+                    error{ &c, at = expr_at{ e }, msg = "a C function pointer can't be bound with `_`: call it with every field" }
+                    return types::ERROR
+                }
             }
             else => {}
         }
@@ -5314,7 +5362,7 @@ namespace check {
         let refs = check_exclusive{ &c, e, items, fields }
         if bind {
             if not map::put{ m = &c.holds, key = expr_key{ e }, value = refs } { @panic("check: out of memory") }
-            return types::func{ s = &c.ty, fields = gone, ret, bound = true }
+            return types::func{ s = &c.ty, fields = gone, ret, bound = true, external = false }
         }
         return ret
     }
@@ -5740,13 +5788,18 @@ namespace check {
             return tt
         }
         if slice::eq_bytes{ a = n, b = "cast" } {
+            // Pointers and C function pointers (extern fn types) cast to each other.
             let target = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = tt } }
             let mut to_mut = false
             let mut ok = tt == types::ERROR
-            match target { ptr{ mutable } => { ok = true; to_mut = mutable } else => {} }
+            match target {
+                ptr{ mutable } => { ok = true; to_mut = mutable }
+                func{ external } => { ok = external }
+                else => {}
+            }
             if not ok {
                 let mut b = message{ c }
-                pushed{ ok = @fmt(&b, "@cast needs a pointer target type, got {}", tstr{ c, t = tt }) }
+                pushed{ ok = @fmt(&b, "@cast needs a pointer or extern fn target type, got {}", tstr{ c, t = tt }) }
                 error{ &c, at, msg = utf8::view{ b } }
             }
             let src = typed{ &c, e = args[0] }
@@ -5759,7 +5812,14 @@ namespace check {
                             error{ &c, at = expr_at{ e = args[0] }, msg = utf8::view{ b } }
                         }
                     }
-                    else => { error{ &c, at = expr_at{ e = args[0] }, msg = "@cast needs a pointer argument" } }
+                    func{ external } => {
+                        if not external { error{ &c, at = expr_at{ e = args[0] }, msg = "@cast can't take a ctxlang function: only a pointer or an extern fn value" } }
+                    }
+                    opt => {
+                        let msg: utf8::String = if nullable_ptr{ c, t = src } { "@cast needs a value that isn't null: check the optional first" } else { "@cast needs a pointer or extern fn argument" }
+                        error{ &c, at = expr_at{ e = args[0] }, msg }
+                    }
+                    else => { error{ &c, at = expr_at{ e = args[0] }, msg = "@cast needs a pointer or extern fn argument" } }
                 }
             }
             return tt
@@ -6108,8 +6168,8 @@ namespace check {
         if types::is_float{ s = c.ty, t } { return if t == types::prim{ p = types::Prim::f32 } { "push_f32" } else { "push_f64" } }
         if t == types::BOOL { return "push_bool" }
         match types::get{ s = c.ty, id = t } {
-            func{ fields, ret } => {
-                if fields.len == 1 and fields[0].mutable and types::prune{ s = c.ty, t = ret } == types::BOOL { return "call" }
+            func{ fields, ret, external } => {
+                if not external and fields.len == 1 and fields[0].mutable and types::prune{ s = c.ty, t = ret } == types::BOOL { return "call" }
             }
             else => {}
         }
@@ -6299,7 +6359,11 @@ namespace check {
     fn nullable_ptr { c: Checker, t: Id } -> bool {
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
             opt{ elem } => {
-                match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } { ptr => { return true } else => { return false } }
+                match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } {
+                    ptr => { return true }
+                    func{ external } => { return external }
+                    else => { return false }
+                }
             }
             else => { return false }
         }

@@ -45,7 +45,7 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
   now that `proc::run` and `fs::list` exist.
 - `bootstrap/ctxc.c` is ctxc as C. `tools/toolchain.py` compiles it to a seed, and the seed
   compiles ctxc's current source into `build/ctxc` (about 7 s the first time, cached after).
-- `python -m unittest discover tests` runs all 369 tests through the native ctxc: each program is
+- `python -m unittest discover tests` runs all 374 tests through the native ctxc: each program is
   compiled with `ctxc build`, built with cc and run. They pass on Windows (gcc), Linux (gcc) and
   macOS arm64 (Apple clang).
 - `tools/fixpoint.py`: ctxc built by itself, twice, writes byte-identical C, the same as the
@@ -760,8 +760,27 @@ Increments, each landing with tests and a refreshed bootstrap:
    the pointer itself. The backend tests and builds it as a pointer (`p == 0`, `(tN)(p)`).
    `??*T` stays tagged, around the 8-byte `?*T`. The GLFW example's handles are
    `?*mut Window` now, not addresses as `usize`.
-6. **The rest, one at a time:** C function pointers (GL and Vulkan load functions at run time),
-   null-terminated strings, untagged unions (§16 Q8), callbacks from C.
+6. **The rest, one at a time:** C function pointers (*done*, below), null-terminated strings,
+   untagged unions (§16 Q8), callbacks from C.
+   - **C function pointers** — *done.* `extern fn{ fields } -> R` is C's `R (*)(...)`: fields in
+     C's order, which is part of the type; the same field and result rules as an extern fn,
+     capability fields included. A value comes from `@cast(extern fn{...}, p)` for a pointer
+     (what a loader such as `glfwGetProcAddress` returns), or from a named extern fn where the
+     type is expected (its symbol's address); `@cast(*U, f)` goes back. It can't be bound, and
+     neither direction converts between it and a ctxlang `fn` value (ctxlang functions passed to
+     C are the callbacks step). `?extern fn{...}` is a nullable C pointer like `?*T`. In the
+     checker it is a function type marked external; in the IR a `cfn` type (version 11) with
+     params in order; in C a function-pointer typedef, called directly, and a named extern's
+     value is its `xN`. examples/glfw loads glClearColor and glClear through glfwGetProcAddress.
+   - **Later, maybe: loaded capabilities.** If writing a struct of pointers and a cast per
+     function gets tedious, `loaded capability Gl` could have the compiler keep the table: extern
+     fns declared against it are looked up by `@load(gl::Gl, loader){ fields }` (the loader's
+     fields but `name`, given like a call's), which returns `Result(Gl, c::Missing)`. It would be
+     sugar over C function pointers. Caveats found when it was weighed: the table should hold
+     only the extern fns the program reaches (a binding declaring GL 4.6 mustn't fail on a 4.1
+     driver); the loader must take a capability, or code without any could mint a `Gl`; and a
+     `Gl` proves its functions were loaded, not that they are still valid after the context or
+     library is gone.
 7. **A smaller runtime: std over the OS's C functions.** std's `io`, `fs` and `mem` call
    `ctx_io_write` and the rest, thin C wrappers over libc and the OS. They move into ctxlang, one
    at a time, over externs to the OS itself, and the runtime keeps only what has to be C:
@@ -824,6 +843,7 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 | struct | C struct, same field order | Checked with `_Static_assert` on `sizeof` and `offsetof`. |
 | union, `?T` | `struct { uint32_t tag; union { … } p; }` | Tag at 0, payload at `align_up(4, payload align)`. `null` is tag 0. |
 | `?*T`, `?*mut T` | `T*` | `null` is 0. IR type `nptr`. |
+| `extern fn{C} -> R`, and its `?` | `R (*)(P...)`, capabilities dropped | IR type `cfn`, params in order; `null` is 0. A named extern fn as a value is `xN`. |
 | enum | its base integer type | `match` becomes an if-else chain on the value (IR `switch`). |
 | `Io`, `Fs`, `Mem` | empty struct | Size 0 with GNU C, as in ctxi. |
 | `*T`, `q + n`, `q[i]` | `T*`, pointer arithmetic | Not checked. §12.7 calls a bad pointer UB. |

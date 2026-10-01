@@ -12,6 +12,9 @@
 //   extern fns   fN calls xN, a prototype whose assembler name is the C symbol, so that no
 //                header's declaration of the symbol can clash with it. Capabilities aren't
 //                passed; a `mut` field's pointer is.
+//   C fn types   an extern fn{...} type is a C function pointer typedef, called directly, with
+//                the same rules for capabilities and `mut` fields; a named extern fn as its
+//                value is xN.
 //   consts       static const qvN, initialized with the literals of its value.
 //   fn values    ctx_fn*: a record whose first member is the code, called with the record and
 //                the function type's fields in name order. fnref gives a static record per
@@ -157,6 +160,20 @@ namespace emit {
         if mark{ e, id } >= 1 { return }
         set_mark{ &e, id, m = 1 }
         match ty{ e, id } {
+            cfn{ params, ret } => {
+                // typedef R (*tN)(P, ...);
+                typedef{ &e, id = ret }
+                let mut i = 0
+                while i < params.len { typedef{ &e, id = params[i].ty }; i = i + 1 }
+                put{ &e, a = "typedef " }
+                tn{ &e, t = ret }
+                put{ &e, a = " (*" }
+                tn{ &e, t = id }
+                put{ &e, a = ")(" }
+                c_params{ &e, params }
+                put{ &e, a = ");\n" }
+                return
+            }
             prim{ p } => {
                 put{ &e, a = "typedef " }
                 ctype{ &e, p }
@@ -359,11 +376,41 @@ namespace emit {
     fn prototypes { mut e: E } {
         let mut i = 0
         while i < e.p.fns.len {
-            signature{ &e, f = e.p.fns[i] }
+            let f = e.p.fns[i]
+            if f.symbol.len > 0 { c_prototype{ &e, f } }
+            signature{ &e, f }
             put{ &e, a = ";\n" }
             i = i + 1
         }
         ch{ &e, c = '\n' }
+    }
+
+    //   extern R xN(P...) __asm__(CTX_SYMBOL("symbol"));
+    fn c_prototype { mut e: E, f: ir::Func } {
+        put{ &e, a = "extern " }
+        tn{ &e, t = f.ret }
+        put{ &e, a = " x" }
+        num{ &e, n = f.id }
+        ch{ &e, c = '(' }
+        c_params{ &e, params = f.params }
+        put{ &e, a = ") __asm__(CTX_SYMBOL(" }
+        cstr{ &e, b = f.symbol }
+        put{ &e, a = "));\n" }
+    }
+
+    // A C function's parameter types: no capabilities, a `mut` one as a pointer.
+    fn c_params { mut e: E, params: []ir::Param } {
+        let mut first = true
+        let mut i = 0
+        while i < params.len {
+            if not is_cap{ e, t = params[i].ty } {
+                if not first { put{ &e, a = ", " } }
+                param_type{ &e, q = params[i] }
+                first = false
+            }
+            i = i + 1
+        }
+        if first { put{ &e, a = "void" } }
     }
 
     // Const N, in read-only data: its value is literals only (the checker computed it), which
@@ -408,38 +455,20 @@ namespace emit {
         ch{ &e, c = ')' }
     }
 
-    //   extern R xN(P...) __asm__(CTX_SYMBOL("symbol"));
     //   static R fN(...) { return xN(l0, l2); }
+    // after xN's prototype (c_prototype).
     fn external { mut e: E, f: ir::Func } {
         put{ &e, a = "// " }
         raw{ &e, b = f.name }
-        put{ &e, a = "\nextern " }
-        tn{ &e, t = f.ret }
-        put{ &e, a = " x" }
-        num{ &e, n = f.id }
-        ch{ &e, c = '(' }
-        let mut first = true
-        let mut i = 0
-        while i < f.params.len {
-            if not is_cap{ e, t = f.params[i].ty } {
-                if not first { put{ &e, a = ", " } }
-                param_type{ &e, q = f.params[i] }
-                first = false
-            }
-            i = i + 1
-        }
-        if first { put{ &e, a = "void" } }
-        put{ &e, a = ") __asm__(CTX_SYMBOL(" }
-        cstr{ &e, b = f.symbol }
-        put{ &e, a = "));\n" }
+        ch{ &e, c = '\n' }
         signature{ &e, f }
         put{ &e, a = " {\n    " }
         if not is_void{ e, t = f.ret } { put{ &e, a = "return " } }
         ch{ &e, c = 'x' }
         num{ &e, n = f.id }
         ch{ &e, c = '(' }
-        first = true
-        i = 0
+        let mut first = true
+        let mut i = 0
         while i < f.params.len {
             if not is_cap{ e, t = f.params[i].ty } {
                 if not first { put{ &e, a = ", " } }
@@ -454,6 +483,41 @@ namespace emit {
 
     fn is_cap { e: E, t: ir::TypeId } -> bool {
         match ty{ e, id = t } { cap => { return true } else => { return false } }
+    }
+
+    fn is_cfn { e: E, t: ir::TypeId } -> bool {
+        match ty{ e, id = t } { cfn => { return true } else => { return false } }
+    }
+
+    // A call through a C function pointer: the callee, then the args, in C's order without the
+    // capabilities.
+    fn c_call { mut e: E, callee: ir::Expr, args: []ir::Arg } {
+        let cfn{ params } = ty{ e, id = callee.ty } else { @panic("emit: a C call of a non-C function") }
+        let kf = fresh{ &e }
+        put{ &e, a = "({ " }
+        declare{ &e, t = callee.ty, k = kf }
+        expr{ &e, x = callee }
+        put{ &e, a = "; " }
+        let tt = temps_args{ &e, args }
+        tmp{ &e, k = kf }
+        ch{ &e, c = '(' }
+        let mut first = true
+        let mut j = 0
+        while j < params.len {
+            if not is_cap{ e, t = params[j].ty } {
+                if not first { put{ &e, a = ", " } }
+                first = false
+                let mut i = 0
+                while i < args.len {
+                    if args[i].index == j { operand{ &e, x = args[i].value, tt, i = @as(u32, i) } }
+                    i = i + 1
+                }
+            }
+            j = j + 1
+        }
+        ch{ &e, c = ')' }
+        close_temps{ &e, tt }
+        put{ &e, a = "; })" }
     }
 
     fn function { mut e: E, f: ir::Func } {
@@ -1105,6 +1169,11 @@ namespace emit {
             bind{ callee, args } => { bind{ &e, t = x.ty, callee, args } }
             dbind{ callee, args } => { dbind{ &e, t = x.ty, callee = callee.*, args } }
             fnref{ callee } => {
+                if is_cfn{ e, t = x.ty } {
+                    ch{ &e, c = 'x' }                   // a named extern fn as a C function pointer
+                    num{ &e, n = callee }
+                    return
+                }
                 thunk{ &e, callee, t = x.ty }
                 put{ &e, a = "(&g" }
                 num{ &e, n = callee }
@@ -1594,6 +1663,10 @@ namespace emit {
 
     // The callee first, then the args; called through its code.
     fn dcall { mut e: E, callee: ir::Expr, args: []ir::Arg } {
+        if is_cfn{ e, t = callee.ty } {
+            c_call{ &e, callee, args }
+            return
+        }
         let func{ params } = ty{ e, id = callee.ty } else { @panic("emit: call of a non-function") }
         let kf = fresh{ &e }
         put{ &e, a = "({ ctx_fn *" }

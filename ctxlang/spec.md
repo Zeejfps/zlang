@@ -384,6 +384,7 @@ step  := .field | [index]
 | `enum Name: T { ... }` | integer type with named values (below) |
 | `fn{C} -> R` | unbound function type (§5) |
 | `&fn{C} -> R` | bound function type (§5, §6) |
+| `extern fn{C} -> R` | C function pointer (below, §18) |
 | `type Name(G) = T` | alias |
 
 ### Pointers
@@ -427,6 +428,24 @@ let i = @as(usize, k)       // 40
 
 An enum is for a closed set whose values matter: table indexes, file formats, a chosen size. A union whose variants have no payload is for a closed set whose values don't.
 
+### C function pointers
+
+```
+type Op = extern fn{ a: i32, b: i32 } -> i32
+let some{ value = p } = lib::lookup{ &lib, name = "add\0" } else { return 1 }
+let add = @cast(Op, p)                    // the address is a C function of this type
+let n = add{ a = 2, b = 3 }
+let sub: Op = lib::sub                    // a named extern fn: its C symbol's address
+```
+
+1. `extern fn{C} -> R` is a pointer to a C function, as C's `R (*)(...)`: 8 bytes, never null. Its fields are C's parameters in the order they are written, so two such types are the same only if they have the same fields, in the same order, with the same names, types and mutability, and the same result.
+2. Its fields and result follow an extern fn's rules (§18): only types with C equivalents, a capability field isn't passed, and a `mut` field passes a pointer.
+3. It is called like any function (§3), with every field supplied; it can't be bound (§4).
+4. A value comes from `@cast(extern fn{C} -> R, p)`, for a pointer `p` (§13), or from a named extern fn where that type is expected: the address of its C symbol. `@cast(*U, f)` gives the address back.
+5. A ctxlang function value (`fn{C} -> R`) doesn't convert to an extern fn type, nor the other way.
+6. `?extern fn{C} -> R` is a C function pointer that may be `NULL`, as `?*T` is (§8, Optional, rule 6).
+7. It holds no addresses of places: as a `fn` value, it may be stored and returned anywhere.
+
 ### Slices
 
 A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are built in because they are a shape of memory, like arrays and pointers; what to do with memory (allocating, growing, hashing, text) is left to the standard library.
@@ -451,7 +470,7 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 | `@align_of(T)` | `usize` | The required alignment of `T`. A power of two. |
 | `@as(T, x)` | `T` | Converts number `x` to numeric type `T`. Panics if the value isn't representable in `T`. Float to integer rounds toward zero and panics on NaN. Integer to float rounds to nearest. Also converts between an enum and an integer type (§12, Enums). |
 | `@trunc(T, x)` | `T` | Converts integer `x` to integer type `T`, keeping the low bits. |
-| `@cast(*U, q)`, `@cast(*mut U, q)` | the target | Reinterprets pointer `q`. Unchecked, except that a `*T` can't be cast to a `*mut U`. |
+| `@cast(*U, q)`, `@cast(*mut U, q)`, `@cast(extern fn{C} -> R, q)` | the target | Reinterprets `q`, a pointer or a C function pointer (§12), as a pointer or a C function pointer. Unchecked, except that a `*T` can't be cast to a `*mut U`, and `q` can't be optional: check it for `null` first. |
 | `@slice(p, n)` | `[]T`, or `[]mut T` for a `*mut T` | The slice of `n: usize` elements starting at pointer `p: *T`. Unchecked. |
 | `@addr(q)` | `usize` | The address of pointer `q` as an integer. |
 | `@wrap_add(a, b)`, `@wrap_sub(a, b)`, `@wrap_mul(a, b)` | type of `a` | Integer arithmetic that wraps instead of panicking. `a` and `b` have the same integer type. |
@@ -600,9 +619,9 @@ extern fn glfwPollEvents { mut glfw: Glfw }      // a capability says who may ca
 1. `extern fn name { context } -> R` declares a function that C provides. It has no body and no generic parameters.
 2. It calls the C symbol `name`, or the one `#c::symbol{ name = "..." }` gives. The symbol must be a C identifier.
 3. Its context fields are C's parameters in the order they are declared. A field with a capability type (§15) isn't passed: it only says who may call the function. A `mut` field of type `T` is passed as a `T*`.
-4. A field or result may have a numeric type, `bool`, an enum (as its base type), a pointer (as a C pointer), a `?*T` or `?*mut T` (as a C pointer, with `null` as `NULL`: §8, Optional, rule 6), a slice (as a struct of `ptr` and `len`) or a struct (as a C struct of the same layout). Other types are an error, other optionals included.
+4. A field or result may have a numeric type, `bool`, an enum (as its base type), a pointer (as a C pointer), a `?*T` or `?*mut T` (as a C pointer, with `null` as `NULL`: §8, Optional, rule 6), a C function pointer `extern fn{C} -> R` or its `?` (§12), a slice (as a struct of `ptr` and `len`) or a struct (as a C struct of the same layout). Other types are an error, other optionals included.
 5. Every call goes through a declaration of the symbol made for that function, so it can't clash with the declaration of the same symbol in a C header. Nothing checks the declaration against C's: a wrong one is undefined behaviour.
-6. An extern fn is called like any function and is a value of type `fn{C} -> R`.
+6. An extern fn is called like any function and is a value of type `fn{C} -> R`; where an `extern fn{C} -> R` is expected, it is its C symbol's address instead (§12, C function pointers).
 7. Every program is linked with the C library and the math library.
 
 8. §1.3 holds by declaration: an extern fn that reaches IO, the OS or memory outside its pointer arguments must take a capability for it. One without a capability field, such as `sqrt`, promises to be pure. The compiler can't check either.
