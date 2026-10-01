@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 
 #ifdef _WIN32
+#include <direct.h>
 #include <io.h>
 #include <windows.h>
 #define ctx_strtod __mingw_strtod     // correctly rounded, unlike msvcrt's
