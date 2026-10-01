@@ -5,7 +5,7 @@
 // buffers it is given (§14), usually an arena over pages:
 //
 //   fn main { mut io: Io, mut mem: Mem } -> i32 {
-//       let some{ value = buf } = mem::pages{ &mem, size = 67108864 } else { return 1 }   // 64 MiB
+//       let buf = mem::pages{ &mem, size = 67108864 } ifnull { return 1 }   // 64 MiB
 //       let mut heap = arena::new{ buf }
 //       let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
 //       ...
@@ -24,7 +24,7 @@ namespace mem {
         if size == 0 { return slice::empty(u8){} }
         if size > 18446744073709551615 - (PAGE - 1) { return null }     // rounding up would overflow
         let n = (size + PAGE - 1) / PAGE * PAGE
-        let some{ value = p } = os::pages{ &mem, size = n } else { return null }
+        let p = os::pages{ &mem, size = n } ifnull { return null }
         return @slice(p, n)
     }
 }

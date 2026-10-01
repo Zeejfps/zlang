@@ -356,7 +356,7 @@ namespace emit {
                 let mut i = 0
                 while i < variants.len {
                     let v = variants[i]
-                    let some{ value = fields } = v.fields else { i = i + 1; continue }
+                    let fields = v.fields ifnull { i = i + 1; continue }
                     let mut j = 0
                     while j < fields.len {
                         offset_assert{ &e, id, variant = @as(u32, i), f = fields[j] }
@@ -663,7 +663,7 @@ namespace emit {
     fn close_block { mut e: E } {
         defers{ &e, stop = Stop::block }
         while true {
-            let some{ value = s } = list::pop{ list = &e.scopes } else { break }
+            let s = list::pop{ list = &e.scopes } ifnull { break }
             let block = s else { continue }
             break
         }
@@ -853,7 +853,7 @@ namespace emit {
     // `return`: the value into a temporary, then every deferred body, then return.
     fn ret { mut e: E, value: ?ir::Expr } {
         let deferred = has_defers{ e, stop = Stop::function }
-        let some{ value = v } = value else {
+        let v = value ifnull {
             if deferred {
                 ch{ &e, c = '{' }
                 defers{ &e, stop = Stop::function }
@@ -1041,7 +1041,7 @@ namespace emit {
         num{ &e, n = variant }
         put{ &e, a = ".m_" }
         let tagged{ variants } = ty{ e, id = union_t } else { @panic("emit: payload of a non-union") }
-        let some{ value = fields } = variants[variant].fields else { @panic("emit: variant has no payload") }
+        let fields = variants[variant].fields ifnull { @panic("emit: variant has no payload") }
         raw{ &e, b = fields[field].name }
     }
 
@@ -1150,7 +1150,7 @@ namespace emit {
                 put{ &e, a = "; })" }
             }
             neg{ e = a, pos } => {
-                let some{ value = p } = prim_of{ e, t = x.ty } else { @panic("emit: neg of a non-number") }
+                let p = prim_of{ e, t = x.ty } ifnull { @panic("emit: neg of a non-number") }
                 if is_float{ p } {
                     put{ &e, a = "(-(" }
                     expr{ &e, x = a.* }
@@ -1355,7 +1355,7 @@ namespace emit {
     }
 
     fn arith { mut e: E, t: ir::TypeId, op: ir::ArithOp, a: ir::Expr, b: ir::Expr, pos: ir::Pos } {
-        let some{ value = p } = prim_of{ e, t } else { @panic("emit: arithmetic on a non-number") }
+        let p = prim_of{ e, t } ifnull { @panic("emit: arithmetic on a non-number") }
         if is_float{ p } {
             match op {
                 add => { infix{ &e, a, op = " + ", b } }
@@ -1397,8 +1397,8 @@ namespace emit {
     // `((tT)((uint64_t)A << ctx_shcount_i(B, BITS, pos)))`: shl in unsigned arithmetic, so the bits
     // shifted out are dropped; shr is C's, which is arithmetic for a signed A with gcc and clang.
     fn shift { mut e: E, t: ir::TypeId, op: ir::ShiftOp, a: ir::Expr, b: ir::Expr, pos: ir::Pos } {
-        let some{ value = p } = prim_of{ e, t } else { @panic("emit: shift of a non-integer") }
-        let some{ value = cp } = prim_of{ e, t = b.ty } else { @panic("emit: shift count of a non-integer") }
+        let p = prim_of{ e, t } ifnull { @panic("emit: shift of a non-integer") }
+        let cp = prim_of{ e, t = b.ty } ifnull { @panic("emit: shift count of a non-integer") }
         let tt = temps2{ &e, a, b }
         cast_open{ &e, t }
         match op {
@@ -1541,8 +1541,8 @@ namespace emit {
 
     // @as between numbers: range-checked for integer results.
     fn as { mut e: E, t: ir::TypeId, a: ir::Expr, pos: ir::Pos } {
-        let some{ value = dst } = prim_of{ e, t } else { @panic("emit: @as to a non-number") }
-        let some{ value = src } = prim_of{ e, t = a.ty } else { @panic("emit: @as of a non-number") }
+        let dst = prim_of{ e, t } ifnull { @panic("emit: @as to a non-number") }
+        let src = prim_of{ e, t = a.ty } ifnull { @panic("emit: @as of a non-number") }
         if is_float{ p = dst } {
             cast_open{ &e, t }
             if not is_float{ p = src } { put{ &e, a = "(double)" } }
@@ -1665,7 +1665,7 @@ namespace emit {
             record{ fields } => { names = fields }
             cap{ fields } => { names = fields }
             tagged{ variants } => {
-                let some{ value = v } = variant else { @panic("emit: variant literal without a variant") }
+                let v = variant ifnull { @panic("emit: variant literal without a variant") }
                 put{ &e, a = " .tag = " }
                 num{ &e, n = v }
                 let fs = variants[v].fields
@@ -2285,7 +2285,7 @@ namespace emit {
     }
 
     fn float_type { e: E, t: ir::TypeId } -> bool {
-        let some{ value } = prim_of{ e, t } else { return false }
+        let value = prim_of{ e, t } ifnull { return false }
         return is_float{ p = value }
     }
 

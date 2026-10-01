@@ -54,7 +54,7 @@ namespace c {
             if bytes[i] == 0 { return Result::err{ error = CopyError::has_nul{ at = i } } }
             i = i + 1
         }
-        let some{ value = mem } = alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = bytes.len + 1 } else {
+        let mem = alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = bytes.len + 1 } ifnull {
             return Result::err{ error = CopyError::out_of_memory }
         }
         slice::copy(u8){ dst = mem[..bytes.len], src = bytes }

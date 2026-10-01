@@ -40,7 +40,7 @@ namespace recover {
             if w > widest { widest = w }
             i = i + 1
         }
-        let some{ value = buf } = alloc::resize{ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = text.len + widest + 1 } else {
+        let buf = alloc::resize{ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = text.len + widest + 1 } ifnull {
             @panic("recover: out of memory")
         }
         let mut count: u32 = 0
@@ -113,7 +113,7 @@ namespace recover {
         let lexed = lexer::lex{ text, file = 0, &heap, &diags }
         let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, &heap, &diags }
         if diags.errors > diag::CAP { return "more errors than the cap" }
-        let some{ value = seen } = alloc::resize{ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, tree.ids) } else {
+        let seen = alloc::resize{ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, tree.ids) } ifnull {
             @panic("recover: out of memory")
         }
         slice::fill{ s = seen, v = 0 }

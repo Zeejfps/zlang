@@ -140,7 +140,7 @@ namespace types {
 
     fn copy(T) { s: Store, xs: []T } -> []T {
         if xs.len == 0 { return xs }
-        let some{ value = out } = alloc::resize(T){ realloc = arena::alloc, heap = s.heap, mem = slice::empty(T){}, count = xs.len } else {
+        let out = alloc::resize(T){ realloc = arena::alloc, heap = s.heap, mem = slice::empty(T){}, count = xs.len } ifnull {
             @panic("types: out of memory")
         }
         slice::copy{ dst = out, src = xs }

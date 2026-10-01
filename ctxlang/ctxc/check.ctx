@@ -555,7 +555,7 @@ namespace check {
         let mut out = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
         match x.syn.k {
             cap{ fields = fs } => {
-                let some{ value = fields } = fs else { return }
+                let fields = fs ifnull { return }
                 let mut i: usize = 0
                 while i < fields.len {
                     let f = fields[i]
@@ -1996,7 +1996,7 @@ namespace check {
             repeat{ elem } => {
                 let v = fold_to{ &c, e = elem.*, t = elem_type{ c, t } }
                 if v == null { return null }
-                let some{ value = p } = alloc::new{ realloc = arena::alloc, heap = c.heap, value = v } else { @panic("check: out of memory") }
+                let p = alloc::new{ realloc = arena::alloc, heap = c.heap, value = v } ifnull { @panic("check: out of memory") }
                 return Val::repeat{ ty = t, elem = p }
             }
             builtin{ name, targ } => {

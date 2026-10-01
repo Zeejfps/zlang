@@ -25,12 +25,12 @@ namespace alloc {
 
     // One T, initialized to `value`, for building trees and other linked structures:
     //
-    //   let some{ value = node } = alloc::new{ realloc = arena::alloc, &heap, value = Node{ ... } } else { ... }
+    //   let node = alloc::new{ realloc = arena::alloc, &heap, value = Node{ ... } } ifnull { ... }
     //
     // Null on allocation failure. T must not be zero-sized: there is no memory to point to.
     fn new(T, S) { realloc: Fn(S), mut heap: S, value: T } -> ?*mut T {
         if @size_of(T) == 0 { @panic("alloc::new: T is zero-sized") }
-        let some{ value = one } = resize(T, S){ realloc, &heap, mem = slice::empty(T){}, count = 1 } else { return null }
+        let one = resize(T, S){ realloc, &heap, mem = slice::empty(T){}, count = 1 } ifnull { return null }
         let p = &one[0]
         p.* = value
         return p

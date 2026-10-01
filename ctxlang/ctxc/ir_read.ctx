@@ -539,7 +539,7 @@ namespace ir_read {
     }
 
     fn box { mut r: Reader, e: ir::Expr } -> *ir::Expr {
-        let some{ value = p } = alloc::new{ realloc = arena::alloc, heap = r.heap, value = e } else {
+        let p = alloc::new{ realloc = arena::alloc, heap = r.heap, value = e } ifnull {
             @panic("ir_read: out of memory")
         }
         return p
@@ -622,13 +622,13 @@ namespace ir_read {
             is32 = match p { f32 => { true } else => { false } }
         }
         if is32 {
-            let some{ value } = utf8::parse_f32{ s = text } else {
+            let value = utf8::parse_f32{ s = text } ifnull {
                 fail{ &r, problem = Problem::bad_float }
                 return 0.0
             }
             return value
         }
-        let some{ value } = utf8::parse_f64{ s = text } else {
+        let value = utf8::parse_f64{ s = text } ifnull {
             fail{ &r, problem = Problem::bad_float }
             return 0.0
         }
@@ -682,11 +682,11 @@ namespace ir_read {
                 fail{ &r, problem = Problem::bad_escape }
                 return raw
             }
-            let some{ value = hi } = hex{ c = raw[i + 2] } else {
+            let hi = hex{ c = raw[i + 2] } ifnull {
                 fail{ &r, problem = Problem::bad_escape }
                 return raw
             }
-            let some{ value = lo } = hex{ c = raw[i + 3] } else {
+            let lo = hex{ c = raw[i + 3] } ifnull {
                 fail{ &r, problem = Problem::bad_escape }
                 return raw
             }

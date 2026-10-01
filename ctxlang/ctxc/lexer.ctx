@@ -130,7 +130,7 @@ namespace lexer {
                 add{ &lx, kind = tok::Kind::builtin, start }
             }
         } else {
-            let some{ value = k } = op{ text, i = start } else {
+            let k = op{ text, i = start } ifnull {
                 unexpected{ &lx }
                 return
             }
@@ -230,7 +230,7 @@ namespace lexer {
         let text = lx.text
         let start = lx.pos
         let s = scan_literal{ text, start, quote }
-        let some{ value = p } = s.problem else {
+        let p = s.problem ifnull {
             lx.pos = s.end
             add{ &lx, kind = if quote == '"' { tok::Kind::str } else { tok::Kind::char }, start }
             return
@@ -531,7 +531,7 @@ namespace lexer {
     fn decode_char { text: []u8, j: usize } -> Char {
         if text[j] != '\\' { return Char{ b = text[j], next = j + 1 } }
         let e = text[j + 1]
-        let some{ value = b } = escape{ e } else {
+        let b = escape{ e } ifnull {
             return Char{ b = hex_digit{ c = text[j + 2] } * 16 + hex_digit{ c = text[j + 3] }, next = j + 4 }
         }
         return Char{ b, next = j + 2 }

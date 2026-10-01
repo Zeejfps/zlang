@@ -1341,7 +1341,7 @@ namespace parser {
     }
 
     fn box(T) { mut p: Parser, value: T } -> *T {
-        let some{ value = x } = alloc::new{ realloc = arena::alloc, heap = p.heap, value } else { @panic("parser: out of memory") }
+        let x = alloc::new{ realloc = arena::alloc, heap = p.heap, value } ifnull { @panic("parser: out of memory") }
         return x
     }
 

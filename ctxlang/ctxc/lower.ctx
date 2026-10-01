@@ -867,7 +867,7 @@ namespace lower {
     }
 
     fn box { l: Lower, e: ir::Expr } -> *ir::Expr {
-        let some{ value = p } = alloc::new{ realloc = arena::alloc, heap = l.heap, value = e } else {
+        let p = alloc::new{ realloc = arena::alloc, heap = l.heap, value = e } ifnull {
             @panic("lower: out of memory")
         }
         return p

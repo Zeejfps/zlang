@@ -36,12 +36,12 @@ namespace drive {
             return 2
         }
         let path = trim_slash{ path = args[1] }
-        let some{ value = pages } = mem::pages{ &mem, size = 16777216 } else {
+        let pages = mem::pages{ &mem, size = 16777216 } ifnull {
             io::eprintln{ &io, s = "out of memory" }
             return 1
         }
         let mut heap = arena::new{ buf = pages }
-        let some{ value = home } = find_home{ &fs, &proc, &heap } else {
+        let home = find_home{ &fs, &proc, &heap } ifnull {
             io::eprintln{ &io, s = "ctxc: cannot find std/ and ctxc/rt/; set CTX_HOME to the directory that holds them" }
             return 1
         }
@@ -49,7 +49,7 @@ namespace drive {
         let work = join{ &heap, a = build_dir, b = "run" }
         if not made{ &io, &fs, path = build_dir } or not made{ &io, &fs, path = work } { return 1 }
         let os = proc::os{ &proc }
-        let some{ value = std } = std_files{ &io, &fs, &heap, home, os } else { return 1 }
+        let std = std_files{ &io, &fs, &heap, home, os } ifnull { return 1 }
         let cc = compiler{ &fs, &proc, &heap, os }
         let d = Driver{ home, work, std, os, cc, cc_env = cc_env{ &proc, &heap, cc = cc[0], os } }
 
@@ -79,7 +79,7 @@ namespace drive {
             let mut files: [][]u8 = slice::empty([]u8){}
             if kind == 2 {
                 let dir = if slice::eq_bytes{ a = t.root, b = "." } { path } else { join{ &heap, a = path, b = t.root } }
-                let some{ value = found } = ctx_files{ &io, &fs, &heap, dir, skip_build = slice::eq_bytes{ a = dir, b = path } } else { return 1 }
+                let found = ctx_files{ &io, &fs, &heap, dir, skip_build = slice::eq_bytes{ a = dir, b = path } } ifnull { return 1 }
                 if found.len == 0 {
                     cannot{ &io, path = dir, what = "no .ctx files in directory" }
                     return 1
@@ -283,7 +283,7 @@ namespace drive {
         }
         if words.len == 0 { add{ xs = &words, s = "cc" } }
         let xs = list::items{ list = words }
-        let some{ value = found } = on_path{ &fs, &proc, &heap, name = xs[0], os } else { return xs }
+        let found = on_path{ &fs, &proc, &heap, name = xs[0], os } ifnull { return xs }
         let mut out = list::new([]u8){ realloc = arena::alloc, &heap }
         add{ xs = &out, s = found }
         add_all{ xs = &out, ys = xs[1..] }
@@ -294,7 +294,7 @@ namespace drive {
     // Windows.
     fn on_path { mut fs: Fs, mut proc: Proc, mut heap: Heap, name: []u8, os: build::Os } -> ?[]u8 {
         if base{ path = name }.len != name.len { return null }
-        let some{ value = path } = proc::env{ &proc, name = "PATH" } else { return null }
+        let path = proc::env{ &proc, name = "PATH" } ifnull { return null }
         let windows = os == build::Os::windows
         let file = if windows and not ends_with{ s = name, suffix = ".exe" } { cat{ &heap, a = name, b = ".exe" } } else { name }
         let sep: u8 = if windows { ';' } else { ':' }
@@ -320,7 +320,7 @@ namespace drive {
         let dir = parent{ path = cc }
         if dir.len == 0 { return slice::empty([]u8){} }
         let entry = cat{ &heap, a = "PATH=", b = dir }
-        let some{ value = rest } = proc::env{ &proc, name = "PATH" } else { return one{ &heap, s = entry } }
+        let rest = proc::env{ &proc, name = "PATH" } ifnull { return one{ &heap, s = entry } }
         let sep: []u8 = if os == build::Os::windows { ";" } else { ":" }
         return one{ &heap, s = cat{ &heap, a = cat{ &heap, a = entry, b = sep }, b = rest } }
     }
@@ -330,8 +330,8 @@ namespace drive {
     fn std_files { mut io: Io, mut fs: Fs, mut heap: Heap, home: []u8, os: build::Os } -> ?[][]u8 {
         let std_dir = join{ &heap, a = home, b = "std" }
         let layer: []u8 = match os { windows => { "os/windows" } macos => { "os/posix" } linux => { "os/posix" } }
-        let some{ value = top } = ctx_files{ &io, &fs, &heap, dir = std_dir, skip_build = false } else { return null }
-        let some{ value = own } = ctx_files{ &io, &fs, &heap, dir = join{ &heap, a = std_dir, b = layer }, skip_build = false } else { return null }
+        let top = ctx_files{ &io, &fs, &heap, dir = std_dir, skip_build = false } ifnull { return null }
+        let own = ctx_files{ &io, &fs, &heap, dir = join{ &heap, a = std_dir, b = layer }, skip_build = false } ifnull { return null }
         let mut all = list::new([]u8){ realloc = arena::alloc, &heap }
         add_all{ xs = &all, ys = top }
         add_all{ xs = &all, ys = own }
@@ -399,7 +399,7 @@ namespace drive {
     }
 
     fn cat { mut heap: Heap, a: []u8, b: []u8 } -> []u8 {
-        let some{ value = out } = alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = a.len + b.len } else {
+        let out = alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = a.len + b.len } ifnull {
             @panic("ctxc: out of memory")
         }
         slice::copy{ dst = out[..a.len], src = a }
