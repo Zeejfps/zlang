@@ -879,11 +879,16 @@ match load{ &fs, path } {
 1. `error name` or `error name{ fields }` in a namespace declares an error, a variant that may carry
    a payload. Errors are named by their namespace (`fs::not_found`), so two libraries can't clash.
    The compiler numbers every error in the program.
-2. `!T` is a `T` or an error. Unwritten, its error set is inferred: the errors the body returns,
+2. `!T` is a `T` or an error, and its error set is always inferred: the errors the body returns,
    plus the sets of what it passes up with `try`. Recursion is resolved by repeating until the sets
-   stop growing (they only grow, and are finite). An explicit set can be written where an API
-   should be fixed, and must be where nothing can be inferred: a function type's set is written,
-   or means any error. The spelling of an explicit set is open.
+   stop growing (they only grow, and are finite). A set is never written: ctxc compiles the whole
+   program, so every direct call has a body to infer from, and the inferred set is what makes a
+   `match` on errors exhaustive. A `!T` in a function type, where there is no body, means any
+   error, and its callers handle the rest with `err{ error }` or `else`.
+   Written sets (`type OpenError = error{ ... }`, attached as `-> !File errors OpenError` or Zig's
+   `OpenError!File`) were considered and left out. They would serve function values that need
+   exhaustive handling, and libraries pinning their API against a change in a body; neither is
+   needed yet, and both can come later without changing the rest.
 3. Representation: a tagged union of `ok{ value: T }` and the set's errors, numbered program-wide,
    sized for the largest payload. Passing an error into a larger set copies it, with no renumbering.
    Not C-compatible: bindings turn C's return codes into errors.
