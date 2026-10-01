@@ -35,7 +35,7 @@ numbers, which PLAN.md and commit messages cite; git history has the resolved on
   copied (`let q = p`) before it can be narrowed or matched (`check::const_decl`).
 - **11. A `?Union` takes two steps to match.** `map::get` returns `?Entry`, so code tests for
   `null` and then matches the value. A pattern that goes through `some`, or `match` arms that
-  list a `?U`'s variants next to `null`, would take one.
+  list a `?U`'s variants next to `null`, would take one. *Planned:* PLAN.md stage 11 (`null` arms, `orelse`).
 - **12. A diagnostic takes three lines.** `let mut b = message{ c }`, then
   `pushed{ ok = @fmt(&b, ...) }`, then `error{ &c, at, msg = utf8::view{ b } }`: 24 times in
   `check.ctx`. `@fmt` can't produce a `utf8::String` in an expression.
@@ -63,4 +63,4 @@ numbers, which PLAN.md and commit messages cite; git history has the resolved on
 - **20. An optional can't be compared with a value.** `map::get{ m = c.access, key } ==
   Access::field` is an error, so it takes a local and `x != null and x == Access::field`
   (`check::access_is`). With #23, a `let mut` optional needs a copy even for that. `==` between
-  `?T` and `T` meaning "is some and equal" would do.
+  `?T` and `T` meaning "is some and equal" would do. *Planned:* PLAN.md stage 11.

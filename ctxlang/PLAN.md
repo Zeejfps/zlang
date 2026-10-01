@@ -23,6 +23,7 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
 | 8 | Decide ctxi's role: removed, ctxc bootstraps from committed C | done | |
 | 9 | Metaprogramming: build programs, attributes, compile-time consts | step 1 done (for 10.4); attributes done in 10.1 | |
 | 10 | C interop: extern fns, capabilities, linking | in progress | |
+| 11 | Optionals: `orelse`, `null` arms, `?T == T` | next language item | |
 
 ### Where we are
 
@@ -814,6 +815,28 @@ Increments, each landing with tests and a refreshed bootstrap:
 
 *Done when:* a program opens a window and draws with OpenGL through a binding written in
 ctxlang.
+
+### 11. Optionals — next language item
+
+Unwrapping a `?T` is the most common thing done with one, and the pattern form is heavy for it:
+`let some{ value = p } = e else { return 1 }` names the variant and its payload field. Narrowing
+(`let p = e; if p == null { return 1 }`) already does it in two lines. FRICTION.md #11 and #20 are
+the same pain from other sides. Three small features, each for one shape:
+
+| Shape | Feature |
+|---|---|
+| Unwrap, falling back to a default or leaving | `e orelse x`: for `e: ?T`, a `T` — the value if there is one, else `x`, a value of `T` or a block that leaves (`orelse { return 1 }`). As Zig's `orelse`. |
+| Null as an arm next to a union's variants (#11) | `match` on a `?U` for a union `U` lists `null` and `U`'s variants in one set of arms. |
+| "Present and equal" (#20) | `==` and `!=` between a `?T` and a `T`: true when present and equal. |
+
+`let … else` stays, for unions in general (`ok{ value }` or `err{ error }` of a `Result`).
+
+Considered and set aside: Rust-style combinators (`.map(...)`, `.unwrap_or_else(...)`). A lambda
+can't `return` from the function around it, which is the commonest thing done with a missing
+value (Rust needs `?` and `let … else` for that reason); ctxlang has no anonymous functions, and
+captures would meet exclusivity and escape (§3.1, §14); chaining also needs method syntax (§16
+Q4). Zig covers these shapes without closures. Optional chaining (`a?.b`) needs no lambdas, but
+nothing in FRICTION.md asks for it yet.
 
 ### Bootstrap chain
 
