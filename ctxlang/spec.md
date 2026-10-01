@@ -487,7 +487,7 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 2. `@name(...)` is always a builtin call, never generic application (§9). The parentheses are required, even with no arguments.
 3. Each builtin has the signature below. Type arguments always come before value arguments, so the builtin's name alone says whether each argument is parsed as a type or an expression. Only `@fmt` takes any number of arguments.
 4. An unknown builtin, or a call with the wrong number of arguments, is a syntax error.
-5. The type argument of `@as`, `@trunc` or `@cast` may be `_`: the type expected where the call appears (§11 Literals), or its payload if that is optional. In `Gl{ clear = @cast(_, p) }` it is the field's type, and in `let n: i32 = @as(_, big)` the local's. It is an error where nothing expects a type, as in `let n = @as(_, big)`. `_` is a type nowhere else.
+5. The type argument of `@as`, `@trunc` or `@cast` may be `_`: the type expected where the call appears (§11 Literals), or its payload if that is optional. In `Fns{ clear = @cast(_, p) }` it is the field's type, and in `let n: i32 = @as(_, big)` the local's. It is an error where nothing expects a type, as in `let n = @as(_, big)`. `_` is a type nowhere else.
 
 | Signature | Result | Meaning |
 |---|---|---|
@@ -563,22 +563,14 @@ The compiler checks, within each function, that the address of a local doesn't o
 ```
 capability Glfw                                   // permission to call a C library (§18)
 
-capability Gl {                                   // permission to call OpenGL: its functions
-    clear: extern fn{ mask: u32 },
-}
-
 fn main { mut io: Io, mut fs: Fs, mut glfw: Glfw, args: Args } -> i32 { ... }
-
-let some{ value = loaded } = gl::load{ get_proc = glfw::proc_address{ &glfw, _ } } else { return 1 }   // only gl's functions make one
-let mut gl = loaded
-gl.clear{ mask = gl::COLOR_BUFFER_BIT }           // a call through it
 ```
 
 1. `capability Name` declares a **capability type**: permission to have some effect (§1.3). It has no generic parameters and no zero value. Without fields it takes no space; with them (rule 5) it is a struct of C functions.
 2. Nothing can construct a capability without fields: `Name{}` is an error. The only ones are those `main` receives, which it passes down to the functions that need them, and those a callback receives when C calls it (§18 Callbacks), on the binding's word that C calls it only while they are held.
 3. std declares `Io` (console, §17 `io`), `Fs` (files, §17 `fs`), `Mem` (memory beyond the stack, §17 `mem`), `Proc` (other programs and the environment, §17 `proc`) and `Build` (a build program's, §19). A binding of a C library declares its own, and its extern fns with effects take it (§18).
 4. A capability is permission for code that follows the rules, not a sandbox: a pointer `@cast` (§13) can forge one, as it can corrupt any memory.
-5. `capability Name { field: extern fn{C} -> R, ... }` declares one with **fields**: C functions it holds, such as a library's looked up at run time. Each field is a C function pointer (§12), never null; a `?extern fn` isn't allowed, since unwrapping it would read the field (rule 7). Its layout is a struct's.
+5. `capability Name { field: extern fn{C} -> R, ... }` declares one with **fields**: C functions it holds, such as a library's looked up at run time. Each field is a C function pointer (§12), never null; a `?extern fn` isn't allowed, since unwrapping it would read the field (rule 7). Its layout is a struct's. Rules 5 to 8 may not be needed: §16, question 10.
 6. Only a function declared directly in the namespace that declares it, whose context holds a capability or a bound function (`&fn`, §6), can construct one, with a literal (`Name{ field = f, ... }`, §7). Holding one means that function made it. These are how effects reach a function (§1.3): a bound function may hold a capability, as a loader bound to a library's does (`glfw::proc_address{ &glfw, _ }`), so a binding can take one without naming the library it comes from. Code that holds no capability has none to bind a loader to. A loader that holds none can't look a function up: short of a `@cast` (rule 4), it returns `null` or a named function of the type it returns, which is pure if that type takes no capability (§18).
 7. Its fields can only be called: `x.f{ ... }` calls the function field `f` holds, and `x` must be a mutable place, as for passing it to a `mut` field (§3); through a `*mut` to one, `p.f{ ... }` calls it too. Holding `x` is the permission, so the field's type needs no capability field. Reading a field as a value (`let g = x.f`, passing, comparing, casting or taking its address) or assigning one is an error: it would reach code whose signature doesn't name the capability.
 8. One may be a local, a function's field, a result or an optional's payload, and copies as a struct does. Neither the runtime nor C can make one, so `main` can't take one (Entry point, rule 2), nor can a callback (§18 Callbacks, rule 4). An extern fn may take one as any capability: it isn't passed to C.
@@ -601,6 +593,7 @@ Settled questions are removed, and the rest keep their numbers.
 - **6. Imports:** some form of `use list::List` to shorten long paths?
 - **7. Variant shorthand:** should `.variant{...}` be allowed when the expected type is known?
 - **9. Large stack frames:** should the compiler error or warn above a size limit? (Page allocation is now the `Mem` capability, §15.) Should pages be freeable?
+- **10. Capabilities with fields (§15, rules 5 to 8):** maybe we don't need them. examples/glfw holds GL's functions in plain structs instead, each function's type taking a capability without fields (`clear: extern fn{ mut gl: Gl, mask: u32 }`), as GLFW's extern fns take `Glfw`. That costs a `&gl` in every call, and gives up only "holding one means its functions were found", which a `@cast` can forge anyway (rule 4). If nothing else needs them, rules 5 to 8 and their checks can go.
 
 ## 17. Standard library
 

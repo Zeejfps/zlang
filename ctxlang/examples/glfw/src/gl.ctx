@@ -1,25 +1,197 @@
-// The two OpenGL functions main.ctx draws with, looked up at run time, as GL has to be on Windows
-// beyond version 1.1. They are the fields of the capability `Gl` (spec §15): only `load` can make
-// one, so holding a Gl means they were found, and calling one is a call through it,
-// `gl.clear{ mask }`. `load` takes the lookup as a function, so any windowing library can supply
-// it: main.ctx binds GLFW's, `glfw::proc_address{ &glfw, _ }`.
+// OpenGL's functions, looked up at run time, as GL has to be on Windows beyond version 1.1.
+// Calling one takes the capability `Gl` (spec §15), which main receives as it does `Glfw`: each
+// function's type has a `mut gl: Gl` field, which C isn't passed (§18), so `fns.clear{ &gl, mask }`.
+// The functions each version added are a struct, `Fns1_1` for 1.1's, `Fns2_0` for what 2.0 added,
+// and so on. A version has every earlier one's functions too, so `load_3_3` gives a `Gl3_3`
+// holding the four: a program calls the loader of the version it needs, and passes on only the
+// structs each of its functions uses. The loaders take the lookup as a function, so any windowing
+// library can supply it: main.ctx binds GLFW's, `glfw::proc_address{ &glfw, _ }`.
+//
+// These are the core functions, which every profile has. The fixed-function ones a core profile
+// (3.2 and later) removed are `Legacy`, which `load_legacy` gives only on a context that kept them.
 namespace gl {
-    // Permission to call OpenGL: its functions, from the context current when it was loaded.
-    capability Gl {
-        clear_color: extern fn{ r: f32, g: f32, b: f32, a: f32 },
-        clear: extern fn{ mask: u32 },
+    // Permission to call OpenGL, in the context current on this thread.
+    capability Gl
+
+    struct Fns1_1 {
+        clear_color: extern fn{ mut gl: Gl, r: f32, g: f32, b: f32, a: f32 },
+        clear: extern fn{ mut gl: Gl, mask: u32 },
+        viewport: extern fn{ mut gl: Gl, x: i32, y: i32, width: i32, height: i32 },
+        draw_arrays: extern fn{ mut gl: Gl, mode: u32, first: i32, count: i32 },
+        get_string: extern fn{ mut gl: Gl, name: u32 } -> ?*u8,
+        get_integerv: extern fn{ mut gl: Gl, name: u32, data: *mut i32 },
     }
 
-    const COLOR_BUFFER_BIT: u32 = 16384           // GL_COLOR_BUFFER_BIT
+    struct Fns2_0 {
+        create_shader: extern fn{ mut gl: Gl, kind: u32 } -> u32,
+        compile_shader: extern fn{ mut gl: Gl, shader: u32 },
+        create_program: extern fn{ mut gl: Gl } -> u32,
+        use_program: extern fn{ mut gl: Gl, program: u32 },
+    }
 
-    // The functions, from get_proc, which finds one by name in the context current on this
-    // thread, or gives null; null if one is missing.
-    fn load { get_proc: &fn{ name: c::String } -> ?extern fn{} } -> ?Gl {
+    struct Fns3_0 {
+        gen_vertex_arrays: extern fn{ mut gl: Gl, n: i32, arrays: *mut u32 },
+        bind_vertex_array: extern fn{ mut gl: Gl, array: u32 },
+    }
+
+    struct Fns3_3 {
+        vertex_attrib_divisor: extern fn{ mut gl: Gl, index: u32, divisor: u32 },
+        gen_samplers: extern fn{ mut gl: Gl, n: i32, samplers: *mut u32 },
+    }
+
+    // Removed from core profiles.
+    struct Legacy {
+        begin: extern fn{ mut gl: Gl, mode: u32 },
+        end: extern fn{ mut gl: Gl },
+        vertex2f: extern fn{ mut gl: Gl, x: f32, y: f32 },
+        color3f: extern fn{ mut gl: Gl, r: f32, g: f32, b: f32 },
+    }
+
+    struct Gl1_1 { v1_1: Fns1_1 }
+    struct Gl2_0 { v1_1: Fns1_1, v2_0: Fns2_0 }
+    struct Gl3_0 { v1_1: Fns1_1, v2_0: Fns2_0, v3_0: Fns3_0 }
+    struct Gl3_3 { v1_1: Fns1_1, v2_0: Fns2_0, v3_0: Fns3_0, v3_3: Fns3_3 }
+
+    const COLOR_BUFFER_BIT: u32 = 16384           // GL_COLOR_BUFFER_BIT
+    const VERSION: u32 = 7938                     // GL_VERSION
+    const CONTEXT_FLAGS: u32 = 33310              // GL_CONTEXT_FLAGS
+    const CONTEXT_FLAG_FORWARD_COMPATIBLE: i32 = 1
+    const CONTEXT_PROFILE_MASK: u32 = 37158       // GL_CONTEXT_PROFILE_MASK
+    const CONTEXT_COMPATIBILITY_PROFILE: i32 = 2
+
+    // Each loader gives its version's functions and every earlier version's, from get_proc,
+    // which finds one by name in the context current on this thread, or gives null; null if the
+    // context is older or one of them is missing.
+
+    fn load_1_1 { get_proc: &fn{ name: c::String } -> ?extern fn{}, mut gl: Gl } -> ?Gl1_1 {
+        let v1_1 = base{ get_proc, &gl, at_least = 11 } ifnull { return null }
+        return Gl1_1{ v1_1 }
+    }
+
+    fn load_2_0 { get_proc: &fn{ name: c::String } -> ?extern fn{}, mut gl: Gl } -> ?Gl2_0 {
+        let v1_1 = base{ get_proc, &gl, at_least = 20 } ifnull { return null }
+        let v2_0 = fns_2_0{ get_proc } ifnull { return null }
+        return Gl2_0{ v1_1, v2_0 }
+    }
+
+    fn load_3_0 { get_proc: &fn{ name: c::String } -> ?extern fn{}, mut gl: Gl } -> ?Gl3_0 {
+        let v1_1 = base{ get_proc, &gl, at_least = 30 } ifnull { return null }
+        let v2_0 = fns_2_0{ get_proc } ifnull { return null }
+        let v3_0 = fns_3_0{ get_proc } ifnull { return null }
+        return Gl3_0{ v1_1, v2_0, v3_0 }
+    }
+
+    fn load_3_3 { get_proc: &fn{ name: c::String } -> ?extern fn{}, mut gl: Gl } -> ?Gl3_3 {
+        let v1_1 = base{ get_proc, &gl, at_least = 33 } ifnull { return null }
+        let v2_0 = fns_2_0{ get_proc } ifnull { return null }
+        let v3_0 = fns_3_0{ get_proc } ifnull { return null }
+        let v3_3 = fns_3_3{ get_proc } ifnull { return null }
+        return Gl3_3{ v1_1, v2_0, v3_0, v3_3 }
+    }
+
+    // The fixed-function functions, or null if the context is a core profile, or a 3.0 or 3.1
+    // one that left them out. get_proc may find them on such a context all the same, so the
+    // context is asked.
+    fn load_legacy { get_proc: &fn{ name: c::String } -> ?extern fn{}, mut gl: Gl, fns: Fns1_1 } -> ?Legacy {
+        if not has_legacy{ &gl, fns } { return null }
+        let begin = get_proc{ name = "glBegin" } ifnull { return null }
+        let end = get_proc{ name = "glEnd" } ifnull { return null }
+        let vertex2f = get_proc{ name = "glVertex2f" } ifnull { return null }
+        let color3f = get_proc{ name = "glColor3f" } ifnull { return null }
+        return Legacy{
+            begin = @cast(_, begin),
+            end = @cast(_, end),
+            vertex2f = @cast(_, vertex2f),
+            color3f = @cast(_, color3f),
+        }
+    }
+
+    // Whether the context kept the fixed-function functions. A forward-compatible 3.0 context
+    // dropped them, and 3.1 did unless it has GL_ARB_compatibility, which this doesn't look for.
+    // From 3.2 the profile says.
+    fn has_legacy { mut gl: Gl, fns: Fns1_1 } -> bool {
+        let v = version{ &gl, fns }
+        if v < 30 { return true }
+        if v < 31 { return (get_int{ &gl, fns, name = CONTEXT_FLAGS } & CONTEXT_FLAG_FORWARD_COMPATIBLE) == 0 }
+        if v < 32 { return false }
+        return (get_int{ &gl, fns, name = CONTEXT_PROFILE_MASK } & CONTEXT_COMPATIBILITY_PROFILE) != 0
+    }
+
+    // The context's version, as major * 10 + minor, from the "major.minor..." GL_VERSION gives;
+    // 0 if it can't be read. Asked, not inferred from get_proc: it may find a function the
+    // context's version lacks.
+    fn version { mut gl: Gl, fns: Fns1_1 } -> i32 {
+        let s = fns.get_string{ &gl, name = VERSION } ifnull { return 0 }
+        let mut i: usize = 0
+        let mut major = 0
+        while s[i] >= '0' and s[i] <= '9' {
+            major = major * 10 + (s[i] - '0')
+            i = i + 1
+        }
+        if s[i] != '.' { return 0 }
+        i = i + 1
+        let minor = if s[i] >= '0' and s[i] <= '9' { s[i] - '0' } else { 0 }
+        return major * 10 + minor
+    }
+
+    fn get_int { mut gl: Gl, fns: Fns1_1, name: u32 } -> i32 {
+        let mut n: i32 = 0
+        fns.get_integerv{ &gl, name, data = &n }
+        return n
+    }
+
+    // 1.1's functions, if the context is version `at_least` or later.
+    fn base { get_proc: &fn{ name: c::String } -> ?extern fn{}, mut gl: Gl, at_least: i32 } -> ?Fns1_1 {
+        let fns = fns_1_1{ get_proc } ifnull { return null }
+        if version{ &gl, fns } < at_least { return null }
+        return fns
+    }
+
+    fn fns_1_1 { get_proc: &fn{ name: c::String } -> ?extern fn{} } -> ?Fns1_1 {
         let clear_color = get_proc{ name = "glClearColor" } ifnull { return null }
         let clear = get_proc{ name = "glClear" } ifnull { return null }
-        return Gl{
+        let viewport = get_proc{ name = "glViewport" } ifnull { return null }
+        let draw_arrays = get_proc{ name = "glDrawArrays" } ifnull { return null }
+        let get_string = get_proc{ name = "glGetString" } ifnull { return null }
+        let get_integerv = get_proc{ name = "glGetIntegerv" } ifnull { return null }
+        return Fns1_1{
             clear_color = @cast(_, clear_color),
             clear = @cast(_, clear),
+            viewport = @cast(_, viewport),
+            draw_arrays = @cast(_, draw_arrays),
+            get_string = @cast(_, get_string),
+            get_integerv = @cast(_, get_integerv),
+        }
+    }
+
+    fn fns_2_0 { get_proc: &fn{ name: c::String } -> ?extern fn{} } -> ?Fns2_0 {
+        let create_shader = get_proc{ name = "glCreateShader" } ifnull { return null }
+        let compile_shader = get_proc{ name = "glCompileShader" } ifnull { return null }
+        let create_program = get_proc{ name = "glCreateProgram" } ifnull { return null }
+        let use_program = get_proc{ name = "glUseProgram" } ifnull { return null }
+        return Fns2_0{
+            create_shader = @cast(_, create_shader),
+            compile_shader = @cast(_, compile_shader),
+            create_program = @cast(_, create_program),
+            use_program = @cast(_, use_program),
+        }
+    }
+
+    fn fns_3_0 { get_proc: &fn{ name: c::String } -> ?extern fn{} } -> ?Fns3_0 {
+        let gen_vertex_arrays = get_proc{ name = "glGenVertexArrays" } ifnull { return null }
+        let bind_vertex_array = get_proc{ name = "glBindVertexArray" } ifnull { return null }
+        return Fns3_0{
+            gen_vertex_arrays = @cast(_, gen_vertex_arrays),
+            bind_vertex_array = @cast(_, bind_vertex_array),
+        }
+    }
+
+    fn fns_3_3 { get_proc: &fn{ name: c::String } -> ?extern fn{} } -> ?Fns3_3 {
+        let vertex_attrib_divisor = get_proc{ name = "glVertexAttribDivisor" } ifnull { return null }
+        let gen_samplers = get_proc{ name = "glGenSamplers" } ifnull { return null }
+        return Fns3_3{
+            vertex_attrib_divisor = @cast(_, vertex_attrib_divisor),
+            gen_samplers = @cast(_, gen_samplers),
         }
     }
 }
