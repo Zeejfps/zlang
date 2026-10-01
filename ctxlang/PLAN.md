@@ -864,10 +864,15 @@ fn load { mut fs: Fs, path: []u8 } -> !Config {
 }
 
 match load{ &fs, path } {
-    ok{ value }          => { ... }
-    fs::not_found        => { ... }
-    fs::os{ code }       => { ... }
-    else                 => { ... }          // the errors not listed; without it, every one must be
+    ok{ value }  => { ... }
+    err{ error } => {
+        io::eprintln{ &io, s = ... }         // shared handling, written once
+        match error {                        // then by kind: exhaustive over load's set
+            fs::not_found  => { ... }
+            fs::os{ code } => { ... }
+            else           => { ... }        // the rest; without it, every error must be listed
+        }
+    }
 }
 ```
 
@@ -884,10 +889,14 @@ match load{ &fs, path } {
    Not C-compatible: bindings turn C's return codes into errors.
 4. A `T` converts to `!T` implicitly; `return fs::not_found` (or `fs::os{ code = c }`) returns an
    error where a `!T` is expected.
-5. `match` on a `!T` lists `ok{ value }` and errors in one set of arms. It is exhaustive when every
-   error of the set is listed, so adding an error to a function breaks the callers that handled
-   them all, instead of sending it to an `else`. `err{ error }` matches any error and binds it as a
-   value, to pass on or print.
+5. `match` on a `!T` has the arms `ok{ value }` and `err{ error }`, which binds the error as a
+   value of the function's error set. `match error { ... }` then dispatches on its kind, and is
+   exhaustive when every error of the set is listed: adding an error to a function breaks the
+   callers that handled them all, instead of sending it to an `else`. This split is the normal
+   form, since code shared by every error (printing it, say) goes once, before the inner `match`.
+   As a shortcut for pure dispatch, the arms may list errors directly next to `ok{ value }`; a last
+   `err{ error }` arm then takes the errors not listed, with the error bound, which a bare `else`
+   can't.
 6. An `@fmt` hole prints an error's full name (`fs::not_found`), with its payload.
 7. Replaces std's `Result(T, E)` and the `result` namespace. Migration: std (about 20 uses, `fs`
    mostly, whose `Error` union becomes `error` declarations), ctxc (1), examples (8), tests (35), in
@@ -903,7 +912,7 @@ Swift 6 added typed throws because callers wanted the set.
 | Shape | Feature |
 |---|---|
 | Unwrap a `?T`, with a default or by leaving | `e ifnull x`: the value if there is one, else `x`, a value of `T` or a block that leaves (`ifnull { return 1 }`). |
-| Unwrap a `!T`, with a default or by leaving | `e iferr x`: the `ok` value, else `x`, as for `ifnull`. How its block sees the error is open; a `match` already can. |
+| Unwrap a `!T`, with a default or by leaving | `e iferr x`: the `ok` value, else `x`, as for `ifnull`. The block may bind the error, as `let … else` does: `iferr err{ error } { report{ error }; return 1 }`. |
 | Pass an error up | `try e`: for `e: !T` in a function returning `!U`, the value, or return the error (which joins the function's set). Zig's `try`, Rust's `?`. |
 | Unwrap in a `let`, by leaving | `let p = e else { ... }` with a plain name: for `e: ?T`, shorthand for `let some{ value = p } = e else { ... }`. |
 | Null as an arm next to a union's variants (#11) | `match` on a `?U` for a union `U` lists `null` and `U`'s variants in one set of arms, as `match` on a `!T` lists `ok` and errors. |
@@ -912,6 +921,13 @@ Swift 6 added typed throws because callers wanted the set.
 The operator names say which case the right side handles: `ifnull` for `?T`, `iferr` for `!T`.
 Zig's `orelse` and `catch` were the alternative (two unrelated words, neither naming its case), and
 C#'s and Swift's `??` (a symbol, where ctxlang writes logic as words: `and`, `or`, `not`).
+
+The default arm stays `else`, not Rust's `_`. `else` already means "everything not listed" in a
+`match` (§8), as it means "otherwise" after `if` and `let`, and `_` already means a discard
+(`_ = e`) and a bind (`f{ a, _ }`). In Rust the default arm is the wildcard pattern used whole;
+ctxlang's patterns are one level deep, so a wildcard has nowhere else to go yet. If patterns nest
+(a payload's fields, literal values), `_` comes in then as a wildcard inside a pattern
+(`os{ code = _ }`), and `else` stays the whole-arm default.
 
 Considered and set aside: Rust-style combinators (`.map(...)`, `.unwrap_or_else(...)`). A lambda
 can't `return` from the function around it, which is the commonest thing done with a missing
