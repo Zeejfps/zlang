@@ -1034,8 +1034,14 @@ ctxc learned them, then std, the examples, the tests and ctxc itself moved off `
   a listed error must be one it can be, and without `else` or `err` every one must be listed.
 - *Payloads hold no pointers.* An error passes up past frames that end, and the escape check
   (§14) runs while the sets are still unknown, so a payload holding a pointer would have to be
-  assumed to hold one wherever any error might. Values only, for now: std's and the examples'
-  errors carry codes and offsets.
+  assumed to hold one wherever any error might. Values only: std's and the examples' errors carry
+  codes and offsets. Text that names something, such as a function that didn't load, is a
+  `static::String`: a literal's bytes, valid UTF-8 without a NUL and with one after them, which
+  only a literal or a const makes, so the escape check counts it as holding no pointer. It
+  converts to a `utf8::String` and a `c::String` (views of the same bytes), so one name serves a
+  C call and an error. Considered instead: relaxing the rule and holding back each escape error
+  that depends on an error set until the sets are inferred, which would allow payloads that
+  point into a caller's data; offsets serve that so far.
 - *Lowering.* No new IR. `!T` is a tagged union of `ok` and `err{ error }`, and an error type the
   tagged union of its set (normalized to `eset`, so equal sets are one IR type). A conversion into
   a larger set is a match that renumbers; `try` is a match whose `err` arm returns; errors listed

@@ -194,7 +194,7 @@ match pair{ a, b } {
 ```
 
 1. `error name` or `error name{ field: T, ... }`, at the top level or in a namespace, declares an error: a value, named as a function is (`parse::empty`, or `empty` inside `parse`). `name` is the error, and an error with a payload is `name{ field = e, ... }`, every field supplied once, as in a literal (§7). `error` is a keyword only where a declaration begins and a name follows it. An error has no generic parameters and can't be named `ok` or `err`.
-2. A payload holds values: no pointer, slice, `utf8::String` or other type that holds one (§14), and no `!T` or error. An error is passed up past frames that end, so it carries no addresses into them.
+2. A payload holds values: no pointer, slice, `utf8::String` or other type that holds one (§14), and no `!T` or error. An error is passed up past frames that end, so it carries no addresses into them. Text that lives as long as the program is a `static::String` (§11, Literals), which a payload may hold: `error missing{ name: static::String }`.
 3. An error value has an **error type**: a set of errors. `error` is the type of any error, and every error type converts to it. No other error type is written: they come from a function's result (rule 5) or from one error alone.
 4. `!T` is a T or an error. `!` alone is `!T` without a value: a function returning it returns nothing or fails. In such a function, `return` without a value and reaching the end of the body return its `ok`.
 5. A function's result `!T` fails with its **error set**, inferred: the errors its body returns, plus the sets of the calls whose errors it returns or passes up with `try`, repeated through recursion until no set grows. ctxc compiles the whole program, so every direct call has a body to infer from. `!T` written anywhere else, as a function type's result, a field or a local's type, may hold any error.
@@ -386,6 +386,7 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
    - `[]u8`: a **view** of static read-only bytes that live for the whole program. `[]mut u8` is an error.
    - `utf8::String` (§17): a view as above, as text. It is a compile error if the bytes aren't valid UTF-8.
    - `c::String` (§18): static read-only bytes with a NUL byte after them, for C. It is a compile error if the literal holds a NUL itself (`\0`), since C would end the string there.
+   - `static::String` (§17): both of the above at once: static bytes that are valid UTF-8, hold no NUL and have one after them. It converts implicitly, wherever §11 Widening rule 1 applies, to a `utf8::String` (its bytes) and to a `c::String` (their pointer). Only a literal, or a const holding one, makes one: `static::String{ ... }` is an error, and it has no zero value. It is derived from nothing (§14), so it may be stored, returned and carried by an error anywhere. It isn't a C type: C takes it as a `c::String`.
    - anything else, or nothing: a `[N]u8` array value. Like any array it is a value, not a place: bind it to a local to take its address.
 
    In an `if` or `match` expression without an expected type, a branch that is a literal takes the type of another branch that is `[]u8`, `utf8::String` or `c::String`, or of another literal branch that became one. Otherwise, as in `let msg = match p { a => { "one" } b => { "three" } }`, each literal is an array and the lengths must agree; annotate the `let` to get views.
@@ -667,6 +668,7 @@ Settled questions are removed, and the rest keep their numbers.
 | Namespace | Contents |
 |---|---|
 | `slice` | Helpers for built-in slices (§12): `empty`, `cast`, `copy`, `fill`, `eq_bytes` |
+| `static` | `String { bytes: []u8 }`: a string literal's bytes, which live as long as the program, as a type (§11, Literals). It converts to a `utf8::String` and a `c::String`. |
 | `c` | What calling C needs (§18): the attribute `symbol { name: []u8 }`; `String { ptr: *u8 }`, C's NUL-terminated `const char *`, which a literal can be (§11), with `len` (the bytes before the NUL), `bytes` (a view of them) and `copy` (bytes and a NUL from an allocator; fails with `c::has_nul{ at }` or `c::out_of_memory`). |
 | `Args` | Declared at the top level: `type Args = [][]u8`, the type of `main`'s `args` (§15). |
 | `Io`, `Fs`, `Mem`, `Proc`, `Build` | Declared at the top level: `capability Io` and so on (§15), in `io.ctx`, `fs.ctx`, `mem.ctx`, `proc.ctx` and `build.ctx`. |

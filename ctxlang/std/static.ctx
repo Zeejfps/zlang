@@ -1,0 +1,16 @@
+// std: static. Text that lives as long as the program.
+//
+// A `static::String` is a string literal's bytes: valid UTF-8, without a NUL, and followed by a
+// NUL in static memory. Only a string literal (or a const holding one) makes one, so it never
+// points into a frame or an allocation that ends: an error may carry one (spec §8, Errors). It
+// converts to a utf8::String and to a c::String, both views of the same bytes:
+//
+//   error missing{ name: static::String }
+//
+//   fn proc { get_proc: &fn{ name: c::String } -> ?extern fn{}, name: static::String } -> !extern fn{} {
+//       return get_proc{ name } ifnull { return missing{ name } }
+//   }
+
+namespace static {
+    struct String { bytes: []u8 }
+}

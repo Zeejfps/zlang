@@ -126,6 +126,7 @@ namespace check {
         main:      u32,                          // NONE unless `main` is valid
         text_decl: u32,                          // utf8::String, or NONE
         cstr_decl: u32,                          // c::String, or NONE
+        static_decl: u32,                        // static::String, or NONE
         builder_decl: u32,                       // utf8::Builder, or NONE
         calling:   u64,                          // the callee being checked, whose field may be a capability's
         // The body being checked: a const's initializer or a function's body.
@@ -293,6 +294,7 @@ namespace check {
             main = NONE,
             text_decl = NONE,
             cstr_decl = NONE,
+            static_decl = NONE,
             builder_decl = NONE,
             calling = NO_CALLEE,
             sc = Scope{ ns = ROOT, owner = NONE, names = no_names{}, args = slice::empty(Id){} },
@@ -372,6 +374,7 @@ namespace check {
         }
         c.text_decl = std_decl{ c, space = "utf8", name = "String" }
         c.cstr_decl = std_decl{ c, space = "c", name = "String" }
+        c.static_decl = std_decl{ c, space = "static", name = "String" }
         c.builder_decl = std_decl{ c, space = "utf8", name = "Builder" }
         generic_params{ &c, xs = c.structs }
         generic_params{ &c, xs = c.unions }
@@ -1098,7 +1101,8 @@ namespace check {
 
     fn c_compatible { c: Checker, t: Id } -> bool {
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
-            error | prim | cap | enumeration | ptr | slice | record => { return true }
+            record{ decl } => { return decl != c.static_decl or decl == NONE }    // C passes a c::String
+            error | prim | cap | enumeration | ptr | slice => { return true }
             opt => { return nullable_ptr{ c, t } }
             func{ external } => { return external }
             else => { return false }
@@ -2794,7 +2798,8 @@ namespace check {
         match types::get{ s = c.ty, id = x } {
             error | prim | opt | slice => { return true }
             array{ elem } => { return has_zero{ &c, t = elem, depth = depth + 1 } }
-            record => {
+            record{ decl } => {
+                if decl == c.static_decl { return false }        // an empty view has no NUL after it
                 let fs = struct_fields{ &c, t = x }
                 let mut i: usize = 0
                 while i < fs.len {
@@ -3520,7 +3525,7 @@ namespace check {
                     match types::get{ s = c.ty, id = u } { opt{ elem } => { u = types::prune{ s = c.ty, t = elem } } else => {} }
                     match types::get{ s = c.ty, id = u } {
                         slice{ elem } => { if types::prune{ s = c.ty, t = elem } == types::U8 { hint = br.t } }
-                        record{ decl } => { if decl == c.text_decl or decl == c.cstr_decl { hint = br.t } }
+                        record{ decl } => { if decl == c.text_decl or decl == c.cstr_decl or decl == c.static_decl { hint = br.t } }
                         else => {}
                     }
                 }
@@ -4336,6 +4341,7 @@ namespace check {
             array{ elem } => { return contains_ptr{ &c, t = elem, seen } }
             record{ decl } => {
                 if has_id{ xs = seen, n = decl } { return false }
+                if decl == c.static_decl { return false }        // static bytes outlive every local
                 let inner = set_add{ c, xs = seen, n = decl }
                 let fs = struct_fields{ &c, t = x }
                 let mut i: usize = 0
@@ -5270,7 +5276,7 @@ namespace check {
                     }
                     else => {}
                 }
-                if types::unify{ s = &c.ty, a = x, b = ee } or types::widens{ s = &c.ty, a = x, b = ee } or includes_cap{ c, a = x, b = ee } { return Coercion::some }
+                if types::unify{ s = &c.ty, a = x, b = ee } or types::widens{ s = &c.ty, a = x, b = ee } or includes_cap{ c, a = x, b = ee } or static_text{ c, a = x, b = ee } { return Coercion::some }
                 return Coercion::fail
             }
             cap => {
@@ -5291,8 +5297,16 @@ namespace check {
             }
             else => {}
         }
-        if types::unify{ s = &c.ty, a = x, b = y } or types::widens{ s = &c.ty, a = x, b = y } { return Coercion::same }
+        if types::unify{ s = &c.ty, a = x, b = y } or types::widens{ s = &c.ty, a = x, b = y } or static_text{ c, a = x, b = y } { return Coercion::same }
         return Coercion::fail
+    }
+
+    // Whether a is a static::String and b a utf8::String or a c::String, which it converts to:
+    // a view of the same bytes, whose NUL is already after them.
+    fn static_text { c: Checker, a: Id, b: Id } -> bool {
+        if c.static_decl == NONE or record_decl{ c, t = a } != c.static_decl { return false }
+        let d = record_decl{ c, t = b }
+        return d != NONE and (d == c.text_decl or d == c.cstr_decl)
     }
 
     // §5: whether function type g is accepted where s is expected, bound-ness aside.
@@ -5619,6 +5633,29 @@ namespace check {
                             if bytes[k] == 0 {
                                 let mut b = message{ c }
                                 pushed{ ok = @fmt(&b, "a C string literal can't hold a NUL byte (byte {}): C would end the string there", k) }
+                                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                                break
+                            }
+                            k = k + 1
+                        }
+                        return want
+                    }
+                    if decl == c.static_decl and decl != NONE {
+                        // Both a utf8::String and a c::String: valid UTF-8, and no NUL.
+                        match utf8::from{ bytes } {
+                            ok => {}
+                            utf8::invalid{ at = bad } => {
+                                let mut b = message{ c }
+                                pushed{ ok = @fmt(&b, "string literal is not valid UTF-8 (byte {})", bad) }
+                                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                                return want
+                            }
+                        }
+                        let mut k: usize = 0
+                        while k < bytes.len {
+                            if bytes[k] == 0 {
+                                let mut b = message{ c }
+                                pushed{ ok = @fmt(&b, "a static::String can't hold a NUL byte (byte {}): as a c::String, C would end it there", k) }
                                 error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
                                 break
                             }
@@ -6217,6 +6254,10 @@ namespace check {
             let mut b = message{ c }
             pushed{ ok = @fmt(&b, "`{}` is not a struct", str{ s = seg.name.text }) }
             error{ &c, at = seg.name.span, msg = utf8::view{ b } }
+            return types::ERROR
+        }
+        if decl == c.static_decl {
+            error{ &c, at = seg.name.span, msg = "a static::String comes only from a string literal, or a const holding one" }
             return types::ERROR
         }
         same_decl{ &c, t, exp }
@@ -7146,7 +7187,7 @@ namespace check {
         }
         match types::get{ s = c.ty, id = t } {
             record{ decl } => {
-                if decl == c.text_decl { return if has_width { "push_padded" } else { "push" } }
+                if decl == c.text_decl or (decl == c.static_decl and decl != NONE) { return if has_width { "push_padded" } else { "push" } }
             }
             else => {}
         }

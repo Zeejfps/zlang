@@ -4320,6 +4320,65 @@ fn main { mut io: Io } {
 """, '2\n')
 
 
+class StaticStrings(Base):
+    """static::String: a string literal's bytes, which convert to a utf8::String and a
+    c::String and may be held by an error (spec §8, Errors, and §11, Literals)."""
+
+    def test_converts_to_both(self):
+        self.assertOutput(r"""
+extern fn strlen { s: c::String } -> usize
+fn show { mut io: Io, s: utf8::String } { io::println{ &io, s } }
+const NAMES: [2]static::String = ["alpha", "beta"]
+fn main { mut io: Io } {
+    let a: static::String = "h\xc3\xa9llo"
+    show{ &io, s = a }
+    io::println_u64{ &io, n = strlen{ s = a } }
+    io::println_u64{ &io, n = strlen{ s = NAMES[1] } }
+    let o: ?utf8::String = NAMES[0]
+    if o != null { show{ &io, s = o } }
+    let pick = if strlen{ s = a } > 9 { a } else { "short" }
+    show{ &io, s = pick }
+    io::println_u64{ &io, n = a.bytes.len }
+}
+""", 'héllo\n6\n4\nalpha\nshort\n6\n')
+
+    def test_in_an_error(self):
+        self.assertOutput("""
+error missing{ name: static::String }
+fn lookup { name: static::String, have: bool } -> !i32 {
+    if not have { return missing{ name } }
+    return 1
+}
+fn main { mut io: Io } {
+    match lookup{ name = "glCreateShader", have = false } {
+        ok => {}
+        missing{ name } => { io::println{ &io, s = name } }
+    }
+    let mut mem: [128]u8 = [0; 128]
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    match lookup{ name = "glClear", have = false } {
+        ok => {}
+        err{ error } => { _ = @fmt(&b, "{}", error) }
+    }
+    io::println{ &io, s = utf8::view{ b } }
+}
+""", 'glCreateShader\nmissing{ name = glClear }\n')
+
+    def test_compile_errors(self):
+        for src, msg in [
+            ('fn main {} { let s: static::String = "a\\0b" }', "a static::String can't hold a NUL byte (byte 1)"),
+            ('fn main {} { let s: static::String = "\\xff" }', 'string literal is not valid UTF-8 (byte 0)'),
+            ('fn main {} { let b: []u8 = "x"\n    let s = static::String{ bytes = b } }', 'a static::String comes only from a string literal'),
+            ('fn main {} { let mut s: static::String\n    let t: utf8::String = s }', '`s` may be read before it is assigned'),
+            ('fn f { s: utf8::String } -> static::String { return s }\nfn main {} {}', 'expected static::String, got utf8::String'),
+            ('extern fn g {} -> static::String\nfn main {} {}', "can't return static::String"),
+        ]:
+            with self.assertRaises(CompileError, msg=src) as cm:
+                run(src)
+            self.assertIn(msg, cm.exception.msg, src)
+
+
 class Defer(Base):
     def test_order_and_return(self):
         self.assertOutput("""

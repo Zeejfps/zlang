@@ -46,8 +46,16 @@ fn main { mut io: Io, mut glfw: glfw::Glfw } -> i32 {
     }
     defer glfw::destroy_window{ &glfw, window }
     glfw::make_current{ &glfw, window }
-    let mut gl = gl::load_2_0{ get_proc = glfw::proc_address{ &glfw, _ } } ifnull {
-        io::eprintln{ &io, s = "gl: version 2.0 or its functions missing" }
+    let mut gl = gl::load_2_0{ get_proc = glfw::proc_address{ &glfw, _ } } iferr err{ error } {
+        // Every error load_2_0 can fail with is listed: its set is inferred, so this is exhaustive.
+        let mut buf: [128]u8
+        let mut heap = arena::new{ buf = buf[..] }
+        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+        let ok = match error {
+            gl::too_old{ have, need } => { @fmt(&b, "gl: the context's OpenGL is {}.{}; this needs {}.{}", have / 10, have % 10, need / 10, need % 10) }
+            gl::missing{ name } => { @fmt(&b, "gl: {} didn't load", name) }
+        }
+        if ok { io::eprintln{ &io, s = utf8::view{ b } } }
         return 1
     }
     print_version{ &io, &gl }
