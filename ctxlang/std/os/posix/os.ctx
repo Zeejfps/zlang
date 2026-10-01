@@ -1,0 +1,36 @@
+// std: os on Linux and macOS. The platform's layer (spec §17): what io and mem need from the
+// operating system, over libc's write, read, aligned_alloc and memset. Every layer declares the
+// same functions; std/os/windows is Windows', and a build compiles one.
+
+namespace os {
+    #c::symbol{ name = "write" }
+    extern fn c_write { mut io: Io, fd: i32, buf: *u8, count: usize } -> i64
+
+    #c::symbol{ name = "read" }
+    extern fn c_read { mut io: Io, fd: i32, buf: *mut u8, count: usize } -> i64
+
+    extern fn aligned_alloc { mut mem: Mem, alignment: usize, size: usize } -> ?*mut u8
+    extern fn memset { mut mem: Mem, dst: *mut u8, byte: i32, count: usize } -> *mut u8
+
+    // Writes some of `bytes`, which isn't empty, to the stream. Returns how many; 0 after an error.
+    fn write { mut io: Io, to: io::Stream, bytes: []u8 } -> usize {
+        let fd: i32 = match to { out => { 1 } err => { 2 } }
+        let w = c_write{ &io, fd, buf = bytes.ptr, count = bytes.len }
+        return if w > 0 { @as(usize, w) } else { 0 }
+    }
+
+    // Reads some of standard input into `into`, which isn't empty. Returns how many; 0 at the end
+    // or after an error.
+    fn read { mut io: Io, into: []mut u8 } -> usize {
+        let r = c_read{ &io, fd = 0, buf = into.ptr, count = into.len }
+        return if r > 0 { @as(usize, r) } else { 0 }
+    }
+
+    // `size` bytes, a multiple of mem::PAGE, zeroed and page-aligned. Null if there isn't enough
+    // memory.
+    fn pages { mut mem: Mem, size: usize } -> ?*mut u8 {
+        let some{ value = p } = aligned_alloc{ &mem, alignment = mem::PAGE, size } else { return null }
+        _ = memset{ &mem, dst = p, byte = 0, count = size }
+        return p
+    }
+}

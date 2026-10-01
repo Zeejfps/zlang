@@ -2,9 +2,9 @@
 
 `ctxc` is a compiler written in ctxlang that emits C. It began as a backend fed by `ctxi`, a Python
 interpreter and front end, and replaced ctxi piece by piece, diffed against it at every step.
-Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctxc from
-`bootstrap/ctxc.c` with nothing but a C compiler. ctxi's last version is in git history, at
-`8436f4d`.
+Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctxc from its
+platform's bootstrap, `bootstrap/ctxc.posix.c` or `bootstrap/ctxc.windows.c`, with nothing but a
+C compiler. ctxi's last version is in git history, at `8436f4d`.
 
 ## Status
 
@@ -22,7 +22,7 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
 | 7a | Language server | | |
 | 8 | Decide ctxi's role: removed, ctxc bootstraps from committed C | done | |
 | 9 | Metaprogramming: build programs, attributes, compile-time consts | step 1 done (for 10.4); attributes done in 10.1 | |
-| 10 | C interop: extern fns, capabilities, linking | in progress | |
+| 10 | C interop: extern fns, capabilities, linking; std's io and mem over the OS (10.7) | in progress | |
 | 11 | Optionals and errors: `!T` with inferred error sets, `ifnull`, `iferr`, `try`, flat `match` arms, `?T == T` | next language item | |
 
 ### Where we are
@@ -30,27 +30,30 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
 - **Without Python**, ctxc and a C compiler are all a program needs (stage 10.8):
 
   ```
-  cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctxc.c ctxc/rt/ctxrt.c -lm -o ctxc
+  cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctxc.posix.c ctxc/rt/ctxrt.c -lm -o ctxc
   ./ctxc run examples/wordcount.ctx -- spec.md       # a file
   ./ctxc run examples/json -- examples/json/sample.json   # a directory
   ./ctxc run examples/glfw                           # a directory with a build program
   ./ctxc exe examples/list.ctx -o list
   ```
 
-  ctxc finds std/ and ctxc/rt/ through CTX_HOME, or above its executable or the working
-  directory, and builds in HOME/build/run. That ctxc is the bootstrap's, so it is the
-  compiler as of the last refresh; `tools/toolchain.py` builds the current source's.
+  On Windows the bootstrap is `bootstrap/ctxc.windows.c`. ctxc finds std/ and ctxc/rt/ through
+  CTX_HOME, or above its executable or the working directory, and builds in HOME/build/run.
+  That ctxc is the bootstrap's, so it is the compiler as of the last refresh;
+  `tools/toolchain.py` builds the current source's.
 - **Python** is left in development only: the test suite (`tests/`), `tools/toolchain.py`
   (which builds the current ctxc from the bootstrap, with caching, for the tests and tools),
   `tools/ctxc.py`, `fixpoint.py`, `corpus.py` and `recover.py`. Each could be a ctxlang program
   now that `proc::run` and `fs::list` exist.
-- `bootstrap/ctxc.c` is ctxc as C. `tools/toolchain.py` compiles it to a seed, and the seed
+- `bootstrap/ctxc.PLATFORM.c` is ctxc as C, with std's layer for `posix` (Linux and macOS) or
+  `windows` (stage 10.7). `tools/toolchain.py` compiles this platform's to a seed, and the seed
   compiles ctxc's current source into `build/ctxc` (about 7 s the first time, cached after).
-- `python -m unittest discover tests` runs all 386 tests through the native ctxc: each program is
+- `python -m unittest discover tests` runs all 388 tests through the native ctxc: each program is
   compiled with `ctxc build`, built with cc and run. They pass on Windows (gcc), Linux (gcc) and
   macOS arm64 (Apple clang).
-- `tools/fixpoint.py`: ctxc built by itself, twice, writes byte-identical C, the same as the
-  bootstrap's, on Windows and Linux, with gcc and with clang.
+- `tools/fixpoint.py`: ctxc built by itself, twice, writes byte-identical C, the same as this
+  platform's bootstrap, and writes the other platform's bootstrap too, on Windows and Linux, with
+  gcc and with clang.
 - `tools/recover.py`: every damaged copy of the corpus's files parses and passes its checks.
 - `python tools/ctxc.py PROGRAM --run [args...]` compiles and runs a program (it replaces
   `python -m ctxi PROGRAM`).
@@ -61,10 +64,11 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
 
 ctxc's source may use only what the bootstrap's ctxc understands. A new feature lands in two
 steps: first in ctxc, without ctxc using it (the bootstrap compiles that source, and the result
-understands the feature); then `python tools/fixpoint.py --update` refreshes `bootstrap/ctxc.c`,
-and ctxc's source may use it. Removing a feature goes the other way round: stop using it, refresh
-the bootstrap, then remove it. Refresh the bootstrap whenever a change to ctxc lands, so a fresh
-checkout builds the current compiler in one step; `fixpoint.py` says when it is out of date.
+understands the feature); then `python tools/fixpoint.py --update` refreshes the bootstraps
+(`bootstrap/ctxc.*.c`, one per platform layer, all written from any machine), and ctxc's source
+may use it. Removing a feature goes the other way round: stop using it, refresh the bootstraps,
+then remove it. Refresh them whenever a change to ctxc lands, so a fresh checkout builds the
+current compiler in one step; `fixpoint.py` says when one is out of date.
 
 ### Known gaps
 
@@ -119,7 +123,8 @@ ctxc/                  one multi-file program (every .ctx in the directory)
   emit_c.ctx                              backend (stage 2)
   dump.ctx                                token, syntax-tree and checked-program dumps
 ctxc/rt/ctxrt.h ctxrt.c                   C runtime: panic, natives, startup
-bootstrap/ctxc.c                          ctxc as C, for building it with only a C compiler (stage 8)
+std/*.ctx  std/os/PLATFORM/os.ctx         std, and its platform layers (stage 10.7)
+bootstrap/ctxc.PLATFORM.c                 ctxc as C, for building it with only a C compiler (stage 8)
 tools/toolchain.py                        builds ctxc from the bootstrap; builds and runs programs
 tools/ctxc.py                             driver: ctxc build, then cc, to an executable
 tools/fixpoint.py                         ctxc built by itself, twice; --update refreshes the bootstrap
@@ -596,8 +601,9 @@ language change twice, stage 9's compile-time evaluator included, would cost mor
 second implementation catches now that ctxc matches it on the whole corpus. Its last version is
 at `8436f4d`.
 
-- **The bootstrap.** `bootstrap/ctxc.c` is `ctxc build`'s output for ctxc, with files named by
-  relative `/` paths, so it is the same on every platform (`.gitattributes` keeps it LF).
+- **The bootstrap.** `bootstrap/ctxc.c` was `ctxc build`'s output for ctxc, with files named by
+  relative `/` paths, so it was the same on every platform (`.gitattributes` keeps it LF). Since
+  stage 10.7 there is one per platform layer, `bootstrap/ctxc.PLATFORM.c`.
   `tools/toolchain.py` compiles it to a seed, and the seed compiles the current source; if that
   gives the bootstrap's C again, the seed is used as it is. `fixpoint.py --update` refreshes it
   (see [Changing the language](#changing-the-language)).
@@ -819,25 +825,46 @@ Increments, each landing with tests and a refreshed bootstrap:
      C declares a `union`, and a literal is `({ tN t; memset(&t, 0, sizeof t); t.m_f = v; t; })`
      since C leaves a union literal's other bytes unspecified. examples/sdl reads SDL2's
      `SDL_Event` through one.
-7. **A smaller runtime: std over the OS's C functions.** std's `io`, `fs` and `mem` call
-   `ctx_io_write` and the rest, thin C wrappers over libc and the OS. They move into ctxlang, one
-   at a time, over externs to the OS itself, and the runtime keeps only what has to be C:
-   startup, panics, the stack check, and small helpers such as reading `errno` (a macro, not a
-   symbol). This is the FFI's own test.
-   - **Platforms.** A capability type stays one type; what differs per platform is the namespace
-     of functions that take it. `fs.windows.ctx` (`_wopen`, UTF-16 paths) and `fs.posix.ctx`
-     (`open`) both declare `namespace fs` with the same signatures, and the build compiles one.
-     A call is a direct call: no interface, no dispatch. Until stage 9's build programs, ctxc
-     picks the files by a name convention and `--target`.
-   - **Keeping platforms in step.** A build checks only its own files, so `ctxc check --target X`
-     checks any platform's file set from any machine (checking needs no C compiler).
-   - **The bootstrap.** `bootstrap/ctxc.c` is the same on every platform only because ctxc
-     reaches the OS through the runtime. Once std's files differ by platform, ctxc's C does too:
-     either one bootstrap per platform, or a small portable layer kept under what ctxc uses.
-     Decide before the first platform file.
-   - **Needs:** externs chosen per platform (step 4), and the state the runtime shares with
-     panics (buffered stdout, which a panic flushes) moved or exposed. Float formatting and
-     parsing (shortest round-trip text) may stay in C.
+7. **A smaller runtime: std over the OS's C functions** — *io and mem done.* std's `io`, `fs`
+   and `mem` called `ctx_io_write` and the rest, thin C wrappers over libc and the OS. They move
+   into ctxlang, one at a time, over externs to the OS itself, and the runtime keeps only what
+   has to be C: startup, panics, the stack check, and small helpers such as reading `errno` (a
+   macro, not a symbol). This is the FFI's own test.
+   - **Platform layers** — *done.* What differs per platform is a directory, `std/os/windows`
+     or `std/os/posix` (Linux and macOS), whose `os.ctx` declares namespace `os`: the functions
+     the rest of std needs from the OS, with the same signatures in every layer, over the
+     layer's own externs. A build compiles std's files and one layer; a call is a direct call,
+     with no interface or dispatch. A capability type stays one type. A layer is a directory
+     rather than a file suffix so that, as with newlib's syscall stubs, a port can be a layer
+     supplied beside std rather than an edit to it. It is one namespace in one file because a
+     namespace can't be declared twice (§10), and an `os` nested in `io` couldn't name `io`'s
+     own types. `ctxc run` and `exe` pick the host's layer from `proc::os`; `ctxc build`, `ir`
+     and `decls` take std's files as given, so `tools/toolchain.py` passes a platform's
+     (`std_files(platform)`, the host's by default).
+   - **io** — *done.* `io::write` and `io::read` are ctxlang. Standard output's 64 KiB buffer
+     stays in the runtime, since a panic and `ctx_exit` flush it: std reaches it through
+     `io::out_buffer` (`ctx_io_out`), fills it, and flushes it through `os::write` before
+     standard error and input. Windows' layer calls `_write` and `_read` (an int count, so 1 GiB
+     at a time), posix's `write` and `read`. The binary mode of Windows' standard streams stays
+     in `ctx_init`.
+   - **mem** — *done.* `mem::pages` rounds up to `mem::PAGE` in ctxlang and calls `os::pages`:
+     `VirtualAlloc` on Windows, `aligned_alloc` and `memset` on posix, which avoids `mmap`'s
+     `MAP_ANON` (0x20 on Linux, 0x1000 on macOS). The 4 GiB limit, kept to match ctxi, is gone.
+   - **Keeping platforms in step.** A build checks only its own layer, so the tests check every
+     layer from any machine (`PlatformLayers`: `ctxc build` with each one's files, since
+     checking and writing C need no C compiler).
+   - **The bootstrap** — *decided: one per layer.* ctxc's C differs by layer, so there are
+     `bootstrap/ctxc.posix.c` and `bootstrap/ctxc.windows.c`, and `fixpoint.py --update` writes
+     both from any machine: this platform's from the fixpoint, the other's by `ctxc build` with
+     that layer's files. Only the fixpoint itself needs the platform.
+   - **Next:** fs and proc over the layers. fs needs `errno` (`__errno_location` on Linux,
+     `__error` on macOS), so either a runtime helper or the posix layer split in two.
+   - **Later:** a build program naming a layer of its own for a platform std doesn't know
+     (`build::platform{ &b, exe, dir }`), so that a port supplies `namespace os` without editing
+     std, as a board supplies newlib's syscall stubs; and a target with no layer at all, where
+     everything that takes no capability still works (freestanding). Both wait for a target
+     that needs them, and freestanding also needs the runtime's startup and panics replaced.
+   - **Needs:** float formatting and parsing (shortest round-trip text) may stay in C.
 
 8. **ctxc as its own driver** — *done.* `ctxc run PATH [-- ARGS...]` and `ctxc exe PATH -o OUT`
    (`ctxc/drive.ctx`) do what `tools/ctxc.py` did: run a directory's build program with
@@ -963,7 +990,7 @@ Q4). Optional chaining (`a?.b`) needs no lambdas, but nothing in FRICTION.md ask
 | Stage 3 | ctxi (Python) | ctxlang interpreted by ctxi | `ctxc.c`, a native backend |
 | Stages 3–6 | ctxi (Python) | native | C for any program |
 | Stage 7 | ctxc (native) | native | `ctxc2`, then `ctxc3`; their C output must be identical |
-| Stage 8 on | ctxc from `bootstrap/ctxc.c` | native | the current ctxc, then any program |
+| Stage 8 on | ctxc from `bootstrap/ctxc.PLATFORM.c` | native | the current ctxc, then any program |
 
 ## How ctxlang maps to C
 

@@ -47,9 +47,9 @@ namespace drive {
         let build_dir = join{ &heap, a = home, b = "build" }
         let work = join{ &heap, a = build_dir, b = "run" }
         if not made{ &io, &fs, path = build_dir } or not made{ &io, &fs, path = work } { return 1 }
-        let std_dir = join{ &heap, a = home, b = "std" }
-        let some{ value = std } = ctx_files{ &io, &fs, &heap, dir = std_dir, skip_build = false } else { return 1 }
-        let d = Driver{ home, work, std, os = proc::os{ &proc }, cc = compiler{ &proc, &heap } }
+        let os = proc::os{ &proc }
+        let some{ value = std } = std_files{ &io, &fs, &heap, home, os } else { return 1 }
+        let d = Driver{ home, work, std, os, cc = compiler{ &proc, &heap } }
 
         let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
         let kind = kind_of{ &fs, path }
@@ -280,6 +280,19 @@ namespace drive {
         }
         if words.len == 0 { add{ xs = &words, s = "cc" } }
         return list::items{ list = words }
+    }
+
+    // std's files, then those of its layer for os (spec §17): std/os/windows, or std/os/posix for
+    // Linux and macOS.
+    fn std_files { mut io: Io, mut fs: Fs, mut heap: Heap, home: []u8, os: build::Os } -> ?[][]u8 {
+        let std_dir = join{ &heap, a = home, b = "std" }
+        let layer: []u8 = match os { windows => { "os/windows" } macos => { "os/posix" } linux => { "os/posix" } }
+        let some{ value = top } = ctx_files{ &io, &fs, &heap, dir = std_dir, skip_build = false } else { return null }
+        let some{ value = own } = ctx_files{ &io, &fs, &heap, dir = join{ &heap, a = std_dir, b = layer }, skip_build = false } else { return null }
+        let mut all = list::new([]u8){ realloc = arena::alloc, &heap }
+        add_all{ xs = &all, ys = top }
+        add_all{ xs = &all, ys = own }
+        return list::items{ list = all }
     }
 
     // The .ctx files in dir, as paths under it, sorted; without build.ctx if skip_build.

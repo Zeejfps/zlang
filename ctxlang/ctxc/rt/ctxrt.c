@@ -31,10 +31,15 @@ static const char *const *ctx_files;
 static uint32_t ctx_nfiles;
 char *ctx_stack_limit;
 
-// ---- output: standard output is buffered and flushed before anything else is written or read
+// ---- output: standard output is buffered and flushed before anything else is written or read.
+// std's io fills the buffer (std/io.ctx, `Out`); a panic and ctx_exit flush it here.
 
 static char out_buf[1 << 16];
-static size_t out_len;
+static struct { ctx_slice buf; uint64_t len; } stdout_buf = { { out_buf, sizeof out_buf }, 0 };
+
+void *ctx_io_out(void) {
+    return &stdout_buf;
+}
 
 static void write_all(int fd, const void *p, size_t n) {
     const char *c = p;
@@ -51,15 +56,15 @@ static void write_all(int fd, const void *p, size_t n) {
 }
 
 static void flush_out(void) {
-    write_all(1, out_buf, out_len);
-    out_len = 0;
+    write_all(1, out_buf, stdout_buf.len);
+    stdout_buf.len = 0;
 }
 
 static void put_out(const void *p, size_t n) {
-    if (out_len + n > sizeof out_buf) flush_out();
+    if (stdout_buf.len + n > sizeof out_buf) flush_out();
     if (n > sizeof out_buf) { write_all(1, p, n); return; }
-    memcpy(out_buf + out_len, p, n);
-    out_len += n;
+    memcpy(out_buf + stdout_buf.len, p, n);
+    stdout_buf.len += n;
 }
 
 static void put_err(const char *s) {
@@ -273,29 +278,6 @@ uint64_t ctx_f2i_u(double v, uint64_t hi, const char *dst, CTX_POS) {
     return (uint64_t)v;
 }
 
-// ---- io
-
-void ctx_io_write(uint32_t to, ctx_slice bytes) {
-    if (bytes.len == 0) return;
-    if (to == 0) {
-        put_out(bytes.ptr, bytes.len);
-    } else {
-        flush_out();
-        write_all(2, bytes.ptr, bytes.len);
-    }
-}
-
-uint64_t ctx_io_read(ctx_slice into) {
-    if (into.len == 0) return 0;
-    flush_out();
-#ifdef _WIN32
-    int n = _read(0, into.ptr, into.len > 0x40000000 ? 0x40000000 : (unsigned)into.len);
-#else
-    ssize_t n = read(0, into.ptr, into.len);
-#endif
-    return n > 0 ? (uint64_t)n : 0;
-}
-
 // ---- fs: each native returns a status, >= 0 for a result and < 0 for an error, as in ctxi
 
 enum { NOT_FOUND = -1, PERMISSION = -2, IS_DIR = -3, EXISTS = -4, NOT_DIR = -5, BAD_FILE = -6 };
@@ -426,29 +408,6 @@ int64_t ctx_fs_sys_remove(ctx_slice path) {
     int e = errno;
     free(w);
     return r < 0 ? os_error(e) : 0;
-}
-
-// ---- mem
-
-#define PAGE 4096
-#define MAX_MEMORY (1ULL << 32)          // as ctxi: everything, stack included, within 4 GiB
-static uint64_t used_memory = 64 + (16 << 20);
-
-ctx_slice ctx_mem_sys_pages(uint64_t size) {
-    ctx_slice out = { NULL, 0 };
-    size = (size + PAGE - 1) / PAGE * PAGE;
-    if (size == 0 || used_memory + size > MAX_MEMORY) return out;
-#ifdef _WIN32
-    void *p = VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-#else
-    void *p = aligned_alloc(PAGE, size);
-    if (p) memset(p, 0, size);
-#endif
-    if (!p) return out;
-    used_memory += size;
-    out.ptr = p;
-    out.len = size;
-    return out;
 }
 
 // ---- fs: directories

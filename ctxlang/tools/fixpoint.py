@@ -1,17 +1,20 @@
-"""The self-hosting fixpoint, and the bootstrap's refresh.
+"""The self-hosting fixpoint, and the bootstraps' refresh.
 
     python tools/fixpoint.py [--update] [--keep]
 
-ctxc1 is the native ctxc for the current source (tools/toolchain.py: bootstrap/ctxc.c compiles
-it). Then, with `ctxc build`:
+ctxc1 is the native ctxc for the current source (tools/toolchain.py: this platform's bootstrap
+compiles it). Then, with `ctxc build` and this platform's std layer (std/os/PLATFORM):
 
     ctxc1 build -> ctxc2.c -> cc -> ctxc2
     ctxc2 build -> ctxc3.c -> cc -> ctxc3
 
-ctxc2.c and ctxc3.c must be byte-identical. If bootstrap/ctxc.c differs from them, it is out of
-date, and --update replaces it with ctxc3.c. Refresh it before a change to ctxc's source needs a
-feature the bootstrap's ctxc doesn't have, and whenever a change lands: the bootstrap is what
-builds ctxc from a fresh checkout. Everything goes in build/fixpoint; --keep leaves the C there.
+ctxc2.c and ctxc3.c must be byte-identical. There is a bootstrap per layer,
+bootstrap/ctxc.PLATFORM.c: this platform's is ctxc3.c, and each other's is what ctxc2 builds with
+that layer's files (ctxc.PLATFORM.c here), since writing C needs no C compiler. A bootstrap that
+differs is out of date, and --update replaces it. Refresh them before a change to ctxc's source
+needs a feature the bootstraps' ctxc doesn't have, and whenever a change lands: a bootstrap is
+what builds ctxc from a fresh checkout. Everything goes in build/fixpoint; --keep leaves the C
+there.
 """
 
 import os
@@ -28,10 +31,10 @@ import toolchain  # noqa: E402
 OUT = os.path.join(ROOT, 'build', 'fixpoint')
 
 
-def build(ctxc, c):
-    """Runs `ctxc build` on ctxc's source. Returns the seconds it took."""
+def build(ctxc, c, platform=toolchain.HOST):
+    """Runs `ctxc build` on ctxc's source, with platform's std layer. Returns the seconds it took."""
     start = time.perf_counter()
-    code, err = toolchain.ctxc_build(ctxc, c, toolchain.ctxc_files())
+    code, err = toolchain.ctxc_build(ctxc, c, toolchain.ctxc_files(), platform=platform)
     took = time.perf_counter() - start
     if code != 0:
         sys.exit(f'{os.path.basename(ctxc)} build failed ({code}):\n{err[:2000]}')
@@ -75,18 +78,28 @@ def main(argv):
     c3 = cc(path('ctxc3.c'), path('ctxc3' + exe))
     print(f'ctxc3: ctxc2 build {t3 * 1000:.0f} ms, cc {c3:.1f} s')
 
-    two, three, boot = read(path('ctxc2.c')), read(path('ctxc3.c')), read(toolchain.BOOT)
+    two, three = read(path('ctxc2.c')), read(path('ctxc3.c'))
     ok = two == three
     print(f'ctxc2.c == ctxc3.c: ' + (f'yes ({len(two):,} bytes)' if ok else f'NO, {first_difference(two, three)}'))
-    if ok and boot == three:
-        print('bootstrap/ctxc.c: up to date')
-    elif ok and '--update' in argv:
-        shutil.copyfile(path('ctxc3.c'), toolchain.BOOT)
-        print('bootstrap/ctxc.c: updated')
-    elif ok:
-        print(f'bootstrap/ctxc.c: out of date ({first_difference(boot, three)}); --update refreshes it')
+    made = ['ctxc2.c', 'ctxc3.c']
+    for platform in toolchain.PLATFORMS if ok else ():
+        c = path('ctxc3.c')
+        if platform != toolchain.HOST:
+            c = path(f'ctxc.{platform}.c')
+            build(path('ctxc2' + exe), c, platform)
+            made.append(os.path.basename(c))
+        new, name = read(c), f'bootstrap/ctxc.{platform}.c'
+        boot = os.path.join(ROOT, name)
+        old = read(boot) if os.path.exists(boot) else b''
+        if old == new:
+            print(f'{name}: up to date')
+        elif '--update' in argv:
+            shutil.copyfile(c, boot)
+            print(f'{name}: updated')
+        else:
+            print(f'{name}: out of date ({first_difference(old, new)}); --update refreshes it')
     if '--keep' not in argv:
-        for name in ('ctxc2.c', 'ctxc3.c'):
+        for name in made:
             os.remove(path(name))
     return 0 if ok else 1
 

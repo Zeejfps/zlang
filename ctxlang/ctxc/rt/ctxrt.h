@@ -132,12 +132,12 @@ uint64_t ctx_as_u(uint64_t v, uint64_t hi, const char *dst, CTX_POS);
 int64_t ctx_f2i_s(double v, int64_t lo, int64_t hi, const char *dst, CTX_POS);
 uint64_t ctx_f2i_u(double v, uint64_t hi, const char *dst, CTX_POS);
 
-// ---- natives: std's extern fns (std/io.ctx, fs.ctx, mem.ctx, ascii.ctx, build.ctx). A
-// capability isn't passed, and a slice is a ctx_slice. std declares them for itself, so these
-// declarations are for the runtime.
+// ---- natives: std's extern fns over the runtime (std/io.ctx, fs.ctx, ascii.ctx, proc.ctx,
+// build.ctx). A capability isn't passed, and a slice is a ctx_slice. std declares them for
+// itself, so these declarations are for the runtime. io and mem reach the OS through std's
+// platform layer (std/os) instead.
 
-void ctx_io_write(uint32_t to, ctx_slice bytes);
-uint64_t ctx_io_read(ctx_slice into);
+void *ctx_io_out(void);                    // io::Out: standard output's buffer, a ctx_slice and its length
 uint64_t ctx_ascii_f64_digits(double n, ctx_slice into);
 uint64_t ctx_ascii_f32_digits(float n, ctx_slice into);
 double ctx_ascii_f64_parse(ctx_slice text);
@@ -148,7 +148,6 @@ int64_t ctx_fs_sys_write(uint32_t file, ctx_slice bytes);
 int64_t ctx_fs_sys_close(uint32_t file);
 int64_t ctx_fs_sys_size(ctx_slice path);
 int64_t ctx_fs_sys_remove(ctx_slice path);
-ctx_slice ctx_mem_sys_pages(uint64_t size);
 int64_t ctx_fs_sys_list(ctx_slice path, ctx_slice into);
 int64_t ctx_fs_sys_make_dir(ctx_slice path);
 int64_t ctx_proc_run(ctx_slice argv, ctx_slice env, int32_t *code);

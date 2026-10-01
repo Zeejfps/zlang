@@ -4,10 +4,11 @@
     exe = build_sources([(src, 'user.ctx')])      an executable, or CompileError
     run_source(src, out=..., args=[...])          builds and runs; raises Panic or CompileError
 
-native_ctxc() compiles bootstrap/ctxc.c, the C of a recent ctxc, and has that ctxc compile ctxc's
-current source. Both are cached under build/ctxc, by a hash of their inputs. A program's C goes
-to build/progs and its executable to build/cbackend, cached by a hash of the C. Everything runs
-through the C compiler: gcc, or zig cc with CTX_CC=zig.
+native_ctxc() compiles the bootstrap, the C of a recent ctxc for this platform's std layer
+(bootstrap/ctxc.PLATFORM.c), and has that ctxc compile ctxc's current source. Both are cached
+under build/ctxc, by a hash of their inputs. A program's C goes to build/progs and its
+executable to build/cbackend, cached by a hash of the C. Everything runs through the C compiler:
+gcc, or zig cc with CTX_CC=zig.
 
 A program's files are written to build/progs/HASH/, each under the name its positions use when
 that is a relative path, and positions are mapped back to the names given: a file with no name is
@@ -32,7 +33,10 @@ import threading
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CTXC = os.path.join(ROOT, 'ctxc')
 RT = os.path.join(CTXC, 'rt')
-BOOT = os.path.join(ROOT, 'bootstrap', 'ctxc.c')
+# std's platform layers (std/os/PLATFORM, spec §17): posix is Linux's and macOS's.
+PLATFORMS = ('posix', 'windows')
+HOST = 'windows' if os.name == 'nt' else 'posix'
+BOOT = os.path.join(ROOT, 'bootstrap', f'ctxc.{HOST}.c')
 CACHE = os.path.join(ROOT, 'build', 'cbackend')
 PROGS = os.path.join(ROOT, 'build', 'progs')
 NATIVE = os.path.join(ROOT, 'build', 'ctxc')
@@ -66,9 +70,12 @@ class Panic(Exception):
 
 # ---- ctxc itself
 
-def std_files():
-    """std's files, relative to ROOT, as the names positions in them use."""
-    return sorted(os.path.relpath(p, ROOT).replace(os.sep, '/') for p in glob.glob(os.path.join(ROOT, 'std', '*.ctx')))
+def std_files(platform=HOST):
+    """std's files, then its layer's for platform, relative to ROOT, as the names positions in
+    them use."""
+    def ctx(*d):
+        return sorted(os.path.relpath(p, ROOT).replace(os.sep, '/') for p in glob.glob(os.path.join(ROOT, *d, '*.ctx')))
+    return ctx('std') + ctx('std', 'os', platform)
 
 
 def ctxc_files():
@@ -114,15 +121,16 @@ def stack_flags():
     return []
 
 
-def program_args(files, cwd):
-    """`STD... -- FILE...`, with std's files relative to cwd."""
-    std = [os.path.relpath(os.path.join(ROOT, p), cwd).replace(os.sep, '/') for p in std_files()]
+def program_args(files, cwd, platform=HOST):
+    """`STD... -- FILE...`, with std's files for platform relative to cwd."""
+    std = [os.path.relpath(os.path.join(ROOT, p), cwd).replace(os.sep, '/') for p in std_files(platform)]
     return [*std, '--', *files]
 
 
-def ctxc_build(ctxc, out_c, files, cwd=ROOT):
-    """Runs `ctxc build OUT.c STD... -- FILE...` in cwd. Returns (exit code, stderr text)."""
-    r = subprocess.run([ctxc, 'build', out_c, *program_args(files, cwd)], cwd=cwd,
+def ctxc_build(ctxc, out_c, files, cwd=ROOT, platform=HOST):
+    """Runs `ctxc build OUT.c STD... -- FILE...` in cwd, with std's files for platform. Returns
+    (exit code, stderr text)."""
+    r = subprocess.run([ctxc, 'build', out_c, *program_args(files, cwd, platform)], cwd=cwd,
                        capture_output=True, env=dict(os.environ, CTX_STACK=CTXC_STACK))
     return r.returncode, r.stderr.decode('utf-8', 'replace')
 
@@ -130,7 +138,7 @@ def ctxc_build(ctxc, out_c, files, cwd=ROOT):
 def native_ctxc():
     """The path of a native ctxc for ctxc's current source, building it if it isn't cached.
 
-    bootstrap/ctxc.c is compiled to a seed, and the seed compiles the current source. If that
+    The bootstrap is compiled to a seed, and the seed compiles the current source. If that
     gives the bootstrap's C again, the seed is the current ctxc."""
     global _native
     if _native is not None:
@@ -140,12 +148,13 @@ def native_ctxc():
             return _native
         os.makedirs(NATIVE, exist_ok=True)
         base = runtime_hash()
-        seed = os.path.join(NATIVE, 'seed-' + digest(['bootstrap/ctxc.c'], base.encode())[:16] + EXE)
+        boot = os.path.relpath(BOOT, ROOT).replace(os.sep, '/')
+        seed = os.path.join(NATIVE, 'seed-' + digest([boot], base.encode())[:16] + EXE)
         if not os.path.exists(seed):
             tmp = os.path.join(NATIVE, f'seed-{os.getpid()}.c')
             shutil.copyfile(BOOT, tmp)
             link(tmp, os.path.splitext(seed)[0] + '.c', seed, 'ctxc')
-        key = digest(['bootstrap/ctxc.c', *ctxc_files(), *std_files()], base.encode())[:16]
+        key = digest([boot, *ctxc_files(), *std_files()], base.encode())[:16]
         exe = os.path.join(NATIVE, 'ctxc-' + key + EXE)
         if not os.path.exists(exe):
             tmp = os.path.join(NATIVE, f'ctxc-{os.getpid()}.c')
@@ -289,14 +298,15 @@ def first_error(stderr, given=None):
 
 
 def rename(file, given):
-    """The name a position's file was given: by given, and std's as std/NAME.ctx."""
+    """The name a position's file was given: by given, and std's as std/NAME.ctx or
+    std/os/PLATFORM/NAME.ctx."""
     if given and file in given:
         return given[file]
     m = STD_FILE.fullmatch(file)
     return m.group(1) if m else file
 
 
-STD_FILE = re.compile(r'(?:\.\./)*(std/[^/]+\.ctx)')
+STD_FILE = re.compile(r'(?:\.\./)*(std/(?:os/[^/]+/)?[^/]+\.ctx)')
 
 
 # ---- running programs

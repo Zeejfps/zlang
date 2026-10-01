@@ -23,7 +23,8 @@
 //   ctxc decls STD... -- FILE...                checks the program and prints its declarations
 //                                               and bodies (dump.ctx, namespace decls)
 //
-// bootstrap/ctxc.c is this program as C, for building ctxc with only a C compiler.
+// bootstrap/ctxc.PLATFORM.c is this program as C with std's layer for PLATFORM (std/os), for
+// building ctxc with only a C compiler.
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
     let mut to_c = false

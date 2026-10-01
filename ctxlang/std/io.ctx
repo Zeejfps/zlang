@@ -16,15 +16,57 @@ capability Io
 namespace io {
     enum Stream: u32 { out, err }
 
-    // ---- the runtime's (ctxrt.c)
+    // Standard output's buffer, the runtime's (ctxrt.c), since a panic and the program's end
+    // flush it too: the bytes in buf[..len] are waiting to be written.
+    struct Out { buf: []mut u8, len: usize }
 
-    // Writes bytes to standard output or standard error.
-    #c::symbol{ name = "ctx_io_write" }
-    extern fn write { mut io: Io, to: Stream, bytes: []u8 }
+    #c::symbol{ name = "ctx_io_out" }
+    extern fn out_buffer { mut io: Io } -> *mut Out
+
+    // Writes bytes to standard output or standard error. Standard output is buffered, and written
+    // out before anything goes to standard error or is read from standard input.
+    fn write { mut io: Io, to: Stream, bytes: []u8 } {
+        if bytes.len == 0 { return }
+        if to == Stream::err {
+            flush{ &io }
+            put{ &io, to, bytes }
+            return
+        }
+        let b = out_buffer{ &io }
+        if b.len + bytes.len > b.buf.len { flush{ &io } }
+        if bytes.len > b.buf.len {
+            put{ &io, to, bytes }
+            return
+        }
+        slice::copy(u8){ dst = b.buf[b.len..b.len + bytes.len], src = bytes }
+        b.len = b.len + bytes.len
+    }
 
     // Reads at most into.len bytes of standard input into `into`. Returns how many; 0 at the end.
-    #c::symbol{ name = "ctx_io_read" }
-    extern fn read { mut io: Io, into: []mut u8 } -> usize
+    fn read { mut io: Io, into: []mut u8 } -> usize {
+        if into.len == 0 { return 0 }
+        flush{ &io }
+        return os::read{ &io, into }
+    }
+
+    // Writes standard output's buffer out.
+    fn flush { mut io: Io } {
+        let b = out_buffer{ &io }
+        let n = b.len
+        b.len = 0
+        put{ &io, to = Stream::out, bytes = b.buf[..n] }
+    }
+
+    // Writes all of `bytes` through the platform's layer (std/os), or as much as it takes before
+    // an error.
+    fn put { mut io: Io, to: Stream, bytes: []u8 } {
+        let mut done: usize = 0
+        while done < bytes.len {
+            let n = os::write{ &io, to, bytes = bytes[done..bytes.len] }
+            if n == 0 { return }
+            done = done + n
+        }
+    }
 
     // ---- text
 

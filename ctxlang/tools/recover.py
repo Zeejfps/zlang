@@ -2,10 +2,10 @@
 
     python tools/recover.py [CORPUS] [-k SUBSTRING] [-j JOBS] [--sample N]
 
-For each distinct file of the corpus (tools/corpus.py), plus std/ and ctxc/, `ctxc recover`
-parses three damaged copies per token: cut short where the token starts, with it deleted, and
-with it duplicated. ctxc/recover.ctx lists what each copy must satisfy. Large files are split into
-chunks of tokens, and chunks run in parallel.
+For each distinct file of the corpus (tools/corpus.py), plus std/ (its layers too) and ctxc/,
+`ctxc recover` parses three damaged copies per token: cut short where the token starts, with it
+deleted, and with it duplicated. ctxc/recover.ctx lists what each copy must satisfy. Large files
+are split into chunks of tokens, and chunks run in parallel.
 
 With --sample N, only every Nth token is damaged, for a quicker run.
 """
@@ -29,7 +29,7 @@ WORK = 200_000_000    # bytes to parse per chunk: copies times the file's size
 
 
 def files(corpus, k):
-    """(label, path) for each file of the corpus, std/ and ctxc/."""
+    """(label, path) for each file of the corpus, std/, std/os/*/ and ctxc/."""
     out = []
     if os.path.isdir(corpus):
         for name in sorted(os.listdir(corpus)):
@@ -38,8 +38,8 @@ def files(corpus, k):
                 meta = json.load(f)
             for _, local in meta['files']:
                 out.append((f'{name}/{local}', os.path.join(d, local)))
-    for sub in ('std', 'ctxc'):
-        for p in sorted(glob.glob(os.path.join(ROOT, sub, '*.ctx'))):
+    for sub in (('std',), ('std', 'os', '*'), ('ctxc',)):
+        for p in sorted(glob.glob(os.path.join(ROOT, *sub, '*.ctx'))):
             out.append((os.path.relpath(p, ROOT).replace(os.sep, '/'), p))
     return [(label, p) for label, p in out if k in label]
 

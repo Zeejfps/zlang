@@ -15,17 +15,16 @@
 capability Mem
 
 namespace mem {
-    // The runtime's (ctxrt.c): `size` rounded up to a multiple of the page size, zeroed and
-    // page-aligned. Empty if `size` is 0 or there isn't enough memory.
-    #c::symbol{ name = "ctx_mem_sys_pages" }
-    extern fn sys_pages { mut mem: Mem, size: usize } -> []mut u8
+    const PAGE: usize = 4096
 
-    // At least `size` bytes of zeroed, page-aligned memory. They stay valid until the program ends.
-    // Null if there isn't enough memory. Asking for 0 bytes gives an empty slice.
+    // At least `size` bytes of zeroed, page-aligned memory: `size` rounded up to a multiple of
+    // PAGE. They stay valid until the program ends. Null if there isn't enough memory. Asking for
+    // 0 bytes gives an empty slice.
     fn pages { mut mem: Mem, size: usize } -> ?alloc::Bytes {
         if size == 0 { return slice::empty(u8){} }
-        let got = sys_pages{ &mem, size }
-        if got.len == 0 { return null }
-        return got
+        if size > 18446744073709551615 - (PAGE - 1) { return null }     // rounding up would overflow
+        let n = (size + PAGE - 1) / PAGE * PAGE
+        let some{ value = p } = os::pages{ &mem, size = n } else { return null }
+        return @slice(p, n)
     }
 }

@@ -4211,13 +4211,16 @@ class Mem(Base):
         self.assertEqual(out, '4096\n8192\n1\ntrue\n')
 
     def test_pages_zero_and_too_large(self):
+        # 2^62 bytes is more than any 64-bit OS maps; the largest usize can't be rounded up to
+        # a page at all.
         out, _ = self.run_mem("""
     let some{ value = z } = mem::pages{ &mem, size = 0 } else { return 1 }
     io::println_u64{ &io, n = z.len }
-    if mem::pages{ &mem, size = 1099511627776 } == null { io::println_i64{ &io, n = -1 } }
+    if mem::pages{ &mem, size = 4611686018427387904 } == null { io::println_i64{ &io, n = -1 } }
+    if mem::pages{ &mem, size = 18446744073709551615 } == null { io::println_i64{ &io, n = -2 } }
     return 0
 """)
-        self.assertEqual(out, '0\n-1\n')
+        self.assertEqual(out, '0\n-1\n-2\n')
 
     def test_pages_are_not_stack(self):
         # Memory from pages doesn't extend the stack: deep recursion still overflows.
@@ -4299,6 +4302,55 @@ fn main { mut mem: Mem } { }
     return 0
 """)
         self.assertEqual(out, '0.1 0.1 1e+100\n-2.53.0\n')
+
+
+class PlatformLayers(Base):
+    """std's platform layers (std/os/PLATFORM, spec §17), and standard output's buffer, which std
+    fills and the runtime flushes."""
+
+    def test_every_layer_checks(self):
+        # A build checks only its own layer, so each is checked here from any machine, with the
+        # C symbols it calls.
+        import toolchain
+        self.assertEqual(sorted(os.listdir(os.path.join(ROOT, 'std', 'os'))), sorted(toolchain.PLATFORMS))
+        d, files = toolchain.write_program([("""
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+    let mut line: [16]u8
+    _ = io::read_line{ &io, into = line[..] }
+    io::eprintln{ &io, s = "e" }
+    let some{ value = buf } = mem::pages{ &mem, size = 1 } else { return 1 }
+    io::println_u64{ &io, n = buf.len }
+    return 0
+}
+""", 'main.ctx')])
+        for platform, symbols in [('posix', ['write', 'read', 'aligned_alloc', 'memset']),
+                                  ('windows', ['_write', '_read', 'VirtualAlloc'])]:
+            c = os.path.join(d, f'{platform}.c')
+            self.assertEqual(toolchain.ctxc_build(toolchain.native_ctxc(), c, list(files), cwd=d, platform=platform), (0, ''))
+            with open(c, encoding='utf-8') as f:
+                text = f.read()
+            for s in symbols:
+                self.assertIn(f'CTX_SYMBOL("{s}")', text, platform)
+
+    def test_output_order(self):
+        # Standard output is written out before standard error, and a panic writes out what is
+        # left before its message.
+        import subprocess
+        from toolchain import build_sources
+        exe, _ = build_sources([("""
+fn main { mut io: Io } {
+    io::print{ &io, s = "1" }
+    io::eprint{ &io, s = "2" }
+    io::print{ &io, s = "3" }
+    io::eprint{ &io, s = "4" }
+    io::print{ &io, s = "5" }
+    @panic("6")
+}
+""", None)])
+        r = subprocess.run([exe], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.assertEqual(r.returncode, 134)
+        out = r.stdout.decode().replace('\r\n', '\n')
+        self.assertTrue(out.startswith('12345') and out.endswith(': panic: 6\n'), out)
 
 
 class IRDump(Base):
