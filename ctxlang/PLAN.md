@@ -880,9 +880,10 @@ Increments, each landing with tests and a refreshed bootstrap:
 8. **ctxc as its own driver** — *done.* `ctxc run PATH [-- ARGS...]` and `ctxc exe PATH -o OUT`
    (`ctxc/drive.ctx`) do what `tools/ctxc.py` did: run a directory's build program with
    CTX_BUILD_OUT, read its graph, compile each executable with `ctxc build`'s pipeline in
-   process, and run `cc` (or CTX_CC) with toolchain.py's flags. std gained what it needed, all
-   over externs: `capability Proc` with `proc::run` (posix_spawnp and waitpid, or
-   CreateProcessW), `proc::env` and `proc::exe_path`, and `fs::list` and `fs::make_dir`
+   process, and run `cc` (or CTX_CC) with toolchain.py's flags, its own directory first on PATH
+   as toolchain.py runs it (else MinGW's cc1 can load Git Bash's DLLs and fail silently). std
+   gained what it needed, all over externs: `capability Proc` with `proc::run` (posix_spawnp and
+   waitpid, or CreateProcessW), `proc::env` and `proc::exe_path`, and `fs::list` and `fs::make_dir`
    (opendir, or FindFirstFileW). ctxc finds its home through CTX_HOME, else above its
    executable, else above the working directory. Not yet: caching (every run compiles the runtime
    and the program again, about 0.5 s), and running Windows' code paths, which are written but

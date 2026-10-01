@@ -12,7 +12,8 @@
 // ctxc finds std/ and ctxc/rt/ in its home: CTX_HOME if set, else the first directory holding
 // both above its executable, else above the working directory. Intermediate files go in
 // HOME/build/run. The C compiler is `cc`, or CTX_CC (split at spaces, so `zig cc` works), with
-// the flags tools/toolchain.py uses.
+// the flags tools/toolchain.py uses, run with its own directory first on PATH, as toolchain.py
+// runs it.
 
 namespace drive {
     type Heap = arena::Arena
@@ -20,8 +21,8 @@ namespace drive {
 
     const CFLAGS: [5][]u8 = ["-std=gnu11", "-O1", "-w", "-fwrapv", "-fno-optimize-sibling-calls"]
 
-    // Where things are, and what the C compiler is.
-    struct Driver { home: []u8, work: []u8, std: [][]u8, os: build::Os, cc: [][]u8 }
+    // Where things are, and what the C compiler is and the environment entries it runs with.
+    struct Driver { home: []u8, work: []u8, std: [][]u8, os: build::Os, cc: [][]u8, cc_env: [][]u8 }
 
     // An executable to build: its files, and the C compiler flags its build program gave.
     struct Target { name: []u8, root: []u8, paths: Strs, libs: Strs }
@@ -49,7 +50,8 @@ namespace drive {
         if not made{ &io, &fs, path = build_dir } or not made{ &io, &fs, path = work } { return 1 }
         let os = proc::os{ &proc }
         let some{ value = std } = std_files{ &io, &fs, &heap, home, os } else { return 1 }
-        let d = Driver{ home, work, std, os, cc = compiler{ &proc, &heap } }
+        let cc = compiler{ &fs, &proc, &heap, os }
+        let d = Driver{ home, work, std, os, cc, cc_env = cc_env{ &proc, &heap, cc = cc[0], os } }
 
         let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
         let kind = kind_of{ &fs, path }
@@ -211,7 +213,7 @@ namespace drive {
             macos => { add{ xs = &argv, s = "-Wl,-stack_size,0x10000000" } }
             linux => {}
         }
-        let cc_ran = started{ &io, r = proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} }, what = d.cc[0] }
+        let cc_ran = started{ &io, r = proc::run{ &proc, argv = list::items{ list = argv }, env = d.cc_env }, what = d.cc[0] }
         if cc_ran != 0 {
             io::eprintln{ &io, s = "ctxc: the C compiler failed" }
             return 1
@@ -263,8 +265,9 @@ namespace drive {
                and kind_of{ &fs, path = join{ &heap, a = dir, b = "ctxc/rt/ctxrt.c" } } == 1
     }
 
-    // The C compiler's command: CTX_CC split at spaces, or `cc`.
-    fn compiler { mut proc: Proc, mut heap: Heap } -> [][]u8 {
+    // The C compiler's command: CTX_CC split at spaces, or `cc`. A bare name found on PATH
+    // becomes the path it is found at.
+    fn compiler { mut fs: Fs, mut proc: Proc, mut heap: Heap, os: build::Os } -> [][]u8 {
         let mut words = list::new([]u8){ realloc = arena::alloc, &heap }
         let set = proc::env{ &proc, name = "CTX_CC" }
         if set != null {
@@ -279,7 +282,47 @@ namespace drive {
             }
         }
         if words.len == 0 { add{ xs = &words, s = "cc" } }
-        return list::items{ list = words }
+        let xs = list::items{ list = words }
+        let some{ value = found } = on_path{ &fs, &proc, &heap, name = xs[0], os } else { return xs }
+        let mut out = list::new([]u8){ realloc = arena::alloc, &heap }
+        add{ xs = &out, s = found }
+        add_all{ xs = &out, ys = xs[1..] }
+        return list::items{ list = out }
+    }
+
+    // Where the program `name` is on PATH, if it is a bare name: DIR/name, or DIR/name.exe on
+    // Windows.
+    fn on_path { mut fs: Fs, mut proc: Proc, mut heap: Heap, name: []u8, os: build::Os } -> ?[]u8 {
+        if base{ path = name }.len != name.len { return null }
+        let some{ value = path } = proc::env{ &proc, name = "PATH" } else { return null }
+        let windows = os == build::Os::windows
+        let file = if windows and not ends_with{ s = name, suffix = ".exe" } { cat{ &heap, a = name, b = ".exe" } } else { name }
+        let sep: u8 = if windows { ';' } else { ':' }
+        let mut start: usize = 0
+        let mut i: usize = 0
+        while i <= path.len {
+            if i == path.len or path[i] == sep {
+                if i > start {
+                    let at = join{ &heap, a = path[start..i], b = file }
+                    if kind_of{ &fs, path = at } == 1 { return at }
+                }
+                start = i + 1
+            }
+            i = i + 1
+        }
+        return null
+    }
+
+    // The C compiler's environment entries: PATH with the compiler's own directory first, so that
+    // MinGW's cc1 loads its own DLLs, not those of another MinGW earlier on PATH (Git Bash's),
+    // which fail it without a word. None if cc is a bare name.
+    fn cc_env { mut proc: Proc, mut heap: Heap, cc: []u8, os: build::Os } -> [][]u8 {
+        let dir = parent{ path = cc }
+        if dir.len == 0 { return slice::empty([]u8){} }
+        let entry = cat{ &heap, a = "PATH=", b = dir }
+        let some{ value = rest } = proc::env{ &proc, name = "PATH" } else { return one{ &heap, s = entry } }
+        let sep: []u8 = if os == build::Os::windows { ";" } else { ":" }
+        return one{ &heap, s = cat{ &heap, a = cat{ &heap, a = entry, b = sep }, b = rest } }
     }
 
     // std's files, then those of its layer for os (spec §17): std/os/windows, or std/os/posix for
