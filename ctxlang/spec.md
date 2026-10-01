@@ -388,6 +388,8 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
    - `c::String` (§18): static read-only bytes with a NUL byte after them, for C. It is a compile error if the literal holds a NUL itself (`\0`), since C would end the string there.
    - anything else, or nothing: a `[N]u8` array value. Like any array it is a value, not a place: bind it to a local to take its address.
 
+   A view's static bytes are followed by a 0 byte that isn't part of it: `"abc"` as a `[]u8` has `len` 3, and its `ptr[3]` is 0. PLAN.md stage 12 plans to replace the `utf8::String` and `c::String` cases with conversions that std declares, through the built-in type `strlit` and the attribute `#convert`, so the compiler names no std type here.
+
    In an `if` or `match` expression without an expected type, a branch that is a literal takes the type of another branch that is `[]u8`, `utf8::String` or `c::String`, or of another literal branch that became one. Otherwise, as in `let msg = match p { a => { "one" } b => { "three" } }`, each literal is an array and the lengths must agree; annotate the `let` to get views.
 7. A character literal `'a'` is an integer literal whose value is the character's byte.
 8. String and character literals hold ASCII characters only. Escapes: `\n`, `\t`, `\r`, `\0`, `\\`, `\"`, `\'`, and `\xNN` for any byte.

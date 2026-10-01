@@ -24,6 +24,7 @@ C compiler. ctxi's last version is in git history, at `8436f4d`.
 | 9 | Metaprogramming: build programs, attributes, compile-time consts | step 1 done (for 10.4); attributes done in 10.1 | |
 | 10 | C interop: extern fns, capabilities, linking; std's io and mem over the OS (10.7) | in progress | |
 | 11 | Optionals and errors: `!T` with inferred error sets, `ifnull`, `iferr`, `try`, flat `match` arms, `?T == T` | in progress: `ifnull` and errors done, `Result` removed | |
+| 12 | Literal conversions: `strlit` and `#convert`, so the compiler names no std type for literals | planned; needs stage 9 step 5 | |
 
 ### Where we are
 
@@ -705,7 +706,8 @@ Steps, each usable on its own:
    is a cycle error from `ensure`, and running out of fuel (a step limit) is a diagnostic, not a
    hang. The result must hold no pointers
    other than ones to static data, the same rule as 3a step 4. Uses: lookup tables, perfect-hash
-   keyword maps, precomputed tables for parsers.
+   keyword maps, precomputed tables for parsers, and converting literals to library types
+   (stage 12).
 
 Not planned: generating declarations inside the compile that is running (Zig's `inline for` over
 fields with types as values, or Jai's `#insert`). It needs lazy analysis or a fixed-point loop in
@@ -1075,6 +1077,106 @@ can't `return` from the function around it, which is the commonest thing done wi
 value (Rust needs `?` and `let … else` for that reason); ctxlang has no anonymous functions, and
 captures would meet exclusivity and escape (§3.1, §14); chaining also needs method syntax (§16
 Q4). Optional chaining (`a?.b`) needs no lambdas, but nothing in FRICTION.md asks for it yet.
+
+### 12. Literal conversions — planned
+
+The compiler should know nothing of std: std is built from features any program has, and the
+checker, lowering and runtime never name a std declaration. Today they do, most of all for
+string literals. A literal where a `utf8::String` or a `c::String` is expected becomes that type,
+so the checker looks both up by name (`text_decl`, `cstr_decl`), checks UTF-8 or the lack of a
+NUL itself, and lowering builds their structs (`text_lit`). Commit `f53a93f` fixed a symptom: a
+program's own `utf8` could shadow the one this lookup wanted.
+
+A literal is only bytes. What text or a C string is, and how one is checked, is the library's to
+say; the language gives it a way to receive literals. That way is open to any program, not just
+std, and not just to a type's own namespace.
+
+```
+namespace utf8 {
+    #convert
+    fn literal { s: strlit } -> !String { return from{ bytes = s.bytes } }
+}
+
+namespace c {
+    #convert
+    fn literal { s: strlit } -> !String {
+        let mut i: usize = 0
+        while i < s.bytes.len {
+            if s.bytes[i] == 0 { return has_nul{ at = i } }
+            i = i + 1
+        }
+        return String{ ptr = s.bytes.ptr }       // the hidden zero ends it
+    }
+}
+
+namespace regex {                                // a program's own type
+    #convert
+    fn literal { s: strlit } -> !Regex { return compile{ s.bytes } }
+}
+
+io::println{ &io, s = "hello" }                  // utf8::literal, run while compiling
+let r: regex::Regex = "[a-z]+"                   // a bad pattern is a compile error
+```
+
+1. **The hidden zero.** A string literal's static bytes are followed by a 0 byte that isn't part
+   of them: a `[]u8` view of `"abc"` has `len` 3, and `ptr[3]` is 0. The C backend already gives
+   every view a C string literal, so this costs nothing; the change is that the spec promises it.
+   Nobody writes `"abc\0"` for C.
+2. **Literal types.** `strlit` is the type of a string literal: built in, lowercase and without a
+   namespace, like `u8`. `s.bytes` is its bytes as a `[]u8`, with the hidden zero after them,
+   even when empty. Only a literal makes one, so every `strlit` has that zero. `intlit` (a number
+   literal, as its digits, for a big-integer type) and `arraylit` (an array literal's elements,
+   for a list) follow the same pattern when something needs them; neither is designed yet.
+3. **`#convert`.** An attribute the compiler declares, not std, so it has no namespace. It goes on
+   a fn whose context is one read-only field of a literal type and whose result is a `T` or `!T`.
+   The fn has no generic parameters. With only a literal field it can take no capability, so it
+   can run at compile time. Any namespace may declare one, for any `T`.
+4. **Where it applies.** A string literal where a `T` is expected (also inside `?T`), and
+   `T` isn't `[]u8` or `[N]u8`, which the language gives literals itself, is the result of the
+   conversion from `strlit` to `T`. "Expected" is what it is today: the places widening applies
+   (§11, rule 1), a const's initializer, an `if` or `match` branch next to one of type `T`, and a
+   call's `strlit` field, so `utf8::literal{ s = "hi" }` calls one directly. Only literals
+   convert: no other value does, and conversions don't chain.
+5. **It runs while compiling**, with stage 9 step 5's evaluator, so the program holds the
+   finished value, and the same rule applies to the result: no pointers but ones to static data.
+   An error result is a compile error at the literal, printed as `@fmt` prints an error:
+   `string literal: utf8::invalid{ at = 3 }`.
+6. **Two conversions to one `T`** are an error where a literal would use them, naming both, and
+   not before: two libraries may both declare one, and a program that calls one directly is fine.
+
+What goes from the compiler: `text_decl` and `cstr_decl` in literal checking (`str_lit`), the
+const evaluator's string case and the `if`/`match` hint, and lowering's `text_lit`. The tests'
+literal programs keep their output; the UTF-8 and NUL errors change wording to std's errors.
+
+*Needs* stage 9 step 5. A stopgap that runs nothing, an attribute naming one of a fixed set of
+checks the compiler knows (`utf8`, no NUL), would remove the names first, but it is a second
+design to undo; the evaluator comes first.
+
+*Still naming std after this,* each a later piece of the same goal:
+- `@fmt` writes to a `utf8::Builder` through `utf8::push_*` functions found by name, and a literal
+  hole expects a `utf8::String`. The direction: `@fmt` receives what it writes with, as a hole
+  already may (a function value writes it), rather than knowing std's builder.
+- `c::String`'s C layout: a `?c::String` is a nullable pointer, and an extern fn passes it as a
+  `const char *`.
+- `c::symbol` and `c::callback` are attributes std declares and the compiler acts on. They move
+  beside `#convert`, among the attributes the compiler declares itself.
+- `main`'s `args` is checked against std's `Args`; it can be checked as `[][]u8`. Only `fn build`
+  may take std's `Build`.
+- The runtime fills `io`'s `Out`, a struct whose layout std defines (`ctxrt.c`, `out_buffer`).
+
+Considered and set aside:
+- `@from_literal`: `@` names a builtin call (`@fmt`, `@as`), and attributes are `#`.
+- Only the type's own namespace declaring its conversion: a library can't then give literals to
+  a type it doesn't own. Traits are the usual way to add to such a type, but ctxlang passes
+  behaviour as values instead (`map::Map` takes its hash and equality), and a literal conversion
+  is not a value a caller would pass.
+- A naming convention (a fn called `literal` in the type's namespace): magic by name.
+- No implicit conversion, with `utf8::lit{ "hello" }` at every use: general, but every literal
+  is wrapped.
+- Converting any value, not only literals: it would hide work, and failures, at run time.
+- The user writes the zero (`"hello\0"`): easy to forget, and the language can promise it free.
+- `literal` or `str` for the type: there will be one per literal kind, and `str` reads as the
+  text type to use everywhere, which `utf8::String` is.
 
 ### Bootstrap chain
 
