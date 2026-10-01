@@ -36,6 +36,12 @@ namespace fs {
     extern fn sys_size { mut fs: Fs, path: []u8 } -> i64                       // size in bytes
     #c::symbol{ name = "ctx_fs_sys_remove" }
     extern fn sys_remove { mut fs: Fs, path: []u8 } -> i64
+    // Directory `path`'s entry names, each followed by a zero byte, into `into` if they fit.
+    // Returns the bytes they take.
+    #c::symbol{ name = "ctx_fs_sys_list" }
+    extern fn sys_list { mut fs: Fs, path: []u8, into: []mut u8 } -> i64
+    #c::symbol{ name = "ctx_fs_sys_make_dir" }
+    extern fn sys_make_dir { mut fs: Fs, path: []u8 } -> i64
 
     union Error {
         not_found,
@@ -99,6 +105,60 @@ namespace fs {
     fn remove { mut fs: Fs, path: []u8 } -> ?Error {
         let r = sys_remove{ &fs, path }
         return if r < 0 { error_of{ code = r } } else { null }
+    }
+
+    // Creates directory `path`. Null on success; Error::exists if something is there already.
+    fn make_dir { mut fs: Fs, path: []u8 } -> ?Error {
+        let r = sys_make_dir{ &fs, path }
+        return if r < 0 { error_of{ code = r } } else { null }
+    }
+
+    // The names of directory `path`'s entries, without "." and "..", sorted by their bytes. They
+    // are in memory from `realloc`, in two allocations: the names' bytes, and the slice of them.
+    fn list(S) { mut fs: Fs, mut heap: S, realloc: alloc::Fn(S), path: []u8 } -> Result([][]u8, Error) {
+        let mut buf = slice::empty(u8){}
+        while true {
+            let r = sys_list{ &fs, path, into = buf }
+            if r < 0 {
+                _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
+                return Result::err{ error = error_of{ code = r } }
+            }
+            let n = @as(usize, r)
+            if n <= buf.len {
+                buf = buf[..n]
+                break
+            }
+            // The entries didn't fit, or the directory grew since: try again with room for them.
+            buf = match realloc{ &heap, mem = buf, new = n, align = 1 } {
+                null => {
+                    _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
+                    return Result::err{ error = Error::out_of_memory }
+                }
+                some{ value } => { value }
+            }
+        }
+        let mut count: usize = 0
+        let mut i: usize = 0
+        while i < buf.len {
+            if buf[i] == 0 { count = count + 1 }
+            i = i + 1
+        }
+        let some{ value = names } = alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count } else {
+            _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
+            return Result::err{ error = Error::out_of_memory }
+        }
+        let mut start: usize = 0
+        let mut k: usize = 0
+        i = 0
+        while i < buf.len {
+            if buf[i] == 0 {
+                names[k] = buf[start..i]
+                k = k + 1
+                start = i + 1
+            }
+            i = i + 1
+        }
+        return Result::ok{ value = names }
     }
 
     // Reads the whole file at `path` into memory from `realloc`. The caller owns the result:

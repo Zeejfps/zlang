@@ -1,0 +1,412 @@
+// The driver: `ctxc run` and `ctxc exe` turn a program into an executable, with nothing but ctxc
+// and a C compiler, and `run` runs it.
+//
+//   ctxc run PATH [-- ARGS...]      builds the program at PATH and runs it with ARGS
+//   ctxc exe PATH -o OUT            builds it into the executable OUT
+//
+// PATH is a .ctx file, or a directory: one program of all its .ctx files, or, if it has a
+// build.ctx, the executables its build program describes (spec §19), of which `run` runs the
+// first and `exe` writes the first to OUT. A build program is compiled and run first, with
+// CTX_BUILD_OUT naming the file for its graph (ctxrt.c, "build").
+//
+// ctxc finds std/ and ctxc/rt/ in its home: CTX_HOME if set, else the first directory holding
+// both above its executable, else above the working directory. Intermediate files go in
+// HOME/build/run. The C compiler is `cc`, or CTX_CC (split at spaces, so `zig cc` works), with
+// the flags tools/toolchain.py uses.
+
+namespace drive {
+    type Heap = arena::Arena
+    type Strs = list::List([]u8, Heap)
+
+    const CFLAGS: [5][]u8 = ["-std=gnu11", "-O1", "-w", "-fwrapv", "-fno-optimize-sibling-calls"]
+
+    // Where things are, and what the C compiler is.
+    struct Driver { home: []u8, work: []u8, std: [][]u8, os: build::Os, cc: [][]u8 }
+
+    // An executable to build: its files, and the C compiler flags its build program gave.
+    struct Target { name: []u8, root: []u8, paths: Strs, libs: Strs }
+
+    fn command { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args, run: bool } -> i32 {
+        let ok = if run { args.len == 2 or (args.len >= 3 and slice::eq_bytes{ a = args[2], b = "--" }) } else {
+            args.len == 4 and slice::eq_bytes{ a = args[2], b = "-o" }
+        }
+        if not ok {
+            io::eprintln{ &io, s = "usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT" }
+            return 2
+        }
+        let path = trim_slash{ path = args[1] }
+        let some{ value = pages } = mem::pages{ &mem, size = 16777216 } else {
+            io::eprintln{ &io, s = "out of memory" }
+            return 1
+        }
+        let mut heap = arena::new{ buf = pages }
+        let some{ value = home } = find_home{ &fs, &proc, &heap } else {
+            io::eprintln{ &io, s = "ctxc: cannot find std/ and ctxc/rt/; set CTX_HOME to the directory that holds them" }
+            return 1
+        }
+        let build_dir = join{ &heap, a = home, b = "build" }
+        let work = join{ &heap, a = build_dir, b = "run" }
+        if not made{ &io, &fs, path = build_dir } or not made{ &io, &fs, path = work } { return 1 }
+        let std_dir = join{ &heap, a = home, b = "std" }
+        let some{ value = std } = ctx_files{ &io, &fs, &heap, dir = std_dir, skip_build = false } else { return 1 }
+        let d = Driver{ home, work, std, os = proc::os{ &proc }, cc = compiler{ &proc, &heap } }
+
+        let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
+        let kind = kind_of{ &fs, path }
+        if kind == 0 {
+            cannot{ &io, path, what = "cannot read" }
+            return 1
+        }
+        let build_file = join{ &heap, a = path, b = "build.ctx" }
+        if kind == 2 and kind_of{ &fs, path = build_file } == 1 {
+            let code = build_program{ &io, &fs, &mem, &proc, &heap, d, dir = path, build_file, &targets }
+            if code != 0 { return code }
+            if targets.len == 0 {
+                cannot{ &io, path = build_file, what = "describes no executable" }
+                return 1
+            }
+        } else {
+            let root = if kind == 2 { "." } else { path }
+            add_target{ &targets, &heap, name = stem{ path = base{ path } }, root }
+        }
+
+        let mut first: []u8 = ""
+        let mut i: usize = 0
+        while i < targets.len {
+            let t = list::items{ list = targets }[i]
+            let mut files: [][]u8 = slice::empty([]u8){}
+            if kind == 2 {
+                let dir = if slice::eq_bytes{ a = t.root, b = "." } { path } else { join{ &heap, a = path, b = t.root } }
+                let some{ value = found } = ctx_files{ &io, &fs, &heap, dir, skip_build = slice::eq_bytes{ a = dir, b = path } } else { return 1 }
+                if found.len == 0 {
+                    cannot{ &io, path = dir, what = "no .ctx files in directory" }
+                    return 1
+                }
+                files = found
+            } else {
+                files = one{ &heap, s = path }
+            }
+            let mut flags = list::new([]u8){ realloc = arena::alloc, &heap }
+            add_all{ xs = &flags, ys = list::items{ list = t.paths } }
+            add_all{ xs = &flags, ys = list::items{ list = t.libs } }
+            let exe = if i == 0 and not run { args[3] } else { executable{ &heap, d, name = t.name } }
+            let code = compile{ &io, &fs, &mem, &proc, &heap, d, name = t.name, files, flags = list::items{ list = flags }, exe }
+            if code != 0 { return code }
+            if i == 0 { first = exe }
+            i = i + 1
+        }
+        if not run { return 0 }
+
+        let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+        add{ xs = &argv, s = first }
+        if args.len > 3 { add_all{ xs = &argv, ys = args[3..] } }
+        return started{ &io, r = proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} }, what = first }
+    }
+
+    // Compiles and runs dir's build program, and adds the executables its graph describes.
+    fn build_program { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, build_file: []u8, mut targets: list::List(Target, Heap) } -> i32 {
+        let exe = executable{ &heap, d, name = "build" }
+        let code = compile{ &io, &fs, &mem, &proc, &heap, d, name = "build", files = one{ &heap, s = build_file }, flags = slice::empty([]u8){}, exe }
+        if code != 0 { return code }
+        let graph = join{ &heap, a = d.work, b = "graph.txt" }
+        _ = fs::remove{ &fs, path = graph }
+        let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
+        add{ xs = &env, s = cat{ &heap, a = "CTX_BUILD_OUT=", b = graph } }
+        let ran = started{ &io, r = proc::run{ &proc, argv = one{ &heap, s = exe }, env = list::items{ list = env } }, what = exe }
+        if ran != 0 { return ran }
+        let text = match fs::read_all{ &fs, &heap, realloc = arena::alloc, path = graph } {
+            ok{ value } => { value }
+            err{ error } => {
+                match error { not_found => { return 0 } else => {} }       // it described nothing
+                cannot{ &io, path = graph, what = "cannot read" }
+                return 1
+            }
+        }
+        // One record per line, its fields separated by tabs: exe ID NAME ROOT, link ID LIB,
+        // framework ID NAME, libpath ID PATH. Ids count from 0 in the order of exe records.
+        let mut start: usize = 0
+        let mut i: usize = 0
+        while i < text.len {
+            if text[i] == '\n' {
+                let ok = record{ &heap, &targets, dir, line = text[start..i] }
+                if not ok {
+                    cannot{ &io, path = graph, what = "is not a build graph" }
+                    return 1
+                }
+                start = i + 1
+            }
+            i = i + 1
+        }
+        return 0
+    }
+
+    fn record { mut heap: Heap, mut targets: list::List(Target, Heap), dir: []u8, line: []u8 } -> bool {
+        let mut fields = list::new([]u8){ realloc = arena::alloc, &heap }
+        let mut start: usize = 0
+        let mut i: usize = 0
+        while i <= line.len {
+            if i == line.len or line[i] == '\t' {
+                add{ xs = &fields, s = line[start..i] }
+                start = i + 1
+            }
+            i = i + 1
+        }
+        let f = list::items{ list = fields }
+        if f.len < 3 { return false }
+        let id = utf8::parse_u64{ s = utf8::String{ bytes = f[1] } }
+        if id == null { return false }
+        let kind = f[0]
+        if slice::eq_bytes{ a = kind, b = "exe" } {
+            if f.len != 4 or id != targets.len { return false }
+            add_target{ &targets, &heap, name = f[2], root = f[3] }
+            return true
+        }
+        if f.len != 3 or id >= targets.len { return false }
+        let t = list::at{ list = targets, i = @as(usize, id) }
+        if slice::eq_bytes{ a = kind, b = "link" } {
+            add{ xs = &t.libs, s = cat{ &heap, a = "-l", b = f[2] } }
+        } else if slice::eq_bytes{ a = kind, b = "framework" } {
+            add{ xs = &t.libs, s = "-framework" }
+            add{ xs = &t.libs, s = f[2] }
+        } else if slice::eq_bytes{ a = kind, b = "libpath" } {
+            let p = if absolute{ path = f[2] } { f[2] } else { join{ &heap, a = dir, b = f[2] } }
+            add{ xs = &t.paths, s = cat{ &heap, a = "-L", b = p } }
+        } else {
+            return false
+        }
+        return true
+    }
+
+    // `ctxc build` for files, with std's, into NAME.c in the work directory, then the C
+    // compiler, into exe.
+    fn compile { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, name: []u8, files: [][]u8, flags: [][]u8, exe: []u8 } -> i32 {
+        let c_file = join{ &heap, a = d.work, b = cat{ &heap, a = name, b = ".c" } }
+        let mut paths = list::new([]u8){ realloc = arena::alloc, &heap }
+        add_all{ xs = &paths, ys = d.std }
+        add_all{ xs = &paths, ys = files }
+        let code = analyze{ &io, &fs, &mem, paths = list::items{ list = paths }, std_files = d.std.len, mode = Mode::build, out = c_file }
+        if code != 0 { return code }
+
+        let rt = join{ &heap, a = d.home, b = "ctxc/rt" }
+        let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+        add_all{ xs = &argv, ys = d.cc }
+        let mut i: usize = 0
+        while i < CFLAGS.len {
+            add{ xs = &argv, s = CFLAGS[i] }
+            i = i + 1
+        }
+        add{ xs = &argv, s = "-I" }
+        add{ xs = &argv, s = rt }
+        add{ xs = &argv, s = cat{ &heap, a = cat{ &heap, a = "-DCTX_PROGRAM_NAME=\"", b = name }, b = "\"" } }
+        add{ xs = &argv, s = c_file }
+        add{ xs = &argv, s = join{ &heap, a = rt, b = "ctxrt.c" } }
+        add{ xs = &argv, s = "-o" }
+        add{ xs = &argv, s = exe }
+        add_all{ xs = &argv, ys = flags }
+        add{ xs = &argv, s = "-lm" }
+        // The main thread's stack: ctxrt.c checks against 16 MiB (or CTX_STACK), and on Linux
+        // raises its own limit.
+        match d.os {
+            windows => { add{ xs = &argv, s = "-Wl,--stack,268435456" } }
+            macos => { add{ xs = &argv, s = "-Wl,-stack_size,0x10000000" } }
+            linux => {}
+        }
+        let cc_ran = started{ &io, r = proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} }, what = d.cc[0] }
+        if cc_ran != 0 {
+            io::eprintln{ &io, s = "ctxc: the C compiler failed" }
+            return 1
+        }
+        return 0
+    }
+
+    // A program's exit code, or 1 after saying why it didn't start.
+    fn started { mut io: Io, r: Result(i32, proc::Error), what: []u8 } -> i32 {
+        match r {
+            ok{ value } => { return value }
+            err{ error } => {
+                match error {
+                    not_found => { cannot{ &io, path = what, what = "no such program (set CTX_CC for another C compiler)" } }
+                    permission_denied => { cannot{ &io, path = what, what = "permission denied" } }
+                    other => { cannot{ &io, path = what, what = "cannot start" } }
+                }
+                return 1
+            }
+        }
+    }
+
+    // ---- finding things
+
+    // HOME: CTX_HOME, or the first directory above the executable or the working directory that
+    // holds std/ and ctxc/rt/.
+    fn find_home { mut fs: Fs, mut proc: Proc, mut heap: Heap } -> ?[]u8 {
+        let set = proc::env{ &proc, name = "CTX_HOME" }
+        if set != null and set.len > 0 { return trim_slash{ path = set } }
+        let mut dir = parent{ path = proc::exe_path{ &proc } }
+        while dir.len > 0 {
+            if is_home{ &fs, &heap, dir } { return dir }
+            let up = parent{ path = dir }
+            if up.len == dir.len { break }
+            dir = up
+        }
+        let mut here: []u8 = "."
+        let mut i = 0
+        while i < 16 {
+            if is_home{ &fs, &heap, dir = here } { return here }
+            here = join{ &heap, a = here, b = ".." }
+            i = i + 1
+        }
+        return null
+    }
+
+    fn is_home { mut fs: Fs, mut heap: Heap, dir: []u8 } -> bool {
+        return kind_of{ &fs, path = join{ &heap, a = dir, b = "std/io.ctx" } } == 1
+               and kind_of{ &fs, path = join{ &heap, a = dir, b = "ctxc/rt/ctxrt.c" } } == 1
+    }
+
+    // The C compiler's command: CTX_CC split at spaces, or `cc`.
+    fn compiler { mut proc: Proc, mut heap: Heap } -> [][]u8 {
+        let mut words = list::new([]u8){ realloc = arena::alloc, &heap }
+        let set = proc::env{ &proc, name = "CTX_CC" }
+        if set != null {
+            let mut start: usize = 0
+            let mut i: usize = 0
+            while i <= set.len {
+                if i == set.len or set[i] == ' ' {
+                    if i > start { add{ xs = &words, s = set[start..i] } }
+                    start = i + 1
+                }
+                i = i + 1
+            }
+        }
+        if words.len == 0 { add{ xs = &words, s = "cc" } }
+        return list::items{ list = words }
+    }
+
+    // The .ctx files in dir, as paths under it, sorted; without build.ctx if skip_build.
+    fn ctx_files { mut io: Io, mut fs: Fs, mut heap: Heap, dir: []u8, skip_build: bool } -> ?[][]u8 {
+        let names = match fs::list{ &fs, &heap, realloc = arena::alloc, path = dir } {
+            ok{ value } => { value }
+            err => {
+                cannot{ &io, path = dir, what = "cannot list" }
+                return null
+            }
+        }
+        let mut out = list::new([]u8){ realloc = arena::alloc, &heap }
+        let mut i: usize = 0
+        while i < names.len {
+            let n = names[i]
+            if ends_with{ s = n, suffix = ".ctx" } and not (skip_build and slice::eq_bytes{ a = n, b = "build.ctx" }) {
+                add{ xs = &out, s = join{ &heap, a = dir, b = n } }
+            }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // 0 if nothing is at path, 1 a file, 2 a directory.
+    fn kind_of { mut fs: Fs, path: []u8 } -> u8 {
+        match fs::size{ &fs, path } {
+            ok => { return 1 }
+            err{ error } => { match error { is_directory => { return 2 } else => { return 0 } } }
+        }
+    }
+
+    // Creates directory path unless it is there; false after saying why it can't.
+    fn made { mut io: Io, mut fs: Fs, path: []u8 } -> bool {
+        let e = fs::make_dir{ &fs, path }
+        if e == null { return true }
+        match e { exists => { return true } else => {} }
+        cannot{ &io, path, what = "cannot create directory" }
+        return false
+    }
+
+    fn executable { mut heap: Heap, d: Driver, name: []u8 } -> []u8 {
+        let exe = join{ &heap, a = d.work, b = name }
+        return if d.os == build::Os::windows { cat{ &heap, a = exe, b = ".exe" } } else { exe }
+    }
+
+    fn add_target { mut targets: list::List(Target, Heap), mut heap: Heap, name: []u8, root: []u8 } {
+        let t = Target{
+            name, root,
+            paths = list::new([]u8){ realloc = arena::alloc, &heap },
+            libs = list::new([]u8){ realloc = arena::alloc, &heap },
+        }
+        if not list::push{ list = &targets, item = t } { @panic("ctxc: out of memory") }
+    }
+
+    // ---- paths and byte strings
+
+    fn join { mut heap: Heap, a: []u8, b: []u8 } -> []u8 {
+        if a.len == 0 { return b }
+        if a[a.len - 1] == '/' { return cat{ &heap, a, b } }
+        return cat{ &heap, a = cat{ &heap, a, b = "/" }, b }
+    }
+
+    fn cat { mut heap: Heap, a: []u8, b: []u8 } -> []u8 {
+        let some{ value = out } = alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = a.len + b.len } else {
+            @panic("ctxc: out of memory")
+        }
+        slice::copy{ dst = out[..a.len], src = a }
+        slice::copy{ dst = out[a.len..], src = b }
+        return out
+    }
+
+    // path without its last component; "/" for one at the root, "" for a bare name.
+    fn parent { path: []u8 } -> []u8 {
+        let mut k = path.len
+        while k > 0 {
+            k = k - 1
+            if path[k] == '/' or path[k] == '\\' { return if k == 0 { path[..1] } else { path[..k] } }
+        }
+        return path[..0]
+    }
+
+    // The last component of path.
+    fn base { path: []u8 } -> []u8 {
+        let mut k = path.len
+        while k > 0 {
+            if path[k - 1] == '/' or path[k - 1] == '\\' { return path[k..] }
+            k = k - 1
+        }
+        return path
+    }
+
+    fn stem { path: []u8 } -> []u8 {
+        if ends_with{ s = path, suffix = ".ctx" } and path.len > 4 { return path[..path.len - 4] }
+        return path
+    }
+
+    fn trim_slash { path: []u8 } -> []u8 {
+        let mut n = path.len
+        while n > 1 and (path[n - 1] == '/' or path[n - 1] == '\\') { n = n - 1 }
+        return path[..n]
+    }
+
+    fn absolute { path: []u8 } -> bool {
+        if path.len == 0 { return false }
+        if path[0] == '/' or path[0] == '\\' { return true }
+        return path.len >= 2 and path[1] == ':'
+    }
+
+    fn ends_with { s: []u8, suffix: []u8 } -> bool {
+        return s.len >= suffix.len and slice::eq_bytes{ a = s[s.len - suffix.len..], b = suffix }
+    }
+
+    fn one { mut heap: Heap, s: []u8 } -> [][]u8 {
+        let mut xs = list::new([]u8){ realloc = arena::alloc, &heap }
+        add{ &xs, s }
+        return list::items{ list = xs }
+    }
+
+    fn add { mut xs: Strs, s: []u8 } {
+        if not list::push{ list = &xs, item = s } { @panic("ctxc: out of memory") }
+    }
+
+    fn add_all { mut xs: Strs, ys: [][]u8 } {
+        let mut i: usize = 0
+        while i < ys.len {
+            add{ &xs, s = ys[i] }
+            i = i + 1
+        }
+    }
+}

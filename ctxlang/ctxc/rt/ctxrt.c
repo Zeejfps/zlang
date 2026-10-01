@@ -17,6 +17,7 @@
 #define ctx_strtod __mingw_strtod     // correctly rounded, unlike msvcrt's
 #define ctx_strtof __mingw_strtof
 #else
+#include <dirent.h>
 #include <sys/resource.h>
 #include <unistd.h>
 #define ctx_strtod strtod
@@ -447,6 +448,339 @@ ctx_slice ctx_mem_sys_pages(uint64_t size) {
     out.ptr = p;
     out.len = size;
     return out;
+}
+
+// ---- fs: directories
+
+static int compare_names(const void *a, const void *b) {
+    return strcmp(*(char *const *)a, *(char *const *)b);
+}
+
+// The entries of directory `path`, without "." and "..", sorted by their bytes, each followed by
+// a zero byte, into `into` if they fit. Returns the bytes they take, or a status < 0. A caller
+// whose buffer was too small calls again with one as large as the result.
+int64_t ctx_fs_sys_list(ctx_slice path, ctx_slice into) {
+    if (path.len == 0) return NOT_FOUND;
+    size_t count = 0, cap = 64, total = 0;
+    char **names = malloc(cap * sizeof *names);
+    if (!names) ctx_panic_nopos("out of memory");
+#ifdef _WIN32
+    ctx_slice pattern_bytes = { malloc(path.len + 2), path.len + 2 };
+    if (!pattern_bytes.ptr) ctx_panic_nopos("out of memory");
+    memcpy(pattern_bytes.ptr, path.ptr, path.len);
+    memcpy((char *)pattern_bytes.ptr + path.len, "/*", 2);
+    wchar_t *pattern = os_path(pattern_bytes);
+    free(pattern_bytes.ptr);
+    WIN32_FIND_DATAW found;
+    HANDLE h = FindFirstFileW(pattern, &found);
+    free(pattern);
+    if (h == INVALID_HANDLE_VALUE) {
+        DWORD e = GetLastError();
+        free(names);
+        if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) return NOT_FOUND;
+        if (e == ERROR_ACCESS_DENIED) return PERMISSION;
+        if (e == ERROR_DIRECTORY) return NOT_DIR;
+        return -1000 - (int64_t)e;
+    }
+    do {
+        const wchar_t *w = found.cFileName;
+        if (wcscmp(w, L".") == 0 || wcscmp(w, L"..") == 0) continue;
+        int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, NULL, 0, NULL, NULL);
+        char *name = malloc(n);
+        if (!name) ctx_panic_nopos("out of memory");
+        WideCharToMultiByte(CP_UTF8, 0, w, -1, name, n, NULL, NULL);
+        if (count == cap) {
+            cap *= 2;
+            names = realloc(names, cap * sizeof *names);
+            if (!names) ctx_panic_nopos("out of memory");
+        }
+        names[count++] = name;
+        total += (size_t)n;
+    } while (FindNextFileW(h, &found));
+    FindClose(h);
+#else
+    char *p = c_string(path);
+    DIR *dir = opendir(p);
+    free(p);
+    if (!dir) {
+        free(names);
+        return os_error(errno);
+    }
+    struct dirent *ent;
+    while ((ent = readdir(dir)) != NULL) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
+        size_t n = strlen(ent->d_name) + 1;
+        char *name = malloc(n);
+        if (!name) ctx_panic_nopos("out of memory");
+        memcpy(name, ent->d_name, n);
+        if (count == cap) {
+            cap *= 2;
+            names = realloc(names, cap * sizeof *names);
+            if (!names) ctx_panic_nopos("out of memory");
+        }
+        names[count++] = name;
+        total += n;
+    }
+    closedir(dir);
+#endif
+    qsort(names, count, sizeof *names, compare_names);
+    if (total <= into.len) {
+        char *out = into.ptr;
+        for (size_t i = 0; i < count; i++) {
+            size_t n = strlen(names[i]) + 1;
+            memcpy(out, names[i], n);
+            out += n;
+        }
+    }
+    for (size_t i = 0; i < count; i++) free(names[i]);
+    free(names);
+    return (int64_t)total;
+}
+
+// Creates directory `path`. EXISTS if there is one, or a file, already.
+int64_t ctx_fs_sys_make_dir(ctx_slice path) {
+    if (path.len == 0) return NOT_FOUND;
+    path_char *w = os_path(path);
+#ifdef _WIN32
+    int r = _wmkdir(w);
+#else
+    int r = mkdir(w, 0777);
+#endif
+    int e = errno;
+    free(w);
+    return r < 0 ? os_error(e) : 0;
+}
+
+// ---- proc: other programs, and this one's environment
+
+// Runs argv[0], found on PATH unless it holds a path separator, with this program's
+// environment plus the "KEY=VALUE" entries of `env` (an entry replaces one of the same key),
+// sharing standard input, output and error, and waits for it. Returns 0 and sets *code to its
+// exit code, 128 + N if signal N killed it, or returns a status < 0 if it couldn't start.
+#ifdef _WIN32
+// Appends arg to the command line as CommandLineToArgvW reads it back: quoted if it is empty or
+// holds a space, a tab or a quote, with backslashes doubled before a quote.
+static void quote_arg(char **line, size_t *len, size_t *cap, ctx_slice arg) {
+    const char *a = arg.ptr;
+    size_t need = *len + 2 * arg.len + 4;
+    if (need > *cap) {
+        *cap = need * 2;
+        *line = realloc(*line, *cap);
+        if (!*line) ctx_panic_nopos("out of memory");
+    }
+    char *o = *line + *len;
+    if (*len > 0) *o++ = ' ';
+    int plain = arg.len > 0;
+    for (uint64_t i = 0; i < arg.len; i++)
+        if (a[i] == ' ' || a[i] == '\t' || a[i] == '"' || a[i] == '\n' || a[i] == '\v') plain = 0;
+    if (plain) {
+        memcpy(o, a, arg.len);
+        o += arg.len;
+    } else {
+        *o++ = '"';
+        size_t slashes = 0;
+        for (uint64_t i = 0; i < arg.len; i++) {
+            if (a[i] == '\\') { slashes++; continue; }
+            if (a[i] == '"') { for (size_t k = 0; k < slashes * 2 + 1; k++) *o++ = '\\'; }
+            else { for (size_t k = 0; k < slashes; k++) *o++ = '\\'; }
+            slashes = 0;
+            *o++ = a[i];
+        }
+        for (size_t k = 0; k < slashes * 2; k++) *o++ = '\\';
+        *o++ = '"';
+    }
+    *len = (size_t)(o - *line);
+}
+
+static wchar_t *widen(const char *p, size_t n) {
+    int w = MultiByteToWideChar(CP_UTF8, 0, p, (int)n, NULL, 0);
+    wchar_t *out = malloc((w + 1) * sizeof *out);
+    if (!out) ctx_panic_nopos("out of memory");
+    MultiByteToWideChar(CP_UTF8, 0, p, (int)n, out, w);
+    out[w] = 0;
+    return out;
+}
+#else
+#include <spawn.h>
+#include <sys/wait.h>
+extern char **environ;
+#endif
+
+// Whether environment entry `entry` ("KEY=VALUE") has the key of one of `env`'s entries.
+static int overridden(const char *entry, ctx_slice env) {
+    const char *eq = strchr(entry + (entry[0] == '='), '=');      // Windows has "=C:=C:\..."
+    size_t key = eq ? (size_t)(eq - entry) : strlen(entry);
+    ctx_slice *items = env.ptr;
+    for (uint64_t i = 0; i < env.len; i++) {
+        const char *e = items[i].ptr;
+        if (items[i].len > key && e[key] == '=' &&
+#ifdef _WIN32
+            _strnicmp(e, entry, key) == 0
+#else
+            memcmp(e, entry, key) == 0
+#endif
+        ) return 1;
+    }
+    return 0;
+}
+
+int64_t ctx_proc_run(ctx_slice argv, ctx_slice env, int32_t *code) {
+    ctx_slice *args = argv.ptr;
+    ctx_slice *extra = env.ptr;
+    if (argv.len == 0) ctx_panic_nopos("proc: run needs a program to run");
+    for (uint64_t i = 0; i < env.len; i++) {
+        const char *e = extra[i].ptr;
+        if (extra[i].len == 0 || !memchr(e, '=', extra[i].len) || e[0] == '=')
+            ctx_panic_nopos("proc: an environment entry is KEY=VALUE");
+    }
+    flush_out();
+#ifdef _WIN32
+    char *line = NULL;
+    size_t len = 0, cap = 0;
+    for (uint64_t i = 0; i < argv.len; i++) quote_arg(&line, &len, &cap, args[i]);
+    wchar_t *wline = widen(line ? line : "", len);
+    free(line);
+    // The environment block: "KEY=VALUE\0" entries, then another \0.
+    wchar_t *inherited = GetEnvironmentStringsW();
+    size_t wlen = 0, wcap = 1024;
+    wchar_t *block = malloc(wcap * sizeof *block);
+    if (!block) ctx_panic_nopos("out of memory");
+    for (wchar_t *e = inherited; *e; e += wcslen(e) + 1) {
+        int n = WideCharToMultiByte(CP_UTF8, 0, e, -1, NULL, 0, NULL, NULL);
+        char *u = malloc(n);
+        if (!u) ctx_panic_nopos("out of memory");
+        WideCharToMultiByte(CP_UTF8, 0, e, -1, u, n, NULL, NULL);
+        int skip = overridden(u, env);
+        free(u);
+        if (skip) continue;
+        size_t n16 = wcslen(e) + 1;
+        if (wlen + n16 + 1 > wcap) {
+            wcap = (wlen + n16 + 1) * 2;
+            block = realloc(block, wcap * sizeof *block);
+            if (!block) ctx_panic_nopos("out of memory");
+        }
+        memcpy(block + wlen, e, n16 * sizeof *block);
+        wlen += n16;
+    }
+    FreeEnvironmentStringsW(inherited);
+    for (uint64_t i = 0; i < env.len; i++) {
+        wchar_t *w = widen(extra[i].ptr, extra[i].len);
+        size_t n16 = wcslen(w) + 1;
+        if (wlen + n16 + 1 > wcap) {
+            wcap = (wlen + n16 + 1) * 2;
+            block = realloc(block, wcap * sizeof *block);
+            if (!block) ctx_panic_nopos("out of memory");
+        }
+        memcpy(block + wlen, w, n16 * sizeof *block);
+        wlen += n16;
+        free(w);
+    }
+    block[wlen] = 0;
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    memset(&si, 0, sizeof si);
+    si.cb = sizeof si;
+    BOOL ok = CreateProcessW(NULL, wline, NULL, NULL, TRUE, CREATE_UNICODE_ENVIRONMENT, block, NULL, &si, &pi);
+    DWORD e = GetLastError();
+    free(wline);
+    free(block);
+    if (!ok) {
+        if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) return NOT_FOUND;
+        if (e == ERROR_ACCESS_DENIED) return PERMISSION;
+        return -1000 - (int64_t)e;
+    }
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD exit_code = 0;
+    GetExitCodeProcess(pi.hProcess, &exit_code);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    *code = (int32_t)exit_code;
+    return 0;
+#else
+    char **cargv = malloc((argv.len + 1) * sizeof *cargv);
+    if (!cargv) ctx_panic_nopos("out of memory");
+    for (uint64_t i = 0; i < argv.len; i++) cargv[i] = c_string(args[i]);
+    cargv[argv.len] = NULL;
+    size_t n = 0;
+    while (environ[n]) n++;
+    char **cenv = malloc((n + env.len + 1) * sizeof *cenv);
+    if (!cenv) ctx_panic_nopos("out of memory");
+    size_t k = 0;
+    for (size_t i = 0; i < n; i++)
+        if (!overridden(environ[i], env)) cenv[k++] = environ[i];
+    for (uint64_t i = 0; i < env.len; i++) cenv[k++] = c_string(extra[i]);
+    cenv[k] = NULL;
+    pid_t pid;
+    int r = posix_spawnp(&pid, cargv[0], NULL, NULL, cargv, cenv);
+    for (uint64_t i = 0; i < argv.len; i++) free(cargv[i]);
+    free(cargv);
+    for (size_t i = k - env.len; i < k; i++) free(cenv[i]);
+    free(cenv);
+    if (r != 0) return os_error(r);
+    int status;
+    while (waitpid(pid, &status, 0) < 0)
+        if (errno != EINTR) return os_error(errno);
+    if (WIFEXITED(status)) *code = WEXITSTATUS(status);
+    else if (WIFSIGNALED(status)) *code = 128 + WTERMSIG(status);
+    else *code = 255;
+    return 0;
+#endif
+}
+
+// Environment variable `name` into *value, which lives until the program ends. 0 if it isn't set.
+bool ctx_proc_env(ctx_slice name, ctx_slice *value) {
+#ifdef _WIN32
+    wchar_t *w = widen(name.ptr ? name.ptr : "", name.len);
+    const wchar_t *v = _wgetenv(w);
+    free(w);
+    if (!v) return 0;
+    int n = WideCharToMultiByte(CP_UTF8, 0, v, -1, NULL, 0, NULL, NULL);
+    char *u = ctx_alloc(n);
+    WideCharToMultiByte(CP_UTF8, 0, v, -1, u, n, NULL, NULL);
+    *value = (ctx_slice){ u, (uint64_t)(n - 1) };
+    return 1;
+#else
+    char *p = c_string(name);
+    const char *v = getenv(p);
+    free(p);
+    if (!v) return 0;
+    *value = (ctx_slice){ (void *)v, strlen(v) };
+    return 1;
+#endif
+}
+
+// The absolute path of this program's executable; empty if the OS won't say.
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+ctx_slice ctx_proc_exe_path(void) {
+    static char *path;
+    if (!path) {
+#if defined(_WIN32)
+        wchar_t w[32768];
+        DWORD n = GetModuleFileNameW(NULL, w, 32768);
+        if (n == 0 || n >= 32768) return (ctx_slice){ NULL, 0 };
+        int u = WideCharToMultiByte(CP_UTF8, 0, w, (int)n, NULL, 0, NULL, NULL);
+        path = ctx_alloc(u + 1);
+        WideCharToMultiByte(CP_UTF8, 0, w, (int)n, path, u, NULL, NULL);
+        for (int i = 0; i < u; i++) if (path[i] == '\\') path[i] = '/';
+#elif defined(__APPLE__)
+        char buf[4096];
+        uint32_t size = sizeof buf;
+        if (_NSGetExecutablePath(buf, &size) != 0) return (ctx_slice){ NULL, 0 };
+        char *real = realpath(buf, NULL);
+        if (!real) return (ctx_slice){ NULL, 0 };
+        path = real;
+#else
+        char buf[4096];
+        ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
+        if (n <= 0) return (ctx_slice){ NULL, 0 };
+        buf[n] = 0;
+        path = ctx_alloc((size_t)n + 1);
+        memcpy(path, buf, (size_t)n + 1);
+#endif
+    }
+    return (ctx_slice){ path, strlen(path) };
 }
 
 // ---- startup and exit

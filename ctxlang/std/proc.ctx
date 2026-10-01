@@ -1,0 +1,71 @@
+// std: proc. Other programs, and this program's environment.
+//
+// Every function takes `mut proc: Proc`. Only `main` receives a `Proc`, from the runtime, so a
+// function can start programs or read the environment only if its caller passes it down.
+//
+//   fn main { mut io: Io, mut proc: Proc, mut mem: Mem } -> i32 {
+//       let mut buf: [4096]u8
+//       let mut heap = arena::new{ buf = buf[..] }
+//       let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+//       _ = list::push{ list = &argv, item = "cc" } and list::push{ list = &argv, item = "--version" }
+//       return match proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} } {
+//           ok{ value }  => { value }          // cc's exit code
+//           err{ error } => { 127 }
+//       }
+//   }
+
+// Permission to start programs and to read this program's environment.
+capability Proc
+
+namespace proc {
+    union Error {
+        not_found,          // no such program, on PATH or at the path given
+        permission_denied,
+        other{ code: i64 }, // the OS's error number
+    }
+
+    // ---- the runtime's (ctxrt.c)
+
+    #c::symbol{ name = "ctx_proc_run" }
+    extern fn sys_run { mut proc: Proc, argv: [][]u8, env: [][]u8, mut code: i32 } -> i64
+
+    #c::symbol{ name = "ctx_proc_env" }
+    extern fn sys_env { mut proc: Proc, name: []u8, mut value: []u8 } -> bool
+
+    // The absolute path of this program's executable; empty if the OS won't say.
+    #c::symbol{ name = "ctx_proc_exe_path" }
+    extern fn exe_path { mut proc: Proc } -> []u8
+
+    // The operating system this program runs on.
+    #c::symbol{ name = "ctx_build_os" }
+    extern fn os { mut proc: Proc } -> build::Os
+
+    // ----
+
+    // Runs program argv[0] with the arguments argv[1..] and waits for it to end. argv[0] is
+    // looked for on PATH unless it holds a path separator. The program gets this one's
+    // environment plus `env`'s "KEY=VALUE" entries, each replacing an entry of the same key, and
+    // shares its standard input, output and error. Returns the program's exit code; one that a
+    // signal N killed has 128 + N, as a shell says.
+    fn run { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> Result(i32, Error) {
+        let mut code: i32 = 0
+        let r = sys_run{ &proc, argv, env, code = &code }
+        if r < 0 { return Result::err{ error = error_of{ code = r } } }
+        return Result::ok{ value = code }
+    }
+
+    // The value of environment variable `name`, or null if it isn't set. It lives until the
+    // program ends.
+    fn env { mut proc: Proc, name: []u8 } -> ?[]u8 {
+        let mut value: []u8 = slice::empty(u8){}
+        if not sys_env{ &proc, name, value = &value } { return null }
+        return value
+    }
+
+    // The Error for the runtime's negative status, as fs::error_of reads it.
+    fn error_of { code: i64 } -> Error {
+        if code == -1 { return Error::not_found }
+        if code == -2 { return Error::permission_denied }
+        return Error::other{ code = -1000 - code }
+    }
+}

@@ -523,7 +523,7 @@ fn main { mut io: Io, mut fs: Fs, mut glfw: Glfw, args: Args } -> i32 { ... }
 
 1. `capability Name` declares a **capability type**: permission to have some effect (§1.3). It has no fields, no generic parameters and no zero value, and takes no space.
 2. Nothing can construct a capability: `Name{}` is an error. The only ones are those `main` receives, which it passes down to the functions that need them.
-3. std declares `Io` (console, §17 `io`), `Fs` (files, §17 `fs`) and `Mem` (memory beyond the stack, §17 `mem`). A binding of a C library declares its own, and its extern fns with effects take it (§18).
+3. std declares `Io` (console, §17 `io`), `Fs` (files, §17 `fs`), `Mem` (memory beyond the stack, §17 `mem`), `Proc` (other programs and the environment, §17 `proc`) and `Build` (a build program's, §19). A binding of a C library declares its own, and its extern fns with effects take it (§18).
 4. A capability is permission for code that follows the rules, not a sandbox: a pointer `@cast` (§13) can forge one, as it can corrupt any memory.
 
 ### Entry point
@@ -557,10 +557,11 @@ Settled questions are removed, and the rest keep their numbers.
 | `slice` | Helpers for built-in slices (§12): `empty`, `cast`, `copy`, `fill`, `eq_bytes` |
 | `c` | Attributes for calling C (§18): `symbol { name: []u8 }`. |
 | `Args` | Declared at the top level: `type Args = [][]u8`, the type of `main`'s `args` (§15). |
-| `Io`, `Fs`, `Mem`, `Build` | Declared at the top level: `capability Io` and so on (§15), in `io.ctx`, `fs.ctx`, `mem.ctx` and `build.ctx`. |
+| `Io`, `Fs`, `Mem`, `Proc`, `Build` | Declared at the top level: `capability Io` and so on (§15), in `io.ctx`, `fs.ctx`, `mem.ctx`, `proc.ctx` and `build.ctx`. |
+| `proc` | `Error`; `run` (starts a program found on PATH, with extra `KEY=VALUE` environment entries, sharing standard input and output, and returns its exit code: 128 + N if signal N killed it), `env` (an environment variable, or null), `exe_path` (this program's executable), `os` (the operating system, a `build::Os`). Every function takes `mut proc: Proc`. |
 | `build` | Build programs (§19): `Exe`, `Os` (`windows`, `macos`, `linux`); `exe`, `link`, `framework`, `lib_path`, `os`. Every function takes `mut b: Build`. |
 | `Result(T, E)` | Declared at the top level: `union Result(T, E) { ok{ value: T }, err{ error: E } }`. Namespace `result`: `is_ok`, `is_err`, `value`, `error`, `value_or`, `unwrap`, `ok_or`. |
-| `fs` | `File`, `Mode` (`read`, `write`, `append`, `create`), `Error`; `open`, `read`, `write`, `close`, `size`, `remove`, and `read_all` (into memory from an allocator) and `write_all`. Every function takes `mut fs: Fs` and reports failure as a `Result(T, fs::Error)` or `?fs::Error`. Extern fns: `sys_open`, `sys_read`, `sys_write`, `sys_close`, `sys_size`, `sys_remove`. |
+| `fs` | `File`, `Mode` (`read`, `write`, `append`, `create`), `Error`; `open`, `read`, `write`, `close`, `size`, `remove`, `make_dir`, and `read_all` (into memory from an allocator), `write_all` and `list` (a directory's entry names, sorted, into memory from an allocator). Every function takes `mut fs: Fs` and reports failure as a `Result(T, fs::Error)` or `?fs::Error`. Extern fns: `sys_open`, `sys_read`, `sys_write`, `sys_close`, `sys_size`, `sys_remove`, `sys_list`, `sys_make_dir`. |
 | `alloc` | `Bytes` (`[]mut u8`), the allocator type `Fn(S)`, typed `resize(T, S)`, and `new(T, S)` and `free(T, S)` for one `T`: `new` returns a `?*mut T` holding the given `value` |
 | `mem` | `pages`: at least `size` bytes of zeroed, page-aligned memory, as a `?alloc::Bytes`. Takes `mut mem: Mem`. Extern fn: `sys_pages`. |
 | `arena` | `Arena`, a bump allocator: `new`, `alloc` (an `alloc::Fn(Arena)`), `reset`, `remaining` |
@@ -625,3 +626,4 @@ fn build { mut b: Build } {
 3. Only `build` may take a `Build` (§15): `main` can't.
 4. `build::exe{ &b, name, root }` names an executable built from the `.ctx` files of directory `root`, and returns a `build::Exe` for the calls that add to it: `link` (a library, `-l`), `framework` (a macOS framework) and `lib_path` (a directory to find libraries in, `-L`). `build::os` is the operating system the build is for. Paths are relative to the directory `build.ctx` is in, and `build.ctx` is never one of an executable's files.
 5. Names, roots, libraries and paths can't be empty or hold a tab or a line break: the build panics.
+6. `ctxc run PATH [-- ARGS...]` builds the program at PATH (a `.ctx` file, or a directory, with or without a `build.ctx`) and runs its first executable; `ctxc exe PATH -o OUT` writes that executable to OUT. Only ctxc and a C compiler are needed (PLAN.md, "Where we are").

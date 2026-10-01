@@ -8,10 +8,12 @@ bootstrap/ctxc.c on first use) checks the program and writes C with `ctxc build`
 clang (or zig cc, with CTX_CC=zig) builds it with ctxc/rt/ctxrt.c. Builds are cached in
 build/cbackend. Errors are printed as `PATH:LINE:COL: error: MESSAGE`.
 
-Without Python, the same is:
+Without Python, ctxc does the same itself (ctxc/drive.ctx), with the bootstrap's compiler:
 
-    ctxc build OUT.c std/*.ctx -- PROGRAM.ctx...
-    cc -std=gnu11 -O1 -fwrapv -fno-optimize-sibling-calls -Ictxc/rt OUT.c ctxc/rt/ctxrt.c -lm
+    ctxc run PROGRAM [-- args...]
+    ctxc exe PROGRAM -o EXE
+
+This script stays for development: it uses the current source's ctxc and caches builds.
 """
 
 import argparse

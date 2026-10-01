@@ -149,6 +149,11 @@ int64_t ctx_fs_sys_close(uint32_t file);
 int64_t ctx_fs_sys_size(ctx_slice path);
 int64_t ctx_fs_sys_remove(ctx_slice path);
 ctx_slice ctx_mem_sys_pages(uint64_t size);
+int64_t ctx_fs_sys_list(ctx_slice path, ctx_slice into);
+int64_t ctx_fs_sys_make_dir(ctx_slice path);
+int64_t ctx_proc_run(ctx_slice argv, ctx_slice env, int32_t *code);
+bool ctx_proc_env(ctx_slice name, ctx_slice *value);
+ctx_slice ctx_proc_exe_path(void);
 
 typedef struct { uint32_t id; } ctx_build_exe;            // build::Exe
 ctx_build_exe ctx_build_exe_new(ctx_slice name, ctx_slice root);

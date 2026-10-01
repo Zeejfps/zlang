@@ -3993,6 +3993,31 @@ class Fs(Base):
         code = run_source(extra + FS_MAIN % body, out=out, args=list(args))
         return out.getvalue(), code
 
+    def test_list_and_make_dir(self):
+        for name in ['b.txt', 'a.ctx', 'c']:
+            with open(self.path(name), 'w') as f:
+                f.write('x')
+        out, code = self.run_fs("""
+    let made = fs::make_dir{ &fs, path = args[1] }
+    io::println_bool{ &io, n = made == null }
+    let again = fs::make_dir{ &fs, path = args[1] }
+    io::println_bool{ &io, n = again != null }
+    let names = match fs::list{ &fs, &heap, realloc = arena::alloc, path = args[0] } {
+        ok{ value }  => { value }
+        err{ error } => { return 1 }
+    }
+    let mut i: usize = 0
+    while i < names.len {
+        io::println{ &io, s = utf8::of{ chars = names[i] } }
+        i = i + 1
+    }
+    match fs::list{ &fs, &heap, realloc = arena::alloc, path = args[2] } {
+        ok => { return 2 }
+        err{ error } => { match error { not_found => { return 0 } else => { return 3 } } }
+    }
+""", [self.dir, self.path('sub'), self.path('missing')])
+        self.assertEqual((out, code), ('true\ntrue\na.ctx\nb.txt\nc\nsub\n', 0))
+
     def test_read_all_and_write_all(self):
         src, dst = self.path('in.txt'), self.path('out.txt')
         with open(src, 'wb') as f:
@@ -4820,6 +4845,136 @@ fn main { mut io: Io, mut fs: Fs } -> i32 { return @as(i32, @size_of(Io)) + 3 }
             ('capability C\nfn main {} { let c: C\n    f{ c } }\nfn f { c: C } {}', '`c` may be read before it is assigned', 3, 8),
         ]:
             self.assertCapError(src, msg, line, col)
+
+
+PROC_MAIN = """
+fn main { mut io: Io, mut proc: Proc, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+    let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
+%s
+}
+"""
+
+
+class Proc(Base):
+    """std's proc: running programs, and this one's environment. The programs run are the
+    Python running the tests, so they exist on every platform."""
+
+    def run_proc(self, body, args=()):
+        out = io.StringIO()
+        code = run_source(PROC_MAIN % body, out=out, args=list(args))
+        return out.getvalue(), code
+
+    def test_exit_code_and_env(self):
+        script = 'import os, sys; print(os.environ["CTX_TEST_FOO"]); sys.exit(7)'
+        out, code = self.run_proc("""
+    _ = list::push{ list = &argv, item = args[0] } and list::push{ list = &argv, item = "-c" }
+        and list::push{ list = &argv, item = args[1] }
+    _ = list::push{ list = &env, item = "CTX_TEST_FOO=bar baz" }
+    io::println{ &io, s = "before" }
+    match proc::run{ &proc, argv = list::items{ list = argv }, env = list::items{ list = env } } {
+        ok{ value }  => { io::println_i64{ &io, n = value } }
+        err          => { return 1 }
+    }
+    return 0
+""", [sys.executable, script])
+        # The child's output comes after "before": proc::run flushes this program's first.
+        self.assertEqual(out.replace('\r\n', '\n'), 'before\nbar baz\n7\n')
+        self.assertEqual(code, 0)
+
+    def test_missing_program(self):
+        out, code = self.run_proc("""
+    _ = list::push{ list = &argv, item = "ctx-no-such-program-anywhere" }
+    match proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} } {
+        ok           => { return 1 }
+        err{ error } => { match error { not_found => { return 0 } else => { return 2 } } }
+    }
+""")
+        self.assertEqual(code, 0)
+
+    def test_env_and_exe_path(self):
+        os.environ['CTX_TEST_ENV'] = 'set'
+        self.addCleanup(os.environ.pop, 'CTX_TEST_ENV', None)
+        out, code = self.run_proc("""
+    let v = proc::env{ &proc, name = "CTX_TEST_ENV" }
+    if v != null { io::println{ &io, s = utf8::of{ chars = v } } }
+    io::println_bool{ &io, n = proc::env{ &proc, name = "CTX_TEST_UNSET_VAR" } == null }
+    io::println_bool{ &io, n = proc::exe_path{ &proc }.len > 0 }
+    return 0
+""")
+        self.assertEqual((out, code), ('set\ntrue\ntrue\n', 0))
+
+    def test_bad_env_entry_panics(self):
+        with self.assertRaises(Panic) as cm:
+            self.run_proc("""
+    _ = list::push{ list = &argv, item = "x" }
+    _ = list::push{ list = &env, item = "NOEQUALS" }
+    _ = proc::run{ &proc, argv = list::items{ list = argv }, env = list::items{ list = env } }
+    return 0
+""")
+        self.assertIn('an environment entry is KEY=VALUE', cm.exception.msg)
+
+
+class CtxcDriver(Base):
+    """`ctxc run` and `ctxc exe` (ctxc/drive.ctx): ctxc and a C compiler, without Python."""
+
+    def project(self, files):
+        import tempfile
+        d = tempfile.mkdtemp(prefix='ctxdrive-', dir=os.path.join(ROOT, 'build'))
+        self.addCleanup(shutil.rmtree, d, True)
+        for name, text in files.items():
+            path = os.path.join(d, name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', encoding='utf-8', newline='') as f:
+                f.write(text)
+        return d
+
+    def ctxc(self, *args):
+        import subprocess
+        from toolchain import native_ctxc
+        env = dict(os.environ, CTX_HOME=ROOT)
+        r = subprocess.run([native_ctxc(), *args], capture_output=True, env=env)
+        return r.returncode, r.stdout.decode().replace('\r\n', '\n'), r.stderr.decode()
+
+    def test_run_a_file_with_arguments(self):
+        d = self.project({'hello.ctx': """
+fn main { mut io: Io, args: Args } -> i32 {
+    io::println{ &io, s = utf8::of{ chars = args[0] } }
+    return 3
+}
+"""})
+        self.assertEqual(self.ctxc('run', os.path.join(d, 'hello.ctx'), '--', 'hi')[:2], (3, 'hi\n'))
+
+    def test_run_a_build_program(self):
+        d = self.project({
+            'build.ctx': """
+fn build { mut b: Build } {
+    _ = build::exe{ &b, name = "first", root = "app" }
+    _ = build::exe{ &b, name = "second", root = "." }
+}
+""",
+            'app/main.ctx': 'fn main { mut io: Io } { io::println{ &io, s = "from app" } }\n',
+            'main.ctx': 'fn main { mut io: Io } { io::println{ &io, s = "from top" } }\n',
+        })
+        self.assertEqual(self.ctxc('run', d)[:2], (0, 'from app\n'))
+        out = os.path.join(d, 'prog')
+        self.assertEqual(self.ctxc('exe', d, '-o', out)[0], 0)
+        from toolchain import run_exe
+        got = io.StringIO()
+        run_exe(out, out=got)
+        self.assertEqual(got.getvalue(), 'from app\n')
+
+    def test_errors(self):
+        d = self.project({'bad.ctx': 'fn main {} { let x: i32 = true }\n'})
+        code, _, err = self.ctxc('run', os.path.join(d, 'bad.ctx'))
+        self.assertEqual(code, 1)
+        self.assertIn('bad.ctx:1:27: error: expected i32, got bool', err)
+        code, _, err = self.ctxc('run', os.path.join(d, 'missing.ctx'))
+        self.assertEqual(code, 1)
+        self.assertIn('missing.ctx: cannot read', err)
+        self.assertEqual(self.ctxc('run')[0], 2)
 
 
 class BuildPrograms(Base):

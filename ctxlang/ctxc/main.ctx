@@ -1,8 +1,13 @@
 // ctxc: the ctxlang compiler, written in ctxlang. A directory is one program: this file holds
 // the driver; source.ctx, diag.ctx, lexer.ctx, syntax.ctx, parser.ctx, types.ctx and check.ctx
 // the front end; lower.ctx the checked program as IR; ir.ctx the typed IR, ir_read.ctx and
-// ir_print.ctx its text form; emit_c.ctx the C backend; dump.ctx text dumps for tests.
+// ir_print.ctx its text form; emit_c.ctx the C backend; dump.ctx text dumps for tests;
+// drive.ctx the driver, which runs the C compiler.
 //
+//   ctxc run PATH [-- ARGS...]                  builds the program at PATH (a .ctx file, or a
+//                                               directory, maybe with a build.ctx) with the C
+//                                               compiler and runs it (drive.ctx)
+//   ctxc exe PATH -o OUT                        builds it into the executable OUT
 //   ctxc build OUT.c STD... -- FILE...          checks the program of FILE..., with std's files
 //                                               STD..., and writes it as C, for ctxc/rt/ctxrt.c;
 //                                               or prints its errors and exits with 1
@@ -18,11 +23,16 @@
 //   ctxc decls STD... -- FILE...                checks the program and prints its declarations
 //                                               and bodies (dump.ctx, namespace decls)
 //
-// tools/ctxc.py runs the whole pipeline: ctxc build and the C compiler. bootstrap/ctxc.c is
-// this program as C, for building ctxc with only a C compiler (tools/toolchain.py).
+// bootstrap/ctxc.c is this program as C, for building ctxc with only a C compiler.
 
-fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
     let mut to_c = false
+    if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "run" } {
+        return drive::command{ run = true, .. }
+    }
+    if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "exe" } {
+        return drive::command{ run = false, .. }
+    }
     if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "tokens" } {
         return dumps{ &io, &fs, &mem, args, trees = false }
     }
@@ -44,7 +54,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     if args.len == 3 and slice::eq_bytes{ a = args[0], b = "c" } {
         to_c = true
     } else if args.len != 2 or not slice::eq_bytes{ a = args[0], b = "roundtrip" } {
-        io::eprintln{ &io, s = "usage: ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO | ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE..." }
+        io::eprintln{ &io, s = "usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT | ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO | ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE..." }
         return 2
     }
     let path = args[1]
@@ -138,24 +148,40 @@ enum Mode: u8 { decls, ir, build }
 // `ctxc build OUT.c ...` writes it as C.
 fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, mode: Mode } -> i32 {
     let first: usize = if mode == Mode::build { 2 } else { 1 }
-    let mut total: u64 = 0
+    let mut buf: [65536]u8
+    let mut heap = arena::new{ buf = buf[..] }
+    let mut paths = list::new([]u8){ realloc = arena::alloc, &heap }
     let mut split: usize = 0
     let mut i = first
     while i < args.len {
         if slice::eq_bytes{ a = args[i], b = "--" } {
             split = i
-        } else {
-            let ok{ value = size } = fs::size{ &fs, path = args[i] } else {
-                cannot{ &io, path = args[i], what = "cannot read" }
-                return 1
-            }
-            total = total + size
+        } else if not list::push{ list = &paths, item = args[i] } {
+            io::eprintln{ &io, s = "too many files" }
+            return 1
         }
         i = i + 1
     }
     if split == 0 {
         io::eprintln{ &io, s = "usage: ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE..." }
         return 2
+    }
+    let out: []u8 = if mode == Mode::build { args[1] } else { "" }
+    return analyze{ &io, &fs, &mem, paths = list::items{ list = paths }, std_files = split - first, mode, out }
+}
+
+// Checks the program of `paths`, std's files first, and acts on it as `mode` says: for build,
+// writes it as C to `out`.
+fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, paths: [][]u8, std_files: usize, mode: Mode, out: []u8 } -> i32 {
+    let mut total: u64 = 0
+    let mut i: usize = 0
+    while i < paths.len {
+        let ok{ value = size } = fs::size{ &fs, path = paths[i] } else {
+            cannot{ &io, path = paths[i], what = "cannot read" }
+            return 1
+        }
+        total = total + size
+        i = i + 1
     }
     let some{ value = pages } = mem::pages{ &mem, size = 67108864 + @as(usize, total) * 512 } else {
         io::eprintln{ &io, s = "out of memory" }
@@ -164,23 +190,20 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, mode: Mode }
     let mut heap = arena::new{ buf = pages }
     let mut diags = diag::new{ &heap }
     let mut files = list::new(check::File){ realloc = arena::alloc, &heap }
-    i = first
-    while i < args.len {
-        if i != split {
-            let path = args[i]
-            let ok{ value = text } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } else {
-                cannot{ &io, path, what = "cannot read" }
-                return 1
-            }
-            add_file{ &files, &heap, &diags, name = path, text }
+    i = 0
+    while i < paths.len {
+        let path = paths[i]
+        let ok{ value = text } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } else {
+            cannot{ &io, path, what = "cannot read" }
+            return 1
         }
+        add_file{ &files, &heap, &diags, name = path, text }
         i = i + 1
     }
-    let mut c = check::new{ files = list::items{ list = files }, std_files = split - first, &heap, &diags }
+    let mut c = check::new{ files = list::items{ list = files }, std_files, &heap, &diags }
     check::program{ &c }
     if mode == Mode::build {
         if diags.errors == 0 {
-            let out = args[1]
             let code = emit::program{ heap = &heap, p = lower::program{ &c } }
             let ok = fs::write_all{ &fs, path = out, bytes = code } else {
                 cannot{ &io, path = out, what = "cannot write" }

@@ -26,11 +26,26 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
 
 ### Where we are
 
+- **Without Python**, ctxc and a C compiler are all a program needs (stage 10.8):
+
+  ```
+  cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctxc.c ctxc/rt/ctxrt.c -lm -o ctxc
+  ./ctxc run examples/wordcount.ctx -- spec.md       # a file
+  ./ctxc run examples/json -- examples/json/sample.json   # a directory
+  ./ctxc run examples/glfw                           # a directory with a build program
+  ./ctxc exe examples/list.ctx -o list
+  ```
+
+  ctxc finds std/ and ctxc/rt/ through CTX_HOME, or above its executable or the working
+  directory, and builds in HOME/build/run. That ctxc is the bootstrap's, so it is the
+  compiler as of the last refresh; `tools/toolchain.py` builds the current source's.
+- **Python** is left in development only: the test suite (`tests/`), `tools/toolchain.py`
+  (which builds the current ctxc from the bootstrap, with caching, for the tests and tools),
+  `tools/ctxc.py`, `fixpoint.py`, `corpus.py` and `recover.py`. Each could be a ctxlang program
+  now that `proc::run` and `fs::list` exist.
 - `bootstrap/ctxc.c` is ctxc as C. `tools/toolchain.py` compiles it to a seed, and the seed
   compiles ctxc's current source into `build/ctxc` (about 7 s the first time, cached after).
-  Without Python: `cc -std=gnu11 -O1 -fwrapv -fno-optimize-sibling-calls -Ictxc/rt
-  bootstrap/ctxc.c ctxc/rt/ctxrt.c -lm -o ctxc`, then `ctxc build OUT.c std/*.ctx -- FILE...`.
-- `python -m unittest discover tests` runs all 357 tests through the native ctxc: each program is
+- `python -m unittest discover tests` runs all 365 tests through the native ctxc: each program is
   compiled with `ctxc build`, built with cc and run. They pass on Windows (gcc), Linux (gcc) and
   macOS arm64 (Apple clang).
 - `tools/fixpoint.py`: ctxc built by itself, twice, writes byte-identical C, the same as the
@@ -759,6 +774,17 @@ Increments, each landing with tests and a refreshed bootstrap:
    - **Needs:** externs chosen per platform (step 4), and the state the runtime shares with
      panics (buffered stdout, which a panic flushes) moved or exposed. Float formatting and
      parsing (shortest round-trip text) may stay in C.
+
+8. **ctxc as its own driver** — *done.* `ctxc run PATH [-- ARGS...]` and `ctxc exe PATH -o OUT`
+   (`ctxc/drive.ctx`) do what `tools/ctxc.py` did: run a directory's build program with
+   CTX_BUILD_OUT, read its graph, compile each executable with `ctxc build`'s pipeline in
+   process, and run `cc` (or CTX_CC) with toolchain.py's flags. std gained what it needed, all
+   over externs: `capability Proc` with `proc::run` (posix_spawnp and waitpid, or
+   CreateProcessW), `proc::env` and `proc::exe_path`, and `fs::list` and `fs::make_dir`
+   (opendir, or FindFirstFileW). ctxc finds its home through CTX_HOME, else above its
+   executable, else above the working directory. Not yet: caching (every run compiles the runtime
+   and the program again, about 0.5 s), and running Windows' code paths, which are written but
+   untested.
 
 *Done when:* a program opens a window and draws with OpenGL through a binding written in
 ctxlang.
