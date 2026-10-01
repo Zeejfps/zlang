@@ -23,7 +23,7 @@ C compiler. ctxi's last version is in git history, at `8436f4d`.
 | 8 | Decide ctxi's role: removed, ctxc bootstraps from committed C | done | |
 | 9 | Metaprogramming: build programs, attributes, compile-time consts | step 1 done (for 10.4); attributes done in 10.1 | |
 | 10 | C interop: extern fns, capabilities, linking; std's io and mem over the OS (10.7) | in progress | |
-| 11 | Optionals and errors: `!T` with inferred error sets, `ifnull`, `iferr`, `try`, flat `match` arms, `?T == T` | next language item | |
+| 11 | Optionals and errors: `!T` with inferred error sets, `ifnull`, `iferr`, `try`, flat `match` arms, `?T == T` | in progress: `ifnull` done | |
 
 ### Where we are
 
@@ -975,12 +975,21 @@ Swift 6 added typed throws because callers wanted the set.
 
 | Shape | Feature |
 |---|---|
-| Unwrap a `?T`, with a default or by leaving | `e ifnull x`: the value if there is one, else `x`, a value of `T` or a block that leaves (`ifnull { return 1 }`). |
+| Unwrap a `?T`, with a default or by leaving | **Done** (spec §8, Optional, rule 7). `e ifnull x`: the value if there is one, else `x`, a value of `T` or a block that leaves (`ifnull { return 1 }`). |
 | Unwrap a `!T`, with a default or by leaving | `e iferr x`: the `ok` value, else `x`, as for `ifnull`. The block may bind the error, as `let … else` does: `iferr err{ error } { report{ error }; return 1 }`. |
 | Pass an error up | `try e`: for `e: !T` in a function returning `!U`, the value, or return the error (which joins the function's set). Zig's `try`, Rust's `?`. |
 | Unwrap in a `let`, by leaving | `let p = e else { ... }` with a plain name: for `e: ?T`, shorthand for `let some{ value = p } = e else { ... }`. |
 | Null as an arm next to a union's variants (#11) | `match` on a `?U` for a union `U` lists `null` and `U`'s variants in one set of arms, as `match` on a `!T` lists `ok` and errors. |
 | "Present and equal" (#20) | `==` and `!=` between a `?T` and a `T`: true when present and equal. |
+
+**`ifnull`, as built.** The parser makes `e ifnull x` a `match` marked `ifnull`, with the arms
+`some{ value } => { value }` and `null => { x }`, so the checker and lowering treat it as that match:
+narrowing, a block that leaves, escape and exclusivity checks, and the type (`x` may be a `?T`,
+which makes the result one). The mark only changes the error for an `e` that isn't optional. It
+binds tighter than comparison and looser than `|`, as Swift's `??` and Kotlin's `?:` do, so
+`get{ k } ifnull 0 > 3` compares the value; Zig's `orelse` and C#'s `??` bind looser than `or`. It
+groups right to left, so `a ifnull b ifnull 0` reads as a fallback chain. `iferr` should take the
+same shape, with an `err{ error }` arm.
 
 The operator names say which case the right side handles: `ifnull` for `?T`, `iferr` for `!T`.
 Zig's `orelse` and `catch` were the alternative (two unrelated words, neither naming its case), and

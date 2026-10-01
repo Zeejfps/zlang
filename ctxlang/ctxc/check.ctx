@@ -3182,7 +3182,12 @@ namespace check {
             else => {}
         }
         let mut ok = st != types::ERROR and ut != types::ERROR
-        if ok and through and is_enum{ c, t = ut } {
+        if ok and x.is_ifnull and not is_opt{ c, t = st } {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "`ifnull` needs an optional value, got {}", tstr{ c, t = st }) }
+            error{ &c, at = expr_at{ e = scrut }, msg = utf8::view{ b } }
+            ok = false
+        } else if ok and through and is_enum{ c, t = ut } {
             error{ &c, at = expr_at{ e = scrut }, msg = "match cannot go through a pointer to an enum; match on the value with `.*`" }
             ok = false
         } else if ok and untagged_type{ c, t = ut } {

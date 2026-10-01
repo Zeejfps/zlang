@@ -685,7 +685,7 @@ namespace parser {
             skip_semis{ &p }
         }
         expect{ &p, k = tok::Kind::rbrace }
-        return syntax::Match{ scrut, arms = list::items{ list = arms } }
+        return syntax::Match{ scrut, arms = list::items{ list = arms }, is_ifnull = false }
     }
 
     // ---- expressions
@@ -722,10 +722,10 @@ namespace parser {
 
     fn cmp_expr { mut p: Parser } -> syntax::Expr {
         let start = p.i
-        let mut e = bin_expr{ &p, level = 0 }
+        let mut e = null_expr{ &p }
         if is_cmp{ k = kind{ p, ahead = 0 } } {
             let op = take{ &p }
-            let b = bin_expr{ &p, level = 0 }
+            let b = null_expr{ &p }
             e = binary{ &p, start, op, a = e, b }
             if is_cmp{ k = kind{ p, ahead = 0 } } { fail{ &p, msg = "comparisons do not chain" } }
         }
@@ -737,7 +737,46 @@ namespace parser {
                or k == tok::Kind::gt or k == tok::Kind::ge
     }
 
-    // Binary operator levels between comparison and prefix, loosest first. All are left to right.
+    // `e ifnull x`, right to left: a match on e marked is_ifnull (syntax::Match). x is a block, or
+    // an expression of this level or tighter.
+    fn null_expr { mut p: Parser } -> syntax::Expr {
+        let start = p.i
+        let e = bin_expr{ &p, level = 0 }
+        if not is{ p, k = tok::Kind::kw_ifnull } { return e }
+        let id = new_id{ &p }
+        let op_i = p.i
+        let op = take{ &p }
+        let here = source::Span{ file = p.file, start = op.span.start, end = op.span.start }
+        let mut binders = list::new(syntax::Binder){ realloc = arena::alloc, heap = p.heap }
+        let field = made_name{ &p, at = here, text = "value" }
+        add{ &p, xs = &binders, item = syntax::Binder{ span = here, by_ref = false, field, local = null } }
+        let mut pats = list::new(syntax::Pattern){ realloc = arena::alloc, heap = p.heap }
+        add{ &p, xs = &pats, item = syntax::Pattern{ span = here, variant = made_name{ &p, at = here, text = "some" }, binders = list::items{ list = binders } } }
+        let value = name_path{ &p, name = made_name{ &p, at = here, text = "value" } }
+        let some_body = one{ &p, s = syntax::Stmt{ id = new_id{ &p }, span = here, k = syntax::StmtKind::eval{ e = value } } }
+        let mut arms = list::new(syntax::Arm){ realloc = arena::alloc, heap = p.heap }
+        add{ &p, xs = &arms, item = syntax::Arm{ span = here, pats = list::items{ list = pats }, body = some_body } }
+        let mut nulls = list::new(syntax::Pattern){ realloc = arena::alloc, heap = p.heap }
+        add{ &p, xs = &nulls, item = syntax::Pattern{ span = here, variant = made_name{ &p, at = here, text = "null" }, binders = slice::empty(syntax::Binder){} } }
+        let null_body = if is{ p, k = tok::Kind::lbrace } { block{ &p } } else { null_value{ &p } }
+        add{ &p, xs = &arms, item = syntax::Arm{ span = span_from{ p, start = op_i }, pats = list::items{ list = nulls }, body = null_body } }
+        let x = syntax::Match{ scrut = box{ &p, value = e }, arms = list::items{ list = arms }, is_ifnull = true }
+        return syntax::Expr{ id, span = span_from{ p, start }, at = op.span.start, k = syntax::ExprKind::matchx{ x } }
+    }
+
+    // The right side of `ifnull`, if it isn't a block: a block of it alone.
+    fn null_value { mut p: Parser } -> syntax::Block {
+        let id = new_id{ &p }
+        let x = null_expr{ &p }
+        return one{ &p, s = syntax::Stmt{ id, span = x.span, k = syntax::StmtKind::eval{ e = x } } }
+    }
+
+    // A name the parser makes up, where there is none in the source.
+    fn made_name { mut p: Parser, at: source::Span, text: []u8 } -> syntax::Name {
+        return syntax::Name{ id = new_id{ &p }, span = at, text }
+    }
+
+    // Binary operator levels between `ifnull` and prefix, loosest first. All are left to right.
     const LEVELS: u32 = 6
 
     fn in_level { k: tok::Kind, level: u32 } -> bool {
@@ -815,9 +854,10 @@ namespace parser {
 
     fn postfix { mut p: Parser } -> syntax::Expr {
         let start = p.i
+        let paren = is{ p, k = tok::Kind::lparen }
         let mut e = primary{ &p }
         match e.k {
-            ifx | matchx => { return e }           // `if` and `match` expressions end at their `}`
+            ifx | matchx => { if not paren { return e } }   // `if` and `match` end at their `}`, unless in parentheses
             path{ segs } => { e = path_tail{ &p, start, e, segs } }
             else => {}
         }

@@ -99,7 +99,10 @@ namespace syntax {
     // `else if` is an else block holding the next `if`.
     struct If { c: *Expr, then: Block, els: ?Block }
 
-    struct Match { scrut: *Expr, arms: []Arm }
+    // `e ifnull x` is a match marked is_ifnull, with the arms `some{ value } => { value }` and
+    // `null => { x }`. The first arm is zero-width at the `ifnull`, and so is the second's
+    // pattern; the second's block is x's, or x alone.
+    struct Match { scrut: *Expr, arms: []Arm, is_ifnull: bool }
 
     // pats is empty for `else`.
     struct Arm { span: Span, pats: []Pattern, body: Block }
@@ -135,7 +138,7 @@ namespace syntax {
         repeat{ elem: *Expr, count: *Expr },            // [elem; count]
         builtin{ name: Name, targ: ?*TypeExpr, args: []Expr },   // the name without `@`
         ifx{ x: If },
-        matchx{ x: Match },
+        matchx{ x: Match },                             // `ifnull` too, at the `ifnull`
     }
 
     // An item in braces. A pun `c` has the value `c`, and `&d` the value `&d`.

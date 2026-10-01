@@ -579,7 +579,7 @@ namespace tree {
     }
 
     fn match_node { mut d: Dumper, at: u32, x: syntax::Match } {
-        line{ &d, at, s = "match" }
+        line{ &d, at, s = if x.is_ifnull { "match ifnull" } else { "match" } }
         d.depth = d.depth + 1
         expr{ &d, e = x.scrut.* }
         let mut i: usize = 0

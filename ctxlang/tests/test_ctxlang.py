@@ -1642,6 +1642,19 @@ fn main { mut io: Io } {
 }
 """, '1\n')
 
+    def test_postfix_on_parenthesized_if_and_match(self):
+        # §11, If and match expressions, rule 9.
+        self.assertOutput("""
+struct P { x: i32 }
+fn main { mut io: Io } {
+    let a = P{ x = 1 }
+    let b = P{ x = 2 }
+    io::println_i64{ &io, n = (if a.x > 1 { a } else { b }).x }
+    let o: ?P = a
+    io::println_i64{ &io, n = (match o { some{ value } => { value } null => { b } }).x }
+}
+""", '2\n1\n')
+
 
 class Builtins(Base):
     def test_unknown_builtin(self):
@@ -3857,6 +3870,174 @@ fn main {} {
     let some{ value } = x else { return }
 }
 """, 'already declared')
+
+
+class IfNull(Base):
+    """`e ifnull x`: e's value if it has one, else x (PLAN.md stage 11)."""
+
+    FIND = """
+fn find { xs: []i32, want: i32 } -> ?usize {
+    let mut i: usize = 0
+    while i < xs.len {
+        if xs[i] == want { return i }
+        i = i + 1
+    }
+    return null
+}
+"""
+
+    def test_default(self):
+        self.assertOutput(self.FIND + """
+fn main { mut io: Io } {
+    let xs = [3, 5, 7]
+    io::println_u64{ &io, n = find{ xs = xs[..], want = 5 } ifnull 99 }
+    io::println_u64{ &io, n = find{ xs = xs[..], want = 4 } ifnull 99 }
+}
+""", '1\n99\n')
+
+    def test_default_only_evaluated_when_null(self):
+        self.assertOutput("""
+fn loud { mut io: Io } -> i32 {
+    io::println{ &io, s = "loud" }
+    return 0
+}
+fn main { mut io: Io } {
+    let a: ?i32 = 5
+    let b: ?i32 = null
+    io::println_i64{ &io, n = a ifnull loud{ &io } }
+    io::println_i64{ &io, n = b ifnull loud{ &io } }
+}
+""", '5\nloud\n0\n')
+
+    def test_block_that_leaves(self):
+        self.assertOutput(self.FIND + """
+fn index_of { xs: []i32, want: i32 } -> i32 {
+    let i = find{ xs, want } ifnull { return -1 }
+    return @as(i32, i)
+}
+fn main { mut io: Io } {
+    let xs = [3, 5, 7]
+    io::println_i64{ &io, n = index_of{ xs = xs[..], want = 7 } }
+    io::println_i64{ &io, n = index_of{ xs = xs[..], want = 8 } }
+    let ys: [3]?i32 = [1, null, 3]
+    let mut i: usize = 0
+    while i < ys.len {
+        let y = ys[i]
+        i = i + 1
+        io::println_i64{ &io, n = y ifnull { continue } }
+    }
+}
+""", '2\n-1\n1\n3\n')
+
+    def test_block_with_a_value(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let n: ?i32 = null
+    io::println_i64{ &io, n = n ifnull { let k = 40; k + 2 } }
+}
+""", '42\n')
+
+    def test_leaving_runs_defers(self):
+        self.assertOutput("""
+fn f { mut io: Io, x: ?i32 } {
+    defer io::println_i64{ &io, n = 99 }
+    let v = x ifnull { return }
+    io::println_i64{ &io, n = v }
+}
+fn main { mut io: Io } {
+    f{ &io, x = 5 }
+    f{ &io, x = null }
+}
+""", '5\n99\n99\n')
+
+    def test_chains_right_to_left(self):
+        # `a ifnull b ifnull c` is `a ifnull (b ifnull c)`. An optional default gives an optional.
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a: ?i32 = null
+    let b: ?i32 = 8
+    let c: ?i32 = null
+    io::println_i64{ &io, n = a ifnull b ifnull 0 }
+    io::println_i64{ &io, n = a ifnull c ifnull 0 }
+    let d = a ifnull c
+    io::println_bool{ &io, n = d == null }
+}
+""", '8\n0\ntrue\n')
+
+    def test_expected_type(self):
+        self.assertOutput("""
+fn small {} -> ?i8 { return null }
+fn main { mut io: Io } {
+    let n: i64 = small{} ifnull 1000
+    io::println_i64{ &io, n }
+}
+""", '1000\n')
+
+    def test_nullable_pointer(self):
+        self.assertOutput("""
+fn first { xs: []i32 } -> ?*i32 {
+    if xs.len == 0 { return null }
+    return &xs[0]
+}
+fn main { mut io: Io } {
+    let xs = [3, 5]
+    let zero = 0
+    io::println_i64{ &io, n = (first{ xs = xs[..] } ifnull { @panic() }).* }
+    io::println_i64{ &io, n = (first{ xs = xs[..0] } ifnull &zero).* }
+}
+""", '3\n0\n')
+
+    def test_precedence(self):
+        # Tighter than comparison and `and`, looser than arithmetic.
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let n: ?i32 = null
+    let m: ?i32 = 2
+    io::println_i64{ &io, n = n ifnull 1 + 1 }
+    io::println_i64{ &io, n = m ifnull 1 + 1 }
+    io::println_bool{ &io, n = m ifnull 0 == 2 }
+    let b: ?bool = null
+    io::println_bool{ &io, n = b ifnull true and false }
+    if n ifnull 0 < 1 { io::println{ &io, s = "cond" } }
+    if b ifnull { true } { io::println{ &io, s = "block" } }
+}
+""", '2\n2\ntrue\nfalse\ncond\nblock\n')
+
+    def test_needs_an_optional(self):
+        for body, found, line, col in [
+            ('let x = 5 ifnull 0', '{integer}', 2, 13),
+            ('let n: ?i32 = null\n    let p = &n\n    let x = p ifnull 0', '*?i32', 4, 13),
+            # A narrowed local is no longer optional.
+            ('let n: ?i32 = 3\n    if n != null { let y = n ifnull 0 }', 'i32', 3, 28),
+        ]:
+            with self.assertRaises(CompileError) as cm:
+                run('fn main {} {\n    %s\n}' % body)
+            self.assertEqual((cm.exception.msg, cm.exception.pos[:2]),
+                             ('`ifnull` needs an optional value, got ' + found, (line, col)), body)
+
+    def test_default_of_another_type(self):
+        self.assertCompileError("""
+fn main {} {
+    let n: ?i32 = null
+    let x = n ifnull true
+}
+""", 'branches have different types: i32 and bool')
+
+    def test_block_must_give_a_value_or_leave(self):
+        self.assertCompileError("""
+fn main {} {
+    let n: ?i32 = null
+    let x = n ifnull { }
+}
+""", 'this branch must end in a value, or leave')
+
+    def test_needs_a_right_side(self):
+        self.assertCompileError("""
+fn main {} {
+    let n: ?i32 = null
+    let x = n ifnull
+}
+""", "expected an expression, found '}'")
 
 
 class Defer(Base):

@@ -147,6 +147,7 @@ match e {
    - In `if c { B1 } else { B2 }`, what `c` narrows when true holds in `B1`, and when false in `B2`. In `while c { B }`, what `c` narrows when true holds in `B`.
    - After an `if` statement: if one branch always leaves (it ends a path, §11.7, 8, 9), the other branch's narrowing holds from after the `if` to the end of the enclosing block. Without an `else`, that is what `c` narrows when false, if the `{ }` leaves. A `let x` in that same block is an error if `x` was declared there, and shadows it otherwise.
 6. Representation: `?*T` and `?*mut T` are a pointer, the size of one, with `null` the address 0. A pointer is never null (§12), so no tag is needed, and the layout is C's nullable pointer, which is what lets one cross into C (§18). So are `?extern fn{C} -> R` (§12) and `?c::String` (§18), whose pointer is never null either. Every other `?T`, `??*T` included, holds a tag and its payload.
+7. `e ifnull x`, for `e` of type `?T`, is `e`'s value if it has one, and otherwise `x`, which is evaluated only then. `x` is an expression, or a block that gives a value or leaves, as a branch of an `if` expression does (§11, If and match expressions): `f{} ifnull { return 1 }`. It is the expression `match e { some{ value } => { value } null => { x } }`, and its type is that match's: `T` when `x` converts to `T`, and `?T` when `x` is a `?T` (or `null`). `ifnull` groups right to left, so `a ifnull b ifnull 0` tries `a`, then `b`. It is an error if `e` isn't an optional; a narrowed `x` (rule 3) isn't one.
 
 ```
 let d = hex_digit{ c }            // ?u32
@@ -155,6 +156,9 @@ v = v * 16 + d                    // d: u32
 
 if o == null or o.name == null { return }
 print{ s = o.name }               // o: Obj, o.name: utf8::String
+
+let n = utf8::parse_i64{ s } ifnull 0              // i64
+let e = map::get{ m, key } ifnull { return null }   // leaves when the key is missing
 ```
 
 ## 9. Generics
@@ -294,6 +298,7 @@ Precedence, tightest first:
 | bitwise and | `&` | left to right |
 | bitwise xor | `^` | left to right |
 | bitwise or | `\|` | left to right |
+| ifnull | `ifnull` | right to left; the right side may be a block (§8, Optional) |
 | comparison | `==` `!=` `<` `<=` `>` `>=` | don't chain: `a < b < c` is an error |
 | and | `and` | short-circuit |
 | or | `or` | short-circuit |
