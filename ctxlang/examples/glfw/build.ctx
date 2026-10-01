@@ -1,0 +1,15 @@
+// The build program for examples/glfw: `python tools/ctxc.py examples/glfw --run`.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "glfw-demo", root = "src" }
+    match build::os{ &b } {
+        macos => {
+            build::lib_path{ &b, exe, path = "/opt/homebrew/lib" }        // Homebrew's glfw
+            build::link{ &b, exe, lib = "glfw" }
+        }
+        windows => {
+            build::link{ &b, exe, lib = "glfw3" }
+            build::link{ &b, exe, lib = "gdi32" }
+        }
+        linux => { build::link{ &b, exe, lib = "glfw" } }
+    }
+}

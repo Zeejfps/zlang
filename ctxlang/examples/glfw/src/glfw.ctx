@@ -1,0 +1,42 @@
+// A small binding of GLFW 3 (https://www.glfw.org): what main.ctx uses.
+//
+// Until optional pointers cross into C (PLAN.md stage 10.5), a window is its address as a usize,
+// and 0 is NULL. A title is a []u8 that ends in a zero byte.
+namespace glfw {
+    // Permission to call GLFW.
+    capability Glfw
+
+    struct Window { handle: usize }
+
+    extern fn glfwInit { mut glfw: Glfw } -> i32
+    extern fn glfwTerminate { mut glfw: Glfw }
+    extern fn glfwGetVersion { mut glfw: Glfw, mut major: i32, mut minor: i32, mut rev: i32 }
+    extern fn glfwCreateWindow { mut glfw: Glfw, width: i32, height: i32, title: *u8, monitor: usize, share: usize } -> usize
+    extern fn glfwDestroyWindow { mut glfw: Glfw, window: usize }
+    extern fn glfwWindowShouldClose { mut glfw: Glfw, window: usize } -> i32
+    extern fn glfwPollEvents { mut glfw: Glfw }
+    extern fn glfwGetTime { mut glfw: Glfw } -> f64
+
+    fn init { mut glfw: Glfw } -> bool { return glfwInit{ &glfw } != 0 }
+
+    fn terminate { mut glfw: Glfw } { glfwTerminate{ &glfw } }
+
+    // A window, or null if GLFW couldn't make one.
+    fn create_window { mut glfw: Glfw, width: i32, height: i32, title: []u8 } -> ?Window {
+        if title.len == 0 or title[title.len - 1] != 0 { @panic("glfw: a title must end in a zero byte") }
+        let h = glfwCreateWindow{ &glfw, width, height, title = title.ptr, monitor = 0, share = 0 }
+        if h == 0 { return null }
+        return Window{ handle = h }
+    }
+
+    fn destroy_window { mut glfw: Glfw, window: Window } { glfwDestroyWindow{ &glfw, window = window.handle } }
+
+    fn should_close { mut glfw: Glfw, window: Window } -> bool {
+        return glfwWindowShouldClose{ &glfw, window = window.handle } != 0
+    }
+
+    fn poll_events { mut glfw: Glfw } { glfwPollEvents{ &glfw } }
+
+    // Seconds since init.
+    fn time { mut glfw: Glfw } -> f64 { return glfwGetTime{ &glfw } }
+}

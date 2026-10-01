@@ -132,9 +132,9 @@ uint64_t ctx_as_u(uint64_t v, uint64_t hi, const char *dst, CTX_POS);
 int64_t ctx_f2i_s(double v, int64_t lo, int64_t hi, const char *dst, CTX_POS);
 uint64_t ctx_f2i_u(double v, uint64_t hi, const char *dst, CTX_POS);
 
-// ---- natives: std's extern fns (std/io.ctx, fs.ctx, mem.ctx, ascii.ctx). A capability isn't
-// passed, and a slice is a ctx_slice. std declares them for itself, so these declarations are
-// for the runtime.
+// ---- natives: std's extern fns (std/io.ctx, fs.ctx, mem.ctx, ascii.ctx, build.ctx). A
+// capability isn't passed, and a slice is a ctx_slice. std declares them for itself, so these
+// declarations are for the runtime.
 
 void ctx_io_write(uint32_t to, ctx_slice bytes);
 uint64_t ctx_io_read(ctx_slice into);
@@ -149,5 +149,12 @@ int64_t ctx_fs_sys_close(uint32_t file);
 int64_t ctx_fs_sys_size(ctx_slice path);
 int64_t ctx_fs_sys_remove(ctx_slice path);
 ctx_slice ctx_mem_sys_pages(uint64_t size);
+
+typedef struct { uint32_t id; } ctx_build_exe;            // build::Exe
+ctx_build_exe ctx_build_exe_new(ctx_slice name, ctx_slice root);
+void ctx_build_link(ctx_build_exe exe, ctx_slice lib);
+void ctx_build_framework(ctx_build_exe exe, ctx_slice name);
+void ctx_build_lib_path(ctx_build_exe exe, ctx_slice path);
+uint32_t ctx_build_os(void);                              // build::Os: windows 0, macos 1, linux 2
 
 #endif

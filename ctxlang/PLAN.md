@@ -21,7 +21,7 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
 | 7 | Self-hosting fixpoint | done | `8436f4d` |
 | 7a | Language server | | |
 | 8 | Decide ctxi's role: removed, ctxc bootstraps from committed C | done | |
-| 9 | Metaprogramming: build programs, attributes, compile-time consts | future (attributes: done, in 10.1) | |
+| 9 | Metaprogramming: build programs, attributes, compile-time consts | step 1 done (for 10.4); attributes done in 10.1 | |
 | 10 | C interop: extern fns, capabilities, linking | in progress | |
 
 ### Where we are
@@ -30,7 +30,7 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
   compiles ctxc's current source into `build/ctxc` (about 7 s the first time, cached after).
   Without Python: `cc -std=gnu11 -O1 -fwrapv -fno-optimize-sibling-calls -Ictxc/rt
   bootstrap/ctxc.c ctxc/rt/ctxrt.c -lm -o ctxc`, then `ctxc build OUT.c std/*.ctx -- FILE...`.
-- `python -m unittest discover tests` runs all 352 tests through the native ctxc: each program is
+- `python -m unittest discover tests` runs all 357 tests through the native ctxc: each program is
   compiled with `ctxc build`, built with cc and run. They pass on Windows (gcc), Linux (gcc) and
   macOS arm64 (Apple clang).
 - `tools/fixpoint.py`: ctxc built by itself, twice, writes byte-identical C, the same as the
@@ -621,8 +621,21 @@ that changes the types being reflected on.
 
 Steps, each usable on its own:
 
-1. **Build programs.** `build.ctx` declares `fn build { mut b: Build, ... }`. It is compiled and
-   run with the existing pipeline before the program it describes. `Build` is a new capability
+1. **Build programs.** *Done, ahead of the rest of stage 9, for linking (stage 10.4); spec §19.*
+   `build.ctx` declares `fn build { mut b: Build, ... }`. It is compiled and
+   run with the existing pipeline before the program it describes.
+
+   *What was built.* A build program is a program whose entry is `fn build` instead of `main`
+   (check.ctx `check_main` takes `build` when there is no `main`), so ctxc needs no flag or mode
+   for it: the driver compiles `build.ctx` alone, like any program. Only `build` may take std's
+   `capability Build`. `std/build.ctx` declares `exe`, `link`, `framework`, `lib_path` and `os`
+   as extern fns over the runtime (`ctx_build_*`), which writes the graph as tab-separated lines
+   (`exe ID NAME ROOT`, `link ID LIB`, `framework ID NAME`, `libpath ID PATH`) to the file
+   `CTX_BUILD_OUT` names, or to standard output without it. The driver
+   (`toolchain.build_project`, `tools/ctxc.py DIR`) runs it with that set, reads the lines and
+   builds each executable from its root's `.ctx` files with the flags. The record format is the
+   seam: a driver written in ctxlang can replace the Python one. `build::os` is the host's;
+   generated files (`build::gen_file`) and cross-compiling are not done yet. `Build` is a new capability
    type whose natives record a build graph: executables, their source roots, and generated files
    (`build::exe`, `build::gen_file`). Generated files go under `build/gen/` and join the program's
    file list. A build program declares `Fs` or `Mem` only if it needs them, as `main` does.
@@ -691,9 +704,13 @@ passed to C. That keeps a signature's promise of what a function can touch, and 
 premise that code needing no capability can run at compile time. A capability is authority that
 can be audited, not a sandbox: code holding one can still corrupt memory through C.
 
-Metadata about the C side (the symbol, later the library and how to load it) is attributes:
-structs in std's `c` namespace, checked as const literals (stage 9 steps 2 and 4, brought forward
-for this). They are typed, so a typo is an error, and a new option is a new field, not grammar.
+Metadata about a C function itself (its symbol) is an attribute: a struct in std's `c` namespace,
+checked as a const literal (stage 9 steps 2 and 4, brought forward for this). Typed, so a typo is
+an error, and a new option is a new field, not grammar. What to link is not in the source: it
+depends on the platform and the machine, and choosing by platform is ordinary code, so it belongs
+to the build program (stage 9 step 1), as in Zig's build.zig. An attribute syntax for it
+(`#c::library` on a namespace, with per-platform variants) was considered and dropped: it would
+grow into a small platform language that build programs replace.
 
 Increments, each landing with tests and a refreshed bootstrap:
 
@@ -715,9 +732,11 @@ Increments, each landing with tests and a refreshed bootstrap:
    library, say). Handles such as windows or buffers are plain structs, as `fs::File` is: the
    capability is the permission, the struct is data. Capabilities with fields, which a binding
    would construct from another (a GL context from a window), wait until a binding needs them.
-4. **Linking.** `#c::library{ ... }` on a namespace names the library its externs come from, per
-   platform. `ctxc build` reports what to link and the driver passes it to cc. Later, a mode that
-   loads the library at run time, where the capability means "it loaded".
+4. **Linking, through build programs** — *done.* Stage 9 step 1, below: a program is a
+   directory, and its `build.ctx` says what to build and link, choosing by platform with ordinary
+   `if`s and `match`es (`build::os`). A binding carries its link requirements as a function its
+   users' build programs call (`glfw::link{ &b, exe }`), as a Zig module does. Later, a mode that
+   loads a library at run time, where the capability means "it loaded".
 5. **`?*T` as a nullable C pointer**, so C's `NULL` crosses as `null`.
 6. **The rest, one at a time:** C function pointers (GL and Vulkan load functions at run time),
    null-terminated strings, untagged unions (§16 Q8), callbacks from C.

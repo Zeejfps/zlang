@@ -1,0 +1,49 @@
+// std: build. Build programs (spec §19).
+//
+// A program that is a directory may have a `build.ctx` at its top: a build program, which the
+// driver compiles and runs first. Its entry point is `fn build` instead of `fn main`, and only it
+// receives a `Build`. It describes what to build: each executable, from the .ctx files of a
+// directory, and what to link it with. Choices by platform are ordinary code:
+//
+//   fn build { mut b: Build } {
+//       let exe = build::exe{ &b, name = "demo", root = "src" }
+//       build::link{ &b, exe, lib = "glfw" }
+//       match build::os{ &b } {
+//           macos => { build::lib_path{ &b, exe, path = "/opt/homebrew/lib" } }
+//           windows => { build::link{ &b, exe, lib = "gdi32" } }
+//           linux => {}
+//       }
+//   }
+//
+// Names, roots, libraries and paths are bytes without tabs or line breaks. Paths are relative to
+// the directory build.ctx is in.
+
+// Permission to describe a build: only a build program's `fn build` receives one.
+capability Build
+
+namespace build {
+    // An executable the build describes.
+    struct Exe { id: u32 }
+
+    // The operating system the build is for: the one it runs on, for now.
+    enum Os: u32 { windows, macos, linux }
+
+    // An executable `name`, from the .ctx files in directory `root` (build.ctx never is one).
+    #c::symbol{ name = "ctx_build_exe_new" }
+    extern fn exe { mut b: Build, name: []u8, root: []u8 } -> Exe
+
+    // Links exe with library `lib`: `-l lib`.
+    #c::symbol{ name = "ctx_build_link" }
+    extern fn link { mut b: Build, exe: Exe, lib: []u8 }
+
+    // Links exe with a macOS framework: `-framework name`.
+    #c::symbol{ name = "ctx_build_framework" }
+    extern fn framework { mut b: Build, exe: Exe, name: []u8 }
+
+    // Looks for exe's libraries in directory `path` too: `-L path`.
+    #c::symbol{ name = "ctx_build_lib_path" }
+    extern fn lib_path { mut b: Build, exe: Exe, path: []u8 }
+
+    #c::symbol{ name = "ctx_build_os" }
+    extern fn os { mut b: Build } -> Os
+}

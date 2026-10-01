@@ -2,7 +2,8 @@
 
     python tools/ctxc.py PROGRAM [-o EXE] [--c FILE.c] [--run [args...]]
 
-PROGRAM is a .ctx file or a directory of them. A native ctxc (tools/toolchain.py builds it from
+PROGRAM is a .ctx file or a directory of them. A directory with a build.ctx is built as its build
+program says (spec §19): -o, --c and --run then apply to the first executable it names. A native ctxc (tools/toolchain.py builds it from
 bootstrap/ctxc.c on first use) checks the program and writes C with `ctxc build`, and gcc or
 clang (or zig cc, with CTX_CC=zig) builds it with ctxc/rt/ctxrt.c. Builds are cached in
 build/cbackend. Errors are printed as `PATH:LINE:COL: error: MESSAGE`.
@@ -33,18 +34,28 @@ def main(argv):
     ap.add_argument('--c', dest='c', help='also copy the generated C here')
     ap.add_argument('--run', nargs=argparse.REMAINDER, help='run it, with these arguments')
     a = ap.parse_args(argv)
-    if os.path.isdir(a.program):
-        files = sorted(glob.glob(os.path.join(a.program, '*.ctx')))
-        if not files:
-            print(f'{a.program}: error: no .ctx files in directory', file=sys.stderr)
-            return 1
-    else:
-        files = [a.program]
     try:
-        exe = toolchain.build_files(files, cwd=os.getcwd(), name=a.program)
+        if os.path.isfile(os.path.join(a.program, 'build.ctx')):
+            built = toolchain.build_project(a.program)
+            if not built:
+                print(f'{a.program}: error: build.ctx names no executable', file=sys.stderr)
+                return 1
+        else:
+            if os.path.isdir(a.program):
+                files = sorted(glob.glob(os.path.join(a.program, '*.ctx')))
+                if not files:
+                    print(f'{a.program}: error: no .ctx files in directory', file=sys.stderr)
+                    return 1
+            else:
+                files = [a.program]
+            built = [(a.program, toolchain.build_files(files, cwd=os.getcwd(), name=a.program))]
     except toolchain.CompileError as e:
-        sys.stderr.write(e.text)
+        sys.stderr.write(e.text or f'{a.program}: error: {e.msg}\n')
         return 1
+    except (toolchain.Panic, RuntimeError) as e:
+        print(f'{a.program}: error: {e}', file=sys.stderr)
+        return 1
+    exe = built[0][1]
     if a.c:
         shutil.copyfile(os.path.splitext(exe)[0] + '.c', a.c)
     if a.out:
@@ -53,7 +64,8 @@ def main(argv):
     if a.run is not None:
         return subprocess.run([exe, *a.run]).returncode
     if not a.out:
-        print(exe)
+        for _, path in built:
+            print(path)
     return 0
 
 

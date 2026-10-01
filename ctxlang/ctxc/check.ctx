@@ -747,13 +747,15 @@ namespace check {
         return list::items{ list = out }
     }
 
-    // §15: `main` exists, isn't generic, returns i32 or nothing, and takes capabilities and
-    // `args`.
+    // §15: the entry point exists, isn't generic, returns i32 or nothing, and takes capabilities
+    // and `args`. It is `main`, or in a build program (§19), which has no `main`, `build`. Only
+    // `build` may take a `Build`.
     fn check_main { mut c: Checker } {
-        let found = map::get{ m = get_space{ c, ns = ROOT }.values, key = "main" }
-        let mut m = NONE
-        if found != null {
-            match found { decl{ i } => { if get_decl{ c, d = i }.kind == Kind::func { m = i } } else => {} }
+        let mut m = root_fn{ c, name = "main" }
+        let mut entry: []u8 = "main"
+        if m == NONE {
+            m = root_fn{ c, name = "build" }
+            entry = "build"
         }
         if m == NONE {
             error{ &c, at = nowhere{}, msg = "no `fn main` entry point" }
@@ -762,13 +764,18 @@ namespace check {
         let x = get_decl{ c, d = m }
         let at = x.syn.span
         let bad = c.diags.errors
-        if x.tparams.len > 0 { error{ &c, at, msg = "`main` cannot be generic" } }
+        if x.tparams.len > 0 {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "`{}` cannot be generic", str{ s = entry }) }
+            error{ &c, at, msg = utf8::view{ b } }
+        }
         if x.ret != types::VOID and x.ret != types::I32 and x.ret != types::ERROR {
             let mut b = message{ c }
-            pushed{ ok = @fmt(&b, "`main` can only return i32 (the exit code), not {}", tstr{ c, t = x.ret }) }
+            pushed{ ok = @fmt(&b, "`{}` can only return i32 (the exit code), not {}", str{ s = entry }, tstr{ c, t = x.ret }) }
             error{ &c, at, msg = utf8::view{ b } }
         }
         let args_t = std_type{ &c, name = "Args" }
+        let build_cap = std_decl_top{ c, name = "Build" }
         let mut i: usize = 0
         while i < x.fields.len {
             let f = x.fields[i]
@@ -776,15 +783,19 @@ namespace check {
             if slice::eq_bytes{ a = f.name, b = "args" } and not f.mutable {
                 if t != args_t and t != types::ERROR and args_t != types::ERROR {
                     let mut b = message{ c }
-                    pushed{ ok = @fmt(&b, "`main` context field `args` must have type Args, got {}", tstr{ c, t }) }
+                    pushed{ ok = @fmt(&b, "`{}` context field `args` must have type Args, got {}", str{ s = entry }, tstr{ c, t }) }
                     error{ &c, at, msg = utf8::view{ b } }
                 }
             } else if t != types::ERROR {
                 match types::get{ s = c.ty, id = t } {
-                    cap => {}
+                    cap{ decl } => {
+                        if decl == build_cap and slice::eq_bytes{ a = entry, b = "main" } {
+                            error{ &c, at, msg = "`main` cannot take a Build: only a build program's `fn build` receives one" }
+                        }
+                    }
                     else => {
                         let mut b = message{ c }
-                        pushed{ ok = @fmt(&b, "`main` context field `{}` must have a capability type or be `args: Args`, got {}", str{ s = f.name }, tstr{ c, t }) }
+                        pushed{ ok = @fmt(&b, "`{}` context field `{}` must have a capability type or be `args: Args`, got {}", str{ s = entry }, str{ s = f.name }, tstr{ c, t }) }
                         error{ &c, at, msg = utf8::view{ b } }
                     }
                 }
@@ -792,6 +803,24 @@ namespace check {
             i = i + 1
         }
         if c.diags.errors == bad { c.main = m }
+    }
+
+    // The function the program's top level declares as `name`, or NONE.
+    fn root_fn { c: Checker, name: []u8 } -> u32 {
+        let found = map::get{ m = get_space{ c, ns = ROOT }.values, key = name }
+        if found == null { return NONE }
+        match found {
+            decl{ i } => { if get_decl{ c, d = i }.kind == Kind::func { return i } }
+            else => {}
+        }
+        return NONE
+    }
+
+    // The declaration std's top level has as `name`, such as the capability `Build`, or NONE.
+    fn std_decl_top { c: Checker, name: []u8 } -> u32 {
+        let e = map::get{ m = get_space{ c, ns = STD }.paths, key = name }
+        if e == null { return NONE }
+        match e { decl{ i } => { return i } else => { return NONE } }
     }
 
     // ---- attributes (§18; stage 9 gives them to generators)

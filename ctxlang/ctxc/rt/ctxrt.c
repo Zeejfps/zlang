@@ -525,8 +525,100 @@ ctx_slice ctx_args(void) {
     return out;
 }
 
+// ---- build: a build program's graph (std/build.ctx), one record per line, its fields separated
+// by tabs, to the file CTX_BUILD_OUT names, or to standard output without it:
+//   exe ID NAME ROOT    link ID LIB    framework ID NAME    libpath ID PATH
+
+static FILE *build_out;
+static uint32_t build_exes;
+
+static void build_field(ctx_slice s, const char *what) {
+    const char *p = s.ptr;
+    if (s.len == 0) {
+        char msg[96];
+        snprintf(msg, sizeof msg, "build: empty %s", what);
+        ctx_panic_nopos(msg);
+    }
+    for (uint64_t i = 0; i < s.len; i++) {
+        if (p[i] == '\t' || p[i] == '\n' || p[i] == '\r' || p[i] == 0) {
+            char msg[96];
+            snprintf(msg, sizeof msg, "build: a %s cannot hold a tab, a line break or a zero byte", what);
+            ctx_panic_nopos(msg);
+        }
+    }
+}
+
+static void build_record(const char *kind, uint32_t id, ctx_slice a, ctx_slice b) {
+    char head[64];
+    int n = snprintf(head, sizeof head, "%s\t%u\t", kind, (unsigned)id);
+    if (!build_out) {
+        const char *path = getenv("CTX_BUILD_OUT");
+        if (path && *path) {
+            build_out = fopen(path, "wb");
+            if (!build_out) ctx_panic_nopos("build: cannot write CTX_BUILD_OUT");
+        }
+    }
+    if (build_out) {
+        fwrite(head, 1, (size_t)n, build_out);
+        fwrite(a.ptr, 1, a.len, build_out);
+        if (b.len) { fputc('\t', build_out); fwrite(b.ptr, 1, b.len, build_out); }
+        fputc('\n', build_out);
+        fflush(build_out);
+    } else {
+        put_out(head, (size_t)n);
+        put_out(a.ptr, a.len);
+        if (b.len) { put_out("\t", 1); put_out(b.ptr, b.len); }
+        put_out("\n", 1);
+    }
+}
+
+static void build_check(uint32_t exe) {
+    if (exe >= build_exes) {
+        char msg[64];
+        snprintf(msg, sizeof msg, "build: no executable %u", (unsigned)exe);
+        ctx_panic_nopos(msg);
+    }
+}
+
+ctx_build_exe ctx_build_exe_new(ctx_slice name, ctx_slice root) {
+    build_field(name, "name");
+    build_field(root, "root");
+    ctx_build_exe exe = { build_exes++ };
+    build_record("exe", exe.id, name, root);
+    return exe;
+}
+
+void ctx_build_link(ctx_build_exe exe, ctx_slice lib) {
+    build_check(exe.id);
+    build_field(lib, "library");
+    build_record("link", exe.id, lib, (ctx_slice){ NULL, 0 });
+}
+
+void ctx_build_framework(ctx_build_exe exe, ctx_slice name) {
+    build_check(exe.id);
+    build_field(name, "framework");
+    build_record("framework", exe.id, name, (ctx_slice){ NULL, 0 });
+}
+
+void ctx_build_lib_path(ctx_build_exe exe, ctx_slice path) {
+    build_check(exe.id);
+    build_field(path, "library path");
+    build_record("libpath", exe.id, path, (ctx_slice){ NULL, 0 });
+}
+
+uint32_t ctx_build_os(void) {
+#if defined(_WIN32)
+    return 0;
+#elif defined(__APPLE__)
+    return 1;
+#else
+    return 2;
+#endif
+}
+
 int ctx_exit(int32_t code) {
     flush_out();
+    if (build_out) fclose(build_out);
     for (uint32_t i = 1; i < next_file; i++)
         if (files[i]) close(files[i] - 1);
     return code;

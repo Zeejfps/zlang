@@ -4180,7 +4180,7 @@ class Mem(Base):
     slice::fill{ s = a, v = 1 }
     slice::fill{ s = b, v = 2 }
     io::println_u64{ &io, n = a[a.len - 1] }
-    io::println_bool{ &io, n = @addr(&b[0]) > @addr(&a[a.len - 1]) }
+    io::println_bool{ &io, n = @addr(&b[0]) > @addr(&a[a.len - 1]) or @addr(&a[0]) > @addr(&b[b.len - 1]) }
     return 0
 """)
         self.assertEqual(out, '4096\n8192\n1\ntrue\n')
@@ -4820,6 +4820,119 @@ fn main { mut io: Io, mut fs: Fs } -> i32 { return @as(i32, @size_of(Io)) + 3 }
             ('capability C\nfn main {} { let c: C\n    f{ c } }\nfn f { c: C } {}', '`c` may be read before it is assigned', 3, 8),
         ]:
             self.assertCapError(src, msg, line, col)
+
+
+class BuildPrograms(Base):
+    """Build programs (spec §19): a directory's build.ctx, through toolchain.build_project."""
+
+    def project(self, files):
+        import tempfile
+        d = tempfile.mkdtemp(prefix='ctxproj-', dir=os.path.join(ROOT, 'build'))
+        self.addCleanup(shutil.rmtree, d, True)
+        for name, text in files.items():
+            path = os.path.join(d, name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', encoding='utf-8', newline='') as f:
+                f.write(text)
+        return d
+
+    def run_exe(self, exe):
+        from toolchain import run_exe
+        out = io.StringIO()
+        run_exe(exe, out=out)
+        return out.getvalue()
+
+    def test_links_a_static_library(self):
+        import subprocess
+        from toolchain import build_project, compiler
+        if shutil.which('ar') is None:
+            self.skipTest('no ar')
+        d = self.project({
+            'lib/add.c': 'int ctxtest_add(int a, int b) { return a + b; }\n',
+            'build.ctx': """
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "adder", root = "src" }
+    build::lib_path{ &b, exe, path = "lib" }
+    build::link{ &b, exe, lib = "ctxtest" }
+}
+""",
+            'src/main.ctx': """
+namespace ctxtest {
+    capability Lib
+    extern fn ctxtest_add { mut lib: Lib, a: i32, b: i32 } -> i32
+}
+fn main { mut io: Io, mut lib: ctxtest::Lib } {
+    io::println_i64{ &io, n = ctxtest::ctxtest_add{ &lib, a = 40, b = 2 } }
+}
+""",
+        })
+        cc, env = compiler()
+        lib = os.path.join(d, 'lib')
+        subprocess.run(cc + ['-c', os.path.join(lib, 'add.c'), '-o', os.path.join(lib, 'add.o')], check=True, env=env)
+        subprocess.run(['ar', 'rcs', os.path.join(lib, 'libctxtest.a'), os.path.join(lib, 'add.o')], check=True)
+        [(name, exe)] = build_project(d)
+        self.assertEqual(name, 'adder')
+        self.assertEqual(self.run_exe(exe), '42\n')
+
+    def test_choices_by_os_and_several_executables(self):
+        from toolchain import build_project
+        d = self.project({
+            'build.ctx': """
+fn build { mut b: Build } {
+    let os: []u8 = match build::os{ &b } {
+        windows => { "windows" }
+        macos   => { "macos" }
+        linux   => { "linux" }
+    }
+    _ = build::exe{ &b, name = os, root = "one" }
+    _ = build::exe{ &b, name = "two", root = "." }
+}
+""",
+            'one/main.ctx': 'fn main { mut io: Io } { io::println{ &io, s = "one" } }\n',
+            'main.ctx': 'fn main { mut io: Io } { io::println{ &io, s = "two" } }\n',
+        })
+        built = build_project(d)
+        host = 'windows' if os.name == 'nt' else 'macos' if sys.platform == 'darwin' else 'linux'
+        self.assertEqual([name for name, _ in built], [host, 'two'])
+        # The top directory's .ctx files are an executable's, but build.ctx never is.
+        self.assertEqual([self.run_exe(exe) for _, exe in built], ['one\n', 'two\n'])
+
+    def test_graph_without_the_driver(self):
+        # Run directly, a build program prints its records.
+        self.assertOutput("""
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "demo", root = "src" }
+    build::link{ &b, exe, lib = "m" }
+    build::framework{ &b, exe, name = "Cocoa" }
+    build::lib_path{ &b, exe, path = "/opt/lib" }
+}
+""", "exe\t0\tdemo\tsrc\nlink\t0\tm\nframework\t0\tCocoa\nlibpath\t0\t/opt/lib\n")
+
+    def test_errors(self):
+        from toolchain import build_project
+        d = self.project({'build.ctx': 'fn build { mut b: Build } {\n    build::link{ &b, lib = "m" }\n}\n'})
+        with self.assertRaises(CompileError) as cm:
+            build_project(d)
+        self.assertEqual((cm.exception.msg, cm.exception.pos), ('call to `build::link` is missing `exe`', (2, 16, 'build.ctx')))
+        d = self.project({'build.ctx': 'fn build { mut b: Build } {\n    _ = build::exe{ &b, name = "", root = "." }\n}\n'})
+        with self.assertRaises(Panic) as cm:
+            build_project(d)
+        self.assertEqual(cm.exception.msg, 'build: empty name')
+        d = self.project({'build.ctx': 'fn build { mut b: Build } {\n    _ = build::exe{ &b, name = "x", root = "nothing" }\n}\n'})
+        with self.assertRaises(CompileError) as cm:
+            build_project(d)
+        self.assertEqual((cm.exception.msg, cm.exception.pos), ('no .ctx files in directory', (0, 0, 'nothing')))
+        self.assertPanic('fn build { mut b: Build } { build::link{ &b, exe = build::Exe{ id = 3 }, lib = "m" } }',
+                         'build: no executable 3')
+
+    def test_entry_errors(self):
+        self.assertCompileError('fn main { mut b: Build } {}',
+                                "`main` cannot take a Build: only a build program's `fn build` receives one")
+        self.assertCompileError('fn build { n: i32 } {}',
+                                '`build` context field `n` must have a capability type or be `args: Args`, got i32')
+        self.assertCompileError('fn build {} -> u8 { return 1 }', '`build` can only return i32 (the exit code), not u8')
+        # With a `main`, `build` is an ordinary function.
+        self.assertOutput('fn build {} -> i32 { return 7 }\nfn main { mut io: Io } { io::println_i64{ &io, n = build{} } }', '7\n')
 
 
 class WordCountExample(Base):

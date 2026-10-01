@@ -1,0 +1,31 @@
+// Opens a window for two seconds, or until it is closed, through the GLFW binding in glfw.ctx.
+fn main { mut io: Io, mut glfw: glfw::Glfw } -> i32 {
+    if not glfw::init{ &glfw } {
+        io::eprintln{ &io, s = "glfw: init failed" }
+        return 1
+    }
+    defer glfw::terminate{ &glfw }
+
+    let mut major: i32 = 0
+    let mut minor: i32 = 0
+    let mut rev: i32 = 0
+    glfw::glfwGetVersion{ &glfw, major = &major, minor = &minor, rev = &rev }
+    io::print{ &io, s = "GLFW " }
+    io::print_i64{ &io, n = major }
+    io::print{ &io, s = "." }
+    io::print_i64{ &io, n = minor }
+    io::print{ &io, s = "." }
+    io::println_i64{ &io, n = rev }
+
+    let some{ value = window } = glfw::create_window{ &glfw, width = 640, height = 480, title = "ctxlang\0" } else {
+        io::eprintln{ &io, s = "glfw: no window" }
+        return 1
+    }
+    defer glfw::destroy_window{ &glfw, window }
+    io::println{ &io, s = "window open" }
+    while not glfw::should_close{ &glfw, window } and glfw::time{ &glfw } < 2.0 {
+        glfw::poll_events{ &glfw }
+    }
+    io::println{ &io, s = "window closed" }
+    return 0
+}

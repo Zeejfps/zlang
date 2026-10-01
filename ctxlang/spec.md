@@ -1,6 +1,6 @@
 # ctxlang: spec draft
 
-Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound functions), [examples/wordcount.ctx](examples/wordcount.ctx) (files, arguments, maps), [examples/json](examples/json) (a JSON parser and printer, as a program of several files: `python tools/ctxc.py examples/json --run FILE`).
+Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound functions), [examples/wordcount.ctx](examples/wordcount.ctx) (files, arguments, maps), [examples/json](examples/json) (a JSON parser and printer, as a program of several files: `python tools/ctxc.py examples/json --run FILE`), [examples/glfw](examples/glfw) (a build program, §19, and a binding of a C library, §18: `python tools/ctxc.py examples/glfw --run`).
 
 ## 1. Top level
 
@@ -557,7 +557,8 @@ Settled questions are removed, and the rest keep their numbers.
 | `slice` | Helpers for built-in slices (§12): `empty`, `cast`, `copy`, `fill`, `eq_bytes` |
 | `c` | Attributes for calling C (§18): `symbol { name: []u8 }`. |
 | `Args` | Declared at the top level: `type Args = [][]u8`, the type of `main`'s `args` (§15). |
-| `Io`, `Fs`, `Mem` | Declared at the top level: `capability Io` and so on (§15), in `io.ctx`, `fs.ctx` and `mem.ctx`. |
+| `Io`, `Fs`, `Mem`, `Build` | Declared at the top level: `capability Io` and so on (§15), in `io.ctx`, `fs.ctx`, `mem.ctx` and `build.ctx`. |
+| `build` | Build programs (§19): `Exe`, `Os` (`windows`, `macos`, `linux`); `exe`, `link`, `framework`, `lib_path`, `os`. Every function takes `mut b: Build`. |
 | `Result(T, E)` | Declared at the top level: `union Result(T, E) { ok{ value: T }, err{ error: E } }`. Namespace `result`: `is_ok`, `is_err`, `value`, `error`, `value_or`, `unwrap`, `ok_or`. |
 | `fs` | `File`, `Mode` (`read`, `write`, `append`, `create`), `Error`; `open`, `read`, `write`, `close`, `size`, `remove`, and `read_all` (into memory from an allocator) and `write_all`. Every function takes `mut fs: Fs` and reports failure as a `Result(T, fs::Error)` or `?fs::Error`. Extern fns: `sys_open`, `sys_read`, `sys_write`, `sys_close`, `sys_size`, `sys_remove`. |
 | `alloc` | `Bytes` (`[]mut u8`), the allocator type `Fn(S)`, typed `resize(T, S)`, and `new(T, S)` and `free(T, S)` for one `T`: `new` returns a `?*mut T` holding the given `value` |
@@ -603,3 +604,24 @@ extern fn glfwPollEvents { mut glfw: Glfw }      // a capability says who may ca
 7. Every program is linked with the C library and the math library.
 
 8. §1.3 holds by declaration: an extern fn that reaches IO, the OS or memory outside its pointer arguments must take a capability for it. One without a capability field, such as `sqrt`, promises to be pure. The compiler can't check either.
+
+## 19. Build programs
+
+```
+// build.ctx, at the top of a program's directory
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "demo", root = "src" }
+    build::link{ &b, exe, lib = "glfw" }
+    match build::os{ &b } {
+        macos   => { build::lib_path{ &b, exe, path = "/opt/homebrew/lib" } }
+        windows => { build::link{ &b, exe, lib = "gdi32" } }
+        linux   => {}
+    }
+}
+```
+
+1. A program that is a directory may have a `build.ctx` at its top: its **build program**, compiled and run before anything else is built. It describes the executables to build and what each links with. Platform choices are ordinary code.
+2. A build program is a program whose entry point is `fn build` instead of `fn main`: §15's rules for `main` apply to it. A program with a `main` has no other entry point, and a `fn build` in it is an ordinary function.
+3. Only `build` may take a `Build` (§15): `main` can't.
+4. `build::exe{ &b, name, root }` names an executable built from the `.ctx` files of directory `root`, and returns a `build::Exe` for the calls that add to it: `link` (a library, `-l`), `framework` (a macOS framework) and `lib_path` (a directory to find libraries in, `-L`). `build::os` is the operating system the build is for. Paths are relative to the directory `build.ctx` is in, and `build.ctx` is never one of an executable's files.
+5. Names, roots, libraries and paths can't be empty or hold a tab or a line break: the build panics.
