@@ -2,16 +2,15 @@
 // reports, reading each through the extern union sdl::Event.
 fn main { mut io: Io, mut sdl: sdl::Sdl } -> i32 {
     if sdl::SDL_Init{ &sdl, flags = sdl::INIT_VIDEO } != 0 {
-        io::eprintln{ &io, s = "sdl: init failed" }
+        failed{ &io, &sdl, what = "init" }
         return 1
     }
     defer sdl::SDL_Quit{ &sdl }
-    let title: []u8 = "ctxlang\0"
     let some{ value = window } = sdl::SDL_CreateWindow{
-        &sdl, title = title.ptr, x = sdl::WINDOWPOS_CENTERED, y = sdl::WINDOWPOS_CENTERED,
+        &sdl, title = "ctxlang", x = sdl::WINDOWPOS_CENTERED, y = sdl::WINDOWPOS_CENTERED,
         w = 640, h = 480, flags = sdl::WINDOW_SHOWN,
     } else {
-        io::eprintln{ &io, s = "sdl: no window" }
+        failed{ &io, &sdl, what = "no window" }
         return 1
     }
     defer sdl::SDL_DestroyWindow{ &sdl, window }
@@ -40,4 +39,12 @@ fn main { mut io: Io, mut sdl: sdl::Sdl } -> i32 {
     io::println_u64{ &io, n = windows }
     io::println{ &io, s = "window closed" }
     return 0
+}
+
+// `sdl: WHAT: MESSAGE`, with SDL's own message, a C string.
+fn failed { mut io: Io, mut sdl: sdl::Sdl, what: utf8::String } {
+    io::eprint{ &io, s = "sdl: " }
+    io::eprint{ &io, s = what }
+    io::eprint{ &io, s = ": " }
+    io::eprintln{ &io, s = utf8::of{ chars = c::bytes{ s = sdl::SDL_GetError{ &sdl } } } }
 }

@@ -14,7 +14,7 @@ namespace lower {
     type Id = types::Id
 
     const NONE: u32 = 4294967295
-    const VERSION: u64 = 12
+    const VERSION: u64 = 13
 
     // A function instance: a declaration and its generic arguments.
     struct Inst { decl: u32, targs: []Id }
@@ -1069,9 +1069,15 @@ namespace lower {
         return types::slice{ s = &l.c.ty, elem = types::U8, mutable = false }
     }
 
-    // A utf8::String around a view of static bytes.
+    // A utf8::String around a view of static bytes, or a c::String around a pointer to them,
+    // with a NUL after them.
     fn text_lit { mut l: Lower, bytes: []u8, t: Id } -> ir::Expr {
-        let v = mk{ ty = tid{ &l, t = u8_slice{ &l } }, k = ir::ExprKind::sbytes{ bytes } }
+        let c_string = check::record_decl{ c = l.c.*, t } == l.c.cstr_decl
+        let v = if c_string {
+            mk{ ty = tid{ &l, t = types::ptr{ s = &l.c.ty, elem = types::U8, mutable = false } }, k = ir::ExprKind::cstr{ bytes } }
+        } else {
+            mk{ ty = tid{ &l, t = u8_slice{ &l } }, k = ir::ExprKind::sbytes{ bytes } }
+        }
         let ty = tid{ &l, t }
         let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
         add_arg{ xs = &out, a = ir::Arg{ index = 0, value = v } }
@@ -1156,6 +1162,7 @@ namespace lower {
             boolean{ ty, value = x } => { return mk{ ty = tid{ &l, t = ty }, k = ir::ExprKind::boolean{ value = x } } }
             str{ ty, bytes } => { return mk{ ty = tid{ &l, t = ty }, k = ir::ExprKind::str{ bytes } } }
             sbytes{ ty, bytes } => { return mk{ ty = tid{ &l, t = ty }, k = ir::ExprKind::sbytes{ bytes } } }
+            cstr{ ty, bytes } => { return mk{ ty = tid{ &l, t = ty }, k = ir::ExprKind::cstr{ bytes } } }
             nil{ ty } => { return mk{ ty = tid{ &l, t = ty }, k = ir::ExprKind::nil } }
             record{ ty, fields } => {
                 let id = tid{ &l, t = ty }

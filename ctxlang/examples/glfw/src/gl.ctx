@@ -14,8 +14,8 @@ namespace gl {
 
     // The functions, from the context current on this thread; null if one is missing.
     fn load { mut glfw: glfw::Glfw } -> ?Procs {
-        let some{ value = clear_color } = glfw::proc_address{ &glfw, name = "glClearColor\0" } else { return null }
-        let some{ value = clear } = glfw::proc_address{ &glfw, name = "glClear\0" } else { return null }
+        let some{ value = clear_color } = glfw::proc_address{ &glfw, name = "glClearColor" } else { return null }
+        let some{ value = clear } = glfw::proc_address{ &glfw, name = "glClear" } else { return null }
         return Procs{ clear_color = @cast(ClearColor, clear_color), clear = @cast(Clear, clear) }
     }
 }

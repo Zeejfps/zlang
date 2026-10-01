@@ -18,7 +18,7 @@ fn main { mut io: Io, mut glfw: glfw::Glfw, mut gl: gl::Gl } -> i32 {
     io::print{ &io, s = "." }
     io::println_i64{ &io, n = rev }
 
-    let some{ value = window } = glfw::create_window{ &glfw, width = 640, height = 480, title = "ctxlang\0" } else {
+    let some{ value = window } = glfw::create_window{ &glfw, width = 640, height = 480, title = "ctxlang" } else {
         io::eprintln{ &io, s = "glfw: no window" }
         return 1
     }

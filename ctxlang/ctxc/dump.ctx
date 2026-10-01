@@ -1307,6 +1307,10 @@ namespace decls {
                 dump::put{ &out, s = "view " }
                 quote{ &out, b = bytes }
             }
+            cstr{ bytes } => {
+                dump::put{ &out, s = "cstr " }
+                quote{ &out, b = bytes }
+            }
             record{ fields } => {
                 dump::put{ &out, s = "{" }
                 values{ &out, c, xs = fields }

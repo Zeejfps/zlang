@@ -115,6 +115,7 @@ namespace check {
         busy:      map::Map(Id, bool, Heap),     // layouts being computed
         main:      u32,                          // NONE unless `main` is valid
         text_decl: u32,                          // utf8::String, or NONE
+        cstr_decl: u32,                          // c::String, or NONE
         builder_decl: u32,                       // utf8::Builder, or NONE
         // The body being checked: a const's initializer or a function's body.
         sc:        Scope,
@@ -261,6 +262,7 @@ namespace check {
             busy = map::new(Id, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             main = NONE,
             text_decl = NONE,
+            cstr_decl = NONE,
             builder_decl = NONE,
             sc = Scope{ ns = ROOT, owner = NONE, names = no_names{}, args = slice::empty(Id){} },
             ret = types::VOID,
@@ -328,6 +330,7 @@ namespace check {
             f = f + 1
         }
         c.text_decl = std_decl{ c, space = "utf8", name = "String" }
+        c.cstr_decl = std_decl{ c, space = "c", name = "String" }
         c.builder_decl = std_decl{ c, space = "utf8", name = "Builder" }
         generic_params{ &c, xs = c.structs }
         generic_params{ &c, xs = c.unions }
@@ -1728,6 +1731,7 @@ namespace check {
         boolean{ ty: Id, value: bool },
         str{ ty: Id, bytes: []u8 },             // a [N]u8
         sbytes{ ty: Id, bytes: []u8 },          // a view of static bytes
+        cstr{ ty: Id, bytes: []u8 },            // a *u8 to static bytes with a NUL after them
         nil{ ty: Id },
         record{ ty: Id, fields: []Val },        // a struct's fields, in order
         variant{ ty: Id, index: u32, fields: []Val },
@@ -1835,6 +1839,10 @@ namespace check {
                     array => { return Val::str{ ty = t, bytes } }
                     slice => { return Val::sbytes{ ty = t, bytes } }
                     else => {
+                        if record_decl{ c, t } == c.cstr_decl {
+                            let p = Val::cstr{ ty = types::ptr{ s = &c.ty, elem = types::U8, mutable = false }, bytes }
+                            return Val::record{ ty = t, fields = one_val{ c, v = p } }
+                        }
                         let view = Val::sbytes{ ty = types::slice{ s = &c.ty, elem = types::U8, mutable = false }, bytes }
                         return Val::record{ ty = t, fields = one_val{ c, v = view } }
                     }
@@ -3002,7 +3010,7 @@ namespace check {
                     match types::get{ s = c.ty, id = u } { opt{ elem } => { u = types::prune{ s = c.ty, t = elem } } else => {} }
                     match types::get{ s = c.ty, id = u } {
                         slice{ elem } => { if types::prune{ s = c.ty, t = elem } == types::U8 { hint = br.t } }
-                        record{ decl } => { if decl == c.text_decl { hint = br.t } }
+                        record{ decl } => { if decl == c.text_decl or decl == c.cstr_decl { hint = br.t } }
                         else => {}
                     }
                 }
@@ -4913,8 +4921,9 @@ namespace check {
         }
     }
 
-    // A string literal is a view of static bytes where a []u8 or a utf8::String is expected
-    // (also inside ?), and a [N]u8 array value otherwise.
+    // A string literal is a view of static bytes where a []u8, a utf8::String or a c::String is
+    // expected (also inside ?), and a [N]u8 array value otherwise. As a c::String the bytes get a
+    // NUL after them, so they can't hold one.
     fn str_lit { mut c: Checker, e: syntax::Expr, bytes: []u8, exp: Id } -> Id {
         let mut want = types::NO_TYPE
         if exp != types::NO_TYPE {
@@ -4941,6 +4950,19 @@ namespace check {
                                 error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
                             }
                             ok => {}
+                        }
+                        return want
+                    }
+                    if decl == c.cstr_decl {
+                        let mut k: usize = 0
+                        while k < bytes.len {
+                            if bytes[k] == 0 {
+                                let mut b = message{ c }
+                                pushed{ ok = @fmt(&b, "a C string literal can't hold a NUL byte (byte {}): C would end the string there", k) }
+                                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                                break
+                            }
+                            k = k + 1
                         }
                         return want
                     }
@@ -6420,13 +6442,15 @@ namespace check {
     }
 
     // Whether t is a `?*T` or `?*mut T`, which is a pointer whose null is the address 0: a `*T`
-    // is never null (§12), so the tag isn't needed, and the layout is C's.
+    // is never null (§12), so the tag isn't needed, and the layout is C's. So are a `?extern fn`
+    // and a `?c::String`, a struct around a pointer that is never null.
     fn nullable_ptr { c: Checker, t: Id } -> bool {
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
             opt{ elem } => {
                 match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } {
                     ptr => { return true }
                     func{ external } => { return external }
+                    record{ decl } => { return decl == c.cstr_decl and decl != NONE }
                     else => { return false }
                 }
             }

@@ -133,6 +133,7 @@ namespace ir {
         boolean{ value: bool },
         str{ bytes: Bytes },
         sbytes{ bytes: Bytes },                                 // a []u8 viewing static read-only bytes
+        cstr{ bytes: Bytes },                                   // a *u8 to static bytes and a NUL
         nil,                                                    // (null T)
         local{ slot: u32 },
         constref{ id: u32 },                                    // the value of a Const

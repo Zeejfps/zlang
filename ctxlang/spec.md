@@ -146,7 +146,7 @@ match e {
    - In `a and b`, what `a` narrows when true holds in `b`. In `a or b`, what `a` narrows when false holds in `b`.
    - In `if c { B1 } else { B2 }`, what `c` narrows when true holds in `B1`, and when false in `B2`. In `while c { B }`, what `c` narrows when true holds in `B`.
    - After an `if` statement: if one branch always leaves (it ends a path, §11.7, 8, 9), the other branch's narrowing holds from after the `if` to the end of the enclosing block. Without an `else`, that is what `c` narrows when false, if the `{ }` leaves. A `let x` in that same block is an error if `x` was declared there, and shadows it otherwise.
-6. Representation: `?*T` and `?*mut T` are a pointer, the size of one, with `null` the address 0. A pointer is never null (§12), so no tag is needed, and the layout is C's nullable pointer, which is what lets one cross into C (§18). Every other `?T`, `??*T` included, holds a tag and its payload.
+6. Representation: `?*T` and `?*mut T` are a pointer, the size of one, with `null` the address 0. A pointer is never null (§12), so no tag is needed, and the layout is C's nullable pointer, which is what lets one cross into C (§18). So are `?extern fn{C} -> R` (§12) and `?c::String` (§18), whose pointer is never null either. Every other `?T`, `??*T` included, holds a tag and its payload.
 
 ```
 let d = hex_digit{ c }            // ?u32
@@ -333,9 +333,10 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 6. A string literal `"..."` holds `N` bytes, with no terminator. Its type depends on the type expected where it appears (also inside `?`):
    - `[]u8`: a **view** of static read-only bytes that live for the whole program. `[]mut u8` is an error.
    - `utf8::String` (§17): a view as above, as text. It is a compile error if the bytes aren't valid UTF-8.
+   - `c::String` (§18): static read-only bytes with a NUL byte after them, for C. It is a compile error if the literal holds a NUL itself (`\0`), since C would end the string there.
    - anything else, or nothing: a `[N]u8` array value. Like any array it is a value, not a place: bind it to a local to take its address.
 
-   In an `if` or `match` expression without an expected type, a branch that is a literal takes the type of another branch that is `[]u8` or `utf8::String`, or of another literal branch that became one. Otherwise, as in `let msg = match p { a => { "one" } b => { "three" } }`, each literal is an array and the lengths must agree; annotate the `let` to get views.
+   In an `if` or `match` expression without an expected type, a branch that is a literal takes the type of another branch that is `[]u8`, `utf8::String` or `c::String`, or of another literal branch that became one. Otherwise, as in `let msg = match p { a => { "one" } b => { "three" } }`, each literal is an array and the lengths must agree; annotate the `let` to get views.
 7. A character literal `'a'` is an integer literal whose value is the character's byte.
 8. String and character literals hold ASCII characters only. Escapes: `\n`, `\t`, `\r`, `\0`, `\\`, `\"`, `\'`, and `\xNN` for any byte.
 
@@ -592,7 +593,7 @@ Settled questions are removed, and the rest keep their numbers.
 | Namespace | Contents |
 |---|---|
 | `slice` | Helpers for built-in slices (§12): `empty`, `cast`, `copy`, `fill`, `eq_bytes` |
-| `c` | Attributes for calling C (§18): `symbol { name: []u8 }`. |
+| `c` | What calling C needs (§18): the attribute `symbol { name: []u8 }`; `String { ptr: *u8 }`, C's NUL-terminated `const char *`, which a literal can be (§11), with `len` (the bytes before the NUL), `bytes` (a view of them) and `copy` (bytes and a NUL from an allocator, or `CopyError::has_nul{ at }` or `out_of_memory`). |
 | `Args` | Declared at the top level: `type Args = [][]u8`, the type of `main`'s `args` (§15). |
 | `Io`, `Fs`, `Mem`, `Proc`, `Build` | Declared at the top level: `capability Io` and so on (§15), in `io.ctx`, `fs.ctx`, `mem.ctx`, `proc.ctx` and `build.ctx`. |
 | `proc` | `Error`; `run` (starts a program found on PATH, with extra `KEY=VALUE` environment entries, sharing standard input and output, and returns its exit code: 128 + N if signal N killed it), `env` (an environment variable, or null), `exe_path` (this program's executable), `os` (the operating system, a `build::Os`). Every function takes `mut proc: Proc`. |
@@ -636,7 +637,8 @@ extern fn glfwPollEvents { mut glfw: Glfw }      // a capability says who may ca
 1. `extern fn name { context } -> R` declares a function that C provides. It has no body and no generic parameters.
 2. It calls the C symbol `name`, or the one `#c::symbol{ name = "..." }` gives. The symbol must be a C identifier.
 3. Its context fields are C's parameters in the order they are declared. A field with a capability type (§15) isn't passed: it only says who may call the function. A `mut` field of type `T` is passed as a `T*`.
-4. A field or result may have a numeric type, `bool`, an enum (as its base type), a pointer (as a C pointer), a `?*T` or `?*mut T` (as a C pointer, with `null` as `NULL`: §8, Optional, rule 6), a C function pointer `extern fn{C} -> R` or its `?` (§12), a slice (as a struct of `ptr` and `len`), a struct (as a C struct of the same layout) or an extern union (as a C union, §12). Other types are an error, other optionals included.
+4. A field or result may have a numeric type, `bool`, an enum (as its base type), a pointer (as a C pointer), a `?*T` or `?*mut T` (as a C pointer, with `null` as `NULL`: §8, Optional, rule 6), a C function pointer `extern fn{C} -> R` or its `?` (§12), a `c::String` or `?c::String` (as a `const char *`, below), a slice (as a struct of `ptr` and `len`), a struct (as a C struct of the same layout) or an extern union (as a C union, §12). Other types are an error, other optionals included.
+   A `c::String` is C's `const char *`: a struct around one pointer, which C takes and returns as the pointer, and a `?c::String` is one that may be `NULL` (§8, Optional, rule 6). A literal where one is expected is NUL-terminated by the compiler (§11, Literals). A `c::String` built from any other `*u8` (`c::String{ ptr = p }`) must point to bytes that end in a NUL; that isn't checked.
 5. Every call goes through a declaration of the symbol made for that function, so it can't clash with the declaration of the same symbol in a C header. Nothing checks the declaration against C's: a wrong one is undefined behaviour.
 6. An extern fn is called like any function and is a value of type `fn{C} -> R`; where an `extern fn{C} -> R` is expected, it is its C symbol's address instead (§12, C function pointers).
 7. Every program is linked with the C library and the math library.

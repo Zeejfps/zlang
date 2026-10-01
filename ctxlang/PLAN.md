@@ -46,7 +46,7 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
   now that `proc::run` and `fs::list` exist.
 - `bootstrap/ctxc.c` is ctxc as C. `tools/toolchain.py` compiles it to a seed, and the seed
   compiles ctxc's current source into `build/ctxc` (about 7 s the first time, cached after).
-- `python -m unittest discover tests` runs all 378 tests through the native ctxc: each program is
+- `python -m unittest discover tests` runs all 383 tests through the native ctxc: each program is
   compiled with `ctxc build`, built with cc and run. They pass on Windows (gcc), Linux (gcc) and
   macOS arm64 (Apple clang).
 - `tools/fixpoint.py`: ctxc built by itself, twice, writes byte-identical C, the same as the
@@ -762,7 +762,19 @@ Increments, each landing with tests and a refreshed bootstrap:
    `??*T` stays tagged, around the 8-byte `?*T`. The GLFW example's handles are
    `?*mut Window` now, not addresses as `usize`.
 6. **The rest, one at a time:** C function pointers (*done*, below), untagged unions (*done*,
-   below), null-terminated strings, callbacks from C.
+   below), null-terminated strings (*done*, below), callbacks from C.
+   - **Null-terminated strings** — *done.* `c::String { ptr: *u8 }` in std/c.ctx is C's `const
+     char *`. The checker knows it (`cstr_decl`, as `text_decl` is utf8::String): a literal where
+     one is expected is static bytes with a NUL (C's own string-literal terminator), and a `\0`
+     in it is a compile error; consts may hold one. In the IR such a literal is `(cstr *u8 "...")`
+     (IR version 13). At the C boundary it is passed by value as the struct around one pointer,
+     which every 64-bit C ABI we target passes and returns exactly as the pointer. `?c::String` is
+     an `nptr` whose payload is the struct, so it is a nullable `const char *` everywhere, in
+     structs passed to C too. `c::len` is a loop in ctxlang (pure, no libc), `c::bytes` a view, and
+     `c::copy` copies bytes and a NUL from an allocator, failing with `CopyError::has_nul{ at }` or
+     `out_of_memory`; there is no `free`, since a `c::String` is read-only and can't give its
+     memory back. examples/glfw and examples/sdl take titles and names as `c::String` literals, and
+     sdl prints `SDL_GetError`.
    - **C function pointers** — *done.* `extern fn{ fields } -> R` is C's `R (*)(...)`: fields in
      C's order, which is part of the type; the same field and result rules as an extern fn,
      capability fields included. A value comes from `@cast(extern fn{...}, p)` for a pointer
@@ -876,6 +888,7 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 | struct | C struct, same field order | Checked with `_Static_assert` on `sizeof` and `offsetof`. |
 | union, `?T` | `struct { uint32_t tag; union { … } p; }` | Tag at 0, payload at `align_up(4, payload align)`. `null` is tag 0. |
 | `?*T`, `?*mut T` | `T*` | `null` is 0. IR type `nptr`. |
+| `c::String`, `?c::String` | `struct { uint8_t *m_ptr; }`, and the same under a typedef | Passed to C by value, which 64-bit C ABIs pass and return as the pointer; a literal is `((uint8_t *)"...")`, NUL-terminated by C. `?c::String` is null when `m_ptr` is 0. |
 | `extern union` | C `union` | Every field at offset 0. IR `(cunion ...)`. A literal zeroes the other bytes with `memset`. |
 | `extern fn{C} -> R`, and its `?` | `R (*)(P...)`, capabilities dropped | IR type `cfn`, params in order; `null` is 0. A named extern fn as a value is `xN`. |
 | enum | its base integer type | `match` becomes an if-else chain on the value (IR `switch`). |

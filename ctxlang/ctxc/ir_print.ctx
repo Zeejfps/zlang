@@ -443,6 +443,7 @@ namespace ir_print {
             boolean{ value }          => { head{ &o, e, a = "bool" }; char{ &o, c = ' ' }; flag{ &o, b = value } }
             str{ bytes }              => { head{ &o, e, a = "str" }; char{ &o, c = ' ' }; quote{ &o, b = bytes } }
             sbytes{ bytes }           => { head{ &o, e, a = "sbytes" }; char{ &o, c = ' ' }; quote{ &o, b = bytes } }
+            cstr{ bytes }             => { head{ &o, e, a = "cstr" }; char{ &o, c = ' ' }; quote{ &o, b = bytes } }
             nil                       => { head{ &o, e, a = "null" } }
             local{ slot }             => { head{ &o, e, a = "local" }; spaced{ &o, n = slot } }
             constref{ id }            => { head{ &o, e, a = "constref" }; spaced{ &o, n = id } }

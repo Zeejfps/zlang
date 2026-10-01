@@ -27,7 +27,8 @@ namespace sdl {
 
     extern fn SDL_Init { mut sdl: Sdl, flags: u32 } -> i32
     extern fn SDL_Quit { mut sdl: Sdl }
-    extern fn SDL_CreateWindow { mut sdl: Sdl, title: *u8, x: i32, y: i32, w: i32, h: i32, flags: u32 } -> ?*mut Window
+    extern fn SDL_GetError { mut sdl: Sdl } -> c::String         // the last error's message
+    extern fn SDL_CreateWindow { mut sdl: Sdl, title: c::String, x: i32, y: i32, w: i32, h: i32, flags: u32 } -> ?*mut Window
     extern fn SDL_DestroyWindow { mut sdl: Sdl, window: *mut Window }
     extern fn SDL_PollEvent { mut sdl: Sdl, mut event: Event } -> i32
     extern fn SDL_GetTicks { mut sdl: Sdl } -> u32

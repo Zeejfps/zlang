@@ -281,6 +281,7 @@ namespace emit {
                 struct_head{ &e, id }
                 put{ &e, a = "};\n" }
             }
+            nptr{ ptr } => { define{ &e, id = ptr } }      // a ?c::String's struct
             else => {}
         }
     }
@@ -922,8 +923,10 @@ namespace emit {
     fn tag_is { mut e: E, k: u32, through: bool, union_t: ir::TypeId, variant: u32 } {
         ch{ &e, c = '(' }
         if is_nptr{ e, t = union_t } {
-            if through { put{ &e, a = "*" } }
+            if through { put{ &e, a = "(*" } }
             tmp{ &e, k }
+            if through { ch{ &e, c = ')' } }
+            nptr_member{ &e, t = union_t }
             put{ &e, a = if variant == 0 { " == 0)" } else { " != 0)" } }
             return
         }
@@ -935,6 +938,25 @@ namespace emit {
 
     fn is_nptr { e: E, t: ir::TypeId } -> bool {
         match ty{ e, id = t } { nptr => { return true } else => { return false } }
+    }
+
+    // Whether t is a nullable pointer whose payload is a struct around the pointer (a
+    // ?c::String) rather than the pointer itself.
+    fn nptr_record { e: E, t: ir::TypeId } -> bool {
+        let nptr{ ptr } = ty{ e, id = t } else { return false }
+        match ty{ e, id = ptr } { record => { return true } else => { return false } }
+    }
+
+    // `.m_NAME`, the pointer inside a ?c::String's struct; nothing for a ?*T.
+    fn nptr_member { mut e: E, t: ir::TypeId } {
+        let nptr{ ptr } = ty{ e, id = t } else { return }
+        match ty{ e, id = ptr } {
+            record{ fields } => {
+                put{ &e, a = ".m_" }
+                raw{ &e, b = fields[0].name }
+            }
+            else => {}
+        }
     }
 
     // With several patterns, the bindings depend on which one matched.
@@ -1035,6 +1057,12 @@ namespace emit {
                 }
                 put{ &e, a = "})" }
             }
+            cstr{ bytes } => {
+                // A C string literal: static storage, with C's NUL after the bytes.
+                cast_open{ &e, t = x.ty }
+                cstr{ &e, b = bytes }
+                put{ &e, a = "))" }
+            }
             sbytes{ bytes } => {
                 // A C string literal has static storage; its terminator isn't part of the view.
                 compound{ &e, t = x.ty }
@@ -1045,7 +1073,7 @@ namespace emit {
                 put{ &e, a = " })" }
             }
             nil => {
-                if is_nptr{ e, t = x.ty } {
+                if is_nptr{ e, t = x.ty } and not nptr_record{ e, t = x.ty } {
                     cast_open{ &e, t = x.ty }
                     put{ &e, a = "0))" }
                 } else {
@@ -1145,12 +1173,16 @@ namespace emit {
             isnull{ e = a } => {
                 put{ &e, a = "((" }
                 expr{ &e, x = a.* }
-                put{ &e, a = if is_nptr{ e, t = a.ty } { ") == 0)" } else { ").tag == 0)" } }
+                ch{ &e, c = ')' }
+                nptr_member{ &e, t = a.ty }
+                put{ &e, a = if is_nptr{ e, t = a.ty } { " == 0)" } else { ".tag == 0)" } }
             }
             notnull{ e = a } => {
                 put{ &e, a = "((" }
                 expr{ &e, x = a.* }
-                put{ &e, a = if is_nptr{ e, t = a.ty } { ") != 0)" } else { ").tag != 0)" } }
+                ch{ &e, c = ')' }
+                nptr_member{ &e, t = a.ty }
+                put{ &e, a = if is_nptr{ e, t = a.ty } { " != 0)" } else { ".tag != 0)" } }
             }
             widen{ e = a } => { convert_to{ &e, t = x.ty, a = a.* } }
             trunc{ e = a } => { convert_to{ &e, t = x.ty, a = a.* } }
@@ -1161,7 +1193,9 @@ namespace emit {
                 put{ &e, a = "))" }
             }
             some{ e = a } => {
-                if is_nptr{ e, t = x.ty } {
+                if nptr_record{ e, t = x.ty } {
+                    expr{ &e, x = a.* }                     // the same struct, under a typedef
+                } else if is_nptr{ e, t = x.ty } {
                     convert_to{ &e, t = x.ty, a = a.* }
                 } else {
                     compound{ &e, t = x.ty }
@@ -1544,6 +1578,16 @@ namespace emit {
 
     // A struct or variant literal.
     fn literal { mut e: E, t: ir::TypeId, variant: ?u32, items: []ir::Arg } {
+        if nptr_record{ e, t } {
+            // `null` is the struct with a 0 pointer; `some{ value = s }` is s
+            if items.len == 1 {
+                expr{ &e, x = items[0].value }
+            } else {
+                compound{ &e, t }
+                put{ &e, a = "0})" }
+            }
+            return
+        }
         if is_nptr{ e, t } {
             // `null` is 0; `some{ value = p }` is p
             cast_open{ &e, t }
@@ -2058,7 +2102,7 @@ namespace emit {
     // nothing between writes memory.
     fn pure { e: E, x: ir::Expr } -> bool {
         return match x.k {
-            int | float | boolean | str | sbytes | nil | local | fnref => { true }
+            int | float | boolean | str | sbytes | cstr | nil | local | fnref => { true }
             deref{ ptr = a } | field{ base = a } | payload{ base = a } | addr{ place = a }
             | lnot{ e = a } | isnull{ e = a } | notnull{ e = a } | widen{ e = a } | some{ e = a }
             | cast{ e = a } | ptraddr{ e = a } | trunc{ e = a } | fnconv{ e = a } | repeat{ elem = a } => {
@@ -2097,7 +2141,7 @@ namespace emit {
     // The same value whenever it is computed, whatever else runs.
     fn constant { x: ir::Expr } -> bool {
         return match x.k {
-            int | float | boolean | str | sbytes | nil | fnref => { true }
+            int | float | boolean | str | sbytes | cstr | nil | fnref => { true }
             addr{ place } => { fixed_place{ x = place.* } }
             else    => { false }
         }

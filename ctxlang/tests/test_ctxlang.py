@@ -5425,6 +5425,121 @@ fn main { mut io: Io } {
             self.assertUnionError(src, msg, line, col)
 
 
+class CStrings(Base):
+    """`c::String` (spec §11 Literals, §18): C's NUL-terminated `const char *`. A literal where one
+    is expected gets a NUL, and `?c::String` is a pointer whose null is NULL."""
+
+    LIB_C = """
+#include <stdint.h>
+#include <string.h>
+typedef struct { const char *name; int32_t n; } Named;
+typedef const char *(*Pick)(int32_t);
+static const char *pick(int32_t i) { return i ? "one" : NULL; }
+uint64_t ctxtest_named(Named x) { return x.name ? strlen(x.name) * 10 + (uint64_t)x.n : (uint64_t)x.n; }
+const char *ctxtest_echo(const char *s) { return s; }
+Pick ctxtest_picker(void) { return pick; }
+"""
+
+    BUILD = CFunctionPointers.BUILD
+
+    HEAD = """
+struct Named { name: ?c::String, n: i32 }
+type Pick = extern fn{ i: i32 } -> ?c::String
+extern fn ctxtest_named { x: Named } -> u64
+extern fn ctxtest_echo { s: ?c::String } -> ?c::String
+extern fn ctxtest_picker {} -> Pick
+"""
+
+    def run_with_lib(self, main):
+        return CFunctionPointers.run_with_lib(self, main)
+
+    def test_literals_to_libc(self):
+        self.assertOutput("""
+extern fn strlen { s: c::String } -> usize
+extern fn strcmp { a: c::String, b: c::String } -> i32
+extern fn strchr { s: c::String, ch: i32 } -> ?c::String
+const GREETING: c::String = "hello"
+fn pick { b: bool } -> c::String { return if b { "yes" } else { "no" } }
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = strlen{ s = "hello" } }
+    io::println_i64{ &io, n = strcmp{ a = "abc", b = "abc" } }
+    io::println_u64{ &io, n = strlen{ s = GREETING } + strlen{ s = pick{ b = true } } }
+    let hit = strchr{ s = "hello", ch = 'l' }
+    match hit {
+        null => { io::println{ &io, s = "none" } }
+        some{ value } => { io::println{ &io, s = utf8::of{ chars = c::bytes{ s = value } } } }
+    }
+    io::println_bool{ &io, n = strchr{ s = "hello", ch = 'z' } == null }
+}
+""", "5\n0\n8\nllo\ntrue\n")
+
+    def test_helpers(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let s: c::String = "abc"
+    io::println_u64{ &io, n = c::len{ s } }
+    io::println{ &io, s = utf8::of{ chars = c::bytes{ s } } }
+    io::println_u64{ &io, n = c::len{ s = "" } }
+    let mut mem: [16]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let ok{ value = t } = c::copy{ realloc = arena::alloc, &heap, bytes = "built" } else { return }
+    io::println_u64{ &io, n = c::len{ s = t } }
+    let bad: []u8 = "a\\0b"
+    match c::copy{ realloc = arena::alloc, &heap, bytes = bad } {
+        ok => {}
+        err{ error } => {
+            match error {
+                has_nul{ at } => { io::println_u64{ &io, n = at } }
+                out_of_memory => { io::println{ &io, s = "oom" } }
+            }
+        }
+    }
+    let big: []u8 = "this does not fit in what is left"
+    match c::copy{ realloc = arena::alloc, &heap, bytes = big } {
+        ok => {}
+        err{ error } => { match error { has_nul => {} out_of_memory => { io::println{ &io, s = "oom" } } } }
+    }
+}
+""", "3\nabc\n0\n5\n1\noom\n")
+
+    def test_nullable_and_layout(self):
+        self.assertOutput("""
+const NONE: ?c::String = null
+const SOME: ?c::String = "set"
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = @size_of(?c::String) + @size_of(c::String) }
+    let mut z: ?c::String
+    let s = SOME
+    io::println_bool{ &io, n = z == null and NONE == null and s != null }
+    if s != null { io::println_u64{ &io, n = c::len{ s } } }
+    z = "now"
+    let some{ value = v } = z else { return }
+    io::println_u64{ &io, n = c::len{ s = v } }
+}
+""", "16\ntrue\n3\n3\n")
+
+    def test_across_c(self):
+        self.assertEqual(self.run_with_lib("""
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = ctxtest_named{ x = Named{ name = "four", n = 2 } } }
+    io::println_u64{ &io, n = ctxtest_named{ x = Named{ name = null, n = 7 } } }
+    io::println_bool{ &io, n = ctxtest_echo{ s = null } == null }
+    let e = ctxtest_echo{ s = "back" }
+    if e != null { io::println{ &io, s = utf8::of{ chars = c::bytes{ s = e } } } }
+    let pick = ctxtest_picker{}
+    let one = pick{ i = 1 }
+    if one != null { io::println_u64{ &io, n = c::len{ s = one } } }
+    io::println_bool{ &io, n = pick{ i = 0 } == null }
+}
+"""), "42\n7\ntrue\nback\n3\ntrue\n")
+
+    def test_nul_in_a_literal(self):
+        with self.assertRaises(CompileError) as cm:
+            run('extern fn puts { s: c::String } -> i32\nfn main {} { _ = puts{ s = "a\\0b" } }')
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]),
+                         ("a C string literal can't hold a NUL byte (byte 1): C would end the string there", (2, 28)))
+
+
 class WordCountExample(Base):
     def setUp(self):
         import tempfile

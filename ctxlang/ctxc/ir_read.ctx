@@ -427,6 +427,8 @@ namespace ir_read {
             k = ir::ExprKind::str{ bytes = string{ &r } }
         } else if is{ s = tag, lit = "sbytes" } {
             k = ir::ExprKind::sbytes{ bytes = string{ &r } }
+        } else if is{ s = tag, lit = "cstr" } {
+            k = ir::ExprKind::cstr{ bytes = string{ &r } }
         } else if is{ s = tag, lit = "some" } {
             k = ir::ExprKind::some{ e = sub{ &r } }
         } else if is{ s = tag, lit = "widen" } {
