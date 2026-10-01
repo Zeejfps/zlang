@@ -809,10 +809,12 @@ Increments, each landing with tests and a refreshed bootstrap:
    - **Capabilities with functions** — *done.* `capability Gl { clear: extern fn{ mask: u32 },
      ... }` holds C function pointers, and holding one is the permission to call them:
      `gl.clear{ mask }`. Only a fn declared in the capability's own namespace that holds a
-     capability itself can write `Gl{ ... }`, so a binding's `load` (`gl::load{ &glfw }`, through
-     `glfwGetProcAddress`) is where one comes from, and capability-free code can't mint one. Its
-     fields can only be called, through a mutable one: read as a value, a field could reach code
-     whose signature doesn't name `Gl`. `main` can't take one and callbacks can't receive one,
+     capability or a bound function itself can write `Gl{ ... }`, so a binding's `load` is where
+     one comes from, and capability-free code can't mint one. A bound function counts because a
+     bind can hold a capability (spec §1.3), so `load` can take any windowing library's lookup
+     and name none: `gl::load{ get_proc = glfw::proc_address{ &glfw, _ } }`. Its fields can only
+     be called, through a mutable one: read as a value, a field could reach code whose signature
+     doesn't name `Gl`. `main` can't take one and callbacks can't receive one,
      since the runtime and the C thunks have nothing to fill it with. Fields are never `?`: an
      optional would have to be read to be unwrapped. A binding for functions that may be
      missing, such as a later GL version's, declares them in a second capability with its own

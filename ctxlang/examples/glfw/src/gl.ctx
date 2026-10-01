@@ -1,7 +1,8 @@
-// The two OpenGL functions main.ctx draws with, looked up at run time through GLFW, as GL has to
-// be on Windows beyond version 1.1. They are the fields of the capability `Gl` (spec §15): only
-// `load` can make one, so holding a Gl means they were found, and calling one is a call through
-// it, `gl.clear{ mask }`.
+// The two OpenGL functions main.ctx draws with, looked up at run time, as GL has to be on Windows
+// beyond version 1.1. They are the fields of the capability `Gl` (spec §15): only `load` can make
+// one, so holding a Gl means they were found, and calling one is a call through it,
+// `gl.clear{ mask }`. `load` takes the lookup as a function, so any windowing library can supply
+// it: main.ctx binds GLFW's, `glfw::proc_address{ &glfw, _ }`.
 namespace gl {
     // Permission to call OpenGL: its functions, from the context current when it was loaded.
     capability Gl {
@@ -11,10 +12,11 @@ namespace gl {
 
     const COLOR_BUFFER_BIT: u32 = 16384           // GL_COLOR_BUFFER_BIT
 
-    // The functions, from the context current on this thread; null if one is missing.
-    fn load { mut glfw: glfw::Glfw } -> ?Gl {
-        let some{ value = clear_color } = glfw::proc_address{ &glfw, name = "glClearColor" } else { return null }
-        let some{ value = clear } = glfw::proc_address{ &glfw, name = "glClear" } else { return null }
+    // The functions, from get_proc, which finds one by name in the context current on this
+    // thread, or gives null; null if one is missing.
+    fn load { get_proc: &fn{ name: c::String } -> ?extern fn{} } -> ?Gl {
+        let some{ value = clear_color } = get_proc{ name = "glClearColor" } else { return null }
+        let some{ value = clear } = get_proc{ name = "glClear" } else { return null }
         return Gl{
             clear_color = @cast(extern fn{ r: f32, g: f32, b: f32, a: f32 }, clear_color),
             clear = @cast(extern fn{ mask: u32 }, clear),

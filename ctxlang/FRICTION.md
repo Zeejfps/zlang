@@ -66,7 +66,7 @@ numbers, which PLAN.md and commit messages cite; git history has the resolved on
   `?T` and `T` meaning "is some and equal" would do. *Planned:* PLAN.md stage 11.
 - **21. A pattern can't bind a mutable local.** Calling through a capability's field needs a
   mutable capability, and `let ... else` bindings are read-only (spec §11, Let-else), so
-  examples/glfw takes `let some{ value = loaded } = gl::load{ &glfw } else { ... }` and then
+  examples/glfw takes `let some{ value = loaded } = gl::load{ ... } else { ... }` and then
   `let mut gl = loaded`. `let some{ value = mut gl } = ...` would take one.
 - **22. A loaded function's type is written twice.** `capability Gl` declares each field's
   `extern fn{...}` type, and `gl::load` writes it again in the `@cast` that fills the field

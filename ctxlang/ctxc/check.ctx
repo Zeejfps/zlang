@@ -5623,7 +5623,8 @@ namespace check {
     }
 
     // A capability with fields (§15): only a function of the namespace that declares it, which
-    // holds a capability itself, can make one, so code that holds none can't.
+    // isn't pure, can make one, so code that holds no capability can't. Effects reach a function
+    // through a capability or a bound function, which may hold one (§1.3).
     fn cap_lit { mut c: Checker, e: syntax::Expr, t: Id, decl: u32, seg: syntax::Seg, items: []syntax::Item, forward: bool, bind: bool, exp: Id } -> Id {
         let x = get_decl{ c, d = decl }
         let owner = c.sc.owner
@@ -5643,12 +5644,16 @@ namespace check {
         let mut holds = false
         let mut i: usize = 0
         while i < fs.len {
-            match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = fs[i].ty } } { cap => { holds = true } else => {} }
+            match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = fs[i].ty } } {
+                cap => { holds = true }
+                func{ bound } => { if bound { holds = true } }
+                else => {}
+            }
             i = i + 1
         }
         if not holds {
             let mut b = message{ c }
-            pushed{ ok = @fmt(&b, "capability `{}` can only be made by a function that holds a capability: `{}` takes none", str{ s = seg.name.text }, str{ s = get_decl{ c, d = owner }.name.text }) }
+            pushed{ ok = @fmt(&b, "capability `{}` can only be made by a function that holds a capability or a bound function: `{}` takes neither", str{ s = seg.name.text }, str{ s = get_decl{ c, d = owner }.name.text }) }
             error{ &c, at = seg.name.span, msg = utf8::view{ b } }
             return types::ERROR
         }

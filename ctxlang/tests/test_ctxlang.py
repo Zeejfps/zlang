@@ -5037,10 +5037,13 @@ fn main { mut io: Io, mut loader: clib::Loader } -> i32 {
             ('capability C { f: ?extern fn{} }\nfn main {} {}', "capability `C`'s field `f` must be a C function pointer, `extern fn{ ... }`, not ?extern fn{}", 1, 16),
             ('capability C { f: fn{} }\nfn main {} {}', "capability `C`'s field `f` must be a C function pointer, `extern fn{ ... }`, not fn{}", 1, 16),
             ('capability C { f: extern fn{}, f: extern fn{} }\nfn main {} {}', 'duplicate field `f`', 1, 32),
-            # made only by a function of its namespace that holds a capability
+            # made only by a function of its namespace that holds a capability or a bound function
             (CAP_FIELDS + 'fn main { mut l: m::L } { let x = m::M{ f = m::abs } }', 'capability `M` can only be made by a function of namespace `m`, which declares it', 8, 38),
             ('namespace m {\n    capability M { f: extern fn{} }\n    extern fn g {}\n    fn load {} -> M { return M{ f = g } }\n}\nfn main {} {}',
-             'capability `M` can only be made by a function that holds a capability: `load` takes none', 4, 30),
+             'capability `M` can only be made by a function that holds a capability or a bound function: `load` takes neither', 4, 30),
+            # a plain fn can't hold a capability: whoever calls it supplies its context
+            ('namespace m {\n    capability M { f: extern fn{} }\n    extern fn g {}\n    fn load { find: fn{} -> ?extern fn{} } -> M { return M{ f = g } }\n}\nfn main {} {}',
+             'capability `M` can only be made by a function that holds a capability or a bound function: `load` takes neither', 4, 58),
             ('namespace m {\n    capability M { f: extern fn{} }\n    extern fn g {}\n    const X: M = M{ f = g }\n}\nfn main {} {}',
              'capability `M` can only be made by a function of namespace `m`, which declares it', 4, 18),
             ('capability M { f: extern fn{} }\nextern fn g {}\nnamespace q { fn make { mut io: Io } -> M { return M{ f = g } } }\nfn main {} {}',
@@ -5064,6 +5067,33 @@ fn main { mut io: Io, mut loader: clib::Loader } -> i32 {
              "callback `cb` can't have type extern fn{ mut x: M, n: i32 }: its field `x` is capability M, which has fields, and nothing can supply one when C calls the callback", 12, 24),
         ]:
             self.assertCapError(src, msg, line, col)
+
+    def test_made_through_a_bound_function(self):
+        # A bound function may hold a capability (spec §1.3), so a load that takes only a lookup
+        # can make one and names no library: here the lookup is lib's, bound to its capability.
+        self.assertOutput("""
+namespace lib {
+    capability Lib
+    #c::symbol{ name = "llabs" }
+    extern fn long_abs { n: i64 } -> i64
+    fn find { mut l: Lib, name: c::String } -> ?extern fn{ n: i64 } -> i64 { return long_abs }
+}
+
+namespace m {
+    capability M { f: extern fn{ n: i64 } -> i64 }
+    fn load { find: &fn{ name: c::String } -> ?extern fn{ n: i64 } -> i64 } -> ?M {
+        let some{ value = f } = find{ name = "llabs" } else { return null }
+        return M{ f }
+    }
+}
+
+fn main { mut io: Io, mut l: lib::Lib } -> i32 {
+    let some{ value = loaded } = m::load{ find = lib::find{ &l, _ } } else { return 1 }
+    let mut x = loaded
+    io::println_i64{ &io, n = x.f{ n = -9 } }
+    return 0
+}
+""", "9\n")
 
     def test_extern_takes_one(self):
         # An extern fn may take one: like any capability, it isn't passed to C.

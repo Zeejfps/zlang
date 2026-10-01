@@ -39,7 +39,7 @@ fn main { mut io: Io, mut glfw: glfw::Glfw } -> i32 {
     }
     defer glfw::destroy_window{ &glfw, window }
     glfw::make_current{ &glfw, window }
-    let some{ value = loaded } = gl::load{ &glfw } else {
+    let some{ value = loaded } = gl::load{ get_proc = glfw::proc_address{ &glfw, _ } } else {
         io::eprintln{ &io, s = "gl: functions missing" }
         return 1
     }
