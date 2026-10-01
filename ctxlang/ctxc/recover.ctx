@@ -145,11 +145,12 @@ namespace recover {
         return null
     }
 
-    // Whether a capability with fields, s, is one without in have: cut before its braces.
+    // Whether a capability or an error with fields, s, is one without in have: cut before its
+    // braces.
     fn fieldless { have: []Symbol, s: Symbol } -> bool {
         let mut i: usize = 0
         while i < have.len {
-            if have[i].kind == 'k' and not have[i].braced and same{ a = have[i], b = s } { return true }
+            if (have[i].kind == 'k' or have[i].kind == 'r') and not have[i].braced and same{ a = have[i], b = s } { return true }
             i = i + 1
         }
         return false
@@ -178,6 +179,7 @@ namespace recover {
                 constant{ name } => { kind = 'c'; n = name; braced = false }
                 space{ name, decls } => { kind = 'n'; n = name; inner = decls }
                 cap{ name, fields } => { kind = 'k'; n = name; braced = fields != null }
+                fault{ name, fields } => { kind = 'r'; n = name; braced = fields != null }
             }
             if kind != 0 {
                 let mut b = utf8::builder{ realloc = arena::alloc, &heap }
@@ -303,6 +305,10 @@ namespace recover {
                     i = i + 1
                 }
             }
+            fault{ name = n, fields } => {
+                name{ &c, n, lo = a, hi = b }
+                if fields != null { field_list{ &c, xs = fields, lo = a, hi = b } }
+            }
             space{ name = n, decls } => {
                 name{ &c, n, lo = a, hi = b }
                 let mut i: usize = 0
@@ -345,6 +351,7 @@ namespace recover {
             path{ segs } => { seg_list{ &c, segs, lo = a, hi = b } }
             ptr{ elem } => { type_expr{ &c, t = elem.*, lo = a, hi = b } }
             opt{ elem } => { type_expr{ &c, t = elem.*, lo = a, hi = b } }
+            fail{ elem } => { if elem != null { type_expr{ &c, t = elem.*, lo = a, hi = b } } }
             slice{ elem } => { type_expr{ &c, t = elem.*, lo = a, hi = b } }
             array{ n, elem } => {
                 expr{ &c, e = n.*, lo = a, hi = b }
@@ -452,6 +459,7 @@ namespace recover {
             while k < arm.pats.len {
                 let pat = arm.pats[k]
                 within{ &c, span = pat.span, lo = arm.span.start, hi = arm.span.end }
+                names{ &c, xs = pat.quals, lo = pat.span.start, hi = pat.span.end }
                 name{ &c, n = pat.variant, lo = pat.span.start, hi = pat.span.end }
                 binder_list{ &c, xs = pat.binders, lo = pat.span.start, hi = pat.span.end }
                 k = k + 1
@@ -523,6 +531,7 @@ namespace recover {
             }
             ifx{ x } => { if_node{ &c, x, lo = a, hi = b } }
             matchx{ x } => { match_node{ &c, x, lo = a, hi = b } }
+            trye{ e = x } => { expr{ &c, e = x.*, lo = a, hi = b } }
         }
     }
 }

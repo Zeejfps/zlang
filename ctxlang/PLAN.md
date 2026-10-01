@@ -23,7 +23,7 @@ C compiler. ctxi's last version is in git history, at `8436f4d`.
 | 8 | Decide ctxi's role: removed, ctxc bootstraps from committed C | done | |
 | 9 | Metaprogramming: build programs, attributes, compile-time consts | step 1 done (for 10.4); attributes done in 10.1 | |
 | 10 | C interop: extern fns, capabilities, linking; std's io and mem over the OS (10.7) | in progress | |
-| 11 | Optionals and errors: `!T` with inferred error sets, `ifnull`, `iferr`, `try`, flat `match` arms, `?T == T` | in progress: `ifnull` done | |
+| 11 | Optionals and errors: `!T` with inferred error sets, `ifnull`, `iferr`, `try`, flat `match` arms, `?T == T` | in progress: `ifnull` and errors done; std still on `Result` | |
 
 ### Where we are
 
@@ -961,15 +961,17 @@ match load{ &fs, path } {
    plus the sets of what it passes up with `try`. Recursion is resolved by repeating until the sets
    stop growing (they only grow, and are finite). A set is never written: ctxc compiles the whole
    program, so every direct call has a body to infer from, and the inferred set is what makes a
-   `match` on errors exhaustive. A `!T` in a function type, where there is no body, means any
-   error, and its callers handle the rest with `err{ error }` or `else`.
+   `match` on errors exhaustive. A `!T` anywhere but a function's own result, as in a function
+   type, where there is no body, means any error, and its callers handle the rest with
+   `err{ error }` or `else`; `error` is the type of any error.
    Written sets (`type OpenError = error{ ... }`, attached as `-> !File errors OpenError` or Zig's
    `OpenError!File`) were considered and left out. They would serve function values that need
    exhaustive handling, and libraries pinning their API against a change in a body; neither is
    needed yet, and both can come later without changing the rest.
-3. Representation: a tagged union of `ok{ value: T }` and the set's errors, numbered program-wide,
-   sized for the largest payload. Passing an error into a larger set copies it, with no renumbering.
-   Not C-compatible: bindings turn C's return codes into errors.
+3. Representation: a tagged union of `ok{ value: T }` and `err{ error: E }`, where an error type
+   E is a tagged union of its set's errors, in the program's order of declaration, sized for the
+   largest payload. Passing an error into a larger set renumbers it. Not C-compatible: bindings
+   turn C's return codes into errors.
 4. A `T` converts to `!T` implicitly; `return fs::not_found` (or `fs::os{ code = c }`) returns an
    error where a `!T` is expected.
 5. `match` on a `!T` has the arms `ok{ value }` and `err{ error }`, which binds the error as a
@@ -995,8 +997,8 @@ Swift 6 added typed throws because callers wanted the set.
 | Shape | Feature |
 |---|---|
 | Unwrap a `?T`, with a default or by leaving | **Done** (spec §8, Optional, rule 7). `e ifnull x`: the value if there is one, else `x`, a value of `T` or a block that leaves (`ifnull { return 1 }`). |
-| Unwrap a `!T`, with a default or by leaving | `e iferr x`: the `ok` value, else `x`, as for `ifnull`. The block may bind the error, as `let … else` does: `iferr err{ error } { report{ error }; return 1 }`. |
-| Pass an error up | `try e`: for `e: !T` in a function returning `!U`, the value, or return the error (which joins the function's set). Zig's `try`, Rust's `?`. |
+| Unwrap a `!T`, with a default or by leaving | **Done** (spec §8, Errors). `e iferr x`: the `ok` value, else `x`, as for `ifnull`. The block may bind the error, as `let … else` does: `iferr err{ error } { report{ error }; return 1 }`. |
+| Pass an error up | **Done.** `try e`: for `e: !T` in a function returning `!U`, the value, or return the error (which joins the function's set). Zig's `try`, Rust's `?`. |
 | Unwrap in a `let`, by leaving | `let p = e else { ... }` with a plain name: for `e: ?T`, shorthand for `let some{ value = p } = e else { ... }`. |
 | Null as an arm next to a union's variants (#11) | `match` on a `?U` for a union `U` lists `null` and `U`'s variants in one set of arms, as `match` on a `!T` lists `ok` and errors. |
 | "Present and equal" (#20) | `==` and `!=` between a `?T` and a `T`: true when present and equal. |
@@ -1009,6 +1011,39 @@ binds tighter than comparison and looser than `|`, as Swift's `??` and Kotlin's 
 `get{ k } ifnull 0 > 3` compares the value; Zig's `orelse` and C#'s `??` bind looser than `or`. It
 groups right to left, so `a ifnull b ifnull 0` reads as a fallback chain. `iferr` should take the
 same shape, with an `err{ error }` arm.
+
+**Errors, as built** (spec §8, Errors). The first step of [Changing the language](#changing-the-language):
+ctxc understands them and the tests use them, but std, the examples and ctxc itself still use
+`Result`.
+
+- *Syntax.* `error name` or `error name{ fields }` is a declaration where `error` begins one and a
+  name follows, so `error` stays a name everywhere else (`err{ error }`, ctxc's own `fn error`).
+  `!T` and a bare `!` are a type kind of their own (`fail`), `try e` a prefix operator at `not`'s
+  level, and `e iferr x` a match marked `is_iferr` at `ifnull`'s level, with the arms
+  `ok{ value } => { value }` and `err => { x }`, or the `err{ ... }` written before x's block. A
+  pattern may have a path, `fs::not_found`, for an error.
+- *Types.* `res{ ok, errs }` is `!T`; `errs{ owner, one }` the type of an error: of function
+  `owner`'s set, the error `one` alone, or with neither any error; `eset{ errs }` a set as its
+  errors. A function's result `!T` gets `errs{ owner = itself }`, `!T` anywhere else any error.
+  Error values are values of their namespace, as functions are: `fs::not_found` is of type
+  `errs{ one }`.
+- *Inference.* An error converts only into the result of the function being checked, or into any
+  error. `coerce` records each such conversion as what flows into that function's set (`Flow`:
+  errors, the functions whose sets it takes, any). After the bodies, `infer_sets` repeats over the
+  functions until no set grows, and `finish_matches` checks each match on errors against its set:
+  a listed error must be one it can be, and without `else` or `err` every one must be listed.
+- *Payloads hold no pointers.* An error passes up past frames that end, and the escape check
+  (§14) runs while the sets are still unknown, so a payload holding a pointer would have to be
+  assumed to hold one wherever any error might. Values only, for now: std's and the examples'
+  errors carry codes and offsets.
+- *Lowering.* No new IR. `!T` is a tagged union of `ok` and `err{ error }`, and an error type the
+  tagged union of its set (normalized to `eset`, so equal sets are one IR type). A conversion into
+  a larger set is a match that renumbers; `try` is a match whose `err` arm returns; errors listed
+  beside `ok` become an inner match on the error that `err` binds. A bare `!` returns `ok` at the
+  end of its body. `@fmt` prints an error with its payload.
+- *Not yet.* A function whose result's set is inferred can't be a value of a function type, whose
+  `!T` holds any error: that needs the thunk that widens a function value to also renumber its
+  result. `main` can't return `!T`. Matching through a pointer to a `!T`.
 
 The operator names say which case the right side handles: `ifnull` for `?T`, `iferr` for `!T`.
 Zig's `orelse` and `catch` were the alternative (two unrelated words, neither naming its case), and

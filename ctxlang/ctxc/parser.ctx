@@ -150,6 +150,14 @@ namespace parser {
                 fields = fs
             }
             d = syntax::DeclKind::cap{ name, fields, includes = list::items{ list = includes } }
+        } else if at_error_decl{ p } {
+            // `error name` or `error name{ fields }`: `error` is a keyword only here, where a
+            // declaration begins and a name follows it.
+            skip{ &p }
+            let name = ident{ &p }
+            if is{ p, k = tok::Kind::lparen } and not nl{ p } { fail{ &p, msg = "an error cannot have generic parameters" } }
+            let fields: ?[]syntax::Field = if is{ p, k = tok::Kind::lbrace } and not nl{ p } { plain_fields{ &p } } else { null }
+            d = syntax::DeclKind::fault{ name, fields }
         } else if k == tok::Kind::kw_namespace {
             skip{ &p }
             let name = ident{ &p }
@@ -199,7 +207,7 @@ namespace parser {
             }
             add{ &p, xs = &xs, item = syntax::Attr{ span = span_from{ p, start }, value } }
         }
-        if xs.len > 0 and not p.bad and not is_decl_start{ k = kind{ p, ahead = 0 } } {
+        if xs.len > 0 and not p.bad and not is_decl_start{ k = kind{ p, ahead = 0 } } and not at_error_decl{ p } {
             expected{ &p, what = "a declaration after an attribute" }
         }
         return list::items{ list = xs }
@@ -341,6 +349,12 @@ namespace parser {
         } else if k == tok::Kind::question {
             skip{ &p }
             t = syntax::TypeKind::opt{ elem = box{ &p, value = type_expr{ &p } } }
+        } else if k == tok::Kind::bang {
+            // `!T`, or `!` alone where no type follows: a function that returns no value or fails.
+            skip{ &p }
+            let mut elem: ?*syntax::TypeExpr = null
+            if starts_type{ p } { elem = box{ &p, value = type_expr{ &p } } }
+            t = syntax::TypeKind::fail{ elem }
         } else if k == tok::Kind::lbracket {
             skip{ &p }
             if accept{ &p, k = tok::Kind::rbracket } {
@@ -370,6 +384,15 @@ namespace parser {
             expected{ &p, what = "a type" }
         }
         return syntax::TypeExpr{ id, span = span_from{ p, start }, k = t }
+    }
+
+    // Whether a type begins at the current token.
+    fn starts_type { p: Parser } -> bool {
+        let k = kind{ p, ahead = 0 }
+        let k1 = kind{ p, ahead = 1 }
+        return k == tok::Kind::star or k == tok::Kind::question or k == tok::Kind::lbracket or k == tok::Kind::ident
+               or k == tok::Kind::kw_fn or (k == tok::Kind::amp and k1 == tok::Kind::kw_fn)
+               or (k == tok::Kind::kw_extern and k1 == tok::Kind::kw_fn)
     }
 
     fn type_seg { mut p: Parser } -> syntax::Seg {
@@ -565,13 +588,20 @@ namespace parser {
         return null
     }
 
-    // `variant` or `variant{ binders }`, where variant may be `null`.
+    // `variant` or `variant{ binders }`, where variant may be `null`, or an error's name with its
+    // path, `a::b::name`.
     fn pattern { mut p: Parser } -> syntax::Pattern {
         let start = p.i
-        let variant = if is{ p, k = tok::Kind::kw_null } { keyword_name{ &p } } else { ident{ &p } }
+        let mut variant = if is{ p, k = tok::Kind::kw_null } { keyword_name{ &p } } else { ident{ &p } }
+        let mut quals = list::new(syntax::Name){ realloc = arena::alloc, heap = p.heap }
+        while is{ p, k = tok::Kind::colons } and variant.text.len > 0 {
+            skip{ &p }
+            add{ &p, xs = &quals, item = variant }
+            variant = ident{ &p }
+        }
         let mut bs: []syntax::Binder = slice::empty(syntax::Binder){}
         if is{ p, k = tok::Kind::lbrace } { bs = binder_list{ &p } }
-        return syntax::Pattern{ span = span_from{ p, start }, variant, binders = bs }
+        return syntax::Pattern{ span = span_from{ p, start }, quals = list::items{ list = quals }, variant, binders = bs }
     }
 
     // `{ f, &g, h = x, &k = y }`: the payload fields a pattern binds.
@@ -707,7 +737,7 @@ namespace parser {
             skip_semis{ &p }
         }
         expect{ &p, k = tok::Kind::rbrace }
-        return syntax::Match{ scrut, arms = list::items{ list = arms }, is_ifnull = false }
+        return syntax::Match{ scrut, arms = list::items{ list = arms }, is_ifnull = false, is_iferr = false }
     }
 
     // ---- expressions
@@ -759,31 +789,54 @@ namespace parser {
                or k == tok::Kind::gt or k == tok::Kind::ge
     }
 
-    // `e ifnull x`, right to left: a match on e marked is_ifnull (syntax::Match). x is a block, or
-    // an expression of this level or tighter.
+    // `e ifnull x` and `e iferr x`, right to left: a match on e marked is_ifnull or is_iferr
+    // (syntax::Match). x is a block, or an expression of this level or tighter. After `iferr`,
+    // `err{ binders }` before a block binds the error, as after a let-else's `else`.
     fn null_expr { mut p: Parser } -> syntax::Expr {
         let start = p.i
         let e = bin_expr{ &p, level = 0 }
-        if not is{ p, k = tok::Kind::kw_ifnull } { return e }
+        let is_null = is{ p, k = tok::Kind::kw_ifnull }
+        if not is_null and not is{ p, k = tok::Kind::kw_iferr } { return e }
         let id = new_id{ &p }
         let op_i = p.i
         let op = take{ &p }
         let here = source::Span{ file = p.file, start = op.span.start, end = op.span.start }
+        let no_quals = slice::empty(syntax::Name){}
         let mut binders = list::new(syntax::Binder){ realloc = arena::alloc, heap = p.heap }
         let field = made_name{ &p, at = here, text = "value" }
         add{ &p, xs = &binders, item = syntax::Binder{ span = here, by_ref = false, field, local = null } }
         let mut pats = list::new(syntax::Pattern){ realloc = arena::alloc, heap = p.heap }
-        add{ &p, xs = &pats, item = syntax::Pattern{ span = here, variant = made_name{ &p, at = here, text = "some" }, binders = list::items{ list = binders } } }
+        let has: []u8 = if is_null { "some" } else { "ok" }
+        add{ &p, xs = &pats, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = has }, binders = list::items{ list = binders } } }
         let value = name_path{ &p, name = made_name{ &p, at = here, text = "value" } }
         let some_body = one{ &p, s = syntax::Stmt{ id = new_id{ &p }, span = here, k = syntax::StmtKind::eval{ e = value } } }
         let mut arms = list::new(syntax::Arm){ realloc = arena::alloc, heap = p.heap }
         add{ &p, xs = &arms, item = syntax::Arm{ span = here, pats = list::items{ list = pats }, body = some_body } }
         let mut nulls = list::new(syntax::Pattern){ realloc = arena::alloc, heap = p.heap }
-        add{ &p, xs = &nulls, item = syntax::Pattern{ span = here, variant = made_name{ &p, at = here, text = "null" }, binders = slice::empty(syntax::Binder){} } }
+        if is_null {
+            add{ &p, xs = &nulls, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = "null" }, binders = slice::empty(syntax::Binder){} } }
+        } else if err_pattern{ p } {
+            let pat_start = p.i
+            let name = ident{ &p }
+            let bs = binder_list{ &p }
+            add{ &p, xs = &nulls, item = syntax::Pattern{ span = span_from{ p, start = pat_start }, quals = no_quals, variant = name, binders = bs } }
+        } else {
+            add{ &p, xs = &nulls, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = "err" }, binders = slice::empty(syntax::Binder){} } }
+        }
         let null_body = if is{ p, k = tok::Kind::lbrace } { block{ &p } } else { null_value{ &p } }
         add{ &p, xs = &arms, item = syntax::Arm{ span = span_from{ p, start = op_i }, pats = list::items{ list = nulls }, body = null_body } }
-        let x = syntax::Match{ scrut = box{ &p, value = e }, arms = list::items{ list = arms }, is_ifnull = true }
+        let x = syntax::Match{ scrut = box{ &p, value = e }, arms = list::items{ list = arms }, is_ifnull = is_null, is_iferr = not is_null }
         return syntax::Expr{ id, span = span_from{ p, start }, at = op.span.start, k = syntax::ExprKind::matchx{ x } }
+    }
+
+    // After `iferr`, whether `err{ ... }` comes next with a block after it: a pattern that binds
+    // the error, rather than an expression.
+    fn err_pattern { p: Parser } -> bool {
+        if not is{ p, k = tok::Kind::ident } or not slice::eq_bytes{ a = text_of{ p, t = p.toks[p.i] }, b = "err" } { return false }
+        if kind{ p, ahead = 1 } != tok::Kind::lbrace { return false }
+        let mut q = p
+        q.i = p.i + 1
+        return braces_then_brace{ p = q }
     }
 
     // The right side of `ifnull`, if it isn't a block: a block of it alone.
@@ -865,6 +918,11 @@ namespace parser {
             skip{ &p }
             let e = box{ &p, value = prefix{ &p } }
             return expr_from{ &p, start, k = syntax::ExprKind::lnot{ e } }
+        }
+        if k == tok::Kind::kw_try {
+            skip{ &p }
+            let e = box{ &p, value = prefix{ &p } }
+            return expr_from{ &p, start, k = syntax::ExprKind::trye{ e } }
         }
         return postfix{ &p }
     }
@@ -1188,6 +1246,12 @@ namespace parser {
         }
         p.i = k
         p.bad = false
+    }
+
+    // At `error name`, which declares an error: `error` is a name anywhere else.
+    fn at_error_decl { p: Parser } -> bool {
+        return is{ p, k = tok::Kind::ident } and slice::eq_bytes{ a = text_of{ p, t = p.toks[p.i] }, b = "error" }
+               and kind{ p, ahead = 1 } == tok::Kind::ident
     }
 
     // A token that can begin a declaration, at the start of a line, for recovery.

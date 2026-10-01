@@ -51,6 +51,14 @@ namespace types {
         func{ fields: []Field, ret: Id, bound: bool, external: bool },
         param{ decl: u32, index: u32 },         // generic parameter `index` of decl, opaque
         var{ n: u32 },                          // inference variable n (Store.vars)
+        // An error (§8, Errors): one of function owner's, whose set is inferred from its body,
+        // or the error declaration `one` alone. With both NONE, any error at all.
+        errs{ owner: u32, one: u32 },
+        // An error of a known set: the declarations of its errors, in declaration order. What an
+        // errs becomes once the sets are inferred.
+        eset{ errs: []u32 },
+        // `!T`: a T, or an error of type errs (an errs). ok is VOID for a bare `!`.
+        res{ ok: Id, errs: Id },
     }
 
     // An inference variable: `any` for a generic argument, `int` or `float` for a literal,
@@ -138,6 +146,20 @@ namespace types {
         return intern{ &s, t = Type::sum{ decl, args = copy(Id){ s, xs = args } } }
     }
 
+    const NONE: u32 = 4294967295
+
+    fn errs { mut s: Store, owner: u32, one: u32 } -> Id {
+        return intern{ &s, t = Type::errs{ owner, one } }
+    }
+
+    fn eset { mut s: Store, errs: []u32 } -> Id {
+        return intern{ &s, t = Type::eset{ errs = copy(u32){ s, xs = errs } } }
+    }
+
+    fn res { mut s: Store, ok: Id, errs: Id } -> Id {
+        return intern{ &s, t = Type::res{ ok, errs } }
+    }
+
     fn copy(T) { s: Store, xs: []T } -> []T {
         if xs.len == 0 { return xs }
         let out = alloc::resize(T){ realloc = arena::alloc, heap = s.heap, mem = slice::empty(T){}, count = xs.len } ifnull {
@@ -174,6 +196,7 @@ namespace types {
                 }
                 return func{ &s, fields = list::items{ list = fs }, ret = subst{ &s, t = ret, decl, args }, bound, external }
             }
+            res{ ok, errs } => { return res{ &s, ok = subst{ &s, t = ok, decl, args }, errs } }
             else => { return t }
         }
     }
@@ -258,6 +281,9 @@ namespace types {
             }
             param{ decl, index } => { return mix{ h = mix{ h = 14, n = decl }, n = index } }
             var{ n } => { return mix{ h = 15, n } }
+            errs{ owner, one } => { return mix{ h = mix{ h = 16, n = owner }, n = one } }
+            eset{ errs } => { return mix_ids{ h = 17, ids = errs } }
+            res{ ok, errs } => { return mix{ h = mix{ h = 18, n = ok }, n = errs } }
         }
     }
 
@@ -323,6 +349,13 @@ namespace types {
                 match b { param{ decl = d, index = k } => { return decl == d and index == k } else => { return false } }
             }
             var{ n } => { match b { var{ n = k } => { return n == k } else => { return false } } }
+            errs{ owner, one } => {
+                match b { errs{ owner = o, one = e } => { return owner == o and one == e } else => { return false } }
+            }
+            eset{ errs } => { match b { eset{ errs = xs } => { return same_ids{ a = errs, b = xs } } else => { return false } } }
+            res{ ok, errs } => {
+                match b { res{ ok = o, errs = e } => { return ok == o and errs == e } else => { return false } }
+            }
         }
     }
 
@@ -382,6 +415,7 @@ namespace types {
                 }
                 return func{ &s, fields = list::items{ list = fs }, ret = zonk{ &s, t = ret }, bound, external }
             }
+            res{ ok, errs } => { return res{ &s, ok = zonk{ &s, t = ok }, errs } }
             else => { return x }
         }
     }
@@ -410,6 +444,7 @@ namespace types {
             array{ elem } => { return occurs{ s, n, t = elem } }
             record{ args } => { return any_occurs{ s, n, ts = args } }
             sum{ args } => { return any_occurs{ s, n, ts = args } }
+            res{ ok } => { return occurs{ s, n, t = ok } }
             func{ fields, ret } => {
                 if occurs{ s, n, t = ret } { return true }
                 let mut i: usize = 0
@@ -484,6 +519,11 @@ namespace types {
             }
             sum{ decl, args } => {
                 match tb { sum{ decl = d, args = xs } => { return decl == d and unify_all{ &s, a = args, b = xs } } else => { return false } }
+            }
+            // Two results are the same type only with the same errors: an error set flows into
+            // another only where the checker allows it (check::coerce).
+            res{ ok, errs } => {
+                match tb { res{ ok = o, errs = e } => { return errs == e and unify{ &s, a = ok, b = o } } else => { return false } }
             }
             func{ fields, ret, bound, external } => {
                 match tb {
@@ -577,6 +617,7 @@ namespace types {
             array{ elem } => { return has_vars{ s, t = elem } }
             record{ args } => { return any_vars{ s, ts = args } }
             sum{ args } => { return any_vars{ s, ts = args } }
+            res{ ok } => { return has_vars{ s, t = ok } }
             func{ fields, ret } => {
                 if has_vars{ s, t = ret } { return true }
                 let mut i: usize = 0
@@ -609,6 +650,7 @@ namespace types {
             array{ elem } => { return has_bound_fn{ s, t = elem } }
             record{ args } => { return any_bound_fn{ s, ts = args } }
             sum{ args } => { return any_bound_fn{ s, ts = args } }
+            res{ ok } => { return has_bound_fn{ s, t = ok } }
             else => { return false }
         }
     }

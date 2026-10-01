@@ -4,7 +4,7 @@ Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound funct
 
 ## 1. Top level
 
-1. A program is a sequence of declarations: `fn`, `extern fn` (§18), `struct`, `union`, `enum`, `type`, `const`, `capability` (§15), `namespace`. Any declaration may have attributes (§18).
+1. A program is a sequence of declarations: `fn`, `extern fn` (§18), `struct`, `union`, `enum`, `type`, `const`, `capability` (§15), `error` (§8, Errors), `namespace`. Any declaration may have attributes (§18).
 2. There is no mutable state at top level. Top-level names may be referenced from anywhere.
 3. All effects (IO, memory, OS) reach a function only through its context.
 4. Source files are UTF-8. Names are ASCII: a letter or `_`, then letters, digits and `_`. Other characters may appear only in comments, which are `// to the end of the line` and `/* ... */` (not nested). String and character literals are ASCII too (§11 Literals).
@@ -161,6 +161,52 @@ let n = utf8::parse_i64{ s } ifnull 0              // i64
 let e = map::get{ m, key } ifnull { return null }   // leaves when the key is missing
 ```
 
+### Errors
+
+```
+namespace parse {
+    error empty
+    error bad_digit{ at: usize }                 // an error with a payload
+}
+
+fn number { s: []u8 } -> !u64 {                  // a u64, or one of the errors its body returns
+    if s.len == 0 { return parse::empty }
+    ...
+    return n
+}
+
+fn pair { a: []u8, b: []u8 } -> !u64 {
+    let x = try number{ s = a }                  // number's error is returned: pair's set gains number's
+    let y = number{ s = b } iferr 0              // or a default
+    return x + y
+}
+
+match pair{ a, b } {
+    ok{ value }  => { ... }
+    err{ error } => {
+        report{ error }                          // code every error shares, once
+        match error {                            // then by kind, exhaustive over pair's set
+            parse::empty        => { ... }
+            parse::bad_digit{ at } => { ... }
+        }
+    }
+}
+```
+
+1. `error name` or `error name{ field: T, ... }`, at the top level or in a namespace, declares an error: a value, named as a function is (`parse::empty`, or `empty` inside `parse`). `name` is the error, and an error with a payload is `name{ field = e, ... }`, every field supplied once, as in a literal (§7). `error` is a keyword only where a declaration begins and a name follows it. An error has no generic parameters and can't be named `ok` or `err`.
+2. A payload holds values: no pointer, slice, `utf8::String` or other type that holds one (§14), and no `!T` or error. An error is passed up past frames that end, so it carries no addresses into them.
+3. An error value has an **error type**: a set of errors. `error` is the type of any error, and every error type converts to it. No other error type is written: they come from a function's result (rule 5) or from one error alone.
+4. `!T` is a T or an error. `!` alone is `!T` without a value: a function returning it returns nothing or fails. In such a function, `return` without a value and reaching the end of the body return its `ok`.
+5. A function's result `!T` fails with its **error set**, inferred: the errors its body returns, plus the sets of the calls whose errors it returns or passes up with `try`, repeated through recursion until no set grows. ctxc compiles the whole program, so every direct call has a body to infer from. `!T` written anywhere else, as a function type's result, a field or a local's type, may hold any error.
+6. A T converts implicitly to `!T`, as its value (§11, Widening). An error, or a `!T`, converts to an error type, or a `!U` of the same `T`, that holds its errors: the result of the function being checked, whose set gains them, or any error. A set never takes another function's errors: `r = g{}` for a local `r` of `f{}`'s type is an error.
+7. `try e`, for `e` of type `!T` in a function that returns `!U`: `e`'s value, or, if `e` is an error, `return e` (deferred bodies run first). The function's set gains `e`'s errors. It is a prefix operator, at the level of `not`: `try f{}.x` takes `.x` of `f{}`'s value. `try` is an error in a `defer`, and as a statement its operand must be a call.
+8. `e iferr x`, for `e` of type `!T`, is `e`'s value if it isn't an error, and otherwise `x`, as `ifnull` is for `?T` (§8, Optional, rule 7): `x` is an expression, or a block that gives a value or leaves. `e iferr err{ error } { ... }` binds the error in the block, as `let ... else` does. For a bare `!` it has no value, and is a statement: `close{ &fs, file } iferr { return 1 }`. It groups right to left with `ifnull`.
+9. A `match` on a `!T` has the arms `ok{ value }` (`ok` for a bare `!`) and `err{ error }`, where `error` has the `!T`'s error type. `let ok{ value } = e else err{ error } { ... }` takes one apart (§11, Let-else). The arms may instead list errors next to `ok`: then `ok` must be listed, and a last `err{ error }`, or `else`, takes the errors not listed. A `match` on an error lists errors, with `else` for the rest. An arm doesn't mix `ok` or `err` with errors.
+10. A listed error must be one the value can be, and without `else` or `err` every one it can be must be listed: adding an error to a function breaks the matches that listed all of its errors. With `else` or `err`, at least one must be left for it. These are checked once the sets are inferred. A value of `error`, or of a function type's `!T`, may be any error of the program, so a match on one needs `else` or `err`.
+11. An error type or a `!T` isn't a C type (§18) and can't be held by a const (§14). Neither has a zero value. `match` doesn't go through a pointer to one.
+12. A function whose result's set is inferred can't be a value of a function type: that type's `!T` may be any error, and the function's result holds only its own.
+13. Representation: `!T` is a tagged union of `ok{ value: T }` and `err{ error: E }`. An error type is a tagged union of its set's errors, in the order they are declared in the program, sized for the largest payload; passing an error into a larger set renumbers it. Two error types with the same errors are the same type.
+
 ## 9. Generics
 
 1. Generic parameters are types, listed in `( )` directly after a declaration's name.
@@ -217,7 +263,7 @@ f{ ... }
 3. Statements are separated by newlines or `;`. A postfix `{`, `[` or `(` must be on the same line as the expression before it.
 4. Every block is a scope. A `let` is visible from its declaration to the end of its block.
 5. In `x = e`, `x` must be a mutable place.
-6. An expression statement must be a call or a builtin call that returns nothing. A call that returns a value is an error as a statement: use the value, or discard it explicitly with `_ = e`. `_ = e` evaluates any expression `e` that has a value, and drops it; `_` is not a name and can't be declared. The exception is the last statement of a branch of an `if` or `match` expression, which gives the branch its value (below).
+6. An expression statement must be a call or a builtin call that returns nothing, `try` of such a call, or `iferr` on a bare `!` (§8, Errors). A call that returns a value is an error as a statement, a `!T` or `!` included: use the value, or discard it explicitly with `_ = e`. `_ = e` evaluates any expression `e` that has a value, and drops it; `_` is not a name and can't be declared. The exception is the last statement of a branch of an `if` or `match` expression, which gives the branch its value (below).
 7. `return` without a value is only allowed in a function with no `-> R`. In a function with `-> R`, every path must end in `return e` or `@panic()`.
 8. `break` leaves the innermost enclosing `while`. `continue` skips the rest of its body and goes to its next condition check. Both are errors outside a loop, and both end a path.
 9. `while true` without a `break` that leaves it ends a path, like `return`.
@@ -291,14 +337,14 @@ Precedence, tightest first:
 | Level | Operators | Notes |
 |---|---|---|
 | postfix | `.f` `.*` `[i]` `[lo..hi]` `{ ... }` `::x` `(G)` | left to right |
-| prefix | `&` `-` `not` | |
+| prefix | `&` `-` `not` `try` | `try`: §8, Errors |
 | multiplicative | `*` `/` `%` | left to right |
 | additive | `+` `-` | left to right |
 | shift | `<<` `>>` | left to right |
 | bitwise and | `&` | left to right |
 | bitwise xor | `^` | left to right |
 | bitwise or | `\|` | left to right |
-| ifnull | `ifnull` | right to left; the right side may be a block (§8, Optional) |
+| ifnull | `ifnull` `iferr` | right to left; the right side may be a block (§8, Optional, Errors) |
 | comparison | `==` `!=` `<` `<=` `>` `>=` | don't chain: `a < b < c` is an error |
 | and | `and` | short-circuit |
 | or | `or` | short-circuit |
@@ -388,6 +434,8 @@ step  := .field | [index]
 | `[]T` | read-only slice: a pointer to `T`s and a length. |
 | `[]mut T` | slice whose elements can be written. |
 | `?T` | optional (§8). `?*T` is a nullable pointer. |
+| `!T`, `!` | a value or an error (§8, Errors). |
+| `error` | any error (§8, Errors). |
 | `enum Name: T { ... }` | integer type with named values (below) |
 | `fn{C} -> R` | unbound function type (§5) |
 | `&fn{C} -> R` | bound function type (§5, §6) |
@@ -518,6 +566,7 @@ _ = @fmt(&b, "due {}", date::write_iso{ d, _ })     // a function writes the hol
    - `f32` or `f64`: as `utf8::push_f32` and `push_f64` do, the shortest text that reads back as the value;
    - `bool`: `true` or `false`;
    - `utf8::String`: its text. A string literal argument is a view (§11, Literals);
+   - an error (§8, Errors): its full name, and its payload as `{ field = value, ... }`, each value as a hole of its type pushes it, or `_` for a type no hole takes: `parse::bad_digit{ at = 3 }`;
    - a function value whose context is one `mut` field and that returns `bool`: the function is called with `b` in that field, and its result counts as the hole's. This is how a type is formatted: `write_iso{ d, _ }` binds everything but the builder (§4).
 
    Anything else is an error. `{x}` takes an unsigned integer and writes it in lowercase hexadecimal; `{c}` takes an integer that converts to `u32` and writes it as a character (`utf8::push_char`).

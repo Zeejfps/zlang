@@ -39,7 +39,7 @@ namespace check {
     // A source file: std's files come first, then the program's.
     struct File { name: []u8, text: []u8, lines: []u32, tree: syntax::File }
 
-    enum Kind: u8 { func, record, sum, enumeration, alias, constant, external, cap }
+    enum Kind: u8 { func, record, sum, enumeration, alias, constant, external, cap, fault }
 
     // A union variant, resolved. A variant without a payload has null fields.
     struct Variant { name: []u8, fields: ?[]types::Field }
@@ -68,6 +68,7 @@ namespace check {
         space{ ns: u32 },
         decl{ i: u32 },
         prim{ p: types::Prim },
+        anyerr,                         // `error`: the type of any error (§8, Errors)
     }
 
     struct Space {
@@ -85,6 +86,7 @@ namespace check {
         prim{ p: types::Prim },
         param{ decl: u32, index: u32 },
         local{ var: u32 },
+        anyerr,
     }
 
     // Where a type expression is resolved: a namespace, and the generic parameters in scope,
@@ -171,7 +173,23 @@ namespace check {
         // The sets of Var.derived and Var.held.
         derived:   list::List([]u32, Heap),
         held:      list::List([]Place, Heap),
+        // Errors (§8, Errors): their declarations, numbered in this order, and each function's
+        // set, inferred from what flows into it while its body is checked (infer_sets).
+        faults:    list::List(u32, Heap),
+        fn_decl:   u32,                               // the function whose body is checked, or NONE
+        flows:     map::Map(u32, Flow, Heap),         // by function
+        sets:      map::Map(u32, []u32, Heap),        // by function, once inferred
+        pending:   list::List(Pending, Heap),         // matches on errors, finished once they are
+        pat_errs:  map::Map(u64, u32, Heap),          // the error a pattern names, by its name's key
     }
+
+    // What flows into a function's error set: the errors it returns (atoms), the functions whose
+    // errors it passes up (subs), and whether any error at all may (from a function type).
+    struct Flow { atoms: []u32, subs: []u32, any: bool }
+
+    // A match on errors, whose arms are checked against the set once it is inferred: the errors
+    // it lists, where, and the arm that takes the rest (`else` or `err`), if any.
+    struct Pending { at: source::Span, errs: Id, listed: []u32, spans: []source::Span, rest: ?source::Span, rest_word: []u8 }
 
     // A local, context field or match binding, or a narrowed view of one (ctxi's VarInfo).
     enum VarKind: u8 { ctx, local, bind, narrow }
@@ -253,6 +271,7 @@ namespace check {
         variant{ ty: Id, index: u32 },
         enumval{ ty: Id, index: u32 },
         path{ e: Entry, seg: syntax::Seg },          // a type or namespace: not a value
+        fault{ decl: u32 },                          // an error (§8, Errors)
     }
 
     fn new { files: []File, std_files: usize, mut heap: Heap, mut diags: diag::Diags } -> Checker {
@@ -308,6 +327,12 @@ namespace check {
             folding = ids{ &heap },
             derived = list::new([]u32){ realloc = arena::alloc, &heap },
             held = list::new([]Place){ realloc = arena::alloc, &heap },
+            faults = ids{ &heap },
+            fn_decl = NONE,
+            flows = map::new(u32, Flow){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            sets = map::new(u32, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            pending = list::new(Pending){ realloc = arena::alloc, &heap },
+            pat_errs = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
         }
         _ = space{ &c, name = "", parent = NONE }
         _ = space{ &c, name = "", parent = UNIVERSE }
@@ -318,6 +343,7 @@ namespace check {
             put_name{ &c, ns = UNIVERSE, values = false, name = types::PRIM_NAMES[i], e = Entry::prim{ p } }
             i = i + 1
         }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "error", e = Entry::anyerr }
         return c
     }
 
@@ -333,6 +359,8 @@ namespace check {
         each{ &c, xs = c.consts, what = Phase::fold }
         attributes{ &c }
         each{ &c, xs = c.fns, what = Phase::bodies }
+        infer_sets{ &c }
+        finish_matches{ &c }
         check_main{ &c }
     }
 
@@ -353,12 +381,13 @@ namespace check {
         each{ &c, xs = c.unions, what = Phase::unions }
         each{ &c, xs = c.enums, what = Phase::enums }
         each{ &c, xs = c.aliases, what = Phase::aliases }
+        each{ &c, xs = c.faults, what = Phase::faults }
         each{ &c, xs = c.consts, what = Phase::consts }
         each{ &c, xs = c.fns, what = Phase::sigs }
         each{ &c, xs = c.externs, what = Phase::sigs }
     }
 
-    union Phase { structs, caps, unions, enums, aliases, consts, sigs, const_values, fold, bodies }
+    union Phase { structs, faults, caps, unions, enums, aliases, consts, sigs, const_values, fold, bodies }
 
     fn each { mut c: Checker, xs: list::List(u32, Heap), what: Phase } {
         let items = list::items{ list = xs }
@@ -367,6 +396,7 @@ namespace check {
             let d = items[i]
             match what {
                 structs => { resolve_struct{ &c, d } }
+                faults  => { resolve_fault{ &c, d } }
                 caps    => { resolve_cap{ &c, d } }
                 unions  => { resolve_union{ &c, d } }
                 enums   => { resolve_enum{ &c, d } }
@@ -426,6 +456,16 @@ namespace check {
                     let d = declare{ &c, kind = Kind::cap, x, file, name, tparams = no_names{}, ns }
                     add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
                     if fields != null { push{ xs = &c.caps, n = d } }
+                }
+                fault{ name } => {
+                    let d = declare{ &c, kind = Kind::fault, x, file, name, tparams = no_names{}, ns }
+                    if slice::eq_bytes{ a = name.text, b = "ok" } or slice::eq_bytes{ a = name.text, b = "err" } {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "an error can't be named `{}`: a match on a `!T` has the arms `ok` and `err`", str{ s = name.text }) }
+                        error{ &c, at = name.span, msg = utf8::view{ b } }
+                    }
+                    add_name{ &c, ns, values = true, name, e = Entry::decl{ i = d }, at = x.span }
+                    push{ xs = &c.faults, n = d }
                 }
                 space{ name, decls = inner } => {
                     let child = space{ &c, name = name.text, parent = ns }
@@ -551,6 +591,76 @@ namespace check {
             else => {}
         }
         list::at{ list = c.decls, i = d }.fields = list::items{ list = out }
+    }
+
+    // An error's payload (§8, Errors), resolved as a struct's fields are.
+    fn resolve_fault { mut c: Checker, d: u32 } {
+        let x = get_decl{ c, d }
+        let sc = own_scope{ &c, d }
+        let mut out = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        match x.syn.k {
+            fault{ fields = fs } => {
+                let fields = fs ifnull { slice::empty(syntax::Field){} }
+                let mut i: usize = 0
+                while i < fields.len {
+                    let f = fields[i]
+                    if seen_field{ fields, i } { duplicate{ &c, what = "field", name = f.name, at = f.span } }
+                    let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
+                    if contains_ptr{ &c, t, seen = no_vars{} } or holds_fail{ &c, t, depth = 0 } {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "error `{}`'s field `{}` can't hold {}: an error is passed up past frames that end, so its payload holds values, not pointers, slices or other errors", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t }) }
+                        error{ &c, at = f.span, msg = utf8::view{ b } }
+                    }
+                    add_field{ xs = &out, f = types::Field{ name = f.name.text, mutable = false, ty = t } }
+                    i = i + 1
+                }
+            }
+            else => {}
+        }
+        list::at{ list = c.decls, i = d }.fields = list::items{ list = out }
+    }
+
+    // Whether t is or holds a `!T` or an error, as a field, an element or a payload.
+    fn holds_fail { mut c: Checker, t: Id, depth: u32 } -> bool {
+        if depth > 64 { return false }
+        let x = types::prune{ s = c.ty, t }
+        match types::get{ s = c.ty, id = x } {
+            res | errs | eset => { return true }
+            array{ elem } | opt{ elem } => { return holds_fail{ &c, t = elem, depth = depth + 1 } }
+            record => {
+                let fs = struct_fields{ &c, t = x }
+                let mut i: usize = 0
+                while i < fs.len {
+                    if holds_fail{ &c, t = fs[i].ty, depth = depth + 1 } { return true }
+                    i = i + 1
+                }
+                return false
+            }
+            sum => {
+                let vs = variants_of{ &c, t = x }
+                let mut i: usize = 0
+                while i < vs.len {
+                    let fs = vs[i].fields ifnull { slice::empty(types::Field){} }
+                    let mut j: usize = 0
+                    while j < fs.len {
+                        if holds_fail{ &c, t = fs[j].ty, depth = depth + 1 } { return true }
+                        j = j + 1
+                    }
+                    i = i + 1
+                }
+                return false
+            }
+            else => { return false }
+        }
+    }
+
+    // An error's payload: null for an error declared without braces.
+    fn fault_fields { c: Checker, d: u32 } -> ?[]types::Field {
+        match get_decl{ c, d }.syn.k {
+            fault{ fields } => { if fields == null { return null } }
+            else => {}
+        }
+        return get_decl{ c, d }.fields
     }
 
     // §15: a capability's fields are C function pointers, called through it (§12, C function
@@ -928,7 +1038,11 @@ namespace check {
         match x.syn.k {
             constant{ ty } => {
                 let empty = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }
-                let t = rtype{ &c, te = ty, sc = empty, allow_bound = false }
+                let mut t = rtype{ &c, te = ty, sc = empty, allow_bound = false }
+                if holds_fail{ &c, t, depth = 0 } {
+                    error{ &c, at = ty.span, msg = "a const can't hold a `!T` or an error" }
+                    t = types::ERROR
+                }
                 list::at{ list = c.decls, i = d }.ty = t
             }
             else => {}
@@ -943,7 +1057,7 @@ namespace check {
             func{ params, ret, external } => {
                 let fields = context{ &c, params, sc }
                 let mut r = types::VOID
-                if ret != null { r = rtype{ &c, te = ret, sc, allow_bound = false } }
+                if ret != null { r = ret_type{ &c, te = ret, sc, owner = d } }
                 let at = list::at{ list = c.decls, i = d }
                 at.fields = fields
                 at.ret = r
@@ -1319,7 +1433,7 @@ namespace check {
             func{ bound, params, ret, external } => {
                 let fields = context{ &c, params, sc }
                 let mut r = types::VOID
-                if ret != null { r = rtype{ &c, te = ret.*, sc, allow_bound = false } }
+                if ret != null { r = ret_type{ &c, te = ret.*, sc, owner = NONE } }
                 if bound and not allow_bound {
                     error{ &c, at = te.span, msg = "`&fn` can only be the type of a local or a read-only context field" }
                     return types::ERROR
@@ -1330,7 +1444,23 @@ namespace check {
                 }
                 return types::func{ s = &c.ty, fields, ret = r, bound, external }
             }
+            // `!T` anywhere but a function's own result, where there is no body to infer a set
+            // from, fails with any error.
+            fail{ elem } => {
+                let ok = if elem == null { types::VOID } else { rtype{ &c, te = elem.*, sc, allow_bound = false } }
+                return types::res{ s = &c.ty, ok, errs = types::errs{ s = &c.ty, owner = NONE, one = NONE } }
+            }
         }
+    }
+
+    // A function's result type. `!T` there fails with the errors owner's body can produce, or
+    // with any error in a function type (owner NONE), which has no body to infer them from.
+    fn ret_type { mut c: Checker, te: syntax::TypeExpr, sc: Scope, owner: u32 } -> Id {
+        let fail{ elem } = te.k else { return rtype{ &c, te, sc, allow_bound = false } }
+        let ok = if elem == null { types::VOID } else { rtype{ &c, te = elem.*, sc, allow_bound = false } }
+        let t = types::res{ s = &c.ty, ok, errs = types::errs{ s = &c.ty, owner, one = NONE } }
+        if not map::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = t } { @panic("check: out of memory") }
+        return t
     }
 
     fn path_type { mut c: Checker, segs: []syntax::Seg, sc: Scope, allow_bound: bool } -> Id {
@@ -1426,6 +1556,10 @@ namespace check {
             prim{ p } => {
                 if given > 0 { no_targs{ &c, what = types::PRIM_NAMES[@as(usize, p)], at } }
                 return types::prim{ p }
+            }
+            anyerr => {
+                if given > 0 { no_targs{ &c, what = "error", at } }
+                return types::errs{ s = &c.ty, owner = NONE, one = NONE }
             }
             space{ ns } => {
                 let mut b = message{ c }
@@ -1703,6 +1837,7 @@ namespace check {
             space{ ns } => { use{ &c, n, r = Ref::space{ ns } } }
             decl{ i } => { use{ &c, n, r = Ref::decl{ i } } }
             prim{ p } => { use{ &c, n, r = Ref::prim{ p } } }
+            anyerr => { use{ &c, n, r = Ref::anyerr } }
         }
     }
 
@@ -1767,6 +1902,39 @@ namespace check {
                 return ok
             }
             param{ decl, index } => { return utf8::push{ &b, s = str{ s = get_decl{ c, d = decl }.tparams[index].text } } }
+            errs{ owner, one } => {
+                if one != NONE { return utf8::push{ &b, s = str{ s = get_decl{ c, d = one }.qual } } }
+                if owner == NONE { return utf8::push{ &b, s = "error" } }
+                return @fmt(&b, "error of `{}`", str{ s = get_decl{ c, d = owner }.qual })
+            }
+            eset{ errs } => {
+                let mut ok = utf8::push{ &b, s = "error{" }
+                let mut i: usize = 0
+                while i < errs.len {
+                    if i > 0 { ok = ok and utf8::push{ &b, s = ", " } }
+                    ok = ok and utf8::push{ &b, s = str{ s = get_decl{ c, d = errs[i] }.qual } }
+                    i = i + 1
+                }
+                return ok and utf8::push{ &b, s = "}" }
+            }
+            res{ ok, errs } => {
+                let r = utf8::push{ &b, s = "!" }
+                if ok == types::VOID { return r }
+                return r and write_type{ c, t = ok, &b }
+            }
+        }
+    }
+
+    // What errors of type t (an errs) may be, for messages: "the errors of `f`", "`fs::eof`" or
+    // "any error".
+    fn set_text { c: Checker, t: Id, mut b: utf8::Builder(Heap) } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            errs{ owner, one } => {
+                if one != NONE { return @fmt(&b, "`{}`", str{ s = get_decl{ c, d = one }.qual }) }
+                if owner == NONE { return utf8::push{ &b, s = "any error" } }
+                return @fmt(&b, "the errors of `{}`", str{ s = get_decl{ c, d = owner }.qual })
+            }
+            else => { return write_type{ c, t, &b } }
         }
     }
 
@@ -1807,6 +1975,7 @@ namespace check {
         match x.syn.k {
             func{ params, body } => {
                 begin_body{ &c, sc = own_scope{ &c, d }, ret = x.ret }
+                c.fn_decl = d
                 if not map::put{ m = &c.first_var, key = d, value = @as(u32, c.vars.len) } { @panic("check: out of memory") }
                 let mut i: usize = 0
                 while i < x.fields.len and i < params.len {
@@ -1817,7 +1986,7 @@ namespace check {
                     i = i + 1
                 }
                 block{ &c, b = body }
-                if x.ret != types::VOID and x.ret != types::ERROR and not c.dead {
+                if x.ret != types::VOID and x.ret != types::ERROR and not c.dead and not void_result{ c, t = x.ret } {
                     let mut b = message{ c }
                     pushed{ ok = @fmt(&b, "`{}` must end every path in `return` or `@panic()`", str{ s = x.name.text }) }
                     error{ &c, at = x.syn.span, msg = utf8::view{ b } }
@@ -1831,6 +2000,7 @@ namespace check {
     fn begin_body { mut c: Checker, sc: Scope, ret: Id } {
         c.sc = sc
         c.ret = ret
+        c.fn_decl = NONE
         list::clear{ list = &c.lits }
         list::clear{ list = &c.gvars }
         list::clear{ list = &c.fmts }
@@ -2896,6 +3066,37 @@ namespace check {
                 pushed{ ok = @fmt(&b, "@{}", str{ s = n.text }) }
                 name = utf8::view{ b }
             }
+            trye{ e = x } => {
+                // `try f{ ... }`: a call whose error is passed up.
+                t = typed{ &c, e }
+                let mut call = false
+                match x.k {
+                    braced{ callee } => {
+                        let lit = map::get{ m = c.literal, key = expr_key{ e = x.* } }
+                        call = lit == null or not lit
+                        let mut b = message{ c }
+                        match callee.k {
+                            path{ segs } => { pushed{ ok = @fmt(&b, "try {}", path_text{ c, segs }) } }
+                            else => { pushed{ ok = utf8::push{ &b, s = "try" } } }
+                        }
+                        name = utf8::view{ b }
+                    }
+                    else => {}
+                }
+                if not call {
+                    error{ &c, at = expr_at{ e }, msg = "an expression statement must be a call: `try` one, as in `try f{ ... }`" }
+                    return
+                }
+            }
+            matchx{ x } => {
+                if not x.is_iferr {
+                    error{ &c, at = expr_at{ e }, msg = "an expression statement must be a call" }
+                    _ = expr{ &c, e, exp = types::NO_TYPE }
+                    return
+                }
+                t = typed{ &c, e }
+                name = "iferr"
+            }
             else => {
                 error{ &c, at = expr_at{ e }, msg = "an expression statement must be a call" }
                 _ = expr{ &c, e, exp = types::NO_TYPE }
@@ -2912,7 +3113,7 @@ namespace check {
     fn return_stmt { mut c: Checker, value: ?syntax::Expr, at: source::Span } {
         if c.defers > 0 { error{ &c, at, msg = "cannot `return` from a defer" } }
         if value == null {
-            if c.ret != types::VOID and c.ret != types::ERROR { error{ &c, at, msg = "`return` needs a value here" } }
+            if c.ret != types::VOID and c.ret != types::ERROR and not void_result{ c, t = c.ret } { error{ &c, at, msg = "`return` needs a value here" } }
         } else if c.ret == types::VOID {
             error{ &c, at, msg = "this function has no return type" }
             _ = expr{ &c, e = value, exp = types::NO_TYPE }
@@ -3382,6 +3583,15 @@ namespace check {
             pushed{ ok = @fmt(&b, "`ifnull` needs an optional value, got {}", tstr{ c, t = st }) }
             error{ &c, at = expr_at{ e = scrut }, msg = utf8::view{ b } }
             ok = false
+        } else if ok and x.is_iferr and not is_res{ c, t = st } {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "`iferr` needs a `!T` value, got {}", tstr{ c, t = st }) }
+            error{ &c, at = expr_at{ e = scrut }, msg = utf8::view{ b } }
+            ok = false
+        } else if ok and (is_res{ c, t = ut } or is_errs{ c, t = ut }) {
+            if not through { return check_fail_match{ &c, x, at, exp, value, may_leave, t = ut } }
+            error{ &c, at = expr_at{ e = scrut }, msg = "match cannot go through a pointer to a `!T` or an error; match on the value with `.*`" }
+            ok = false
         } else if ok and through and is_enum{ c, t = ut } {
             error{ &c, at = expr_at{ e = scrut }, msg = "match cannot go through a pointer to an enum; match on the value with `.*`" }
             ok = false
@@ -3641,7 +3851,7 @@ namespace check {
                 error{ &c, at = expr_at{ e = init }, msg = "a `let` pattern cannot match through a pointer; use `match`" }
                 ok = false
             }
-            sum | opt => {}
+            sum | opt | res => {}
             else => {
                 if ok and untagged_type{ c, t } {
                     error{ &c, at = expr_at{ e = init }, msg = "an extern union has no tag to match on: read the field you know it holds" }
@@ -4153,8 +4363,14 @@ namespace check {
                 }
                 return false
             }
+            // An error's payload holds no pointers (resolve_fault).
+            res{ ok } => { return contains_ptr{ &c, t = ok, seen } }
             else => { return false }
         }
+    }
+
+    fn one_id { c: Checker, n: u32 } -> []u32 {
+        return set_add{ c, xs = no_vars{}, n }
     }
 
     // The type e's value has after any conversion.
@@ -4253,6 +4469,7 @@ namespace check {
             repeat{ elem } => { return derives{ &c, e = elem.* } }
             ifx{ x } => { return derives_if{ &c, x } }
             matchx{ x } => { return derives_match{ &c, x } }
+            trye{ e = x } => { return derives_raw{ &c, e = x.* } }
             else => {}
         }
         return no_vars{}
@@ -4808,6 +5025,7 @@ namespace check {
             }
             ifx{ x } => { scan_if{ &c, sc, x } }
             matchx{ x } => { scan_match{ &c, sc, x } }
+            trye{ e = x } => { scan{ &c, sc, e = x.* } }
             else => {}
         }
     }
@@ -4901,12 +5119,48 @@ namespace check {
 
     // Converts the value with key k, of type a, to t, and records how. pos is where it is.
     fn coerce_key { mut c: Checker, k: u64, pos: source::Span, a: Id, t: Id } {
+        let to = inner_target{ c, a, t }
         match convert{ &c, a, t, pos } {
             fail | same => {}
-            some => { put_conv_key{ &c, k, conv = Conv::some{ to = t } } }
-            to_slice => { put_conv_key{ &c, k, conv = Conv::slice{ to = t } } }
-            to_null => { put_type{ &c, k, t } }
+            some => { put_conv_key{ &c, k, conv = Conv::some{ to } } }
+            to_slice => { put_conv_key{ &c, k, conv = Conv::slice{ to } } }
+            to_null => { put_type{ &c, k, t = to } }
         }
+    }
+
+    // The type a value of type a becomes inside t: when t is a `!T` and a is neither a `!T` nor
+    // an error, a becomes the result's value, a T; otherwise t.
+    fn inner_target { c: Checker, a: Id, t: Id } -> Id {
+        let res{ ok } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } else { return t }
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = a } } {
+            res | errs => { return t }
+            else => { return ok }
+        }
+    }
+
+    // Whether errors of type `from` may become errors of type `into` (both errs), which records
+    // that they do when into is the set of the function being checked. A set takes another's
+    // errors only there, or when it is any error: a function type's, which has no body to infer
+    // a set from.
+    fn flows { mut c: Checker, from: Id, into: Id } -> bool {
+        let x = types::prune{ s = c.ty, t = from }
+        let y = types::prune{ s = c.ty, t = into }
+        if x == y { return true }
+        let errs{ owner = io, one = ie } = types::get{ s = c.ty, id = y } else { return false }
+        if io == NONE and ie == NONE { return true }
+        if io == NONE or io != c.fn_decl { return false }
+        let errs{ owner = fo, one = fe } = types::get{ s = c.ty, id = x } else { return false }
+        let f = map::get{ m = c.flows, key = io } ifnull { Flow{ atoms = no_vars{}, subs = no_vars{}, any = false } }
+        let mut g = f
+        if fe != NONE {
+            g.atoms = set_add{ c, xs = f.atoms, n = fe }
+        } else if fo == NONE {
+            g.any = true
+        } else if fo != io {
+            g.subs = set_add{ c, xs = f.subs, n = fo }
+        }
+        if not map::put{ m = &c.flows, key = io, value = g } { @panic("check: out of memory") }
+        return true
     }
 
     // How a value of type a converts to t, after reporting at pos that it doesn't.
@@ -4952,6 +5206,34 @@ namespace check {
         let y = types::prune{ s = c.ty, t = e }
         if x == types::ERROR or y == types::ERROR { return Coercion::same }
         let ty = types::get{ s = c.ty, id = y }
+        // A T becomes a `!T`'s value; a `!T` or an error keeps its errors, which may join the
+        // function's (flows).
+        match ty {
+            res{ ok = u, errs = into } => {
+                match types::get{ s = c.ty, id = x } {
+                    res{ ok = t, errs = from } => {
+                        if not types::unify{ s = &c.ty, a = t, b = u } { return Coercion::fail }
+                        return if flows{ &c, from, into } { Coercion::same } else { Coercion::fail }
+                    }
+                    errs => { return if flows{ &c, from = x, into } { Coercion::same } else { Coercion::fail } }
+                    var{ n } => {
+                        if types::var_of{ s = c.ty, n }.kind == types::VarKind::any {
+                            return if types::unify{ s = &c.ty, a = x, b = y } { Coercion::same } else { Coercion::fail }
+                        }
+                    }
+                    else => {}
+                }
+                if types::prune{ s = c.ty, t = u } == types::VOID { return Coercion::fail }
+                return coerce{ &c, a = x, e = u }
+            }
+            errs => {
+                match types::get{ s = c.ty, id = x } {
+                    errs => { return if flows{ &c, from = x, into = y } { Coercion::same } else { Coercion::fail } }
+                    else => {}
+                }
+            }
+            else => {}
+        }
         if x == types::NULL {
             match ty { opt => { return Coercion::to_null } else => { return Coercion::fail } }
         }
@@ -5065,7 +5347,37 @@ namespace check {
             }
             else => {}
         }
+        // Two results, or two functions returning one, whose errors differ.
+        let xr = result_of{ c, t = x }
+        let yr = result_of{ c, t = y }
+        match types::get{ s = c.ty, id = xr } {
+            res{ ok = xo, errs = xe } => {
+                match types::get{ s = c.ty, id = yr } {
+                    res{ ok = yo, errs = ye } => {
+                        if types::prune{ s = c.ty, t = xo } == types::prune{ s = c.ty, t = yo } and xe != ye {
+                            if xr != x {
+                                return @fmt(&b, "a function whose `!T` fails with its body's errors can't be a value of type ") and write_type{ c, t = y, &b }
+                                    and @fmt(&b, ", whose `!T` fails with any error")
+                            }
+                            return @fmt(&b, "expected ") and write_type{ c, t = y, &b } and @fmt(&b, " failing with ") and set_text{ c, t = ye, &b }
+                                and @fmt(&b, ", got one failing with ") and set_text{ c, t = xe, &b }
+                                and @fmt(&b, ": errors join only the result of the function that returns them")
+                        }
+                    }
+                    else => {}
+                }
+            }
+            else => {}
+        }
         return @fmt(&b, "expected ") and write_type{ c, t = y, &b } and @fmt(&b, ", got ") and write_type{ c, t = x, &b }
+    }
+
+    // t's result if t is a function type, else t.
+    fn result_of { c: Checker, t: Id } -> Id {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            func{ ret } => { return types::prune{ s = c.ty, t = ret } }
+            else => { return types::prune{ s = c.ty, t } }
+        }
     }
 
     fn expr_kind { mut c: Checker, e: syntax::Expr, exp: Id } -> Id {
@@ -5157,7 +5469,38 @@ namespace check {
             }
             ifx{ x } => { return check_if{ &c, x, at = expr_at{ e }, exp, value = true, may_leave = false } }
             matchx{ x } => { return check_match{ &c, x, at = expr_at{ e }, exp, value = true, may_leave = false } }
+            trye{ e = x } => { return try_expr{ &c, e, x = x.* } }
         }
+    }
+
+    // `try x` (§8, Errors): x's value, or x's error returned from the function, whose set gains
+    // x's errors. x is a `!T`, in a function returning `!U`.
+    fn try_expr { mut c: Checker, e: syntax::Expr, x: syntax::Expr } -> Id {
+        let t = typed{ &c, e = x }
+        if t == types::ERROR { return types::ERROR }
+        let res{ ok, errs } = types::get{ s = c.ty, id = t } else {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "`try` needs a `!T` value, got {}", tstr{ c, t }) }
+            error{ &c, at = expr_at{ e = x }, msg = utf8::view{ b } }
+            return types::ERROR
+        }
+        if c.defers > 0 {
+            error{ &c, at = expr_at{ e }, msg = "cannot `try` in a defer: it may return" }
+            return ok
+        }
+        if c.ret == types::ERROR { return ok }
+        let res{ errs = own } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = c.ret } } else {
+            let mut b = message{ c }
+            if c.ret == types::VOID {
+                pushed{ ok = utf8::push{ &b, s = "`try` passes an error up: it needs a function that returns `!T`, not one without a result type" } }
+            } else {
+                pushed{ ok = @fmt(&b, "`try` passes an error up: it needs a function that returns `!T`, not {}", tstr{ c, t = c.ret }) }
+            }
+            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+            return ok
+        }
+        _ = flows{ &c, from = errs, into = own }
+        return ok
     }
 
     // `base[lo..hi]`. An array place is sliced through its address, a `*[N]T` directly.
@@ -5331,6 +5674,14 @@ namespace check {
                 pushed{ ok = @fmt(&b, "`{}` is a type, not a value", path_text{ c, segs }) }
                 error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
                 return types::ERROR
+            }
+            fault{ decl } => {
+                if fault_fields{ c, d = decl } != null {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "error `{}` has a payload; construct it with `{}{{ ... }}`", str{ s = get_decl{ c, d = decl }.qual }, path_text{ c, segs }) }
+                    error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                }
+                return types::errs{ s = &c.ty, owner = NONE, one = decl }
             }
         }
     }
@@ -5568,6 +5919,15 @@ namespace check {
                     }
                     return PathRef::constant{ decl = i }
                 }
+                if x.kind == Kind::fault {
+                    if seg.targs != null {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "error `{}` takes no type arguments", str{ s = x.name.text }) }
+                        error{ &c, at = seg.name.span, msg = utf8::view{ b } }
+                        return null
+                    }
+                    return PathRef::fault{ decl = i }
+                }
                 let explicit = targs_of{ &c, seg }
                 let mut all = list::new(Id){ realloc = arena::alloc, heap = c.heap }
                 if explicit != null {
@@ -5623,6 +5983,7 @@ namespace check {
                         return types::ERROR
                     }
                     func{ decl, targs } => { ct = fn_type{ &c, d = decl, targs } }
+                    fault{ decl } => { return fault_lit{ &c, e, decl, items, forward, bind } }
                     constant{ decl } => { ct = get_decl{ c, d = decl }.ty }
                     local{ var } => {
                         check_read{ &c, v = var, at = expr_at{ e = callee } }
@@ -5817,8 +6178,9 @@ namespace check {
             let how = if includes_cap_ptr{ c, a = arg, b = want } { Coercion::same } else { convert{ &c, a = arg, t = want, pos = at } }
             return Forward{ name = f.name, var = v, mutable = true, ty = x.ty, arg, conv = conv_of{ how, t = want } }
         }
+        let to = inner_target{ c, a = x.ty, t = f.ty }
         let how = convert{ &c, a = x.ty, t = f.ty, pos = at }
-        return Forward{ name = f.name, var = v, mutable = false, ty = x.ty, arg = x.ty, conv = conv_of{ how, t = f.ty } }
+        return Forward{ name = f.name, var = v, mutable = false, ty = x.ty, arg = x.ty, conv = conv_of{ how, t = to } }
     }
 
     // "`a`, `b`"
@@ -5965,6 +6327,22 @@ namespace check {
             i = i + 1
         }
         return t
+    }
+
+    // An error with its payload, `fs::os{ code = c }`: an error of its own alone.
+    fn fault_lit { mut c: Checker, e: syntax::Expr, decl: u32, items: []syntax::Item, forward: bool, bind: bool } -> Id {
+        let q = str{ s = get_decl{ c, d = decl }.qual }
+        let fields = fault_fields{ c, d = decl } ifnull {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "error `{}` has no payload; write it without braces", q) }
+            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+            return types::ERROR
+        }
+        no_spread{ &c, e, items }
+        let t = types::errs{ s = &c.ty, owner = NONE, one = decl }
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "error `{}`", q) }
+        return fields_lit{ &c, e, t, fields, what = utf8::view{ b }, items, spread = slice::empty(types::Field){}, forward, bind }
     }
 
     fn variant_lit { mut c: Checker, e: syntax::Expr, ut: Id, vi: u32, items: []syntax::Item, forward: bool, bind: bool, exp: Id } -> Id {
@@ -6780,6 +7158,7 @@ namespace check {
         }
         if types::is_float{ s = c.ty, t } { return if t == types::prim{ p = types::Prim::f32 } { "push_f32" } else { "push_f64" } }
         if t == types::BOOL { return "push_bool" }
+        if is_errs{ c, t } { return "error" }
         match types::get{ s = c.ty, id = t } {
             func{ fields, ret, external } => {
                 if not external and fields.len == 1 and fields[0].mutable and types::prune{ s = c.ty, t = ret } == types::BOOL { return "call" }
@@ -6787,7 +7166,7 @@ namespace check {
             else => {}
         }
         let mut b = message{ c }
-        pushed{ ok = @fmt(&b, "@fmt can't format {}: give a utf8::String, a number, a bool, or a function that writes to the builder", tstr{ c, t }) }
+        pushed{ ok = @fmt(&b, "@fmt can't format {}: give a utf8::String, a number, a bool, an error, or a function that writes to the builder", tstr{ c, t }) }
         error{ &c, at, msg = utf8::view{ b } }
         return ""
     }
@@ -6853,6 +7232,370 @@ namespace check {
         }
     }
 
+    // ---- errors (§8, Errors)
+
+    fn is_res { c: Checker, t: Id } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { res => { return true } else => { return false } }
+    }
+
+    fn is_errs { c: Checker, t: Id } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { errs | eset => { return true } else => { return false } }
+    }
+
+    // Whether t is a bare `!`: a function returning it returns no value, or fails.
+    fn void_result { c: Checker, t: Id } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            res{ ok } => { return types::prune{ s = c.ty, t = ok } == types::VOID }
+            else => { return false }
+        }
+    }
+
+    // The errors an error of type t may be, once the sets are inferred: a function's set, one
+    // error, or every error of the program.
+    fn set_of { c: Checker, t: Id } -> []u32 {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            errs{ owner, one } => {
+                if one != NONE { return one_id{ c, n = one } }
+                if owner == NONE { return list::items{ list = c.faults } }
+                return map::get{ m = c.sets, key = owner } ifnull { no_vars{} }
+            }
+            eset{ errs } => { return errs }
+            else => { return no_vars{} }
+        }
+    }
+
+    // An error type as its set: the type lowering gives it, shared by every type with its errors.
+    fn eset_of { mut c: Checker, t: Id } -> Id {
+        return types::eset{ s = &c.ty, errs = set_of{ c, t } }
+    }
+
+    // The error a pattern names, `name` or `a::b::name`, or NONE after saying why it names none.
+    fn fault_named { mut c: Checker, p: syntax::Pattern } -> u32 {
+        let n = p.variant
+        if n.text.len == 0 { return NONE }
+        let mut found: ?Entry = null
+        if p.quals.len == 0 {
+            found = lookup_value{ c, ns = c.sc.ns, name = n.text }
+        } else {
+            let q0 = p.quals[0]
+            if q0.text.len == 0 { return NONE }
+            let first = lookup_path{ c, ns = c.sc.ns, name = q0.text } ifnull {
+                unknown{ &c, n = q0 }
+                return NONE
+            }
+            refer{ &c, n = q0, e = first }
+            let mut e = first
+            let mut i: usize = 0
+            while i < p.quals.len {
+                let prev = p.quals[i]
+                let space{ ns } = e else {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "`{}` is not a namespace", str{ s = prev.text }) }
+                    error{ &c, at = prev.span, msg = utf8::view{ b } }
+                    return NONE
+                }
+                if i + 1 == p.quals.len {
+                    found = map::get{ m = get_space{ c, ns }.values, key = n.text }
+                } else {
+                    let q = p.quals[i + 1]
+                    e = map::get{ m = get_space{ c, ns }.paths, key = q.text } ifnull {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "no namespace `{}` in `{}`", str{ s = q.text }, str{ s = prev.text }) }
+                        error{ &c, at = q.span, msg = utf8::view{ b } }
+                        return NONE
+                    }
+                    refer{ &c, n = q, e }
+                }
+                i = i + 1
+            }
+        }
+        let f = found
+        if f != null {
+            match f {
+                decl{ i } => {
+                    if get_decl{ c, d = i }.kind == Kind::fault {
+                        refer{ &c, n, e = f }
+                        return i
+                    }
+                }
+                else => {}
+            }
+        }
+        let mut b = message{ c }
+        let mut ok = utf8::push{ &b, s = if f == null { "no error `" } else { "`" } }
+        let mut i: usize = 0
+        while i < p.quals.len {
+            ok = ok and @fmt(&b, "{}::", str{ s = p.quals[i].text })
+            i = i + 1
+        }
+        pushed{ ok = ok and utf8::push{ &b, s = str{ s = n.text } } and utf8::push{ &b, s = if f == null { "`" } else { "` is not an error" } } }
+        error{ &c, at = p.span, msg = utf8::view{ b } }
+        return NONE
+    }
+
+    // A match on a `!T` or an error (§8, Errors). On a `!T`, `ok` and `err` are its variants,
+    // and errors may be listed next to `ok`: then an `else`, or an `err` arm, which binds the
+    // error, takes the rest. On an error, the arms list errors. Whether each listed error can
+    // happen, and whether every one that can is listed, waits for the sets (finish_matches). As
+    // `iferr` on a bare `!`, it has no value, and its `ok` arm is skipped.
+    fn check_fail_match { mut c: Checker, x: syntax::Match, at: source::Span, exp: Id, value: bool, may_leave: bool, t: Id } -> Id {
+        let scrut = x.scrut.*
+        let mut vs: []Variant = slice::empty(Variant){}
+        let mut errs = t
+        let mut bare = false
+        match types::get{ s = c.ty, id = t } {
+            res{ ok, errs = e } => {
+                vs = variants_of{ &c, t }
+                errs = e
+                bare = x.is_iferr and types::prune{ s = c.ty, t = ok } == types::VOID
+            }
+            else => {}
+        }
+        let is_r = vs.len > 0
+        let scrut_derived = new_derived{ &c, xs = derives{ &c, e = scrut } }
+        let s0 = save{ c }
+        let mut seen = list::new(u32){ realloc = arena::alloc, heap = c.heap }       // 0 for `ok`, 1 for `err`
+        let mut listed = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let mut spans = list::new(source::Span){ realloc = arena::alloc, heap = c.heap }
+        let mut rest: ?source::Span = null
+        let mut rest_word: []u8 = "else"
+        let mut has_else = false
+        let mut results = list::new(State){ realloc = arena::alloc, heap = c.heap }
+        let mut bs = list::new(Branch){ realloc = arena::alloc, heap = c.heap }
+        let arms = x.arms
+        let mut i: usize = 0
+        while i < arms.len {
+            let arm = arms[i]
+            let skip = bare and i == 0
+            let mut first: []u32 = slice::empty(u32){}
+            let mut first_name: []u8 = ""
+            if arm.pats.len == 0 {
+                if i != arms.len - 1 {
+                    error{ &c, at = arm.span, msg = "`else` must be the last arm" }
+                } else if seen.len == 2 {
+                    error{ &c, at = arm.span, msg = "`else` is unreachable: every variant is already listed" }
+                }
+                has_else = true
+                rest = arm.span
+                rest_word = "else"
+            }
+            let mut kinds: u32 = 0          // 1: `ok` or `err`, 2: errors
+            let mut k: usize = 0
+            while k < arm.pats.len {
+                let p = arm.pats[k]
+                let word = p.variant.text
+                let mut fields: ?[]types::Field = null
+                let mut known = true
+                if is_r and p.quals.len == 0 and (slice::eq_bytes{ a = word, b = "ok" } or slice::eq_bytes{ a = word, b = "err" }) {
+                    kinds = kinds | 1
+                    let vi: u32 = if slice::eq_bytes{ a = word, b = "ok" } { 0 } else { 1 }
+                    if has_id{ xs = list::items{ list = seen }, n = vi } {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "variant `{}` appears in more than one arm", str{ s = word }) }
+                        error{ &c, at = p.span, msg = utf8::view{ b } }
+                    } else {
+                        push{ xs = &seen, n = vi }
+                    }
+                    if vi == 1 {
+                        rest = p.span
+                        rest_word = "err"
+                    }
+                    fields = vs[vi].fields
+                } else {
+                    kinds = kinds | 2
+                    let d = fault_named{ &c, p }
+                    if d == NONE {
+                        known = false
+                    } else {
+                        let q = str{ s = get_decl{ c, d }.qual }
+                        if has_id{ xs = list::items{ list = seen }, n = 1 } {
+                            let mut b = message{ c }
+                            pushed{ ok = @fmt(&b, "error `{}` comes after `err`, which takes every error", q) }
+                            error{ &c, at = p.span, msg = utf8::view{ b } }
+                        } else if has_id{ xs = list::items{ list = listed }, n = d } {
+                            let mut b = message{ c }
+                            pushed{ ok = @fmt(&b, "error `{}` appears in more than one arm", q) }
+                            error{ &c, at = p.span, msg = utf8::view{ b } }
+                        } else {
+                            push{ xs = &listed, n = d }
+                            if not list::push{ list = &spans, item = p.span } { @panic("check: out of memory") }
+                        }
+                        fields = fault_fields{ c, d }
+                        if not map::put{ m = &c.pat_errs, key = name_key{ n = p.variant }, value = d } { @panic("check: out of memory") }
+                    }
+                }
+                let bv = if skip { no_vars{} } else { pattern_vars{ &c, variant = word, known, fields, binders = p.binders, through = false, ptr_mut = false, derived = scrut_derived, at = p.span } }
+                if k == 0 {
+                    first = bv
+                    first_name = word
+                } else {
+                    same_binds{ &c, first_name, first, variant = word, mine = bv, binders = p.binders, at = p.span }
+                }
+                k = k + 1
+            }
+            if kinds == 3 { error{ &c, at = arm.span, msg = "an arm can't list `ok` or `err` with errors" } }
+            restore{ &c, s = s0 }
+            if skip {
+                add_branch{ xs = &bs, b = Branch{ t = types::NO_TYPE, value = Value::none } }
+            } else {
+                add_branch{ xs = &bs, b = branch{ &c, b = arm.body, vars = first, facts = slice::empty(Fact){}, exp, value = value and not bare } }
+            }
+            add_state{ xs = &results, s = save{ c } }
+            i = i + 1
+        }
+        let ok_seen = has_id{ xs = list::items{ list = seen }, n = 0 }
+        let err_seen = has_id{ xs = list::items{ list = seen }, n = 1 }
+        if is_r and listed.len > 0 and not ok_seen {
+            error{ &c, at, msg = "a match that lists errors must list `ok` too" }
+        } else if is_r and not has_else and (not ok_seen or (not err_seen and listed.len == 0)) {
+            let missing: utf8::String = if not ok_seen and not err_seen and listed.len == 0 { "ok, err" } else if not ok_seen { "ok" } else { "err" }
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "match isn't exhaustive: missing {}", missing) }
+            error{ &c, at, msg = utf8::view{ b } }
+        }
+        if listed.len > 0 or not is_r {
+            let p = Pending{
+                at, errs, listed = list::items{ list = listed }, spans = list::items{ list = spans },
+                rest = if has_else or err_seen { rest } else { null }, rest_word,
+            }
+            if not list::push{ list = &c.pending, item = p } { @panic("check: out of memory") }
+        }
+        restore{ &c, s = merge{ c, xs = list::items{ list = results } } }
+        if bare { return types::VOID }
+        if value { return join{ &c, at, bs = list::items{ list = bs }, exp, may_leave } }
+        return types::NO_TYPE
+    }
+
+    // Each function's error set: the errors that flow into it, and the sets of the functions whose
+    // errors flow into it, until no set grows. Sets only grow and are finite, so this ends,
+    // through recursion too. A set is in declaration order: each error's number.
+    fn infer_sets { mut c: Checker } {
+        let fs = list::items{ list = c.fns }
+        let mut any = map::new(u32, bool){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 }
+        let mut i: usize = 0
+        while i < fs.len {
+            let d = fs[i]
+            let f = map::get{ m = c.flows, key = d }
+            if f != null {
+                if not map::put{ m = &c.sets, key = d, value = f.atoms } { @panic("check: out of memory") }
+                if f.any { put_bool{ m = &any, k = d } }
+            }
+            i = i + 1
+        }
+        let mut changed = true
+        while changed {
+            changed = false
+            i = 0
+            while i < fs.len {
+                let d = fs[i]
+                let f = map::get{ m = c.flows, key = d }
+                if f != null and not map::has{ m = any, key = d } {
+                    let mut cur = map::get{ m = c.sets, key = d } ifnull { no_vars{} }
+                    let mut k: usize = 0
+                    while k < f.subs.len {
+                        let sub = f.subs[k]
+                        if map::has{ m = any, key = sub } {
+                            put_bool{ m = &any, k = d }
+                            changed = true
+                            break
+                        }
+                        let theirs = map::get{ m = c.sets, key = sub } ifnull { no_vars{} }
+                        let n = set_union{ c, a = cur, b = theirs }
+                        if n.len != cur.len {
+                            cur = n
+                            changed = true
+                        }
+                        k = k + 1
+                    }
+                    if not map::put{ m = &c.sets, key = d, value = cur } { @panic("check: out of memory") }
+                }
+                i = i + 1
+            }
+        }
+        i = 0
+        while i < fs.len {
+            let d = fs[i]
+            let set = if map::has{ m = any, key = d } { list::items{ list = c.faults } } else { map::get{ m = c.sets, key = d } ifnull { no_vars{} } }
+            if not map::put{ m = &c.sets, key = d, value = sorted_ids{ c, xs = set } } { @panic("check: out of memory") }
+            i = i + 1
+        }
+    }
+
+    fn sorted_ids { c: Checker, xs: []u32 } -> []u32 {
+        let mut out = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < xs.len {
+            push{ xs = &out, n = xs[i] }
+            let ys = list::items{ list = out }
+            let mut k = ys.len - 1
+            while k > 0 and ys[k] < ys[k - 1] {
+                let tmp = ys[k]
+                ys[k] = ys[k - 1]
+                ys[k - 1] = tmp
+                k = k - 1
+            }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // The matches on errors, against the inferred sets: each error listed must be one that can
+    // happen, and without an `else` or `err` arm every one that can must be listed.
+    fn finish_matches { mut c: Checker } {
+        let ps = list::items{ list = c.pending }
+        let mut i: usize = 0
+        while i < ps.len {
+            let p = ps[i]
+            let set = set_of{ c, t = p.errs }
+            let mut j: usize = 0
+            while j < p.listed.len {
+                if not has_id{ xs = set, n = p.listed[j] } {
+                    let mut b = message{ c }
+                    let mut ok = @fmt(&b, "error `{}` can't happen here: ", str{ s = get_decl{ c, d = p.listed[j] }.qual })
+                    if set.len == 0 {
+                        ok = ok and utf8::push{ &b, s = "this can't fail" }
+                    } else {
+                        ok = ok and utf8::push{ &b, s = "this fails only with " } and fault_names{ c, ds = set, &b }
+                    }
+                    pushed{ ok }
+                    error{ &c, at = p.spans[j], msg = utf8::view{ b } }
+                }
+                j = j + 1
+            }
+            let mut missing = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+            j = 0
+            while j < set.len {
+                if not has_id{ xs = p.listed, n = set[j] } { push{ xs = &missing, n = set[j] } }
+                j = j + 1
+            }
+            let rest = p.rest
+            if rest == null {
+                if missing.len > 0 {
+                    let mut b = message{ c }
+                    pushed{ ok = utf8::push{ &b, s = "match isn't exhaustive: missing " } and fault_names{ c, ds = list::items{ list = missing }, &b } }
+                    error{ &c, at = p.at, msg = utf8::view{ b } }
+                }
+            } else if missing.len == 0 {
+                let mut b = message{ c }
+                pushed{ ok = @fmt(&b, "`{}` is unreachable: every error is already listed", str{ s = p.rest_word }) }
+                error{ &c, at = rest, msg = utf8::view{ b } }
+            }
+            i = i + 1
+        }
+    }
+
+    // "a::x, b::y"
+    fn fault_names { c: Checker, ds: []u32, mut b: utf8::Builder(Heap) } -> bool {
+        let mut ok = true
+        let mut i: usize = 0
+        while i < ds.len {
+            if i > 0 { ok = ok and utf8::push{ &b, s = ", " } }
+            ok = ok and utf8::push{ &b, s = str{ s = get_decl{ c, d = ds[i] }.qual } }
+            i = i + 1
+        }
+        return ok
+    }
+
     // ---- the fields of declared types
 
     // The type a non-generic struct or union declaration declares.
@@ -6900,6 +7643,29 @@ namespace check {
                     } else {
                         add_variant{ xs = &out, v = Variant{ name = v.name, fields = subst_fields{ &c, fields = fs, decl, args } } }
                     }
+                    i = i + 1
+                }
+            }
+            // `!T`: `ok{ value }` (`ok` alone for a bare `!`) and `err{ error }`.
+            res{ ok, errs } => {
+                if types::prune{ s = c.ty, t = ok } == types::VOID {
+                    add_variant{ xs = &out, v = Variant{ name = "ok", fields = null } }
+                } else {
+                    let mut fs = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+                    add_field{ xs = &fs, f = types::Field{ name = "value", mutable = false, ty = ok } }
+                    add_variant{ xs = &out, v = Variant{ name = "ok", fields = list::items{ list = fs } } }
+                }
+                let mut es = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+                add_field{ xs = &es, f = types::Field{ name = "error", mutable = false, ty = errs } }
+                add_variant{ xs = &out, v = Variant{ name = "err", fields = list::items{ list = es } } }
+            }
+            // An error: one variant per error of its set, which must be inferred by now.
+            errs => { return variants_of{ &c, t = eset_of{ &c, t } } }
+            eset{ errs } => {
+                let mut i: usize = 0
+                while i < errs.len {
+                    let d = get_decl{ c, d = errs[i] }
+                    add_variant{ xs = &out, v = Variant{ name = d.qual, fields = fault_fields{ c, d = errs[i] } } }
                     i = i + 1
                 }
             }
@@ -6964,12 +7730,13 @@ namespace check {
                 if offs == null { return null }
                 return offs.layout
             }
-            opt | sum => {
+            opt | sum | res | eset => {
                 if nullable_ptr{ c, t } { return Layout{ size = 8, align = 8 } }
                 let u = union_offsets{ &c, t }
                 if u == null { return null }
                 return u.layout
             }
+            errs => { return layout{ &c, t = eset_of{ &c, t } } }
             else => { return null }
         }
     }

@@ -43,6 +43,7 @@ namespace syntax {
         constant{ name: Name, ty: TypeExpr, value: Expr },
         space{ name: Name, decls: []Decl },                               // namespace
         cap{ name: Name, fields: ?[]Field, includes: []Include },          // capability; fields null without braces
+        fault{ name: Name, fields: ?[]Field },                              // error; fields null without braces
     }
 
     // `..Name` among a capability's fields (§15): the fields before it in the braces are
@@ -72,6 +73,7 @@ namespace syntax {
         slice{ mutable: bool, elem: *TypeExpr },
         array{ n: *Expr, elem: *TypeExpr },
         func{ bound: bool, params: []Param, ret: ?*TypeExpr, external: bool },   // external: `extern fn{...}`
+        fail{ elem: ?*TypeExpr },               // `!T`, or `!` alone (no elem): a result or an error
     }
 
     // One step of a path: `name` or `name(T, ...)`. `name()` has empty targs, not null ones.
@@ -105,14 +107,16 @@ namespace syntax {
 
     // `e ifnull x` is a match marked is_ifnull, with the arms `some{ value } => { value }` and
     // `null => { x }`. The first arm is zero-width at the `ifnull`, and so is the second's
-    // pattern; the second's block is x's, or x alone.
-    struct Match { scrut: *Expr, arms: []Arm, is_ifnull: bool }
+    // pattern; the second's block is x's, or x alone. `e iferr x` is one marked is_iferr, with
+    // `ok{ value } => { value }` and `err => { x }`, or the `err{ ... }` written before x's block.
+    struct Match { scrut: *Expr, arms: []Arm, is_ifnull: bool, is_iferr: bool }
 
     // pats is empty for `else`.
     struct Arm { span: Span, pats: []Pattern, body: Block }
 
-    // `variant` or `variant{ binders }`, where the variant may be `null`.
-    struct Pattern { span: Span, variant: Name, binders: []Binder }
+    // `variant` or `variant{ binders }`, where the variant may be `null`. An error's name may
+    // have a path, `a::b::variant`: quals are the names before the variant.
+    struct Pattern { span: Span, quals: []Name, variant: Name, binders: []Binder }
 
     // `f`, `&f`, `f = x` or `&f = x`: the local is null unless it is renamed.
     struct Binder { span: Span, by_ref: bool, field: Name, local: ?Name }
@@ -142,7 +146,8 @@ namespace syntax {
         repeat{ elem: *Expr, count: *Expr },            // [elem; count]
         builtin{ name: Name, targ: ?*TypeExpr, args: []Expr },   // the name without `@`
         ifx{ x: If },
-        matchx{ x: Match },                             // `ifnull` too, at the `ifnull`
+        matchx{ x: Match },                             // `ifnull` and `iferr` too, at the operator
+        trye{ e: *Expr },                               // try e
     }
 
     // An item in braces. A pun `c` has the value `c`, and `&d` the value `&d`. A spread `..e`

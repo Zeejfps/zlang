@@ -1111,7 +1111,7 @@ class Bodies(Base):
             (B + '    return @fmt(&b, "{5}", true)\n}',
              '`{5}`: a width applies to integers and utf8::String, not bool', 2, 28),
             ('struct S { a: i32 }\n' + B + '    return @fmt(&b, "{}", S{ a = 1 })\n}',
-             "@fmt can't format S: give a utf8::String, a number, a bool, or a function that writes to the builder", 3, 28),
+             "@fmt can't format S: give a utf8::String, a number, a bool, an error, or a function that writes to the builder", 3, 28),
             (B + '    let n: i64 = 65\n    return @fmt(&b, "{c}", n)\n}',
              'expected u32, got i64', 3, 28),
             ('fn wr { mut b: i32 } -> bool { return true }\n' + B + '    return @fmt(&b, "{}", wr)\n}',
@@ -4038,6 +4038,317 @@ fn main {} {
     let x = n ifnull
 }
 """, "expected an expression, found '}'")
+
+
+class Errors(Base):
+    """Declared errors, `!T` with inferred error sets, `try`, `iferr` and matches on errors
+    (spec §8, Errors; PLAN.md stage 11)."""
+
+    PARSE = """
+namespace parse {
+    error empty
+    error bad_digit{ at: usize }
+    error too_big
+}
+
+fn number { s: []u8 } -> !u64 {
+    if s.len == 0 { return parse::empty }
+    let mut n: u64 = 0
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] < '0' or s[i] > '9' { return parse::bad_digit{ at = i } }
+        if n > 100000 { return parse::too_big }
+        n = n * 10 + @as(u64, s[i] - '0')
+        i = i + 1
+    }
+    return n
+}
+
+fn show { mut io: Io, r: !u64 } {
+    let mut mem: [256]u8 = [0; 256]
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    let ok = match r {
+        ok{ value }  => { @fmt(&b, "ok {}", value) }
+        err{ error } => { @fmt(&b, "err {}", error) }
+    }
+    if ok { io::println{ &io, s = utf8::view{ b } } }
+}
+"""
+
+    def test_return_and_match(self):
+        self.assertOutput(self.PARSE + """
+fn main { mut io: Io } {
+    show{ &io, r = number{ s = "42" } }
+    show{ &io, r = number{ s = "" } }
+    show{ &io, r = number{ s = "4x2" } }
+    show{ &io, r = number{ s = "99999999" } }
+}
+""", 'ok 42\nerr parse::empty\nerr parse::bad_digit{ at = 1 }\nerr parse::too_big\n')
+
+    def test_try_passes_the_error_up(self):
+        self.assertOutput(self.PARSE + """
+fn sum { a: []u8, b: []u8 } -> !u64 {
+    let x = try number{ s = a }
+    return x + try number{ s = b }
+}
+fn main { mut io: Io } {
+    show{ &io, r = sum{ a = "40", b = "2" } }
+    show{ &io, r = sum{ a = "40", b = "-" } }
+    show{ &io, r = sum{ a = "", b = "-" } }
+}
+""", 'ok 42\nerr parse::bad_digit{ at = 0 }\nerr parse::empty\n')
+
+    def test_try_runs_defers(self):
+        self.assertOutput(self.PARSE + """
+fn f { mut io: Io, s: []u8 } -> !u64 {
+    defer io::println{ &io, s = "defer" }
+    let n = try number{ s }
+    io::println{ &io, s = "parsed" }
+    return n
+}
+fn main { mut io: Io } {
+    show{ &io, r = f{ &io, s = "7" } }
+    show{ &io, r = f{ &io, s = "" } }
+}
+""", 'parsed\ndefer\nok 7\ndefer\nerr parse::empty\n')
+
+    def test_iferr(self):
+        self.assertOutput(self.PARSE + """
+fn or_neg { s: []u8 } -> i64 {
+    let n = number{ s } iferr { return -1 }
+    return @as(i64, n)
+}
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = number{ s = "12" } iferr 0 }
+    io::println_u64{ &io, n = number{ s = "1x" } iferr 0 }
+    io::println_i64{ &io, n = or_neg{ s = "" } }
+    io::println_u64{ &io, n = number{ s = "" } iferr number{ s = "x" } iferr 5 }
+    let at = number{ s = "12x" } iferr err{ error } {
+        match error {
+            parse::bad_digit{ at } => { @as(u64, at) }
+            else => { 0 }
+        }
+    }
+    io::println_u64{ &io, n = at }
+}
+""", '12\n0\n-1\n5\n2\n')
+
+    def test_errors_listed_beside_ok(self):
+        self.assertOutput(self.PARSE + """
+fn kind { s: []u8 } -> i32 {
+    return match number{ s } {
+        ok                 => { 0 }
+        parse::empty       => { 1 }
+        parse::bad_digit | parse::too_big => { 2 }
+    }
+}
+fn rest { s: []u8 } -> i32 {
+    match number{ s } {
+        ok{ value }    => { return @as(i32, value) }
+        parse::empty   => { return -1 }
+        err{ error }   => {
+            return match error { parse::too_big => { -3 } else => { -2 } }
+        }
+    }
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = kind{ s = "5" } }
+    io::println_i64{ &io, n = kind{ s = "" } }
+    io::println_i64{ &io, n = kind{ s = "x" } }
+    io::println_i64{ &io, n = rest{ s = "5" } }
+    io::println_i64{ &io, n = rest{ s = "" } }
+    io::println_i64{ &io, n = rest{ s = "x" } }
+    io::println_i64{ &io, n = rest{ s = "1234567" } }
+}
+""", '0\n1\n2\n5\n-1\n-2\n-3\n')
+
+    def test_sets_through_recursion(self):
+        # even fails with a, odd with b, and each passes the other's up: both sets are {a, b},
+        # so listing a and b is exhaustive.
+        self.assertOutput("""
+error a
+error b{ n: i32 }
+fn even { n: i32 } -> !bool {
+    if n < 0 { return a }
+    if n == 0 { return true }
+    return try odd{ n = n - 1 }
+}
+fn odd { n: i32 } -> !bool {
+    if n > 100 { return b{ n } }
+    if n == 0 { return false }
+    return try even{ n = n - 1 }
+}
+fn main { mut io: Io } {
+    let ns = [4, 7, -1, 300]
+    let mut i: usize = 0
+    while i < ns.len {
+        match even{ n = ns[i] } {
+            ok{ value } => { io::println_bool{ &io, n = value } }
+            a           => { io::println{ &io, s = "a" } }
+            b{ n }      => { io::println_i64{ &io, n } }
+        }
+        i = i + 1
+    }
+}
+""", 'true\nfalse\na\n299\n')
+
+    def test_into_a_larger_set(self):
+        # An error keeps its payload when it joins a set that numbers it differently.
+        self.assertOutput("""
+error x
+error y{ k: u8, m: i64 }
+error z
+fn only_y {} -> !i32 { return y{ k = 7, m = -9 } }
+fn generic(T) { xs: []T } -> !T {
+    if xs.len == 0 { return z }
+    return xs[0]
+}
+fn mixed { which: i32 } -> !i32 {
+    if which == 0 { return x }
+    if which == 1 { return only_y{} }
+    return try generic{ xs = slice::empty(i32){} }
+}
+fn main { mut io: Io } {
+    let mut mem: [512]u8 = [0; 512]
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    let mut i = 0
+    while i < 3 {
+        match mixed{ which = i } {
+            ok => {}
+            err{ error } => { _ = @fmt(&b, "{} ", error) }
+        }
+        i = i + 1
+    }
+    io::println{ &io, s = utf8::view{ b } }
+}
+""", 'x y{ k = 7, m = -9 } z \n')
+
+    def test_bare_result(self):
+        self.assertOutput("""
+error closed
+fn close { fail: bool } -> ! {
+    if fail { return closed }
+}
+fn both { fail: bool } -> ! {
+    try close{ fail = false }
+    try close{ fail }
+    return
+}
+fn main { mut io: Io } -> i32 {
+    both{ fail = false } iferr { return 1 }
+    io::println{ &io, s = "closed" }
+    match both{ fail = true } {
+        ok     => { io::println{ &io, s = "no" } }
+        closed => { io::println{ &io, s = "failed" } }
+    }
+    both{ fail = true } iferr err{ error } { return 3 }
+    return 0
+}
+""", 'closed\nfailed\n')
+
+    def test_any_error(self):
+        # `error`, and `!T` outside a function's own result, hold any error.
+        self.assertOutput(self.PARSE + """
+error other
+struct Last { r: !u64 }
+fn report { mut io: Io, e: error } {
+    match e {
+        parse::empty => { io::println{ &io, s = "empty" } }
+        else         => { io::println{ &io, s = "something else" } }
+    }
+}
+fn main { mut io: Io } {
+    let last = Last{ r = number{ s = "" } }
+    match last.r {
+        ok => {}
+        err{ error } => { report{ &io, e = error } }
+    }
+    report{ &io, e = other }
+    let e: error = parse::too_big
+    report{ &io, e }
+}
+""", 'empty\nsomething else\nsomething else\n')
+
+    def test_let_else(self):
+        self.assertOutput(self.PARSE + """
+fn main { mut io: Io } -> i32 {
+    let ok{ value } = number{ s = "8" } else err{ error } { return 1 }
+    io::println_u64{ &io, n = value }
+    let ok{ value = v } = number{ s = "" } else { return 2 }
+    return 0
+}
+""", '8\n')
+
+    def test_errors_in_namespaces(self):
+        # Inside its namespace an error needs no path.
+        self.assertOutput("""
+namespace fsx {
+    error not_found
+    fn open { name: []u8 } -> !i32 {
+        if name.len == 0 { return not_found }
+        return 3
+    }
+    fn missing { name: []u8 } -> bool {
+        return match open{ name } { ok => { false } not_found => { true } }
+    }
+}
+fn main { mut io: Io } {
+    io::println_bool{ &io, n = fsx::missing{ name = "" } }
+    io::println_bool{ &io, n = fsx::missing{ name = "f" } }
+}
+""", 'true\nfalse\n')
+
+    def test_compile_errors(self):
+        for body, msg, pos in [
+            ('fn main {} -> i32 { match number{ s = "1" } { ok{ value } => { return 1 } parse::empty => { return 2 } } }',
+             "match isn't exhaustive: missing parse::bad_digit, parse::too_big", (1, 21)),
+            ('error other\nfn main {} -> i32 { match number{ s = "1" } { ok => { return 1 } other => { return 2 } err => { return 3 } } }',
+             "error `other` can't happen here: this fails only with parse::empty, parse::bad_digit, parse::too_big", (2, 66)),
+            ('fn main {} -> i32 { match number{ s = "1" } { ok => { return 1 } parse::empty => { return 2 } parse::bad_digit => { return 3 } parse::too_big => { return 4 } else => { return 5 } } }',
+             '`else` is unreachable: every error is already listed', (1, 159)),
+            ('fn main {} -> i32 { match number{ s = "1" } { parse::empty => { return 2 } else => { return 5 } } }',
+             'a match that lists errors must list `ok` too', (1, 21)),
+            ('fn main {} -> i32 { match number{ s = "1" } { ok => { return 1 } } }',
+             "match isn't exhaustive: missing err", (1, 21)),
+            ('fn main {} -> i32 {\n    let n = try number{ s = "1" }\n    return 0\n}',
+             '`try` passes an error up: it needs a function that returns `!T`, not i32', (2, 13)),
+            ('fn f {} -> !i32 { return try 5 }\nfn main {} {}', '`try` needs a `!T` value, got {integer}', (1, 30)),
+            ('fn main {} { number{ s = "1" } }', 'the result of `number` (!u64) is unused', (1, 20)),
+            ('fn main {} { let x = 5 iferr 0 }', '`iferr` needs a `!T` value, got {integer}', (1, 22)),
+            ('fn f {} -> !i32 {\n    defer { _ = try number{ s = "1" } }\n    return 1\n}\nfn main {} {}',
+             'cannot `try` in a defer: it may return', (2, 17)),
+            ('fn g {} -> !u64 { return 1 }\nfn main {} {\n    let mut r = number{ s = "1" }\n    r = g{}\n}',
+             'expected !u64 failing with the errors of `number`, got one failing with the errors of `g`', (4, 10)),
+            ('fn main {} { let f: fn{ s: []u8 } -> !u64 = number }',
+             "a function whose `!T` fails with its body's errors can't be a value of type fn{ s: []u8 } -> !u64", (1, 45)),
+            ('fn f {} -> !i32 { return parse::bad_digit }\nfn main {} {}',
+             'error `parse::bad_digit` has a payload; construct it with `parse::bad_digit{ ... }`', (1, 26)),
+            ('fn f {} -> !i32 { return parse::empty{} }\nfn main {} {}',
+             'error `parse::empty` has no payload; write it without braces', (1, 38)),
+            ('error ok\nfn main {} {}', "an error can't be named `ok`", (1, 7)),
+            ('error e{ s: []u8 }\nfn main {} {}', "error `e`'s field `s` can't hold []u8", (1, 10)),
+            ('extern fn foo {} -> !i32\nfn main {} {}', "extern fn `foo` can't return !i32", (1, 21)),
+            ('const C: !i32 = 1\nfn main {} {}', "a const can't hold a `!T` or an error", (1, 10)),
+            ('fn main {} -> i32 { match number{ s = "1" } { ok => { return 1 } q::empty => { return 2 } else => { return 3 } } }',
+             'unknown type or namespace `q`', (1, 66)),
+        ]:
+            with self.assertRaises(CompileError, msg=body) as cm:
+                run(self.PARSE + body)
+            line = self.PARSE.count('\n')
+            self.assertIn(msg, cm.exception.msg, body)
+            self.assertEqual(cm.exception.pos[:2], (pos[0] + line, pos[1]), body)
+
+    def test_error_needs_a_name(self):
+        # `error` begins a declaration only before a name: elsewhere it is a name itself.
+        self.assertOutput("""
+fn error { n: i32 } -> i32 { return n + 1 }
+fn main { mut io: Io } {
+    let error = error{ n = 1 }
+    io::println_i64{ &io, n = error }
+}
+""", '2\n')
 
 
 class Defer(Base):

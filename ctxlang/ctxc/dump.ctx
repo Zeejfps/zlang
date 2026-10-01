@@ -337,6 +337,16 @@ namespace tree {
                     d.depth = d.depth - 1
                 }
             }
+            fault{ name = n, fields } => {
+                named{ &d, at, kind = "error", n, tparams = untyped }
+                if fields == null {
+                    end{ &d }
+                } else {
+                    d.depth = d.depth + 1
+                    field_list{ &d, xs = fields }
+                    d.depth = d.depth - 1
+                }
+            }
             space{ name = n, decls } => {
                 named{ &d, at, kind = "namespace", n, tparams = untyped }
                 d.depth = d.depth + 1
@@ -397,6 +407,10 @@ namespace tree {
             opt{ elem } => {
                 line{ &d, at, s = "topt" }
                 sub_type{ &d, t = elem.* }
+            }
+            fail{ elem } => {
+                line{ &d, at, s = "tfail" }
+                if elem != null { sub_type{ &d, t = elem.* } }
             }
             slice{ mutable, elem } => {
                 line{ &d, at, s = if mutable { "tslice mut" } else { "tslice" } }
@@ -593,7 +607,7 @@ namespace tree {
     }
 
     fn match_node { mut d: Dumper, at: u32, x: syntax::Match } {
-        line{ &d, at, s = if x.is_ifnull { "match ifnull" } else { "match" } }
+        line{ &d, at, s = if x.is_ifnull { "match ifnull" } else if x.is_iferr { "match iferr" } else { "match" } }
         d.depth = d.depth + 1
         expr{ &d, e = x.scrut.* }
         let mut i: usize = 0
@@ -606,6 +620,12 @@ namespace tree {
                 let pat = arm.pats[k]
                 start{ &d, at = pat.span.start }
                 put{ &d, s = "pat " }
+                let mut q: usize = 0
+                while q < pat.quals.len {
+                    name{ &d, n = pat.quals[q] }
+                    put{ &d, s = "::" }
+                    q = q + 1
+                }
                 name{ &d, n = pat.variant }
                 end{ &d }
                 d.depth = d.depth + 1
@@ -778,6 +798,10 @@ namespace tree {
             }
             ifx{ x } => { if_node{ &d, at, x } }
             matchx{ x } => { match_node{ &d, at, x } }
+            trye{ e = x } => {
+                line{ &d, at, s = "try" }
+                sub{ &d, e = x.* }
+            }
         }
     }
 }
@@ -950,6 +974,20 @@ namespace decls {
                     func{ body } => { stmts{ &out, c, xs = body.stmts, depth = 1 } }
                     else => {}
                 }
+            }
+            fault => {
+                pushed{ ok = @fmt(&out, "error {}", q) }
+                let fs = check::fault_fields{ c, d = i }
+                if fs != null { dump::put{ &out, s = if fs.len == 0 { "{}" } else { "{ " } } }
+                let all = d.fields
+                let mut j: usize = 0
+                while j < all.len {
+                    if j > 0 { dump::put{ &out, s = ", " } }
+                    pushed{ ok = @fmt(&out, "{}: {}", check::str{ s = all[j].name }, check::tstr{ c, t = all[j].ty }) }
+                    j = j + 1
+                }
+                if all.len > 0 { dump::put{ &out, s = " }" } }
+                dump::put{ &out, s = "\n" }
             }
             cap => {
                 pushed{ ok = @fmt(&out, "capability {}", q) }
@@ -1283,6 +1321,10 @@ namespace decls {
             }
             lnot{ e = x } => {
                 head = "not"
+                one = x.*
+            }
+            trye{ e = x } => {
+                head = "try"
                 one = x.*
             }
             binary{ op, a, b } => {

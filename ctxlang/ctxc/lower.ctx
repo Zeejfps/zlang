@@ -171,6 +171,17 @@ namespace lower {
             func{ body = b } => { body = block{ &l, b } }
             else => {}
         }
+        if check::void_result{ c = l.c.*, t = l.ret } {
+            // A function returning a bare `!` that reaches its end returns `ok`.
+            let mut xs = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+            let mut i: usize = 0
+            while i < body.stmts.len {
+                if not list::push{ list = &xs, item = body.stmts[i] } { @panic("lower: out of memory") }
+                i = i + 1
+            }
+            if not list::push{ list = &xs, item = ir::Stmt::ret{ value = ok_unit{ &l } } } { @panic("lower: out of memory") }
+            body = ir::Block{ stmts = list::items{ list = xs }, result = null }
+        }
         let ret = tid{ &l, t = l.ret }
         return ir::Func{
             id, name, symbol = "", params = list::items{ list = params }, ret,
@@ -203,6 +214,9 @@ namespace lower {
             array{ n, elem } => { return types::array{ s = &l.c.ty, n, elem = norm{ &l, t = elem } } }
             record{ decl, args } => { return types::record{ s = &l.c.ty, decl, args = norm_all{ &l, ts = args } } }
             sum{ decl, args } => { return types::sum{ s = &l.c.ty, decl, args = norm_all{ &l, ts = args } } }
+            // An error is its set: errors of two functions with the same set are one IR type.
+            res{ ok, errs } => { return types::res{ s = &l.c.ty, ok = norm{ &l, t = ok }, errs = norm{ &l, t = errs } } }
+            errs => { return check::eset_of{ c = l.c, t = x } }
             func{ fields, ret, bound, external } => {
                 let sorted = if external { fields } else { sorted_fields{ l, fields } }
                 let mut fs = list::new(types::Field){ realloc = arena::alloc, heap = l.heap }
@@ -333,7 +347,8 @@ namespace lower {
                 if check::nullable_ptr{ c = l.c.*, t } { return ir::Type::nptr{ ptr = tid{ &l, t = elem } } }
                 return tagged{ &l, t }
             }
-            sum => { return tagged{ &l, t } }
+            sum | res | eset => { return tagged{ &l, t } }
+            errs => { return tagged{ &l, t = check::eset_of{ c = l.c, t } } }
             else => { @panic("lower: a type that isn't concrete") }
         }
         return ir::Type::void
@@ -342,7 +357,7 @@ namespace lower {
     // A union's or optional's IR type: its tag, payload offset and variants.
     fn tagged { mut l: Lower, t: Id } -> ir::Type {
         match types::get{ s = l.c.ty, id = t } {
-            opt | sum => {
+            opt | sum | res | eset => {
                 let u = check::union_offsets{ c = l.c, t }
                 if u == null { @panic("lower: a union without a layout") }
                 let name = type_name{ l, t }
@@ -532,6 +547,18 @@ namespace lower {
                     builtin{ name, args } => {
                         if slice::eq_bytes{ a = name.text, b = "panic" } { return panic_stmt{ &l, e, args } }
                     }
+                    trye{ e = x } => {
+                        // `try f{ ... }` of a bare `!`: a match with no value.
+                        if T{ &l, t = check::type_of_expr{ c = l.c.*, e } } == types::VOID {
+                            let scrut = ex{ &l, e = x.* }
+                            return ir::Stmt::choose{ scrut, through = false, arms = try_arms{ &l, x = x.*, value = false } }
+                        }
+                    }
+                    matchx{ x } => {
+                        if x.is_iferr and T{ &l, t = check::type_of_expr{ c = l.c.*, e } } == types::VOID {
+                            return match_stmt{ &l, x, t = types::NO_TYPE, leaving = false }
+                        }
+                    }
                     else => {}
                 }
                 return ir::Stmt::eval{ e = ex{ &l, e } }
@@ -553,7 +580,10 @@ namespace lower {
             brk => { return ir::Stmt::brk{ label = map::get{ m = l.c.jump_ids, key = k } } }
             cont => { return ir::Stmt::cont{ label = map::get{ m = l.c.jump_ids, key = k } } }
             ret{ value } => {
-                if value == null { return ir::Stmt::ret{ value = null } }
+                if value == null {
+                    if check::void_result{ c = l.c.*, t = l.ret } { return ir::Stmt::ret{ value = ok_unit{ &l } } }
+                    return ir::Stmt::ret{ value = null }
+                }
                 return ir::Stmt::ret{ value = conv{ &l, e = value, to = l.ret } }
             }
             deferred{ body } => { return ir::Stmt::deferred{ body = block{ &l, b = body } } }
@@ -679,11 +709,252 @@ namespace lower {
     // no value.
     fn match_stmt { mut l: Lower, x: syntax::Match, t: Id, leaving: bool } -> ir::Stmt {
         let scrut = ex{ &l, e = x.scrut.* }
+        let ft = fail_scrut{ &l, x }
+        if ft != types::NO_TYPE {
+            return ir::Stmt::choose{ scrut, through = false, arms = fail_arms{ &l, x, st = ft, t, value = leaving } }
+        }
         let u = scrut_type{ &l, x }
         if u.enum_decl != NONE {
             return ir::Stmt::switch{ scrut, cases = cases{ &l, x, decl = u.enum_decl, t, value = leaving } }
         }
         return ir::Stmt::choose{ scrut, through = u.through, arms = arms{ &l, x, vs = u.vs, t, value = leaving } }
+    }
+
+    // The scrutinee's type if the match is on a `!T` or an error, else NO_TYPE.
+    fn fail_scrut { mut l: Lower, x: syntax::Match } -> Id {
+        let t = types::prune{ s = l.c.ty, t = T{ &l, t = check::type_of_expr{ c = l.c.*, e = x.scrut.* } } }
+        match types::get{ s = l.c.ty, id = t } {
+            res | errs | eset => { return t }
+            else => { return types::NO_TYPE }
+        }
+    }
+
+    // The arms of a match on a `!T` or an error, of type st (§8, Errors). On a `!T` they are `ok`
+    // and `err`; errors listed beside `ok` become an inner match on the error, which `err` binds,
+    // whose last arm is the `err` or `else` arm. As `iferr` on a bare `!`, the `ok` arm is empty.
+    fn fail_arms { mut l: Lower, x: syntax::Match, st: Id, t: Id, value: bool } -> []ir::Arm {
+        let res{ ok, errs } = types::get{ s = l.c.ty, id = st } else {
+            return error_arms{ &l, arms = x.arms, set = check::set_of{ c = l.c.*, t = st }, t, value }
+        }
+        let vs = check::variants_of{ c = l.c, t = st }
+        let bare = x.is_iferr and types::prune{ s = l.c.ty, t = ok } == types::VOID
+        let mut listed = false
+        let mut i: usize = 0
+        while i < x.arms.len {
+            let pats = x.arms[i].pats
+            if pats.len > 0 and is_error_pat{ l, p = pats[0] } { listed = true }
+            i = i + 1
+        }
+        if not listed and not bare { return arms{ &l, x, vs, t, value } }
+        let mut out = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+        if bare {
+            let none = slice::empty(ir::Bind){}
+            add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 0, binds = none } }, body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = null } }
+            let arm = x.arms[1]
+            let p = arm.pats[0]
+            add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = binds{ &l, binders = p.binders, fields = vs[1].fields } } }, body = block{ &l, b = arm.body } }
+            return list::items{ list = out }
+        }
+        // The slot `err` binds the error to: its own binding's, or a new one.
+        let et = tid{ &l, t = errs }
+        let mut slot = NONE
+        i = 0
+        while i < x.arms.len {
+            let arm = x.arms[i]
+            if arm.pats.len > 0 and arm.pats[0].quals.len == 0 and slice::eq_bytes{ a = arm.pats[0].variant.text, b = "err" } {
+                let bs = arm.pats[0].binders
+                if bs.len > 0 { slot = slot{ &l, v = local_of{ l, k = check::name_key{ n = bs[0].field } } } }
+            }
+            i = i + 1
+        }
+        if slot == NONE { slot = temp{ &l, ty = et } }
+        let set = check::set_of{ c = l.c.*, t = errs }
+        let mut inner = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+        i = 0
+        while i < x.arms.len {
+            let arm = x.arms[i]
+            let body = if value { value_block{ &l, b = arm.body, t } } else { block{ &l, b = arm.body } }
+            if arm.pats.len == 0 or slice::eq_bytes{ a = arm.pats[0].variant.text, b = "err" } and arm.pats[0].quals.len == 0 {
+                add_arm{ l, xs = &inner, pats = slice::empty(ir::Pat){}, body }
+            } else if is_error_pat{ l, p = arm.pats[0] } {
+                add_arm{ l, xs = &inner, pats = error_pats{ &l, arm, set }, body }
+            } else {
+                let mut pats = list::new(ir::Pat){ realloc = arena::alloc, heap = l.heap }
+                let mut k: usize = 0
+                while k < arm.pats.len {
+                    let p = arm.pats[k]
+                    let bs = if k == 0 { binds{ &l, binders = p.binders, fields = vs[0].fields } } else { alt_binds{ &l, first = arm.pats[0].binders, binders = p.binders, fields = vs[0].fields } }
+                    if not list::push{ list = &pats, item = ir::Pat{ variant = 0, binds = bs } } { @panic("lower: out of memory") }
+                    k = k + 1
+                }
+                add_arm{ l, xs = &out, pats = list::items{ list = pats }, body }
+            }
+            i = i + 1
+        }
+        let scrut = mk{ ty = et, k = ir::ExprKind::local{ slot } }
+        let mut binds = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+        add_bind{ xs = &binds, b = ir::Bind{ slot, field = 0, by_ref = false } }
+        let mut body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = null }
+        if value and t != types::NO_TYPE {
+            let m = mk{ ty = tid{ &l, t }, k = ir::ExprKind::matchx{ scrut = box{ l, e = scrut }, through = false, arms = list::items{ list = inner } } }
+            body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = m } }
+        } else {
+            let mut xs = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+            if not list::push{ list = &xs, item = ir::Stmt::choose{ scrut, through = false, arms = list::items{ list = inner } } } { @panic("lower: out of memory") }
+            body = ir::Block{ stmts = list::items{ list = xs }, result = null }
+        }
+        add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = list::items{ list = binds } } }, body }
+        return list::items{ list = out }
+    }
+
+    // The arms of a match on an error of set `set`: each error listed is its place in the set.
+    fn error_arms { mut l: Lower, arms: []syntax::Arm, set: []u32, t: Id, value: bool } -> []ir::Arm {
+        let mut out = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < arms.len {
+            let arm = arms[i]
+            let pats = if arm.pats.len == 0 { slice::empty(ir::Pat){} } else { error_pats{ &l, arm, set } }
+            let body = if value { value_block{ &l, b = arm.body, t } } else { block{ &l, b = arm.body } }
+            add_arm{ l, xs = &out, pats, body }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // An arm's patterns, each an error of `set`.
+    fn error_pats { mut l: Lower, arm: syntax::Arm, set: []u32 } -> []ir::Pat {
+        let mut out = list::new(ir::Pat){ realloc = arena::alloc, heap = l.heap }
+        let mut k: usize = 0
+        while k < arm.pats.len {
+            let p = arm.pats[k]
+            let d = map::get{ m = l.c.pat_errs, key = check::name_key{ n = p.variant } } ifnull { @panic("lower: an error pattern that wasn't resolved") }
+            let fields = check::fault_fields{ c = l.c.*, d }
+            let bs = if k == 0 { binds{ &l, binders = p.binders, fields } } else { alt_binds{ &l, first = arm.pats[0].binders, binders = p.binders, fields } }
+            if not list::push{ list = &out, item = ir::Pat{ variant = set_index{ set, d }, binds = bs } } { @panic("lower: out of memory") }
+            k = k + 1
+        }
+        return list::items{ list = out }
+    }
+
+    fn is_error_pat { l: Lower, p: syntax::Pattern } -> bool {
+        return map::has{ m = l.c.pat_errs, key = check::name_key{ n = p.variant } }
+    }
+
+    // Error d's variant in an error type of `set`.
+    fn set_index { set: []u32, d: u32 } -> u32 {
+        let mut i: usize = 0
+        while i < set.len {
+            if set[i] == d { return @as(u32, i) }
+            i = i + 1
+        }
+        @panic("lower: an error outside its set")
+    }
+
+    fn one_pat { l: Lower, p: ir::Pat } -> []ir::Pat {
+        let mut out = list::new(ir::Pat){ realloc = arena::alloc, heap = l.heap }
+        if not list::push{ list = &out, item = p } { @panic("lower: out of memory") }
+        return list::items{ list = out }
+    }
+
+    fn add_arm { l: Lower, mut xs: list::List(ir::Arm, Heap), pats: []ir::Pat, body: ir::Block } {
+        if not list::push{ list = &xs, item = ir::Arm{ pats, body } } { @panic("lower: out of memory") }
+    }
+
+    // `ok` of a bare `!`, of the function's result type.
+    fn ok_unit { mut l: Lower } -> ir::Expr {
+        return mk{ ty = tid{ &l, t = l.ret }, k = ir::ExprKind::variant{ index = 0, items = slice::empty(ir::Arg){} } }
+    }
+
+    // `try x`'s arms (§8, Errors): `ok` gives the value, unless value is false (a bare `!`), and
+    // `err` returns the error in the function's result.
+    fn try_arms { mut l: Lower, x: syntax::Expr, value: bool } -> []ir::Arm {
+        let rt = types::prune{ s = l.c.ty, t = T{ &l, t = check::type_of_expr{ c = l.c.*, e = x } } }
+        let res{ ok, errs = from } = types::get{ s = l.c.ty, id = rt } else { @panic("lower: try of a value that isn't a result") }
+        let res{ errs = into } = types::get{ s = l.c.ty, id = types::prune{ s = l.c.ty, t = l.ret } } else { @panic("lower: try in a function that doesn't return a result") }
+        let mut out = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+        let none = slice::empty(ir::Stmt){}
+        if value {
+            let s = temp{ &l, ty = tid{ &l, t = ok } }
+            let mut bs = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+            add_bind{ xs = &bs, b = ir::Bind{ slot = s, field = 0, by_ref = false } }
+            let v = mk{ ty = tid{ &l, t = ok }, k = ir::ExprKind::local{ slot = s } }
+            add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 0, binds = list::items{ list = bs } } }, body = ir::Block{ stmts = none, result = box{ l, e = v } } }
+        } else {
+            add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 0, binds = slice::empty(ir::Bind){} } }, body = ir::Block{ stmts = none, result = null } }
+        }
+        let et = tid{ &l, t = from }
+        let e = temp{ &l, ty = et }
+        let mut bs = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+        add_bind{ xs = &bs, b = ir::Bind{ slot = e, field = 0, by_ref = false } }
+        let err = remap{ &l, x = mk{ ty = et, k = ir::ExprKind::local{ slot = e } }, frm = from, to = into }
+        let r = mk{ ty = tid{ &l, t = l.ret }, k = ir::ExprKind::variant{ index = 1, items = one_arg{ l, v = err } } }
+        let mut st = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        if not list::push{ list = &st, item = ir::Stmt::ret{ value = r } } { @panic("lower: out of memory") }
+        add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = list::items{ list = bs } } }, body = ir::Block{ stmts = list::items{ list = st }, result = null } }
+        return list::items{ list = out }
+    }
+
+    fn one_arg { l: Lower, v: ir::Expr } -> []ir::Arg {
+        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        add_arg{ xs = &out, a = ir::Arg{ index = 0, value = v } }
+        return list::items{ list = out }
+    }
+
+    // Error x, of error type frm, as one of error type `to`, whose set holds frm's: each error
+    // becomes the same error in to's numbering, with its payload.
+    fn remap { mut l: Lower, x: ir::Expr, frm: Id, to: Id } -> ir::Expr {
+        if norm{ &l, t = frm } == norm{ &l, t = to } { return x }
+        let fs = check::set_of{ c = l.c.*, t = frm }
+        let ts = check::set_of{ c = l.c.*, t = to }
+        let ty = tid{ &l, t = to }
+        let mut out = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < fs.len {
+            let fields = check::fault_fields{ c = l.c.*, d = fs[i] } ifnull { slice::empty(types::Field){} }
+            let mut bs = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+            let mut items = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+            let mut k: usize = 0
+            while k < fields.len {
+                let ft = tid{ &l, t = fields[k].ty }
+                let s = temp{ &l, ty = ft }
+                add_bind{ xs = &bs, b = ir::Bind{ slot = s, field = @as(u32, k), by_ref = false } }
+                add_arg{ xs = &items, a = ir::Arg{ index = @as(u32, k), value = mk{ ty = ft, k = ir::ExprKind::local{ slot = s } } } }
+                k = k + 1
+            }
+            let v = mk{ ty, k = ir::ExprKind::variant{ index = set_index{ set = ts, d = fs[i] }, items = list::items{ list = items } } }
+            add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = @as(u32, i), binds = list::items{ list = bs } } }, body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = v } } }
+            i = i + 1
+        }
+        return mk{ ty, k = ir::ExprKind::matchx{ scrut = box{ l, e = x }, through = false, arms = list::items{ list = out } } }
+    }
+
+    // Result x, of type frm, as a result of type `to` with the same value type and errors that
+    // hold frm's.
+    fn res_remap { mut l: Lower, x: ir::Expr, frm: Id, to: Id } -> ir::Expr {
+        let res{ ok, errs = fe } = types::get{ s = l.c.ty, id = frm } else { @panic("lower: not a result") }
+        let res{ errs = te } = types::get{ s = l.c.ty, id = to } else { @panic("lower: not a result") }
+        let ty = tid{ &l, t = to }
+        let none = slice::empty(ir::Stmt){}
+        let mut out = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+        if types::prune{ s = l.c.ty, t = ok } == types::VOID {
+            let v = mk{ ty, k = ir::ExprKind::variant{ index = 0, items = slice::empty(ir::Arg){} } }
+            add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 0, binds = slice::empty(ir::Bind){} } }, body = ir::Block{ stmts = none, result = box{ l, e = v } } }
+        } else {
+            let ot = tid{ &l, t = ok }
+            let s = temp{ &l, ty = ot }
+            let mut bs = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+            add_bind{ xs = &bs, b = ir::Bind{ slot = s, field = 0, by_ref = false } }
+            let v = mk{ ty, k = ir::ExprKind::variant{ index = 0, items = one_arg{ l, v = mk{ ty = ot, k = ir::ExprKind::local{ slot = s } } } } }
+            add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 0, binds = list::items{ list = bs } } }, body = ir::Block{ stmts = none, result = box{ l, e = v } } }
+        }
+        let et = tid{ &l, t = fe }
+        let e = temp{ &l, ty = et }
+        let mut bs = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+        add_bind{ xs = &bs, b = ir::Bind{ slot = e, field = 0, by_ref = false } }
+        let err = remap{ &l, x = mk{ ty = et, k = ir::ExprKind::local{ slot = e } }, frm = fe, to = te }
+        let v = mk{ ty, k = ir::ExprKind::variant{ index = 1, items = one_arg{ l, v = err } } }
+        add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = list::items{ list = bs } } }, body = ir::Block{ stmts = none, result = box{ l, e = v } } }
+        return mk{ ty, k = ir::ExprKind::matchx{ scrut = box{ l, e = x }, through = false, arms = list::items{ list = out } } }
     }
 
     struct Scrut { through: bool, vs: []check::Variant, enum_decl: u32 }
@@ -853,6 +1124,10 @@ namespace lower {
     fn match_expr { mut l: Lower, x: syntax::Match, t: Id } -> ir::Expr {
         let ty = tid{ &l, t }
         let scrut = ex{ &l, e = x.scrut.* }
+        let ft = fail_scrut{ &l, x }
+        if ft != types::NO_TYPE {
+            return mk{ ty, k = ir::ExprKind::matchx{ scrut = box{ l, e = scrut }, through = false, arms = fail_arms{ &l, x, st = ft, t, value = true } } }
+        }
         let u = scrut_type{ &l, x }
         if u.enum_decl != NONE {
             return mk{ ty, k = ir::ExprKind::switchx{ scrut = box{ l, e = scrut }, cases = cases{ &l, x, decl = u.enum_decl, t, value = true } } }
@@ -896,6 +1171,27 @@ namespace lower {
         if norm{ &l, t = frm } == norm{ &l, t = to } { return x }
         let a = types::prune{ s = l.c.ty, t = frm }
         let b = types::prune{ s = l.c.ty, t = to }
+        // A T becomes a `!T`'s `ok`, an error its `err`; a result or an error with fewer errors
+        // is renumbered into the larger set (§8, Errors).
+        match get{ l, t = b } {
+            res{ ok = u, errs = into } => {
+                match get{ l, t = a } {
+                    res => { return res_remap{ &l, x, frm = a, to = b } }
+                    errs | eset => {
+                        let v = remap{ &l, x, frm = a, to = into }
+                        return mk{ ty = tid{ &l, t = b }, k = ir::ExprKind::variant{ index = 1, items = one_arg{ l, v } } }
+                    }
+                    else => {
+                        let v = coerce{ &l, x, frm = a, to = u, at }
+                        return mk{ ty = tid{ &l, t = b }, k = ir::ExprKind::variant{ index = 0, items = one_arg{ l, v } } }
+                    }
+                }
+            }
+            errs | eset => {
+                match get{ l, t = a } { errs | eset => { return remap{ &l, x, frm = a, to = b } } else => {} }
+            }
+            else => {}
+        }
         if types::prim_of{ s = l.c.ty, t = a } != null and types::prim_of{ s = l.c.ty, t = b } != null and types::widens{ s = &l.c.ty, a, b } {
             return mk{ ty = tid{ &l, t = b }, k = ir::ExprKind::widen{ e = box{ l, e = x } } }
         }
@@ -1156,6 +1452,10 @@ namespace lower {
             builtin{ name, targ, args } => { return builtin{ &l, e, name = name.text, targ, args, t } }
             ifx{ x } => { return if_expr{ &l, x, t } }
             matchx{ x } => { return match_expr{ &l, x, t } }
+            trye{ e = x } => {
+                let scrut = ex{ &l, e = x.* }
+                return mk{ ty = tid{ &l, t }, k = ir::ExprKind::matchx{ scrut = box{ l, e = scrut }, through = false, arms = try_arms{ &l, x = x.*, value = true } } }
+            }
             error => { @panic("lower: an expression that didn't parse") }
         }
     }
@@ -1216,6 +1516,8 @@ namespace lower {
             variant{ index } => {
                 return mk{ ty = tid{ &l, t }, k = ir::ExprKind::variant{ index, items = slice::empty(ir::Arg){} } }
             }
+            // An error alone: the one variant of its set.
+            fault => { return mk{ ty = tid{ &l, t }, k = ir::ExprKind::variant{ index = 0, items = slice::empty(ir::Arg){} } } }
             path => { @panic("lower: a type as a value") }
         }
     }
@@ -1478,6 +1780,11 @@ namespace lower {
                         let ty = tid{ &l, t }
                         let fs: []types::Field = if fields == null { slice::empty(types::Field){} } else { fields }
                         return mk{ ty, k = ir::ExprKind::variant{ index, items = item_args{ &l, e, items, fields = fs, ptrs = false } } }
+                    }
+                    fault{ decl } => {
+                        let fs = check::fault_fields{ c = l.c.*, d = decl } ifnull { slice::empty(types::Field){} }
+                        let ty = tid{ &l, t }
+                        return mk{ ty, k = ir::ExprKind::variant{ index = 0, items = item_args{ &l, e, items, fields = fs, ptrs = false } } }
                     }
                     else => {}
                 }
@@ -1759,6 +2066,7 @@ namespace lower {
             }
             hole = args[h]
         }
+        if slice::eq_bytes{ a = p.push, b = "error" } { return error_push{ &l, b, bt, hole } }
         if slice::eq_bytes{ a = p.push, b = "call" } {
             let ft = T{ &l, t = check::type_of_expr{ c = l.c.*, e = hole } }
             let mut fields: []types::Field = slice::empty(types::Field){}
@@ -1812,6 +2120,85 @@ namespace lower {
             }
         }
         return mk{ ty, k = ir::ExprKind::call{ callee = fid, args = list::items{ list = out } } }
+    }
+
+    // An error in an @fmt hole: its name, as `fs::os`, and its payload, as `{ code = 5 }`. Each
+    // field is pushed as a hole of its type would be, or as `_` if @fmt can't push its type.
+    fn error_push { mut l: Lower, b: syntax::Expr, bt: Id, hole: syntax::Expr } -> ir::Expr {
+        let et = after{ &l, e = hole }
+        let set = check::set_of{ c = l.c.*, t = et }
+        let bool_t = tid{ &l, t = types::BOOL }
+        let mut out = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < set.len {
+            let d = check::get_decl{ c = l.c.*, d = set[i] }
+            let fields = check::fault_fields{ c = l.c.*, d = set[i] } ifnull { slice::empty(types::Field){} }
+            let mut bs = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+            let mut r = push_ir{ &l, b, bt, name = "push", text = d.qual, v = null, vt = types::VOID }
+            let mut k: usize = 0
+            while k < fields.len {
+                let f = fields[k]
+                let ft = tid{ &l, t = f.ty }
+                let s = temp{ &l, ty = ft }
+                add_bind{ xs = &bs, b = ir::Bind{ slot = s, field = @as(u32, k), by_ref = false } }
+                let mut tb = message{ l }
+                pushed{ ok = @fmt(&tb, "{}{} = ", str{ s = if k == 0 { "{ " } else { ", " } }, str{ s = f.name }) }
+                r = both{ l, a = r, b = push_ir{ &l, b, bt, name = "push", text = utf8::view{ b = tb }.bytes, v = null, vt = types::VOID } }
+                let push = field_push{ l, t = f.ty }
+                let v = mk{ ty = ft, k = ir::ExprKind::local{ slot = s } }
+                let piece = if push.len == 0 { push_ir{ &l, b, bt, name = "push", text = "_", v = null, vt = types::VOID } } else { push_ir{ &l, b, bt, name = push, text = "", v, vt = f.ty } }
+                r = both{ l, a = r, b = piece }
+                k = k + 1
+            }
+            if fields.len > 0 { r = both{ l, a = r, b = push_ir{ &l, b, bt, name = "push", text = " }", v = null, vt = types::VOID } } }
+            add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = @as(u32, i), binds = list::items{ list = bs } } }, body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = r } } }
+            i = i + 1
+        }
+        return mk{ ty = bool_t, k = ir::ExprKind::matchx{ scrut = box{ l, e = conv{ &l, e = hole, to = et } }, through = false, arms = list::items{ list = out } } }
+    }
+
+    fn both { l: Lower, a: ir::Expr, b: ir::Expr } -> ir::Expr {
+        return mk{ ty = a.ty, k = ir::ExprKind::land{ a = box{ l, e = a }, b = box{ l, e = b } } }
+    }
+
+    // The utf8 function that pushes an error's field of type t, or "" if there is none.
+    fn field_push { l: Lower, t: Id } -> []u8 {
+        let x = types::prune{ s = l.c.ty, t }
+        let p = types::prim_of{ s = l.c.ty, t = x }
+        if p != null {
+            if p == types::Prim::bool { return "push_bool" }
+            if p == types::Prim::f32 { return "push_f32" }
+            if p == types::Prim::f64 { return "push_f64" }
+            return if types::signed{ p } { "push_i64" } else { "push_u64" }
+        }
+        if check::record_decl{ c = l.c.*, t = x } == l.c.text_decl and l.c.text_decl != NONE { return "push" }
+        return ""
+    }
+
+    // A call of utf8 function `name` with builder b, and with v of type vt (its value field), or
+    // without v the text as `s`.
+    fn push_ir { mut l: Lower, b: syntax::Expr, bt: Id, name: []u8, text: []u8, v: ?ir::Expr, vt: Id } -> ir::Expr {
+        let d = push_decl{ &l, name }
+        let s = builder_state{ l, t = bt }
+        let mut ts = list::new(Id){ realloc = arena::alloc, heap = l.heap }
+        if not list::push{ list = &ts, item = s } { @panic("lower: out of memory") }
+        let targs = list::items{ list = ts }
+        let x = check::get_decl{ c = l.c.*, d }
+        let fields = check::subst_fields{ c = l.c, fields = x.fields, decl = d, args = targs }
+        let fid = fn_id{ &l, decl = d, targs }
+        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        let bi = field_pos{ fields, name = "b" }
+        let bv = coerce{ &l, x = ex{ &l, e = b }, frm = bt, to = arg_type{ &l, f = fields[bi], ptrs = true }, at = check::expr_at{ e = b } }
+        add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, bi), value = bv } }
+        if v == null {
+            let si = field_pos{ fields, name = "s" }
+            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, si), value = text_lit{ &l, bytes = text, t = fields[si].ty } } }
+        } else {
+            let vname: []u8 = if slice::eq_bytes{ a = name, b = "push" } { "s" } else if slice::eq_bytes{ a = name, b = "push_bool" } { "v" } else { "n" }
+            let vi = field_pos{ fields, name = vname }
+            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, vi), value = coerce{ &l, x = v, frm = vt, to = fields[vi].ty, at = check::expr_at{ e = b } } } }
+        }
+        return mk{ ty = tid{ &l, t = types::BOOL }, k = ir::ExprKind::call{ callee = fid, args = list::items{ list = out } } }
     }
 
     fn push_decl { mut l: Lower, name: []u8 } -> u32 {
