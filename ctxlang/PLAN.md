@@ -23,7 +23,7 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
 | 8 | Decide ctxi's role: removed, ctxc bootstraps from committed C | done | |
 | 9 | Metaprogramming: build programs, attributes, compile-time consts | step 1 done (for 10.4); attributes done in 10.1 | |
 | 10 | C interop: extern fns, capabilities, linking | in progress | |
-| 11 | Optionals: `orelse`, `null` arms, `?T == T` | next language item | |
+| 11 | Optionals and results: `ifnull`, `iferr`, `let p = e else`, `null` arms, `?T == T` | next language item | |
 
 ### Where we are
 
@@ -838,20 +838,31 @@ Increments, each landing with tests and a refreshed bootstrap:
 *Done when:* a program opens a window and draws with OpenGL through a binding written in
 ctxlang.
 
-### 11. Optionals — next language item
+### 11. Optionals and results — next language item
 
 Unwrapping a `?T` is the most common thing done with one, and the pattern form is heavy for it:
 `let some{ value = p } = e else { return 1 }` names the variant and its payload field. Narrowing
 (`let p = e; if p == null { return 1 }`) already does it in two lines. FRICTION.md #11 and #20 are
-the same pain from other sides. Three small features, each for one shape:
+the same pain from other sides. Small features, each for one shape:
 
 | Shape | Feature |
 |---|---|
-| Unwrap, falling back to a default or leaving | `e orelse x`: for `e: ?T`, a `T` — the value if there is one, else `x`, a value of `T` or a block that leaves (`orelse { return 1 }`). As Zig's `orelse`. |
+| Unwrap a `?T`, with a default or by leaving | `e ifnull x`: for `e: ?T`, a `T` — the value if there is one, else `x`, a value of `T` or a block that leaves (`ifnull { return 1 }`). |
+| The same for a `Result(T, E)` | `e iferr x`: the `ok` value, else `x`, which can see the error (a form such as `iferr err { return 2 }`; the binding's spelling is settled when it is built). |
+| Unwrap in a `let`, by leaving | `let p = e else { ... }` with a plain name: for `e: ?T`, shorthand for `let some{ value = p } = e else { ... }`. |
 | Null as an arm next to a union's variants (#11) | `match` on a `?U` for a union `U` lists `null` and `U`'s variants in one set of arms. |
 | "Present and equal" (#20) | `==` and `!=` between a `?T` and a `T`: true when present and equal. |
 
-`let … else` stays, for unions in general (`ok{ value }` or `err{ error }` of a `Result`).
+```
+let p = glfw::proc_address{ &glfw, name = "glClear" } ifnull { return 1 }
+let text = fs::read_all{ &fs, &heap, realloc, path } iferr { return 2 }
+let n = maybe_count ifnull 0
+```
+
+The names say which case the right side handles: `ifnull` for a `?T`, `iferr` for a `Result`.
+Zig's `orelse` and `catch` were the alternative (two unrelated words, neither naming its case),
+and C#'s and Swift's `??` (a symbol, where ctxlang writes logic as words: `and`, `or`, `not`).
+`let … else` with a pattern stays, for unions in general.
 
 Considered and set aside: Rust-style combinators (`.map(...)`, `.unwrap_or_else(...)`). A lambda
 can't `return` from the function around it, which is the commonest thing done with a missing
