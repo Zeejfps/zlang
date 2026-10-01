@@ -10,13 +10,13 @@
 //       let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
 //       ...
 //   }
-//
-// Natives (provided by the runtime):
-//   sys_pages { mut mem: Mem, size: usize } -> []u8
-//       `size` rounded up to a multiple of the page size, zeroed and page-aligned. Empty if
-//       `size` is 0 or there isn't enough memory.
 
 namespace mem {
+    // The runtime's (ctxrt.c): `size` rounded up to a multiple of the page size, zeroed and
+    // page-aligned. Empty if `size` is 0 or there isn't enough memory.
+    #c::symbol{ name = "ctx_mem_sys_pages" }
+    extern fn sys_pages { mut mem: Mem, size: usize } -> []mut u8
+
     // At least `size` bytes of zeroed, page-aligned memory. They stay valid until the program ends.
     // Null if there isn't enough memory. Asking for 0 bytes gives an empty slice.
     fn pages { mut mem: Mem, size: usize } -> ?alloc::Bytes {

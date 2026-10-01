@@ -99,7 +99,7 @@ namespace emit {
         i = 0
         while i < p.fns.len {
             let f = p.fns[i]
-            if f.symbol.len > 0 { external{ &e, f } } else if f.native { native{ &e, f } } else { function{ &e, f } }
+            if f.symbol.len > 0 { external{ &e, f } } else { function{ &e, f } }
             i = i + 1
         }
         entry{ &e }
@@ -389,7 +389,7 @@ namespace emit {
         let mut i = 0
         while i < f.params.len {
             if i > 0 { put{ &e, a = ", " } }
-            if f.native {
+            if f.symbol.len > 0 {
                 param_type{ &e, q = f.params[i] }
             } else {
                 tn{ &e, t = f.locals[i].ty }
@@ -399,50 +399,6 @@ namespace emit {
             i = i + 1
         }
         ch{ &e, c = ')' }
-    }
-
-    // A native calls the runtime's ctx_n_NS_NAME, with slices as ctx_slice and payload-less
-    // unions as their tag.
-    fn native { mut e: E, f: ir::Func } {
-        signature{ &e, f }
-        put{ &e, a = " {\n    " }
-        let void_ret = is_void{ e, t = f.ret }
-        let slice_ret = match ty{ e, id = f.ret } { record => { true } else => { false } }
-        if not void_ret { put{ &e, a = "return " } }
-        if slice_ret {
-            put{ &e, a = "CTX_BITCAST(" }
-            tn{ &e, t = f.ret }
-            put{ &e, a = ", " }
-        }
-        put{ &e, a = "ctx_n_" }
-        let mut i = 0
-        while i < f.name.len {
-            let c = f.name[i]
-            if c == ':' {
-                ch{ &e, c = '_' }
-                i = i + 2
-            } else {
-                ch{ &e, c }
-                i = i + 1
-            }
-        }
-        ch{ &e, c = '(' }
-        i = 0
-        while i < f.params.len {
-            if i > 0 { put{ &e, a = ", " } }
-            let q = f.params[i]
-            let kind = if q.mutable { 0 } else {
-                match ty{ e, id = q.ty } { record => { 1 } tagged => { 2 } else => { 0 } }
-            }
-            if kind == 1 { put{ &e, a = "CTX_BITCAST(ctx_slice, " } }
-            ch{ &e, c = 'l' }
-            num{ &e, n = i }
-            if kind == 1 { ch{ &e, c = ')' } }
-            if kind == 2 { put{ &e, a = ".tag" } }
-            i = i + 1
-        }
-        if slice_ret { ch{ &e, c = ')' } }
-        put{ &e, a = ");\n}\n\n" }
     }
 
     //   extern R xN(P...) __asm__(CTX_SYMBOL("symbol"));

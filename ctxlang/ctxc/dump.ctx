@@ -756,7 +756,7 @@ namespace tree {
 
 // The checked program: the diagnostics first, as `error FILE:LINE:COL MSG`, then one line per declaration, in the
 // files' order and into namespaces, with const initializers and function bodies under theirs,
-// then the natives, then `main` if it is valid.
+// then `main` if it is valid.
 //
 //   struct arena::Arena 24 8
 //     buf: []mut u8 @0
@@ -772,16 +772,9 @@ namespace decls {
             i = i + 1
         }
         let mut f: usize = 0
-        while f < c.files.len - 1 {
+        while f < c.files.len {
             list_decls{ &out, &c, file = @as(u32, f), xs = c.files[f].tree.decls }
             f = f + 1
-        }
-        let natives = list::items{ list = c.natives }
-        i = 0
-        while i < natives.len {
-            let d = check::get_decl{ c, d = natives[i] }
-            pushed{ ok = @fmt(&out, "native {} ", check::str{ s = d.qual }) and sig{ c, d, b = &out } and @fmt(&out, "\n") }
-            i = i + 1
         }
         if c.main != check::NONE { dump::put{ &out, s = "main\n" } }
     }
@@ -929,7 +922,9 @@ namespace decls {
                     else => {}
                 }
             }
-            native => {}
+            external => {
+                pushed{ ok = @fmt(&out, "extern fn {} = {} ", q, check::str{ s = d.symbol }) and sig{ c, d, b = &out } and @fmt(&out, "\n") }
+            }
         }
     }
 

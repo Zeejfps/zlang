@@ -14,7 +14,7 @@ namespace lower {
     type Id = types::Id
 
     const NONE: u32 = 4294967295
-    const VERSION: u64 = 8
+    const VERSION: u64 = 9
 
     // A function instance: a declaration and its generic arguments.
     struct Inst { decl: u32, targs: []Id }
@@ -59,8 +59,8 @@ namespace lower {
         let mut i: usize = 0
         while i < l.queue.len {
             let inst = list::items{ list = l.queue }[i]
-            let f = if check::get_decl{ c = l.c.*, d = inst.decl }.kind == check::Kind::native {
-                native{ &l, id = @as(u32, i), d = inst.decl }
+            let f = if check::get_decl{ c = l.c.*, d = inst.decl }.kind == check::Kind::external {
+                external{ &l, id = @as(u32, i), d = inst.decl }
             } else {
                 function{ &l, id = @as(u32, i), inst }
             }
@@ -113,13 +113,13 @@ namespace lower {
         }
     }
 
-    fn native { mut l: Lower, id: u32, d: u32 } -> ir::Func {
+    fn external { mut l: Lower, id: u32, d: u32 } -> ir::Func {
         let x = check::get_decl{ c = l.c.*, d }
         let params = params_of{ &l, fields = x.fields }
         let ret = tid{ &l, t = x.ret }
         let none = slice::empty(ir::Stmt){}
         return ir::Func{
-            id, name = x.qual, native = true, symbol = x.symbol, params, ret,
+            id, name = x.qual, symbol = x.symbol, params, ret,
             locals = slice::empty(ir::Local){}, body = ir::Block{ stmts = none, result = null },
         }
     }
@@ -173,7 +173,7 @@ namespace lower {
         }
         let ret = tid{ &l, t = l.ret }
         return ir::Func{
-            id, name, native = false, symbol = "", params = list::items{ list = params }, ret,
+            id, name, symbol = "", params = list::items{ list = params }, ret,
             locals = list::items{ list = l.locals }, body,
         }
     }

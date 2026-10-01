@@ -535,12 +535,12 @@ Settled questions are removed, and the rest keep their numbers.
 - **5. File = namespace:** should each file implicitly be a namespace?
 - **6. Imports:** some form of `use list::List` to shorten long paths?
 - **7. Variant shorthand:** should `.variant{...}` be allowed when the expected type is known?
-- **8. Untagged unions:** C-style unions, whose fields share storage with no tag, as C structs such as `SDL_Event` hold. Needed to match C layouts, or is `@cast` (§13) enough? Deferred until there is a C function interface: programs reach C only through the runtime's natives.
+- **8. Untagged unions:** C-style unions, whose fields share storage with no tag, as C structs such as `SDL_Event` hold. Needed to match C layouts, or is `@cast` (§13) enough? Needed for C interop (§18, PLAN.md stage 10).
 - **9. Large stack frames:** should the compiler error or warn above a size limit? (Page allocation is now the `Mem` capability, §15.) Should pages be freeable?
 
 ## 17. Standard library
 
-1. The standard library is ctxlang source (`std/*.ctx`), except for a few functions provided by the runtime (natives). It is part of every program.
+1. The standard library is ctxlang source (`std/*.ctx`). A few of its functions are extern fns (§18) that the runtime provides in C. It is part of every program.
 2. Its namespaces are visible from user code as if declared at top level. A user declaration with the same name shadows a std one (§10).
 3. It allocates only through an allocator the caller passes in (§14), and does IO only through an `Io` or `Fs` the caller passes in (§15). Only `mem::pages` takes memory from the system, through a `Mem` the caller passes in.
 
@@ -550,15 +550,15 @@ Settled questions are removed, and the rest keep their numbers.
 | `c` | Attributes for calling C (§18): `symbol { name: []u8 }`. |
 | `Args` | Declared at the top level: `type Args = [][]u8`, the type of `main`'s `args` (§15). |
 | `Result(T, E)` | Declared at the top level: `union Result(T, E) { ok{ value: T }, err{ error: E } }`. Namespace `result`: `is_ok`, `is_err`, `value`, `error`, `value_or`, `unwrap`, `ok_or`. |
-| `fs` | `File`, `Mode` (`read`, `write`, `append`, `create`), `Error`; `open`, `read`, `write`, `close`, `size`, `remove`, and `read_all` (into memory from an allocator) and `write_all`. Every function takes `mut fs: Fs` and reports failure as a `Result(T, fs::Error)` or `?fs::Error`. Natives: `sys_open`, `sys_read`, `sys_write`, `sys_close`, `sys_size`, `sys_remove`. |
+| `fs` | `File`, `Mode` (`read`, `write`, `append`, `create`), `Error`; `open`, `read`, `write`, `close`, `size`, `remove`, and `read_all` (into memory from an allocator) and `write_all`. Every function takes `mut fs: Fs` and reports failure as a `Result(T, fs::Error)` or `?fs::Error`. Extern fns: `sys_open`, `sys_read`, `sys_write`, `sys_close`, `sys_size`, `sys_remove`. |
 | `alloc` | `Bytes` (`[]mut u8`), the allocator type `Fn(S)`, typed `resize(T, S)`, and `new(T, S)` and `free(T, S)` for one `T`: `new` returns a `?*mut T` holding the given `value` |
-| `mem` | `pages`: at least `size` bytes of zeroed, page-aligned memory, as a `?alloc::Bytes`. Takes `mut mem: Mem`. Native: `sys_pages`. |
+| `mem` | `pages`: at least `size` bytes of zeroed, page-aligned memory, as a `?alloc::Bytes`. Takes `mut mem: Mem`. Extern fn: `sys_pages`. |
 | `arena` | `Arena`, a bump allocator: `new`, `alloc` (an `alloc::Fn(Arena)`), `reset`, `remaining` |
 | `list` | `List(T, S)`: `new`, `reserve`, `push`, `pop`, `get`, `set`, `at`, `items`, `clear`, `each`, `free`. `new` takes the allocator's function and a pointer to its state, and the list keeps both, so it must not outlive the state (§14). |
 | `map` | `Map(K, V, S)`, a hash map that holds its allocator as a list does, and its key type's hash and equality functions: `new`, `len`, `has`, `get`, `at`, `put`, `remove`, `clear`, `free`, `next`, `each`. `hash_*` and `eq_*` for `i32`, `i64`, `u32`, `u64`, `usize`; `hash_bytes` for byte slices, with `slice::eq_bytes`; `hash_string` for `utf8::String`, with `utf8::eq`. |
-| `ascii` | Byte-level character tests and case for a `u8`: `is_digit`, `is_upper`, `is_lower`, `is_alpha`, `is_alnum`, `is_space`, `to_upper`, `to_lower`. Natives, used by `utf8`'s numbers: `f64_digits`, `f32_digits`, `f64_parse`, `f32_parse`. |
+| `ascii` | Byte-level character tests and case for a `u8`: `is_digit`, `is_upper`, `is_lower`, `is_alpha`, `is_alnum`, `is_space`, `to_upper`, `to_lower`. Extern fns, used by `utf8`'s numbers: `f64_digits`, `f32_digits`, `f64_parse`, `f32_parse`. |
 | `utf8` | `String { bytes: []u8 }`, the text type: a non-owning view of valid UTF-8. Offsets are in bytes, and an offset inside a character panics; a character is a `u32` code point. `from` (checks the bytes, returning `Result(String, Invalid)` with the offset of the first bad byte), `of` (panics if invalid), `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`, `is_ascii`. Character tests and case (ASCII only). `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers, by character: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes and holds its allocator as a list does, with `push`, `push_char`, `push_i64`, `push_u64`, `push_f64`, `push_f32`, `push_bool`, `view`, `clear`, `free`, and for `@fmt` (§13, Formatting) `push_padded`, `push_int`, `push_uint`, `push_hex`. `fmt_hex` writes an unsigned integer in hexadecimal into a buffer. |
-| `io` | `Stream`; `print`, `println`, `eprint`, `eprintln` for `utf8::String`, `newline`, `put_char` (one character), `print_i64`, `print_u64`, `print_f64`, `print_f32`, `print_bool` and their `println_` forms (smaller number types widen to these), `read_line` (bytes that aren't valid UTF-8 become `?`). Natives: `write`, `read`. |
+| `io` | `Stream` (an enum: `out`, `err`); `print`, `println`, `eprint`, `eprintln` for `utf8::String`, `newline`, `put_char` (one character), `print_i64`, `print_u64`, `print_f64`, `print_f32`, `print_bool` and their `println_` forms (smaller number types widen to these), `read_line` (bytes that aren't valid UTF-8 become `?`). Extern fns: `write`, `read`. |
 
 ```
 fn main { mut io: Io } {

@@ -201,12 +201,12 @@ static uint64_t put_digits(const char *text, int n, ctx_slice into) {
     return (uint64_t)n;
 }
 
-uint64_t ctx_n_ascii_f64_digits(double v, ctx_slice into) {
+uint64_t ctx_ascii_f64_digits(double v, ctx_slice into) {
     char buf[64];
     return put_digits(buf, repr_f64(v, buf), into);
 }
 
-uint64_t ctx_n_ascii_f32_digits(float v, ctx_slice into) {
+uint64_t ctx_ascii_f32_digits(float v, ctx_slice into) {
     char buf[64];
     return put_digits(buf, repr_f32(v, buf), into);
 }
@@ -219,14 +219,14 @@ static char *c_string(ctx_slice s) {
     return p;
 }
 
-double ctx_n_ascii_f64_parse(ctx_slice text) {
+double ctx_ascii_f64_parse(ctx_slice text) {
     char *s = c_string(text);
     double v = ctx_strtod(s, NULL);
     free(s);
     return v;
 }
 
-float ctx_n_ascii_f32_parse(ctx_slice text) {
+float ctx_ascii_f32_parse(ctx_slice text) {
     char *s = c_string(text);
     float v = ctx_strtof(s, NULL);
     free(s);
@@ -273,8 +273,7 @@ uint64_t ctx_f2i_u(double v, uint64_t hi, const char *dst, CTX_POS) {
 
 // ---- io
 
-void ctx_n_io_write(void *io, uint32_t to, ctx_slice bytes) {
-    (void)io;
+void ctx_io_write(uint32_t to, ctx_slice bytes) {
     if (bytes.len == 0) return;
     if (to == 0) {
         put_out(bytes.ptr, bytes.len);
@@ -284,8 +283,7 @@ void ctx_n_io_write(void *io, uint32_t to, ctx_slice bytes) {
     }
 }
 
-uint64_t ctx_n_io_read(void *io, ctx_slice into) {
-    (void)io;
+uint64_t ctx_io_read(ctx_slice into) {
     if (into.len == 0) return 0;
     flush_out();
 #ifdef _WIN32
@@ -350,8 +348,7 @@ static path_char *checked_path(ctx_slice p, int64_t *status) {
     return w;
 }
 
-int64_t ctx_n_fs_sys_open(void *fs, ctx_slice path, uint8_t mode) {
-    (void)fs;
+int64_t ctx_fs_sys_open(ctx_slice path, uint8_t mode) {
     static const int flags[] = {
         O_RDONLY, O_WRONLY | O_CREAT | O_TRUNC, O_WRONLY | O_CREAT | O_APPEND, O_WRONLY | O_CREAT | O_EXCL,
     };
@@ -377,8 +374,7 @@ static int fd_of(uint32_t id) {
     return id < MAX_FILES ? files[id] - 1 : -1;
 }
 
-int64_t ctx_n_fs_sys_read(void *fs, uint32_t file, ctx_slice into) {
-    (void)fs;
+int64_t ctx_fs_sys_read(uint32_t file, ctx_slice into) {
     int fd = fd_of(file);
     if (fd < 0) return BAD_FILE;
     if (into.len == 0) return 0;
@@ -390,8 +386,7 @@ int64_t ctx_n_fs_sys_read(void *fs, uint32_t file, ctx_slice into) {
     return n < 0 ? os_error(errno) : n;
 }
 
-int64_t ctx_n_fs_sys_write(void *fs, uint32_t file, ctx_slice bytes) {
-    (void)fs;
+int64_t ctx_fs_sys_write(uint32_t file, ctx_slice bytes) {
     int fd = fd_of(file);
     if (fd < 0) return BAD_FILE;
     if (bytes.len == 0) return 0;
@@ -403,16 +398,14 @@ int64_t ctx_n_fs_sys_write(void *fs, uint32_t file, ctx_slice bytes) {
     return n < 0 ? os_error(errno) : n;
 }
 
-int64_t ctx_n_fs_sys_close(void *fs, uint32_t file) {
-    (void)fs;
+int64_t ctx_fs_sys_close(uint32_t file) {
     int fd = fd_of(file);
     if (fd < 0) return BAD_FILE;
     files[file] = 0;
     return close(fd) < 0 ? os_error(errno) : 0;
 }
 
-int64_t ctx_n_fs_sys_size(void *fs, ctx_slice path) {
-    (void)fs;
+int64_t ctx_fs_sys_size(ctx_slice path) {
     int64_t status = 0;
     path_char *w = checked_path(path, &status);
     if (!w) return status;
@@ -423,8 +416,7 @@ int64_t ctx_n_fs_sys_size(void *fs, ctx_slice path) {
     return r < 0 ? os_error(e) : (int64_t)st.st_size;
 }
 
-int64_t ctx_n_fs_sys_remove(void *fs, ctx_slice path) {
-    (void)fs;
+int64_t ctx_fs_sys_remove(ctx_slice path) {
     int64_t status = 0;
     path_char *w = checked_path(path, &status);
     if (!w) return status;
@@ -440,8 +432,7 @@ int64_t ctx_n_fs_sys_remove(void *fs, ctx_slice path) {
 #define MAX_MEMORY (1ULL << 32)          // as ctxi: everything, stack included, within 4 GiB
 static uint64_t used_memory = 64 + (16 << 20);
 
-ctx_slice ctx_n_mem_sys_pages(void *mem, uint64_t size) {
-    (void)mem;
+ctx_slice ctx_mem_sys_pages(uint64_t size) {
     ctx_slice out = { NULL, 0 };
     size = (size + PAGE - 1) / PAGE * PAGE;
     if (size == 0 || used_memory + size > MAX_MEMORY) return out;

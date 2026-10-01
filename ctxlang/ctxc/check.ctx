@@ -33,10 +33,10 @@ namespace check {
     const STD: u32 = 1
     const ROOT: u32 = 2
 
-    // A source file: std's files come first, then the program's, then the natives' signatures.
+    // A source file: std's files come first, then the program's.
     struct File { name: []u8, text: []u8, lines: []u32, tree: syntax::File }
 
-    enum Kind: u8 { func, record, sum, enumeration, alias, constant, native }
+    enum Kind: u8 { func, record, sum, enumeration, alias, constant, external }
 
     // A union variant, resolved. A variant without a payload has null fields.
     struct Variant { name: []u8, fields: ?[]types::Field }
@@ -105,7 +105,7 @@ namespace check {
         aliases:   list::List(u32, Heap),
         consts:    list::List(u32, Heap),
         fns:       list::List(u32, Heap),
-        natives:   list::List(u32, Heap),
+        externs:   list::List(u32, Heap),
         alias_stack: list::List(u32, Heap),
         const_stack: list::List(u32, Heap),
         // Side tables, keyed by key{ file, id }.
@@ -246,39 +246,6 @@ namespace check {
         path{ e: Entry, seg: syntax::Seg },          // a type or namespace: not a value
     }
 
-    // The natives, functions the runtime provides (ctxi/natives.py), as source: each is declared
-    // in the std namespace of the same index.
-    const NATIVE_SPACES: [13][]u8 = [
-        "io", "io", "ascii", "ascii", "fs", "fs", "fs", "fs", "fs", "fs", "mem", "ascii", "ascii",
-    ]
-
-    const NATIVES: [13][]u8 = [
-        "fn write { mut io: Io, to: Stream, bytes: []u8 } {}",
-        "fn read { mut io: Io, into: []mut u8 } -> usize {}",
-        "fn f64_digits { n: f64, into: []mut u8 } -> usize {}",
-        "fn f32_digits { n: f32, into: []mut u8 } -> usize {}",
-        "fn sys_open { mut fs: Fs, path: []u8, mode: u8 } -> i64 {}",
-        "fn sys_read { mut fs: Fs, file: u32, into: []mut u8 } -> i64 {}",
-        "fn sys_write { mut fs: Fs, file: u32, bytes: []u8 } -> i64 {}",
-        "fn sys_close { mut fs: Fs, file: u32 } -> i64 {}",
-        "fn sys_size { mut fs: Fs, path: []u8 } -> i64 {}",
-        "fn sys_remove { mut fs: Fs, path: []u8 } -> i64 {}",
-        "fn sys_pages { mut mem: Mem, size: usize } -> []mut u8 {}",
-        "fn f64_parse { text: []u8 } -> f64 {}",
-        "fn f32_parse { text: []u8 } -> f32 {}",
-    ]
-
-    // The natives' source, one per line, to be parsed as the last file.
-    fn natives_source { mut heap: Heap } -> []u8 {
-        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
-        let mut i: usize = 0
-        while i < NATIVES.len {
-            pushed{ ok = utf8::push{ &b, s = utf8::String{ bytes = NATIVES[i] } } and utf8::push{ &b, s = "\n" } }
-            i = i + 1
-        }
-        return utf8::view{ b }.bytes
-    }
-
     fn new { files: []File, std_files: usize, mut heap: Heap, mut diags: diag::Diags } -> Checker {
         let mut c = Checker{
             heap = &heap, diags = &diags, files, std_files,
@@ -286,7 +253,7 @@ namespace check {
             spaces = list::new(Space){ realloc = arena::alloc, &heap },
             decls = list::new(Decl){ realloc = arena::alloc, &heap },
             structs = ids{ &heap }, unions = ids{ &heap }, enums = ids{ &heap }, aliases = ids{ &heap },
-            consts = ids{ &heap }, fns = ids{ &heap }, natives = ids{ &heap },
+            consts = ids{ &heap }, fns = ids{ &heap }, externs = ids{ &heap },
             alias_stack = ids{ &heap }, const_stack = ids{ &heap },
             decl_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             space_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
@@ -364,11 +331,10 @@ namespace check {
 
     fn declarations { mut c: Checker } {
         let mut f: usize = 0
-        while f < c.files.len - 1 {
+        while f < c.files.len {
             collect{ &c, file = @as(u32, f), decls = c.files[f].tree.decls, ns = if f < c.std_files { STD } else { ROOT } }
             f = f + 1
         }
-        declare_natives{ &c }
         c.text_decl = std_decl{ c, space = "utf8", name = "String" }
         c.builder_decl = std_decl{ c, space = "utf8", name = "Builder" }
         generic_params{ &c, xs = c.structs }
@@ -380,7 +346,7 @@ namespace check {
         each{ &c, xs = c.aliases, what = Phase::aliases }
         each{ &c, xs = c.consts, what = Phase::consts }
         each{ &c, xs = c.fns, what = Phase::sigs }
-        each{ &c, xs = c.natives, what = Phase::sigs }
+        each{ &c, xs = c.externs, what = Phase::sigs }
     }
 
     union Phase { structs, unions, enums, aliases, consts, sigs, const_values, fold, bodies }
@@ -412,11 +378,11 @@ namespace check {
             match x.k {
                 error => {}
                 func{ name, tparams, external } => {
-                    let d = declare{ &c, kind = if external { Kind::native } else { Kind::func }, x, file, name, tparams, ns }
+                    let d = declare{ &c, kind = if external { Kind::external } else { Kind::func }, x, file, name, tparams, ns }
                     add_name{ &c, ns, values = true, name, e = Entry::decl{ i = d }, at = x.span }
                     if external {
                         list::at{ list = c.decls, i = d }.symbol = name.text
-                        push{ xs = &c.natives, n = d }
+                        push{ xs = &c.externs, n = d }
                     } else {
                         push{ xs = &c.fns, n = d }
                     }
@@ -512,35 +478,6 @@ namespace check {
         let sp = list::at{ list = c.spaces, i = ns }
         let ok = if values { map::put{ m = &sp.values, key = name, value = e } } else { map::put{ m = &sp.paths, key = name, value = e } }
         if not ok { @panic("check: out of memory") }
-    }
-
-    // Each native goes into its std namespace, as a function that has only a signature.
-    fn declare_natives { mut c: Checker } {
-        let file = @as(u32, c.files.len - 1)
-        let decls = c.files[file].tree.decls
-        let mut i: usize = 0
-        while i < decls.len {
-            let x = decls[i]
-            match x.k {
-                func{ name } => {
-                    let found = map::get{ m = get_space{ c, ns = STD }.paths, key = NATIVE_SPACES[i] }
-                    let mut ns = STD
-                    if found != null {
-                        match found { space{ ns = n } => { ns = n } else => {} }
-                    }
-                    if ns == STD {
-                        let mut b = message{ c }
-                        pushed{ ok = @fmt(&b, "native `{}::{}` has no std namespace", str{ s = NATIVE_SPACES[i] }, str{ s = name.text }) }
-                        error{ &c, at = nowhere{}, msg = utf8::view{ b } }
-                    }
-                    let d = declare{ &c, kind = Kind::native, x, file, name, tparams = no_names{}, ns }
-                    add_name{ &c, ns, values = true, name, e = Entry::decl{ i = d }, at = x.span }
-                    push{ xs = &c.natives, n = d }
-                }
-                else => { @panic("check: a native must be a function") }
-            }
-            i = i + 1
-        }
     }
 
     fn generic_params { mut c: Checker, xs: list::List(u32, Heap) } {
@@ -746,7 +683,7 @@ namespace check {
         }
     }
 
-    // A function's (or a native's) context fields and return type.
+    // A function's (or an extern fn's) context fields and return type.
     fn resolve_sig { mut c: Checker, d: u32 } {
         let x = get_decl{ c, d }
         let sc = own_scope{ &c, d }
@@ -867,7 +804,7 @@ namespace check {
     // The compiler acts on std's `c::symbol` and ignores the rest.
     fn attributes { mut c: Checker } {
         let mut f: usize = 0
-        while f < c.files.len - 1 {
+        while f < c.files.len {
             attribute_list{ &c, file = @as(u32, f), decls = c.files[f].tree.decls, ns = if f < c.std_files { STD } else { ROOT } }
             f = f + 1
         }

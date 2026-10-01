@@ -2,14 +2,24 @@
 //
 // Text is `utf8::String`. These functions look at single bytes, for code that scans `[]u8`
 // directly; `utf8` has the same tests for a `u32` character.
-//
-// Natives (provided by the runtime), used by `utf8`'s number formatting and parsing:
-//   f64_digits { n: f64, into: []mut u8 } -> usize   writes the shortest round-trip text
-//   f32_digits { n: f32, into: []mut u8 } -> usize   of n into `into`; panics if it doesn't fit
-//   f64_parse  { text: []u8 } -> f64    the nearest value to `text`, which must already
-//   f32_parse  { text: []u8 } -> f32    be valid float syntax (see utf8::parse_f64)
 
 namespace ascii {
+    // ---- the runtime's (ctxrt.c), used by `utf8`'s number formatting and parsing. They are
+    // pure, so they take no capability.
+
+    // Write the shortest round-trip text of n into `into`; panic if it doesn't fit.
+    #c::symbol{ name = "ctx_ascii_f64_digits" }
+    extern fn f64_digits { n: f64, into: []mut u8 } -> usize
+    #c::symbol{ name = "ctx_ascii_f32_digits" }
+    extern fn f32_digits { n: f32, into: []mut u8 } -> usize
+
+    // The nearest value to `text`, which must already be valid float syntax (see
+    // utf8::parse_f64).
+    #c::symbol{ name = "ctx_ascii_f64_parse" }
+    extern fn f64_parse { text: []u8 } -> f64
+    #c::symbol{ name = "ctx_ascii_f32_parse" }
+    extern fn f32_parse { text: []u8 } -> f32
+
     fn is_digit { c: u8 } -> bool { return c >= '0' and c <= '9' }
     fn is_upper { c: u8 } -> bool { return c >= 'A' and c <= 'Z' }
     fn is_lower { c: u8 } -> bool { return c >= 'a' and c <= 'z' }

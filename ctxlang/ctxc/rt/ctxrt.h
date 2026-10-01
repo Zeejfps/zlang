@@ -132,20 +132,22 @@ uint64_t ctx_as_u(uint64_t v, uint64_t hi, const char *dst, CTX_POS);
 int64_t ctx_f2i_s(double v, int64_t lo, int64_t hi, const char *dst, CTX_POS);
 uint64_t ctx_f2i_u(double v, uint64_t hi, const char *dst, CTX_POS);
 
-// ---- natives (std's runtime-provided functions)
+// ---- natives: std's extern fns (std/io.ctx, fs.ctx, mem.ctx, ascii.ctx). A capability isn't
+// passed, and a slice is a ctx_slice. std declares them for itself, so these declarations are
+// for the runtime.
 
-void ctx_n_io_write(void *io, uint32_t to, ctx_slice bytes);
-uint64_t ctx_n_io_read(void *io, ctx_slice into);
-uint64_t ctx_n_ascii_f64_digits(double n, ctx_slice into);
-uint64_t ctx_n_ascii_f32_digits(float n, ctx_slice into);
-double ctx_n_ascii_f64_parse(ctx_slice text);
-float ctx_n_ascii_f32_parse(ctx_slice text);
-int64_t ctx_n_fs_sys_open(void *fs, ctx_slice path, uint8_t mode);
-int64_t ctx_n_fs_sys_read(void *fs, uint32_t file, ctx_slice into);
-int64_t ctx_n_fs_sys_write(void *fs, uint32_t file, ctx_slice bytes);
-int64_t ctx_n_fs_sys_close(void *fs, uint32_t file);
-int64_t ctx_n_fs_sys_size(void *fs, ctx_slice path);
-int64_t ctx_n_fs_sys_remove(void *fs, ctx_slice path);
-ctx_slice ctx_n_mem_sys_pages(void *mem, uint64_t size);
+void ctx_io_write(uint32_t to, ctx_slice bytes);
+uint64_t ctx_io_read(ctx_slice into);
+uint64_t ctx_ascii_f64_digits(double n, ctx_slice into);
+uint64_t ctx_ascii_f32_digits(float n, ctx_slice into);
+double ctx_ascii_f64_parse(ctx_slice text);
+float ctx_ascii_f32_parse(ctx_slice text);
+int64_t ctx_fs_sys_open(ctx_slice path, uint8_t mode);
+int64_t ctx_fs_sys_read(uint32_t file, ctx_slice into);
+int64_t ctx_fs_sys_write(uint32_t file, ctx_slice bytes);
+int64_t ctx_fs_sys_close(uint32_t file);
+int64_t ctx_fs_sys_size(ctx_slice path);
+int64_t ctx_fs_sys_remove(ctx_slice path);
+ctx_slice ctx_mem_sys_pages(uint64_t size);
 
 #endif

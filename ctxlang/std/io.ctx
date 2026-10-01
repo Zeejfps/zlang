@@ -8,15 +8,20 @@
 //       io::println_i64{ &io, n = 42 }
 //   }
 //
-// Natives (provided by the runtime):
-//   write { mut io: Io, to: Stream, bytes: []u8 }
-//   read  { mut io: Io, into: []mut u8 } -> usize
-//       Reads at most into.len bytes of standard input into `into`. Returns how many; 0 at the end.
-//
 // print* functions write their value only. println* functions add a newline.
 
 namespace io {
-    union Stream { out, err }
+    enum Stream: u32 { out, err }
+
+    // ---- the runtime's (ctxrt.c)
+
+    // Writes bytes to standard output or standard error.
+    #c::symbol{ name = "ctx_io_write" }
+    extern fn write { mut io: Io, to: Stream, bytes: []u8 }
+
+    // Reads at most into.len bytes of standard input into `into`. Returns how many; 0 at the end.
+    #c::symbol{ name = "ctx_io_read" }
+    extern fn read { mut io: Io, into: []mut u8 } -> usize
 
     // ---- text
 

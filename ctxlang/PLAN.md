@@ -30,7 +30,7 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
   compiles ctxc's current source into `build/ctxc` (about 7 s the first time, cached after).
   Without Python: `cc -std=gnu11 -O1 -fwrapv -fno-optimize-sibling-calls -Ictxc/rt
   bootstrap/ctxc.c ctxc/rt/ctxrt.c -lm -o ctxc`, then `ctxc build OUT.c std/*.ctx -- FILE...`.
-- `python -m unittest discover tests` runs all 340 tests through the native ctxc: each program is
+- `python -m unittest discover tests` runs all 349 tests through the native ctxc: each program is
   compiled with `ctxc build`, built with cc and run. They pass on Windows (gcc), Linux (gcc) and
   macOS arm64 (Apple clang).
 - `tools/fixpoint.py`: ctxc built by itself, twice, writes byte-identical C, the same as the
@@ -705,9 +705,10 @@ Increments, each landing with tests and a refreshed bootstrap:
    `(extern ID NAME SYMBOL PARAMS RET)` (IR version 8). The C backend declares each extern as
    `xN` with an assembler name (`__asm__(CTX_SYMBOL("sym"))`), so a header that declares the
    same symbol with other C types can't clash with it, and `fN` calls it.
-2. **The runtime's natives as externs.** The 13 natives in `check.ctx`'s table move into std as
-   extern fns over runtime functions without capability parameters, and the table goes.
-   `io::Stream` becomes an enum, since a union can't cross into C.
+2. **The runtime's natives as externs** — *done.* The 13 natives in `check.ctx`'s table moved
+   into std as extern fns over `ctx_io_write` and the rest, which take no capability parameter,
+   and the table and its `<natives>` file are gone. `io::Stream` is an enum, since a union can't
+   cross into C. The IR has no `(native ...)` any more (IR version 9).
 3. **Capability types declared in source.** `Io`, `Fs` and `Mem` become std declarations, `main`
    accepts any capability type, and a namespace can construct its own capabilities, so a binding
    can derive one from another (a window from a library, a GL context from a window).
@@ -745,7 +746,7 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 | `f32` arithmetic | `float` | Needs `FLT_EVAL_METHOD == 0` (SSE). |
 | `@as`, `@trunc`, `@wrap_*` | range check then cast; unsigned arithmetic then cast | |
 | `[N]T` | `struct { T a[N]; }` | Wrapped so arrays copy, assign and return as values. |
-| `[]T`, `s[i]`, `s[lo..hi]` | `struct { T *m_ptr; uint64_t m_len; }`; `ctx_idx`, `ctx_range` | Bounds checks panic as in ctxi. The runtime's natives see it as `ctx_slice`. |
+| `[]T`, `s[i]`, `s[lo..hi]` | `struct { T *m_ptr; uint64_t m_len; }`; `ctx_idx`, `ctx_range` | Bounds checks panic as in ctxi. The runtime's C functions see it as `ctx_slice`. |
 | struct | C struct, same field order | Checked with `_Static_assert` on `sizeof` and `offsetof`. |
 | union, `?T` | `struct { uint32_t tag; union { … } p; }` | Tag at 0, payload at `align_up(4, payload align)`. `null` is tag 0. |
 | enum | its base integer type | `match` becomes an if-else chain on the value (IR `switch`). |

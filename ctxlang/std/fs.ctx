@@ -17,16 +17,23 @@
 //
 // Paths are bytes, relative to the working directory the program was started in.
 //
-// Natives (provided by the runtime). Each returns a status: >= 0 is the result, < 0 an error
-// code that `error_of` decodes.
-//   sys_open   { mut fs: Fs, path: []u8, mode: u8 } -> i64         a file id
-//   sys_read   { mut fs: Fs, file: u32, into: []mut u8 } -> i64        bytes read, 0 at the end
-//   sys_write  { mut fs: Fs, file: u32, bytes: []u8 } -> i64       bytes written
-//   sys_close  { mut fs: Fs, file: u32 } -> i64
-//   sys_size   { mut fs: Fs, path: []u8 } -> i64                   size in bytes
-//   sys_remove { mut fs: Fs, path: []u8 } -> i64
-
 namespace fs {
+    // ---- the runtime's (ctxrt.c). Each returns a status: >= 0 is the result, < 0 an error
+    // code that `error_of` decodes.
+
+    #c::symbol{ name = "ctx_fs_sys_open" }
+    extern fn sys_open { mut fs: Fs, path: []u8, mode: u8 } -> i64             // a file id
+    #c::symbol{ name = "ctx_fs_sys_read" }
+    extern fn sys_read { mut fs: Fs, file: u32, into: []mut u8 } -> i64        // bytes read, 0 at the end
+    #c::symbol{ name = "ctx_fs_sys_write" }
+    extern fn sys_write { mut fs: Fs, file: u32, bytes: []u8 } -> i64          // bytes written
+    #c::symbol{ name = "ctx_fs_sys_close" }
+    extern fn sys_close { mut fs: Fs, file: u32 } -> i64
+    #c::symbol{ name = "ctx_fs_sys_size" }
+    extern fn sys_size { mut fs: Fs, path: []u8 } -> i64                       // size in bytes
+    #c::symbol{ name = "ctx_fs_sys_remove" }
+    extern fn sys_remove { mut fs: Fs, path: []u8 } -> i64
+
     union Error {
         not_found,
         permission_denied,

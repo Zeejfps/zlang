@@ -176,7 +176,6 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, mode: Mode }
         }
         i = i + 1
     }
-    add_file{ &files, &heap, &diags, name = "<natives>", text = check::natives_source{ &heap } }
     let mut c = check::new{ files = list::items{ list = files }, std_files = split - first, &heap, &diags }
     check::program{ &c }
     if mode == Mode::build {
