@@ -1,0 +1,35 @@
+// A few of SDL2's functions (SDL.h), for main.ctx. SDL_Event is a C union whose members all start
+// with the event type, so it is an extern union (spec §12, Untagged unions): read `kind` first,
+// then the member it names.
+namespace sdl {
+    // Permission to call SDL.
+    capability Sdl
+
+    const INIT_VIDEO: u32 = 32                     // SDL_INIT_VIDEO
+    const WINDOWPOS_CENTERED: i32 = 805240832     // SDL_WINDOWPOS_CENTERED
+    const WINDOW_SHOWN: u32 = 4                    // SDL_WINDOW_SHOWN
+    const QUIT: u32 = 256                          // SDL_QUIT
+    const WINDOWEVENT: u32 = 512                   // SDL_WINDOWEVENT
+    const KEYDOWN: u32 = 768                       // SDL_KEYDOWN
+
+    struct Window {}                               // opaque: only ever behind a pointer
+
+    struct Keysym { scancode: i32, sym: i32, mods: u16, unused: u32 }
+    struct KeyboardEvent { kind: u32, timestamp: u32, window_id: u32, state: u8, repeat: u8, pad2: u8, pad3: u8, keysym: Keysym }
+    struct QuitEvent { kind: u32, timestamp: u32 }
+
+    extern union Event {
+        kind: u32,
+        key: KeyboardEvent,
+        quit: QuitEvent,
+        padding: [56]u8,                           // SDL's size on 64-bit targets
+    }
+
+    extern fn SDL_Init { mut sdl: Sdl, flags: u32 } -> i32
+    extern fn SDL_Quit { mut sdl: Sdl }
+    extern fn SDL_CreateWindow { mut sdl: Sdl, title: *u8, x: i32, y: i32, w: i32, h: i32, flags: u32 } -> ?*mut Window
+    extern fn SDL_DestroyWindow { mut sdl: Sdl, window: *mut Window }
+    extern fn SDL_PollEvent { mut sdl: Sdl, mut event: Event } -> i32
+    extern fn SDL_GetTicks { mut sdl: Sdl } -> u32
+    extern fn SDL_Delay { mut sdl: Sdl, ms: u32 }
+}

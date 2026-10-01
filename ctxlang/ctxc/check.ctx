@@ -934,6 +934,17 @@ namespace check {
         return true
     }
 
+    // Whether struct declaration d is an extern union, whose fields all start at offset 0 (§12,
+    // Untagged unions).
+    fn is_untagged { c: Checker, d: u32 } -> bool {
+        match get_decl{ c, d }.syn.k { record{ untagged } => { return untagged } else => { return false } }
+    }
+
+    fn untagged_type { c: Checker, t: Id } -> bool {
+        let d = record_decl{ c, t }
+        return d != NONE and is_untagged{ c, d }
+    }
+
     // The struct declaration of type t, or NONE if it isn't a struct.
     fn record_decl { c: Checker, t: Id } -> u32 {
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
@@ -1683,6 +1694,9 @@ namespace check {
                 let lit = map::get{ m = c.literal, key = expr_key{ e } }
                 if lit == null or not lit {
                     error{ &c, at, msg = "a const cannot call a function" }
+                } else if untagged_type{ c, t = type_of_expr{ c, e } } {
+                    error{ &c, at, msg = "a const cannot hold an extern union" }
+                    return
                 }
                 let mut i: usize = 0
                 while i < items.len {
@@ -3049,6 +3063,9 @@ namespace check {
         if ok and through and is_enum{ c, t = ut } {
             error{ &c, at = expr_at{ e = scrut }, msg = "match cannot go through a pointer to an enum; match on the value with `.*`" }
             ok = false
+        } else if ok and untagged_type{ c, t = ut } {
+            error{ &c, at = expr_at{ e = scrut }, msg = "an extern union has no tag to match on: read the field you know it holds" }
+            ok = false
         } else if ok and not has_variants{ c, t = ut } {
             let mut b = message{ c }
             pushed{ ok = @fmt(&b, "match needs a union, enum or optional value, got {}", tstr{ c, t = st }) }
@@ -3304,7 +3321,10 @@ namespace check {
             }
             sum | opt => {}
             else => {
-                if ok {
+                if ok and untagged_type{ c, t } {
+                    error{ &c, at = expr_at{ e = init }, msg = "an extern union has no tag to match on: read the field you know it holds" }
+                    ok = false
+                } else if ok {
                     let mut b = message{ c }
                     pushed{ ok = @fmt(&b, "a `let` pattern needs a union or optional value, got {}", tstr{ c, t }) }
                     error{ &c, at = expr_at{ e = init }, msg = utf8::view{ b } }
@@ -3544,7 +3564,12 @@ namespace check {
             field{ base, name } => {
                 if access_is{ c, e, a = Access::field } {
                     let p = place_path{ c, e = base.* }
-                    if p != null { return Place{ root = p.root, steps = add_step{ c, steps = p.steps, step = name.text } } }
+                    if p != null {
+                        // An extern union's fields share their bytes: `|` marks such a step, and
+                        // overlap counts any two of them at one depth as the same.
+                        let step = if untagged_type{ c, t = type_of_expr{ c, e = base.* } } { union_step{ c, name = name.text } } else { name.text }
+                        return Place{ root = p.root, steps = add_step{ c, steps = p.steps, step } }
+                    }
                 }
             }
             index{ base } => {
@@ -3556,6 +3581,12 @@ namespace check {
             else => {}
         }
         return null
+    }
+
+    fn union_step { c: Checker, name: []u8 } -> []u8 {
+        let mut b = message{ c }
+        pushed{ ok = utf8::push{ &b, s = "|" } and utf8::push{ &b, s = str{ s = name } } }
+        return utf8::view{ b }.bytes
     }
 
     fn add_step { c: Checker, steps: [][]u8, step: []u8 } -> [][]u8 {
@@ -4300,7 +4331,10 @@ namespace check {
         if p.root != q.root { return false }
         let mut i: usize = 0
         while i < p.steps.len and i < q.steps.len {
-            if not slice::eq_bytes{ a = p.steps[i], b = q.steps[i] } { return false }
+            let a = p.steps[i]
+            let b = q.steps[i]
+            let both_union = a.len > 0 and b.len > 0 and a[0] == '|' and b[0] == '|'
+            if not both_union and not slice::eq_bytes{ a, b } { return false }
             i = i + 1
         }
         return true
@@ -4314,6 +4348,8 @@ namespace check {
         while i < p.steps.len {
             if slice::eq_bytes{ a = p.steps[i], b = "[" } {
                 ok = ok and utf8::push{ &b, s = "[_]" }
+            } else if p.steps[i].len > 0 and p.steps[i][0] == '|' {
+                ok = ok and utf8::push{ &b, s = "." } and utf8::push{ &b, s = str{ s = p.steps[i][1..] } }
             } else {
                 ok = ok and utf8::push{ &b, s = "." } and utf8::push{ &b, s = str{ s = p.steps[i] } }
             }
@@ -5422,8 +5458,37 @@ namespace check {
         }
         same_decl{ &c, t, exp }
         let mut b = message{ c }
+        if is_untagged{ c, d = decl } {
+            pushed{ ok = @fmt(&b, "extern union `{}`", str{ s = get_decl{ c, d = decl }.name.text }) }
+            return untagged_lit{ &c, e, t, fields = struct_fields{ &c, t }, what = utf8::view{ b }, items, forward, bind }
+        }
         pushed{ ok = @fmt(&b, "struct `{}`", str{ s = get_decl{ c, d = decl }.name.text }) }
         return fields_lit{ &c, e, t, fields = struct_fields{ &c, t }, what = utf8::view{ b }, items, forward, bind }
+    }
+
+    // An extern union's literal (§12, Untagged unions) sets exactly one field; the rest of its
+    // bytes are zero.
+    fn untagged_lit { mut c: Checker, e: syntax::Expr, t: Id, fields: []types::Field, what: utf8::String, items: []syntax::Item, forward: bool, bind: bool } -> Id {
+        set_literal{ &c, e, is = true }
+        if forward or bind {
+            let word: utf8::String = if forward { ".." } else { "_" }
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "`{}` is not allowed in a literal", word) }
+            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+        }
+        supplied{ &c, items, fields, what }
+        if items.len != 1 {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "{} literal must set exactly one field", what) }
+            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+        }
+        let mut i: usize = 0
+        while i < items.len {
+            let f = types::find_field{ fields, name = items[i].name.text }
+            if f != null { expect{ &c, e = items[i].value, t = f.ty } }
+            i = i + 1
+        }
+        return t
     }
 
     fn variant_lit { mut c: Checker, e: syntax::Expr, ut: Id, vi: u32, items: []syntax::Item, forward: bool, bind: bool, exp: Id } -> Id {
@@ -6374,6 +6439,7 @@ namespace check {
 
     fn struct_offsets { mut c: Checker, t: Id } -> ?Offsets {
         let fields = struct_fields{ &c, t }
+        let untagged = untagged_type{ c, t }
         let mut offs = list::new(u64){ realloc = arena::alloc, heap = c.heap }
         let mut off: u64 = 0
         let mut al: u64 = 1
@@ -6381,9 +6447,15 @@ namespace check {
         while i < fields.len {
             let fl = layout{ &c, t = fields[i].ty }
             if fl == null { return null }
-            off = align_up{ n = off, a = fl.align }
-            push_u64{ xs = &offs, n = off }
-            off = off + fl.size
+            if untagged {
+                // every field at 0, as in a C union
+                push_u64{ xs = &offs, n = 0 }
+                if fl.size > off { off = fl.size }
+            } else {
+                off = align_up{ n = off, a = fl.align }
+                push_u64{ xs = &offs, n = off }
+                off = off + fl.size
+            }
             if fl.align > al { al = fl.align }
             i = i + 1
         }

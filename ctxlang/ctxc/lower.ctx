@@ -14,7 +14,7 @@ namespace lower {
     type Id = types::Id
 
     const NONE: u32 = 4294967295
-    const VERSION: u64 = 11
+    const VERSION: u64 = 12
 
     // A function instance: a declaration and its generic arguments.
     struct Inst { decl: u32, targs: []Id }
@@ -299,7 +299,7 @@ namespace lower {
                 let mut fs = list::new(ir::Field){ realloc = arena::alloc, heap = l.heap }
                 add_ir_field{ xs = &fs, f = ir::Field{ name = "ptr", ty = p, offset = 0 } }
                 add_ir_field{ xs = &fs, f = ir::Field{ name = "len", ty = n, offset = 8 } }
-                return ir::Type::record{ name, size = 16, align = 8, fields = list::items{ list = fs } }
+                return ir::Type::record{ name, size = 16, align = 8, fields = list::items{ list = fs }, untagged = false }
             }
             record => {
                 let offs = check::struct_offsets{ c = l.c, t }
@@ -313,7 +313,7 @@ namespace lower {
                     add_ir_field{ xs = &fs, f = ir::Field{ name = fields[i].name, ty = ft, offset = offs.offs[i] } }
                     i = i + 1
                 }
-                return ir::Type::record{ name, size = offs.layout.size, align = offs.layout.align, fields = list::items{ list = fs } }
+                return ir::Type::record{ name, size = offs.layout.size, align = offs.layout.align, fields = list::items{ list = fs }, untagged = check::untagged_type{ c = l.c.*, t } }
             }
             opt{ elem } => {
                 if check::nullable_ptr{ c = l.c.*, t } { return ir::Type::nptr{ ptr = tid{ &l, t = elem } } }

@@ -1,0 +1,43 @@
+// Opens a window for two seconds through the SDL binding in sdl.ctx, and prints the events SDL
+// reports, reading each through the extern union sdl::Event.
+fn main { mut io: Io, mut sdl: sdl::Sdl } -> i32 {
+    if sdl::SDL_Init{ &sdl, flags = sdl::INIT_VIDEO } != 0 {
+        io::eprintln{ &io, s = "sdl: init failed" }
+        return 1
+    }
+    defer sdl::SDL_Quit{ &sdl }
+    let title: []u8 = "ctxlang\0"
+    let some{ value = window } = sdl::SDL_CreateWindow{
+        &sdl, title = title.ptr, x = sdl::WINDOWPOS_CENTERED, y = sdl::WINDOWPOS_CENTERED,
+        w = 640, h = 480, flags = sdl::WINDOW_SHOWN,
+    } else {
+        io::eprintln{ &io, s = "sdl: no window" }
+        return 1
+    }
+    defer sdl::SDL_DestroyWindow{ &sdl, window }
+    io::println{ &io, s = "window open" }
+
+    let start = sdl::SDL_GetTicks{ &sdl }
+    let mut event: sdl::Event
+    let mut windows: u32 = 0
+    run:
+    while sdl::SDL_GetTicks{ &sdl } - start < 2000 {
+        while sdl::SDL_PollEvent{ &sdl, event = &event } != 0 {
+            let kind = event.kind
+            if kind == sdl::QUIT {
+                io::println{ &io, s = "quit" }
+                break run
+            } else if kind == sdl::KEYDOWN {
+                io::print{ &io, s = "key " }
+                io::println_i64{ &io, n = event.key.keysym.sym }
+            } else if kind == sdl::WINDOWEVENT {
+                windows = windows + 1
+            }
+        }
+        sdl::SDL_Delay{ &sdl, ms = 10 }
+    }
+    io::print{ &io, s = "window events: " }
+    io::println_u64{ &io, n = windows }
+    io::println{ &io, s = "window closed" }
+    return 0
+}

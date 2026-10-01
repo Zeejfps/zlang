@@ -73,8 +73,8 @@ namespace ir_print {
                 char{ &o, c = ' ' }
                 num{ &o, n = elem }
             }
-            record{ name, size, align, fields } => {
-                text{ &o, a = "(struct " }
+            record{ name, size, align, fields, untagged } => {
+                text{ &o, a = if untagged { "(cunion " } else { "(struct " } }
                 quote{ &o, b = name }
                 char{ &o, c = ' ' }
                 num{ &o, n = size }

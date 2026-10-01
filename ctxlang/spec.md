@@ -1,6 +1,6 @@
 # ctxlang: spec draft
 
-Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound functions), [examples/wordcount.ctx](examples/wordcount.ctx) (files, arguments, maps), [examples/json](examples/json) (a JSON parser and printer, as a program of several files: `python tools/ctxc.py examples/json --run FILE`), [examples/glfw](examples/glfw) (a build program, §19, and a binding of a C library, §18: `python tools/ctxc.py examples/glfw --run`).
+Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound functions), [examples/wordcount.ctx](examples/wordcount.ctx) (files, arguments, maps), [examples/json](examples/json) (a JSON parser and printer, as a program of several files: `python tools/ctxc.py examples/json --run FILE`), [examples/glfw](examples/glfw) (a build program, §19, and a binding of a C library, §18: `python tools/ctxc.py examples/glfw --run`), [examples/sdl](examples/sdl) (SDL2's events through an extern union, §12).
 
 ## 1. Top level
 
@@ -385,6 +385,7 @@ step  := .field | [index]
 | `fn{C} -> R` | unbound function type (§5) |
 | `&fn{C} -> R` | bound function type (§5, §6) |
 | `extern fn{C} -> R` | C function pointer (below, §18) |
+| `extern union Name { f: T, ... }` | C's untagged union (below, §18) |
 | `type Name(G) = T` | alias |
 
 ### Pointers
@@ -445,6 +446,23 @@ let sub: Op = lib::sub                    // a named extern fn: its C symbol's a
 5. A ctxlang function value (`fn{C} -> R`) doesn't convert to an extern fn type, nor the other way.
 6. `?extern fn{C} -> R` is a C function pointer that may be `NULL`, as `?*T` is (§8, Optional, rule 6).
 7. It holds no addresses of places: as a `fn` value, it may be stored and returned anywhere.
+
+### Untagged unions
+
+```
+extern union ClearValue { color: Color, depth_stencil: DepthStencil }
+
+let v = ClearValue{ color = Color{ r = 1.0, g = 0.0, b = 0.0, a = 1.0 } }
+let d = v.depth_stencil.depth          // the same bytes, read as another field
+```
+
+1. `extern union Name { field: T, ... }` declares C's union: every field starts at offset 0. Its size is its largest field's, rounded up to its largest alignment, and its alignment is its largest field alignment, as in C. It can't have generic parameters.
+2. It has no tag, so it can't be matched (§8, Match) or taken apart with `let … else`. A field is read and written as a struct's is (`v.color`, `v.color = c`, `p.color` through a pointer), and is a place as a struct field is (§11). Which field holds a meaningful value is for the program to know, as in C: reading a field other than the one last written reads the same bytes as that field's type.
+3. A literal sets exactly one field, and the rest of the bytes are zero.
+4. Its zero value is every byte zero, if every field type has a zero value (§11, Initialization).
+5. A const can't hold one (§14).
+6. Two fields of one extern union are the same place for §3.1: passing `&v.color` and `&v.depth_stencil` to `mut` fields of one call is an error. A value read from a field is derived from whatever the union is (§14).
+7. For a union of the language's own, which says which variant it holds, use `union` (§8).
 
 ### Slices
 
@@ -563,7 +581,6 @@ Settled questions are removed, and the rest keep their numbers.
 - **5. File = namespace:** should each file implicitly be a namespace?
 - **6. Imports:** some form of `use list::List` to shorten long paths?
 - **7. Variant shorthand:** should `.variant{...}` be allowed when the expected type is known?
-- **8. Untagged unions:** C-style unions, whose fields share storage with no tag, as C structs such as `SDL_Event` hold. Needed to match C layouts, or is `@cast` (§13) enough? Needed for C interop (§18, PLAN.md stage 10).
 - **9. Large stack frames:** should the compiler error or warn above a size limit? (Page allocation is now the `Mem` capability, §15.) Should pages be freeable?
 
 ## 17. Standard library
@@ -619,7 +636,7 @@ extern fn glfwPollEvents { mut glfw: Glfw }      // a capability says who may ca
 1. `extern fn name { context } -> R` declares a function that C provides. It has no body and no generic parameters.
 2. It calls the C symbol `name`, or the one `#c::symbol{ name = "..." }` gives. The symbol must be a C identifier.
 3. Its context fields are C's parameters in the order they are declared. A field with a capability type (§15) isn't passed: it only says who may call the function. A `mut` field of type `T` is passed as a `T*`.
-4. A field or result may have a numeric type, `bool`, an enum (as its base type), a pointer (as a C pointer), a `?*T` or `?*mut T` (as a C pointer, with `null` as `NULL`: §8, Optional, rule 6), a C function pointer `extern fn{C} -> R` or its `?` (§12), a slice (as a struct of `ptr` and `len`) or a struct (as a C struct of the same layout). Other types are an error, other optionals included.
+4. A field or result may have a numeric type, `bool`, an enum (as its base type), a pointer (as a C pointer), a `?*T` or `?*mut T` (as a C pointer, with `null` as `NULL`: §8, Optional, rule 6), a C function pointer `extern fn{C} -> R` or its `?` (§12), a slice (as a struct of `ptr` and `len`), a struct (as a C struct of the same layout) or an extern union (as a C union, §12). Other types are an error, other optionals included.
 5. Every call goes through a declaration of the symbol made for that function, so it can't clash with the declaration of the same symbol in a C header. Nothing checks the declaration against C's: a wrong one is undefined behaviour.
 6. An extern fn is called like any function and is a value of type `fn{C} -> R`; where an `extern fn{C} -> R` is expected, it is its C symbol's address instead (§12, C function pointers).
 7. Every program is linked with the C library and the math library.

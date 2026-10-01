@@ -5316,6 +5316,115 @@ fn main { mut io: Io } {
             'expected extern fn{ b: i32, a: i32 }, got extern fn{ a: i32, b: i32 }', 2, 51)
 
 
+class UntaggedUnions(Base):
+    """`extern union` (spec §12, Untagged unions): C's union, every field at offset 0, checked
+    against C through a static library built in the test."""
+
+    LIB_C = """
+#include <stddef.h>
+#include <stdint.h>
+typedef struct { float r, g, b, a; } Color;
+typedef struct { float depth; uint32_t stencil; } DepthStencil;
+typedef union { Color color; DepthStencil depth_stencil; } ClearValue;
+typedef struct { uint32_t kind; ClearValue value; uint8_t last; } Attachment;
+uint64_t ctxtest_size(void) { return sizeof(ClearValue); }
+uint64_t ctxtest_align(void) { return _Alignof(ClearValue); }
+uint64_t ctxtest_attachment_size(void) { return sizeof(Attachment); }
+uint64_t ctxtest_last_offset(void) { return offsetof(Attachment, last); }
+ClearValue ctxtest_depth(float d, uint32_t s) { ClearValue v = { 0 }; v.depth_stencil.depth = d; v.depth_stencil.stencil = s; return v; }
+float ctxtest_sum(ClearValue v) { return v.color.r + v.color.g + v.color.b + v.color.a; }
+uint32_t ctxtest_attachment(Attachment a) { return a.kind * 1000 + a.value.depth_stencil.stencil * 10 + a.last; }
+"""
+
+    BUILD = CFunctionPointers.BUILD
+
+    HEAD = """
+struct Color { r: f32, g: f32, b: f32, a: f32 }
+struct DepthStencil { depth: f32, stencil: u32 }
+extern union ClearValue { color: Color, depth_stencil: DepthStencil }
+struct Attachment { kind: u32, value: ClearValue, last: u8 }
+extern fn ctxtest_size {} -> u64
+extern fn ctxtest_align {} -> u64
+extern fn ctxtest_attachment_size {} -> u64
+extern fn ctxtest_last_offset {} -> u64
+extern fn ctxtest_depth { d: f32, s: u32 } -> ClearValue
+extern fn ctxtest_sum { v: ClearValue } -> f32
+extern fn ctxtest_attachment { a: Attachment } -> u32
+"""
+
+    def run_with_lib(self, main):
+        return CFunctionPointers.run_with_lib(self, main)
+
+    def assertUnionError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_layout_matches_c(self):
+        self.assertEqual(self.run_with_lib("""
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = ctxtest_size{} - @size_of(ClearValue) }
+    io::println_u64{ &io, n = ctxtest_align{} - @align_of(ClearValue) }
+    io::println_u64{ &io, n = ctxtest_attachment_size{} - @size_of(Attachment) }
+    io::println_u64{ &io, n = @size_of(ClearValue) }
+    io::println_u64{ &io, n = ctxtest_last_offset{} }
+}
+"""), "0\n0\n0\n16\n20\n")
+
+    def test_by_value_both_ways(self):
+        self.assertEqual(self.run_with_lib("""
+fn main { mut io: Io } {
+    let v = ctxtest_depth{ d = 0.5, s = 7 }
+    io::println_f64{ &io, n = v.depth_stencil.depth }
+    io::println_u64{ &io, n = v.depth_stencil.stencil }
+    let c = ClearValue{ color = Color{ r = 1.0, g = 2.0, b = 3.0, a = 4.0 } }
+    io::println_f64{ &io, n = ctxtest_sum{ v = c } }
+    let a = Attachment{ kind = 3, value = ClearValue{ depth_stencil = DepthStencil{ depth = 1.0, stencil = 5 } }, last = 9 }
+    io::println_u64{ &io, n = ctxtest_attachment{ a } }
+}
+"""), "0.5\n7\n10.0\n3059\n")
+
+    def test_fields_share_bytes(self):
+        self.assertOutput("""
+extern union Bits { f: f32, u: u32, b: u8 }
+struct Holder { tag: u8, bits: Bits }
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = @size_of(Bits) + @align_of(Bits) * 10 }
+    // a literal sets one field; the other bytes are zero
+    let mut x = Bits{ b = 255 }
+    io::println_u64{ &io, n = x.u }
+    x.f = 1.0
+    io::println_u64{ &io, n = x.u }
+    // the zero value: every byte zero
+    let mut z: Bits
+    io::println_u64{ &io, n = z.u }
+    let mut h = Holder{ tag = 1, bits = Bits{ u = 7 } }
+    h.bits.b = 9
+    io::println_u64{ &io, n = h.bits.u }
+    let p = &h.bits
+    io::println_u64{ &io, n = p.u }
+}
+""", "44\n255\n1065353216\n0\n9\n9\n")
+
+    def test_errors(self):
+        U = 'extern union U { a: i32, b: f32 }\n'
+        for src, msg, line, col in [
+            (U + 'fn main {} { let u = U{ a = 1, b = 2.0 } }', 'extern union `U` literal must set exactly one field', 2, 23),
+            (U + 'fn main {} { let u = U{} }', 'extern union `U` literal must set exactly one field', 2, 23),
+            (U + 'fn main {} { let u = U{ a = 1 }\n    match u { a => {} } }',
+             'an extern union has no tag to match on: read the field you know it holds', 3, 11),
+            (U + 'fn main {} { let u = U{ a = 1 }\n    let a{ x } = u else { return } }',
+             'an extern union has no tag to match on: read the field you know it holds', 3, 18),
+            ('extern union U(T) { a: T }\nfn main {} {}', 'an extern union cannot have generic parameters', 1, 15),
+            (U + 'fn f { mut x: i32, mut y: f32 } {}\nfn main {} { let mut u = U{ a = 1 }\n    f{ x = &u.a, y = &u.b } }',
+             'two mut references to `u.a` in one call', 4, 6),
+            (U + 'const C: U = U{ a = 1 }\nfn main {} {}', 'a const cannot hold an extern union', 2, 15),
+            ('struct P { p: *i32 }\nextern union V { a: i32, p: P }\nfn main { mut io: Io } { let mut v: V\n    io::println_i64{ &io, n = v.a } }',
+             '`v` may be read before it is assigned', 4, 31),
+        ]:
+            self.assertUnionError(src, msg, line, col)
+
+
 class WordCountExample(Base):
     def setUp(self):
         import tempfile

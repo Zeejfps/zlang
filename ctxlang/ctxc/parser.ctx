@@ -90,6 +90,12 @@ namespace parser {
             let params = ctx_fields{ &p }
             let ret: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { type_expr{ &p } } else { null }
             d = syntax::DeclKind::func{ name, tparams, params, ret, body = block{ &p }, external = false }
+        } else if k == tok::Kind::kw_extern and kind{ p, ahead = 1 } == tok::Kind::kw_union {
+            skip{ &p }
+            skip{ &p }
+            let name = ident{ &p }
+            if is{ p, k = tok::Kind::lparen } { fail{ &p, msg = "an extern union cannot have generic parameters" } }
+            d = syntax::DeclKind::record{ name, tparams = slice::empty(syntax::Name){}, fields = plain_fields{ &p }, untagged = true }
         } else if k == tok::Kind::kw_extern {
             skip{ &p }
             expect{ &p, k = tok::Kind::kw_fn }
@@ -105,7 +111,7 @@ namespace parser {
             skip{ &p }
             let name = ident{ &p }
             let tparams = tparams{ &p }
-            d = syntax::DeclKind::record{ name, tparams, fields = plain_fields{ &p } }
+            d = syntax::DeclKind::record{ name, tparams, fields = plain_fields{ &p }, untagged = false }
         } else if k == tok::Kind::kw_union {
             skip{ &p }
             let name = ident{ &p }

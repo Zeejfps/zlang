@@ -45,7 +45,8 @@ namespace ir {
         prim{ p: Prim },
         ptr{ elem: TypeId },
         arr{ n: u64, elem: TypeId },
-        record{ name: Bytes, size: u64, align: u64, fields: []Field },
+        // A struct; untagged, an extern union, whose fields are all at offset 0.
+        record{ name: Bytes, size: u64, align: u64, fields: []Field, untagged: bool },
         // A union or optional: a u32 tag at offset 0, the payload at pay_off. null is tag 0.
         tagged{ name: Bytes, size: u64, align: u64, pay_off: u64, variants: []Variant },
         // A `?*T`: the pointer of type ptr itself, with null the address 0. It is an optional,

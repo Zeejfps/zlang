@@ -192,6 +192,11 @@ namespace emit {
             }
             func => { put{ &e, a = "typedef ctx_fn *" } }
             void => { put{ &e, a = "typedef void " } }
+            record{ untagged } => {
+                put{ &e, a = if untagged { "typedef union " } else { "typedef struct " } }
+                tn{ &e, t = id }
+                ch{ &e, c = ' ' }
+            }
             else => {
                 put{ &e, a = "typedef struct " }
                 tn{ &e, t = id }
@@ -233,9 +238,11 @@ namespace emit {
                 num{ &e, n }
                 put{ &e, a = "]; };\n" }
             }
-            record{ fields } => {
+            record{ fields, untagged } => {
                 define_fields{ &e, fields }
-                struct_head{ &e, id }
+                if untagged { put{ &e, a = "union " } } else { put{ &e, a = "struct " } }
+                tn{ &e, t = id }
+                put{ &e, a = " { " }
                 members{ &e, fields }
                 put{ &e, a = "};\n" }
             }
@@ -1543,6 +1550,36 @@ namespace emit {
             if items.len == 1 { expr{ &e, x = items[0].value } } else { ch{ &e, c = '0' } }
             put{ &e, a = "))" }
             return
+        }
+        match ty{ e, id = t } {
+            record{ fields, untagged } => {
+                if untagged {
+                    // An extern union's one field, over zeroed bytes: C leaves the rest of a
+                    // union literal's bytes unspecified.
+                    //   ({ tN _tK; memset(&_tK, 0, sizeof _tK); _tK.m_f = VALUE; _tK; })
+                    let k = e.temp
+                    e.temp = e.temp + 1
+                    put{ &e, a = "({ " }
+                    tn{ &e, t }
+                    put{ &e, a = " _t" }
+                    num{ &e, n = k }
+                    put{ &e, a = "; memset(&_t" }
+                    num{ &e, n = k }
+                    put{ &e, a = ", 0, sizeof _t" }
+                    num{ &e, n = k }
+                    put{ &e, a = "); _t" }
+                    num{ &e, n = k }
+                    put{ &e, a = ".m_" }
+                    raw{ &e, b = fields[items[0].index].name }
+                    put{ &e, a = " = " }
+                    expr{ &e, x = items[0].value }
+                    put{ &e, a = "; _t" }
+                    num{ &e, n = k }
+                    put{ &e, a = "; })" }
+                    return
+                }
+            }
+            else => {}
         }
         let tt = temps_args{ &e, args = items }
         compound{ &e, t }

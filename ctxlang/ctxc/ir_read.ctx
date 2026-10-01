@@ -99,11 +99,12 @@ namespace ir_read {
         } else if is{ s = tag, lit = "arr" } {
             let n = num{ &r }
             t = ir::Type::arr{ n, elem = id32{ &r } }
-        } else if is{ s = tag, lit = "struct" } {
+        } else if is{ s = tag, lit = "struct" } or is{ s = tag, lit = "cunion" } {
+            let untagged = is{ s = tag, lit = "cunion" }
             let name = string{ &r }
             let size = num{ &r }
             let align = num{ &r }
-            t = ir::Type::record{ name, size, align, fields = fields{ &r } }
+            t = ir::Type::record{ name, size, align, fields = fields{ &r }, untagged }
         } else if is{ s = tag, lit = "union" } {
             let name = string{ &r }
             let size = num{ &r }

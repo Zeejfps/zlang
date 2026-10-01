@@ -46,7 +46,7 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
   now that `proc::run` and `fs::list` exist.
 - `bootstrap/ctxc.c` is ctxc as C. `tools/toolchain.py` compiles it to a seed, and the seed
   compiles ctxc's current source into `build/ctxc` (about 7 s the first time, cached after).
-- `python -m unittest discover tests` runs all 374 tests through the native ctxc: each program is
+- `python -m unittest discover tests` runs all 378 tests through the native ctxc: each program is
   compiled with `ctxc build`, built with cc and run. They pass on Windows (gcc), Linux (gcc) and
   macOS arm64 (Apple clang).
 - `tools/fixpoint.py`: ctxc built by itself, twice, writes byte-identical C, the same as the
@@ -761,8 +761,8 @@ Increments, each landing with tests and a refreshed bootstrap:
    the pointer itself. The backend tests and builds it as a pointer (`p == 0`, `(tN)(p)`).
    `??*T` stays tagged, around the 8-byte `?*T`. The GLFW example's handles are
    `?*mut Window` now, not addresses as `usize`.
-6. **The rest, one at a time:** C function pointers (*done*, below), null-terminated strings,
-   untagged unions (§16 Q8), callbacks from C.
+6. **The rest, one at a time:** C function pointers (*done*, below), untagged unions (*done*,
+   below), null-terminated strings, callbacks from C.
    - **C function pointers** — *done.* `extern fn{ fields } -> R` is C's `R (*)(...)`: fields in
      C's order, which is part of the type; the same field and result rules as an extern fn,
      capability fields included. A value comes from `@cast(extern fn{...}, p)` for a pointer
@@ -782,6 +782,16 @@ Increments, each landing with tests and a refreshed bootstrap:
      driver); the loader must take a capability, or code without any could mint a `Gl`; and a
      `Gl` proves its functions were loaded, not that they are still valid after the context or
      library is gone.
+   - **Untagged unions** — *done* (§16 Q8, closed). `extern union Name { f: T, ... }` is C's
+     union: every field at offset 0, size the largest rounded to the largest alignment. Fields
+     read and write as a struct's; no `match` or `let … else` (no tag); a literal sets exactly
+     one field over zeroed bytes; the zero value is all zeros; consts can't hold one. Any two of
+     its fields are the same place for exclusivity (a `|` step in the checker's places). In the
+     checker it is a struct declaration marked untagged, so field access, places and escape
+     are a struct's; the IR's struct type gains the mark, printed `(cunion ...)` (version 12);
+     C declares a `union`, and a literal is `({ tN t; memset(&t, 0, sizeof t); t.m_f = v; t; })`
+     since C leaves a union literal's other bytes unspecified. examples/sdl reads SDL2's
+     `SDL_Event` through one.
 7. **A smaller runtime: std over the OS's C functions.** std's `io`, `fs` and `mem` call
    `ctx_io_write` and the rest, thin C wrappers over libc and the OS. They move into ctxlang, one
    at a time, over externs to the OS itself, and the runtime keeps only what has to be C:
@@ -866,6 +876,7 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 | struct | C struct, same field order | Checked with `_Static_assert` on `sizeof` and `offsetof`. |
 | union, `?T` | `struct { uint32_t tag; union { … } p; }` | Tag at 0, payload at `align_up(4, payload align)`. `null` is tag 0. |
 | `?*T`, `?*mut T` | `T*` | `null` is 0. IR type `nptr`. |
+| `extern union` | C `union` | Every field at offset 0. IR `(cunion ...)`. A literal zeroes the other bytes with `memset`. |
 | `extern fn{C} -> R`, and its `?` | `R (*)(P...)`, capabilities dropped | IR type `cfn`, params in order; `null` is 0. A named extern fn as a value is `xN`. |
 | enum | its base integer type | `match` becomes an if-else chain on the value (IR `switch`). |
 | `Io`, `Fs`, `Mem` | empty struct | Size 0 with GNU C, as in ctxi. |
