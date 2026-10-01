@@ -23,7 +23,7 @@ Since stage 8 ctxc is self-hosting and ctxi is gone: a fresh checkout builds ctx
 | 8 | Decide ctxi's role: removed, ctxc bootstraps from committed C | done | |
 | 9 | Metaprogramming: build programs, attributes, compile-time consts | step 1 done (for 10.4); attributes done in 10.1 | |
 | 10 | C interop: extern fns, capabilities, linking | in progress | |
-| 11 | Optionals and results: `ifnull`, `iferr`, `let p = e else`, `null` arms, `?T == T` | next language item | |
+| 11 | Optionals and errors: `!T` with inferred error sets, `ifnull`, `iferr`, `try`, flat `match` arms, `?T == T` | next language item | |
 
 ### Where we are
 
@@ -838,38 +838,86 @@ Increments, each landing with tests and a refreshed bootstrap:
 *Done when:* a program opens a window and draws with OpenGL through a binding written in
 ctxlang.
 
-### 11. Optionals and results — next language item
+### 11. Optionals and errors — next language item
 
-Unwrapping a `?T` is the most common thing done with one, and the pattern form is heavy for it:
-`let some{ value = p } = e else { return 1 }` names the variant and its payload field. Narrowing
-(`let p = e; if p == null { return 1 }`) already does it in two lines. FRICTION.md #11 and #20 are
-the same pain from other sides. Small features, each for one shape:
+Two built-in kinds of "maybe": `?T` (§8) and, new here, `!T`, a value or an error from a set the
+compiler works out. Today errors are std's `Result(T, E)`, an ordinary union: every function picks
+its own `E`, and an operator for it would tie the language to a std type. Unwrapping either kind
+is the commonest thing done with one, and the pattern form is heavy for it: `let some{ value = p }
+= e else { return 1 }`. FRICTION.md #11 and #20 are the same pain from other sides.
+
+**Errors are declared, may carry data, and a function's set is inferred.**
+
+```
+namespace fs {
+    error not_found
+    error permission_denied
+    error os{ code: i64 }                    // an error with data
+}
+
+fn open { mut fs: Fs, path: []u8 } -> !File { ... }       // its set: what its body can produce
+
+fn load { mut fs: Fs, path: []u8 } -> !Config {
+    let f = try fs::open{ &fs, path }        // load's set gains open's
+    if bad { return config::invalid }        // and its own
+    ...
+}
+
+match load{ &fs, path } {
+    ok{ value }          => { ... }
+    fs::not_found        => { ... }
+    fs::os{ code }       => { ... }
+    else                 => { ... }          // the errors not listed; without it, every one must be
+}
+```
+
+1. `error name` or `error name{ fields }` in a namespace declares an error, a variant that may carry
+   a payload. Errors are named by their namespace (`fs::not_found`), so two libraries can't clash.
+   The compiler numbers every error in the program.
+2. `!T` is a `T` or an error. Unwritten, its error set is inferred: the errors the body returns,
+   plus the sets of what it passes up with `try`. Recursion is resolved by repeating until the sets
+   stop growing (they only grow, and are finite). An explicit set can be written where an API
+   should be fixed, and must be where nothing can be inferred: a function type's set is written,
+   or means any error. The spelling of an explicit set is open.
+3. Representation: a tagged union of `ok{ value: T }` and the set's errors, numbered program-wide,
+   sized for the largest payload. Passing an error into a larger set copies it, with no renumbering.
+   Not C-compatible: bindings turn C's return codes into errors.
+4. A `T` converts to `!T` implicitly; `return fs::not_found` (or `fs::os{ code = c }`) returns an
+   error where a `!T` is expected.
+5. `match` on a `!T` lists `ok{ value }` and errors in one set of arms. It is exhaustive when every
+   error of the set is listed, so adding an error to a function breaks the callers that handled
+   them all, instead of sending it to an `else`. `err{ error }` matches any error and binds it as a
+   value, to pass on or print.
+6. An `@fmt` hole prints an error's full name (`fs::not_found`), with its payload.
+7. Replaces std's `Result(T, E)` and the `result` namespace. Migration: std (about 20 uses, `fs`
+   mostly, whose `Error` union becomes `error` declarations), ctxc (1), examples (8), tests (35), in
+   the two steps of [Changing the language](#changing-the-language).
+
+Precedent: Zig infers error sets for `!T` but its errors carry no data; Rust's typed enums carry
+data but need an enum and conversions per module, and `anyhow` erases the type to avoid that;
+Java's checked exceptions list the set by hand everywhere, which is the cost inference avoids;
+Swift 6 added typed throws because callers wanted the set.
+
+**Operators and forms:**
 
 | Shape | Feature |
 |---|---|
-| Unwrap a `?T`, with a default or by leaving | `e ifnull x`: for `e: ?T`, a `T` — the value if there is one, else `x`, a value of `T` or a block that leaves (`ifnull { return 1 }`). |
-| The same for a `Result(T, E)` | `e iferr x`: the `ok` value, else `x`, which can see the error (a form such as `iferr err { return 2 }`; the binding's spelling is settled when it is built). |
+| Unwrap a `?T`, with a default or by leaving | `e ifnull x`: the value if there is one, else `x`, a value of `T` or a block that leaves (`ifnull { return 1 }`). |
+| Unwrap a `!T`, with a default or by leaving | `e iferr x`: the `ok` value, else `x`, as for `ifnull`. How its block sees the error is open; a `match` already can. |
+| Pass an error up | `try e`: for `e: !T` in a function returning `!U`, the value, or return the error (which joins the function's set). Zig's `try`, Rust's `?`. |
 | Unwrap in a `let`, by leaving | `let p = e else { ... }` with a plain name: for `e: ?T`, shorthand for `let some{ value = p } = e else { ... }`. |
-| Null as an arm next to a union's variants (#11) | `match` on a `?U` for a union `U` lists `null` and `U`'s variants in one set of arms. |
+| Null as an arm next to a union's variants (#11) | `match` on a `?U` for a union `U` lists `null` and `U`'s variants in one set of arms, as `match` on a `!T` lists `ok` and errors. |
 | "Present and equal" (#20) | `==` and `!=` between a `?T` and a `T`: true when present and equal. |
 
-```
-let p = glfw::proc_address{ &glfw, name = "glClear" } ifnull { return 1 }
-let text = fs::read_all{ &fs, &heap, realloc, path } iferr { return 2 }
-let n = maybe_count ifnull 0
-```
-
-The names say which case the right side handles: `ifnull` for a `?T`, `iferr` for a `Result`.
-Zig's `orelse` and `catch` were the alternative (two unrelated words, neither naming its case),
-and C#'s and Swift's `??` (a symbol, where ctxlang writes logic as words: `and`, `or`, `not`).
-`let … else` with a pattern stays, for unions in general.
+The operator names say which case the right side handles: `ifnull` for `?T`, `iferr` for `!T`.
+Zig's `orelse` and `catch` were the alternative (two unrelated words, neither naming its case), and
+C#'s and Swift's `??` (a symbol, where ctxlang writes logic as words: `and`, `or`, `not`).
 
 Considered and set aside: Rust-style combinators (`.map(...)`, `.unwrap_or_else(...)`). A lambda
 can't `return` from the function around it, which is the commonest thing done with a missing
 value (Rust needs `?` and `let … else` for that reason); ctxlang has no anonymous functions, and
 captures would meet exclusivity and escape (§3.1, §14); chaining also needs method syntax (§16
-Q4). Zig covers these shapes without closures. Optional chaining (`a?.b`) needs no lambdas, but
-nothing in FRICTION.md asks for it yet.
+Q4). Optional chaining (`a?.b`) needs no lambdas, but nothing in FRICTION.md asks for it yet.
 
 ### Bootstrap chain
 
