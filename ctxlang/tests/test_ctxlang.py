@@ -5786,13 +5786,15 @@ fn main { mut io: Io, mut l: m::L } -> i32 {
         # the capability, or a pointer to one; it takes no space, so a capability with only
         # variables is one `main` receives. One without fields may be included by one that has
         # none either, and converts to it, so another namespace can hold a platform's.
+        # `#c::symbol` names a variable's symbol, as an extern fn's, through inclusions too.
         self.assertOutput("""
 namespace getopt {
     capability Opts {
-        extern opterr: i32,
+        #c::symbol{ name = "opterr" }
+        extern reports: i32,
         extern optind: i32,
     }
-    fn errors_on { mut o: Opts } -> bool { return o.opterr != 0 }
+    fn errors_on { mut o: Opts } -> bool { return o.reports != 0 }
     fn index { p: *Opts } -> i32 { return p.optind }
 }
 
@@ -5837,6 +5839,8 @@ fn main { mut o: g::O } -> i32 { return g::a{ &o } + g::b{ p = &o } }
         self.assertRegex(text, r'\(var 0 "optind" "optind" \d+\)')
         self.assertNotIn('(var 1', text)
         self.assertEqual(text.count('(cvar '), 2)
+        text = ir_sources([('capability O {\n    #c::symbol{ name = "opterr" }\n    extern reports: i32\n}\nfn main { mut o: O } -> i32 { return o.reports }', None)])
+        self.assertRegex(text, r'\(var 0 "reports" "opterr" \d+\)')
 
     def test_c_variable_errors(self):
         for src, msg, line, col in [
@@ -5862,6 +5866,15 @@ fn main { mut o: g::O } -> i32 { return g::a{ &o } + g::b{ p = &o } }
              'capability `O` includes `x` twice: from `V` and from `W`', 3, 21),
             # `extern` marks a capability's field only
             ('struct S { extern x: i32 }\nfn main {} {}', "expected a name, found 'extern'", 1, 12),
+            # `#c::symbol` names a C variable's symbol; a field's attributes go on lines before it
+            ('capability O {\n    #c::symbol{ name = "x" }\n    f: extern fn{}\n}\nfn main {} {}',
+             "`c::symbol` on a capability's field applies only to a C variable, `extern name: T`", 2, 5),
+            ('capability O {\n    #c::symbol{ name = "x" }\n    #c::symbol{ name = "y" }\n    extern a: i32\n}\nfn main {} {}', 'duplicate `c::symbol` attribute', 3, 5),
+            ('capability O {\n    #c::symbol{ name = "not ok" }\n    extern a: i32\n}\nfn main {} {}', '`not ok` is not a C identifier', 2, 5),
+            ('capability O {\n    #c::callback\n    extern a: i32\n}\nfn main {} {}', '`c::callback` applies only to a fn', 2, 5),
+            ('capability O {\n    #c::symbl{ name = "x" }\n    extern a: i32\n}\nfn main {} {}', '`symbl` not found in namespace `c`', 2, 9),
+            ('capability O {\n    #c::symbol{ name = "x" } extern a: i32\n}\nfn main {} {}', 'an attribute goes on its own line, before a field', 2, 30),
+            ('capability O {\n    #c::symbol{ name = "x" }\n    ..Io\n}\nfn main {} {}', "expected a field after an attribute, found '..'", 3, 5),
         ]:
             self.assertCapError(src, msg, line, col)
 

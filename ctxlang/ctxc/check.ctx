@@ -61,12 +61,14 @@ namespace check {
         symbol:   []u8,                 // an extern fn's C symbol
         callback: bool,                 // a fn with `#c::callback`: C may call it (§18)
         includes: []u32,                // what a capability includes, directly or not (§15)
-        vars:     []CVar,               // a capability's C variables, its own and included ones
+        vars:     []mut CVar,           // a capability's C variables, its own and included ones
     }
 
-    // A capability's C variable (§15): `extern name: T` reads the C symbol `name`. owner is the
-    // capability that declares it, and only a function of owner's namespace may read it.
-    struct CVar { name: []u8, ty: Id, owner: u32 }
+    // A capability's C variable (§15): `extern name: T` reads the C symbol `name`, or the one
+    // `#c::symbol` gives. owner is the capability that declares it: only a function of owner's
+    // namespace may read it, and owner's own entry has the symbol, once attributes are checked
+    // (var_symbol).
+    struct CVar { name: []u8, ty: Id, owner: u32, symbol: []u8 }
 
     // What a name in a path refers to.
     union Entry {
@@ -761,7 +763,7 @@ namespace check {
         }
         let came = cap_member{ out, from, vars = list::items{ list = vars }, vfrom = list::items{ list = vfrom }, name = f.name.text }
         if came != null and f.name.text.len > 0 { cap_clash{ &c, x, name = f.name, at = f.span, came } }
-        if not list::push{ list = &vars, item = CVar{ name = f.name.text, ty = t, owner = d } } { @panic("check: out of memory") }
+        if not list::push{ list = &vars, item = CVar{ name = f.name.text, ty = t, owner = d, symbol = f.name.text } } { @panic("check: out of memory") }
         push{ xs = &vfrom, n = NONE }
     }
 
@@ -1339,10 +1341,77 @@ namespace check {
                     let child = map::get{ m = c.space_of, key = key{ file, id = x.id } }
                     if child != null { attribute_list{ &c, file, decls = inner, ns = child } }
                 }
+                cap{ fields } => {
+                    if fields != null { field_attributes{ &c, x, file, fields, ns, symbol_decl, callback_decl } }
+                }
                 else => {}
             }
             i = i + 1
         }
+    }
+
+    // The attributes of capability x's fields: `c::symbol` on a C variable gives its symbol (§15,
+    // rule 12), and the rest but `c::callback` are checked and ignored.
+    fn field_attributes { mut c: Checker, x: syntax::Decl, file: u32, fields: []syntax::Field, ns: u32, symbol_decl: u32, callback_decl: u32 } {
+        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let mut i: usize = 0
+        while i < fields.len {
+            let f = fields[i]
+            let mut seen = false
+            let mut k: usize = 0
+            while k < f.attrs.len {
+                let a = f.attrs[k]
+                let v = attribute{ &c, a, ns }
+                if v != null {
+                    match v {
+                        record{ ty, fields = vals } => {
+                            let rd = record_decl{ c, t = ty }
+                            if rd == NONE {
+                            } else if rd == symbol_decl {
+                                var_symbol_attr{ &c, d, f, a, fields = vals, seen }
+                                seen = true
+                            } else if rd == callback_decl {
+                                error{ &c, at = a.span, msg = "`c::callback` applies only to a fn" }
+                            }
+                        }
+                        else => {}
+                    }
+                }
+                k = k + 1
+            }
+            i = i + 1
+        }
+    }
+
+    // `#c::symbol{ name }` on capability d's field f: the symbol of the C variable it is.
+    fn var_symbol_attr { mut c: Checker, d: u32, f: syntax::Field, a: syntax::Attr, fields: []Val, seen: bool } {
+        if not f.external {
+            error{ &c, at = a.span, msg = "`c::symbol` on a capability's field applies only to a C variable, `extern name: T`" }
+            return
+        }
+        if seen {
+            error{ &c, at = a.span, msg = "duplicate `c::symbol` attribute" }
+            return
+        }
+        let name = symbol_name{ &c, a, fields } ifnull { return }
+        let vs = get_decl{ c, d }.vars
+        let mut i: usize = 0
+        while i < vs.len {
+            if vs[i].owner == d and slice::eq_bytes{ a = vs[i].name, b = f.name.text } { vs[i].symbol = name }
+            i = i + 1
+        }
+    }
+
+    // The C symbol a capability's variable v reads: its own entry's, in the capability that
+    // declares it, which `#c::symbol` may have set after v was copied into others.
+    fn var_symbol { c: Checker, v: CVar } -> []u8 {
+        let vs = get_decl{ c, d = v.owner }.vars
+        let mut i: usize = 0
+        while i < vs.len {
+            if vs[i].owner == v.owner and slice::eq_bytes{ a = vs[i].name, b = v.name } { return vs[i].symbol }
+            i = i + 1
+        }
+        return v.symbol
     }
 
     // An attribute's value: a const literal of a struct (§14), or null after reporting why not.
@@ -1374,6 +1443,14 @@ namespace check {
             error{ &c, at = a.span, msg = "duplicate `c::symbol` attribute" }
             return
         }
+        let name = symbol_name{ &c, a, fields } ifnull { return }
+        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } }
+        if d != null { list::at{ list = c.decls, i = d }.symbol = name }
+    }
+
+    // The name a `c::symbol` attribute a gives, from its fields, or null after reporting that
+    // it isn't a C identifier.
+    fn symbol_name { mut c: Checker, a: syntax::Attr, fields: []Val } -> ?[]u8 {
         let mut name: []u8 = ""
         if fields.len == 1 {
             match fields[0] { sbytes{ bytes } => { name = bytes } else => {} }
@@ -1382,10 +1459,9 @@ namespace check {
             let mut b = message{ c }
             pushed{ ok = @fmt(&b, "`{}` is not a C identifier", str{ s = name }) }
             error{ &c, at = a.span, msg = utf8::view{ b } }
-            return
+            return null
         }
-        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } }
-        if d != null { list::at{ list = c.decls, i = d }.symbol = name }
+        return name
     }
 
     // `#c::callback` on a fn: C may call it through a pointer, so it converts to an extern fn

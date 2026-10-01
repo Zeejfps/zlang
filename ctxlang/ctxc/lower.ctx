@@ -1573,7 +1573,7 @@ namespace lower {
             i = i + 1
         }
         let ty = tid{ &l, t = T{ &l, t = v.ty } }
-        if not list::push{ list = &l.vars, item = ir::Var{ name = v.name, symbol = v.name, ty } } or not list::push{ list = &l.var_owners, item = v.owner } {
+        if not list::push{ list = &l.vars, item = ir::Var{ name = v.name, symbol = check::var_symbol{ c = l.c.*, v }, ty } } or not list::push{ list = &l.var_owners, item = v.owner } {
             @panic("lower: out of memory")
         }
         return @as(u32, vs.len)

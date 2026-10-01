@@ -377,6 +377,14 @@ namespace tree {
         let mut i: usize = 0
         while i < xs.len {
             let f = xs[i]
+            let mut k: usize = 0
+            while k < f.attrs.len {
+                line{ &d, at = f.attrs[k].span.start, s = "attr" }
+                d.depth = d.depth + 1
+                expr{ &d, e = f.attrs[k].value }
+                d.depth = d.depth - 1
+                k = k + 1
+            }
             start{ &d, at = f.span.start }
             put{ &d, s = if f.external { "extern field " } else { "field " } }
             name{ &d, n = f.name }

@@ -335,6 +335,14 @@ namespace recover {
         let mut i: usize = 0
         while i < xs.len {
             let f = xs[i]
+            let mut k: usize = 0
+            while k < f.attrs.len {
+                let at = f.attrs[k]
+                within{ &c, span = at.span, lo, hi }
+                if at.span.end > f.span.start { fail{ &c, msg = "an attribute after its field's start" } }
+                expr{ &c, e = at.value, lo = at.span.start, hi = at.span.end }
+                k = k + 1
+            }
             within{ &c, span = f.span, lo, hi }
             name{ &c, n = f.name, lo = f.span.start, hi = f.span.end }
             type_expr{ &c, t = f.ty, lo = f.span.start, hi = f.span.end }

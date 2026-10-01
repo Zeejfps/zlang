@@ -71,7 +71,7 @@ namespace parser {
     }
 
     fn decl { mut p: Parser } -> syntax::Decl {
-        let attrs = attributes{ &p }
+        let attrs = attributes{ &p, field = false }
         let start = p.i
         let id = new_id{ &p }
         let k = kind{ p, ahead = 0 }
@@ -171,9 +171,10 @@ namespace parser {
         return syntax::Decl{ id, span = span_from{ p, start }, attrs, k = d }
     }
 
-    // The attributes before a declaration: `#path` or `#path{ field = value, ... }`, each on its
-    // own line. A bare `#path` gets empty braces, so every attribute is a literal.
-    fn attributes { mut p: Parser } -> []syntax::Attr {
+    // The attributes before a declaration, or before a capability's field: `#path` or
+    // `#path{ field = value, ... }`, each on its own line. A bare `#path` gets empty braces, so
+    // every attribute is a literal.
+    fn attributes { mut p: Parser, field: bool } -> []syntax::Attr {
         let mut xs = list::new(syntax::Attr){ realloc = arena::alloc, heap = p.heap }
         while is{ p, k = tok::Kind::hash } and not p.bad {
             let start = p.i
@@ -202,13 +203,18 @@ namespace parser {
                 break
             }
             if not nl{ p } {
-                fail{ &p, msg = "an attribute goes on its own line, before a declaration" }
+                fail{ &p, msg = if field { "an attribute goes on its own line, before a field" } else { "an attribute goes on its own line, before a declaration" } }
                 break
             }
             add{ &p, xs = &xs, item = syntax::Attr{ span = span_from{ p, start }, value } }
         }
-        if xs.len > 0 and not p.bad and not is_decl_start{ k = kind{ p, ahead = 0 } } and not at_error_decl{ p } {
-            expected{ &p, what = "a declaration after an attribute" }
+        if xs.len > 0 and not p.bad {
+            let k = kind{ p, ahead = 0 }
+            if field {
+                if k != tok::Kind::ident and k != tok::Kind::kw_extern { expected{ &p, what = "a field after an attribute" } }
+            } else if not is_decl_start{ k } and not at_error_decl{ p } {
+                expected{ &p, what = "a declaration after an attribute" }
+            }
         }
         return list::items{ list = xs }
     }
@@ -277,7 +283,7 @@ namespace parser {
             let name = ident{ &p }
             expect{ &p, k = tok::Kind::colon }
             let ty = type_expr{ &p }
-            add{ &p, xs = &xs, item = syntax::Field{ span = span_from{ p, start }, name, ty, external = false } }
+            add{ &p, xs = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs = slice::empty(syntax::Attr){}, name, ty, external = false } }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         expect{ &p, k = tok::Kind::rbrace }
@@ -290,6 +296,7 @@ namespace parser {
         let mut xs = list::new(syntax::Field){ realloc = arena::alloc, heap = p.heap }
         expect{ &p, k = tok::Kind::lbrace }
         while more{ p, close = tok::Kind::rbrace } {
+            let attrs = attributes{ &p, field = true }
             let start = p.i
             if accept{ &p, k = tok::Kind::dots } {
                 let ty = type_expr{ &p }
@@ -299,7 +306,7 @@ namespace parser {
                 let name = ident{ &p }
                 expect{ &p, k = tok::Kind::colon }
                 let ty = type_expr{ &p }
-                add{ &p, xs = &xs, item = syntax::Field{ span = span_from{ p, start }, name, ty, external } }
+                add{ &p, xs = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs, name, ty, external } }
             }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
