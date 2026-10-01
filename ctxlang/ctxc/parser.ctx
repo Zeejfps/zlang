@@ -140,9 +140,15 @@ namespace parser {
         } else if k == tok::Kind::kw_capability {
             skip{ &p }
             let name = ident{ &p }
-            if is{ p, k = tok::Kind::lbrace } and not nl{ p } { fail{ &p, msg = "a capability has no fields: it is only permission" } }
             if is{ p, k = tok::Kind::lparen } and not nl{ p } { fail{ &p, msg = "a capability cannot have generic parameters" } }
-            d = syntax::DeclKind::cap{ name }
+            let mut fields: ?[]syntax::Field = null
+            if is{ p, k = tok::Kind::lbrace } and not nl{ p } {
+                let open = p.i
+                let fs = plain_fields{ &p }
+                if fs.len == 0 and not p.bad { fail_at{ &p, msg = "a capability without fields has no braces: write `capability Name`", t = p.toks[open] } }
+                fields = fs
+            }
+            d = syntax::DeclKind::cap{ name, fields }
         } else if k == tok::Kind::kw_namespace {
             skip{ &p }
             let name = ident{ &p }

@@ -56,7 +56,8 @@ namespace ir {
         func{ bound: bool, params: []Param, ret: TypeId },
         // A C function pointer (`extern fn{...}`): params in declaration order, which is C's.
         cfn{ params: []Param, ret: TypeId },
-        cap{ name: Bytes },
+        // A capability: fields only if it has them (§15), C function pointers called through it.
+        cap{ name: Bytes, size: u64, align: u64, fields: []Field },
         void,
     }
 

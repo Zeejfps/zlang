@@ -127,9 +127,17 @@ namespace ir_print {
                 text{ &o, a = "(nptr " }
                 num{ &o, n = ptr }
             }
-            cap{ name } => {
+            cap{ name, size, align, fields } => {
                 text{ &o, a = "(cap " }
                 quote{ &o, b = name }
+                if fields.len > 0 {
+                    char{ &o, c = ' ' }
+                    num{ &o, n = size }
+                    char{ &o, c = ' ' }
+                    num{ &o, n = align }
+                    char{ &o, c = ' ' }
+                    field_list{ &o, fields }
+                }
             }
             void => { text{ &o, a = "(void" } }
         }

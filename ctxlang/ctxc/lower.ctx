@@ -14,7 +14,7 @@ namespace lower {
     type Id = types::Id
 
     const NONE: u32 = 4294967295
-    const VERSION: u64 = 14
+    const VERSION: u64 = 15
 
     // A function instance: a declaration and its generic arguments.
     struct Inst { decl: u32, targs: []Id }
@@ -277,7 +277,21 @@ namespace lower {
             prim{ p } => { return ir::Type::prim{ p = ir_prim{ p } } }
             ptr{ elem } => { return ir::Type::ptr{ elem = tid{ &l, t = elem } } }
             array{ n, elem } => { return ir::Type::arr{ n, elem = tid{ &l, t = elem } } }
-            cap{ decl } => { return ir::Type::cap{ name = check::get_decl{ c = l.c.*, d = decl }.qual } }
+            cap{ decl } => {
+                let name = check::get_decl{ c = l.c.*, d = decl }.qual
+                let fields = check::struct_fields{ c = l.c, t }
+                let mut fs = list::new(ir::Field){ realloc = arena::alloc, heap = l.heap }
+                if fields.len == 0 { return ir::Type::cap{ name, size = 0, align = 1, fields = list::items{ list = fs } } }
+                let offs = check::struct_offsets{ c = l.c, t }
+                if offs == null { @panic("lower: a capability without a layout") }
+                let mut i: usize = 0
+                while i < fields.len {
+                    let ft = tid{ &l, t = fields[i].ty }
+                    add_ir_field{ xs = &fs, f = ir::Field{ name = fields[i].name, ty = ft, offset = offs.offs[i] } }
+                    i = i + 1
+                }
+                return ir::Type::cap{ name, size = offs.layout.size, align = offs.layout.align, fields = list::items{ list = fs } }
+            }
             void => { return ir::Type::void }
             func{ fields, ret, bound, external } => {
                 let sorted = if external { fields } else { sorted_fields{ l, fields } }

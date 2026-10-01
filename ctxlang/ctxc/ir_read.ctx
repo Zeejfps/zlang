@@ -121,7 +121,15 @@ namespace ir_read {
         } else if is{ s = tag, lit = "nptr" } {
             t = ir::Type::nptr{ ptr = id32{ &r } }
         } else if is{ s = tag, lit = "cap" } {
-            t = ir::Type::cap{ name = string{ &r } }
+            // (cap NAME), or (cap NAME SIZE ALIGN [FIELD...]) for one with fields
+            let name = string{ &r }
+            if more{ &r, close = ')' } {
+                let size = num{ &r }
+                let align = num{ &r }
+                t = ir::Type::cap{ name, size, align, fields = fields{ &r } }
+            } else {
+                t = ir::Type::cap{ name, size = 0, align = 1, fields = slice::empty(ir::Field){} }
+            }
         } else if not is{ s = tag, lit = "void" } {
             fail{ &r, problem = Problem::unknown_tag }
         }

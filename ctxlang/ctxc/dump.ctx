@@ -313,9 +313,15 @@ namespace tree {
                 expr{ &d, e = value }
                 d.depth = d.depth - 1
             }
-            cap{ name = n } => {
+            cap{ name = n, fields } => {
                 named{ &d, at, kind = "capability", n, tparams = untyped }
-                end{ &d }
+                if fields == null {
+                    end{ &d }
+                } else {
+                    d.depth = d.depth + 1
+                    field_list{ &d, xs = fields }
+                    d.depth = d.depth - 1
+                }
             }
             space{ name = n, decls } => {
                 named{ &d, at, kind = "namespace", n, tparams = untyped }
@@ -927,7 +933,20 @@ namespace decls {
                     else => {}
                 }
             }
-            cap => { pushed{ ok = @fmt(&out, "capability {}\n", q) } }
+            cap => {
+                pushed{ ok = @fmt(&out, "capability {}", q) }
+                let o = check::struct_offsets{ &c, t = types::cap{ s = &c.ty, decl = i } }
+                if d.fields.len > 0 and o != null { pushed{ ok = @fmt(&out, " {} {}", o.layout.size, o.layout.align) } }
+                dump::put{ &out, s = "\n" }
+                let mut j: usize = 0
+                while j < d.fields.len {
+                    let f = d.fields[j]
+                    pushed{ ok = @fmt(&out, "  {}: {}", check::str{ s = f.name }, check::tstr{ c, t = f.ty }) }
+                    if o != null and j < o.offs.len { pushed{ ok = @fmt(&out, " @{}", o.offs[j]) } }
+                    dump::put{ &out, s = "\n" }
+                    j = j + 1
+                }
+            }
             external => {
                 pushed{ ok = @fmt(&out, "extern fn {} = {} ", q, check::str{ s = d.symbol }) and sig{ c, d, b = &out } and @fmt(&out, "\n") }
             }

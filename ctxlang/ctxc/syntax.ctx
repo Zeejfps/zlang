@@ -42,7 +42,7 @@ namespace syntax {
         alias{ name: Name, tparams: []Name, ty: TypeExpr },               // type
         constant{ name: Name, ty: TypeExpr, value: Expr },
         space{ name: Name, decls: []Decl },                               // namespace
-        cap{ name: Name },                                                // capability
+        cap{ name: Name, fields: ?[]Field },                               // capability; fields null without braces
     }
 
     // A context field, of a function or a function type.

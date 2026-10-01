@@ -752,8 +752,8 @@ Increments, each landing with tests and a refreshed bootstrap:
    no zero value, size 0, and nothing can construct it, so the only ones are those `main`
    receives. `Io`, `Fs` and `Mem` are std's declarations, and a binding declares its own (one per
    library, say). Handles such as windows or buffers are plain structs, as `fs::File` is: the
-   capability is the permission, the struct is data. Capabilities with fields, which a binding
-   would construct from another (a GL context from a window), wait until a binding needs them.
+   capability is the permission, the struct is data. Capabilities with fields came with GL
+   (step 6, below).
 4. **Linking, through build programs** — *done.* Stage 9 step 1, below: a program is a
    directory, and its `build.ctx` says what to build and link, choosing by platform with ordinary
    `if`s and `match`es (`build::os`). A binding carries its link requirements as a function its
@@ -806,15 +806,24 @@ Increments, each landing with tests and a refreshed bootstrap:
      checker it is a function type marked external; in the IR a `cfn` type (version 11) with
      params in order; in C a function-pointer typedef, called directly, and a named extern's
      value is its `xN`. examples/glfw loads glClearColor and glClear through glfwGetProcAddress.
-   - **Later, maybe: loaded capabilities.** If writing a struct of pointers and a cast per
-     function gets tedious, `loaded capability Gl` could have the compiler keep the table: extern
-     fns declared against it are looked up by `@load(gl::Gl, loader){ fields }` (the loader's
-     fields but `name`, given like a call's), which returns `Result(Gl, c::Missing)`. It would be
-     sugar over C function pointers. Caveats found when it was weighed: the table should hold
-     only the extern fns the program reaches (a binding declaring GL 4.6 mustn't fail on a 4.1
-     driver); the loader must take a capability, or code without any could mint a `Gl`; and a
-     `Gl` proves its functions were loaded, not that they are still valid after the context or
-     library is gone.
+   - **Capabilities with functions** — *done.* `capability Gl { clear: extern fn{ mask: u32 },
+     ... }` holds C function pointers, and holding one is the permission to call them:
+     `gl.clear{ mask }`. Only a fn declared in the capability's own namespace that holds a
+     capability itself can write `Gl{ ... }`, so a binding's `load` (`gl::load{ &glfw }`, through
+     `glfwGetProcAddress`) is where one comes from, and capability-free code can't mint one. Its
+     fields can only be called, through a mutable one: read as a value, a field could reach code
+     whose signature doesn't name `Gl`. `main` can't take one and callbacks can't receive one,
+     since the runtime and the C thunks have nothing to fill it with. Fields are never `?`: an
+     optional would have to be read to be unwrapped. A binding for functions that may be
+     missing, such as a later GL version's, declares them in a second capability with its own
+     `load`, which fails as a whole. A `Gl` proves its functions were found, not that the context
+     or library they came from is still alive. The compiler-kept table (`loaded capability`,
+     `@load`, loading only the functions the program reaches) was weighed and left out: the
+     binding's `load` is ordinary code. In the IR a capability's type carries its layout and
+     fields, `(cap NAME SIZE ALIGN [FIELD...])`, and stays `(cap NAME)` without them (version
+     15); in C it is a struct of function pointers, and a call through a field is a call of the
+     pointer. examples/glfw's `Gl` holds glClearColor and glClear, and `main` no longer receives
+     a `Gl` from the runtime before a context exists.
    - **Untagged unions** — *done* (§16 Q8, closed). `extern union Name { f: T, ... }` is C's
      union: every field at offset 0, size the largest rounded to the largest alignment. Fields
      read and write as a struct's; no `match` or `let … else` (no tag); a literal sets exactly
@@ -1015,6 +1024,7 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 | `extern fn{C} -> R`, and its `?` | `R (*)(P...)`, capabilities dropped | IR type `cfn`, params in order; `null` is 0. A named extern fn as a value is `xN`; a `#c::callback` fn is `kK`, a C function calling `fN`. |
 | enum | its base integer type | `match` becomes an if-else chain on the value (IR `switch`). |
 | `Io`, `Fs`, `Mem` | empty struct | Size 0 with GNU C, as in ctxi. |
+| `capability Gl { f: extern fn{C} -> R, ... }` | struct of function pointers | `x.f{ ... }` calls the pointer; dropped from extern and `cfn` params, as other capabilities are. |
 | `*T`, `q + n`, `q[i]` | `T*`, pointer arithmetic | Not checked. §12.7 calls a bad pointer UB. |
 | `a[i]` on arrays | index with a bounds check | Panics, as the spec requires. |
 | `fn{C} -> R` | pointer to a record whose first member is the code | Called with the record and the fields in name order. Conversion to a type with more fields wraps the value in an adapter. |

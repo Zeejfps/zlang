@@ -4448,7 +4448,7 @@ fn main { mut io: Io } {
 
     def test_examples_lower(self):
         from toolchain import ir_sources
-        for path in ('examples/list.ctx', 'examples/wordcount.ctx', 'examples/json'):
+        for path in ('examples/list.ctx', 'examples/wordcount.ctx', 'examples/json', 'examples/glfw/src'):
             self.assertIn('(main ', ir_sources(read_program(os.path.join(ROOT, path))))
 
     def test_ctxc_roundtrip(self):
@@ -4979,13 +4979,113 @@ fn main { mut io: Io, mut fs: Fs } -> i32 { return @as(i32, @size_of(Io)) + 3 }
         for src, msg, line, col in [
             ('capability C\nfn main {} { let c = C{} }', '`C` is a capability: only `main` receives one, from the runtime', 2, 22),
             ('fn main {} { let x = Io{} }', '`Io` is a capability: only `main` receives one, from the runtime', 1, 22),
-            ('capability C { x: i32 }\nfn main {} {}', 'a capability has no fields: it is only permission', 1, 14),
+            ('capability C {}\nfn main {} {}', 'a capability without fields has no braces: write `capability Name`', 1, 14),
             ('capability C(T)\nfn main {} {}', 'a capability cannot have generic parameters', 1, 13),
             ('capability C\nstruct S { a: C(u8) }\nfn main {} {}', '`C` takes no type arguments', 2, 15),
             ('capability C\ncapability C\nfn main {} {}', '`C` is already declared in this scope', 2, 1),
             ('capability C\nfn main {} { let c: C\n    f{ c } }\nfn f { c: C } {}', '`c` may be read before it is assigned', 3, 8),
         ]:
             self.assertCapError(src, msg, line, col)
+
+    def test_fields_are_c_functions(self):
+        # A capability with fields holds C function pointers, which only its namespace's `load`
+        # can set; holding one is the permission to call them, through it.
+        self.assertOutput("""
+namespace clib {
+    capability Loader
+
+    #c::symbol{ name = "llabs" }
+    extern fn long_abs { n: i64 } -> i64
+    #c::symbol{ name = "strlen" }
+    extern fn str_len { s: c::String } -> usize
+
+    capability Math {
+        abs: extern fn{ n: i64 } -> i64,
+        len: extern fn{ s: c::String } -> usize,
+    }
+
+    fn load { mut loader: Loader } -> ?Math {
+        return Math{ abs = long_abs, len = str_len }
+    }
+}
+
+fn twice { mut m: clib::Math, n: i64 } -> i64 { return m.abs{ n } * 2 }
+fn through { p: *mut clib::Math } -> i64 { return p.abs{ n = -3 } }
+
+fn main { mut io: Io, mut loader: clib::Loader } -> i32 {
+    let some{ value = loaded } = clib::load{ &loader } else { return 1 }
+    let mut m = loaded
+    io::println_i64{ &io, n = m.abs{ n = -12 } }
+    io::println_i64{ &io, n = twice{ &m, n = -5 } }
+    io::println_i64{ &io, n = through{ p = &m } }
+    io::println_u64{ &io, n = m.len{ s = "hello" } }
+    io::println_u64{ &io, n = @size_of(clib::Math) }
+    return 0
+}
+""", "12\n10\n3\n5\n16\n")
+
+    def test_field_ir(self):
+        from toolchain import ir_sources
+        text = ir_sources([(CAP_FIELDS + 'fn main { mut l: m::L } -> i32 { let mut x = m::load{ &l }\n    return @trunc(i32, x.f{ n = -2 }) }', None)])
+        self.assertIn('(cap "m::L"))', text)
+        self.assertRegex(text, r'\(cap "m::M" 8 8 \[\("f" \d+ 0\)\]\)')
+
+    def test_field_errors(self):
+        callback_type = 'type T = extern fn{ mut x: m::M, n: i32 }\n#c::callback\nfn cb { n: i32 } {}\nextern fn take { f: T }\nfn main {} { take{ f = cb } }'
+        for src, msg, line, col in [
+            ('capability C { x: i32 }\nfn main {} {}', "capability `C`'s field `x` must be a C function pointer, `extern fn{ ... }`, not i32", 1, 16),
+            ('capability C { f: ?extern fn{} }\nfn main {} {}', "capability `C`'s field `f` must be a C function pointer, `extern fn{ ... }`, not ?extern fn{}", 1, 16),
+            ('capability C { f: fn{} }\nfn main {} {}', "capability `C`'s field `f` must be a C function pointer, `extern fn{ ... }`, not fn{}", 1, 16),
+            ('capability C { f: extern fn{}, f: extern fn{} }\nfn main {} {}', 'duplicate field `f`', 1, 32),
+            # made only by a function of its namespace that holds a capability
+            (CAP_FIELDS + 'fn main { mut l: m::L } { let x = m::M{ f = m::abs } }', 'capability `M` can only be made by a function of namespace `m`, which declares it', 8, 38),
+            ('namespace m {\n    capability M { f: extern fn{} }\n    extern fn g {}\n    fn load {} -> M { return M{ f = g } }\n}\nfn main {} {}',
+             'capability `M` can only be made by a function that holds a capability: `load` takes none', 4, 30),
+            ('namespace m {\n    capability M { f: extern fn{} }\n    extern fn g {}\n    const X: M = M{ f = g }\n}\nfn main {} {}',
+             'capability `M` can only be made by a function of namespace `m`, which declares it', 4, 18),
+            ('capability M { f: extern fn{} }\nextern fn g {}\nnamespace q { fn make { mut io: Io } -> M { return M{ f = g } } }\nfn main {} {}',
+             'capability `M` can only be made by a function at the top level, which declares it', 3, 52),
+            ('namespace m {\n    capability M { f: extern fn{}, g: extern fn{} }\n    extern fn h {}\n    fn load { mut io: Io } -> M { return M{ f = h } }\n}\nfn main {} {}',
+             'capability `M` is missing `g`', 4, 43),
+            # its fields can only be called, through a mutable one
+            (CAP_FIELDS + 'fn main { mut l: m::L } { let mut x = m::load{ &l }\n    let f = x.f }', '`f` is a field of capability M: it can only be called, as `x.f{ ... }`', 9, 14),
+            (CAP_FIELDS + 'fn g { f: extern fn{ n: i64 } -> i64 } {}\nfn main { mut l: m::L } { let mut x = m::load{ &l }\n    g{ f = x.f } }', '`f` is a field of capability M: it can only be called, as `x.f{ ... }`', 10, 13),
+            (CAP_FIELDS + 'fn main { mut l: m::L } -> i32 { let mut x = m::load{ &l }\n    if x.f == m::abs { return 1 }\n    return 0 }', '`f` is a field of capability M: it can only be called, as `x.f{ ... }`', 9, 9),
+            (CAP_FIELDS + 'fn main { mut l: m::L } { let mut x = m::load{ &l }\n    let p = @cast(*u8, x.f) }', '`f` is a field of capability M: it can only be called, as `x.f{ ... }`', 9, 25),
+            (CAP_FIELDS + 'fn main { mut l: m::L } { let mut x = m::load{ &l }\n    x.f = m::abs }', '`f` is a field of capability M: it can only be called, as `x.f{ ... }`', 9, 6),
+            (CAP_FIELDS + 'fn main { mut l: m::L } -> i32 { let x = m::load{ &l }\n    return @trunc(i32, x.f{ n = 1 }) }', '`x` is not a mutable place', 9, 24),
+            (CAP_FIELDS + 'fn g { x: m::M } -> i64 { return x.f{ n = 1 } }\nfn main {} {}', '`x` is not a mutable place', 8, 34),
+            (CAP_FIELDS + 'fn g { p: *m::M } -> i64 { return p.f{ n = -3 } }\nfn main {} {}', 'cannot write through *M; it needs to be a `*mut`', 8, 36),
+            # neither the runtime nor a callback's thunk can supply one
+            (CAP_FIELDS + 'fn main { mut x: m::M } {}', '`main` cannot take `M`: a capability with fields comes from a function of its namespace, not the runtime', 8, 1),
+            (CAP_FIELDS + '#c::callback\nfn cb { mut x: m::M, n: i32 } {}\nfn main {} {}',
+             "callback `cb` can't take `x`: capability M has fields, and nothing can supply one when C calls the callback", 9, 1),
+            (CAP_FIELDS + callback_type,
+             "callback `cb` can't have type extern fn{ mut x: M, n: i32 }: its field `x` is capability M, which has fields, and nothing can supply one when C calls the callback", 12, 24),
+        ]:
+            self.assertCapError(src, msg, line, col)
+
+    def test_extern_takes_one(self):
+        # An extern fn may take one: like any capability, it isn't passed to C.
+        self.assertOutput(CAP_FIELDS + """
+#c::symbol{ name = "llabs" }
+extern fn magnitude { mut x: m::M, n: i64 } -> i64
+fn main { mut io: Io, mut l: m::L } {
+    let mut x = m::load{ &l }
+    io::println_i64{ &io, n = magnitude{ &x, n = -7 } + x.f{ n = -1 } }
+}
+""", "8\n")
+
+
+# A capability with fields, M, and the function of its namespace that makes one.
+CAP_FIELDS = """namespace m {
+    capability L
+    capability M { f: extern fn{ n: i64 } -> i64 }
+    #c::symbol{ name = "llabs" }
+    extern fn abs { n: i64 } -> i64
+    fn load { mut l: L } -> M { return M{ f = abs } }
+}
+"""
 
 
 PROC_MAIN = """

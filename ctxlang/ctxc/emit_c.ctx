@@ -283,12 +283,24 @@ namespace emit {
                 }
                 put{ &e, a = "};\n" }
             }
-            cap => {
+            cap{ fields } => {
+                define_fields{ &e, fields }
                 struct_head{ &e, id }
+                members{ &e, fields }
                 put{ &e, a = "};\n" }
             }
             nptr{ ptr } => { define{ &e, id = ptr } }      // a ?c::String's struct
             else => {}
+        }
+    }
+
+    // The fields of a struct, or of a capability with fields (§15), which is a struct of C
+    // function pointers.
+    fn struct_members { e: E, t: ir::TypeId } -> []ir::Field {
+        match ty{ e, id = t } {
+            record{ fields } => { return fields }
+            cap{ fields } => { return fields }
+            else => { @panic("emit: field of a non-struct") }
         }
     }
 
@@ -327,6 +339,15 @@ namespace emit {
                 while i < fields.len {
                     let f = fields[i]
                     offset_assert{ &e, id, variant = null, f }
+                    i = i + 1
+                }
+            }
+            cap{ size, align, fields } => {
+                if fields.len == 0 { return }
+                size_assert{ &e, id, size, align }
+                let mut i = 0
+                while i < fields.len {
+                    offset_assert{ &e, id, variant = null, f = fields[i] }
                     i = i + 1
                 }
             }
@@ -1101,8 +1122,7 @@ namespace emit {
                 ch{ &e, c = '(' }
                 expr{ &e, x = base.* }
                 put{ &e, a = ").m_" }
-                let record{ fields } = ty{ e, id = base.ty } else { @panic("emit: field of a non-struct") }
-                raw{ &e, b = fields[index].name }
+                raw{ &e, b = struct_members{ e, t = base.ty }[index].name }
             }
             index{ base, i, pos } => { index{ &e, base = base.*, i = i.*, pos } }
             sindex{ base, i, pos } => { sindex{ &e, base = base.*, i = i.*, pos } }
@@ -1643,6 +1663,7 @@ namespace emit {
         let mut payload = false
         match ty{ e, id = t } {
             record{ fields } => { names = fields }
+            cap{ fields } => { names = fields }
             tagged{ variants } => {
                 let some{ value = v } = variant else { @panic("emit: variant literal without a variant") }
                 put{ &e, a = " .tag = " }

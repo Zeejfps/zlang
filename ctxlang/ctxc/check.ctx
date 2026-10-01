@@ -33,6 +33,9 @@ namespace check {
     const STD: u32 = 1
     const ROOT: u32 = 2
 
+    // Checker.calling when no callee is being checked: no expression has this key.
+    const NO_CALLEE: u64 = 18446744073709551615
+
     // A source file: std's files come first, then the program's.
     struct File { name: []u8, text: []u8, lines: []u32, tree: syntax::File }
 
@@ -105,6 +108,7 @@ namespace check {
         consts:    list::List(u32, Heap),
         fns:       list::List(u32, Heap),
         externs:   list::List(u32, Heap),
+        caps:      list::List(u32, Heap),          // capabilities with fields
         alias_stack: list::List(u32, Heap),
         const_stack: list::List(u32, Heap),
         // Side tables, keyed by key{ file, id }.
@@ -118,6 +122,7 @@ namespace check {
         text_decl: u32,                          // utf8::String, or NONE
         cstr_decl: u32,                          // c::String, or NONE
         builder_decl: u32,                       // utf8::Builder, or NONE
+        calling:   u64,                          // the callee being checked, whose field may be a capability's
         // The body being checked: a const's initializer or a function's body.
         sc:        Scope,
         ret:       Id,
@@ -253,7 +258,7 @@ namespace check {
             spaces = list::new(Space){ realloc = arena::alloc, &heap },
             decls = list::new(Decl){ realloc = arena::alloc, &heap },
             structs = ids{ &heap }, unions = ids{ &heap }, enums = ids{ &heap }, aliases = ids{ &heap },
-            consts = ids{ &heap }, fns = ids{ &heap }, externs = ids{ &heap },
+            consts = ids{ &heap }, fns = ids{ &heap }, externs = ids{ &heap }, caps = ids{ &heap },
             alias_stack = ids{ &heap }, const_stack = ids{ &heap },
             decl_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             space_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
@@ -265,6 +270,7 @@ namespace check {
             text_decl = NONE,
             cstr_decl = NONE,
             builder_decl = NONE,
+            calling = NO_CALLEE,
             sc = Scope{ ns = ROOT, owner = NONE, names = no_names{}, args = slice::empty(Id){} },
             ret = types::VOID,
             lits = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
@@ -337,6 +343,7 @@ namespace check {
         generic_params{ &c, xs = c.unions }
         generic_params{ &c, xs = c.fns }
         each{ &c, xs = c.structs, what = Phase::structs }
+        each{ &c, xs = c.caps, what = Phase::caps }
         each{ &c, xs = c.unions, what = Phase::unions }
         each{ &c, xs = c.enums, what = Phase::enums }
         each{ &c, xs = c.aliases, what = Phase::aliases }
@@ -345,7 +352,7 @@ namespace check {
         each{ &c, xs = c.externs, what = Phase::sigs }
     }
 
-    union Phase { structs, unions, enums, aliases, consts, sigs, const_values, fold, bodies }
+    union Phase { structs, caps, unions, enums, aliases, consts, sigs, const_values, fold, bodies }
 
     fn each { mut c: Checker, xs: list::List(u32, Heap), what: Phase } {
         let items = list::items{ list = xs }
@@ -354,6 +361,7 @@ namespace check {
             let d = items[i]
             match what {
                 structs => { resolve_struct{ &c, d } }
+                caps    => { resolve_cap{ &c, d } }
                 unions  => { resolve_union{ &c, d } }
                 enums   => { resolve_enum{ &c, d } }
                 aliases => { resolve_alias{ &c, d } }
@@ -408,9 +416,10 @@ namespace check {
                     add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
                     push{ xs = &c.aliases, n = d }
                 }
-                cap{ name } => {
+                cap{ name, fields } => {
                     let d = declare{ &c, kind = Kind::cap, x, file, name, tparams = no_names{}, ns }
                     add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
+                    if fields != null { push{ xs = &c.caps, n = d } }
                 }
                 space{ name, decls = inner } => {
                     let child = space{ &c, name = name.text, parent = ns }
@@ -536,6 +545,55 @@ namespace check {
             else => {}
         }
         list::at{ list = c.decls, i = d }.fields = list::items{ list = out }
+    }
+
+    // §15: a capability's fields are C function pointers, called through it (§12, C function
+    // pointers). A `?extern fn` would have to be read to be unwrapped, which a field can't be.
+    fn resolve_cap { mut c: Checker, d: u32 } {
+        let x = get_decl{ c, d }
+        let sc = own_scope{ &c, d }
+        let mut out = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        match x.syn.k {
+            cap{ fields = fs } => {
+                let some{ value = fields } = fs else { return }
+                let mut i: usize = 0
+                while i < fields.len {
+                    let f = fields[i]
+                    if seen_field{ fields, i } { duplicate{ &c, what = "field", name = f.name, at = f.span } }
+                    let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
+                    let mut ok = t == types::ERROR
+                    match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { func{ external } => { ok = external } else => {} }
+                    if not ok {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "capability `{}`'s field `{}` must be a C function pointer, `extern fn{{ ... }}`, not {}", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t }) }
+                        error{ &c, at = f.span, msg = utf8::view{ b } }
+                    }
+                    add_field{ xs = &out, f = types::Field{ name = f.name.text, mutable = false, ty = t } }
+                    i = i + 1
+                }
+            }
+            else => {}
+        }
+        list::at{ list = c.decls, i = d }.fields = list::items{ list = out }
+    }
+
+    // Whether t is a capability with fields (§15), which only a function of its namespace can
+    // construct, and so neither the runtime nor a callback's thunk can supply.
+    fn loaded_cap { c: Checker, t: Id } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            cap{ decl } => { return get_decl{ c, d = decl }.fields.len > 0 }
+            else => { return false }
+        }
+    }
+
+    // The first of fields with a capability with fields, or null.
+    fn loaded_field { c: Checker, fields: []types::Field } -> ?types::Field {
+        let mut i: usize = 0
+        while i < fields.len {
+            if loaded_cap{ c, t = fields[i].ty } { return fields[i] }
+            i = i + 1
+        }
+        return null
     }
 
     fn resolve_union { mut c: Checker, d: u32 } {
@@ -807,6 +865,10 @@ namespace check {
                     cap{ decl } => {
                         if decl == build_cap and slice::eq_bytes{ a = entry, b = "main" } {
                             error{ &c, at, msg = "`main` cannot take a Build: only a build program's `fn build` receives one" }
+                        } else if loaded_cap{ c, t } {
+                            let mut b = message{ c }
+                            pushed{ ok = @fmt(&b, "`{}` cannot take `{}`: a capability with fields comes from a function of its namespace, not the runtime", str{ s = entry }, tstr{ c, t }) }
+                            error{ &c, at, msg = utf8::view{ b } }
                         }
                     }
                     else => {
@@ -963,7 +1025,16 @@ namespace check {
         pushed{ ok = @fmt(&what, "callback `{}`", str{ s = at.name.text }) }
         let ret_at: ?source::Span = if ret == null { null } else { ret.span }
         c_signature{ &c, what = utf8::view{ b = what }, params, ret_at, fields = at.fields, r = at.ret }
+        let lf = loaded_field{ c, fields = at.fields }
+        if lf != null {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "callback `{}` can't take `{}`: capability {} {}", str{ s = at.name.text }, str{ s = lf.name }, tstr{ c, t = lf.ty }, str{ s = NO_THUNK }) }
+            error{ &c, at = x.span, msg = utf8::view{ b } }
+        }
     }
+
+    // Why a callback can't receive a capability with fields.
+    const NO_THUNK: []u8 = "has fields, and nothing can supply one when C calls the callback"
 
     // A letter or `_`, then letters, digits and `_`.
     fn c_ident { s: []u8 } -> bool {
@@ -5032,7 +5103,7 @@ namespace check {
                 return get_var{ c, v = var }.ty
             }
             func{ decl, targs } => {
-                let ct = c_fn_value{ &c, d = decl, exp }
+                let ct = c_fn_value{ &c, d = decl, exp, at = expr_at{ e } }
                 if ct != types::NO_TYPE { return ct }
                 return fn_type{ &c, d = decl, targs }
             }
@@ -5077,14 +5148,21 @@ namespace check {
     // of the extern fn type of its declaration. A `#c::callback` fn there is a C function that
     // calls it, of the expected type if the fn accepts its fields (§5), or of its own fields in
     // their order if not, which the conversion then reports. NO_TYPE otherwise.
-    fn c_fn_value { mut c: Checker, d: u32, exp: Id } -> Id {
+    fn c_fn_value { mut c: Checker, d: u32, exp: Id, at: source::Span } -> Id {
         let x = get_decl{ c, d }
         if (x.kind != Kind::external and not x.callback) or exp == types::NO_TYPE { return types::NO_TYPE }
         let mut want = types::prune{ s = c.ty, t = exp }
         match types::get{ s = c.ty, id = want } { opt{ elem } => { want = types::prune{ s = c.ty, t = elem } } else => {} }
         match types::get{ s = c.ty, id = want } {
-            func{ external } => {
+            func{ external, fields } => {
                 if external and x.callback {
+                    let lf = loaded_field{ c, fields }
+                    if lf != null {
+                        let mut b = message{ c }
+                        pushed{ ok = @fmt(&b, "callback `{}` can't have type {}: its field `{}` is capability {}, which {}", str{ s = x.name.text }, tstr{ c, t = want }, str{ s = lf.name }, tstr{ c, t = lf.ty }, str{ s = NO_THUNK }) }
+                        error{ &c, at, msg = utf8::view{ b } }
+                        return types::ERROR
+                    }
                     let own = types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = false }
                     if fn_accepts{ &c, g = own, s = want } { return want }
                 }
@@ -5337,7 +5415,15 @@ namespace check {
                 }
                 set_type{ &c, e = callee, t = ct }
             }
-            else => { ct = expr{ &c, e = callee, exp = types::NO_TYPE } }
+            else => {
+                let outer = c.calling
+                c.calling = expr_key{ e = callee }
+                ct = expr{ &c, e = callee, exp = types::NO_TYPE }
+                c.calling = outer
+                // Calling through a capability's field needs the capability mutable, as passing
+                // it as a `mut` field does.
+                match callee.k { field{ base } => { if cap_base{ c, e = base.* } { check_mutable{ &c, e = callee } } } else => {} }
+            }
         }
         let ft = types::prune{ s = c.ty, t = ct }
         if ft == types::ERROR { return types::ERROR }
@@ -5509,11 +5595,14 @@ namespace check {
         let mut decl = NONE
         match types::get{ s = c.ty, id = t } {
             record{ decl = x } => { decl = x }
-            cap => {
-                let mut b = message{ c }
-                pushed{ ok = @fmt(&b, "`{}` is a capability: only `main` receives one, from the runtime", str{ s = seg.name.text }) }
-                error{ &c, at = seg.name.span, msg = utf8::view{ b } }
-                return types::ERROR
+            cap{ decl = x } => {
+                if not loaded_cap{ c, t } {
+                    let mut b = message{ c }
+                    pushed{ ok = @fmt(&b, "`{}` is a capability: only `main` receives one, from the runtime", str{ s = seg.name.text }) }
+                    error{ &c, at = seg.name.span, msg = utf8::view{ b } }
+                    return types::ERROR
+                }
+                return cap_lit{ &c, e, t, decl = x, seg, items, forward, bind, exp }
             }
             else => {}
         }
@@ -5531,6 +5620,42 @@ namespace check {
         }
         pushed{ ok = @fmt(&b, "struct `{}`", str{ s = get_decl{ c, d = decl }.name.text }) }
         return fields_lit{ &c, e, t, fields = struct_fields{ &c, t }, what = utf8::view{ b }, items, forward, bind }
+    }
+
+    // A capability with fields (§15): only a function of the namespace that declares it, which
+    // holds a capability itself, can make one, so code that holds none can't.
+    fn cap_lit { mut c: Checker, e: syntax::Expr, t: Id, decl: u32, seg: syntax::Seg, items: []syntax::Item, forward: bool, bind: bool, exp: Id } -> Id {
+        let x = get_decl{ c, d = decl }
+        let owner = c.sc.owner
+        let in_fn = owner != NONE and get_decl{ c, d = owner }.kind == Kind::func
+        if not in_fn or get_decl{ c, d = owner }.ns != x.ns {
+            let qual = get_space{ c, ns = x.ns }.qual
+            let mut b = message{ c }
+            if qual.len == 0 {
+                pushed{ ok = @fmt(&b, "capability `{}` can only be made by a function at the top level, which declares it", str{ s = seg.name.text }) }
+            } else {
+                pushed{ ok = @fmt(&b, "capability `{}` can only be made by a function of namespace `{}`, which declares it", str{ s = seg.name.text }, str{ s = qual }) }
+            }
+            error{ &c, at = seg.name.span, msg = utf8::view{ b } }
+            return types::ERROR
+        }
+        let fs = get_decl{ c, d = owner }.fields
+        let mut holds = false
+        let mut i: usize = 0
+        while i < fs.len {
+            match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = fs[i].ty } } { cap => { holds = true } else => {} }
+            i = i + 1
+        }
+        if not holds {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "capability `{}` can only be made by a function that holds a capability: `{}` takes none", str{ s = seg.name.text }, str{ s = get_decl{ c, d = owner }.name.text }) }
+            error{ &c, at = seg.name.span, msg = utf8::view{ b } }
+            return types::ERROR
+        }
+        same_decl{ &c, t, exp }
+        let mut b = message{ c }
+        pushed{ ok = @fmt(&b, "capability `{}`", str{ s = x.name.text }) }
+        return fields_lit{ &c, e, t, fields = x.fields, what = utf8::view{ b }, items, forward, bind }
     }
 
     // An extern union's literal (§12, Untagged unions) sets exactly one field; the rest of its
@@ -5794,6 +5919,12 @@ namespace check {
                         put_access{ &c, e, a = Access::pfield }
                         return field_type{ &c, st = inner, e, name }
                     }
+                    cap => {
+                        if loaded_cap{ c, t = inner } {
+                            put_access{ &c, e, a = Access::pfield }
+                            return cap_field{ &c, st = inner, e, name }
+                        }
+                    }
                     array => {
                         if is_len {
                             put_access{ &c, e, a = Access::plen }
@@ -5801,6 +5932,12 @@ namespace check {
                         }
                     }
                     else => {}
+                }
+            }
+            cap => {
+                if loaded_cap{ c, t = bt } {
+                    put_access{ &c, e, a = Access::field }
+                    return cap_field{ &c, st = bt, e, name }
                 }
             }
             record => {
@@ -5846,6 +5983,27 @@ namespace check {
         let f = types::find_field{ fields = struct_fields{ &c, t = st }, name = name.text }
         if f != null { return f.ty }
         return no_field{ &c, t = st, e, name }
+    }
+
+    // A capability's field (§15) can only be called: read as a value, it could reach code whose
+    // signature doesn't name the capability.
+    fn cap_field { mut c: Checker, st: Id, e: syntax::Expr, name: syntax::Name } -> Id {
+        let ft = field_type{ &c, st, e, name }
+        if ft != types::ERROR and c.calling != expr_key{ e } {
+            let mut b = message{ c }
+            pushed{ ok = @fmt(&b, "`{}` is a field of capability {}: it can only be called, as `{}{{ ... }}`", str{ s = name.text }, tstr{ c, t = st }, str{ s = source_text{ c, span = e.span } }) }
+            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+        }
+        return ft
+    }
+
+    // Whether e is a capability with fields, or a pointer to one.
+    fn cap_base { c: Checker, e: syntax::Expr } -> bool {
+        let t = types::prune{ s = c.ty, t = type_of_expr{ c, e } }
+        match types::get{ s = c.ty, id = t } {
+            ptr{ elem } => { return loaded_cap{ c, t = elem } }
+            else => { return loaded_cap{ c, t } }
+        }
     }
 
     fn no_field { mut c: Checker, t: Id, e: syntax::Expr, name: syntax::Name } -> Id {
@@ -6385,6 +6543,7 @@ namespace check {
     fn struct_fields { mut c: Checker, t: Id } -> []types::Field {
         match types::get{ s = c.ty, id = t } {
             record{ decl, args } => { return subst_fields{ &c, fields = get_decl{ c, d = decl }.fields, decl, args } }
+            cap{ decl } => { return get_decl{ c, d = decl }.fields }
             else => { return slice::empty(types::Field){} }
         }
     }
@@ -6463,7 +6622,13 @@ namespace check {
             }
             ptr | func => { return Layout{ size = 8, align = 8 } }
             slice => { return Layout{ size = 16, align = 8 } }
-            cap | void => { return Layout{ size = 0, align = 1 } }
+            cap{ decl } => {
+                if get_decl{ c, d = decl }.fields.len == 0 { return Layout{ size = 0, align = 1 } }
+                let offs = struct_offsets{ &c, t }
+                if offs == null { return null }
+                return offs.layout
+            }
+            void => { return Layout{ size = 0, align = 1 } }
             enumeration{ decl } => { return layout{ &c, t = get_decl{ c, d = decl }.ty } }
             array{ n, elem } => {
                 let el = layout{ &c, t = elem }
