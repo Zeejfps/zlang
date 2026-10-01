@@ -388,7 +388,7 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
    - `c::String` (§18): static read-only bytes with a NUL byte after them, for C. It is a compile error if the literal holds a NUL itself (`\0`), since C would end the string there.
    - anything else, or nothing: a `[N]u8` array value. Like any array it is a value, not a place: bind it to a local to take its address.
 
-   A view's static bytes are followed by a 0 byte that isn't part of it: `"abc"` as a `[]u8` has `len` 3, and its `ptr[3]` is 0. PLAN.md stage 12 plans to replace the `utf8::String` and `c::String` cases with conversions that std declares, through the built-in type `strlit` and the attribute `#convert`, so the compiler names no std type here.
+   A view's static bytes are followed by a 0 byte that isn't part of it: `"abc"` as a `[]u8` has `len` 3, and its `ptr[3]` is 0. PLAN.md stage 4 plans to replace the `utf8::String` and `c::String` cases with conversions that std declares, through the built-in type `strlit` and the attribute `#convert`, so the compiler names no std type here.
 
    In an `if` or `match` expression without an expected type, a branch that is a literal takes the type of another branch that is `[]u8`, `utf8::String` or `c::String`, or of another literal branch that became one. Otherwise, as in `let msg = match p { a => { "one" } b => { "three" } }`, each literal is an array and the lengths must agree; annotate the `let` to get views.
 7. A character literal `'a'` is an integer literal whose value is the character's byte.
@@ -709,7 +709,7 @@ extern fn glfwPollEvents { mut glfw: Glfw }      // a capability says who may ca
 
 1. `#path` or `#path{ field = e, ... }`, on its own line before a declaration, is an **attribute** of it. A declaration may have several.
 2. `path` names a struct, and the braces are a literal of it, checked as a const's initializer is (§14): its value is computed at compile time. `#path` alone means `#path{}`.
-3. Attributes are data. The compiler acts on those of std's `c` namespace (`c::symbol`, `c::callback`) and ignores the rest; a program can read them later (PLAN.md, stage 9).
+3. Attributes are data. The compiler acts on those of std's `c` namespace (`c::symbol`, `c::callback`) and ignores the rest; a program can read them later (PLAN.md, stage 3).
 
 ### Extern functions
 
@@ -764,4 +764,4 @@ fn build { mut b: Build } {
 3. Only `build` may take a `Build` (§15): `main` can't.
 4. `build::exe{ &b, name, root }` names an executable built from the `.ctx` files of directory `root`, and returns a `build::Exe` for the calls that add to it: `link` (a library, `-l`), `framework` (a macOS framework) and `lib_path` (a directory to find libraries in, `-L`). `build::os` is the operating system the build is for. Paths are relative to the directory `build.ctx` is in, and `build.ctx` is never one of an executable's files.
 5. Names, roots, libraries and paths can't be empty or hold a tab or a line break: the build panics.
-6. `ctxc run PATH [-- ARGS...]` builds the program at PATH (a `.ctx` file, or a directory, with or without a `build.ctx`) and runs its first executable; `ctxc exe PATH -o OUT` writes that executable to OUT. Only ctxc and a C compiler are needed (PLAN.md, "Where we are").
+6. `ctxc run PATH [-- ARGS...]` builds the program at PATH (a `.ctx` file, or a directory, with or without a `build.ctx`) and runs its first executable; `ctxc exe PATH -o OUT` writes that executable to OUT. Only ctxc and a C compiler are needed (PLAN.md, "Working on ctxc").

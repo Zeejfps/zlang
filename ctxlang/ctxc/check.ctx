@@ -1219,7 +1219,7 @@ namespace check {
         match e { decl{ i } => { return i } else => { return NONE } }
     }
 
-    // ---- attributes (§18; stage 9 gives them to generators)
+    // ---- attributes (§18; PLAN.md stage 3 gives them to generators)
 
     // Every declaration's attributes, each checked as a const literal of the struct it names.
     // The compiler acts on std's `c::symbol` and `c::callback` and ignores the rest.

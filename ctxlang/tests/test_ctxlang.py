@@ -3863,7 +3863,7 @@ fn main {} {
 
 
 class IfNull(Base):
-    """`e ifnull x`: e's value if it has one, else x (PLAN.md stage 11)."""
+    """`e ifnull x`: e's value if it has one, else x."""
 
     FIND = """
 fn find { xs: []i32, want: i32 } -> ?usize {
@@ -4032,7 +4032,7 @@ fn main {} {
 
 class Errors(Base):
     """Declared errors, `!T` with inferred error sets, `try`, `iferr` and matches on errors
-    (spec §8, Errors; PLAN.md stage 11)."""
+    (spec §8, Errors)."""
 
     PARSE = """
 namespace parse {

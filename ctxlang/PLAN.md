@@ -2,109 +2,74 @@
 
 `ctxc` is a self-hosting compiler written in ctxlang that emits C. A fresh checkout builds it from
 its platform's bootstrap, `bootstrap/ctxc.posix.c` or `bootstrap/ctxc.windows.c`, with nothing
-but a C compiler. Finished stages (0–8, and the done parts of 9–11) are described in git history;
-the last version of this file that had them is at `f53a93f`. ctxi, the Python interpreter ctxc
-replaced, is at `8436f4d`.
+but a C compiler.
+
+This file lists only what is left. Finished work is in git history: the last version of this
+file that described it, with the old stage numbers (0–12), is at `f53a93f`. ctxi, the Python
+interpreter ctxc replaced, is at `8436f4d`.
 
 ## Status
 
-| Stage | What | Left |
-|---|---|---|
-| 7a | Language server | all of it |
-| 9 | Metaprogramming | generated files, reflection (step 3), compile-time consts (step 5) |
-| 10 | C interop | fs and proc over the platform layers, driver caching, `#c::export`, run-time loading |
-| 11 | Optionals and errors | `let p = e else`, `null` beside a union's variants, `?T == T`, the errors' "not yet" list |
-| 12 | Literal conversions: `strlit` and `#convert` | all of it; needs stage 9 step 5 |
-
-### Working on ctxc
-
-```
-cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctxc.posix.c ctxc/rt/ctxrt.c -lm -o ctxc
-./ctxc run examples/wordcount.ctx -- spec.md       # a file
-./ctxc run examples/json -- examples/json/sample.json   # a directory
-./ctxc run examples/glfw                           # a directory with a build program
-./ctxc exe examples/list.ctx -o list
-```
-
-- On Windows the bootstrap is `bootstrap/ctxc.windows.c`. ctxc finds std/ and ctxc/rt/ through
-  CTX_HOME, or above its executable or the working directory, and builds in HOME/build/run.
-  That ctxc is the bootstrap's; `tools/toolchain.py` builds the current source's into
-  `build/ctxc` (about 7 s the first time, cached after).
-- `python -m unittest discover tests` runs all tests through the native ctxc. They pass on
-  Windows (gcc), Linux (gcc) and macOS arm64 (Apple clang).
-- `tools/fixpoint.py`: ctxc built by itself, twice, writes byte-identical C, the same as this
-  platform's bootstrap, and writes the other platform's bootstrap too.
-- `tools/recover.py`: every damaged copy of the corpus's files parses and passes its checks.
-- `python tools/ctxc.py PROGRAM --run [args...]` compiles and runs a program.
-- Python is left in development only: `tests/` and `tools/`. Each could be a ctxlang program now
-  that `proc::run` and `fs::list` exist.
-- Friction found while writing ctxc is logged in [FRICTION.md](FRICTION.md).
-
-### Changing the language
-
-ctxc's source may use only what the bootstrap's ctxc understands. A new feature lands in two
-steps: first in ctxc, without ctxc using it (the bootstrap compiles that source, and the result
-understands the feature); then `python tools/fixpoint.py --update` refreshes the bootstraps
-(`bootstrap/ctxc.*.c`, one per platform layer, all written from any machine), and ctxc's source
-may use it. Removing a feature goes the other way round: stop using it, refresh the bootstraps,
-then remove it. Refresh them whenever a change to ctxc lands, so a fresh checkout builds the
-current compiler in one step; `fixpoint.py` says when one is out of date.
-
-### Known gaps
-
-- The front end is over its budget: checking and lowering ctxc takes about 215 ms natively,
-  against 100 ms for the check alone. It hasn't been profiled.
-- The C backend prints no `in fn` stack trace with a panic (see Open decisions).
-- 20 corpus programs read temporary files that the test suite deletes once it's done.
-  `tools/corpus.py` should copy those files into the case directory.
-- There is no second implementation to diff against. New checks are covered by the unit tests'
-  expected outputs and error fragments alone.
-- `ctxc build`, `ir` and `decls` need std's files listed on the command line; only `run` and
-  `exe` find them.
+| Stage | What | State | Needs |
+|---|---|---|---|
+| 1 | [Optionals and errors](#1-optionals-and-errors) | in progress | |
+| 2 | [C interop](#2-c-interop) | in progress | |
+| 3 | [Metaprogramming](#3-metaprogramming) | build programs and attributes done | |
+| 4 | [Literal conversions](#4-literal-conversions) | planned | 3.3 |
+| 5 | [Language server](#5-language-server) | planned | |
 
 ## Stages
 
-### 7a. Language server
+### 1. Optionals and errors
 
-`ctxls`, written in ctxlang, speaks LSP (JSON-RPC over stdin and stdout) and answers from the
-`Analysis` the front end produces. The JSON reader and writer grow out of `examples/json`.
+`?T`, `ifnull`, and errors (`!T` with inferred sets, `try`, `iferr`) are done (spec §8).
 
-The front end was built for this: `check{ files }` takes source text (so unsaved buffers work),
-never exits or panics on bad input, recovers from errors in the lexer, parser and checker, keeps
-comments on the side, and records its results in side tables by node id, so parsed trees stay
-read-only and unchanged files (std in particular) needn't be reparsed. What's left is reading
-those tables:
+1. **Unwrap in a `let`, by leaving.** `let p = e else { ... }` with a plain name: for `e: ?T`,
+   shorthand for `let some{ value = p } = e else { ... }`.
+2. **Null as an arm next to a union's variants** (FRICTION #11). `match` on a `?U` for a union `U`
+   lists `null` and `U`'s variants in one set of arms, as `match` on a `!T` lists `ok` and errors.
+3. **Present and equal** (FRICTION #20). `==` and `!=` between a `?T` and a `T`: true when present
+   and equal.
+4. **Errors' remaining gaps.**
+   - A function whose result's set is inferred can't be a value of a function type, whose `!T`
+     holds any error: that needs the thunk that widens a function value to also renumber its
+     result.
+   - `main` can't return `!T`.
+   - Matching through a pointer to a `!T`.
 
-| Record | Serves |
-|---|---|
-| each name use → its declaration (the file and span of a local, field, variant, fn, type or namespace) | go to definition, references, rename, semantic tokens |
-| each expression's type, and a local's type at each use (after narrowing, §8) | hover, inlay hints |
-| each declaration: kind, name, span, signature text, and its namespace | document and workspace symbols, hover |
-| scopes: each block's locals, with the span where each one is live | completion of names |
-| the expected type at each `{` of a call or literal, and which fields a pun or `..` supplied | completion of field names, signature help, hover on `..` |
+*Later, if wanted:* if patterns nest (a payload's fields, literal values), `_` comes in as a
+wildcard inside a pattern (`os{ code = _ }`), and `else` stays the whole-arm default. Optional
+chaining (`a?.b`) needs no lambdas, but nothing in FRICTION.md asks for it yet.
 
-- **Features, in order:** diagnostics on open and change (with debouncing), go to definition, hover
-  (type and signature), document symbols, completion (names in scope, fields after `.`, context
-  fields inside `{`), references, rename, workspace symbols, semantic tokens, signature help, inlay
-  hints for inferred `let` types.
-- **Positions.** Spans are byte offsets; the server converts to whatever the client negotiated:
-  UTF-8 if it accepts `positionEncoding`, UTF-16 otherwise.
-- **Workspace.** A program is a directory of `.ctx` files plus std (§10). An open file joins the
-  program in its directory. Buffers the editor holds replace the text on disk.
-- **What std needs:** `io::read` of an exact byte count from stdin, because a message body has no
-  trailing newline and `read_line` won't do; and writing raw bytes to stdout without a newline.
-- **Speed.** On every edit the server re-lexes and reparses the files that changed and rechecks
-  the whole program. Only if a profile says otherwise: skip unchanged function bodies, or check
-  only up to the cursor for completion.
-- **Robustness.** A panic kills the server, so the recovery test gates every release. A request
-  whose analysis fails for an internal reason returns an LSP error and doesn't take the session down
-  with it.
-- The doc-comment syntax, for hover docs, is a separate spec decision.
+### 2. C interop
 
-*Done when:* VS Code, with a minimal client extension, shows diagnostics while you type, and go to
-definition, hover and completion work on `ctxc/` itself. The editor-query fixtures pass.
+The goal is real programs over C libraries: OpenGL or Vulkan rendering, windowing, audio. Extern
+fns, attributes, capabilities (with functions and inclusion), linking through build programs,
+nullable pointers, C function pointers, callbacks, untagged unions, C strings, the platform
+layers, std's io and mem over the OS, and ctxc as its own driver are done.
 
-### 9. Metaprogramming
+1. **fs and proc over the platform layers.** fs needs `errno` (`__errno_location` on Linux,
+   `__error` on macOS), so either a runtime helper or the posix layer split in two. The runtime
+   then keeps only what has to be C: startup, panics, the stack check, and small helpers. Float
+   formatting and parsing (shortest round-trip text) may stay in C.
+2. **Driver caching.** `ctxc run` compiles the runtime and the program again every time (about
+   0.5 s). Windows' code paths in the driver are written but untested.
+3. **`#c::export{ name }`**, for a public symbol, over the callback thunk.
+4. **Loading a library at run time**, where the capability means "it loaded".
+
+*Later,* each waiting for a target that needs it:
+- A build program naming a layer of its own for a platform std doesn't know
+  (`build::platform{ &b, exe, dir }`), so that a port supplies `namespace os` without editing std.
+- A target with no layer at all, where everything that takes no capability still works
+  (freestanding). It also needs the runtime's startup and panics replaced.
+- Threads. A `#c::callback` must be called on the thread that called into C, since the stack
+  limit and the runtime's stdout buffer are global; threads would need a `_Thread_local` limit
+  and an entry thunk.
+
+*Done when:* a program opens a window and draws with OpenGL through a binding written in
+ctxlang.
+
+### 3. Metaprogramming
 
 The aim is code generation (serializers, for example) and build logic written in ctxlang, as with
 Zig's `build.zig` and Jai's `#run`, without macros and without making types compile-time values.
@@ -116,82 +81,37 @@ Generated code is written out as real `.ctx` files and compiled in a later step,
 into the compile that is running. Errors in generated code point at files a person can open, and a
 generator can't observe its own output.
 
-Build programs (step 1) and typed attributes (steps 2 and 4) are done. Left:
+Build programs (spec §19) and typed attributes (§18) are done.
 
-1. **Build programs: the rest.** Generated files (`build::gen_file`, under `build/gen/`, joining
-   the program's file list) and cross-compiling. `build::os` is the host's.
-3. **Reflection: `build::check`.** Runs the front end on an executable's sources and gives the build
-   program the checked declarations as data: structs, unions, fields, layouts and attributes. That
-   data is the `Analysis`, read-only trees plus side tables, so no separate reflection format is
-   needed.
-5. **Compile-time consts.** A `const` initializer may call any function. No capability exists at
+1. **Generated files and cross-compiling.** `build::gen_file` writes a file under `build/gen/`
+   that joins the program's file list. `build::os` is the host's for now.
+2. **Reflection: `build::check`.** Runs the front end on an executable's sources and gives the
+   build program the checked declarations as data: structs, unions, fields, layouts and
+   attributes. That data is the `Analysis`, read-only trees plus side tables, so no separate
+   reflection format is needed.
+3. **Compile-time consts.** A `const` initializer may call any function. No capability exists at
    compile time, apart perhaps from a compile-time arena for allocation, so only effect-free code
    can run there. ctxc evaluates it with an interpreter over the IR, which is monomorphized, typed
    and laid out. Checking the const calls `ensure` on the functions it reaches, lowers from the
    initializer as the root, and runs that IR: the checker already has per-declaration check state
-   and lowering from any root, so this step adds the interpreter and a new caller. The value is
-   cached in the const's check state, so the language server doesn't re-run it on edits that don't
-   touch its inputs. A const whose evaluation reaches itself is a cycle error from `ensure`, and
-   running out of fuel (a step limit) is a diagnostic, not a hang. The result must hold no pointers
-   other than ones to static data. Uses: lookup tables, perfect-hash keyword maps, precomputed
-   tables for parsers, and converting literals to library types (stage 12).
+   and lowering from any root, so this step adds the interpreter and a new caller.
+   - The value is cached in the const's check state, so the language server doesn't re-run it on
+     edits that don't touch its inputs.
+   - A const whose evaluation reaches itself is a cycle error from `ensure`, and running out of
+     fuel (a step limit) is a diagnostic, not a hang.
+   - The result must hold no pointers other than ones to static data.
+   - Uses: lookup tables, perfect-hash keyword maps, precomputed tables for parsers, and
+     converting literals to library types (stage 4).
 
-Not planned: generating declarations inside the compile that is running (Zig's `inline for` over
-fields with types as values, or Jai's `#insert`). It needs lazy analysis or a fixed-point loop in
-the checker, and generics would become compile-time values. Revisit only if steps 1–5 fall short
-on real code.
+*Not planned:* generating declarations inside the compile that is running (Zig's `inline for`
+over fields with types as values, or Jai's `#insert`). It needs lazy analysis or a fixed-point
+loop in the checker, and generics would become compile-time values. Revisit only if 3.1–3.3 fall
+short on real code.
 
 *Done when:* a JSON generator in ctxlang derives `write` and `read` functions for
 `#json::derive` structs, and `examples/json` uses them for a typed round trip.
 
-### 10. C interop
-
-The goal is real programs over C libraries: OpenGL or Vulkan rendering, windowing, audio. Extern
-fns, attributes, capabilities (with functions and inclusion), linking through build programs,
-nullable pointers, C function pointers, callbacks, untagged unions, C strings, the platform
-layers, std's io and mem over the OS, and ctxc as its own driver are done. Left:
-
-- **fs and proc over the platform layers.** fs needs `errno` (`__errno_location` on Linux,
-  `__error` on macOS), so either a runtime helper or the posix layer split in two. The runtime
-  then keeps only what has to be C: startup, panics, the stack check, and small helpers. Float
-  formatting and parsing (shortest round-trip text) may stay in C.
-- **Driver caching.** `ctxc run` compiles the runtime and the program again every time (about
-  0.5 s). Windows' code paths in the driver are written but untested.
-- **`#c::export{ name }`**, for a public symbol, over the callback thunk.
-- **Loading a library at run time**, where the capability means "it loaded".
-- **Later:** a build program naming a layer of its own for a platform std doesn't know
-  (`build::platform{ &b, exe, dir }`), so that a port supplies `namespace os` without editing
-  std; and a target with no layer at all, where everything that takes no capability still works
-  (freestanding). Both wait for a target that needs them, and freestanding also needs the
-  runtime's startup and panics replaced.
-- **Threads.** A `#c::callback` must be called on the thread that called into C, since the stack
-  limit and the runtime's stdout buffer are global; threads would need a `_Thread_local` limit
-  and an entry thunk.
-
-*Done when:* a program opens a window and draws with OpenGL through a binding written in
-ctxlang.
-
-### 11. Optionals and errors
-
-`ifnull`, errors (`!T` with inferred sets, `try`, `iferr`) are done (spec §8). Left:
-
-| Shape | Feature |
-|---|---|
-| Unwrap in a `let`, by leaving | `let p = e else { ... }` with a plain name: for `e: ?T`, shorthand for `let some{ value = p } = e else { ... }`. |
-| Null as an arm next to a union's variants (FRICTION #11) | `match` on a `?U` for a union `U` lists `null` and `U`'s variants in one set of arms, as `match` on a `!T` lists `ok` and errors. |
-| "Present and equal" (FRICTION #20) | `==` and `!=` between a `?T` and a `T`: true when present and equal. |
-
-Errors, not yet:
-- A function whose result's set is inferred can't be a value of a function type, whose `!T`
-  holds any error: that needs the thunk that widens a function value to also renumber its result.
-- `main` can't return `!T`.
-- Matching through a pointer to a `!T`.
-
-If patterns nest (a payload's fields, literal values), `_` comes in then as a wildcard inside a
-pattern (`os{ code = _ }`), and `else` stays the whole-arm default. Optional chaining (`a?.b`)
-needs no lambdas, but nothing in FRICTION.md asks for it yet.
-
-### 12. Literal conversions — planned
+### 4. Literal conversions
 
 The compiler should know nothing of std: std is built from features any program has, and the
 checker, lowering and runtime never name a std declaration. Today they do, most of all for
@@ -250,20 +170,20 @@ let r: regex::Regex = "[a-z]+"                   // a bad pattern is a compile e
    (§11, rule 1), a const's initializer, an `if` or `match` branch next to one of type `T`, and a
    call's `strlit` field, so `utf8::literal{ s = "hi" }` calls one directly. Only literals
    convert: no other value does, and conversions don't chain.
-5. **It runs while compiling**, with stage 9 step 5's evaluator, so the program holds the
-   finished value, and the same rule applies to the result: no pointers but ones to static data.
-   An error result is a compile error at the literal, printed as `@fmt` prints an error:
+5. **It runs while compiling**, with 3.3's evaluator, so the program holds the finished value,
+   and the same rule applies to the result: no pointers but ones to static data. An error result
+   is a compile error at the literal, printed as `@fmt` prints an error:
    `string literal: utf8::invalid{ at = 3 }`.
 6. **Two conversions to one `T`** are an error where a literal would use them, naming both, and
    not before: two libraries may both declare one, and a program that calls one directly is fine.
 
-What goes from the compiler: `text_decl` and `cstr_decl` in literal checking (`str_lit`), the
+*What goes from the compiler:* `text_decl` and `cstr_decl` in literal checking (`str_lit`), the
 const evaluator's string case and the `if`/`match` hint, and lowering's `text_lit`. The tests'
 literal programs keep their output; the UTF-8 and NUL errors change wording to std's errors.
 
-*Needs* stage 9 step 5. A stopgap that runs nothing, an attribute naming one of a fixed set of
-checks the compiler knows (`utf8`, no NUL), would remove the names first, but it is a second
-design to undo; the evaluator comes first.
+*Needs* 3.3. A stopgap that runs nothing, an attribute naming one of a fixed set of checks the
+compiler knows (`utf8`, no NUL), would remove the names first, but it is a second design to
+undo; the evaluator comes first.
 
 *Still naming std after this,* each a later piece of the same goal:
 - `@fmt` writes to a `utf8::Builder` through `utf8::push_*` functions found by name, and a literal
@@ -277,7 +197,7 @@ design to undo; the evaluator comes first.
   may take std's `Build`.
 - The runtime fills `io`'s `Out`, a struct whose layout std defines (`ctxrt.c`, `out_buffer`).
 
-Considered and set aside:
+*Considered and set aside:*
 - `@from_literal`: `@` names a builtin call (`@fmt`, `@as`), and attributes are `#`.
 - Only the type's own namespace declaring its conversion: a library can't then give literals to
   a type it doesn't own. Traits are the usual way to add to such a type, but ctxlang passes
@@ -290,6 +210,96 @@ Considered and set aside:
 - The user writes the zero (`"hello\0"`): easy to forget, and the language can promise it free.
 - `literal` or `str` for the type: there will be one per literal kind, and `str` reads as the
   text type to use everywhere, which `utf8::String` is.
+
+### 5. Language server
+
+`ctxls`, written in ctxlang, speaks LSP (JSON-RPC over stdin and stdout) and answers from the
+`Analysis` the front end produces. The JSON reader and writer grow out of `examples/json`.
+
+The front end was built for this: `check{ files }` takes source text (so unsaved buffers work),
+never exits or panics on bad input, recovers from errors in the lexer, parser and checker, keeps
+comments on the side, and records its results in side tables by node id, so parsed trees stay
+read-only and unchanged files (std in particular) needn't be reparsed. What's left is reading
+those tables:
+
+| Record | Serves |
+|---|---|
+| each name use → its declaration (the file and span of a local, field, variant, fn, type or namespace) | go to definition, references, rename, semantic tokens |
+| each expression's type, and a local's type at each use (after narrowing, §8) | hover, inlay hints |
+| each declaration: kind, name, span, signature text, and its namespace | document and workspace symbols, hover |
+| scopes: each block's locals, with the span where each one is live | completion of names |
+| the expected type at each `{` of a call or literal, and which fields a pun or `..` supplied | completion of field names, signature help, hover on `..` |
+
+1. **Features, in order:** diagnostics on open and change (with debouncing), go to definition,
+   hover (type and signature), document symbols, completion (names in scope, fields after `.`,
+   context fields inside `{`), references, rename, workspace symbols, semantic tokens, signature
+   help, inlay hints for inferred `let` types.
+2. **What std needs:** `io::read` of an exact byte count from stdin, because a message body has
+   no trailing newline and `read_line` won't do; and writing raw bytes to stdout without a
+   newline.
+3. **Doc comments,** for hover: their syntax is a separate spec decision.
+
+Design notes:
+- **Positions.** Spans are byte offsets; the server converts to whatever the client negotiated:
+  UTF-8 if it accepts `positionEncoding`, UTF-16 otherwise.
+- **Workspace.** A program is a directory of `.ctx` files plus std (§10). An open file joins the
+  program in its directory. Buffers the editor holds replace the text on disk.
+- **Speed.** On every edit the server re-lexes and reparses the files that changed and rechecks
+  the whole program. Only if a profile says otherwise: skip unchanged function bodies, or check
+  only up to the cursor for completion.
+- **Robustness.** A panic kills the server, so the recovery test gates every release. A request
+  whose analysis fails for an internal reason returns an LSP error and doesn't take the session
+  down with it.
+
+*Done when:* VS Code, with a minimal client extension, shows diagnostics while you type, and go to
+definition, hover and completion work on `ctxc/` itself. The editor-query fixtures pass.
+
+## Working on ctxc
+
+```
+cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctxc.posix.c ctxc/rt/ctxrt.c -lm -o ctxc
+./ctxc run examples/wordcount.ctx -- spec.md             # a file
+./ctxc run examples/json -- examples/json/sample.json    # a directory
+./ctxc run examples/glfw                                 # a directory with a build program
+./ctxc exe examples/list.ctx -o list
+```
+
+- On Windows the bootstrap is `bootstrap/ctxc.windows.c`. ctxc finds std/ and ctxc/rt/ through
+  CTX_HOME, or above its executable or the working directory, and builds in HOME/build/run.
+- That ctxc is the bootstrap's; `tools/toolchain.py` builds the current source's into
+  `build/ctxc` (about 7 s the first time, cached after).
+- `python tools/ctxc.py PROGRAM --run [args...]` compiles and runs a program with it.
+- `python -m unittest discover tests` runs all tests through the native ctxc. They pass on
+  Windows (gcc), Linux (gcc) and macOS arm64 (Apple clang).
+- Python is left in development only: `tests/` and `tools/`. Each could be a ctxlang program now
+  that `proc::run` and `fs::list` exist.
+- Friction found while writing ctxc is logged in [FRICTION.md](FRICTION.md).
+
+### Changing the language
+
+ctxc's source may use only what the bootstrap's ctxc understands. A new feature lands in two
+steps:
+
+1. Add it to ctxc, without ctxc using it. The bootstrap compiles that source, and the result
+   understands the feature.
+2. Run `python tools/fixpoint.py --update` to refresh the bootstraps (`bootstrap/ctxc.*.c`, one
+   per platform layer, all written from any machine). ctxc's source may now use it.
+
+Removing a feature goes the other way round: stop using it, refresh the bootstraps, then remove
+it. Refresh them whenever a change to ctxc lands, so a fresh checkout builds the current compiler
+in one step; `fixpoint.py` says when one is out of date.
+
+### Known gaps
+
+- The front end is over its budget: checking and lowering ctxc takes about 215 ms natively,
+  against 100 ms for the check alone. It hasn't been profiled.
+- The C backend prints no `in fn` stack trace with a panic (see Open decisions).
+- 20 corpus programs read temporary files that the test suite deletes once it's done.
+  `tools/corpus.py` should copy those files into the case directory.
+- There is no second implementation to diff against. New checks are covered by the unit tests'
+  expected outputs and error fragments alone.
+- `ctxc build`, `ir` and `decls` need std's files listed on the command line; only `run` and
+  `exe` find them.
 
 ## How ctxlang maps to C
 
@@ -345,7 +355,7 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
   cut inside a declaration that ends in `}` must report an error, and a cut must still produce
   symbols for the declarations before it. Other damage can leave valid code, so it needn't report
   anything. This is the test that guards editor use.
-- **Editor queries** (stage 7a). Fixture files mark positions (`/*^def*/`, `/*^hover*/`) and state
+- **Editor queries** (stage 5). Fixture files mark positions (`/*^def*/`, `/*^hover*/`) and state
   the expected answer, which covers the semantic model without a client.
 - **Float text.** `f64_digits` must copy Python's `repr` exactly: shortest round-trip digits,
   exponent form below `1e-4` and from `1e16`, and a `.0` suffix.
