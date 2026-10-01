@@ -6,10 +6,10 @@ fn main { mut io: Io, mut sdl: sdl::Sdl } -> i32 {
         return 1
     }
     defer sdl::SDL_Quit{ &sdl }
-    let some{ value = window } = sdl::SDL_CreateWindow{
+    let window = sdl::SDL_CreateWindow{
         &sdl, title = "ctxlang", x = sdl::WINDOWPOS_CENTERED, y = sdl::WINDOWPOS_CENTERED,
         w = 640, h = 480, flags = sdl::WINDOW_SHOWN,
-    } else {
+    } ifnull {
         failed{ &io, &sdl, what = "no window" }
         return 1
     }

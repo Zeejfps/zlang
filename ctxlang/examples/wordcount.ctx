@@ -114,10 +114,7 @@ fn most_common(S) { counts: map::Map(utf8::String, i64, S) } -> ?Top {
     let mut best: ?Top = null
     let mut cursor: usize = 0
     while true {
-        let e = match map::next{ m = counts, &cursor } {
-            null          => { break }
-            some{ value } => { value }
-        }
+        let e = map::next{ m = counts, &cursor } ifnull { break }
         let better = match best {
             null          => { true }
             some{ value } => {

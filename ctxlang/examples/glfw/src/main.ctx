@@ -9,7 +9,7 @@ struct App { keys: i64 }
 #c::callback
 fn on_key { mut glfw: glfw::Glfw, window: *mut glfw::Window, key: i32, action: i32 } {
     if action != glfw::PRESS { return }
-    let some{ value = p } = glfw::user_pointer{ &glfw, window } else { return }
+    let p = glfw::user_pointer{ &glfw, window } ifnull { return }
     let app = @cast(*mut App, p)
     app.*.keys = app.*.keys + 1
     if key == glfw::KEY_ESCAPE { glfw::set_should_close{ &glfw, window } }
@@ -33,13 +33,13 @@ fn main { mut io: Io, mut glfw: glfw::Glfw } -> i32 {
     io::print{ &io, s = "." }
     io::println_i64{ &io, n = rev }
 
-    let some{ value = window } = glfw::create_window{ &glfw, width = 640, height = 480, title = "ctxlang" } else {
+    let window = glfw::create_window{ &glfw, width = 640, height = 480, title = "ctxlang" } ifnull {
         io::eprintln{ &io, s = "glfw: no window" }
         return 1
     }
     defer glfw::destroy_window{ &glfw, window }
     glfw::make_current{ &glfw, window }
-    let some{ value = loaded } = gl::load{ get_proc = glfw::proc_address{ &glfw, _ } } else {
+    let loaded = gl::load{ get_proc = glfw::proc_address{ &glfw, _ } } ifnull {
         io::eprintln{ &io, s = "gl: functions missing" }
         return 1
     }

@@ -15,8 +15,8 @@ namespace gl {
     // The functions, from get_proc, which finds one by name in the context current on this
     // thread, or gives null; null if one is missing.
     fn load { get_proc: &fn{ name: c::String } -> ?extern fn{} } -> ?Gl {
-        let some{ value = clear_color } = get_proc{ name = "glClearColor" } else { return null }
-        let some{ value = clear } = get_proc{ name = "glClear" } else { return null }
+        let clear_color = get_proc{ name = "glClearColor" } ifnull { return null }
+        let clear = get_proc{ name = "glClear" } ifnull { return null }
         return Gl{
             clear_color = @cast(_, clear_color),
             clear = @cast(_, clear),
