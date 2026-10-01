@@ -2201,20 +2201,11 @@ namespace lower {
         return mk{ ty = tid{ &l, t = types::BOOL }, k = ir::ExprKind::call{ callee = fid, args = list::items{ list = out } } }
     }
 
+    // std's utf8 function `name`, even where the program has a `utf8` of its own.
     fn push_decl { mut l: Lower, name: []u8 } -> u32 {
-        let sp = check::lookup_path{ c = l.c.*, ns = check::get_decl{ c = l.c.*, d = l.decl }.ns, name = "utf8" }
-        if sp != null {
-            match sp {
-                space{ ns } => {
-                    let d = map::get{ m = check::get_space{ c = l.c.*, ns }.values, key = name }
-                    if d != null {
-                        match d { decl{ i } => { return i } else => {} }
-                    }
-                }
-                else => {}
-            }
-        }
-        @panic("lower: no utf8 push function")
+        let d = check::std_value{ c = l.c.*, space = "utf8", name }
+        if d == NONE { @panic("lower: no utf8 push function") }
+        return d
     }
 
     // S of the *mut utf8::Builder(S) an @fmt writes to.

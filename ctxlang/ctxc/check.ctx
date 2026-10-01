@@ -1398,6 +1398,16 @@ namespace check {
         }
     }
 
+    // The function or const std's namespace `space` has as `name`, or NONE: std's own, whatever
+    // the program declares.
+    fn std_value { c: Checker, space: []u8, name: []u8 } -> u32 {
+        let sp = map::get{ m = get_space{ c, ns = STD }.paths, key = space } ifnull { return NONE }
+        let space{ ns } = sp else { return NONE }
+        let e = map::get{ m = get_space{ c, ns }.values, key = name } ifnull { return NONE }
+        let decl{ i } = e else { return NONE }
+        return i
+    }
+
     // A type std declares at its top level, such as `Args`.
     fn std_type { mut c: Checker, name: []u8 } -> Id {
         let e = lookup_path{ c, ns = STD, name }
@@ -7268,23 +7278,11 @@ namespace check {
         } else {
             "n"
         }
-        let sp = lookup_path{ c, ns = c.sc.ns, name = "utf8" }
-        if sp == null { return types::NO_TYPE }
-        match sp {
-            space{ ns } => {
-                let d = map::get{ m = get_space{ c, ns }.values, key = push }
-                if d == null { return types::NO_TYPE }
-                match d {
-                    decl{ i } => {
-                        let f = types::find_field{ fields = get_decl{ c, d = i }.fields, name = field }
-                        if f != null { return f.ty }
-                    }
-                    else => {}
-                }
-            }
-            else => {}
-        }
-        return types::NO_TYPE
+        // std's utf8, even where the program has a `utf8` of its own.
+        let d = std_value{ c, space = "utf8", name = push }
+        if d == NONE { return types::NO_TYPE }
+        let f = types::find_field{ fields = get_decl{ c, d }.fields, name = field } ifnull { return types::NO_TYPE }
+        return f.ty
     }
 
     // A width too large for a usize, as a literal that doesn't fit.

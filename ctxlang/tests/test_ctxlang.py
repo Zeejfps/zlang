@@ -2372,6 +2372,27 @@ fn main { mut io: Io } {
             self.fmt_error(body, fragment)
 
 
+    def test_program_utf8_does_not_hide_std(self):
+        # @fmt pushes with std's utf8, even where a namespace of the program's is called utf8.
+        self.assertOutput("""
+namespace app {
+    namespace utf8 {
+        fn push { x: i32 } -> bool { return false }
+    }
+    fn show { mut io: Io } {
+        let mut mem: [64]u8
+        let mut heap = arena::new{ buf = mem[..] }
+        let mut b = std_utf8{ &heap }
+        if @fmt(&b, "{} and {}", 42, true) { io::println{ &io, s = view{ b } } }
+    }
+}
+fn std_utf8 { mut heap: arena::Arena } -> utf8::Builder(arena::Arena) {
+    return utf8::builder{ realloc = arena::alloc, &heap }
+}
+fn view { b: utf8::Builder(arena::Arena) } -> utf8::String { return utf8::view{ b } }
+fn main { mut io: Io } { app::show{ &io } }
+""", '42 and true\n')
+
 class StdLib(Base):
     def test_hello(self):
         self.assertOutput("""
