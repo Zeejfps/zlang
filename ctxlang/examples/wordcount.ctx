@@ -28,9 +28,13 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     defer _ = alloc::resize{ realloc = arena::alloc, &heap, mem = bytes, count = 0 }
 
     lowercase{ bytes }
-    let text = utf8::from{ bytes } iferr {
-        io::eprintln{ &io, s = "not a UTF-8 text file" }
-        return 1
+    // A match that lists every error: one utf8::from gains won't compile until it is handled.
+    let text = match utf8::from{ bytes } {
+        ok{ value } => { value }
+        utf8::invalid => {
+            io::eprintln{ &io, s = "not a UTF-8 text file" }
+            return 1
+        }
     }
 
     // Keys are views into `bytes`, which outlives the map: defers run in reverse order.
@@ -50,9 +54,12 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
         if seen != null {
             seen.* = seen.* + 1
         } else {
-            map::put{ m = &counts, key = word, value = 1 } iferr {
-                io::eprintln{ &io, s = "out of memory" }
-                return 1
+            match map::put{ m = &counts, key = word, value = 1 } {
+                ok => {}
+                alloc::out_of_memory => {
+                    io::eprintln{ &io, s = "out of memory" }
+                    return 1
+                }
             }
         }
     }

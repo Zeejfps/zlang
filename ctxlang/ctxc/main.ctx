@@ -76,7 +76,14 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> 
     }
 
     let mut r = ir_read::reader{ text, heap = &heap }
-    let prog = ir_read::program{ &r }
+    // Every error program can fail with is listed: one it gains won't compile until it is.
+    let prog = match ir_read::program{ &r } {
+        ok{ value } => { value }
+        alloc::out_of_memory => {
+            cannot{ &io, path, what = "out of memory" }
+            return 1
+        }
+    }
     if r.failed {
         report{ &io, path, text, at = r.error_at, problem = r.error }
         return 1
