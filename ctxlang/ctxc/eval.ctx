@@ -1973,10 +1973,13 @@ namespace eval {
 
     // n zeroed bytes from ctx_alloc: 16-byte aligned, never freed.
     fn heap_bytes { mut m: M, n: u64 } -> !Addr {
-        let a = bump{ &m, region = m.chunk, n, align = 16 }
-        if a != null { return a }
-        m.chunk = try region{ &m, n, writable = true }
-        let b = bump{ &m, region = m.chunk, n, align = 16 } ifnull { return 0 }
+        let mut a = bump{ &m, region = m.chunk, n, align = 16 }
+        if a == null {
+            m.chunk = try region{ &m, n, writable = true }
+            a = bump{ &m, region = m.chunk, n, align = 16 }
+        }
+        let b = a ifnull { return 0 }
+        slice::fill(u8){ s = try at{ &m, a = b, n }, v = 0 }
         return b
     }
 
@@ -1998,14 +2001,15 @@ namespace eval {
         return addr_of{ region, off = start }
     }
 
-    // A new region of at least n bytes, zeroed.
+    // A new region of at least n bytes. They aren't zeroed: static data is written as it is
+    // allocated, and heap_bytes zeroes what it hands out, so a run that needs little memory, as
+    // a literal's conversion does, doesn't pay for a whole region.
     fn region { mut m: M, n: u64, writable: bool } -> !u32 {
         let size = if n > CHUNK { n } else { CHUNK }
         let bytes = alloc::resize(u8, Heap){ realloc = arena::alloc, heap = m.heap, mem = slice::empty(u8){}, count = @as(usize, size) } iferr {
             fail{ &m, msg = "out of memory" }
             return halt
         }
-        slice::fill(u8){ s = bytes, v = 0 }
         let id = @as(u32, m.regions.len)
         try! list::push{ list = &m.regions, item = Region{ bytes, used = 0, writable } }
         return id

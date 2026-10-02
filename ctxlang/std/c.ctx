@@ -7,7 +7,7 @@
 //   extern fn long_abs { n: i64 } -> i64      // C's labs; without the attribute, `long_abs`
 //
 //   extern fn puts { s: c::String } -> i32
-//   _ = puts{ s = "hello" }                   // a literal gets its NUL from the compiler
+//   _ = puts{ s = "hello" }                   // a literal ends in its hidden zero (from_literal)
 
 namespace c {
     // The C symbol an extern fn calls, when it isn't the fn's own name.
@@ -24,8 +24,9 @@ namespace c {
     struct callback {}
 
     // A NUL-terminated string, as C's `const char *`: read-only, and not owned by its holder. A
-    // string literal where one is expected is static bytes with a NUL after them (§11). C takes
-    // and returns it as a plain pointer, and `?String` as one that may be NULL.
+    // string literal where one is expected is its static bytes, which the hidden zero after them
+    // ends (from_literal). C takes and returns it as a plain pointer, and `?String` as one that
+    // may be NULL.
     struct String { ptr: *u8 }
 
     // The bytes before the NUL.
@@ -41,6 +42,18 @@ namespace c {
     }
 
     error has_nul{ at: usize }      // C would end the string at this byte
+
+    // A string literal where a String is expected: a pointer to its bytes, checked while
+    // compiling. The hidden zero after them ends it, so they can't hold a NUL themselves.
+    #convert
+    fn from_literal { s: strlit } -> !String {
+        let mut i: usize = 0
+        while i < s.bytes.len {
+            if s.bytes[i] == 0 { return has_nul{ at = i } }
+            i = i + 1
+        }
+        return String{ ptr = s.bytes.ptr }
+    }
 
     // A String holding a copy of `bytes` and a NUL, from the allocator: for text built at run
     // time. It lives as long as the allocator's memory, as with an arena; a String is read-only,

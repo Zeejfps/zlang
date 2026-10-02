@@ -8,7 +8,8 @@
 //       return 1                                  // utf8::invalid{ at }: the offset of the bad byte
 //   }
 //
-// A string literal where a String is expected is one, checked at compile time:
+// A string literal where a String is expected is one, checked at compile time by
+// `from_literal`:
 //
 //   let s: utf8::String = "hello"
 //   io::println{ &io, s = "hi" }
@@ -35,6 +36,13 @@ namespace utf8 {
             i = i + n
         }
         return String{ bytes }
+    }
+
+    // A string literal where a String is expected: its bytes, checked while compiling, so bytes
+    // that aren't valid UTF-8 are a compile error at the literal.
+    #convert
+    fn from_literal { s: strlit } -> !String {
+        return from{ bytes = s.bytes }
     }
 
     // Views bytes as text. Panics if they aren't valid.

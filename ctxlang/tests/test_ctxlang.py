@@ -825,7 +825,7 @@ class ConstInitializers(Base):
             ('const A: [3]u8 = [7; 4]', 'expected [3]u8, got [4]u8', 1, 18),
             ('struct S { a: i32 }\nconst A: S = S{ .. }', '`..` is not allowed in a literal', 2, 15),
             ('const A: u8 = N\nconst N: i64 = 3', 'expected u8, got i64', 1, 15),
-            ('const A: utf8::String = "\\xff"', 'string literal is not valid UTF-8 (byte 0)', 1, 25),
+            ('const A: utf8::String = "\\xff"', 'string literal: utf8::invalid{ at = 0 }', 1, 25),
         ]:
             self.assertConstError(src + '\nfn main {} {}', msg, line, col)
 
@@ -2344,7 +2344,25 @@ fn main { mut io: Io } { let mut a: [1]i32 = [1]; let s: [][]mut u8 = &a }
 
 
 class LiteralViews(Base):
-    """A string literal where a []u8 or a utf8::String is expected views static bytes."""
+    """A string literal where a []u8 is expected views static bytes, and where a utf8::String is,
+    std's utf8::from_literal makes one of them while compiling."""
+
+    def test_std_conversions(self):
+        """std's conversions are fns as any other, which a call runs when the program does."""
+        self.assertOutput(r"""
+fn main { mut io: Io } {
+    io::println{ &io, s = try! utf8::from_literal{ s = "direct" } }
+    match utf8::from_literal{ s = "ok\xff" } {
+        ok => {}
+        utf8::invalid{ at } => { io::println_u64{ &io, n = at } }
+    }
+    io::println_u64{ &io, n = c::len{ s = try! c::from_literal{ s = "cstr" } } }
+    match c::from_literal{ s = "a\0b" } {
+        ok => {}
+        c::has_nul{ at } => { io::println_u64{ &io, n = at } }
+    }
+}
+""", 'direct\n2\n4\n1\n')
 
     def test_views(self):
         self.assertOutput(r"""
@@ -2443,7 +2461,7 @@ fn main { mut io: Io } {
 
     def test_invalid_utf8_rejected(self):
         self.assertCompileError(r'fn main { mut io: Io } { io::println{ &io, s = "ok\xc3" } }',
-                                'string literal is not valid UTF-8 (byte 2)')
+                                'string literal: utf8::invalid{ at = 2 }')
 
     def test_view_is_read_only(self):
         self.assertCompileError('fn main { mut io: Io } {\n    let b: []u8 = "abc"\n    b[0] = 1\n}',
@@ -7512,7 +7530,8 @@ fn main { mut io: Io } {
 
 class CStrings(Base):
     """`c::String` (spec §11 Literals, §18): C's NUL-terminated `const char *`. A literal where one
-    is expected gets a NUL, and `?c::String` is a pointer whose null is NULL."""
+    is expected points to its bytes, which its hidden zero ends (c::from_literal), and
+    `?c::String` is a pointer whose null is NULL."""
 
     LIB_C = """
 #include <stdint.h>
@@ -7623,7 +7642,7 @@ fn main { mut io: Io } {
         with self.assertRaises(CompileError) as cm:
             run('extern fn puts { s: c::String } -> i32\nfn main {} { _ = puts{ s = "a\\0b" } }')
         self.assertEqual((cm.exception.msg, cm.exception.pos[:2]),
-                         ("a C string literal can't hold a NUL byte (byte 1): C would end the string there", (2, 28)))
+                         ("string literal: c::has_nul{ at = 1 }", (2, 28)))
 
 
 class WordCountExample(Base):
