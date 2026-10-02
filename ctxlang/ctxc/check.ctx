@@ -553,9 +553,7 @@ namespace check {
                 fault{ name } => {
                     let d = declare{ &c, kind = Kind::fault, x, file, name, tparams = no_names{}, ns }
                     if slice::eq_bytes{ a = name.text, b = "ok" } or slice::eq_bytes{ a = name.text, b = "err" } {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "an error can't be named `{}`: a match on a `!T` has the arms `ok` and `err`", str{ s = name.text })
-                        error{ &c, at = name.span, msg = utf8::view{ b } }
+                        errorf{ &c, at = name.span, msg = @fmt("an error can't be named `{}`: a match on a `!T` has the arms `ok` and `err`", str{ s = name.text }) }
                     }
                     add_name{ &c, ns, values = true, name, e = Entry::decl{ i = d }, at = x.span }
                     push{ xs = &c.faults, n = d }
@@ -614,9 +612,7 @@ namespace check {
         let sp = get_space{ c, ns }
         let table = if values { sp.values } else { sp.paths }
         if map::has{ m = table, key = name.text } {
-            let mut b = message{ c }
-            try! @fmt(&b, "`{}` is already declared in this scope", str{ s = name.text })
-            error{ &c, at, msg = utf8::view{ b } }
+            errorf{ &c, at, msg = @fmt("`{}` is already declared in this scope", str{ s = name.text }) }
             return
         }
         put_name{ &c, ns, values, name = name.text, e }
@@ -645,9 +641,7 @@ namespace check {
                 j = j + 1
             }
             if dup {
-                let mut b = message{ c }
-                try! @fmt(&b, "duplicate generic parameter in `{}`", str{ s = d.name.text })
-                error{ &c, at = d.syn.span, msg = utf8::view{ b } }
+                errorf{ &c, at = d.syn.span, msg = @fmt("duplicate generic parameter in `{}`", str{ s = d.name.text }) }
             }
             i = i + 1
         }
@@ -695,9 +689,7 @@ namespace check {
                 if seen_field{ fields, i } { duplicate{ &c, what = "field", name = f.name, at = f.span } }
                 let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
                 if holds_fail{ &c, t, depth = 0 } {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "error `{}`'s field `{}` can't hold {}: a payload holds no `!T` or error", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t })
-                    error{ &c, at = f.span, msg = utf8::view{ b } }
+                    errorf{ &c, at = f.span, msg = @fmt("error `{}`'s field `{}` can't hold {}: a payload holds no `!T` or error", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t }) }
                 }
                 add_field{ xs = &out, f = types::Field{ name = f.name.text, mutable = false, ty = t } }
                 i = i + 1
@@ -788,9 +780,7 @@ namespace check {
                 let mut ok = t == types::ERROR
                 if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is func{ external } { ok = external }
                 if not ok {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "capability `{}`'s field `{}` must be a C function pointer, `extern fn{{ ... }}`, not {}", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t })
-                    error{ &c, at = f.span, msg = utf8::view{ b } }
+                    errorf{ &c, at = f.span, msg = @fmt("capability `{}`'s field `{}` must be a C function pointer, `extern fn{{ ... }}`, not {}", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t }) }
                 }
                 let came = cap_member{ out = list::items{ list = out }, from = list::items{ list = from }, vars = list::items{ list = vars }, vfrom = list::items{ list = vfrom }, name = f.name.text }
                 if came != null and f.name.text.len > 0 { cap_clash{ &c, x, name = f.name, at = f.span, came } }
@@ -802,9 +792,7 @@ namespace check {
         if out.len > 0 and bare != NONE {
             let y = get_decl{ c, d = bare }
             let why: utf8::String = if y.vars.len > 0 { "it has only C variables" } else { "it has no fields" }
-            let mut b = message{ c }
-            try! @fmt(&b, "capability `{}` can't include `{}`: {}", str{ s = x.name.text }, str{ s = y.name.text }, why)
-            error{ &c, at = bare_at, msg = utf8::view{ b } }
+            errorf{ &c, at = bare_at, msg = @fmt("capability `{}` can't include `{}`: {}", str{ s = x.name.text }, str{ s = y.name.text }, why) }
         }
         _ = list::pop{ list = &c.cap_stack }
         put_bool{ m = &c.caps_done, k = d }
@@ -818,9 +806,7 @@ namespace check {
         let x = get_decl{ c, d }
         let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
         if not c_variable{ c, t } {
-            let mut b = message{ c }
-            try! @fmt(&b, "capability `{}`'s C variable `{}` can't have type {}: C has no equivalent of it", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t })
-            error{ &c, at = f.span, msg = utf8::view{ b } }
+            errorf{ &c, at = f.span, msg = @fmt("capability `{}`'s C variable `{}` can't have type {}: C has no equivalent of it", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t }) }
         }
         let came = cap_member{ out, from, vars = list::items{ list = vars }, vfrom = list::items{ list = vfrom }, name = f.name.text }
         if came != null and f.name.text.len > 0 { cap_clash{ &c, x, name = f.name, at = f.span, came } }
@@ -859,9 +845,7 @@ namespace check {
             duplicate{ &c, what = "field", name, at }
             return
         }
-        let mut b = message{ c }
-        try! @fmt(&b, "capability `{}` declares `{}`, which it includes from `{}`", str{ s = x.name.text }, str{ s = name.text }, str{ s = get_decl{ c, d = came }.name.text })
-        error{ &c, at, msg = utf8::view{ b } }
+        errorf{ &c, at, msg = @fmt("capability `{}` declares `{}`, which it includes from `{}`", str{ s = x.name.text }, str{ s = name.text }, str{ s = get_decl{ c, d = came }.name.text }) }
     }
 
     // `..Name` in capability d's braces: Name's fields and C variables, which must each reach d
@@ -874,9 +858,7 @@ namespace check {
         let mut i = NONE
         if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is cap{ decl } { i = decl }
         if i == NONE {
-            let mut b = message{ c }
-            try! @fmt(&b, "capability `{}` can only include a capability, not {}", str{ s = x.name.text }, tstr{ c, t })
-            error{ &c, at = inc.span, msg = utf8::view{ b } }
+            errorf{ &c, at = inc.span, msg = @fmt("capability `{}` can only include a capability, not {}", str{ s = x.name.text }, tstr{ c, t }) }
             return NONE
         }
         // A cycle: Name is still being resolved, d through the ones after it.
@@ -1015,9 +997,7 @@ namespace check {
     fn check_cap_assign { mut c: Checker, t: Id, once: bool, at: source::Span } {
         if once or not holds_cap{ &c, t, depth = 0 } { return }
         let what: utf8::String = if loaded_cap{ c, t } { "is" } else { "holds" }
-        let mut b = message{ c }
-        try! @fmt(&b, "cannot assign {}, which {} a capability with fields: one is never replaced, only declared with its value or assigned once to a `let x: T`", tstr{ c, t }, what)
-        error{ &c, at, msg = utf8::view{ b } }
+        errorf{ &c, at, msg = @fmt("cannot assign {}, which {} a capability with fields: one is never replaced, only declared with its value or assigned once to a `let x: T`", tstr{ c, t }, what) }
     }
 
     // The first of fields with a capability with fields, or null.
@@ -1080,9 +1060,7 @@ namespace check {
 
     // "duplicate field `a`"
     fn duplicate { mut c: Checker, what: utf8::String, name: syntax::Name, at: source::Span } {
-        let mut b = message{ c }
-        try! @fmt(&b, "duplicate {} `{}`", what, str{ s = name.text })
-        error{ &c, at, msg = utf8::view{ b } }
+        errorf{ &c, at, msg = @fmt("duplicate {} `{}`", what, str{ s = name.text }) }
     }
 
     // The base type, and each variant's value: the one given, or one more than the last.
@@ -1093,9 +1071,7 @@ namespace check {
         if x.syn.k is enumeration{ base, variants } {
             let mut t = rtype{ &c, te = base, sc = empty, allow_bound = false }
             if t != types::ERROR and not types::is_int{ s = c.ty, t } {
-                let mut b = message{ c }
-                try! @fmt(&b, "enum `{}` needs an integer base type, got {}", str{ s = x.name.text }, tstr{ c, t })
-                error{ &c, at = base.span, msg = utf8::view{ b } }
+                errorf{ &c, at = base.span, msg = @fmt("enum `{}` needs an integer base type, got {}", str{ s = x.name.text }, tstr{ c, t }) }
                 t = types::ERROR
             }
             list::at{ list = c.decls, i = d }.ty = t
@@ -1129,16 +1105,12 @@ namespace check {
     fn enum_value { mut c: Checker, t: Id, name: syntax::Name, value: i64, at: source::Span, variants: []syntax::EnumVariant, before: []i64 } {
         let p = @as(types::Prim, t - types::FIRST_PRIM)
         if not types::fits{ p, negative = value < 0, magnitude = magnitude{ v = value } } {
-            let mut b = message{ c }
-            try! @fmt(&b, "value {} of `{}` does not fit in {}", value, str{ s = name.text }, tstr{ c, t })
-            error{ &c, at, msg = utf8::view{ b } }
+            errorf{ &c, at, msg = @fmt("value {} of `{}` does not fit in {}", value, str{ s = name.text }, tstr{ c, t }) }
         }
         let mut k: usize = 0
         while k < before.len {
             if before[k] == value {
-                let mut b = message{ c }
-                try! @fmt(&b, "`{}` has the same value ({}) as `{}`", str{ s = name.text }, value, str{ s = variants[k].name.text })
-                error{ &c, at, msg = utf8::view{ b } }
+                errorf{ &c, at, msg = @fmt("`{}` has the same value ({}) as `{}`", str{ s = name.text }, value, str{ s = variants[k].name.text }) }
                 return
             }
             k = k + 1
@@ -1202,16 +1174,12 @@ namespace check {
         while i < fields.len and i < params.len {
             let f = fields[i]
             if not c_compatible{ c, t = f.ty } {
-                let mut b = message{ c }
-                try! @fmt(&b, "{} can't pass `{}` to C: it has type {}, which C has no equivalent of", what, str{ s = f.name }, tstr{ c, t = f.ty })
-                error{ &c, at = params[i].span, msg = utf8::view{ b } }
+                errorf{ &c, at = params[i].span, msg = @fmt("{} can't pass `{}` to C: it has type {}, which C has no equivalent of", what, str{ s = f.name }, tstr{ c, t = f.ty }) }
             }
             i = i + 1
         }
         if ret_at != null and r != types::VOID and not c_compatible{ c, t = r } {
-            let mut b = message{ c }
-            try! @fmt(&b, "{} can't return {}: C has no equivalent of it", what, tstr{ c, t = r })
-            error{ &c, at = ret_at, msg = utf8::view{ b } }
+            errorf{ &c, at = ret_at, msg = @fmt("{} can't return {}: C has no equivalent of it", what, tstr{ c, t = r }) }
         }
     }
 
@@ -1233,9 +1201,7 @@ namespace check {
             let mut k: usize = 0
             while k < i {
                 if slice::eq_bytes{ a = params[k].name.text, b = f.name.text } and f.name.text.len > 0 {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "duplicate context field `{}`", str{ s = f.name.text })
-                    error{ &c, at = f.span, msg = utf8::view{ b } }
+                    errorf{ &c, at = f.span, msg = @fmt("duplicate context field `{}`", str{ s = f.name.text }) }
                     break
                 }
                 k = k + 1
@@ -1265,14 +1231,10 @@ namespace check {
         let at = x.syn.span
         let bad = c.diags.errors
         if x.tparams.len > 0 {
-            let mut b = message{ c }
-            try! @fmt(&b, "`{}` cannot be generic", str{ s = entry })
-            error{ &c, at, msg = utf8::view{ b } }
+            errorf{ &c, at, msg = @fmt("`{}` cannot be generic", str{ s = entry }) }
         }
         if x.ret != types::VOID and x.ret != types::I32 and x.ret != types::ERROR {
-            let mut b = message{ c }
-            try! @fmt(&b, "`{}` can only return i32 (the exit code), not {}", str{ s = entry }, tstr{ c, t = x.ret })
-            error{ &c, at, msg = utf8::view{ b } }
+            errorf{ &c, at, msg = @fmt("`{}` can only return i32 (the exit code), not {}", str{ s = entry }, tstr{ c, t = x.ret }) }
         }
         let args_t = std_type{ &c, name = "Args" }
         let build_cap = std_decl_top{ c, name = "Build" }
@@ -1282,9 +1244,7 @@ namespace check {
             let t = f.ty
             if slice::eq_bytes{ a = f.name, b = "args" } and not f.mutable {
                 if t != args_t and t != types::ERROR and args_t != types::ERROR {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "`{}` context field `args` must have type Args, got {}", str{ s = entry }, tstr{ c, t })
-                    error{ &c, at, msg = utf8::view{ b } }
+                    errorf{ &c, at, msg = @fmt("`{}` context field `args` must have type Args, got {}", str{ s = entry }, tstr{ c, t }) }
                 }
             } else if t != types::ERROR {
                 match types::get{ s = c.ty, id = t } {
@@ -1292,15 +1252,11 @@ namespace check {
                         if decl == build_cap and slice::eq_bytes{ a = entry, b = "main" } {
                             error{ &c, at, msg = "`main` cannot take a Build: only a build program's `fn build` receives one" }
                         } else if loaded_cap{ c, t } {
-                            let mut b = message{ c }
-                            try! @fmt(&b, "`{}` cannot take `{}`: a capability with fields comes from a function of its namespace, not the runtime", str{ s = entry }, tstr{ c, t })
-                            error{ &c, at, msg = utf8::view{ b } }
+                            errorf{ &c, at, msg = @fmt("`{}` cannot take `{}`: a capability with fields comes from a function of its namespace, not the runtime", str{ s = entry }, tstr{ c, t }) }
                         }
                     }
                     else => {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "`{}` context field `{}` must have a capability type or be `args: Args`, got {}", str{ s = entry }, str{ s = f.name }, tstr{ c, t })
-                        error{ &c, at, msg = utf8::view{ b } }
+                        errorf{ &c, at, msg = @fmt("`{}` context field `{}` must have a capability type or be `args: Args`, got {}", str{ s = entry }, str{ s = f.name }, tstr{ c, t }) }
                     }
                 }
             }
@@ -1391,9 +1347,7 @@ namespace check {
         let path{ segs } = callee.k else { return }
         use{ &c, n = segs[0].name, r = Ref::attr{ a = which } }
         if items.len > 0 {
-            let mut b = message{ c }
-            try! @fmt(&b, "`{}` takes no fields", str{ s = segs[0].name.text })
-            error{ &c, at = items[0].span, msg = utf8::view{ b } }
+            errorf{ &c, at = items[0].span, msg = @fmt("`{}` takes no fields", str{ s = segs[0].name.text }) }
         }
     }
 
@@ -1434,9 +1388,7 @@ namespace check {
             return
         }
         if not convertible{ c, t } {
-            let mut b = message{ c }
-            try! @fmt(&b, "a `convert` fn can't give a {}: a string literal is one already", tstr{ c, t })
-            error{ &c, at = ret_at, msg = utf8::view{ b } }
+            errorf{ &c, at = ret_at, msg = @fmt("a `convert` fn can't give a {}: a string literal is one already", tstr{ c, t }) }
             return
         }
         push{ xs = &c.converts, n = d }
@@ -1600,9 +1552,7 @@ namespace check {
                 let which = compiler_attr{ c, a, ns }
                 if which != null {
                     use_attr{ &c, a, which }
-                    let mut b = message{ c }
-                    try! @fmt(&b, "`{}` applies only to a fn", str{ s = attr_name{ a = which } })
-                    error{ &c, at = a.span, msg = utf8::view{ b } }
+                    errorf{ &c, at = a.span, msg = @fmt("`{}` applies only to a fn", str{ s = attr_name{ a = which } }) }
                 } else if attribute{ &c, a, ns } is record{ ty, fields = vals } {
                     let rd = record_decl{ c, t = ty }
                     if rd == NONE {
@@ -1666,9 +1616,7 @@ namespace check {
         if c.diags.errors != before { return null }
         let v = fold{ &c, e = a.value }
         if v == null and c.unfolded != NONE {
-            let mut b = message{ c }
-            try! @fmt(&b, "an attribute can't use `{}`: its value is computed by running code", str{ s = get_decl{ c, d = c.unfolded }.name.text })
-            error{ &c, at = expr_at{ e = a.value }, msg = utf8::view{ b } }
+            errorf{ &c, at = expr_at{ e = a.value }, msg = @fmt("an attribute can't use `{}`: its value is computed by running code", str{ s = get_decl{ c, d = c.unfolded }.name.text }) }
             c.unfolded = NONE
         }
         return v
@@ -1697,9 +1645,7 @@ namespace check {
         let mut name: []u8 = ""
         if fields.len == 1 and fields[0] is sbytes{ bytes } { name = bytes }
         if not c_ident{ s = name } {
-            let mut b = message{ c }
-            try! @fmt(&b, "`{}` is not a C identifier", str{ s = name })
-            error{ &c, at = a.span, msg = utf8::view{ b } }
+            errorf{ &c, at = a.span, msg = @fmt("`{}` is not a C identifier", str{ s = name }) }
             return null
         }
         return name
@@ -1735,9 +1681,7 @@ namespace check {
         c_signature{ &c, what = utf8::view{ b = what }, params, ret_at, fields = at.fields, r = at.ret }
         let lf = loaded_field{ c, fields = at.fields }
         if lf != null {
-            let mut b = message{ c }
-            try! @fmt(&b, "callback `{}` can't take `{}`: capability {} {}", str{ s = at.name.text }, str{ s = lf.name }, tstr{ c, t = lf.ty }, str{ s = NO_THUNK })
-            error{ &c, at = x.span, msg = utf8::view{ b } }
+            errorf{ &c, at = x.span, msg = @fmt("callback `{}` can't take `{}`: capability {} {}", str{ s = at.name.text }, str{ s = lf.name }, tstr{ c, t = lf.ty }, str{ s = NO_THUNK }) }
         }
     }
 
@@ -1874,9 +1818,7 @@ namespace check {
                 if slice::eq_bytes{ a = sc.names[k].text, b = s0.name.text } {
                     use{ &c, n = s0.name, r = Ref::param{ decl = sc.owner, index = @as(u32, k) } }
                     if s0.targs != null {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "generic parameter `{}` takes no type arguments", str{ s = s0.name.text })
-                        error{ &c, at = s0.name.span, msg = utf8::view{ b } }
+                        errorf{ &c, at = s0.name.span, msg = @fmt("generic parameter `{}` takes no type arguments", str{ s = s0.name.text }) }
                         return types::ERROR
                     }
                     return sc.args[k]
@@ -1902,16 +1844,12 @@ namespace check {
             let mut inner = NONE
             if e is space{ ns } { inner = ns }
             if prev.targs != null or inner == NONE {
-                let mut b = message{ c }
-                try! @fmt(&b, "`{}` is not a namespace", str{ s = prev.name.text })
-                error{ &c, at = prev.name.span, msg = utf8::view{ b } }
+                errorf{ &c, at = prev.name.span, msg = @fmt("`{}` is not a namespace", str{ s = prev.name.text }) }
                 return types::ERROR
             }
             let next = map::get{ m = get_space{ c, ns = inner }.paths, key = s.name.text }
             if next == null {
-                let mut b = message{ c }
-                try! @fmt(&b, "no type or namespace `{}` in `{}`", str{ s = s.name.text }, str{ s = prev.name.text })
-                error{ &c, at = s.name.span, msg = utf8::view{ b } }
+                errorf{ &c, at = s.name.span, msg = @fmt("no type or namespace `{}` in `{}`", str{ s = s.name.text }, str{ s = prev.name.text }) }
                 return types::ERROR
             }
             e = next
@@ -1944,9 +1882,7 @@ namespace check {
     }
 
     fn unknown { mut c: Checker, n: syntax::Name } {
-        let mut b = message{ c }
-        try! @fmt(&b, "unknown type or namespace `{}`", str{ s = n.text })
-        error{ &c, at = n.span, msg = utf8::view{ b } }
+        errorf{ &c, at = n.span, msg = @fmt("unknown type or namespace `{}`", str{ s = n.text }) }
     }
 
     // The type that path entry e names, with args if it was given any. If partial, as where a
@@ -1968,15 +1904,11 @@ namespace check {
                 return types::STRLIT
             }
             attr => {
-                let mut b = message{ c }
-                try! @fmt(&b, "`{}` is an attribute, not a type", str{ s = name.text })
-                error{ &c, at, msg = utf8::view{ b } }
+                errorf{ &c, at, msg = @fmt("`{}` is an attribute, not a type", str{ s = name.text }) }
                 return types::ERROR
             }
             space{ ns } => {
-                let mut b = message{ c }
-                try! @fmt(&b, "namespace `{}` used as a type", str{ s = get_space{ c, ns }.name })
-                error{ &c, at, msg = utf8::view{ b } }
+                errorf{ &c, at, msg = @fmt("namespace `{}` used as a type", str{ s = get_space{ c, ns }.name }) }
                 return types::ERROR
             }
             decl{ i } => {
@@ -1987,9 +1919,7 @@ namespace check {
                 }
                 let n = x.tparams.len
                 if given > n or (given < n and not partial) {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "`{}` expects {} type argument(s), got {}", str{ s = x.name.text }, n, given)
-                    error{ &c, at, msg = utf8::view{ b } }
+                    errorf{ &c, at, msg = @fmt("`{}` expects {} type argument(s), got {}", str{ s = x.name.text }, n, given) }
                     return types::ERROR
                 }
                 let mut all = list::new(Id){ realloc = arena::alloc, heap = c.heap }
@@ -2015,9 +1945,7 @@ namespace check {
                         let mut k: usize = 0
                         while k < items.len {
                             if items[k] == i {
-                                let mut b = message{ c }
-                                try! @fmt(&b, "type alias `{}` refers to itself", str{ s = x.name.text })
-                                error{ &c, at, msg = utf8::view{ b } }
+                                errorf{ &c, at, msg = @fmt("type alias `{}` refers to itself", str{ s = x.name.text }) }
                                 return types::ERROR
                             }
                             k = k + 1
@@ -2037,9 +1965,7 @@ namespace check {
     }
 
     fn no_targs { mut c: Checker, what: []u8, at: source::Span } {
-        let mut b = message{ c }
-        try! @fmt(&b, "`{}` takes no type arguments", str{ s = what })
-        error{ &c, at, msg = utf8::view{ b } }
+        errorf{ &c, at, msg = @fmt("`{}` takes no type arguments", str{ s = what }) }
     }
 
     // ---- compile-time integers: array lengths and enum values (ctxi's const_int)
@@ -2083,9 +2009,7 @@ namespace check {
                     let mut k: usize = 0
                     while k < items.len {
                         if items[k] == d {
-                            let mut b = message{ c }
-                            try! @fmt(&b, "const `{}` refers to itself", str{ s = x.name.text })
-                            error{ &c, at, msg = utf8::view{ b } }
+                            errorf{ &c, at, msg = @fmt("const `{}` refers to itself", str{ s = x.name.text }) }
                             return null
                         }
                         k = k + 1
@@ -2094,9 +2018,7 @@ namespace check {
                     if x.syn.k is constant{ value } {
                         if calls{ e = value } {
                             // It is evaluated (§14), long after the declarations need it.
-                            let mut b = message{ c }
-                            try! @fmt(&b, "{} can't use `{}`: its value is computed by calling a function", what, str{ s = x.name.text })
-                            error{ &c, at, msg = utf8::view{ b } }
+                            errorf{ &c, at, msg = @fmt("{} can't use `{}`: its value is computed by calling a function", what, str{ s = x.name.text }) }
                             return null
                         }
                         push{ xs = &c.const_stack, n = d }
@@ -2109,9 +2031,7 @@ namespace check {
             }
             else => {}
         }
-        let mut b = message{ c }
-        try! @fmt(&b, "{} must be a compile-time integer constant", what)
-        error{ &c, at, msg = utf8::view{ b } }
+        errorf{ &c, at, msg = @fmt("{} must be a compile-time integer constant", what) }
         return null
     }
 
@@ -2185,9 +2105,7 @@ namespace check {
         } else {
             let first = lookup_path{ c, ns, name = segs[0].name.text }
             if first == null {
-                let mut b = message{ c }
-                try! @fmt(&b, "unknown type or namespace `{}`", str{ s = segs[0].name.text })
-                error{ &c, at, msg = utf8::view{ b } }
+                errorf{ &c, at, msg = @fmt("unknown type or namespace `{}`", str{ s = segs[0].name.text }) }
                 return null
             }
             let mut p: ?Entry = first
@@ -2413,9 +2331,7 @@ namespace check {
             }
             block{ &c, b = body }
             if x.ret != types::VOID and x.ret != types::ERROR and not c.dead and not void_result{ c, t = x.ret } {
-                let mut b = message{ c }
-                try! @fmt(&b, "`{}` must end every path in `return` or `@panic()`", str{ s = x.name.text })
-                error{ &c, at = x.syn.span, msg = utf8::view{ b } }
+                errorf{ &c, at = x.syn.span, msg = @fmt("`{}` must end every path in `return` or `@panic()`", str{ s = x.name.text }) }
             }
             finish{ &c }
         }
@@ -2498,14 +2414,10 @@ namespace check {
         while i < gs.len {
             let g = gs[i]
             if types::has_vars{ s = c.ty, t = g.v } {
-                let mut b = message{ c }
-                try! @fmt(&b, "cannot infer type parameter `{}` of `{}`", str{ s = g.param }, str{ s = g.owner })
-                error{ &c, at = g.at, msg = utf8::view{ b } }
+                errorf{ &c, at = g.at, msg = @fmt("cannot infer type parameter `{}` of `{}`", str{ s = g.param }, str{ s = g.owner }) }
             }
             if types::has_bound_fn{ s = c.ty, t = g.v } {
-                let mut b = message{ c }
-                try! @fmt(&b, "type parameter `{}` of `{}` cannot be a `&fn` type", str{ s = g.param }, str{ s = g.owner })
-                error{ &c, at = g.at, msg = utf8::view{ b } }
+                errorf{ &c, at = g.at, msg = @fmt("type parameter `{}` of `{}` cannot be a `&fn` type", str{ s = g.param }, str{ s = g.owner }) }
             }
             i = i + 1
         }
@@ -2584,9 +2496,7 @@ namespace check {
                 let mut ok = true
                 if not slice::eq_bytes{ a = name.text, b = "size_of" } and not slice::eq_bytes{ a = name.text, b = "align_of" } {
                     if strict {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "@{} is not allowed in an attribute", str{ s = name.text })
-                        error{ &c, at, msg = utf8::view{ b } }
+                        errorf{ &c, at, msg = @fmt("@{} is not allowed in an attribute", str{ s = name.text }) }
                     }
                     ok = false
                 }
@@ -2616,9 +2526,7 @@ namespace check {
     // False, after reporting `an attribute MSG` if strict.
     fn unfoldable { mut c: Checker, at: source::Span, strict: bool, msg: []u8 } -> bool {
         if strict {
-            let mut b = message{ c }
-            try! @fmt(&b, "an attribute {}", str{ s = msg })
-            error{ &c, at, msg = utf8::view{ b } }
+            errorf{ &c, at, msg = @fmt("an attribute {}", str{ s = msg }) }
         }
         return false
     }
@@ -2674,9 +2582,7 @@ namespace check {
         }
         let x = get_decl{ c, d }
         if has_id{ xs = list::items{ list = c.folding }, n = d } {
-            let mut b = message{ c }
-            try! @fmt(&b, "const `{}` refers to itself", str{ s = x.name.text })
-            error{ &c, at, msg = utf8::view{ b } }
+            errorf{ &c, at, msg = @fmt("const `{}` refers to itself", str{ s = x.name.text }) }
             return null
         }
         push{ xs = &c.folding, n = d }
@@ -2689,9 +2595,7 @@ namespace check {
                 let before = c.diags.errors
                 v = comptime::value{ &c, d, e = value }
                 if v == null and c.diags.errors == before {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "const `{}` couldn't be computed while compiling", str{ s = x.qual })
-                    error{ &c, at = expr_at{ e = value }, msg = utf8::view{ b } }
+                    errorf{ &c, at = expr_at{ e = value }, msg = @fmt("const `{}` couldn't be computed while compiling", str{ s = x.qual }) }
                 }
             }
         }
@@ -3131,9 +3035,7 @@ namespace check {
         if old != NONE and x.name.len > 0 {
             let o = get_var{ c, v = old }
             if not (o.kind == VarKind::narrow and get_var{ c, v = root_var{ c, v = old } }.depth < c.depth) {
-                let mut b = message{ c }
-                try! @fmt(&b, "`{}` is already declared in this scope", str{ s = x.name })
-                error{ &c, at = x.at, msg = utf8::view{ b } }
+                errorf{ &c, at = x.at, msg = @fmt("`{}` is already declared in this scope", str{ s = x.name }) }
             }
         }
         let at = list::at{ list = c.vars, i = v }
@@ -3441,9 +3343,7 @@ namespace check {
             set_type{ &c, e = place, t = x.ty }
             if not x.mutable and not x.tracked {
                 let why: utf8::String = if x.indirect { "bound through a read-only pointer" } else { "read-only" }
-                let mut b = message{ c }
-                try! @fmt(&b, "cannot assign to `{}`: it is {}", str{ s = x.name }, why)
-                error{ &c, at = expr_at{ e = place }, msg = utf8::view{ b } }
+                errorf{ &c, at = expr_at{ e = place }, msg = @fmt("cannot assign to `{}`: it is {}", str{ s = x.name }, why) }
             }
             expect{ &c, e = value, t = x.ty }
             check_cap_assign{ &c, t = x.ty, once = x.tracked and not x.mutable, at = expr_at{ e = place } }
@@ -3541,9 +3441,7 @@ namespace check {
             }
         }
         if t != types::VOID and t != types::ERROR {
-            let mut b = message{ c }
-            try! @fmt(&b, "the result of `{}` ({}) is unused: use it, or discard it with `_ = ...`", name, tstr{ c, t })
-            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("the result of `{}` ({}) is unused: use it, or discard it with `_ = ...`", name, tstr{ c, t }) }
         }
     }
 
@@ -3571,9 +3469,7 @@ namespace check {
     fn jump { mut c: Checker, word: utf8::String, label: ?syntax::Name, at: source::Span, k: u64 } {
         let in_defer: utf8::String = if c.defers > 0 { " in this defer" } else { "" }
         if c.loops.len == c.loop_base {
-            let mut b = message{ c }
-            try! @fmt(&b, "`{}` outside a loop{}", word, in_defer)
-            error{ &c, at, msg = utf8::view{ b } }
+            errorf{ &c, at, msg = @fmt("`{}` outside a loop{}", word, in_defer) }
             c.dead = true
             return
         }
@@ -3592,9 +3488,7 @@ namespace check {
                 }
             }
             if not found {
-                let mut b = message{ c }
-                try! @fmt(&b, "no enclosing loop is labeled `{}`{}", str{ s = label.text }, in_defer)
-                error{ &c, at, msg = utf8::view{ b } }
+                errorf{ &c, at, msg = @fmt("no enclosing loop is labeled `{}`{}", str{ s = label.text }, in_defer) }
                 c.dead = true
                 return
             }
@@ -3627,9 +3521,7 @@ namespace check {
             let mut i = c.loop_base
             while i < loops.len {
                 if name.len > 0 and slice::eq_bytes{ a = loops[i].label, b = name } {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "loop label `{}` is already used by an enclosing loop", str{ s = name })
-                    error{ &c, at = label.span, msg = utf8::view{ b } }
+                    errorf{ &c, at = label.span, msg = @fmt("loop label `{}` is already used by an enclosing loop", str{ s = name }) }
                     break
                 }
                 i = i + 1
@@ -3902,9 +3794,7 @@ namespace check {
                     i = i + 1
                 }
                 if other == types::NO_TYPE { other = a }
-                let mut b = message{ c }
-                try! @fmt(&b, "branches have different types: {} and {}", tstr{ c, t = a }, tstr{ c, t = other })
-                error{ &c, at, msg = utf8::view{ b } }
+                errorf{ &c, at, msg = @fmt("branches have different types: {} and {}", tstr{ c, t = a }, tstr{ c, t = other }) }
                 return types::ERROR
             }
         }
@@ -4001,14 +3891,10 @@ namespace check {
         }
         let mut ok = st != types::ERROR and ut != types::ERROR
         if ok and x.is_ifnull and not is_opt{ c, t = st } {
-            let mut b = message{ c }
-            try! @fmt(&b, "`ifnull` needs an optional value, got {}", tstr{ c, t = st })
-            error{ &c, at = expr_at{ e = scrut }, msg = utf8::view{ b } }
+            errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("`ifnull` needs an optional value, got {}", tstr{ c, t = st }) }
             ok = false
         } else if ok and x.is_iferr and not is_res{ c, t = st } {
-            let mut b = message{ c }
-            try! @fmt(&b, "`iferr` needs a `!T` value, got {}", tstr{ c, t = st })
-            error{ &c, at = expr_at{ e = scrut }, msg = utf8::view{ b } }
+            errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("`iferr` needs a `!T` value, got {}", tstr{ c, t = st }) }
             ok = false
         } else if ok and (is_res{ c, t = ut } or is_errs{ c, t = ut }) {
             if not through { return check_fail_match{ &c, x, at, exp, value, may_leave, t = ut } }
@@ -4021,9 +3907,7 @@ namespace check {
             error{ &c, at = expr_at{ e = scrut }, msg = "an extern union has no tag to match on: read the field you know it holds" }
             ok = false
         } else if ok and not has_variants{ c, t = ut } {
-            let mut b = message{ c }
-            try! @fmt(&b, "match needs a union, enum or optional value, got {}", tstr{ c, t = st })
-            error{ &c, at = expr_at{ e = scrut }, msg = utf8::view{ b } }
+            errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("match needs a union, enum or optional value, got {}", tstr{ c, t = st }) }
             ok = false
         }
         let vs: []Variant = if ok { variants_of{ &c, t = ut } } else { slice::empty(Variant){} }
@@ -4056,15 +3940,11 @@ namespace check {
                 let mut known = ok
                 if ok and vi == NONE {
                     if p.variant.text.len > 0 {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "{} has no variant `{}`", tstr{ c, t = ut }, str{ s = p.variant.text })
-                        error{ &c, at = p.span, msg = utf8::view{ b } }
+                        errorf{ &c, at = p.span, msg = @fmt("{} has no variant `{}`", tstr{ c, t = ut }, str{ s = p.variant.text }) }
                     }
                     known = false
                 } else if ok and has_id{ xs = list::items{ list = seen }, n = vi } {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "variant `{}` appears in more than one arm", str{ s = p.variant.text })
-                    error{ &c, at = p.span, msg = utf8::view{ b } }
+                    errorf{ &c, at = p.span, msg = @fmt("variant `{}` appears in more than one arm", str{ s = p.variant.text }) }
                 } else if ok {
                     push{ xs = &seen, n = vi }
                 }
@@ -4145,9 +4025,7 @@ namespace check {
     fn pattern_vars { mut c: Checker, variant: []u8, known: bool, fields: ?[]types::Field, binders: []syntax::Binder, through: bool, ptr_mut: bool, derived: u32, at: source::Span } -> []u32 {
         let mut out = list::new(u32){ realloc = arena::alloc, heap = c.heap }
         if known and binders.len > 0 and fields == null {
-            let mut b = message{ c }
-            try! @fmt(&b, "variant `{}` has no payload", str{ s = variant })
-            error{ &c, at, msg = utf8::view{ b } }
+            errorf{ &c, at, msg = @fmt("variant `{}` has no payload", str{ s = variant }) }
         }
         let mut i: usize = 0
         while i < binders.len {
@@ -4158,23 +4036,17 @@ namespace check {
                 let f = types::find_field{ fields, name = field }
                 if f == null {
                     if field.len > 0 {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "variant `{}` has no field `{}`", str{ s = variant }, str{ s = field })
-                        error{ &c, at = bd.span, msg = utf8::view{ b } }
+                        errorf{ &c, at = bd.span, msg = @fmt("variant `{}` has no field `{}`", str{ s = variant }, str{ s = field }) }
                     }
                 } else {
                     ft = f.ty
                     if bound_before{ binders, i } {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "`{}` is bound twice", str{ s = field })
-                        error{ &c, at = bd.span, msg = utf8::view{ b } }
+                        errorf{ &c, at = bd.span, msg = @fmt("`{}` is bound twice", str{ s = field }) }
                     }
                 }
             }
             if known and bd.by_ref and not through {
-                let mut b = message{ c }
-                try! @fmt(&b, "`&{}` needs a pointer scrutinee", str{ s = field })
-                error{ &c, at = bd.span, msg = utf8::view{ b } }
+                errorf{ &c, at = bd.span, msg = @fmt("`&{}` needs a pointer scrutinee", str{ s = field }) }
             }
             let local = bd.local
             let name = if local == null { field } else { local.text }
@@ -4223,9 +4095,7 @@ namespace check {
                 }
             }
             if found == NONE {
-                let mut b = message{ c }
-                try! @fmt(&b, "`{}` must bind `{}`, as `{}` in the same {} does", str{ s = variant }, str{ s = fv.name }, str{ s = first_name }, str{ s = within })
-                error{ &c, at, msg = utf8::view{ b } }
+                errorf{ &c, at, msg = @fmt("`{}` must bind `{}`, as `{}` in the same {} does", str{ s = variant }, str{ s = fv.name }, str{ s = first_name }, str{ s = within }) }
             } else {
                 let mut k: usize = 0
                 while k < mine.len {
@@ -4234,13 +4104,9 @@ namespace check {
                 }
                 let v = get_var{ c, v = mine[found] }
                 if not types::unify{ s = &c.ty, a = v.ty, b = fv.ty } {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "`{}` is {} in `{}` but {} in `{}`", str{ s = fv.name }, tstr{ c, t = fv.ty }, str{ s = first_name }, tstr{ c, t = v.ty }, str{ s = variant })
-                    error{ &c, at = v.at, msg = utf8::view{ b } }
+                    errorf{ &c, at = v.at, msg = @fmt("`{}` is {} in `{}` but {} in `{}`", str{ s = fv.name }, tstr{ c, t = fv.ty }, str{ s = first_name }, tstr{ c, t = v.ty }, str{ s = variant }) }
                 } else if v.indirect != fv.indirect {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "`{}` must be bound with `&` in both `{}` and `{}`, or in neither", str{ s = fv.name }, str{ s = first_name }, str{ s = variant })
-                    error{ &c, at = v.at, msg = utf8::view{ b } }
+                    errorf{ &c, at = v.at, msg = @fmt("`{}` must be bound with `&` in both `{}` and `{}`, or in neither", str{ s = fv.name }, str{ s = first_name }, str{ s = variant }) }
                 }
                 put_local{ &c, key = name_key{ n = binders[found].field }, v = first[i] }
             }
@@ -4250,9 +4116,7 @@ namespace check {
         while i < mine.len {
             if not flags[i] {
                 let v = get_var{ c, v = mine[i] }
-                let mut b = message{ c }
-                try! @fmt(&b, "`{}` binds `{}`, which `{}` in the same {} does not", str{ s = variant }, str{ s = v.name }, str{ s = first_name }, str{ s = within })
-                error{ &c, at = v.at, msg = utf8::view{ b } }
+                errorf{ &c, at = v.at, msg = @fmt("`{}` binds `{}`, which `{}` in the same {} does not", str{ s = variant }, str{ s = v.name }, str{ s = first_name }, str{ s = within }) }
                 return
             }
             i = i + 1
@@ -4276,9 +4140,7 @@ namespace check {
                     error{ &c, at = expr_at{ e = init }, msg = "an extern union has no tag to match on: read the field you know it holds" }
                     ok = false
                 } else if ok {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "a `let` pattern needs a union or optional value, got {}", tstr{ c, t })
-                    error{ &c, at = expr_at{ e = init }, msg = utf8::view{ b } }
+                    errorf{ &c, at = expr_at{ e = init }, msg = @fmt("a `let` pattern needs a union or optional value, got {}", tstr{ c, t }) }
                     ok = false
                 }
             }
@@ -4304,9 +4166,7 @@ namespace check {
         let mut known = ok
         if ok and vi == NONE {
             if variant.text.len > 0 {
-                let mut b = message{ c }
-                try! @fmt(&b, "{} has no variant `{}`", tstr{ c, t }, str{ s = variant.text })
-                error{ &c, at = s.span, msg = utf8::view{ b } }
+                errorf{ &c, at = s.span, msg = @fmt("{} has no variant `{}`", tstr{ c, t }, str{ s = variant.text }) }
             }
             known = false
         }
@@ -4319,19 +4179,13 @@ namespace check {
             let evi = variant_index{ vs, name = ev }
             let mut eknown = known and evi != NONE and not deep
             if known and deep {
-                let mut b = message{ c }
-                try! @fmt(&b, "`else {}` can't follow `{}` of an optional's value: the `else` takes null too", str{ s = ev }, str{ s = variant.text })
-                error{ &c, at = els.span, msg = utf8::view{ b } }
+                errorf{ &c, at = els.span, msg = @fmt("`else {}` can't follow `{}` of an optional's value: the `else` takes null too", str{ s = ev }, str{ s = variant.text }) }
             } else if known and evi == NONE {
                 if ev.len > 0 {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "{} has no variant `{}`", tstr{ c, t }, str{ s = ev })
-                    error{ &c, at = els.span, msg = utf8::view{ b } }
+                    errorf{ &c, at = els.span, msg = @fmt("{} has no variant `{}`", tstr{ c, t }, str{ s = ev }) }
                 }
             } else if known and slice::eq_bytes{ a = ev, b = variant.text } {
-                let mut b = message{ c }
-                try! @fmt(&b, "variant `{}` appears on both sides of the `else`", str{ s = variant.text })
-                error{ &c, at = els.span, msg = utf8::view{ b } }
+                errorf{ &c, at = els.span, msg = @fmt("variant `{}` appears on both sides of the `else`", str{ s = variant.text }) }
             } else if known and vs.len != 2 {
                 let mut b = message{ c }
                 try! @fmt(&b, "`else {}` would skip ", str{ s = ev })
@@ -4382,9 +4236,7 @@ namespace check {
                 } else if ok and untagged_type{ c, t } {
                     error{ &c, at = expr_at{ e = x }, msg = "an extern union has no tag to match on: read the field you know it holds" }
                 } else if ok {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "`is` needs a union, enum or optional value, got {}", tstr{ c, t })
-                    error{ &c, at = expr_at{ e = x }, msg = utf8::view{ b } }
+                    errorf{ &c, at = expr_at{ e = x }, msg = @fmt("`is` needs a union, enum or optional value, got {}", tstr{ c, t }) }
                 }
                 ok = false
             }
@@ -4411,21 +4263,15 @@ namespace check {
             }
             let mut known = ok
             if p.quals.len > 0 {
-                let mut b = message{ c }
-                try! @fmt(&b, "`is` names a variant alone: write `{}`", str{ s = name })
-                error{ &c, at = p.span, msg = utf8::view{ b } }
+                errorf{ &c, at = p.span, msg = @fmt("`is` names a variant alone: write `{}`", str{ s = name }) }
                 known = false
             } else if ok and vi == NONE {
                 if name.len > 0 {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "{} has no variant `{}`", tstr{ c, t }, str{ s = name })
-                    error{ &c, at = p.span, msg = utf8::view{ b } }
+                    errorf{ &c, at = p.span, msg = @fmt("{} has no variant `{}`", tstr{ c, t }, str{ s = name }) }
                 }
                 known = false
             } else if ok and listed_before{ pats, i } {
-                let mut b = message{ c }
-                try! @fmt(&b, "variant `{}` is listed twice", str{ s = name })
-                error{ &c, at = p.span, msg = utf8::view{ b } }
+                errorf{ &c, at = p.span, msg = @fmt("variant `{}` is listed twice", str{ s = name }) }
             }
             let fields: ?[]types::Field = if known { from[vi].fields } else { null }
             let bv = pattern_vars{ &c, variant = name, known, fields, binders = p.binders, through = false, ptr_mut = false, derived, at = p.span }
@@ -4775,9 +4621,7 @@ namespace check {
                     let v = get_var{ c, v = var }
                     if not v.mutable {
                         let why: utf8::String = if v.indirect { ": it is bound through a read-only pointer" } else { "" }
-                        let mut b = message{ c }
-                        try! @fmt(&b, "`{}` is not a mutable place{}", str{ s = v.name }, why)
-                        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                        errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` is not a mutable place{}", str{ s = v.name }, why) }
                     }
                 }
                 return
@@ -4799,9 +4643,7 @@ namespace check {
         if not place_mutable{ c, e } {
             let pt = pointer_of{ c, e }
             let want: utf8::String = match types::get{ s = c.ty, id = pt } { slice => { "[]mut" } else => { "*mut" } }
-            let mut b = message{ c }
-            try! @fmt(&b, "cannot write through {}; it needs to be a `{}`", tstr{ c, t = pt }, want)
-            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("cannot write through {}; it needs to be a `{}`", tstr{ c, t = pt }, want) }
         }
     }
 
@@ -5977,9 +5819,7 @@ namespace check {
             neg{ e = x } => {
                 let t = expr{ &c, e = x.*, exp }
                 if not is_num{ c, t } {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "unary `-` needs a number, got {}", tstr{ c, t })
-                    error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                    errorf{ &c, at = expr_at{ e }, msg = @fmt("unary `-` needs a number, got {}", tstr{ c, t }) }
                 }
                 return t
             }
@@ -5998,9 +5838,7 @@ namespace check {
                     ptr{ elem } => { return elem }
                     error => { return types::ERROR }
                     else => {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "`.*` needs a pointer, got {}", tstr{ c, t = bt })
-                        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                        errorf{ &c, at = expr_at{ e }, msg = @fmt("`.*` needs a pointer, got {}", tstr{ c, t = bt }) }
                         return types::ERROR
                     }
                 }
@@ -6031,9 +5869,7 @@ namespace check {
                     }
                     error => { return types::ERROR }
                     else => {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "cannot index {}", tstr{ c, t = bt })
-                        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                        errorf{ &c, at = expr_at{ e }, msg = @fmt("cannot index {}", tstr{ c, t = bt }) }
                         return types::ERROR
                     }
                 }
@@ -6059,9 +5895,7 @@ namespace check {
         let t = typed{ &c, e = x }
         if t == types::ERROR { return types::ERROR }
         let res{ ok, errs } = types::get{ s = c.ty, id = t } else {
-            let mut b = message{ c }
-            try! @fmt(&b, "`{}` needs a `!T` value, got {}", str{ s = if panics { "try!" } else { "try" } }, tstr{ c, t })
-            error{ &c, at = expr_at{ e = x }, msg = utf8::view{ b } }
+            errorf{ &c, at = expr_at{ e = x }, msg = @fmt("`{}` needs a `!T` value, got {}", str{ s = if panics { "try!" } else { "try" } }, tstr{ c, t }) }
             return types::ERROR
         }
         if panics { return ok }
@@ -6120,9 +5954,7 @@ namespace check {
             t = types::ERROR
         } else {
             if not (types::get{ s = c.ty, id = bt } is slice | error) {
-                let mut b = message{ c }
-                try! @fmt(&b, "cannot slice {}", tstr{ c, t = bt })
-                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                errorf{ &c, at = expr_at{ e }, msg = @fmt("cannot slice {}", tstr{ c, t = bt }) }
                 t = types::ERROR
             }
         }
@@ -6188,9 +6020,7 @@ namespace check {
                 // libraries may each declare one, and a program may call either.
                 let g = other_conversion{ c, t = want, f, ns = c.sc.ns }
                 if g != null {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "string literal has two conversions to {}: `{}` and `{}`", tstr{ c, t = want }, str{ s = get_decl{ c, d = f }.qual }, str{ s = get_decl{ c, d = g }.qual })
-                    error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                    errorf{ &c, at = expr_at{ e }, msg = @fmt("string literal has two conversions to {}: `{}` and `{}`", tstr{ c, t = want }, str{ s = get_decl{ c, d = f }.qual }, str{ s = get_decl{ c, d = g }.qual }) }
                     return want
                 }
                 try! map::put{ m = &c.lit_convs, key = expr_key{ e }, value = f }
@@ -6229,25 +6059,19 @@ namespace check {
             variant{ ty, index } => {
                 let v = variants_of{ &c, t = ty }[index]
                 if v.fields != null {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "variant `{}` has a payload; construct it with `{}{{ ... }}`", str{ s = v.name }, path_text{ c, segs })
-                    error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                    errorf{ &c, at = expr_at{ e }, msg = @fmt("variant `{}` has a payload; construct it with `{}{{ ... }}`", str{ s = v.name }, path_text{ c, segs }) }
                 }
                 same_decl{ &c, t = ty, exp }
                 return ty
             }
             enumval{ ty } => { return ty }
             path => {
-                let mut b = message{ c }
-                try! @fmt(&b, "`{}` is a type, not a value", path_text{ c, segs })
-                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` is a type, not a value", path_text{ c, segs }) }
                 return types::ERROR
             }
             fault{ decl } => {
                 if fault_fields{ c, d = decl } != null {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "error `{}` has a payload; construct it with `{}{{ ... }}`", str{ s = get_decl{ c, d = decl }.qual }, path_text{ c, segs })
-                    error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                    errorf{ &c, at = expr_at{ e }, msg = @fmt("error `{}` has a payload; construct it with `{}{{ ... }}`", str{ s = get_decl{ c, d = decl }.qual }, path_text{ c, segs }) }
                 }
                 return types::errs{ s = &c.ty, owner = NONE, one = decl }
             }
@@ -6283,9 +6107,7 @@ namespace check {
             if external and x.callback {
                 let lf = loaded_field{ c, fields }
                 if lf != null {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "callback `{}` can't have type {}: its field `{}` is capability {}, which {}", str{ s = x.name.text }, tstr{ c, t = want }, str{ s = lf.name }, tstr{ c, t = lf.ty }, str{ s = NO_THUNK })
-                    error{ &c, at, msg = utf8::view{ b } }
+                    errorf{ &c, at, msg = @fmt("callback `{}` can't have type {}: its field `{}` is capability {}, which {}", str{ s = x.name.text }, tstr{ c, t = want }, str{ s = lf.name }, tstr{ c, t = lf.ty }, str{ s = NO_THUNK }) }
                     return types::ERROR
                 }
                 let own = types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = false }
@@ -6335,9 +6157,7 @@ namespace check {
             let v = local_named{ c, name = s0.name.text, call }
             if v != NONE {
                 if s0.targs != null {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "`{}` is not generic", str{ s = s0.name.text })
-                    error{ &c, at = s0.name.span, msg = utf8::view{ b } }
+                    errorf{ &c, at = s0.name.span, msg = @fmt("`{}` is not generic", str{ s = s0.name.text }) }
                     return null
                 }
                 use{ &c, n = s0.name, r = Ref::local{ var = v } }
@@ -6353,9 +6173,7 @@ namespace check {
                 refer{ &c, n = s0.name, e = p }
                 return PathRef::path{ e = p, seg = s0 }
             }
-            let mut b = message{ c }
-            try! @fmt(&b, "unknown name `{}`", str{ s = s0.name.text })
-            error{ &c, at = s0.name.span, msg = utf8::view{ b } }
+            errorf{ &c, at = s0.name.span, msg = @fmt("unknown name `{}`", str{ s = s0.name.text }) }
             return null
         }
         let first = lookup_path{ c, ns, name = s0.name.text }
@@ -6374,9 +6192,7 @@ namespace check {
             if d is space{ ns = n } { inner = n }
             if inner != NONE {
                 if prev.targs != null {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "namespace `{}` takes no type arguments", str{ s = prev.name.text })
-                    error{ &c, at = prev.name.span, msg = utf8::view{ b } }
+                    errorf{ &c, at = prev.name.span, msg = @fmt("namespace `{}` takes no type arguments", str{ s = prev.name.text }) }
                     return null
                 }
                 let sp = get_space{ c, ns = inner }
@@ -6389,9 +6205,7 @@ namespace check {
                 }
                 let p = map::get{ m = sp.paths, key = s.name.text }
                 if p == null {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "`{}` not found in namespace `{}`", str{ s = s.name.text }, str{ s = prev.name.text })
-                    error{ &c, at = s.name.span, msg = utf8::view{ b } }
+                    errorf{ &c, at = s.name.span, msg = @fmt("`{}` not found in namespace `{}`", str{ s = s.name.text }, str{ s = prev.name.text }) }
                     return null
                 }
                 refer{ &c, n = s.name, e = p }
@@ -6426,15 +6240,11 @@ namespace check {
                         }
                         k = k + 1
                     }
-                    let mut b = message{ c }
-                    try! @fmt(&b, "{} has no variant `{}`", tstr{ c, t }, str{ s = s.name.text })
-                    error{ &c, at = s.name.span, msg = utf8::view{ b } }
+                    errorf{ &c, at = s.name.span, msg = @fmt("{} has no variant `{}`", tstr{ c, t }, str{ s = s.name.text }) }
                     return null
                 }
             }
-            let mut b = message{ c }
-            try! @fmt(&b, "`{}` has no member `{}`", str{ s = prev.name.text }, str{ s = s.name.text })
-            error{ &c, at = s.name.span, msg = utf8::view{ b } }
+            errorf{ &c, at = s.name.span, msg = @fmt("`{}` has no member `{}`", str{ s = prev.name.text }, str{ s = s.name.text }) }
             return null
         }
         return PathRef::path{ e = d, seg = segs[segs.len - 1] }
@@ -6474,18 +6284,14 @@ namespace check {
                 let x = get_decl{ c, d = i }
                 if x.kind == Kind::constant {
                     if seg.targs != null {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "const `{}` takes no type arguments", str{ s = x.name.text })
-                        error{ &c, at = seg.name.span, msg = utf8::view{ b } }
+                        errorf{ &c, at = seg.name.span, msg = @fmt("const `{}` takes no type arguments", str{ s = x.name.text }) }
                         return null
                     }
                     return PathRef::constant{ decl = i }
                 }
                 if x.kind == Kind::fault {
                     if seg.targs != null {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "error `{}` takes no type arguments", str{ s = x.name.text })
-                        error{ &c, at = seg.name.span, msg = utf8::view{ b } }
+                        errorf{ &c, at = seg.name.span, msg = @fmt("error `{}` takes no type arguments", str{ s = x.name.text }) }
                         return null
                     }
                     return PathRef::fault{ decl = i }
@@ -6494,9 +6300,7 @@ namespace check {
                 let mut all = list::new(Id){ realloc = arena::alloc, heap = c.heap }
                 if explicit != null {
                     if explicit.len > x.tparams.len {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "`{}` expects at most {} type argument(s), got {}", str{ s = x.name.text }, x.tparams.len, explicit.len)
-                        error{ &c, at = seg.name.span, msg = utf8::view{ b } }
+                        errorf{ &c, at = seg.name.span, msg = @fmt("`{}` expects at most {} type argument(s), got {}", str{ s = x.name.text }, x.tparams.len, explicit.len) }
                         return null
                     }
                     let mut k: usize = 0
@@ -6539,9 +6343,7 @@ namespace check {
                     path{ e = d, seg } => { return struct_lit{ &c, e, d, seg, items, forward, bind, exp } }
                     variant{ ty, index } => { return variant_lit{ &c, e, ut = ty, vi = index, items, forward, bind, exp } }
                     enumval => {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "`{}` is an enum value; write it without braces", name)
-                        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                        errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` is an enum value; write it without braces", name) }
                         return types::ERROR
                     }
                     func{ decl, targs } => { ct = fn_type{ &c, d = decl, targs } }
@@ -6567,9 +6369,7 @@ namespace check {
         let ft = types::prune{ s = c.ty, t = ct }
         if ft == types::ERROR { return types::ERROR }
         if not (types::get{ s = c.ty, id = ft } is func) {
-            let mut b = message{ c }
-            try! @fmt(&b, "`{}` has type {} and cannot be called", name, tstr{ c, t = ct })
-            error{ &c, at = expr_at{ e = callee }, msg = utf8::view{ b } }
+            errorf{ &c, at = expr_at{ e = callee }, msg = @fmt("`{}` has type {} and cannot be called", name, tstr{ c, t = ct }) }
             return types::ERROR
         }
         return call_args{ &c, e, ft, name, items, forward, bind }
@@ -6587,16 +6387,12 @@ namespace check {
             if it.spread {
                 // a capability literal's, which cap_lit checks
             } else if types::find_field{ fields, name = it.name.text } == null {
-                let mut b = message{ c }
-                try! @fmt(&b, "{} has no field `{}`", what, str{ s = it.name.text })
-                error{ &c, at = it.span, msg = utf8::view{ b } }
+                errorf{ &c, at = it.span, msg = @fmt("{} has no field `{}`", what, str{ s = it.name.text }) }
             } else {
                 let mut k: usize = 0
                 while k < i {
                     if slice::eq_bytes{ a = items[k].name.text, b = it.name.text } {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "`{}` is supplied more than once", str{ s = it.name.text })
-                        error{ &c, at = it.span, msg = utf8::view{ b } }
+                        errorf{ &c, at = it.span, msg = @fmt("`{}` is supplied more than once", str{ s = it.name.text }) }
                         break
                     }
                     k = k + 1
@@ -6614,9 +6410,7 @@ namespace check {
             let it = items[i]
             if it.spread {
                 _ = expr{ &c, e = it.value, exp = types::NO_TYPE }
-                let mut b = message{ c }
-                try! @fmt(&b, "`..{}` is allowed only in a capability's literal", str{ s = source_text{ c, span = it.value.span } })
-                error{ &c, at = it.span, msg = utf8::view{ b } }
+                errorf{ &c, at = it.span, msg = @fmt("`..{}` is allowed only in a capability's literal", str{ s = source_text{ c, span = it.value.span } }) }
             }
             i = i + 1
         }
@@ -6683,9 +6477,7 @@ namespace check {
                 if forward {
                     let v = lookup_local{ c, name = f.name, callable = false }
                     if v == NONE {
-                        let mut m = message{ c }
-                        try! @fmt(&m, "`..` cannot supply `{}`: no local or context field named `{}`", str{ s = f.name }, str{ s = f.name })
-                        error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
+                        errorf{ &c, at = expr_at{ e }, msg = @fmt("`..` cannot supply `{}`: no local or context field named `{}`", str{ s = f.name }, str{ s = f.name }) }
                     } else {
                         try! list::push{ list = &fwd, item = forwarded{ &c, f, v, at = expr_at{ e } } }
                     }
@@ -6727,9 +6519,7 @@ namespace check {
             let arg = types::ptr{ s = &c.ty, elem = x.ty, mutable = x.mutable }
             if not x.mutable {
                 let why: utf8::String = if x.indirect { ": it is bound through a read-only pointer" } else { "" }
-                let mut b = message{ c }
-                try! @fmt(&b, "`{}` is not a mutable place{}", str{ s = x.name }, why)
-                error{ &c, at, msg = utf8::view{ b } }
+                errorf{ &c, at, msg = @fmt("`{}` is not a mutable place{}", str{ s = x.name }, why) }
             }
             let want = types::ptr{ s = &c.ty, elem = f.ty, mutable = true }
             let how = if includes_cap_ptr{ c, a = arg, b = want } { Coercion::same } else { convert{ &c, a = arg, t = want, pos = at } }
@@ -6759,9 +6549,7 @@ namespace check {
             record{ decl = x } => { decl = x }
             cap{ decl = x } => {
                 if not loaded_cap{ c, t } {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "`{}` is a capability: only `main` receives one, from the runtime", str{ s = seg.name.text })
-                    error{ &c, at = seg.name.span, msg = utf8::view{ b } }
+                    errorf{ &c, at = seg.name.span, msg = @fmt("`{}` is a capability: only `main` receives one, from the runtime", str{ s = seg.name.text }) }
                     return types::ERROR
                 }
                 return cap_lit{ &c, e, t, decl = x, seg, items, forward, bind, exp }
@@ -6769,9 +6557,7 @@ namespace check {
             else => {}
         }
         if decl == NONE {
-            let mut b = message{ c }
-            try! @fmt(&b, "`{}` is not a struct", str{ s = seg.name.text })
-            error{ &c, at = seg.name.span, msg = utf8::view{ b } }
+            errorf{ &c, at = seg.name.span, msg = @fmt("`{}` is not a struct", str{ s = seg.name.text }) }
             return types::ERROR
         }
         same_decl{ &c, t, exp }
@@ -6816,9 +6602,7 @@ namespace check {
             i = i + 1
         }
         if not holds {
-            let mut b = message{ c }
-            try! @fmt(&b, "capability `{}` can only be made by a function that holds a capability or a bound function: `{}` takes neither", str{ s = seg.name.text }, str{ s = get_decl{ c, d = owner }.name.text })
-            error{ &c, at = seg.name.span, msg = utf8::view{ b } }
+            errorf{ &c, at = seg.name.span, msg = @fmt("capability `{}` can only be made by a function that holds a capability or a bound function: `{}` takes neither", str{ s = seg.name.text }, str{ s = get_decl{ c, d = owner }.name.text }) }
             return types::ERROR
         }
         same_decl{ &c, t, exp }
@@ -6834,9 +6618,7 @@ namespace check {
                     let mut k: usize = 0
                     while k < sf.len {
                         if given{ items, name = sf[k].name } or types::find_field{ fields = list::items{ list = spread }, name = sf[k].name } != null {
-                            let mut b = message{ c }
-                            try! @fmt(&b, "`{}` is supplied more than once", str{ s = sf[k].name })
-                            error{ &c, at = it.span, msg = utf8::view{ b } }
+                            errorf{ &c, at = it.span, msg = @fmt("`{}` is supplied more than once", str{ s = sf[k].name }) }
                             break
                         }
                         k = k + 1
@@ -6847,9 +6629,7 @@ namespace check {
                         k = k + 1
                     }
                 } else if types::prune{ s = c.ty, t = st } != types::ERROR {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "`..{}` has type {}, which capability `{}` doesn't include", str{ s = source_text{ c, span = it.value.span } }, tstr{ c, t = st }, str{ s = x.name.text })
-                    error{ &c, at = expr_at{ e = it.value }, msg = utf8::view{ b } }
+                    errorf{ &c, at = expr_at{ e = it.value }, msg = @fmt("`..{}` has type {}, which capability `{}` doesn't include", str{ s = source_text{ c, span = it.value.span } }, tstr{ c, t = st }, str{ s = x.name.text }) }
                 }
             }
             i = i + 1
@@ -6865,15 +6645,11 @@ namespace check {
         set_literal{ &c, e, literal = true }
         if forward or bind {
             let word: utf8::String = if forward { ".." } else { "_" }
-            let mut b = message{ c }
-            try! @fmt(&b, "`{}` is not allowed in a literal", word)
-            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` is not allowed in a literal", word) }
         }
         supplied{ &c, items, fields, what }
         if items.len != 1 {
-            let mut b = message{ c }
-            try! @fmt(&b, "{} literal must set exactly one field", what)
-            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("{} literal must set exactly one field", what) }
         }
         let mut i: usize = 0
         while i < items.len {
@@ -6888,9 +6664,7 @@ namespace check {
     fn fault_lit { mut c: Checker, e: syntax::Expr, decl: u32, items: []syntax::Item, forward: bool, bind: bool } -> Id {
         let q = str{ s = get_decl{ c, d = decl }.qual }
         let fields = fault_fields{ c, d = decl } ifnull {
-            let mut b = message{ c }
-            try! @fmt(&b, "error `{}` has no payload; write it without braces", q)
-            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("error `{}` has no payload; write it without braces", q) }
             return types::ERROR
         }
         no_spread{ &c, e, items }
@@ -6904,9 +6678,7 @@ namespace check {
         let v = variants_of{ &c, t = ut }[vi]
         let fields = v.fields
         if fields == null {
-            let mut b = message{ c }
-            try! @fmt(&b, "variant `{}` has no payload; write it without braces", str{ s = v.name })
-            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("variant `{}` has no payload; write it without braces", str{ s = v.name }) }
             return types::ERROR
         }
         same_decl{ &c, t = ut, exp }
@@ -6921,9 +6693,7 @@ namespace check {
         set_literal{ &c, e, literal = true }
         if forward or bind {
             let word: utf8::String = if forward { ".." } else { "_" }
-            let mut b = message{ c }
-            try! @fmt(&b, "`{}` is not allowed in a literal", word)
-            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` is not allowed in a literal", word) }
         }
         supplied{ &c, items, fields, what }
         let mut missing = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
@@ -6976,9 +6746,7 @@ namespace check {
                 let x = if ln { b } else { a }
                 let xt = typed{ &c, e = x }
                 if xt != types::ERROR and not (types::get{ s = c.ty, id = xt } is opt) {
-                    let mut m = message{ c }
-                    try! @fmt(&m, "only an optional can be compared with null, got {}", tstr{ c, t = xt })
-                    error{ &c, at, msg = utf8::view{ b = m } }
+                    errorf{ &c, at, msg = @fmt("only an optional can be compared with null, got {}", tstr{ c, t = xt }) }
                 }
                 set_type{ &c, e = if ln { a } else { b }, t = xt }
                 return types::BOOL
@@ -6992,9 +6760,7 @@ namespace check {
             }
             let eq = is_num{ c, t } or t == types::BOOL or types::get{ s = c.ty, id = t } is ptr | enumeration
             if not eq {
-                let mut m = message{ c }
-                try! @fmt(&m, "{} has no built-in equality", tstr{ c, t })
-                error{ &c, at, msg = utf8::view{ b = m } }
+                errorf{ &c, at, msg = @fmt("{} has no built-in equality", tstr{ c, t }) }
             }
             return types::BOOL
         }
@@ -7005,24 +6771,18 @@ namespace check {
             if t == types::NO_TYPE {
                 cannot_compare{ &c, lt, rt, at }
             } else if not is_num{ c, t } {
-                let mut m = message{ c }
-                try! @fmt(&m, "`{}` needs numbers, got {}", opname, tstr{ c, t })
-                error{ &c, at, msg = utf8::view{ b = m } }
+                errorf{ &c, at, msg = @fmt("`{}` needs numbers, got {}", opname, tstr{ c, t }) }
             }
             return types::BOOL
         }
         if op == tok::Kind::shl or op == tok::Kind::shr {
             let t = expr{ &c, e = a, exp }
             if not is_int{ c, t } {
-                let mut m = message{ c }
-                try! @fmt(&m, "`{}` needs an integer to shift, got {}", opname, tstr{ c, t })
-                error{ &c, at, msg = utf8::view{ b = m } }
+                errorf{ &c, at, msg = @fmt("`{}` needs an integer to shift, got {}", opname, tstr{ c, t }) }
             }
             let ct = expr{ &c, e = b, exp = types::NO_TYPE }
             if not is_int{ c, t = ct } {
-                let mut m = message{ c }
-                try! @fmt(&m, "a shift count must be an integer, got {}", tstr{ c, t = ct })
-                error{ &c, at, msg = utf8::view{ b = m } }
+                errorf{ &c, at, msg = @fmt("a shift count must be an integer, got {}", tstr{ c, t = ct }) }
             }
             return t
         }
@@ -7030,9 +6790,7 @@ namespace check {
         let plt = types::prune{ s = c.ty, t = lt }
         if types::get{ s = c.ty, id = plt } is ptr {
             if op != tok::Kind::plus {
-                let mut m = message{ c }
-                try! @fmt(&m, "`{}` is not defined on pointers", opname)
-                error{ &c, at, msg = utf8::view{ b = m } }
+                errorf{ &c, at, msg = @fmt("`{}` is not defined on pointers", opname) }
             }
             expect{ &c, e = b, t = types::USIZE }
             return plt
@@ -7040,21 +6798,15 @@ namespace check {
         let rt = expr{ &c, e = b, exp = lt }
         let t = operand_type{ &c, lt, rt, a, b }
         if t == types::NO_TYPE {
-            let mut m = message{ c }
-            try! @fmt(&m, "operands of `{}` have incompatible types: {} and {}; convert one with @as", opname, tstr{ c, t = lt }, tstr{ c, t = rt })
-            error{ &c, at, msg = utf8::view{ b = m } }
+            errorf{ &c, at, msg = @fmt("operands of `{}` have incompatible types: {} and {}; convert one with @as", opname, tstr{ c, t = lt }, tstr{ c, t = rt }) }
             return types::ERROR
         }
         if op == tok::Kind::amp or op == tok::Kind::pipe or op == tok::Kind::caret {
             if not is_int{ c, t } {
-                let mut m = message{ c }
-                try! @fmt(&m, "`{}` needs integers, got {}", opname, tstr{ c, t })
-                error{ &c, at, msg = utf8::view{ b = m } }
+                errorf{ &c, at, msg = @fmt("`{}` needs integers, got {}", opname, tstr{ c, t }) }
             }
         } else if not is_num{ c, t } {
-            let mut m = message{ c }
-            try! @fmt(&m, "`{}` needs numbers, got {}", opname, tstr{ c, t })
-            error{ &c, at, msg = utf8::view{ b = m } }
+            errorf{ &c, at, msg = @fmt("`{}` needs numbers, got {}", opname, tstr{ c, t }) }
         }
         return t
     }
@@ -7064,9 +6816,7 @@ namespace check {
     }
 
     fn cannot_compare { mut c: Checker, lt: Id, rt: Id, at: source::Span } {
-        let mut m = message{ c }
-        try! @fmt(&m, "cannot compare {} with {}", tstr{ c, t = lt }, tstr{ c, t = rt })
-        error{ &c, at, msg = utf8::view{ b = m } }
+        errorf{ &c, at, msg = @fmt("cannot compare {} with {}", tstr{ c, t = lt }, tstr{ c, t = rt }) }
     }
 
     // The common type of two operands: equal types, or the one the other widens to, or NO_TYPE.
@@ -7192,9 +6942,7 @@ namespace check {
                 }
             }
             var => {
-                let mut b = message{ c }
-                try! @fmt(&b, "the type of this expression must be known before `.{}`", str{ s = name.text })
-                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                errorf{ &c, at = expr_at{ e }, msg = @fmt("the type of this expression must be known before `.{}`", str{ s = name.text }) }
                 return types::ERROR
             }
             else => {}
@@ -7213,9 +6961,7 @@ namespace check {
     fn cap_field { mut c: Checker, st: Id, e: syntax::Expr, name: syntax::Name } -> Id {
         let ft = field_type{ &c, st, e, name }
         if ft != types::ERROR and c.calling != expr_key{ e } {
-            let mut b = message{ c }
-            try! @fmt(&b, "`{}` is a field of capability {}: it can only be called, as `{}{{ ... }}`", str{ s = name.text }, tstr{ c, t = st }, str{ s = source_text{ c, span = e.span } })
-            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` is a field of capability {}: it can only be called, as `{}{{ ... }}`", str{ s = name.text }, tstr{ c, t = st }, str{ s = source_text{ c, span = e.span } }) }
         }
         return ft
     }
@@ -7263,9 +7009,7 @@ namespace check {
     }
 
     fn no_field { mut c: Checker, t: Id, e: syntax::Expr, name: syntax::Name } -> Id {
-        let mut b = message{ c }
-        try! @fmt(&b, "{} has no field `{}`", tstr{ c, t }, str{ s = name.text })
-        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+        errorf{ &c, at = expr_at{ e }, msg = @fmt("{} has no field `{}`", tstr{ c, t }, str{ s = name.text }) }
         return types::ERROR
     }
 
@@ -7288,9 +7032,7 @@ namespace check {
                 else => { return want }
             }
         }
-        let mut b = message{ c }
-        try! @fmt(&b, "@{}(_, ...) takes the type expected here, and nothing here expects one: write the type", str{ s = name })
-        error{ &c, at, msg = utf8::view{ b } }
+        errorf{ &c, at, msg = @fmt("@{}(_, ...) takes the type expected here, and nothing here expects one: write the type", str{ s = name }) }
         return types::ERROR
     }
 
@@ -7327,24 +7069,18 @@ namespace check {
             if tt == types::ERROR or src == types::ERROR { return tt }
             if is_enum{ c, t = tt } {
                 if not is_int{ c, t = src } {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "@as to an enum takes an integer, got {}", tstr{ c, t = src })
-                    error{ &c, at = expr_at{ e = x }, msg = utf8::view{ b } }
+                    errorf{ &c, at = expr_at{ e = x }, msg = @fmt("@as to an enum takes an integer, got {}", tstr{ c, t = src }) }
                 }
                 return tt
             }
             if is_enum{ c, t = src } {
                 if not is_int{ c, t = tt } {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "@as converts an enum to an integer type, not {}", tstr{ c, t = tt })
-                    error{ &c, at, msg = utf8::view{ b } }
+                    errorf{ &c, at, msg = @fmt("@as converts an enum to an integer type, not {}", tstr{ c, t = tt }) }
                 }
                 return tt
             }
             if not is_num{ c, t = tt } {
-                let mut b = message{ c }
-                try! @fmt(&b, "@as needs a numeric target type, got {}", tstr{ c, t = tt })
-                error{ &c, at, msg = utf8::view{ b } }
+                errorf{ &c, at, msg = @fmt("@as needs a numeric target type, got {}", tstr{ c, t = tt }) }
             } else if not is_num{ c, t = src } {
                 error{ &c, at = expr_at{ e = x }, msg = "@as converts numbers only" }
             }
@@ -7352,9 +7088,7 @@ namespace check {
         }
         if slice::eq_bytes{ a = n, b = "trunc" } {
             if not is_int{ c, t = tt } {
-                let mut b = message{ c }
-                try! @fmt(&b, "@trunc needs an integer target type, got {}", tstr{ c, t = tt })
-                error{ &c, at, msg = utf8::view{ b } }
+                errorf{ &c, at, msg = @fmt("@trunc needs an integer target type, got {}", tstr{ c, t = tt }) }
             }
             let at0 = expr{ &c, e = args[0], exp = types::NO_TYPE }
             if not is_int{ c, t = at0 } {
@@ -7373,18 +7107,14 @@ namespace check {
                 else => {}
             }
             if not ok {
-                let mut b = message{ c }
-                try! @fmt(&b, "@cast needs a pointer or extern fn target type, got {}", tstr{ c, t = tt })
-                error{ &c, at, msg = utf8::view{ b } }
+                errorf{ &c, at, msg = @fmt("@cast needs a pointer or extern fn target type, got {}", tstr{ c, t = tt }) }
             }
             let src = typed{ &c, e = args[0] }
             if src != types::ERROR {
                 match types::get{ s = c.ty, id = src } {
                     ptr{ mutable } => {
                         if ok and to_mut and not mutable {
-                            let mut b = message{ c }
-                            try! @fmt(&b, "@cast cannot make {} writable", tstr{ c, t = src })
-                            error{ &c, at = expr_at{ e = args[0] }, msg = utf8::view{ b } }
+                            errorf{ &c, at = expr_at{ e = args[0] }, msg = @fmt("@cast cannot make {} writable", tstr{ c, t = src }) }
                         }
                     }
                     func{ external } => {
@@ -7406,9 +7136,7 @@ namespace check {
                 ptr{ elem, mutable } => { out = types::slice{ s = &c.ty, elem, mutable } }
                 error => {}
                 else => {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "@slice needs a pointer, got {}", tstr{ c, t = pt })
-                    error{ &c, at = expr_at{ e = args[0] }, msg = utf8::view{ b } }
+                    errorf{ &c, at = expr_at{ e = args[0] }, msg = @fmt("@slice needs a pointer, got {}", tstr{ c, t = pt }) }
                 }
             }
             expect{ &c, e = args[1], t = types::USIZE }
@@ -7423,9 +7151,7 @@ namespace check {
         let lt = expr{ &c, e = args[0], exp }
         let rt = expr{ &c, e = args[1], exp = lt }
         if not types::unify{ s = &c.ty, a = lt, b = rt } or not is_int{ c, t = lt } {
-            let mut b = message{ c }
-            try! @fmt(&b, "@{} needs two integers of the same type", str{ s = n })
-            error{ &c, at, msg = utf8::view{ b } }
+            errorf{ &c, at, msg = @fmt("@{} needs two integers of the same type", str{ s = n }) }
         }
         return lt
     }
@@ -7481,9 +7207,7 @@ namespace check {
                 error{ &c, at = expr_at{ e }, msg = "an @fmt without a sink needs a type to be: a writer, a function of its sink such as `utf8::Fmt(S)`" }
                 ok = false
             } else if types::prune{ s = c.ty, t = exp } != types::ERROR {
-                let mut m = message{ c }
-                try! @fmt(&m, "an @fmt without a sink is a writer, `&fn{{ mut b: B }} -> !`, not {}", tstr{ c, t = exp })
-                error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
+                errorf{ &c, at = expr_at{ e }, msg = @fmt("an @fmt without a sink is a writer, `&fn{{ mut b: B }} -> !`, not {}", tstr{ c, t = exp }) }
                 ok = false
             } else {
                 ok = false
@@ -7503,17 +7227,13 @@ namespace check {
                 if b.k is addr{ e = x } {
                     check_mutable{ &c, e = x.* }
                 } else {
-                    let mut m = message{ c }
-                    try! @fmt(&m, "@fmt writes to a `*mut` sink, got {}", tstr{ c, t = bt })
-                    error{ &c, at = expr_at{ e = b }, msg = utf8::view{ b = m } }
+                    errorf{ &c, at = expr_at{ e = b }, msg = @fmt("@fmt writes to a `*mut` sink, got {}", tstr{ c, t = bt }) }
                 }
                 ok = false
             }
         } else if not is_builder_ptr{ c, t = bt } {
             if bt != types::ERROR {
-                let mut m = message{ c }
-                try! @fmt(&m, "@fmt writes to a *mut utf8::Builder, got {}", tstr{ c, t = bt })
-                error{ &c, at = expr_at{ e = if value { e } else { b } }, msg = utf8::view{ b = m } }
+                errorf{ &c, at = expr_at{ e = if value { e } else { b } }, msg = @fmt("@fmt writes to a *mut utf8::Builder, got {}", tstr{ c, t = bt }) }
             }
             ok = false
         }
@@ -7573,9 +7293,7 @@ namespace check {
                 let s1: utf8::String = if n == 1 { "" } else { "s" }
                 let s2: utf8::String = if args.len == 1 { "" } else { "s" }
                 let s3: utf8::String = if args.len == 1 { "s" } else { "" }
-                let mut m = message{ c }
-                try! @fmt(&m, "the format has {} hole{} but {} argument{} follow{} it", n, s1, args.len, s2, s3)
-                error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
+                errorf{ &c, at = expr_at{ e }, msg = @fmt("the format has {} hole{} but {} argument{} follow{} it", n, s1, args.len, s2, s3) }
                 ok = false
             }
         }
@@ -7744,9 +7462,7 @@ namespace check {
             let t = types::prune{ s = c.ty, t = fs[i].ty }
             let what: utf8::String = if fs[i].mutable { "sink" } else { "value" }
             if types::get{ s = c.ty, id = t } is param {
-                let mut b = message{ c }
-                try! @fmt(&b, "a `write` fn's {} can't be a bare type parameter", what)
-                error{ &c, at = params[i].span, msg = utf8::view{ b } }
+                errorf{ &c, at = params[i].span, msg = @fmt("a `write` fn's {} can't be a bare type parameter", what) }
                 return
             }
             if not fs[i].mutable and types::get{ s = c.ty, id = t } is func {
@@ -7759,9 +7475,7 @@ namespace check {
         while i < tparams.len {
             let k = @as(u32, i)
             if not types::mentions{ s = c.ty, t = fs[0].ty, decl = d, index = k } and not types::mentions{ s = c.ty, t = fs[1].ty, decl = d, index = k } {
-                let mut b = message{ c }
-                try! @fmt(&b, "a `write` fn's type parameter `{}` must appear in its fields", str{ s = tparams[i].text })
-                error{ &c, at = tparams[i].span, msg = utf8::view{ b } }
+                errorf{ &c, at = tparams[i].span, msg = @fmt("a `write` fn's type parameter `{}` must appear in its fields", str{ s = tparams[i].text }) }
                 return
             }
             i = i + 1
@@ -7830,9 +7544,7 @@ namespace check {
     fn writer_of { mut c: Checker, b: Id, t: Id, ns: u32, at: source::Span, why: utf8::String } -> ?Writer {
         let found = writers_of{ &c, b, t, ns }
         if found.two != NONE {
-            let mut m = message{ c }
-            try! @fmt(&m, "@fmt has two writers of {} to {}: `{}` and `{}`", tstr{ c, t }, tstr{ c, t = b }, str{ s = get_decl{ c, d = found.one.decl }.qual }, str{ s = get_decl{ c, d = found.two }.qual })
-            error{ &c, at, msg = utf8::view{ b = m } }
+            errorf{ &c, at, msg = @fmt("@fmt has two writers of {} to {}: `{}` and `{}`", tstr{ c, t }, tstr{ c, t = b }, str{ s = get_decl{ c, d = found.one.decl }.qual }, str{ s = get_decl{ c, d = found.two }.qual }) }
             return null
         }
         if found.one.decl == NONE {
@@ -8100,9 +7812,7 @@ namespace check {
         match utf8::from{ bytes = text } {
             ok => {}
             utf8::invalid{ at = bad } => {
-                let mut m = message{ c }
-                try! @fmt(&m, "string literal is not valid UTF-8 (byte {})", bad)
-                error{ &c, at, msg = utf8::view{ b = m } }
+                errorf{ &c, at, msg = @fmt("string literal is not valid UTF-8 (byte {})", bad) }
             }
         }
     }
@@ -8129,9 +7839,7 @@ namespace check {
         while k < fields.len {
             let found = writers_of{ &c, b = st.sink, t = fields[k].ty, ns = st.ns }
             if found.two != NONE {
-                let mut m = message{ c }
-                try! @fmt(&m, "@fmt has two writers of {} to {}, for `{}`'s field `{}`: `{}` and `{}`", tstr{ c, t = fields[k].ty }, tstr{ c, t = st.sink }, str{ s = get_decl{ c, d }.qual }, str{ s = fields[k].name }, str{ s = get_decl{ c, d = found.one.decl }.qual }, str{ s = get_decl{ c, d = found.two }.qual })
-                error{ &c, at, msg = utf8::view{ b = m } }
+                errorf{ &c, at, msg = @fmt("@fmt has two writers of {} to {}, for `{}`'s field `{}`: `{}` and `{}`", tstr{ c, t = fields[k].ty }, tstr{ c, t = st.sink }, str{ s = get_decl{ c, d }.qual }, str{ s = fields[k].name }, str{ s = get_decl{ c, d = found.one.decl }.qual }, str{ s = get_decl{ c, d = found.two }.qual }) }
             }
             if found.one.decl != NONE { add_writer_set{ c, &flow, d = found.one.decl } }
             try! list::push{ list = &out, item = found.one }
@@ -8163,18 +7871,14 @@ namespace check {
         let signed = pr != null and types::signed{ p = pr }
         if p.conv == 'c' {
             if has_width {
-                let mut b = message{ c }
-                try! @fmt(&b, "`{}`: a width applies to numbers and text, not characters", what)
-                error{ &c, at, msg = utf8::view{ b } }
+                errorf{ &c, at, msg = @fmt("`{}`: a width applies to numbers and text, not characters", what) }
                 return ""
             }
             return "push_char"
         }
         if p.conv == 'x' {
             if not (is_int and not signed) {
-                let mut b = message{ c }
-                try! @fmt(&b, "`{}` formats an unsigned integer, not {}", what, tstr{ c, t })
-                error{ &c, at, msg = utf8::view{ b } }
+                errorf{ &c, at, msg = @fmt("`{}` formats an unsigned integer, not {}", what, tstr{ c, t }) }
                 return ""
             }
             return "push_hex"
@@ -8185,18 +7889,14 @@ namespace check {
         }
         if types::get{ s = c.ty, id = t } is record{ decl } and decl == c.text_decl { return if has_width { "push_padded" } else { "push" } }
         if has_width {
-            let mut b = message{ c }
-            try! @fmt(&b, "`{}`: a width applies to integers and utf8::String, not {}", what, tstr{ c, t })
-            error{ &c, at, msg = utf8::view{ b } }
+            errorf{ &c, at, msg = @fmt("`{}`: a width applies to integers and utf8::String, not {}", what, tstr{ c, t }) }
             return ""
         }
         if types::is_float{ s = c.ty, t } { return if t == types::prim{ p = types::Prim::f32 } { "push_f32" } else { "push_f64" } }
         if t == types::BOOL { return "push_bool" }
         if is_errs{ c, t } { return "error" }
         if types::get{ s = c.ty, id = t } is func{ fields, ret, external } and not external and fields.len == 1 and fields[0].mutable and void_result{ c, t = ret } { return "call" }
-        let mut b = message{ c }
-        try! @fmt(&b, "@fmt can't format {}: give a utf8::String, a number, a bool, an error, or a function that writes to the builder", tstr{ c, t })
-        error{ &c, at, msg = utf8::view{ b } }
+        errorf{ &c, at, msg = @fmt("@fmt can't format {}: give a utf8::String, a number, a bool, an error, or a function that writes to the builder", tstr{ c, t }) }
         return ""
     }
 
@@ -8240,9 +7940,7 @@ namespace check {
                 let padded = slice::eq_bytes{ a = p.push, b = "push_hex" } or slice::eq_bytes{ a = p.push, b = "push_int" }
                     or slice::eq_bytes{ a = p.push, b = "push_uint" } or slice::eq_bytes{ a = p.push, b = "push_padded" }
                 if padded and p.digits.len > 0 and p.width == null {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "literal {} does not fit in usize", str{ s = width_text{ p } })
-                    error{ &c, at = expr_at{ e = args[h] }, msg = utf8::view{ b } }
+                    errorf{ &c, at = expr_at{ e = args[h] }, msg = @fmt("literal {} does not fit in usize", str{ s = width_text{ p } }) }
                 }
                 h = h + 1
             }
@@ -8304,9 +8002,7 @@ namespace check {
             while i < p.quals.len {
                 let prev = p.quals[i]
                 let space{ ns } = e else {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "`{}` is not a namespace", str{ s = prev.text })
-                    error{ &c, at = prev.span, msg = utf8::view{ b } }
+                    errorf{ &c, at = prev.span, msg = @fmt("`{}` is not a namespace", str{ s = prev.text }) }
                     return NONE
                 }
                 if i + 1 == p.quals.len {
@@ -8314,9 +8010,7 @@ namespace check {
                 } else {
                     let q = p.quals[i + 1]
                     e = map::get{ m = get_space{ c, ns }.paths, key = q.text } ifnull {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "no namespace `{}` in `{}`", str{ s = q.text }, str{ s = prev.text })
-                        error{ &c, at = q.span, msg = utf8::view{ b } }
+                        errorf{ &c, at = q.span, msg = @fmt("no namespace `{}` in `{}`", str{ s = q.text }, str{ s = prev.text }) }
                         return NONE
                     }
                     refer{ &c, n = q, e }
@@ -8396,9 +8090,7 @@ namespace check {
                     kinds = kinds | 1
                     let vi: u32 = if slice::eq_bytes{ a = word, b = "ok" } { 0 } else { 1 }
                     if has_id{ xs = list::items{ list = seen }, n = vi } {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "variant `{}` appears in more than one arm", str{ s = word })
-                        error{ &c, at = p.span, msg = utf8::view{ b } }
+                        errorf{ &c, at = p.span, msg = @fmt("variant `{}` appears in more than one arm", str{ s = word }) }
                     } else {
                         push{ xs = &seen, n = vi }
                     }
@@ -8415,13 +8107,9 @@ namespace check {
                     } else {
                         let q = str{ s = get_decl{ c, d }.qual }
                         if has_id{ xs = list::items{ list = seen }, n = 1 } {
-                            let mut b = message{ c }
-                            try! @fmt(&b, "error `{}` comes after `err`, which takes every error", q)
-                            error{ &c, at = p.span, msg = utf8::view{ b } }
+                            errorf{ &c, at = p.span, msg = @fmt("error `{}` comes after `err`, which takes every error", q) }
                         } else if has_id{ xs = list::items{ list = listed }, n = d } {
-                            let mut b = message{ c }
-                            try! @fmt(&b, "error `{}` appears in more than one arm", q)
-                            error{ &c, at = p.span, msg = utf8::view{ b } }
+                            errorf{ &c, at = p.span, msg = @fmt("error `{}` appears in more than one arm", q) }
                         } else {
                             push{ xs = &listed, n = d }
                             try! list::push{ list = &spans, item = p.span }
@@ -8455,9 +8143,7 @@ namespace check {
             error{ &c, at, msg = "a match that lists errors must list `ok` too" }
         } else if is_r and not has_else and (not ok_seen or (not err_seen and listed.len == 0)) {
             let missing: utf8::String = if not ok_seen and not err_seen and listed.len == 0 { "ok, err" } else if not ok_seen { "ok" } else { "err" }
-            let mut b = message{ c }
-            try! @fmt(&b, "match isn't exhaustive: missing {}", missing)
-            error{ &c, at, msg = utf8::view{ b } }
+            errorf{ &c, at, msg = @fmt("match isn't exhaustive: missing {}", missing) }
         }
         if listed.len > 0 or not is_r {
             let p = Pending{
@@ -8637,9 +8323,7 @@ namespace check {
                     error{ &c, at = p.at, msg = utf8::view{ b } }
                 }
             } else if missing.len == 0 {
-                let mut b = message{ c }
-                try! @fmt(&b, "`{}` is unreachable: every error is already listed", str{ s = p.rest_word })
-                error{ &c, at = rest, msg = utf8::view{ b } }
+                errorf{ &c, at = rest, msg = @fmt("`{}` is unreachable: every error is already listed", str{ s = p.rest_word }) }
             }
             i = i + 1
         }
@@ -8908,6 +8592,13 @@ namespace check {
             i = i + 1
         }
         diag::error{ diags = c.diags, span = at, msg }
+    }
+
+    // error, with a message that msg writes: `errorf{ &c, at, msg = @fmt("no `{}`", name) }`.
+    fn errorf { mut c: Checker, at: source::Span, msg: utf8::Fmt(Heap) } {
+        let mut b = message{ c }
+        try! msg{ &b }
+        error{ &c, at, msg = utf8::view{ b } }
     }
 
     fn nowhere {} -> source::Span {

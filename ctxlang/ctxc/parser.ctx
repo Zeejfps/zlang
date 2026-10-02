@@ -83,9 +83,7 @@ namespace parser {
             let name = ident{ &p }
             let tparams = tparams{ &p }
             if body_as_context{ p } {
-                let mut b = message{ p }
-                try! @fmt(&b, "a function's context comes before its body: write `fn {} {{}} {{ ... }}`", utf8::String{ bytes = name.text })
-                fail{ &p, msg = utf8::view{ b } }
+                failf{ &p, msg = @fmt("a function's context comes before its body: write `fn {} {{}} {{ ... }}`", utf8::String{ bytes = name.text }) }
             }
             let params = ctx_fields{ &p }
             let ret: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { type_expr{ &p } } else { null }
@@ -552,9 +550,7 @@ namespace parser {
         let ty: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::colon } { type_expr{ &p } } else { null }
         let init: ?syntax::Expr = if accept{ &p, k = tok::Kind::assign } { expr{ &p } } else { null }
         if ty == null and init == null {
-            let mut b = message{ p }
-            try! @fmt(&b, "`let {}` needs a type or an initializer", utf8::String{ bytes = name.text })
-            fail_at{ &p, msg = utf8::view{ b }, t }
+            failf_at{ &p, msg = @fmt("`let {}` needs a type or an initializer", utf8::String{ bytes = name.text }), t }
         }
         if init != null and ty == null and not mutable and next_is{ p, k = tok::Kind::kw_else } {
             // `let variant = e else ...`
@@ -1211,16 +1207,12 @@ namespace parser {
         let mut n: usize = 0
         while n < BUILTINS.len and not slice::eq_bytes{ a = BUILTINS[n].name, b = name.text } { n = n + 1 }
         if n == BUILTINS.len {
-            let mut b = message{ p }
-            try! @fmt(&b, "unknown builtin `@{}`", utf8::String{ bytes = name.text })
-            fail_at{ &p, msg = utf8::view{ b }, t }
+            failf_at{ &p, msg = @fmt("unknown builtin `@{}`", utf8::String{ bytes = name.text }), t }
             return expr_from{ &p, start, k = syntax::ExprKind::error }
         }
         let sig = BUILTINS[n]
         if not next_is{ p, k = tok::Kind::lparen } {
-            let mut b = message{ p }
-            try! @fmt(&b, "expected '(' after @{}: {}", utf8::String{ bytes = name.text }, sig.usage)
-            fail{ &p, msg = utf8::view{ b } }
+            failf{ &p, msg = @fmt("expected '(' after @{}: {}", utf8::String{ bytes = name.text }, sig.usage) }
             return expr_from{ &p, start, k = syntax::ExprKind::error }
         }
         skip{ &p }
@@ -1237,9 +1229,7 @@ namespace parser {
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         if count < sig.types + sig.lo or not next_is{ p, k = tok::Kind::rparen } {
-            let mut b = message{ p }
-            try! @fmt(&b, "wrong number of arguments: {}", sig.usage)
-            fail{ &p, msg = utf8::view{ b } }
+            failf{ &p, msg = @fmt("wrong number of arguments: {}", sig.usage) }
         }
         skip{ &p }
         let k = syntax::ExprKind::builtin{ name, targ, args = list::items{ list = args } }
@@ -1311,6 +1301,17 @@ namespace parser {
     // Reports msg at the current token, unless recovering.
     fn fail { mut p: Parser, msg: utf8::String } {
         fail_at{ &p, msg, t = p.toks[p.i] }
+    }
+
+    // fail and fail_at, with a message that msg writes: `failf{ &p, msg = @fmt("...", x) }`.
+    fn failf { mut p: Parser, msg: utf8::Fmt(arena::Arena) } {
+        failf_at{ &p, msg, t = p.toks[p.i] }
+    }
+
+    fn failf_at { mut p: Parser, msg: utf8::Fmt(arena::Arena), t: tok::Token } {
+        let mut b = message{ p }
+        try! msg{ &b }
+        fail_at{ &p, msg = utf8::view{ b }, t }
     }
 
     // Reports msg at t, unless recovering, and starts recovering.
