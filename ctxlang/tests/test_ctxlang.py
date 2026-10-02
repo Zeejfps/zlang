@@ -1594,8 +1594,8 @@ fn main { mut io: Io } {
              'fn made {} -> utf8::String {\n    let buf: [4]u8 = "made"\n    let mut s: utf8::String = ""\n'
              '    keep{ &s, bytes = buf[..] }\n    return s\n}\nconst A: utf8::String = made{}',
              "const `A` can't hold a pointer to the stack: it would point to memory that doesn't outlive compiling", 8, 29),
-            ('fn f {} -> *u8 {\n    let s: c::String = "abc"\n    return s.ptr\n}\nconst A: *u8 = f{}',
-             "const `A` can't hold a *u8 into a literal: only a []u8 or c::String can point into one", 5, 17),
+            ('fn f {} -> *i8 {\n    let s: []u8 = "abc"\n    return @cast(*i8, s.ptr)\n}\nconst A: *i8 = f{}',
+             "const `A` can't hold a *i8 into a literal: only a []u8 or a *u8 can point into one", 5, 17),
             ('fn g {} {}\nfn f {} -> fn{} { return g }\nconst A: fn{} = f{}',
              "const `A` can't hold a function value: it would point to memory that doesn't outlive compiling", 3, 18),
             ('extern union X { a: i32, b: f32 }\nfn f {} -> X { return X{ a = 1 } }\nconst A: X = f{}',
@@ -2559,6 +2559,162 @@ fn main { mut io: Io } {
     }
 }
 """, '4\nempty\n')
+
+
+# A program's own type with a literal conversion (PLAN.md 4.4), as a regex library would have.
+PATTERN = """namespace pattern {
+    // An atom matches one byte in lo..hi: itself, any (`.`) or a range (`[a-z]`), and with `+`
+    // one or more.
+    struct Atom { lo: u8, hi: u8, more: bool }
+    struct Pattern { atoms: [8]Atom, n: usize, source: []u8 }
+
+    error unclosed{ at: usize }
+    error nothing_to_repeat{ at: usize }
+    error too_long
+
+    #convert
+    fn from_literal { s: strlit } -> !Pattern {
+        let b = s.bytes
+        let mut p = Pattern{ atoms = [Atom{ lo = 0, hi = 0, more = false }; 8], n = 0, source = b }
+        let mut i: usize = 0
+        while i < b.len {
+            if b[i] == '+' {
+                if p.n == 0 { return nothing_to_repeat{ at = i } }
+                p.atoms[p.n - 1].more = true
+            } else {
+                if p.n == p.atoms.len { return too_long }
+                let mut a = Atom{ lo = b[i], hi = b[i], more = false }
+                if b[i] == '.' { a = Atom{ lo = 0, hi = 255, more = false } }
+                if b[i] == '[' {
+                    if i + 4 >= b.len or b[i + 2] != '-' or b[i + 4] != ']' { return unclosed{ at = i } }
+                    a = Atom{ lo = b[i + 1], hi = b[i + 3], more = false }
+                    i = i + 4
+                }
+                p.atoms[p.n] = a
+                p.n = p.n + 1
+            }
+            i = i + 1
+        }
+        return p
+    }
+
+    // Whether p matches all of text. An atom with `+` takes all the bytes it can, then gives
+    // them back one at a time.
+    fn matches { p: Pattern, text: []u8 } -> bool { return from{ p, k = 0, text, i = 0 } }
+
+    fn from { p: Pattern, k: usize, text: []u8, i: usize } -> bool {
+        if k == p.n { return i == text.len }
+        let a = p.atoms[k]
+        if i >= text.len or text[i] < a.lo or text[i] > a.hi { return false }
+        if not a.more { return from{ p, k = k + 1, text, i = i + 1 } }
+        let mut j = i + 1
+        while j < text.len and text[j] >= a.lo and text[j] <= a.hi { j = j + 1 }
+        while j > i {
+            if from{ p, k = k + 1, text, i = j } { return true }
+            j = j - 1
+        }
+        return false
+    }
+}
+"""
+
+
+class LiteralConversions(Base):
+    """A string literal where a T is expected is the result of the `#convert` fn to T (PLAN.md
+    4.4), run while compiling (4.5): the program holds the finished value, and an error result
+    is a compile error at the literal."""
+
+    def assertError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_own_type(self):
+        """Wherever a T is expected: a typed let, a call's field, a struct field, a const, inside
+        ?T, a return, and an `if` branch next to a T. A call runs the fn as any other."""
+        self.assertOutput(PATTERN + """
+struct Rule { name: []u8, p: pattern::Pattern }
+const DIGITS: pattern::Pattern = "[0-9]+"
+const RULES: [2]Rule = [Rule{ name = "word", p = "[a-z]+" }, Rule{ name = "hex", p = "0x[0-f]+" }]
+fn pick { b: bool } -> pattern::Pattern { return if b { "a+b" } else { "x.z" } }
+fn test { mut io: Io, p: pattern::Pattern, text: []u8 } {
+    io::println_bool{ &io, n = pattern::matches{ p, text } }
+}
+fn main { mut io: Io } {
+    let word: pattern::Pattern = "[a-z]+"
+    test{ &io, p = word, text = "hello" }
+    test{ &io, p = word, text = "Hello" }
+    test{ &io, p = DIGITS, text = "2024" }
+    test{ &io, p = "h.llo", text = "hallo" }
+    let r = Rule{ name = "id", p = "[a-z][a-z]+" }
+    test{ &io, p = r.p, text = "xy" }
+    test{ &io, p = RULES[1].p, text = "0x1f" }
+    let o: ?pattern::Pattern = "a+"
+    if o != null { test{ &io, p = o, text = "aaa" } }
+    test{ &io, p = pick{ b = true }, text = "aaab" }
+    let k = 2
+    let q = if k > 1 { word } else { "[0-9]" }
+    test{ &io, p = q, text = "abc" }
+    io::println{ &io, s = utf8::of{ chars = word.source } }
+    match pattern::from_literal{ s = "[a-" } {
+        ok => {}
+        pattern::unclosed{ at } => { io::println_u64{ &io, n = at } }
+        else => {}
+    }
+}
+""", 'true\nfalse\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n[a-z]+\n0\n')
+
+    def test_errors(self):
+        n = PATTERN.count('\n')
+        for src, msg, line, col in [
+            # an error result, printed as @fmt prints an error
+            (PATTERN + 'fn main {} { let p: pattern::Pattern = "[a-" }',
+             'string literal: pattern::unclosed{ at = 0 }', n + 1, 40),
+            (PATTERN + 'fn main {} {\n    let p: pattern::Pattern = "+a"\n}',
+             'string literal: pattern::nothing_to_repeat{ at = 0 }', n + 2, 31),
+            (PATTERN + 'fn main {} { let p: pattern::Pattern = "abcdefghi" }', 'string literal: pattern::too_long', n + 1, 40),
+            # only literals convert, and an attribute is folded before anything runs
+            (PATTERN + 'fn main {} {\n    let s: strlit = "a"\n    let p: pattern::Pattern = s\n}',
+             'expected pattern::Pattern, got strlit', n + 3, 31),
+            (PATTERN + 'struct A { p: pattern::Pattern }\n#A{ p = "x" }\nfn main {} {}',
+             'an attribute cannot convert a string literal: its conversion runs code', n + 2, 9),
+            # what stops a run, as for a const
+            ('namespace w {\n    struct W { n: u8 }\n    #convert\n    fn from_literal { s: strlit } -> W { return W{ n = s.bytes[5] } }\n}\n'
+             'fn main {} { let x: w::W = "abc" }',
+             'string literal panicked while compiling: index 5 out of bounds for length 3, at 4:63', 6, 28),
+            ('namespace w {\n    struct W { b: []u8 }\n    fn keep { mut w: W, b: []u8 } { w.b = b }\n    #convert\n'
+             '    fn from_literal { s: strlit } -> W {\n        let buf: [3]u8 = [1, 2, 3]\n        let mut w = W{ b = s.bytes }\n'
+             '        keep{ &w, b = buf[..] }\n        return w\n    }\n}\nfn main {} { let x: w::W = "abc" }',
+             "string literal can't hold a pointer to the stack: it would point to memory that doesn't outlive compiling", 12, 28),
+            # a conversion can't need its own result
+            ('namespace w {\n    struct W { n: usize }\n    #convert\n    fn from_literal { s: strlit } -> W {\n'
+             '        let other: W = "x"\n        return W{ n = s.bytes.len + other.n }\n    }\n}\nfn main {} { let x: w::W = "abc" }',
+             "string literal needs `w::from_literal` to run while compiling, and running `w::from_literal` needs this literal's value", 5, 24),
+            # an error's payload, each field as an @fmt hole writes it
+            ('namespace w {\n    struct C { p: *u8 }\n    error bad{ n: i32, f: f32, t: utf8::String, b: bool, p: *u8 }\n    #convert\n'
+             '    fn from_literal { s: strlit } -> !C {\n        return bad{ n = -3, f = 1.5, t = "text", b = true, p = s.bytes.ptr }\n    }\n}\n'
+             'fn main {} { let c: w::C = "" }',
+             'string literal: w::bad{ n = -3, f = 1.5, t = text, b = true, p = _ }', 9, 28),
+        ]:
+            self.assertError(src, msg, line, col)
+
+    def test_pointer_into_the_literal(self):
+        """A result may point into the literal's bytes, which are static data: a []u8 or a *u8,
+        followed by the hidden zero."""
+        self.assertOutput("""
+namespace cstr {
+    struct C { p: *u8, n: usize }
+    extern fn strlen { s: *u8 } -> usize
+    #convert
+    fn from_literal { s: strlit } -> C { return C{ p = s.bytes.ptr, n = s.bytes.len } }
+}
+fn main { mut io: Io } {
+    let c: cstr::C = "four"
+    io::println_u64{ &io, n = cstr::strlen{ s = c.p } + c.n }
+    let e: cstr::C = ""
+    io::println_u64{ &io, n = cstr::strlen{ s = e.p } }
+}
+""", '8\n0\n')
 
 
 FMT_SETUP = """

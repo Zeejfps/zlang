@@ -1,14 +1,17 @@
 // Compile-time consts (§14): a const whose initializer folding can't compute is evaluated. The
-// initializer is lowered as a program of its own (lower::initializer), run in the interpreter
+// initializer is lowered as a program of its own (lower::alone), run in the interpreter
 // (eval.ctx) without the externs `ctxc interp` emulates, and its result read back by the const's
-// type into a check::Val, the value folding would have computed.
+// type into a check::Val, the value folding would have computed. A converted literal (PLAN.md
+// 4.5) is computed the same way, by running its `#convert` fn on its bytes.
 //
-//   let v = comptime::value{ &c, d, e }       // const d, whose initializer is e; null after an error
+//   let v = comptime::value{ &c, d, e }            // const d, whose initializer is e; null after an error
+//   let v = comptime::literal{ &c, f, e, bytes }   // literal e, converted by fn f
 //
 // A const has no context, so it holds no capability, and nothing it runs can reach the world:
 // an extern fn stops it. So do a panic, running out of fuel and too deep a recursion, each a
-// compile error at the initializer. The result holds no pointer but a []u8 or c::String into a
-// literal's bytes, which outlive compiling as the program's static data.
+// compile error at the initializer. A conversion takes only its literal, so the same holds, and
+// its error result is a compile error at the literal too. The result holds no pointer but a []u8
+// or *u8 into a literal's bytes, which outlive compiling as the program's static data.
 
 namespace comptime {
     type Heap = arena::Arena
@@ -18,45 +21,185 @@ namespace comptime {
     const STACK: u64 = 4194304              // the bytes of ctxc's stack its calls may take
     const SCRATCH: usize = 33554432         // the interpreter's memory: its 16 MiB stack and data
 
-    // A result being read back: the machine that computed it, and the const, for messages.
-    struct Reader { m: *mut eval::M, name: []u8, at: source::Span }
+    // A result being read back: the machine that computed it, and what it is the value of, for
+    // messages: "const `NAME`" or "string literal".
+    struct Reader { m: *mut eval::M, what: []u8, at: source::Span }
 
     // Const d's value, computed by running its initializer e; null after reporting why it has
     // none. A const it needs is computed first, as lowering meets it.
     fn value { mut c: check::Checker, d: u32, e: syntax::Expr } -> ?check::Val {
         let name = check::get_decl{ c, d }.qual
+        let mut w = check::message{ c }
+        try! @fmt(&w, "const `{}`", check::str{ s = name })
+        let what = utf8::view{ b = w }.bytes
         let at = check::expr_at{ e }
-        let p = lower::initializer{ &c, d } ifnull { return null }
-        if c.scratch.len == 0 {
-            // Allocated once: each const's run starts over in it.
-            c.scratch = alloc::resize(u8, Heap){ realloc = arena::alloc, heap = c.heap, mem = slice::empty(u8){}, count = SCRATCH } iferr {
-                report{ &c, at, name, msg = "couldn't be computed while compiling: out of memory" }
-                return null
-            }
-        }
-        let mut heap = arena::new{ buf = c.scratch }
+        let p = lower::alone{ &c, d } ifnull { return null }
+        let mem = scratch{ &c, at, what } ifnull { return null }
+        let mut heap = arena::new{ buf = mem }
         let mut m = eval::machine{ heap = &heap, p, name, emulate = false, fuel = c.fuel, stack = c.stack }
-        match eval::run{ &m, callee = p.main, args = slice::empty([]u8){} } {
-            ok{ value } => {
-                // The result's bytes, as a temporary the reader can address.
-                let a = eval::heap_bytes{ &m, n = @as(u64, value.len) } iferr {
-                    report{ &c, at, name, msg = "couldn't be computed while compiling: out of memory" }
-                    return null
-                }
-                let dst = eval::at{ &m, a, n = @as(u64, value.len) } iferr { return null }
-                slice::copy(u8){ dst, src = value }
-                let mut r = Reader{ m = &m, name, at }
-                return back{ &c, &r, t = check::get_decl{ c, d }.ty, a }
-            }
-            else => {
-                stopped{ &c, at, name, m, p }
-                return null
-            }
-        }
+        let out = eval::run{ &m, callee = p.main, args = slice::empty([]u8){} }
+        let mut r = Reader{ m = &m, what, at }
+        let a = result{ &c, &r, out, p } ifnull { return null }
+        return back{ &c, &r, t = check::get_decl{ c, d }.ty, a }
     }
 
-    // Why the run of const `name` stopped, as an error at its initializer.
-    fn stopped { mut c: check::Checker, at: source::Span, name: []u8, m: eval::M, p: ir::Program } {
+    // The value conversion f gives literal e, whose bytes are `bytes`: f's result, run on them,
+    // or for a !T its value, since an error is a compile error at the literal, printed as @fmt
+    // prints one. Null after reporting why it has none.
+    fn literal { mut c: check::Checker, f: u32, e: syntax::Expr, bytes: []u8 } -> ?check::Val {
+        let what: []u8 = "string literal"
+        let at = check::expr_at{ e }
+        // The same bytes convert the same way.
+        let mut kb = list::new(u8){ realloc = arena::alloc, heap = c.heap }
+        try! list::push{ list = &kb, item = @trunc(u8, f) }
+        try! list::push{ list = &kb, item = @trunc(u8, f >> 8) }
+        try! list::push{ list = &kb, item = @trunc(u8, f >> 16) }
+        try! list::push{ list = &kb, item = @trunc(u8, f >> 24) }
+        let mut i: usize = 0
+        while i < bytes.len {
+            try! list::push{ list = &kb, item = bytes[i] }
+            i = i + 1
+        }
+        let key = list::items{ list = kb }
+        let known = map::get{ m = c.lit_cache, key }
+        if known != null { return known }
+        let p = program{ &c, f, at } ifnull { return null }
+        let mem = scratch{ &c, at, what } ifnull { return null }
+        let mut heap = arena::new{ buf = mem }
+        let name = check::get_decl{ c, d = f }.qual
+        let mut m = eval::machine{ heap = &heap, p, name, emulate = false, fuel = c.fuel, stack = c.stack }
+        // f's one field, a strlit: a view of the bytes in static data, with the hidden zero after them.
+        let s = eval::literal{ &m, bytes } iferr {
+            report{ &c, at, what, msg = "couldn't be computed while compiling: out of memory" }
+            return null
+        }
+        let mut arg: [16]u8
+        eval::put_bits{ b = arg[..8], v = s }
+        eval::put_bits{ b = arg[8..], v = @as(u64, bytes.len) }
+        let view: []u8 = arg[..]
+        let args: [1][]u8 = [view]
+        let out = eval::run{ &m, callee = p.main, args = args[..] }
+        let mut r = Reader{ m = &m, what, at }
+        let a = result{ &c, &r, out, p } ifnull { return null }
+        let ty = types::prune{ s = c.ty, t = check::get_decl{ c, d = f }.ret }
+        let res{ ok } = types::get{ s = c.ty, id = ty } else {
+            let v = back{ &c, &r, t = ty, a } ifnull { return null }
+            try! map::put{ m = &c.lit_cache, key, value = v }
+            return v
+        }
+        let u = check::union_offsets{ &c, t = ty } ifnull { return null }
+        let tag = load{ &r, a, n = 4 } ifnull { return null }
+        if tag != 0 {
+            let vs = check::variants_of{ &c, t = ty }
+            let fields = vs[1].fields ifnull { return null }
+            let mut b = check::message{ c }
+            try! @fmt(&b, "{}: ", check::str{ s = what })
+            try! error_text{ &c, &r, t = fields[0].ty, a = a + u.offs[1][0], &b }
+            check::error{ &c, at, msg = utf8::view{ b } }
+            return null
+        }
+        let v = back{ &c, &r, t = ok, a = a + u.offs[0][0] } ifnull { return null }
+        try! map::put{ m = &c.lit_cache, key, value = v }
+        return v
+    }
+
+    // Conversion f as a program of its own, lowered the first time a literal needs it; null if
+    // it can't be, after reporting why. Its code can't need the value of a literal it converts.
+    fn program { mut c: check::Checker, f: u32, at: source::Span } -> ?ir::Program {
+        let known = map::get{ m = c.conv_progs, key = f }
+        if known != null { return known }
+        let name = check::get_decl{ c, d = f }.qual
+        if check::has_id{ xs = list::items{ list = c.converting }, n = f } {
+            let mut b = check::message{ c }
+            try! @fmt(&b, "string literal needs `{}` to run while compiling, and running `{}` needs this literal's value", check::str{ s = name }, check::str{ s = name })
+            check::error{ &c, at, msg = utf8::view{ b } }
+            return null
+        }
+        check::push{ xs = &c.converting, n = f }
+        let p = lower::alone{ &c, d = f }
+        _ = list::pop{ list = &c.converting }
+        if p == null { return null }
+        try! map::put{ m = &c.conv_progs, key = f, value = p }
+        return p
+    }
+
+    // The interpreter's memory, allocated once: each run starts over in it. Null after reporting
+    // that there is none.
+    fn scratch { mut c: check::Checker, at: source::Span, what: []u8 } -> ?alloc::Bytes {
+        if c.scratch.len == 0 {
+            c.scratch = alloc::resize(u8, Heap){ realloc = arena::alloc, heap = c.heap, mem = slice::empty(u8){}, count = SCRATCH } iferr {
+                report{ &c, at, what, msg = "couldn't be computed while compiling: out of memory" }
+                return null
+            }
+        }
+        return c.scratch
+    }
+
+    // The address of a run's result, copied where the reader can address it; null after
+    // reporting why the run stopped.
+    fn result { mut c: check::Checker, mut r: Reader, out: eval::Outcome, p: ir::Program } -> ?eval::Addr {
+        let ok{ value } = out else {
+            stopped{ &c, at = r.at, what = r.what, m = r.m.*, p }
+            return null
+        }
+        let a = eval::heap_bytes{ m = r.m, n = @as(u64, value.len) } iferr {
+            report{ &c, at = r.at, what = r.what, msg = "couldn't be computed while compiling: out of memory" }
+            return null
+        }
+        let dst = eval::at{ m = r.m, a, n = @as(u64, value.len) } iferr { return null }
+        slice::copy(u8){ dst, src = value }
+        return a
+    }
+
+    // An error of type t at a, as @fmt writes one (lower's error_push): its name, and its
+    // payload as `{ field = value, ... }`, each value as a hole of its type writes it, or `_`.
+    fn error_text { mut c: check::Checker, mut r: Reader, t: Id, a: eval::Addr, mut b: utf8::Builder(Heap) } -> ! {
+        let et = check::eset_of{ &c, t }
+        let vs = check::variants_of{ &c, t = et }
+        let u = check::union_offsets{ &c, t = et } ifnull { return }
+        let tag = load{ &r, a, n = 4 } ifnull { return }
+        if tag >= @as(u64, vs.len) { return }
+        let index = @as(usize, tag)
+        try utf8::push{ &b, s = check::str{ s = vs[index].name } }
+        let fields = vs[index].fields ifnull { return }
+        if fields.len == 0 { return }
+        let mut i: usize = 0
+        while i < fields.len {
+            try @fmt(&b, "{}{} = ", check::str{ s = if i == 0 { "{ " } else { ", " } }, check::str{ s = fields[i].name })
+            try field_text{ &c, &r, t = fields[i].ty, a = a + u.offs[index][i], &b }
+            i = i + 1
+        }
+        try utf8::push{ &b, s = " }" }
+    }
+
+    // A value of type t at a, as an @fmt hole writes an error's field: a number or bool, or a
+    // utf8::String's text; `_` for any other type.
+    fn field_text { mut c: check::Checker, mut r: Reader, t: Id, a: eval::Addr, mut b: utf8::Builder(Heap) } -> ! {
+        let ty = types::prune{ s = c.ty, t }
+        let p = types::prim_of{ s = c.ty, t = ty }
+        if p != null {
+            let v = scalar{ &r, ty, p, a } ifnull { return utf8::push{ &b, s = "_" } }
+            match v {
+                int{ negative, magnitude } => { return @fmt(&b, "{}{}", check::str{ s = if negative { "-" } else { "" } }, magnitude) }
+                float{ value } => {
+                    if p == types::Prim::f32 { return utf8::push_f32{ &b, n = @as(f32, value) } }
+                    return utf8::push_f64{ &b, n = value }
+                }
+                boolean{ value } => { return utf8::push_bool{ &b, v = value } }
+                else => {}
+            }
+        }
+        if check::record_decl{ c, t = ty } == c.text_decl and c.text_decl != check::NONE {
+            let ptr = word{ &r, a } ifnull { return utf8::push{ &b, s = "_" } }
+            let len = word{ &r, a = a + 8 } ifnull { return utf8::push{ &b, s = "_" } }
+            let text = mem{ &r, a = ptr, n = len } ifnull { return utf8::push{ &b, s = "_" } }
+            return utf8::push{ &b, s = utf8::String{ bytes = text } }
+        }
+        return utf8::push{ &b, s = "_" }
+    }
+
+    // Why the run of `what` stopped, as an error at at.
+    fn stopped { mut c: check::Checker, at: source::Span, what: []u8, m: eval::M, p: ir::Program } {
         let mut b = check::message{ c }
         match m.why {
             panic{ pos, msg } => {
@@ -79,7 +222,7 @@ namespace comptime {
             external{ name = f } => { try! @fmt(&b, "calls extern fn `{}`, which can't run while compiling", check::str{ s = f }) }
             none => { try! @fmt(&b, "couldn't be computed while compiling: {}", check::str{ s = failure{ m } }) }
         }
-        report{ &c, at, name, msg = utf8::view{ b } }
+        report{ &c, at, what, msg = utf8::view{ b } }
     }
 
     fn failure { m: eval::M } -> []u8 {
@@ -90,16 +233,16 @@ namespace comptime {
         }
     }
 
-    // "const `NAME` MSG" at at.
-    fn report { mut c: check::Checker, at: source::Span, name: []u8, msg: utf8::String } {
+    // "WHAT MSG" at at: "const `NAME` MSG" or "string literal MSG".
+    fn report { mut c: check::Checker, at: source::Span, what: []u8, msg: utf8::String } {
         let mut b = check::message{ c }
-        try! @fmt(&b, "const `{}` {}", check::str{ s = name }, msg)
+        try! @fmt(&b, "{} {}", check::str{ s = what }, msg)
         check::error{ &c, at, msg = utf8::view{ b } }
     }
 
     // ---- reading the result back
 
-    // The value of type t at address a, as folding gives it: a []u8 or c::String as the bytes
+    // The value of type t at address a, as folding gives it: a []u8, strlit or *u8 as the bytes
     // of the literal it points into. Null after reporting what it can't hold.
     fn back { mut c: check::Checker, mut r: Reader, t: Id, a: eval::Addr } -> ?check::Val {
         let ty = types::prune{ s = c.ty, t }
@@ -131,21 +274,19 @@ namespace comptime {
                 return pointer{ &c, r, t = ty, p = ptr }
             }
             strlit => { return view{ &c, &r, ty, a } }
-            ptr => {
+            ptr{ elem, mutable } => {
                 let p = word{ &r, a } ifnull { return null }
+                // A *u8 into a literal's bytes: the rest of them, with the hidden zero after them,
+                // as a c::String's pointer is.
+                if types::prune{ s = c.ty, t = elem } == types::U8 and not mutable {
+                    let rest = eval::literal_rest{ m = r.m.*, a = p }
+                    if rest != null { return check::Val::cstr{ ty, bytes = rest } }
+                }
                 return pointer{ &c, r, t = ty, p }
             }
             record{ decl } => {
                 if check::untagged_type{ c, t = ty } { return cannot{ &c, r, what = "an extern union" } }
                 let fields = check::struct_fields{ &c, t = ty }
-                if decl == c.cstr_decl and fields.len == 1 {
-                    // c::String: its pointer, to a literal's bytes and the NUL after them
-                    let p = word{ &r, a } ifnull { return null }
-                    let rest = eval::literal_rest{ m = r.m.*, a = p }
-                    if rest == null { return pointer{ &c, r, t = ty, p } }
-                    let s = check::Val::cstr{ ty = fields[0].ty, bytes = rest }
-                    return check::Val::record{ ty, fields = one{ c, v = s } }
-                }
                 let offs = check::struct_offsets{ &c, t = ty } ifnull { return null }
                 let mut out = list::new(check::Val){ realloc = arena::alloc, heap = c.heap }
                 let mut i: usize = 0
@@ -226,7 +367,7 @@ namespace comptime {
     fn pointer { mut c: check::Checker, r: Reader, t: Id, p: eval::Addr } -> ?check::Val {
         if eval::literal_rest{ m = r.m.*, a = p } != null {
             let mut b = check::message{ c }
-            try! @fmt(&b, "a {} into a literal: only a []u8 or c::String can point into one", check::tstr{ c, t })
+            try! @fmt(&b, "a {} into a literal: only a []u8 or a *u8 can point into one", check::tstr{ c, t })
             return cannot{ &c, r, what = utf8::view{ b }.bytes }
         }
         let region = p >> eval::SHIFT
@@ -242,11 +383,11 @@ namespace comptime {
         return cannot{ &c, r, what = utf8::view{ b }.bytes }
     }
 
-    // Null, after reporting "const `NAME` can't hold WHAT".
+    // Null, after reporting "const `NAME` can't hold WHAT", or "string literal can't ...".
     fn cannot { mut c: check::Checker, r: Reader, what: []u8 } -> ?check::Val {
         let mut b = check::message{ c }
         try! @fmt(&b, "can't hold {}", check::str{ s = what })
-        report{ &c, at = r.at, name = r.name, msg = utf8::view{ b } }
+        report{ &c, at = r.at, what = r.what, msg = utf8::view{ b } }
         return null
     }
 

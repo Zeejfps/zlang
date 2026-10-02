@@ -39,22 +39,23 @@ namespace lower {
         ret:       Id,
         slots:     map::Map(u32, u32, Heap),       // by the checker's Var
         locals:    list::List(ir::Local, Heap),
-        failed:    bool,                           // a const it met has no value, and said why
+        failed:    bool,                           // a const or converted literal it met has no value, and said why
     }
 
     fn program { mut c: check::Checker } -> ir::Program {
         let mut l = lowering{ &c }
         let main = fn_id{ &l, decl = c.main, targs = no_ids{} }
         let p = finish{ &l, main }
-        if l.failed { @panic("lower: a const without a value") }
+        if l.failed { @panic("lower: a const or literal without a value") }
         return p
     }
 
-    // Const d's initializer as a program of its own, for the interpreter (comptime.ctx): its
-    // main is a function without context that returns the const's value, and the rest is what
-    // that reaches. It has its own Lower, so the program's IR doesn't change. Null if a const it
-    // needs has no value; why is reported.
-    fn initializer { mut c: check::Checker, d: u32 } -> ?ir::Program {
+    // Const d's initializer, or fn d, as a program of its own, for the interpreter (comptime.ctx):
+    // its main is a function without context that returns the const's value, or fn d, a literal
+    // conversion, and the rest is what that reaches. It has its own Lower, so the program's IR
+    // doesn't change. Null if a const or converted literal it needs has no value; why is
+    // reported.
+    fn alone { mut c: check::Checker, d: u32 } -> ?ir::Program {
         let mut l = lowering{ &c }
         let main = fn_id{ &l, decl = d, targs = no_ids{} }
         let p = finish{ &l, main }
@@ -1474,7 +1475,7 @@ namespace lower {
             float{ negative, value } => {
                 return mk{ ty = tid{ &l, t }, k = ir::ExprKind::float{ value = if negative { -value } else { value } } }
             }
-            str{ bytes } => { return str_lit{ &l, bytes, t } }
+            str{ bytes } => { return str_lit{ &l, e, bytes, t } }
             boolean{ value } => { return mk{ ty = tid{ &l, t }, k = ir::ExprKind::boolean{ value } } }
             nil => { return mk{ ty = tid{ &l, t }, k = ir::ExprKind::nil } }
             path => { return path_ex{ &l, e, t } }
@@ -1629,9 +1630,16 @@ namespace lower {
         return null
     }
 
-    // A string literal: a [N]u8 array, or a view of static bytes as a []u8, a strlit or a
-    // utf8::String.
-    fn str_lit { mut l: Lower, bytes: []u8, t: Id } -> ir::Expr {
+    // A string literal: what its conversion gave it while compiling (PLAN.md 4.5), or a [N]u8
+    // array, or a view of static bytes as a []u8, a strlit or a utf8::String.
+    fn str_lit { mut l: Lower, e: syntax::Expr, bytes: []u8, t: Id } -> ir::Expr {
+        if map::has{ m = l.c.lit_convs, key = check::expr_key{ e } } {
+            let v = check::literal_value{ c = l.c, e } ifnull {
+                l.failed = true
+                return value{ &l, v = check::Val::nil{ ty = t } }
+            }
+            return value{ &l, v }
+        }
         match get{ l, t } {
             array => { return mk{ ty = tid{ &l, t }, k = ir::ExprKind::str{ bytes } } }
             slice | strlit => { return mk{ ty = tid{ &l, t = u8_slice{ &l } }, k = ir::ExprKind::sbytes{ bytes } } }
