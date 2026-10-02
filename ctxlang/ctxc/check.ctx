@@ -1464,8 +1464,10 @@ namespace check {
         let f = map::get{ m = c.lit_convs, key = k } ifnull { return null }
         if f == NONE or not c.can_eval { return null }
         let str{ bytes } = e.k else { return null }
+        let before = c.diags.errors
         let v = comptime::literal{ &c, f, e, bytes } ifnull {
             try! map::put{ m = &c.lit_convs, key = k, value = NONE }
+            if c.diags.errors == before { error{ &c, at = expr_at{ e }, msg = "string literal couldn't be computed while compiling" } }
             return null
         }
         try! map::put{ m = &c.lit_values, key = k, value = v }
@@ -2609,7 +2611,18 @@ namespace check {
         push{ xs = &c.folding, n = d }
         let mut v: ?Val = null
         if x.syn.k is constant{ value } {
-            v = if folds { fold_to{ &c, e = value, t = x.ty } } else { comptime::value{ &c, d, e = value } }
+            if folds {
+                v = fold_to{ &c, e = value, t = x.ty }
+            } else {
+                // A value missing without an error would reach lowering, which has none to give.
+                let before = c.diags.errors
+                v = comptime::value{ &c, d, e = value }
+                if v == null and c.diags.errors == before {
+                    let mut b = message{ c }
+                    try! @fmt(&b, "const `{}` couldn't be computed while compiling", str{ s = x.qual })
+                    error{ &c, at = expr_at{ e = value }, msg = utf8::view{ b } }
+                }
+            }
         }
         _ = list::pop{ list = &c.folding }
         let got = v

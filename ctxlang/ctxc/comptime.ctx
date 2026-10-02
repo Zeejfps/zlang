@@ -82,19 +82,28 @@ namespace comptime {
         let mut r = Reader{ m = &m, what, at }
         let a = result{ &c, &r, out, p } ifnull { return null }
         let ty = types::prune{ s = c.ty, t = check::get_decl{ c, d = f }.ret }
-        let res{ ok } = types::get{ s = c.ty, id = ty } else {
+        let res{ ok, errs } = types::get{ s = c.ty, id = ty } else {
             let v = back{ &c, &r, t = ty, a } ifnull { return null }
             try! map::put{ m = &c.lit_cache, key, value = v }
             return v
         }
-        let u = check::union_offsets{ &c, t = ty } ifnull { return null }
-        let tag = load{ &r, a, n = 4 } ifnull { return null }
-        if tag != 0 {
-            let vs = check::variants_of{ &c, t = ty }
-            let fields = vs[1].fields ifnull { return null }
+        // r holds the address of m, a local, so a reporter's result isn't returned as it is.
+        let u = check::union_offsets{ &c, t = ty } ifnull {
+            _ = unknown{ &c, r, t = ty }
+            return null
+        }
+        let tag = load{ &r, a, n = 4 } ifnull {
+            _ = unread{ &c, r }
+            return null
+        }
+        if tag > 1 {
+            _ = no_variant{ &c, r, t = ty, tag }
+            return null
+        }
+        if tag == 1 {
             let mut b = check::message{ c }
             try! @fmt(&b, "{}: ", check::str{ s = what })
-            try! error_text{ &c, &r, t = fields[0].ty, a = a + u.offs[1][0], &b }
+            try! error_text{ &c, &r, t = errs, a = a + u.offs[1][0], &b }
             check::error{ &c, at, msg = utf8::view{ b } }
             return null
         }
@@ -136,7 +145,7 @@ namespace comptime {
     }
 
     // The address of a run's result, copied where the reader can address it; null after
-    // reporting why the run stopped.
+    // reporting why the run stopped, or why its result can't be copied.
     fn result { mut c: check::Checker, mut r: Reader, out: eval::Outcome, p: ir::Program } -> ?eval::Addr {
         let ok{ value } = out else {
             stopped{ &c, at = r.at, what = r.what, m = r.m.*, p }
@@ -146,7 +155,10 @@ namespace comptime {
             report{ &c, at = r.at, what = r.what, msg = "couldn't be computed while compiling: out of memory" }
             return null
         }
-        let dst = eval::at{ m = r.m, a, n = @as(u64, value.len) } iferr { return null }
+        let dst = eval::at{ m = r.m, a, n = @as(u64, value.len) } iferr {
+            _ = unread{ &c, r }
+            return null
+        }
         slice::copy(u8){ dst, src = value }
         return a
     }
@@ -243,20 +255,25 @@ namespace comptime {
     // ---- reading the result back
 
     // The value of type t at address a, as folding gives it: a []u8, strlit or *u8 as the bytes
-    // of the literal it points into. Null after reporting what it can't hold.
+    // of the literal it points into. Null after reporting what it can't hold, or why it can't
+    // be read.
     fn back { mut c: check::Checker, mut r: Reader, t: Id, a: eval::Addr } -> ?check::Val {
         let ty = types::prune{ s = c.ty, t }
         match types::get{ s = c.ty, id = ty } {
-            prim{ p } => { return scalar{ &r, ty, p, a } }
+            prim{ p } => {
+                let v = scalar{ &r, ty, p, a } ifnull { return unread{ &c, r } }
+                return v
+            }
             enumeration{ decl } => {
-                let p = types::prim_of{ s = c.ty, t = types::prune{ s = c.ty, t = check::get_decl{ c, d = decl }.ty } } ifnull { return null }
-                return scalar{ &r, ty, p, a }
+                let p = types::prim_of{ s = c.ty, t = types::prune{ s = c.ty, t = check::get_decl{ c, d = decl }.ty } } ifnull { return unknown{ &c, r, t = ty } }
+                let v = scalar{ &r, ty, p, a } ifnull { return unread{ &c, r } }
+                return v
             }
             array{ n, elem } => {
                 let et = types::prune{ s = c.ty, t = elem }
-                let lay = check::layout{ &c, t = et } ifnull { return null }
+                let lay = check::layout{ &c, t = et } ifnull { return unknown{ &c, r, t = ty } }
                 if et == types::U8 {
-                    let bytes = mem{ &r, a, n } ifnull { return null }
+                    let bytes = mem{ &r, a, n } ifnull { return unread{ &c, r } }
                     return check::Val::str{ ty, bytes = keep{ c, bytes } }
                 }
                 let mut out = list::new(check::Val){ realloc = arena::alloc, heap = c.heap }
@@ -270,12 +287,12 @@ namespace comptime {
             }
             slice{ elem, mutable } => {
                 if types::prune{ s = c.ty, t = elem } == types::U8 and not mutable { return view{ &c, &r, ty, a } }
-                let ptr = word{ &r, a } ifnull { return null }
+                let ptr = word{ &r, a } ifnull { return unread{ &c, r } }
                 return pointer{ &c, r, t = ty, p = ptr }
             }
             strlit => { return view{ &c, &r, ty, a } }
             ptr{ elem, mutable } => {
-                let p = word{ &r, a } ifnull { return null }
+                let p = word{ &r, a } ifnull { return unread{ &c, r } }
                 // A *u8 into a literal's bytes: the rest of them, with the hidden zero after them,
                 // as a c::String's pointer is.
                 if types::prune{ s = c.ty, t = elem } == types::U8 and not mutable {
@@ -287,7 +304,7 @@ namespace comptime {
             record{ decl } => {
                 if check::untagged_type{ c, t = ty } { return cannot{ &c, r, what = "an extern union" } }
                 let fields = check::struct_fields{ &c, t = ty }
-                let offs = check::struct_offsets{ &c, t = ty } ifnull { return null }
+                let offs = check::struct_offsets{ &c, t = ty } ifnull { return unknown{ &c, r, t = ty } }
                 let mut out = list::new(check::Val){ realloc = arena::alloc, heap = c.heap }
                 let mut i: usize = 0
                 while i < fields.len {
@@ -300,7 +317,7 @@ namespace comptime {
             opt{ elem } => {
                 if check::nullable_ptr{ c, t = ty } {
                     // the pointer itself, null as 0
-                    let p = word{ &r, a } ifnull { return null }
+                    let p = word{ &r, a } ifnull { return unread{ &c, r } }
                     if p == 0 { return check::Val::nil{ ty } }
                     let v = back{ &c, &r, t = elem, a } ifnull { return null }
                     return check::Val::variant{ ty, index = 1, fields = one{ c, v } }
@@ -319,8 +336,8 @@ namespace comptime {
 
     // A []u8 or strlit: the bytes of the literal it views.
     fn view { mut c: check::Checker, mut r: Reader, ty: Id, a: eval::Addr } -> ?check::Val {
-        let ptr = word{ &r, a } ifnull { return null }
-        let len = word{ &r, a = a + 8 } ifnull { return null }
+        let ptr = word{ &r, a } ifnull { return unread{ &c, r } }
+        let len = word{ &r, a = a + 8 } ifnull { return unread{ &c, r } }
         if len == 0 { return check::Val::sbytes{ ty, bytes = slice::empty(u8){} } }
         let rest = eval::literal_rest{ m = r.m.*, a = ptr }
         if rest != null and len <= @as(u64, rest.len) { return check::Val::sbytes{ ty, bytes = rest[..@as(usize, len)] } }
@@ -329,12 +346,12 @@ namespace comptime {
 
     // A union or optional with a tag: null, or the variant with its payload's fields.
     fn tagged { mut c: check::Checker, mut r: Reader, ty: Id, a: eval::Addr } -> ?check::Val {
-        let tag = load{ &r, a, n = 4 } ifnull { return null }
+        let tag = load{ &r, a, n = 4 } ifnull { return unread{ &c, r } }
         let index = @trunc(u32, tag)
         if types::get{ s = c.ty, id = ty } is opt and index == 0 { return check::Val::nil{ ty } }
         let vs = check::variants_of{ &c, t = ty }
-        let u = check::union_offsets{ &c, t = ty } ifnull { return null }
-        if @as(usize, index) >= vs.len { return null }
+        let u = check::union_offsets{ &c, t = ty } ifnull { return unknown{ &c, r, t = ty } }
+        if tag >= @as(u64, vs.len) { return no_variant{ &c, r, t = ty, tag } }
         let fields = vs[index].fields ifnull { return check::Val::variant{ ty, index, fields = slice::empty(check::Val){} } }
         let mut out = list::new(check::Val){ realloc = arena::alloc, heap = c.heap }
         let mut j: usize = 0
@@ -387,6 +404,29 @@ namespace comptime {
     fn cannot { mut c: check::Checker, r: Reader, what: []u8 } -> ?check::Val {
         let mut b = check::message{ c }
         try! @fmt(&b, "can't hold {}", check::str{ s = what })
+        report{ &c, at = r.at, what = r.what, msg = utf8::view{ b } }
+        return null
+    }
+
+    // Null, after reporting that the result's tag, which a value made through an extern union
+    // can set to anything, names no variant of t.
+    fn no_variant { mut c: check::Checker, r: Reader, t: Id, tag: u64 } -> ?check::Val {
+        let mut b = check::message{ c }
+        try! @fmt(&b, "a {} with tag {}: it has no such variant", check::tstr{ c, t }, tag)
+        return cannot{ &c, r, what = utf8::view{ b }.bytes }
+    }
+
+    // Null, after reporting that a value of type t can't be read back: ctxc has no layout for it.
+    fn unknown { mut c: check::Checker, r: Reader, t: Id } -> ?check::Val {
+        let mut b = check::message{ c }
+        try! @fmt(&b, "a value of type {}, whose layout isn't known", check::tstr{ c, t })
+        return cannot{ &c, r, what = utf8::view{ b }.bytes }
+    }
+
+    // Null, after reporting why the result's memory couldn't be read, as the interpreter says.
+    fn unread { mut c: check::Checker, r: Reader } -> ?check::Val {
+        let mut b = check::message{ c }
+        try! @fmt(&b, "couldn't be computed while compiling: {}", check::str{ s = failure{ m = r.m.* } })
         report{ &c, at = r.at, what = r.what, msg = utf8::view{ b } }
         return null
     }

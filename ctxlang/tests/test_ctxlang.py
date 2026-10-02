@@ -1600,6 +1600,11 @@ fn main { mut io: Io } {
              "const `A` can't hold a function value: it would point to memory that doesn't outlive compiling", 3, 18),
             ('extern union X { a: i32, b: f32 }\nfn f {} -> X { return X{ a = 1 } }\nconst A: X = f{}',
              "const `A` can't hold an extern union", 3, 15),
+            # a union whose tag, set through an extern union, names no variant: an error, where
+            # lowering once panicked for a const without a value
+            ('union Shape { dot, line{ n: usize } }\nextern union Raw { s: Shape, w: [2]u64 }\n'
+             'fn mk {} -> Shape {\n    let r = Raw{ w = [99, 0] }\n    return r.s\n}\nconst S: Shape = mk{}',
+             "const `S` can't hold a Shape with tag 99: it has no such variant", 7, 20),
             # array lengths and enum values are needed before anything runs
             ('fn three {} -> usize { return 3 }\nconst N: usize = three{}\nstruct S { a: [N]u8 }',
              "an array length can't use `N`: its value is computed by calling a function", 3, 16),
@@ -2722,6 +2727,20 @@ fn main { mut io: Io } {
              '    fn from_literal { s: strlit } -> !C {\n        return bad{ n = -3, f = 1.5, t = "text", b = true, p = s.bytes.ptr }\n    }\n}\n'
              'fn main {} { let c: w::C = "" }',
              'string literal: w::bad{ n = -3, f = 1.5, t = text, b = true, p = _ }', 9, 28),
+            # a result whose tag, set through an extern union, names no variant: an error, where
+            # lowering once panicked for a literal without a value
+            ('union Shape { dot, line{ n: usize } }\nextern union Raw { s: Shape, w: [2]u64 }\n#convert\n'
+             'fn mk { s: strlit } -> Shape {\n    let r = Raw{ w = [99, 0] }\n    return r.s\n}\n'
+             'fn main {} { let x: Shape = "abc" }',
+             "string literal can't hold a Shape with tag 99: it has no such variant", 8, 29),
+            ('union Shape { dot, line{ n: usize } }\nextern union Raw { r: !Shape, w: [3]u64 }\n#convert\n'
+             'fn mk { s: strlit } -> !Shape {\n    let r = Raw{ w = [7, 0, 0] }\n    return r.r\n}\n'
+             'fn main {} { let x: Shape = "abc" }',
+             "string literal can't hold a !Shape with tag 7: it has no such variant", 8, 29),
+            ('struct P { n: usize }\nextern union Raw { o: ?P, w: [2]u64 }\n#convert\n'
+             'fn mk { s: strlit } -> ?P {\n    let r = Raw{ w = [5, 0] }\n    return r.o\n}\n'
+             'fn main {} { let x: ?P = "abc" }',
+             "string literal can't hold a ?P with tag 5: it has no such variant", 8, 26),
         ]:
             self.assertError(src, msg, line, col)
 
