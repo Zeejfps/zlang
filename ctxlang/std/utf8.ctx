@@ -472,7 +472,9 @@ namespace utf8 {
     }
 
     // Each push fails with alloc::out_of_memory. `push` then leaves b as it was; the padded ones
-    // may have pushed some of the padding.
+    // may have pushed some of the padding. The `#write` ones are @fmt's writers (§13), one for
+    // each type a hole may have: every integer type, f32, f64, bool, String and strlit.
+    #write
     fn push(S) { mut b: Builder(S), s: String } -> ! {
         try list::reserve{ list = &b.bytes, extra = s.bytes.len }
         let mut i: usize = 0
@@ -482,35 +484,75 @@ namespace utf8 {
         }
     }
 
-    // Panics if c isn't a scalar value.
+    // A literal's bytes, which @fmt has checked are valid UTF-8 where it writes one.
+    #write
+    fn push_literal(S) { mut b: Builder(S), s: strlit } -> ! {
+        try push{ &b, s = String{ bytes = s.bytes } }
+    }
+
+    // Panics if c isn't a scalar value. Not a writer: a u32 hole is written as a number.
     fn push_char(S) { mut b: Builder(S), c: u32 } -> ! {
         let mut buf: [4]u8
         try push{ &b, s = encode{ c, into = buf[..] } }
     }
 
+    #write
     fn push_i64(S) { mut b: Builder(S), n: i64 } -> ! {
         let mut buf: [20]u8
         try push{ &b, s = fmt_i64{ n, into = buf[..] } }
     }
 
+    #write
     fn push_u64(S) { mut b: Builder(S), n: u64 } -> ! {
         let mut buf: [20]u8
         try push{ &b, s = fmt_u64{ n, into = buf[..] } }
     }
 
+    // The other integer types, each its own writer: a hole is written by the writer of its
+    // exact type.
+    #write
+    fn push_i8(S) { mut b: Builder(S), n: i8 } -> ! { return push_i64{ &b, n } }
+    #write
+    fn push_i16(S) { mut b: Builder(S), n: i16 } -> ! { return push_i64{ &b, n } }
+    #write
+    fn push_i32(S) { mut b: Builder(S), n: i32 } -> ! { return push_i64{ &b, n } }
+    #write
+    fn push_u8(S) { mut b: Builder(S), n: u8 } -> ! { return push_u64{ &b, n } }
+    #write
+    fn push_u16(S) { mut b: Builder(S), n: u16 } -> ! { return push_u64{ &b, n } }
+    #write
+    fn push_u32(S) { mut b: Builder(S), n: u32 } -> ! { return push_u64{ &b, n } }
+    #write
+    fn push_usize(S) { mut b: Builder(S), n: usize } -> ! { return push_u64{ &b, n } }
+
+    #write
     fn push_f64(S) { mut b: Builder(S), n: f64 } -> ! {
         let mut buf: [32]u8
         try push{ &b, s = fmt_f64{ n, into = buf[..] } }
     }
 
+    #write
     fn push_f32(S) { mut b: Builder(S), n: f32 } -> ! {
         let mut buf: [32]u8
         try push{ &b, s = fmt_f32{ n, into = buf[..] } }
     }
 
+    #write
     fn push_bool(S) { mut b: Builder(S), v: bool } -> ! {
         try push{ &b, s = if v { "true" } else { "false" } }
     }
+
+    // Writers to name in an @fmt hole, as `utf8::write_hex{ n, _ }`: n in lowercase hex, and
+    // character c. The padded ones below take a width.
+    fn write_hex(S) { mut b: Builder(S), n: u64 } -> ! {
+        let mut buf: [16]u8
+        try push{ &b, s = fmt_hex{ n, into = buf[..] } }
+    }
+
+    fn write_char(S) { mut b: Builder(S), c: u32 } -> ! {
+        return push_char{ &b, c }
+    }
+
 
     // s right-aligned in `width` characters: padded with spaces, or with zeros after any `-` if
     // `zero`. Wider text is pushed whole.

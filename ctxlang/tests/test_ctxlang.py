@@ -1112,7 +1112,7 @@ class Bodies(Base):
             (B + '    return @fmt(&b, "{5}", true)\n}',
              '`{5}`: a width applies to integers and utf8::String, not bool', 2, 28),
             ('struct S { a: i32 }\n' + B + '    return @fmt(&b, "{}", S{ a = 1 })\n}',
-             "@fmt can't format S: give a utf8::String, a number, a bool, an error, or a function that writes to the builder", 3, 28),
+             "@fmt has no writer of S to utf8::Builder(arena::Arena)", 3, 28),
             (B + '    let n: i64 = 65\n    return @fmt(&b, "{c}", n)\n}',
              'expected u32, got i64', 3, 28),
             ('fn wr { mut b: i32 } -> ! { }\n' + B + '    return @fmt(&b, "{}", wr)\n}',
@@ -2906,6 +2906,24 @@ class Fmt(Base):
     _ = @fmt(&b, "{} {} {} {} {} {}|{c}|{{}}|{}", -3, small, 1.5, true, name, @as(f32, 0.5), 'A', "lit")""",
                  '-3 7 1.5 true caf\u00e9 0.5|A|{}|lit')
 
+    def test_every_type(self):
+        # std's utf8 has one writer for each: every integer type, f32, f64, bool, String and
+        # strlit. A u32 is a number; write_char and write_hex write a character and hex.
+        self.fmt(r"""
+    let a: i8 = -1
+    let c: i16 = -2
+    let d: i32 = -3
+    let e: i64 = -4
+    let f: u8 = 5
+    let g: u16 = 6
+    let h: u32 = 65
+    let i: u64 = 8
+    let j: usize = 9
+    let s: utf8::String = "str"
+    _ = @fmt(&b, "{} {} {} {} {} {} {} {} {} {} {} {} {} {}", a, c, d, e, f, g, h, i, j, @as(f32, 0.5), 1.25, false, s, "lit")
+    _ = @fmt(&b, " {}{}", utf8::write_char{ c = h, _ }, utf8::write_hex{ n = 255, _ })""",
+                 '-1 -2 -3 -4 5 6 65 8 9 0.5 1.25 false str lit Aff')
+
     def test_widths_and_hex(self):
         self.fmt(r"""
     let name = utf8::of{ chars = "ab" }
@@ -2976,7 +2994,7 @@ fn main { mut io: Io } {
 """, '7\na[\n')
 
     def test_writer_must_fail(self):
-        self.fmt_error('_ = @fmt(&b, "{}", w{ _ })', "@fmt can't format &fn{ mut b: utf8::Builder(arena::Arena) } -> bool",
+        self.fmt_error('_ = @fmt(&b, "{}", w{ _ })', "@fmt has no writer of &fn{ mut b: utf8::Builder(arena::Arena) } -> bool to utf8::Builder(arena::Arena)",
                        extra='fn w { mut b: utf8::Builder(arena::Arena) } -> bool { return true }\n')
 
     def test_open_integer_types(self):
@@ -3024,11 +3042,11 @@ fn main { mut io: Io } {
             ('let n: i32 = 1\n    _ = @fmt(&b, "{x}", n)', '`{x}` formats an unsigned integer, not i32'),
             ('_ = @fmt(&b, "{4c}", 65)', '`{4c}`: a width applies to numbers and text'),
             ('_ = @fmt(&b, "{4}", 1.5)', '`{4}`: a width applies to integers and utf8::String, not f64'),
-            ('_ = @fmt(&b, "{}", [1, 2])', "@fmt can't format [2]i32"),
-            ('let s: []u8 = "x"\n    _ = @fmt(&b, "{}", s)', "@fmt can't format []u8"),
+            ('_ = @fmt(&b, "{}", [1, 2])', "@fmt has no writer of [2]i32 to utf8::Builder(arena::Arena)"),
+            ('let s: []u8 = "x"\n    _ = @fmt(&b, "{}", s)', "@fmt has no writer of []u8 to utf8::Builder(arena::Arena)"),
             ('let mut n: i32 = 1\n    _ = @fmt(&n, "x")','@fmt writes to a *mut utf8::Builder, got *mut i32'),
             ('let bs: [1]utf8::Builder(arena::Arena) = [b]\n    _ = @fmt(&bs[0], "x")',
-             '@fmt writes to a *mut utf8::Builder, got *utf8::Builder(arena::Arena)'),
+             '`bs` is not a mutable place'),
             ('_ = @fmt(&b, "{}", w{ &b, _ })', '`b` overlaps a place held by `w{ &b, _ }`'),
             ('@fmt(&b, "x")', 'the result of `@fmt` (!) is unused'),
         ]:
