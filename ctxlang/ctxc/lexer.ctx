@@ -61,9 +61,33 @@ namespace tok {
         return @as(u8, kind) >= @as(u8, Kind::arrow)
     }
 
-    // The kind of KEYWORDS[i] or OPS[i].
-    fn keyword { i: usize } -> Kind { return @as(Kind, @as(usize, Kind::kw_fn) + i) }
-    fn op { i: usize } -> Kind { return @as(Kind, @as(usize, Kind::arrow) + i) }
+    // The kind of KEYWORDS[i] or OPS[i]: an index into a table computed while compiling, rather
+    // than an @as that checks the value against every variant.
+    fn keyword { i: usize } -> Kind { return KEYWORD_KINDS[i] }
+    fn op { i: usize } -> Kind { return OP_KINDS[i] }
+
+    const KEYWORD_KINDS: [29]Kind = keyword_kinds{}
+    const OP_KINDS: [34]Kind = op_kinds{}
+
+    fn keyword_kinds {} -> [29]Kind {
+        let mut out: [29]Kind = [Kind::eof; 29]
+        let mut i: usize = 0
+        while i < out.len {
+            out[i] = @as(Kind, @as(usize, Kind::kw_fn) + i)
+            i = i + 1
+        }
+        return out
+    }
+
+    fn op_kinds {} -> [34]Kind {
+        let mut out: [34]Kind = [Kind::eof; 34]
+        let mut i: usize = 0
+        while i < out.len {
+            out[i] = @as(Kind, @as(usize, Kind::arrow) + i)
+            i = i + 1
+        }
+        return out
+    }
 
     // An operator's text.
     fn op_text { kind: Kind } -> []u8 { return OPS[@as(usize, kind) - @as(usize, Kind::arrow)] }

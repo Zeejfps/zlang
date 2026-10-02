@@ -87,4 +87,6 @@ errors and capability-variable work (`e19f1fe`).
   `tok::Kind`, `lower::to_enum`), which the C backend emits as a chain. An enum whose values are
   contiguous could lower to one range check instead. With the C compiler in between, this is
   unlikely to show in a profile; the front end's time hasn't been profiled (PLAN.md, Known gaps).
+  The lexer now indexes tables of kinds that consts compute while compiling (`tok::KEYWORD_KINDS`,
+  `OP_KINDS`); other `@as` to an enum still lower to the chain.
 

@@ -657,14 +657,14 @@ typedef t494 *t650;
 typedef struct t651 t651;
 typedef struct t652 t652;
 typedef t116 *t653;
-typedef ctx_fn *t654;
-typedef struct t655 t655;
+typedef struct t654 t654;
+typedef ctx_fn *t655;
 typedef struct t656 t656;
 typedef struct t657 t657;
 typedef struct t658 t658;
 typedef struct t659 t659;
 typedef struct t660 t660;
-typedef t660 *t661;
+typedef struct t661 t661;
 typedef struct t662 t662;
 typedef t662 *t663;
 typedef struct t664 t664;
@@ -680,45 +680,45 @@ typedef t672 *t673;
 typedef struct t674 t674;
 typedef t674 *t675;
 typedef struct t676 t676;
-typedef struct t677 t677;
+typedef t676 *t677;
 typedef struct t678 t678;
-typedef t678 *t679;
+typedef struct t679 t679;
 typedef struct t680 t680;
 typedef t680 *t681;
-typedef ctx_fn *t682;
-typedef ctx_fn *t683;
-typedef struct t684 t684;
-typedef struct t685 t685;
+typedef struct t682 t682;
+typedef t682 *t683;
+typedef ctx_fn *t684;
+typedef ctx_fn *t685;
 typedef struct t686 t686;
-typedef t289 *t687;
-typedef t326 *t688;
-typedef t327 *t689;
-typedef t335 *t690;
-typedef t339 *t691;
-typedef t342 *t692;
-typedef struct t693 t693;
-typedef struct t694 t694;
-typedef t331 *t695;
+typedef struct t687 t687;
+typedef struct t688 t688;
+typedef t289 *t689;
+typedef t326 *t690;
+typedef t327 *t691;
+typedef t335 *t692;
+typedef t339 *t693;
+typedef t342 *t694;
+typedef struct t695 t695;
 typedef struct t696 t696;
-typedef struct t697 t697;
-typedef t697 *t698;
+typedef t331 *t697;
+typedef struct t698 t698;
 typedef struct t699 t699;
-typedef struct t700 t700;
+typedef t699 *t700;
 typedef struct t701 t701;
 typedef struct t702 t702;
 typedef struct t703 t703;
-typedef t500 *t704;
-typedef t516 *t705;
-typedef struct t706 t706;
-typedef struct t707 t707;
+typedef struct t704 t704;
+typedef struct t705 t705;
+typedef t500 *t706;
+typedef t516 *t707;
 typedef struct t708 t708;
 typedef struct t709 t709;
-typedef t709 *t710;
+typedef struct t710 t710;
 typedef struct t711 t711;
-typedef struct t712 t712;
-typedef t712 *t713;
+typedef t711 *t712;
+typedef struct t713 t713;
 typedef struct t714 t714;
-typedef struct t715 t715;
+typedef t714 *t715;
 typedef struct t716 t716;
 typedef struct t717 t717;
 typedef struct t718 t718;
@@ -726,92 +726,92 @@ typedef struct t719 t719;
 typedef struct t720 t720;
 typedef struct t721 t721;
 typedef struct t722 t722;
-typedef t272 *t723;
+typedef struct t723 t723;
 typedef struct t724 t724;
-typedef struct t725 t725;
-typedef t405 *t726;
-typedef t408 *t727;
-typedef struct t728 t728;
-typedef t728 *t729;
+typedef t272 *t725;
+typedef struct t726 t726;
+typedef struct t727 t727;
+typedef t405 *t728;
+typedef t408 *t729;
 typedef struct t730 t730;
-typedef struct t731 t731;
+typedef t730 *t731;
 typedef struct t732 t732;
 typedef struct t733 t733;
-typedef t320 *t734;
+typedef struct t734 t734;
 typedef struct t735 t735;
-typedef struct t736 t736;
+typedef t320 *t736;
 typedef struct t737 t737;
-typedef t737 *t738;
+typedef struct t738 t738;
 typedef struct t739 t739;
-typedef struct t740 t740;
+typedef t739 *t740;
 typedef struct t741 t741;
 typedef struct t742 t742;
 typedef struct t743 t743;
 typedef struct t744 t744;
-typedef t744 *t745;
+typedef struct t745 t745;
 typedef struct t746 t746;
-typedef struct t747 t747;
+typedef t746 *t747;
 typedef struct t748 t748;
 typedef struct t749 t749;
 typedef struct t750 t750;
 typedef struct t751 t751;
 typedef struct t752 t752;
 typedef struct t753 t753;
-typedef t753 *t754;
-typedef t752 *t755;
-typedef struct t756 t756;
-typedef struct t757 t757;
+typedef struct t754 t754;
+typedef struct t755 t755;
+typedef t755 *t756;
+typedef t754 *t757;
 typedef struct t758 t758;
 typedef struct t759 t759;
 typedef struct t760 t760;
-typedef t315 *t761;
+typedef struct t761 t761;
 typedef struct t762 t762;
-typedef struct t763 t763;
+typedef t315 *t763;
 typedef struct t764 t764;
 typedef struct t765 t765;
 typedef struct t766 t766;
 typedef struct t767 t767;
-typedef t767 *t768;
+typedef struct t768 t768;
 typedef struct t769 t769;
-typedef struct t770 t770;
+typedef t769 *t770;
 typedef struct t771 t771;
 typedef struct t772 t772;
 typedef struct t773 t773;
 typedef struct t774 t774;
 typedef struct t775 t775;
-typedef t775 *t776;
+typedef struct t776 t776;
 typedef struct t777 t777;
-typedef struct t778 t778;
+typedef t777 *t778;
 typedef struct t779 t779;
 typedef struct t780 t780;
 typedef struct t781 t781;
+typedef struct t782 t782;
 typedef struct t783 t783;
-typedef t783 *t782;
-typedef struct t784 t784;
-typedef t364 *t785;
+typedef struct t785 t785;
+typedef t785 *t784;
 typedef struct t786 t786;
-typedef struct t787 t787;
+typedef t364 *t787;
 typedef struct t788 t788;
+typedef struct t789 t789;
 typedef struct t790 t790;
-typedef t790 *t789;
-typedef t787 *t791;
 typedef struct t792 t792;
-typedef t346 *t793;
+typedef t792 *t791;
+typedef t789 *t793;
 typedef struct t794 t794;
-typedef t368 *t795;
-typedef t350 *t796;
-typedef struct t797 t797;
-typedef struct t798 t798;
+typedef t346 *t795;
+typedef struct t796 t796;
+typedef t368 *t797;
+typedef t350 *t798;
 typedef struct t799 t799;
 typedef struct t800 t800;
 typedef struct t801 t801;
 typedef struct t802 t802;
-typedef t51 *t803;
-typedef t565 *t804;
-typedef struct t805 t805;
-typedef t497 *t806;
+typedef struct t803 t803;
+typedef struct t804 t804;
+typedef t51 *t805;
+typedef t565 *t806;
 typedef struct t807 t807;
-typedef struct t808 t808;
+typedef t497 *t808;
 typedef struct t809 t809;
 typedef struct t810 t810;
 typedef struct t811 t811;
@@ -820,41 +820,41 @@ typedef struct t813 t813;
 typedef struct t814 t814;
 typedef struct t815 t815;
 typedef struct t816 t816;
-typedef t816 *t817;
-typedef t380 *t818;
-typedef t420 *t819;
-typedef t425 *t820;
-typedef t411 *t821;
-typedef struct t822 t822;
-typedef t355 *t823;
+typedef struct t817 t817;
+typedef struct t818 t818;
+typedef t818 *t819;
+typedef t380 *t820;
+typedef t420 *t821;
+typedef t425 *t822;
+typedef t411 *t823;
 typedef struct t824 t824;
-typedef struct t825 t825;
+typedef t355 *t825;
 typedef struct t826 t826;
 typedef struct t827 t827;
 typedef struct t828 t828;
-typedef t828 *t829;
-typedef t372 *t830;
-typedef t387 *t831;
-typedef t360 *t832;
-typedef struct t833 t833;
-typedef t833 *t834;
+typedef struct t829 t829;
+typedef struct t830 t830;
+typedef t830 *t831;
+typedef t372 *t832;
+typedef t387 *t833;
+typedef t360 *t834;
 typedef struct t835 t835;
-typedef struct t836 t836;
+typedef t835 *t836;
 typedef struct t837 t837;
 typedef struct t838 t838;
-typedef t838 *t839;
+typedef struct t839 t839;
 typedef struct t840 t840;
-typedef struct t841 t841;
-typedef t509 *t842;
-typedef t520 *t843;
-typedef t505 *t844;
-typedef struct t845 t845;
-typedef struct t846 t846;
+typedef t840 *t841;
+typedef struct t842 t842;
+typedef struct t843 t843;
+typedef t509 *t844;
+typedef t520 *t845;
+typedef t505 *t846;
+typedef struct t847 t847;
 typedef struct t848 t848;
-typedef t848 *t847;
-typedef t845 *t849;
 typedef struct t850 t850;
-typedef struct t851 t851;
+typedef t850 *t849;
+typedef t847 *t851;
 typedef struct t852 t852;
 typedef struct t853 t853;
 typedef struct t854 t854;
@@ -873,6 +873,8 @@ typedef struct t866 t866;
 typedef struct t867 t867;
 typedef struct t868 t868;
 typedef struct t869 t869;
+typedef struct t870 t870;
+typedef struct t871 t871;
 
 struct t0 { };
 struct t2 { };
@@ -1321,158 +1323,160 @@ struct t647 { uint32_t tag; union { struct { t648 m_value; } v1; } p; };
 struct t649 { t650 m_ptr; t13 m_len; };
 struct t652 { t324 m_layout; t19 m_pay_off; t649 m_offs; };
 struct t651 { uint32_t tag; union { struct { t652 m_value; } v1; } p; };
-struct t655 { t33 m_c; t13 m_size; };
-struct t656 { t13 m_next; t611 m_problem; };
-struct t657 { uint32_t tag; union { struct { t126 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t658 { uint32_t tag; union { struct { t254 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t659 { uint32_t tag; union { struct { t135 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t660 { t138 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t662 { t186 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t664 { t144 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t666 { t182 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t668 { t193 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t670 { t189 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t672 { t154 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t674 { t165 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t676 { uint32_t tag; union { struct { t440 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t677 { uint32_t tag; union { struct { t64 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t678 { t76 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t680 { t17 m_s; t13 m_pos; };
-struct t684 { uint32_t tag; union { struct { t82 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t685 { uint32_t tag; union { struct { t279 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t686 { uint32_t tag; union { struct { t283 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t693 { uint32_t tag; union { struct { t12 m_value; } v1; } p; };
-struct t694 { uint32_t tag; union { struct { t359 m_value; } v1; } p; };
-struct t696 { uint32_t tag; union { struct { t45 m_value; } v1; } p; };
-struct t697 { t527 m_m; t10 m_name; t121 m_at; };
-struct t699 { uint32_t tag; union { struct { t265 m_value; } v1; } p; };
-struct t700 { uint32_t tag; union { struct { t417 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t701 { uint32_t tag; union { struct { t491 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t702 { uint32_t tag; union { struct { t502 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t703 { uint32_t tag; union { struct { t33 m_value; } v0; struct { t603 m_error; } v1; } p; };
-struct t706 { uint32_t tag; union { struct { t534 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t707 { uint32_t tag; union { struct { t530 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t708 { uint32_t tag; union { struct { t324 m_value; } v1; } p; };
-struct t709 { t649 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t711 { uint32_t tag; union { struct { t384 m_value; } v1; } p; };
-struct t712 { t12 a[16]; };
-struct t714 { t12 a[8]; };
-struct t715 { uint32_t tag; union { struct { t129 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t716 { uint32_t tag; union { struct { t153 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t717 { uint32_t tag; union { struct { t150 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t718 { uint32_t tag; union { struct { t233 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t719 { uint32_t tag; union { struct { t237 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t720 { uint32_t tag; union { struct { t260 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t721 { uint32_t tag; union { struct { t267 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t722 { uint32_t tag; union { struct { t310 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t724 { uint32_t tag; };
-struct t725 { uint32_t tag; union { struct { t395 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t728 { t403 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t730 { uint32_t tag; union { struct { t399 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t731 { uint32_t tag; union { struct { t304 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t733 { uint32_t tag; };
-struct t732 { uint32_t tag; union { struct { t733 m_error; } v1; } p; };
-struct t735 { uint32_t tag; union { struct { t376 m_value; } v1; } p; };
-struct t736 { uint32_t tag; union { struct { t117 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t737 { t159 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t739 { uint32_t tag; union { struct { t162 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t740 { uint32_t tag; union { struct { t138 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t741 { uint32_t tag; union { struct { t186 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t742 { uint32_t tag; union { struct { t196 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t743 { uint32_t tag; union { struct { t144 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t744 { t149 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t746 { uint32_t tag; union { struct { t149 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t747 { uint32_t tag; union { struct { t182 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t748 { uint32_t tag; union { struct { t193 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t749 { uint32_t tag; union { struct { t189 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t750 { uint32_t tag; union { struct { t154 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t751 { uint32_t tag; union { struct { t165 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t752 { t176 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t753 { t179 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t756 { uint32_t tag; union { struct { t226 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t757 { uint32_t tag; union { struct { t290 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t758 { uint32_t tag; union { struct { t263 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t759 { uint32_t tag; union { struct { t299 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t760 { uint32_t tag; union { struct { t293 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t762 { uint32_t tag; union { struct { t297 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t763 { uint32_t tag; union { struct { t332 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t764 { uint32_t tag; union { struct { t404 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t765 { t14 m_negative; t19 m_magnitude; };
-struct t766 { uint32_t tag; union { struct { t494 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t767 { t12 a[64]; };
-struct t769 { uint32_t tag; };
-struct t770 { uint32_t tag; union { struct { t517 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t771 { uint32_t tag; union { struct { t649 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t772 { uint32_t tag; union { struct { t141 m_e; } v1; struct { t167 m_s; } v2; } p; };
-struct t773 { t10 m_name; t33 m_types; t33 m_lo; t33 m_hi; t17 m_usage; };
-struct t774 { t773 a[12]; };
-struct t775 { t171 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t777 { uint32_t tag; union { struct { t273 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t778 { uint32_t tag; union { struct { t328 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t779 { uint32_t tag; union { struct { t340 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t781 { t782 m_ptr; t13 m_len; };
-struct t780 { t781 m_yes; t781 m_no; };
-struct t783 { t33 m_var; t33 m_root; t8 m_steps; t33 m_ty; t121 m_at; t14 m_bind; t14 m_clash; };
-struct t784 { uint32_t tag; union { struct { t301 m_value; } v1; } p; };
-struct t786 { uint32_t tag; union { struct { t12 m_value; } v1; } p; };
-struct t788 { t789 m_ptr; t13 m_len; };
-struct t787 { t788 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t790 { t33 m_t; t772 m_value; };
-struct t792 { uint32_t tag; union { struct { t393 m_value; } v1; } p; };
-struct t794 { t393 m_forb; t17 m_via; };
-struct t797 { uint32_t tag; union { struct { t406 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t798 { uint32_t tag; union { struct { t409 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t799 { uint32_t tag; union { struct { t336 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t800 { uint32_t tag; union { struct { t345 m_value; } v1; } p; };
-struct t801 { uint32_t tag; union { struct { t403 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t802 { uint32_t tag; union { struct { t765 m_value; } v1; } p; };
-struct t805 { uint32_t tag; union { struct { t19 m_value; } v0; struct { t733 m_error; } v1; } p; };
-struct t807 { uint32_t tag; union { struct { t58 m_value; } v1; } p; };
-struct t808 { t14 m_through; t293 m_vs; t33 m_enum_decl; };
-struct t809 { uint32_t tag; union { struct { t181 m_value; } v1; } p; };
-struct t810 { uint32_t tag; union { struct { t321 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t811 { uint32_t tag; union { struct { t159 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t812 { uint32_t tag; union { struct { t179 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t813 { uint32_t tag; union { struct { t176 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t814 { uint32_t tag; union { struct { t316 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t815 { uint32_t tag; union { struct { t783 m_value; } v1; } p; };
-struct t816 { t781 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t822 { uint32_t tag; union { struct { t391 m_value; } v1; } p; };
-struct t824 { uint32_t tag; union { struct { t14 m_value; } v0; struct { t733 m_error; } v1; } p; };
-struct t825 { uint32_t tag; union { struct { t14 m_value; } v0; struct { t603 m_error; } v1; } p; };
-struct t826 { uint32_t tag; union { struct { t13 m_value; } v0; struct { t733 m_error; } v1; } p; };
-struct t827 { uint32_t tag; union { struct { t171 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t828 { t376 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t833 { t384 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t835 { uint32_t tag; union { struct { t365 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t836 { uint32_t tag; union { struct { t369 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t837 { uint32_t tag; union { struct { t351 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t838 { t391 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t840 { uint32_t tag; union { struct { t343 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t841 { uint32_t tag; union { struct { t347 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t846 { t847 m_ptr; t13 m_len; };
-struct t845 { t846 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
-struct t848 { t393 m_p; t10 m_holder; };
-struct t850 { uint32_t tag; union { struct { t381 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t851 { uint32_t tag; union { struct { t788 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t852 { uint32_t tag; union { struct { t421 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t853 { uint32_t tag; union { struct { t426 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t854 { uint32_t tag; union { struct { t412 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t855 { uint32_t tag; union { struct { t356 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t856 { uint32_t tag; union { struct { t498 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t857 { uint32_t tag; union { struct { t508 m_value; } v0; struct { t603 m_error; } v1; } p; };
-struct t858 { uint32_t tag; union { struct { t13 m_value; } v0; struct { t603 m_error; } v1; } p; };
-struct t859 { uint32_t tag; union { struct { t376 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t860 { uint32_t tag; union { struct { t373 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t861 { uint32_t tag; union { struct { t388 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t862 { uint32_t tag; union { struct { t361 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t863 { uint32_t tag; union { struct { t781 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t864 { uint32_t tag; union { struct { t510 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t865 { uint32_t tag; union { struct { t521 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t866 { uint32_t tag; union { struct { t506 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t867 { uint32_t tag; union { struct { t384 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t868 { uint32_t tag; union { struct { t391 m_value; } v0; struct { t95 m_error; } v1; } p; };
-struct t869 { uint32_t tag; union { struct { t846 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t654 { t12 a[34]; };
+struct t656 { t33 m_c; t13 m_size; };
+struct t657 { t13 m_next; t611 m_problem; };
+struct t658 { t12 a[29]; };
+struct t659 { uint32_t tag; union { struct { t126 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t660 { uint32_t tag; union { struct { t254 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t661 { uint32_t tag; union { struct { t135 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t662 { t138 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t664 { t186 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t666 { t144 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t668 { t182 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t670 { t193 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t672 { t189 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t674 { t154 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t676 { t165 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t678 { uint32_t tag; union { struct { t440 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t679 { uint32_t tag; union { struct { t64 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t680 { t76 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t682 { t17 m_s; t13 m_pos; };
+struct t686 { uint32_t tag; union { struct { t82 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t687 { uint32_t tag; union { struct { t279 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t688 { uint32_t tag; union { struct { t283 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t695 { uint32_t tag; union { struct { t12 m_value; } v1; } p; };
+struct t696 { uint32_t tag; union { struct { t359 m_value; } v1; } p; };
+struct t698 { uint32_t tag; union { struct { t45 m_value; } v1; } p; };
+struct t699 { t527 m_m; t10 m_name; t121 m_at; };
+struct t701 { uint32_t tag; union { struct { t265 m_value; } v1; } p; };
+struct t702 { uint32_t tag; union { struct { t417 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t703 { uint32_t tag; union { struct { t491 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t704 { uint32_t tag; union { struct { t502 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t705 { uint32_t tag; union { struct { t33 m_value; } v0; struct { t603 m_error; } v1; } p; };
+struct t708 { uint32_t tag; union { struct { t534 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t709 { uint32_t tag; union { struct { t530 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t710 { uint32_t tag; union { struct { t324 m_value; } v1; } p; };
+struct t711 { t649 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t713 { uint32_t tag; union { struct { t384 m_value; } v1; } p; };
+struct t714 { t12 a[16]; };
+struct t716 { t12 a[8]; };
+struct t717 { uint32_t tag; union { struct { t129 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t718 { uint32_t tag; union { struct { t153 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t719 { uint32_t tag; union { struct { t150 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t720 { uint32_t tag; union { struct { t233 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t721 { uint32_t tag; union { struct { t237 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t722 { uint32_t tag; union { struct { t260 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t723 { uint32_t tag; union { struct { t267 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t724 { uint32_t tag; union { struct { t310 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t726 { uint32_t tag; };
+struct t727 { uint32_t tag; union { struct { t395 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t730 { t403 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t732 { uint32_t tag; union { struct { t399 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t733 { uint32_t tag; union { struct { t304 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t735 { uint32_t tag; };
+struct t734 { uint32_t tag; union { struct { t735 m_error; } v1; } p; };
+struct t737 { uint32_t tag; union { struct { t376 m_value; } v1; } p; };
+struct t738 { uint32_t tag; union { struct { t117 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t739 { t159 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t741 { uint32_t tag; union { struct { t162 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t742 { uint32_t tag; union { struct { t138 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t743 { uint32_t tag; union { struct { t186 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t744 { uint32_t tag; union { struct { t196 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t745 { uint32_t tag; union { struct { t144 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t746 { t149 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t748 { uint32_t tag; union { struct { t149 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t749 { uint32_t tag; union { struct { t182 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t750 { uint32_t tag; union { struct { t193 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t751 { uint32_t tag; union { struct { t189 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t752 { uint32_t tag; union { struct { t154 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t753 { uint32_t tag; union { struct { t165 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t754 { t176 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t755 { t179 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t758 { uint32_t tag; union { struct { t226 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t759 { uint32_t tag; union { struct { t290 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t760 { uint32_t tag; union { struct { t263 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t761 { uint32_t tag; union { struct { t299 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t762 { uint32_t tag; union { struct { t293 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t764 { uint32_t tag; union { struct { t297 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t765 { uint32_t tag; union { struct { t332 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t766 { uint32_t tag; union { struct { t404 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t767 { t14 m_negative; t19 m_magnitude; };
+struct t768 { uint32_t tag; union { struct { t494 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t769 { t12 a[64]; };
+struct t771 { uint32_t tag; };
+struct t772 { uint32_t tag; union { struct { t517 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t773 { uint32_t tag; union { struct { t649 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t774 { uint32_t tag; union { struct { t141 m_e; } v1; struct { t167 m_s; } v2; } p; };
+struct t775 { t10 m_name; t33 m_types; t33 m_lo; t33 m_hi; t17 m_usage; };
+struct t776 { t775 a[12]; };
+struct t777 { t171 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t779 { uint32_t tag; union { struct { t273 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t780 { uint32_t tag; union { struct { t328 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t781 { uint32_t tag; union { struct { t340 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t783 { t784 m_ptr; t13 m_len; };
+struct t782 { t783 m_yes; t783 m_no; };
+struct t785 { t33 m_var; t33 m_root; t8 m_steps; t33 m_ty; t121 m_at; t14 m_bind; t14 m_clash; };
+struct t786 { uint32_t tag; union { struct { t301 m_value; } v1; } p; };
+struct t788 { uint32_t tag; union { struct { t12 m_value; } v1; } p; };
+struct t790 { t791 m_ptr; t13 m_len; };
+struct t789 { t790 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t792 { t33 m_t; t774 m_value; };
+struct t794 { uint32_t tag; union { struct { t393 m_value; } v1; } p; };
+struct t796 { t393 m_forb; t17 m_via; };
+struct t799 { uint32_t tag; union { struct { t406 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t800 { uint32_t tag; union { struct { t409 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t801 { uint32_t tag; union { struct { t336 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t802 { uint32_t tag; union { struct { t345 m_value; } v1; } p; };
+struct t803 { uint32_t tag; union { struct { t403 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t804 { uint32_t tag; union { struct { t767 m_value; } v1; } p; };
+struct t807 { uint32_t tag; union { struct { t19 m_value; } v0; struct { t735 m_error; } v1; } p; };
+struct t809 { uint32_t tag; union { struct { t58 m_value; } v1; } p; };
+struct t810 { t14 m_through; t293 m_vs; t33 m_enum_decl; };
+struct t811 { uint32_t tag; union { struct { t181 m_value; } v1; } p; };
+struct t812 { uint32_t tag; union { struct { t321 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t813 { uint32_t tag; union { struct { t159 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t814 { uint32_t tag; union { struct { t179 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t815 { uint32_t tag; union { struct { t176 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t816 { uint32_t tag; union { struct { t316 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t817 { uint32_t tag; union { struct { t785 m_value; } v1; } p; };
+struct t818 { t783 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t824 { uint32_t tag; union { struct { t391 m_value; } v1; } p; };
+struct t826 { uint32_t tag; union { struct { t14 m_value; } v0; struct { t735 m_error; } v1; } p; };
+struct t827 { uint32_t tag; union { struct { t14 m_value; } v0; struct { t603 m_error; } v1; } p; };
+struct t828 { uint32_t tag; union { struct { t13 m_value; } v0; struct { t735 m_error; } v1; } p; };
+struct t829 { uint32_t tag; union { struct { t171 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t830 { t376 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t835 { t384 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t837 { uint32_t tag; union { struct { t365 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t838 { uint32_t tag; union { struct { t369 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t839 { uint32_t tag; union { struct { t351 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t840 { t391 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t842 { uint32_t tag; union { struct { t343 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t843 { uint32_t tag; union { struct { t347 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t848 { t849 m_ptr; t13 m_len; };
+struct t847 { t848 m_items; t13 m_len; t27 m_realloc; t26 m_heap; };
+struct t850 { t393 m_p; t10 m_holder; };
+struct t852 { uint32_t tag; union { struct { t381 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t853 { uint32_t tag; union { struct { t790 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t854 { uint32_t tag; union { struct { t421 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t855 { uint32_t tag; union { struct { t426 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t856 { uint32_t tag; union { struct { t412 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t857 { uint32_t tag; union { struct { t356 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t858 { uint32_t tag; union { struct { t498 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t859 { uint32_t tag; union { struct { t508 m_value; } v0; struct { t603 m_error; } v1; } p; };
+struct t860 { uint32_t tag; union { struct { t13 m_value; } v0; struct { t603 m_error; } v1; } p; };
+struct t861 { uint32_t tag; union { struct { t376 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t862 { uint32_t tag; union { struct { t373 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t863 { uint32_t tag; union { struct { t388 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t864 { uint32_t tag; union { struct { t361 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t865 { uint32_t tag; union { struct { t783 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t866 { uint32_t tag; union { struct { t510 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t867 { uint32_t tag; union { struct { t521 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t868 { uint32_t tag; union { struct { t506 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t869 { uint32_t tag; union { struct { t384 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t870 { uint32_t tag; union { struct { t391 m_value; } v0; struct { t95 m_error; } v1; } p; };
+struct t871 { uint32_t tag; union { struct { t848 m_value; } v0; struct { t95 m_error; } v1; } p; };
 
 typedef t22 (*c27)(ctx_fn *, t13, void *, t10, t13);
 typedef t19 (*c270)(ctx_fn *, t262);
@@ -1486,9 +1490,9 @@ typedef t14 (*c314)(ctx_fn *, t19, t19);
 typedef t19 (*c514)(ctx_fn *, t513);
 typedef t14 (*c515)(ctx_fn *, t513, t513);
 typedef t608 (*c609)(ctx_fn *, void *);
-typedef t110 (*c654)(ctx_fn *, void *);
-typedef t14 (*c682)(ctx_fn *, t33);
-typedef t14 (*c683)(ctx_fn *, t33);
+typedef t110 (*c655)(ctx_fn *, void *);
+typedef t14 (*c684)(ctx_fn *, t33);
+typedef t14 (*c685)(ctx_fn *, t33);
 
 _Static_assert(sizeof(t8) == 16 && _Alignof(t8) == 8, "layout of t8");
 _Static_assert(offsetof(t8, m_ptr) == 0, "offset in t8");
@@ -3487,26 +3491,21 @@ _Static_assert(sizeof(t652) == 40 && _Alignof(t652) == 8, "layout of t652");
 _Static_assert(offsetof(t652, m_layout) == 0, "offset in t652");
 _Static_assert(offsetof(t652, m_pay_off) == 16, "offset in t652");
 _Static_assert(offsetof(t652, m_offs) == 24, "offset in t652");
-_Static_assert(sizeof(t655) == 16 && _Alignof(t655) == 8, "layout of t655");
-_Static_assert(offsetof(t655, m_c) == 0, "offset in t655");
-_Static_assert(offsetof(t655, m_size) == 8, "offset in t655");
-_Static_assert(sizeof(t656) == 32 && _Alignof(t656) == 8, "layout of t656");
-_Static_assert(offsetof(t656, m_next) == 0, "offset in t656");
-_Static_assert(offsetof(t656, m_problem) == 8, "offset in t656");
-_Static_assert(sizeof(t657) == 24 && _Alignof(t657) == 8, "layout of t657");
-_Static_assert(offsetof(t657, p.v0.m_value) == 8, "offset in t657");
-_Static_assert(offsetof(t657, p.v1.m_error) == 8, "offset in t657");
-_Static_assert(sizeof(t658) == 24 && _Alignof(t658) == 8, "layout of t658");
-_Static_assert(offsetof(t658, p.v0.m_value) == 8, "offset in t658");
-_Static_assert(offsetof(t658, p.v1.m_error) == 8, "offset in t658");
+_Static_assert(sizeof(t656) == 16 && _Alignof(t656) == 8, "layout of t656");
+_Static_assert(offsetof(t656, m_c) == 0, "offset in t656");
+_Static_assert(offsetof(t656, m_size) == 8, "offset in t656");
+_Static_assert(sizeof(t657) == 32 && _Alignof(t657) == 8, "layout of t657");
+_Static_assert(offsetof(t657, m_next) == 0, "offset in t657");
+_Static_assert(offsetof(t657, m_problem) == 8, "offset in t657");
 _Static_assert(sizeof(t659) == 24 && _Alignof(t659) == 8, "layout of t659");
 _Static_assert(offsetof(t659, p.v0.m_value) == 8, "offset in t659");
 _Static_assert(offsetof(t659, p.v1.m_error) == 8, "offset in t659");
-_Static_assert(sizeof(t660) == 40 && _Alignof(t660) == 8, "layout of t660");
-_Static_assert(offsetof(t660, m_items) == 0, "offset in t660");
-_Static_assert(offsetof(t660, m_len) == 16, "offset in t660");
-_Static_assert(offsetof(t660, m_realloc) == 24, "offset in t660");
-_Static_assert(offsetof(t660, m_heap) == 32, "offset in t660");
+_Static_assert(sizeof(t660) == 24 && _Alignof(t660) == 8, "layout of t660");
+_Static_assert(offsetof(t660, p.v0.m_value) == 8, "offset in t660");
+_Static_assert(offsetof(t660, p.v1.m_error) == 8, "offset in t660");
+_Static_assert(sizeof(t661) == 24 && _Alignof(t661) == 8, "layout of t661");
+_Static_assert(offsetof(t661, p.v0.m_value) == 8, "offset in t661");
+_Static_assert(offsetof(t661, p.v1.m_error) == 8, "offset in t661");
 _Static_assert(sizeof(t662) == 40 && _Alignof(t662) == 8, "layout of t662");
 _Static_assert(offsetof(t662, m_items) == 0, "offset in t662");
 _Static_assert(offsetof(t662, m_len) == 16, "offset in t662");
@@ -3542,81 +3541,80 @@ _Static_assert(offsetof(t674, m_items) == 0, "offset in t674");
 _Static_assert(offsetof(t674, m_len) == 16, "offset in t674");
 _Static_assert(offsetof(t674, m_realloc) == 24, "offset in t674");
 _Static_assert(offsetof(t674, m_heap) == 32, "offset in t674");
-_Static_assert(sizeof(t676) == 24 && _Alignof(t676) == 8, "layout of t676");
-_Static_assert(offsetof(t676, p.v0.m_value) == 8, "offset in t676");
-_Static_assert(offsetof(t676, p.v1.m_error) == 8, "offset in t676");
-_Static_assert(sizeof(t677) == 24 && _Alignof(t677) == 8, "layout of t677");
-_Static_assert(offsetof(t677, p.v0.m_value) == 8, "offset in t677");
-_Static_assert(offsetof(t677, p.v1.m_error) == 8, "offset in t677");
-_Static_assert(sizeof(t678) == 40 && _Alignof(t678) == 8, "layout of t678");
-_Static_assert(offsetof(t678, m_items) == 0, "offset in t678");
-_Static_assert(offsetof(t678, m_len) == 16, "offset in t678");
-_Static_assert(offsetof(t678, m_realloc) == 24, "offset in t678");
-_Static_assert(offsetof(t678, m_heap) == 32, "offset in t678");
-_Static_assert(sizeof(t680) == 24 && _Alignof(t680) == 8, "layout of t680");
-_Static_assert(offsetof(t680, m_s) == 0, "offset in t680");
-_Static_assert(offsetof(t680, m_pos) == 16, "offset in t680");
-_Static_assert(sizeof(t684) == 24 && _Alignof(t684) == 8, "layout of t684");
-_Static_assert(offsetof(t684, p.v0.m_value) == 8, "offset in t684");
-_Static_assert(offsetof(t684, p.v1.m_error) == 8, "offset in t684");
-_Static_assert(sizeof(t685) == 24 && _Alignof(t685) == 8, "layout of t685");
-_Static_assert(offsetof(t685, p.v0.m_value) == 8, "offset in t685");
-_Static_assert(offsetof(t685, p.v1.m_error) == 8, "offset in t685");
+_Static_assert(sizeof(t676) == 40 && _Alignof(t676) == 8, "layout of t676");
+_Static_assert(offsetof(t676, m_items) == 0, "offset in t676");
+_Static_assert(offsetof(t676, m_len) == 16, "offset in t676");
+_Static_assert(offsetof(t676, m_realloc) == 24, "offset in t676");
+_Static_assert(offsetof(t676, m_heap) == 32, "offset in t676");
+_Static_assert(sizeof(t678) == 24 && _Alignof(t678) == 8, "layout of t678");
+_Static_assert(offsetof(t678, p.v0.m_value) == 8, "offset in t678");
+_Static_assert(offsetof(t678, p.v1.m_error) == 8, "offset in t678");
+_Static_assert(sizeof(t679) == 24 && _Alignof(t679) == 8, "layout of t679");
+_Static_assert(offsetof(t679, p.v0.m_value) == 8, "offset in t679");
+_Static_assert(offsetof(t679, p.v1.m_error) == 8, "offset in t679");
+_Static_assert(sizeof(t680) == 40 && _Alignof(t680) == 8, "layout of t680");
+_Static_assert(offsetof(t680, m_items) == 0, "offset in t680");
+_Static_assert(offsetof(t680, m_len) == 16, "offset in t680");
+_Static_assert(offsetof(t680, m_realloc) == 24, "offset in t680");
+_Static_assert(offsetof(t680, m_heap) == 32, "offset in t680");
+_Static_assert(sizeof(t682) == 24 && _Alignof(t682) == 8, "layout of t682");
+_Static_assert(offsetof(t682, m_s) == 0, "offset in t682");
+_Static_assert(offsetof(t682, m_pos) == 16, "offset in t682");
 _Static_assert(sizeof(t686) == 24 && _Alignof(t686) == 8, "layout of t686");
 _Static_assert(offsetof(t686, p.v0.m_value) == 8, "offset in t686");
 _Static_assert(offsetof(t686, p.v1.m_error) == 8, "offset in t686");
-_Static_assert(sizeof(t693) == 8 && _Alignof(t693) == 4, "layout of t693");
-_Static_assert(offsetof(t693, p.v1.m_value) == 4, "offset in t693");
-_Static_assert(sizeof(t694) == 80 && _Alignof(t694) == 8, "layout of t694");
-_Static_assert(offsetof(t694, p.v1.m_value) == 8, "offset in t694");
-_Static_assert(sizeof(t696) == 104 && _Alignof(t696) == 8, "layout of t696");
+_Static_assert(sizeof(t687) == 24 && _Alignof(t687) == 8, "layout of t687");
+_Static_assert(offsetof(t687, p.v0.m_value) == 8, "offset in t687");
+_Static_assert(offsetof(t687, p.v1.m_error) == 8, "offset in t687");
+_Static_assert(sizeof(t688) == 24 && _Alignof(t688) == 8, "layout of t688");
+_Static_assert(offsetof(t688, p.v0.m_value) == 8, "offset in t688");
+_Static_assert(offsetof(t688, p.v1.m_error) == 8, "offset in t688");
+_Static_assert(sizeof(t695) == 8 && _Alignof(t695) == 4, "layout of t695");
+_Static_assert(offsetof(t695, p.v1.m_value) == 4, "offset in t695");
+_Static_assert(sizeof(t696) == 80 && _Alignof(t696) == 8, "layout of t696");
 _Static_assert(offsetof(t696, p.v1.m_value) == 8, "offset in t696");
-_Static_assert(sizeof(t697) == 40 && _Alignof(t697) == 8, "layout of t697");
-_Static_assert(offsetof(t697, m_m) == 0, "offset in t697");
-_Static_assert(offsetof(t697, m_name) == 8, "offset in t697");
-_Static_assert(offsetof(t697, m_at) == 24, "offset in t697");
-_Static_assert(sizeof(t699) == 32 && _Alignof(t699) == 8, "layout of t699");
-_Static_assert(offsetof(t699, p.v1.m_value) == 8, "offset in t699");
-_Static_assert(sizeof(t700) == 24 && _Alignof(t700) == 8, "layout of t700");
-_Static_assert(offsetof(t700, p.v0.m_value) == 8, "offset in t700");
-_Static_assert(offsetof(t700, p.v1.m_error) == 8, "offset in t700");
-_Static_assert(sizeof(t701) == 24 && _Alignof(t701) == 8, "layout of t701");
-_Static_assert(offsetof(t701, p.v0.m_value) == 8, "offset in t701");
-_Static_assert(offsetof(t701, p.v1.m_error) == 8, "offset in t701");
+_Static_assert(sizeof(t698) == 104 && _Alignof(t698) == 8, "layout of t698");
+_Static_assert(offsetof(t698, p.v1.m_value) == 8, "offset in t698");
+_Static_assert(sizeof(t699) == 40 && _Alignof(t699) == 8, "layout of t699");
+_Static_assert(offsetof(t699, m_m) == 0, "offset in t699");
+_Static_assert(offsetof(t699, m_name) == 8, "offset in t699");
+_Static_assert(offsetof(t699, m_at) == 24, "offset in t699");
+_Static_assert(sizeof(t701) == 32 && _Alignof(t701) == 8, "layout of t701");
+_Static_assert(offsetof(t701, p.v1.m_value) == 8, "offset in t701");
 _Static_assert(sizeof(t702) == 24 && _Alignof(t702) == 8, "layout of t702");
 _Static_assert(offsetof(t702, p.v0.m_value) == 8, "offset in t702");
 _Static_assert(offsetof(t702, p.v1.m_error) == 8, "offset in t702");
-_Static_assert(sizeof(t703) == 8 && _Alignof(t703) == 4, "layout of t703");
-_Static_assert(offsetof(t703, p.v0.m_value) == 4, "offset in t703");
-_Static_assert(offsetof(t703, p.v1.m_error) == 4, "offset in t703");
-_Static_assert(sizeof(t706) == 24 && _Alignof(t706) == 8, "layout of t706");
-_Static_assert(offsetof(t706, p.v0.m_value) == 8, "offset in t706");
-_Static_assert(offsetof(t706, p.v1.m_error) == 8, "offset in t706");
-_Static_assert(sizeof(t707) == 24 && _Alignof(t707) == 8, "layout of t707");
-_Static_assert(offsetof(t707, p.v0.m_value) == 8, "offset in t707");
-_Static_assert(offsetof(t707, p.v1.m_error) == 8, "offset in t707");
+_Static_assert(sizeof(t703) == 24 && _Alignof(t703) == 8, "layout of t703");
+_Static_assert(offsetof(t703, p.v0.m_value) == 8, "offset in t703");
+_Static_assert(offsetof(t703, p.v1.m_error) == 8, "offset in t703");
+_Static_assert(sizeof(t704) == 24 && _Alignof(t704) == 8, "layout of t704");
+_Static_assert(offsetof(t704, p.v0.m_value) == 8, "offset in t704");
+_Static_assert(offsetof(t704, p.v1.m_error) == 8, "offset in t704");
+_Static_assert(sizeof(t705) == 8 && _Alignof(t705) == 4, "layout of t705");
+_Static_assert(offsetof(t705, p.v0.m_value) == 4, "offset in t705");
+_Static_assert(offsetof(t705, p.v1.m_error) == 4, "offset in t705");
 _Static_assert(sizeof(t708) == 24 && _Alignof(t708) == 8, "layout of t708");
-_Static_assert(offsetof(t708, p.v1.m_value) == 8, "offset in t708");
-_Static_assert(sizeof(t709) == 40 && _Alignof(t709) == 8, "layout of t709");
-_Static_assert(offsetof(t709, m_items) == 0, "offset in t709");
-_Static_assert(offsetof(t709, m_len) == 16, "offset in t709");
-_Static_assert(offsetof(t709, m_realloc) == 24, "offset in t709");
-_Static_assert(offsetof(t709, m_heap) == 32, "offset in t709");
-_Static_assert(sizeof(t711) == 24 && _Alignof(t711) == 8, "layout of t711");
-_Static_assert(offsetof(t711, p.v1.m_value) == 8, "offset in t711");
-_Static_assert(sizeof(t715) == 24 && _Alignof(t715) == 8, "layout of t715");
-_Static_assert(offsetof(t715, p.v0.m_value) == 8, "offset in t715");
-_Static_assert(offsetof(t715, p.v1.m_error) == 8, "offset in t715");
-_Static_assert(sizeof(t716) == 16 && _Alignof(t716) == 8, "layout of t716");
-_Static_assert(offsetof(t716, p.v0.m_value) == 8, "offset in t716");
-_Static_assert(offsetof(t716, p.v1.m_error) == 8, "offset in t716");
-_Static_assert(sizeof(t717) == 16 && _Alignof(t717) == 8, "layout of t717");
+_Static_assert(offsetof(t708, p.v0.m_value) == 8, "offset in t708");
+_Static_assert(offsetof(t708, p.v1.m_error) == 8, "offset in t708");
+_Static_assert(sizeof(t709) == 24 && _Alignof(t709) == 8, "layout of t709");
+_Static_assert(offsetof(t709, p.v0.m_value) == 8, "offset in t709");
+_Static_assert(offsetof(t709, p.v1.m_error) == 8, "offset in t709");
+_Static_assert(sizeof(t710) == 24 && _Alignof(t710) == 8, "layout of t710");
+_Static_assert(offsetof(t710, p.v1.m_value) == 8, "offset in t710");
+_Static_assert(sizeof(t711) == 40 && _Alignof(t711) == 8, "layout of t711");
+_Static_assert(offsetof(t711, m_items) == 0, "offset in t711");
+_Static_assert(offsetof(t711, m_len) == 16, "offset in t711");
+_Static_assert(offsetof(t711, m_realloc) == 24, "offset in t711");
+_Static_assert(offsetof(t711, m_heap) == 32, "offset in t711");
+_Static_assert(sizeof(t713) == 24 && _Alignof(t713) == 8, "layout of t713");
+_Static_assert(offsetof(t713, p.v1.m_value) == 8, "offset in t713");
+_Static_assert(sizeof(t717) == 24 && _Alignof(t717) == 8, "layout of t717");
 _Static_assert(offsetof(t717, p.v0.m_value) == 8, "offset in t717");
 _Static_assert(offsetof(t717, p.v1.m_error) == 8, "offset in t717");
-_Static_assert(sizeof(t718) == 24 && _Alignof(t718) == 8, "layout of t718");
+_Static_assert(sizeof(t718) == 16 && _Alignof(t718) == 8, "layout of t718");
 _Static_assert(offsetof(t718, p.v0.m_value) == 8, "offset in t718");
 _Static_assert(offsetof(t718, p.v1.m_error) == 8, "offset in t718");
-_Static_assert(sizeof(t719) == 24 && _Alignof(t719) == 8, "layout of t719");
+_Static_assert(sizeof(t719) == 16 && _Alignof(t719) == 8, "layout of t719");
 _Static_assert(offsetof(t719, p.v0.m_value) == 8, "offset in t719");
 _Static_assert(offsetof(t719, p.v1.m_error) == 8, "offset in t719");
 _Static_assert(sizeof(t720) == 24 && _Alignof(t720) == 8, "layout of t720");
@@ -3628,40 +3626,40 @@ _Static_assert(offsetof(t721, p.v1.m_error) == 8, "offset in t721");
 _Static_assert(sizeof(t722) == 24 && _Alignof(t722) == 8, "layout of t722");
 _Static_assert(offsetof(t722, p.v0.m_value) == 8, "offset in t722");
 _Static_assert(offsetof(t722, p.v1.m_error) == 8, "offset in t722");
-_Static_assert(sizeof(t724) == 4 && _Alignof(t724) == 4, "layout of t724");
-_Static_assert(sizeof(t725) == 24 && _Alignof(t725) == 8, "layout of t725");
-_Static_assert(offsetof(t725, p.v0.m_value) == 8, "offset in t725");
-_Static_assert(offsetof(t725, p.v1.m_error) == 8, "offset in t725");
-_Static_assert(sizeof(t728) == 40 && _Alignof(t728) == 8, "layout of t728");
-_Static_assert(offsetof(t728, m_items) == 0, "offset in t728");
-_Static_assert(offsetof(t728, m_len) == 16, "offset in t728");
-_Static_assert(offsetof(t728, m_realloc) == 24, "offset in t728");
-_Static_assert(offsetof(t728, m_heap) == 32, "offset in t728");
-_Static_assert(sizeof(t730) == 24 && _Alignof(t730) == 8, "layout of t730");
-_Static_assert(offsetof(t730, p.v0.m_value) == 8, "offset in t730");
-_Static_assert(offsetof(t730, p.v1.m_error) == 8, "offset in t730");
-_Static_assert(sizeof(t731) == 24 && _Alignof(t731) == 8, "layout of t731");
-_Static_assert(offsetof(t731, p.v0.m_value) == 8, "offset in t731");
-_Static_assert(offsetof(t731, p.v1.m_error) == 8, "offset in t731");
-_Static_assert(sizeof(t732) == 8 && _Alignof(t732) == 4, "layout of t732");
-_Static_assert(offsetof(t732, p.v1.m_error) == 4, "offset in t732");
-_Static_assert(sizeof(t733) == 4 && _Alignof(t733) == 4, "layout of t733");
-_Static_assert(sizeof(t735) == 24 && _Alignof(t735) == 8, "layout of t735");
-_Static_assert(offsetof(t735, p.v1.m_value) == 8, "offset in t735");
-_Static_assert(sizeof(t736) == 24 && _Alignof(t736) == 8, "layout of t736");
-_Static_assert(offsetof(t736, p.v0.m_value) == 8, "offset in t736");
-_Static_assert(offsetof(t736, p.v1.m_error) == 8, "offset in t736");
-_Static_assert(sizeof(t737) == 40 && _Alignof(t737) == 8, "layout of t737");
-_Static_assert(offsetof(t737, m_items) == 0, "offset in t737");
-_Static_assert(offsetof(t737, m_len) == 16, "offset in t737");
-_Static_assert(offsetof(t737, m_realloc) == 24, "offset in t737");
-_Static_assert(offsetof(t737, m_heap) == 32, "offset in t737");
-_Static_assert(sizeof(t739) == 24 && _Alignof(t739) == 8, "layout of t739");
-_Static_assert(offsetof(t739, p.v0.m_value) == 8, "offset in t739");
-_Static_assert(offsetof(t739, p.v1.m_error) == 8, "offset in t739");
-_Static_assert(sizeof(t740) == 24 && _Alignof(t740) == 8, "layout of t740");
-_Static_assert(offsetof(t740, p.v0.m_value) == 8, "offset in t740");
-_Static_assert(offsetof(t740, p.v1.m_error) == 8, "offset in t740");
+_Static_assert(sizeof(t723) == 24 && _Alignof(t723) == 8, "layout of t723");
+_Static_assert(offsetof(t723, p.v0.m_value) == 8, "offset in t723");
+_Static_assert(offsetof(t723, p.v1.m_error) == 8, "offset in t723");
+_Static_assert(sizeof(t724) == 24 && _Alignof(t724) == 8, "layout of t724");
+_Static_assert(offsetof(t724, p.v0.m_value) == 8, "offset in t724");
+_Static_assert(offsetof(t724, p.v1.m_error) == 8, "offset in t724");
+_Static_assert(sizeof(t726) == 4 && _Alignof(t726) == 4, "layout of t726");
+_Static_assert(sizeof(t727) == 24 && _Alignof(t727) == 8, "layout of t727");
+_Static_assert(offsetof(t727, p.v0.m_value) == 8, "offset in t727");
+_Static_assert(offsetof(t727, p.v1.m_error) == 8, "offset in t727");
+_Static_assert(sizeof(t730) == 40 && _Alignof(t730) == 8, "layout of t730");
+_Static_assert(offsetof(t730, m_items) == 0, "offset in t730");
+_Static_assert(offsetof(t730, m_len) == 16, "offset in t730");
+_Static_assert(offsetof(t730, m_realloc) == 24, "offset in t730");
+_Static_assert(offsetof(t730, m_heap) == 32, "offset in t730");
+_Static_assert(sizeof(t732) == 24 && _Alignof(t732) == 8, "layout of t732");
+_Static_assert(offsetof(t732, p.v0.m_value) == 8, "offset in t732");
+_Static_assert(offsetof(t732, p.v1.m_error) == 8, "offset in t732");
+_Static_assert(sizeof(t733) == 24 && _Alignof(t733) == 8, "layout of t733");
+_Static_assert(offsetof(t733, p.v0.m_value) == 8, "offset in t733");
+_Static_assert(offsetof(t733, p.v1.m_error) == 8, "offset in t733");
+_Static_assert(sizeof(t734) == 8 && _Alignof(t734) == 4, "layout of t734");
+_Static_assert(offsetof(t734, p.v1.m_error) == 4, "offset in t734");
+_Static_assert(sizeof(t735) == 4 && _Alignof(t735) == 4, "layout of t735");
+_Static_assert(sizeof(t737) == 24 && _Alignof(t737) == 8, "layout of t737");
+_Static_assert(offsetof(t737, p.v1.m_value) == 8, "offset in t737");
+_Static_assert(sizeof(t738) == 24 && _Alignof(t738) == 8, "layout of t738");
+_Static_assert(offsetof(t738, p.v0.m_value) == 8, "offset in t738");
+_Static_assert(offsetof(t738, p.v1.m_error) == 8, "offset in t738");
+_Static_assert(sizeof(t739) == 40 && _Alignof(t739) == 8, "layout of t739");
+_Static_assert(offsetof(t739, m_items) == 0, "offset in t739");
+_Static_assert(offsetof(t739, m_len) == 16, "offset in t739");
+_Static_assert(offsetof(t739, m_realloc) == 24, "offset in t739");
+_Static_assert(offsetof(t739, m_heap) == 32, "offset in t739");
 _Static_assert(sizeof(t741) == 24 && _Alignof(t741) == 8, "layout of t741");
 _Static_assert(offsetof(t741, p.v0.m_value) == 8, "offset in t741");
 _Static_assert(offsetof(t741, p.v1.m_error) == 8, "offset in t741");
@@ -3671,17 +3669,17 @@ _Static_assert(offsetof(t742, p.v1.m_error) == 8, "offset in t742");
 _Static_assert(sizeof(t743) == 24 && _Alignof(t743) == 8, "layout of t743");
 _Static_assert(offsetof(t743, p.v0.m_value) == 8, "offset in t743");
 _Static_assert(offsetof(t743, p.v1.m_error) == 8, "offset in t743");
-_Static_assert(sizeof(t744) == 40 && _Alignof(t744) == 8, "layout of t744");
-_Static_assert(offsetof(t744, m_items) == 0, "offset in t744");
-_Static_assert(offsetof(t744, m_len) == 16, "offset in t744");
-_Static_assert(offsetof(t744, m_realloc) == 24, "offset in t744");
-_Static_assert(offsetof(t744, m_heap) == 32, "offset in t744");
-_Static_assert(sizeof(t746) == 24 && _Alignof(t746) == 8, "layout of t746");
-_Static_assert(offsetof(t746, p.v0.m_value) == 8, "offset in t746");
-_Static_assert(offsetof(t746, p.v1.m_error) == 8, "offset in t746");
-_Static_assert(sizeof(t747) == 24 && _Alignof(t747) == 8, "layout of t747");
-_Static_assert(offsetof(t747, p.v0.m_value) == 8, "offset in t747");
-_Static_assert(offsetof(t747, p.v1.m_error) == 8, "offset in t747");
+_Static_assert(sizeof(t744) == 24 && _Alignof(t744) == 8, "layout of t744");
+_Static_assert(offsetof(t744, p.v0.m_value) == 8, "offset in t744");
+_Static_assert(offsetof(t744, p.v1.m_error) == 8, "offset in t744");
+_Static_assert(sizeof(t745) == 24 && _Alignof(t745) == 8, "layout of t745");
+_Static_assert(offsetof(t745, p.v0.m_value) == 8, "offset in t745");
+_Static_assert(offsetof(t745, p.v1.m_error) == 8, "offset in t745");
+_Static_assert(sizeof(t746) == 40 && _Alignof(t746) == 8, "layout of t746");
+_Static_assert(offsetof(t746, m_items) == 0, "offset in t746");
+_Static_assert(offsetof(t746, m_len) == 16, "offset in t746");
+_Static_assert(offsetof(t746, m_realloc) == 24, "offset in t746");
+_Static_assert(offsetof(t746, m_heap) == 32, "offset in t746");
 _Static_assert(sizeof(t748) == 24 && _Alignof(t748) == 8, "layout of t748");
 _Static_assert(offsetof(t748, p.v0.m_value) == 8, "offset in t748");
 _Static_assert(offsetof(t748, p.v1.m_error) == 8, "offset in t748");
@@ -3694,22 +3692,22 @@ _Static_assert(offsetof(t750, p.v1.m_error) == 8, "offset in t750");
 _Static_assert(sizeof(t751) == 24 && _Alignof(t751) == 8, "layout of t751");
 _Static_assert(offsetof(t751, p.v0.m_value) == 8, "offset in t751");
 _Static_assert(offsetof(t751, p.v1.m_error) == 8, "offset in t751");
-_Static_assert(sizeof(t752) == 40 && _Alignof(t752) == 8, "layout of t752");
-_Static_assert(offsetof(t752, m_items) == 0, "offset in t752");
-_Static_assert(offsetof(t752, m_len) == 16, "offset in t752");
-_Static_assert(offsetof(t752, m_realloc) == 24, "offset in t752");
-_Static_assert(offsetof(t752, m_heap) == 32, "offset in t752");
-_Static_assert(sizeof(t753) == 40 && _Alignof(t753) == 8, "layout of t753");
-_Static_assert(offsetof(t753, m_items) == 0, "offset in t753");
-_Static_assert(offsetof(t753, m_len) == 16, "offset in t753");
-_Static_assert(offsetof(t753, m_realloc) == 24, "offset in t753");
-_Static_assert(offsetof(t753, m_heap) == 32, "offset in t753");
-_Static_assert(sizeof(t756) == 24 && _Alignof(t756) == 8, "layout of t756");
-_Static_assert(offsetof(t756, p.v0.m_value) == 8, "offset in t756");
-_Static_assert(offsetof(t756, p.v1.m_error) == 8, "offset in t756");
-_Static_assert(sizeof(t757) == 24 && _Alignof(t757) == 8, "layout of t757");
-_Static_assert(offsetof(t757, p.v0.m_value) == 8, "offset in t757");
-_Static_assert(offsetof(t757, p.v1.m_error) == 8, "offset in t757");
+_Static_assert(sizeof(t752) == 24 && _Alignof(t752) == 8, "layout of t752");
+_Static_assert(offsetof(t752, p.v0.m_value) == 8, "offset in t752");
+_Static_assert(offsetof(t752, p.v1.m_error) == 8, "offset in t752");
+_Static_assert(sizeof(t753) == 24 && _Alignof(t753) == 8, "layout of t753");
+_Static_assert(offsetof(t753, p.v0.m_value) == 8, "offset in t753");
+_Static_assert(offsetof(t753, p.v1.m_error) == 8, "offset in t753");
+_Static_assert(sizeof(t754) == 40 && _Alignof(t754) == 8, "layout of t754");
+_Static_assert(offsetof(t754, m_items) == 0, "offset in t754");
+_Static_assert(offsetof(t754, m_len) == 16, "offset in t754");
+_Static_assert(offsetof(t754, m_realloc) == 24, "offset in t754");
+_Static_assert(offsetof(t754, m_heap) == 32, "offset in t754");
+_Static_assert(sizeof(t755) == 40 && _Alignof(t755) == 8, "layout of t755");
+_Static_assert(offsetof(t755, m_items) == 0, "offset in t755");
+_Static_assert(offsetof(t755, m_len) == 16, "offset in t755");
+_Static_assert(offsetof(t755, m_realloc) == 24, "offset in t755");
+_Static_assert(offsetof(t755, m_heap) == 32, "offset in t755");
 _Static_assert(sizeof(t758) == 24 && _Alignof(t758) == 8, "layout of t758");
 _Static_assert(offsetof(t758, p.v0.m_value) == 8, "offset in t758");
 _Static_assert(offsetof(t758, p.v1.m_error) == 8, "offset in t758");
@@ -3719,118 +3717,118 @@ _Static_assert(offsetof(t759, p.v1.m_error) == 8, "offset in t759");
 _Static_assert(sizeof(t760) == 24 && _Alignof(t760) == 8, "layout of t760");
 _Static_assert(offsetof(t760, p.v0.m_value) == 8, "offset in t760");
 _Static_assert(offsetof(t760, p.v1.m_error) == 8, "offset in t760");
+_Static_assert(sizeof(t761) == 24 && _Alignof(t761) == 8, "layout of t761");
+_Static_assert(offsetof(t761, p.v0.m_value) == 8, "offset in t761");
+_Static_assert(offsetof(t761, p.v1.m_error) == 8, "offset in t761");
 _Static_assert(sizeof(t762) == 24 && _Alignof(t762) == 8, "layout of t762");
 _Static_assert(offsetof(t762, p.v0.m_value) == 8, "offset in t762");
 _Static_assert(offsetof(t762, p.v1.m_error) == 8, "offset in t762");
-_Static_assert(sizeof(t763) == 24 && _Alignof(t763) == 8, "layout of t763");
-_Static_assert(offsetof(t763, p.v0.m_value) == 8, "offset in t763");
-_Static_assert(offsetof(t763, p.v1.m_error) == 8, "offset in t763");
-_Static_assert(sizeof(t764) == 16 && _Alignof(t764) == 8, "layout of t764");
+_Static_assert(sizeof(t764) == 24 && _Alignof(t764) == 8, "layout of t764");
 _Static_assert(offsetof(t764, p.v0.m_value) == 8, "offset in t764");
 _Static_assert(offsetof(t764, p.v1.m_error) == 8, "offset in t764");
-_Static_assert(sizeof(t765) == 16 && _Alignof(t765) == 8, "layout of t765");
-_Static_assert(offsetof(t765, m_negative) == 0, "offset in t765");
-_Static_assert(offsetof(t765, m_magnitude) == 8, "offset in t765");
-_Static_assert(sizeof(t766) == 24 && _Alignof(t766) == 8, "layout of t766");
+_Static_assert(sizeof(t765) == 24 && _Alignof(t765) == 8, "layout of t765");
+_Static_assert(offsetof(t765, p.v0.m_value) == 8, "offset in t765");
+_Static_assert(offsetof(t765, p.v1.m_error) == 8, "offset in t765");
+_Static_assert(sizeof(t766) == 16 && _Alignof(t766) == 8, "layout of t766");
 _Static_assert(offsetof(t766, p.v0.m_value) == 8, "offset in t766");
 _Static_assert(offsetof(t766, p.v1.m_error) == 8, "offset in t766");
-_Static_assert(sizeof(t769) == 4 && _Alignof(t769) == 4, "layout of t769");
-_Static_assert(sizeof(t770) == 24 && _Alignof(t770) == 8, "layout of t770");
-_Static_assert(offsetof(t770, p.v0.m_value) == 8, "offset in t770");
-_Static_assert(offsetof(t770, p.v1.m_error) == 8, "offset in t770");
-_Static_assert(sizeof(t771) == 24 && _Alignof(t771) == 8, "layout of t771");
-_Static_assert(offsetof(t771, p.v0.m_value) == 8, "offset in t771");
-_Static_assert(offsetof(t771, p.v1.m_error) == 8, "offset in t771");
-_Static_assert(sizeof(t772) == 280 && _Alignof(t772) == 8, "layout of t772");
-_Static_assert(offsetof(t772, p.v1.m_e) == 8, "offset in t772");
-_Static_assert(offsetof(t772, p.v2.m_s) == 8, "offset in t772");
-_Static_assert(sizeof(t773) == 48 && _Alignof(t773) == 8, "layout of t773");
-_Static_assert(offsetof(t773, m_name) == 0, "offset in t773");
-_Static_assert(offsetof(t773, m_types) == 16, "offset in t773");
-_Static_assert(offsetof(t773, m_lo) == 20, "offset in t773");
-_Static_assert(offsetof(t773, m_hi) == 24, "offset in t773");
-_Static_assert(offsetof(t773, m_usage) == 32, "offset in t773");
-_Static_assert(sizeof(t775) == 40 && _Alignof(t775) == 8, "layout of t775");
-_Static_assert(offsetof(t775, m_items) == 0, "offset in t775");
-_Static_assert(offsetof(t775, m_len) == 16, "offset in t775");
-_Static_assert(offsetof(t775, m_realloc) == 24, "offset in t775");
-_Static_assert(offsetof(t775, m_heap) == 32, "offset in t775");
-_Static_assert(sizeof(t777) == 24 && _Alignof(t777) == 8, "layout of t777");
-_Static_assert(offsetof(t777, p.v0.m_value) == 8, "offset in t777");
-_Static_assert(offsetof(t777, p.v1.m_error) == 8, "offset in t777");
-_Static_assert(sizeof(t778) == 24 && _Alignof(t778) == 8, "layout of t778");
-_Static_assert(offsetof(t778, p.v0.m_value) == 8, "offset in t778");
-_Static_assert(offsetof(t778, p.v1.m_error) == 8, "offset in t778");
+_Static_assert(sizeof(t767) == 16 && _Alignof(t767) == 8, "layout of t767");
+_Static_assert(offsetof(t767, m_negative) == 0, "offset in t767");
+_Static_assert(offsetof(t767, m_magnitude) == 8, "offset in t767");
+_Static_assert(sizeof(t768) == 24 && _Alignof(t768) == 8, "layout of t768");
+_Static_assert(offsetof(t768, p.v0.m_value) == 8, "offset in t768");
+_Static_assert(offsetof(t768, p.v1.m_error) == 8, "offset in t768");
+_Static_assert(sizeof(t771) == 4 && _Alignof(t771) == 4, "layout of t771");
+_Static_assert(sizeof(t772) == 24 && _Alignof(t772) == 8, "layout of t772");
+_Static_assert(offsetof(t772, p.v0.m_value) == 8, "offset in t772");
+_Static_assert(offsetof(t772, p.v1.m_error) == 8, "offset in t772");
+_Static_assert(sizeof(t773) == 24 && _Alignof(t773) == 8, "layout of t773");
+_Static_assert(offsetof(t773, p.v0.m_value) == 8, "offset in t773");
+_Static_assert(offsetof(t773, p.v1.m_error) == 8, "offset in t773");
+_Static_assert(sizeof(t774) == 280 && _Alignof(t774) == 8, "layout of t774");
+_Static_assert(offsetof(t774, p.v1.m_e) == 8, "offset in t774");
+_Static_assert(offsetof(t774, p.v2.m_s) == 8, "offset in t774");
+_Static_assert(sizeof(t775) == 48 && _Alignof(t775) == 8, "layout of t775");
+_Static_assert(offsetof(t775, m_name) == 0, "offset in t775");
+_Static_assert(offsetof(t775, m_types) == 16, "offset in t775");
+_Static_assert(offsetof(t775, m_lo) == 20, "offset in t775");
+_Static_assert(offsetof(t775, m_hi) == 24, "offset in t775");
+_Static_assert(offsetof(t775, m_usage) == 32, "offset in t775");
+_Static_assert(sizeof(t777) == 40 && _Alignof(t777) == 8, "layout of t777");
+_Static_assert(offsetof(t777, m_items) == 0, "offset in t777");
+_Static_assert(offsetof(t777, m_len) == 16, "offset in t777");
+_Static_assert(offsetof(t777, m_realloc) == 24, "offset in t777");
+_Static_assert(offsetof(t777, m_heap) == 32, "offset in t777");
 _Static_assert(sizeof(t779) == 24 && _Alignof(t779) == 8, "layout of t779");
 _Static_assert(offsetof(t779, p.v0.m_value) == 8, "offset in t779");
 _Static_assert(offsetof(t779, p.v1.m_error) == 8, "offset in t779");
-_Static_assert(sizeof(t780) == 32 && _Alignof(t780) == 8, "layout of t780");
-_Static_assert(offsetof(t780, m_yes) == 0, "offset in t780");
-_Static_assert(offsetof(t780, m_no) == 16, "offset in t780");
-_Static_assert(sizeof(t781) == 16 && _Alignof(t781) == 8, "layout of t781");
-_Static_assert(offsetof(t781, m_ptr) == 0, "offset in t781");
-_Static_assert(offsetof(t781, m_len) == 8, "offset in t781");
-_Static_assert(sizeof(t783) == 48 && _Alignof(t783) == 8, "layout of t783");
-_Static_assert(offsetof(t783, m_var) == 0, "offset in t783");
-_Static_assert(offsetof(t783, m_root) == 4, "offset in t783");
-_Static_assert(offsetof(t783, m_steps) == 8, "offset in t783");
-_Static_assert(offsetof(t783, m_ty) == 24, "offset in t783");
-_Static_assert(offsetof(t783, m_at) == 28, "offset in t783");
-_Static_assert(offsetof(t783, m_bind) == 40, "offset in t783");
-_Static_assert(offsetof(t783, m_clash) == 41, "offset in t783");
-_Static_assert(sizeof(t784) == 48 && _Alignof(t784) == 8, "layout of t784");
-_Static_assert(offsetof(t784, p.v1.m_value) == 8, "offset in t784");
-_Static_assert(sizeof(t786) == 8 && _Alignof(t786) == 4, "layout of t786");
-_Static_assert(offsetof(t786, p.v1.m_value) == 4, "offset in t786");
-_Static_assert(sizeof(t787) == 40 && _Alignof(t787) == 8, "layout of t787");
-_Static_assert(offsetof(t787, m_items) == 0, "offset in t787");
-_Static_assert(offsetof(t787, m_len) == 16, "offset in t787");
-_Static_assert(offsetof(t787, m_realloc) == 24, "offset in t787");
-_Static_assert(offsetof(t787, m_heap) == 32, "offset in t787");
-_Static_assert(sizeof(t788) == 16 && _Alignof(t788) == 8, "layout of t788");
-_Static_assert(offsetof(t788, m_ptr) == 0, "offset in t788");
-_Static_assert(offsetof(t788, m_len) == 8, "offset in t788");
-_Static_assert(sizeof(t790) == 288 && _Alignof(t790) == 8, "layout of t790");
-_Static_assert(offsetof(t790, m_t) == 0, "offset in t790");
-_Static_assert(offsetof(t790, m_value) == 8, "offset in t790");
-_Static_assert(sizeof(t792) == 32 && _Alignof(t792) == 8, "layout of t792");
-_Static_assert(offsetof(t792, p.v1.m_value) == 8, "offset in t792");
-_Static_assert(sizeof(t794) == 40 && _Alignof(t794) == 8, "layout of t794");
-_Static_assert(offsetof(t794, m_forb) == 0, "offset in t794");
-_Static_assert(offsetof(t794, m_via) == 24, "offset in t794");
-_Static_assert(sizeof(t797) == 24 && _Alignof(t797) == 8, "layout of t797");
-_Static_assert(offsetof(t797, p.v0.m_value) == 8, "offset in t797");
-_Static_assert(offsetof(t797, p.v1.m_error) == 8, "offset in t797");
-_Static_assert(sizeof(t798) == 24 && _Alignof(t798) == 8, "layout of t798");
-_Static_assert(offsetof(t798, p.v0.m_value) == 8, "offset in t798");
-_Static_assert(offsetof(t798, p.v1.m_error) == 8, "offset in t798");
+_Static_assert(sizeof(t780) == 24 && _Alignof(t780) == 8, "layout of t780");
+_Static_assert(offsetof(t780, p.v0.m_value) == 8, "offset in t780");
+_Static_assert(offsetof(t780, p.v1.m_error) == 8, "offset in t780");
+_Static_assert(sizeof(t781) == 24 && _Alignof(t781) == 8, "layout of t781");
+_Static_assert(offsetof(t781, p.v0.m_value) == 8, "offset in t781");
+_Static_assert(offsetof(t781, p.v1.m_error) == 8, "offset in t781");
+_Static_assert(sizeof(t782) == 32 && _Alignof(t782) == 8, "layout of t782");
+_Static_assert(offsetof(t782, m_yes) == 0, "offset in t782");
+_Static_assert(offsetof(t782, m_no) == 16, "offset in t782");
+_Static_assert(sizeof(t783) == 16 && _Alignof(t783) == 8, "layout of t783");
+_Static_assert(offsetof(t783, m_ptr) == 0, "offset in t783");
+_Static_assert(offsetof(t783, m_len) == 8, "offset in t783");
+_Static_assert(sizeof(t785) == 48 && _Alignof(t785) == 8, "layout of t785");
+_Static_assert(offsetof(t785, m_var) == 0, "offset in t785");
+_Static_assert(offsetof(t785, m_root) == 4, "offset in t785");
+_Static_assert(offsetof(t785, m_steps) == 8, "offset in t785");
+_Static_assert(offsetof(t785, m_ty) == 24, "offset in t785");
+_Static_assert(offsetof(t785, m_at) == 28, "offset in t785");
+_Static_assert(offsetof(t785, m_bind) == 40, "offset in t785");
+_Static_assert(offsetof(t785, m_clash) == 41, "offset in t785");
+_Static_assert(sizeof(t786) == 48 && _Alignof(t786) == 8, "layout of t786");
+_Static_assert(offsetof(t786, p.v1.m_value) == 8, "offset in t786");
+_Static_assert(sizeof(t788) == 8 && _Alignof(t788) == 4, "layout of t788");
+_Static_assert(offsetof(t788, p.v1.m_value) == 4, "offset in t788");
+_Static_assert(sizeof(t789) == 40 && _Alignof(t789) == 8, "layout of t789");
+_Static_assert(offsetof(t789, m_items) == 0, "offset in t789");
+_Static_assert(offsetof(t789, m_len) == 16, "offset in t789");
+_Static_assert(offsetof(t789, m_realloc) == 24, "offset in t789");
+_Static_assert(offsetof(t789, m_heap) == 32, "offset in t789");
+_Static_assert(sizeof(t790) == 16 && _Alignof(t790) == 8, "layout of t790");
+_Static_assert(offsetof(t790, m_ptr) == 0, "offset in t790");
+_Static_assert(offsetof(t790, m_len) == 8, "offset in t790");
+_Static_assert(sizeof(t792) == 288 && _Alignof(t792) == 8, "layout of t792");
+_Static_assert(offsetof(t792, m_t) == 0, "offset in t792");
+_Static_assert(offsetof(t792, m_value) == 8, "offset in t792");
+_Static_assert(sizeof(t794) == 32 && _Alignof(t794) == 8, "layout of t794");
+_Static_assert(offsetof(t794, p.v1.m_value) == 8, "offset in t794");
+_Static_assert(sizeof(t796) == 40 && _Alignof(t796) == 8, "layout of t796");
+_Static_assert(offsetof(t796, m_forb) == 0, "offset in t796");
+_Static_assert(offsetof(t796, m_via) == 24, "offset in t796");
 _Static_assert(sizeof(t799) == 24 && _Alignof(t799) == 8, "layout of t799");
 _Static_assert(offsetof(t799, p.v0.m_value) == 8, "offset in t799");
 _Static_assert(offsetof(t799, p.v1.m_error) == 8, "offset in t799");
-_Static_assert(sizeof(t800) == 112 && _Alignof(t800) == 8, "layout of t800");
-_Static_assert(offsetof(t800, p.v1.m_value) == 8, "offset in t800");
+_Static_assert(sizeof(t800) == 24 && _Alignof(t800) == 8, "layout of t800");
+_Static_assert(offsetof(t800, p.v0.m_value) == 8, "offset in t800");
+_Static_assert(offsetof(t800, p.v1.m_error) == 8, "offset in t800");
 _Static_assert(sizeof(t801) == 24 && _Alignof(t801) == 8, "layout of t801");
 _Static_assert(offsetof(t801, p.v0.m_value) == 8, "offset in t801");
 _Static_assert(offsetof(t801, p.v1.m_error) == 8, "offset in t801");
-_Static_assert(sizeof(t802) == 24 && _Alignof(t802) == 8, "layout of t802");
+_Static_assert(sizeof(t802) == 112 && _Alignof(t802) == 8, "layout of t802");
 _Static_assert(offsetof(t802, p.v1.m_value) == 8, "offset in t802");
-_Static_assert(sizeof(t805) == 16 && _Alignof(t805) == 8, "layout of t805");
-_Static_assert(offsetof(t805, p.v0.m_value) == 8, "offset in t805");
-_Static_assert(offsetof(t805, p.v1.m_error) == 8, "offset in t805");
-_Static_assert(sizeof(t807) == 8 && _Alignof(t807) == 4, "layout of t807");
-_Static_assert(offsetof(t807, p.v1.m_value) == 4, "offset in t807");
-_Static_assert(sizeof(t808) == 32 && _Alignof(t808) == 8, "layout of t808");
-_Static_assert(offsetof(t808, m_through) == 0, "offset in t808");
-_Static_assert(offsetof(t808, m_vs) == 8, "offset in t808");
-_Static_assert(offsetof(t808, m_enum_decl) == 24, "offset in t808");
-_Static_assert(sizeof(t809) == 88 && _Alignof(t809) == 8, "layout of t809");
-_Static_assert(offsetof(t809, p.v1.m_value) == 8, "offset in t809");
-_Static_assert(sizeof(t810) == 24 && _Alignof(t810) == 8, "layout of t810");
-_Static_assert(offsetof(t810, p.v0.m_value) == 8, "offset in t810");
-_Static_assert(offsetof(t810, p.v1.m_error) == 8, "offset in t810");
-_Static_assert(sizeof(t811) == 24 && _Alignof(t811) == 8, "layout of t811");
-_Static_assert(offsetof(t811, p.v0.m_value) == 8, "offset in t811");
-_Static_assert(offsetof(t811, p.v1.m_error) == 8, "offset in t811");
+_Static_assert(sizeof(t803) == 24 && _Alignof(t803) == 8, "layout of t803");
+_Static_assert(offsetof(t803, p.v0.m_value) == 8, "offset in t803");
+_Static_assert(offsetof(t803, p.v1.m_error) == 8, "offset in t803");
+_Static_assert(sizeof(t804) == 24 && _Alignof(t804) == 8, "layout of t804");
+_Static_assert(offsetof(t804, p.v1.m_value) == 8, "offset in t804");
+_Static_assert(sizeof(t807) == 16 && _Alignof(t807) == 8, "layout of t807");
+_Static_assert(offsetof(t807, p.v0.m_value) == 8, "offset in t807");
+_Static_assert(offsetof(t807, p.v1.m_error) == 8, "offset in t807");
+_Static_assert(sizeof(t809) == 8 && _Alignof(t809) == 4, "layout of t809");
+_Static_assert(offsetof(t809, p.v1.m_value) == 4, "offset in t809");
+_Static_assert(sizeof(t810) == 32 && _Alignof(t810) == 8, "layout of t810");
+_Static_assert(offsetof(t810, m_through) == 0, "offset in t810");
+_Static_assert(offsetof(t810, m_vs) == 8, "offset in t810");
+_Static_assert(offsetof(t810, m_enum_decl) == 24, "offset in t810");
+_Static_assert(sizeof(t811) == 88 && _Alignof(t811) == 8, "layout of t811");
+_Static_assert(offsetof(t811, p.v1.m_value) == 8, "offset in t811");
 _Static_assert(sizeof(t812) == 24 && _Alignof(t812) == 8, "layout of t812");
 _Static_assert(offsetof(t812, p.v0.m_value) == 8, "offset in t812");
 _Static_assert(offsetof(t812, p.v1.m_error) == 8, "offset in t812");
@@ -3840,74 +3838,74 @@ _Static_assert(offsetof(t813, p.v1.m_error) == 8, "offset in t813");
 _Static_assert(sizeof(t814) == 24 && _Alignof(t814) == 8, "layout of t814");
 _Static_assert(offsetof(t814, p.v0.m_value) == 8, "offset in t814");
 _Static_assert(offsetof(t814, p.v1.m_error) == 8, "offset in t814");
-_Static_assert(sizeof(t815) == 56 && _Alignof(t815) == 8, "layout of t815");
-_Static_assert(offsetof(t815, p.v1.m_value) == 8, "offset in t815");
-_Static_assert(sizeof(t816) == 40 && _Alignof(t816) == 8, "layout of t816");
-_Static_assert(offsetof(t816, m_items) == 0, "offset in t816");
-_Static_assert(offsetof(t816, m_len) == 16, "offset in t816");
-_Static_assert(offsetof(t816, m_realloc) == 24, "offset in t816");
-_Static_assert(offsetof(t816, m_heap) == 32, "offset in t816");
-_Static_assert(sizeof(t822) == 24 && _Alignof(t822) == 8, "layout of t822");
-_Static_assert(offsetof(t822, p.v1.m_value) == 8, "offset in t822");
-_Static_assert(sizeof(t824) == 8 && _Alignof(t824) == 4, "layout of t824");
-_Static_assert(offsetof(t824, p.v0.m_value) == 4, "offset in t824");
-_Static_assert(offsetof(t824, p.v1.m_error) == 4, "offset in t824");
-_Static_assert(sizeof(t825) == 8 && _Alignof(t825) == 4, "layout of t825");
-_Static_assert(offsetof(t825, p.v0.m_value) == 4, "offset in t825");
-_Static_assert(offsetof(t825, p.v1.m_error) == 4, "offset in t825");
-_Static_assert(sizeof(t826) == 16 && _Alignof(t826) == 8, "layout of t826");
-_Static_assert(offsetof(t826, p.v0.m_value) == 8, "offset in t826");
-_Static_assert(offsetof(t826, p.v1.m_error) == 8, "offset in t826");
-_Static_assert(sizeof(t827) == 24 && _Alignof(t827) == 8, "layout of t827");
-_Static_assert(offsetof(t827, p.v0.m_value) == 8, "offset in t827");
-_Static_assert(offsetof(t827, p.v1.m_error) == 8, "offset in t827");
-_Static_assert(sizeof(t828) == 40 && _Alignof(t828) == 8, "layout of t828");
-_Static_assert(offsetof(t828, m_items) == 0, "offset in t828");
-_Static_assert(offsetof(t828, m_len) == 16, "offset in t828");
-_Static_assert(offsetof(t828, m_realloc) == 24, "offset in t828");
-_Static_assert(offsetof(t828, m_heap) == 32, "offset in t828");
-_Static_assert(sizeof(t833) == 40 && _Alignof(t833) == 8, "layout of t833");
-_Static_assert(offsetof(t833, m_items) == 0, "offset in t833");
-_Static_assert(offsetof(t833, m_len) == 16, "offset in t833");
-_Static_assert(offsetof(t833, m_realloc) == 24, "offset in t833");
-_Static_assert(offsetof(t833, m_heap) == 32, "offset in t833");
-_Static_assert(sizeof(t835) == 24 && _Alignof(t835) == 8, "layout of t835");
-_Static_assert(offsetof(t835, p.v0.m_value) == 8, "offset in t835");
-_Static_assert(offsetof(t835, p.v1.m_error) == 8, "offset in t835");
-_Static_assert(sizeof(t836) == 24 && _Alignof(t836) == 8, "layout of t836");
-_Static_assert(offsetof(t836, p.v0.m_value) == 8, "offset in t836");
-_Static_assert(offsetof(t836, p.v1.m_error) == 8, "offset in t836");
+_Static_assert(sizeof(t815) == 24 && _Alignof(t815) == 8, "layout of t815");
+_Static_assert(offsetof(t815, p.v0.m_value) == 8, "offset in t815");
+_Static_assert(offsetof(t815, p.v1.m_error) == 8, "offset in t815");
+_Static_assert(sizeof(t816) == 24 && _Alignof(t816) == 8, "layout of t816");
+_Static_assert(offsetof(t816, p.v0.m_value) == 8, "offset in t816");
+_Static_assert(offsetof(t816, p.v1.m_error) == 8, "offset in t816");
+_Static_assert(sizeof(t817) == 56 && _Alignof(t817) == 8, "layout of t817");
+_Static_assert(offsetof(t817, p.v1.m_value) == 8, "offset in t817");
+_Static_assert(sizeof(t818) == 40 && _Alignof(t818) == 8, "layout of t818");
+_Static_assert(offsetof(t818, m_items) == 0, "offset in t818");
+_Static_assert(offsetof(t818, m_len) == 16, "offset in t818");
+_Static_assert(offsetof(t818, m_realloc) == 24, "offset in t818");
+_Static_assert(offsetof(t818, m_heap) == 32, "offset in t818");
+_Static_assert(sizeof(t824) == 24 && _Alignof(t824) == 8, "layout of t824");
+_Static_assert(offsetof(t824, p.v1.m_value) == 8, "offset in t824");
+_Static_assert(sizeof(t826) == 8 && _Alignof(t826) == 4, "layout of t826");
+_Static_assert(offsetof(t826, p.v0.m_value) == 4, "offset in t826");
+_Static_assert(offsetof(t826, p.v1.m_error) == 4, "offset in t826");
+_Static_assert(sizeof(t827) == 8 && _Alignof(t827) == 4, "layout of t827");
+_Static_assert(offsetof(t827, p.v0.m_value) == 4, "offset in t827");
+_Static_assert(offsetof(t827, p.v1.m_error) == 4, "offset in t827");
+_Static_assert(sizeof(t828) == 16 && _Alignof(t828) == 8, "layout of t828");
+_Static_assert(offsetof(t828, p.v0.m_value) == 8, "offset in t828");
+_Static_assert(offsetof(t828, p.v1.m_error) == 8, "offset in t828");
+_Static_assert(sizeof(t829) == 24 && _Alignof(t829) == 8, "layout of t829");
+_Static_assert(offsetof(t829, p.v0.m_value) == 8, "offset in t829");
+_Static_assert(offsetof(t829, p.v1.m_error) == 8, "offset in t829");
+_Static_assert(sizeof(t830) == 40 && _Alignof(t830) == 8, "layout of t830");
+_Static_assert(offsetof(t830, m_items) == 0, "offset in t830");
+_Static_assert(offsetof(t830, m_len) == 16, "offset in t830");
+_Static_assert(offsetof(t830, m_realloc) == 24, "offset in t830");
+_Static_assert(offsetof(t830, m_heap) == 32, "offset in t830");
+_Static_assert(sizeof(t835) == 40 && _Alignof(t835) == 8, "layout of t835");
+_Static_assert(offsetof(t835, m_items) == 0, "offset in t835");
+_Static_assert(offsetof(t835, m_len) == 16, "offset in t835");
+_Static_assert(offsetof(t835, m_realloc) == 24, "offset in t835");
+_Static_assert(offsetof(t835, m_heap) == 32, "offset in t835");
 _Static_assert(sizeof(t837) == 24 && _Alignof(t837) == 8, "layout of t837");
 _Static_assert(offsetof(t837, p.v0.m_value) == 8, "offset in t837");
 _Static_assert(offsetof(t837, p.v1.m_error) == 8, "offset in t837");
-_Static_assert(sizeof(t838) == 40 && _Alignof(t838) == 8, "layout of t838");
-_Static_assert(offsetof(t838, m_items) == 0, "offset in t838");
-_Static_assert(offsetof(t838, m_len) == 16, "offset in t838");
-_Static_assert(offsetof(t838, m_realloc) == 24, "offset in t838");
-_Static_assert(offsetof(t838, m_heap) == 32, "offset in t838");
-_Static_assert(sizeof(t840) == 24 && _Alignof(t840) == 8, "layout of t840");
-_Static_assert(offsetof(t840, p.v0.m_value) == 8, "offset in t840");
-_Static_assert(offsetof(t840, p.v1.m_error) == 8, "offset in t840");
-_Static_assert(sizeof(t841) == 24 && _Alignof(t841) == 8, "layout of t841");
-_Static_assert(offsetof(t841, p.v0.m_value) == 8, "offset in t841");
-_Static_assert(offsetof(t841, p.v1.m_error) == 8, "offset in t841");
-_Static_assert(sizeof(t845) == 40 && _Alignof(t845) == 8, "layout of t845");
-_Static_assert(offsetof(t845, m_items) == 0, "offset in t845");
-_Static_assert(offsetof(t845, m_len) == 16, "offset in t845");
-_Static_assert(offsetof(t845, m_realloc) == 24, "offset in t845");
-_Static_assert(offsetof(t845, m_heap) == 32, "offset in t845");
-_Static_assert(sizeof(t846) == 16 && _Alignof(t846) == 8, "layout of t846");
-_Static_assert(offsetof(t846, m_ptr) == 0, "offset in t846");
-_Static_assert(offsetof(t846, m_len) == 8, "offset in t846");
-_Static_assert(sizeof(t848) == 40 && _Alignof(t848) == 8, "layout of t848");
-_Static_assert(offsetof(t848, m_p) == 0, "offset in t848");
-_Static_assert(offsetof(t848, m_holder) == 24, "offset in t848");
-_Static_assert(sizeof(t850) == 24 && _Alignof(t850) == 8, "layout of t850");
-_Static_assert(offsetof(t850, p.v0.m_value) == 8, "offset in t850");
-_Static_assert(offsetof(t850, p.v1.m_error) == 8, "offset in t850");
-_Static_assert(sizeof(t851) == 24 && _Alignof(t851) == 8, "layout of t851");
-_Static_assert(offsetof(t851, p.v0.m_value) == 8, "offset in t851");
-_Static_assert(offsetof(t851, p.v1.m_error) == 8, "offset in t851");
+_Static_assert(sizeof(t838) == 24 && _Alignof(t838) == 8, "layout of t838");
+_Static_assert(offsetof(t838, p.v0.m_value) == 8, "offset in t838");
+_Static_assert(offsetof(t838, p.v1.m_error) == 8, "offset in t838");
+_Static_assert(sizeof(t839) == 24 && _Alignof(t839) == 8, "layout of t839");
+_Static_assert(offsetof(t839, p.v0.m_value) == 8, "offset in t839");
+_Static_assert(offsetof(t839, p.v1.m_error) == 8, "offset in t839");
+_Static_assert(sizeof(t840) == 40 && _Alignof(t840) == 8, "layout of t840");
+_Static_assert(offsetof(t840, m_items) == 0, "offset in t840");
+_Static_assert(offsetof(t840, m_len) == 16, "offset in t840");
+_Static_assert(offsetof(t840, m_realloc) == 24, "offset in t840");
+_Static_assert(offsetof(t840, m_heap) == 32, "offset in t840");
+_Static_assert(sizeof(t842) == 24 && _Alignof(t842) == 8, "layout of t842");
+_Static_assert(offsetof(t842, p.v0.m_value) == 8, "offset in t842");
+_Static_assert(offsetof(t842, p.v1.m_error) == 8, "offset in t842");
+_Static_assert(sizeof(t843) == 24 && _Alignof(t843) == 8, "layout of t843");
+_Static_assert(offsetof(t843, p.v0.m_value) == 8, "offset in t843");
+_Static_assert(offsetof(t843, p.v1.m_error) == 8, "offset in t843");
+_Static_assert(sizeof(t847) == 40 && _Alignof(t847) == 8, "layout of t847");
+_Static_assert(offsetof(t847, m_items) == 0, "offset in t847");
+_Static_assert(offsetof(t847, m_len) == 16, "offset in t847");
+_Static_assert(offsetof(t847, m_realloc) == 24, "offset in t847");
+_Static_assert(offsetof(t847, m_heap) == 32, "offset in t847");
+_Static_assert(sizeof(t848) == 16 && _Alignof(t848) == 8, "layout of t848");
+_Static_assert(offsetof(t848, m_ptr) == 0, "offset in t848");
+_Static_assert(offsetof(t848, m_len) == 8, "offset in t848");
+_Static_assert(sizeof(t850) == 40 && _Alignof(t850) == 8, "layout of t850");
+_Static_assert(offsetof(t850, m_p) == 0, "offset in t850");
+_Static_assert(offsetof(t850, m_holder) == 24, "offset in t850");
 _Static_assert(sizeof(t852) == 24 && _Alignof(t852) == 8, "layout of t852");
 _Static_assert(offsetof(t852, p.v0.m_value) == 8, "offset in t852");
 _Static_assert(offsetof(t852, p.v1.m_error) == 8, "offset in t852");
@@ -3923,16 +3921,16 @@ _Static_assert(offsetof(t855, p.v1.m_error) == 8, "offset in t855");
 _Static_assert(sizeof(t856) == 24 && _Alignof(t856) == 8, "layout of t856");
 _Static_assert(offsetof(t856, p.v0.m_value) == 8, "offset in t856");
 _Static_assert(offsetof(t856, p.v1.m_error) == 8, "offset in t856");
-_Static_assert(sizeof(t857) == 40 && _Alignof(t857) == 8, "layout of t857");
+_Static_assert(sizeof(t857) == 24 && _Alignof(t857) == 8, "layout of t857");
 _Static_assert(offsetof(t857, p.v0.m_value) == 8, "offset in t857");
 _Static_assert(offsetof(t857, p.v1.m_error) == 8, "offset in t857");
-_Static_assert(sizeof(t858) == 16 && _Alignof(t858) == 8, "layout of t858");
+_Static_assert(sizeof(t858) == 24 && _Alignof(t858) == 8, "layout of t858");
 _Static_assert(offsetof(t858, p.v0.m_value) == 8, "offset in t858");
 _Static_assert(offsetof(t858, p.v1.m_error) == 8, "offset in t858");
-_Static_assert(sizeof(t859) == 24 && _Alignof(t859) == 8, "layout of t859");
+_Static_assert(sizeof(t859) == 40 && _Alignof(t859) == 8, "layout of t859");
 _Static_assert(offsetof(t859, p.v0.m_value) == 8, "offset in t859");
 _Static_assert(offsetof(t859, p.v1.m_error) == 8, "offset in t859");
-_Static_assert(sizeof(t860) == 24 && _Alignof(t860) == 8, "layout of t860");
+_Static_assert(sizeof(t860) == 16 && _Alignof(t860) == 8, "layout of t860");
 _Static_assert(offsetof(t860, p.v0.m_value) == 8, "offset in t860");
 _Static_assert(offsetof(t860, p.v1.m_error) == 8, "offset in t860");
 _Static_assert(sizeof(t861) == 24 && _Alignof(t861) == 8, "layout of t861");
@@ -3962,6 +3960,12 @@ _Static_assert(offsetof(t868, p.v1.m_error) == 8, "offset in t868");
 _Static_assert(sizeof(t869) == 24 && _Alignof(t869) == 8, "layout of t869");
 _Static_assert(offsetof(t869, p.v0.m_value) == 8, "offset in t869");
 _Static_assert(offsetof(t869, p.v1.m_error) == 8, "offset in t869");
+_Static_assert(sizeof(t870) == 24 && _Alignof(t870) == 8, "layout of t870");
+_Static_assert(offsetof(t870, p.v0.m_value) == 8, "offset in t870");
+_Static_assert(offsetof(t870, p.v1.m_error) == 8, "offset in t870");
+_Static_assert(sizeof(t871) == 24 && _Alignof(t871) == 8, "layout of t871");
+_Static_assert(offsetof(t871, p.v0.m_value) == 8, "offset in t871");
+_Static_assert(offsetof(t871, p.v1.m_error) == 8, "offset in t871");
 
 static t15 f0(t1 l0, t3 l1, t5 l2, t7 l3, t8 l4);
 static t14 f1(t10 l0, t10 l1);
@@ -4919,60 +4923,60 @@ static t33 f927(t592 l0, t33 l1);
 static t110 f928(t653 l0, t119 l1);
 static t110 f929(t133 l0, t19 l1, t13 l2, t14 l3);
 static t110 f930(t133 l0, t33 l1);
-static t655 f931(t17 l0, t13 l1);
-static t656 f932(t10 l0, t13 l1);
+static t656 f931(t17 l0, t13 l1);
+static t657 f932(t10 l0, t13 l1);
 static t110 f933(t614 l0, t13 l1);
-static t657 f934(t27 l0, t26 l1, t126 l2, t13 l3);
-static t658 f935(t27 l0, t26 l1, t254 l2, t13 l3);
+static t659 f934(t27 l0, t26 l1, t126 l2, t13 l3);
+static t660 f935(t27 l0, t26 l1, t254 l2, t13 l3);
 static t462 f936(t12 l0);
 static t12 f937(t12 l0);
-static t659 f938(t27 l0, t26 l1, t135 l2, t13 l3);
-static t660 f939(t27 l0, t26 l1);
+static t661 f938(t27 l0, t26 l1, t135 l2, t13 l3);
+static t662 f939(t27 l0, t26 l1);
 static t141 f940(t436 l0);
 static t153 f941(t436 l0, t141 l1);
 static t159 f942(void);
-static t110 f943(t661 l0, t140 l1);
+static t110 f943(t663 l0, t140 l1);
 static t14 f944(t12 l0);
-static t138 f945(t660 l0);
+static t138 f945(t662 l0);
 static t16 f946(t436 l0, t17 l1);
 static t147 f947(t436 l0);
 static t10 f948(t435 l0, t128 l1);
-static t662 f949(t27 l0, t26 l1);
+static t664 f949(t27 l0, t26 l1);
 static t14 f950(t435 l0, t12 l1);
-static t110 f951(t663 l0, t188 l1);
+static t110 f951(t665 l0, t188 l1);
 static t138 f952(void);
-static t186 f953(t662 l0);
+static t186 f953(t664 l0);
 static t196 f954(void);
 static t110 f955(t617 l0, t198 l1);
 static t14 f956(t436 l0);
-static t664 f957(t27 l0, t26 l1);
-static t110 f958(t665 l0, t146 l1);
+static t666 f957(t27 l0, t26 l1);
+static t110 f958(t667 l0, t146 l1);
 static t146 f959(t436 l0);
-static t144 f960(t664 l0);
+static t144 f960(t666 l0);
 static t150 f961(t436 l0, t151 l1);
 static t14 f962(t435 l0);
 static t141 f963(t436 l0);
-static t666 f964(t27 l0, t26 l1);
-static t110 f965(t667 l0, t147 l1);
-static t182 f966(t666 l0);
-static t668 f967(t27 l0, t26 l1);
-static t110 f968(t669 l0, t195 l1);
-static t193 f969(t668 l0);
-static t670 f970(t27 l0, t26 l1);
-static t110 f971(t671 l0, t191 l1);
-static t189 f972(t670 l0);
-static t672 f973(t27 l0, t26 l1);
-static t110 f974(t673 l0, t156 l1);
-static t154 f975(t672 l0);
-static t674 f976(t27 l0, t26 l1);
-static t165 f977(t674 l0);
-static t110 f978(t675 l0, t167 l1);
+static t668 f964(t27 l0, t26 l1);
+static t110 f965(t669 l0, t147 l1);
+static t182 f966(t668 l0);
+static t670 f967(t27 l0, t26 l1);
+static t110 f968(t671 l0, t195 l1);
+static t193 f969(t670 l0);
+static t672 f970(t27 l0, t26 l1);
+static t110 f971(t673 l0, t191 l1);
+static t189 f972(t672 l0);
+static t674 f973(t27 l0, t26 l1);
+static t110 f974(t675 l0, t156 l1);
+static t154 f975(t674 l0);
+static t676 f976(t27 l0, t26 l1);
+static t165 f977(t676 l0);
+static t110 f978(t677 l0, t167 l1);
 static t167 f979(t436 l0);
 static t14 f980(t435 l0);
 static t16 f981(t438 l0, t171 l1);
 static t16 f982(t438 l0, t170 l1);
 static t16 f983(t438 l0, t33 l1, t17 l2, t174 l3);
-static t676 f984(t27 l0, t26 l1, t440 l2, t13 l3);
+static t678 f984(t27 l0, t26 l1, t440 l2, t13 l3);
 static t16 f985(t546 l0, t144 l1, t33 l2, t33 l3);
 static t16 f986(t546 l0, t163 l1, t33 l2, t33 l3);
 static t16 f987(t546 l0, t175 l1, t33 l2, t33 l3);
@@ -4982,17 +4986,17 @@ static t458 f990(t27 l0, t26 l1, t41 l2, t13 l3);
 static t10 f991(t91 l0);
 static t91 f992(t10 l0);
 static t465 f993(t27 l0, t26 l1, t62 l2, t13 l3);
-static t677 f994(t27 l0, t26 l1, t64 l2, t13 l3);
-static t678 f995(t27 l0, t26 l1);
-static t110 f996(t679 l0, t78 l1);
-static t76 f997(t678 l0);
+static t679 f994(t27 l0, t26 l1, t64 l2, t13 l3);
+static t680 f995(t27 l0, t26 l1);
+static t110 f996(t681 l0, t78 l1);
+static t76 f997(t680 l0);
 static t464 f998(t27 l0, t26 l1, t59 l2, t13 l3);
-static t680 f999(t17 l0);
-static t14 f1000(t681 l0, t33 l1);
-static t17 f1001(t681 l0, t683 l1);
+static t682 f999(t17 l0);
+static t14 f1000(t683 l0, t33 l1);
+static t17 f1001(t683 l0, t685 l1);
 static t14 f1002(t33 l0);
-static t14 f1003(t680 l0);
-static t684 f1004(t27 l0, t26 l1, t82 l2, t13 l3);
+static t14 f1003(t682 l0);
+static t686 f1004(t27 l0, t26 l1, t82 l2, t13 l3);
 static t466 f1005(t27 l0, t26 l1, t79 l2, t13 l3);
 static t110 f1006(t621 l0, t13 l1);
 static t467 f1007(t27 l0, t26 l1, t70 l2, t13 l3);
@@ -5012,15 +5016,15 @@ static t630 f1020(t266 l0, t262 l1);
 static t110 f1021(t628 l0, t13 l1);
 static t110 f1022(t629 l0);
 static t13 f1023(t266 l0, t262 l1);
-static t685 f1024(t27 l0, t26 l1, t279 l2, t13 l3);
+static t687 f1024(t27 l0, t26 l1, t279 l2, t13 l3);
 static t13 f1025(t282 l0, t10 l1);
-static t686 f1026(t27 l0, t26 l1, t283 l2, t13 l3);
+static t688 f1026(t27 l0, t26 l1, t283 l2, t13 l3);
 static t16 f1027(t283 l0, t285 l1);
 static t263 f1028(void);
 static t293 f1029(void);
 static t297 f1030(void);
 static t299 f1031(void);
-static t110 f1032(t687 l0, t292 l1);
+static t110 f1032(t689 l0, t292 l1);
 static t14 f1033(t282 l0, t10 l1);
 static t110 f1034(t631 l0);
 static t13 f1035(t309 l0, t19 l1);
@@ -5049,11 +5053,11 @@ static t33 f1057(t592 l0, t33 l1, t254 l2);
 static t33 f1058(t592 l0, t33 l1, t254 l2);
 static t33 f1059(t592 l0, t33 l1, t33 l2);
 static t16 f1060(t429 l0, t17 l1, t154 l2, t424 l3, t263 l4, t33 l5);
-static t16 f1061(t688 l0);
-static t16 f1062(t689 l0);
-static t16 f1063(t690 l0);
-static t16 f1064(t691 l0);
-static t16 f1065(t692 l0);
+static t16 f1061(t690 l0);
+static t16 f1062(t691 l0);
+static t16 f1063(t692 l0);
+static t16 f1064(t693 l0);
+static t16 f1065(t694 l0);
 static t16 f1066(t429 l0, t13 l1);
 static t33 f1067(t429 l0, t141 l1, t33 l2);
 static t16 f1068(t429 l0, t141 l1, t33 l2, t33 l3);
@@ -5063,7 +5067,7 @@ static t33 f1071(t257 l0, t141 l1);
 static t68 f1072(t258 l0, t33 l1);
 static t14 f1073(t592 l0, t33 l1, t33 l2);
 static t16 f1074(t429 l0, t141 l1);
-static t693 f1075(t258 l0, t33 l1);
+static t695 f1075(t258 l0, t33 l1);
 static t10 f1076(t257 l0, t121 l1);
 static t17 f1077(t257 l0, t19 l1);
 static t110 f1078(t257 l0, t33 l1, t133 l2);
@@ -5075,7 +5079,7 @@ static t379 f1083(t350 l0, t19 l1);
 static t19 f1084(t141 l0);
 static t14 f1085(t429 l0, t121 l1, t14 l2, t10 l3);
 static t14 f1086(t429 l0, t162 l1, t14 l2);
-static t694 f1087(t355 l0, t19 l1);
+static t696 f1087(t355 l0, t19 l1);
 static t643 f1088(t360 l0, t19 l1);
 static t14 f1089(t257 l0, t33 l1);
 static t630 f1090(t394 l0, t33 l1);
@@ -5084,7 +5088,7 @@ static t13 f1092(t394 l0, t33 l1);
 static t33 f1093(t429 l0, t254 l1);
 static t33 f1094(t429 l0, t391 l1);
 static t391 f1095(void);
-static t110 f1096(t695 l0, t334 l1);
+static t110 f1096(t697 l0, t334 l1);
 static t16 f1097(t429 l0, t338 l1);
 static t16 f1098(t429 l0);
 static t16 f1099(t429 l0, t165 l1);
@@ -5092,18 +5096,18 @@ static t16 f1100(t429 l0);
 static t630 f1101(t398 l0, t33 l1);
 static t595 f1102(t429 l0, t141 l1);
 static t402 f1103(t257 l0, t402 l1, t33 l2);
-static t696 f1104(t429 l0, t33 l1);
+static t698 f1104(t429 l0, t33 l1);
 static t16 f1105(t429 l0, t121 l1, t10 l2, t17 l3);
-static t595 f1106(t429 l0, t698 l1, t33 l2, t19 l3);
+static t595 f1106(t429 l0, t700 l1, t33 l2, t19 l3);
 static t16 f1107(t429 l0, t121 l1, t10 l2, t489 l3, t45 l4);
 static t110 f1108(t644 l0);
 static t13 f1109(t398 l0, t33 l1);
-static t699 f1110(t257 l0, t263 l1);
+static t701 f1110(t257 l0, t263 l1);
 static t22 f1111(t429 l0, t140 l1, t403 l2);
 static t16 f1112(t429 l0, t33 l1, t188 l2, t140 l3, t403 l4, t14 l5);
 static t13 f1113(t411 l0, t33 l1);
 static t13 f1114(t416 l0, t33 l1);
-static t700 f1115(t27 l0, t26 l1, t417 l2, t13 l3);
+static t702 f1115(t27 l0, t26 l1, t417 l2, t13 l3);
 static t16 f1116(t417 l0, t419 l1);
 static t110 f1117(t598 l0);
 static t13 f1118(t303 l0, t33 l1);
@@ -5112,21 +5116,21 @@ static t263 f1120(t429 l0, t263 l1, t33 l2, t254 l3);
 static t8 f1121(t257 l0, t33 l1);
 static t33 f1122(t429 l0, t33 l1);
 static t110 f1123(t257 l0, t33 l1, t254 l2, t133 l3);
-static t701 f1124(t27 l0, t26 l1, t491 l2, t13 l3);
-static t702 f1125(t27 l0, t26 l1, t502 l2, t13 l3);
+static t703 f1124(t27 l0, t26 l1, t491 l2, t13 l3);
+static t704 f1125(t27 l0, t26 l1, t502 l2, t13 l3);
 static t19 f1126(t32 l0);
 static t143 f1127(t527 l0, t33 l1, t19 l2, t19 l3);
-static t703 f1128(t527 l0, t19 l1, t14 l2);
+static t705 f1128(t527 l0, t19 l1, t14 l2);
 static t491 f1129(t490 l0);
 static t132 f1130(t26 l0);
 static t16 f1131(t527 l0, t10 l1);
 static t646 f1132(t527 l0, t19 l1, t19 l2);
 static t645 f1133(t527 l0, t19 l1, t19 l2);
-static t110 f1134(t704 l0, t19 l1);
+static t110 f1134(t706 l0, t19 l1);
 static t645 f1135(t527 l0, t33 l1);
 static t604 f1136(t527 l0, t33 l1, t13 l2, t19 l3);
 static t518 f1137(t516 l0, t13 l1);
-static t110 f1138(t705 l0, t519 l1);
+static t110 f1138(t707 l0, t519 l1);
 static t33 f1139(t592 l0, t33 l1, t14 l2);
 static t33 f1140(t592 l0, t33 l1, t14 l2);
 static t33 f1141(t592 l0, t33 l1);
@@ -5136,9 +5140,9 @@ static t263 f1144(t528 l0, t263 l1);
 static t16 f1145(t634 l0, t265 l1);
 static t33 f1146(t592 l0, t263 l1, t33 l2, t14 l3, t14 l4);
 static t13 f1147(t533 l0, t10 l1);
-static t706 f1148(t27 l0, t26 l1, t534 l2, t13 l3);
+static t708 f1148(t27 l0, t26 l1, t534 l2, t13 l3);
 static t16 f1149(t534 l0, t536 l1);
-static t707 f1150(t27 l0, t26 l1, t530 l2, t13 l3);
+static t709 f1150(t27 l0, t26 l1, t530 l2, t13 l3);
 static t31 f1151(t537 l0, t33 l1);
 static t16 f1152(t395 l0, t397 l1);
 static t33 f1153(t592 l0, t33 l1);
@@ -5150,13 +5154,13 @@ static t334 f1158(t257 l0, t33 l1);
 static t64 f1159(t537 l0, t165 l1);
 static t49 f1160(t33 l0, t50 l1);
 static t13 f1161(t309 l0, t19 l1);
-static t708 f1162(t429 l0, t33 l1);
+static t710 f1162(t429 l0, t33 l1);
 static t19 f1163(t19 l0, t19 l1);
-static t16 f1164(t704 l0, t19 l1);
+static t16 f1164(t706 l0, t19 l1);
 static t494 f1165(t500 l0);
-static t709 f1166(t27 l0, t26 l1);
-static t110 f1167(t710 l0, t494 l1);
-static t649 f1168(t709 l0);
+static t711 f1166(t27 l0, t26 l1);
+static t110 f1167(t712 l0, t494 l1);
+static t649 f1168(t711 l0);
 static t17 f1169(t21 l0, t10 l1);
 static t33 f1170(t133 l0, t257 l1, t19 l2, t33 l3);
 static t16 f1171(t133 l0, t33 l1);
@@ -5165,7 +5169,7 @@ static t16 f1173(t133 l0, t257 l1, t163 l2, t33 l3, t14 l4);
 static t16 f1174(t133 l0, t257 l1, t175 l2, t33 l3, t14 l4);
 static t16 f1175(t133 l0, t257 l1, t141 l2, t33 l3);
 static t16 f1176(t133 l0, t257 l1, t171 l2, t33 l3);
-static t711 f1177(t380 l0, t19 l1);
+static t713 f1177(t380 l0, t19 l1);
 static t16 f1178(t133 l0, t10 l1);
 static t16 f1179(t133 l0, t257 l1, t403 l2);
 static t16 f1180(t133 l0, t257 l1, t167 l2, t33 l3);
@@ -5173,7 +5177,7 @@ static t110 f1181(t653 l0, t13 l1);
 static t110 f1182(t133 l0, t17 l1, t13 l2, t14 l3);
 static t17 f1183(t19 l0, t10 l1);
 static t14 f1184(t17 l0, t13 l1);
-static t715 f1185(t27 l0, t26 l1, t129 l2, t13 l3);
+static t717 f1185(t27 l0, t26 l1, t129 l2, t13 l3);
 static t10 f1186(t126 l0);
 static t126 f1187(t10 l0);
 static t10 f1188(t254 l0);
@@ -5186,25 +5190,25 @@ static t14 f1194(t435 l0);
 static t141 f1195(t436 l0, t13 l1, t141 l2);
 static t141 f1196(t436 l0, t13 l1, t128 l2, t142 l3);
 static t158 f1197(t436 l0);
-static t716 f1198(t27 l0, t26 l1, t141 l2);
-static t110 f1199(t661 l0, t13 l1);
+static t718 f1198(t27 l0, t26 l1, t141 l2);
+static t110 f1199(t663 l0, t13 l1);
 static t128 f1200(t436 l0);
-static t110 f1201(t663 l0, t13 l1);
+static t110 f1201(t665 l0, t13 l1);
 static t110 f1202(t617 l0, t13 l1);
 static t144 f1203(void);
-static t110 f1204(t665 l0, t13 l1);
+static t110 f1204(t667 l0, t13 l1);
 static t149 f1205(t436 l0);
-static t717 f1206(t27 l0, t26 l1, t151 l2);
+static t719 f1206(t27 l0, t26 l1, t151 l2);
 static t141 f1207(t436 l0);
 static t141 f1208(t436 l0, t13 l1, t128 l2, t141 l3, t141 l4);
-static t110 f1209(t667 l0, t13 l1);
+static t110 f1209(t669 l0, t13 l1);
 static t193 f1210(void);
-static t110 f1211(t669 l0, t13 l1);
+static t110 f1211(t671 l0, t13 l1);
 static t189 f1212(void);
-static t110 f1213(t671 l0, t13 l1);
+static t110 f1213(t673 l0, t13 l1);
 static t154 f1214(void);
-static t110 f1215(t673 l0, t13 l1);
-static t110 f1216(t675 l0, t13 l1);
+static t110 f1215(t675 l0, t13 l1);
+static t110 f1216(t677 l0, t13 l1);
 static t14 f1217(t141 l0);
 static t168 f1218(t436 l0, t174 l1);
 static t164 f1219(t436 l0, t167 l1);
@@ -5222,7 +5226,7 @@ static t62 f1230(t10 l0);
 static t10 f1231(t64 l0);
 static t64 f1232(t10 l0);
 static t76 f1233(void);
-static t110 f1234(t679 l0, t13 l1);
+static t110 f1234(t681 l0, t13 l1);
 static t10 f1235(t59 l0);
 static t59 f1236(t10 l0);
 static t17 f1237(t17 l0, t13 l1, t13 l2);
@@ -5237,19 +5241,19 @@ static t10 f1245(t34 l0);
 static t34 f1246(t10 l0);
 static t10 f1247(t37 l0);
 static t37 f1248(t10 l0);
-static t718 f1249(t27 l0, t26 l1, t233 l2, t13 l3);
-static t719 f1250(t27 l0, t26 l1, t237 l2, t13 l3);
+static t720 f1249(t27 l0, t26 l1, t233 l2, t13 l3);
+static t721 f1250(t27 l0, t26 l1, t237 l2, t13 l3);
 static t110 f1251(t625 l0, t13 l1);
 static t13 f1252(t266 l0, t262 l1);
-static t720 f1253(t27 l0, t26 l1, t260 l2, t13 l3);
-static t721 f1254(t27 l0, t26 l1, t267 l2, t13 l3);
+static t722 f1253(t27 l0, t26 l1, t260 l2, t13 l3);
+static t723 f1254(t27 l0, t26 l1, t267 l2, t13 l3);
 static t16 f1255(t267 l0, t269 l1);
 static t10 f1256(t279 l0);
 static t279 f1257(t10 l0);
 static t10 f1258(t283 l0);
 static t283 f1259(t10 l0);
-static t110 f1260(t687 l0, t13 l1);
-static t722 f1261(t27 l0, t26 l1, t310 l2, t13 l3);
+static t110 f1260(t689 l0, t13 l1);
+static t724 f1261(t27 l0, t26 l1, t310 l2, t13 l3);
 static t16 f1262(t310 l0, t312 l1);
 static t33 f1263(t429 l0, t144 l1, t325 l2, t14 l3);
 static t110 f1264(t634 l0, t13 l1);
@@ -5263,21 +5267,21 @@ static t16 f1271(t429 l0, t147 l1, t319 l2);
 static t33 f1272(t12 l0);
 static t14 f1273(t12 l0);
 static t110 f1274(t641 l0, t13 l1);
-static t110 f1275(t723 l0, t275 l1);
-static t110 f1276(t689 l0, t330 l1);
+static t110 f1275(t725 l0, t275 l1);
+static t110 f1276(t691 l0, t330 l1);
 static t254 f1277(t258 l0, t254 l1);
 static t14 f1278(t257 l0, t33 l1);
-static t110 f1279(t691 l0, t13 l1);
+static t110 f1279(t693 l0, t13 l1);
 static t33 f1280(t429 l0, t141 l1, t33 l2);
 static t16 f1281(t429 l0, t141 l1, t33 l2);
 static t16 f1282(t429 l0, t19 l1, t121 l2, t33 l3, t33 l4);
 static t162 f1283(t141 l0);
 static t14 f1284(t592 l0, t33 l1, t33 l2);
 static t14 f1285(t592 l0, t254 l1, t254 l2);
-static t699 f1286(t263 l0, t10 l1);
+static t701 f1286(t263 l0, t10 l1);
 static t10 f1287(t429 l0, t386 l1, t141 l2);
 static t33 f1288(t429 l0, t10 l1);
-static t724 f1289(t429 l0, t33 l1, t33 l2, t121 l3);
+static t726 f1289(t429 l0, t33 l1, t33 l2, t121 l3);
 static t10 f1290(t386 l0);
 static t14 f1291(t258 l0, t254 l1);
 static t14 f1292(t258 l0, t254 l1);
@@ -5285,35 +5289,35 @@ static t630 f1293(t350 l0, t19 l1);
 static t630 f1294(t355 l0, t19 l1);
 static t630 f1295(t360 l0, t19 l1);
 static t13 f1296(t394 l0, t33 l1);
-static t725 f1297(t27 l0, t26 l1, t395 l2, t13 l3);
-static t110 f1298(t726 l0, t254 l1);
-static t110 f1299(t727 l0, t391 l1);
-static t110 f1300(t695 l0, t13 l1);
-static t110 f1301(t690 l0, t338 l1);
+static t727 f1297(t27 l0, t26 l1, t395 l2, t13 l3);
+static t110 f1298(t728 l0, t254 l1);
+static t110 f1299(t729 l0, t391 l1);
+static t110 f1300(t697 l0, t13 l1);
+static t110 f1301(t692 l0, t338 l1);
 static t16 f1302(t429 l0, t167 l1);
-static t630 f1303(t691 l0);
+static t630 f1303(t693 l0);
 static t13 f1304(t398 l0, t33 l1);
 static t595 f1305(t429 l0, t141 l1);
 static t403 f1306(t257 l0, t402 l1);
-static t595 f1307(t698 l0, t33 l1, t12 l2, t19 l3);
-static t22 f1308(t698 l0, t19 l1, t19 l2);
+static t595 f1307(t700 l0, t33 l1, t12 l2, t19 l3);
+static t22 f1308(t700 l0, t19 l1, t19 l2);
 static t10 f1309(t257 l0, t10 l1);
-static t728 f1310(t27 l0, t26 l1);
-static t110 f1311(t729 l0, t402 l1);
-static t403 f1312(t728 l0);
-static t143 f1313(t698 l0, t19 l1);
+static t730 f1310(t27 l0, t26 l1);
+static t110 f1311(t731 l0, t402 l1);
+static t403 f1312(t730 l0);
+static t143 f1313(t700 l0, t19 l1);
 static t22 f1314(t489 l0, t19 l1);
-static t595 f1315(t429 l0, t697 l1, t33 l2, t19 l3);
-static t595 f1316(t429 l0, t697 l1, t10 l2);
+static t595 f1315(t429 l0, t699 l1, t33 l2, t19 l3);
+static t595 f1316(t429 l0, t699 l1, t10 l2);
 static t403 f1317(t257 l0, t402 l1);
-static t595 f1318(t429 l0, t698 l1, t33 l2, t19 l3);
+static t595 f1318(t429 l0, t700 l1, t33 l2, t19 l3);
 static t10 f1319(t489 l0);
-static t730 f1320(t27 l0, t26 l1, t399 l2, t13 l3);
+static t732 f1320(t27 l0, t26 l1, t399 l2, t13 l3);
 static t16 f1321(t399 l0, t401 l1);
 static t14 f1322(t10 l0);
 static t10 f1323(t417 l0);
 static t417 f1324(t10 l0);
-static t731 f1325(t27 l0, t26 l1, t304 l2, t13 l3);
+static t733 f1325(t27 l0, t26 l1, t304 l2, t13 l3);
 static t16 f1326(t304 l0, t306 l1);
 static t33 f1327(t592 l0, t254 l1);
 static t10 f1328(t491 l0);
@@ -5325,15 +5329,15 @@ static t19 f1333(t19 l0, t19 l1);
 static t19 f1334(t33 l0, t19 l1);
 static t19 f1335(t527 l0);
 static t16 f1336(t527 l0, t10 l1, t14 l2);
-static t110 f1337(t704 l0, t13 l1);
+static t110 f1337(t706 l0, t13 l1);
 static t19 f1338(t29 l0, t33 l1);
 static t604 f1339(t527 l0, t90 l1, t13 l2, t19 l3);
 static t604 f1340(t527 l0);
 static t504 f1341(t527 l0, t33 l1);
 static t604 f1342(t527 l0, t19 l1, t19 l2, t19 l3);
-static t732 f1343(t527 l0, t63 l1, t19 l2);
+static t734 f1343(t527 l0, t63 l1, t19 l2);
 static t16 f1344(t527 l0, t10 l1);
-static t110 f1345(t705 l0, t13 l1);
+static t110 f1345(t707 l0, t13 l1);
 static t14 f1346(t10 l0, t10 l1);
 static t263 f1347(t258 l0, t263 l1);
 static t10 f1348(t534 l0);
@@ -5363,55 +5367,55 @@ static t49 f1371(t537 l0, t49 l1, t33 l2, t33 l3, t33 l4, t121 l5);
 static t33 f1372(t257 l0, t19 l1);
 static t332 f1373(t331 l0);
 static t66 f1374(t537 l0, t167 l1);
-static t708 f1375(t320 l0, t33 l1);
-static t708 f1376(t429 l0, t33 l1);
-static t110 f1377(t734 l0, t33 l1, t324 l2);
-static t110 f1378(t710 l0, t13 l1);
+static t710 f1375(t320 l0, t33 l1);
+static t710 f1376(t429 l0, t33 l1);
+static t110 f1377(t736 l0, t33 l1, t324 l2);
+static t110 f1378(t712 l0, t13 l1);
 static t16 f1379(t133 l0, t33 l1, t17 l2);
 static t16 f1380(t133 l0, t257 l1, t164 l2, t33 l3, t14 l4);
-static t735 f1381(t372 l0, t19 l1);
+static t737 f1381(t372 l0, t19 l1);
 static t19 f1382(t147 l0);
 static t630 f1383(t380 l0, t19 l1);
 static t17 f1384(t257 l0, t19 l1);
 static t19 f1385(t167 l0);
 static t16 f1386(t133 l0, t33 l1, t17 l2, t174 l3);
-static t736 f1387(t27 l0, t26 l1, t117 l2, t13 l3);
+static t738 f1387(t27 l0, t26 l1, t117 l2, t13 l3);
 static t13 f1388(t17 l0);
 static t10 f1389(t129 l0);
 static t129 f1390(t10 l0);
 static t141 f1391(t436 l0, t13 l1, t142 l2);
-static t110 f1392(t688 l0, t141 l1);
+static t110 f1392(t690 l0, t141 l1);
 static t141 f1393(t436 l0);
 static t141 f1394(t436 l0);
 static t141 f1395(t436 l0, t147 l1);
-static t737 f1396(t27 l0, t26 l1);
+static t739 f1396(t27 l0, t26 l1);
 static t147 f1397(t436 l0, t147 l1);
-static t110 f1398(t738 l0, t161 l1);
-static t159 f1399(t737 l0);
-static t739 f1400(t27 l0, t26 l1, t162 l2, t13 l3);
-static t740 f1401(t27 l0, t26 l1, t138 l2, t13 l3);
-static t741 f1402(t27 l0, t26 l1, t186 l2, t13 l3);
-static t742 f1403(t27 l0, t26 l1, t196 l2, t13 l3);
-static t743 f1404(t27 l0, t26 l1, t144 l2, t13 l3);
-static t744 f1405(t27 l0, t26 l1);
-static t110 f1406(t745 l0, t151 l1);
-static t149 f1407(t744 l0);
-static t746 f1408(t27 l0, t26 l1, t149 l2, t13 l3);
+static t110 f1398(t740 l0, t161 l1);
+static t159 f1399(t739 l0);
+static t741 f1400(t27 l0, t26 l1, t162 l2, t13 l3);
+static t742 f1401(t27 l0, t26 l1, t138 l2, t13 l3);
+static t743 f1402(t27 l0, t26 l1, t186 l2, t13 l3);
+static t744 f1403(t27 l0, t26 l1, t196 l2, t13 l3);
+static t745 f1404(t27 l0, t26 l1, t144 l2, t13 l3);
+static t746 f1405(t27 l0, t26 l1);
+static t110 f1406(t747 l0, t151 l1);
+static t149 f1407(t746 l0);
+static t748 f1408(t27 l0, t26 l1, t149 l2, t13 l3);
 static t149 f1409(void);
 static t141 f1410(t436 l0);
-static t747 f1411(t27 l0, t26 l1, t182 l2, t13 l3);
-static t748 f1412(t27 l0, t26 l1, t193 l2, t13 l3);
-static t749 f1413(t27 l0, t26 l1, t189 l2, t13 l3);
-static t750 f1414(t27 l0, t26 l1, t154 l2, t13 l3);
-static t751 f1415(t27 l0, t26 l1, t165 l2, t13 l3);
+static t749 f1411(t27 l0, t26 l1, t182 l2, t13 l3);
+static t750 f1412(t27 l0, t26 l1, t193 l2, t13 l3);
+static t751 f1413(t27 l0, t26 l1, t189 l2, t13 l3);
+static t752 f1414(t27 l0, t26 l1, t154 l2, t13 l3);
+static t753 f1415(t27 l0, t26 l1, t165 l2, t13 l3);
 static t141 f1416(t436 l0);
-static t752 f1417(t27 l0, t26 l1);
-static t753 f1418(t27 l0, t26 l1);
-static t110 f1419(t754 l0, t181 l1);
+static t754 f1417(t27 l0, t26 l1);
+static t755 f1418(t27 l0, t26 l1);
+static t110 f1419(t756 l0, t181 l1);
 static t181 f1420(t436 l0, t14 l1);
-static t110 f1421(t755 l0, t178 l1);
-static t179 f1422(t753 l0);
-static t176 f1423(t752 l0);
+static t110 f1421(t757 l0, t178 l1);
+static t179 f1422(t755 l0);
+static t176 f1423(t754 l0);
 static t167 f1424(t436 l0, t33 l1, t13 l2, t147 l3, t171 l4);
 static t171 f1425(t436 l0);
 static t167 f1426(t436 l0, t33 l1, t13 l2, t147 l3, t171 l4, t141 l5);
@@ -5423,26 +5427,26 @@ static t10 f1431(t233 l0);
 static t233 f1432(t10 l0);
 static t10 f1433(t237 l0);
 static t237 f1434(t10 l0);
-static t756 f1435(t27 l0, t26 l1, t226 l2, t13 l3);
+static t758 f1435(t27 l0, t26 l1, t226 l2, t13 l3);
 static t10 f1436(t260 l0);
 static t260 f1437(t10 l0);
 static t10 f1438(t267 l0);
 static t267 f1439(t10 l0);
-static t757 f1440(t27 l0, t26 l1, t290 l2, t13 l3);
+static t759 f1440(t27 l0, t26 l1, t290 l2, t13 l3);
 static t10 f1441(t310 l0);
 static t310 f1442(t10 l0);
 static t14 f1443(t144 l0);
 static t16 f1444(t429 l0, t147 l1);
 static t16 f1445(t429 l0, t147 l1, t286 l2);
-static t758 f1446(t27 l0, t26 l1, t263 l2, t13 l3);
-static t759 f1447(t27 l0, t26 l1, t299 l2, t13 l3);
-static t760 f1448(t27 l0, t26 l1, t293 l2, t13 l3);
-static t110 f1449(t761 l0, t19 l1, t319 l2);
-static t762 f1450(t27 l0, t26 l1, t297 l2, t13 l3);
-static t110 f1451(t723 l0, t13 l1);
-static t110 f1452(t689 l0, t13 l1);
+static t760 f1446(t27 l0, t26 l1, t263 l2, t13 l3);
+static t761 f1447(t27 l0, t26 l1, t299 l2, t13 l3);
+static t762 f1448(t27 l0, t26 l1, t293 l2, t13 l3);
+static t110 f1449(t763 l0, t19 l1, t319 l2);
+static t764 f1450(t27 l0, t26 l1, t297 l2, t13 l3);
+static t110 f1451(t725 l0, t13 l1);
+static t110 f1452(t691 l0, t13 l1);
 static t16 f1453(t254 l0, t254 l1);
-static t110 f1454(t691 l0, t13 l1);
+static t110 f1454(t693 l0, t13 l1);
 static t16 f1455(t429 l0, t141 l1);
 static t33 f1456(t429 l0, t141 l1, t10 l2, t33 l3);
 static t33 f1457(t429 l0, t141 l1, t144 l2, t33 l3);
@@ -5470,17 +5474,17 @@ static t14 f1478(t258 l0, t33 l1);
 static t14 f1479(t258 l0, t33 l1, t33 l2);
 static t14 f1480(t257 l0, t33 l1);
 static t33 f1481(t257 l0, t10 l1, t10 l2);
-static t724 f1482(t429 l0, t33 l1, t33 l2);
+static t726 f1482(t429 l0, t33 l1, t33 l2);
 static t110 f1483(t429 l0, t33 l1, t33 l2, t133 l3);
 static t13 f1484(t350 l0, t19 l1);
 static t13 f1485(t355 l0, t19 l1);
 static t13 f1486(t360 l0, t19 l1);
 static t10 f1487(t395 l0);
 static t395 f1488(t10 l0);
-static t110 f1489(t726 l0, t13 l1);
-static t110 f1490(t727 l0, t13 l1);
-static t763 f1491(t27 l0, t26 l1, t332 l2, t13 l3);
-static t110 f1492(t690 l0, t13 l1);
+static t110 f1489(t728 l0, t13 l1);
+static t110 f1490(t729 l0, t13 l1);
+static t765 f1491(t27 l0, t26 l1, t332 l2, t13 l3);
+static t110 f1492(t692 l0, t13 l1);
 static t16 f1493(t429 l0, t167 l1, t14 l2, t147 l3, t169 l4, t170 l5);
 static t16 f1494(t429 l0, t167 l1, t147 l2, t171 l3, t141 l4, t174 l5, t171 l6, t164 l7);
 static t16 f1495(t429 l0, t141 l1, t141 l2, t121 l3);
@@ -5497,16 +5501,16 @@ static t51 f1505(t51 l0);
 static t403 f1506(void);
 static t595 f1507(t429 l0, t141 l1, t141 l2, t159 l3, t33 l4);
 static t33 f1508(t257 l0, t33 l1);
-static t16 f1509(t729 l0, t402 l1);
-static t764 f1510(t27 l0, t26 l1, t402 l2);
+static t16 f1509(t731 l0, t402 l1);
+static t766 f1510(t27 l0, t26 l1, t402 l2);
 static t14 f1511(t402 l0);
-static t765 f1512(t402 l0);
-static t595 f1513(t429 l0, t765 l1, t33 l2, t121 l3);
+static t767 f1512(t402 l0);
+static t595 f1513(t429 l0, t767 l1, t33 l2, t121 l3);
 static t595 f1514(t429 l0, t141 l1, t12 l2, t141 l3, t141 l4, t33 l5);
-static t143 f1515(t698 l0, t19 l1, t19 l2);
+static t143 f1515(t700 l0, t19 l1, t19 l2);
 static t51 f1516(t19 l0);
 static t565 f1517(t19 l0);
-static t110 f1518(t729 l0, t13 l1);
+static t110 f1518(t731 l0, t13 l1);
 static t521 f1519(t520 l0);
 static t10 f1520(t399 l0);
 static t399 f1521(t10 l0);
@@ -5514,16 +5518,16 @@ static t14 f1522(t12 l0);
 static t10 f1523(t304 l0);
 static t304 f1524(t10 l0);
 static t17 f1525(t10 l0);
-static t766 f1526(t27 l0, t26 l1, t494 l2, t13 l3);
+static t768 f1526(t27 l0, t26 l1, t494 l2, t13 l3);
 static t645 f1527(t527 l0, t90 l1, t13 l2, t10 l3);
 static t645 f1528(t527 l0, t90 l1, t13 l2, t10 l3);
 static t16 f1529(t527 l0, t10 l1);
 static t19 f1530(t565 l0);
 static t19 f1531(t51 l0);
 static t502 f1532(t501 l0);
-static t732 f1533(t527 l0, t63 l1, t19 l2);
-static t732 f1534(t527 l0, t13 l1);
-static t770 f1535(t27 l0, t26 l1, t517 l2, t13 l3);
+static t734 f1533(t527 l0, t63 l1, t19 l2);
+static t734 f1534(t527 l0, t13 l1);
+static t772 f1535(t27 l0, t26 l1, t517 l2, t13 l3);
 static t16 f1536(t263 l0, t263 l1);
 static t110 f1537(t528 l0, t33 l1, t133 l2);
 static t49 f1538(t537 l0, t10 l1, t33 l2);
@@ -5542,7 +5546,7 @@ static t70 f1550(t537 l0, t141 l1, t14 l2, t14 l3, t53 l4);
 static t49 f1551(t537 l0, t141 l1, t179 l2);
 static t59 f1552(t528 l0, t49 l1, t49 l2);
 static t33 f1553(t537 l0, t33 l1);
-static t16 f1554(t679 l0, t78 l1);
+static t16 f1554(t681 l0, t78 l1);
 static t16 f1555(t528 l0, t574 l1, t73 l2, t63 l3);
 static t73 f1556(t528 l0, t75 l1);
 static t16 f1557(t560 l0, t61 l1);
@@ -5560,18 +5564,18 @@ static t76 f1568(t537 l0, t171 l1, t296 l2);
 static t66 f1569(t537 l0, t141 l1, t162 l2);
 static t66 f1570(t537 l0, t175 l1, t33 l2, t14 l3);
 static t630 f1571(t320 l0, t33 l1);
-static t110 f1572(t734 l0);
+static t110 f1572(t736 l0);
 static t13 f1573(t320 l0, t33 l1);
-static t771 f1574(t27 l0, t26 l1, t649 l2, t13 l3);
-static t772 f1575(t167 l0);
+static t773 f1574(t27 l0, t26 l1, t649 l2, t13 l3);
+static t774 f1575(t167 l0);
 static t630 f1576(t372 l0, t19 l1);
 static t13 f1577(t380 l0, t19 l1);
 static t10 f1578(t117 l0);
 static t117 f1579(t10 l0);
 static t33 f1580(t435 l0, t13 l1);
-static t110 f1581(t688 l0, t13 l1);
+static t110 f1581(t690 l0, t13 l1);
 static t164 f1582(t436 l0);
-static t110 f1583(t738 l0, t13 l1);
+static t110 f1583(t740 l0, t13 l1);
 static t10 f1584(t162 l0);
 static t162 f1585(t10 l0);
 static t10 f1586(t138 l0);
@@ -5582,7 +5586,7 @@ static t10 f1590(t196 l0);
 static t196 f1591(t10 l0);
 static t10 f1592(t144 l0);
 static t144 f1593(t10 l0);
-static t110 f1594(t745 l0, t13 l1);
+static t110 f1594(t747 l0, t13 l1);
 static t10 f1595(t149 l0);
 static t149 f1596(t10 l0);
 static t141 f1597(t436 l0);
@@ -5600,11 +5604,11 @@ static t10 f1608(t165 l0);
 static t165 f1609(t10 l0);
 static t176 f1610(void);
 static t179 f1611(void);
-static t110 f1612(t754 l0, t13 l1);
-static t110 f1613(t755 l0, t13 l1);
-static t775 f1614(t27 l0, t26 l1);
-static t110 f1615(t776 l0, t173 l1);
-static t171 f1616(t775 l0);
+static t110 f1612(t756 l0, t13 l1);
+static t110 f1613(t757 l0, t13 l1);
+static t777 f1614(t27 l0, t26 l1);
+static t110 f1615(t778 l0, t173 l1);
+static t171 f1616(t777 l0);
 static t14 f1617(t435 l0);
 static t10 f1618(t76 l0);
 static t76 f1619(t10 l0);
@@ -5619,14 +5623,14 @@ static t299 f1627(t10 l0);
 static t10 f1628(t293 l0);
 static t293 f1629(t10 l0);
 static t630 f1630(t315 l0, t19 l1);
-static t110 f1631(t761 l0);
+static t110 f1631(t763 l0);
 static t13 f1632(t315 l0, t19 l1);
 static t10 f1633(t297 l0);
 static t297 f1634(t10 l0);
-static t777 f1635(t27 l0, t26 l1, t273 l2, t13 l3);
-static t778 f1636(t27 l0, t26 l1, t328 l2, t13 l3);
-static t779 f1637(t27 l0, t26 l1, t340 l2, t13 l3);
-static t694 f1638(t429 l0, t141 l1, t144 l2, t14 l3);
+static t779 f1635(t27 l0, t26 l1, t273 l2, t13 l3);
+static t780 f1636(t27 l0, t26 l1, t328 l2, t13 l3);
+static t781 f1637(t27 l0, t26 l1, t340 l2, t13 l3);
+static t696 f1638(t429 l0, t141 l1, t144 l2, t14 l3);
 static t16 f1639(t429 l0, t33 l1, t121 l2);
 static t33 f1640(t429 l0, t33 l1, t33 l2, t121 l3);
 static t33 f1641(t429 l0, t33 l1, t254 l2);
@@ -5635,8 +5639,8 @@ static t16 f1643(t429 l0, t33 l1, t33 l2);
 static t33 f1644(t429 l0, t141 l1, t141 l2, t159 l3, t14 l4, t14 l5, t33 l6);
 static t14 f1645(t360 l0, t19 l1);
 static t16 f1646(t429 l0, t141 l1, t159 l2);
-static t780 f1647(t257 l0, t141 l1);
-static t16 f1648(t429 l0, t781 l1, t14 l2);
+static t782 f1647(t257 l0, t141 l1);
+static t16 f1648(t429 l0, t783 l1, t14 l2);
 static t14 f1649(t141 l0);
 static t33 f1650(t429 l0, t33 l1, t33 l2, t141 l3, t141 l4);
 static t16 f1651(t429 l0, t33 l1, t33 l2, t121 l3);
@@ -5646,35 +5650,35 @@ static t33 f1654(t429 l0, t10 l1, t33 l2, t121 l3);
 static t33 f1655(t429 l0, t141 l1, t162 l2);
 static t14 f1656(t257 l0, t33 l1);
 static t33 f1657(t429 l0, t33 l1, t141 l2, t147 l3);
-static t784 f1658(t257 l0, t33 l1, t10 l2);
+static t786 f1658(t257 l0, t33 l1, t10 l2);
 static t33 f1659(t429 l0, t141 l1, t301 l2);
 static t33 f1660(t429 l0, t33 l1, t141 l2, t147 l3);
 static t33 f1661(t257 l0, t141 l1);
 static t33 f1662(t429 l0, t33 l1, t141 l2, t147 l3);
-static t110 f1663(t785 l0, t19 l1, t12 l2);
+static t110 f1663(t787 l0, t19 l1, t12 l2);
 static t16 f1664(t429 l0, t141 l1, t354 l2);
-static t786 f1665(t257 l0, t141 l1);
+static t788 f1665(t257 l0, t141 l1);
 static t33 f1666(t257 l0, t141 l1);
-static t787 f1667(t27 l0, t26 l1);
-static t16 f1668(t791 l0, t790 l1);
-static t790 f1669(t429 l0, t164 l1, t254 l2, t781 l3, t33 l4, t14 l5);
+static t789 f1667(t27 l0, t26 l1);
+static t16 f1668(t793 l0, t792 l1);
+static t792 f1669(t429 l0, t164 l1, t254 l2, t783 l3, t33 l4, t14 l5);
 static t349 f1670(t257 l0, t347 l1);
 static t347 f1671(t257 l0, t349 l1, t349 l2);
-static t33 f1672(t429 l0, t121 l1, t788 l2, t33 l3, t14 l4);
-static t788 f1673(t787 l0);
+static t33 f1672(t429 l0, t121 l1, t790 l2, t33 l3, t14 l4);
+static t790 f1673(t789 l0);
 static t14 f1674(t257 l0, t33 l1);
 static t14 f1675(t257 l0, t33 l1);
 static t33 f1676(t429 l0, t175 l1, t121 l2, t33 l3, t14 l4, t14 l5, t33 l6);
 static t14 f1677(t257 l0, t33 l1);
-static t792 f1678(t257 l0, t141 l1);
+static t794 f1678(t257 l0, t141 l1);
 static t254 f1679(t429 l0, t141 l1);
 static t346 f1680(t27 l0, t26 l1);
 static t33 f1681(t293 l0, t10 l1);
 static t254 f1682(t429 l0, t10 l1, t14 l2, t296 l3, t171 l4, t14 l5, t14 l6, t33 l7, t121 l8);
 static t16 f1683(t429 l0, t10 l1, t254 l2, t10 l3, t254 l4, t171 l5, t121 l6, t10 l7);
-static t781 f1684(void);
-static t16 f1685(t793 l0, t349 l1);
-static t16 f1686(t429 l0, t794 l1, t165 l2);
+static t783 f1684(void);
+static t16 f1685(t795 l0, t349 l1);
+static t16 f1686(t429 l0, t796 l1, t165 l2);
 static t17 f1687(t257 l0, t254 l1);
 static t347 f1688(t346 l0);
 static t254 f1689(t429 l0, t141 l1);
@@ -5682,19 +5686,19 @@ static t254 f1690(t257 l0, t254 l1);
 static t16 f1691(t429 l0, t33 l1, t121 l2, t17 l3);
 static t14 f1692(t429 l0, t33 l1, t33 l2);
 static t14 f1693(t179 l0, t13 l1);
-static t110 f1694(t795 l0, t19 l1, t254 l2);
-static t110 f1695(t796 l0, t19 l1, t354 l2);
+static t110 f1694(t797 l0, t19 l1, t254 l2);
+static t110 f1695(t798 l0, t19 l1, t354 l2);
 static t274 f1696(t272 l0, t13 l1);
 static t14 f1697(t258 l0, t33 l1, t254 l2);
 static t14 f1698(t257 l0, t33 l1, t33 l2);
 static t14 f1699(t429 l0, t33 l1, t33 l2);
 static t33 f1700(t257 l0, t33 l1);
 static t110 f1701(t257 l0, t33 l1, t133 l2);
-static t797 f1702(t27 l0, t26 l1, t406 l2, t13 l3);
-static t798 f1703(t27 l0, t26 l1, t409 l2, t13 l3);
+static t799 f1702(t27 l0, t26 l1, t406 l2, t13 l3);
+static t800 f1703(t27 l0, t26 l1, t409 l2, t13 l3);
 static t10 f1704(t332 l0);
 static t332 f1705(t10 l0);
-static t799 f1706(t27 l0, t26 l1, t336 l2, t13 l3);
+static t801 f1706(t27 l0, t26 l1, t336 l2, t13 l3);
 static t391 f1707(t257 l0, t141 l1);
 static t14 f1708(t429 l0, t33 l1, t33 l2);
 static t16 f1709(t429 l0, t33 l1);
@@ -5708,29 +5712,29 @@ static t16 f1716(t429 l0, t33 l1, t14 l2, t141 l3, t121 l4);
 static t16 f1717(t429 l0, t33 l1, t391 l2);
 static t16 f1718(t429 l0, t141 l1);
 static t343 f1719(t342 l0);
-static t110 f1720(t692 l0, t345 l1);
-static t800 f1721(t692 l0);
+static t110 f1720(t694 l0, t345 l1);
+static t802 f1721(t694 l0);
 static t16 f1722(t429 l0, t19 l1, t19 l2);
 static t344 f1723(t342 l0, t13 l1);
-static t110 f1724(t793 l0, t349 l1);
-static t801 f1725(t27 l0, t26 l1, t403 l2, t13 l3);
-static t402 f1726(t33 l0, t765 l1);
+static t110 f1724(t795 l0, t349 l1);
+static t803 f1725(t27 l0, t26 l1, t403 l2, t13 l3);
+static t402 f1726(t33 l0, t767 l1);
 static t14 f1727(t12 l0, t402 l1, t402 l2);
 static t14 f1728(t257 l0, t33 l1);
 static t51 f1729(t402 l0);
-static t19 f1730(t765 l0);
-static t765 f1731(t19 l0, t14 l1);
-static t802 f1732(t765 l0, t765 l1);
-static t765 f1733(t765 l0);
-static t802 f1734(t765 l0, t765 l1);
+static t19 f1730(t767 l0);
+static t767 f1731(t19 l0, t14 l1);
+static t804 f1732(t767 l0, t767 l1);
+static t767 f1733(t767 l0);
+static t804 f1734(t767 l0, t767 l1);
 static t14 f1735(t12 l0);
 static t10 f1736(t494 l0);
 static t494 f1737(t10 l0);
 static t630 f1738(t41 l0, t10 l1);
 static t645 f1739(t527 l0, t19 l1, t33 l2);
-static t732 f1740(t527 l0, t66 l1);
-static t805 f1741(t527 l0, t49 l1);
-static t67 f1742(t806 l0);
+static t734 f1740(t527 l0, t66 l1);
+static t807 f1741(t527 l0, t49 l1);
+static t67 f1742(t808 l0);
 static t10 f1743(t517 l0);
 static t517 f1744(t10 l0);
 static t110 f1745(t528 l0, t33 l1, t254 l2, t133 l3);
@@ -5744,7 +5748,7 @@ static t402 f1752(t537 l0, t33 l1, t121 l2);
 static t33 f1753(t528 l0, t33 l1);
 static t33 f1754(t537 l0, t33 l1, t10 l2);
 static t33 f1755(t537 l0, t33 l1, t10 l2);
-static t807 f1756(t12 l0);
+static t809 f1756(t12 l0);
 static t14 f1757(t537 l0, t33 l1, t33 l2);
 static t55 f1758(t12 l0);
 static t59 f1759(t537 l0, t141 l1, t159 l2, t263 l3, t14 l4);
@@ -5757,34 +5761,34 @@ static t49 f1765(t537 l0, t141 l1, t141 l2, t33 l3, t33 l4, t33 l5);
 static t63 f1766(t537 l0, t164 l1, t33 l2);
 static t33 f1767(t537 l0, t175 l1);
 static t70 f1768(t537 l0, t175 l1, t33 l2, t33 l3, t14 l4);
-static t808 f1769(t537 l0, t175 l1);
+static t810 f1769(t537 l0, t175 l1);
 static t79 f1770(t537 l0, t175 l1, t33 l2, t33 l3, t14 l4);
 static t70 f1771(t537 l0, t175 l1, t293 l2, t33 l3, t14 l4);
 static t63 f1772(t537 l0, t33 l1, t33 l2, t53 l3);
 static t49 f1773(t537 l0, t49 l1, t33 l2, t293 l3, t179 l4, t171 l5);
 static t63 f1774(t537 l0, t14 l1);
 static t14 f1775(t179 l0, t10 l1);
-static t809 f1776(t179 l0, t10 l1);
+static t811 f1776(t179 l0, t10 l1);
 static t76 f1777(t537 l0, t171 l1, t171 l2, t296 l3);
 static t13 f1778(t263 l0, t10 l1);
 static t33 f1779(t296 l0, t10 l1);
 static t10 f1780(t528 l0, t10 l1);
 static t13 f1781(t320 l0, t33 l1);
-static t810 f1782(t27 l0, t26 l1, t321 l2, t13 l3);
+static t812 f1782(t27 l0, t26 l1, t321 l2, t13 l3);
 static t16 f1783(t321 l0, t323 l1);
 static t10 f1784(t649 l0);
 static t649 f1785(t10 l0);
 static t13 f1786(t372 l0, t19 l1);
-static t811 f1787(t27 l0, t26 l1, t159 l2, t13 l3);
+static t813 f1787(t27 l0, t26 l1, t159 l2, t13 l3);
 static t141 f1788(t436 l0, t33 l1);
 static t147 f1789(t436 l0, t121 l1, t10 l2);
 static t14 f1790(t435 l0);
 static t164 f1791(t436 l0);
-static t812 f1792(t27 l0, t26 l1, t179 l2, t13 l3);
-static t813 f1793(t27 l0, t26 l1, t176 l2, t13 l3);
-static t110 f1794(t776 l0, t13 l1);
+static t814 f1792(t27 l0, t26 l1, t179 l2, t13 l3);
+static t815 f1793(t27 l0, t26 l1, t176 l2, t13 l3);
+static t110 f1794(t778 l0, t13 l1);
 static t13 f1795(t315 l0, t19 l1);
-static t814 f1796(t27 l0, t26 l1, t316 l2, t13 l3);
+static t816 f1796(t27 l0, t26 l1, t316 l2, t13 l3);
 static t16 f1797(t316 l0, t318 l1);
 static t10 f1798(t273 l0);
 static t273 f1799(t10 l0);
@@ -5792,7 +5796,7 @@ static t10 f1800(t328 l0);
 static t328 f1801(t10 l0);
 static t10 f1802(t340 l0);
 static t340 f1803(t10 l0);
-static t694 f1804(t429 l0, t144 l1, t14 l2);
+static t696 f1804(t429 l0, t144 l1, t14 l2);
 static t33 f1805(t257 l0, t33 l1);
 static t33 f1806(t429 l0, t141 l1, t286 l2, t146 l3, t159 l4, t14 l5, t14 l6, t33 l7);
 static t33 f1807(t429 l0, t141 l1, t33 l2, t33 l3, t159 l4, t14 l5, t14 l6, t33 l7);
@@ -5800,40 +5804,40 @@ static t33 f1808(t429 l0, t141 l1, t33 l2, t159 l3, t14 l4, t14 l5);
 static t14 f1809(t257 l0, t141 l1);
 static t33 f1810(t429 l0, t141 l1, t33 l2, t17 l3, t159 l4, t14 l5, t14 l6);
 static t16 f1811(t429 l0, t141 l1);
-static t781 f1812(t257 l0, t781 l1, t781 l2);
-static t781 f1813(t257 l0, t781 l1, t781 l2);
-static t815 f1814(t257 l0, t141 l1);
-static t816 f1815(t27 l0, t26 l1);
-static t16 f1816(t817 l0, t783 l1);
-static t781 f1817(t816 l0);
+static t783 f1812(t257 l0, t783 l1, t783 l2);
+static t783 f1813(t257 l0, t783 l1, t783 l2);
+static t817 f1814(t257 l0, t141 l1);
+static t818 f1815(t27 l0, t26 l1);
+static t16 f1816(t819 l0, t785 l1);
+static t783 f1817(t818 l0);
 static t14 f1818(t179 l0);
 static t599 f1819(t368 l0, t19 l1);
 static t16 f1820(t429 l0, t33 l1, t141 l2);
 static t33 f1821(t429 l0, t14 l1);
 static t14 f1822(t141 l0);
 static t14 f1823(t257 l0, t33 l1);
-static t711 f1824(t429 l0, t10 l1, t121 l2);
+static t713 f1824(t429 l0, t10 l1, t121 l2);
 static t33 f1825(t429 l0);
-static t110 f1826(t818 l0, t19 l1, t384 l2);
+static t110 f1826(t820 l0, t19 l1, t384 l2);
 static t336 f1827(t335 l0);
 static t14 f1828(t8 l0, t8 l1);
 static t630 f1829(t364 l0, t19 l1);
-static t110 f1830(t785 l0);
+static t110 f1830(t787 l0);
 static t13 f1831(t364 l0, t19 l1);
-static t786 f1832(t364 l0, t19 l1);
-static t788 f1833(void);
-static t110 f1834(t791 l0, t790 l1);
-static t790 f1835(t429 l0, t164 l1, t254 l2, t781 l3, t33 l4);
+static t788 f1832(t364 l0, t19 l1);
+static t790 f1833(void);
+static t110 f1834(t793 l0, t792 l1);
+static t792 f1835(t429 l0, t164 l1, t254 l2, t783 l3, t33 l4);
 static t254 f1836(t257 l0, t254 l1, t254 l2);
-static t16 f1837(t429 l0, t788 l1);
-static t14 f1838(t429 l0, t788 l1, t33 l2);
+static t16 f1837(t429 l0, t790 l1);
+static t14 f1838(t429 l0, t790 l1, t33 l2);
 static t33 f1839(t429 l0, t181 l1);
-static t110 f1840(t819 l0, t423 l1);
+static t110 f1840(t821 l0, t423 l1);
 static t10 f1841(t257 l0, t10 l1);
 static t8 f1842(t257 l0, t8 l1, t10 l2);
 static t347 f1843(void);
 static t14 f1844(t171 l0, t13 l1);
-static t16 f1845(t429 l0, t794 l1, t167 l2);
+static t16 f1845(t429 l0, t796 l1, t167 l2);
 static t254 f1846(t429 l0, t141 l1);
 static t254 f1847(t257 l0, t33 l1);
 static t263 f1848(t257 l0, t141 l1);
@@ -5841,12 +5845,12 @@ static t14 f1849(t263 l0, t10 l1);
 static t14 f1850(t12 l0);
 static t254 f1851(t429 l0, t163 l1);
 static t254 f1852(t429 l0, t175 l1);
-static t110 f1853(t820 l0, t428 l1);
-static t110 f1854(t821 l0, t33 l1, t415 l2);
+static t110 f1853(t822 l0, t428 l1);
+static t110 f1854(t823 l0, t33 l1, t415 l2);
 static t630 f1855(t368 l0, t19 l1);
-static t110 f1856(t795 l0);
+static t110 f1856(t797 l0);
 static t13 f1857(t368 l0, t19 l1);
-static t110 f1858(t796 l0);
+static t110 f1858(t798 l0);
 static t13 f1859(t350 l0, t19 l1);
 static t10 f1860(t406 l0);
 static t406 f1861(t10 l0);
@@ -5855,50 +5859,50 @@ static t409 f1863(t10 l0);
 static t10 f1864(t336 l0);
 static t336 f1865(t10 l0);
 static t391 f1866(t257 l0, t33 l1);
-static t822 f1867(t387 l0, t19 l1);
+static t824 f1867(t387 l0, t19 l1);
 static t391 f1868(t257 l0, t164 l1);
 static t391 f1869(t257 l0, t391 l1, t391 l2);
 static t33 f1870(t257 l0, t10 l1);
 static t391 f1871(t257 l0, t391 l1);
 static t340 f1872(t339 l0);
 static t14 f1873(t257 l0, t33 l1);
-static t110 f1874(t823 l0, t19 l1, t359 l2);
+static t110 f1874(t825 l0, t19 l1, t359 l2);
 static t14 f1875(t429 l0, t33 l1, t33 l2);
 static t16 f1876(t429 l0, t33 l1, t254 l2);
 static t391 f1877(t257 l0, t391 l1, t391 l2);
 static t409 f1878(t408 l0);
-static t110 f1879(t692 l0, t13 l1);
-static t110 f1880(t793 l0, t13 l1);
+static t110 f1879(t694 l0, t13 l1);
+static t110 f1880(t795 l0, t13 l1);
 static t10 f1881(t403 l0);
 static t403 f1882(t10 l0);
-static t14 f1883(t765 l0, t765 l1);
+static t14 f1883(t767 l0, t767 l1);
 static t14 f1884(t12 l0);
 static t14 f1885(t12 l0);
 static t19 f1886(t19 l0, t32 l1);
 static t19 f1887(t527 l0, t33 l1);
-static t805 f1888(t527 l0, t49 l1);
-static t824 f1889(t527 l0, t49 l1);
-static t732 f1890(t527 l0, t49 l1, t63 l2, t68 l3);
-static t110 f1891(t806 l0, t63 l1);
+static t807 f1888(t527 l0, t49 l1);
+static t826 f1889(t527 l0, t49 l1);
+static t734 f1890(t527 l0, t49 l1, t63 l2, t68 l3);
+static t110 f1891(t808 l0, t63 l1);
 static t16 f1892(t527 l0, t53 l1, t10 l2);
-static t732 f1893(t527 l0, t19 l1, t14 l2, t33 l3, t70 l4, t19 l5);
-static t805 f1894(t527 l0, t49 l1);
-static t732 f1895(t527 l0, t19 l1, t33 l2, t79 l3, t19 l4);
-static t825 f1896(t527 l0, t19 l1, t33 l2, t33 l3);
+static t734 f1893(t527 l0, t19 l1, t14 l2, t33 l3, t70 l4, t19 l5);
+static t807 f1894(t527 l0, t49 l1);
+static t734 f1895(t527 l0, t19 l1, t33 l2, t79 l3, t19 l4);
+static t827 f1896(t527 l0, t19 l1, t33 l2, t33 l3);
 static t604 f1897(t527 l0, t76 l1, t19 l2, t33 l3, t33 l4);
 static t19 f1898(t19 l0, t19 l1);
 static t645 f1899(t527 l0, t10 l1);
 static t645 f1900(t527 l0, t19 l1, t33 l2);
-static t805 f1901(t527 l0, t33 l1, t49 l2, t49 l3, t54 l4, t53 l5);
+static t807 f1901(t527 l0, t33 l1, t49 l2, t49 l3, t54 l4, t53 l5);
 static t14 f1902(t49 l0);
 static t19 f1903(t29 l0, t33 l1, t33 l2, t33 l3);
-static t805 f1904(t527 l0, t33 l1, t49 l2);
-static t826 f1905(t527 l0, t59 l1, t13 l2);
-static t805 f1906(t527 l0, t33 l1, t49 l2, t59 l3);
+static t807 f1904(t527 l0, t33 l1, t49 l2);
+static t828 f1905(t527 l0, t59 l1, t13 l2);
+static t807 f1906(t527 l0, t33 l1, t49 l2, t59 l3);
 static t19 f1907(t527 l0, t513 l1, t508 l2);
-static t805 f1908(t527 l0, t33 l1, t19 l2, t19 l3, t19 l4, t59 l5);
+static t807 f1908(t527 l0, t33 l1, t19 l2, t19 l3, t19 l4, t59 l5);
 static t645 f1909(t527 l0, t33 l1);
-static t805 f1910(t527 l0, t33 l1, t68 l2, t59 l3);
+static t807 f1910(t527 l0, t33 l1, t68 l2, t59 l3);
 static t59 f1911(t537 l0, t403 l1);
 static t10 f1912(t257 l0, t301 l1);
 static t33 f1913(t537 l0, t265 l1, t14 l2);
@@ -5926,11 +5930,11 @@ static t10 f1934(t179 l0);
 static t179 f1935(t10 l0);
 static t10 f1936(t176 l0);
 static t176 f1937(t10 l0);
-static t827 f1938(t27 l0, t26 l1, t171 l2, t13 l3);
+static t829 f1938(t27 l0, t26 l1, t171 l2, t13 l3);
 static t10 f1939(t316 l0);
 static t316 f1940(t10 l0);
 static t33 f1941(t257 l0, t10 l1, t14 l2);
-static t694 f1942(t429 l0, t286 l1, t146 l2);
+static t696 f1942(t429 l0, t286 l1, t146 l2);
 static t599 f1943(t429 l0, t146 l1);
 static t8 f1944(t429 l0, t33 l1);
 static t14 f1945(t257 l0, t33 l1);
@@ -5940,83 +5944,83 @@ static t33 f1948(t429 l0, t141 l1, t33 l2, t263 l3, t17 l4, t159 l5, t263 l6, t1
 static t16 f1949(t429 l0, t141 l1, t14 l2);
 static t16 f1950(t429 l0, t159 l1, t263 l2, t17 l3);
 static t16 f1951(t429 l0, t141 l1, t33 l2, t33 l3);
-static t828 f1952(t27 l0, t26 l1);
+static t830 f1952(t27 l0, t26 l1);
 static t14 f1953(t159 l0, t10 l1);
-static t110 f1954(t829 l0, t378 l1);
+static t110 f1954(t831 l0, t378 l1);
 static t378 f1955(t429 l0, t265 l1, t33 l2, t121 l3);
-static t110 f1956(t830 l0, t19 l1, t376 l2);
-static t376 f1957(t828 l0);
+static t110 f1956(t832 l0, t19 l1, t376 l2);
+static t376 f1957(t830 l0);
 static t110 f1958(t263 l0, t133 l1);
 static t391 f1959(t429 l0, t141 l1, t159 l2, t263 l3);
-static t110 f1960(t831 l0, t19 l1, t391 l2);
-static t110 f1961(t832 l0, t19 l1, t14 l2);
-static t14 f1962(t257 l0, t781 l1, t783 l2);
-static t14 f1963(t781 l0, t783 l1);
+static t110 f1960(t833 l0, t19 l1, t391 l2);
+static t110 f1961(t834 l0, t19 l1, t14 l2);
+static t14 f1962(t257 l0, t783 l1, t785 l2);
+static t14 f1963(t783 l0, t785 l1);
 static t14 f1964(t8 l0);
-static t110 f1965(t817 l0, t783 l1);
-static t833 f1966(t27 l0, t26 l1);
+static t110 f1965(t819 l0, t785 l1);
+static t835 f1966(t27 l0, t26 l1);
 static t16 f1967(t241 l0, t12 l1);
-static t16 f1968(t834 l0, t386 l1);
-static t384 f1969(t833 l0);
-static t110 f1970(t818 l0);
+static t16 f1968(t836 l0, t386 l1);
+static t384 f1969(t835 l0);
+static t110 f1970(t820 l0);
 static t13 f1971(t380 l0, t19 l1);
 static t13 f1972(t364 l0, t19 l1);
-static t835 f1973(t27 l0, t26 l1, t365 l2, t13 l3);
+static t837 f1973(t27 l0, t26 l1, t365 l2, t13 l3);
 static t16 f1974(t365 l0, t367 l1);
-static t110 f1975(t791 l0, t13 l1);
+static t110 f1975(t793 l0, t13 l1);
 static t33 f1976(t429 l0, t167 l1, t33 l2);
-static t16 f1977(t429 l0, t772 l1);
-static t33 f1978(t257 l0, t772 l1);
-static t110 f1979(t819 l0, t13 l1);
-static t16 f1980(t429 l0, t794 l1, t141 l2);
-static t16 f1981(t429 l0, t794 l1, t163 l2);
-static t16 f1982(t429 l0, t794 l1, t175 l2);
+static t16 f1977(t429 l0, t774 l1);
+static t33 f1978(t257 l0, t774 l1);
+static t110 f1979(t821 l0, t13 l1);
+static t16 f1980(t429 l0, t796 l1, t141 l2);
+static t16 f1981(t429 l0, t796 l1, t163 l2);
+static t16 f1982(t429 l0, t796 l1, t175 l2);
 static t406 f1983(t405 l0);
 static t254 f1984(t429 l0, t164 l1);
-static t110 f1985(t820 l0, t13 l1);
-static t110 f1986(t821 l0);
+static t110 f1985(t822 l0, t13 l1);
+static t110 f1986(t823 l0);
 static t13 f1987(t411 l0, t33 l1);
 static t13 f1988(t368 l0, t19 l1);
-static t836 f1989(t27 l0, t26 l1, t369 l2, t13 l3);
+static t838 f1989(t27 l0, t26 l1, t369 l2, t13 l3);
 static t16 f1990(t369 l0, t371 l1);
-static t837 f1991(t27 l0, t26 l1, t351 l2, t13 l3);
+static t839 f1991(t27 l0, t26 l1, t351 l2, t13 l3);
 static t16 f1992(t351 l0, t353 l1);
 static t630 f1993(t387 l0, t19 l1);
-static t391 f1994(t257 l0, t772 l1);
-static t838 f1995(t27 l0, t26 l1);
-static t16 f1996(t839 l0, t393 l1);
-static t391 f1997(t838 l0);
+static t391 f1994(t257 l0, t774 l1);
+static t840 f1995(t27 l0, t26 l1);
+static t16 f1996(t841 l0, t393 l1);
+static t391 f1997(t840 l0);
 static t14 f1998(t257 l0, t393 l1, t393 l2);
-static t110 f1999(t823 l0);
+static t110 f1999(t825 l0);
 static t13 f2000(t355 l0, t19 l1);
 static t14 f2001(t429 l0, t263 l1, t33 l2);
-static t840 f2002(t27 l0, t26 l1, t343 l2, t13 l3);
-static t841 f2003(t27 l0, t26 l1, t347 l2, t13 l3);
+static t842 f2002(t27 l0, t26 l1, t343 l2, t13 l3);
+static t843 f2003(t27 l0, t26 l1, t347 l2, t13 l3);
 static t14 f2004(t32 l0);
-static t805 f2005(t527 l0, t33 l1);
-static t805 f2006(t527 l0, t49 l1);
+static t807 f2005(t527 l0, t33 l1);
+static t807 f2006(t527 l0, t49 l1);
 static t34 f2007(t29 l0, t33 l1);
 static t604 f2008(t527 l0, t19 l1, t19 l2, t53 l3);
 static t14 f2009(t68 l0, t68 l1);
-static t110 f2010(t806 l0, t13 l1);
+static t110 f2010(t808 l0, t13 l1);
 static t19 f2011(t14 l0, t19 l1, t32 l2);
 static t32 f2012(t29 l0, t33 l1);
 static t645 f2013(t527 l0, t32 l1, t19 l2, t53 l3);
 static t645 f2014(t527 l0, t55 l1, t32 l2, t19 l3, t19 l4, t53 l5);
 static t645 f2015(t527 l0, t57 l1, t32 l2, t19 l3, t19 l4, t32 l5, t53 l6);
 static t14 f2016(t29 l0, t58 l1, t33 l2, t19 l3, t19 l4);
-static t824 f2017(t527 l0, t49 l1);
+static t826 f2017(t527 l0, t49 l1);
 static t19 f2018(t19 l0, t32 l1, t32 l2);
 static t645 f2019(t527 l0, t19 l1, t32 l2, t32 l3, t53 l4);
 static t143 f2020(t509 l0, t513 l1);
 static t645 f2021(t527 l0, t19 l1, t19 l2);
-static t110 f2022(t842 l0, t513 l1, t19 l2);
-static t110 f2023(t843 l0, t523 l1);
+static t110 f2022(t844 l0, t513 l1, t19 l2);
+static t110 f2023(t845 l0, t523 l1);
 static t19 f2024(t29 l0, t33 l1);
 static t14 f2025(t41 l0, t41 l1);
-static t805 f2026(t527 l0, t33 l1, t49 l2, t41 l3, t59 l4);
+static t807 f2026(t527 l0, t33 l1, t49 l2, t41 l3, t59 l4);
 static t604 f2027(t527 l0, t19 l1, t41 l2, t13 l3, t19 l4);
-static t110 f2028(t844 l0, t508 l1);
+static t110 f2028(t846 l0, t508 l1);
 static t49 f2029(t537 l0, t141 l1, t33 l2, t141 l3, t33 l4);
 static t49 f2030(t537 l0, t49 l1, t33 l2, t33 l3);
 static t33 f2031(t537 l0, t10 l1);
@@ -6030,50 +6034,50 @@ static t10 f2038(t171 l0);
 static t171 f2039(t10 l0);
 static t14 f2040(t257 l0, t33 l1, t33 l2);
 static t376 f2041(void);
-static t110 f2042(t829 l0, t13 l1);
-static t379 f2043(t724 l0, t33 l1);
-static t110 f2044(t830 l0);
+static t110 f2042(t831 l0, t13 l1);
+static t379 f2043(t726 l0, t33 l1);
+static t110 f2044(t832 l0);
 static t13 f2045(t372 l0, t19 l1);
-static t845 f2046(t27 l0, t26 l1);
-static t16 f2047(t849 l0, t257 l1, t391 l2, t10 l3);
-static t16 f2048(t849 l0, t848 l1);
-static t846 f2049(t845 l0);
+static t847 f2046(t27 l0, t26 l1);
+static t16 f2047(t851 l0, t257 l1, t391 l2, t10 l3);
+static t16 f2048(t851 l0, t850 l1);
+static t848 f2049(t847 l0);
 static t14 f2050(t393 l0, t393 l1);
 static t17 f2051(t257 l0, t393 l1);
-static t391 f2052(t257 l0, t846 l1);
-static t110 f2053(t831 l0);
+static t391 f2052(t257 l0, t848 l1);
+static t110 f2053(t833 l0);
 static t13 f2054(t387 l0, t19 l1);
-static t110 f2055(t832 l0);
+static t110 f2055(t834 l0);
 static t13 f2056(t360 l0, t19 l1);
-static t110 f2057(t817 l0, t13 l1);
+static t110 f2057(t819 l0, t13 l1);
 static t384 f2058(void);
-static t110 f2059(t834 l0, t386 l1);
-static t850 f2060(t27 l0, t26 l1, t381 l2, t13 l3);
+static t110 f2059(t836 l0, t386 l1);
+static t852 f2060(t27 l0, t26 l1, t381 l2, t13 l3);
 static t16 f2061(t381 l0, t383 l1);
 static t10 f2062(t365 l0);
 static t365 f2063(t10 l0);
-static t851 f2064(t27 l0, t26 l1, t788 l2, t13 l3);
-static t254 f2065(t429 l0, t772 l1);
-static t852 f2066(t27 l0, t26 l1, t421 l2, t13 l3);
-static t792 f2067(t257 l0, t141 l1);
-static t16 f2068(t429 l0, t794 l1, t121 l2);
-static t16 f2069(t429 l0, t794 l1, t162 l2);
-static t853 f2070(t27 l0, t26 l1, t426 l2, t13 l3);
-static t854 f2071(t27 l0, t26 l1, t412 l2, t13 l3);
+static t853 f2064(t27 l0, t26 l1, t790 l2, t13 l3);
+static t254 f2065(t429 l0, t774 l1);
+static t854 f2066(t27 l0, t26 l1, t421 l2, t13 l3);
+static t794 f2067(t257 l0, t141 l1);
+static t16 f2068(t429 l0, t796 l1, t121 l2);
+static t16 f2069(t429 l0, t796 l1, t162 l2);
+static t855 f2070(t27 l0, t26 l1, t426 l2, t13 l3);
+static t856 f2071(t27 l0, t26 l1, t412 l2, t13 l3);
 static t16 f2072(t412 l0, t414 l1);
 static t10 f2073(t369 l0);
 static t369 f2074(t10 l0);
 static t10 f2075(t351 l0);
 static t351 f2076(t10 l0);
 static t13 f2077(t387 l0, t19 l1);
-static t110 f2078(t839 l0, t393 l1);
-static t855 f2079(t27 l0, t26 l1, t356 l2, t13 l3);
+static t110 f2078(t841 l0, t393 l1);
+static t857 f2079(t27 l0, t26 l1, t356 l2, t13 l3);
 static t16 f2080(t356 l0, t358 l1);
 static t10 f2081(t343 l0);
 static t343 f2082(t10 l0);
 static t10 f2083(t347 l0);
 static t347 f2084(t10 l0);
-static t856 f2085(t27 l0, t26 l1, t498 l2, t13 l3);
+static t858 f2085(t27 l0, t26 l1, t498 l2, t13 l3);
 static t21 f2086(t32 l0);
 static t16 f2087(t527 l0, t53 l1);
 static t645 f2088(t527 l0, t55 l1, t32 l2, t19 l3, t19 l4, t53 l5);
@@ -6084,72 +6088,72 @@ static t51 f2092(t19 l0, t32 l1);
 static t19 f2093(t51 l0, t32 l1);
 static t17 f2094(t32 l0);
 static t630 f2095(t509 l0, t513 l1);
-static t110 f2096(t842 l0);
+static t110 f2096(t844 l0);
 static t13 f2097(t509 l0, t513 l1);
-static t110 f2098(t843 l0, t13 l1);
-static t857 f2099(t527 l0, t19 l1);
-static t858 f2100(t527 l0, t41 l1, t59 l2, t19 l3, t19 l4, t41 l5, t13 l6);
-static t110 f2101(t844 l0, t13 l1);
+static t110 f2098(t845 l0, t13 l1);
+static t859 f2099(t527 l0, t19 l1);
+static t860 f2100(t527 l0, t41 l1, t59 l2, t19 l3, t19 l4, t41 l5, t13 l6);
+static t110 f2101(t846 l0, t13 l1);
 static t49 f2102(t537 l0, t141 l1, t33 l2, t10 l3, t10 l4, t69 l5, t33 l6, t33 l7);
 static t10 f2103(t528 l0, t33 l1);
-static t859 f2104(t27 l0, t26 l1, t376 l2, t13 l3);
-static t860 f2105(t27 l0, t26 l1, t373 l2, t13 l3);
+static t861 f2104(t27 l0, t26 l1, t376 l2, t13 l3);
+static t862 f2105(t27 l0, t26 l1, t373 l2, t13 l3);
 static t16 f2106(t373 l0, t375 l1);
-static t846 f2107(void);
-static t110 f2108(t849 l0, t848 l1);
-static t861 f2109(t27 l0, t26 l1, t388 l2, t13 l3);
+static t848 f2107(void);
+static t110 f2108(t851 l0, t850 l1);
+static t863 f2109(t27 l0, t26 l1, t388 l2, t13 l3);
 static t16 f2110(t388 l0, t390 l1);
-static t862 f2111(t27 l0, t26 l1, t361 l2, t13 l3);
+static t864 f2111(t27 l0, t26 l1, t361 l2, t13 l3);
 static t16 f2112(t361 l0, t363 l1);
-static t863 f2113(t27 l0, t26 l1, t781 l2, t13 l3);
-static t110 f2114(t834 l0, t13 l1);
+static t865 f2113(t27 l0, t26 l1, t783 l2, t13 l3);
+static t110 f2114(t836 l0, t13 l1);
 static t10 f2115(t381 l0);
 static t381 f2116(t10 l0);
-static t10 f2117(t788 l0);
-static t788 f2118(t10 l0);
+static t10 f2117(t790 l0);
+static t790 f2118(t10 l0);
 static t10 f2119(t421 l0);
 static t421 f2120(t10 l0);
 static t10 f2121(t426 l0);
 static t426 f2122(t10 l0);
 static t10 f2123(t412 l0);
 static t412 f2124(t10 l0);
-static t110 f2125(t839 l0, t13 l1);
+static t110 f2125(t841 l0, t13 l1);
 static t10 f2126(t356 l0);
 static t356 f2127(t10 l0);
 static t10 f2128(t498 l0);
 static t498 f2129(t10 l0);
 static t13 f2130(t509 l0, t513 l1);
-static t864 f2131(t27 l0, t26 l1, t510 l2, t13 l3);
+static t866 f2131(t27 l0, t26 l1, t510 l2, t13 l3);
 static t16 f2132(t510 l0, t512 l1);
-static t865 f2133(t27 l0, t26 l1, t521 l2, t13 l3);
+static t867 f2133(t27 l0, t26 l1, t521 l2, t13 l3);
 static t506 f2134(t505 l0);
-static t866 f2135(t27 l0, t26 l1, t506 l2, t13 l3);
+static t868 f2135(t27 l0, t26 l1, t506 l2, t13 l3);
 static t10 f2136(t376 l0);
 static t376 f2137(t10 l0);
 static t10 f2138(t373 l0);
 static t373 f2139(t10 l0);
-static t110 f2140(t849 l0, t13 l1);
+static t110 f2140(t851 l0, t13 l1);
 static t10 f2141(t388 l0);
 static t388 f2142(t10 l0);
 static t10 f2143(t361 l0);
 static t361 f2144(t10 l0);
-static t10 f2145(t781 l0);
-static t781 f2146(t10 l0);
-static t867 f2147(t27 l0, t26 l1, t384 l2, t13 l3);
-static t868 f2148(t27 l0, t26 l1, t391 l2, t13 l3);
+static t10 f2145(t783 l0);
+static t783 f2146(t10 l0);
+static t869 f2147(t27 l0, t26 l1, t384 l2, t13 l3);
+static t870 f2148(t27 l0, t26 l1, t391 l2, t13 l3);
 static t10 f2149(t510 l0);
 static t510 f2150(t10 l0);
 static t10 f2151(t521 l0);
 static t521 f2152(t10 l0);
 static t10 f2153(t506 l0);
 static t506 f2154(t10 l0);
-static t869 f2155(t27 l0, t26 l1, t846 l2, t13 l3);
+static t871 f2155(t27 l0, t26 l1, t848 l2, t13 l3);
 static t10 f2156(t384 l0);
 static t384 f2157(t10 l0);
 static t10 f2158(t391 l0);
 static t391 f2159(t10 l0);
-static t10 f2160(t846 l0);
-static t846 f2161(t10 l0);
+static t10 f2160(t848 l0);
+static t848 f2161(t10 l0);
 
 static t22 h13_code(ctx_fn *self, t13 a0, void * a1, t10 a2, t13 a3) {
     (void)self;
@@ -6253,11 +6257,17 @@ static const t607 qv2 = ((t607){{ ((t10){ .m_ptr = (void *)"->", .m_len = 2 }), 
 // tok::KEYWORDS
 static const t613 qv3 = ((t613){{ ((t10){ .m_ptr = (void *)"fn", .m_len = 2 }), ((t10){ .m_ptr = (void *)"struct", .m_len = 6 }), ((t10){ .m_ptr = (void *)"union", .m_len = 5 }), ((t10){ .m_ptr = (void *)"enum", .m_len = 4 }), ((t10){ .m_ptr = (void *)"type", .m_len = 4 }), ((t10){ .m_ptr = (void *)"const", .m_len = 5 }), ((t10){ .m_ptr = (void *)"namespace", .m_len = 9 }), ((t10){ .m_ptr = (void *)"let", .m_len = 3 }), ((t10){ .m_ptr = (void *)"mut", .m_len = 3 }), ((t10){ .m_ptr = (void *)"if", .m_len = 2 }), ((t10){ .m_ptr = (void *)"else", .m_len = 4 }), ((t10){ .m_ptr = (void *)"while", .m_len = 5 }), ((t10){ .m_ptr = (void *)"break", .m_len = 5 }), ((t10){ .m_ptr = (void *)"continue", .m_len = 8 }), ((t10){ .m_ptr = (void *)"match", .m_len = 5 }), ((t10){ .m_ptr = (void *)"return", .m_len = 6 }), ((t10){ .m_ptr = (void *)"defer", .m_len = 5 }), ((t10){ .m_ptr = (void *)"and", .m_len = 3 }), ((t10){ .m_ptr = (void *)"or", .m_len = 2 }), ((t10){ .m_ptr = (void *)"not", .m_len = 3 }), ((t10){ .m_ptr = (void *)"true", .m_len = 4 }), ((t10){ .m_ptr = (void *)"false", .m_len = 5 }), ((t10){ .m_ptr = (void *)"null", .m_len = 4 }), ((t10){ .m_ptr = (void *)"extern", .m_len = 6 }), ((t10){ .m_ptr = (void *)"capability", .m_len = 10 }), ((t10){ .m_ptr = (void *)"ifnull", .m_len = 6 }), ((t10){ .m_ptr = (void *)"iferr", .m_len = 5 }), ((t10){ .m_ptr = (void *)"try", .m_len = 3 }), ((t10){ .m_ptr = (void *)"is", .m_len = 2 }) }});
 
+// tok::OP_KINDS
+static const t654 qv4 = ((t654){{ ((t12)(37ULL)), ((t12)(38ULL)), ((t12)(39ULL)), ((t12)(40ULL)), ((t12)(41ULL)), ((t12)(42ULL)), ((t12)(43ULL)), ((t12)(44ULL)), ((t12)(45ULL)), ((t12)(46ULL)), ((t12)(47ULL)), ((t12)(48ULL)), ((t12)(49ULL)), ((t12)(50ULL)), ((t12)(51ULL)), ((t12)(52ULL)), ((t12)(53ULL)), ((t12)(54ULL)), ((t12)(55ULL)), ((t12)(56ULL)), ((t12)(57ULL)), ((t12)(58ULL)), ((t12)(59ULL)), ((t12)(60ULL)), ((t12)(61ULL)), ((t12)(62ULL)), ((t12)(63ULL)), ((t12)(64ULL)), ((t12)(65ULL)), ((t12)(66ULL)), ((t12)(67ULL)), ((t12)(68ULL)), ((t12)(69ULL)), ((t12)(70ULL)) }});
+
+// tok::KEYWORD_KINDS
+static const t658 qv5 = ((t658){{ ((t12)(8ULL)), ((t12)(9ULL)), ((t12)(10ULL)), ((t12)(11ULL)), ((t12)(12ULL)), ((t12)(13ULL)), ((t12)(14ULL)), ((t12)(15ULL)), ((t12)(16ULL)), ((t12)(17ULL)), ((t12)(18ULL)), ((t12)(19ULL)), ((t12)(20ULL)), ((t12)(21ULL)), ((t12)(22ULL)), ((t12)(23ULL)), ((t12)(24ULL)), ((t12)(25ULL)), ((t12)(26ULL)), ((t12)(27ULL)), ((t12)(28ULL)), ((t12)(29ULL)), ((t12)(30ULL)), ((t12)(31ULL)), ((t12)(32ULL)), ((t12)(33ULL)), ((t12)(34ULL)), ((t12)(35ULL)), ((t12)(36ULL)) }});
+
 // check::NO_THUNK
-static const t10 qv4 = ((t10){ .m_ptr = (void *)"has fields, and nothing can supply one when C calls the callback", .m_len = 64 });
+static const t10 qv6 = ((t10){ .m_ptr = (void *)"has fields, and nothing can supply one when C calls the callback", .m_len = 64 });
 
 // parser::BUILTINS
-static const t774 qv5 = ((t774){{ ((t773){ .m_name = ((t10){ .m_ptr = (void *)"size_of", .m_len = 7 }), .m_types = ((t33)(1ULL)), .m_lo = ((t33)(0ULL)), .m_hi = ((t33)(0ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@size_of(T)", .m_len = 11 }), }), }), ((t773){ .m_name = ((t10){ .m_ptr = (void *)"align_of", .m_len = 8 }), .m_types = ((t33)(1ULL)), .m_lo = ((t33)(0ULL)), .m_hi = ((t33)(0ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@align_of(T)", .m_len = 12 }), }), }), ((t773){ .m_name = ((t10){ .m_ptr = (void *)"as", .m_len = 2 }), .m_types = ((t33)(1ULL)), .m_lo = ((t33)(1ULL)), .m_hi = ((t33)(1ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@as(T, x)", .m_len = 9 }), }), }), ((t773){ .m_name = ((t10){ .m_ptr = (void *)"trunc", .m_len = 5 }), .m_types = ((t33)(1ULL)), .m_lo = ((t33)(1ULL)), .m_hi = ((t33)(1ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@trunc(T, x)", .m_len = 12 }), }), }), ((t773){ .m_name = ((t10){ .m_ptr = (void *)"cast", .m_len = 4 }), .m_types = ((t33)(1ULL)), .m_lo = ((t33)(1ULL)), .m_hi = ((t33)(1ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@cast(*U, q)", .m_len = 12 }), }), }), ((t773){ .m_name = ((t10){ .m_ptr = (void *)"addr", .m_len = 4 }), .m_types = ((t33)(0ULL)), .m_lo = ((t33)(1ULL)), .m_hi = ((t33)(1ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@addr(q)", .m_len = 8 }), }), }), ((t773){ .m_name = ((t10){ .m_ptr = (void *)"slice", .m_len = 5 }), .m_types = ((t33)(0ULL)), .m_lo = ((t33)(2ULL)), .m_hi = ((t33)(2ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@slice(p, n)", .m_len = 12 }), }), }), ((t773){ .m_name = ((t10){ .m_ptr = (void *)"wrap_add", .m_len = 8 }), .m_types = ((t33)(0ULL)), .m_lo = ((t33)(2ULL)), .m_hi = ((t33)(2ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@wrap_add(a, b)", .m_len = 15 }), }), }), ((t773){ .m_name = ((t10){ .m_ptr = (void *)"wrap_sub", .m_len = 8 }), .m_types = ((t33)(0ULL)), .m_lo = ((t33)(2ULL)), .m_hi = ((t33)(2ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@wrap_sub(a, b)", .m_len = 15 }), }), }), ((t773){ .m_name = ((t10){ .m_ptr = (void *)"wrap_mul", .m_len = 8 }), .m_types = ((t33)(0ULL)), .m_lo = ((t33)(2ULL)), .m_hi = ((t33)(2ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@wrap_mul(a, b)", .m_len = 15 }), }), }), ((t773){ .m_name = ((t10){ .m_ptr = (void *)"panic", .m_len = 5 }), .m_types = ((t33)(0ULL)), .m_lo = ((t33)(0ULL)), .m_hi = ((t33)(1ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@panic() or @panic(\042reason\042)", .m_len = 28 }), }), }), ((t773){ .m_name = ((t10){ .m_ptr = (void *)"fmt", .m_len = 3 }), .m_types = ((t33)(0ULL)), .m_lo = ((t33)(2ULL)), .m_hi = ((t33)(4294967295ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@fmt(b, \042format\042, args...)", .m_len = 26 }), }), }) }});
+static const t776 qv7 = ((t776){{ ((t775){ .m_name = ((t10){ .m_ptr = (void *)"size_of", .m_len = 7 }), .m_types = ((t33)(1ULL)), .m_lo = ((t33)(0ULL)), .m_hi = ((t33)(0ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@size_of(T)", .m_len = 11 }), }), }), ((t775){ .m_name = ((t10){ .m_ptr = (void *)"align_of", .m_len = 8 }), .m_types = ((t33)(1ULL)), .m_lo = ((t33)(0ULL)), .m_hi = ((t33)(0ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@align_of(T)", .m_len = 12 }), }), }), ((t775){ .m_name = ((t10){ .m_ptr = (void *)"as", .m_len = 2 }), .m_types = ((t33)(1ULL)), .m_lo = ((t33)(1ULL)), .m_hi = ((t33)(1ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@as(T, x)", .m_len = 9 }), }), }), ((t775){ .m_name = ((t10){ .m_ptr = (void *)"trunc", .m_len = 5 }), .m_types = ((t33)(1ULL)), .m_lo = ((t33)(1ULL)), .m_hi = ((t33)(1ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@trunc(T, x)", .m_len = 12 }), }), }), ((t775){ .m_name = ((t10){ .m_ptr = (void *)"cast", .m_len = 4 }), .m_types = ((t33)(1ULL)), .m_lo = ((t33)(1ULL)), .m_hi = ((t33)(1ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@cast(*U, q)", .m_len = 12 }), }), }), ((t775){ .m_name = ((t10){ .m_ptr = (void *)"addr", .m_len = 4 }), .m_types = ((t33)(0ULL)), .m_lo = ((t33)(1ULL)), .m_hi = ((t33)(1ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@addr(q)", .m_len = 8 }), }), }), ((t775){ .m_name = ((t10){ .m_ptr = (void *)"slice", .m_len = 5 }), .m_types = ((t33)(0ULL)), .m_lo = ((t33)(2ULL)), .m_hi = ((t33)(2ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@slice(p, n)", .m_len = 12 }), }), }), ((t775){ .m_name = ((t10){ .m_ptr = (void *)"wrap_add", .m_len = 8 }), .m_types = ((t33)(0ULL)), .m_lo = ((t33)(2ULL)), .m_hi = ((t33)(2ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@wrap_add(a, b)", .m_len = 15 }), }), }), ((t775){ .m_name = ((t10){ .m_ptr = (void *)"wrap_sub", .m_len = 8 }), .m_types = ((t33)(0ULL)), .m_lo = ((t33)(2ULL)), .m_hi = ((t33)(2ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@wrap_sub(a, b)", .m_len = 15 }), }), }), ((t775){ .m_name = ((t10){ .m_ptr = (void *)"wrap_mul", .m_len = 8 }), .m_types = ((t33)(0ULL)), .m_lo = ((t33)(2ULL)), .m_hi = ((t33)(2ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@wrap_mul(a, b)", .m_len = 15 }), }), }), ((t775){ .m_name = ((t10){ .m_ptr = (void *)"panic", .m_len = 5 }), .m_types = ((t33)(0ULL)), .m_lo = ((t33)(0ULL)), .m_hi = ((t33)(1ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@panic() or @panic(\042reason\042)", .m_len = 28 }), }), }), ((t775){ .m_name = ((t10){ .m_ptr = (void *)"fmt", .m_len = 3 }), .m_types = ((t33)(0ULL)), .m_lo = ((t33)(2ULL)), .m_hi = ((t33)(4294967295ULL)), .m_usage = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@fmt(b, \042format\042, args...)", .m_len = 26 }), }), }) }});
 
 // main
 static t15 f0(t1 l0, t3 l1, t5 l2, t7 l3, t8 l4) {
@@ -8281,17 +8291,17 @@ static t125 f53(t10 l0, t33 l1, t26 l2, t131 l3) {
         l4 = ({ t10 _t0 = l0; t33 _t1 = l1; t13 _t2 = ((t13)(0ULL)); t14 _t3 = ((bool)1); t26 _t4 = (&(*l2)); t131 _t5 = (&(*l3)); t431 _t6 = f155((&g13), (&(*l2))); t432 _t7 = f156((&g13), (&(*l2))); ((t430){ .m_text = _t0, .m_file = _t1, .m_pos = _t2, .m_nl = _t3, .m_heap = _t4, .m_diags = _t5, .m_tokens = _t6, .m_comments = _t7, }); });
         if (((l0).m_len > ((t13)(4294967295ULL)))) {
             f157((&l4), ((t13)(0ULL)), ((t13)(0ULL)), ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"file too large", .m_len = 14 }), }));
-            (l4).m_text = ({ t10 _t8 = (l0); uint64_t _t9 = ((t13)(0ULL)); uint64_t _t10 = ((t13)(0ULL)); ctx_range(_t9, _t10, _t8.m_len, 94, 27, 12); (t10){ .m_ptr = _t8.m_ptr + _t9, .m_len = _t10 - _t9 }; });
+            (l4).m_text = ({ t10 _t8 = (l0); uint64_t _t9 = ((t13)(0ULL)); uint64_t _t10 = ((t13)(0ULL)); ctx_range(_t9, _t10, _t8.m_len, 118, 27, 12); (t10){ .m_ptr = _t8.m_ptr + _t9, .m_len = _t10 - _t9 }; });
         }
         while (((l4).m_pos < ((l4).m_text).m_len)) {
-            l5 = (*({ t10 _t11 = ((l4).m_text); uint64_t _t12 = (l4).m_pos; _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 97, 28, 12); }));
-            l6 = ({ t10 _t13 = (l4).m_text; t13 _t14 = ctx_add_u64((l4).m_pos, ((t13)(1ULL)), 98, 54, 12); f158(_t13, _t14); });
+            l5 = (*({ t10 _t11 = ((l4).m_text); uint64_t _t12 = (l4).m_pos; _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 121, 28, 12); }));
+            l6 = ({ t10 _t13 = (l4).m_text; t13 _t14 = ctx_add_u64((l4).m_pos, ((t13)(1ULL)), 122, 54, 12); f158(_t13, _t14); });
             if ((l5 == ((t12)(10ULL)))) {
-                (l4).m_pos = ctx_add_u64((l4).m_pos, ((t13)(1ULL)), 100, 33, 12);
+                (l4).m_pos = ctx_add_u64((l4).m_pos, ((t13)(1ULL)), 124, 33, 12);
                 (l4).m_nl = ((bool)1);
             } else {
                 if ((((l5 == ((t12)(32ULL))) || (l5 == ((t12)(9ULL)))) || (l5 == ((t12)(13ULL))))) {
-                    (l4).m_pos = ctx_add_u64((l4).m_pos, ((t13)(1ULL)), 103, 33, 12);
+                    (l4).m_pos = ctx_add_u64((l4).m_pos, ((t13)(1ULL)), 127, 33, 12);
                 } else {
                     if (((l5 == ((t12)(47ULL))) && (l6 == ((t12)(47ULL))))) {
                         f161((&l4));
@@ -11841,7 +11851,7 @@ static t12 f158(t10 l0, t13 l1) {
         if ((l1 >= (l0).m_len)) {
             return ((t12)(0ULL));
         }
-        return (*({ t10 _t0 = (l0); uint64_t _t1 = l1; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 453, 17, 12); }));
+        return (*({ t10 _t0 = (l0); uint64_t _t1 = l1; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 477, 17, 12); }));
     }
     __builtin_unreachable();
 }
@@ -11857,10 +11867,10 @@ static t16 f159(t433 l0) {
     {
         l1 = ((*l0)).m_text;
         l2 = ((*l0)).m_pos;
-        l3 = (*({ t10 _t0 = (l1); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 120, 21, 12); }));
+        l3 = (*({ t10 _t0 = (l1); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 144, 21, 12); }));
         if (f352(l3)) {
-            { t13 _t2 = ({ t10 _t3 = l1; t13 _t4 = ctx_add_u64(l2, ((t13)(1ULL)), 122, 48, 12); f347(_t3, _t4); }); ((*l0)).m_pos = _t2; }
-            ({ t433 _t5 = (&(*l0)); t12 _t6 = f353(({ t10 _t8 = (l1); uint64_t _t9 = l2; uint64_t _t10 = ((*l0)).m_pos; ctx_range(_t9, _t10, _t8.m_len, 123, 50, 12); (t10){ .m_ptr = _t8.m_ptr + _t9, .m_len = _t10 - _t9 }; })); t13 _t7 = l2; f162(_t5, _t6, _t7); });
+            { t13 _t2 = ({ t10 _t3 = l1; t13 _t4 = ctx_add_u64(l2, ((t13)(1ULL)), 146, 48, 12); f347(_t3, _t4); }); ((*l0)).m_pos = _t2; }
+            ({ t433 _t5 = (&(*l0)); t12 _t6 = f353(({ t10 _t8 = (l1); uint64_t _t9 = l2; uint64_t _t10 = ((*l0)).m_pos; ctx_range(_t9, _t10, _t8.m_len, 147, 50, 12); (t10){ .m_ptr = _t8.m_ptr + _t9, .m_len = _t10 - _t9 }; })); t13 _t7 = l2; f162(_t5, _t6, _t7); });
         } else {
             if (f350(l3)) {
                 f351((&(*l0)));
@@ -11869,8 +11879,8 @@ static t16 f159(t433 l0) {
                     f349((&(*l0)), l3);
                 } else {
                     if ((l3 == ((t12)(64ULL)))) {
-                        { t13 _t11 = ({ t10 _t12 = l1; t13 _t13 = ctx_add_u64(l2, ((t13)(1ULL)), 129, 48, 12); f347(_t12, _t13); }); ((*l0)).m_pos = _t11; }
-                        if (({ t13 _t14 = ((*l0)).m_pos; t13 _t15 = ctx_add_u64(l2, ((t13)(1ULL)), 130, 32, 12); (_t14 == _t15); })) {
+                        { t13 _t11 = ({ t10 _t12 = l1; t13 _t13 = ctx_add_u64(l2, ((t13)(1ULL)), 153, 48, 12); f347(_t12, _t13); }); ((*l0)).m_pos = _t11; }
+                        if (({ t13 _t14 = ((*l0)).m_pos; t13 _t15 = ctx_add_u64(l2, ((t13)(1ULL)), 154, 32, 12); (_t14 == _t15); })) {
                             f348((&(*l0)), l2, ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"expected a builtin name after '@'", .m_len = 33 }), }));
                         } else {
                             f162((&(*l0)), ((t12)(7ULL)), l2);
@@ -11882,7 +11892,7 @@ static t16 f159(t433 l0) {
                             f345((&(*l0)));
                             return;
                         } } _t16; });
-                        { t13 _t18 = ({ t13 _t19 = l2; t13 _t20 = (f346(l4)).m_len; ctx_add_u64(_t19, _t20, 140, 28, 12); }); ((*l0)).m_pos = _t18; }
+                        { t13 _t18 = ({ t13 _t19 = l2; t13 _t20 = (f346(l4)).m_len; ctx_add_u64(_t19, _t20, 164, 28, 12); }); ((*l0)).m_pos = _t18; }
                         f162((&(*l0)), l4, l2);
                     }
                 }
@@ -11898,17 +11908,17 @@ static t16 f160(t433 l0) {
     CTX_STACK_CHECK();
     {
         l1 = ((*l0)).m_pos;
-        l2 = ctx_add_u64(l1, ((t13)(2ULL)), 392, 27, 12);
+        l2 = ctx_add_u64(l1, ((t13)(2ULL)), 416, 27, 12);
         while (((bool)1)) {
             if ((l2 >= (((*l0)).m_text).m_len)) {
-                ({ t433 _t0 = (&(*l0)); t13 _t1 = l1; t13 _t2 = ctx_add_u64(l1, ((t13)(2ULL)), 395, 49, 12); t17 _t3 = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"unterminated block comment", .m_len = 26 }), }); f157(_t0, _t1, _t2, _t3); });
+                ({ t433 _t0 = (&(*l0)); t13 _t1 = l1; t13 _t2 = ctx_add_u64(l1, ((t13)(2ULL)), 419, 49, 12); t17 _t3 = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"unterminated block comment", .m_len = 26 }), }); f157(_t0, _t1, _t2, _t3); });
                  break;
             }
-            if ((((*({ t10 _t4 = (((*l0)).m_text); uint64_t _t5 = l2; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 398, 23, 12); })) == ((t12)(42ULL))) && (({ t10 _t6 = ((*l0)).m_text; t13 _t7 = ctx_add_u64(l2, ((t13)(1ULL)), 398, 63, 12); f158(_t6, _t7); }) == ((t12)(47ULL))))) {
-                l2 = ctx_add_u64(l2, ((t13)(2ULL)), 399, 23, 12);
+            if ((((*({ t10 _t4 = (((*l0)).m_text); uint64_t _t5 = l2; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 422, 23, 12); })) == ((t12)(42ULL))) && (({ t10 _t6 = ((*l0)).m_text; t13 _t7 = ctx_add_u64(l2, ((t13)(1ULL)), 422, 63, 12); f158(_t6, _t7); }) == ((t12)(47ULL))))) {
+                l2 = ctx_add_u64(l2, ((t13)(2ULL)), 423, 23, 12);
                  break;
             }
-            if (((*({ t10 _t8 = (((*l0)).m_text); uint64_t _t9 = l2; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 402, 23, 12); })) == ((t12)(10ULL)))) {
+            if (((*({ t10 _t8 = (((*l0)).m_text); uint64_t _t9 = l2; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 426, 23, 12); })) == ((t12)(10ULL)))) {
                 ((*l0)).m_nl = ((bool)1);
             }
             l2 = f354((&(*l0)), l2);
@@ -11926,7 +11936,7 @@ static t16 f161(t433 l0) {
     {
         l1 = ((*l0)).m_pos;
         l2 = l1;
-        while (((l2 < (((*l0)).m_text).m_len) && ((*({ t10 _t0 = (((*l0)).m_text); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 384, 42, 12); })) != ((t12)(10ULL))))) {
+        while (((l2 < (((*l0)).m_text).m_len) && ((*({ t10 _t0 = (((*l0)).m_text); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 408, 42, 12); })) != ((t12)(10ULL))))) {
             l2 = f354((&(*l0)), l2);
         }
         ((*l0)).m_pos = l2;
@@ -11944,7 +11954,7 @@ static t16 f162(t433 l0, t12 l1, t13 l2) {
         { t110 _t3 = f356((&((*l0)).m_tokens), l3); if ((_t3.tag == 0)) { {
         } } else if ((_t3.tag == 1)) { l4 = _t3.p.v1.m_error; {
             { t95 _t4 = l4; if ((_t4.tag == 0)) { {
-                ctx_panic(430, 9, 12, "try! failed: alloc::out_of_memory");
+                ctx_panic(454, 9, 12, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         ((*l0)).m_nl = ((bool)0);
@@ -16596,7 +16606,7 @@ static t16 f342(t131 l0, t121 l1, t17 l2) {
 static t121 f343(t430 l0, t13 l1, t13 l2) {
     CTX_STACK_CHECK();
     {
-        return ({ t33 _t0 = (l0).m_file; t33 _t1 = ((t33)(ctx_as_u((uint64_t)(l1), UINT32_MAX, "u32", 445, 54, 12))); t33 _t2 = ((t33)(ctx_as_u((uint64_t)(l2), UINT32_MAX, "u32", 445, 77, 12))); ((t121){ .m_file = _t0, .m_start = _t1, .m_end = _t2, }); });
+        return ({ t33 _t0 = (l0).m_file; t33 _t1 = ((t33)(ctx_as_u((uint64_t)(l1), UINT32_MAX, "u32", 469, 54, 12))); t33 _t2 = ((t33)(ctx_as_u((uint64_t)(l2), UINT32_MAX, "u32", 469, 77, 12))); ((t121){ .m_file = _t0, .m_start = _t1, .m_end = _t2, }); });
     }
     __builtin_unreachable();
 }
@@ -16609,11 +16619,11 @@ static t538 f344(t10 l0, t13 l1) {
     {
         l2 = ((t13)(0ULL));
         while ((l2 < ((t13)(34ULL)))) {
-            l3 = (*({ t607 *_t0 = &(qv2); uint64_t _t1 = l2; &_t0->a[ctx_idx(_t1, 34, 158, 29, 12)]; }));
-            if ((({ t13 _t2 = ctx_add_u64(l1, (l3).m_len, 159, 18, 12); t13 _t3 = (l0).m_len; (_t2 <= _t3); }) && ({ t10 _t4 = ({ t10 _t6 = (l0); uint64_t _t7 = l1; uint64_t _t8 = ctx_add_u64(l1, (l3).m_len, 159, 73, 12); ctx_range(_t7, _t8, _t6.m_len, 159, 67, 12); (t10){ .m_ptr = _t6.m_ptr + _t7, .m_len = _t8 - _t7 }; }); t10 _t5 = l3; f1(_t4, _t5); }))) {
+            l3 = (*({ t607 *_t0 = &(qv2); uint64_t _t1 = l2; &_t0->a[ctx_idx(_t1, 34, 182, 29, 12)]; }));
+            if ((({ t13 _t2 = ctx_add_u64(l1, (l3).m_len, 183, 18, 12); t13 _t3 = (l0).m_len; (_t2 <= _t3); }) && ({ t10 _t4 = ({ t10 _t6 = (l0); uint64_t _t7 = l1; uint64_t _t8 = ctx_add_u64(l1, (l3).m_len, 183, 73, 12); ctx_range(_t7, _t8, _t6.m_len, 183, 67, 12); (t10){ .m_ptr = _t6.m_ptr + _t7, .m_len = _t8 - _t7 }; }); t10 _t5 = l3; f1(_t4, _t5); }))) {
                 return ((t538){ .tag = 1, .p.v1.m_value = f644(l2) });
             }
-            l2 = ctx_add_u64(l2, ((t13)(1ULL)), 162, 19, 12);
+            l2 = ctx_add_u64(l2, ((t13)(1ULL)), 186, 19, 12);
         }
         return ((t538){0});
     }
@@ -16635,11 +16645,11 @@ static t16 f345(t433 l0) {
         l2 = ((*l0)).m_pos;
         l3 = f645(l1, l2);
         if ((l3 == ((t13)(0ULL)))) {
-            { t13 _t0 = ctx_add_u64(l2, ((t13)(1ULL)), 340, 28, 12); ((*l0)).m_pos = _t0; }
+            { t13 _t0 = ctx_add_u64(l2, ((t13)(1ULL)), 364, 28, 12); ((*l0)).m_pos = _t0; }
             f348((&(*l0)), l2, ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"invalid UTF-8", .m_len = 13 }), }));
             return;
         }
-        { t13 _t1 = ctx_add_u64(l2, l3, 344, 24, 12); ((*l0)).m_pos = _t1; }
+        { t13 _t1 = ctx_add_u64(l2, l3, 368, 24, 12); ((*l0)).m_pos = _t1; }
         l4 = f54((&g13), ((*l0)).m_heap);
         (void)({ t608 _t2; t608 _t3 = ({ t608 _t4; t110 _t5 = f55((&l4), ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"unexpected character ", .m_len = 21 }), })); if ((_t5.tag == 0)) { {
             _t4 = ((t608){ .tag = 0 });
@@ -16664,7 +16674,7 @@ static t16 f345(t433 l0) {
 static t10 f346(t12 l0) {
     CTX_STACK_CHECK();
     {
-        return (*({ t607 *_t0 = &(qv2); uint64_t _t1 = ({ t13 _t2 = ((t13)(ctx_as_u((uint64_t)(l0), UINT64_MAX, "usize", 69, 52, 12))); t13 _t3 = ((t13)(ctx_as_u((uint64_t)(((t12)(37ULL))), UINT64_MAX, "usize", 69, 71, 12))); ctx_sub_u64(_t2, _t3, 69, 69, 12); }); &_t0->a[ctx_idx(_t1, 34, 69, 51, 12)]; }));
+        return (*({ t607 *_t0 = &(qv2); uint64_t _t1 = ({ t13 _t2 = ((t13)(ctx_as_u((uint64_t)(l0), UINT64_MAX, "usize", 93, 52, 12))); t13 _t3 = ((t13)(ctx_as_u((uint64_t)(((t12)(37ULL))), UINT64_MAX, "usize", 93, 71, 12))); ctx_sub_u64(_t2, _t3, 93, 69, 12); }); &_t0->a[ctx_idx(_t1, 34, 93, 51, 12)]; }));
     }
     __builtin_unreachable();
 }
@@ -16675,8 +16685,8 @@ static t13 f347(t10 l0, t13 l1) {
     CTX_STACK_CHECK();
     {
         l2 = l1;
-        while (((l2 < (l0).m_len) && f647((*({ t10 _t0 = (l0); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 464, 50, 12); }))))) {
-            l2 = ctx_add_u64(l2, ((t13)(1ULL)), 464, 64, 12);
+        while (((l2 < (l0).m_len) && f647((*({ t10 _t0 = (l0); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 488, 50, 12); }))))) {
+            l2 = ctx_add_u64(l2, ((t13)(1ULL)), 488, 64, 12);
         }
         return l2;
     }
@@ -16719,7 +16729,7 @@ static t16 f349(t433 l0, t12 l1) {
             } _t5; }); t13 _t4 = l3; f162(_t2, _t3, _t4); });
             return;
         } } _t0; });
-        { t13 _t6 = ({ t10 _t7 = l2; t13 _t8 = ctx_add_u64(l3, ((t13)(1ULL)), 241, 47, 12); t12 _t9 = l1; f649(_t7, _t8, _t9); }); ((*l0)).m_pos = _t6; }
+        { t13 _t6 = ({ t10 _t7 = l2; t13 _t8 = ctx_add_u64(l3, ((t13)(1ULL)), 265, 47, 12); t12 _t9 = l1; f649(_t7, _t8, _t9); }); ((*l0)).m_pos = _t6; }
         l7 = f650(((*l0)).m_heap, l2, l5);
         f348((&(*l0)), l3, l7);
         l8 = ({ t13 _t10; t612 _t11 = l5; if ((_t11.tag == 1)) { l9 = _t11.p.v1.m_at; {
@@ -16727,10 +16737,10 @@ static t16 f349(t433 l0, t12 l1) {
         } } else { {
             _t10 = l3;
         } } _t10; });
-        l10 = ctx_add_u64(l3, ((t13)(1ULL)), 247, 27, 12);
+        l10 = ctx_add_u64(l3, ((t13)(1ULL)), 271, 27, 12);
         while ((l10 < ((*l0)).m_pos)) {
             l10 = ({ t13 _t12; if ((l10 == l8)) {
-                _t12 = ctx_add_u64(l10, ((t13)(1ULL)), 249, 34, 12);
+                _t12 = ctx_add_u64(l10, ((t13)(1ULL)), 273, 34, 12);
             } else {
                 _t12 = f354((&(*l0)), l10);
             } _t12; });
@@ -16768,35 +16778,35 @@ static t16 f351(t433 l0) {
         l3 = l2;
         l4 = ((t12)(3ULL));
         l5 = ((bool)1);
-        l6 = ({ t10 _t0 = l1; t13 _t1 = ctx_add_u64(l3, ((t13)(1ULL)), 175, 39, 12); f158(_t0, _t1); });
-        if ((((*({ t10 _t2 = (l1); uint64_t _t3 = l3; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 176, 16, 12); })) == ((t12)(48ULL))) && ((((l6 == ((t12)(120ULL))) || (l6 == ((t12)(88ULL)))) || (l6 == ((t12)(98ULL)))) || (l6 == ((t12)(66ULL)))))) {
+        l6 = ({ t10 _t0 = l1; t13 _t1 = ctx_add_u64(l3, ((t13)(1ULL)), 199, 39, 12); f158(_t0, _t1); });
+        if ((((*({ t10 _t2 = (l1); uint64_t _t3 = l3; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 200, 16, 12); })) == ((t12)(48ULL))) && ((((l6 == ((t12)(120ULL))) || (l6 == ((t12)(88ULL)))) || (l6 == ((t12)(98ULL)))) || (l6 == ((t12)(66ULL)))))) {
             l10 = ((l6 == ((t12)(120ULL))) || (l6 == ((t12)(88ULL))));
-            l3 = ctx_add_u64(l3, ((t13)(2ULL)), 178, 19, 12);
+            l3 = ctx_add_u64(l3, ((t13)(2ULL)), 202, 19, 12);
             l11 = ((t13)(0ULL));
             while (((bool)1)) {
                 l12 = f158(l1, l3);
                 if (((l10 && f652(l12)) || ((!l10) && ((l12 == ((t12)(48ULL))) || (l12 == ((t12)(49ULL))))))) {
-                    l11 = ctx_add_u64(l11, ((t13)(1ULL)), 183, 37, 12);
+                    l11 = ctx_add_u64(l11, ((t13)(1ULL)), 207, 37, 12);
                 } else {
                     if ((l12 != ((t12)(95ULL)))) {
                          break;
                     }
                 }
-                l3 = ctx_add_u64(l3, ((t13)(1ULL)), 187, 23, 12);
+                l3 = ctx_add_u64(l3, ((t13)(1ULL)), 211, 23, 12);
             }
             l5 = (l11 > ((t13)(0ULL)));
         } else {
             l3 = f651(l1, l3, ((bool)1));
-            if (((f158(l1, l3) == ((t12)(46ULL))) && f350(({ t10 _t4 = l1; t13 _t5 = ctx_add_u64(l3, ((t13)(1ULL)), 192, 83, 12); f158(_t4, _t5); })))) {
+            if (((f158(l1, l3) == ((t12)(46ULL))) && f350(({ t10 _t4 = l1; t13 _t5 = ctx_add_u64(l3, ((t13)(1ULL)), 216, 83, 12); f158(_t4, _t5); })))) {
                 l4 = ((t12)(4ULL));
-                l3 = ({ t10 _t6 = l1; t13 _t7 = ctx_add_u64(l3, ((t13)(1ULL)), 194, 45, 12); t14 _t8 = ((bool)1); f651(_t6, _t7, _t8); });
+                l3 = ({ t10 _t6 = l1; t13 _t7 = ctx_add_u64(l3, ((t13)(1ULL)), 218, 45, 12); t14 _t8 = ((bool)1); f651(_t6, _t7, _t8); });
             }
             l7 = f158(l1, l3);
             if (((l7 == ((t12)(101ULL))) || (l7 == ((t12)(69ULL))))) {
-                l8 = ctx_add_u64(l3, ((t13)(1ULL)), 198, 31, 12);
+                l8 = ctx_add_u64(l3, ((t13)(1ULL)), 222, 31, 12);
                 l9 = f158(l1, l8);
                 if (((l9 == ((t12)(43ULL))) || (l9 == ((t12)(45ULL))))) {
-                    l8 = ctx_add_u64(l8, ((t13)(1ULL)), 200, 55, 12);
+                    l8 = ctx_add_u64(l8, ((t13)(1ULL)), 224, 55, 12);
                 }
                 if (f350(f158(l1, l8))) {
                     l4 = ((t12)(4ULL));
@@ -16831,15 +16841,15 @@ static t12 f353(t10 l0) {
     t13 l1;
     CTX_STACK_CHECK();
     {
-        if ((((l0).m_len > ((t13)(10ULL))) || ((*({ t10 _t0 = (l0); uint64_t _t1 = ((t13)(0ULL)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 146, 33, 12); })) < ((t12)(97ULL))))) {
+        if ((((l0).m_len > ((t13)(10ULL))) || ((*({ t10 _t0 = (l0); uint64_t _t1 = ((t13)(0ULL)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 170, 33, 12); })) < ((t12)(97ULL))))) {
             return ((t12)(2ULL));
         }
         l1 = ((t13)(0ULL));
         while ((l1 < ((t13)(29ULL)))) {
-            if (({ t10 _t2 = l0; t10 _t3 = (*({ t613 *_t4 = &(qv3); uint64_t _t5 = l1; &_t4->a[ctx_idx(_t5, 29, 149, 60, 12)]; })); f1(_t2, _t3); })) {
+            if (({ t10 _t2 = l0; t10 _t3 = (*({ t613 *_t4 = &(qv3); uint64_t _t5 = l1; &_t4->a[ctx_idx(_t5, 29, 173, 60, 12)]; })); f1(_t2, _t3); })) {
                 return f653(l1);
             }
-            l1 = ctx_add_u64(l1, ((t13)(1ULL)), 150, 19, 12);
+            l1 = ctx_add_u64(l1, ((t13)(1ULL)), 174, 19, 12);
         }
         return ((t12)(2ULL));
     }
@@ -16851,15 +16861,15 @@ static t13 f354(t433 l0, t13 l1) {
     t13 l2;
     CTX_STACK_CHECK();
     {
-        if (((*({ t10 _t0 = (((*l0)).m_text); uint64_t _t1 = l1; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 416, 19, 12); })) < ((t12)(128ULL)))) {
-            return ctx_add_u64(l1, ((t13)(1ULL)), 416, 40, 12);
+        if (((*({ t10 _t0 = (((*l0)).m_text); uint64_t _t1 = l1; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 440, 19, 12); })) < ((t12)(128ULL)))) {
+            return ctx_add_u64(l1, ((t13)(1ULL)), 440, 40, 12);
         }
         l2 = f645(((*l0)).m_text, l1);
         if ((l2 == ((t13)(0ULL)))) {
-            ({ t433 _t2 = (&(*l0)); t13 _t3 = l1; t13 _t4 = ctx_add_u64(l1, ((t13)(1ULL)), 419, 45, 12); t17 _t5 = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"invalid UTF-8", .m_len = 13 }), }); f157(_t2, _t3, _t4, _t5); });
-            return ctx_add_u64(l1, ((t13)(1ULL)), 420, 22, 12);
+            ({ t433 _t2 = (&(*l0)); t13 _t3 = l1; t13 _t4 = ctx_add_u64(l1, ((t13)(1ULL)), 443, 45, 12); t17 _t5 = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"invalid UTF-8", .m_len = 13 }), }); f157(_t2, _t3, _t4, _t5); });
+            return ctx_add_u64(l1, ((t13)(1ULL)), 444, 22, 12);
         }
-        return ctx_add_u64(l1, l2, 422, 18, 12);
+        return ctx_add_u64(l1, l2, 446, 18, 12);
     }
     __builtin_unreachable();
 }
@@ -16874,7 +16884,7 @@ static t16 f355(t433 l0, t13 l1) {
         { t110 _t0 = f654((&((*l0)).m_comments), l2); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l3 = _t0.p.v1.m_error; {
             { t95 _t1 = l3; if ((_t1.tag == 0)) { {
-                ctx_panic(411, 9, 12, "try! failed: alloc::out_of_memory");
+                ctx_panic(435, 9, 12, "try! failed: alloc::out_of_memory");
             } } }
         } } }
     }
@@ -16949,10 +16959,10 @@ static t10 f361(t26 l0, t10 l1) {
     t95 l7;
     CTX_STACK_CHECK();
     {
-        l2 = ({ t10 _t0 = (l1); uint64_t _t1 = ((t13)(1ULL)); uint64_t _t2 = ctx_sub_u64((l1).m_len, ((t13)(1ULL)), 516, 37, 12); ctx_range(_t1, _t2, _t0.m_len, 516, 24, 12); (t10){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
+        l2 = ({ t10 _t0 = (l1); uint64_t _t1 = ((t13)(1ULL)); uint64_t _t2 = ctx_sub_u64((l1).m_len, ((t13)(1ULL)), 540, 37, 12); ctx_range(_t1, _t2, _t0.m_len, 540, 24, 12); (t10){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
         l3 = ((t13)(0ULL));
-        while (((l3 < (l2).m_len) && ((*({ t10 _t3 = (l2); uint64_t _t4 = l3; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 518, 36, 12); })) != ((t12)(92ULL))))) {
-            l3 = ctx_add_u64(l3, ((t13)(1ULL)), 518, 56, 12);
+        while (((l3 < (l2).m_len) && ((*({ t10 _t3 = (l2); uint64_t _t4 = l3; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 542, 36, 12); })) != ((t12)(92ULL))))) {
+            l3 = ctx_add_u64(l3, ((t13)(1ULL)), 542, 56, 12);
         }
         if ((l3 == (l2).m_len)) {
             return l2;
@@ -16964,7 +16974,7 @@ static t10 f361(t26 l0, t10 l1) {
             { t110 _t5 = f105((&l4), (l6).m_b); if ((_t5.tag == 0)) { {
             } } else if ((_t5.tag == 1)) { l7 = _t5.p.v1.m_error; {
                 { t95 _t6 = l7; if ((_t6.tag == 0)) { {
-                    ctx_panic(524, 13, 12, "try! failed: alloc::out_of_memory");
+                    ctx_panic(548, 13, 12, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
             l5 = (l6).m_next;
@@ -17011,10 +17021,10 @@ static t51 f364(t26 l0, t10 l1) {
         l2 = f54((&g13), (&(*l0)));
         l3 = ((t13)(0ULL));
         while ((l3 < (l1).m_len)) {
-            if (((*({ t10 _t0 = (l1); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 504, 20, 12); })) != ((t12)(95ULL)))) {
-                (void)f97((&l2), ((t33)((*({ t10 _t2 = (l1); uint64_t _t3 = l3; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 504, 66, 12); })))));
+            if (((*({ t10 _t0 = (l1); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 528, 20, 12); })) != ((t12)(95ULL)))) {
+                (void)f97((&l2), ((t33)((*({ t10 _t2 = (l1); uint64_t _t3 = l3; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 528, 66, 12); })))));
             }
-            l3 = ctx_add_u64(l3, ((t13)(1ULL)), 505, 19, 12);
+            l3 = ctx_add_u64(l3, ((t13)(1ULL)), 529, 19, 12);
         }
         return f658((f59(l2)).m_bytes);
     }
@@ -17030,40 +17040,40 @@ static t143 f365(t10 l0) {
     t19 l5;
     CTX_STACK_CHECK();
     {
-        if (((*({ t10 _t0 = (l0); uint64_t _t1 = ((t13)(0ULL)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 478, 16, 12); })) == ((t12)(39ULL)))) {
+        if (((*({ t10 _t0 = (l0); uint64_t _t1 = ((t13)(0ULL)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 502, 16, 12); })) == ((t12)(39ULL)))) {
             return ((t143){ .tag = 1, .p.v1.m_value = ((t19)(f659(l0))) });
         }
         l1 = ((t19)(10ULL));
         l2 = ((t13)(0ULL));
-        if (((((l0).m_len > ((t13)(2ULL))) && ((*({ t10 _t2 = (l0); uint64_t _t3 = ((t13)(0ULL)); _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 481, 33, 12); })) == ((t12)(48ULL)))) && (((*({ t10 _t4 = (l0); uint64_t _t5 = ((t13)(1ULL)); _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 481, 53, 12); })) == ((t12)(120ULL))) || ((*({ t10 _t6 = (l0); uint64_t _t7 = ((t13)(1ULL)); _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 481, 71, 12); })) == ((t12)(88ULL)))))) {
+        if (((((l0).m_len > ((t13)(2ULL))) && ((*({ t10 _t2 = (l0); uint64_t _t3 = ((t13)(0ULL)); _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 505, 33, 12); })) == ((t12)(48ULL)))) && (((*({ t10 _t4 = (l0); uint64_t _t5 = ((t13)(1ULL)); _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 505, 53, 12); })) == ((t12)(120ULL))) || ((*({ t10 _t6 = (l0); uint64_t _t7 = ((t13)(1ULL)); _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 505, 71, 12); })) == ((t12)(88ULL)))))) {
             l1 = ((t19)(16ULL));
             l2 = ((t13)(2ULL));
         } else {
-            if (((((l0).m_len > ((t13)(2ULL))) && ((*({ t10 _t8 = (l0); uint64_t _t9 = ((t13)(0ULL)); _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 484, 40, 12); })) == ((t12)(48ULL)))) && (((*({ t10 _t10 = (l0); uint64_t _t11 = ((t13)(1ULL)); _t10.m_ptr + ctx_idx(_t11, _t10.m_len, 484, 60, 12); })) == ((t12)(98ULL))) || ((*({ t10 _t12 = (l0); uint64_t _t13 = ((t13)(1ULL)); _t12.m_ptr + ctx_idx(_t13, _t12.m_len, 484, 78, 12); })) == ((t12)(66ULL)))))) {
+            if (((((l0).m_len > ((t13)(2ULL))) && ((*({ t10 _t8 = (l0); uint64_t _t9 = ((t13)(0ULL)); _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 508, 40, 12); })) == ((t12)(48ULL)))) && (((*({ t10 _t10 = (l0); uint64_t _t11 = ((t13)(1ULL)); _t10.m_ptr + ctx_idx(_t11, _t10.m_len, 508, 60, 12); })) == ((t12)(98ULL))) || ((*({ t10 _t12 = (l0); uint64_t _t13 = ((t13)(1ULL)); _t12.m_ptr + ctx_idx(_t13, _t12.m_len, 508, 78, 12); })) == ((t12)(66ULL)))))) {
                 l1 = ((t19)(2ULL));
                 l2 = ((t13)(2ULL));
             }
         }
         l3 = ((t19)(0ULL));
         while ((l2 < (l0).m_len)) {
-            l4 = (*({ t10 _t14 = (l0); uint64_t _t15 = l2; _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 490, 25, 12); }));
-            l2 = ctx_add_u64(l2, ((t13)(1ULL)), 491, 19, 12);
+            l4 = (*({ t10 _t14 = (l0); uint64_t _t15 = l2; _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 514, 25, 12); }));
+            l2 = ctx_add_u64(l2, ((t13)(1ULL)), 515, 19, 12);
             if ((l4 == ((t12)(95ULL)))) {
                  continue;
             }
             l5 = ({ t19 _t16; if (f350(l4)) {
-                _t16 = ((t19)(ctx_sub_u8(l4, ((t12)(48ULL)), 493, 47, 12)));
+                _t16 = ((t19)(ctx_sub_u8(l4, ((t12)(48ULL)), 517, 47, 12)));
             } else {
                 _t16 = ({ t19 _t17; if ((l4 >= ((t12)(97ULL)))) {
-                    _t17 = ((t19)(ctx_add_u8(ctx_sub_u8(l4, ((t12)(97ULL)), 493, 76, 12), ((t12)(10ULL)), 493, 82, 12)));
+                    _t17 = ((t19)(ctx_add_u8(ctx_sub_u8(l4, ((t12)(97ULL)), 517, 76, 12), ((t12)(10ULL)), 517, 82, 12)));
                 } else {
-                    _t17 = ((t19)(ctx_add_u8(ctx_sub_u8(l4, ((t12)(65ULL)), 493, 98, 12), ((t12)(10ULL)), 493, 104, 12)));
+                    _t17 = ((t19)(ctx_add_u8(ctx_sub_u8(l4, ((t12)(65ULL)), 517, 98, 12), ((t12)(10ULL)), 517, 104, 12)));
                 } _t17; });
             } _t16; });
-            if (({ t19 _t18 = l3; t19 _t19 = ({ t19 _t20 = ctx_sub_u64(((t19)(18446744073709551615ULL)), l5, 494, 42, 12); t19 _t21 = l1; ctx_div_u64(_t20, _t21, 494, 47, 12); }); (_t18 > _t19); })) {
+            if (({ t19 _t18 = l3; t19 _t19 = ({ t19 _t20 = ctx_sub_u64(((t19)(18446744073709551615ULL)), l5, 518, 42, 12); t19 _t21 = l1; ctx_div_u64(_t20, _t21, 518, 47, 12); }); (_t18 > _t19); })) {
                 return ((t143){0});
             }
-            l3 = ({ t19 _t22 = ctx_mul_u64(l3, l1, 495, 19, 12); t19 _t23 = l5; ctx_add_u64(_t22, _t23, 495, 26, 12); });
+            l3 = ({ t19 _t22 = ctx_mul_u64(l3, l1, 519, 19, 12); t19 _t23 = l5; ctx_add_u64(_t22, _t23, 519, 26, 12); });
         }
         return ((t143){ .tag = 1, .p.v1.m_value = l3 });
     }
@@ -24795,151 +24805,7 @@ static t122 f643(void) {
 static t12 f644(t13 l0) {
     CTX_STACK_CHECK();
     {
-        return ({ t12 _t0; t13 _t1 = ({ t13 _t2 = ((t13)(ctx_as_u((uint64_t)(((t12)(37ULL))), UINT64_MAX, "usize", 66, 51, 12))); t13 _t3 = l0; ctx_add_u64(_t2, _t3, 66, 75, 12); }); if (_t1 == ((t13)(0ULL))) { {
-            _t0 = ((t12)(0ULL));
-        } } else if (_t1 == ((t13)(1ULL))) { {
-            _t0 = ((t12)(1ULL));
-        } } else if (_t1 == ((t13)(2ULL))) { {
-            _t0 = ((t12)(2ULL));
-        } } else if (_t1 == ((t13)(3ULL))) { {
-            _t0 = ((t12)(3ULL));
-        } } else if (_t1 == ((t13)(4ULL))) { {
-            _t0 = ((t12)(4ULL));
-        } } else if (_t1 == ((t13)(5ULL))) { {
-            _t0 = ((t12)(5ULL));
-        } } else if (_t1 == ((t13)(6ULL))) { {
-            _t0 = ((t12)(6ULL));
-        } } else if (_t1 == ((t13)(7ULL))) { {
-            _t0 = ((t12)(7ULL));
-        } } else if (_t1 == ((t13)(8ULL))) { {
-            _t0 = ((t12)(8ULL));
-        } } else if (_t1 == ((t13)(9ULL))) { {
-            _t0 = ((t12)(9ULL));
-        } } else if (_t1 == ((t13)(10ULL))) { {
-            _t0 = ((t12)(10ULL));
-        } } else if (_t1 == ((t13)(11ULL))) { {
-            _t0 = ((t12)(11ULL));
-        } } else if (_t1 == ((t13)(12ULL))) { {
-            _t0 = ((t12)(12ULL));
-        } } else if (_t1 == ((t13)(13ULL))) { {
-            _t0 = ((t12)(13ULL));
-        } } else if (_t1 == ((t13)(14ULL))) { {
-            _t0 = ((t12)(14ULL));
-        } } else if (_t1 == ((t13)(15ULL))) { {
-            _t0 = ((t12)(15ULL));
-        } } else if (_t1 == ((t13)(16ULL))) { {
-            _t0 = ((t12)(16ULL));
-        } } else if (_t1 == ((t13)(17ULL))) { {
-            _t0 = ((t12)(17ULL));
-        } } else if (_t1 == ((t13)(18ULL))) { {
-            _t0 = ((t12)(18ULL));
-        } } else if (_t1 == ((t13)(19ULL))) { {
-            _t0 = ((t12)(19ULL));
-        } } else if (_t1 == ((t13)(20ULL))) { {
-            _t0 = ((t12)(20ULL));
-        } } else if (_t1 == ((t13)(21ULL))) { {
-            _t0 = ((t12)(21ULL));
-        } } else if (_t1 == ((t13)(22ULL))) { {
-            _t0 = ((t12)(22ULL));
-        } } else if (_t1 == ((t13)(23ULL))) { {
-            _t0 = ((t12)(23ULL));
-        } } else if (_t1 == ((t13)(24ULL))) { {
-            _t0 = ((t12)(24ULL));
-        } } else if (_t1 == ((t13)(25ULL))) { {
-            _t0 = ((t12)(25ULL));
-        } } else if (_t1 == ((t13)(26ULL))) { {
-            _t0 = ((t12)(26ULL));
-        } } else if (_t1 == ((t13)(27ULL))) { {
-            _t0 = ((t12)(27ULL));
-        } } else if (_t1 == ((t13)(28ULL))) { {
-            _t0 = ((t12)(28ULL));
-        } } else if (_t1 == ((t13)(29ULL))) { {
-            _t0 = ((t12)(29ULL));
-        } } else if (_t1 == ((t13)(30ULL))) { {
-            _t0 = ((t12)(30ULL));
-        } } else if (_t1 == ((t13)(31ULL))) { {
-            _t0 = ((t12)(31ULL));
-        } } else if (_t1 == ((t13)(32ULL))) { {
-            _t0 = ((t12)(32ULL));
-        } } else if (_t1 == ((t13)(33ULL))) { {
-            _t0 = ((t12)(33ULL));
-        } } else if (_t1 == ((t13)(34ULL))) { {
-            _t0 = ((t12)(34ULL));
-        } } else if (_t1 == ((t13)(35ULL))) { {
-            _t0 = ((t12)(35ULL));
-        } } else if (_t1 == ((t13)(36ULL))) { {
-            _t0 = ((t12)(36ULL));
-        } } else if (_t1 == ((t13)(37ULL))) { {
-            _t0 = ((t12)(37ULL));
-        } } else if (_t1 == ((t13)(38ULL))) { {
-            _t0 = ((t12)(38ULL));
-        } } else if (_t1 == ((t13)(39ULL))) { {
-            _t0 = ((t12)(39ULL));
-        } } else if (_t1 == ((t13)(40ULL))) { {
-            _t0 = ((t12)(40ULL));
-        } } else if (_t1 == ((t13)(41ULL))) { {
-            _t0 = ((t12)(41ULL));
-        } } else if (_t1 == ((t13)(42ULL))) { {
-            _t0 = ((t12)(42ULL));
-        } } else if (_t1 == ((t13)(43ULL))) { {
-            _t0 = ((t12)(43ULL));
-        } } else if (_t1 == ((t13)(44ULL))) { {
-            _t0 = ((t12)(44ULL));
-        } } else if (_t1 == ((t13)(45ULL))) { {
-            _t0 = ((t12)(45ULL));
-        } } else if (_t1 == ((t13)(46ULL))) { {
-            _t0 = ((t12)(46ULL));
-        } } else if (_t1 == ((t13)(47ULL))) { {
-            _t0 = ((t12)(47ULL));
-        } } else if (_t1 == ((t13)(48ULL))) { {
-            _t0 = ((t12)(48ULL));
-        } } else if (_t1 == ((t13)(49ULL))) { {
-            _t0 = ((t12)(49ULL));
-        } } else if (_t1 == ((t13)(50ULL))) { {
-            _t0 = ((t12)(50ULL));
-        } } else if (_t1 == ((t13)(51ULL))) { {
-            _t0 = ((t12)(51ULL));
-        } } else if (_t1 == ((t13)(52ULL))) { {
-            _t0 = ((t12)(52ULL));
-        } } else if (_t1 == ((t13)(53ULL))) { {
-            _t0 = ((t12)(53ULL));
-        } } else if (_t1 == ((t13)(54ULL))) { {
-            _t0 = ((t12)(54ULL));
-        } } else if (_t1 == ((t13)(55ULL))) { {
-            _t0 = ((t12)(55ULL));
-        } } else if (_t1 == ((t13)(56ULL))) { {
-            _t0 = ((t12)(56ULL));
-        } } else if (_t1 == ((t13)(57ULL))) { {
-            _t0 = ((t12)(57ULL));
-        } } else if (_t1 == ((t13)(58ULL))) { {
-            _t0 = ((t12)(58ULL));
-        } } else if (_t1 == ((t13)(59ULL))) { {
-            _t0 = ((t12)(59ULL));
-        } } else if (_t1 == ((t13)(60ULL))) { {
-            _t0 = ((t12)(60ULL));
-        } } else if (_t1 == ((t13)(61ULL))) { {
-            _t0 = ((t12)(61ULL));
-        } } else if (_t1 == ((t13)(62ULL))) { {
-            _t0 = ((t12)(62ULL));
-        } } else if (_t1 == ((t13)(63ULL))) { {
-            _t0 = ((t12)(63ULL));
-        } } else if (_t1 == ((t13)(64ULL))) { {
-            _t0 = ((t12)(64ULL));
-        } } else if (_t1 == ((t13)(65ULL))) { {
-            _t0 = ((t12)(65ULL));
-        } } else if (_t1 == ((t13)(66ULL))) { {
-            _t0 = ((t12)(66ULL));
-        } } else if (_t1 == ((t13)(67ULL))) { {
-            _t0 = ((t12)(67ULL));
-        } } else if (_t1 == ((t13)(68ULL))) { {
-            _t0 = ((t12)(68ULL));
-        } } else if (_t1 == ((t13)(69ULL))) { {
-            _t0 = ((t12)(69ULL));
-        } } else if (_t1 == ((t13)(70ULL))) { {
-            _t0 = ((t12)(70ULL));
-        } } else { {
-            ctx_panic(66, 41, 12, "@as: no variant of tok::Kind has this value");
-        } } _t0; });
+        return (*({ t654 *_t0 = &(qv4); uint64_t _t1 = l0; &_t0->a[ctx_idx(_t1, 34, 67, 49, 12)]; }));
     }
     __builtin_unreachable();
 }
@@ -25039,7 +24905,7 @@ static t608 f646(t133 l0, t10 l1, t13 l2) {
     t114 l24;
     CTX_STACK_CHECK();
     {
-        l3 = (*({ t10 _t0 = (l1); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 354, 21, 12); }));
+        l3 = (*({ t10 _t0 = (l1); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 378, 21, 12); }));
         if (((l3 < ((t12)(32ULL))) || (l3 == ((t12)(127ULL))))) {
             return ({ t608 _t2; t110 _t3 = ({ t110 _t4; t110 _t5 = f55((&(*l0)), ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"'\134x", .m_len = 3 }), })); if ((_t5.tag == 0)) { {
                 _t4 = ({ t110 _t6; t110 _t7 = f929((&(*l0)), ((t19)(l3)), ((t13)(2ULL)), ((bool)1)); if ((_t7.tag == 0)) { {
@@ -25095,7 +24961,7 @@ static t608 f646(t133 l0, t10 l1, t13 l2) {
                 } } _t26; }), } });
             } } _t18; });
         }
-        l14 = ((t17){ .m_bytes = ({ t10 _t28 = (l1); uint64_t _t29 = l2; uint64_t _t30 = ({ t13 _t31 = l2; t13 _t32 = f645(l1, l2); ctx_add_u64(_t31, _t32, 358, 51, 12); }); ctx_range(_t29, _t30, _t28.m_len, 358, 43, 12); (t10){ .m_ptr = _t28.m_ptr + _t29, .m_len = _t30 - _t29 }; }), });
+        l14 = ((t17){ .m_bytes = ({ t10 _t28 = (l1); uint64_t _t29 = l2; uint64_t _t30 = ({ t13 _t31 = l2; t13 _t32 = f645(l1, l2); ctx_add_u64(_t31, _t32, 382, 51, 12); }); ctx_range(_t29, _t30, _t28.m_len, 382, 43, 12); (t10){ .m_ptr = _t28.m_ptr + _t29, .m_len = _t30 - _t29 }; }), });
         return ({ t608 _t33; t608 _t34 = ({ t608 _t35; t110 _t36 = f55((&(*l0)), ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"'", .m_len = 1 }), })); if ((_t36.tag == 0)) { {
             _t35 = ((t608){ .tag = 0 });
         } } else if ((_t36.tag == 1)) { l15 = _t36.p.v1.m_error; {
@@ -25117,7 +24983,7 @@ static t608 f646(t133 l0, t10 l1, t13 l2) {
                         _t49 = ((t114){ .tag = 0 });
                     } } _t49; }), } });
                 } } _t47; }); if ((_t46.tag == 0)) { {
-                    _t45 = ({ t608 _t51; t608 _t52 = ({ t608 _t53; t110 _t54 = ({ ctx_fn *_t55 = ({ struct b1 *_t56 = ctx_alloc(sizeof(struct b1)); _t56->base.code = (void (*)(void))b1_code; _t56->c1 = (f931(l14, ((t13)(0ULL)))).m_c; (ctx_fn *)_t56; }); ((c654)_t55->code)(_t55, (&(*l0))); }); if ((_t54.tag == 0)) { {
+                    _t45 = ({ t608 _t51; t608 _t52 = ({ t608 _t53; t110 _t54 = ({ ctx_fn *_t55 = ({ struct b1 *_t56 = ctx_alloc(sizeof(struct b1)); _t56->base.code = (void (*)(void))b1_code; _t56->c1 = (f931(l14, ((t13)(0ULL)))).m_c; (ctx_fn *)_t56; }); ((c655)_t55->code)(_t55, (&(*l0))); }); if ((_t54.tag == 0)) { {
                         _t53 = ((t608){ .tag = 0 });
                     } } else if ((_t54.tag == 1)) { l18 = _t54.p.v1.m_error; {
                         _t53 = ((t608){ .tag = 1, .p.v1 = { .m_error = ({ t114 _t57; t95 _t58 = l18; if ((_t58.tag == 0)) { {
@@ -25164,11 +25030,11 @@ static t14 f647(t12 l0) {
 // lexer::scan_literal
 static t610 f648(t10 l0, t13 l1, t12 l2) {
     t13 l3;
-    t656 l4;
-    t656 l5;
+    t657 l4;
+    t657 l5;
     CTX_STACK_CHECK();
     {
-        l3 = ctx_add_u64(l1, ((t13)(1ULL)), 254, 27, 12);
+        l3 = ctx_add_u64(l1, ((t13)(1ULL)), 278, 27, 12);
         if ((l2 == ((t12)(34ULL)))) {
             while ((f158(l0, l3) != ((t12)(34ULL)))) {
                 l4 = f932(l0, l3);
@@ -25177,7 +25043,7 @@ static t610 f648(t10 l0, t13 l1, t12 l2) {
                 }
                 l3 = (l4).m_next;
             }
-            return ((t610){ .m_end = ctx_add_u64(l3, ((t13)(1ULL)), 261, 37, 12), .m_problem = ((t611){0}), });
+            return ((t610){ .m_end = ctx_add_u64(l3, ((t13)(1ULL)), 285, 37, 12), .m_problem = ((t611){0}), });
         }
         if ((f158(l0, l3) == ((t12)(39ULL)))) {
             return ((t610){ .m_end = l3, .m_problem = ((t611){ .tag = 1, .p.v1.m_value = ((t612){ .tag = 4 }) }), });
@@ -25189,7 +25055,7 @@ static t610 f648(t10 l0, t13 l1, t12 l2) {
         if ((f158(l0, (l5).m_next) != ((t12)(39ULL)))) {
             return ((t610){ .m_end = l3, .m_problem = ((t611){ .tag = 1, .p.v1.m_value = ((t612){ .tag = 4 }) }), });
         }
-        return ((t610){ .m_end = ctx_add_u64((l5).m_next, ((t13)(1ULL)), 269, 38, 12), .m_problem = ((t611){0}), });
+        return ((t610){ .m_end = ctx_add_u64((l5).m_next, ((t13)(1ULL)), 293, 38, 12), .m_problem = ((t611){0}), });
     }
     __builtin_unreachable();
 }
@@ -25200,14 +25066,14 @@ static t13 f649(t10 l0, t13 l1, t12 l2) {
     CTX_STACK_CHECK();
     {
         l3 = l1;
-        while (((l3 < (l0).m_len) && ((*({ t10 _t0 = (l0); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 304, 36, 12); })) != ((t12)(10ULL))))) {
-            if (({ t12 _t2 = (*({ t10 _t4 = (l0); uint64_t _t5 = l3; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 305, 20, 12); })); t12 _t3 = l2; (_t2 == _t3); })) {
-                return ctx_add_u64(l3, ((t13)(1ULL)), 305, 44, 12);
+        while (((l3 < (l0).m_len) && ((*({ t10 _t0 = (l0); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 328, 36, 12); })) != ((t12)(10ULL))))) {
+            if (({ t12 _t2 = (*({ t10 _t4 = (l0); uint64_t _t5 = l3; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 329, 20, 12); })); t12 _t3 = l2; (_t2 == _t3); })) {
+                return ctx_add_u64(l3, ((t13)(1ULL)), 329, 44, 12);
             }
-            if ((((*({ t10 _t6 = (l0); uint64_t _t7 = l3; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 306, 20, 12); })) == ((t12)(92ULL))) && (({ t10 _t8 = l0; t13 _t9 = ctx_add_u64(l3, ((t13)(1ULL)), 306, 58, 12); f158(_t8, _t9); }) != ((t12)(10ULL))))) {
-                l3 = ctx_add_u64(l3, ((t13)(1ULL)), 307, 23, 12);
+            if ((((*({ t10 _t6 = (l0); uint64_t _t7 = l3; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 330, 20, 12); })) == ((t12)(92ULL))) && (({ t10 _t8 = l0; t13 _t9 = ctx_add_u64(l3, ((t13)(1ULL)), 330, 58, 12); f158(_t8, _t9); }) != ((t12)(10ULL))))) {
+                l3 = ctx_add_u64(l3, ((t13)(1ULL)), 331, 23, 12);
             }
-            l3 = ctx_add_u64(l3, ((t13)(1ULL)), 309, 19, 12);
+            l3 = ctx_add_u64(l3, ((t13)(1ULL)), 333, 19, 12);
         }
         if ((l3 > (l0).m_len)) {
             return (l0).m_len;
@@ -25274,7 +25140,7 @@ static t17 f650(t26 l0, t10 l1, t612 l2) {
                 return ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"invalid UTF-8", .m_len = 13 }), });
             }
             (void)({ t110 _t17; t110 _t18 = f55((&l3), ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"unknown escape \134", .m_len = 16 }), })); if ((_t18.tag == 0)) { {
-                _t17 = ({ t110 _t19; t110 _t20 = f55((&l3), ((t17){ .m_bytes = ({ t10 _t21 = (l1); uint64_t _t22 = l10; uint64_t _t23 = ctx_add_u64(l10, l11, 328, 87, 12); ctx_range(_t22, _t23, _t21.m_len, 328, 79, 12); (t10){ .m_ptr = _t21.m_ptr + _t22, .m_len = _t23 - _t22 }; }), })); if ((_t20.tag == 0)) { {
+                _t17 = ({ t110 _t19; t110 _t20 = f55((&l3), ((t17){ .m_bytes = ({ t10 _t21 = (l1); uint64_t _t22 = l10; uint64_t _t23 = ctx_add_u64(l10, l11, 352, 87, 12); ctx_range(_t22, _t23, _t21.m_len, 352, 79, 12); (t10){ .m_ptr = _t21.m_ptr + _t22, .m_len = _t23 - _t22 }; }), })); if ((_t20.tag == 0)) { {
                     _t19 = ((t110){ .tag = 0 });
                 } } else if ((_t20.tag == 1)) { l12 = _t20.p.v1.m_error; {
                     _t19 = ((t110){ .tag = 1, .p.v1 = { .m_error = l12, } });
@@ -25294,8 +25160,8 @@ static t13 f651(t10 l0, t13 l1, t14 l2) {
     CTX_STACK_CHECK();
     {
         l3 = l1;
-        while (((l3 < (l0).m_len) && (f350((*({ t10 _t0 = (l0); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 470, 51, 12); }))) || (l2 && ((*({ t10 _t2 = (l0); uint64_t _t3 = l3; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 470, 75, 12); })) == ((t12)(95ULL))))))) {
-            l3 = ctx_add_u64(l3, ((t13)(1ULL)), 470, 96, 12);
+        while (((l3 < (l0).m_len) && (f350((*({ t10 _t0 = (l0); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 494, 51, 12); }))) || (l2 && ((*({ t10 _t2 = (l0); uint64_t _t3 = l3; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 494, 75, 12); })) == ((t12)(95ULL))))))) {
+            l3 = ctx_add_u64(l3, ((t13)(1ULL)), 494, 96, 12);
         }
         return l3;
     }
@@ -25315,151 +25181,7 @@ static t14 f652(t12 l0) {
 static t12 f653(t13 l0) {
     CTX_STACK_CHECK();
     {
-        return ({ t12 _t0; t13 _t1 = ({ t13 _t2 = ((t13)(ctx_as_u((uint64_t)(((t12)(8ULL))), UINT64_MAX, "usize", 65, 56, 12))); t13 _t3 = l0; ctx_add_u64(_t2, _t3, 65, 80, 12); }); if (_t1 == ((t13)(0ULL))) { {
-            _t0 = ((t12)(0ULL));
-        } } else if (_t1 == ((t13)(1ULL))) { {
-            _t0 = ((t12)(1ULL));
-        } } else if (_t1 == ((t13)(2ULL))) { {
-            _t0 = ((t12)(2ULL));
-        } } else if (_t1 == ((t13)(3ULL))) { {
-            _t0 = ((t12)(3ULL));
-        } } else if (_t1 == ((t13)(4ULL))) { {
-            _t0 = ((t12)(4ULL));
-        } } else if (_t1 == ((t13)(5ULL))) { {
-            _t0 = ((t12)(5ULL));
-        } } else if (_t1 == ((t13)(6ULL))) { {
-            _t0 = ((t12)(6ULL));
-        } } else if (_t1 == ((t13)(7ULL))) { {
-            _t0 = ((t12)(7ULL));
-        } } else if (_t1 == ((t13)(8ULL))) { {
-            _t0 = ((t12)(8ULL));
-        } } else if (_t1 == ((t13)(9ULL))) { {
-            _t0 = ((t12)(9ULL));
-        } } else if (_t1 == ((t13)(10ULL))) { {
-            _t0 = ((t12)(10ULL));
-        } } else if (_t1 == ((t13)(11ULL))) { {
-            _t0 = ((t12)(11ULL));
-        } } else if (_t1 == ((t13)(12ULL))) { {
-            _t0 = ((t12)(12ULL));
-        } } else if (_t1 == ((t13)(13ULL))) { {
-            _t0 = ((t12)(13ULL));
-        } } else if (_t1 == ((t13)(14ULL))) { {
-            _t0 = ((t12)(14ULL));
-        } } else if (_t1 == ((t13)(15ULL))) { {
-            _t0 = ((t12)(15ULL));
-        } } else if (_t1 == ((t13)(16ULL))) { {
-            _t0 = ((t12)(16ULL));
-        } } else if (_t1 == ((t13)(17ULL))) { {
-            _t0 = ((t12)(17ULL));
-        } } else if (_t1 == ((t13)(18ULL))) { {
-            _t0 = ((t12)(18ULL));
-        } } else if (_t1 == ((t13)(19ULL))) { {
-            _t0 = ((t12)(19ULL));
-        } } else if (_t1 == ((t13)(20ULL))) { {
-            _t0 = ((t12)(20ULL));
-        } } else if (_t1 == ((t13)(21ULL))) { {
-            _t0 = ((t12)(21ULL));
-        } } else if (_t1 == ((t13)(22ULL))) { {
-            _t0 = ((t12)(22ULL));
-        } } else if (_t1 == ((t13)(23ULL))) { {
-            _t0 = ((t12)(23ULL));
-        } } else if (_t1 == ((t13)(24ULL))) { {
-            _t0 = ((t12)(24ULL));
-        } } else if (_t1 == ((t13)(25ULL))) { {
-            _t0 = ((t12)(25ULL));
-        } } else if (_t1 == ((t13)(26ULL))) { {
-            _t0 = ((t12)(26ULL));
-        } } else if (_t1 == ((t13)(27ULL))) { {
-            _t0 = ((t12)(27ULL));
-        } } else if (_t1 == ((t13)(28ULL))) { {
-            _t0 = ((t12)(28ULL));
-        } } else if (_t1 == ((t13)(29ULL))) { {
-            _t0 = ((t12)(29ULL));
-        } } else if (_t1 == ((t13)(30ULL))) { {
-            _t0 = ((t12)(30ULL));
-        } } else if (_t1 == ((t13)(31ULL))) { {
-            _t0 = ((t12)(31ULL));
-        } } else if (_t1 == ((t13)(32ULL))) { {
-            _t0 = ((t12)(32ULL));
-        } } else if (_t1 == ((t13)(33ULL))) { {
-            _t0 = ((t12)(33ULL));
-        } } else if (_t1 == ((t13)(34ULL))) { {
-            _t0 = ((t12)(34ULL));
-        } } else if (_t1 == ((t13)(35ULL))) { {
-            _t0 = ((t12)(35ULL));
-        } } else if (_t1 == ((t13)(36ULL))) { {
-            _t0 = ((t12)(36ULL));
-        } } else if (_t1 == ((t13)(37ULL))) { {
-            _t0 = ((t12)(37ULL));
-        } } else if (_t1 == ((t13)(38ULL))) { {
-            _t0 = ((t12)(38ULL));
-        } } else if (_t1 == ((t13)(39ULL))) { {
-            _t0 = ((t12)(39ULL));
-        } } else if (_t1 == ((t13)(40ULL))) { {
-            _t0 = ((t12)(40ULL));
-        } } else if (_t1 == ((t13)(41ULL))) { {
-            _t0 = ((t12)(41ULL));
-        } } else if (_t1 == ((t13)(42ULL))) { {
-            _t0 = ((t12)(42ULL));
-        } } else if (_t1 == ((t13)(43ULL))) { {
-            _t0 = ((t12)(43ULL));
-        } } else if (_t1 == ((t13)(44ULL))) { {
-            _t0 = ((t12)(44ULL));
-        } } else if (_t1 == ((t13)(45ULL))) { {
-            _t0 = ((t12)(45ULL));
-        } } else if (_t1 == ((t13)(46ULL))) { {
-            _t0 = ((t12)(46ULL));
-        } } else if (_t1 == ((t13)(47ULL))) { {
-            _t0 = ((t12)(47ULL));
-        } } else if (_t1 == ((t13)(48ULL))) { {
-            _t0 = ((t12)(48ULL));
-        } } else if (_t1 == ((t13)(49ULL))) { {
-            _t0 = ((t12)(49ULL));
-        } } else if (_t1 == ((t13)(50ULL))) { {
-            _t0 = ((t12)(50ULL));
-        } } else if (_t1 == ((t13)(51ULL))) { {
-            _t0 = ((t12)(51ULL));
-        } } else if (_t1 == ((t13)(52ULL))) { {
-            _t0 = ((t12)(52ULL));
-        } } else if (_t1 == ((t13)(53ULL))) { {
-            _t0 = ((t12)(53ULL));
-        } } else if (_t1 == ((t13)(54ULL))) { {
-            _t0 = ((t12)(54ULL));
-        } } else if (_t1 == ((t13)(55ULL))) { {
-            _t0 = ((t12)(55ULL));
-        } } else if (_t1 == ((t13)(56ULL))) { {
-            _t0 = ((t12)(56ULL));
-        } } else if (_t1 == ((t13)(57ULL))) { {
-            _t0 = ((t12)(57ULL));
-        } } else if (_t1 == ((t13)(58ULL))) { {
-            _t0 = ((t12)(58ULL));
-        } } else if (_t1 == ((t13)(59ULL))) { {
-            _t0 = ((t12)(59ULL));
-        } } else if (_t1 == ((t13)(60ULL))) { {
-            _t0 = ((t12)(60ULL));
-        } } else if (_t1 == ((t13)(61ULL))) { {
-            _t0 = ((t12)(61ULL));
-        } } else if (_t1 == ((t13)(62ULL))) { {
-            _t0 = ((t12)(62ULL));
-        } } else if (_t1 == ((t13)(63ULL))) { {
-            _t0 = ((t12)(63ULL));
-        } } else if (_t1 == ((t13)(64ULL))) { {
-            _t0 = ((t12)(64ULL));
-        } } else if (_t1 == ((t13)(65ULL))) { {
-            _t0 = ((t12)(65ULL));
-        } } else if (_t1 == ((t13)(66ULL))) { {
-            _t0 = ((t12)(66ULL));
-        } } else if (_t1 == ((t13)(67ULL))) { {
-            _t0 = ((t12)(67ULL));
-        } } else if (_t1 == ((t13)(68ULL))) { {
-            _t0 = ((t12)(68ULL));
-        } } else if (_t1 == ((t13)(69ULL))) { {
-            _t0 = ((t12)(69ULL));
-        } } else if (_t1 == ((t13)(70ULL))) { {
-            _t0 = ((t12)(70ULL));
-        } } else { {
-            ctx_panic(65, 46, 12, "@as: no variant of tok::Kind has this value");
-        } } _t0; });
+        return (*({ t658 *_t0 = &(qv5); uint64_t _t1 = l0; &_t0->a[ctx_idx(_t1, 29, 66, 59, 12)]; }));
     }
     __builtin_unreachable();
 }
@@ -25499,7 +25221,7 @@ static t110 f655(t539 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t126 _t0 = ({ t126 _t1; t657 _t2 = f934(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t126 _t0 = ({ t126 _t1; t659 _t2 = f934(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -25528,7 +25250,7 @@ static t110 f656(t540 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t254 _t0 = ({ t254 _t1; t658 _t2 = f935(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t254 _t0 = ({ t254 _t1; t660 _t2 = f935(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -25545,16 +25267,16 @@ static t615 f657(t10 l0, t13 l1) {
     t12 l4;
     CTX_STACK_CHECK();
     {
-        if (((*({ t10 _t0 = (l0); uint64_t _t1 = l1; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 534, 16, 12); })) != ((t12)(92ULL)))) {
-            return ({ t12 _t2 = (*({ t10 _t4 = (l0); uint64_t _t5 = l1; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 534, 51, 12); })); t13 _t3 = ctx_add_u64(l1, ((t13)(1ULL)), 534, 65, 12); ((t615){ .m_b = _t2, .m_next = _t3, }); });
+        if (((*({ t10 _t0 = (l0); uint64_t _t1 = l1; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 558, 16, 12); })) != ((t12)(92ULL)))) {
+            return ({ t12 _t2 = (*({ t10 _t4 = (l0); uint64_t _t5 = l1; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 558, 51, 12); })); t13 _t3 = ctx_add_u64(l1, ((t13)(1ULL)), 558, 65, 12); ((t615){ .m_b = _t2, .m_next = _t3, }); });
         }
-        l2 = (*({ t10 _t6 = (l0); uint64_t _t7 = ctx_add_u64(l1, ((t13)(1ULL)), 535, 24, 12); _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 535, 21, 12); }));
+        l2 = (*({ t10 _t6 = (l0); uint64_t _t7 = ctx_add_u64(l1, ((t13)(1ULL)), 559, 24, 12); _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 559, 21, 12); }));
         l3 = ({ t12 _t8; t462 _t9 = f936(l2); if ((_t9.tag == 1)) { l4 = _t9.p.v1.m_value; {
             _t8 = l4;
         } } else if ((_t9.tag == 0)) { {
-            return ({ t12 _t10 = ({ t12 _t12 = ctx_mul_u8(f937((*({ t10 _t14 = (l0); uint64_t _t15 = ctx_add_u64(l1, ((t13)(2ULL)), 537, 52, 12); _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 537, 49, 12); }))), ((t12)(16ULL)), 537, 59, 12); t12 _t13 = f937((*({ t10 _t16 = (l0); uint64_t _t17 = ctx_add_u64(l1, ((t13)(3ULL)), 537, 88, 12); _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 537, 85, 12); }))); ctx_add_u8(_t12, _t13, 537, 64, 12); }); t13 _t11 = ctx_add_u64(l1, ((t13)(4ULL)), 537, 105, 12); ((t615){ .m_b = _t10, .m_next = _t11, }); });
+            return ({ t12 _t10 = ({ t12 _t12 = ctx_mul_u8(f937((*({ t10 _t14 = (l0); uint64_t _t15 = ctx_add_u64(l1, ((t13)(2ULL)), 561, 52, 12); _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 561, 49, 12); }))), ((t12)(16ULL)), 561, 59, 12); t12 _t13 = f937((*({ t10 _t16 = (l0); uint64_t _t17 = ctx_add_u64(l1, ((t13)(3ULL)), 561, 88, 12); _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 561, 85, 12); }))); ctx_add_u8(_t12, _t13, 561, 64, 12); }); t13 _t11 = ctx_add_u64(l1, ((t13)(4ULL)), 561, 105, 12); ((t615){ .m_b = _t10, .m_next = _t11, }); });
         } } _t8; });
-        return ({ t12 _t18 = l3; t13 _t19 = ctx_add_u64(l1, ((t13)(2ULL)), 539, 34, 12); ((t615){ .m_b = _t18, .m_next = _t19, }); });
+        return ({ t12 _t18 = l3; t13 _t19 = ctx_add_u64(l1, ((t13)(2ULL)), 563, 34, 12); ((t615){ .m_b = _t18, .m_next = _t19, }); });
     }
     __builtin_unreachable();
 }
@@ -25642,7 +25364,7 @@ static t110 f663(t542 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t135 _t0 = ({ t135 _t1; t659 _t2 = f938(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t135 _t0 = ({ t135 _t1; t661 _t2 = f938(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -25654,7 +25376,7 @@ static t110 f663(t542 l0, t13 l1) {
 
 // parser::attributes
 static t138 f664(t436 l0, t14 l1) {
-    t660 l2;
+    t662 l2;
     t13 l3;
     t141 l4;
     t141 l5;
@@ -25858,7 +25580,7 @@ static t14 f671(t435 l0) {
 
 // parser::plain_fields
 static t186 f672(t436 l0) {
-    t662 l1;
+    t664 l1;
     t13 l2;
     t147 l3;
     t151 l4;
@@ -25899,7 +25621,7 @@ static t616 f673(t27 l0, t26 l1) {
 
 // parser::cap_fields
 static t186 f674(t436 l0, t617 l1) {
-    t662 l2;
+    t664 l2;
     t138 l3;
     t13 l4;
     t14 l5;
@@ -25960,7 +25682,7 @@ static t151 f676(t436 l0) {
     t33 l2;
     t12 l3;
     t152 l4;
-    t664 l5;
+    t666 l5;
     t95 l6;
     t95 l7;
     t14 l8;
@@ -26078,7 +25800,7 @@ static t141 f677(t436 l0) {
 
 // parser::tparams
 static t182 f678(t436 l0) {
-    t666 l1;
+    t668 l1;
     t95 l2;
     t95 l3;
     CTX_STACK_CHECK();
@@ -26108,7 +25830,7 @@ static t182 f678(t436 l0) {
 
 // parser::enum_variants
 static t193 f679(t436 l0) {
-    t668 l1;
+    t670 l1;
     t13 l2;
     t147 l3;
     t170 l4;
@@ -26143,7 +25865,7 @@ static t193 f679(t436 l0) {
 
 // parser::variants
 static t189 f680(t436 l0) {
-    t670 l1;
+    t672 l1;
     t13 l2;
     t147 l3;
     t192 l4;
@@ -26178,7 +25900,7 @@ static t189 f680(t436 l0) {
 
 // parser::ctx_fields
 static t154 f681(t436 l0) {
-    t672 l1;
+    t674 l1;
     t13 l2;
     t14 l3;
     t147 l4;
@@ -26284,7 +26006,7 @@ static t132 f685(t435 l0) {
 static t164 f686(t436 l0) {
     t13 l1;
     t33 l2;
-    t674 l3;
+    t676 l3;
     t13 l4;
     t95 l5;
     CTX_STACK_CHECK();
@@ -26662,7 +26384,7 @@ static t110 f700(t443 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t440 _t0 = ({ t440 _t1; t676 _t2 = f984(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t440 _t0 = ({ t440 _t1; t678 _t2 = f984(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -27084,7 +26806,7 @@ static t110 f718(t555 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t64 _t0 = ({ t64 _t1; t677 _t2 = f994(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t64 _t0 = ({ t64 _t1; t679 _t2 = f994(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -27109,7 +26831,7 @@ static t68 f719(t96 l0) {
 
 // ir_read::bind_list
 static t619 f720(t96 l0) {
-    t678 l1;
+    t680 l1;
     t33 l2;
     t33 l3;
     t14 l4;
@@ -27299,7 +27021,7 @@ static t565 f731(t10 l0) {
 
 // utf8::is_float_number
 static t14 f732(t17 l0) {
-    t680 l1;
+    t682 l1;
     CTX_STACK_CHECK();
     {
         l1 = f999(l0);
@@ -27366,7 +27088,7 @@ static t110 f735(t570 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t82 _t0 = ({ t82 _t1; t684 _t2 = f1004(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t82 _t0 = ({ t82 _t1; t686 _t2 = f1004(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -28716,7 +28438,7 @@ static t110 f800(t593 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t279 _t0 = ({ t279 _t1; t685 _t2 = f1024(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t279 _t0 = ({ t279 _t1; t687 _t2 = f1024(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -28767,7 +28489,7 @@ static t110 f802(t594 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t283 _t2 = ({ t283 _t3; t686 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t283 _t7 = f799(); t13 _t8 = l1; f1026(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t283 _t2 = ({ t283 _t3; t688 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t283 _t7 = f799(); t13 _t8 = l1; f1026(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -30368,7 +30090,7 @@ static t16 f842(t429 l0) {
     t14 l8;
     t143 l9;
     t33 l10;
-    t693 l11;
+    t695 l11;
     t132 l12;
     t17 l13;
     t17 l14;
@@ -30569,7 +30291,7 @@ static t14 f843(t429 l0, t141 l1, t14 l2) {
     t14 l10;
     t162 l11;
     t153 l12;
-    t694 l13;
+    t696 l13;
     t359 l14;
     t147 l15;
     t162 l16;
@@ -30613,7 +30335,7 @@ static t14 f843(t429 l0, t141 l1, t14 l2) {
             return f843((&(*l0)), (*l12), l2);
         } } else if ((_t6.tag == 6)) { {
             l13 = ({ t355 _t7 = ((*l0)).m_refs; t19 _t8 = f1084(l1); f1087(_t7, _t8); });
-            if ((!({ t14 _t9; t694 _t10 = l13; if ((_t10.tag == 0)) { {
+            if ((!({ t14 _t9; t696 _t10 = l13; if ((_t10.tag == 0)) { {
                 _t9 = ((bool)0);
             } } else if ((_t10.tag == 1)) { l14 = _t10.p.v1.m_value; {
                 _t9 = ({ t14 _t11; t359 _t12 = l14; if ((_t12.tag == 2) || (_t12.tag == 3) || (_t12.tag == 4)) { {
@@ -30826,12 +30548,12 @@ static t595 f852(t429 l0, t33 l1, t141 l2) {
     t19 l12;
     t10 l13;
     t10 l14;
-    t697 l15;
+    t699 l15;
     CTX_STACK_CHECK();
     {
         l3 = (f585((*l0), l1)).m_qual;
         l4 = f1044(l2);
-        l5 = ({ t45 _t0; t696 _t1 = f1104((&(*l0)), l1); if ((_t1.tag == 1)) { l6 = _t1.p.v1.m_value; {
+        l5 = ({ t45 _t0; t698 _t1 = f1104((&(*l0)), l1); if ((_t1.tag == 1)) { l6 = _t1.p.v1.m_value; {
             _t0 = l6;
         } } else if ((_t1.tag == 0)) { {
             return ((t595){0});
@@ -30859,8 +30581,8 @@ static t595 f852(t429 l0, t33 l1, t141 l2) {
                 return ((t595){0});
             } } _t15; });
             f69(l13, l10);
-            l15 = ((t697){ .m_m = (&l9), .m_name = l3, .m_at = l4, });
-            return ({ t429 _t20 = (&(*l0)); t698 _t21 = (&l15); t33 _t22 = (f585((*l0), l1)).m_ty; t19 _t23 = l11; f1106(_t20, _t21, _t22, _t23); });
+            l15 = ((t699){ .m_m = (&l9), .m_name = l3, .m_at = l4, });
+            return ({ t429 _t20 = (&(*l0)); t700 _t21 = (&l15); t33 _t22 = (f585((*l0), l1)).m_ty; t19 _t23 = l11; f1106(_t20, _t21, _t22, _t23); });
         } } else { {
             f1107((&(*l0)), l4, l3, l9, l5);
             return ((t595){0});
@@ -31016,7 +30738,7 @@ static t16 f858(t429 l0, t137 l1, t33 l2, t140 l3, t14 l4) {
     t95 l14;
     t95 l15;
     t424 l16;
-    t699 l17;
+    t701 l17;
     t132 l18;
     t95 l19;
     t95 l20;
@@ -31086,7 +30808,7 @@ static t16 f858(t429 l0, t137 l1, t33 l2, t140 l3, t14 l4) {
                             _t25 = ({ t110 _t27; t110 _t28 = f55((&l18), ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"`: capability ", .m_len = 14 }), })); if ((_t28.tag == 0)) { {
                                 _t27 = ({ t110 _t29; t110 _t30 = f55((&l18), f606((*l0), ((l17).p.v1.m_value).m_ty)); if ((_t30.tag == 0)) { {
                                     _t29 = ({ t110 _t31; t110 _t32 = f55((&l18), ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)" ", .m_len = 1 }), })); if ((_t32.tag == 0)) { {
-                                        _t31 = ({ t110 _t33; t110 _t34 = f55((&l18), f337(qv4)); if ((_t34.tag == 0)) { {
+                                        _t31 = ({ t110 _t33; t110 _t34 = f55((&l18), f337(qv6)); if ((_t34.tag == 0)) { {
                                             _t33 = ((t110){ .tag = 0 });
                                         } } else if ((_t34.tag == 1)) { l19 = _t34.p.v1.m_error; {
                                             _t33 = ((t110){ .tag = 1, .p.v1 = { .m_error = l19, } });
@@ -31281,7 +31003,7 @@ static t110 f863(t597 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t417 _t2 = ({ t417 _t3; t700 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t417 _t7 = f561(); t13 _t8 = l1; f1115(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t417 _t2 = ({ t417 _t3; t702 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t417 _t7 = f561(); t13 _t8 = l1; f1115(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -31890,7 +31612,7 @@ static t110 f882(t600 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t491 _t0 = ({ t491 _t1; t701 _t2 = f1124(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t491 _t0 = ({ t491 _t1; t703 _t2 = f1124(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -31919,7 +31641,7 @@ static t110 f883(t601 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t502 _t0 = ({ t502 _t1; t702 _t2 = f1125(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t502 _t0 = ({ t502 _t1; t704 _t2 = f1125(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -31991,7 +31713,7 @@ static t645 f886(t527 l0, t19 l1) {
         if (((l2).tag != 0)) {
             return ((t645){ .tag = 0, .p.v0 = { .m_value = (l2).p.v1.m_value, } });
         }
-        { t33 _t0 = ({ t33 _t1; t703 _t2 = f1128((&(*l0)), l1, ((bool)1)); if ((_t2.tag == 0)) { l3 = _t2.p.v0.m_value; {
+        { t33 _t0 = ({ t33 _t1; t705 _t2 = f1128((&(*l0)), l1, ((bool)1)); if ((_t2.tag == 0)) { l3 = _t2.p.v0.m_value; {
             _t1 = l3;
         } } else if ((_t2.tag == 1)) { l4 = _t2.p.v1.m_error; {
             return ((t645){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -32374,7 +32096,7 @@ static t110 f899(t605 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t534 _t2 = ({ t534 _t3; t706 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t534 _t7 = f895(); t13 _t8 = l1; f1148(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t534 _t2 = ({ t534 _t3; t708 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t534 _t7 = f895(); t13 _t8 = l1; f1148(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -32432,7 +32154,7 @@ static t110 f901(t606 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t530 _t0 = ({ t530 _t1; t707 _t2 = f1150(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t530 _t0 = ({ t530 _t1; t709 _t2 = f1150(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -32754,7 +32476,7 @@ static t647 f918(t429 l0, t33 l1) {
     t19 l5;
     t19 l6;
     t13 l7;
-    t708 l8;
+    t710 l8;
     CTX_STACK_CHECK();
     {
         l2 = f870((&(*l0)), l1);
@@ -32802,7 +32524,7 @@ static t649 f919(void) {
 // check::union_offsets
 static t651 f920(t429 l0, t33 l1) {
     t293 l2;
-    t709 l3;
+    t711 l3;
     t19 l4;
     t19 l5;
     t13 l6;
@@ -32810,7 +32532,7 @@ static t651 f920(t429 l0, t33 l1) {
     t500 l8;
     t19 l9;
     t13 l10;
-    t708 l11;
+    t710 l11;
     t95 l12;
     t19 l13;
     t19 l14;
@@ -32975,7 +32697,7 @@ static t16 f922(t133 l0, t257 l1, t141 l2, t33 l3) {
     t95 l81;
     t95 l82;
     t13 l83;
-    t711 l84;
+    t713 l84;
     t95 l85;
     t95 l86;
     t95 l87;
@@ -33658,7 +33380,7 @@ static t110 f928(t653 l0, t119 l1) {
 
 // utf8::push_hex(arena::Arena)
 static t110 f929(t133 l0, t19 l1, t13 l2, t14 l3) {
-    t712 l4;
+    t714 l4;
     t95 l5;
     CTX_STACK_CHECK();
     {
@@ -33674,7 +33396,7 @@ static t110 f929(t133 l0, t19 l1, t13 l2, t14 l3) {
 
 // lexer::upper_hex
 static t110 f930(t133 l0, t33 l1) {
-    t714 l2;
+    t716 l2;
     t13 l3;
     t33 l4;
     t12 l5;
@@ -33685,18 +33407,18 @@ static t110 f930(t133 l0, t33 l1) {
         l3 = ((t13)(0ULL));
         l4 = l1;
         while (((l4 > ((t33)(0ULL))) || (l3 < ((t13)(4ULL))))) {
-            l5 = ((t12)(ctx_rem_u32(l4, ((t33)(16ULL)), 368, 34, 12)));
+            l5 = ((t12)(ctx_rem_u32(l4, ((t33)(16ULL)), 392, 34, 12)));
             { t12 _t0 = ({ t12 _t1; if ((l5 < ((t12)(10ULL)))) {
-                _t1 = ctx_add_u8(((t12)(48ULL)), l5, 369, 41, 12);
+                _t1 = ctx_add_u8(((t12)(48ULL)), l5, 393, 41, 12);
             } else {
-                _t1 = ctx_sub_u8(ctx_add_u8(((t12)(65ULL)), l5, 369, 58, 12), ((t12)(10ULL)), 369, 62, 12);
-            } _t1; }); (l2).a[ctx_idx(l3, 8, 369, 19, 12)] = _t0; }
-            l4 = ctx_div_u32(l4, ((t33)(16ULL)), 370, 19, 12);
-            l3 = ctx_add_u64(l3, ((t13)(1ULL)), 371, 19, 12);
+                _t1 = ctx_sub_u8(ctx_add_u8(((t12)(65ULL)), l5, 393, 58, 12), ((t12)(10ULL)), 393, 62, 12);
+            } _t1; }); (l2).a[ctx_idx(l3, 8, 393, 19, 12)] = _t0; }
+            l4 = ctx_div_u32(l4, ((t33)(16ULL)), 394, 19, 12);
+            l3 = ctx_add_u64(l3, ((t13)(1ULL)), 395, 19, 12);
         }
         while ((l3 > ((t13)(0ULL)))) {
-            l3 = ctx_sub_u64(l3, ((t13)(1ULL)), 374, 19, 12);
-            { t110 _t2 = ({ t133 _t3 = (&(*l0)); t33 _t4 = ((t33)((l2).a[ctx_idx(l3, 8, 375, 48, 12)])); f97(_t3, _t4); }); if ((_t2.tag == 0)) { {
+            l3 = ctx_sub_u64(l3, ((t13)(1ULL)), 398, 19, 12);
+            { t110 _t2 = ({ t133 _t3 = (&(*l0)); t33 _t4 = ((t33)((l2).a[ctx_idx(l3, 8, 399, 48, 12)])); f97(_t3, _t4); }); if ((_t2.tag == 0)) { {
             } } else if ((_t2.tag == 1)) { l6 = _t2.p.v1.m_error; {
                 return ((t110){ .tag = 1, .p.v1 = { .m_error = l6, } });
             } } }
@@ -33707,7 +33429,7 @@ static t110 f930(t133 l0, t33 l1) {
 }
 
 // utf8::decode
-static t655 f931(t17 l0, t13 l1) {
+static t656 f931(t17 l0, t13 l1) {
     t33 l2;
     t33 l3;
     t13 l4;
@@ -33719,7 +33441,7 @@ static t655 f931(t17 l0, t13 l1) {
         }
         l2 = ((t33)((*({ t10 _t0 = ((l0).m_bytes); uint64_t _t1 = l1; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 622, 30, 13); }))));
         if ((l2 < ((t33)(128ULL)))) {
-            return ((t655){ .m_c = l2, .m_size = ((t13)(1ULL)), });
+            return ((t656){ .m_c = l2, .m_size = ((t13)(1ULL)), });
         }
         l3 = ((t33)(0ULL));
         l4 = ((t13)(4ULL));
@@ -33739,41 +33461,41 @@ static t655 f931(t17 l0, t13 l1) {
             l3 = ({ t33 _t2 = ctx_mul_u32(l3, ((t33)(64ULL)), 637, 19, 13); t33 _t3 = ((t33)(ctx_sub_u8((*({ t10 _t4 = ((l0).m_bytes); uint64_t _t5 = ctx_add_u64(l1, l5, 637, 37, 13); _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 637, 34, 13); })), ((t12)(128ULL)), 637, 42, 13))); ctx_add_u32(_t2, _t3, 637, 24, 13); });
             l5 = ctx_add_u64(l5, ((t13)(1ULL)), 638, 19, 13);
         }
-        return ((t655){ .m_c = l3, .m_size = l4, });
+        return ((t656){ .m_c = l3, .m_size = l4, });
     }
     __builtin_unreachable();
 }
 
 // lexer::char_at
-static t656 f932(t10 l0, t13 l1) {
+static t657 f932(t10 l0, t13 l1) {
     t12 l2;
     t12 l3;
     CTX_STACK_CHECK();
     {
-        if (((l1 >= (l0).m_len) || ((*({ t10 _t0 = (l0); uint64_t _t1 = l1; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 273, 33, 12); })) == ((t12)(10ULL))))) {
-            return ((t656){ .m_next = l1, .m_problem = ((t611){ .tag = 1, .p.v1.m_value = ((t612){ .tag = 0 }) }), });
+        if (((l1 >= (l0).m_len) || ((*({ t10 _t0 = (l0); uint64_t _t1 = l1; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 297, 33, 12); })) == ((t12)(10ULL))))) {
+            return ((t657){ .m_next = l1, .m_problem = ((t611){ .tag = 1, .p.v1.m_value = ((t612){ .tag = 0 }) }), });
         }
-        l2 = (*({ t10 _t2 = (l0); uint64_t _t3 = l1; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 274, 21, 12); }));
+        l2 = (*({ t10 _t2 = (l0); uint64_t _t3 = l1; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 298, 21, 12); }));
         if ((l2 != ((t12)(92ULL)))) {
             if ((l2 >= ((t12)(128ULL)))) {
-                return ((t656){ .m_next = l1, .m_problem = ((t611){ .tag = 1, .p.v1.m_value = ((t612){ .tag = 1, .p.v1 = { .m_at = l1, } }) }), });
+                return ((t657){ .m_next = l1, .m_problem = ((t611){ .tag = 1, .p.v1.m_value = ((t612){ .tag = 1, .p.v1 = { .m_at = l1, } }) }), });
             }
-            return ((t656){ .m_next = ctx_add_u64(l1, ((t13)(1ULL)), 277, 37, 12), .m_problem = ((t611){0}), });
+            return ((t657){ .m_next = ctx_add_u64(l1, ((t13)(1ULL)), 301, 37, 12), .m_problem = ((t611){0}), });
         }
-        if (({ t13 _t4 = ctx_add_u64(l1, ((t13)(1ULL)), 279, 14, 12); t13 _t5 = (l0).m_len; (_t4 >= _t5); })) {
-            return ((t656){ .m_next = l1, .m_problem = ((t611){ .tag = 1, .p.v1.m_value = ((t612){ .tag = 0 }) }), });
+        if (({ t13 _t4 = ctx_add_u64(l1, ((t13)(1ULL)), 303, 14, 12); t13 _t5 = (l0).m_len; (_t4 >= _t5); })) {
+            return ((t657){ .m_next = l1, .m_problem = ((t611){ .tag = 1, .p.v1.m_value = ((t612){ .tag = 0 }) }), });
         }
-        l3 = (*({ t10 _t6 = (l0); uint64_t _t7 = ctx_add_u64(l1, ((t13)(1ULL)), 280, 24, 12); _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 280, 21, 12); }));
+        l3 = (*({ t10 _t6 = (l0); uint64_t _t7 = ctx_add_u64(l1, ((t13)(1ULL)), 304, 24, 12); _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 304, 21, 12); }));
         if (((f936(l3)).tag != 0)) {
-            return ((t656){ .m_next = ctx_add_u64(l1, ((t13)(2ULL)), 281, 58, 12), .m_problem = ((t611){0}), });
+            return ((t657){ .m_next = ctx_add_u64(l1, ((t13)(2ULL)), 305, 58, 12), .m_problem = ((t611){0}), });
         }
         if ((l3 == ((t12)(120ULL)))) {
-            if ((f652(({ t10 _t8 = l0; t13 _t9 = ctx_add_u64(l1, ((t13)(2ULL)), 283, 50, 12); f158(_t8, _t9); })) && f652(({ t10 _t10 = l0; t13 _t11 = ctx_add_u64(l1, ((t13)(3ULL)), 283, 96, 12); f158(_t10, _t11); })))) {
-                return ((t656){ .m_next = ctx_add_u64(l1, ((t13)(4ULL)), 284, 41, 12), .m_problem = ((t611){0}), });
+            if ((f652(({ t10 _t8 = l0; t13 _t9 = ctx_add_u64(l1, ((t13)(2ULL)), 307, 50, 12); f158(_t8, _t9); })) && f652(({ t10 _t10 = l0; t13 _t11 = ctx_add_u64(l1, ((t13)(3ULL)), 307, 96, 12); f158(_t10, _t11); })))) {
+                return ((t657){ .m_next = ctx_add_u64(l1, ((t13)(4ULL)), 308, 41, 12), .m_problem = ((t611){0}), });
             }
-            return ((t656){ .m_next = l1, .m_problem = ((t611){ .tag = 1, .p.v1.m_value = ((t612){ .tag = 2 }) }), });
+            return ((t657){ .m_next = l1, .m_problem = ((t611){ .tag = 1, .p.v1.m_value = ((t612){ .tag = 2 }) }), });
         }
-        return ({ t13 _t12 = l1; t611 _t13 = ((t611){ .tag = 1, .p.v1.m_value = ((t612){ .tag = 3, .p.v3 = { .m_at = ctx_add_u64(l1, ((t13)(1ULL)), 288, 76, 12), } }) }); ((t656){ .m_next = _t12, .m_problem = _t13, }); });
+        return ({ t13 _t12 = l1; t611 _t13 = ((t611){ .tag = 1, .p.v1.m_value = ((t612){ .tag = 3, .p.v3 = { .m_at = ctx_add_u64(l1, ((t13)(1ULL)), 312, 76, 12), } }) }); ((t657){ .m_next = _t12, .m_problem = _t13, }); });
     }
     __builtin_unreachable();
 }
@@ -33797,7 +33519,7 @@ static t110 f933(t614 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t129 _t0 = ({ t129 _t1; t715 _t2 = f1185(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t129 _t0 = ({ t129 _t1; t717 _t2 = f1185(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -33808,7 +33530,7 @@ static t110 f933(t614 l0, t13 l1) {
 }
 
 // alloc::resize(tok::Token, arena::Arena)
-static t657 f934(t27 l0, t26 l1, t126 l2, t13 l3) {
+static t659 f934(t27 l0, t26 l1, t126 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -33816,15 +33538,15 @@ static t657 f934(t27 l0, t26 l1, t126 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1186(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(16ULL)), 23, 25, 21); t13 _t6 = ((t13)(4ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t657){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t659){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t657){ .tag = 0, .p.v0 = { .m_value = f1187(l4), } });
+        return ((t659){ .tag = 0, .p.v0 = { .m_value = f1187(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(u32, arena::Arena)
-static t658 f935(t27 l0, t26 l1, t254 l2, t13 l3) {
+static t660 f935(t27 l0, t26 l1, t254 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -33832,9 +33554,9 @@ static t658 f935(t27 l0, t26 l1, t254 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1188(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(4ULL)), 23, 25, 21); t13 _t6 = ((t13)(4ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t658){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t660){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t658){ .tag = 0, .p.v0 = { .m_value = f1189(l4), } });
+        return ((t660){ .tag = 0, .p.v0 = { .m_value = f1189(l4), } });
     }
     __builtin_unreachable();
 }
@@ -33868,18 +33590,18 @@ static t12 f937(t12 l0) {
     CTX_STACK_CHECK();
     {
         if (f350(l0)) {
-            return ctx_sub_u8(l0, ((t12)(48ULL)), 543, 37, 12);
+            return ctx_sub_u8(l0, ((t12)(48ULL)), 567, 37, 12);
         }
         if ((l0 >= ((t12)(97ULL)))) {
-            return ctx_add_u8(ctx_sub_u8(l0, ((t12)(97ULL)), 544, 32, 12), ((t12)(10ULL)), 544, 38, 12);
+            return ctx_add_u8(ctx_sub_u8(l0, ((t12)(97ULL)), 568, 32, 12), ((t12)(10ULL)), 568, 38, 12);
         }
-        return ctx_add_u8(ctx_sub_u8(l0, ((t12)(65ULL)), 545, 18, 12), ((t12)(10ULL)), 545, 24, 12);
+        return ctx_add_u8(ctx_sub_u8(l0, ((t12)(65ULL)), 569, 18, 12), ((t12)(10ULL)), 569, 24, 12);
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(syntax::Decl, arena::Arena)
-static t659 f938(t27 l0, t26 l1, t135 l2, t13 l3) {
+static t661 f938(t27 l0, t26 l1, t135 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -33887,18 +33609,18 @@ static t659 f938(t27 l0, t26 l1, t135 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1190(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(248ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t659){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t661){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t659){ .tag = 0, .p.v0 = { .m_value = f1191(l4), } });
+        return ((t661){ .tag = 0, .p.v0 = { .m_value = f1191(l4), } });
     }
     __builtin_unreachable();
 }
 
 // list::new(syntax::Attr, arena::Arena)
-static t660 f939(t27 l0, t26 l1) {
+static t662 f939(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t138 _t0 = f952(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t660){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t138 _t0 = f952(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t662){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
@@ -33983,7 +33705,7 @@ static t153 f941(t436 l0, t141 l1) {
     t95 l4;
     CTX_STACK_CHECK();
     {
-        l2 = ({ t153 _t0; t716 _t1 = f1198((&g13), ((*l0)).m_heap, l1); if ((_t1.tag == 0)) { l3 = _t1.p.v0.m_value; {
+        l2 = ({ t153 _t0; t718 _t1 = f1198((&g13), ((*l0)).m_heap, l1); if ((_t1.tag == 0)) { l3 = _t1.p.v0.m_value; {
             _t0 = l3;
         } } else if ((_t1.tag == 1)) { l4 = _t1.p.v1.m_error; {
             { t95 _t2 = l4; if ((_t2.tag == 0)) { {
@@ -34007,7 +33729,7 @@ static t159 f942(void) {
 }
 
 // list::push(syntax::Attr, arena::Arena)
-static t110 f943(t661 l0, t140 l1) {
+static t110 f943(t663 l0, t140 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -34032,7 +33754,7 @@ static t14 f944(t12 l0) {
 }
 
 // list::items(syntax::Attr, arena::Arena)
-static t138 f945(t660 l0) {
+static t138 f945(t662 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t138 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t138){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -34123,10 +33845,10 @@ static t10 f948(t435 l0, t128 l1) {
 }
 
 // list::new(syntax::Field, arena::Arena)
-static t662 f949(t27 l0, t26 l1) {
+static t664 f949(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t186 _t0 = f817(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t662){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t186 _t0 = f817(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t664){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
@@ -34141,7 +33863,7 @@ static t14 f950(t435 l0, t12 l1) {
 }
 
 // list::push(syntax::Field, arena::Arena)
-static t110 f951(t663 l0, t188 l1) {
+static t110 f951(t665 l0, t188 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -34168,7 +33890,7 @@ static t138 f952(void) {
 }
 
 // list::items(syntax::Field, arena::Arena)
-static t186 f953(t662 l0) {
+static t186 f953(t664 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t186 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t186){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -34218,16 +33940,16 @@ static t14 f956(t436 l0) {
 }
 
 // list::new(syntax::Seg, arena::Arena)
-static t664 f957(t27 l0, t26 l1) {
+static t666 f957(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t144 _t0 = f1203(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t664){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t144 _t0 = f1203(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t666){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // list::push(syntax::Seg, arena::Arena)
-static t110 f958(t665 l0, t146 l1) {
+static t110 f958(t667 l0, t146 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -34260,7 +33982,7 @@ static t146 f959(t436 l0) {
 }
 
 // list::items(syntax::Seg, arena::Arena)
-static t144 f960(t664 l0) {
+static t144 f960(t666 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t144 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t144){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -34275,7 +33997,7 @@ static t150 f961(t436 l0, t151 l1) {
     t95 l4;
     CTX_STACK_CHECK();
     {
-        l2 = ({ t150 _t0; t717 _t1 = f1206((&g13), ((*l0)).m_heap, l1); if ((_t1.tag == 0)) { l3 = _t1.p.v0.m_value; {
+        l2 = ({ t150 _t0; t719 _t1 = f1206((&g13), ((*l0)).m_heap, l1); if ((_t1.tag == 0)) { l3 = _t1.p.v0.m_value; {
             _t0 = l3;
         } } else if ((_t1.tag == 1)) { l4 = _t1.p.v1.m_error; {
             { t95 _t2 = l4; if ((_t2.tag == 0)) { {
@@ -34321,16 +34043,16 @@ static t141 f963(t436 l0) {
 }
 
 // list::new(syntax::Name, arena::Arena)
-static t666 f964(t27 l0, t26 l1) {
+static t668 f964(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t182 _t0 = f377(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t666){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t182 _t0 = f377(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t668){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // list::push(syntax::Name, arena::Arena)
-static t110 f965(t667 l0, t147 l1) {
+static t110 f965(t669 l0, t147 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -34346,7 +34068,7 @@ static t110 f965(t667 l0, t147 l1) {
 }
 
 // list::items(syntax::Name, arena::Arena)
-static t182 f966(t666 l0) {
+static t182 f966(t668 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t182 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t182){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -34355,16 +34077,16 @@ static t182 f966(t666 l0) {
 }
 
 // list::new(syntax::EnumVariant, arena::Arena)
-static t668 f967(t27 l0, t26 l1) {
+static t670 f967(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t193 _t0 = f1210(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t668){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t193 _t0 = f1210(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t670){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // list::push(syntax::EnumVariant, arena::Arena)
-static t110 f968(t669 l0, t195 l1) {
+static t110 f968(t671 l0, t195 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -34380,7 +34102,7 @@ static t110 f968(t669 l0, t195 l1) {
 }
 
 // list::items(syntax::EnumVariant, arena::Arena)
-static t193 f969(t668 l0) {
+static t193 f969(t670 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t193 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t193){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -34389,16 +34111,16 @@ static t193 f969(t668 l0) {
 }
 
 // list::new(syntax::Variant, arena::Arena)
-static t670 f970(t27 l0, t26 l1) {
+static t672 f970(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t189 _t0 = f1212(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t670){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t189 _t0 = f1212(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t672){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // list::push(syntax::Variant, arena::Arena)
-static t110 f971(t671 l0, t191 l1) {
+static t110 f971(t673 l0, t191 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -34414,7 +34136,7 @@ static t110 f971(t671 l0, t191 l1) {
 }
 
 // list::items(syntax::Variant, arena::Arena)
-static t189 f972(t670 l0) {
+static t189 f972(t672 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t189 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t189){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -34423,16 +34145,16 @@ static t189 f972(t670 l0) {
 }
 
 // list::new(syntax::Param, arena::Arena)
-static t672 f973(t27 l0, t26 l1) {
+static t674 f973(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t154 _t0 = f1214(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t672){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t154 _t0 = f1214(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t674){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // list::push(syntax::Param, arena::Arena)
-static t110 f974(t673 l0, t156 l1) {
+static t110 f974(t675 l0, t156 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -34448,7 +34170,7 @@ static t110 f974(t673 l0, t156 l1) {
 }
 
 // list::items(syntax::Param, arena::Arena)
-static t154 f975(t672 l0) {
+static t154 f975(t674 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t154 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t154){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -34457,16 +34179,16 @@ static t154 f975(t672 l0) {
 }
 
 // list::new(syntax::Stmt, arena::Arena)
-static t674 f976(t27 l0, t26 l1) {
+static t676 f976(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t165 _t0 = f683(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t674){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t165 _t0 = f683(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t676){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // list::items(syntax::Stmt, arena::Arena)
-static t165 f977(t674 l0) {
+static t165 f977(t676 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t165 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t165){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -34475,7 +34197,7 @@ static t165 f977(t674 l0) {
 }
 
 // list::push(syntax::Stmt, arena::Arena)
-static t110 f978(t675 l0, t167 l1) {
+static t110 f978(t677 l0, t167 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -34653,7 +34375,7 @@ static t16 f983(t438 l0, t33 l1, t17 l2, t174 l3) {
 }
 
 // alloc::resize(recover::Symbol, arena::Arena)
-static t676 f984(t27 l0, t26 l1, t440 l2, t13 l3) {
+static t678 f984(t27 l0, t26 l1, t440 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -34661,9 +34383,9 @@ static t676 f984(t27 l0, t26 l1, t440 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1224(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(40ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t676){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t678){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t676){ .tag = 0, .p.v0 = { .m_value = f1225(l4), } });
+        return ((t678){ .tag = 0, .p.v0 = { .m_value = f1225(l4), } });
     }
     __builtin_unreachable();
 }
@@ -34886,7 +34608,7 @@ static t465 f993(t27 l0, t26 l1, t62 l2, t13 l3) {
 }
 
 // alloc::resize(ir::Stmt, arena::Arena)
-static t677 f994(t27 l0, t26 l1, t64 l2, t13 l3) {
+static t679 f994(t27 l0, t26 l1, t64 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -34894,24 +34616,24 @@ static t677 f994(t27 l0, t26 l1, t64 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1231(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(152ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t677){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t679){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t677){ .tag = 0, .p.v0 = { .m_value = f1232(l4), } });
+        return ((t679){ .tag = 0, .p.v0 = { .m_value = f1232(l4), } });
     }
     __builtin_unreachable();
 }
 
 // list::new(ir::Bind, arena::Arena)
-static t678 f995(t27 l0, t26 l1) {
+static t680 f995(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t76 _t0 = f1233(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t678){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t76 _t0 = f1233(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t680){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // list::push(ir::Bind, arena::Arena)
-static t110 f996(t679 l0, t78 l1) {
+static t110 f996(t681 l0, t78 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -34927,7 +34649,7 @@ static t110 f996(t679 l0, t78 l1) {
 }
 
 // list::items(ir::Bind, arena::Arena)
-static t76 f997(t678 l0) {
+static t76 f997(t680 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t76 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t76){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -34952,17 +34674,17 @@ static t464 f998(t27 l0, t26 l1, t59 l2, t13 l3) {
 }
 
 // utf8::cursor
-static t680 f999(t17 l0) {
+static t682 f999(t17 l0) {
     CTX_STACK_CHECK();
     {
-        return ((t680){ .m_s = l0, .m_pos = ((t13)(0ULL)), });
+        return ((t682){ .m_s = l0, .m_pos = ((t13)(0ULL)), });
     }
     __builtin_unreachable();
 }
 
 // utf8::eat
-static t14 f1000(t681 l0, t33 l1) {
-    t655 l2;
+static t14 f1000(t683 l0, t33 l1) {
+    t656 l2;
     CTX_STACK_CHECK();
     {
         if (f1003((*l0))) {
@@ -34979,15 +34701,15 @@ static t14 f1000(t681 l0, t33 l1) {
 }
 
 // utf8::take_while
-static t17 f1001(t681 l0, t683 l1) {
+static t17 f1001(t683 l0, t685 l1) {
     t13 l2;
-    t655 l3;
+    t656 l3;
     CTX_STACK_CHECK();
     {
         l2 = ((*l0)).m_pos;
         while ((!f1003((*l0)))) {
             l3 = f931(((*l0)).m_s, ((*l0)).m_pos);
-            if ((!({ ctx_fn *_t0 = l1; ((c683)_t0->code)(_t0, (l3).m_c); }))) {
+            if ((!({ ctx_fn *_t0 = l1; ((c685)_t0->code)(_t0, (l3).m_c); }))) {
                  break;
             }
             { t13 _t1 = ctx_add_u64(((*l0)).m_pos, (l3).m_size, 437, 31, 13); ((*l0)).m_pos = _t1; }
@@ -35007,7 +34729,7 @@ static t14 f1002(t33 l0) {
 }
 
 // utf8::done
-static t14 f1003(t680 l0) {
+static t14 f1003(t682 l0) {
     CTX_STACK_CHECK();
     {
         return ((l0).m_pos >= (((l0).m_s).m_bytes).m_len);
@@ -35016,7 +34738,7 @@ static t14 f1003(t680 l0) {
 }
 
 // alloc::resize(ir::Int, arena::Arena)
-static t684 f1004(t27 l0, t26 l1, t82 l2, t13 l3) {
+static t686 f1004(t27 l0, t26 l1, t82 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -35024,9 +34746,9 @@ static t684 f1004(t27 l0, t26 l1, t82 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1238(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(16ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t684){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t686){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t684){ .tag = 0, .p.v0 = { .m_value = f1239(l4), } });
+        return ((t686){ .tag = 0, .p.v0 = { .m_value = f1239(l4), } });
     }
     __builtin_unreachable();
 }
@@ -35159,7 +34881,7 @@ static t110 f1011(t622 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t233 _t0 = ({ t233 _t1; t718 _t2 = f1249(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t233 _t0 = ({ t233 _t1; t720 _t2 = f1249(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -35188,7 +34910,7 @@ static t110 f1012(t623 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t237 _t0 = ({ t237 _t1; t719 _t2 = f1250(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t237 _t0 = ({ t237 _t1; t721 _t2 = f1250(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -35355,7 +35077,7 @@ static t110 f1021(t628 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t260 _t0 = ({ t260 _t1; t720 _t2 = f1253(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t260 _t0 = ({ t260 _t1; t722 _t2 = f1253(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -35381,7 +35103,7 @@ static t110 f1022(t629 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t267 _t2 = ({ t267 _t3; t721 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t267 _t7 = f790(); t13 _t8 = l1; f1254(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t267 _t2 = ({ t267 _t3; t723 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t267 _t7 = f790(); t13 _t8 = l1; f1254(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -35421,7 +35143,7 @@ static t13 f1023(t266 l0, t262 l1) {
 }
 
 // alloc::resize(check::Space, arena::Arena)
-static t685 f1024(t27 l0, t26 l1, t279 l2, t13 l3) {
+static t687 f1024(t27 l0, t26 l1, t279 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -35429,9 +35151,9 @@ static t685 f1024(t27 l0, t26 l1, t279 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1256(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(168ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t685){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t687){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t685){ .tag = 0, .p.v0 = { .m_value = f1257(l4), } });
+        return ((t687){ .tag = 0, .p.v0 = { .m_value = f1257(l4), } });
     }
     __builtin_unreachable();
 }
@@ -35450,7 +35172,7 @@ static t13 f1025(t282 l0, t10 l1) {
 }
 
 // alloc::resize(map::Slot([]u8, check::Entry), arena::Arena)
-static t686 f1026(t27 l0, t26 l1, t283 l2, t13 l3) {
+static t688 f1026(t27 l0, t26 l1, t283 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -35458,9 +35180,9 @@ static t686 f1026(t27 l0, t26 l1, t283 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1258(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t686){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t688){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t686){ .tag = 0, .p.v0 = { .m_value = f1259(l4), } });
+        return ((t688){ .tag = 0, .p.v0 = { .m_value = f1259(l4), } });
     }
     __builtin_unreachable();
 }
@@ -35523,7 +35245,7 @@ static t299 f1031(void) {
 }
 
 // list::push(check::Decl, arena::Arena)
-static t110 f1032(t687 l0, t292 l1) {
+static t110 f1032(t689 l0, t292 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -35563,7 +35285,7 @@ static t110 f1034(t631 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t310 _t2 = ({ t310 _t3; t722 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t310 _t7 = f539(); t13 _t8 = l1; f1261(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t310 _t2 = ({ t310 _t3; t724 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t310 _t7 = f539(); t13 _t8 = l1; f1261(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -36244,7 +35966,7 @@ static t16 f1060(t429 l0, t17 l1, t154 l2, t424 l3, t263 l4, t33 l5) {
 }
 
 // list::clear(syntax::Expr, arena::Arena)
-static t16 f1061(t688 l0) {
+static t16 f1061(t690 l0) {
     CTX_STACK_CHECK();
     {
         ((*l0)).m_len = ((t13)(0ULL));
@@ -36252,7 +35974,7 @@ static t16 f1061(t688 l0) {
 }
 
 // list::clear(check::GVar, arena::Arena)
-static t16 f1062(t689 l0) {
+static t16 f1062(t691 l0) {
     CTX_STACK_CHECK();
     {
         ((*l0)).m_len = ((t13)(0ULL));
@@ -36260,7 +35982,7 @@ static t16 f1062(t689 l0) {
 }
 
 // list::clear(check::Binding, arena::Arena)
-static t16 f1063(t690 l0) {
+static t16 f1063(t692 l0) {
     CTX_STACK_CHECK();
     {
         ((*l0)).m_len = ((t13)(0ULL));
@@ -36268,7 +35990,7 @@ static t16 f1063(t690 l0) {
 }
 
 // list::clear(usize, arena::Arena)
-static t16 f1064(t691 l0) {
+static t16 f1064(t693 l0) {
     CTX_STACK_CHECK();
     {
         ((*l0)).m_len = ((t13)(0ULL));
@@ -36276,7 +35998,7 @@ static t16 f1064(t691 l0) {
 }
 
 // list::clear(check::Loop, arena::Arena)
-static t16 f1065(t692 l0) {
+static t16 f1065(t694 l0) {
     CTX_STACK_CHECK();
     {
         ((*l0)).m_len = ((t13)(0ULL));
@@ -36328,7 +36050,7 @@ static t162 f1069(t326 l0) {
 
 // check::open_holes
 static t16 f1070(t429 l0, t141 l1) {
-    t711 l2;
+    t713 l2;
     t162 l3;
     t13 l4;
     t13 l5;
@@ -36437,7 +36159,7 @@ static t14 f1073(t592 l0, t33 l1, t33 l2) {
     t14 l41;
     t13 l42;
     t265 l43;
-    t699 l44;
+    t701 l44;
     CTX_STACK_CHECK();
     {
         l3 = f822((*l0), l1);
@@ -36507,8 +36229,8 @@ static t14 f1073(t592 l0, t33 l1, t33 l2) {
             l42 = ((t13)(0ULL));
             while ((l42 < (l34).m_len)) {
                 l43 = (*({ t263 _t17 = (l34); uint64_t _t18 = l42; _t17.m_ptr + ctx_idx(_t18, _t17.m_len, 488, 35, 22); }));
-                l44 = ({ t699 _t19; if (l37) {
-                    _t19 = ((t699){ .tag = 1, .p.v1.m_value = (*({ t263 _t20 = (l38); uint64_t _t21 = l42; _t20.m_ptr + ctx_idx(_t21, _t20.m_len, 490, 53, 22); })) });
+                l44 = ({ t701 _t19; if (l37) {
+                    _t19 = ((t701){ .tag = 1, .p.v1.m_value = (*({ t263 _t20 = (l38); uint64_t _t21 = l42; _t20.m_ptr + ctx_idx(_t21, _t20.m_len, 490, 53, 22); })) });
                 } else {
                     _t19 = f1286(l38, (l43).m_name);
                 } _t19; });
@@ -36530,7 +36252,7 @@ static t14 f1073(t592 l0, t33 l1, t33 l2) {
 
 // check::fmt_calls
 static t16 f1074(t429 l0, t141 l1) {
-    t711 l2;
+    t713 l2;
     t384 l3;
     t162 l4;
     t13 l5;
@@ -36630,14 +36352,14 @@ static t16 f1074(t429 l0, t141 l1) {
 }
 
 // types::prim_of
-static t693 f1075(t258 l0, t33 l1) {
+static t695 f1075(t258 l0, t33 l1) {
     t12 l2;
     CTX_STACK_CHECK();
     {
         { t262 _t0 = f609(l0, l1); if ((_t0.tag == 3)) { l2 = _t0.p.v3.m_p; {
-            return ((t693){ .tag = 1, .p.v1.m_value = l2 });
+            return ((t695){ .tag = 1, .p.v1.m_value = l2 });
         } } else { {
-            return ((t693){0});
+            return ((t695){0});
         } } }
     }
     __builtin_unreachable();
@@ -36763,7 +36485,7 @@ static t110 f1078(t257 l0, t33 l1, t133 l2) {
 
 // check::fmt_widths
 static t16 f1079(t429 l0, t141 l1) {
-    t711 l2;
+    t713 l2;
     t162 l3;
     t13 l4;
     t13 l5;
@@ -36987,7 +36709,7 @@ static t14 f1086(t429 l0, t162 l1, t14 l2) {
 }
 
 // map::get(u64, check::PathRef, arena::Arena)
-static t694 f1087(t355 l0, t19 l1) {
+static t696 f1087(t355 l0, t19 l1) {
     t630 l2;
     t359 l3;
     CTX_STACK_CHECK();
@@ -36995,11 +36717,11 @@ static t694 f1087(t355 l0, t19 l1) {
         l2 = f1294(l0, l1);
         if (((l2).tag != 0)) {
             { t358 _t0 = (*({ t356 _t1 = ((l0).m_slots); uint64_t _t2 = (l2).p.v1.m_value; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 56, 26, 25); })); if ((_t0.tag == 2)) { l3 = _t0.p.v2.m_v; {
-                return ((t694){ .tag = 1, .p.v1.m_value = l3 });
+                return ((t696){ .tag = 1, .p.v1.m_value = l3 });
             } } else { {
             } } }
         }
-        return ((t694){0});
+        return ((t696){0});
     }
     __builtin_unreachable();
 }
@@ -37074,7 +36796,7 @@ static t110 f1091(t642 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t395 _t2 = ({ t395 _t3; t725 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t395 _t7 = f556(); t13 _t8 = l1; f1297(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t395 _t2 = ({ t395 _t3; t727 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t395 _t7 = f556(); t13 _t8 = l1; f1297(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -37161,7 +36883,7 @@ static t391 f1095(void) {
 }
 
 // list::push(check::Var, arena::Arena)
-static t110 f1096(t695 l0, t334 l1) {
+static t110 f1096(t697 l0, t334 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -37312,7 +37034,7 @@ static t402 f1103(t257 l0, t402 l1, t33 l2) {
 }
 
 // lower::initializer
-static t696 f1104(t429 l0, t33 l1) {
+static t698 f1104(t429 l0, t33 l1) {
     t528 l2;
     t33 l3;
     t45 l4;
@@ -37322,9 +37044,9 @@ static t696 f1104(t429 l0, t33 l1) {
         l3 = ({ t537 _t0 = (&l2); t33 _t1 = l1; t254 _t2 = f334(); f333(_t0, _t1, _t2); });
         l4 = f335((&l2), l3);
         if ((l2).m_failed) {
-            return ((t696){0});
+            return ((t698){0});
         }
-        return ((t696){ .tag = 1, .p.v1.m_value = l4 });
+        return ((t698){ .tag = 1, .p.v1.m_value = l4 });
     }
     __builtin_unreachable();
 }
@@ -37367,7 +37089,7 @@ static t16 f1105(t429 l0, t121 l1, t10 l2, t17 l3) {
 }
 
 // comptime::back
-static t595 f1106(t429 l0, t698 l1, t33 l2, t19 l3) {
+static t595 f1106(t429 l0, t700 l1, t33 l2, t19 l3) {
     t33 l4;
     t12 l5;
     t33 l6;
@@ -37380,7 +37102,7 @@ static t595 f1106(t429 l0, t698 l1, t33 l2, t19 l3) {
     t324 l13;
     t10 l14;
     t10 l15;
-    t728 l16;
+    t730 l16;
     t19 l17;
     t402 l18;
     t402 l19;
@@ -37402,7 +37124,7 @@ static t595 f1106(t429 l0, t698 l1, t33 l2, t19 l3) {
     t402 l35;
     t648 l36;
     t648 l37;
-    t728 l38;
+    t730 l38;
     t13 l39;
     t402 l40;
     t402 l41;
@@ -37422,7 +37144,7 @@ static t595 f1106(t429 l0, t698 l1, t33 l2, t19 l3) {
         { t262 _t0 = f609(((*l0)).m_ty, l4); if ((_t0.tag == 3)) { l5 = _t0.p.v3.m_p; {
             return f1307((&(*l1)), l4, l5, l3);
         } } else if ((_t0.tag == 11)) { l6 = _t0.p.v11.m_decl; {
-            l7 = ({ t12 _t1; t693 _t2 = ({ t258 _t3 = ((*l0)).m_ty; t33 _t4 = ({ t258 _t5 = ((*l0)).m_ty; t33 _t6 = (f585((*l0), l6)).m_ty; f822(_t5, _t6); }); f1075(_t3, _t4); }); if ((_t2.tag == 1)) { l8 = _t2.p.v1.m_value; {
+            l7 = ({ t12 _t1; t695 _t2 = ({ t258 _t3 = ((*l0)).m_ty; t33 _t4 = ({ t258 _t5 = ((*l0)).m_ty; t33 _t6 = (f585((*l0), l6)).m_ty; f822(_t5, _t6); }); f1075(_t3, _t4); }); if ((_t2.tag == 1)) { l8 = _t2.p.v1.m_value; {
                 _t1 = l8;
             } } else if ((_t2.tag == 0)) { {
                 return ((t595){0});
@@ -37430,7 +37152,7 @@ static t595 f1106(t429 l0, t698 l1, t33 l2, t19 l3) {
             return f1307((&(*l1)), l4, l7, l3);
         } } else if ((_t0.tag == 7)) { l9 = _t0.p.v7.m_n; l10 = _t0.p.v7.m_elem; {
             l11 = f822(((*l0)).m_ty, l10);
-            l12 = ({ t324 _t7; t708 _t8 = f1162((&(*l0)), l11); if ((_t8.tag == 1)) { l13 = _t8.p.v1.m_value; {
+            l12 = ({ t324 _t7; t710 _t8 = f1162((&(*l0)), l11); if ((_t8.tag == 1)) { l13 = _t8.p.v1.m_value; {
                 _t7 = l13;
             } } else if ((_t8.tag == 0)) { {
                 return ((t595){0});
@@ -37446,7 +37168,7 @@ static t595 f1106(t429 l0, t698 l1, t33 l2, t19 l3) {
             l16 = f1310((&g13), ((*l0)).m_heap);
             l17 = ((t19)(0ULL));
             while ((l17 < l9)) {
-                l18 = ({ t402 _t13; t595 _t14 = ({ t429 _t15 = (&(*l0)); t698 _t16 = (&(*l1)); t33 _t17 = l11; t19 _t18 = ({ t19 _t19 = l3; t19 _t20 = ctx_mul_u64(l17, (l12).m_size, 122, 61, 26); ctx_add_u64(_t19, _t20, 122, 57, 26); }); f1106(_t15, _t16, _t17, _t18); }); if ((_t14.tag == 1)) { l19 = _t14.p.v1.m_value; {
+                l18 = ({ t402 _t13; t595 _t14 = ({ t429 _t15 = (&(*l0)); t700 _t16 = (&(*l1)); t33 _t17 = l11; t19 _t18 = ({ t19 _t19 = l3; t19 _t20 = ctx_mul_u64(l17, (l12).m_size, 122, 61, 26); ctx_add_u64(_t19, _t20, 122, 57, 26); }); f1106(_t15, _t16, _t17, _t18); }); if ((_t14.tag == 1)) { l19 = _t14.p.v1.m_value; {
                     _t13 = l19;
                 } } else if ((_t14.tag == 0)) { {
                     return ((t595){0});
@@ -37466,7 +37188,7 @@ static t595 f1106(t429 l0, t698 l1, t33 l2, t19 l3) {
             } } else if ((_t26.tag == 0)) { {
                 return ((t595){0});
             } } _t25; });
-            l25 = ({ t19 _t27; t143 _t28 = ({ t698 _t29 = (&(*l1)); t19 _t30 = ctx_add_u64(l3, ((t19)(8ULL)), 130, 43, 26); f1313(_t29, _t30); }); if ((_t28.tag == 1)) { l26 = _t28.p.v1.m_value; {
+            l25 = ({ t19 _t27; t143 _t28 = ({ t700 _t29 = (&(*l1)); t19 _t30 = ctx_add_u64(l3, ((t19)(8ULL)), 130, 43, 26); f1313(_t29, _t30); }); if ((_t28.tag == 1)) { l26 = _t28.p.v1.m_value; {
                 _t27 = l26;
             } } else if ((_t28.tag == 0)) { {
                 return ((t595){0});
@@ -37514,7 +37236,7 @@ static t595 f1106(t429 l0, t698 l1, t33 l2, t19 l3) {
             l38 = f1310((&g13), ((*l0)).m_heap);
             l39 = ((t13)(0ULL));
             while ((l39 < (l31).m_len)) {
-                l40 = ({ t402 _t52; t595 _t53 = ({ t429 _t54 = (&(*l0)); t698 _t55 = (&(*l1)); t33 _t56 = ((*({ t263 _t58 = (l31); uint64_t _t59 = l39; _t58.m_ptr + ctx_idx(_t59, _t58.m_len, 157, 53, 26); }))).m_ty; t19 _t57 = ({ t19 _t60 = l3; t19 _t61 = (*({ t494 _t62 = ((l36).m_offs); uint64_t _t63 = l39; _t62.m_ptr + ctx_idx(_t63, _t62.m_len, 157, 78, 26); })); ctx_add_u64(_t60, _t61, 157, 67, 26); }); f1106(_t54, _t55, _t56, _t57); }); if ((_t53.tag == 1)) { l41 = _t53.p.v1.m_value; {
+                l40 = ({ t402 _t52; t595 _t53 = ({ t429 _t54 = (&(*l0)); t700 _t55 = (&(*l1)); t33 _t56 = ((*({ t263 _t58 = (l31); uint64_t _t59 = l39; _t58.m_ptr + ctx_idx(_t59, _t58.m_len, 157, 53, 26); }))).m_ty; t19 _t57 = ({ t19 _t60 = l3; t19 _t61 = (*({ t494 _t62 = ((l36).m_offs); uint64_t _t63 = l39; _t62.m_ptr + ctx_idx(_t63, _t62.m_len, 157, 78, 26); })); ctx_add_u64(_t60, _t61, 157, 67, 26); }); f1106(_t54, _t55, _t56, _t57); }); if ((_t53.tag == 1)) { l41 = _t53.p.v1.m_value; {
                     _t52 = l41;
                 } } else if ((_t53.tag == 0)) { {
                     return ((t595){0});
@@ -37566,7 +37288,7 @@ static t595 f1106(t429 l0, t698 l1, t33 l2, t19 l3) {
                     ctx_panic(177, 17, 26, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
-            return ({ t429 _t81 = (&(*l0)); t697 _t82 = (*l1); t10 _t83 = (f59(l48)).m_bytes; f1316(_t81, _t82, _t83); });
+            return ({ t429 _t81 = (&(*l0)); t699 _t82 = (*l1); t10 _t83 = (f59(l48)).m_bytes; f1316(_t81, _t82, _t83); });
         } } }
     }
     __builtin_unreachable();
@@ -37785,7 +37507,7 @@ static t110 f1108(t644 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t399 _t2 = ({ t399 _t3; t730 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t399 _t7 = f557(); t13 _t8 = l1; f1320(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t399 _t2 = ({ t399 _t3; t732 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t399 _t7 = f557(); t13 _t8 = l1; f1320(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -37825,18 +37547,18 @@ static t13 f1109(t398 l0, t33 l1) {
 }
 
 // check::loaded_field
-static t699 f1110(t257 l0, t263 l1) {
+static t701 f1110(t257 l0, t263 l1) {
     t13 l2;
     CTX_STACK_CHECK();
     {
         l2 = ((t13)(0ULL));
         while ((l2 < (l1).m_len)) {
             if (({ t257 _t0 = l0; t33 _t1 = ((*({ t263 _t2 = (l1); uint64_t _t3 = l2; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 980, 41, 18); }))).m_ty; f610(_t0, _t1); })) {
-                return ((t699){ .tag = 1, .p.v1.m_value = (*({ t263 _t4 = (l1); uint64_t _t5 = l2; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 980, 65, 18); })) });
+                return ((t701){ .tag = 1, .p.v1.m_value = (*({ t263 _t4 = (l1); uint64_t _t5 = l2; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 980, 65, 18); })) });
             }
             l2 = ctx_add_u64(l2, ((t13)(1ULL)), 981, 19, 18);
         }
-        return ((t699){0});
+        return ((t701){0});
     }
     __builtin_unreachable();
 }
@@ -37947,7 +37669,7 @@ static t13 f1114(t416 l0, t33 l1) {
 }
 
 // alloc::resize(map::Slot(u32, []u32), arena::Arena)
-static t700 f1115(t27 l0, t26 l1, t417 l2, t13 l3) {
+static t702 f1115(t27 l0, t26 l1, t417 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -37955,9 +37677,9 @@ static t700 f1115(t27 l0, t26 l1, t417 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1323(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t700){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t702){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t700){ .tag = 0, .p.v0 = { .m_value = f1324(l4), } });
+        return ((t702){ .tag = 0, .p.v0 = { .m_value = f1324(l4), } });
     }
     __builtin_unreachable();
 }
@@ -37991,7 +37713,7 @@ static t110 f1117(t598 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t304 _t2 = ({ t304 _t3; t731 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t304 _t7 = f538(); t13 _t8 = l1; f1325(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t304 _t2 = ({ t304 _t3; t733 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t304 _t7 = f538(); t13 _t8 = l1; f1325(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -38145,7 +37867,7 @@ static t110 f1123(t257 l0, t33 l1, t254 l2, t133 l3) {
 }
 
 // alloc::resize(eval::Region, arena::Arena)
-static t701 f1124(t27 l0, t26 l1, t491 l2, t13 l3) {
+static t703 f1124(t27 l0, t26 l1, t491 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -38153,15 +37875,15 @@ static t701 f1124(t27 l0, t26 l1, t491 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1328(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t701){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t703){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t701){ .tag = 0, .p.v0 = { .m_value = f1329(l4), } });
+        return ((t703){ .tag = 0, .p.v0 = { .m_value = f1329(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(eval::Frame, arena::Arena)
-static t702 f1125(t27 l0, t26 l1, t502 l2, t13 l3) {
+static t704 f1125(t27 l0, t26 l1, t502 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -38169,9 +37891,9 @@ static t702 f1125(t27 l0, t26 l1, t502 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1330(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t702){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t704){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t702){ .tag = 0, .p.v0 = { .m_value = f1331(l4), } });
+        return ((t704){ .tag = 0, .p.v0 = { .m_value = f1331(l4), } });
     }
     __builtin_unreachable();
 }
@@ -38224,7 +37946,7 @@ static t143 f1127(t527 l0, t33 l1, t19 l2, t19 l3) {
 }
 
 // eval::region
-static t703 f1128(t527 l0, t19 l1, t14 l2) {
+static t705 f1128(t527 l0, t19 l1, t14 l2) {
     t19 l3;
     t10 l4;
     t10 l5;
@@ -38241,7 +37963,7 @@ static t703 f1128(t527 l0, t19 l1, t14 l2) {
             _t1 = l5;
         } } else if ((_t2.tag == 1)) { {
             f1131((&(*l0)), ((t10){ .m_ptr = (void *)"out of memory", .m_len = 13 }));
-            return ((t703){ .tag = 1, .p.v1 = { .m_error = ((t603){ .tag = 0 }), } });
+            return ((t705){ .tag = 1, .p.v1 = { .m_error = ((t603){ .tag = 0 }), } });
         } } _t1; });
         f396(l4, ((t12)(0ULL)));
         l6 = ((t33)(ctx_as_u((uint64_t)((((*l0)).m_regions).m_len), UINT32_MAX, "u32", 2009, 18, 23)));
@@ -38251,7 +37973,7 @@ static t703 f1128(t527 l0, t19 l1, t14 l2) {
                 ctx_panic(2010, 9, 23, "try! failed: alloc::out_of_memory");
             } } }
         } } }
-        return ((t703){ .tag = 0, .p.v0 = { .m_value = l6, } });
+        return ((t705){ .tag = 0, .p.v0 = { .m_value = l6, } });
     }
     __builtin_unreachable();
 }
@@ -38342,7 +38064,7 @@ static t645 f1133(t527 l0, t19 l1, t19 l2) {
 }
 
 // list::push(u64, arena::Arena)
-static t110 f1134(t704 l0, t19 l1) {
+static t110 f1134(t706 l0, t19 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -38389,8 +38111,8 @@ static t604 f1136(t527 l0, t33 l1, t13 l2, t19 l3) {
     t19 l16;
     t19 l17;
     t19 l18;
-    t732 l19;
-    t733 l20;
+    t734 l19;
+    t735 l20;
     CTX_STACK_CHECK();
     {
         l4 = (*({ t88 _t0 = ((((*l0)).m_p).m_fns); uint64_t _t1 = ((t13)(l1)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 273, 24, 23); }));
@@ -38444,7 +38166,7 @@ static t604 f1136(t527 l0, t33 l1, t13 l2, t19 l3) {
         ((*l0)).m_res = l16;
         ((*l0)).m_sp = l17;
         ((*l0)).m_floor = l18;
-        { t732 _t30 = l19; if ((_t30.tag == 0)) { {
+        { t734 _t30 = l19; if ((_t30.tag == 0)) { {
             if ((!({ t14 _t31; t31 _t32 = (*({ t29 _t33 = (((*l0)).m_types); uint64_t _t34 = ((t13)((l4).m_ret)); _t33.m_ptr + ctx_idx(_t34, _t33.m_len, 318, 32, 23); })); if ((_t32.tag == 9)) { {
                 _t31 = ((bool)1);
             } } else { {
@@ -38454,7 +38176,7 @@ static t604 f1136(t527 l0, t33 l1, t13 l2, t19 l3) {
                 return ((t604){ .tag = 1, .p.v1 = { .m_error = ((t603){ .tag = 0 }), } });
             }
         } } else if ((_t30.tag == 1)) { l20 = _t30.p.v1.m_error; {
-            { t733 _t35 = l20; if ((_t35.tag == 0)) { {
+            { t735 _t35 = l20; if ((_t35.tag == 0)) { {
                 ((*l0)).m_flow = ((t496){ .tag = 0 });
             } } else if ((_t35.tag == 1)) { {
                 return ((t604){ .tag = 1, .p.v1 = { .m_error = ((t603){ .tag = 0 }), } });
@@ -38478,7 +38200,7 @@ static t518 f1137(t516 l0, t13 l1) {
 }
 
 // list::push(eval::Chunk, arena::Arena)
-static t110 f1138(t705 l0, t519 l1) {
+static t110 f1138(t707 l0, t519 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -38619,7 +38341,7 @@ static t13 f1147(t533 l0, t10 l1) {
 }
 
 // alloc::resize(map::Slot([]u8, u32), arena::Arena)
-static t706 f1148(t27 l0, t26 l1, t534 l2, t13 l3) {
+static t708 f1148(t27 l0, t26 l1, t534 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -38627,9 +38349,9 @@ static t706 f1148(t27 l0, t26 l1, t534 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1348(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t706){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t708){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t706){ .tag = 0, .p.v0 = { .m_value = f1349(l4), } });
+        return ((t708){ .tag = 0, .p.v0 = { .m_value = f1349(l4), } });
     }
     __builtin_unreachable();
 }
@@ -38648,7 +38370,7 @@ static t16 f1149(t534 l0, t536 l1) {
 }
 
 // alloc::resize(lower::Inst, arena::Arena)
-static t707 f1150(t27 l0, t26 l1, t530 l2, t13 l3) {
+static t709 f1150(t27 l0, t26 l1, t530 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -38656,9 +38378,9 @@ static t707 f1150(t27 l0, t26 l1, t530 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1350(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(24ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t707){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t709){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t707){ .tag = 0, .p.v0 = { .m_value = f1351(l4), } });
+        return ((t709){ .tag = 0, .p.v0 = { .m_value = f1351(l4), } });
     }
     __builtin_unreachable();
 }
@@ -39121,19 +38843,19 @@ static t13 f1161(t309 l0, t19 l1) {
 }
 
 // check::layout
-static t708 f1162(t429 l0, t33 l1) {
-    t708 l2;
+static t710 f1162(t429 l0, t33 l1) {
+    t710 l2;
     t95 l3;
-    t708 l4;
+    t710 l4;
     t95 l5;
     CTX_STACK_CHECK();
     {
         l2 = f1375(((*l0)).m_layouts, l1);
         if (((l2).tag != 0)) {
-            return ((t708){ .tag = 1, .p.v1.m_value = (l2).p.v1.m_value });
+            return ((t710){ .tag = 1, .p.v1.m_value = (l2).p.v1.m_value });
         }
         if (f590(((*l0)).m_busy, l1)) {
-            return ((t708){0});
+            return ((t710){0});
         }
         { t110 _t0 = f865((&((*l0)).m_busy), l1, ((bool)1)); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l3 = _t0.p.v1.m_error; {
@@ -39166,7 +38888,7 @@ static t19 f1163(t19 l0, t19 l1) {
 }
 
 // check::push_u64
-static t16 f1164(t704 l0, t19 l1) {
+static t16 f1164(t706 l0, t19 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -39189,16 +38911,16 @@ static t494 f1165(t500 l0) {
 }
 
 // list::new([]mut u64, arena::Arena)
-static t709 f1166(t27 l0, t26 l1) {
+static t711 f1166(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t649 _t0 = f919(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t709){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t649 _t0 = f919(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t711){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // list::push([]mut u64, arena::Arena)
-static t110 f1167(t710 l0, t494 l1) {
+static t110 f1167(t712 l0, t494 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -39214,7 +38936,7 @@ static t110 f1167(t710 l0, t494 l1) {
 }
 
 // list::items([]mut u64, arena::Arena)
-static t649 f1168(t709 l0) {
+static t649 f1168(t711 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t649 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t649){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -39457,7 +39179,7 @@ static t16 f1174(t133 l0, t257 l1, t175 l2, t33 l3, t14 l4) {
 
 // decls::forwards
 static t16 f1175(t133 l0, t257 l1, t141 l2, t33 l3) {
-    t735 l4;
+    t737 l4;
     t13 l5;
     t378 l6;
     t33 l7;
@@ -39643,7 +39365,7 @@ static t16 f1176(t133 l0, t257 l1, t171 l2, t33 l3) {
 }
 
 // map::get(u64, []mut check::Piece, arena::Arena)
-static t711 f1177(t380 l0, t19 l1) {
+static t713 f1177(t380 l0, t19 l1) {
     t630 l2;
     t384 l3;
     CTX_STACK_CHECK();
@@ -39651,11 +39373,11 @@ static t711 f1177(t380 l0, t19 l1) {
         l2 = f1383(l0, l1);
         if (((l2).tag != 0)) {
             { t383 _t0 = (*({ t381 _t1 = ((l0).m_slots); uint64_t _t2 = (l2).p.v1.m_value; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 56, 26, 25); })); if ((_t0.tag == 2)) { l3 = _t0.p.v2.m_v; {
-                return ((t711){ .tag = 1, .p.v1.m_value = l3 });
+                return ((t713){ .tag = 1, .p.v1.m_value = l3 });
             } } else { {
             } } }
         }
-        return ((t711){0});
+        return ((t713){0});
     }
     __builtin_unreachable();
 }
@@ -39876,7 +39598,7 @@ static t110 f1181(t653 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t117 _t0 = ({ t117 _t1; t736 _t2 = f1387(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t117 _t0 = ({ t117 _t1; t738 _t2 = f1387(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -39931,7 +39653,7 @@ static t110 f1182(t133 l0, t17 l1, t13 l2, t14 l3) {
 
 // utf8::fmt_hex
 static t17 f1183(t19 l0, t10 l1) {
-    t712 l2;
+    t714 l2;
     t13 l3;
     t19 l4;
     t12 l5;
@@ -39983,7 +39705,7 @@ static t14 f1184(t17 l0, t13 l1) {
 }
 
 // alloc::resize(source::Span, arena::Arena)
-static t715 f1185(t27 l0, t26 l1, t129 l2, t13 l3) {
+static t717 f1185(t27 l0, t26 l1, t129 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -39991,9 +39713,9 @@ static t715 f1185(t27 l0, t26 l1, t129 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1389(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(12ULL)), 23, 25, 21); t13 _t6 = ((t13)(4ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t715){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t717){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t715){ .tag = 0, .p.v0 = { .m_value = f1390(l4), } });
+        return ((t717){ .tag = 0, .p.v0 = { .m_value = f1390(l4), } });
     }
     __builtin_unreachable();
 }
@@ -40199,7 +39921,7 @@ static t141 f1192(t436 l0) {
 
 // parser::path_tail
 static t141 f1193(t436 l0, t13 l1, t141 l2, t144 l3) {
-    t664 l4;
+    t666 l4;
     t13 l5;
     t95 l6;
     t149 l7;
@@ -40284,7 +40006,7 @@ static t14 f1194(t435 l0) {
 static t141 f1195(t436 l0, t13 l1, t141 l2) {
     t128 l3;
     t153 l4;
-    t737 l5;
+    t739 l5;
     t14 l6;
     t14 l7;
     t128 l8;
@@ -40406,7 +40128,7 @@ static t158 f1197(t436 l0) {
 }
 
 // alloc::new(syntax::Expr, arena::Arena)
-static t716 f1198(t27 l0, t26 l1, t141 l2) {
+static t718 f1198(t27 l0, t26 l1, t141 l2) {
     t162 l3;
     t162 l4;
     t95 l5;
@@ -40416,20 +40138,20 @@ static t716 f1198(t27 l0, t26 l1, t141 l2) {
         if ((((t13)(112ULL)) == ((t13)(0ULL)))) {
             ctx_panic(35, 31, 21, "alloc::new: T is zero-sized");
         }
-        l3 = ({ t162 _t0; t739 _t1 = ({ t27 _t2 = l0; t26 _t3 = (&(*l1)); t162 _t4 = f542(); t13 _t5 = ((t13)(1ULL)); f1400(_t2, _t3, _t4, _t5); }); if ((_t1.tag == 0)) { l4 = _t1.p.v0.m_value; {
+        l3 = ({ t162 _t0; t741 _t1 = ({ t27 _t2 = l0; t26 _t3 = (&(*l1)); t162 _t4 = f542(); t13 _t5 = ((t13)(1ULL)); f1400(_t2, _t3, _t4, _t5); }); if ((_t1.tag == 0)) { l4 = _t1.p.v0.m_value; {
             _t0 = l4;
         } } else if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_error; {
-            return ((t716){ .tag = 1, .p.v1 = { .m_error = l5, } });
+            return ((t718){ .tag = 1, .p.v1 = { .m_error = l5, } });
         } } _t0; });
         l6 = (&(*({ t162 _t6 = (l3); uint64_t _t7 = ((t13)(0ULL)); _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 37, 21, 21); })));
         (*l6) = l2;
-        return ((t716){ .tag = 0, .p.v0 = { .m_value = l6, } });
+        return ((t718){ .tag = 0, .p.v0 = { .m_value = l6, } });
     }
     __builtin_unreachable();
 }
 
 // list::reserve(syntax::Attr, arena::Arena)
-static t110 f1199(t661 l0, t13 l1) {
+static t110 f1199(t663 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t138 l4;
@@ -40447,7 +40169,7 @@ static t110 f1199(t661 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t138 _t0 = ({ t138 _t1; t740 _t2 = f1401(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t138 _t0 = ({ t138 _t1; t742 _t2 = f1401(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -40470,7 +40192,7 @@ static t128 f1200(t436 l0) {
 }
 
 // list::reserve(syntax::Field, arena::Arena)
-static t110 f1201(t663 l0, t13 l1) {
+static t110 f1201(t665 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t186 l4;
@@ -40488,7 +40210,7 @@ static t110 f1201(t663 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t186 _t0 = ({ t186 _t1; t741 _t2 = f1402(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t186 _t0 = ({ t186 _t1; t743 _t2 = f1402(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -40517,7 +40239,7 @@ static t110 f1202(t617 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t196 _t0 = ({ t196 _t1; t742 _t2 = f1403(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t196 _t0 = ({ t196 _t1; t744 _t2 = f1403(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -40539,7 +40261,7 @@ static t144 f1203(void) {
 }
 
 // list::reserve(syntax::Seg, arena::Arena)
-static t110 f1204(t665 l0, t13 l1) {
+static t110 f1204(t667 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t144 l4;
@@ -40557,7 +40279,7 @@ static t110 f1204(t665 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t144 _t0 = ({ t144 _t1; t743 _t2 = f1404(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t144 _t0 = ({ t144 _t1; t745 _t2 = f1404(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -40569,7 +40291,7 @@ static t110 f1204(t665 l0, t13 l1) {
 
 // parser::type_list
 static t149 f1205(t436 l0) {
-    t744 l1;
+    t746 l1;
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -40593,7 +40315,7 @@ static t149 f1205(t436 l0) {
 }
 
 // alloc::new(syntax::TypeExpr, arena::Arena)
-static t717 f1206(t27 l0, t26 l1, t151 l2) {
+static t719 f1206(t27 l0, t26 l1, t151 l2) {
     t149 l3;
     t149 l4;
     t95 l5;
@@ -40603,14 +40325,14 @@ static t717 f1206(t27 l0, t26 l1, t151 l2) {
         if ((((t13)(64ULL)) == ((t13)(0ULL)))) {
             ctx_panic(35, 31, 21, "alloc::new: T is zero-sized");
         }
-        l3 = ({ t149 _t0; t746 _t1 = ({ t27 _t2 = l0; t26 _t3 = (&(*l1)); t149 _t4 = f1409(); t13 _t5 = ((t13)(1ULL)); f1408(_t2, _t3, _t4, _t5); }); if ((_t1.tag == 0)) { l4 = _t1.p.v0.m_value; {
+        l3 = ({ t149 _t0; t748 _t1 = ({ t27 _t2 = l0; t26 _t3 = (&(*l1)); t149 _t4 = f1409(); t13 _t5 = ((t13)(1ULL)); f1408(_t2, _t3, _t4, _t5); }); if ((_t1.tag == 0)) { l4 = _t1.p.v0.m_value; {
             _t0 = l4;
         } } else if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_error; {
-            return ((t717){ .tag = 1, .p.v1 = { .m_error = l5, } });
+            return ((t719){ .tag = 1, .p.v1 = { .m_error = l5, } });
         } } _t0; });
         l6 = (&(*({ t149 _t6 = (l3); uint64_t _t7 = ((t13)(0ULL)); _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 37, 21, 21); })));
         (*l6) = l2;
-        return ((t717){ .tag = 0, .p.v0 = { .m_value = l6, } });
+        return ((t719){ .tag = 0, .p.v0 = { .m_value = l6, } });
     }
     __builtin_unreachable();
 }
@@ -40649,7 +40371,7 @@ static t141 f1208(t436 l0, t13 l1, t128 l2, t141 l3, t141 l4) {
 }
 
 // list::reserve(syntax::Name, arena::Arena)
-static t110 f1209(t667 l0, t13 l1) {
+static t110 f1209(t669 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t182 l4;
@@ -40667,7 +40389,7 @@ static t110 f1209(t667 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t182 _t0 = ({ t182 _t1; t747 _t2 = f1411(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t182 _t0 = ({ t182 _t1; t749 _t2 = f1411(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -40689,7 +40411,7 @@ static t193 f1210(void) {
 }
 
 // list::reserve(syntax::EnumVariant, arena::Arena)
-static t110 f1211(t669 l0, t13 l1) {
+static t110 f1211(t671 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t193 l4;
@@ -40707,7 +40429,7 @@ static t110 f1211(t669 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t193 _t0 = ({ t193 _t1; t748 _t2 = f1412(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t193 _t0 = ({ t193 _t1; t750 _t2 = f1412(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -40729,7 +40451,7 @@ static t189 f1212(void) {
 }
 
 // list::reserve(syntax::Variant, arena::Arena)
-static t110 f1213(t671 l0, t13 l1) {
+static t110 f1213(t673 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t189 l4;
@@ -40747,7 +40469,7 @@ static t110 f1213(t671 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t189 _t0 = ({ t189 _t1; t749 _t2 = f1413(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t189 _t0 = ({ t189 _t1; t751 _t2 = f1413(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -40769,7 +40491,7 @@ static t154 f1214(void) {
 }
 
 // list::reserve(syntax::Param, arena::Arena)
-static t110 f1215(t673 l0, t13 l1) {
+static t110 f1215(t675 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t154 l4;
@@ -40787,7 +40509,7 @@ static t110 f1215(t673 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t154 _t0 = ({ t154 _t1; t750 _t2 = f1414(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t154 _t0 = ({ t154 _t1; t752 _t2 = f1414(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -40798,7 +40520,7 @@ static t110 f1215(t673 l0, t13 l1) {
 }
 
 // list::reserve(syntax::Stmt, arena::Arena)
-static t110 f1216(t675 l0, t13 l1) {
+static t110 f1216(t677 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t165 l4;
@@ -40816,7 +40538,7 @@ static t110 f1216(t675 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t165 _t0 = ({ t165 _t1; t751 _t2 = f1415(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t165 _t0 = ({ t165 _t1; t753 _t2 = f1415(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -40854,7 +40576,7 @@ static t168 f1218(t436 l0, t174 l1) {
 
 // parser::one
 static t164 f1219(t436 l0, t167 l1) {
-    t674 l2;
+    t676 l2;
     t95 l3;
     CTX_STACK_CHECK();
     {
@@ -40885,9 +40607,9 @@ static t174 f1220(t436 l0) {
 // parser::match_node
 static t175 f1221(t436 l0) {
     t153 l1;
-    t752 l2;
+    t754 l2;
     t13 l3;
-    t753 l4;
+    t755 l4;
     t95 l5;
     t95 l6;
     t164 l7;
@@ -41187,7 +40909,7 @@ static t76 f1233(void) {
 }
 
 // list::reserve(ir::Bind, arena::Arena)
-static t110 f1234(t679 l0, t13 l1) {
+static t110 f1234(t681 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t76 l4;
@@ -41412,7 +41134,7 @@ static t37 f1248(t10 l0) {
 }
 
 // alloc::resize(emit::Pair, arena::Arena)
-static t718 f1249(t27 l0, t26 l1, t233 l2, t13 l3) {
+static t720 f1249(t27 l0, t26 l1, t233 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -41420,15 +41142,15 @@ static t718 f1249(t27 l0, t26 l1, t233 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1431(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(8ULL)), 23, 25, 21); t13 _t6 = ((t13)(4ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t718){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t720){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t718){ .tag = 0, .p.v0 = { .m_value = f1432(l4), } });
+        return ((t720){ .tag = 0, .p.v0 = { .m_value = f1432(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(emit::Callback, arena::Arena)
-static t719 f1250(t27 l0, t26 l1, t237 l2, t13 l3) {
+static t721 f1250(t27 l0, t26 l1, t237 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -41436,9 +41158,9 @@ static t719 f1250(t27 l0, t26 l1, t237 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1433(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(8ULL)), 23, 25, 21); t13 _t6 = ((t13)(4ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t719){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t721){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t719){ .tag = 0, .p.v0 = { .m_value = f1434(l4), } });
+        return ((t721){ .tag = 0, .p.v0 = { .m_value = f1434(l4), } });
     }
     __builtin_unreachable();
 }
@@ -41462,7 +41184,7 @@ static t110 f1251(t625 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t226 _t0 = ({ t226 _t1; t756 _t2 = f1435(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t226 _t0 = ({ t226 _t1; t758 _t2 = f1435(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -41486,7 +41208,7 @@ static t13 f1252(t266 l0, t262 l1) {
 }
 
 // alloc::resize(types::Type, arena::Arena)
-static t720 f1253(t27 l0, t26 l1, t260 l2, t13 l3) {
+static t722 f1253(t27 l0, t26 l1, t260 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -41494,15 +41216,15 @@ static t720 f1253(t27 l0, t26 l1, t260 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1436(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t720){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t722){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t720){ .tag = 0, .p.v0 = { .m_value = f1437(l4), } });
+        return ((t722){ .tag = 0, .p.v0 = { .m_value = f1437(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(map::Slot(types::Type, u32), arena::Arena)
-static t721 f1254(t27 l0, t26 l1, t267 l2, t13 l3) {
+static t723 f1254(t27 l0, t26 l1, t267 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -41510,9 +41232,9 @@ static t721 f1254(t27 l0, t26 l1, t267 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1438(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(48ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t721){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t723){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t721){ .tag = 0, .p.v0 = { .m_value = f1439(l4), } });
+        return ((t723){ .tag = 0, .p.v0 = { .m_value = f1439(l4), } });
     }
     __builtin_unreachable();
 }
@@ -41587,7 +41309,7 @@ static t283 f1259(t10 l0) {
 }
 
 // list::reserve(check::Decl, arena::Arena)
-static t110 f1260(t687 l0, t13 l1) {
+static t110 f1260(t689 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t290 l4;
@@ -41605,7 +41327,7 @@ static t110 f1260(t687 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t290 _t0 = ({ t290 _t1; t757 _t2 = f1440(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t290 _t0 = ({ t290 _t1; t759 _t2 = f1440(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -41616,7 +41338,7 @@ static t110 f1260(t687 l0, t13 l1) {
 }
 
 // alloc::resize(map::Slot(u64, u32), arena::Arena)
-static t722 f1261(t27 l0, t26 l1, t310 l2, t13 l3) {
+static t724 f1261(t27 l0, t26 l1, t310 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -41624,9 +41346,9 @@ static t722 f1261(t27 l0, t26 l1, t310 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1441(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(24ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t722){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t724){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t722){ .tag = 0, .p.v0 = { .m_value = f1442(l4), } });
+        return ((t724){ .tag = 0, .p.v0 = { .m_value = f1442(l4), } });
     }
     __builtin_unreachable();
 }
@@ -41835,7 +41557,7 @@ static t110 f1264(t634 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t263 _t0 = ({ t263 _t1; t758 _t2 = f1446(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t263 _t0 = ({ t263 _t1; t760 _t2 = f1446(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -41864,7 +41586,7 @@ static t110 f1265(t636 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t299 _t0 = ({ t299 _t1; t759 _t2 = f1447(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t299 _t0 = ({ t299 _t1; t761 _t2 = f1447(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -41926,7 +41648,7 @@ static t110 f1268(t638 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t293 _t0 = ({ t293 _t1; t760 _t2 = f1448(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t293 _t0 = ({ t293 _t1; t762 _t2 = f1448(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -41982,7 +41704,7 @@ static t16 f1271(t429 l0, t147 l1, t319 l2) {
         if (((l1).m_id == ((t33)(4294967295ULL)))) {
             return;
         }
-        { t110 _t0 = ({ t761 _t1 = (&((*l0)).m_uses); t19 _t2 = f638(((l1).m_span).m_file, (l1).m_id); t319 _t3 = l2; f1449(_t1, _t2, _t3); }); if ((_t0.tag == 0)) { {
+        { t110 _t0 = ({ t763 _t1 = (&((*l0)).m_uses); t19 _t2 = f638(((l1).m_span).m_file, (l1).m_id); t319 _t3 = l2; f1449(_t1, _t2, _t3); }); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l3 = _t0.p.v1.m_error; {
             { t95 _t4 = l3; if ((_t4.tag == 0)) { {
                 ctx_panic(1960, 9, 18, "try! failed: alloc::out_of_memory");
@@ -42040,7 +41762,7 @@ static t110 f1274(t641 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t297 _t0 = ({ t297 _t1; t762 _t2 = f1450(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t297 _t0 = ({ t297 _t1; t764 _t2 = f1450(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -42051,7 +41773,7 @@ static t110 f1274(t641 l0, t13 l1) {
 }
 
 // list::push(types::Var, arena::Arena)
-static t110 f1275(t723 l0, t275 l1) {
+static t110 f1275(t725 l0, t275 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -42067,7 +41789,7 @@ static t110 f1275(t723 l0, t275 l1) {
 }
 
 // list::push(check::GVar, arena::Arena)
-static t110 f1276(t689 l0, t330 l1) {
+static t110 f1276(t691 l0, t330 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -42092,7 +41814,7 @@ static t254 f1277(t258 l0, t254 l1) {
         if (((l1).m_len == ((t13)(0ULL)))) {
             return l1;
         }
-        l2 = ({ t254 _t0; t658 _t1 = ({ t27 _t2 = (&g13); t26 _t3 = (l0).m_heap; t254 _t4 = f295(); t13 _t5 = (l1).m_len; f935(_t2, _t3, _t4, _t5); }); if ((_t1.tag == 0)) { l3 = _t1.p.v0.m_value; {
+        l2 = ({ t254 _t0; t660 _t1 = ({ t27 _t2 = (&g13); t26 _t3 = (l0).m_heap; t254 _t4 = f295(); t13 _t5 = (l1).m_len; f935(_t2, _t3, _t4, _t5); }); if ((_t1.tag == 0)) { l3 = _t1.p.v0.m_value; {
             _t0 = l3;
         } } else if ((_t1.tag == 1)) { l4 = _t1.p.v1.m_error; {
             { t95 _t6 = l4; if ((_t6.tag == 0)) { {
@@ -42124,7 +41846,7 @@ static t14 f1278(t257 l0, t33 l1) {
 }
 
 // list::push(usize, arena::Arena)
-static t110 f1279(t691 l0, t13 l1) {
+static t110 f1279(t693 l0, t13 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -42354,7 +42076,7 @@ static t16 f1282(t429 l0, t19 l1, t121 l2, t33 l3, t33 l4) {
     CTX_STACK_CHECK();
     {
         l5 = f1474((*l0), l3, l4);
-        { t724 _t0 = f1289((&(*l0)), l3, l4, l2); if ((_t0.tag == 0) || (_t0.tag == 1)) { {
+        { t726 _t0 = f1289((&(*l0)), l3, l4, l2); if ((_t0.tag == 0) || (_t0.tag == 1)) { {
         } } else if ((_t0.tag == 2)) { {
             f1475((&(*l0)), l1, ((t354){ .tag = 0, .p.v0 = { .m_to = l5, } }));
         } } else if ((_t0.tag == 3)) { {
@@ -42433,7 +42155,7 @@ static t14 f1285(t592 l0, t254 l1, t254 l2) {
 }
 
 // types::find_field
-static t699 f1286(t263 l0, t10 l1) {
+static t701 f1286(t263 l0, t10 l1) {
     t13 l2;
     t13 l3;
     CTX_STACK_CHECK();
@@ -42441,9 +42163,9 @@ static t699 f1286(t263 l0, t10 l1) {
         l2 = ({ t13 _t0; t630 _t1 = f1041(l0, l1); if ((_t1.tag == 1)) { l3 = _t1.p.v1.m_value; {
             _t0 = l3;
         } } else if ((_t1.tag == 0)) { {
-            return ((t699){0});
+            return ((t701){0});
         } } _t0; });
-        return ((t699){ .tag = 1, .p.v1.m_value = (*({ t263 _t2 = (l0); uint64_t _t3 = l2; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 513, 22, 22); })) });
+        return ((t701){ .tag = 1, .p.v1.m_value = (*({ t263 _t2 = (l0); uint64_t _t3 = l2; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 513, 22, 22); })) });
     }
     __builtin_unreachable();
 }
@@ -42459,7 +42181,7 @@ static t10 f1287(t429 l0, t386 l1, t141 l2) {
     t95 l9;
     t95 l10;
     t17 l11;
-    t693 l12;
+    t695 l12;
     t14 l13;
     t14 l14;
     t132 l15;
@@ -42711,7 +42433,7 @@ static t33 f1288(t429 l0, t10 l1) {
         if ((l3 == ((t33)(4294967295ULL)))) {
             return ((t33)(4294967295ULL));
         }
-        l4 = ({ t265 _t3; t699 _t4 = ({ t263 _t5 = (f585((*l0), l3)).m_fields; t10 _t6 = l2; f1286(_t5, _t6); }); if ((_t4.tag == 1)) { l5 = _t4.p.v1.m_value; {
+        l4 = ({ t265 _t3; t701 _t4 = ({ t263 _t5 = (f585((*l0), l3)).m_fields; t10 _t6 = l2; f1286(_t5, _t6); }); if ((_t4.tag == 1)) { l5 = _t4.p.v1.m_value; {
             _t3 = l5;
         } } else if ((_t4.tag == 0)) { {
             return ((t33)(4294967295ULL));
@@ -42722,18 +42444,18 @@ static t33 f1288(t429 l0, t10 l1) {
 }
 
 // check::convert
-static t724 f1289(t429 l0, t33 l1, t33 l2, t121 l3) {
-    t724 l4;
+static t726 f1289(t429 l0, t33 l1, t33 l2, t121 l3) {
+    t726 l4;
     t132 l5;
     t95 l6;
     CTX_STACK_CHECK();
     {
         if ((l1 == ((t33)(1ULL)))) {
             f600((&(*l0)), l3, ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"expression has no value", .m_len = 23 }), }));
-            return ((t724){ .tag = 0 });
+            return ((t726){ .tag = 0 });
         }
         l4 = f1482((&(*l0)), l1, l2);
-        if (({ t14 _t0; t724 _t1 = l4; if ((_t1.tag == 0)) { {
+        if (({ t14 _t0; t726 _t1 = l4; if ((_t1.tag == 0)) { {
             _t0 = ((bool)1);
         } } else { {
             _t0 = ((bool)0);
@@ -42891,7 +42613,7 @@ static t13 f1296(t394 l0, t33 l1) {
 }
 
 // alloc::resize(map::Slot(u32, u32), arena::Arena)
-static t725 f1297(t27 l0, t26 l1, t395 l2, t13 l3) {
+static t727 f1297(t27 l0, t26 l1, t395 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -42899,15 +42621,15 @@ static t725 f1297(t27 l0, t26 l1, t395 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1487(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(12ULL)), 23, 25, 21); t13 _t6 = ((t13)(4ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t725){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t727){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t725){ .tag = 0, .p.v0 = { .m_value = f1488(l4), } });
+        return ((t727){ .tag = 0, .p.v0 = { .m_value = f1488(l4), } });
     }
     __builtin_unreachable();
 }
 
 // list::push([]u32, arena::Arena)
-static t110 f1298(t726 l0, t254 l1) {
+static t110 f1298(t728 l0, t254 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -42923,7 +42645,7 @@ static t110 f1298(t726 l0, t254 l1) {
 }
 
 // list::push([]check::Place, arena::Arena)
-static t110 f1299(t727 l0, t391 l1) {
+static t110 f1299(t729 l0, t391 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -42939,7 +42661,7 @@ static t110 f1299(t727 l0, t391 l1) {
 }
 
 // list::reserve(check::Var, arena::Arena)
-static t110 f1300(t695 l0, t13 l1) {
+static t110 f1300(t697 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t332 l4;
@@ -42957,7 +42679,7 @@ static t110 f1300(t695 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t332 _t0 = ({ t332 _t1; t763 _t2 = f1491(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t332 _t0 = ({ t332 _t1; t765 _t2 = f1491(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -42968,7 +42690,7 @@ static t110 f1300(t695 l0, t13 l1) {
 }
 
 // list::push(check::Binding, arena::Arena)
-static t110 f1301(t690 l0, t338 l1) {
+static t110 f1301(t692 l0, t338 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -43080,7 +42802,7 @@ static t16 f1302(t429 l0, t167 l1) {
 }
 
 // list::pop(usize, arena::Arena)
-static t630 f1303(t691 l0) {
+static t630 f1303(t693 l0) {
     CTX_STACK_CHECK();
     {
         if ((((*l0)).m_len == ((t13)(0ULL)))) {
@@ -43118,7 +42840,7 @@ static t595 f1305(t429 l0, t141 l1) {
     t10 l10;
     t402 l11;
     t402 l12;
-    t694 l13;
+    t696 l13;
     t33 l14;
     t33 l15;
     t33 l16;
@@ -43129,7 +42851,7 @@ static t595 f1305(t429 l0, t141 l1) {
     t159 l21;
     t162 l22;
     t33 l23;
-    t728 l24;
+    t730 l24;
     t13 l25;
     t595 l26;
     t153 l27;
@@ -43141,14 +42863,14 @@ static t595 f1305(t429 l0, t141 l1) {
     t157 l33;
     t151 l34;
     t68 l35;
-    t708 l36;
+    t710 l36;
     t19 l37;
     t153 l38;
     t595 l39;
     t153 l40;
     t595 l41;
     t51 l42;
-    t765 l43;
+    t767 l43;
     t12 l44;
     t153 l45;
     t153 l46;
@@ -43229,7 +42951,7 @@ static t595 f1305(t429 l0, t141 l1) {
             if (((l28).tag == 0)) {
                 return ((t595){0});
             }
-            l29 = ({ t404 _t44; t764 _t45 = f1510((&g13), ((*l0)).m_heap, (l28).p.v1.m_value); if ((_t45.tag == 0)) { l30 = _t45.p.v0.m_value; {
+            l29 = ({ t404 _t44; t766 _t45 = f1510((&g13), ((*l0)).m_heap, (l28).p.v1.m_value); if ((_t45.tag == 0)) { l30 = _t45.p.v0.m_value; {
                 _t44 = l30;
             } } else if ((_t45.tag == 1)) { l31 = _t45.p.v1.m_error; {
                 { t95 _t46 = l31; if ((_t46.tag == 0)) { {
@@ -43275,7 +42997,7 @@ static t595 f1305(t429 l0, t141 l1) {
                 return ((t595){ .tag = 1, .p.v1.m_value = ((t402){ .tag = 1, .p.v1 = { .m_ty = l2, .m_value = (-(l42)), } }) });
             }
             l43 = f1512((l41).p.v1.m_value);
-            return ({ t429 _t56 = (&(*l0)); t765 _t57 = ((t765){ .m_negative = ((!(l43).m_negative) && ((l43).m_magnitude != ((t19)(0ULL)))), .m_magnitude = (l43).m_magnitude, }); t33 _t58 = l2; t121 _t59 = f1044(l1); f1513(_t56, _t57, _t58, _t59); });
+            return ({ t429 _t56 = (&(*l0)); t767 _t57 = ((t767){ .m_negative = ((!(l43).m_negative) && ((l43).m_magnitude != ((t19)(0ULL)))), .m_magnitude = (l43).m_magnitude, }); t33 _t58 = l2; t121 _t59 = f1044(l1); f1513(_t56, _t57, _t58, _t59); });
         } } else if ((_t2.tag == 15)) { l44 = _t2.p.v15.m_op; l45 = _t2.p.v15.m_a; l46 = _t2.p.v15.m_b; {
             return f1514((&(*l0)), l1, l44, (*l45), (*l46), l2);
         } } else { {
@@ -43287,7 +43009,7 @@ static t595 f1305(t429 l0, t141 l1) {
 
 // check::one_val
 static t403 f1306(t257 l0, t402 l1) {
-    t728 l2;
+    t730 l2;
     CTX_STACK_CHECK();
     {
         l2 = f1310((&g13), (l0).m_heap);
@@ -43298,14 +43020,14 @@ static t403 f1306(t257 l0, t402 l1) {
 }
 
 // comptime::scalar
-static t595 f1307(t698 l0, t33 l1, t12 l2, t19 l3) {
+static t595 f1307(t700 l0, t33 l1, t12 l2, t19 l3) {
     t19 l4;
     t19 l5;
     t19 l6;
     CTX_STACK_CHECK();
     {
         l4 = ((t19)(ctx_as_u((uint64_t)(f1272(l2)), UINT64_MAX, "u64", 204, 17, 26)));
-        l5 = ({ t19 _t0; t143 _t1 = ({ t698 _t2 = (&(*l0)); t19 _t3 = l3; t19 _t4 = ctx_div_u64(l4, ((t19)(8ULL)), 205, 36, 26); f1515(_t2, _t3, _t4); }); if ((_t1.tag == 1)) { l6 = _t1.p.v1.m_value; {
+        l5 = ({ t19 _t0; t143 _t1 = ({ t700 _t2 = (&(*l0)); t19 _t3 = l3; t19 _t4 = ctx_div_u64(l4, ((t19)(8ULL)), 205, 36, 26); f1515(_t2, _t3, _t4); }); if ((_t1.tag == 1)) { l6 = _t1.p.v1.m_value; {
             _t0 = l6;
         } } else if ((_t1.tag == 0)) { {
             return ((t595){0});
@@ -43333,7 +43055,7 @@ static t595 f1307(t698 l0, t33 l1, t12 l2, t19 l3) {
 }
 
 // comptime::mem
-static t22 f1308(t698 l0, t19 l1, t19 l2) {
+static t22 f1308(t700 l0, t19 l1, t19 l2) {
     t10 l3;
     CTX_STACK_CHECK();
     {
@@ -43367,16 +43089,16 @@ static t10 f1309(t257 l0, t10 l1) {
 }
 
 // list::new(check::Val, arena::Arena)
-static t728 f1310(t27 l0, t26 l1) {
+static t730 f1310(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t403 _t0 = f1506(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t728){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t403 _t0 = f1506(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t730){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // list::push(check::Val, arena::Arena)
-static t110 f1311(t729 l0, t402 l1) {
+static t110 f1311(t731 l0, t402 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -43392,7 +43114,7 @@ static t110 f1311(t729 l0, t402 l1) {
 }
 
 // list::items(check::Val, arena::Arena)
-static t403 f1312(t728 l0) {
+static t403 f1312(t730 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t403 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t403){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -43401,7 +43123,7 @@ static t403 f1312(t728 l0) {
 }
 
 // comptime::word
-static t143 f1313(t698 l0, t19 l1) {
+static t143 f1313(t700 l0, t19 l1) {
     CTX_STACK_CHECK();
     {
         return f1515((&(*l0)), l1, ((t19)(8ULL)));
@@ -43431,7 +43153,7 @@ static t22 f1314(t489 l0, t19 l1) {
 }
 
 // comptime::pointer
-static t595 f1315(t429 l0, t697 l1, t33 l2, t19 l3) {
+static t595 f1315(t429 l0, t699 l1, t33 l2, t19 l3) {
     t132 l4;
     t95 l5;
     t95 l6;
@@ -43466,7 +43188,7 @@ static t595 f1315(t429 l0, t697 l1, t33 l2, t19 l3) {
                     ctx_panic(223, 13, 26, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
-            return ({ t429 _t8 = (&(*l0)); t697 _t9 = l1; t10 _t10 = (f59(l4)).m_bytes; f1316(_t8, _t9, _t10); });
+            return ({ t429 _t8 = (&(*l0)); t699 _t9 = l1; t10 _t10 = (f59(l4)).m_bytes; f1316(_t8, _t9, _t10); });
         }
         l9 = ((t19)(l3 >> ctx_shcount_u(((t19)(40ULL)), 64, 226, 24, 26)));
         l10 = f1129(((*(l1).m_m)).m_regions);
@@ -43493,13 +43215,13 @@ static t595 f1315(t429 l0, t697 l1, t33 l2, t19 l3) {
                 ctx_panic(235, 9, 26, "try! failed: alloc::out_of_memory");
             } } }
         } } }
-        return ({ t429 _t25 = (&(*l0)); t697 _t26 = l1; t10 _t27 = (f59(l12)).m_bytes; f1316(_t25, _t26, _t27); });
+        return ({ t429 _t25 = (&(*l0)); t699 _t26 = l1; t10 _t27 = (f59(l12)).m_bytes; f1316(_t25, _t26, _t27); });
     }
     __builtin_unreachable();
 }
 
 // comptime::cannot
-static t595 f1316(t429 l0, t697 l1, t10 l2) {
+static t595 f1316(t429 l0, t699 l1, t10 l2) {
     t132 l3;
     t95 l4;
     t95 l5;
@@ -43529,7 +43251,7 @@ static t595 f1316(t429 l0, t697 l1, t10 l2) {
 
 // comptime::one
 static t403 f1317(t257 l0, t402 l1) {
-    t728 l2;
+    t730 l2;
     t95 l3;
     CTX_STACK_CHECK();
     {
@@ -43546,7 +43268,7 @@ static t403 f1317(t257 l0, t402 l1) {
 }
 
 // comptime::tagged
-static t595 f1318(t429 l0, t698 l1, t33 l2, t19 l3) {
+static t595 f1318(t429 l0, t700 l1, t33 l2, t19 l3) {
     t19 l4;
     t19 l5;
     t33 l6;
@@ -43555,7 +43277,7 @@ static t595 f1318(t429 l0, t698 l1, t33 l2, t19 l3) {
     t652 l9;
     t263 l10;
     t263 l11;
-    t728 l12;
+    t730 l12;
     t13 l13;
     t402 l14;
     t402 l15;
@@ -43592,7 +43314,7 @@ static t595 f1318(t429 l0, t698 l1, t33 l2, t19 l3) {
         l12 = f1310((&g13), ((*l0)).m_heap);
         l13 = ((t13)(0ULL));
         while ((l13 < (l10).m_len)) {
-            l14 = ({ t402 _t15; t595 _t16 = ({ t429 _t17 = (&(*l0)); t698 _t18 = (&(*l1)); t33 _t19 = ((*({ t263 _t21 = (l10); uint64_t _t22 = l13; _t21.m_ptr + ctx_idx(_t22, _t21.m_len, 195, 45, 26); }))).m_ty; t19 _t20 = ({ t19 _t23 = l3; t19 _t24 = (*({ t494 _t25 = ((*({ t649 _t27 = ((l8).m_offs); uint64_t _t28 = ((t13)(l6)); _t27.m_ptr + ctx_idx(_t28, _t27.m_len, 195, 67, 26); }))); uint64_t _t26 = l13; _t25.m_ptr + ctx_idx(_t26, _t25.m_len, 195, 74, 26); })); ctx_add_u64(_t23, _t24, 195, 59, 26); }); f1106(_t17, _t18, _t19, _t20); }); if ((_t16.tag == 1)) { l15 = _t16.p.v1.m_value; {
+            l14 = ({ t402 _t15; t595 _t16 = ({ t429 _t17 = (&(*l0)); t700 _t18 = (&(*l1)); t33 _t19 = ((*({ t263 _t21 = (l10); uint64_t _t22 = l13; _t21.m_ptr + ctx_idx(_t22, _t21.m_len, 195, 45, 26); }))).m_ty; t19 _t20 = ({ t19 _t23 = l3; t19 _t24 = (*({ t494 _t25 = ((*({ t649 _t27 = ((l8).m_offs); uint64_t _t28 = ((t13)(l6)); _t27.m_ptr + ctx_idx(_t28, _t27.m_len, 195, 67, 26); }))); uint64_t _t26 = l13; _t25.m_ptr + ctx_idx(_t26, _t25.m_len, 195, 74, 26); })); ctx_add_u64(_t23, _t24, 195, 59, 26); }); f1106(_t17, _t18, _t19, _t20); }); if ((_t16.tag == 1)) { l15 = _t16.p.v1.m_value; {
                 _t15 = l15;
             } } else if ((_t16.tag == 0)) { {
                 return ((t595){0});
@@ -43628,7 +43350,7 @@ static t10 f1319(t489 l0) {
 }
 
 // alloc::resize(map::Slot(u32, check::Val), arena::Arena)
-static t730 f1320(t27 l0, t26 l1, t399 l2, t13 l3) {
+static t732 f1320(t27 l0, t26 l1, t399 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -43636,9 +43358,9 @@ static t730 f1320(t27 l0, t26 l1, t399 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1520(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(48ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t730){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t732){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t730){ .tag = 0, .p.v0 = { .m_value = f1521(l4), } });
+        return ((t732){ .tag = 0, .p.v0 = { .m_value = f1521(l4), } });
     }
     __builtin_unreachable();
 }
@@ -43705,7 +43427,7 @@ static t417 f1324(t10 l0) {
 }
 
 // alloc::resize(map::Slot(u32, bool), arena::Arena)
-static t731 f1325(t27 l0, t26 l1, t304 l2, t13 l3) {
+static t733 f1325(t27 l0, t26 l1, t304 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -43713,9 +43435,9 @@ static t731 f1325(t27 l0, t26 l1, t304 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1523(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(12ULL)), 23, 25, 21); t13 _t6 = ((t13)(4ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t731){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t733){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t731){ .tag = 0, .p.v0 = { .m_value = f1524(l4), } });
+        return ((t733){ .tag = 0, .p.v0 = { .m_value = f1524(l4), } });
     }
     __builtin_unreachable();
 }
@@ -43909,7 +43631,7 @@ static t16 f1336(t527 l0, t10 l1, t14 l2) {
 }
 
 // list::reserve(u64, arena::Arena)
-static t110 f1337(t704 l0, t13 l1) {
+static t110 f1337(t706 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t494 l4;
@@ -43927,7 +43649,7 @@ static t110 f1337(t704 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t494 _t0 = ({ t494 _t1; t766 _t2 = f1526(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t494 _t0 = ({ t494 _t1; t768 _t2 = f1526(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -43998,7 +43720,7 @@ static t604 f1339(t527 l0, t90 l1, t13 l2, t19 l3) {
     t19 l32;
     t19 l33;
     t603 l34;
-    t767 l35;
+    t769 l35;
     t13 l36;
     t19 l37;
     t19 l38;
@@ -44326,44 +44048,44 @@ static t604 f1342(t527 l0, t19 l1, t19 l2, t19 l3) {
 }
 
 // eval::block
-static t732 f1343(t527 l0, t63 l1, t19 l2) {
+static t734 f1343(t527 l0, t63 l1, t19 l2) {
     t19 l3;
     t19 l4;
     t13 l5;
-    t733 l6;
-    t733 l7;
-    t733 l8;
+    t735 l6;
+    t735 l7;
+    t735 l8;
     CTX_STACK_CHECK();
     {
         l3 = ((*l0)).m_sp;
         l4 = ((*l0)).m_floor;
         l5 = (((*l0)).m_defers).m_len;
         ((*l0)).m_floor = ((*l0)).m_sp;
-        { t732 _t0 = f1533((&(*l0)), l1, l2); if ((_t0.tag == 0)) { {
+        { t734 _t0 = f1533((&(*l0)), l1, l2); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l6 = _t0.p.v1.m_error; {
-            { t733 _t1 = l6; if ((_t1.tag == 0)) { {
-                { t732 _t2 = f1534((&(*l0)), l5); if ((_t2.tag == 0)) { {
+            { t735 _t1 = l6; if ((_t1.tag == 0)) { {
+                { t734 _t2 = f1534((&(*l0)), l5); if ((_t2.tag == 0)) { {
                 } } else if ((_t2.tag == 1)) { l7 = _t2.p.v1.m_error; {
-                    return ((t732){ .tag = 1, .p.v1 = { .m_error = l7, } });
+                    return ((t734){ .tag = 1, .p.v1 = { .m_error = l7, } });
                 } } }
                 ((*l0)).m_sp = l3;
                 ((*l0)).m_floor = l4;
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t3; t769 _t4 = ((t769){ .tag = 0 }); if ((_t4.tag == 0)) { {
-                    _t3 = ((t733){ .tag = 0 });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t3; t771 _t4 = ((t771){ .tag = 0 }); if ((_t4.tag == 0)) { {
+                    _t3 = ((t735){ .tag = 0 });
                 } } _t3; }), } });
             } } else if ((_t1.tag == 1)) { {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t5; t603 _t6 = ((t603){ .tag = 0 }); if ((_t6.tag == 0)) { {
-                    _t5 = ((t733){ .tag = 1 });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t5; t603 _t6 = ((t603){ .tag = 0 }); if ((_t6.tag == 0)) { {
+                    _t5 = ((t735){ .tag = 1 });
                 } } _t5; }), } });
             } } }
         } } }
-        { t732 _t7 = f1534((&(*l0)), l5); if ((_t7.tag == 0)) { {
+        { t734 _t7 = f1534((&(*l0)), l5); if ((_t7.tag == 0)) { {
         } } else if ((_t7.tag == 1)) { l8 = _t7.p.v1.m_error; {
-            return ((t732){ .tag = 1, .p.v1 = { .m_error = l8, } });
+            return ((t734){ .tag = 1, .p.v1 = { .m_error = l8, } });
         } } }
         ((*l0)).m_sp = l3;
         ((*l0)).m_floor = l4;
-        return ((t732){ .tag = 0 });
+        return ((t734){ .tag = 0 });
     }
     __builtin_unreachable();
 }
@@ -44396,7 +44118,7 @@ static t16 f1344(t527 l0, t10 l1) {
 }
 
 // list::reserve(eval::Chunk, arena::Arena)
-static t110 f1345(t705 l0, t13 l1) {
+static t110 f1345(t707 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t517 l4;
@@ -44414,7 +44136,7 @@ static t110 f1345(t705 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t517 _t0 = ({ t517 _t1; t770 _t2 = f1535(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t517 _t0 = ({ t517 _t1; t772 _t2 = f1535(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -44451,7 +44173,7 @@ static t263 f1347(t258 l0, t263 l1) {
         if (((l1).m_len == ((t13)(0ULL)))) {
             return l1;
         }
-        l2 = ({ t263 _t0; t758 _t1 = ({ t27 _t2 = (&g13); t26 _t3 = (l0).m_heap; t263 _t4 = f1028(); t13 _t5 = (l1).m_len; f1446(_t2, _t3, _t4, _t5); }); if ((_t1.tag == 0)) { l3 = _t1.p.v0.m_value; {
+        l2 = ({ t263 _t0; t760 _t1 = ({ t27 _t2 = (&g13); t26 _t3 = (l0).m_heap; t263 _t4 = f1028(); t13 _t5 = (l1).m_len; f1446(_t2, _t3, _t4, _t5); }); if ((_t1.tag == 0)) { l3 = _t1.p.v0.m_value; {
             _t0 = l3;
         } } else if ((_t1.tag == 1)) { l4 = _t1.p.v1.m_error; {
             { t95 _t6 = l4; if ((_t6.tag == 0)) { {
@@ -44944,12 +44666,12 @@ static t49 f1366(t537 l0, t49 l1, t33 l2, t33 l3) {
     t572 l9;
     t33 l10;
     t33 l11;
-    t678 l12;
+    t680 l12;
     t49 l13;
     t49 l14;
     t33 l15;
     t33 l16;
-    t678 l17;
+    t680 l17;
     t49 l18;
     t49 l19;
     CTX_STACK_CHECK();
@@ -44995,7 +44717,7 @@ static t49 f1367(t537 l0, t49 l1, t33 l2, t33 l3) {
     t13 l8;
     t263 l9;
     t263 l10;
-    t678 l11;
+    t680 l11;
     t559 l12;
     t13 l13;
     t33 l14;
@@ -45060,8 +44782,8 @@ static t14 f1369(t592 l0, t33 l1, t33 l2) {
     t14 l10;
     t33 l11;
     t14 l12;
-    t693 l13;
-    t693 l14;
+    t695 l13;
+    t695 l14;
     t14 l15;
     t14 l16;
     CTX_STACK_CHECK();
@@ -45222,7 +44944,7 @@ static t66 f1374(t537 l0, t167 l1) {
     t174 l10;
     t171 l11;
     t164 l12;
-    t753 l13;
+    t755 l13;
     t95 l14;
     t49 l15;
     t49 l16;
@@ -45353,7 +45075,7 @@ static t66 f1374(t537 l0, t167 l1) {
 }
 
 // map::get(u32, check::Layout, arena::Arena)
-static t708 f1375(t320 l0, t33 l1) {
+static t710 f1375(t320 l0, t33 l1) {
     t630 l2;
     t324 l3;
     CTX_STACK_CHECK();
@@ -45361,17 +45083,17 @@ static t708 f1375(t320 l0, t33 l1) {
         l2 = f1571(l0, l1);
         if (((l2).tag != 0)) {
             { t323 _t0 = (*({ t321 _t1 = ((l0).m_slots); uint64_t _t2 = (l2).p.v1.m_value; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 56, 26, 25); })); if ((_t0.tag == 2)) { l3 = _t0.p.v2.m_v; {
-                return ((t708){ .tag = 1, .p.v1.m_value = l3 });
+                return ((t710){ .tag = 1, .p.v1.m_value = l3 });
             } } else { {
             } } }
         }
-        return ((t708){0});
+        return ((t710){0});
     }
     __builtin_unreachable();
 }
 
 // check::compute
-static t708 f1376(t429 l0, t33 l1) {
+static t710 f1376(t429 l0, t33 l1) {
     t12 l2;
     t19 l3;
     t33 l4;
@@ -45379,66 +45101,66 @@ static t708 f1376(t429 l0, t33 l1) {
     t33 l6;
     t19 l7;
     t33 l8;
-    t708 l9;
+    t710 l9;
     t647 l10;
     t651 l11;
     CTX_STACK_CHECK();
     {
         { t262 _t0 = f609(((*l0)).m_ty, l1); if ((_t0.tag == 3)) { l2 = _t0.p.v3.m_p; {
             l3 = ((t19)(ctx_as_u((uint64_t)(ctx_div_u32(f1272(l2), ((t33)(8ULL)), 7937, 51, 18)), UINT64_MAX, "u64", 7937, 25, 18)));
-            return ((t708){ .tag = 1, .p.v1.m_value = ((t324){ .m_size = l3, .m_align = l3, }) });
+            return ((t710){ .tag = 1, .p.v1.m_value = ((t324){ .m_size = l3, .m_align = l3, }) });
         } } else if ((_t0.tag == 5) || (_t0.tag == 12)) { {
-            return ((t708){ .tag = 1, .p.v1.m_value = ((t324){ .m_size = ((t19)(8ULL)), .m_align = ((t19)(8ULL)), }) });
+            return ((t710){ .tag = 1, .p.v1.m_value = ((t324){ .m_size = ((t19)(8ULL)), .m_align = ((t19)(8ULL)), }) });
         } } else if ((_t0.tag == 6)) { {
-            return ((t708){ .tag = 1, .p.v1.m_value = ((t324){ .m_size = ((t19)(16ULL)), .m_align = ((t19)(8ULL)), }) });
+            return ((t710){ .tag = 1, .p.v1.m_value = ((t324){ .m_size = ((t19)(16ULL)), .m_align = ((t19)(8ULL)), }) });
         } } else if ((_t0.tag == 4)) { l4 = _t0.p.v4.m_decl; {
             if ((((f585((*l0), l4)).m_fields).m_len == ((t13)(0ULL)))) {
-                return ((t708){ .tag = 1, .p.v1.m_value = ((t324){ .m_size = ((t19)(0ULL)), .m_align = ((t19)(1ULL)), }) });
+                return ((t710){ .tag = 1, .p.v1.m_value = ((t324){ .m_size = ((t19)(0ULL)), .m_align = ((t19)(1ULL)), }) });
             }
             l5 = f918((&(*l0)), l1);
             if (((l5).tag == 0)) {
-                return ((t708){0});
+                return ((t710){0});
             }
-            return ((t708){ .tag = 1, .p.v1.m_value = ((l5).p.v1.m_value).m_layout });
+            return ((t710){ .tag = 1, .p.v1.m_value = ((l5).p.v1.m_value).m_layout });
         } } else if ((_t0.tag == 1)) { {
-            return ((t708){ .tag = 1, .p.v1.m_value = ((t324){ .m_size = ((t19)(0ULL)), .m_align = ((t19)(1ULL)), }) });
+            return ((t710){ .tag = 1, .p.v1.m_value = ((t324){ .m_size = ((t19)(0ULL)), .m_align = ((t19)(1ULL)), }) });
         } } else if ((_t0.tag == 11)) { l6 = _t0.p.v11.m_decl; {
             return ({ t429 _t1 = (&(*l0)); t33 _t2 = (f585((*l0), l6)).m_ty; f1162(_t1, _t2); });
         } } else if ((_t0.tag == 7)) { l7 = _t0.p.v7.m_n; l8 = _t0.p.v7.m_elem; {
             l9 = f1162((&(*l0)), l8);
             if (((l9).tag == 0)) {
-                return ((t708){0});
+                return ((t710){0});
             }
             if (((((l9).p.v1.m_value).m_size != ((t19)(0ULL))) && ({ t19 _t3 = l7; t19 _t4 = ctx_div_u64(((t19)(18446744073709551615ULL)), ((l9).p.v1.m_value).m_size, 7953, 62, 18); (_t3 > _t4); }))) {
-                return ((t708){0});
+                return ((t710){0});
             }
-            return ((t708){ .tag = 1, .p.v1.m_value = ({ t19 _t5 = ctx_mul_u64(l7, ((l9).p.v1.m_value).m_size, 7954, 41, 18); t19 _t6 = ((l9).p.v1.m_value).m_align; ((t324){ .m_size = _t5, .m_align = _t6, }); }) });
+            return ((t710){ .tag = 1, .p.v1.m_value = ({ t19 _t5 = ctx_mul_u64(l7, ((l9).p.v1.m_value).m_size, 7954, 41, 18); t19 _t6 = ((l9).p.v1.m_value).m_align; ((t324){ .m_size = _t5, .m_align = _t6, }); }) });
         } } else if ((_t0.tag == 9)) { {
             l10 = f918((&(*l0)), l1);
             if (((l10).tag == 0)) {
-                return ((t708){0});
+                return ((t710){0});
             }
-            return ((t708){ .tag = 1, .p.v1.m_value = ((l10).p.v1.m_value).m_layout });
+            return ((t710){ .tag = 1, .p.v1.m_value = ((l10).p.v1.m_value).m_layout });
         } } else if ((_t0.tag == 8) || (_t0.tag == 10) || (_t0.tag == 17) || (_t0.tag == 16)) { {
             if (f1266((*l0), l1)) {
-                return ((t708){ .tag = 1, .p.v1.m_value = ((t324){ .m_size = ((t19)(8ULL)), .m_align = ((t19)(8ULL)), }) });
+                return ((t710){ .tag = 1, .p.v1.m_value = ((t324){ .m_size = ((t19)(8ULL)), .m_align = ((t19)(8ULL)), }) });
             }
             l11 = f920((&(*l0)), l1);
             if (((l11).tag == 0)) {
-                return ((t708){0});
+                return ((t710){0});
             }
-            return ((t708){ .tag = 1, .p.v1.m_value = ((l11).p.v1.m_value).m_layout });
+            return ((t710){ .tag = 1, .p.v1.m_value = ((l11).p.v1.m_value).m_layout });
         } } else if ((_t0.tag == 15)) { {
             return ({ t429 _t7 = (&(*l0)); t33 _t8 = f1122((&(*l0)), l1); f1162(_t7, _t8); });
         } } else { {
-            return ((t708){0});
+            return ((t710){0});
         } } }
     }
     __builtin_unreachable();
 }
 
 // map::put(u32, check::Layout, arena::Arena)
-static t110 f1377(t734 l0, t33 l1, t324 l2) {
+static t110 f1377(t736 l0, t33 l1, t324 l2) {
     t630 l3;
     t95 l4;
     t13 l5;
@@ -45468,7 +45190,7 @@ static t110 f1377(t734 l0, t33 l1, t324 l2) {
 }
 
 // list::reserve([]mut u64, arena::Arena)
-static t110 f1378(t710 l0, t13 l1) {
+static t110 f1378(t712 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t649 l4;
@@ -45486,7 +45208,7 @@ static t110 f1378(t710 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t649 _t0 = ({ t649 _t1; t771 _t2 = f1574(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t649 _t0 = ({ t649 _t1; t773 _t2 = f1574(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -45545,7 +45267,7 @@ static t16 f1380(t133 l0, t257 l1, t164 l2, t33 l3, t14 l4) {
             f925((&(*l0)), l1, l5, l3);
             return;
         }
-        { t772 _t0 = f1575((*({ t165 _t1 = (l5); uint64_t _t2 = ctx_sub_u64((l5).m_len, ((t13)(1ULL)), 1183, 50, 14); _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 1183, 42, 14); }))); if ((_t0.tag == 0)) { {
+        { t774 _t0 = f1575((*({ t165 _t1 = (l5); uint64_t _t2 = ctx_sub_u64((l5).m_len, ((t13)(1ULL)), 1183, 50, 14); _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 1183, 42, 14); }))); if ((_t0.tag == 0)) { {
             f925((&(*l0)), l1, l5, l3);
         } } else if ((_t0.tag == 1)) { l6 = _t0.p.v1.m_e; {
             ({ t133 _t3 = (&(*l0)); t257 _t4 = l1; t165 _t5 = ({ t165 _t7 = (l5); uint64_t _t8 = ((t13)(0ULL)); uint64_t _t9 = ctx_sub_u64((l5).m_len, ((t13)(1ULL)), 1186, 50, 14); ctx_range(_t8, _t9, _t7.m_len, 1186, 40, 14); (t165){ .m_ptr = _t7.m_ptr + _t8, .m_len = _t9 - _t8 }; }); t33 _t6 = l3; f925(_t3, _t4, _t5, _t6); });
@@ -45605,7 +45327,7 @@ static t16 f1380(t133 l0, t257 l1, t164 l2, t33 l3, t14 l4) {
 }
 
 // map::get(u64, []check::Forward, arena::Arena)
-static t735 f1381(t372 l0, t19 l1) {
+static t737 f1381(t372 l0, t19 l1) {
     t630 l2;
     t376 l3;
     CTX_STACK_CHECK();
@@ -45613,11 +45335,11 @@ static t735 f1381(t372 l0, t19 l1) {
         l2 = f1576(l0, l1);
         if (((l2).tag != 0)) {
             { t375 _t0 = (*({ t373 _t1 = ((l0).m_slots); uint64_t _t2 = (l2).p.v1.m_value; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 56, 26, 25); })); if ((_t0.tag == 2)) { l3 = _t0.p.v2.m_v; {
-                return ((t735){ .tag = 1, .p.v1.m_value = l3 });
+                return ((t737){ .tag = 1, .p.v1.m_value = l3 });
             } } else { {
             } } }
         }
-        return ((t735){0});
+        return ((t737){0});
     }
     __builtin_unreachable();
 }
@@ -45709,7 +45431,7 @@ static t16 f1386(t133 l0, t33 l1, t17 l2, t174 l3) {
 }
 
 // alloc::resize(diag::Diag, arena::Arena)
-static t736 f1387(t27 l0, t26 l1, t117 l2, t13 l3) {
+static t738 f1387(t27 l0, t26 l1, t117 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -45717,9 +45439,9 @@ static t736 f1387(t27 l0, t26 l1, t117 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1578(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(48ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t736){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t738){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t736){ .tag = 0, .p.v0 = { .m_value = f1579(l4), } });
+        return ((t738){ .tag = 0, .p.v0 = { .m_value = f1579(l4), } });
     }
     __builtin_unreachable();
 }
@@ -45781,7 +45503,7 @@ static t141 f1391(t436 l0, t13 l1, t142 l2) {
 }
 
 // list::push(syntax::Expr, arena::Arena)
-static t110 f1392(t688 l0, t141 l1) {
+static t110 f1392(t690 l0, t141 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -45807,7 +45529,7 @@ static t141 f1393(t436 l0) {
     t95 l7;
     t95 l8;
     t95 l9;
-    t773 l10;
+    t775 l10;
     t132 l11;
     t95 l12;
     t95 l13;
@@ -45829,7 +45551,7 @@ static t141 f1393(t436 l0) {
         l2 = f1200((&(*l0)));
         l3 = ({ t33 _t0 = f665((&(*l0))); t121 _t1 = ({ t33 _t3 = ((*l0)).m_file; t33 _t4 = ctx_add_u32(((l2).m_span).m_start, ((t33)(1ULL)), 1207, 89, 15); t33 _t5 = ((l2).m_span).m_end; ((t121){ .m_file = _t3, .m_start = _t4, .m_end = _t5, }); }); t10 _t2 = ({ t10 _t6 = (((*l0)).m_text); uint64_t _t7 = ((t13)(ctx_add_u32(((l2).m_span).m_start, ((t33)(1ULL)), 1208, 40, 15))); uint64_t _t8 = ((t13)(((l2).m_span).m_end)); ctx_range(_t7, _t8, _t6.m_len, 1208, 26, 15); (t10){ .m_ptr = _t6.m_ptr + _t7, .m_len = _t8 - _t7 }; }); ((t147){ .m_id = _t0, .m_span = _t1, .m_text = _t2, }); });
         l4 = ((t13)(0ULL));
-        while (((l4 < ((t13)(12ULL))) && (!({ t10 _t9 = ((*({ t774 *_t11 = &(qv5); uint64_t _t12 = l4; &_t11->a[ctx_idx(_t12, 12, 1211, 69, 15)]; }))).m_name; t10 _t10 = (l3).m_text; f1(_t9, _t10); })))) {
+        while (((l4 < ((t13)(12ULL))) && (!({ t10 _t9 = ((*({ t776 *_t11 = &(qv7); uint64_t _t12 = l4; &_t11->a[ctx_idx(_t12, 12, 1211, 69, 15)]; }))).m_name; t10 _t10 = (l3).m_text; f1(_t9, _t10); })))) {
             l4 = ctx_add_u64(l4, ((t13)(1ULL)), 1211, 103, 15);
         }
         if ((l4 == ((t13)(12ULL)))) {
@@ -45855,7 +45577,7 @@ static t141 f1393(t436 l0) {
             ({ t436 _t21 = (&(*l0)); t17 _t22 = f59(l5); t128 _t23 = l2; f662(_t21, _t22, _t23); });
             return f1391((&(*l0)), l1, ((t142){ .tag = 0 }));
         }
-        l10 = (*({ t774 *_t24 = &(qv5); uint64_t _t25 = l4; &_t24->a[ctx_idx(_t25, 12, 1218, 27, 15)]; }));
+        l10 = (*({ t776 *_t24 = &(qv7); uint64_t _t25 = l4; &_t24->a[ctx_idx(_t25, 12, 1218, 27, 15)]; }));
         if ((!f371((*l0), ((t12)(49ULL))))) {
             l11 = f685((*l0));
             { t110 _t26 = ({ t110 _t27; t110 _t28 = f55((&l11), ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"expected '(' after @", .m_len = 20 }), })); if ((_t28.tag == 0)) { {
@@ -45960,7 +45682,7 @@ static t141 f1394(t436 l0) {
 
 // parser::name_path
 static t141 f1395(t436 l0, t147 l1) {
-    t664 l2;
+    t666 l2;
     t95 l3;
     t142 l4;
     CTX_STACK_CHECK();
@@ -45979,10 +45701,10 @@ static t141 f1395(t436 l0, t147 l1) {
 }
 
 // list::new(syntax::Item, arena::Arena)
-static t737 f1396(t27 l0, t26 l1) {
+static t739 f1396(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t159 _t0 = f942(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t737){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t159 _t0 = f942(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t739){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
@@ -45997,7 +45719,7 @@ static t147 f1397(t436 l0, t147 l1) {
 }
 
 // list::push(syntax::Item, arena::Arena)
-static t110 f1398(t738 l0, t161 l1) {
+static t110 f1398(t740 l0, t161 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -46013,7 +45735,7 @@ static t110 f1398(t738 l0, t161 l1) {
 }
 
 // list::items(syntax::Item, arena::Arena)
-static t159 f1399(t737 l0) {
+static t159 f1399(t739 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t159 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t159){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -46022,7 +45744,7 @@ static t159 f1399(t737 l0) {
 }
 
 // alloc::resize(syntax::Expr, arena::Arena)
-static t739 f1400(t27 l0, t26 l1, t162 l2, t13 l3) {
+static t741 f1400(t27 l0, t26 l1, t162 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46030,15 +45752,15 @@ static t739 f1400(t27 l0, t26 l1, t162 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1584(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(112ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t739){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t741){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t739){ .tag = 0, .p.v0 = { .m_value = f1585(l4), } });
+        return ((t741){ .tag = 0, .p.v0 = { .m_value = f1585(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(syntax::Attr, arena::Arena)
-static t740 f1401(t27 l0, t26 l1, t138 l2, t13 l3) {
+static t742 f1401(t27 l0, t26 l1, t138 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46046,15 +45768,15 @@ static t740 f1401(t27 l0, t26 l1, t138 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1586(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(128ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t740){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t742){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t740){ .tag = 0, .p.v0 = { .m_value = f1587(l4), } });
+        return ((t742){ .tag = 0, .p.v0 = { .m_value = f1587(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(syntax::Field, arena::Arena)
-static t741 f1402(t27 l0, t26 l1, t186 l2, t13 l3) {
+static t743 f1402(t27 l0, t26 l1, t186 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46062,15 +45784,15 @@ static t741 f1402(t27 l0, t26 l1, t186 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1588(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(136ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t741){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t743){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t741){ .tag = 0, .p.v0 = { .m_value = f1589(l4), } });
+        return ((t743){ .tag = 0, .p.v0 = { .m_value = f1589(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(syntax::Include, arena::Arena)
-static t742 f1403(t27 l0, t26 l1, t196 l2, t13 l3) {
+static t744 f1403(t27 l0, t26 l1, t196 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46078,15 +45800,15 @@ static t742 f1403(t27 l0, t26 l1, t196 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1590(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(88ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t742){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t744){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t742){ .tag = 0, .p.v0 = { .m_value = f1591(l4), } });
+        return ((t744){ .tag = 0, .p.v0 = { .m_value = f1591(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(syntax::Seg, arena::Arena)
-static t743 f1404(t27 l0, t26 l1, t144 l2, t13 l3) {
+static t745 f1404(t27 l0, t26 l1, t144 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46094,24 +45816,24 @@ static t743 f1404(t27 l0, t26 l1, t144 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1592(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(56ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t743){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t745){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t743){ .tag = 0, .p.v0 = { .m_value = f1593(l4), } });
+        return ((t745){ .tag = 0, .p.v0 = { .m_value = f1593(l4), } });
     }
     __builtin_unreachable();
 }
 
 // list::new(syntax::TypeExpr, arena::Arena)
-static t744 f1405(t27 l0, t26 l1) {
+static t746 f1405(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t149 _t0 = f1409(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t744){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t149 _t0 = f1409(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t746){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // list::push(syntax::TypeExpr, arena::Arena)
-static t110 f1406(t745 l0, t151 l1) {
+static t110 f1406(t747 l0, t151 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -46127,7 +45849,7 @@ static t110 f1406(t745 l0, t151 l1) {
 }
 
 // list::items(syntax::TypeExpr, arena::Arena)
-static t149 f1407(t744 l0) {
+static t149 f1407(t746 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t149 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t149){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -46136,7 +45858,7 @@ static t149 f1407(t744 l0) {
 }
 
 // alloc::resize(syntax::TypeExpr, arena::Arena)
-static t746 f1408(t27 l0, t26 l1, t149 l2, t13 l3) {
+static t748 f1408(t27 l0, t26 l1, t149 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46144,9 +45866,9 @@ static t746 f1408(t27 l0, t26 l1, t149 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1595(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(64ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t746){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t748){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t746){ .tag = 0, .p.v0 = { .m_value = f1596(l4), } });
+        return ((t748){ .tag = 0, .p.v0 = { .m_value = f1596(l4), } });
     }
     __builtin_unreachable();
 }
@@ -46192,7 +45914,7 @@ static t141 f1410(t436 l0) {
 }
 
 // alloc::resize(syntax::Name, arena::Arena)
-static t747 f1411(t27 l0, t26 l1, t182 l2, t13 l3) {
+static t749 f1411(t27 l0, t26 l1, t182 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46200,15 +45922,15 @@ static t747 f1411(t27 l0, t26 l1, t182 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1600(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t747){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t749){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t747){ .tag = 0, .p.v0 = { .m_value = f1601(l4), } });
+        return ((t749){ .tag = 0, .p.v0 = { .m_value = f1601(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(syntax::EnumVariant, arena::Arena)
-static t748 f1412(t27 l0, t26 l1, t193 l2, t13 l3) {
+static t750 f1412(t27 l0, t26 l1, t193 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46216,15 +45938,15 @@ static t748 f1412(t27 l0, t26 l1, t193 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1602(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(168ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t748){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t750){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t748){ .tag = 0, .p.v0 = { .m_value = f1603(l4), } });
+        return ((t750){ .tag = 0, .p.v0 = { .m_value = f1603(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(syntax::Variant, arena::Arena)
-static t749 f1413(t27 l0, t26 l1, t189 l2, t13 l3) {
+static t751 f1413(t27 l0, t26 l1, t189 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46232,15 +45954,15 @@ static t749 f1413(t27 l0, t26 l1, t189 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1604(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(72ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t749){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t751){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t749){ .tag = 0, .p.v0 = { .m_value = f1605(l4), } });
+        return ((t751){ .tag = 0, .p.v0 = { .m_value = f1605(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(syntax::Param, arena::Arena)
-static t750 f1414(t27 l0, t26 l1, t154 l2, t13 l3) {
+static t752 f1414(t27 l0, t26 l1, t154 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46248,15 +45970,15 @@ static t750 f1414(t27 l0, t26 l1, t154 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1606(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(112ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t750){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t752){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t750){ .tag = 0, .p.v0 = { .m_value = f1607(l4), } });
+        return ((t752){ .tag = 0, .p.v0 = { .m_value = f1607(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(syntax::Stmt, arena::Arena)
-static t751 f1415(t27 l0, t26 l1, t165 l2, t13 l3) {
+static t753 f1415(t27 l0, t26 l1, t165 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46264,9 +45986,9 @@ static t751 f1415(t27 l0, t26 l1, t165 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1608(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(272ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t751){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t753){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t751){ .tag = 0, .p.v0 = { .m_value = f1609(l4), } });
+        return ((t753){ .tag = 0, .p.v0 = { .m_value = f1609(l4), } });
     }
     __builtin_unreachable();
 }
@@ -46287,25 +46009,25 @@ static t141 f1416(t436 l0) {
 }
 
 // list::new(syntax::Arm, arena::Arena)
-static t752 f1417(t27 l0, t26 l1) {
+static t754 f1417(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t176 _t0 = f1610(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t752){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t176 _t0 = f1610(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t754){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // list::new(syntax::Pattern, arena::Arena)
-static t753 f1418(t27 l0, t26 l1) {
+static t755 f1418(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t179 _t0 = f1611(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t753){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t179 _t0 = f1611(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t755){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // list::push(syntax::Pattern, arena::Arena)
-static t110 f1419(t754 l0, t181 l1) {
+static t110 f1419(t756 l0, t181 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -46324,7 +46046,7 @@ static t110 f1419(t754 l0, t181 l1) {
 static t181 f1420(t436 l0, t14 l1) {
     t13 l2;
     t147 l3;
-    t666 l4;
+    t668 l4;
     t95 l5;
     t171 l6;
     CTX_STACK_CHECK();
@@ -46356,7 +46078,7 @@ static t181 f1420(t436 l0, t14 l1) {
 }
 
 // list::push(syntax::Arm, arena::Arena)
-static t110 f1421(t755 l0, t178 l1) {
+static t110 f1421(t757 l0, t178 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -46372,7 +46094,7 @@ static t110 f1421(t755 l0, t178 l1) {
 }
 
 // list::items(syntax::Pattern, arena::Arena)
-static t179 f1422(t753 l0) {
+static t179 f1422(t755 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t179 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t179){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -46381,7 +46103,7 @@ static t179 f1422(t753 l0) {
 }
 
 // list::items(syntax::Arm, arena::Arena)
-static t176 f1423(t752 l0) {
+static t176 f1423(t754 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t176 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t176){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -46406,7 +46128,7 @@ static t167 f1424(t436 l0, t33 l1, t13 l2, t147 l3, t171 l4) {
 
 // parser::binder_list
 static t171 f1425(t436 l0) {
-    t775 l1;
+    t777 l1;
     t13 l2;
     t14 l3;
     t147 l4;
@@ -46581,7 +46303,7 @@ static t237 f1434(t10 l0) {
 }
 
 // alloc::resize(emit::Scope, arena::Arena)
-static t756 f1435(t27 l0, t26 l1, t226 l2, t13 l3) {
+static t758 f1435(t27 l0, t26 l1, t226 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46589,9 +46311,9 @@ static t756 f1435(t27 l0, t26 l1, t226 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1620(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t756){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t758){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t756){ .tag = 0, .p.v0 = { .m_value = f1621(l4), } });
+        return ((t758){ .tag = 0, .p.v0 = { .m_value = f1621(l4), } });
     }
     __builtin_unreachable();
 }
@@ -46653,7 +46375,7 @@ static t267 f1439(t10 l0) {
 }
 
 // alloc::resize(check::Decl, arena::Arena)
-static t757 f1440(t27 l0, t26 l1, t290 l2, t13 l3) {
+static t759 f1440(t27 l0, t26 l1, t290 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46661,9 +46383,9 @@ static t757 f1440(t27 l0, t26 l1, t290 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1622(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(440ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t757){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t759){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t757){ .tag = 0, .p.v0 = { .m_value = f1623(l4), } });
+        return ((t759){ .tag = 0, .p.v0 = { .m_value = f1623(l4), } });
     }
     __builtin_unreachable();
 }
@@ -46757,7 +46479,7 @@ static t16 f1445(t429 l0, t147 l1, t286 l2) {
 }
 
 // alloc::resize(types::Field, arena::Arena)
-static t758 f1446(t27 l0, t26 l1, t263 l2, t13 l3) {
+static t760 f1446(t27 l0, t26 l1, t263 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46765,15 +46487,15 @@ static t758 f1446(t27 l0, t26 l1, t263 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1624(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(24ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t758){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t760){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t758){ .tag = 0, .p.v0 = { .m_value = f1625(l4), } });
+        return ((t760){ .tag = 0, .p.v0 = { .m_value = f1625(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(check::CVar, arena::Arena)
-static t759 f1447(t27 l0, t26 l1, t299 l2, t13 l3) {
+static t761 f1447(t27 l0, t26 l1, t299 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46781,15 +46503,15 @@ static t759 f1447(t27 l0, t26 l1, t299 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1626(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(40ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t759){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t761){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t759){ .tag = 0, .p.v0 = { .m_value = f1627(l4), } });
+        return ((t761){ .tag = 0, .p.v0 = { .m_value = f1627(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(check::Variant, arena::Arena)
-static t760 f1448(t27 l0, t26 l1, t293 l2, t13 l3) {
+static t762 f1448(t27 l0, t26 l1, t293 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46797,15 +46519,15 @@ static t760 f1448(t27 l0, t26 l1, t293 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1628(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(40ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t760){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t762){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t760){ .tag = 0, .p.v0 = { .m_value = f1629(l4), } });
+        return ((t762){ .tag = 0, .p.v0 = { .m_value = f1629(l4), } });
     }
     __builtin_unreachable();
 }
 
 // map::put(u64, check::Ref, arena::Arena)
-static t110 f1449(t761 l0, t19 l1, t319 l2) {
+static t110 f1449(t763 l0, t19 l1, t319 l2) {
     t630 l3;
     t95 l4;
     t13 l5;
@@ -46835,7 +46557,7 @@ static t110 f1449(t761 l0, t19 l1, t319 l2) {
 }
 
 // alloc::resize(i64, arena::Arena)
-static t762 f1450(t27 l0, t26 l1, t297 l2, t13 l3) {
+static t764 f1450(t27 l0, t26 l1, t297 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -46843,15 +46565,15 @@ static t762 f1450(t27 l0, t26 l1, t297 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1633(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(8ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t762){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t764){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t762){ .tag = 0, .p.v0 = { .m_value = f1634(l4), } });
+        return ((t764){ .tag = 0, .p.v0 = { .m_value = f1634(l4), } });
     }
     __builtin_unreachable();
 }
 
 // list::reserve(types::Var, arena::Arena)
-static t110 f1451(t723 l0, t13 l1) {
+static t110 f1451(t725 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t273 l4;
@@ -46869,7 +46591,7 @@ static t110 f1451(t723 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t273 _t0 = ({ t273 _t1; t777 _t2 = f1635(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t273 _t0 = ({ t273 _t1; t779 _t2 = f1635(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -46880,7 +46602,7 @@ static t110 f1451(t723 l0, t13 l1) {
 }
 
 // list::reserve(check::GVar, arena::Arena)
-static t110 f1452(t689 l0, t13 l1) {
+static t110 f1452(t691 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t328 l4;
@@ -46898,7 +46620,7 @@ static t110 f1452(t689 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t328 _t0 = ({ t328 _t1; t778 _t2 = f1636(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t328 _t0 = ({ t328 _t1; t780 _t2 = f1636(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -46925,7 +46647,7 @@ static t16 f1453(t254 l0, t254 l1) {
 }
 
 // list::reserve(usize, arena::Arena)
-static t110 f1454(t691 l0, t13 l1) {
+static t110 f1454(t693 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t340 l4;
@@ -46943,7 +46665,7 @@ static t110 f1454(t691 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t340 _t0 = ({ t340 _t1; t779 _t2 = f1637(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t340 _t0 = ({ t340 _t1; t781 _t2 = f1637(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -47077,7 +46799,7 @@ static t33 f1456(t429 l0, t141 l1, t10 l2, t33 l3) {
 
 // check::path_expr
 static t33 f1457(t429 l0, t141 l1, t144 l2, t33 l3) {
-    t694 l4;
+    t696 l4;
     t33 l5;
     t33 l6;
     t254 l7;
@@ -47256,7 +46978,7 @@ static t14 f1459(t257 l0, t33 l1) {
 static t33 f1460(t429 l0, t141 l1, t12 l2, t141 l3, t141 l4, t33 l5) {
     t121 l6;
     t17 l7;
-    t780 l8;
+    t782 l8;
     t14 l9;
     t14 l10;
     t141 l11;
@@ -47332,7 +47054,7 @@ static t33 f1460(t429 l0, t141 l1, t12 l2, t141 l3, t141 l4, t33 l5) {
             f841((&(*l0)), l3, ((t33)(14ULL)));
             f1098((&(*l0)));
             l8 = f1647((*l0), l3);
-            ({ t429 _t0 = (&(*l0)); t781 _t1 = ({ t781 _t3; if ((l2 == ((t12)(25ULL)))) {
+            ({ t429 _t0 = (&(*l0)); t783 _t1 = ({ t783 _t3; if ((l2 == ((t12)(25ULL)))) {
                 _t3 = (l8).m_yes;
             } else {
                 _t3 = (l8).m_no;
@@ -48060,8 +47782,8 @@ static t33 f1464(t429 l0, t141 l1, t141 l2, t147 l3) {
     t14 l5;
     t33 l6;
     t33 l7;
-    t784 l8;
-    t784 l9;
+    t786 l8;
+    t786 l9;
     t33 l10;
     t33 l11;
     t95 l12;
@@ -48185,7 +47907,7 @@ static t16 f1466(t429 l0, t141 l1, t12 l2) {
     t95 l3;
     CTX_STACK_CHECK();
     {
-        { t110 _t0 = ({ t785 _t1 = (&((*l0)).m_access); t19 _t2 = f1084(l1); t12 _t3 = l2; f1663(_t1, _t2, _t3); }); if ((_t0.tag == 0)) { {
+        { t110 _t0 = ({ t787 _t1 = (&((*l0)).m_access); t19 _t2 = f1084(l1); t12 _t3 = l2; f1663(_t1, _t2, _t3); }); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l3 = _t0.p.v1.m_error; {
             { t95 _t4 = l3; if ((_t4.tag == 0)) { {
                 ctx_panic(4430, 9, 18, "try! failed: alloc::out_of_memory");
@@ -48289,7 +48011,7 @@ static t33 f1467(t429 l0, t141 l1, t141 l2, t158 l3, t158 l4) {
 static t14 f1468(t429 l0, t141 l1) {
     t17 l2;
     t144 l3;
-    t694 l4;
+    t696 l4;
     t17 l5;
     t132 l6;
     t95 l7;
@@ -48299,7 +48021,7 @@ static t14 f1468(t429 l0, t141 l1) {
     t95 l11;
     t153 l12;
     t147 l13;
-    t786 l14;
+    t788 l14;
     t12 l15;
     t12 l16;
     t132 l17;
@@ -48355,7 +48077,7 @@ static t14 f1468(t429 l0, t141 l1) {
             l2 = f59(l6);
         } } else if ((_t0.tag == 7)) { l12 = _t0.p.v7.m_base; l13 = _t0.p.v7.m_name; {
             l14 = f1665((*l0), l1);
-            if (({ t14 _t15; t786 _t16 = l14; if ((_t16.tag == 0)) { {
+            if (({ t14 _t15; t788 _t16 = l14; if ((_t16.tag == 0)) { {
                 _t15 = ((bool)0);
             } } else if ((_t16.tag == 1)) { l15 = _t16.p.v1.m_value; {
                 _t15 = ({ t14 _t17; t12 _t18 = l15; if (_t18 == ((t12)(0ULL))) { {
@@ -48366,7 +48088,7 @@ static t14 f1468(t429 l0, t141 l1) {
             } } _t15; })) {
                 return f1468((&(*l0)), (*l12));
             }
-            if (({ t14 _t19; t786 _t20 = l14; if ((_t20.tag == 0)) { {
+            if (({ t14 _t19; t788 _t20 = l14; if ((_t20.tag == 0)) { {
                 _t19 = ((bool)1);
             } } else if ((_t20.tag == 1)) { l16 = _t20.p.v1.m_value; {
                 _t19 = ({ t14 _t21; t12 _t22 = l16; if (_t22 == ((t12)(1ULL))) { {
@@ -48398,7 +48120,7 @@ static t14 f1468(t429 l0, t141 l1) {
             } } }
             l2 = f59(l17);
         } } else if ((_t0.tag == 9)) { l22 = _t0.p.v9.m_base; {
-            if (({ t14 _t31; t786 _t32 = f1665((*l0), l1); if ((_t32.tag == 0)) { {
+            if (({ t14 _t31; t788 _t32 = f1665((*l0), l1); if ((_t32.tag == 0)) { {
                 _t31 = ((bool)0);
             } } else if ((_t32.tag == 1)) { l23 = _t32.p.v1.m_value; {
                 _t31 = ({ t14 _t33; t12 _t34 = l23; if (_t34 == ((t12)(6ULL))) { {
@@ -48432,7 +48154,7 @@ static t14 f1469(t257 l0, t141 l1) {
     CTX_STACK_CHECK();
     {
         { t142 _t0 = (l1).m_k; if ((_t0.tag == 6)) { {
-            if (({ t14 _t1; t694 _t2 = ({ t355 _t3 = (l0).m_refs; t19 _t4 = f1084(l1); f1087(_t3, _t4); }); if ((_t2.tag == 0)) { {
+            if (({ t14 _t1; t696 _t2 = ({ t355 _t3 = (l0).m_refs; t19 _t4 = f1084(l1); f1087(_t3, _t4); }); if ((_t2.tag == 0)) { {
                 _t1 = ((bool)0);
             } } else if ((_t2.tag == 1)) { l2 = _t2.p.v1.m_value; {
                 _t1 = ({ t14 _t5; t359 _t6 = l2; if ((_t6.tag == 0)) { l3 = _t6.p.v0.m_var; {
@@ -48445,7 +48167,7 @@ static t14 f1469(t257 l0, t141 l1) {
             }
             return ((bool)1);
         } } else if ((_t0.tag == 7)) { l4 = _t0.p.v7.m_base; {
-            if (({ t14 _t7; t786 _t8 = f1665(l0, l1); if ((_t8.tag == 0)) { {
+            if (({ t14 _t7; t788 _t8 = f1665(l0, l1); if ((_t8.tag == 0)) { {
                 _t7 = ((bool)0);
             } } else if ((_t8.tag == 1)) { l5 = _t8.p.v1.m_value; {
                 _t7 = ({ t14 _t9; t12 _t10 = l5; if (_t10 == ((t12)(0ULL))) { {
@@ -48457,7 +48179,7 @@ static t14 f1469(t257 l0, t141 l1) {
                 return f1469(l0, (*l4));
             }
         } } else if ((_t0.tag == 9)) { l6 = _t0.p.v9.m_base; {
-            if (({ t14 _t11; t786 _t12 = f1665(l0, l1); if ((_t12.tag == 0)) { {
+            if (({ t14 _t11; t788 _t12 = f1665(l0, l1); if ((_t12.tag == 0)) { {
                 _t11 = ((bool)0);
             } } else if ((_t12.tag == 1)) { l7 = _t12.p.v1.m_value; {
                 _t11 = ({ t14 _t13; t12 _t14 = l7; if (_t14 == ((t12)(6ULL))) { {
@@ -48486,10 +48208,10 @@ static t14 f1469(t257 l0, t141 l1) {
 // check::check_if
 static t33 f1470(t429 l0, t163 l1, t121 l2, t33 l3, t14 l4, t14 l5) {
     t141 l6;
-    t780 l7;
+    t782 l7;
     t349 l8;
     t254 l9;
-    t787 l10;
+    t789 l10;
     t349 l11;
     t184 l12;
     t349 l13;
@@ -48511,7 +48233,7 @@ static t33 f1470(t429 l0, t163 l1, t121 l2, t33 l3, t14 l4, t14 l5) {
         l13 = f1500((*l0));
         ({ t429 _t0 = (&(*l0)); t349 _t1 = ({ t257 _t2 = (*l0); t347 _t3 = f1671((*l0), l11, l13); f1670(_t2, _t3); }); f1503(_t0, _t1); });
         if (l4) {
-            return ({ t429 _t4 = (&(*l0)); t121 _t5 = l2; t788 _t6 = f1673(l10); t33 _t7 = l3; t14 _t8 = l5; f1672(_t4, _t5, _t6, _t7, _t8); });
+            return ({ t429 _t4 = (&(*l0)); t121 _t5 = l2; t790 _t6 = f1673(l10); t33 _t7 = l3; t14 _t8 = l5; f1672(_t4, _t5, _t6, _t7, _t8); });
         }
         if ((!(l8).m_dead)) {
             if ((l11).m_dead) {
@@ -48549,14 +48271,14 @@ static t33 f1471(t429 l0, t175 l1, t121 l2, t33 l3, t14 l4, t14 l5) {
     t95 l24;
     t95 l25;
     t293 l26;
-    t792 l27;
+    t794 l27;
     t153 l28;
     t33 l29;
     t349 l30;
     t302 l31;
     t14 l32;
     t346 l33;
-    t787 l34;
+    t789 l34;
     t176 l35;
     t13 l36;
     t178 l37;
@@ -48684,10 +48406,10 @@ static t33 f1471(t429 l0, t175 l1, t121 l2, t33 l3, t14 l4, t14 l5) {
         } else {
             _t38 = f1029();
         } _t38; });
-        l27 = ({ t792 _t39; t142 _t40 = (l6).m_k; if ((_t40.tag == 14)) { l28 = _t40.p.v14.m_e; {
+        l27 = ({ t794 _t39; t142 _t40 = (l6).m_k; if ((_t40.tag == 14)) { l28 = _t40.p.v14.m_e; {
             _t39 = f1678((*l0), (*l28));
         } } else { {
-            _t39 = ((t792){0});
+            _t39 = ((t794){0});
         } } _t39; });
         l29 = ({ t429 _t41 = (&(*l0)); t254 _t42 = ({ t254 _t43; if (l9) {
             _t43 = f592();
@@ -48791,10 +48513,10 @@ static t33 f1471(t429 l0, t175 l1, t121 l2, t33 l3, t14 l4, t14 l5) {
                 l40 = ctx_add_u64(l40, ((t13)(1ULL)), 3779, 23, 18);
             }
             f1503((&(*l0)), l30);
-            f1668((&l34), ({ t429 _t79 = (&(*l0)); t164 _t80 = (l37).m_body; t254 _t81 = l38; t781 _t82 = f1684(); t33 _t83 = l3; t14 _t84 = l4; f1669(_t79, _t80, _t81, _t82, _t83, _t84); }));
+            f1668((&l34), ({ t429 _t79 = (&(*l0)); t164 _t80 = (l37).m_body; t254 _t81 = l38; t783 _t82 = f1684(); t33 _t83 = l3; t14 _t84 = l4; f1669(_t79, _t80, _t81, _t82, _t83, _t84); }));
             f1685((&l33), f1500((*l0)));
             if (((l27).tag != 0)) {
-                ({ t429 _t85 = (&(*l0)); t794 _t86 = ({ t393 _t88 = (l27).p.v1.m_value; t17 _t89 = f1687((*l0), l38); ((t794){ .m_forb = _t88, .m_via = _t89, }); }); t165 _t87 = ((l37).m_body).m_stmts; f1686(_t85, _t86, _t87); });
+                ({ t429 _t85 = (&(*l0)); t796 _t86 = ({ t393 _t88 = (l27).p.v1.m_value; t17 _t89 = f1687((*l0), l38); ((t796){ .m_forb = _t88, .m_via = _t89, }); }); t165 _t87 = ((l37).m_body).m_stmts; f1686(_t85, _t86, _t87); });
             }
             l36 = ctx_add_u64(l36, ((t13)(1ULL)), 3785, 19, 18);
         }
@@ -48832,7 +48554,7 @@ static t33 f1471(t429 l0, t175 l1, t121 l2, t33 l3, t14 l4, t14 l5) {
         }
         ({ t429 _t103 = (&(*l0)); t349 _t104 = ({ t257 _t105 = (*l0); t347 _t106 = f1688(l33); f1670(_t105, _t106); }); f1503(_t103, _t104); });
         if (l4) {
-            return ({ t429 _t107 = (&(*l0)); t121 _t108 = l2; t788 _t109 = f1673(l34); t33 _t110 = l3; t14 _t111 = l5; f1672(_t107, _t108, _t109, _t110, _t111); });
+            return ({ t429 _t107 = (&(*l0)); t121 _t108 = l2; t790 _t109 = f1673(l34); t33 _t110 = l3; t14 _t111 = l5; f1672(_t107, _t108, _t109, _t110, _t111); });
         }
         return ((t33)(4294967295ULL));
     }
@@ -49165,7 +48887,7 @@ static t33 f1473(t429 l0, t141 l1, t141 l2, t179 l3) {
             l39 = f1682((&(*l0)), l18, l21, l38, (l17).m_binders, ((bool)0), ((bool)0), l14, (l17).m_span);
             if ((l16 == ((t13)(0ULL)))) {
                 l15 = l39;
-                { t110 _t66 = ({ t795 _t67 = (&((*l0)).m_is_vars); t19 _t68 = f1084(l1); t254 _t69 = l39; f1694(_t67, _t68, _t69); }); if ((_t66.tag == 0)) { {
+                { t110 _t66 = ({ t797 _t67 = (&((*l0)).m_is_vars); t19 _t68 = f1084(l1); t254 _t69 = l39; f1694(_t67, _t68, _t69); }); if ((_t66.tag == 0)) { {
                 } } else if ((_t66.tag == 1)) { l40 = _t66.p.v1.m_error; {
                     { t95 _t70 = l40; if ((_t70.tag == 0)) { {
                         ctx_panic(4134, 17, 18, "try! failed: alloc::out_of_memory");
@@ -49342,7 +49064,7 @@ static t33 f1481(t257 l0, t10 l1, t10 l2) {
 }
 
 // check::coerce
-static t724 f1482(t429 l0, t33 l1, t33 l2) {
+static t726 f1482(t429 l0, t33 l1, t33 l2) {
     t33 l3;
     t33 l4;
     t262 l5;
@@ -49369,37 +49091,37 @@ static t724 f1482(t429 l0, t33 l1, t33 l2) {
         l3 = f822(((*l0)).m_ty, l1);
         l4 = f822(((*l0)).m_ty, l2);
         if (((l3 == ((t33)(0ULL))) || (l4 == ((t33)(0ULL))))) {
-            return ((t724){ .tag = 1 });
+            return ((t726){ .tag = 1 });
         }
         l5 = f609(((*l0)).m_ty, l4);
         { t262 _t0 = l5; if ((_t0.tag == 17)) { l6 = _t0.p.v17.m_ok; l7 = _t0.p.v17.m_errs; {
             { t262 _t1 = f609(((*l0)).m_ty, l3); if ((_t1.tag == 17)) { l8 = _t1.p.v17.m_ok; l9 = _t1.p.v17.m_errs; {
                 if ((!f1073((&((*l0)).m_ty), l8, l6))) {
-                    return ((t724){ .tag = 0 });
+                    return ((t726){ .tag = 0 });
                 }
-                return ({ t724 _t2; if (f1692((&(*l0)), l9, l7)) {
-                    _t2 = ((t724){ .tag = 1 });
+                return ({ t726 _t2; if (f1692((&(*l0)), l9, l7)) {
+                    _t2 = ((t726){ .tag = 1 });
                 } else {
-                    _t2 = ((t724){ .tag = 0 });
+                    _t2 = ((t726){ .tag = 0 });
                 } _t2; });
             } } else if ((_t1.tag == 15)) { {
-                return ({ t724 _t3; if (f1692((&(*l0)), l3, l7)) {
-                    _t3 = ((t724){ .tag = 1 });
+                return ({ t726 _t3; if (f1692((&(*l0)), l3, l7)) {
+                    _t3 = ((t726){ .tag = 1 });
                 } else {
-                    _t3 = ((t724){ .tag = 0 });
+                    _t3 = ((t726){ .tag = 0 });
                 } _t3; });
             } } else if ((_t1.tag == 14)) { l10 = _t1.p.v14.m_n; {
                 if (((f1040(((*l0)).m_ty, l10)).m_kind == ((t12)(0ULL)))) {
-                    return ({ t724 _t4; if (f1073((&((*l0)).m_ty), l3, l4)) {
-                        _t4 = ((t724){ .tag = 1 });
+                    return ({ t726 _t4; if (f1073((&((*l0)).m_ty), l3, l4)) {
+                        _t4 = ((t726){ .tag = 1 });
                     } else {
-                        _t4 = ((t724){ .tag = 0 });
+                        _t4 = ((t726){ .tag = 0 });
                     } _t4; });
                 }
             } } else { {
             } } }
             if ((f822(((*l0)).m_ty, l6) == ((t33)(1ULL)))) {
-                return ((t724){ .tag = 0 });
+                return ((t726){ .tag = 0 });
             }
             return f1482((&(*l0)), l3, l6);
         } } else if ((_t0.tag == 15)) { {
@@ -49408,19 +49130,19 @@ static t724 f1482(t429 l0, t33 l1, t33 l2) {
             } } else { {
                 _t5 = ((bool)0);
             } } _t5; })) {
-                return ({ t724 _t7; if (f1692((&(*l0)), l3, l4)) {
-                    _t7 = ((t724){ .tag = 1 });
+                return ({ t726 _t7; if (f1692((&(*l0)), l3, l4)) {
+                    _t7 = ((t726){ .tag = 1 });
                 } else {
-                    _t7 = ((t724){ .tag = 0 });
+                    _t7 = ((t726){ .tag = 0 });
                 } _t7; });
             }
         } } else { {
         } } }
         if ((l3 == ((t33)(2ULL)))) {
             { t262 _t8 = l5; if ((_t8.tag == 8)) { {
-                return ((t724){ .tag = 4 });
+                return ((t726){ .tag = 4 });
             } } else { {
-                return ((t724){ .tag = 0 });
+                return ((t726){ .tag = 0 });
             } } }
         }
         l11 = f609(((*l0)).m_ty, l3);
@@ -49435,7 +49157,7 @@ static t724 f1482(t429 l0, t33 l1, t33 l2) {
                 } } else { {
                     _t12 = ((bool)0);
                 } } _t12; }) && (l15 || (!l13))) && f1073((&((*l0)).m_ty), l16, l12))) {
-                    return ((t724){ .tag = 3 });
+                    return ((t726){ .tag = 3 });
                 }
             }
         } } else if ((_t9.tag == 8)) { l17 = _t9.p.v8.m_elem; {
@@ -49445,30 +49167,30 @@ static t724 f1482(t429 l0, t33 l1, t33 l2) {
                 } } else { {
                     _t17 = ((bool)0);
                 } } _t17; }) && f1369((&((*l0)).m_ty), l18, l17))) {
-                    return ((t724){ .tag = 1 });
+                    return ((t726){ .tag = 1 });
                 }
-                return ({ t724 _t21; if (f1073((&((*l0)).m_ty), l3, l4)) {
-                    _t21 = ((t724){ .tag = 1 });
+                return ({ t726 _t21; if (f1073((&((*l0)).m_ty), l3, l4)) {
+                    _t21 = ((t726){ .tag = 1 });
                 } else {
-                    _t21 = ((t724){ .tag = 0 });
+                    _t21 = ((t726){ .tag = 0 });
                 } _t21; });
             } } else if ((_t16.tag == 14)) { l19 = _t16.p.v14.m_n; {
                 if (((f1040(((*l0)).m_ty, l19)).m_kind == ((t12)(0ULL)))) {
-                    return ({ t724 _t22; if (f1073((&((*l0)).m_ty), l3, l4)) {
-                        _t22 = ((t724){ .tag = 1 });
+                    return ({ t726 _t22; if (f1073((&((*l0)).m_ty), l3, l4)) {
+                        _t22 = ((t726){ .tag = 1 });
                     } else {
-                        _t22 = ((t724){ .tag = 0 });
+                        _t22 = ((t726){ .tag = 0 });
                     } _t22; });
                 }
             } } else { {
             } } }
             if (((f1073((&((*l0)).m_ty), l3, l17) || f1369((&((*l0)).m_ty), l3, l17)) || f1698((*l0), l3, l17))) {
-                return ((t724){ .tag = 2 });
+                return ((t726){ .tag = 2 });
             }
-            return ((t724){ .tag = 0 });
+            return ((t726){ .tag = 0 });
         } } else if ((_t9.tag == 4)) { {
             if (f1698((*l0), l3, l4)) {
-                return ((t724){ .tag = 1 });
+                return ((t726){ .tag = 1 });
             }
         } } else if ((_t9.tag == 12)) { l20 = _t9.p.v12.m_bound; l21 = _t9.p.v12.m_external; {
             if (({ t14 _t23; t262 _t24 = l11; if ((_t24.tag == 12)) { l22 = _t24.p.v12.m_bound; l23 = _t24.p.v12.m_external; {
@@ -49477,30 +49199,30 @@ static t724 f1482(t429 l0, t33 l1, t33 l2) {
                 _t23 = ((bool)0);
             } } _t23; })) {
                 if ((l23 != l21)) {
-                    return ((t724){ .tag = 0 });
+                    return ((t726){ .tag = 0 });
                 }
                 if (l21) {
-                    return ({ t724 _t25; if (f1073((&((*l0)).m_ty), l3, l4)) {
-                        _t25 = ((t724){ .tag = 1 });
+                    return ({ t726 _t25; if (f1073((&((*l0)).m_ty), l3, l4)) {
+                        _t25 = ((t726){ .tag = 1 });
                     } else {
-                        _t25 = ((t724){ .tag = 0 });
+                        _t25 = ((t726){ .tag = 0 });
                     } _t25; });
                 }
                 if ((l22 && (!l20))) {
-                    return ((t724){ .tag = 0 });
+                    return ((t726){ .tag = 0 });
                 }
-                return ({ t724 _t26; if (f1699((&(*l0)), l3, l4)) {
-                    _t26 = ((t724){ .tag = 1 });
+                return ({ t726 _t26; if (f1699((&(*l0)), l3, l4)) {
+                    _t26 = ((t726){ .tag = 1 });
                 } else {
-                    _t26 = ((t724){ .tag = 0 });
+                    _t26 = ((t726){ .tag = 0 });
                 } _t26; });
             }
         } } else { {
         } } }
         if ((f1073((&((*l0)).m_ty), l3, l4) || f1369((&((*l0)).m_ty), l3, l4))) {
-            return ((t724){ .tag = 1 });
+            return ((t726){ .tag = 1 });
         }
-        return ((t724){ .tag = 0 });
+        return ((t726){ .tag = 0 });
     }
     __builtin_unreachable();
 }
@@ -49830,7 +49552,7 @@ static t395 f1488(t10 l0) {
 }
 
 // list::reserve([]u32, arena::Arena)
-static t110 f1489(t726 l0, t13 l1) {
+static t110 f1489(t728 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t406 l4;
@@ -49848,7 +49570,7 @@ static t110 f1489(t726 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t406 _t0 = ({ t406 _t1; t797 _t2 = f1702(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t406 _t0 = ({ t406 _t1; t799 _t2 = f1702(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -49859,7 +49581,7 @@ static t110 f1489(t726 l0, t13 l1) {
 }
 
 // list::reserve([]check::Place, arena::Arena)
-static t110 f1490(t727 l0, t13 l1) {
+static t110 f1490(t729 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t409 l4;
@@ -49877,7 +49599,7 @@ static t110 f1490(t727 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t409 _t0 = ({ t409 _t1; t798 _t2 = f1703(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t409 _t0 = ({ t409 _t1; t800 _t2 = f1703(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -49888,7 +49610,7 @@ static t110 f1490(t727 l0, t13 l1) {
 }
 
 // alloc::resize(check::Var, arena::Arena)
-static t763 f1491(t27 l0, t26 l1, t332 l2, t13 l3) {
+static t765 f1491(t27 l0, t26 l1, t332 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -49896,15 +49618,15 @@ static t763 f1491(t27 l0, t26 l1, t332 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1704(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(56ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t763){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t765){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t763){ .tag = 0, .p.v0 = { .m_value = f1705(l4), } });
+        return ((t765){ .tag = 0, .p.v0 = { .m_value = f1705(l4), } });
     }
     __builtin_unreachable();
 }
 
 // list::reserve(check::Binding, arena::Arena)
-static t110 f1492(t690 l0, t13 l1) {
+static t110 f1492(t692 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t336 l4;
@@ -49922,7 +49644,7 @@ static t110 f1492(t690 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t336 _t0 = ({ t336 _t1; t799 _t2 = f1706(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t336 _t0 = ({ t336 _t1; t801 _t2 = f1706(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -50317,7 +50039,7 @@ static t16 f1495(t429 l0, t141 l1, t141 l2, t121 l3) {
     t14 l20;
     t391 l21;
     t33 l22;
-    t792 l23;
+    t794 l23;
     CTX_STACK_CHECK();
     {
         l4 = ((t33)(4294967295ULL));
@@ -50624,10 +50346,10 @@ static t16 f1497(t429 l0, t174 l1, t141 l2, t164 l3, t121 l4, t19 l5) {
     t95 l12;
     t95 l13;
     t349 l14;
-    t780 l15;
+    t782 l15;
     t345 l16;
     t95 l17;
-    t800 l18;
+    t802 l18;
     t345 l19;
     t347 l20;
     t347 l21;
@@ -50842,7 +50564,7 @@ static t16 f1499(t429 l0, t17 l1, t174 l2, t121 l3, t19 l4) {
     t95 l20;
     t95 l21;
     t344 l22;
-    t793 l23;
+    t795 l23;
     t95 l24;
     CTX_STACK_CHECK();
     {
@@ -50925,12 +50647,12 @@ static t16 f1499(t429 l0, t17 l1, t174 l2, t121 l3, t19 l4) {
             }
         }
         l22 = f1723(((*l0)).m_loops, l12);
-        l23 = ({ t793 _t38; if (f1((l1).m_bytes, ((t10){ .m_ptr = (void *)"break", .m_len = 5 }))) {
+        l23 = ({ t795 _t38; if (f1((l1).m_bytes, ((t10){ .m_ptr = (void *)"break", .m_len = 5 }))) {
             _t38 = (&((*l22)).m_breaks);
         } else {
             _t38 = (&((*l22)).m_conts);
         } _t38; });
-        { t110 _t39 = ({ t793 _t40 = l23; t349 _t41 = f1500((*l0)); f1724(_t40, _t41); }); if ((_t39.tag == 0)) { {
+        { t110 _t39 = ({ t795 _t40 = l23; t349 _t41 = f1500((*l0)); f1724(_t40, _t41); }); if ((_t39.tag == 0)) { {
         } } else if ((_t39.tag == 1)) { l24 = _t39.p.v1.m_error; {
             { t95 _t42 = l24; if ((_t42.tag == 0)) { {
                 ctx_panic(3307, 9, 18, "try! failed: alloc::out_of_memory");
@@ -51028,7 +50750,7 @@ static t595 f1507(t429 l0, t141 l1, t141 l2, t159 l3, t33 l4) {
     t359 l7;
     t33 l8;
     t296 l9;
-    t728 l10;
+    t730 l10;
     t13 l11;
     t13 l12;
     t33 l13;
@@ -51037,7 +50759,7 @@ static t595 f1507(t429 l0, t141 l1, t141 l2, t159 l3, t33 l4) {
     {
         l5 = f870((&(*l0)), l4);
         l6 = ((t33)(4294967295ULL));
-        if (({ t14 _t0; t694 _t1 = ({ t355 _t2 = ((*l0)).m_refs; t19 _t3 = f1084(l2); f1087(_t2, _t3); }); if ((_t1.tag == 0)) { {
+        if (({ t14 _t0; t696 _t1 = ({ t355 _t2 = ((*l0)).m_refs; t19 _t3 = f1084(l2); f1087(_t2, _t3); }); if ((_t1.tag == 0)) { {
             _t0 = ((bool)0);
         } } else if ((_t1.tag == 1)) { l7 = _t1.p.v1.m_value; {
             _t0 = ({ t14 _t4; t359 _t5 = l7; if ((_t5.tag == 3)) { l8 = _t5.p.v3.m_index; {
@@ -51099,7 +50821,7 @@ static t33 f1508(t257 l0, t33 l1) {
 }
 
 // check::add_val
-static t16 f1509(t729 l0, t402 l1) {
+static t16 f1509(t731 l0, t402 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -51113,7 +50835,7 @@ static t16 f1509(t729 l0, t402 l1) {
 }
 
 // alloc::new(check::Val, arena::Arena)
-static t764 f1510(t27 l0, t26 l1, t402 l2) {
+static t766 f1510(t27 l0, t26 l1, t402 l2) {
     t403 l3;
     t403 l4;
     t95 l5;
@@ -51123,14 +50845,14 @@ static t764 f1510(t27 l0, t26 l1, t402 l2) {
         if ((((t13)(32ULL)) == ((t13)(0ULL)))) {
             ctx_panic(35, 31, 21, "alloc::new: T is zero-sized");
         }
-        l3 = ({ t403 _t0; t801 _t1 = ({ t27 _t2 = l0; t26 _t3 = (&(*l1)); t403 _t4 = f1506(); t13 _t5 = ((t13)(1ULL)); f1725(_t2, _t3, _t4, _t5); }); if ((_t1.tag == 0)) { l4 = _t1.p.v0.m_value; {
+        l3 = ({ t403 _t0; t803 _t1 = ({ t27 _t2 = l0; t26 _t3 = (&(*l1)); t403 _t4 = f1506(); t13 _t5 = ((t13)(1ULL)); f1725(_t2, _t3, _t4, _t5); }); if ((_t1.tag == 0)) { l4 = _t1.p.v0.m_value; {
             _t0 = l4;
         } } else if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_error; {
-            return ((t764){ .tag = 1, .p.v1 = { .m_error = l5, } });
+            return ((t766){ .tag = 1, .p.v1 = { .m_error = l5, } });
         } } _t0; });
         l6 = (&(*({ t403 _t6 = (l3); uint64_t _t7 = ((t13)(0ULL)); _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 37, 21, 21); })));
         (*l6) = l2;
-        return ((t764){ .tag = 0, .p.v0 = { .m_value = l6, } });
+        return ((t766){ .tag = 0, .p.v0 = { .m_value = l6, } });
     }
     __builtin_unreachable();
 }
@@ -51150,23 +50872,23 @@ static t14 f1511(t402 l0) {
 }
 
 // check::num_of
-static t765 f1512(t402 l0) {
+static t767 f1512(t402 l0) {
     t14 l1;
     t19 l2;
     CTX_STACK_CHECK();
     {
         { t402 _t0 = l0; if ((_t0.tag == 0)) { l1 = _t0.p.v0.m_negative; l2 = _t0.p.v0.m_magnitude; {
-            return ((t765){ .m_negative = l1, .m_magnitude = l2, });
+            return ((t767){ .m_negative = l1, .m_magnitude = l2, });
         } } else { {
-            return ((t765){ .m_negative = ((bool)0), .m_magnitude = ((t19)(0ULL)), });
+            return ((t767){ .m_negative = ((bool)0), .m_magnitude = ((t19)(0ULL)), });
         } } }
     }
     __builtin_unreachable();
 }
 
 // check::fits_in
-static t595 f1513(t429 l0, t765 l1, t33 l2, t121 l3) {
-    t693 l4;
+static t595 f1513(t429 l0, t767 l1, t33 l2, t121 l3) {
+    t695 l4;
     CTX_STACK_CHECK();
     {
         l4 = f1075(((*l0)).m_ty, l2);
@@ -51193,9 +50915,9 @@ static t595 f1514(t429 l0, t141 l1, t12 l2, t141 l3, t141 l4, t33 l5) {
     t51 l15;
     t51 l16;
     t51 l17;
-    t765 l18;
-    t765 l19;
-    t693 l20;
+    t767 l18;
+    t767 l19;
+    t695 l20;
     t19 l21;
     t19 l22;
     t19 l23;
@@ -51205,7 +50927,7 @@ static t595 f1514(t429 l0, t141 l1, t12 l2, t141 l3, t141 l4, t33 l5) {
     t19 l27;
     t19 l28;
     t19 l29;
-    t802 l30;
+    t804 l30;
     CTX_STACK_CHECK();
     {
         l6 = f1044(l1);
@@ -51296,7 +51018,7 @@ static t595 f1514(t429 l0, t141 l1, t12 l2, t141 l3, t141 l4, t33 l5) {
                     _t17 = ((t19)((l21 ^ l22)));
                 } _t17; });
             } _t16; });
-            return ((t595){ .tag = 1, .p.v1.m_value = ({ t33 _t18 = l5; t765 _t19 = ({ t19 _t20 = l23; t14 _t21 = f1273((l20).p.v1.m_value); f1731(_t20, _t21); }); f1726(_t18, _t19); }) });
+            return ((t595){ .tag = 1, .p.v1.m_value = ({ t33 _t18 = l5; t767 _t19 = ({ t19 _t20 = l23; t14 _t21 = f1273((l20).p.v1.m_value); f1731(_t20, _t21); }); f1726(_t18, _t19); }) });
         }
         if (((l2 == ((t12)(45ULL))) || (l2 == ((t12)(46ULL))))) {
             l24 = ((t19)(ctx_as_u((uint64_t)(f1272((l20).p.v1.m_value)), UINT64_MAX, "u64", 2617, 21, 18)));
@@ -51308,18 +51030,18 @@ static t595 f1514(t429 l0, t141 l1, t12 l2, t141 l3, t141 l4, t33 l5) {
             if ((l2 == ((t12)(46ULL)))) {
                 if (f1273((l20).p.v1.m_value)) {
                     l26 = ({ t21 _t22 = ((t21)(f1730(l18))); t33 _t23 = l25; ((t21)(_t22 >> ctx_shcount_u(_t23, 64, 2625, 59, 18))); });
-                    return ((t595){ .tag = 1, .p.v1.m_value = ({ t33 _t24 = l5; t765 _t25 = f1731(((t19)(l26)), ((bool)1)); f1726(_t24, _t25); }) });
+                    return ((t595){ .tag = 1, .p.v1.m_value = ({ t33 _t24 = l5; t767 _t25 = f1731(((t19)(l26)), ((bool)1)); f1726(_t24, _t25); }) });
                 }
-                return ((t595){ .tag = 1, .p.v1.m_value = ({ t33 _t26 = l5; t765 _t27 = ((t765){ .m_negative = ((bool)0), .m_magnitude = ((t19)((l18).m_magnitude >> ctx_shcount_u(l25, 64, 2628, 92, 18))), }); f1726(_t26, _t27); }) });
+                return ((t595){ .tag = 1, .p.v1.m_value = ({ t33 _t26 = l5; t767 _t27 = ((t767){ .m_negative = ((bool)0), .m_magnitude = ((t19)((l18).m_magnitude >> ctx_shcount_u(l25, 64, 2628, 92, 18))), }); f1726(_t26, _t27); }) });
             }
             l27 = ({ t19 _t28 = f1730(l18); t33 _t29 = l25; ((t19)((uint64_t)_t28 << ctx_shcount_u(_t29, 64, 2630, 42, 18))); });
             if ((l24 < ((t19)(64ULL)))) {
                 l27 = ((t19)(({ t19 _t30 = l27; t19 _t31 = ctx_sub_u64(({ t19 _t32 = ((t19)(ctx_as_s((int64_t)(((t15)(1ULL))), 0, INT64_MAX, "u64", 2631, 35, 18))); t33 _t33 = ((t33)(ctx_as_u((uint64_t)(l24), UINT32_MAX, "u32", 2631, 50, 18))); ((t19)((uint64_t)_t32 << ctx_shcount_u(_t33, 64, 2631, 47, 18))); }), ((t19)(1ULL)), 2631, 63, 18); (_t30 & _t31); })));
             }
             if (((f1273((l20).p.v1.m_value) && (l24 < ((t19)(64ULL)))) && ({ t19 _t34 = l27; t19 _t35 = ({ t19 _t36 = ((t19)(ctx_as_s((int64_t)(((t15)(1ULL))), 0, INT64_MAX, "u64", 2632, 62, 18))); t33 _t37 = ((t33)(ctx_as_u((uint64_t)(ctx_sub_u64(l24, ((t19)(1ULL)), 2632, 88, 18)), UINT32_MAX, "u32", 2632, 77, 18))); ((t19)((uint64_t)_t36 << ctx_shcount_u(_t37, 64, 2632, 74, 18))); }); (_t34 >= _t35); }))) {
-                return ((t595){ .tag = 1, .p.v1.m_value = ({ t33 _t38 = l5; t765 _t39 = ((t765){ .m_negative = ((bool)1), .m_magnitude = ({ t19 _t40 = ({ t19 _t42 = ((t19)(ctx_as_s((int64_t)(((t15)(1ULL))), 0, INT64_MAX, "u64", 2633, 80, 18))); t33 _t43 = ((t33)(ctx_as_u((uint64_t)(l24), UINT32_MAX, "u32", 2633, 95, 18))); ((t19)((uint64_t)_t42 << ctx_shcount_u(_t43, 64, 2633, 92, 18))); }); t19 _t41 = l27; ctx_sub_u64(_t40, _t41, 2633, 108, 18); }), }); f1726(_t38, _t39); }) });
+                return ((t595){ .tag = 1, .p.v1.m_value = ({ t33 _t38 = l5; t767 _t39 = ((t767){ .m_negative = ((bool)1), .m_magnitude = ({ t19 _t40 = ({ t19 _t42 = ((t19)(ctx_as_s((int64_t)(((t15)(1ULL))), 0, INT64_MAX, "u64", 2633, 80, 18))); t33 _t43 = ((t33)(ctx_as_u((uint64_t)(l24), UINT32_MAX, "u32", 2633, 95, 18))); ((t19)((uint64_t)_t42 << ctx_shcount_u(_t43, 64, 2633, 92, 18))); }); t19 _t41 = l27; ctx_sub_u64(_t40, _t41, 2633, 108, 18); }), }); f1726(_t38, _t39); }) });
             }
-            return ((t595){ .tag = 1, .p.v1.m_value = ({ t33 _t44 = l5; t765 _t45 = ({ t19 _t46 = l27; t14 _t47 = (f1273((l20).p.v1.m_value) && (l24 == ((t19)(64ULL)))); f1731(_t46, _t47); }); f1726(_t44, _t45); }) });
+            return ((t595){ .tag = 1, .p.v1.m_value = ({ t33 _t44 = l5; t767 _t45 = ({ t19 _t46 = l27; t14 _t47 = (f1273((l20).p.v1.m_value) && (l24 == ((t19)(64ULL)))); f1731(_t46, _t47); }); f1726(_t44, _t45); }) });
         }
         if (((l2 == ((t12)(63ULL))) || (l2 == ((t12)(64ULL))))) {
             if (((l19).m_magnitude == ((t19)(0ULL)))) {
@@ -51328,16 +51050,16 @@ static t595 f1514(t429 l0, t141 l1, t12 l2, t141 l3, t141 l4, t33 l5) {
             }
             if ((l2 == ((t12)(64ULL)))) {
                 l28 = ctx_rem_u64((l18).m_magnitude, (l19).m_magnitude, 2643, 37, 18);
-                return ((t595){ .tag = 1, .p.v1.m_value = f1726(l5, ((t765){ .m_negative = ((l18).m_negative && (l28 != ((t19)(0ULL)))), .m_magnitude = l28, })) });
+                return ((t595){ .tag = 1, .p.v1.m_value = f1726(l5, ((t767){ .m_negative = ((l18).m_negative && (l28 != ((t19)(0ULL)))), .m_magnitude = l28, })) });
             }
             l29 = ctx_div_u64((l18).m_magnitude, (l19).m_magnitude, 2646, 33, 18);
-            return f1513((&(*l0)), ((t765){ .m_negative = (((l18).m_negative != (l19).m_negative) && (l29 != ((t19)(0ULL)))), .m_magnitude = l29, }), l5, l6);
+            return f1513((&(*l0)), ((t767){ .m_negative = (((l18).m_negative != (l19).m_negative) && (l29 != ((t19)(0ULL)))), .m_magnitude = l29, }), l5, l6);
         }
-        l30 = ({ t802 _t48; if ((l2 == ((t12)(60ULL)))) {
+        l30 = ({ t804 _t48; if ((l2 == ((t12)(60ULL)))) {
             _t48 = f1732(l18, l19);
         } else {
-            _t48 = ({ t802 _t49; if ((l2 == ((t12)(61ULL)))) {
-                _t49 = ({ t765 _t50 = l18; t765 _t51 = f1733(l19); f1732(_t50, _t51); });
+            _t48 = ({ t804 _t49; if ((l2 == ((t12)(61ULL)))) {
+                _t49 = ({ t767 _t50 = l18; t767 _t51 = f1733(l19); f1732(_t50, _t51); });
             } else {
                 _t49 = f1734(l18, l19);
             } _t49; });
@@ -51352,7 +51074,7 @@ static t595 f1514(t429 l0, t141 l1, t12 l2, t141 l3, t141 l4, t33 l5) {
 }
 
 // comptime::load
-static t143 f1515(t698 l0, t19 l1, t19 l2) {
+static t143 f1515(t700 l0, t19 l1, t19 l2) {
     t19 l3;
     CTX_STACK_CHECK();
     {
@@ -51371,7 +51093,7 @@ static t51 f1516(t19 l0) {
     CTX_STACK_CHECK();
     {
         l1 = l0;
-        return (*((t803)((&l1))));
+        return (*((t805)((&l1))));
     }
     __builtin_unreachable();
 }
@@ -51382,13 +51104,13 @@ static t565 f1517(t19 l0) {
     CTX_STACK_CHECK();
     {
         l1 = ((t33)(l0));
-        return (*((t804)((&l1))));
+        return (*((t806)((&l1))));
     }
     __builtin_unreachable();
 }
 
 // list::reserve(check::Val, arena::Arena)
-static t110 f1518(t729 l0, t13 l1) {
+static t110 f1518(t731 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t403 l4;
@@ -51406,7 +51128,7 @@ static t110 f1518(t729 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t403 _t0 = ({ t403 _t1; t801 _t2 = f1725(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t403 _t0 = ({ t403 _t1; t803 _t2 = f1725(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -51500,7 +51222,7 @@ static t17 f1525(t10 l0) {
 }
 
 // alloc::resize(u64, arena::Arena)
-static t766 f1526(t27 l0, t26 l1, t494 l2, t13 l3) {
+static t768 f1526(t27 l0, t26 l1, t494 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -51508,9 +51230,9 @@ static t766 f1526(t27 l0, t26 l1, t494 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1736(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(8ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t766){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t768){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t766){ .tag = 0, .p.v0 = { .m_value = f1737(l4), } });
+        return ((t768){ .tag = 0, .p.v0 = { .m_value = f1737(l4), } });
     }
     __builtin_unreachable();
 }
@@ -51662,23 +51384,23 @@ static t502 f1532(t501 l0) {
 }
 
 // eval::steps
-static t732 f1533(t527 l0, t63 l1, t19 l2) {
+static t734 f1533(t527 l0, t63 l1, t19 l2) {
     t13 l3;
     t19 l4;
-    t733 l5;
+    t735 l5;
     t49 l6;
     t19 l7;
     t19 l8;
-    t733 l9;
+    t735 l9;
     t603 l10;
     CTX_STACK_CHECK();
     {
         l3 = ((t13)(0ULL));
         while ((l3 < ((l1).m_stmts).m_len)) {
             l4 = ((*l0)).m_sp;
-            { t732 _t0 = ({ t527 _t1 = (&(*l0)); t66 _t2 = (*({ t64 _t3 = ((l1).m_stmts); uint64_t _t4 = l3; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 404, 38, 23); })); f1740(_t1, _t2); }); if ((_t0.tag == 0)) { {
+            { t734 _t0 = ({ t527 _t1 = (&(*l0)); t66 _t2 = (*({ t64 _t3 = ((l1).m_stmts); uint64_t _t4 = l3; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 404, 38, 23); })); f1740(_t1, _t2); }); if ((_t0.tag == 0)) { {
             } } else if ((_t0.tag == 1)) { l5 = _t0.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = l5, } });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = l5, } });
             } } }
             { t19 _t5 = ({ t19 _t6; if ((l4 > ((*l0)).m_floor)) {
                 _t6 = l4;
@@ -51689,29 +51411,29 @@ static t732 f1533(t527 l0, t63 l1, t19 l2) {
         }
         if (((l2 != ((t19)(0ULL))) && (((l1).m_result) != 0))) {
             l6 = (*((l1).m_result));
-            l7 = ({ t19 _t7; t805 _t8 = f1741((&(*l0)), l6); if ((_t8.tag == 0)) { l8 = _t8.p.v0.m_value; {
+            l7 = ({ t19 _t7; t807 _t8 = f1741((&(*l0)), l6); if ((_t8.tag == 0)) { l8 = _t8.p.v0.m_value; {
                 _t7 = l8;
             } } else if ((_t8.tag == 1)) { l9 = _t8.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = l9, } });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = l9, } });
             } } _t7; });
             { t604 _t9 = ({ t527 _t10 = (&(*l0)); t19 _t11 = l2; t19 _t12 = l7; t19 _t13 = f885(((*l0)).m_types, (l6).m_ty); f1342(_t10, _t11, _t12, _t13); }); if ((_t9.tag == 0)) { {
             } } else if ((_t9.tag == 1)) { l10 = _t9.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t14; t603 _t15 = l10; if ((_t15.tag == 0)) { {
-                    _t14 = ((t733){ .tag = 1 });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t14; t603 _t15 = l10; if ((_t15.tag == 0)) { {
+                    _t14 = ((t735){ .tag = 1 });
                 } } _t14; }), } });
             } } }
         }
-        return ((t732){ .tag = 0 });
+        return ((t734){ .tag = 0 });
     }
     __builtin_unreachable();
 }
 
 // eval::unwind
-static t732 f1534(t527 l0, t13 l1) {
+static t734 f1534(t527 l0, t13 l1) {
     t496 l2;
     t63 l3;
     t63 l4;
-    t733 l5;
+    t735 l5;
     CTX_STACK_CHECK();
     {
         l2 = ((*l0)).m_flow;
@@ -51722,19 +51444,19 @@ static t732 f1534(t527 l0, t13 l1) {
                  break;
             } } _t0; });
             ((*l0)).m_flow = ((t496){ .tag = 0 });
-            { t732 _t2 = f1343((&(*l0)), l3, ((t19)(0ULL))); if ((_t2.tag == 0)) { {
+            { t734 _t2 = f1343((&(*l0)), l3, ((t19)(0ULL))); if ((_t2.tag == 0)) { {
             } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = l5, } });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = l5, } });
             } } }
         }
         ((*l0)).m_flow = l2;
-        return ((t732){ .tag = 0 });
+        return ((t734){ .tag = 0 });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(eval::Chunk, arena::Arena)
-static t770 f1535(t27 l0, t26 l1, t517 l2, t13 l3) {
+static t772 f1535(t27 l0, t26 l1, t517 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -51742,9 +51464,9 @@ static t770 f1535(t27 l0, t26 l1, t517 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1743(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(24ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t770){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t772){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t770){ .tag = 0, .p.v0 = { .m_value = f1744(l4), } });
+        return ((t772){ .tag = 0, .p.v0 = { .m_value = f1744(l4), } });
     }
     __builtin_unreachable();
 }
@@ -51960,7 +51682,7 @@ static t49 f1538(t537 l0, t10 l1, t33 l2) {
 
 // lower::path_ex
 static t49 f1539(t537 l0, t141 l1, t33 l2) {
-    t694 l3;
+    t696 l3;
     t33 l4;
     t33 l5;
     t254 l6;
@@ -52015,7 +51737,7 @@ static t49 f1539(t537 l0, t141 l1, t33 l2) {
 // lower::field_ex
 static t49 f1540(t537 l0, t141 l1, t141 l2, t147 l3, t33 l4) {
     t33 l5;
-    t786 l6;
+    t788 l6;
     t12 l7;
     t68 l8;
     t33 l9;
@@ -52048,7 +51770,7 @@ static t49 f1540(t537 l0, t141 l1, t141 l2, t147 l3, t33 l4) {
     {
         l5 = ({ t537 _t0 = (&(*l0)); t33 _t1 = f1071((*((*l0)).m_c), l2); f905(_t0, _t1); });
         l6 = f1665((*((*l0)).m_c), l1);
-        if (({ t14 _t2; t786 _t3 = l6; if ((_t3.tag == 0)) { {
+        if (({ t14 _t2; t788 _t3 = l6; if ((_t3.tag == 0)) { {
             _t2 = ((bool)0);
         } } else if ((_t3.tag == 1)) { l7 = _t3.p.v1.m_value; {
             _t2 = ({ t14 _t4; t12 _t5 = l7; if (_t5 == ((t12)(0ULL))) { {
@@ -52068,7 +51790,7 @@ static t49 f1540(t537 l0, t141 l1, t141 l2, t147 l3, t33 l4) {
             l13 = f1155((&(*l0)), l2);
             return ({ t33 _t16 = l12; t50 _t17 = ({ t52 _t18 = f1360((*l0), l13); t33 _t19 = f1754((&(*l0)), l5, (l3).m_text); ((t50){ .tag = 11, .p.v11 = { .m_base = _t18, .m_index = _t19, } }); }); f1160(_t16, _t17); });
         }
-        if (({ t14 _t20; t786 _t21 = l6; if ((_t21.tag == 0)) { {
+        if (({ t14 _t20; t788 _t21 = l6; if ((_t21.tag == 0)) { {
             _t20 = ((bool)0);
         } } else if ((_t21.tag == 1)) { l14 = _t21.p.v1.m_value; {
             _t20 = ({ t14 _t22; t12 _t23 = l14; if (_t23 == ((t12)(1ULL))) { {
@@ -52084,7 +51806,7 @@ static t49 f1540(t537 l0, t141 l1, t141 l2, t147 l3, t33 l4) {
             l19 = f903((&(*l0)), l4);
             return ({ t33 _t28 = l19; t50 _t29 = ({ t52 _t30 = f1360((*l0), l18); t33 _t31 = f1754((&(*l0)), l15, (l3).m_text); ((t50){ .tag = 11, .p.v11 = { .m_base = _t30, .m_index = _t31, } }); }); f1160(_t28, _t29); });
         }
-        if (({ t14 _t32; t786 _t33 = l6; if ((_t33.tag == 0)) { {
+        if (({ t14 _t32; t788 _t33 = l6; if ((_t33.tag == 0)) { {
             _t32 = ((bool)0);
         } } else if ((_t33.tag == 1)) { l20 = _t33.p.v1.m_value; {
             _t32 = ({ t14 _t34; t12 _t35 = l20; if (_t35 == ((t12)(10ULL))) { {
@@ -52105,7 +51827,7 @@ static t49 f1540(t537 l0, t141 l1, t141 l2, t147 l3, t33 l4) {
             l23 = f1155((&(*l0)), l2);
             return ({ t33 _t40 = l21; t50 _t41 = ({ t52 _t42 = f1360((*l0), l23); t52 _t43 = f1360((*l0), l22); ((t50){ .tag = 17, .p.v17 = { .m_first = _t42, .m_then = _t43, } }); }); f1160(_t40, _t41); });
         }
-        l24 = ({ t14 _t44; t786 _t45 = l6; if ((_t45.tag == 0)) { {
+        l24 = ({ t14 _t44; t788 _t45 = l6; if ((_t45.tag == 0)) { {
             _t44 = ((bool)0);
         } } else if ((_t45.tag == 1)) { l25 = _t45.p.v1.m_value; {
             _t44 = ({ t14 _t46; t12 _t47 = l25; if (_t47 == ((t12)(5ULL))) { {
@@ -52114,7 +51836,7 @@ static t49 f1540(t537 l0, t141 l1, t141 l2, t147 l3, t33 l4) {
                 _t46 = ((bool)0);
             } } _t46; });
         } } _t44; });
-        if ((l24 || ({ t14 _t48; t786 _t49 = l6; if ((_t49.tag == 0)) { {
+        if ((l24 || ({ t14 _t48; t788 _t49 = l6; if ((_t49.tag == 0)) { {
             _t48 = ((bool)0);
         } } else if ((_t49.tag == 1)) { l26 = _t49.p.v1.m_value; {
             _t48 = ({ t14 _t50; t12 _t51 = l26; if (_t51 == ((t12)(4ULL))) { {
@@ -52131,7 +51853,7 @@ static t49 f1540(t537 l0, t141 l1, t141 l2, t147 l3, t33 l4) {
                 _t56 = ((t33)(1ULL));
             } _t56; }); ((t50){ .tag = 11, .p.v11 = { .m_base = _t54, .m_index = _t55, } }); }); f1160(_t52, _t53); });
         }
-        l29 = ({ t14 _t57; t786 _t58 = l6; if ((_t58.tag == 0)) { {
+        l29 = ({ t14 _t57; t788 _t58 = l6; if ((_t58.tag == 0)) { {
             _t57 = ((bool)0);
         } } else if ((_t58.tag == 1)) { l30 = _t58.p.v1.m_value; {
             _t57 = ({ t14 _t59; t12 _t60 = l30; if (_t60 == ((t12)(3ULL))) { {
@@ -52174,7 +51896,7 @@ static t49 f1542(t537 l0, t141 l1, t141 l2, t141 l3, t33 l4) {
     t33 l5;
     t49 l6;
     t53 l7;
-    t786 l8;
+    t788 l8;
     t12 l9;
     t33 l10;
     t49 l11;
@@ -52196,7 +51918,7 @@ static t49 f1542(t537 l0, t141 l1, t141 l2, t141 l3, t33 l4) {
         l6 = f906((&(*l0)), l3, ((t33)(11ULL)));
         l7 = f1541((&(*l0)), l1);
         l8 = f1665((*((*l0)).m_c), l1);
-        if (({ t14 _t2; t786 _t3 = l8; if ((_t3.tag == 0)) { {
+        if (({ t14 _t2; t788 _t3 = l8; if ((_t3.tag == 0)) { {
             _t2 = ((bool)0);
         } } else if ((_t3.tag == 1)) { l9 = _t3.p.v1.m_value; {
             _t2 = ({ t14 _t4; t12 _t5 = l9; if (_t5 == ((t12)(6ULL))) { {
@@ -52209,7 +51931,7 @@ static t49 f1542(t537 l0, t141 l1, t141 l2, t141 l3, t33 l4) {
             l11 = f1155((&(*l0)), l2);
             return ({ t33 _t6 = l10; t50 _t7 = ({ t52 _t8 = f1360((*l0), l11); t52 _t9 = f1360((*l0), l6); t53 _t10 = l7; ((t50){ .tag = 12, .p.v12 = { .m_base = _t8, .m_i = _t9, .m_pos = _t10, } }); }); f1160(_t6, _t7); });
         }
-        if (({ t14 _t11; t786 _t12 = l8; if ((_t12.tag == 0)) { {
+        if (({ t14 _t11; t788 _t12 = l8; if ((_t12.tag == 0)) { {
             _t11 = ((bool)0);
         } } else if ((_t12.tag == 1)) { l12 = _t12.p.v1.m_value; {
             _t11 = ({ t14 _t13; t12 _t14 = l12; if (_t14 == ((t12)(8ULL))) { {
@@ -52224,7 +51946,7 @@ static t49 f1542(t537 l0, t141 l1, t141 l2, t141 l3, t33 l4) {
             l16 = f903((&(*l0)), l4);
             return ({ t33 _t21 = l16; t50 _t22 = ({ t52 _t23 = f1360((*l0), l15); t52 _t24 = f1360((*l0), l6); t53 _t25 = l7; ((t50){ .tag = 12, .p.v12 = { .m_base = _t23, .m_i = _t24, .m_pos = _t25, } }); }); f1160(_t21, _t22); });
         }
-        if (({ t14 _t26; t786 _t27 = l8; if ((_t27.tag == 0)) { {
+        if (({ t14 _t26; t788 _t27 = l8; if ((_t27.tag == 0)) { {
             _t26 = ((bool)0);
         } } else if ((_t27.tag == 1)) { l17 = _t27.p.v1.m_value; {
             _t26 = ({ t14 _t28; t12 _t29 = l17; if (_t29 == ((t12)(7ULL))) { {
@@ -52263,7 +51985,7 @@ static t49 f1544(t537 l0, t141 l1, t12 l2, t141 l3, t141 l4, t33 l5) {
     t14 l9;
     t33 l10;
     t49 l11;
-    t807 l12;
+    t809 l12;
     t33 l13;
     t33 l14;
     t33 l15;
@@ -52372,7 +52094,7 @@ static t49 f1544(t537 l0, t141 l1, t12 l2, t141 l3, t141 l4, t33 l5) {
 static t49 f1545(t537 l0, t141 l1, t141 l2, t159 l3, t14 l4, t33 l5) {
     t19 l6;
     t643 l7;
-    t694 l8;
+    t696 l8;
     t33 l9;
     t296 l10;
     t33 l11;
@@ -52433,7 +52155,7 @@ static t49 f1545(t537 l0, t141 l1, t141 l2, t159 l3, t14 l4, t33 l5) {
             }
             return ({ t33 _t18 = l18; t50 _t19 = ((t50){ .tag = 38, .p.v38 = { .m_items = f1759((&(*l0)), l1, l3, l17, ((bool)0)), } }); f1160(_t18, _t19); });
         }
-        if (({ t14 _t20; t694 _t21 = l8; if ((_t21.tag == 0)) { {
+        if (({ t14 _t20; t696 _t21 = l8; if ((_t21.tag == 0)) { {
             _t20 = ((bool)0);
         } } else if ((_t21.tag == 1)) { l19 = _t21.p.v1.m_value; {
             _t20 = ({ t14 _t22; t359 _t23 = l19; if ((_t23.tag == 1)) { l20 = _t23.p.v1.m_decl; l21 = _t23.p.v1.m_targs; {
@@ -52503,7 +52225,7 @@ static t33 f1546(t528 l0, t33 l1) {
 // lower::builtin
 static t49 f1547(t537 l0, t141 l1, t10 l2, t157 l3, t162 l4, t33 l5) {
     t33 l6;
-    t708 l7;
+    t710 l7;
     t19 l8;
     t33 l9;
     t33 l10;
@@ -52624,7 +52346,7 @@ static t49 f1549(t537 l0, t175 l1, t33 l2) {
     t33 l3;
     t49 l4;
     t33 l5;
-    t808 l6;
+    t810 l6;
     CTX_STACK_CHECK();
     {
         l3 = f903((&(*l0)), l2);
@@ -52650,14 +52372,14 @@ static t70 f1550(t537 l0, t141 l1, t14 l2, t14 l3, t53 l4) {
     t572 l8;
     t64 l9;
     t33 l10;
-    t678 l11;
+    t680 l11;
     t49 l12;
     t33 l13;
-    t678 l14;
+    t680 l14;
     t33 l15;
     t33 l16;
     t33 l17;
-    t678 l18;
+    t680 l18;
     t49 l19;
     t49 l20;
     t554 l21;
@@ -52713,10 +52435,10 @@ static t49 f1551(t537 l0, t141 l1, t179 l2) {
     t49 l3;
     t33 l4;
     t293 l5;
-    t753 l6;
-    t753 l7;
+    t755 l6;
+    t755 l7;
     t13 l8;
-    t754 l9;
+    t756 l9;
     t95 l10;
     t171 l11;
     t33 l12;
@@ -52725,9 +52447,9 @@ static t49 f1551(t537 l0, t141 l1, t179 l2) {
     t49 l15;
     t179 l16;
     t76 l17;
-    t678 l18;
+    t680 l18;
     t572 l19;
-    t809 l20;
+    t811 l20;
     t63 l21;
     t76 l22;
     CTX_STACK_CHECK();
@@ -52739,12 +52461,12 @@ static t49 f1551(t537 l0, t141 l1, t179 l2) {
         l7 = f1418((&g13), ((*l0)).m_heap);
         l8 = ((t13)(0ULL));
         while ((l8 < (l2).m_len)) {
-            l9 = ({ t754 _t4; if ((({ t293 _t5 = l5; t10 _t6 = (((*({ t179 _t7 = (l2); uint64_t _t8 = l8; _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 1547, 62, 19); }))).m_variant).m_text; f1681(_t5, _t6); }) == ((t33)(4294967295ULL)))) {
+            l9 = ({ t756 _t4; if ((({ t293 _t5 = l5; t10 _t6 = (((*({ t179 _t7 = (l2); uint64_t _t8 = l8; _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 1547, 62, 19); }))).m_variant).m_text; f1681(_t5, _t6); }) == ((t33)(4294967295ULL)))) {
                 _t4 = (&l7);
             } else {
                 _t4 = (&l6);
             } _t4; });
-            { t110 _t9 = ({ t754 _t10 = l9; t181 _t11 = (*({ t179 _t12 = (l2); uint64_t _t13 = l8; _t12.m_ptr + ctx_idx(_t13, _t12.m_len, 1548, 52, 19); })); f1419(_t10, _t11); }); if ((_t9.tag == 0)) { {
+            { t110 _t9 = ({ t756 _t10 = l9; t181 _t11 = (*({ t179 _t12 = (l2); uint64_t _t13 = l8; _t12.m_ptr + ctx_idx(_t13, _t12.m_len, 1548, 52, 19); })); f1419(_t10, _t11); }); if ((_t9.tag == 0)) { {
             } } else if ((_t9.tag == 1)) { l10 = _t9.p.v1.m_error; {
                 { t95 _t14 = l10; if ((_t14.tag == 0)) { {
                     ctx_panic(1548, 13, 19, "try! failed: alloc::out_of_memory");
@@ -52811,7 +52533,7 @@ static t33 f1553(t537 l0, t33 l1) {
 }
 
 // lower::add_bind
-static t16 f1554(t679 l0, t78 l1) {
+static t16 f1554(t681 l0, t78 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -53064,7 +52786,7 @@ static t33 f1567(t293 l0, t10 l1) {
 
 // lower::binds
 static t76 f1568(t537 l0, t171 l1, t296 l2) {
-    t678 l3;
+    t680 l3;
     t13 l4;
     t173 l5;
     t33 l6;
@@ -53110,7 +52832,7 @@ static t66 f1569(t537 l0, t141 l1, t162 l2) {
 static t66 f1570(t537 l0, t175 l1, t33 l2, t14 l3) {
     t49 l4;
     t33 l5;
-    t808 l6;
+    t810 l6;
     CTX_STACK_CHECK();
     {
         l4 = f1155((&(*l0)), (*(l1).m_scrut));
@@ -53153,7 +52875,7 @@ static t630 f1571(t320 l0, t33 l1) {
 }
 
 // map::rehash(u32, check::Layout, arena::Arena)
-static t110 f1572(t734 l0) {
+static t110 f1572(t736 l0) {
     t13 l1;
     t321 l2;
     t321 l3;
@@ -53168,7 +52890,7 @@ static t110 f1572(t734 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t321 _t2 = ({ t321 _t3; t810 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t321 _t7 = f541(); t13 _t8 = l1; f1782(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t321 _t2 = ({ t321 _t3; t812 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t321 _t7 = f541(); t13 _t8 = l1; f1782(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -53208,7 +52930,7 @@ static t13 f1573(t320 l0, t33 l1) {
 }
 
 // alloc::resize([]mut u64, arena::Arena)
-static t771 f1574(t27 l0, t26 l1, t649 l2, t13 l3) {
+static t773 f1574(t27 l0, t26 l1, t649 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -53216,25 +52938,25 @@ static t771 f1574(t27 l0, t26 l1, t649 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1784(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(16ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t771){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t773){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t771){ .tag = 0, .p.v0 = { .m_value = f1785(l4), } });
+        return ((t773){ .tag = 0, .p.v0 = { .m_value = f1785(l4), } });
     }
     __builtin_unreachable();
 }
 
 // check::branch_value
-static t772 f1575(t167 l0) {
+static t774 f1575(t167 l0) {
     t163 l1;
     t141 l2;
     t147 l3;
     CTX_STACK_CHECK();
     {
         { t168 _t0 = (l0).m_k; if ((_t0.tag == 8)) { {
-            return ((t772){ .tag = 2, .p.v2 = { .m_s = l0, } });
+            return ((t774){ .tag = 2, .p.v2 = { .m_s = l0, } });
         } } else if ((_t0.tag == 6)) { l1 = _t0.p.v6.m_x; {
             if ((((l1).m_els).tag != 0)) {
-                return ((t772){ .tag = 2, .p.v2 = { .m_s = l0, } });
+                return ((t774){ .tag = 2, .p.v2 = { .m_s = l0, } });
             }
         } } else if ((_t0.tag == 4)) { l2 = _t0.p.v4.m_e; {
             if ((({ t14 _t1; t142 _t2 = (l2).m_k; if ((_t2.tag == 18)) { l3 = _t2.p.v18.m_name; {
@@ -53242,12 +52964,12 @@ static t772 f1575(t167 l0) {
             } } else { {
                 _t1 = ((bool)0);
             } } _t1; }) && f1((l3).m_text, ((t10){ .m_ptr = (void *)"panic", .m_len = 5 })))) {
-                return ((t772){ .tag = 0 });
+                return ((t774){ .tag = 0 });
             }
-            return ((t772){ .tag = 1, .p.v1 = { .m_e = l2, } });
+            return ((t774){ .tag = 1, .p.v1 = { .m_e = l2, } });
         } } else { {
         } } }
-        return ((t772){ .tag = 0 });
+        return ((t774){ .tag = 0 });
     }
     __builtin_unreachable();
 }
@@ -53328,7 +53050,7 @@ static t33 f1580(t435 l0, t13 l1) {
 }
 
 // list::reserve(syntax::Expr, arena::Arena)
-static t110 f1581(t688 l0, t13 l1) {
+static t110 f1581(t690 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t162 l4;
@@ -53346,7 +53068,7 @@ static t110 f1581(t688 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t162 _t0 = ({ t162 _t1; t739 _t2 = f1400(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t162 _t0 = ({ t162 _t1; t741 _t2 = f1400(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -53372,7 +53094,7 @@ static t164 f1582(t436 l0) {
 }
 
 // list::reserve(syntax::Item, arena::Arena)
-static t110 f1583(t738 l0, t13 l1) {
+static t110 f1583(t740 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t159 l4;
@@ -53390,7 +53112,7 @@ static t110 f1583(t738 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t159 _t0 = ({ t159 _t1; t811 _t2 = f1787(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t159 _t0 = ({ t159 _t1; t813 _t2 = f1787(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -53541,7 +53263,7 @@ static t144 f1593(t10 l0) {
 }
 
 // list::reserve(syntax::TypeExpr, arena::Arena)
-static t110 f1594(t745 l0, t13 l1) {
+static t110 f1594(t747 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t149 l4;
@@ -53559,7 +53281,7 @@ static t110 f1594(t745 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t149 _t0 = ({ t149 _t1; t746 _t2 = f1408(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t149 _t0 = ({ t149 _t1; t748 _t2 = f1408(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -53607,17 +53329,17 @@ static t141 f1597(t436 l0) {
     t128 l6;
     t121 l7;
     t182 l8;
-    t775 l9;
+    t777 l9;
     t147 l10;
     t95 l11;
-    t753 l12;
+    t755 l12;
     t10 l13;
     t95 l14;
     t141 l15;
     t164 l16;
-    t752 l17;
+    t754 l17;
     t95 l18;
-    t753 l19;
+    t755 l19;
     t95 l20;
     t13 l21;
     t147 l22;
@@ -53729,7 +53451,7 @@ static t141 f1599(t436 l0, t13 l1, t141 l2) {
     t141 l4;
     t142 l5;
     t128 l6;
-    t753 l7;
+    t755 l7;
     t95 l8;
     t95 l9;
     t142 l10;
@@ -53931,7 +53653,7 @@ static t179 f1611(void) {
 }
 
 // list::reserve(syntax::Pattern, arena::Arena)
-static t110 f1612(t754 l0, t13 l1) {
+static t110 f1612(t756 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t179 l4;
@@ -53949,7 +53671,7 @@ static t110 f1612(t754 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t179 _t0 = ({ t179 _t1; t812 _t2 = f1792(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t179 _t0 = ({ t179 _t1; t814 _t2 = f1792(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -53960,7 +53682,7 @@ static t110 f1612(t754 l0, t13 l1) {
 }
 
 // list::reserve(syntax::Arm, arena::Arena)
-static t110 f1613(t755 l0, t13 l1) {
+static t110 f1613(t757 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t176 l4;
@@ -53978,7 +53700,7 @@ static t110 f1613(t755 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t176 _t0 = ({ t176 _t1; t813 _t2 = f1793(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t176 _t0 = ({ t176 _t1; t815 _t2 = f1793(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -53989,16 +53711,16 @@ static t110 f1613(t755 l0, t13 l1) {
 }
 
 // list::new(syntax::Binder, arena::Arena)
-static t775 f1614(t27 l0, t26 l1) {
+static t777 f1614(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t171 _t0 = f1427(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t775){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t171 _t0 = f1427(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t777){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // list::push(syntax::Binder, arena::Arena)
-static t110 f1615(t776 l0, t173 l1) {
+static t110 f1615(t778 l0, t173 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -54014,7 +53736,7 @@ static t110 f1615(t776 l0, t173 l1) {
 }
 
 // list::items(syntax::Binder, arena::Arena)
-static t171 f1616(t775 l0) {
+static t171 f1616(t777 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t171 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t171){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -54247,7 +53969,7 @@ static t630 f1630(t315 l0, t19 l1) {
 }
 
 // map::rehash(u64, check::Ref, arena::Arena)
-static t110 f1631(t761 l0) {
+static t110 f1631(t763 l0) {
     t13 l1;
     t316 l2;
     t316 l3;
@@ -54262,7 +53984,7 @@ static t110 f1631(t761 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t316 _t2 = ({ t316 _t3; t814 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t316 _t7 = f540(); t13 _t8 = l1; f1796(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t316 _t2 = ({ t316 _t3; t816 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t316 _t7 = f540(); t13 _t8 = l1; f1796(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -54330,7 +54052,7 @@ static t297 f1634(t10 l0) {
 }
 
 // alloc::resize(types::Var, arena::Arena)
-static t777 f1635(t27 l0, t26 l1, t273 l2, t13 l3) {
+static t779 f1635(t27 l0, t26 l1, t273 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -54338,15 +54060,15 @@ static t777 f1635(t27 l0, t26 l1, t273 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1798(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(48ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t777){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t779){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t777){ .tag = 0, .p.v0 = { .m_value = f1799(l4), } });
+        return ((t779){ .tag = 0, .p.v0 = { .m_value = f1799(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(check::GVar, arena::Arena)
-static t778 f1636(t27 l0, t26 l1, t328 l2, t13 l3) {
+static t780 f1636(t27 l0, t26 l1, t328 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -54354,15 +54076,15 @@ static t778 f1636(t27 l0, t26 l1, t328 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1800(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(56ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t778){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t780){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t778){ .tag = 0, .p.v0 = { .m_value = f1801(l4), } });
+        return ((t780){ .tag = 0, .p.v0 = { .m_value = f1801(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(usize, arena::Arena)
-static t779 f1637(t27 l0, t26 l1, t340 l2, t13 l3) {
+static t781 f1637(t27 l0, t26 l1, t340 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -54370,20 +54092,20 @@ static t779 f1637(t27 l0, t26 l1, t340 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1802(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(8ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t779){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t781){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t779){ .tag = 0, .p.v0 = { .m_value = f1803(l4), } });
+        return ((t781){ .tag = 0, .p.v0 = { .m_value = f1803(l4), } });
     }
     __builtin_unreachable();
 }
 
 // check::resolve_path
-static t694 f1638(t429 l0, t141 l1, t144 l2, t14 l3) {
-    t694 l4;
+static t696 f1638(t429 l0, t141 l1, t144 l2, t14 l3) {
+    t696 l4;
     CTX_STACK_CHECK();
     {
         if (f1269(l2)) {
-            return ((t694){0});
+            return ((t696){0});
         }
         l4 = f1804((&(*l0)), l2, l3);
         if (((l4).tag != 0)) {
@@ -54439,7 +54161,7 @@ static t33 f1640(t429 l0, t33 l1, t33 l2, t121 l3) {
     t33 l6;
     t14 l7;
     t263 l8;
-    t699 l9;
+    t701 l9;
     t132 l10;
     t95 l11;
     t95 l12;
@@ -54485,7 +54207,7 @@ static t33 f1640(t429 l0, t33 l1, t33 l2, t121 l3) {
                                             _t15 = ({ t110 _t17; t110 _t18 = f55((&l10), ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"` is capability ", .m_len = 16 }), })); if ((_t18.tag == 0)) { {
                                                 _t17 = ({ t110 _t19; t110 _t20 = f55((&l10), f606((*l0), ((l9).p.v1.m_value).m_ty)); if ((_t20.tag == 0)) { {
                                                     _t19 = ({ t110 _t21; t110 _t22 = f55((&l10), ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)", which ", .m_len = 8 }), })); if ((_t22.tag == 0)) { {
-                                                        _t21 = ({ t110 _t23; t110 _t24 = f55((&l10), f337(qv4)); if ((_t24.tag == 0)) { {
+                                                        _t21 = ({ t110 _t23; t110 _t24 = f55((&l10), f337(qv6)); if ((_t24.tag == 0)) { {
                                                             _t23 = ((t110){ .tag = 0 });
                                                         } } else if ((_t24.tag == 1)) { l11 = _t24.p.v1.m_error; {
                                                             _t23 = ((t110){ .tag = 1, .p.v1 = { .m_error = l11, } });
@@ -54629,7 +54351,7 @@ static t33 f1644(t429 l0, t141 l1, t141 l2, t159 l3, t14 l4, t14 l5, t33 l6) {
     t33 l7;
     t17 l8;
     t144 l9;
-    t694 l10;
+    t696 l10;
     t286 l11;
     t146 l12;
     t33 l13;
@@ -54811,25 +54533,25 @@ static t16 f1646(t429 l0, t141 l1, t159 l2) {
 }
 
 // check::facts
-static t780 f1647(t257 l0, t141 l1) {
-    t781 l2;
+static t782 f1647(t257 l0, t141 l1) {
+    t783 l2;
     t153 l3;
-    t780 l4;
+    t782 l4;
     t12 l5;
     t153 l6;
     t153 l7;
-    t780 l8;
-    t780 l9;
+    t782 l8;
+    t782 l9;
     t14 l10;
-    t815 l11;
-    t816 l12;
-    t781 l13;
+    t817 l11;
+    t818 l12;
+    t783 l13;
     t153 l14;
     t179 l15;
-    t816 l16;
-    t781 l17;
-    t815 l18;
-    t816 l19;
+    t818 l16;
+    t783 l17;
+    t817 l18;
+    t818 l19;
     t599 l20;
     t13 l21;
     t334 l22;
@@ -54838,15 +54560,15 @@ static t780 f1647(t257 l0, t141 l1) {
         l2 = f1684();
         { t142 _t0 = (l1).m_k; if ((_t0.tag == 13)) { l3 = _t0.p.v13.m_e; {
             l4 = f1647(l0, (*l3));
-            return ((t780){ .m_yes = (l4).m_no, .m_no = (l4).m_yes, });
+            return ((t782){ .m_yes = (l4).m_no, .m_no = (l4).m_yes, });
         } } else if ((_t0.tag == 15)) { l5 = _t0.p.v15.m_op; l6 = _t0.p.v15.m_a; l7 = _t0.p.v15.m_b; {
             if (((l5 == ((t12)(25ULL))) || (l5 == ((t12)(26ULL))))) {
                 l8 = f1647(l0, (*l6));
                 l9 = f1647(l0, (*l7));
                 if ((l5 == ((t12)(25ULL)))) {
-                    return ({ t781 _t1 = f1812(l0, (l8).m_yes, (l9).m_yes); t781 _t2 = f1813(l0, (l8).m_no, (l9).m_no); ((t780){ .m_yes = _t1, .m_no = _t2, }); });
+                    return ({ t783 _t1 = f1812(l0, (l8).m_yes, (l9).m_yes); t783 _t2 = f1813(l0, (l8).m_no, (l9).m_no); ((t782){ .m_yes = _t1, .m_no = _t2, }); });
                 }
-                return ({ t781 _t3 = f1813(l0, (l8).m_yes, (l9).m_yes); t781 _t4 = f1812(l0, (l8).m_no, (l9).m_no); ((t780){ .m_yes = _t3, .m_no = _t4, }); });
+                return ({ t783 _t3 = f1813(l0, (l8).m_yes, (l9).m_yes); t783 _t4 = f1812(l0, (l8).m_no, (l9).m_no); ((t782){ .m_yes = _t3, .m_no = _t4, }); });
             }
             l10 = f1649((*l6));
             if ((((l5 == ((t12)(41ULL))) || (l5 == ((t12)(42ULL)))) && ({ t14 _t5 = l10; t14 _t6 = f1649((*l7)); (_t5 != _t6); }))) {
@@ -54856,15 +54578,15 @@ static t780 f1647(t257 l0, t141 l1) {
                     _t9 = (*l6);
                 } _t9; }); f1814(_t7, _t8); });
                 if (((l11).tag == 0)) {
-                    return ((t780){ .m_yes = l2, .m_no = l2, });
+                    return ((t782){ .m_yes = l2, .m_no = l2, });
                 }
                 l12 = f1815((&g13), (l0).m_heap);
                 f1816((&l12), (l11).p.v1.m_value);
                 l13 = f1817(l12);
                 if ((l5 == ((t12)(42ULL)))) {
-                    return ((t780){ .m_yes = l13, .m_no = l2, });
+                    return ((t782){ .m_yes = l13, .m_no = l2, });
                 }
-                return ((t780){ .m_yes = l2, .m_no = l13, });
+                return ((t782){ .m_yes = l2, .m_no = l13, });
             }
         } } else if ((_t0.tag == 22)) { l14 = _t0.p.v22.m_e; l15 = _t0.p.v22.m_pats; {
             l16 = f1815((&g13), (l0).m_heap);
@@ -54884,22 +54606,22 @@ static t780 f1647(t257 l0, t141 l1) {
                 l21 = ((t13)(0ULL));
                 while ((l21 < ((l20).p.v1.m_value).m_len)) {
                     l22 = ({ t257 _t12 = l0; t33 _t13 = (*({ t254 _t14 = ((l20).p.v1.m_value); uint64_t _t15 = l21; _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 4202, 53, 18); })); f1158(_t12, _t13); });
-                    f1816((&l16), ({ t33 _t16 = (*({ t254 _t23 = ((l20).p.v1.m_value); uint64_t _t24 = l21; _t23.m_ptr + ctx_idx(_t24, _t23.m_len, 4203, 65, 18); })); t33 _t17 = ((t33)(4294967295ULL)); t8 _t18 = f38(); t33 _t19 = (l22).m_ty; t121 _t20 = (l22).m_at; t14 _t21 = ((bool)1); t14 _t22 = ((bool)0); ((t783){ .m_var = _t16, .m_root = _t17, .m_steps = _t18, .m_ty = _t19, .m_at = _t20, .m_bind = _t21, .m_clash = _t22, }); }));
+                    f1816((&l16), ({ t33 _t16 = (*({ t254 _t23 = ((l20).p.v1.m_value); uint64_t _t24 = l21; _t23.m_ptr + ctx_idx(_t24, _t23.m_len, 4203, 65, 18); })); t33 _t17 = ((t33)(4294967295ULL)); t8 _t18 = f38(); t33 _t19 = (l22).m_ty; t121 _t20 = (l22).m_at; t14 _t21 = ((bool)1); t14 _t22 = ((bool)0); ((t785){ .m_var = _t16, .m_root = _t17, .m_steps = _t18, .m_ty = _t19, .m_at = _t20, .m_bind = _t21, .m_clash = _t22, }); }));
                     l21 = ctx_add_u64(l21, ((t13)(1ULL)), 4204, 31, 18);
                 }
             }
-            return ({ t781 _t25 = f1817(l16); t781 _t26 = l17; ((t780){ .m_yes = _t25, .m_no = _t26, }); });
+            return ({ t783 _t25 = f1817(l16); t783 _t26 = l17; ((t782){ .m_yes = _t25, .m_no = _t26, }); });
         } } else { {
         } } }
-        return ((t780){ .m_yes = l2, .m_no = l2, });
+        return ((t782){ .m_yes = l2, .m_no = l2, });
     }
     __builtin_unreachable();
 }
 
 // check::assume
-static t16 f1648(t429 l0, t781 l1, t14 l2) {
+static t16 f1648(t429 l0, t783 l1, t14 l2) {
     t13 l3;
-    t783 l4;
+    t785 l4;
     t10 l5;
     t33 l6;
     t333 l7;
@@ -54907,7 +54629,7 @@ static t16 f1648(t429 l0, t781 l1, t14 l2) {
     {
         l3 = ((t13)(0ULL));
         while ((l3 < (l1).m_len)) {
-            l4 = (*({ t781 _t0 = (l1); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 4342, 26, 18); }));
+            l4 = (*({ t783 _t0 = (l1); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 4342, 26, 18); }));
             if ((l4).m_bind) {
                 if ((!(l4).m_clash)) {
                     f1709((&(*l0)), (l4).m_var);
@@ -55115,7 +54837,7 @@ static t33 f1655(t429 l0, t141 l1, t162 l2) {
     t95 l10;
     t95 l11;
     t95 l12;
-    t711 l13;
+    t713 l13;
     t10 l14;
     t162 l15;
     t13 l16;
@@ -55182,13 +54904,13 @@ static t33 f1655(t429 l0, t141 l1, t162 l2) {
             }
             l5 = ((bool)0);
         }
-        l13 = ({ t711 _t18; t142 _t19 = (l4).m_k; if ((_t19.tag == 3)) { l14 = _t19.p.v3.m_bytes; {
+        l13 = ({ t713 _t18; t142 _t19 = (l4).m_k; if ((_t19.tag == 3)) { l14 = _t19.p.v3.m_bytes; {
             _t18 = ({ t429 _t20 = (&(*l0)); t10 _t21 = l14; t121 _t22 = f1044(l4); f1824(_t20, _t21, _t22); });
         } } else if ((_t19.tag == 0)) { {
-            _t18 = ((t711){0});
+            _t18 = ((t713){0});
         } } else { {
             ({ t429 _t23 = (&(*l0)); t121 _t24 = f1044(l4); t17 _t25 = ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"@fmt takes its format as a string literal", .m_len = 41 }), }); f600(_t23, _t24, _t25); });
-            _t18 = ((t711){0});
+            _t18 = ((t713){0});
         } } _t18; });
         l15 = ({ t162 _t26 = (l2); uint64_t _t27 = ((t13)(2ULL)); uint64_t _t28 = _t26.m_len; ctx_range(_t27, _t28, _t26.m_len, 7145, 25, 18); (t162){ .m_ptr = _t26.m_ptr + _t27, .m_len = _t28 - _t27 }; });
         if (((l13).tag == 0)) {
@@ -55293,7 +55015,7 @@ static t33 f1655(t429 l0, t141 l1, t162 l2) {
             l35 = ctx_add_u64(l35, ((t13)(1ULL)), 7172, 19, 18);
         }
         if ((l5 && ((l13).tag != 0))) {
-            { t110 _t69 = ({ t818 _t70 = (&((*l0)).m_pieces); t19 _t71 = f1084(l1); t384 _t72 = (l13).p.v1.m_value; f1826(_t70, _t71, _t72); }); if ((_t69.tag == 0)) { {
+            { t110 _t69 = ({ t820 _t70 = (&((*l0)).m_pieces); t19 _t71 = f1084(l1); t384 _t72 = (l13).p.v1.m_value; f1826(_t70, _t71, _t72); }); if ((_t69.tag == 0)) { {
             } } else if ((_t69.tag == 1)) { l39 = _t69.p.v1.m_error; {
                 { t95 _t73 = l39; if ((_t73.tag == 0)) { {
                     ctx_panic(7175, 13, 18, "try! failed: alloc::out_of_memory");
@@ -55326,7 +55048,7 @@ static t14 f1656(t257 l0, t33 l1) {
 
 // check::field_type
 static t33 f1657(t429 l0, t33 l1, t141 l2, t147 l3) {
-    t699 l4;
+    t701 l4;
     CTX_STACK_CHECK();
     {
         l4 = ({ t263 _t0 = f870((&(*l0)), l1); t10 _t1 = (l3).m_text; f1286(_t0, _t1); });
@@ -55339,7 +55061,7 @@ static t33 f1657(t429 l0, t33 l1, t141 l2, t147 l3) {
 }
 
 // check::cap_var
-static t784 f1658(t257 l0, t33 l1, t10 l2) {
+static t786 f1658(t257 l0, t33 l1, t10 l2) {
     t33 l3;
     t299 l4;
     t13 l5;
@@ -55354,12 +55076,12 @@ static t784 f1658(t257 l0, t33 l1, t10 l2) {
             l5 = ((t13)(0ULL));
             while ((l5 < (l4).m_len)) {
                 if (({ t10 _t4 = ((*({ t299 _t6 = (l4); uint64_t _t7 = l5; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 6908, 43, 18); }))).m_name; t10 _t5 = l2; f1(_t4, _t5); })) {
-                    return ((t784){ .tag = 1, .p.v1.m_value = (*({ t299 _t8 = (l4); uint64_t _t9 = l5; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 6908, 75, 18); })) });
+                    return ((t786){ .tag = 1, .p.v1.m_value = (*({ t299 _t8 = (l4); uint64_t _t9 = l5; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 6908, 75, 18); })) });
                 }
                 l5 = ctx_add_u64(l5, ((t13)(1ULL)), 6909, 23, 18);
             }
         }
-        return ((t784){0});
+        return ((t786){0});
     }
     __builtin_unreachable();
 }
@@ -55522,7 +55244,7 @@ static t33 f1660(t429 l0, t33 l1, t141 l2, t147 l3) {
 
 // check::narrowed_path
 static t33 f1661(t257 l0, t141 l1) {
-    t792 l2;
+    t794 l2;
     t336 l3;
     t13 l4;
     t33 l5;
@@ -55590,7 +55312,7 @@ static t33 f1662(t429 l0, t33 l1, t141 l2, t147 l3) {
 }
 
 // map::put(u64, check::Access, arena::Arena)
-static t110 f1663(t785 l0, t19 l1, t12 l2) {
+static t110 f1663(t787 l0, t19 l1, t12 l2) {
     t630 l3;
     t95 l4;
     t13 l5;
@@ -55628,7 +55350,7 @@ static t16 f1664(t429 l0, t141 l1, t354 l2) {
 }
 
 // check::access_of
-static t786 f1665(t257 l0, t141 l1) {
+static t788 f1665(t257 l0, t141 l1) {
     CTX_STACK_CHECK();
     {
         return ({ t364 _t0 = (l0).m_access; t19 _t1 = f1084(l1); f1832(_t0, _t1); });
@@ -55657,16 +55379,16 @@ static t33 f1666(t257 l0, t141 l1) {
 }
 
 // list::new(check::Branch, arena::Arena)
-static t787 f1667(t27 l0, t26 l1) {
+static t789 f1667(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t788 _t0 = f1833(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t787){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t790 _t0 = f1833(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t789){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // check::add_branch
-static t16 f1668(t791 l0, t790 l1) {
+static t16 f1668(t793 l0, t792 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -55680,7 +55402,7 @@ static t16 f1668(t791 l0, t790 l1) {
 }
 
 // check::branch
-static t790 f1669(t429 l0, t164 l1, t254 l2, t781 l3, t33 l4, t14 l5) {
+static t792 f1669(t429 l0, t164 l1, t254 l2, t783 l3, t33 l4, t14 l5) {
     CTX_STACK_CHECK();
     {
         if (l5) {
@@ -55691,7 +55413,7 @@ static t790 f1669(t429 l0, t164 l1, t254 l2, t781 l3, t33 l4, t14 l5) {
         f1648((&(*l0)), l3, ((bool)0));
         f1099((&(*l0)), (l1).m_stmts);
         f1100((&(*l0)));
-        return ((t790){ .m_t = ((t33)(4294967295ULL)), .m_value = ((t772){ .tag = 0 }), });
+        return ((t792){ .m_t = ((t33)(4294967295ULL)), .m_value = ((t774){ .tag = 0 }), });
     }
     __builtin_unreachable();
 }
@@ -55746,7 +55468,7 @@ static t347 f1671(t257 l0, t349 l1, t349 l2) {
 }
 
 // check::join
-static t33 f1672(t429 l0, t121 l1, t788 l2, t33 l3, t14 l4) {
+static t33 f1672(t429 l0, t121 l1, t790 l2, t33 l3, t14 l4) {
     t13 l5;
     t33 l6;
     t13 l7;
@@ -55756,14 +55478,14 @@ static t33 f1672(t429 l0, t121 l1, t788 l2, t33 l3, t14 l4) {
     t14 l11;
     t33 l12;
     t33 l13;
-    t724 l14;
+    t726 l14;
     t132 l15;
     t95 l16;
     t95 l17;
     t95 l18;
     t95 l19;
     t95 l20;
-    t790 l21;
+    t792 l21;
     t141 l22;
     t167 l23;
     CTX_STACK_CHECK();
@@ -55772,7 +55494,7 @@ static t33 f1672(t429 l0, t121 l1, t788 l2, t33 l3, t14 l4) {
         l6 = ((t33)(4294967295ULL));
         l7 = ((t13)(0ULL));
         while ((l7 < (l2).m_len)) {
-            if ((((*({ t788 _t0 = (l2); uint64_t _t1 = l7; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 3555, 18, 18); }))).m_t != ((t33)(4294967295ULL)))) {
+            if ((((*({ t790 _t0 = (l2); uint64_t _t1 = l7; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 3555, 18, 18); }))).m_t != ((t33)(4294967295ULL)))) {
                 if ((l6 == ((t33)(4294967295ULL)))) {
                     l6 = ((t33)(ctx_as_u((uint64_t)(l7), UINT32_MAX, "u32", 3556, 44, 18)));
                 }
@@ -55795,15 +55517,15 @@ static t33 f1672(t429 l0, t121 l1, t788 l2, t33 l3, t14 l4) {
             l9 = ((bool)0);
             l7 = ((t13)(0ULL));
             while ((l7 < (l2).m_len)) {
-                if (((((*({ t788 _t2 = (l2); uint64_t _t3 = l7; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 3574, 22, 18); }))).m_t != ((t33)(4294967295ULL))) && (({ t258 _t4 = ((*l0)).m_ty; t33 _t5 = ((*({ t788 _t6 = (l2); uint64_t _t7 = l7; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 3574, 80, 18); }))).m_t; f822(_t4, _t5); }) == ((t33)(2ULL))))) {
+                if (((((*({ t790 _t2 = (l2); uint64_t _t3 = l7; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 3574, 22, 18); }))).m_t != ((t33)(4294967295ULL))) && (({ t258 _t4 = ((*l0)).m_ty; t33 _t5 = ((*({ t790 _t6 = (l2); uint64_t _t7 = l7; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 3574, 80, 18); }))).m_t; f822(_t4, _t5); }) == ((t33)(2ULL))))) {
                     l9 = ((bool)1);
                 }
                 l7 = ctx_add_u64(l7, ((t13)(1ULL)), 3575, 23, 18);
             }
             l7 = ((t13)(0ULL));
             while (((l7 < (l2).m_len) && (l8 == ((t33)(4294967295ULL))))) {
-                if ((((*({ t788 _t8 = (l2); uint64_t _t9 = l7; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 3579, 22, 18); }))).m_t != ((t33)(4294967295ULL)))) {
-                    l10 = ({ t258 _t10 = ((*l0)).m_ty; t33 _t11 = ((*({ t788 _t12 = (l2); uint64_t _t13 = l7; _t12.m_ptr + ctx_idx(_t13, _t12.m_len, 3580, 66, 18); }))).m_t; f822(_t10, _t11); });
+                if ((((*({ t790 _t8 = (l2); uint64_t _t9 = l7; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 3579, 22, 18); }))).m_t != ((t33)(4294967295ULL)))) {
+                    l10 = ({ t258 _t10 = ((*l0)).m_ty; t33 _t11 = ((*({ t790 _t12 = (l2); uint64_t _t13 = l7; _t12.m_ptr + ctx_idx(_t13, _t12.m_len, 3580, 66, 18); }))).m_t; f822(_t10, _t11); });
                     if ((l10 != ((t33)(2ULL)))) {
                         if ((l9 && (!f1677((*l0), l10)))) {
                             l10 = f1141((&((*l0)).m_ty), l10);
@@ -55819,7 +55541,7 @@ static t33 f1672(t429 l0, t121 l1, t788 l2, t33 l3, t14 l4) {
                 l11 = ((bool)1);
                 l7 = ((t13)(0ULL));
                 while ((l7 < (l2).m_len)) {
-                    if (((((*({ t788 _t14 = (l2); uint64_t _t15 = l7; _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 3592, 26, 18); }))).m_t != ((t33)(4294967295ULL))) && (({ t258 _t16 = ((*l0)).m_ty; t33 _t17 = ((*({ t788 _t18 = (l2); uint64_t _t19 = l7; _t18.m_ptr + ctx_idx(_t19, _t18.m_len, 3592, 84, 18); }))).m_t; f822(_t16, _t17); }) != ((t33)(2ULL))))) {
+                    if (((((*({ t790 _t14 = (l2); uint64_t _t15 = l7; _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 3592, 26, 18); }))).m_t != ((t33)(4294967295ULL))) && (({ t258 _t16 = ((*l0)).m_ty; t33 _t17 = ((*({ t790 _t18 = (l2); uint64_t _t19 = l7; _t18.m_ptr + ctx_idx(_t19, _t18.m_len, 3592, 84, 18); }))).m_t; f822(_t16, _t17); }) != ((t33)(2ULL))))) {
                         l11 = ((bool)0);
                     }
                     l7 = ctx_add_u64(l7, ((t13)(1ULL)), 3593, 27, 18);
@@ -55827,18 +55549,18 @@ static t33 f1672(t429 l0, t121 l1, t788 l2, t33 l3, t14 l4) {
                 if (l11) {
                     return ((t33)(2ULL));
                 }
-                l12 = ((*({ t788 _t20 = (l2); uint64_t _t21 = ((t13)(l6)); _t20.m_ptr + ctx_idx(_t21, _t20.m_len, 3596, 27, 18); }))).m_t;
+                l12 = ((*({ t790 _t20 = (l2); uint64_t _t21 = ((t13)(l6)); _t20.m_ptr + ctx_idx(_t21, _t20.m_len, 3596, 27, 18); }))).m_t;
                 l13 = ((t33)(4294967295ULL));
                 l7 = ctx_add_u64(((t13)(ctx_as_u((uint64_t)(l6), UINT64_MAX, "usize", 3598, 21, 18))), ((t13)(1ULL)), 3598, 39, 18);
                 while ((l7 < (l2).m_len)) {
-                    if ((((*({ t788 _t22 = (l2); uint64_t _t23 = l7; _t22.m_ptr + ctx_idx(_t23, _t22.m_len, 3600, 26, 18); }))).m_t != ((t33)(4294967295ULL)))) {
-                        l14 = ({ t429 _t24 = (&(*l0)); t33 _t25 = ((*({ t788 _t27 = (l2); uint64_t _t28 = l7; _t27.m_ptr + ctx_idx(_t28, _t27.m_len, 3601, 52, 18); }))).m_t; t33 _t26 = l12; f1482(_t24, _t25, _t26); });
-                        if (({ t14 _t29; t724 _t30 = l14; if ((_t30.tag == 0)) { {
+                    if ((((*({ t790 _t22 = (l2); uint64_t _t23 = l7; _t22.m_ptr + ctx_idx(_t23, _t22.m_len, 3600, 26, 18); }))).m_t != ((t33)(4294967295ULL)))) {
+                        l14 = ({ t429 _t24 = (&(*l0)); t33 _t25 = ((*({ t790 _t27 = (l2); uint64_t _t28 = l7; _t27.m_ptr + ctx_idx(_t28, _t27.m_len, 3601, 52, 18); }))).m_t; t33 _t26 = l12; f1482(_t24, _t25, _t26); });
+                        if (({ t14 _t29; t726 _t30 = l14; if ((_t30.tag == 0)) { {
                             _t29 = ((bool)1);
                         } } else { {
                             _t29 = ((bool)0);
                         } } _t29; })) {
-                            l13 = ((*({ t788 _t31 = (l2); uint64_t _t32 = l7; _t31.m_ptr + ctx_idx(_t32, _t31.m_len, 3602, 51, 18); }))).m_t;
+                            l13 = ((*({ t790 _t31 = (l2); uint64_t _t32 = l7; _t31.m_ptr + ctx_idx(_t32, _t31.m_len, 3602, 51, 18); }))).m_t;
                         }
                         if ((l13 != ((t33)(4294967295ULL)))) {
                              break;
@@ -55878,9 +55600,9 @@ static t33 f1672(t429 l0, t121 l1, t788 l2, t33 l3, t14 l4) {
         }
         l7 = ((t13)(0ULL));
         while ((l7 < (l2).m_len)) {
-            l21 = (*({ t788 _t46 = (l2); uint64_t _t47 = l7; _t46.m_ptr + ctx_idx(_t47, _t46.m_len, 3616, 24, 18); }));
+            l21 = (*({ t790 _t46 = (l2); uint64_t _t47 = l7; _t46.m_ptr + ctx_idx(_t47, _t46.m_len, 3616, 24, 18); }));
             if (((l21).m_t != ((t33)(4294967295ULL)))) {
-                { t772 _t48 = (l21).m_value; if ((_t48.tag == 1)) { l22 = _t48.p.v1.m_e; {
+                { t774 _t48 = (l21).m_value; if ((_t48.tag == 1)) { l22 = _t48.p.v1.m_e; {
                     f1068((&(*l0)), l22, (l21).m_t, l8);
                 } } else if ((_t48.tag == 2)) { l23 = _t48.p.v2.m_s; {
                     ({ t429 _t49 = (&(*l0)); t19 _t50 = f1385(l23); t121 _t51 = (l23).m_span; t33 _t52 = (l21).m_t; t33 _t53 = l8; f1282(_t49, _t50, _t51, _t52, _t53); });
@@ -55895,10 +55617,10 @@ static t33 f1672(t429 l0, t121 l1, t788 l2, t33 l3, t14 l4) {
 }
 
 // list::items(check::Branch, arena::Arena)
-static t788 f1673(t787 l0) {
+static t790 f1673(t789 l0) {
     CTX_STACK_CHECK();
     {
-        return ({ t788 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t788){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
+        return ({ t790 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t790){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
     }
     __builtin_unreachable();
 }
@@ -55947,7 +55669,7 @@ static t33 f1676(t429 l0, t175 l1, t121 l2, t33 l3, t14 l4, t14 l5, t33 l6) {
     t10 l20;
     t14 l21;
     t346 l22;
-    t787 l23;
+    t789 l23;
     t176 l24;
     t13 l25;
     t178 l26;
@@ -56165,9 +55887,9 @@ static t33 f1676(t429 l0, t175 l1, t121 l2, t33 l3, t14 l4, t14 l5, t33 l6) {
             }
             f1503((&(*l0)), l15);
             if (l27) {
-                f1668((&l23), ((t790){ .m_t = ((t33)(4294967295ULL)), .m_value = ((t772){ .tag = 0 }), }));
+                f1668((&l23), ((t792){ .m_t = ((t33)(4294967295ULL)), .m_value = ((t774){ .tag = 0 }), }));
             } else {
-                f1668((&l23), ({ t429 _t58 = (&(*l0)); t164 _t59 = (l26).m_body; t254 _t60 = l28; t781 _t61 = f1684(); t33 _t62 = l3; t14 _t63 = (l4 && (!l10)); f1669(_t58, _t59, _t60, _t61, _t62, _t63); }));
+                f1668((&l23), ({ t429 _t58 = (&(*l0)); t164 _t59 = (l26).m_body; t254 _t60 = l28; t783 _t61 = f1684(); t33 _t62 = l3; t14 _t63 = (l4 && (!l10)); f1669(_t58, _t59, _t60, _t61, _t62, _t63); }));
             }
             f1685((&l22), f1500((*l0)));
             l25 = ctx_add_u64(l25, ((t13)(1ULL)), 7673, 19, 18);
@@ -56223,7 +55945,7 @@ static t33 f1676(t429 l0, t175 l1, t121 l2, t33 l3, t14 l4, t14 l5, t33 l6) {
             return ((t33)(1ULL));
         }
         if (l4) {
-            return ({ t429 _t88 = (&(*l0)); t121 _t89 = l2; t788 _t90 = f1673(l23); t33 _t91 = l3; t14 _t92 = l5; f1672(_t88, _t89, _t90, _t91, _t92); });
+            return ({ t429 _t88 = (&(*l0)); t121 _t89 = l2; t790 _t90 = f1673(l23); t33 _t91 = l3; t14 _t92 = l5; f1672(_t88, _t89, _t90, _t91, _t92); });
         }
         return ((t33)(4294967295ULL));
     }
@@ -56244,21 +55966,21 @@ static t14 f1677(t257 l0, t33 l1) {
 }
 
 // check::place_path
-static t792 f1678(t257 l0, t141 l1) {
+static t794 f1678(t257 l0, t141 l1) {
     t359 l2;
     t33 l3;
     t153 l4;
     t147 l5;
     t12 l6;
-    t792 l7;
+    t794 l7;
     t10 l8;
     t153 l9;
     t12 l10;
-    t792 l11;
+    t794 l11;
     CTX_STACK_CHECK();
     {
         { t142 _t0 = (l1).m_k; if ((_t0.tag == 6)) { {
-            if (({ t14 _t1; t694 _t2 = ({ t355 _t3 = (l0).m_refs; t19 _t4 = f1084(l1); f1087(_t3, _t4); }); if ((_t2.tag == 0)) { {
+            if (({ t14 _t1; t696 _t2 = ({ t355 _t3 = (l0).m_refs; t19 _t4 = f1084(l1); f1087(_t3, _t4); }); if ((_t2.tag == 0)) { {
                 _t1 = ((bool)0);
             } } else if ((_t2.tag == 1)) { l2 = _t2.p.v1.m_value; {
                 _t1 = ({ t14 _t5; t359 _t6 = l2; if ((_t6.tag == 0)) { l3 = _t6.p.v0.m_var; {
@@ -56267,10 +55989,10 @@ static t792 f1678(t257 l0, t141 l1) {
                     _t5 = ((bool)0);
                 } } _t5; });
             } } _t1; })) {
-                return ((t792){ .tag = 1, .p.v1.m_value = ({ t33 _t7 = f1805(l0, l3); t8 _t8 = f38(); ((t393){ .m_root = _t7, .m_steps = _t8, }); }) });
+                return ((t794){ .tag = 1, .p.v1.m_value = ({ t33 _t7 = f1805(l0, l3); t8 _t8 = f38(); ((t393){ .m_root = _t7, .m_steps = _t8, }); }) });
             }
         } } else if ((_t0.tag == 7)) { l4 = _t0.p.v7.m_base; l5 = _t0.p.v7.m_name; {
-            if (({ t14 _t9; t786 _t10 = f1665(l0, l1); if ((_t10.tag == 0)) { {
+            if (({ t14 _t9; t788 _t10 = f1665(l0, l1); if ((_t10.tag == 0)) { {
                 _t9 = ((bool)0);
             } } else if ((_t10.tag == 1)) { l6 = _t10.p.v1.m_value; {
                 _t9 = ({ t14 _t11; t12 _t12 = l6; if (_t12 == ((t12)(0ULL))) { {
@@ -56286,11 +56008,11 @@ static t792 f1678(t257 l0, t141 l1) {
                     } else {
                         _t13 = (l5).m_text;
                     } _t13; });
-                    return ((t792){ .tag = 1, .p.v1.m_value = ({ t33 _t16 = ((l7).p.v1.m_value).m_root; t8 _t17 = f1842(l0, ((l7).p.v1.m_value).m_steps, l8); ((t393){ .m_root = _t16, .m_steps = _t17, }); }) });
+                    return ((t794){ .tag = 1, .p.v1.m_value = ({ t33 _t16 = ((l7).p.v1.m_value).m_root; t8 _t17 = f1842(l0, ((l7).p.v1.m_value).m_steps, l8); ((t393){ .m_root = _t16, .m_steps = _t17, }); }) });
                 }
             }
         } } else if ((_t0.tag == 9)) { l9 = _t0.p.v9.m_base; {
-            if (({ t14 _t18; t786 _t19 = f1665(l0, l1); if ((_t19.tag == 0)) { {
+            if (({ t14 _t18; t788 _t19 = f1665(l0, l1); if ((_t19.tag == 0)) { {
                 _t18 = ((bool)0);
             } } else if ((_t19.tag == 1)) { l10 = _t19.p.v1.m_value; {
                 _t18 = ({ t14 _t20; t12 _t21 = l10; if (_t21 == ((t12)(6ULL))) { {
@@ -56301,12 +56023,12 @@ static t792 f1678(t257 l0, t141 l1) {
             } } _t18; })) {
                 l11 = f1678(l0, (*l9));
                 if (((l11).tag != 0)) {
-                    return ((t792){ .tag = 1, .p.v1.m_value = ({ t33 _t22 = ((l11).p.v1.m_value).m_root; t8 _t23 = f1842(l0, ((l11).p.v1.m_value).m_steps, ((t10){ .m_ptr = (void *)"[", .m_len = 1 })); ((t393){ .m_root = _t22, .m_steps = _t23, }); }) });
+                    return ((t794){ .tag = 1, .p.v1.m_value = ({ t33 _t22 = ((l11).p.v1.m_value).m_root; t8 _t23 = f1842(l0, ((l11).p.v1.m_value).m_steps, ((t10){ .m_ptr = (void *)"[", .m_len = 1 })); ((t393){ .m_root = _t22, .m_steps = _t23, }); }) });
                 }
             }
         } } else { {
         } } }
-        return ((t792){0});
+        return ((t794){0});
     }
     __builtin_unreachable();
 }
@@ -56361,7 +56083,7 @@ static t254 f1682(t429 l0, t10 l1, t14 l2, t296 l3, t171 l4, t14 l5, t14 l6, t33
     t173 l16;
     t10 l17;
     t33 l18;
-    t699 l19;
+    t701 l19;
     t132 l20;
     t95 l21;
     t95 l22;
@@ -56802,8 +56524,8 @@ static t16 f1683(t429 l0, t10 l1, t254 l2, t10 l3, t254 l4, t171 l5, t121 l6, t1
 }
 
 // slice::empty(check::Fact)
-static t781 f1684(void) {
-    t781 l0;
+static t783 f1684(void) {
+    t783 l0;
     CTX_STACK_CHECK();
     {
         memset(&l0, 0, sizeof l0);
@@ -56813,7 +56535,7 @@ static t781 f1684(void) {
 }
 
 // check::add_state
-static t16 f1685(t793 l0, t349 l1) {
+static t16 f1685(t795 l0, t349 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -56827,13 +56549,13 @@ static t16 f1685(t793 l0, t349 l1) {
 }
 
 // check::scan_stmts
-static t16 f1686(t429 l0, t794 l1, t165 l2) {
+static t16 f1686(t429 l0, t796 l1, t165 l2) {
     t13 l3;
     CTX_STACK_CHECK();
     {
         l3 = ((t13)(0ULL));
         while ((l3 < (l2).m_len)) {
-            ({ t429 _t0 = (&(*l0)); t794 _t1 = l1; t167 _t2 = (*({ t165 _t3 = (l2); uint64_t _t4 = l3; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 5198, 38, 18); })); f1845(_t0, _t1, _t2); });
+            ({ t429 _t0 = (&(*l0)); t796 _t1 = l1; t167 _t2 = (*({ t165 _t3 = (l2); uint64_t _t4 = l3; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 5198, 38, 18); })); f1845(_t0, _t1, _t2); });
             l3 = ctx_add_u64(l3, ((t13)(1ULL)), 5199, 19, 18);
         }
     }
@@ -56918,7 +56640,7 @@ static t254 f1689(t429 l0, t141 l1) {
     t263 l17;
     t254 l18;
     t13 l19;
-    t735 l20;
+    t737 l20;
     t378 l21;
     t33 l22;
     t12 l23;
@@ -56946,7 +56668,7 @@ static t254 f1689(t429 l0, t141 l1) {
         { t142 _t6 = (l1).m_k; if ((_t6.tag == 14)) { l3 = _t6.p.v14.m_e; {
             return f1846((&(*l0)), (*l3));
         } } else if ((_t6.tag == 6)) { {
-            if (({ t14 _t7; t694 _t8 = ({ t355 _t9 = ((*l0)).m_refs; t19 _t10 = f1084(l1); f1087(_t9, _t10); }); if ((_t8.tag == 0)) { {
+            if (({ t14 _t7; t696 _t8 = ({ t355 _t9 = ((*l0)).m_refs; t19 _t10 = f1084(l1); f1087(_t9, _t10); }); if ((_t8.tag == 0)) { {
                 _t7 = ((bool)0);
             } } else if ((_t8.tag == 1)) { l4 = _t8.p.v1.m_value; {
                 _t7 = ({ t14 _t11; t359 _t12 = l4; if ((_t12.tag == 0)) { l5 = _t12.p.v0.m_var; {
@@ -56960,7 +56682,7 @@ static t254 f1689(t429 l0, t141 l1) {
         } } else if ((_t6.tag == 10)) { l6 = _t6.p.v10.m_base; {
             return f1689((&(*l0)), (*l6));
         } } else if ((_t6.tag == 7)) { l7 = _t6.p.v7.m_base; {
-            if (({ t14 _t13; t786 _t14 = f1665((*l0), l1); if ((_t14.tag == 0)) { {
+            if (({ t14 _t13; t788 _t14 = f1665((*l0), l1); if ((_t14.tag == 0)) { {
                 _t13 = ((bool)0);
             } } else if ((_t14.tag == 1)) { l8 = _t14.p.v1.m_value; {
                 _t13 = ({ t14 _t15; t12 _t16 = l8; if (_t16 == ((t12)(5ULL)) || _t16 == ((t12)(0ULL))) { {
@@ -56972,7 +56694,7 @@ static t254 f1689(t429 l0, t141 l1) {
                 return f1689((&(*l0)), (*l7));
             }
         } } else if ((_t6.tag == 9)) { l9 = _t6.p.v9.m_base; {
-            if (({ t14 _t17; t786 _t18 = f1665((*l0), l1); if ((_t18.tag == 0)) { {
+            if (({ t14 _t17; t788 _t18 = f1665((*l0), l1); if ((_t18.tag == 0)) { {
                 _t17 = ((bool)0);
             } } else if ((_t18.tag == 1)) { l10 = _t18.p.v1.m_value; {
                 _t17 = ({ t14 _t19; t12 _t20 = l10; if (_t20 == ((t12)(6ULL))) { {
@@ -57177,7 +56899,7 @@ static t14 f1693(t179 l0, t13 l1) {
 }
 
 // map::put(u64, []u32, arena::Arena)
-static t110 f1694(t795 l0, t19 l1, t254 l2) {
+static t110 f1694(t797 l0, t19 l1, t254 l2) {
     t630 l3;
     t95 l4;
     t13 l5;
@@ -57207,7 +56929,7 @@ static t110 f1694(t795 l0, t19 l1, t254 l2) {
 }
 
 // map::put(u64, check::Conv, arena::Arena)
-static t110 f1695(t796 l0, t19 l1, t354 l2) {
+static t110 f1695(t798 l0, t19 l1, t354 l2) {
     t630 l3;
     t95 l4;
     t13 l5;
@@ -57292,7 +57014,7 @@ static t14 f1699(t429 l0, t33 l1, t33 l2) {
     t33 l6;
     t13 l7;
     t265 l8;
-    t699 l9;
+    t701 l9;
     CTX_STACK_CHECK();
     {
         { t262 _t0 = f609(((*l0)).m_ty, l1); if ((_t0.tag == 12)) { l3 = _t0.p.v12.m_fields; l4 = _t0.p.v12.m_ret; {
@@ -57384,7 +57106,7 @@ static t110 f1701(t257 l0, t33 l1, t133 l2) {
 }
 
 // alloc::resize([]u32, arena::Arena)
-static t797 f1702(t27 l0, t26 l1, t406 l2, t13 l3) {
+static t799 f1702(t27 l0, t26 l1, t406 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -57392,15 +57114,15 @@ static t797 f1702(t27 l0, t26 l1, t406 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1860(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(16ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t797){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t799){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t797){ .tag = 0, .p.v0 = { .m_value = f1861(l4), } });
+        return ((t799){ .tag = 0, .p.v0 = { .m_value = f1861(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize([]check::Place, arena::Arena)
-static t798 f1703(t27 l0, t26 l1, t409 l2, t13 l3) {
+static t800 f1703(t27 l0, t26 l1, t409 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -57408,9 +57130,9 @@ static t798 f1703(t27 l0, t26 l1, t409 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1862(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(16ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t798){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t800){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t798){ .tag = 0, .p.v0 = { .m_value = f1863(l4), } });
+        return ((t800){ .tag = 0, .p.v0 = { .m_value = f1863(l4), } });
     }
     __builtin_unreachable();
 }
@@ -57444,7 +57166,7 @@ static t332 f1705(t10 l0) {
 }
 
 // alloc::resize(check::Binding, arena::Arena)
-static t799 f1706(t27 l0, t26 l1, t336 l2, t13 l3) {
+static t801 f1706(t27 l0, t26 l1, t336 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -57452,9 +57174,9 @@ static t799 f1706(t27 l0, t26 l1, t336 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1864(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(40ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t799){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t801){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t799){ .tag = 0, .p.v0 = { .m_value = f1865(l4), } });
+        return ((t801){ .tag = 0, .p.v0 = { .m_value = f1865(l4), } });
     }
     __builtin_unreachable();
 }
@@ -57465,7 +57187,7 @@ static t391 f1707(t257 l0, t141 l1) {
     t359 l3;
     t33 l4;
     t14 l5;
-    t822 l6;
+    t824 l6;
     t163 l7;
     t391 l8;
     t184 l9;
@@ -57479,7 +57201,7 @@ static t391 f1707(t257 l0, t141 l1) {
             return l2;
         }
         { t142 _t2 = (l1).m_k; if ((_t2.tag == 6)) { {
-            if (({ t14 _t3; t694 _t4 = ({ t355 _t5 = (l0).m_refs; t19 _t6 = f1084(l1); f1087(_t5, _t6); }); if ((_t4.tag == 0)) { {
+            if (({ t14 _t3; t696 _t4 = ({ t355 _t5 = (l0).m_refs; t19 _t6 = f1084(l1); f1087(_t5, _t6); }); if ((_t4.tag == 0)) { {
                 _t3 = ((bool)0);
             } } else if ((_t4.tag == 1)) { l3 = _t4.p.v1.m_value; {
                 _t3 = ({ t14 _t7; t359 _t8 = l3; if ((_t8.tag == 0)) { l4 = _t8.p.v0.m_var; {
@@ -57731,7 +57453,7 @@ static t16 f1714(t429 l0, t141 l1, t359 l2) {
     t95 l3;
     CTX_STACK_CHECK();
     {
-        { t110 _t0 = ({ t823 _t1 = (&((*l0)).m_refs); t19 _t2 = f1084(l1); t359 _t3 = l2; f1874(_t1, _t2, _t3); }); if ((_t0.tag == 0)) { {
+        { t110 _t0 = ({ t825 _t1 = (&((*l0)).m_refs); t19 _t2 = f1084(l1); t359 _t3 = l2; f1874(_t1, _t2, _t3); }); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l3 = _t0.p.v1.m_error; {
             { t95 _t4 = l3; if ((_t4.tag == 0)) { {
                 ctx_panic(6014, 9, 18, "try! failed: alloc::out_of_memory");
@@ -57937,7 +57659,7 @@ static t16 f1717(t429 l0, t33 l1, t391 l2) {
 
 // check::check_mutable
 static t16 f1718(t429 l0, t141 l1) {
-    t694 l2;
+    t696 l2;
     t33 l3;
     t334 l4;
     t17 l5;
@@ -58012,7 +57734,7 @@ static t16 f1718(t429 l0, t141 l1) {
             }
             return;
         } } else if ((_t0.tag == 7)) { l12 = _t0.p.v7.m_base; {
-            if (({ t14 _t19; t786 _t20 = f1665((*l0), l1); if ((_t20.tag == 0)) { {
+            if (({ t14 _t19; t788 _t20 = f1665((*l0), l1); if ((_t20.tag == 0)) { {
                 _t19 = ((bool)0);
             } } else if ((_t20.tag == 1)) { l13 = _t20.p.v1.m_value; {
                 _t19 = ({ t14 _t21; t12 _t22 = l13; if (_t22 == ((t12)(0ULL))) { {
@@ -58025,7 +57747,7 @@ static t16 f1718(t429 l0, t141 l1) {
                 return;
             }
         } } else if ((_t0.tag == 9)) { l14 = _t0.p.v9.m_base; {
-            if (({ t14 _t23; t786 _t24 = f1665((*l0), l1); if ((_t24.tag == 0)) { {
+            if (({ t14 _t23; t788 _t24 = f1665((*l0), l1); if ((_t24.tag == 0)) { {
                 _t23 = ((bool)0);
             } } else if ((_t24.tag == 1)) { l15 = _t24.p.v1.m_value; {
                 _t23 = ({ t14 _t25; t12 _t26 = l15; if (_t26 == ((t12)(6ULL))) { {
@@ -58088,7 +57810,7 @@ static t343 f1719(t342 l0) {
 }
 
 // list::push(check::Loop, arena::Arena)
-static t110 f1720(t692 l0, t345 l1) {
+static t110 f1720(t694 l0, t345 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -58104,14 +57826,14 @@ static t110 f1720(t692 l0, t345 l1) {
 }
 
 // list::pop(check::Loop, arena::Arena)
-static t800 f1721(t692 l0) {
+static t802 f1721(t694 l0) {
     CTX_STACK_CHECK();
     {
         if ((((*l0)).m_len == ((t13)(0ULL)))) {
-            return ((t800){0});
+            return ((t802){0});
         }
         { t13 _t0 = ctx_sub_u64(((*l0)).m_len, ((t13)(1ULL)), 42, 29, 10); ((*l0)).m_len = _t0; }
-        return ((t800){ .tag = 1, .p.v1.m_value = (*({ t343 _t1 = (((*l0)).m_items); uint64_t _t2 = ((*l0)).m_len; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 43, 26, 10); })) });
+        return ((t802){ .tag = 1, .p.v1.m_value = (*({ t343 _t1 = (((*l0)).m_items); uint64_t _t2 = ((*l0)).m_len; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 43, 26, 10); })) });
     }
     __builtin_unreachable();
 }
@@ -58160,7 +57882,7 @@ static t344 f1723(t342 l0, t13 l1) {
 }
 
 // list::push(check::State, arena::Arena)
-static t110 f1724(t793 l0, t349 l1) {
+static t110 f1724(t795 l0, t349 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -58176,7 +57898,7 @@ static t110 f1724(t793 l0, t349 l1) {
 }
 
 // alloc::resize(check::Val, arena::Arena)
-static t801 f1725(t27 l0, t26 l1, t403 l2, t13 l3) {
+static t803 f1725(t27 l0, t26 l1, t403 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -58184,15 +57906,15 @@ static t801 f1725(t27 l0, t26 l1, t403 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1881(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t801){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t803){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t801){ .tag = 0, .p.v0 = { .m_value = f1882(l4), } });
+        return ((t803){ .tag = 0, .p.v0 = { .m_value = f1882(l4), } });
     }
     __builtin_unreachable();
 }
 
 // check::int_val
-static t402 f1726(t33 l0, t765 l1) {
+static t402 f1726(t33 l0, t767 l1) {
     CTX_STACK_CHECK();
     {
         return ((t402){ .tag = 0, .p.v0 = { .m_ty = l0, .m_negative = (l1).m_negative, .m_magnitude = (l1).m_magnitude, } });
@@ -58204,8 +57926,8 @@ static t402 f1726(t33 l0, t765 l1) {
 static t14 f1727(t12 l0, t402 l1, t402 l2) {
     t14 l3;
     t14 l4;
-    t765 l5;
-    t765 l6;
+    t767 l5;
+    t767 l6;
     t51 l7;
     t51 l8;
     t14 l9;
@@ -58284,7 +58006,7 @@ static t51 f1729(t402 l0) {
 }
 
 // check::bits_of
-static t19 f1730(t765 l0) {
+static t19 f1730(t767 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t19 _t0; if ((l0).m_negative) {
@@ -58297,19 +58019,19 @@ static t19 f1730(t765 l0) {
 }
 
 // check::from_bits
-static t765 f1731(t19 l0, t14 l1) {
+static t767 f1731(t19 l0, t14 l1) {
     CTX_STACK_CHECK();
     {
         if ((l1 && (l0 >= ((t19)(9223372036854775808ULL))))) {
-            return ((t765){ .m_negative = ((bool)1), .m_magnitude = ((t19)((uint64_t)((t19)(0ULL)) - (uint64_t)l0)), });
+            return ((t767){ .m_negative = ((bool)1), .m_magnitude = ((t19)((uint64_t)((t19)(0ULL)) - (uint64_t)l0)), });
         }
-        return ((t765){ .m_negative = ((bool)0), .m_magnitude = l0, });
+        return ((t767){ .m_negative = ((bool)0), .m_magnitude = l0, });
     }
     __builtin_unreachable();
 }
 
 // check::num_add
-static t802 f1732(t765 l0, t765 l1) {
+static t804 f1732(t767 l0, t767 l1) {
     t19 l2;
     t19 l3;
     CTX_STACK_CHECK();
@@ -58317,38 +58039,38 @@ static t802 f1732(t765 l0, t765 l1) {
         if (((l0).m_negative == (l1).m_negative)) {
             l2 = ((t19)((uint64_t)(l0).m_magnitude + (uint64_t)(l1).m_magnitude));
             if ((l2 < (l0).m_magnitude)) {
-                return ((t802){0});
+                return ((t804){0});
             }
-            return ((t802){ .tag = 1, .p.v1.m_value = ((t765){ .m_negative = ((l0).m_negative && (l2 != ((t19)(0ULL)))), .m_magnitude = l2, }) });
+            return ((t804){ .tag = 1, .p.v1.m_value = ((t767){ .m_negative = ((l0).m_negative && (l2 != ((t19)(0ULL)))), .m_magnitude = l2, }) });
         }
         if (((l0).m_magnitude >= (l1).m_magnitude)) {
             l3 = ctx_sub_u64((l0).m_magnitude, (l1).m_magnitude, 2701, 33, 18);
-            return ((t802){ .tag = 1, .p.v1.m_value = ((t765){ .m_negative = ((l0).m_negative && (l3 != ((t19)(0ULL)))), .m_magnitude = l3, }) });
+            return ((t804){ .tag = 1, .p.v1.m_value = ((t767){ .m_negative = ((l0).m_negative && (l3 != ((t19)(0ULL)))), .m_magnitude = l3, }) });
         }
-        return ((t802){ .tag = 1, .p.v1.m_value = ({ t14 _t0 = (l1).m_negative; t19 _t1 = ctx_sub_u64((l1).m_magnitude, (l0).m_magnitude, 2704, 68, 18); ((t765){ .m_negative = _t0, .m_magnitude = _t1, }); }) });
+        return ((t804){ .tag = 1, .p.v1.m_value = ({ t14 _t0 = (l1).m_negative; t19 _t1 = ctx_sub_u64((l1).m_magnitude, (l0).m_magnitude, 2704, 68, 18); ((t767){ .m_negative = _t0, .m_magnitude = _t1, }); }) });
     }
     __builtin_unreachable();
 }
 
 // check::num_neg
-static t765 f1733(t765 l0) {
+static t767 f1733(t767 l0) {
     CTX_STACK_CHECK();
     {
-        return ((t765){ .m_negative = ((!(l0).m_negative) && ((l0).m_magnitude != ((t19)(0ULL)))), .m_magnitude = (l0).m_magnitude, });
+        return ((t767){ .m_negative = ((!(l0).m_negative) && ((l0).m_magnitude != ((t19)(0ULL)))), .m_magnitude = (l0).m_magnitude, });
     }
     __builtin_unreachable();
 }
 
 // check::num_mul
-static t802 f1734(t765 l0, t765 l1) {
+static t804 f1734(t767 l0, t767 l1) {
     t19 l2;
     CTX_STACK_CHECK();
     {
         if ((((l0).m_magnitude != ((t19)(0ULL))) && ({ t19 _t0 = (l1).m_magnitude; t19 _t1 = ctx_div_u64(((t19)(18446744073709551615ULL)), (l0).m_magnitude, 2708, 68, 18); (_t0 > _t1); }))) {
-            return ((t802){0});
+            return ((t804){0});
         }
         l2 = ctx_mul_u64((l0).m_magnitude, (l1).m_magnitude, 2709, 29, 18);
-        return ((t802){ .tag = 1, .p.v1.m_value = ((t765){ .m_negative = (((l0).m_negative != (l1).m_negative) && (l2 != ((t19)(0ULL)))), .m_magnitude = l2, }) });
+        return ((t804){ .tag = 1, .p.v1.m_value = ((t767){ .m_negative = (((l0).m_negative != (l1).m_negative) && (l2 != ((t19)(0ULL)))), .m_magnitude = l2, }) });
     }
     __builtin_unreachable();
 }
@@ -58439,13 +58161,13 @@ static t645 f1739(t527 l0, t19 l1, t33 l2) {
 }
 
 // eval::stmt
-static t732 f1740(t527 l0, t66 l1) {
+static t734 f1740(t527 l0, t66 l1) {
     t603 l2;
     t33 l3;
     t49 l4;
     t19 l5;
     t19 l6;
-    t733 l7;
+    t735 l7;
     t19 l8;
     t603 l9;
     t33 l10;
@@ -58457,32 +58179,32 @@ static t732 f1740(t527 l0, t66 l1) {
     t49 l16;
     t19 l17;
     t19 l18;
-    t733 l19;
+    t735 l19;
     t19 l20;
     t19 l21;
-    t733 l22;
+    t735 l22;
     t603 l23;
     t49 l24;
     t19 l25;
-    t733 l26;
+    t735 l26;
     t49 l27;
     t63 l28;
     t67 l29;
     t14 l30;
     t14 l31;
-    t733 l32;
-    t733 l33;
-    t733 l34;
+    t735 l32;
+    t735 l33;
+    t735 l34;
     t49 l35;
     t63 l36;
     t68 l37;
-    t733 l38;
+    t735 l38;
     t68 l39;
     t68 l40;
     t69 l41;
     t19 l42;
     t19 l43;
-    t733 l44;
+    t735 l44;
     t19 l45;
     t603 l46;
     t63 l47;
@@ -58494,14 +58216,14 @@ static t732 f1740(t527 l0, t66 l1) {
     t70 l53;
     t19 l54;
     t19 l55;
-    t733 l56;
-    t733 l57;
+    t735 l56;
+    t735 l57;
     t49 l58;
     t79 l59;
     t19 l60;
     t19 l61;
-    t733 l62;
-    t733 l63;
+    t735 l62;
+    t735 l63;
     t49 l64;
     t33 l65;
     t76 l66;
@@ -58510,32 +58232,32 @@ static t732 f1740(t527 l0, t66 l1) {
     t63 l69;
     t19 l70;
     t19 l71;
-    t733 l72;
+    t735 l72;
     t14 l73;
     t14 l74;
     t603 l75;
     t603 l76;
-    t733 l77;
+    t735 l77;
     t603 l78;
     CTX_STACK_CHECK();
     {
         { t604 _t0 = f1340((&(*l0))); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l2 = _t0.p.v1.m_error; {
-            return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t1; t603 _t2 = l2; if ((_t2.tag == 0)) { {
-                _t1 = ((t733){ .tag = 1 });
+            return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t1; t603 _t2 = l2; if ((_t2.tag == 0)) { {
+                _t1 = ((t735){ .tag = 1 });
             } } _t1; }), } });
         } } }
         { t66 _t3 = l1; if ((_t3.tag == 0)) { l3 = _t3.p.v0.m_slot; l4 = _t3.p.v0.m_init; {
-            l5 = ({ t19 _t4; t805 _t5 = f1741((&(*l0)), l4); if ((_t5.tag == 0)) { l6 = _t5.p.v0.m_value; {
+            l5 = ({ t19 _t4; t807 _t5 = f1741((&(*l0)), l4); if ((_t5.tag == 0)) { l6 = _t5.p.v0.m_value; {
                 _t4 = l6;
             } } else if ((_t5.tag == 1)) { l7 = _t5.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = l7, } });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = l7, } });
             } } _t4; });
             l8 = f1887((&(*l0)), l3);
             { t604 _t6 = ({ t527 _t7 = (&(*l0)); t19 _t8 = l8; t19 _t9 = l5; t19 _t10 = f885(((*l0)).m_types, (l4).m_ty); f1342(_t7, _t8, _t9, _t10); }); if ((_t6.tag == 0)) { {
             } } else if ((_t6.tag == 1)) { l9 = _t6.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t11; t603 _t12 = l9; if ((_t12.tag == 0)) { {
-                    _t11 = ((t733){ .tag = 1 });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t11; t603 _t12 = l9; if ((_t12.tag == 0)) { {
+                    _t11 = ((t735){ .tag = 1 });
                 } } _t11; }), } });
             } } }
         } } else if ((_t3.tag == 1)) { l10 = _t3.p.v1.m_slot; {
@@ -58543,86 +58265,86 @@ static t732 f1740(t527 l0, t66 l1) {
             l12 = ({ t10 _t13; t646 _t14 = ({ t527 _t15 = (&(*l0)); t19 _t16 = l11; t19 _t17 = ({ t29 _t18 = ((*l0)).m_types; t33 _t19 = ((*({ t91 _t20 = (((*l0)).m_locals); uint64_t _t21 = ((t13)(l10)); _t20.m_ptr + ctx_idx(_t21, _t20.m_len, 437, 82, 23); }))).m_ty; f885(_t18, _t19); }); f887(_t15, _t16, _t17); }); if ((_t14.tag == 0)) { l13 = _t14.p.v0.m_value; {
                 _t13 = l13;
             } } else if ((_t14.tag == 1)) { l14 = _t14.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t22; t603 _t23 = l14; if ((_t23.tag == 0)) { {
-                    _t22 = ((t733){ .tag = 1 });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t22; t603 _t23 = l14; if ((_t23.tag == 0)) { {
+                    _t22 = ((t735){ .tag = 1 });
                 } } _t22; }), } });
             } } _t13; });
             f396(l12, ((t12)(0ULL)));
         } } else if ((_t3.tag == 2)) { l15 = _t3.p.v2.m_place; l16 = _t3.p.v2.m_value; {
-            l17 = ({ t19 _t24; t805 _t25 = f1741((&(*l0)), l16); if ((_t25.tag == 0)) { l18 = _t25.p.v0.m_value; {
+            l17 = ({ t19 _t24; t807 _t25 = f1741((&(*l0)), l16); if ((_t25.tag == 0)) { l18 = _t25.p.v0.m_value; {
                 _t24 = l18;
             } } else if ((_t25.tag == 1)) { l19 = _t25.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = l19, } });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = l19, } });
             } } _t24; });
-            l20 = ({ t19 _t26; t805 _t27 = f1888((&(*l0)), l15); if ((_t27.tag == 0)) { l21 = _t27.p.v0.m_value; {
+            l20 = ({ t19 _t26; t807 _t27 = f1888((&(*l0)), l15); if ((_t27.tag == 0)) { l21 = _t27.p.v0.m_value; {
                 _t26 = l21;
             } } else if ((_t27.tag == 1)) { l22 = _t27.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = l22, } });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = l22, } });
             } } _t26; });
             { t604 _t28 = ({ t527 _t29 = (&(*l0)); t19 _t30 = l20; t19 _t31 = l17; t19 _t32 = f885(((*l0)).m_types, (l16).m_ty); f1342(_t29, _t30, _t31, _t32); }); if ((_t28.tag == 0)) { {
             } } else if ((_t28.tag == 1)) { l23 = _t28.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t33; t603 _t34 = l23; if ((_t34.tag == 0)) { {
-                    _t33 = ((t733){ .tag = 1 });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t33; t603 _t34 = l23; if ((_t34.tag == 0)) { {
+                    _t33 = ((t735){ .tag = 1 });
                 } } _t33; }), } });
             } } }
         } } else if ((_t3.tag == 3)) { l24 = _t3.p.v3.m_e; {
-            (void)({ t19 _t35; t805 _t36 = f1741((&(*l0)), l24); if ((_t36.tag == 0)) { l25 = _t36.p.v0.m_value; {
+            (void)({ t19 _t35; t807 _t36 = f1741((&(*l0)), l24); if ((_t36.tag == 0)) { l25 = _t36.p.v0.m_value; {
                 _t35 = l25;
             } } else if ((_t36.tag == 1)) { l26 = _t36.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = l26, } });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = l26, } });
             } } _t35; });
         } } else if ((_t3.tag == 4)) { l27 = _t3.p.v4.m_c; l28 = _t3.p.v4.m_then; l29 = _t3.p.v4.m_els; {
-            l30 = ({ t14 _t37; t824 _t38 = f1889((&(*l0)), l27); if ((_t38.tag == 0)) { l31 = _t38.p.v0.m_value; {
+            l30 = ({ t14 _t37; t826 _t38 = f1889((&(*l0)), l27); if ((_t38.tag == 0)) { l31 = _t38.p.v0.m_value; {
                 _t37 = l31;
             } } else if ((_t38.tag == 1)) { l32 = _t38.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = l32, } });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = l32, } });
             } } _t37; });
             if (l30) {
-                { t732 _t39 = f1343((&(*l0)), l28, ((t19)(0ULL))); if ((_t39.tag == 0)) { {
+                { t734 _t39 = f1343((&(*l0)), l28, ((t19)(0ULL))); if ((_t39.tag == 0)) { {
                 } } else if ((_t39.tag == 1)) { l34 = _t39.p.v1.m_error; {
-                    return ((t732){ .tag = 1, .p.v1 = { .m_error = l34, } });
+                    return ((t734){ .tag = 1, .p.v1 = { .m_error = l34, } });
                 } } }
             } else {
                 if (((l29).tag != 0)) {
-                    { t732 _t40 = f1343((&(*l0)), (l29).p.v1.m_value, ((t19)(0ULL))); if ((_t40.tag == 0)) { {
+                    { t734 _t40 = f1343((&(*l0)), (l29).p.v1.m_value, ((t19)(0ULL))); if ((_t40.tag == 0)) { {
                     } } else if ((_t40.tag == 1)) { l33 = _t40.p.v1.m_error; {
-                        return ((t732){ .tag = 1, .p.v1 = { .m_error = l33, } });
+                        return ((t734){ .tag = 1, .p.v1 = { .m_error = l33, } });
                     } } }
                 }
             }
         } } else if ((_t3.tag == 5)) { l35 = _t3.p.v5.m_c; l36 = _t3.p.v5.m_body; l37 = _t3.p.v5.m_label; {
-            { t732 _t41 = f1890((&(*l0)), l35, l36, l37); if ((_t41.tag == 0)) { {
+            { t734 _t41 = f1890((&(*l0)), l35, l36, l37); if ((_t41.tag == 0)) { {
             } } else if ((_t41.tag == 1)) { l38 = _t41.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = l38, } });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = l38, } });
             } } }
         } } else if ((_t3.tag == 6)) { l39 = _t3.p.v6.m_label; {
             ((*l0)).m_flow = ((t496){ .tag = 1, .p.v1 = { .m_label = l39, } });
-            return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t42; t769 _t43 = ((t769){ .tag = 0 }); if ((_t43.tag == 0)) { {
-                _t42 = ((t733){ .tag = 0 });
+            return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t42; t771 _t43 = ((t771){ .tag = 0 }); if ((_t43.tag == 0)) { {
+                _t42 = ((t735){ .tag = 0 });
             } } _t42; }), } });
         } } else if ((_t3.tag == 7)) { l40 = _t3.p.v7.m_label; {
             ((*l0)).m_flow = ((t496){ .tag = 2, .p.v2 = { .m_label = l40, } });
-            return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t44; t769 _t45 = ((t769){ .tag = 0 }); if ((_t45.tag == 0)) { {
-                _t44 = ((t733){ .tag = 0 });
+            return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t44; t771 _t45 = ((t771){ .tag = 0 }); if ((_t45.tag == 0)) { {
+                _t44 = ((t735){ .tag = 0 });
             } } _t44; }), } });
         } } else if ((_t3.tag == 8)) { l41 = _t3.p.v8.m_value; {
             if (((l41).tag != 0)) {
-                l42 = ({ t19 _t46; t805 _t47 = f1741((&(*l0)), (l41).p.v1.m_value); if ((_t47.tag == 0)) { l43 = _t47.p.v0.m_value; {
+                l42 = ({ t19 _t46; t807 _t47 = f1741((&(*l0)), (l41).p.v1.m_value); if ((_t47.tag == 0)) { l43 = _t47.p.v0.m_value; {
                     _t46 = l43;
                 } } else if ((_t47.tag == 1)) { l44 = _t47.p.v1.m_error; {
-                    return ((t732){ .tag = 1, .p.v1 = { .m_error = l44, } });
+                    return ((t734){ .tag = 1, .p.v1 = { .m_error = l44, } });
                 } } _t46; });
                 l45 = ((*l0)).m_res;
                 { t604 _t48 = ({ t527 _t49 = (&(*l0)); t19 _t50 = l45; t19 _t51 = l42; t19 _t52 = f885(((*l0)).m_types, ((l41).p.v1.m_value).m_ty); f1342(_t49, _t50, _t51, _t52); }); if ((_t48.tag == 0)) { {
                 } } else if ((_t48.tag == 1)) { l46 = _t48.p.v1.m_error; {
-                    return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t53; t603 _t54 = l46; if ((_t54.tag == 0)) { {
-                        _t53 = ((t733){ .tag = 1 });
+                    return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t53; t603 _t54 = l46; if ((_t54.tag == 0)) { {
+                        _t53 = ((t735){ .tag = 1 });
                     } } _t53; }), } });
                 } } }
             }
             ((*l0)).m_flow = ((t496){ .tag = 3 });
-            return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t55; t769 _t56 = ((t769){ .tag = 0 }); if ((_t56.tag == 0)) { {
-                _t55 = ((t733){ .tag = 0 });
+            return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t55; t771 _t56 = ((t771){ .tag = 0 }); if ((_t56.tag == 0)) { {
+                _t55 = ((t735){ .tag = 0 });
             } } _t55; }), } });
         } } else if ((_t3.tag == 9)) { l47 = _t3.p.v9.m_body; {
             { t110 _t57 = f1891((&((*l0)).m_defers), l47); if ((_t57.tag == 0)) { {
@@ -58633,74 +58355,74 @@ static t732 f1740(t527 l0, t66 l1) {
             } } }
         } } else if ((_t3.tag == 10)) { l49 = _t3.p.v10.m_pos; l50 = _t3.p.v10.m_msg; {
             f1892((&(*l0)), l49, l50);
-            return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t59; t603 _t60 = ((t603){ .tag = 0 }); if ((_t60.tag == 0)) { {
-                _t59 = ((t733){ .tag = 1 });
+            return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t59; t603 _t60 = ((t603){ .tag = 0 }); if ((_t60.tag == 0)) { {
+                _t59 = ((t735){ .tag = 1 });
             } } _t59; }), } });
         } } else if ((_t3.tag == 11)) { l51 = _t3.p.v11.m_scrut; l52 = _t3.p.v11.m_through; l53 = _t3.p.v11.m_arms; {
-            l54 = ({ t19 _t61; t805 _t62 = f1741((&(*l0)), l51); if ((_t62.tag == 0)) { l55 = _t62.p.v0.m_value; {
+            l54 = ({ t19 _t61; t807 _t62 = f1741((&(*l0)), l51); if ((_t62.tag == 0)) { l55 = _t62.p.v0.m_value; {
                 _t61 = l55;
             } } else if ((_t62.tag == 1)) { l56 = _t62.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = l56, } });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = l56, } });
             } } _t61; });
-            { t732 _t63 = f1893((&(*l0)), l54, l52, (l51).m_ty, l53, ((t19)(0ULL))); if ((_t63.tag == 0)) { {
+            { t734 _t63 = f1893((&(*l0)), l54, l52, (l51).m_ty, l53, ((t19)(0ULL))); if ((_t63.tag == 0)) { {
             } } else if ((_t63.tag == 1)) { l57 = _t63.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = l57, } });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = l57, } });
             } } }
         } } else if ((_t3.tag == 12)) { l58 = _t3.p.v12.m_scrut; l59 = _t3.p.v12.m_cases; {
-            l60 = ({ t19 _t64; t805 _t65 = f1894((&(*l0)), l58); if ((_t65.tag == 0)) { l61 = _t65.p.v0.m_value; {
+            l60 = ({ t19 _t64; t807 _t65 = f1894((&(*l0)), l58); if ((_t65.tag == 0)) { l61 = _t65.p.v0.m_value; {
                 _t64 = l61;
             } } else if ((_t65.tag == 1)) { l62 = _t65.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = l62, } });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = l62, } });
             } } _t64; });
-            { t732 _t66 = f1895((&(*l0)), l60, (l58).m_ty, l59, ((t19)(0ULL))); if ((_t66.tag == 0)) { {
+            { t734 _t66 = f1895((&(*l0)), l60, (l58).m_ty, l59, ((t19)(0ULL))); if ((_t66.tag == 0)) { {
             } } else if ((_t66.tag == 1)) { l63 = _t66.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = l63, } });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = l63, } });
             } } }
         } } else if ((_t3.tag == 13)) { l64 = _t3.p.v13.m_init; l65 = _t3.p.v13.m_variant; l66 = _t3.p.v13.m_binds; l67 = _t3.p.v13.m_els_variant; l68 = _t3.p.v13.m_els_binds; l69 = _t3.p.v13.m_els; {
-            l70 = ({ t19 _t67; t805 _t68 = f1741((&(*l0)), l64); if ((_t68.tag == 0)) { l71 = _t68.p.v0.m_value; {
+            l70 = ({ t19 _t67; t807 _t68 = f1741((&(*l0)), l64); if ((_t68.tag == 0)) { l71 = _t68.p.v0.m_value; {
                 _t67 = l71;
             } } else if ((_t68.tag == 1)) { l72 = _t68.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = l72, } });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = l72, } });
             } } _t67; });
-            l73 = ({ t14 _t69; t825 _t70 = f1896((&(*l0)), l70, (l64).m_ty, l65); if ((_t70.tag == 0)) { l74 = _t70.p.v0.m_value; {
+            l73 = ({ t14 _t69; t827 _t70 = f1896((&(*l0)), l70, (l64).m_ty, l65); if ((_t70.tag == 0)) { l74 = _t70.p.v0.m_value; {
                 _t69 = l74;
             } } else if ((_t70.tag == 1)) { l75 = _t70.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t71; t603 _t72 = l75; if ((_t72.tag == 0)) { {
-                    _t71 = ((t733){ .tag = 1 });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t71; t603 _t72 = l75; if ((_t72.tag == 0)) { {
+                    _t71 = ((t735){ .tag = 1 });
                 } } _t71; }), } });
             } } _t69; });
             if ((!l73)) {
                 if (((l67).tag != 0)) {
                     { t604 _t73 = f1897((&(*l0)), l68, l70, (l64).m_ty, (l67).p.v1.m_value); if ((_t73.tag == 0)) { {
                     } } else if ((_t73.tag == 1)) { l76 = _t73.p.v1.m_error; {
-                        return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t74; t603 _t75 = l76; if ((_t75.tag == 0)) { {
-                            _t74 = ((t733){ .tag = 1 });
+                        return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t74; t603 _t75 = l76; if ((_t75.tag == 0)) { {
+                            _t74 = ((t735){ .tag = 1 });
                         } } _t74; }), } });
                     } } }
                 }
-                { t732 _t76 = f1343((&(*l0)), l69, ((t19)(0ULL))); if ((_t76.tag == 0)) { {
+                { t734 _t76 = f1343((&(*l0)), l69, ((t19)(0ULL))); if ((_t76.tag == 0)) { {
                 } } else if ((_t76.tag == 1)) { l77 = _t76.p.v1.m_error; {
-                    return ((t732){ .tag = 1, .p.v1 = { .m_error = l77, } });
+                    return ((t734){ .tag = 1, .p.v1 = { .m_error = l77, } });
                 } } }
-                return ((t732){ .tag = 0 });
+                return ((t734){ .tag = 0 });
             }
             { t604 _t77 = f1897((&(*l0)), l66, l70, (l64).m_ty, l65); if ((_t77.tag == 0)) { {
             } } else if ((_t77.tag == 1)) { l78 = _t77.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t78; t603 _t79 = l78; if ((_t79.tag == 0)) { {
-                    _t78 = ((t733){ .tag = 1 });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t78; t603 _t79 = l78; if ((_t79.tag == 0)) { {
+                    _t78 = ((t735){ .tag = 1 });
                 } } _t78; }), } });
             } } }
         } } }
-        return ((t732){ .tag = 0 });
+        return ((t734){ .tag = 0 });
     }
     __builtin_unreachable();
 }
 
 // eval::value
-static t805 f1741(t527 l0, t49 l1) {
+static t807 f1741(t527 l0, t49 l1) {
     t19 l2;
     t19 l3;
-    t733 l4;
+    t735 l4;
     t19 l5;
     t19 l6;
     t603 l7;
@@ -58733,7 +58455,7 @@ static t805 f1741(t527 l0, t49 l1) {
     t603 l34;
     t19 l35;
     t19 l36;
-    t733 l37;
+    t735 l37;
     t19 l38;
     t603 l39;
     t33 l40;
@@ -58749,13 +58471,13 @@ static t805 f1741(t527 l0, t49 l1) {
     t54 l50;
     t53 l51;
     t19 l52;
-    t733 l53;
+    t735 l53;
     t52 l54;
     t19 l55;
     t19 l56;
-    t733 l57;
+    t735 l57;
     t19 l58;
-    t733 l59;
+    t735 l59;
     t19 l60;
     t19 l61;
     t603 l62;
@@ -58763,40 +58485,40 @@ static t805 f1741(t527 l0, t49 l1) {
     t52 l64;
     t52 l65;
     t19 l66;
-    t733 l67;
+    t735 l67;
     t19 l68;
-    t733 l69;
+    t735 l69;
     t33 l70;
     t52 l71;
     t52 l72;
     t19 l73;
     t19 l74;
-    t733 l75;
+    t735 l75;
     t19 l76;
     t603 l77;
     t19 l78;
-    t733 l79;
+    t735 l79;
     t52 l80;
     t19 l81;
-    t733 l82;
+    t735 l82;
     t19 l83;
     t19 l84;
     t603 l85;
     t603 l86;
     t19 l87;
     t19 l88;
-    t733 l89;
+    t735 l89;
     t19 l90;
     t603 l91;
     t52 l92;
     t19 l93;
-    t733 l94;
+    t735 l94;
     t33 l95;
     t59 l96;
     t90 l97;
     t13 l98;
     t13 l99;
-    t733 l100;
+    t735 l100;
     t19 l101;
     t19 l102;
     t603 l103;
@@ -58804,20 +58526,20 @@ static t805 f1741(t527 l0, t49 l1) {
     t52 l105;
     t59 l106;
     t19 l107;
-    t733 l108;
+    t735 l108;
     t33 l109;
     t59 l110;
     t19 l111;
     t19 l112;
-    t733 l113;
+    t735 l113;
     t52 l114;
     t59 l115;
     t19 l116;
     t19 l117;
     t19 l118;
-    t733 l119;
+    t735 l119;
     t19 l120;
-    t733 l121;
+    t735 l121;
     t33 l122;
     t19 l123;
     t19 l124;
@@ -58830,11 +58552,11 @@ static t805 f1741(t527 l0, t49 l1) {
     t603 l131;
     t59 l132;
     t19 l133;
-    t733 l134;
+    t735 l134;
     t33 l135;
     t59 l136;
     t19 l137;
-    t733 l138;
+    t735 l138;
     t62 l139;
     t19 l140;
     t19 l141;
@@ -58844,12 +58566,12 @@ static t805 f1741(t527 l0, t49 l1) {
     t13 l145;
     t19 l146;
     t19 l147;
-    t733 l148;
+    t735 l148;
     t603 l149;
     t52 l150;
     t19 l151;
     t19 l152;
-    t733 l153;
+    t735 l153;
     t19 l154;
     t19 l155;
     t603 l156;
@@ -58865,8 +58587,8 @@ static t805 f1741(t527 l0, t49 l1) {
     t603 l166;
     t14 l167;
     t14 l168;
-    t733 l169;
-    t733 l170;
+    t735 l169;
+    t735 l170;
     t52 l171;
     t14 l172;
     t70 l173;
@@ -58875,8 +58597,8 @@ static t805 f1741(t527 l0, t49 l1) {
     t603 l176;
     t19 l177;
     t19 l178;
-    t733 l179;
-    t733 l180;
+    t735 l179;
+    t735 l180;
     t52 l181;
     t79 l182;
     t19 l183;
@@ -58884,116 +58606,116 @@ static t805 f1741(t527 l0, t49 l1) {
     t603 l185;
     t19 l186;
     t19 l187;
-    t733 l188;
-    t733 l189;
+    t735 l188;
+    t735 l189;
     CTX_STACK_CHECK();
     {
         { t50 _t0 = (l1).m_k; if ((_t0.tag == 0) || (_t0.tag == 1) || (_t0.tag == 2) || (_t0.tag == 19) || (_t0.tag == 20) || (_t0.tag == 21) || (_t0.tag == 22) || (_t0.tag == 23) || (_t0.tag == 24) || (_t0.tag == 25) || (_t0.tag == 26) || (_t0.tag == 27) || (_t0.tag == 28) || (_t0.tag == 29) || (_t0.tag == 30) || (_t0.tag == 46) || (_t0.tag == 48) || (_t0.tag == 49) || (_t0.tag == 45) || (_t0.tag == 47)) { {
-            l2 = ({ t19 _t1; t805 _t2 = f1894((&(*l0)), l1); if ((_t2.tag == 0)) { l3 = _t2.p.v0.m_value; {
+            l2 = ({ t19 _t1; t807 _t2 = f1894((&(*l0)), l1); if ((_t2.tag == 0)) { l3 = _t2.p.v0.m_value; {
                 _t1 = l3;
             } } else if ((_t2.tag == 1)) { l4 = _t2.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l4, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l4, } });
             } } _t1; });
             l5 = ({ t19 _t3; t645 _t4 = f1135((&(*l0)), (l1).m_ty); if ((_t4.tag == 0)) { l6 = _t4.p.v0.m_value; {
                 _t3 = l6;
             } } else if ((_t4.tag == 1)) { l7 = _t4.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t5; t603 _t6 = l7; if ((_t6.tag == 0)) { {
-                    _t5 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t5; t603 _t6 = l7; if ((_t6.tag == 0)) { {
+                    _t5 = ((t735){ .tag = 1 });
                 } } _t5; }), } });
             } } _t3; });
             { t604 _t7 = ({ t527 _t8 = (&(*l0)); t19 _t9 = l5; t19 _t10 = f885(((*l0)).m_types, (l1).m_ty); t19 _t11 = l2; f888(_t8, _t9, _t10, _t11); }); if ((_t7.tag == 0)) { {
             } } else if ((_t7.tag == 1)) { l8 = _t7.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t12; t603 _t13 = l8; if ((_t13.tag == 0)) { {
-                    _t12 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t12; t603 _t13 = l8; if ((_t13.tag == 0)) { {
+                    _t12 = ((t735){ .tag = 1 });
                 } } _t12; }), } });
             } } }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = l5, } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = l5, } });
         } } else if ((_t0.tag == 3)) { l9 = _t0.p.v3.m_bytes; {
             l10 = ({ t19 _t14; t645 _t15 = f1135((&(*l0)), (l1).m_ty); if ((_t15.tag == 0)) { l11 = _t15.p.v0.m_value; {
                 _t14 = l11;
             } } else if ((_t15.tag == 1)) { l12 = _t15.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t16; t603 _t17 = l12; if ((_t17.tag == 0)) { {
-                    _t16 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t16; t603 _t17 = l12; if ((_t17.tag == 0)) { {
+                    _t16 = ((t735){ .tag = 1 });
                 } } _t16; }), } });
             } } _t14; });
             l13 = ({ t19 _t18 = f885(((*l0)).m_types, (l1).m_ty); t19 _t19 = ((t19)(ctx_as_u((uint64_t)((l9).m_len), UINT64_MAX, "u64", 638, 70, 23))); f1898(_t18, _t19); });
             ({ t10 _t20 = ({ t10 _t22; t646 _t23 = f887((&(*l0)), l10, l13); if ((_t23.tag == 0)) { l14 = _t23.p.v0.m_value; {
                 _t22 = l14;
             } } else if ((_t23.tag == 1)) { l15 = _t23.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t24; t603 _t25 = l15; if ((_t25.tag == 0)) { {
-                    _t24 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t24; t603 _t25 = l15; if ((_t25.tag == 0)) { {
+                    _t24 = ((t735){ .tag = 1 });
                 } } _t24; }), } });
             } } _t22; }); t10 _t21 = ({ t10 _t26 = (l9); uint64_t _t27 = ((t13)(0ULL)); uint64_t _t28 = ((t13)(ctx_as_u((uint64_t)(l13), UINT64_MAX, "usize", 639, 74, 23))); ctx_range(_t27, _t28, _t26.m_len, 639, 71, 23); (t10){ .m_ptr = _t26.m_ptr + _t27, .m_len = _t28 - _t27 }; }); f69(_t20, _t21); });
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = l10, } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = l10, } });
         } } else if ((_t0.tag == 4)) { l16 = _t0.p.v4.m_bytes; {
             l17 = ({ t19 _t29; t645 _t30 = f1899((&(*l0)), l16); if ((_t30.tag == 0)) { l18 = _t30.p.v0.m_value; {
                 _t29 = l18;
             } } else if ((_t30.tag == 1)) { l19 = _t30.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t31; t603 _t32 = l19; if ((_t32.tag == 0)) { {
-                    _t31 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t31; t603 _t32 = l19; if ((_t32.tag == 0)) { {
+                    _t31 = ((t735){ .tag = 1 });
                 } } _t31; }), } });
             } } _t29; });
             l20 = ({ t19 _t33; t645 _t34 = f1135((&(*l0)), (l1).m_ty); if ((_t34.tag == 0)) { l21 = _t34.p.v0.m_value; {
                 _t33 = l21;
             } } else if ((_t34.tag == 1)) { l22 = _t34.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t35; t603 _t36 = l22; if ((_t36.tag == 0)) { {
-                    _t35 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t35; t603 _t36 = l22; if ((_t36.tag == 0)) { {
+                    _t35 = ((t735){ .tag = 1 });
                 } } _t35; }), } });
             } } _t33; });
             { t604 _t37 = f888((&(*l0)), l20, ((t19)(8ULL)), l17); if ((_t37.tag == 0)) { {
             } } else if ((_t37.tag == 1)) { l23 = _t37.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t38; t603 _t39 = l23; if ((_t39.tag == 0)) { {
-                    _t38 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t38; t603 _t39 = l23; if ((_t39.tag == 0)) { {
+                    _t38 = ((t735){ .tag = 1 });
                 } } _t38; }), } });
             } } }
             { t604 _t40 = ({ t527 _t41 = (&(*l0)); t19 _t42 = ctx_add_u64(l20, ((t19)(8ULL)), 646, 38, 23); t19 _t43 = ((t19)(8ULL)); t19 _t44 = ((t19)(ctx_as_u((uint64_t)((l16).m_len), UINT64_MAX, "u64", 646, 54, 23))); f888(_t41, _t42, _t43, _t44); }); if ((_t40.tag == 0)) { {
             } } else if ((_t40.tag == 1)) { l24 = _t40.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t45; t603 _t46 = l24; if ((_t46.tag == 0)) { {
-                    _t45 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t45; t603 _t46 = l24; if ((_t46.tag == 0)) { {
+                    _t45 = ((t735){ .tag = 1 });
                 } } _t45; }), } });
             } } }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = l20, } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = l20, } });
         } } else if ((_t0.tag == 5)) { l25 = _t0.p.v5.m_bytes; {
             l26 = ({ t19 _t47; t645 _t48 = f1899((&(*l0)), l25); if ((_t48.tag == 0)) { l27 = _t48.p.v0.m_value; {
                 _t47 = l27;
             } } else if ((_t48.tag == 1)) { l28 = _t48.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t49; t603 _t50 = l28; if ((_t50.tag == 0)) { {
-                    _t49 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t49; t603 _t50 = l28; if ((_t50.tag == 0)) { {
+                    _t49 = ((t735){ .tag = 1 });
                 } } _t49; }), } });
             } } _t47; });
             l29 = ({ t19 _t51; t645 _t52 = f1135((&(*l0)), (l1).m_ty); if ((_t52.tag == 0)) { l30 = _t52.p.v0.m_value; {
                 _t51 = l30;
             } } else if ((_t52.tag == 1)) { l31 = _t52.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t53; t603 _t54 = l31; if ((_t54.tag == 0)) { {
-                    _t53 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t53; t603 _t54 = l31; if ((_t54.tag == 0)) { {
+                    _t53 = ((t735){ .tag = 1 });
                 } } _t53; }), } });
             } } _t51; });
             { t604 _t55 = f888((&(*l0)), l29, ((t19)(8ULL)), l26); if ((_t55.tag == 0)) { {
             } } else if ((_t55.tag == 1)) { l32 = _t55.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t56; t603 _t57 = l32; if ((_t57.tag == 0)) { {
-                    _t56 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t56; t603 _t57 = l32; if ((_t57.tag == 0)) { {
+                    _t56 = ((t735){ .tag = 1 });
                 } } _t56; }), } });
             } } }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = l29, } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = l29, } });
         } } else if ((_t0.tag == 6)) { {
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t58; t645 _t59 = f1135((&(*l0)), (l1).m_ty); if ((_t59.tag == 0)) { l33 = _t59.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t58; t645 _t59 = f1135((&(*l0)), (l1).m_ty); if ((_t59.tag == 0)) { l33 = _t59.p.v0.m_value; {
                 _t58 = l33;
             } } else if ((_t59.tag == 1)) { l34 = _t59.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t60; t603 _t61 = l34; if ((_t61.tag == 0)) { {
-                    _t60 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t60; t603 _t61 = l34; if ((_t61.tag == 0)) { {
+                    _t60 = ((t735){ .tag = 1 });
                 } } _t60; }), } });
             } } _t58; }), } });
         } } else if ((_t0.tag == 7) || (_t0.tag == 8) || (_t0.tag == 10) || (_t0.tag == 11) || (_t0.tag == 12) || (_t0.tag == 13) || (_t0.tag == 15)) { {
-            l35 = ({ t19 _t62; t805 _t63 = f1888((&(*l0)), l1); if ((_t63.tag == 0)) { l36 = _t63.p.v0.m_value; {
+            l35 = ({ t19 _t62; t807 _t63 = f1888((&(*l0)), l1); if ((_t63.tag == 0)) { l36 = _t63.p.v0.m_value; {
                 _t62 = l36;
             } } else if ((_t63.tag == 1)) { l37 = _t63.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l37, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l37, } });
             } } _t62; });
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t64; t645 _t65 = f1900((&(*l0)), l35, (l1).m_ty); if ((_t65.tag == 0)) { l38 = _t65.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t64; t645 _t65 = f1900((&(*l0)), l35, (l1).m_ty); if ((_t65.tag == 0)) { l38 = _t65.p.v0.m_value; {
                 _t64 = l38;
             } } else if ((_t65.tag == 1)) { l39 = _t65.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t66; t603 _t67 = l39; if ((_t67.tag == 0)) { {
-                    _t66 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t66; t603 _t67 = l39; if ((_t67.tag == 0)) { {
+                    _t66 = ((t735){ .tag = 1 });
                 } } _t66; }), } });
             } } _t64; }), } });
         } } else if ((_t0.tag == 9)) { l40 = _t0.p.v9.m_id; {
@@ -59025,28 +58747,28 @@ static t805 f1741(t527 l0, t49 l1) {
                 } } }
             } } }
             ({ t527 _t84 = (&(*l0)); t10 _t85 = (f59(l41)).m_bytes; f1131(_t84, _t85); });
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t86; t603 _t87 = ((t603){ .tag = 0 }); if ((_t87.tag == 0)) { {
-                _t86 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t86; t603 _t87 = ((t603){ .tag = 0 }); if ((_t87.tag == 0)) { {
+                _t86 = ((t735){ .tag = 1 });
             } } _t86; }), } });
         } } else if ((_t0.tag == 14)) { l48 = _t0.p.v14.m_base; l49 = _t0.p.v14.m_lo; l50 = _t0.p.v14.m_hi; l51 = _t0.p.v14.m_pos; {
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t88; t805 _t89 = f1901((&(*l0)), (l1).m_ty, (*l48), (*l49), l50, l51); if ((_t89.tag == 0)) { l52 = _t89.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t88; t807 _t89 = f1901((&(*l0)), (l1).m_ty, (*l48), (*l49), l50, l51); if ((_t89.tag == 0)) { l52 = _t89.p.v0.m_value; {
                 _t88 = l52;
             } } else if ((_t89.tag == 1)) { l53 = _t89.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l53, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l53, } });
             } } _t88; }), } });
         } } else if ((_t0.tag == 16)) { l54 = _t0.p.v16.m_place; {
             l55 = ((t19)(0ULL));
             if (f1902((*l54))) {
-                l55 = ({ t19 _t90; t805 _t91 = f1888((&(*l0)), (*l54)); if ((_t91.tag == 0)) { l58 = _t91.p.v0.m_value; {
+                l55 = ({ t19 _t90; t807 _t91 = f1888((&(*l0)), (*l54)); if ((_t91.tag == 0)) { l58 = _t91.p.v0.m_value; {
                     _t90 = l58;
                 } } else if ((_t91.tag == 1)) { l59 = _t91.p.v1.m_error; {
-                    return ((t805){ .tag = 1, .p.v1 = { .m_error = l59, } });
+                    return ((t807){ .tag = 1, .p.v1 = { .m_error = l59, } });
                 } } _t90; });
             } else {
-                l55 = ({ t19 _t92; t805 _t93 = f1741((&(*l0)), (*l54)); if ((_t93.tag == 0)) { l56 = _t93.p.v0.m_value; {
+                l55 = ({ t19 _t92; t807 _t93 = f1741((&(*l0)), (*l54)); if ((_t93.tag == 0)) { l56 = _t93.p.v0.m_value; {
                     _t92 = l56;
                 } } else if ((_t93.tag == 1)) { l57 = _t93.p.v1.m_error; {
-                    return ((t805){ .tag = 1, .p.v1 = { .m_error = l57, } });
+                    return ((t807){ .tag = 1, .p.v1 = { .m_error = l57, } });
                 } } _t92; });
                 if ((((*l0)).m_sp > ((*l0)).m_floor)) {
                     ((*l0)).m_floor = ((*l0)).m_sp;
@@ -59055,45 +58777,45 @@ static t805 f1741(t527 l0, t49 l1) {
             l60 = ({ t19 _t94; t645 _t95 = f1135((&(*l0)), (l1).m_ty); if ((_t95.tag == 0)) { l61 = _t95.p.v0.m_value; {
                 _t94 = l61;
             } } else if ((_t95.tag == 1)) { l62 = _t95.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t96; t603 _t97 = l62; if ((_t97.tag == 0)) { {
-                    _t96 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t96; t603 _t97 = l62; if ((_t97.tag == 0)) { {
+                    _t96 = ((t735){ .tag = 1 });
                 } } _t96; }), } });
             } } _t94; });
             { t604 _t98 = f888((&(*l0)), l60, ((t19)(8ULL)), l55); if ((_t98.tag == 0)) { {
             } } else if ((_t98.tag == 1)) { l63 = _t98.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t99; t603 _t100 = l63; if ((_t100.tag == 0)) { {
-                    _t99 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t99; t603 _t100 = l63; if ((_t100.tag == 0)) { {
+                    _t99 = ((t735){ .tag = 1 });
                 } } _t99; }), } });
             } } }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = l60, } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = l60, } });
         } } else if ((_t0.tag == 17)) { l64 = _t0.p.v17.m_first; l65 = _t0.p.v17.m_then; {
-            (void)({ t19 _t101; t805 _t102 = f1741((&(*l0)), (*l64)); if ((_t102.tag == 0)) { l66 = _t102.p.v0.m_value; {
+            (void)({ t19 _t101; t807 _t102 = f1741((&(*l0)), (*l64)); if ((_t102.tag == 0)) { l66 = _t102.p.v0.m_value; {
                 _t101 = l66;
             } } else if ((_t102.tag == 1)) { l67 = _t102.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l67, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l67, } });
             } } _t101; });
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t103; t805 _t104 = f1741((&(*l0)), (*l65)); if ((_t104.tag == 0)) { l68 = _t104.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t103; t807 _t104 = f1741((&(*l0)), (*l65)); if ((_t104.tag == 0)) { l68 = _t104.p.v0.m_value; {
                 _t103 = l68;
             } } else if ((_t104.tag == 1)) { l69 = _t104.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l69, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l69, } });
             } } _t103; }), } });
         } } else if ((_t0.tag == 18)) { l70 = _t0.p.v18.m_slot; l71 = _t0.p.v18.m_init; l72 = _t0.p.v18.m_body; {
-            l73 = ({ t19 _t105; t805 _t106 = f1741((&(*l0)), (*l71)); if ((_t106.tag == 0)) { l74 = _t106.p.v0.m_value; {
+            l73 = ({ t19 _t105; t807 _t106 = f1741((&(*l0)), (*l71)); if ((_t106.tag == 0)) { l74 = _t106.p.v0.m_value; {
                 _t105 = l74;
             } } else if ((_t106.tag == 1)) { l75 = _t106.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l75, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l75, } });
             } } _t105; });
             l76 = f1887((&(*l0)), l70);
             { t604 _t107 = ({ t527 _t108 = (&(*l0)); t19 _t109 = l76; t19 _t110 = l73; t19 _t111 = f885(((*l0)).m_types, ((*l71)).m_ty); f1342(_t108, _t109, _t110, _t111); }); if ((_t107.tag == 0)) { {
             } } else if ((_t107.tag == 1)) { l77 = _t107.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t112; t603 _t113 = l77; if ((_t113.tag == 0)) { {
-                    _t112 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t112; t603 _t113 = l77; if ((_t113.tag == 0)) { {
+                    _t112 = ((t735){ .tag = 1 });
                 } } _t112; }), } });
             } } }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t114; t805 _t115 = f1741((&(*l0)), (*l72)); if ((_t115.tag == 0)) { l78 = _t115.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t114; t807 _t115 = f1741((&(*l0)), (*l72)); if ((_t115.tag == 0)) { l78 = _t115.p.v0.m_value; {
                 _t114 = l78;
             } } else if ((_t115.tag == 1)) { l79 = _t115.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l79, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l79, } });
             } } _t114; }), } });
         } } else if ((_t0.tag == 31)) { l80 = _t0.p.v31.m_e; {
             if (({ t14 _t116; t31 _t117 = (*({ t29 _t118 = (((*l0)).m_types); uint64_t _t119 = ((t13)((l1).m_ty)); _t118.m_ptr + ctx_idx(_t119, _t118.m_len, 692, 27, 23); })); if ((_t117.tag == 5)) { {
@@ -59101,97 +58823,97 @@ static t805 f1741(t527 l0, t49 l1) {
             } } else { {
                 _t116 = ((bool)0);
             } } _t116; })) {
-                return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t120; t805 _t121 = f1741((&(*l0)), (*l80)); if ((_t121.tag == 0)) { l81 = _t121.p.v0.m_value; {
+                return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t120; t807 _t121 = f1741((&(*l0)), (*l80)); if ((_t121.tag == 0)) { l81 = _t121.p.v0.m_value; {
                     _t120 = l81;
                 } } else if ((_t121.tag == 1)) { l82 = _t121.p.v1.m_error; {
-                    return ((t805){ .tag = 1, .p.v1 = { .m_error = l82, } });
+                    return ((t807){ .tag = 1, .p.v1 = { .m_error = l82, } });
                 } } _t120; }), } });
             }
             l83 = ({ t19 _t122; t645 _t123 = f1135((&(*l0)), (l1).m_ty); if ((_t123.tag == 0)) { l84 = _t123.p.v0.m_value; {
                 _t122 = l84;
             } } else if ((_t123.tag == 1)) { l85 = _t123.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t124; t603 _t125 = l85; if ((_t125.tag == 0)) { {
-                    _t124 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t124; t603 _t125 = l85; if ((_t125.tag == 0)) { {
+                    _t124 = ((t735){ .tag = 1 });
                 } } _t124; }), } });
             } } _t122; });
             { t604 _t126 = f888((&(*l0)), l83, ((t19)(4ULL)), ((t19)(1ULL))); if ((_t126.tag == 0)) { {
             } } else if ((_t126.tag == 1)) { l86 = _t126.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t127; t603 _t128 = l86; if ((_t128.tag == 0)) { {
-                    _t127 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t127; t603 _t128 = l86; if ((_t128.tag == 0)) { {
+                    _t127 = ((t735){ .tag = 1 });
                 } } _t127; }), } });
             } } }
-            l87 = ({ t19 _t129; t805 _t130 = f1741((&(*l0)), (*l80)); if ((_t130.tag == 0)) { l88 = _t130.p.v0.m_value; {
+            l87 = ({ t19 _t129; t807 _t130 = f1741((&(*l0)), (*l80)); if ((_t130.tag == 0)) { l88 = _t130.p.v0.m_value; {
                 _t129 = l88;
             } } else if ((_t130.tag == 1)) { l89 = _t130.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l89, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l89, } });
             } } _t129; });
             l90 = f1903(((*l0)).m_types, (l1).m_ty, ((t33)(1ULL)), ((t33)(0ULL)));
             { t604 _t131 = ({ t527 _t132 = (&(*l0)); t19 _t133 = ctx_add_u64(l83, l90, 697, 39, 23); t19 _t134 = l87; t19 _t135 = f885(((*l0)).m_types, ((*l80)).m_ty); f1342(_t132, _t133, _t134, _t135); }); if ((_t131.tag == 0)) { {
             } } else if ((_t131.tag == 1)) { l91 = _t131.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t136; t603 _t137 = l91; if ((_t137.tag == 0)) { {
-                    _t136 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t136; t603 _t137 = l91; if ((_t137.tag == 0)) { {
+                    _t136 = ((t735){ .tag = 1 });
                 } } _t136; }), } });
             } } }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = l83, } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = l83, } });
         } } else if ((_t0.tag == 32)) { l92 = _t0.p.v32.m_e; {
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t138; t805 _t139 = f1904((&(*l0)), (l1).m_ty, (*l92)); if ((_t139.tag == 0)) { l93 = _t139.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t138; t807 _t139 = f1904((&(*l0)), (l1).m_ty, (*l92)); if ((_t139.tag == 0)) { l93 = _t139.p.v0.m_value; {
                 _t138 = l93;
             } } else if ((_t139.tag == 1)) { l94 = _t139.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l94, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l94, } });
             } } _t138; }), } });
         } } else if ((_t0.tag == 33)) { l95 = _t0.p.v33.m_callee; l96 = _t0.p.v33.m_args; {
             l97 = (*({ t88 _t140 = ((((*l0)).m_p).m_fns); uint64_t _t141 = ((t13)(l95)); _t140.m_ptr + ctx_idx(_t141, _t140.m_len, 702, 32, 23); }));
-            l98 = ({ t13 _t142; t826 _t143 = f1905((&(*l0)), l96, ((l97).m_params).m_len); if ((_t143.tag == 0)) { l99 = _t143.p.v0.m_value; {
+            l98 = ({ t13 _t142; t828 _t143 = f1905((&(*l0)), l96, ((l97).m_params).m_len); if ((_t143.tag == 0)) { l99 = _t143.p.v0.m_value; {
                 _t142 = l99;
             } } else if ((_t143.tag == 1)) { l100 = _t143.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l100, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l100, } });
             } } _t142; });
             l101 = ({ t19 _t144; t645 _t145 = f1135((&(*l0)), (l97).m_ret); if ((_t145.tag == 0)) { l102 = _t145.p.v0.m_value; {
                 _t144 = l102;
             } } else if ((_t145.tag == 1)) { l103 = _t145.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t146; t603 _t147 = l103; if ((_t147.tag == 0)) { {
-                    _t146 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t146; t603 _t147 = l103; if ((_t147.tag == 0)) { {
+                    _t146 = ((t735){ .tag = 1 });
                 } } _t146; }), } });
             } } _t144; });
             { t604 _t148 = f1136((&(*l0)), l95, l98, l101); if ((_t148.tag == 0)) { {
             } } else if ((_t148.tag == 1)) { l104 = _t148.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t149; t603 _t150 = l104; if ((_t150.tag == 0)) { {
-                    _t149 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t149; t603 _t150 = l104; if ((_t150.tag == 0)) { {
+                    _t149 = ((t735){ .tag = 1 });
                 } } _t149; }), } });
             } } }
             (((*l0)).m_argv).m_len = l98;
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = l101, } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = l101, } });
         } } else if ((_t0.tag == 35)) { l105 = _t0.p.v35.m_callee; l106 = _t0.p.v35.m_args; {
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t151; t805 _t152 = f1906((&(*l0)), (l1).m_ty, (*l105), l106); if ((_t152.tag == 0)) { l107 = _t152.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t151; t807 _t152 = f1906((&(*l0)), (l1).m_ty, (*l105), l106); if ((_t152.tag == 0)) { l107 = _t152.p.v0.m_value; {
                 _t151 = l107;
             } } else if ((_t152.tag == 1)) { l108 = _t152.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l108, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l108, } });
             } } _t151; }), } });
         } } else if ((_t0.tag == 34)) { l109 = _t0.p.v34.m_callee; l110 = _t0.p.v34.m_args; {
             l111 = f1907((&(*l0)), ((t513){ .m_kind = ((t33)(2ULL)), .m_a = ((t19)(l109)), .m_b = ((t19)(((uint64_t)(uintptr_t)((l110).m_ptr)))), }), ((t508){ .tag = 1, .p.v1 = { .m_callee = l109, .m_args = l110, } }));
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t153; t805 _t154 = f1908((&(*l0)), (l1).m_ty, l111, ((t19)(0ULL)), ((t19)(8ULL)), l110); if ((_t154.tag == 0)) { l112 = _t154.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t153; t807 _t154 = f1908((&(*l0)), (l1).m_ty, l111, ((t19)(0ULL)), ((t19)(8ULL)), l110); if ((_t154.tag == 0)) { l112 = _t154.p.v0.m_value; {
                 _t153 = l112;
             } } else if ((_t154.tag == 1)) { l113 = _t154.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l113, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l113, } });
             } } _t153; }), } });
         } } else if ((_t0.tag == 36)) { l114 = _t0.p.v36.m_callee; l115 = _t0.p.v36.m_args; {
             l116 = f1907((&(*l0)), ((t513){ .m_kind = ((t33)(3ULL)), .m_a = ((t19)(((*l114)).m_ty)), .m_b = ((t19)(((uint64_t)(uintptr_t)((l115).m_ptr)))), }), ((t508){ .tag = 2, .p.v2 = { .m_inner = ((*l114)).m_ty, .m_args = l115, } }));
-            l117 = ({ t19 _t155; t805 _t156 = f1894((&(*l0)), (*l114)); if ((_t156.tag == 0)) { l118 = _t156.p.v0.m_value; {
+            l117 = ({ t19 _t155; t807 _t156 = f1894((&(*l0)), (*l114)); if ((_t156.tag == 0)) { l118 = _t156.p.v0.m_value; {
                 _t155 = l118;
             } } else if ((_t156.tag == 1)) { l119 = _t156.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l119, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l119, } });
             } } _t155; });
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t157; t805 _t158 = f1908((&(*l0)), (l1).m_ty, l116, l117, ((t19)(16ULL)), l115); if ((_t158.tag == 0)) { l120 = _t158.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t157; t807 _t158 = f1908((&(*l0)), (l1).m_ty, l116, l117, ((t19)(16ULL)), l115); if ((_t158.tag == 0)) { l120 = _t158.p.v0.m_value; {
                 _t157 = l120;
             } } else if ((_t158.tag == 1)) { l121 = _t158.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l121, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l121, } });
             } } _t157; }), } });
         } } else if ((_t0.tag == 37)) { l122 = _t0.p.v37.m_callee; {
             l123 = ({ t19 _t159; t645 _t160 = f1135((&(*l0)), (l1).m_ty); if ((_t160.tag == 0)) { l124 = _t160.p.v0.m_value; {
                 _t159 = l124;
             } } else if ((_t160.tag == 1)) { l125 = _t160.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t161; t603 _t162 = l125; if ((_t162.tag == 0)) { {
-                    _t161 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t161; t603 _t162 = l125; if ((_t162.tag == 0)) { {
+                    _t161 = ((t735){ .tag = 1 });
                 } } _t161; }), } });
             } } _t159; });
             if (({ t14 _t163; t31 _t164 = (*({ t29 _t165 = (((*l0)).m_types); uint64_t _t166 = ((t13)((l1).m_ty)); _t165.m_ptr + ctx_idx(_t166, _t165.m_len, 721, 27, 23); })); if ((_t164.tag == 7)) { {
@@ -59202,86 +58924,86 @@ static t805 f1741(t527 l0, t49 l1) {
                 l126 = f1907((&(*l0)), ((t513){ .m_kind = ((t33)(1ULL)), .m_a = ((t19)(l122)), .m_b = ((t19)(0ULL)), }), ((t508){ .tag = 4, .p.v4 = { .m_callee = l122, } }));
                 { t604 _t167 = f888((&(*l0)), l123, ((t19)(8ULL)), l126); if ((_t167.tag == 0)) { {
                 } } else if ((_t167.tag == 1)) { l127 = _t167.p.v1.m_error; {
-                    return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t168; t603 _t169 = l127; if ((_t169.tag == 0)) { {
-                        _t168 = ((t733){ .tag = 1 });
+                    return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t168; t603 _t169 = l127; if ((_t169.tag == 0)) { {
+                        _t168 = ((t735){ .tag = 1 });
                     } } _t168; }), } });
                 } } }
-                return ((t805){ .tag = 0, .p.v0 = { .m_value = l123, } });
+                return ((t807){ .tag = 0, .p.v0 = { .m_value = l123, } });
             }
             l128 = ({ t19 _t170; t645 _t171 = f1909((&(*l0)), l122); if ((_t171.tag == 0)) { l129 = _t171.p.v0.m_value; {
                 _t170 = l129;
             } } else if ((_t171.tag == 1)) { l130 = _t171.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t172; t603 _t173 = l130; if ((_t173.tag == 0)) { {
-                    _t172 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t172; t603 _t173 = l130; if ((_t173.tag == 0)) { {
+                    _t172 = ((t735){ .tag = 1 });
                 } } _t172; }), } });
             } } _t170; });
             { t604 _t174 = f888((&(*l0)), l123, ((t19)(8ULL)), l128); if ((_t174.tag == 0)) { {
             } } else if ((_t174.tag == 1)) { l131 = _t174.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t175; t603 _t176 = l131; if ((_t176.tag == 0)) { {
-                    _t175 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t175; t603 _t176 = l131; if ((_t176.tag == 0)) { {
+                    _t175 = ((t735){ .tag = 1 });
                 } } _t175; }), } });
             } } }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = l123, } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = l123, } });
         } } else if ((_t0.tag == 38)) { l132 = _t0.p.v38.m_items; {
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t177; t805 _t178 = f1910((&(*l0)), (l1).m_ty, ((t68){0}), l132); if ((_t178.tag == 0)) { l133 = _t178.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t177; t807 _t178 = f1910((&(*l0)), (l1).m_ty, ((t68){0}), l132); if ((_t178.tag == 0)) { l133 = _t178.p.v0.m_value; {
                 _t177 = l133;
             } } else if ((_t178.tag == 1)) { l134 = _t178.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l134, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l134, } });
             } } _t177; }), } });
         } } else if ((_t0.tag == 39)) { l135 = _t0.p.v39.m_index; l136 = _t0.p.v39.m_items; {
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t179; t805 _t180 = f1910((&(*l0)), (l1).m_ty, ((t68){ .tag = 1, .p.v1.m_value = l135 }), l136); if ((_t180.tag == 0)) { l137 = _t180.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t179; t807 _t180 = f1910((&(*l0)), (l1).m_ty, ((t68){ .tag = 1, .p.v1.m_value = l135 }), l136); if ((_t180.tag == 0)) { l137 = _t180.p.v0.m_value; {
                 _t179 = l137;
             } } else if ((_t180.tag == 1)) { l138 = _t180.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l138, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l138, } });
             } } _t179; }), } });
         } } else if ((_t0.tag == 40)) { l139 = _t0.p.v40.m_elems; {
             l140 = ({ t19 _t181; t645 _t182 = f1135((&(*l0)), (l1).m_ty); if ((_t182.tag == 0)) { l141 = _t182.p.v0.m_value; {
                 _t181 = l141;
             } } else if ((_t182.tag == 1)) { l142 = _t182.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t183; t603 _t184 = l142; if ((_t184.tag == 0)) { {
-                    _t183 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t183; t603 _t184 = l142; if ((_t184.tag == 0)) { {
+                    _t183 = ((t735){ .tag = 1 });
                 } } _t183; }), } });
             } } _t181; });
             { t31 _t185 = (*({ t29 _t186 = (((*l0)).m_types); uint64_t _t187 = ((t13)((l1).m_ty)); _t186.m_ptr + ctx_idx(_t187, _t186.m_len, 734, 42, 23); })); if (!(_t185.tag == 2)) { {
                 f1131((&(*l0)), ((t10){ .m_ptr = (void *)"eval: an array literal of a non-array", .m_len = 37 }));
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t188; t603 _t189 = ((t603){ .tag = 0 }); if ((_t189.tag == 0)) { {
-                    _t188 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t188; t603 _t189 = ((t603){ .tag = 0 }); if ((_t189.tag == 0)) { {
+                    _t188 = ((t735){ .tag = 1 });
                 } } _t188; }), } });
             } } l143 = _t185.p.v2.m_elem; }
             l144 = f885(((*l0)).m_types, l143);
             l145 = ((t13)(0ULL));
             while ((l145 < (l139).m_len)) {
-                l146 = ({ t19 _t190; t805 _t191 = ({ t527 _t192 = (&(*l0)); t49 _t193 = (*({ t62 _t194 = (l139); uint64_t _t195 = l145; _t194.m_ptr + ctx_idx(_t195, _t194.m_len, 741, 53, 23); })); f1741(_t192, _t193); }); if ((_t191.tag == 0)) { l147 = _t191.p.v0.m_value; {
+                l146 = ({ t19 _t190; t807 _t191 = ({ t527 _t192 = (&(*l0)); t49 _t193 = (*({ t62 _t194 = (l139); uint64_t _t195 = l145; _t194.m_ptr + ctx_idx(_t195, _t194.m_len, 741, 53, 23); })); f1741(_t192, _t193); }); if ((_t191.tag == 0)) { l147 = _t191.p.v0.m_value; {
                     _t190 = l147;
                 } } else if ((_t191.tag == 1)) { l148 = _t191.p.v1.m_error; {
-                    return ((t805){ .tag = 1, .p.v1 = { .m_error = l148, } });
+                    return ((t807){ .tag = 1, .p.v1 = { .m_error = l148, } });
                 } } _t190; });
                 { t604 _t196 = ({ t527 _t197 = (&(*l0)); t19 _t198 = ({ t19 _t201 = l140; t19 _t202 = ({ t19 _t203 = l144; t19 _t204 = ((t19)(ctx_as_u((uint64_t)(l145), UINT64_MAX, "u64", 742, 49, 23))); ctx_mul_u64(_t203, _t204, 742, 47, 23); }); ctx_add_u64(_t201, _t202, 742, 43, 23); }); t19 _t199 = l146; t19 _t200 = l144; f1342(_t197, _t198, _t199, _t200); }); if ((_t196.tag == 0)) { {
                 } } else if ((_t196.tag == 1)) { l149 = _t196.p.v1.m_error; {
-                    return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t205; t603 _t206 = l149; if ((_t206.tag == 0)) { {
-                        _t205 = ((t733){ .tag = 1 });
+                    return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t205; t603 _t206 = l149; if ((_t206.tag == 0)) { {
+                        _t205 = ((t735){ .tag = 1 });
                     } } _t205; }), } });
                 } } }
                 l145 = ctx_add_u64(l145, ((t13)(1ULL)), 743, 27, 23);
             }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = l140, } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = l140, } });
         } } else if ((_t0.tag == 41)) { l150 = _t0.p.v41.m_elem; {
-            l151 = ({ t19 _t207; t805 _t208 = f1741((&(*l0)), (*l150)); if ((_t208.tag == 0)) { l152 = _t208.p.v0.m_value; {
+            l151 = ({ t19 _t207; t807 _t208 = f1741((&(*l0)), (*l150)); if ((_t208.tag == 0)) { l152 = _t208.p.v0.m_value; {
                 _t207 = l152;
             } } else if ((_t208.tag == 1)) { l153 = _t208.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l153, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l153, } });
             } } _t207; });
             l154 = ({ t19 _t209; t645 _t210 = f1135((&(*l0)), (l1).m_ty); if ((_t210.tag == 0)) { l155 = _t210.p.v0.m_value; {
                 _t209 = l155;
             } } else if ((_t210.tag == 1)) { l156 = _t210.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t211; t603 _t212 = l156; if ((_t212.tag == 0)) { {
-                    _t211 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t211; t603 _t212 = l156; if ((_t212.tag == 0)) { {
+                    _t211 = ((t735){ .tag = 1 });
                 } } _t211; }), } });
             } } _t209; });
             { t31 _t213 = (*({ t29 _t214 = (((*l0)).m_types); uint64_t _t215 = ((t13)((l1).m_ty)); _t214.m_ptr + ctx_idx(_t215, _t214.m_len, 750, 47, 23); })); if (!(_t213.tag == 2)) { {
                 f1131((&(*l0)), ((t10){ .m_ptr = (void *)"eval: a repeat of a non-array", .m_len = 29 }));
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t216; t603 _t217 = ((t603){ .tag = 0 }); if ((_t217.tag == 0)) { {
-                    _t216 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t216; t603 _t217 = ((t603){ .tag = 0 }); if ((_t217.tag == 0)) { {
+                    _t216 = ((t735){ .tag = 1 });
                 } } _t216; }), } });
             } } l157 = _t213.p.v2.m_n; }
             l158 = f885(((*l0)).m_types, ((*l150)).m_ty);
@@ -59289,78 +59011,78 @@ static t805 f1741(t527 l0, t49 l1) {
             while ((l159 < l157)) {
                 { t604 _t218 = ({ t527 _t219 = (&(*l0)); t19 _t220 = ({ t19 _t223 = l154; t19 _t224 = ctx_mul_u64(l158, l159, 757, 47, 23); ctx_add_u64(_t223, _t224, 757, 43, 23); }); t19 _t221 = l151; t19 _t222 = l158; f1342(_t219, _t220, _t221, _t222); }); if ((_t218.tag == 0)) { {
                 } } else if ((_t218.tag == 1)) { l160 = _t218.p.v1.m_error; {
-                    return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t225; t603 _t226 = l160; if ((_t226.tag == 0)) { {
-                        _t225 = ((t733){ .tag = 1 });
+                    return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t225; t603 _t226 = l160; if ((_t226.tag == 0)) { {
+                        _t225 = ((t735){ .tag = 1 });
                     } } _t225; }), } });
                 } } }
                 l159 = ctx_add_u64(l159, ((t19)(1ULL)), 758, 27, 23);
             }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = l154, } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = l154, } });
         } } else if ((_t0.tag == 42)) { l161 = _t0.p.v42.m_c; l162 = _t0.p.v42.m_then; l163 = _t0.p.v42.m_els; {
             l164 = ({ t19 _t227; t645 _t228 = f1135((&(*l0)), (l1).m_ty); if ((_t228.tag == 0)) { l165 = _t228.p.v0.m_value; {
                 _t227 = l165;
             } } else if ((_t228.tag == 1)) { l166 = _t228.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t229; t603 _t230 = l166; if ((_t230.tag == 0)) { {
-                    _t229 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t229; t603 _t230 = l166; if ((_t230.tag == 0)) { {
+                    _t229 = ((t735){ .tag = 1 });
                 } } _t229; }), } });
             } } _t227; });
-            l167 = ({ t14 _t231; t824 _t232 = f1889((&(*l0)), (*l161)); if ((_t232.tag == 0)) { l168 = _t232.p.v0.m_value; {
+            l167 = ({ t14 _t231; t826 _t232 = f1889((&(*l0)), (*l161)); if ((_t232.tag == 0)) { l168 = _t232.p.v0.m_value; {
                 _t231 = l168;
             } } else if ((_t232.tag == 1)) { l169 = _t232.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l169, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l169, } });
             } } _t231; });
-            { t732 _t233 = ({ t527 _t234 = (&(*l0)); t63 _t235 = ({ t63 _t237; if (l167) {
+            { t734 _t233 = ({ t527 _t234 = (&(*l0)); t63 _t235 = ({ t63 _t237; if (l167) {
                 _t237 = l162;
             } else {
                 _t237 = l163;
             } _t237; }); t19 _t236 = l164; f1343(_t234, _t235, _t236); }); if ((_t233.tag == 0)) { {
             } } else if ((_t233.tag == 1)) { l170 = _t233.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l170, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l170, } });
             } } }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = l164, } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = l164, } });
         } } else if ((_t0.tag == 43)) { l171 = _t0.p.v43.m_scrut; l172 = _t0.p.v43.m_through; l173 = _t0.p.v43.m_arms; {
             l174 = ({ t19 _t238; t645 _t239 = f1135((&(*l0)), (l1).m_ty); if ((_t239.tag == 0)) { l175 = _t239.p.v0.m_value; {
                 _t238 = l175;
             } } else if ((_t239.tag == 1)) { l176 = _t239.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t240; t603 _t241 = l176; if ((_t241.tag == 0)) { {
-                    _t240 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t240; t603 _t241 = l176; if ((_t241.tag == 0)) { {
+                    _t240 = ((t735){ .tag = 1 });
                 } } _t240; }), } });
             } } _t238; });
-            l177 = ({ t19 _t242; t805 _t243 = f1741((&(*l0)), (*l171)); if ((_t243.tag == 0)) { l178 = _t243.p.v0.m_value; {
+            l177 = ({ t19 _t242; t807 _t243 = f1741((&(*l0)), (*l171)); if ((_t243.tag == 0)) { l178 = _t243.p.v0.m_value; {
                 _t242 = l178;
             } } else if ((_t243.tag == 1)) { l179 = _t243.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l179, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l179, } });
             } } _t242; });
-            { t732 _t244 = f1893((&(*l0)), l177, l172, ((*l171)).m_ty, l173, l174); if ((_t244.tag == 0)) { {
+            { t734 _t244 = f1893((&(*l0)), l177, l172, ((*l171)).m_ty, l173, l174); if ((_t244.tag == 0)) { {
             } } else if ((_t244.tag == 1)) { l180 = _t244.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l180, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l180, } });
             } } }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = l174, } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = l174, } });
         } } else if ((_t0.tag == 44)) { l181 = _t0.p.v44.m_scrut; l182 = _t0.p.v44.m_cases; {
             l183 = ({ t19 _t245; t645 _t246 = f1135((&(*l0)), (l1).m_ty); if ((_t246.tag == 0)) { l184 = _t246.p.v0.m_value; {
                 _t245 = l184;
             } } else if ((_t246.tag == 1)) { l185 = _t246.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t247; t603 _t248 = l185; if ((_t248.tag == 0)) { {
-                    _t247 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t247; t603 _t248 = l185; if ((_t248.tag == 0)) { {
+                    _t247 = ((t735){ .tag = 1 });
                 } } _t247; }), } });
             } } _t245; });
-            l186 = ({ t19 _t249; t805 _t250 = f1894((&(*l0)), (*l181)); if ((_t250.tag == 0)) { l187 = _t250.p.v0.m_value; {
+            l186 = ({ t19 _t249; t807 _t250 = f1894((&(*l0)), (*l181)); if ((_t250.tag == 0)) { l187 = _t250.p.v0.m_value; {
                 _t249 = l187;
             } } else if ((_t250.tag == 1)) { l188 = _t250.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l188, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l188, } });
             } } _t249; });
-            { t732 _t251 = f1895((&(*l0)), l186, ((*l181)).m_ty, l182, l183); if ((_t251.tag == 0)) { {
+            { t734 _t251 = f1895((&(*l0)), l186, ((*l181)).m_ty, l182, l183); if ((_t251.tag == 0)) { {
             } } else if ((_t251.tag == 1)) { l189 = _t251.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l189, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l189, } });
             } } }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = l183, } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = l183, } });
         } } }
     }
     __builtin_unreachable();
 }
 
 // list::pop(ir::Block, arena::Arena)
-static t67 f1742(t806 l0) {
+static t67 f1742(t808 l0) {
     CTX_STACK_CHECK();
     {
         if ((((*l0)).m_len == ((t13)(0ULL)))) {
@@ -59724,7 +59446,7 @@ static t33 f1755(t537 l0, t33 l1, t10 l2) {
         } } _t0; })) {
             l3 = l4;
         }
-        l5 = ({ t301 _t2; t784 _t3 = f1658((*((*l0)).m_c), l3, l2); if ((_t3.tag == 1)) { l6 = _t3.p.v1.m_value; {
+        l5 = ({ t301 _t2; t786 _t3 = f1658((*((*l0)).m_c), l3, l2); if ((_t3.tag == 1)) { l6 = _t3.p.v1.m_value; {
             _t2 = l6;
         } } else if ((_t3.tag == 0)) { {
             ctx_panic(1725, 68, 19, "lower: no such C variable");
@@ -59757,28 +59479,28 @@ static t33 f1755(t537 l0, t33 l1, t10 l2) {
 }
 
 // lower::cmp_op
-static t807 f1756(t12 l0) {
+static t809 f1756(t12 l0) {
     CTX_STACK_CHECK();
     {
         if ((l0 == ((t12)(41ULL)))) {
-            return ((t807){ .tag = 1, .p.v1.m_value = ((t58){ .tag = 0 }) });
+            return ((t809){ .tag = 1, .p.v1.m_value = ((t58){ .tag = 0 }) });
         }
         if ((l0 == ((t12)(42ULL)))) {
-            return ((t807){ .tag = 1, .p.v1.m_value = ((t58){ .tag = 1 }) });
+            return ((t809){ .tag = 1, .p.v1.m_value = ((t58){ .tag = 1 }) });
         }
         if ((l0 == ((t12)(58ULL)))) {
-            return ((t807){ .tag = 1, .p.v1.m_value = ((t58){ .tag = 2 }) });
+            return ((t809){ .tag = 1, .p.v1.m_value = ((t58){ .tag = 2 }) });
         }
         if ((l0 == ((t12)(43ULL)))) {
-            return ((t807){ .tag = 1, .p.v1.m_value = ((t58){ .tag = 3 }) });
+            return ((t809){ .tag = 1, .p.v1.m_value = ((t58){ .tag = 3 }) });
         }
         if ((l0 == ((t12)(59ULL)))) {
-            return ((t807){ .tag = 1, .p.v1.m_value = ((t58){ .tag = 4 }) });
+            return ((t809){ .tag = 1, .p.v1.m_value = ((t58){ .tag = 4 }) });
         }
         if ((l0 == ((t12)(44ULL)))) {
-            return ((t807){ .tag = 1, .p.v1.m_value = ((t58){ .tag = 5 }) });
+            return ((t809){ .tag = 1, .p.v1.m_value = ((t58){ .tag = 5 }) });
         }
-        return ((t807){0});
+        return ((t809){0});
     }
     __builtin_unreachable();
 }
@@ -59819,7 +59541,7 @@ static t59 f1759(t537 l0, t141 l1, t159 l2, t263 l3, t14 l4) {
     t13 l6;
     t13 l7;
     t49 l8;
-    t735 l9;
+    t737 l9;
     t121 l10;
     t378 l11;
     t13 l12;
@@ -59937,7 +59659,7 @@ static t49 f1761(t537 l0, t141 l1, t159 l2, t263 l3, t33 l4) {
 
 // lower::fmt
 static t49 f1762(t537 l0, t141 l1, t162 l2) {
-    t711 l3;
+    t713 l3;
     t384 l4;
     t33 l5;
     t561 l6;
@@ -60004,7 +59726,7 @@ static t33 f1764(t537 l0, t33 l1) {
 // lower::to_enum
 static t49 f1765(t537 l0, t141 l1, t141 l2, t33 l3, t33 l4, t33 l5) {
     t292 l6;
-    t693 l7;
+    t695 l7;
     t568 l8;
     t13 l9;
     t21 l10;
@@ -60096,7 +59818,7 @@ static t49 f1765(t537 l0, t141 l1, t141 l2, t33 l3, t33 l4, t33 l5) {
 // lower::value_block
 static t63 f1766(t537 l0, t164 l1, t33 l2) {
     t165 l3;
-    t772 l4;
+    t774 l4;
     t554 l5;
     t13 l6;
     t66 l7;
@@ -60111,12 +59833,12 @@ static t63 f1766(t537 l0, t164 l1, t33 l2) {
     CTX_STACK_CHECK();
     {
         l3 = (l1).m_stmts;
-        l4 = ({ t772 _t0; if (((l3).m_len == ((t13)(0ULL)))) {
-            _t0 = ((t772){ .tag = 0 });
+        l4 = ({ t774 _t0; if (((l3).m_len == ((t13)(0ULL)))) {
+            _t0 = ((t774){ .tag = 0 });
         } else {
             _t0 = f1575((*({ t165 _t1 = (l3); uint64_t _t2 = ctx_sub_u64((l3).m_len, ((t13)(1ULL)), 1135, 97, 19); _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 1135, 89, 19); })));
         } _t0; });
-        if (({ t14 _t3; t772 _t4 = l4; if ((_t4.tag == 0)) { {
+        if (({ t14 _t3; t774 _t4 = l4; if ((_t4.tag == 0)) { {
             _t3 = ((bool)1);
         } } else { {
             _t3 = ((bool)0);
@@ -60135,7 +59857,7 @@ static t63 f1766(t537 l0, t164 l1, t33 l2) {
             } } }
             l6 = ctx_add_u64(l6, ((t13)(1ULL)), 1142, 19, 19);
         }
-        { t772 _t13 = l4; if ((_t13.tag == 2)) { l9 = _t13.p.v2.m_s; {
+        { t774 _t13 = l4; if ((_t13.tag == 2)) { l9 = _t13.p.v2.m_s; {
             if (((({ t309 _t14 = ((*((*l0)).m_c)).m_expr_ty; t19 _t15 = f1385(l9); f639(_t14, _t15); })).tag == 0)) {
                 l10 = f1919((&(*l0)), l9);
                 { t110 _t16 = f416((&l5), l10); if ((_t16.tag == 0)) { {
@@ -60205,7 +59927,7 @@ static t70 f1768(t537 l0, t175 l1, t33 l2, t33 l3, t14 l4) {
     t76 l27;
     t95 l28;
     t49 l29;
-    t678 l30;
+    t680 l30;
     t63 l31;
     t554 l32;
     t95 l33;
@@ -60316,7 +60038,7 @@ static t70 f1768(t537 l0, t175 l1, t33 l2, t33 l3, t14 l4) {
 }
 
 // lower::scrut_type
-static t808 f1769(t537 l0, t175 l1) {
+static t810 f1769(t537 l0, t175 l1) {
     t33 l2;
     t14 l3;
     t33 l4;
@@ -60342,7 +60064,7 @@ static t808 f1769(t537 l0, t175 l1) {
         } } _t6; })) {
             l5 = l6;
         }
-        return ({ t14 _t8 = l3; t293 _t9 = f871(((*l0)).m_c, l2); t33 _t10 = l5; ((t808){ .m_through = _t8, .m_vs = _t9, .m_enum_decl = _t10, }); });
+        return ({ t14 _t8 = l3; t293 _t9 = f871(((*l0)).m_c, l2); t33 _t10 = l5; ((t810){ .m_through = _t8, .m_vs = _t9, .m_enum_decl = _t10, }); });
     }
     __builtin_unreachable();
 }
@@ -60615,25 +60337,25 @@ static t14 f1775(t179 l0, t10 l1) {
 }
 
 // lower::pat_named
-static t809 f1776(t179 l0, t10 l1) {
+static t811 f1776(t179 l0, t10 l1) {
     t13 l2;
     CTX_STACK_CHECK();
     {
         l2 = ((t13)(0ULL));
         while ((l2 < (l0).m_len)) {
             if (({ t10 _t0 = (((*({ t179 _t2 = (l0); uint64_t _t3 = l2; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 1623, 41, 19); }))).m_variant).m_text; t10 _t1 = l1; f1(_t0, _t1); })) {
-                return ((t809){ .tag = 1, .p.v1.m_value = (*({ t179 _t4 = (l0); uint64_t _t5 = l2; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 1623, 83, 19); })) });
+                return ((t811){ .tag = 1, .p.v1.m_value = (*({ t179 _t4 = (l0); uint64_t _t5 = l2; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 1623, 83, 19); })) });
             }
             l2 = ctx_add_u64(l2, ((t13)(1ULL)), 1624, 19, 19);
         }
-        return ((t809){0});
+        return ((t811){0});
     }
     __builtin_unreachable();
 }
 
 // lower::alt_binds
 static t76 f1777(t537 l0, t171 l1, t171 l2, t296 l3) {
-    t678 l4;
+    t680 l4;
     t13 l5;
     t33 l6;
     t10 l7;
@@ -60744,7 +60466,7 @@ static t13 f1781(t320 l0, t33 l1) {
 }
 
 // alloc::resize(map::Slot(u32, check::Layout), arena::Arena)
-static t810 f1782(t27 l0, t26 l1, t321 l2, t13 l3) {
+static t812 f1782(t27 l0, t26 l1, t321 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -60752,9 +60474,9 @@ static t810 f1782(t27 l0, t26 l1, t321 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1928(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t810){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t812){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t810){ .tag = 0, .p.v0 = { .m_value = f1929(l4), } });
+        return ((t812){ .tag = 0, .p.v0 = { .m_value = f1929(l4), } });
     }
     __builtin_unreachable();
 }
@@ -60814,7 +60536,7 @@ static t13 f1786(t372 l0, t19 l1) {
 }
 
 // alloc::resize(syntax::Item, arena::Arena)
-static t811 f1787(t27 l0, t26 l1, t159 l2, t13 l3) {
+static t813 f1787(t27 l0, t26 l1, t159 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -60822,9 +60544,9 @@ static t811 f1787(t27 l0, t26 l1, t159 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1930(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(168ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t811){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t813){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t811){ .tag = 0, .p.v0 = { .m_value = f1931(l4), } });
+        return ((t813){ .tag = 0, .p.v0 = { .m_value = f1931(l4), } });
     }
     __builtin_unreachable();
 }
@@ -60893,7 +60615,7 @@ static t164 f1791(t436 l0) {
 }
 
 // alloc::resize(syntax::Pattern, arena::Arena)
-static t812 f1792(t27 l0, t26 l1, t179 l2, t13 l3) {
+static t814 f1792(t27 l0, t26 l1, t179 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -60901,15 +60623,15 @@ static t812 f1792(t27 l0, t26 l1, t179 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1934(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(80ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t812){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t814){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t812){ .tag = 0, .p.v0 = { .m_value = f1935(l4), } });
+        return ((t814){ .tag = 0, .p.v0 = { .m_value = f1935(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(syntax::Arm, arena::Arena)
-static t813 f1793(t27 l0, t26 l1, t176 l2, t13 l3) {
+static t815 f1793(t27 l0, t26 l1, t176 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -60917,15 +60639,15 @@ static t813 f1793(t27 l0, t26 l1, t176 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1936(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(64ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t813){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t815){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t813){ .tag = 0, .p.v0 = { .m_value = f1937(l4), } });
+        return ((t815){ .tag = 0, .p.v0 = { .m_value = f1937(l4), } });
     }
     __builtin_unreachable();
 }
 
 // list::reserve(syntax::Binder, arena::Arena)
-static t110 f1794(t776 l0, t13 l1) {
+static t110 f1794(t778 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t171 l4;
@@ -60943,7 +60665,7 @@ static t110 f1794(t776 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t171 _t0 = ({ t171 _t1; t827 _t2 = f1938(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t171 _t0 = ({ t171 _t1; t829 _t2 = f1938(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -60967,7 +60689,7 @@ static t13 f1795(t315 l0, t19 l1) {
 }
 
 // alloc::resize(map::Slot(u64, check::Ref), arena::Arena)
-static t814 f1796(t27 l0, t26 l1, t316 l2, t13 l3) {
+static t816 f1796(t27 l0, t26 l1, t316 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -60975,9 +60697,9 @@ static t814 f1796(t27 l0, t26 l1, t316 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f1939(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t814){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t816){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t814){ .tag = 0, .p.v0 = { .m_value = f1940(l4), } });
+        return ((t816){ .tag = 0, .p.v0 = { .m_value = f1940(l4), } });
     }
     __builtin_unreachable();
 }
@@ -61080,7 +60802,7 @@ static t340 f1803(t10 l0) {
 }
 
 // check::resolve_segs
-static t694 f1804(t429 l0, t144 l1, t14 l2) {
+static t696 f1804(t429 l0, t144 l1, t14 l2) {
     t33 l3;
     t146 l4;
     t33 l5;
@@ -61166,10 +60888,10 @@ static t694 f1804(t429 l0, t144 l1, t14 l2) {
                         } } }
                     } } }
                     ({ t429 _t10 = (&(*l0)); t121 _t11 = ((l4).m_name).m_span; t17 _t12 = f59(l6); f600(_t10, _t11, _t12); });
-                    return ((t694){0});
+                    return ((t696){0});
                 }
                 f1271((&(*l0)), (l4).m_name, ((t319){ .tag = 4, .p.v4 = { .m_var = l5, } }));
-                return ((t694){ .tag = 1, .p.v1.m_value = ((t359){ .tag = 0, .p.v0 = { .m_var = l5, } }) });
+                return ((t696){ .tag = 1, .p.v1.m_value = ((t359){ .tag = 0, .p.v0 = { .m_var = l5, } }) });
             }
             l11 = f1270((*l0), l3, ((l4).m_name).m_text);
             if (((l11).tag != 0)) {
@@ -61179,7 +60901,7 @@ static t694 f1804(t429 l0, t144 l1, t14 l2) {
             l12 = f873((*l0), l3, ((l4).m_name).m_text);
             if (((l12).tag != 0)) {
                 f1445((&(*l0)), (l4).m_name, (l12).p.v1.m_value);
-                return ((t694){ .tag = 1, .p.v1.m_value = ((t359){ .tag = 5, .p.v5 = { .m_e = (l12).p.v1.m_value, .m_seg = l4, } }) });
+                return ((t696){ .tag = 1, .p.v1.m_value = ((t359){ .tag = 5, .p.v5 = { .m_e = (l12).p.v1.m_value, .m_seg = l4, } }) });
             }
             l13 = f598((*l0));
             { t110 _t13 = ({ t110 _t14; t110 _t15 = f55((&l13), ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"unknown name `", .m_len = 14 }), })); if ((_t15.tag == 0)) { {
@@ -61201,12 +60923,12 @@ static t694 f1804(t429 l0, t144 l1, t14 l2) {
                 } } }
             } } }
             ({ t429 _t21 = (&(*l0)); t121 _t22 = ((l4).m_name).m_span; t17 _t23 = f59(l13); f600(_t21, _t22, _t23); });
-            return ((t694){0});
+            return ((t696){0});
         }
         l18 = f873((*l0), l3, ((l4).m_name).m_text);
         if (((l18).tag == 0)) {
             f1444((&(*l0)), (l4).m_name);
-            return ((t694){0});
+            return ((t696){0});
         }
         f1445((&(*l0)), (l4).m_name, (l18).p.v1.m_value);
         l19 = (l18).p.v1.m_value;
@@ -61245,7 +60967,7 @@ static t694 f1804(t429 l0, t144 l1, t14 l2) {
                         } } }
                     } } }
                     ({ t429 _t40 = (&(*l0)); t121 _t41 = ((l22).m_name).m_span; t17 _t42 = f59(l26); f600(_t40, _t41, _t42); });
-                    return ((t694){0});
+                    return ((t696){0});
                 }
                 l31 = f640((*l0), l24);
                 if (l23) {
@@ -61285,7 +61007,7 @@ static t694 f1804(t429 l0, t144 l1, t14 l2) {
                         } } }
                     } } }
                     ({ t429 _t55 = (&(*l0)); t121 _t56 = ((l21).m_name).m_span; t17 _t57 = f59(l34); f600(_t55, _t56, _t57); });
-                    return ((t694){0});
+                    return ((t696){0});
                 }
                 f1445((&(*l0)), (l21).m_name, (l33).p.v1.m_value);
                 l19 = (l33).p.v1.m_value;
@@ -61295,7 +61017,7 @@ static t694 f1804(t429 l0, t144 l1, t14 l2) {
             l41 = ({ t429 _t58 = (&(*l0)); t286 _t59 = l19; t147 _t60 = (l22).m_name; t599 _t61 = f1943((&(*l0)), l22); t121 _t62 = ((l22).m_name).m_span; t14 _t63 = ((bool)1); t14 _t64 = ((bool)0); f836(_t58, _t59, _t60, _t61, _t62, _t63, _t64); });
             l42 = f822(((*l0)).m_ty, l41);
             if ((l42 == ((t33)(0ULL)))) {
-                return ((t694){0});
+                return ((t696){0});
             }
             if (l23) {
                 l43 = f38();
@@ -61310,15 +61032,15 @@ static t694 f1804(t429 l0, t144 l1, t14 l2) {
                 if (((((l43).m_len > ((t13)(0ULL))) || l44) || f1945((*l0), l42))) {
                     if ((((l21).m_targs).tag != 0)) {
                         f600((&(*l0)), ((l21).m_name).m_span, ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"a variant takes no type arguments", .m_len = 33 }), }));
-                        return ((t694){0});
+                        return ((t696){0});
                     }
                     l46 = ((t13)(0ULL));
                     while ((l46 < (l43).m_len)) {
                         if (({ t10 _t66 = (*({ t8 _t68 = (l43); uint64_t _t69 = l46; _t68.m_ptr + ctx_idx(_t69, _t68.m_len, 6109, 54, 18); })); t10 _t67 = ((l21).m_name).m_text; f1(_t66, _t67); })) {
                             if (l44) {
-                                return ((t694){ .tag = 1, .p.v1.m_value = ({ t33 _t70 = l42; t33 _t71 = ((t33)(ctx_as_u((uint64_t)(l46), UINT32_MAX, "u32", 6110, 83, 18))); ((t359){ .tag = 4, .p.v4 = { .m_ty = _t70, .m_index = _t71, } }); }) });
+                                return ((t696){ .tag = 1, .p.v1.m_value = ({ t33 _t70 = l42; t33 _t71 = ((t33)(ctx_as_u((uint64_t)(l46), UINT32_MAX, "u32", 6110, 83, 18))); ((t359){ .tag = 4, .p.v4 = { .m_ty = _t70, .m_index = _t71, } }); }) });
                             }
-                            return ((t694){ .tag = 1, .p.v1.m_value = ({ t33 _t72 = l42; t33 _t73 = ((t33)(ctx_as_u((uint64_t)(l46), UINT32_MAX, "u32", 6111, 70, 18))); ((t359){ .tag = 3, .p.v3 = { .m_ty = _t72, .m_index = _t73, } }); }) });
+                            return ((t696){ .tag = 1, .p.v1.m_value = ({ t33 _t72 = l42; t33 _t73 = ((t33)(ctx_as_u((uint64_t)(l46), UINT32_MAX, "u32", 6111, 70, 18))); ((t359){ .tag = 3, .p.v3 = { .m_ty = _t72, .m_index = _t73, } }); }) });
                         }
                         l46 = ctx_add_u64(l46, ((t13)(1ULL)), 6113, 31, 18);
                     }
@@ -61346,7 +61068,7 @@ static t694 f1804(t429 l0, t144 l1, t14 l2) {
                         } } }
                     } } }
                     ({ t429 _t84 = (&(*l0)); t121 _t85 = ((l21).m_name).m_span; t17 _t86 = f59(l47); f600(_t84, _t85, _t86); });
-                    return ((t694){0});
+                    return ((t696){0});
                 }
             }
             l53 = f598((*l0));
@@ -61377,9 +61099,9 @@ static t694 f1804(t429 l0, t144 l1, t14 l2) {
                 } } }
             } } }
             ({ t429 _t99 = (&(*l0)); t121 _t100 = ((l21).m_name).m_span; t17 _t101 = f59(l53); f600(_t99, _t100, _t101); });
-            return ((t694){0});
+            return ((t696){0});
         }
-        return ((t694){ .tag = 1, .p.v1.m_value = ({ t286 _t102 = l19; t146 _t103 = (*({ t144 _t104 = (l1); uint64_t _t105 = ctx_sub_u64((l1).m_len, ((t13)(1ULL)), 6126, 58, 18); _t104.m_ptr + ctx_idx(_t105, _t104.m_len, 6126, 48, 18); })); ((t359){ .tag = 5, .p.v5 = { .m_e = _t102, .m_seg = _t103, } }); }) });
+        return ((t696){ .tag = 1, .p.v1.m_value = ({ t286 _t102 = l19; t146 _t103 = (*({ t144 _t104 = (l1); uint64_t _t105 = ctx_sub_u64((l1).m_len, ((t13)(1ULL)), 6126, 58, 18); _t104.m_ptr + ctx_idx(_t105, _t104.m_len, 6126, 48, 18); })); ((t359){ .tag = 5, .p.v5 = { .m_e = _t102, .m_seg = _t103, } }); }) });
     }
     __builtin_unreachable();
 }
@@ -61698,12 +61420,12 @@ static t33 f1810(t429 l0, t141 l1, t33 l2, t17 l3, t159 l4, t14 l5, t14 l6) {
     t95 l16;
     t13 l17;
     t161 l18;
-    t699 l19;
+    t701 l19;
     t33 l20;
     t153 l21;
     t33 l22;
     t633 l23;
-    t828 l24;
+    t830 l24;
     t265 l25;
     t33 l26;
     t95 l27;
@@ -61834,7 +61556,7 @@ static t33 f1810(t429 l0, t141 l1, t33 l2, t17 l3, t159 l4, t14 l5, t14 l6) {
             l17 = ctx_add_u64(l17, ((t13)(1ULL)), 6382, 19, 18);
         }
         if (((l24).m_len > ((t13)(0ULL)))) {
-            { t110 _t47 = ({ t830 _t48 = (&((*l0)).m_forwards); t19 _t49 = f1084(l1); t376 _t50 = f1957(l24); f1956(_t48, _t49, _t50); }); if ((_t47.tag == 0)) { {
+            { t110 _t47 = ({ t832 _t48 = (&((*l0)).m_forwards); t19 _t49 = f1084(l1); t376 _t50 = f1957(l24); f1956(_t48, _t49, _t50); }); if ((_t47.tag == 0)) { {
             } } else if ((_t47.tag == 1)) { l35 = _t47.p.v1.m_error; {
                 { t95 _t51 = l35; if ((_t51.tag == 0)) { {
                     ctx_panic(6385, 13, 18, "try! failed: alloc::out_of_memory");
@@ -61872,7 +61594,7 @@ static t33 f1810(t429 l0, t141 l1, t33 l2, t17 l3, t159 l4, t14 l5, t14 l6) {
         }
         l43 = f1959((&(*l0)), l1, l4, l7);
         if (l6) {
-            { t110 _t65 = ({ t831 _t66 = (&((*l0)).m_holds); t19 _t67 = f1084(l1); t391 _t68 = l43; f1960(_t66, _t67, _t68); }); if ((_t65.tag == 0)) { {
+            { t110 _t65 = ({ t833 _t66 = (&((*l0)).m_holds); t19 _t67 = f1084(l1); t391 _t68 = l43; f1960(_t66, _t67, _t68); }); if ((_t65.tag == 0)) { {
             } } else if ((_t65.tag == 1)) { l44 = _t65.p.v1.m_error; {
                 { t95 _t69 = l44; if ((_t69.tag == 0)) { {
                     ctx_panic(6396, 13, 18, "try! failed: alloc::out_of_memory");
@@ -61890,7 +61612,7 @@ static t16 f1811(t429 l0, t141 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
-        { t110 _t0 = ({ t832 _t1 = (&((*l0)).m_spreads); t19 _t2 = f1084(l1); t14 _t3 = ((bool)1); f1961(_t1, _t2, _t3); }); if ((_t0.tag == 0)) { {
+        { t110 _t0 = ({ t834 _t1 = (&((*l0)).m_spreads); t19 _t2 = f1084(l1); t14 _t3 = ((bool)1); f1961(_t1, _t2, _t3); }); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l2 = _t0.p.v1.m_error; {
             { t95 _t4 = l2; if ((_t4.tag == 0)) { {
                 ctx_panic(6312, 9, 18, "try! failed: alloc::out_of_memory");
@@ -61900,17 +61622,17 @@ static t16 f1811(t429 l0, t141 l1) {
 }
 
 // check::fact_union
-static t781 f1812(t257 l0, t781 l1, t781 l2) {
-    t816 l3;
+static t783 f1812(t257 l0, t783 l1, t783 l2) {
+    t818 l3;
     t13 l4;
-    t783 l5;
-    t783 l6;
+    t785 l5;
+    t785 l6;
     CTX_STACK_CHECK();
     {
         l3 = f1815((&g13), (l0).m_heap);
         l4 = ((t13)(0ULL));
         while ((l4 < (l1).m_len)) {
-            l5 = (*({ t781 _t0 = (l1); uint64_t _t1 = l4; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 4272, 26, 18); }));
+            l5 = (*({ t783 _t0 = (l1); uint64_t _t1 = l4; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 4272, 26, 18); }));
             if (((l5).m_bind && f1962(l0, l2, l5))) {
                 (l5).m_clash = ((bool)1);
             }
@@ -61919,7 +61641,7 @@ static t781 f1812(t257 l0, t781 l1, t781 l2) {
         }
         l4 = ((t13)(0ULL));
         while ((l4 < (l2).m_len)) {
-            l6 = (*({ t781 _t2 = (l2); uint64_t _t3 = l4; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 4279, 22, 18); }));
+            l6 = (*({ t783 _t2 = (l2); uint64_t _t3 = l4; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 4279, 22, 18); }));
             if ((l6).m_bind) {
                 if ((!f1962(l0, l1, l6))) {
                     f1816((&l3), l6);
@@ -61937,16 +61659,16 @@ static t781 f1812(t257 l0, t781 l1, t781 l2) {
 }
 
 // check::fact_meet
-static t781 f1813(t257 l0, t781 l1, t781 l2) {
-    t816 l3;
+static t783 f1813(t257 l0, t783 l1, t783 l2) {
+    t818 l3;
     t13 l4;
     CTX_STACK_CHECK();
     {
         l3 = f1815((&g13), (l0).m_heap);
         l4 = ((t13)(0ULL));
         while ((l4 < (l1).m_len)) {
-            if (({ t781 _t0 = l2; t783 _t1 = (*({ t781 _t2 = (l1); uint64_t _t3 = l4; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 4306, 39, 18); })); f1963(_t0, _t1); })) {
-                f1816((&l3), (*({ t781 _t4 = (l1); uint64_t _t5 = l4; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 4306, 73, 18); })));
+            if (({ t783 _t0 = l2; t785 _t1 = (*({ t783 _t2 = (l1); uint64_t _t3 = l4; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 4306, 39, 18); })); f1963(_t0, _t1); })) {
+                f1816((&l3), (*({ t783 _t4 = (l1); uint64_t _t5 = l4; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 4306, 73, 18); })));
             }
             l4 = ctx_add_u64(l4, ((t13)(1ULL)), 4307, 19, 18);
         }
@@ -61956,14 +61678,14 @@ static t781 f1813(t257 l0, t781 l1, t781 l2) {
 }
 
 // check::fact
-static t815 f1814(t257 l0, t141 l1) {
+static t817 f1814(t257 l0, t141 l1) {
     t33 l2;
     t33 l3;
     t33 l4;
     t359 l5;
     t33 l6;
     t12 l7;
-    t792 l8;
+    t794 l8;
     t334 l9;
     CTX_STACK_CHECK();
     {
@@ -61972,10 +61694,10 @@ static t815 f1814(t257 l0, t141 l1) {
         { t262 _t2 = f609((l0).m_ty, l2); if ((_t2.tag == 8)) { l4 = _t2.p.v8.m_elem; {
             l3 = l4;
         } } else { {
-            return ((t815){0});
+            return ((t817){0});
         } } }
         { t142 _t3 = (l1).m_k; if ((_t3.tag == 6)) { {
-            if (({ t14 _t4; t694 _t5 = ({ t355 _t6 = (l0).m_refs; t19 _t7 = f1084(l1); f1087(_t6, _t7); }); if ((_t5.tag == 0)) { {
+            if (({ t14 _t4; t696 _t5 = ({ t355 _t6 = (l0).m_refs; t19 _t7 = f1084(l1); f1087(_t6, _t7); }); if ((_t5.tag == 0)) { {
                 _t4 = ((bool)0);
             } } else if ((_t5.tag == 1)) { l5 = _t5.p.v1.m_value; {
                 _t4 = ({ t14 _t8; t359 _t9 = l5; if ((_t9.tag == 0)) { l6 = _t9.p.v0.m_var; {
@@ -61985,12 +61707,12 @@ static t815 f1814(t257 l0, t141 l1) {
                 } } _t8; });
             } } _t4; })) {
                 if ((f1158(l0, l6)).m_mutable) {
-                    return ((t815){0});
+                    return ((t817){0});
                 }
-                return ((t815){ .tag = 1, .p.v1.m_value = ({ t33 _t10 = l6; t33 _t11 = ((t33)(4294967295ULL)); t8 _t12 = f38(); t33 _t13 = l3; t121 _t14 = f1044(l1); t14 _t15 = ((bool)0); t14 _t16 = ((bool)0); ((t783){ .m_var = _t10, .m_root = _t11, .m_steps = _t12, .m_ty = _t13, .m_at = _t14, .m_bind = _t15, .m_clash = _t16, }); }) });
+                return ((t817){ .tag = 1, .p.v1.m_value = ({ t33 _t10 = l6; t33 _t11 = ((t33)(4294967295ULL)); t8 _t12 = f38(); t33 _t13 = l3; t121 _t14 = f1044(l1); t14 _t15 = ((bool)0); t14 _t16 = ((bool)0); ((t785){ .m_var = _t10, .m_root = _t11, .m_steps = _t12, .m_ty = _t13, .m_at = _t14, .m_bind = _t15, .m_clash = _t16, }); }) });
             }
         } } else if ((_t3.tag == 7)) { {
-            if (({ t14 _t17; t786 _t18 = f1665(l0, l1); if ((_t18.tag == 0)) { {
+            if (({ t14 _t17; t788 _t18 = f1665(l0, l1); if ((_t18.tag == 0)) { {
                 _t17 = ((bool)0);
             } } else if ((_t18.tag == 1)) { l7 = _t18.p.v1.m_value; {
                 _t17 = ({ t14 _t19; t12 _t20 = l7; if (_t20 == ((t12)(0ULL))) { {
@@ -62003,28 +61725,28 @@ static t815 f1814(t257 l0, t141 l1) {
                 if (((l8).tag != 0)) {
                     l9 = f1158(l0, ((l8).p.v1.m_value).m_root);
                     if ((((!(l9).m_mutable) && (!(l9).m_indirect)) && f1964(((l8).p.v1.m_value).m_steps))) {
-                        return ((t815){ .tag = 1, .p.v1.m_value = ({ t33 _t21 = ((t33)(4294967295ULL)); t33 _t22 = ((l8).p.v1.m_value).m_root; t8 _t23 = ((l8).p.v1.m_value).m_steps; t33 _t24 = l3; t121 _t25 = f1044(l1); t14 _t26 = ((bool)0); t14 _t27 = ((bool)0); ((t783){ .m_var = _t21, .m_root = _t22, .m_steps = _t23, .m_ty = _t24, .m_at = _t25, .m_bind = _t26, .m_clash = _t27, }); }) });
+                        return ((t817){ .tag = 1, .p.v1.m_value = ({ t33 _t21 = ((t33)(4294967295ULL)); t33 _t22 = ((l8).p.v1.m_value).m_root; t8 _t23 = ((l8).p.v1.m_value).m_steps; t33 _t24 = l3; t121 _t25 = f1044(l1); t14 _t26 = ((bool)0); t14 _t27 = ((bool)0); ((t785){ .m_var = _t21, .m_root = _t22, .m_steps = _t23, .m_ty = _t24, .m_at = _t25, .m_bind = _t26, .m_clash = _t27, }); }) });
                     }
                 }
             }
         } } else { {
         } } }
-        return ((t815){0});
+        return ((t817){0});
     }
     __builtin_unreachable();
 }
 
 // list::new(check::Fact, arena::Arena)
-static t816 f1815(t27 l0, t26 l1) {
+static t818 f1815(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t781 _t0 = f1684(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t816){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t783 _t0 = f1684(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t818){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // check::add_fact
-static t16 f1816(t817 l0, t783 l1) {
+static t16 f1816(t819 l0, t785 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -62038,10 +61760,10 @@ static t16 f1816(t817 l0, t783 l1) {
 }
 
 // list::items(check::Fact, arena::Arena)
-static t781 f1817(t816 l0) {
+static t783 f1817(t818 l0) {
     CTX_STACK_CHECK();
     {
-        return ({ t781 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t781){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
+        return ({ t783 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t783){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
     }
     __builtin_unreachable();
 }
@@ -62162,8 +61884,8 @@ static t14 f1823(t257 l0, t33 l1) {
 }
 
 // check::fmt_pieces
-static t711 f1824(t429 l0, t10 l1, t121 l2) {
-    t833 l3;
+static t713 f1824(t429 l0, t10 l1, t121 l2) {
+    t835 l3;
     t99 l4;
     t13 l5;
     t12 l6;
@@ -62204,7 +61926,7 @@ static t711 f1824(t429 l0, t10 l1, t121 l2) {
                     }
                     if ((l8 >= (l1).m_len)) {
                         f600((&(*l0)), l2, ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"the format has a `{` without a `}`; write `{{` for a brace", .m_len = 58 }), }));
-                        return ((t711){0});
+                        return ((t713){0});
                     }
                     l9 = ctx_add_u64(l5, ((t13)(1ULL)), 7237, 31, 18);
                     l10 = ((l9 < l8) && ((*({ t10 _t9 = (l1); uint64_t _t10 = l9; _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 7238, 39, 18); })) == ((t12)(48ULL))));
@@ -62251,7 +61973,7 @@ static t711 f1824(t429 l0, t10 l1, t121 l2) {
                             } } }
                         } } }
                         ({ t429 _t35 = (&(*l0)); t121 _t36 = l2; t17 _t37 = f59(l14); f600(_t35, _t36, _t37); });
-                        return ((t711){0});
+                        return ((t713){0});
                     }
                     if (((l4).m_len > ((t13)(0ULL)))) {
                         f1968((&l3), ((t386){ .m_hole = ((bool)0), .m_text = f22(l4), .m_zero = ((bool)0), .m_width = ((t143){0}), .m_digits = ((t10){ .m_ptr = (void *)"", .m_len = 0 }), .m_conv = ((t12)(0ULL)), .m_push = ((t10){ .m_ptr = (void *)"", .m_len = 0 }), }));
@@ -62267,7 +61989,7 @@ static t711 f1824(t429 l0, t10 l1, t121 l2) {
                 } else {
                     if ((l6 == ((t12)(125ULL)))) {
                         f600((&(*l0)), l2, ((t17){ .m_bytes = ((t10){ .m_ptr = (void *)"the format has a `}` without a `{`; write `}}` for a brace", .m_len = 58 }), }));
-                        return ((t711){0});
+                        return ((t713){0});
                     } else {
                         f1967((&l4), l6);
                         l5 = ctx_add_u64(l5, ((t13)(1ULL)), 7273, 23, 18);
@@ -62278,7 +62000,7 @@ static t711 f1824(t429 l0, t10 l1, t121 l2) {
         if (((l4).m_len > ((t13)(0ULL)))) {
             f1968((&l3), ((t386){ .m_hole = ((bool)0), .m_text = f22(l4), .m_zero = ((bool)0), .m_width = ((t143){0}), .m_digits = ((t10){ .m_ptr = (void *)"", .m_len = 0 }), .m_conv = ((t12)(0ULL)), .m_push = ((t10){ .m_ptr = (void *)"", .m_len = 0 }), }));
         }
-        return ((t711){ .tag = 1, .p.v1.m_value = f1969(l3) });
+        return ((t713){ .tag = 1, .p.v1.m_value = f1969(l3) });
     }
     __builtin_unreachable();
 }
@@ -62296,7 +62018,7 @@ static t33 f1825(t429 l0) {
 }
 
 // map::put(u64, []mut check::Piece, arena::Arena)
-static t110 f1826(t818 l0, t19 l1, t384 l2) {
+static t110 f1826(t820 l0, t19 l1, t384 l2) {
     t630 l3;
     t95 l4;
     t13 l5;
@@ -62380,7 +62102,7 @@ static t630 f1829(t364 l0, t19 l1) {
 }
 
 // map::rehash(u64, check::Access, arena::Arena)
-static t110 f1830(t785 l0) {
+static t110 f1830(t787 l0) {
     t13 l1;
     t365 l2;
     t365 l3;
@@ -62395,7 +62117,7 @@ static t110 f1830(t785 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t365 _t2 = ({ t365 _t3; t835 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t365 _t7 = f551(); t13 _t8 = l1; f1973(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t365 _t2 = ({ t365 _t3; t837 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t365 _t7 = f551(); t13 _t8 = l1; f1973(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -62435,7 +62157,7 @@ static t13 f1831(t364 l0, t19 l1) {
 }
 
 // map::get(u64, check::Access, arena::Arena)
-static t786 f1832(t364 l0, t19 l1) {
+static t788 f1832(t364 l0, t19 l1) {
     t630 l2;
     t12 l3;
     CTX_STACK_CHECK();
@@ -62443,18 +62165,18 @@ static t786 f1832(t364 l0, t19 l1) {
         l2 = f1829(l0, l1);
         if (((l2).tag != 0)) {
             { t367 _t0 = (*({ t365 _t1 = ((l0).m_slots); uint64_t _t2 = (l2).p.v1.m_value; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 56, 26, 25); })); if ((_t0.tag == 2)) { l3 = _t0.p.v2.m_v; {
-                return ((t786){ .tag = 1, .p.v1.m_value = l3 });
+                return ((t788){ .tag = 1, .p.v1.m_value = l3 });
             } } else { {
             } } }
         }
-        return ((t786){0});
+        return ((t788){0});
     }
     __builtin_unreachable();
 }
 
 // slice::empty(check::Branch)
-static t788 f1833(void) {
-    t788 l0;
+static t790 f1833(void) {
+    t790 l0;
     CTX_STACK_CHECK();
     {
         memset(&l0, 0, sizeof l0);
@@ -62464,7 +62186,7 @@ static t788 f1833(void) {
 }
 
 // list::push(check::Branch, arena::Arena)
-static t110 f1834(t791 l0, t790 l1) {
+static t110 f1834(t793 l0, t792 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -62472,7 +62194,7 @@ static t110 f1834(t791 l0, t790 l1) {
         } } else if ((_t0.tag == 1)) { l2 = _t0.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l2, } });
         } } }
-        (*({ t788 _t1 = (((*l0)).m_items); uint64_t _t2 = ((*l0)).m_len; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 36, 19, 10); })) = l1;
+        (*({ t790 _t1 = (((*l0)).m_items); uint64_t _t2 = ((*l0)).m_len; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 36, 19, 10); })) = l1;
         { t13 _t3 = ctx_add_u64(((*l0)).m_len, ((t13)(1ULL)), 37, 29, 10); ((*l0)).m_len = _t3; }
         return ((t110){ .tag = 0 });
     }
@@ -62480,10 +62202,10 @@ static t110 f1834(t791 l0, t790 l1) {
 }
 
 // check::value_block
-static t790 f1835(t429 l0, t164 l1, t254 l2, t781 l3, t33 l4) {
+static t792 f1835(t429 l0, t164 l1, t254 l2, t783 l3, t33 l4) {
     t14 l5;
     t165 l6;
-    t772 l7;
+    t774 l7;
     t14 l8;
     t33 l9;
     t167 l10;
@@ -62495,12 +62217,12 @@ static t790 f1835(t429 l0, t164 l1, t254 l2, t781 l3, t33 l4) {
         f1712((&(*l0)), l2);
         f1648((&(*l0)), l3, ((bool)0));
         l6 = (l1).m_stmts;
-        l7 = ({ t772 _t0; if (((l6).m_len == ((t13)(0ULL)))) {
-            _t0 = ((t772){ .tag = 0 });
+        l7 = ({ t774 _t0; if (((l6).m_len == ((t13)(0ULL)))) {
+            _t0 = ((t774){ .tag = 0 });
         } else {
             _t0 = f1575((*({ t165 _t1 = (l6); uint64_t _t2 = ctx_sub_u64((l6).m_len, ((t13)(1ULL)), 3461, 83, 18); _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 3461, 75, 18); })));
         } _t0; });
-        l8 = (!({ t14 _t3; t772 _t4 = l7; if ((_t4.tag == 0)) { {
+        l8 = (!({ t14 _t3; t774 _t4 = l7; if ((_t4.tag == 0)) { {
             _t3 = ((bool)1);
         } } else { {
             _t3 = ((bool)0);
@@ -62511,7 +62233,7 @@ static t790 f1835(t429 l0, t164 l1, t254 l2, t781 l3, t33 l4) {
             _t7 = l6;
         } _t7; }); f1099(_t5, _t6); });
         l9 = ((t33)(4294967295ULL));
-        { t772 _t11 = l7; if ((_t11.tag == 2)) { l10 = _t11.p.v2.m_s; {
+        { t774 _t11 = l7; if ((_t11.tag == 2)) { l10 = _t11.p.v2.m_s; {
             l9 = f1976((&(*l0)), l10, l4);
             if ((l9 != ((t33)(4294967295ULL)))) {
                 ({ t429 _t12 = (&(*l0)); t19 _t13 = f1385(l10); t33 _t14 = l9; f1476(_t12, _t13, _t14); });
@@ -62535,7 +62257,7 @@ static t790 f1835(t429 l0, t164 l1, t254 l2, t781 l3, t33 l4) {
         if ((((*l0)).m_dead && (!l5))) {
             l9 = ((t33)(4294967295ULL));
         }
-        return ((t790){ .m_t = l9, .m_value = l7, });
+        return ((t792){ .m_t = l9, .m_value = l7, });
     }
     __builtin_unreachable();
 }
@@ -62560,23 +62282,23 @@ static t254 f1836(t257 l0, t254 l1, t254 l2) {
 }
 
 // check::view_literals
-static t16 f1837(t429 l0, t788 l1) {
+static t16 f1837(t429 l0, t790 l1) {
     t33 l2;
     t13 l3;
-    t790 l4;
+    t792 l4;
     t33 l5;
     t33 l6;
     t33 l7;
     t33 l8;
     t33 l9;
-    t790 l10;
+    t792 l10;
     t141 l11;
     CTX_STACK_CHECK();
     {
         l2 = ((t33)(4294967295ULL));
         l3 = ((t13)(0ULL));
         while (((l3 < (l1).m_len) && (l2 == ((t33)(4294967295ULL))))) {
-            l4 = (*({ t788 _t0 = (l1); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 3649, 24, 18); }));
+            l4 = (*({ t790 _t0 = (l1); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 3649, 24, 18); }));
             if (((l4).m_t != ((t33)(4294967295ULL)))) {
                 l5 = f1978((*l0), (l4).m_value);
                 if ((l5 == ((t33)(2ULL)))) {
@@ -62611,13 +62333,13 @@ static t16 f1837(t429 l0, t788 l1) {
         }
         l3 = ((t13)(0ULL));
         while ((l3 < (l1).m_len)) {
-            l10 = (*({ t788 _t5 = (l1); uint64_t _t6 = l3; _t5.m_ptr + ctx_idx(_t6, _t5.m_len, 3669, 24, 18); }));
-            if (((((l10).m_t != ((t33)(4294967295ULL))) && (f1978((*l0), (l10).m_value) == ((t33)(1ULL)))) && ({ t14 _t7; t772 _t8 = (l10).m_value; if ((_t8.tag == 1)) { l11 = _t8.p.v1.m_e; {
+            l10 = (*({ t790 _t5 = (l1); uint64_t _t6 = l3; _t5.m_ptr + ctx_idx(_t6, _t5.m_len, 3669, 24, 18); }));
+            if (((((l10).m_t != ((t33)(4294967295ULL))) && (f1978((*l0), (l10).m_value) == ((t33)(1ULL)))) && ({ t14 _t7; t774 _t8 = (l10).m_value; if ((_t8.tag == 1)) { l11 = _t8.p.v1.m_e; {
                 _t7 = ((bool)1);
             } } else { {
                 _t7 = ((bool)0);
             } } _t7; }))) {
-                { t33 _t9 = f1067((&(*l0)), l11, l2); ((*({ t788 _t10 = (l1); uint64_t _t11 = l3; _t10.m_ptr + ctx_idx(_t11, _t10.m_len, 3670, 110, 18); }))).m_t = _t9; }
+                { t33 _t9 = f1067((&(*l0)), l11, l2); ((*({ t790 _t10 = (l1); uint64_t _t11 = l3; _t10.m_ptr + ctx_idx(_t11, _t10.m_len, 3670, 110, 18); }))).m_t = _t9; }
             }
             l3 = ctx_add_u64(l3, ((t13)(1ULL)), 3671, 19, 18);
         }
@@ -62625,13 +62347,13 @@ static t16 f1837(t429 l0, t788 l1) {
 }
 
 // check::all_convert
-static t14 f1838(t429 l0, t788 l1, t33 l2) {
+static t14 f1838(t429 l0, t790 l1, t33 l2) {
     t13 l3;
     CTX_STACK_CHECK();
     {
         l3 = ((t13)(0ULL));
         while ((l3 < (l1).m_len)) {
-            if (((((*({ t788 _t0 = (l1); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 3633, 18, 18); }))).m_t != ((t33)(4294967295ULL))) && ({ t14 _t2; t724 _t3 = ({ t429 _t4 = (&(*l0)); t33 _t5 = ((*({ t788 _t7 = (l1); uint64_t _t8 = l3; _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 3633, 64, 18); }))).m_t; t33 _t6 = l2; f1482(_t4, _t5, _t6); }); if ((_t3.tag == 0)) { {
+            if (((((*({ t790 _t0 = (l1); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 3633, 18, 18); }))).m_t != ((t33)(4294967295ULL))) && ({ t14 _t2; t726 _t3 = ({ t429 _t4 = (&(*l0)); t33 _t5 = ((*({ t790 _t7 = (l1); uint64_t _t8 = l3; _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 3633, 64, 18); }))).m_t; t33 _t6 = l2; f1482(_t4, _t5, _t6); }); if ((_t3.tag == 0)) { {
                 _t2 = ((bool)1);
             } } else { {
                 _t2 = ((bool)0);
@@ -62836,7 +62558,7 @@ static t33 f1839(t429 l0, t181 l1) {
 }
 
 // list::push(check::Pending, arena::Arena)
-static t110 f1840(t819 l0, t423 l1) {
+static t110 f1840(t821 l0, t423 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -62934,7 +62656,7 @@ static t14 f1844(t171 l0, t13 l1) {
 }
 
 // check::scan_stmt
-static t16 f1845(t429 l0, t794 l1, t167 l2) {
+static t16 f1845(t429 l0, t796 l1, t167 l2) {
     t170 l3;
     t141 l4;
     t164 l5;
@@ -62984,7 +62706,7 @@ static t16 f1845(t429 l0, t794 l1, t167 l2) {
 
 // check::derive_addr
 static t254 f1846(t429 l0, t141 l1) {
-    t792 l2;
+    t794 l2;
     t141 l3;
     t12 l4;
     t153 l5;
@@ -63002,7 +62724,7 @@ static t254 f1846(t429 l0, t141 l1) {
             return ({ t257 _t0 = (*l0); t254 _t1 = f592(); t33 _t2 = ((l2).p.v1.m_value).m_root; f867(_t0, _t1, _t2); });
         }
         l3 = l1;
-        while (({ t14 _t3; t786 _t4 = f1665((*l0), l3); if ((_t4.tag == 0)) { {
+        while (({ t14 _t3; t788 _t4 = f1665((*l0), l3); if ((_t4.tag == 0)) { {
             _t3 = ((bool)0);
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_value; {
             _t3 = ({ t14 _t5; t12 _t6 = l4; if (_t6 == ((t12)(0ULL)) || _t6 == ((t12)(6ULL))) { {
@@ -63065,7 +62787,7 @@ static t263 f1848(t257 l0, t141 l1) {
 
 // check::field_is_mut
 static t14 f1849(t263 l0, t10 l1) {
-    t699 l2;
+    t701 l2;
     CTX_STACK_CHECK();
     {
         l2 = f1286(l0, l1);
@@ -63117,7 +62839,7 @@ static t254 f1852(t429 l0, t175 l1) {
 }
 
 // list::push(check::Escape, arena::Arena)
-static t110 f1853(t820 l0, t428 l1) {
+static t110 f1853(t822 l0, t428 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -63133,7 +62855,7 @@ static t110 f1853(t820 l0, t428 l1) {
 }
 
 // map::put(u32, check::Flow, arena::Arena)
-static t110 f1854(t821 l0, t33 l1, t415 l2) {
+static t110 f1854(t823 l0, t33 l1, t415 l2) {
     t630 l3;
     t95 l4;
     t13 l5;
@@ -63188,7 +62910,7 @@ static t630 f1855(t368 l0, t19 l1) {
 }
 
 // map::rehash(u64, []u32, arena::Arena)
-static t110 f1856(t795 l0) {
+static t110 f1856(t797 l0) {
     t13 l1;
     t369 l2;
     t369 l3;
@@ -63203,7 +62925,7 @@ static t110 f1856(t795 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t369 _t2 = ({ t369 _t3; t836 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t369 _t7 = f552(); t13 _t8 = l1; f1989(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t369 _t2 = ({ t369 _t3; t838 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t369 _t7 = f552(); t13 _t8 = l1; f1989(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -63243,7 +62965,7 @@ static t13 f1857(t368 l0, t19 l1) {
 }
 
 // map::rehash(u64, check::Conv, arena::Arena)
-static t110 f1858(t796 l0) {
+static t110 f1858(t798 l0) {
     t13 l1;
     t351 l2;
     t351 l3;
@@ -63258,7 +62980,7 @@ static t110 f1858(t796 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t351 _t2 = ({ t351 _t3; t837 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t351 _t7 = f548(); t13 _t8 = l1; f1991(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t351 _t2 = ({ t351 _t3; t839 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t351 _t7 = f548(); t13 _t8 = l1; f1991(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -63391,7 +63113,7 @@ static t391 f1866(t257 l0, t33 l1) {
 }
 
 // map::get(u64, []check::Place, arena::Arena)
-static t822 f1867(t387 l0, t19 l1) {
+static t824 f1867(t387 l0, t19 l1) {
     t630 l2;
     t391 l3;
     CTX_STACK_CHECK();
@@ -63399,11 +63121,11 @@ static t822 f1867(t387 l0, t19 l1) {
         l2 = f1993(l0, l1);
         if (((l2).tag != 0)) {
             { t390 _t0 = (*({ t388 _t1 = ((l0).m_slots); uint64_t _t2 = (l2).p.v1.m_value; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 56, 26, 25); })); if ((_t0.tag == 2)) { l3 = _t0.p.v2.m_v; {
-                return ((t822){ .tag = 1, .p.v1.m_value = l3 });
+                return ((t824){ .tag = 1, .p.v1.m_value = l3 });
             } } else { {
             } } }
         }
-        return ((t822){0});
+        return ((t824){0});
     }
     __builtin_unreachable();
 }
@@ -63415,14 +63137,14 @@ static t391 f1868(t257 l0, t164 l1) {
         if ((((l1).m_stmts).m_len == ((t13)(0ULL)))) {
             return f1095();
         }
-        return ({ t257 _t0 = l0; t772 _t1 = f1575((*({ t165 _t2 = ((l1).m_stmts); uint64_t _t3 = ctx_sub_u64(((l1).m_stmts).m_len, ((t13)(1ULL)), 4905, 73, 18); _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 4905, 60, 18); }))); f1994(_t0, _t1); });
+        return ({ t257 _t0 = l0; t774 _t1 = f1575((*({ t165 _t2 = ((l1).m_stmts); uint64_t _t3 = ctx_sub_u64(((l1).m_stmts).m_len, ((t13)(1ULL)), 4905, 73, 18); _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 4905, 60, 18); }))); f1994(_t0, _t1); });
     }
     __builtin_unreachable();
 }
 
 // check::place_concat
 static t391 f1869(t257 l0, t391 l1, t391 l2) {
-    t838 l3;
+    t840 l3;
     t13 l4;
     CTX_STACK_CHECK();
     {
@@ -63478,7 +63200,7 @@ static t33 f1870(t257 l0, t10 l1) {
 
 // check::places_in_order
 static t391 f1871(t257 l0, t391 l1) {
-    t838 l2;
+    t840 l2;
     t13 l3;
     t391 l4;
     t13 l5;
@@ -63527,7 +63249,7 @@ static t14 f1873(t257 l0, t33 l1) {
 }
 
 // map::put(u64, check::PathRef, arena::Arena)
-static t110 f1874(t823 l0, t19 l1, t359 l2) {
+static t110 f1874(t825 l0, t19 l1, t359 l2) {
     t630 l3;
     t95 l4;
     t13 l5;
@@ -63613,7 +63335,7 @@ static t16 f1876(t429 l0, t33 l1, t254 l2) {
 
 // check::place_union
 static t391 f1877(t257 l0, t391 l1, t391 l2) {
-    t838 l3;
+    t840 l3;
     t13 l4;
     t393 l5;
     t391 l6;
@@ -63658,7 +63380,7 @@ static t409 f1878(t408 l0) {
 }
 
 // list::reserve(check::Loop, arena::Arena)
-static t110 f1879(t692 l0, t13 l1) {
+static t110 f1879(t694 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t343 l4;
@@ -63676,7 +63398,7 @@ static t110 f1879(t692 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t343 _t0 = ({ t343 _t1; t840 _t2 = f2002(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t343 _t0 = ({ t343 _t1; t842 _t2 = f2002(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -63687,7 +63409,7 @@ static t110 f1879(t692 l0, t13 l1) {
 }
 
 // list::reserve(check::State, arena::Arena)
-static t110 f1880(t793 l0, t13 l1) {
+static t110 f1880(t795 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t347 l4;
@@ -63705,7 +63427,7 @@ static t110 f1880(t793 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t347 _t0 = ({ t347 _t1; t841 _t2 = f2003(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t347 _t0 = ({ t347 _t1; t843 _t2 = f2003(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -63744,7 +63466,7 @@ static t403 f1882(t10 l0) {
 }
 
 // check::num_less
-static t14 f1883(t765 l0, t765 l1) {
+static t14 f1883(t767 l0, t767 l1) {
     CTX_STACK_CHECK();
     {
         if (((l0).m_negative != (l1).m_negative)) {
@@ -63807,19 +63529,19 @@ static t19 f1887(t527 l0, t33 l1) {
 }
 
 // eval::place
-static t805 f1888(t527 l0, t49 l1) {
+static t807 f1888(t527 l0, t49 l1) {
     t33 l2;
     t33 l3;
     t19 l4;
-    t733 l5;
+    t735 l5;
     t52 l6;
     t19 l7;
-    t733 l8;
+    t735 l8;
     t52 l9;
     t33 l10;
     t19 l11;
     t19 l12;
-    t733 l13;
+    t735 l13;
     t52 l14;
     t52 l15;
     t53 l16;
@@ -63827,20 +63549,20 @@ static t805 f1888(t527 l0, t49 l1) {
     t33 l18;
     t19 l19;
     t19 l20;
-    t733 l21;
+    t735 l21;
     t19 l22;
     t19 l23;
-    t733 l24;
+    t735 l24;
     t603 l25;
     t52 l26;
     t52 l27;
     t53 l28;
     t19 l29;
     t19 l30;
-    t733 l31;
+    t735 l31;
     t19 l32;
     t19 l33;
-    t733 l34;
+    t735 l34;
     t19 l35;
     t19 l36;
     t603 l37;
@@ -63853,107 +63575,107 @@ static t805 f1888(t527 l0, t49 l1) {
     t33 l44;
     t19 l45;
     t19 l46;
-    t733 l47;
+    t735 l47;
     t19 l48;
-    t733 l49;
+    t735 l49;
     CTX_STACK_CHECK();
     {
         { t50 _t0 = (l1).m_k; if ((_t0.tag == 7)) { l2 = _t0.p.v7.m_slot; {
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = f1887((&(*l0)), l2), } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = f1887((&(*l0)), l2), } });
         } } else if ((_t0.tag == 8)) { l3 = _t0.p.v8.m_id; {
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t1; t805 _t2 = f2005((&(*l0)), l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t1; t807 _t2 = f2005((&(*l0)), l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
                 _t1 = l4;
             } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l5, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l5, } });
             } } _t1; }), } });
         } } else if ((_t0.tag == 10)) { l6 = _t0.p.v10.m_ptr; {
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t3; t805 _t4 = f1894((&(*l0)), (*l6)); if ((_t4.tag == 0)) { l7 = _t4.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t3; t807 _t4 = f1894((&(*l0)), (*l6)); if ((_t4.tag == 0)) { l7 = _t4.p.v0.m_value; {
                 _t3 = l7;
             } } else if ((_t4.tag == 1)) { l8 = _t4.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l8, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l8, } });
             } } _t3; }), } });
         } } else if ((_t0.tag == 11)) { l9 = _t0.p.v11.m_base; l10 = _t0.p.v11.m_index; {
-            l11 = ({ t19 _t5; t805 _t6 = f2006((&(*l0)), (*l9)); if ((_t6.tag == 0)) { l12 = _t6.p.v0.m_value; {
+            l11 = ({ t19 _t5; t807 _t6 = f2006((&(*l0)), (*l9)); if ((_t6.tag == 0)) { l12 = _t6.p.v0.m_value; {
                 _t5 = l12;
             } } else if ((_t6.tag == 1)) { l13 = _t6.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l13, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l13, } });
             } } _t5; });
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t7 = l11; t19 _t8 = ((*({ t34 _t9 = (f2007(((*l0)).m_types, ((*l9)).m_ty)); uint64_t _t10 = ((t13)(l10)); _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 903, 64, 23); }))).m_offset; ctx_add_u64(_t7, _t8, 903, 26, 23); }), } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t7 = l11; t19 _t8 = ((*({ t34 _t9 = (f2007(((*l0)).m_types, ((*l9)).m_ty)); uint64_t _t10 = ((t13)(l10)); _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 903, 64, 23); }))).m_offset; ctx_add_u64(_t7, _t8, 903, 26, 23); }), } });
         } } else if ((_t0.tag == 12)) { l14 = _t0.p.v12.m_base; l15 = _t0.p.v12.m_i; l16 = _t0.p.v12.m_pos; {
             { t31 _t11 = (*({ t29 _t12 = (((*l0)).m_types); uint64_t _t13 = ((t13)(((*l14)).m_ty)); _t12.m_ptr + ctx_idx(_t13, _t12.m_len, 906, 45, 23); })); if (!(_t11.tag == 2)) { {
                 f1131((&(*l0)), ((t10){ .m_ptr = (void *)"eval: an index of a non-array", .m_len = 29 }));
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t14; t603 _t15 = ((t603){ .tag = 0 }); if ((_t15.tag == 0)) { {
-                    _t14 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t14; t603 _t15 = ((t603){ .tag = 0 }); if ((_t15.tag == 0)) { {
+                    _t14 = ((t735){ .tag = 1 });
                 } } _t14; }), } });
             } } l17 = _t11.p.v2.m_n; l18 = _t11.p.v2.m_elem; }
-            l19 = ({ t19 _t16; t805 _t17 = f2006((&(*l0)), (*l14)); if ((_t17.tag == 0)) { l20 = _t17.p.v0.m_value; {
+            l19 = ({ t19 _t16; t807 _t17 = f2006((&(*l0)), (*l14)); if ((_t17.tag == 0)) { l20 = _t17.p.v0.m_value; {
                 _t16 = l20;
             } } else if ((_t17.tag == 1)) { l21 = _t17.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l21, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l21, } });
             } } _t16; });
-            l22 = ({ t19 _t18; t805 _t19 = f1894((&(*l0)), (*l15)); if ((_t19.tag == 0)) { l23 = _t19.p.v0.m_value; {
+            l22 = ({ t19 _t18; t807 _t19 = f1894((&(*l0)), (*l15)); if ((_t19.tag == 0)) { l23 = _t19.p.v0.m_value; {
                 _t18 = l23;
             } } else if ((_t19.tag == 1)) { l24 = _t19.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l24, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l24, } });
             } } _t18; });
             { t604 _t20 = f2008((&(*l0)), l22, l17, l16); if ((_t20.tag == 0)) { {
             } } else if ((_t20.tag == 1)) { l25 = _t20.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t21; t603 _t22 = l25; if ((_t22.tag == 0)) { {
-                    _t21 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t21; t603 _t22 = l25; if ((_t22.tag == 0)) { {
+                    _t21 = ((t735){ .tag = 1 });
                 } } _t21; }), } });
             } } }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t23 = l19; t19 _t24 = ({ t19 _t25 = l22; t19 _t26 = f885(((*l0)).m_types, l18); ctx_mul_u64(_t25, _t26, 913, 30, 23); }); ctx_add_u64(_t23, _t24, 913, 26, 23); }), } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t23 = l19; t19 _t24 = ({ t19 _t25 = l22; t19 _t26 = f885(((*l0)).m_types, l18); ctx_mul_u64(_t25, _t26, 913, 30, 23); }); ctx_add_u64(_t23, _t24, 913, 26, 23); }), } });
         } } else if ((_t0.tag == 13)) { l26 = _t0.p.v13.m_base; l27 = _t0.p.v13.m_i; l28 = _t0.p.v13.m_pos; {
-            l29 = ({ t19 _t27; t805 _t28 = f1741((&(*l0)), (*l26)); if ((_t28.tag == 0)) { l30 = _t28.p.v0.m_value; {
+            l29 = ({ t19 _t27; t807 _t28 = f1741((&(*l0)), (*l26)); if ((_t28.tag == 0)) { l30 = _t28.p.v0.m_value; {
                 _t27 = l30;
             } } else if ((_t28.tag == 1)) { l31 = _t28.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l31, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l31, } });
             } } _t27; });
-            l32 = ({ t19 _t29; t805 _t30 = f1894((&(*l0)), (*l27)); if ((_t30.tag == 0)) { l33 = _t30.p.v0.m_value; {
+            l32 = ({ t19 _t29; t807 _t30 = f1894((&(*l0)), (*l27)); if ((_t30.tag == 0)) { l33 = _t30.p.v0.m_value; {
                 _t29 = l33;
             } } else if ((_t30.tag == 1)) { l34 = _t30.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l34, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l34, } });
             } } _t29; });
             l35 = ({ t19 _t31; t645 _t32 = f892((&(*l0)), l29, ((t19)(8ULL))); if ((_t32.tag == 0)) { l36 = _t32.p.v0.m_value; {
                 _t31 = l36;
             } } else if ((_t32.tag == 1)) { l37 = _t32.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t33; t603 _t34 = l37; if ((_t34.tag == 0)) { {
-                    _t33 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t33; t603 _t34 = l37; if ((_t34.tag == 0)) { {
+                    _t33 = ((t735){ .tag = 1 });
                 } } _t33; }), } });
             } } _t31; });
             l38 = ({ t19 _t35; t645 _t36 = ({ t527 _t37 = (&(*l0)); t19 _t38 = ctx_add_u64(l29, ((t19)(8ULL)), 919, 45, 23); t19 _t39 = ((t19)(8ULL)); f892(_t37, _t38, _t39); }); if ((_t36.tag == 0)) { l39 = _t36.p.v0.m_value; {
                 _t35 = l39;
             } } else if ((_t36.tag == 1)) { l40 = _t36.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t40; t603 _t41 = l40; if ((_t41.tag == 0)) { {
-                    _t40 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t40; t603 _t41 = l40; if ((_t41.tag == 0)) { {
+                    _t40 = ((t735){ .tag = 1 });
                 } } _t40; }), } });
             } } _t35; });
             { t604 _t42 = f2008((&(*l0)), l32, l38, l28); if ((_t42.tag == 0)) { {
             } } else if ((_t42.tag == 1)) { l41 = _t42.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t43; t603 _t44 = l41; if ((_t44.tag == 0)) { {
-                    _t43 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t43; t603 _t44 = l41; if ((_t44.tag == 0)) { {
+                    _t43 = ((t735){ .tag = 1 });
                 } } _t43; }), } });
             } } }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t45 = l35; t19 _t46 = ({ t19 _t47 = l32; t19 _t48 = f885(((*l0)).m_types, (l1).m_ty); ((t19)((uint64_t)_t47 * (uint64_t)_t48)); }); ((t19)((uint64_t)_t45 + (uint64_t)_t46)); }), } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t45 = l35; t19 _t46 = ({ t19 _t47 = l32; t19 _t48 = f885(((*l0)).m_types, (l1).m_ty); ((t19)((uint64_t)_t47 * (uint64_t)_t48)); }); ((t19)((uint64_t)_t45 + (uint64_t)_t46)); }), } });
         } } else if ((_t0.tag == 15)) { l42 = _t0.p.v15.m_base; l43 = _t0.p.v15.m_variant; l44 = _t0.p.v15.m_field; {
-            l45 = ({ t19 _t49; t805 _t50 = f2006((&(*l0)), (*l42)); if ((_t50.tag == 0)) { l46 = _t50.p.v0.m_value; {
+            l45 = ({ t19 _t49; t807 _t50 = f2006((&(*l0)), (*l42)); if ((_t50.tag == 0)) { l46 = _t50.p.v0.m_value; {
                 _t49 = l46;
             } } else if ((_t50.tag == 1)) { l47 = _t50.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l47, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l47, } });
             } } _t49; });
             if (({ t14 _t51; t31 _t52 = (*({ t29 _t53 = (((*l0)).m_types); uint64_t _t54 = ((t13)(((*l42)).m_ty)); _t53.m_ptr + ctx_idx(_t54, _t53.m_len, 925, 27, 23); })); if ((_t52.tag == 5)) { {
                 _t51 = ((bool)1);
             } } else { {
                 _t51 = ((bool)0);
             } } _t51; })) {
-                return ((t805){ .tag = 0, .p.v0 = { .m_value = l45, } });
+                return ((t807){ .tag = 0, .p.v0 = { .m_value = l45, } });
             }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t55 = l45; t19 _t56 = f1903(((*l0)).m_types, ((*l42)).m_ty, l43, l44); ctx_add_u64(_t55, _t56, 926, 26, 23); }), } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t55 = l45; t19 _t56 = f1903(((*l0)).m_types, ((*l42)).m_ty, l43, l44); ctx_add_u64(_t55, _t56, 926, 26, 23); }), } });
         } } else { {
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t57; t805 _t58 = f1741((&(*l0)), l1); if ((_t58.tag == 0)) { l48 = _t58.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t57; t807 _t58 = f1741((&(*l0)), l1); if ((_t58.tag == 0)) { l48 = _t58.p.v0.m_value; {
                 _t57 = l48;
             } } else if ((_t58.tag == 1)) { l49 = _t58.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l49, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l49, } });
             } } _t57; }), } });
         } } }
     }
@@ -63961,30 +63683,30 @@ static t805 f1888(t527 l0, t49 l1) {
 }
 
 // eval::truth
-static t824 f1889(t527 l0, t49 l1) {
+static t826 f1889(t527 l0, t49 l1) {
     t19 l2;
     t19 l3;
-    t733 l4;
+    t735 l4;
     CTX_STACK_CHECK();
     {
-        l2 = ({ t19 _t0; t805 _t1 = f1894((&(*l0)), l1); if ((_t1.tag == 0)) { l3 = _t1.p.v0.m_value; {
+        l2 = ({ t19 _t0; t807 _t1 = f1894((&(*l0)), l1); if ((_t1.tag == 0)) { l3 = _t1.p.v0.m_value; {
             _t0 = l3;
         } } else if ((_t1.tag == 1)) { l4 = _t1.p.v1.m_error; {
-            return ((t824){ .tag = 1, .p.v1 = { .m_error = l4, } });
+            return ((t826){ .tag = 1, .p.v1 = { .m_error = l4, } });
         } } _t0; });
-        return ((t824){ .tag = 0, .p.v0 = { .m_value = (l2 != ((t19)(0ULL))), } });
+        return ((t826){ .tag = 0, .p.v0 = { .m_value = (l2 != ((t19)(0ULL))), } });
     }
     __builtin_unreachable();
 }
 
 // eval::run_loop
-static t732 f1890(t527 l0, t49 l1, t63 l2, t68 l3) {
+static t734 f1890(t527 l0, t49 l1, t63 l2, t68 l3) {
     t603 l4;
     t19 l5;
     t14 l6;
     t14 l7;
-    t733 l8;
-    t733 l9;
+    t735 l8;
+    t735 l9;
     t68 l10;
     t68 l11;
     CTX_STACK_CHECK();
@@ -63992,15 +63714,15 @@ static t732 f1890(t527 l0, t49 l1, t63 l2, t68 l3) {
         while (((bool)1)) {
             { t604 _t0 = f1340((&(*l0))); if ((_t0.tag == 0)) { {
             } } else if ((_t0.tag == 1)) { l4 = _t0.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t1; t603 _t2 = l4; if ((_t2.tag == 0)) { {
-                    _t1 = ((t733){ .tag = 1 });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t1; t603 _t2 = l4; if ((_t2.tag == 0)) { {
+                    _t1 = ((t735){ .tag = 1 });
                 } } _t1; }), } });
             } } }
             l5 = ((*l0)).m_sp;
-            l6 = ({ t14 _t3; t824 _t4 = f1889((&(*l0)), l1); if ((_t4.tag == 0)) { l7 = _t4.p.v0.m_value; {
+            l6 = ({ t14 _t3; t826 _t4 = f1889((&(*l0)), l1); if ((_t4.tag == 0)) { l7 = _t4.p.v0.m_value; {
                 _t3 = l7;
             } } else if ((_t4.tag == 1)) { l8 = _t4.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = l8, } });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = l8, } });
             } } _t3; });
             { t19 _t5 = ({ t19 _t6; if ((l5 > ((*l0)).m_floor)) {
                 _t6 = l5;
@@ -64008,15 +63730,15 @@ static t732 f1890(t527 l0, t49 l1, t63 l2, t68 l3) {
                 _t6 = ((*l0)).m_floor;
             } _t6; }); ((*l0)).m_sp = _t5; }
             if ((!l6)) {
-                return ((t732){ .tag = 0 });
+                return ((t734){ .tag = 0 });
             }
-            { t732 _t7 = f1343((&(*l0)), l2, ((t19)(0ULL))); if ((_t7.tag == 0)) { {
+            { t734 _t7 = f1343((&(*l0)), l2, ((t19)(0ULL))); if ((_t7.tag == 0)) { {
             } } else if ((_t7.tag == 1)) { l9 = _t7.p.v1.m_error; {
-                { t733 _t8 = l9; if ((_t8.tag == 0)) { {
+                { t735 _t8 = l9; if ((_t8.tag == 0)) { {
                     { t496 _t9 = ((*l0)).m_flow; if ((_t9.tag == 1)) { l10 = _t9.p.v1.m_label; {
                         if (f2009(l10, l3)) {
                             ((*l0)).m_flow = ((t496){ .tag = 0 });
-                            return ((t732){ .tag = 0 });
+                            return ((t734){ .tag = 0 });
                         }
                     } } else if ((_t9.tag == 2)) { l11 = _t9.p.v2.m_label; {
                         if (f2009(l11, l3)) {
@@ -64025,23 +63747,23 @@ static t732 f1890(t527 l0, t49 l1, t63 l2, t68 l3) {
                         }
                     } } else { {
                     } } }
-                    return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t10; t769 _t11 = ((t769){ .tag = 0 }); if ((_t11.tag == 0)) { {
-                        _t10 = ((t733){ .tag = 0 });
+                    return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t10; t771 _t11 = ((t771){ .tag = 0 }); if ((_t11.tag == 0)) { {
+                        _t10 = ((t735){ .tag = 0 });
                     } } _t10; }), } });
                 } } else if ((_t8.tag == 1)) { {
-                    return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t12; t603 _t13 = ((t603){ .tag = 0 }); if ((_t13.tag == 0)) { {
-                        _t12 = ((t733){ .tag = 1 });
+                    return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t12; t603 _t13 = ((t603){ .tag = 0 }); if ((_t13.tag == 0)) { {
+                        _t12 = ((t735){ .tag = 1 });
                     } } _t12; }), } });
                 } } }
             } } }
         }
-        return ((t732){ .tag = 0 });
+        return ((t734){ .tag = 0 });
     }
     __builtin_unreachable();
 }
 
 // list::push(ir::Block, arena::Arena)
-static t110 f1891(t806 l0, t63 l1) {
+static t110 f1891(t808 l0, t63 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -64115,7 +63837,7 @@ static t16 f1892(t527 l0, t53 l1, t10 l2) {
 }
 
 // eval::pick
-static t732 f1893(t527 l0, t19 l1, t14 l2, t33 l3, t70 l4, t19 l5) {
+static t734 f1893(t527 l0, t19 l1, t14 l2, t33 l3, t70 l4, t19 l5) {
     t19 l6;
     t33 l7;
     t19 l8;
@@ -64137,14 +63859,14 @@ static t732 f1893(t527 l0, t19 l1, t14 l2, t33 l3, t70 l4, t19 l5) {
             l6 = ({ t19 _t0; t645 _t1 = f892((&(*l0)), l1, ((t19)(8ULL))); if ((_t1.tag == 0)) { l8 = _t1.p.v0.m_value; {
                 _t0 = l8;
             } } else if ((_t1.tag == 1)) { l9 = _t1.p.v1.m_error; {
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t2; t603 _t3 = l9; if ((_t3.tag == 0)) { {
-                    _t2 = ((t733){ .tag = 1 });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t2; t603 _t3 = l9; if ((_t3.tag == 0)) { {
+                    _t2 = ((t735){ .tag = 1 });
                 } } _t2; }), } });
             } } _t0; });
             { t31 _t4 = (*({ t29 _t5 = (((*l0)).m_types); uint64_t _t6 = ((t13)(l3)); _t5.m_ptr + ctx_idx(_t6, _t5.m_len, 545, 38, 23); })); if (!(_t4.tag == 1)) { {
                 f1131((&(*l0)), ((t10){ .m_ptr = (void *)"eval: a match through a non-pointer", .m_len = 35 }));
-                return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t7; t603 _t8 = ((t603){ .tag = 0 }); if ((_t8.tag == 0)) { {
-                    _t7 = ((t733){ .tag = 1 });
+                return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t7; t603 _t8 = ((t603){ .tag = 0 }); if ((_t8.tag == 0)) { {
+                    _t7 = ((t735){ .tag = 1 });
                 } } _t7; }), } });
             } } l10 = _t4.p.v1.m_elem; }
             l7 = l10;
@@ -64158,18 +63880,18 @@ static t732 f1893(t527 l0, t19 l1, t14 l2, t33 l3, t70 l4, t19 l5) {
             l13 = ((t13)(0ULL));
             while ((l13 < ((l12).m_pats).m_len)) {
                 l14 = (*({ t73 _t11 = ((l12).m_pats); uint64_t _t12 = l13; _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 557, 31, 23); }));
-                l15 = ({ t14 _t13; t825 _t14 = f1896((&(*l0)), l6, l7, (l14).m_variant); if ((_t14.tag == 0)) { l16 = _t14.p.v0.m_value; {
+                l15 = ({ t14 _t13; t827 _t14 = f1896((&(*l0)), l6, l7, (l14).m_variant); if ((_t14.tag == 0)) { l16 = _t14.p.v0.m_value; {
                     _t13 = l16;
                 } } else if ((_t14.tag == 1)) { l17 = _t14.p.v1.m_error; {
-                    return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t15; t603 _t16 = l17; if ((_t16.tag == 0)) { {
-                        _t15 = ((t733){ .tag = 1 });
+                    return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t15; t603 _t16 = l17; if ((_t16.tag == 0)) { {
+                        _t15 = ((t735){ .tag = 1 });
                     } } _t15; }), } });
                 } } _t13; });
                 if (l15) {
                     { t604 _t17 = f1897((&(*l0)), (l14).m_binds, l6, l7, (l14).m_variant); if ((_t17.tag == 0)) { {
                     } } else if ((_t17.tag == 1)) { l18 = _t17.p.v1.m_error; {
-                        return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t18; t603 _t19 = l18; if ((_t19.tag == 0)) { {
-                            _t18 = ((t733){ .tag = 1 });
+                        return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t18; t603 _t19 = l18; if ((_t19.tag == 0)) { {
+                            _t18 = ((t735){ .tag = 1 });
                         } } _t18; }), } });
                     } } }
                     return f1343((&(*l0)), (l12).m_body, l5);
@@ -64179,58 +63901,58 @@ static t732 f1893(t527 l0, t19 l1, t14 l2, t33 l3, t70 l4, t19 l5) {
             l11 = ctx_add_u64(l11, ((t13)(1ULL)), 565, 19, 23);
         }
         f1131((&(*l0)), ((t10){ .m_ptr = (void *)"eval: no arm of a match holds its value", .m_len = 39 }));
-        return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t20; t603 _t21 = ((t603){ .tag = 0 }); if ((_t21.tag == 0)) { {
-            _t20 = ((t733){ .tag = 1 });
+        return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t20; t603 _t21 = ((t603){ .tag = 0 }); if ((_t21.tag == 0)) { {
+            _t20 = ((t735){ .tag = 1 });
         } } _t20; }), } });
-        return ((t732){ .tag = 0 });
+        return ((t734){ .tag = 0 });
     }
     __builtin_unreachable();
 }
 
 // eval::scalar
-static t805 f1894(t527 l0, t49 l1) {
+static t807 f1894(t527 l0, t49 l1) {
     t14 l2;
     t19 l3;
     t51 l4;
     t14 l5;
     t19 l6;
     t19 l7;
-    t733 l8;
+    t735 l8;
     t19 l9;
     t603 l10;
     t52 l11;
     t53 l12;
     t19 l13;
     t19 l14;
-    t733 l15;
+    t735 l15;
     t19 l16;
     t603 l17;
     t52 l18;
     t19 l19;
     t19 l20;
-    t733 l21;
+    t735 l21;
     t52 l22;
     t52 l23;
     t14 l24;
-    t733 l25;
+    t735 l25;
     t14 l26;
-    t733 l27;
+    t735 l27;
     t52 l28;
     t52 l29;
     t14 l30;
-    t733 l31;
+    t735 l31;
     t14 l32;
-    t733 l33;
+    t735 l33;
     t55 l34;
     t52 l35;
     t52 l36;
     t53 l37;
     t19 l38;
     t19 l39;
-    t733 l40;
+    t735 l40;
     t19 l41;
     t19 l42;
-    t733 l43;
+    t735 l43;
     t19 l44;
     t603 l45;
     t56 l46;
@@ -64238,20 +63960,20 @@ static t805 f1894(t527 l0, t49 l1) {
     t52 l48;
     t19 l49;
     t19 l50;
-    t733 l51;
+    t735 l51;
     t19 l52;
     t19 l53;
-    t733 l54;
+    t735 l54;
     t57 l55;
     t52 l56;
     t52 l57;
     t53 l58;
     t19 l59;
     t19 l60;
-    t733 l61;
+    t735 l61;
     t19 l62;
     t19 l63;
-    t733 l64;
+    t735 l64;
     t19 l65;
     t603 l66;
     t58 l67;
@@ -64259,41 +63981,41 @@ static t805 f1894(t527 l0, t49 l1) {
     t52 l69;
     t19 l70;
     t19 l71;
-    t733 l72;
+    t735 l72;
     t19 l73;
     t19 l74;
-    t733 l75;
+    t735 l75;
     t52 l76;
     t52 l77;
     t19 l78;
     t19 l79;
-    t733 l80;
+    t735 l80;
     t19 l81;
     t19 l82;
-    t733 l83;
+    t735 l83;
     t33 l84;
     t52 l85;
     t14 l86;
-    t733 l87;
+    t735 l87;
     t52 l88;
     t14 l89;
-    t733 l90;
+    t735 l90;
     t52 l91;
     t19 l92;
     t19 l93;
-    t733 l94;
+    t735 l94;
     t31 l95;
     t31 l96;
     t32 l97;
     t32 l98;
     t52 l99;
     t19 l100;
-    t733 l101;
+    t735 l101;
     t52 l102;
     t53 l103;
     t19 l104;
     t19 l105;
-    t733 l106;
+    t735 l106;
     t19 l107;
     t603 l108;
     t55 l109;
@@ -64301,219 +64023,219 @@ static t805 f1894(t527 l0, t49 l1) {
     t52 l111;
     t19 l112;
     t19 l113;
-    t733 l114;
+    t735 l114;
     t19 l115;
     t19 l116;
-    t733 l117;
+    t735 l117;
     t19 l118;
     t19 l119;
     t19 l120;
-    t733 l121;
+    t735 l121;
     t19 l122;
     t603 l123;
     CTX_STACK_CHECK();
     {
         { t50 _t0 = (l1).m_k; if ((_t0.tag == 0)) { l2 = _t0.p.v0.m_negative; l3 = _t0.p.v0.m_value; {
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t14 _t1 = l2; t19 _t2 = l3; t32 _t3 = f2012(((*l0)).m_types, (l1).m_ty); f2011(_t1, _t2, _t3); }), } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t14 _t1 = l2; t19 _t2 = l3; t32 _t3 = f2012(((*l0)).m_types, (l1).m_ty); f2011(_t1, _t2, _t3); }), } });
         } } else if ((_t0.tag == 1)) { l4 = _t0.p.v1.m_value; {
             if (({ t14 _t4; t32 _t5 = f2012(((*l0)).m_types, (l1).m_ty); if ((_t5.tag == 9)) { {
                 _t4 = ((bool)1);
             } } else { {
                 _t4 = ((bool)0);
             } } _t4; })) {
-                return ((t805){ .tag = 0, .p.v0 = { .m_value = f1530(((t565)(l4))), } });
+                return ((t807){ .tag = 0, .p.v0 = { .m_value = f1530(((t565)(l4))), } });
             }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = f1531(l4), } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = f1531(l4), } });
         } } else if ((_t0.tag == 2)) { l5 = _t0.p.v2.m_value; {
-            return ({ t805 _t6; if (l5) {
-                _t6 = ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)(1ULL)), } });
+            return ({ t807 _t6; if (l5) {
+                _t6 = ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)(1ULL)), } });
             } else {
-                _t6 = ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)(0ULL)), } });
+                _t6 = ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)(0ULL)), } });
             } _t6; });
         } } else if ((_t0.tag == 7) || (_t0.tag == 8) || (_t0.tag == 10) || (_t0.tag == 11) || (_t0.tag == 12) || (_t0.tag == 13) || (_t0.tag == 15)) { {
-            l6 = ({ t19 _t7; t805 _t8 = f1888((&(*l0)), l1); if ((_t8.tag == 0)) { l7 = _t8.p.v0.m_value; {
+            l6 = ({ t19 _t7; t807 _t8 = f1888((&(*l0)), l1); if ((_t8.tag == 0)) { l7 = _t8.p.v0.m_value; {
                 _t7 = l7;
             } } else if ((_t8.tag == 1)) { l8 = _t8.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l8, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l8, } });
             } } _t7; });
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t9; t645 _t10 = f1739((&(*l0)), l6, (l1).m_ty); if ((_t10.tag == 0)) { l9 = _t10.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t9; t645 _t10 = f1739((&(*l0)), l6, (l1).m_ty); if ((_t10.tag == 0)) { l9 = _t10.p.v0.m_value; {
                 _t9 = l9;
             } } else if ((_t10.tag == 1)) { l10 = _t10.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t11; t603 _t12 = l10; if ((_t12.tag == 0)) { {
-                    _t11 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t11; t603 _t12 = l10; if ((_t12.tag == 0)) { {
+                    _t11 = ((t735){ .tag = 1 });
                 } } _t11; }), } });
             } } _t9; }), } });
         } } else if ((_t0.tag == 19)) { l11 = _t0.p.v19.m_e; l12 = _t0.p.v19.m_pos; {
-            l13 = ({ t19 _t13; t805 _t14 = f1894((&(*l0)), (*l11)); if ((_t14.tag == 0)) { l14 = _t14.p.v0.m_value; {
+            l13 = ({ t19 _t13; t807 _t14 = f1894((&(*l0)), (*l11)); if ((_t14.tag == 0)) { l14 = _t14.p.v0.m_value; {
                 _t13 = l14;
             } } else if ((_t14.tag == 1)) { l15 = _t14.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l15, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l15, } });
             } } _t13; });
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t15; t645 _t16 = ({ t527 _t17 = (&(*l0)); t32 _t18 = f2012(((*l0)).m_types, (l1).m_ty); t19 _t19 = l13; t53 _t20 = l12; f2013(_t17, _t18, _t19, _t20); }); if ((_t16.tag == 0)) { l16 = _t16.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t15; t645 _t16 = ({ t527 _t17 = (&(*l0)); t32 _t18 = f2012(((*l0)).m_types, (l1).m_ty); t19 _t19 = l13; t53 _t20 = l12; f2013(_t17, _t18, _t19, _t20); }); if ((_t16.tag == 0)) { l16 = _t16.p.v0.m_value; {
                 _t15 = l16;
             } } else if ((_t16.tag == 1)) { l17 = _t16.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t21; t603 _t22 = l17; if ((_t22.tag == 0)) { {
-                    _t21 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t21; t603 _t22 = l17; if ((_t22.tag == 0)) { {
+                    _t21 = ((t735){ .tag = 1 });
                 } } _t21; }), } });
             } } _t15; }), } });
         } } else if ((_t0.tag == 20)) { l18 = _t0.p.v20.m_e; {
-            l19 = ({ t19 _t23; t805 _t24 = f1894((&(*l0)), (*l18)); if ((_t24.tag == 0)) { l20 = _t24.p.v0.m_value; {
+            l19 = ({ t19 _t23; t807 _t24 = f1894((&(*l0)), (*l18)); if ((_t24.tag == 0)) { l20 = _t24.p.v0.m_value; {
                 _t23 = l20;
             } } else if ((_t24.tag == 1)) { l21 = _t24.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l21, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l21, } });
             } } _t23; });
-            return ({ t805 _t25; if ((l19 == ((t19)(0ULL)))) {
-                _t25 = ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)(1ULL)), } });
+            return ({ t807 _t25; if ((l19 == ((t19)(0ULL)))) {
+                _t25 = ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)(1ULL)), } });
             } else {
-                _t25 = ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)(0ULL)), } });
+                _t25 = ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)(0ULL)), } });
             } _t25; });
         } } else if ((_t0.tag == 21)) { l22 = _t0.p.v21.m_a; l23 = _t0.p.v21.m_b; {
-            if ((!({ t14 _t26; t824 _t27 = f1889((&(*l0)), (*l22)); if ((_t27.tag == 0)) { l24 = _t27.p.v0.m_value; {
+            if ((!({ t14 _t26; t826 _t27 = f1889((&(*l0)), (*l22)); if ((_t27.tag == 0)) { l24 = _t27.p.v0.m_value; {
                 _t26 = l24;
             } } else if ((_t27.tag == 1)) { l25 = _t27.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l25, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l25, } });
             } } _t26; }))) {
-                return ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)(0ULL)), } });
+                return ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)(0ULL)), } });
             }
-            return ({ t805 _t28; if (({ t14 _t29; t824 _t30 = f1889((&(*l0)), (*l23)); if ((_t30.tag == 0)) { l26 = _t30.p.v0.m_value; {
+            return ({ t807 _t28; if (({ t14 _t29; t826 _t30 = f1889((&(*l0)), (*l23)); if ((_t30.tag == 0)) { l26 = _t30.p.v0.m_value; {
                 _t29 = l26;
             } } else if ((_t30.tag == 1)) { l27 = _t30.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l27, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l27, } });
             } } _t29; })) {
-                _t28 = ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)(1ULL)), } });
+                _t28 = ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)(1ULL)), } });
             } else {
-                _t28 = ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)(0ULL)), } });
+                _t28 = ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)(0ULL)), } });
             } _t28; });
         } } else if ((_t0.tag == 22)) { l28 = _t0.p.v22.m_a; l29 = _t0.p.v22.m_b; {
-            if (({ t14 _t31; t824 _t32 = f1889((&(*l0)), (*l28)); if ((_t32.tag == 0)) { l30 = _t32.p.v0.m_value; {
+            if (({ t14 _t31; t826 _t32 = f1889((&(*l0)), (*l28)); if ((_t32.tag == 0)) { l30 = _t32.p.v0.m_value; {
                 _t31 = l30;
             } } else if ((_t32.tag == 1)) { l31 = _t32.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l31, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l31, } });
             } } _t31; })) {
-                return ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)(1ULL)), } });
+                return ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)(1ULL)), } });
             }
-            return ({ t805 _t33; if (({ t14 _t34; t824 _t35 = f1889((&(*l0)), (*l29)); if ((_t35.tag == 0)) { l32 = _t35.p.v0.m_value; {
+            return ({ t807 _t33; if (({ t14 _t34; t826 _t35 = f1889((&(*l0)), (*l29)); if ((_t35.tag == 0)) { l32 = _t35.p.v0.m_value; {
                 _t34 = l32;
             } } else if ((_t35.tag == 1)) { l33 = _t35.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l33, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l33, } });
             } } _t34; })) {
-                _t33 = ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)(1ULL)), } });
+                _t33 = ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)(1ULL)), } });
             } else {
-                _t33 = ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)(0ULL)), } });
+                _t33 = ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)(0ULL)), } });
             } _t33; });
         } } else if ((_t0.tag == 23)) { l34 = _t0.p.v23.m_op; l35 = _t0.p.v23.m_a; l36 = _t0.p.v23.m_b; l37 = _t0.p.v23.m_pos; {
-            l38 = ({ t19 _t36; t805 _t37 = f1894((&(*l0)), (*l35)); if ((_t37.tag == 0)) { l39 = _t37.p.v0.m_value; {
+            l38 = ({ t19 _t36; t807 _t37 = f1894((&(*l0)), (*l35)); if ((_t37.tag == 0)) { l39 = _t37.p.v0.m_value; {
                 _t36 = l39;
             } } else if ((_t37.tag == 1)) { l40 = _t37.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l40, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l40, } });
             } } _t36; });
-            l41 = ({ t19 _t38; t805 _t39 = f1894((&(*l0)), (*l36)); if ((_t39.tag == 0)) { l42 = _t39.p.v0.m_value; {
+            l41 = ({ t19 _t38; t807 _t39 = f1894((&(*l0)), (*l36)); if ((_t39.tag == 0)) { l42 = _t39.p.v0.m_value; {
                 _t38 = l42;
             } } else if ((_t39.tag == 1)) { l43 = _t39.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l43, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l43, } });
             } } _t38; });
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t40; t645 _t41 = ({ t527 _t42 = (&(*l0)); t55 _t43 = l34; t32 _t44 = f2012(((*l0)).m_types, (l1).m_ty); t19 _t45 = l38; t19 _t46 = l41; t53 _t47 = l37; f2014(_t42, _t43, _t44, _t45, _t46, _t47); }); if ((_t41.tag == 0)) { l44 = _t41.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t40; t645 _t41 = ({ t527 _t42 = (&(*l0)); t55 _t43 = l34; t32 _t44 = f2012(((*l0)).m_types, (l1).m_ty); t19 _t45 = l38; t19 _t46 = l41; t53 _t47 = l37; f2014(_t42, _t43, _t44, _t45, _t46, _t47); }); if ((_t41.tag == 0)) { l44 = _t41.p.v0.m_value; {
                 _t40 = l44;
             } } else if ((_t41.tag == 1)) { l45 = _t41.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t48; t603 _t49 = l45; if ((_t49.tag == 0)) { {
-                    _t48 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t48; t603 _t49 = l45; if ((_t49.tag == 0)) { {
+                    _t48 = ((t735){ .tag = 1 });
                 } } _t48; }), } });
             } } _t40; }), } });
         } } else if ((_t0.tag == 24)) { l46 = _t0.p.v24.m_op; l47 = _t0.p.v24.m_a; l48 = _t0.p.v24.m_b; {
-            l49 = ({ t19 _t50; t805 _t51 = f1894((&(*l0)), (*l47)); if ((_t51.tag == 0)) { l50 = _t51.p.v0.m_value; {
+            l49 = ({ t19 _t50; t807 _t51 = f1894((&(*l0)), (*l47)); if ((_t51.tag == 0)) { l50 = _t51.p.v0.m_value; {
                 _t50 = l50;
             } } else if ((_t51.tag == 1)) { l51 = _t51.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l51, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l51, } });
             } } _t50; });
-            l52 = ({ t19 _t52; t805 _t53 = f1894((&(*l0)), (*l48)); if ((_t53.tag == 0)) { l53 = _t53.p.v0.m_value; {
+            l52 = ({ t19 _t52; t807 _t53 = f1894((&(*l0)), (*l48)); if ((_t53.tag == 0)) { l53 = _t53.p.v0.m_value; {
                 _t52 = l53;
             } } else if ((_t53.tag == 1)) { l54 = _t53.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l54, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l54, } });
             } } _t52; });
             { t56 _t54 = l46; if ((_t54.tag == 0)) { {
-                return ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)((l49 & l52))), } });
+                return ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)((l49 & l52))), } });
             } } else if ((_t54.tag == 1)) { {
-                return ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)((l49 | l52))), } });
+                return ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)((l49 | l52))), } });
             } } else if ((_t54.tag == 2)) { {
-                return ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)((l49 ^ l52))), } });
+                return ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)((l49 ^ l52))), } });
             } } }
         } } else if ((_t0.tag == 25)) { l55 = _t0.p.v25.m_op; l56 = _t0.p.v25.m_a; l57 = _t0.p.v25.m_b; l58 = _t0.p.v25.m_pos; {
-            l59 = ({ t19 _t55; t805 _t56 = f1894((&(*l0)), (*l56)); if ((_t56.tag == 0)) { l60 = _t56.p.v0.m_value; {
+            l59 = ({ t19 _t55; t807 _t56 = f1894((&(*l0)), (*l56)); if ((_t56.tag == 0)) { l60 = _t56.p.v0.m_value; {
                 _t55 = l60;
             } } else if ((_t56.tag == 1)) { l61 = _t56.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l61, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l61, } });
             } } _t55; });
-            l62 = ({ t19 _t57; t805 _t58 = f1894((&(*l0)), (*l57)); if ((_t58.tag == 0)) { l63 = _t58.p.v0.m_value; {
+            l62 = ({ t19 _t57; t807 _t58 = f1894((&(*l0)), (*l57)); if ((_t58.tag == 0)) { l63 = _t58.p.v0.m_value; {
                 _t57 = l63;
             } } else if ((_t58.tag == 1)) { l64 = _t58.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l64, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l64, } });
             } } _t57; });
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t59; t645 _t60 = ({ t527 _t61 = (&(*l0)); t57 _t62 = l55; t32 _t63 = f2012(((*l0)).m_types, (l1).m_ty); t19 _t64 = l59; t19 _t65 = l62; t32 _t66 = f2012(((*l0)).m_types, ((*l57)).m_ty); t53 _t67 = l58; f2015(_t61, _t62, _t63, _t64, _t65, _t66, _t67); }); if ((_t60.tag == 0)) { l65 = _t60.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t59; t645 _t60 = ({ t527 _t61 = (&(*l0)); t57 _t62 = l55; t32 _t63 = f2012(((*l0)).m_types, (l1).m_ty); t19 _t64 = l59; t19 _t65 = l62; t32 _t66 = f2012(((*l0)).m_types, ((*l57)).m_ty); t53 _t67 = l58; f2015(_t61, _t62, _t63, _t64, _t65, _t66, _t67); }); if ((_t60.tag == 0)) { l65 = _t60.p.v0.m_value; {
                 _t59 = l65;
             } } else if ((_t60.tag == 1)) { l66 = _t60.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t68; t603 _t69 = l66; if ((_t69.tag == 0)) { {
-                    _t68 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t68; t603 _t69 = l66; if ((_t69.tag == 0)) { {
+                    _t68 = ((t735){ .tag = 1 });
                 } } _t68; }), } });
             } } _t59; }), } });
         } } else if ((_t0.tag == 26)) { l67 = _t0.p.v26.m_op; l68 = _t0.p.v26.m_a; l69 = _t0.p.v26.m_b; {
-            l70 = ({ t19 _t70; t805 _t71 = f1894((&(*l0)), (*l68)); if ((_t71.tag == 0)) { l71 = _t71.p.v0.m_value; {
+            l70 = ({ t19 _t70; t807 _t71 = f1894((&(*l0)), (*l68)); if ((_t71.tag == 0)) { l71 = _t71.p.v0.m_value; {
                 _t70 = l71;
             } } else if ((_t71.tag == 1)) { l72 = _t71.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l72, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l72, } });
             } } _t70; });
-            l73 = ({ t19 _t72; t805 _t73 = f1894((&(*l0)), (*l69)); if ((_t73.tag == 0)) { l74 = _t73.p.v0.m_value; {
+            l73 = ({ t19 _t72; t807 _t73 = f1894((&(*l0)), (*l69)); if ((_t73.tag == 0)) { l74 = _t73.p.v0.m_value; {
                 _t72 = l74;
             } } else if ((_t73.tag == 1)) { l75 = _t73.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l75, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l75, } });
             } } _t72; });
-            return ({ t805 _t74; if (f2016(((*l0)).m_types, l67, ((*l68)).m_ty, l70, l73)) {
-                _t74 = ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)(1ULL)), } });
+            return ({ t807 _t74; if (f2016(((*l0)).m_types, l67, ((*l68)).m_ty, l70, l73)) {
+                _t74 = ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)(1ULL)), } });
             } else {
-                _t74 = ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)(0ULL)), } });
+                _t74 = ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)(0ULL)), } });
             } _t74; });
         } } else if ((_t0.tag == 27)) { l76 = _t0.p.v27.m_p; l77 = _t0.p.v27.m_n; {
-            l78 = ({ t19 _t75; t805 _t76 = f1894((&(*l0)), (*l76)); if ((_t76.tag == 0)) { l79 = _t76.p.v0.m_value; {
+            l78 = ({ t19 _t75; t807 _t76 = f1894((&(*l0)), (*l76)); if ((_t76.tag == 0)) { l79 = _t76.p.v0.m_value; {
                 _t75 = l79;
             } } else if ((_t76.tag == 1)) { l80 = _t76.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l80, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l80, } });
             } } _t75; });
-            l81 = ({ t19 _t77; t805 _t78 = f1894((&(*l0)), (*l77)); if ((_t78.tag == 0)) { l82 = _t78.p.v0.m_value; {
+            l81 = ({ t19 _t77; t807 _t78 = f1894((&(*l0)), (*l77)); if ((_t78.tag == 0)) { l82 = _t78.p.v0.m_value; {
                 _t77 = l82;
             } } else if ((_t78.tag == 1)) { l83 = _t78.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l83, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l83, } });
             } } _t77; });
             { t31 _t79 = (*({ t29 _t80 = (((*l0)).m_types); uint64_t _t81 = ((t13)(((*l76)).m_ty)); _t80.m_ptr + ctx_idx(_t81, _t80.m_len, 840, 42, 23); })); if (!(_t79.tag == 1)) { {
                 f1131((&(*l0)), ((t10){ .m_ptr = (void *)"eval: pointer arithmetic on a non-pointer", .m_len = 41 }));
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t82; t603 _t83 = ((t603){ .tag = 0 }); if ((_t83.tag == 0)) { {
-                    _t82 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t82; t603 _t83 = ((t603){ .tag = 0 }); if ((_t83.tag == 0)) { {
+                    _t82 = ((t735){ .tag = 1 });
                 } } _t82; }), } });
             } } l84 = _t79.p.v1.m_elem; }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t84 = l78; t19 _t85 = ({ t19 _t86 = l81; t19 _t87 = f885(((*l0)).m_types, l84); ((t19)((uint64_t)_t86 * (uint64_t)_t87)); }); ((t19)((uint64_t)_t84 + (uint64_t)_t85)); }), } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t84 = l78; t19 _t85 = ({ t19 _t86 = l81; t19 _t87 = f885(((*l0)).m_types, l84); ((t19)((uint64_t)_t86 * (uint64_t)_t87)); }); ((t19)((uint64_t)_t84 + (uint64_t)_t85)); }), } });
         } } else if ((_t0.tag == 28)) { l85 = _t0.p.v28.m_e; {
-            return ({ t805 _t88; if (({ t14 _t89; t824 _t90 = f2017((&(*l0)), (*l85)); if ((_t90.tag == 0)) { l86 = _t90.p.v0.m_value; {
+            return ({ t807 _t88; if (({ t14 _t89; t826 _t90 = f2017((&(*l0)), (*l85)); if ((_t90.tag == 0)) { l86 = _t90.p.v0.m_value; {
                 _t89 = l86;
             } } else if ((_t90.tag == 1)) { l87 = _t90.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l87, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l87, } });
             } } _t89; })) {
-                _t88 = ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)(1ULL)), } });
+                _t88 = ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)(1ULL)), } });
             } else {
-                _t88 = ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)(0ULL)), } });
+                _t88 = ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)(0ULL)), } });
             } _t88; });
         } } else if ((_t0.tag == 29)) { l88 = _t0.p.v29.m_e; {
-            return ({ t805 _t91; if (({ t14 _t92; t824 _t93 = f2017((&(*l0)), (*l88)); if ((_t93.tag == 0)) { l89 = _t93.p.v0.m_value; {
+            return ({ t807 _t91; if (({ t14 _t92; t826 _t93 = f2017((&(*l0)), (*l88)); if ((_t93.tag == 0)) { l89 = _t93.p.v0.m_value; {
                 _t92 = l89;
             } } else if ((_t93.tag == 1)) { l90 = _t93.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l90, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l90, } });
             } } _t92; })) {
-                _t91 = ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)(0ULL)), } });
+                _t91 = ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)(0ULL)), } });
             } else {
-                _t91 = ((t805){ .tag = 0, .p.v0 = { .m_value = ((t19)(1ULL)), } });
+                _t91 = ((t807){ .tag = 0, .p.v0 = { .m_value = ((t19)(1ULL)), } });
             } _t91; });
         } } else if ((_t0.tag == 30) || (_t0.tag == 46) || (_t0.tag == 48)) { if ((_t0.tag == 30)) { l91 = _t0.p.v30.m_e; } else if ((_t0.tag == 46)) { l91 = _t0.p.v46.m_e; } else if ((_t0.tag == 48)) { l91 = _t0.p.v48.m_e; } {
-            l92 = ({ t19 _t94; t805 _t95 = f1894((&(*l0)), (*l91)); if ((_t95.tag == 0)) { l93 = _t95.p.v0.m_value; {
+            l92 = ({ t19 _t94; t807 _t95 = f1894((&(*l0)), (*l91)); if ((_t95.tag == 0)) { l93 = _t95.p.v0.m_value; {
                 _t94 = l93;
             } } else if ((_t95.tag == 1)) { l94 = _t95.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l94, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l94, } });
             } } _t94; });
             l95 = (*({ t29 _t96 = (((*l0)).m_types); uint64_t _t97 = ((t13)(((*l91)).m_ty)); _t96.m_ptr + ctx_idx(_t97, _t96.m_len, 851, 35, 23); }));
             l96 = (*({ t29 _t98 = (((*l0)).m_types); uint64_t _t99 = ((t13)((l1).m_ty)); _t98.m_ptr + ctx_idx(_t99, _t98.m_len, 852, 33, 23); }));
@@ -64526,38 +64248,38 @@ static t805 f1894(t527 l0, t49 l1) {
             } } else { {
                 _t102 = ((bool)0);
             } } _t102; }))) {
-                return ((t805){ .tag = 0, .p.v0 = { .m_value = f2018(l92, l97, l98), } });
+                return ((t807){ .tag = 0, .p.v0 = { .m_value = f2018(l92, l97, l98), } });
             }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = l92, } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = l92, } });
         } } else if ((_t0.tag == 49)) { l99 = _t0.p.v49.m_e; {
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t104; t805 _t105 = f1894((&(*l0)), (*l99)); if ((_t105.tag == 0)) { l100 = _t105.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t104; t807 _t105 = f1894((&(*l0)), (*l99)); if ((_t105.tag == 0)) { l100 = _t105.p.v0.m_value; {
                 _t104 = l100;
             } } else if ((_t105.tag == 1)) { l101 = _t105.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l101, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l101, } });
             } } _t104; }), } });
         } } else if ((_t0.tag == 45)) { l102 = _t0.p.v45.m_e; l103 = _t0.p.v45.m_pos; {
-            l104 = ({ t19 _t106; t805 _t107 = f1894((&(*l0)), (*l102)); if ((_t107.tag == 0)) { l105 = _t107.p.v0.m_value; {
+            l104 = ({ t19 _t106; t807 _t107 = f1894((&(*l0)), (*l102)); if ((_t107.tag == 0)) { l105 = _t107.p.v0.m_value; {
                 _t106 = l105;
             } } else if ((_t107.tag == 1)) { l106 = _t107.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l106, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l106, } });
             } } _t106; });
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t108; t645 _t109 = ({ t527 _t110 = (&(*l0)); t19 _t111 = l104; t32 _t112 = f2012(((*l0)).m_types, ((*l102)).m_ty); t32 _t113 = f2012(((*l0)).m_types, (l1).m_ty); t53 _t114 = l103; f2019(_t110, _t111, _t112, _t113, _t114); }); if ((_t109.tag == 0)) { l107 = _t109.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t108; t645 _t109 = ({ t527 _t110 = (&(*l0)); t19 _t111 = l104; t32 _t112 = f2012(((*l0)).m_types, ((*l102)).m_ty); t32 _t113 = f2012(((*l0)).m_types, (l1).m_ty); t53 _t114 = l103; f2019(_t110, _t111, _t112, _t113, _t114); }); if ((_t109.tag == 0)) { l107 = _t109.p.v0.m_value; {
                 _t108 = l107;
             } } else if ((_t109.tag == 1)) { l108 = _t109.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t115; t603 _t116 = l108; if ((_t116.tag == 0)) { {
-                    _t115 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t115; t603 _t116 = l108; if ((_t116.tag == 0)) { {
+                    _t115 = ((t735){ .tag = 1 });
                 } } _t115; }), } });
             } } _t108; }), } });
         } } else if ((_t0.tag == 47)) { l109 = _t0.p.v47.m_op; l110 = _t0.p.v47.m_a; l111 = _t0.p.v47.m_b; {
-            l112 = ({ t19 _t117; t805 _t118 = f1894((&(*l0)), (*l110)); if ((_t118.tag == 0)) { l113 = _t118.p.v0.m_value; {
+            l112 = ({ t19 _t117; t807 _t118 = f1894((&(*l0)), (*l110)); if ((_t118.tag == 0)) { l113 = _t118.p.v0.m_value; {
                 _t117 = l113;
             } } else if ((_t118.tag == 1)) { l114 = _t118.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l114, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l114, } });
             } } _t117; });
-            l115 = ({ t19 _t119; t805 _t120 = f1894((&(*l0)), (*l111)); if ((_t120.tag == 0)) { l116 = _t120.p.v0.m_value; {
+            l115 = ({ t19 _t119; t807 _t120 = f1894((&(*l0)), (*l111)); if ((_t120.tag == 0)) { l116 = _t120.p.v0.m_value; {
                 _t119 = l116;
             } } else if ((_t120.tag == 1)) { l117 = _t120.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l117, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l117, } });
             } } _t119; });
             l118 = ({ t19 _t121; t55 _t122 = l109; if ((_t122.tag == 0)) { {
                 _t121 = ((t19)((uint64_t)l112 + (uint64_t)l115));
@@ -64566,18 +64288,18 @@ static t805 f1894(t527 l0, t49 l1) {
             } } else { {
                 _t121 = ((t19)((uint64_t)l112 * (uint64_t)l115));
             } } _t121; });
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t123 = l118; t32 _t124 = f2012(((*l0)).m_types, (l1).m_ty); f1886(_t123, _t124); }), } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t123 = l118; t32 _t124 = f2012(((*l0)).m_types, (l1).m_ty); f1886(_t123, _t124); }), } });
         } } else { {
-            l119 = ({ t19 _t125; t805 _t126 = f1741((&(*l0)), l1); if ((_t126.tag == 0)) { l120 = _t126.p.v0.m_value; {
+            l119 = ({ t19 _t125; t807 _t126 = f1741((&(*l0)), l1); if ((_t126.tag == 0)) { l120 = _t126.p.v0.m_value; {
                 _t125 = l120;
             } } else if ((_t126.tag == 1)) { l121 = _t126.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l121, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l121, } });
             } } _t125; });
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t127; t645 _t128 = f1739((&(*l0)), l119, (l1).m_ty); if ((_t128.tag == 0)) { l122 = _t128.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t127; t645 _t128 = f1739((&(*l0)), l119, (l1).m_ty); if ((_t128.tag == 0)) { l122 = _t128.p.v0.m_value; {
                 _t127 = l122;
             } } else if ((_t128.tag == 1)) { l123 = _t128.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t129; t603 _t130 = l123; if ((_t130.tag == 0)) { {
-                    _t129 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t129; t603 _t130 = l123; if ((_t130.tag == 0)) { {
+                    _t129 = ((t735){ .tag = 1 });
                 } } _t129; }), } });
             } } _t127; }), } });
         } } }
@@ -64586,7 +64308,7 @@ static t805 f1894(t527 l0, t49 l1) {
 }
 
 // eval::case_of
-static t732 f1895(t527 l0, t19 l1, t33 l2, t79 l3, t19 l4) {
+static t734 f1895(t527 l0, t19 l1, t33 l2, t79 l3, t19 l4) {
     t32 l5;
     t13 l6;
     t81 l7;
@@ -64610,16 +64332,16 @@ static t732 f1895(t527 l0, t19 l1, t33 l2, t79 l3, t19 l4) {
             l6 = ctx_add_u64(l6, ((t13)(1ULL)), 583, 19, 23);
         }
         f1131((&(*l0)), ((t10){ .m_ptr = (void *)"eval: no case of a match holds its value", .m_len = 40 }));
-        return ((t732){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t11; t603 _t12 = ((t603){ .tag = 0 }); if ((_t12.tag == 0)) { {
-            _t11 = ((t733){ .tag = 1 });
+        return ((t734){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t11; t603 _t12 = ((t603){ .tag = 0 }); if ((_t12.tag == 0)) { {
+            _t11 = ((t735){ .tag = 1 });
         } } _t11; }), } });
-        return ((t732){ .tag = 0 });
+        return ((t734){ .tag = 0 });
     }
     __builtin_unreachable();
 }
 
 // eval::holds
-static t825 f1896(t527 l0, t19 l1, t33 l2, t33 l3) {
+static t827 f1896(t527 l0, t19 l1, t33 l2, t33 l3) {
     t19 l4;
     t19 l5;
     t603 l6;
@@ -64636,16 +64358,16 @@ static t825 f1896(t527 l0, t19 l1, t33 l2, t33 l3) {
             l4 = ({ t19 _t4; t645 _t5 = f892((&(*l0)), l1, ((t19)(8ULL))); if ((_t5.tag == 0)) { l5 = _t5.p.v0.m_value; {
                 _t4 = l5;
             } } else if ((_t5.tag == 1)) { l6 = _t5.p.v1.m_error; {
-                return ((t825){ .tag = 1, .p.v1 = { .m_error = l6, } });
+                return ((t827){ .tag = 1, .p.v1 = { .m_error = l6, } });
             } } _t4; });
-            return ((t825){ .tag = 0, .p.v0 = { .m_value = ((l4 == ((t19)(0ULL))) == (l3 == ((t33)(0ULL)))), } });
+            return ((t827){ .tag = 0, .p.v0 = { .m_value = ((l4 == ((t19)(0ULL))) == (l3 == ((t33)(0ULL)))), } });
         }
         l7 = ({ t19 _t6; t645 _t7 = f892((&(*l0)), l1, ((t19)(4ULL))); if ((_t7.tag == 0)) { l8 = _t7.p.v0.m_value; {
             _t6 = l8;
         } } else if ((_t7.tag == 1)) { l9 = _t7.p.v1.m_error; {
-            return ((t825){ .tag = 1, .p.v1 = { .m_error = l9, } });
+            return ((t827){ .tag = 1, .p.v1 = { .m_error = l9, } });
         } } _t6; });
-        return ((t825){ .tag = 0, .p.v0 = { .m_value = (l7 == ((t19)(l3))), } });
+        return ((t827){ .tag = 0, .p.v0 = { .m_value = (l7 == ((t19)(l3))), } });
     }
     __builtin_unreachable();
 }
@@ -64785,19 +64507,19 @@ static t645 f1900(t527 l0, t19 l1, t33 l2) {
 }
 
 // eval::ssub
-static t805 f1901(t527 l0, t33 l1, t49 l2, t49 l3, t54 l4, t53 l5) {
+static t807 f1901(t527 l0, t33 l1, t49 l2, t49 l3, t54 l4, t53 l5) {
     t19 l6;
     t19 l7;
-    t733 l8;
+    t735 l8;
     t19 l9;
     t19 l10;
-    t733 l11;
+    t735 l11;
     t19 l12;
     t19 l13;
     t603 l14;
     t19 l15;
     t19 l16;
-    t733 l17;
+    t735 l17;
     t132 l18;
     t95 l19;
     t95 l20;
@@ -64816,29 +64538,29 @@ static t805 f1901(t527 l0, t33 l1, t49 l2, t49 l3, t54 l4, t53 l5) {
     t603 l33;
     CTX_STACK_CHECK();
     {
-        l6 = ({ t19 _t0; t805 _t1 = f1741((&(*l0)), l2); if ((_t1.tag == 0)) { l7 = _t1.p.v0.m_value; {
+        l6 = ({ t19 _t0; t807 _t1 = f1741((&(*l0)), l2); if ((_t1.tag == 0)) { l7 = _t1.p.v0.m_value; {
             _t0 = l7;
         } } else if ((_t1.tag == 1)) { l8 = _t1.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = l8, } });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = l8, } });
         } } _t0; });
-        l9 = ({ t19 _t2; t805 _t3 = f1894((&(*l0)), l3); if ((_t3.tag == 0)) { l10 = _t3.p.v0.m_value; {
+        l9 = ({ t19 _t2; t807 _t3 = f1894((&(*l0)), l3); if ((_t3.tag == 0)) { l10 = _t3.p.v0.m_value; {
             _t2 = l10;
         } } else if ((_t3.tag == 1)) { l11 = _t3.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = l11, } });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = l11, } });
         } } _t2; });
         l12 = ({ t19 _t4; t645 _t5 = ({ t527 _t6 = (&(*l0)); t19 _t7 = ctx_add_u64(l6, ((t19)(8ULL)), 959, 37, 23); t19 _t8 = ((t19)(8ULL)); f892(_t6, _t7, _t8); }); if ((_t5.tag == 0)) { l13 = _t5.p.v0.m_value; {
             _t4 = l13;
         } } else if ((_t5.tag == 1)) { l14 = _t5.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t9; t603 _t10 = l14; if ((_t10.tag == 0)) { {
-                _t9 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t9; t603 _t10 = l14; if ((_t10.tag == 0)) { {
+                _t9 = ((t735){ .tag = 1 });
             } } _t9; }), } });
         } } _t4; });
         l15 = l12;
         if (((l4) != 0)) {
-            l15 = ({ t19 _t11; t805 _t12 = f1894((&(*l0)), (*(l4))); if ((_t12.tag == 0)) { l16 = _t12.p.v0.m_value; {
+            l15 = ({ t19 _t11; t807 _t12 = f1894((&(*l0)), (*(l4))); if ((_t12.tag == 0)) { l16 = _t12.p.v0.m_value; {
                 _t11 = l16;
             } } else if ((_t12.tag == 1)) { l17 = _t12.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l17, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l17, } });
             } } _t11; });
         }
         if (((l9 > l15) || (l15 > l12))) {
@@ -64874,37 +64596,37 @@ static t805 f1901(t527 l0, t33 l1, t49 l2, t49 l3, t54 l4, t53 l5) {
                 } } }
             } } }
             ({ t527 _t27 = (&(*l0)); t53 _t28 = l5; t10 _t29 = (f59(l18)).m_bytes; f1892(_t27, _t28, _t29); });
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t30; t603 _t31 = ((t603){ .tag = 0 }); if ((_t31.tag == 0)) { {
-                _t30 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t30; t603 _t31 = ((t603){ .tag = 0 }); if ((_t31.tag == 0)) { {
+                _t30 = ((t735){ .tag = 1 });
             } } _t30; }), } });
         }
         l26 = ({ t19 _t32; t645 _t33 = f892((&(*l0)), l6, ((t19)(8ULL))); if ((_t33.tag == 0)) { l27 = _t33.p.v0.m_value; {
             _t32 = l27;
         } } else if ((_t33.tag == 1)) { l28 = _t33.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t34; t603 _t35 = l28; if ((_t35.tag == 0)) { {
-                _t34 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t34; t603 _t35 = l28; if ((_t35.tag == 0)) { {
+                _t34 = ((t735){ .tag = 1 });
             } } _t34; }), } });
         } } _t32; });
         l29 = ({ t19 _t36; t645 _t37 = f1135((&(*l0)), l1); if ((_t37.tag == 0)) { l30 = _t37.p.v0.m_value; {
             _t36 = l30;
         } } else if ((_t37.tag == 1)) { l31 = _t37.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t38; t603 _t39 = l31; if ((_t39.tag == 0)) { {
-                _t38 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t38; t603 _t39 = l31; if ((_t39.tag == 0)) { {
+                _t38 = ((t735){ .tag = 1 });
             } } _t38; }), } });
         } } _t36; });
         { t604 _t40 = ({ t527 _t41 = (&(*l0)); t19 _t42 = l29; t19 _t43 = ((t19)(8ULL)); t19 _t44 = ({ t19 _t45 = l26; t19 _t46 = ({ t19 _t47 = l9; t19 _t48 = f2024(((*l0)).m_types, l1); ((t19)((uint64_t)_t47 * (uint64_t)_t48)); }); ((t19)((uint64_t)_t45 + (uint64_t)_t46)); }); f888(_t41, _t42, _t43, _t44); }); if ((_t40.tag == 0)) { {
         } } else if ((_t40.tag == 1)) { l32 = _t40.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t49; t603 _t50 = l32; if ((_t50.tag == 0)) { {
-                _t49 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t49; t603 _t50 = l32; if ((_t50.tag == 0)) { {
+                _t49 = ((t735){ .tag = 1 });
             } } _t49; }), } });
         } } }
         { t604 _t51 = ({ t527 _t52 = (&(*l0)); t19 _t53 = ctx_add_u64(l29, ((t19)(8ULL)), 971, 30, 23); t19 _t54 = ((t19)(8ULL)); t19 _t55 = ctx_sub_u64(l15, l9, 971, 48, 23); f888(_t52, _t53, _t54, _t55); }); if ((_t51.tag == 0)) { {
         } } else if ((_t51.tag == 1)) { l33 = _t51.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t56; t603 _t57 = l33; if ((_t57.tag == 0)) { {
-                _t56 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t56; t603 _t57 = l33; if ((_t57.tag == 0)) { {
+                _t56 = ((t735){ .tag = 1 });
             } } _t56; }), } });
         } } }
-        return ((t805){ .tag = 0, .p.v0 = { .m_value = l29, } });
+        return ((t807){ .tag = 0, .p.v0 = { .m_value = l29, } });
     }
     __builtin_unreachable();
 }
@@ -64950,12 +64672,12 @@ static t19 f1903(t29 l0, t33 l1, t33 l2, t33 l3) {
 }
 
 // eval::fnconv
-static t805 f1904(t527 l0, t33 l1, t49 l2) {
+static t807 f1904(t527 l0, t33 l1, t49 l2) {
     t41 l3;
     t41 l4;
     t19 l5;
     t19 l6;
-    t733 l7;
+    t735 l7;
     t19 l8;
     t19 l9;
     t603 l10;
@@ -64971,76 +64693,76 @@ static t805 f1904(t527 l0, t33 l1, t49 l2) {
     {
         { t31 _t0 = (*({ t29 _t1 = (((*l0)).m_types); uint64_t _t2 = ((t13)((l2).m_ty)); _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 1240, 43, 23); })); if (!(_t0.tag == 6)) { {
             f1131((&(*l0)), ((t10){ .m_ptr = (void *)"eval: fnconv of a non-function", .m_len = 30 }));
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t3; t603 _t4 = ((t603){ .tag = 0 }); if ((_t4.tag == 0)) { {
-                _t3 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t3; t603 _t4 = ((t603){ .tag = 0 }); if ((_t4.tag == 0)) { {
+                _t3 = ((t735){ .tag = 1 });
             } } _t3; }), } });
         } } l3 = _t0.p.v6.m_params; }
         { t31 _t5 = (*({ t29 _t6 = (((*l0)).m_types); uint64_t _t7 = ((t13)(l1)); _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 1244, 43, 23); })); if (!(_t5.tag == 6)) { {
             f1131((&(*l0)), ((t10){ .m_ptr = (void *)"eval: fnconv to a non-function", .m_len = 30 }));
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t8; t603 _t9 = ((t603){ .tag = 0 }); if ((_t9.tag == 0)) { {
-                _t8 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t8; t603 _t9 = ((t603){ .tag = 0 }); if ((_t9.tag == 0)) { {
+                _t8 = ((t735){ .tag = 1 });
             } } _t8; }), } });
         } } l4 = _t5.p.v6.m_params; }
-        l5 = ({ t19 _t10; t805 _t11 = f1894((&(*l0)), l2); if ((_t11.tag == 0)) { l6 = _t11.p.v0.m_value; {
+        l5 = ({ t19 _t10; t807 _t11 = f1894((&(*l0)), l2); if ((_t11.tag == 0)) { l6 = _t11.p.v0.m_value; {
             _t10 = l6;
         } } else if ((_t11.tag == 1)) { l7 = _t11.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = l7, } });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = l7, } });
         } } _t10; });
         l8 = ({ t19 _t12; t645 _t13 = f1135((&(*l0)), l1); if ((_t13.tag == 0)) { l9 = _t13.p.v0.m_value; {
             _t12 = l9;
         } } else if ((_t13.tag == 1)) { l10 = _t13.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t14; t603 _t15 = l10; if ((_t15.tag == 0)) { {
-                _t14 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t14; t603 _t15 = l10; if ((_t15.tag == 0)) { {
+                _t14 = ((t735){ .tag = 1 });
             } } _t14; }), } });
         } } _t12; });
         if (f2025(l3, l4)) {
             { t604 _t16 = f888((&(*l0)), l8, ((t19)(8ULL)), l5); if ((_t16.tag == 0)) { {
             } } else if ((_t16.tag == 1)) { l11 = _t16.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t17; t603 _t18 = l11; if ((_t18.tag == 0)) { {
-                    _t17 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t17; t603 _t18 = l11; if ((_t18.tag == 0)) { {
+                    _t17 = ((t735){ .tag = 1 });
                 } } _t17; }), } });
             } } }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = l8, } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = l8, } });
         }
         l12 = ({ t527 _t19 = (&(*l0)); t513 _t20 = ((t513){ .m_kind = ((t33)(4ULL)), .m_a = ((t19)(ctx_as_u((uint64_t)((l2).m_ty), UINT64_MAX, "u64", 1254, 52, 23))), .m_b = ((t19)(0ULL)), }); t508 _t21 = ((t508){ .tag = 3, .p.v3 = { .m_from = (l2).m_ty, } }); f1907(_t19, _t20, _t21); });
         l13 = ({ t19 _t22; t645 _t23 = f886((&(*l0)), ((t19)(16ULL))); if ((_t23.tag == 0)) { l14 = _t23.p.v0.m_value; {
             _t22 = l14;
         } } else if ((_t23.tag == 1)) { l15 = _t23.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t24; t603 _t25 = l15; if ((_t25.tag == 0)) { {
-                _t24 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t24; t603 _t25 = l15; if ((_t25.tag == 0)) { {
+                _t24 = ((t735){ .tag = 1 });
             } } _t24; }), } });
         } } _t22; });
         { t604 _t26 = f888((&(*l0)), l13, ((t19)(8ULL)), l12); if ((_t26.tag == 0)) { {
         } } else if ((_t26.tag == 1)) { l16 = _t26.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t27; t603 _t28 = l16; if ((_t28.tag == 0)) { {
-                _t27 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t27; t603 _t28 = l16; if ((_t28.tag == 0)) { {
+                _t27 = ((t735){ .tag = 1 });
             } } _t27; }), } });
         } } }
         { t604 _t29 = ({ t527 _t30 = (&(*l0)); t19 _t31 = ctx_add_u64(l13, ((t19)(8ULL)), 1257, 32, 23); t19 _t32 = ((t19)(8ULL)); t19 _t33 = l5; f888(_t30, _t31, _t32, _t33); }); if ((_t29.tag == 0)) { {
         } } else if ((_t29.tag == 1)) { l17 = _t29.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t34; t603 _t35 = l17; if ((_t35.tag == 0)) { {
-                _t34 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t34; t603 _t35 = l17; if ((_t35.tag == 0)) { {
+                _t34 = ((t735){ .tag = 1 });
             } } _t34; }), } });
         } } }
         { t604 _t36 = f888((&(*l0)), l8, ((t19)(8ULL)), l13); if ((_t36.tag == 0)) { {
         } } else if ((_t36.tag == 1)) { l18 = _t36.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t37; t603 _t38 = l18; if ((_t38.tag == 0)) { {
-                _t37 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t37; t603 _t38 = l18; if ((_t38.tag == 0)) { {
+                _t37 = ((t735){ .tag = 1 });
             } } _t37; }), } });
         } } }
-        return ((t805){ .tag = 0, .p.v0 = { .m_value = l8, } });
+        return ((t807){ .tag = 0, .p.v0 = { .m_value = l8, } });
     }
     __builtin_unreachable();
 }
 
 // eval::args_of
-static t826 f1905(t527 l0, t59 l1, t13 l2) {
+static t828 f1905(t527 l0, t59 l1, t13 l2) {
     t13 l3;
     t13 l4;
     t95 l5;
     t19 l6;
     t19 l7;
-    t733 l8;
+    t735 l8;
     CTX_STACK_CHECK();
     {
         l3 = (((*l0)).m_argv).m_len;
@@ -65056,31 +64778,31 @@ static t826 f1905(t527 l0, t59 l1, t13 l2) {
         }
         l4 = ((t13)(0ULL));
         while ((l4 < (l1).m_len)) {
-            l6 = ({ t19 _t2; t805 _t3 = ({ t527 _t4 = (&(*l0)); t49 _t5 = ((*({ t59 _t6 = (l1); uint64_t _t7 = l4; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 1063, 44, 23); }))).m_value; f1741(_t4, _t5); }); if ((_t3.tag == 0)) { l7 = _t3.p.v0.m_value; {
+            l6 = ({ t19 _t2; t807 _t3 = ({ t527 _t4 = (&(*l0)); t49 _t5 = ((*({ t59 _t6 = (l1); uint64_t _t7 = l4; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 1063, 44, 23); }))).m_value; f1741(_t4, _t5); }); if ((_t3.tag == 0)) { l7 = _t3.p.v0.m_value; {
                 _t2 = l7;
             } } else if ((_t3.tag == 1)) { l8 = _t3.p.v1.m_error; {
-                return ((t826){ .tag = 1, .p.v1 = { .m_error = l8, } });
+                return ((t828){ .tag = 1, .p.v1 = { .m_error = l8, } });
             } } _t2; });
             (*({ t494 _t8 = (f1165(((*l0)).m_argv)); uint64_t _t9 = ({ t13 _t10 = l3; t13 _t11 = ((t13)(((*({ t59 _t12 = (l1); uint64_t _t13 = l4; _t12.m_ptr + ctx_idx(_t13, _t12.m_len, 1064, 53, 23); }))).m_index)); ctx_add_u64(_t10, _t11, 1064, 47, 23); }); _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 1064, 41, 23); })) = l6;
             l4 = ctx_add_u64(l4, ((t13)(1ULL)), 1065, 19, 23);
         }
-        return ((t826){ .tag = 0, .p.v0 = { .m_value = l3, } });
+        return ((t828){ .tag = 0, .p.v0 = { .m_value = l3, } });
     }
     __builtin_unreachable();
 }
 
 // eval::dcall
-static t805 f1906(t527 l0, t33 l1, t49 l2, t59 l3) {
+static t807 f1906(t527 l0, t33 l1, t49 l2, t59 l3) {
     t41 l4;
     t19 l5;
-    t733 l6;
+    t735 l6;
     t41 l7;
     t19 l8;
     t19 l9;
-    t733 l10;
+    t735 l10;
     t13 l11;
     t13 l12;
-    t733 l13;
+    t735 l13;
     t19 l14;
     t19 l15;
     t603 l16;
@@ -65092,43 +64814,43 @@ static t805 f1906(t527 l0, t33 l1, t49 l2, t59 l3) {
         } } else { {
             _t0 = ((bool)0);
         } } _t0; })) {
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t4; t805 _t5 = f2026((&(*l0)), l1, l2, l4, l3); if ((_t5.tag == 0)) { l5 = _t5.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t4; t807 _t5 = f2026((&(*l0)), l1, l2, l4, l3); if ((_t5.tag == 0)) { l5 = _t5.p.v0.m_value; {
                 _t4 = l5;
             } } else if ((_t5.tag == 1)) { l6 = _t5.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l6, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l6, } });
             } } _t4; }), } });
         }
         { t31 _t6 = (*({ t29 _t7 = (((*l0)).m_types); uint64_t _t8 = ((t13)((l2).m_ty)); _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 1073, 37, 23); })); if (!(_t6.tag == 6)) { {
             f1131((&(*l0)), ((t10){ .m_ptr = (void *)"eval: a call of a non-function", .m_len = 30 }));
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t9; t603 _t10 = ((t603){ .tag = 0 }); if ((_t10.tag == 0)) { {
-                _t9 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t9; t603 _t10 = ((t603){ .tag = 0 }); if ((_t10.tag == 0)) { {
+                _t9 = ((t735){ .tag = 1 });
             } } _t9; }), } });
         } } l7 = _t6.p.v6.m_params; }
-        l8 = ({ t19 _t11; t805 _t12 = f1894((&(*l0)), l2); if ((_t12.tag == 0)) { l9 = _t12.p.v0.m_value; {
+        l8 = ({ t19 _t11; t807 _t12 = f1894((&(*l0)), l2); if ((_t12.tag == 0)) { l9 = _t12.p.v0.m_value; {
             _t11 = l9;
         } } else if ((_t12.tag == 1)) { l10 = _t12.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = l10, } });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = l10, } });
         } } _t11; });
-        l11 = ({ t13 _t13; t826 _t14 = f1905((&(*l0)), l3, (l7).m_len); if ((_t14.tag == 0)) { l12 = _t14.p.v0.m_value; {
+        l11 = ({ t13 _t13; t828 _t14 = f1905((&(*l0)), l3, (l7).m_len); if ((_t14.tag == 0)) { l12 = _t14.p.v0.m_value; {
             _t13 = l12;
         } } else if ((_t14.tag == 1)) { l13 = _t14.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = l13, } });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = l13, } });
         } } _t13; });
         l14 = ({ t19 _t15; t645 _t16 = f1135((&(*l0)), l1); if ((_t16.tag == 0)) { l15 = _t16.p.v0.m_value; {
             _t15 = l15;
         } } else if ((_t16.tag == 1)) { l16 = _t16.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t17; t603 _t18 = l16; if ((_t18.tag == 0)) { {
-                _t17 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t17; t603 _t18 = l16; if ((_t18.tag == 0)) { {
+                _t17 = ((t735){ .tag = 1 });
             } } _t17; }), } });
         } } _t15; });
         { t604 _t19 = f2027((&(*l0)), l8, l7, l11, l14); if ((_t19.tag == 0)) { {
         } } else if ((_t19.tag == 1)) { l17 = _t19.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t20; t603 _t21 = l17; if ((_t21.tag == 0)) { {
-                _t20 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t20; t603 _t21 = l17; if ((_t21.tag == 0)) { {
+                _t20 = ((t735){ .tag = 1 });
             } } _t20; }), } });
         } } }
         (((*l0)).m_argv).m_len = l11;
-        return ((t805){ .tag = 0, .p.v0 = { .m_value = l14, } });
+        return ((t807){ .tag = 0, .p.v0 = { .m_value = l14, } });
     }
     __builtin_unreachable();
 }
@@ -65164,13 +64886,13 @@ static t19 f1907(t527 l0, t513 l1, t508 l2) {
 }
 
 // eval::record_of
-static t805 f1908(t527 l0, t33 l1, t19 l2, t19 l3, t19 l4, t59 l5) {
+static t807 f1908(t527 l0, t33 l1, t19 l2, t19 l3, t19 l4, t59 l5) {
     t13 l6;
     t19 l7;
     t13 l8;
     t19 l9;
     t19 l10;
-    t733 l11;
+    t735 l11;
     t95 l12;
     t33 l13;
     t19 l14;
@@ -65192,10 +64914,10 @@ static t805 f1908(t527 l0, t33 l1, t19 l2, t19 l3, t19 l4, t59 l5) {
         l7 = l4;
         l8 = ((t13)(0ULL));
         while ((l8 < (l5).m_len)) {
-            l9 = ({ t19 _t0; t805 _t1 = ({ t527 _t2 = (&(*l0)); t49 _t3 = ((*({ t59 _t4 = (l5); uint64_t _t5 = l8; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 1212, 44, 23); }))).m_value; f1741(_t2, _t3); }); if ((_t1.tag == 0)) { l10 = _t1.p.v0.m_value; {
+            l9 = ({ t19 _t0; t807 _t1 = ({ t527 _t2 = (&(*l0)); t49 _t3 = ((*({ t59 _t4 = (l5); uint64_t _t5 = l8; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 1212, 44, 23); }))).m_value; f1741(_t2, _t3); }); if ((_t1.tag == 0)) { l10 = _t1.p.v0.m_value; {
                 _t0 = l10;
             } } else if ((_t1.tag == 1)) { l11 = _t1.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l11, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l11, } });
             } } _t0; });
             { t110 _t6 = f1134((&((*l0)).m_argv), l9); if ((_t6.tag == 0)) { {
             } } else if ((_t6.tag == 1)) { l12 = _t6.p.v1.m_error; {
@@ -65210,21 +64932,21 @@ static t805 f1908(t527 l0, t33 l1, t19 l2, t19 l3, t19 l4, t59 l5) {
         l14 = ({ t19 _t14; t645 _t15 = f886((&(*l0)), l7); if ((_t15.tag == 0)) { l15 = _t15.p.v0.m_value; {
             _t14 = l15;
         } } else if ((_t15.tag == 1)) { l16 = _t15.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t16; t603 _t17 = l16; if ((_t17.tag == 0)) { {
-                _t16 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t16; t603 _t17 = l16; if ((_t17.tag == 0)) { {
+                _t16 = ((t735){ .tag = 1 });
             } } _t16; }), } });
         } } _t14; });
         { t604 _t18 = f888((&(*l0)), l14, ((t19)(8ULL)), l2); if ((_t18.tag == 0)) { {
         } } else if ((_t18.tag == 1)) { l17 = _t18.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t19; t603 _t20 = l17; if ((_t20.tag == 0)) { {
-                _t19 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t19; t603 _t20 = l17; if ((_t20.tag == 0)) { {
+                _t19 = ((t735){ .tag = 1 });
             } } _t19; }), } });
         } } }
         if ((l4 == ((t19)(16ULL)))) {
             { t604 _t21 = ({ t527 _t22 = (&(*l0)); t19 _t23 = ctx_add_u64(l14, ((t19)(8ULL)), 1220, 49, 23); t19 _t24 = ((t19)(8ULL)); t19 _t25 = l3; f888(_t22, _t23, _t24, _t25); }); if ((_t21.tag == 0)) { {
             } } else if ((_t21.tag == 1)) { l18 = _t21.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t26; t603 _t27 = l18; if ((_t27.tag == 0)) { {
-                    _t26 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t26; t603 _t27 = l18; if ((_t27.tag == 0)) { {
+                    _t26 = ((t735){ .tag = 1 });
                 } } _t26; }), } });
             } } }
         }
@@ -65236,8 +64958,8 @@ static t805 f1908(t527 l0, t33 l1, t19 l2, t19 l3, t19 l4, t59 l5) {
             l21 = (*({ t494 _t32 = (f1165(((*l0)).m_argv)); uint64_t _t33 = ctx_add_u64(l6, l8, 1226, 57, 23); _t32.m_ptr + ctx_idx(_t33, _t32.m_len, 1226, 51, 23); }));
             { t604 _t34 = ({ t527 _t35 = (&(*l0)); t19 _t36 = ctx_add_u64(l14, l19, 1227, 37, 23); t19 _t37 = l21; t19 _t38 = f885(((*l0)).m_types, l20); f1342(_t35, _t36, _t37, _t38); }); if ((_t34.tag == 0)) { {
             } } else if ((_t34.tag == 1)) { l22 = _t34.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t39; t603 _t40 = l22; if ((_t40.tag == 0)) { {
-                    _t39 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t39; t603 _t40 = l22; if ((_t40.tag == 0)) { {
+                    _t39 = ((t735){ .tag = 1 });
                 } } _t39; }), } });
             } } }
             l19 = ({ t19 _t41 = l19; t19 _t42 = f885(((*l0)).m_types, l20); ctx_add_u64(_t41, _t42, 1228, 23, 23); });
@@ -65247,17 +64969,17 @@ static t805 f1908(t527 l0, t33 l1, t19 l2, t19 l3, t19 l4, t59 l5) {
         l23 = ({ t19 _t43; t645 _t44 = f1135((&(*l0)), l1); if ((_t44.tag == 0)) { l24 = _t44.p.v0.m_value; {
             _t43 = l24;
         } } else if ((_t44.tag == 1)) { l25 = _t44.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t45; t603 _t46 = l25; if ((_t46.tag == 0)) { {
-                _t45 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t45; t603 _t46 = l25; if ((_t46.tag == 0)) { {
+                _t45 = ((t735){ .tag = 1 });
             } } _t45; }), } });
         } } _t43; });
         { t604 _t47 = f888((&(*l0)), l23, ((t19)(8ULL)), l14); if ((_t47.tag == 0)) { {
         } } else if ((_t47.tag == 1)) { l26 = _t47.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t48; t603 _t49 = l26; if ((_t49.tag == 0)) { {
-                _t48 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t48; t603 _t49 = l26; if ((_t49.tag == 0)) { {
+                _t48 = ((t735){ .tag = 1 });
             } } _t48; }), } });
         } } }
-        return ((t805){ .tag = 0, .p.v0 = { .m_value = l23, } });
+        return ((t807){ .tag = 0, .p.v0 = { .m_value = l23, } });
     }
     __builtin_unreachable();
 }
@@ -65310,9 +65032,9 @@ static t645 f1909(t527 l0, t33 l1) {
 }
 
 // eval::literal_of
-static t805 f1910(t527 l0, t33 l1, t68 l2, t59 l3) {
+static t807 f1910(t527 l0, t33 l1, t68 l2, t59 l3) {
     t19 l4;
-    t733 l5;
+    t735 l5;
     t19 l6;
     t603 l7;
     t19 l8;
@@ -65328,7 +65050,7 @@ static t805 f1910(t527 l0, t33 l1, t68 l2, t59 l3) {
     t61 l18;
     t19 l19;
     t19 l20;
-    t733 l21;
+    t735 l21;
     t603 l22;
     CTX_STACK_CHECK();
     {
@@ -65338,25 +65060,25 @@ static t805 f1910(t527 l0, t33 l1, t68 l2, t59 l3) {
             _t0 = ((bool)0);
         } } _t0; })) {
             if (((l3).m_len == ((t13)(1ULL)))) {
-                return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t4; t805 _t5 = ({ t527 _t6 = (&(*l0)); t49 _t7 = ((*({ t59 _t8 = (l3); uint64_t _t9 = ((t13)(0ULL)); _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 979, 64, 23); }))).m_value; f1741(_t6, _t7); }); if ((_t5.tag == 0)) { l4 = _t5.p.v0.m_value; {
+                return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t4; t807 _t5 = ({ t527 _t6 = (&(*l0)); t49 _t7 = ((*({ t59 _t8 = (l3); uint64_t _t9 = ((t13)(0ULL)); _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 979, 64, 23); }))).m_value; f1741(_t6, _t7); }); if ((_t5.tag == 0)) { l4 = _t5.p.v0.m_value; {
                     _t4 = l4;
                 } } else if ((_t5.tag == 1)) { l5 = _t5.p.v1.m_error; {
-                    return ((t805){ .tag = 1, .p.v1 = { .m_error = l5, } });
+                    return ((t807){ .tag = 1, .p.v1 = { .m_error = l5, } });
                 } } _t4; }), } });
             }
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t10; t645 _t11 = f1135((&(*l0)), l1); if ((_t11.tag == 0)) { l6 = _t11.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t10; t645 _t11 = f1135((&(*l0)), l1); if ((_t11.tag == 0)) { l6 = _t11.p.v0.m_value; {
                 _t10 = l6;
             } } else if ((_t11.tag == 1)) { l7 = _t11.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t12; t603 _t13 = l7; if ((_t13.tag == 0)) { {
-                    _t12 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t12; t603 _t13 = l7; if ((_t13.tag == 0)) { {
+                    _t12 = ((t735){ .tag = 1 });
                 } } _t12; }), } });
             } } _t10; }), } });
         }
         l8 = ({ t19 _t14; t645 _t15 = f1135((&(*l0)), l1); if ((_t15.tag == 0)) { l9 = _t15.p.v0.m_value; {
             _t14 = l9;
         } } else if ((_t15.tag == 1)) { l10 = _t15.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t16; t603 _t17 = l10; if ((_t17.tag == 0)) { {
-                _t16 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t16; t603 _t17 = l10; if ((_t17.tag == 0)) { {
+                _t16 = ((t735){ .tag = 1 });
             } } _t16; }), } });
         } } _t14; });
         l11 = f2007(((*l0)).m_types, l1);
@@ -65369,14 +65091,14 @@ static t805 f1910(t527 l0, t33 l1, t68 l2, t59 l3) {
                 _t22 = l14;
             } } else if ((_t23.tag == 0)) { {
                 f1131((&(*l0)), ((t10){ .m_ptr = (void *)"eval: a variant literal without a variant", .m_len = 41 }));
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t24; t603 _t25 = ((t603){ .tag = 0 }); if ((_t25.tag == 0)) { {
-                    _t24 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t24; t603 _t25 = ((t603){ .tag = 0 }); if ((_t25.tag == 0)) { {
+                    _t24 = ((t735){ .tag = 1 });
                 } } _t24; }), } });
             } } _t22; });
             { t604 _t26 = ({ t527 _t27 = (&(*l0)); t19 _t28 = l8; t19 _t29 = ((t19)(4ULL)); t19 _t30 = ((t19)(ctx_as_u((uint64_t)(l13), UINT64_MAX, "u64", 989, 46, 23))); f888(_t27, _t28, _t29, _t30); }); if ((_t26.tag == 0)) { {
             } } else if ((_t26.tag == 1)) { l15 = _t26.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t31; t603 _t32 = l15; if ((_t32.tag == 0)) { {
-                    _t31 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t31; t603 _t32 = l15; if ((_t32.tag == 0)) { {
+                    _t31 = ((t735){ .tag = 1 });
                 } } _t31; }), } });
             } } }
             l11 = ({ t34 _t33; t40 _t34 = ((*({ t37 _t35 = (l12); uint64_t _t36 = ((t13)(l13)); _t35.m_ptr + ctx_idx(_t36, _t35.m_len, 990, 30, 23); }))).m_fields; if ((_t34.tag == 1)) { l16 = _t34.p.v1.m_value; {
@@ -65388,20 +65110,20 @@ static t805 f1910(t527 l0, t33 l1, t68 l2, t59 l3) {
         l17 = ((t13)(0ULL));
         while ((l17 < (l3).m_len)) {
             l18 = (*({ t59 _t37 = (l3); uint64_t _t38 = l17; _t37.m_ptr + ctx_idx(_t38, _t37.m_len, 994, 26, 23); }));
-            l19 = ({ t19 _t39; t805 _t40 = f1741((&(*l0)), (l18).m_value); if ((_t40.tag == 0)) { l20 = _t40.p.v0.m_value; {
+            l19 = ({ t19 _t39; t807 _t40 = f1741((&(*l0)), (l18).m_value); if ((_t40.tag == 0)) { l20 = _t40.p.v0.m_value; {
                 _t39 = l20;
             } } else if ((_t40.tag == 1)) { l21 = _t40.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l21, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l21, } });
             } } _t39; });
             { t604 _t41 = ({ t527 _t42 = (&(*l0)); t19 _t43 = ({ t19 _t46 = l8; t19 _t47 = ((*({ t34 _t48 = (l11); uint64_t _t49 = ((t13)((l18).m_index)); _t48.m_ptr + ctx_idx(_t49, _t48.m_len, 996, 43, 23); }))).m_offset; ctx_add_u64(_t46, _t47, 996, 35, 23); }); t19 _t44 = l19; t19 _t45 = f885(((*l0)).m_types, ((l18).m_value).m_ty); f1342(_t42, _t43, _t44, _t45); }); if ((_t41.tag == 0)) { {
             } } else if ((_t41.tag == 1)) { l22 = _t41.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t50; t603 _t51 = l22; if ((_t51.tag == 0)) { {
-                    _t50 = ((t733){ .tag = 1 });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t50; t603 _t51 = l22; if ((_t51.tag == 0)) { {
+                    _t50 = ((t735){ .tag = 1 });
                 } } _t50; }), } });
             } } }
             l17 = ctx_add_u64(l17, ((t13)(1ULL)), 997, 19, 23);
         }
-        return ((t805){ .tag = 0, .p.v0 = { .m_value = l8, } });
+        return ((t807){ .tag = 0, .p.v0 = { .m_value = l8, } });
     }
     __builtin_unreachable();
 }
@@ -65652,7 +65374,7 @@ static t49 f1917(t537 l0, t49 l1, t49 l2, t33 l3) {
     t33 l6;
     t33 l7;
     t64 l8;
-    t678 l9;
+    t680 l9;
     t49 l10;
     t572 l11;
     CTX_STACK_CHECK();
@@ -66102,7 +65824,7 @@ static t176 f1937(t10 l0) {
 }
 
 // alloc::resize(syntax::Binder, arena::Arena)
-static t827 f1938(t27 l0, t26 l1, t171 l2, t13 l3) {
+static t829 f1938(t27 l0, t26 l1, t171 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -66110,9 +65832,9 @@ static t827 f1938(t27 l0, t26 l1, t171 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2038(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(88ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t827){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t829){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t827){ .tag = 0, .p.v0 = { .m_value = f2039(l4), } });
+        return ((t829){ .tag = 0, .p.v0 = { .m_value = f2039(l4), } });
     }
     __builtin_unreachable();
 }
@@ -66168,7 +65890,7 @@ static t33 f1941(t257 l0, t10 l1, t14 l2) {
 }
 
 // check::value_ref
-static t694 f1942(t429 l0, t286 l1, t146 l2) {
+static t696 f1942(t429 l0, t286 l1, t146 l2) {
     t33 l3;
     t292 l4;
     t132 l5;
@@ -66219,9 +65941,9 @@ static t694 f1942(t429 l0, t286 l1, t146 l2) {
                         } } }
                     } } }
                     ({ t429 _t9 = (&(*l0)); t121 _t10 = ((l2).m_name).m_span; t17 _t11 = f59(l5); f600(_t9, _t10, _t11); });
-                    return ((t694){0});
+                    return ((t696){0});
                 }
-                return ((t694){ .tag = 1, .p.v1.m_value = ((t359){ .tag = 2, .p.v2 = { .m_decl = l3, } }) });
+                return ((t696){ .tag = 1, .p.v1.m_value = ((t359){ .tag = 2, .p.v2 = { .m_decl = l3, } }) });
             }
             if (((l4).m_kind == ((t12)(8ULL)))) {
                 if ((((l2).m_targs).tag != 0)) {
@@ -66245,9 +65967,9 @@ static t694 f1942(t429 l0, t286 l1, t146 l2) {
                         } } }
                     } } }
                     ({ t429 _t20 = (&(*l0)); t121 _t21 = ((l2).m_name).m_span; t17 _t22 = f59(l10); f600(_t20, _t21, _t22); });
-                    return ((t694){0});
+                    return ((t696){0});
                 }
-                return ((t694){ .tag = 1, .p.v1.m_value = ((t359){ .tag = 6, .p.v6 = { .m_decl = l3, } }) });
+                return ((t696){ .tag = 1, .p.v1.m_value = ((t359){ .tag = 6, .p.v6 = { .m_decl = l3, } }) });
             }
             l15 = f1943((&(*l0)), l2);
             l16 = f357((&g13), ((*l0)).m_heap);
@@ -66285,7 +66007,7 @@ static t694 f1942(t429 l0, t286 l1, t146 l2) {
                         } } }
                     } } }
                     ({ t429 _t37 = (&(*l0)); t121 _t38 = ((l2).m_name).m_span; t17 _t39 = f59(l17); f600(_t37, _t38, _t39); });
-                    return ((t694){0});
+                    return ((t696){0});
                 }
                 l25 = ((t13)(0ULL));
                 while ((l25 < ((l15).p.v1.m_value).m_len)) {
@@ -66298,9 +66020,9 @@ static t694 f1942(t429 l0, t286 l1, t146 l2) {
                 ({ t429 _t42 = (&(*l0)); t33 _t43 = l26; t147 _t44 = (*({ t182 _t47 = ((l4).m_tparams); uint64_t _t48 = (l16).m_len; _t47.m_ptr + ctx_idx(_t48, _t47.m_len, 6196, 58, 18); })); t147 _t45 = (l4).m_name; t121 _t46 = ((l2).m_name).m_span; f1056(_t42, _t43, _t44, _t45, _t46); });
                 f601((&l16), l26);
             }
-            return ((t694){ .tag = 1, .p.v1.m_value = ({ t33 _t49 = l3; t254 _t50 = f359(l16); ((t359){ .tag = 1, .p.v1 = { .m_decl = _t49, .m_targs = _t50, } }); }) });
+            return ((t696){ .tag = 1, .p.v1.m_value = ({ t33 _t49 = l3; t254 _t50 = f359(l16); ((t359){ .tag = 1, .p.v1 = { .m_decl = _t49, .m_targs = _t50, } }); }) });
         } } else { {
-            return ((t694){0});
+            return ((t696){0});
         } } }
     }
     __builtin_unreachable();
@@ -66643,7 +66365,7 @@ static t33 f1947(t429 l0, t141 l1, t33 l2, t263 l3, t17 l4, t159 l5, t14 l6, t14
     t95 l16;
     t95 l17;
     t13 l18;
-    t699 l19;
+    t701 l19;
     CTX_STACK_CHECK();
     {
         f1949((&(*l0)), l1, ((bool)1));
@@ -66722,7 +66444,7 @@ static t33 f1948(t429 l0, t141 l1, t33 l2, t263 l3, t17 l4, t159 l5, t263 l6, t1
     t95 l20;
     t95 l21;
     t95 l22;
-    t699 l23;
+    t701 l23;
     CTX_STACK_CHECK();
     {
         f1949((&(*l0)), l1, ((bool)1));
@@ -66805,7 +66527,7 @@ static t16 f1949(t429 l0, t141 l1, t14 l2) {
     t95 l3;
     CTX_STACK_CHECK();
     {
-        { t110 _t0 = ({ t832 _t1 = (&((*l0)).m_literal); t19 _t2 = f1084(l1); t14 _t3 = l2; f1961(_t1, _t2, _t3); }); if ((_t0.tag == 0)) { {
+        { t110 _t0 = ({ t834 _t1 = (&((*l0)).m_literal); t19 _t2 = f1084(l1); t14 _t3 = l2; f1961(_t1, _t2, _t3); }); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l3 = _t0.p.v1.m_error; {
             { t95 _t4 = l3; if ((_t4.tag == 0)) { {
                 ctx_panic(6265, 9, 18, "try! failed: alloc::out_of_memory");
@@ -66908,10 +66630,10 @@ static t16 f1951(t429 l0, t141 l1, t33 l2, t33 l3) {
 }
 
 // list::new(check::Forward, arena::Arena)
-static t828 f1952(t27 l0, t26 l1) {
+static t830 f1952(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t376 _t0 = f2041(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t828){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t376 _t0 = f2041(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t830){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
@@ -66934,7 +66656,7 @@ static t14 f1953(t159 l0, t10 l1) {
 }
 
 // list::push(check::Forward, arena::Arena)
-static t110 f1954(t829 l0, t378 l1) {
+static t110 f1954(t831 l0, t378 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -66961,9 +66683,9 @@ static t378 f1955(t429 l0, t265 l1, t33 l2, t121 l3) {
     t95 l11;
     t95 l12;
     t33 l13;
-    t724 l14;
+    t726 l14;
     t33 l15;
-    t724 l16;
+    t726 l16;
     CTX_STACK_CHECK();
     {
         f1639((&(*l0)), l2, l3);
@@ -67002,8 +66724,8 @@ static t378 f1955(t429 l0, t265 l1, t33 l2, t121 l3) {
                 ({ t429 _t11 = (&(*l0)); t121 _t12 = l3; t17 _t13 = f59(l7); f600(_t11, _t12, _t13); });
             }
             l13 = f1139((&((*l0)).m_ty), (l1).m_ty, ((bool)1));
-            l14 = ({ t724 _t14; if (f2040((*l0), l5, l13)) {
-                _t14 = ((t724){ .tag = 1 });
+            l14 = ({ t726 _t14; if (f2040((*l0), l5, l13)) {
+                _t14 = ((t726){ .tag = 1 });
             } else {
                 _t14 = f1289((&(*l0)), l5, l13, l3);
             } _t14; });
@@ -67017,7 +66739,7 @@ static t378 f1955(t429 l0, t265 l1, t33 l2, t121 l3) {
 }
 
 // map::put(u64, []check::Forward, arena::Arena)
-static t110 f1956(t830 l0, t19 l1, t376 l2) {
+static t110 f1956(t832 l0, t19 l1, t376 l2) {
     t630 l3;
     t95 l4;
     t13 l5;
@@ -67047,7 +66769,7 @@ static t110 f1956(t830 l0, t19 l1, t376 l2) {
 }
 
 // list::items(check::Forward, arena::Arena)
-static t376 f1957(t828 l0) {
+static t376 f1957(t830 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t376 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t376){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -67098,20 +66820,20 @@ static t110 f1958(t263 l0, t133 l1) {
 
 // check::check_exclusive
 static t391 f1959(t429 l0, t141 l1, t159 l2, t263 l3) {
-    t845 l4;
+    t847 l4;
     t13 l5;
     t161 l6;
-    t699 l7;
+    t701 l7;
     t10 l8;
     t144 l9;
     t153 l10;
-    t792 l11;
-    t735 l12;
+    t794 l11;
+    t737 l12;
     t378 l13;
-    t846 l14;
+    t848 l14;
     t13 l15;
-    t848 l16;
-    t848 l17;
+    t850 l16;
+    t850 l17;
     t132 l18;
     t10 l19;
     t393 l20;
@@ -67141,7 +66863,7 @@ static t391 f1959(t429 l0, t141 l1, t159 l2, t263 l3) {
                     } } _t2; })) {
                         l11 = f1678((*l0), (*l10));
                         if (((l11).tag != 0)) {
-                            f2048((&l4), ((t848){ .m_p = (l11).p.v1.m_value, .m_holder = ((t10){ .m_ptr = (void *)"", .m_len = 0 }), }));
+                            f2048((&l4), ((t850){ .m_p = (l11).p.v1.m_value, .m_holder = ((t10){ .m_ptr = (void *)"", .m_len = 0 }), }));
                         }
                     }
                 } else {
@@ -67154,7 +66876,7 @@ static t391 f1959(t429 l0, t141 l1, t159 l2, t263 l3) {
                     } } else { {
                         _t4 = ((l6).m_name).m_text;
                     } } _t4; });
-                    ({ t849 _t11 = (&l4); t257 _t12 = (*l0); t391 _t13 = f1707((*l0), (l6).m_value); t10 _t14 = l8; f2047(_t11, _t12, _t13, _t14); });
+                    ({ t851 _t11 = (&l4); t257 _t12 = (*l0); t391 _t13 = f1707((*l0), (l6).m_value); t10 _t14 = l8; f2047(_t11, _t12, _t13, _t14); });
                 }
             }
             l5 = ctx_add_u64(l5, ((t13)(1ULL)), 5091, 19, 18);
@@ -67165,10 +66887,10 @@ static t391 f1959(t429 l0, t141 l1, t159 l2, t263 l3) {
             while ((l5 < ((l12).p.v1.m_value).m_len)) {
                 l13 = (*({ t376 _t17 = ((l12).p.v1.m_value); uint64_t _t18 = l5; _t17.m_ptr + ctx_idx(_t18, _t17.m_len, 5097, 27, 18); }));
                 if ((l13).m_mutable) {
-                    f2048((&l4), ((t848){ .m_p = ({ t33 _t19 = f1805((*l0), (l13).m_var); t8 _t20 = f38(); ((t393){ .m_root = _t19, .m_steps = _t20, }); }), .m_holder = ((t10){ .m_ptr = (void *)"", .m_len = 0 }), }));
+                    f2048((&l4), ((t850){ .m_p = ({ t33 _t19 = f1805((*l0), (l13).m_var); t8 _t20 = f38(); ((t393){ .m_root = _t19, .m_steps = _t20, }); }), .m_holder = ((t10){ .m_ptr = (void *)"", .m_len = 0 }), }));
                 } else {
                     if ((((l13).m_conv).tag == 0)) {
-                        ({ t849 _t21 = (&l4); t257 _t22 = (*l0); t391 _t23 = f1866((*l0), (l13).m_var); t10 _t24 = (l13).m_name; f2047(_t21, _t22, _t23, _t24); });
+                        ({ t851 _t21 = (&l4); t257 _t22 = (*l0); t391 _t23 = f1866((*l0), (l13).m_var); t10 _t24 = (l13).m_name; f2047(_t21, _t22, _t23, _t24); });
                     }
                 }
                 l5 = ctx_add_u64(l5, ((t13)(1ULL)), 5103, 23, 18);
@@ -67179,8 +66901,8 @@ static t391 f1959(t429 l0, t141 l1, t159 l2, t263 l3) {
         while ((l5 < (l14).m_len)) {
             l15 = ctx_add_u64(l5, ((t13)(1ULL)), 5109, 27, 18);
             while ((l15 < (l14).m_len)) {
-                l16 = (*({ t846 _t25 = (l14); uint64_t _t26 = l5; _t25.m_ptr + ctx_idx(_t26, _t25.m_len, 5111, 27, 18); }));
-                l17 = (*({ t846 _t27 = (l14); uint64_t _t28 = l15; _t27.m_ptr + ctx_idx(_t28, _t27.m_len, 5112, 27, 18); }));
+                l16 = (*({ t848 _t25 = (l14); uint64_t _t26 = l5; _t25.m_ptr + ctx_idx(_t26, _t25.m_len, 5111, 27, 18); }));
+                l17 = (*({ t848 _t27 = (l14); uint64_t _t28 = l15; _t27.m_ptr + ctx_idx(_t28, _t27.m_len, 5112, 27, 18); }));
                 if (f2050((l16).m_p, (l17).m_p)) {
                     l18 = f598((*l0));
                     if (((((l16).m_holder).m_len == ((t13)(0ULL))) && (((l17).m_holder).m_len == ((t13)(0ULL))))) {
@@ -67253,7 +66975,7 @@ static t391 f1959(t429 l0, t141 l1, t159 l2, t263 l3) {
 }
 
 // map::put(u64, []check::Place, arena::Arena)
-static t110 f1960(t831 l0, t19 l1, t391 l2) {
+static t110 f1960(t833 l0, t19 l1, t391 l2) {
     t630 l3;
     t95 l4;
     t13 l5;
@@ -67283,7 +67005,7 @@ static t110 f1960(t831 l0, t19 l1, t391 l2) {
 }
 
 // map::put(u64, bool, arena::Arena)
-static t110 f1961(t832 l0, t19 l1, t14 l2) {
+static t110 f1961(t834 l0, t19 l1, t14 l2) {
     t630 l3;
     t95 l4;
     t13 l5;
@@ -67313,7 +67035,7 @@ static t110 f1961(t832 l0, t19 l1, t14 l2) {
 }
 
 // check::binds_name
-static t14 f1962(t257 l0, t781 l1, t783 l2) {
+static t14 f1962(t257 l0, t783 l1, t785 l2) {
     t10 l3;
     t13 l4;
     CTX_STACK_CHECK();
@@ -67321,7 +67043,7 @@ static t14 f1962(t257 l0, t781 l1, t783 l2) {
         l3 = (f1158(l0, (l2).m_var)).m_name;
         l4 = ((t13)(0ULL));
         while ((l4 < (l1).m_len)) {
-            if ((((*({ t781 _t0 = (l1); uint64_t _t1 = l4; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 4295, 18, 18); }))).m_bind && ({ t10 _t2 = (({ t257 _t4 = l0; t33 _t5 = ((*({ t781 _t6 = (l1); uint64_t _t7 = l4; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 4295, 70, 18); }))).m_var; f1158(_t4, _t5); })).m_name; t10 _t3 = l3; f1(_t2, _t3); }))) {
+            if ((((*({ t783 _t0 = (l1); uint64_t _t1 = l4; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 4295, 18, 18); }))).m_bind && ({ t10 _t2 = (({ t257 _t4 = l0; t33 _t5 = ((*({ t783 _t6 = (l1); uint64_t _t7 = l4; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 4295, 70, 18); }))).m_var; f1158(_t4, _t5); })).m_name; t10 _t3 = l3; f1(_t2, _t3); }))) {
                 return ((bool)1);
             }
             l4 = ctx_add_u64(l4, ((t13)(1ULL)), 4296, 19, 18);
@@ -67332,14 +67054,14 @@ static t14 f1962(t257 l0, t781 l1, t783 l2) {
 }
 
 // check::has_fact
-static t14 f1963(t781 l0, t783 l1) {
+static t14 f1963(t783 l0, t785 l1) {
     t13 l2;
-    t783 l3;
+    t785 l3;
     CTX_STACK_CHECK();
     {
         l2 = ((t13)(0ULL));
         while ((l2 < (l0).m_len)) {
-            l3 = (*({ t781 _t0 = (l0); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 4315, 23, 18); }));
+            l3 = (*({ t783 _t0 = (l0); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 4315, 23, 18); }));
             if ((((l1).m_var != ((t33)(4294967295ULL))) || ((l3).m_var != ((t33)(4294967295ULL))))) {
                 if (((l1).m_var == (l3).m_var)) {
                     return ((bool)1);
@@ -67374,7 +67096,7 @@ static t14 f1964(t8 l0) {
 }
 
 // list::push(check::Fact, arena::Arena)
-static t110 f1965(t817 l0, t783 l1) {
+static t110 f1965(t819 l0, t785 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -67382,7 +67104,7 @@ static t110 f1965(t817 l0, t783 l1) {
         } } else if ((_t0.tag == 1)) { l2 = _t0.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l2, } });
         } } }
-        (*({ t781 _t1 = (((*l0)).m_items); uint64_t _t2 = ((*l0)).m_len; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 36, 19, 10); })) = l1;
+        (*({ t783 _t1 = (((*l0)).m_items); uint64_t _t2 = ((*l0)).m_len; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 36, 19, 10); })) = l1;
         { t13 _t3 = ctx_add_u64(((*l0)).m_len, ((t13)(1ULL)), 37, 29, 10); ((*l0)).m_len = _t3; }
         return ((t110){ .tag = 0 });
     }
@@ -67390,10 +67112,10 @@ static t110 f1965(t817 l0, t783 l1) {
 }
 
 // list::new(check::Piece, arena::Arena)
-static t833 f1966(t27 l0, t26 l1) {
+static t835 f1966(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t384 _t0 = f2058(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t833){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t384 _t0 = f2058(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t835){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
@@ -67413,7 +67135,7 @@ static t16 f1967(t241 l0, t12 l1) {
 }
 
 // check::add_piece
-static t16 f1968(t834 l0, t386 l1) {
+static t16 f1968(t836 l0, t386 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -67427,7 +67149,7 @@ static t16 f1968(t834 l0, t386 l1) {
 }
 
 // list::items(check::Piece, arena::Arena)
-static t384 f1969(t833 l0) {
+static t384 f1969(t835 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t384 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t384){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -67436,7 +67158,7 @@ static t384 f1969(t833 l0) {
 }
 
 // map::rehash(u64, []mut check::Piece, arena::Arena)
-static t110 f1970(t818 l0) {
+static t110 f1970(t820 l0) {
     t13 l1;
     t381 l2;
     t381 l3;
@@ -67451,7 +67173,7 @@ static t110 f1970(t818 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t381 _t2 = ({ t381 _t3; t850 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t381 _t7 = f554(); t13 _t8 = l1; f2060(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t381 _t2 = ({ t381 _t3; t852 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t381 _t7 = f554(); t13 _t8 = l1; f2060(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -67504,7 +67226,7 @@ static t13 f1972(t364 l0, t19 l1) {
 }
 
 // alloc::resize(map::Slot(u64, check::Access), arena::Arena)
-static t835 f1973(t27 l0, t26 l1, t365 l2, t13 l3) {
+static t837 f1973(t27 l0, t26 l1, t365 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -67512,9 +67234,9 @@ static t835 f1973(t27 l0, t26 l1, t365 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2062(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(24ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t835){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t837){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t835){ .tag = 0, .p.v0 = { .m_value = f2063(l4), } });
+        return ((t837){ .tag = 0, .p.v0 = { .m_value = f2063(l4), } });
     }
     __builtin_unreachable();
 }
@@ -67533,10 +67255,10 @@ static t16 f1974(t365 l0, t367 l1) {
 }
 
 // list::reserve(check::Branch, arena::Arena)
-static t110 f1975(t791 l0, t13 l1) {
+static t110 f1975(t793 l0, t13 l1) {
     t13 l2;
     t13 l3;
-    t788 l4;
+    t790 l4;
     t95 l5;
     CTX_STACK_CHECK();
     {
@@ -67551,7 +67273,7 @@ static t110 f1975(t791 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t788 _t0 = ({ t788 _t1; t851 _t2 = f2064(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t790 _t0 = ({ t790 _t1; t853 _t2 = f2064(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -67579,7 +67301,7 @@ static t33 f1976(t429 l0, t167 l1, t33 l2) {
 }
 
 // check::branch_escape
-static t16 f1977(t429 l0, t772 l1) {
+static t16 f1977(t429 l0, t774 l1) {
     t121 l2;
     t141 l3;
     t167 l4;
@@ -67604,14 +67326,14 @@ static t16 f1977(t429 l0, t772 l1) {
     t95 l23;
     CTX_STACK_CHECK();
     {
-        l2 = ({ t121 _t0; t772 _t1 = l1; if ((_t1.tag == 1)) { l3 = _t1.p.v1.m_e; {
+        l2 = ({ t121 _t0; t774 _t1 = l1; if ((_t1.tag == 1)) { l3 = _t1.p.v1.m_e; {
             _t0 = f1044(l3);
         } } else if ((_t1.tag == 2)) { l4 = _t1.p.v2.m_s; {
             _t0 = (l4).m_span;
         } } else if ((_t1.tag == 0)) { {
             _t0 = f605();
         } } _t0; });
-        l5 = ({ t33 _t2; t772 _t3 = l1; if ((_t3.tag == 1)) { l6 = _t3.p.v1.m_e; {
+        l5 = ({ t33 _t2; t774 _t3 = l1; if ((_t3.tag == 1)) { l6 = _t3.p.v1.m_e; {
             _t2 = ({ t257 _t4 = (*l0); t19 _t5 = f1084(l6); f1372(_t4, _t5); });
         } } else if ((_t3.tag == 2)) { l7 = _t3.p.v2.m_s; {
             _t2 = ({ t257 _t6 = (*l0); t19 _t7 = f1385(l7); f1372(_t6, _t7); });
@@ -67681,11 +67403,11 @@ static t16 f1977(t429 l0, t772 l1) {
 }
 
 // check::literal_kind
-static t33 f1978(t257 l0, t772 l1) {
+static t33 f1978(t257 l0, t774 l1) {
     t141 l2;
     CTX_STACK_CHECK();
     {
-        if (({ t14 _t0; t772 _t1 = l1; if ((_t1.tag == 1)) { l2 = _t1.p.v1.m_e; {
+        if (({ t14 _t0; t774 _t1 = l1; if ((_t1.tag == 1)) { l2 = _t1.p.v1.m_e; {
             _t0 = ((bool)1);
         } } else { {
             _t0 = ((bool)0);
@@ -67708,7 +67430,7 @@ static t33 f1978(t257 l0, t772 l1) {
 }
 
 // list::reserve(check::Pending, arena::Arena)
-static t110 f1979(t819 l0, t13 l1) {
+static t110 f1979(t821 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t421 l4;
@@ -67726,7 +67448,7 @@ static t110 f1979(t819 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t421 _t0 = ({ t421 _t1; t852 _t2 = f2066(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t421 _t0 = ({ t421 _t1; t854 _t2 = f2066(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -67737,8 +67459,8 @@ static t110 f1979(t819 l0, t13 l1) {
 }
 
 // check::scan
-static t16 f1980(t429 l0, t794 l1, t141 l2) {
-    t792 l3;
+static t16 f1980(t429 l0, t796 l1, t141 l2) {
+    t794 l3;
     t141 l4;
     t153 l5;
     t153 l6;
@@ -67749,7 +67471,7 @@ static t16 f1980(t429 l0, t794 l1, t141 l2) {
     t14 l11;
     t359 l12;
     t13 l13;
-    t735 l14;
+    t737 l14;
     t393 l15;
     t153 l16;
     t153 l17;
@@ -67771,7 +67493,7 @@ static t16 f1980(t429 l0, t794 l1, t141 l2) {
         { t142 _t0 = (l2).m_k; if ((_t0.tag == 6) || (_t0.tag == 7) || (_t0.tag == 9) || (_t0.tag == 8)) { {
             l3 = f2067((*l0), l2);
             if ((((l3).tag != 0) && f2050((l3).p.v1.m_value, (l1).m_forb))) {
-                ({ t429 _t1 = (&(*l0)); t794 _t2 = l1; t121 _t3 = f1044(l2); f2068(_t1, _t2, _t3); });
+                ({ t429 _t1 = (&(*l0)); t796 _t2 = l1; t121 _t3 = f1044(l2); f2068(_t1, _t2, _t3); });
             }
             l4 = l2;
             while (((bool)1)) {
@@ -67800,7 +67522,7 @@ static t16 f1980(t429 l0, t794 l1, t141 l2) {
             } } else { {
                 _t7 = ((bool)0);
             } } _t7; })) {
-                l11 = ({ t14 _t9; t694 _t10 = ({ t355 _t11 = ((*l0)).m_refs; t19 _t12 = f1084((*l9)); f1087(_t11, _t12); }); if ((_t10.tag == 0)) { {
+                l11 = ({ t14 _t9; t696 _t10 = ({ t355 _t11 = ((*l0)).m_refs; t19 _t12 = f1084((*l9)); f1087(_t11, _t12); }); if ((_t10.tag == 0)) { {
                     _t9 = ((bool)0);
                 } } else if ((_t10.tag == 1)) { l12 = _t10.p.v1.m_value; {
                     _t9 = ({ t14 _t13; t359 _t14 = l12; if ((_t14.tag == 0)) { {
@@ -67815,7 +67537,7 @@ static t16 f1980(t429 l0, t794 l1, t141 l2) {
             }
             l13 = ((t13)(0ULL));
             while ((l13 < (l10).m_len)) {
-                ({ t429 _t15 = (&(*l0)); t794 _t16 = l1; t141 _t17 = ((*({ t159 _t18 = (l10); uint64_t _t19 = l13; _t18.m_ptr + ctx_idx(_t19, _t18.m_len, 5277, 44, 18); }))).m_value; f1980(_t15, _t16, _t17); });
+                ({ t429 _t15 = (&(*l0)); t796 _t16 = l1; t141 _t17 = ((*({ t159 _t18 = (l10); uint64_t _t19 = l13; _t18.m_ptr + ctx_idx(_t19, _t18.m_len, 5277, 44, 18); }))).m_value; f1980(_t15, _t16, _t17); });
                 l13 = ctx_add_u64(l13, ((t13)(1ULL)), 5278, 27, 18);
             }
             l14 = ({ t372 _t20 = ((*l0)).m_forwards; t19 _t21 = f1084(l2); f1381(_t20, _t21); });
@@ -67824,7 +67546,7 @@ static t16 f1980(t429 l0, t794 l1, t141 l2) {
                 while ((l13 < ((l14).p.v1.m_value).m_len)) {
                     l15 = ({ t33 _t22 = ({ t257 _t24 = (*l0); t33 _t25 = ((*({ t376 _t26 = ((l14).p.v1.m_value); uint64_t _t27 = l13; _t26.m_ptr + ctx_idx(_t27, _t26.m_len, 5285, 66, 18); }))).m_var; f1805(_t24, _t25); }); t8 _t23 = f38(); ((t393){ .m_root = _t22, .m_steps = _t23, }); });
                     if (f2050(l15, (l1).m_forb)) {
-                        ({ t429 _t28 = (&(*l0)); t794 _t29 = l1; t121 _t30 = f1044(l2); f2068(_t28, _t29, _t30); });
+                        ({ t429 _t28 = (&(*l0)); t796 _t29 = l1; t121 _t30 = f1044(l2); f2068(_t28, _t29, _t30); });
                     }
                     l13 = ctx_add_u64(l13, ((t13)(1ULL)), 5287, 31, 18);
                 }
@@ -67866,7 +67588,7 @@ static t16 f1980(t429 l0, t794 l1, t141 l2) {
 }
 
 // check::scan_if
-static t16 f1981(t429 l0, t794 l1, t163 l2) {
+static t16 f1981(t429 l0, t796 l1, t163 l2) {
     t184 l3;
     CTX_STACK_CHECK();
     {
@@ -67880,14 +67602,14 @@ static t16 f1981(t429 l0, t794 l1, t163 l2) {
 }
 
 // check::scan_match
-static t16 f1982(t429 l0, t794 l1, t175 l2) {
+static t16 f1982(t429 l0, t796 l1, t175 l2) {
     t13 l3;
     CTX_STACK_CHECK();
     {
         f1980((&(*l0)), l1, (*(l2).m_scrut));
         l3 = ((t13)(0ULL));
         while ((l3 < ((l2).m_arms).m_len)) {
-            ({ t429 _t0 = (&(*l0)); t794 _t1 = l1; t165 _t2 = (((*({ t176 _t3 = ((l2).m_arms); uint64_t _t4 = l3; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 5239, 44, 18); }))).m_body).m_stmts; f1686(_t0, _t1, _t2); });
+            ({ t429 _t0 = (&(*l0)); t796 _t1 = l1; t165 _t2 = (((*({ t176 _t3 = ((l2).m_arms); uint64_t _t4 = l3; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 5239, 44, 18); }))).m_body).m_stmts; f1686(_t0, _t1, _t2); });
             l3 = ctx_add_u64(l3, ((t13)(1ULL)), 5240, 19, 18);
         }
     }
@@ -67909,13 +67631,13 @@ static t254 f1984(t429 l0, t164 l1) {
         if ((((l1).m_stmts).m_len == ((t13)(0ULL)))) {
             return f592();
         }
-        return ({ t429 _t0 = (&(*l0)); t772 _t1 = f1575((*({ t165 _t2 = ((l1).m_stmts); uint64_t _t3 = ctx_sub_u64(((l1).m_stmts).m_len, ((t13)(1ULL)), 4849, 77, 18); _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 4849, 64, 18); }))); f2065(_t0, _t1); });
+        return ({ t429 _t0 = (&(*l0)); t774 _t1 = f1575((*({ t165 _t2 = ((l1).m_stmts); uint64_t _t3 = ctx_sub_u64(((l1).m_stmts).m_len, ((t13)(1ULL)), 4849, 77, 18); _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 4849, 64, 18); }))); f2065(_t0, _t1); });
     }
     __builtin_unreachable();
 }
 
 // list::reserve(check::Escape, arena::Arena)
-static t110 f1985(t820 l0, t13 l1) {
+static t110 f1985(t822 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t426 l4;
@@ -67933,7 +67655,7 @@ static t110 f1985(t820 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t426 _t0 = ({ t426 _t1; t853 _t2 = f2070(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t426 _t0 = ({ t426 _t1; t855 _t2 = f2070(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -67944,7 +67666,7 @@ static t110 f1985(t820 l0, t13 l1) {
 }
 
 // map::rehash(u32, check::Flow, arena::Arena)
-static t110 f1986(t821 l0) {
+static t110 f1986(t823 l0) {
     t13 l1;
     t412 l2;
     t412 l3;
@@ -67959,7 +67681,7 @@ static t110 f1986(t821 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t412 _t2 = ({ t412 _t3; t854 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t412 _t7 = f560(); t13 _t8 = l1; f2071(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t412 _t2 = ({ t412 _t3; t856 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t412 _t7 = f560(); t13 _t8 = l1; f2071(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -68012,7 +67734,7 @@ static t13 f1988(t368 l0, t19 l1) {
 }
 
 // alloc::resize(map::Slot(u64, []u32), arena::Arena)
-static t836 f1989(t27 l0, t26 l1, t369 l2, t13 l3) {
+static t838 f1989(t27 l0, t26 l1, t369 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -68020,9 +67742,9 @@ static t836 f1989(t27 l0, t26 l1, t369 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2073(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t836){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t838){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t836){ .tag = 0, .p.v0 = { .m_value = f2074(l4), } });
+        return ((t838){ .tag = 0, .p.v0 = { .m_value = f2074(l4), } });
     }
     __builtin_unreachable();
 }
@@ -68041,7 +67763,7 @@ static t16 f1990(t369 l0, t371 l1) {
 }
 
 // alloc::resize(map::Slot(u64, check::Conv), arena::Arena)
-static t837 f1991(t27 l0, t26 l1, t351 l2, t13 l3) {
+static t839 f1991(t27 l0, t26 l1, t351 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -68049,9 +67771,9 @@ static t837 f1991(t27 l0, t26 l1, t351 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2075(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t837){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t839){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t837){ .tag = 0, .p.v0 = { .m_value = f2076(l4), } });
+        return ((t839){ .tag = 0, .p.v0 = { .m_value = f2076(l4), } });
     }
     __builtin_unreachable();
 }
@@ -68095,7 +67817,7 @@ static t630 f1993(t387 l0, t19 l1) {
 }
 
 // check::held_value
-static t391 f1994(t257 l0, t772 l1) {
+static t391 f1994(t257 l0, t774 l1) {
     t391 l2;
     t141 l3;
     t167 l4;
@@ -68108,7 +67830,7 @@ static t391 f1994(t257 l0, t772 l1) {
     CTX_STACK_CHECK();
     {
         l2 = f1095();
-        { t772 _t0 = l1; if ((_t0.tag == 1)) { l3 = _t0.p.v1.m_e; {
+        { t774 _t0 = l1; if ((_t0.tag == 1)) { l3 = _t0.p.v1.m_e; {
             return f1707(l0, l3);
         } } else if ((_t0.tag == 2)) { l4 = _t0.p.v2.m_s; {
             if (((({ t350 _t1 = (l0).m_convs; t19 _t2 = f1385(l4); f1083(_t1, _t2); })).tag != 0)) {
@@ -68139,16 +67861,16 @@ static t391 f1994(t257 l0, t772 l1) {
 }
 
 // list::new(check::Place, arena::Arena)
-static t838 f1995(t27 l0, t26 l1) {
+static t840 f1995(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t391 _t0 = f1095(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t838){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t391 _t0 = f1095(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t840){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // check::add_place
-static t16 f1996(t839 l0, t393 l1) {
+static t16 f1996(t841 l0, t393 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -68162,7 +67884,7 @@ static t16 f1996(t839 l0, t393 l1) {
 }
 
 // list::items(check::Place, arena::Arena)
-static t391 f1997(t838 l0) {
+static t391 f1997(t840 l0) {
     CTX_STACK_CHECK();
     {
         return ({ t391 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t391){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
@@ -68206,7 +67928,7 @@ static t14 f1998(t257 l0, t393 l1, t393 l2) {
 }
 
 // map::rehash(u64, check::PathRef, arena::Arena)
-static t110 f1999(t823 l0) {
+static t110 f1999(t825 l0) {
     t13 l1;
     t356 l2;
     t356 l3;
@@ -68221,7 +67943,7 @@ static t110 f1999(t823 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t356 _t2 = ({ t356 _t3; t855 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t356 _t7 = f549(); t13 _t8 = l1; f2079(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t356 _t2 = ({ t356 _t3; t857 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t356 _t7 = f549(); t13 _t8 = l1; f2079(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -68278,7 +68000,7 @@ static t14 f2001(t429 l0, t263 l1, t33 l2) {
 }
 
 // alloc::resize(check::Loop, arena::Arena)
-static t840 f2002(t27 l0, t26 l1, t343 l2, t13 l3) {
+static t842 f2002(t27 l0, t26 l1, t343 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -68286,15 +68008,15 @@ static t840 f2002(t27 l0, t26 l1, t343 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2081(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(104ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t840){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t842){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t840){ .tag = 0, .p.v0 = { .m_value = f2082(l4), } });
+        return ((t842){ .tag = 0, .p.v0 = { .m_value = f2082(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(check::State, arena::Arena)
-static t841 f2003(t27 l0, t26 l1, t347 l2, t13 l3) {
+static t843 f2003(t27 l0, t26 l1, t347 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -68302,9 +68024,9 @@ static t841 f2003(t27 l0, t26 l1, t347 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2083(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(40ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t841){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t843){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t841){ .tag = 0, .p.v0 = { .m_value = f2084(l4), } });
+        return ((t843){ .tag = 0, .p.v0 = { .m_value = f2084(l4), } });
     }
     __builtin_unreachable();
 }
@@ -68329,13 +68051,13 @@ static t14 f2004(t32 l0) {
 }
 
 // eval::const_at
-static t805 f2005(t527 l0, t33 l1) {
+static t807 f2005(t527 l0, t33 l1) {
     t513 l2;
     t143 l3;
     t48 l4;
     t19 l5;
     t19 l6;
-    t733 l7;
+    t735 l7;
     t19 l8;
     t19 l9;
     t19 l10;
@@ -68350,33 +68072,33 @@ static t805 f2005(t527 l0, t33 l1) {
         l2 = ((t513){ .m_kind = ((t33)(6ULL)), .m_a = ((t19)(ctx_as_u((uint64_t)(l1), UINT64_MAX, "u64", 1011, 38, 23))), .m_b = ((t19)(0ULL)), });
         l3 = f2020(((*l0)).m_known, l2);
         if (((l3).tag != 0)) {
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = (l3).p.v1.m_value, } });
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = (l3).p.v1.m_value, } });
         }
         l4 = (*({ t46 _t0 = ((((*l0)).m_p).m_consts); uint64_t _t1 = ((t13)(l1)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1014, 27, 23); }));
-        l5 = ({ t19 _t2; t805 _t3 = f1741((&(*l0)), (l4).m_value); if ((_t3.tag == 0)) { l6 = _t3.p.v0.m_value; {
+        l5 = ({ t19 _t2; t807 _t3 = f1741((&(*l0)), (l4).m_value); if ((_t3.tag == 0)) { l6 = _t3.p.v0.m_value; {
             _t2 = l6;
         } } else if ((_t3.tag == 1)) { l7 = _t3.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = l7, } });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = l7, } });
         } } _t2; });
         l8 = f885(((*l0)).m_types, (l4).m_ty);
         l9 = ({ t19 _t4; t645 _t5 = ({ t527 _t6 = (&(*l0)); t19 _t7 = l8; t19 _t8 = f1338(((*l0)).m_types, (l4).m_ty); f2021(_t6, _t7, _t8); }); if ((_t5.tag == 0)) { l10 = _t5.p.v0.m_value; {
             _t4 = l10;
         } } else if ((_t5.tag == 1)) { l11 = _t5.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t9; t603 _t10 = l11; if ((_t10.tag == 0)) { {
-                _t9 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t9; t603 _t10 = l11; if ((_t10.tag == 0)) { {
+                _t9 = ((t735){ .tag = 1 });
             } } _t9; }), } });
         } } _t4; });
         ({ t10 _t11 = ({ t10 _t13; t646 _t14 = f887((&(*l0)), l9, l8); if ((_t14.tag == 0)) { l12 = _t14.p.v0.m_value; {
             _t13 = l12;
         } } else if ((_t14.tag == 1)) { l13 = _t14.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t15; t603 _t16 = l13; if ((_t16.tag == 0)) { {
-                _t15 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t15; t603 _t16 = l13; if ((_t16.tag == 0)) { {
+                _t15 = ((t735){ .tag = 1 });
             } } _t15; }), } });
         } } _t13; }); t10 _t12 = ({ t10 _t17; t646 _t18 = f887((&(*l0)), l5, l8); if ((_t18.tag == 0)) { l14 = _t18.p.v0.m_value; {
             _t17 = l14;
         } } else if ((_t18.tag == 1)) { l15 = _t18.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t19; t603 _t20 = l15; if ((_t20.tag == 0)) { {
-                _t19 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t19; t603 _t20 = l15; if ((_t20.tag == 0)) { {
+                _t19 = ((t735){ .tag = 1 });
             } } _t19; }), } });
         } } _t17; }); f69(_t11, _t12); });
         { t110 _t21 = f2022((&((*l0)).m_known), l2, l9); if ((_t21.tag == 0)) { {
@@ -68385,30 +68107,30 @@ static t805 f2005(t527 l0, t33 l1) {
                 ctx_panic(1019, 9, 23, "try! failed: alloc::out_of_memory");
             } } }
         } } }
-        return ((t805){ .tag = 0, .p.v0 = { .m_value = l9, } });
+        return ((t807){ .tag = 0, .p.v0 = { .m_value = l9, } });
     }
     __builtin_unreachable();
 }
 
 // eval::base_of
-static t805 f2006(t527 l0, t49 l1) {
+static t807 f2006(t527 l0, t49 l1) {
     t19 l2;
-    t733 l3;
+    t735 l3;
     t19 l4;
-    t733 l5;
+    t735 l5;
     CTX_STACK_CHECK();
     {
         if (f1902(l1)) {
-            return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t0; t805 _t1 = f1888((&(*l0)), l1); if ((_t1.tag == 0)) { l2 = _t1.p.v0.m_value; {
+            return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t0; t807 _t1 = f1888((&(*l0)), l1); if ((_t1.tag == 0)) { l2 = _t1.p.v0.m_value; {
                 _t0 = l2;
             } } else if ((_t1.tag == 1)) { l3 = _t1.p.v1.m_error; {
-                return ((t805){ .tag = 1, .p.v1 = { .m_error = l3, } });
+                return ((t807){ .tag = 1, .p.v1 = { .m_error = l3, } });
             } } _t0; }), } });
         }
-        return ((t805){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t2; t805 _t3 = f1741((&(*l0)), l1); if ((_t3.tag == 0)) { l4 = _t3.p.v0.m_value; {
+        return ((t807){ .tag = 0, .p.v0 = { .m_value = ({ t19 _t2; t807 _t3 = f1741((&(*l0)), l1); if ((_t3.tag == 0)) { l4 = _t3.p.v0.m_value; {
             _t2 = l4;
         } } else if ((_t3.tag == 1)) { l5 = _t3.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = l5, } });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = l5, } });
         } } _t2; }), } });
     }
     __builtin_unreachable();
@@ -68490,7 +68212,7 @@ static t14 f2009(t68 l0, t68 l1) {
 }
 
 // list::reserve(ir::Block, arena::Arena)
-static t110 f2010(t806 l0, t13 l1) {
+static t110 f2010(t808 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t498 l4;
@@ -68508,7 +68230,7 @@ static t110 f2010(t806 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t498 _t0 = ({ t498 _t1; t856 _t2 = f2085(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t498 _t0 = ({ t498 _t1; t858 _t2 = f2085(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -68874,13 +68596,13 @@ static t14 f2016(t29 l0, t58 l1, t33 l2, t19 l3, t19 l4) {
 }
 
 // eval::is_null
-static t824 f2017(t527 l0, t49 l1) {
+static t826 f2017(t527 l0, t49 l1) {
     t19 l2;
     t19 l3;
-    t733 l4;
+    t735 l4;
     t19 l5;
     t19 l6;
-    t733 l7;
+    t735 l7;
     t19 l8;
     t19 l9;
     t603 l10;
@@ -68891,26 +68613,26 @@ static t824 f2017(t527 l0, t49 l1) {
         } } else { {
             _t0 = ((bool)0);
         } } _t0; })) {
-            l2 = ({ t19 _t4; t805 _t5 = f1894((&(*l0)), l1); if ((_t5.tag == 0)) { l3 = _t5.p.v0.m_value; {
+            l2 = ({ t19 _t4; t807 _t5 = f1894((&(*l0)), l1); if ((_t5.tag == 0)) { l3 = _t5.p.v0.m_value; {
                 _t4 = l3;
             } } else if ((_t5.tag == 1)) { l4 = _t5.p.v1.m_error; {
-                return ((t824){ .tag = 1, .p.v1 = { .m_error = l4, } });
+                return ((t826){ .tag = 1, .p.v1 = { .m_error = l4, } });
             } } _t4; });
-            return ((t824){ .tag = 0, .p.v0 = { .m_value = (l2 == ((t19)(0ULL))), } });
+            return ((t826){ .tag = 0, .p.v0 = { .m_value = (l2 == ((t19)(0ULL))), } });
         }
-        l5 = ({ t19 _t6; t805 _t7 = f1741((&(*l0)), l1); if ((_t7.tag == 0)) { l6 = _t7.p.v0.m_value; {
+        l5 = ({ t19 _t6; t807 _t7 = f1741((&(*l0)), l1); if ((_t7.tag == 0)) { l6 = _t7.p.v0.m_value; {
             _t6 = l6;
         } } else if ((_t7.tag == 1)) { l7 = _t7.p.v1.m_error; {
-            return ((t824){ .tag = 1, .p.v1 = { .m_error = l7, } });
+            return ((t826){ .tag = 1, .p.v1 = { .m_error = l7, } });
         } } _t6; });
         l8 = ({ t19 _t8; t645 _t9 = f892((&(*l0)), l5, ((t19)(4ULL))); if ((_t9.tag == 0)) { l9 = _t9.p.v0.m_value; {
             _t8 = l9;
         } } else if ((_t9.tag == 1)) { l10 = _t9.p.v1.m_error; {
-            return ((t824){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t10; t603 _t11 = l10; if ((_t11.tag == 0)) { {
-                _t10 = ((t733){ .tag = 1 });
+            return ((t826){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t10; t603 _t11 = l10; if ((_t11.tag == 0)) { {
+                _t10 = ((t735){ .tag = 1 });
             } } _t10; }), } });
         } } _t8; });
-        return ((t824){ .tag = 0, .p.v0 = { .m_value = (l8 == ((t19)(0ULL))), } });
+        return ((t826){ .tag = 0, .p.v0 = { .m_value = (l8 == ((t19)(0ULL))), } });
     }
     __builtin_unreachable();
 }
@@ -69137,7 +68859,7 @@ static t645 f2021(t527 l0, t19 l1, t19 l2) {
         if (((l3).tag != 0)) {
             return ((t645){ .tag = 0, .p.v0 = { .m_value = (l3).p.v1.m_value, } });
         }
-        { t33 _t0 = ({ t33 _t1; t703 _t2 = f1128((&(*l0)), l1, ((bool)0)); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t33 _t0 = ({ t33 _t1; t705 _t2 = f1128((&(*l0)), l1, ((bool)0)); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t645){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -69153,7 +68875,7 @@ static t645 f2021(t527 l0, t19 l1, t19 l2) {
 }
 
 // map::put(eval::Key, u64, arena::Arena)
-static t110 f2022(t842 l0, t513 l1, t19 l2) {
+static t110 f2022(t844 l0, t513 l1, t19 l2) {
     t630 l3;
     t95 l4;
     t13 l5;
@@ -69183,7 +68905,7 @@ static t110 f2022(t842 l0, t513 l1, t19 l2) {
 }
 
 // list::push(eval::Literal, arena::Arena)
-static t110 f2023(t843 l0, t523 l1) {
+static t110 f2023(t845 l0, t523 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -69242,13 +68964,13 @@ static t14 f2025(t41 l0, t41 l1) {
 }
 
 // eval::c_call
-static t805 f2026(t527 l0, t33 l1, t49 l2, t41 l3, t59 l4) {
+static t807 f2026(t527 l0, t33 l1, t49 l2, t41 l3, t59 l4) {
     t19 l5;
     t19 l6;
-    t733 l7;
+    t735 l7;
     t13 l8;
     t13 l9;
-    t733 l10;
+    t735 l10;
     t19 l11;
     t19 l12;
     t603 l13;
@@ -69275,34 +68997,34 @@ static t805 f2026(t527 l0, t33 l1, t49 l2, t41 l3, t59 l4) {
     t603 l34;
     CTX_STACK_CHECK();
     {
-        l5 = ({ t19 _t0; t805 _t1 = f1894((&(*l0)), l2); if ((_t1.tag == 0)) { l6 = _t1.p.v0.m_value; {
+        l5 = ({ t19 _t0; t807 _t1 = f1894((&(*l0)), l2); if ((_t1.tag == 0)) { l6 = _t1.p.v0.m_value; {
             _t0 = l6;
         } } else if ((_t1.tag == 1)) { l7 = _t1.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = l7, } });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = l7, } });
         } } _t0; });
-        l8 = ({ t13 _t2; t826 _t3 = f1905((&(*l0)), l4, (l3).m_len); if ((_t3.tag == 0)) { l9 = _t3.p.v0.m_value; {
+        l8 = ({ t13 _t2; t828 _t3 = f1905((&(*l0)), l4, (l3).m_len); if ((_t3.tag == 0)) { l9 = _t3.p.v0.m_value; {
             _t2 = l9;
         } } else if ((_t3.tag == 1)) { l10 = _t3.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = l10, } });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = l10, } });
         } } _t2; });
         l11 = ({ t19 _t4; t645 _t5 = f1135((&(*l0)), l1); if ((_t5.tag == 0)) { l12 = _t5.p.v0.m_value; {
             _t4 = l12;
         } } else if ((_t5.tag == 1)) { l13 = _t5.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t6; t603 _t7 = l13; if ((_t7.tag == 0)) { {
-                _t6 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t6; t603 _t7 = l13; if ((_t7.tag == 0)) { {
+                _t6 = ((t735){ .tag = 1 });
             } } _t6; }), } });
         } } _t4; });
-        l14 = ({ t508 _t8; t857 _t9 = f2099((&(*l0)), l5); if ((_t9.tag == 0)) { l15 = _t9.p.v0.m_value; {
+        l14 = ({ t508 _t8; t859 _t9 = f2099((&(*l0)), l5); if ((_t9.tag == 0)) { l15 = _t9.p.v0.m_value; {
             _t8 = l15;
         } } else if ((_t9.tag == 1)) { l16 = _t9.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t10; t603 _t11 = l16; if ((_t11.tag == 0)) { {
-                _t10 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t10; t603 _t11 = l16; if ((_t11.tag == 0)) { {
+                _t10 = ((t735){ .tag = 1 });
             } } _t10; }), } });
         } } _t8; });
         { t508 _t12 = l14; if (!(_t12.tag == 4)) { {
             f1131((&(*l0)), ((t10){ .m_ptr = (void *)"eval: a C call of a function value", .m_len = 34 }));
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t13; t603 _t14 = ((t603){ .tag = 0 }); if ((_t14.tag == 0)) { {
-                _t13 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t13; t603 _t14 = ((t603){ .tag = 0 }); if ((_t14.tag == 0)) { {
+                _t13 = ((t735){ .tag = 1 });
             } } _t13; }), } });
         } } l17 = _t12.p.v4.m_callee; }
         l18 = (*({ t88 _t15 = ((((*l0)).m_p).m_fns); uint64_t _t16 = ((t13)(l17)); _t15.m_ptr + ctx_idx(_t16, _t15.m_len, 1285, 24, 23); }));
@@ -69320,29 +69042,29 @@ static t805 f2026(t527 l0, t33 l1, t49 l2, t41 l3, t59 l4) {
                     l22 = ({ t19 _t23; t645 _t24 = ({ t527 _t25 = (&(*l0)); t33 _t26 = ((*({ t91 _t27 = ((l18).m_locals); uint64_t _t28 = l20; _t27.m_ptr + ctx_idx(_t28, _t27.m_len, 1293, 51, 23); }))).m_ty; f1135(_t25, _t26); }); if ((_t24.tag == 0)) { l27 = _t24.p.v0.m_value; {
                         _t23 = l27;
                     } } else if ((_t24.tag == 1)) { l28 = _t24.p.v1.m_error; {
-                        return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t29; t603 _t30 = l28; if ((_t30.tag == 0)) { {
-                            _t29 = ((t733){ .tag = 1 });
+                        return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t29; t603 _t30 = l28; if ((_t30.tag == 0)) { {
+                            _t29 = ((t735){ .tag = 1 });
                         } } _t29; }), } });
                     } } _t23; });
                     l29 = ({ t19 _t31; t645 _t32 = f890((&(*l0))); if ((_t32.tag == 0)) { l30 = _t32.p.v0.m_value; {
                         _t31 = l30;
                     } } else if ((_t32.tag == 1)) { l31 = _t32.p.v1.m_error; {
-                        return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t33; t603 _t34 = l31; if ((_t34.tag == 0)) { {
-                            _t33 = ((t733){ .tag = 1 });
+                        return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t33; t603 _t34 = l31; if ((_t34.tag == 0)) { {
+                            _t33 = ((t735){ .tag = 1 });
                         } } _t33; }), } });
                     } } _t31; });
                     { t604 _t35 = f888((&(*l0)), l22, ((t19)(8ULL)), l29); if ((_t35.tag == 0)) { {
                     } } else if ((_t35.tag == 1)) { l32 = _t35.p.v1.m_error; {
-                        return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t36; t603 _t37 = l32; if ((_t37.tag == 0)) { {
-                            _t36 = ((t733){ .tag = 1 });
+                        return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t36; t603 _t37 = l32; if ((_t37.tag == 0)) { {
+                            _t36 = ((t735){ .tag = 1 });
                         } } _t36; }), } });
                     } } }
                 } else {
                     l22 = ({ t19 _t38; t645 _t39 = f1135((&(*l0)), (l21).m_ty); if ((_t39.tag == 0)) { l25 = _t39.p.v0.m_value; {
                         _t38 = l25;
                     } } else if ((_t39.tag == 1)) { l26 = _t39.p.v1.m_error; {
-                        return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t40; t603 _t41 = l26; if ((_t41.tag == 0)) { {
-                            _t40 = ((t733){ .tag = 1 });
+                        return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t40; t603 _t41 = l26; if ((_t41.tag == 0)) { {
+                            _t40 = ((t735){ .tag = 1 });
                         } } _t40; }), } });
                     } } _t38; });
                 }
@@ -69351,8 +69073,8 @@ static t805 f2026(t527 l0, t33 l1, t49 l2, t41 l3, t59 l4) {
                     _t42 = l24;
                 } } else if ((_t43.tag == 0)) { {
                     f1131((&(*l0)), ((t10){ .m_ptr = (void *)"eval: a C function's param is missing", .m_len = 37 }));
-                    return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t44; t603 _t45 = ((t603){ .tag = 0 }); if ((_t45.tag == 0)) { {
-                        _t44 = ((t733){ .tag = 1 });
+                    return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t44; t603 _t45 = ((t603){ .tag = 0 }); if ((_t45.tag == 0)) { {
+                        _t44 = ((t735){ .tag = 1 });
                     } } _t44; }), } });
                 } } _t42; });
                 l22 = (*({ t494 _t46 = (f1165(((*l0)).m_argv)); uint64_t _t47 = ctx_add_u64(l8, l23, 1304, 55, 23); _t46.m_ptr + ctx_idx(_t47, _t46.m_len, 1304, 49, 23); }));
@@ -69367,12 +69089,12 @@ static t805 f2026(t527 l0, t33 l1, t49 l2, t41 l3, t59 l4) {
         }
         { t604 _t50 = f1136((&(*l0)), l17, l19, l11); if ((_t50.tag == 0)) { {
         } } else if ((_t50.tag == 1)) { l34 = _t50.p.v1.m_error; {
-            return ((t805){ .tag = 1, .p.v1 = { .m_error = ({ t733 _t51; t603 _t52 = l34; if ((_t52.tag == 0)) { {
-                _t51 = ((t733){ .tag = 1 });
+            return ((t807){ .tag = 1, .p.v1 = { .m_error = ({ t735 _t51; t603 _t52 = l34; if ((_t52.tag == 0)) { {
+                _t51 = ((t735){ .tag = 1 });
             } } _t51; }), } });
         } } }
         (((*l0)).m_argv).m_len = l8;
-        return ((t805){ .tag = 0, .p.v0 = { .m_value = l11, } });
+        return ((t807){ .tag = 0, .p.v0 = { .m_value = l11, } });
     }
     __builtin_unreachable();
 }
@@ -69422,13 +69144,13 @@ static t604 f2027(t527 l0, t19 l1, t41 l2, t13 l3, t19 l4) {
         } } else if ((_t1.tag == 1)) { l7 = _t1.p.v1.m_error; {
             return ((t604){ .tag = 1, .p.v1 = { .m_error = l7, } });
         } } _t0; });
-        l8 = ({ t508 _t2; t857 _t3 = f2099((&(*l0)), l5); if ((_t3.tag == 0)) { l9 = _t3.p.v0.m_value; {
+        l8 = ({ t508 _t2; t859 _t3 = f2099((&(*l0)), l5); if ((_t3.tag == 0)) { l9 = _t3.p.v0.m_value; {
             _t2 = l9;
         } } else if ((_t3.tag == 1)) { l10 = _t3.p.v1.m_error; {
             return ((t604){ .tag = 1, .p.v1 = { .m_error = l10, } });
         } } _t2; });
         { t508 _t4 = l8; if ((_t4.tag == 0)) { l11 = _t4.p.v0.m_callee; {
-            l12 = ({ t13 _t5; t858 _t6 = ({ t527 _t7 = (&(*l0)); t41 _t8 = ((*({ t88 _t14 = ((((*l0)).m_p).m_fns); uint64_t _t15 = ((t13)(l11)); _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 1092, 59, 23); }))).m_params; t59 _t9 = f726(); t19 _t10 = l1; t19 _t11 = ((t19)(8ULL)); t41 _t12 = l2; t13 _t13 = l3; f2100(_t7, _t8, _t9, _t10, _t11, _t12, _t13); }); if ((_t6.tag == 0)) { l13 = _t6.p.v0.m_value; {
+            l12 = ({ t13 _t5; t860 _t6 = ({ t527 _t7 = (&(*l0)); t41 _t8 = ((*({ t88 _t14 = ((((*l0)).m_p).m_fns); uint64_t _t15 = ((t13)(l11)); _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 1092, 59, 23); }))).m_params; t59 _t9 = f726(); t19 _t10 = l1; t19 _t11 = ((t19)(8ULL)); t41 _t12 = l2; t13 _t13 = l3; f2100(_t7, _t8, _t9, _t10, _t11, _t12, _t13); }); if ((_t6.tag == 0)) { l13 = _t6.p.v0.m_value; {
                 _t5 = l13;
             } } else if ((_t6.tag == 1)) { l14 = _t6.p.v1.m_error; {
                 return ((t604){ .tag = 1, .p.v1 = { .m_error = l14, } });
@@ -69439,7 +69161,7 @@ static t604 f2027(t527 l0, t19 l1, t41 l2, t13 l3, t19 l4) {
             } } }
             (((*l0)).m_argv).m_len = l12;
         } } else if ((_t4.tag == 1)) { l16 = _t4.p.v1.m_callee; l17 = _t4.p.v1.m_args; {
-            l18 = ({ t13 _t17; t858 _t18 = ({ t527 _t19 = (&(*l0)); t41 _t20 = ((*({ t88 _t26 = ((((*l0)).m_p).m_fns); uint64_t _t27 = ((t13)(l16)); _t26.m_ptr + ctx_idx(_t27, _t26.m_len, 1097, 59, 23); }))).m_params; t59 _t21 = l17; t19 _t22 = l1; t19 _t23 = ((t19)(8ULL)); t41 _t24 = l2; t13 _t25 = l3; f2100(_t19, _t20, _t21, _t22, _t23, _t24, _t25); }); if ((_t18.tag == 0)) { l19 = _t18.p.v0.m_value; {
+            l18 = ({ t13 _t17; t860 _t18 = ({ t527 _t19 = (&(*l0)); t41 _t20 = ((*({ t88 _t26 = ((((*l0)).m_p).m_fns); uint64_t _t27 = ((t13)(l16)); _t26.m_ptr + ctx_idx(_t27, _t26.m_len, 1097, 59, 23); }))).m_params; t59 _t21 = l17; t19 _t22 = l1; t19 _t23 = ((t19)(8ULL)); t41 _t24 = l2; t13 _t25 = l3; f2100(_t19, _t20, _t21, _t22, _t23, _t24, _t25); }); if ((_t18.tag == 0)) { l19 = _t18.p.v0.m_value; {
                 _t17 = l19;
             } } else if ((_t18.tag == 1)) { l20 = _t18.p.v1.m_error; {
                 return ((t604){ .tag = 1, .p.v1 = { .m_error = l20, } });
@@ -69454,7 +69176,7 @@ static t604 f2027(t527 l0, t19 l1, t41 l2, t13 l3, t19 l4) {
                 f1131((&(*l0)), ((t10){ .m_ptr = (void *)"eval: a bind of a non-function", .m_len = 30 }));
                 return ((t604){ .tag = 1, .p.v1 = { .m_error = ((t603){ .tag = 0 }), } });
             } } l24 = _t29.p.v6.m_params; }
-            l25 = ({ t13 _t32; t858 _t33 = f2100((&(*l0)), l24, l23, l1, ((t19)(16ULL)), l2, l3); if ((_t33.tag == 0)) { l26 = _t33.p.v0.m_value; {
+            l25 = ({ t13 _t32; t860 _t33 = f2100((&(*l0)), l24, l23, l1, ((t19)(16ULL)), l2, l3); if ((_t33.tag == 0)) { l26 = _t33.p.v0.m_value; {
                 _t32 = l26;
             } } else if ((_t33.tag == 1)) { l27 = _t33.p.v1.m_error; {
                 return ((t604){ .tag = 1, .p.v1 = { .m_error = l27, } });
@@ -69474,7 +69196,7 @@ static t604 f2027(t527 l0, t19 l1, t41 l2, t13 l3, t19 l4) {
                 f1131((&(*l0)), ((t10){ .m_ptr = (void *)"eval: an adapter of a non-function", .m_len = 34 }));
                 return ((t604){ .tag = 1, .p.v1 = { .m_error = ((t603){ .tag = 0 }), } });
             } } l33 = _t40.p.v6.m_params; }
-            l34 = ({ t13 _t43; t858 _t44 = ({ t527 _t45 = (&(*l0)); t41 _t46 = l33; t59 _t47 = f726(); t19 _t48 = l1; t19 _t49 = ((t19)(16ULL)); t41 _t50 = l2; t13 _t51 = l3; f2100(_t45, _t46, _t47, _t48, _t49, _t50, _t51); }); if ((_t44.tag == 0)) { l35 = _t44.p.v0.m_value; {
+            l34 = ({ t13 _t43; t860 _t44 = ({ t527 _t45 = (&(*l0)); t41 _t46 = l33; t59 _t47 = f726(); t19 _t48 = l1; t19 _t49 = ((t19)(16ULL)); t41 _t50 = l2; t13 _t51 = l3; f2100(_t45, _t46, _t47, _t48, _t49, _t50, _t51); }); if ((_t44.tag == 0)) { l35 = _t44.p.v0.m_value; {
                 _t43 = l35;
             } } else if ((_t44.tag == 1)) { l36 = _t44.p.v1.m_error; {
                 return ((t604){ .tag = 1, .p.v1 = { .m_error = l36, } });
@@ -69499,7 +69221,7 @@ static t604 f2027(t527 l0, t19 l1, t41 l2, t13 l3, t19 l4) {
 }
 
 // list::push(eval::Code, arena::Arena)
-static t110 f2028(t844 l0, t508 l1) {
+static t110 f2028(t846 l0, t508 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -69524,7 +69246,7 @@ static t49 f2029(t537 l0, t141 l1, t33 l2, t141 l3, t33 l4) {
     t292 l10;
     t263 l11;
     t263 l12;
-    t678 l13;
+    t680 l13;
     t49 l14;
     t13 l15;
     t265 l16;
@@ -69775,7 +69497,7 @@ static t376 f2041(void) {
 }
 
 // list::reserve(check::Forward, arena::Arena)
-static t110 f2042(t829 l0, t13 l1) {
+static t110 f2042(t831 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t376 l4;
@@ -69793,7 +69515,7 @@ static t110 f2042(t829 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t376 _t0 = ({ t376 _t1; t859 _t2 = f2104(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t376 _t0 = ({ t376 _t1; t861 _t2 = f2104(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -69804,10 +69526,10 @@ static t110 f2042(t829 l0, t13 l1) {
 }
 
 // check::conv_of
-static t379 f2043(t724 l0, t33 l1) {
+static t379 f2043(t726 l0, t33 l1) {
     CTX_STACK_CHECK();
     {
-        { t724 _t0 = l0; if ((_t0.tag == 2)) { {
+        { t726 _t0 = l0; if ((_t0.tag == 2)) { {
             return ((t379){ .tag = 1, .p.v1.m_value = ((t354){ .tag = 0, .p.v0 = { .m_to = l1, } }) });
         } } else if ((_t0.tag == 3)) { {
             return ((t379){ .tag = 1, .p.v1.m_value = ((t354){ .tag = 1, .p.v1 = { .m_to = l1, } }) });
@@ -69819,7 +69541,7 @@ static t379 f2043(t724 l0, t33 l1) {
 }
 
 // map::rehash(u64, []check::Forward, arena::Arena)
-static t110 f2044(t830 l0) {
+static t110 f2044(t832 l0) {
     t13 l1;
     t373 l2;
     t373 l3;
@@ -69834,7 +69556,7 @@ static t110 f2044(t830 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t373 _t2 = ({ t373 _t3; t860 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t373 _t7 = f553(); t13 _t8 = l1; f2105(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t373 _t2 = ({ t373 _t3; t862 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t373 _t7 = f553(); t13 _t8 = l1; f2105(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -69874,16 +69596,16 @@ static t13 f2045(t372 l0, t19 l1) {
 }
 
 // list::new(check::HeldRef, arena::Arena)
-static t845 f2046(t27 l0, t26 l1) {
+static t847 f2046(t27 l0, t26 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t846 _t0 = f2107(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t845){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
+        return ({ t848 _t0 = f2107(); t13 _t1 = ((t13)(0ULL)); t27 _t2 = l0; t26 _t3 = l1; ((t847){ .m_items = _t0, .m_len = _t1, .m_realloc = _t2, .m_heap = _t3, }); });
     }
     __builtin_unreachable();
 }
 
 // check::held_refs
-static t16 f2047(t849 l0, t257 l1, t391 l2, t10 l3) {
+static t16 f2047(t851 l0, t257 l1, t391 l2, t10 l3) {
     t391 l4;
     t13 l5;
     CTX_STACK_CHECK();
@@ -69891,14 +69613,14 @@ static t16 f2047(t849 l0, t257 l1, t391 l2, t10 l3) {
         l4 = f1871(l1, l2);
         l5 = ((t13)(0ULL));
         while ((l5 < (l4).m_len)) {
-            ({ t849 _t0 = (&(*l0)); t848 _t1 = ({ t393 _t2 = (*({ t391 _t4 = (l4); uint64_t _t5 = l5; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 5140, 46, 18); })); t10 _t3 = l3; ((t848){ .m_p = _t2, .m_holder = _t3, }); }); f2048(_t0, _t1); });
+            ({ t851 _t0 = (&(*l0)); t850 _t1 = ({ t393 _t2 = (*({ t391 _t4 = (l4); uint64_t _t5 = l5; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 5140, 46, 18); })); t10 _t3 = l3; ((t850){ .m_p = _t2, .m_holder = _t3, }); }); f2048(_t0, _t1); });
             l5 = ctx_add_u64(l5, ((t13)(1ULL)), 5141, 19, 18);
         }
     }
 }
 
 // check::add_ref
-static t16 f2048(t849 l0, t848 l1) {
+static t16 f2048(t851 l0, t850 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -69912,10 +69634,10 @@ static t16 f2048(t849 l0, t848 l1) {
 }
 
 // list::items(check::HeldRef, arena::Arena)
-static t846 f2049(t845 l0) {
+static t848 f2049(t847 l0) {
     CTX_STACK_CHECK();
     {
-        return ({ t846 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t846){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
+        return ({ t848 _t0 = ((l0).m_items); uint64_t _t1 = ((t13)(0ULL)); uint64_t _t2 = (l0).m_len; ctx_range(_t1, _t2, _t0.m_len, 65, 26, 10); (t848){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
     }
     __builtin_unreachable();
 }
@@ -70011,15 +69733,15 @@ static t17 f2051(t257 l0, t393 l1) {
 }
 
 // check::places_of
-static t391 f2052(t257 l0, t846 l1) {
-    t838 l2;
+static t391 f2052(t257 l0, t848 l1) {
+    t840 l2;
     t13 l3;
     CTX_STACK_CHECK();
     {
         l2 = f1995((&g13), (l0).m_heap);
         l3 = ((t13)(0ULL));
         while ((l3 < (l1).m_len)) {
-            f1996((&l2), ((*({ t846 _t0 = (l1); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 5149, 41, 18); }))).m_p);
+            f1996((&l2), ((*({ t848 _t0 = (l1); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 5149, 41, 18); }))).m_p);
             l3 = ctx_add_u64(l3, ((t13)(1ULL)), 5150, 19, 18);
         }
         return f1997(l2);
@@ -70028,7 +69750,7 @@ static t391 f2052(t257 l0, t846 l1) {
 }
 
 // map::rehash(u64, []check::Place, arena::Arena)
-static t110 f2053(t831 l0) {
+static t110 f2053(t833 l0) {
     t13 l1;
     t388 l2;
     t388 l3;
@@ -70043,7 +69765,7 @@ static t110 f2053(t831 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t388 _t2 = ({ t388 _t3; t861 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t388 _t7 = f555(); t13 _t8 = l1; f2109(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t388 _t2 = ({ t388 _t3; t863 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t388 _t7 = f555(); t13 _t8 = l1; f2109(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -70083,7 +69805,7 @@ static t13 f2054(t387 l0, t19 l1) {
 }
 
 // map::rehash(u64, bool, arena::Arena)
-static t110 f2055(t832 l0) {
+static t110 f2055(t834 l0) {
     t13 l1;
     t361 l2;
     t361 l3;
@@ -70098,7 +69820,7 @@ static t110 f2055(t832 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t361 _t2 = ({ t361 _t3; t862 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t361 _t7 = f550(); t13 _t8 = l1; f2111(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t361 _t2 = ({ t361 _t3; t864 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t361 _t7 = f550(); t13 _t8 = l1; f2111(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -70138,10 +69860,10 @@ static t13 f2056(t360 l0, t19 l1) {
 }
 
 // list::reserve(check::Fact, arena::Arena)
-static t110 f2057(t817 l0, t13 l1) {
+static t110 f2057(t819 l0, t13 l1) {
     t13 l2;
     t13 l3;
-    t781 l4;
+    t783 l4;
     t95 l5;
     CTX_STACK_CHECK();
     {
@@ -70156,7 +69878,7 @@ static t110 f2057(t817 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t781 _t0 = ({ t781 _t1; t863 _t2 = f2113(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t783 _t0 = ({ t783 _t1; t865 _t2 = f2113(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -70178,7 +69900,7 @@ static t384 f2058(void) {
 }
 
 // list::push(check::Piece, arena::Arena)
-static t110 f2059(t834 l0, t386 l1) {
+static t110 f2059(t836 l0, t386 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -70194,7 +69916,7 @@ static t110 f2059(t834 l0, t386 l1) {
 }
 
 // alloc::resize(map::Slot(u64, []mut check::Piece), arena::Arena)
-static t850 f2060(t27 l0, t26 l1, t381 l2, t13 l3) {
+static t852 f2060(t27 l0, t26 l1, t381 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -70202,9 +69924,9 @@ static t850 f2060(t27 l0, t26 l1, t381 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2115(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t850){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t852){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t850){ .tag = 0, .p.v0 = { .m_value = f2116(l4), } });
+        return ((t852){ .tag = 0, .p.v0 = { .m_value = f2116(l4), } });
     }
     __builtin_unreachable();
 }
@@ -70251,7 +69973,7 @@ static t365 f2063(t10 l0) {
 }
 
 // alloc::resize(check::Branch, arena::Arena)
-static t851 f2064(t27 l0, t26 l1, t788 l2, t13 l3) {
+static t853 f2064(t27 l0, t26 l1, t790 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -70259,22 +69981,22 @@ static t851 f2064(t27 l0, t26 l1, t788 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2117(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(288ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t851){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t853){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t851){ .tag = 0, .p.v0 = { .m_value = f2118(l4), } });
+        return ((t853){ .tag = 0, .p.v0 = { .m_value = f2118(l4), } });
     }
     __builtin_unreachable();
 }
 
 // check::derives_value
-static t254 f2065(t429 l0, t772 l1) {
+static t254 f2065(t429 l0, t774 l1) {
     t141 l2;
     t167 l3;
     t163 l4;
     t175 l5;
     CTX_STACK_CHECK();
     {
-        { t772 _t0 = l1; if ((_t0.tag == 1)) { l2 = _t0.p.v1.m_e; {
+        { t774 _t0 = l1; if ((_t0.tag == 1)) { l2 = _t0.p.v1.m_e; {
             return f1679((&(*l0)), l2);
         } } else if ((_t0.tag == 2)) { l3 = _t0.p.v2.m_s; {
             if ((!({ t429 _t1 = (&(*l0)); t33 _t2 = ({ t257 _t4 = (*l0); t19 _t5 = f1385(l3); f1372(_t4, _t5); }); t254 _t3 = f592(); f809(_t1, _t2, _t3); }))) {
@@ -70294,7 +70016,7 @@ static t254 f2065(t429 l0, t772 l1) {
 }
 
 // alloc::resize(check::Pending, arena::Arena)
-static t852 f2066(t27 l0, t26 l1, t421 l2, t13 l3) {
+static t854 f2066(t27 l0, t26 l1, t421 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -70302,29 +70024,29 @@ static t852 f2066(t27 l0, t26 l1, t421 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2119(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(80ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t852){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t854){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t852){ .tag = 0, .p.v0 = { .m_value = f2120(l4), } });
+        return ((t854){ .tag = 0, .p.v0 = { .m_value = f2120(l4), } });
     }
     __builtin_unreachable();
 }
 
 // check::access_path
-static t792 f2067(t257 l0, t141 l1) {
+static t794 f2067(t257 l0, t141 l1) {
     t359 l2;
     t33 l3;
     t153 l4;
     t147 l5;
-    t792 l6;
+    t794 l6;
     t12 l7;
     t153 l8;
-    t792 l9;
+    t794 l9;
     t12 l10;
     t153 l11;
     CTX_STACK_CHECK();
     {
         { t142 _t0 = (l1).m_k; if ((_t0.tag == 6)) { {
-            if (({ t14 _t1; t694 _t2 = ({ t355 _t3 = (l0).m_refs; t19 _t4 = f1084(l1); f1087(_t3, _t4); }); if ((_t2.tag == 0)) { {
+            if (({ t14 _t1; t696 _t2 = ({ t355 _t3 = (l0).m_refs; t19 _t4 = f1084(l1); f1087(_t3, _t4); }); if ((_t2.tag == 0)) { {
                 _t1 = ((bool)0);
             } } else if ((_t2.tag == 1)) { l2 = _t2.p.v1.m_value; {
                 _t1 = ({ t14 _t5; t359 _t6 = l2; if ((_t6.tag == 0)) { l3 = _t6.p.v0.m_var; {
@@ -70333,11 +70055,11 @@ static t792 f2067(t257 l0, t141 l1) {
                     _t5 = ((bool)0);
                 } } _t5; });
             } } _t1; })) {
-                return ((t792){ .tag = 1, .p.v1.m_value = ({ t33 _t7 = f1805(l0, l3); t8 _t8 = f38(); ((t393){ .m_root = _t7, .m_steps = _t8, }); }) });
+                return ((t794){ .tag = 1, .p.v1.m_value = ({ t33 _t7 = f1805(l0, l3); t8 _t8 = f38(); ((t393){ .m_root = _t7, .m_steps = _t8, }); }) });
             }
         } } else if ((_t0.tag == 7)) { l4 = _t0.p.v7.m_base; l5 = _t0.p.v7.m_name; {
             l6 = f2067(l0, (*l4));
-            if ((((l6).tag != 0) && ({ t14 _t9; t786 _t10 = f1665(l0, l1); if ((_t10.tag == 0)) { {
+            if ((((l6).tag != 0) && ({ t14 _t9; t788 _t10 = f1665(l0, l1); if ((_t10.tag == 0)) { {
                 _t9 = ((bool)0);
             } } else if ((_t10.tag == 1)) { l7 = _t10.p.v1.m_value; {
                 _t9 = ({ t14 _t11; t12 _t12 = l7; if (_t12 == ((t12)(0ULL))) { {
@@ -70346,12 +70068,12 @@ static t792 f2067(t257 l0, t141 l1) {
                     _t11 = ((bool)0);
                 } } _t11; });
             } } _t9; }))) {
-                return ((t792){ .tag = 1, .p.v1.m_value = ({ t33 _t13 = ((l6).p.v1.m_value).m_root; t8 _t14 = f1842(l0, ((l6).p.v1.m_value).m_steps, (l5).m_text); ((t393){ .m_root = _t13, .m_steps = _t14, }); }) });
+                return ((t794){ .tag = 1, .p.v1.m_value = ({ t33 _t13 = ((l6).p.v1.m_value).m_root; t8 _t14 = f1842(l0, ((l6).p.v1.m_value).m_steps, (l5).m_text); ((t393){ .m_root = _t13, .m_steps = _t14, }); }) });
             }
             return l6;
         } } else if ((_t0.tag == 9)) { l8 = _t0.p.v9.m_base; {
             l9 = f2067(l0, (*l8));
-            if ((((l9).tag != 0) && ({ t14 _t15; t786 _t16 = f1665(l0, l1); if ((_t16.tag == 0)) { {
+            if ((((l9).tag != 0) && ({ t14 _t15; t788 _t16 = f1665(l0, l1); if ((_t16.tag == 0)) { {
                 _t15 = ((bool)0);
             } } else if ((_t16.tag == 1)) { l10 = _t16.p.v1.m_value; {
                 _t15 = ({ t14 _t17; t12 _t18 = l10; if (_t18 == ((t12)(6ULL))) { {
@@ -70360,20 +70082,20 @@ static t792 f2067(t257 l0, t141 l1) {
                     _t17 = ((bool)0);
                 } } _t17; });
             } } _t15; }))) {
-                return ((t792){ .tag = 1, .p.v1.m_value = ({ t33 _t19 = ((l9).p.v1.m_value).m_root; t8 _t20 = f1842(l0, ((l9).p.v1.m_value).m_steps, ((t10){ .m_ptr = (void *)"[", .m_len = 1 })); ((t393){ .m_root = _t19, .m_steps = _t20, }); }) });
+                return ((t794){ .tag = 1, .p.v1.m_value = ({ t33 _t19 = ((l9).p.v1.m_value).m_root; t8 _t20 = f1842(l0, ((l9).p.v1.m_value).m_steps, ((t10){ .m_ptr = (void *)"[", .m_len = 1 })); ((t393){ .m_root = _t19, .m_steps = _t20, }); }) });
             }
             return l9;
         } } else if ((_t0.tag == 8)) { l11 = _t0.p.v8.m_base; {
             return f2067(l0, (*l11));
         } } else { {
         } } }
-        return ((t792){0});
+        return ((t794){0});
     }
     __builtin_unreachable();
 }
 
 // check::forbidden
-static t16 f2068(t429 l0, t794 l1, t121 l2) {
+static t16 f2068(t429 l0, t796 l1, t121 l2) {
     t132 l3;
     t95 l4;
     t95 l5;
@@ -70405,20 +70127,20 @@ static t16 f2068(t429 l0, t794 l1, t121 l2) {
 }
 
 // check::scan_list
-static t16 f2069(t429 l0, t794 l1, t162 l2) {
+static t16 f2069(t429 l0, t796 l1, t162 l2) {
     t13 l3;
     CTX_STACK_CHECK();
     {
         l3 = ((t13)(0ULL));
         while ((l3 < (l2).m_len)) {
-            ({ t429 _t0 = (&(*l0)); t794 _t1 = l1; t141 _t2 = (*({ t162 _t3 = (l2); uint64_t _t4 = l3; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 5247, 33, 18); })); f1980(_t0, _t1, _t2); });
+            ({ t429 _t0 = (&(*l0)); t796 _t1 = l1; t141 _t2 = (*({ t162 _t3 = (l2); uint64_t _t4 = l3; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 5247, 33, 18); })); f1980(_t0, _t1, _t2); });
             l3 = ctx_add_u64(l3, ((t13)(1ULL)), 5248, 19, 18);
         }
     }
 }
 
 // alloc::resize(check::Escape, arena::Arena)
-static t853 f2070(t27 l0, t26 l1, t426 l2, t13 l3) {
+static t855 f2070(t27 l0, t26 l1, t426 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -70426,15 +70148,15 @@ static t853 f2070(t27 l0, t26 l1, t426 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2121(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(40ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t853){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t855){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t853){ .tag = 0, .p.v0 = { .m_value = f2122(l4), } });
+        return ((t855){ .tag = 0, .p.v0 = { .m_value = f2122(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(map::Slot(u32, check::Flow), arena::Arena)
-static t854 f2071(t27 l0, t26 l1, t412 l2, t13 l3) {
+static t856 f2071(t27 l0, t26 l1, t412 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -70442,9 +70164,9 @@ static t854 f2071(t27 l0, t26 l1, t412 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2123(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(56ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t854){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t856){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t854){ .tag = 0, .p.v0 = { .m_value = f2124(l4), } });
+        return ((t856){ .tag = 0, .p.v0 = { .m_value = f2124(l4), } });
     }
     __builtin_unreachable();
 }
@@ -70532,7 +70254,7 @@ static t13 f2077(t387 l0, t19 l1) {
 }
 
 // list::push(check::Place, arena::Arena)
-static t110 f2078(t839 l0, t393 l1) {
+static t110 f2078(t841 l0, t393 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -70548,7 +70270,7 @@ static t110 f2078(t839 l0, t393 l1) {
 }
 
 // alloc::resize(map::Slot(u64, check::PathRef), arena::Arena)
-static t855 f2079(t27 l0, t26 l1, t356 l2, t13 l3) {
+static t857 f2079(t27 l0, t26 l1, t356 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -70556,9 +70278,9 @@ static t855 f2079(t27 l0, t26 l1, t356 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2126(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(88ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t855){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t857){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t855){ .tag = 0, .p.v0 = { .m_value = f2127(l4), } });
+        return ((t857){ .tag = 0, .p.v0 = { .m_value = f2127(l4), } });
     }
     __builtin_unreachable();
 }
@@ -70633,7 +70355,7 @@ static t347 f2084(t10 l0) {
 }
 
 // alloc::resize(ir::Block, arena::Arena)
-static t856 f2085(t27 l0, t26 l1, t498 l2, t13 l3) {
+static t858 f2085(t27 l0, t26 l1, t498 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -70641,9 +70363,9 @@ static t856 f2085(t27 l0, t26 l1, t498 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2128(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(24ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t856){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t858){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t856){ .tag = 0, .p.v0 = { .m_value = f2129(l4), } });
+        return ((t858){ .tag = 0, .p.v0 = { .m_value = f2129(l4), } });
     }
     __builtin_unreachable();
 }
@@ -70899,7 +70621,7 @@ static t630 f2095(t509 l0, t513 l1) {
 }
 
 // map::rehash(eval::Key, u64, arena::Arena)
-static t110 f2096(t842 l0) {
+static t110 f2096(t844 l0) {
     t13 l1;
     t510 l2;
     t510 l3;
@@ -70914,7 +70636,7 @@ static t110 f2096(t842 l0) {
             l1 = ctx_mul_u64(l1, ((t13)(2ULL)), 228, 49, 25);
         }
         l2 = ((*l0)).m_slots;
-        { t510 _t2 = ({ t510 _t3; t864 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t510 _t7 = f879(); t13 _t8 = l1; f2131(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
+        { t510 _t2 = ({ t510 _t3; t866 _t4 = ({ t27 _t5 = ((*l0)).m_realloc; t26 _t6 = ((*l0)).m_heap; t510 _t7 = f879(); t13 _t8 = l1; f2131(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l3 = _t4.p.v0.m_value; {
             _t3 = l3;
         } } else if ((_t4.tag == 1)) { l4 = _t4.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l4, } });
@@ -70954,7 +70676,7 @@ static t13 f2097(t509 l0, t513 l1) {
 }
 
 // list::reserve(eval::Literal, arena::Arena)
-static t110 f2098(t843 l0, t13 l1) {
+static t110 f2098(t845 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t521 l4;
@@ -70972,7 +70694,7 @@ static t110 f2098(t843 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t521 _t0 = ({ t521 _t1; t865 _t2 = f2133(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t521 _t0 = ({ t521 _t1; t867 _t2 = f2133(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -70983,7 +70705,7 @@ static t110 f2098(t843 l0, t13 l1) {
 }
 
 // eval::code_at
-static t857 f2099(t527 l0, t19 l1) {
+static t859 f2099(t527 l0, t19 l1) {
     t132 l2;
     t95 l3;
     t95 l4;
@@ -71012,15 +70734,15 @@ static t857 f2099(t527 l0, t19 l1) {
                 } } }
             } } }
             ({ t527 _t12 = (&(*l0)); t10 _t13 = (f59(l2)).m_bytes; f1131(_t12, _t13); });
-            return ((t857){ .tag = 1, .p.v1 = { .m_error = ((t603){ .tag = 0 }), } });
+            return ((t859){ .tag = 1, .p.v1 = { .m_error = ((t603){ .tag = 0 }), } });
         }
-        return ((t857){ .tag = 0, .p.v0 = { .m_value = (*({ t506 _t14 = (f2134(((*l0)).m_codes)); uint64_t _t15 = ((t13)(ctx_as_u((uint64_t)(((t19)((l1 & ((t19)(1099511627775ULL)))))), UINT64_MAX, "usize", 1179, 46, 23))); _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 1179, 45, 23); })), } });
+        return ((t859){ .tag = 0, .p.v0 = { .m_value = (*({ t506 _t14 = (f2134(((*l0)).m_codes)); uint64_t _t15 = ((t13)(ctx_as_u((uint64_t)(((t19)((l1 & ((t19)(1099511627775ULL)))))), UINT64_MAX, "usize", 1179, 46, 23))); _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 1179, 45, 23); })), } });
     }
     __builtin_unreachable();
 }
 
 // eval::forward
-static t858 f2100(t527 l0, t41 l1, t59 l2, t19 l3, t19 l4, t41 l5, t13 l6) {
+static t860 f2100(t527 l0, t41 l1, t59 l2, t19 l3, t19 l4, t41 l5, t13 l6) {
     t13 l7;
     t13 l8;
     t19 l9;
@@ -71055,7 +70777,7 @@ static t858 f2100(t527 l0, t41 l1, t59 l2, t19 l3, t19 l4, t41 l5, t13 l6) {
                     _t10 = l15;
                 } } else if ((_t11.tag == 0)) { {
                     f1131((&(*l0)), ((t10){ .m_ptr = (void *)"eval: a function value's param is missing", .m_len = 41 }));
-                    return ((t858){ .tag = 1, .p.v1 = { .m_error = ((t603){ .tag = 0 }), } });
+                    return ((t860){ .tag = 1, .p.v1 = { .m_error = ((t603){ .tag = 0 }), } });
                 } } _t10; });
                 l9 = (*({ t494 _t16 = (f1165(((*l0)).m_argv)); uint64_t _t17 = ctx_add_u64(l6, l14, 1154, 55, 23); _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 1154, 49, 23); }));
             }
@@ -71067,13 +70789,13 @@ static t858 f2100(t527 l0, t41 l1, t59 l2, t19 l3, t19 l4, t41 l5, t13 l6) {
             } } }
             l8 = ctx_add_u64(l8, ((t13)(1ULL)), 1157, 19, 23);
         }
-        return ((t858){ .tag = 0, .p.v0 = { .m_value = l7, } });
+        return ((t860){ .tag = 0, .p.v0 = { .m_value = l7, } });
     }
     __builtin_unreachable();
 }
 
 // list::reserve(eval::Code, arena::Arena)
-static t110 f2101(t844 l0, t13 l1) {
+static t110 f2101(t846 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t506 l4;
@@ -71091,7 +70813,7 @@ static t110 f2101(t844 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t506 _t0 = ({ t506 _t1; t866 _t2 = f2135(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t506 _t0 = ({ t506 _t1; t868 _t2 = f2135(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -71164,7 +70886,7 @@ static t49 f2102(t537 l0, t141 l1, t33 l2, t10 l3, t10 l4, t69 l5, t33 l6, t33 l
 // lower::field_push
 static t10 f2103(t528 l0, t33 l1) {
     t33 l2;
-    t693 l3;
+    t695 l3;
     CTX_STACK_CHECK();
     {
         l2 = f822(((*(l0).m_c)).m_ty, l1);
@@ -71194,7 +70916,7 @@ static t10 f2103(t528 l0, t33 l1) {
 }
 
 // alloc::resize(check::Forward, arena::Arena)
-static t859 f2104(t27 l0, t26 l1, t376 l2, t13 l3) {
+static t861 f2104(t27 l0, t26 l1, t376 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -71202,15 +70924,15 @@ static t859 f2104(t27 l0, t26 l1, t376 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2136(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(48ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t859){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t861){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t859){ .tag = 0, .p.v0 = { .m_value = f2137(l4), } });
+        return ((t861){ .tag = 0, .p.v0 = { .m_value = f2137(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(map::Slot(u64, []check::Forward), arena::Arena)
-static t860 f2105(t27 l0, t26 l1, t373 l2, t13 l3) {
+static t862 f2105(t27 l0, t26 l1, t373 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -71218,9 +70940,9 @@ static t860 f2105(t27 l0, t26 l1, t373 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2138(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t860){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t862){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t860){ .tag = 0, .p.v0 = { .m_value = f2139(l4), } });
+        return ((t862){ .tag = 0, .p.v0 = { .m_value = f2139(l4), } });
     }
     __builtin_unreachable();
 }
@@ -71239,8 +70961,8 @@ static t16 f2106(t373 l0, t375 l1) {
 }
 
 // slice::empty(check::HeldRef)
-static t846 f2107(void) {
-    t846 l0;
+static t848 f2107(void) {
+    t848 l0;
     CTX_STACK_CHECK();
     {
         memset(&l0, 0, sizeof l0);
@@ -71250,7 +70972,7 @@ static t846 f2107(void) {
 }
 
 // list::push(check::HeldRef, arena::Arena)
-static t110 f2108(t849 l0, t848 l1) {
+static t110 f2108(t851 l0, t850 l1) {
     t95 l2;
     CTX_STACK_CHECK();
     {
@@ -71258,7 +70980,7 @@ static t110 f2108(t849 l0, t848 l1) {
         } } else if ((_t0.tag == 1)) { l2 = _t0.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l2, } });
         } } }
-        (*({ t846 _t1 = (((*l0)).m_items); uint64_t _t2 = ((*l0)).m_len; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 36, 19, 10); })) = l1;
+        (*({ t848 _t1 = (((*l0)).m_items); uint64_t _t2 = ((*l0)).m_len; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 36, 19, 10); })) = l1;
         { t13 _t3 = ctx_add_u64(((*l0)).m_len, ((t13)(1ULL)), 37, 29, 10); ((*l0)).m_len = _t3; }
         return ((t110){ .tag = 0 });
     }
@@ -71266,7 +70988,7 @@ static t110 f2108(t849 l0, t848 l1) {
 }
 
 // alloc::resize(map::Slot(u64, []check::Place), arena::Arena)
-static t861 f2109(t27 l0, t26 l1, t388 l2, t13 l3) {
+static t863 f2109(t27 l0, t26 l1, t388 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -71274,9 +70996,9 @@ static t861 f2109(t27 l0, t26 l1, t388 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2141(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t861){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t863){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t861){ .tag = 0, .p.v0 = { .m_value = f2142(l4), } });
+        return ((t863){ .tag = 0, .p.v0 = { .m_value = f2142(l4), } });
     }
     __builtin_unreachable();
 }
@@ -71295,7 +71017,7 @@ static t16 f2110(t388 l0, t390 l1) {
 }
 
 // alloc::resize(map::Slot(u64, bool), arena::Arena)
-static t862 f2111(t27 l0, t26 l1, t361 l2, t13 l3) {
+static t864 f2111(t27 l0, t26 l1, t361 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -71303,9 +71025,9 @@ static t862 f2111(t27 l0, t26 l1, t361 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2143(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(24ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t862){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t864){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t862){ .tag = 0, .p.v0 = { .m_value = f2144(l4), } });
+        return ((t864){ .tag = 0, .p.v0 = { .m_value = f2144(l4), } });
     }
     __builtin_unreachable();
 }
@@ -71324,7 +71046,7 @@ static t16 f2112(t361 l0, t363 l1) {
 }
 
 // alloc::resize(check::Fact, arena::Arena)
-static t863 f2113(t27 l0, t26 l1, t781 l2, t13 l3) {
+static t865 f2113(t27 l0, t26 l1, t783 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -71332,15 +71054,15 @@ static t863 f2113(t27 l0, t26 l1, t781 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2145(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(48ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t863){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t865){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t863){ .tag = 0, .p.v0 = { .m_value = f2146(l4), } });
+        return ((t865){ .tag = 0, .p.v0 = { .m_value = f2146(l4), } });
     }
     __builtin_unreachable();
 }
 
 // list::reserve(check::Piece, arena::Arena)
-static t110 f2114(t834 l0, t13 l1) {
+static t110 f2114(t836 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t384 l4;
@@ -71358,7 +71080,7 @@ static t110 f2114(t834 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t384 _t0 = ({ t384 _t1; t867 _t2 = f2147(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t384 _t0 = ({ t384 _t1; t869 _t2 = f2147(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -71397,7 +71119,7 @@ static t381 f2116(t10 l0) {
 }
 
 // slice::cast(check::Branch, u8)
-static t10 f2117(t788 l0) {
+static t10 f2117(t790 l0) {
     t13 l1;
     CTX_STACK_CHECK();
     {
@@ -71411,7 +71133,7 @@ static t10 f2117(t788 l0) {
 }
 
 // slice::cast(u8, check::Branch)
-static t788 f2118(t10 l0) {
+static t790 f2118(t10 l0) {
     t13 l1;
     CTX_STACK_CHECK();
     {
@@ -71419,7 +71141,7 @@ static t788 f2118(t10 l0) {
         if ((ctx_rem_u64(l1, ((t13)(288ULL)), 14, 18, 1) != ((t13)(0ULL)))) {
             ctx_panic(14, 39, 1, "slice::cast: byte length does not divide evenly");
         }
-        return ({ t789 _t0 = ((t789)((l0).m_ptr)); t13 _t1 = ctx_div_u64(l1, ((t13)(288ULL)), 15, 51, 1); ((t788){ .m_ptr = _t0, .m_len = _t1, }); });
+        return ({ t791 _t0 = ((t791)((l0).m_ptr)); t13 _t1 = ctx_div_u64(l1, ((t13)(288ULL)), 15, 51, 1); ((t790){ .m_ptr = _t0, .m_len = _t1, }); });
     }
     __builtin_unreachable();
 }
@@ -71509,7 +71231,7 @@ static t412 f2124(t10 l0) {
 }
 
 // list::reserve(check::Place, arena::Arena)
-static t110 f2125(t839 l0, t13 l1) {
+static t110 f2125(t841 l0, t13 l1) {
     t13 l2;
     t13 l3;
     t391 l4;
@@ -71527,7 +71249,7 @@ static t110 f2125(t839 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t391 _t0 = ({ t391 _t1; t868 _t2 = f2148(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t391 _t0 = ({ t391 _t1; t870 _t2 = f2148(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -71607,7 +71329,7 @@ static t13 f2130(t509 l0, t513 l1) {
 }
 
 // alloc::resize(map::Slot(eval::Key, u64), arena::Arena)
-static t864 f2131(t27 l0, t26 l1, t510 l2, t13 l3) {
+static t866 f2131(t27 l0, t26 l1, t510 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -71615,9 +71337,9 @@ static t864 f2131(t27 l0, t26 l1, t510 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2149(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(40ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t864){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t866){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t864){ .tag = 0, .p.v0 = { .m_value = f2150(l4), } });
+        return ((t866){ .tag = 0, .p.v0 = { .m_value = f2150(l4), } });
     }
     __builtin_unreachable();
 }
@@ -71636,7 +71358,7 @@ static t16 f2132(t510 l0, t512 l1) {
 }
 
 // alloc::resize(eval::Literal, arena::Arena)
-static t865 f2133(t27 l0, t26 l1, t521 l2, t13 l3) {
+static t867 f2133(t27 l0, t26 l1, t521 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -71644,9 +71366,9 @@ static t865 f2133(t27 l0, t26 l1, t521 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2151(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(24ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t865){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t867){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t865){ .tag = 0, .p.v0 = { .m_value = f2152(l4), } });
+        return ((t867){ .tag = 0, .p.v0 = { .m_value = f2152(l4), } });
     }
     __builtin_unreachable();
 }
@@ -71661,7 +71383,7 @@ static t506 f2134(t505 l0) {
 }
 
 // alloc::resize(eval::Code, arena::Arena)
-static t866 f2135(t27 l0, t26 l1, t506 l2, t13 l3) {
+static t868 f2135(t27 l0, t26 l1, t506 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -71669,9 +71391,9 @@ static t866 f2135(t27 l0, t26 l1, t506 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2153(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(32ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t866){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t868){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t866){ .tag = 0, .p.v0 = { .m_value = f2154(l4), } });
+        return ((t868){ .tag = 0, .p.v0 = { .m_value = f2154(l4), } });
     }
     __builtin_unreachable();
 }
@@ -71733,10 +71455,10 @@ static t373 f2139(t10 l0) {
 }
 
 // list::reserve(check::HeldRef, arena::Arena)
-static t110 f2140(t849 l0, t13 l1) {
+static t110 f2140(t851 l0, t13 l1) {
     t13 l2;
     t13 l3;
-    t846 l4;
+    t848 l4;
     t95 l5;
     CTX_STACK_CHECK();
     {
@@ -71751,7 +71473,7 @@ static t110 f2140(t849 l0, t13 l1) {
         while ((l3 < l2)) {
             l3 = ctx_mul_u64(l3, ((t13)(2ULL)), 28, 38, 10);
         }
-        { t846 _t0 = ({ t846 _t1; t869 _t2 = f2155(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
+        { t848 _t0 = ({ t848 _t1; t871 _t2 = f2155(((*l0)).m_realloc, ((*l0)).m_heap, ((*l0)).m_items, l3); if ((_t2.tag == 0)) { l4 = _t2.p.v0.m_value; {
             _t1 = l4;
         } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
             return ((t110){ .tag = 1, .p.v1 = { .m_error = l5, } });
@@ -71818,7 +71540,7 @@ static t361 f2144(t10 l0) {
 }
 
 // slice::cast(check::Fact, u8)
-static t10 f2145(t781 l0) {
+static t10 f2145(t783 l0) {
     t13 l1;
     CTX_STACK_CHECK();
     {
@@ -71832,7 +71554,7 @@ static t10 f2145(t781 l0) {
 }
 
 // slice::cast(u8, check::Fact)
-static t781 f2146(t10 l0) {
+static t783 f2146(t10 l0) {
     t13 l1;
     CTX_STACK_CHECK();
     {
@@ -71840,13 +71562,13 @@ static t781 f2146(t10 l0) {
         if ((ctx_rem_u64(l1, ((t13)(48ULL)), 14, 18, 1) != ((t13)(0ULL)))) {
             ctx_panic(14, 39, 1, "slice::cast: byte length does not divide evenly");
         }
-        return ({ t782 _t0 = ((t782)((l0).m_ptr)); t13 _t1 = ctx_div_u64(l1, ((t13)(48ULL)), 15, 51, 1); ((t781){ .m_ptr = _t0, .m_len = _t1, }); });
+        return ({ t784 _t0 = ((t784)((l0).m_ptr)); t13 _t1 = ctx_div_u64(l1, ((t13)(48ULL)), 15, 51, 1); ((t783){ .m_ptr = _t0, .m_len = _t1, }); });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(check::Piece, arena::Arena)
-static t867 f2147(t27 l0, t26 l1, t384 l2, t13 l3) {
+static t869 f2147(t27 l0, t26 l1, t384 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -71854,15 +71576,15 @@ static t867 f2147(t27 l0, t26 l1, t384 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2156(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(88ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t867){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t869){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t867){ .tag = 0, .p.v0 = { .m_value = f2157(l4), } });
+        return ((t869){ .tag = 0, .p.v0 = { .m_value = f2157(l4), } });
     }
     __builtin_unreachable();
 }
 
 // alloc::resize(check::Place, arena::Arena)
-static t868 f2148(t27 l0, t26 l1, t391 l2, t13 l3) {
+static t870 f2148(t27 l0, t26 l1, t391 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -71870,9 +71592,9 @@ static t868 f2148(t27 l0, t26 l1, t391 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2158(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(24ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t868){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t870){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t868){ .tag = 0, .p.v0 = { .m_value = f2159(l4), } });
+        return ((t870){ .tag = 0, .p.v0 = { .m_value = f2159(l4), } });
     }
     __builtin_unreachable();
 }
@@ -71962,7 +71684,7 @@ static t506 f2154(t10 l0) {
 }
 
 // alloc::resize(check::HeldRef, arena::Arena)
-static t869 f2155(t27 l0, t26 l1, t846 l2, t13 l3) {
+static t871 f2155(t27 l0, t26 l1, t848 l2, t13 l3) {
     t10 l4;
     t10 l5;
     CTX_STACK_CHECK();
@@ -71970,9 +71692,9 @@ static t869 f2155(t27 l0, t26 l1, t846 l2, t13 l3) {
         l4 = ({ t10 _t0; t22 _t1 = ({ ctx_fn *_t2 = l0; ({ t26 _t3 = (&(*l1)); t10 _t4 = f2160(l2); t13 _t5 = ctx_mul_u64(l3, ((t13)(40ULL)), 23, 25, 21); t13 _t6 = ((t13)(8ULL)); ((c27)_t2->code)(_t2, _t6, _t3, _t4, _t5); }); }); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
             _t0 = l5;
         } } else if ((_t1.tag == 0)) { {
-            return ((t869){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
+            return ((t871){ .tag = 1, .p.v1 = { .m_error = ((t95){ .tag = 0 }), } });
         } } _t0; });
-        return ((t869){ .tag = 0, .p.v0 = { .m_value = f2161(l4), } });
+        return ((t871){ .tag = 0, .p.v0 = { .m_value = f2161(l4), } });
     }
     __builtin_unreachable();
 }
@@ -72034,7 +71756,7 @@ static t391 f2159(t10 l0) {
 }
 
 // slice::cast(check::HeldRef, u8)
-static t10 f2160(t846 l0) {
+static t10 f2160(t848 l0) {
     t13 l1;
     CTX_STACK_CHECK();
     {
@@ -72048,7 +71770,7 @@ static t10 f2160(t846 l0) {
 }
 
 // slice::cast(u8, check::HeldRef)
-static t846 f2161(t10 l0) {
+static t848 f2161(t10 l0) {
     t13 l1;
     CTX_STACK_CHECK();
     {
@@ -72056,7 +71778,7 @@ static t846 f2161(t10 l0) {
         if ((ctx_rem_u64(l1, ((t13)(40ULL)), 14, 18, 1) != ((t13)(0ULL)))) {
             ctx_panic(14, 39, 1, "slice::cast: byte length does not divide evenly");
         }
-        return ({ t847 _t0 = ((t847)((l0).m_ptr)); t13 _t1 = ctx_div_u64(l1, ((t13)(40ULL)), 15, 51, 1); ((t846){ .m_ptr = _t0, .m_len = _t1, }); });
+        return ({ t849 _t0 = ((t849)((l0).m_ptr)); t13 _t1 = ctx_div_u64(l1, ((t13)(40ULL)), 15, 51, 1); ((t848){ .m_ptr = _t0, .m_len = _t1, }); });
     }
     __builtin_unreachable();
 }
