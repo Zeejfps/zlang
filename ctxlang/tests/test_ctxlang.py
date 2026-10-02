@@ -2753,6 +2753,40 @@ fn main { mut io: Io } {
         ]:
             self.assertError(two + body, msg, n + line, col)
 
+    def test_result_types(self):
+        """Any T: a generic struct's instance, a union, and a ?T, whose conversion comes before
+        one to T where a ?T is expected."""
+        self.assertOutput("""
+struct Box(T) { v: T }
+union Shape { dot, line{ n: usize } }
+struct P { n: usize }
+#convert
+fn boxed { s: strlit } -> Box(usize) { return Box{ v = s.bytes.len } }
+#convert
+fn shape { s: strlit } -> Shape {
+    if s.bytes.len == 0 { return Shape::dot }
+    return Shape::line{ n = s.bytes.len }
+}
+#convert
+fn maybe { s: strlit } -> ?P {
+    if s.bytes.len == 0 { return null }
+    return P{ n = s.bytes.len }
+}
+fn main { mut io: Io } {
+    let b: Box(usize) = "four"
+    io::println_u64{ &io, n = b.v }
+    let s: Shape = "xyz"
+    match s {
+        line{ n } => { io::println_u64{ &io, n } }
+        dot => {}
+    }
+    let p: ?P = "ab"
+    let q: ?P = ""
+    if p != null { io::println_u64{ &io, n = p.n } }
+    io::println_bool{ &io, n = q == null }
+}
+""", '4\n3\n2\ntrue\n')
+
     def test_pointer_into_the_literal(self):
         """A result may point into the literal's bytes, which are static data: a []u8 or a *u8,
         followed by the hidden zero."""

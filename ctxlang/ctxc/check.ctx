@@ -3865,6 +3865,7 @@ namespace check {
                     hint = br.t
                 } else if lit == 0 {
                     let mut u = types::prune{ s = c.ty, t = br.t }
+                    if conversion{ c, t = u } != null { hint = br.t }
                     if types::get{ s = c.ty, id = u } is opt{ elem } { u = types::prune{ s = c.ty, t = elem } }
                     match types::get{ s = c.ty, id = u } {
                         strlit => { hint = br.t }
@@ -6053,13 +6054,14 @@ namespace check {
 
     // A string literal is a strlit where one is expected (also inside ?), a view of static bytes
     // where a []u8 is, the result of the conversion to T where a T is (PLAN.md 4.4), and a [N]u8
-    // array value otherwise. What text or a C string is, std's conversions say.
+    // array value otherwise. What text or a C string is, std's conversions say. Where a ?T is
+    // expected, a conversion to ?T comes before one to T.
     fn str_lit { mut c: Checker, e: syntax::Expr, bytes: []u8, exp: Id } -> Id {
         _ = map::remove{ m = &c.lit_convs, key = expr_key{ e } }
         let mut want = types::NO_TYPE
         if exp != types::NO_TYPE {
             want = types::prune{ s = c.ty, t = exp }
-            if types::get{ s = c.ty, id = want } is opt{ elem } { want = types::prune{ s = c.ty, t = elem } }
+            if types::get{ s = c.ty, id = want } is opt{ elem } and conversion{ c, t = want } == null { want = types::prune{ s = c.ty, t = elem } }
         }
         if want != types::NO_TYPE {
             match types::get{ s = c.ty, id = want } {
