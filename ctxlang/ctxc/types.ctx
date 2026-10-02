@@ -505,6 +505,87 @@ namespace types {
         }
     }
 
+    // Whether t is an instance of p, whose generic parameters are decl's: p with args[i] for
+    // parameter i is t. One way, and nothing is bound: args starts as NO_TYPE, and each parameter
+    // takes the part of t it meets first, which must be the same wherever else it appears.
+    fn instance { s: Store, p: Id, t: Id, decl: u32, args: []mut Id } -> bool {
+        let x = prune{ s, t = p }
+        let y = prune{ s, t }
+        if get{ s, id = x } is param{ decl = d, index } and d == decl {
+            if args[index] == NO_TYPE {
+                args[index] = y
+                return true
+            }
+            return args[index] == y
+        }
+        if x == y { return true }
+        let tb = get{ s, id = y }
+        match get{ s, id = x } {
+            ptr{ elem, mutable } => { return tb is ptr{ elem = e, mutable = m } and mutable == m and instance{ s, p = elem, t = e, decl, args } }
+            slice{ elem, mutable } => { return tb is slice{ elem = e, mutable = m } and mutable == m and instance{ s, p = elem, t = e, decl, args } }
+            opt{ elem } => { return tb is opt{ elem = e } and instance{ s, p = elem, t = e, decl, args } }
+            array{ n, elem } => { return tb is array{ n = k, elem = e } and n == k and instance{ s, p = elem, t = e, decl, args } }
+            record{ decl = r, args = ps } => { return tb is record{ decl = d, args = ts } and r == d and instances{ s, ps, ts, decl, args } }
+            sum{ decl = r, args = ps } => { return tb is sum{ decl = d, args = ts } and r == d and instances{ s, ps, ts, decl, args } }
+            res{ ok, errs } => { return tb is res{ ok = o, errs = e } and errs == e and instance{ s, p = ok, t = o, decl, args } }
+            func{ fields, ret, bound, external } => {
+                if not (tb is func{ fields = fs, ret = r, bound = bd, external = ex }) or bound != bd or external != ex or fields.len != fs.len { return false }
+                let mut i: usize = 0
+                while i < fields.len {
+                    let f = fields[i]
+                    let g: ?Field = if external { fs[i] } else { find_field{ fields = fs, name = f.name } }
+                    if g == null or g.mutable != f.mutable or not instance{ s, p = f.ty, t = g.ty, decl, args } { return false }
+                    if external and not slice::eq_bytes{ a = f.name, b = g.name } { return false }
+                    i = i + 1
+                }
+                return instance{ s, p = ret, t = r, decl, args }
+            }
+            else => { return false }
+        }
+    }
+
+    // Whether t mentions generic parameter `index` of decl.
+    fn mentions { s: Store, t: Id, decl: u32, index: u32 } -> bool {
+        match get{ s, id = prune{ s, t } } {
+            param{ decl = d, index = i } => { return d == decl and i == index }
+            ptr{ elem } => { return mentions{ s, t = elem, decl, index } }
+            slice{ elem } => { return mentions{ s, t = elem, decl, index } }
+            opt{ elem } => { return mentions{ s, t = elem, decl, index } }
+            array{ elem } => { return mentions{ s, t = elem, decl, index } }
+            record{ args } => { return any_mentions{ s, ts = args, decl, index } }
+            sum{ args } => { return any_mentions{ s, ts = args, decl, index } }
+            res{ ok } => { return mentions{ s, t = ok, decl, index } }
+            func{ fields, ret } => {
+                let mut i: usize = 0
+                while i < fields.len {
+                    if mentions{ s, t = fields[i].ty, decl, index } { return true }
+                    i = i + 1
+                }
+                return mentions{ s, t = ret, decl, index }
+            }
+            else => { return false }
+        }
+    }
+
+    fn any_mentions { s: Store, ts: []Id, decl: u32, index: u32 } -> bool {
+        let mut i: usize = 0
+        while i < ts.len {
+            if mentions{ s, t = ts[i], decl, index } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    fn instances { s: Store, ps: []Id, ts: []Id, decl: u32, args: []mut Id } -> bool {
+        if ps.len != ts.len { return false }
+        let mut i: usize = 0
+        while i < ps.len {
+            if not instance{ s, p = ps[i], t = ts[i], decl, args } { return false }
+            i = i + 1
+        }
+        return true
+    }
+
     // As in ctxi, pairs up to the shorter list.
     fn unify_all { mut s: Store, a: []Id, b: []Id } -> bool {
         let mut i: usize = 0

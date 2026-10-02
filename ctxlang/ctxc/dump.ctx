@@ -1380,13 +1380,16 @@ namespace decls {
                     expr{ &out, c, e = args[i], depth = d + 1 }
                     i = i + 1
                 }
-                // An @fmt's pushes, one per piece of its format.
-                let ps = map::get{ m = c.pieces, key = k }
+                // How an @fmt writes each piece of its format: a writer, or a utf8 push.
+                let ps = check::site_pieces{ c, e }
                 if ps != null {
                     i = 0
                     while i < ps.len {
                         indent{ &out, depth = d + 1 }
-                        try! @fmt(&out, "fmt {}\n", check::str{ s = ps[i].push })
+                        try! @fmt(&out, "fmt {}", check::str{ s = ps[i].push })
+                        let w = ps[i].writer
+                        if w.decl != check::NONE { try! @fmt(&out, " {}", check::str{ s = check::get_decl{ c, d = w.decl }.qual }) }
+                        try! @fmt(&out, "\n")
                         i = i + 1
                     }
                 }

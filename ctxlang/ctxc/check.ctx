@@ -36,6 +36,10 @@ namespace check {
     // Checker.calling when no callee is being checked: no expression has this key.
     const NO_CALLEE: u64 = 18446744073709551615
 
+    // An @fmt's error set is owned by SITE + the index of its Site: no declaration has so
+    // large an index.
+    const SITE: u32 = 2147483648
+
     // A source file: std's files come first, then the program's.
     struct File { name: []u8, text: []u8, lines: []u32, tree: syntax::File }
 
@@ -80,8 +84,9 @@ namespace check {
         attr{ a: Attribute },           // an attribute the compiler declares
     }
 
-    // The attributes the compiler declares, in the universe: `#convert` (PLAN.md 4.3).
-    enum Attribute: u8 { convert }
+    // The attributes the compiler declares, in the universe: `#convert` (§18, Literal
+    // conversions) and `#write` (§13, Formatting).
+    enum Attribute: u8 { convert, write }
 
     struct Space {
         name:   []u8,
@@ -139,6 +144,7 @@ namespace check {
         busy:      map::Map(Id, bool, Heap),     // layouts being computed
         main:      u32,                          // NONE unless `main` is valid
         converts:  list::List(u32, Heap),        // the fns with a valid `#convert`, in order
+        writers:   list::List(u32, Heap),        // the fns with a valid `#write`, in order
         text_decl: u32,                          // utf8::String, for @fmt, or NONE
         cstr_decl: u32,                          // c::String, for its C layout, or NONE
         builder_decl: u32,                       // utf8::Builder, or NONE
@@ -148,7 +154,7 @@ namespace check {
         ret:       Id,
         lits:      list::List(syntax::Expr, Heap),    // literals, whose types are settled at the end
         gvars:     list::List(GVar, Heap),            // generic arguments to infer
-        fmts:      list::List(syntax::Expr, Heap),    // @fmt calls, whose pushes are settled at the end
+        fmts:      list::List(syntax::Expr, Heap),    // the body's @fmt calls, whose writers are settled at the end
         vars:      list::List(Var, Heap),             // the locals of every body, by index
         scope:     list::List(Binding, Heap),         // what is in scope, innermost last
         marks:     list::List(usize, Heap),           // where each open scope starts in `scope`
@@ -173,7 +179,7 @@ namespace check {
         local_of:  map::Map(u64, u32, Heap),          // the local a `let` or a binder's field declares
         is_vars:   map::Map(u64, []u32, Heap),        // the locals an `is` binds, by its key
         forwards:  map::Map(u64, []Forward, Heap),    // what `..` supplies to a call
-        pieces:    map::Map(u64, []mut Piece, Heap),  // an @fmt's format
+        site_of:   map::Map(u64, u32, Heap),          // an @fmt's site, by its key
         holds:     map::Map(u64, []Place, Heap),      // the places a bind holds
         // A loop that a jump from an inner loop leaves or repeats has an id (1, 2, ... in each
         // body), and the jump names it.
@@ -214,6 +220,8 @@ namespace check {
         pending:   list::List(Pending, Heap),         // matches on errors, finished once they are
         pat_errs:  map::Map(u64, u32, Heap),          // the error a pattern names, by its name's key
         escapes:   list::List(Escape, Heap),          // escape errors that wait on the sets
+        sites:     list::List(Site, Heap),            // every @fmt, whose set is owned by SITE + its index
+        fault_writers: map::Map(u64, []Writer, Heap), // an error hole's field writers, by fault_key
         ptr_faults: bool,                             // whether some error's payload holds a pointer
     }
 
@@ -279,9 +287,11 @@ namespace check {
     struct Forward { name: []u8, var: u32, mutable: bool, ty: Id, arg: Id, conv: ?Conv }
 
     // A piece of an @fmt format: text, or a hole, `{` then an optional `0` and width, then `x`,
-    // `c` or neither (conv 0). push names the utf8 function it becomes, or is `call` for a
-    // function that writes to the builder; it is known once the body is finished.
-    struct Piece { hole: bool, text: []u8, zero: bool, width: ?u64, digits: []u8, conv: u8, push: []u8 }
+    // `c` or neither (conv 0). How it is written is known once the body is finished: push is
+    // `write`, by writer, `error`, an error hole, whose name writer writes, `call`, a function
+    // hole called with the sink, or the name of the utf8 function it pushes with. ty is a hole's
+    // type then, and at is where it is.
+    struct Piece { hole: bool, text: []u8, zero: bool, width: ?u64, digits: []u8, conv: u8, push: []u8, writer: Writer, ty: Id, at: source::Span }
 
     // What narrows when a condition is true or false (§8): a local (var) or a path of struct
     // fields from one (root, with var NONE), narrowed to ty. With bind, var is a binding of an
@@ -334,6 +344,7 @@ namespace check {
             busy = map::new(Id, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             main = NONE,
             converts = ids{ &heap },
+            writers = ids{ &heap },
             text_decl = NONE,
             cstr_decl = NONE,
             builder_decl = NONE,
@@ -360,7 +371,7 @@ namespace check {
             local_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             is_vars = map::new(u64, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             forwards = map::new(u64, []Forward){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
-            pieces = map::new(u64, []mut Piece){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            site_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             holds = map::new(u64, []Place){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             loop_ids = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             jump_ids = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
@@ -387,6 +398,8 @@ namespace check {
             pending = list::new(Pending){ realloc = arena::alloc, &heap },
             pat_errs = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             escapes = list::new(Escape){ realloc = arena::alloc, &heap },
+            sites = list::new(Site){ realloc = arena::alloc, &heap },
+            fault_writers = map::new(u64, []Writer){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             ptr_faults = false,
         }
         _ = space{ &c, name = "", parent = NONE }
@@ -401,6 +414,7 @@ namespace check {
         put_name{ &c, ns = UNIVERSE, values = false, name = "error", e = Entry::anyerr }
         put_name{ &c, ns = UNIVERSE, values = false, name = "strlit", e = Entry::strlit }
         put_name{ &c, ns = UNIVERSE, values = false, name = "convert", e = Entry::attr{ a = Attribute::convert } }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "write", e = Entry::attr{ a = Attribute::write } }
         return c
     }
 
@@ -459,7 +473,7 @@ namespace check {
         each{ &c, xs = c.consts, what = Phase::consts }
         each{ &c, xs = c.fns, what = Phase::sigs }
         each{ &c, xs = c.externs, what = Phase::sigs }
-        conversions{ &c }
+        compiler_attributes{ &c }
         c.ptr_faults = faults_hold_ptr{ &c, ds = list::items{ list = c.faults } }
     }
 
@@ -1308,44 +1322,60 @@ namespace check {
         return i
     }
 
-    // ---- literal conversions (PLAN.md 4.3): `#convert` fns
+    // ---- the attributes the compiler declares: `#convert` and `#write`
 
-    // The fns with `#convert`, checked once their signatures are resolved: a literal where a T is
-    // expected becomes the result of the one to T (str_lit), in a const's initializer too, so
-    // they are known before any body is checked.
-    fn conversions { mut c: Checker } {
+    // The fns with `#convert` or `#write`, checked once their signatures are resolved: a literal
+    // where a T is expected becomes the result of the conversion to T (str_lit), in a const's
+    // initializer too, and an @fmt writes each piece with a writer (fmt_calls), so they are
+    // known before any body is checked.
+    fn compiler_attributes { mut c: Checker } {
         let mut f: usize = 0
         while f < c.files.len {
-            convert_list{ &c, file = @as(u32, f), decls = c.files[f].tree.decls, ns = if f < c.std_files { STD } else { ROOT } }
+            compiler_attr_list{ &c, file = @as(u32, f), decls = c.files[f].tree.decls, ns = if f < c.std_files { STD } else { ROOT } }
             f = f + 1
         }
     }
 
-    fn convert_list { mut c: Checker, file: u32, decls: []syntax::Decl, ns: u32 } {
+    fn compiler_attr_list { mut c: Checker, file: u32, decls: []syntax::Decl, ns: u32 } {
         let mut i: usize = 0
         while i < decls.len {
             let x = decls[i]
-            let mut seen = false
+            let mut seen_convert = false
+            let mut seen_write = false
             let mut k: usize = 0
             while k < x.attrs.len {
                 let a = x.attrs[k]
-                if compiler_attr{ c, a, ns } is convert {
-                    use_attr{ &c, a }
-                    convert_attr{ &c, x, file, a, seen }
-                    seen = true
+                let which = compiler_attr{ c, a, ns }
+                if which != null {
+                    use_attr{ &c, a, which }
+                    match which {
+                        convert => {
+                            convert_attr{ &c, x, file, a, seen = seen_convert }
+                            seen_convert = true
+                        }
+                        write => {
+                            write_attr{ &c, x, file, a, seen = seen_write }
+                            seen_write = true
+                        }
+                    }
                 }
                 k = k + 1
             }
             if x.k is space{ decls = inner } {
                 let child = map::get{ m = c.space_of, key = key{ file, id = x.id } }
-                if child != null { convert_list{ &c, file, decls = inner, ns = child } }
+                if child != null { compiler_attr_list{ &c, file, decls = inner, ns = child } }
             }
             i = i + 1
         }
     }
 
-    // The attribute the compiler declares that a names, if it is one: `#convert` where no
-    // declaration of the program or std shadows the name.
+    // A compiler attribute's name, for messages.
+    fn attr_name { a: Attribute } -> []u8 {
+        return match a { convert => { "convert" } write => { "write" } }
+    }
+
+    // The attribute the compiler declares that a names, if it is one: `#convert` or `#write`
+    // where no declaration of the program or std shadows the name.
     fn compiler_attr { c: Checker, a: syntax::Attr, ns: u32 } -> ?Attribute {
         let braced{ callee } = a.value.k else { return null }
         let path{ segs } = callee.k else { return null }
@@ -1354,11 +1384,12 @@ namespace check {
         return which
     }
 
-    // Records what a compiler attribute's name refers to. It takes no fields: `#convert` alone.
-    fn use_attr { mut c: Checker, a: syntax::Attr } {
+    // Records what a compiler attribute's name refers to. It takes no fields: `#convert` or
+    // `#write` alone.
+    fn use_attr { mut c: Checker, a: syntax::Attr, which: Attribute } {
         let braced{ callee, items } = a.value.k else { return }
         let path{ segs } = callee.k else { return }
-        use{ &c, n = segs[0].name, r = Ref::attr{ a = Attribute::convert } }
+        use{ &c, n = segs[0].name, r = Ref::attr{ a = which } }
         if items.len > 0 {
             let mut b = message{ c }
             try! @fmt(&b, "`{}` takes no fields", str{ s = segs[0].name.text })
@@ -1527,7 +1558,7 @@ namespace check {
             while k < x.attrs.len {
                 let a = x.attrs[k]
                 if compiler_attr{ c, a, ns } != null {
-                    // checked with the signatures (conversions)
+                    // checked with the signatures (compiler_attributes)
                 } else if attribute{ &c, a, ns } is record{ ty, fields } {
                     let rd = record_decl{ c, t = ty }
                     if rd == NONE {
@@ -1566,9 +1597,12 @@ namespace check {
             let mut k: usize = 0
             while k < f.attrs.len {
                 let a = f.attrs[k]
-                if compiler_attr{ c, a, ns } is convert {
-                    use_attr{ &c, a }
-                    error{ &c, at = a.span, msg = "`convert` applies only to a fn" }
+                let which = compiler_attr{ c, a, ns }
+                if which != null {
+                    use_attr{ &c, a, which }
+                    let mut b = message{ c }
+                    try! @fmt(&b, "`{}` applies only to a fn", str{ s = attr_name{ a = which } })
+                    error{ &c, at = a.span, msg = utf8::view{ b } }
                 } else if attribute{ &c, a, ns } is record{ ty, fields = vals } {
                     let rd = record_decl{ c, t = ty }
                     if rd == NONE {
@@ -2290,6 +2324,10 @@ namespace check {
             errs{ owner, one } => {
                 if one != NONE { return utf8::push{ &b, s = str{ s = get_decl{ c, d = one }.qual } } }
                 if owner == NONE { return utf8::push{ &b, s = "error" } }
+                if owner >= SITE {
+                    try utf8::push{ &b, s = "error of " }
+                    return site_text{ c, owner, &b }
+                }
                 return @fmt(&b, "error of `{}`", str{ s = get_decl{ c, d = owner }.qual })
             }
             eset{ errs } => {
@@ -2316,6 +2354,10 @@ namespace check {
             errs{ owner, one } => {
                 if one != NONE { return @fmt(&b, "`{}`", str{ s = get_decl{ c, d = one }.qual }) }
                 if owner == NONE { return utf8::push{ &b, s = "any error" } }
+                if owner >= SITE {
+                    try utf8::push{ &b, s = "the errors of " }
+                    return site_text{ c, owner, &b }
+                }
                 return @fmt(&b, "the errors of `{}`", str{ s = get_decl{ c, d = owner }.qual })
             }
             else => { return write_type{ c, t, &b } }
@@ -5363,7 +5405,13 @@ namespace check {
             }
         }
         let rs = list::items{ list = refs }
-        i = 0
+        overlapping{ &c, e, rs }
+        return places_of{ c, rs }
+    }
+
+    // The first two of call e's mut references rs that overlap, if any, as an error.
+    fn overlapping { mut c: Checker, e: syntax::Expr, rs: []HeldRef } {
+        let mut i: usize = 0
         while i < rs.len {
             let mut j = i + 1
             while j < rs.len {
@@ -5379,13 +5427,12 @@ namespace check {
                         try! @fmt(&m, "`{}` overlaps a place held by `{}`", place_str{ c, p = place }, str{ s = holder })
                     }
                     flow_error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
-                    return places_of{ c, rs }
+                    return
                 }
                 j = j + 1
             }
             i = i + 1
         }
-        return places_of{ c, rs }
     }
 
     fn add_ref { mut xs: list::List(HeldRef, Heap), r: HeldRef } {
@@ -7371,20 +7418,47 @@ namespace check {
         return types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is enumeration
     }
 
-    // ---- @fmt(b, "format", args...) (§13, Formatting): pushes onto a builder
+    // ---- @fmt(b, "format", args...) (§13, Formatting): writes into a sink
+
+    // An instance of a `#write` fn, or decl NONE for none.
+    struct Writer { decl: u32, targs: []Id }
+
+    // The writers of a value to a sink that some code sees: one, and the decl of a second if
+    // there is one, which is an error.
+    struct Writers { one: Writer, two: u32 }
+
+    // An @fmt: where it is, the namespace it is in, whose writers it sees, the B of its sink, a
+    // `*mut B`, and its format's pieces. With writers, B has a `#write` fn the @fmt sees, and
+    // each piece is written by one (fmt_calls); without, B is a utf8::Builder, which std's
+    // utf8 functions push onto, found by name. Its errors are a set of its own, inferred as a
+    // function's is (infer_sets), owned by SITE + its index. faults are the errors whose fields
+    // an error hole's writers are looked up for (fault_writers).
+    struct Site { at: source::Span, ns: u32, sink: Id, writers: bool, pieces: []mut Piece, faults: []u32 }
+
+    fn no_writer {} -> Writer {
+        return Writer{ decl = NONE, targs = slice::empty(Id){} }
+    }
 
     fn fmt_builtin { mut c: Checker, e: syntax::Expr, args: []syntax::Expr } -> Id {
-        if args.len < 2 { return fmt_type{ &c, calls = false } }         // the parser has reported it
+        if args.len < 2 { return fmt_type{ &c } }         // the parser has reported it
         let b = args[0]
         let f = args[1]
         let mut ok = true
-        let inner = match b.k { addr{ e = x } => { x.* } else => { b } }
-        if not simple_place{ e = inner } {
-            error{ &c, at = expr_at{ e = b }, msg = "@fmt takes its builder as `&b`, `&x.f` or a name: it is used once per piece" }
-            ok = false
-        }
         let bt = typed{ &c, e = b }
-        if not is_builder_ptr{ c, t = bt } {
+        let sink = sink_of{ c, t = bt }
+        let writers = sink != types::NO_TYPE and has_writer{ &c, b = sink, ns = c.sc.ns }
+        if writers {
+            if not (types::get{ s = c.ty, id = types::prune{ s = c.ty, t = bt } } is ptr{ mutable } and mutable) {
+                if b.k is addr{ e = x } {
+                    check_mutable{ &c, e = x.* }
+                } else {
+                    let mut m = message{ c }
+                    try! @fmt(&m, "@fmt writes to a `*mut` sink, got {}", tstr{ c, t = bt })
+                    error{ &c, at = expr_at{ e = b }, msg = utf8::view{ b = m } }
+                }
+                ok = false
+            }
+        } else if not is_builder_ptr{ c, t = bt } {
             if bt != types::ERROR {
                 let mut m = message{ c }
                 try! @fmt(&m, "@fmt writes to a *mut utf8::Builder, got {}", tstr{ c, t = bt })
@@ -7420,31 +7494,37 @@ namespace check {
                 ok = false
             }
         }
-        let mut calls = false
+        // A string literal hole is written as the format's text is: a strlit, or with name
+        // lookup a utf8::String.
         let mut i: usize = 0
         while i < holes.len {
             let h = holes[i]
-            let want = match h.k { str => { text_type{ &c } } else => { types::NO_TYPE } }
-            let ht = expr{ &c, e = h, exp = want }
-            if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = ht } } is func { calls = true }
+            let want = match h.k { str => { if writers { types::STRLIT } else { text_type{ &c } } } else => { types::NO_TYPE } }
+            _ = expr{ &c, e = h, exp = want }
             i = i + 1
         }
-        if ok and ps != null {
-            try! map::put{ m = &c.pieces, key = expr_key{ e }, value = ps }
-            try! list::push{ list = &c.fmts, item = e }
-        }
-        return fmt_type{ &c, calls }
+        fmt_exclusive{ &c, e, sink = b, holes }
+        if not ok or ps == null { return fmt_type{ &c } }
+        let si = @as(u32, c.sites.len)
+        try! list::push{ list = &c.sites, item = Site{ at = expr_at{ e }, ns = c.sc.ns, sink, writers, pieces = ps, faults = no_vars{} } }
+        try! map::put{ m = &c.site_of, key = expr_key{ e }, value = si }
+        try! list::push{ list = &c.fmts, item = e }
+        return types::res{ s = &c.ty, ok = types::VOID, errs = types::errs{ s = &c.ty, owner = SITE + si, one = NONE } }
     }
 
-    // @fmt's type: a bare `!` that fails with alloc::out_of_memory, or with any error if a hole is
-    // a function, whose errors are its own.
-    fn fmt_type { mut c: Checker, calls: bool } -> Id {
-        let oom = std_value{ c, space = "alloc", name = "out_of_memory" }
-        let one = if calls { NONE } else { oom }
-        return types::res{ s = &c.ty, ok = types::VOID, errs = types::errs{ s = &c.ty, owner = NONE, one } }
+    // The type of an @fmt that has no site: a bare `!` that may fail with any error.
+    fn fmt_type { mut c: Checker } -> Id {
+        return types::res{ s = &c.ty, ok = types::VOID, errs = types::errs{ s = &c.ty, owner = NONE, one = NONE } }
     }
 
-    // A name, or a path of fields from one: it can be evaluated more than once.
+    // B, for a sink of type t, `*B` or `*mut B`; NO_TYPE for anything else.
+    fn sink_of { c: Checker, t: Id } -> Id {
+        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is ptr{ elem } { return types::prune{ s = c.ty, t = elem } }
+        return types::NO_TYPE
+    }
+
+    // A name, or a path of fields from one: evaluating it again gives the same place, so
+    // lowering needs no temporary for it.
     fn simple_place { e: syntax::Expr } -> bool {
         let mut x = e
         while true {
@@ -7470,6 +7550,185 @@ namespace check {
     fn text_type { mut c: Checker } -> Id {
         if c.text_decl == NONE { return types::ERROR }
         return types::record{ s = &c.ty, decl = c.text_decl, args = slice::empty(Id){} }
+    }
+
+    // The sink's place, if it is `&p`, and the places the holes' bound functions hold are one
+    // call's mut references (§3.1): `@fmt(&b, "{}", w{ &b, _ })` is two.
+    fn fmt_exclusive { mut c: Checker, e: syntax::Expr, sink: syntax::Expr, holes: []syntax::Expr } {
+        let mut refs = list::new(HeldRef){ realloc = arena::alloc, heap = c.heap }
+        if sink.k is addr{ e = x } {
+            let p = place_path{ c, e = x.* }
+            if p != null { add_ref{ xs = &refs, r = HeldRef{ p, holder = "" } } }
+        }
+        let mut i: usize = 0
+        while i < holes.len {
+            let h = holes[i]
+            let holder = match h.k {
+                path{ segs } => { if map::get{ m = c.convs, key = expr_key{ e = h } } == null { segs[0].name.text } else { source_text{ c, span = h.span } } }
+                else => { source_text{ c, span = h.span } }
+            }
+            held_refs{ xs = &refs, c, places = held_of{ c, e = h }, holder }
+            i = i + 1
+        }
+        overlapping{ &c, e, rs = list::items{ list = refs } }
+    }
+
+    // ---- `#write` fns and the writers an @fmt finds
+
+    // `#write` on x (§13, Formatting): a fn whose context is two fields, the sink, `mut`, and the
+    // value, read-only, and whose result is a bare `!`, or nothing for one that records failure
+    // itself. It may be generic, but neither field's type is a bare type parameter and every
+    // parameter appears in a field's type, so that matching a hole's type finds them all. The
+    // value isn't a function: a function in a hole is called with the sink.
+    fn write_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, seen: bool } {
+        let func{ tparams, params, ret } = x.k else {
+            error{ &c, at = a.span, msg = "`write` applies only to a fn" }
+            return
+        }
+        if seen {
+            error{ &c, at = a.span, msg = "duplicate `write` attribute" }
+            return
+        }
+        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let fd = get_decl{ c, d }
+        let fs = fd.fields
+        let mut i: usize = 0
+        while i < fs.len {
+            if types::prune{ s = c.ty, t = fs[i].ty } == types::ERROR { return }
+            i = i + 1
+        }
+        if fs.len != 2 or fs[0].mutable == fs[1].mutable or params.len != 2 {
+            let at = if params.len > 0 { params[0].span } else { x.span }
+            error{ &c, at, msg = "a `write` fn takes two fields: the sink, `mut`, and the value, read-only" }
+            return
+        }
+        let r = types::prune{ s = c.ty, t = fd.ret }
+        if r == types::ERROR { return }
+        if r != types::VOID and not void_result{ c, t = r } {
+            error{ &c, at = if ret == null { x.span } else { ret.span }, msg = "a `write` fn returns a bare `!`, or nothing" }
+            return
+        }
+        i = 0
+        while i < 2 {
+            let t = types::prune{ s = c.ty, t = fs[i].ty }
+            let what: utf8::String = if fs[i].mutable { "sink" } else { "value" }
+            if types::get{ s = c.ty, id = t } is param {
+                let mut b = message{ c }
+                try! @fmt(&b, "a `write` fn's {} can't be a bare type parameter", what)
+                error{ &c, at = params[i].span, msg = utf8::view{ b } }
+                return
+            }
+            if not fs[i].mutable and types::get{ s = c.ty, id = t } is func {
+                error{ &c, at = params[i].span, msg = "a `write` fn's value can't be a function: an @fmt hole calls a function with the sink" }
+                return
+            }
+            i = i + 1
+        }
+        i = 0
+        while i < tparams.len {
+            let k = @as(u32, i)
+            if not types::mentions{ s = c.ty, t = fs[0].ty, decl = d, index = k } and not types::mentions{ s = c.ty, t = fs[1].ty, decl = d, index = k } {
+                let mut b = message{ c }
+                try! @fmt(&b, "a `write` fn's type parameter `{}` must appear in its fields", str{ s = tparams[i].text })
+                error{ &c, at = tparams[i].span, msg = utf8::view{ b } }
+                return
+            }
+            i = i + 1
+        }
+        push{ xs = &c.writers, n = d }
+    }
+
+    // A `#write` fn's sink field and value field.
+    fn sink_field { c: Checker, d: u32 } -> types::Field {
+        let fs = get_decl{ c, d }.fields
+        return if fs[0].mutable { fs[0] } else { fs[1] }
+    }
+
+    fn value_field { c: Checker, d: u32 } -> types::Field {
+        let fs = get_decl{ c, d }.fields
+        return if fs[0].mutable { fs[1] } else { fs[0] }
+    }
+
+    // Whether some `#write` fn that code in namespace ns sees writes to a sink of type b.
+    fn has_writer { mut c: Checker, b: Id, ns: u32 } -> bool {
+        let ws = list::items{ list = c.writers }
+        let mut i: usize = 0
+        while i < ws.len {
+            let x = get_decl{ c, d = ws[i] }
+            if reaches{ c, from = ns, ns = x.ns } and types::instance{ s = c.ty, p = sink_field{ c, d = ws[i] }.ty, t = b, decl = ws[i], args = no_args{ &c, n = x.tparams.len } } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // n generic arguments, none known yet.
+    fn no_args { mut c: Checker, n: usize } -> []mut Id {
+        let mut out = list::new(Id){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < n {
+            try! list::push{ list = &out, item = types::NO_TYPE }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // The writers of a t to a sink of type b that code in namespace ns sees (§13): `#write` fns
+    // whose fields' types, with some generic arguments, are exactly b and t. No widening: a u32
+    // widens to both an i64 and a u64.
+    fn writers_of { mut c: Checker, b: Id, t: Id, ns: u32 } -> Writers {
+        let ws = list::items{ list = c.writers }
+        let mut one = no_writer{}
+        let mut i: usize = 0
+        while i < ws.len {
+            let d = ws[i]
+            let x = get_decl{ c, d }
+            if reaches{ c, from = ns, ns = x.ns } {
+                let args = no_args{ &c, n = x.tparams.len }
+                if types::instance{ s = c.ty, p = sink_field{ c, d }.ty, t = b, decl = d, args } and types::instance{ s = c.ty, p = value_field{ c, d }.ty, t, decl = d, args } {
+                    if one.decl != NONE { return Writers{ one, two = d } }
+                    one = Writer{ decl = d, targs = args }
+                }
+            }
+            i = i + 1
+        }
+        return Writers{ one, two = NONE }
+    }
+
+    // The writer of a t to a sink of type b that code in namespace ns sees, or null after
+    // reporting at `at` that there is none, or that there are two. why ends the message.
+    fn writer_of { mut c: Checker, b: Id, t: Id, ns: u32, at: source::Span, why: utf8::String } -> ?Writer {
+        let found = writers_of{ &c, b, t, ns }
+        if found.two != NONE {
+            let mut m = message{ c }
+            try! @fmt(&m, "@fmt has two writers of {} to {}: `{}` and `{}`", tstr{ c, t }, tstr{ c, t = b }, str{ s = get_decl{ c, d = found.one.decl }.qual }, str{ s = get_decl{ c, d = found.two }.qual })
+            error{ &c, at, msg = utf8::view{ b = m } }
+            return null
+        }
+        if found.one.decl == NONE {
+            let mut m = message{ c }
+            try! @fmt(&m, "@fmt has no writer of {} to {}{}", tstr{ c, t }, tstr{ c, t = b }, why)
+            if is_enum{ c, t } {
+                try! utf8::push{ b = &m, s = ": convert it with `@as`" }
+            } else if types::get{ s = c.ty, id = t } is opt {
+                try! utf8::push{ b = &m, s = ": give it a value with `ifnull`" }
+            }
+            error{ &c, at, msg = utf8::view{ b = m } }
+            return null
+        }
+        return found.one
+    }
+
+    // What a writer adds to an @fmt's set: its own, unless it returns nothing.
+    fn add_writer_set { c: Checker, mut flow: Flow, d: u32 } {
+        if types::prune{ s = c.ty, t = get_decl{ c, d }.ret } != types::VOID { flow.subs = set_add{ c, xs = flow.subs, n = d } }
+    }
+
+    // The text of an error type owned by a site: its position, "`@fmt` at 3:9".
+    fn site_text { c: Checker, owner: u32, mut b: utf8::Builder(Heap) } -> ! {
+        let at = list::items{ list = c.sites }[@as(usize, owner - SITE)].at
+        let file = c.files[at.file]
+        let p = source::position{ text = file.text, lines = file.lines, offset = at.start }
+        return @fmt(&b, "`@fmt` at {}:{}", p.line, p.col)
     }
 
     // The pieces of a format: text as it is, except that `{{` and `}}` stand for braces, and
@@ -7517,11 +7776,11 @@ namespace check {
                     return null
                 }
                 if text.len > 0 {
-                    add_piece{ xs = &out, p = Piece{ hole = false, text = list::items{ list = text }, zero = false, width = null, digits = "", conv = 0, push = "" } }
+                    add_piece{ xs = &out, p = Piece{ hole = false, text = list::items{ list = text }, zero = false, width = null, digits = "", conv = 0, push = "", writer = no_writer{}, ty = types::STRLIT, at } }
                     text = list::new(u8){ realloc = arena::alloc, heap = c.heap }
                 }
                 let width: ?u64 = if digits.len > 0 { utf8::parse_u64{ s = str{ s = digits } } } else { null }
-                add_piece{ xs = &out, p = Piece{ hole = true, text = "", zero = lead and digits.len > 0, width, digits, conv, push = "" } }
+                add_piece{ xs = &out, p = Piece{ hole = true, text = "", zero = lead and digits.len > 0, width, digits, conv, push = "", writer = no_writer{}, ty = types::NO_TYPE, at } }
                 i = j + 1
             } else if ch == '}' {
                 error{ &c, at, msg = "the format has a `}` without a `{`; write `}}` for a brace" }
@@ -7532,7 +7791,7 @@ namespace check {
             }
         }
         if text.len > 0 {
-            add_piece{ xs = &out, p = Piece{ hole = false, text = list::items{ list = text }, zero = false, width = null, digits = "", conv = 0, push = "" } }
+            add_piece{ xs = &out, p = Piece{ hole = false, text = list::items{ list = text }, zero = false, width = null, digits = "", conv = 0, push = "", writer = no_writer{}, ty = types::STRLIT, at } }
         }
         return list::items{ list = out }
     }
@@ -7552,10 +7811,15 @@ namespace check {
         }
     }
 
+    // The pieces of an @fmt, or null if it has no site.
+    fn site_pieces { c: Checker, e: syntax::Expr } -> ?[]mut Piece {
+        let si = map::get{ m = c.site_of, key = expr_key{ e } } ifnull { return null }
+        return list::items{ list = c.sites }[@as(usize, si)].pieces
+    }
+
     // A `{x}` or `{c}` hole settles an integer literal whose type is still open.
     fn open_holes { mut c: Checker, e: syntax::Expr } {
-        let ps = map::get{ m = c.pieces, key = expr_key{ e } }
-        if ps == null { return }
+        let ps = site_pieces{ c, e } ifnull { return }
         let args = fmt_args{ e }
         let mut h: usize = 2
         let mut i: usize = 0
@@ -7575,20 +7839,37 @@ namespace check {
         }
     }
 
-    // The pushes an @fmt stands for (ctxi's fmt_calls): each hole's by its argument's type,
+    // How each piece of an @fmt is written, once the body's types are settled, and what its set
+    // gains from them. With writers, text is a strlit and each hole is written by the writer
+    // for its exact type; a hole with a format option, an error and a function hole are the
+    // exceptions. Without, as ctxi's fmt_calls: each hole's utf8 push by its argument's type,
     // then each push checked as the call it is.
     fn fmt_calls { mut c: Checker, e: syntax::Expr } {
-        let found = map::get{ m = c.pieces, key = expr_key{ e } }
-        if found == null { return }
-        let ps = found
+        let si = map::get{ m = c.site_of, key = expr_key{ e } } ifnull { return }
+        let st = list::items{ list = c.sites }[@as(usize, si)]
+        let sink = types::zonk{ s = &c.ty, t = st.sink }
+        list::at{ list = c.sites, i = @as(usize, si) }.sink = sink
+        let mut flow = Flow{ atoms = no_vars{}, subs = no_vars{}, any = true }
+        let ok = if st.writers { write_calls{ &c, e, site = st, sink, &flow } } else { push_calls{ &c, e, ps = st.pieces, &flow } }
+        if not ok { flow.any = true }
+        try! map::put{ m = &c.flows, key = SITE + si, value = flow }
+    }
+
+    // The pieces of an @fmt with name lookup: each a utf8 push onto the builder, which fails
+    // with alloc::out_of_memory, or a function hole's call, which fails with any error.
+    fn push_calls { mut c: Checker, e: syntax::Expr, ps: []mut Piece, mut flow: Flow } -> bool {
         let args = fmt_args{ e }
+        flow.any = false
+        let oom = std_value{ c, space = "alloc", name = "out_of_memory" }
+        if oom != NONE { flow.atoms = one_id{ c, n = oom } }
         let mut h: usize = 2
         let mut i: usize = 0
         while i < ps.len {
             if ps[i].hole {
                 let push = fmt_hole{ &c, p = ps[i], x = args[h] }
-                if push.len == 0 { return }
+                if push.len == 0 { return false }
                 ps[i].push = push
+                if slice::eq_bytes{ a = push, b = "call" } { flow.any = true }
                 h = h + 1
             } else {
                 ps[i].push = "push"
@@ -7602,22 +7883,12 @@ namespace check {
         while i < ps.len {
             let p = ps[i]
             if not p.hole {
-                match utf8::from{ bytes = p.text } {
-                    ok => {}
-                    utf8::invalid{ at = bad } => {
-                        let mut m = message{ c }
-                        try! @fmt(&m, "string literal is not valid UTF-8 (byte {})", bad)
-                        error{ &c, at = expr_at{ e = args[1] }, msg = utf8::view{ b = m } }
-                    }
-                }
+                fmt_text_ok{ &c, text = p.text, at = expr_at{ e = args[1] } }
             } else {
                 let x = args[h]
                 h = h + 1
                 if slice::eq_bytes{ a = p.push, b = "call" } {
-                    if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = x } } } is func{ fields } {
-                        let want = types::ptr{ s = &c.ty, elem = fields[0].ty, mutable = true }
-                        _ = convert{ &c, a = bt, t = want, pos = expr_at{ e = b } }
-                    }
+                    call_hole{ &c, x, b, bt }
                 } else {
                     let pt = push_param{ &c, push = p.push }
                     if pt != types::NO_TYPE { _ = convert{ &c, a = type_of_expr{ c, e = x }, t = pt, pos = expr_at{ e = x } } }
@@ -7625,6 +7896,123 @@ namespace check {
             }
             i = i + 1
         }
+        return true
+    }
+
+    // The pieces of an @fmt with writers (§13): text by the writer of a strlit, a hole by the
+    // writer of its type, an error by the compiler, and a function by calling it with the sink.
+    // Format options still push with std's utf8, onto a utf8::Builder.
+    fn write_calls { mut c: Checker, e: syntax::Expr, site: Site, sink: Id, mut flow: Flow } -> bool {
+        let args = fmt_args{ e }
+        let ps = site.pieces
+        let b = args[0]
+        let bt = type_of_expr{ c, e = b }
+        flow.any = false
+        let mut text = no_writer{}
+        let mut h: usize = 2
+        let mut i: usize = 0
+        while i < ps.len {
+            let p = ps[i]
+            let mut x = args[1]
+            let mut t = types::STRLIT
+            let mut why: utf8::String = ", for its text"
+            if p.hole {
+                x = args[h]
+                h = h + 1
+                t = types::zonk{ s = &c.ty, t = type_of_expr{ c, e = x } }
+                ps[i].ty = t
+                ps[i].at = expr_at{ e = x }
+                why = ""
+                if t == types::ERROR { return false }
+                if x.k is str{ bytes } { fmt_text_ok{ &c, text = bytes, at = expr_at{ e = x } } }
+            } else {
+                fmt_text_ok{ &c, text = p.text, at = expr_at{ e = x } }
+            }
+            let options = p.digits.len > 0 or p.conv != 0
+            if options {
+                if not is_builder_ptr{ c, t = bt } {
+                    error{ &c, at = expr_at{ e = x }, msg = "a format option writes to a *mut utf8::Builder only: give a function that writes the hole instead" }
+                    return false
+                }
+                let push = fmt_hole{ &c, p, x }
+                if push.len == 0 { return false }
+                ps[i].push = push
+                let oom = std_value{ c, space = "alloc", name = "out_of_memory" }
+                if oom != NONE { flow.atoms = set_add{ c, xs = flow.atoms, n = oom } }
+                let pt = push_param{ &c, push }
+                if pt != types::NO_TYPE { _ = convert{ &c, a = t, t = pt, pos = expr_at{ e = x } } }
+            } else if is_errs{ c, t } or t == types::STRLIT {
+                // Text, a strlit, and an error's name and braces are written by the writer of a
+                // strlit; an error's fields are looked up once its set is known (infer_sets).
+                if text.decl == NONE {
+                    if is_errs{ c, t } { why = ", for an error's name" }
+                    text = writer_of{ &c, b = sink, t = types::STRLIT, ns = site.ns, at = expr_at{ e = x }, why } ifnull { return false }
+                    add_writer_set{ c, &flow, d = text.decl }
+                }
+                ps[i].push = if is_errs{ c, t } { "error" } else { "write" }
+                ps[i].writer = text
+            } else if types::get{ s = c.ty, id = t } is func{ fields, ret, external } and not external and fields.len == 1 and fields[0].mutable and void_result{ c, t = ret } {
+                ps[i].push = "call"
+                flow.any = true
+                call_hole{ &c, x, b, bt }
+            } else {
+                let w = writer_of{ &c, b = sink, t, ns = site.ns, at = expr_at{ e = x }, why } ifnull { return false }
+                add_writer_set{ c, &flow, d = w.decl }
+                ps[i].push = "write"
+                ps[i].writer = w
+            }
+            i = i + 1
+        }
+        return true
+    }
+
+    // Text must be valid UTF-8: the checker rejects a format that isn't, whatever the sink.
+    fn fmt_text_ok { mut c: Checker, text: []u8, at: source::Span } {
+        match utf8::from{ bytes = text } {
+            ok => {}
+            utf8::invalid{ at = bad } => {
+                let mut m = message{ c }
+                try! @fmt(&m, "string literal is not valid UTF-8 (byte {})", bad)
+                error{ &c, at, msg = utf8::view{ b = m } }
+            }
+        }
+    }
+
+    // A function hole x, which the @fmt calls with its sink b of type bt in its one field.
+    fn call_hole { mut c: Checker, x: syntax::Expr, b: syntax::Expr, bt: Id } {
+        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = x } } } is func{ fields } {
+            let want = types::ptr{ s = &c.ty, elem = fields[0].ty, mutable = true }
+            _ = convert{ &c, a = bt, t = want, pos = expr_at{ e = b } }
+        }
+    }
+
+    // The writers of an error's fields, for an error hole of site si: each field's, or none if
+    // there is none, which writes `_`. Looked up while the sets are inferred, for each error a
+    // hole's set gains, and keyed by the site and the error (fault_writers). Their sets join
+    // the site's.
+    fn fault_field_writers { mut c: Checker, si: u32, d: u32, at: source::Span } {
+        let st = list::items{ list = c.sites }[@as(usize, si)]
+        let fields = fault_fields{ c, d } ifnull { slice::empty(types::Field){} }
+        let mut out = list::new(Writer){ realloc = arena::alloc, heap = c.heap }
+        let mut flow = map::get{ m = c.flows, key = SITE + si } ifnull { Flow{ atoms = no_vars{}, subs = no_vars{}, any = false } }
+        let mut k: usize = 0
+        while k < fields.len {
+            let found = writers_of{ &c, b = st.sink, t = fields[k].ty, ns = st.ns }
+            if found.two != NONE {
+                let mut m = message{ c }
+                try! @fmt(&m, "@fmt has two writers of {} to {}, for `{}`'s field `{}`: `{}` and `{}`", tstr{ c, t = fields[k].ty }, tstr{ c, t = st.sink }, str{ s = get_decl{ c, d }.qual }, str{ s = fields[k].name }, str{ s = get_decl{ c, d = found.one.decl }.qual }, str{ s = get_decl{ c, d = found.two }.qual })
+                error{ &c, at, msg = utf8::view{ b = m } }
+            }
+            if found.one.decl != NONE { add_writer_set{ c, &flow, d = found.one.decl } }
+            try! list::push{ list = &out, item = found.one }
+            k = k + 1
+        }
+        try! map::put{ m = &c.fault_writers, key = fault_key{ si, d }, value = list::items{ list = out } }
+        try! map::put{ m = &c.flows, key = SITE + si, value = flow }
+    }
+
+    fn fault_key { si: u32, d: u32 } -> u64 {
+        return (@as(u64, si) << 32) | @as(u64, d)
     }
 
     // The utf8 function hole piece p pushes argument x with, or "" after reporting why x can't
@@ -7710,8 +8098,7 @@ namespace check {
 
     // A width too large for a usize, as a literal that doesn't fit.
     fn fmt_widths { mut c: Checker, e: syntax::Expr } {
-        let ps = map::get{ m = c.pieces, key = expr_key{ e } }
-        if ps == null { return }
+        let ps = site_pieces{ c, e } ifnull { return }
         let args = fmt_args{ e }
         let mut h: usize = 2
         let mut i: usize = 0
@@ -7953,13 +8340,27 @@ namespace check {
         return types::NO_TYPE
     }
 
-    // Each function's error set: the errors that flow into it, and the sets of the functions whose
-    // errors flow into it, until no set grows. Sets only grow and are finite, so this ends,
-    // through recursion too. A set is in declaration order: each error's number.
+    // Each function's and @fmt's error set: the errors that flow into it, and the sets of the
+    // functions and @fmts whose errors flow into it, until no set grows. An error hole's set
+    // adds the writers of each of its errors' fields as it grows (fault_field_writers). Sets
+    // only grow and are finite, so this ends, through recursion too. A set is in declaration
+    // order: each error's number.
     fn infer_sets { mut c: Checker } {
-        let fs = list::items{ list = c.fns }
-        let mut any = map::new(u32, bool){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 }
+        let mut owners = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let ds = list::items{ list = c.fns }
         let mut i: usize = 0
+        while i < ds.len {
+            push{ xs = &owners, n = ds[i] }
+            i = i + 1
+        }
+        i = 0
+        while i < c.sites.len {
+            push{ xs = &owners, n = SITE + @as(u32, i) }
+            i = i + 1
+        }
+        let fs = list::items{ list = owners }
+        let mut any = map::new(u32, bool){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 }
+        i = 0
         while i < fs.len {
             let d = fs[i]
             let f = map::get{ m = c.flows, key = d }
@@ -7972,6 +8373,7 @@ namespace check {
         let mut changed = true
         while changed {
             changed = false
+            if error_holes{ &c, any } { changed = true }
             i = 0
             while i < fs.len {
                 let d = fs[i]
@@ -8006,6 +8408,45 @@ namespace check {
             try! map::put{ m = &c.sets, key = d, value = sorted_ids{ c, xs = set } }
             i = i + 1
         }
+    }
+
+    // The writers of the fields of each error that an error hole's set has gained, for each
+    // @fmt with writers; whether one was looked up. A set with `any` is every error.
+    fn error_holes { mut c: Checker, any: map::Map(u32, bool, Heap) } -> bool {
+        let mut grew = false
+        let mut si: usize = 0
+        while si < c.sites.len {
+            let st = list::items{ list = c.sites }[si]
+            let mut k: usize = 0
+            while st.writers and k < st.pieces.len {
+                let p = st.pieces[k]
+                if p.hole and slice::eq_bytes{ a = p.push, b = "error" } {
+                    let set = current_set{ c, t = p.ty, any }
+                    let mut j: usize = 0
+                    while j < set.len {
+                        let now = list::items{ list = c.sites }[si]
+                        if not has_id{ xs = now.faults, n = set[j] } {
+                            list::at{ list = c.sites, i = si }.faults = set_add{ c, xs = now.faults, n = set[j] }
+                            fault_field_writers{ &c, si = @as(u32, si), d = set[j], at = p.at }
+                            grew = true
+                        }
+                        j = j + 1
+                    }
+                }
+                k = k + 1
+            }
+            si = si + 1
+        }
+        return grew
+    }
+
+    // The errors an error of type t may be while the sets are inferred: as set_of, with a
+    // function or @fmt in `any` failing with every error.
+    fn current_set { c: Checker, t: Id, any: map::Map(u32, bool, Heap) } -> []u32 {
+        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is errs{ owner, one } and one == NONE and owner != NONE and map::has{ m = any, key = owner } {
+            return list::items{ list = c.faults }
+        }
+        return set_of{ c, t }
     }
 
     fn sorted_ids { c: Checker, xs: []u32 } -> []u32 {

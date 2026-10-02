@@ -1089,8 +1089,6 @@ class Bodies(Base):
              '@addr needs a pointer argument', 2, 19),
             ('fn f { a: i32, b: i64 } {\n    let c = @wrap_add(a, b)\n}',
              '@wrap_add needs two integers of the same type', 2, 13),
-            ('fn w { mut bs: [1]utf8::Builder(arena::Arena) } -> ! {\n    return @fmt(&bs[0], "x")\n}',
-             '@fmt takes its builder as `&b`, `&x.f` or a name: it is used once per piece', 2, 17),
             ('fn w { mut n: i32 } -> ! {\n    return @fmt(&n, "x")\n}',
              '@fmt writes to a *mut utf8::Builder, got *mut i32', 2, 17),
             (B + '    let s = "x"\n    return @fmt(&b, s)\n}',
@@ -3030,11 +3028,26 @@ fn main { mut io: Io } {
             ('let s: []u8 = "x"\n    _ = @fmt(&b, "{}", s)', "@fmt can't format []u8"),
             ('let mut n: i32 = 1\n    _ = @fmt(&n, "x")','@fmt writes to a *mut utf8::Builder, got *mut i32'),
             ('let bs: [1]utf8::Builder(arena::Arena) = [b]\n    _ = @fmt(&bs[0], "x")',
-             '@fmt takes its builder as `&b`, `&x.f` or a name'),
+             '@fmt writes to a *mut utf8::Builder, got *utf8::Builder(arena::Arena)'),
+            ('_ = @fmt(&b, "{}", w{ &b, _ })', '`b` overlaps a place held by `w{ &b, _ }`'),
             ('@fmt(&b, "x")', 'the result of `@fmt` (!) is unused'),
         ]:
-            self.fmt_error(body, fragment)
+            self.fmt_error(body, fragment, extra='fn w { mut b: utf8::Builder(arena::Arena) } -> ! {}\n')
 
+    def test_sink_evaluated_once(self):
+        # The sink may be any `*mut` expression: it is evaluated once, before the pieces.
+        self.fmt("""
+    let mut bs = [utf8::builder{ realloc = arena::alloc, &heap }, utf8::builder{ realloc = arena::alloc, &heap }]
+    let mut n: usize = 0
+    _ = @fmt(pick{ &bs, i = next{ &n } }, "{}{}{}", 1, 2, 3)
+    _ = @fmt(&bs[0], "[{}]", n)
+    _ = @fmt(&b, "{}{}", utf8::view{ b = bs[0] }, utf8::view{ b = bs[1] })""", '[1]123', extra="""
+fn next { mut n: usize } -> usize {
+    n = n + 1
+    return n
+}
+fn pick { mut bs: [2]utf8::Builder(arena::Arena), i: usize } -> *mut utf8::Builder(arena::Arena) { return &bs[i] }
+""")
 
     def test_program_utf8_does_not_hide_std(self):
         # @fmt pushes with std's utf8, even where a namespace of the program's is called utf8.
@@ -3057,6 +3070,174 @@ fn std_utf8 { mut heap: arena::Arena } -> utf8::Builder(arena::Arena) {
 fn view { b: utf8::Builder(arena::Arena) } -> utf8::String { return utf8::view{ b } }
 fn main { mut io: Io } { app::show{ &io } }
 """, '42 and true\n')
+
+WRITE_LIB = """
+namespace out {
+    error full
+    struct Line { b: utf8::Builder(arena::Arena), pieces: u32, cap: u32 }
+    fn line { mut heap: arena::Arena, cap: u32 } -> Line {
+        return Line{ b = utf8::builder{ realloc = arena::alloc, &heap }, pieces = 0, cap }
+    }
+    fn count { mut l: Line } -> ! {
+        if l.pieces == l.cap { return full }
+        l.pieces = l.pieces + 1
+    }
+    #write
+    fn text { mut l: Line, s: strlit } -> ! {
+        try count{ &l }
+        try! utf8::push{ b = &l.b, s = utf8::String{ bytes = s.bytes } }
+    }
+    #write
+    fn number { mut l: Line, n: i32 } -> ! {
+        try count{ &l }
+        try! utf8::push_i64{ b = &l.b, n }
+    }
+    #write
+    fn flag { v: bool, mut l: Line } {
+        try! utf8::push{ b = &l.b, s = if v { "yes" } else { "no" } }
+    }
+}
+"""
+
+WRITE_MAIN = """
+fn main { mut io: Io } {
+    let mut mem: [1024]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut line = out::line{ &heap, cap = 100 }
+%s
+    io::println{ &io, s = utf8::view{ b = line.b } }
+}
+"""
+
+
+class Write(Base):
+    """`#write` (§13): fns that write a value to a sink, which @fmt finds by the sink's type and
+    each piece's exact type."""
+
+    def assertError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def write(self, body, expected, extra=''):
+        self.assertOutput(WRITE_LIB + extra + WRITE_MAIN % body, expected + '\n')
+
+    def test_rules(self):
+        two = 'a `write` fn takes two fields: the sink, `mut`, and the value, read-only'
+        result = 'a `write` fn returns a bare `!`, or nothing'
+        for src, msg, line, col in [
+            ('#write\nstruct S {}', '`write` applies only to a fn', 1, 1),
+            ('struct S {}\n#write\n#write\nfn w { mut s: S, v: i32 } {}', 'duplicate `write` attribute', 3, 1),
+            ('struct S {}\n#write\nfn w { mut s: S } {}', two, 3, 8),
+            ('struct S {}\n#write\nfn w { mut s: S, mut v: i32 } {}', two, 3, 8),
+            ('struct S {}\n#write\nfn w { s: S, v: i32 } {}', two, 3, 8),
+            ('struct S {}\n#write\nfn w { mut s: S, v: i32, k: i32 } {}', two, 3, 8),
+            ('struct S {}\n#write\nfn w {} {}', two, 3, 1),
+            ('struct S {}\n#write\nfn w { mut s: S, v: i32 } -> i32 { return 1 }', result, 3, 30),
+            ('struct S {}\n#write\nfn w { mut s: S, v: i32 } -> !i32 { return 1 }', result, 3, 30),
+            ('#write\nfn w(T) { mut s: T, v: i32 } {}', "a `write` fn's sink can't be a bare type parameter", 2, 11),
+            ('struct S(T) { x: T }\n#write\nfn w(T) { mut s: S(T), v: T } {}', "a `write` fn's value can't be a bare type parameter", 3, 24),
+            ('struct S {}\n#write\nfn w { mut s: S, v: fn{} } {}', "a `write` fn's value can't be a function: an @fmt hole calls a function with the sink", 3, 18),
+            ('struct S {}\n#write\nfn w(T) { mut s: S, v: i32 } {}', "a `write` fn's type parameter `T` must appear in its fields", 3, 6),
+            ('struct S {}\n#write{ x = 1 }\nfn w { mut s: S, v: i32 } {}', '`write` takes no fields', 2, 9),
+            ('capability C {\n    #write\n    extern x: i32\n}', '`write` applies only to a fn', 2, 5),
+            ('fn f { x: write } {}', '`write` is an attribute, not a type', 1, 11),
+        ]:
+            self.assertError(src + '\nfn main {} {}', msg, line, col)
+
+    def test_writes(self):
+        """Text is a strlit, so is a string literal hole, and each hole is written by the writer
+        of its exact type; the sink may come before or after the value in the fn's fields."""
+        self.write("""
+    try! @fmt(&line, "a={} b={} c={}|{}", 5, true, -2, "lit")
+    let n = @as(i32, line.pieces)
+    _ = @fmt(&line, " {}", n)""", 'a=5 b=yes c=-2|lit 7')
+
+    def test_generic(self):
+        # A generic writer and sink, used from a generic function: B is Log(S) there.
+        self.assertOutput("""
+namespace log {
+    struct Log(S) { b: utf8::Builder(S) }
+    #write
+    fn num(S) { mut l: Log(S), n: i64 } -> ! { return utf8::push_i64{ b = &l.b, n } }
+    #write
+    fn text(S) { mut l: Log(S), s: strlit } -> ! { return utf8::push{ b = &l.b, s = utf8::String{ bytes = s.bytes } } }
+}
+fn report(S) { mut l: log::Log(S), n: i64 } -> ! { return @fmt(&l, "n={};", n) }
+fn main { mut io: Io } {
+    let mut mem: [256]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut l = log::Log{ b = utf8::builder{ realloc = arena::alloc, &heap } }
+    try! report{ &l, n = 4 }
+    try! @fmt(&l, "{}", @as(i64, 5))
+    io::println{ &io, s = utf8::view{ b = l.b } }
+}
+""", 'n=4;5\n')
+
+    def test_set(self):
+        """An @fmt fails with its writers' errors: its own set, inferred as a function's is. A
+        writer that returns nothing adds none."""
+        self.write("""
+    let mut small = out::line{ &heap, cap = 2 }
+    match @fmt(&small, "{}{}{}", 1, 2, 3) {
+        ok       => { _ = @fmt(&line, "ok") }
+        out::full => { _ = @fmt(&line, "full at {}", @as(i32, small.pieces)) }
+    }
+    _ = @fmt(&line, "|{}", utf8::view{ b = small.b })""", 'full at 2|12', extra="""
+#write
+fn view { mut l: out::Line, s: utf8::String } -> ! {
+    try out::count{ &l }
+    try! utf8::push{ b = &l.b, s }
+}
+""")
+
+    def test_error_hole(self):
+        """The compiler writes an error: its name with the writer of a strlit, and each field
+        with the writer of its type, or `_` if there is none."""
+        self.write("""
+    match pick{ n = 2 } {
+        ok => {}
+        err{ error } => { try! @fmt(&line, "{} ", error) }
+    }
+    pick{ n = 1 } iferr err{ error } { try! @fmt(&line, "{}", error) }""", 'bad{ code = 7, why = _ } other', extra="""
+error bad{ code: i32, why: []u8 }
+error other
+fn pick { n: i32 } -> ! {
+    if n == 1 { return other }
+    return bad{ code = 7, why = "x" }
+}
+""")
+
+    def test_errors(self):
+        for body, msg, line, col in [
+            ('    try! @fmt(&line, "{}", 1.5)', '@fmt has no writer of f64 to out::Line', 36, 28),
+            ('    try! @fmt(&line, "{}", E::a)', '@fmt has no writer of E to out::Line: convert it with `@as`', 36, 28),
+            ('    let n: ?i32 = 1\n    try! @fmt(&line, "{}", n)', '@fmt has no writer of ?i32 to out::Line: give it a value with `ifnull`', 37, 28),
+            ('    let n: u8 = 1\n    try! @fmt(&line, "{}", n)', '@fmt has no writer of u8 to out::Line', 37, 28),
+            ('    try! @fmt(&line, "{x}", 1)', 'a format option writes to a *mut utf8::Builder only: give a function that writes the hole instead', 36, 29),
+            ('    let l2 = line\n    try! @fmt(&l2, "x")', '`l2` is not a mutable place', 37, 16),
+            ('    let p: *out::Line = &line\n    try! @fmt(p, "x")', '@fmt writes to a `*mut` sink, got *out::Line', 37, 15),
+            ('    try! @fmt(&line, "{}", w{ l = &line, _ })', '`line` overlaps a place held by `w{ l = &line, _ }`', 36, 10),
+            ('    let mut r = @fmt(&line, "x")\n    r = fails{}\n    try! r',
+             'expected ! failing with the errors of `@fmt` at 36:17, got one failing with the errors of `fails`: errors join only the result of the function that returns them', 37, 14),
+            ('    match @fmt(&line, "{}", 1) {\n        ok => {}\n        other => {}\n        else => {}\n    }',
+             "error `other` can't happen here: this fails only with out::full", 38, 9),
+        ]:
+            self.assertError(WRITE_LIB + 'enum E: u8 { a }\nerror other\nfn fails {} -> ! { return other }\nfn w { mut l: out::Line } -> ! {}\n' + WRITE_MAIN % body, msg, line, col)
+
+    def test_sink_errors(self):
+        for src, msg, line, col in [
+            ('struct S {}\n#write\nfn w { mut s: S, v: i32 } {}\nfn f { mut s: S } {\n    @fmt(&s, "x{}", 1) iferr {}\n}',
+             '@fmt has no writer of strlit to S, for its text', 5, 14),
+            ('struct S {}\nerror e\n#write\nfn w { mut s: S, v: i32 } {}\nfn f { mut s: S } {\n    @fmt(&s, "{}", e) iferr {}\n}',
+             "@fmt has no writer of strlit to S, for an error's name", 6, 20),
+            ('struct S {}\nnamespace a {\n    #write\n    fn w { mut s: S, v: i32 } {}\n}\nnamespace b {\n    #write\n    fn w { mut s: S, v: i32 } {}\n}\n#write\nfn t { mut s: S, v: strlit } {}\nfn f { mut s: S } {\n    @fmt(&s, "{}", 1) iferr {}\n}',
+             '@fmt has two writers of i32 to S: `a::w` and `b::w`', 13, 20),
+            ('struct S {}\n#write\nfn w { mut s: S, v: strlit } {}\nfn f { mut s: S } {\n    @fmt(&s, "\\xff") iferr {}\n}',
+             'string literal is not valid UTF-8 (byte 0)', 5, 14),
+        ]:
+            self.assertError(src + '\nfn main {} {}', msg, line, col)
+
 
 class StdLib(Base):
     def test_hello(self):

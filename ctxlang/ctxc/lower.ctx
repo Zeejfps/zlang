@@ -2209,17 +2209,29 @@ namespace lower {
         return mk{ ty, k = ir::ExprKind::switchx{ scrut = box{ l, e = x }, cases = list::items{ list = out } } }
     }
 
-    // ---- @fmt: the pushes it stands for, each in turn until one fails, whose error is the @fmt's
+    // ---- @fmt: the writes it stands for, each in turn until one fails, whose error is the @fmt's
+
+    // An @fmt's sink: its expression, of type ty, which is evaluated once. A name or a path of
+    // fields from one is read again for each piece, as it gives the same place; anything else
+    // is held in slot.
+    struct Sink { e: syntax::Expr, ty: Id, slot: u32 }
 
     fn fmt { mut l: Lower, e: syntax::Expr, args: []syntax::Expr } -> ir::Expr {
-        let found = map::get{ m = l.c.pieces, key = check::expr_key{ e } }
-        if found == null { @panic("lower: an @fmt that wasn't checked") }
-        let ps = found
+        let si = map::get{ m = l.c.site_of, key = check::expr_key{ e } } ifnull { @panic("lower: an @fmt that wasn't checked") }
+        let ps = list::items{ list = l.c.sites }[@as(usize, si)].pieces
         let rt = types::prune{ s = l.c.ty, t = T{ &l, t = check::type_of_expr{ c = l.c.*, e } } }
+        let b = args[0]
+        let mut s = Sink{ e = b, ty = T{ &l, t = check::type_of_expr{ c = l.c.*, e = b } }, slot = NONE }
+        let inner = match b.k { addr{ e = x } => { x.* } else => { b } }
+        let mut init = ir::Expr{ ty = 0, k = ir::ExprKind::nil }
+        if not check::simple_place{ e = inner } {
+            init = ex{ &l, e = b }
+            s.slot = temp{ &l, ty = init.ty }
+        }
         let mut calls = list::new(ir::Expr){ realloc = arena::alloc, heap = l.heap }
         let mut i: usize = 0
         while i < ps.len {
-            try! list::push{ list = &calls, item = push_call{ &l, args, ps, i, rt } }
+            try! list::push{ list = &calls, item = push_call{ &l, s, args, ps, i, si, rt } }
             i = i + 1
         }
         let mut r = ok_of{ &l, rt }
@@ -2227,7 +2239,13 @@ namespace lower {
             i = i - 1
             r = then{ &l, a = list::items{ list = calls }[i], b = r, rt }
         }
+        if s.slot != NONE { r = mk{ ty = tid{ &l, t = rt }, k = ir::ExprKind::with{ slot = s.slot, init = box{ l, e = init }, body = box{ l, e = r } } } }
         return r
+    }
+
+    fn sink_ex { mut l: Lower, s: Sink } -> ir::Expr {
+        if s.slot == NONE { return ex{ &l, e = s.e } }
+        return mk{ ty = tid{ &l, t = s.ty }, k = ir::ExprKind::local{ slot = s.slot } }
     }
 
     // `ok` of a bare `!` of type rt.
@@ -2262,13 +2280,12 @@ namespace lower {
         return types::subst{ s = &l.c.ty, t = check::get_decl{ c = l.c.*, d }.ret, decl = d, args = targs }
     }
 
-    // The call piece i becomes: a utf8 push with the builder and the piece, or a call of the
-    // hole's function with the builder, as a result of type rt.
-    fn push_call { mut l: Lower, args: []syntax::Expr, ps: []check::Piece, i: usize, rt: Id } -> ir::Expr {
+    // The call piece i of site si becomes, as a result of type rt: its writer's with the sink
+    // and the piece, the hole's function with the sink, an error's name and fields, or with
+    // name lookup a utf8 push.
+    fn push_call { mut l: Lower, s: Sink, args: []syntax::Expr, ps: []check::Piece, i: usize, si: u32, rt: Id } -> ir::Expr {
         let p = ps[i]
-        let b = args[0]
-        let bt = T{ &l, t = check::type_of_expr{ c = l.c.*, e = b } }
-        let mut hole = syntax::Expr{ id = 0, span = b.span, at = 0, k = syntax::ExprKind::error }
+        let mut hole = syntax::Expr{ id = 0, span = s.e.span, at = 0, k = syntax::ExprKind::error }
         if p.hole {
             let mut h: usize = 2
             let mut k: usize = 0
@@ -2278,7 +2295,17 @@ namespace lower {
             }
             hole = args[h]
         }
-        if slice::eq_bytes{ a = p.push, b = "error" } { return error_push{ &l, b, bt, hole, rt } }
+        if slice::eq_bytes{ a = p.push, b = "error" } {
+            if p.writer.decl != NONE { return error_write{ &l, s, hole, text = p.writer, si, rt } }
+            return error_push{ &l, s, hole, rt }
+        }
+        if slice::eq_bytes{ a = p.push, b = "write" } {
+            if not p.hole { return text_write{ &l, s, w = p.writer, bytes = p.text, rt } }
+            let vt = T{ &l, t = check::value_field{ c = l.c.*, d = p.writer.decl }.ty }
+            let targs = T_all{ &l, ts = p.writer.targs }
+            let v = conv{ &l, e = hole, to = types::subst{ s = &l.c.ty, t = vt, decl = p.writer.decl, args = targs } }
+            return write_call{ &l, s, w = p.writer, v, rt, at = check::expr_at{ e = hole } }
+        }
         if slice::eq_bytes{ a = p.push, b = "call" } {
             let ft = T{ &l, t = check::type_of_expr{ c = l.c.*, e = hole } }
             let mut fields: []types::Field = slice::empty(types::Field){}
@@ -2286,16 +2313,16 @@ namespace lower {
             if get{ l, t = ft } is func{ fields = fs, ret = r } { fields = sorted_fields{ l, fields = fs }; ret = r }
             let ty = tid{ &l, t = ret }
             let c = ex{ &l, e = hole }
-            let bx = coerce{ &l, x = ex{ &l, e = b }, frm = bt, to = types::ptr{ s = &l.c.ty, elem = fields[0].ty, mutable = false }, at = check::expr_at{ e = b } }
+            let bx = coerce{ &l, x = sink_ex{ &l, s }, frm = s.ty, to = types::ptr{ s = &l.c.ty, elem = fields[0].ty, mutable = false }, at = check::expr_at{ e = s.e } }
             let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
             add_arg{ xs = &out, a = ir::Arg{ index = 0, value = bx } }
             let call = mk{ ty, k = ir::ExprKind::dcall{ callee = box{ l, e = c }, args = list::items{ list = out } } }
             return lift{ &l, x = call, frm = ret, to = rt }
         }
         let d = push_decl{ &l, name = p.push }
-        let s = builder_state{ l, t = bt }
+        let st = builder_state{ l, t = s.ty }
         let mut ts = list::new(Id){ realloc = arena::alloc, heap = l.heap }
-        try! list::push{ list = &ts, item = s }
+        try! list::push{ list = &ts, item = st }
         let targs = list::items{ list = ts }
         let x = check::get_decl{ c = l.c.*, d }
         let fields = check::subst_fields{ c = l.c, fields = x.fields, decl = d, args = targs }
@@ -2304,12 +2331,12 @@ namespace lower {
         let ty = tid{ &l, t = ret }
         let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
         let bi = field_pos{ fields, name = "b" }
-        let bv = coerce{ &l, x = ex{ &l, e = b }, frm = bt, to = arg_type{ &l, f = fields[bi], ptrs = true }, at = check::expr_at{ e = b } }
+        let bv = coerce{ &l, x = sink_ex{ &l, s }, frm = s.ty, to = arg_type{ &l, f = fields[bi], ptrs = true }, at = check::expr_at{ e = s.e } }
         add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, bi), value = bv } }
         if not p.hole {
-            let si = field_pos{ fields, name = "s" }
-            let v = fmt_text{ &l, bytes = p.text, t = fields[si].ty }
-            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, si), value = v } }
+            let ti = field_pos{ fields, name = "s" }
+            let v = fmt_text{ &l, bytes = p.text, t = fields[ti].ty }
+            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, ti), value = v } }
         } else {
             let vname: []u8 = if slice::eq_bytes{ a = p.push, b = "push" } or slice::eq_bytes{ a = p.push, b = "push_padded" } {
                 "s"
@@ -2338,9 +2365,72 @@ namespace lower {
         return lift{ &l, x = call, frm = ret, to = rt }
     }
 
-    // An error in an @fmt hole: its name, as `fs::os`, and its payload, as `{ code = 5 }`. Each
-    // field is pushed as a hole of its type would be, or as `_` if @fmt can't push its type.
-    fn error_push { mut l: Lower, b: syntax::Expr, bt: Id, hole: syntax::Expr, rt: Id } -> ir::Expr {
+    // A call of writer w with the sink and v, of the type its value field has, as a result of
+    // type rt. A writer that returns nothing gives `ok` after it.
+    fn write_call { mut l: Lower, s: Sink, w: check::Writer, v: ir::Expr, rt: Id, at: source::Span } -> ir::Expr {
+        let targs = T_all{ &l, ts = w.targs }
+        let x = check::get_decl{ c = l.c.*, d = w.decl }
+        let fields = check::subst_fields{ c = l.c, fields = x.fields, decl = w.decl, args = targs }
+        let fid = fn_id{ &l, decl = w.decl, targs }
+        let bi: usize = if fields[0].mutable { 0 } else { 1 }
+        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        let bv = coerce{ &l, x = sink_ex{ &l, s }, frm = s.ty, to = arg_type{ &l, f = fields[bi], ptrs = true }, at }
+        add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, bi), value = bv } }
+        add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, 1 - bi), value = v } }
+        let ret = types::subst{ s = &l.c.ty, t = x.ret, decl = w.decl, args = targs }
+        let call = mk{ ty = tid{ &l, t = ret }, k = ir::ExprKind::call{ callee = fid, args = list::items{ list = out } } }
+        if types::prune{ s = l.c.ty, t = ret } == types::VOID {
+            return mk{ ty = tid{ &l, t = rt }, k = ir::ExprKind::seq{ first = box{ l, e = call }, then = box{ l, e = ok_of{ &l, rt } } } }
+        }
+        return lift{ &l, x = call, frm = ret, to = rt }
+    }
+
+    // Text as a strlit, written by w, the writer of a strlit to the sink.
+    fn text_write { mut l: Lower, s: Sink, w: check::Writer, bytes: []u8, rt: Id } -> ir::Expr {
+        let v = mk{ ty = tid{ &l, t = u8_slice{ &l } }, k = ir::ExprKind::sbytes{ bytes } }
+        return write_call{ &l, s, w, v, rt, at = check::expr_at{ e = s.e } }
+    }
+
+    // An error in an @fmt hole of site si, with writers: its name, as `fs::os`, and its
+    // payload, as `{ code = 5 }`, written by text, the writer of a strlit. Each field is written
+    // by the writer the checker found for its type, or as `_` if there is none.
+    fn error_write { mut l: Lower, s: Sink, hole: syntax::Expr, text: check::Writer, si: u32, rt: Id } -> ir::Expr {
+        let et = after{ &l, e = hole }
+        let set = check::set_of{ c = l.c.*, t = et }
+        let ty = tid{ &l, t = rt }
+        let mut out = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < set.len {
+            let d = check::get_decl{ c = l.c.*, d = set[i] }
+            let fields = check::fault_fields{ c = l.c.*, d = set[i] } ifnull { slice::empty(types::Field){} }
+            let ws = map::get{ m = l.c.fault_writers, key = check::fault_key{ si, d = set[i] } } ifnull { @panic("lower: an error hole's fields without writers") }
+            let mut bs = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+            let mut r = text_write{ &l, s, w = text, bytes = d.qual, rt }
+            let mut k: usize = 0
+            while k < fields.len {
+                let f = fields[k]
+                let ft = tid{ &l, t = f.ty }
+                let slot = temp{ &l, ty = ft }
+                add_bind{ xs = &bs, b = ir::Bind{ slot, field = @as(u32, k), by_ref = false } }
+                let mut tb = message{ l }
+                try! @fmt(&tb, "{}{} = ", str{ s = if k == 0 { "{ " } else { ", " } }, str{ s = f.name })
+                r = then{ &l, a = r, b = text_write{ &l, s, w = text, bytes = utf8::view{ b = tb }.bytes, rt }, rt }
+                let v = mk{ ty = ft, k = ir::ExprKind::local{ slot } }
+                let piece = if ws[k].decl == NONE { text_write{ &l, s, w = text, bytes = "_", rt } } else { write_call{ &l, s, w = ws[k], v, rt, at = check::expr_at{ e = hole } } }
+                r = then{ &l, a = r, b = piece, rt }
+                k = k + 1
+            }
+            if fields.len > 0 { r = then{ &l, a = r, b = text_write{ &l, s, w = text, bytes = " }", rt }, rt } }
+            add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = @as(u32, i), binds = list::items{ list = bs } } }, body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = r } } }
+            i = i + 1
+        }
+        return mk{ ty, k = ir::ExprKind::matchx{ scrut = box{ l, e = conv{ &l, e = hole, to = et } }, through = false, arms = list::items{ list = out } } }
+    }
+
+    // An error in an @fmt hole, with name lookup: its name, as `fs::os`, and its payload, as
+    // `{ code = 5 }`. Each field is pushed as a hole of its type would be, or as `_` if @fmt
+    // can't push its type.
+    fn error_push { mut l: Lower, s: Sink, hole: syntax::Expr, rt: Id } -> ir::Expr {
         let et = after{ &l, e = hole }
         let set = check::set_of{ c = l.c.*, t = et }
         let ty = tid{ &l, t = rt }
@@ -2350,23 +2440,23 @@ namespace lower {
             let d = check::get_decl{ c = l.c.*, d = set[i] }
             let fields = check::fault_fields{ c = l.c.*, d = set[i] } ifnull { slice::empty(types::Field){} }
             let mut bs = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
-            let mut r = push_ir{ &l, b, bt, name = "push", text = d.qual, v = null, vt = types::VOID, rt }
+            let mut r = push_ir{ &l, s, name = "push", text = d.qual, v = null, vt = types::VOID, rt }
             let mut k: usize = 0
             while k < fields.len {
                 let f = fields[k]
                 let ft = tid{ &l, t = f.ty }
-                let s = temp{ &l, ty = ft }
-                add_bind{ xs = &bs, b = ir::Bind{ slot = s, field = @as(u32, k), by_ref = false } }
+                let slot = temp{ &l, ty = ft }
+                add_bind{ xs = &bs, b = ir::Bind{ slot, field = @as(u32, k), by_ref = false } }
                 let mut tb = message{ l }
                 try! @fmt(&tb, "{}{} = ", str{ s = if k == 0 { "{ " } else { ", " } }, str{ s = f.name })
-                r = then{ &l, a = r, b = push_ir{ &l, b, bt, name = "push", text = utf8::view{ b = tb }.bytes, v = null, vt = types::VOID, rt }, rt }
+                r = then{ &l, a = r, b = push_ir{ &l, s, name = "push", text = utf8::view{ b = tb }.bytes, v = null, vt = types::VOID, rt }, rt }
                 let push = field_push{ l, t = f.ty }
-                let v = mk{ ty = ft, k = ir::ExprKind::local{ slot = s } }
-                let piece = if push.len == 0 { push_ir{ &l, b, bt, name = "push", text = "_", v = null, vt = types::VOID, rt } } else { push_ir{ &l, b, bt, name = push, text = "", v, vt = f.ty, rt } }
+                let v = mk{ ty = ft, k = ir::ExprKind::local{ slot } }
+                let piece = if push.len == 0 { push_ir{ &l, s, name = "push", text = "_", v = null, vt = types::VOID, rt } } else { push_ir{ &l, s, name = push, text = "", v, vt = f.ty, rt } }
                 r = then{ &l, a = r, b = piece, rt }
                 k = k + 1
             }
-            if fields.len > 0 { r = then{ &l, a = r, b = push_ir{ &l, b, bt, name = "push", text = " }", v = null, vt = types::VOID, rt }, rt } }
+            if fields.len > 0 { r = then{ &l, a = r, b = push_ir{ &l, s, name = "push", text = " }", v = null, vt = types::VOID, rt }, rt } }
             add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = @as(u32, i), binds = list::items{ list = bs } } }, body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = r } } }
             i = i + 1
         }
@@ -2387,20 +2477,20 @@ namespace lower {
         return ""
     }
 
-    // A call of utf8 function `name` with builder b, and with v of type vt (its value field), or
+    // A call of utf8 function `name` with the sink, and with v of type vt (its value field), or
     // without v the text as `s`, as a result of type rt.
-    fn push_ir { mut l: Lower, b: syntax::Expr, bt: Id, name: []u8, text: []u8, v: ?ir::Expr, vt: Id, rt: Id } -> ir::Expr {
+    fn push_ir { mut l: Lower, s: Sink, name: []u8, text: []u8, v: ?ir::Expr, vt: Id, rt: Id } -> ir::Expr {
         let d = push_decl{ &l, name }
-        let s = builder_state{ l, t = bt }
+        let st = builder_state{ l, t = s.ty }
         let mut ts = list::new(Id){ realloc = arena::alloc, heap = l.heap }
-        try! list::push{ list = &ts, item = s }
+        try! list::push{ list = &ts, item = st }
         let targs = list::items{ list = ts }
         let x = check::get_decl{ c = l.c.*, d }
         let fields = check::subst_fields{ c = l.c, fields = x.fields, decl = d, args = targs }
         let fid = fn_id{ &l, decl = d, targs }
         let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
         let bi = field_pos{ fields, name = "b" }
-        let bv = coerce{ &l, x = ex{ &l, e = b }, frm = bt, to = arg_type{ &l, f = fields[bi], ptrs = true }, at = check::expr_at{ e = b } }
+        let bv = coerce{ &l, x = sink_ex{ &l, s }, frm = s.ty, to = arg_type{ &l, f = fields[bi], ptrs = true }, at = check::expr_at{ e = s.e } }
         add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, bi), value = bv } }
         if v == null {
             let si = field_pos{ fields, name = "s" }
@@ -2408,8 +2498,9 @@ namespace lower {
         } else {
             let vname: []u8 = if slice::eq_bytes{ a = name, b = "push" } { "s" } else if slice::eq_bytes{ a = name, b = "push_bool" } { "v" } else { "n" }
             let vi = field_pos{ fields, name = vname }
-            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, vi), value = coerce{ &l, x = v, frm = vt, to = fields[vi].ty, at = check::expr_at{ e = b } } } }
+            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, vi), value = coerce{ &l, x = v, frm = vt, to = fields[vi].ty, at = check::expr_at{ e = s.e } } } }
         }
+
         let ret = push_ret{ &l, d, targs }
         let call = mk{ ty = tid{ &l, t = ret }, k = ir::ExprKind::call{ callee = fid, args = list::items{ list = out } } }
         return lift{ &l, x = call, frm = ret, to = rt }
