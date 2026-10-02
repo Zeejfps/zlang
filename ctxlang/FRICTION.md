@@ -28,7 +28,8 @@ errors and capability-variable work (`e19f1fe`).
   `null` and then matches the value; ctxc calls `map::get` about 100 times. A pattern that goes
   through `some`, or `match` arms that list a `?U`'s variants next to `null`, would take one.
   `ifnull` (spec §8) helps when the missing case leaves, but not when it is one arm among the
-  variants. *Planned:* PLAN.md stage 1 (`null` arms).
+  variants. *Planned:* PLAN.md 1.2 (`e is P`, which tests for one variant and sees through a
+  `?U`).
 - **5. No checked arithmetic.** Const folding detects i64 overflow by hand, with `@wrap_*` and
   sign tests (`check::arith`). `@checked_add` and the like, returning `?T`, would do it. This
   matters more now: PLAN.md 3.3's compile-time evaluator runs IR and must detect overflow on
