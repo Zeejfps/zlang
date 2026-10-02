@@ -15,7 +15,7 @@ interpreter ctxc replaced, is at `8436f4d`.
 | 1 | [Optionals and errors](#1-optionals-and-errors) | in progress | |
 | 2 | [C interop](#2-c-interop) | in progress | |
 | 3 | [Metaprogramming](#3-metaprogramming) | in progress | |
-| 4 | [Literal conversions](#4-literal-conversions) | planned | 3.3 |
+| 4 | [Literal conversions](#4-literal-conversions) | planned | |
 | 5 | [Language server](#5-language-server) | planned | |
 | 6 | [Tools in ctxlang](#6-tools-in-ctxlang) | planned | 3.1, 3.2 for 6.5 |
 
@@ -137,43 +137,20 @@ generator can't observe its own output.
    build program the checked declarations as data: structs, unions, fields, layouts and
    attributes. That data is the `Analysis`, read-only trees plus side tables, so no separate
    reflection format is needed.
-3. **Compile-time consts.** A `const` initializer may call any function. A const has no context,
-   so it holds no capability, and only effect-free code can run there. ctxc evaluates it with an
-   interpreter over the IR, which is monomorphized, typed and laid out.
-   - **When.** The checker runs in phases (declarations, const folding, bodies, error sets), and
-     has no per-declaration `ensure`. A const that calls a function is evaluated after every body
-     is checked and the sets are inferred, before lowering, the first time its value is needed
-     (each in order, or earlier where another needs it), and only in a program without errors.
-     A const whose evaluation reaches itself is a cycle error.
-   - **Array lengths and enum values** are needed during declarations, so they keep today's
-     folding (`const_int`): a const that calls a function there is an error. Nothing uses a named
-     const as an array length today; checking bodies on demand can lift this later.
-   - **How.** A second `Lower`, separate from the program's so the emitted C doesn't change,
-     lowers the initializer as a function without context, and what it reaches. The interpreter
-     (`ctxc/eval.ctx`) runs it over memory as bytes, laid out by the IR's sizes and offsets, so
-     `@cast`, extern unions, pointer arithmetic and std's allocators, which reinterpret `[]u8`
-     as typed memory, behave as they do in C. A pointer is a region (static literal bytes, a stack
-     frame, the heap) and an offset.
-   - **Limits.** A panic (overflow, bounds, `@panic`, `try!`) is a compile error at the const with
-     its message. So are running out of fuel (10^8 steps, a few seconds; `CTX_CONST_FUEL` sets it)
-     and too deep a recursion. Calling an extern fn is an error: none can run while compiling.
-     (The capability-less ones std has, float formatting and parsing, are ctxc's own runtime's,
-     so a later version could call ctxc's.)
-   - **The result** is read back by its type into the const's value. A `[]u8` or `c::String` must
-     point into static literal bytes; any other pointer, or a function value, is an error.
-   - The value is cached in the checker (`values`), so the language server doesn't re-run it on
-     edits that don't touch its inputs.
-   - **Two steps,** both done: the interpreter (`ctxc/eval.ctx`) and `ctxc interp FILE`, which
-     runs a whole program's `main` in it, emulating the externs that writing to stdout and stderr
-     reaches, so the tests run every program both ways (Testing); then consts that call functions
-     on top of it (`ctxc/comptime.ctx`). ctxc's own source doesn't use them yet.
-   - Uses: lookup tables, perfect-hash keyword maps, precomputed tables for parsers, and
-     converting literals to library types (stage 4).
+
+*Later, for compile-time consts* (spec §14; `ctxc/eval.ctx`, `comptime.ctx`):
+- Array lengths, enum values and attributes take only folded consts, since they are needed while
+  declarations are resolved, before any body is checked. Checking bodies on demand would lift
+  this; nothing has needed it yet.
+- A const is evaluated only in a program without errors, since lowering a body with errors could
+  crash. Stage 5 wants a const's errors next to the others.
+- No extern fn runs while compiling. std's capability-less ones, float formatting and parsing,
+  are ctxc's own runtime's, so ctxc could call its copies.
 
 *Not planned:* generating declarations inside the compile that is running (Zig's `inline for`
 over fields with types as values, or Jai's `#insert`). It needs lazy analysis or a fixed-point
-loop in the checker, and generics would become compile-time values. Revisit only if 3.1–3.3 fall
-short on real code.
+loop in the checker, and generics would become compile-time values. Revisit only if 3.1, 3.2 and
+compile-time consts fall short on real code.
 
 *Done when:* a JSON generator in ctxlang derives `write` and `read` functions for
 `#json::derive` structs, and `examples/json` uses them for a typed round trip.
@@ -237,7 +214,7 @@ let r: regex::Regex = "[a-z]+"                   // a bad pattern is a compile e
    (§11, rule 1), a const's initializer, an `if` or `match` branch next to one of type `T`, and a
    call's `strlit` field, so `utf8::literal{ s = "hi" }` calls one directly. Only literals
    convert: no other value does, and conversions don't chain.
-5. **It runs while compiling**, with 3.3's evaluator, so the program holds the finished value,
+5. **It runs while compiling**, as a const's initializer does (§14), so the program holds the finished value,
    and the same rule applies to the result: no pointers but ones to static data. An error result
    is a compile error at the literal, printed as `@fmt` prints an error:
    `string literal: utf8::invalid{ at = 3 }`.
@@ -247,10 +224,6 @@ let r: regex::Regex = "[a-z]+"                   // a bad pattern is a compile e
 *What goes from the compiler:* `text_decl` and `cstr_decl` in literal checking (`str_lit`), the
 const evaluator's string case and the `if`/`match` hint, and lowering's `text_lit`. The tests'
 literal programs keep their output; the UTF-8 and NUL errors change wording to std's errors.
-
-*Needs* 3.3. A stopgap that runs nothing, an attribute naming one of a fixed set of checks the
-compiler knows (`utf8`, no NUL), would remove the names first, but it is a second design to
-undo; the evaluator comes first.
 
 *Still naming std after this,* each a later piece of the same goal:
 - `@fmt` writes to a `utf8::Builder` through `utf8::push_*` functions found by name, fails with
@@ -355,7 +328,7 @@ alone; step 5 gives programs a test framework of their own. None blocks the othe
    fn add_overflows {} { _ = max_i32{} + 1 }
    ```
    - **A test's context is what it needs.** One without capabilities is deterministic by
-     construction, so it can run in parallel, and with 3.3 while compiling. One that takes `Fs`
+     construction, so it can run in parallel, and could run while compiling, as consts do. One that takes `Fs`
      says so, and the runner supplies it as `main`'s are supplied.
    - **No mocking framework.** Behaviour is already passed as values (capabilities with fields,
      `map::Map`'s hash): a test passes a fake.
