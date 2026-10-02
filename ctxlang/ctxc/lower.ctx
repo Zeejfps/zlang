@@ -1631,7 +1631,7 @@ namespace lower {
     }
 
     // A string literal: what its conversion gave it while compiling (PLAN.md 4.5), or a [N]u8
-    // array, or a view of static bytes as a []u8, a strlit or a utf8::String.
+    // array, or a view of static bytes as a []u8 or a strlit.
     fn str_lit { mut l: Lower, e: syntax::Expr, bytes: []u8, t: Id } -> ir::Expr {
         if map::has{ m = l.c.lit_convs, key = check::expr_key{ e } } {
             let v = check::literal_value{ c = l.c, e } ifnull {
@@ -1643,27 +1643,12 @@ namespace lower {
         match get{ l, t } {
             array => { return mk{ ty = tid{ &l, t }, k = ir::ExprKind::str{ bytes } } }
             slice | strlit => { return mk{ ty = tid{ &l, t = u8_slice{ &l } }, k = ir::ExprKind::sbytes{ bytes } } }
-            else => { return text_lit{ &l, bytes, t } }
+            else => { @panic("lower: a string literal of a type a literal can't be") }
         }
     }
 
     fn u8_slice { mut l: Lower } -> Id {
         return types::slice{ s = &l.c.ty, elem = types::U8, mutable = false }
-    }
-
-    // A utf8::String around a view of static bytes, or a c::String around a pointer to them,
-    // with a NUL after them.
-    fn text_lit { mut l: Lower, bytes: []u8, t: Id } -> ir::Expr {
-        let c_string = check::record_decl{ c = l.c.*, t } == l.c.cstr_decl
-        let v = if c_string {
-            mk{ ty = tid{ &l, t = types::ptr{ s = &l.c.ty, elem = types::U8, mutable = false } }, k = ir::ExprKind::cstr{ bytes } }
-        } else {
-            mk{ ty = tid{ &l, t = u8_slice{ &l } }, k = ir::ExprKind::sbytes{ bytes } }
-        }
-        let ty = tid{ &l, t }
-        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
-        add_arg{ xs = &out, a = ir::Arg{ index = 0, value = v } }
-        return mk{ ty, k = ir::ExprKind::record{ items = list::items{ list = out } } }
     }
 
     fn path_ex { mut l: Lower, e: syntax::Expr, t: Id } -> ir::Expr {
@@ -2323,7 +2308,7 @@ namespace lower {
         add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, bi), value = bv } }
         if not p.hole {
             let si = field_pos{ fields, name = "s" }
-            let v = text_lit{ &l, bytes = p.text, t = fields[si].ty }
+            let v = fmt_text{ &l, bytes = p.text, t = fields[si].ty }
             add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, si), value = v } }
         } else {
             let vname: []u8 = if slice::eq_bytes{ a = p.push, b = "push" } or slice::eq_bytes{ a = p.push, b = "push_padded" } {
@@ -2419,7 +2404,7 @@ namespace lower {
         add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, bi), value = bv } }
         if v == null {
             let si = field_pos{ fields, name = "s" }
-            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, si), value = text_lit{ &l, bytes = text, t = fields[si].ty } } }
+            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, si), value = fmt_text{ &l, bytes = text, t = fields[si].ty } } }
         } else {
             let vname: []u8 = if slice::eq_bytes{ a = name, b = "push" } { "s" } else if slice::eq_bytes{ a = name, b = "push_bool" } { "v" } else { "n" }
             let vi = field_pos{ fields, name = vname }
@@ -2435,6 +2420,16 @@ namespace lower {
         let d = check::std_value{ c = l.c.*, space = "utf8", name }
         if d == NONE { @panic("lower: no utf8 push function") }
         return d
+    }
+
+    // A piece of an @fmt's text as the utf8::String of type t that `push` takes: a view of static
+    // bytes. @fmt names std's utf8 until `#write` (PLAN.md stage 4) makes the piece a strlit.
+    fn fmt_text { mut l: Lower, bytes: []u8, t: Id } -> ir::Expr {
+        let v = mk{ ty = tid{ &l, t = u8_slice{ &l } }, k = ir::ExprKind::sbytes{ bytes } }
+        let ty = tid{ &l, t }
+        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        add_arg{ xs = &out, a = ir::Arg{ index = 0, value = v } }
+        return mk{ ty, k = ir::ExprKind::record{ items = list::items{ list = out } } }
     }
 
     // S of the *mut utf8::Builder(S) an @fmt writes to.

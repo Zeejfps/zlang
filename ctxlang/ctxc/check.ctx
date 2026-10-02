@@ -139,8 +139,8 @@ namespace check {
         busy:      map::Map(Id, bool, Heap),     // layouts being computed
         main:      u32,                          // NONE unless `main` is valid
         converts:  list::List(u32, Heap),        // the fns with a valid `#convert`, in order
-        text_decl: u32,                          // utf8::String, or NONE
-        cstr_decl: u32,                          // c::String, or NONE
+        text_decl: u32,                          // utf8::String, for @fmt, or NONE
+        cstr_decl: u32,                          // c::String, for its C layout, or NONE
         builder_decl: u32,                       // utf8::Builder, or NONE
         calling:   u64,                          // the callee being checked, whose field may be a capability's
         // The body being checked: a const's initializer or a function's body.
@@ -2679,18 +2679,12 @@ namespace check {
             }
             boolean{ value } => { return Val::boolean{ ty = t, value } }
             nil => { return Val::nil{ ty = t } }
+            // A converted literal isn't folded: its conversion runs (const_ok).
             str{ bytes } => {
                 match types::get{ s = c.ty, id = t } {
                     array => { return Val::str{ ty = t, bytes } }
                     slice | strlit => { return Val::sbytes{ ty = t, bytes } }
-                    else => {
-                        if record_decl{ c, t } == c.cstr_decl {
-                            let p = Val::cstr{ ty = types::ptr{ s = &c.ty, elem = types::U8, mutable = false }, bytes }
-                            return Val::record{ ty = t, fields = one_val{ c, v = p } }
-                        }
-                        let view = Val::sbytes{ ty = types::slice{ s = &c.ty, elem = types::U8, mutable = false }, bytes }
-                        return Val::record{ ty = t, fields = one_val{ c, v = view } }
-                    }
+                    else => { return null }
                 }
             }
             path => {
@@ -3875,7 +3869,6 @@ namespace check {
                     match types::get{ s = c.ty, id = u } {
                         strlit => { hint = br.t }
                         slice{ elem } => { if types::prune{ s = c.ty, t = elem } == types::U8 { hint = br.t } }
-                        record{ decl } => { if decl == c.text_decl or decl == c.cstr_decl { hint = br.t } }
                         else => {}
                     }
                     if conversion{ c, t = u } != null { hint = br.t }
@@ -6060,8 +6053,7 @@ namespace check {
 
     // A string literal is a strlit where one is expected (also inside ?), a view of static bytes
     // where a []u8 is, the result of the conversion to T where a T is (PLAN.md 4.4), and a [N]u8
-    // array value otherwise. Without a conversion, a utf8::String or c::String is a view too, and
-    // as a c::String the bytes get a NUL after them, so they can't hold one.
+    // array value otherwise. What text or a C string is, std's conversions say.
     fn str_lit { mut c: Checker, e: syntax::Expr, bytes: []u8, exp: Id } -> Id {
         _ = map::remove{ m = &c.lit_convs, key = expr_key{ e } }
         let mut want = types::NO_TYPE
@@ -6094,35 +6086,6 @@ namespace check {
                 try! map::put{ m = &c.lit_convs, key = expr_key{ e }, value = f }
                 try! list::push{ list = &c.lit_list, item = e }
                 return want
-            }
-            match types::get{ s = c.ty, id = want } {
-                record{ decl } => {
-                    if decl == c.text_decl {
-                        match utf8::from{ bytes } {
-                            ok => {}
-                            utf8::invalid{ at = bad } => {
-                                let mut b = message{ c }
-                                try! @fmt(&b, "string literal is not valid UTF-8 (byte {})", bad)
-                                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
-                            }
-                        }
-                        return want
-                    }
-                    if decl == c.cstr_decl {
-                        let mut k: usize = 0
-                        while k < bytes.len {
-                            if bytes[k] == 0 {
-                                let mut b = message{ c }
-                                try! @fmt(&b, "a C string literal can't hold a NUL byte (byte {}): C would end the string there", k)
-                                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
-                                break
-                            }
-                            k = k + 1
-                        }
-                        return want
-                    }
-                }
-                else => {}
             }
         }
         return types::array{ s = &c.ty, n = bytes.len, elem = types::U8 }
