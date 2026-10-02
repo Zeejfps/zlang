@@ -4149,6 +4149,38 @@ fn main { mut io: Io } {
 }
 """, 'ok 42\nerr parse::bad_digit{ at = 0 }\nerr parse::empty\n')
 
+    def test_try_bang(self):
+        # try! gives the value, needs no `!` result, works in a defer, and adds nothing to the set:
+        # f fails with parse's errors alone, so this match is exhaustive without alloc's.
+        self.assertOutput(self.PARSE.replace('fn show', 'fn unused') + """
+fn f { mut xs: list::List(i64, arena::Arena), s: []u8 } -> !u64 {
+    try! list::push{ list = &xs, item = 1 }
+    return try number{ s }
+}
+fn main { mut io: Io } {
+    let mut mem: [256]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut xs = list::new(i64){ realloc = arena::alloc, &heap }
+    defer try! list::push{ list = &xs, item = 2 }
+    io::println_u64{ &io, n = try! number{ s = "41" } + 1 }
+    match f{ &xs, s = "" } {
+        ok{ value }     => { io::println_u64{ &io, n = value } }
+        parse::empty    => { io::println{ &io, s = "empty" } }
+        parse::bad_digit => { io::println{ &io, s = "bad digit" } }
+        parse::too_big  => { io::println{ &io, s = "too big" } }
+    }
+    io::println_u64{ &io, n = xs.len }
+}
+""", '42\nempty\n1\n')
+
+    def test_try_bang_panics(self):
+        self.assertPanic(self.PARSE + """
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = try! number{ s = "1x" } }
+}
+""", 'try! failed: parse::bad_digit')
+        self.assertCompileError('fn main {} { let n: i64 = 1\n    let m = try! n }', '`try!` needs a `!T` value, got i64')
+
     def test_try_runs_defers(self):
         self.assertOutput(self.PARSE + """
 fn f { mut io: Io, s: []u8 } -> !u64 {

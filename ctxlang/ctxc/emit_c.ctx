@@ -78,12 +78,12 @@ namespace emit {
         }
         let mut i = 0
         while i < p.fns.len {
-            add{ xs = &e.thunks, item = false }
+            try! list::push{ list = &e.thunks, item = false }
             i = i + 1
         }
         i = 0
         while i < p.types.len {
-            add{ xs = &e.marks, item = 0 }
+            try! list::push{ list = &e.marks, item = 0 }
             i = i + 1
         }
 
@@ -690,7 +690,7 @@ namespace emit {
     }
 
     fn push_scope { mut e: E, s: Scope } {
-        add{ xs = &e.scopes, item = s }
+        try! list::push{ list = &e.scopes, item = s }
     }
 
     // The deferred bodies between here and the nearest `stop`, innermost first.
@@ -2027,7 +2027,7 @@ namespace emit {
             if q.callee == callee and q.ty == t { return @as(u32, k) }
             k = k + 1
         }
-        add{ xs = &e.callbacks, item = Callback{ callee, ty = t } }
+        try! list::push{ list = &e.callbacks, item = Callback{ callee, ty = t } }
         let f = e.p.fns[callee]
         let cfn{ params, ret } = ty{ e, id = t } else { @panic("emit: a callback of a non-C function type") }
         to_aux{ &e }
@@ -2102,7 +2102,7 @@ namespace emit {
             k = k + 1
         }
         if k == e.adapters.len {
-            add{ xs = &e.adapters, item = Pair{ from = a.ty, to } }
+            try! list::push{ list = &e.adapters, item = Pair{ from = a.ty, to } }
             to_aux{ &e }
             code_head{ &e, prefix = "a", k = @as(u32, k), ret, params = dst }
             put{ &e, a = "    ctx_fn *in = ((ctx_adapter *)self)->inner;\n    " }
@@ -2445,7 +2445,4 @@ namespace emit {
         ir_print::bytes{ o = &e.o, b }
     }
 
-    fn add(T) { mut xs: list::List(T, ir::Heap), item: T } {
-        list::push{ list = &xs, item } iferr { @panic("emit: out of memory") }
-    }
 }

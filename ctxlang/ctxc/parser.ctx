@@ -60,7 +60,7 @@ namespace parser {
                 break
             }
             let start = p.i
-            add{ &p, xs = &xs, item = decl{ &p } }
+            try! list::push{ list = &xs, item = decl{ &p } }
             if p.bad {
                 sync{ &p, start, in_block = false, top }
                 if p.i == start { p.i = p.i + 1 }
@@ -84,7 +84,7 @@ namespace parser {
             let tparams = tparams{ &p }
             if body_as_context{ p } {
                 let mut b = message{ p }
-                pushed{ ok = @fmt(&b, "a function's context comes before its body: write `fn {} {{}} {{ ... }}`", utf8::String{ bytes = name.text }) }
+                try! @fmt(&b, "a function's context comes before its body: write `fn {} {{}} {{ ... }}`", utf8::String{ bytes = name.text })
                 fail{ &p, msg = utf8::view{ b } }
             }
             let params = ctx_fields{ &p }
@@ -206,7 +206,7 @@ namespace parser {
                 fail{ &p, msg = if field { "an attribute goes on its own line, before a field" } else { "an attribute goes on its own line, before a declaration" } }
                 break
             }
-            add{ &p, xs = &xs, item = syntax::Attr{ span = span_from{ p, start }, value } }
+            try! list::push{ list = &xs, item = syntax::Attr{ span = span_from{ p, start }, value } }
         }
         if xs.len > 0 and not p.bad {
             let k = kind{ p, ahead = 0 }
@@ -250,8 +250,8 @@ namespace parser {
     fn tparams { mut p: Parser } -> []syntax::Name {
         let mut xs = list::new(syntax::Name){ realloc = arena::alloc, heap = p.heap }
         if accept{ &p, k = tok::Kind::lparen } {
-            add{ &p, xs = &xs, item = ident{ &p } }
-            while accept{ &p, k = tok::Kind::comma } { add{ &p, xs = &xs, item = ident{ &p } } }
+            try! list::push{ list = &xs, item = ident{ &p } }
+            while accept{ &p, k = tok::Kind::comma } { try! list::push{ list = &xs, item = ident{ &p } } }
             expect{ &p, k = tok::Kind::rparen }
         }
         return list::items{ list = xs }
@@ -267,7 +267,7 @@ namespace parser {
             let name = ident{ &p }
             expect{ &p, k = tok::Kind::colon }
             let ty = type_expr{ &p }
-            add{ &p, xs = &xs, item = syntax::Param{ span = span_from{ p, start }, mutable, name, ty } }
+            try! list::push{ list = &xs, item = syntax::Param{ span = span_from{ p, start }, mutable, name, ty } }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         expect{ &p, k = tok::Kind::rbrace }
@@ -283,7 +283,7 @@ namespace parser {
             let name = ident{ &p }
             expect{ &p, k = tok::Kind::colon }
             let ty = type_expr{ &p }
-            add{ &p, xs = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs = slice::empty(syntax::Attr){}, name, ty, external = false } }
+            try! list::push{ list = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs = slice::empty(syntax::Attr){}, name, ty, external = false } }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         expect{ &p, k = tok::Kind::rbrace }
@@ -300,13 +300,13 @@ namespace parser {
             let start = p.i
             if accept{ &p, k = tok::Kind::dots } {
                 let ty = type_expr{ &p }
-                add{ &p, xs = &includes, item = syntax::Include{ span = span_from{ p, start }, ty, at = xs.len } }
+                try! list::push{ list = &includes, item = syntax::Include{ span = span_from{ p, start }, ty, at = xs.len } }
             } else {
                 let external = accept{ &p, k = tok::Kind::kw_extern }
                 let name = ident{ &p }
                 expect{ &p, k = tok::Kind::colon }
                 let ty = type_expr{ &p }
-                add{ &p, xs = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs, name, ty, external } }
+                try! list::push{ list = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs, name, ty, external } }
             }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
@@ -321,7 +321,7 @@ namespace parser {
             let start = p.i
             let name = ident{ &p }
             let fields: ?[]syntax::Field = if is{ p, k = tok::Kind::lbrace } { plain_fields{ &p } } else { null }
-            add{ &p, xs = &xs, item = syntax::Variant{ span = span_from{ p, start }, name, fields } }
+            try! list::push{ list = &xs, item = syntax::Variant{ span = span_from{ p, start }, name, fields } }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         expect{ &p, k = tok::Kind::rbrace }
@@ -335,7 +335,7 @@ namespace parser {
             let start = p.i
             let name = ident{ &p }
             let value: ?syntax::Expr = if accept{ &p, k = tok::Kind::assign } { expr{ &p } } else { null }
-            add{ &p, xs = &xs, item = syntax::EnumVariant{ span = span_from{ p, start }, name, value } }
+            try! list::push{ list = &xs, item = syntax::EnumVariant{ span = span_from{ p, start }, name, value } }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         expect{ &p, k = tok::Kind::rbrace }
@@ -384,8 +384,8 @@ namespace parser {
             t = syntax::TypeKind::func{ bound, params, ret, external }
         } else if k == tok::Kind::ident {
             let mut segs = list::new(syntax::Seg){ realloc = arena::alloc, heap = p.heap }
-            add{ &p, xs = &segs, item = type_seg{ &p } }
-            while accept{ &p, k = tok::Kind::colons } { add{ &p, xs = &segs, item = type_seg{ &p } } }
+            try! list::push{ list = &segs, item = type_seg{ &p } }
+            while accept{ &p, k = tok::Kind::colons } { try! list::push{ list = &segs, item = type_seg{ &p } } }
             t = syntax::TypeKind::path{ segs = list::items{ list = segs } }
         } else if k == tok::Kind::error {
             skip{ &p }
@@ -415,7 +415,7 @@ namespace parser {
         let mut xs = list::new(syntax::TypeExpr){ realloc = arena::alloc, heap = p.heap }
         expect{ &p, k = tok::Kind::lparen }
         while more{ p, close = tok::Kind::rparen } {
-            add{ &p, xs = &xs, item = type_expr{ &p } }
+            try! list::push{ list = &xs, item = type_expr{ &p } }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         expect{ &p, k = tok::Kind::rparen }
@@ -438,7 +438,7 @@ namespace parser {
                 break
             }
             let s = p.i
-            add{ &p, xs = &xs, item = stmt{ &p } }
+            try! list::push{ list = &xs, item = stmt{ &p } }
             if not p.bad and not (nl{ p } or is{ p, k = tok::Kind::semi } or is{ p, k = tok::Kind::rbrace }) {
                 expected{ &p, what = "a newline or ';' after statement" }
             }
@@ -528,7 +528,7 @@ namespace parser {
     // A block holding one statement, with the statement's span.
     fn one { mut p: Parser, s: syntax::Stmt } -> syntax::Block {
         let mut xs = list::new(syntax::Stmt){ realloc = arena::alloc, heap = p.heap }
-        add{ &p, xs = &xs, item = s }
+        try! list::push{ list = &xs, item = s }
         return syntax::Block{ id = new_id{ &p }, span = s.span, stmts = list::items{ list = xs } }
     }
 
@@ -552,7 +552,7 @@ namespace parser {
         let init: ?syntax::Expr = if accept{ &p, k = tok::Kind::assign } { expr{ &p } } else { null }
         if ty == null and init == null {
             let mut b = message{ p }
-            pushed{ ok = @fmt(&b, "`let {}` needs a type or an initializer", utf8::String{ bytes = name.text }) }
+            try! @fmt(&b, "`let {}` needs a type or an initializer", utf8::String{ bytes = name.text })
             fail_at{ &p, msg = utf8::view{ b }, t }
         }
         if init != null and ty == null and not mutable and is{ p, k = tok::Kind::kw_else } {
@@ -605,7 +605,7 @@ namespace parser {
         let mut quals = list::new(syntax::Name){ realloc = arena::alloc, heap = p.heap }
         while is{ p, k = tok::Kind::colons } and variant.text.len > 0 {
             skip{ &p }
-            add{ &p, xs = &quals, item = variant }
+            try! list::push{ list = &quals, item = variant }
             variant = ident{ &p }
         }
         let mut bs: []syntax::Binder = slice::empty(syntax::Binder){}
@@ -622,7 +622,7 @@ namespace parser {
             let by_ref = accept{ &p, k = tok::Kind::amp }
             let field = ident{ &p }
             let local: ?syntax::Name = if accept{ &p, k = tok::Kind::assign } { ident{ &p } } else { null }
-            add{ &p, xs = &xs, item = syntax::Binder{ span = span_from{ p, start }, by_ref, field, local } }
+            try! list::push{ list = &xs, item = syntax::Binder{ span = span_from{ p, start }, by_ref, field, local } }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         expect{ &p, k = tok::Kind::rbrace }
@@ -732,12 +732,12 @@ namespace parser {
             let start = p.i
             let mut pats = list::new(syntax::Pattern){ realloc = arena::alloc, heap = p.heap }
             if not accept{ &p, k = tok::Kind::kw_else } {
-                add{ &p, xs = &pats, item = pattern{ &p } }
-                while accept{ &p, k = tok::Kind::pipe } { add{ &p, xs = &pats, item = pattern{ &p } } }
+                try! list::push{ list = &pats, item = pattern{ &p } }
+                while accept{ &p, k = tok::Kind::pipe } { try! list::push{ list = &pats, item = pattern{ &p } } }
             }
             expect{ &p, k = tok::Kind::fat_arrow }
             let body = block{ &p }
-            add{ &p, xs = &arms, item = syntax::Arm{ span = span_from{ p, start }, pats = list::items{ list = pats }, body } }
+            try! list::push{ list = &arms, item = syntax::Arm{ span = span_from{ p, start }, pats = list::items{ list = pats }, body } }
             _ = accept{ &p, k = tok::Kind::comma }
             if p.bad {
                 sync{ &p, start, in_block = true, top = false }
@@ -813,27 +813,27 @@ namespace parser {
         let no_quals = slice::empty(syntax::Name){}
         let mut binders = list::new(syntax::Binder){ realloc = arena::alloc, heap = p.heap }
         let field = made_name{ &p, at = here, text = "value" }
-        add{ &p, xs = &binders, item = syntax::Binder{ span = here, by_ref = false, field, local = null } }
+        try! list::push{ list = &binders, item = syntax::Binder{ span = here, by_ref = false, field, local = null } }
         let mut pats = list::new(syntax::Pattern){ realloc = arena::alloc, heap = p.heap }
         let has: []u8 = if is_null { "some" } else { "ok" }
-        add{ &p, xs = &pats, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = has }, binders = list::items{ list = binders } } }
+        try! list::push{ list = &pats, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = has }, binders = list::items{ list = binders } } }
         let value = name_path{ &p, name = made_name{ &p, at = here, text = "value" } }
         let some_body = one{ &p, s = syntax::Stmt{ id = new_id{ &p }, span = here, k = syntax::StmtKind::eval{ e = value } } }
         let mut arms = list::new(syntax::Arm){ realloc = arena::alloc, heap = p.heap }
-        add{ &p, xs = &arms, item = syntax::Arm{ span = here, pats = list::items{ list = pats }, body = some_body } }
+        try! list::push{ list = &arms, item = syntax::Arm{ span = here, pats = list::items{ list = pats }, body = some_body } }
         let mut nulls = list::new(syntax::Pattern){ realloc = arena::alloc, heap = p.heap }
         if is_null {
-            add{ &p, xs = &nulls, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = "null" }, binders = slice::empty(syntax::Binder){} } }
+            try! list::push{ list = &nulls, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = "null" }, binders = slice::empty(syntax::Binder){} } }
         } else if err_pattern{ p } {
             let pat_start = p.i
             let name = ident{ &p }
             let bs = binder_list{ &p }
-            add{ &p, xs = &nulls, item = syntax::Pattern{ span = span_from{ p, start = pat_start }, quals = no_quals, variant = name, binders = bs } }
+            try! list::push{ list = &nulls, item = syntax::Pattern{ span = span_from{ p, start = pat_start }, quals = no_quals, variant = name, binders = bs } }
         } else {
-            add{ &p, xs = &nulls, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = "err" }, binders = slice::empty(syntax::Binder){} } }
+            try! list::push{ list = &nulls, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = "err" }, binders = slice::empty(syntax::Binder){} } }
         }
         let null_body = if is{ p, k = tok::Kind::lbrace } { block{ &p } } else { null_value{ &p } }
-        add{ &p, xs = &arms, item = syntax::Arm{ span = span_from{ p, start = op_i }, pats = list::items{ list = nulls }, body = null_body } }
+        try! list::push{ list = &arms, item = syntax::Arm{ span = span_from{ p, start = op_i }, pats = list::items{ list = nulls }, body = null_body } }
         let x = syntax::Match{ scrut = box{ &p, value = e }, arms = list::items{ list = arms }, is_ifnull = is_null, is_iferr = not is_null }
         return syntax::Expr{ id, span = span_from{ p, start }, at = op.span.start, k = syntax::ExprKind::matchx{ x } }
     }
@@ -930,8 +930,9 @@ namespace parser {
         }
         if k == tok::Kind::kw_try {
             skip{ &p }
+            let panics = accept{ &p, k = tok::Kind::bang }       // `try!`: `!` never starts an expression
             let e = box{ &p, value = prefix{ &p } }
-            return expr_from{ &p, start, k = syntax::ExprKind::trye{ e } }
+            return expr_from{ &p, start, k = syntax::ExprKind::trye{ e, panics } }
         }
         return postfix{ &p }
     }
@@ -1007,12 +1008,12 @@ namespace parser {
         let mut xs = list::new(syntax::Seg){ realloc = arena::alloc, heap = p.heap }
         let mut i: usize = 0
         while i < segs.len {
-            add{ &p, xs = &xs, item = segs[i] }
+            try! list::push{ list = &xs, item = segs[i] }
             i = i + 1
         }
         while true {
             if accept{ &p, k = tok::Kind::colons } {
-                add{ &p, xs = &xs, item = syntax::Seg{ name = ident{ &p }, targs = null } }
+                try! list::push{ list = &xs, item = syntax::Seg{ name = ident{ &p }, targs = null } }
             } else if is{ p, k = tok::Kind::lparen } and not nl{ p } and xs.items[xs.len - 1].targs == null {
                 let targs = type_list{ &p }
                 xs.items[xs.len - 1].targs = targs
@@ -1047,7 +1048,7 @@ namespace parser {
                     // `..e`: a spread
                     let name = syntax::Name{ id = new_id{ &p }, span = source::Span{ file = p.file, start = it.span.start, end = it.span.start }, text = p.text[..0] }
                     let value = expr{ &p }
-                    add{ &p, xs = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = false, spread = true } }
+                    try! list::push{ list = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = false, spread = true } }
                 }
             } else if it.kind == tok::Kind::ident and slice::eq_bytes{ a = text_of{ p, t = it }, b = "_" } {
                 skip{ &p }
@@ -1059,15 +1060,15 @@ namespace parser {
                     id = new_id{ &p }, span = span_from{ p, start = s }, at = it.span.start,
                     k = syntax::ExprKind::addr{ e = box{ &p, value = path } },
                 }
-                add{ &p, xs = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = true, spread = false } }
+                try! list::push{ list = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = true, spread = false } }
             } else {
                 let name = ident{ &p }
                 if accept{ &p, k = tok::Kind::assign } {
                     let value = expr{ &p }
-                    add{ &p, xs = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = false, spread = false } }
+                    try! list::push{ list = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = false, spread = false } }
                 } else {
                     let value = name_path{ &p, name = again{ &p, n = name } }
-                    add{ &p, xs = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = true, spread = false } }
+                    try! list::push{ list = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = true, spread = false } }
                 }
             }
             if not accept{ &p, k = tok::Kind::comma } { break }
@@ -1085,7 +1086,7 @@ namespace parser {
     // A path of one name, where the name is.
     fn name_path { mut p: Parser, name: syntax::Name } -> syntax::Expr {
         let mut segs = list::new(syntax::Seg){ realloc = arena::alloc, heap = p.heap }
-        add{ &p, xs = &segs, item = syntax::Seg{ name, targs = null } }
+        try! list::push{ list = &segs, item = syntax::Seg{ name, targs = null } }
         let k = syntax::ExprKind::path{ segs = list::items{ list = segs } }
         return syntax::Expr{ id = new_id{ &p }, span = name.span, at = name.span.start, k }
     }
@@ -1137,10 +1138,10 @@ namespace parser {
                     expect{ &p, k = tok::Kind::rbracket }
                     return expr_from{ &p, start, k = syntax::ExprKind::repeat{ elem, count } }
                 }
-                add{ &p, xs = &elems, item = first }
+                try! list::push{ list = &elems, item = first }
                 while accept{ &p, k = tok::Kind::comma } {
                     if is{ p, k = tok::Kind::rbracket } { break }
-                    add{ &p, xs = &elems, item = expr{ &p } }
+                    try! list::push{ list = &elems, item = expr{ &p } }
                 }
                 expect{ &p, k = tok::Kind::rbracket }
             }
@@ -1185,14 +1186,14 @@ namespace parser {
         while n < BUILTINS.len and not slice::eq_bytes{ a = BUILTINS[n].name, b = name.text } { n = n + 1 }
         if n == BUILTINS.len {
             let mut b = message{ p }
-            pushed{ ok = @fmt(&b, "unknown builtin `@{}`", utf8::String{ bytes = name.text }) }
+            try! @fmt(&b, "unknown builtin `@{}`", utf8::String{ bytes = name.text })
             fail_at{ &p, msg = utf8::view{ b }, t }
             return expr_from{ &p, start, k = syntax::ExprKind::error }
         }
         let sig = BUILTINS[n]
         if not is{ p, k = tok::Kind::lparen } {
             let mut b = message{ p }
-            pushed{ ok = @fmt(&b, "expected '(' after @{}: {}", utf8::String{ bytes = name.text }, sig.usage) }
+            try! @fmt(&b, "expected '(' after @{}: {}", utf8::String{ bytes = name.text }, sig.usage)
             fail{ &p, msg = utf8::view{ b } }
             return expr_from{ &p, start, k = syntax::ExprKind::error }
         }
@@ -1204,14 +1205,14 @@ namespace parser {
             if count < sig.types {
                 targ = box{ &p, value = type_expr{ &p } }
             } else {
-                add{ &p, xs = &args, item = expr{ &p } }
+                try! list::push{ list = &args, item = expr{ &p } }
             }
             count = count + 1
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         if count < sig.types + sig.lo or not is{ p, k = tok::Kind::rparen } {
             let mut b = message{ p }
-            pushed{ ok = @fmt(&b, "wrong number of arguments: {}", sig.usage) }
+            try! @fmt(&b, "wrong number of arguments: {}", sig.usage)
             fail{ &p, msg = utf8::view{ b } }
         }
         skip{ &p }
@@ -1301,7 +1302,7 @@ namespace parser {
     fn expected { mut p: Parser, what: utf8::String } {
         if p.bad { return }
         let mut b = message{ p }
-        pushed{ ok = @fmt(&b, "expected {}, found ", what) }
+        try! @fmt(&b, "expected {}, found ", what)
         expected_msg{ &p, msg = utf8::view{ b } }
     }
 
@@ -1311,9 +1312,9 @@ namespace parser {
         let t = p.toks[p.i]
         let mut b = message{ p }
         if t.kind == tok::Kind::eof {
-            pushed{ ok = @fmt(&b, "{}end of file", msg) }
+            try! @fmt(&b, "{}end of file", msg)
         } else {
-            pushed{ ok = @fmt(&b, "{}'{}'", msg, utf8::String{ bytes = text_of{ p, t } }) }
+            try! @fmt(&b, "{}'{}'", msg, utf8::String{ bytes = text_of{ p, t } })
         }
         fail{ &p, msg = utf8::view{ b } }
     }
@@ -1323,9 +1324,6 @@ namespace parser {
         return utf8::builder{ realloc = arena::alloc, heap = p.heap }
     }
 
-    fn pushed { ok: ! } {
-        ok iferr { @panic("parser: out of memory") }
-    }
 
     // ---- tokens
 
@@ -1372,7 +1370,7 @@ namespace parser {
     fn expect { mut p: Parser, k: tok::Kind } {
         if accept{ &p, k } or p.bad { return }
         let mut b = message{ p }
-        pushed{ ok = @fmt(&b, "expected '{}', found ", utf8::String{ bytes = kind_text{ k } }) }
+        try! @fmt(&b, "expected '{}', found ", utf8::String{ bytes = kind_text{ k } })
         expected_msg{ &p, msg = utf8::view{ b } }
     }
 
@@ -1443,11 +1441,8 @@ namespace parser {
     }
 
     fn box(T) { mut p: Parser, value: T } -> *T {
-        let x = alloc::new{ realloc = arena::alloc, heap = p.heap, value } iferr { @panic("parser: out of memory") }
+        let x = try! alloc::new{ realloc = arena::alloc, heap = p.heap, value }
         return x
     }
 
-    fn add(T) { mut p: Parser, mut xs: list::List(T, arena::Arena), item: T } {
-        list::push{ list = &xs, item } iferr { @panic("parser: out of memory") }
-    }
 }

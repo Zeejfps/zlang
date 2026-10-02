@@ -276,7 +276,7 @@ fn add_file { mut files: list::List(check::File, arena::Arena), mut heap: arena:
     let lexed = lexer::lex{ text, file, &heap, &diags }
     let tree = parser::parse{ text, file, tokens = lexed.tokens, &heap, &diags }
     let lines = source::line_starts{ text, &heap }
-    list::push{ list = &files, item = check::File{ name, text, lines, tree } } iferr { @panic("ctxc: out of memory") }
+    try! list::push{ list = &files, item = check::File{ name, text, lines, tree } }
 }
 
 // `ctxc recover FILE FROM TO [-v]`

@@ -100,7 +100,7 @@ namespace drive {
         if not run { return 0 }
 
         let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
-        add{ xs = &argv, s = first }
+        try! list::push{ list = &argv, item = first }
         if args.len > 3 { add_all{ xs = &argv, ys = args[3..] } }
         return started{ &io, r = proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} }, what = first }
     }
@@ -113,7 +113,7 @@ namespace drive {
         let graph = join{ &heap, a = d.work, b = "graph.txt" }
         _ = fs::remove{ &fs, path = graph }
         let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
-        add{ xs = &env, s = cat{ &heap, a = "CTX_BUILD_OUT=", b = graph } }
+        try! list::push{ list = &env, item = cat{ &heap, a = "CTX_BUILD_OUT=", b = graph } }
         let ran = started{ &io, r = proc::run{ &proc, argv = one{ &heap, s = exe }, env = list::items{ list = env } }, what = exe }
         if ran != 0 { return ran }
         let text = match fs::read_all{ &fs, &heap, realloc = arena::alloc, path = graph } {
@@ -148,7 +148,7 @@ namespace drive {
         let mut i: usize = 0
         while i <= line.len {
             if i == line.len or line[i] == '\t' {
-                add{ xs = &fields, s = line[start..i] }
+                try! list::push{ list = &fields, item = line[start..i] }
                 start = i + 1
             }
             i = i + 1
@@ -166,13 +166,13 @@ namespace drive {
         if f.len != 3 or id >= targets.len { return false }
         let t = list::at{ list = targets, i = @as(usize, id) }
         if slice::eq_bytes{ a = kind, b = "link" } {
-            add{ xs = &t.libs, s = cat{ &heap, a = "-l", b = f[2] } }
+            try! list::push{ list = &t.libs, item = cat{ &heap, a = "-l", b = f[2] } }
         } else if slice::eq_bytes{ a = kind, b = "framework" } {
-            add{ xs = &t.libs, s = "-framework" }
-            add{ xs = &t.libs, s = f[2] }
+            try! list::push{ list = &t.libs, item = "-framework" }
+            try! list::push{ list = &t.libs, item = f[2] }
         } else if slice::eq_bytes{ a = kind, b = "libpath" } {
             let p = if absolute{ path = f[2] } { f[2] } else { join{ &heap, a = dir, b = f[2] } }
-            add{ xs = &t.paths, s = cat{ &heap, a = "-L", b = p } }
+            try! list::push{ list = &t.paths, item = cat{ &heap, a = "-L", b = p } }
         } else {
             return false
         }
@@ -194,23 +194,23 @@ namespace drive {
         add_all{ xs = &argv, ys = d.cc }
         let mut i: usize = 0
         while i < CFLAGS.len {
-            add{ xs = &argv, s = CFLAGS[i] }
+            try! list::push{ list = &argv, item = CFLAGS[i] }
             i = i + 1
         }
-        add{ xs = &argv, s = "-I" }
-        add{ xs = &argv, s = rt }
-        add{ xs = &argv, s = cat{ &heap, a = cat{ &heap, a = "-DCTX_PROGRAM_NAME=\"", b = name }, b = "\"" } }
-        add{ xs = &argv, s = c_file }
-        add{ xs = &argv, s = join{ &heap, a = rt, b = "ctxrt.c" } }
-        add{ xs = &argv, s = "-o" }
-        add{ xs = &argv, s = exe }
+        try! list::push{ list = &argv, item = "-I" }
+        try! list::push{ list = &argv, item = rt }
+        try! list::push{ list = &argv, item = cat{ &heap, a = cat{ &heap, a = "-DCTX_PROGRAM_NAME=\"", b = name }, b = "\"" } }
+        try! list::push{ list = &argv, item = c_file }
+        try! list::push{ list = &argv, item = join{ &heap, a = rt, b = "ctxrt.c" } }
+        try! list::push{ list = &argv, item = "-o" }
+        try! list::push{ list = &argv, item = exe }
         add_all{ xs = &argv, ys = flags }
-        add{ xs = &argv, s = "-lm" }
+        try! list::push{ list = &argv, item = "-lm" }
         // The main thread's stack: ctxrt.c checks against 16 MiB (or CTX_STACK), and on Linux
         // raises its own limit.
         match d.os {
-            windows => { add{ xs = &argv, s = "-Wl,--stack,268435456" } }
-            macos => { add{ xs = &argv, s = "-Wl,-stack_size,0x10000000" } }
+            windows => { try! list::push{ list = &argv, item = "-Wl,--stack,268435456" } }
+            macos => { try! list::push{ list = &argv, item = "-Wl,-stack_size,0x10000000" } }
             linux => {}
         }
         let cc_ran = started{ &io, r = proc::run{ &proc, argv = list::items{ list = argv }, env = d.cc_env }, what = d.cc[0] }
@@ -275,17 +275,17 @@ namespace drive {
             let mut i: usize = 0
             while i <= set.len {
                 if i == set.len or set[i] == ' ' {
-                    if i > start { add{ xs = &words, s = set[start..i] } }
+                    if i > start { try! list::push{ list = &words, item = set[start..i] } }
                     start = i + 1
                 }
                 i = i + 1
             }
         }
-        if words.len == 0 { add{ xs = &words, s = "cc" } }
+        if words.len == 0 { try! list::push{ list = &words, item = "cc" } }
         let xs = list::items{ list = words }
         let found = on_path{ &fs, &proc, &heap, name = xs[0], os } ifnull { return xs }
         let mut out = list::new([]u8){ realloc = arena::alloc, &heap }
-        add{ xs = &out, s = found }
+        try! list::push{ list = &out, item = found }
         add_all{ xs = &out, ys = xs[1..] }
         return list::items{ list = out }
     }
@@ -356,7 +356,7 @@ namespace drive {
         while i < names.len {
             let n = names[i]
             if ends_with{ s = n, suffix = ".ctx" } and not (skip_build and slice::eq_bytes{ a = n, b = "build.ctx" }) {
-                add{ xs = &out, s = join{ &heap, a = dir, b = n } }
+                try! list::push{ list = &out, item = join{ &heap, a = dir, b = n } }
             }
             i = i + 1
         }
@@ -394,7 +394,7 @@ namespace drive {
             paths = list::new([]u8){ realloc = arena::alloc, &heap },
             libs = list::new([]u8){ realloc = arena::alloc, &heap },
         }
-        list::push{ list = &targets, item = t } iferr { @panic("ctxc: out of memory") }
+        try! list::push{ list = &targets, item = t }
     }
 
     // ---- paths and byte strings
@@ -406,9 +406,7 @@ namespace drive {
     }
 
     fn cat { mut heap: Heap, a: []u8, b: []u8 } -> []u8 {
-        let out = alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = a.len + b.len } iferr {
-            @panic("ctxc: out of memory")
-        }
+        let out = try! alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = a.len + b.len }
         slice::copy{ dst = out[..a.len], src = a }
         slice::copy{ dst = out[a.len..], src = b }
         return out
@@ -457,18 +455,15 @@ namespace drive {
 
     fn one { mut heap: Heap, s: []u8 } -> [][]u8 {
         let mut xs = list::new([]u8){ realloc = arena::alloc, &heap }
-        add{ &xs, s }
+        try! list::push{ list = &xs, item = s }
         return list::items{ list = xs }
     }
 
-    fn add { mut xs: Strs, s: []u8 } {
-        list::push{ list = &xs, item = s } iferr { @panic("ctxc: out of memory") }
-    }
 
     fn add_all { mut xs: Strs, ys: [][]u8 } {
         let mut i: usize = 0
         while i < ys.len {
-            add{ &xs, s = ys[i] }
+            try! list::push{ list = &xs, item = ys[i] }
             i = i + 1
         }
     }

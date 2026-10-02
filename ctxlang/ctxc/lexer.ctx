@@ -408,7 +408,7 @@ namespace lexer {
 
     fn comment { mut lx: Lexer, start: usize } {
         let s = span{ lx, start, end = lx.pos }
-        list::push{ list = &lx.comments, item = s } iferr { @panic("lexer: out of memory") }
+        try! list::push{ list = &lx.comments, item = s }
     }
 
     // The offset after the character at i, reporting it if it isn't valid UTF-8.
@@ -427,7 +427,7 @@ namespace lexer {
     // A token of `kind` from start to lx.pos.
     fn add { mut lx: Lexer, kind: tok::Kind, start: usize } {
         let t = tok::Token{ kind, nl = lx.nl, span = span{ lx, start, end = lx.pos } }
-        list::push{ list = &lx.tokens, item = t } iferr { @panic("lexer: out of memory") }
+        try! list::push{ list = &lx.tokens, item = t }
         lx.nl = false
     }
 
@@ -521,7 +521,7 @@ namespace lexer {
         let mut j: usize = 0
         while j < body.len {
             let d = decode_char{ text = body, j }
-            list::push{ list = &xs, item = d.b } iferr { @panic("lexer: out of memory") }
+            try! list::push{ list = &xs, item = d.b }
             j = d.next
         }
         return list::items{ list = xs }

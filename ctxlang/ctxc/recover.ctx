@@ -40,9 +40,7 @@ namespace recover {
             if w > widest { widest = w }
             i = i + 1
         }
-        let buf = alloc::resize{ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = text.len + widest + 1 } iferr {
-            @panic("recover: out of memory")
-        }
+        let buf = try! alloc::resize{ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = text.len + widest + 1 }
         let mut count: u32 = 0
         let mut failures: u32 = 0
         let mark = heap.used
@@ -113,9 +111,7 @@ namespace recover {
         let lexed = lexer::lex{ text, file = 0, &heap, &diags }
         let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, &heap, &diags }
         if diags.errors > diag::CAP { return "more errors than the cap" }
-        let seen = alloc::resize{ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, tree.ids) } iferr {
-            @panic("recover: out of memory")
-        }
+        let seen = try! alloc::resize{ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, tree.ids) }
         slice::fill{ s = seen, v = 0 }
         let mut c = Check{ ids = tree.ids, seen, problem = null }
         let mut i: usize = 0
@@ -187,9 +183,7 @@ namespace recover {
                 _ = utf8::push{ &b, s = "::" }
                 _ = utf8::push{ &b, s = utf8::String{ bytes = n.text } }
                 let path = utf8::view{ b }.bytes
-                list::push{ list = &syms, item = Symbol{ kind, path, span = d.span, braced } } iferr {
-                    @panic("recover: out of memory")
-                }
+                try! list::push{ list = &syms, item = Symbol{ kind, path, span = d.span, braced } }
                 collect{ &syms, &heap, prefix = path, decls = inner }
             }
             i = i + 1

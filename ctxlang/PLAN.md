@@ -22,13 +22,13 @@ interpreter ctxc replaced, is at `8436f4d`.
 
 ### 1. Optionals and errors
 
-`?T`, `ifnull`, and errors (`!T` with inferred sets, `try`, `iferr`) are done (spec §8).
+`?T`, `ifnull`, and errors (`!T` with inferred sets, `try`, `try!`, `iferr`) are done (spec §8).
 
 1. **Unwrap in a `let`, by leaving.** `let p = e else { ... }` with a plain name: for `e: ?T`,
    shorthand for `let some{ value = p } = e else { ... }`.
-2. **Null as an arm next to a union's variants** (FRICTION #5). `match` on a `?U` for a union `U`
+2. **Null as an arm next to a union's variants** (FRICTION #4). `match` on a `?U` for a union `U`
    lists `null` and `U`'s variants in one set of arms, as `match` on a `!T` lists `ok` and errors.
-3. **Present and equal** (FRICTION #9). `==` and `!=` between a `?T` and a `T`: true when present
+3. **Present and equal** (FRICTION #8). `==` and `!=` between a `?T` and a `T`: true when present
    and equal.
 4. **Errors' remaining gaps.**
    - A function whose result's set is inferred can't be a value of a function type, whose `!T`

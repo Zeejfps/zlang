@@ -102,8 +102,8 @@ namespace types {
         let known = map::get{ m = s.index, key = t }
         if known != null { return known }
         let id = @as(Id, s.items.len)
-        list::push{ list = &s.items, item = t } iferr { @panic("types: out of memory") }
-        map::put{ m = &s.index, key = t, value = id } iferr { @panic("types: out of memory") }
+        try! list::push{ list = &s.items, item = t }
+        try! map::put{ m = &s.index, key = t, value = id }
         return id
     }
 
@@ -161,9 +161,7 @@ namespace types {
 
     fn copy(T) { s: Store, xs: []T } -> []T {
         if xs.len == 0 { return xs }
-        let out = alloc::resize(T){ realloc = arena::alloc, heap = s.heap, mem = slice::empty(T){}, count = xs.len } iferr {
-            @panic("types: out of memory")
-        }
+        let out = try! alloc::resize(T){ realloc = arena::alloc, heap = s.heap, mem = slice::empty(T){}, count = xs.len }
         slice::copy{ dst = out, src = xs }
         return out
     }
@@ -190,7 +188,7 @@ namespace types {
                 let mut i: usize = 0
                 while i < fields.len {
                     let f = fields[i]
-                    add{ xs = &fs, item = Field{ name = f.name, mutable = f.mutable, ty = subst{ &s, t = f.ty, decl, args } } }
+                    try! list::push{ list = &fs, item = Field{ name = f.name, mutable = f.mutable, ty = subst{ &s, t = f.ty, decl, args } } }
                     i = i + 1
                 }
                 return func{ &s, fields = list::items{ list = fs }, ret = subst{ &s, t = ret, decl, args }, bound, external }
@@ -204,15 +202,12 @@ namespace types {
         let mut out = list::new(Id){ realloc = arena::alloc, heap = s.heap }
         let mut i: usize = 0
         while i < ts.len {
-            add{ xs = &out, item = subst{ &s, t = ts[i], decl, args } }
+            try! list::push{ list = &out, item = subst{ &s, t = ts[i], decl, args } }
             i = i + 1
         }
         return list::items{ list = out }
     }
 
-    fn add(T) { mut xs: list::List(T, Heap), item: T } {
-        list::push{ list = &xs, item } iferr { @panic("types: out of memory") }
-    }
 
     // ---- questions
 
@@ -362,7 +357,7 @@ namespace types {
 
     fn fresh { mut s: Store, kind: VarKind } -> Id {
         let n = @as(u32, s.vars.len)
-        list::push{ list = &s.vars, item = Var{ kind, ref = NO_TYPE, fixed = null } } iferr { @panic("types: out of memory") }
+        try! list::push{ list = &s.vars, item = Var{ kind, ref = NO_TYPE, fixed = null } }
         return intern{ &s, t = Type::var{ n } }
     }
 
@@ -409,7 +404,7 @@ namespace types {
                 let mut i: usize = 0
                 while i < fields.len {
                     let f = fields[i]
-                    add{ xs = &fs, item = Field{ name = f.name, mutable = f.mutable, ty = zonk{ &s, t = f.ty } } }
+                    try! list::push{ list = &fs, item = Field{ name = f.name, mutable = f.mutable, ty = zonk{ &s, t = f.ty } } }
                     i = i + 1
                 }
                 return func{ &s, fields = list::items{ list = fs }, ret = zonk{ &s, t = ret }, bound, external }
@@ -423,7 +418,7 @@ namespace types {
         let mut out = list::new(Id){ realloc = arena::alloc, heap = s.heap }
         let mut i: usize = 0
         while i < ts.len {
-            add{ xs = &out, item = zonk{ &s, t = ts[i] } }
+            try! list::push{ list = &out, item = zonk{ &s, t = ts[i] } }
             i = i + 1
         }
         return list::items{ list = out }

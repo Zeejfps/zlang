@@ -149,7 +149,7 @@ namespace syntax {
         builtin{ name: Name, targ: ?*TypeExpr, args: []Expr },   // the name without `@`
         ifx{ x: If },
         matchx{ x: Match },                             // `ifnull` and `iferr` too, at the operator
-        trye{ e: *Expr },                               // try e
+        trye{ e: *Expr, panics: bool },                 // try e, or try! e if panics
     }
 
     // An item in braces. A pun `c` has the value `c`, and `&d` the value `&d`. A spread `..e`

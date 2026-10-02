@@ -15,10 +15,10 @@ namespace source {
     // The offset of each line's first byte: 0, then the byte after each '\n'.
     fn line_starts { text: []u8, mut heap: arena::Arena } -> []u32 {
         let mut xs = list::new(u32){ realloc = arena::alloc, &heap }
-        add{ &xs, n = 0 }
+        try! list::push{ list = &xs, item = 0 }
         let mut i: usize = 0
         while i < text.len {
-            if text[i] == '\n' { add{ &xs, n = @as(u32, i + 1) } }
+            if text[i] == '\n' { try! list::push{ list = &xs, item = @as(u32, i + 1) } }
             i = i + 1
         }
         return list::items{ list = xs }
@@ -41,7 +41,4 @@ namespace source {
         return Pos{ line = @as(u32, lo + 1), col }
     }
 
-    fn add { mut xs: list::List(u32, arena::Arena), n: u32 } {
-        list::push{ list = &xs, item = n } iferr { @panic("source: out of memory") }
-    }
 }
