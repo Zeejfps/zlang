@@ -376,9 +376,9 @@ namespace lexer {
     // A writer for @fmt: `show_char{ text, at, _ }`.
     fn show_char { mut b: utf8::Builder(arena::Arena), text: []u8, at: usize } -> ! {
         let c = text[at]
-        if c < 32 or c == 127 { return @fmt(&b, "'\\x{02x}'", c) }
+        if c < 32 or c == 127 { return @fmt(&b, "'\\x{}'", utf8::push_hex{ n = c, width = 2, zero = true, _ }) }
         if c == '\\' { return @fmt(&b, "'\\\\'") }
-        if c < 128 { return @fmt(&b, "'{c}'", c) }
+        if c < 128 { return @fmt(&b, "'{}'", utf8::push_char{ c, _ }) }
         let s = utf8::String{ bytes = text[at..at + utf8::seq_len{ bytes = text, i = at }] }
         return @fmt(&b, "'{}' (U+{})", s, upper_hex{ n = utf8::decode{ s, i = 0 }.c, _ })
     }

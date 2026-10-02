@@ -1474,7 +1474,7 @@ namespace decls {
             if ch >= 32 and ch <= 126 and ch != '"' and ch != '\\' {
                 dump::byte{ &out, c = ch }
             } else {
-                try! @fmt(&out, "\\x{02x}", ch)
+                try! @fmt(&out, "\\x{}", utf8::push_hex{ n = ch, width = 2, zero = true, _ })
             }
             i = i + 1
         }

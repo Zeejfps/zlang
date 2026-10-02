@@ -1172,7 +1172,7 @@ namespace eval {
     fn code_at { mut m: M, a: Addr } -> !Code {
         if a >> SHIFT != @as(u64, CODE) or (a & MASK) >= @as(u64, m.codes.len) {
             let mut b = builder{ heap = m.heap }
-            try! @fmt(&b, "a call through {x}, which isn't a function", a)
+            try! @fmt(&b, "a call through {}, which isn't a function", utf8::push_hex{ n = a, width = 0, zero = false, _ })
             fail{ &m, msg = utf8::view{ b }.bytes }
             return halt
         }
@@ -1875,7 +1875,7 @@ namespace eval {
             if off <= len and n <= len - off { return g.bytes[@as(usize, off)..@as(usize, off + n)] }
         }
         let mut b = builder{ heap = m.heap }
-        try! @fmt(&b, "invalid memory access: {} bytes at {x}", n, a)
+        try! @fmt(&b, "invalid memory access: {} bytes at {}", n, utf8::push_hex{ n = a, width = 0, zero = false, _ })
         fail{ &m, msg = utf8::view{ b }.bytes }
         return halt
     }
@@ -1885,7 +1885,7 @@ namespace eval {
         let bytes = try at{ &m, a, n }
         if n > 0 and not list::items{ list = m.regions }[@as(usize, a >> SHIFT)].writable {
             let mut b = builder{ heap = m.heap }
-            try! @fmt(&b, "a write to read-only memory at {x}", a)
+            try! @fmt(&b, "a write to read-only memory at {}", utf8::push_hex{ n = a, width = 0, zero = false, _ })
             fail{ &m, msg = utf8::view{ b }.bytes }
             return halt
         }
