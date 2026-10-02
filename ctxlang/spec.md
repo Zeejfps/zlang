@@ -573,31 +573,40 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 | `@addr(q)` | `usize` | The address of pointer `q` as an integer. |
 | `@wrap_add(a, b)`, `@wrap_sub(a, b)`, `@wrap_mul(a, b)` | type of `a` | Integer arithmetic that wraps instead of panicking. `a` and `b` have the same integer type. |
 | `@panic()`, `@panic("reason")` | none | Stops the program. Never returns. It ends a path for return and assignment checks. The reason must be a string literal. The runtime reports it with the panic's location, so no capability is needed. |
-| `@fmt(b, "format", args...)` | `bool` | Pushes text onto a `utf8::Builder` (below). |
+| `@fmt(b, "format", args...)`, `@fmt("format", args...)` | `!`; a writer | Writes text into a sink, now or when called (below). |
 
 ### Formatting
 
 ```
-try @fmt(&b, "{}:{}: error: {}", line, col, msg)
-@fmt(&b, "{08x} {5}|", addr, count) iferr { return 1 }    // 0000beef    42|
-_ = @fmt(&b, "due {}", date::write_iso{ d, _ })          // a function writes the hole
+try @fmt(&b, "{}:{}: error: {}", line, col, msg)                    // write into b now
+errorf{ &c, at, msg = @fmt("no variant `{}` in {}", name, kind) }   // a writer, passed on
+_ = @fmt(&b, "due {} at {}", date::write_iso{ d, _ }, utf8::write_hex{ n = addr, _ })
+
+fn errorf { mut c: Checker, at: Span, msg: utf8::Fmt(Heap) } {
+    let mut b = message{ c }
+    try! msg{ &b }                                                  // a writer writes when called
+    error{ &c, at, msg = utf8::view{ b } }
+}
+
+namespace utf8 {
+    #write
+    fn push_i64(S) { mut b: Builder(S), n: i64 } -> ! { ... }       // how an i64 goes into a Builder
+}
 ```
 
-1. `b` is a `*mut utf8::Builder(S)`, written `&p` for a name or a path of fields from one, or a name. It is used once for each piece of the format, so it can't contain a call or an index.
-2. The format must be a string literal. Its text is pushed as it is, except for holes: `{`, then optionally `0` and a width, then optionally `x` or `c`, then `}`. `{{` and `}}` stand for `{` and `}`. The holes take the remaining arguments in order, and their numbers must match.
-3. A hole pushes its argument according to the argument's type:
-   - an integer: in decimal, with a `-` if negative;
-   - `f32` or `f64`: as `utf8::push_f32` and `push_f64` do, the shortest text that reads back as the value;
-   - `bool`: `true` or `false`;
-   - `utf8::String`: its text. A string literal argument is one, through `utf8::from_literal` (§11, Literals);
-   - an error (§8, Errors): its full name, and its payload as `{ field = value, ... }`, each value as a hole of its type pushes it, or `_` for a type no hole takes: `parse::bad_digit{ at = 3 }`;
-   - a function value whose context is one `mut` field and that returns a bare `!`: the function is called with `b` in that field, and its result counts as the hole's. This is how a type is formatted: `write_iso{ d, _ }` binds everything but the builder (§4).
+1. `@fmt(b, "format", args...)` writes text into the **sink** `b`: any expression of type `*mut B`, for a type `B`, evaluated once. `@fmt("format", args...)`, without a sink, is a **writer**: a bound function (§6) that writes the same text into the sink it is called with. Its type is the type expected where it appears (§11, Literals), which must be a function type with exactly one `mut` field, of type `B`, and a bare `!` result, as std's `utf8::Fmt(S)` is: `&fn{ mut b: Builder(S) } -> !`. Without one, as in `let w = @fmt(...)`, it is an error. A format is always a string literal and a sink never is, so the first argument says which form a call is. `@fmt(b, ...)` writes what `@fmt(...)` would, called on `b` at once, without making a bound function.
+2. The format must be a string literal of valid UTF-8. Its text is written as it is, except for holes, `{}`, which take the remaining arguments in order; their numbers must match. `{{` and `}}` stand for `{` and `}`.
+3. The arguments are evaluated once, at the `@fmt`, in order. A writer copies them as a bind does (§4), and holds what they hold: the places their bound functions hold (§3.1), and what they are derived from (§14), so it can't outlive any of them. With a sink first, the sink and the places the arguments' bound functions hold are one call's mut references (§3.1): `@fmt(&b, "{}", w{ &b, _ })` is an error.
+4. A fn with the attribute `#write` is a **writer** of its value to its sink. Its context is two fields: the sink, `mut`, and the value, read-only. Its result is a bare `!`, or nothing, for a writer that records failure itself. It may be generic, but neither field's type is a bare type parameter, the value isn't a function, and every type parameter appears in a field's type. The compiler declares `write`, as it declares `convert` (§18, Attributes). An `@fmt` sees the writers its code could name, as a literal sees conversions (§18, Literal conversions, rule 4).
+5. Each piece of the format is written to the sink, a `B`, by the writer the `@fmt` sees for `B` and the piece's type:
+   - text is a `strlit` (§12), and so is a string literal argument;
+   - an argument of type `T` is written by the writer for exactly `T`. There's no widening, since a `u32` widens to both an `i64` and a `u64`. The types are those the body settles, after integer literals take their defaults (§11, Literals);
+   - a function value whose context is one `mut` field, of type `B`, and that returns a bare `!` is called with the sink. This is how a value is written some other way: `utf8::write_hex{ n, _ }` and `date::write_iso{ d, _ }` bind everything but the sink (§4). An `@fmt` without a sink as an argument is written as part of the outer one;
+   - an error (§8, Errors) is written by the compiler: its full name, as a `strlit`, and its payload as `{ field = value, ... }`, each value by the writer for its type, or `_` if there is none: `parse::bad_digit{ at = 3 }`.
 
-   Anything else is an error. `{x}` takes an unsigned integer and writes it in lowercase hexadecimal; `{c}` takes an integer that converts to `u32` and writes it as a character (`utf8::push_char`).
-4. A width right-aligns an integer or a `utf8::String` in that many characters, padded with spaces, or with zeros after any `-` if the width starts with `0`. Wider text is written whole. A width doesn't apply to other types or to `{c}`.
-5. An integer whose type isn't known when the hole is checked keeps it open until the end of the enclosing body (§11, Literals). A `{x}` hole then makes it a `u64` and a `{c}` hole a `u32`; otherwise it takes its default.
-6. The result is a bare `!` (§8, Errors): `ok` if every piece was pushed, or the error of the first that failed, after which the builder holds the pieces before it and later arguments aren't evaluated. It fails with `alloc::out_of_memory`, or, if a hole is a function, with any error, since a function value's `!` may hold any. Like any call's result it must be used (§11.6), and `try @fmt(...)` is a statement as `try` of a call is.
-7. `@fmt` is short for the `utf8::push` calls it stands for, each run only if the one before it succeeded, and has no cost beyond them.
+   A piece with no writer is an error naming both types; an enum converts to an integer with `@as`, and a `?T` gives a value with `ifnull`. Two writers for the same types are an error naming both, as two conversions are (§18).
+6. The result, of `@fmt(b, ...)` or of calling a writer, is a bare `!` (§8, Errors): `ok` if every piece was written, or the error of the first that failed, after which the sink holds the pieces before it. With a sink first, it fails with the errors of the writers it uses: a set of its own, inferred as a function's is (§8, Errors, rule 5), which is any error if an argument is a function, whose `!` may hold any. A writer's result is its type's, a function type's `!`, which may hold any error. Like any call's result it must be used (§11.6), and `try @fmt(...)` is a statement as `try` of a call is.
+7. `@fmt` is short for the writer calls it stands for, each run only if the one before it succeeded. With a sink first it has no cost beyond them; a writer is a bound function, whose record holds the arguments.
 
 ## 14. Memory
 
@@ -715,7 +724,7 @@ Settled questions are removed, and the rest keep their numbers.
 | `list` | `List(T, S)`: `new`, `reserve`, `push`, `pop`, `get`, `set`, `at`, `items`, `clear`, `each`, `free`. `new` takes the allocator's function and a pointer to its state, and the list keeps both, so it must not outlive the state (§14). `reserve` and `push` return a bare `!` that fails with `alloc::out_of_memory`, leaving the list as it was. |
 | `map` | `Map(K, V, S)`, a hash map that holds its allocator as a list does, and its key type's hash and equality functions: `new`, `len`, `has`, `get`, `at`, `put`, `remove`, `clear`, `free`, `next`, `each`. `put` returns a bare `!` that fails with `alloc::out_of_memory`, leaving the map as it was. `hash_*` and `eq_*` for `i32`, `i64`, `u32`, `u64`, `usize`; `hash_bytes` for byte slices, with `slice::eq_bytes`; `hash_string` for `utf8::String`, with `utf8::eq`. |
 | `ascii` | Byte-level character tests and case for a `u8`: `is_digit`, `is_upper`, `is_lower`, `is_alpha`, `is_alnum`, `is_space`, `to_upper`, `to_lower`. Extern fns, used by `utf8`'s numbers: `f64_digits`, `f32_digits`, `f64_parse`, `f32_parse`. |
-| `utf8` | `String { bytes: []u8 }`, the text type: a non-owning view of valid UTF-8. Offsets are in bytes, and an offset inside a character panics; a character is a `u32` code point. `from` (checks the bytes, returning a `!String` that fails with `invalid{ at }`, the offset of the first bad byte), `from_literal` (a literal's conversion, §18: `from` while compiling), `of` (panics if invalid), `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`, `is_ascii`. Character tests and case (ASCII only). `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers, by character: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes and holds its allocator as a list does, with `push`, `push_char`, `push_i64`, `push_u64`, `push_f64`, `push_f32`, `push_bool`, `view`, `clear`, `free`, and for `@fmt` (§13, Formatting) `push_padded`, `push_int`, `push_uint`, `push_hex`. Each push returns a bare `!` that fails with `alloc::out_of_memory`. `fmt_hex` writes an unsigned integer in hexadecimal into a buffer. |
+| `utf8` | `String { bytes: []u8 }`, the text type: a non-owning view of valid UTF-8. Offsets are in bytes, and an offset inside a character panics; a character is a `u32` code point. `from` (checks the bytes, returning a `!String` that fails with `invalid{ at }`, the offset of the first bad byte), `from_literal` (a literal's conversion, §18: `from` while compiling), `of` (panics if invalid), `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`, `is_ascii`. Character tests and case (ASCII only). `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers, by character: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes and holds its allocator as a list does, with `push`, `push_char`, `push_i64`, `push_u64`, `push_f64`, `push_f32`, `push_bool`, `view`, `clear`, `free`. Its `@fmt` writers (§13, Formatting), marked `#write`, are `push` for a `String`, `push_literal` for a `strlit`, `push_bool`, `push_f32`, `push_f64`, and `push_` and the type for each integer type (`push_i8` ... `push_usize`); `push_char` isn't one. For a hole written another way: `write_hex`, `write_char`, and padded to a width with spaces, or zeros after any `-`: `push_padded` (a `String`), `push_int`, `push_uint`, `push_hex`. `Fmt(S)` is a writer into a `Builder(S)`, `&fn{ mut b: Builder(S) } -> !`. Each push and write returns a bare `!` that fails with `alloc::out_of_memory`. `fmt_hex` writes an unsigned integer in hexadecimal into a buffer. |
 | `io` | `Stream` (an enum: `out`, `err`); `print`, `println`, `eprint`, `eprintln` for `utf8::String`, `newline`, `put_char` (one character), `print_i64`, `print_u64`, `print_f64`, `print_f32`, `print_bool` and their `println_` forms (smaller number types widen to these), `read_line` (bytes that aren't valid UTF-8 become `?`), `write` and `read` (bytes), `flush`, `put` (bytes past the buffer, through `os::write`). Standard output is buffered: it is written out before anything goes to standard error or is read from standard input, and when the program ends or panics. The buffer is the runtime's, since a panic flushes it too: `Out`, from extern fn `out_buffer`. |
 
 ```
@@ -740,7 +749,7 @@ extern fn glfwPollEvents { mut glfw: Glfw }      // a capability says who may ca
 1. `#path` or `#path{ field = e, ... }`, on its own line before a declaration or a capability's field, is an **attribute** of it. Either may have several.
 2. `path` names a struct, and the braces are a literal of it, checked as a const's initializer is and folded (§14): it can't call a function or use a const that isn't folded. `#path` alone means `#path{}`.
 3. Attributes are data. The compiler acts on those of std's `c` namespace (`c::symbol` on an extern fn or a C variable, `c::callback` on a fn) and ignores the rest; a program can read them later (PLAN.md, stage 3).
-4. The compiler declares `convert` itself (Literal conversions, below). It has no namespace, and a declaration named `convert` shadows it.
+4. The compiler declares `convert` (Literal conversions, below) and `write` (§13, Formatting) itself. They have no namespace, and a declaration of the same name shadows one.
 
 ### Extern functions
 
@@ -778,7 +787,7 @@ let r: regex::Regex = "[a-z]+"                   // a bad pattern is a compile e
 2. The fn has a body and no generic parameters. Its context is one read-only field of a literal type, `s: strlit`, so it takes no capability and can run while compiling. Its result is a `T` or a `!T`, where `T` isn't a `strlit`, a `[]u8` or a `[N]u8`, or a `?` of one, which a literal is without one.
 3. "Expected" is where widening applies (§11, Widening, rule 1), a const's initializer, an `if` or `match` branch next to one of type `T` (§11, Literals), and a call's `strlit` field, so `utf8::from_literal{ s = "hi" }` calls one directly, as any fn. Where a `?T` is expected, a conversion to `?T` comes before one to `T`. Only literals convert: no other value does, and conversions don't chain.
 4. A literal sees only the conversions its code could name (§10, Name lookup): those in its namespace or one around it, or in a named namespace inside one of those, as `a::b::` names it. The program's top level has no name, so std's code sees only std's conversions, and the program's sees std's and its own. Two conversions to one `T` that a literal sees are an error at it, naming both, and not before: two libraries may each declare one, and a program may call either.
-5. The conversion runs once the bodies are checked, as a const's initializer does (§14), and the program holds its result. The same limits apply, and the result may hold no pointer but one into the literal's bytes. An error result is a compile error at the literal, printed as `@fmt` prints an error (§13): `string literal: utf8::invalid{ at = 3 }`. A const whose initializer holds a converted literal is run, not folded, and an attribute can't hold one.
+5. The conversion runs once the bodies are checked, as a const's initializer does (§14), and the program holds its result. The same limits apply, and the result may hold no pointer but one into the literal's bytes. An error result is a compile error at the literal, printed as `@fmt` writes an error (§13), with each field a number or a `bool`, or `_` for any other type: `string literal: utf8::invalid{ at = 3 }`. A const whose initializer holds a converted literal is run, not folded, and an attribute can't hold one.
 
 ### Callbacks
 

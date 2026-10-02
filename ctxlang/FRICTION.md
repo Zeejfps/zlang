@@ -9,11 +9,11 @@ errors and capability-variable work (`e19f1fe`).
 
 - **1. A diagnostic takes three lines.** `let mut b = message{ c }`, then
   `try! @fmt(&b, ...)`, then `error{ &c, at, msg = utf8::view{ b } }`. This was 24
-  times in `check.ctx` when first noted; it is now 197, plus 13 in `lower.ctx` and `parser.ctx`,
-  and about 166 of them are exactly those three lines. `@fmt` can't produce a `utf8::String` in an
-  expression, and no helper can take a format and its arguments to pass on. *Planned:* PLAN.md
-  1.3: `@fmt` without a builder is a writer, which a new `errorf` takes, so each is one line
-  (`errorf{ &c, at, msg = @fmt("...", args) }`). `error` keeps its plain-text messages.
+  times in `check.ctx` when first noted, and 197 before PLAN.md 1.3. *Mostly solved:* `@fmt`
+  without a sink is a writer (spec §13), which check's `errorf` and the parser's `failf` take, so
+  163 of those sites are one line (`errorf{ &c, at, msg = @fmt("...", args) }`). About 50 keep a
+  builder: reports through `flow_error` and `escape_error`, which take a `utf8::String`, and
+  messages built from more than one `@fmt` or with a loop between.
 - **2. A read-only argument can be copied before a later argument changes it.** Arguments are
   evaluated in order, so `types::prune{ s = c.ty, t = expr{ &c, e } }` copies the type store,
   then `expr` adds a type to the real one, and `prune` indexes the stale copy out of bounds.
@@ -61,8 +61,8 @@ errors and capability-variable work (`e19f1fe`).
 - **11. An `if` of literals has no type as a `@fmt` hole** (spec §11 Literals). `@fmt(&b, "{}",
   if m { "mut " } else { "" })` makes two arrays of different lengths ("branches have different
   types: [4]u8 and [0]u8"). The hole needs a typed `let` first. A hole could expect a
-  `utf8::String`, as a bare literal hole already does. Literal conversions kept the rule (a
-  literal branch takes the type of one next to it), so `#write` (PLAN.md stage 4) could settle it.
+  `strlit`, as a bare literal hole now does. Literal conversions kept the rule (a literal branch
+  takes the type of one next to it), and `#write` didn't change it: a hole expects no type.
 - **12. A parameter name can defeat punning.** `utf8::push_char`, `push_u64` and the rest call
   their builder `b`, so a builder named `out` must be passed as `b = &out`, not `&out`: about 30
   times, mostly in `dump.ctx`. `@fmt` has replaced most direct pushes, which shrank this. A std

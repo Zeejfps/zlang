@@ -30,133 +30,10 @@ interpreter ctxc replaced, is at `8436f4d`.
      holds any error: that needs the thunk that widens a function value to also renumber its
      result.
    - Matching through a pointer to a `!T`.
-3. **`@fmt` as a writer, over `#write`** (FRICTION #1). Two problems, one design:
-   - A formatted diagnostic takes three lines, a builder, the `@fmt` and the view: about 166 sites
-     in ctxc are exactly that. No helper can hide them, since no function takes a format and its
-     arguments to pass on.
-   - `@fmt` names std. It writes to a `utf8::Builder` (`builder_decl`) through `utf8::push_*`
-     functions found by name, fails with `alloc::out_of_memory`, and makes a `utf8::String` for
-     its text (`text_decl`, `fmt_text`).
 
-   `@fmt("format", args...)` is a writer: a function that writes the text into a sink when
-   called, as Rust's `format_args!` is a value any sink takes. `@fmt(&b, "format", args...)`
-   makes one and calls it on `b` at once. How a value is written to a sink, libraries say with
-   `#write`, so the compiler names no sink and no writer:
-   ```
-   try @fmt(&b, "{}:{}: error: {}", line, col, msg)                           // write into b now
-   errorf{ &c, at, msg = @fmt("no variant `{}` in {}", name, tstr{ c, t }) }  // pass a writer on
-
-   fn errorf { mut c: Checker, at: source::Span, msg: utf8::Fmt(Heap) } {
-       let mut b = message{ c }
-       try! msg{ &b }
-       error{ &c, at, msg = utf8::view{ b } }
-   }
-
-   namespace utf8 {
-       #write
-       fn push_i64(S) { mut b: Builder(S), n: i64 } -> ! { ... }
-   }
-
-   namespace json {                                 // any library, for any sink
-       #write
-       fn write_number { mut w: Writer, n: f64 } -> ! { ... }
-   }
-   ```
-   - **The two forms.**
-     - Without a sink, `@fmt` is a value of type `&fn{ mut b: B } -> R`, taken from the expected
-       type, which must have exactly one `mut` field and a bare `!` result. Without an expected
-       type (`let w = @fmt(...)`) it is an error, as with an untyped `null`. std gets
-       `type Fmt(S) = &fn{ mut b: Builder(S) } -> !` in `utf8`.
-     - With a sink first, `B` is the sink's type. The sink is evaluated once, so it may be any
-       expression of type `*mut B`, not only a name or a path of fields (§13.1 today).
-     - The two forms can't be confused: a format is always a literal, and a sink never is.
-     - The arguments are evaluated once, at the `@fmt`, in order; a writer value copies them, as
-       a bind does (§4). §13.6's "later arguments aren't evaluated" goes.
-     - A hole that is a writer for `B` is called with the sink, so writers nest. An `@fmt` value
-       used as a hole is flattened into the outer one while checking.
-   - **`#write`.** An attribute the compiler declares, beside `#convert`.
-     - Its fn has exactly two fields, the sink `mut` and the value read-only. Its result is a bare
-       `!`, or nothing: a writer that records failure itself, as `examples/json`'s do, adds no
-       errors.
-     - It may be generic, but neither field's type is a bare type parameter, the value isn't a
-       function, and every type parameter appears in a field's type.
-     - A writer is a candidate where its declaration is visible from the `@fmt`, by the rule
-       conversions use (`reaches`).
-     - Each hole of type `T` is written by the writer for `B` and exactly `T`. There's no
-       widening, since a `u32` widens to both `i64` and `u64`.
-     - Matching is one-way, against the resolved types at the end of the body (after integer
-       literals take their defaults), as an instance of the writer's field types, never with
-       `unify`, which can't be undone. Each piece's writer and type arguments are recorded for
-       lowering.
-     - Text is a `strlit`, written by the writer for `B` and `strlit`, and so is a string
-       literal hole. The checker still rejects a format that isn't valid UTF-8.
-     - A hole with no writer is an error naming both types (suggesting `@as` or `ifnull` for an
-       enum or a `?T`). Two writers are an error naming both, as two conversions are (§18).
-     - An error hole is written by the compiler: its name as a `strlit`, and each payload field
-       with the writer for its type, or `_` if there is none.
-     - std marks writers for every integer type, `f32`, `f64`, `bool`, `String` and `strlit`, but
-       not `push_char`, or every `u32` hole would print as a character.
-   - **Format options go.** The format keeps only `{}`, `{{` and `}}`. Hex, characters and
-     padding are writers named in the call: `utf8::write_hex{ n, _ }`, `utf8::write_char{ c, _ }`,
-     and padded ones that take a width. ctxc, std and the examples use options 6 times.
-   - **The error set.** Each `@fmt` site gets its own inferred set, as a fn does (`Flow`,
-     `infer_sets`): the union of its writers' sets, or any error if a hole is a function value.
-     An error hole's field writers depend on its set, so they are added inside the inference
-     loop, which only grows. A writer value passed on takes `R` from the expected type (a
-     function type's `!` is any error), and its hidden fn lifts into it (`lift`), so 1.2's gap
-     isn't on the way. A site's owner is no declaration: `tstr`, `set_text`, `mismatch`, dump and
-     lowering must handle it.
-   - **Holds.**
-     - A writer value holds what its holes hold (§6.2), including the roots its read-only
-       arguments derive from. Binds don't count those today (`derives`). Test this first: a bind
-       may already carry a slice of an inner scope's local out of that scope.
-     - With a sink first, the holes' holds are checked against the sink, as one call's arguments
-       are (§3.1). `errorf{ &c, msg = @fmt("{}", w{ &c, _ }) }` is two `mut` uses of `c`.
-   - **Lowering.**
-     - With a sink first: the sink and the holes go into temporaries, then today's chain of
-       writer calls follows, through the recorded writers. It is the same C as today, with no
-       hidden fn.
-     - A writer value: a hidden fn per site, queued as an instance keyed by the site and the
-       enclosing instance's type arguments, lowered under the enclosing fn's declaration, with a
-       bind of the holes. Its record is leaked from `ctx_alloc`, as every `&fn`'s is (Open
-       decisions). Diagnostics are capped at 100, so ctxc doesn't mind.
-   - **What leaves the compiler:** `builder_decl`, the `push_*` names, `out_of_memory`, and
-     `text_decl` and `fmt_text` for `@fmt`; the simple-place rule; and the options (`open_holes`,
-     `fmt_widths`). `comptime`'s `field_text`, which prints a conversion error's `String` field,
-     then prints `_` (§18).
-   - **Steps.** Each lands in ctxc before ctxc or std uses it, then the bootstraps are refreshed.
-     0. With today's compiler: the 6 option uses become `push_hex` and `push_char` binds as
-        holes, as `lexer.ctx` does with `upper_hex`.
-     1. `#write` in the compiler with the rules above, and a per-site error set, used by today's
-        `@fmt(&b, ...)`, with the sink evaluated once and checked against the holes' holds. Name
-        lookup stays only where no visible writer has that sink. ctxc's sets and IR don't change.
-        Tests; refresh.
-     2. std marks its whole set of Builder writers, and a `strlit` one. Dump's `fmt` lines show
-        that every piece resolves to a writer. Refresh.
-     3. The value form: holds and derives, the hidden fn, nesting, literal holes as `strlit`.
-        Tests for every kind of hole, nesting, errors, `errorf{ &c }` with an `&c` hole, and
-        loops. Refresh.
-     4. ctxc adds `errorf`, beside `error`, which keeps its literal messages. A script converts
-        the three-line sites, skipping any with code between the lines, and keeps `tstr` holes:
-        `write_type{ c, ... }` would copy the whole `Checker` into each record. Refresh.
-     5. Remove the name lookups, `builder_decl`, `out_of_memory`, the options and `text_decl` from
-        `@fmt`. Migrate the tests (49 uses, some of them message tests), and rewrite spec §13,
-        whose table still says `@fmt` gives a `bool`. Refresh.
-   - *To settle first:* 3.1's `main -> !` prints an error "as `@fmt` prints it", and 6.5's
-     `@expect` formats both sides as holes, with no sink of the program's. With no sink in the
-     compiler, those need their own answer: for example, the runtime prints primitives and
-     `strlit` in C, and `_` for anything else.
-   - *Considered:*
-     - `@fmt(…){ &b }`, calling a writer in place, as the only spelling. The checker would have
-       to type a call on an expression that has no expected type. The writer's one field would
-       have to take whatever name a pun gives it (`{ &out }`, `{ &m }`). A forgotten `{ &b }`
-       reads as a used result. And it rewrites 345 calls and 49 tests.
-     - A std helper, `utf8::write{ &b, w = @fmt(…) }`: one per sink type, a record and an
-       indirect call per use, and a result that can only be any error, which breaks exhaustive
-       matches on `@fmt`'s errors.
-     - `@fmt` as a library function. It needs any number of arguments of any types, and a writer
-       chosen by each one's type, so either the call expands to code or types are compile-time
-       values (Zig's `anytype`). Stage 3 rules out both.
+*Later, for `@fmt`* (spec §13): a writer's record is leaked from `ctx_alloc`, one per `@fmt`
+passed on, as every bind's is (Open decisions). An error hole is the only piece the compiler writes
+itself; a field with no writer is `_`, and std's padded writers keep their `push_` names.
 
 *Later, if wanted:* if patterns nest (a payload's fields, literal values), `_` comes in as a
 wildcard inside a pattern (`os{ code = _ }`), and `else` stays the whole-arm default. Optional
@@ -228,10 +105,14 @@ generator can't observe its own output.
      a build program should pass that up with `try`, as Zig's `build.zig` does, not panic with
      `try!` or handle every failure where it happens. §19 gives `build` main's rules, so `main`
      gains it too, for small programs, tests and examples (Rust, Zig and Swift allow it). `ok`
-     exits with its value, or 0 for a bare `!`. An error prints `error: ` and the error as `@fmt`
-     prints it (`fs::other{ code = 5 }`) to stderr, and exits with 1. Printing the payload needs a
-     small fixed buffer; a first version may print only the name, as `try!` does. Programs that
-     report with context and pick their exit codes, as ctxc and the examples do, keep `-> i32`.
+     exits with its value, or 0 for a bare `!`. An error prints `error: ` and the error, as
+     `fs::other{ code = 5 }`, to stderr, and exits with 1. Programs that report with context and
+     pick their exit codes, as ctxc and the examples do, keep `-> i32`.
+   - *To settle first:* the error can't be printed "as `@fmt` prints it": `@fmt` writes through a
+     sink's `#write` fns (spec §13), and the compiler names no sink, so the runtime has none of
+     the program's. The same goes for 6.5's `@expect`. One answer: the runtime prints primitives
+     and `strlit` in C, and `_` for anything else, as a converted literal's error is printed
+     (spec §18). A first version may print only the name, as `try!` does.
 2. **Reflection: `build::check`.** Runs the front end on an executable's sources and gives the
    build program the checked declarations as data: structs, unions, fields, layouts and
    attributes. That data is the `Analysis`, read-only trees plus side tables, so no separate
@@ -251,7 +132,7 @@ generator can't observe its own output.
     45 panics that assume checked code.
   - *Direction:* the checker decides, so lowering only ever sees clean code. While it checks a
     declaration, it records what that declaration depends on: each name use, each recorded type,
-    inferred error sets, the conversions its literals use, and `@fmt`'s uses of std. A
+    inferred error sets, the conversions its literals use, and the writers its `@fmt`s use. A
     declaration is blocked if it holds an error, if a type it records contains the error type,
     or if something it depends on is blocked. At `evaluate`, a const or literal whose root or
     conversion is blocked is skipped, with no error of its own, since the cause is reported
@@ -276,16 +157,15 @@ compile-time consts fall short on real code.
 The compiler should know nothing of std: std is built from features any program has, and the
 checker, lowering and runtime never name a std declaration. String literals no longer do: a
 literal is a `strlit`, and std's `#convert` fns, `utf8::from_literal` and `c::from_literal`, make
-it a `utf8::String` or a `c::String` while compiling (spec §11, §18). The checker still names std
-for `@fmt` and for `c::String`'s layout, and std still declares attributes the compiler acts on.
+it a `utf8::String` or a `c::String` while compiling (spec §11, §18), and `@fmt` writes through
+std's `#write` fns (spec §13). The checker still names std for `c::String`'s layout, and std still
+declares attributes the compiler acts on.
 
 *Still naming std after this,* each a later piece of the same goal:
-- `@fmt` names `utf8::Builder`, the `utf8::push_*` functions, `alloc::out_of_memory` and
-  `utf8::String`. 1.3 replaces them with `#write`.
 - `c::String`'s C layout: a `?c::String` is a nullable pointer, and an extern fn passes it as a
   `const char *` (`cstr_decl`).
 - `c::symbol` and `c::callback` are attributes std declares and the compiler acts on. They move
-  beside `#convert`, among the attributes the compiler declares itself.
+  beside `#convert` and `#write`, among the attributes the compiler declares itself.
 - `main`'s `args` is checked against std's `Args`; it can be checked as `[][]u8`. Only `fn build`
   may take std's `Build`.
 - The runtime fills `io`'s `Out`, a struct whose layout std defines (`ctxrt.c`, `out_buffer`).
@@ -379,9 +259,10 @@ alone; step 5 gives programs a test framework of their own. None blocks the othe
      says so, and the runner supplies it as `main`'s are supplied.
    - **No mocking framework.** Behaviour is already passed as values (capabilities with fields,
      `map::Map`'s hash): a test passes a fake.
-   - **A test returns `!`,** so it can `try`; an error fails it, printed as `@fmt` prints one.
+   - **A test returns `!`,** so it can `try`; an error fails it, printed as `main`'s is (3.1).
    - **`@expect(c)`**, a builtin: on failure it records the condition's text and, for a
-     comparison, both sides as `@fmt` holes, and the test goes on. ctxlang has no macros or
+     comparison, both sides, and the test goes on. With no sink of the program's, the compiler
+     prints them as 3.1's `main -> !` prints an error's fields, which needs settling first. ctxlang has no macros or
      generic printing (FRICTION #6), so a library `assert_eq` couldn't show the values.
    - **Leaks.** A std counting allocator fails a test that doesn't free what it took, as Zig's
      `std.testing.allocator` does.
@@ -518,8 +399,8 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
   which costs time on every call. *Recommendation:* a debug flag, off by default. **Deferred.**
 - **Where bound-function records live.** Leaked from `ctx_alloc` for now. §6 already keeps an
   `&fn` from outliving the frame that made it (it can't be returned, stored in a field, or put
-  in a `mut` field), so a record could live in that frame. 1.3's writer values leak one per
-  `@fmt` passed on. Diagnostics are capped at 100, so ctxc doesn't mind, but a language server
+  in a `mut` field), so a record could live in that frame. `@fmt` writers (spec §13) leak one
+  per `@fmt` passed on. Diagnostics are capped at 100, so ctxc doesn't mind, but a language server
   (stage 5) running for hours would.
   - One slot per site is unsound in a loop: §6.2 lets a bind that holds no places be assigned to
     a local declared outside the loop, so two live values would share the slot. It needs a rule
