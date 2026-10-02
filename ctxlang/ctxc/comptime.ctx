@@ -163,8 +163,8 @@ namespace comptime {
         return a
     }
 
-    // An error of type t at a, as @fmt writes one (lower's error_push): its name, and its
-    // payload as `{ field = value, ... }`, each value as a hole of its type writes it, or `_`.
+    // An error of type t at a, as @fmt writes one (lower's error_write): its name, and its
+    // payload as `{ field = value, ... }`, each value a number or bool, or `_`.
     fn error_text { mut c: check::Checker, mut r: Reader, t: Id, a: eval::Addr, mut b: utf8::Builder(Heap) } -> ! {
         let et = check::eset_of{ &c, t }
         let vs = check::variants_of{ &c, t = et }
@@ -184,8 +184,8 @@ namespace comptime {
         try utf8::push{ &b, s = " }" }
     }
 
-    // A value of type t at a, as an @fmt hole writes an error's field: a number or bool, or a
-    // utf8::String's text; `_` for any other type.
+    // A value of type t at a, as an error's field in a message: a number or bool, or `_` for
+    // any other type. The compiler names no std type, so a utf8::String is `_` too.
     fn field_text { mut c: check::Checker, mut r: Reader, t: Id, a: eval::Addr, mut b: utf8::Builder(Heap) } -> ! {
         let ty = types::prune{ s = c.ty, t }
         let p = types::prim_of{ s = c.ty, t = ty }
@@ -200,12 +200,6 @@ namespace comptime {
                 boolean{ value } => { return utf8::push_bool{ &b, v = value } }
                 else => {}
             }
-        }
-        if check::record_decl{ c, t = ty } == c.text_decl and c.text_decl != check::NONE {
-            let ptr = word{ &r, a } ifnull { return utf8::push{ &b, s = "_" } }
-            let len = word{ &r, a = a + 8 } ifnull { return utf8::push{ &b, s = "_" } }
-            let text = mem{ &r, a = ptr, n = len } ifnull { return utf8::push{ &b, s = "_" } }
-            return utf8::push{ &b, s = utf8::String{ bytes = text } }
         }
         return utf8::push{ &b, s = "_" }
     }

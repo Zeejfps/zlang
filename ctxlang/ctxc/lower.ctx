@@ -2411,81 +2411,28 @@ namespace lower {
         return res_remap{ &l, x, frm = types::prune{ s = l.c.ty, t = frm }, to }
     }
 
-    // What std's utf8 function d returns for builder state targs: a bare `!`.
-    fn push_ret { mut l: Lower, d: u32, targs: []Id } -> Id {
-        return types::subst{ s = &l.c.ty, t = check::get_decl{ c = l.c.*, d }.ret, decl = d, args = targs }
-    }
-
     // The call piece p becomes, as a result of type w.rt: its writer's with the sink and the
-    // piece, the hole's function with the sink, an error's name and fields, or with name lookup
-    // a utf8 push. h is the hole's index, if it is one.
+    // piece, an error's name and fields, or the hole's function with the sink. h is the hole's
+    // index, if it is one.
     fn push_call { mut l: Lower, w: Writes, p: check::Piece, h: usize } -> ir::Expr {
         let s = w.s
         let rt = w.rt
-        if slice::eq_bytes{ a = p.push, b = "error" } {
-            if p.writer.decl != NONE { return error_write{ &l, w, h, text = p.writer } }
-            return error_push{ &l, w, h }
-        }
+        if slice::eq_bytes{ a = p.push, b = "error" } { return error_write{ &l, w, h, text = p.writer } }
         if slice::eq_bytes{ a = p.push, b = "write" } {
             if not p.hole { return text_write{ &l, s, w = p.writer, bytes = p.text, rt } }
             let targs = T_all{ &l, ts = p.writer.targs }
             let vt = types::subst{ s = &l.c.ty, t = check::value_field{ c = l.c.*, d = p.writer.decl }.ty, decl = p.writer.decl, args = targs }
             return write_call{ &l, s, w = p.writer, v = hole_val{ &l, w, h, to = vt }, rt, at = p.at }
         }
-        if slice::eq_bytes{ a = p.push, b = "call" } {
-            let ft = w.tys[h]
-            let mut fields: []types::Field = slice::empty(types::Field){}
-            let mut ret = types::VOID
-            if get{ l, t = ft } is func{ fields = fs, ret = r } { fields = sorted_fields{ l, fields = fs }; ret = r }
-            let ty = tid{ &l, t = ret }
-            let bx = coerce{ &l, x = sink_ex{ &l, s }, frm = s.ty, to = types::ptr{ s = &l.c.ty, elem = fields[0].ty, mutable = false }, at = s.at }
-            let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
-            add_arg{ xs = &out, a = ir::Arg{ index = 0, value = bx } }
-            let call = mk{ ty, k = ir::ExprKind::dcall{ callee = box{ l, e = w.vals[h] }, args = list::items{ list = out } } }
-            return lift{ &l, x = call, frm = ret, to = rt }
-        }
-        let d = push_decl{ &l, name = p.push }
-        let st = builder_state{ l, t = s.ty }
-        let mut ts = list::new(Id){ realloc = arena::alloc, heap = l.heap }
-        try! list::push{ list = &ts, item = st }
-        let targs = list::items{ list = ts }
-        let x = check::get_decl{ c = l.c.*, d }
-        let fields = check::subst_fields{ c = l.c, fields = x.fields, decl = d, args = targs }
-        let fid = fn_id{ &l, decl = d, targs }
-        let ret = push_ret{ &l, d, targs }
+        let ft = w.tys[h]
+        let mut fields: []types::Field = slice::empty(types::Field){}
+        let mut ret = types::VOID
+        if get{ l, t = ft } is func{ fields = fs, ret = r } { fields = sorted_fields{ l, fields = fs }; ret = r }
         let ty = tid{ &l, t = ret }
+        let bx = coerce{ &l, x = sink_ex{ &l, s }, frm = s.ty, to = types::ptr{ s = &l.c.ty, elem = fields[0].ty, mutable = false }, at = s.at }
         let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
-        let bi = field_pos{ fields, name = "b" }
-        let bv = coerce{ &l, x = sink_ex{ &l, s }, frm = s.ty, to = arg_type{ &l, f = fields[bi], ptrs = true }, at = s.at }
-        add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, bi), value = bv } }
-        if not p.hole {
-            let ti = field_pos{ fields, name = "s" }
-            let v = fmt_text{ &l, bytes = p.text, t = fields[ti].ty }
-            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, ti), value = v } }
-        } else {
-            let vname: []u8 = if slice::eq_bytes{ a = p.push, b = "push" } or slice::eq_bytes{ a = p.push, b = "push_padded" } {
-                "s"
-            } else if slice::eq_bytes{ a = p.push, b = "push_char" } {
-                "c"
-            } else if slice::eq_bytes{ a = p.push, b = "push_bool" } {
-                "v"
-            } else {
-                "n"
-            }
-            let vi = field_pos{ fields, name = vname }
-            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, vi), value = hole_val{ &l, w, h, to = fields[vi].ty } } }
-            let padded = slice::eq_bytes{ a = p.push, b = "push_hex" } or slice::eq_bytes{ a = p.push, b = "push_int" }
-                or slice::eq_bytes{ a = p.push, b = "push_uint" } or slice::eq_bytes{ a = p.push, b = "push_padded" }
-            if padded {
-                let wi = field_pos{ fields, name = "width" }
-                let wd = p.width
-                add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, wi), value = int_lit{ &l, t = types::USIZE, n = if wd == null { 0 } else { wd } } } }
-                let zi = field_pos{ fields, name = "zero" }
-                let z = mk{ ty = tid{ &l, t = types::BOOL }, k = ir::ExprKind::boolean{ value = p.zero } }
-                add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, zi), value = z } }
-            }
-        }
-        let call = mk{ ty, k = ir::ExprKind::call{ callee = fid, args = list::items{ list = out } } }
+        add_arg{ xs = &out, a = ir::Arg{ index = 0, value = bx } }
+        let call = mk{ ty, k = ir::ExprKind::dcall{ callee = box{ l, e = w.vals[h] }, args = list::items{ list = out } } }
         return lift{ &l, x = call, frm = ret, to = rt }
     }
 
@@ -2550,109 +2497,6 @@ namespace lower {
             i = i + 1
         }
         return mk{ ty, k = ir::ExprKind::matchx{ scrut = box{ l, e = w.vals[h] }, through = false, arms = list::items{ list = out } } }
-    }
-
-    // An error in hole h, with name lookup: its name, as `fs::os`, and its payload, as
-    // `{ code = 5 }`. Each field is pushed as a hole of its type would be, or as `_` if @fmt
-    // can't push its type.
-    fn error_push { mut l: Lower, w: Writes, h: usize } -> ir::Expr {
-        let s = w.s
-        let rt = w.rt
-        let set = check::set_of{ c = l.c.*, t = w.tys[h] }
-        let ty = tid{ &l, t = rt }
-        let mut out = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
-        let mut i: usize = 0
-        while i < set.len {
-            let d = check::get_decl{ c = l.c.*, d = set[i] }
-            let fields = check::fault_fields{ c = l.c.*, d = set[i] } ifnull { slice::empty(types::Field){} }
-            let mut bs = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
-            let mut r = push_ir{ &l, s, name = "push", text = d.qual, v = null, vt = types::VOID, rt }
-            let mut k: usize = 0
-            while k < fields.len {
-                let f = fields[k]
-                let ft = tid{ &l, t = f.ty }
-                let slot = temp{ &l, ty = ft }
-                add_bind{ xs = &bs, b = ir::Bind{ slot, field = @as(u32, k), by_ref = false } }
-                let mut tb = message{ l }
-                try! @fmt(&tb, "{}{} = ", str{ s = if k == 0 { "{ " } else { ", " } }, str{ s = f.name })
-                r = then{ &l, a = r, b = push_ir{ &l, s, name = "push", text = utf8::view{ b = tb }.bytes, v = null, vt = types::VOID, rt }, rt }
-                let push = field_push{ l, t = f.ty }
-                let v = mk{ ty = ft, k = ir::ExprKind::local{ slot } }
-                let piece = if push.len == 0 { push_ir{ &l, s, name = "push", text = "_", v = null, vt = types::VOID, rt } } else { push_ir{ &l, s, name = push, text = "", v, vt = f.ty, rt } }
-                r = then{ &l, a = r, b = piece, rt }
-                k = k + 1
-            }
-            if fields.len > 0 { r = then{ &l, a = r, b = push_ir{ &l, s, name = "push", text = " }", v = null, vt = types::VOID, rt }, rt } }
-            add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = @as(u32, i), binds = list::items{ list = bs } } }, body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = r } } }
-            i = i + 1
-        }
-        return mk{ ty, k = ir::ExprKind::matchx{ scrut = box{ l, e = w.vals[h] }, through = false, arms = list::items{ list = out } } }
-    }
-
-    // The utf8 function that pushes an error's field of type t, or "" if there is none.
-    fn field_push { l: Lower, t: Id } -> []u8 {
-        let x = types::prune{ s = l.c.ty, t }
-        let p = types::prim_of{ s = l.c.ty, t = x }
-        if p != null {
-            if p == types::Prim::bool { return "push_bool" }
-            if p == types::Prim::f32 { return "push_f32" }
-            if p == types::Prim::f64 { return "push_f64" }
-            return if types::signed{ p } { "push_i64" } else { "push_u64" }
-        }
-        if check::record_decl{ c = l.c.*, t = x } == l.c.text_decl and l.c.text_decl != NONE { return "push" }
-        return ""
-    }
-
-    // A call of utf8 function `name` with the sink, and with v of type vt (its value field), or
-    // without v the text as `s`, as a result of type rt.
-    fn push_ir { mut l: Lower, s: Sink, name: []u8, text: []u8, v: ?ir::Expr, vt: Id, rt: Id } -> ir::Expr {
-        let d = push_decl{ &l, name }
-        let st = builder_state{ l, t = s.ty }
-        let mut ts = list::new(Id){ realloc = arena::alloc, heap = l.heap }
-        try! list::push{ list = &ts, item = st }
-        let targs = list::items{ list = ts }
-        let x = check::get_decl{ c = l.c.*, d }
-        let fields = check::subst_fields{ c = l.c, fields = x.fields, decl = d, args = targs }
-        let fid = fn_id{ &l, decl = d, targs }
-        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
-        let bi = field_pos{ fields, name = "b" }
-        let bv = coerce{ &l, x = sink_ex{ &l, s }, frm = s.ty, to = arg_type{ &l, f = fields[bi], ptrs = true }, at = s.at }
-        add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, bi), value = bv } }
-        if v == null {
-            let si = field_pos{ fields, name = "s" }
-            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, si), value = fmt_text{ &l, bytes = text, t = fields[si].ty } } }
-        } else {
-            let vname: []u8 = if slice::eq_bytes{ a = name, b = "push" } { "s" } else if slice::eq_bytes{ a = name, b = "push_bool" } { "v" } else { "n" }
-            let vi = field_pos{ fields, name = vname }
-            add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, vi), value = coerce{ &l, x = v, frm = vt, to = fields[vi].ty, at = s.at } } }
-        }
-
-        let ret = push_ret{ &l, d, targs }
-        let call = mk{ ty = tid{ &l, t = ret }, k = ir::ExprKind::call{ callee = fid, args = list::items{ list = out } } }
-        return lift{ &l, x = call, frm = ret, to = rt }
-    }
-
-    // std's utf8 function `name`, even where the program has a `utf8` of its own.
-    fn push_decl { mut l: Lower, name: []u8 } -> u32 {
-        let d = check::std_value{ c = l.c.*, space = "utf8", name }
-        if d == NONE { @panic("lower: no utf8 push function") }
-        return d
-    }
-
-    // A piece of an @fmt's text as the utf8::String of type t that `push` takes: a view of static
-    // bytes. @fmt names std's utf8 until `#write` (PLAN.md stage 4) makes the piece a strlit.
-    fn fmt_text { mut l: Lower, bytes: []u8, t: Id } -> ir::Expr {
-        let v = mk{ ty = tid{ &l, t = u8_slice{ &l } }, k = ir::ExprKind::sbytes{ bytes } }
-        let ty = tid{ &l, t }
-        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
-        add_arg{ xs = &out, a = ir::Arg{ index = 0, value = v } }
-        return mk{ ty, k = ir::ExprKind::record{ items = list::items{ list = out } } }
-    }
-
-    // S of the *mut utf8::Builder(S) an @fmt writes to.
-    fn builder_state { l: Lower, t: Id } -> Id {
-        if get{ l, t } is ptr{ elem } and get{ l, t = elem } is record{ args } and args.len == 1 { return args[0] }
-        @panic("lower: @fmt to something that isn't a builder")
     }
 
     // ---- text

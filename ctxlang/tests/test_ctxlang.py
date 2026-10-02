@@ -1090,7 +1090,7 @@ class Bodies(Base):
             ('fn f { a: i32, b: i64 } {\n    let c = @wrap_add(a, b)\n}',
              '@wrap_add needs two integers of the same type', 2, 13),
             ('fn w { mut n: i32 } -> ! {\n    return @fmt(&n, "x")\n}',
-             '@fmt writes to a *mut utf8::Builder, got *mut i32', 2, 17),
+             '@fmt has no writer to i32: no `#write` fn it sees has a sink of that type', 2, 17),
             (B + '    let s = "x"\n    return @fmt(&b, s)\n}',
              '@fmt takes its format as a string literal', 3, 21),
             (B + '    return @fmt(&b, "a{", 1)\n}',
@@ -1098,23 +1098,17 @@ class Bodies(Base):
             (B + '    return @fmt(&b, "a}")\n}',
              'the format has a `}` without a `{`; write `}}` for a brace', 2, 21),
             (B + '    return @fmt(&b, "{q}", 1)\n}',
-             'bad hole `{q}` in the format: use `{}`, `{x}`, `{c}` or a width such as `{8}` or `{08x}`', 2, 21),
+             'bad hole `{q}` in the format: a hole is `{}`, and a function writes a value another way, as `utf8::write_hex{ n, _ }`', 2, 21),
             (B + '    return @fmt(&b, "{} {}", 1)\n}',
              'the format has 2 holes but 1 argument follows it', 2, 12),
             (B + '    return @fmt(&b, "{}")\n}',
              'the format has 1 hole but 0 arguments follow it', 2, 12),
             (B + '    return @fmt(&b, "x", 1, 2)\n}',
              'the format has 0 holes but 2 arguments follow it', 2, 12),
-            (B + '    return @fmt(&b, "{5c}", 65)\n}',
-             '`{5c}`: a width applies to numbers and text, not characters', 2, 29),
-            (B + '    let n: i32 = 1\n    return @fmt(&b, "{x}", n)\n}',
-             '`{x}` formats an unsigned integer, not i32', 3, 28),
-            (B + '    return @fmt(&b, "{5}", true)\n}',
-             '`{5}`: a width applies to integers and utf8::String, not bool', 2, 28),
             ('struct S { a: i32 }\n' + B + '    return @fmt(&b, "{}", S{ a = 1 })\n}',
              "@fmt has no writer of S to utf8::Builder(arena::Arena)", 3, 28),
-            (B + '    let n: i64 = 65\n    return @fmt(&b, "{c}", n)\n}',
-             'expected u32, got i64', 3, 28),
+            (B + '    let n: i64 = 65\n    return @fmt(&b, "{}", utf8::write_char{ c = n, _ })\n}',
+             'expected u32, got i64', 3, 49),
             ('fn wr { mut b: i32 } -> ! { }\n' + B + '    return @fmt(&b, "{}", wr)\n}',
              'expected *mut i32, got *mut utf8::Builder(arena::Arena)', 3, 17),
             ('struct S { f: i32 }\nfn f { o: ?S } {\n    let y = o.f\n}',
@@ -1186,8 +1180,8 @@ class Bodies(Base):
             # builtins
             'enum E: u8 { a, b }\nfn main {} {\n    let n: i64 = 300\n    let x = @as(f64, n)\n    let y = @trunc(u8, n)\n    let e = @as(E, 1)\n    let k = @as(u32, e)\n    let w = @wrap_add(y, @as(u8, 250))\n    let v = @wrap_sub(y, w)\n    let m = @wrap_mul(y, v)\n    let s = @size_of(i64) + @align_of(u32)\n    let mut arr: [4]u8 = [0; 4]\n    let sl = @slice(&arr[0], 2)\n    sl[0] = 1\n    let addr = @addr(&arr)\n    let bp = @cast(*u8, &arr)\n    _ = addr + s + @as(usize, m) + @as(usize, k) + @as(usize, bp.*)\n    _ = x\n}',
             'fn f { n: i32 } -> i32 {\n    if n < 0 { @panic("negative") }\n    if n > 100 { @panic() }\n    return n\n}\nfn main {} {\n    _ = f{ n = 1 }\n}',
-            # @fmt with widths, x, c and function holes
-            'struct D { y: u32 }\nfn w_d { mut b: utf8::Builder(arena::Arena), d: D } -> ! {\n    return @fmt(&b, "{04}", d.y)\n}\nfn main {} {\n    let mut mem: [256]u8\n    let mut heap = arena::new{ buf = mem[..] }\n    let mut b = utf8::builder{ realloc = arena::alloc, &heap }\n    let d = D{ y = 7 }\n    let name: utf8::String = "ab"\n    _ = @fmt(&b, "[{5}] {x} {08x} {c} {6} {} {} {{}}", 42, 255, 48879, 65, name, true, w_d{ d, _ })\n}',
+            # @fmt with padding, hex, characters and functions as writers in holes
+            'struct D { y: u32 }\nfn w_d { mut b: utf8::Builder(arena::Arena), d: D } -> ! {\n    return @fmt(&b, "{}", utf8::push_uint{ n = d.y, width = 4, zero = true, _ })\n}\nfn main {} {\n    let mut mem: [256]u8\n    let mut heap = arena::new{ buf = mem[..] }\n    let mut b = utf8::builder{ realloc = arena::alloc, &heap }\n    let d = D{ y = 7 }\n    let name: utf8::String = "ab"\n    _ = @fmt(&b, "[{}] {} {} {} {} {} {} {{}}", utf8::push_int{ n = 42, width = 5, zero = false, _ }, utf8::write_hex{ n = 255, _ }, utf8::push_hex{ n = 48879, width = 8, zero = true, _ }, utf8::write_char{ c = 65, _ }, utf8::push_padded{ s = name, width = 6, zero = false, _ }, true, w_d{ d, _ })\n}',
             # generic functions with inferred args
             'fn first(T) { a: T, b: T } -> T { return a }\nfn wrap(T) { v: T } -> ?T { return v }\nfn main {} {\n    let x: i64 = first{ a = 1, b = 2 }\n    let o = wrap{ v = true }\n    if o != null { _ = first{ a = o, b = false } }\n    _ = x\n}',
             # match through *mut U with &f binders
@@ -2735,7 +2729,7 @@ fn main { mut io: Io } {
             ('namespace w {\n    struct C { p: *u8 }\n    error bad{ n: i32, f: f32, t: utf8::String, b: bool, p: *u8 }\n    #convert\n'
              '    fn from_literal { s: strlit } -> !C {\n        return bad{ n = -3, f = 1.5, t = "text", b = true, p = s.bytes.ptr }\n    }\n}\n'
              'fn main {} { let c: w::C = "" }',
-             'string literal: w::bad{ n = -3, f = 1.5, t = text, b = true, p = _ }', 9, 28),
+             'string literal: w::bad{ n = -3, f = 1.5, t = _, b = true, p = _ }', 9, 28),
             # a result whose tag, set through an extern union, names no variant: an error, where
             # lowering once panicked for a literal without a value
             ('union Shape { dot, line{ n: usize } }\nextern union Raw { s: Shape, w: [2]u64 }\n#convert\n'
@@ -2903,7 +2897,7 @@ class Fmt(Base):
         self.fmt(r"""
     let name = utf8::of{ chars = "caf\xc3\xa9" }
     let small: u8 = 7
-    _ = @fmt(&b, "{} {} {} {} {} {}|{c}|{{}}|{}", -3, small, 1.5, true, name, @as(f32, 0.5), 'A', "lit")""",
+    _ = @fmt(&b, "{} {} {} {} {} {}|{}|{{}}|{}", -3, small, 1.5, true, name, @as(f32, 0.5), utf8::write_char{ c = 'A', _ }, "lit")""",
                  '-3 7 1.5 true caf\u00e9 0.5|A|{}|lit')
 
     def test_every_type(self):
@@ -2927,7 +2921,9 @@ class Fmt(Base):
     def test_widths_and_hex(self):
         self.fmt(r"""
     let name = utf8::of{ chars = "ab" }
-    _ = @fmt(&b, "[{5}][{05}][{05}][{x}][{08x}][{4}][{1}]", 42, 42, -42, 255, 48879, name, name)""",
+    _ = @fmt(&b, "[{}][{}][{}][{}][{}][{}][{}]", utf8::push_int{ n = 42, width = 5, zero = false, _ }, utf8::push_int{ n = 42, width = 5, zero = true, _ },
+        utf8::push_int{ n = -42, width = 5, zero = true, _ }, utf8::write_hex{ n = 255, _ }, utf8::push_hex{ n = 48879, width = 8, zero = true, _ },
+        utf8::push_padded{ s = name, width = 4, zero = false, _ }, utf8::push_padded{ s = name, width = 1, zero = false, _ })""",
                  '[   42][00042][-0042][ff][0000beef][  ab][ab]')
 
     def test_writer_function(self):
@@ -2937,11 +2933,12 @@ class Fmt(Base):
                  'due 2026-09-30, or 09/30/2026', extra="""
 struct Date { y: u32, m: u32, d: u32 }
 fn write_iso { mut b: utf8::Builder(arena::Arena), d: Date } -> ! {
-    return @fmt(&b, "{04}-{02}-{02}", d.y, d.m, d.d)
+    return @fmt(&b, "{}-{}-{}", utf8::push_uint{ n = d.y, width = 4, zero = true, _ }, two{ n = d.m, _ }, two{ n = d.d, _ })
 }
 fn write_us { mut out: utf8::Builder(arena::Arena), d: Date, sep: u8 } -> ! {
-    return @fmt(&out, "{02}{c}{02}{c}{}", d.m, sep, d.d, sep, d.y)
+    return @fmt(&out, "{}{}{}{}{}", two{ n = d.m, _ }, utf8::write_char{ c = sep, _ }, two{ n = d.d, _ }, utf8::write_char{ c = sep, _ }, d.y)
 }
+fn two { mut b: utf8::Builder(arena::Arena), n: u32 } -> ! { return utf8::push_uint{ &b, n, width = 2, zero = true } }
 """)
 
     def test_try_passes_out_of_memory_up(self):
@@ -3039,12 +3036,11 @@ fn main { mut io: Io } {
             ('_ = @fmt(&b, "{", 1)', 'the format has a `{` without a `}`'),
             ('_ = @fmt(&b, "}")', 'the format has a `}` without a `{`'),
             ('_ = @fmt(&b, "{y}", 1)', 'bad hole `{y}` in the format'),
-            ('let n: i32 = 1\n    _ = @fmt(&b, "{x}", n)', '`{x}` formats an unsigned integer, not i32'),
-            ('_ = @fmt(&b, "{4c}", 65)', '`{4c}`: a width applies to numbers and text'),
-            ('_ = @fmt(&b, "{4}", 1.5)', '`{4}`: a width applies to integers and utf8::String, not f64'),
+            ('_ = @fmt(&b, "{x}", 1)', 'bad hole `{x}` in the format: a hole is `{}`'),
             ('_ = @fmt(&b, "{}", [1, 2])', "@fmt has no writer of [2]i32 to utf8::Builder(arena::Arena)"),
             ('let s: []u8 = "x"\n    _ = @fmt(&b, "{}", s)', "@fmt has no writer of []u8 to utf8::Builder(arena::Arena)"),
-            ('let mut n: i32 = 1\n    _ = @fmt(&n, "x")','@fmt writes to a *mut utf8::Builder, got *mut i32'),
+            ('let mut n: i32 = 1\n    _ = @fmt(&n, "x")', '@fmt has no writer to i32: no `#write` fn it sees has a sink of that type'),
+            ('_ = @fmt(b, "x")', '@fmt writes to a `*mut` sink, got utf8::Builder(arena::Arena)'),
             ('let bs: [1]utf8::Builder(arena::Arena) = [b]\n    _ = @fmt(&bs[0], "x")',
              '`bs` is not a mutable place'),
             ('_ = @fmt(&b, "{}", w{ &b, _ })', '`b` overlaps a place held by `w{ &b, _ }`'),
@@ -3232,7 +3228,7 @@ fn pick { n: i32 } -> ! {
             ('    try! @fmt(&line, "{}", E::a)', '@fmt has no writer of E to out::Line: convert it with `@as`', 36, 28),
             ('    let n: ?i32 = 1\n    try! @fmt(&line, "{}", n)', '@fmt has no writer of ?i32 to out::Line: give it a value with `ifnull`', 37, 28),
             ('    let n: u8 = 1\n    try! @fmt(&line, "{}", n)', '@fmt has no writer of u8 to out::Line', 37, 28),
-            ('    try! @fmt(&line, "{x}", 1)', 'a format option writes to a *mut utf8::Builder only: give a function that writes the hole instead', 36, 29),
+            ('    try! @fmt(&line, "{x}", 1)', 'bad hole `{x}` in the format: a hole is `{}`, and a function writes a value another way, as `utf8::write_hex{ n, _ }`', 36, 22),
             ('    let l2 = line\n    try! @fmt(&l2, "x")', '`l2` is not a mutable place', 37, 16),
             ('    let p: *out::Line = &line\n    try! @fmt(p, "x")', '@fmt writes to a `*mut` sink, got *out::Line', 37, 15),
             ('    try! @fmt(&line, "{}", w{ l = &line, _ })', '`line` overlaps a place held by `w{ l = &line, _ }`', 36, 10),
