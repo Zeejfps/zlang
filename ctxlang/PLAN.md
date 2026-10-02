@@ -45,19 +45,19 @@ interpreter ctxc replaced, is at `8436f4d`.
      `a is x and b is y` needs no parentheses.
    - Let-else sees through a `?U` the same way: `let decl{ i } = found else { return NONE }`,
      whose `else` takes null too.
-   - On an enum it also answers part of 1.3: `map::get{ m = c.access, key } is field`.
-3. **Present and equal** (FRICTION #8). `==` and `!=` between a `?T` and a `T`: true when present
-   and equal. For an enum `T`, 1.2's `is` already does this; revisit once it lands.
-4. **Errors' remaining gaps.**
+   - On an enum it also compares an optional with a value: `map::get{ m = c.access, key } is field`.
+3. **Errors' remaining gaps.**
    - A function whose result's set is inferred can't be a value of a function type, whose `!T`
      holds any error: that needs the thunk that widens a function value to also renumber its
      result.
-   - `main` can't return `!T`.
    - Matching through a pointer to a `!T`.
 
 *Later, if wanted:* if patterns nest (a payload's fields, literal values), `_` comes in as a
 wildcard inside a pattern (`os{ code = _ }`), and `else` stays the whole-arm default. Optional
-chaining (`a?.b`) needs no lambdas, but nothing in FRICTION.md asks for it yet.
+chaining (`a?.b`) needs no lambdas, but nothing in FRICTION.md asks for it yet. `==` between a `?T`
+and a `T` (FRICTION #8) would follow Swift: `T` widens to `?T`, two nulls are equal, and `!=` is
+`==`'s negation, so `null != x` is true. `is` covers enums, and only three integer comparisons
+in ctxc would use it; one of them (`d != null and d != NONE`) shows how `!=` would mislead.
 
 ### 2. C interop
 
@@ -117,6 +117,14 @@ generator can't observe its own output.
 
 1. **Generated files and cross-compiling.** `build::gen_file` writes a file under `build/gen/`
    that joins the program's file list. `build::os` is the host's for now.
+   - **`build` and `main` return `!` or `!i32`.** Writing files and checking sources can fail, and
+     a build program should pass that up with `try`, as Zig's `build.zig` does, not panic with
+     `try!` or handle every failure where it happens. §19 gives `build` main's rules, so `main`
+     gains it too, for small programs, tests and examples (Rust, Zig and Swift allow it). `ok`
+     exits with its value, or 0 for a bare `!`. An error prints `error: ` and the error as `@fmt`
+     prints it (`fs::other{ code = 5 }`) to stderr, and exits with 1. Printing the payload needs a
+     small fixed buffer; a first version may print only the name, as `try!` does. Programs that
+     report with context and pick their exit codes, as ctxc and the examples do, keep `-> i32`.
 2. **Reflection: `build::check`.** Runs the front end on an executable's sources and gives the
    build program the checked declarations as data: structs, unions, fields, layouts and
    attributes. That data is the `Analysis`, read-only trees plus side tables, so no separate

@@ -46,7 +46,8 @@ errors and capability-variable work (`e19f1fe`).
   Access::field` is an error ("cannot compare ?A with A"), so it takes a local and
   `x != null and x == Access::field` (`check::access_is`). With #7, a `let mut` optional needs a
   copy even for that. `==` between `?T` and `T` meaning "is some and equal" would do. *Planned:*
-  PLAN.md stage 1.
+  PLAN.md 1.2's `is` covers an enum (`x is field`); `?T == T` itself is under stage 1's
+  *Later*, since only three integer comparisons in ctxc would use it.
 - **9. An inferred slice type is too mutable.** `let mut bs = list::items{ list = xs }` gives `bs`
   the type `[]mut T`, so a later `bs = f{}` with a `[]T` result is an error. The same goes for an
   empty slice: `let mut fields = slice::empty(types::Field){}` can't later take a
