@@ -49,9 +49,11 @@ fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
         let seen = map::at{ m = counts, key = word }            // ?*i64
         if seen != null {
             seen.* = seen.* + 1
-        } else if not map::put{ m = &counts, key = word, value = 1 } {
-            io::eprintln{ &io, s = "out of memory" }
-            return 1
+        } else {
+            map::put{ m = &counts, key = word, value = 1 } iferr {
+                io::eprintln{ &io, s = "out of memory" }
+                return 1
+            }
         }
     }
 
@@ -138,7 +140,7 @@ fn report { mut io: Io, path: []u8, error: error } {          // `error`: any er
         fs::not_found         => { ": no such file" }
         fs::permission_denied => { ": permission denied" }
         fs::is_directory      => { ": is a directory" }
-        fs::out_of_memory     => { ": too large for the heap" }
+        alloc::out_of_memory  => { ": too large for the heap" }
         else                  => { ": cannot read" }
     }
     io::eprintln{ &io, s = why }

@@ -7,13 +7,13 @@ Items are numbered by how much fixing them would pay off, most first: how often 
 today, and whether they cost lines or correctness. Counts are from ctxc's source as of the
 errors and capability-variable work (`e19f1fe`).
 
-- **1. Allocation failure everywhere.** Each `list::push` or `map::put` returns `bool`, so it
-  needs `if not ... { @panic(...) }`: about 115 such lines in ctxc, 100 of them in `check.ctx`
-  and `lower.ctx`, and every module grows its own `add`/`push` wrapper (diag, drive, ir_read,
-  parser, types, source, lexer, emit_c, and four in `check.ctx`). Errors (spec §8) now give a
-  cheap fix: `list::push` and the rest return `!` with an `alloc::out_of_memory` error, so a
-  caller that can fail writes `try`, and one that can't writes `iferr { @panic(...) }`. An arena
-  that can't fail, or a std `must` helper, would still help code that wants neither.
+- **1. Allocation failure everywhere.** `list::push`, `map::put` and `alloc::new` now fail with
+  `alloc::out_of_memory` (spec §8, Errors), so the type says they can fail and a caller that
+  returns `!` writes `try`. ctxc's checker and lowerer don't, so each of about 145 sites
+  (118 in `check.ctx` and `lower.ctx`) is `... iferr { @panic(...) }`, no shorter than the
+  `if not` it replaced, and every module keeps its own `add`/`push` wrapper. An arena that can't
+  fail, or a std `must` helper, would help code that wants neither. `utf8::Builder` and `@fmt`
+  still return `bool` (#2).
 - **2. A diagnostic takes three lines.** `let mut b = message{ c }`, then
   `pushed{ ok = @fmt(&b, ...) }`, then `error{ &c, at, msg = utf8::view{ b } }`. This was 24
   times in `check.ctx` when first noted; it is now 188, plus 12 in `lower.ctx` and `parser.ctx`.

@@ -1,7 +1,7 @@
 // std: list. A growable list, generic over the element type T and the allocator state S.
 //
 //   let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
-//   if not list::push{ list = &xs, item = 42 } { @panic("out of memory") }
+//   try list::push{ list = &xs, item = 42 }        // fails with alloc::out_of_memory
 //
 // A list keeps a pointer to its allocator's state, so it always allocates from the same state,
 // and it must not outlive it.
@@ -18,29 +18,23 @@ namespace list {
         return List{ items = slice::empty(T){}, len = 0, realloc, heap }
     }
 
-    // Ensures room for `extra` more items. Returns false on allocation failure.
-    fn reserve(T, S) { mut list: List(T, S), extra: usize } -> bool {
+    // Ensures room for `extra` more items. Fails with alloc::out_of_memory, leaving list as it was.
+    fn reserve(T, S) { mut list: List(T, S), extra: usize } -> ! {
         let need = list.len + extra
-        if need <= list.items.len { return true }
+        if need <= list.items.len { return }
 
         let mut cap = list.items.len
         if cap == 0 { cap = 4 }
         while cap < need { cap = cap * 2 }
 
-        let items = alloc::resize{ realloc = list.realloc, heap = list.heap, mem = list.items, count = cap }
-        match items {
-            null          => { return false }
-            some{ value } => { list.items = value }
-        }
-        return true
+        list.items = try alloc::resize{ realloc = list.realloc, heap = list.heap, mem = list.items, count = cap }
     }
 
-    // Returns false on allocation failure.
-    fn push(T, S) { mut list: List(T, S), item: T } -> bool {
-        if not reserve{ extra = 1, .. } { return false }   // `..` forwards &list
+    // Fails with alloc::out_of_memory, leaving list as it was.
+    fn push(T, S) { mut list: List(T, S), item: T } -> ! {
+        try reserve{ extra = 1, .. }   // `..` forwards &list
         list.items[list.len] = item
         list.len = list.len + 1
-        return true
     }
 
     fn pop(T, S) { mut list: List(T, S) } -> ?T {

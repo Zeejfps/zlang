@@ -76,7 +76,7 @@ namespace parser {
         if not eat{ &p, c = ']' } {
             while true {
                 let value = try parse_value{ .. }
-                if not list::push{ list = &items, item = value } {
+                list::push{ list = &items, item = value } iferr {
                     return fail{ at = p.pos, problem = Problem::out_of_memory }
                 }
                 skip_space{ &p }
@@ -101,7 +101,7 @@ namespace parser {
                 skip_space{ &p }
                 if not eat{ &p, c = ':' } { return fail{ at = p.pos, problem = Problem::expected_colon } }
                 let value = try parse_value{ .. }
-                if not list::push{ list = &members, item = json::Member{ key, value } } {
+                list::push{ list = &members, item = json::Member{ key, value } } iferr {
                     return fail{ at = p.pos, problem = Problem::out_of_memory }
                 }
                 skip_space{ &p }

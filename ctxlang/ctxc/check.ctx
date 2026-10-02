@@ -488,7 +488,7 @@ namespace check {
                 }
                 space{ name, decls = inner } => {
                     let child = space{ &c, name = name.text, parent = ns }
-                    if not map::put{ m = &c.space_of, key = key{ file, id = x.id }, value = child } { @panic("check: out of memory") }
+                    map::put{ m = &c.space_of, key = key{ file, id = x.id }, value = child } iferr { @panic("check: out of memory") }
                     add_name{ &c, ns, values = false, name, e = Entry::space{ ns = child }, at = x.span }
                     collect{ &c, file, decls = inner, ns = child }
                 }
@@ -509,9 +509,8 @@ namespace check {
             ret = types::VOID, ty = types::ERROR, values = slice::empty(i64){}, symbol = "",
             callback = false, includes = slice::empty(u32){}, vars = slice::empty(CVar){},
         }
-        if not list::push{ list = &c.decls, item } or not map::put{ m = &c.decl_of, key = key{ file, id = x.id }, value = d } {
-            @panic("check: out of memory")
-        }
+        list::push{ list = &c.decls, item } iferr { @panic("check: out of memory") }
+        map::put{ m = &c.decl_of, key = key{ file, id = x.id }, value = d } iferr { @panic("check: out of memory") }
         return d
     }
 
@@ -523,7 +522,7 @@ namespace check {
             paths = map::new([]u8, Entry){ realloc = arena::alloc, heap = c.heap, hash = map::hash_bytes, eq = slice::eq_bytes },
             values = map::new([]u8, Entry){ realloc = arena::alloc, heap = c.heap, hash = map::hash_bytes, eq = slice::eq_bytes },
         }
-        if not list::push{ list = &c.spaces, item } { @panic("check: out of memory") }
+        list::push{ list = &c.spaces, item } iferr { @panic("check: out of memory") }
         return ns
     }
 
@@ -551,8 +550,8 @@ namespace check {
 
     fn put_name { mut c: Checker, ns: u32, values: bool, name: []u8, e: Entry } {
         let sp = list::at{ list = c.spaces, i = ns }
-        let ok = if values { map::put{ m = &sp.values, key = name, value = e } } else { map::put{ m = &sp.paths, key = name, value = e } }
-        if not ok { @panic("check: out of memory") }
+        let into = if values { &sp.values } else { &sp.paths }
+        map::put{ m = into, key = name, value = e } iferr { @panic("check: out of memory") }
     }
 
     fn generic_params { mut c: Checker, xs: list::List(u32, Heap) } {
@@ -763,7 +762,7 @@ namespace check {
         }
         let came = cap_member{ out, from, vars = list::items{ list = vars }, vfrom = list::items{ list = vfrom }, name = f.name.text }
         if came != null and f.name.text.len > 0 { cap_clash{ &c, x, name = f.name, at = f.span, came } }
-        if not list::push{ list = &vars, item = CVar{ name = f.name.text, ty = t, owner = d, symbol = f.name.text } } { @panic("check: out of memory") }
+        list::push{ list = &vars, item = CVar{ name = f.name.text, ty = t, owner = d, symbol = f.name.text } } iferr { @panic("check: out of memory") }
         push{ xs = &vfrom, n = NONE }
     }
 
@@ -850,7 +849,7 @@ namespace check {
                     add_field{ xs = &out, f = y.fields[f] }
                     push{ xs = &from, n = i }
                 } else {
-                    if not list::push{ list = &vars, item = y.vars[f - y.fields.len] } { @panic("check: out of memory") }
+                    list::push{ list = &vars, item = y.vars[f - y.fields.len] } iferr { @panic("check: out of memory") }
                     push{ xs = &vfrom, n = i }
                 }
             } else if not clash and name.len > 0 {
@@ -1569,7 +1568,7 @@ namespace check {
 
     fn rtype { mut c: Checker, te: syntax::TypeExpr, sc: Scope, allow_bound: bool } -> Id {
         let t = resolve{ &c, te, sc, allow_bound }
-        if not map::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = t } { @panic("check: out of memory") }
+        map::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = t } iferr { @panic("check: out of memory") }
         return t
     }
 
@@ -1629,7 +1628,7 @@ namespace check {
         let fail{ elem } = te.k else { return rtype{ &c, te, sc, allow_bound = false } }
         let ok = if elem == null { types::VOID } else { rtype{ &c, te = elem.*, sc, allow_bound = false } }
         let t = types::res{ s = &c.ty, ok, errs = types::errs{ s = &c.ty, owner, one = NONE } }
-        if not map::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = t } { @panic("check: out of memory") }
+        map::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = t } iferr { @panic("check: out of memory") }
         return t
     }
 
@@ -1999,7 +1998,7 @@ namespace check {
     // Records what name n refers to.
     fn use { mut c: Checker, n: syntax::Name, r: Ref } {
         if n.id == NONE { return }
-        if not map::put{ m = &c.uses, key = key{ file = n.span.file, id = n.id }, value = r } { @panic("check: out of memory") }
+        map::put{ m = &c.uses, key = key{ file = n.span.file, id = n.id }, value = r } iferr { @panic("check: out of memory") }
     }
 
     fn refer { mut c: Checker, n: syntax::Name, e: Entry } {
@@ -2146,7 +2145,7 @@ namespace check {
             func{ params, body } => {
                 begin_body{ &c, sc = own_scope{ &c, d }, ret = x.ret }
                 c.fn_decl = d
-                if not map::put{ m = &c.first_var, key = d, value = @as(u32, c.vars.len) } { @panic("check: out of memory") }
+                map::put{ m = &c.first_var, key = d, value = @as(u32, c.vars.len) } iferr { @panic("check: out of memory") }
                 let mut i: usize = 0
                 while i < x.fields.len and i < params.len {
                     let f = x.fields[i]
@@ -2298,7 +2297,7 @@ namespace check {
 
     // A generic argument to infer by the end of the body.
     fn generic_var { mut c: Checker, v: Id, param: syntax::Name, owner: syntax::Name, at: source::Span } {
-        if not list::push{ list = &c.gvars, item = GVar{ v, param = param.text, owner = owner.text, at } } { @panic("check: out of memory") }
+        list::push{ list = &c.gvars, item = GVar{ v, param = param.text, owner = owner.text, at } } iferr { @panic("check: out of memory") }
     }
 
     // §14: a const's initializer is computable at compile time.
@@ -2389,7 +2388,7 @@ namespace check {
     struct Num { negative: bool, magnitude: u64 }
 
     fn put_bool { mut m: map::Map(u32, bool, Heap), k: u32 } {
-        if not map::put{ m = &m, key = k, value = true } { @panic("check: out of memory") }
+        map::put{ m = &m, key = k, value = true } iferr { @panic("check: out of memory") }
     }
 
     // The value of const d, computed the first time it is needed; null if its initializer has
@@ -2417,7 +2416,7 @@ namespace check {
             _ = map::remove{ m = &c.foldable, key = d }
             return null
         }
-        if not map::put{ m = &c.values, key = d, value = got } { @panic("check: out of memory") }
+        map::put{ m = &c.values, key = d, value = got } iferr { @panic("check: out of memory") }
         return got
     }
 
@@ -2465,7 +2464,7 @@ namespace check {
     }
 
     fn add_val { mut xs: list::List(Val, Heap), v: Val } {
-        if not list::push{ list = &xs, item = v } { @panic("check: out of memory") }
+        list::push{ list = &xs, item = v } iferr { @panic("check: out of memory") }
     }
 
     fn fold_node { mut c: Checker, e: syntax::Expr } -> ?Val {
@@ -2529,7 +2528,7 @@ namespace check {
             repeat{ elem } => {
                 let v = fold_to{ &c, e = elem.*, t = elem_type{ c, t } }
                 if v == null { return null }
-                let p = alloc::new{ realloc = arena::alloc, heap = c.heap, value = v } ifnull { @panic("check: out of memory") }
+                let p = alloc::new{ realloc = arena::alloc, heap = c.heap, value = v } iferr { @panic("check: out of memory") }
                 return Val::repeat{ ty = t, elem = p }
             }
             builtin{ name, targ } => {
@@ -2818,7 +2817,7 @@ namespace check {
             derived = new_derived{ &c, xs = slice::empty(u32){} },
             held = new_held{ &c, xs = slice::empty(Place){} },
         }
-        if not list::push{ list = &c.vars, item } { @panic("check: out of memory") }
+        list::push{ list = &c.vars, item } iferr { @panic("check: out of memory") }
         return v
     }
 
@@ -2845,11 +2844,11 @@ namespace check {
     }
 
     fn add_mark { mut c: Checker, n: usize } {
-        if not list::push{ list = &c.marks, item = n } { @panic("check: out of memory") }
+        list::push{ list = &c.marks, item = n } iferr { @panic("check: out of memory") }
     }
 
     fn add_binding { mut c: Checker, b: Binding } {
-        if not list::push{ list = &c.scope, item = b } { @panic("check: out of memory") }
+        list::push{ list = &c.scope, item = b } iferr { @panic("check: out of memory") }
     }
 
     // Puts local var in the innermost scope as `name`, over any earlier one there.
@@ -2946,7 +2945,7 @@ namespace check {
     }
 
     fn put_local { mut c: Checker, key: u64, v: u32 } {
-        if not map::put{ m = &c.local_of, key, value = v } { @panic("check: out of memory") }
+        map::put{ m = &c.local_of, key, value = v } iferr { @panic("check: out of memory") }
     }
 
     fn stmt_key { s: syntax::Stmt } -> u64 {
@@ -3333,8 +3332,8 @@ namespace check {
             }
         }
         let l = list::at{ list = c.loops, i = target }
-        let ok = if slice::eq_bytes{ a = word.bytes, b = "break" } { list::push{ list = &l.breaks, item = save{ c } } } else { list::push{ list = &l.conts, item = save{ c } } }
-        if not ok { @panic("check: out of memory") }
+        let jumps = if slice::eq_bytes{ a = word.bytes, b = "break" } { &l.breaks } else { &l.conts }
+        list::push{ list = jumps, item = save{ c } } iferr { @panic("check: out of memory") }
         c.dead = true
     }
 
@@ -3345,11 +3344,11 @@ namespace check {
         if known == null {
             c.label_ids = c.label_ids + 1
             id = c.label_ids
-            if not map::put{ m = &c.loop_ids, key = loop_key, value = id } { @panic("check: out of memory") }
+            map::put{ m = &c.loop_ids, key = loop_key, value = id } iferr { @panic("check: out of memory") }
         } else {
             id = known
         }
-        if not map::put{ m = &c.jump_ids, key = jump_key, value = id } { @panic("check: out of memory") }
+        map::put{ m = &c.jump_ids, key = jump_key, value = id } iferr { @panic("check: out of memory") }
     }
 
     fn while_stmt { mut c: Checker, label: ?syntax::Name, cond: syntax::Expr, body: syntax::Block, at: source::Span, k: u64 } {
@@ -3377,7 +3376,7 @@ namespace check {
             breaks = list::new(State){ realloc = arena::alloc, heap = c.heap },
             conts = list::new(State){ realloc = arena::alloc, heap = c.heap },
         }
-        if not list::push{ list = &c.loops, item = lp } { @panic("check: out of memory") }
+        list::push{ list = &c.loops, item = lp } iferr { @panic("check: out of memory") }
         c.loop_depth = c.loop_depth + 1
         open{ &c }
         assume{ &c, facts = f.yes, after_if = false }
@@ -3461,11 +3460,11 @@ namespace check {
     }
 
     fn add_state { mut xs: list::List(State, Heap), s: State } {
-        if not list::push{ list = &xs, item = s } { @panic("check: out of memory") }
+        list::push{ list = &xs, item = s } iferr { @panic("check: out of memory") }
     }
 
     fn add_branch { mut xs: list::List(Branch, Heap), b: Branch } {
-        if not list::push{ list = &xs, item = b } { @panic("check: out of memory") }
+        list::push{ list = &xs, item = b } iferr { @panic("check: out of memory") }
     }
 
     // A block of an `if` or `match`, which starts with vars declared or facts assumed.
@@ -3574,7 +3573,7 @@ namespace check {
     }
 
     fn put_type { mut c: Checker, k: u64, t: Id } {
-        if not map::put{ m = &c.expr_ty, key = k, value = t } { @panic("check: out of memory") }
+        map::put{ m = &c.expr_ty, key = k, value = t } iferr { @panic("check: out of memory") }
     }
 
     // The type of an `if` or `match` expression, from its branches: with an expected type that
@@ -3958,7 +3957,7 @@ namespace check {
         let mut used = list::new(bool){ realloc = arena::alloc, heap = c.heap }
         let mut i: usize = 0
         while i < mine.len {
-            if not list::push{ list = &used, item = false } { @panic("check: out of memory") }
+            list::push{ list = &used, item = false } iferr { @panic("check: out of memory") }
             i = i + 1
         }
         let flags = list::items{ list = used }
@@ -4166,7 +4165,7 @@ namespace check {
     }
 
     fn add_fact { mut xs: list::List(Fact, Heap), f: Fact } {
-        if not list::push{ list = &xs, item = f } { @panic("check: out of memory") }
+        list::push{ list = &xs, item = f } iferr { @panic("check: out of memory") }
     }
 
     fn all_fields { steps: [][]u8 } -> bool {
@@ -4297,7 +4296,7 @@ namespace check {
         let mut i: usize = 0
         while i <= steps.len {
             let s = if i < steps.len { steps[i] } else { step }
-            if not list::push{ list = &out, item = s } { @panic("check: out of memory") }
+            list::push{ list = &out, item = s } iferr { @panic("check: out of memory") }
             i = i + 1
         }
         return list::items{ list = out }
@@ -4325,7 +4324,7 @@ namespace check {
     }
 
     fn put_access { mut c: Checker, e: syntax::Expr, a: Access } {
-        if not map::put{ m = &c.access, key = expr_key{ e }, value = a } { @panic("check: out of memory") }
+        map::put{ m = &c.access, key = expr_key{ e }, value = a } iferr { @panic("check: out of memory") }
     }
 
     // ---- places (§11, Places)
@@ -4444,13 +4443,13 @@ namespace check {
 
     fn new_derived { mut c: Checker, xs: []u32 } -> u32 {
         let i = @as(u32, c.derived.len)
-        if not list::push{ list = &c.derived, item = xs } { @panic("check: out of memory") }
+        list::push{ list = &c.derived, item = xs } iferr { @panic("check: out of memory") }
         return i
     }
 
     fn new_held { mut c: Checker, xs: []Place } -> u32 {
         let i = @as(u32, c.held.len)
-        if not list::push{ list = &c.held, item = xs } { @panic("check: out of memory") }
+        list::push{ list = &c.held, item = xs } iferr { @panic("check: out of memory") }
         return i
     }
 
@@ -4494,7 +4493,7 @@ namespace check {
     }
 
     fn add_place { mut xs: list::List(Place, Heap), p: Place } {
-        if not list::push{ list = &xs, item = p } { @panic("check: out of memory") }
+        list::push{ list = &xs, item = p } iferr { @panic("check: out of memory") }
     }
 
     // Whether a value of type t can hold a pointer: only such values carry where they point.
@@ -4580,7 +4579,7 @@ namespace check {
             return
         }
         let report = c.diags.errors == c.body_errors + c.flow_errors        // as flow_error decides
-        if not list::push{ list = &c.escapes, item = Escape{ t, at, msg, report } } { @panic("check: out of memory") }
+        list::push{ list = &c.escapes, item = Escape{ t, at, msg, report } } iferr { @panic("check: out of memory") }
     }
 
     // The escape errors that waited on the sets: each is real if its value's type holds a pointer
@@ -5069,7 +5068,7 @@ namespace check {
     }
 
     fn add_ref { mut xs: list::List(HeldRef, Heap), r: HeldRef } {
-        if not list::push{ list = &xs, item = r } { @panic("check: out of memory") }
+        list::push{ list = &xs, item = r } iferr { @panic("check: out of memory") }
     }
 
     fn held_refs { mut xs: list::List(HeldRef, Heap), c: Checker, places: []Place, holder: []u8 } {
@@ -5315,7 +5314,7 @@ namespace check {
     }
 
     fn set_type { mut c: Checker, e: syntax::Expr, t: Id } {
-        if not map::put{ m = &c.expr_ty, key = expr_key{ e }, value = t } { @panic("check: out of memory") }
+        map::put{ m = &c.expr_ty, key = expr_key{ e }, value = t } iferr { @panic("check: out of memory") }
     }
 
     // Checks e, of type exp if it has an expected type (types::NO_TYPE otherwise), and records
@@ -5386,7 +5385,7 @@ namespace check {
         } else if fo != io {
             g.subs = set_add{ c, xs = f.subs, n = fo }
         }
-        if not map::put{ m = &c.flows, key = io, value = g } { @panic("check: out of memory") }
+        map::put{ m = &c.flows, key = io, value = g } iferr { @panic("check: out of memory") }
         return true
     }
 
@@ -5413,7 +5412,7 @@ namespace check {
     }
 
     fn put_conv_key { mut c: Checker, k: u64, conv: Conv } {
-        if not map::put{ m = &c.convs, key = k, value = conv } { @panic("check: out of memory") }
+        map::put{ m = &c.convs, key = k, value = conv } iferr { @panic("check: out of memory") }
     }
 
     // A conversion as recorded, for a value that has no node.
@@ -5797,7 +5796,7 @@ namespace check {
     }
 
     fn add_lit { mut c: Checker, e: syntax::Expr } {
-        if not list::push{ list = &c.lits, item = e } { @panic("check: out of memory") }
+        list::push{ list = &c.lits, item = e } iferr { @panic("check: out of memory") }
     }
 
     fn is_int { c: Checker, t: Id } -> bool {
@@ -5997,7 +5996,7 @@ namespace check {
     }
 
     fn put_ref { mut c: Checker, e: syntax::Expr, r: PathRef } {
-        if not map::put{ m = &c.refs, key = expr_key{ e }, value = r } { @panic("check: out of memory") }
+        map::put{ m = &c.refs, key = expr_key{ e }, value = r } iferr { @panic("check: out of memory") }
     }
 
     fn resolve_segs { mut c: Checker, segs: []syntax::Seg, call: bool } -> ?PathRef {
@@ -6121,7 +6120,7 @@ namespace check {
         let mut out = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
         let mut i: usize = 0
         while i < vs.len {
-            if not list::push{ list = &out, item = vs[i].name } { @panic("check: out of memory") }
+            list::push{ list = &out, item = vs[i].name } iferr { @panic("check: out of memory") }
             i = i + 1
         }
         return list::items{ list = out }
@@ -6133,7 +6132,7 @@ namespace check {
             enumeration{ variants } => {
                 let mut i: usize = 0
                 while i < variants.len {
-                    if not list::push{ list = &out, item = variants[i].name.text } { @panic("check: out of memory") }
+                    list::push{ list = &out, item = variants[i].name.text } iferr { @panic("check: out of memory") }
                     i = i + 1
                 }
             }
@@ -6254,7 +6253,7 @@ namespace check {
     }
 
     fn set_literal { mut c: Checker, e: syntax::Expr, is: bool } {
-        if not map::put{ m = &c.literal, key = expr_key{ e }, value = is } { @panic("check: out of memory") }
+        map::put{ m = &c.literal, key = expr_key{ e }, value = is } iferr { @panic("check: out of memory") }
     }
 
     // The fields supplied in braces must exist and be supplied once. `what` names the callee.
@@ -6301,7 +6300,7 @@ namespace check {
     }
 
     fn spreads_checked { mut c: Checker, e: syntax::Expr } {
-        if not map::put{ m = &c.spreads, key = expr_key{ e }, value = true } { @panic("check: out of memory") }
+        map::put{ m = &c.spreads, key = expr_key{ e }, value = true } iferr { @panic("check: out of memory") }
     }
 
     fn given { items: []syntax::Item, name: []u8 } -> bool {
@@ -6367,8 +6366,10 @@ namespace check {
                         let mut m = message{ c }
                         pushed{ ok = @fmt(&m, "`..` cannot supply `{}`: no local or context field named `{}`", str{ s = f.name }, str{ s = f.name }) }
                         error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
-                    } else if not list::push{ list = &fwd, item = forwarded{ &c, f, v, at = expr_at{ e } } } {
-                        @panic("check: out of memory")
+                    } else {
+                        list::push{ list = &fwd, item = forwarded{ &c, f, v, at = expr_at{ e } } } iferr {
+                            @panic("check: out of memory")
+                        }
                     }
                 } else {
                     add_field{ xs = &missing, f }
@@ -6377,7 +6378,7 @@ namespace check {
             i = i + 1
         }
         if fwd.len > 0 {
-            if not map::put{ m = &c.forwards, key = expr_key{ e }, value = list::items{ list = fwd } } { @panic("check: out of memory") }
+            map::put{ m = &c.forwards, key = expr_key{ e }, value = list::items{ list = fwd } } iferr { @panic("check: out of memory") }
         }
         let gone = list::items{ list = missing }
         if gone.len > 0 and not bind and not forward {
@@ -6387,7 +6388,7 @@ namespace check {
         }
         let refs = check_exclusive{ &c, e, items, fields }
         if bind {
-            if not map::put{ m = &c.holds, key = expr_key{ e }, value = refs } { @panic("check: out of memory") }
+            map::put{ m = &c.holds, key = expr_key{ e }, value = refs } iferr { @panic("check: out of memory") }
             return types::func{ s = &c.ty, fields = gone, ret, bound = true, external = false }
         }
         return ret
@@ -6854,7 +6855,7 @@ namespace check {
                 // A narrowed field path (§8): the expression is the ?T field's payload.
                 let nt = narrowed_path{ c, e }
                 if nt != types::NO_TYPE {
-                    if not map::put{ m = &c.narrowed, key = expr_key{ e }, value = ft } { @panic("check: out of memory") }
+                    map::put{ m = &c.narrowed, key = expr_key{ e }, value = ft } iferr { @panic("check: out of memory") }
                     return nt
                 }
                 return ft
@@ -6994,7 +6995,7 @@ namespace check {
             let infer = match te.k { path{ segs } => { is_infer{ segs } } else => { false } }
             if infer and typed_arg {
                 tt = expected_targ{ &c, name = n, exp, at = te.span }
-                if not map::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = tt } { @panic("check: out of memory") }
+                map::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = tt } iferr { @panic("check: out of memory") }
             } else {
                 tt = rtype{ &c, te, sc = c.sc, allow_bound = false }
             }
@@ -7187,9 +7188,8 @@ namespace check {
             i = i + 1
         }
         if ok and ps != null {
-            if not map::put{ m = &c.pieces, key = expr_key{ e }, value = ps } or not list::push{ list = &c.fmts, item = e } {
-                @panic("check: out of memory")
-            }
+            map::put{ m = &c.pieces, key = expr_key{ e }, value = ps } iferr { @panic("check: out of memory") }
+            list::push{ list = &c.fmts, item = e } iferr { @panic("check: out of memory") }
         }
         return types::BOOL
     }
@@ -7291,11 +7291,11 @@ namespace check {
     }
 
     fn push_byte { mut xs: list::List(u8, Heap), n: u8 } {
-        if not list::push{ list = &xs, item = n } { @panic("check: out of memory") }
+        list::push{ list = &xs, item = n } iferr { @panic("check: out of memory") }
     }
 
     fn add_piece { mut xs: list::List(Piece, Heap), p: Piece } {
-        if not list::push{ list = &xs, item = p } { @panic("check: out of memory") }
+        list::push{ list = &xs, item = p } iferr { @panic("check: out of memory") }
     }
 
     fn fmt_args { e: syntax::Expr } -> []syntax::Expr {
@@ -7683,10 +7683,10 @@ namespace check {
                             error{ &c, at = p.span, msg = utf8::view{ b } }
                         } else {
                             push{ xs = &listed, n = d }
-                            if not list::push{ list = &spans, item = p.span } { @panic("check: out of memory") }
+                            list::push{ list = &spans, item = p.span } iferr { @panic("check: out of memory") }
                         }
                         fields = fault_fields{ c, d }
-                        if not map::put{ m = &c.pat_errs, key = name_key{ n = p.variant }, value = d } { @panic("check: out of memory") }
+                        map::put{ m = &c.pat_errs, key = name_key{ n = p.variant }, value = d } iferr { @panic("check: out of memory") }
                     }
                 }
                 let bv = if skip { no_vars{} } else { pattern_vars{ &c, variant = word, known, fields, binders = p.binders, through = false, ptr_mut = false, derived = scrut_derived, at = p.span } }
@@ -7723,7 +7723,7 @@ namespace check {
                 at, errs, listed = list::items{ list = listed }, spans = list::items{ list = spans },
                 rest = if has_else or err_seen { rest } else { null }, rest_word,
             }
-            if not list::push{ list = &c.pending, item = p } { @panic("check: out of memory") }
+            list::push{ list = &c.pending, item = p } iferr { @panic("check: out of memory") }
         }
         restore{ &c, s = merge{ c, xs = list::items{ list = results } } }
         if bare { return types::VOID }
@@ -7742,7 +7742,7 @@ namespace check {
             let d = fs[i]
             let f = map::get{ m = c.flows, key = d }
             if f != null {
-                if not map::put{ m = &c.sets, key = d, value = f.atoms } { @panic("check: out of memory") }
+                map::put{ m = &c.sets, key = d, value = f.atoms } iferr { @panic("check: out of memory") }
                 if f.any { put_bool{ m = &any, k = d } }
             }
             i = i + 1
@@ -7772,7 +7772,7 @@ namespace check {
                         }
                         k = k + 1
                     }
-                    if not map::put{ m = &c.sets, key = d, value = cur } { @panic("check: out of memory") }
+                    map::put{ m = &c.sets, key = d, value = cur } iferr { @panic("check: out of memory") }
                 }
                 i = i + 1
             }
@@ -7781,7 +7781,7 @@ namespace check {
         while i < fs.len {
             let d = fs[i]
             let set = if map::has{ m = any, key = d } { list::items{ list = c.faults } } else { map::get{ m = c.sets, key = d } ifnull { no_vars{} } }
-            if not map::put{ m = &c.sets, key = d, value = sorted_ids{ c, xs = set } } { @panic("check: out of memory") }
+            map::put{ m = &c.sets, key = d, value = sorted_ids{ c, xs = set } } iferr { @panic("check: out of memory") }
             i = i + 1
         }
     }
@@ -7959,11 +7959,11 @@ namespace check {
         let known = map::get{ m = c.layouts, key = t }
         if known != null { return known }
         if map::has{ m = c.busy, key = t } { return null }
-        if not map::put{ m = &c.busy, key = t, value = true } { @panic("check: out of memory") }
+        map::put{ m = &c.busy, key = t, value = true } iferr { @panic("check: out of memory") }
         let lay = compute{ &c, t }
         _ = map::remove{ m = &c.busy, key = t }
         if lay != null {
-            if not map::put{ m = &c.layouts, key = t, value = lay } { @panic("check: out of memory") }
+            map::put{ m = &c.layouts, key = t, value = lay } iferr { @panic("check: out of memory") }
         }
         return lay
     }
@@ -8078,7 +8078,7 @@ namespace check {
                 }
                 if off > psize { psize = off }
             }
-            if not list::push{ list = &rel, item = list::items{ list = offs } } { @panic("check: out of memory") }
+            list::push{ list = &rel, item = list::items{ list = offs } } iferr { @panic("check: out of memory") }
             i = i + 1
         }
         let al: u64 = if pal > 4 { pal } else { 4 }
@@ -8138,22 +8138,22 @@ namespace check {
     }
 
     fn push { mut xs: list::List(u32, Heap), n: u32 } {
-        if not list::push{ list = &xs, item = n } { @panic("check: out of memory") }
+        list::push{ list = &xs, item = n } iferr { @panic("check: out of memory") }
     }
 
     fn push_i64 { mut xs: list::List(i64, Heap), n: i64 } {
-        if not list::push{ list = &xs, item = n } { @panic("check: out of memory") }
+        list::push{ list = &xs, item = n } iferr { @panic("check: out of memory") }
     }
 
     fn push_u64 { mut xs: list::List(u64, Heap), n: u64 } {
-        if not list::push{ list = &xs, item = n } { @panic("check: out of memory") }
+        list::push{ list = &xs, item = n } iferr { @panic("check: out of memory") }
     }
 
     fn add_field { mut xs: list::List(types::Field, Heap), f: types::Field } {
-        if not list::push{ list = &xs, item = f } { @panic("check: out of memory") }
+        list::push{ list = &xs, item = f } iferr { @panic("check: out of memory") }
     }
 
     fn add_variant { mut xs: list::List(Variant, Heap), v: Variant } {
-        if not list::push{ list = &xs, item = v } { @panic("check: out of memory") }
+        list::push{ list = &xs, item = v } iferr { @panic("check: out of memory") }
     }
 }

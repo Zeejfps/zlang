@@ -32,7 +32,7 @@ namespace diag {
             diags.dropped = diags.dropped + 1
             return
         }
-        if not list::push{ list = &diags.items, item = d } { @panic("diag: out of memory") }
+        list::push{ list = &diags.items, item = d } iferr { @panic("diag: out of memory") }
     }
 
     fn items { diags: Diags } -> []Diag {

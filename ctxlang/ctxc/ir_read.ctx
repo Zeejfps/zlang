@@ -551,7 +551,7 @@ namespace ir_read {
     }
 
     fn box { mut r: Reader, e: ir::Expr } -> *ir::Expr {
-        let p = alloc::new{ realloc = arena::alloc, heap = r.heap, value = e } ifnull {
+        let p = alloc::new{ realloc = arena::alloc, heap = r.heap, value = e } iferr {
             @panic("ir_read: out of memory")
         }
         return p
@@ -838,6 +838,6 @@ namespace ir_read {
     }
 
     fn add(T) { mut r: Reader, mut xs: list::List(T, ir::Heap), item: T } {
-        if not list::push{ list = &xs, item } { @panic("ir_read: out of memory") }
+        list::push{ list = &xs, item } iferr { @panic("ir_read: out of memory") }
     }
 }

@@ -465,10 +465,10 @@ namespace utf8 {
 
     // Each push returns false on allocation failure.
     fn push(S) { mut b: Builder(S), s: String } -> bool {
-        if not list::reserve{ list = &b.bytes, extra = s.bytes.len } { return false }
+        list::reserve{ list = &b.bytes, extra = s.bytes.len } iferr { return false }
         let mut i: usize = 0
         while i < s.bytes.len {
-            _ = list::push{ list = &b.bytes, item = s.bytes[i] }
+            _ = list::push{ list = &b.bytes, item = s.bytes[i] }     // reserved: can't fail
             i = i + 1
         }
         return true

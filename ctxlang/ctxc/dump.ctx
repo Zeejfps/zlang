@@ -125,7 +125,7 @@ namespace dump {
 
     // One byte, which may be part of a character.
     fn byte { mut out: Out, c: u8 } {
-        if not list::push{ list = &out.bytes, item = c } { @panic("dump: out of memory") }
+        list::push{ list = &out.bytes, item = c } iferr { @panic("dump: out of memory") }
     }
 }
 

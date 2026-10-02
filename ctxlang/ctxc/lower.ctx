@@ -68,7 +68,7 @@ namespace lower {
             } else {
                 function{ &l, id = @as(u32, i), inst }
             }
-            if not list::push{ list = &l.fns, item = f } { @panic("lower: out of memory") }
+            list::push{ list = &l.fns, item = f } iferr { @panic("lower: out of memory") }
             i = i + 1
         }
         return ir::Program{
@@ -92,9 +92,8 @@ namespace lower {
         let known = map::get{ m = l.fn_ids, key = k }
         if known != null { return known }
         let i = @as(u32, l.queue.len)
-        if not map::put{ m = &l.fn_ids, key = k, value = i } or not list::push{ list = &l.queue, item = Inst{ decl, targs } } {
-            @panic("lower: out of memory")
-        }
+        map::put{ m = &l.fn_ids, key = k, value = i } iferr { @panic("lower: out of memory") }
+        list::push{ list = &l.queue, item = Inst{ decl, targs } } iferr { @panic("lower: out of memory") }
         return i
     }
 
@@ -113,7 +112,7 @@ namespace lower {
     fn put_u32 { mut xs: list::List(u8, Heap), n: u32 } {
         let mut k: u32 = 0
         while k < 4 {
-            if not list::push{ list = &xs, item = @trunc(u8, n >> (k * 8)) } { @panic("lower: out of memory") }
+            list::push{ list = &xs, item = @trunc(u8, n >> (k * 8)) } iferr { @panic("lower: out of memory") }
             k = k + 1
         }
     }
@@ -135,7 +134,7 @@ namespace lower {
         while i < fields.len {
             let f = fields[i]
             let t = tid{ &l, t = T{ &l, t = f.ty } }
-            if not list::push{ list = &out, item = ir::Param{ name = f.name, mutable = f.mutable, ty = t } } { @panic("lower: out of memory") }
+            list::push{ list = &out, item = ir::Param{ name = f.name, mutable = f.mutable, ty = t } } iferr { @panic("lower: out of memory") }
             i = i + 1
         }
         return list::items{ list = out }
@@ -167,7 +166,7 @@ namespace lower {
         while i < x.fields.len {
             let f = x.fields[i]
             let t = tid{ &l, t = T{ &l, t = f.ty } }
-            if not list::push{ list = &params, item = ir::Param{ name = f.name, mutable = f.mutable, ty = t } } { @panic("lower: out of memory") }
+            list::push{ list = &params, item = ir::Param{ name = f.name, mutable = f.mutable, ty = t } } iferr { @panic("lower: out of memory") }
             if first != null { _ = slot{ &l, v = first + @as(u32, i) } }
             i = i + 1
         }
@@ -181,10 +180,10 @@ namespace lower {
             let mut xs = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
             let mut i: usize = 0
             while i < body.stmts.len {
-                if not list::push{ list = &xs, item = body.stmts[i] } { @panic("lower: out of memory") }
+                list::push{ list = &xs, item = body.stmts[i] } iferr { @panic("lower: out of memory") }
                 i = i + 1
             }
-            if not list::push{ list = &xs, item = ir::Stmt::ret{ value = ok_unit{ &l } } } { @panic("lower: out of memory") }
+            list::push{ list = &xs, item = ir::Stmt::ret{ value = ok_unit{ &l } } } iferr { @panic("lower: out of memory") }
             body = ir::Block{ stmts = list::items{ list = xs }, result = null }
         }
         let ret = tid{ &l, t = l.ret }
@@ -242,14 +241,14 @@ namespace lower {
         let mut i: usize = 0
         while i < ts.len {
             let n = norm{ &l, t = ts[i] }
-            if not list::push{ list = &out, item = n } { @panic("lower: out of memory") }
+            list::push{ list = &out, item = n } iferr { @panic("lower: out of memory") }
             i = i + 1
         }
         return list::items{ list = out }
     }
 
     fn add_field { mut xs: list::List(types::Field, Heap), f: types::Field } {
-        if not list::push{ list = &xs, item = f } { @panic("lower: out of memory") }
+        list::push{ list = &xs, item = f } iferr { @panic("lower: out of memory") }
     }
 
     // A function type's fields, sorted by name.
@@ -283,9 +282,8 @@ namespace lower {
         let known = map::get{ m = l.type_ids, key = k }
         if known != null { return known }
         let i = @as(u32, l.types.len)
-        if not map::put{ m = &l.type_ids, key = k, value = i } or not list::push{ list = &l.types, item = ir::Type::void } {
-            @panic("lower: out of memory")
-        }
+        map::put{ m = &l.type_ids, key = k, value = i } iferr { @panic("lower: out of memory") }
+        list::push{ list = &l.types, item = ir::Type::void } iferr { @panic("lower: out of memory") }
         let d = type_def{ &l, t = x }
         list::items{ list = l.types }[i] = d
         return i
@@ -319,7 +317,7 @@ namespace lower {
                 while i < sorted.len {
                     let f = sorted[i]
                     let ft = tid{ &l, t = f.ty }
-                    if not list::push{ list = &ps, item = ir::Param{ name = f.name, mutable = f.mutable, ty = ft } } { @panic("lower: out of memory") }
+                    list::push{ list = &ps, item = ir::Param{ name = f.name, mutable = f.mutable, ty = ft } } iferr { @panic("lower: out of memory") }
                     i = i + 1
                 }
                 if external { return ir::Type::cfn{ params = list::items{ list = ps }, ret = tid{ &l, t = ret } } }
@@ -382,7 +380,7 @@ namespace lower {
                         }
                         v.fields = list::items{ list = fs }
                     }
-                    if not list::push{ list = &out, item = v } { @panic("lower: out of memory") }
+                    list::push{ list = &out, item = v } iferr { @panic("lower: out of memory") }
                     i = i + 1
                 }
                 return ir::Type::tagged{ name, size = u.layout.size, align = u.layout.align, pay_off = u.pay_off, variants = list::items{ list = out } }
@@ -393,7 +391,7 @@ namespace lower {
     }
 
     fn add_ir_field { mut xs: list::List(ir::Field, Heap), f: ir::Field } {
-        if not list::push{ list = &xs, item = f } { @panic("lower: out of memory") }
+        list::push{ list = &xs, item = f } iferr { @panic("lower: out of memory") }
     }
 
     fn ir_prim { p: types::Prim } -> ir::Prim {
@@ -468,12 +466,12 @@ namespace lower {
         let known = map::get{ m = l.slots, key = v }
         if known != null { return known }
         let s = @as(u32, l.locals.len)
-        if not map::put{ m = &l.slots, key = v, value = s } { @panic("lower: out of memory") }
+        map::put{ m = &l.slots, key = v, value = s } iferr { @panic("lower: out of memory") }
         let x = check::get_var{ c = l.c.*, v }
         let t = T{ &l, t = x.ty }
         let st = if x.indirect { types::ptr{ s = &l.c.ty, elem = t, mutable = false } } else { t }
         let id = tid{ &l, t = st }
-        if not list::push{ list = &l.locals, item = ir::Local{ name = x.name, ty = id } } { @panic("lower: out of memory") }
+        list::push{ list = &l.locals, item = ir::Local{ name = x.name, ty = id } } iferr { @panic("lower: out of memory") }
         return s
     }
 
@@ -485,9 +483,8 @@ namespace lower {
         if known == null {
             f = @as(u32, l.files.len)
             let name = l.c.files[at.file].name
-            if not map::put{ m = &l.file_ids, key = at.file, value = f } or not list::push{ list = &l.files, item = name } {
-                @panic("lower: out of memory")
-            }
+            map::put{ m = &l.file_ids, key = at.file, value = f } iferr { @panic("lower: out of memory") }
+            list::push{ list = &l.files, item = name } iferr { @panic("lower: out of memory") }
         } else {
             f = known
         }
@@ -511,7 +508,7 @@ namespace lower {
         let mut i: usize = 0
         while i < xs.len {
             let s = stmt{ &l, s = xs[i] }
-            if not list::push{ list = &out, item = s } { @panic("lower: out of memory") }
+            list::push{ list = &out, item = s } iferr { @panic("lower: out of memory") }
             i = i + 1
         }
         return list::items{ list = out }
@@ -641,7 +638,7 @@ namespace lower {
     }
 
     fn push_byte { mut xs: list::List(u8, Heap), n: u8 } {
-        if not list::push{ list = &xs, item = n } { @panic("lower: out of memory") }
+        list::push{ list = &xs, item = n } iferr { @panic("lower: out of memory") }
     }
 
     fn variant_at { vs: []check::Variant, name: []u8 } -> u32 {
@@ -665,7 +662,7 @@ namespace lower {
     }
 
     fn add_bind { mut xs: list::List(ir::Bind, Heap), b: ir::Bind } {
-        if not list::push{ list = &xs, item = b } { @panic("lower: out of memory") }
+        list::push{ list = &xs, item = b } iferr { @panic("lower: out of memory") }
     }
 
     fn field_at { fields: ?[]types::Field, name: []u8 } -> u32 {
@@ -789,7 +786,7 @@ namespace lower {
                 while k < arm.pats.len {
                     let p = arm.pats[k]
                     let bs = if k == 0 { binds{ &l, binders = p.binders, fields = vs[0].fields } } else { alt_binds{ &l, first = arm.pats[0].binders, binders = p.binders, fields = vs[0].fields } }
-                    if not list::push{ list = &pats, item = ir::Pat{ variant = 0, binds = bs } } { @panic("lower: out of memory") }
+                    list::push{ list = &pats, item = ir::Pat{ variant = 0, binds = bs } } iferr { @panic("lower: out of memory") }
                     k = k + 1
                 }
                 add_arm{ l, xs = &out, pats = list::items{ list = pats }, body }
@@ -805,7 +802,7 @@ namespace lower {
             body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = m } }
         } else {
             let mut xs = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
-            if not list::push{ list = &xs, item = ir::Stmt::choose{ scrut, through = false, arms = list::items{ list = inner } } } { @panic("lower: out of memory") }
+            list::push{ list = &xs, item = ir::Stmt::choose{ scrut, through = false, arms = list::items{ list = inner } } } iferr { @panic("lower: out of memory") }
             body = ir::Block{ stmts = list::items{ list = xs }, result = null }
         }
         add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = list::items{ list = binds } } }, body }
@@ -835,7 +832,7 @@ namespace lower {
             let d = map::get{ m = l.c.pat_errs, key = check::name_key{ n = p.variant } } ifnull { @panic("lower: an error pattern that wasn't resolved") }
             let fields = check::fault_fields{ c = l.c.*, d }
             let bs = if k == 0 { binds{ &l, binders = p.binders, fields } } else { alt_binds{ &l, first = arm.pats[0].binders, binders = p.binders, fields } }
-            if not list::push{ list = &out, item = ir::Pat{ variant = set_index{ set, d }, binds = bs } } { @panic("lower: out of memory") }
+            list::push{ list = &out, item = ir::Pat{ variant = set_index{ set, d }, binds = bs } } iferr { @panic("lower: out of memory") }
             k = k + 1
         }
         return list::items{ list = out }
@@ -857,12 +854,12 @@ namespace lower {
 
     fn one_pat { l: Lower, p: ir::Pat } -> []ir::Pat {
         let mut out = list::new(ir::Pat){ realloc = arena::alloc, heap = l.heap }
-        if not list::push{ list = &out, item = p } { @panic("lower: out of memory") }
+        list::push{ list = &out, item = p } iferr { @panic("lower: out of memory") }
         return list::items{ list = out }
     }
 
     fn add_arm { l: Lower, mut xs: list::List(ir::Arm, Heap), pats: []ir::Pat, body: ir::Block } {
-        if not list::push{ list = &xs, item = ir::Arm{ pats, body } } { @panic("lower: out of memory") }
+        list::push{ list = &xs, item = ir::Arm{ pats, body } } iferr { @panic("lower: out of memory") }
     }
 
     // `ok` of a bare `!`, of the function's result type.
@@ -894,7 +891,7 @@ namespace lower {
         let err = remap{ &l, x = mk{ ty = et, k = ir::ExprKind::local{ slot = e } }, frm = from, to = into }
         let r = mk{ ty = tid{ &l, t = l.ret }, k = ir::ExprKind::variant{ index = 1, items = one_arg{ l, v = err } } }
         let mut st = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
-        if not list::push{ list = &st, item = ir::Stmt::ret{ value = r } } { @panic("lower: out of memory") }
+        list::push{ list = &st, item = ir::Stmt::ret{ value = r } } iferr { @panic("lower: out of memory") }
         add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = list::items{ list = bs } } }, body = ir::Block{ stmts = list::items{ list = st }, result = null } }
         return list::items{ list = out }
     }
@@ -994,11 +991,11 @@ namespace lower {
                 } else {
                     alt_binds{ &l, first = arm.pats[0].binders, binders = p.binders, fields = vs[vi].fields }
                 }
-                if not list::push{ list = &pats, item = ir::Pat{ variant = vi, binds = bs } } { @panic("lower: out of memory") }
+                list::push{ list = &pats, item = ir::Pat{ variant = vi, binds = bs } } iferr { @panic("lower: out of memory") }
                 k = k + 1
             }
             let body = if value { value_block{ &l, b = arm.body, t } } else { block{ &l, b = arm.body } }
-            if not list::push{ list = &out, item = ir::Arm{ pats = list::items{ list = pats }, body } } { @panic("lower: out of memory") }
+            list::push{ list = &out, item = ir::Arm{ pats = list::items{ list = pats }, body } } iferr { @panic("lower: out of memory") }
             i = i + 1
         }
         return list::items{ list = out }
@@ -1016,11 +1013,11 @@ namespace lower {
             let mut k: usize = 0
             while k < arm.pats.len {
                 let vi = name_index{ names, name = arm.pats[k].variant.text }
-                if not list::push{ list = &vals, item = int_of{ v = d.values[vi] } } { @panic("lower: out of memory") }
+                list::push{ list = &vals, item = int_of{ v = d.values[vi] } } iferr { @panic("lower: out of memory") }
                 k = k + 1
             }
             let body = if value { value_block{ &l, b = arm.body, t } } else { block{ &l, b = arm.body } }
-            if not list::push{ list = &out, item = ir::Case{ values = list::items{ list = vals }, body } } { @panic("lower: out of memory") }
+            list::push{ list = &out, item = ir::Case{ values = list::items{ list = vals }, body } } iferr { @panic("lower: out of memory") }
             i = i + 1
         }
         return list::items{ list = out }
@@ -1053,14 +1050,14 @@ namespace lower {
         let mut i: usize = 0
         while i + 1 < xs.len {
             let s = stmt{ &l, s = xs[i] }
-            if not list::push{ list = &out, item = s } { @panic("lower: out of memory") }
+            list::push{ list = &out, item = s } iferr { @panic("lower: out of memory") }
             i = i + 1
         }
         match v {
             nested{ s } => {
                 if map::get{ m = l.c.expr_ty, key = check::stmt_key{ s } } == null {
                     let st = leaving{ &l, s }
-                    if not list::push{ list = &out, item = st } { @panic("lower: out of memory") }
+                    list::push{ list = &out, item = st } iferr { @panic("lower: out of memory") }
                     return ir::Block{ stmts = list::items{ list = out }, result = null }
                 }
                 let r = nested_full{ &l, s }
@@ -1147,7 +1144,7 @@ namespace lower {
     }
 
     fn box { l: Lower, e: ir::Expr } -> *ir::Expr {
-        let p = alloc::new{ realloc = arena::alloc, heap = l.heap, value = e } ifnull {
+        let p = alloc::new{ realloc = arena::alloc, heap = l.heap, value = e } iferr {
             @panic("lower: out of memory")
         }
         return p
@@ -1285,7 +1282,7 @@ namespace lower {
     // A local that lowering adds, of IR type ty, named `_`, which no local in the source is.
     fn temp { mut l: Lower, ty: u32 } -> u32 {
         let s = @as(u32, l.locals.len)
-        if not list::push{ list = &l.locals, item = ir::Local{ name = "_", ty } } { @panic("lower: out of memory") }
+        list::push{ list = &l.locals, item = ir::Local{ name = "_", ty } } iferr { @panic("lower: out of memory") }
         return s
     }
 
@@ -1345,7 +1342,7 @@ namespace lower {
     }
 
     fn add_arg { mut xs: list::List(ir::Arg, Heap), a: ir::Arg } {
-        if not list::push{ list = &xs, item = a } { @panic("lower: out of memory") }
+        list::push{ list = &xs, item = a } iferr { @panic("lower: out of memory") }
     }
 
     fn slice_elem { l: Lower, t: Id } -> Id {
@@ -1445,7 +1442,7 @@ namespace lower {
                 let mut i: usize = 0
                 while i < elems.len {
                     let x = conv{ &l, e = elems[i], to = et }
-                    if not list::push{ list = &out, item = x } { @panic("lower: out of memory") }
+                    list::push{ list = &out, item = x } iferr { @panic("lower: out of memory") }
                     i = i + 1
                 }
                 return mk{ ty, k = ir::ExprKind::array{ elems = list::items{ list = out } } }
@@ -1536,7 +1533,7 @@ namespace lower {
         let mut i: usize = 0
         while i < ts.len {
             let x = T{ &l, t = ts[i] }
-            if not list::push{ list = &out, item = x } { @panic("lower: out of memory") }
+            list::push{ list = &out, item = x } iferr { @panic("lower: out of memory") }
             i = i + 1
         }
         return list::items{ list = out }
@@ -1549,9 +1546,8 @@ namespace lower {
         let i = @as(u32, l.consts.len)
         let x = check::get_decl{ c = l.c.*, d }
         let placeholder = ir::Const{ name = x.qual, ty = 0, value = mk{ ty = 0, k = ir::ExprKind::nil } }
-        if not map::put{ m = &l.const_ids, key = d, value = i } or not list::push{ list = &l.consts, item = placeholder } {
-            @panic("lower: out of memory")
-        }
+        map::put{ m = &l.const_ids, key = d, value = i } iferr { @panic("lower: out of memory") }
+        list::push{ list = &l.consts, item = placeholder } iferr { @panic("lower: out of memory") }
         let t = T{ &l, t = x.ty }
         let ty = tid{ &l, t }
         let v = value{ &l, v = const_val{ l, d } }
@@ -1573,9 +1569,8 @@ namespace lower {
             i = i + 1
         }
         let ty = tid{ &l, t = T{ &l, t = v.ty } }
-        if not list::push{ list = &l.vars, item = ir::Var{ name = v.name, symbol = check::var_symbol{ c = l.c.*, v }, ty } } or not list::push{ list = &l.var_owners, item = v.owner } {
-            @panic("lower: out of memory")
-        }
+        list::push{ list = &l.vars, item = ir::Var{ name = v.name, symbol = check::var_symbol{ c = l.c.*, v }, ty } } iferr { @panic("lower: out of memory") }
+        list::push{ list = &l.var_owners, item = v.owner } iferr { @panic("lower: out of memory") }
         return @as(u32, vs.len)
     }
 
@@ -1609,7 +1604,7 @@ namespace lower {
                 let mut i: usize = 0
                 while i < elems.len {
                     let x = value{ &l, v = elems[i] }
-                    if not list::push{ list = &out, item = x } { @panic("lower: out of memory") }
+                    list::push{ list = &out, item = x } iferr { @panic("lower: out of memory") }
                     i = i + 1
                 }
                 return mk{ ty = id, k = ir::ExprKind::array{ elems = list::items{ list = out } } }
@@ -1878,7 +1873,8 @@ namespace lower {
                 let mut src = ex{ &l, e = items[i].value }
                 if not plain{ x = src } {
                     let s = temp{ &l, ty = src.ty }
-                    if not list::push{ list = &slots, item = s } or not list::push{ list = &inits, item = src } { @panic("lower: out of memory") }
+                    list::push{ list = &slots, item = s } iferr { @panic("lower: out of memory") }
+                    list::push{ list = &inits, item = src } iferr { @panic("lower: out of memory") }
                     src = mk{ ty = src.ty, k = ir::ExprKind::local{ slot = s } }
                 }
                 cap_args{ &l, src, frm = st, names = check::cap_fields{ c = l.c.*, t = st }, into = fields, out = &out }
@@ -2046,9 +2042,9 @@ namespace lower {
             if p != null and types::fits{ p, negative = v < 0, magnitude = check::magnitude{ v } } {
                 let value = mk{ ty = tid{ &l, t }, k = ir::ExprKind::int{ negative = v < 0, value = check::magnitude{ v } } }
                 let mut vals = list::new(ir::Int){ realloc = arena::alloc, heap = l.heap }
-                if not list::push{ list = &vals, item = int_of{ v } } { @panic("lower: out of memory") }
+                list::push{ list = &vals, item = int_of{ v } } iferr { @panic("lower: out of memory") }
                 let body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = value } }
-                if not list::push{ list = &out, item = ir::Case{ values = list::items{ list = vals }, body } } { @panic("lower: out of memory") }
+                list::push{ list = &out, item = ir::Case{ values = list::items{ list = vals }, body } } iferr { @panic("lower: out of memory") }
             }
             i = i + 1
         }
@@ -2056,9 +2052,9 @@ namespace lower {
         pushed{ ok = @fmt(&b, "@as: no variant of {} has this value", str{ s = d.qual }) }
         let panic = ir::Stmt::panic{ pos = epos{ &l, e }, msg = utf8::view{ b }.bytes }
         let mut ps = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
-        if not list::push{ list = &ps, item = panic } { @panic("lower: out of memory") }
+        list::push{ list = &ps, item = panic } iferr { @panic("lower: out of memory") }
         let els = ir::Block{ stmts = list::items{ list = ps }, result = null }
-        if not list::push{ list = &out, item = ir::Case{ values = slice::empty(ir::Int){}, body = els } } { @panic("lower: out of memory") }
+        list::push{ list = &out, item = ir::Case{ values = slice::empty(ir::Int){}, body = els } } iferr { @panic("lower: out of memory") }
         let ty = tid{ &l, t }
         let x = ex{ &l, e = arg }
         return mk{ ty, k = ir::ExprKind::switchx{ scrut = box{ l, e = x }, cases = list::items{ list = out } } }
@@ -2114,7 +2110,7 @@ namespace lower {
         let d = push_decl{ &l, name = p.push }
         let s = builder_state{ l, t = bt }
         let mut ts = list::new(Id){ realloc = arena::alloc, heap = l.heap }
-        if not list::push{ list = &ts, item = s } { @panic("lower: out of memory") }
+        list::push{ list = &ts, item = s } iferr { @panic("lower: out of memory") }
         let targs = list::items{ list = ts }
         let x = check::get_decl{ c = l.c.*, d }
         let fields = check::subst_fields{ c = l.c, fields = x.fields, decl = d, args = targs }
@@ -2214,7 +2210,7 @@ namespace lower {
         let d = push_decl{ &l, name }
         let s = builder_state{ l, t = bt }
         let mut ts = list::new(Id){ realloc = arena::alloc, heap = l.heap }
-        if not list::push{ list = &ts, item = s } { @panic("lower: out of memory") }
+        list::push{ list = &ts, item = s } iferr { @panic("lower: out of memory") }
         let targs = list::items{ list = ts }
         let x = check::get_decl{ c = l.c.*, d }
         let fields = check::subst_fields{ c = l.c, fields = x.fields, decl = d, args = targs }

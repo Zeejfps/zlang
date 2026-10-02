@@ -13,7 +13,8 @@
 //   }
 //
 // Paths are bytes, relative to the working directory the program was started in. A function
-// fails with the errors below that its body can produce (spec §8, Errors).
+// fails with the errors below that its body can produce (spec §8, Errors), and read_all and list
+// with alloc::out_of_memory when their allocator fails.
 //
 // Permission to use the filesystem.
 capability Fs
@@ -25,7 +26,6 @@ namespace fs {
     error exists                // open with Mode::create, and the file is already there
     error not_directory         // a directory in the path is a file
     error bad_file              // the file is closed
-    error out_of_memory         // read_all's or list's allocator failed
     error other{ code: i64 }    // the OS's error number
 
     union Mode {
@@ -100,7 +100,7 @@ namespace fs {
                 buf = match realloc{ &heap, mem = buf, new = cap, align = 1 } {
                     null => {
                         _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
-                        return out_of_memory
+                        return alloc::out_of_memory
                     }
                     some{ value } => { value }
                 }
@@ -116,9 +116,9 @@ namespace fs {
             if buf[i] == 0 { count = count + 1 }
             i = i + 1
         }
-        let names = alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count } ifnull {
+        let names = alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count } iferr err{ error } {
             _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
-            return out_of_memory
+            return error
         }
         let mut start: usize = 0
         let mut k: usize = 0
@@ -149,7 +149,7 @@ namespace fs {
                 buf = match realloc{ &heap, mem = buf, new = cap, align = 1 } {
                     null => {
                         _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
-                        return out_of_memory
+                        return alloc::out_of_memory
                     }
                     some{ value } => { value }
                 }

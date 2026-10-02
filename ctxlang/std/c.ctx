@@ -41,20 +41,17 @@ namespace c {
     }
 
     error has_nul{ at: usize }      // C would end the string at this byte
-    error out_of_memory
 
     // A String holding a copy of `bytes` and a NUL, from the allocator: for text built at run
     // time. It lives as long as the allocator's memory, as with an arena; a String is read-only,
-    // so it can't be given back on its own.
+    // so it can't be given back on its own. Fails with has_nul or alloc::out_of_memory.
     fn copy(S) { realloc: alloc::Fn(S), mut heap: S, bytes: []u8 } -> !String {
         let mut i: usize = 0
         while i < bytes.len {
             if bytes[i] == 0 { return has_nul{ at = i } }
             i = i + 1
         }
-        let mem = alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = bytes.len + 1 } ifnull {
-            return out_of_memory
-        }
+        let mem = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = bytes.len + 1 }
         slice::copy(u8){ dst = mem[..bytes.len], src = bytes }
         mem[bytes.len] = 0
         return String{ ptr = mem.ptr }

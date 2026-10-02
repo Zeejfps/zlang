@@ -2446,6 +2446,6 @@ namespace emit {
     }
 
     fn add(T) { mut xs: list::List(T, ir::Heap), item: T } {
-        if not list::push{ list = &xs, item } { @panic("emit: out of memory") }
+        list::push{ list = &xs, item } iferr { @panic("emit: out of memory") }
     }
 }

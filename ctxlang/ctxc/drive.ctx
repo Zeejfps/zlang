@@ -394,7 +394,7 @@ namespace drive {
             paths = list::new([]u8){ realloc = arena::alloc, &heap },
             libs = list::new([]u8){ realloc = arena::alloc, &heap },
         }
-        if not list::push{ list = &targets, item = t } { @panic("ctxc: out of memory") }
+        list::push{ list = &targets, item = t } iferr { @panic("ctxc: out of memory") }
     }
 
     // ---- paths and byte strings
@@ -406,7 +406,7 @@ namespace drive {
     }
 
     fn cat { mut heap: Heap, a: []u8, b: []u8 } -> []u8 {
-        let out = alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = a.len + b.len } ifnull {
+        let out = alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = a.len + b.len } iferr {
             @panic("ctxc: out of memory")
         }
         slice::copy{ dst = out[..a.len], src = a }
@@ -462,7 +462,7 @@ namespace drive {
     }
 
     fn add { mut xs: Strs, s: []u8 } {
-        if not list::push{ list = &xs, item = s } { @panic("ctxc: out of memory") }
+        list::push{ list = &xs, item = s } iferr { @panic("ctxc: out of memory") }
     }
 
     fn add_all { mut xs: Strs, ys: [][]u8 } {

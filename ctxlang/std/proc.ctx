@@ -7,7 +7,8 @@
 //       let mut buf: [4096]u8
 //       let mut heap = arena::new{ buf = buf[..] }
 //       let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
-//       _ = list::push{ list = &argv, item = "cc" } and list::push{ list = &argv, item = "--version" }
+//       list::push{ list = &argv, item = "cc" } iferr { return 1 }
+//       list::push{ list = &argv, item = "--version" } iferr { return 1 }
 //       return proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} } iferr { 127 }
 //   }
 

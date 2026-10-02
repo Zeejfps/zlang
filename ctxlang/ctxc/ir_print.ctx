@@ -741,11 +741,11 @@ namespace ir_print {
     }
 
     fn char { mut o: Out, c: u8 } {
-        if not list::push{ list = &o.bytes, item = c } { @panic("ir_print: out of memory") }
+        list::push{ list = &o.bytes, item = c } iferr { @panic("ir_print: out of memory") }
     }
 
     fn bytes { mut o: Out, b: ir::Bytes } {
-        if not list::reserve{ list = &o.bytes, extra = b.len } { @panic("ir_print: out of memory") }
+        list::reserve{ list = &o.bytes, extra = b.len } iferr { @panic("ir_print: out of memory") }
         let len = o.bytes.len
         slice::copy{ dst = o.bytes.items[len..len + b.len], src = b }
         o.bytes.len = len + b.len

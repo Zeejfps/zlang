@@ -157,9 +157,11 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, mode: Mode }
     while i < args.len {
         if slice::eq_bytes{ a = args[i], b = "--" } {
             split = i
-        } else if not list::push{ list = &paths, item = args[i] } {
-            io::eprintln{ &io, s = "too many files" }
-            return 1
+        } else {
+            list::push{ list = &paths, item = args[i] } iferr {
+                io::eprintln{ &io, s = "too many files" }
+                return 1
+            }
         }
         i = i + 1
     }
@@ -267,7 +269,7 @@ fn add_file { mut files: list::List(check::File, arena::Arena), mut heap: arena:
     let lexed = lexer::lex{ text, file, &heap, &diags }
     let tree = parser::parse{ text, file, tokens = lexed.tokens, &heap, &diags }
     let lines = source::line_starts{ text, &heap }
-    if not list::push{ list = &files, item = check::File{ name, text, lines, tree } } { @panic("ctxc: out of memory") }
+    list::push{ list = &files, item = check::File{ name, text, lines, tree } } iferr { @panic("ctxc: out of memory") }
 }
 
 // `ctxc recover FILE FROM TO [-v]`

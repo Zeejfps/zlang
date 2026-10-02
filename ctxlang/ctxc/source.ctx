@@ -42,6 +42,6 @@ namespace source {
     }
 
     fn add { mut xs: list::List(u32, arena::Arena), n: u32 } {
-        if not list::push{ list = &xs, item = n } { @panic("source: out of memory") }
+        list::push{ list = &xs, item = n } iferr { @panic("source: out of memory") }
     }
 }

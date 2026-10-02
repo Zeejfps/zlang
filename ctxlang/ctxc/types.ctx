@@ -102,9 +102,8 @@ namespace types {
         let known = map::get{ m = s.index, key = t }
         if known != null { return known }
         let id = @as(Id, s.items.len)
-        if not list::push{ list = &s.items, item = t } or not map::put{ m = &s.index, key = t, value = id } {
-            @panic("types: out of memory")
-        }
+        list::push{ list = &s.items, item = t } iferr { @panic("types: out of memory") }
+        map::put{ m = &s.index, key = t, value = id } iferr { @panic("types: out of memory") }
         return id
     }
 
@@ -162,7 +161,7 @@ namespace types {
 
     fn copy(T) { s: Store, xs: []T } -> []T {
         if xs.len == 0 { return xs }
-        let out = alloc::resize(T){ realloc = arena::alloc, heap = s.heap, mem = slice::empty(T){}, count = xs.len } ifnull {
+        let out = alloc::resize(T){ realloc = arena::alloc, heap = s.heap, mem = slice::empty(T){}, count = xs.len } iferr {
             @panic("types: out of memory")
         }
         slice::copy{ dst = out, src = xs }
@@ -212,7 +211,7 @@ namespace types {
     }
 
     fn add(T) { mut xs: list::List(T, Heap), item: T } {
-        if not list::push{ list = &xs, item } { @panic("types: out of memory") }
+        list::push{ list = &xs, item } iferr { @panic("types: out of memory") }
     }
 
     // ---- questions
@@ -363,7 +362,7 @@ namespace types {
 
     fn fresh { mut s: Store, kind: VarKind } -> Id {
         let n = @as(u32, s.vars.len)
-        if not list::push{ list = &s.vars, item = Var{ kind, ref = NO_TYPE, fixed = null } } { @panic("types: out of memory") }
+        list::push{ list = &s.vars, item = Var{ kind, ref = NO_TYPE, fixed = null } } iferr { @panic("types: out of memory") }
         return intern{ &s, t = Type::var{ n } }
     }
 

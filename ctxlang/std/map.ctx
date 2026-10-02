@@ -7,7 +7,7 @@
 //   let mut ages = map::new(utf8::String, i64){
 //       realloc = arena::alloc, &heap, hash = map::hash_string, eq = utf8::eq,
 //   }
-//   if not map::put{ m = &ages, key = name, value = 42 } { @panic("out of memory") }
+//   try map::put{ m = &ages, key = name, value = 42 }    // fails with alloc::out_of_memory
 //   let age = map::get{ m = ages, key = name }       // ?i64
 //
 // A map copies its keys but not memory they point to: the bytes of an utf8::String key must
@@ -73,15 +73,15 @@ namespace map {
         return null
     }
 
-    // Inserts key, or replaces its value. Returns false on allocation failure, leaving m unchanged.
-    fn put(K, V, S) { mut m: Map(K, V, S), key: K, value: V } -> bool {
+    // Inserts key, or replaces its value. Fails with alloc::out_of_memory, leaving m unchanged.
+    fn put(K, V, S) { mut m: Map(K, V, S), key: K, value: V } -> ! {
         let found = find{ m, key }
         if found != null {
             m.slots[found] = Slot::full{ k = key, v = value }
-            return true
+            return
         }
         if (m.used + 1) * 4 > m.slots.len * 3 {         // keep the load at most 3/4
-            if not rehash{ &m } { return false }
+            try rehash{ &m }
         }
         let i = free_slot{ m, key }
         match m.slots[i] {
@@ -90,7 +90,6 @@ namespace map {
         }
         m.slots[i] = Slot::full{ k = key, v = value }
         m.len = m.len + 1
-        return true
     }
 
     // Removes key and returns its value, or null if it wasn't there. Never reallocates.
@@ -223,17 +222,13 @@ namespace map {
     }
 
     // Moves every entry into a new table with room for one more at a load of at most 1/2, and
-    // drops removed slots. Returns false on allocation failure, leaving m unchanged.
-    fn rehash(K, V, S) { mut m: Map(K, V, S) } -> bool {
+    // drops removed slots. Fails with alloc::out_of_memory, leaving m unchanged.
+    fn rehash(K, V, S) { mut m: Map(K, V, S) } -> ! {
         let mut cap: usize = 8
         while (m.len + 1) * 2 > cap { cap = cap * 2 }
-        let fresh = alloc::resize{
-            realloc = m.realloc, heap = m.heap, mem = slice::empty(Slot(K, V)){}, count = cap,
-        }
         let old = m.slots
-        match fresh {
-            null          => { return false }
-            some{ value } => { m.slots = value }
+        m.slots = try alloc::resize{
+            realloc = m.realloc, heap = m.heap, mem = slice::empty(Slot(K, V)){}, count = cap,
         }
         slice::fill{ s = m.slots, v = Slot::empty }
         m.used = m.len
@@ -247,6 +242,5 @@ namespace map {
             i = i + 1
         }
         _ = alloc::resize{ realloc = m.realloc, heap = m.heap, mem = old, count = 0 }
-        return true
     }
 }

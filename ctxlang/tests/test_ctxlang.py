@@ -2857,10 +2857,9 @@ fn main { mut io: Io } {
     let mut heap = arena::new{ buf = mem[..] }
     let mut m = map::new(u64, u64){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 }
     let mut i: u64 = 0
-    let mut ok = true
-    while ok {
-        ok = map::put{ &m, key = i, value = i }
-        if ok { i = i + 1 }
+    while true {
+        map::put{ &m, key = i, value = i } iferr { break }
+        i = i + 1
     }
     io::println_u64{ &io, n = i }
     io::println_u64{ &io, n = map::len{ m } }
@@ -4449,6 +4448,28 @@ fn main { mut io: Io } {
 }
 """, '-1\n0\n-2\n42\n')
 
+    def test_push_out_of_memory(self):
+        # push fails with alloc::out_of_memory, leaving the list as it was, and try passes it up.
+        self.assertOutput("""
+fn fill(S) { mut xs: list::List(i64, S), n: i64 } -> ! {
+    let mut i: i64 = 0
+    while i < n {
+        try list::push{ list = &xs, item = i }
+        i = i + 1
+    }
+}
+fn main { mut io: Io } {
+    let mut mem: [100]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut xs = list::new(i64){ realloc = arena::alloc, &heap }
+    match fill{ &xs, n = 100 } {
+        ok                   => { io::println{ &io, s = "ok" } }
+        alloc::out_of_memory => { io::println_u64{ &io, n = xs.len } }
+    }
+    io::println_i64{ &io, n = list::at{ list = xs, i = xs.len - 1 }.* }
+}
+""", '8\n7\n')
+
     def test_free_list(self):
         self.assertOutput("""
 fn total { mut heap: arena::Arena, n: i32 } -> i64 {
@@ -4456,7 +4477,7 @@ fn total { mut heap: arena::Arena, n: i32 } -> i64 {
     defer list::free{ list = &xs}
     let mut i = 0
     while i < n {
-        if not list::push{ list = &xs, item = i } { return -1 }
+        list::push{ list = &xs, item = i } iferr { return -1 }
         i = i + 1
     }
     let mut sum: i64 = 0
@@ -4546,7 +4567,7 @@ def show_error():
 fn show { mut io: Io, e: error } {
     let code = match e {
         fs::not_found => { 1 } fs::permission_denied => { 2 } fs::is_directory => { 3 } fs::exists => { 4 }
-        fs::not_directory => { 5 } fs::bad_file => { 6 } fs::out_of_memory => { 7 } fs::other => { 8 }
+        fs::not_directory => { 5 } fs::bad_file => { 6 } alloc::out_of_memory => { 7 } fs::other => { 8 }
         else => { 9 }
     }
     io::println_i64{ &io, n = code }
@@ -4809,7 +4830,7 @@ fn main { mut mem: Mem } { }
     let mut head: ?*mut Node = null
     let mut i: i64 = 1
     while i <= 4 {
-        let some{ value = n } = alloc::new{ realloc = arena::alloc, &heap, value = Node{ v = i, next = head } } else { return 2 }
+        let n = alloc::new{ realloc = arena::alloc, &heap, value = Node{ v = i, next = head } } iferr { return 2 }
         head = n
         i = i + 1
     }
@@ -4831,13 +4852,17 @@ fn main { mut mem: Mem } { }
         out, _ = self.run_mem("""
     let mut buf: [16]u8
     let mut heap = arena::new{ buf = buf[..] }
-    let a = alloc::new{ realloc = arena::alloc, &heap, value = [1, 2, 3, 4, 5] }
-    io::println_bool{ &io, n = a == null }
-    let b = alloc::new{ realloc = arena::alloc, &heap, value = 5 }
-    io::println_bool{ &io, n = b == null }
+    match alloc::new{ realloc = arena::alloc, &heap, value = [1, 2, 3, 4, 5] } {
+        ok                    => { io::println{ &io, s = "ok" } }
+        alloc::out_of_memory  => { io::println{ &io, s = "oom" } }
+    }
+    match alloc::new{ realloc = arena::alloc, &heap, value = 5 } {
+        ok                    => { io::println{ &io, s = "ok" } }
+        alloc::out_of_memory  => { io::println{ &io, s = "oom" } }
+    }
     return 0
 """)
-        self.assertEqual(out, 'true\nfalse\n')
+        self.assertEqual(out, 'oom\nok\n')
 
     def test_alloc_new_zero_sized(self):
         with self.assertRaises(Panic) as cm:
@@ -5941,8 +5966,9 @@ class Proc(Base):
     def test_exit_code_and_env(self):
         script = 'import os, sys; print(os.environ["CTX_TEST_FOO"]); sys.exit(7)'
         out, code = self.run_proc("""
-    _ = list::push{ list = &argv, item = args[0] } and list::push{ list = &argv, item = "-c" }
-        and list::push{ list = &argv, item = args[1] }
+    _ = list::push{ list = &argv, item = args[0] }
+    _ = list::push{ list = &argv, item = "-c" }
+    _ = list::push{ list = &argv, item = args[1] }
     _ = list::push{ list = &env, item = "CTX_TEST_FOO=bar baz" }
     io::println{ &io, s = "before" }
     match proc::run{ &proc, argv = list::items{ list = argv }, env = list::items{ list = env } } {
@@ -6588,7 +6614,7 @@ fn main { mut io: Io } {
         err{ error } => {
             match error {
                 c::has_nul{ at } => { io::println_u64{ &io, n = at } }
-                c::out_of_memory => { io::println{ &io, s = "oom" } }
+                alloc::out_of_memory => { io::println{ &io, s = "oom" } }
             }
         }
     }
@@ -6596,7 +6622,7 @@ fn main { mut io: Io } {
     match c::copy{ realloc = arena::alloc, &heap, bytes = big } {
         ok               => {}
         c::has_nul       => {}
-        c::out_of_memory => { io::println{ &io, s = "oom" } }
+        alloc::out_of_memory => { io::println{ &io, s = "oom" } }
     }
 }
 """, "3\nabc\n0\n5\n1\noom\n")

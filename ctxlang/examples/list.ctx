@@ -7,13 +7,12 @@ union Event {
     clear,
 }
 
-// Applies one event to the list. Returns false on allocation failure.
-// `match` is an expression here: each arm's last expression is its value.
-fn apply(S) { mut nums: list::List(i32, S), ev: Event } -> bool {
-    return match ev {
-        push{ value } => { list::push{ list = &nums, item = value, .. } }
-        pop           => { _ = list::pop{ list = &nums }; true }
-        clear         => { list::clear{ list = &nums }; true }
+// Applies one event to the list. Fails with alloc::out_of_memory: `try` passes push's error up.
+fn apply(S) { mut nums: list::List(i32, S), ev: Event } -> ! {
+    match ev {
+        push{ value } => { try list::push{ list = &nums, item = value, .. } }
+        pop           => { _ = list::pop{ list = &nums } }
+        clear         => { list::clear{ list = &nums } }
     }
 }
 
@@ -56,7 +55,7 @@ fn main { mut io: Io } {
     let mut j = 0
     while j < events.len {
         let ev = events.items[j]
-        if not apply{ &nums, ev, .. } { return }
+        apply{ &nums, ev, .. } iferr { return }
         j = j + 1
     }
 
