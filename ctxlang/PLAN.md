@@ -30,6 +30,34 @@ interpreter ctxc replaced, is at `8436f4d`.
      holds any error: that needs the thunk that widens a function value to also renumber its
      result.
    - Matching through a pointer to a `!T`.
+3. **`@fmt` as a value** (FRICTION #1). A formatted diagnostic takes three lines, a builder, the
+   `@fmt` and the view, about 190 times in ctxc, and no helper can hide them: no function takes
+   a format and its arguments to pass on. Without a builder, `@fmt("...", args)` is a function
+   that writes the text when called, as Rust's `format_args!` is a value any sink takes:
+   ```
+   error{ &c, at, msg = @fmt("no variant `{}` in {}", name, tstr{ c, t }) }
+
+   fn error { mut c: Checker, at: source::Span, msg: utf8::Fmt(Heap) } {
+       let mut b = message{ c }
+       try! msg{ &b }
+       report{ &c, at, text = utf8::view{ b } }
+   }
+   ```
+   - It is a hidden fn per site, whose context is the arguments and `mut b`, and whose body is
+     `return @fmt(&b, ...)`, bound with `_` (§4): no new IR or C. The two forms can't be
+     confused, since a format is always a literal and a builder never is.
+   - Its type, `&fn{ mut b: utf8::Builder(S) } -> !`, comes from the expected type. Without one
+     (`let w = @fmt(...)`) it is an error, as with an untyped `null`.
+   - The arguments are evaluated and copied at the `@fmt`, as a bind's are (§4).
+   - The result stays `!`: it can run out of memory, and a hole that is a function may fail.
+     The sink decides, as ctxc's `error` does with one `try!`.
+   - A writer is what a hole already takes (§13), so writers nest: helpers that build a string
+     only to put it in another (`binding_names`) return a writer instead.
+   - std gets `type Fmt(S) = &fn{ mut b: Builder(S) } -> !` in `utf8`. An API that takes plain
+     text keeps a `utf8::String` field, and adds one that takes a writer (`error` and `errorf`).
+   - The bound record is leaked from `ctx_alloc`, as every `&fn`'s is (Open decisions), until
+     records live in the frame.
+   - It still writes to std's `utf8::Builder`. Any sink, as stage 4 wants, is a later design.
 
 *Later, if wanted:* if patterns nest (a payload's fields, literal values), `_` comes in as a
 wildcard inside a pattern (`os{ code = _ }`), and `else` stays the whole-arm default. Optional
@@ -226,7 +254,8 @@ undo; the evaluator comes first.
 *Still naming std after this,* each a later piece of the same goal:
 - `@fmt` writes to a `utf8::Builder` through `utf8::push_*` functions found by name, fails with
   `alloc::out_of_memory`, which it names too, and a literal hole expects a `utf8::String`. The direction: `@fmt` receives what it writes with, as a hole
-  already may (a function value writes it), rather than knowing std's builder.
+  already may (a function value writes it), rather than knowing std's builder. 1.3 moves that
+  way: the sink of an `@fmt` value owns the builder.
 - `c::String`'s C layout: a `?c::String` is a nullable pointer, and an extern fn passes it as a
   `const char *`.
 - `c::symbol` and `c::callback` are attributes std declares and the compiler acts on. They move
@@ -459,8 +488,11 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 
 - **Panic stack traces.** Printing the function frames with each panic needs a shadow stack in C,
   which costs time on every call. *Recommendation:* a debug flag, off by default. **Deferred.**
-- **Where bound-function records live.** Leaked from `ctx_alloc` for now. A spec rule that lets
-  records live in the frame may come later.
+- **Where bound-function records live.** Leaked from `ctx_alloc` for now. §6 already keeps an
+  `&fn` from outliving the frame that made it (it can't be returned, stored in a field, or put
+  in a `mut` field), so every record could live in that frame; with 1.3 a compiler reporting
+  thousands of diagnostics leaks one record each until then. *Recommendation:* move them to
+  the frame, as its own change in emit_c's `bind`.
 
 ## Risks
 

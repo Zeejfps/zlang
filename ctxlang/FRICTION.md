@@ -12,7 +12,8 @@ errors and capability-variable work (`e19f1fe`).
   times in `check.ctx` when first noted; it is now 188, plus 12 in `lower.ctx` and `parser.ctx`.
   `@fmt` can't produce a `utf8::String` in an expression. An `@fmt` form that returns the text
   (from an allocator in scope), or a std `error_fmt`-style helper once `@fmt` can forward its
-  arguments, would make each one a line.
+  arguments, would make each one a line. *Planned:* PLAN.md 1.3 (`@fmt` without a builder is a
+  writer, which `error` takes).
 - **2. A read-only argument can be copied before a later argument changes it.** Arguments are
   evaluated in order, so `types::prune{ s = c.ty, t = expr{ &c, e } }` copies the type store,
   then `expr` adds a type to the real one, and `prune` indexes the stale copy out of bounds.
