@@ -3690,7 +3690,7 @@ namespace check {
                     first = bv
                     first_name = p.variant.text
                 } else {
-                    same_binds{ &c, first_name, first, variant = p.variant.text, mine = bv, binders = p.binders, at = p.span }
+                    same_binds{ &c, first_name, first, variant = p.variant.text, mine = bv, binders = p.binders, at = p.span, within = "arm" }
                 }
                 k = k + 1
             }
@@ -3815,9 +3815,10 @@ namespace check {
         return false
     }
 
-    // A later pattern of an arm must bind what its first pattern does, each name with the same
-    // type and bound the same way. Each of its names then refers to the first pattern's local.
-    fn same_binds { mut c: Checker, first_name: []u8, first: []u32, variant: []u8, mine: []u32, binders: []syntax::Binder, at: source::Span } {
+    // A later pattern of an arm, or of an `is` (within names which), must bind what its first
+    // pattern does, each name with the same type and bound the same way. Each of its names then
+    // refers to the first pattern's local.
+    fn same_binds { mut c: Checker, first_name: []u8, first: []u32, variant: []u8, mine: []u32, binders: []syntax::Binder, at: source::Span, within: []u8 } {
         let mut used = list::new(bool){ realloc = arena::alloc, heap = c.heap }
         let mut i: usize = 0
         while i < mine.len {
@@ -3839,7 +3840,7 @@ namespace check {
             }
             if found == NONE {
                 let mut b = message{ c }
-                try! @fmt(&b, "`{}` must bind `{}`, as `{}` in the same arm does", str{ s = variant }, str{ s = fv.name }, str{ s = first_name })
+                try! @fmt(&b, "`{}` must bind `{}`, as `{}` in the same {} does", str{ s = variant }, str{ s = fv.name }, str{ s = first_name }, str{ s = within })
                 error{ &c, at, msg = utf8::view{ b } }
             } else {
                 let mut k: usize = 0
@@ -3866,7 +3867,7 @@ namespace check {
             if not flags[i] {
                 let v = get_var{ c, v = mine[i] }
                 let mut b = message{ c }
-                try! @fmt(&b, "`{}` binds `{}`, which `{}` in the same arm does not", str{ s = variant }, str{ s = v.name }, str{ s = first_name })
+                try! @fmt(&b, "`{}` binds `{}`, which `{}` in the same {} does not", str{ s = variant }, str{ s = v.name }, str{ s = first_name }, str{ s = within })
                 error{ &c, at = v.at, msg = utf8::view{ b } }
                 return
             }
@@ -3979,8 +3980,9 @@ namespace check {
     }
 
     // e, `x is P` (§8, Is): whether x holds one of the patterns' variants. On a `?U` for a union or
-    // enum U, a pattern other than `null` or `some` names one of U's variants. Only a test of one
-    // pattern binds, and its locals are declared where the test is known true (facts).
+    // enum U, a pattern other than `null` or `some` names one of U's variants. Every pattern binds
+    // what the first does, as in a match arm, and its locals are declared where the test is known
+    // true (facts).
     fn check_is { mut c: Checker, e: syntax::Expr, x: syntax::Expr, pats: []syntax::Pattern } -> Id {
         let t = typed{ &c, e = x }
         let mut ok = t != types::ERROR
@@ -4012,6 +4014,7 @@ namespace check {
             }
         }
         let derived = new_derived{ &c, xs = derives{ &c, e = x } }
+        let mut first: []u32 = slice::empty(u32){}
         let mut i: usize = 0
         while i < pats.len {
             let p = pats[i]
@@ -4040,12 +4043,14 @@ namespace check {
                 try! @fmt(&b, "variant `{}` is listed twice", str{ s = name })
                 error{ &c, at = p.span, msg = utf8::view{ b } }
             }
-            if pats.len > 1 and p.binders.len > 0 {
-                error{ &c, at = p.binders[0].span, msg = "an `is` with `|` cannot bind: test one pattern to bind its fields" }
-            }
             let fields: ?[]types::Field = if known { from[vi].fields } else { null }
             let bv = pattern_vars{ &c, variant = name, known, fields, binders = p.binders, through = false, ptr_mut = false, derived, at = p.span }
-            if pats.len == 1 { try! map::put{ m = &c.is_vars, key = expr_key{ e }, value = bv } }
+            if i == 0 {
+                first = bv
+                try! map::put{ m = &c.is_vars, key = expr_key{ e }, value = bv }
+            } else {
+                same_binds{ &c, first_name = pats[0].variant.text, first, variant = name, mine = bv, binders = p.binders, at = p.span, within = "test" }
+            }
             i = i + 1
         }
         return types::BOOL
@@ -4091,21 +4096,45 @@ namespace check {
                     return Facts{ yes = none, no = xs }
                 }
             }
-            isx => {
-                let vars = map::get{ m = c.is_vars, key = expr_key{ e } }
-                if vars == null { return Facts{ yes = none, no = none } }
+            isx{ e = x, pats } => {
+                // x itself narrows as `x != null` would: when true, or when false if a pattern
+                // is `null`.
                 let mut xs = list::new(Fact){ realloc = arena::alloc, heap = c.heap }
-                let mut i: usize = 0
-                while i < vars.len {
-                    let v = get_var{ c, v = vars[i] }
-                    add_fact{ xs = &xs, f = Fact{ var = vars[i], root = NONE, steps = slice::empty([]u8){}, ty = v.ty, at = v.at, bind = true, clash = false } }
-                    i = i + 1
+                let mut no: []Fact = none
+                let f = fact{ c, e = x.* }
+                if f != null {
+                    if names_null{ pats } {
+                        let mut one = list::new(Fact){ realloc = arena::alloc, heap = c.heap }
+                        add_fact{ xs = &one, f }
+                        no = list::items{ list = one }
+                    } else {
+                        add_fact{ xs = &xs, f }
+                    }
                 }
-                return Facts{ yes = list::items{ list = xs }, no = none }
+                let vars = map::get{ m = c.is_vars, key = expr_key{ e } }
+                if vars != null {
+                    let mut i: usize = 0
+                    while i < vars.len {
+                        let v = get_var{ c, v = vars[i] }
+                        add_fact{ xs = &xs, f = Fact{ var = vars[i], root = NONE, steps = slice::empty([]u8){}, ty = v.ty, at = v.at, bind = true, clash = false } }
+                        i = i + 1
+                    }
+                }
+                return Facts{ yes = list::items{ list = xs }, no }
             }
             else => {}
         }
         return Facts{ yes = none, no = none }
+    }
+
+    // Whether one of an `is`'s patterns is `null`.
+    fn names_null { pats: []syntax::Pattern } -> bool {
+        let mut i: usize = 0
+        while i < pats.len {
+            if slice::eq_bytes{ a = pats[i].variant.text, b = "null" } { return true }
+            i = i + 1
+        }
+        return false
     }
 
     // The fact that e is not null, if e can be narrowed: a read-only local or context field,
@@ -4584,13 +4613,7 @@ namespace check {
     // The type e's value has after any conversion.
     fn value_ty { c: Checker, k: u64 } -> Id {
         let conv = map::get{ m = c.convs, key = k }
-        if conv != null {
-            match conv {
-                some{ to } => { return to }
-                slice{ to } => { return to }
-                addr_slice{ to } => { return to }
-            }
-        }
+        if conv != null { return conv_target{ conv } }
         let t = map::get{ m = c.expr_ty, key = k }
         return if t == null { types::NO_TYPE } else { t }
     }
@@ -4673,12 +4696,9 @@ namespace check {
     }
 
     fn conv_target { conv: ?Conv } -> Id {
-        if conv == null { return types::NO_TYPE }
-        match conv {
-            some{ to } => { return to }
-            slice{ to } => { return to }
-            addr_slice{ to } => { return to }
-        }
+        // `conv != null` first: on a ?Conv, `some` names the optional's own variant.
+        if conv != null and conv is some{ to } | slice{ to } | addr_slice{ to } { return to }
+        return types::NO_TYPE
     }
 
     // The operators whose left side may be a pointer, for pointer arithmetic.
@@ -7444,7 +7464,7 @@ namespace check {
             }
         }
         let f = found
-        if f != null and f is decl{ i } and get_decl{ c, d = i }.kind == Kind::fault {
+        if f is decl{ i } and get_decl{ c, d = i }.kind == Kind::fault {
             refer{ &c, n, e = f }
             return i
         }
@@ -7554,7 +7574,7 @@ namespace check {
                     first = bv
                     first_name = word
                 } else {
-                    same_binds{ &c, first_name, first, variant = word, mine = bv, binders = p.binders, at = p.span }
+                    same_binds{ &c, first_name, first, variant = word, mine = bv, binders = p.binders, at = p.span, within = "arm" }
                 }
                 k = k + 1
             }

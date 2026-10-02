@@ -4078,7 +4078,10 @@ fn main { mut io: Io } {
         for body, fragment in [
             ('if r is nope { }', '?Ref has no variant `nope`'),
             ('if c is purple { }', 'Color has no variant `purple`'),
-            ('if r is local{ var } | variant { }', 'an `is` with `|` cannot bind'),
+            ('if r is local{ var } | variant { }', '`variant` must bind `var`, as `local` in the same test does'),
+            ('if r is local{ var } | constant{ value } { }', '`constant` must bind `var`, as `local` in the same test does'),
+            ('if r is local{ var = x } | constant{ value = x } { }', '`x` is i32 in `local` but i64 in `constant`'),
+            ('if r is variant | local{ var } { }', '`local` binds `var`, which `variant` in the same test does not'),
             ('if r is local{ &var } { }', '`&var` needs a pointer scrutinee'),
             ('let p = &r\n    if p is null { }', '`is` cannot test through a pointer; use `match`'),
             ('let e: !i32 = 1\n    if e is ok { }', '`is` cannot test a `!T` or an error'),
@@ -4136,6 +4139,93 @@ fn f {} -> *i32 {
 }
 fn main {} { _ = f{} }
 """, 'returned value holds the address of local `x`')
+
+    def test_alternatives_bind(self):
+        # Every alternative binds the same names: on a union, and through a ?U.
+        self.assertOutput("""
+union Conv { none, some{ to: i32 }, slice{ to: i32, n: u8 }, addr{ to: i32 } }
+fn target { c: Conv } -> i32 {
+    if c is some{ to } | slice{ to } | addr{ to } { return to }
+    return -1
+}
+fn opt_target { c: ?Conv } -> i32 {
+    if c is slice{ to = t } | addr{ to = t } { return t }
+    return -1
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = target{ c = Conv::slice{ to = 4, n = 1 } } }
+    io::println_i64{ &io, n = target{ c = Conv::addr{ to = 5 } } }
+    io::println_i64{ &io, n = target{ c = Conv::none } }
+    io::println_i64{ &io, n = opt_target{ c = Conv::addr{ to = 6 } } }
+    io::println_i64{ &io, n = opt_target{ c = Conv::slice{ to = 7, n = 2 } } }
+    io::println_i64{ &io, n = opt_target{ c = Conv::some{ to = 8 } } }
+    io::println_i64{ &io, n = opt_target{ c = null } }
+}
+""", '4\n5\n-1\n6\n7\n-1\n-1\n')
+
+    def test_narrows_tested_value(self):
+        # In the `if`, after `and`, and after a leaving `if not (x is P)`, x: ?Ref is a Ref.
+        self.assertOutput(self.REF + """
+fn var_of { r: Ref } -> i32 { return if r is local{ var } { var } else { 0 } }
+fn after_leaving { r: ?Ref } -> i32 {
+    if not (r is local) { return -1 }
+    return var_of{ r }
+}
+fn main { mut io: Io } {
+    let mut i = 0
+    while i < 4 {
+        let r = find{ n = i }
+        if r is local{ var } { io::println_i64{ &io, n = var_of{ r } + var } }
+        if r is local | constant and var_of{ r } == 0 { io::println{ &io, s = "constant" } }
+        io::println_i64{ &io, n = after_leaving{ r } }
+        i = i + 1
+    }
+}
+""", '-1\n14\n7\nconstant\n-1\n-1\n')
+
+    def test_narrows_through_a_path(self):
+        self.assertOutput(self.REF + """
+struct Slot { r: ?Ref }
+fn var_of { r: Ref } -> i32 { return if r is local{ var } { var } else { 0 } }
+fn main { mut io: Io } {
+    let s = Slot{ r = find{ n = 1 } }
+    if s.r is local { io::println_i64{ &io, n = var_of{ r = s.r } } }
+}
+""", '7\n')
+
+    def test_is_null_narrows_when_false(self):
+        self.assertOutput(self.REF + """
+fn var_of { r: Ref } -> i32 { return if r is local{ var } { var } else { 0 } }
+fn f { r: ?Ref } -> i32 {
+    if r is null { return -1 }
+    return var_of{ r }
+}
+fn g { r: ?Ref } -> i32 { return if r is null { -1 } else { var_of{ r } } }
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = f{ r = find{ n = 1 } } }
+    io::println_i64{ &io, n = f{ r = null } }
+    io::println_i64{ &io, n = g{ r = find{ n = 1 } } }
+}
+""", '7\n-1\n7\n')
+
+    def test_narrowing_where_not_known(self):
+        # A `let mut` local doesn't narrow; `x is null` doesn't narrow when true; nor does
+        # either side of an `or` alone.
+        for body in [
+            'let mut m = find{ n = 1 }\n    if m is local { take{ r = m } }',
+            'if r is null { take{ r } }',
+            'if r is local or true { take{ r } }',
+            'if r is local { } else { take{ r } }',
+            'if r is null | local { take{ r } }',
+        ]:
+            with self.subTest(body=body):
+                self.assertCompileError(self.REF + """
+fn take { r: Ref } {}
+fn main {} {
+    let r = find{ n = 1 }
+    %s
+}
+""" % body, 'expected Ref, got ?Ref')
 
     def test_is_is_a_keyword(self):
         self.assertCompileError("""

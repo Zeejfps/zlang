@@ -1487,7 +1487,7 @@ namespace lower {
 
     // `x is P` (§8, Is): a match on x giving true for P's variants and false for the others. On
     // a `?U`, patterns of U's variants go in an inner match on the value, which `some` binds to
-    // a temporary.
+    // a temporary. Every pattern binds the first one's locals.
     fn is_ex { mut l: Lower, x: syntax::Expr, pats: []syntax::Pattern } -> ir::Expr {
         let scrut = ex{ &l, e = x }
         let t = types::prune{ s = l.c.ty, t = T{ &l, t = check::type_of_expr{ c = l.c.*, e = x } } }
@@ -1500,19 +1500,22 @@ namespace lower {
             try! list::push{ list = xs, item = pats[i] }
             i = i + 1
         }
-        if deep.len == 0 { return test{ &l, scrut, t, vs, pats } }
+        let first = pats[0].binders
+        if deep.len == 0 { return test{ &l, scrut, t, vs, pats, first } }
         let u = types::prune{ s = l.c.ty, t = opt_elem{ l, t } }
         let ut = tid{ &l, t = u }
         let slot = temp{ &l, ty = ut }
-        let inner = test{ &l, scrut = mk{ ty = ut, k = ir::ExprKind::local{ slot } }, t = u, vs = check::variants_of{ c = l.c, t = u }, pats = list::items{ list = deep } }
+        let inner = test{ &l, scrut = mk{ ty = ut, k = ir::ExprKind::local{ slot } }, t = u, vs = check::variants_of{ c = l.c, t = u }, pats = list::items{ list = deep }, first }
         let mine = list::items{ list = own }
         let none = slice::empty(ir::Bind){}
         let mut take = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
         add_bind{ xs = &take, b = ir::Bind{ slot, field = 0, by_ref = false } }
         let mut out = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
         add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 0, binds = none } }, body = bool_block{ &l, value = has_pat{ pats = mine, name = "null" } } }
-        if has_pat{ pats = mine, name = "some" } {
-            add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = none } }, body = bool_block{ &l, value = true } }
+        let some = pat_named{ pats = mine, name = "some" }
+        if some != null {
+            let bs = alt_binds{ &l, first, binders = some.binders, fields = vs[1].fields }
+            add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = bs } }, body = bool_block{ &l, value = true } }
         } else {
             let body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = inner } }
             add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = list::items{ list = take } } }, body }
@@ -1521,8 +1524,9 @@ namespace lower {
     }
 
     // Whether scrut, of type t with variants vs, holds one of pats' variants: a switch on an
-    // enum, else a match, whose one pattern binds its fields.
-    fn test { mut l: Lower, scrut: ir::Expr, t: Id, vs: []check::Variant, pats: []syntax::Pattern } -> ir::Expr {
+    // enum, else a match, whose patterns each bind the locals of the `is`'s first pattern, whose
+    // binders are first.
+    fn test { mut l: Lower, scrut: ir::Expr, t: Id, vs: []check::Variant, pats: []syntax::Pattern, first: []syntax::Binder } -> ir::Expr {
         let ty = tid{ &l, t = types::BOOL }
         let all = pats.len == vs.len
         if types::get{ s = l.c.ty, id = t } is enumeration{ decl } {
@@ -1543,7 +1547,7 @@ namespace lower {
         let mut i: usize = 0
         while i < pats.len {
             let vi = variant_at{ vs, name = pats[i].variant.text }
-            let bs = if pats.len == 1 { binds{ &l, binders = pats[i].binders, fields = vs[vi].fields } } else { slice::empty(ir::Bind){} }
+            let bs = alt_binds{ &l, first, binders = pats[i].binders, fields = vs[vi].fields }
             try! list::push{ list = &ps, item = ir::Pat{ variant = vi, binds = bs } }
             i = i + 1
         }
@@ -1561,12 +1565,17 @@ namespace lower {
 
     // Whether one of pats names variant `name`.
     fn has_pat { pats: []syntax::Pattern, name: []u8 } -> bool {
+        return pat_named{ pats, name } != null
+    }
+
+    // The one of pats that names variant `name`, if any.
+    fn pat_named { pats: []syntax::Pattern, name: []u8 } -> ?syntax::Pattern {
         let mut i: usize = 0
         while i < pats.len {
-            if slice::eq_bytes{ a = pats[i].variant.text, b = name } { return true }
+            if slice::eq_bytes{ a = pats[i].variant.text, b = name } { return pats[i] }
             i = i + 1
         }
-        return false
+        return null
     }
 
     // A string literal: a [N]u8 array, or a view of static bytes as a []u8 or a utf8::String.

@@ -1253,8 +1253,7 @@ namespace decls {
                 indent{ &out, depth = d }
                 match conv {
                     some{ to } => { try! @fmt(&out, "some {}\n", check::tstr{ c, t = to }) }
-                    slice{ to } => { try! @fmt(&out, "slice {}\n", check::tstr{ c, t = to }) }
-                    addr_slice{ to } => { try! @fmt(&out, "slice {}\n", check::tstr{ c, t = to }) }
+                    slice{ to } | addr_slice{ to } => { try! @fmt(&out, "slice {}\n", check::tstr{ c, t = to }) }
                 }
                 d = d + 1
             }

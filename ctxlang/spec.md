@@ -138,6 +138,7 @@ match e {
 3. Narrowing: where an `x` of type `?T` is known not to be null, it has type `T`. `x` must be a `let` local or a read-only context field, or a path of struct fields from one, such as `v.a.b` (not through a pointer, `.*` or an index). To narrow a mutable one, copy it first (`let y = x`) or `match` on it.
 4. A condition narrows some `x`s when it is true and some when it is false:
    - `x != null` narrows `x` when true; `x == null` narrows `x` when false.
+   - `x is P` narrows `x` when true, unless `P` lists `null`: then it narrows `x` when false, as `x == null` does (§8, Is).
    - `not c` swaps what `c` narrows when true and when false.
    - `a and b` narrows, when true, what `a` or `b` narrows when true; when false, what both narrow when false.
    - `a or b` narrows, when true, what both narrow when true; when false, what `a` or `b` narrows when false.
@@ -167,15 +168,18 @@ let e = map::get{ m, key } ifnull { return null }   // leaves when the key is mi
 if r is local{ var } { use{ var } }             // r: ?Ref, for a union Ref
 if not (r is local{ var }) { return }           // var is bound from here to the end of the block
 if r is constant | variant | enumval { ... }
+if c is some{ to } | slice{ to } { use{ to } }  // both bind `to`, of one type
+if r is local { take{ r } }                     // r: Ref here
 let found = map::get{ m, key } is field         // ?Kind for an enum Kind: null doesn't match
 ```
 
-1. `e is P` is a `bool`: true when `e` holds `P`'s variant. `P` is a pattern as in a match arm (§8, Match), its variant named alone, or several separated by `|` if none of them binds anything: then it is true for any of them. A binding is read-only: `&f` is an error.
+1. `e is P` is a `bool`: true when `e` holds `P`'s variant. `P` is a pattern as in a match arm (§8, Match), its variant named alone, or several separated by `|`: then it is true for any of them, and each must bind the same names, each with the same type, as an arm's patterns do (§8, Match, rule 3). A binding is read-only: `&f` is an error.
 2. `e` is a union, an enum or a `?T`. A pointer is an error, and so is a `!T` or an error: use `match`.
 3. On a `?U` for a union or enum `U`, a pattern may name a variant of `U`, which null doesn't match. `null` and `some` still name the optional's own variants. `match` doesn't do this: it lists exactly its scrutinee's variants.
 4. Its bindings are bound where the test is known true. `e is P` binds them when true, and `not`, `and` and `or` combine what conditions bind as they combine what they narrow (§8, Optional, rule 4). A name that would be bound twice, as in `a is x{ v } and b is y{ v }`, isn't bound, and neither is one that only one side of an `or` binds.
 5. They are in scope where narrowing would hold (§8, Optional, rule 5): in `b` of `a and b`, in the first branch of `if c` and the body of `while c`, and after an `if` whose branch leaves when `c` is false. After an `if`, they are declared in the enclosing block as a let-else's bindings are (§11, Let-else): a later `let` of the same name in that block is an error.
-6. `is` binds at the level of `==` and doesn't chain with comparisons (§11, Expressions). `not e is P` is `not (e is P)`, and `a is x and b is y` needs no parentheses.
+6. `x is P`, for an `x` of type `?T` that can narrow (§8, Optional, rule 3), narrows `x` to `T` where it is known true, for a `P` that doesn't list `null`: `if r is local { take{ r } }`. A `P` that lists `null`, as `x is null` does, narrows `x` where the test is known false, as `x == null` does. This is the narrowing of §8, Optional, so it combines with `and`, `or` and `not` and holds where any narrowing would. A `let mut` local doesn't narrow.
+7. `is` binds at the level of `==` and doesn't chain with comparisons (§11, Expressions). `not e is P` is `not (e is P)`, and `a is x and b is y` needs no parentheses.
 
 ### Errors
 
