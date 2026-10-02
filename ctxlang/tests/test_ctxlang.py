@@ -920,7 +920,7 @@ class Bodies(Base):
     def test_errors(self):
         U2 = 'union U { a, b{ x: i32 } }\n'
         U3 = 'union U { a, b{ x: i32 }, c{ x: i32, y: bool } }\n'
-        B = 'fn w { mut b: utf8::Builder(arena::Arena) } -> bool {\n'
+        B = 'fn w { mut b: utf8::Builder(arena::Arena) } -> ! {\n'
         for src, msg, line, col in [
             ('fn f {} {\n    let x = null\n}',
              'cannot infer the type of `null` here; add a type', 2, 13),
@@ -1086,9 +1086,9 @@ class Bodies(Base):
              '@addr needs a pointer argument', 2, 19),
             ('fn f { a: i32, b: i64 } {\n    let c = @wrap_add(a, b)\n}',
              '@wrap_add needs two integers of the same type', 2, 13),
-            ('fn w { mut bs: [1]utf8::Builder(arena::Arena) } -> bool {\n    return @fmt(&bs[0], "x")\n}',
+            ('fn w { mut bs: [1]utf8::Builder(arena::Arena) } -> ! {\n    return @fmt(&bs[0], "x")\n}',
              '@fmt takes its builder as `&b`, `&x.f` or a name: it is used once per piece', 2, 17),
-            ('fn w { mut n: i32 } -> bool {\n    return @fmt(&n, "x")\n}',
+            ('fn w { mut n: i32 } -> ! {\n    return @fmt(&n, "x")\n}',
              '@fmt writes to a *mut utf8::Builder, got *mut i32', 2, 17),
             (B + '    let s = "x"\n    return @fmt(&b, s)\n}',
              '@fmt takes its format as a string literal', 3, 21),
@@ -1114,7 +1114,7 @@ class Bodies(Base):
              "@fmt can't format S: give a utf8::String, a number, a bool, an error, or a function that writes to the builder", 3, 28),
             (B + '    let n: i64 = 65\n    return @fmt(&b, "{c}", n)\n}',
              'expected u32, got i64', 3, 28),
-            ('fn wr { mut b: i32 } -> bool { return true }\n' + B + '    return @fmt(&b, "{}", wr)\n}',
+            ('fn wr { mut b: i32 } -> ! { }\n' + B + '    return @fmt(&b, "{}", wr)\n}',
              'expected *mut i32, got *mut utf8::Builder(arena::Arena)', 3, 17),
             ('struct S { f: i32 }\nfn f { o: ?S } {\n    let y = o.f\n}',
              '?S has no field `f`', 3, 14),
@@ -1186,7 +1186,7 @@ class Bodies(Base):
             'enum E: u8 { a, b }\nfn main {} {\n    let n: i64 = 300\n    let x = @as(f64, n)\n    let y = @trunc(u8, n)\n    let e = @as(E, 1)\n    let k = @as(u32, e)\n    let w = @wrap_add(y, @as(u8, 250))\n    let v = @wrap_sub(y, w)\n    let m = @wrap_mul(y, v)\n    let s = @size_of(i64) + @align_of(u32)\n    let mut arr: [4]u8 = [0; 4]\n    let sl = @slice(&arr[0], 2)\n    sl[0] = 1\n    let addr = @addr(&arr)\n    let bp = @cast(*u8, &arr)\n    _ = addr + s + @as(usize, m) + @as(usize, k) + @as(usize, bp.*)\n    _ = x\n}',
             'fn f { n: i32 } -> i32 {\n    if n < 0 { @panic("negative") }\n    if n > 100 { @panic() }\n    return n\n}\nfn main {} {\n    _ = f{ n = 1 }\n}',
             # @fmt with widths, x, c and function holes
-            'struct D { y: u32 }\nfn w_d { mut b: utf8::Builder(arena::Arena), d: D } -> bool {\n    return @fmt(&b, "{04}", d.y)\n}\nfn main {} {\n    let mut mem: [256]u8\n    let mut heap = arena::new{ buf = mem[..] }\n    let mut b = utf8::builder{ realloc = arena::alloc, &heap }\n    let d = D{ y = 7 }\n    let name: utf8::String = "ab"\n    _ = @fmt(&b, "[{5}] {x} {08x} {c} {6} {} {} {{}}", 42, 255, 48879, 65, name, true, w_d{ d, _ })\n}',
+            'struct D { y: u32 }\nfn w_d { mut b: utf8::Builder(arena::Arena), d: D } -> ! {\n    return @fmt(&b, "{04}", d.y)\n}\nfn main {} {\n    let mut mem: [256]u8\n    let mut heap = arena::new{ buf = mem[..] }\n    let mut b = utf8::builder{ realloc = arena::alloc, &heap }\n    let d = D{ y = 7 }\n    let name: utf8::String = "ab"\n    _ = @fmt(&b, "[{5}] {x} {08x} {c} {6} {} {} {{}}", 42, 255, 48879, 65, name, true, w_d{ d, _ })\n}',
             # generic functions with inferred args
             'fn first(T) { a: T, b: T } -> T { return a }\nfn wrap(T) { v: T } -> ?T { return v }\nfn main {} {\n    let x: i64 = first{ a = 1, b = 2 }\n    let o = wrap{ v = true }\n    if o != null { _ = first{ a = o, b = false } }\n    _ = x\n}',
             # match through *mut U with &f binders
@@ -2316,13 +2316,66 @@ class Fmt(Base):
     _ = @fmt(&b, "due {}, or {}", write_iso{ d, _ }, write_us{ d, sep = '/', _ })""",
                  'due 2026-09-30, or 09/30/2026', extra="""
 struct Date { y: u32, m: u32, d: u32 }
-fn write_iso { mut b: utf8::Builder(arena::Arena), d: Date } -> bool {
+fn write_iso { mut b: utf8::Builder(arena::Arena), d: Date } -> ! {
     return @fmt(&b, "{04}-{02}-{02}", d.y, d.m, d.d)
 }
-fn write_us { mut out: utf8::Builder(arena::Arena), d: Date, sep: u8 } -> bool {
+fn write_us { mut out: utf8::Builder(arena::Arena), d: Date, sep: u8 } -> ! {
     return @fmt(&out, "{02}{c}{02}{c}{}", d.m, sep, d.d, sep, d.y)
 }
 """)
+
+    def test_try_passes_out_of_memory_up(self):
+        # `try @fmt` fails a writer with alloc::out_of_memory alone, so this match is exhaustive.
+        self.assertOutput("""
+fn pair { mut b: utf8::Builder(arena::Arena), x: i64, y: i64 } -> ! {
+    try @fmt(&b, "<{}, {}>", x, y)
+}
+fn show { mut io: Io, mut b: utf8::Builder(arena::Arena) } {
+    match pair{ &b, x = 1, y = 2 } {
+        ok                   => { io::println{ &io, s = utf8::view{ b } } }
+        alloc::out_of_memory => { io::println{ &io, s = "oom" } }
+    }
+}
+fn main { mut io: Io } {
+    let mut mem: [64]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    show{ &io, &b }
+    let mut small: [4]u8
+    let mut tiny = arena::new{ buf = small[..] }
+    let mut t = utf8::builder{ realloc = arena::alloc, heap = &tiny }
+    show{ &io, b = &t }
+}
+""", '<1, 2>\noom\n')
+
+    def test_writer_error_passes_through(self):
+        # A writer's own error is the @fmt's, and the pieces after it aren't pushed.
+        self.assertOutput("""
+error bad{ code: i64 }
+fn fails { mut b: utf8::Builder(arena::Arena), code: i64 } -> ! {
+    try utf8::push{ &b, s = "[" }
+    return bad{ code }
+}
+fn main { mut io: Io } {
+    let mut mem: [64]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    match @fmt(&b, "a{}b", fails{ code = 7, _ }) {
+        ok => { io::println{ &io, s = "ok" } }
+        err{ error } => {
+            match error {
+                bad{ code } => { io::println_i64{ &io, n = code } }
+                else        => { io::println{ &io, s = "other" } }
+            }
+        }
+    }
+    io::println{ &io, s = utf8::view{ b } }
+}
+""", '7\na[\n')
+
+    def test_writer_must_fail(self):
+        self.fmt_error('_ = @fmt(&b, "{}", w{ _ })', "@fmt can't format &fn{ mut b: utf8::Builder(arena::Arena) } -> bool",
+                       extra='fn w { mut b: utf8::Builder(arena::Arena) } -> bool { return true }\n')
 
     def test_open_integer_types(self):
         # The pushes are chosen once the body is checked, so `n` is still free to become a usize.
@@ -2336,7 +2389,7 @@ fn write_us { mut out: utf8::Builder(arena::Arena), d: Date, sep: u8 } -> bool {
     def test_field_builder_and_result(self):
         self.fmt("""
     let mut w = W{ out = utf8::builder{ realloc = arena::alloc, &heap } }
-    let ok = @fmt(&w.out, "{}+{}", 1, 2)
+    let ok = match @fmt(&w.out, "{}+{}", 1, 2) { ok => { true } err => { false } }
     _ = @fmt(&b, "{}", ok)
     _ = utf8::push{ &b, s = utf8::view{ b = w.out } }""", 'true1+2', extra='struct W { out: utf8::Builder(arena::Arena) }\n')
 
@@ -2346,10 +2399,17 @@ fn main { mut io: Io } {
     let mut mem: [8]u8
     let mut heap = arena::new{ buf = mem[..] }
     let mut b = utf8::builder{ realloc = arena::alloc, &heap }
-    io::println_bool{ &io, n = @fmt(&b, "{}", 1234) }
-    io::println_bool{ &io, n = @fmt(&b, "{} and more than eight bytes", 5) }
+    match @fmt(&b, "{}", 1234) {
+        ok                   => { io::println{ &io, s = "ok" } }
+        alloc::out_of_memory => { io::println{ &io, s = "oom" } }
+    }
+    match @fmt(&b, "{} and more than eight bytes", 5) {
+        ok                   => { io::println{ &io, s = "ok" } }
+        alloc::out_of_memory => { io::println{ &io, s = "oom" } }
+    }
+    io::println{ &io, s = utf8::view{ b } }    // the pieces before the one that failed
 }
-""", 'true\nfalse\n')
+""", 'ok\noom\n1234\n')
 
     def test_errors(self):
         for body, fragment in [
@@ -2367,7 +2427,7 @@ fn main { mut io: Io } {
             ('let mut n: i32 = 1\n    _ = @fmt(&n, "x")','@fmt writes to a *mut utf8::Builder, got *mut i32'),
             ('let bs: [1]utf8::Builder(arena::Arena) = [b]\n    _ = @fmt(&bs[0], "x")',
              '@fmt takes its builder as `&b`, `&x.f` or a name'),
-            ('@fmt(&b, "x")', 'the result of `@fmt` (bool) is unused'),
+            ('@fmt(&b, "x")', 'the result of `@fmt` (!) is unused'),
         ]:
             self.fmt_error(body, fragment)
 
@@ -2383,7 +2443,8 @@ namespace app {
         let mut mem: [64]u8
         let mut heap = arena::new{ buf = mem[..] }
         let mut b = std_utf8{ &heap }
-        if @fmt(&b, "{} and {}", 42, true) { io::println{ &io, s = view{ b } } }
+        @fmt(&b, "{} and {}", 42, true) iferr { return }
+        io::println{ &io, s = view{ b } }
     }
 }
 fn std_utf8 { mut heap: arena::Arena } -> utf8::Builder(arena::Arena) {
@@ -4057,11 +4118,11 @@ fn show { mut io: Io, r: !u64 } {
     let mut mem: [256]u8 = [0; 256]
     let mut heap = arena::new{ buf = mem[..] }
     let mut b = utf8::builder{ realloc = arena::alloc, &heap }
-    let ok = match r {
-        ok{ value }  => { @fmt(&b, "ok {}", value) }
-        err{ error } => { @fmt(&b, "err {}", error) }
+    match r {
+        ok{ value }  => { _ = @fmt(&b, "ok {}", value) }
+        err{ error } => { _ = @fmt(&b, "err {}", error) }
     }
-    if ok { io::println{ &io, s = utf8::view{ b } } }
+    io::println{ &io, s = utf8::view{ b } }
 }
 """
 

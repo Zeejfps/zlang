@@ -131,14 +131,14 @@ namespace parser {
                 p.pos = p.pos + 1
                 return run
             }
-            if not utf8::push{ &b, s = run } { return fail{ at = p.pos, problem = Problem::out_of_memory } }
+            utf8::push{ &b, s = run } iferr { return fail{ at = p.pos, problem = Problem::out_of_memory } }
             if c == '"' {
                 p.pos = p.pos + 1
                 return utf8::view{ b }
             }
             // c is '\\'
             let ch = try parse_escape{ &p }
-            if not utf8::push_char{ &b, c = ch } { return fail{ at = p.pos, problem = Problem::out_of_memory } }
+            utf8::push_char{ &b, c = ch } iferr { return fail{ at = p.pos, problem = Problem::out_of_memory } }
             copied = true
         }
     }

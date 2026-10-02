@@ -23,7 +23,7 @@ fn print_version { mut io: Io, mut gl: gl::Gl1_1 } {
 }
 
 // Pushes C string s, for an @fmt hole, or `?` if it isn't valid UTF-8.
-fn write_c { s: c::String, mut b: utf8::Builder(arena::Arena) } -> bool {
+fn write_c { s: c::String, mut b: utf8::Builder(arena::Arena) } -> ! {
     let text = utf8::from{ bytes = c::bytes{ s } } iferr { return utf8::push{ &b, s = "?" } }
     return utf8::push{ &b, s = text }
 }
@@ -57,11 +57,11 @@ fn main { mut io: Io, mut glfw: glfw::Glfw } -> i32 {
         let mut buf: [128]u8
         let mut heap = arena::new{ buf = buf[..] }
         let mut b = utf8::builder{ realloc = arena::alloc, &heap }
-        let ok = match error {
-            gl::too_old{ have, need } => { @fmt(&b, "gl: the context's OpenGL is {}.{}; this needs {}.{}", have / 10, have % 10, need / 10, need % 10) }
-            gl::missing{ name } => { @fmt(&b, "gl: {} didn't load", write_c{ s = name, _ }) }
+        match error {
+            gl::too_old{ have, need } => { _ = @fmt(&b, "gl: the context's OpenGL is {}.{}; this needs {}.{}", have / 10, have % 10, need / 10, need % 10) }
+            gl::missing{ name } => { _ = @fmt(&b, "gl: {} didn't load", write_c{ s = name, _ }) }
         }
-        if ok { io::eprintln{ &io, s = utf8::view{ b } } }
+        io::eprintln{ &io, s = utf8::view{ b } }
         return 1
     }
     print_version{ &io, &gl }

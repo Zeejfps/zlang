@@ -823,14 +823,13 @@ namespace check {
         while k < stack.len and stack[k] != i { k = k + 1 }
         if k < stack.len {
             let mut b = message{ c }
-            let mut ok = @fmt(&b, "capability `{}` includes itself", str{ s = get_decl{ c, d = i }.name.text })
+            pushed{ ok = @fmt(&b, "capability `{}` includes itself", str{ s = get_decl{ c, d = i }.name.text }) }
             let mut n = k + 1
             while n < stack.len {
                 let sep: utf8::String = if n == k + 1 { ", through " } else { ", " }
-                ok = ok and @fmt(&b, "{}`{}`", sep, str{ s = get_decl{ c, d = stack[n] }.name.text })
+                pushed{ ok = @fmt(&b, "{}`{}`", sep, str{ s = get_decl{ c, d = stack[n] }.name.text }) }
                 n = n + 1
             }
-            pushed{ ok }
             error{ &c, at = inc.span, msg = utf8::view{ b } }
             return NONE
         }
@@ -2030,7 +2029,7 @@ namespace check {
         return utf8::view{ b }
     }
 
-    fn write_type { c: Checker, t: Id, mut b: utf8::Builder(Heap) } -> bool {
+    fn write_type { c: Checker, t: Id, mut b: utf8::Builder(Heap) } -> ! {
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
             var{ n } => {
                 match types::var_of{ s = c.ty, n }.kind {
@@ -2045,30 +2044,41 @@ namespace check {
             prim{ p } => { return utf8::push{ &b, s = str{ s = types::PRIM_NAMES[@as(usize, p)] } } }
             cap{ decl } => { return utf8::push{ &b, s = str{ s = get_decl{ c, d = decl }.name.text } } }
             ptr{ elem, mutable } => {
-                return utf8::push{ &b, s = if mutable { "*mut " } else { "*" } } and write_type{ c, t = elem, &b }
+                try utf8::push{ &b, s = if mutable { "*mut " } else { "*" } }
+                return write_type{ c, t = elem, &b }
             }
             slice{ elem, mutable } => {
-                return utf8::push{ &b, s = if mutable { "[]mut " } else { "[]" } } and write_type{ c, t = elem, &b }
+                try utf8::push{ &b, s = if mutable { "[]mut " } else { "[]" } }
+                return write_type{ c, t = elem, &b }
             }
-            array{ n, elem } => { return @fmt(&b, "[{}]", n) and write_type{ c, t = elem, &b } }
-            opt{ elem } => { return utf8::push{ &b, s = "?" } and write_type{ c, t = elem, &b } }
+            array{ n, elem } => {
+                try @fmt(&b, "[{}]", n)
+                return write_type{ c, t = elem, &b }
+            }
+            opt{ elem } => {
+                try utf8::push{ &b, s = "?" }
+                return write_type{ c, t = elem, &b }
+            }
             enumeration{ decl } => { return utf8::push{ &b, s = str{ s = get_decl{ c, d = decl }.qual } } }
             record{ decl, args } => { return generic{ c, decl, args, &b } }
             sum{ decl, args } => { return generic{ c, decl, args, &b } }
             func{ fields, ret, bound, external } => {
-                let mut ok = utf8::push{ &b, s = if bound { "&fn{" } else if external { "extern fn{" } else { "fn{" } }
+                try utf8::push{ &b, s = if bound { "&fn{" } else if external { "extern fn{" } else { "fn{" } }
                 let mut i: usize = 0
                 while i < fields.len {
                     let f = fields[i]
-                    ok = ok and utf8::push{ &b, s = if i == 0 { " " } else { ", " } }
-                        and utf8::push{ &b, s = if f.mutable { "mut " } else { "" } }
-                        and @fmt(&b, "{}: ", str{ s = f.name }) and write_type{ c, t = f.ty, &b }
+                    try utf8::push{ &b, s = if i == 0 { " " } else { ", " } }
+                    try utf8::push{ &b, s = if f.mutable { "mut " } else { "" } }
+                    try @fmt(&b, "{}: ", str{ s = f.name })
+                    try write_type{ c, t = f.ty, &b }
                     i = i + 1
                 }
-                if fields.len > 0 { ok = ok and utf8::push{ &b, s = " " } }
-                ok = ok and utf8::push{ &b, s = "}" }
-                if ret != types::VOID { ok = ok and utf8::push{ &b, s = " -> " } and write_type{ c, t = ret, &b } }
-                return ok
+                if fields.len > 0 { try utf8::push{ &b, s = " " } }
+                try utf8::push{ &b, s = "}" }
+                if ret != types::VOID {
+                    try utf8::push{ &b, s = " -> " }
+                    try write_type{ c, t = ret, &b }
+                }
             }
             param{ decl, index } => { return utf8::push{ &b, s = str{ s = get_decl{ c, d = decl }.tparams[index].text } } }
             errs{ owner, one } => {
@@ -2077,26 +2087,25 @@ namespace check {
                 return @fmt(&b, "error of `{}`", str{ s = get_decl{ c, d = owner }.qual })
             }
             eset{ errs } => {
-                let mut ok = utf8::push{ &b, s = "error{" }
+                try utf8::push{ &b, s = "error{" }
                 let mut i: usize = 0
                 while i < errs.len {
-                    if i > 0 { ok = ok and utf8::push{ &b, s = ", " } }
-                    ok = ok and utf8::push{ &b, s = str{ s = get_decl{ c, d = errs[i] }.qual } }
+                    if i > 0 { try utf8::push{ &b, s = ", " } }
+                    try utf8::push{ &b, s = str{ s = get_decl{ c, d = errs[i] }.qual } }
                     i = i + 1
                 }
-                return ok and utf8::push{ &b, s = "}" }
+                return utf8::push{ &b, s = "}" }
             }
             res{ ok, errs } => {
-                let r = utf8::push{ &b, s = "!" }
-                if ok == types::VOID { return r }
-                return r and write_type{ c, t = ok, &b }
+                try utf8::push{ &b, s = "!" }
+                if ok != types::VOID { try write_type{ c, t = ok, &b } }
             }
         }
     }
 
     // What errors of type t (an errs) may be, for messages: "the errors of `f`", "`fs::eof`" or
     // "any error".
-    fn set_text { c: Checker, t: Id, mut b: utf8::Builder(Heap) } -> bool {
+    fn set_text { c: Checker, t: Id, mut b: utf8::Builder(Heap) } -> ! {
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
             errs{ owner, one } => {
                 if one != NONE { return @fmt(&b, "`{}`", str{ s = get_decl{ c, d = one }.qual }) }
@@ -2108,17 +2117,17 @@ namespace check {
     }
 
     // `name(A, B)`, or `name` without arguments.
-    fn generic { c: Checker, decl: u32, args: []Id, mut b: utf8::Builder(Heap) } -> bool {
-        let mut ok = utf8::push{ &b, s = str{ s = get_decl{ c, d = decl }.qual } }
-        if args.len == 0 { return ok }
-        ok = ok and utf8::push{ &b, s = "(" }
+    fn generic { c: Checker, decl: u32, args: []Id, mut b: utf8::Builder(Heap) } -> ! {
+        try utf8::push{ &b, s = str{ s = get_decl{ c, d = decl }.qual } }
+        if args.len == 0 { return }
+        try utf8::push{ &b, s = "(" }
         let mut i: usize = 0
         while i < args.len {
-            if i > 0 { ok = ok and utf8::push{ &b, s = ", " } }
-            ok = ok and write_type{ c, t = args[i], &b }
+            if i > 0 { try utf8::push{ &b, s = ", " } }
+            try write_type{ c, t = args[i], &b }
             i = i + 1
         }
-        return ok and utf8::push{ &b, s = ")" }
+        return utf8::push{ &b, s = ")" }
     }
 
     // ---- bodies: const initializers and functions (ctxi's check_const and check_fn)
@@ -2227,7 +2236,8 @@ namespace check {
                         let mut b = message{ c }
                         let sign: utf8::String = if negative { "-" } else { "" }
                         let digits = if value == null { str{ s = source_text{ c, span = e.span } } } else { message_u64{ c, n = value } }
-                        pushed{ ok = @fmt(&b, "literal {}{} does not fit in {}", sign, digits, tstr{ c, t }) and fixed_by{ c, t = type_of_expr{ c, e }, &b } }
+                        pushed{ ok = @fmt(&b, "literal {}{} does not fit in {}", sign, digits, tstr{ c, t }) }
+                        pushed{ ok = fixed_by{ c, t = type_of_expr{ c, e }, &b } }
                         error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
                     }
                 }
@@ -2271,7 +2281,7 @@ namespace check {
 
     // `, which it gets from `n` at 3:9`: why a literal of type t has its type, if an operand
     // fixed it.
-    fn fixed_by { c: Checker, t: Id, mut b: utf8::Builder(Heap) } -> bool {
+    fn fixed_by { c: Checker, t: Id, mut b: utf8::Builder(Heap) } -> ! {
         let mut x = t
         while true {
             match types::get{ s = c.ty, id = x } {
@@ -2286,13 +2296,12 @@ namespace check {
                         }
                         return @fmt(&b, ", which it gets from the operand at {}:{}", p.line, p.col)
                     }
-                    if v.ref == types::NO_TYPE { return true }
+                    if v.ref == types::NO_TYPE { return }
                     x = v.ref
                 }
-                else => { return true }
+                else => { return }
             }
         }
-        return true
     }
 
     // A generic argument to infer by the end of the body.
@@ -3250,6 +3259,10 @@ namespace check {
                         }
                         name = utf8::view{ b }
                     }
+                    builtin{ name = n } => {
+                        call = slice::eq_bytes{ a = n.text, b = "fmt" }
+                        name = "try @fmt"
+                    }
                     else => {}
                 }
                 if not call {
@@ -3834,18 +3847,17 @@ namespace check {
         }
         if ok and not has_else and seen.len < vs.len {
             let mut b = message{ c }
-            let mut okb = utf8::push{ &b, s = "match isn't exhaustive: missing " }
+            pushed{ ok = utf8::push{ &b, s = "match isn't exhaustive: missing " } }
             let mut n: usize = 0
             let mut j: usize = 0
             while j < vs.len {
                 if not has_id{ xs = list::items{ list = seen }, n = @as(u32, j) } {
-                    if n > 0 { okb = okb and utf8::push{ &b, s = ", " } }
-                    okb = okb and utf8::push{ &b, s = str{ s = vs[j].name } }
+                    if n > 0 { pushed{ ok = utf8::push{ &b, s = ", " } } }
+                    pushed{ ok = utf8::push{ &b, s = str{ s = vs[j].name } } }
                     n = n + 1
                 }
                 j = j + 1
             }
-            pushed{ ok = okb }
             error{ &c, at, msg = utf8::view{ b } }
         }
         restore{ &c, s = merge{ c, xs = list::items{ list = results } } }
@@ -4065,18 +4077,18 @@ namespace check {
                 error{ &c, at = els.span, msg = utf8::view{ b } }
             } else if known and vs.len != 2 {
                 let mut b = message{ c }
-                let mut okb = @fmt(&b, "`else {}` would skip ", str{ s = ev })
+                pushed{ ok = @fmt(&b, "`else {}` would skip ", str{ s = ev }) }
                 let mut n: usize = 0
                 let mut j: usize = 0
                 while j < vs.len {
                     if not slice::eq_bytes{ a = vs[j].name, b = variant.text } and not slice::eq_bytes{ a = vs[j].name, b = ev } {
-                        if n > 0 { okb = okb and utf8::push{ &b, s = ", " } }
-                        okb = okb and utf8::push{ &b, s = str{ s = vs[j].name } }
+                        if n > 0 { pushed{ ok = utf8::push{ &b, s = ", " } } }
+                        pushed{ ok = utf8::push{ &b, s = str{ s = vs[j].name } } }
                         n = n + 1
                     }
                     j = j + 1
                 }
-                pushed{ ok = okb and utf8::push{ &b, s = "; a pattern after `else` must name the only other variant" } }
+                pushed{ ok = utf8::push{ &b, s = "; a pattern after `else` must name the only other variant" } }
                 error{ &c, at = els.span, msg = utf8::view{ b } }
             }
             let efields: ?[]types::Field = if eknown { vs[evi].fields } else { null }
@@ -4287,7 +4299,8 @@ namespace check {
 
     fn union_step { c: Checker, name: []u8 } -> []u8 {
         let mut b = message{ c }
-        pushed{ ok = utf8::push{ &b, s = "|" } and utf8::push{ &b, s = str{ s = name } } }
+        pushed{ ok = utf8::push{ &b, s = "|" } }
+        pushed{ ok = utf8::push{ &b, s = str{ s = name } } }
         return utf8::view{ b }.bytes
     }
 
@@ -5108,19 +5121,20 @@ namespace check {
     // `a.b[_]`
     fn place_str { c: Checker, p: Place } -> utf8::String {
         let mut b = message{ c }
-        let mut ok = utf8::push{ &b, s = str{ s = get_var{ c, v = p.root }.name } }
+        pushed{ ok = utf8::push{ &b, s = str{ s = get_var{ c, v = p.root }.name } } }
         let mut i: usize = 0
         while i < p.steps.len {
             if slice::eq_bytes{ a = p.steps[i], b = "[" } {
-                ok = ok and utf8::push{ &b, s = "[_]" }
+                pushed{ ok = utf8::push{ &b, s = "[_]" } }
             } else if p.steps[i].len > 0 and p.steps[i][0] == '|' {
-                ok = ok and utf8::push{ &b, s = "." } and utf8::push{ &b, s = str{ s = p.steps[i][1..] } }
+                pushed{ ok = utf8::push{ &b, s = "." } }
+                pushed{ ok = utf8::push{ &b, s = str{ s = p.steps[i][1..] } } }
             } else {
-                ok = ok and utf8::push{ &b, s = "." } and utf8::push{ &b, s = str{ s = p.steps[i] } }
+                pushed{ ok = utf8::push{ &b, s = "." } }
+                pushed{ ok = utf8::push{ &b, s = str{ s = p.steps[i] } } }
             }
             i = i + 1
         }
-        pushed{ ok }
         return utf8::view{ b }
     }
 
@@ -5543,7 +5557,7 @@ namespace check {
         }
     }
 
-    fn mismatch { mut c: Checker, a: Id, e: Id, mut b: utf8::Builder(Heap) } -> bool {
+    fn mismatch { mut c: Checker, a: Id, e: Id, mut b: utf8::Builder(Heap) } -> ! {
         let x = types::prune{ s = c.ty, t = a }
         let y = types::prune{ s = c.ty, t = e }
         match types::get{ s = c.ty, id = x } {
@@ -5551,10 +5565,15 @@ namespace check {
                 match types::get{ s = c.ty, id = y } {
                     func{ fields = ef, bound = eb, external = ee } => {
                         if ee and not ae {
-                            return @fmt(&b, "a ctxlang function can't be passed as a C function pointer (") and write_type{ c, t = y, &b } and @fmt(&b, "): only an extern fn or a `#c::callback` fn can")
+                            try @fmt(&b, "a ctxlang function can't be passed as a C function pointer (")
+                            try write_type{ c, t = y, &b }
+                            return @fmt(&b, "): only an extern fn or a `#c::callback` fn can")
                         }
                         if ae and not ee {
-                            return @fmt(&b, "a C function pointer (") and write_type{ c, t = x, &b } and @fmt(&b, ") can't be used as a ctxlang ") and write_type{ c, t = y, &b }
+                            try @fmt(&b, "a C function pointer (")
+                            try write_type{ c, t = x, &b }
+                            try @fmt(&b, ") can't be used as a ctxlang ")
+                            return write_type{ c, t = y, &b }
                         }
                         if not (ab and not eb) and not ae {
                             let mut i: usize = 0
@@ -5562,7 +5581,9 @@ namespace check {
                                 let f = af[i]
                                 if types::find_field{ fields = ef, name = f.name } == null {
                                     let m: utf8::String = if f.mutable { "mut " } else { "" }
-                                    return @fmt(&b, "function needs `{}{}`, which ", m, str{ s = f.name }) and write_type{ c, t = y, &b } and @fmt(&b, " doesn't provide")
+                                    try @fmt(&b, "function needs `{}{}`, which ", m, str{ s = f.name })
+                                    try write_type{ c, t = y, &b }
+                                    return @fmt(&b, " doesn't provide")
                                 }
                                 i = i + 1
                             }
@@ -5582,12 +5603,17 @@ namespace check {
                     res{ ok = yo, errs = ye } => {
                         if types::prune{ s = c.ty, t = xo } == types::prune{ s = c.ty, t = yo } and xe != ye {
                             if xr != x {
-                                return @fmt(&b, "a function whose `!T` fails with its body's errors can't be a value of type ") and write_type{ c, t = y, &b }
-                                    and @fmt(&b, ", whose `!T` fails with any error")
+                                try @fmt(&b, "a function whose `!T` fails with its body's errors can't be a value of type ")
+                                try write_type{ c, t = y, &b }
+                                return @fmt(&b, ", whose `!T` fails with any error")
                             }
-                            return @fmt(&b, "expected ") and write_type{ c, t = y, &b } and @fmt(&b, " failing with ") and set_text{ c, t = ye, &b }
-                                and @fmt(&b, ", got one failing with ") and set_text{ c, t = xe, &b }
-                                and @fmt(&b, ": errors join only the result of the function that returns them")
+                            try @fmt(&b, "expected ")
+                            try write_type{ c, t = y, &b }
+                            try @fmt(&b, " failing with ")
+                            try set_text{ c, t = ye, &b }
+                            try @fmt(&b, ", got one failing with ")
+                            try set_text{ c, t = xe, &b }
+                            return @fmt(&b, ": errors join only the result of the function that returns them")
                         }
                     }
                     else => {}
@@ -5595,7 +5621,10 @@ namespace check {
             }
             else => {}
         }
-        return @fmt(&b, "expected ") and write_type{ c, t = y, &b } and @fmt(&b, ", got ") and write_type{ c, t = x, &b }
+        try @fmt(&b, "expected ")
+        try write_type{ c, t = y, &b }
+        try @fmt(&b, ", got ")
+        return write_type{ c, t = x, &b }
     }
 
     // t's result if t is a function type, else t.
@@ -6383,7 +6412,8 @@ namespace check {
         let gone = list::items{ list = missing }
         if gone.len > 0 and not bind and not forward {
             let mut m = message{ c }
-            pushed{ ok = @fmt(&m, "call to `{}` is missing ", name) and names{ fields = gone, b = &m } }
+            pushed{ ok = @fmt(&m, "call to `{}` is missing ", name) }
+            pushed{ ok = names{ fields = gone, b = &m } }
             error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
         }
         let refs = check_exclusive{ &c, e, items, fields }
@@ -6422,15 +6452,13 @@ namespace check {
     }
 
     // "`a`, `b`"
-    fn names { fields: []types::Field, mut b: utf8::Builder(Heap) } -> bool {
-        let mut ok = true
+    fn names { fields: []types::Field, mut b: utf8::Builder(Heap) } -> ! {
         let mut i: usize = 0
         while i < fields.len {
-            if i > 0 { ok = ok and utf8::push{ &b, s = ", " } }
-            ok = ok and @fmt(&b, "`{}`", str{ s = fields[i].name })
+            if i > 0 { try utf8::push{ &b, s = ", " } }
+            try @fmt(&b, "`{}`", str{ s = fields[i].name })
             i = i + 1
         }
-        return ok
     }
 
     fn struct_lit { mut c: Checker, e: syntax::Expr, d: Entry, seg: syntax::Seg, items: []syntax::Item, forward: bool, bind: bool, exp: Id } -> Id {
@@ -6620,7 +6648,8 @@ namespace check {
         let gone = list::items{ list = missing }
         if gone.len > 0 {
             let mut b = message{ c }
-            pushed{ ok = @fmt(&b, "{} is missing ", what) and names{ fields = gone, &b } }
+            pushed{ ok = @fmt(&b, "{} is missing ", what) }
+            pushed{ ok = names{ fields = gone, &b } }
             error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
         }
         i = 0
@@ -7134,7 +7163,7 @@ namespace check {
     // ---- @fmt(b, "format", args...) (§13, Formatting): pushes onto a builder
 
     fn fmt_builtin { mut c: Checker, e: syntax::Expr, args: []syntax::Expr } -> Id {
-        if args.len < 2 { return types::BOOL }         // the parser has reported it
+        if args.len < 2 { return fmt_type{ &c, calls = false } }         // the parser has reported it
         let b = args[0]
         let f = args[1]
         let mut ok = true
@@ -7180,18 +7209,28 @@ namespace check {
                 ok = false
             }
         }
+        let mut calls = false
         let mut i: usize = 0
         while i < holes.len {
             let h = holes[i]
             let want = match h.k { str => { text_type{ &c } } else => { types::NO_TYPE } }
-            _ = expr{ &c, e = h, exp = want }
+            let ht = expr{ &c, e = h, exp = want }
+            match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = ht } } { func => { calls = true } else => {} }
             i = i + 1
         }
         if ok and ps != null {
             map::put{ m = &c.pieces, key = expr_key{ e }, value = ps } iferr { @panic("check: out of memory") }
             list::push{ list = &c.fmts, item = e } iferr { @panic("check: out of memory") }
         }
-        return types::BOOL
+        return fmt_type{ &c, calls }
+    }
+
+    // @fmt's type: a bare `!` that fails with alloc::out_of_memory, or with any error if a hole is
+    // a function, whose errors are its own.
+    fn fmt_type { mut c: Checker, calls: bool } -> Id {
+        let oom = std_value{ c, space = "alloc", name = "out_of_memory" }
+        let one = if calls { NONE } else { oom }
+        return types::res{ s = &c.ty, ok = types::VOID, errs = types::errs{ s = &c.ty, owner = NONE, one } }
     }
 
     // A name, or a path of fields from one: it can be evaluated more than once.
@@ -7258,14 +7297,14 @@ namespace check {
                 }
                 if k != j {
                     let mut m = message{ c }
-                    let mut okm = utf8::push{ b = &m, s = "bad hole `" }
+                    pushed{ ok = utf8::push{ b = &m, s = "bad hole `" } }
                     let mut q = i
                     while q <= j {
                         let code: u32 = if s[q] < 128 { s[q] } else { 65533 }      // as ctxi's "replace"
-                        okm = okm and utf8::push_char{ b = &m, c = code }
+                        pushed{ ok = utf8::push_char{ b = &m, c = code } }
                         q = q + 1
                     }
-                    pushed{ ok = okm and utf8::push{ b = &m, s = "` in the format: use `{}`, `{x}`, `{c}` or a width such as `{8}` or `{08x}`" } }
+                    pushed{ ok = utf8::push{ b = &m, s = "` in the format: use `{}`, `{x}`, `{c}` or a width such as `{8}` or `{08x}`" } }
                     error{ &c, at, msg = utf8::view{ b = m } }
                     return null
                 }
@@ -7391,10 +7430,10 @@ namespace check {
         let at = expr_at{ e = x }
         let has_width = p.digits.len > 0
         let mut w = message{ c }
-        let mut okw = utf8::push{ b = &w, s = if p.zero { "{0" } else { "{" } }
-        if has_width { okw = okw and utf8::push{ b = &w, s = str{ s = width_text{ p } } } }
-        if p.conv != 0 { okw = okw and utf8::push_char{ b = &w, c = p.conv } }
-        pushed{ ok = okw and utf8::push{ b = &w, s = "}" } }
+        pushed{ ok = utf8::push{ b = &w, s = if p.zero { "{0" } else { "{" } } }
+        if has_width { pushed{ ok = utf8::push{ b = &w, s = str{ s = width_text{ p } } } } }
+        if p.conv != 0 { pushed{ ok = utf8::push_char{ b = &w, c = p.conv } } }
+        pushed{ ok = utf8::push{ b = &w, s = "}" } }
         let what = utf8::view{ b = w }
         let pr = types::prim_of{ s = c.ty, t }
         let is_int = types::is_int{ s = c.ty, t }
@@ -7438,7 +7477,7 @@ namespace check {
         if is_errs{ c, t } { return "error" }
         match types::get{ s = c.ty, id = t } {
             func{ fields, ret, external } => {
-                if not external and fields.len == 1 and fields[0].mutable and types::prune{ s = c.ty, t = ret } == types::BOOL { return "call" }
+                if not external and fields.len == 1 and fields[0].mutable and void_result{ c, t = ret } { return "call" }
             }
             else => {}
         }
@@ -7587,13 +7626,14 @@ namespace check {
             }
         }
         let mut b = message{ c }
-        let mut ok = utf8::push{ &b, s = if f == null { "no error `" } else { "`" } }
+        pushed{ ok = utf8::push{ &b, s = if f == null { "no error `" } else { "`" } } }
         let mut i: usize = 0
         while i < p.quals.len {
-            ok = ok and @fmt(&b, "{}::", str{ s = p.quals[i].text })
+            pushed{ ok = @fmt(&b, "{}::", str{ s = p.quals[i].text }) }
             i = i + 1
         }
-        pushed{ ok = ok and utf8::push{ &b, s = str{ s = n.text } } and utf8::push{ &b, s = if f == null { "`" } else { "` is not an error" } } }
+        pushed{ ok = utf8::push{ &b, s = str{ s = n.text } } }
+        pushed{ ok = utf8::push{ &b, s = if f == null { "`" } else { "` is not an error" } } }
         error{ &c, at = p.span, msg = utf8::view{ b } }
         return NONE
     }
@@ -7816,13 +7856,13 @@ namespace check {
             while j < p.listed.len {
                 if not has_id{ xs = set, n = p.listed[j] } {
                     let mut b = message{ c }
-                    let mut ok = @fmt(&b, "error `{}` can't happen here: ", str{ s = get_decl{ c, d = p.listed[j] }.qual })
+                    pushed{ ok = @fmt(&b, "error `{}` can't happen here: ", str{ s = get_decl{ c, d = p.listed[j] }.qual }) }
                     if set.len == 0 {
-                        ok = ok and utf8::push{ &b, s = "this can't fail" }
+                        pushed{ ok = utf8::push{ &b, s = "this can't fail" } }
                     } else {
-                        ok = ok and utf8::push{ &b, s = "this fails only with " } and fault_names{ c, ds = set, &b }
+                        pushed{ ok = utf8::push{ &b, s = "this fails only with " } }
+                        pushed{ ok = fault_names{ c, ds = set, &b } }
                     }
-                    pushed{ ok }
                     error{ &c, at = p.spans[j], msg = utf8::view{ b } }
                 }
                 j = j + 1
@@ -7837,7 +7877,8 @@ namespace check {
             if rest == null {
                 if missing.len > 0 {
                     let mut b = message{ c }
-                    pushed{ ok = utf8::push{ &b, s = "match isn't exhaustive: missing " } and fault_names{ c, ds = list::items{ list = missing }, &b } }
+                    pushed{ ok = utf8::push{ &b, s = "match isn't exhaustive: missing " } }
+                    pushed{ ok = fault_names{ c, ds = list::items{ list = missing }, &b } }
                     error{ &c, at = p.at, msg = utf8::view{ b } }
                 }
             } else if missing.len == 0 {
@@ -7850,15 +7891,13 @@ namespace check {
     }
 
     // "a::x, b::y"
-    fn fault_names { c: Checker, ds: []u32, mut b: utf8::Builder(Heap) } -> bool {
-        let mut ok = true
+    fn fault_names { c: Checker, ds: []u32, mut b: utf8::Builder(Heap) } -> ! {
         let mut i: usize = 0
         while i < ds.len {
-            if i > 0 { ok = ok and utf8::push{ &b, s = ", " } }
-            ok = ok and utf8::push{ &b, s = str{ s = get_decl{ c, d = ds[i] }.qual } }
+            if i > 0 { try utf8::push{ &b, s = ", " } }
+            try utf8::push{ &b, s = str{ s = get_decl{ c, d = ds[i] }.qual } }
             i = i + 1
         }
-        return ok
     }
 
     // ---- the fields of declared types
@@ -8133,8 +8172,8 @@ namespace check {
         return utf8::String{ bytes = s }
     }
 
-    fn pushed { ok: bool } {
-        if not ok { @panic("check: out of memory") }
+    fn pushed { ok: ! } {
+        ok iferr { @panic("check: out of memory") }
     }
 
     fn push { mut xs: list::List(u32, Heap), n: u32 } {

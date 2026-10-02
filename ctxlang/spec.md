@@ -556,9 +556,9 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 ### Formatting
 
 ```
-_ = @fmt(&b, "{}:{}: error: {}", line, col, msg)
-_ = @fmt(&b, "{08x} {5}|", addr, count)            // 0000beef    42|
-_ = @fmt(&b, "due {}", date::write_iso{ d, _ })     // a function writes the hole
+try @fmt(&b, "{}:{}: error: {}", line, col, msg)
+@fmt(&b, "{08x} {5}|", addr, count) iferr { return 1 }    // 0000beef    42|
+_ = @fmt(&b, "due {}", date::write_iso{ d, _ })          // a function writes the hole
 ```
 
 1. `b` is a `*mut utf8::Builder(S)`, written `&p` for a name or a path of fields from one, or a name. It is used once for each piece of the format, so it can't contain a call or an index.
@@ -569,13 +569,13 @@ _ = @fmt(&b, "due {}", date::write_iso{ d, _ })     // a function writes the hol
    - `bool`: `true` or `false`;
    - `utf8::String`: its text. A string literal argument is a view (§11, Literals);
    - an error (§8, Errors): its full name, and its payload as `{ field = value, ... }`, each value as a hole of its type pushes it, or `_` for a type no hole takes: `parse::bad_digit{ at = 3 }`;
-   - a function value whose context is one `mut` field and that returns `bool`: the function is called with `b` in that field, and its result counts as the hole's. This is how a type is formatted: `write_iso{ d, _ }` binds everything but the builder (§4).
+   - a function value whose context is one `mut` field and that returns a bare `!`: the function is called with `b` in that field, and its result counts as the hole's. This is how a type is formatted: `write_iso{ d, _ }` binds everything but the builder (§4).
 
    Anything else is an error. `{x}` takes an unsigned integer and writes it in lowercase hexadecimal; `{c}` takes an integer that converts to `u32` and writes it as a character (`utf8::push_char`).
 4. A width right-aligns an integer or a `utf8::String` in that many characters, padded with spaces, or with zeros after any `-` if the width starts with `0`. Wider text is written whole. A width doesn't apply to other types or to `{c}`.
 5. An integer whose type isn't known when the hole is checked keeps it open until the end of the enclosing body (§11, Literals). A `{x}` hole then makes it a `u64` and a `{c}` hole a `u32`; otherwise it takes its default.
-6. The result is `true` if every piece was pushed, and `false` at the first allocation failure, after which the builder holds the pieces before it and later arguments aren't evaluated. Like any call's result it must be used (§11.6).
-7. `@fmt` is short for the `utf8::push` calls it stands for, joined by `and`, and has no cost beyond them.
+6. The result is a bare `!` (§8, Errors): `ok` if every piece was pushed, or the error of the first that failed, after which the builder holds the pieces before it and later arguments aren't evaluated. It fails with `alloc::out_of_memory`, or, if a hole is a function, with any error, since a function value's `!` may hold any. Like any call's result it must be used (§11.6), and `try @fmt(...)` is a statement as `try` of a call is.
+7. `@fmt` is short for the `utf8::push` calls it stands for, each run only if the one before it succeeded, and has no cost beyond them.
 
 ## 14. Memory
 
@@ -688,7 +688,7 @@ Settled questions are removed, and the rest keep their numbers.
 | `list` | `List(T, S)`: `new`, `reserve`, `push`, `pop`, `get`, `set`, `at`, `items`, `clear`, `each`, `free`. `new` takes the allocator's function and a pointer to its state, and the list keeps both, so it must not outlive the state (§14). `reserve` and `push` return a bare `!` that fails with `alloc::out_of_memory`, leaving the list as it was. |
 | `map` | `Map(K, V, S)`, a hash map that holds its allocator as a list does, and its key type's hash and equality functions: `new`, `len`, `has`, `get`, `at`, `put`, `remove`, `clear`, `free`, `next`, `each`. `put` returns a bare `!` that fails with `alloc::out_of_memory`, leaving the map as it was. `hash_*` and `eq_*` for `i32`, `i64`, `u32`, `u64`, `usize`; `hash_bytes` for byte slices, with `slice::eq_bytes`; `hash_string` for `utf8::String`, with `utf8::eq`. |
 | `ascii` | Byte-level character tests and case for a `u8`: `is_digit`, `is_upper`, `is_lower`, `is_alpha`, `is_alnum`, `is_space`, `to_upper`, `to_lower`. Extern fns, used by `utf8`'s numbers: `f64_digits`, `f32_digits`, `f64_parse`, `f32_parse`. |
-| `utf8` | `String { bytes: []u8 }`, the text type: a non-owning view of valid UTF-8. Offsets are in bytes, and an offset inside a character panics; a character is a `u32` code point. `from` (checks the bytes, returning a `!String` that fails with `invalid{ at }`, the offset of the first bad byte), `of` (panics if invalid), `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`, `is_ascii`. Character tests and case (ASCII only). `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers, by character: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes and holds its allocator as a list does, with `push`, `push_char`, `push_i64`, `push_u64`, `push_f64`, `push_f32`, `push_bool`, `view`, `clear`, `free`, and for `@fmt` (§13, Formatting) `push_padded`, `push_int`, `push_uint`, `push_hex`. `fmt_hex` writes an unsigned integer in hexadecimal into a buffer. |
+| `utf8` | `String { bytes: []u8 }`, the text type: a non-owning view of valid UTF-8. Offsets are in bytes, and an offset inside a character panics; a character is a `u32` code point. `from` (checks the bytes, returning a `!String` that fails with `invalid{ at }`, the offset of the first bad byte), `of` (panics if invalid), `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`, `is_ascii`. Character tests and case (ASCII only). `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers, by character: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes and holds its allocator as a list does, with `push`, `push_char`, `push_i64`, `push_u64`, `push_f64`, `push_f32`, `push_bool`, `view`, `clear`, `free`, and for `@fmt` (§13, Formatting) `push_padded`, `push_int`, `push_uint`, `push_hex`. Each push returns a bare `!` that fails with `alloc::out_of_memory`. `fmt_hex` writes an unsigned integer in hexadecimal into a buffer. |
 | `io` | `Stream` (an enum: `out`, `err`); `print`, `println`, `eprint`, `eprintln` for `utf8::String`, `newline`, `put_char` (one character), `print_i64`, `print_u64`, `print_f64`, `print_f32`, `print_bool` and their `println_` forms (smaller number types widen to these), `read_line` (bytes that aren't valid UTF-8 become `?`), `write` and `read` (bytes), `flush`, `put` (bytes past the buffer, through `os::write`). Standard output is buffered: it is written out before anything goes to standard error or is read from standard input, and when the program ends or panics. The buffer is the runtime's, since a panic flushes it too: `Out`, from extern fn `out_buffer`. |
 
 ```

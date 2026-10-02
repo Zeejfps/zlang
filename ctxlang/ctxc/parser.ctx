@@ -1323,8 +1323,8 @@ namespace parser {
         return utf8::builder{ realloc = arena::alloc, heap = p.heap }
     }
 
-    fn pushed { ok: bool } {
-        if not ok { @panic("parser: out of memory") }
+    fn pushed { ok: ! } {
+        ok iferr { @panic("parser: out of memory") }
     }
 
     // ---- tokens

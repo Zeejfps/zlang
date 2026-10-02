@@ -350,7 +350,7 @@ namespace lexer {
     // A character in a message, as ctxi's show_char: 'c', '\xNN' for an ASCII control character,
     // and the code point after a non-ASCII one, which may be invisible. It must be valid UTF-8.
     // A writer for @fmt: `show_char{ text, at, _ }`.
-    fn show_char { mut b: utf8::Builder(arena::Arena), text: []u8, at: usize } -> bool {
+    fn show_char { mut b: utf8::Builder(arena::Arena), text: []u8, at: usize } -> ! {
         let c = text[at]
         if c < 32 or c == 127 { return @fmt(&b, "'\\x{02x}'", c) }
         if c == '\\' { return @fmt(&b, "'\\\\'") }
@@ -360,7 +360,7 @@ namespace lexer {
     }
 
     // n in uppercase hex, with at least 4 digits.
-    fn upper_hex { mut b: utf8::Builder(arena::Arena), n: u32 } -> bool {
+    fn upper_hex { mut b: utf8::Builder(arena::Arena), n: u32 } -> ! {
         let mut digits: [8]u8
         let mut k: usize = 0
         let mut v = n
@@ -372,9 +372,8 @@ namespace lexer {
         }
         while k > 0 {
             k = k - 1
-            if not utf8::push_char{ &b, c = digits[k] } { return false }
+            try utf8::push_char{ &b, c = digits[k] }
         }
-        return true
     }
 
     // ---- comments

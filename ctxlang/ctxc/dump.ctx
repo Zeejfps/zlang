@@ -115,7 +115,7 @@ namespace dump {
     }
 
     fn put { mut out: Out, s: utf8::String } {
-        if not utf8::push{ b = &out, s } { @panic("dump: out of memory") }
+        utf8::push{ b = &out, s } iferr { @panic("dump: out of memory") }
     }
 
     // Source bytes, which the lexer has checked are valid UTF-8 wherever it made a token.
@@ -840,15 +840,13 @@ namespace decls {
     }
 
     fn diagnostic { mut out: Out, c: check::Checker, d: diag::Diag } {
-        let mut ok = true
         if d.span.file == check::NO_FILE {
-            ok = @fmt(&out, "error :1:1 ")
+            pushed{ ok = @fmt(&out, "error :1:1 ") }
         } else {
             let f = c.files[d.span.file]
             let p = source::position{ text = f.text, lines = f.lines, offset = d.span.start }
-            ok = @fmt(&out, "error {}:{}:{} ", check::str{ s = f.name }, p.line, p.col)
+            pushed{ ok = @fmt(&out, "error {}:{}:{} ", check::str{ s = f.name }, p.line, p.col) }
         }
-        pushed{ ok }
         let mut k: usize = 0
         while k < d.msg.bytes.len {
             let ch = d.msg.bytes[k]
@@ -887,7 +885,8 @@ namespace decls {
         match d.kind {
             record => {
                 let word: utf8::String = if check::is_untagged{ c, d = i } { "extern union" } else { "struct" }
-                pushed{ ok = @fmt(&out, "{} {}", word, q) and tparams{ d, b = &out } }
+                pushed{ ok = @fmt(&out, "{} {}", word, q) }
+                pushed{ ok = tparams{ d, b = &out } }
                 let t = check::types_of_decl{ &c, d = i }
                 let mut offs: []u64 = slice::empty(u64){}
                 if not generic {
@@ -910,7 +909,8 @@ namespace decls {
                 }
             }
             sum => {
-                pushed{ ok = @fmt(&out, "union {}", q) and tparams{ d, b = &out } }
+                pushed{ ok = @fmt(&out, "union {}", q) }
+                pushed{ ok = tparams{ d, b = &out } }
                 let t = check::types_of_decl{ &c, d = i }
                 let mut offs: [][]mut u64 = slice::empty([]mut u64){}
                 if not generic {
@@ -958,7 +958,9 @@ namespace decls {
             }
             alias => {
                 if generic {
-                    pushed{ ok = @fmt(&out, "type {}", q) and tparams{ d, b = &out } and @fmt(&out, "\n") }
+                    pushed{ ok = @fmt(&out, "type {}", q) }
+                    pushed{ ok = tparams{ d, b = &out } }
+                    pushed{ ok = @fmt(&out, "\n") }
                 } else {
                     pushed{ ok = @fmt(&out, "type {} = {}\n", q, check::tstr{ c, t = d.ty }) }
                 }
@@ -977,7 +979,11 @@ namespace decls {
                 }
             }
             func => {
-                pushed{ ok = @fmt(&out, "fn {}", q) and tparams{ d, b = &out } and @fmt(&out, " ") and sig{ c, d, b = &out } and @fmt(&out, "\n") }
+                pushed{ ok = @fmt(&out, "fn {}", q) }
+                pushed{ ok = tparams{ d, b = &out } }
+                pushed{ ok = @fmt(&out, " ") }
+                pushed{ ok = sig{ c, d, b = &out } }
+                pushed{ ok = @fmt(&out, "\n") }
                 match d.syn.k {
                     func{ body } => { stmts{ &out, c, xs = body.stmts, depth = 1 } }
                     else => {}
@@ -1018,7 +1024,9 @@ namespace decls {
                 }
             }
             external => {
-                pushed{ ok = @fmt(&out, "extern fn {} = {} ", q, check::str{ s = d.symbol }) and sig{ c, d, b = &out } and @fmt(&out, "\n") }
+                pushed{ ok = @fmt(&out, "extern fn {} = {} ", q, check::str{ s = d.symbol }) }
+                pushed{ ok = sig{ c, d, b = &out } }
+                pushed{ ok = @fmt(&out, "\n") }
             }
         }
     }
@@ -1464,36 +1472,38 @@ namespace decls {
     }
 
     // `(T, S)` after a generic declaration's name.
-    fn tparams { d: check::Decl, mut b: Out } -> bool {
-        if d.tparams.len == 0 { return true }
-        let mut ok = utf8::push{ &b, s = "(" }
+    fn tparams { d: check::Decl, mut b: Out } -> ! {
+        if d.tparams.len == 0 { return }
+        try utf8::push{ &b, s = "(" }
         let mut i: usize = 0
         while i < d.tparams.len {
-            if i > 0 { ok = ok and utf8::push{ &b, s = ", " } }
-            ok = ok and utf8::push{ &b, s = check::str{ s = d.tparams[i].text } }
+            if i > 0 { try utf8::push{ &b, s = ", " } }
+            try utf8::push{ &b, s = check::str{ s = d.tparams[i].text } }
             i = i + 1
         }
-        return ok and utf8::push{ &b, s = ")" }
+        try utf8::push{ &b, s = ")" }
     }
 
     // `{ mut io: Io, n: i64 } -> R`
-    fn sig { c: check::Checker, d: check::Decl, mut b: Out } -> bool {
-        let mut ok = utf8::push{ &b, s = "{" }
+    fn sig { c: check::Checker, d: check::Decl, mut b: Out } -> ! {
+        try utf8::push{ &b, s = "{" }
         let mut i: usize = 0
         while i < d.fields.len {
             let f = d.fields[i]
-            ok = ok and utf8::push{ &b, s = if i == 0 { " " } else { ", " } }
             let m: utf8::String = if f.mutable { "mut " } else { "" }
-            ok = ok and @fmt(&b, "{}{}: ", m, check::str{ s = f.name }) and check::write_type{ c, t = f.ty, &b }
+            try @fmt(&b, "{}{}{}: ", check::str{ s = if i == 0 { " " } else { ", " } }, m, check::str{ s = f.name })
+            try check::write_type{ c, t = f.ty, &b }
             i = i + 1
         }
-        if d.fields.len > 0 { ok = ok and utf8::push{ &b, s = " " } }
-        ok = ok and utf8::push{ &b, s = "}" }
-        if d.ret != types::VOID { ok = ok and utf8::push{ &b, s = " -> " } and check::write_type{ c, t = d.ret, &b } }
-        return ok
+        if d.fields.len > 0 { try utf8::push{ &b, s = " " } }
+        try utf8::push{ &b, s = "}" }
+        if d.ret != types::VOID {
+            try utf8::push{ &b, s = " -> " }
+            try check::write_type{ c, t = d.ret, &b }
+        }
     }
 
-    fn pushed { ok: bool } {
-        if not ok { @panic("dump: out of memory") }
+    fn pushed { ok: ! } {
+        ok iferr { @panic("dump: out of memory") }
     }
 }

@@ -448,9 +448,9 @@ namespace utf8 {
     // A growable string that owns its bytes, allocated like a list. Free it with `free`.
     //
     //   let mut b = utf8::builder{ realloc = arena::alloc, &heap }
-    //   _ = utf8::push{ &b, s = name }
-    //   _ = utf8::push_i64{ &b, n = 42 }
-    //   _ = utf8::push_char{ &b, c = 233 }        // U+00E9, e with an acute accent
+    //   try utf8::push{ &b, s = name }
+    //   try utf8::push_i64{ &b, n = 42 }
+    //   try utf8::push_char{ &b, c = 233 }        // U+00E9, e with an acute accent
     //   io::println{ &io, s = utf8::view{ b } }
     struct Builder(S) { bytes: list::List(u8, S) }
 
@@ -463,79 +463,79 @@ namespace utf8 {
         return String{ bytes = list::items{ list = b.bytes } }
     }
 
-    // Each push returns false on allocation failure.
-    fn push(S) { mut b: Builder(S), s: String } -> bool {
-        list::reserve{ list = &b.bytes, extra = s.bytes.len } iferr { return false }
+    // Each push fails with alloc::out_of_memory. `push` then leaves b as it was; the padded ones
+    // may have pushed some of the padding.
+    fn push(S) { mut b: Builder(S), s: String } -> ! {
+        try list::reserve{ list = &b.bytes, extra = s.bytes.len }
         let mut i: usize = 0
         while i < s.bytes.len {
             _ = list::push{ list = &b.bytes, item = s.bytes[i] }     // reserved: can't fail
             i = i + 1
         }
-        return true
     }
 
     // Panics if c isn't a scalar value.
-    fn push_char(S) { mut b: Builder(S), c: u32 } -> bool {
+    fn push_char(S) { mut b: Builder(S), c: u32 } -> ! {
         let mut buf: [4]u8
-        return push{ &b, s = encode{ c, into = buf[..] } }
+        try push{ &b, s = encode{ c, into = buf[..] } }
     }
 
-    fn push_i64(S) { mut b: Builder(S), n: i64 } -> bool {
+    fn push_i64(S) { mut b: Builder(S), n: i64 } -> ! {
         let mut buf: [20]u8
-        return push{ &b, s = fmt_i64{ n, into = buf[..] } }
+        try push{ &b, s = fmt_i64{ n, into = buf[..] } }
     }
 
-    fn push_u64(S) { mut b: Builder(S), n: u64 } -> bool {
+    fn push_u64(S) { mut b: Builder(S), n: u64 } -> ! {
         let mut buf: [20]u8
-        return push{ &b, s = fmt_u64{ n, into = buf[..] } }
+        try push{ &b, s = fmt_u64{ n, into = buf[..] } }
     }
 
-    fn push_f64(S) { mut b: Builder(S), n: f64 } -> bool {
+    fn push_f64(S) { mut b: Builder(S), n: f64 } -> ! {
         let mut buf: [32]u8
-        return push{ &b, s = fmt_f64{ n, into = buf[..] } }
+        try push{ &b, s = fmt_f64{ n, into = buf[..] } }
     }
 
-    fn push_f32(S) { mut b: Builder(S), n: f32 } -> bool {
+    fn push_f32(S) { mut b: Builder(S), n: f32 } -> ! {
         let mut buf: [32]u8
-        return push{ &b, s = fmt_f32{ n, into = buf[..] } }
+        try push{ &b, s = fmt_f32{ n, into = buf[..] } }
     }
 
-    fn push_bool(S) { mut b: Builder(S), v: bool } -> bool {
-        return push{ &b, s = if v { "true" } else { "false" } }
+    fn push_bool(S) { mut b: Builder(S), v: bool } -> ! {
+        try push{ &b, s = if v { "true" } else { "false" } }
     }
 
     // s right-aligned in `width` characters: padded with spaces, or with zeros after any `-` if
     // `zero`. Wider text is pushed whole.
-    fn push_padded(S) { mut b: Builder(S), s: String, width: usize, zero: bool } -> bool {
+    fn push_padded(S) { mut b: Builder(S), s: String, width: usize, zero: bool } -> ! {
         let n = count{ s }
         if n >= width { return push{ &b, s } }
         let mut rest = s
         if zero and s.bytes.len > 0 and s.bytes[0] == '-' {
-            if not push_char{ &b, c = '-' } { return false }
+            try push_char{ &b, c = '-' }
             rest = sub{ s, lo = 1, hi = s.bytes.len }
         }
         let mut k = n
         while k < width {
-            if not push_char{ &b, c = if zero { '0' } else { ' ' } } { return false }
+            try push_char{ &b, c = if zero { '0' } else { ' ' } }
             k = k + 1
         }
-        return push{ &b, s = rest }
+        try push{ &b, s = rest }
     }
 
     // Integers padded as by push_padded, for `@fmt` holes with a width.
-    fn push_int(S) { mut b: Builder(S), n: i64, width: usize, zero: bool } -> bool {
+    fn push_int(S) { mut b: Builder(S), n: i64, width: usize, zero: bool } -> ! {
         let mut buf: [20]u8
-        return push_padded{ &b, s = fmt_i64{ n, into = buf[..] }, width, zero }
+        try push_padded{ &b, s = fmt_i64{ n, into = buf[..] }, width, zero }
     }
 
-    fn push_uint(S) { mut b: Builder(S), n: u64, width: usize, zero: bool } -> bool {
+    fn push_uint(S) { mut b: Builder(S), n: u64, width: usize, zero: bool } -> ! {
         let mut buf: [20]u8
-        return push_padded{ &b, s = fmt_u64{ n, into = buf[..] }, width, zero }
+        try push_padded{ &b, s = fmt_u64{ n, into = buf[..] }, width, zero }
     }
 
-    fn push_hex(S) { mut b: Builder(S), n: u64, width: usize, zero: bool } -> bool {
+    fn push_hex(S) { mut b: Builder(S), n: u64, width: usize, zero: bool } -> ! {
         let mut buf: [16]u8
-        return push_padded{ &b, s = fmt_hex{ n, into = buf[..] }, width, zero }
+        try push_padded{ &b, s = fmt_hex{ n, into = buf[..] }, width, zero }
     }
 
     fn clear(S) { mut b: Builder(S) } {

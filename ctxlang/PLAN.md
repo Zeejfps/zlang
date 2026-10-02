@@ -205,8 +205,8 @@ compiler knows (`utf8`, no NUL), would remove the names first, but it is a secon
 undo; the evaluator comes first.
 
 *Still naming std after this,* each a later piece of the same goal:
-- `@fmt` writes to a `utf8::Builder` through `utf8::push_*` functions found by name, and a literal
-  hole expects a `utf8::String`. The direction: `@fmt` receives what it writes with, as a hole
+- `@fmt` writes to a `utf8::Builder` through `utf8::push_*` functions found by name, fails with
+  `alloc::out_of_memory`, which it names too, and a literal hole expects a `utf8::String`. The direction: `@fmt` receives what it writes with, as a hole
   already may (a function value writes it), rather than knowing std's builder.
 - `c::String`'s C layout: a `?c::String` is a nullable pointer, and an extern fn passes it as a
   `const char *`.
