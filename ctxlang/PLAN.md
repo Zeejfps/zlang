@@ -14,15 +14,13 @@ interpreter ctxc replaced, is at `8436f4d`.
 |---|---|---|---|
 | 1 | [Optionals and errors](#1-optionals-and-errors) | in progress | |
 | 2 | [C interop](#2-c-interop) | in progress | |
-| 3 | [Metaprogramming](#3-metaprogramming) | build programs and attributes done | |
+| 3 | [Metaprogramming](#3-metaprogramming) | in progress | |
 | 4 | [Literal conversions](#4-literal-conversions) | planned | 3.3 |
 | 5 | [Language server](#5-language-server) | planned | |
 
 ## Stages
 
 ### 1. Optionals and errors
-
-`?T`, `ifnull`, and errors (`!T` with inferred sets, `try`, `try!`, `iferr`) are done (spec §8).
 
 1. **Unwrap in a `let`, by leaving.** `let p = e else { ... }` with a plain name: for `e: ?T`,
    shorthand for `let some{ value = p } = e else { ... }`.
@@ -43,10 +41,7 @@ chaining (`a?.b`) needs no lambdas, but nothing in FRICTION.md asks for it yet.
 
 ### 2. C interop
 
-The goal is real programs over C libraries: OpenGL or Vulkan rendering, windowing, audio. Extern
-fns, attributes, capabilities (with functions and inclusion), linking through build programs,
-nullable pointers, C function pointers, callbacks, untagged unions, C strings, C variables, the
-platform layers, std's io, mem and fs over the OS, and ctxc as its own driver are done.
+The goal is real programs over C libraries: OpenGL or Vulkan rendering, windowing, audio.
 
 1. **proc over the layers.** `ctx_proc_run`, `ctx_proc_exe_path` and Windows' `ctx_proc_env`
    move into ctxlang. The runtime then keeps only what has to be C: startup, panics, the stack
@@ -99,8 +94,6 @@ is a ctxlang library, so reflection needs no builtins.
 Generated code is written out as real `.ctx` files and compiled in a later step, never spliced
 into the compile that is running. Errors in generated code point at files a person can open, and a
 generator can't observe its own output.
-
-Build programs (spec §19) and typed attributes (§18) are done.
 
 1. **Generated files and cross-compiling.** `build::gen_file` writes a file under `build/gen/`
    that joins the program's file list. `build::os` is the host's for now.
