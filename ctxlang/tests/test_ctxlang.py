@@ -661,7 +661,7 @@ class Parser(Base):
             ('@panic', 'expected \'(\' after @panic: @panic() or @panic("reason")', 3, 1),
             ('let x = @as(i32)', 'wrong number of arguments: @as(T, x)', 2, 20),
             ('let x = @size_of(i32, 1)', 'wrong number of arguments: @size_of(T)', 2, 27),
-            ('let x = @fmt(b)', 'wrong number of arguments: @fmt(b, "format", args...)', 2, 19),
+            ('let x = @fmt()', 'wrong number of arguments: @fmt(b, "format", args...) or @fmt("format", args...)', 2, 18),
         ]:
             self.assertParseError('fn main {} {\n    %s\n}' % body, msg, line, col)
 
@@ -3255,6 +3255,125 @@ fn pick { n: i32 } -> ! {
              'string literal is not valid UTF-8 (byte 0)', 5, 14),
         ]:
             self.assertError(src + '\nfn main {} {}', msg, line, col)
+
+
+WRITER_SETUP = """
+error bad{ code: i32, why: utf8::String }
+fn report { mut io: Io, mut heap: arena::Arena, msg: utf8::Fmt(arena::Arena) } {
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    msg{ &b } iferr { io::println{ &io, s = "failed" } }
+    io::println{ &io, s = utf8::view{ b } }
+}
+fn next { mut n: i32 } -> i32 {
+    n = n + 1
+    return n
+}
+fn main { mut io: Io } {
+    let mut mem: [8192]u8
+    let mut heap = arena::new{ buf = mem[..] }
+%s
+}
+"""
+
+
+class Writers(Base):
+    """@fmt without a sink (§13): a writer, a bound function that writes into the sink it is
+    called with."""
+
+    def writer(self, body, expected, extra=''):
+        self.assertOutput(extra + WRITER_SETUP % body, expected)
+
+    def assertError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_holes(self):
+        # Every kind of hole: numbers of any type, a bool, text, a literal, an error, a function
+        # and a nested writer, whose pieces are the outer one's.
+        self.writer("""
+    let name: utf8::String = "name"
+    let small: u8 = 7
+    let lit: strlit = "strlit"
+    let e = bad{ code = 3, why = "why" }
+    report{ &io, &heap, msg = @fmt("{} {} {} {} {} {} {} {}", -1, small, @as(u64, 9), 2.5, true, name, "lit", lit) }
+    report{ &io, &heap, msg = @fmt("{} [{}] {}", e, @fmt("in {} {}", 1, @fmt("deep {}", 2)), utf8::write_hex{ n = 255, _ }) }""",
+                    '-1 7 9 2.5 true name lit strlit\nbad{ code = 3, why = why } [in 1 deep 2] ff\n')
+
+    def test_evaluated_once(self):
+        # The arguments are evaluated once, at the @fmt, in order, and copied: calling the writer
+        # again writes the same. With a sink first they are evaluated before anything is written.
+        self.writer("""
+    let mut n = 0
+    let w: utf8::Fmt(arena::Arena) = @fmt("{},{}", next{ &n }, next{ &n })
+    n = 10
+    report{ &io, &heap, msg = w }
+    report{ &io, &heap, msg = w }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    try! @fmt(&b, "{}{}", "abc", b.bytes.len)
+    io::println{ &io, s = utf8::view{ b } }""", '1,2\n1,2\nabc0\n')
+
+    def test_loops(self):
+        self.writer("""
+    let mut i = 0
+    while i < 3 {
+        let w: utf8::Fmt(arena::Arena) = @fmt("loop {}", i)
+        report{ &io, &heap, msg = w }
+        i = i + 1
+    }""", 'loop 0\nloop 1\nloop 2\n')
+
+    def test_generic(self):
+        # Each instance of a generic fn has its own hidden fn for the writer in it.
+        self.writer("""
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    try! show{ &b, n = 1 }
+    let mut p = Pool{ a = arena::new{ buf = mem[4096..] } }
+    let mut q = utf8::builder{ realloc = pool_alloc, heap = &p }
+    try! show{ b = &q, n = 2 }
+    io::println{ &io, s = utf8::view{ b } }
+    io::println{ &io, s = utf8::view{ b = q } }""", 'g1\ng2\n', extra="""
+struct Pool { a: arena::Arena }
+fn pool_alloc { mut heap: Pool, mem: alloc::Bytes, new: usize, align: usize } -> ?alloc::Bytes {
+    return arena::alloc{ heap = &heap.a, mem, new, align }
+}
+fn show(S) { mut b: utf8::Builder(S), n: i32 } -> ! {
+    let w: utf8::Fmt(S) = @fmt("g{}", n)
+    return w{ &b }
+}
+""")
+
+    def test_own_sink(self):
+        # A writer to a sink of the program's own.
+        self.assertOutput(WRITE_LIB + """
+fn emit { mut l: out::Line, w: &fn{ mut l: out::Line } -> ! } -> ! { return w{ &l } }
+fn main { mut io: Io } {
+    let mut mem: [1024]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut line = out::line{ &heap, cap = 100 }
+    try! emit{ l = &line, w = @fmt("{} and {}", 4, false) }
+    io::println{ &io, s = utf8::view{ b = line.b } }
+}
+""", '4 and no\n')
+
+    def test_errors(self):
+        for body, msg, line, col in [
+            ('    let w = @fmt("x")', 'an @fmt without a sink needs a type to be: a writer, a function of its sink such as `utf8::Fmt(S)`', 15, 13),
+            ('    let w: i32 = @fmt("x")', 'an @fmt without a sink is a writer, `&fn{ mut b: B } -> !`, not i32', 15, 18),
+            ('    let w: fn{ mut b: utf8::Builder(arena::Arena) } -> ! = @fmt("x")',
+             'an @fmt without a sink is a writer, `&fn{ mut b: B } -> !`, not fn{ mut b: utf8::Builder(arena::Arena) } -> !', 15, 60),
+            ('    let w: &fn{ mut b: utf8::Builder(arena::Arena) } -> bool = @fmt("x")',
+             'an @fmt without a sink is a writer, `&fn{ mut b: B } -> !`, not &fn{ mut b: utf8::Builder(arena::Arena) } -> bool', 15, 64),
+            ('    let mut b = utf8::builder{ realloc = arena::alloc, &heap }\n    try! @fmt(&b)', '@fmt needs a format after its sink: a string literal', 16, 10),
+            ('    @fmt("x")', 'an @fmt without a sink needs a type to be: a writer, a function of its sink such as `utf8::Fmt(S)`', 15, 5),
+            ('    let mut n = 0\n    report{ &io, &heap, msg = @fmt("{}", bump{ &heap, _ }) }',
+             '`heap` overlaps a place held by `msg`', 16, 11),
+            ('    let mut w: utf8::Fmt(arena::Arena) = @fmt("x")\n    if true {\n        let buf: [2]u8 = [1, 2]\n        w = @fmt("{}", @as(i32, buf[..][0]))\n        w = @fmt("{}", view{ s = buf[..], _ })\n    }',
+             '`w` outlives local `buf` whose address it would hold', 19, 9),
+        ]:
+            self.assertError(WRITER_SETUP % body + """
+fn bump { mut heap: arena::Arena, mut b: utf8::Builder(arena::Arena) } -> ! {}
+fn view { mut b: utf8::Builder(arena::Arena), s: []u8 } -> ! {}
+""", msg, line, col)
 
 
 class StdLib(Base):

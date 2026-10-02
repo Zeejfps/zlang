@@ -359,10 +359,11 @@ namespace parser {
             skip{ &p }
             t = syntax::TypeKind::opt{ elem = box{ &p, value = type_expr{ &p } } }
         } else if k == tok::Kind::bang {
-            // `!T`, or `!` alone where no type follows: a function that returns no value or fails.
+            // `!T`, or `!` alone where no type follows on its line: a function that returns no
+            // value or fails.
             skip{ &p }
             let mut elem: ?*syntax::TypeExpr = null
-            if starts_type{ p } { elem = box{ &p, value = type_expr{ &p } } }
+            if starts_type{ p } and not nl{ p } { elem = box{ &p, value = type_expr{ &p } } }
             t = syntax::TypeKind::fail{ elem }
         } else if k == tok::Kind::lbracket {
             skip{ &p }
@@ -1197,7 +1198,7 @@ namespace parser {
         Builtin{ name = "wrap_sub", types = 0, lo = 2, hi = 2, usage = "@wrap_sub(a, b)" },
         Builtin{ name = "wrap_mul", types = 0, lo = 2, hi = 2, usage = "@wrap_mul(a, b)" },
         Builtin{ name = "panic",    types = 0, lo = 0, hi = 1, usage = "@panic() or @panic(\"reason\")" },
-        Builtin{ name = "fmt",      types = 0, lo = 2, hi = ANY, usage = "@fmt(b, \"format\", args...)" },
+        Builtin{ name = "fmt",      types = 0, lo = 1, hi = ANY, usage = "@fmt(b, \"format\", args...) or @fmt(\"format\", args...)" },
     ]
 
     fn builtin { mut p: Parser } -> syntax::Expr {

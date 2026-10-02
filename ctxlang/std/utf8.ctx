@@ -453,6 +453,10 @@ namespace utf8 {
 
     // ---- building strings
 
+    // A writer of text into a Builder(S): what an @fmt without a sink is, as a field's type
+    // (§13), called with the builder: `try msg{ &b }`.
+    type Fmt(S) = &fn{ mut b: Builder(S) } -> !
+
     // A growable string that owns its bytes, allocated like a list. Free it with `free`.
     //
     //   let mut b = utf8::builder{ realloc = arena::alloc, &heap }
