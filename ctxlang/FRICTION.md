@@ -61,8 +61,8 @@ errors and capability-variable work (`e19f1fe`).
 - **11. An `if` of literals has no type as a `@fmt` hole** (spec §11 Literals). `@fmt(&b, "{}",
   if m { "mut " } else { "" })` makes two arrays of different lengths ("branches have different
   types: [4]u8 and [0]u8"). The hole needs a typed `let` first. A hole could expect a
-  `utf8::String`, as a bare literal hole already does. PLAN.md stage 4 rewrites this rule, so it
-  could be settled there.
+  `utf8::String`, as a bare literal hole already does. Literal conversions kept the rule (a
+  literal branch takes the type of one next to it), so `#write` (PLAN.md stage 4) could settle it.
 - **12. A parameter name can defeat punning.** `utf8::push_char`, `push_u64` and the rest call
   their builder `b`, so a builder named `out` must be passed as `b = &out`, not `&out`: about 30
   times, mostly in `dump.ctx`. `@fmt` has replaced most direct pushes, which shrank this. A std

@@ -15,7 +15,7 @@ interpreter ctxc replaced, is at `8436f4d`.
 | 1 | [Optionals and errors](#1-optionals-and-errors) | in progress | |
 | 2 | [C interop](#2-c-interop) | in progress | |
 | 3 | [Metaprogramming](#3-metaprogramming) | in progress | |
-| 4 | [Literal conversions](#4-literal-conversions) | planned | |
+| 4 | [Literal conversions](#4-literal-conversions) | in progress | |
 | 5 | [Language server](#5-language-server) | planned | |
 | 6 | [Tools in ctxlang](#6-tools-in-ctxlang) | planned | 3.1, 3.2 for 6.5 |
 
@@ -187,72 +187,10 @@ compile-time consts fall short on real code.
 ### 4. Literal conversions
 
 The compiler should know nothing of std: std is built from features any program has, and the
-checker, lowering and runtime never name a std declaration. Today they do, most of all for
-string literals. A literal where a `utf8::String` or a `c::String` is expected becomes that type,
-so the checker looks both up by name (`text_decl`, `cstr_decl`), checks UTF-8 or the lack of a
-NUL itself, and lowering builds their structs (`text_lit`). Commit `f53a93f` fixed a symptom: a
-program's own `utf8` could shadow the one this lookup wanted.
-
-A literal is only bytes. What text or a C string is, and how one is checked, is the library's to
-say; the language gives it a way to receive literals. That way is open to any program, not just
-std, and not just to a type's own namespace.
-
-```
-namespace utf8 {
-    #convert
-    fn literal { s: strlit } -> !String { return from{ bytes = s.bytes } }
-}
-
-namespace c {
-    #convert
-    fn literal { s: strlit } -> !String {
-        let mut i: usize = 0
-        while i < s.bytes.len {
-            if s.bytes[i] == 0 { return has_nul{ at = i } }
-            i = i + 1
-        }
-        return String{ ptr = s.bytes.ptr }       // the hidden zero ends it
-    }
-}
-
-namespace regex {                                // a program's own type
-    #convert
-    fn literal { s: strlit } -> !Regex { return compile{ s.bytes } }
-}
-
-io::println{ &io, s = "hello" }                  // utf8::literal, run while compiling
-let r: regex::Regex = "[a-z]+"                   // a bad pattern is a compile error
-```
-
-1. **The hidden zero.** A string literal's static bytes are followed by a 0 byte that isn't part
-   of them: a `[]u8` view of `"abc"` has `len` 3, and `ptr[3]` is 0. The C backend already gives
-   every view a C string literal, so this costs nothing; the change is that the spec promises it.
-   Nobody writes `"abc\0"` for C.
-2. **Literal types.** `strlit` is the type of a string literal: built in, lowercase and without a
-   namespace, like `u8`. `s.bytes` is its bytes as a `[]u8`, with the hidden zero after them,
-   even when empty. Only a literal makes one, so every `strlit` has that zero. `intlit` (a number
-   literal, as its digits, for a big-integer type) and `arraylit` (an array literal's elements,
-   for a list) follow the same pattern when something needs them; neither is designed yet.
-3. **`#convert`.** An attribute the compiler declares, not std, so it has no namespace. It goes on
-   a fn whose context is one read-only field of a literal type and whose result is a `T` or `!T`.
-   The fn has no generic parameters. With only a literal field it can take no capability, so it
-   can run at compile time. Any namespace may declare one, for any `T`.
-4. **Where it applies.** A string literal where a `T` is expected (also inside `?T`), and
-   `T` isn't `[]u8` or `[N]u8`, which the language gives literals itself, is the result of the
-   conversion from `strlit` to `T`. "Expected" is what it is today: the places widening applies
-   (§11, rule 1), a const's initializer, an `if` or `match` branch next to one of type `T`, and a
-   call's `strlit` field, so `utf8::literal{ s = "hi" }` calls one directly. Only literals
-   convert: no other value does, and conversions don't chain.
-5. **It runs while compiling**, as a const's initializer does (§14), so the program holds the finished value,
-   and the same rule applies to the result: no pointers but ones to static data. An error result
-   is a compile error at the literal, printed as `@fmt` prints an error:
-   `string literal: utf8::invalid{ at = 3 }`.
-6. **Two conversions to one `T`** are an error where a literal would use them, naming both, and
-   not before: two libraries may both declare one, and a program that calls one directly is fine.
-
-*What goes from the compiler:* `text_decl` and `cstr_decl` in literal checking (`str_lit`), the
-const evaluator's string case and the `if`/`match` hint, and lowering's `text_lit`. The tests'
-literal programs keep their output; the UTF-8 and NUL errors change wording to std's errors.
+checker, lowering and runtime never name a std declaration. String literals no longer do: a
+literal is a `strlit`, and std's `#convert` fns, `utf8::from_literal` and `c::from_literal`, make
+it a `utf8::String` or a `c::String` while compiling (spec §11, §18). The checker still names std
+for `@fmt` and for `c::String`'s layout, and std still declares attributes the compiler acts on.
 
 *Still naming std after this,* each a later piece of the same goal:
 - `@fmt` writes to a `utf8::Builder` through `utf8::push_*` functions found by name, fails with
@@ -273,13 +211,15 @@ literal programs keep their output; the UTF-8 and NUL errors change wording to s
   }
   ```
   - What goes: `builder_decl` (any type with writers is a sink), the `push_*` names, and
-    `out_of_memory` (an `@fmt`'s error set is the union of its writers'). A literal hole is a
-    `strlit`, so `text_decl` goes with `#convert`.
+    `out_of_memory` (an `@fmt`'s error set is the union of its writers'). A piece of the format
+    is a `strlit`, so `text_decl` goes, with lowering's `fmt_text`, which builds a piece's
+    `utf8::String`, and the evaluator's `field_text`, which prints an error's `utf8::String`
+    field as `@fmt` does when a conversion fails.
   - 1.3 needs no change: an `@fmt` value's type becomes `&fn{ mut b: B } -> R` for any sink `B`.
   - An error hole is still written by the compiler, which walks the payload, but with the
     writers of its fields' types, so it names nothing in std.
-  - Two `#write` fns for one `B` and `T` are an error where an `@fmt` would use them, as with
-    `#convert` (4.6).
+  - Two `#write` fns for one `B` and `T` are an error where an `@fmt` would use them, as two
+    `#convert` fns to one `T` are where a literal would.
   - *To settle:* how a hole's options reach its writer. A writer may take `width` and `zero`
     fields, which the hole fills; or `{x}` and `{c}` become writers named in the call
     (`hex{ n, _ }`), and the format keeps only widths.
@@ -288,26 +228,21 @@ literal programs keep their output; the UTF-8 and NUL errors change wording to s
     compile-time values (Zig's `anytype`), and stage 3 rules out both. Every argument as an
     explicit writer needs an array of `&fn`, which §6.1 forbids, and is longer than today.
 - `c::String`'s C layout: a `?c::String` is a nullable pointer, and an extern fn passes it as a
-  `const char *`.
+  `const char *` (`cstr_decl`).
 - `c::symbol` and `c::callback` are attributes std declares and the compiler acts on. They move
   beside `#convert`, among the attributes the compiler declares itself.
 - `main`'s `args` is checked against std's `Args`; it can be checked as `[][]u8`. Only `fn build`
   may take std's `Build`.
 - The runtime fills `io`'s `Out`, a struct whose layout std defines (`ctxrt.c`, `out_buffer`).
 
-*Considered and set aside:*
-- `@from_literal`: `@` names a builtin call (`@fmt`, `@as`), and attributes are `#`.
-- Only the type's own namespace declaring its conversion: a library can't then give literals to
-  a type it doesn't own. Traits are the usual way to add to such a type, but ctxlang passes
-  behaviour as values instead (`map::Map` takes its hash and equality), and a literal conversion
-  is not a value a caller would pass.
-- A naming convention (a fn called `literal` in the type's namespace): magic by name.
-- No implicit conversion, with `utf8::lit{ "hello" }` at every use: general, but every literal
-  is wrapped.
-- Converting any value, not only literals: it would hide work, and failures, at run time.
-- The user writes the zero (`"hello\0"`): easy to forget, and the language can promise it free.
-- `literal` or `str` for the type: there will be one per literal kind, and `str` reads as the
-  text type to use everywhere, which `utf8::String` is.
+*Later, for literal conversions* (spec §18; `ctxc/comptime.ctx`):
+- `intlit` (a number literal, as its digits, for a big-integer type) and `arraylit` (an array
+  literal's elements, for a list) follow `strlit` when something needs them; neither is designed.
+- A literal is converted only in a program without errors, as a const is evaluated (stage 3), so
+  its errors come after the others'. An attribute can't hold a converted literal: attributes are
+  folded before any body is checked.
+- Each literal's conversion runs in a fresh interpreter, which costs ctxc's own build about 30 ms
+  of its 450. A machine kept per conversion, between runs, would save most of it.
 
 ### 5. Language server
 
@@ -473,10 +408,11 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 | `@as`, `@trunc`, `@wrap_*` | range check then cast; unsigned arithmetic then cast | |
 | `[N]T` | `struct { T a[N]; }` | Wrapped so arrays copy, assign and return as values. |
 | `[]T`, `s[i]`, `s[lo..hi]` | `struct { T *m_ptr; uint64_t m_len; }`; `ctx_idx`, `ctx_range` | Bounds checks panic. The runtime's C functions see it as `ctx_slice`. |
+| `strlit` | its bytes' `[]u8` | A literal's view points to a C string literal, whose NUL is the hidden zero. |
 | struct | C struct, same field order | Checked with `_Static_assert` on `sizeof` and `offsetof`. |
 | union, `?T` | `struct { uint32_t tag; union { … } p; }` | Tag at 0, payload at `align_up(4, payload align)`. `null` is tag 0. |
 | `?*T`, `?*mut T` | `T*` | `null` is 0. IR type `nptr`. |
-| `c::String`, `?c::String` | `struct { uint8_t *m_ptr; }`, and the same under a typedef | Passed to C by value, which 64-bit C ABIs pass and return as the pointer; a literal is `((uint8_t *)"...")`, NUL-terminated by C. `?c::String` is null when `m_ptr` is 0. |
+| `c::String`, `?c::String` | `struct { uint8_t *m_ptr; }`, and the same under a typedef | Passed to C by value, which 64-bit C ABIs pass and return as the pointer; a literal's is `((uint8_t *)"...")`, whose NUL is the hidden zero. `?c::String` is null when `m_ptr` is 0. |
 | `extern union` | C `union` | Every field at offset 0. IR `(cunion ...)`. A literal zeroes the other bytes with `memset`. |
 | `extern fn{C} -> R`, and its `?` | `R (*)(P...)`, capabilities dropped | IR type `cfn`, params in order; `null` is 0. A named extern fn as a value is `xN`; a `#c::callback` fn is `kK`, a C function calling `fN`. |
 | enum | its base integer type | `match` becomes an if-else chain on the value (IR `switch`). |

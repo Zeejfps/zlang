@@ -403,15 +403,15 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 3. `true` and `false` are the `bool` values. `null` is described in §8.
 4. `[a, b, c]` is a `[3]T` array. Every element has type `T`.
 5. `[x; N]` is a `[N]T` array with every element a copy of `x`. `N` is a compile-time integer constant (§14).
-6. A string literal `"..."` holds `N` bytes, with no terminator. Its type depends on the type expected where it appears (also inside `?`):
-   - `[]u8`: a **view** of static read-only bytes that live for the whole program. `[]mut u8` is an error.
-   - `utf8::String` (§17): a view as above, as text. It is a compile error if the bytes aren't valid UTF-8.
-   - `c::String` (§18): static read-only bytes with a NUL byte after them, for C. It is a compile error if the literal holds a NUL itself (`\0`), since C would end the string there.
+6. A string literal `"..."` holds `N` bytes. Its type depends on the type expected where it appears (also inside `?`):
+   - `strlit` (§12): the literal itself. Its `bytes` are static and read-only, and live for the whole program.
+   - `[]u8`: a **view** of those bytes. `[]mut u8` is an error.
+   - a type `T` that a `#convert` fn gives (§18, Literal conversions): that fn's result for the literal, computed while compiling. So std makes a literal a `utf8::String` (§17), whose bytes must be valid UTF-8, or a `c::String` (§18), which can't hold a NUL itself (`\0`), since C would end the string there.
    - anything else, or nothing: a `[N]u8` array value. Like any array it is a value, not a place: bind it to a local to take its address.
 
-   A view's static bytes are followed by a 0 byte that isn't part of it, the **hidden zero**: `"abc"` as a `[]u8` has `len` 3, and its `ptr[3]` is 0, and `""`'s `ptr[0]` is 0. So a pointer to a literal's bytes is a C string as it is, and nobody writes `"abc "` for C. PLAN.md stage 4 plans to replace the `utf8::String` and `c::String` cases with conversions that std declares, through the built-in type `strlit` and the attribute `#convert`, so the compiler names no std type here.
+   A literal's static bytes are followed by a 0 byte that isn't one of them, the **hidden zero**: `"abc"` as a `[]u8` has `len` 3, and its `ptr[3]` is 0, and `""`'s `ptr[0]` is 0. So a pointer to a literal's bytes is a C string as it is, and nobody writes `"abc\0"` for C.
 
-   In an `if` or `match` expression without an expected type, a branch that is a literal takes the type of another branch that is `[]u8`, `utf8::String` or `c::String`, or of another literal branch that became one. Otherwise, as in `let msg = match p { a => { "one" } b => { "three" } }`, each literal is an array and the lengths must agree; annotate the `let` to get views.
+   In an `if` or `match` expression without an expected type, a branch that is a literal takes the type of another branch that is a `strlit`, a `[]u8` or a type a `#convert` fn gives, or of another literal branch that became one. Otherwise, as in `let msg = match p { a => { "one" } b => { "three" } }`, each literal is an array and the lengths must agree; annotate the `let` to get views.
 7. A character literal `'a'` is an integer literal whose value is the character's byte.
 8. String and character literals hold ASCII characters only. Escapes: `\n`, `\t`, `\r`, `\0`, `\\`, `\"`, `\'`, and `\xNN` for any byte.
 
@@ -442,7 +442,7 @@ step  := .field | [index]
 | `[N]T` | every element zero, if `T` has a zero value |
 | `[]T`, `[]mut T` | the empty slice |
 | struct | every field zero, if every field type has a zero value |
-| `*T`, `*mut T`, user-defined unions, enums, `fn{C} -> R`, `&fn{C} -> R`, capability types | none |
+| `*T`, `*mut T`, `strlit`, user-defined unions, enums, `fn{C} -> R`, `&fn{C} -> R`, capability types | none |
 
 4. Reading a variable before it is assigned is a compile error. There is no way to declare uninitialized memory.
 
@@ -459,6 +459,7 @@ step  := .field | [index]
 | `?T` | optional (§8). `?*T` is a nullable pointer. |
 | `!T`, `!` | a value or an error (§8, Errors). |
 | `error` | any error (§8, Errors). |
+| `strlit` | a string literal (§11, Literals): `s.bytes` is its bytes, a `[]u8` followed by the hidden zero, and isn't a place. Only a literal makes one: it has no zero value, and nothing converts to it. A `#convert` fn takes one (§18). |
 | `enum Name: T { ... }` | integer type with named values (below) |
 | `fn{C} -> R` | unbound function type (§5) |
 | `&fn{C} -> R` | bound function type (§5, §6) |
@@ -588,7 +589,7 @@ _ = @fmt(&b, "due {}", date::write_iso{ d, _ })          // a function writes th
    - an integer: in decimal, with a `-` if negative;
    - `f32` or `f64`: as `utf8::push_f32` and `push_f64` do, the shortest text that reads back as the value;
    - `bool`: `true` or `false`;
-   - `utf8::String`: its text. A string literal argument is a view (§11, Literals);
+   - `utf8::String`: its text. A string literal argument is one, through `utf8::from_literal` (§11, Literals);
    - an error (§8, Errors): its full name, and its payload as `{ field = value, ... }`, each value as a hole of its type pushes it, or `_` for a type no hole takes: `parse::bad_digit{ at = 3 }`;
    - a function value whose context is one `mut` field and that returns a bare `!`: the function is called with `b` in that field, and its result counts as the hole's. This is how a type is formatted: `write_iso{ d, _ }` binds everything but the builder (§4).
 
@@ -600,11 +601,11 @@ _ = @fmt(&b, "due {}", date::write_iso{ d, _ })          // a function writes th
 
 ## 14. Memory
 
-1. The only static memory is the bytes of string literal views (§11 Literals), which are read-only. `const NAME: T = e` declares a constant, whose value is computed while compiling. `e` may be any expression of type `T`, calls included. A const has no context, so it holds no capability (§15), and nothing it runs reaches outside the program. `const` data is immutable and its location is unobservable: a const is a value, not a place, so `&C` is an error.
+1. The only static memory is the bytes of string literals, with the hidden zero after them (§11 Literals), which are read-only. `const NAME: T = e` declares a constant, whose value is computed while compiling. `e` may be any expression of type `T`, calls included. A const has no context, so it holds no capability (§15), and nothing it runs reaches outside the program. `const` data is immutable and its location is unobservable: a const is a value, not a place, so `&C` is an error.
    - An `e` made of literals, folded consts, enum values, operators, `@size_of`, `@align_of`, and struct, union and array literals of these is **folded** before the bodies are checked. What would panic at run time is an error at the operation.
    - Any other `e`, one that uses a const that isn't folded included, is **run** once every body is checked and the error sets are inferred, the first time its value is needed. What stops it is an error at the const: a panic, with its message and position; too many steps, or too deep a recursion; or calling an extern fn (§18), since none can run while compiling.
    - A const whose value needs its own, directly or through the functions it calls, is an error.
-   - The value may hold no pointer, slice or function value, except a `[]u8` or `c::String`, or a struct over one such as `utf8::String`, that points into a string literal's bytes (part of them is fine). Anything else would point to memory that doesn't outlive compiling.
+   - The value may hold no pointer, slice or function value, except a `[]u8`, a `strlit` or a `*u8` that points into a string literal's bytes (part of them is fine; a `*u8` is followed by the rest of them and the hidden zero), or a struct over one, such as `utf8::String` or `c::String`. Anything else would point to memory that doesn't outlive compiling.
    - An array length (§12) or an enum's value can use only a folded const: they are needed before anything can run.
 2. Locals and context fields live on the stack.
 3. Memory not on the stack comes from `mem::pages`, which needs the `Mem` capability (§15), or from an allocator function over memory the caller provides. It is accessed only through pointers and slices.
@@ -701,7 +702,7 @@ Settled questions are removed, and the rest keep their numbers.
 | Namespace | Contents |
 |---|---|
 | `slice` | Helpers for built-in slices (§12): `empty`, `cast`, `copy`, `fill`, `eq_bytes` |
-| `c` | What calling C needs (§18): the attribute `symbol { name: []u8 }`; `String { ptr: *u8 }`, C's NUL-terminated `const char *`, which a literal can be (§11), with `len` (the bytes before the NUL), `bytes` (a view of them) and `copy` (bytes and a NUL from an allocator; fails with `c::has_nul{ at }` or `alloc::out_of_memory`). |
+| `c` | What calling C needs (§18): the attribute `symbol { name: []u8 }`; `String { ptr: *u8 }`, C's NUL-terminated `const char *`, which a literal can be (`from_literal`, §18, which fails with `has_nul{ at }`), with `len` (the bytes before the NUL), `bytes` (a view of them) and `copy` (bytes and a NUL from an allocator; fails with `c::has_nul{ at }` or `alloc::out_of_memory`). |
 | `Args` | Declared at the top level: `type Args = [][]u8`, the type of `main`'s `args` (§15). |
 | `Io`, `Fs`, `Mem`, `Proc`, `Build` | Declared at the top level: `capability Io` and so on (§15), in `io.ctx`, `fs.ctx`, `mem.ctx`, `proc.ctx` and `build.ctx`. |
 | `proc` | `Proc` includes the layer's `os::Proc` (rule 4). The errors `not_found`, `permission_denied` and `other{ code }`; `run` (starts a program found on PATH, with extra `KEY=VALUE` environment entries, sharing standard input and output, and returns its exit code, a `!i32`: 128 + N if signal N killed it), `env` (an environment variable, or null), `exe_path` (this program's executable), `os` (the operating system, a `build::Os`). Every function takes `mut proc: Proc`. |
@@ -714,12 +715,12 @@ Settled questions are removed, and the rest keep their numbers.
 | `list` | `List(T, S)`: `new`, `reserve`, `push`, `pop`, `get`, `set`, `at`, `items`, `clear`, `each`, `free`. `new` takes the allocator's function and a pointer to its state, and the list keeps both, so it must not outlive the state (§14). `reserve` and `push` return a bare `!` that fails with `alloc::out_of_memory`, leaving the list as it was. |
 | `map` | `Map(K, V, S)`, a hash map that holds its allocator as a list does, and its key type's hash and equality functions: `new`, `len`, `has`, `get`, `at`, `put`, `remove`, `clear`, `free`, `next`, `each`. `put` returns a bare `!` that fails with `alloc::out_of_memory`, leaving the map as it was. `hash_*` and `eq_*` for `i32`, `i64`, `u32`, `u64`, `usize`; `hash_bytes` for byte slices, with `slice::eq_bytes`; `hash_string` for `utf8::String`, with `utf8::eq`. |
 | `ascii` | Byte-level character tests and case for a `u8`: `is_digit`, `is_upper`, `is_lower`, `is_alpha`, `is_alnum`, `is_space`, `to_upper`, `to_lower`. Extern fns, used by `utf8`'s numbers: `f64_digits`, `f32_digits`, `f64_parse`, `f32_parse`. |
-| `utf8` | `String { bytes: []u8 }`, the text type: a non-owning view of valid UTF-8. Offsets are in bytes, and an offset inside a character panics; a character is a `u32` code point. `from` (checks the bytes, returning a `!String` that fails with `invalid{ at }`, the offset of the first bad byte), `of` (panics if invalid), `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`, `is_ascii`. Character tests and case (ASCII only). `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers, by character: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes and holds its allocator as a list does, with `push`, `push_char`, `push_i64`, `push_u64`, `push_f64`, `push_f32`, `push_bool`, `view`, `clear`, `free`, and for `@fmt` (§13, Formatting) `push_padded`, `push_int`, `push_uint`, `push_hex`. Each push returns a bare `!` that fails with `alloc::out_of_memory`. `fmt_hex` writes an unsigned integer in hexadecimal into a buffer. |
+| `utf8` | `String { bytes: []u8 }`, the text type: a non-owning view of valid UTF-8. Offsets are in bytes, and an offset inside a character panics; a character is a `u32` code point. `from` (checks the bytes, returning a `!String` that fails with `invalid{ at }`, the offset of the first bad byte), `from_literal` (a literal's conversion, §18: `from` while compiling), `of` (panics if invalid), `empty`, `len` (bytes), `count` (characters), `is_boundary`, `at`, `sub`, `eq`, `starts_with`, `ends_with`, `find`, `find_str`, `split_once`, `trim`, `trim_start`, `trim_end`, `encode`, `is_scalar`, `is_ascii`. Character tests and case (ASCII only). `parse_i64`, `parse_u64`, `parse_f64`, `parse_f32`, `fmt_i64`, `fmt_u64`, `fmt_f64`, `fmt_f32`. `Cursor`: a read position for lexers, by character: `cursor`, `done`, `rest`, `peek`, `peek_at`, `bump`, `eat`, `eat_str`, `take_while`, `skip_space`. `Builder(S)`: a growable string that owns its bytes and holds its allocator as a list does, with `push`, `push_char`, `push_i64`, `push_u64`, `push_f64`, `push_f32`, `push_bool`, `view`, `clear`, `free`, and for `@fmt` (§13, Formatting) `push_padded`, `push_int`, `push_uint`, `push_hex`. Each push returns a bare `!` that fails with `alloc::out_of_memory`. `fmt_hex` writes an unsigned integer in hexadecimal into a buffer. |
 | `io` | `Stream` (an enum: `out`, `err`); `print`, `println`, `eprint`, `eprintln` for `utf8::String`, `newline`, `put_char` (one character), `print_i64`, `print_u64`, `print_f64`, `print_f32`, `print_bool` and their `println_` forms (smaller number types widen to these), `read_line` (bytes that aren't valid UTF-8 become `?`), `write` and `read` (bytes), `flush`, `put` (bytes past the buffer, through `os::write`). Standard output is buffered: it is written out before anything goes to standard error or is read from standard input, and when the program ends or panics. The buffer is the runtime's, since a panic flushes it too: `Out`, from extern fn `out_buffer`. |
 
 ```
 fn main { mut io: Io } {
-    io::println{ &io, s = "hello" }                    // a utf8::String viewing static bytes
+    io::println{ &io, s = "hello" }                    // a utf8::String viewing static bytes (utf8::from_literal)
     io::println_i64{ &io, n = 42 }
 }
 ```
@@ -739,6 +740,7 @@ extern fn glfwPollEvents { mut glfw: Glfw }      // a capability says who may ca
 1. `#path` or `#path{ field = e, ... }`, on its own line before a declaration or a capability's field, is an **attribute** of it. Either may have several.
 2. `path` names a struct, and the braces are a literal of it, checked as a const's initializer is and folded (§14): it can't call a function or use a const that isn't folded. `#path` alone means `#path{}`.
 3. Attributes are data. The compiler acts on those of std's `c` namespace (`c::symbol` on an extern fn or a C variable, `c::callback` on a fn) and ignores the rest; a program can read them later (PLAN.md, stage 3).
+4. The compiler declares `convert` itself (Literal conversions, below). It has no namespace, and a declaration named `convert` shadows it.
 
 ### Extern functions
 
@@ -746,7 +748,7 @@ extern fn glfwPollEvents { mut glfw: Glfw }      // a capability says who may ca
 2. It calls the C symbol `name`, or the one `#c::symbol{ name = "..." }` gives. The symbol must be a C identifier.
 3. Its context fields are C's parameters in the order they are declared. A field with a capability type (§15) isn't passed: it only says who may call the function. A `mut` field of type `T` is passed as a `T*`.
 4. A field or result may have a numeric type, `bool`, an enum (as its base type), a pointer (as a C pointer), a `?*T` or `?*mut T` (as a C pointer, with `null` as `NULL`: §8, Optional, rule 6), a C function pointer `extern fn{C} -> R` or its `?` (§12), a `c::String` or `?c::String` (as a `const char *`, below), a slice (as a struct of `ptr` and `len`), a struct (as a C struct of the same layout) or an extern union (as a C union, §12). Other types are an error, other optionals included.
-   A `c::String` is C's `const char *`: a struct around one pointer, which C takes and returns as the pointer, and a `?c::String` is one that may be `NULL` (§8, Optional, rule 6). A literal where one is expected is NUL-terminated by the compiler (§11, Literals). A `c::String` built from any other `*u8` (`c::String{ ptr = p }`) must point to bytes that end in a NUL; that isn't checked.
+   A `c::String` is C's `const char *`: a struct around one pointer, which C takes and returns as the pointer, and a `?c::String` is one that may be `NULL` (§8, Optional, rule 6). A literal where one is expected points to its bytes, which the hidden zero ends (`c::from_literal`; §11, Literals). A `c::String` built from any other `*u8` (`c::String{ ptr = p }`) must point to bytes that end in a NUL; that isn't checked.
 5. Every call goes through a declaration of the symbol made for that function, so it can't clash with the declaration of the same symbol in a C header. Nothing checks the declaration against C's: a wrong one is undefined behaviour.
 6. An extern fn is called like any function and is a value of type `fn{C} -> R`; where an `extern fn{C} -> R` is expected, it is its C symbol's address instead (§12, C function pointers).
 7. Every program is linked with the C library and the math library.
@@ -754,6 +756,29 @@ extern fn glfwPollEvents { mut glfw: Glfw }      // a capability says who may ca
 8. §1.3 holds by declaration: an extern fn that reaches IO, the OS or memory outside its pointer arguments must take a capability for it. One without a capability field, such as `sqrt`, promises to be pure. The compiler can't check either.
 
 9. C's global variables have no declaration of their own: a capability names them, `extern name: T` among its fields, and only its namespace reads them (§15, rule 12). Reading one is as much an effect as calling an extern fn that takes the capability.
+
+### Literal conversions
+
+```
+namespace utf8 {
+    #convert
+    fn from_literal { s: strlit } -> !String { return from{ bytes = s.bytes } }
+}
+
+namespace regex {                                // a program's own type
+    #convert
+    fn from_literal { s: strlit } -> !Regex { return compile{ s.bytes } }
+}
+
+io::println{ &io, s = "hello" }                  // utf8::from_literal, run while compiling
+let r: regex::Regex = "[a-z]+"                   // a bad pattern is a compile error
+```
+
+1. `#convert` on a fn makes it a **literal conversion**: a string literal where the type `T` of its result is expected is the fn's result for the literal (§11, Literals). Any namespace may declare one, for any `T`, so a library can give literals to a type it doesn't own.
+2. The fn has a body and no generic parameters. Its context is one read-only field of a literal type, `s: strlit`, so it takes no capability and can run while compiling. Its result is a `T` or a `!T`, where `T` isn't a `strlit`, a `[]u8` or a `[N]u8`, which a literal is without one.
+3. "Expected" is where widening applies (§11, Widening, rule 1), a const's initializer, an `if` or `match` branch next to one of type `T` (§11, Literals), and a call's `strlit` field, so `utf8::from_literal{ s = "hi" }` calls one directly, as any fn. Only literals convert: no other value does, and conversions don't chain.
+4. Two conversions to one `T` are an error at a literal that would use them, naming both, and not before: two libraries may each declare one, and a program may call either.
+5. The conversion runs once the bodies are checked, as a const's initializer does (§14), and the program holds its result. The same limits apply, and the result may hold no pointer but one into the literal's bytes. An error result is a compile error at the literal, printed as `@fmt` prints an error (§13): `string literal: utf8::invalid{ at = 3 }`. A const whose initializer holds a converted literal is run, not folded, and an attribute can't hold one.
 
 ### Callbacks
 
