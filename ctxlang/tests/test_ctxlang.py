@@ -2450,6 +2450,56 @@ fn main { mut io: Io } {
                                 'cannot write through []u8')
 
 
+class StrLit(Base):
+    """`strlit`, a string literal's type (PLAN.md 4.2): built in, with its bytes as `.bytes`, a
+    []u8 with the hidden zero after it. Only a literal makes one."""
+
+    def assertError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_values(self):
+        self.assertOutput("""
+struct Named { name: strlit, n: i32 }
+fn size { s: strlit } -> usize { return s.bytes.len }
+fn view { s: strlit } -> []u8 { return s.bytes }
+fn same { s: strlit } -> strlit { return s }
+fn pick { b: bool } -> strlit { return if b { "yes" } else { "no" } }
+const FOLDED: strlit = "folded"
+const RUN: strlit = same{ s = "evaluated" }
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = size{ s = "hello" } + size{ s = "" } }
+    let s: strlit = "abc"
+    io::println_u64{ &io, n = s.bytes.len + @as(u64, s.bytes.ptr[3]) }
+    io::println{ &io, s = utf8::of{ chars = view{ s = "view" } } }
+    let n = Named{ name = "named", n = 2 }
+    io::println_u64{ &io, n = n.name.bytes.len }
+    io::println_u64{ &io, n = FOLDED.bytes.len + @size_of(strlit) }
+    io::println_u64{ &io, n = RUN.bytes.len + @as(u64, RUN.bytes.ptr[9]) }
+    io::println{ &io, s = utf8::of{ chars = pick{ b = false }.bytes } }
+    let o: ?strlit = "maybe"
+    if o != null { io::println_u64{ &io, n = o.bytes.len } }
+}
+""", '5\n3\nview\n5\n22\n9\nno\n5\n')
+
+    def test_errors(self):
+        for src, msg, line, col in [
+            ('fn f { s: strlit, t: strlit } -> strlit {\n    let mut x = s\n    x.bytes = t.bytes\n    return x\n}',
+             '`.bytes` is not a place', 3, 6),
+            ('fn f { b: []u8 } -> strlit { return b }', 'expected strlit, got []u8', 1, 37),
+            ('fn f { s: strlit } -> []u8 { return s }', 'expected []u8, got strlit', 1, 37),
+            ('fn f {} -> strlit {\n    let s = "abc"\n    return s\n}', 'expected strlit, got [3]u8', 3, 12),
+            ('fn f {} { let s = strlit{ bytes = "x" } }', '`strlit` is not a struct', 1, 19),
+            ('fn f { s: strlit } -> bool { return s == s }', 'strlit has no built-in equality', 1, 39),
+            ('fn f { s: strlit } { _ = s.ptr }', 'strlit has no field `ptr`', 1, 27),
+            ('fn f {} { let mut s: strlit\n    _ = s.bytes\n}', '`s` may be read before it is assigned', 2, 9),
+            ('extern fn f { s: strlit }',
+             "extern fn `f` can't pass `s` to C: it has type strlit, which C has no equivalent of", 1, 15),
+        ]:
+            self.assertError(src + '\nfn main {} {}', msg, line, col)
+
+
 FMT_SETUP = """
 fn main { mut io: Io } {
     let mut mem: [4096]u8

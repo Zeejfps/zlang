@@ -253,10 +253,12 @@ namespace lower {
     }
 
     // t as ctxi's tkey sees it: without pointer and slice mutability, a function type's fields
-    // sorted by name. Two types are the same IR type exactly when they normalize to one Id.
+    // sorted by name, and a strlit as the []u8 it is. Two types are the same IR type exactly
+    // when they normalize to one Id.
     fn norm { mut l: Lower, t: Id } -> Id {
         let x = types::prune{ s = l.c.ty, t }
         match types::get{ s = l.c.ty, id = x } {
+            strlit => { return u8_slice{ &l } }
             ptr{ elem } => { return types::ptr{ s = &l.c.ty, elem = norm{ &l, t = elem }, mutable = false } }
             slice{ elem } => { return types::slice{ s = &l.c.ty, elem = norm{ &l, t = elem }, mutable = false } }
             opt{ elem } => { return types::opt{ s = &l.c.ty, elem = norm{ &l, t = elem } } }
@@ -320,6 +322,7 @@ namespace lower {
     fn tid { mut l: Lower, t: Id } -> u32 {
         let mut x = types::prune{ s = l.c.ty, t }
         if types::get{ s = l.c.ty, id = x } is enumeration{ decl } { x = check::get_decl{ c = l.c.*, d = decl }.ty }
+        if x == types::STRLIT { x = u8_slice{ &l } }
         let k = norm{ &l, t = x }
         let known = map::get{ m = l.type_ids, key = k }
         if known != null { return known }
@@ -1626,11 +1629,12 @@ namespace lower {
         return null
     }
 
-    // A string literal: a [N]u8 array, or a view of static bytes as a []u8 or a utf8::String.
+    // A string literal: a [N]u8 array, or a view of static bytes as a []u8, a strlit or a
+    // utf8::String.
     fn str_lit { mut l: Lower, bytes: []u8, t: Id } -> ir::Expr {
         match get{ l, t } {
             array => { return mk{ ty = tid{ &l, t }, k = ir::ExprKind::str{ bytes } } }
-            slice => { return mk{ ty = tid{ &l, t = u8_slice{ &l } }, k = ir::ExprKind::sbytes{ bytes } } }
+            slice | strlit => { return mk{ ty = tid{ &l, t = u8_slice{ &l } }, k = ir::ExprKind::sbytes{ bytes } } }
             else => { return text_lit{ &l, bytes, t } }
         }
     }
@@ -1826,6 +1830,8 @@ namespace lower {
             let b = ex{ &l, e = base }
             return mk{ ty, k = ir::ExprKind::seq{ first = box{ l, e = b }, then = box{ l, e = v } } }
         }
+        // A strlit's bytes: the strlit itself, which is a []u8 in the IR.
+        if a is lit { return ex{ &l, e = base } }
         let is_ptr = a is sptr
         if is_ptr or a is slen {
             let ty = tid{ &l, t }

@@ -2,8 +2,8 @@
 // layout, fields of a declared type) needs its declarations and lives in check.ctx.
 //
 // Types are interned in a Store: each distinct type has one Id, so two types are equal exactly
-// when their ids are. Ids for the error type, `no value`, `null` and the primitives are fixed
-// (the consts below); every other id comes from `intern`.
+// when their ids are. Ids for the error type, `no value`, `null`, the primitives and `strlit` are
+// fixed (the consts below); every other id comes from `intern`.
 //
 // The error type stands for a type that couldn't be resolved. It is equal to itself only, but
 // the checker accepts it wherever a type is expected and reports nothing more about it, so one
@@ -27,6 +27,7 @@ namespace types {
     const U8: Id = 7
     const USIZE: Id = 11
     const BOOL: Id = 14
+    const STRLIT: Id = 15
 
     // A context field of a function type, in declaration order.
     struct Field { name: []u8, mutable: bool, ty: Id }
@@ -59,6 +60,9 @@ namespace types {
         eset{ errs: []u32 },
         // `!T`: a T, or an error of type errs (an errs). ok is VOID for a bare `!`.
         res{ ok: Id, errs: Id },
+        // A string literal's type (§11): its bytes, `.bytes`, with the hidden zero after them.
+        // Only a literal makes one. It is a []u8 in the IR.
+        strlit,
     }
 
     // An inference variable: `any` for a generic argument, `int` or `float` for a literal,
@@ -94,6 +98,7 @@ namespace types {
             _ = intern{ &s, t = Type::prim{ p = @as(Prim, i) } }
             i = i + 1
         }
+        _ = intern{ &s, t = Type::strlit }
         return s
     }
 
@@ -275,6 +280,7 @@ namespace types {
             errs{ owner, one } => { return mix{ h = mix{ h = 16, n = owner }, n = one } }
             eset{ errs } => { return mix_ids{ h = 17, ids = errs } }
             res{ ok, errs } => { return mix{ h = mix{ h = 18, n = ok }, n = errs } }
+            strlit => { return 19 }
         }
     }
 
@@ -326,6 +332,7 @@ namespace types {
             errs{ owner, one } => { return b is errs{ owner = o, one = e } and owner == o and one == e }
             eset{ errs } => { return b is eset{ errs = xs } and same_ids{ a = errs, b = xs } }
             res{ ok, errs } => { return b is res{ ok = o, errs = e } and ok == o and errs == e }
+            strlit => { return b is strlit }
         }
     }
 

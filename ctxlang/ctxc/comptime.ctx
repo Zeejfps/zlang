@@ -126,15 +126,11 @@ namespace comptime {
                 return check::Val::array{ ty, elems = list::items{ list = out } }
             }
             slice{ elem, mutable } => {
+                if types::prune{ s = c.ty, t = elem } == types::U8 and not mutable { return view{ &c, &r, ty, a } }
                 let ptr = word{ &r, a } ifnull { return null }
-                let len = word{ &r, a = a + 8 } ifnull { return null }
-                if types::prune{ s = c.ty, t = elem } == types::U8 and not mutable {
-                    if len == 0 { return check::Val::sbytes{ ty, bytes = slice::empty(u8){} } }
-                    let rest = eval::literal_rest{ m = r.m.*, a = ptr }
-                    if rest != null and len <= @as(u64, rest.len) { return check::Val::sbytes{ ty, bytes = rest[..@as(usize, len)] } }
-                }
                 return pointer{ &c, r, t = ty, p = ptr }
             }
+            strlit => { return view{ &c, &r, ty, a } }
             ptr => {
                 let p = word{ &r, a } ifnull { return null }
                 return pointer{ &c, r, t = ty, p }
@@ -178,6 +174,16 @@ namespace comptime {
                 return cannot{ &c, r, what = utf8::view{ b }.bytes }
             }
         }
+    }
+
+    // A []u8 or strlit: the bytes of the literal it views.
+    fn view { mut c: check::Checker, mut r: Reader, ty: Id, a: eval::Addr } -> ?check::Val {
+        let ptr = word{ &r, a } ifnull { return null }
+        let len = word{ &r, a = a + 8 } ifnull { return null }
+        if len == 0 { return check::Val::sbytes{ ty, bytes = slice::empty(u8){} } }
+        let rest = eval::literal_rest{ m = r.m.*, a = ptr }
+        if rest != null and len <= @as(u64, rest.len) { return check::Val::sbytes{ ty, bytes = rest[..@as(usize, len)] } }
+        return pointer{ &c, r, t = ty, p = ptr }
     }
 
     // A union or optional with a tag: null, or the variant with its payload's fields.

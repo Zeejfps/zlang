@@ -76,6 +76,7 @@ namespace check {
         decl{ i: u32 },
         prim{ p: types::Prim },
         anyerr,                         // `error`: the type of any error (§8, Errors)
+        strlit,                         // a string literal's type (§11, Literals)
     }
 
     struct Space {
@@ -94,6 +95,7 @@ namespace check {
         param{ decl: u32, index: u32 },
         local{ var: u32 },
         anyerr,
+        strlit,
     }
 
     // Where a type expression is resolved: a namespace, and the generic parameters in scope,
@@ -255,8 +257,8 @@ namespace check {
 
     // How a field, index or `.len` expression reaches its value (ctxi's Field.kind and
     // Index.kind): through a pointer (p), in an array or slice (s). cvar is a capability's C
-    // variable (§15), read through the capability or a pointer to it.
-    enum Access: u8 { field, pfield, plen, len, slen, sptr, arr, slice, parr, ptr, cvar }
+    // variable (§15), read through the capability or a pointer to it, and lit a strlit's bytes.
+    enum Access: u8 { field, pfield, plen, len, slen, sptr, arr, slice, parr, ptr, cvar, lit }
 
     // A field that `..` supplies: the local of the same name, as `&name` for a `mut` field. ty is
     // the local's type, arg the argument's.
@@ -376,6 +378,7 @@ namespace check {
             i = i + 1
         }
         put_name{ &c, ns = UNIVERSE, values = false, name = "error", e = Entry::anyerr }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "strlit", e = Entry::strlit }
         return c
     }
 
@@ -1696,6 +1699,10 @@ namespace check {
                 if given > 0 { no_targs{ &c, what = "error", at } }
                 return types::errs{ s = &c.ty, owner = NONE, one = NONE }
             }
+            strlit => {
+                if given > 0 { no_targs{ &c, what = "strlit", at } }
+                return types::STRLIT
+            }
             space{ ns } => {
                 let mut b = message{ c }
                 try! @fmt(&b, "namespace `{}` used as a type", str{ s = get_space{ c, ns }.name })
@@ -1966,6 +1973,7 @@ namespace check {
             decl{ i } => { use{ &c, n, r = Ref::decl{ i } } }
             prim{ p } => { use{ &c, n, r = Ref::prim{ p } } }
             anyerr => { use{ &c, n, r = Ref::anyerr } }
+            strlit => { use{ &c, n, r = Ref::strlit } }
         }
     }
 
@@ -2001,6 +2009,7 @@ namespace check {
             error => { return utf8::push{ &b, s = "{error}" } }
             void => { return utf8::push{ &b, s = "no value" } }
             nil => { return utf8::push{ &b, s = "null" } }
+            strlit => { return utf8::push{ &b, s = "strlit" } }
             prim{ p } => { return utf8::push{ &b, s = str{ s = types::PRIM_NAMES[@as(usize, p)] } } }
             cap{ decl } => { return utf8::push{ &b, s = str{ s = get_decl{ c, d = decl }.name.text } } }
             ptr{ elem, mutable } => {
@@ -2465,7 +2474,7 @@ namespace check {
             str{ bytes } => {
                 match types::get{ s = c.ty, id = t } {
                     array => { return Val::str{ ty = t, bytes } }
-                    slice => { return Val::sbytes{ ty = t, bytes } }
+                    slice | strlit => { return Val::sbytes{ ty = t, bytes } }
                     else => {
                         if record_decl{ c, t } == c.cstr_decl {
                             let p = Val::cstr{ ty = types::ptr{ s = &c.ty, elem = types::U8, mutable = false }, bytes }
@@ -4605,7 +4614,7 @@ namespace check {
         if t == types::NO_TYPE { return false }
         let x = types::prune{ s = c.ty, t }
         match types::get{ s = c.ty, id = x } {
-            ptr | slice | param => { return true }
+            ptr | slice | strlit | param => { return true }
             opt{ elem } => { return holds_ptr{ &c, t = elem, seen, unknown } }
             array{ elem } => { return holds_ptr{ &c, t = elem, seen, unknown } }
             record{ decl } => {
@@ -4721,7 +4730,7 @@ namespace check {
             }
             range{ base } => { return derives_raw{ &c, e = base.* } }
             field{ base } => {
-                if access_of{ c, e } is sptr | field { return derives_raw{ &c, e = base.* } }
+                if access_of{ c, e } is sptr | field | lit { return derives_raw{ &c, e = base.* } }
             }
             index{ base } => {
                 if access_of{ c, e } is arr { return derives_raw{ &c, e = base.* } }
@@ -5838,9 +5847,9 @@ namespace check {
         }
     }
 
-    // A string literal is a view of static bytes where a []u8, a utf8::String or a c::String is
-    // expected (also inside ?), and a [N]u8 array value otherwise. As a c::String the bytes get a
-    // NUL after them, so they can't hold one.
+    // A string literal is a strlit where one is expected (also inside ?), a view of static bytes
+    // where a []u8, a utf8::String or a c::String is, and a [N]u8 array value otherwise. As a
+    // c::String the bytes get a NUL after them, so they can't hold one.
     fn str_lit { mut c: Checker, e: syntax::Expr, bytes: []u8, exp: Id } -> Id {
         let mut want = types::NO_TYPE
         if exp != types::NO_TYPE {
@@ -5849,6 +5858,7 @@ namespace check {
         }
         if want != types::NO_TYPE {
             match types::get{ s = c.ty, id = want } {
+                strlit => { return want }
                 slice{ elem, mutable } => {
                     if types::prune{ s = c.ty, t = elem } == types::U8 {
                         if mutable { error{ &c, at = expr_at{ e }, msg = "a string literal is read-only; it cannot be a []mut u8" } }
@@ -6868,6 +6878,13 @@ namespace check {
                 if slice::eq_bytes{ a = name.text, b = "ptr" } {
                     put_access{ &c, e, a = Access::sptr }
                     return types::ptr{ s = &c.ty, elem, mutable }
+                }
+            }
+            // A literal's bytes, which like a slice's `.ptr` aren't a place: nothing replaces them.
+            strlit => {
+                if slice::eq_bytes{ a = name.text, b = "bytes" } {
+                    put_access{ &c, e, a = Access::lit }
+                    return types::slice{ s = &c.ty, elem = types::U8, mutable = false }
                 }
             }
             var => {
@@ -7938,7 +7955,7 @@ namespace check {
                 return Layout{ size = n, align = n }
             }
             ptr | func => { return Layout{ size = 8, align = 8 } }
-            slice => { return Layout{ size = 16, align = 8 } }
+            slice | strlit => { return Layout{ size = 16, align = 8 } }
             cap{ decl } => {
                 if get_decl{ c, d = decl }.fields.len == 0 { return Layout{ size = 0, align = 1 } }
                 let offs = struct_offsets{ &c, t }
