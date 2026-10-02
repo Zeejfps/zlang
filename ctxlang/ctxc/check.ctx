@@ -1431,27 +1431,56 @@ namespace check {
         }
     }
 
-    // The conversion that makes a literal a t (PLAN.md 4.4), or null if there is none.
-    fn conversion { c: Checker, t: Id } -> ?u32 {
+    // The conversion that makes a literal in namespace ns a t (PLAN.md 4.4), or null if there
+    // is none. Only one that code in ns could name counts: std's code sees std's conversions,
+    // and the program's sees std's and its own.
+    fn conversion { c: Checker, t: Id, ns: u32 } -> ?u32 {
         if t == types::ERROR or not convertible{ c, t } { return null }
         let fs = list::items{ list = c.converts }
         let mut i: usize = 0
         while i < fs.len {
-            if converts_to{ c, f = fs[i] } == t { return fs[i] }
+            if converts_to{ c, f = fs[i] } == t and reaches{ c, from = ns, ns = get_decl{ c, d = fs[i] }.ns } { return fs[i] }
             i = i + 1
         }
         return null
     }
 
-    // A conversion to t other than f, or null if f is the only one (PLAN.md 4.6).
-    fn other_conversion { c: Checker, t: Id, f: u32 } -> ?u32 {
+    // A conversion to t other than f that a literal in namespace ns sees, or null if f is the
+    // only one (PLAN.md 4.6).
+    fn other_conversion { c: Checker, t: Id, f: u32, ns: u32 } -> ?u32 {
         let fs = list::items{ list = c.converts }
         let mut i: usize = 0
         while i < fs.len {
-            if fs[i] != f and converts_to{ c, f = fs[i] } == t { return fs[i] }
+            if fs[i] != f and converts_to{ c, f = fs[i] } == t and reaches{ c, from = ns, ns = get_decl{ c, d = fs[i] }.ns } { return fs[i] }
             i = i + 1
         }
         return null
+    }
+
+    // Whether code in namespace `from` can name what namespace ns holds (§10, Name lookup): ns
+    // is `from` or around it, or a named namespace in one that is, as `a::b::` names it. The
+    // program's top level has no name, so std's code names none of the program's declarations.
+    fn reaches { c: Checker, from: u32, ns: u32 } -> bool {
+        let mut n = ns
+        while n != NONE {
+            if encloses{ c, outer = n, inner = from } { return true }
+            let sp = get_space{ c, ns = n }
+            if sp.parent == NONE { return false }
+            let space{ ns = named } = map::get{ m = get_space{ c, ns = sp.parent }.paths, key = sp.name } else { return false }
+            if named != n { return false }
+            n = sp.parent
+        }
+        return false
+    }
+
+    // Whether namespace outer is inner or around it.
+    fn encloses { c: Checker, outer: u32, inner: u32 } -> bool {
+        let mut n = inner
+        while n != NONE {
+            if n == outer { return true }
+            n = get_space{ c, ns = n }.parent
+        }
+        return false
     }
 
     // The value of a converted literal e: what its conversion gives (comptime::literal),
@@ -3880,14 +3909,14 @@ namespace check {
                     hint = br.t
                 } else if lit == 0 {
                     let mut u = types::prune{ s = c.ty, t = br.t }
-                    if conversion{ c, t = u } != null { hint = br.t }
+                    if conversion{ c, t = u, ns = c.sc.ns } != null { hint = br.t }
                     if types::get{ s = c.ty, id = u } is opt{ elem } { u = types::prune{ s = c.ty, t = elem } }
                     match types::get{ s = c.ty, id = u } {
                         strlit => { hint = br.t }
                         slice{ elem } => { if types::prune{ s = c.ty, t = elem } == types::U8 { hint = br.t } }
                         else => {}
                     }
-                    if conversion{ c, t = u } != null { hint = br.t }
+                    if conversion{ c, t = u, ns = c.sc.ns } != null { hint = br.t }
                 }
             }
             i = i + 1
@@ -6076,7 +6105,7 @@ namespace check {
         let mut want = types::NO_TYPE
         if exp != types::NO_TYPE {
             want = types::prune{ s = c.ty, t = exp }
-            if types::get{ s = c.ty, id = want } is opt{ elem } and conversion{ c, t = want } == null { want = types::prune{ s = c.ty, t = elem } }
+            if types::get{ s = c.ty, id = want } is opt{ elem } and conversion{ c, t = want, ns = c.sc.ns } == null { want = types::prune{ s = c.ty, t = elem } }
         }
         if want != types::NO_TYPE {
             match types::get{ s = c.ty, id = want } {
@@ -6089,11 +6118,11 @@ namespace check {
                 }
                 else => {}
             }
-            let f = conversion{ c, t = want }
+            let f = conversion{ c, t = want, ns = c.sc.ns }
             if f != null {
                 // Two are an error here, where a literal would use them, and not before: two
                 // libraries may each declare one, and a program may call either.
-                let g = other_conversion{ c, t = want, f }
+                let g = other_conversion{ c, t = want, f, ns = c.sc.ns }
                 if g != null {
                     let mut b = message{ c }
                     try! @fmt(&b, "string literal has two conversions to {}: `{}` and `{}`", tstr{ c, t = want }, str{ s = get_decl{ c, d = f }.qual }, str{ s = get_decl{ c, d = g }.qual })

@@ -2781,6 +2781,32 @@ fn main { mut io: Io } {
         ]:
             self.assertError(two + body, msg, n + line, col)
 
+    def test_visible_conversions(self):
+        """A literal uses only the conversions its code could name (§10, Name lookup): std's
+        code names none of the program's, so a program's own conversion to utf8::String leaves
+        std's literals alone, and is ambiguous only in the program's code, where a literal would
+        use both. A namespace of the program names another's by path."""
+        mine = """
+namespace mine {
+    #convert
+    fn from_literal { s: strlit } -> !utf8::String { return utf8::from{ bytes = s.bytes } }
+}
+"""
+        self.assertOutput(mine + """
+fn main { mut io: Io } {
+    io::println{ &io, s = utf8::of{ chars = "std's literals are std's" } }
+}
+""", "std's literals are std's\n")
+        self.assertError(mine + 'fn main { mut io: Io } {\n    io::println{ &io, s = "hi" }\n}',
+                         'string literal has two conversions to utf8::String: `utf8::from_literal` and `mine::from_literal`',
+                         mine.count('\n') + 2, 27)
+        self.assertOutput(PATTERN + """
+namespace app {
+    fn digits { text: []u8 } -> bool { return pattern::matches{ p = "[0-9]+", text } }
+}
+fn main { mut io: Io } { io::println_bool{ &io, n = app::digits{ text = "42" } } }
+""", 'true\n')
+
     def test_result_types(self):
         """Any T: a generic struct's instance, a union, and a ?T, whose conversion comes before
         one to T where a ?T is expected."""
