@@ -627,9 +627,9 @@ The compiler checks, within each function, that the address of a local doesn't o
    - a struct, union or array literal, or an error with a payload (`name{ field = e }`)
    - pointer arithmetic, `@cast` or `@slice`
    - converting a `*[N]T` to a slice, slicing (`s[lo..hi]`), or `s.ptr`
-   - a call, whose result is derived from everything its read-only arguments are derived from. Arguments passed to `mut` fields don't count.
+   - a call, whose result is derived from everything its read-only arguments are derived from, or a bind (§4), which copies them. Arguments passed to `mut` fields don't count.
 
-   Only values whose type contains a pointer carry this. An error type (§8, Errors) contains one if an error of its set has a payload that does, and a `!T` if its `T` or its error type does. `&fn` values follow §6 instead. A string literal view is derived from nothing.
+   Only values whose type contains a pointer carry this. An error type (§8, Errors) contains one if an error of its set has a payload that does, and a `!T` if its `T` or its error type does. A `&fn` contains one; the places it holds follow §6. A string literal view is derived from nothing.
 3. It is a compile error to:
    - `return` a value derived from any local or read-only context field of the function
    - `try e` (§8, Errors) for an `e` derived from any local or read-only context field of the function, if `e`'s error type contains a pointer: `try` may return the error

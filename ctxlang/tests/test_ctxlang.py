@@ -1326,6 +1326,15 @@ class Safety(Base):
              'bound function stored in `h` holds `n`, which does not live as long', 8, 9),
             ('union U { a{ x: i32 }, b }\nfn f { mut u: U } {\n    match &u {\n        a{ &x } => { x = 3 }\n        b => { u = U::b }\n    }\n}',
              'u overlaps the match scrutinee; access it only through the arm bindings', 5, 16),
+            # A bind holds what its read-only arguments are derived from.
+            ('fn first { s: []u8, k: u8 } -> u8 { return s[0] + k }\nfn f {} {\n    let mut h = first{ s = "a", _ }\n    if true {\n        let buf: [2]u8 = [1, 2]\n        h = first{ s = buf[..], _ }\n    }\n}',
+             '`h` outlives local `buf` whose address it would hold', 6, 9),
+            ('fn first { s: []u8, k: u8 } -> u8 { return s[0] + k }\nfn f { c: bool } {\n    let h: &fn{ k: u8 } -> u8\n    if c {\n        let buf: [2]u8 = [1, 2]\n        let g = first{ s = buf[..], _ }\n        h = g\n    } else {\n        h = first{ s = "a", _ }\n    }\n}',
+             '`h` outlives local `buf` whose address it would hold', 7, 9),
+            ('fn read { p: *i32 } -> i32 { return p.* }\nfn f { c: bool } {\n    let y = 0\n    let h = if c { let x = 1; read{ p = &x, _ } } else { read{ p = &y, _ } }\n}',
+             'the value of this branch holds the address of local `x`, which ends with the branch', 4, 35),
+            ('fn get { f: &fn{} -> []u8 } -> []u8 { return f{} }\nfn view { s: []u8 } -> []u8 { return s }\nfn f {} -> []u8 {\n    let a: [2]u8 = [1, 2]\n    return get{ f = view{ s = a[..], _ } }\n}',
+             'returned value holds the address of local `a`', 5, 5),
         ]:
             self.assertSafetyError(src + '\nfn main {} {}', msg, line, col)
 
@@ -1339,6 +1348,8 @@ class Safety(Base):
             'fn inc { mut n: i32 } { n = n + 1 }\nfn f {} {\n    let mut n = 0\n    let h = inc{ &n, _ }\n    h{}\n}',
             'fn f { c: bool } -> i32 {\n    let x = 1\n    let p = if c { &x } else { &x }\n    return p.*\n}',
             'fn f {} -> []u8 {\n    return "static"\n}',
+            'fn first { s: []u8, k: u8 } -> u8 { return s[0] + k }\nfn f {} -> u8 {\n    let buf: [2]u8 = [1, 2]\n    let h = first{ s = buf[..], _ }\n    return h{ k = 1 }\n}',
+            'fn first { s: []u8, k: u8 } -> u8 { return s[0] + k }\nfn f {} -> u8 {\n    let mut h = first{ s = "a", _ }\n    if true { h = first{ s = "b", _ } }\n    return h{ k = 1 }\n}',
         ]:
             run(src + '\nfn main {} {}')
 

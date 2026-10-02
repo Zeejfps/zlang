@@ -4858,12 +4858,14 @@ namespace check {
     // Whether t can hold a pointer. An error type holds one if an error of its set has a payload
     // that does (§8, Errors). A function's set is unknown until infer_sets: until then, with
     // unknown, it counts as holding one if any error of the program does, which keeps what values
-    // are derived from sound, and without, as holding none, which leaves what is certain.
+    // are derived from sound, and without, as holding none, which leaves what is certain. A bound
+    // function holds what its bind's read-only arguments were derived from (§6).
     fn holds_ptr { mut c: Checker, t: Id, seen: []u32, unknown: bool } -> bool {
         if t == types::NO_TYPE { return false }
         let x = types::prune{ s = c.ty, t }
         match types::get{ s = c.ty, id = x } {
             ptr | slice | strlit | param => { return true }
+            func{ bound } => { return bound }
             opt{ elem } => { return holds_ptr{ &c, t = elem, seen, unknown } }
             array{ elem } => { return holds_ptr{ &c, t = elem, seen, unknown } }
             record{ decl } => {
@@ -4992,7 +4994,6 @@ namespace check {
             braced{ items, bind } => {
                 let lit = map::get{ m = c.literal, key = expr_key{ e } }
                 let is_lit = lit != null and lit
-                if bind and not is_lit { return no_vars{} }
                 let fields = callee_fields{ c, e }
                 let mut out = no_vars{}
                 let mut i: usize = 0
