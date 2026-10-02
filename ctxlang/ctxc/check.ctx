@@ -1441,6 +1441,17 @@ namespace check {
         return null
     }
 
+    // A conversion to t other than f, or null if f is the only one (PLAN.md 4.6).
+    fn other_conversion { c: Checker, t: Id, f: u32 } -> ?u32 {
+        let fs = list::items{ list = c.converts }
+        let mut i: usize = 0
+        while i < fs.len {
+            if fs[i] != f and converts_to{ c, f = fs[i] } == t { return fs[i] }
+            i = i + 1
+        }
+        return null
+    }
+
     // The value of a converted literal e: what its conversion gives (comptime::literal),
     // computed the first time it is needed, once the bodies are checked. Null if it has none,
     // after reporting why.
@@ -6071,6 +6082,15 @@ namespace check {
             }
             let f = conversion{ c, t = want }
             if f != null {
+                // Two are an error here, where a literal would use them, and not before: two
+                // libraries may each declare one, and a program may call either.
+                let g = other_conversion{ c, t = want, f }
+                if g != null {
+                    let mut b = message{ c }
+                    try! @fmt(&b, "string literal has two conversions to {}: `{}` and `{}`", tstr{ c, t = want }, str{ s = get_decl{ c, d = f }.qual }, str{ s = get_decl{ c, d = g }.qual })
+                    error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                    return want
+                }
                 try! map::put{ m = &c.lit_convs, key = expr_key{ e }, value = f }
                 try! list::push{ list = &c.lit_list, item = e }
                 return want

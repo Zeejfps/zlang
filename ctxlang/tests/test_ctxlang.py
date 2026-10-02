@@ -2698,6 +2698,43 @@ fn main { mut io: Io } {
         ]:
             self.assertError(src, msg, line, col)
 
+    def test_two_conversions(self):
+        """Two conversions to one T (PLAN.md 4.6) are an error where a literal would use them,
+        naming both, and not before: a program that calls one directly is fine."""
+        two = """
+struct Celsius { deg: i32 }
+fn degrees { s: strlit } -> i32 {
+    let mut n = 0
+    let mut i: usize = 0
+    while i < s.bytes.len and s.bytes[i] >= '0' and s.bytes[i] <= '9' {
+        n = n * 10 + @as(i32, s.bytes[i] - '0')
+        i = i + 1
+    }
+    return n
+}
+namespace metric {
+    #convert
+    fn from_literal { s: strlit } -> Celsius { return Celsius{ deg = degrees{ s } } }
+}
+namespace imperial {
+    #convert
+    fn from_literal { s: strlit } -> Celsius { return Celsius{ deg = (degrees{ s } - 32) * 5 / 9 } }
+}
+"""
+        self.assertOutput(two + """
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = imperial::from_literal{ s = "212" }.deg + metric::from_literal{ s = "1" }.deg }
+}
+""", '101\n')
+        msg = 'string literal has two conversions to Celsius: `metric::from_literal` and `imperial::from_literal`'
+        n = two.count('\n')
+        for body, line, col in [
+            ('fn main {} { let c: Celsius = "20" }', 1, 31),
+            ('fn hot { c: Celsius } -> bool { return c.deg > 30 }\nfn main {} { _ = hot{ c = "40" } }', 2, 27),
+            ('fn main {} {\n    let c = Celsius{ deg = 1 }\n    let d = if c.deg > 0 { c } else { "0" }\n}', 3, 39),
+        ]:
+            self.assertError(two + body, msg, n + line, col)
+
     def test_pointer_into_the_literal(self):
         """A result may point into the literal's bytes, which are static data: a []u8 or a *u8,
         followed by the hidden zero."""
