@@ -17,6 +17,7 @@ interpreter ctxc replaced, is at `8436f4d`.
 | 3 | [Metaprogramming](#3-metaprogramming) | in progress | |
 | 4 | [Literal conversions](#4-literal-conversions) | planned | 3.3 |
 | 5 | [Language server](#5-language-server) | planned | |
+| 6 | [Tools in ctxlang](#6-tools-in-ctxlang) | planned | 3.1, 3.2 for 6.5 |
 
 ## Stages
 
@@ -108,17 +109,35 @@ generator can't observe its own output.
    build program the checked declarations as data: structs, unions, fields, layouts and
    attributes. That data is the `Analysis`, read-only trees plus side tables, so no separate
    reflection format is needed.
-3. **Compile-time consts.** A `const` initializer may call any function. No capability exists at
-   compile time, apart perhaps from a compile-time arena for allocation, so only effect-free code
-   can run there. ctxc evaluates it with an interpreter over the IR, which is monomorphized, typed
-   and laid out. Checking the const calls `ensure` on the functions it reaches, lowers from the
-   initializer as the root, and runs that IR: the checker already has per-declaration check state
-   and lowering from any root, so this step adds the interpreter and a new caller.
-   - The value is cached in the const's check state, so the language server doesn't re-run it on
+3. **Compile-time consts.** A `const` initializer may call any function. A const has no context,
+   so it holds no capability, and only effect-free code can run there. ctxc evaluates it with an
+   interpreter over the IR, which is monomorphized, typed and laid out.
+   - **When.** The checker runs in phases (declarations, const folding, bodies, error sets), and
+     has no per-declaration `ensure`. A const that calls a function is evaluated after every body
+     is checked and the sets are inferred, before lowering, the first time its value is needed.
+     A const whose evaluation reaches itself is a cycle error.
+   - **Array lengths and enum values** are needed during declarations, so they keep today's
+     folding (`const_int`): a const that calls a function there is an error. Nothing uses a named
+     const as an array length today; checking bodies on demand can lift this later.
+   - **How.** A second `Lower`, separate from the program's so the emitted C doesn't change,
+     lowers the initializer as a function without context, and what it reaches. The interpreter
+     (`ctxc/eval.ctx`) runs it over memory as bytes, laid out by the IR's sizes and offsets, so
+     `@cast`, extern unions, pointer arithmetic and std's allocators, which reinterpret `[]u8`
+     as typed memory, behave as they do in C. A pointer is a region (static literal bytes, a stack
+     frame, the heap) and an offset.
+   - **Limits.** A panic (overflow, bounds, `@panic`, `try!`) is a compile error at the const with
+     its message. So are running out of fuel (a step limit) and too deep a recursion. Calling an
+     extern fn is an error: none can run while compiling. (The capability-less ones std has, float
+     formatting and parsing, are ctxc's own runtime's, so a later version could call ctxc's.)
+   - **The result** is read back by its type into the const's value. A `[]u8` or `c::String` must
+     point into static literal bytes; any other pointer, or a function value, is an error.
+   - The value is cached in the checker (`values`), so the language server doesn't re-run it on
      edits that don't touch its inputs.
-   - A const whose evaluation reaches itself is a cycle error from `ensure`, and running out of
-     fuel (a step limit) is a diagnostic, not a hang.
-   - The result must hold no pointers other than ones to static data.
+   - **Two steps.** First the interpreter and `ctxc interp FILE`, which runs a whole program's
+     `main` in it, emulating the externs that writing to stdout and stderr reaches. The tests run
+     every program that only prints both ways and compare output, exit code and panic: the
+     second implementation the C backend has lacked (Known gaps). Then consts that call
+     functions, on top of it.
    - Uses: lookup tables, perfect-hash keyword maps, precomputed tables for parsers, and
      converting literals to library types (stage 4).
 
@@ -273,6 +292,64 @@ Design notes:
 *Done when:* VS Code, with a minimal client extension, shows diagnostics while you type, and go to
 definition, hover and completion work on `ctxc/` itself. The editor-query fixtures pass.
 
+### 6. Tools in ctxlang
+
+Python is left in development only: about 8,100 lines in `tests/` and `tools/`. ctxc and std have
+none, and `ctxc run` and `exe` drive a build themselves. Steps 1–4 replace the Python and stand
+alone; step 5 gives programs a test framework of their own. None blocks the other stages.
+
+1. **Remove `tools/ctxc.py`.** `ctxc run` and `ctxc exe` do what it does. The examples' header
+   comments, spec.md's list of examples and "Working on ctxc" name it, and move to `ctxc run`.
+2. **`fixpoint.py` in ctxlang.** It builds ctxc with itself twice, compares the C, and with
+   `--update` writes the three bootstraps: a few `proc::run` calls and file compares.
+3. **Tests as files.** The 454 tests are programs in Python strings (`tests/test_ctxlang.py`).
+   Each becomes a `.ctx` file, or a directory for a multi-file program, that states its
+   expected output, exit code, panic or first error in a header comment, and a ctxlang runner
+   builds, runs and checks them. Then ctxc, the recovery corpus and stage 5's editor-query
+   fixtures all read the same files, and `tools/toolchain.py`'s harness (building ctxc from the
+   bootstrap, caching by hash, mapping positions back) moves into the runner. Do this before
+   stage 5.
+4. **`corpus.py` and `recover.py` in ctxlang.** Both run many processes at once, and `proc::run`
+   waits for its child, so this needs a way to start a process and wait later (`proc::spawn`
+   and `wait`). With tests as files, the corpus is mostly the test directory itself.
+5. **`#test` functions** for std, ctxc's internals and programs, next to the code they test. The
+   compiler's own suite stays as files (6.3): a program can't catch its own compile error.
+   ```
+   #test
+   fn reads_config { mut fs: Fs } -> ! {
+       let text = try fs::read_all{ &fs, ... }
+       @expect(text.len == 42)                 // fails with "text.len == 42: 17 == 42"
+   }
+
+   #test{ panics = "integer overflow" }
+   fn add_overflows {} { _ = max_i32{} + 1 }
+   ```
+   - **A test's context is what it needs.** One without capabilities is deterministic by
+     construction, so it can run in parallel, and with 3.3 while compiling. One that takes `Fs`
+     says so, and the runner supplies it as `main`'s are supplied.
+   - **No mocking framework.** Behaviour is already passed as values (capabilities with fields,
+     `map::Map`'s hash): a test passes a fake.
+   - **A test returns `!`,** so it can `try`; an error fails it, printed as `@fmt` prints one.
+   - **`@expect(c)`**, a builtin: on failure it records the condition's text and, for a
+     comparison, both sides as `@fmt` holes, and the test goes on. ctxlang has no macros or
+     generic printing (FRICTION #6), so a library `assert_eq` couldn't show the values.
+   - **Leaks.** A std counting allocator fails a test that doesn't free what it took, as Zig's
+     `std.testing.allocator` does.
+   - **No `cfg(test)`.** Lowering starts from `main`, so tests never reach a normal build.
+   - **The compiler knows nothing of tests.** `#test` is std's attribute, and a build program
+     finds the tests with `build::check` (3.2) and writes a runner `main` with `build::gen_file`
+     (3.1). Only `@expect` is the compiler's. A test that expects a panic runs in its own
+     process, which needs 6.4's `proc::spawn`.
+   - *Needs* 3.1 and 3.2, and 6.4 for expected panics. It is a first real user of
+     `build::check`, next to the JSON generator.
+   - *Considered:* finding tests by name (Go's `TestXxx`) is magic by name; `test "name" { }`
+     blocks (Zig) are syntax an attribute already gives; fixtures by parameter name (pytest) are
+     hidden injection that capabilities make explicit; mocks that patch code at run time (Jest)
+     don't fit a language that passes behaviour as values.
+
+*Later, if wanted:* benchmarks (`#bench`, timed through a clock capability the runner supplies)
+and fuzzing (`#fuzz` over a `[]u8` input), both built in as Go has them.
+
 ## Working on ctxc
 
 ```
@@ -290,8 +367,7 @@ cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctx
 - `python tools/ctxc.py PROGRAM --run [args...]` compiles and runs a program with it.
 - `python -m unittest discover tests` runs all tests through the native ctxc. They pass on
   Windows (gcc), Linux (gcc) and macOS arm64 (Apple clang).
-- Python is left in development only: `tests/` and `tools/`. Each could be a ctxlang program now
-  that `proc::run` and `fs::list` exist.
+- Python is left in development only: `tests/` and `tools/`. Stage 6 moves them to ctxlang.
 - Friction found while writing ctxc is logged in [FRICTION.md](FRICTION.md).
 
 ### Changing the language
