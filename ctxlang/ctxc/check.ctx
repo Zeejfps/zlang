@@ -599,18 +599,15 @@ namespace check {
         let x = get_decl{ c, d }
         let sc = own_scope{ &c, d }
         let mut out = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
-        match x.syn.k {
-            record{ fields } => {
-                let mut i: usize = 0
-                while i < fields.len {
-                    let f = fields[i]
-                    if seen_field{ fields, i } { duplicate{ &c, what = "field", name = f.name, at = f.span } }
-                    let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
-                    add_field{ xs = &out, f = types::Field{ name = f.name.text, mutable = false, ty = t } }
-                    i = i + 1
-                }
+        if x.syn.k is record{ fields } {
+            let mut i: usize = 0
+            while i < fields.len {
+                let f = fields[i]
+                if seen_field{ fields, i } { duplicate{ &c, what = "field", name = f.name, at = f.span } }
+                let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
+                add_field{ xs = &out, f = types::Field{ name = f.name.text, mutable = false, ty = t } }
+                i = i + 1
             }
-            else => {}
         }
         list::at{ list = c.decls, i = d }.fields = list::items{ list = out }
     }
@@ -620,24 +617,21 @@ namespace check {
         let x = get_decl{ c, d }
         let sc = own_scope{ &c, d }
         let mut out = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
-        match x.syn.k {
-            fault{ fields = fs } => {
-                let fields = fs ifnull { slice::empty(syntax::Field){} }
-                let mut i: usize = 0
-                while i < fields.len {
-                    let f = fields[i]
-                    if seen_field{ fields, i } { duplicate{ &c, what = "field", name = f.name, at = f.span } }
-                    let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
-                    if holds_fail{ &c, t, depth = 0 } {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "error `{}`'s field `{}` can't hold {}: a payload holds no `!T` or error", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t })
-                        error{ &c, at = f.span, msg = utf8::view{ b } }
-                    }
-                    add_field{ xs = &out, f = types::Field{ name = f.name.text, mutable = false, ty = t } }
-                    i = i + 1
+        if x.syn.k is fault{ fields = fs } {
+            let fields = fs ifnull { slice::empty(syntax::Field){} }
+            let mut i: usize = 0
+            while i < fields.len {
+                let f = fields[i]
+                if seen_field{ fields, i } { duplicate{ &c, what = "field", name = f.name, at = f.span } }
+                let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
+                if holds_fail{ &c, t, depth = 0 } {
+                    let mut b = message{ c }
+                    try! @fmt(&b, "error `{}`'s field `{}` can't hold {}: a payload holds no `!T` or error", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t })
+                    error{ &c, at = f.span, msg = utf8::view{ b } }
                 }
+                add_field{ xs = &out, f = types::Field{ name = f.name.text, mutable = false, ty = t } }
+                i = i + 1
             }
-            else => {}
         }
         list::at{ list = c.decls, i = d }.fields = list::items{ list = out }
     }
@@ -678,10 +672,7 @@ namespace check {
 
     // An error's payload: null for an error declared without braces.
     fn fault_fields { c: Checker, d: u32 } -> ?[]types::Field {
-        match get_decl{ c, d }.syn.k {
-            fault{ fields } => { if fields == null { return null } }
-            else => {}
-        }
+        if get_decl{ c, d }.syn.k is fault{ fields } and fields == null { return null }
         return get_decl{ c, d }.fields
     }
 
@@ -703,43 +694,40 @@ namespace check {
         let mut bare = NONE                     // the first capability without fields included
         let mut bare_at = x.syn.span
         push{ xs = &c.cap_stack, n = d }
-        match x.syn.k {
-            cap{ fields = fs, includes } => {
-                let fields = fs ifnull { slice::empty(syntax::Field){} }
-                let mut j: usize = 0
-                let mut i: usize = 0
-                while i <= fields.len {
-                    while j < includes.len and includes[j].at == i {
-                        let y = include_cap{ &c, d, inc = includes[j], sc, out = &out, from = &from, vars = &vars, vfrom = &vfrom, incl = &incl }
-                        if y != NONE and bare == NONE and get_decl{ c, d = y }.fields.len == 0 {
-                            bare = y
-                            bare_at = includes[j].span
-                        }
-                        j = j + 1
+        if x.syn.k is cap{ fields = fs, includes } {
+            let fields = fs ifnull { slice::empty(syntax::Field){} }
+            let mut j: usize = 0
+            let mut i: usize = 0
+            while i <= fields.len {
+                while j < includes.len and includes[j].at == i {
+                    let y = include_cap{ &c, d, inc = includes[j], sc, out = &out, from = &from, vars = &vars, vfrom = &vfrom, incl = &incl }
+                    if y != NONE and bare == NONE and get_decl{ c, d = y }.fields.len == 0 {
+                        bare = y
+                        bare_at = includes[j].span
                     }
-                    if i == fields.len { break }
-                    let f = fields[i]
-                    if f.external {
-                        add_cvar{ &c, d, f, sc, out = list::items{ list = out }, from = list::items{ list = from }, vars = &vars, vfrom = &vfrom }
-                        i = i + 1
-                        continue
-                    }
-                    let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
-                    let mut ok = t == types::ERROR
-                    match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { func{ external } => { ok = external } else => {} }
-                    if not ok {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "capability `{}`'s field `{}` must be a C function pointer, `extern fn{{ ... }}`, not {}", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t })
-                        error{ &c, at = f.span, msg = utf8::view{ b } }
-                    }
-                    let came = cap_member{ out = list::items{ list = out }, from = list::items{ list = from }, vars = list::items{ list = vars }, vfrom = list::items{ list = vfrom }, name = f.name.text }
-                    if came != null and f.name.text.len > 0 { cap_clash{ &c, x, name = f.name, at = f.span, came } }
-                    add_field{ xs = &out, f = types::Field{ name = f.name.text, mutable = false, ty = t } }
-                    push{ xs = &from, n = NONE }
-                    i = i + 1
+                    j = j + 1
                 }
+                if i == fields.len { break }
+                let f = fields[i]
+                if f.external {
+                    add_cvar{ &c, d, f, sc, out = list::items{ list = out }, from = list::items{ list = from }, vars = &vars, vfrom = &vfrom }
+                    i = i + 1
+                    continue
+                }
+                let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
+                let mut ok = t == types::ERROR
+                if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is func{ external } { ok = external }
+                if not ok {
+                    let mut b = message{ c }
+                    try! @fmt(&b, "capability `{}`'s field `{}` must be a C function pointer, `extern fn{{ ... }}`, not {}", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t })
+                    error{ &c, at = f.span, msg = utf8::view{ b } }
+                }
+                let came = cap_member{ out = list::items{ list = out }, from = list::items{ list = from }, vars = list::items{ list = vars }, vfrom = list::items{ list = vfrom }, name = f.name.text }
+                if came != null and f.name.text.len > 0 { cap_clash{ &c, x, name = f.name, at = f.span, came } }
+                add_field{ xs = &out, f = types::Field{ name = f.name.text, mutable = false, ty = t } }
+                push{ xs = &from, n = NONE }
+                i = i + 1
             }
-            else => {}
         }
         if out.len > 0 and bare != NONE {
             let y = get_decl{ c, d = bare }
@@ -814,7 +802,7 @@ namespace check {
         let t = rtype{ &c, te = inc.ty, sc, allow_bound = false }
         if t == types::ERROR { return NONE }
         let mut i = NONE
-        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { cap{ decl } => { i = decl } else => {} }
+        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is cap{ decl } { i = decl }
         if i == NONE {
             let mut b = message{ c }
             try! @fmt(&b, "capability `{}` can only include a capability, not {}", str{ s = x.name.text }, tstr{ c, t })
@@ -838,7 +826,7 @@ namespace check {
             return NONE
         }
         let mut braced = false
-        match get_decl{ c, d = i }.syn.k { cap{ fields } => { braced = fields != null } else => {} }
+        if get_decl{ c, d = i }.syn.k is cap{ fields } { braced = fields != null }
         if braced { resolve_cap{ &c, d = i } }
         let y = get_decl{ c, d = i }
         let mut clash = false
@@ -879,29 +867,17 @@ namespace check {
     // Whether a is a capability that includes capability b, directly or through others, and so
     // converts to it (§15): a copy, since a capability's fields never change.
     fn includes_cap { c: Checker, a: Id, b: Id } -> bool {
-        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = a } } {
-            cap{ decl = x } => {
-                match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = b } } {
-                    cap{ decl = y } => { return has_id{ xs = get_decl{ c, d = x }.includes, n = y } }
-                    else => { return false }
-                }
-            }
-            else => { return false }
-        }
+        return types::get{ s = c.ty, id = types::prune{ s = c.ty, t = a } } is cap{ decl = x }
+               and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = b } } is cap{ decl = y }
+               and has_id{ xs = get_decl{ c, d = x }.includes, n = y }
     }
 
     // Whether pointer type a points to a capability that includes the one b points to, as a
     // `mut` field's argument may (§15): `&gl` for `mut gl: Gl2_0`, with `gl: Gl3_3`.
     fn includes_cap_ptr { c: Checker, a: Id, b: Id } -> bool {
-        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = a } } {
-            ptr{ elem = x, mutable = m } => {
-                match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = b } } {
-                    ptr{ elem = y, mutable = n } => { return (m or not n) and includes_cap{ c, a = x, b = y } }
-                    else => { return false }
-                }
-            }
-            else => { return false }
-        }
+        return types::get{ s = c.ty, id = types::prune{ s = c.ty, t = a } } is ptr{ elem = x, mutable = m }
+               and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = b } } is ptr{ elem = y, mutable = n }
+               and (m or not n) and includes_cap{ c, a = x, b = y }
     }
 
     // Whether capability b's fields are the first of capability a's, as when a's first item is
@@ -928,10 +904,7 @@ namespace check {
     // Whether t is a capability with fields (§15), which only a function of its namespace can
     // construct, and so neither the runtime nor a callback's thunk can supply.
     fn loaded_cap { c: Checker, t: Id } -> bool {
-        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
-            cap{ decl } => { return get_decl{ c, d = decl }.fields.len > 0 }
-            else => { return false }
-        }
+        return types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is cap{ decl } and get_decl{ c, d = decl }.fields.len > 0
     }
 
     // Whether a value of type t is or holds a capability with fields, as a field, an element or
@@ -991,38 +964,35 @@ namespace check {
         let x = get_decl{ c, d }
         let sc = own_scope{ &c, d }
         let mut out = list::new(Variant){ realloc = arena::alloc, heap = c.heap }
-        match x.syn.k {
-            sum{ variants } => {
-                let mut i: usize = 0
-                while i < variants.len {
-                    let v = variants[i]
-                    let mut k: usize = 0
-                    while k < i {
-                        if slice::eq_bytes{ a = variants[k].name.text, b = v.name.text } and v.name.text.len > 0 {
-                            duplicate{ &c, what = "variant", name = v.name, at = v.span }
-                            break
-                        }
-                        k = k + 1
+        if x.syn.k is sum{ variants } {
+            let mut i: usize = 0
+            while i < variants.len {
+                let v = variants[i]
+                let mut k: usize = 0
+                while k < i {
+                    if slice::eq_bytes{ a = variants[k].name.text, b = v.name.text } and v.name.text.len > 0 {
+                        duplicate{ &c, what = "variant", name = v.name, at = v.span }
+                        break
                     }
-                    let vfields = v.fields
-                    if vfields == null {
-                        add_variant{ xs = &out, v = Variant{ name = v.name.text, fields = null } }
-                    } else {
-                        let mut fs = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
-                        let mut j: usize = 0
-                        while j < vfields.len {
-                            let f = vfields[j]
-                            if seen_field{ fields = vfields, i = j } { duplicate{ &c, what = "field", name = f.name, at = f.span } }
-                            let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
-                            add_field{ xs = &fs, f = types::Field{ name = f.name.text, mutable = false, ty = t } }
-                            j = j + 1
-                        }
-                        add_variant{ xs = &out, v = Variant{ name = v.name.text, fields = list::items{ list = fs } } }
-                    }
-                    i = i + 1
+                    k = k + 1
                 }
+                let vfields = v.fields
+                if vfields == null {
+                    add_variant{ xs = &out, v = Variant{ name = v.name.text, fields = null } }
+                } else {
+                    let mut fs = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+                    let mut j: usize = 0
+                    while j < vfields.len {
+                        let f = vfields[j]
+                        if seen_field{ fields = vfields, i = j } { duplicate{ &c, what = "field", name = f.name, at = f.span } }
+                        let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
+                        add_field{ xs = &fs, f = types::Field{ name = f.name.text, mutable = false, ty = t } }
+                        j = j + 1
+                    }
+                    add_variant{ xs = &out, v = Variant{ name = v.name.text, fields = list::items{ list = fs } } }
+                }
+                i = i + 1
             }
-            else => {}
         }
         list::at{ list = c.decls, i = d }.variants = list::items{ list = out }
     }
@@ -1050,40 +1020,37 @@ namespace check {
         let x = get_decl{ c, d }
         let empty = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }
         let mut values = list::new(i64){ realloc = arena::alloc, heap = c.heap }
-        match x.syn.k {
-            enumeration{ base, variants } => {
-                let mut t = rtype{ &c, te = base, sc = empty, allow_bound = false }
-                if t != types::ERROR and not types::is_int{ s = c.ty, t } {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "enum `{}` needs an integer base type, got {}", str{ s = x.name.text }, tstr{ c, t })
-                    error{ &c, at = base.span, msg = utf8::view{ b } }
-                    t = types::ERROR
-                }
-                list::at{ list = c.decls, i = d }.ty = t
-                let mut next: ?i64 = 0
-                let mut i: usize = 0
-                while i < variants.len {
-                    let v = variants[i]
-                    let mut k: usize = 0
-                    while k < i {
-                        if slice::eq_bytes{ a = variants[k].name.text, b = v.name.text } and v.name.text.len > 0 {
-                            duplicate{ &c, what = "variant", name = v.name, at = v.span }
-                            break
-                        }
-                        k = k + 1
-                    }
-                    let given = v.value
-                    let value = if given == null { next } else { const_int{ &c, e = given, ns = x.ns, what = "an enum value" } }
-                    next = null
-                    if value != null {
-                        if t != types::ERROR { enum_value{ &c, t, name = v.name, value, at = v.span, variants, before = list::items{ list = values } } }
-                        if value < 9223372036854775807 { next = value + 1 }
-                    }
-                    push_i64{ xs = &values, n = if value == null { 0 } else { value } }
-                    i = i + 1
-                }
+        if x.syn.k is enumeration{ base, variants } {
+            let mut t = rtype{ &c, te = base, sc = empty, allow_bound = false }
+            if t != types::ERROR and not types::is_int{ s = c.ty, t } {
+                let mut b = message{ c }
+                try! @fmt(&b, "enum `{}` needs an integer base type, got {}", str{ s = x.name.text }, tstr{ c, t })
+                error{ &c, at = base.span, msg = utf8::view{ b } }
+                t = types::ERROR
             }
-            else => {}
+            list::at{ list = c.decls, i = d }.ty = t
+            let mut next: ?i64 = 0
+            let mut i: usize = 0
+            while i < variants.len {
+                let v = variants[i]
+                let mut k: usize = 0
+                while k < i {
+                    if slice::eq_bytes{ a = variants[k].name.text, b = v.name.text } and v.name.text.len > 0 {
+                        duplicate{ &c, what = "variant", name = v.name, at = v.span }
+                        break
+                    }
+                    k = k + 1
+                }
+                let given = v.value
+                let value = if given == null { next } else { const_int{ &c, e = given, ns = x.ns, what = "an enum value" } }
+                next = null
+                if value != null {
+                    if t != types::ERROR { enum_value{ &c, t, name = v.name, value, at = v.span, variants, before = list::items{ list = values } } }
+                    if value < 9223372036854775807 { next = value + 1 }
+                }
+                push_i64{ xs = &values, n = if value == null { 0 } else { value } }
+                i = i + 1
+            }
         }
         list::at{ list = c.decls, i = d }.values = list::items{ list = values }
     }
@@ -1123,17 +1090,14 @@ namespace check {
 
     fn resolve_const { mut c: Checker, d: u32 } {
         let x = get_decl{ c, d }
-        match x.syn.k {
-            constant{ ty } => {
-                let empty = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }
-                let mut t = rtype{ &c, te = ty, sc = empty, allow_bound = false }
-                if holds_fail{ &c, t, depth = 0 } {
-                    error{ &c, at = ty.span, msg = "a const can't hold a `!T` or an error" }
-                    t = types::ERROR
-                }
-                list::at{ list = c.decls, i = d }.ty = t
+        if x.syn.k is constant{ ty } {
+            let empty = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }
+            let mut t = rtype{ &c, te = ty, sc = empty, allow_bound = false }
+            if holds_fail{ &c, t, depth = 0 } {
+                error{ &c, at = ty.span, msg = "a const can't hold a `!T` or an error" }
+                t = types::ERROR
             }
-            else => {}
+            list::at{ list = c.decls, i = d }.ty = t
         }
     }
 
@@ -1141,17 +1105,14 @@ namespace check {
     fn resolve_sig { mut c: Checker, d: u32 } {
         let x = get_decl{ c, d }
         let sc = own_scope{ &c, d }
-        match x.syn.k {
-            func{ params, ret, external } => {
-                let fields = context{ &c, params, sc }
-                let mut r = types::VOID
-                if ret != null { r = ret_type{ &c, te = ret, sc, owner = d } }
-                let at = list::at{ list = c.decls, i = d }
-                at.fields = fields
-                at.ret = r
-                if external { extern_sig{ &c, x, params, ret, fields, r } }
-            }
-            else => {}
+        if x.syn.k is func{ params, ret, external } {
+            let fields = context{ &c, params, sc }
+            let mut r = types::VOID
+            if ret != null { r = ret_type{ &c, te = ret, sc, owner = d } }
+            let at = list::at{ list = c.decls, i = d }
+            at.fields = fields
+            at.ret = r
+            if external { extern_sig{ &c, x, params, ret, fields, r } }
         }
     }
 
@@ -1281,19 +1242,14 @@ namespace check {
     // The function the program's top level declares as `name`, or NONE.
     fn root_fn { c: Checker, name: []u8 } -> u32 {
         let found = map::get{ m = get_space{ c, ns = ROOT }.values, key = name }
-        if found == null { return NONE }
-        match found {
-            decl{ i } => { if get_decl{ c, d = i }.kind == Kind::func { return i } }
-            else => {}
-        }
+        if found is decl{ i } and get_decl{ c, d = i }.kind == Kind::func { return i }
         return NONE
     }
 
     // The declaration std's top level has as `name`, such as the capability `Build`, or NONE.
     fn std_decl_top { c: Checker, name: []u8 } -> u32 {
-        let e = map::get{ m = get_space{ c, ns = STD }.paths, key = name }
-        if e == null { return NONE }
-        match e { decl{ i } => { return i } else => { return NONE } }
+        let decl{ i } = map::get{ m = get_space{ c, ns = STD }.paths, key = name } else { return NONE }
+        return i
     }
 
     // ---- attributes (§18; PLAN.md stage 3 gives them to generators)
@@ -1319,21 +1275,15 @@ namespace check {
             let mut k: usize = 0
             while k < x.attrs.len {
                 let a = x.attrs[k]
-                let v = attribute{ &c, a, ns }
-                if v != null {
-                    match v {
-                        record{ ty, fields } => {
-                            let rd = record_decl{ c, t = ty }
-                            if rd == NONE {
-                            } else if rd == symbol_decl {
-                                symbol_attr{ &c, x, file, a, fields, seen }
-                                seen = true
-                            } else if rd == callback_decl {
-                                callback_attr{ &c, x, file, a, seen = seen_callback }
-                                seen_callback = true
-                            }
-                        }
-                        else => {}
+                if attribute{ &c, a, ns } is record{ ty, fields } {
+                    let rd = record_decl{ c, t = ty }
+                    if rd == NONE {
+                    } else if rd == symbol_decl {
+                        symbol_attr{ &c, x, file, a, fields, seen }
+                        seen = true
+                    } else if rd == callback_decl {
+                        callback_attr{ &c, x, file, a, seen = seen_callback }
+                        seen_callback = true
                     }
                 }
                 k = k + 1
@@ -1363,20 +1313,14 @@ namespace check {
             let mut k: usize = 0
             while k < f.attrs.len {
                 let a = f.attrs[k]
-                let v = attribute{ &c, a, ns }
-                if v != null {
-                    match v {
-                        record{ ty, fields = vals } => {
-                            let rd = record_decl{ c, t = ty }
-                            if rd == NONE {
-                            } else if rd == symbol_decl {
-                                var_symbol_attr{ &c, d, f, a, fields = vals, seen }
-                                seen = true
-                            } else if rd == callback_decl {
-                                error{ &c, at = a.span, msg = "`c::callback` applies only to a fn" }
-                            }
-                        }
-                        else => {}
+                if attribute{ &c, a, ns } is record{ ty, fields = vals } {
+                    let rd = record_decl{ c, t = ty }
+                    if rd == NONE {
+                    } else if rd == symbol_decl {
+                        var_symbol_attr{ &c, d, f, a, fields = vals, seen }
+                        seen = true
+                    } else if rd == callback_decl {
+                        error{ &c, at = a.span, msg = "`c::callback` applies only to a fn" }
                     }
                 }
                 k = k + 1
@@ -1436,7 +1380,7 @@ namespace check {
     // `#c::symbol{ name }` on an extern fn: the C symbol it calls.
     fn symbol_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, fields: []Val, seen: bool } {
         let mut external = false
-        match x.k { func{ external = e } => { external = e } else => {} }
+        if x.k is func{ external = e } { external = e }
         if not external {
             error{ &c, at = a.span, msg = "`c::symbol` applies only to an extern fn" }
             return
@@ -1454,9 +1398,7 @@ namespace check {
     // it isn't a C identifier.
     fn symbol_name { mut c: Checker, a: syntax::Attr, fields: []Val } -> ?[]u8 {
         let mut name: []u8 = ""
-        if fields.len == 1 {
-            match fields[0] { sbytes{ bytes } => { name = bytes } else => {} }
-        }
+        if fields.len == 1 and fields[0] is sbytes{ bytes } { name = bytes }
         if not c_ident{ s = name } {
             let mut b = message{ c }
             try! @fmt(&b, "`{}` is not a C identifier", str{ s = name })
@@ -1519,7 +1461,7 @@ namespace check {
     // Whether struct declaration d is an extern union, whose fields all start at offset 0 (§12,
     // Untagged unions).
     fn is_untagged { c: Checker, d: u32 } -> bool {
-        match get_decl{ c, d }.syn.k { record{ untagged } => { return untagged } else => { return false } }
+        return get_decl{ c, d }.syn.k is record{ untagged } and untagged
     }
 
     fn untagged_type { c: Checker, t: Id } -> bool {
@@ -1537,25 +1479,16 @@ namespace check {
 
     // The declaration std's namespace `space` has as `name`, or NONE.
     fn std_decl { c: Checker, space: []u8, name: []u8 } -> u32 {
-        let sp = map::get{ m = get_space{ c, ns = STD }.paths, key = space }
-        if sp == null { return NONE }
-        match sp {
-            space{ ns } => {
-                let e = map::get{ m = get_space{ c, ns }.paths, key = name }
-                if e == null { return NONE }
-                match e { decl{ i } => { return i } else => { return NONE } }
-            }
-            else => { return NONE }
-        }
+        let space{ ns } = map::get{ m = get_space{ c, ns = STD }.paths, key = space } else { return NONE }
+        let decl{ i } = map::get{ m = get_space{ c, ns }.paths, key = name } else { return NONE }
+        return i
     }
 
     // The function or const std's namespace `space` has as `name`, or NONE: std's own, whatever
     // the program declares.
     fn std_value { c: Checker, space: []u8, name: []u8 } -> u32 {
-        let sp = map::get{ m = get_space{ c, ns = STD }.paths, key = space } ifnull { return NONE }
-        let space{ ns } = sp else { return NONE }
-        let e = map::get{ m = get_space{ c, ns }.values, key = name } ifnull { return NONE }
-        let decl{ i } = e else { return NONE }
+        let space{ ns } = map::get{ m = get_space{ c, ns = STD }.paths, key = space } else { return NONE }
+        let decl{ i } = map::get{ m = get_space{ c, ns }.values, key = name } else { return NONE }
         return i
     }
 
@@ -1670,7 +1603,7 @@ namespace check {
             let prev = segs[i - 1]
             let s = segs[i]
             let mut inner = NONE
-            match e { space{ ns } => { inner = ns } else => {} }
+            if e is space{ ns } { inner = ns }
             if prev.targs != null or inner == NONE {
                 let mut b = message{ c }
                 try! @fmt(&b, "`{}` is not a namespace", str{ s = prev.name.text })
@@ -1784,11 +1717,8 @@ namespace check {
                         }
                         push{ xs = &c.alias_stack, n = i }
                         let mut t = types::ERROR
-                        match x.syn.k {
-                            alias{ ty } => {
-                                t = rtype{ &c, te = ty, sc = Scope{ ns = x.ns, owner = i, names = x.tparams, args = xs }, allow_bound }
-                            }
-                            else => {}
+                        if x.syn.k is alias{ ty } {
+                            t = rtype{ &c, te = ty, sc = Scope{ ns = x.ns, owner = i, names = x.tparams, args = xs }, allow_bound }
                         }
                         _ = list::pop{ list = &c.alias_stack }
                         return t
@@ -1854,13 +1784,10 @@ namespace check {
                         k = k + 1
                     }
                     let mut v: ?i64 = null
-                    match x.syn.k {
-                        constant{ value } => {
-                            push{ xs = &c.const_stack, n = d }
-                            v = const_int{ &c, e = value, ns = x.ns, what }
-                            _ = list::pop{ list = &c.const_stack }
-                        }
-                        else => {}
+                    if x.syn.k is constant{ value } {
+                        push{ xs = &c.const_stack, n = d }
+                        v = const_int{ &c, e = value, ns = x.ns, what }
+                        _ = list::pop{ list = &c.const_stack }
                     }
                     return v
                 }
@@ -1942,32 +1869,14 @@ namespace check {
             let mut p: ?Entry = first
             let mut i: usize = 1
             while i < segs.len - 1 {
-                let mut inner = NONE
-                let q = p
-                if q != null {
-                    match q { space{ ns = n } => { inner = n } else => {} }
-                }
-                p = if inner == NONE { null } else { map::get{ m = get_space{ c, ns = inner }.paths, key = segs[i].name.text } }
+                p = if p is space{ ns = n } { map::get{ m = get_space{ c, ns = n }.paths, key = segs[i].name.text } } else { null }
                 i = i + 1
             }
-            let q = p
-            if q != null {
-                match q {
-                    space{ ns = n } => { found = map::get{ m = get_space{ c, ns = n }.values, key = last.name.text } }
-                    else => {}
-                }
-            }
+            if p is space{ ns = n } { found = map::get{ m = get_space{ c, ns = n }.values, key = last.name.text } }
         }
-        let f = found
-        if f == null { return NONE }
-        match f {
-            decl{ i } => {
-                if get_decl{ c, d = i }.kind == Kind::constant {
-                    use{ &c, n = last.name, r = Ref::decl{ i } }
-                    return i
-                }
-            }
-            else => {}
+        if found is decl{ i } and get_decl{ c, d = i }.kind == Kind::constant {
+            use{ &c, n = last.name, r = Ref::decl{ i } }
+            return i
         }
         return NONE
     }
@@ -2138,44 +2047,38 @@ namespace check {
 
     fn check_const { mut c: Checker, d: u32 } {
         let x = get_decl{ c, d }
-        match x.syn.k {
-            constant{ value } => {
-                begin_body{ &c, sc = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }, ret = types::VOID }
-                let before = c.diags.errors
-                expect{ &c, e = value, t = x.ty }
-                finish{ &c }
-                if c.diags.errors == before { const_ok{ &c, e = value } }
-                if c.diags.errors == before { put_bool{ m = &c.foldable, k = d } }
-            }
-            else => {}
+        if x.syn.k is constant{ value } {
+            begin_body{ &c, sc = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }, ret = types::VOID }
+            let before = c.diags.errors
+            expect{ &c, e = value, t = x.ty }
+            finish{ &c }
+            if c.diags.errors == before { const_ok{ &c, e = value } }
+            if c.diags.errors == before { put_bool{ m = &c.foldable, k = d } }
         }
     }
 
     // A function's body, with its context fields in the outermost scope.
     fn check_fn { mut c: Checker, d: u32 } {
         let x = get_decl{ c, d }
-        match x.syn.k {
-            func{ params, body } => {
-                begin_body{ &c, sc = own_scope{ &c, d }, ret = x.ret }
-                c.fn_decl = d
-                try! map::put{ m = &c.first_var, key = d, value = @as(u32, c.vars.len) }
-                let mut i: usize = 0
-                while i < x.fields.len and i < params.len {
-                    let f = x.fields[i]
-                    let v = new_var{ &c, name = f.name, ty = f.ty, kind = VarKind::ctx, mutable = f.mutable, at = params[i].span }
-                    list::at{ list = c.vars, i = v }.indirect = f.mutable
-                    bind_name{ &c, name = f.name, var = v }
-                    i = i + 1
-                }
-                block{ &c, b = body }
-                if x.ret != types::VOID and x.ret != types::ERROR and not c.dead and not void_result{ c, t = x.ret } {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "`{}` must end every path in `return` or `@panic()`", str{ s = x.name.text })
-                    error{ &c, at = x.syn.span, msg = utf8::view{ b } }
-                }
-                finish{ &c }
+        if x.syn.k is func{ params, body } {
+            begin_body{ &c, sc = own_scope{ &c, d }, ret = x.ret }
+            c.fn_decl = d
+            try! map::put{ m = &c.first_var, key = d, value = @as(u32, c.vars.len) }
+            let mut i: usize = 0
+            while i < x.fields.len and i < params.len {
+                let f = x.fields[i]
+                let v = new_var{ &c, name = f.name, ty = f.ty, kind = VarKind::ctx, mutable = f.mutable, at = params[i].span }
+                list::at{ list = c.vars, i = v }.indirect = f.mutable
+                bind_name{ &c, name = f.name, var = v }
+                i = i + 1
             }
-            else => {}
+            block{ &c, b = body }
+            if x.ret != types::VOID and x.ret != types::ERROR and not c.dead and not void_result{ c, t = x.ret } {
+                let mut b = message{ c }
+                try! @fmt(&b, "`{}` must end every path in `return` or `@panic()`", str{ s = x.name.text })
+                error{ &c, at = x.syn.span, msg = utf8::view{ b } }
+            }
+            finish{ &c }
         }
     }
 
@@ -2232,20 +2135,17 @@ namespace check {
         i = 0
         while i < lits.len {
             let e = lits[i]
-            match e.k {
-                int{ negative, value } => {
-                    let t = types::prune{ s = c.ty, t = type_of_expr{ c, e } }
-                    let p = types::prim_of{ s = c.ty, t }
-                    if p != null and (value == null or not types::fits{ p, negative, magnitude = value }) {
-                        let mut b = message{ c }
-                        let sign: utf8::String = if negative { "-" } else { "" }
-                        let digits = if value == null { str{ s = source_text{ c, span = e.span } } } else { message_u64{ c, n = value } }
-                        try! @fmt(&b, "literal {}{} does not fit in {}", sign, digits, tstr{ c, t })
-                        try! fixed_by{ c, t = type_of_expr{ c, e }, &b }
-                        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
-                    }
+            if e.k is int{ negative, value } {
+                let t = types::prune{ s = c.ty, t = type_of_expr{ c, e } }
+                let p = types::prim_of{ s = c.ty, t }
+                if p != null and (value == null or not types::fits{ p, negative, magnitude = value }) {
+                    let mut b = message{ c }
+                    let sign: utf8::String = if negative { "-" } else { "" }
+                    let digits = if value == null { str{ s = source_text{ c, span = e.span } } } else { message_u64{ c, n = value } }
+                    try! @fmt(&b, "literal {}{} does not fit in {}", sign, digits, tstr{ c, t })
+                    try! fixed_by{ c, t = type_of_expr{ c, e }, &b }
+                    error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
                 }
-                else => {}
             }
             i = i + 1
         }
@@ -2316,15 +2216,9 @@ namespace check {
     // §14: a const's initializer is computable at compile time.
     fn const_ok { mut c: Checker, e: syntax::Expr } {
         let at = expr_at{ e }
-        let conv = map::get{ m = c.convs, key = expr_key{ e } }
-        if conv != null {
-            match conv {
-                slice => {
-                    error{ &c, at, msg = "a const must be computable at compile time" }
-                    return
-                }
-                else => {}
-            }
+        if map::get{ m = c.convs, key = expr_key{ e } } is slice {
+            error{ &c, at, msg = "a const must be computable at compile time" }
+            return
         }
         match e.k {
             error | int | float | str | boolean | nil => {}
@@ -2338,11 +2232,7 @@ namespace check {
             repeat{ elem } => { const_ok{ &c, e = elem.* } }
             path => {
                 let r = map::get{ m = c.refs, key = expr_key{ e } }
-                let mut ok = false
-                if r != null {
-                    match r { constant | variant | enumval => { ok = true } else => {} }
-                }
-                if not ok { error{ &c, at, msg = "a const may only refer to other consts" } }
+                if not (r is constant | variant | enumval) { error{ &c, at, msg = "a const may only refer to other consts" } }
             }
             builtin{ name, args } => {
                 if not slice::eq_bytes{ a = name.text, b = "size_of" } and not slice::eq_bytes{ a = name.text, b = "align_of" } {
@@ -2419,10 +2309,7 @@ namespace check {
         }
         push{ xs = &c.folding, n = d }
         let mut v: ?Val = null
-        match x.syn.k {
-            constant{ value } => { v = fold_to{ &c, e = value, t = x.ty } }
-            else => {}
-        }
+        if x.syn.k is constant{ value } { v = fold_to{ &c, e = value, t = x.ty } }
         _ = list::pop{ list = &c.folding }
         let got = v
         if got == null {
@@ -2441,9 +2328,7 @@ namespace check {
     }
 
     fn retype { c: Checker, v: Val, t: Id } -> Val {
-        let mut scalar = false
-        match types::get{ s = c.ty, id = t } { prim | enumeration => { scalar = true } else => {} }
-        if not scalar { return v }
+        if not (types::get{ s = c.ty, id = t } is prim | enumeration) { return v }
         match v {
             int{ negative, magnitude } => { return Val::int{ ty = t, negative, magnitude } }
             float{ value } => { return Val::float{ ty = t, value } }
@@ -2459,7 +2344,7 @@ namespace check {
                 some{ to } => {
                     let t = types::prune{ s = c.ty, t = to }
                     let mut elem = types::ERROR
-                    match types::get{ s = c.ty, id = t } { opt{ elem = x } => { elem = x } else => {} }
+                    if types::get{ s = c.ty, id = t } is opt{ elem = x } { elem = x }
                     let inner = fold_node{ &c, e }
                     if inner == null { return null }
                     return Val::variant{ ty = t, index = 1, fields = one_val{ c, v = retype{ c, v = inner, t = types::prune{ s = c.ty, t = elem } } } }
@@ -2562,10 +2447,7 @@ namespace check {
             neg{ e = x } => {
                 let v = fold{ &c, e = x.* }
                 if v == null { return null }
-                match v {
-                    float{ value } => { return Val::float{ ty = t, value = -value } }
-                    else => {}
-                }
+                if v is float{ value } { return Val::float{ ty = t, value = -value } }
                 let n = num_of{ v }
                 return fits_in{ &c, n = Num{ negative = not n.negative and n.magnitude != 0, magnitude = n.magnitude }, t, at = expr_at{ e } }
             }
@@ -2578,16 +2460,10 @@ namespace check {
     fn fold_literal { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, t: Id } -> ?Val {
         let mut fields = struct_fields{ &c, t }
         let mut index = NONE
-        let r = map::get{ m = c.refs, key = expr_key{ e = callee } }
-        if r != null {
-            match r {
-                variant{ index = vi } => {
-                    index = vi
-                    let fs = variants_of{ &c, t }[vi].fields
-                    fields = if fs == null { slice::empty(types::Field){} } else { fs }
-                }
-                else => {}
-            }
+        if map::get{ m = c.refs, key = expr_key{ e = callee } } is variant{ index = vi } {
+            index = vi
+            let fs = variants_of{ &c, t }[vi].fields
+            fields = if fs == null { slice::empty(types::Field){} } else { fs }
         }
         let mut out = list::new(Val){ realloc = arena::alloc, heap = c.heap }
         let mut i: usize = 0
@@ -2627,7 +2503,7 @@ namespace check {
         if (op == tok::Kind::eq or op == tok::Kind::ne) and (an or is_null{ e = b }) {
             let x = fold{ &c, e = if an { b } else { a } }
             if x == null { return null }
-            let null_now = match x { nil => { true } else => { false } }
+            let null_now = x is nil
             return Val::boolean{ ty = t, value = null_now == (op == tok::Kind::eq) }
         }
         let x = fold{ &c, e = a }
@@ -2723,10 +2599,7 @@ namespace check {
     }
 
     fn bool_of { v: Val } -> bool {
-        match v {
-            boolean{ value } => { return value }
-            else => { return false }
-        }
+        return v is boolean{ value } and value
     }
 
     fn num_neg { n: Num } -> Num {
@@ -2942,7 +2815,7 @@ namespace check {
     }
 
     fn is_fn { c: Checker, t: Id } -> bool {
-        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { func => { return true } else => { return false } }
+        return types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is func
     }
 
     // The local a name in an expression refers to, or NONE. In a call or literal, a local that
@@ -3174,15 +3047,12 @@ namespace check {
 
     fn assign { mut c: Checker, place: syntax::Expr, value: syntax::Expr, at: source::Span } {
         let mut v = NONE
-        match place.k {
-            path{ segs } => {
-                let s0 = segs[0]
-                if segs.len == 1 and s0.targs == null and s0.name.text.len > 0 {
-                    v = lookup_local{ c, name = s0.name.text, callable = false }
-                    if v != NONE { use{ &c, n = s0.name, r = Ref::local{ var = v } } }
-                }
+        if place.k is path{ segs } {
+            let s0 = segs[0]
+            if segs.len == 1 and s0.targs == null and s0.name.text.len > 0 {
+                v = lookup_local{ c, name = s0.name.text, callable = false }
+                if v != NONE { use{ &c, n = s0.name, r = Ref::local{ var = v } } }
             }
-            else => {}
         }
         if v != NONE {
             let x = get_var{ c, v }
@@ -3206,15 +3076,12 @@ namespace check {
                 c.maybe = set_add{ c, xs = c.maybe, n = v }
             }
             check_store{ &c, root = v, through = false, rhs = value, at }
-            match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = x.ty } } {
-                func{ bound } => {
-                    if bound {
-                        let held = held_of{ c, e = value }
-                        add_held{ &c, v, xs = held }
-                        check_bound_scope{ &c, v, places = held, at }
-                    }
+            if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = x.ty } } is func{ bound } {
+                if bound {
+                    let held = held_of{ c, e = value }
+                    add_held{ &c, v, xs = held }
+                    check_bound_scope{ &c, v, places = held, at }
                 }
-                else => {}
             }
             return
         }
@@ -3239,7 +3106,7 @@ namespace check {
                     error{ &c, at = expr_at{ e }, msg = "an expression statement must be a call" }
                     return
                 }
-                match callee.k { path{ segs } => { name = path_text{ c, segs } } else => {} }
+                if callee.k is path{ segs } { name = path_text{ c, segs } }
             }
             builtin{ name = n } => {
                 t = typed{ &c, e }
@@ -3435,7 +3302,7 @@ namespace check {
             i = i + 1
         }
         let mut forever = false
-        match cond.k { boolean{ value } => { forever = value } else => {} }
+        if cond.k is boolean{ value } { forever = value }
         if forever {
             // `while true` leaves only through a break; without one it ends the path.
             let after = if breaks.len > 0 { merge{ c, xs = breaks } } else { State{ defs = s0.defs, maybe = slice::empty(u32){}, dead = true } }
@@ -3508,7 +3375,7 @@ namespace check {
         assume{ &c, facts, after_if = false }
         let xs = b.stmts
         let v = if xs.len == 0 { Value::none } else { branch_value{ s = xs[xs.len - 1] } }
-        let has = match v { none => { false } else => { true } }
+        let has = not (v is none)
         stmts{ &c, xs = if has { xs[..xs.len - 1] } else { xs } }
         let mut t = types::NO_TYPE
         match v {
@@ -3573,10 +3440,7 @@ namespace check {
             choose => { return Value::nested{ s } }
             cond{ x } => { if x.els != null { return Value::nested{ s } } }
             eval{ e } => {
-                match e.k {
-                    builtin{ name } => { if slice::eq_bytes{ a = name.text, b = "panic" } { return Value::none } }
-                    else => {}
-                }
+                if e.k is builtin{ name } and slice::eq_bytes{ a = name.text, b = "panic" } { return Value::none }
                 return Value::expr{ e }
             }
             else => {}
@@ -3651,7 +3515,7 @@ namespace check {
                 while i < bs.len {
                     if bs[i].t != types::NO_TYPE {
                         let ok = coerce{ &c, a = bs[i].t, e = a }
-                        match ok { fail => { other = bs[i].t } else => {} }
+                        if ok is fail { other = bs[i].t }
                         if other != types::NO_TYPE { break }
                     }
                     i = i + 1
@@ -3682,16 +3546,14 @@ namespace check {
     fn all_convert { mut c: Checker, bs: []mut Branch, t: Id } -> bool {
         let mut i: usize = 0
         while i < bs.len {
-            if bs[i].t != types::NO_TYPE {
-                match coerce{ &c, a = bs[i].t, e = t } { fail => { return false } else => {} }
-            }
+            if bs[i].t != types::NO_TYPE and coerce{ &c, a = bs[i].t, e = t } is fail { return false }
             i = i + 1
         }
         return true
     }
 
     fn is_opt { c: Checker, t: Id } -> bool {
-        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { opt => { return true } else => { return false } }
+        return types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is opt
     }
 
     // Branches that are bare string literals, retyped as views when another branch is one:
@@ -3707,7 +3569,7 @@ namespace check {
                     hint = br.t
                 } else if lit == 0 {
                     let mut u = types::prune{ s = c.ty, t = br.t }
-                    match types::get{ s = c.ty, id = u } { opt{ elem } => { u = types::prune{ s = c.ty, t = elem } } else => {} }
+                    if types::get{ s = c.ty, id = u } is opt{ elem } { u = types::prune{ s = c.ty, t = elem } }
                     match types::get{ s = c.ty, id = u } {
                         slice{ elem } => { if types::prune{ s = c.ty, t = elem } == types::U8 { hint = br.t } }
                         record{ decl } => { if decl == c.text_decl or decl == c.cstr_decl { hint = br.t } }
@@ -3721,12 +3583,7 @@ namespace check {
         i = 0
         while i < bs.len {
             let br = bs[i]
-            if br.t != types::NO_TYPE and literal_kind{ c, v = br.value } == 1 {
-                match br.value {
-                    expr{ e } => { bs[i].t = expr{ &c, e, exp = hint } }
-                    else => {}
-                }
-            }
+            if br.t != types::NO_TYPE and literal_kind{ c, v = br.value } == 1 and br.value is expr{ e } { bs[i].t = expr{ &c, e, exp = hint } }
             i = i + 1
         }
     }
@@ -3734,19 +3591,13 @@ namespace check {
     // 1 if a branch's value is a string literal that became an array, 2 if one that became a
     // view, 0 if it isn't one.
     fn literal_kind { c: Checker, v: Value } -> u32 {
-        match v {
-            expr{ e } => {
-                match e.k {
-                    str => {
-                        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e } } } {
-                            array => { return 1 }
-                            else => { return 2 }
-                        }
-                    }
-                    else => {}
+        if v is expr{ e } {
+            if e.k is str {
+                match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e } } } {
+                    array => { return 1 }
+                    else => { return 2 }
                 }
             }
-            else => {}
         }
         return 0
     }
@@ -3759,13 +3610,10 @@ namespace check {
         let mut ut = st
         let mut through = false
         let mut ptr_mut = false
-        match types::get{ s = c.ty, id = st } {
-            ptr{ elem, mutable } => {
-                through = true
-                ptr_mut = mutable
-                ut = types::prune{ s = c.ty, t = elem }
-            }
-            else => {}
+        if types::get{ s = c.ty, id = st } is ptr{ elem, mutable } {
+            through = true
+            ptr_mut = mutable
+            ut = types::prune{ s = c.ty, t = elem }
         }
         let mut ok = st != types::ERROR and ut != types::ERROR
         if ok and x.is_ifnull and not is_opt{ c, t = st } {
@@ -3886,10 +3734,7 @@ namespace check {
     }
 
     fn has_variants { c: Checker, t: Id } -> bool {
-        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
-            sum | opt | enumeration => { return true }
-            else => { return false }
-        }
+        return types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is sum | opt | enumeration
     }
 
     fn variant_index { vs: []Variant, name: []u8 } -> u32 {
@@ -4058,23 +3903,17 @@ namespace check {
         // On a `?U` for a union U, a variant of U: null goes to the else block with U's others.
         let mut deep = false
         if ok and vi == NONE {
-            match types::get{ s = c.ty, id = t } {
-                opt{ elem } => {
-                    let u = types::prune{ s = c.ty, t = elem }
-                    match types::get{ s = c.ty, id = u } {
-                        sum => {
-                            let uvs = variants_of{ &c, t = u }
-                            let ui = variant_index{ vs = uvs, name = variant.text }
-                            if ui != NONE {
-                                vs = uvs
-                                vi = ui
-                                deep = true
-                            }
-                        }
-                        else => {}
+            if types::get{ s = c.ty, id = t } is opt{ elem } {
+                let u = types::prune{ s = c.ty, t = elem }
+                if types::get{ s = c.ty, id = u } is sum {
+                    let uvs = variants_of{ &c, t = u }
+                    let ui = variant_index{ vs = uvs, name = variant.text }
+                    if ui != NONE {
+                        vs = uvs
+                        vi = ui
+                        deep = true
                     }
                 }
-                else => {}
             }
         }
         let mut known = ok
@@ -4167,12 +4006,9 @@ namespace check {
         let vs: []Variant = if ok { variants_of{ &c, t } } else { slice::empty(Variant){} }
         let mut inner: []Variant = slice::empty(Variant){}
         if ok {
-            match types::get{ s = c.ty, id = t } {
-                opt{ elem } => {
-                    let u = types::prune{ s = c.ty, t = elem }
-                    match types::get{ s = c.ty, id = u } { sum | enumeration => { inner = variants_of{ &c, t = u } } else => {} }
-                }
-                else => {}
+            if types::get{ s = c.ty, id = t } is opt{ elem } {
+                let u = types::prune{ s = c.ty, t = elem }
+                if types::get{ s = c.ty, id = u } is sum | enumeration { inner = variants_of{ &c, t = u } }
             }
         }
         let derived = new_derived{ &c, xs = derives{ &c, e = x } }
@@ -4280,19 +4116,13 @@ namespace check {
         match types::get{ s = c.ty, id = t } { opt{ elem = x } => { elem = x } else => { return null } }
         match e.k {
             path => {
-                let r = map::get{ m = c.refs, key = expr_key{ e } }
-                if r != null {
-                    match r {
-                        local{ var } => {
-                            if get_var{ c, v = var }.mutable { return null }
-                            return Fact{ var, root = NONE, steps = slice::empty([]u8){}, ty = elem, at = expr_at{ e }, bind = false, clash = false }
-                        }
-                        else => {}
-                    }
+                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
+                    if get_var{ c, v = var }.mutable { return null }
+                    return Fact{ var, root = NONE, steps = slice::empty([]u8){}, ty = elem, at = expr_at{ e }, bind = false, clash = false }
                 }
             }
             field => {
-                if access_is{ c, e, a = Access::field } {
+                if access_of{ c, e } is field {
                     let p = place_path{ c, e }
                     if p != null {
                         let root = get_var{ c, v = p.root }
@@ -4421,16 +4251,10 @@ namespace check {
     fn place_path { c: Checker, e: syntax::Expr } -> ?Place {
         match e.k {
             path => {
-                let r = map::get{ m = c.refs, key = expr_key{ e } }
-                if r != null {
-                    match r {
-                        local{ var } => { return Place{ root = root_var{ c, v = var }, steps = slice::empty([]u8){} } }
-                        else => {}
-                    }
-                }
+                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return Place{ root = root_var{ c, v = var }, steps = slice::empty([]u8){} } }
             }
             field{ base, name } => {
-                if access_is{ c, e, a = Access::field } {
+                if access_of{ c, e } is field {
                     let p = place_path{ c, e = base.* }
                     if p != null {
                         // An extern union's fields share their bytes: `|` marks such a step, and
@@ -4441,7 +4265,7 @@ namespace check {
                 }
             }
             index{ base } => {
-                if access_is{ c, e, a = Access::arr } {
+                if access_of{ c, e } is arr {
                     let p = place_path{ c, e = base.* }
                     if p != null { return Place{ root = p.root, steps = add_step{ c, steps = p.steps, step = "[" } } }
                 }
@@ -4485,9 +4309,8 @@ namespace check {
         return types::NO_TYPE
     }
 
-    fn access_is { c: Checker, e: syntax::Expr, a: Access } -> bool {
-        let x = map::get{ m = c.access, key = expr_key{ e } }
-        return x != null and x == a
+    fn access_of { c: Checker, e: syntax::Expr } -> ?Access {
+        return map::get{ m = c.access, key = expr_key{ e } }
     }
 
     fn put_access { mut c: Checker, e: syntax::Expr, a: Access } {
@@ -4511,16 +4334,15 @@ namespace check {
                 msg = utf8::view{ b }
             }
             field{ base, name } => {
-                let a = map::get{ m = c.access, key = expr_key{ e } }
-                if a == null { return true }
-                if a == Access::field { return check_place{ &c, e = base.* } }
-                if a == Access::pfield { return true }
+                let a = access_of{ c, e }
+                if a is field { return check_place{ &c, e = base.* } }
+                if a is null | pfield { return true }
                 let mut b = message{ c }
                 try! @fmt(&b, "`.{}` is not a place", str{ s = name.text })
                 msg = utf8::view{ b }
             }
             index{ base } => {
-                if access_is{ c, e, a = Access::arr } { return check_place{ &c, e = base.* } }
+                if access_of{ c, e } is arr { return check_place{ &c, e = base.* } }
                 return true
             }
             else => { msg = "expression is not a place" }
@@ -4536,28 +4358,25 @@ namespace check {
             path => {
                 let r = map::get{ m = c.refs, key = expr_key{ e } }
                 if r == null { return }
-                match r {
-                    local{ var } => {
-                        let v = get_var{ c, v = var }
-                        if not v.mutable {
-                            let why: utf8::String = if v.indirect { ": it is bound through a read-only pointer" } else { "" }
-                            let mut b = message{ c }
-                            try! @fmt(&b, "`{}` is not a mutable place{}", str{ s = v.name }, why)
-                            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
-                        }
+                if r is local{ var } {
+                    let v = get_var{ c, v = var }
+                    if not v.mutable {
+                        let why: utf8::String = if v.indirect { ": it is bound through a read-only pointer" } else { "" }
+                        let mut b = message{ c }
+                        try! @fmt(&b, "`{}` is not a mutable place{}", str{ s = v.name }, why)
+                        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
                     }
-                    else => {}
                 }
                 return
             }
             field{ base } => {
-                if access_is{ c, e, a = Access::field } {
+                if access_of{ c, e } is field {
                     check_mutable{ &c, e = base.* }
                     return
                 }
             }
             index{ base } => {
-                if access_is{ c, e, a = Access::arr } {
+                if access_of{ c, e } is arr {
                     check_mutable{ &c, e = base.* }
                     return
                 }
@@ -4578,14 +4397,11 @@ namespace check {
     fn place_mutable { c: Checker, e: syntax::Expr } -> bool {
         match e.k {
             path => {
-                let r = map::get{ m = c.refs, key = expr_key{ e } }
-                if r != null {
-                    match r { local{ var } => { return get_var{ c, v = var }.mutable } else => {} }
-                }
+                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return get_var{ c, v = var }.mutable }
                 return true
             }
-            field{ base } => { if access_is{ c, e, a = Access::field } { return place_mutable{ c, e = base.* } } }
-            index{ base } => { if access_is{ c, e, a = Access::arr } { return place_mutable{ c, e = base.* } } }
+            field{ base } => { if access_of{ c, e } is field { return place_mutable{ c, e = base.* } } }
+            index{ base } => { if access_of{ c, e } is arr { return place_mutable{ c, e = base.* } } }
             deref => {}
             else => { return true }
         }
@@ -4790,24 +4606,18 @@ namespace check {
     }
 
     fn derives_raw { mut c: Checker, e: syntax::Expr } -> []u32 {
-        let conv = map::get{ m = c.convs, key = expr_key{ e } }
-        if conv != null {
-            match conv { addr_slice => { return derive_addr{ &c, x = e } } else => {} }
-        }
+        if map::get{ m = c.convs, key = expr_key{ e } } is addr_slice { return derive_addr{ &c, x = e } }
         match e.k {
             addr{ e = x } => { return derive_addr{ &c, x = x.* } }
             path => {
-                let r = map::get{ m = c.refs, key = expr_key{ e } }
-                if r != null {
-                    match r { local{ var } => { return derived_of{ c, v = var } } else => {} }
-                }
+                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return derived_of{ c, v = var } }
             }
             range{ base } => { return derives_raw{ &c, e = base.* } }
             field{ base } => {
-                if access_is{ c, e, a = Access::sptr } or access_is{ c, e, a = Access::field } { return derives_raw{ &c, e = base.* } }
+                if access_of{ c, e } is sptr | field { return derives_raw{ &c, e = base.* } }
             }
             index{ base } => {
-                if access_is{ c, e, a = Access::arr } { return derives_raw{ &c, e = base.* } }
+                if access_of{ c, e } is arr { return derives_raw{ &c, e = base.* } }
             }
             builtin{ name, args } => {
                 if args.len > 0 and (slice::eq_bytes{ a = name.text, b = "slice" } or slice::eq_bytes{ a = name.text, b = "cast" }) {
@@ -4842,12 +4652,7 @@ namespace check {
                 return out
             }
             binary{ op, a } => {
-                if is_arith{ op } {
-                    match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = a.* } } } {
-                        ptr => { return derives_raw{ &c, e = a.* } }
-                        else => {}
-                    }
-                }
+                if is_arith{ op } and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = a.* } } } is ptr { return derives_raw{ &c, e = a.* } }
             }
             array{ elems } => {
                 let mut out = no_vars{}
@@ -4884,15 +4689,7 @@ namespace check {
 
     // The context fields of the function a call calls.
     fn callee_fields { c: Checker, e: syntax::Expr } -> []types::Field {
-        match e.k {
-            braced{ callee } => {
-                match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = callee.* } } } {
-                    func{ fields } => { return fields }
-                    else => {}
-                }
-            }
-            else => {}
-        }
+        if e.k is braced{ callee } and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = callee.* } } } is func{ fields } { return fields }
         return slice::empty(types::Field){}
     }
 
@@ -4910,7 +4707,7 @@ namespace check {
             return set_add{ c, xs = no_vars{}, n = p.root }
         }
         let mut b = x
-        while access_is{ c, e = b, a = Access::field } or access_is{ c, e = b, a = Access::arr } {
+        while access_of{ c, e = b } is field | arr {
             match b.k {
                 field{ base } => { b = base.* }
                 index{ base } => { b = base.* }
@@ -4971,10 +4768,7 @@ namespace check {
         if map::get{ m = c.convs, key = expr_key{ e } } != null { return none }
         match e.k {
             path => {
-                let r = map::get{ m = c.refs, key = expr_key{ e } }
-                if r != null {
-                    match r { local{ var } => { return held_by{ c, v = var } } else => {} }
-                }
+                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return held_by{ c, v = var } }
             }
             braced{ bind } => {
                 if bind {
@@ -5178,12 +4972,9 @@ namespace check {
             let f = types::find_field{ fields, name = it.name.text }
             if f != null {
                 if f.mutable {
-                    match it.value.k {
-                        addr{ e = x } => {
-                            let p = place_path{ c, e = x.* }
-                            if p != null { add_ref{ xs = &refs, r = HeldRef{ p, holder = "" } } }
-                        }
-                        else => {}
+                    if it.value.k is addr{ e = x } {
+                        let p = place_path{ c, e = x.* }
+                        if p != null { add_ref{ xs = &refs, r = HeldRef{ p, holder = "" } } }
                     }
                 } else {
                     let holder = match it.value.k {
@@ -5371,20 +5162,11 @@ namespace check {
                         else => { break }
                     }
                 }
-                match n.k { path => {} else => { scan{ &c, sc, e = n } } }
+                if not (n.k is path) { scan{ &c, sc, e = n } }
             }
             braced{ callee, items } => {
                 let mut scan_callee = true
-                match callee.k {
-                    path => {
-                        let r = map::get{ m = c.refs, key = expr_key{ e = callee.* } }
-                        scan_callee = false
-                        if r != null {
-                            match r { local => { scan_callee = true } else => {} }
-                        }
-                    }
-                    else => {}
-                }
+                if callee.k is path { scan_callee = map::get{ m = c.refs, key = expr_key{ e = callee.* } } is local }
                 if scan_callee { scan{ &c, sc, e = callee.* } }
                 let mut i: usize = 0
                 while i < items.len {
@@ -5436,24 +5218,18 @@ namespace check {
     fn access_path { c: Checker, e: syntax::Expr } -> ?Place {
         match e.k {
             path => {
-                let r = map::get{ m = c.refs, key = expr_key{ e } }
-                if r != null {
-                    match r {
-                        local{ var } => { return Place{ root = root_var{ c, v = var }, steps = slice::empty([]u8){} } }
-                        else => {}
-                    }
-                }
+                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return Place{ root = root_var{ c, v = var }, steps = slice::empty([]u8){} } }
             }
             field{ base, name } => {
                 let ap = access_path{ c, e = base.* }
-                if ap != null and access_is{ c, e, a = Access::field } {
+                if ap != null and access_of{ c, e } is field {
                     return Place{ root = ap.root, steps = add_step{ c, steps = ap.steps, step = name.text } }
                 }
                 return ap
             }
             index{ base } => {
                 let ap = access_path{ c, e = base.* }
-                if ap != null and access_is{ c, e, a = Access::arr } {
+                if ap != null and access_of{ c, e } is arr {
                     return Place{ root = ap.root, steps = add_step{ c, steps = ap.steps, step = "[" } }
                 }
                 return ap
@@ -5565,13 +5341,10 @@ namespace check {
             return Coercion::fail
         }
         let how = coerce{ &c, a, e = t }
-        match how {
-            fail => {
-                let mut b = message{ c }
-                try! mismatch{ &c, a, e = t, &b }
-                error{ &c, at = pos, msg = utf8::view{ b } }
-            }
-            else => {}
+        if how is fail {
+            let mut b = message{ c }
+            try! mismatch{ &c, a, e = t, &b }
+            error{ &c, at = pos, msg = utf8::view{ b } }
         }
         return how
     }
@@ -5622,10 +5395,7 @@ namespace check {
                 return coerce{ &c, a = x, e = u }
             }
             errs => {
-                match types::get{ s = c.ty, id = x } {
-                    errs => { return if flows{ &c, from = x, into = y } { Coercion::same } else { Coercion::fail } }
-                    else => {}
-                }
+                if types::get{ s = c.ty, id = x } is errs { return if flows{ &c, from = x, into = y } { Coercion::same } else { Coercion::fail } }
             }
             else => {}
         }
@@ -5635,27 +5405,14 @@ namespace check {
         let tx = types::get{ s = c.ty, id = x }
         match ty {
             slice{ elem = ee, mutable = em } => {
-                match tx {
-                    ptr{ elem = ae, mutable = am } => {
-                        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = ae } } {
-                            array{ elem } => {
-                                if (am or not em) and types::unify{ s = &c.ty, a = elem, b = ee } { return Coercion::to_slice }
-                            }
-                            else => {}
-                        }
-                    }
-                    else => {}
+                if tx is ptr{ elem = ae, mutable = am } {
+                    if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = ae } } is array{ elem } and (am or not em) and types::unify{ s = &c.ty, a = elem, b = ee } { return Coercion::to_slice }
                 }
             }
             opt{ elem = ee } => {
                 match tx {
                     opt{ elem = ae } => {
-                        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = ae } } {
-                            ptr | slice => {
-                                if types::widens{ s = &c.ty, a = ae, b = ee } { return Coercion::same }
-                            }
-                            else => {}
-                        }
+                        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = ae } } is ptr | slice and types::widens{ s = &c.ty, a = ae, b = ee } { return Coercion::same }
                         return if types::unify{ s = &c.ty, a = x, b = y } { Coercion::same } else { Coercion::fail }
                     }
                     var{ n } => {
@@ -5672,16 +5429,13 @@ namespace check {
                 if includes_cap{ c, a = x, b = y } { return Coercion::same }
             }
             func{ bound = eb, external = ee } => {
-                match tx {
-                    func{ bound = ab, external = ae } => {
-                        // A C function pointer and a ctxlang function value don't convert either
-                        // way; two C function types must be the same.
-                        if ae != ee { return Coercion::fail }
-                        if ee { return if types::unify{ s = &c.ty, a = x, b = y } { Coercion::same } else { Coercion::fail } }
-                        if ab and not eb { return Coercion::fail }
-                        return if fn_accepts{ &c, g = x, s = y } { Coercion::same } else { Coercion::fail }
-                    }
-                    else => {}
+                if tx is func{ bound = ab, external = ae } {
+                    // A C function pointer and a ctxlang function value don't convert either
+                    // way; two C function types must be the same.
+                    if ae != ee { return Coercion::fail }
+                    if ee { return if types::unify{ s = &c.ty, a = x, b = y } { Coercion::same } else { Coercion::fail } }
+                    if ab and not eb { return Coercion::fail }
+                    return if fn_accepts{ &c, g = x, s = y } { Coercion::same } else { Coercion::fail }
                 }
             }
             else => {}
@@ -5715,66 +5469,54 @@ namespace check {
     fn mismatch { mut c: Checker, a: Id, e: Id, mut b: utf8::Builder(Heap) } -> ! {
         let x = types::prune{ s = c.ty, t = a }
         let y = types::prune{ s = c.ty, t = e }
-        match types::get{ s = c.ty, id = x } {
-            func{ fields = af, bound = ab, external = ae } => {
-                match types::get{ s = c.ty, id = y } {
-                    func{ fields = ef, bound = eb, external = ee } => {
-                        if ee and not ae {
-                            try @fmt(&b, "a ctxlang function can't be passed as a C function pointer (")
+        if types::get{ s = c.ty, id = x } is func{ fields = af, bound = ab, external = ae } {
+            if types::get{ s = c.ty, id = y } is func{ fields = ef, bound = eb, external = ee } {
+                if ee and not ae {
+                    try @fmt(&b, "a ctxlang function can't be passed as a C function pointer (")
+                    try write_type{ c, t = y, &b }
+                    return @fmt(&b, "): only an extern fn or a `#c::callback` fn can")
+                }
+                if ae and not ee {
+                    try @fmt(&b, "a C function pointer (")
+                    try write_type{ c, t = x, &b }
+                    try @fmt(&b, ") can't be used as a ctxlang ")
+                    return write_type{ c, t = y, &b }
+                }
+                if not (ab and not eb) and not ae {
+                    let mut i: usize = 0
+                    while i < af.len {
+                        let f = af[i]
+                        if types::find_field{ fields = ef, name = f.name } == null {
+                            let m: utf8::String = if f.mutable { "mut " } else { "" }
+                            try @fmt(&b, "function needs `{}{}`, which ", m, str{ s = f.name })
                             try write_type{ c, t = y, &b }
-                            return @fmt(&b, "): only an extern fn or a `#c::callback` fn can")
+                            return @fmt(&b, " doesn't provide")
                         }
-                        if ae and not ee {
-                            try @fmt(&b, "a C function pointer (")
-                            try write_type{ c, t = x, &b }
-                            try @fmt(&b, ") can't be used as a ctxlang ")
-                            return write_type{ c, t = y, &b }
-                        }
-                        if not (ab and not eb) and not ae {
-                            let mut i: usize = 0
-                            while i < af.len {
-                                let f = af[i]
-                                if types::find_field{ fields = ef, name = f.name } == null {
-                                    let m: utf8::String = if f.mutable { "mut " } else { "" }
-                                    try @fmt(&b, "function needs `{}{}`, which ", m, str{ s = f.name })
-                                    try write_type{ c, t = y, &b }
-                                    return @fmt(&b, " doesn't provide")
-                                }
-                                i = i + 1
-                            }
-                        }
+                        i = i + 1
                     }
-                    else => {}
                 }
             }
-            else => {}
         }
         // Two results, or two functions returning one, whose errors differ.
         let xr = result_of{ c, t = x }
         let yr = result_of{ c, t = y }
-        match types::get{ s = c.ty, id = xr } {
-            res{ ok = xo, errs = xe } => {
-                match types::get{ s = c.ty, id = yr } {
-                    res{ ok = yo, errs = ye } => {
-                        if types::prune{ s = c.ty, t = xo } == types::prune{ s = c.ty, t = yo } and xe != ye {
-                            if xr != x {
-                                try @fmt(&b, "a function whose `!T` fails with its body's errors can't be a value of type ")
-                                try write_type{ c, t = y, &b }
-                                return @fmt(&b, ", whose `!T` fails with any error")
-                            }
-                            try @fmt(&b, "expected ")
-                            try write_type{ c, t = y, &b }
-                            try @fmt(&b, " failing with ")
-                            try set_text{ c, t = ye, &b }
-                            try @fmt(&b, ", got one failing with ")
-                            try set_text{ c, t = xe, &b }
-                            return @fmt(&b, ": errors join only the result of the function that returns them")
-                        }
+        if types::get{ s = c.ty, id = xr } is res{ ok = xo, errs = xe } {
+            if types::get{ s = c.ty, id = yr } is res{ ok = yo, errs = ye } {
+                if types::prune{ s = c.ty, t = xo } == types::prune{ s = c.ty, t = yo } and xe != ye {
+                    if xr != x {
+                        try @fmt(&b, "a function whose `!T` fails with its body's errors can't be a value of type ")
+                        try write_type{ c, t = y, &b }
+                        return @fmt(&b, ", whose `!T` fails with any error")
                     }
-                    else => {}
+                    try @fmt(&b, "expected ")
+                    try write_type{ c, t = y, &b }
+                    try @fmt(&b, " failing with ")
+                    try set_text{ c, t = ye, &b }
+                    try @fmt(&b, ", got one failing with ")
+                    try set_text{ c, t = xe, &b }
+                    return @fmt(&b, ": errors join only the result of the function that returns them")
                 }
             }
-            else => {}
         }
         try @fmt(&b, "expected ")
         try write_type{ c, t = y, &b }
@@ -5931,43 +5673,31 @@ namespace check {
         let mut bt = typed{ &c, e = base }
         let mut addr = types::NO_TYPE
         let mut ok = true
-        match types::get{ s = c.ty, id = bt } {
-            array => {
-                if check_place{ &c, e = base } {
-                    let m = place_mutable{ c, e = base }
-                    addr = types::ptr{ s = &c.ty, elem = bt, mutable = m }
-                    bt = addr
-                } else {
-                    ok = false
-                }
+        if types::get{ s = c.ty, id = bt } is array {
+            if check_place{ &c, e = base } {
+                let m = place_mutable{ c, e = base }
+                addr = types::ptr{ s = &c.ty, elem = bt, mutable = m }
+                bt = addr
+            } else {
+                ok = false
             }
-            else => {}
         }
-        match types::get{ s = c.ty, id = bt } {
-            ptr{ elem, mutable } => {
-                match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } {
-                    array{ elem = ae } => {
-                        let st = types::slice{ s = &c.ty, elem = ae, mutable }
-                        put_conv{ &c, e = base, conv = if addr == types::NO_TYPE { Conv::slice{ to = st } } else { Conv::addr_slice{ ptr = addr, to = st } } }
-                        bt = st
-                    }
-                    else => {}
-                }
+        if types::get{ s = c.ty, id = bt } is ptr{ elem, mutable } {
+            if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } is array{ elem = ae } {
+                let st = types::slice{ s = &c.ty, elem = ae, mutable }
+                put_conv{ &c, e = base, conv = if addr == types::NO_TYPE { Conv::slice{ to = st } } else { Conv::addr_slice{ ptr = addr, to = st } } }
+                bt = st
             }
-            else => {}
         }
         let mut t = bt
         if not ok {
             t = types::ERROR
         } else {
-            match types::get{ s = c.ty, id = bt } {
-                slice | error => {}
-                else => {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "cannot slice {}", tstr{ c, t = bt })
-                    error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
-                    t = types::ERROR
-                }
+            if not (types::get{ s = c.ty, id = bt } is slice | error) {
+                let mut b = message{ c }
+                try! @fmt(&b, "cannot slice {}", tstr{ c, t = bt })
+                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                t = types::ERROR
             }
         }
         if lo != null { expect{ &c, e = lo.*, t = types::USIZE } }
@@ -6011,10 +5741,7 @@ namespace check {
         let mut want = types::NO_TYPE
         if exp != types::NO_TYPE {
             want = types::prune{ s = c.ty, t = exp }
-            match types::get{ s = c.ty, id = want } {
-                opt{ elem } => { want = types::prune{ s = c.ty, t = elem } }
-                else => {}
-            }
+            if types::get{ s = c.ty, id = want } is opt{ elem } { want = types::prune{ s = c.ty, t = elem } }
         }
         if want != types::NO_TYPE {
             match types::get{ s = c.ty, id = want } {
@@ -6116,10 +5843,10 @@ namespace check {
         let pe = types::prune{ s = c.ty, t = exp }
         match types::get{ s = c.ty, id = t } {
             record{ decl } => {
-                match types::get{ s = c.ty, id = pe } { record{ decl = d } => { if d == decl { _ = types::unify{ s = &c.ty, a = t, b = pe } } } else => {} }
+                if types::get{ s = c.ty, id = pe } is record{ decl = d } and d == decl { _ = types::unify{ s = &c.ty, a = t, b = pe } }
             }
             sum{ decl } => {
-                match types::get{ s = c.ty, id = pe } { sum{ decl = d } => { if d == decl { _ = types::unify{ s = &c.ty, a = t, b = pe } } } else => {} }
+                if types::get{ s = c.ty, id = pe } is sum{ decl = d } and d == decl { _ = types::unify{ s = &c.ty, a = t, b = pe } }
             }
             else => {}
         }
@@ -6133,23 +5860,20 @@ namespace check {
         let x = get_decl{ c, d }
         if (x.kind != Kind::external and not x.callback) or exp == types::NO_TYPE { return types::NO_TYPE }
         let mut want = types::prune{ s = c.ty, t = exp }
-        match types::get{ s = c.ty, id = want } { opt{ elem } => { want = types::prune{ s = c.ty, t = elem } } else => {} }
-        match types::get{ s = c.ty, id = want } {
-            func{ external, fields } => {
-                if external and x.callback {
-                    let lf = loaded_field{ c, fields }
-                    if lf != null {
-                        let mut b = message{ c }
-                        try! @fmt(&b, "callback `{}` can't have type {}: its field `{}` is capability {}, which {}", str{ s = x.name.text }, tstr{ c, t = want }, str{ s = lf.name }, tstr{ c, t = lf.ty }, str{ s = NO_THUNK })
-                        error{ &c, at, msg = utf8::view{ b } }
-                        return types::ERROR
-                    }
-                    let own = types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = false }
-                    if fn_accepts{ &c, g = own, s = want } { return want }
+        if types::get{ s = c.ty, id = want } is opt{ elem } { want = types::prune{ s = c.ty, t = elem } }
+        if types::get{ s = c.ty, id = want } is func{ external, fields } {
+            if external and x.callback {
+                let lf = loaded_field{ c, fields }
+                if lf != null {
+                    let mut b = message{ c }
+                    try! @fmt(&b, "callback `{}` can't have type {}: its field `{}` is capability {}, which {}", str{ s = x.name.text }, tstr{ c, t = want }, str{ s = lf.name }, tstr{ c, t = lf.ty }, str{ s = NO_THUNK })
+                    error{ &c, at, msg = utf8::view{ b } }
+                    return types::ERROR
                 }
-                if external { return types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = true } }
+                let own = types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = false }
+                if fn_accepts{ &c, g = own, s = want } { return want }
             }
-            else => {}
+            if external { return types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = true } }
         }
         return types::NO_TYPE
     }
@@ -6229,7 +5953,7 @@ namespace check {
             let prev = segs[i - 1]
             let last = i == segs.len - 1
             let mut inner = NONE
-            match d { space{ ns = n } => { inner = n } else => {} }
+            if d is space{ ns = n } { inner = n }
             if inner != NONE {
                 if prev.targs != null {
                     let mut b = message{ c }
@@ -6299,7 +6023,7 @@ namespace check {
     }
 
     fn is_sum { c: Checker, t: Id } -> bool {
-        match types::get{ s = c.ty, id = t } { sum => { return true } else => { return false } }
+        return types::get{ s = c.ty, id = t } is sum
     }
 
     fn variant_names { mut c: Checker, t: Id } -> [][]u8 {
@@ -6315,15 +6039,12 @@ namespace check {
 
     fn enum_names { c: Checker, d: u32 } -> [][]u8 {
         let mut out = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
-        match get_decl{ c, d }.syn.k {
-            enumeration{ variants } => {
-                let mut i: usize = 0
-                while i < variants.len {
-                    try! list::push{ list = &out, item = variants[i].name.text }
-                    i = i + 1
-                }
+        if get_decl{ c, d }.syn.k is enumeration{ variants } {
+            let mut i: usize = 0
+            while i < variants.len {
+                try! list::push{ list = &out, item = variants[i].name.text }
+                i = i + 1
             }
-            else => {}
         }
         return list::items{ list = out }
     }
@@ -6422,19 +6143,16 @@ namespace check {
                 c.calling = outer
                 // Calling through a capability's field needs the capability mutable, as passing
                 // it as a `mut` field does.
-                match callee.k { field{ base } => { if cap_base{ c, e = base.* } { check_mutable{ &c, e = callee } } } else => {} }
+                if callee.k is field{ base } and cap_base{ c, e = base.* } { check_mutable{ &c, e = callee } }
             }
         }
         let ft = types::prune{ s = c.ty, t = ct }
         if ft == types::ERROR { return types::ERROR }
-        match types::get{ s = c.ty, id = ft } {
-            func => {}
-            else => {
-                let mut b = message{ c }
-                try! @fmt(&b, "`{}` has type {} and cannot be called", name, tstr{ c, t = ct })
-                error{ &c, at = expr_at{ e = callee }, msg = utf8::view{ b } }
-                return types::ERROR
-            }
+        if not (types::get{ s = c.ty, id = ft } is func) {
+            let mut b = message{ c }
+            try! @fmt(&b, "`{}` has type {} and cannot be called", name, tstr{ c, t = ct })
+            error{ &c, at = expr_at{ e = callee }, msg = utf8::view{ b } }
+            return types::ERROR
         }
         return call_args{ &c, e, ft, name, items, forward, bind }
     }
@@ -6505,16 +6223,13 @@ namespace check {
         no_spread{ &c, e, items }
         let mut fields: []types::Field = slice::empty(types::Field){}
         let mut ret = types::VOID
-        match types::get{ s = c.ty, id = ft } {
-            func{ fields = fs, ret = r, external } => {
-                fields = fs
-                ret = r
-                if bind and external {
-                    error{ &c, at = expr_at{ e }, msg = "a C function pointer can't be bound with `_`: call it with every field" }
-                    return types::ERROR
-                }
+        if types::get{ s = c.ty, id = ft } is func{ fields = fs, ret = r, external } {
+            fields = fs
+            ret = r
+            if bind and external {
+                error{ &c, at = expr_at{ e }, msg = "a C function pointer can't be bound with `_`: call it with every field" }
+                return types::ERROR
             }
-            else => {}
         }
         let mut b = message{ c }
         try! @fmt(&b, "`{}`", name)
@@ -6842,9 +6557,7 @@ namespace check {
                 }
                 let x = if ln { b } else { a }
                 let xt = typed{ &c, e = x }
-                let mut is_opt = xt == types::ERROR
-                match types::get{ s = c.ty, id = xt } { opt => { is_opt = true } else => {} }
-                if not is_opt {
+                if xt != types::ERROR and not (types::get{ s = c.ty, id = xt } is opt) {
                     let mut m = message{ c }
                     try! @fmt(&m, "only an optional can be compared with null, got {}", tstr{ c, t = xt })
                     error{ &c, at, msg = utf8::view{ b = m } }
@@ -6859,8 +6572,7 @@ namespace check {
                 cannot_compare{ &c, lt, rt, at }
                 return types::BOOL
             }
-            let mut eq = is_num{ c, t } or t == types::BOOL
-            match types::get{ s = c.ty, id = t } { ptr | enumeration => { eq = true } else => {} }
+            let eq = is_num{ c, t } or t == types::BOOL or types::get{ s = c.ty, id = t } is ptr | enumeration
             if not eq {
                 let mut m = message{ c }
                 try! @fmt(&m, "{} has no built-in equality", tstr{ c, t })
@@ -6898,17 +6610,14 @@ namespace check {
         }
         let lt = expr{ &c, e = a, exp }
         let plt = types::prune{ s = c.ty, t = lt }
-        match types::get{ s = c.ty, id = plt } {
-            ptr => {
-                if op != tok::Kind::plus {
-                    let mut m = message{ c }
-                    try! @fmt(&m, "`{}` is not defined on pointers", opname)
-                    error{ &c, at, msg = utf8::view{ b = m } }
-                }
-                expect{ &c, e = b, t = types::USIZE }
-                return plt
+        if types::get{ s = c.ty, id = plt } is ptr {
+            if op != tok::Kind::plus {
+                let mut m = message{ c }
+                try! @fmt(&m, "`{}` is not defined on pointers", opname)
+                error{ &c, at, msg = utf8::view{ b = m } }
             }
-            else => {}
+            expect{ &c, e = b, t = types::USIZE }
+            return plt
         }
         let rt = expr{ &c, e = b, exp = lt }
         let t = operand_type{ &c, lt, rt, a, b }
@@ -6933,7 +6642,7 @@ namespace check {
     }
 
     fn is_null { e: syntax::Expr } -> bool {
-        match e.k { nil => { return true } else => { return false } }
+        return e.k is nil
     }
 
     fn cannot_compare { mut c: Checker, lt: Id, rt: Id, at: source::Span } {
@@ -6959,15 +6668,13 @@ namespace check {
 
     fn fix { mut c: Checker, n: u32, by: syntax::Expr } {
         let mut path: []u8 = ""
-        match by.k { path{ segs } => { path = path_text{ c, segs }.bytes } else => {} }
+        if by.k is path{ segs } { path = path_text{ c, segs }.bytes }
         list::at{ list = c.ty.vars, i = n }.fixed = types::Fixed{ at = expr_at{ e = by }, path }
     }
 
     fn array_lit { mut c: Checker, e: syntax::Expr, elems: []syntax::Expr, exp: Id } -> Id {
         let mut et = types::NO_TYPE
-        if exp != types::NO_TYPE {
-            match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = exp } } { array{ elem } => { et = elem } else => {} }
-        }
+        if exp != types::NO_TYPE and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = exp } } is array{ elem } { et = elem }
         if elems.len == 0 {
             if et == types::NO_TYPE {
                 error{ &c, at = expr_at{ e }, msg = "an empty array literal needs a known type" }
@@ -6986,9 +6693,7 @@ namespace check {
     fn repeat { mut c: Checker, elem: syntax::Expr, count: syntax::Expr, exp: Id } -> Id {
         let n = const_int{ &c, e = count, ns = c.sc.ns, what = "array length" }
         let mut et = types::NO_TYPE
-        if exp != types::NO_TYPE {
-            match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = exp } } { array{ elem = x } => { et = x } else => {} }
-        }
+        if exp != types::NO_TYPE and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = exp } } is array{ elem = x } { et = x }
         if et != types::NO_TYPE { expect{ &c, e = elem, t = et } } else { et = value_type{ &c, e = elem } }
         if n == null or n < 0 { return types::ERROR }
         return types::array{ s = &c.ty, n = @as(u64, n), elem = et }
@@ -7092,16 +6797,13 @@ namespace check {
 
     // Capability t's C variable `name` (§15), its own or one it includes, or null.
     fn cap_var { c: Checker, t: Id, name: []u8 } -> ?CVar {
-        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
-            cap{ decl } => {
-                let vs = get_decl{ c, d = decl }.vars
-                let mut i: usize = 0
-                while i < vs.len {
-                    if slice::eq_bytes{ a = vs[i].name, b = name } { return vs[i] }
-                    i = i + 1
-                }
+        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is cap{ decl } {
+            let vs = get_decl{ c, d = decl }.vars
+            let mut i: usize = 0
+            while i < vs.len {
+                if slice::eq_bytes{ a = vs[i].name, b = name } { return vs[i] }
+                i = i + 1
             }
-            else => {}
         }
         return null
     }
@@ -7154,10 +6856,7 @@ namespace check {
     fn expected_targ { mut c: Checker, name: []u8, exp: Id, at: source::Span } -> Id {
         if exp != types::NO_TYPE {
             let mut want = types::prune{ s = c.ty, t = exp }
-            match types::get{ s = c.ty, id = want } {
-                opt{ elem } => { want = types::prune{ s = c.ty, t = elem } }
-                else => {}
-            }
+            if types::get{ s = c.ty, id = want } is opt{ elem } { want = types::prune{ s = c.ty, t = elem } }
             match types::get{ s = c.ty, id = want } {
                 var => {}
                 error => { return types::ERROR }
@@ -7191,10 +6890,7 @@ namespace check {
         if args.len < need or (typed_arg and targ == null) { return types::ERROR }
         if slice::eq_bytes{ a = n, b = "panic" } {
             if args.len > 0 {
-                match args[0].k {
-                    str => {}
-                    else => { error{ &c, at = expr_at{ e = args[0] }, msg = "@panic takes a string literal" } }
-                }
+                if not (args[0].k is str) { error{ &c, at = expr_at{ e = args[0] }, msg = "@panic takes a string literal" } }
                 _ = expr{ &c, e = args[0], exp = types::NO_TYPE }
             }
             return types::VOID
@@ -7295,10 +6991,7 @@ namespace check {
         }
         if slice::eq_bytes{ a = n, b = "addr" } {
             let pt = typed{ &c, e = args[0] }
-            match types::get{ s = c.ty, id = pt } {
-                ptr | error => {}
-                else => { error{ &c, at = expr_at{ e = args[0] }, msg = "@addr needs a pointer argument" } }
-            }
+            if not (types::get{ s = c.ty, id = pt } is ptr | error) { error{ &c, at = expr_at{ e = args[0] }, msg = "@addr needs a pointer argument" } }
             return types::USIZE
         }
         // @wrap_add, @wrap_sub, @wrap_mul
@@ -7313,7 +7006,7 @@ namespace check {
     }
 
     fn is_enum { c: Checker, t: Id } -> bool {
-        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { enumeration => { return true } else => { return false } }
+        return types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is enumeration
     }
 
     // ---- @fmt(b, "format", args...) (§13, Formatting): pushes onto a builder
@@ -7371,7 +7064,7 @@ namespace check {
             let h = holes[i]
             let want = match h.k { str => { text_type{ &c } } else => { types::NO_TYPE } }
             let ht = expr{ &c, e = h, exp = want }
-            match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = ht } } { func => { calls = true } else => {} }
+            if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = ht } } is func { calls = true }
             i = i + 1
         }
         if ok and ps != null {
@@ -7406,10 +7099,7 @@ namespace check {
         match types::get{ s = c.ty, id = t } {
             ptr{ elem, mutable } => {
                 if not mutable { return false }
-                match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } {
-                    record{ decl } => { return decl == c.builder_decl and decl != NONE }
-                    else => { return false }
-                }
+                return types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } is record{ decl } and decl == c.builder_decl and decl != NONE
             }
             else => { return false }
         }
@@ -7562,12 +7252,9 @@ namespace check {
                 let x = args[h]
                 h = h + 1
                 if slice::eq_bytes{ a = p.push, b = "call" } {
-                    match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = x } } } {
-                        func{ fields } => {
-                            let want = types::ptr{ s = &c.ty, elem = fields[0].ty, mutable = true }
-                            _ = convert{ &c, a = bt, t = want, pos = expr_at{ e = b } }
-                        }
-                        else => {}
+                    if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = x } } } is func{ fields } {
+                        let want = types::ptr{ s = &c.ty, elem = fields[0].ty, mutable = true }
+                        _ = convert{ &c, a = bt, t = want, pos = expr_at{ e = b } }
                     }
                 } else {
                     let pt = push_param{ &c, push = p.push }
@@ -7616,12 +7303,7 @@ namespace check {
             if not has_width { return if signed { "push_i64" } else { "push_u64" } }
             return if signed { "push_int" } else { "push_uint" }
         }
-        match types::get{ s = c.ty, id = t } {
-            record{ decl } => {
-                if decl == c.text_decl { return if has_width { "push_padded" } else { "push" } }
-            }
-            else => {}
-        }
+        if types::get{ s = c.ty, id = t } is record{ decl } and decl == c.text_decl { return if has_width { "push_padded" } else { "push" } }
         if has_width {
             let mut b = message{ c }
             try! @fmt(&b, "`{}`: a width applies to integers and utf8::String, not {}", what, tstr{ c, t })
@@ -7631,12 +7313,7 @@ namespace check {
         if types::is_float{ s = c.ty, t } { return if t == types::prim{ p = types::Prim::f32 } { "push_f32" } else { "push_f64" } }
         if t == types::BOOL { return "push_bool" }
         if is_errs{ c, t } { return "error" }
-        match types::get{ s = c.ty, id = t } {
-            func{ fields, ret, external } => {
-                if not external and fields.len == 1 and fields[0].mutable and void_result{ c, t = ret } { return "call" }
-            }
-            else => {}
-        }
+        if types::get{ s = c.ty, id = t } is func{ fields, ret, external } and not external and fields.len == 1 and fields[0].mutable and void_result{ c, t = ret } { return "call" }
         let mut b = message{ c }
         try! @fmt(&b, "@fmt can't format {}: give a utf8::String, a number, a bool, an error, or a function that writes to the builder", tstr{ c, t })
         error{ &c, at, msg = utf8::view{ b } }
@@ -7695,19 +7372,16 @@ namespace check {
     // ---- errors (§8, Errors)
 
     fn is_res { c: Checker, t: Id } -> bool {
-        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { res => { return true } else => { return false } }
+        return types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is res
     }
 
     fn is_errs { c: Checker, t: Id } -> bool {
-        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } { errs | eset => { return true } else => { return false } }
+        return types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is errs | eset
     }
 
     // Whether t is a bare `!`: a function returning it returns no value, or fails.
     fn void_result { c: Checker, t: Id } -> bool {
-        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
-            res{ ok } => { return types::prune{ s = c.ty, t = ok } == types::VOID }
-            else => { return false }
-        }
+        return types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is res{ ok } and types::prune{ s = c.ty, t = ok } == types::VOID
     }
 
     // The errors an error of type t may be, once the sets are inferred: a function's set, one
@@ -7770,16 +7444,9 @@ namespace check {
             }
         }
         let f = found
-        if f != null {
-            match f {
-                decl{ i } => {
-                    if get_decl{ c, d = i }.kind == Kind::fault {
-                        refer{ &c, n, e = f }
-                        return i
-                    }
-                }
-                else => {}
-            }
+        if f != null and f is decl{ i } and get_decl{ c, d = i }.kind == Kind::fault {
+            refer{ &c, n, e = f }
+            return i
         }
         let mut b = message{ c }
         try! utf8::push{ &b, s = if f == null { "no error `" } else { "`" } }
@@ -7804,13 +7471,10 @@ namespace check {
         let mut vs: []Variant = slice::empty(Variant){}
         let mut errs = t
         let mut bare = false
-        match types::get{ s = c.ty, id = t } {
-            res{ ok, errs = e } => {
-                vs = variants_of{ &c, t }
-                errs = e
-                bare = x.is_iferr and types::prune{ s = c.ty, t = ok } == types::VOID
-            }
-            else => {}
+        if types::get{ s = c.ty, id = t } is res{ ok, errs = e } {
+            vs = variants_of{ &c, t }
+            errs = e
+            bare = x.is_iferr and types::prune{ s = c.ty, t = ok } == types::VOID
         }
         let is_r = vs.len > 0
         let scrut_derived = new_derived{ &c, xs = derives{ &c, e = scrut } }

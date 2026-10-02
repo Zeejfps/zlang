@@ -959,15 +959,12 @@ namespace decls {
             }
             enumeration => {
                 try! @fmt(&out, "enum {}: {}\n", q, check::tstr{ c, t = d.ty })
-                match d.syn.k {
-                    enumeration{ variants } => {
-                        let mut j: usize = 0
-                        while j < variants.len and j < d.values.len {
-                            try! @fmt(&out, "  {} = {}\n", check::str{ s = variants[j].name.text }, d.values[j])
-                            j = j + 1
-                        }
+                if d.syn.k is enumeration{ variants } {
+                    let mut j: usize = 0
+                    while j < variants.len and j < d.values.len {
+                        try! @fmt(&out, "  {} = {}\n", check::str{ s = variants[j].name.text }, d.values[j])
+                        j = j + 1
                     }
-                    else => {}
                 }
             }
             alias => {
@@ -981,10 +978,7 @@ namespace decls {
             }
             constant => {
                 try! @fmt(&out, "const {}: {}\n", q, check::tstr{ c, t = d.ty })
-                match d.syn.k {
-                    constant{ value } => { expr{ &out, c, e = value, depth = 1 } }
-                    else => {}
-                }
+                if d.syn.k is constant{ value } { expr{ &out, c, e = value, depth = 1 } }
                 let v = map::get{ m = c.values, key = i }
                 if v != null {
                     dump::put{ &out, s = "  value " }
@@ -998,10 +992,7 @@ namespace decls {
                 try! @fmt(&out, " ")
                 try! sig{ c, d, b = &out }
                 try! @fmt(&out, "\n")
-                match d.syn.k {
-                    func{ body } => { stmts{ &out, c, xs = body.stmts, depth = 1 } }
-                    else => {}
-                }
+                if d.syn.k is func{ body } { stmts{ &out, c, xs = body.stmts, depth = 1 } }
             }
             fault => {
                 try! @fmt(&out, "error {}", q)
@@ -1459,7 +1450,7 @@ namespace decls {
                 dump::put{ &out, s = "[" }
                 value{ &out, c, v = elem.* }
                 let mut n: u64 = 0
-                match types::get{ s = c.ty, id = ty } { array{ n = k } => { n = k } else => {} }
+                if types::get{ s = c.ty, id = ty } is array{ n = k } { n = k }
                 try! @fmt(&out, "; {}]", n)
             }
         }

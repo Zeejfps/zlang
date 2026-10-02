@@ -194,7 +194,7 @@ namespace parser {
                     ok = true
                 }
                 braced{ callee, forward, bind } => {
-                    match callee.k { path => { ok = not forward and not bind } else => {} }
+                    if callee.k is path { ok = not forward and not bind }
                 }
                 else => {}
             }
@@ -478,7 +478,7 @@ namespace parser {
                 s = syntax::StmtKind::deferred{ body = block{ &p } }
             } else {
                 let inner = stmt{ &p }
-                let ok = match inner.k { eval | discard | assign => { true } else => { false } }
+                let ok = inner.k is eval | discard | assign
                 if not ok { fail_at{ &p, msg = "`defer` takes a call, an assignment, `_ = e` or a block", t } }
                 s = syntax::StmtKind::deferred{ body = one{ &p, s = inner } }
             }
@@ -803,15 +803,12 @@ namespace parser {
     // `e is a | b`, after e, which began at token `start`. A `not` in front of e takes the whole
     // test, `not (e is a)`, though it binds tighter than `is` everywhere else.
     fn is_expr { mut p: Parser, start: usize, e: syntax::Expr } -> syntax::Expr {
-        match e.k {
-            lnot{ e = x } => {
-                if p.toks[start].kind == tok::Kind::kw_not {
-                    let inner = is_expr{ &p, start = start + 1, e = x.* }
-                    let k = syntax::ExprKind::lnot{ e = box{ &p, value = inner } }
-                    return syntax::Expr{ id = e.id, span = span_from{ p, start }, at = e.at, k }
-                }
+        if e.k is lnot{ e = x } {
+            if p.toks[start].kind == tok::Kind::kw_not {
+                let inner = is_expr{ &p, start = start + 1, e = x.* }
+                let k = syntax::ExprKind::lnot{ e = box{ &p, value = inner } }
+                return syntax::Expr{ id = e.id, span = span_from{ p, start }, at = e.at, k }
             }
-            else => {}
         }
         let t = take{ &p }
         let mut pats = list::new(syntax::Pattern){ realloc = arena::alloc, heap = p.heap }

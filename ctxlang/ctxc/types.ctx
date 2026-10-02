@@ -230,10 +230,7 @@ namespace types {
     }
 
     fn signed { p: Prim } -> bool {
-        match p {
-            i8 | i16 | i32 | i64 | f32 | f64 => { return true }
-            else => { return false }
-        }
+        return p is i8 | i16 | i32 | i64 | f32 | f64
     }
 
     // Whether integer value v, of magnitude and sign, fits in integer type p.
@@ -299,57 +296,36 @@ namespace types {
 
     fn eq { a: Type, b: Type } -> bool {
         match a {
-            error => { match b { error => { return true } else => { return false } } }
-            void => { match b { void => { return true } else => { return false } } }
-            nil => { match b { nil => { return true } else => { return false } } }
-            prim{ p } => { match b { prim{ p = q } => { return p == q } else => { return false } } }
-            cap{ decl } => { match b { cap{ decl = d } => { return decl == d } else => { return false } } }
-            ptr{ elem, mutable } => {
-                match b { ptr{ elem = e, mutable = m } => { return elem == e and mutable == m } else => { return false } }
-            }
-            slice{ elem, mutable } => {
-                match b { slice{ elem = e, mutable = m } => { return elem == e and mutable == m } else => { return false } }
-            }
-            array{ n, elem } => {
-                match b { array{ n = k, elem = e } => { return n == k and elem == e } else => { return false } }
-            }
-            opt{ elem } => { match b { opt{ elem = e } => { return elem == e } else => { return false } } }
-            record{ decl, args } => {
-                match b { record{ decl = d, args = xs } => { return decl == d and same_ids{ a = args, b = xs } } else => { return false } }
-            }
-            sum{ decl, args } => {
-                match b { sum{ decl = d, args = xs } => { return decl == d and same_ids{ a = args, b = xs } } else => { return false } }
-            }
-            enumeration{ decl } => { match b { enumeration{ decl = d } => { return decl == d } else => { return false } } }
+            error => { return b is error }
+            void => { return b is void }
+            nil => { return b is nil }
+            prim{ p } => { return b is prim{ p = q } and p == q }
+            cap{ decl } => { return b is cap{ decl = d } and decl == d }
+            ptr{ elem, mutable } => { return b is ptr{ elem = e, mutable = m } and elem == e and mutable == m }
+            slice{ elem, mutable } => { return b is slice{ elem = e, mutable = m } and elem == e and mutable == m }
+            array{ n, elem } => { return b is array{ n = k, elem = e } and n == k and elem == e }
+            opt{ elem } => { return b is opt{ elem = e } and elem == e }
+            record{ decl, args } => { return b is record{ decl = d, args = xs } and decl == d and same_ids{ a = args, b = xs } }
+            sum{ decl, args } => { return b is sum{ decl = d, args = xs } and decl == d and same_ids{ a = args, b = xs } }
+            enumeration{ decl } => { return b is enumeration{ decl = d } and decl == d }
             func{ fields, ret, bound, external } => {
-                match b {
-                    func{ fields = fs, ret = r, bound = bd, external = ex } => {
-                        if ret != r or bound != bd or external != ex or fields.len != fs.len { return false }
-                        let mut i: usize = 0
-                        while i < fields.len {
-                            let f = fields[i]
-                            let g = fs[i]
-                            if f.ty != g.ty or f.mutable != g.mutable or not slice::eq_bytes{ a = f.name, b = g.name } {
-                                return false
-                            }
-                            i = i + 1
-                        }
-                        return true
+                if not (b is func{ fields = fs, ret = r, bound = bd, external = ex }) or ret != r or bound != bd or external != ex or fields.len != fs.len { return false }
+                let mut i: usize = 0
+                while i < fields.len {
+                    let f = fields[i]
+                    let g = fs[i]
+                    if f.ty != g.ty or f.mutable != g.mutable or not slice::eq_bytes{ a = f.name, b = g.name } {
+                        return false
                     }
-                    else => { return false }
+                    i = i + 1
                 }
+                return true
             }
-            param{ decl, index } => {
-                match b { param{ decl = d, index = k } => { return decl == d and index == k } else => { return false } }
-            }
-            var{ n } => { match b { var{ n = k } => { return n == k } else => { return false } } }
-            errs{ owner, one } => {
-                match b { errs{ owner = o, one = e } => { return owner == o and one == e } else => { return false } }
-            }
-            eset{ errs } => { match b { eset{ errs = xs } => { return same_ids{ a = errs, b = xs } } else => { return false } } }
-            res{ ok, errs } => {
-                match b { res{ ok = o, errs = e } => { return ok == o and errs == e } else => { return false } }
-            }
+            param{ decl, index } => { return b is param{ decl = d, index = k } and decl == d and index == k }
+            var{ n } => { return b is var{ n = k } and n == k }
+            errs{ owner, one } => { return b is errs{ owner = o, one = e } and owner == o and one == e }
+            eset{ errs } => { return b is eset{ errs = xs } and same_ids{ a = errs, b = xs } }
+            res{ ok, errs } => { return b is res{ ok = o, errs = e } and ok == o and errs == e }
         }
     }
 
@@ -496,46 +472,27 @@ namespace types {
         if vy != null { return bind{ &s, n = vy, t = x } }
         let tb = get{ s, id = y }
         match get{ s, id = x } {
-            ptr{ elem, mutable } => {
-                match tb { ptr{ elem = e, mutable = m } => { return mutable == m and unify{ &s, a = elem, b = e } } else => { return false } }
-            }
-            slice{ elem, mutable } => {
-                match tb { slice{ elem = e, mutable = m } => { return mutable == m and unify{ &s, a = elem, b = e } } else => { return false } }
-            }
-            opt{ elem } => {
-                match tb { opt{ elem = e } => { return unify{ &s, a = elem, b = e } } else => { return false } }
-            }
-            array{ n, elem } => {
-                match tb { array{ n = k, elem = e } => { return n == k and unify{ &s, a = elem, b = e } } else => { return false } }
-            }
-            record{ decl, args } => {
-                match tb { record{ decl = d, args = xs } => { return decl == d and unify_all{ &s, a = args, b = xs } } else => { return false } }
-            }
-            sum{ decl, args } => {
-                match tb { sum{ decl = d, args = xs } => { return decl == d and unify_all{ &s, a = args, b = xs } } else => { return false } }
-            }
+            ptr{ elem, mutable } => { return tb is ptr{ elem = e, mutable = m } and mutable == m and unify{ &s, a = elem, b = e } }
+            slice{ elem, mutable } => { return tb is slice{ elem = e, mutable = m } and mutable == m and unify{ &s, a = elem, b = e } }
+            opt{ elem } => { return tb is opt{ elem = e } and unify{ &s, a = elem, b = e } }
+            array{ n, elem } => { return tb is array{ n = k, elem = e } and n == k and unify{ &s, a = elem, b = e } }
+            record{ decl, args } => { return tb is record{ decl = d, args = xs } and decl == d and unify_all{ &s, a = args, b = xs } }
+            sum{ decl, args } => { return tb is sum{ decl = d, args = xs } and decl == d and unify_all{ &s, a = args, b = xs } }
             // Two results are the same type only with the same errors: an error set flows into
             // another only where the checker allows it (check::coerce).
-            res{ ok, errs } => {
-                match tb { res{ ok = o, errs = e } => { return errs == e and unify{ &s, a = ok, b = o } } else => { return false } }
-            }
+            res{ ok, errs } => { return tb is res{ ok = o, errs = e } and errs == e and unify{ &s, a = ok, b = o } }
             func{ fields, ret, bound, external } => {
-                match tb {
-                    func{ fields = fs, ret = r, bound = bd, external = ex } => {
-                        if bound != bd or external != ex or fields.len != fs.len { return false }
-                        let mut i: usize = 0
-                        while i < fields.len {
-                            let f = fields[i]
-                            // A C function's fields pair up in order; a ctxlang function's by name.
-                            let g: ?Field = if external { fs[i] } else { find_field{ fields = fs, name = f.name } }
-                            if g == null or g.mutable != f.mutable or not unify{ &s, a = f.ty, b = g.ty } { return false }
-                            if external and not slice::eq_bytes{ a = f.name, b = g.name } { return false }
-                            i = i + 1
-                        }
-                        return unify{ &s, a = ret, b = r }
-                    }
-                    else => { return false }
+                if not (tb is func{ fields = fs, ret = r, bound = bd, external = ex }) or bound != bd or external != ex or fields.len != fs.len { return false }
+                let mut i: usize = 0
+                while i < fields.len {
+                    let f = fields[i]
+                    // A C function's fields pair up in order; a ctxlang function's by name.
+                    let g: ?Field = if external { fs[i] } else { find_field{ fields = fs, name = f.name } }
+                    if g == null or g.mutable != f.mutable or not unify{ &s, a = f.ty, b = g.ty } { return false }
+                    if external and not slice::eq_bytes{ a = f.name, b = g.name } { return false }
+                    i = i + 1
                 }
+                return unify{ &s, a = ret, b = r }
             }
             else => { return false }         // distinct primitives, capabilities or parameters
         }
@@ -573,10 +530,10 @@ namespace types {
         let y = prune{ s, t = b }
         match get{ s, id = x } {
             ptr{ elem, mutable } => {
-                match get{ s, id = y } { ptr{ elem = e, mutable = m } => { return mutable and not m and unify{ &s, a = elem, b = e } } else => { return false } }
+                return get{ s, id = y } is ptr{ elem = e, mutable = m } and mutable and not m and unify{ &s, a = elem, b = e }
             }
             slice{ elem, mutable } => {
-                match get{ s, id = y } { slice{ elem = e, mutable = m } => { return mutable and not m and unify{ &s, a = elem, b = e } } else => { return false } }
+                return get{ s, id = y } is slice{ elem = e, mutable = m } and mutable and not m and unify{ &s, a = elem, b = e }
             }
             else => {}
         }

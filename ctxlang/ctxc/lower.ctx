@@ -171,10 +171,7 @@ namespace lower {
             i = i + 1
         }
         let mut body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = null }
-        match x.syn.k {
-            func{ body = b } => { body = block{ &l, b } }
-            else => {}
-        }
+        if x.syn.k is func{ body = b } { body = block{ &l, b } }
         if check::void_result{ c = l.c.*, t = l.ret } {
             // A function returning a bare `!` that reaches its end returns `ok`.
             let mut xs = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
@@ -274,10 +271,7 @@ namespace lower {
     // A new type gets the next id before its parts do.
     fn tid { mut l: Lower, t: Id } -> u32 {
         let mut x = types::prune{ s = l.c.ty, t }
-        match types::get{ s = l.c.ty, id = x } {
-            enumeration{ decl } => { x = check::get_decl{ c = l.c.*, d = decl }.ty }
-            else => {}
-        }
+        if types::get{ s = l.c.ty, id = x } is enumeration{ decl } { x = check::get_decl{ c = l.c.*, d = decl }.ty }
         let k = norm{ &l, t = x }
         let known = map::get{ m = l.type_ids, key = k }
         if known != null { return known }
@@ -634,12 +628,7 @@ namespace lower {
     fn panic_stmt { mut l: Lower, e: syntax::Expr, args: []syntax::Expr } -> ir::Stmt {
         let p = epos{ &l, e }
         let mut msg: []u8 = "@panic()"
-        if args.len > 0 {
-            match args[0].k {
-                str{ bytes } => { msg = escaped{ l, bytes } }
-                else => {}
-            }
-        }
+        if args.len > 0 and args[0].k is str{ bytes } { msg = escaped{ l, bytes } }
         return ir::Stmt::panic{ pos = p, msg }
     }
 
@@ -1021,15 +1010,12 @@ namespace lower {
     fn scrut_type { mut l: Lower, x: syntax::Match } -> Scrut {
         let mut t = types::prune{ s = l.c.ty, t = T{ &l, t = check::type_of_expr{ c = l.c.*, e = x.scrut.* } } }
         let mut through = false
-        match types::get{ s = l.c.ty, id = t } {
-            ptr{ elem } => {
-                through = true
-                t = types::prune{ s = l.c.ty, t = elem }
-            }
-            else => {}
+        if types::get{ s = l.c.ty, id = t } is ptr{ elem } {
+            through = true
+            t = types::prune{ s = l.c.ty, t = elem }
         }
         let mut enum_decl = NONE
-        match types::get{ s = l.c.ty, id = t } { enumeration{ decl } => { enum_decl = decl } else => {} }
+        if types::get{ s = l.c.ty, id = t } is enumeration{ decl } { enum_decl = decl }
         return Scrut{ through, vs = check::variants_of{ c = l.c, t }, enum_decl }
     }
 
@@ -1099,10 +1085,7 @@ namespace lower {
     fn value_block { mut l: Lower, b: syntax::Block, t: Id } -> ir::Block {
         let xs = b.stmts
         let v = if xs.len == 0 { check::Value::none } else { check::branch_value{ s = xs[xs.len - 1] } }
-        match v {
-            none => { return ir::Block{ stmts = stmts{ &l, xs }, result = null } }
-            else => {}
-        }
+        if v is none { return ir::Block{ stmts = stmts{ &l, xs }, result = null } }
         let mut out = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
         let mut i: usize = 0
         while i + 1 < xs.len {
@@ -1149,14 +1132,9 @@ namespace lower {
     fn nested_full { mut l: Lower, s: syntax::Stmt } -> ir::Expr {
         let k = check::stmt_key{ s }
         let conv = map::get{ m = l.c.convs, key = k }
-        if conv != null {
-            match conv {
-                some{ to } => {
-                    let inner = coerce{ &l, x = nested{ &l, s }, frm = T{ &l, t = check::type_of_key{ c = l.c.*, k } }, to = opt_elem{ l, t = T{ &l, t = to } }, at = s.span }
-                    return mk{ ty = tid{ &l, t = T{ &l, t = to } }, k = ir::ExprKind::some{ e = box{ l, e = inner } } }
-                }
-                else => {}
-            }
+        if conv != null and conv is some{ to } {
+            let inner = coerce{ &l, x = nested{ &l, s }, frm = T{ &l, t = check::type_of_key{ c = l.c.*, k } }, to = opt_elem{ l, t = T{ &l, t = to } }, at = s.span }
+            return mk{ ty = tid{ &l, t = T{ &l, t = to } }, k = ir::ExprKind::some{ e = box{ l, e = inner } } }
         }
         return nested{ &l, s }
     }
@@ -1245,7 +1223,7 @@ namespace lower {
                 }
             }
             errs | eset => {
-                match get{ l, t = a } { errs | eset => { return remap{ &l, x, frm = a, to = b } } else => {} }
+                if get{ l, t = a } is errs | eset { return remap{ &l, x, frm = a, to = b } }
             }
             else => {}
         }
@@ -1254,24 +1232,13 @@ namespace lower {
         }
         match get{ l, t = a } {
             func => {
-                match get{ l, t = b } {
-                    func => { return mk{ ty = tid{ &l, t = b }, k = ir::ExprKind::fnconv{ e = box{ l, e = x } } } }
-                    else => {}
-                }
+                if get{ l, t = b } is func { return mk{ ty = tid{ &l, t = b }, k = ir::ExprKind::fnconv{ e = box{ l, e = x } } } }
             }
             cap => {
-                match get{ l, t = b } {
-                    cap => { return cap_copy{ &l, x, frm = a, to = b } }
-                    else => {}
-                }
+                if get{ l, t = b } is cap { return cap_copy{ &l, x, frm = a, to = b } }
             }
             ptr{ elem = pa } => {
-                match get{ l, t = b } {
-                    ptr{ elem = pb } => {
-                        match get{ l, t = pa } { cap => { return cap_ptr{ &l, x, frm = pa, to = pb, pt = b, at } } else => {} }
-                    }
-                    else => {}
-                }
+                if get{ l, t = b } is ptr{ elem = pb } and get{ l, t = pa } is cap { return cap_ptr{ &l, x, frm = pa, to = pb, pt = b, at } }
             }
             else => {}
         }
@@ -1558,22 +1525,19 @@ namespace lower {
     fn test { mut l: Lower, scrut: ir::Expr, t: Id, vs: []check::Variant, pats: []syntax::Pattern } -> ir::Expr {
         let ty = tid{ &l, t = types::BOOL }
         let all = pats.len == vs.len
-        match types::get{ s = l.c.ty, id = t } {
-            enumeration{ decl } => {
-                let d = check::get_decl{ c = l.c.*, d = decl }
-                let names = check::enum_names{ c = l.c.*, d = decl }
-                let mut vals = list::new(ir::Int){ realloc = arena::alloc, heap = l.heap }
-                let mut i: usize = 0
-                while i < pats.len {
-                    try! list::push{ list = &vals, item = int_of{ v = d.values[name_index{ names, name = pats[i].variant.text }] } }
-                    i = i + 1
-                }
-                let mut cases = list::new(ir::Case){ realloc = arena::alloc, heap = l.heap }
-                try! list::push{ list = &cases, item = ir::Case{ values = list::items{ list = vals }, body = bool_block{ &l, value = true } } }
-                if not all { try! list::push{ list = &cases, item = ir::Case{ values = slice::empty(ir::Int){}, body = bool_block{ &l, value = false } } } }
-                return mk{ ty, k = ir::ExprKind::switchx{ scrut = box{ l, e = scrut }, cases = list::items{ list = cases } } }
+        if types::get{ s = l.c.ty, id = t } is enumeration{ decl } {
+            let d = check::get_decl{ c = l.c.*, d = decl }
+            let names = check::enum_names{ c = l.c.*, d = decl }
+            let mut vals = list::new(ir::Int){ realloc = arena::alloc, heap = l.heap }
+            let mut i: usize = 0
+            while i < pats.len {
+                try! list::push{ list = &vals, item = int_of{ v = d.values[name_index{ names, name = pats[i].variant.text }] } }
+                i = i + 1
             }
-            else => {}
+            let mut cases = list::new(ir::Case){ realloc = arena::alloc, heap = l.heap }
+            try! list::push{ list = &cases, item = ir::Case{ values = list::items{ list = vals }, body = bool_block{ &l, value = true } } }
+            if not all { try! list::push{ list = &cases, item = ir::Case{ values = slice::empty(ir::Int){}, body = bool_block{ &l, value = false } } } }
+            return mk{ ty, k = ir::ExprKind::switchx{ scrut = box{ l, e = scrut }, cases = list::items{ list = cases } } }
         }
         let mut ps = list::new(ir::Pat){ realloc = arena::alloc, heap = l.heap }
         let mut i: usize = 0
@@ -1644,12 +1608,9 @@ namespace lower {
                 return mk{ ty, k = ir::ExprKind::fnref{ callee = fn_id{ &l, decl, targs = ts } } }
             }
             constant{ decl } => {
-                match get{ l, t } {
-                    array | record | sum | opt | slice => {
-                        let ty = tid{ &l, t }
-                        return mk{ ty, k = ir::ExprKind::constref{ id = const_id{ &l, d = decl } } }
-                    }
-                    else => {}
+                if get{ l, t } is array | record | sum | opt | slice {
+                    let ty = tid{ &l, t }
+                    return mk{ ty, k = ir::ExprKind::constref{ id = const_id{ &l, d = decl } } }
                 }
                 return value{ &l, v = const_val{ l, d = decl } }
             }
@@ -1702,7 +1663,7 @@ namespace lower {
     // first time it is met.
     fn var_id { mut l: Lower, t: Id, name: []u8 } -> u32 {
         let mut ct = t
-        match get{ l, t } { ptr{ elem } => { ct = elem } else => {} }
+        if get{ l, t } is ptr{ elem } { ct = elem }
         let v = check::cap_var{ c = l.c.*, t = ct, name } ifnull { @panic("lower: no such C variable") }
         let vs = list::items{ list = l.vars }
         let owners = list::items{ list = l.var_owners }
@@ -1773,7 +1734,8 @@ namespace lower {
 
     fn field_ex { mut l: Lower, e: syntax::Expr, base: syntax::Expr, name: syntax::Name, t: Id } -> ir::Expr {
         let bt = T{ &l, t = check::type_of_expr{ c = l.c.*, e = base } }
-        if check::access_is{ c = l.c.*, e, a = check::Access::field } {
+        let a = check::access_of{ c = l.c.*, e }
+        if a is field {
             let narrow = map::get{ m = l.c.narrowed, key = check::expr_key{ e } }
             if narrow != null {
                 let nt = tid{ &l, t = T{ &l, t = narrow } }
@@ -1785,7 +1747,7 @@ namespace lower {
             let b = ex{ &l, e = base }
             return mk{ ty, k = ir::ExprKind::field{ base = box{ l, e = b }, index = field_index{ &l, t = bt, name = name.text } } }
         }
-        if check::access_is{ c = l.c.*, e, a = check::Access::pfield } {
+        if a is pfield {
             let elem = ptr_elem{ l, t = bt }
             let et = tid{ &l, t = elem }
             let b = ex{ &l, e = base }
@@ -1794,27 +1756,25 @@ namespace lower {
             return mk{ ty, k = ir::ExprKind::field{ base = box{ l, e = d }, index = field_index{ &l, t = elem, name = name.text } } }
         }
         // A capability's C variable: its value, after evaluating the base unless it is a name.
-        if check::access_is{ c = l.c.*, e, a = check::Access::cvar } {
+        if a is cvar {
             let ty = tid{ &l, t }
             let v = mk{ ty, k = ir::ExprKind::cvar{ id = var_id{ &l, t = bt, name = name.text } } }
-            match base.k { path => { return v } else => {} }
+            if base.k is path { return v }
             let b = ex{ &l, e = base }
             return mk{ ty, k = ir::ExprKind::seq{ first = box{ l, e = b }, then = box{ l, e = v } } }
         }
-        let is_ptr = check::access_is{ c = l.c.*, e, a = check::Access::sptr }
-        if is_ptr or check::access_is{ c = l.c.*, e, a = check::Access::slen } {
+        let is_ptr = a is sptr
+        if is_ptr or a is slen {
             let ty = tid{ &l, t }
             let b = ex{ &l, e = base }
             return mk{ ty, k = ir::ExprKind::field{ base = box{ l, e = b }, index = if is_ptr { 0 } else { 1 } } }
         }
         // `.len` of an array or of a pointer to one: its length, after evaluating the base
         // unless it is a name.
-        let is_len = check::access_is{ c = l.c.*, e, a = check::Access::len }
+        let is_len = a is len
         let n = if is_len { array_len{ l, t = bt } } else { array_len{ l, t = ptr_elem{ l, t = bt } } }
         let lit = int_lit{ &l, t = types::USIZE, n }
-        if is_len {
-            match base.k { path => { return lit } else => {} }
-        }
+        if is_len and base.k is path { return lit }
         let ty = tid{ &l, t = types::USIZE }
         let b = ex{ &l, e = base }
         return mk{ ty, k = ir::ExprKind::seq{ first = box{ l, e = b }, then = box{ l, e = lit } } }
@@ -1834,19 +1794,20 @@ namespace lower {
         let bt = T{ &l, t = check::type_of_expr{ c = l.c.*, e = base } }
         let ix = conv{ &l, e = i, to = types::USIZE }
         let p = epos{ &l, e }
-        if check::access_is{ c = l.c.*, e, a = check::Access::arr } {
+        let a = check::access_of{ c = l.c.*, e }
+        if a is arr {
             let ty = tid{ &l, t }
             let b = ex{ &l, e = base }
             return mk{ ty, k = ir::ExprKind::index{ base = box{ l, e = b }, i = box{ l, e = ix }, pos = p } }
         }
-        if check::access_is{ c = l.c.*, e, a = check::Access::parr } {
+        if a is parr {
             let at = tid{ &l, t = ptr_elem{ l, t = bt } }
             let b = ex{ &l, e = base }
             let arr = mk{ ty = at, k = ir::ExprKind::deref{ ptr = box{ l, e = b }, pos = p } }
             let ty = tid{ &l, t }
             return mk{ ty, k = ir::ExprKind::index{ base = box{ l, e = arr }, i = box{ l, e = ix }, pos = p } }
         }
-        if check::access_is{ c = l.c.*, e, a = check::Access::slice } {
+        if a is slice {
             let ty = tid{ &l, t }
             let b = ex{ &l, e = base }
             return mk{ ty, k = ir::ExprKind::sindex{ base = box{ l, e = b }, i = box{ l, e = ix }, pos = p } }
@@ -1885,14 +1846,11 @@ namespace lower {
             let y = conv{ &l, e = b, to = common }
             return mk{ ty, k = ir::ExprKind::cmp{ op = cmp, a = box{ l, e = x }, b = box{ l, e = y } } }
         }
-        match get{ l, t = check::type_of_expr{ c = l.c.*, e = a } } {
-            ptr => {
-                let ty = tid{ &l, t }
-                let x = ex{ &l, e = a }
-                let y = conv{ &l, e = b, to = types::USIZE }
-                return mk{ ty, k = ir::ExprKind::ptradd{ p = box{ l, e = x }, n = box{ l, e = y } } }
-            }
-            else => {}
+        if get{ l, t = check::type_of_expr{ c = l.c.*, e = a } } is ptr {
+            let ty = tid{ &l, t }
+            let x = ex{ &l, e = a }
+            let y = conv{ &l, e = b, to = types::USIZE }
+            return mk{ ty, k = ir::ExprKind::ptradd{ p = box{ l, e = x }, n = box{ l, e = y } } }
         }
         if op == tok::Kind::amp or op == tok::Kind::pipe or op == tok::Kind::caret {
             let ty = tid{ &l, t }
@@ -1965,27 +1923,19 @@ namespace lower {
             if has_spread{ items } { return spread_lit{ &l, e, items, fields, ty } }
             return mk{ ty, k = ir::ExprKind::record{ items = item_args{ &l, e, items, fields, ptrs = false } } }
         }
-        if r != null {
-            match r {
-                func{ decl, targs } => {
-                    let ts = T_all{ &l, ts = targs }
-                    let x = check::get_decl{ c = l.c.*, d = decl }
-                    let fields = check::subst_fields{ c = l.c, fields = x.fields, decl, args = ts }
-                    let fid = fn_id{ &l, decl, targs = ts }
-                    let ty = tid{ &l, t }
-                    let args = item_args{ &l, e, items, fields, ptrs = true }
-                    if bind { return mk{ ty, k = ir::ExprKind::bind{ callee = fid, args } } }
-                    return mk{ ty, k = ir::ExprKind::call{ callee = fid, args } }
-                }
-                else => {}
-            }
+        if r is func{ decl, targs } {
+            let ts = T_all{ &l, ts = targs }
+            let x = check::get_decl{ c = l.c.*, d = decl }
+            let fields = check::subst_fields{ c = l.c, fields = x.fields, decl, args = ts }
+            let fid = fn_id{ &l, decl, targs = ts }
+            let ty = tid{ &l, t }
+            let args = item_args{ &l, e, items, fields, ptrs = true }
+            if bind { return mk{ ty, k = ir::ExprKind::bind{ callee = fid, args } } }
+            return mk{ ty, k = ir::ExprKind::call{ callee = fid, args } }
         }
         let ft = T{ &l, t = check::type_of_expr{ c = l.c.*, e = callee } }
         let mut fields: []types::Field = slice::empty(types::Field){}
-        match get{ l, t = ft } {
-            func{ fields = fs, external } => { fields = if external { fs } else { sorted_fields{ l, fields = fs } } }
-            else => {}
-        }
+        if get{ l, t = ft } is func{ fields = fs, external } { fields = if external { fs } else { sorted_fields{ l, fields = fs } } }
         let ty = tid{ &l, t }
         let c = ex{ &l, e = callee }
         let args = item_args{ &l, e, items, fields, ptrs = true }
@@ -2133,16 +2083,10 @@ namespace lower {
         }
         if slice::eq_bytes{ a = name, b = "as" } {
             let src = T{ &l, t = check::type_of_expr{ c = l.c.*, e = args[0] } }
-            match get{ l, t } {
-                enumeration{ decl } => { return to_enum{ &l, e, arg = args[0], src, t, decl } }
-                else => {}
-            }
-            match get{ l, t = src } {
-                enumeration{ decl } => {
-                    let base = check::get_decl{ c = l.c.*, d = decl }.ty
-                    if norm{ &l, t = base } == norm{ &l, t } { return ex{ &l, e = args[0] } }
-                }
-                else => {}
+            if get{ l, t } is enumeration{ decl } { return to_enum{ &l, e, arg = args[0], src, t, decl } }
+            if get{ l, t = src } is enumeration{ decl } {
+                let base = check::get_decl{ c = l.c.*, d = decl }.ty
+                if norm{ &l, t = base } == norm{ &l, t } { return ex{ &l, e = args[0] } }
             }
             let ty = tid{ &l, t }
             let x = ex{ &l, e = args[0] }
@@ -2277,7 +2221,7 @@ namespace lower {
             let ft = T{ &l, t = check::type_of_expr{ c = l.c.*, e = hole } }
             let mut fields: []types::Field = slice::empty(types::Field){}
             let mut ret = types::VOID
-            match get{ l, t = ft } { func{ fields = fs, ret = r } => { fields = sorted_fields{ l, fields = fs }; ret = r } else => {} }
+            if get{ l, t = ft } is func{ fields = fs, ret = r } { fields = sorted_fields{ l, fields = fs }; ret = r }
             let ty = tid{ &l, t = ret }
             let c = ex{ &l, e = hole }
             let bx = coerce{ &l, x = ex{ &l, e = b }, frm = bt, to = types::ptr{ s = &l.c.ty, elem = fields[0].ty, mutable = false }, at = check::expr_at{ e = b } }
@@ -2418,15 +2362,7 @@ namespace lower {
 
     // S of the *mut utf8::Builder(S) an @fmt writes to.
     fn builder_state { l: Lower, t: Id } -> Id {
-        match get{ l, t } {
-            ptr{ elem } => {
-                match get{ l, t = elem } {
-                    record{ args } => { if args.len == 1 { return args[0] } }
-                    else => {}
-                }
-            }
-            else => {}
-        }
+        if get{ l, t } is ptr{ elem } and get{ l, t = elem } is record{ args } and args.len == 1 { return args[0] }
         @panic("lower: @fmt to something that isn't a builder")
     }
 

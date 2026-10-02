@@ -629,7 +629,7 @@ namespace ir_read {
         let mut is32 = false
         if ty < r.types.len {
             let prim{ p } = r.types[ty] else { return 0.0 }
-            is32 = match p { f32 => { true } else => { false } }
+            is32 = p is f32
         }
         if is32 {
             let value = utf8::parse_f32{ s = text } ifnull {

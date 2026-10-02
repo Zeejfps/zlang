@@ -535,11 +535,11 @@ namespace emit {
     }
 
     fn is_cap { e: E, t: ir::TypeId } -> bool {
-        match ty{ e, id = t } { cap => { return true } else => { return false } }
+        return ty{ e, id = t } is cap
     }
 
     fn is_cfn { e: E, t: ir::TypeId } -> bool {
-        match ty{ e, id = t } { cfn => { return true } else => { return false } }
+        return ty{ e, id = t } is cfn
     }
 
     // A call through a C function pointer: the callee, then the args, in C's order without the
@@ -982,25 +982,22 @@ namespace emit {
     }
 
     fn is_nptr { e: E, t: ir::TypeId } -> bool {
-        match ty{ e, id = t } { nptr => { return true } else => { return false } }
+        return ty{ e, id = t } is nptr
     }
 
     // Whether t is a nullable pointer whose payload is a struct around the pointer (a
     // ?c::String) rather than the pointer itself.
     fn nptr_record { e: E, t: ir::TypeId } -> bool {
         let nptr{ ptr } = ty{ e, id = t } else { return false }
-        match ty{ e, id = ptr } { record => { return true } else => { return false } }
+        return ty{ e, id = ptr } is record
     }
 
     // `.m_NAME`, the pointer inside a ?c::String's struct; nothing for a ?*T.
     fn nptr_member { mut e: E, t: ir::TypeId } {
         let nptr{ ptr } = ty{ e, id = t } else { return }
-        match ty{ e, id = ptr } {
-            record{ fields } => {
-                put{ &e, a = ".m_" }
-                raw{ &e, b = fields[0].name }
-            }
-            else => {}
+        if ty{ e, id = ptr } is record{ fields } {
+            put{ &e, a = ".m_" }
+            raw{ &e, b = fields[0].name }
         }
     }
 
@@ -1658,35 +1655,32 @@ namespace emit {
             put{ &e, a = "))" }
             return
         }
-        match ty{ e, id = t } {
-            record{ fields, untagged } => {
-                if untagged {
-                    // An extern union's one field, over zeroed bytes: C leaves the rest of a
-                    // union literal's bytes unspecified.
-                    //   ({ tN _tK; memset(&_tK, 0, sizeof _tK); _tK.m_f = VALUE; _tK; })
-                    let k = e.temp
-                    e.temp = e.temp + 1
-                    put{ &e, a = "({ " }
-                    tn{ &e, t }
-                    put{ &e, a = " _t" }
-                    num{ &e, n = k }
-                    put{ &e, a = "; memset(&_t" }
-                    num{ &e, n = k }
-                    put{ &e, a = ", 0, sizeof _t" }
-                    num{ &e, n = k }
-                    put{ &e, a = "); _t" }
-                    num{ &e, n = k }
-                    put{ &e, a = ".m_" }
-                    raw{ &e, b = fields[items[0].index].name }
-                    put{ &e, a = " = " }
-                    expr{ &e, x = items[0].value }
-                    put{ &e, a = "; _t" }
-                    num{ &e, n = k }
-                    put{ &e, a = "; })" }
-                    return
-                }
+        if ty{ e, id = t } is record{ fields, untagged } {
+            if untagged {
+                // An extern union's one field, over zeroed bytes: C leaves the rest of a
+                // union literal's bytes unspecified.
+                //   ({ tN _tK; memset(&_tK, 0, sizeof _tK); _tK.m_f = VALUE; _tK; })
+                let k = e.temp
+                e.temp = e.temp + 1
+                put{ &e, a = "({ " }
+                tn{ &e, t }
+                put{ &e, a = " _t" }
+                num{ &e, n = k }
+                put{ &e, a = "; memset(&_t" }
+                num{ &e, n = k }
+                put{ &e, a = ", 0, sizeof _t" }
+                num{ &e, n = k }
+                put{ &e, a = "); _t" }
+                num{ &e, n = k }
+                put{ &e, a = ".m_" }
+                raw{ &e, b = fields[items[0].index].name }
+                put{ &e, a = " = " }
+                expr{ &e, x = items[0].value }
+                put{ &e, a = "; _t" }
+                num{ &e, n = k }
+                put{ &e, a = "; })" }
+                return
             }
-            else => {}
         }
         let tt = temps_args{ &e, args = items }
         compound{ &e, t }
@@ -2307,7 +2301,7 @@ namespace emit {
     }
 
     fn is_void { e: E, t: ir::TypeId } -> bool {
-        return match ty{ e, id = t } { void => { true } else => { false } }
+        return ty{ e, id = t } is void
     }
 
     fn prim_of { e: E, t: ir::TypeId } -> ?ir::Prim {
