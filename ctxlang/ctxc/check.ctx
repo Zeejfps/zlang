@@ -1419,9 +1419,11 @@ namespace check {
     }
 
     // Whether a literal where a t is expected may be converted: not where the language makes it
-    // a strlit, a []u8 or a [N]u8 itself.
+    // a strlit, a []u8 or a [N]u8 itself, also inside ?.
     fn convertible { c: Checker, t: Id } -> bool {
-        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+        let mut u = types::prune{ s = c.ty, t }
+        if types::get{ s = c.ty, id = u } is opt{ elem } { u = types::prune{ s = c.ty, t = elem } }
+        match types::get{ s = c.ty, id = u } {
             strlit => { return false }
             slice{ elem } => { return types::prune{ s = c.ty, t = elem } != types::U8 }
             array{ elem } => { return types::prune{ s = c.ty, t = elem } != types::U8 }

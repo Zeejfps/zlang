@@ -2544,6 +2544,15 @@ class Convert(Base):
              "a `convert` fn can't give a []u8: a string literal is one already", 2, 23),
             ('#convert\nfn f { s: strlit } -> strlit { return s }',
              "a `convert` fn can't give a strlit: a string literal is one already", 2, 23),
+            # nor inside ?, where a literal is one too
+            ('#convert\nfn f { s: strlit } -> ?[]u8 { return null }',
+             "a `convert` fn can't give a ?[]u8: a string literal is one already", 2, 23),
+            ('#convert\nfn f { s: strlit } -> ?strlit { return null }',
+             "a `convert` fn can't give a ?strlit: a string literal is one already", 2, 23),
+            ('#convert\nfn f { s: strlit } -> ?[4]u8 { return null }',
+             "a `convert` fn can't give a ?[4]u8: a string literal is one already", 2, 23),
+            ('#convert\nfn f { s: strlit } -> !?[]u8 { return null }',
+             "a `convert` fn can't give a ?[]u8: a string literal is one already", 2, 23),
             ('#convert{ x = 1 }\nfn f { s: strlit } -> i32 { return 1 }', '`convert` takes no fields', 1, 11),
             ('capability C {\n    #convert\n    extern x: i32\n}', '`convert` applies only to a fn', 2, 5),
             ('fn f { x: convert } {}', '`convert` is an attribute, not a type', 1, 11),
@@ -2786,6 +2795,18 @@ fn main { mut io: Io } {
     io::println_bool{ &io, n = q == null }
 }
 """, '4\n3\n2\ntrue\n')
+
+    def test_optional_view(self):
+        """Where a ?[]u8 or ?strlit is expected, a literal is the language's own view or strlit,
+        which no conversion can take over."""
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let x: ?[]u8 = "abc"
+    let s: ?strlit = "de"
+    if x != null { io::println_u64{ &io, n = x.len } }
+    if s != null { io::println_u64{ &io, n = s.bytes.len } }
+}
+""", '3\n2\n')
 
     def test_pointer_into_the_literal(self):
         """A result may point into the literal's bytes, which are static data: a []u8 or a *u8,
