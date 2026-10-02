@@ -7,7 +7,7 @@ Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound funct
 1. A program is a sequence of declarations: `fn`, `extern fn` (§18), `struct`, `union`, `enum`, `type`, `const`, `capability` (§15), `error` (§8, Errors), `namespace`. Any declaration may have attributes (§18).
 2. There is no mutable state at top level. Top-level names may be referenced from anywhere.
 3. All effects (IO, memory, OS) reach a function only through its context.
-4. Source files are UTF-8. Names are ASCII: a letter or `_`, then letters, digits and `_`. Other characters may appear only in comments, which are `// to the end of the line` and `/* ... */` (not nested). String and character literals are ASCII too (§11 Literals).
+4. Source files are UTF-8. Names are ASCII: a letter or `_`, then letters, digits and `_`, and not a keyword: `fn` `struct` `union` `enum` `type` `const` `namespace` `let` `mut` `if` `else` `while` `break` `continue` `match` `return` `defer` `and` `or` `not` `true` `false` `null` `extern` `capability` `ifnull` `iferr` `try` `is`. Other characters may appear only in comments, which are `// to the end of the line` and `/* ... */` (not nested). String and character literals are ASCII too (§11 Literals).
 
 ## 2. Functions and contexts
 
@@ -129,7 +129,7 @@ match e {
 6. `&f` in a pattern is an error unless the scrutinee is a pointer.
 7. If the scrutinee is `&p`, no place that overlaps `p` (§3.1) may be accessed inside an arm except through that arm's bindings. For other pointer scrutinees this isn't checked.
 8. `match` is a statement, and can also be an expression (§11, If and match expressions).
-9. To take one variant apart and leave on any other, use `let` with a pattern (§11, Let-else).
+9. To take one variant apart and leave on any other, use `let` with a pattern (§11, Let-else). To test for one, use `is` (§8, Is).
 
 ### Optional
 
@@ -160,6 +160,22 @@ print{ s = o.name }               // o: Obj, o.name: utf8::String
 let n = utf8::parse_i64{ s } ifnull 0              // i64
 let e = map::get{ m, key } ifnull { return null }   // leaves when the key is missing
 ```
+
+### Is
+
+```
+if r is local{ var } { use{ var } }             // r: ?Ref, for a union Ref
+if not (r is local{ var }) { return }           // var is bound from here to the end of the block
+if r is constant | variant | enumval { ... }
+let found = map::get{ m, key } is field         // ?Kind for an enum Kind: null doesn't match
+```
+
+1. `e is P` is a `bool`: true when `e` holds `P`'s variant. `P` is a pattern as in a match arm (§8, Match), its variant named alone, or several separated by `|` if none of them binds anything: then it is true for any of them. A binding is read-only: `&f` is an error.
+2. `e` is a union, an enum or a `?T`. A pointer is an error, and so is a `!T` or an error: use `match`.
+3. On a `?U` for a union or enum `U`, a pattern may name a variant of `U`, which null doesn't match. `null` and `some` still name the optional's own variants. `match` doesn't do this: it lists exactly its scrutinee's variants.
+4. Its bindings are bound where the test is known true. `e is P` binds them when true, and `not`, `and` and `or` combine what conditions bind as they combine what they narrow (§8, Optional, rule 4). A name that would be bound twice, as in `a is x{ v } and b is y{ v }`, isn't bound, and neither is one that only one side of an `or` binds.
+5. They are in scope where narrowing would hold (§8, Optional, rule 5): in `b` of `a and b`, in the first branch of `if c` and the body of `while c`, and after an `if` whose branch leaves when `c` is false. After an `if`, they are declared in the enclosing block as a let-else's bindings are (§11, Let-else): a later `let` of the same name in that block is an error.
+6. `is` binds at the level of `==` and doesn't chain with comparisons (§11, Expressions). `not e is P` is `not (e is P)`, and `a is x and b is y` needs no parentheses.
 
 ### Errors
 
@@ -287,13 +303,14 @@ while r < n {
 let ok{ value = h } = half{ n } else err{ error } { return error }
 let some{ value = c } = peek{ p } else { return null }
 let null = cached else { @panic() }
+let decl{ i } = found else { return NONE }        // found: ?Ref; null takes the else too
 ```
 
 1. `let P = e else { B }` matches `e` against the pattern `P`, which is a variant with optional bindings as in a match arm (§8, Match). `P` may not be `mut`, and bindings may not use `&`.
-2. `e` must have a union or `?T` type. A pointer is an error: use `match`.
+2. `e` must have a union or `?T` type. A pointer is an error: use `match`. On a `?U` for a union `U`, `P` may name a variant of `U`, as with `is` (§8, Is): `B` then runs for null too.
 3. If `e` holds `P`'s variant, its bindings are read-only locals from after the statement to the end of the enclosing block, as if declared by `let`.
 4. Otherwise `B` runs. `B` must leave: it ends a path (§11.7, 8, 9). `P`'s bindings aren't visible in it.
-5. `else V{ ... } { B }` binds `V`'s fields in `B`. `V` must be the union's only variant other than `P`'s.
+5. `else V{ ... } { B }` binds `V`'s fields in `B`. `V` must be the union's only variant other than `P`'s, and `P` can't be a variant of a `?U`'s `U`.
 
 ### Defer
 
@@ -337,7 +354,7 @@ Precedence, tightest first:
 | Level | Operators | Notes |
 |---|---|---|
 | postfix | `.f` `.*` `[i]` `[lo..hi]` `{ ... }` `::x` `(G)` | left to right |
-| prefix | `&` `-` `not` `try` | `try`: §8, Errors |
+| prefix | `&` `-` `not` `try` | `try`: §8, Errors; `not e is P` is `not (e is P)` |
 | multiplicative | `*` `/` `%` | left to right |
 | additive | `+` `-` | left to right |
 | shift | `<<` `>>` | left to right |
@@ -345,7 +362,7 @@ Precedence, tightest first:
 | bitwise xor | `^` | left to right |
 | bitwise or | `\|` | left to right |
 | ifnull | `ifnull` `iferr` | right to left; the right side may be a block (§8, Optional, Errors) |
-| comparison | `==` `!=` `<` `<=` `>` `>=` | don't chain: `a < b < c` is an error |
+| comparison | `==` `!=` `<` `<=` `>` `>=` `is` | don't chain: `a < b < c` is an error; `is`: §8, Is |
 | and | `and` | short-circuit |
 | or | `or` | short-circuit |
 
@@ -480,7 +497,7 @@ let i = @as(usize, k)       // 40
 3. An enum can't have generic parameters.
 4. `Name::v` is variant `v`'s value, of type `Name`. An enum converts implicitly to and from no other type (§11, Widening), and has no zero value (§11, Initialization).
 5. `==` and `!=` compare two values of the same enum. No other operator applies to enums.
-6. `match` takes an enum scrutinee as it takes a union one (§8, Match): arms list variants, the arms must be exhaustive, and patterns have no bindings. The scrutinee can't be a pointer to an enum: match on `p.*`. `let` with a pattern (§11, Let-else) doesn't apply to enums.
+6. `match` takes an enum scrutinee as it takes a union one (§8, Match): arms list variants, the arms must be exhaustive, and patterns have no bindings. So does `is` (§8, Is): `k is lbrace | rbrace`. The scrutinee can't be a pointer to an enum: match on `p.*`. `let` with a pattern (§11, Let-else) doesn't apply to enums.
 7. `@as(U, x)` gives the value of enum `x` in integer type `U`, and panics if it doesn't fit. `@as(E, n)` gives the variant of enum `E` whose value is integer `n`, and panics if there is none (§13).
 8. A const may hold enum values (§14).
 

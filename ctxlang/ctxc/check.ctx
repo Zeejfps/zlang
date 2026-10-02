@@ -163,6 +163,7 @@ namespace check {
         access:    map::Map(u64, Access, Heap),       // how a field or index reaches its value
         narrowed:  map::Map(u64, Id, Heap),           // a narrowed field's own ?T
         local_of:  map::Map(u64, u32, Heap),          // the local a `let` or a binder's field declares
+        is_vars:   map::Map(u64, []u32, Heap),        // the locals an `is` binds, by its key
         forwards:  map::Map(u64, []Forward, Heap),    // what `..` supplies to a call
         pieces:    map::Map(u64, []mut Piece, Heap),  // an @fmt's format
         holds:     map::Map(u64, []Place, Heap),      // the places a bind holds
@@ -259,8 +260,10 @@ namespace check {
     struct Piece { hole: bool, text: []u8, zero: bool, width: ?u64, digits: []u8, conv: u8, push: []u8 }
 
     // What narrows when a condition is true or false (§8): a local (var) or a path of struct
-    // fields from one (root, with var NONE), narrowed to ty.
-    struct Fact { var: u32, root: u32, steps: [][]u8, ty: Id, at: source::Span }
+    // fields from one (root, with var NONE), narrowed to ty. With bind, var is a binding of an
+    // `is` (§8, Is), declared where the fact holds, unless clash: another binding of its name
+    // holds there too, and neither is declared.
+    struct Fact { var: u32, root: u32, steps: [][]u8, ty: Id, at: source::Span, bind: bool, clash: bool }
 
     struct Facts { yes: []Fact, no: []Fact }
 
@@ -330,6 +333,7 @@ namespace check {
             access = map::new(u64, Access){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             narrowed = map::new(u64, Id){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             local_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            is_vars = map::new(u64, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             forwards = map::new(u64, []Forward){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             pieces = map::new(u64, []mut Piece){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             holds = map::new(u64, []Place){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
@@ -4049,8 +4053,30 @@ namespace check {
                 }
             }
         }
-        let vs: []Variant = if ok { variants_of{ &c, t } } else { slice::empty(Variant){} }
-        let vi = variant_index{ vs, name = variant.text }
+        let mut vs: []Variant = if ok { variants_of{ &c, t } } else { slice::empty(Variant){} }
+        let mut vi = variant_index{ vs, name = variant.text }
+        // On a `?U` for a union U, a variant of U: null goes to the else block with U's others.
+        let mut deep = false
+        if ok and vi == NONE {
+            match types::get{ s = c.ty, id = t } {
+                opt{ elem } => {
+                    let u = types::prune{ s = c.ty, t = elem }
+                    match types::get{ s = c.ty, id = u } {
+                        sum => {
+                            let uvs = variants_of{ &c, t = u }
+                            let ui = variant_index{ vs = uvs, name = variant.text }
+                            if ui != NONE {
+                                vs = uvs
+                                vi = ui
+                                deep = true
+                            }
+                        }
+                        else => {}
+                    }
+                }
+                else => {}
+            }
+        }
         let mut known = ok
         if ok and vi == NONE {
             if variant.text.len > 0 {
@@ -4067,8 +4093,12 @@ namespace check {
         if els_variant != null {
             let ev = els_variant.text
             let evi = variant_index{ vs, name = ev }
-            let mut eknown = known and evi != NONE
-            if known and evi == NONE {
+            let mut eknown = known and evi != NONE and not deep
+            if known and deep {
+                let mut b = message{ c }
+                try! @fmt(&b, "`else {}` can't follow `{}` of an optional's value: the `else` takes null too", str{ s = ev }, str{ s = variant.text })
+                error{ &c, at = els.span, msg = utf8::view{ b } }
+            } else if known and evi == NONE {
                 if ev.len > 0 {
                     let mut b = message{ c }
                     try! @fmt(&b, "{} has no variant `{}`", tstr{ c, t }, str{ s = ev })
@@ -4109,6 +4139,92 @@ namespace check {
         declare_all{ &c, vars = bvars }
     }
 
+    // e, `x is P` (§8, Is): whether x holds one of the patterns' variants. On a `?U` for a union or
+    // enum U, a pattern other than `null` or `some` names one of U's variants. Only a test of one
+    // pattern binds, and its locals are declared where the test is known true (facts).
+    fn check_is { mut c: Checker, e: syntax::Expr, x: syntax::Expr, pats: []syntax::Pattern } -> Id {
+        let t = typed{ &c, e = x }
+        let mut ok = t != types::ERROR
+        match types::get{ s = c.ty, id = t } {
+            ptr => {
+                error{ &c, at = expr_at{ e = x }, msg = "`is` cannot test through a pointer; use `match`" }
+                ok = false
+            }
+            sum | opt | enumeration => {}
+            else => {
+                if ok and (is_res{ c, t } or is_errs{ c, t }) {
+                    error{ &c, at = expr_at{ e = x }, msg = "`is` cannot test a `!T` or an error; use `match` or `iferr`" }
+                } else if ok and untagged_type{ c, t } {
+                    error{ &c, at = expr_at{ e = x }, msg = "an extern union has no tag to match on: read the field you know it holds" }
+                } else if ok {
+                    let mut b = message{ c }
+                    try! @fmt(&b, "`is` needs a union, enum or optional value, got {}", tstr{ c, t })
+                    error{ &c, at = expr_at{ e = x }, msg = utf8::view{ b } }
+                }
+                ok = false
+            }
+        }
+        let vs: []Variant = if ok { variants_of{ &c, t } } else { slice::empty(Variant){} }
+        let mut inner: []Variant = slice::empty(Variant){}
+        if ok {
+            match types::get{ s = c.ty, id = t } {
+                opt{ elem } => {
+                    let u = types::prune{ s = c.ty, t = elem }
+                    match types::get{ s = c.ty, id = u } { sum | enumeration => { inner = variants_of{ &c, t = u } } else => {} }
+                }
+                else => {}
+            }
+        }
+        let derived = new_derived{ &c, xs = derives{ &c, e = x } }
+        let mut i: usize = 0
+        while i < pats.len {
+            let p = pats[i]
+            let name = p.variant.text
+            let mut from = vs
+            let mut vi = variant_index{ vs, name }
+            if vi == NONE and inner.len > 0 {
+                from = inner
+                vi = variant_index{ vs = inner, name }
+            }
+            let mut known = ok
+            if p.quals.len > 0 {
+                let mut b = message{ c }
+                try! @fmt(&b, "`is` names a variant alone: write `{}`", str{ s = name })
+                error{ &c, at = p.span, msg = utf8::view{ b } }
+                known = false
+            } else if ok and vi == NONE {
+                if name.len > 0 {
+                    let mut b = message{ c }
+                    try! @fmt(&b, "{} has no variant `{}`", tstr{ c, t }, str{ s = name })
+                    error{ &c, at = p.span, msg = utf8::view{ b } }
+                }
+                known = false
+            } else if ok and listed_before{ pats, i } {
+                let mut b = message{ c }
+                try! @fmt(&b, "variant `{}` is listed twice", str{ s = name })
+                error{ &c, at = p.span, msg = utf8::view{ b } }
+            }
+            if pats.len > 1 and p.binders.len > 0 {
+                error{ &c, at = p.binders[0].span, msg = "an `is` with `|` cannot bind: test one pattern to bind its fields" }
+            }
+            let fields: ?[]types::Field = if known { from[vi].fields } else { null }
+            let bv = pattern_vars{ &c, variant = name, known, fields, binders = p.binders, through = false, ptr_mut = false, derived, at = p.span }
+            if pats.len == 1 { try! map::put{ m = &c.is_vars, key = expr_key{ e }, value = bv } }
+            i = i + 1
+        }
+        return types::BOOL
+    }
+
+    // Whether pats[i]'s variant is named earlier.
+    fn listed_before { pats: []syntax::Pattern, i: usize } -> bool {
+        let mut k: usize = 0
+        while k < i {
+            if slice::eq_bytes{ a = pats[k].variant.text, b = pats[i].variant.text } { return true }
+            k = k + 1
+        }
+        return false
+    }
+
     // ---- narrowing (§8, Optional)
 
     // What the checked condition e narrows when it is true and when it is false.
@@ -4139,6 +4255,18 @@ namespace check {
                     return Facts{ yes = none, no = xs }
                 }
             }
+            isx => {
+                let vars = map::get{ m = c.is_vars, key = expr_key{ e } }
+                if vars == null { return Facts{ yes = none, no = none } }
+                let mut xs = list::new(Fact){ realloc = arena::alloc, heap = c.heap }
+                let mut i: usize = 0
+                while i < vars.len {
+                    let v = get_var{ c, v = vars[i] }
+                    add_fact{ xs = &xs, f = Fact{ var = vars[i], root = NONE, steps = slice::empty([]u8){}, ty = v.ty, at = v.at, bind = true, clash = false } }
+                    i = i + 1
+                }
+                return Facts{ yes = list::items{ list = xs }, no = none }
+            }
             else => {}
         }
         return Facts{ yes = none, no = none }
@@ -4157,7 +4285,7 @@ namespace check {
                     match r {
                         local{ var } => {
                             if get_var{ c, v = var }.mutable { return null }
-                            return Fact{ var, root = NONE, steps = slice::empty([]u8){}, ty = elem, at = expr_at{ e } }
+                            return Fact{ var, root = NONE, steps = slice::empty([]u8){}, ty = elem, at = expr_at{ e }, bind = false, clash = false }
                         }
                         else => {}
                     }
@@ -4169,7 +4297,7 @@ namespace check {
                     if p != null {
                         let root = get_var{ c, v = p.root }
                         if not root.mutable and not root.indirect and all_fields{ steps = p.steps } {
-                            return Fact{ var = NONE, root = p.root, steps = p.steps, ty = elem, at = expr_at{ e } }
+                            return Fact{ var = NONE, root = p.root, steps = p.steps, ty = elem, at = expr_at{ e }, bind = false, clash = false }
                         }
                     }
                 }
@@ -4192,20 +4320,39 @@ namespace check {
         return true
     }
 
-    // Facts of a, then those of b whose local or path a doesn't have.
+    // Facts of a, then those of b whose local or path a doesn't have. A binding whose name both
+    // bind clashes, and stays once.
     fn fact_union { c: Checker, a: []Fact, b: []Fact } -> []Fact {
         let mut out = list::new(Fact){ realloc = arena::alloc, heap = c.heap }
         let mut i: usize = 0
         while i < a.len {
-            add_fact{ xs = &out, f = a[i] }
+            let mut f = a[i]
+            if f.bind and binds_name{ c, xs = b, f } { f.clash = true }
+            add_fact{ xs = &out, f }
             i = i + 1
         }
         i = 0
         while i < b.len {
-            if not has_fact{ xs = a, f = b[i] } { add_fact{ xs = &out, f = b[i] } }
+            let f = b[i]
+            if f.bind {
+                if not binds_name{ c, xs = a, f } { add_fact{ xs = &out, f } }
+            } else if not has_fact{ xs = a, f } {
+                add_fact{ xs = &out, f }
+            }
             i = i + 1
         }
         return list::items{ list = out }
+    }
+
+    // Whether xs has a binding of f's name.
+    fn binds_name { c: Checker, xs: []Fact, f: Fact } -> bool {
+        let name = get_var{ c, v = f.var }.name
+        let mut i: usize = 0
+        while i < xs.len {
+            if xs[i].bind and slice::eq_bytes{ a = get_var{ c, v = xs[i].var }.name, b = name } { return true }
+            i = i + 1
+        }
+        return false
     }
 
     // Facts of a whose local or path b also has.
@@ -4244,12 +4391,16 @@ namespace check {
     }
 
     // Narrows each fact's local or path in the innermost scope. After an `if`, a local's
-    // narrowed view replaces it there, or shadows it if it is from an outer scope.
+    // narrowed view replaces it there, or shadows it if it is from an outer scope. A binding is
+    // declared there.
     fn assume { mut c: Checker, facts: []Fact, after_if: bool } {
         let mut i: usize = 0
         while i < facts.len {
             let f = facts[i]
-            if f.var == NONE {
+            if f.bind {
+                // As a let-else's binding, after an `if` too.
+                if not f.clash { declare_var{ &c, v = f.var } }
+            } else if f.var == NONE {
                 add_binding{ &c, b = Binding::path{ root = f.root, steps = f.steps, ty = f.ty } }
             } else {
                 let name = get_var{ c, v = f.var }.name
@@ -5269,6 +5420,7 @@ namespace check {
             ifx{ x } => { scan_if{ &c, sc, x } }
             matchx{ x } => { scan_match{ &c, sc, x } }
             trye{ e = x } => { scan{ &c, sc, e = x.* } }
+            isx{ e = x } => { scan{ &c, sc, e = x.* } }
             else => {}
         }
     }
@@ -5728,6 +5880,7 @@ namespace check {
             ifx{ x } => { return check_if{ &c, x, at = expr_at{ e }, exp, value = true, may_leave = false } }
             matchx{ x } => { return check_match{ &c, x, at = expr_at{ e }, exp, value = true, may_leave = false } }
             trye{ e = x, panics } => { return try_expr{ &c, e, x = x.*, panics } }
+            isx{ e = x, pats } => { return check_is{ &c, e, x = x.*, pats } }
         }
     }
 
@@ -6286,8 +6439,8 @@ namespace check {
         return call_args{ &c, e, ft, name, items, forward, bind }
     }
 
-    fn set_literal { mut c: Checker, e: syntax::Expr, is: bool } {
-        try! map::put{ m = &c.literal, key = expr_key{ e }, value = is }
+    fn set_literal { mut c: Checker, e: syntax::Expr, literal: bool } {
+        try! map::put{ m = &c.literal, key = expr_key{ e }, value = literal }
     }
 
     // The fields supplied in braces must exist and be supplied once. `what` names the callee.
@@ -6348,7 +6501,7 @@ namespace check {
 
     // A call or a bind of function type ft (ctxi's call_args).
     fn call_args { mut c: Checker, e: syntax::Expr, ft: Id, name: utf8::String, items: []syntax::Item, forward: bool, bind: bool } -> Id {
-        set_literal{ &c, e, is = false }
+        set_literal{ &c, e, literal = false }
         no_spread{ &c, e, items }
         let mut fields: []types::Field = slice::empty(types::Field){}
         let mut ret = types::VOID
@@ -6576,7 +6729,7 @@ namespace check {
     // An extern union's literal (§12, Untagged unions) sets exactly one field; the rest of its
     // bytes are zero.
     fn untagged_lit { mut c: Checker, e: syntax::Expr, t: Id, fields: []types::Field, what: utf8::String, items: []syntax::Item, forward: bool, bind: bool } -> Id {
-        set_literal{ &c, e, is = true }
+        set_literal{ &c, e, literal = true }
         if forward or bind {
             let word: utf8::String = if forward { ".." } else { "_" }
             let mut b = message{ c }
@@ -6632,7 +6785,7 @@ namespace check {
 
     // A literal's items, and the fields its spreads supply (a capability's, §15).
     fn fields_lit { mut c: Checker, e: syntax::Expr, t: Id, fields: []types::Field, what: utf8::String, items: []syntax::Item, spread: []types::Field, forward: bool, bind: bool } -> Id {
-        set_literal{ &c, e, is = true }
+        set_literal{ &c, e, literal = true }
         if forward or bind {
             let word: utf8::String = if forward { ".." } else { "_" }
             let mut b = message{ c }

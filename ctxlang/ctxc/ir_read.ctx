@@ -58,25 +58,25 @@ namespace ir_read {
             expect{ &r, c = '(' }
             if r.failed { break }
             let tag = sym{ &r }
-            if is{ s = tag, lit = "type" } {
+            if spells{ s = tag, lit = "type" } {
                 if id32{ &r } != types.len { fail{ &r, problem = Problem::bad_id } }
                 try list::push{ list = &types, item = try type_def{ &r } }
                 r.types = list::items{ list = types }
-            } else if is{ s = tag, lit = "const" } {
+            } else if spells{ s = tag, lit = "const" } {
                 if id32{ &r } != consts.len { fail{ &r, problem = Problem::bad_id } }
                 let name = try string{ &r }
                 let ty = id32{ &r }
                 try list::push{ list = &consts, item = ir::Const{ name, ty, value = try expr{ &r } } }
-            } else if is{ s = tag, lit = "var" } {
+            } else if spells{ s = tag, lit = "var" } {
                 if id32{ &r } != vars.len { fail{ &r, problem = Problem::bad_id } }
                 let name = try string{ &r }
                 let symbol = try string{ &r }
                 try list::push{ list = &vars, item = ir::Var{ name, symbol, ty = id32{ &r } } }
-            } else if is{ s = tag, lit = "fn" } {
+            } else if spells{ s = tag, lit = "fn" } {
                 try list::push{ list = &fns, item = try function{ &r } }
-            } else if is{ s = tag, lit = "extern" } {
+            } else if spells{ s = tag, lit = "extern" } {
                 try list::push{ list = &fns, item = try extern_fn{ &r } }
-            } else if is{ s = tag, lit = "main" } {
+            } else if spells{ s = tag, lit = "main" } {
                 main = id32{ &r }
                 expect{ &r, c = ')' }
                 break
@@ -98,35 +98,35 @@ namespace ir_read {
         expect{ &r, c = '(' }
         let tag = sym{ &r }
         let mut t = ir::Type::void
-        if is{ s = tag, lit = "prim" } {
+        if spells{ s = tag, lit = "prim" } {
             t = ir::Type::prim{ p = prim{ &r } }
-        } else if is{ s = tag, lit = "ptr" } {
+        } else if spells{ s = tag, lit = "ptr" } {
             t = ir::Type::ptr{ elem = id32{ &r } }
-        } else if is{ s = tag, lit = "arr" } {
+        } else if spells{ s = tag, lit = "arr" } {
             let n = num{ &r }
             t = ir::Type::arr{ n, elem = id32{ &r } }
-        } else if is{ s = tag, lit = "struct" } or is{ s = tag, lit = "cunion" } {
-            let untagged = is{ s = tag, lit = "cunion" }
+        } else if spells{ s = tag, lit = "struct" } or spells{ s = tag, lit = "cunion" } {
+            let untagged = spells{ s = tag, lit = "cunion" }
             let name = try string{ &r }
             let size = num{ &r }
             let align = num{ &r }
             t = ir::Type::record{ name, size, align, fields = try fields{ &r }, untagged }
-        } else if is{ s = tag, lit = "union" } {
+        } else if spells{ s = tag, lit = "union" } {
             let name = try string{ &r }
             let size = num{ &r }
             let align = num{ &r }
             let pay_off = num{ &r }
             t = ir::Type::tagged{ name, size, align, pay_off, variants = try variants{ &r } }
-        } else if is{ s = tag, lit = "fn" } {
+        } else if spells{ s = tag, lit = "fn" } {
             let bound = flag{ &r }
             let params = try params{ &r }
             t = ir::Type::func{ bound, params, ret = id32{ &r } }
-        } else if is{ s = tag, lit = "cfn" } {
+        } else if spells{ s = tag, lit = "cfn" } {
             let params = try params{ &r }
             t = ir::Type::cfn{ params, ret = id32{ &r } }
-        } else if is{ s = tag, lit = "nptr" } {
+        } else if spells{ s = tag, lit = "nptr" } {
             t = ir::Type::nptr{ ptr = id32{ &r } }
-        } else if is{ s = tag, lit = "cap" } {
+        } else if spells{ s = tag, lit = "cap" } {
             // (cap NAME), or (cap NAME SIZE ALIGN [FIELD...]) for one with fields
             let name = try string{ &r }
             if more{ &r, close = ')' } {
@@ -136,7 +136,7 @@ namespace ir_read {
             } else {
                 t = ir::Type::cap{ name, size = 0, align = 1, fields = slice::empty(ir::Field){} }
             }
-        } else if not is{ s = tag, lit = "void" } {
+        } else if not spells{ s = tag, lit = "void" } {
             fail{ &r, problem = Problem::unknown_tag }
         }
         expect{ &r, c = ')' }
@@ -145,18 +145,18 @@ namespace ir_read {
 
     fn prim { mut r: Reader } -> ir::Prim {
         let s = sym{ &r }
-        if is{ s, lit = "i8" } { return ir::Prim::i8 }
-        if is{ s, lit = "i16" } { return ir::Prim::i16 }
-        if is{ s, lit = "i32" } { return ir::Prim::i32 }
-        if is{ s, lit = "i64" } { return ir::Prim::i64 }
-        if is{ s, lit = "u8" } { return ir::Prim::u8 }
-        if is{ s, lit = "u16" } { return ir::Prim::u16 }
-        if is{ s, lit = "u32" } { return ir::Prim::u32 }
-        if is{ s, lit = "u64" } { return ir::Prim::u64 }
-        if is{ s, lit = "usize" } { return ir::Prim::usize }
-        if is{ s, lit = "f32" } { return ir::Prim::f32 }
-        if is{ s, lit = "f64" } { return ir::Prim::f64 }
-        if not is{ s, lit = "bool" } { fail{ &r, problem = Problem::unknown_tag } }
+        if spells{ s, lit = "i8" } { return ir::Prim::i8 }
+        if spells{ s, lit = "i16" } { return ir::Prim::i16 }
+        if spells{ s, lit = "i32" } { return ir::Prim::i32 }
+        if spells{ s, lit = "i64" } { return ir::Prim::i64 }
+        if spells{ s, lit = "u8" } { return ir::Prim::u8 }
+        if spells{ s, lit = "u16" } { return ir::Prim::u16 }
+        if spells{ s, lit = "u32" } { return ir::Prim::u32 }
+        if spells{ s, lit = "u64" } { return ir::Prim::u64 }
+        if spells{ s, lit = "usize" } { return ir::Prim::usize }
+        if spells{ s, lit = "f32" } { return ir::Prim::f32 }
+        if spells{ s, lit = "f64" } { return ir::Prim::f64 }
+        if not spells{ s, lit = "bool" } { fail{ &r, problem = Problem::unknown_tag } }
         return ir::Prim::bool
     }
 
@@ -264,50 +264,50 @@ namespace ir_read {
         expect{ &r, c = '(' }
         let tag = sym{ &r }
         let mut s = ir::Stmt::brk{ label = null }
-        if is{ s = tag, lit = "let" } {
+        if spells{ s = tag, lit = "let" } {
             let slot = id32{ &r }
             s = ir::Stmt::define{ slot, init = try expr{ &r } }
-        } else if is{ s = tag, lit = "do" } {
+        } else if spells{ s = tag, lit = "do" } {
             s = ir::Stmt::eval{ e = try expr{ &r } }
-        } else if is{ s = tag, lit = "set" } {
+        } else if spells{ s = tag, lit = "set" } {
             let place = try expr{ &r }
             s = ir::Stmt::assign{ place, value = try expr{ &r } }
-        } else if is{ s = tag, lit = "if" } {
+        } else if spells{ s = tag, lit = "if" } {
             let c = try expr{ &r }
             let then = try block{ &r }
             let els: ?ir::Block = if none{ &r } { null } else { try block{ &r } }
             s = ir::Stmt::cond{ c, then, els }
-        } else if is{ s = tag, lit = "return" } {
+        } else if spells{ s = tag, lit = "return" } {
             let value: ?ir::Expr = if none{ &r } { null } else { try expr{ &r } }
             s = ir::Stmt::ret{ value }
-        } else if is{ s = tag, lit = "zero" } {
+        } else if spells{ s = tag, lit = "zero" } {
             s = ir::Stmt::zero{ slot = id32{ &r } }
-        } else if is{ s = tag, lit = "while" } {
+        } else if spells{ s = tag, lit = "while" } {
             let c = try expr{ &r }
             let body = try block{ &r }
             s = ir::Stmt::loop{ c, body, label = label{ &r } }
-        } else if is{ s = tag, lit = "match" } {
+        } else if spells{ s = tag, lit = "match" } {
             let scrut = try expr{ &r }
             let through = flag{ &r }
             s = ir::Stmt::choose{ scrut, through, arms = try arms{ &r } }
-        } else if is{ s = tag, lit = "switch" } {
+        } else if spells{ s = tag, lit = "switch" } {
             let scrut = try expr{ &r }
             s = ir::Stmt::switch{ scrut, cases = try cases{ &r } }
-        } else if is{ s = tag, lit = "letelse" } {
+        } else if spells{ s = tag, lit = "letelse" } {
             let init = try expr{ &r }
             let variant = id32{ &r }
             let binds = try bind_list{ &r }
             let els_variant = opt_id{ &r }
             let els_binds = try bind_list{ &r }
             s = ir::Stmt::let_else{ init, variant, binds, els_variant, els_binds, els = try block{ &r } }
-        } else if is{ s = tag, lit = "defer" } {
+        } else if spells{ s = tag, lit = "defer" } {
             s = ir::Stmt::deferred{ body = try block{ &r } }
-        } else if is{ s = tag, lit = "panic" } {
+        } else if spells{ s = tag, lit = "panic" } {
             let at = pos{ &r }
             s = ir::Stmt::panic{ pos = at, msg = try string{ &r } }
-        } else if is{ s = tag, lit = "continue" } {
+        } else if spells{ s = tag, lit = "continue" } {
             s = ir::Stmt::cont{ label = label{ &r } }
-        } else if is{ s = tag, lit = "break" } {
+        } else if spells{ s = tag, lit = "break" } {
             s = ir::Stmt::brk{ label = label{ &r } }
         } else {
             fail{ &r, problem = Problem::unknown_tag }
@@ -396,146 +396,146 @@ namespace ir_read {
             return ir::Expr{ ty, k }
         }
         // Roughly by how often each appears.
-        if is{ s = tag, lit = "local" } {
+        if spells{ s = tag, lit = "local" } {
             k = ir::ExprKind::local{ slot = id32{ &r } }
-        } else if is{ s = tag, lit = "constref" } {
+        } else if spells{ s = tag, lit = "constref" } {
             k = ir::ExprKind::constref{ id = id32{ &r } }
-        } else if is{ s = tag, lit = "cvar" } {
+        } else if spells{ s = tag, lit = "cvar" } {
             k = ir::ExprKind::cvar{ id = id32{ &r } }
-        } else if is{ s = tag, lit = "call" } {
+        } else if spells{ s = tag, lit = "call" } {
             let callee = id32{ &r }
             k = ir::ExprKind::call{ callee, args = try args{ &r } }
-        } else if is{ s = tag, lit = "addr" } {
+        } else if spells{ s = tag, lit = "addr" } {
             k = ir::ExprKind::addr{ place = try sub{ &r } }
-        } else if is{ s = tag, lit = "deref" } {
+        } else if spells{ s = tag, lit = "deref" } {
             let ptr = try sub{ &r }
             k = ir::ExprKind::deref{ ptr, pos = pos{ &r } }
-        } else if is{ s = tag, lit = "field" } {
+        } else if spells{ s = tag, lit = "field" } {
             let base = try sub{ &r }
             k = ir::ExprKind::field{ base, index = id32{ &r } }
-        } else if is{ s = tag, lit = "int" } {
+        } else if spells{ s = tag, lit = "int" } {
             let negative = eat{ &r, c = '-' }
             k = ir::ExprKind::int{ negative, value = num{ &r } }
-        } else if is{ s = tag, lit = "cmp" } {
+        } else if spells{ s = tag, lit = "cmp" } {
             let op = cmp_op{ &r }
             let a = try sub{ &r }
             k = ir::ExprKind::cmp{ op, a, b = try sub{ &r } }
-        } else if is{ s = tag, lit = "arith" } {
+        } else if spells{ s = tag, lit = "arith" } {
             let op = arith_op{ &r }
             let a = try sub{ &r }
             let b = try sub{ &r }
             k = ir::ExprKind::arith{ op, a, b, pos = pos{ &r } }
-        } else if is{ s = tag, lit = "bits" } {
+        } else if spells{ s = tag, lit = "bits" } {
             let op = bit_op{ &r }
             let a = try sub{ &r }
             k = ir::ExprKind::bits{ op, a, b = try sub{ &r } }
-        } else if is{ s = tag, lit = "shift" } {
+        } else if spells{ s = tag, lit = "shift" } {
             let op = shift_op{ &r }
             let a = try sub{ &r }
             let b = try sub{ &r }
             k = ir::ExprKind::shift{ op, a, b, pos = pos{ &r } }
-        } else if is{ s = tag, lit = "variant" } {
+        } else if spells{ s = tag, lit = "variant" } {
             let index = id32{ &r }
             k = ir::ExprKind::variant{ index, items = try args{ &r } }
-        } else if is{ s = tag, lit = "struct" } {
+        } else if spells{ s = tag, lit = "struct" } {
             k = ir::ExprKind::record{ items = try args{ &r } }
-        } else if is{ s = tag, lit = "str" } {
+        } else if spells{ s = tag, lit = "str" } {
             k = ir::ExprKind::str{ bytes = try string{ &r } }
-        } else if is{ s = tag, lit = "sbytes" } {
+        } else if spells{ s = tag, lit = "sbytes" } {
             k = ir::ExprKind::sbytes{ bytes = try string{ &r } }
-        } else if is{ s = tag, lit = "cstr" } {
+        } else if spells{ s = tag, lit = "cstr" } {
             k = ir::ExprKind::cstr{ bytes = try string{ &r } }
-        } else if is{ s = tag, lit = "some" } {
+        } else if spells{ s = tag, lit = "some" } {
             k = ir::ExprKind::some{ e = try sub{ &r } }
-        } else if is{ s = tag, lit = "widen" } {
+        } else if spells{ s = tag, lit = "widen" } {
             k = ir::ExprKind::widen{ e = try sub{ &r } }
-        } else if is{ s = tag, lit = "payload" } {
+        } else if spells{ s = tag, lit = "payload" } {
             let base = try sub{ &r }
             let variant = id32{ &r }
             k = ir::ExprKind::payload{ base, variant, field = id32{ &r } }
-        } else if is{ s = tag, lit = "index" } {
+        } else if spells{ s = tag, lit = "index" } {
             let base = try sub{ &r }
             let i = try sub{ &r }
             k = ir::ExprKind::index{ base, i, pos = pos{ &r } }
-        } else if is{ s = tag, lit = "sindex" } {
+        } else if spells{ s = tag, lit = "sindex" } {
             let base = try sub{ &r }
             let i = try sub{ &r }
             k = ir::ExprKind::sindex{ base, i, pos = pos{ &r } }
-        } else if is{ s = tag, lit = "ssub" } {
+        } else if spells{ s = tag, lit = "ssub" } {
             let base = try sub{ &r }
             let lo = try sub{ &r }
             let hi: ?*ir::Expr = if none{ &r } { null } else { try sub{ &r } }
             k = ir::ExprKind::ssub{ base, lo, hi, pos = pos{ &r } }
-        } else if is{ s = tag, lit = "null" } {
+        } else if spells{ s = tag, lit = "null" } {
             k = ir::ExprKind::nil
-        } else if is{ s = tag, lit = "bool" } {
+        } else if spells{ s = tag, lit = "bool" } {
             k = ir::ExprKind::boolean{ value = flag{ &r } }
-        } else if is{ s = tag, lit = "isnull" } {
+        } else if spells{ s = tag, lit = "isnull" } {
             k = ir::ExprKind::isnull{ e = try sub{ &r } }
-        } else if is{ s = tag, lit = "notnull" } {
+        } else if spells{ s = tag, lit = "notnull" } {
             k = ir::ExprKind::notnull{ e = try sub{ &r } }
-        } else if is{ s = tag, lit = "not" } {
+        } else if spells{ s = tag, lit = "not" } {
             k = ir::ExprKind::lnot{ e = try sub{ &r } }
-        } else if is{ s = tag, lit = "and" } {
+        } else if spells{ s = tag, lit = "and" } {
             let a = try sub{ &r }
             k = ir::ExprKind::land{ a, b = try sub{ &r } }
-        } else if is{ s = tag, lit = "or" } {
+        } else if spells{ s = tag, lit = "or" } {
             let a = try sub{ &r }
             k = ir::ExprKind::lor{ a, b = try sub{ &r } }
-        } else if is{ s = tag, lit = "ptradd" } {
+        } else if spells{ s = tag, lit = "ptradd" } {
             let p = try sub{ &r }
             k = ir::ExprKind::ptradd{ p, n = try sub{ &r } }
-        } else if is{ s = tag, lit = "fnref" } {
+        } else if spells{ s = tag, lit = "fnref" } {
             k = ir::ExprKind::fnref{ callee = id32{ &r } }
-        } else if is{ s = tag, lit = "ifx" } {
+        } else if spells{ s = tag, lit = "ifx" } {
             let c = try sub{ &r }
             let then = try block{ &r }
             k = ir::ExprKind::ifx{ c, then, els = try block{ &r } }
-        } else if is{ s = tag, lit = "matchx" } {
+        } else if spells{ s = tag, lit = "matchx" } {
             let scrut = try sub{ &r }
             let through = flag{ &r }
             k = ir::ExprKind::matchx{ scrut, through, arms = try arms{ &r } }
-        } else if is{ s = tag, lit = "switchx" } {
+        } else if spells{ s = tag, lit = "switchx" } {
             let scrut = try sub{ &r }
             k = ir::ExprKind::switchx{ scrut, cases = try cases{ &r } }
-        } else if is{ s = tag, lit = "dcall" } {
+        } else if spells{ s = tag, lit = "dcall" } {
             let callee = try sub{ &r }
             k = ir::ExprKind::dcall{ callee, args = try args{ &r } }
-        } else if is{ s = tag, lit = "as" } {
+        } else if spells{ s = tag, lit = "as" } {
             let e = try sub{ &r }
             k = ir::ExprKind::convert{ e, pos = pos{ &r } }
-        } else if is{ s = tag, lit = "neg" } {
+        } else if spells{ s = tag, lit = "neg" } {
             let e = try sub{ &r }
             k = ir::ExprKind::neg{ e, pos = pos{ &r } }
-        } else if is{ s = tag, lit = "float" } {
+        } else if spells{ s = tag, lit = "float" } {
             k = ir::ExprKind::float{ value = float{ &r, ty } }
-        } else if is{ s = tag, lit = "array" } {
+        } else if spells{ s = tag, lit = "array" } {
             k = ir::ExprKind::array{ elems = try exprs{ &r } }
-        } else if is{ s = tag, lit = "repeat" } {
+        } else if spells{ s = tag, lit = "repeat" } {
             k = ir::ExprKind::repeat{ elem = try sub{ &r } }
-        } else if is{ s = tag, lit = "seq" } {
+        } else if spells{ s = tag, lit = "seq" } {
             let first = try sub{ &r }
             k = ir::ExprKind::seq{ first, then = try sub{ &r } }
-        } else if is{ s = tag, lit = "with" } {
+        } else if spells{ s = tag, lit = "with" } {
             let slot = id32{ &r }
             let init = try sub{ &r }
             k = ir::ExprKind::with{ slot, init, body = try sub{ &r } }
-        } else if is{ s = tag, lit = "cast" } {
+        } else if spells{ s = tag, lit = "cast" } {
             k = ir::ExprKind::cast{ e = try sub{ &r } }
-        } else if is{ s = tag, lit = "ptraddr" } {
+        } else if spells{ s = tag, lit = "ptraddr" } {
             k = ir::ExprKind::ptraddr{ e = try sub{ &r } }
-        } else if is{ s = tag, lit = "trunc" } {
+        } else if spells{ s = tag, lit = "trunc" } {
             k = ir::ExprKind::trunc{ e = try sub{ &r } }
-        } else if is{ s = tag, lit = "wrap" } {
+        } else if spells{ s = tag, lit = "wrap" } {
             let op = arith_op{ &r }
             let a = try sub{ &r }
             k = ir::ExprKind::wrap{ op, a, b = try sub{ &r } }
-        } else if is{ s = tag, lit = "fnconv" } {
+        } else if spells{ s = tag, lit = "fnconv" } {
             k = ir::ExprKind::fnconv{ e = try sub{ &r } }
-        } else if is{ s = tag, lit = "bind" } {
+        } else if spells{ s = tag, lit = "bind" } {
             let callee = id32{ &r }
             k = ir::ExprKind::bind{ callee, args = try args{ &r } }
-        } else if is{ s = tag, lit = "dbind" } {
+        } else if spells{ s = tag, lit = "dbind" } {
             let callee = try sub{ &r }
             k = ir::ExprKind::dbind{ callee, args = try args{ &r } }
         } else {
@@ -583,37 +583,37 @@ namespace ir_read {
 
     fn arith_op { mut r: Reader } -> ir::ArithOp {
         let s = sym{ &r }
-        if is{ s, lit = "add" } { return ir::ArithOp::add }
-        if is{ s, lit = "sub" } { return ir::ArithOp::sub }
-        if is{ s, lit = "mul" } { return ir::ArithOp::mul }
-        if is{ s, lit = "div" } { return ir::ArithOp::div }
-        if not is{ s, lit = "rem" } { fail{ &r, problem = Problem::unknown_tag } }
+        if spells{ s, lit = "add" } { return ir::ArithOp::add }
+        if spells{ s, lit = "sub" } { return ir::ArithOp::sub }
+        if spells{ s, lit = "mul" } { return ir::ArithOp::mul }
+        if spells{ s, lit = "div" } { return ir::ArithOp::div }
+        if not spells{ s, lit = "rem" } { fail{ &r, problem = Problem::unknown_tag } }
         return ir::ArithOp::rem
     }
 
     fn bit_op { mut r: Reader } -> ir::BitOp {
         let s = sym{ &r }
-        if is{ s, lit = "and" } { return ir::BitOp::bit_and }
-        if is{ s, lit = "or" } { return ir::BitOp::bit_or }
-        if not is{ s, lit = "xor" } { fail{ &r, problem = Problem::unknown_tag } }
+        if spells{ s, lit = "and" } { return ir::BitOp::bit_and }
+        if spells{ s, lit = "or" } { return ir::BitOp::bit_or }
+        if not spells{ s, lit = "xor" } { fail{ &r, problem = Problem::unknown_tag } }
         return ir::BitOp::bit_xor
     }
 
     fn shift_op { mut r: Reader } -> ir::ShiftOp {
         let s = sym{ &r }
-        if is{ s, lit = "shl" } { return ir::ShiftOp::shl }
-        if not is{ s, lit = "shr" } { fail{ &r, problem = Problem::unknown_tag } }
+        if spells{ s, lit = "shl" } { return ir::ShiftOp::shl }
+        if not spells{ s, lit = "shr" } { fail{ &r, problem = Problem::unknown_tag } }
         return ir::ShiftOp::shr
     }
 
     fn cmp_op { mut r: Reader } -> ir::CmpOp {
         let s = sym{ &r }
-        if is{ s, lit = "eq" } { return ir::CmpOp::eq }
-        if is{ s, lit = "ne" } { return ir::CmpOp::ne }
-        if is{ s, lit = "lt" } { return ir::CmpOp::lt }
-        if is{ s, lit = "le" } { return ir::CmpOp::le }
-        if is{ s, lit = "gt" } { return ir::CmpOp::gt }
-        if not is{ s, lit = "ge" } { fail{ &r, problem = Problem::unknown_tag } }
+        if spells{ s, lit = "eq" } { return ir::CmpOp::eq }
+        if spells{ s, lit = "ne" } { return ir::CmpOp::ne }
+        if spells{ s, lit = "lt" } { return ir::CmpOp::lt }
+        if spells{ s, lit = "le" } { return ir::CmpOp::le }
+        if spells{ s, lit = "gt" } { return ir::CmpOp::gt }
+        if not spells{ s, lit = "ge" } { fail{ &r, problem = Problem::unknown_tag } }
         return ir::CmpOp::ge
     }
 
@@ -788,7 +788,7 @@ namespace ir_read {
     }
 
     // Does symbol s spell `lit`?
-    fn is { s: ir::Bytes, lit: []u8 } -> bool {
+    fn spells { s: ir::Bytes, lit: []u8 } -> bool {
         return slice::eq_bytes{ a = s, b = lit }
     }
 

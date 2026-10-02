@@ -150,6 +150,7 @@ namespace syntax {
         ifx{ x: If },
         matchx{ x: Match },                             // `ifnull` and `iferr` too, at the operator
         trye{ e: *Expr, panics: bool },                 // try e, or try! e if panics
+        isx{ e: *Expr, pats: []Pattern },               // `e is a | b`, at the `is`
     }
 
     // An item in braces. A pun `c` has the value `c`, and `&d` the value `&d`. A spread `..e`

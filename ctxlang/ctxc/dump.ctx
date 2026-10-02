@@ -625,26 +625,29 @@ namespace tree {
             d.depth = d.depth + 1
             let mut k: usize = 0
             while k < arm.pats.len {
-                let pat = arm.pats[k]
-                start{ &d, at = pat.span.start }
-                put{ &d, s = "pat " }
-                let mut q: usize = 0
-                while q < pat.quals.len {
-                    name{ &d, n = pat.quals[q] }
-                    put{ &d, s = "::" }
-                    q = q + 1
-                }
-                name{ &d, n = pat.variant }
-                end{ &d }
-                d.depth = d.depth + 1
-                binder_list{ &d, xs = pat.binders }
-                d.depth = d.depth - 1
+                pattern{ &d, pat = arm.pats[k] }
                 k = k + 1
             }
             block{ &d, b = arm.body }
             d.depth = d.depth - 1
             i = i + 1
         }
+        d.depth = d.depth - 1
+    }
+
+    fn pattern { mut d: Dumper, pat: syntax::Pattern } {
+        start{ &d, at = pat.span.start }
+        put{ &d, s = "pat " }
+        let mut q: usize = 0
+        while q < pat.quals.len {
+            name{ &d, n = pat.quals[q] }
+            put{ &d, s = "::" }
+            q = q + 1
+        }
+        name{ &d, n = pat.variant }
+        end{ &d }
+        d.depth = d.depth + 1
+        binder_list{ &d, xs = pat.binders }
         d.depth = d.depth - 1
     }
 
@@ -809,6 +812,17 @@ namespace tree {
             trye{ e = x, panics } => {
                 line{ &d, at, s = if panics { "try!" } else { "try" } }
                 sub{ &d, e = x.* }
+            }
+            isx{ e = x, pats } => {
+                line{ &d, at, s = "is" }
+                d.depth = d.depth + 1
+                expr{ &d, e = x.* }
+                let mut i: usize = 0
+                while i < pats.len {
+                    pattern{ &d, pat = pats[i] }
+                    i = i + 1
+                }
+                d.depth = d.depth - 1
             }
         }
     }
@@ -1348,6 +1362,20 @@ namespace decls {
             trye{ e = x, panics } => {
                 head = if panics { "try!" } else { "try" }
                 one = x.*
+            }
+            isx{ e = x, pats } => {
+                try! @fmt(&out, "is {}\n", t)
+                expr{ &out, c, e = x.*, depth = d + 1 }
+                let mut i: usize = 0
+                while i < pats.len {
+                    indent{ &out, depth = d + 1 }
+                    dump::put{ &out, s = "pat " }
+                    dump::put{ &out, s = check::str{ s = pats[i].variant.text } }
+                    dump::put{ &out, s = "\n" }
+                    binds{ &out, c, xs = pats[i].binders, depth = d + 2 }
+                    i = i + 1
+                }
+                return
             }
             binary{ op, a, b } => {
                 try! @fmt(&out, "binary {} {}\n", check::str{ s = parser::kind_text{ k = op } }, t)

@@ -24,29 +24,7 @@ interpreter ctxc replaced, is at `8436f4d`.
 
 1. **Unwrap in a `let`, by leaving.** `let p = e else { ... }` with a plain name: for `e: ?T`,
    shorthand for `let some{ value = p } = e else { ... }`.
-2. **`is`: testing for one variant** (FRICTION #4). Most of ctxc's `?U` matches ask one question,
-   "is it this variant?", with null and every other variant meaning no:
-   `if r != null { match r { local{ var } => { ... } else => {} } }`. `e is P` asks it directly,
-   as C#'s `is` and Rust's `if let` do: `if r is local{ var } { ... }`.
-   - `e is P` is a `bool`: true when `e` holds `P`'s variant. `P` is a pattern as in a match arm
-     (§8, Match), and may list alternatives with `|` when they bind nothing:
-     `r is constant | variant | enumval`. Bindings are read-only, without `&`.
-   - `e` is a union, an enum or a `?T`, not a pointer (as with let-else) and not a `!T`.
-   - On a `?U` for a union or enum `U`, `P` may name `U`'s variants: null is then just one more
-     value that doesn't match. `null` and `some` still name the optional's own variants.
-     `match` doesn't change: it stays exhaustive over exactly the type it is given, and never
-     gets a `null` arm next to `U`'s variants.
-   - Its bindings are in scope wherever the test is known true, by the rules that narrow
-     `x != null` (§8, Optional, rules 4 and 5): in `b` of `a and b`, in the `if`'s first branch,
-     in a `while` body, and after an `if` whose branch leaves when it is false
-     (`if not (r is local{ var }) { return }`). Where they would be bound twice, or by only one
-     side of `or`, they aren't bound.
-   - It binds at the level of `==`: `not r is local` is `not (r is local)`, and
-     `a is x and b is y` needs no parentheses.
-   - Let-else sees through a `?U` the same way: `let decl{ i } = found else { return NONE }`,
-     whose `else` takes null too.
-   - On an enum it also compares an optional with a value: `map::get{ m = c.access, key } is field`.
-3. **Errors' remaining gaps.**
+2. **Errors' remaining gaps.**
    - A function whose result's set is inferred can't be a value of a function type, whose `!T`
      holds any error: that needs the thunk that widens a function value to also renumber its
      result.
@@ -56,8 +34,9 @@ interpreter ctxc replaced, is at `8436f4d`.
 wildcard inside a pattern (`os{ code = _ }`), and `else` stays the whole-arm default. Optional
 chaining (`a?.b`) needs no lambdas, but nothing in FRICTION.md asks for it yet. `==` between a `?T`
 and a `T` (FRICTION #8) would follow Swift: `T` widens to `?T`, two nulls are equal, and `!=` is
-`==`'s negation, so `null != x` is true. `is` covers enums, and only three integer comparisons
-in ctxc would use it; one of them (`d != null and d != NONE`) shows how `!=` would mislead.
+`==`'s negation, so `null != x` is true. `is` (spec §8) covers enums, and only three integer
+comparisons in ctxc would use it; one of them (`d != null and d != NONE`) shows how `!=` would
+mislead.
 
 ### 2. C interop
 

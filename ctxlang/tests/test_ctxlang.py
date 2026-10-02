@@ -646,6 +646,8 @@ class Parser(Base):
         for body, msg, line, col in [
             ('let v = if true { 1 }', 'an `if` expression needs an `else`', 2, 13),
             ('let b = 1 < 2 < 3', 'comparisons do not chain', 2, 19),
+            ('let b = r is a == b', 'comparisons do not chain', 2, 20),
+            ('let b = r == null is a', 'comparisons do not chain', 2, 23),
             ('f{ .., a }', "'..' must be the last item", 2, 12),
             ('f{ _, a }', "'_' must be the last item", 2, 11),
             ('let x = )', "expected an expression, found ')'", 2, 13),
@@ -3920,6 +3922,227 @@ fn main {} {
     let some{ value } = x else { return }
 }
 """, 'already declared')
+
+    def test_through_optional_union(self):
+        # On a `?U`, the pattern may name U's variant; the else takes null and U's others.
+        self.assertOutput("""
+union Decl { var{ i: i32 }, func{ name: i32 } }
+fn index { found: ?Decl } -> i32 {
+    let var{ i } = found else { return -1 }
+    return i
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = index{ found = Decl::var{ i = 4 } } }
+    io::println_i64{ &io, n = index{ found = Decl::func{ name = 2 } } }
+    io::println_i64{ &io, n = index{ found = null } }
+}
+""", '4\n-1\n-1\n')
+
+    def test_through_optional_no_else_pattern(self):
+        self.assertCompileError("""
+union Decl { var{ i: i32 }, func{ name: i32 } }
+fn main {} {
+    let found: ?Decl = null
+    let var{ i } = found else func{ name } { return }
+}
+""", "the `else` takes null too")
+
+
+class Is(Base):
+    """§8 Is: `e is P`, whether e holds P's variant, binding its fields where that is known."""
+
+    REF = """
+union Ref { local{ var: i32 }, constant{ value: i64 }, variant, enumval }
+enum Color: u8 { red, green, blue }
+fn find { n: i32 } -> ?Ref {
+    if n == 0 { return null }
+    if n == 1 { return Ref::local{ var = 7 } }
+    if n == 2 { return Ref::constant{ value = 9 } }
+    return Ref::variant
+}
+"""
+
+    def test_union(self):
+        self.assertOutput(self.REF + """
+fn main { mut io: Io } {
+    let a = Ref::local{ var = 1 }
+    let b = Ref::enumval
+    io::println_bool{ &io, n = a is local }
+    io::println_bool{ &io, n = a is variant }
+    io::println_bool{ &io, n = b is constant | variant | enumval }
+    io::println_bool{ &io, n = not a is local }
+}
+""", 'true\nfalse\ntrue\nfalse\n')
+
+    def test_enum(self):
+        self.assertOutput(self.REF + """
+fn main { mut io: Io } {
+    let c = Color::green
+    let o: ?Color = Color::blue
+    let n: ?Color = null
+    io::println_bool{ &io, n = c is green }
+    io::println_bool{ &io, n = c is red | blue }
+    io::println_bool{ &io, n = o is blue }
+    io::println_bool{ &io, n = n is blue }
+    io::println_bool{ &io, n = n is null | red }
+}
+""", 'true\nfalse\ntrue\nfalse\ntrue\n')
+
+    def test_optional_union(self):
+        # Null doesn't match U's variants; `null` and `some` name the optional's own.
+        self.assertOutput(self.REF + """
+fn main { mut io: Io } {
+    let mut i = 0
+    while i < 4 {
+        let r = find{ n = i }
+        io::println_bool{ &io, n = r is local }
+        io::println_bool{ &io, n = r is constant | variant }
+        io::println_bool{ &io, n = r is null }
+        io::println_bool{ &io, n = r is some }
+        i = i + 1
+    }
+}
+""", 'false\nfalse\ntrue\nfalse\n'
+     'true\nfalse\nfalse\ntrue\n'
+     'false\ntrue\nfalse\ntrue\n'
+     'false\ntrue\nfalse\ntrue\n')
+
+    def test_optional(self):
+        self.assertOutput("""
+fn has(T) { x: ?T } -> bool { return x is some }
+fn main { mut io: Io } {
+    let a: ?i32 = 5
+    let b: ?i32 = null
+    if a is some{ value } { io::println_i64{ &io, n = value } }
+    if b is some{ value = v } { io::println_i64{ &io, n = v } } else { io::println{ &io, s = "null" } }
+    io::println_bool{ &io, n = b is null }
+    io::println_bool{ &io, n = has{ x = a } }
+}
+""", '5\nnull\ntrue\ntrue\n')
+
+    def test_bindings(self):
+        # In the `if`'s first branch, after `and`, in an `if` expression and in a `while` body.
+        self.assertOutput(self.REF + """
+fn main { mut io: Io } {
+    let mut i = 0
+    while i < 4 {
+        let r = find{ n = i }
+        if r is local{ var } { io::println_i64{ &io, n = var } }
+        if r is constant{ value = v } and v > 5 { io::println_i64{ &io, n = v } }
+        io::println_i64{ &io, n = if not (r is local{ var }) { -1 } else { var * 2 } }
+        i = i + 1
+    }
+    let xs: [3]?i32 = [1, 2, null]
+    let mut k: usize = 0
+    let mut x = xs[0]
+    while x is some{ value } {
+        io::println_i64{ &io, n = value * 10 }
+        k = k + 1
+        x = xs[k]
+    }
+}
+""", '-1\n7\n14\n9\n-1\n-1\n10\n20\n')
+
+    def test_bindings_after_leaving_if(self):
+        self.assertOutput(self.REF + """
+fn value { r: ?Ref } -> i64 {
+    if not (r is constant{ value }) { return -1 }
+    return value
+}
+fn local_var { r: Ref } -> i32 {
+    if not r is local{ var } or var < 0 { return 0 }
+    return var
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = value{ r = find{ n = 2 } } }
+    io::println_i64{ &io, n = value{ r = null } }
+    io::println_i64{ &io, n = local_var{ r = Ref::local{ var = 3 } } }
+    io::println_i64{ &io, n = local_var{ r = Ref::local{ var = -3 } } }
+    io::println_i64{ &io, n = local_var{ r = Ref::variant } }
+}
+""", '9\n-1\n3\n0\n0\n')
+
+    def test_precedence(self):
+        # At the level of `==`: under `and` and `not`, above `|`, `ifnull`.
+        self.assertOutput(self.REF + """
+fn main { mut io: Io } {
+    let a = Ref::local{ var = 1 }
+    let b: ?Ref = null
+    io::println_bool{ &io, n = a is local and b is null }
+    io::println_bool{ &io, n = not b is local }
+    io::println_bool{ &io, n = b ifnull a is local | enumval }
+}
+""", 'true\ntrue\ntrue\n')
+
+    def test_errors(self):
+        for body, fragment in [
+            ('if r is nope { }', '?Ref has no variant `nope`'),
+            ('if c is purple { }', 'Color has no variant `purple`'),
+            ('if r is local{ var } | variant { }', 'an `is` with `|` cannot bind'),
+            ('if r is local{ &var } { }', '`&var` needs a pointer scrutinee'),
+            ('let p = &r\n    if p is null { }', '`is` cannot test through a pointer; use `match`'),
+            ('let e: !i32 = 1\n    if e is ok { }', '`is` cannot test a `!T` or an error'),
+            ('if true is local { }', '`is` needs a union, enum or optional value, got bool'),
+            ('if r is local | local { }', 'variant `local` is listed twice'),
+            ('if c is red{ x } { }', 'variant `red` has no payload'),
+            ('if c is Color::red { }', '`is` names a variant alone: write `red`'),
+        ]:
+            with self.subTest(body=body):
+                self.assertCompileError(self.REF + """
+fn main {} {
+    let r = find{ n = 1 }
+    let c = Color::red
+    %s
+}
+""" % body, fragment)
+
+    def test_bindings_where_not_known(self):
+        # Outside the test, on one side of `or`, bound twice, after an `if` that doesn't leave.
+        for body in [
+            'let b = r is local{ var }\n    _ = var',
+            'if r is local{ var } or true { _ = var }',
+            'if r is local{ var } { } else { _ = var }',
+            'if r is local{ var } and s is local{ var } { _ = var }',
+            'if not (r is local{ var }) { }\n    _ = var',
+            'while r is local{ var } { break }\n    _ = var',
+        ]:
+            with self.subTest(body=body):
+                self.assertCompileError(self.REF + """
+fn main {} {
+    let r = find{ n = 1 }
+    let s = find{ n = 2 }
+    %s
+}
+""" % body, 'unknown name `var`')
+
+    def test_later_let_of_a_binding(self):
+        # After a leaving `if`, a binding is declared in the block, as by let-else.
+        self.assertCompileError(self.REF + """
+fn main {} {
+    let r = find{ n = 1 }
+    if not (r is local{ var }) { return }
+    let var = 2
+}
+""", '`var` is already declared in this scope')
+
+    def test_binding_escapes(self):
+        # A binding holds what the tested value holds.
+        self.assertCompileError("""
+fn f {} -> *i32 {
+    let x = 1
+    let p: ?*i32 = &x
+    if p is some{ value } { return value }
+    @panic()
+}
+fn main {} { _ = f{} }
+""", 'returned value holds the address of local `x`')
+
+    def test_is_is_a_keyword(self):
+        self.assertCompileError("""
+fn main {} {
+    let is = 1
+}
+""", "expected a name, found 'is'")
 
 
 class IfNull(Base):

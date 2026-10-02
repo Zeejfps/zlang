@@ -459,16 +459,19 @@ namespace recover {
             within{ &c, span = arm.span, lo, hi }
             let mut k: usize = 0
             while k < arm.pats.len {
-                let pat = arm.pats[k]
-                within{ &c, span = pat.span, lo = arm.span.start, hi = arm.span.end }
-                names{ &c, xs = pat.quals, lo = pat.span.start, hi = pat.span.end }
-                name{ &c, n = pat.variant, lo = pat.span.start, hi = pat.span.end }
-                binder_list{ &c, xs = pat.binders, lo = pat.span.start, hi = pat.span.end }
+                pattern{ &c, pat = arm.pats[k], lo = arm.span.start, hi = arm.span.end }
                 k = k + 1
             }
             block{ &c, x = arm.body, lo = arm.span.start, hi = arm.span.end }
             i = i + 1
         }
+    }
+
+    fn pattern { mut c: Check, pat: syntax::Pattern, lo: u32, hi: u32 } {
+        within{ &c, span = pat.span, lo, hi }
+        names{ &c, xs = pat.quals, lo = pat.span.start, hi = pat.span.end }
+        name{ &c, n = pat.variant, lo = pat.span.start, hi = pat.span.end }
+        binder_list{ &c, xs = pat.binders, lo = pat.span.start, hi = pat.span.end }
     }
 
     fn expr { mut c: Check, e: syntax::Expr, lo: u32, hi: u32 } {
@@ -534,6 +537,14 @@ namespace recover {
             ifx{ x } => { if_node{ &c, x, lo = a, hi = b } }
             matchx{ x } => { match_node{ &c, x, lo = a, hi = b } }
             trye{ e = x } => { expr{ &c, e = x.*, lo = a, hi = b } }
+            isx{ e = x, pats } => {
+                expr{ &c, e = x.*, lo = a, hi = b }
+                let mut i: usize = 0
+                while i < pats.len {
+                    pattern{ &c, pat = pats[i], lo = a, hi = b }
+                    i = i + 1
+                }
+            }
         }
     }
 }

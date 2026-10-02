@@ -538,6 +538,14 @@ namespace lower {
                 return ir::Stmt::define{ slot = sl, init = conv{ &l, e = init, to = t } }
             }
             let_else{ variant, binders, init, els_variant, els_binders, els } => {
+                if through_opt{ &l, init, variant = variant.text } {
+                    // On a `?U`, for a variant of U: `if not (init is variant{ ... }) { els }`.
+                    let mut pats = list::new(syntax::Pattern){ realloc = arena::alloc, heap = l.heap }
+                    try! list::push{ list = &pats, item = syntax::Pattern{ span = s.span, quals = slice::empty(syntax::Name){}, variant, binders } }
+                    let test = is_ex{ &l, x = init, pats = list::items{ list = pats } }
+                    let c = mk{ ty = test.ty, k = ir::ExprKind::lnot{ e = box{ l, e = test } } }
+                    return ir::Stmt::cond{ c, then = block{ &l, b = els }, els = null }
+                }
                 let x = ex{ &l, e = init }
                 let ut = T{ &l, t = check::type_of_expr{ c = l.c.*, e = init } }
                 let vs = check::variants_of{ c = l.c, t = types::prune{ s = l.c.ty, t = ut } }
@@ -604,6 +612,14 @@ namespace lower {
             deferred{ body } => { return ir::Stmt::deferred{ body = block{ &l, b = body } } }
             choose{ x } => { return match_stmt{ &l, x, t = types::NO_TYPE, leaving = false } }
             error => { @panic("lower: a statement that didn't parse") }
+        }
+    }
+
+    // Whether a let-else's variant is one of the U of init's `?U`.
+    fn through_opt { mut l: Lower, init: syntax::Expr, variant: []u8 } -> bool {
+        match get{ l, t = T{ &l, t = check::type_of_expr{ c = l.c.*, e = init } } } {
+            opt => { return not slice::eq_bytes{ a = variant, b = "null" } and not slice::eq_bytes{ a = variant, b = "some" } }
+            else => { return false }
         }
     }
 
@@ -1497,8 +1513,96 @@ namespace lower {
                 let scrut = ex{ &l, e = x.* }
                 return mk{ ty = tid{ &l, t }, k = ir::ExprKind::matchx{ scrut = box{ l, e = scrut }, through = false, arms = try_arms{ &l, x = x.*, value = true, panics, pos = epos{ &l, e } } } }
             }
+            isx{ e = x, pats } => { return is_ex{ &l, x = x.*, pats } }
             error => { @panic("lower: an expression that didn't parse") }
         }
+    }
+
+    // `x is P` (§8, Is): a match on x giving true for P's variants and false for the others. On
+    // a `?U`, patterns of U's variants go in an inner match on the value, which `some` binds to
+    // a temporary.
+    fn is_ex { mut l: Lower, x: syntax::Expr, pats: []syntax::Pattern } -> ir::Expr {
+        let scrut = ex{ &l, e = x }
+        let t = types::prune{ s = l.c.ty, t = T{ &l, t = check::type_of_expr{ c = l.c.*, e = x } } }
+        let vs = check::variants_of{ c = l.c, t }
+        let mut own = list::new(syntax::Pattern){ realloc = arena::alloc, heap = l.heap }
+        let mut deep = list::new(syntax::Pattern){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < pats.len {
+            let xs = if check::variant_index{ vs, name = pats[i].variant.text } == NONE { &deep } else { &own }
+            try! list::push{ list = xs, item = pats[i] }
+            i = i + 1
+        }
+        if deep.len == 0 { return test{ &l, scrut, t, vs, pats } }
+        let u = types::prune{ s = l.c.ty, t = opt_elem{ l, t } }
+        let ut = tid{ &l, t = u }
+        let slot = temp{ &l, ty = ut }
+        let inner = test{ &l, scrut = mk{ ty = ut, k = ir::ExprKind::local{ slot } }, t = u, vs = check::variants_of{ c = l.c, t = u }, pats = list::items{ list = deep } }
+        let mine = list::items{ list = own }
+        let none = slice::empty(ir::Bind){}
+        let mut take = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+        add_bind{ xs = &take, b = ir::Bind{ slot, field = 0, by_ref = false } }
+        let mut out = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+        add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 0, binds = none } }, body = bool_block{ &l, value = has_pat{ pats = mine, name = "null" } } }
+        if has_pat{ pats = mine, name = "some" } {
+            add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = none } }, body = bool_block{ &l, value = true } }
+        } else {
+            let body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = inner } }
+            add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = list::items{ list = take } } }, body }
+        }
+        return mk{ ty = tid{ &l, t = types::BOOL }, k = ir::ExprKind::matchx{ scrut = box{ l, e = scrut }, through = false, arms = list::items{ list = out } } }
+    }
+
+    // Whether scrut, of type t with variants vs, holds one of pats' variants: a switch on an
+    // enum, else a match, whose one pattern binds its fields.
+    fn test { mut l: Lower, scrut: ir::Expr, t: Id, vs: []check::Variant, pats: []syntax::Pattern } -> ir::Expr {
+        let ty = tid{ &l, t = types::BOOL }
+        let all = pats.len == vs.len
+        match types::get{ s = l.c.ty, id = t } {
+            enumeration{ decl } => {
+                let d = check::get_decl{ c = l.c.*, d = decl }
+                let names = check::enum_names{ c = l.c.*, d = decl }
+                let mut vals = list::new(ir::Int){ realloc = arena::alloc, heap = l.heap }
+                let mut i: usize = 0
+                while i < pats.len {
+                    try! list::push{ list = &vals, item = int_of{ v = d.values[name_index{ names, name = pats[i].variant.text }] } }
+                    i = i + 1
+                }
+                let mut cases = list::new(ir::Case){ realloc = arena::alloc, heap = l.heap }
+                try! list::push{ list = &cases, item = ir::Case{ values = list::items{ list = vals }, body = bool_block{ &l, value = true } } }
+                if not all { try! list::push{ list = &cases, item = ir::Case{ values = slice::empty(ir::Int){}, body = bool_block{ &l, value = false } } } }
+                return mk{ ty, k = ir::ExprKind::switchx{ scrut = box{ l, e = scrut }, cases = list::items{ list = cases } } }
+            }
+            else => {}
+        }
+        let mut ps = list::new(ir::Pat){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < pats.len {
+            let vi = variant_at{ vs, name = pats[i].variant.text }
+            let bs = if pats.len == 1 { binds{ &l, binders = pats[i].binders, fields = vs[vi].fields } } else { slice::empty(ir::Bind){} }
+            try! list::push{ list = &ps, item = ir::Pat{ variant = vi, binds = bs } }
+            i = i + 1
+        }
+        let mut out = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+        add_arm{ l, xs = &out, pats = list::items{ list = ps }, body = bool_block{ &l, value = true } }
+        if not all { add_arm{ l, xs = &out, pats = slice::empty(ir::Pat){}, body = bool_block{ &l, value = false } } }
+        return mk{ ty, k = ir::ExprKind::matchx{ scrut = box{ l, e = scrut }, through = false, arms = list::items{ list = out } } }
+    }
+
+    // A value block of a bool alone.
+    fn bool_block { mut l: Lower, value: bool } -> ir::Block {
+        let x = mk{ ty = tid{ &l, t = types::BOOL }, k = ir::ExprKind::boolean{ value } }
+        return ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = x } }
+    }
+
+    // Whether one of pats names variant `name`.
+    fn has_pat { pats: []syntax::Pattern, name: []u8 } -> bool {
+        let mut i: usize = 0
+        while i < pats.len {
+            if slice::eq_bytes{ a = pats[i].variant.text, b = name } { return true }
+            i = i + 1
+        }
+        return false
     }
 
     // A string literal: a [N]u8 array, or a view of static bytes as a []u8 or a utf8::String.

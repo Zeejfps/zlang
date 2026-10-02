@@ -52,10 +52,10 @@ namespace parser {
         skip_semis{ &p }
         while true {
             if top {
-                if is{ p, k = tok::Kind::eof } { break }
-            } else if is{ p, k = tok::Kind::rbrace } {
+                if next_is{ p, k = tok::Kind::eof } { break }
+            } else if next_is{ p, k = tok::Kind::rbrace } {
                 break
-            } else if is{ p, k = tok::Kind::eof } {
+            } else if next_is{ p, k = tok::Kind::eof } {
                 fail{ &p, msg = "expected '}' to close namespace" }
                 break
             }
@@ -94,16 +94,16 @@ namespace parser {
             skip{ &p }
             skip{ &p }
             let name = ident{ &p }
-            if is{ p, k = tok::Kind::lparen } { fail{ &p, msg = "an extern union cannot have generic parameters" } }
+            if next_is{ p, k = tok::Kind::lparen } { fail{ &p, msg = "an extern union cannot have generic parameters" } }
             d = syntax::DeclKind::record{ name, tparams = slice::empty(syntax::Name){}, fields = plain_fields{ &p }, untagged = true }
         } else if k == tok::Kind::kw_extern {
             skip{ &p }
             expect{ &p, k = tok::Kind::kw_fn }
             let name = ident{ &p }
-            if is{ p, k = tok::Kind::lparen } { fail{ &p, msg = "an extern fn cannot have generic parameters" } }
+            if next_is{ p, k = tok::Kind::lparen } { fail{ &p, msg = "an extern fn cannot have generic parameters" } }
             let params = ctx_fields{ &p }
             let ret: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { type_expr{ &p } } else { null }
-            if is{ p, k = tok::Kind::lbrace } and not nl{ p } { fail{ &p, msg = "an extern fn has no body: C provides it" } }
+            if next_is{ p, k = tok::Kind::lbrace } and not nl{ p } { fail{ &p, msg = "an extern fn has no body: C provides it" } }
             let at = prev_end{ p }
             let body = syntax::Block{ id = new_id{ &p }, span = source::Span{ file = p.file, start = at, end = at }, stmts = slice::empty(syntax::Stmt){} }
             d = syntax::DeclKind::func{ name, tparams = slice::empty(syntax::Name){}, params, ret, body, external = true }
@@ -120,7 +120,7 @@ namespace parser {
         } else if k == tok::Kind::kw_enum {
             skip{ &p }
             let name = ident{ &p }
-            if is{ p, k = tok::Kind::lparen } { fail{ &p, msg = "an enum cannot have generic parameters" } }
+            if next_is{ p, k = tok::Kind::lparen } { fail{ &p, msg = "an enum cannot have generic parameters" } }
             expect{ &p, k = tok::Kind::colon }
             let base = type_expr{ &p }
             d = syntax::DeclKind::enumeration{ name, base, variants = enum_variants{ &p } }
@@ -140,10 +140,10 @@ namespace parser {
         } else if k == tok::Kind::kw_capability {
             skip{ &p }
             let name = ident{ &p }
-            if is{ p, k = tok::Kind::lparen } and not nl{ p } { fail{ &p, msg = "a capability cannot have generic parameters" } }
+            if next_is{ p, k = tok::Kind::lparen } and not nl{ p } { fail{ &p, msg = "a capability cannot have generic parameters" } }
             let mut fields: ?[]syntax::Field = null
             let mut includes = list::new(syntax::Include){ realloc = arena::alloc, heap = p.heap }
-            if is{ p, k = tok::Kind::lbrace } and not nl{ p } {
+            if next_is{ p, k = tok::Kind::lbrace } and not nl{ p } {
                 let open = p.i
                 let fs = cap_fields{ &p, includes = &includes }
                 if fs.len == 0 and includes.len == 0 and not p.bad { fail_at{ &p, msg = "a capability without fields has no braces: write `capability Name`", t = p.toks[open] } }
@@ -155,8 +155,8 @@ namespace parser {
             // declaration begins and a name follows it.
             skip{ &p }
             let name = ident{ &p }
-            if is{ p, k = tok::Kind::lparen } and not nl{ p } { fail{ &p, msg = "an error cannot have generic parameters" } }
-            let fields: ?[]syntax::Field = if is{ p, k = tok::Kind::lbrace } and not nl{ p } { plain_fields{ &p } } else { null }
+            if next_is{ p, k = tok::Kind::lparen } and not nl{ p } { fail{ &p, msg = "an error cannot have generic parameters" } }
+            let fields: ?[]syntax::Field = if next_is{ p, k = tok::Kind::lbrace } and not nl{ p } { plain_fields{ &p } } else { null }
             d = syntax::DeclKind::fault{ name, fields }
         } else if k == tok::Kind::kw_namespace {
             skip{ &p }
@@ -176,10 +176,10 @@ namespace parser {
     // every attribute is a literal.
     fn attributes { mut p: Parser, field: bool } -> []syntax::Attr {
         let mut xs = list::new(syntax::Attr){ realloc = arena::alloc, heap = p.heap }
-        while is{ p, k = tok::Kind::hash } and not p.bad {
+        while next_is{ p, k = tok::Kind::hash } and not p.bad {
             let start = p.i
             skip{ &p }
-            if not is{ p, k = tok::Kind::ident } {
+            if not next_is{ p, k = tok::Kind::ident } {
                 expected{ &p, what = "a struct name after '#'" }
                 break
             }
@@ -223,7 +223,7 @@ namespace parser {
     // doesn't start like a context (`}`, `mut` or `name:`), it is closed, and neither a body nor
     // `->` follows it.
     fn body_as_context { p: Parser } -> bool {
-        if not is{ p, k = tok::Kind::lbrace } { return false }
+        if not next_is{ p, k = tok::Kind::lbrace } { return false }
         let first = kind{ p, ahead = 1 }
         if first == tok::Kind::rbrace or first == tok::Kind::kw_mut
            or (first == tok::Kind::ident and kind{ p, ahead = 2 } == tok::Kind::colon) {
@@ -320,7 +320,7 @@ namespace parser {
         while more{ p, close = tok::Kind::rbrace } {
             let start = p.i
             let name = ident{ &p }
-            let fields: ?[]syntax::Field = if is{ p, k = tok::Kind::lbrace } { plain_fields{ &p } } else { null }
+            let fields: ?[]syntax::Field = if next_is{ p, k = tok::Kind::lbrace } { plain_fields{ &p } } else { null }
             try! list::push{ list = &xs, item = syntax::Variant{ span = span_from{ p, start }, name, fields } }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
@@ -406,7 +406,7 @@ namespace parser {
 
     fn type_seg { mut p: Parser } -> syntax::Seg {
         let name = ident{ &p }
-        let targs: ?[]syntax::TypeExpr = if is{ p, k = tok::Kind::lparen } and not nl{ p } { type_list{ &p } } else { null }
+        let targs: ?[]syntax::TypeExpr = if next_is{ p, k = tok::Kind::lparen } and not nl{ p } { type_list{ &p } } else { null }
         return syntax::Seg{ name, targs }
     }
 
@@ -432,14 +432,14 @@ namespace parser {
         defer p.depth = p.depth - 1
         expect{ &p, k = tok::Kind::lbrace }
         skip_semis{ &p }
-        while not is{ p, k = tok::Kind::rbrace } {
-            if is{ p, k = tok::Kind::eof } {
+        while not next_is{ p, k = tok::Kind::rbrace } {
+            if next_is{ p, k = tok::Kind::eof } {
                 fail{ &p, msg = "expected '}' to close block" }
                 break
             }
             let s = p.i
             try! list::push{ list = &xs, item = stmt{ &p } }
-            if not p.bad and not (nl{ p } or is{ p, k = tok::Kind::semi } or is{ p, k = tok::Kind::rbrace }) {
+            if not p.bad and not (nl{ p } or next_is{ p, k = tok::Kind::semi } or next_is{ p, k = tok::Kind::rbrace }) {
                 expected{ &p, what = "a newline or ';' after statement" }
             }
             if p.bad {
@@ -474,7 +474,7 @@ namespace parser {
             s = syntax::StmtKind::cont{ label = jump_label{ &p } }
         } else if k == tok::Kind::kw_defer {
             skip{ &p }
-            if is{ p, k = tok::Kind::lbrace } {
+            if next_is{ p, k = tok::Kind::lbrace } {
                 s = syntax::StmtKind::deferred{ body = block{ &p } }
             } else {
                 let inner = stmt{ &p }
@@ -484,7 +484,7 @@ namespace parser {
             }
         } else if k == tok::Kind::kw_return {
             skip{ &p }
-            if nl{ p } or is{ p, k = tok::Kind::rbrace } or is{ p, k = tok::Kind::semi } {
+            if nl{ p } or next_is{ p, k = tok::Kind::rbrace } or next_is{ p, k = tok::Kind::semi } {
                 s = syntax::StmtKind::ret{ value = null }
             } else {
                 s = syntax::StmtKind::ret{ value = expr{ &p } }
@@ -495,7 +495,7 @@ namespace parser {
             let label = ident{ &p }
             skip{ &p }
             start = p.i
-            if is{ p, k = tok::Kind::kw_while } {
+            if next_is{ p, k = tok::Kind::kw_while } {
                 s = while_stmt{ &p, label }
             } else {
                 expected_msg{ &p, msg = "only a `while` can be labeled, found " }
@@ -536,15 +536,15 @@ namespace parser {
         let start = p.i
         let t = take{ &p }
         let mutable = accept{ &p, k = tok::Kind::kw_mut }
-        if not mutable and is{ p, k = tok::Kind::kw_null } {
-            let pat = pattern{ &p }
+        if not mutable and next_is{ p, k = tok::Kind::kw_null } {
+            let pat = pattern{ &p, test = false }
             return let_else{ &p, id, start, variant = pat.variant, binders = pat.binders }
         }
         let name = ident{ &p }
         if slice::eq_bytes{ a = name.text, b = "_" } {
             fail_at{ &p, msg = "`_` is not a name: `_ = e` discards a value without declaring anything", t }
         }
-        if not mutable and is{ p, k = tok::Kind::lbrace } {
+        if not mutable and next_is{ p, k = tok::Kind::lbrace } {
             let bs = binder_list{ &p }
             return let_else{ &p, id, start, variant = name, binders = bs }
         }
@@ -555,7 +555,7 @@ namespace parser {
             try! @fmt(&b, "`let {}` needs a type or an initializer", utf8::String{ bytes = name.text })
             fail_at{ &p, msg = utf8::view{ b }, t }
         }
-        if init != null and ty == null and not mutable and is{ p, k = tok::Kind::kw_else } {
+        if init != null and ty == null and not mutable and next_is{ p, k = tok::Kind::kw_else } {
             // `let variant = e else ...`
             return let_else_tail{ &p, id, start, variant = name, binders = slice::empty(syntax::Binder){}, init }
         }
@@ -566,7 +566,7 @@ namespace parser {
     fn let_else { mut p: Parser, id: u32, start: usize, variant: syntax::Name, binders: []syntax::Binder } -> syntax::Stmt {
         expect{ &p, k = tok::Kind::assign }
         let init = expr{ &p }
-        if not is{ p, k = tok::Kind::kw_else } { fail{ &p, msg = "a `let` with a pattern needs an `else`" } }
+        if not next_is{ p, k = tok::Kind::kw_else } { fail{ &p, msg = "a `let` with a pattern needs an `else`" } }
         return let_else_tail{ &p, id, start, variant, binders, init }
     }
 
@@ -575,9 +575,9 @@ namespace parser {
         expect{ &p, k = tok::Kind::kw_else }
         let mut els_variant: ?syntax::Name = null
         let mut els_binders: []syntax::Binder = slice::empty(syntax::Binder){}
-        if not is{ p, k = tok::Kind::lbrace } {
+        if not next_is{ p, k = tok::Kind::lbrace } {
             // `else v { ... }` binds nothing; `else v{ ... } { ... }` has bindings, then the block.
-            els_variant = if is{ p, k = tok::Kind::kw_null } { keyword_name{ &p } } else { ident{ &p } }
+            els_variant = if next_is{ p, k = tok::Kind::kw_null } { keyword_name{ &p } } else { ident{ &p } }
             if braces_then_brace{ p } { els_binders = binder_list{ &p } }
         }
         let els = block{ &p }
@@ -593,23 +593,26 @@ namespace parser {
 
     // The label after `break` or `continue`, if one follows on the same line.
     fn jump_label { mut p: Parser } -> ?syntax::Name {
-        if is{ p, k = tok::Kind::ident } and not nl{ p } { return ident{ &p } }
+        if next_is{ p, k = tok::Kind::ident } and not nl{ p } { return ident{ &p } }
         return null
     }
 
     // `variant` or `variant{ binders }`, where variant may be `null`, or an error's name with its
-    // path, `a::b::name`.
-    fn pattern { mut p: Parser } -> syntax::Pattern {
+    // path, `a::b::name`. After `is` (test), a `{` begins binders only on the same line, and in a
+    // condition only where it would begin a call's braces.
+    fn pattern { mut p: Parser, test: bool } -> syntax::Pattern {
         let start = p.i
-        let mut variant = if is{ p, k = tok::Kind::kw_null } { keyword_name{ &p } } else { ident{ &p } }
+        let mut variant = if next_is{ p, k = tok::Kind::kw_null } { keyword_name{ &p } } else { ident{ &p } }
         let mut quals = list::new(syntax::Name){ realloc = arena::alloc, heap = p.heap }
-        while is{ p, k = tok::Kind::colons } and variant.text.len > 0 {
+        while next_is{ p, k = tok::Kind::colons } and variant.text.len > 0 {
             skip{ &p }
             try! list::push{ list = &quals, item = variant }
             variant = ident{ &p }
         }
         let mut bs: []syntax::Binder = slice::empty(syntax::Binder){}
-        if is{ p, k = tok::Kind::lbrace } { bs = binder_list{ &p } }
+        if next_is{ p, k = tok::Kind::lbrace } and (not test or (not nl{ p } and (not p.in_cond or brace_is_call{ p }))) {
+            bs = binder_list{ &p }
+        }
         return syntax::Pattern{ span = span_from{ p, start }, quals = list::items{ list = quals }, variant, binders = bs }
     }
 
@@ -631,7 +634,7 @@ namespace parser {
 
     // Whether the `{ ... }` starting here is followed by another `{`.
     fn braces_then_brace { p: Parser } -> bool {
-        if not is{ p, k = tok::Kind::lbrace } { return false }
+        if not next_is{ p, k = tok::Kind::lbrace } { return false }
         let mut depth: u32 = 0
         let mut k = p.i
         while p.toks[k].kind != tok::Kind::eof {
@@ -689,7 +692,7 @@ namespace parser {
         let then = block{ &p }
         let mut els: ?syntax::Block = null
         if accept{ &p, k = tok::Kind::kw_else } {
-            if is{ p, k = tok::Kind::kw_if } {
+            if next_is{ p, k = tok::Kind::kw_if } {
                 let start = p.i
                 let id = new_id{ &p }
                 let x = if_node{ &p }
@@ -709,7 +712,7 @@ namespace parser {
         let c = box{ &p, value = cond_expr{ &p } }
         let then = block{ &p }
         if not accept{ &p, k = tok::Kind::kw_else } { fail_at{ &p, msg = "an `if` expression needs an `else`", t } }
-        let els = if is{ p, k = tok::Kind::kw_if } { else_if{ &p } } else { block{ &p } }
+        let els = if next_is{ p, k = tok::Kind::kw_if } { else_if{ &p } } else { block{ &p } }
         let k = syntax::ExprKind::ifx{ x = syntax::If{ c, then, els } }
         return syntax::Expr{ id, span = span_from{ p, start }, at = start_of{ p, start }, k }
     }
@@ -732,8 +735,8 @@ namespace parser {
             let start = p.i
             let mut pats = list::new(syntax::Pattern){ realloc = arena::alloc, heap = p.heap }
             if not accept{ &p, k = tok::Kind::kw_else } {
-                try! list::push{ list = &pats, item = pattern{ &p } }
-                while accept{ &p, k = tok::Kind::pipe } { try! list::push{ list = &pats, item = pattern{ &p } } }
+                try! list::push{ list = &pats, item = pattern{ &p, test = false } }
+                while accept{ &p, k = tok::Kind::pipe } { try! list::push{ list = &pats, item = pattern{ &p, test = false } } }
             }
             expect{ &p, k = tok::Kind::fat_arrow }
             let body = block{ &p }
@@ -741,7 +744,7 @@ namespace parser {
             _ = accept{ &p, k = tok::Kind::comma }
             if p.bad {
                 sync{ &p, start, in_block = true, top = false }
-                if at_decl{ p } or is{ p, k = tok::Kind::eof } { break }
+                if at_decl{ p } or next_is{ p, k = tok::Kind::eof } { break }
             }
             skip_semis{ &p }
         }
@@ -762,7 +765,7 @@ namespace parser {
     fn or_expr { mut p: Parser } -> syntax::Expr {
         let start = p.i
         let mut e = and_expr{ &p }
-        while is{ p, k = tok::Kind::kw_or } {
+        while next_is{ p, k = tok::Kind::kw_or } {
             let op = take{ &p }
             let b = and_expr{ &p }
             e = binary{ &p, start, op, a = e, b }
@@ -773,7 +776,7 @@ namespace parser {
     fn and_expr { mut p: Parser } -> syntax::Expr {
         let start = p.i
         let mut e = cmp_expr{ &p }
-        while is{ p, k = tok::Kind::kw_and } {
+        while next_is{ p, k = tok::Kind::kw_and } {
             let op = take{ &p }
             let b = cmp_expr{ &p }
             e = binary{ &p, start, op, a = e, b }
@@ -784,13 +787,38 @@ namespace parser {
     fn cmp_expr { mut p: Parser } -> syntax::Expr {
         let start = p.i
         let mut e = null_expr{ &p }
-        if is_cmp{ k = kind{ p, ahead = 0 } } {
+        if next_is{ p, k = tok::Kind::kw_is } {
+            e = is_expr{ &p, start, e }
+        } else if is_cmp{ k = kind{ p, ahead = 0 } } {
             let op = take{ &p }
             let b = null_expr{ &p }
             e = binary{ &p, start, op, a = e, b }
-            if is_cmp{ k = kind{ p, ahead = 0 } } { fail{ &p, msg = "comparisons do not chain" } }
+        } else {
+            return e
         }
+        if is_cmp{ k = kind{ p, ahead = 0 } } or next_is{ p, k = tok::Kind::kw_is } { fail{ &p, msg = "comparisons do not chain" } }
         return e
+    }
+
+    // `e is a | b`, after e, which began at token `start`. A `not` in front of e takes the whole
+    // test, `not (e is a)`, though it binds tighter than `is` everywhere else.
+    fn is_expr { mut p: Parser, start: usize, e: syntax::Expr } -> syntax::Expr {
+        match e.k {
+            lnot{ e = x } => {
+                if p.toks[start].kind == tok::Kind::kw_not {
+                    let inner = is_expr{ &p, start = start + 1, e = x.* }
+                    let k = syntax::ExprKind::lnot{ e = box{ &p, value = inner } }
+                    return syntax::Expr{ id = e.id, span = span_from{ p, start }, at = e.at, k }
+                }
+            }
+            else => {}
+        }
+        let t = take{ &p }
+        let mut pats = list::new(syntax::Pattern){ realloc = arena::alloc, heap = p.heap }
+        try! list::push{ list = &pats, item = pattern{ &p, test = true } }
+        while accept{ &p, k = tok::Kind::pipe } { try! list::push{ list = &pats, item = pattern{ &p, test = true } } }
+        let k = syntax::ExprKind::isx{ e = box{ &p, value = e }, pats = list::items{ list = pats } }
+        return syntax::Expr{ id = new_id{ &p }, span = span_from{ p, start }, at = t.span.start, k }
     }
 
     fn is_cmp { k: tok::Kind } -> bool {
@@ -804,8 +832,8 @@ namespace parser {
     fn null_expr { mut p: Parser } -> syntax::Expr {
         let start = p.i
         let e = bin_expr{ &p, level = 0 }
-        let is_null = is{ p, k = tok::Kind::kw_ifnull }
-        if not is_null and not is{ p, k = tok::Kind::kw_iferr } { return e }
+        let is_null = next_is{ p, k = tok::Kind::kw_ifnull }
+        if not is_null and not next_is{ p, k = tok::Kind::kw_iferr } { return e }
         let id = new_id{ &p }
         let op_i = p.i
         let op = take{ &p }
@@ -832,7 +860,7 @@ namespace parser {
         } else {
             try! list::push{ list = &nulls, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = "err" }, binders = slice::empty(syntax::Binder){} } }
         }
-        let null_body = if is{ p, k = tok::Kind::lbrace } { block{ &p } } else { null_value{ &p } }
+        let null_body = if next_is{ p, k = tok::Kind::lbrace } { block{ &p } } else { null_value{ &p } }
         try! list::push{ list = &arms, item = syntax::Arm{ span = span_from{ p, start = op_i }, pats = list::items{ list = nulls }, body = null_body } }
         let x = syntax::Match{ scrut = box{ &p, value = e }, arms = list::items{ list = arms }, is_ifnull = is_null, is_iferr = not is_null }
         return syntax::Expr{ id, span = span_from{ p, start }, at = op.span.start, k = syntax::ExprKind::matchx{ x } }
@@ -841,7 +869,7 @@ namespace parser {
     // After `iferr`, whether `err{ ... }` comes next with a block after it: a pattern that binds
     // the error, rather than an expression.
     fn err_pattern { p: Parser } -> bool {
-        if not is{ p, k = tok::Kind::ident } or not slice::eq_bytes{ a = text_of{ p, t = p.toks[p.i] }, b = "err" } { return false }
+        if not next_is{ p, k = tok::Kind::ident } or not slice::eq_bytes{ a = text_of{ p, t = p.toks[p.i] }, b = "err" } { return false }
         if kind{ p, ahead = 1 } != tok::Kind::lbrace { return false }
         let mut q = p
         q.i = p.i + 1
@@ -944,7 +972,7 @@ namespace parser {
 
     fn postfix { mut p: Parser } -> syntax::Expr {
         let start = p.i
-        let paren = is{ p, k = tok::Kind::lparen }
+        let paren = next_is{ p, k = tok::Kind::lparen }
         let mut e = primary{ &p }
         match e.k {
             ifx | matchx => { if not paren { return e } }   // `if` and `match` end at their `}`, unless in parentheses
@@ -992,7 +1020,7 @@ namespace parser {
     // After `lo..`: the end of a range, if any, and its `]`.
     fn range_hi { mut p: Parser } -> ?*syntax::Expr {
         let mut hi: ?*syntax::Expr = null
-        if not is{ p, k = tok::Kind::rbracket } { hi = box{ &p, value = expr{ &p } } }
+        if not next_is{ p, k = tok::Kind::rbracket } { hi = box{ &p, value = expr{ &p } } }
         expect{ &p, k = tok::Kind::rbracket }
         return hi
     }
@@ -1004,7 +1032,7 @@ namespace parser {
 
     // The rest of a path: `::name` and generic arguments `(T, ...)` on the same line.
     fn path_tail { mut p: Parser, start: usize, e: syntax::Expr, segs: []syntax::Seg } -> syntax::Expr {
-        if not is{ p, k = tok::Kind::colons } and not (is{ p, k = tok::Kind::lparen } and not nl{ p }) { return e }
+        if not next_is{ p, k = tok::Kind::colons } and not (next_is{ p, k = tok::Kind::lparen } and not nl{ p }) { return e }
         let mut xs = list::new(syntax::Seg){ realloc = arena::alloc, heap = p.heap }
         let mut i: usize = 0
         while i < segs.len {
@@ -1014,7 +1042,7 @@ namespace parser {
         while true {
             if accept{ &p, k = tok::Kind::colons } {
                 try! list::push{ list = &xs, item = syntax::Seg{ name = ident{ &p }, targs = null } }
-            } else if is{ p, k = tok::Kind::lparen } and not nl{ p } and xs.items[xs.len - 1].targs == null {
+            } else if next_is{ p, k = tok::Kind::lparen } and not nl{ p } and xs.items[xs.len - 1].targs == null {
                 let targs = type_list{ &p }
                 xs.items[xs.len - 1].targs = targs
             } else {
@@ -1042,7 +1070,7 @@ namespace parser {
             }
             let s = p.i
             if accept{ &p, k = tok::Kind::dots } {
-                if is{ p, k = tok::Kind::rbrace } or is{ p, k = tok::Kind::comma } {
+                if next_is{ p, k = tok::Kind::rbrace } or next_is{ p, k = tok::Kind::comma } {
                     forward = true
                 } else {
                     // `..e`: a spread
@@ -1140,7 +1168,7 @@ namespace parser {
                 }
                 try! list::push{ list = &elems, item = first }
                 while accept{ &p, k = tok::Kind::comma } {
-                    if is{ p, k = tok::Kind::rbracket } { break }
+                    if next_is{ p, k = tok::Kind::rbracket } { break }
                     try! list::push{ list = &elems, item = expr{ &p } }
                 }
                 expect{ &p, k = tok::Kind::rbracket }
@@ -1191,7 +1219,7 @@ namespace parser {
             return expr_from{ &p, start, k = syntax::ExprKind::error }
         }
         let sig = BUILTINS[n]
-        if not is{ p, k = tok::Kind::lparen } {
+        if not next_is{ p, k = tok::Kind::lparen } {
             let mut b = message{ p }
             try! @fmt(&b, "expected '(' after @{}: {}", utf8::String{ bytes = name.text }, sig.usage)
             fail{ &p, msg = utf8::view{ b } }
@@ -1210,7 +1238,7 @@ namespace parser {
             count = count + 1
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
-        if count < sig.types + sig.lo or not is{ p, k = tok::Kind::rparen } {
+        if count < sig.types + sig.lo or not next_is{ p, k = tok::Kind::rparen } {
             let mut b = message{ p }
             try! @fmt(&b, "wrong number of arguments: {}", sig.usage)
             fail{ &p, msg = utf8::view{ b } }
@@ -1260,7 +1288,7 @@ namespace parser {
 
     // At `error name`, which declares an error: `error` is a name anywhere else.
     fn at_error_decl { p: Parser } -> bool {
-        return is{ p, k = tok::Kind::ident } and slice::eq_bytes{ a = text_of{ p, t = p.toks[p.i] }, b = "error" }
+        return next_is{ p, k = tok::Kind::ident } and slice::eq_bytes{ a = text_of{ p, t = p.toks[p.i] }, b = "error" }
                and kind{ p, ahead = 1 } == tok::Kind::ident
     }
 
@@ -1335,7 +1363,7 @@ namespace parser {
         return p.toks[k].kind
     }
 
-    fn is { p: Parser, k: tok::Kind } -> bool {
+    fn next_is { p: Parser, k: tok::Kind } -> bool {
         return kind{ p, ahead = 0 } == k
     }
 
@@ -1347,7 +1375,7 @@ namespace parser {
     // Whether a list closed by `close` goes on: at the end of the file it does, and the next
     // item reports it.
     fn more { p: Parser, close: tok::Kind } -> bool {
-        return not p.bad and not is{ p, k = close }
+        return not p.bad and not next_is{ p, k = close }
     }
 
     // Consumes the current token, unless it is the end of the file or the parser is recovering.
@@ -1362,7 +1390,7 @@ namespace parser {
     }
 
     fn accept { mut p: Parser, k: tok::Kind } -> bool {
-        if not is{ p, k } { return false }
+        if not next_is{ p, k } { return false }
         skip{ &p }
         return true
     }
@@ -1390,7 +1418,7 @@ namespace parser {
 
     // A name, or a missing one where the name should have been.
     fn ident { mut p: Parser } -> syntax::Name {
-        if is{ p, k = tok::Kind::ident } { return keyword_name{ &p } }
+        if next_is{ p, k = tok::Kind::ident } { return keyword_name{ &p } }
         expected{ &p, what = "a name" }
         let at = prev_end{ p }
         return syntax::Name{ id = new_id{ &p }, span = source::Span{ file = p.file, start = at, end = at }, text = p.text[..0] }
