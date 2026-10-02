@@ -1,0 +1,1983 @@
+// The interpreter: runs an ir::Program's functions over memory as bytes, as the C that
+// emit_c.ctx writes would run them. emit_c is the reference for what each node does.
+//
+//   let mut m = eval::machine{ heap = &heap, p, name, emulate = true, fuel = eval::FUEL, stack }
+//   match eval::main{ &m, argv } {                // or eval::run{ &m, callee, args }
+//       ok{ value, ty } => { ... }                // the result's bytes, of IR type ty
+//       panic{ text }   => { ... }                // as ctxrt.c's ctx_panic prints it
+//       failed{ msg }   => { ... }                // out of fuel, too deep, an extern fn, a bad pointer
+//   }
+//   ... m.chunks, m.out: what the program wrote, in order ...
+//
+// Memory is bytes, laid out by the IR's sizes, alignments and offsets, so @cast, extern unions
+// and allocators that carve typed values out of []u8 behave as they do in C. It is in regions:
+//   0    null: no bytes
+//   1    code: no bytes. A function value's code is an address here; its offset indexes codes.
+//   2    the stack: each call's frame, its locals at offsets fixed per function, and the
+//        temporaries above them. A statement's temporaries are freed when it ends, except those
+//        whose address is taken (C's compound literals), which live until their block ends.
+//   3... static data (literals' bytes, with C's NUL after them, and consts), read-only, and the
+//        heap (ctx_alloc's records, the stdout buffer, main's args), in chunks that never move.
+// An address is a u64, region << 40 | offset: @addr and casts between pointers round-trip, 0 is
+// null, and since a region starts at a multiple of 2^40, an address's alignment is its offset's.
+//
+// Function values are emit_c's: a pointer to a record whose first 8 bytes are its code. A named
+// function's record is static (gN); a bind allocates one with its captured args (bK), a bind of
+// a function value one with the inner value too, and a conversion to a type with more fields an
+// adapter (ctx_adapt). A C function pointer is its code alone.
+//
+// Control: evaluation fails with `halt` when the program stops (m.stop says why), and with
+// `leave` when a break, continue or return leaves blocks (m.flow says where to). Each block it
+// leaves runs its deferred bodies, innermost first, as emit_c's copies at each exit do.
+//
+// Nothing here needs a capability: what the program writes is kept in order (m.out, m.chunks)
+// for the caller to write. With `emulate`, the externs that writing to standard output and error
+// reaches run here: ctx_io_out (ctxrt.c's stdout buffer), `write` (Windows: `_write`) to fds 1 and
+// 2, and std's float text natives, which are ctxc's own. Any other extern fn, and any C variable,
+// stops the program.
+
+namespace eval {
+    type Heap = arena::Arena
+    type Addr = u64
+
+    const SHIFT: u64 = 40
+    const MASK: u64 = 1099511627775             // 2^40 - 1: an address's offset
+    const CODE: u32 = 1
+    const STACK: u32 = 2
+    const STACK_SIZE: u64 = 16777216            // 16 MiB, ctxrt.c's stack check
+    const CHUNK: u64 = 1048576                  // a static or heap region, at least
+    const FUEL: u64 = 1000000000                // the steps `ctxc interp` allows: under a minute
+    const MAX_DEPTH: u32 = 100000               // nested calls
+    const MAX: u64 = 18446744073709551615
+
+    // What a run ended with.
+    union Outcome {
+        ok{ value: []u8, ty: ir::TypeId },
+        panic{ text: []u8 },                    // "FILE:LINE:COL: panic: MSG", without a newline
+        failed{ msg: []u8 },
+    }
+
+    // What the program wrote: out[start..start + len], to stream `to`.
+    struct Chunk { to: io::Stream, start: usize, len: usize }
+
+    struct Region { bytes: []mut u8, used: u64, writable: bool }
+
+    // A function value's code (see the top).
+    union Code {
+        thunk{ callee: u32 },                           // hN: calls callee
+        bound{ callee: u32, args: []ir::Arg },          // bK: calls callee with args captured
+        dbound{ inner: ir::TypeId, args: []ir::Arg },   // bK: calls the inner value, of type inner
+        adapter{ from: ir::TypeId },                    // aK: calls the inner value, of type from
+        cfn{ callee: u32 },                             // xN or kK: an extern fn, or a callback
+    }
+
+    // Where a jump that is leaving blocks goes.
+    union Flow { none, brk{ label: ?u32 }, cont{ label: ?u32 }, ret }
+
+    error leave
+    error halt
+
+    // A function's locals: each one's offset in its frame, and the frame's size.
+    struct Frame { offs: []u64, size: u64, known: bool }
+
+    // What `known` maps, by kind: 0 a function's static record gN, 1 the code of a C function
+    // pointer, 2 and 3 a bind's code, by its callee and args, 4 an adapter's code, 5 a literal's
+    // static bytes, 6 a const's.
+    struct Key { kind: u32, a: u64, b: u64 }
+
+    struct M {
+        p:        ir::Program,
+        types:    []ir::Type,
+        heap:     *mut Heap,
+        name:     []u8,                         // the program's, for a panic without a position
+        emulate:  bool,
+        fuel:     u64,
+        depth:    u32,
+        // Each nested call takes some of ctxc's own stack: `budget` bytes of it from `host`,
+        // where it stood when the run began.
+        budget:   u64,
+        host:     u64,
+        regions:  list::List(Region, Heap),
+        sp:       u64,                          // the stack's top
+        floor:    u64,                          // where a statement's end may take sp back to
+        // The function running: its frame, its locals' offsets and types, and where `return`
+        // puts its value.
+        frame:    u64,
+        offs:     []u64,
+        locals:   []ir::Local,
+        res:      Addr,
+        flow:     Flow,
+        defers:   list::List(ir::Block, Heap),  // the deferred bodies reached, innermost last
+        argv:     list::List(Addr, Heap),       // calls' args, by param, as a stack
+        frames:   list::List(Frame, Heap),      // by function id
+        codes:    list::List(Code, Heap),
+        known:    map::Map(Key, Addr, Heap),
+        statics:  u32,                          // the region static data is going into
+        chunk:    u32,                          // the region the heap is going into
+        cap:      Addr,                         // what a `mut` capability points to: emit_c's cap[1]
+        stdout:   Addr,                         // ctx_io_out's buffer, once asked for
+        out:      list::List(u8, Heap),
+        chunks:   list::List(Chunk, Heap),
+        stop:     Outcome,
+    }
+
+    // A machine for p, from whose functions run{ ... } and main{ ... } run, in memory from heap.
+    // `stack` is how much of ctxc's own stack they may take: calls nest only as deep as it holds.
+    fn machine { heap: *mut Heap, p: ir::Program, name: []u8, emulate: bool, fuel: u64, stack: u64 } -> M {
+        let mut m = M{
+            p, types = p.types, heap, name, emulate, fuel, depth = 0, budget = stack, host = 0,
+            regions = list::new(Region){ realloc = arena::alloc, heap },
+            sp = 0, floor = 0, frame = 0,
+            offs = slice::empty(u64){}, locals = slice::empty(ir::Local){}, res = 0,
+            flow = Flow::none,
+            defers = list::new(ir::Block){ realloc = arena::alloc, heap },
+            argv = list::new(Addr){ realloc = arena::alloc, heap },
+            frames = list::new(Frame){ realloc = arena::alloc, heap },
+            codes = list::new(Code){ realloc = arena::alloc, heap },
+            known = map::new(Key, Addr){ realloc = arena::alloc, heap, hash = hash_key, eq = eq_key },
+            statics = 0, chunk = 0, cap = 0, stdout = 0,
+            out = list::new(u8){ realloc = arena::alloc, heap },
+            chunks = list::new(Chunk){ realloc = arena::alloc, heap },
+            stop = Outcome::failed{ msg = "" },
+        }
+        let none = slice::empty(u8){}
+        try! list::push{ list = &m.regions, item = Region{ bytes = none, used = 0, writable = false } }
+        try! list::push{ list = &m.regions, item = Region{ bytes = none, used = 0, writable = false } }
+        // Without the memory for a stack, every call fails as too deep.
+        let stack = alloc::resize(u8, Heap){ realloc = arena::alloc, heap, mem = none, count = @as(usize, STACK_SIZE) } iferr { none }
+        try! list::push{ list = &m.regions, item = Region{ bytes = stack, used = 0, writable = true } }
+        let mut i: usize = 0
+        while i < p.fns.len {
+            try! list::push{ list = &m.frames, item = Frame{ offs = slice::empty(u64){}, size = 0, known = false } }
+            i = i + 1
+        }
+        return m
+    }
+
+    fn hash_key { key: Key } -> u64 {
+        return @wrap_add(@wrap_mul(@wrap_add(@wrap_mul(key.a, 1099511628211), key.b), 1099511628211), @as(u64, key.kind))
+    }
+
+    fn eq_key { a: Key, b: Key } -> bool {
+        return a.kind == b.kind and a.a == b.a and a.b == b.b
+    }
+
+    // ---- running
+
+    // main, with the capabilities and args the C entry point (emit_c's `entry`) gives it, and
+    // standard output's buffer flushed after, as ctx_exit and a panic flush it.
+    fn main { mut m: M, argv: [][]u8 } -> Outcome {
+        let ok{ value = args } = main_args{ &m, argv } else { return m.stop }
+        let r = run{ &m, callee = m.p.main, args }
+        match flush{ &m } {
+            ok => {}
+            else => { return m.stop }
+        }
+        return r
+    }
+
+    fn main_args { mut m: M, argv: [][]u8 } -> ![][]u8 {
+        let f = m.p.fns[m.p.main]
+        let mut out = list::new([]u8){ realloc = arena::alloc, heap = m.heap }
+        let mut i: usize = 0
+        while i < f.params.len {
+            let q = f.params[i]
+            let b = host_bytes{ &m, n = if q.mutable { 8 } else { size{ ts = m.types, t = q.ty } } }
+            if q.mutable {
+                let c = try cap{ &m }
+                put_bits{ b = b[..8], v = c }
+            } else if slice::eq_bytes{ a = q.name, b = "args" } {
+                // ctx_args: a [][]u8 on the heap, an empty arg's pointer null
+                let mut items: Addr = 0
+                if argv.len > 0 { items = try heap_bytes{ &m, n = 16 * @as(u64, argv.len) } }
+                let mut k: usize = 0
+                while k < argv.len {
+                    let s = argv[k]
+                    let mut at_s: Addr = 0
+                    if s.len > 0 {
+                        at_s = try heap_bytes{ &m, n = @as(u64, s.len) }
+                        slice::copy(u8){ dst = try at{ &m, a = at_s, n = @as(u64, s.len) }, src = s }
+                    }
+                    let item = items + 16 * @as(u64, k)
+                    try store{ &m, a = item, n = 8, v = at_s }
+                    try store{ &m, a = item + 8, n = 8, v = @as(u64, s.len) }
+                    k = k + 1
+                }
+                put_bits{ b = b[..8], v = items }
+                put_bits{ b = b[8..16], v = @as(u64, argv.len) }
+            }
+            try! list::push{ list = &out, item = b }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // Function `callee`, with each param's bytes in args.
+    fn run { mut m: M, callee: u32, args: [][]u8 } -> Outcome {
+        let here: u8 = 0
+        m.host = @addr(&here)
+        m.flow = Flow::none
+        let ty = m.p.fns[callee].ret
+        match enter{ &m, callee, args } {
+            ok{ value } => {
+                let n = size{ ts = m.types, t = ty }
+                let b = host_bytes{ &m, n }
+                match at{ &m, a = value, n } {
+                    ok{ value = src } => { slice::copy(u8){ dst = b, src } }
+                    else => { return m.stop }
+                }
+                return Outcome::ok{ value = b, ty }
+            }
+            halt => { return m.stop }
+        }
+    }
+
+    fn enter { mut m: M, callee: u32, args: [][]u8 } -> !Addr {
+        let f = m.p.fns[callee]
+        if args.len != f.params.len {
+            fail{ &m, msg = "eval: the wrong number of args" }
+            return halt
+        }
+        let base = m.argv.len
+        let mut i: usize = 0
+        while i < args.len {
+            let a = try reserve{ &m, n = @as(u64, args[i].len), align = 16 }
+            slice::copy(u8){ dst = try at{ &m, a, n = @as(u64, args[i].len) }, src = args[i] }
+            try! list::push{ list = &m.argv, item = a }
+            i = i + 1
+        }
+        let res = try temp{ &m, t = f.ret }
+        try invoke{ &m, callee, base, res }
+        m.argv.len = base
+        return res
+    }
+
+    // main's exit code, from its result's bytes: 0 for none.
+    fn exit_code { value: []u8 } -> i32 {
+        if value.len != 4 { return 0 }
+        return @trunc(i32, bits_of{ b = value })
+    }
+
+    // Calls function `callee` with its args at argv[base..], by param; its value goes into res.
+    fn invoke { mut m: M, callee: u32, base: usize, res: Addr } -> ! {
+        let f = m.p.fns[callee]
+        if f.symbol.len > 0 { return external{ &m, f, base, res } }
+        try spend{ &m }
+        let here: u8 = 0
+        if m.host > @addr(&here) and m.host - @addr(&here) > m.budget or m.depth >= MAX_DEPTH {
+            too_deep{ &m, name = f.name, full = false }
+            return halt
+        }
+        let fr = layout{ &m, callee }
+        let start = up{ n = m.sp, to = 16 }
+        if start + fr.size > stack_len{ &m } {
+            too_deep{ &m, name = f.name, full = true }
+            return halt
+        }
+        let frame = list::items{ list = m.regions }[STACK].bytes[@as(usize, start)..@as(usize, start + fr.size)]
+        slice::fill(u8){ s = frame, v = 0 }
+        let mut i: usize = 0
+        while i < f.params.len {
+            let src = list::items{ list = m.argv }[base + i]
+            try copy{ &m, dst = addr_of{ region = STACK, off = start + fr.offs[i] }, src, n = size{ ts = m.types, t = f.locals[i].ty } }
+            i = i + 1
+        }
+        let saved_frame = m.frame
+        let saved_offs = m.offs
+        let saved_locals = m.locals
+        let saved_res = m.res
+        let saved_sp = m.sp
+        let saved_floor = m.floor
+        m.frame = start
+        m.offs = fr.offs
+        m.locals = f.locals
+        m.res = res
+        m.sp = start + fr.size
+        m.floor = m.sp
+        m.depth = m.depth + 1
+        let r = block{ &m, b = f.body, res = 0 }
+        m.depth = m.depth - 1
+        m.frame = saved_frame
+        m.offs = saved_offs
+        m.locals = saved_locals
+        m.res = saved_res
+        m.sp = saved_sp
+        m.floor = saved_floor
+        match r {
+            ok => {
+                if not (m.types[f.ret] is void) {
+                    no_return{ &m, name = f.name }
+                    return halt
+                }
+            }
+            leave => { m.flow = Flow::none }
+            halt => { return halt }
+        }
+    }
+
+    // Too deep a recursion: past the calls ctxc's stack holds, or the interpreter's stack is full.
+    // Here, not in invoke, so that each call's frame is small.
+    fn too_deep { mut m: M, name: []u8, full: bool } {
+        let mut b = builder{ heap = m.heap }
+        if full {
+            try! @fmt(&b, "too deep: the {} MiB stack is full, at {}", STACK_SIZE / 1048576, str{ s = name })
+        } else {
+            try! @fmt(&b, "too deep: {} nested calls, at {}", m.depth, str{ s = name })
+        }
+        fail{ &m, msg = utf8::view{ b }.bytes }
+    }
+
+    fn no_return { mut m: M, name: []u8 } {
+        let mut b = builder{ heap = m.heap }
+        try! @fmt(&b, "{} reached its end without returning a value", str{ s = name })
+        fail{ &m, msg = utf8::view{ b }.bytes }
+    }
+
+    // The offsets of a function's locals, aligned as C would, computed once.
+    fn layout { mut m: M, callee: u32 } -> Frame {
+        let known = list::items{ list = m.frames }[callee]
+        if known.known { return known }
+        let f = m.p.fns[callee]
+        let mut offs = list::new(u64){ realloc = arena::alloc, heap = m.heap }
+        let mut off: u64 = 0
+        let mut i: usize = 0
+        while i < f.locals.len {
+            let t = f.locals[i].ty
+            off = up{ n = off, to = align{ ts = m.types, t } }
+            try! list::push{ list = &offs, item = off }
+            off = off + size{ ts = m.types, t }
+            i = i + 1
+        }
+        let fr = Frame{ offs = list::items{ list = offs }, size = up{ n = off, to = 16 }, known = true }
+        list::items{ list = m.frames }[callee] = fr
+        return fr
+    }
+
+    fn spend { mut m: M } -> ! {
+        if m.fuel == 0 {
+            fail{ &m, msg = "out of fuel: the program ran too many steps" }
+            return halt
+        }
+        m.fuel = m.fuel - 1
+    }
+
+    // ---- statements
+
+    // Block b, then its deferred bodies, also when a jump leaves it. With res, a value block's
+    // result goes there, before the deferred bodies run.
+    fn block { mut m: M, b: ir::Block, res: Addr } -> ! {
+        let sp = m.sp
+        let floor = m.floor
+        let defers = m.defers.len
+        m.floor = m.sp
+        match steps{ &m, b, res } {
+            ok => {}
+            leave => {
+                try unwind{ &m, to = defers }
+                m.sp = sp
+                m.floor = floor
+                return leave
+            }
+            halt => { return halt }
+        }
+        try unwind{ &m, to = defers }
+        m.sp = sp
+        m.floor = floor
+    }
+
+    fn steps { mut m: M, b: ir::Block, res: Addr } -> ! {
+        let mut i: usize = 0
+        while i < b.stmts.len {
+            let mark = m.sp
+            try stmt{ &m, s = b.stmts[i] }
+            m.sp = if mark > m.floor { mark } else { m.floor }
+            i = i + 1
+        }
+        if res != 0 and b.result != null {
+            let x = b.result.*
+            let v = try value{ &m, x }
+            try copy{ &m, dst = res, src = v, n = size{ ts = m.types, t = x.ty } }
+        }
+    }
+
+    // Runs the deferred bodies reached above `to`, innermost first, keeping the jump that is
+    // leaving.
+    fn unwind { mut m: M, to: usize } -> ! {
+        let flow = m.flow
+        while m.defers.len > to {
+            let body = list::pop{ list = &m.defers } ifnull { break }
+            m.flow = Flow::none
+            try block{ &m, b = body, res = 0 }
+        }
+        m.flow = flow
+    }
+
+    fn stmt { mut m: M, s: ir::Stmt } -> ! {
+        try spend{ &m }
+        match s {
+            define{ slot, init } => {
+                let v = try value{ &m, x = init }
+                let dst = local{ &m, slot }
+                try copy{ &m, dst, src = v, n = size{ ts = m.types, t = init.ty } }
+            }
+            zero{ slot } => {
+                let dst = local{ &m, slot }
+                let b = try at{ &m, a = dst, n = size{ ts = m.types, t = m.locals[slot].ty } }
+                slice::fill(u8){ s = b, v = 0 }
+            }
+            assign{ place = q, value = e } => {
+                // the value, then the place, as emit_c's temporary does
+                let v = try value{ &m, x = e }
+                let dst = try place{ &m, x = q }
+                try copy{ &m, dst, src = v, n = size{ ts = m.types, t = e.ty } }
+            }
+            eval{ e } => { _ = try value{ &m, x = e } }
+            cond{ c, then, els } => {
+                let go = try truth{ &m, x = c }
+                if go {
+                    try block{ &m, b = then, res = 0 }
+                } else if els != null {
+                    try block{ &m, b = els, res = 0 }
+                }
+            }
+            loop{ c, body, label } => { try run_loop{ &m, c, body, label } }
+            brk{ label } => {
+                m.flow = Flow::brk{ label }
+                return leave
+            }
+            cont{ label } => {
+                m.flow = Flow::cont{ label }
+                return leave
+            }
+            ret{ value = e } => {
+                if e != null {
+                    let v = try value{ &m, x = e }
+                    let dst = m.res
+                    try copy{ &m, dst, src = v, n = size{ ts = m.types, t = e.ty } }
+                }
+                m.flow = Flow::ret
+                return leave
+            }
+            deferred{ body } => { try! list::push{ list = &m.defers, item = body } }
+            panic{ pos, msg } => {
+                panic_at{ &m, pos, msg }
+                return halt
+            }
+            choose{ scrut, through, arms } => {
+                let k = try value{ &m, x = scrut }
+                try pick{ &m, k, through, t = scrut.ty, arms, res = 0 }
+            }
+            switch{ scrut, cases } => {
+                let v = try scalar{ &m, x = scrut }
+                try case_of{ &m, v, t = scrut.ty, cases, res = 0 }
+            }
+            let_else{ init, variant, binds, els_variant, els_binds, els } => {
+                let k = try value{ &m, x = init }
+                let held = try holds{ &m, u = k, t = init.ty, variant }
+                if not held {
+                    if els_variant != null { try bind_all{ &m, binds = els_binds, u = k, t = init.ty, variant = els_variant } }
+                    try block{ &m, b = els, res = 0 }
+                    return
+                }
+                try bind_all{ &m, binds, u = k, t = init.ty, variant }
+            }
+        }
+    }
+
+    fn run_loop { mut m: M, c: ir::Expr, body: ir::Block, label: ?u32 } -> ! {
+        while true {
+            try spend{ &m }
+            let mark = m.sp
+            let go = try truth{ &m, x = c }
+            m.sp = if mark > m.floor { mark } else { m.floor }
+            if not go { return }
+            match block{ &m, b = body, res = 0 } {
+                ok => {}
+                leave => {
+                    match m.flow {
+                        brk{ label = target } => {
+                            if stops{ target, label } {
+                                m.flow = Flow::none
+                                return
+                            }
+                        }
+                        cont{ label = target } => {
+                            if stops{ target, label } {
+                                m.flow = Flow::none
+                                continue
+                            }
+                        }
+                        else => {}
+                    }
+                    return leave
+                }
+                halt => { return halt }
+            }
+        }
+    }
+
+    // Whether a jump to `target` (null: the innermost loop) is to a loop labeled `label`.
+    fn stops { target: ?u32, label: ?u32 } -> bool {
+        if target == null { return true }
+        if label == null { return false }
+        return target == label
+    }
+
+    // The arm of `arms` for the union at k, or the one k points to if `through`, with its
+    // bindings; a value arm's result into res.
+    fn pick { mut m: M, k: Addr, through: bool, t: ir::TypeId, arms: []ir::Arm, res: Addr } -> ! {
+        let mut u = k
+        let mut ut = t
+        if through {
+            u = try load{ &m, a = k, n = 8 }
+            let ptr{ elem } = m.types[t] else {
+                fail{ &m, msg = "eval: a match through a non-pointer" }
+                return halt
+            }
+            ut = elem
+        }
+        let mut i: usize = 0
+        while i < arms.len {
+            let a = arms[i]
+            if a.pats.len == 0 { return block{ &m, b = a.body, res } }
+            let mut j: usize = 0
+            while j < a.pats.len {
+                let q = a.pats[j]
+                let held = try holds{ &m, u, t = ut, variant = q.variant }
+                if held {
+                    try bind_all{ &m, binds = q.binds, u, t = ut, variant = q.variant }
+                    return block{ &m, b = a.body, res }
+                }
+                j = j + 1
+            }
+            i = i + 1
+        }
+        fail{ &m, msg = "eval: no arm of a match holds its value" }
+        return halt
+    }
+
+    // The case of `cases` for v, an integer of type t.
+    fn case_of { mut m: M, v: u64, t: ir::TypeId, cases: []ir::Case, res: Addr } -> ! {
+        let p = prim{ ts = m.types, t }
+        let mut i: usize = 0
+        while i < cases.len {
+            let c = cases[i]
+            if c.values.len == 0 { return block{ &m, b = c.body, res } }
+            let mut j: usize = 0
+            while j < c.values.len {
+                if int_bits{ negative = c.values[j].negative, n = c.values[j].value, p } == v { return block{ &m, b = c.body, res } }
+                j = j + 1
+            }
+            i = i + 1
+        }
+        fail{ &m, msg = "eval: no case of a match holds its value" }
+        return halt
+    }
+
+    // Whether the union at u, of type t, holds `variant`: for a ?*T, null is the address 0.
+    fn holds { mut m: M, u: Addr, t: ir::TypeId, variant: u32 } -> !bool {
+        if m.types[t] is nptr {
+            let v = try load{ &m, a = u, n = 8 }
+            return (v == 0) == (variant == 0)
+        }
+        let tag = try load{ &m, a = u, n = 4 }
+        return tag == variant
+    }
+
+    // Each binding's slot gets its payload field of `variant` of the union at u, or the field's
+    // address. A ?*T's payload is the pointer itself.
+    fn bind_all { mut m: M, binds: []ir::Bind, u: Addr, t: ir::TypeId, variant: u32 } -> ! {
+        let mut i: usize = 0
+        while i < binds.len {
+            let b = binds[i]
+            let mut src = u
+            if m.types[t] is tagged{ variants } {
+                let fields = variants[variant].fields ifnull {
+                    fail{ &m, msg = "eval: a binding of a variant without a payload" }
+                    return halt
+                }
+                src = u + fields[b.field].offset
+            }
+            let dst = local{ &m, slot = b.slot }
+            if b.by_ref {
+                try store{ &m, a = dst, n = 8, v = src }
+            } else {
+                try copy{ &m, dst, src, n = size{ ts = m.types, t = m.locals[b.slot].ty } }
+            }
+            i = i + 1
+        }
+    }
+
+    // ---- expressions
+
+    // x's value, in a temporary on the stack.
+    fn value { mut m: M, x: ir::Expr } -> !Addr {
+        match x.k {
+            int | float | boolean | neg | lnot | land | lor | arith | bits | shift | cmp | ptradd
+            | isnull | notnull | widen | trunc | cast | ptraddr | convert | wrap => {
+                let v = try scalar{ &m, x }
+                let a = try temp{ &m, t = x.ty }
+                try store{ &m, a, n = size{ ts = m.types, t = x.ty }, v }
+                return a
+            }
+            str{ bytes } => {
+                // an array of the bytes
+                let a = try temp{ &m, t = x.ty }
+                let n = min{ a = size{ ts = m.types, t = x.ty }, b = @as(u64, bytes.len) }
+                slice::copy(u8){ dst = try at{ &m, a, n }, src = bytes[..@as(usize, n)] }
+                return a
+            }
+            sbytes{ bytes } => {
+                let s = try literal{ &m, bytes }
+                let a = try temp{ &m, t = x.ty }
+                try store{ &m, a, n = 8, v = s }
+                try store{ &m, a = a + 8, n = 8, v = @as(u64, bytes.len) }
+                return a
+            }
+            cstr{ bytes } => {
+                let s = try literal{ &m, bytes }
+                let a = try temp{ &m, t = x.ty }
+                try store{ &m, a, n = 8, v = s }
+                return a
+            }
+            nil => { return try temp{ &m, t = x.ty } }
+            local | constref | deref | field | index | sindex | payload => {
+                let src = try place{ &m, x }
+                return try copied{ &m, src, t = x.ty }
+            }
+            cvar{ id } => {
+                let mut b = builder{ heap = m.heap }
+                try! @fmt(&b, "C variable {} (C's `{}`) is not supported by interp", str{ s = m.p.vars[id].name }, str{ s = m.p.vars[id].symbol })
+                fail{ &m, msg = utf8::view{ b }.bytes }
+                return halt
+            }
+            ssub{ base, lo, hi, pos } => { return try ssub{ &m, t = x.ty, base = base.*, lo = lo.*, hi, pos } }
+            addr{ place = q } => {
+                let mut a: Addr = 0
+                if is_place{ x = q.* } {
+                    a = try place{ &m, x = q.* }
+                } else {
+                    // C's compound literal: it lives until its block ends
+                    a = try value{ &m, x = q.* }
+                    if m.sp > m.floor { m.floor = m.sp }
+                }
+                let r = try temp{ &m, t = x.ty }
+                try store{ &m, a = r, n = 8, v = a }
+                return r
+            }
+            seq{ first, then } => {
+                _ = try value{ &m, x = first.* }
+                return try value{ &m, x = then.* }
+            }
+            with{ slot, init, body } => {
+                let v = try value{ &m, x = init.* }
+                let dst = local{ &m, slot }
+                try copy{ &m, dst, src = v, n = size{ ts = m.types, t = init.ty } }
+                return try value{ &m, x = body.* }
+            }
+            some{ e } => {
+                // a ?*T, or a ?c::String, is its payload's bytes
+                if m.types[x.ty] is nptr { return try value{ &m, x = e.* } }
+                let r = try temp{ &m, t = x.ty }
+                try store{ &m, a = r, n = 4, v = 1 }
+                let v = try value{ &m, x = e.* }
+                let off = payload_offset{ ts = m.types, t = x.ty, variant = 1, field = 0 }
+                try copy{ &m, dst = r + off, src = v, n = size{ ts = m.types, t = e.ty } }
+                return r
+            }
+            fnconv{ e } => { return try fnconv{ &m, t = x.ty, e = e.* } }
+            call{ callee, args } => {
+                let f = m.p.fns[callee]
+                let base = try args_of{ &m, args, n = f.params.len }
+                let r = try temp{ &m, t = f.ret }
+                try invoke{ &m, callee, base, res = r }
+                m.argv.len = base
+                return r
+            }
+            dcall{ callee, args } => { return try dcall{ &m, t = x.ty, callee = callee.*, args } }
+            bind{ callee, args } => {
+                let c = code{ &m, key = Key{ kind = 2, a = callee, b = @addr(args.ptr) }, c = Code::bound{ callee, args } }
+                return try record_of{ &m, t = x.ty, c, inner = 0, start = 8, args }
+            }
+            dbind{ callee, args } => {
+                let c = code{ &m, key = Key{ kind = 3, a = callee.ty, b = @addr(args.ptr) }, c = Code::dbound{ inner = callee.ty, args } }
+                let inner = try scalar{ &m, x = callee.* }
+                return try record_of{ &m, t = x.ty, c, inner, start = 16, args }
+            }
+            fnref{ callee } => {
+                let r = try temp{ &m, t = x.ty }
+                if m.types[x.ty] is cfn {
+                    let c = code{ &m, key = Key{ kind = 1, a = callee, b = 0 }, c = Code::cfn{ callee } }
+                    try store{ &m, a = r, n = 8, v = c }
+                    return r
+                }
+                let g = try thunk{ &m, callee }
+                try store{ &m, a = r, n = 8, v = g }
+                return r
+            }
+            record{ items } => { return try literal_of{ &m, t = x.ty, variant = null, items } }
+            variant{ index, items } => { return try literal_of{ &m, t = x.ty, variant = index, items } }
+            array{ elems } => {
+                let r = try temp{ &m, t = x.ty }
+                let arr{ elem } = m.types[x.ty] else {
+                    fail{ &m, msg = "eval: an array literal of a non-array" }
+                    return halt
+                }
+                let n = size{ ts = m.types, t = elem }
+                let mut i: usize = 0
+                while i < elems.len {
+                    let v = try value{ &m, x = elems[i] }
+                    try copy{ &m, dst = r + n * @as(u64, i), src = v, n }
+                    i = i + 1
+                }
+                return r
+            }
+            repeat{ elem } => {
+                let v = try value{ &m, x = elem.* }
+                let r = try temp{ &m, t = x.ty }
+                let arr{ n = count } = m.types[x.ty] else {
+                    fail{ &m, msg = "eval: a repeat of a non-array" }
+                    return halt
+                }
+                let n = size{ ts = m.types, t = elem.ty }
+                let mut i: u64 = 0
+                while i < count {
+                    try copy{ &m, dst = r + n * i, src = v, n }
+                    i = i + 1
+                }
+                return r
+            }
+            ifx{ c, then, els } => {
+                let r = try temp{ &m, t = x.ty }
+                let go = try truth{ &m, x = c.* }
+                try block{ &m, b = if go { then } else { els }, res = r }
+                return r
+            }
+            matchx{ scrut, through, arms } => {
+                let r = try temp{ &m, t = x.ty }
+                let k = try value{ &m, x = scrut.* }
+                try pick{ &m, k, through, t = scrut.ty, arms, res = r }
+                return r
+            }
+            switchx{ scrut, cases } => {
+                let r = try temp{ &m, t = x.ty }
+                let v = try scalar{ &m, x = scrut.* }
+                try case_of{ &m, v, t = scrut.ty, cases, res = r }
+                return r
+            }
+        }
+    }
+
+    // The value of x, of a primitive, pointer or function type, as a u64: an integer's bits,
+    // sign-extended if it is signed; a bool's 0 or 1; a float's bits; an address.
+    fn scalar { mut m: M, x: ir::Expr } -> !u64 {
+        match x.k {
+            int{ negative, value = n } => { return int_bits{ negative, n, p = prim{ ts = m.types, t = x.ty } } }
+            float{ value = d } => {
+                if prim{ ts = m.types, t = x.ty } is f32 { return f32_bits{ x = @as(f32, d) } }
+                return f64_bits{ x = d }
+            }
+            boolean{ value = b } => { return if b { 1 } else { 0 } }
+            local | constref | deref | field | index | sindex | payload => {
+                let a = try place{ &m, x }
+                return try get{ &m, a, t = x.ty }
+            }
+            neg{ e, pos } => {
+                let v = try scalar{ &m, x = e.* }
+                return try negate{ &m, p = prim{ ts = m.types, t = x.ty }, v, pos }
+            }
+            lnot{ e } => {
+                let v = try scalar{ &m, x = e.* }
+                return if v == 0 { 1 } else { 0 }
+            }
+            land{ a, b } => {
+                if not try truth{ &m, x = a.* } { return 0 }
+                return if try truth{ &m, x = b.* } { 1 } else { 0 }
+            }
+            lor{ a, b } => {
+                if try truth{ &m, x = a.* } { return 1 }
+                return if try truth{ &m, x = b.* } { 1 } else { 0 }
+            }
+            arith{ op, a, b, pos } => {
+                let va = try scalar{ &m, x = a.* }
+                let vb = try scalar{ &m, x = b.* }
+                return try arith{ &m, op, p = prim{ ts = m.types, t = x.ty }, a = va, b = vb, pos }
+            }
+            bits{ op, a, b } => {
+                let va = try scalar{ &m, x = a.* }
+                let vb = try scalar{ &m, x = b.* }
+                match op {
+                    bit_and => { return va & vb }
+                    bit_or  => { return va | vb }
+                    bit_xor => { return va ^ vb }
+                }
+            }
+            shift{ op, a, b, pos } => {
+                let va = try scalar{ &m, x = a.* }
+                let vb = try scalar{ &m, x = b.* }
+                return try shift{ &m, op, p = prim{ ts = m.types, t = x.ty }, a = va, b = vb, cp = prim{ ts = m.types, t = b.ty }, pos }
+            }
+            cmp{ op, a, b } => {
+                let va = try scalar{ &m, x = a.* }
+                let vb = try scalar{ &m, x = b.* }
+                return if compare{ ts = m.types, op, t = a.ty, a = va, b = vb } { 1 } else { 0 }
+            }
+            ptradd{ p = q, n } => {
+                let vp = try scalar{ &m, x = q.* }
+                let vn = try scalar{ &m, x = n.* }
+                let ptr{ elem } = m.types[q.ty] else {
+                    fail{ &m, msg = "eval: pointer arithmetic on a non-pointer" }
+                    return halt
+                }
+                return @wrap_add(vp, @wrap_mul(vn, size{ ts = m.types, t = elem }))
+            }
+            isnull{ e } => { return if try is_null{ &m, x = e.* } { 1 } else { 0 } }
+            notnull{ e } => { return if try is_null{ &m, x = e.* } { 0 } else { 1 } }
+            widen{ e } | trunc{ e } | cast{ e } => {
+                // C's cast: between numbers, a conversion; between pointers, the same address
+                let v = try scalar{ &m, x = e.* }
+                let from = m.types[e.ty]
+                let to = m.types[x.ty]
+                if from is prim{ p = pf } and to is prim{ p = pt } { return c_cast{ v, from = pf, to = pt } }
+                return v
+            }
+            ptraddr{ e } => { return try scalar{ &m, x = e.* } }
+            convert{ e, pos } => {
+                let v = try scalar{ &m, x = e.* }
+                return try as{ &m, v, from = prim{ ts = m.types, t = e.ty }, to = prim{ ts = m.types, t = x.ty }, pos }
+            }
+            wrap{ op, a, b } => {
+                let va = try scalar{ &m, x = a.* }
+                let vb = try scalar{ &m, x = b.* }
+                let r = match op {
+                    add  => { @wrap_add(va, vb) }
+                    sub  => { @wrap_sub(va, vb) }
+                    else => { @wrap_mul(va, vb) }
+                }
+                return extend{ v = r, p = prim{ ts = m.types, t = x.ty } }
+            }
+            else => {
+                let a = try value{ &m, x }
+                return try get{ &m, a, t = x.ty }
+            }
+        }
+    }
+
+    fn truth { mut m: M, x: ir::Expr } -> !bool {
+        let v = try scalar{ &m, x }
+        return v != 0
+    }
+
+    // Whether x, a ?T, is null: tag 0, or a ?*T's address 0.
+    fn is_null { mut m: M, x: ir::Expr } -> !bool {
+        if m.types[x.ty] is nptr {
+            let v = try scalar{ &m, x }
+            return v == 0
+        }
+        let a = try value{ &m, x }
+        let tag = try load{ &m, a, n = 4 }
+        return tag == 0
+    }
+
+    // The address of place x. Anything else is a value in a temporary, so that a field or element
+    // of a call's result is found as emit_c's temporaries find it.
+    fn place { mut m: M, x: ir::Expr } -> !Addr {
+        match x.k {
+            local{ slot } => { return local{ &m, slot } }
+            constref{ id } => { return try const_at{ &m, id } }
+            deref{ ptr } => { return try scalar{ &m, x = ptr.* } }
+            field{ base, index } => {
+                let b = try base_of{ &m, x = base.* }
+                return b + members{ ts = m.types, t = base.ty }[index].offset
+            }
+            index{ base, i, pos } => {
+                let arr{ n, elem } = m.types[base.ty] else {
+                    fail{ &m, msg = "eval: an index of a non-array" }
+                    return halt
+                }
+                let b = try base_of{ &m, x = base.* }
+                let k = try scalar{ &m, x = i.* }
+                try bounds{ &m, i = k, n, pos }
+                return b + k * size{ ts = m.types, t = elem }
+            }
+            sindex{ base, i, pos } => {
+                let s = try value{ &m, x = base.* }
+                let k = try scalar{ &m, x = i.* }
+                let ptr = try load{ &m, a = s, n = 8 }
+                let n = try load{ &m, a = s + 8, n = 8 }
+                try bounds{ &m, i = k, n, pos }
+                return @wrap_add(ptr, @wrap_mul(k, size{ ts = m.types, t = x.ty }))
+            }
+            payload{ base, variant, field } => {
+                let b = try base_of{ &m, x = base.* }
+                if m.types[base.ty] is nptr { return b }
+                return b + payload_offset{ ts = m.types, t = base.ty, variant, field }
+            }
+            else => { return try value{ &m, x } }
+        }
+    }
+
+    fn base_of { mut m: M, x: ir::Expr } -> !Addr {
+        if is_place{ x } { return try place{ &m, x } }
+        return try value{ &m, x }
+    }
+
+    // emit_c's is_place: a place in C.
+    fn is_place { x: ir::Expr } -> bool {
+        return match x.k {
+            local | constref | deref | sindex => { true }
+            field{ base } | index{ base } | payload{ base } => { is_place{ x = base.* } }
+            else => { false }
+        }
+    }
+
+    // "index I out of bounds for length N", as ctx_idx panics.
+    fn bounds { mut m: M, i: u64, n: u64, pos: ir::Pos } -> ! {
+        if i < n { return }
+        let mut b = builder{ heap = m.heap }
+        try! @fmt(&b, "index {} out of bounds for length {}", i, n)
+        panic_at{ &m, pos, msg = utf8::view{ b }.bytes }
+        return halt
+    }
+
+    // S[LO..HI], as ctx_range checks it.
+    fn ssub { mut m: M, t: ir::TypeId, base: ir::Expr, lo: ir::Expr, hi: ?*ir::Expr, pos: ir::Pos } -> !Addr {
+        let s = try value{ &m, x = base }
+        let l = try scalar{ &m, x = lo }
+        let n = try load{ &m, a = s + 8, n = 8 }
+        let mut h = n
+        if hi != null { h = try scalar{ &m, x = hi.* } }
+        if l > h or h > n {
+            let mut b = builder{ heap = m.heap }
+            try! @fmt(&b, "range {}..{} out of bounds for length {}", l, h, n)
+            panic_at{ &m, pos, msg = utf8::view{ b }.bytes }
+            return halt
+        }
+        let ptr = try load{ &m, a = s, n = 8 }
+        let r = try temp{ &m, t }
+        try store{ &m, a = r, n = 8, v = @wrap_add(ptr, @wrap_mul(l, elem_size{ ts = m.types, t })) }
+        try store{ &m, a = r + 8, n = 8, v = h - l }
+        return r
+    }
+
+    // A struct, capability, union or optional literal.
+    fn literal_of { mut m: M, t: ir::TypeId, variant: ?u32, items: []ir::Arg } -> !Addr {
+        if m.types[t] is nptr {
+            // `null` is 0; `some{ value = p }` is p
+            if items.len == 1 { return try value{ &m, x = items[0].value } }
+            return try temp{ &m, t }
+        }
+        let r = try temp{ &m, t }
+        let mut fields = members{ ts = m.types, t }
+        if m.types[t] is tagged{ variants } {
+            let v = variant ifnull {
+                fail{ &m, msg = "eval: a variant literal without a variant" }
+                return halt
+            }
+            try store{ &m, a = r, n = 4, v = @as(u64, v) }
+            fields = variants[v].fields ifnull { slice::empty(ir::Field){} }
+        }
+        let mut i: usize = 0
+        while i < items.len {
+            let a = items[i]
+            let v = try value{ &m, x = a.value }
+            try copy{ &m, dst = r + fields[a.index].offset, src = v, n = size{ ts = m.types, t = a.value.ty } }
+            i = i + 1
+        }
+        return r
+    }
+
+    // A copy of the value of type t at src.
+    fn copied { mut m: M, src: Addr, t: ir::TypeId } -> !Addr {
+        let a = try temp{ &m, t }
+        try copy{ &m, dst = a, src, n = size{ ts = m.types, t } }
+        return a
+    }
+
+    // The address of const id's value, in static data, evaluated the first time.
+    fn const_at { mut m: M, id: u32 } -> !Addr {
+        let key = Key{ kind = 6, a = @as(u64, id), b = 0 }
+        let known = map::get{ m = m.known, key }
+        if known != null { return known }
+        let c = m.p.consts[id]
+        let v = try value{ &m, x = c.value }
+        let n = size{ ts = m.types, t = c.ty }
+        let a = try static_bytes{ &m, n, align = align{ ts = m.types, t = c.ty } }
+        slice::copy(u8){ dst = try at{ &m, a, n }, src = try at{ &m, a = v, n } }
+        try! map::put{ m = &m.known, key, value = a }
+        return a
+    }
+
+    // A literal's bytes in static data, with a NUL after them, as a C string literal has.
+    fn literal { mut m: M, bytes: []u8 } -> !Addr {
+        let key = Key{ kind = 5, a = @addr(bytes.ptr), b = @as(u64, bytes.len) }
+        let known = map::get{ m = m.known, key }
+        if known != null { return known }
+        let n = @as(u64, bytes.len)
+        let a = try static_bytes{ &m, n = n + 1, align = 1 }
+        let d = try at{ &m, a, n = n + 1 }
+        slice::copy(u8){ dst = d, src = bytes }
+        d[bytes.len] = 0
+        try! map::put{ m = &m.known, key, value = a }
+        return a
+    }
+
+    // ---- function values and calls
+
+    // Evaluates args in order, each into argv[base + its param]. Returns base.
+    fn args_of { mut m: M, args: []ir::Arg, n: usize } -> !usize {
+        let base = m.argv.len
+        let mut i: usize = 0
+        while i < n {
+            try! list::push{ list = &m.argv, item = 0 }
+            i = i + 1
+        }
+        i = 0
+        while i < args.len {
+            let v = try value{ &m, x = args[i].value }
+            list::items{ list = m.argv }[base + args[i].index] = v
+            i = i + 1
+        }
+        return base
+    }
+
+    // A call through a function value: the callee, then the args.
+    fn dcall { mut m: M, t: ir::TypeId, callee: ir::Expr, args: []ir::Arg } -> !Addr {
+        if m.types[callee.ty] is cfn{ params } { return try c_call{ &m, t, callee, params, args } }
+        let func{ params } = m.types[callee.ty] else {
+            fail{ &m, msg = "eval: a call of a non-function" }
+            return halt
+        }
+        let rec = try scalar{ &m, x = callee }
+        let base = try args_of{ &m, args, n = params.len }
+        let r = try temp{ &m, t }
+        try dispatch{ &m, rec, given = params, base, res = r }
+        m.argv.len = base
+        return r
+    }
+
+    // Calls the function value whose record is at rec, with args at argv[base..] for the params
+    // `given`; its value into res.
+    fn dispatch { mut m: M, rec: Addr, given: []ir::Param, base: usize, res: Addr } -> ! {
+        let a = try load{ &m, a = rec, n = 8 }
+        let c = try code_at{ &m, a }
+        match c {
+            thunk{ callee } => {
+                let nb = try forward{ &m, target = m.p.fns[callee].params, args = slice::empty(ir::Arg){}, rec, start = 8, given, base }
+                try invoke{ &m, callee, base = nb, res }
+                m.argv.len = nb
+            }
+            bound{ callee, args } => {
+                let nb = try forward{ &m, target = m.p.fns[callee].params, args, rec, start = 8, given, base }
+                try invoke{ &m, callee, base = nb, res }
+                m.argv.len = nb
+            }
+            dbound{ inner, args } => {
+                let func{ params } = m.types[inner] else {
+                    fail{ &m, msg = "eval: a bind of a non-function" }
+                    return halt
+                }
+                let nb = try forward{ &m, target = params, args, rec, start = 16, given, base }
+                let inside = try load{ &m, a = rec + 8, n = 8 }
+                try dispatch{ &m, rec = inside, given = params, base = nb, res }
+                m.argv.len = nb
+            }
+            adapter{ from } => {
+                let func{ params } = m.types[from] else {
+                    fail{ &m, msg = "eval: an adapter of a non-function" }
+                    return halt
+                }
+                let nb = try forward{ &m, target = params, args = slice::empty(ir::Arg){}, rec, start = 16, given, base }
+                let inside = try load{ &m, a = rec + 8, n = 8 }
+                try dispatch{ &m, rec = inside, given = params, base = nb, res }
+                m.argv.len = nb
+            }
+            cfn => {
+                fail{ &m, msg = "eval: a C function pointer called as a function value" }
+                return halt
+            }
+        }
+    }
+
+    // Pushes an arg for each of target's params: one captured in the record at rec, laid out
+    // after `start` bytes in args' order, or else the given param of the same name. Returns
+    // where they start in argv.
+    fn forward { mut m: M, target: []ir::Param, args: []ir::Arg, rec: Addr, start: u64, given: []ir::Param, base: usize } -> !usize {
+        let nb = m.argv.len
+        let mut j: usize = 0
+        while j < target.len {
+            let mut a: Addr = 0
+            let mut found = false
+            let mut off = start
+            let mut i: usize = 0
+            while i < args.len {
+                let t = args[i].value.ty
+                off = up{ n = off, to = align{ ts = m.types, t } }
+                if args[i].index == j {
+                    a = rec + off
+                    found = true
+                }
+                off = off + size{ ts = m.types, t }
+                i = i + 1
+            }
+            if not found {
+                let k = by_name{ params = given, name = target[j].name } ifnull {
+                    fail{ &m, msg = "eval: a function value's param is missing" }
+                    return halt
+                }
+                a = list::items{ list = m.argv }[base + k]
+            }
+            try! list::push{ list = &m.argv, item = a }
+            j = j + 1
+        }
+        return nb
+    }
+
+    fn by_name { params: []ir::Param, name: []u8 } -> ?usize {
+        let mut i: usize = 0
+        while i < params.len {
+            if slice::eq_bytes{ a = params[i].name, b = name } { return i }
+            i = i + 1
+        }
+        return null
+    }
+
+    // The code at address a.
+    fn code_at { mut m: M, a: Addr } -> !Code {
+        if a >> SHIFT != @as(u64, CODE) or (a & MASK) >= @as(u64, m.codes.len) {
+            let mut b = builder{ heap = m.heap }
+            try! @fmt(&b, "a call through {x}, which isn't a function", a)
+            fail{ &m, msg = utf8::view{ b }.bytes }
+            return halt
+        }
+        return list::items{ list = m.codes }[@as(usize, a & MASK)]
+    }
+
+    // The address of code c, known by key.
+    fn code { mut m: M, key: Key, c: Code } -> Addr {
+        let known = map::get{ m = m.known, key }
+        if known != null { return known }
+        let a = addr_of{ region = CODE, off = @as(u64, m.codes.len) }
+        try! list::push{ list = &m.codes, item = c }
+        try! map::put{ m = &m.known, key, value = a }
+        return a
+    }
+
+    // gN, function callee's static record.
+    fn thunk { mut m: M, callee: u32 } -> !Addr {
+        let key = Key{ kind = 0, a = @as(u64, callee), b = 0 }
+        let known = map::get{ m = m.known, key }
+        if known != null { return known }
+        let c = addr_of{ region = CODE, off = @as(u64, m.codes.len) }
+        try! list::push{ list = &m.codes, item = Code::thunk{ callee } }
+        let g = try static_bytes{ &m, n = 8, align = 8 }
+        put_bits{ b = try at{ &m, a = g, n = 8 }, v = c }
+        try! map::put{ m = &m.known, key, value = g }
+        return g
+    }
+
+    // A bind's record, from ctx_alloc: its code, the inner function value if start is 16, then
+    // the captured args, evaluated in order. Returns a temporary holding its address.
+    fn record_of { mut m: M, t: ir::TypeId, c: Addr, inner: Addr, start: u64, args: []ir::Arg } -> !Addr {
+        let base = m.argv.len
+        let mut end = start
+        let mut i: usize = 0
+        while i < args.len {
+            let v = try value{ &m, x = args[i].value }
+            try! list::push{ list = &m.argv, item = v }
+            let at_t = args[i].value.ty
+            end = up{ n = end, to = align{ ts = m.types, t = at_t } } + size{ ts = m.types, t = at_t }
+            i = i + 1
+        }
+        let rec = try heap_bytes{ &m, n = end }
+        try store{ &m, a = rec, n = 8, v = c }
+        if start == 16 { try store{ &m, a = rec + 8, n = 8, v = inner } }
+        let mut off = start
+        i = 0
+        while i < args.len {
+            let at_t = args[i].value.ty
+            off = up{ n = off, to = align{ ts = m.types, t = at_t } }
+            let src = list::items{ list = m.argv }[base + i]
+            try copy{ &m, dst = rec + off, src, n = size{ ts = m.types, t = at_t } }
+            off = off + size{ ts = m.types, t = at_t }
+            i = i + 1
+        }
+        m.argv.len = base
+        let r = try temp{ &m, t }
+        try store{ &m, a = r, n = 8, v = rec }
+        return r
+    }
+
+    // A function value of type e.ty as a t: the same value for the same params, or an adapter
+    // that drops the extra ones.
+    fn fnconv { mut m: M, t: ir::TypeId, e: ir::Expr } -> !Addr {
+        let func{ params = src } = m.types[e.ty] else {
+            fail{ &m, msg = "eval: fnconv of a non-function" }
+            return halt
+        }
+        let func{ params = dst } = m.types[t] else {
+            fail{ &m, msg = "eval: fnconv to a non-function" }
+            return halt
+        }
+        let v = try scalar{ &m, x = e }
+        let r = try temp{ &m, t }
+        if same_params{ a = src, b = dst } {
+            try store{ &m, a = r, n = 8, v }
+            return r
+        }
+        let c = code{ &m, key = Key{ kind = 4, a = @as(u64, e.ty), b = 0 }, c = Code::adapter{ from = e.ty } }
+        let rec = try heap_bytes{ &m, n = 16 }
+        try store{ &m, a = rec, n = 8, v = c }
+        try store{ &m, a = rec + 8, n = 8, v }
+        try store{ &m, a = r, n = 8, v = rec }
+        return r
+    }
+
+    fn same_params { a: []ir::Param, b: []ir::Param } -> bool {
+        if a.len != b.len { return false }
+        let mut i: usize = 0
+        while i < a.len {
+            let x = a[i]
+            let y = b[i]
+            if x.ty != y.ty or x.mutable != y.mutable or not slice::eq_bytes{ a = x.name, b = y.name } { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // A call through a C function pointer: the callee, then the args. A callback gets the
+    // capabilities C doesn't pass, as emit_c's kK supplies them.
+    fn c_call { mut m: M, t: ir::TypeId, callee: ir::Expr, params: []ir::Param, args: []ir::Arg } -> !Addr {
+        let a = try scalar{ &m, x = callee }
+        let base = try args_of{ &m, args, n = params.len }
+        let r = try temp{ &m, t }
+        let c = try code_at{ &m, a }
+        let cfn{ callee = id } = c else {
+            fail{ &m, msg = "eval: a C call of a function value" }
+            return halt
+        }
+        let f = m.p.fns[id]
+        let nb = m.argv.len
+        let mut j: usize = 0
+        while j < f.params.len {
+            let q = f.params[j]
+            let mut v: Addr = 0
+            if m.types[q.ty] is cap {
+                if q.mutable {
+                    v = try temp{ &m, t = f.locals[j].ty }
+                    let c_at = try cap{ &m }
+                    try store{ &m, a = v, n = 8, v = c_at }
+                } else {
+                    v = try temp{ &m, t = q.ty }
+                }
+            } else {
+                let k = by_name{ params, name = q.name } ifnull {
+                    fail{ &m, msg = "eval: a C function's param is missing" }
+                    return halt
+                }
+                v = list::items{ list = m.argv }[base + k]
+            }
+            try! list::push{ list = &m.argv, item = v }
+            j = j + 1
+        }
+        try invoke{ &m, callee = id, base = nb, res = r }
+        m.argv.len = base
+        return r
+    }
+
+    // What a `mut` capability param points to: emit_c's `static char cap[1]`, zeroed.
+    fn cap { mut m: M } -> !Addr {
+        if m.cap == 0 { m.cap = try heap_bytes{ &m, n = 8 } }
+        return m.cap
+    }
+
+    // ---- extern fns
+
+    fn external { mut m: M, f: ir::Func, base: usize, res: Addr } -> ! {
+        if m.emulate {
+            let s = f.symbol
+            if slice::eq_bytes{ a = s, b = "ctx_io_out" } {
+                // ctxrt.c's { ctx_slice buf; uint64_t len; } over a 64 KiB buffer
+                if m.stdout == 0 {
+                    let buf = try heap_bytes{ &m, n = 65536 }
+                    let o = try heap_bytes{ &m, n = 24 }
+                    try store{ &m, a = o, n = 8, v = buf }
+                    try store{ &m, a = o + 8, n = 8, v = 65536 }
+                    m.stdout = o
+                }
+                try store{ &m, a = res, n = 8, v = m.stdout }
+                return
+            }
+            if slice::eq_bytes{ a = s, b = "write" } or slice::eq_bytes{ a = s, b = "_write" } {
+                // C's write, or the Windows CRT's _write, to standard output or error
+                let fd = try arg_bits{ &m, f, base, name = "fd" }
+                let buf = try arg_bits{ &m, f, base, name = "buf" }
+                let count = try arg_bits{ &m, f, base, name = "count" }
+                if fd == 1 or fd == 2 {
+                    let bytes = try at{ &m, a = buf, n = count }
+                    try emit{ &m, to = if fd == 1 { io::Stream::out } else { io::Stream::err }, bytes }
+                    try store{ &m, a = res, n = size{ ts = m.types, t = f.ret }, v = count }
+                    return
+                }
+            }
+            let f64_text = slice::eq_bytes{ a = s, b = "ctx_ascii_f64_digits" }
+            if f64_text or slice::eq_bytes{ a = s, b = "ctx_ascii_f32_digits" } {
+                let n = try arg_bits{ &m, f, base, name = "n" }
+                let into = try arg_at{ &m, f, base, name = "into" }
+                let mut buf: [64]u8
+                let k = if f64_text { ascii::f64_digits{ n = f64_of{ v = n }, into = buf[..] } } else { ascii::f32_digits{ n = f32_of{ v = n }, into = buf[..] } }
+                let ptr = try load{ &m, a = into, n = 8 }
+                let len = try load{ &m, a = into + 8, n = 8 }
+                if @as(u64, k) > len {
+                    let mut b = builder{ heap = m.heap }
+                    try! @fmt(&b, "{} characters do not fit in a buffer of {}", k, len)
+                    panic_nopos{ &m, msg = utf8::view{ b }.bytes }
+                    return halt
+                }
+                slice::copy(u8){ dst = try at_w{ &m, a = ptr, n = @as(u64, k) }, src = buf[..k] }
+                try store{ &m, a = res, n = 8, v = @as(u64, k) }
+                return
+            }
+            let f64_parse = slice::eq_bytes{ a = s, b = "ctx_ascii_f64_parse" }
+            if f64_parse or slice::eq_bytes{ a = s, b = "ctx_ascii_f32_parse" } {
+                let text = try arg_at{ &m, f, base, name = "text" }
+                let ptr = try load{ &m, a = text, n = 8 }
+                let len = try load{ &m, a = text + 8, n = 8 }
+                let bytes = try at{ &m, a = ptr, n = len }
+                if f64_parse {
+                    try store{ &m, a = res, n = 8, v = f64_bits{ x = ascii::f64_parse{ text = bytes } } }
+                } else {
+                    try store{ &m, a = res, n = 4, v = f32_bits{ x = ascii::f32_parse{ text = bytes } } }
+                }
+                return
+            }
+        }
+        let mut b = builder{ heap = m.heap }
+        try! @fmt(&b, "extern fn {} (C's `{}`) is not supported by interp", str{ s = f.name }, str{ s = f.symbol })
+        fail{ &m, msg = utf8::view{ b }.bytes }
+        return halt
+    }
+
+    // The address of an extern fn's arg named `name`.
+    fn arg_at { mut m: M, f: ir::Func, base: usize, name: []u8 } -> !Addr {
+        let k = by_name{ params = f.params, name } ifnull {
+            let mut b = builder{ heap = m.heap }
+            try! @fmt(&b, "extern fn {} (C's `{}`) is not supported by interp", str{ s = f.name }, str{ s = f.symbol })
+            fail{ &m, msg = utf8::view{ b }.bytes }
+            return halt
+        }
+        return list::items{ list = m.argv }[base + k]
+    }
+
+    fn arg_bits { mut m: M, f: ir::Func, base: usize, name: []u8 } -> !u64 {
+        let a = try arg_at{ &m, f, base, name }
+        let k = by_name{ params = f.params, name } ifnull { return 0 }
+        return try get{ &m, a, t = f.params[k].ty }
+    }
+
+    // Standard output's buffer, written out, as ctxrt.c's flush_out does.
+    fn flush { mut m: M } -> ! {
+        if m.stdout == 0 { return }
+        let ptr = try load{ &m, a = m.stdout, n = 8 }
+        let len = try load{ &m, a = m.stdout + 16, n = 8 }
+        let bytes = try at{ &m, a = ptr, n = len }
+        try emit{ &m, to = io::Stream::out, bytes }
+        try store{ &m, a = m.stdout + 16, n = 8, v = 0 }
+    }
+
+    // Keeps bytes the program wrote to `to`.
+    fn emit { mut m: M, to: io::Stream, bytes: []u8 } -> ! {
+        if bytes.len == 0 { return }
+        let start = m.out.len
+        list::reserve{ list = &m.out, extra = bytes.len } iferr {
+            fail{ &m, msg = "out of memory for the program's output" }
+            return halt
+        }
+        slice::copy(u8){ dst = m.out.items[start..start + bytes.len], src = bytes }
+        m.out.len = start + bytes.len
+        if m.chunks.len > 0 {
+            let last = list::at{ list = m.chunks, i = m.chunks.len - 1 }
+            if last.to == to {
+                last.len = last.len + bytes.len
+                return
+            }
+        }
+        try! list::push{ list = &m.chunks, item = Chunk{ to, start, len = bytes.len } }
+    }
+
+    // ---- stopping
+
+    // "FILE:LINE:COL: panic: MSG", as ctx_panic writes it. A file without a name is the program.
+    fn panic_at { mut m: M, pos: ir::Pos, msg: []u8 } {
+        let mut file = m.name
+        if pos.file < m.p.files.len and m.p.files[pos.file].len > 0 { file = m.p.files[pos.file] }
+        let mut b = builder{ heap = m.heap }
+        try! @fmt(&b, "{}:{}:{}: panic: {}", str{ s = file }, pos.line, pos.col, str{ s = msg })
+        m.stop = Outcome::panic{ text = utf8::view{ b }.bytes }
+    }
+
+    // "PROGRAM: panic: MSG", as ctx_panic_nopos writes it.
+    fn panic_nopos { mut m: M, msg: []u8 } {
+        let mut b = builder{ heap = m.heap }
+        try! @fmt(&b, "{}: panic: {}", str{ s = m.name }, str{ s = msg })
+        m.stop = Outcome::panic{ text = utf8::view{ b }.bytes }
+    }
+
+    fn overflow { mut m: M, pos: ir::Pos } {
+        panic_at{ &m, pos, msg = "integer overflow" }
+    }
+
+    fn fail { mut m: M, msg: []u8 } {
+        m.stop = Outcome::failed{ msg }
+    }
+
+    fn builder { heap: *mut Heap } -> utf8::Builder(Heap) {
+        return utf8::builder{ realloc = arena::alloc, heap }
+    }
+
+    fn str { s: []u8 } -> utf8::String {
+        return utf8::String{ bytes = s }
+    }
+
+    // ---- arithmetic
+
+    // a OP b of type p, with ctxrt.h's checks: overflow, and division by zero.
+    fn arith { mut m: M, op: ir::ArithOp, p: ir::Prim, a: u64, b: u64, pos: ir::Pos } -> !u64 {
+        if p is f64 {
+            let x = f64_of{ v = a }
+            let y = f64_of{ v = b }
+            return f64_bits{ x = match op { add => { x + y } sub => { x - y } mul => { x * y } div => { x / y } rem => { x % y } } }
+        }
+        if p is f32 {
+            let x = f32_of{ v = a }
+            let y = f32_of{ v = b }
+            // C's fmod is on doubles, then rounded to the f32
+            return f32_bits{ x = match op { add => { x + y } sub => { x - y } mul => { x * y } div => { x / y } rem => { @as(f32, @as(f64, x) % @as(f64, y)) } } }
+        }
+        if signed{ p } { return try signed_arith{ &m, op, p, a, b, pos } }
+        let w = bit_width{ p }
+        let hi = max_of{ p }
+        match op {
+            add => {
+                let r = @wrap_add(a, b)
+                if r < a or r > hi {
+                    overflow{ &m, pos }
+                    return halt
+                }
+                return r
+            }
+            sub => {
+                if b > a {
+                    overflow{ &m, pos }
+                    return halt
+                }
+                return a - b
+            }
+            mul => {
+                let r = @wrap_mul(a, b)
+                if (w == 64 and a != 0 and r / a != b) or r > hi {
+                    overflow{ &m, pos }
+                    return halt
+                }
+                return r
+            }
+            div => {
+                try nonzero{ &m, b, pos }
+                return a / b
+            }
+            rem => {
+                try nonzero{ &m, b, pos }
+                return a % b
+            }
+        }
+    }
+
+    fn signed_arith { mut m: M, op: ir::ArithOp, p: ir::Prim, a: u64, b: u64, pos: ir::Pos } -> !u64 {
+        let x = @trunc(i64, a)
+        let y = @trunc(i64, b)
+        let wide = bit_width{ p } == 64
+        let lo = min_of{ p }
+        let hi = @trunc(i64, max_of{ p })
+        let mut r: i64 = 0
+        let mut bad = false
+        match op {
+            add => {
+                r = @wrap_add(x, y)
+                bad = if wide { (x >= 0) == (y >= 0) and (r >= 0) != (x >= 0) } else { r < lo or r > hi }
+            }
+            sub => {
+                r = @wrap_sub(x, y)
+                bad = if wide { (x >= 0) != (y >= 0) and (r >= 0) != (x >= 0) } else { r < lo or r > hi }
+            }
+            mul => {
+                // narrower than 64 bits, the product is exact in an i64
+                r = @wrap_mul(x, y)
+                if wide {
+                    bad = x != 0 and ((x == -1 and y == lo) or (y == -1 and x == lo) or (x != -1 and r / x != y))
+                } else {
+                    bad = r < lo or r > hi
+                }
+            }
+            div => {
+                try nonzero{ &m, b, pos }
+                if x == lo and y == -1 {
+                    overflow{ &m, pos }
+                    return halt
+                }
+                r = x / y
+            }
+            rem => {
+                try nonzero{ &m, b, pos }
+                if y == -1 { return 0 }
+                r = x % y
+            }
+        }
+        if bad {
+            overflow{ &m, pos }
+            return halt
+        }
+        return @trunc(u64, r)
+    }
+
+    fn nonzero { mut m: M, b: u64, pos: ir::Pos } -> ! {
+        if b != 0 { return }
+        panic_at{ &m, pos, msg = "division by zero" }
+        return halt
+    }
+
+    fn negate { mut m: M, p: ir::Prim, v: u64, pos: ir::Pos } -> !u64 {
+        if p is f64 { return f64_bits{ x = -f64_of{ v } } }
+        if p is f32 { return f32_bits{ x = -f32_of{ v } } }
+        let bad = if signed{ p } { @trunc(i64, v) == min_of{ p } } else { v != 0 }
+        if bad {
+            overflow{ &m, pos }
+            return halt
+        }
+        return @wrap_sub(0, v)
+    }
+
+    // a SHIFT b, of type p, by a count of type cp, as ctx_shcount_i and ctx_shcount_u check it.
+    fn shift { mut m: M, op: ir::ShiftOp, p: ir::Prim, a: u64, b: u64, cp: ir::Prim, pos: ir::Pos } -> !u64 {
+        let w = bit_width{ p }
+        let mut b2 = builder{ heap = m.heap }
+        if signed{ p = cp } {
+            let n = @trunc(i64, b)
+            if n < 0 or n >= @as(i64, w) {
+                try! @fmt(&b2, "shift count {} out of range for a {}-bit integer", n, w)
+                panic_at{ &m, pos, msg = utf8::view{ b = b2 }.bytes }
+                return halt
+            }
+        } else if b >= w {
+            try! @fmt(&b2, "shift count {} out of range for a {}-bit integer", b, w)
+            panic_at{ &m, pos, msg = utf8::view{ b = b2 }.bytes }
+            return halt
+        }
+        let n = @trunc(u32, b)
+        match op {
+            shl => { return extend{ v = a << n, p } }
+            shr => {
+                if signed{ p } { return @trunc(u64, @trunc(i64, a) >> n) }
+                return a >> n
+            }
+        }
+    }
+
+    fn compare { ts: []ir::Type, op: ir::CmpOp, t: ir::TypeId, a: u64, b: u64 } -> bool {
+        if ts[t] is prim{ p } {
+            if p is f64 {
+                let x = f64_of{ v = a }
+                let y = f64_of{ v = b }
+                return match op { eq => { x == y } ne => { x != y } lt => { x < y } le => { x <= y } gt => { x > y } ge => { x >= y } }
+            }
+            if p is f32 {
+                let x = f32_of{ v = a }
+                let y = f32_of{ v = b }
+                return match op { eq => { x == y } ne => { x != y } lt => { x < y } le => { x <= y } gt => { x > y } ge => { x >= y } }
+            }
+            if signed{ p } {
+                let x = @trunc(i64, a)
+                let y = @trunc(i64, b)
+                return match op { eq => { x == y } ne => { x != y } lt => { x < y } le => { x <= y } gt => { x > y } ge => { x >= y } }
+            }
+        }
+        return match op { eq => { a == b } ne => { a != b } lt => { a < b } le => { a <= b } gt => { a > b } ge => { a >= b } }
+    }
+
+    // C's cast between numbers: an integer keeps its value's low bits, a float converts.
+    fn c_cast { v: u64, from: ir::Prim, to: ir::Prim } -> u64 {
+        let ff = is_float{ p = from }
+        let tf = is_float{ p = to }
+        if not ff and not tf { return extend{ v, p = to } }
+        let d = to_f64{ v, p = from }
+        if tf { return from_f64{ d, p = to } }
+        // a float out of the integer's range is undefined in C; this gives 0
+        if signed{ p = to } {
+            if d >= -9223372036854775808.0 and d < 9223372036854775808.0 { return extend{ v = @trunc(u64, @as(i64, d)), p = to } }
+            return 0
+        }
+        if d > -1.0 and d < 18446744073709551616.0 { return extend{ v = @as(u64, d), p = to } }
+        return 0
+    }
+
+    // @as between numbers: ctx_as_s, ctx_as_u, ctx_f2i_s and ctx_f2i_u's checks, with their
+    // messages.
+    fn as { mut m: M, v: u64, from: ir::Prim, to: ir::Prim, pos: ir::Pos } -> !u64 {
+        if is_float{ p = to } { return from_f64{ d = to_f64{ v, p = from }, p = to } }
+        let mut b = builder{ heap = m.heap }
+        if is_float{ p = from } {
+            let d = to_f64{ v, p = from }
+            let mut ok = false
+            if signed{ p = to } {
+                let lo = min_of{ p = to }
+                let hi = @trunc(i64, max_of{ p = to })
+                let low_ok = if lo == min_of{ p = ir::Prim::i64 } { d >= -9223372036854775808.0 } else { d > @as(f64, lo) - 1.0 }
+                ok = low_ok and d < @as(f64, hi) + 1.0
+                if ok { return extend{ v = @trunc(u64, @as(i64, d)), p = to } }
+            } else {
+                let hi = max_of{ p = to }
+                let limit = if hi == MAX { 18446744073709551616.0 } else { @as(f64, hi) + 1.0 }
+                ok = d > -1.0 and d < limit
+                if ok { return @as(u64, d) }
+            }
+            let mut text: [32]u8
+            try! @fmt(&b, "@as: {} is not representable in {}", utf8::fmt_f64{ n = d, into = text[..] }, prim_name{ p = to })
+            panic_at{ &m, pos, msg = utf8::view{ b }.bytes }
+            return halt
+        }
+        if signed{ p = from } {
+            let x = @trunc(i64, v)
+            let mut lo: i64 = 0
+            let mut hi: i64 = 0
+            if signed{ p = to } {
+                lo = min_of{ p = to }
+                hi = @trunc(i64, max_of{ p = to })
+            } else if bit_width{ p = to } == 64 {
+                hi = @trunc(i64, max_of{ p = ir::Prim::i64 })      // all an i64 can reach
+            } else {
+                hi = @trunc(i64, max_of{ p = to })
+            }
+            if x < lo or x > hi {
+                try! @fmt(&b, "@as: {} is not representable in {}", x, prim_name{ p = to })
+                panic_at{ &m, pos, msg = utf8::view{ b }.bytes }
+                return halt
+            }
+            return extend{ v, p = to }
+        }
+        if v > max_of{ p = to } {
+            try! @fmt(&b, "@as: {} is not representable in {}", v, prim_name{ p = to })
+            panic_at{ &m, pos, msg = utf8::view{ b }.bytes }
+            return halt
+        }
+        return v
+    }
+
+    fn to_f64 { v: u64, p: ir::Prim } -> f64 {
+        if p is f64 { return f64_of{ v } }
+        if p is f32 { return @as(f64, f32_of{ v }) }
+        if signed{ p } { return @as(f64, @trunc(i64, v)) }
+        return @as(f64, v)
+    }
+
+    fn from_f64 { d: f64, p: ir::Prim } -> u64 {
+        if p is f32 { return f32_bits{ x = @as(f32, d) } }
+        return f64_bits{ x = d }
+    }
+
+    // ---- numbers as bits
+
+    // An integer literal of type p: its magnitude, negated if negative.
+    fn int_bits { negative: bool, n: u64, p: ir::Prim } -> u64 {
+        return extend{ v = if negative { @wrap_sub(0, n) } else { n }, p }
+    }
+
+    // v's low bits for p, sign-extended if p is signed.
+    fn extend { v: u64, p: ir::Prim } -> u64 {
+        let w = bit_width{ p }
+        if w == 64 { return v }
+        let mask = (@as(u64, 1) << w) - 1
+        let low = v & mask
+        if signed{ p } and (low >> (w - 1)) & 1 == 1 { return low | (MAX ^ mask) }
+        return low
+    }
+
+    fn f64_bits { x: f64 } -> u64 {
+        let v = x
+        return @cast(*u64, &v).*
+    }
+
+    fn f64_of { v: u64 } -> f64 {
+        let b = v
+        return @cast(*f64, &b).*
+    }
+
+    fn f32_bits { x: f32 } -> u64 {
+        let v = x
+        return @as(u64, @cast(*u32, &v).*)
+    }
+
+    fn f32_of { v: u64 } -> f32 {
+        let b = @trunc(u32, v)
+        return @cast(*f32, &b).*
+    }
+
+    fn min_of { p: ir::Prim } -> i64 {
+        return match p {
+            i8 => { -128 } i16 => { -32768 } i32 => { -2147483648 }
+            i64 => { @trunc(i64, @as(u64, 1) << 63) }
+            else => { 0 }
+        }
+    }
+
+    fn max_of { p: ir::Prim } -> u64 {
+        if p is bool { return 1 }
+        let w = bit_width{ p }
+        if signed{ p } { return (@as(u64, 1) << (w - 1)) - 1 }
+        if w == 64 { return MAX }
+        return (@as(u64, 1) << w) - 1
+    }
+
+    fn bit_width { p: ir::Prim } -> u64 {
+        return match p {
+            i8 => { 8 } u8 => { 8 } bool => { 8 } i16 => { 16 } u16 => { 16 } i32 => { 32 } u32 => { 32 } f32 => { 32 } else => { 64 }
+        }
+    }
+
+    fn signed { p: ir::Prim } -> bool {
+        return match p { i8 => { true } i16 => { true } i32 => { true } i64 => { true } else => { false } }
+    }
+
+    fn is_float { p: ir::Prim } -> bool {
+        return match p { f32 => { true } f64 => { true } else => { false } }
+    }
+
+    // The runtime's name for a type in @as's message: usize is usize.
+    fn prim_name { p: ir::Prim } -> utf8::String {
+        return match p {
+            i8 => { "i8" } i16 => { "i16" } i32 => { "i32" } i64 => { "i64" }
+            u8 => { "u8" } u16 => { "u16" } u32 => { "u32" } u64 => { "u64" } usize => { "usize" }
+            f32 => { "f32" } f64 => { "f64" } bool => { "bool" }
+        }
+    }
+
+    // ---- types
+
+    fn prim { ts: []ir::Type, t: ir::TypeId } -> ir::Prim {
+        if ts[t] is prim{ p } { return p }
+        return ir::Prim::u64
+    }
+
+    fn size { ts: []ir::Type, t: ir::TypeId } -> u64 {
+        return match ts[t] {
+            prim{ p } => { bit_width{ p } / 8 }
+            arr{ n, elem } => { n * size{ ts, t = elem } }
+            record{ size = s } => { s }
+            tagged{ size = s } => { s }
+            cap{ size = s } => { s }
+            void => { 0 }
+            else => { 8 }
+        }
+    }
+
+    fn align { ts: []ir::Type, t: ir::TypeId } -> u64 {
+        return match ts[t] {
+            prim{ p } => { bit_width{ p } / 8 }
+            arr{ elem } => { align{ ts, t = elem } }
+            record{ align = a } => { a }
+            tagged{ align = a } => { a }
+            cap{ align = a } => { a }
+            void => { 1 }
+            else => { 8 }
+        }
+    }
+
+    // The fields of a struct or a capability.
+    fn members { ts: []ir::Type, t: ir::TypeId } -> []ir::Field {
+        return match ts[t] {
+            record{ fields } => { fields }
+            cap{ fields } => { fields }
+            else => { slice::empty(ir::Field){} }
+        }
+    }
+
+    // A union's payload field's offset from the union's start.
+    fn payload_offset { ts: []ir::Type, t: ir::TypeId, variant: u32, field: u32 } -> u64 {
+        if ts[t] is tagged{ variants } {
+            let fields = variants[variant].fields ifnull { return 0 }
+            return fields[field].offset
+        }
+        return 0
+    }
+
+    // A slice type's element size.
+    fn elem_size { ts: []ir::Type, t: ir::TypeId } -> u64 {
+        let fields = members{ ts, t }
+        if fields.len > 0 and ts[fields[0].ty] is ptr{ elem } { return size{ ts, t = elem } }
+        return 1
+    }
+
+    // ---- memory
+
+    fn addr_of { region: u32, off: u64 } -> Addr {
+        return (@as(u64, region) << SHIFT) | off
+    }
+
+    fn up { n: u64, to: u64 } -> u64 {
+        if to <= 1 { return n }
+        return (n + to - 1) / to * to
+    }
+
+    fn min { a: u64, b: u64 } -> u64 {
+        return if a < b { a } else { b }
+    }
+
+    fn stack_len { mut m: M } -> u64 {
+        return @as(u64, list::items{ list = m.regions }[STACK].bytes.len)
+    }
+
+    // The n bytes at a, or a halt for an address that doesn't hold them.
+    fn at { mut m: M, a: Addr, n: u64 } -> ![]mut u8 {
+        if n == 0 { return slice::empty(u8){} }
+        let r = a >> SHIFT
+        let off = a & MASK
+        if r < @as(u64, m.regions.len) {
+            let g = list::items{ list = m.regions }[@as(usize, r)]
+            let len = @as(u64, g.bytes.len)
+            if off <= len and n <= len - off { return g.bytes[@as(usize, off)..@as(usize, off + n)] }
+        }
+        let mut b = builder{ heap = m.heap }
+        try! @fmt(&b, "invalid memory access: {} bytes at {x}", n, a)
+        fail{ &m, msg = utf8::view{ b }.bytes }
+        return halt
+    }
+
+    // The same, for the program to write.
+    fn at_w { mut m: M, a: Addr, n: u64 } -> ![]mut u8 {
+        let bytes = try at{ &m, a, n }
+        if n > 0 and not list::items{ list = m.regions }[@as(usize, a >> SHIFT)].writable {
+            let mut b = builder{ heap = m.heap }
+            try! @fmt(&b, "a write to read-only memory at {x}", a)
+            fail{ &m, msg = utf8::view{ b }.bytes }
+            return halt
+        }
+        return bytes
+    }
+
+    fn load { mut m: M, a: Addr, n: u64 } -> !u64 {
+        let b = try at{ &m, a, n }
+        return bits_of{ b }
+    }
+
+    fn store { mut m: M, a: Addr, n: u64, v: u64 } -> ! {
+        let b = try at_w{ &m, a, n }
+        put_bits{ b, v }
+    }
+
+    // The value of scalar type t at a (see scalar).
+    fn get { mut m: M, a: Addr, t: ir::TypeId } -> !u64 {
+        if m.types[t] is prim{ p } {
+            let v = try load{ &m, a, n = bit_width{ p } / 8 }
+            return extend{ v, p }
+        }
+        return try load{ &m, a, n = 8 }
+    }
+
+    fn bits_of { b: []u8 } -> u64 {
+        if b.len == 8 { return @cast(*u64, b.ptr).* }
+        if b.len == 4 { return @as(u64, @cast(*u32, b.ptr).*) }
+        if b.len == 2 { return @as(u64, @cast(*u16, b.ptr).*) }
+        if b.len == 1 { return @as(u64, b[0]) }
+        return 0
+    }
+
+    fn put_bits { b: []mut u8, v: u64 } {
+        if b.len == 8 {
+            @cast(*mut u64, b.ptr).* = v
+        } else if b.len == 4 {
+            @cast(*mut u32, b.ptr).* = @trunc(u32, v)
+        } else if b.len == 2 {
+            @cast(*mut u16, b.ptr).* = @trunc(u16, v)
+        } else if b.len == 1 {
+            b[0] = @trunc(u8, v)
+        }
+    }
+
+    fn copy { mut m: M, dst: Addr, src: Addr, n: u64 } -> ! {
+        if n == 0 { return }
+        let s = try at{ &m, a = src, n }
+        let d = try at_w{ &m, a = dst, n }
+        if n == 8 {
+            put_bits{ b = d, v = bits_of{ b = s } }
+            return
+        }
+        slice::copy(u8){ dst = d, src = s }
+    }
+
+    // A local's address in the running function's frame.
+    fn local { mut m: M, slot: u32 } -> Addr {
+        return addr_of{ region = STACK, off = m.frame + m.offs[slot] }
+    }
+
+    // A temporary of type t, zeroed, on the stack.
+    fn temp { mut m: M, t: ir::TypeId } -> !Addr {
+        return try reserve{ &m, n = size{ ts = m.types, t }, align = align{ ts = m.types, t } }
+    }
+
+    fn reserve { mut m: M, n: u64, align: u64 } -> !Addr {
+        let start = up{ n = m.sp, to = align }
+        if start + n > stack_len{ &m } {
+            too_deep{ &m, name = "a temporary", full = true }
+            return halt
+        }
+        let s = list::items{ list = m.regions }[STACK].bytes
+        slice::fill(u8){ s = s[@as(usize, start)..@as(usize, start + n)], v = 0 }
+        m.sp = start + n
+        return addr_of{ region = STACK, off = start }
+    }
+
+    // n bytes of host memory, zeroed: a param's or a result's.
+    fn host_bytes { mut m: M, n: u64 } -> []mut u8 {
+        let b = try! alloc::resize(u8, Heap){ realloc = arena::alloc, heap = m.heap, mem = slice::empty(u8){}, count = @as(usize, n) }
+        slice::fill(u8){ s = b, v = 0 }
+        return b
+    }
+
+    // n zeroed bytes from ctx_alloc: 16-byte aligned, never freed.
+    fn heap_bytes { mut m: M, n: u64 } -> !Addr {
+        let a = bump{ &m, region = m.chunk, n, align = 16 }
+        if a != null { return a }
+        m.chunk = try region{ &m, n, writable = true }
+        let b = bump{ &m, region = m.chunk, n, align = 16 } ifnull { return 0 }
+        return b
+    }
+
+    // n bytes of static data, read-only to the program.
+    fn static_bytes { mut m: M, n: u64, align: u64 } -> !Addr {
+        let a = bump{ &m, region = m.statics, n, align }
+        if a != null { return a }
+        m.statics = try region{ &m, n, writable = false }
+        let b = bump{ &m, region = m.statics, n, align } ifnull { return 0 }
+        return b
+    }
+
+    fn bump { mut m: M, region: u32, n: u64, align: u64 } -> ?Addr {
+        if region == 0 { return null }
+        let g = list::at{ list = m.regions, i = @as(usize, region) }
+        let start = up{ n = g.used, to = align }
+        if start + n > @as(u64, g.bytes.len) { return null }
+        g.used = start + n
+        return addr_of{ region, off = start }
+    }
+
+    // A new region of at least n bytes, zeroed.
+    fn region { mut m: M, n: u64, writable: bool } -> !u32 {
+        let size = if n > CHUNK { n } else { CHUNK }
+        let bytes = alloc::resize(u8, Heap){ realloc = arena::alloc, heap = m.heap, mem = slice::empty(u8){}, count = @as(usize, size) } iferr {
+            fail{ &m, msg = "out of memory" }
+            return halt
+        }
+        slice::fill(u8){ s = bytes, v = 0 }
+        let id = @as(u32, m.regions.len)
+        try! list::push{ list = &m.regions, item = Region{ bytes, used = 0, writable } }
+        return id
+    }
+}

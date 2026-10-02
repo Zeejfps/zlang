@@ -161,11 +161,10 @@ generator can't observe its own output.
      point into static literal bytes; any other pointer, or a function value, is an error.
    - The value is cached in the checker (`values`), so the language server doesn't re-run it on
      edits that don't touch its inputs.
-   - **Two steps.** First the interpreter and `ctxc interp FILE`, which runs a whole program's
-     `main` in it, emulating the externs that writing to stdout and stderr reaches. The tests run
-     every program that only prints both ways and compare output, exit code and panic: the
-     second implementation the C backend has lacked (Known gaps). Then consts that call
-     functions, on top of it.
+   - **Two steps.** The first is done: the interpreter (`ctxc/eval.ctx`) and `ctxc interp FILE`,
+     which runs a whole program's `main` in it, emulating the externs that writing to stdout and
+     stderr reaches; the tests run every program both ways (Testing). Next, consts that call
+     functions, on top of it: `eval::run` runs any function, and `failed` says why it stopped.
    - Uses: lookup tables, perfect-hash keyword maps, precomputed tables for parsers, and
      converting literals to library types (stage 4).
 
@@ -387,6 +386,7 @@ cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctx
 ./ctxc run examples/json -- examples/json/sample.json    # a directory
 ./ctxc run examples/glfw                                 # a directory with a build program
 ./ctxc exe examples/list.ctx -o list
+./ctxc interp examples/list.ctx                          # main in the interpreter, no C compiler
 ```
 
 - On macOS the bootstrap is `bootstrap/ctxc.macos.c`, and on Windows `bootstrap/ctxc.windows.c`. ctxc finds std/ and ctxc/rt/ through
@@ -420,8 +420,9 @@ in one step; `fixpoint.py` says when one is out of date.
 - The C backend prints no `in fn` stack trace with a panic (see Open decisions).
 - 20 corpus programs read temporary files that the test suite deletes once it's done.
   `tools/corpus.py` should copy those files into the case directory.
-- There is no second implementation to diff against. New checks are covered by the unit tests'
-  expected outputs and error fragments alone.
+- The interpreter is the only second implementation, and it runs only programs that just print:
+  the suite's programs that use files, processes, input, `mem::pages` or a C library are checked
+  by their expected outputs alone.
 - `ctxc build`, `ir` and `decls` need std's files listed on the command line; only `run` and
   `exe` find them.
 
@@ -464,6 +465,10 @@ C11 with GNU extensions (overflow builtins, empty structs, statement expressions
 
 - **The suite.** `python -m unittest discover tests` runs every program through the native ctxc
   and cc (`tools/toolchain.py`), and checks its output, exit code, panic or first error.
+- **The interpreter.** `run_sources` also runs each program with `ctxc interp` and requires the
+  same stdout, stderr, exit code and panic; one that calls an extern fn the interpreter doesn't
+  emulate, or recurses too deep, is skipped. `CTX_DIFF=0` turns it off (it adds about a quarter
+  to the suite's time); `tools/interp_diff.py` counts matches and skips by reason.
 - **Errors.** The compile-error tests match on a message fragment, or the message and position
   exactly, so message text is part of the interface. The tests see the first diagnostic; ctxc
   may report more.

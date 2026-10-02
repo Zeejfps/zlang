@@ -18,11 +18,19 @@ written as mainN.ctx, and its positions have no file (None).
 
 build_project compiles and runs DIR/build.ctx, the build program, which records what to build in
 a file named by CTX_BUILD_OUT; then it builds each executable that names, with its libraries.
+
+run_sources also runs each program in ctxc's interpreter (`ctxc interp`), and raises DiffMismatch
+unless its stdout, stderr, exit code and panic are the compiled program's: a second
+implementation to check the C backend against. A program the interpreter can't run (an extern fn
+it doesn't emulate, as files, processes and input need; too deep; out of fuel) is skipped.
+CTX_DIFF=0 turns this off. With CTX_DIFF_LOG=FILE, each comparison appends a JSON line to FILE:
+tools/interp_diff.py runs the suite that way and counts them.
 """
 
 import glob
 import hashlib
 import io
+import json
 import os
 import re
 import shutil
@@ -61,6 +69,10 @@ class CompileError(Exception):
     def __init__(self, msg, pos=None, text=''):
         super().__init__(msg)
         self.msg, self.pos, self.text = msg, pos, text
+
+
+class DiffMismatch(AssertionError):
+    """The interpreter's run of a program differs from the compiled one's."""
 
 
 class Panic(Exception):
@@ -326,8 +338,13 @@ def run_source(src, file=None, **kw):
 def run_sources(sources, out=None, err=None, inp=None, stack_size=16 << 20, args=(), timeout=None):
     """Like run_source, for a program of several (source, file) pairs."""
     exe, given = build_sources(sources)
-    return run_exe(exe, out=out, err=err, inp=inp, stack_size=stack_size, args=args, given=given,
-                   timeout=timeout)
+    if os.environ.get('CTX_DIFF') == '0':
+        return run_exe(exe, out=out, err=err, inp=inp, stack_size=stack_size, args=args, given=given,
+                       timeout=timeout)
+    stdin = read_input(inp)
+    r = execute(exe, stdin, stack_size, args, timeout)
+    diff(sources, r, stdin, args, timeout)
+    return report(r, out, err, 'program', given)
 
 
 def run_exe(exe, out=None, err=None, inp=None, stack_size=None, args=(), name='program',
@@ -335,12 +352,24 @@ def run_exe(exe, out=None, err=None, inp=None, stack_size=None, args=(), name='p
     """Runs an executable with the given streams, and env added to the environment. Returns its
     exit code, or raises Panic. Raises subprocess.TimeoutExpired if it runs longer than timeout
     seconds."""
-    stdin = b''
-    if inp is not None:
-        data = inp.read()
-        stdin = data.encode() if isinstance(data, str) else data
+    r = execute(exe, read_input(inp), stack_size, args, timeout, env, cwd)
+    return report(r, out, err, name, given)
+
+
+def read_input(inp):
+    if inp is None:
+        return b''
+    data = inp.read()
+    return data.encode() if isinstance(data, str) else data
+
+
+def execute(exe, stdin, stack_size=None, args=(), timeout=None, env=None, cwd=None):
     full = dict(os.environ, CTX_STACK=str(stack_size or (16 << 20)), **(env or {}))
-    r = subprocess.run([exe, *args], input=stdin, capture_output=True, env=full, timeout=timeout, cwd=cwd)
+    return subprocess.run([exe, *args], input=stdin, capture_output=True, env=full, timeout=timeout, cwd=cwd)
+
+
+def report(r, out, err, name, given):
+    """Writes a run's output to out and err, and returns its exit code or raises Panic."""
     code = r.returncode
     if code >= 1 << 31:
         code -= 1 << 32
@@ -391,6 +420,76 @@ def read_program(path):
         with open(p, encoding='utf-8', newline='') as f:
             sources.append((f.read(), os.path.relpath(p, ROOT).replace(os.sep, '/')))
     return sources
+
+
+# ---- the interpreter, against the compiled program (unless CTX_DIFF=0)
+
+INTERP_ERROR = 'ctxc interp: '
+
+
+def diff(sources, r, stdin, args, timeout):
+    """Runs the program of sources, already written by build_sources, with `ctxc interp`, and
+    compares it with r, the compiled program's run: raises DiffMismatch if they differ."""
+    d, files = write_program(sources)
+    names = list(files)
+    if len(names) == 1:
+        path = names[0]
+    else:
+        # A program of several files is their directory, if it holds just them.
+        top = os.path.dirname(names[0])
+        inside = sorted(os.path.relpath(p, d).replace(os.sep, '/') for p in glob.glob(os.path.join(d, top or '.', '*.ctx')))
+        if not top or any(os.path.dirname(n) != top for n in names) or inside != sorted(names):
+            return log('skip', 'several files outside one directory')
+        path = top
+    home = os.path.relpath(ROOT, d).replace(os.sep, '/')
+    env = dict(os.environ, CTX_HOME=home, CTX_STACK=CTXC_STACK)
+    try:
+        i = subprocess.run([native_ctxc(), 'interp', path, '--', *args], input=stdin, capture_output=True,
+                           env=env, cwd=d, timeout=timeout or 600)
+    except subprocess.TimeoutExpired:
+        return log('skip', 'timeout')
+    err = i.stderr.decode('utf-8', 'replace')
+    last = err.rstrip('\n').split('\n')[-1]
+    if i.returncode == 1 and last.startswith(INTERP_ERROR):
+        return log('skip', skip_reason(last[len(INTERP_ERROR):]), last)
+    # A panic without a position names the program: `program` when compiled, the file's stem
+    # when interpreted, as with `ctxc run`.
+    stem = os.path.splitext(os.path.basename(path))[0]
+    want_err = r.stderr.decode('utf-8', 'replace').replace('\nprogram: panic: ', f'\n{stem}: panic: ')
+    if want_err.startswith('program: panic: '):
+        want_err = stem + want_err[len('program'):]
+    code, got_code = (c - (1 << 32) if c >= 1 << 31 else c for c in (r.returncode, i.returncode))
+    got = (i.stdout, err, got_code)
+    want = (r.stdout, want_err, code)
+    if got != want:
+        detail = (f'interp differs from the compiled program, in {os.path.join(d, path)}:\n'
+                  f'compiled: exit {code}\n--- stdout\n{want[0].decode("utf-8", "replace")}--- stderr\n{want_err}'
+                  f'interp: exit {got_code}\n--- stdout\n{got[0].decode("utf-8", "replace")}--- stderr\n{err}')
+        log('mismatch', 'mismatch', detail)
+        raise DiffMismatch(detail)
+    log('match', '')
+
+
+def skip_reason(msg):
+    """What a message of `ctxc interp`'s says it couldn't do, to count skips by."""
+    m = re.match(r"extern fn (\S+) \(C's `([^`]*)`\) is not supported by interp", msg)
+    if m:
+        return f'extern fn {m.group(1)}'
+    m = re.match(r'C variable (\S+) ', msg)
+    if m:
+        return f'C variable {m.group(1)}'
+    if msg.startswith('too deep'):
+        return 'too deep'
+    if msg.startswith('out of fuel'):
+        return 'out of fuel'
+    return msg
+
+
+def log(status, reason, detail=''):
+    path = os.environ.get('CTX_DIFF_LOG')
+    if path:
+        with _lock, open(path, 'a', encoding='utf-8') as f:
+            f.write(json.dumps({'status': status, 'reason': reason, 'detail': detail}) + '\n')
 
 
 # ---- build programs (spec §19)

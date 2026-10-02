@@ -6481,6 +6481,88 @@ fn build { mut b: Build } {
         self.assertEqual(self.ctxc('run')[0], 2)
 
 
+class Interp(Base):
+    """`ctxc interp` (ctxc/eval.ctx): main run in the interpreter over the IR. Every program the
+    other tests run is also compared with its compiled run (toolchain.run_sources, unless
+    CTX_DIFF=0; tools/interp_diff.py counts them)."""
+
+    project = CtxcDriver.project
+    ctxc = CtxcDriver.ctxc
+
+    def both(self, path, *args):
+        """`ctxc interp` and `ctxc run` of path: each one's exit code, stdout and stderr."""
+        return self.ctxc('interp', path, '--', *args), self.ctxc('run', path, '--', *args)
+
+    def test_runs_main_as_compiled(self):
+        d = self.project({'hello.ctx': """
+fn twice { f: &fn{ n: i64 } -> i64, n: i64 } -> i64 { return f{ n = f{ n } } }
+fn add { k: i64, n: i64 } -> i64 { return k + n }
+fn main { mut io: Io, args: Args } -> i32 {
+    defer io::println{ &io, s = "deferred" }
+    io::println{ &io, s = utf8::of{ chars = args[1] } }
+    io::eprintln{ &io, s = "to stderr" }
+    io::println_i64{ &io, n = twice{ f = add{ k = 20, _ }, n = 2 } }
+    io::println_f32{ &io, n = @as(f32, 0.1) + @as(f32, 0.2) }
+    return @as(i32, args.len)
+}
+"""})
+        got, want = self.both(os.path.join(d, 'hello.ctx'), 'a', 'b c')
+        self.assertEqual(got, (2, 'b c\n42\n0.3\ndeferred\n', 'to stderr\n'))
+        self.assertEqual(got, want)
+
+    def test_panic(self):
+        # Standard output's buffer is written before the panic, as ctxrt.c does.
+        d = self.project({'boom.ctx': """
+fn main { mut io: Io } {
+    io::println{ &io, s = "before" }
+    let xs = [1, 2, 3]
+    let mut i: usize = 0
+    while true { i = i + xs[i] }
+}
+"""})
+        path = os.path.join(d, 'boom.ctx')
+        got, want = self.both(path)
+        self.assertEqual(got, (134, 'before\n', f'{path}:6:28: panic: index 3 out of bounds for length 3\n'))
+        self.assertEqual(got, want)
+
+    def test_a_directory(self):
+        d = self.project({
+            'a.ctx': 'fn main { mut io: Io } { io::println_i64{ &io, n = b::n{} } }\n',
+            'b.ctx': 'namespace b { fn n {} -> i64 { return 7 } }\n',
+        })
+        self.assertEqual(self.ctxc('interp', d), (0, '7\n', ''))
+
+    def test_extern_fn_not_supported(self):
+        d = self.project({'c.ctx': """
+extern fn abs { n: i32 } -> i32
+fn main { mut io: Io } {
+    io::println{ &io, s = "first" }
+    io::println_i64{ &io, n = abs{ n = -3 } }
+}
+"""})
+        self.assertEqual(self.ctxc('interp', os.path.join(d, 'c.ctx')),
+                         (1, 'first\n', "ctxc interp: extern fn abs (C's `abs`) is not supported by interp\n"))
+
+    def test_too_deep(self):
+        d = self.project({'deep.ctx': """
+fn down { n: u64 } -> u64 { return down{ n = n + 1 } + 1 }
+fn main { mut io: Io } { io::println_u64{ &io, n = down{ n = 0 } } }
+"""})
+        code, out, err = self.ctxc('interp', os.path.join(d, 'deep.ctx'))
+        self.assertEqual((code, out), (1, ''))
+        self.assertRegex(err, r'^ctxc interp: too deep: \d+ nested calls, at down\n$')
+
+    def test_errors(self):
+        d = self.project({'bad.ctx': 'fn main {} { let x: i32 = true }\n', 'built/build.ctx': 'fn build { mut b: Build } { }\n'})
+        code, _, err = self.ctxc('interp', os.path.join(d, 'bad.ctx'))
+        self.assertEqual(code, 1)
+        self.assertIn('bad.ctx:1:27: error: expected i32, got bool', err)
+        code, _, err = self.ctxc('interp', os.path.join(d, 'built'))
+        self.assertEqual(code, 1)
+        self.assertIn("has a build program, which interp doesn't run", err)
+        self.assertEqual(self.ctxc('interp')[0], 2)
+
+
 class BuildPrograms(Base):
     """Build programs (spec §19): a directory's build.ctx, through toolchain.build_project."""
 

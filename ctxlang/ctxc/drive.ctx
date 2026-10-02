@@ -3,6 +3,7 @@
 //
 //   ctxc run PATH [-- ARGS...]      builds the program at PATH and runs it with ARGS
 //   ctxc exe PATH -o OUT            builds it into the executable OUT
+//   ctxc interp PATH [-- ARGS...]   checks it, and runs it in the interpreter (eval.ctx)
 //
 // PATH is a .ctx file, or a directory: one program of all its .ctx files, or, if it has a
 // build.ctx, the executables its build program describes (spec §19), of which `run` runs the
@@ -105,6 +106,59 @@ namespace drive {
         return started{ &io, r = proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} }, what = first }
     }
 
+    // `ctxc interp PATH [-- ARGS...]`: finds std and PATH's files as `run` does, then checks and
+    // lowers the program and runs its main in the interpreter instead of the C compiler. A
+    // directory with a build program is an error: interp doesn't run one.
+    fn interp { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
+        if not (args.len == 2 or (args.len >= 3 and slice::eq_bytes{ a = args[2], b = "--" })) {
+            io::eprintln{ &io, s = "usage: ctxc interp PATH [-- ARGS...]" }
+            return 2
+        }
+        let path = trim_slash{ path = args[1] }
+        let pages = mem::pages{ &mem, size = 16777216 } ifnull {
+            io::eprintln{ &io, s = "out of memory" }
+            return 1
+        }
+        let mut heap = arena::new{ buf = pages }
+        let home = find_home{ &fs, &proc, &heap } ifnull {
+            io::eprintln{ &io, s = "ctxc: cannot find std/ and ctxc/rt/; set CTX_HOME to the directory that holds them" }
+            return 1
+        }
+        let std = std_files{ &io, &fs, &heap, home, os = proc::os{ &proc } } ifnull { return 1 }
+        let kind = kind_of{ &fs, path }
+        if kind == 0 {
+            cannot{ &io, path, what = "cannot read" }
+            return 1
+        }
+        let mut files = one{ &heap, s = path }
+        if kind == 2 {
+            if kind_of{ &fs, path = join{ &heap, a = path, b = "build.ctx" } } == 1 {
+                cannot{ &io, path, what = "has a build program, which interp doesn't run" }
+                return 1
+            }
+            files = ctx_files{ &io, &fs, &heap, dir = path, skip_build = true } ifnull { return 1 }
+            if files.len == 0 {
+                cannot{ &io, path, what = "no .ctx files in directory" }
+                return 1
+            }
+        }
+        let mut paths = list::new([]u8){ realloc = arena::alloc, &heap }
+        add_all{ xs = &paths, ys = std }
+        add_all{ xs = &paths, ys = files }
+        let argv = if args.len >= 3 { args[3..] } else { args[2..] }
+        let stack = host_stack{ &proc } / 4 * 3
+        return analyze{ &io, &fs, &mem, paths = list::items{ list = paths }, std_files = std.len, mode = Mode::interp, out = stem{ path = base{ path } }, argv, stack }
+    }
+
+    // The stack ctxrt.c lets this program use before it panics: CTX_STACK bytes, at most 200
+    // MiB, or 16 MiB.
+    fn host_stack { mut proc: Proc } -> u64 {
+        let set = proc::env{ &proc, name = "CTX_STACK" } ifnull { return 16777216 }
+        let n = utf8::parse_u64{ s = utf8::String{ bytes = set } } ifnull { return 16777216 }
+        if n == 0 { return 16777216 }
+        return if n > 209715200 { 209715200 } else { n }
+    }
+
     // Compiles and runs dir's build program, and adds the executables its graph describes.
     fn build_program { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, build_file: []u8, mut targets: list::List(Target, Heap) } -> i32 {
         let exe = executable{ &heap, d, name = "build" }
@@ -186,7 +240,7 @@ namespace drive {
         let mut paths = list::new([]u8){ realloc = arena::alloc, &heap }
         add_all{ xs = &paths, ys = d.std }
         add_all{ xs = &paths, ys = files }
-        let code = analyze{ &io, &fs, &mem, paths = list::items{ list = paths }, std_files = d.std.len, mode = Mode::build, out = c_file }
+        let code = analyze{ &io, &fs, &mem, paths = list::items{ list = paths }, std_files = d.std.len, mode = Mode::build, out = c_file, argv = slice::empty([]u8){}, stack = 0 }
         if code != 0 { return code }
 
         let rt = join{ &heap, a = d.home, b = "ctxc/rt" }
