@@ -402,7 +402,7 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 2. A float literal (`1.5`, `2e3`) is inferred the same way among float types, and defaults to `f64`.
 3. `true` and `false` are the `bool` values. `null` is described in §8.
 4. `[a, b, c]` is a `[3]T` array. Every element has type `T`.
-5. `[x; N]` is a `[N]T` array with every element a copy of `x`. `N` is a compile-time constant.
+5. `[x; N]` is a `[N]T` array with every element a copy of `x`. `N` is a compile-time integer constant (§14).
 6. A string literal `"..."` holds `N` bytes, with no terminator. Its type depends on the type expected where it appears (also inside `?`):
    - `[]u8`: a **view** of static read-only bytes that live for the whole program. `[]mut u8` is an error.
    - `utf8::String` (§17): a view as above, as text. It is a compile error if the bytes aren't valid UTF-8.
@@ -453,7 +453,7 @@ step  := .field | [index]
 | `i8..i64`, `u8..u64`, `usize`, `f32`, `f64`, `bool` | primitives |
 | `*T` | read-only pointer to a `T`. Never null. |
 | `*mut T` | pointer to a `T` that can be written through. Never null. |
-| `[N]T` | fixed array. `N` is a compile-time constant. |
+| `[N]T` | fixed array. `N` is a compile-time integer constant (§14). |
 | `[]T` | read-only slice: a pointer to `T`s and a length. |
 | `[]mut T` | slice whose elements can be written. |
 | `?T` | optional (§8). `?*T` is a nullable pointer. |
@@ -600,7 +600,12 @@ _ = @fmt(&b, "due {}", date::write_iso{ d, _ })          // a function writes th
 
 ## 14. Memory
 
-1. The only static memory is the bytes of string literal views (§11 Literals), which are read-only. `const NAME: T = e` declares a constant. `e` must be computable at compile time: literals, other consts, enum values, operators, `@size_of`, `@align_of`, and struct, union and array literals of these. `const` data is immutable and its location is unobservable: a const is a value, not a place, so `&C` is an error.
+1. The only static memory is the bytes of string literal views (§11 Literals), which are read-only. `const NAME: T = e` declares a constant, whose value is computed while compiling. `e` may be any expression of type `T`, calls included. A const has no context, so it holds no capability (§15), and nothing it runs reaches outside the program. `const` data is immutable and its location is unobservable: a const is a value, not a place, so `&C` is an error.
+   - An `e` made of literals, folded consts, enum values, operators, `@size_of`, `@align_of`, and struct, union and array literals of these is **folded** before the bodies are checked. What would panic at run time is an error at the operation.
+   - Any other `e`, one that uses a const that isn't folded included, is **run** once every body is checked and the error sets are inferred, the first time its value is needed. What stops it is an error at the const: a panic, with its message and position; too many steps, or too deep a recursion; or calling an extern fn (§18), since none can run while compiling.
+   - A const whose value needs its own, directly or through the functions it calls, is an error.
+   - The value may hold no pointer, slice or function value, except a `[]u8` or `c::String`, or a struct over one such as `utf8::String`, that points into a string literal's bytes (part of them is fine). Anything else would point to memory that doesn't outlive compiling.
+   - An array length (§12) or an enum's value can use only a folded const: they are needed before anything can run.
 2. Locals and context fields live on the stack.
 3. Memory not on the stack comes from `mem::pages`, which needs the `Mem` capability (§15), or from an allocator function over memory the caller provides. It is accessed only through pointers and slices.
    - Allocators are byte-level: `alloc::Fn(S) = fn{ mut heap: S, mem: Bytes, new: usize, align: usize } -> ?Bytes`. The result must be aligned to `align`.
@@ -732,7 +737,7 @@ extern fn glfwPollEvents { mut glfw: Glfw }      // a capability says who may ca
 ### Attributes
 
 1. `#path` or `#path{ field = e, ... }`, on its own line before a declaration or a capability's field, is an **attribute** of it. Either may have several.
-2. `path` names a struct, and the braces are a literal of it, checked as a const's initializer is (§14): its value is computed at compile time. `#path` alone means `#path{}`.
+2. `path` names a struct, and the braces are a literal of it, checked as a const's initializer is and folded (§14): it can't call a function or use a const that isn't folded. `#path` alone means `#path{}`.
 3. Attributes are data. The compiler acts on those of std's `c` namespace (`c::symbol` on an extern fn or a C variable, `c::callback` on a fn) and ignores the rest; a program can read them later (PLAN.md, stage 3).
 
 ### Extern functions

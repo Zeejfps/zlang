@@ -754,8 +754,8 @@ class Declarations(Base):
             ('struct S { a: [1 << 64]u8 }', 'shift count out of range in constant', 1, 18),
             ('const N: usize = N\nstruct S { a: [N]u8 }', 'const `N` refers to itself', 1, 18),
             ('const N: usize = M\nconst M: usize = N\nstruct S { a: [N]u8 }', 'const `N` refers to itself', 2, 18),
-            ('struct S { a: [x]u8 }', 'array length must be a compile-time integer constant', 1, 16),
-            ('struct S { a: [1.5]u8 }', 'array length must be a compile-time integer constant', 1, 16),
+            ('struct S { a: [x]u8 }', 'an array length must be a compile-time integer constant', 1, 16),
+            ('struct S { a: [1.5]u8 }', 'an array length must be a compile-time integer constant', 1, 16),
             ('namespace n { const N: usize = 2 }\nstruct S { a: [n::N * 3 - 1]u8 }\nconst B: [5]u8 = [0; 5]\nfn f { s: S } { let b: [5]u8 = s.a }', None, 0, 0),
             ('struct S { a: [nope::N]u8 }', 'unknown type or namespace `nope`', 1, 16),
             ('enum E: u8 { a = n::N }\nnamespace n { const N: u8 = 300 }', 'value 300 of `a` does not fit in u8', 1, 14),
@@ -811,9 +811,8 @@ class ConstInitializers(Base):
             ('const A: i32 = nope', 'unknown name `nope`', 1, 16),
             ('namespace n {}\nconst A: i32 = n::x', '`x` not found in namespace `n`', 2, 19),
             ('struct S { a: i32 }\nconst A: i32 = S::x', '`S` has no member `x`', 2, 19),
-            ('fn f {} -> i32 { return 1 }\nconst A: i32 = f{}', 'a const cannot call a function', 2, 17),
-            ('fn f {} {}\nconst A: fn{} = f', 'a const may only refer to other consts', 2, 17),
-            ('const A: i32 = @as(i32, 1)', '@as is not allowed in a const', 1, 16),
+            ('fn f {} {}\nconst A: fn{} = f',
+             "const `A` can't hold a function value: it would point to memory that doesn't outlive compiling", 2, 17),
             ('const A: []mut u8 = "x"', 'a string literal is read-only; it cannot be a []mut u8', 1, 21),
             ('const A: bool = 1 == null', 'only an optional can be compared with null, got {integer}', 1, 19),
             ('const A: i32 = 1 + 1.5', 'operands of `+` have incompatible types: {integer} and {float}; convert one with @as', 1, 18),
@@ -846,6 +845,8 @@ class ConstInitializers(Base):
             'const A: bool = false and 1 / 0 == 1',
             'const A: i32 = -2147483648 % -1',
             'const A: i8 = 64 << 1',
+            'const A: i32 = @as(i32, 1)',
+            'fn f {} -> i32 { return 1 }\nconst A: i32 = f{}',
         ]:
             run(src + '\nfn main {} {}')
 
@@ -1474,6 +1475,154 @@ fn main { mut io: Io } {
 }
 """, '58\none\n2\n')
 
+
+
+class ConstEvaluation(Base):
+    """Consts whose initializers folding can't compute, such as calls, run in the interpreter
+    while compiling (§14, ctxc/comptime.ctx), and their results become the consts' values."""
+
+    def assertConstError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_values(self):
+        self.assertOutput("""
+fn table {} -> [256]u8 {
+    let mut t: [256]u8
+    let mut i: usize = 0
+    while i < t.len {
+        t[i] = @trunc(u8, i * 37 % 256)
+        i = i + 1
+    }
+    return t
+}
+fn fib { n: u64 } -> u64 {
+    if n < 2 { return n }
+    return fib{ n = n - 1 } + fib{ n = n - 2 }
+}
+fn pair(T) { x: T, y: T } -> [2]T { return [x, y] }
+struct Point { x: i32, y: i32 }
+union Shape { dot, circle{ at: Point, r: f64 } }
+fn origin { d: i32 } -> Point { return Point{ x = -d, y = d * 2 } }
+fn circle {} -> Shape { return Shape::circle{ at = origin{ d = 1 }, r = 2.5 } }
+fn find { xs: []u8, b: u8 } -> ?usize {
+    let mut i: usize = 0
+    while i < xs.len {
+        if xs[i] == b { return i }
+        i = i + 1
+    }
+    return null
+}
+fn word {} -> []u8 {
+    let s: []u8 = "lookup table"
+    return s[7..]
+}
+fn greeting {} -> utf8::String { return "hello" }
+fn tail {} -> c::String {
+    let s: c::String = "a C string"
+    return c::String{ ptr = s.ptr + 2 }
+}
+fn squares {} -> [8]u32 {
+    let mut buf: [256]u8
+    let mut heap = arena::new{ buf = buf[..] }
+    let mut xs = list::new(u32){ realloc = arena::alloc, &heap }
+    let mut i: u32 = 0
+    while i < 8 {
+        try! list::push{ list = &xs, item = i * i }
+        i = i + 1
+    }
+    let mut out: [8]u32
+    slice::copy(u32){ dst = out[..], src = list::items{ list = xs } }
+    return out
+}
+const T: [256]u8 = table{}
+const FIB: u64 = fib{ n = 20 }
+const P: [2]i16 = pair(i16){ x = -3, y = 4 }
+const O: Point = origin{ d = 5 }
+const S: Shape = circle{}
+const AT: ?usize = find{ xs = "abc", b = 'c' }
+const MISSING: ?usize = find{ xs = "abc", b = 'z' }
+const NEXT: u64 = FIB + @as(u64, T[3])
+const FIFTH: u64 = FIB / 5
+const WORD: []u8 = word{}
+const HI: utf8::String = greeting{}
+const TAIL: c::String = tail{}
+const SQ: [8]u32 = squares{}
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = @as(u64, T[3]) }
+    io::println_u64{ &io, n = FIB + 1 }
+    io::println_i64{ &io, n = P[0] * P[1] }
+    io::println_i64{ &io, n = O.x + O.y }
+    match S {
+        circle{ at, r } => {
+            io::println_i64{ &io, n = at.y }
+            io::println_f64{ &io, n = r }
+        }
+        dot => {}
+    }
+    io::println_u64{ &io, n = AT ifnull { 99 } }
+    io::println_u64{ &io, n = MISSING ifnull { 99 } }
+    io::println_u64{ &io, n = NEXT }
+    io::println_u64{ &io, n = FIFTH }
+    io::println{ &io, s = utf8::String{ bytes = WORD } }
+    io::println{ &io, s = HI }
+    io::println{ &io, s = utf8::String{ bytes = c::bytes{ s = TAIL } } }
+    io::println_u64{ &io, n = @as(u64, SQ[7]) }
+}
+""", "111\n6766\n-12\n5\n2\n2.5\n2\n99\n6876\n1353\ntable\nhello\nC string\n49\n")
+
+    def test_errors(self):
+        for src, msg, line, col in [
+            # a panic, with where it happened
+            ('fn at { i: usize } -> u8 {\n    let xs = [1, 2]\n    return xs[i]\n}\nconst A: u8 = at{ i = 2 }',
+             'const `A` panicked while compiling: index 2 out of bounds for length 2, at 3:14', 5, 17),
+            ('fn twice { n: i32 } -> i32 { return n * 2 }\nconst A: i32 = twice{ n = 2000000000 }',
+             'const `A` panicked while compiling: integer overflow, at 1:39', 2, 21),
+            ('fn f {} -> i32 { @panic("no") }\nconst A: i32 = f{}', 'const `A` panicked while compiling: no, at 1:18', 2, 17),
+            ('extern fn abs { n: i32 } -> i32\nconst A: i32 = abs{ n = -3 }',
+             "const `A` calls extern fn `abs`, which can't run while compiling", 2, 19),
+            ('const A: i32 = @as(i32, A)', 'const `A` refers to itself', 1, 25),
+            ('fn f {} -> i32 { return A + 1 }\nconst A: i32 = f{}', 'const `A` refers to itself', 1, 25),
+            ('fn f {} -> i32 { return B }\nconst A: i32 = f{}\nconst B: i32 = A', 'const `A` refers to itself', 3, 16),
+            # a result that points to memory the run had: the stack, and a function
+            ('struct S { p: ?*i32 }\nfn keep { mut s: S, p: *i32 } { s.p = p }\n'
+             'fn f {} -> S {\n    let x: i32 = 1\n    let mut s = S{ p = null }\n    keep{ &s, p = &x }\n    return s\n}\n'
+             'const A: S = f{}',
+             "const `A` can't hold a pointer to the stack: it would point to memory that doesn't outlive compiling", 9, 15),
+            ('fn keep { mut s: utf8::String, bytes: []u8 } { s.bytes = bytes }\n'
+             'fn made {} -> utf8::String {\n    let buf: [4]u8 = "made"\n    let mut s: utf8::String = ""\n'
+             '    keep{ &s, bytes = buf[..] }\n    return s\n}\nconst A: utf8::String = made{}',
+             "const `A` can't hold a pointer to the stack: it would point to memory that doesn't outlive compiling", 8, 29),
+            ('fn f {} -> *u8 {\n    let s: c::String = "abc"\n    return s.ptr\n}\nconst A: *u8 = f{}',
+             "const `A` can't hold a *u8 into a literal: only a []u8 or c::String can point into one", 5, 17),
+            ('fn g {} {}\nfn f {} -> fn{} { return g }\nconst A: fn{} = f{}',
+             "const `A` can't hold a function value: it would point to memory that doesn't outlive compiling", 3, 18),
+            ('extern union X { a: i32, b: f32 }\nfn f {} -> X { return X{ a = 1 } }\nconst A: X = f{}',
+             "const `A` can't hold an extern union", 3, 15),
+            # array lengths and enum values are needed before anything runs
+            ('fn three {} -> usize { return 3 }\nconst N: usize = three{}\nstruct S { a: [N]u8 }',
+             "an array length can't use `N`: its value is computed by calling a function", 3, 16),
+            ('fn three {} -> usize { return 3 }\nconst N: usize = three{}\nconst M: usize = N + 1\nfn g {} { let xs = [0; M] }',
+             "an array length can't use `N`: its value is computed by calling a function", 3, 18),
+            ('fn three {} -> i64 { return 3 }\nconst N: i64 = three{}\nenum E: u8 { a = N }',
+             "an enum value can't use `N`: its value is computed by calling a function", 3, 18),
+            ('struct S { x: i32 }\nfn three {} -> i32 { return 3 }\nconst N: i32 = three{}\n#S{ x = N }\nfn g {} {}',
+             "an attribute can't use `N`: its value is computed by running code", 4, 3),
+        ]:
+            self.assertConstError(src + '\nfn main {} {}', msg, line, col)
+
+    def test_limits(self):
+        """Running out of fuel, here a test-sized budget, and too deep a recursion."""
+        os.environ['CTX_CONST_FUEL'] = '100000'
+        self.addCleanup(os.environ.pop, 'CTX_CONST_FUEL', None)
+        self.assertConstError('fn spin {} -> i32 {\n    while true {}\n    return 0\n}\nconst A: i32 = spin{}\nfn main {} {}',
+                              'const `A` ran out of fuel while compiling: it took more than 100000 steps', 5, 20)
+        os.environ.pop('CTX_CONST_FUEL')
+        with self.assertRaises(CompileError) as cm:
+            run('fn down { n: u64 } -> u64 { return down{ n = n + 1 } + 1 }\nconst A: u64 = down{ n = 0 }\nfn main {} {}')
+        self.assertRegex(cm.exception.msg, r'^const `A` recursed too deeply while compiling: (\d+ nested calls|the \d+ MiB stack is full), at down$')
+        self.assertEqual(cm.exception.pos[:2], (2, 20))
 
 class CallLookup(Base):
     """In a call or literal, a local that doesn't hold a function doesn't hide a function or type
@@ -5833,7 +5982,7 @@ fn main {} -> i32 { return @trunc(i32, long_abs{ n = 3 }) }
             ('#c::symbol{ nme = "a" }\nextern fn f {}\nfn main {} {}', 'struct `symbol` has no field `nme`', 1, 13),
             ('union U { a{ x: i32 } }\n#U::a{ x = 1 }\nfn main {} {}', 'an attribute must be a struct literal', 2, 6),
             ('fn g {} -> i32 { return 1 }\nstruct S { x: i32 }\n#S{ x = g{} }\nfn main {} {}',
-             'a const cannot call a function', 3, 10),
+             'an attribute cannot call a function', 3, 10),
         ]:
             self.assertExternError(src, msg, line, col)
 

@@ -173,11 +173,19 @@ namespace check {
         jump_ids:  map::Map(u64, u32, Heap),          // the id of the loop a jump targets
         label_ids: u32,                               // ids given in this body
         first_var: map::Map(u32, u32, Heap),          // a function's first local: its first context field
-        // Const values (§14): a const whose initializer checked is foldable, and its value is
-        // computed after every initializer has been checked.
+        // Const values (§14): a const whose initializer checked is foldable if folding can
+        // compute it, and its value is computed after every initializer has been checked. One
+        // that needs more is evaluated (comptime.ctx), once the bodies are checked and the error
+        // sets inferred (evaluate).
         foldable:  map::Map(u32, bool, Heap),
+        evaluated: map::Map(u32, bool, Heap),
         values:    map::Map(u32, Val, Heap),
         folding:   list::List(u32, Heap),             // consts being computed, for cycles
+        unfolded:  u32,                               // an evaluated const that folding met, or NONE
+        can_eval:  bool,                              // whether evaluated consts can be computed yet
+        fuel:      u64,                               // the steps evaluating a const may take
+        stack:     u64,                               // the bytes of ctxc's stack its calls may take
+        scratch:   alloc::Bytes,                      // the interpreter's memory, for one const at a time
         // The sets of Var.derived and Var.held.
         derived:   list::List([]u32, Heap),
         held:      list::List([]Place, Heap),
@@ -342,8 +350,11 @@ namespace check {
             label_ids = 0,
             first_var = map::new(u32, u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             foldable = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            evaluated = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             values = map::new(u32, Val){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             folding = ids{ &heap },
+            unfolded = NONE, can_eval = false,
+            fuel = comptime::FUEL, stack = comptime::STACK, scratch = slice::empty(u8){},
             derived = list::new([]u32){ realloc = arena::alloc, &heap },
             held = list::new([]Place){ realloc = arena::alloc, &heap },
             faults = ids{ &heap },
@@ -383,7 +394,16 @@ namespace check {
         infer_sets{ &c }
         finish_matches{ &c }
         finish_escapes{ &c }
+        evaluate{ &c }
         check_main{ &c }
+    }
+
+    // The consts folding can't compute (§14), evaluated in order, or earlier where another const
+    // needs one. Only a program without errors is: lowering needs every body it reaches checked.
+    fn evaluate { mut c: Checker } {
+        if c.diags.errors > 0 { return }
+        c.can_eval = true
+        each{ &c, xs = c.consts, what = Phase::fold }
     }
 
     fn declarations { mut c: Checker } {
@@ -428,7 +448,10 @@ namespace check {
                 sigs    => { resolve_sig{ &c, d } }
                 const_values => { check_const{ &c, d } }
                 bodies  => { check_fn{ &c, d } }
-                fold    => { _ = const_value{ &c, d, at = get_decl{ c, d }.syn.span } }
+                fold    => {
+                    _ = const_value{ &c, d, at = get_decl{ c, d }.syn.span }
+                    c.unfolded = NONE
+                }
             }
             i = i + 1
         }
@@ -1372,9 +1395,16 @@ namespace check {
             error{ &c, at = expr_at{ e = a.value }, msg = "an attribute must be a struct literal" }
             return null
         }
-        const_ok{ &c, e = a.value }
+        _ = const_ok{ &c, e = a.value, strict = true }
         if c.diags.errors != before { return null }
-        return fold{ &c, e = a.value }
+        let v = fold{ &c, e = a.value }
+        if v == null and c.unfolded != NONE {
+            let mut b = message{ c }
+            try! @fmt(&b, "an attribute can't use `{}`: its value is computed by running code", str{ s = get_decl{ c, d = c.unfolded }.name.text })
+            error{ &c, at = expr_at{ e = a.value }, msg = utf8::view{ b } }
+            c.unfolded = NONE
+        }
+        return v
     }
 
     // `#c::symbol{ name }` on an extern fn: the C symbol it calls.
@@ -1525,7 +1555,7 @@ namespace check {
                 return types::slice{ s = &c.ty, elem = t, mutable }
             }
             array{ n, elem } => {
-                let len = const_int{ &c, e = n.*, ns = sc.ns, what = "array length" }
+                let len = const_int{ &c, e = n.*, ns = sc.ns, what = "an array length" }
                 let mut ok = len != null
                 if len != null and len < 0 {
                     error{ &c, at = te.span, msg = "array length must not be negative" }
@@ -1785,6 +1815,13 @@ namespace check {
                     }
                     let mut v: ?i64 = null
                     if x.syn.k is constant{ value } {
+                        if calls{ e = value } {
+                            // It is evaluated (§14), long after the declarations need it.
+                            let mut b = message{ c }
+                            try! @fmt(&b, "{} can't use `{}`: its value is computed by calling a function", what, str{ s = x.name.text })
+                            error{ &c, at, msg = utf8::view{ b } }
+                            return null
+                        }
                         push{ xs = &c.const_stack, n = d }
                         v = const_int{ &c, e = value, ns = x.ns, what }
                         _ = list::pop{ list = &c.const_stack }
@@ -1799,6 +1836,16 @@ namespace check {
         try! @fmt(&b, "{} must be a compile-time integer constant", what)
         error{ &c, at, msg = utf8::view{ b } }
         return null
+    }
+
+    // Whether an integer initializer calls a function: braces where an integer is are a call.
+    fn calls { e: syntax::Expr } -> bool {
+        match e.k {
+            braced => { return true }
+            neg{ e = x } => { return calls{ e = x.* } }
+            binary{ a, b } => { return calls{ e = a.* } or calls{ e = b.* } }
+            else => { return false }
+        }
     }
 
     fn too_large { mut c: Checker, at: source::Span } {
@@ -2052,8 +2099,12 @@ namespace check {
             let before = c.diags.errors
             expect{ &c, e = value, t = x.ty }
             finish{ &c }
-            if c.diags.errors == before { const_ok{ &c, e = value } }
-            if c.diags.errors == before { put_bool{ m = &c.foldable, k = d } }
+            if c.diags.errors == before {
+                let folds = const_ok{ &c, e = value, strict = false }
+                if c.diags.errors == before {
+                    if folds { put_bool{ m = &c.foldable, k = d } } else { put_bool{ m = &c.evaluated, k = d } }
+                }
+            }
         }
     }
 
@@ -2213,59 +2264,81 @@ namespace check {
         try! list::push{ list = &c.gvars, item = GVar{ v, param = param.text, owner = owner.text, at } }
     }
 
-    // §14: a const's initializer is computable at compile time.
-    fn const_ok { mut c: Checker, e: syntax::Expr } {
+    // §14: whether folding can compute a const's initializer: literals, other consts, enum
+    // values, operators, `@size_of`, `@align_of`, and literals of these. What it can't is
+    // evaluated (comptime.ctx), or, in an attribute (strict), an error.
+    fn const_ok { mut c: Checker, e: syntax::Expr, strict: bool } -> bool {
         let at = expr_at{ e }
         if map::get{ m = c.convs, key = expr_key{ e } } is slice {
-            error{ &c, at, msg = "a const must be computable at compile time" }
-            return
+            return unfoldable{ &c, at, strict, msg = "must be computable at compile time" }
         }
         match e.k {
-            error | int | float | str | boolean | nil => {}
-            neg{ e = x } => { const_ok{ &c, e = x.* } }
-            lnot{ e = x } => { const_ok{ &c, e = x.* } }
+            error | int | float | str | boolean | nil => { return true }
+            neg{ e = x } => { return const_ok{ &c, e = x.*, strict } }
+            lnot{ e = x } => { return const_ok{ &c, e = x.*, strict } }
             binary{ a, b } => {
-                const_ok{ &c, e = a.* }
-                const_ok{ &c, e = b.* }
+                let x = const_ok{ &c, e = a.*, strict }
+                let y = const_ok{ &c, e = b.*, strict }
+                return x and y
             }
-            array{ elems } => { const_list{ &c, xs = elems } }
-            repeat{ elem } => { const_ok{ &c, e = elem.* } }
+            array{ elems } => { return const_list{ &c, xs = elems, strict } }
+            repeat{ elem } => { return const_ok{ &c, e = elem.*, strict } }
             path => {
                 let r = map::get{ m = c.refs, key = expr_key{ e } }
-                if not (r is constant | variant | enumval) { error{ &c, at, msg = "a const may only refer to other consts" } }
+                if not (r is constant | variant | enumval) { return unfoldable{ &c, at, strict, msg = "may only refer to consts" } }
+                return true
             }
             builtin{ name, args } => {
+                let mut ok = true
                 if not slice::eq_bytes{ a = name.text, b = "size_of" } and not slice::eq_bytes{ a = name.text, b = "align_of" } {
-                    let mut b = message{ c }
-                    try! @fmt(&b, "@{} is not allowed in a const", str{ s = name.text })
-                    error{ &c, at, msg = utf8::view{ b } }
+                    if strict {
+                        let mut b = message{ c }
+                        try! @fmt(&b, "@{} is not allowed in an attribute", str{ s = name.text })
+                        error{ &c, at, msg = utf8::view{ b } }
+                    }
+                    ok = false
                 }
-                const_list{ &c, xs = args }
+                return const_list{ &c, xs = args, strict } and ok
             }
             braced{ items } => {
                 let lit = map::get{ m = c.literal, key = expr_key{ e } }
+                let mut ok = true
                 if lit == null or not lit {
-                    error{ &c, at, msg = "a const cannot call a function" }
+                    ok = unfoldable{ &c, at, strict, msg = "cannot call a function" }
+                    if not strict { return false }
                 } else if untagged_type{ c, t = type_of_expr{ c, e } } {
-                    error{ &c, at, msg = "a const cannot hold an extern union" }
-                    return
+                    error{ &c, at, msg = if strict { "an attribute cannot hold an extern union" } else { "a const cannot hold an extern union" } }
+                    return false
                 }
                 let mut i: usize = 0
                 while i < items.len {
-                    const_ok{ &c, e = items[i].value }
+                    if not const_ok{ &c, e = items[i].value, strict } { ok = false }
                     i = i + 1
                 }
+                return ok
             }
-            else => { error{ &c, at, msg = "a const must be computable at compile time" } }
+            else => { return unfoldable{ &c, at, strict, msg = "must be computable at compile time" } }
         }
     }
 
-    fn const_list { mut c: Checker, xs: []syntax::Expr } {
+    // False, after reporting `an attribute MSG` if strict.
+    fn unfoldable { mut c: Checker, at: source::Span, strict: bool, msg: []u8 } -> bool {
+        if strict {
+            let mut b = message{ c }
+            try! @fmt(&b, "an attribute {}", str{ s = msg })
+            error{ &c, at, msg = utf8::view{ b } }
+        }
+        return false
+    }
+
+    fn const_list { mut c: Checker, xs: []syntax::Expr, strict: bool } -> bool {
+        let mut ok = true
         let mut i: usize = 0
         while i < xs.len {
-            const_ok{ &c, e = xs[i] }
+            if not const_ok{ &c, e = xs[i], strict } { ok = false }
             i = i + 1
         }
+        return ok
     }
 
     // ---- const values (§14), computed at compile time (ctxi's Checker.fold)
@@ -2295,11 +2368,18 @@ namespace check {
     }
 
     // The value of const d, computed the first time it is needed; null if its initializer has
-    // an error, or computing it did. at is where it is needed, for a cycle.
+    // an error, or computing it did. at is where it is needed, for a cycle. An evaluated const
+    // has none until the bodies are checked: folding that meets one notes it in unfolded, and
+    // the consts folding it was for are evaluated too.
     fn const_value { mut c: Checker, d: u32, at: source::Span } -> ?Val {
         let known = map::get{ m = c.values, key = d }
         if known != null { return known }
-        if not map::has{ m = c.foldable, key = d } { return null }
+        let folds = map::has{ m = c.foldable, key = d }
+        if not folds and not map::has{ m = c.evaluated, key = d } { return null }
+        if not folds and not c.can_eval {
+            c.unfolded = d
+            return null
+        }
         let x = get_decl{ c, d }
         if has_id{ xs = list::items{ list = c.folding }, n = d } {
             let mut b = message{ c }
@@ -2309,11 +2389,15 @@ namespace check {
         }
         push{ xs = &c.folding, n = d }
         let mut v: ?Val = null
-        if x.syn.k is constant{ value } { v = fold_to{ &c, e = value, t = x.ty } }
+        if x.syn.k is constant{ value } {
+            v = if folds { fold_to{ &c, e = value, t = x.ty } } else { comptime::value{ &c, d, e = value } }
+        }
         _ = list::pop{ list = &c.folding }
         let got = v
         if got == null {
             _ = map::remove{ m = &c.foldable, key = d }
+            _ = map::remove{ m = &c.evaluated, key = d }
+            if folds and c.unfolded != NONE { put_bool{ m = &c.evaluated, k = d } }
             return null
         }
         try! map::put{ m = &c.values, key = d, value = got }
@@ -6711,7 +6795,7 @@ namespace check {
     }
 
     fn repeat { mut c: Checker, elem: syntax::Expr, count: syntax::Expr, exp: Id } -> Id {
-        let n = const_int{ &c, e = count, ns = c.sc.ns, what = "array length" }
+        let n = const_int{ &c, e = count, ns = c.sc.ns, what = "an array length" }
         let mut et = types::NO_TYPE
         if exp != types::NO_TYPE and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = exp } } is array{ elem = x } { et = x }
         if et != types::NO_TYPE { expect{ &c, e = elem, t = et } } else { et = value_type{ &c, e = elem } }

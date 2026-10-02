@@ -147,7 +147,7 @@ namespace drive {
         add_all{ xs = &paths, ys = files }
         let argv = if args.len >= 3 { args[3..] } else { args[2..] }
         let stack = host_stack{ &proc } / 4 * 3
-        return analyze{ &io, &fs, &mem, paths = list::items{ list = paths }, std_files = std.len, mode = Mode::interp, out = stem{ path = base{ path } }, argv, stack }
+        return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, mode = Mode::interp, out = stem{ path = base{ path } }, argv, stack }
     }
 
     // The stack ctxrt.c lets this program use before it panics: CTX_STACK bytes, at most 200
@@ -240,7 +240,7 @@ namespace drive {
         let mut paths = list::new([]u8){ realloc = arena::alloc, &heap }
         add_all{ xs = &paths, ys = d.std }
         add_all{ xs = &paths, ys = files }
-        let code = analyze{ &io, &fs, &mem, paths = list::items{ list = paths }, std_files = d.std.len, mode = Mode::build, out = c_file, argv = slice::empty([]u8){}, stack = 0 }
+        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = d.std.len, mode = Mode::build, out = c_file, argv = slice::empty([]u8){}, stack = 0 }
         if code != 0 { return code }
 
         let rt = join{ &heap, a = d.home, b = "ctxc/rt" }

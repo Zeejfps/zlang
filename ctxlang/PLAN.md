@@ -142,7 +142,8 @@ generator can't observe its own output.
    interpreter over the IR, which is monomorphized, typed and laid out.
    - **When.** The checker runs in phases (declarations, const folding, bodies, error sets), and
      has no per-declaration `ensure`. A const that calls a function is evaluated after every body
-     is checked and the sets are inferred, before lowering, the first time its value is needed.
+     is checked and the sets are inferred, before lowering, the first time its value is needed
+     (each in order, or earlier where another needs it), and only in a program without errors.
      A const whose evaluation reaches itself is a cycle error.
    - **Array lengths and enum values** are needed during declarations, so they keep today's
      folding (`const_int`): a const that calls a function there is an error. Nothing uses a named
@@ -154,17 +155,18 @@ generator can't observe its own output.
      as typed memory, behave as they do in C. A pointer is a region (static literal bytes, a stack
      frame, the heap) and an offset.
    - **Limits.** A panic (overflow, bounds, `@panic`, `try!`) is a compile error at the const with
-     its message. So are running out of fuel (a step limit) and too deep a recursion. Calling an
-     extern fn is an error: none can run while compiling. (The capability-less ones std has, float
-     formatting and parsing, are ctxc's own runtime's, so a later version could call ctxc's.)
+     its message. So are running out of fuel (10^8 steps, a few seconds; `CTX_CONST_FUEL` sets it)
+     and too deep a recursion. Calling an extern fn is an error: none can run while compiling.
+     (The capability-less ones std has, float formatting and parsing, are ctxc's own runtime's,
+     so a later version could call ctxc's.)
    - **The result** is read back by its type into the const's value. A `[]u8` or `c::String` must
      point into static literal bytes; any other pointer, or a function value, is an error.
    - The value is cached in the checker (`values`), so the language server doesn't re-run it on
      edits that don't touch its inputs.
-   - **Two steps.** The first is done: the interpreter (`ctxc/eval.ctx`) and `ctxc interp FILE`,
-     which runs a whole program's `main` in it, emulating the externs that writing to stdout and
-     stderr reaches; the tests run every program both ways (Testing). Next, consts that call
-     functions, on top of it: `eval::run` runs any function, and `failed` says why it stopped.
+   - **Two steps,** both done: the interpreter (`ctxc/eval.ctx`) and `ctxc interp FILE`, which
+     runs a whole program's `main` in it, emulating the externs that writing to stdout and stderr
+     reaches, so the tests run every program both ways (Testing); then consts that call functions
+     on top of it (`ctxc/comptime.ctx`). ctxc's own source doesn't use them yet.
    - Uses: lookup tables, perfect-hash keyword maps, precomputed tables for parsers, and
      converting literals to library types (stage 4).
 

@@ -39,10 +39,31 @@ namespace lower {
         ret:       Id,
         slots:     map::Map(u32, u32, Heap),       // by the checker's Var
         locals:    list::List(ir::Local, Heap),
+        failed:    bool,                           // a const it met has no value, and said why
     }
 
     fn program { mut c: check::Checker } -> ir::Program {
-        let mut l = Lower{
+        let mut l = lowering{ &c }
+        let main = fn_id{ &l, decl = c.main, targs = no_ids{} }
+        let p = finish{ &l, main }
+        if l.failed { @panic("lower: a const without a value") }
+        return p
+    }
+
+    // Const d's initializer as a program of its own, for the interpreter (comptime.ctx): its
+    // main is a function without context that returns the const's value, and the rest is what
+    // that reaches. It has its own Lower, so the program's IR doesn't change. Null if a const it
+    // needs has no value; why is reported.
+    fn initializer { mut c: check::Checker, d: u32 } -> ?ir::Program {
+        let mut l = lowering{ &c }
+        let main = fn_id{ &l, decl = d, targs = no_ids{} }
+        let p = finish{ &l, main }
+        if l.failed { return null }
+        return p
+    }
+
+    fn lowering { mut c: check::Checker } -> Lower {
+        return Lower{
             c = &c, heap = c.heap,
             types = list::new(ir::Type){ realloc = arena::alloc, heap = c.heap },
             type_ids = map::new(Id, u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 },
@@ -58,13 +79,20 @@ namespace lower {
             decl = NONE, targs = no_ids{}, ret = types::VOID,
             slots = map::new(u32, u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 },
             locals = list::new(ir::Local){ realloc = arena::alloc, heap = c.heap },
+            failed = false,
         }
-        let main = fn_id{ &l, decl = c.main, targs = no_ids{} }
+    }
+
+    // Lowers the queued instances, and those they reach, into a program.
+    fn finish { mut l: Lower, main: u32 } -> ir::Program {
         let mut i: usize = 0
         while i < l.queue.len {
             let inst = list::items{ list = l.queue }[i]
-            let f = if check::get_decl{ c = l.c.*, d = inst.decl }.kind == check::Kind::external {
+            let kind = check::get_decl{ c = l.c.*, d = inst.decl }.kind
+            let f = if kind == check::Kind::external {
                 external{ &l, id = @as(u32, i), d = inst.decl }
+            } else if kind == check::Kind::constant {
+                const_fn{ &l, id = @as(u32, i), d = inst.decl }
             } else {
                 function{ &l, id = @as(u32, i), inst }
             }
@@ -138,6 +166,26 @@ namespace lower {
             i = i + 1
         }
         return list::items{ list = out }
+    }
+
+    // A const's initializer as a function: `return e`, with no context.
+    fn const_fn { mut l: Lower, id: u32, d: u32 } -> ir::Func {
+        let x = check::get_decl{ c = l.c.*, d }
+        l.decl = d
+        l.targs = no_ids{}
+        map::clear{ m = &l.slots }
+        l.locals = list::new(ir::Local){ realloc = arena::alloc, heap = l.heap }
+        l.ret = T{ &l, t = x.ty }
+        let mut xs = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        if x.syn.k is constant{ value } {
+            let r = conv{ &l, e = value, to = l.ret }
+            try! list::push{ list = &xs, item = ir::Stmt::ret{ value = r } }
+        }
+        let ret = tid{ &l, t = l.ret }
+        return ir::Func{
+            id, name = x.qual, symbol = "", params = slice::empty(ir::Param){}, ret,
+            locals = list::items{ list = l.locals }, body = ir::Block{ stmts = list::items{ list = xs }, result = null },
+        }
     }
 
     fn function { mut l: Lower, id: u32, inst: Inst } -> ir::Func {
@@ -1617,11 +1665,12 @@ namespace lower {
                 return mk{ ty, k = ir::ExprKind::fnref{ callee = fn_id{ &l, decl, targs = ts } } }
             }
             constant{ decl } => {
+                let at = check::expr_at{ e }
                 if get{ l, t } is array | record | sum | opt | slice {
                     let ty = tid{ &l, t }
-                    return mk{ ty, k = ir::ExprKind::constref{ id = const_id{ &l, d = decl } } }
+                    return mk{ ty, k = ir::ExprKind::constref{ id = const_id{ &l, d = decl, at } } }
                 }
-                return value{ &l, v = const_val{ l, d = decl } }
+                return value{ &l, v = const_val{ &l, d = decl, at } }
             }
             enumval{ ty, index } => {
                 let d = enum_decl{ l, t = ty }
@@ -1653,7 +1702,7 @@ namespace lower {
     }
 
     // The id of an array, struct or union const's item, lowered the first time it is met.
-    fn const_id { mut l: Lower, d: u32 } -> u32 {
+    fn const_id { mut l: Lower, d: u32, at: source::Span } -> u32 {
         let known = map::get{ m = l.const_ids, key = d }
         if known != null { return known }
         let i = @as(u32, l.consts.len)
@@ -1663,7 +1712,7 @@ namespace lower {
         try! list::push{ list = &l.consts, item = placeholder }
         let t = T{ &l, t = x.ty }
         let ty = tid{ &l, t }
-        let v = value{ &l, v = const_val{ l, d } }
+        let v = value{ &l, v = const_val{ &l, d, at } }
         list::items{ list = l.consts }[i] = ir::Const{ name = x.qual, ty, value = v }
         return i
     }
@@ -1687,9 +1736,14 @@ namespace lower {
         return @as(u32, vs.len)
     }
 
-    fn const_val { l: Lower, d: u32 } -> check::Val {
-        let v = map::get{ m = l.c.values, key = d }
-        if v == null { @panic("lower: a const without a value") }
+    // Const d's value, used at `at`. An evaluated const's is computed here the first time
+    // (check's const_value), while another const's initializer is lowered; if it has none, the
+    // lowering has failed, and the value is a stand-in.
+    fn const_val { mut l: Lower, d: u32, at: source::Span } -> check::Val {
+        let v = check::const_value{ c = l.c, d, at } ifnull {
+            l.failed = true
+            return check::Val::nil{ ty = check::get_decl{ c = l.c.*, d }.ty }
+        }
         return v
     }
 

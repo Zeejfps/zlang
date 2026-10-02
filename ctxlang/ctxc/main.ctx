@@ -1,8 +1,9 @@
 // ctxc: the ctxlang compiler, written in ctxlang. A directory is one program: this file holds
 // the driver; source.ctx, diag.ctx, lexer.ctx, syntax.ctx, parser.ctx, types.ctx and check.ctx
 // the front end; lower.ctx the checked program as IR; ir.ctx the typed IR, ir_read.ctx and
-// ir_print.ctx its text form; emit_c.ctx the C backend; eval.ctx an interpreter over the IR;
-// dump.ctx text dumps for tests; drive.ctx the driver, which runs the C compiler.
+// ir_print.ctx its text form; emit_c.ctx the C backend; eval.ctx an interpreter over the IR,
+// which comptime.ctx runs consts in; dump.ctx text dumps for tests; drive.ctx the driver, which
+// runs the C compiler.
 //
 //   ctxc run PATH [-- ARGS...]                  builds the program at PATH (a .ctx file, or a
 //                                               directory, maybe with a build.ctx) with the C
@@ -159,7 +160,7 @@ enum Mode: u8 { decls, ir, build, interp }
 // `ctxc decls STD... -- FILE...`: lexes and parses every file, then checks the program, all in
 // one arena. `ctxc ir ...` prints the program's IR instead, if it has no errors, and
 // `ctxc build OUT.c ...` writes it as C.
-fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, mode: Mode } -> i32 {
+fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args, mode: Mode } -> i32 {
     let first: usize = if mode == Mode::build { 2 } else { 1 }
     let mut buf: [65536]u8
     let mut heap = arena::new{ buf = buf[..] }
@@ -182,13 +183,14 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, mode: Mode }
         return 2
     }
     let out: []u8 = if mode == Mode::build { args[1] } else { "" }
-    return analyze{ &io, &fs, &mem, paths = list::items{ list = paths }, std_files = split - first, mode, out, argv = slice::empty([]u8){}, stack = 0 }
+    return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, mode, out, argv = slice::empty([]u8){}, stack = 0 }
 }
 
 // Checks the program of `paths`, std's files first, and acts on it as `mode` says: for build,
 // writes it as C to `out`; for interp, runs it with args `argv`, as the program named `out`,
-// letting its calls take `stack` bytes of ctxc's stack.
-fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, paths: [][]u8, std_files: usize, mode: Mode, out: []u8, argv: [][]u8, stack: u64 } -> i32 {
+// letting its calls take `stack` bytes of ctxc's stack. A const computed by running code
+// (comptime.ctx) may take half of ctxc's stack, and CTX_CONST_FUEL steps if that is set.
+fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, mode: Mode, out: []u8, argv: [][]u8, stack: u64 } -> i32 {
     let mut total: u64 = 0
     let mut i: usize = 0
     while i < paths.len {
@@ -217,6 +219,12 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, paths: [][]u8, std_files: usi
         i = i + 1
     }
     let mut c = check::new{ files = list::items{ list = files }, std_files, &heap, &diags }
+    c.stack = drive::host_stack{ &proc } / 2
+    let fuel = proc::env{ &proc, name = "CTX_CONST_FUEL" }
+    if fuel != null {
+        let n = utf8::parse_u64{ s = utf8::String{ bytes = fuel } }
+        if n != null { c.fuel = n }
+    }
     check::program{ &c }
     if mode == Mode::build or mode == Mode::interp {
         if diags.errors == 0 and mode == Mode::interp {

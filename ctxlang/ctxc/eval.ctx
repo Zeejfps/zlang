@@ -7,7 +7,7 @@
 //       panic{ text }   => { ... }                // as ctxrt.c's ctx_panic prints it
 //       failed{ msg }   => { ... }                // out of fuel, too deep, an extern fn, a bad pointer
 //   }
-//   ... m.chunks, m.out: what the program wrote, in order ...
+//   ... m.chunks, m.out: what the program wrote, in order; m.why: why it stopped ...
 //
 // Memory is bytes, laid out by the IR's sizes, alignments and offsets, so @cast, extern unions
 // and allocators that carve typed values out of []u8 behave as they do in C. It is in regions:
@@ -56,6 +56,12 @@ namespace eval {
         panic{ text: []u8 },                    // "FILE:LINE:COL: panic: MSG", without a newline
         failed{ msg: []u8 },
     }
+
+    // Why a run stopped, for a caller that words it itself (comptime.ctx).
+    union Why { none, panic{ pos: ?ir::Pos, msg: []u8 }, fuel, deep, external{ name: []u8 } }
+
+    // A literal's bytes, in static data at `at`.
+    struct Literal { at: Addr, bytes: []u8 }
 
     // What the program wrote: out[start..start + len], to stream `to`.
     struct Chunk { to: io::Stream, start: usize, len: usize }
@@ -118,7 +124,9 @@ namespace eval {
         stdout:   Addr,                         // ctx_io_out's buffer, once asked for
         out:      list::List(u8, Heap),
         chunks:   list::List(Chunk, Heap),
+        literals: list::List(Literal, Heap),
         stop:     Outcome,
+        why:      Why,
     }
 
     // A machine for p, from whose functions run{ ... } and main{ ... } run, in memory from heap.
@@ -138,7 +146,9 @@ namespace eval {
             statics = 0, chunk = 0, cap = 0, stdout = 0,
             out = list::new(u8){ realloc = arena::alloc, heap },
             chunks = list::new(Chunk){ realloc = arena::alloc, heap },
+            literals = list::new(Literal){ realloc = arena::alloc, heap },
             stop = Outcome::failed{ msg = "" },
+            why = Why::none,
         }
         let none = slice::empty(u8){}
         try! list::push{ list = &m.regions, item = Region{ bytes = none, used = 0, writable = false } }
@@ -325,6 +335,7 @@ namespace eval {
             try! @fmt(&b, "too deep: {} nested calls, at {}", m.depth, str{ s = name })
         }
         fail{ &m, msg = utf8::view{ b }.bytes }
+        m.why = Why::deep
     }
 
     fn no_return { mut m: M, name: []u8 } {
@@ -356,6 +367,7 @@ namespace eval {
     fn spend { mut m: M } -> ! {
         if m.fuel == 0 {
             fail{ &m, msg = "out of fuel: the program ran too many steps" }
+            m.why = Why::fuel
             return halt
         }
         m.fuel = m.fuel - 1
@@ -1019,7 +1031,21 @@ namespace eval {
         slice::copy(u8){ dst = d, src = bytes }
         d[bytes.len] = 0
         try! map::put{ m = &m.known, key, value = a }
+        try! list::push{ list = &m.literals, item = Literal{ at = a, bytes } }
         return a
+    }
+
+    // The bytes from address a to the end of the literal it points into (not the NUL after
+    // them), or null if a isn't in a literal's static bytes.
+    fn literal_rest { m: M, a: Addr } -> ?[]u8 {
+        let ls = list::items{ list = m.literals }
+        let mut i: usize = 0
+        while i < ls.len {
+            let x = ls[i]
+            if a >= x.at and a - x.at <= @as(u64, x.bytes.len) { return x.bytes[@as(usize, a - x.at)..] }
+            i = i + 1
+        }
+        return null
     }
 
     // ---- function values and calls
@@ -1355,6 +1381,7 @@ namespace eval {
         let mut b = builder{ heap = m.heap }
         try! @fmt(&b, "extern fn {} (C's `{}`) is not supported by interp", str{ s = f.name }, str{ s = f.symbol })
         fail{ &m, msg = utf8::view{ b }.bytes }
+        m.why = Why::external{ name = f.name }
         return halt
     }
 
@@ -1364,6 +1391,7 @@ namespace eval {
             let mut b = builder{ heap = m.heap }
             try! @fmt(&b, "extern fn {} (C's `{}`) is not supported by interp", str{ s = f.name }, str{ s = f.symbol })
             fail{ &m, msg = utf8::view{ b }.bytes }
+            m.why = Why::external{ name = f.name }
             return halt
         }
         return list::items{ list = m.argv }[base + k]
@@ -1414,6 +1442,7 @@ namespace eval {
         let mut b = builder{ heap = m.heap }
         try! @fmt(&b, "{}:{}:{}: panic: {}", str{ s = file }, pos.line, pos.col, str{ s = msg })
         m.stop = Outcome::panic{ text = utf8::view{ b }.bytes }
+        m.why = Why::panic{ pos, msg }
     }
 
     // "PROGRAM: panic: MSG", as ctx_panic_nopos writes it.
@@ -1421,6 +1450,7 @@ namespace eval {
         let mut b = builder{ heap = m.heap }
         try! @fmt(&b, "{}: panic: {}", str{ s = m.name }, str{ s = msg })
         m.stop = Outcome::panic{ text = utf8::view{ b }.bytes }
+        m.why = Why::panic{ pos = null, msg }
     }
 
     fn overflow { mut m: M, pos: ir::Pos } {
