@@ -9,11 +9,11 @@ errors and capability-variable work (`e19f1fe`).
 
 - **1. A diagnostic takes three lines.** `let mut b = message{ c }`, then
   `try! @fmt(&b, ...)`, then `error{ &c, at, msg = utf8::view{ b } }`. This was 24
-  times in `check.ctx` when first noted; it is now 188, plus 12 in `lower.ctx` and `parser.ctx`.
-  `@fmt` can't produce a `utf8::String` in an expression. An `@fmt` form that returns the text
-  (from an allocator in scope), or a std `error_fmt`-style helper once `@fmt` can forward its
-  arguments, would make each one a line. *Planned:* PLAN.md 1.3 (`@fmt` without a builder is a
-  writer, which `error` takes).
+  times in `check.ctx` when first noted; it is now 197, plus 13 in `lower.ctx` and `parser.ctx`,
+  and 157 of them are exactly those three lines. `@fmt` can't produce a `utf8::String` in an
+  expression, and no helper can take a format and its arguments to pass on. *Planned:* PLAN.md
+  1.3: `@fmt` without a builder is a writer, which a new `errorf` takes, so each is one line
+  (`errorf{ &c, at, msg = @fmt("...", args) }`). `error` keeps its plain-text messages.
 - **2. A read-only argument can be copied before a later argument changes it.** Arguments are
   evaluated in order, so `types::prune{ s = c.ty, t = expr{ &c, e } }` copies the type store,
   then `expr` adds a type to the real one, and `prune` indexes the stale copy out of bounds.

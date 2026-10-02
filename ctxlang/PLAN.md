@@ -31,33 +31,62 @@ interpreter ctxc replaced, is at `8436f4d`.
      result.
    - Matching through a pointer to a `!T`.
 3. **`@fmt` as a value** (FRICTION #1). A formatted diagnostic takes three lines, a builder, the
-   `@fmt` and the view, about 190 times in ctxc, and no helper can hide them: no function takes
-   a format and its arguments to pass on. Without a builder, `@fmt("...", args)` is a function
-   that writes the text when called, as Rust's `format_args!` is a value any sink takes:
+   `@fmt` and the view: 157 sites in ctxc are exactly that, and about 50 more are close. No
+   helper can hide them, since no function takes a format and its arguments to pass on. Without
+   a builder, `@fmt("...", args)` is a writer, a function that writes the text when called, as
+   Rust's `format_args!` is a value any sink takes:
    ```
-   error{ &c, at, msg = @fmt("no variant `{}` in {}", name, tstr{ c, t }) }
+   errorf{ &c, at, msg = @fmt("`{}` is already declared in this scope", str{ s = name.text }) }
+   errorf{ &c, at, msg = @fmt("expected {}, got {}", write_type{ c, t = want, _ }, write_type{ c, t = got, _ }) }
 
-   fn error { mut c: Checker, at: source::Span, msg: utf8::Fmt(Heap) } {
+   fn errorf { mut c: Checker, at: source::Span, msg: utf8::Fmt(Heap) } {
        let mut b = message{ c }
        try! msg{ &b }
-       report{ &c, at, text = utf8::view{ b } }
+       error{ &c, at, msg = utf8::view{ b } }
    }
    ```
-   - It is a hidden fn per site, whose context is the arguments and `mut b`, and whose body is
-     `return @fmt(&b, ...)`, bound with `_` (§4): no new IR or C. The two forms can't be
-     confused, since a format is always a literal and a builder never is.
-   - Its type, `&fn{ mut b: utf8::Builder(S) } -> !`, comes from the expected type. Without one
-     (`let w = @fmt(...)`) it is an error, as with an untyped `null`.
-   - The arguments are evaluated and copied at the `@fmt`, as a bind's are (§4).
+   - It is a hidden fn per site, whose context is `mut b` and one field per argument, and whose
+     body is `return @fmt(&b, ...)`, bound with `_` (§4). The two forms can't be confused: a
+     format is always a literal, and a builder is a name or a path of fields (§13.1).
+   - Its type, `&fn{ mut b: utf8::Builder(S) } -> R`, is the expected type's, `R` included. The
+     pushes alone fail with `alloc::out_of_memory`, but §5 wants `R` identical, and `Fmt`'s `!`
+     holds any error; the hidden fn returns `R` and widens its pushes into it, as an `@fmt` with a
+     function hole does today (`lift`), so 1.2's gap isn't on the way. Without an expected type
+     (`let w = @fmt(...)`) it is an error, as with an untyped `null`, and so is one whose `S` is
+     known only from the `@fmt`.
+   - The arguments are evaluated and copied at the `@fmt`, as a bind's are (§4), all of them:
+     §13.6's "later arguments aren't evaluated" holds only for the form with a builder, and the
+     spec says so.
    - The result stays `!`: it can run out of memory, and a hole that is a function may fail.
-     The sink decides, as ctxc's `error` does with one `try!`.
-   - A writer is what a hole already takes (§13), so writers nest: helpers that build a string
-     only to put it in another (`binding_names`) return a writer instead.
+     The sink decides, as `errorf` does with one `try!`.
+   - A writer is what a hole already takes (§13), so writers nest. A helper that builds a string
+     only to put it in another becomes a writer by taking `mut b`, as `write_type` already is,
+     and is passed as `helper{ ..., _ }`. It can't return a writer: an `&fn` is no return type or
+     struct field (§6.1, §7.2). So `binding_names`, whose text `Scan.via` stores, stays a string.
+   - The value holds what its holes hold (§6.2), so a hole that binds `&c` can't go to a call
+     that takes `&c` (§3.1). ctxc has no such site; a read-only `write_type{ c, ... }` copies `c`.
    - std gets `type Fmt(S) = &fn{ mut b: Builder(S) } -> !` in `utf8`. An API that takes plain
-     text keeps a `utf8::String` field, and adds one that takes a writer (`error` and `errorf`).
+     text keeps its `utf8::String` field, and a second fn takes a writer: ctxc's `error` keeps
+     its 68 literal messages, and `errorf` takes the rest.
+   - **Checker.** The parser takes `@fmt` with one argument. `fmt_builtin` sends a call whose
+     first argument is a string literal to a value form, which checks the format and holes as
+     today and joins `c.fmts`, so widths and integer literals settle at the end of the body.
+   - **Lowering.** No new IR or C: the value is `bind{ callee, args }`, which emit_c and the
+     interpreter already run. But the queue holds `Inst{ decl, targs }` and a hidden fn has no
+     declaration, so an instance may be an `@fmt` site, keyed by the site and the enclosing
+     instance's type arguments (`S` may be one). Its params are `b` then one per hole, named so
+     their sorted order is that one. `push_call` and `error_push` take the builder and hole as IR
+     values and types instead of syntax: the builder form lowers `b` for each piece, as now, and
+     the hidden fn uses its params.
+   - **Steps.** Add it to ctxc with tests (every kind of hole, a nested writer, a value with no
+     function hole accepted as `Fmt`, no expected type, a `Fmt` local, and the exclusivity
+     case), and §13 in the spec; refresh the bootstraps; then ctxc adds `errorf` in check, lower
+     and parser, a script converts the 157 sites, and the rest go by hand.
    - The bound record is leaked from `ctx_alloc`, as every `&fn`'s is (Open decisions), until
      records live in the frame.
-   - It still writes to std's `utf8::Builder`. Any sink, as stage 4 wants, is a later design.
+   - It still writes to std's `utf8::Builder`. Any sink comes with stage 4's `#write`.
+   - *Later, if wanted:* a hole could expect the outer builder's `Fmt(S)`, so an `@fmt` value
+     nests directly as a hole.
 
 *Later, if wanted:* if patterns nest (a payload's fields, literal values), `_` comes in as a
 wildcard inside a pattern (`os{ code = _ }`), and `else` stays the whole-arm default. Optional
@@ -227,9 +256,37 @@ literal programs keep their output; the UTF-8 and NUL errors change wording to s
 
 *Still naming std after this,* each a later piece of the same goal:
 - `@fmt` writes to a `utf8::Builder` through `utf8::push_*` functions found by name, fails with
-  `alloc::out_of_memory`, which it names too, and a literal hole expects a `utf8::String`. The direction: `@fmt` receives what it writes with, as a hole
-  already may (a function value writes it), rather than knowing std's builder. 1.3 moves that
-  way: the sink of an `@fmt` value owns the builder.
+  `alloc::out_of_memory`, which it names too, and a literal hole expects a `utf8::String`.
+  *Direction:* `#write`, an attribute the compiler declares, beside `#convert`. It goes on a fn
+  whose context is one `mut` field, the sink, and one read-only field, the value, and whose
+  result is a bare `!`. An `@fmt` to a sink of type `B` writes each hole of type `T` with the
+  `#write` fn for `B` and `T`, and each piece of the format with the one for `B` and `strlit`.
+  ```
+  namespace utf8 {
+      #write
+      fn push_i64(S) { mut b: Builder(S), n: i64 } -> ! { ... }
+  }
+
+  namespace json {                                 // any library, for any sink
+      #write
+      fn number { mut w: Writer, n: f64 } -> ! { ... }
+  }
+  ```
+  - What goes: `builder_decl` (any type with writers is a sink), the `push_*` names, and
+    `out_of_memory` (an `@fmt`'s error set is the union of its writers'). A literal hole is a
+    `strlit`, so `text_decl` goes with `#convert`.
+  - 1.3 needs no change: an `@fmt` value's type becomes `&fn{ mut b: B } -> R` for any sink `B`.
+  - An error hole is still written by the compiler, which walks the payload, but with the
+    writers of its fields' types, so it names nothing in std.
+  - Two `#write` fns for one `B` and `T` are an error where an `@fmt` would use them, as with
+    `#convert` (4.6).
+  - *To settle:* how a hole's options reach its writer. A writer may take `width` and `zero`
+    fields, which the hole fills; or `{x}` and `{c}` become writers named in the call
+    (`hex{ n, _ }`), and the format keeps only widths.
+  - *Considered:* `@fmt` as a library function. It needs any number of arguments of any types
+    and a writer chosen by each one's type: either the call expands to code, or types are
+    compile-time values (Zig's `anytype`), and stage 3 rules out both. Every argument as an
+    explicit writer needs an array of `&fn`, which §6.1 forbids, and is longer than today.
 - `c::String`'s C layout: a `?c::String` is a nullable pointer, and an extern fn passes it as a
   `const char *`.
 - `c::symbol` and `c::callback` are attributes std declares and the compiler acts on. They move
