@@ -4877,19 +4877,27 @@ class PlatformLayers(Base):
         # A build checks only its own layer, so each is checked here from any machine, with the
         # C symbols it calls.
         import toolchain
-        self.assertEqual(sorted(os.listdir(os.path.join(ROOT, 'std', 'os'))), sorted(toolchain.PLATFORMS))
+        # Linux's and macOS's share std/os/posix.
+        self.assertEqual(sorted(os.listdir(os.path.join(ROOT, 'std', 'os'))), sorted(toolchain.PLATFORMS + ('posix',)))
         d, files = toolchain.write_program([("""
-fn main { mut io: Io, mut mem: Mem } -> i32 {
+fn main { mut io: Io, mut mem: Mem, mut fs: Fs } -> i32 {
     let mut line: [16]u8
     _ = io::read_line{ &io, into = line[..] }
     io::eprintln{ &io, s = "e" }
     let some{ value = buf } = mem::pages{ &mem, size = 1 } else { return 1 }
     io::println_u64{ &io, n = buf.len }
+    let mut heap = arena::new{ buf = line[..] }
+    let f = fs::open{ &fs, path = "x", mode = fs::Mode::create } iferr { return 1 }
+    _ = fs::write{ &fs, file = f, bytes = "y" }
+    _ = fs::close{ &fs, file = f }
+    _ = fs::list{ &fs, &heap, realloc = arena::alloc, path = "." }
     return 0
 }
 """, 'main.ctx')])
-        for platform, symbols in [('posix', ['write', 'read', 'aligned_alloc', 'memset']),
-                                  ('windows', ['_write', '_read', 'VirtualAlloc'])]:
+        posix = ['write', 'read', 'aligned_alloc', 'memset', 'open', 'close', 'opendir', 'readdir']
+        for platform, symbols in [('linux', posix + ['__errno_location']),
+                                  ('macos', posix + ['__error']),
+                                  ('windows', ['_write', '_read', 'VirtualAlloc', 'CreateFileW', 'FindFirstFileW'])]:
             c = os.path.join(d, f'{platform}.c')
             self.assertEqual(toolchain.ctxc_build(toolchain.native_ctxc(), c, list(files), cwd=d, platform=platform), (0, ''))
             with open(c, encoding='utf-8') as f:

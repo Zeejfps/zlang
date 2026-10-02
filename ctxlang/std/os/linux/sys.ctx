@@ -1,0 +1,31 @@
+// std: sys on Linux. std/os/posix's `os` serves Linux and macOS alike; what differs between them
+// is here, with the same names in std/os/macos: the C library's numbers and layouts, and the
+// functions it names differently.
+
+namespace sys {
+    // Where this thread's errno is: a macro in C, over this function.
+    #c::symbol{ name = "__errno_location" }
+    extern fn errno { mut fs: Fs } -> *mut i32
+
+    // open's flags, besides O_RDONLY (0) and O_WRONLY (1), which every system shares.
+    const O_CREAT: i32 = 0x40
+    const O_EXCL: i32 = 0x80
+    const O_TRUNC: i32 = 0x200
+    const O_APPEND: i32 = 0x400
+
+    // The errno for a path that is too long.
+    const ENAMETOOLONG: i32 = 36
+
+    // The offset of d_name, the entry's name, in the struct dirent readdir returns: glibc's and
+    // musl's, on every 64-bit architecture.
+    const DIRENT_NAME: usize = 19
+
+    // C's open, which is variadic: mode, used when it creates the file, is its variadic
+    // argument. Linux's C conventions pass that as any other argument.
+    #c::symbol{ name = "open" }
+    extern fn c_open { mut fs: Fs, path: *u8, flags: i32, mode: u32 } -> i32
+
+    fn open { mut fs: Fs, path: *u8, flags: i32, mode: u32 } -> i32 {
+        return c_open{ &fs, path, flags, mode }
+    }
+}

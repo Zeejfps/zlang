@@ -9,21 +9,17 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/stat.h>
 
 #ifdef _WIN32
-#include <direct.h>
 #include <io.h>
 #include <windows.h>
 #define ctx_strtod __mingw_strtod     // correctly rounded, unlike msvcrt's
 #define ctx_strtof __mingw_strtof
 #else
-#include <dirent.h>
 #include <sys/resource.h>
 #include <unistd.h>
 #define ctx_strtod strtod
 #define ctx_strtof strtof
-#define O_BINARY 0
 #endif
 
 static const char *program_name = "program";
@@ -278,7 +274,7 @@ uint64_t ctx_f2i_u(double v, uint64_t hi, const char *dst, CTX_POS) {
     return (uint64_t)v;
 }
 
-// ---- fs: each native returns a status, >= 0 for a result and < 0 for an error, as in ctxi
+// ---- statuses: >= 0 for a result and < 0 for an error, for proc's natives
 
 enum { NOT_FOUND = -1, PERMISSION = -2, IS_DIR = -3, EXISTS = -4, NOT_DIR = -5, BAD_FILE = -6 };
 
@@ -291,224 +287,6 @@ static int64_t os_error(int e) {
     case ENOTDIR: return NOT_DIR;
     default: return -1000 - e;
     }
-}
-
-#define MAX_FILES 1024
-static int files[MAX_FILES];            // id -> fd + 1; 0 is a free id
-static uint32_t next_file = 1;
-
-#ifdef _WIN32
-typedef wchar_t path_char;
-static path_char *os_path(ctx_slice p) {
-    int n = MultiByteToWideChar(CP_UTF8, 0, p.ptr, (int)p.len, NULL, 0);
-    wchar_t *w = malloc((n + 1) * sizeof *w);
-    MultiByteToWideChar(CP_UTF8, 0, p.ptr, (int)p.len, w, n);
-    w[n] = 0;
-    return w;
-}
-#define OS_STAT _wstat64
-typedef struct _stat64 os_stat_t;
-#define OS_OPEN _wopen
-#define OS_REMOVE _wremove
-#else
-typedef char path_char;
-static path_char *os_path(ctx_slice p) { return c_string(p); }
-#define OS_STAT stat
-typedef struct stat os_stat_t;
-#define OS_OPEN open
-#define OS_REMOVE remove
-#endif
-
-// The path, or null with *status set if it is empty or a directory.
-static path_char *checked_path(ctx_slice p, int64_t *status) {
-    if (p.len == 0) { *status = NOT_FOUND; return NULL; }
-    path_char *w = os_path(p);
-    os_stat_t st;
-    if (OS_STAT(w, &st) == 0 && (st.st_mode & S_IFMT) == S_IFDIR) {
-        free(w);
-        *status = IS_DIR;
-        return NULL;
-    }
-    return w;
-}
-
-int64_t ctx_fs_sys_open(ctx_slice path, uint8_t mode) {
-    static const int flags[] = {
-        O_RDONLY, O_WRONLY | O_CREAT | O_TRUNC, O_WRONLY | O_CREAT | O_APPEND, O_WRONLY | O_CREAT | O_EXCL,
-    };
-    if (mode > 3) {
-        char msg[64];
-        snprintf(msg, sizeof msg, "invalid open mode %u", (unsigned)mode);
-        ctx_panic_nopos(msg);
-    }
-    int64_t status = 0;
-    path_char *w = checked_path(path, &status);
-    if (!w) return status;
-    int fd = OS_OPEN(w, flags[mode] | O_BINARY, 0666);
-    int e = errno;
-    free(w);
-    if (fd < 0) return os_error(e);
-    if (next_file >= MAX_FILES) ctx_panic_nopos("too many open files");
-    uint32_t id = next_file++;
-    files[id] = fd + 1;
-    return id;
-}
-
-static int fd_of(uint32_t id) {
-    return id < MAX_FILES ? files[id] - 1 : -1;
-}
-
-int64_t ctx_fs_sys_read(uint32_t file, ctx_slice into) {
-    int fd = fd_of(file);
-    if (fd < 0) return BAD_FILE;
-    if (into.len == 0) return 0;
-#ifdef _WIN32
-    int n = _read(fd, into.ptr, into.len > 0x40000000 ? 0x40000000 : (unsigned)into.len);
-#else
-    ssize_t n = read(fd, into.ptr, into.len);
-#endif
-    return n < 0 ? os_error(errno) : n;
-}
-
-int64_t ctx_fs_sys_write(uint32_t file, ctx_slice bytes) {
-    int fd = fd_of(file);
-    if (fd < 0) return BAD_FILE;
-    if (bytes.len == 0) return 0;
-#ifdef _WIN32
-    int n = _write(fd, bytes.ptr, bytes.len > 0x40000000 ? 0x40000000 : (unsigned)bytes.len);
-#else
-    ssize_t n = write(fd, bytes.ptr, bytes.len);
-#endif
-    return n < 0 ? os_error(errno) : n;
-}
-
-int64_t ctx_fs_sys_close(uint32_t file) {
-    int fd = fd_of(file);
-    if (fd < 0) return BAD_FILE;
-    files[file] = 0;
-    return close(fd) < 0 ? os_error(errno) : 0;
-}
-
-int64_t ctx_fs_sys_size(ctx_slice path) {
-    int64_t status = 0;
-    path_char *w = checked_path(path, &status);
-    if (!w) return status;
-    os_stat_t st;
-    int r = OS_STAT(w, &st);
-    int e = errno;
-    free(w);
-    return r < 0 ? os_error(e) : (int64_t)st.st_size;
-}
-
-int64_t ctx_fs_sys_remove(ctx_slice path) {
-    int64_t status = 0;
-    path_char *w = checked_path(path, &status);
-    if (!w) return status;
-    int r = OS_REMOVE(w);
-    int e = errno;
-    free(w);
-    return r < 0 ? os_error(e) : 0;
-}
-
-// ---- fs: directories
-
-static int compare_names(const void *a, const void *b) {
-    return strcmp(*(char *const *)a, *(char *const *)b);
-}
-
-// The entries of directory `path`, without "." and "..", sorted by their bytes, each followed by
-// a zero byte, into `into` if they fit. Returns the bytes they take, or a status < 0. A caller
-// whose buffer was too small calls again with one as large as the result.
-int64_t ctx_fs_sys_list(ctx_slice path, ctx_slice into) {
-    if (path.len == 0) return NOT_FOUND;
-    size_t count = 0, cap = 64, total = 0;
-    char **names = malloc(cap * sizeof *names);
-    if (!names) ctx_panic_nopos("out of memory");
-#ifdef _WIN32
-    ctx_slice pattern_bytes = { malloc(path.len + 2), path.len + 2 };
-    if (!pattern_bytes.ptr) ctx_panic_nopos("out of memory");
-    memcpy(pattern_bytes.ptr, path.ptr, path.len);
-    memcpy((char *)pattern_bytes.ptr + path.len, "/*", 2);
-    wchar_t *pattern = os_path(pattern_bytes);
-    free(pattern_bytes.ptr);
-    WIN32_FIND_DATAW found;
-    HANDLE h = FindFirstFileW(pattern, &found);
-    free(pattern);
-    if (h == INVALID_HANDLE_VALUE) {
-        DWORD e = GetLastError();
-        free(names);
-        if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) return NOT_FOUND;
-        if (e == ERROR_ACCESS_DENIED) return PERMISSION;
-        if (e == ERROR_DIRECTORY) return NOT_DIR;
-        return -1000 - (int64_t)e;
-    }
-    do {
-        const wchar_t *w = found.cFileName;
-        if (wcscmp(w, L".") == 0 || wcscmp(w, L"..") == 0) continue;
-        int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, NULL, 0, NULL, NULL);
-        char *name = malloc(n);
-        if (!name) ctx_panic_nopos("out of memory");
-        WideCharToMultiByte(CP_UTF8, 0, w, -1, name, n, NULL, NULL);
-        if (count == cap) {
-            cap *= 2;
-            names = realloc(names, cap * sizeof *names);
-            if (!names) ctx_panic_nopos("out of memory");
-        }
-        names[count++] = name;
-        total += (size_t)n;
-    } while (FindNextFileW(h, &found));
-    FindClose(h);
-#else
-    char *p = c_string(path);
-    DIR *dir = opendir(p);
-    free(p);
-    if (!dir) {
-        free(names);
-        return os_error(errno);
-    }
-    struct dirent *ent;
-    while ((ent = readdir(dir)) != NULL) {
-        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
-        size_t n = strlen(ent->d_name) + 1;
-        char *name = malloc(n);
-        if (!name) ctx_panic_nopos("out of memory");
-        memcpy(name, ent->d_name, n);
-        if (count == cap) {
-            cap *= 2;
-            names = realloc(names, cap * sizeof *names);
-            if (!names) ctx_panic_nopos("out of memory");
-        }
-        names[count++] = name;
-        total += n;
-    }
-    closedir(dir);
-#endif
-    qsort(names, count, sizeof *names, compare_names);
-    if (total <= into.len) {
-        char *out = into.ptr;
-        for (size_t i = 0; i < count; i++) {
-            size_t n = strlen(names[i]) + 1;
-            memcpy(out, names[i], n);
-            out += n;
-        }
-    }
-    for (size_t i = 0; i < count; i++) free(names[i]);
-    free(names);
-    return (int64_t)total;
-}
-
-// Creates directory `path`. EXISTS if there is one, or a file, already.
-int64_t ctx_fs_sys_make_dir(ctx_slice path) {
-    if (path.len == 0) return NOT_FOUND;
-    path_char *w = os_path(path);
-#ifdef _WIN32
-    int r = _wmkdir(w);
-#else
-    int r = mkdir(w, 0777);
-#endif
-    int e = errno;
-    free(w);
-    return r < 0 ? os_error(e) : 0;
 }
 
 // ---- proc: other programs, and this one's environment
@@ -907,7 +685,5 @@ uint32_t ctx_build_os(void) {
 int ctx_exit(int32_t code) {
     flush_out();
     if (build_out) fclose(build_out);
-    for (uint32_t i = 1; i < next_file; i++)
-        if (files[i]) close(files[i] - 1);
     return code;
 }

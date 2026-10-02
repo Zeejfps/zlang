@@ -19,28 +19,6 @@
 capability Fs
 
 namespace fs {
-    // ---- the runtime's (ctxrt.c). Each returns a status: >= 0 is the result, < 0 an error
-    // code that `failed` decodes.
-
-    #c::symbol{ name = "ctx_fs_sys_open" }
-    extern fn sys_open { mut fs: Fs, path: []u8, mode: u8 } -> i64             // a file id
-    #c::symbol{ name = "ctx_fs_sys_read" }
-    extern fn sys_read { mut fs: Fs, file: u32, into: []mut u8 } -> i64        // bytes read, 0 at the end
-    #c::symbol{ name = "ctx_fs_sys_write" }
-    extern fn sys_write { mut fs: Fs, file: u32, bytes: []u8 } -> i64          // bytes written
-    #c::symbol{ name = "ctx_fs_sys_close" }
-    extern fn sys_close { mut fs: Fs, file: u32 } -> i64
-    #c::symbol{ name = "ctx_fs_sys_size" }
-    extern fn sys_size { mut fs: Fs, path: []u8 } -> i64                       // size in bytes
-    #c::symbol{ name = "ctx_fs_sys_remove" }
-    extern fn sys_remove { mut fs: Fs, path: []u8 } -> i64
-    // Directory `path`'s entry names, each followed by a zero byte, into `into` if they fit.
-    // Returns the bytes they take.
-    #c::symbol{ name = "ctx_fs_sys_list" }
-    extern fn sys_list { mut fs: Fs, path: []u8, into: []mut u8 } -> i64
-    #c::symbol{ name = "ctx_fs_sys_make_dir" }
-    extern fn sys_make_dir { mut fs: Fs, path: []u8 } -> i64
-
     error not_found
     error permission_denied
     error is_directory
@@ -57,82 +35,81 @@ namespace fs {
         create,     // creates the file; fails with `exists` if it is already there
     }
 
-    struct File { id: u32 }
+    // An open file: the OS's handle for it, a file descriptor or a Windows HANDLE.
+    struct File { id: u64 }
 
+    // The platform's layer (std/os) does the work, and reports its errors as these.
     fn open { mut fs: Fs, path: []u8, mode: Mode } -> !File {
-        let m: u8 = match mode { read => { 0 } write => { 1 } append => { 2 } create => { 3 } }
-        let r = sys_open{ &fs, path, mode = m }
-        if r < 0 { return failed{ code = r } }
-        return File{ id = @as(u32, r) }
+        if path.len == 0 { return not_found }
+        return File{ id = try os::file_open{ &fs, path, mode } }
     }
 
     // Reads at most into.len bytes into `into`. Returns how many; 0 at the end of the file.
     fn read { mut fs: Fs, file: File, into: []mut u8 } -> !usize {
-        let r = sys_read{ &fs, file = file.id, into }
-        if r < 0 { return failed{ code = r } }
-        return @as(usize, r)
+        if into.len == 0 { return 0 }
+        return try os::file_read{ &fs, file = file.id, into }
     }
 
     // Writes all of `bytes`.
     fn write { mut fs: Fs, file: File, bytes: []u8 } -> !usize {
         let mut done: usize = 0
         while done < bytes.len {
-            let r = sys_write{ &fs, file = file.id, bytes = bytes[done..bytes.len] }
-            if r < 0 { return failed{ code = r } }
-            done = done + @as(usize, r)
+            done = done + try os::file_write{ &fs, file = file.id, bytes = bytes[done..bytes.len] }
         }
         return done
     }
 
     // Files still open when the program ends are closed then.
     fn close { mut fs: Fs, file: File } -> ! {
-        let r = sys_close{ &fs, file = file.id }
-        if r < 0 { return failed{ code = r } }
+        try os::file_close{ &fs, file = file.id }
     }
 
     // The size of the file at `path`, in bytes.
     fn size { mut fs: Fs, path: []u8 } -> !u64 {
-        let r = sys_size{ &fs, path }
-        if r < 0 { return failed{ code = r } }
-        return @as(u64, r)
+        if path.len == 0 { return not_found }
+        return try os::file_size{ &fs, path }
     }
 
     // Deletes the file at `path`.
     fn remove { mut fs: Fs, path: []u8 } -> ! {
-        let r = sys_remove{ &fs, path }
-        if r < 0 { return failed{ code = r } }
+        if path.len == 0 { return not_found }
+        try os::remove{ &fs, path }
     }
 
     // Creates directory `path`; fails with `exists` if something is there already.
     fn make_dir { mut fs: Fs, path: []u8 } -> ! {
-        let r = sys_make_dir{ &fs, path }
-        if r < 0 { return failed{ code = r } }
+        if path.len == 0 { return not_found }
+        try os::make_dir{ &fs, path }
     }
 
     // The names of directory `path`'s entries, without "." and "..", sorted by their bytes. They
     // are in memory from `realloc`, in two allocations: the names' bytes, and the slice of them.
     fn list(S) { mut fs: Fs, mut heap: S, realloc: alloc::Fn(S), path: []u8 } -> ![][]u8 {
+        if path.len == 0 { return not_found }
+        let mut dir = try os::dir_open{ &fs, path }
+        defer os::dir_close{ &fs, &dir }
+        // Each name, followed by a zero byte.
         let mut buf = slice::empty(u8){}
+        let mut n: usize = 0
         while true {
-            let r = sys_list{ &fs, path, into = buf }
-            if r < 0 {
-                _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
-                return failed{ code = r }
-            }
-            let n = @as(usize, r)
-            if n <= buf.len {
-                buf = buf[..n]
-                break
-            }
-            // The entries didn't fit, or the directory grew since: try again with room for them.
-            buf = match realloc{ &heap, mem = buf, new = n, align = 1 } {
-                null => {
-                    _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
-                    return out_of_memory
+            let name = os::dir_next{ &fs, &dir } ifnull { break }
+            if slice::eq_bytes{ a = name, b = "." } or slice::eq_bytes{ a = name, b = ".." } { continue }
+            if n + name.len + 1 > buf.len {
+                let want = n + name.len + 1
+                let cap: usize = if buf.len * 2 > want { buf.len * 2 } else if want > 256 { want } else { 256 }
+                buf = match realloc{ &heap, mem = buf, new = cap, align = 1 } {
+                    null => {
+                        _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
+                        return out_of_memory
+                    }
+                    some{ value } => { value }
                 }
-                some{ value } => { value }
             }
+            slice::copy(u8){ dst = buf[n..n + name.len], src = name }
+            buf[n + name.len] = 0
+            n = n + name.len + 1
         }
+        buf = buf[..n]
         let mut count: usize = 0
         let mut i: usize = 0
         while i < buf.len {
@@ -154,6 +131,7 @@ namespace fs {
             }
             i = i + 1
         }
+        sort{ names }
         return names
     }
 
@@ -196,14 +174,29 @@ namespace fs {
         return write{ &fs, file, bytes }
     }
 
-    // The error for a native's negative status, as a failed result of any type.
-    fn failed(T) { code: i64 } -> !T {
-        if code == -1 { return not_found }
-        if code == -2 { return permission_denied }
-        if code == -3 { return is_directory }
-        if code == -4 { return exists }
-        if code == -5 { return not_directory }
-        if code == -6 { return bad_file }
-        return other{ code = -1000 - code }
+    // Sorts names by their bytes, as unsigned numbers: insertion sort, since a directory's
+    // entries are few.
+    fn sort { names: []mut []u8 } {
+        let mut i: usize = 1
+        while i < names.len {
+            let x = names[i]
+            let mut j = i
+            while j > 0 and before{ a = x, b = names[j - 1] } {
+                names[j] = names[j - 1]
+                j = j - 1
+            }
+            names[j] = x
+            i = i + 1
+        }
+    }
+
+    // Whether a comes before b: at the first byte they differ in, or as a prefix of it.
+    fn before { a: []u8, b: []u8 } -> bool {
+        let mut i: usize = 0
+        while i < a.len and i < b.len {
+            if a[i] != b[i] { return a[i] < b[i] }
+            i = i + 1
+        }
+        return a.len < b.len
     }
 }

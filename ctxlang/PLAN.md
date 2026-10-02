@@ -1,8 +1,8 @@
 # ctxc: a ctxlang compiler written in ctxlang
 
 `ctxc` is a self-hosting compiler written in ctxlang that emits C. A fresh checkout builds it from
-its platform's bootstrap, `bootstrap/ctxc.posix.c` or `bootstrap/ctxc.windows.c`, with nothing
-but a C compiler.
+its platform's bootstrap, `bootstrap/ctxc.linux.c`, `ctxc.macos.c` or `ctxc.windows.c`, with
+nothing but a C compiler.
 
 This file lists only what is left. Finished work is in git history: the last version of this
 file that described it, with the old stage numbers (0–12), is at `f53a93f`. ctxi, the Python
@@ -45,36 +45,21 @@ chaining (`a?.b`) needs no lambdas, but nothing in FRICTION.md asks for it yet.
 
 The goal is real programs over C libraries: OpenGL or Vulkan rendering, windowing, audio. Extern
 fns, attributes, capabilities (with functions and inclusion), linking through build programs,
-nullable pointers, C function pointers, callbacks, untagged unions, C strings, the platform
-layers, std's io and mem over the OS, and ctxc as its own driver are done.
+nullable pointers, C function pointers, callbacks, untagged unions, C strings, C variables, the
+platform layers, std's io, mem and fs over the OS, and ctxc as its own driver are done.
 
-1. **Split the posix layer into linux and macos.** One posix layer can't carry proc and fs
-   without help from C, because an extern that only one OS has fails to link on the other even
-   if it's never called. They differ in:
-
-   | Need | Linux | macOS |
-   |---|---|---|
-   | the executable's path | `readlink("/proc/self/exe")` | `_NSGetExecutablePath` + `realpath` |
-   | `errno` | `__errno_location()` | `__error()` |
-   | `open`'s flags, `struct stat` | Linux's values and layout | macOS's |
-
-   So the layers become `std/os/linux`, `std/os/macos` and `std/os/windows`, each declaring
-   `namespace os` with the same functions. What Linux and macOS share (`write`, `read`,
-   `posix_spawnp`, `waitpid`, `getenv`) goes in `std/os/posix/posix.ctx`, `namespace posix`, which
-   a linux or macos build compiles beside its layer. That makes three bootstraps,
-   `bootstrap/ctxc.{linux,macos,windows}.c`, still all written from any machine by
-   `fixpoint.py --update`. Each layer declares `const OS: build::Os`, so `proc::os` and
-   `build::os` stop calling `ctx_build_os`. io and mem move across unchanged, and
-   `PlatformLayers` checks all three layers. Without a Mac, macos is only checked as far as C
-   (and an object file with `zig cc`).
-2. **proc over the layers.** `ctx_proc_run`, `ctx_proc_exe_path` and Windows' `ctx_proc_env`
-   move into ctxlang:
+1. **proc over the layers.** `ctx_proc_run`, `ctx_proc_exe_path` and Windows' `ctx_proc_env`
+   move into ctxlang. The runtime then keeps only what has to be C: startup, panics, the stack
+   check, and small helpers. Float formatting and parsing (shortest round-trip text) may stay in
+   C.
    - `proc.ctx`, shared: argv and env checks, whether an entry overrides an inherited one
      (case-insensitive on Windows), and the status-to-error mapping.
-   - linux and macos: argv and env as `?c::String` arrays, `posix_spawnp` (which returns the
-     error number itself), `waitpid` retried on EINTR, and the exit status decoded with bit
-     operations, since `WIFEXITED` and the rest are macros; the encoding is the same on both.
-     The environment to merge comes from `os::Proc`'s `environ`.
+   - posix (`std/os/posix`): argv and env as `?c::String` arrays, `posix_spawnp` (which returns
+     the error number itself), `waitpid` retried on EINTR, and the exit status decoded with bit
+     operations, since `WIFEXITED` and the rest are macros; the encoding is the same on Linux
+     and macOS. The environment to merge comes from `os::Proc`'s `environ`. The executable's
+     path differs, so it goes in `sys`: `readlink("/proc/self/exe")` on Linux,
+     `_NSGetExecutablePath` and `realpath` on macOS.
    - windows: `quote_arg` in ctxlang, UTF-8 to UTF-16 and back, the `GetEnvironmentStringsW`
      block walked with pointer arithmetic, `CreateProcessW` with `STARTUPINFOW` and
      `PROCESS_INFORMATION` as ctxlang structs, `_wgetenv`, `GetModuleFileNameW`. This also
@@ -82,15 +67,16 @@ layers, std's io and mem over the OS, and ctxc as its own driver are done.
    - The C code uses `malloc` and flushes stdout before the child starts. In ctxlang both show
      in the signatures: `run`, `env` and `exe_path` take an allocator, as `fs::list` does, and
      `run` takes `Io` for the flush. *To settle.*
-3. **fs over the layers**, the same way, after proc. The runtime then keeps only what has to be
-   C: startup, panics, the stack check, and small helpers. Float formatting and parsing
-   (shortest round-trip text) may stay in C.
-4. **Driver caching.** `ctxc run` compiles the runtime and the program again every time (about
+2. **`const OS` in each layer**, so that `proc::os` and `build::os` stop calling `ctx_build_os`.
+3. **Driver caching.** `ctxc run` compiles the runtime and the program again every time (about
    0.5 s).
-5. **`#c::export{ name }`**, for a public symbol, over the callback thunk.
-6. **Loading a library at run time**, where the capability means "it loaded".
+4. **`#c::export{ name }`**, for a public symbol, over the callback thunk.
+5. **Loading a library at run time**, where the capability means "it loaded".
 
 *Later,* each waiting for a target that needs it:
+- macOS on x86_64: its `readdir` returns the old `struct dirent` unless it is called as
+  `readdir$INODE64`, so `sys::DIRENT_NAME` (21, arm64's) is wrong there. A layer is per OS, not
+  per architecture, so this needs a way to choose by both.
 - A build program naming a layer of its own for a platform std doesn't know
   (`build::platform{ &b, exe, dir }`), so that a port supplies `namespace os` without editing std.
 - A target with no layer at all, where everything that takes no capability still works
@@ -290,14 +276,14 @@ definition, hover and completion work on `ctxc/` itself. The editor-query fixtur
 ## Working on ctxc
 
 ```
-cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctxc.posix.c ctxc/rt/ctxrt.c -lm -o ctxc
+cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctxc.linux.c ctxc/rt/ctxrt.c -lm -o ctxc
 ./ctxc run examples/wordcount.ctx -- spec.md             # a file
 ./ctxc run examples/json -- examples/json/sample.json    # a directory
 ./ctxc run examples/glfw                                 # a directory with a build program
 ./ctxc exe examples/list.ctx -o list
 ```
 
-- On Windows the bootstrap is `bootstrap/ctxc.windows.c`. ctxc finds std/ and ctxc/rt/ through
+- On macOS the bootstrap is `bootstrap/ctxc.macos.c`, and on Windows `bootstrap/ctxc.windows.c`. ctxc finds std/ and ctxc/rt/ through
   CTX_HOME, or above its executable or the working directory, and builds in HOME/build/run.
 - That ctxc is the bootstrap's; `tools/toolchain.py` builds the current source's into
   `build/ctxc` (about 7 s the first time, cached after).

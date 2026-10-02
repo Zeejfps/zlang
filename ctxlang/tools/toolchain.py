@@ -33,9 +33,10 @@ import threading
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CTXC = os.path.join(ROOT, 'ctxc')
 RT = os.path.join(CTXC, 'rt')
-# std's platform layers (std/os/PLATFORM, spec §17): posix is Linux's and macOS's.
-PLATFORMS = ('posix', 'windows')
-HOST = 'windows' if os.name == 'nt' else 'posix'
+# std's platform layers (std/os/PLATFORM, spec §17). Linux's and macOS's each have their sys
+# beside std/os/posix, which they share.
+PLATFORMS = ('linux', 'macos', 'windows')
+HOST = 'windows' if os.name == 'nt' else 'macos' if sys.platform == 'darwin' else 'linux'
 BOOT = os.path.join(ROOT, 'bootstrap', f'ctxc.{HOST}.c')
 CACHE = os.path.join(ROOT, 'build', 'cbackend')
 PROGS = os.path.join(ROOT, 'build', 'progs')
@@ -77,7 +78,8 @@ def std_files(platform=HOST):
     them use."""
     def ctx(*d):
         return sorted(os.path.relpath(p, ROOT).replace(os.sep, '/') for p in glob.glob(os.path.join(ROOT, *d, '*.ctx')))
-    return ctx('std') + ctx('std', 'os', platform)
+    shared = [] if platform == 'windows' else ctx('std', 'os', 'posix')
+    return ctx('std') + shared + ctx('std', 'os', platform)
 
 
 def ctxc_files():

@@ -1,6 +1,7 @@
-// std: os on Linux and macOS. The platform's layer (spec §17): what io, mem and proc need from
-// the operating system, over libc's write, read, aligned_alloc and memset, and its environ.
-// Every layer declares the same functions; std/os/windows is Windows', and a build compiles one.
+// std: os on Linux and macOS. The platform's layer (spec §17): what io, mem, proc and fs need
+// from the operating system, over the C library and its environ. Every layer declares the same
+// functions; std/os/windows is Windows', and a build compiles one. What differs between Linux
+// and macOS is in namespace sys, std/os/linux or std/os/macos, which a build compiles beside it.
 
 namespace os {
     // What std's Proc holds on this platform: C's `char **environ`, the "KEY=VALUE" strings of
@@ -53,5 +54,146 @@ namespace os {
             i = i + 1
         }
         return null
+    }
+
+    // ---- files, for std's fs: a File's id is its file descriptor. Paths aren't empty: fs
+    // reports those as not_found itself.
+
+    #c::symbol{ name = "read" }
+    extern fn fd_read { mut fs: Fs, fd: i32, buf: *mut u8, count: usize } -> i64
+    #c::symbol{ name = "write" }
+    extern fn fd_write { mut fs: Fs, fd: i32, buf: *u8, count: usize } -> i64
+    #c::symbol{ name = "close" }
+    extern fn fd_close { mut fs: Fs, fd: i32 } -> i32
+    extern fn lseek { mut fs: Fs, fd: i32, offset: i64, whence: i32 } -> i64
+    extern fn unlink { mut fs: Fs, path: *u8 } -> i32
+    extern fn mkdir { mut fs: Fs, path: *u8, mode: u32 } -> i32
+    // A DIR * is opaque, so it is a number here, 0 for null: as a pointer, the escape check
+    // would take it to hold the path opendir was given.
+    extern fn opendir { mut fs: Fs, path: *u8 } -> u64
+    extern fn readdir { mut fs: Fs, dir: u64 } -> ?*u8
+    extern fn closedir { mut fs: Fs, dir: u64 } -> i32
+
+    const O_RDONLY: i32 = 0
+    const O_WRONLY: i32 = 1
+    const SEEK_END: i32 = 2
+    const PATH_MAX: usize = 4096
+
+    // A directory being read, for fs::list: the C library's DIR.
+    struct Dir { handle: u64 }
+
+    fn file_open { mut fs: Fs, path: []u8, mode: fs::Mode } -> !u64 {
+        let mut buf: [4096]u8
+        let p = c_path{ path, buf = buf[..] } ifnull { return failed{ code = sys::ENAMETOOLONG } }
+        if is_dir{ &fs, path = p } { return fs::is_directory }
+        let flags = match mode {
+            read   => { O_RDONLY }
+            write  => { O_WRONLY | sys::O_CREAT | sys::O_TRUNC }
+            append => { O_WRONLY | sys::O_CREAT | sys::O_APPEND }
+            create => { O_WRONLY | sys::O_CREAT | sys::O_EXCL }
+        }
+        let fd = sys::open{ &fs, path = p, flags, mode = 438 }      // 0666, less the umask
+        if fd < 0 { return failed{ code = sys::errno{ &fs }.* } }
+        return @as(u64, fd)
+    }
+
+    // Reads at most into.len bytes, which aren't none. Returns how many; 0 at the end.
+    fn file_read { mut fs: Fs, file: u64, into: []mut u8 } -> !usize {
+        let fd = descriptor{ file } ifnull { return fs::bad_file }
+        let n = fd_read{ &fs, fd, buf = into.ptr, count = into.len }
+        if n < 0 { return failed{ code = sys::errno{ &fs }.* } }
+        return @as(usize, n)
+    }
+
+    // Writes some of `bytes`, which aren't none. Returns how many.
+    fn file_write { mut fs: Fs, file: u64, bytes: []u8 } -> !usize {
+        let fd = descriptor{ file } ifnull { return fs::bad_file }
+        let n = fd_write{ &fs, fd, buf = bytes.ptr, count = bytes.len }
+        if n < 0 { return failed{ code = sys::errno{ &fs }.* } }
+        return @as(usize, n)
+    }
+
+    fn file_close { mut fs: Fs, file: u64 } -> ! {
+        let fd = descriptor{ file } ifnull { return fs::bad_file }
+        if fd_close{ &fs, fd } < 0 { return failed{ code = sys::errno{ &fs }.* } }
+    }
+
+    // The size of the file at `path`: where its end is, which needs no layout of struct stat.
+    fn file_size { mut fs: Fs, path: []u8 } -> !u64 {
+        let mut buf: [4096]u8
+        let p = c_path{ path, buf = buf[..] } ifnull { return failed{ code = sys::ENAMETOOLONG } }
+        if is_dir{ &fs, path = p } { return fs::is_directory }
+        let fd = sys::open{ &fs, path = p, flags = O_RDONLY, mode = 0 }
+        if fd < 0 { return failed{ code = sys::errno{ &fs }.* } }
+        let end = lseek{ &fs, fd, offset = 0, whence = SEEK_END }
+        let code = sys::errno{ &fs }.*
+        _ = fd_close{ &fs, fd }
+        if end < 0 { return failed{ code } }
+        return @as(u64, end)
+    }
+
+    fn remove { mut fs: Fs, path: []u8 } -> ! {
+        let mut buf: [4096]u8
+        let p = c_path{ path, buf = buf[..] } ifnull { return failed{ code = sys::ENAMETOOLONG } }
+        if is_dir{ &fs, path = p } { return fs::is_directory }
+        if unlink{ &fs, path = p } < 0 { return failed{ code = sys::errno{ &fs }.* } }
+    }
+
+    fn make_dir { mut fs: Fs, path: []u8 } -> ! {
+        let mut buf: [4096]u8
+        let p = c_path{ path, buf = buf[..] } ifnull { return failed{ code = sys::ENAMETOOLONG } }
+        if mkdir{ &fs, path = p, mode = 511 } < 0 { return failed{ code = sys::errno{ &fs }.* } }     // 0777, less the umask
+    }
+
+    fn dir_open { mut fs: Fs, path: []u8 } -> !Dir {
+        let mut buf: [4096]u8
+        let p = c_path{ path, buf = buf[..] } ifnull { return failed{ code = sys::ENAMETOOLONG } }
+        let d = opendir{ &fs, path = p }
+        if d == 0 { return failed{ code = sys::errno{ &fs }.* } }
+        return Dir{ handle = d }
+    }
+
+    // The next entry's name, "." and ".." included, or null at the end. It lives until the next
+    // call.
+    fn dir_next { mut fs: Fs, mut dir: Dir } -> ?[]u8 {
+        let e = readdir{ &fs, dir = dir.handle } ifnull { return null }
+        return c::bytes{ s = c::String{ ptr = e + sys::DIRENT_NAME } }
+    }
+
+    fn dir_close { mut fs: Fs, mut dir: Dir } {
+        _ = closedir{ &fs, dir = dir.handle }
+    }
+
+    // `path` with a zero after it, as C takes it, in buf; null if it doesn't fit.
+    fn c_path { path: []u8, buf: []mut u8 } -> ?*u8 {
+        if path.len >= buf.len { return null }
+        slice::copy(u8){ dst = buf[..path.len], src = path }
+        buf[path.len] = 0
+        return buf.ptr
+    }
+
+    // Whether there is a directory at `path`: opendir needs no layout of struct stat.
+    fn is_dir { mut fs: Fs, path: *u8 } -> bool {
+        let d = opendir{ &fs, path }
+        if d == 0 { return false }
+        _ = closedir{ &fs, dir = d }
+        return true
+    }
+
+    // A File's id as a descriptor; null if it can't be one.
+    fn descriptor { file: u64 } -> ?i32 {
+        if file > 2147483647 { return null }
+        return @as(i32, file)
+    }
+
+    // The error for errno `code`: their numbers are the same on Linux and macOS.
+    fn failed(T) { code: i32 } -> !T {
+        if code == 2 { return fs::not_found }                       // ENOENT
+        if code == 1 or code == 13 { return fs::permission_denied } // EPERM, EACCES
+        if code == 21 { return fs::is_directory }                   // EISDIR
+        if code == 17 { return fs::exists }                         // EEXIST
+        if code == 20 { return fs::not_directory }                  // ENOTDIR
+        if code == 9 { return fs::bad_file }                        // EBADF
+        return fs::other{ code = @as(i64, code) }
     }
 }

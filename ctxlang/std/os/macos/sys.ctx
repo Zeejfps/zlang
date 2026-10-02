@@ -1,0 +1,35 @@
+// std: sys on macOS. std/os/posix's `os` serves Linux and macOS alike; what differs between them
+// is here, with the same names in std/os/linux: the C library's numbers and layouts, and the
+// functions it names differently.
+
+namespace sys {
+    // Where this thread's errno is: a macro in C, over this function.
+    #c::symbol{ name = "__error" }
+    extern fn errno { mut fs: Fs } -> *mut i32
+
+    // open's flags, besides O_RDONLY (0) and O_WRONLY (1), which every system shares.
+    const O_CREAT: i32 = 0x200
+    const O_EXCL: i32 = 0x800
+    const O_TRUNC: i32 = 0x400
+    const O_APPEND: i32 = 0x8
+
+    // The errno for a path that is too long.
+    const ENAMETOOLONG: i32 = 63
+
+    // The offset of d_name, the entry's name, in the struct dirent readdir returns: arm64's,
+    // with 64-bit inode numbers. x86_64's readdir returns the older struct, with d_name at 8,
+    // unless it is called as readdir$INODE64; that is left until an x86_64 Mac needs it.
+    const DIRENT_NAME: usize = 21
+
+    // C's open, which is variadic: mode, used when it creates the file, is its variadic
+    // argument. ctxlang can't declare a variadic fn, and arm64 macOS passes variadic arguments
+    // on the stack, not in registers as other arguments: so this declares six more after
+    // flags, which fill the remaining registers, and passes mode both first among them, where
+    // x86_64 reads it, and after them, on the stack, where arm64 does.
+    #c::symbol{ name = "open" }
+    extern fn c_open { mut fs: Fs, path: *u8, flags: i32, mode: u32, r3: u64, r4: u64, r5: u64, r6: u64, r7: u64, stacked: u32 } -> i32
+
+    fn open { mut fs: Fs, path: *u8, flags: i32, mode: u32 } -> i32 {
+        return c_open{ &fs, path, flags, mode, r3 = 0, r4 = 0, r5 = 0, r6 = 0, r7 = 0, stacked = mode }
+    }
+}

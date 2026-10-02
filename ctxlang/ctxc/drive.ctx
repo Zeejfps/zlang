@@ -325,15 +325,19 @@ namespace drive {
         return one{ &heap, s = cat{ &heap, a = cat{ &heap, a = entry, b = sep }, b = rest } }
     }
 
-    // std's files, then those of its layer for os (spec §17): std/os/windows, or std/os/posix for
-    // Linux and macOS.
+    // std's files, then those of its layer for os (spec §17): std/os/windows, or for Linux and
+    // macOS std/os/posix, which they share, and std/os/linux or std/os/macos.
     fn std_files { mut io: Io, mut fs: Fs, mut heap: Heap, home: []u8, os: build::Os } -> ?[][]u8 {
         let std_dir = join{ &heap, a = home, b = "std" }
-        let layer: []u8 = match os { windows => { "os/windows" } macos => { "os/posix" } linux => { "os/posix" } }
+        let layer: []u8 = match os { windows => { "os/windows" } macos => { "os/macos" } linux => { "os/linux" } }
         let top = ctx_files{ &io, &fs, &heap, dir = std_dir, skip_build = false } ifnull { return null }
-        let own = ctx_files{ &io, &fs, &heap, dir = join{ &heap, a = std_dir, b = layer }, skip_build = false } ifnull { return null }
         let mut all = list::new([]u8){ realloc = arena::alloc, &heap }
         add_all{ xs = &all, ys = top }
+        if os != build::Os::windows {
+            let shared = ctx_files{ &io, &fs, &heap, dir = join{ &heap, a = std_dir, b = "os/posix" }, skip_build = false } ifnull { return null }
+            add_all{ xs = &all, ys = shared }
+        }
+        let own = ctx_files{ &io, &fs, &heap, dir = join{ &heap, a = std_dir, b = layer }, skip_build = false } ifnull { return null }
         add_all{ xs = &all, ys = own }
         return list::items{ list = all }
     }

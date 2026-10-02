@@ -1,5 +1,5 @@
-// std: os on Windows. The platform's layer (spec §17): what io, mem and proc need from the
-// operating system, over the C runtime's _write and _read, the kernel's VirtualAlloc, and the
+// std: os on Windows. The platform's layer (spec §17): what io, mem, proc and fs need from the
+// operating system, over the C runtime's _write and _read, the kernel's own functions, and the
 // runtime's ctx_proc_env. Every layer declares the same functions; std/os/posix is Linux's and
 // macOS's, and a build compiles one.
 
@@ -55,5 +55,168 @@ namespace os {
         let mut value: []u8 = slice::empty(u8){}
         if not sys_env{ &proc, name, value = &value } { return null }
         return value
+    }
+
+    // ---- files, for std's fs: a File's id is its HANDLE. Paths aren't empty: fs reports those
+    // as not_found itself. Paths are UTF-8, and Windows' are UTF-16.
+
+    extern fn CreateFileW { mut fs: Fs, name: *u16, access: u32, share: u32, security: ?*u8, disposition: u32, flags: u32, template: u64 } -> u64
+    extern fn ReadFile { mut fs: Fs, file: u64, buf: *mut u8, count: u32, mut done: u32, overlapped: ?*u8 } -> i32
+    extern fn WriteFile { mut fs: Fs, file: u64, buf: *u8, count: u32, mut done: u32, overlapped: ?*u8 } -> i32
+    extern fn CloseHandle { mut fs: Fs, handle: u64 } -> i32
+    extern fn GetFileAttributesW { mut fs: Fs, name: *u16 } -> u32
+    extern fn GetFileAttributesExW { mut fs: Fs, name: *u16, level: i32, mut data: FileData } -> i32
+    extern fn DeleteFileW { mut fs: Fs, name: *u16 } -> i32
+    extern fn CreateDirectoryW { mut fs: Fs, name: *u16, security: ?*u8 } -> i32
+    extern fn FindFirstFileW { mut fs: Fs, name: *u16, mut data: FindData } -> u64
+    extern fn FindNextFileW { mut fs: Fs, find: u64, mut data: FindData } -> i32
+    extern fn FindClose { mut fs: Fs, find: u64 } -> i32
+    extern fn GetLastError { mut fs: Fs } -> u32
+    extern fn MultiByteToWideChar { mut fs: Fs, page: u32, flags: u32, text: *u8, n: i32, out: *mut u16, cap: i32 } -> i32
+    extern fn WideCharToMultiByte { mut fs: Fs, page: u32, flags: u32, text: *u16, n: i32, out: *mut u8, cap: i32, fallback: ?*u8, used: ?*mut i32 } -> i32
+
+    const INVALID_HANDLE: u64 = 18446744073709551615        // INVALID_HANDLE_VALUE, (HANDLE)-1
+    const INVALID_ATTRIBUTES: u32 = 4294967295
+    const ATTRIBUTE_DIRECTORY: u32 = 0x10
+    const ATTRIBUTE_NORMAL: u32 = 0x80
+    const GENERIC_READ: u32 = 0x80000000
+    const GENERIC_WRITE: u32 = 0x40000000
+    const FILE_APPEND_DATA: u32 = 0x4
+    const SHARE_ALL: u32 = 7                                    // read, write and delete
+    const CREATE_NEW: u32 = 1
+    const CREATE_ALWAYS: u32 = 2
+    const OPEN_EXISTING: u32 = 3
+    const OPEN_ALWAYS: u32 = 4
+    const UTF8: u32 = 65001
+    const NAME_MAX: usize = 1040                                // a found name's UTF-8 bytes, at most
+
+    // WIN32_FILE_ATTRIBUTE_DATA: its three FILETIMEs as pairs of u32s.
+    struct FileData { attributes: u32, times: [6]u32, size_high: u32, size_low: u32 }
+
+    // WIN32_FIND_DATAW.
+    struct FindData { attributes: u32, times: [6]u32, size_high: u32, size_low: u32, reserved: [2]u32, name: [260]u16, short_name: [14]u16 }
+
+    // A directory being read, for fs::list: the search, the entry it found last, whether that one
+    // hasn't been returned yet, and its name as UTF-8.
+    struct Dir { find: u64, data: FindData, fresh: bool, name: [1040]u8 }
+
+    fn file_open { mut fs: Fs, path: []u8, mode: fs::Mode } -> !u64 {
+        let mut buf: [32768]u16
+        let p = wide_path{ &fs, path, buf = buf[..] } ifnull { return too_long{} }
+        if is_dir{ &fs, path = p } { return fs::is_directory }
+        let access = match mode { read => { GENERIC_READ } write => { GENERIC_WRITE } append => { FILE_APPEND_DATA } create => { GENERIC_WRITE } }
+        let disposition = match mode { read => { OPEN_EXISTING } write => { CREATE_ALWAYS } append => { OPEN_ALWAYS } create => { CREATE_NEW } }
+        let h = CreateFileW{ &fs, name = p, access, share = SHARE_ALL, security = null, disposition, flags = ATTRIBUTE_NORMAL, template = 0 }
+        if h == INVALID_HANDLE { return failed{ code = GetLastError{ &fs } } }
+        return h
+    }
+
+    // Reads at most into.len bytes, which aren't none. Returns how many; 0 at the end.
+    fn file_read { mut fs: Fs, file: u64, into: []mut u8 } -> !usize {
+        let n = if into.len > CHUNK { CHUNK } else { into.len }
+        let mut done: u32 = 0
+        if ReadFile{ &fs, file, buf = into.ptr, count = @as(u32, n), done = &done, overlapped = null } == 0 {
+            return failed{ code = GetLastError{ &fs } }
+        }
+        return @as(usize, done)
+    }
+
+    // Writes some of `bytes`, which aren't none. Returns how many.
+    fn file_write { mut fs: Fs, file: u64, bytes: []u8 } -> !usize {
+        let n = if bytes.len > CHUNK { CHUNK } else { bytes.len }
+        let mut done: u32 = 0
+        if WriteFile{ &fs, file, buf = bytes.ptr, count = @as(u32, n), done = &done, overlapped = null } == 0 {
+            return failed{ code = GetLastError{ &fs } }
+        }
+        return @as(usize, done)
+    }
+
+    fn file_close { mut fs: Fs, file: u64 } -> ! {
+        if CloseHandle{ &fs, handle = file } == 0 { return failed{ code = GetLastError{ &fs } } }
+    }
+
+    fn file_size { mut fs: Fs, path: []u8 } -> !u64 {
+        let mut buf: [32768]u16
+        let p = wide_path{ &fs, path, buf = buf[..] } ifnull { return too_long{} }
+        let mut data: FileData
+        if GetFileAttributesExW{ &fs, name = p, level = 0, data = &data } == 0 { return failed{ code = GetLastError{ &fs } } }
+        if data.attributes & ATTRIBUTE_DIRECTORY != 0 { return fs::is_directory }
+        return (@as(u64, data.size_high) << 32) | @as(u64, data.size_low)
+    }
+
+    fn remove { mut fs: Fs, path: []u8 } -> ! {
+        let mut buf: [32768]u16
+        let p = wide_path{ &fs, path, buf = buf[..] } ifnull { return too_long{} }
+        if is_dir{ &fs, path = p } { return fs::is_directory }
+        if DeleteFileW{ &fs, name = p } == 0 { return failed{ code = GetLastError{ &fs } } }
+    }
+
+    fn make_dir { mut fs: Fs, path: []u8 } -> ! {
+        let mut buf: [32768]u16
+        let p = wide_path{ &fs, path, buf = buf[..] } ifnull { return too_long{} }
+        if CreateDirectoryW{ &fs, name = p, security = null } == 0 { return failed{ code = GetLastError{ &fs } } }
+    }
+
+    fn dir_open { mut fs: Fs, path: []u8 } -> !Dir {
+        let mut buf: [32768]u16
+        let p = wide_path{ &fs, path, buf = buf[..buf.len - 2] } ifnull { return too_long{} }
+        let mut n: usize = 0
+        while buf[n] != 0 { n = n + 1 }
+        buf[n] = 47                                             // "/*"
+        buf[n + 1] = 42
+        buf[n + 2] = 0
+        let mut d = Dir{
+            find = 0,
+            data = FindData{ attributes = 0, times = [0; 6], size_high = 0, size_low = 0, reserved = [0; 2], name = [0; 260], short_name = [0; 14] },
+            fresh = true,
+            name = [0; 1040],
+        }
+        d.find = FindFirstFileW{ &fs, name = p, data = &d.data }
+        if d.find == INVALID_HANDLE { return failed{ code = GetLastError{ &fs } } }
+        return d
+    }
+
+    // The next entry's name, "." and ".." included, or null at the end. It lives until the next
+    // call.
+    fn dir_next { mut fs: Fs, mut dir: Dir } -> ?[]u8 {
+        if not dir.fresh {
+            if FindNextFileW{ &fs, find = dir.find, data = &dir.data } == 0 { return null }
+        }
+        dir.fresh = false
+        let n = WideCharToMultiByte{ &fs, page = UTF8, flags = 0, text = dir.data.name[..].ptr, n = -1, out = dir.name[..].ptr, cap = @as(i32, NAME_MAX), fallback = null, used = null }
+        if n <= 0 { return null }
+        return dir.name[..@as(usize, n) - 1]
+    }
+
+    fn dir_close { mut fs: Fs, mut dir: Dir } {
+        _ = FindClose{ &fs, find = dir.find }
+    }
+
+    // `path` as UTF-16 with a zero after it, in buf; null if it doesn't fit.
+    fn wide_path { mut fs: Fs, path: []u8, buf: []mut u16 } -> ?*u16 {
+        if path.len >= buf.len { return null }
+        let n = MultiByteToWideChar{ &fs, page = UTF8, flags = 0, text = path.ptr, n = @as(i32, path.len), out = buf.ptr, cap = @as(i32, buf.len - 1) }
+        if n <= 0 { return null }
+        buf[@as(usize, n)] = 0
+        return buf.ptr
+    }
+
+    fn is_dir { mut fs: Fs, path: *u16 } -> bool {
+        let a = GetFileAttributesW{ &fs, name = path }
+        return a != INVALID_ATTRIBUTES and a & ATTRIBUTE_DIRECTORY != 0
+    }
+
+    fn too_long(T) {} -> !T {
+        return fs::other{ code = 206 }                              // ERROR_FILENAME_EXCED_RANGE
+    }
+
+    // The error for GetLastError's `code`.
+    fn failed(T) { code: u32 } -> !T {
+        if code == 2 or code == 3 { return fs::not_found }          // file, path not found
+        if code == 5 { return fs::permission_denied }               // access denied
+        if code == 80 or code == 183 { return fs::exists }          // file, already exists
+        if code == 267 { return fs::not_directory }                 // directory name invalid
+        if code == 6 { return fs::bad_file }                        // invalid handle
+        return fs::other{ code = @as(i64, code) }
     }
 }

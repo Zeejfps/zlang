@@ -142,14 +142,6 @@ uint64_t ctx_ascii_f64_digits(double n, ctx_slice into);
 uint64_t ctx_ascii_f32_digits(float n, ctx_slice into);
 double ctx_ascii_f64_parse(ctx_slice text);
 float ctx_ascii_f32_parse(ctx_slice text);
-int64_t ctx_fs_sys_open(ctx_slice path, uint8_t mode);
-int64_t ctx_fs_sys_read(uint32_t file, ctx_slice into);
-int64_t ctx_fs_sys_write(uint32_t file, ctx_slice bytes);
-int64_t ctx_fs_sys_close(uint32_t file);
-int64_t ctx_fs_sys_size(ctx_slice path);
-int64_t ctx_fs_sys_remove(ctx_slice path);
-int64_t ctx_fs_sys_list(ctx_slice path, ctx_slice into);
-int64_t ctx_fs_sys_make_dir(ctx_slice path);
 int64_t ctx_proc_run(ctx_slice argv, ctx_slice env, int32_t *code);
 #ifdef _WIN32
 bool ctx_proc_env(ctx_slice name, ctx_slice *value);
