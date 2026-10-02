@@ -171,8 +171,25 @@ generator can't observe its own output.
 - Array lengths, enum values and attributes take only folded consts, since they are needed while
   declarations are resolved, before any body is checked. Checking bodies on demand would lift
   this; nothing has needed it yet.
-- A const is evaluated only in a program without errors, since lowering a body with errors could
-  crash. Stage 5 wants a const's errors next to the others.
+- A const is evaluated, and a literal converted, only in a program without errors. Stage 5 wants
+  their errors next to the others, so one should run unless something it reaches has an error.
+  - *Tried:* marking the declaration that holds each error, and having lowering refuse to enter a
+    marked one. It isn't enough. The checker stays quiet about anything that involves the error
+    type, so a declaration with no error of its own can still hold types without a layout, which
+    come from another's signature. A const that only calls a clean fn crashed lowering
+    (`lower: a type that isn't concrete`, `a struct without a layout`), and lowering has about
+    45 panics that assume checked code.
+  - *Direction:* the checker decides, so lowering only ever sees clean code. While it checks a
+    declaration, it records what that declaration depends on: each name use, each recorded type,
+    inferred error sets, the conversions its literals use, and `@fmt`'s uses of std. A
+    declaration is blocked if it holds an error, if a type it records contains the error type,
+    or if something it depends on is blocked. At `evaluate`, a const or literal whose root or
+    conversion is blocked is skipped, with no error of its own, since the cause is reported
+    already. Lowering in `lower::alone` keeps a cheap check that treats meeting a blocked
+    declaration as a bug.
+  - *The risk* is completeness: the dependencies must cover everything lowering can reach, or
+    the crashes come back. It needs its own design pass, with the recovery test running consts in
+    damaged programs.
 - No extern fn runs while compiling. std's capability-less ones, float formatting and parsing,
   are ctxc's own runtime's, so ctxc could call its copies.
 
@@ -207,7 +224,7 @@ for `@fmt` and for `c::String`'s layout, and std still declares attributes the c
 
   namespace json {                                 // any library, for any sink
       #write
-      fn number { mut w: Writer, n: f64 } -> ! { ... }
+      fn write_number { mut w: Writer, n: f64 } -> ! { ... }
   }
   ```
   - What goes: `builder_decl` (any type with writers is a sink), the `push_*` names, and
@@ -222,7 +239,7 @@ for `@fmt` and for `c::String`'s layout, and std still declares attributes the c
     `#convert` fns to one `T` are where a literal would.
   - *To settle:* how a hole's options reach its writer. A writer may take `width` and `zero`
     fields, which the hole fills; or `{x}` and `{c}` become writers named in the call
-    (`hex{ n, _ }`), and the format keeps only widths.
+    (`utf8::write_hex{ n, _ }`), and the format keeps only widths.
   - *Considered:* `@fmt` as a library function. It needs any number of arguments of any types
     and a writer chosen by each one's type: either the call expands to code, or types are
     compile-time values (Zig's `anytype`), and stage 3 rules out both. Every argument as an
@@ -238,9 +255,9 @@ for `@fmt` and for `c::String`'s layout, and std still declares attributes the c
 *Later, for literal conversions* (spec §18; `ctxc/comptime.ctx`):
 - `intlit` (a number literal, as its digits, for a big-integer type) and `arraylit` (an array
   literal's elements, for a list) follow `strlit` when something needs them; neither is designed.
-- A literal is converted only in a program without errors, as a const is evaluated (stage 3), so
-  its errors come after the others'. An attribute can't hold a converted literal: attributes are
-  folded before any body is checked.
+- A literal is converted only in a program without errors, as a const is evaluated, so its
+  errors come after the others' (stage 3's *Later* has the direction). An attribute can't hold a
+  converted literal: attributes are folded before any body is checked.
 - Each literal's conversion runs in a fresh interpreter, which costs ctxc's own build about 30 ms
   of its 450. A machine kept per conversion, between runs, would save most of it.
 
