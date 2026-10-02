@@ -2417,6 +2417,26 @@ fn main { mut io: Io } {
 }
 """, '2\n3\n5\none\n2\nneg\n2\n')
 
+    def test_hidden_zero(self):
+        """A literal's view is followed by a 0 byte that isn't part of it (§11, Literals), even
+        when it is empty, in both backends."""
+        self.assertOutput("""
+fn after { b: []u8 } -> u8 { return b.ptr[b.len] }
+const WORD: []u8 = "const"
+const EMPTY: []u8 = ""
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = after{ b = "abc" } }
+    io::println_u64{ &io, n = after{ b = "" } }
+    io::println_u64{ &io, n = after{ b = WORD } + after{ b = EMPTY } }
+    let s: utf8::String = "text"
+    io::println_u64{ &io, n = after{ b = s.bytes } }
+    let o: ?[]u8 = "maybe"
+    if o != null { io::println_u64{ &io, n = after{ b = o } } }
+    let b: []u8 = "a\\0b"
+    io::println_u64{ &io, n = b.len + @as(u64, after{ b }) }
+}
+""", '0\n0\n0\n0\n0\n3\n')
+
     def test_mut_slice_rejected(self):
         self.assertCompileError('fn f { b: []mut u8 } { }\nfn main { mut io: Io } { f{ b = "abc" } }',
                                 'a string literal is read-only')
