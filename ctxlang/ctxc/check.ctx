@@ -77,7 +77,11 @@ namespace check {
         prim{ p: types::Prim },
         anyerr,                         // `error`: the type of any error (§8, Errors)
         strlit,                         // a string literal's type (§11, Literals)
+        attr{ a: Attribute },           // an attribute the compiler declares
     }
+
+    // The attributes the compiler declares, in the universe: `#convert` (PLAN.md 4.3).
+    enum Attribute: u8 { convert }
 
     struct Space {
         name:   []u8,
@@ -96,6 +100,7 @@ namespace check {
         local{ var: u32 },
         anyerr,
         strlit,
+        attr{ a: Attribute },
     }
 
     // Where a type expression is resolved: a namespace, and the generic parameters in scope,
@@ -133,6 +138,7 @@ namespace check {
         layouts:   map::Map(Id, Layout, Heap),
         busy:      map::Map(Id, bool, Heap),     // layouts being computed
         main:      u32,                          // NONE unless `main` is valid
+        converts:  list::List(u32, Heap),        // the fns with a valid `#convert`, in order
         text_decl: u32,                          // utf8::String, or NONE
         cstr_decl: u32,                          // c::String, or NONE
         builder_decl: u32,                       // utf8::Builder, or NONE
@@ -319,6 +325,7 @@ namespace check {
             layouts = map::new(Id, Layout){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             busy = map::new(Id, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             main = NONE,
+            converts = ids{ &heap },
             text_decl = NONE,
             cstr_decl = NONE,
             builder_decl = NONE,
@@ -379,6 +386,7 @@ namespace check {
         }
         put_name{ &c, ns = UNIVERSE, values = false, name = "error", e = Entry::anyerr }
         put_name{ &c, ns = UNIVERSE, values = false, name = "strlit", e = Entry::strlit }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "convert", e = Entry::attr{ a = Attribute::convert } }
         return c
     }
 
@@ -430,6 +438,7 @@ namespace check {
         each{ &c, xs = c.consts, what = Phase::consts }
         each{ &c, xs = c.fns, what = Phase::sigs }
         each{ &c, xs = c.externs, what = Phase::sigs }
+        conversions{ &c }
         c.ptr_faults = faults_hold_ptr{ &c, ds = list::items{ list = c.faults } }
     }
 
@@ -1278,6 +1287,127 @@ namespace check {
         return i
     }
 
+    // ---- literal conversions (PLAN.md 4.3): `#convert` fns
+
+    // The fns with `#convert`, checked once their signatures are resolved: a literal where a T is
+    // expected becomes the result of the one to T (str_lit), in a const's initializer too, so
+    // they are known before any body is checked.
+    fn conversions { mut c: Checker } {
+        let mut f: usize = 0
+        while f < c.files.len {
+            convert_list{ &c, file = @as(u32, f), decls = c.files[f].tree.decls, ns = if f < c.std_files { STD } else { ROOT } }
+            f = f + 1
+        }
+    }
+
+    fn convert_list { mut c: Checker, file: u32, decls: []syntax::Decl, ns: u32 } {
+        let mut i: usize = 0
+        while i < decls.len {
+            let x = decls[i]
+            let mut seen = false
+            let mut k: usize = 0
+            while k < x.attrs.len {
+                let a = x.attrs[k]
+                if compiler_attr{ c, a, ns } is convert {
+                    use_attr{ &c, a }
+                    convert_attr{ &c, x, file, a, seen }
+                    seen = true
+                }
+                k = k + 1
+            }
+            if x.k is space{ decls = inner } {
+                let child = map::get{ m = c.space_of, key = key{ file, id = x.id } }
+                if child != null { convert_list{ &c, file, decls = inner, ns = child } }
+            }
+            i = i + 1
+        }
+    }
+
+    // The attribute the compiler declares that a names, if it is one: `#convert` where no
+    // declaration of the program or std shadows the name.
+    fn compiler_attr { c: Checker, a: syntax::Attr, ns: u32 } -> ?Attribute {
+        let braced{ callee } = a.value.k else { return null }
+        let path{ segs } = callee.k else { return null }
+        if segs.len != 1 or segs[0].targs != null { return null }
+        let attr{ a = which } = lookup_path{ c, ns, name = segs[0].name.text } else { return null }
+        return which
+    }
+
+    // Records what a compiler attribute's name refers to. It takes no fields: `#convert` alone.
+    fn use_attr { mut c: Checker, a: syntax::Attr } {
+        let braced{ callee, items } = a.value.k else { return }
+        let path{ segs } = callee.k else { return }
+        use{ &c, n = segs[0].name, r = Ref::attr{ a = Attribute::convert } }
+        if items.len > 0 {
+            let mut b = message{ c }
+            try! @fmt(&b, "`{}` takes no fields", str{ s = segs[0].name.text })
+            error{ &c, at = items[0].span, msg = utf8::view{ b } }
+        }
+    }
+
+    // `#convert` on x: a fn with a body and no generic parameters, whose context is one
+    // read-only field of a literal type and whose result is a T or a !T. With only a literal
+    // field it takes no capability, so it can run while compiling.
+    fn convert_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, seen: bool } {
+        let func{ tparams, params, ret, external } = x.k else {
+            error{ &c, at = a.span, msg = "`convert` applies only to a fn" }
+            return
+        }
+        if external {
+            error{ &c, at = a.span, msg = "`convert` applies only to a fn with a body, not an extern fn" }
+            return
+        }
+        if seen {
+            error{ &c, at = a.span, msg = "duplicate `convert` attribute" }
+            return
+        }
+        if tparams.len > 0 {
+            error{ &c, at = a.span, msg = "a `convert` fn can't be generic" }
+            return
+        }
+        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let fd = get_decl{ c, d }
+        let one = fd.fields.len == 1
+        if one and types::prune{ s = c.ty, t = fd.fields[0].ty } == types::ERROR { return }
+        if not one or fd.fields[0].mutable or types::prune{ s = c.ty, t = fd.fields[0].ty } != types::STRLIT {
+            let at = if params.len > 0 { params[0].span } else { x.span }
+            error{ &c, at, msg = "a `convert` fn takes one read-only field of a literal type: `s: strlit`" }
+            return
+        }
+        let t = converts_to{ c, f = d }
+        if t == types::ERROR { return }
+        let ret_at = if ret == null { x.span } else { ret.span }
+        if t == types::VOID {
+            error{ &c, at = ret_at, msg = "a `convert` fn must return a T or a !T: the literal's value" }
+            return
+        }
+        if not convertible{ c, t } {
+            let mut b = message{ c }
+            try! @fmt(&b, "a `convert` fn can't give a {}: a string literal is one already", tstr{ c, t })
+            error{ &c, at = ret_at, msg = utf8::view{ b } }
+            return
+        }
+        push{ xs = &c.converts, n = d }
+    }
+
+    // The type conversion f gives a literal: its result's T, or VOID if it has none.
+    fn converts_to { c: Checker, f: u32 } -> Id {
+        let r = types::prune{ s = c.ty, t = get_decl{ c, d = f }.ret }
+        if types::get{ s = c.ty, id = r } is res{ ok } { return types::prune{ s = c.ty, t = ok } }
+        return r
+    }
+
+    // Whether a literal where a t is expected may be converted: not where the language makes it
+    // a strlit, a []u8 or a [N]u8 itself.
+    fn convertible { c: Checker, t: Id } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            strlit => { return false }
+            slice{ elem } => { return types::prune{ s = c.ty, t = elem } != types::U8 }
+            array{ elem } => { return types::prune{ s = c.ty, t = elem } != types::U8 }
+            else => { return true }
+        }
+    }
+
     // ---- attributes (§18; PLAN.md stage 3 gives them to generators)
 
     // Every declaration's attributes, each checked as a const literal of the struct it names.
@@ -1301,7 +1431,9 @@ namespace check {
             let mut k: usize = 0
             while k < x.attrs.len {
                 let a = x.attrs[k]
-                if attribute{ &c, a, ns } is record{ ty, fields } {
+                if compiler_attr{ c, a, ns } != null {
+                    // checked with the signatures (conversions)
+                } else if attribute{ &c, a, ns } is record{ ty, fields } {
                     let rd = record_decl{ c, t = ty }
                     if rd == NONE {
                     } else if rd == symbol_decl {
@@ -1339,7 +1471,10 @@ namespace check {
             let mut k: usize = 0
             while k < f.attrs.len {
                 let a = f.attrs[k]
-                if attribute{ &c, a, ns } is record{ ty, fields = vals } {
+                if compiler_attr{ c, a, ns } is convert {
+                    use_attr{ &c, a }
+                    error{ &c, at = a.span, msg = "`convert` applies only to a fn" }
+                } else if attribute{ &c, a, ns } is record{ ty, fields = vals } {
                     let rd = record_decl{ c, t = ty }
                     if rd == NONE {
                     } else if rd == symbol_decl {
@@ -1703,6 +1838,12 @@ namespace check {
                 if given > 0 { no_targs{ &c, what = "strlit", at } }
                 return types::STRLIT
             }
+            attr => {
+                let mut b = message{ c }
+                try! @fmt(&b, "`{}` is an attribute, not a type", str{ s = name.text })
+                error{ &c, at, msg = utf8::view{ b } }
+                return types::ERROR
+            }
             space{ ns } => {
                 let mut b = message{ c }
                 try! @fmt(&b, "namespace `{}` used as a type", str{ s = get_space{ c, ns }.name })
@@ -1974,6 +2115,7 @@ namespace check {
             prim{ p } => { use{ &c, n, r = Ref::prim{ p } } }
             anyerr => { use{ &c, n, r = Ref::anyerr } }
             strlit => { use{ &c, n, r = Ref::strlit } }
+            attr{ a } => { use{ &c, n, r = Ref::attr{ a } } }
         }
     }
 

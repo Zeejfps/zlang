@@ -2500,6 +2500,67 @@ fn main { mut io: Io } {
             self.assertError(src + '\nfn main {} {}', msg, line, col)
 
 
+class Convert(Base):
+    """`#convert` (PLAN.md 4.3), an attribute the compiler declares: on a fn without generic
+    parameters whose context is one read-only strlit field and whose result is a T or !T."""
+
+    def assertError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_rules(self):
+        one = 'a `convert` fn takes one read-only field of a literal type: `s: strlit`'
+        for src, msg, line, col in [
+            ('#convert\nstruct S {}', '`convert` applies only to a fn', 1, 1),
+            ('#convert\nextern fn f { s: []u8 } -> i32', '`convert` applies only to a fn with a body, not an extern fn', 1, 1),
+            ('#convert\n#convert\nfn f { s: strlit } -> i32 { return 1 }', 'duplicate `convert` attribute', 2, 1),
+            ('#convert\nfn f(T) { s: strlit } -> i32 { return 1 }', "a `convert` fn can't be generic", 1, 1),
+            ('#convert\nfn f { s: strlit, t: strlit } -> i32 { return 1 }', one, 2, 8),
+            ('#convert\nfn f {} -> i32 { return 1 }', one, 2, 1),
+            ('#convert\nfn f { mut s: strlit } -> i32 { return 1 }', one, 2, 8),
+            ('#convert\nfn f { s: []u8 } -> i32 { return 1 }', one, 2, 8),
+            ('#convert\nfn f { s: strlit } { }', "a `convert` fn must return a T or a !T: the literal's value", 2, 1),
+            ('#convert\nfn f { s: strlit } -> ! { }', "a `convert` fn must return a T or a !T: the literal's value", 2, 23),
+            ('#convert\nfn f { s: strlit } -> []u8 { return s.bytes }',
+             "a `convert` fn can't give a []u8: a string literal is one already", 2, 23),
+            ('#convert\nfn f { s: strlit } -> strlit { return s }',
+             "a `convert` fn can't give a strlit: a string literal is one already", 2, 23),
+            ('#convert{ x = 1 }\nfn f { s: strlit } -> i32 { return 1 }', '`convert` takes no fields', 1, 11),
+            ('capability C {\n    #convert\n    extern x: i32\n}', '`convert` applies only to a fn', 2, 5),
+            ('fn f { x: convert } {}', '`convert` is an attribute, not a type', 1, 11),
+        ]:
+            self.assertError(src + '\nfn main {} {}', msg, line, col)
+
+    def test_declared(self):
+        """Any namespace may declare one, and a program's own `convert` shadows the compiler's.
+        A conversion is an ordinary fn too, which a call runs when the program does."""
+        self.assertOutput("""
+namespace words {
+    struct Count { n: usize }
+    error empty
+    #convert
+    fn from_literal { s: strlit } -> !Count {
+        if s.bytes.len == 0 { return empty }
+        return Count{ n = s.bytes.len }
+    }
+}
+namespace mine {
+    struct convert { why: []u8 }
+    #convert{ why = "data" }
+    struct S {}
+}
+fn main { mut io: Io } {
+    let c = words::from_literal{ s = "four" } iferr { words::Count{ n = 0 } }
+    io::println_u64{ &io, n = c.n }
+    match words::from_literal{ s = "" } {
+        ok => {}
+        words::empty => { io::println{ &io, s = "empty" } }
+    }
+}
+""", '4\nempty\n')
+
+
 FMT_SETUP = """
 fn main { mut io: Io } {
     let mut mem: [4096]u8
