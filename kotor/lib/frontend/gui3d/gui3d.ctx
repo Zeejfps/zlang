@@ -1,0 +1,231 @@
+// A GUI 3D scene: a model posed by an animation, seen through a camera that sits on one of its
+// nodes, lit by its own light nodes, with its emitters simulated on the CPU, drawn into a
+// rectangle of the screen. The main menu's animated background is one (the model `mainmenu`,
+// camera on `camerahook`); the character generation panels will be others (a creature model,
+// a hook inside it). Docs/re/gui3d.md says what the original does and what is ours.
+//
+//   let mut scene = try gui3d::load{ &fs, &dev, heap = &heap, rm, &models, &mats, model = "mainmenu",
+//       camera_node = "camerahook", fov_degrees = gui3d::MAIN_MENU_FOV, animation = "default", warm_up = 1.0 }
+//   each frame:
+//   gui3d::update{ &scene, dt }
+//   render::begin_frame{ &frame, time }
+//   _ = gui3d::add_to_frame{ &scene, &frame, viewport = render::rect{ x = 0.0, y = 0.0, w = 800.0, h = 600.0 } }
+//   render::begin_ui{ ... }              // the panel's GUI quads over the picture
+//   gui3d::free{ &scene, &dev }          // when the panel goes (heap: a per-panel arena; see below)
+//
+// Who owns what: everything the scene allocates (pose, bindings, mesh and material arrays,
+// particle arrays) comes from the arena `heap` given to `load`; free it, or reset it, when the
+// scene is done. The model itself is in `models` (mdl_cache), the textures in `mats`
+// (material::Cache); both must outlive the scene, and each frees its own. `free` gives back only
+// what the scene made on the GPU: its meshes.
+namespace gui3d {
+    // The main menu's camera: a vertical field of view in degrees. The original sets 22.70
+    // (0x41b5ced9) with gluPerspective(fovy, viewport w / h), and the model's backdrop plane (4.8
+    // m tall, 11.96 m from the camera hook) is exactly that tall in it.
+    const MAIN_MENU_FOV: f32 = 22.70
+
+    error no_model{ name: []u8 }
+    error no_camera{ name: []u8 }
+
+    struct Scene {
+        model: *mdl::Model,
+        gpu: mdl_render::Gpu,
+        materials: []mut render::Material,      // by Model.meshes index
+        pose: mdl_anim::Pose,
+        player: mdl_anim::Player,
+        playing: bool,                          // the animation was found (else the bind pose stays)
+        camera: u32,                            // tree index of the camera node
+        fov_degrees: f32,                       // vertical; the aspect is the viewport's
+        near: f32,
+        far: f32,
+        clear: ?render::Color,                  // under the picture inside the viewport; null keeps what is there
+        ambient: math::Vec3,                    // added to the model's ambient-only lights
+        instance: math::Mat4,                   // the model's place in the scene (identity)
+        emitting: []mut Emitting,               // by Model.emitters index
+        time: f32,                              // seconds since the scene started (not counting warm-up)
+        draws: u32,                             // what the last add_to_frame put in the frame
+        particles: u32,
+    }
+
+    // Loads `model` and everything it needs: textures, meshes on the GPU, the pose, `animation`
+    // (looped from its first frame; "" or one the model lacks leaves the bind pose), emitters.
+    // `warm_up` seconds are simulated first, as the original does by updating its scene by one
+    // second once it has made it (the mist is then already drifting in the first frame).
+    fn load {
+        mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, rm: res::Manager,
+        mut models: mdl_cache::Cache, mut mats: material::Cache,
+        model: []u8, camera_node: []u8, fov_degrees: f32, animation: []u8, warm_up: f32,
+    } -> !Scene {
+        let m = mdl_cache::get{ &fs, cache = &models, name = model } ifnull { return no_model{ name = model } }
+        let camera = mdl::find_node{ model = m, name = camera_node } ifnull { return no_camera{ name = camera_node } }
+        let pose = try mdl_anim::make_pose{ realloc = arena::alloc, heap = &heap, model = m }
+        let mut player = mdl_anim::new_player{}
+        let mut playing = false
+        if animation.len > 0 {
+            let found = mdl_anim::find{ model = m, name = animation, lookup = mdl_cache::get{ &fs, cache = &models, _ } }
+            if found != null {
+                let b = try mdl_anim::bind{ realloc = arena::alloc, heap = &heap, model = m, animation = found.animation }
+                mdl_anim::play{ &player, binding = b, looping = true, speed = 1.0, transition = 0.0 }
+                playing = true
+            }
+        }
+        mdl_anim::evaluate{ model = m, player, pose }
+
+        let g = try mdl_render::upload{ &dev, realloc = arena::alloc, heap = &heap, model = m }
+        let materials = try alloc::resize(render::Material, arena::Arena){ realloc = arena::alloc, heap = &heap, mem = slice::empty(render::Material){}, count = m.meshes.len }
+        let mut i: usize = 0
+        while i < materials.len {
+            let mesh = m.meshes[i]
+            materials[i] = if not mdl_render::draws{ mesh } { mdl_render::base_material{ mesh } } else {
+                material::for_mesh{ cache = &mats, &fs, &dev, rm, desc = material::MeshDesc{
+                    diffuse = mesh.textures[0], lightmap = mesh.textures[1], lightmapped = mesh.lightmapped,
+                    transparency_hint = mesh.transparency_hint, alpha = 1.0, self_illum = math::vec3::zero{}, envmap = "",
+                } }
+            }
+            i = i + 1
+        }
+
+        let emitting = try alloc::resize(Emitting, arena::Arena){ realloc = arena::alloc, heap = &heap, mem = slice::empty(Emitting){}, count = m.emitters.len }
+        i = 0
+        while i < emitting.len {
+            emitting[i] = try make_emitting{ &fs, &dev, heap = &heap, &mats, rm, model = m, index = @as(u32, i) }
+            i = i + 1
+        }
+
+        let mut scene = Scene{
+            model = m, gpu = g, materials, pose, player, playing, camera, fov_degrees, near = 0.1, far = 10000.0,
+            clear = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }, ambient = math::vec3::zero{},
+            instance = math::mat4::identity{}, emitting, time = 0.0, draws = 0, particles = 0,
+        }
+        let step: f32 = 1.0 / 30.0
+        let mut left = warm_up
+        while left > 0.0 {
+            update{ &scene, dt = math::min{ a = step, b = left } }
+            left = left - step
+        }
+        scene.time = 0.0
+        return scene
+    }
+
+    // Longest step the simulation takes at once: a hitch of a second is run as ten.
+    const MAX_STEP: f32 = 0.1
+
+    // Moves the scene on by `dt` seconds: the animation (looping), the pose, dangly meshes, and
+    // every emitter's particles.
+    fn update { mut scene: Scene, dt: f32 } {
+        let mut left = dt
+        while left > 0.0 {
+            let step = math::min{ a = left, b = MAX_STEP }
+            step_scene{ scene = &scene, dt = step }
+            left = left - step
+        }
+    }
+
+    fn step_scene { mut scene: Scene, dt: f32 } {
+        mdl_anim::advance{ player = &scene.player, dt, on_event = mdl_anim::ignore_event }
+        mdl_anim::evaluate{ model = scene.model, player = scene.player, pose = scene.pose }
+        mdl_anim::swing{ model = scene.model, pose = scene.pose, transform = scene.instance, dt }
+        let mut i: usize = 0
+        while i < scene.emitting.len {
+            step_emitting{ em = &scene.emitting[i], e = &scene.model.emitters[i], props = scene.pose.emitters[i], dt }
+            i = i + 1
+        }
+        scene.time = scene.time + dt
+    }
+
+    // Adds the scene to `frame` as a view over `viewport` (pixels of the target, origin top left,
+    // as render::View.viewport has it): the camera from the camera node's place in the pose, the
+    // aspect the viewport's, the model's draws, its lights and its particles. Returns the view's
+    // index, or null if the frame had no room for it. Passes added to the frame afterwards
+    // (render::begin_ui) draw over it. The scene's light goes into the frame's light list, which
+    // every view of the frame shares: a world drawn in the same frame would be lit by it too.
+    fn add_to_frame { mut scene: Scene, mut frame: render::Frame, viewport: render::Rect } -> ?u32 {
+        let model = scene.model
+        let world = math::mat4::mul{ a = scene.instance, b = scene.pose.world[scene.camera] }
+        let aspect = if viewport.h > 0.0 { viewport.w / viewport.h } else { 1.0 }
+        let proj = math::mat4::perspective{ fovy = math::radians{ degrees = scene.fov_degrees }, aspect, near = scene.near, far = scene.far }
+        let camera = render::Camera{ view = math::mat4::inverse_affine{ m = world }, proj, eye = math::mat4::get_translation{ m = world } }
+        let mut view = render::make_view{ camera }
+        view.viewport = viewport
+        view.clear_color = scene.clear
+        view.ambient = scene.ambient
+        // Ambient-only lights are a flat ambient term here (the original gives them a position and
+        // a falloff); the others are frame lights.
+        let mut i: usize = 0
+        while i < model.lights.len {
+            let l = model.lights[i]
+            let p = scene.pose.lights[i]
+            i = i + 1
+            let c = math::vec3::scale{ v = p.color, s = p.multiplier }
+            if l.ambient_only {
+                view.ambient = math::vec3::add{ a = view.ambient, b = c }
+            }
+        }
+        let vi = render::add_view{ &frame, view } ifnull { return null }
+        i = 0
+        while i < model.lights.len {
+            let l = model.lights[i]
+            let p = scene.pose.lights[i]
+            i = i + 1
+            if l.ambient_only or p.radius <= 0.0 { continue }
+            let at = math::mat4::transform_point{ m = math::mat4::mul{ a = scene.instance, b = scene.pose.world[l.node] }, p = math::vec3::zero{} }
+            render::add_light{ &frame, light = render::Light{ position = at, color = math::vec3::scale{ v = p.color, s = p.multiplier }, radius = p.radius } }
+        }
+        let first_draw = frame.draw_count
+        scene.draws = mdl_render::add_draws{
+            &frame, view = vi, model, pose = scene.pose, g = scene.gpu, transform = scene.instance,
+            materials = scene.materials, time = scene.time,
+        }
+        // Self-illumination in the original is GL's emission, which is part of the lit colour the
+        // texture then multiplies: a fully emissive surface (the backdrop plane's selfillumcolor
+        // is white) shows its texture at full brightness. The seam adds it after the texture
+        // instead, so such a surface goes white; draw it unlit, which is the same picture.
+        i = @as(usize, first_draw)
+        while i < @as(usize, frame.draw_count) {
+            let s = frame.draws[i].material.selfillum
+            if s.x >= 0.999 and s.y >= 0.999 and s.z >= 0.999 {
+                frame.draws[i].material.selfillum = math::vec3::zero{}
+                frame.draws[i].material.lit = false
+            }
+            i = i + 1
+        }
+        scene.particles = 0
+        i = 0
+        while i < scene.emitting.len {
+            let e = &model.emitters[i]
+            let props = scene.pose.emitters[i]
+            let n = fill_particles{ em = &scene.emitting[i], props }
+            i = i + 1
+            if n == 0 { continue }
+            let em = scene.emitting[i - 1]
+            let node_world = math::mat4::mul{ a = scene.instance, b = scene.pose.world[e.node] }
+            let look = look_of{ e, world = node_world }
+            render::add_emitter{ &frame, emitter = render::Emitter{
+                view = vi, texture = em.texture, blend = look.blend, grid_x = e.x_grid, grid_y = e.y_grid,
+                facing = look.facing, axis = look.axis, transform = node_world, first = 0, count = 0,
+                fog = true, sort = @as(i32, e.render_order),
+            }, particles = em.out[..@as(usize, n)] }
+            scene.particles = scene.particles + n
+        }
+        return vi
+    }
+
+    // Gives back the scene's GPU meshes. Its arena memory, textures and model stay with their
+    // owners.
+    fn free { mut scene: Scene, mut dev: gpu::Device } {
+        mdl_render::release{ &dev, g = scene.gpu }
+    }
+
+    // The largest rectangle of the given width-to-height ratio that fits in `area`, centred in
+    // it: where the 4:3 menu picture goes on a wider screen.
+    fn fit_aspect { area: render::Rect, aspect: f32 } -> render::Rect {
+        if area.h <= 0.0 or aspect <= 0.0 { return area }
+        let mut w = area.w
+        let mut h = w / aspect
+        if h > area.h {
+            h = area.h
+            w = h * aspect
+        }
+        return render::Rect{ x = area.x + (area.w - w) * 0.5, y = area.y + (area.h - h) * 0.5, w, h }
+    }
+}

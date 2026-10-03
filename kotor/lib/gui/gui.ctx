@@ -14,7 +14,7 @@ namespace gui {
         let lines = try alloc::resize(Line, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(Line){}, count = MAX_LINES }
         let mut cursors: [CURSORS]CursorSlot
         let mut sounds: [SOUNDS]Sound
-        let mut backdrops: [5]Img
+        let mut backdrops: [6]Img
         let mut g = Gui{
             heap, rm, cache, tlk = null, mixer = null,
             fonts = list::new(FontSlot, heap::Heap){ realloc = heap::alloc, heap },
@@ -23,11 +23,11 @@ namespace gui {
             next_panel = 1,
             win_w = width, win_h = height, scale = 1.0, ui_w = width, ui_h = height, small_fonts = false,
             mouse_x = width / 2, mouse_y = height / 2, buttons = 0,
-            hover = Ref{ panel = 0, control = -1 }, capture = Ref{ panel = 0, control = -1 }, capture_button = 0, capture_part = 0,
-            cursor = 0, cursor_visible = true, cursors,
+            hover = Ref{ panel = 0, control = -1 }, capture = Ref{ panel = 0, control = -1 }, capture_button = 0, capture_part = 0, press_on_selected = false,
+            cursor = 0, cursor_visible = true, hidden = false, cursors,
             time = 0.0, pulse_border = 1.0, pulse_list = 1.0, hover_time = -1.0, tooltip_delay = 1.0, tooltips = true,
             tooltip_ref = Ref{ panel = 0, control = -1 }, key_repeat = 0.0,
-            backdrops, backdrop_for = [-1, -1, -1, -1, -1],
+            backdrops, backdrop_for = [-1, -1, -1, -1, -1, -1],
             sounds, sound_volume = 1.0,
             events = list::new(Event, heap::Heap){ realloc = heap::alloc, heap },
             dropped_events = 0, lines, quads_drawn = 0,
@@ -65,7 +65,24 @@ namespace gui {
 
     fn set_tlk { mut g: Gui, table: *tlk::Table } { g.tlk = table }
 
+    // The `Use Small Fonts` option: panels opened afterwards load the `a` fonts instead of the
+    // `b` ones (docs/re/gui.md section 5). Fonts of panels already open stay; call it when none is.
+    fn set_small_fonts { mut g: Gui, on: bool } {
+        if g.small_fonts == on { return }
+        g.small_fonts = on
+        let fs = list::items{ list = g.fonts }
+        let mut i: usize = 0
+        while i < fs.len {
+            if fs[i].ok { _ = alloc::resize(render::Glyph, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = fs[i].glyphs, count = 0 } }
+            i = i + 1
+        }
+        list::clear{ list = &g.fonts }
+    }
+
     fn set_mixer { mut g: Gui, mixer: *mut mix::Mixer } { g.mixer = mixer }
+
+    // While hidden the GUI draws nothing and takes no input.
+    fn set_hidden { mut g: Gui, hidden: bool } { g.hidden = hidden }
 
     // ---- the screen
 
@@ -87,18 +104,30 @@ namespace gui {
         return "800x600"
     }
 
+    // The HUD file for a GUI pixel space of `w` x `h`: the largest of the five that fits
+    // (mipc28x6 is the 800x600 one and the fallback). The original picks by exact size; a size it
+    // doesn't list has no HUD there, so the nearest smaller one is the useful answer.
+    fn hud_name { w: i32, h: i32 } -> []u8 {
+        if w >= 1600 and h >= 1200 { return "mipc216x12" }
+        if w >= 1280 and h >= 1024 { return "mipc212x10" }
+        if w >= 1280 and h >= 960 { return "mipc212x9" }
+        if w >= 1024 and h >= 768 { return "mipc210x7" }
+        return "mipc28x6"
+    }
+
     fn backdrop_suffix { kind: u32 } -> []u8 {
         if kind == 1 { return "store" }
         if kind == 2 { return "pazaak" }
         if kind == 3 { return "map" }
         if kind == 4 { return "comp" }
+        if kind == 5 { return "load" }
         return "back"
     }
 
     // Loads the backdrop picture `kind` (0 back, 1 store, 2 pazaak, 3 map, 4 comp) for the
     // current resolution if it isn't yet. Panels call it when opened.
     fn ensure_backdrop { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, kind: u32 } {
-        if kind >= 5 { return }
+        if kind >= 6 { return }
         let res_id = resolution_id{ w = g.ui_w, h = g.ui_h }
         if g.backdrop_for[kind] == res_id { return }
         let a = resolution_name{ id = res_id }
@@ -110,12 +139,23 @@ namespace gui {
         g.backdrop_for[kind] = res_id
     }
 
-    // The window changed size (or the scale): the GUI's pixel space is the window over `scale`
+    // The largest scale in quarter steps at which the 800x600 main menu still fits the window; 1
+    // for windows up to that size. The original never scales (scale 1); this is for big windows.
+    fn auto_scale { w: i32, h: i32 } -> f32 {
+        let fit_w = @as(f32, w) / 800.0
+        let fit_h = @as(f32, h) / 600.0
+        let fit = if fit_w < fit_h { fit_w } else { fit_h }
+        let steps = math::floorf{ x = fit * 4.0 }
+        let s = steps / 4.0
+        return if s < 1.0 { 1.0 } else { s }
+    }
+
+    // The window changed size (or the scale; 0 asks for auto_scale): the GUI's pixel space is the window over `scale`
     // (1 is the original's, which never scales); panels are re-placed.
     fn set_screen { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, width: i32, height: i32, scale: f32 } {
         g.win_w = width
         g.win_h = height
-        g.scale = if scale < 0.25 { 1.0 } else { scale }
+        g.scale = if scale <= 0.0 { auto_scale{ w = width, h = height } } else if scale < 0.25 { 1.0 } else { scale }
         g.ui_w = @as(i32, @as(f32, width) / g.scale)
         g.ui_h = @as(i32, @as(f32, height) / g.scale)
         let ps = list::items{ list = g.panels }
@@ -250,13 +290,19 @@ namespace gui {
 
     // ---- drawing
 
-    // Draws every panel into the frame's UI pass: the backdrop behind full-screen panels, the
-    // panels from the back, modal ones after the rest, then the tooltip and the pointer.
-    // Starts the pass itself (the GUI's pixel space is the window over `scale`).
+    // Draws the whole GUI: `draw_backdrop`, then `draw_panels`. A caller that wants a 3D view
+    // between them (the main menu's scene) calls the two itself.
     fn draw { mut g: Gui, mut frame: render::Frame } {
+        draw_backdrop_pass{ &g, &frame }
+        draw_panels{ &g, &frame }
+    }
+
+    // A UI pass with the picture behind full-screen panels, if any is showing: black, and the
+    // resolution's picture stretched over the whole screen. Starts the pass itself (the GUI's
+    // pixel space is the window over `scale`).
+    fn draw_backdrop_pass { mut g: Gui, mut frame: render::Frame } {
+        if g.hidden { return }
         update_visibility{ &g }
-        render::begin_ui{ &frame, width = @as(f32, g.ui_w), height = @as(f32, g.ui_h), target = null }
-        let screen = rect_of{ x = 0, y = 0, w = g.ui_w, h = g.ui_h }
         let ps = list::items{ list = g.panels }
         let mut i: usize = 0
         let mut kind: u32 = 0
@@ -268,10 +314,22 @@ namespace gui {
             }
             i = i + 1
         }
-        if any_full { draw_backdrop{ &g, &frame, kind } }
+        if not any_full { return }
+        render::begin_ui{ &frame, width = @as(f32, g.ui_w), height = @as(f32, g.ui_h), target = null }
+        draw_backdrop{ &g, &frame, kind }
+    }
+
+    // A UI pass with the panels from the back, modal ones after the rest, then the tooltip and
+    // the pointer.
+    fn draw_panels { mut g: Gui, mut frame: render::Frame } {
+        if g.hidden { return }
+        update_visibility{ &g }
+        render::begin_ui{ &frame, width = @as(f32, g.ui_w), height = @as(f32, g.ui_h), target = null }
+        let screen = rect_of{ x = 0, y = 0, w = g.ui_w, h = g.ui_h }
+        let ps = list::items{ list = g.panels }
         let mut pass: u32 = 0
         while pass < 2 {
-            i = 0
+            let mut i: usize = 0
             while i < ps.len {
                 let p = ps[i]
                 if p.shown and (p.modal == (pass == 1)) { draw_panel{ &g, &frame, p, screen } }
@@ -287,7 +345,7 @@ namespace gui {
     fn draw_backdrop { mut g: Gui, mut frame: render::Frame, kind: u32 } {
         let screen = rect_of{ x = 0, y = 0, w = g.ui_w, h = g.ui_h }
         put_fill{ &frame, x = 0.0, y = 0.0, w = @as(f32, g.ui_w), h = @as(f32, g.ui_h), color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }, clip = screen }
-        if kind < 5 {
+        if kind < 6 {
             let img = g.backdrops[kind]
             put_image{ &frame, img, x = 0.0, y = 0.0, w = @as(f32, g.ui_w), h = @as(f32, g.ui_h), color = white_color{}, angle = 0.0, clip = screen }
         }
@@ -296,10 +354,12 @@ namespace gui {
     fn draw_panel { mut g: Gui, mut frame: render::Frame, p: *mut Panel, screen: render::Rect } {
         if p.w <= 0 or p.h <= 0 { return }
         let clip = rect_of{ x = p.sx, y = p.sy, w = p.w, h = p.h }
-        if p.has_color {
+        if p.has_color and p.background {
             put_fill{ &frame, x = clip.x, y = clip.y, w = clip.w, h = clip.h, color = render::Color{ r = p.color.r, g = p.color.g, b = p.color.b, a = p.alpha }, clip }
         }
-        draw_border{ &g, &frame, b = p.border, x = p.sx, y = p.sy, w = p.w, h = p.h, alpha = p.alpha, clip, override = no_img{} }
+        if p.background {
+            draw_border{ &g, &frame, b = p.border, x = p.sx, y = p.sy, w = p.w, h = p.h, alpha = p.alpha, clip, override = no_img{} }
+        }
         let cs = list::items{ list = p.controls }
         let mut i: usize = 0
         while i < cs.len {

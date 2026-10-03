@@ -1,0 +1,199 @@
+// The CPU side of a model's emitters: births, ageing, and the live particles as render::Particle
+// rows. The simulation is ours, from the emitter node's data (birth rate, life, size, colour and
+// alpha curves; docs/re/gui3d.md says what is inferred): the original's code is read only as far
+// as the main menu needs.
+//
+// Particles live in their emitter's space, so a moving emitter carries them. One Emitting is one
+// emitter node of one model; the Scene owns them.
+namespace gui3d {
+    // One live particle.
+    struct Puff { pos: math::Vec3, vel: math::Vec3, age: f32, life: f32, angle: f32, frame: f32 }
+
+    // The most particles one emitter keeps alive, whatever its birth rate and life say.
+    const MAX_PUFFS: usize = 4096
+
+    // One emitter node's particles. All arrays are in the memory `make_emitting` was given.
+    struct Emitting {
+        emitter: u32,                       // index in Model.emitters
+        texture: ?render::Texture,
+        puffs: []mut Puff,                  // live ones first, `live` of them
+        live: u32,
+        owed: f32,                          // births carried to the next step (a fraction of one)
+        rng: u32,
+        out: []mut render::Particle,        // the live ones as the seam takes them
+    }
+
+    // ---- random numbers (xorshift32: the stream matters only for variety)
+
+    fn rng_next { mut s: u32 } -> u32 {
+        let mut x = s
+        if x == 0 { x = 0x9E3779B9 }
+        x = x ^ (x << 13)
+        x = x ^ (x >> 17)
+        x = x ^ (x << 5)
+        s = x
+        return x
+    }
+
+    // 0 up to 1.
+    fn rng_unit { mut s: u32 } -> f32 {
+        let bits = rng_next{ &s }
+        return @as(f32, bits >> 8) / 16777216.0
+    }
+
+    // ---- making and stepping
+
+    // Room for the particles an emitter can have alive at once: births per second times life,
+    // with some slack for the random part of the rate.
+    fn capacity_for { props: mdl::EmitterProps } -> usize {
+        let rate = math::max{ a = props.birthrate, b = 0.0 } + math::max{ a = props.random_birthrate, b = 0.0 }
+        let need = rate * math::max{ a = props.life_exp, b = 0.0 } * 1.25 + 8.0
+        let n = math::clamp{ x = need, lo = 8.0, hi = @as(f32, MAX_PUFFS) }
+        return @as(usize, n)
+    }
+
+    // The emitter `index` of `model`: its arrays in `heap`, its texture through the material
+    // cache (a missing texture draws nothing).
+    fn make_emitting {
+        mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, mut mats: material::Cache, rm: res::Manager,
+        model: *mdl::Model, index: u32,
+    } -> !Emitting {
+        let e = &model.emitters[index]
+        let cap = capacity_for{ props = e.props }
+        let puffs = try alloc::resize(Puff, arena::Arena){ realloc = arena::alloc, heap = &heap, mem = slice::empty(Puff){}, count = cap }
+        let out = try alloc::resize(render::Particle, arena::Arena){ realloc = arena::alloc, heap = &heap, mem = slice::empty(render::Particle){}, count = cap }
+        let t = material::get{ cache = &mats, &fs, &dev, rm, name = e.texture }
+        return Emitting{
+            emitter = index, texture = t.texture, puffs, live = 0, owed = 0.0,
+            rng = 0x2545F491 + 7919 * (index + 1), out,
+        }
+    }
+
+    // One step of `dt` seconds: the old die, the rest move, new ones are born.
+    fn step_emitting { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, dt: f32 } {
+        if dt <= 0.0 { return }
+        let mut i: u32 = 0
+        while i < em.live {
+            let mut p = em.puffs[i]
+            p.age = p.age + dt
+            if p.age >= p.life {
+                em.puffs[i] = em.puffs[em.live - 1]
+                em.live = em.live - 1
+                continue
+            }
+            p.vel.z = p.vel.z - props.grav * dt
+            p.pos = math::vec3::add_scaled{ a = p.pos, b = p.vel, s = dt }
+            p.angle = p.angle + props.particle_rot * dt
+            em.puffs[i] = p
+            i = i + 1
+        }
+        // Lightning is drawn as a strip of its own, which is not done: such an emitter stays quiet.
+        if e.update == mdl::EmitterUpdate::lightning { return }
+        let mut rate = props.birthrate
+        if props.random_birthrate > 0.0 {
+            rate = rate + (2.0 * rng_unit{ s = &em.rng } - 1.0) * props.random_birthrate
+        }
+        if rate < 0.0 { rate = 0.0 }
+        em.owed = em.owed + rate * dt
+        while em.owed >= 1.0 {
+            em.owed = em.owed - 1.0
+            if @as(usize, em.live) < em.puffs.len { spawn{ &em, e, props } }
+        }
+    }
+
+    // One new particle: somewhere within xsize/100 metres of the emitter along its X axis and
+    // ysize/100 along Y (the original draws an offset of up to that, either way), moving along
+    // +Z within `spread` radians at velocity plus or minus up to randvel.
+    fn spawn { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps } {
+        let x = (2.0 * rng_unit{ s = &em.rng } - 1.0) * props.x_size * 0.01
+        let y = (2.0 * rng_unit{ s = &em.rng } - 1.0) * props.y_size * 0.01
+        let theta = rng_unit{ s = &em.rng } * props.spread
+        let phi = rng_unit{ s = &em.rng } * math::TAU
+        let dir = math::Vec3{
+            x = math::sinf{ x = theta } * math::cosf{ x = phi },
+            y = math::sinf{ x = theta } * math::sinf{ x = phi },
+            z = math::cosf{ x = theta },
+        }
+        let speed = props.velocity + props.rand_vel * (2.0 * rng_unit{ s = &em.rng } - 1.0)
+        // Emitters with `random` pick one cell of their sprite sheet at birth; the others play the
+        // sheet from frame_start at `fps`.
+        let mut frame = props.frame_start
+        if (e.flags & EMIT_RANDOM) != 0 {
+            let span = math::max{ a = props.frame_end - props.frame_start + 1.0, b = 1.0 }
+            frame = props.frame_start + math::floorf{ x = rng_unit{ s = &em.rng } * span }
+        }
+        em.puffs[em.live] = Puff{
+            pos = math::Vec3{ x, y, z = 0.0 },
+            vel = math::vec3::scale{ v = dir, s = speed },
+            age = 0.0, life = math::max{ a = props.life_exp, b = 0.01 },
+            angle = rng_unit{ s = &em.rng } * math::TAU, frame,
+        }
+        em.live = em.live + 1
+    }
+
+    // MDL emitter flag: pick the sprite cell at random.
+    const EMIT_RANDOM: u32 = 0x20
+
+    // ---- drawing
+
+    // Where a curve with three values stands at life fraction t: `a` from percent `ps`, `b` at
+    // `pm`, `c` at `pe`, linear between, held outside.
+    fn curve { t: f32, ps: f32, pm: f32, pe: f32, a: f32, b: f32, c: f32 } -> f32 {
+        if t <= ps { return a }
+        if t >= pe { return c }
+        if t < pm { return math::lerp{ a, b, t = (t - ps) / math::max{ a = pm - ps, b = 0.0001 } } }
+        return math::lerp{ a = b, b = c, t = (t - pm) / math::max{ a = pe - pm, b = 0.0001 } }
+    }
+
+    // The live particles as seam rows (valid until the next call), in the emitter's space.
+    // Returns how many.
+    fn fill_particles { mut em: Emitting, props: mdl::EmitterProps } -> u32 {
+        let mut i: u32 = 0
+        while i < em.live {
+            let p = em.puffs[i]
+            let t = math::clamp{ x = p.age / p.life, lo = 0.0, hi = 1.0 }
+            let r = curve{ t, ps = props.percent_start, pm = props.percent_mid, pe = props.percent_end, a = props.color_start.x, b = props.color_mid.x, c = props.color_end.x }
+            let g = curve{ t, ps = props.percent_start, pm = props.percent_mid, pe = props.percent_end, a = props.color_start.y, b = props.color_mid.y, c = props.color_end.y }
+            let b = curve{ t, ps = props.percent_start, pm = props.percent_mid, pe = props.percent_end, a = props.color_start.z, b = props.color_mid.z, c = props.color_end.z }
+            let a = curve{ t, ps = props.percent_start, pm = props.percent_mid, pe = props.percent_end, a = props.alpha_start, b = props.alpha_mid, c = props.alpha_end }
+            let sx = curve{ t, ps = props.percent_start, pm = props.percent_mid, pe = props.percent_end, a = props.size_start, b = props.size_mid, c = props.size_end }
+            let sy = curve{ t, ps = props.percent_start, pm = props.percent_mid, pe = props.percent_end, a = props.size_start_y, b = props.size_mid_y, c = props.size_end_y }
+            let mut dir = math::vec3::normalize{ v = p.vel }
+            if math::vec3::length_sq{ v = dir } < 0.5 { dir = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } }
+            em.out[i] = render::Particle{
+                position = p.pos, size = math::Vec2{ x = sx, y = if sy > 0.0 { sy } else { sx } }, angle = p.angle,
+                color = render::Color{ r = r, g = g, b = b, a = a }, frame = @as(u32, p.frame), dir,
+            }
+            i = i + 1
+        }
+        return em.live
+    }
+
+    // How the emitter's particles face and which axis that turns about, in the emitter's space
+    // (`world`: its node's matrix to world, to bring Z up into it).
+    struct Look { facing: render::Facing, axis: math::Vec3, blend: render::Blend }
+
+    fn look_of { e: *mdl::Emitter, world: math::Mat4 } -> Look {
+        let up_local = math::vec3::normalize{ v = math::mat4::transform_dir{ m = math::mat4::inverse_affine{ m = world }, v = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } } }
+        let local_z = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }
+        let mut l = Look{ facing = render::Facing::camera, axis = local_z, blend = render::Blend::alpha }
+        let r = e.render
+        if r == mdl::EmitterRender::billboard_to_local_z {
+            l.facing = render::Facing::axis
+        } else if r == mdl::EmitterRender::billboard_to_world_z {
+            l.facing = render::Facing::axis
+            l.axis = up_local
+        } else if r == mdl::EmitterRender::aligned_to_world_z {
+            l.facing = render::Facing::plane
+            l.axis = up_local
+        } else if r == mdl::EmitterRender::aligned_to_particle_dir or r == mdl::EmitterRender::motion_blur {
+            l.facing = render::Facing::velocity
+        }
+        if e.blend == mdl::EmitterBlend::lighten {
+            l.blend = render::Blend::additive
+        } else if e.blend == mdl::EmitterBlend::punch_through {
+            l.blend = render::Blend::punch
+        }
+        return l
+    }
+}

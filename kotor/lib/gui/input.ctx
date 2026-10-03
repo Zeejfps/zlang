@@ -308,6 +308,7 @@ namespace gui {
                     scroll_list{ &g, p, ci = h.control, delta = if ly < mid { -l.visible } else { l.visible } }
                 } else if part == PART_BODY {
                     let r = row_at{ p, c, lx, ly }
+                    g.press_on_selected = r >= 0 and r == c.selected_row
                     if r >= 0 and c.rows[@as(usize, r)].enabled { set_selected_row{ &g, p, ci = h.control, row = r } }
                 }
             }
@@ -385,9 +386,10 @@ namespace gui {
         if not same { return true }
         let c = list::at{ list = p.controls, i = @as(usize, cap.control) }
         if c.kind == K_LIST {
-            // Releasing on the row that was pressed activates it (the press selected it).
+            // Releasing on a row that was already selected when pressed activates it (a second
+            // click); the first click only selected it.
             let r = row_at{ p, c, lx = x - p.sx, ly = y - p.sy }
-            if r >= 0 and r == c.selected_row and bar_part{ p, c, lx = x - p.sx, ly = y - p.sy } == PART_BODY { activate{ &g, p, ci = cap.control } }
+            if r >= 0 and r == c.selected_row and g.press_on_selected and bar_part{ p, c, lx = x - p.sx, ly = y - p.sy } == PART_BODY { activate{ &g, p, ci = cap.control } }
         } else if c.kind != K_SLIDER and c.kind != K_EDIT {
             activate{ &g, p, ci = cap.control }
         } else if c.kind == K_EDIT {
@@ -549,6 +551,7 @@ namespace gui {
     // the event: a press on a control (or any press while a modal panel is up), a wheel over a
     // control, a key while a panel that takes keys is up. The owner then must not act on it.
     fn handle_event { mut g: Gui, ev: sdl::Event, scale_x: f32, scale_y: f32 } -> bool {
+        if g.hidden { return false }
         match ev {
             mouse_motion{ x, y } => {
                 on_motion{ &g, x = to_ui{ v = x, s = scale_x, scale = g.scale }, y = to_ui{ v = y, s = scale_y, scale = g.scale } }
