@@ -12,6 +12,7 @@
 //                              set a number global; the leader walks to a tagged object; print objects by tag part
 //   FRAME ui hover             print the panels' places and the control under the pointer
 //   FRAME ui sweep             the pointer to the centre of each control: a hover test of every shown panel
+//   FRAME ui anims             each party member's animation, moving flag and speed
 //   FRAME ui list | pick | info | party   print selectable objects / the pick under the pointer / the target / the party
 namespace ingame {
     fn run_command { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, text: []u8 } {
@@ -132,6 +133,17 @@ namespace ingame {
             while i < ids.len {
                 _ = @fmt(&w.io, "party {}: {} {}\n", i, ids[i], hud::name_of{ w = &w, id = ids[i] })
                 i = i + 1
+            }
+        } else if ci::eq{ a = cmd, b = "anims" } {
+            // Test helper: each party member's animation, whether it is moving, its speed and place.
+            let ids = party::members{ w = &w }
+            let mut i: usize = 0
+            while i < ids.len {
+                let o = world::object{ w = &w, id = ids[i] }
+                i = i + 1
+                if o == null { continue }
+                let c = obj::creature{ o = o } ifnull { continue }
+                _ = @fmt(&w.io, "anims {}: anim {} x{} moving {} speed {} actions {} at {} {}\n", o.tag, o.animation, o.anim_speed, c.moving, c.speed, o.actions.len, o.position.x, o.position.y)
             }
         } else if ci::eq{ a = cmd, b = "list" } {
             let all = list::items{ list = w.objects.all }
