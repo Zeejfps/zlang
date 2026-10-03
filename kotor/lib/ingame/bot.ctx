@@ -20,6 +20,7 @@ namespace bot {
     struct Bot {
         on: bool,
         unlock: bool,
+        god: bool,                              // keeps the leader at 1 hit point at least, module after module
         route: [64][40]u8,
         lens: [64]u8,
         count: usize,
@@ -27,10 +28,11 @@ namespace bot {
         tick: u32,
         waiting: u32,                           // decisions spent on the current stop
         foe: u32,                               // the one it last ordered an attack on
+        seen_open: bool,                        // the door of the current stop has been seen open (one the story shuts again is passed, not opened twice)
     }
 
     fn new {} -> Bot {
-        return Bot{ on = false, unlock = false, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID }
+        return Bot{ on = false, unlock = false, god = false, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false }
     }
 
     // The `bot ...` input line, after the word `bot`.
@@ -55,8 +57,7 @@ namespace bot {
         } else if ci::eq{ a = what, b = "unlock" } {
             b.unlock = on_word{ words = &words }
         } else if ci::eq{ a = what, b = "god" } {
-            let c = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return }
-            c.min_one_hp = on_word{ words = &words }
+            b.god = on_word{ words = &words }
         } else if ci::eq{ a = what, b = "status" } {
             _ = @fmt(&w.io, "bot: {} stops, at {}", b.count, b.next)
             if b.next < b.count { _ = @fmt(&w.io, " ({})", b.route[b.next][..@as(usize, b.lens[b.next])]) }
@@ -74,11 +75,13 @@ namespace bot {
         if not b.on { return }
         b.tick = b.tick + 1
         if b.tick % EVERY != 0 { return }
+        watch_door{ &b, w = &w }
         if w.conversation.active or w.transition != null or w.arrival > 0 { return }
         let lead = party::leader{ w = &w }
         let me = world::object{ w = &w, id = lead } ifnull { return }
         let c = obj::creature{ o = me } ifnull { return }
         if c.dead { return }
+        if b.god { me.min_one_hp = true }
         // Something hostile and alive within sight: fight it, nearest first.
         let foe = nearest_foe{ w = &w, me }
         if foe != obj::INVALID {
@@ -108,6 +111,10 @@ namespace bot {
         }
         if me.actions.len > 0 { return }
         if t.ext is door{ d } {
+            if d.state == obj::DoorState::closed and b.seen_open {
+                advance{ &b }
+                return
+            }
             if d.state == obj::DoorState::closed {
                 if d.locked and b.unlock { d.locked = false }
                 let mut a = actions::make{ kind = actions::Kind::open_door }
@@ -132,9 +139,17 @@ namespace bot {
         _ = actions::add{ &w, id = lead, action = a, force = true }
     }
 
+    // Notes that the door of the current stop was open at some tick (even in a cutscene).
+    fn watch_door { mut b: Bot, w: *world::World } {
+        if b.next >= b.count { return }
+        let t = world::object{ w, id = world::object_by_tag{ w, tag = b.route[b.next][..@as(usize, b.lens[b.next])], nth = 0 } } ifnull { return }
+        if t.ext is door{ d } { if d.state != obj::DoorState::closed { b.seen_open = true } }
+    }
+
     fn advance { mut b: Bot } {
         b.next = b.next + 1
         b.waiting = 0
+        b.seen_open = false
     }
 
     // The nearest live hostile creature within sight that the leader can see to attack.
