@@ -338,7 +338,8 @@ namespace gui {
     }
 
     // A UI pass with the panels from the back, modal ones after the rest, then the tooltip and
-    // the pointer.
+    // the pointer. Controls a panel holds back (set_overlay_after) wait for draw_overlay, which
+    // then also draws the tooltip and the pointer.
     fn draw_panels { mut g: Gui, mut frame: render::Frame } {
         if g.hidden { return }
         update_visibility{ &g }
@@ -350,10 +351,38 @@ namespace gui {
             let mut i: usize = 0
             while i < ps.len {
                 let p = ps[i]
-                if p.shown and (p.modal == (pass == 1)) { draw_panel{ &g, &frame, p, screen } }
+                if p.shown and (p.modal == (pass == 1)) { draw_panel{ &g, &frame, p, screen, overlay = false } }
                 i = i + 1
             }
             pass = pass + 1
+        }
+        if has_overlay{ &g } { return }
+        draw_tooltip{ &g, &frame, screen }
+        draw_cursor{ &g, &frame, screen }
+    }
+
+    fn has_overlay { mut g: Gui } -> bool {
+        let ps = list::items{ list = g.panels }
+        let mut i: usize = 0
+        while i < ps.len {
+            if ps[i].shown and ps[i].overlay_from >= 0 { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // The controls draw_panels held back, in a UI pass of their own over what the caller drew since,
+    // then the tooltip and the pointer. Nothing happens when no panel holds any back.
+    fn draw_overlay { mut g: Gui, mut frame: render::Frame } {
+        if g.hidden or not has_overlay{ &g } { return }
+        render::begin_ui{ &frame, width = @as(f32, g.ui_w), height = @as(f32, g.ui_h), target = null }
+        let screen = rect_of{ x = 0, y = 0, w = g.ui_w, h = g.ui_h }
+        let ps = list::items{ list = g.panels }
+        let mut i: usize = 0
+        while i < ps.len {
+            let p = ps[i]
+            if p.shown and p.overlay_from >= 0 { draw_panel{ &g, &frame, p, screen, overlay = true } }
+            i = i + 1
         }
         draw_tooltip{ &g, &frame, screen }
         draw_cursor{ &g, &frame, screen }
@@ -383,18 +412,20 @@ namespace gui {
         put_image{ &frame, img, x = @as(f32, (g.ui_w - w) / 2), y = @as(f32, (g.ui_h - h) / 2), w = @as(f32, w), h = @as(f32, h), color = white_color{}, angle = 0.0, clip = screen }
     }
 
-    fn draw_panel { mut g: Gui, mut frame: render::Frame, p: *mut Panel, screen: render::Rect } {
+    // `overlay`: only the controls the panel held back, none of its own background.
+    fn draw_panel { mut g: Gui, mut frame: render::Frame, p: *mut Panel, screen: render::Rect, overlay: bool } {
         if p.w <= 0 or p.h <= 0 { return }
         let clip = rect_of{ x = p.sx, y = p.sy, w = p.w, h = p.h }
-        if p.has_color and p.background {
+        if p.has_color and p.background and not overlay {
             put_fill{ &frame, x = clip.x, y = clip.y, w = clip.w, h = clip.h, color = render::Color{ r = p.color.r, g = p.color.g, b = p.color.b, a = p.alpha }, clip }
         }
-        if p.background {
+        if p.background and not overlay {
             draw_border{ &g, &frame, b = p.border, x = p.sx, y = p.sy, w = p.w, h = p.h, alpha = p.alpha, clip, override = no_img{} }
         }
         let cs = list::items{ list = p.controls }
-        let mut i: usize = 0
-        while i < cs.len {
+        let mut i: usize = if overlay { @as(usize, p.overlay_from) } else { 0 }
+        let end: usize = if not overlay and p.overlay_from >= 0 { @as(usize, p.overlay_from) } else { cs.len }
+        while i < end {
             let c = &cs[i]
             if (c.flags & F_VISIBLE) != 0 and (c.flags & F_INTERNAL) == 0 {
                 draw_control{ &g, &frame, p, c, alpha = p.alpha, clip }

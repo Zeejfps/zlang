@@ -189,6 +189,16 @@ namespace gui {
         if i >= 0 { set_focus_index{ &g, p, ci = i, sound = false } }
     }
 
+    // The original draws a 3D view where its control is in the file, so the controls after it cover
+    // it. A caller that draws the view itself (over the GUI, once draw_panels is done) says which
+    // control it stands for: the ones after `tag` are held back by draw_panels and drawn by
+    // draw_overlay once the view is in the frame. "" puts everything back.
+    fn set_overlay_after { mut g: Gui, panel: u32, tag: []u8 } {
+        let p = find_panel{ &g, id = panel } ifnull { return }
+        p.overlay_from = if tag.len == 0 { -1 } else { find_by_tag{ p, tag } + 1 }
+        if p.overlay_from == 0 { p.overlay_from = -1 }
+    }
+
     fn set_backdrop { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, panel: u32, kind: u32 } {
         let p = find_panel{ &g, id = panel } ifnull { return }
         p.backdrop = kind

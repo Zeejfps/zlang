@@ -189,7 +189,10 @@ namespace frontend {
         draw_scene{ &fe, &g, &frame, target }
         gui::draw_panels{ &g, &frame }
         let cg_active = fe.cg
-        if cg_active != null { chargen::draw_views{ st = cg_active, &g, &frame, target } }
+        if cg_active != null {
+            chargen::draw_views{ st = cg_active, &g, &frame, target }
+            gui::draw_overlay{ &g, &frame }
+        }
     }
 
     // ---- music
