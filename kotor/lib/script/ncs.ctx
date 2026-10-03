@@ -282,6 +282,12 @@ namespace ncs {
         return @cast(*i32, &v).*
     }
 
+    // An i32's 32 bits.
+    fn bits_of_i32 { i: i32 } -> u32 {
+        let mut v = i
+        return @cast(*u32, &v).*
+    }
+
     // The f32 with the IEEE-754 bits `bits`.
     fn f32_of_bits { bits: u32 } -> f32 {
         let mut v = bits

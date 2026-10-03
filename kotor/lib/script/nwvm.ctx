@@ -42,13 +42,15 @@ namespace nwvm {
 
     // ---- programs
 
-    // An instruction decoded for running: opcode and type byte folded into one Op, offsets and
-    // sizes in cells, jump targets as instruction indexes.
+    // An instruction decoded for running: opcode and type byte folded into one Op, sizes in
+    // cells, jump targets as instruction indexes. An SP-relative offset is kept as its distance
+    // below SP (`dist`): the compiler only reads and writes below SP, and an offset at or above
+    // it becomes distance 0, which faults as the access would.
     enum Op: u8 {
         push_const,     // CONSTI CONSTF: a value, b type
         movsp,          // a cells to drop
-        cpdownsp,       // a offset (cells, from SP), b count
-        cptopsp,        // a offset, b count
+        cpdownsp,       // a dist, b count
+        cptopsp,        // a dist, b count
         rsadd,          // a default value, b type
         jz,             // a target
         action,         // a routine, b argc
@@ -58,7 +60,7 @@ namespace nwvm {
         const_s,        // a offset of the text in the file, b its length
         const_o,        // a operand: 0 OBJECT_SELF, anything else OBJECT_INVALID
         retn,
-        cptopbp,        // a offset (cells, from BP), b count
+        cptopbp,        // c offset from BP (cells), b count
         logand,
         logor,
         neg_i,
@@ -71,10 +73,10 @@ namespace nwvm {
         leq_ii,
         geq_ii,
         add_ii,
-        incisp,         // a offset
+        incisp,         // a dist
         decisp,
         store_state,    // a resume index, b globals (bytes), c frame (bytes)
-        cpdownbp,       // a offset (cells, from BP), b count
+        cpdownbp,       // c offset from BP (cells), b count
         savebp,
         restorebp,
         destruct,       // a cells removed, b offset kept, c cells kept
@@ -108,7 +110,7 @@ namespace nwvm {
         comp_i,
         sub_if,
         div_fi,
-        incibp,         // a offset (cells, from BP)
+        incibp,         // c offset from BP (cells)
         decibp,
         add_vv,
         sub_vv,
@@ -120,7 +122,7 @@ namespace nwvm {
         end,            // past the last instruction
     }
 
-    struct Ins { op: Op, a: i32, b: i32, c: i32 }
+    struct Ins { op: Op, a: u32, b: u32, c: i32 }
 
     // A script ready to run. `ins` has one more entry than the file has instructions: an `end`
     // that faults if the code runs off its end. The program views `code`, which must outlive it.
@@ -199,43 +201,54 @@ namespace nwvm {
             let x = program.ins[i]
             if x.op == Op::jmp or x.op == Op::jsr or x.op == Op::jz or x.op == Op::jnz
                 or x.op == Op::store_state or x.op == Op::store_stateall {
-                let target = @as(i64, program.at[i]) + @as(i64, x.a)
+                let target = @as(i64, program.at[i]) + @as(i64, ncs::i32_of_bits{ bits = x.a })
                 if target < 0 or target >= @as(i64, len) { return bad_target{ at = program.at[i] } }
                 let found = index_of{ program, at = @as(u32, target) } ifnull { return bad_target{ at = program.at[i] } }
-                program.ins[i].a = @as(i32, found)
+                program.ins[i].a = found
             }
             i = i + 1
         }
     }
 
-    // One raw instruction as an Ins; jump targets stay offsets from the instruction for now.
+    // One raw instruction as an Ins. Jump targets and resume points stay, for now, the raw
+    // operand's bits: an offset from the instruction, which fill() resolves.
     fn lower { raw: ncs::Raw } -> Ins {
         let op = raw.op
         let ty = raw.ty
-        let mut x = Ins{ op = Op::nop, a = raw.a, b = raw.b, c = raw.c }
-        if op == ncs::CPDOWNSP { x.op = Op::cpdownsp; x.a = raw.a / 4; x.b = raw.b / 4 }
-        else if op == ncs::CPTOPSP { x.op = Op::cptopsp; x.a = raw.a / 4; x.b = raw.b / 4 }
-        else if op == ncs::CPDOWNBP { x.op = Op::cpdownbp; x.a = raw.a / 4; x.b = raw.b / 4 }
-        else if op == ncs::CPTOPBP { x.op = Op::cptopbp; x.a = raw.a / 4; x.b = raw.b / 4 }
-        else if op == ncs::RSADD {
+        let mut x = Ins{ op = Op::nop, a = 0, b = 0, c = 0 }
+        if op == ncs::CPDOWNSP or op == ncs::CPTOPSP {
+            x.op = if op == ncs::CPDOWNSP { Op::cpdownsp } else { Op::cptopsp }
+            x.a = dist{ bytes = raw.a }
+            x.b = @as(u32, raw.b / 4)
+        } else if op == ncs::CPDOWNBP or op == ncs::CPTOPBP {
+            x.op = if op == ncs::CPDOWNBP { Op::cpdownbp } else { Op::cptopbp }
+            x.c = raw.a / 4
+            x.b = @as(u32, raw.b / 4)
+        } else if op == ncs::RSADD {
             x.op = Op::rsadd
-            x.b = @as(i32, ty)
-            x.a = if ty == OBJECT { ncs::i32_of_bits{ bits = OBJECT_INVALID } } else { 0 }
+            x.b = @as(u32, ty)
+            x.a = if ty == OBJECT { OBJECT_INVALID } else { 0 }
         } else if op == ncs::CONST {
             if ty == ncs::T_STRING {
                 // The engine copies the text through a "%s" format, so it ends at a NUL.
                 let mut n: usize = 0
                 while n < raw.text.len and raw.text[n] != 0 { n = n + 1 }
                 x.op = Op::const_s
-                x.a = @as(i32, raw.at + 4)
-                x.b = @as(i32, n)
+                x.a = raw.at + 4
+                x.b = @as(u32, n)
             } else if ty == ncs::T_OBJECT {
                 x.op = Op::const_o
+                x.a = ncs::bits_of_i32{ i = raw.a }
             } else {
                 x.op = Op::push_const
-                x.b = @as(i32, ty)
+                x.a = ncs::bits_of_i32{ i = raw.a }
+                x.b = @as(u32, ty)
             }
-        } else if op == ncs::ACTION { x.op = Op::action }
+        } else if op == ncs::ACTION {
+            x.op = Op::action
+            x.a = @as(u32, raw.a)
+            x.b = @as(u32, raw.b)
+        }
         else if op == ncs::LOGAND { x.op = Op::logand }
         else if op == ncs::LOGOR { x.op = Op::logor }
         else if op == ncs::INCOR { x.op = Op::incor }
@@ -247,7 +260,7 @@ namespace nwvm {
                 x.op = if eq { Op::equal_ii } else { Op::nequal_ii }
             } else {
                 x.op = if eq { Op::equal } else { Op::nequal }
-                x.a = if ty == ncs::T_TT { raw.a / 4 } else { 1 }
+                x.a = if ty == ncs::T_TT { @as(u32, raw.a / 4) } else { 1 }
             }
         } else if op == ncs::GEQ { x.op = if ty == ncs::T_II { Op::geq_ii } else { Op::geq_ff } }
         else if op == ncs::GT { x.op = if ty == ncs::T_II { Op::gt_ii } else { Op::gt_ff } }
@@ -276,23 +289,39 @@ namespace nwvm {
         else if op == ncs::MOVSP {
             // The engine only ever lowers SP: a positive MOVSP does nothing.
             x.op = Op::movsp
-            x.a = if raw.a < 0 { -(raw.a / 4) } else { 0 }
-        } else if op == ncs::STORE_STATEALL { x.op = Op::store_stateall; x.a = @as(i32, ty) }
-        else if op == ncs::JMP { x.op = Op::jmp }
-        else if op == ncs::JSR { x.op = Op::jsr }
-        else if op == ncs::JZ { x.op = Op::jz }
-        else if op == ncs::JNZ { x.op = Op::jnz }
-        else if op == ncs::RETN { x.op = Op::retn }
-        else if op == ncs::DESTRUCT { x.op = Op::destruct; x.a = raw.a / 4; x.b = raw.b / 4; x.c = raw.c / 4 }
-        else if op == ncs::NOT { x.op = Op::not_i }
-        else if op == ncs::DECISP { x.op = Op::decisp; x.a = raw.a / 4 }
-        else if op == ncs::INCISP { x.op = Op::incisp; x.a = raw.a / 4 }
-        else if op == ncs::DECIBP { x.op = Op::decibp; x.a = raw.a / 4 }
-        else if op == ncs::INCIBP { x.op = Op::incibp; x.a = raw.a / 4 }
+            x.a = dist{ bytes = raw.a }
+        } else if op == ncs::STORE_STATEALL { x.op = Op::store_stateall; x.a = @as(u32, ty) }
+        else if op == ncs::JMP or op == ncs::JSR or op == ncs::JZ or op == ncs::JNZ {
+            x.op = if op == ncs::JMP { Op::jmp } else if op == ncs::JSR { Op::jsr } else if op == ncs::JZ { Op::jz } else { Op::jnz }
+            x.a = ncs::bits_of_i32{ i = raw.a }
+        } else if op == ncs::RETN { x.op = Op::retn }
+        else if op == ncs::DESTRUCT {
+            // A negative kept offset can't be honoured: it faults when run.
+            x.op = Op::destruct
+            x.a = @as(u32, raw.a / 4)
+            x.b = if raw.b < 0 { 0xFFFFFFFF } else { @as(u32, raw.b / 4) }
+            x.c = raw.c / 4
+        } else if op == ncs::NOT { x.op = Op::not_i }
+        else if op == ncs::DECISP { x.op = Op::decisp; x.a = dist{ bytes = raw.a } }
+        else if op == ncs::INCISP { x.op = Op::incisp; x.a = dist{ bytes = raw.a } }
+        else if op == ncs::DECIBP { x.op = Op::decibp; x.c = raw.a / 4 }
+        else if op == ncs::INCIBP { x.op = Op::incibp; x.c = raw.a / 4 }
         else if op == ncs::SAVEBP { x.op = Op::savebp }
         else if op == ncs::RESTOREBP { x.op = Op::restorebp }
-        else if op == ncs::STORE_STATE { x.op = Op::store_state; x.c = raw.b; x.b = raw.a; x.a = @as(i32, ty) }
+        else if op == ncs::STORE_STATE {
+            x.op = Op::store_state
+            x.a = @as(u32, ty)
+            x.b = ncs::bits_of_i32{ i = raw.a }
+            x.c = raw.b
+        }
         return x
+    }
+
+    // An SP-relative offset in bytes as the distance below SP in cells, as the engine divides
+    // it; 0 for an offset at or above SP.
+    fn dist { bytes: i32 } -> u32 {
+        if bytes >= 0 { return 0 }
+        return @as(u32, -(bytes / 4))
     }
 
     // ---- the machine
@@ -562,8 +591,8 @@ namespace nwvm {
         while true {
             let cur = ip
             let x = code[cur]
-            ip = cur + 1
-            count = count + 1
+            ip = @wrap_add(cur, 1)
+            count = @wrap_add(count, 1)
             if count >= budget {
                 vm.count = count
                 return trap{ &vm, program, ip = cur, sp, kind = FaultKind::budget }
@@ -572,56 +601,58 @@ namespace nwvm {
                 push_const => {
                     if sp >= cap { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::stack_full } }
                     t[sp] = @trunc(u8, x.b)
-                    v[sp].i = x.a
-                    sp = sp + 1
+                    v[sp].u = x.a
+                    sp = @wrap_add(sp, 1)
                 }
                 movsp => {
-                    let n = @as(usize, x.a)
+                    let n: usize = x.a
                     if n > sp { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::underflow } }
-                    sp = sp - n
+                    sp = @wrap_sub(sp, n)
                 }
                 cpdownsp => {
-                    let n = @as(usize, x.b)
-                    let dst = @as(i64, sp) + @as(i64, x.a)
-                    if n > sp or dst < 0 or dst + @as(i64, n) > @as(i64, sp) {
-                        vm.count = count
-                        return trap{ &vm, program, ip = cur, sp, kind = if n > sp { FaultKind::underflow } else { FaultKind::bad_offset } }
-                    }
-                    let d = @as(usize, dst)
-                    let s = sp - n
-                    let mut k: usize = 0
-                    while k < n {
-                        t[d + k] = t[s + k]
-                        v[d + k] = v[s + k]
-                        k = k + 1
-                    }
-                }
-                cptopsp => {
-                    let n = @as(usize, x.b)
-                    let src = @as(i64, sp) + @as(i64, x.a)
-                    if src < 0 or src + @as(i64, n) > @as(i64, sp) {
+                    // Copies the top n cells to `dist` cells below SP: n <= dist <= sp.
+                    let n: usize = x.b
+                    let d: usize = x.a
+                    if d > sp or n > d {
                         vm.count = count
                         return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset }
                     }
-                    if sp + n > cap { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::stack_full } }
-                    let s = @as(usize, src)
+                    let to = @wrap_sub(sp, d)
+                    let from = @wrap_sub(sp, n)
                     let mut k: usize = 0
                     while k < n {
-                        t[sp + k] = t[s + k]
-                        v[sp + k] = v[s + k]
-                        k = k + 1
+                        t[@wrap_add(to, k)] = t[@wrap_add(from, k)]
+                        v[@wrap_add(to, k)] = v[@wrap_add(from, k)]
+                        k = @wrap_add(k, 1)
                     }
-                    sp = sp + n
+                }
+                cptopsp => {
+                    // Pushes the n cells from `dist` cells below SP: n <= dist <= sp.
+                    let n: usize = x.b
+                    let d: usize = x.a
+                    if d > sp or n > d {
+                        vm.count = count
+                        return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset }
+                    }
+                    if n > cap - sp { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::stack_full } }
+                    let from = @wrap_sub(sp, d)
+                    let mut k: usize = 0
+                    while k < n {
+                        t[@wrap_add(sp, k)] = t[@wrap_add(from, k)]
+                        v[@wrap_add(sp, k)] = v[@wrap_add(from, k)]
+                        k = @wrap_add(k, 1)
+                    }
+                    sp = @wrap_add(sp, n)
                 }
                 rsadd => {
                     if sp >= cap { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::stack_full } }
                     t[sp] = @trunc(u8, x.b)
-                    v[sp].i = x.a
-                    sp = sp + 1
+                    v[sp].u = x.a
+                    sp = @wrap_add(sp, 1)
                 }
                 jz => {
                     if sp < 1 or t[sp - 1] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = 0, deep_n = 0, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     if v[sp].i == 0 { ip = @as(usize, x.a) }
                 }
                 action => {
@@ -640,8 +671,8 @@ namespace nwvm {
                             let want = vm.fault.want
                             let found = vm.fault.found
                             _ = trap{ &vm, program, ip = cur, sp, kind }
-                            vm.fault.routine = x.a
-                            vm.fault.argc = x.b
+                            vm.fault.routine = @as(i32, x.a)
+                            vm.fault.argc = @as(i32, x.b)
                             vm.fault.why = why
                             vm.fault.want = want
                             vm.fault.found = found
@@ -649,8 +680,8 @@ namespace nwvm {
                         }
                         equal => {
                             _ = trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_reply }
-                            vm.fault.routine = x.a
-                            vm.fault.argc = x.b
+                            vm.fault.routine = @as(i32, x.a)
+                            vm.fault.argc = @as(i32, x.b)
                             return false
                         }
                     }
@@ -658,7 +689,7 @@ namespace nwvm {
                 jmp => { ip = @as(usize, x.a) }
                 equal_ii => {
                     if sp >= 2 and t[sp - 1] == INT and t[sp - 2] == INT {
-                        sp = sp - 1
+                        sp = @wrap_sub(sp, 1)
                         v[sp - 1].i = if v[sp - 1].i == v[sp].i { 1 } else { 0 }
                     } else {
                         vm.sp = @as(u32, sp)
@@ -667,7 +698,7 @@ namespace nwvm {
                         sp = @as(usize, vm.sp)
                         t[sp] = INT
                         v[sp].i = if same { 1 } else { 0 }
-                        sp = sp + 1
+                        sp = @wrap_add(sp, 1)
                     }
                 }
                 jsr => {
@@ -686,13 +717,13 @@ namespace nwvm {
                     }
                     t[sp] = STRING
                     v[sp].u = slot
-                    sp = sp + 1
+                    sp = @wrap_add(sp, 1)
                 }
                 const_o => {
                     if sp >= cap { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::stack_full } }
                     t[sp] = OBJECT
                     v[sp].u = if x.a == 0 { vm.levels[vm.depth - 1].self } else { OBJECT_INVALID }
-                    sp = sp + 1
+                    sp = @wrap_add(sp, 1)
                 }
                 retn => {
                     let n = vm.nret
@@ -708,7 +739,7 @@ namespace nwvm {
                 }
                 cptopbp => {
                     let n = @as(usize, x.b)
-                    let src = @as(i64, vm.bp) + @as(i64, x.a)
+                    let src = @as(i64, vm.bp) + @as(i64, x.c)
                     if src < 0 or src + @as(i64, n) > @as(i64, sp) {
                         vm.count = count
                         return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset }
@@ -725,12 +756,12 @@ namespace nwvm {
                 }
                 logand => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].i = if v[sp - 1].i != 0 and v[sp].i != 0 { 1 } else { 0 }
                 }
                 logor => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].i = if v[sp - 1].i != 0 or v[sp].i != 0 { 1 } else { 0 }
                 }
                 neg_i => {
@@ -739,7 +770,7 @@ namespace nwvm {
                 }
                 gt_ii => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].i = if v[sp - 1].i > v[sp].i { 1 } else { 0 }
                 }
                 not_i => {
@@ -748,7 +779,7 @@ namespace nwvm {
                 }
                 nequal_ii => {
                     if sp >= 2 and t[sp - 1] == INT and t[sp - 2] == INT {
-                        sp = sp - 1
+                        sp = @wrap_sub(sp, 1)
                         v[sp - 1].i = if v[sp - 1].i != v[sp].i { 1 } else { 0 }
                     } else {
                         vm.sp = @as(u32, sp)
@@ -757,12 +788,12 @@ namespace nwvm {
                         sp = @as(usize, vm.sp)
                         t[sp] = INT
                         v[sp].i = if same { 0 } else { 1 }
-                        sp = sp + 1
+                        sp = @wrap_add(sp, 1)
                     }
                 }
                 lt_ii => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].i = if v[sp - 1].i < v[sp].i { 1 } else { 0 }
                 }
                 add_ss => {
@@ -772,49 +803,49 @@ namespace nwvm {
                         vm.count = count
                         return trap{ &vm, program, ip = cur, sp, kind = FaultKind::strings_full }
                     }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].u = slot
                 }
                 jnz => {
                     if sp < 1 or t[sp - 1] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = 0, deep_n = 0, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     if v[sp].i != 0 { ip = @as(usize, x.a) }
                 }
                 leq_ii => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].i = if v[sp - 1].i <= v[sp].i { 1 } else { 0 }
                 }
                 geq_ii => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].i = if v[sp - 1].i >= v[sp].i { 1 } else { 0 }
                 }
                 add_ii => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].i = @wrap_add(v[sp - 1].i, v[sp].i)
                 }
                 incisp => {
-                    let at = @as(i64, sp) + @as(i64, x.a)
-                    if at < 0 or at >= @as(i64, sp) { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
-                    let i = @as(usize, at)
+                    let d: usize = x.a
+                    if d == 0 or d > sp { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
+                    let i = @wrap_sub(sp, d)
                     if t[i] != INT { vm.count = count; return wrong_cell{ &vm, program, ip = cur, sp, want = INT, found = t[i] } }
                     v[i].i = @wrap_add(v[i].i, 1)
                 }
                 decisp => {
-                    let at = @as(i64, sp) + @as(i64, x.a)
-                    if at < 0 or at >= @as(i64, sp) { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
-                    let i = @as(usize, at)
+                    let d: usize = x.a
+                    if d == 0 or d > sp { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
+                    let i = @wrap_sub(sp, d)
                     if t[i] != INT { vm.count = count; return wrong_cell{ &vm, program, ip = cur, sp, want = INT, found = t[i] } }
                     v[i].i = @wrap_sub(v[i].i, 1)
                 }
                 store_state => {
-                    vm.saved = Saved{ valid = true, program, resume = @as(u32, x.a), globals = x.b, frame = x.c }
+                    vm.saved = Saved{ valid = true, program, resume = x.a, globals = ncs::i32_of_bits{ bits = x.b }, frame = x.c }
                 }
                 cpdownbp => {
                     let n = @as(usize, x.b)
-                    let dst = @as(i64, vm.bp) + @as(i64, x.a)
+                    let dst = @as(i64, vm.bp) + @as(i64, x.c)
                     if n > sp or dst < 0 or dst + @as(i64, n) > @as(i64, sp) {
                         vm.count = count
                         return trap{ &vm, program, ip = cur, sp, kind = if n > sp { FaultKind::underflow } else { FaultKind::bad_offset } }
@@ -833,20 +864,21 @@ namespace nwvm {
                     t[sp] = INT
                     v[sp].u = vm.bp
                     vm.bp = @as(u32, sp)
-                    sp = sp + 1
+                    sp = @wrap_add(sp, 1)
                 }
                 restorebp => {
                     if sp < 1 or t[sp - 1] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = 0, deep_n = 0, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     vm.bp = v[sp].u
                 }
                 destruct => {
-                    let n = @as(usize, x.a)
-                    if n > sp { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::underflow } }
-                    if x.b < 0 or x.c < 0 or x.b + x.c > x.a { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
-                    let base = sp - n
+                    let n: usize = x.a
                     let keep = @as(usize, x.c)
-                    let from = base + @as(usize, x.b)
+                    let off: usize = x.b
+                    if n > sp { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::underflow } }
+                    if off > n or keep > n - off { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
+                    let base = sp - n
+                    let from = base + off
                     let mut k: usize = 0
                     while k < keep {
                         t[base + k] = t[from + k]
@@ -857,35 +889,35 @@ namespace nwvm {
                 }
                 mul_ii => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].i = @wrap_mul(v[sp - 1].i, v[sp].i)
                 }
                 sub_ii => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].i = @wrap_sub(v[sp - 1].i, v[sp].i)
                 }
                 div_ff => {
                     if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 1 } }
                     if v[sp - 1].f == 0.0 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::div_zero } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].f = v[sp - 1].f / v[sp].f
                 }
                 gt_ff => {
                     if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     t[sp - 1] = INT
                     v[sp - 1].i = if v[sp - 1].f > v[sp].f { 1 } else { 0 }
                 }
                 lt_ff => {
                     if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     t[sp - 1] = INT
                     v[sp - 1].i = if v[sp - 1].f < v[sp].f { 1 } else { 0 }
                 }
                 leq_ff => {
                     if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     t[sp - 1] = INT
                     v[sp - 1].i = if v[sp - 1].f <= v[sp].f { 1 } else { 0 }
                 }
@@ -897,7 +929,7 @@ namespace nwvm {
                     if sp >= cap { return trap{ &vm, program, ip = cur, sp, kind = FaultKind::stack_full } }
                     t[sp] = INT
                     v[sp].i = if same { 1 } else { 0 }
-                    sp = sp + 1
+                    sp = @wrap_add(sp, 1)
                 }
                 nequal => {
                     vm.sp = @as(u32, sp)
@@ -907,22 +939,22 @@ namespace nwvm {
                     if sp >= cap { return trap{ &vm, program, ip = cur, sp, kind = FaultKind::stack_full } }
                     t[sp] = INT
                     v[sp].i = if same { 0 } else { 1 }
-                    sp = sp + 1
+                    sp = @wrap_add(sp, 1)
                 }
                 mul_if => {
                     if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = FLOAT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     t[sp - 1] = FLOAT
                     v[sp - 1].f = @as(f32, v[sp - 1].i) * v[sp].f
                 }
                 add_ff => {
                     if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].f = v[sp - 1].f + v[sp].f
                 }
                 mul_ff => {
                     if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].f = v[sp - 1].f * v[sp].f
                 }
                 div_ii => {
@@ -931,12 +963,12 @@ namespace nwvm {
                     let a = v[sp - 2].i
                     if b == 0 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::div_zero } }
                     if b == -1 and a == -2147483648 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::div_overflow } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].i = a / b
                 }
                 add_if => {
                     if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = FLOAT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     t[sp - 1] = FLOAT
                     v[sp - 1].f = @as(f32, v[sp - 1].i) + v[sp].f
                 }
@@ -946,44 +978,44 @@ namespace nwvm {
                 }
                 incor => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].i = v[sp - 1].i | v[sp].i
                 }
                 add_fi => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].f = v[sp - 1].f + @as(f32, v[sp].i)
                 }
                 sub_ff => {
                     if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].f = v[sp - 1].f - v[sp].f
                 }
                 mul_fi => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].f = v[sp - 1].f * @as(f32, v[sp].i)
                 }
                 booland => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].i = v[sp - 1].i & v[sp].i
                 }
                 sub_fi => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].f = v[sp - 1].f - @as(f32, v[sp].i)
                 }
                 div_if => {
                     if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = FLOAT, top_n = 1 } }
                     if v[sp - 1].f == 0.0 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::div_zero } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     t[sp - 1] = FLOAT
                     v[sp - 1].f = @as(f32, v[sp - 1].i) / v[sp].f
                 }
                 geq_ff => {
                     if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     t[sp - 1] = INT
                     v[sp - 1].i = if v[sp - 1].f >= v[sp].f { 1 } else { 0 }
                 }
@@ -993,18 +1025,18 @@ namespace nwvm {
                     let a = v[sp - 2].i
                     if b == 0 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::div_zero } }
                     if b == -1 and a == -2147483648 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::div_overflow } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].i = a % b
                 }
                 shleft => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].i = v[sp - 1].i << (v[sp].i & 31)
                 }
                 shright => {
                     // Rounds toward zero: a negative number is shifted as its magnitude.
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     let a = v[sp - 1].i
                     let n = v[sp].i & 31
                     v[sp - 1].i = if a >= 0 { a >> n } else { @wrap_sub(0, @wrap_sub(0, a) >> n) }
@@ -1012,12 +1044,12 @@ namespace nwvm {
                 ushright => {
                     // Sign-extending, as in the engine (and NWN): not a logical shift.
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].i = v[sp - 1].i >> (v[sp].i & 31)
                 }
                 excor => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].i = v[sp - 1].i ^ v[sp].i
                 }
                 comp_i => {
@@ -1026,25 +1058,25 @@ namespace nwvm {
                 }
                 sub_if => {
                     if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = FLOAT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     t[sp - 1] = FLOAT
                     v[sp - 1].f = @as(f32, v[sp - 1].i) - v[sp].f
                 }
                 div_fi => {
                     if sp < 2 or t[sp - 1] != INT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = INT, top_n = 1 } }
                     if v[sp - 1].i == 0 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::div_zero } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 1].f = v[sp - 1].f / @as(f32, v[sp].i)
                 }
                 incibp => {
-                    let at = @as(i64, vm.bp) + @as(i64, x.a)
+                    let at = @as(i64, vm.bp) + @as(i64, x.c)
                     if at < 0 or at >= @as(i64, sp) { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
                     let i = @as(usize, at)
                     if t[i] != INT { vm.count = count; return wrong_cell{ &vm, program, ip = cur, sp, want = INT, found = t[i] } }
                     v[i].i = @wrap_add(v[i].i, 1)
                 }
                 decibp => {
-                    let at = @as(i64, vm.bp) + @as(i64, x.a)
+                    let at = @as(i64, vm.bp) + @as(i64, x.c)
                     if at < 0 or at >= @as(i64, sp) { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
                     let i = @as(usize, at)
                     if t[i] != INT { vm.count = count; return wrong_cell{ &vm, program, ip = cur, sp, want = INT, found = t[i] } }
@@ -1066,7 +1098,7 @@ namespace nwvm {
                 }
                 mul_vf => {
                     if sp < 4 or not floats{ t, from = sp - 4, n = 4 } { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 3, top = FLOAT, top_n = 1 } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     let k = v[sp].f
                     v[sp - 3].f = v[sp - 3].f * k
                     v[sp - 2].f = v[sp - 2].f * k
@@ -1078,19 +1110,19 @@ namespace nwvm {
                     v[sp - 4].f = k * v[sp - 3].f
                     v[sp - 3].f = k * v[sp - 2].f
                     v[sp - 2].f = k * v[sp - 1].f
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                 }
                 div_vf => {
                     if sp < 4 or not floats{ t, from = sp - 4, n = 4 } { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 3, top = FLOAT, top_n = 1 } }
                     let k = v[sp - 1].f
                     if k == 0.0 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::div_zero } }
-                    sp = sp - 1
+                    sp = @wrap_sub(sp, 1)
                     v[sp - 3].f = v[sp - 3].f / k
                     v[sp - 2].f = v[sp - 2].f / k
                     v[sp - 1].f = v[sp - 1].f / k
                 }
                 store_stateall => {
-                    vm.saved = Saved{ valid = true, program, resume = @as(u32, x.a), globals = 0, frame = 0 }
+                    vm.saved = Saved{ valid = true, program, resume = x.a, globals = 0, frame = 0 }
                 }
                 nop => { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::invalid_opcode } }
                 end => { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::past_end } }
@@ -1693,6 +1725,33 @@ namespace nwvm {
         return "an unknown type"
     }
 
+    // A FaultKind's variant name, for tools and tests.
+    fn kind_id { kind: FaultKind } -> []u8 {
+        return match kind {
+            none => { "none" }
+            budget => { "budget" }
+            too_deep => { "too_deep" }
+            call_depth => { "call_depth" }
+            underflow => { "underflow" }
+            wrong_type => { "wrong_type" }
+            bad_offset => { "bad_offset" }
+            invalid_opcode => { "invalid_opcode" }
+            div_zero => { "div_zero" }
+            div_overflow => { "div_overflow" }
+            past_end => { "past_end" }
+            not_comparable => { "not_comparable" }
+            stack_full => { "stack_full" }
+            strings_full => { "strings_full" }
+            routine_failed => { "routine_failed" }
+            bad_reply => { "bad_reply" }
+            no_state => { "no_state" }
+            bad_state => { "bad_state" }
+            unbalanced => { "unbalanced" }
+            busy => { "busy" }
+        }
+    }
+
+    // A FaultKind in words.
     fn kind_name { kind: FaultKind } -> []u8 {
         return match kind {
             none => { "no fault" }
