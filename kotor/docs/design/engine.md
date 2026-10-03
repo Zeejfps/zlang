@@ -555,7 +555,8 @@ each frame:
   `FRAME warp TAG` (the leader 1.5 m in front of the object), `FRAME use TAG` (the leader's default
   action on it), `FRAME attack TAG` (the leader attacks the nearest live one), `FRAME save NAME`,
   `FRAME load FOLDER`, `FRAME hush` (ends the running conversation), `FRAME newgame` (the front
-  end's New Game). Keys: W/S or arrows forward and back,
+  end's New Game), and in a minigame `FRAME gunner` (a bot aims and fires the turret), `FRAME mouse DX DY`
+  (the mouse moves by those counts) and `FRAME pause` (Escape). Keys: W/S or arrows forward and back,
   Z/C strafe, A/D or arrows turn the camera, R or Space the default action (the nearest door,
   useable placeable or creature with a conversation in front, within 3 m).
 - `--screenshot-at F:PATH` (repeatable) reads the screen after frame F's render and writes a PNG.
