@@ -13,6 +13,7 @@ namespace cam {
         eye: math::Vec3,
         look: math::Vec3,
         dir: math::Vec3,
+        up: math::Vec3,         // +Z, except while a conversation camera rolls it (lib/dialog)
         stops: [64]bool,        // surface materials a camera ray stops at: all but triggers (30)
     }
 
@@ -26,7 +27,7 @@ namespace cam {
         stops[30] = false
         return Camera{
             style = Style{ distance = 6.25, pitch = 80.0, height = 3.5, fov = 55.0 }, yaw = 0.0, rate = 0.0, h = 3.2,
-            started = false, eye = math::vec3::zero{}, look = math::vec3::zero{}, dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, stops,
+            started = false, eye = math::vec3::zero{}, look = math::vec3::zero{}, dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, stops,
         }
     }
 
@@ -79,6 +80,7 @@ namespace cam {
         let down = math::radians{ degrees = 90.0 - c.style.pitch }
         let cd = math::cosf{ x = down }
         c.dir = math::Vec3{ x = hx * cd, y = hy * cd, z = -math::sinf{ x = down } }
+        c.up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }
         c.eye = eye
         c.look = look
     }
@@ -110,7 +112,7 @@ namespace cam {
     fn render_camera { c: *Camera, aspect: f32 } -> render::Camera {
         let at = math::vec3::add{ a = c.eye, b = c.dir }
         return render::Camera{
-            view = math::mat4::look_at{ eye = c.eye, at, up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } },
+            view = math::mat4::look_at{ eye = c.eye, at, up = c.up },
             proj = math::mat4::perspective{ fovy = math::radians{ degrees = c.style.fov }, aspect, near = 0.1, far = 1000.0 },
             eye = c.eye,
         }

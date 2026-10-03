@@ -52,6 +52,8 @@ namespace play {
             }
         }
         let mut amb = ambience::make{ heap = w.heap, m = mixer }
+        let mut view = dlgview::make{ heap = w.heap, m = mixer }
+        dlgview::attach{ v = &view, w = &w }
         ambience::start_area{ a = &amb, &w }
         let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
         let mut keys = ctl::no_keys{}
@@ -131,9 +133,12 @@ namespace play {
             outbox::clear{ out = &w.out }
             // 9-10. Scene and camera (which snaps behind the leader again once it is placed).
             if w.arrival > 0 { camera.started = false }
+            dlgview::pre_sync{ v = &view, w = &w, sc = &sc, dev = &dev, dt = w.clock.dt }
             scene::sync{ &sc, &w, &dev, dt = w.clock.dt }
+            dlgview::post_sync{ v = &view, w = &w, sc = &sc, dt = w.clock.dt }
             let look_height = leader_height{ w = &w }
             cam::update{ c = &camera, w = &w, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt }
+            dlgview::apply_camera{ v = &view, w = &w, camera = &camera }
             let pc = world::object{ w = &w, id = w.pc }
             let room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
             scene::update_visibility{ &sc, w = &w, room }

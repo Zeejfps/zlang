@@ -37,7 +37,7 @@ namespace visual {
         if sc.parts.len == first { return null }
         try list::push{ list = &sc.visuals, item = scene::Visual{
             id = o.id, first, count = sc.parts.len - first, animation = 0xFFFFFFFF, state = 0xFFFFFFFF,
-            room = -1, creature_prefix = prefix, alive = true,
+            room = -1, creature_prefix = prefix, alive = true, stunt = false,
         } }
         let index = sc.visuals.len - 1
         try map::put{ m = &sc.by_id, key = o.id, value = index }
@@ -170,10 +170,13 @@ namespace visual {
     fn animate_creature { mut sc: scene::Scene, mut w: world::World, v: *mut scene::Visual, o: *obj::Object } {
         if v.animation == o.animation { return }
         v.animation = o.animation
-        let base = animname::name_of{ id = o.animation }
-        let looping = animname::loops{ id = o.animation }
+        let mut named: [34]u8
+        let base = animname::name_in{ w = &w, id = o.animation, into = named[..] }
+        let looping = animname::loops_in{ w = &w, id = o.animation }
         let mut buf: [34]u8
-        let name = with_prefix{ into = buf[..], name = if base.len > 0 { base } else { "pause1" }, prefix = v.creature_prefix }
+        // Cutscene models name theirs `cutNNNw` whatever their kind.
+        let prefixed = v.creature_prefix and not ci::starts_with{ s = base, prefix = "cut" }
+        let name = with_prefix{ into = buf[..], name = if base.len > 0 { base } else { "pause1" }, prefix = prefixed }
         let mut fallback: [34]u8
         let pause = with_prefix{ into = fallback[..], name = "pause1", prefix = v.creature_prefix }
         if not scene::play{ &sc, &w, part = v.first, name, looping, speed = o.anim_speed, transition = 0.25 } {
@@ -251,9 +254,11 @@ namespace visual {
     // The visual's draws: each part under its parent's hook.
     fn draw { sc: *scene::Scene, v: *scene::Visual, o: *obj::Object, mut frame: render::Frame, view: u32 } {
         let yaw = obj::model_yaw{ orientation = o.orientation }
-        let instance = math::mat4::from_rotation_translation{
+        let mut instance = math::mat4::from_rotation_translation{
             r = math::quat::from_axis_angle{ axis = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, angle = yaw }, t = o.position,
         }
+        // A cutscene's stunt model is authored in area space: its animation moves it from the origin.
+        if v.stunt { instance = math::mat4::identity{} }
         let mut transforms: [8]math::Mat4
         let mut i: usize = 0
         while i < v.count and i < 8 {

@@ -108,6 +108,8 @@ namespace dlg {
         locked_orientation_count: usize,
         locked_head_count: usize,
         static_camera: i32,         // SetDialogPlaceableCamera's id, -1 none
+        cameras: [50]dlgcam::Static,    // the area's CameraList (a list of 51 or more is ignored)
+        camera_count: usize,
         hold_fade_in: bool,         // HoldWorldFadeInForDialog
         video_effect: i32,          // EnableVideoEffect's row; -2 off, -1 leave
         outcome: Outcome,
@@ -135,7 +137,9 @@ namespace dlg {
             ignore = [resref::empty{}; 4], ignore_count = 0, use_leader = false,
             locked_orientation = [obj::INVALID; 8], locked_head = [obj::INVALID; 8],
             locked_orientation_count = 0, locked_head_count = 0,
-            static_camera = -1, hold_fade_in = false, video_effect = -2, outcome = Outcome::normal, ended_serial = 0, started_serial = 0,
+            static_camera = -1,
+            cameras = [dlgcam::Static{ id = -1, position = math::vec3::zero{}, orientation = math::quat::identity{}, pitch = 0.0, height = 0.0, fov = 55.0, mic_range = 0.0 }; 50],
+            camera_count = 0, hold_fade_in = false, video_effect = -2, outcome = Outcome::normal, ended_serial = 0, started_serial = 0,
             nodes_shown = 0, scripts_run = 0,
         }
     }
