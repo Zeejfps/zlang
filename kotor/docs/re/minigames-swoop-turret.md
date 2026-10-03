@@ -44,13 +44,14 @@ message carries a "has minigame" byte (`FUN_0050aaa0` writes area `+0x234`, the 
   `TAR_SWOOP_ACCEL` first (a tuning number, see 2.3). On finishing, the heartbeat stores the time in
   `<TAR|TAT|MAN>_SWOOP_MIN/SEC/MSEC` (Taris also `..._BEAT`, `Tar_SwoopRaceCounter`, `TAR_RACEMOVIE` and
   plays a movie with `PlayMovie`), fades out with `SetGlobalFadeOut` and returns to the home module (table above).
-  Dialogues (`man26_swoop*`, `tat17_04swoop_01`, ...) read those globals. Manaan sets `MAN_OFFICIAL_RACE`.
+  Dialogues around the races exist (`man26_swoop*`, `tat17_04swoop_01`, `pebn_swoopdrd`) and presumably read those globals (not
+  checked). Manaan's `k_pman_swoop42` sets `MAN_OFFICIAL_RACE` first.
 - **Turret**: `StartNewModule("m12ab", wp "", movie1 "11a")` from `k_ren_taris03` (sets `K_TURRET_SKYBOX` 5),
   `k_ren_levescape` (10, second movie `17a`), `k_ren_unkturret` (15), `k_ren_turretload`, `k_ren_turretld02`
   (skybox left as is) and `k_act_hk47simul` (sets `K_HK47_SIMULATION`; no movie). `k_pebo_mgload` (module
   load) zeroes `ebo_num_fighters`, `ebo_turret_done`, `M12AB_END_SYNC`, `M12AB_START_SYNC`, `K_LAST_LOCATION`;
-  `k_pebo_skybox` (area OnEnter) plays room animations 1-4 of room `m12ab_01a` per `K_TURRET_SKYBOX` and barks
-  strref 37107 "Incoming fighters!". When all six fighters are dead (or the Hawk is "critically damaged") the
+  `k_pebo_skybox` (area OnEnter) plays room animation 1 / 2 / 3 / 4 of room `m12ab_01a` for `K_TURRET_SKYBOX` 5 / 10 / 15 /
+  other (the sky of that planet) and, except for 5, barks strref 37107 "Incoming fighters!" after 1.5 s. When all six fighters are dead (or the Hawk is "critically damaged") the
   script `ST_PlayPostTurret` logic (inlined in `k_pebo_sthdeath2..7`, also script `k_ren_turret`) picks the next
   module by `K_FUTURE_PLANET` / `K_CURRENT_PLANET`: `StartNewModule("ebo_m12aa", movie "11b")`, `ebo_m40ad`, ...
   The Hawk can be lost: `k_pebo_hawkhit` ends the real sequence with `EndGame(TRUE)` when its HP falls below 2000
@@ -81,7 +82,7 @@ ARE/GIT), `m12ac`..`m12ah` (turret variants: LYT, `_mgt01..07`, `_mgo01`, `loads
 | Start_Offset_X / Target_Offset_Z | 0 / 0 | 0 / 0 | 0 / 0 | 7 / -5 |
 | Tunnel Pos, Neg, Infinite | all 0 (scripts set them) | all 0 | all 0 | X +45 / +2, Z +-9999 and Infinite z |
 | Camera model, CameraRotate | none, 0 | none, 1 | none, 1 | `m12ab_camera`, 1 |
-| Player.Models (RotatingModel) | `v_superbike`, `m17mg_camera`, `v_damagetat`, `lmg_distort` (all 1) | same, other order | + `v_sbikewake`, `v_damageman` | `mgf_turret`, `mgf_turretwk`, `mgf_ebonhawk` (0), `mgf_hud01`, `mgf_hud02` |
+| Player.Models (RotatingModel) | `v_superbike`, `m17mg_camera`, `v_damagetat`, `lmg_distort` (all 1) | same four, other order | `v_damageman` instead of `v_damagetat`, plus `v_sbikewake` | `mgf_turret`, `mgf_turretwk`, `mgf_ebonhawk` (0), `mgf_hud01`, `mgf_hud02` |
 | Player scripts | OnCreate `oncreate`, OnHeartbeat `heartbeat`, OnFire `onfire`, OnHitFollower `accelpad`, OnHitObstacle `obstacle` | same | same | OnHeartbeat `k_heartbeat`, OnDamage `k_pebo_hawkhit` |
 | Player gun banks | 1: `mgg_null`, bullet `mgb_null`, dmg 0, rate 0.01, target 3 | same | bullet `mgg_null`, target 1 | 2: `mgg_turret`, bullet `mgb_ebonleft`, dmg 30, rate 0.3, speed 300, life 3, target 2, fire sound `mgs_ebon_fire` (bank 0), hit sound `mgs_sith_hit` |
 | Enemies / Obstacles | 29 pads / 22 | 30 pads / 22 | 30 pads / 22 | 6 fighters / 1 |
@@ -119,8 +120,9 @@ Facts for the VM: object arguments are **minigame object ids** (small integers b
 registry, `0xff` invalid), `CONSTO 0` (OBJECT_SELF) is the object whose script runs, so a player script
 playing "gear1" on OBJECT_SELF plays it on the player's models (med). `AdjustFollowerHitPoints` pops only
 (object, int); the 3rd argument `nAbsolute` is never read, so HP is always changed relatively (high; the pad
-script passes -100 and kills 1-80 HP pads). `GetLastEvent` returns the last animation event string stored on the
-calling object; no shipped script calls it.
+script passes -100 and kills 1-80 HP pads). `GetPlayer/GetEnemy/GetObstacle` push `0xff` (not OBJECT_INVALID) when there
+is no such object; `GetEnemy(i)` and `GetObstacle(i)` are 0-based (`k_pebo_hawkhit` loops 1..count, a harmless off-by-one).
+`GetLastEvent` returns the last animation event string stored on the calling object; no shipped script calls it.
 
 ### 2.2 Script slots and the "script replaces default" rule (high)
 
@@ -132,10 +134,10 @@ calls `SWMG_OnDamage/OnDeath/OnBulletHit/OnObstacleHit()` to get the default as 
 
 | Slot | Runner | Default behaviour (when no script, or the script calls SWMG_On...) |
 |---|---|---|
-| 5 OnDamage `0x0066e7a0` | via AdjustFollowerHitPoints | add the pending HP change (clamped to max HP); HP <= 0 sets the dead flag and runs death |
+| 5 OnDamage `0x0066e7a0` | via AdjustFollowerHitPoints (`0x0066e8e0`) | add the pending HP change (healing clamps to max HP); a hit with HP still > 0 plays `damage` then `Ready_01`; HP <= 0 sets the dead flag and runs slot 6 |
 | 6 OnDeath `0x0066e2a0` | | play the death sound (`mgs_accelpad` at volume 127, others 100), play `die` on every model, free them on the `donedie` event, remove the object |
 | 1 OnHitBullet `0x0066c190` | bullet hit | apply `-bullet damage` if the bullet's target mask matches the object's class bit, play the collision sound |
-| 8 OnHitObstacle `0x0066e5c0` | obstacle hit | play `damage`-like effects, mark dead if flagged |
+| 8 OnHitObstacle `0x0066e5c0` | obstacle hit | clear the models' controllers and die (set the dead flag, run slot 6); the swoop scripts replace this, so a swoop never dies |
 | 2 OnHitFollower `0x0066c2d0`, 4 OnHeartbeat `0x0066c0a0`, 0 OnCreate, 3, 9 | | script only; **OnHeartbeat runs every rendered frame** (it is called from the follower's per-frame update `0x0066e130`, which also counts down the invulnerability timer and moves the engine sound) |
 
 `OnFire` (7) is not run on the key press: pressing fire starts the gun model's `fire` animation (rate-limited by
@@ -208,7 +210,8 @@ fighter's HP to 2000, stops the alarm, plays `Health00`, applies visual effect 3
   target; used as player collision mesh), `mgf_hud01` (372 animations: `HudRot_000..359`, `SithLoop02..07` + `d`), `mgf_hud02` (`Health00..12`), `m12ab_camera`
   (`camerahook`, anims `hud1..7`), `mgf_sithfighter` (13 emitters, `gunbank0`, `hitbullet`, `Parts_01..09`, `die` 2.3 s with `detonate` events),
   `mgb_sithfighter`, `mgg_null`/`mgb_null` (empty gun and bullet).
-- **Textures**: 102 `lmg_*.tpc` plus the room lightmaps (`m03mg_01a_lm*`, `m17mg_01c_a0001*`, `m26mg_01a_lm*`), loading images `LOAD_SWOOP`/`LOAD_TURRET`.
+- **Textures**: 59 `lmg_*.tpc` (HUD, effects, island/buoy/crate props) plus the models' own textures (`v_suprbike01`, ...), the room
+  lightmaps (`m03mg_01a_lm*`, `m17mg_01c_a0001*`, `m26mg_01a_lm*`) and the loading images `load_swoop`, `load_turret`.
 - **No `.gui` file** belongs to the minigames; the HUD mode is `CGuiInGame::SetHudMode(2)` (the normal HUD hidden). `pause.gui` is shared.
 - **Audio** (`sounds.bif`, `streamsounds`, high): `mgs_*` one-shots (engine `mgs_engine_01l..05l` loops and `mgs_bike_idle`/`mgs_alarm` in `streamsounds`,
   `mgs_shift_01`, `mgs_pwrup/pwrdown`, `mgs_go`, `mgs_s1`, `mgs_bike_dmg`, `mgs_accelpad`, `mgs_ebon_fire/hit`, `mgs_sith_fire/hit/expl`, `gui_error`), music
@@ -233,7 +236,7 @@ Class tree (all objects take a slot in the 255-slot registry; vtable, constructo
 | `CSWMiniObject` | `0x0066c540` / `0x00752424` (purecall) | base: id (`+8`), name, 10 script slots, `As{Follower,Player,Enemy,Obstacle}` slots (5-8) |
 | `CSWTrackFollower` | `0x0066dee0` / `0x007524c8` | rail follower: models list (`+0x68/6c`, 8-byte entries ptr+rotates), gun banks (`+0x74`), HP `+0x8c`/max `+0x90`, speed `+0x98`, invulnerability `+0x9c/a0`, class bit `+0x80` |
 | `CSWMiniPlayer` | `0x0066eb50` / `0x007525f0` | 0x250 bytes: offset vector `+0x1c4`, bank level `+0x1d0`, min/max/accel `+0x1d8/dc/e0`, tunnel `+0x1e4..0x204`, origin `+0x208`, target offset `+0x214` |
-| `CSWMiniEnemy` | built in `0x00671e40` / `0x007528a8` | fighters and pads; `Trigger` flag `+0x1a0`(byte `+0x68` of the follower side) |
+| `CSWMiniEnemy` | built in `0x00671e40` / `0x007528a8` | fighters and pads; `Trigger` flag byte at `+0x1a0` (read by `0x006705f0`) |
 | gun bank / bullet | `0x006743b0`, `0x00674530` / `0x00752ae4`, `0x00752af0`; bullet controllers `0x006dadf0`, `0x006db590` | |
 
 ### 4.2 Per-frame flow (high)
@@ -251,16 +254,17 @@ collision step `0x006732f0` once with up to **3 iterations** of player-vs-follow
   Speed ramps linearly toward `MaxSpeed` at `Accel` per second (`0x0066d640` start); `Accel = (Max-Min)/Accel_Secs` from the ARE (0 here, scripts set it);
   `SetPlayerSpeed/Min/Max/Accel` ignore negative values. The default player (before the ARE) has speed/min/max 100, accel 0, HP 100.
 - **Steering** (`0x00670fb0`, `0x00670a90`): input `u` per axis in [-1, 1] (keyboard events sum clamped; swoop: `u = (axis, 0, 0)` then y,z negated;
-  turret: `(up/down, 0, left/right)` mapped to `(-z, -y, -x)`, option "Reverse Minigame YAxis" negates the vertical axis). With `UseInertia` mode (the
+  turret: raw `(left/right, 0, up/down)` becomes `(-up/down, 0, -left/right)`, option "Reverse Minigame YAxis" negates the vertical axis). With `UseInertia` mode (the
   default `+0xac = 1`) the lateral state is integrated with a 4th-order Runge-Kutta step per frame, state `(v, x)` per axis:
   `dv/dt = L * u - (L / M) * v`, `dx/dt = v` with `L` = LateralAccel, `M` = MovementPerSec (stage inputs: previous, mean, mean, current).
   Terminal speed `M*u`, time constant `M/L` (swoop 0.33 s at 300; the script lowers `L` at low speed). The alternative mode (`+0xac = 0`) is `x += M*u*dt`.
-  Turret mouse (`0x00671020`): events 0x17/0x18 divided by 20 (global `0x007a232c`), clamped to +-1, `x[axis] -= value * M * dt` on the axis named by `Mouse.AxisX/Y`
-  (1..3 = x,y,z; sign flips), then the pointer is recentred each frame.
+  Turret mouse (`0x00671020`): events 0x17/0x18 (the vertical one negated) divided by 20 (global `0x007a232c`), clamped to +-1, `x[axis] -= value * M * dt` on the axis named by
+  `Mouse.AxisX/Y` (1..3 = x,y,z; a negative stored value = flipped), applied to the new position state directly, then the pointer is recentred each frame.
 - **Offset and bounds** (`0x0066d640` end, `0x0066cb40`): new offset = old + (new x - old x); each axis is clamped to
-  `[Neg + origin, Pos + origin]` unless its `TunnelInfinite` flag is set, in which case turret (type 2) angles wrap at 360. The offset is added to the vehicle's
-  models (swoop: translation; turret: the offset is a (pitch?, ?, yaw) angle triple sent to the rotating models' controllers, types 0x3ea/0x3eb, which build a
-  quaternion with `Quaternion_FromEulerDegrees`) (med). So "walls" are only these bounds; no track mesh collision exists.
+  `[Neg + origin, Pos + origin]` unless its `TunnelInfinite` flag is set, in which case turret (type 2) angles wrap at 360. The offset is written into the node-follow
+  controller (types 0x3ea/0x3eb, fields `+0x3c..+0x44`) of every model flagged `RotatingModel` (and of the turret camera model), so those models are displaced (swoop) or rotated
+  (turret, degrees) relative to `modelhook`; the Hawk model (flag 0) stays put (med; the controller code itself was not read). "Walls" are only these bounds; there is no
+  track-mesh collision.
 - **Bank animation** (`0x006710e0`, `0x0066ce60`, swoop only): a second smoothed value `s` follows the horizontal input (rises by `dt*u` up to about 0.255, decays to zero by
   detents at 0.235 / 0.175 / 0.105 / 0.042 when released); level = 0 if |s| < 0.021 and 1..10 by thresholds 0.021, 0.042, 0.071, 0.1, 0.135, 0.17, 0.2, 0.23, 0.24, 0.25;
   the engine plays `Ready_01` for 0 and `Bank<L|R>_<NN>` otherwise (sign to letter not checked, low) on the player's models.

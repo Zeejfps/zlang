@@ -1,0 +1,10 @@
+// The build program for mgdump: `kotor/tools/ctxc run kotor/tools/mgdump`.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "mgdump", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/base" }
+    build::add_sources{ &b, exe, dir = "../../lib/res" }
+    build::add_sources{ &b, exe, dir = "../../lib/formats" }
+    build::add_sources{ &b, exe, dir = "../../lib/minigame" }
+    build::add_sources{ &b, exe, dir = "../common" }
+    build::optimize{ &b, exe, level = 2 }
+}
