@@ -1,0 +1,184 @@
+// The game screen of a pazaak session, and the per-frame update (screens.ctx has the rest).
+namespace pazaak {
+    // Closes the setup and opens the table with the deck the player chose.
+    fn start_game { mut s: Session, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } -> ! {
+        s.stake = if s.params.max_wager > 0 { s.wager } else { 0 }
+        s.m = new_match{
+            seed = s.params.seed, wager = s.stake, player_deck = s.chosen, opponent_deck = s.params.opponent_deck,
+            tutorial = s.params.tutorial, auto_player = false,
+        }
+        if s.setup != 0 { gui::close{ &g, id = s.setup } }
+        s.setup = 0
+        s.game = try gui::open{ &g, &fs, &dev, name = "pazaakgame", mode = gui::Mode::full_screen, modal = true }
+        gui::set_backdrop{ &g, &fs, &dev, panel = s.game, kind = 2 }
+        if s.params.player_name_len > 0 {
+            set_label{ &g, panel = s.game, tag = "LBL_PLRNAME", text = s.params.player_name[..s.params.player_name_len] }
+        }
+        if s.params.opponent_name_len > 0 {
+            set_label{ &g, panel = s.game, tag = "LBL_NPCNAME", text = s.params.opponent_name[..s.params.opponent_name_len] }
+        }
+        s.stage = Stage::game
+        s.drawn = 0
+        refresh_game{ &s, &g }
+    }
+
+    fn mix_bits { h: u64, v: i64 } -> u64 {
+        return @wrap_mul(h ^ @as(u64, v & 0xffffffff), 1099511628211)
+    }
+
+    // A hash of everything the table shows, so it is redrawn only when something changed.
+    fn game_sig { m: Match } -> u64 {
+        let mut h: u64 = 14695981039346656037
+        let mut who: usize = 0
+        while who < 2 {
+            let side = if who == 0 { m.g.player } else { m.g.opponent }
+            let mut i: usize = 0
+            while i < TABLE_SIZE {
+                h = mix_bits{ h, v = @as(i64, side.table[i].id * 2 + (if side.table[i].flipped { 1 } else { 0 })) }
+                i = i + 1
+            }
+            i = 0
+            while i < HAND_SIZE {
+                h = mix_bits{ h, v = @as(i64, side.hand[i].id * 2 + (if side.hand[i].flipped { 1 } else { 0 })) }
+                i = i + 1
+            }
+            h = mix_bits{ h, v = @as(i64, side.sets) }
+            h = mix_bits{ h, v = if side.standing { 1 } else { 0 } }
+            who = who + 1
+        }
+        h = mix_bits{ h, v = @as(i64, @as(u8, m.phase)) }
+        h = mix_bits{ h, v = if can_choose{ m } { 1 } else { 0 } }
+        return h
+    }
+
+    // Puts the match on the table: both sides' cards, totals, sets, whose turn, what may be pressed.
+    fn refresh_game { mut s: Session, mut g: gui::Gui } {
+        let p = s.game
+        let m = s.m
+        let mut t1: [24]u8 = [0; 24]
+        let mut t2: [24]u8 = [0; 24]
+        let mut i: usize = 0
+        while i < TABLE_SIZE {
+            let b = tag_of{ into = t1[..], prefix = "BTN_PLR", a = i, b = 0, two = false }
+            let l = tag_of{ into = t2[..], prefix = "LBL_PLR", a = i, b = 0, two = false }
+            show_card{ &s, &g, panel = p, button = b, label = l, c = m.g.player.table[i], hidden = false, hand = false, hide = false }
+            let nb = tag_of{ into = t1[..], prefix = "BTN_NPC", a = i, b = 0, two = false }
+            let nl = tag_of{ into = t2[..], prefix = "LBL_NPC", a = i, b = 0, two = false }
+            show_card{ &s, &g, panel = p, button = nb, label = nl, c = m.g.opponent.table[i], hidden = false, hand = false, hide = false }
+            i = i + 1
+        }
+        let mut any_flip = false
+        i = 0
+        while i < HAND_SIZE {
+            let b = tag_of{ into = t1[..], prefix = "BTN_PLRSIDE", a = i, b = 0, two = false }
+            let l = tag_of{ into = t2[..], prefix = "LBL_PLRSIDE", a = i, b = 0, two = false }
+            let c = m.g.player.hand[i]
+            show_card{ &s, &g, panel = p, button = b, label = l, c, hidden = false, hand = true, hide = true }
+            gui::set_enabled{ &g, panel = p, tag = b, enabled = can_play_card{ m, i } }
+            let fb = tag_of{ into = t1[..], prefix = "BTN_FLIP", a = i, b = 0, two = false }
+            let flips = is_flip_card{ c }
+            gui::set_visible{ &g, panel = p, tag = fb, visible = flips }
+            if flips { any_flip = true }
+            let nb = tag_of{ into = t1[..], prefix = "BTN_NPCSIDE", a = i, b = 0, two = false }
+            let nl = tag_of{ into = t2[..], prefix = "LBL_NPCSIDE", a = i, b = 0, two = false }
+            show_card{ &s, &g, panel = p, button = nb, label = nl, c = m.g.opponent.hand[i], hidden = true, hand = true, hide = true }
+            i = i + 1
+        }
+        gui::set_visible{ &g, panel = p, tag = "LBL_FLIPICON", visible = any_flip }
+        gui::set_visible{ &g, panel = p, tag = "LBL_FLIPLEGEND", visible = any_flip }
+        set_number{ &g, panel = p, tag = "LBL_PLRTOTAL", n = total_of{ s = m.g.player } }
+        set_number{ &g, panel = p, tag = "LBL_NPCTOTAL", n = total_of{ s = m.g.opponent } }
+        let win = s.imgs[IMG_WIN]
+        let mut k: usize = 0
+        while k < 3 {
+            let pb = tag_of{ into = t1[..], prefix = "LBL_PLRSCORE", a = k, b = 0, two = false }
+            let nb = tag_of{ into = t2[..], prefix = "LBL_NPCSCORE", a = k, b = 0, two = false }
+            if @as(i32, k) < m.g.player.sets and win.ok {
+                gui::set_picture{ &g, panel = p, tag = pb, texture = win.tex, w = win.w, h = win.h }
+            } else {
+                gui::clear_picture{ &g, panel = p, tag = pb }
+            }
+            if @as(i32, k) < m.g.opponent.sets and win.ok {
+                gui::set_picture{ &g, panel = p, tag = nb, texture = win.tex, w = win.w, h = win.h }
+            } else {
+                gui::clear_picture{ &g, panel = p, tag = nb }
+            }
+            k = k + 1
+        }
+        let mine = turn_of{ m } == Who::player
+        gui::set_visible{ &g, panel = p, tag = "LBL_PLRTURN", visible = mine }
+        gui::set_visible{ &g, panel = p, tag = "LBL_NPCTURN", visible = not mine }
+        gui::set_enabled{ &g, panel = p, tag = "BTN_XTEXT", enabled = can_choose{ m } }
+        gui::set_enabled{ &g, panel = p, tag = "BTN_YTEXT", enabled = can_choose{ m } }
+        s.drawn = game_sig{ m }
+    }
+
+    fn on_game_event { mut s: Session, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> ! {
+        if ev.kind == gui::EventKind::cancel {
+            try open_box{ &s, &g, &fs, &dev, strref = 42425, cancel = true, ask = Ask::quit_game }
+            return
+        }
+        if ev.kind != gui::EventKind::activate { return }
+        let side = tag_number{ tag = ev.tag, prefix = "BTN_PLRSIDE" }
+        let flip = tag_number{ tag = ev.tag, prefix = "BTN_FLIP" }
+        if side >= 0 {
+            _ = play_card{ m = &s.m, i = @as(usize, side) }
+        } else if flip >= 0 {
+            _ = flip_card{ m = &s.m, i = @as(usize, flip) }
+        } else if is_tag{ tag = ev.tag, name = "BTN_XTEXT" } {
+            _ = end_turn{ m = &s.m }
+        } else if is_tag{ tag = ev.tag, name = "BTN_YTEXT" } {
+            _ = stand_up{ m = &s.m }
+        }
+    }
+
+    // The match asks the player something: a message box over the table.
+    fn open_prompt { mut s: Session, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } -> ! {
+        let kind = s.m.prompt.kind
+        try open_box{ &s, &g, &fs, &dev, strref = prompt_text{ m = s.m }, cancel = kind != PromptKind::result, ask = Ask::prompt }
+        if kind == PromptKind::info {
+            try gui::set_strref{ &g, panel = s.box, tag = "BTN_OK", strref = 38623 }
+            try gui::set_strref{ &g, panel = s.box, tag = "BTN_CANCEL", strref = 38625 }
+        }
+    }
+
+    // ---- the frame
+
+    // Handles the GUI's events, runs the match and redraws the table when it changed. `dt` is the
+    // time since the last call. When `s.done` is set the visit is over and the panels are closed.
+    fn update { mut s: Session, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, dt: f32 } -> ! {
+        if s.done { return }
+        let n = g.events.len
+        let mut i: usize = 0
+        while i < n and i < g.events.len and not s.done {
+            let ev = list::items{ list = g.events }[i]
+            try on_event{ &s, &g, &fs, &dev, ev }
+            i = i + 1
+        }
+        gui::clear_events{ &g }
+        if s.done { return }
+        if s.hold_steps > 0 and s.wager_panel == 0 { s.hold_steps = 0 }
+        if s.start_requested {
+            s.start_requested = false
+            close_box{ &s, &g }
+            try start_game{ &s, &g, &fs, &dev }
+        }
+        if s.wager_panel != 0 {
+            repeat_wager{ &s, &g, dt }
+            let still = pressed_tag{ &g, panel = s.wager_panel }
+            if still.len == 0 { s.hold_steps = 0 }
+        }
+        if s.stage != Stage::game { return }
+        if s.box == 0 { step_match{ m = &s.m, dt } }
+        while true {
+            let cue = take_cue{ m = &s.m } ifnull { break }
+            play_sound{ &s, &g, which = cue }
+        }
+        if s.m.finished {
+            if not s.m.forfeited { finish{ &s, &g, won = s.m.won, forfeited = false, wager = s.stake } }
+            return
+        }
+        if has_prompt{ m = s.m } and s.box == 0 { try open_prompt{ &s, &g, &fs, &dev } }
+        if game_sig{ m = s.m } != s.drawn { refresh_game{ &s, &g } }
+    }
+}

@@ -1,0 +1,42 @@
+// The area's static cameras (docs/re/dialogue.md 9.5): the GIT's CameraList, copied when a
+// conversation starts. A list of 51 or more is ignored, as the original does.
+namespace dlg {
+    fn load_cameras { mut w: world::World } {
+        w.conversation.camera_count = 0
+        let ao = world::object{ w = &w, id = w.area } ifnull { return }
+        let area = obj::area{ o = ao } ifnull { return }
+        let mut name = area.resref
+        let read = world::read_gff{ &w, name = resref::bytes{ r = &name }, kind = restype::Type::git } iferr { return }
+        let doc = read ifnull { return }
+        let list = gff::get_list{ doc, s = gff::ROOT, label = "CameraList" } ifnull { return }
+        if list.len > 50 { return }
+        let mut i: usize = 0
+        while i < list.len {
+            let s = list[i]
+            i = i + 1
+            let p = gff::get_vector{ doc, s, label = "Position" } ifnull { [0.0, 0.0, 0.0] }
+            let q = gff::get_orientation{ doc, s, label = "Orientation" } ifnull { [1.0, 0.0, 0.0, 0.0] }
+            let n = w.conversation.camera_count
+            w.conversation.cameras[n] = dlgcam::Static{
+                id = @trunc(i32, num{ doc, s, label = "CameraID", default = -1 }),
+                position = math::Vec3{ x = p[0], y = p[1], z = p[2] },
+                orientation = math::Quat{ w = q[0], x = q[1], y = q[2], z = q[3] },
+                pitch = real{ doc, s, label = "Pitch", default = 0.0 },
+                height = real{ doc, s, label = "Height", default = 0.0 },
+                fov = real{ doc, s, label = "FieldOfView", default = 55.0 },
+                mic_range = real{ doc, s, label = "MicRange", default = 0.0 },
+            }
+            w.conversation.camera_count = n + 1
+        }
+    }
+
+    // The static camera with this CameraID, or null.
+    fn camera_by_id { s: *State, id: i32 } -> ?dlgcam::Static {
+        let mut i: usize = 0
+        while i < s.camera_count {
+            if s.cameras[i].id == id { return s.cameras[i] }
+            i = i + 1
+        }
+        return null
+    }
+}

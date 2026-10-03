@@ -1,0 +1,284 @@
+// lipcheck's checks of lipsync::apply on one head, and on LIPs made to be awkward.
+
+fn expect { mut io: Io, mut rep: Report, ok: bool, head: []u8, what: []u8, value: f32 } {
+    rep.checks = rep.checks + 1
+    if not ok { rep.failed = rep.failed + 1 }
+    let tag: []u8 = if ok { "PASS" } else { "FAIL" }
+    _ = @fmt(&io, "{} {}: {} ({})\n", tag, head, what, fixed{ x = value, places = 5, _ })
+}
+
+// How far two node states are apart: the largest of any position, scale or orientation
+// component (the orientation's sign matched, q and -q being one rotation).
+fn node_distance { x: mdl_anim::NodeState, y: mdl_anim::NodeState } -> f32 {
+    let sign: f32 = if math::quat::dot{ a = x.orientation, b = y.orientation } < 0.0 { -1.0 } else { 1.0 }
+    let mut d: f32 = math::abs{ x = x.position.x - y.position.x }
+    d = math::max{ a = d, b = math::abs{ x = x.position.y - y.position.y } }
+    d = math::max{ a = d, b = math::abs{ x = x.position.z - y.position.z } }
+    d = math::max{ a = d, b = math::abs{ x = x.scale - y.scale } }
+    d = math::max{ a = d, b = math::abs{ x = x.orientation.w - sign * y.orientation.w } }
+    d = math::max{ a = d, b = math::abs{ x = x.orientation.x - sign * y.orientation.x } }
+    d = math::max{ a = d, b = math::abs{ x = x.orientation.y - sign * y.orientation.y } }
+    d = math::max{ a = d, b = math::abs{ x = x.orientation.z - sign * y.orientation.z } }
+    return d
+}
+
+// Whether the talk animation drives `node` of the head.
+fn is_driven { talk: mdl_anim::Binding, node: usize } -> bool {
+    let mut k: usize = 0
+    while k < talk.targets.len {
+        if talk.targets[k] >= 0 and @as(usize, talk.targets[k]) == node { return true }
+        k = k + 1
+    }
+    return false
+}
+
+// The largest node distance between two poses over the nodes the talk animation drives
+// (driven) or over all the others (not driven).
+fn distance { talk: mdl_anim::Binding, a: mdl_anim::Pose, b: mdl_anim::Pose, driven: bool } -> f32 {
+    let mut d: f32 = 0.0
+    let mut i: usize = 0
+    while i < a.nodes.len and i < b.nodes.len {
+        if is_driven{ talk, node = i } == driven {
+            d = math::max{ a = d, b = node_distance{ x = a.nodes[i], y = b.nodes[i] } }
+        }
+        i = i + 1
+    }
+    return d
+}
+
+// Whether every number of the pose is finite.
+fn is_clean { pose: mdl_anim::Pose } -> bool {
+    let mut i: usize = 0
+    while i < pose.nodes.len {
+        let s = pose.nodes[i]
+        let ok = is_finite{ x = s.position.x } and is_finite{ x = s.position.y } and is_finite{ x = s.position.z } and
+            is_finite{ x = s.orientation.w } and is_finite{ x = s.orientation.x } and is_finite{ x = s.orientation.y } and
+            is_finite{ x = s.orientation.z } and is_finite{ x = s.scale }
+        if not ok { return false }
+        let w = pose.world[i]
+        let mut k: usize = 0
+        while k < 16 {
+            if not is_finite{ x = w.m[k] } { return false }
+            k = k + 1
+        }
+        i = i + 1
+    }
+    return true
+}
+
+fn is_finite { x: f32 } -> bool { return x - x == 0.0 }
+
+// The head's own pose with the LIP's mouth at `t` over it, into h.work.
+fn mouth_at { h: Head, talk: mdl_anim::Binding, track: *lipsync::Track, t: f32 } {
+    copy_pose{ from = h.base, to = h.work }
+    let mut pose = h.work
+    lipsync::apply{ model = h.model, talk, track, t, &pose }
+}
+
+// The checks on one head, against the line `track`.
+fn check_head { mut io: Io, mut rep: Report, h: Head, track: *lipsync::Track } {
+    let talk = h.talk ifnull {
+        _ = @fmt(&io, "SKIP {}: no talk animation along its chain; the caller skips lip sync\n", h.name)
+        return
+    }
+    let len = lipsync::length{ t = track }
+
+    // Rest: the first and last moments of a line show shape 0's face.
+    show_shape{ h, talk, shape = lip::Shape::ee, mapping = lipsync::Mapping::ratio }
+    copy_pose{ from = h.work, to = h.third }
+    mouth_at{ h, talk, track, t = 0.0 }
+    expect{ &io, &rep, ok = distance{ talk, a = h.work, b = h.third, driven = true } < 0.000001, head = h.name, what = "t = 0 is the rest face (shape 0)",
+        value = distance{ talk, a = h.work, b = h.third, driven = true } }
+    mouth_at{ h, talk, track, t = len }
+    expect{ &io, &rep, ok = distance{ talk, a = h.work, b = h.third, driven = true } < 0.000001, head = h.name, what = "t = length is the rest face (shape 0)",
+        value = distance{ talk, a = h.work, b = h.third, driven = true } }
+    mouth_at{ h, talk, track, t = len + 3.0 }
+    expect{ &io, &rep, ok = distance{ talk, a = h.work, b = h.third, driven = true } < 0.000001, head = h.name, what = "after the line the face stays at rest",
+        value = distance{ talk, a = h.work, b = h.third, driven = true } }
+    // Shape 0 is the talk pose 1/32 s in, a hair off the model's own face: the jaw is shut to
+    // within two degrees (the tongue tip of some heads moves more; `talk` prints that).
+    if h.jaw is some{ value = jaw } {
+        let a = angle_deg{ a = h.bind.nodes[jaw].orientation, b = h.third.nodes[jaw].orientation }
+        expect{ &io, &rep, ok = a < 2.0, head = h.name, what = "the rest face has the jaw shut (degrees open from the bind pose)", value = a }
+    }
+
+    // Only the nodes `talk` drives change.
+    let open = open_time{ track }
+    mouth_at{ h, talk, track, t = open }
+    let others = distance{ talk, a = h.work, b = h.base, driven = false }
+    expect{ &io, &rep, ok = others == 0.0, head = h.name, what = "mid-line, nodes talk doesn't drive are untouched", value = others }
+    let moved = distance{ talk, a = h.work, b = h.third, driven = true }
+    expect{ &io, &rep, ok = moved > 0.001, head = h.name, what = "mid-line, the face has left its rest", value = moved }
+    if h.jaw is some{ value = jaw } {
+        let a = angle_deg{ a = h.third.nodes[jaw].orientation, b = h.work.nodes[jaw].orientation }
+        expect{ &io, &rep, ok = a > 1.0, head = h.name, what = "mid-line, the jaw is open (degrees from rest)", value = a }
+    }
+
+    // Between two keys of different shapes, the pose is the linear blend of the two shapes.
+    let pair = find_pair{ track }
+    if pair.found {
+        let ta = pair.a.time
+        let tb = pair.b.time
+        let f: f32 = 0.37
+        let t = ta + f * (tb - ta)
+        let e = blend_error{ h, talk, track, a = pair.a.shape, b = pair.b.shape, t, f }
+        expect{ &io, &rep, ok = e < 0.0001, head = h.name, what = "blend 37 percent between two keys is the linear blend", value = e }
+    }
+
+    // A sweep over the line and a little either side makes no NaN.
+    let mut bad: u32 = 0
+    let mut t: f32 = -0.1
+    while t < len + 0.2 {
+        mouth_at{ h, talk, track, t }
+        if not is_clean{ pose = h.work } { bad = bad + 1 }
+        t = t + 1.0 / 60.0
+    }
+    expect{ &io, &rep, ok = bad == 0, head = h.name, what = "no NaN across the line at 60 Hz (bad frames)", value = @as(f32, bad) }
+}
+
+// A time at which the mouth is wide: the first key of the widest-opening kind in the line (ah,
+// else oh, else any key that isn't rest), else the middle.
+fn open_time { track: *lipsync::Track } -> f32 {
+    let mut best: f32 = -1.0
+    let mut rank: u32 = 0
+    let mut i: usize = 0
+    while i < @as(usize, track.lip.count) {
+        let k = lip::get_key{ l = track.lip, i }
+        i = i + 1
+        let r: u32 = if k.shape == lip::Shape::ah { 3 } else if k.shape == lip::Shape::oh { 2 } else if k.shape != lip::Shape::ee { 1 } else { 0 }
+        if r > rank {
+            rank = r
+            best = k.time
+        }
+    }
+    return if best >= 0.0 { best } else { track.lip.length / 2.0 }
+}
+
+struct Pair { found: bool, a: lip::Key, b: lip::Key }
+
+// Two neighbouring keys with different shapes and a gap that isn't tiny.
+fn find_pair { track: *lipsync::Track } -> Pair {
+    let none = lip::Key{ time = 0.0, shape = lip::Shape::ee }
+    let mut i: usize = 1
+    while i < @as(usize, track.lip.count) {
+        let a = lip::get_key{ l = track.lip, i = i - 1 }
+        let b = lip::get_key{ l = track.lip, i }
+        if a.shape != b.shape and b.time - a.time > 0.01 { return Pair{ found = true, a, b } }
+        i = i + 1
+    }
+    return Pair{ found = false, a = none, b = none }
+}
+
+// The distance between lipsync::apply at `t` and the pose built the long way: shape `a`'s pose,
+// shape `b`'s pose, and the position, scale and orientation blended by `f`.
+fn blend_error { h: Head, talk: mdl_anim::Binding, track: *lipsync::Track, a: lip::Shape, b: lip::Shape, t: f32, f: f32 } -> f32 {
+    show_shape{ h, talk, shape = a, mapping = lipsync::Mapping::ratio }
+    copy_pose{ from = h.work, to = h.other }
+    show_shape{ h, talk, shape = b, mapping = lipsync::Mapping::ratio }
+    copy_pose{ from = h.work, to = h.third }
+    mouth_at{ h, talk, track, t }
+    let mut d: f32 = 0.0
+    let mut i: usize = 0
+    while i < h.work.nodes.len {
+        let x = h.other.nodes[i]
+        let y = h.third.nodes[i]
+        let expected = mdl_anim::NodeState{
+            position = math::vec3::lerp{ a = x.position, b = y.position, t = f },
+            orientation = math::quat::slerp{ a = x.orientation, b = y.orientation, t = f },
+            scale = math::lerp{ a = x.scale, b = y.scale, t = f },
+            alpha = x.alpha, self_illum = x.self_illum,
+        }
+        d = math::max{ a = d, b = node_distance{ x = h.work.nodes[i], y = expected } }
+        i = i + 1
+    }
+    return d
+}
+
+// ---- awkward LIPs
+
+fn start_lip { buf: []mut u8, length: f32, count: u32 } {
+    slice::copy(u8){ dst = buf[..8], src = "LIP V1.0" }
+    le::set_u32{ buf, at = 8, v = le::bits_of_f32{ v = length } }
+    le::set_u32{ buf, at = 12, v = count }
+}
+
+fn put_key { buf: []mut u8, i: usize, time: f32, shape: u8 } {
+    le::set_u32{ buf, at = 16 + 5 * i, v = le::bits_of_f32{ v = time } }
+    buf[16 + 5 * i + 4] = shape
+}
+
+// LIPs the game doesn't ship but a reader must survive: a repeated key time (an instant change
+// to the later key, with a zero gap that must not be divided), no keys at all, and times that
+// aren't times, on the first head that can talk.
+fn check_synthetic { mut io: Io, mut rep: Report, hs: []Head } {
+    let mut n: usize = 0
+    while n < hs.len and hs[n].talk == null { n = n + 1 }
+    if n == hs.len { return }
+    let h = hs[n]
+    let talk = h.talk ifnull { return }
+    let who = h.name
+
+    // keys: (0, ee) (0.5, ah) (0.5, oh) (1.0, ee)
+    let mut buf: [36]u8
+    start_lip{ buf = buf[..], length = 1.0, count = 4 }
+    put_key{ buf = buf[..], i = 0, time = 0.0, shape = 0 }
+    put_key{ buf = buf[..], i = 1, time = 0.5, shape = 3 }
+    put_key{ buf = buf[..], i = 2, time = 0.5, shape = 4 }
+    put_key{ buf = buf[..], i = 3, time = 1.0, shape = 0 }
+    let l = lip::parse{ data = buf[..] } iferr err{ error } {
+        expect{ &io, &rep, ok = false, head = who, what = "the repeated-time LIP parses", value = 0.0 }
+        return
+    }
+    let track = lipsync::make_track{ lip = l }
+    expect{ &io, &rep, ok = true, head = who, what = "a LIP with a repeated key time parses", value = 0.0 }
+    let s1 = lipsync::shape_at{ t = &track, time = 0.5 }
+    expect{ &io, &rep, ok = s1 == lip::Shape::oh, head = who, what = "repeated time: the later key is in force at it (shape id)", value = @as(f32, @as(u32, s1)) }
+    let s2 = lipsync::shape_at{ t = &track, time = 0.4999 }
+    expect{ &io, &rep, ok = s2 == lip::Shape::ee, head = who, what = "just before it the earlier key is (shape id)", value = @as(f32, @as(u32, s2)) }
+    show_shape{ h, talk, shape = lip::Shape::oh, mapping = lipsync::Mapping::ratio }
+    copy_pose{ from = h.work, to = h.third }
+    mouth_at{ h, talk, track = &track, t = 0.5 }
+    expect_same{ &io, &rep, h, talk, who, what = "at the repeated time the pose is the later shape's, no division by the zero gap" }
+    let e = blend_error{ h, talk, track = &track, a = lip::Shape::ee, b = lip::Shape::ah, t = 0.25, f = 0.5 }
+    expect{ &io, &rep, ok = e < 0.0001, head = who, what = "halfway into the first stretch is the linear blend", value = e }
+    show_shape{ h, talk, shape = lip::Shape::ah, mapping = lipsync::Mapping::ratio }
+    copy_pose{ from = h.work, to = h.third }
+    mouth_at{ h, talk, track = &track, t = 0.4999999 }
+    let near = distance{ talk, a = h.work, b = h.third, driven = true }
+    expect{ &io, &rep, ok = near < 0.001, head = who, what = "an instant before the repeated time is the earlier shape", value = near }
+
+    // Times that aren't times, on that LIP and on one without keys.
+    show_shape{ h, talk, shape = lip::Shape::ee, mapping = lipsync::Mapping::ratio }
+    copy_pose{ from = h.work, to = h.third }
+    let nan = le::f32_of_bits{ bits = 0x7FC00000 }
+    let inf = le::f32_of_bits{ bits = 0x7F800000 }
+    let odd: [4]f32 = [nan, -1.0, 1.0e9, inf]
+    let mut bad: u32 = 0
+    let mut apart: f32 = 0.0
+    let mut k: usize = 0
+    while k < 4 {
+        mouth_at{ h, talk, track = &track, t = odd[k] }
+        if not is_clean{ pose = h.work } { bad = bad + 1 }
+        apart = math::max{ a = apart, b = distance{ talk, a = h.work, b = h.third, driven = true } }
+        k = k + 1
+    }
+    expect{ &io, &rep, ok = bad == 0, head = who, what = "NaN, negative, huge and infinite times give a finite pose (bad)", value = @as(f32, bad) }
+    expect{ &io, &rep, ok = apart < 0.000001, head = who, what = "and that pose is the rest face (distance)", value = apart }
+
+    let mut empty: [16]u8
+    start_lip{ buf = empty[..], length = 0.0, count = 0 }
+    let l0 = lip::parse{ data = empty[..] } iferr err{ error } {
+        expect{ &io, &rep, ok = false, head = who, what = "a LIP without keys parses", value = 0.0 }
+        return
+    }
+    let t0 = lipsync::make_track{ lip = l0 }
+    mouth_at{ h, talk, track = &t0, t = 0.3 }
+    let d0 = distance{ talk, a = h.work, b = h.third, driven = true }
+    expect{ &io, &rep, ok = d0 < 0.000001 and lipsync::shape_at{ t = &t0, time = 0.3 } == lip::Shape::ee, head = who, what = "a LIP without keys leaves the face at rest", value = d0 }
+}
+
+// The pose in h.work against the one in h.third, as a PASS/FAIL line.
+fn expect_same { mut io: Io, mut rep: Report, h: Head, talk: mdl_anim::Binding, who: []u8, what: []u8 } {
+    let d = distance{ talk, a = h.work, b = h.third, driven = true }
+    expect{ &io, &rep, ok = d < 0.000001, head = who, what, value = d }
+}

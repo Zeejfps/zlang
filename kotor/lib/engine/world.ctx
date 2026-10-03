@@ -28,6 +28,7 @@ namespace world {
         ranges: twoda::Table,
         prioritygroups: twoda::Table,
         portraits: twoda::Table,
+        dialoganimations: twoda::Table,
         combatanimations: twoda::Table,
         weapondischarge: twoda::Table,
     }
@@ -111,7 +112,7 @@ namespace world {
         dice: rules::Rng,
         fx_ids: rules::EffectIds,
         rev: rules::Events,
-        // HOOK(dialog): conversation: dlg::State
+        conversation: dlg::State,           // the running conversation (lib/dialog)
         // HOOK(party): the party table
     }
 
@@ -149,6 +150,7 @@ namespace world {
             serial = 0,
             heartbeats = map::new(u32, u64, heap::Heap){ realloc = heap::alloc, heap, hash = map::hash_u32, eq = map::eq_u32 },
             cursor_area = 0, cursor_shape = 0,
+            conversation = dlg::new_state{},
             cursor_inside = 0, tokens = tokens::new{ heap }, last_acquired = obj::INVALID, last_acquired_from = obj::INVALID,
             rules = try alloc::new(rules::Tables, heap::Heap){ realloc = heap::alloc, heap, value = blank_rules },
             dice = rules::seed_rng{ seed }, fx_ids = rules::EffectIds{ next = 1 }, rev = blank_events,
@@ -207,6 +209,7 @@ namespace world {
             ranges = try load_table{ &fs, heap, rm, name = "ranges" },
             prioritygroups = try load_table{ &fs, heap, rm, name = "prioritygroups" },
             portraits = try load_table{ &fs, heap, rm, name = "portraits" },
+            dialoganimations = try load_table{ &fs, heap, rm, name = "dialoganimations" },
             combatanimations = try load_table{ &fs, heap, rm, name = "combatanimations" },
             weapondischarge = try load_table{ &fs, heap, rm, name = "weapondischarge" },
         }

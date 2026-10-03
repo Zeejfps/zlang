@@ -1,0 +1,93 @@
+// Pazaak cards (docs/re/pazaak.md "Cards"). A card is an id and, for the flip cards, a sign.
+//
+//   ids  0..5   plus cards +1..+6        ids 12..17  flip cards (+n, or -n once flipped)
+//   ids  6..11  minus cards -1..-6       ids 18..27  main-deck cards 1..10
+//
+// The ids are the original's, so the party table's counts (PT_PAZAAKCARDS), pazaakdecks.2da's
+// notation and the card items (g_i_pazcard_001..018) all map onto them directly.
+namespace pazaak {
+    const NO_CARD: i32 = -1
+    const SIDE_KINDS: usize = 18        // the ids a side deck can hold
+    const FIRST_MINUS: i32 = 6
+    const FIRST_FLIP: i32 = 12
+    const FIRST_MAIN: i32 = 18
+    const LAST_MAIN: i32 = 27
+    const PLUS_SIGN: u8 = 0xB1          // the fonts are single-byte: the +/- sign is 0xB1
+
+    struct Card { id: i32, flipped: bool }
+
+    fn no_card {} -> Card { return Card{ id = NO_CARD, flipped = false } }
+
+    fn make_card { id: i32 } -> Card { return Card{ id, flipped = false } }
+
+    fn is_card { c: Card } -> bool { return c.id >= 0 }
+
+    fn is_flip_card { c: Card } -> bool { return c.id >= FIRST_FLIP and c.id < FIRST_MAIN }
+
+    // What the card adds to a table: nothing for an empty slot.
+    fn card_value { c: Card } -> i32 {
+        if c.id < 0 or c.id > LAST_MAIN { return 0 }
+        if c.id < FIRST_MINUS { return c.id + 1 }
+        if c.id < FIRST_FLIP { return 5 - c.id }
+        if c.id < FIRST_MAIN {
+            let v = c.id - 11
+            return if c.flipped { -v } else { v }
+        }
+        return c.id - 17
+    }
+
+    // pazaakdecks.2da's notation: `+3`, `-3`, `*3` (flip card of 3). Null for anything else.
+    fn parse_card { text: []u8 } -> ?i32 {
+        if text.len != 2 { return null }
+        if text[1] < '1' or text[1] > '6' { return null }
+        let n = @as(i32, text[1] - '0')
+        if text[0] == '+' { return n - 1 }
+        if text[0] == '-' { return n + 5 }
+        if text[0] == '*' { return n + 11 }
+        return null
+    }
+
+    // The text on a card's face ("+3", "-3", "±3", "7") as bytes in `into`; the length.
+    fn write_card_text { c: Card, into: []mut u8 } -> usize {
+        if c.id < 0 or c.id > LAST_MAIN or into.len < 3 { return 0 }
+        if c.id >= FIRST_MAIN {
+            let v = c.id - 17
+            if v == 10 {
+                into[0] = '1'
+                into[1] = '0'
+                return 2
+            }
+            into[0] = '0' + @as(u8, v)
+            return 1
+        }
+        let n = @as(u8, card_magnitude{ c })
+        into[0] = if c.id < FIRST_MINUS { '+' } else if c.id < FIRST_FLIP { '-' } else if c.flipped { '-' } else { '+' }
+        into[1] = '0' + n
+        return 2
+    }
+
+    // The same for a card in a hand: a flip card shows its sign as plus-minus until it is played.
+    fn write_hand_text { c: Card, into: []mut u8 } -> usize {
+        if is_flip_card{ c } and into.len >= 3 {
+            into[0] = PLUS_SIGN
+            into[1] = '0' + @as(u8, card_magnitude{ c })
+            return 2
+        }
+        return write_card_text{ c, into }
+    }
+
+    fn card_magnitude { c: Card } -> i32 {
+        let v = card_value{ c }
+        return if v < 0 { -v } else { v }
+    }
+
+    // The texture of a card's face (swpc_tex_gui.erf); `hidden` is the back.
+    fn card_texture { c: Card, hidden: bool } -> []u8 {
+        if hidden { return "lbl_cardback" }
+        if c.id < 0 { return "" }
+        if c.id < FIRST_MINUS { return "lbl_cardmpos" }
+        if c.id < FIRST_FLIP { return "lbl_cardmneg" }
+        if c.id < FIRST_MAIN { return if c.flipped { "lbl_cardraref" } else { "lbl_cardrarem" } }
+        return "lbl_cardstand"
+    }
+}

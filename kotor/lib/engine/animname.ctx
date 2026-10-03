@@ -75,6 +75,55 @@ namespace animname {
         return e.name
     }
 
+    // The model animation an id plays when the table above lacks it: a conversation's AnimList
+    // numbers (re/dialogue.md 8.1), 10000 + a row of animations.2da, and the cutscene models'
+    // `cutNNN`, `cutNNNw`, `cutNNNl`, `cutNNNwl` for 1000..1127, 1200.., 1400.., 1600..; a small
+    // number is a row of animations.2da itself. Written into `into` (at least 12 bytes);
+    // "" for none.
+    fn name_in { w: *world::World, id: u32, into: []mut u8 } -> []u8 {
+        let known = name_of{ id }
+        if known.len > 0 { return known }
+        if id >= 1000 and id < 1728 {
+            let block = (id - 1000) / 200
+            let within = (id - 1000) % 200
+            if within >= 128 { return "" }
+            let n = within + 1
+            into[0] = 'c'
+            into[1] = 'u'
+            into[2] = 't'
+            into[3] = @trunc(u8, '0' + (n / 100) % 10)
+            into[4] = @trunc(u8, '0' + (n / 10) % 10)
+            into[5] = @trunc(u8, '0' + n % 10)
+            let mut len: usize = 6
+            // Blocks: 0 once, 1 `w` once, 2 `l` loops, 3 `wl` loops (the cutscene numbers 1000 to 1727).
+            if block == 1 or block == 3 { into[len] = 'w'; len = len + 1 }
+            if block == 2 or block == 3 { into[len] = 'l'; len = len + 1 }
+            return into[..len]
+        }
+        let row: u32 = if id >= 10000 { id - 10000 } else { id }
+        if id >= 10000 or id < 400 {
+            let n = twoda::get_string{ t = w.tables.animations, row = @as(usize, row), column = "name" } ifnull { return "" }
+            if n.len == 0 or n[0] == '*' or n.len > 30 { return "" }
+            let mut i: usize = 0
+            while i < n.len and i < into.len {
+                into[i] = n[i]
+                i = i + 1
+            }
+            return into[..i]
+        }
+        return ""
+    }
+
+    // Whether the animation `name_in` names loops: the cutscene ones by their suffix, the rest by
+    // animations.2da's `looping` (a table entry above by its own flag).
+    fn loops_in { w: *world::World, id: u32 } -> bool {
+        if find{ id } != null { return loops{ id } }
+        if id >= 1000 and id < 1728 { return (id - 1000) / 200 >= 2 }
+        let row: u32 = if id >= 10000 { id - 10000 } else { id }
+        let v = twoda::get_int{ t = w.tables.animations, row = @as(usize, row), column = "looping" } ifnull { return false }
+        return v != 0
+    }
+
     fn loops { id: u32 } -> bool {
         let e = find{ id } ifnull { return true }
         return e.looping

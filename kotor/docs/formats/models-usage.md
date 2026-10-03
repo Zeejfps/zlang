@@ -118,6 +118,17 @@ The body model comes from `model<L>` and its texture from `tex<L>`, where `<L>` 
 * The head model is attached at the body's **`headhook`** node (RE: `CreateBTypeBody` re-attaches
   the head to `"HeadHook"` after loading a body; confirmed by render, where the head sits on the
   neck exactly). 237 character models have a `headhook`.
+* The head model carries a copy of the body skeleton's top (`rootdummy`, `torso_g`, `torsoUpr_g`,
+  `necklwr_g`, all at bind offset 0, then `neck_g`, `Hturn_g`, `head_g` and the face bones), so
+  the body's animations drive it by node name. Its origin is the neck base, which is where the
+  body's `headhook` is, and `headhook` is a child of the body's `torsoUpr_g`. The engine puts the
+  head object at the hook node's current position and orientation (RE: the attach at `FUN_00443820`
+  copies the hook's transform into the child, `FUN_0049ecd0` refreshes it as the parent moves).
+  So the head's copies of the hook's ancestors must stay at their bind state: animating them
+  again carries the head off the neck by the body's root offset (about 3 cm sideways in `pause1`)
+  and tilts it by the torso's turn. `mdl_anim::hold_shared` does this; the head's own `neck_g`
+  and below still animate. (Inferred from the data and the attach code; the engine's own animation
+  step was not read.)
 * The head has its own supermodel, which is the body (`p_bastilah → P_BastilaBB`), and it plays
   its own animations (`pause1`, `talk`, `tlknorm`, `listen`, `pause2`, plus face and lip work),
   never the body's. Applying the body's animation to the head scrambles its facial bones

@@ -1,0 +1,464 @@
+// A match of pazaak: the original's game panel without the panel (docs/re/pazaak.md, "The flow").
+// The turns, their pauses, the opponent, the messages it waits on and the sounds it asks for are
+// here; screens.ctx draws it and feeds it the player's choices, and a test or the simulation can
+// drive it with no screen (`auto_player` lets the AI play the player's side too).
+//
+//   let mut m = pazaak::new_match{ seed, wager, player_deck, opponent_deck, tutorial = false, auto_player = false }
+//   each frame: pazaak::step_match{ &m, dt }
+//               pazaak::end_turn{ &m } / stand_up{ &m } / play_card{ &m, i } / flip_card{ &m, i }
+//               a prompt (pazaak::has_prompt) blocks the match until pazaak::answer_prompt{ &m, yes }
+//   done when m.finished: m.won, m.forfeited
+namespace pazaak {
+    // The original's panel states, 0..0xc.
+    enum Phase: u8 {
+        begin,                  // 0
+        turn_start,             // 1 the player's turn begins
+        draw,                   // 2 the main-deck draw, after a pause
+        choose,                 // 3 the player may play a hand card, end the turn or stand
+        choose_after_card,      // 4 a hand card was played: end the turn or stand
+        turn_end,               // 5 the player's turn is over
+        opponent_start,         // 6
+        opponent_acts,          // 7 one AI step per tick
+        judge,                  // 8 who won the set, if anyone
+        set_message,            // 9 the result is announced
+        wait_message,           // 10
+        new_set,                // 0xb
+        match_over,             // 0xc
+    }
+
+    enum Sound: u8 { start_turn, draw_main, play_side, warn_bust, win_set, lose_set, win_match, lose_match, click }
+
+    // The sound's resref in sounds.bif; `click` is the GUI's own.
+    fn sound_name { s: Sound } -> []u8 {
+        return match s {
+            start_turn => { "mgs_startturn" }
+            draw_main => { "mgs_drawmain" }
+            play_side => { "mgs_playside" }
+            warn_bust => { "mgs_warnbust" }
+            win_set => { "mgs_winset" }
+            lose_set => { "mgs_loseset" }
+            win_match => { "mgs_winmatch" }
+            lose_match => { "mgs_losematch" }
+            click => { "" }
+        }
+    }
+
+    enum PromptKind: u8 { none, info, confirm, result }
+
+    // What a prompt does when it is accepted.
+    enum Then: u8 { nothing, end_turn, stand, play_card }
+
+    // A message the match waits on: the pages of an explanation (`info`), a question (`confirm`) or
+    // the end of a set (`result`). Texts are dialog.tlk strings.
+    struct Prompt { kind: PromptKind, pages: [10]u32, count: usize, at: usize, then: Then, card: usize }
+
+    struct Match {
+        g: Game,
+        phase: Phase,
+        timer: f32,                     // seconds before the machine steps again
+        tutorial: bool,
+        seen: u32,                      // tutorial pages already shown (bit flags)
+        prompt: Prompt,
+        cues: [16]Sound, cue_count: usize,
+        auto_player: bool,
+        last_set: SetResult,
+        finished: bool,
+        won: bool,
+        forfeited: bool,
+        turns: i32,                     // turns taken in all (for the simulation's statistics)
+    }
+
+    const PAUSE: f32 = 0.4              // the original's pauses
+    const LONG_PAUSE: f32 = 0.8
+
+    const SEEN_START: u32 = 1
+    const SEEN_DRAW: u32 = 2
+    const SEEN_OPPONENT: u32 = 4
+    const SEEN_TWENTY: u32 = 8
+
+    // dialog.tlk
+    const T_WIN_SET: u32 = 32334
+    const T_LOSE_SET: u32 = 32335
+    const T_WIN_MATCH: u32 = 32336
+    const T_LOSE_MATCH: u32 = 32337
+    const T_TIE: u32 = 32338
+
+    fn no_prompt {} -> Prompt {
+        return Prompt{ kind = PromptKind::none, pages = [0; 10], count = 0, at = 0, then = Then::nothing, card = 0 }
+    }
+
+    // A match with both sides' hands dealt (4 of each 10-card side deck). The player's deck is card
+    // ids (-1 for a missing card, which the setup screen never allows).
+    fn new_match {
+        seed: u32, wager: i32, player_deck: [10]i32, opponent_deck: [10]i32, tutorial: bool, auto_player: bool,
+    } -> Match {
+        let mut g = new_game{ seed, wager }
+        deal_hand{ rng = &g.rng, side = &g.player, deck = deck_cards{ ids = player_deck } }
+        deal_hand{ rng = &g.rng, side = &g.opponent, deck = deck_cards{ ids = opponent_deck } }
+        return Match{
+            g, phase = Phase::new_set, timer = 0.0, tutorial, seen = 0, prompt = no_prompt{},
+            cues = [Sound::click; 16], cue_count = 0, auto_player, last_set = SetResult::undecided,
+            finished = false, won = false, forfeited = false, turns = 0,
+        }
+    }
+
+    // ---- cues and prompts
+
+    fn add_cue { mut m: Match, s: Sound } {
+        if m.cue_count < 16 {
+            m.cues[m.cue_count] = s
+            m.cue_count = m.cue_count + 1
+        }
+    }
+
+    // The oldest sound the match wants played, if any.
+    fn take_cue { mut m: Match } -> ?Sound {
+        if m.cue_count == 0 { return null }
+        let s = m.cues[0]
+        let mut i: usize = 1
+        while i < m.cue_count {
+            m.cues[i - 1] = m.cues[i]
+            i = i + 1
+        }
+        m.cue_count = m.cue_count - 1
+        return s
+    }
+
+    fn has_prompt { m: Match } -> bool { return m.prompt.kind != PromptKind::none }
+
+    // The text of the prompt's current page.
+    fn prompt_text { m: Match } -> u32 { return m.prompt.pages[m.prompt.at] }
+
+    // The tutorial's explanations: the pages of each (dialog.tlk).
+    enum Tutorial: u8 { start, draw, opponent, twenty, bust, next_set }
+
+    fn tutorial_pages { page: Tutorial, into: []mut u32 } -> usize {
+        let mut list: [9]u32 = [0; 9]
+        let mut n: usize = 0
+        match page {
+            start => {
+                list = [38631, 38632, 0, 0, 0, 0, 0, 0, 0]
+                n = 2
+            }
+            draw => {
+                list = [38633, 38634, 38635, 38636, 38643, 38644, 38637, 38638, 38639]
+                n = 9
+            }
+            opponent => {
+                list[0] = 38645
+                n = 1
+            }
+            twenty => {
+                list[0] = 38646
+                n = 1
+            }
+            bust => {
+                list[0] = 38647
+                n = 1
+            }
+            next_set => {
+                list[0] = 38648
+                n = 1
+            }
+        }
+        let mut i: usize = 0
+        while i < n and i < into.len {
+            into[i] = list[i]
+            i = i + 1
+        }
+        return i
+    }
+
+    // Shows a tutorial explanation (only with the tutorial on).
+    fn show_info { mut m: Match, page: Tutorial } {
+        if not m.tutorial { return }
+        m.prompt = no_prompt{}
+        m.prompt.kind = PromptKind::info
+        m.prompt.count = tutorial_pages{ page, into = m.prompt.pages[..] }
+    }
+
+    fn ask_confirm { mut m: Match, text: u32, then: Then, card: usize } {
+        m.prompt = no_prompt{}
+        m.prompt.kind = PromptKind::confirm
+        m.prompt.pages[0] = text
+        m.prompt.count = 1
+        m.prompt.then = then
+        m.prompt.card = card
+    }
+
+    // The player accepted (`yes`) or declined the prompt. Info pages turn one page per answer, a
+    // `no` ends the rest of them; a confirm does its action on `yes`.
+    fn answer_prompt { mut m: Match, yes: bool } {
+        let p = m.prompt
+        if p.kind == PromptKind::none { return }
+        if p.kind == PromptKind::info and yes and p.at + 1 < p.count {
+            m.prompt.at = p.at + 1
+            return
+        }
+        m.prompt = no_prompt{}
+        if p.kind == PromptKind::result {
+            if m.g.player.sets >= SETS_TO_WIN or m.g.opponent.sets >= SETS_TO_WIN {
+                m.phase = Phase::match_over
+            } else {
+                m.phase = Phase::new_set
+                show_info{ &m, page = Tutorial::next_set }
+            }
+        } else if p.kind == PromptKind::confirm and yes {
+            if p.then == Then::end_turn { do_end_turn{ &m } }
+            if p.then == Then::stand { do_stand{ &m } }
+            if p.then == Then::play_card { do_play_card{ &m, i = p.card } }
+        }
+    }
+
+    // ---- the player's choices
+
+    fn can_choose { m: Match } -> bool {
+        return (m.phase == Phase::choose or m.phase == Phase::choose_after_card) and
+            not m.g.player.standing and not m.finished and not has_prompt{ m }
+    }
+
+    fn can_play_card { m: Match, i: usize } -> bool {
+        return m.phase == Phase::choose and can_choose{ m } and has_hand_card{ s = m.g.player, i }
+    }
+
+    fn do_end_turn { mut m: Match } {
+        m.phase = Phase::turn_end
+        m.timer = PAUSE
+    }
+
+    fn do_stand { mut m: Match } {
+        m.g.player.standing = true
+        do_end_turn{ &m }
+    }
+
+    fn do_play_card { mut m: Match, i: usize } {
+        if play_hand_card{ s = &m.g.player, i } {
+            add_cue{ &m, s = Sound::play_side }
+            m.phase = Phase::choose_after_card
+            m.timer = PAUSE
+        }
+    }
+
+    // End Turn. With the tutorial on, ending a turn at 16 or more asks first.
+    fn end_turn { mut m: Match } -> bool {
+        if not can_choose{ m } { return false }
+        if m.tutorial and total_of{ s = m.g.player } > 15 {
+            ask_confirm{ &m, text = 38641, then = Then::end_turn, card = 0 }
+        } else {
+            do_end_turn{ &m }
+        }
+        return true
+    }
+
+    // Stand. With the tutorial on, standing below 14 asks first.
+    fn stand_up { mut m: Match } -> bool {
+        if not can_choose{ m } { return false }
+        if m.tutorial and total_of{ s = m.g.player } < 14 {
+            ask_confirm{ &m, text = 38640, then = Then::stand, card = 0 }
+        } else {
+            do_stand{ &m }
+        }
+        return true
+    }
+
+    // Plays hand card `i`; with the tutorial on a low total asks first.
+    fn play_card { mut m: Match, i: usize } -> bool {
+        if not can_play_card{ m, i } { return false }
+        if m.tutorial and total_of{ s = m.g.player } < 13 {
+            ask_confirm{ &m, text = 38642, then = Then::play_card, card = i }
+        } else {
+            do_play_card{ &m, i }
+        }
+        return true
+    }
+
+    // Flips a flip card in the player's hand.
+    fn flip_card { mut m: Match, i: usize } -> bool {
+        if m.finished { return false }
+        return flip_hand_card{ s = &m.g.player, i }
+    }
+
+    // Quitting the match is a loss (the wager is paid by whoever applies the result).
+    fn forfeit_match { mut m: Match } {
+        m.finished = true
+        m.won = false
+        m.forfeited = true
+    }
+
+    // ---- the machine
+
+    // Advances the clock and runs the machine until it needs time, the player or a prompt.
+    fn step_match { mut m: Match, dt: f32 } {
+        if m.finished or has_prompt{ m } { return }
+        if m.timer > 0.0 {
+            m.timer = m.timer - dt
+            if m.timer > 0.0 { return }
+        }
+        let mut guard: i32 = 0
+        while not m.finished and not has_prompt{ m } and m.timer <= 0.0 and guard < 64 {
+            if not run_phase{ &m } { break }
+            guard = guard + 1
+        }
+    }
+
+    // One state of the machine; true if the next may follow at once.
+    fn run_phase { mut m: Match } -> bool {
+        match m.phase {
+            begin => {
+                m.phase = Phase::turn_start
+                return true
+            }
+            turn_start => {
+                if m.g.player.standing {
+                    m.phase = Phase::turn_end
+                    return true
+                }
+                add_cue{ &m, s = Sound::start_turn }
+                m.phase = Phase::draw
+                m.timer = PAUSE
+                return false
+            }
+            draw => {
+                _ = draw_card{ g = &m.g, who = Who::player }
+                m.g.ai[0] = AI_DREW
+                m.turns = m.turns + 1
+                add_cue{ &m, s = Sound::draw_main }
+                if total_of{ s = m.g.player } > TARGET { add_cue{ &m, s = Sound::warn_bust } }
+                if m.g.player.standing { m.timer = PAUSE }
+                if (m.seen & SEEN_DRAW) == 0 {
+                    m.seen = m.seen | SEEN_DRAW
+                    show_info{ &m, page = Tutorial::draw }
+                }
+                m.phase = Phase::choose
+                return false
+            }
+            choose | choose_after_card => {
+                if m.g.player.standing {
+                    m.phase = Phase::turn_end
+                    return true
+                }
+                if m.auto_player {
+                    auto_choose{ &m }
+                    return true
+                }
+                return false
+            }
+            turn_end => {
+                m.g.ai[0] = 0
+                let t = total_of{ s = m.g.player }
+                if t == TARGET and (m.seen & SEEN_TWENTY) == 0 {
+                    m.seen = m.seen | SEEN_TWENTY
+                    show_info{ &m, page = Tutorial::twenty }
+                } else if t > TARGET {
+                    show_info{ &m, page = Tutorial::bust }
+                }
+                if judge_set{ g = &m.g } != SetResult::undecided {
+                    m.phase = Phase::judge
+                    return true
+                }
+                m.phase = Phase::opponent_start
+                return true
+            }
+            opponent_start => {
+                if m.g.opponent.standing {
+                    m.phase = Phase::judge
+                    return true
+                }
+                add_cue{ &m, s = Sound::start_turn }
+                m.phase = Phase::opponent_acts
+                m.timer = PAUSE
+                if (m.seen & SEEN_OPPONENT) == 0 {
+                    m.seen = m.seen | SEEN_OPPONENT
+                    show_info{ &m, page = Tutorial::opponent }
+                }
+                return false
+            }
+            opponent_acts => {
+                let r = ai_step{ g = &m.g, who = Who::opponent }
+                if r == AI_DREW {
+                    m.turns = m.turns + 1
+                    add_cue{ &m, s = Sound::draw_main }
+                    if total_of{ s = m.g.opponent } > TARGET { add_cue{ &m, s = Sound::warn_bust } }
+                } else if r == AI_PLAYED {
+                    add_cue{ &m, s = Sound::play_side }
+                } else if r == AI_STOOD or r == AI_ENDED {
+                    add_cue{ &m, s = Sound::click }
+                }
+                if r == AI_DREW or r == AI_PLAYED {
+                    m.timer = LONG_PAUSE
+                    if total_of{ s = m.g.opponent } == TARGET and (m.seen & SEEN_TWENTY) == 0 {
+                        m.seen = m.seen | SEEN_TWENTY
+                        show_info{ &m, page = Tutorial::twenty }
+                    }
+                    return false
+                }
+                if r == AI_IDLE {
+                    m.timer = PAUSE
+                    m.phase = Phase::judge
+                    return false
+                }
+                return false
+            }
+            judge => {
+                let r = judge_set{ g = &m.g }
+                if r == SetResult::undecided {
+                    m.phase = Phase::turn_start
+                    return false
+                }
+                m.last_set = r
+                let over = score_set{ g = &m.g, r }
+                announce_set{ &m, r, over }
+                return false
+            }
+            set_message | wait_message => { return false }
+            new_set => {
+                clear_tables{ g = &m.g }
+                m.g.ai = [0; 2]
+                m.phase = Phase::begin
+                if (m.seen & SEEN_START) == 0 {
+                    m.seen = m.seen | SEEN_START
+                    show_info{ &m, page = Tutorial::start }
+                }
+                return true
+            }
+            match_over => {
+                m.finished = true
+                m.won = m.g.opponent.sets < m.g.player.sets
+                return false
+            }
+        }
+    }
+
+    // The message and sound for a judged set; the match waits for the player's OK.
+    fn announce_set { mut m: Match, r: SetResult, over: bool } {
+        m.prompt = no_prompt{}
+        m.prompt.kind = PromptKind::result
+        m.prompt.count = 1
+        m.phase = Phase::wait_message
+        if r == SetResult::player {
+            m.prompt.pages[0] = if over { T_WIN_MATCH } else { T_WIN_SET }
+            add_cue{ &m, s = if over { Sound::win_match } else { Sound::win_set } }
+        } else if r == SetResult::opponent {
+            m.prompt.pages[0] = if over { T_LOSE_MATCH } else { T_LOSE_SET }
+            add_cue{ &m, s = if over { Sound::lose_match } else { Sound::lose_set } }
+        } else {
+            m.prompt.pages[0] = T_TIE
+        }
+    }
+
+    // The player's side, played by the AI (simulations, demos): continues a turn from the AI state.
+    fn auto_choose { mut m: Match } {
+        let r = ai_step{ g = &m.g, who = Who::player }
+        if r == AI_PLAYED {
+            add_cue{ &m, s = Sound::play_side }
+            m.phase = Phase::choose_after_card
+        } else {
+            do_end_turn{ &m }
+        }
+    }
+
+    // Whose turn the screen shows.
+    fn turn_of { m: Match } -> Who {
+        return if m.phase == Phase::opponent_start or m.phase == Phase::opponent_acts { Who::opponent } else { Who::player }
+    }
+}

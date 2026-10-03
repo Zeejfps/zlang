@@ -3,7 +3,7 @@
 namespace play {
     // One scripted input line: `FRAME down KEY`, `FRAME up KEY`, and for tests `FRAME warp TAG`
     // (the leader jumps next to the object) and `FRAME use TAG` (the leader's default action on it).
-    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack }
+    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk }
     struct Scripted { frame: u64, command: Command, key: []u8 }
 
     fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
@@ -57,6 +57,8 @@ namespace play {
             }
         }
         let mut amb = ambience::make{ heap = w.heap, m = mixer }
+        let mut dview = dlgview::make{ heap = w.heap, m = mixer }
+        dlgview::attach{ v = &dview, w = &w }
         ambience::start_area{ a = &amb, &w }
         // HOOK(ingame): the HUD and the in-game menus (docs/design/hud.md).
         let ui = try ingame::make{ &w, &dev, mixer, scratch = texture_scratch, width = @as(i32, opts.width), height = @as(i32, opts.height) }
@@ -77,6 +79,7 @@ namespace play {
             // 1. Input: the window's events, or the script's lines for this frame.
             while true {
                 let e = sdl::poll{ &sdl } ifnull { break }
+                if dlgview::handle_event{ v = &dview, g = &ui.gui, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }
                 if ingame::handle_event{ ui, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }    // HOOK(ingame)
                 match e {
                     quit | close => { quit = true }
@@ -100,7 +103,10 @@ namespace play {
                     use => { use_tagged{ &w, tag = s.key } }
                     attack => { attack_tagged{ &w, tag = s.key } }
                     newgame => {}
-                    ui => { ingame::run_command{ ui, &w, &dev, text = s.key } }    // HOOK(ingame)
+                    talk => { talk_to{ &w, &vm, engine, text = s.key } }
+                    ui => {
+                        if not dlgview::run_command{ v = &dview, w = &w, g = &ui.gui, text = s.key } { ingame::run_command{ ui, &w, &dev, text = s.key } }    // HOOK(ingame)
+                    }
                     save => { want_save = s.key }
                     load => { want_load = s.key }
                 }
@@ -145,10 +151,17 @@ namespace play {
             w.played_seconds = w.played_seconds + @as(f64, real)
             // 3-6. The world.
             clock::advance{ c = &w.clock, seconds = dt }
+            // The player doesn't walk while a conversation runs (re/dialogue.md 4.9).
+            if w.conversation.active { keys = ctl::no_keys{} }
             ctl::update{ ctl = &control, &w, keys, yaw = camera.yaw, dt = w.clock.dt }
             world::tick{ &w, &vm, engine }
+            // 7. The conversation's pump: the next line, the replies, the end.
+            dlg::update{ &w, &vm, engine }
             // 6. A transition: the next module, and a new scene and sound for it.
             if w.transition != null {
+                // A conversation doesn't cross a module change (its objects go).
+                dlg::abort{ &w, &vm, engine }
+                dlgview::leave{ v = &dview, w = &w, sc = &sc, g = &ui.gui }
                 ambience::stop_area{ a = &amb }
                 scene::release{ &sc, &dev }
                 arena::reset{ heap = &scene_arena }
@@ -175,14 +188,18 @@ namespace play {
             let mut n: usize = 0
             while n < notes.len {
                 ambience::take{ a = &amb, &w, note = notes[n] }
+                dlgview::take_note{ v = &dview, w = &w, g = &ui.gui, dev = &dev, note = notes[n] }
                 n = n + 1
             }
             outbox::clear{ out = &w.out }
             // 9-10. Scene and camera (which snaps behind the leader again once it is placed).
             if w.arrival > 0 { camera.started = false }
+            dlgview::pre_sync{ v = &dview, w = &w, sc = &sc, dev = &dev, g = &ui.gui, dt = w.clock.dt }
             scene::sync{ &sc, &w, &dev, dt = w.clock.dt }
+            dlgview::post_sync{ v = &dview, w = &w, sc = &sc, dt = w.clock.dt }
             let look_height = leader_height{ w = &w }
             cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt }
+            dlgview::apply_camera{ v = &dview, w = &w, sc = &sc, camera = &camera }
             let pc = world::object{ w = &w, id = w.pc }
             let room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
             scene::update_visibility{ &sc, w = &w, room }
@@ -204,6 +221,7 @@ namespace play {
             view.fog = sc.fog
             let vi = render::add_view{ &frame, view } ifnull { 0 }
             scene::draw{ &sc, w = &w, &frame, view = vi }
+            dlgview::draw{ v = &dview, frame = &frame }
             ingame::draw{ ui, &w, &dev, &frame }    // HOOK(ingame)
             gpu::submit{ &dev, frame = &frame } iferr err{ error } {
                 _ = @fmt(&w.io, "kotor: submit failed: {}\n", error)
@@ -380,13 +398,27 @@ namespace play {
             let what = text::next_word{ &words } ifnull { continue }
             let command = if ci::eq{ a = what, b = "down" } { Command::down } else if ci::eq{ a = what, b = "warp" } { Command::warp } else if ci::eq{ a = what, b = "warpxy" } { Command::warpxy }
                 else if ci::eq{ a = what, b = "use" } { Command::use } else if ci::eq{ a = what, b = "newgame" } { Command::newgame }
-                else if ci::eq{ a = what, b = "ui" } { Command::ui } else if ci::eq{ a = what, b = "save" } { Command::save }
+                else if ci::eq{ a = what, b = "ui" } { Command::ui } else if ci::eq{ a = what, b = "save" } { Command::save } else if ci::eq{ a = what, b = "talk" } { Command::talk }
                 else if ci::eq{ a = what, b = "load" } { Command::load } else if ci::eq{ a = what, b = "attack" } { Command::attack } else { Command::up }
-            // `ui` takes the rest of the line (ingame::run_command); the others one word.
-            let key = if command == Command::ui or command == Command::load or command == Command::save { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
+            // `ui`, `talk`, `load` and `save` take the rest of the line; the others one word.
+            let key = if command == Command::ui or command == Command::load or command == Command::save or command == Command::talk { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
             try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), command, key } }
         }
         return list::items{ list = out }
+    }
+
+    // `FRAME talk RESREF [TAG]`: starts conversation RESREF with the creature tagged TAG
+    // (end_trask by default) as its owner, without the click and the walk up: the dialogue on its
+    // own, for tests.
+    fn talk_to { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, text: []u8 } {
+        let mut words = text::words{ s = text }
+        let name = text::next_word{ &words } ifnull { return }
+        let tag = text::next_word{ &words } ifnull "end_trask"
+        let owner = world::object_by_tag{ w = &w, tag, nth = 0 }
+        if owner == obj::INVALID or not dlg::order{ &w } { return }
+        if not dlg::start{ &w, &vm, engine, owner, other = w.pc, name = resref::truncate{ name }, private = false } {
+            w.conversation.pending = false
+        }
     }
 
     // Test helpers for scripted runs: jump the leader 1.5 m in front of a tagged object, facing

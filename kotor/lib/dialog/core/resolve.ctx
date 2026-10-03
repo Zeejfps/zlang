@@ -1,0 +1,154 @@
+// Who is who in a conversation (docs/re/dialogue.md section 5): finding speakers, listeners and
+// animation participants by tag, joining them to the conversation, and turning them to face each
+// other.
+namespace dlg {
+    const RANGE: f32 = 1000.0
+
+    fn now_ms { w: *world::World } -> u64 { return clock::now_ms{ c = w.clock } }
+
+    // The nearest live object with `tag` in the owner's area, within 1000 m of the owner
+    // (GetNearestObjectByTag, case-insensitive); obj::INVALID if none.
+    fn nearest_with_tag { w: *world::World, tag: []u8, to: u32 } -> u32 {
+        let center = world::object{ w, id = to } ifnull { return obj::INVALID }
+        let all = list::items{ list = w.objects.all }
+        let mut best = obj::INVALID
+        let mut best_d: f32 = RANGE * RANGE
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.area != center.area or not ci::eq{ a = o.tag, b = tag } { continue }
+            let d = math::vec3::length_sq{ v = math::vec3::sub{ a = o.position, b = center.position } }
+            if d <= best_d {
+                best_d = d
+                best = o.id
+            }
+        }
+        return best
+    }
+
+    // The party's creature in slot `i` (0 the leader).
+    fn party_member { w: *world::World, i: usize } -> u32 {
+        let m = party::members{ w }
+        if i < m.len { return m[i] }
+        return obj::INVALID
+    }
+
+    // The object a node's Speaker or Listener tag names (GetParticipant, section 5.1): the owner
+    // by its own tag, else the nearest object with the tag in the owner's area. A free object
+    // joins the conversation. Answers are kept, "not found" included.
+    fn resolve_tag { mut w: world::World, tag: []u8 } -> u32 {
+        if tag.len == 0 { return obj::INVALID }
+        let mut i: usize = 0
+        while i < w.conversation.tag_count {
+            let t = w.conversation.tags[i]
+            if t.len == tag.len and ci::eq{ a = t.tag[..t.len], b = tag } { return t.id }
+            i = i + 1
+        }
+        let owner = w.conversation.owner
+        let oo = world::object{ w = &w, id = owner } ifnull { return obj::INVALID }
+        let mut found = obj::INVALID
+        if ci::eq{ a = oo.tag, b = tag } { found = owner } else { found = nearest_with_tag{ w = &w, tag, to = owner } }
+        if tag.len <= 32 and w.conversation.tag_count < MAX_TAGS {
+            let n = w.conversation.tag_count
+            w.conversation.tags[n].len = tag.len
+            w.conversation.tags[n].id = found
+            let mut k: usize = 0
+            while k < tag.len {
+                w.conversation.tags[n].tag[k] = tag[k]
+                k = k + 1
+            }
+            w.conversation.tag_count = n + 1
+        }
+        if found != obj::INVALID { join{ &w, id = found } }
+        return found
+    }
+
+    // Takes an object into the conversation (the +0x54 owner id of the original).
+    fn join { mut w: world::World, id: u32 } {
+        if is_participant{ s = &w.conversation, id } { return }
+        if w.conversation.participant_count >= MAX_PARTICIPANTS { return }
+        w.conversation.participants[w.conversation.participant_count] = id
+        w.conversation.participant_count = w.conversation.participant_count + 1
+    }
+
+    // An AnimList participant (4.4): PLAYER, OWNER, NPC1 and NPC2 are keywords (case sensitive),
+    // anything else is a tag.
+    fn find_participant { mut w: world::World, name: []u8 } -> u32 {
+        if name.len == 0 { return obj::INVALID }
+        if slice::eq_bytes{ a = name, b = "PLAYER" } { return w.conversation.other }
+        if slice::eq_bytes{ a = name, b = "OWNER" } { return w.conversation.owner }
+        if slice::eq_bytes{ a = name, b = "NPC1" } { return party_member{ w = &w, i = 1 } }
+        if slice::eq_bytes{ a = name, b = "NPC2" } { return party_member{ w = &w, i = 2 } }
+        return nearest_with_tag{ w = &w, tag = name, to = w.conversation.owner }
+    }
+
+    // The listener tag of a node: empty is none (the view picks), OWNER the owner, PLAYER the
+    // party leader, else a tag (none when nobody has it).
+    fn find_listener { mut w: world::World, tag: []u8 } -> u32 {
+        if tag.len == 0 { return obj::INVALID }
+        if ci::eq{ a = tag, b = "OWNER" } { return w.conversation.owner }
+        if ci::eq{ a = tag, b = "PLAYER" } { return w.conversation.other }
+        return resolve_tag{ &w, tag }
+    }
+
+    fn object_tag { w: *world::World, id: u32 } -> []u8 {
+        let o = world::object{ w, id } ifnull { return "" }
+        return o.tag
+    }
+
+    // Turns `id` to face `target` on the spot. The original turns the body only past the head's
+    // arc and lets the head follow (8.2); we have no head tracking yet, so the body turns fully.
+    fn face { mut w: world::World, id: u32, target: u32 } {
+        if id == obj::INVALID or target == obj::INVALID or id == target { return }
+        let to = world::object{ w = &w, id = target } ifnull { return }
+        let at = to.position
+        let o = world::object{ w = &w, id } ifnull { return }
+        if is_locked_orientation{ s = &w.conversation, id } { return }
+        world::set_orientation{ o, v = math::vec3::sub{ a = at, b = o.position } }
+    }
+
+    fn is_locked_orientation { s: *State, id: u32 } -> bool {
+        let mut i: usize = 0
+        while i < s.locked_orientation_count {
+            if s.locked_orientation[i] == id { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    fn is_locked_head { s: *State, id: u32 } -> bool {
+        let mut i: usize = 0
+        while i < s.locked_head_count {
+            if s.locked_head[i] == id { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // SetLockOrientationInDialog / SetLockHeadFollowInDialog: adds or removes `id` from the list.
+    fn set_lock { mut ids: [8]u32, mut count: usize, id: u32, lock: bool } {
+        let mut i: usize = 0
+        while i < count {
+            if ids[i] == id {
+                if not lock {
+                    ids[i] = ids[count - 1]
+                    count = count - 1
+                }
+                return
+            }
+            i = i + 1
+        }
+        if lock and count < 8 {
+            ids[count] = id
+            count = count + 1
+        }
+    }
+
+    // The player's gender for text (0 masculine, 1 feminine).
+    fn gender_of { w: *world::World, id: u32 } -> u32 {
+        let o = world::object{ w, id } ifnull { return 0 }
+        let c = obj::creature{ o } ifnull { return 0 }
+        return if c.gender == 1 { 1 } else { 0 }
+    }
+}

@@ -1,0 +1,418 @@
+// dialogpanels: the conversation panels (lib/dialog/panels, namespace dlgpanel) drawn headless over a
+// plain backdrop, to look at, plus a scripted check of what `poll` answers.
+//
+//   kotor/tools/ctxc run kotor/tools/dialogpanels
+//
+// Writes PNGs to kotor/out/dialogpanels/ (--out DIR): cin_*, replies_*, computer_*, bark, fade, bars_mid,
+// and prints the picks. Options: --game DIR.
+
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+const LINE: []u8 = "You came a long way to find me, <FullName>. The Jedi will not tell you what they fear, but I will: the war is not being won, and the ones who sent you here know it. Listen carefully, because I will say this only once, and then you must decide whether to trust me or to walk away."
+const TALL_LINE: []u8 = "You came a long way to find me, <FullName>. The Jedi will not tell you what they fear, but I will: the war is not being won, and the ones who sent you here know it. Listen carefully, because I will say this only once, and then you must decide whether to trust me or to walk away. There is a ship in the lower docks that was never meant to leave, and the people who built it are not the ones who paid for it. Find the harbour master before the patrols change shifts, and tell him the old password is no longer enough. If he asks who sent you, say nothing, and if he asks what you want, say that you have come to collect on a debt that was owed long before either of us was born."
+const SHORT_LINE: []u8 = "So you are the one they sent, <FullName>."
+const BARK: []u8 = "Stay close to me, <FullName>. The streets of this district are not safe after dark and I do not trust the patrols."
+const COMP_LINE: []u8 = "Access granted. Welcome back, <FullName>. The station log lists three unread messages, a maintenance warning for the lower decks, and an open request from the quartermaster. Select an option to continue."
+
+struct Options { game: []u8, out: []u8 }
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let mut o = Options{ game = DEFAULT_GAME, out = "kotor/out/dialogpanels" }
+    let mut i: usize = 0
+    while i < args.len {
+        if slice::eq_bytes{ a = args[i], b = "--game" } and i + 1 < args.len {
+            i = i + 1
+            o.game = args[i]
+        } else if slice::eq_bytes{ a = args[i], b = "--out" } and i + 1 < args.len {
+            i = i + 1
+            o.out = args[i]
+        }
+        i = i + 1
+    }
+    let pages = mem::pages{ &mem, size = 536870912 } ifnull { return 1 }
+    let scratch = mem::pages{ &mem, size = 134217728 } ifnull { return 1 }
+    let mut heap = arena::new{ buf = pages }
+    let mut h = heap::new{ &mem }
+    run{ &io, &fs, &sdl, &heap, &h, scratch, o } iferr err{ error } {
+        _ = @fmt(&io, "dialogpanels: failed: {}\n", error)
+        match error {
+            gpu::shader_failed{ log } => { _ = @fmt(&io, "{}\n", log) }
+            sdl::failed => { _ = @fmt(&io, "SDL: {}\n", sdl::last_error{ &sdl }) }
+            else => {}
+        }
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return 0
+}
+
+// Everything the scenes share.
+struct Rig {
+    out: []u8,
+    width: i32, height: i32,
+}
+
+fn run {
+    mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut h: heap::Heap, scratch: alloc::Bytes, o: Options,
+} -> ! {
+    try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
+    defer sdl::quit{ &sdl }
+    let mut config = render::make_config{ title = "dialogpanels", width = 800, height = 600, hidden = true }
+    config.debug = true
+    let mut dev = try gpu::open{ &sdl, realloc = arena::alloc, &heap, config }
+    defer gpu::close{ &dev, &sdl }
+    let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, &heap, cap = render::default_capacity{} }
+    let mut rm = try res::open{ &fs, heap = &h, game = o.game }
+    defer res::close{ &fs, &rm }
+    let mut cache = material::new_cache{ heap = &h, scratch }
+    defer material::free_cache{ &cache, &dev }
+    let mut path_buf: [512]u8
+    let tlk_path = join{ into = path_buf[..], a = o.game, b = "dialog.tlk" }
+    let table = try tlk::load{ &fs, realloc = heap::alloc, heap = &h, path = tlk_path }
+    defer tlk::free{ t = table, realloc = heap::alloc, heap = &h }
+    let mut g = try gui::make{ heap = &h, rm, cache = &cache, width = 800, height = 600 }
+    defer gui::free{ &g }
+    gui::set_tlk{ &g, table = &table }
+    try gui::load_defaults{ &g, &fs, &dev }
+    gui::set_cursor_visible{ &g, visible = false }
+    try gui::set_token{ &g, name = "FullName", value = "Revan" }
+    make_dir{ &fs, path = o.out }
+    let mut p = dlgpanel::make{}
+    let rig = Rig{ out = o.out, width = 800, height = 600 }
+
+    // (1) the cinematic panel with a long line, two window sizes, bars in
+    let sizes = [800, 1280]
+    let mut si: usize = 0
+    while si < 2 {
+        let w = sizes[si]
+        let hgt = if si == 0 { 600 } else { 720 }
+        try set_size{ &fs, &dev, &g, &p, width = w, height = hgt }
+        p.bars_instant = true
+        try dlgpanel::open{ &p, &g, &fs, &dev, computer = false, computer_type = 0 }
+        try dlgpanel::set_line{ &p, &g, speaker = "Carth", text = LINE }
+        dlgpanel::update{ &p, &g, dt = 0.033 }
+        try shot{ &io, &fs, &dev, &heap, &frame, &g, p, rig, name = either{ first = si == 0, a = "cin_800x600.png", b = "cin_1280x720.png" } }
+        end_scene{ &p, &g }
+        si = si + 1
+    }
+
+    // (2) replies, the second one pointed at, the third long, the fourth disabled; both sizes
+    si = 0
+    while si < 2 {
+        let w = sizes[si]
+        let hgt = if si == 0 { 600 } else { 720 }
+        try set_size{ &fs, &dev, &g, &p, width = w, height = hgt }
+        p.bars_instant = true
+        try dlgpanel::open{ &p, &g, &fs, &dev, computer = false, computer_type = 0 }
+        try dlgpanel::set_line{ &p, &g, speaker = "Carth", text = SHORT_LINE }
+        try show_replies{ &p, &g, &fs, &dev, &sdl }
+        point_at_row{ &p, &g, row = 1 }
+        dlgpanel::update{ &p, &g, dt = 0.033 }
+        try shot{ &io, &fs, &dev, &heap, &frame, &g, p, rig, name = either{ first = si == 0, a = "replies_800x600.png", b = "replies_1280x720.png" } }
+        end_scene{ &p, &g }
+        si = si + 1
+    }
+
+    // (3) the computer panel, both skins
+    try set_size{ &fs, &dev, &g, &p, width = 800, height = 600 }
+    let mut skin: u8 = 0
+    while skin < 2 {
+        try dlgpanel::open{ &p, &g, &fs, &dev, computer = true, computer_type = skin }
+        try dlgpanel::set_line{ &p, &g, speaker = "", text = COMP_LINE }
+        try dlgpanel::set_computer_stats{ &p, &g, skill = 12, spikes = 3, repair_skill = 8, repair_parts = 5 }
+        try show_computer_replies{ &p, &g }
+        point_at_row{ &p, &g, row = 1 }
+        dlgpanel::update{ &p, &g, dt = 0.033 }
+        try shot{ &io, &fs, &dev, &heap, &frame, &g, p, rig, name = either{ first = skin == 0, a = "computer_skin0.png", b = "computer_skin1.png" } }
+        end_scene{ &p, &g }
+        skin = skin + 1
+    }
+
+    // (3b) a line taller than the panel: it grows upward with the bottom bar; with replies the line
+    // goes up to the top bar, which grows with it
+    try dlgpanel::open{ &p, &g, &fs, &dev, computer = false, computer_type = 0 }
+    try dlgpanel::set_line{ &p, &g, speaker = "Carth", text = TALL_LINE }
+    dlgpanel::update{ &p, &g, dt = 0.033 }
+    try shot{ &io, &fs, &dev, &heap, &frame, &g, p, rig, name = "tall_line.png" }
+    try show_replies{ &p, &g, &fs, &dev, &sdl }
+    dlgpanel::update{ &p, &g, dt = 0.033 }
+    try shot{ &io, &fs, &dev, &heap, &frame, &g, p, rig, name = "tall_replies.png" }
+    end_scene{ &p, &g }
+
+    // (3c) the window changes size while the replies are up
+    try dlgpanel::open{ &p, &g, &fs, &dev, computer = false, computer_type = 0 }
+    try dlgpanel::set_line{ &p, &g, speaker = "Carth", text = SHORT_LINE }
+    try show_replies{ &p, &g, &fs, &dev, &sdl }
+    try set_size{ &fs, &dev, &g, &p, width = 1024, height = 768 }
+    dlgpanel::update{ &p, &g, dt = 0.033 }
+    try shot{ &io, &fs, &dev, &heap, &frame, &g, p, rig, name = "resized_1024x768.png" }
+    end_scene{ &p, &g }
+    try set_size{ &fs, &dev, &g, &p, width = 800, height = 600 }
+
+    // (4) a bark bubble
+    try dlgpanel::show_bark{ &p, &g, &fs, &dev, text = BARK }
+    dlgpanel::update{ &p, &g, dt = 0.033 }
+    try shot{ &io, &fs, &dev, &heap, &frame, &g, p, rig, name = "bark.png" }
+    _ = @fmt(&io, "bark running {} (len {} -> {} s)\n", dlgpanel::bark_running{ p }, BARK.len, @as(f32, BARK.len) * 0.11 + 1.0)
+    dlgpanel::stop_bark{ &p, &g }
+    dlgpanel::update{ &p, &g, dt = 0.033 }
+
+    // (5) the fade layer at 50 % over the cinematic panel; and the bars halfway in
+    p.bars_instant = true
+    try dlgpanel::open{ &p, &g, &fs, &dev, computer = false, computer_type = 0 }
+    try dlgpanel::set_line{ &p, &g, speaker = "Carth", text = SHORT_LINE }
+    dlgpanel::update{ &p, &g, dt = 0.033 }
+    dlgpanel::start_fade{ &p, out = true, delay = 0.0, length = 1.0, color = math::Vec3{ x = 0.0, y = 0.0, z = 0.0 } }
+    dlgpanel::update{ &p, &g, dt = 0.4 }
+    _ = @fmt(&io, "fade alpha {} running {}\n", dlgpanel::fade_alpha{ p }, dlgpanel::fade_running{ p })
+    try shot{ &io, &fs, &dev, &heap, &frame, &g, p, rig, name = "fade.png" }
+    dlgpanel::update{ &p, &g, dt = 0.6 }
+    _ = @fmt(&io, "fade alpha {} running {} (after 1.0 s)\n", dlgpanel::fade_alpha{ p }, dlgpanel::fade_running{ p })
+    dlgpanel::clear_fade{ &p }
+    end_scene{ &p, &g }
+    p.bars_instant = false
+    try dlgpanel::open{ &p, &g, &fs, &dev, computer = false, computer_type = 0 }
+    try dlgpanel::set_line{ &p, &g, speaker = "Carth", text = SHORT_LINE }
+    dlgpanel::update{ &p, &g, dt = 0.2 }
+    _ = @fmt(&io, "bars after 0.2 s: top {}/{} bottom {}/{} arrived {}\n", p.top_h, p.top_target, p.bottom_y, p.bottom_target, dlgpanel::bars_arrived{ p })
+    try shot{ &io, &fs, &dev, &heap, &frame, &g, p, rig, name = "bars_mid.png" }
+    dlgpanel::update{ &p, &g, dt = 0.4 }
+    _ = @fmt(&io, "bars after 0.6 s: top {}/{} bottom {}/{} arrived {}\n", p.top_h, p.top_target, p.bottom_y, p.bottom_target, dlgpanel::bars_arrived{ p })
+    end_scene{ &p, &g }
+    p.bars_instant = true
+
+    // (6) the picks
+    try check_picks{ &io, &fs, &dev, &sdl, &g, &p }
+}
+
+// ---- scenes
+
+fn show_replies { mut p: dlgpanel::Panels, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, mut sdl: sdl::Sdl } -> ! {
+    let mut texts: [4][]u8
+    texts[0] = "I am looking for someone who came through here."
+    texts[1] = "Go on, <FullName> is listening, and in no hurry."
+    texts[2] = "I have travelled a very long way, so you will forgive me if I am blunt: tell me what you know about the ship, or I will find someone who will."
+    texts[3] = "[Persuade] You will tell me everything."
+    let mut en: [4]bool = [true, true, true, false]
+    try dlgpanel::set_replies{ &p, &g, texts = texts[..], enabled = en[..] }
+    dlgpanel::update{ &p, &g, dt = 0.033 }
+}
+
+fn show_computer_replies { mut p: dlgpanel::Panels, mut g: gui::Gui } -> ! {
+    let mut texts: [3][]u8
+    texts[0] = "Read the unread messages."
+    texts[1] = "Open the maintenance warning for the lower decks and show me which sections are affected."
+    texts[2] = "Log out."
+    let en: [3]bool = [true, true, true]
+    try dlgpanel::set_replies{ &p, &g, texts = texts[..], enabled = en[..] }
+    dlgpanel::update{ &p, &g, dt = 0.033 }
+}
+
+// The pointer onto a row of the reply list (a motion event through the panel).
+fn point_at_row { mut p: dlgpanel::Panels, mut g: gui::Gui, row: i32 } {
+    let r = gui::row_rect{ &g, panel = p.main, tag = "LB_REPLIES", row } ifnull { return }
+    let x = @as(i32, r.x + r.w / 2.0)
+    let y = @as(i32, r.y + r.h / 2.0)
+    _ = dlgpanel::handle_event{ &p, &g, ev = sdl::Event::mouse_motion{ x, y, dx = 0, dy = 0, buttons = 0 }, scale_x = 1.0, scale_y = 1.0 }
+}
+
+fn click_at { mut p: dlgpanel::Panels, mut g: gui::Gui, x: i32, y: i32 } {
+    _ = dlgpanel::handle_event{ &p, &g, ev = sdl::Event::mouse_motion{ x, y, dx = 0, dy = 0, buttons = 0 }, scale_x = 1.0, scale_y = 1.0 }
+    _ = dlgpanel::handle_event{ &p, &g, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
+    _ = dlgpanel::handle_event{ &p, &g, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
+}
+
+fn click_row { mut p: dlgpanel::Panels, mut g: gui::Gui, row: i32 } {
+    let r = gui::row_rect{ &g, panel = p.main, tag = "LB_REPLIES", row } ifnull { return }
+    click_at{ &p, &g, x = @as(i32, r.x + r.w / 2.0), y = @as(i32, r.y + r.h / 2.0) }
+}
+
+fn press_key { mut p: dlgpanel::Panels, mut g: gui::Gui, keycode: i32 } -> bool {
+    return dlgpanel::handle_event{ &p, &g, ev = sdl::Event::key{ down = true, repeat = false, scancode = 0, keycode, mods = 0 }, scale_x = 1.0, scale_y = 1.0 }
+}
+
+// ---- picks
+
+fn pick_text { pk: dlgpanel::Pick, buf: []mut u8 } -> []u8 {
+    match pk {
+        none => { return "none" }
+        skip => { return "skip" }
+        reply{ index } => {
+            let pre: []u8 = "reply "
+            slice::copy(u8){ dst = buf[..pre.len], src = pre }
+            buf[pre.len] = '1' + @as(u8, index)
+            return buf[..pre.len + 1]
+        }
+    }
+}
+
+// Prints what poll answers; `want` is the text it should be.
+fn expect { mut io: Io, what: []u8, pk: dlgpanel::Pick, want: []u8 } -> bool {
+    let mut buf: [16]u8
+    let got = pick_text{ pk, buf = buf[..] }
+    let ok = slice::eq_bytes{ a = got, b = want }
+    _ = @fmt(&io, "  {} {}: {} (want {})\n", either{ first = ok, a = "ok  ", b = "FAIL" }, what, got, want)
+    return ok
+}
+
+fn check_picks { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut sdl: sdl::Sdl, mut g: gui::Gui, mut p: dlgpanel::Panels } -> ! {
+    let mut bad: u32 = 0
+    try set_size{ &fs, &dev, &g, &p, width = 800, height = 600 }
+    try check_cinematic{ &io, &fs, &dev, &sdl, &g, &p, &bad }
+    try check_computer{ &io, &fs, &dev, &g, &p, &bad }
+    _ = @fmt(&io, "{} checks failed\n", bad)
+}
+
+fn check_cinematic { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut sdl: sdl::Sdl, mut g: gui::Gui, mut p: dlgpanel::Panels, mut bad: u32 } -> ! {
+        _ = @fmt(&io, "picks, cinematic panel with 4 replies (4th disabled)\n")
+        gui::clear_events{ &g }
+        p.bars_instant = true
+        try dlgpanel::open{ &p, &g, &fs, &dev, computer = false, computer_type = 0 }
+        try dlgpanel::set_line{ &p, &g, speaker = "x", text = SHORT_LINE }
+        dlgpanel::update{ &p, &g, dt = 0.033 }
+        // Enter with only a line: skip. Click: skip. Space: skip.
+        _ = press_key{ &p, &g, keycode = sdl::key::RETURN }
+        if not expect{ &io, what = "Enter, line only", pk = dlgpanel::poll{ &p, &g }, want = "skip" } { bad = bad + 1 }
+        click_at{ &p, &g, x = 400, y = 300 }
+        if not expect{ &io, what = "click, line only", pk = dlgpanel::poll{ &p, &g }, want = "skip" } { bad = bad + 1 }
+        _ = press_key{ &p, &g, keycode = sdl::key::SPACE }
+        if not expect{ &io, what = "Space, line only", pk = dlgpanel::poll{ &p, &g }, want = "skip" } { bad = bad + 1 }
+        if not expect{ &io, what = "nothing happened", pk = dlgpanel::poll{ &p, &g }, want = "none" } { bad = bad + 1 }
+        try show_replies{ &p, &g, &fs, &dev, &sdl }
+        // The wrapped third reply takes several rows: row 3 or 4 is its continuation.
+        _ = @fmt(&io, "  rows: {}, replies: {}, selected {}\n", gui::list_count{ &g, panel = p.main, tag = "LB_REPLIES" }, p.reply_count, p.selected)
+        // Enter with replies: the selected one (the first).
+        _ = press_key{ &p, &g, keycode = sdl::key::RETURN }
+        if not expect{ &io, what = "Enter, replies", pk = dlgpanel::poll{ &p, &g }, want = "reply 1" } { bad = bad + 1 }
+        // Down, Enter: the second.
+        _ = press_key{ &p, &g, keycode = sdl::key::DOWN }
+        _ = press_key{ &p, &g, keycode = sdl::key::RETURN }
+        if not expect{ &io, what = "Down, Enter", pk = dlgpanel::poll{ &p, &g }, want = "reply 2" } { bad = bad + 1 }
+        // Space with replies does nothing.
+        _ = press_key{ &p, &g, keycode = sdl::key::SPACE }
+        if not expect{ &io, what = "Space, replies", pk = dlgpanel::poll{ &p, &g }, want = "none" } { bad = bad + 1 }
+        // Number key 3.
+        _ = press_key{ &p, &g, keycode = 51 }
+        if not expect{ &io, what = "key 3", pk = dlgpanel::poll{ &p, &g }, want = "reply 3" } { bad = bad + 1 }
+        // The disabled fourth, and a number with no reply.
+        _ = press_key{ &p, &g, keycode = 52 }
+        if not expect{ &io, what = "key 4 (disabled)", pk = dlgpanel::poll{ &p, &g }, want = "none" } { bad = bad + 1 }
+        _ = press_key{ &p, &g, keycode = 57 }
+        if not expect{ &io, what = "key 9 (no such reply)", pk = dlgpanel::poll{ &p, &g }, want = "none" } { bad = bad + 1 }
+        // Click on reply 2 (row 1).
+        click_row{ &p, &g, row = 1 }
+        if not expect{ &io, what = "click reply 2", pk = dlgpanel::poll{ &p, &g }, want = "reply 2" } { bad = bad + 1 }
+        // Click on the continuation row of the wrapped third reply.
+        let third = p.reply_first[2]
+        click_row{ &p, &g, row = third + 1 }
+        if not expect{ &io, what = "click 2nd row of reply 3", pk = dlgpanel::poll{ &p, &g }, want = "reply 3" } { bad = bad + 1 }
+        // Click on the disabled fourth.
+        click_row{ &p, &g, row = p.reply_first[3] }
+        if not expect{ &io, what = "click disabled reply 4", pk = dlgpanel::poll{ &p, &g }, want = "none" } { bad = bad + 1 }
+        // The events are gone from the GUI's queue.
+        let left = gui::take_events{ &g }
+        _ = @fmt(&io, "  events left in the gui queue: {}\n", left.len)
+        let mut ei: usize = 0
+        while ei < left.len {
+            _ = @fmt(&io, "    kind {} panel {} (main {}, last {}) tag {}\n", @as(u32, left[ei].kind), left[ei].panel, p.main, p.last, left[ei].tag)
+            ei = ei + 1
+        }
+        end_scene{ &p, &g }
+}
+
+fn check_computer { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut g: gui::Gui, mut p: dlgpanel::Panels, mut bad: u32 } -> ! {
+        _ = @fmt(&io, "picks, computer panel with 3 replies\n")
+        try dlgpanel::open{ &p, &g, &fs, &dev, computer = true, computer_type = 1 }
+        try dlgpanel::set_line{ &p, &g, speaker = "", text = COMP_LINE }
+        _ = press_key{ &p, &g, keycode = sdl::key::RETURN }
+        if not expect{ &io, what = "Enter, line only", pk = dlgpanel::poll{ &p, &g }, want = "skip" } { bad = bad + 1 }
+        try show_computer_replies{ &p, &g }
+        _ = press_key{ &p, &g, keycode = sdl::key::DOWN }
+        _ = press_key{ &p, &g, keycode = sdl::key::RETURN }
+        if not expect{ &io, what = "Down, Enter", pk = dlgpanel::poll{ &p, &g }, want = "reply 2" } { bad = bad + 1 }
+        _ = press_key{ &p, &g, keycode = 49 }
+        if not expect{ &io, what = "key 1", pk = dlgpanel::poll{ &p, &g }, want = "reply 1" } { bad = bad + 1 }
+        click_row{ &p, &g, row = p.reply_first[2] }
+        if not expect{ &io, what = "click reply 3", pk = dlgpanel::poll{ &p, &g }, want = "reply 3" } { bad = bad + 1 }
+        end_scene{ &p, &g }
+}
+
+// ---- screen
+
+fn set_size { mut fs: Fs, mut dev: gpu::Device, mut g: gui::Gui, mut p: dlgpanel::Panels, width: i32, height: i32 } -> ! {
+    try gpu::resize{ &dev, width = @as(u32, width), height = @as(u32, height) }
+    gui::set_screen{ &g, &fs, &dev, width, height, scale = 1.0 }
+    dlgpanel::resize{ &p, &g, &fs, &dev }
+}
+
+// A stand-in for the 3D view: a sky, a floor and a figure, so the bars and the fade show.
+fn draw_scene { mut frame: render::Frame, w: i32, h: i32 } {
+    render::begin_ui{ &frame, width = @as(f32, w), height = @as(f32, h), target = null }
+    let screen = gui::rect_of{ x = 0, y = 0, w, h }
+    let fw = @as(f32, w)
+    let fh = @as(f32, h)
+    gui::put_fill{ &frame, x = 0.0, y = 0.0, w = fw, h = fh * 0.6, color = render::Color{ r = 0.20, g = 0.28, b = 0.38, a = 1.0 }, clip = screen }
+    gui::put_fill{ &frame, x = 0.0, y = fh * 0.6, w = fw, h = fh * 0.4, color = render::Color{ r = 0.30, g = 0.26, b = 0.22, a = 1.0 }, clip = screen }
+    gui::put_fill{ &frame, x = fw * 0.42, y = fh * 0.22, w = fw * 0.16, h = fh * 0.6, color = render::Color{ r = 0.62, g = 0.50, b = 0.38, a = 1.0 }, clip = screen }
+    gui::put_fill{ &frame, x = fw * 0.0, y = 0.0, w = fw * 0.06, h = fh, color = render::Color{ r = 0.85, g = 0.85, b = 0.80, a = 1.0 }, clip = screen }
+}
+
+// One frame: the scene, the overlays, the GUI; saved as a PNG.
+fn shot {
+    mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, mut frame: render::Frame, mut g: gui::Gui,
+    p: dlgpanel::Panels, rig: Rig, name: []u8,
+} -> ! {
+    gui::update{ &g, dt = 0.0 }
+    render::begin_frame{ &frame, time = 0.0 }
+    draw_scene{ &frame, w = g.ui_w, h = g.ui_h }
+    dlgpanel::draw_overlays{ p, &frame }
+    gui::draw{ &g, &frame }
+    try gpu::submit{ &dev, frame = &frame }
+    try save_screen{ &io, &fs, &dev, &heap, dir = rig.out, name }
+}
+
+fn save_screen { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, dir: []u8, name: []u8 } -> ! {
+    let size = gpu::screen_size{ dev }
+    let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+    defer _ = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = pixels, count = 0 }
+    _ = try gpu::read_screen{ &dev, into = pixels }
+    let mut path_buf: [512]u8
+    let path = join{ into = path_buf[..], a = dir, b = name }
+    let image = png::Image{ width = size.width, height = size.height, rgba = pixels }
+    try png::save{ &fs, realloc = arena::alloc, &heap, path, image, alpha = false, bottom_up = false }
+    _ = @fmt(&io, "wrote {} ({}x{})\n", path, size.width, size.height)
+}
+
+fn join { into: []mut u8, a: []u8, b: []u8 } -> []u8 {
+    let mut n: usize = 0
+    slice::copy(u8){ dst = into[..a.len], src = a }
+    n = a.len
+    into[n] = '/'
+    n = n + 1
+    slice::copy(u8){ dst = into[n..n + b.len], src = b }
+    return into[..n + b.len]
+}
+
+// Closes the conversation panels and lets the GUI reap them, as a frame of the game does.
+fn end_scene { mut p: dlgpanel::Panels, mut g: gui::Gui } {
+    dlgpanel::close{ &p, &g }
+    gui::update{ &g, dt = 0.0 }
+    gui::clear_events{ &g }
+}
+
+// `a` or `b` as bytes (a typed result for what `if` of string literals can't give a call argument).
+fn either { first: bool, a: []u8, b: []u8 } -> []u8 {
+    if first { return a }
+    return b
+}
+
+fn make_dir { mut fs: Fs, path: []u8 } {
+    let mut i: usize = 1
+    while i <= path.len {
+        if i == path.len or path[i] == '/' {
+            fs::make_dir{ &fs, path = path[..i] } iferr {}
+        }
+        i = i + 1
+    }
+}

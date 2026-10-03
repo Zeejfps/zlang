@@ -1,0 +1,145 @@
+// Conversation camera shots (docs/re/dialogue.md section 9): the framed shots between a speaker
+// and a listener (angles 1 to 3) and the GIT's static cameras (angle 6), as a camera rig:
+// where the eye is, where it looks, which way is up and the field of view. Pure geometry; the
+// obstruction tests and the side cache that need the scene are in view.ctx.
+//
+// Conventions as the original's: a camera looks down its local -Z at pitch 0 and level at pitch
+// 90, yaw is the heading of the horizontal view direction `atan2(-x, y)`, and shots are
+// rebuilt every frame from where the participants are.
+namespace dlgcam {
+    const FOV: f32 = 55.0
+
+    struct Rig { eye: math::Vec3, forward: math::Vec3, up: math::Vec3, fov: f32 }
+
+    // A camera of the GIT's CameraList (9.5).
+    struct Static {
+        id: i32,
+        position: math::Vec3,
+        orientation: math::Quat,
+        pitch: f32,                 // added to the orientation's pitch, degrees
+        height: f32,                // added to the position's z
+        fov: f32,
+        mic_range: f32,
+    }
+
+    fn zup {} -> math::Vec3 { return math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } }
+
+    // `v` turned about +Z by `degrees` (counter-clockwise seen from above).
+    fn rotate_z { v: math::Vec3, degrees: f32 } -> math::Vec3 {
+        let a = math::radians{ degrees }
+        let c = math::cosf{ x = a }
+        let s = math::sinf{ x = a }
+        return math::Vec3{ x = v.x * c - v.y * s, y = v.x * s + v.y * c, z = v.z }
+    }
+
+    fn flat { v: math::Vec3 } -> math::Vec3 { return math::Vec3{ x = v.x, y = v.y, z = 0.0 } }
+
+    // The horizontal unit vector of `v` (+Y for none).
+    fn heading_of { v: math::Vec3 } -> math::Vec3 {
+        let f = flat{ v }
+        let len = math::vec3::length{ v = f }
+        if len < 0.0001 { return math::Vec3{ x = 0.0, y = 1.0, z = 0.0 } }
+        return math::vec3::scale{ v = f, s = 1.0 / len }
+    }
+
+    // A camera at `eye` looking along the horizontal heading `h` with the pitch that points it at
+    // `target` (Rz(yaw) Rx(pitch), no roll).
+    fn aim { eye: math::Vec3, h: math::Vec3, target: math::Vec3, fov: f32 } -> Rig {
+        let to = math::vec3::sub{ a = target, b = eye }
+        let run = math::sqrtf{ x = to.x * to.x + to.y * to.y }
+        // Elevation of the target above the horizon; the pitch is that plus 90 degrees.
+        let elev = math::atan2f{ y = to.z, x = if run < 0.0001 { 0.0001 } else { run } }
+        let forward = math::Vec3{ x = h.x * math::cosf{ x = elev }, y = h.y * math::cosf{ x = elev }, z = math::sinf{ x = elev } }
+        // Up is perpendicular to the view direction in the vertical plane through it.
+        let up = math::Vec3{ x = -h.x * math::sinf{ x = elev }, y = -h.y * math::sinf{ x = elev }, z = math::cosf{ x = elev } }
+        return Rig{ eye, forward, up, fov }
+    }
+
+    // Angle 1: the speaker from the listener's side, a little above and from 30 degrees off the
+    // line between them. `pull_back` (the speaker's animation's cu_pb_range) backs it away.
+    fn close_up { s: math::Vec3, l: math::Vec3, side: f32, cam_height: f32, tar_height: f32, pull_back: f32, fov: f32 } -> Rig {
+        let mut other = l
+        if math::vec3::length_sq{ v = math::vec3::sub{ a = s, b = l } } < 0.000001 {
+            other = math::vec3::add{ a = s, b = math::Vec3{ x = 1.5, y = 1.5, z = 0.1 } }
+        }
+        let line = math::vec3::sub{ a = s, b = other }
+        let u = heading_of{ v = line }
+        return close_up_rig{ s, u, line, side, cam_height, tar_height, pull_back, fov }
+    }
+
+    fn close_up_rig { s: math::Vec3, u: math::Vec3, line: math::Vec3, side: f32, cam_height: f32, tar_height: f32, pull_back: f32, fov: f32 } -> Rig {
+        let mut t = math::vec3::add_scaled{ a = s, b = u, s = -0.2 }
+        t.z = t.z - 0.04 - 0.2 * pull_back + tar_height
+        let v = heading_of{ v = rotate_z{ v = line, degrees = 30.0 * side } }
+        let mut eye = math::vec3::add_scaled{ a = t, b = v, s = -(0.5 + pull_back) }
+        eye.z = eye.z + cam_height + 0.2 * pull_back
+        return aim{ eye, h = v, target = t, fov }
+    }
+
+    // Angle 2: over the listener's shoulder onto the speaker.
+    fn shoulder { s: math::Vec3, l: math::Vec3, side: f32, cam_height: f32, tar_height: f32, fov: f32 } -> Rig {
+        let line = math::vec3::sub{ a = s, b = l }
+        let d = math::vec3::length{ v = line }
+        if d < 0.001 { return close_up{ s, l, side, cam_height, tar_height, pull_back = 0.0, fov } }
+        // The eye points sink with the distance between them.
+        let sz = s.z - 0.1 * d
+        let lz = l.z - 0.05 * d
+        let p = math::Vec3{ x = l.x + 0.3 * (s.x - l.x), y = l.y + 0.3 * (s.y - l.y), z = lz + 0.3 * (sz - lz) }
+        let v = heading_of{ v = rotate_z{ v = line, degrees = 30.0 * side } }
+        let u = heading_of{ v = line }
+        let mut eye = math::vec3::add_scaled{ a = p, b = v, s = -0.8 }
+        eye = math::vec3::add_scaled{ a = eye, b = u, s = -0.15 }
+        eye.z = eye.z + cam_height
+        let target = math::Vec3{ x = p.x, y = p.y, z = p.z + tar_height }
+        return aim{ eye, h = v, target, fov }
+    }
+
+    // Angle 3: both of them from the side.
+    fn wide { s: math::Vec3, l: math::Vec3, side: f32, cam_height: f32, tar_height: f32, fov: f32 } -> Rig {
+        let line = math::vec3::sub{ a = s, b = l }
+        let d = math::vec3::length{ v = line }
+        if d < 0.001 { return close_up{ s, l, side, cam_height, tar_height, pull_back = 0.0, fov } }
+        let p = math::vec3::scale{ v = math::vec3::add{ a = s, b = l }, s = 0.5 }
+        let v = heading_of{ v = rotate_z{ v = line, degrees = 90.0 * side } }
+        let mut eye = math::vec3::add_scaled{ a = p, b = v, s = -1.5 }
+        eye.z = eye.z + 0.3 * d + cam_height
+        let target = math::Vec3{ x = p.x, y = p.y, z = p.z - 0.2 * d + tar_height }
+        return aim{ eye, h = v, target, fov }
+    }
+
+    // Angle 6: a camera of the GIT (9.5). The orientation gives yaw, pitch and roll (as
+    // Rz Rx Ry); the camera's own Pitch is added to its pitch.
+    fn static_rig { c: Static } -> Rig {
+        let q = c.orientation
+        // Rotation matrix entries of the quaternion that Rz Rx Ry decomposition needs.
+        let r01 = 2.0 * (q.x * q.y - q.w * q.z)
+        let r11 = 1.0 - 2.0 * (q.x * q.x + q.z * q.z)
+        let r21 = 2.0 * (q.y * q.z + q.w * q.x)
+        let r20 = 2.0 * (q.x * q.z - q.w * q.y)
+        let r22 = 1.0 - 2.0 * (q.x * q.x + q.y * q.y)
+        let sp = math::clamp{ x = r21, lo = -1.0, hi = 1.0 }
+        let pitch = math::asinf{ x = sp } + math::radians{ degrees = c.pitch }
+        let yaw = math::atan2f{ y = -r01, x = r11 }
+        let roll = math::atan2f{ y = -r20, x = r22 }
+        let ca = math::cosf{ x = yaw }
+        let sa = math::sinf{ x = yaw }
+        let cb = math::cosf{ x = pitch }
+        let sb = math::sinf{ x = pitch }
+        let cc = math::cosf{ x = roll }
+        let sc = math::sinf{ x = roll }
+        // Columns 1 (up) and 2 (the camera looks down its negative) of Rz Rx Ry.
+        let up = math::Vec3{ x = -sa * cb, y = ca * cb, z = sb }
+        let back = math::Vec3{ x = ca * sc + sa * sb * cc, y = sa * sc - ca * sb * cc, z = cb * cc }
+        let eye = math::Vec3{ x = c.position.x, y = c.position.y, z = c.position.z + c.height }
+        return Rig{ eye, forward = math::vec3::negate{ v = back }, up, fov = c.fov }
+    }
+
+    // The rig of an animated camera node: its world matrix places the camera, which looks down
+    // its -Z with +Y up (the same convention as a GUI 3D camera).
+    fn node_rig { world: math::Mat4, fov: f32 } -> Rig {
+        let eye = math::mat4::transform_point{ m = world, p = math::vec3::zero{} }
+        let forward = math::vec3::normalize{ v = math::mat4::transform_dir{ m = world, v = math::Vec3{ x = 0.0, y = 0.0, z = -1.0 } } }
+        let up = math::vec3::normalize{ v = math::mat4::transform_dir{ m = world, v = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 } } }
+        return Rig{ eye, forward, up, fov }
+    }
+}

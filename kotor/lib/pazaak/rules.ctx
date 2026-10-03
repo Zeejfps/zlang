@@ -1,0 +1,230 @@
+// The rules of a pazaak game, with no screens and no clock (docs/re/pazaak.md, "A game"). A `Game`
+// is the original's game state: both players' hands and tables, the 40-card main deck and the
+// stakes. The match flow (turns, timing, messages) is in match.ctx and the opponent in ai.ctx.
+//
+//   let mut g = pazaak::new_game{ seed, wager }
+//   pazaak::deal_hand{ &g.rng, &g.player, deck = side_deck }
+//   pazaak::draw_card{ &g, who = pazaak::Who::player }
+namespace pazaak {
+    const HAND_SIZE: usize = 4
+    const TABLE_SIZE: usize = 9
+    const SIDE_DECK_SIZE: usize = 10
+    const MAIN_DECK_SIZE: usize = 40
+    const TARGET: i32 = 20
+    const SETS_TO_WIN: i32 = 3
+    const BUST: i32 = -1000000          // a total over 20, as the AI and the judge compare it
+
+    // The original draws with the C runtime's rand(); this is that generator (15 bits), so
+    // shuffles are as uneven as its `% n` made them, and a seed repeats a game exactly.
+    struct Rng { state: u32 }
+
+    fn make_rng { seed: u32 } -> Rng { return Rng{ state = seed } }
+
+    fn rand_below { mut rng: Rng, n: i32 } -> i32 {
+        rng.state = @wrap_add(@wrap_mul(rng.state, 214013), 2531011)
+        let r = @as(i32, (rng.state >> 16) & 32767)
+        return r % n
+    }
+
+    enum Who: u8 { player, opponent }
+
+    fn other_of { who: Who } -> Who { return if who == Who::player { Who::opponent } else { Who::player } }
+
+    fn who_index { who: Who } -> usize { return if who == Who::player { 0 } else { 1 } }
+
+    struct Side {
+        hand: [4]Card,
+        table: [9]Card,
+        standing: bool,
+        sets: i32,                      // sets won in this match
+    }
+
+    fn new_side {} -> Side {
+        return Side{ hand = [no_card{}; 4], table = [no_card{}; 9], standing = false, sets = 0 }
+    }
+
+    struct Game {
+        rng: Rng,
+        player: Side,
+        opponent: Side,
+        main: [40]Card,
+        top: i32,                       // the next main-deck card to draw; -1: shuffle first
+        wager: i32,
+        ai: [2]i32,                     // each side's AI state (ai.ctx), by who_index
+    }
+
+    fn new_game { seed: u32, wager: i32 } -> Game {
+        return Game{
+            rng = make_rng{ seed }, player = new_side{}, opponent = new_side{},
+            main = [no_card{}; 40], top = -1, wager, ai = [0; 2],
+        }
+    }
+
+    // ---- the main deck
+
+    // Four of each 1..10 in a random order: each card is picked from the ones left, the last of
+    // them filling the gap.
+    fn shuffle_main_deck { mut g: Game } {
+        let mut left: [40]Card = [no_card{}; 40]
+        let mut i: usize = 0
+        while i < MAIN_DECK_SIZE {
+            left[i] = make_card{ id = FIRST_MAIN + @as(i32, i % 10) }
+            i = i + 1
+        }
+        let mut n: i32 = @as(i32, MAIN_DECK_SIZE)
+        i = 0
+        while i < MAIN_DECK_SIZE {
+            let r = @as(usize, rand_below{ rng = &g.rng, n })
+            g.main[i] = left[r]
+            left[r] = left[@as(usize, n - 1)]
+            n = n - 1
+            i = i + 1
+        }
+        g.top = @as(i32, MAIN_DECK_SIZE) - 1
+    }
+
+    // The next card of the main deck, shuffling a new deck when it has run out.
+    fn take_main_card { mut g: Game } -> Card {
+        if g.top < 0 { shuffle_main_deck{ &g } }
+        let c = g.main[@as(usize, g.top)]
+        g.top = g.top - 1
+        return c
+    }
+
+    // ---- hands
+
+    // 4 random cards of the 10 of a side deck, without replacement (what the match deals).
+    fn deal_hand { mut rng: Rng, mut side: Side, deck: [10]Card } {
+        let mut left: [10]Card = deck
+        let mut n: i32 = @as(i32, SIDE_DECK_SIZE)
+        let mut i: usize = 0
+        while i < HAND_SIZE {
+            let r = @as(usize, rand_below{ rng = &rng, n })
+            side.hand[i] = left[r]
+            left[r] = left[@as(usize, n - 1)]
+            left[@as(usize, n - 1)] = no_card{}
+            n = n - 1
+            i = i + 1
+        }
+    }
+
+    // A side deck of card ids (-1 for none) as cards.
+    fn deck_cards { ids: [10]i32 } -> [10]Card {
+        let mut cs: [10]Card = [no_card{}; 10]
+        let mut i: usize = 0
+        while i < SIDE_DECK_SIZE {
+            if ids[i] >= 0 and ids[i] < @as(i32, SIDE_KINDS) { cs[i] = make_card{ id = ids[i] } }
+            i = i + 1
+        }
+        return cs
+    }
+
+    // ---- tables
+
+    // What a side's table adds up to; the table is read up to its first empty slot.
+    fn total_of { s: Side } -> i32 {
+        let mut sum: i32 = 0
+        let mut i: usize = 0
+        while i < TABLE_SIZE and is_card{ c = s.table[i] } {
+            sum = sum + card_value{ c = s.table[i] }
+            i = i + 1
+        }
+        return sum
+    }
+
+    // The total as comparisons see it: over 20 is the worst there is.
+    fn scored_total { s: Side } -> i32 {
+        let t = total_of{ s }
+        return if t > TARGET { BUST } else { t }
+    }
+
+    fn table_count { s: Side } -> usize {
+        let mut i: usize = 0
+        while i < TABLE_SIZE and is_card{ c = s.table[i] } { i = i + 1 }
+        return i
+    }
+
+    // Puts a card on the table. A ninth card or a total of exactly 20 makes the side stand.
+    fn place_card { mut s: Side, c: Card } {
+        let at = table_count{ s }
+        if at < TABLE_SIZE { s.table[at] = c }
+        if at >= TABLE_SIZE - 1 or total_of{ s } == TARGET { s.standing = true }
+    }
+
+    // A main-deck card onto a side's table (the start of its turn).
+    fn draw_card { mut g: Game, who: Who } -> Card {
+        let c = take_main_card{ &g }
+        if who == Who::player { place_card{ s = &g.player, c } } else { place_card{ s = &g.opponent, c } }
+        return c
+    }
+
+    fn has_hand_card { s: Side, i: usize } -> bool { return i < HAND_SIZE and is_card{ c = s.hand[i] } }
+
+    // Plays hand card `i` onto the table; false if there is none.
+    fn play_hand_card { mut s: Side, i: usize } -> bool {
+        if not has_hand_card{ s, i } { return false }
+        let c = s.hand[i]
+        s.hand[i] = no_card{}
+        place_card{ &s, c }
+        return true
+    }
+
+    // A flip card in the hand changes its sign (until it is played); false for any other card.
+    fn flip_hand_card { mut s: Side, i: usize } -> bool {
+        if not has_hand_card{ s, i } or not is_flip_card{ c = s.hand[i] } { return false }
+        s.hand[i].flipped = not s.hand[i].flipped
+        return true
+    }
+
+    // A new set: empty tables, nobody standing. Hands, sets won and the main deck stay.
+    fn clear_tables { mut g: Game } {
+        g.player.table = [no_card{}; 9]
+        g.opponent.table = [no_card{}; 9]
+        g.player.standing = false
+        g.opponent.standing = false
+    }
+
+    // ---- judging a set
+
+    enum SetResult: u8 { undecided, player, opponent, tie }
+
+    // The state of the set after a turn. A total over 20 ends it: both sides are made to stand. When
+    // both stand, the higher total wins (a bust is the lowest) and equal totals tie.
+    fn judge_set { mut g: Game } -> SetResult {
+        let a = total_of{ s = g.player }
+        let b = total_of{ s = g.opponent }
+        if a > TARGET or b > TARGET {
+            g.player.standing = true
+            g.opponent.standing = true
+        }
+        if not g.player.standing or not g.opponent.standing { return SetResult::undecided }
+        let sa = if a > TARGET { BUST } else { a }
+        let sb = if b > TARGET { BUST } else { b }
+        if sa > sb { return SetResult::player }
+        if sa < sb { return SetResult::opponent }
+        return SetResult::tie
+    }
+
+    // Counts a judged set; true when it decided the match.
+    fn score_set { mut g: Game, r: SetResult } -> bool {
+        if r == SetResult::player { g.player.sets = g.player.sets + 1 }
+        if r == SetResult::opponent { g.opponent.sets = g.opponent.sets + 1 }
+        return g.player.sets >= SETS_TO_WIN or g.opponent.sets >= SETS_TO_WIN
+    }
+
+    // ---- decks from pazaakdecks.2da
+
+    // Ten cards from the table's row (card0..card9). Null if the table lacks the row.
+    fn opponent_deck { t: twoda::Table, row: usize } -> ?[10]i32 {
+        if row >= twoda::rows{ t } { return null }
+        let mut ids: [10]i32 = [-1; 10]
+        let first = twoda::find_column{ t, name = "card0" } ifnull { return null }
+        let mut i: usize = 0
+        while i < SIDE_DECK_SIZE {
+            let text = twoda::cell{ t, row, col = first + i }
+            ids[i] = parse_card{ text } ifnull -1
+            i = i + 1
+        }
+        return ids
+    }
+}

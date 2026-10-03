@@ -1,0 +1,55 @@
+// A line's voice-over (docs/re/dialogue.md 7): one stream in the voice group, replaced only when
+// the next voiced line starts, so it plays on over the reply list and over unvoiced lines.
+namespace dlgview {
+    fn stop_voice { mut v: View, mut w: world::World, fade: f32 } {
+        mix::stop{ m = v.m, h = v.voice, fade }
+        if v.voice_bytes.len > 0 and fade <= 0.0 {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.voice_bytes, count = 0 }
+            v.voice_bytes = slice::empty(u8){}
+        }
+        w.conversation.vo_playing = false
+        v.lip_elapsed = 0.0
+        drop_lip{ &v }
+    }
+
+    // Starts the voice-over `name` for `speaker`; false when there is no file (the flow treats the
+    // line as unvoiced then).
+    fn play_voice { mut v: View, mut w: world::World, speaker: u32, name: resref::ResRef } -> bool {
+        mix::stop{ m = v.m, h = v.voice, fade = 0.0 }
+        if v.voice_bytes.len > 0 {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.voice_bytes, count = 0 }
+            v.voice_bytes = slice::empty(u8){}
+        }
+        let loaded = dlg::load_sound{ &w, name } iferr { return false }
+        let bytes = loaded ifnull { return false }
+        v.voice_bytes = bytes
+        v.voice = mix::play{ m = v.m, bytes, p = mix::sound_2d{ group = mix::Group::voice, volume = 1.0 } } iferr {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.voice_bytes, count = 0 }
+            v.voice_bytes = slice::empty(u8){}
+            return false
+        }
+        v.voice_speaker = speaker
+        load_lip{ &v, &w, name }
+        v.lip_elapsed = 0.0
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog voice {} on {}\n", name, speaker)
+        }
+        return true
+    }
+
+    // Each frame: honour a stop request, tell the flow whether the voice still plays, and give
+    // the memory of a finished one back.
+    fn update_voice { mut v: View, mut w: world::World } {
+        if w.conversation.vo_stop {
+            w.conversation.vo_stop = false
+            stop_voice{ &v, &w, fade = 0.0 }
+        }
+        let playing = mix::is_playing{ m = v.m, h = v.voice }
+        w.conversation.vo_playing = playing and w.conversation.vo_playing
+        if not playing and v.voice_bytes.len > 0 {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.voice_bytes, count = 0 }
+            v.voice_bytes = slice::empty(u8){}
+        }
+    }
+}

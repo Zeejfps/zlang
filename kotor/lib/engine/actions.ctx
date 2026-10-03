@@ -243,6 +243,7 @@ namespace actions {
             close_door => { return doors::close_door{ &w, &vm, engine, id, a } }
             use_object => { return doors::use_object{ &w, &vm, engine, id, a } }
             dialog_object => { return dialog_object{ &w, id, a } }
+            resume_conversation => { return resume_conversation{ &w } }
             follow => { return follow{ &w, id, a, leader = false } }
             follow_leader => { return follow{ &w, id, a, leader = true } }
             random_walk => { return random_walk{ &w, id, a } }
@@ -381,30 +382,34 @@ namespace actions {
         return Status::done
     }
 
-    // DIALOGOBJECT (actions.md 3.12): params speaker, dialog resref (string), private, ...
-    // HOOK(dialog): dlg::start. Until then the outbox carries the request.
+    // DIALOGOBJECT (actions.md 3.12, re/dialogue.md 2.3): the target must be there and commandable;
+    // then it gets the ON_DIALOGUE event (caller: the actor) whose script calls BeginConversation,
+    // which owns the rest (lib/dialog). Walking into range first is not done yet: the script and
+    // click paths both start from where the actor stands (the original's "skip the range test").
     fn dialog_object { mut w: world::World, id: u32, a: *mut Action } -> Status {
-        let mut speaker = object_param{ a, i = 0 }
-        let mut owner = id
+        let target = object_param{ a, i = 0 }
         let mut dialog = resref::empty{}
         if a.params[1] is string{ s } { dialog = resref::truncate{ name = s } }
-        if resref::is_empty{ r = dialog } {
-            let o = world::object{ w = &w, id } ifnull { return Status::failed }
-            dialog = o.conversation
-            // The player talking to someone: the conversation is theirs (ours: actions.md 3.12
-            // has the player's order queue DIALOGOBJECT on the player with the other as target).
-            if id == w.pc or resref::is_empty{ r = dialog } {
-                let t = world::object{ w = &w, id = speaker } ifnull { return Status::failed }
-                if not resref::is_empty{ r = t.conversation } {
-                    dialog = t.conversation
-                    owner = speaker
-                    speaker = id
-                }
-            }
+        let t = world::object{ w = &w, id = target } ifnull {
+            w.conversation.pending = false
+            return Status::failed
         }
-        outbox::post{ out = &w.out, note = outbox::Note::conversation{ owner, speaker, dialog } }
-        world::prefix{ w = &w }
-        _ = @fmt(&w.io, "conversation {} owner={} speaker={} (no dialogue system yet)\n", dialog, owner, speaker)
+        if not t.commandable or w.conversation.active {
+            w.conversation.pending = w.conversation.active
+            return Status::failed
+        }
+        w.conversation.pending = true
+        dlg::note_event{ &w, target, caller = id, name = dialog, private = int_param{ a, i = 2 } != 0 }
+        // ints: -1, the listen pattern number (-1: a conversation), private, skip the range test.
+        let mut e = events::script_event{ kind = events::DIALOGUE, object = id }
+        e.ints = [-1, -1, int_param{ a, i = 2 }, 1]
+        events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e } }
+        return Status::done
+    }
+
+    // RESUMECONVERSATION (re/dialogue.md 4.10): the conversation goes on.
+    fn resume_conversation { mut w: world::World } -> Status {
+        w.conversation.paused = false
         return Status::done
     }
 }

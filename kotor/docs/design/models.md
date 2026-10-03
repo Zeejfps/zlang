@@ -165,7 +165,11 @@ For a placed object with transform `instance` (from the GIT or LYT):
 (`gogglehook`). An attached model's root goes there: its nodes draw with
 `instance * body_pose.world[hook] * attached_pose.world[node]`. A head is a model of its own,
 with its own player and pose, playing its own animations through its own supermodel chain (which
-leads to the body's), never the body's (models-usage.md, Heads).
+leads to the body's), never the body's (models-usage.md, Heads). Call
+`mdl_anim::hold_shared{ model, pose, parent, hook }` once after making an attachment's pose: the
+attachment's nodes named as the hook's ancestors in the parent (a head's `rootdummy`, `torso_g`,
+`torsoUpr_g`) stay at their bind state, because the hook's transform already carries what the
+parent's animation does to them; without it the head sits off the neck.
 
 ## Drawing through the render seam
 
