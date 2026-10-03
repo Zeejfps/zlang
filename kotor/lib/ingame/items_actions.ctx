@@ -1,0 +1,139 @@
+// What the equipment and inventory panels do to the world: put an item on, take it off, use it.
+//
+// PLACEHOLDER: the original queues EQUIPITEM / UNEQUIPITEM actions on the creature (actions.md,
+// party-items-saves.md 4.2 and 4.5) whose handlers run CanEquipItem, apply the item properties as
+// effects, tell the scripts (OnEquipItem, OnAcquireItem), refuse armour changes in combat and
+// take a round in combat. The engine has no handlers for those actions yet (only the instant
+// ActionEquipItem routine), so the panels call these functions, which move the item ids between
+// `Creature.equipped` and `Creature.inventory` the way the routine does, split one item off a
+// stack as RunEquip does and merge a returning item into an identical stack as AddItem does.
+// When the action handlers exist, `equip`, `unequip` and `use_item` become `actions::add` calls.
+namespace items {
+    // What `equip` did: the item now in the slot and the carried item that holds whatever it
+    // displaced (INVALID for none).
+    struct Swap { equipped: u32, displaced: u32 }
+
+    // Splits one item off the stack `item`: a new item of the same blueprint, base item,
+    // variation and charges with a stack of 1, not yet in any list. An item that is not a stack
+    // (or has no blueprint to copy) is returned as it is.
+    fn split_one { mut w: world::World, who: u32, item: u32 } -> u32 {
+        let io = world::object{ w = &w, id = item } ifnull { return item }
+        let it = obj::item{ o = io } ifnull { return item }
+        if it.stack < 2 or io.template.len == 0 { return item }
+        let name = resref::bytes{ r = &io.template }
+        let made = tmpl::spawn_item{ &w, template = name, possessor = who } iferr { return item }
+        let no = world::object{ w = &w, id = made } ifnull { return item }
+        let nit = obj::item{ o = no } ifnull { return item }
+        nit.base = it.base
+        nit.model_variation = it.model_variation
+        nit.body_variation = it.body_variation
+        nit.texture_variation = it.texture_variation
+        nit.charges = it.charges
+        nit.identified = it.identified
+        nit.stack = 1
+        it.stack = it.stack - 1
+        return made
+    }
+
+    // Puts `item` into the party's inventory, joining an identical stack that has room for all of
+    // it (AddItem's merge, party-items-saves.md 5.2). Returns the item that now holds it.
+    fn stash { mut w: world::World, who: u32, item: u32 } -> u32 {
+        let holder = bag_holder{ w = &w, who }
+        let o = world::object{ w = &w, id = holder } ifnull { return item }
+        let io = world::object{ w = &w, id = item } ifnull { return item }
+        let it = obj::item{ o = io } ifnull { return item }
+        it.equipped_slot = -1
+        it.possessor = holder
+        let most = rt_item::max_stack{ w = &w, base = it.base }
+        if most > 1 {
+            let ids = bag_of{ w = &w, id = holder }
+            let mut k: usize = 0
+            while k < ids.len {
+                let other = world::object{ w = &w, id = ids[k] }
+                k = k + 1
+                if other == null or other.id == item { continue }
+                let oi = obj::item{ o = other } ifnull { continue }
+                if oi.base != it.base or oi.model_variation != it.model_variation or oi.charges != it.charges { continue }
+                if not resref::eq{ a = other.template, b = io.template } { continue }
+                if oi.stack + it.stack > most { continue }
+                oi.stack = oi.stack + it.stack
+                world::destroy{ &w, id = item }
+                return other.id
+            }
+        }
+        _ = rt_item::add_to_inventory{ o, item }
+        return item
+    }
+
+    // Takes what is in equipment index `index` off and into the party's inventory; the id of the
+    // item that holds it there, INVALID when the slot was empty.
+    fn vacate { mut w: world::World, who: u32, index: usize } -> u32 {
+        let o = world::object{ w = &w, id = who } ifnull { return obj::INVALID }
+        let c = obj::creature{ o } ifnull { return obj::INVALID }
+        let id = c.equipped[index]
+        if id == obj::INVALID { return obj::INVALID }
+        c.equipped[index] = obj::INVALID
+        if not world::is_valid{ w = &w, id } { return obj::INVALID }
+        return stash{ &w, who, item = id }
+    }
+
+    // Takes `item` out of whichever list holds it (the party's, or the creature's own).
+    fn take_from_bags { mut w: world::World, who: u32, item: u32 } {
+        let holder = bag_holder{ w = &w, who }
+        let ho = world::object{ w = &w, id = holder } ifnull { return }
+        if rt_item::remove_from_inventory{ o = ho, item } { return }
+        if holder == who { return }
+        let wo = world::object{ w = &w, id = who } ifnull { return }
+        _ = rt_item::remove_from_inventory{ o = wo, item }
+    }
+
+    // Puts the carried item `item` on in equipment index `index`: one of a stack, the former
+    // occupant back among the carried items, both hands cleared for a two-handed weapon
+    // (party-items-saves.md 4.2 and 4.3). Nothing happens, and the result is INVALID, when the
+    // creature cannot wear it there.
+    fn equip { mut w: world::World, who: u32, item: u32, index: usize } -> Swap {
+        let none = Swap{ equipped = obj::INVALID, displaced = obj::INVALID }
+        if not can_equip{ w = &w, who, item, index } { return none }
+        let o = world::object{ w = &w, id = who } ifnull { return none }
+        let c = obj::creature{ o } ifnull { return none }
+        let moved = split_one{ &w, who, item }
+        if moved == item { take_from_bags{ &w, who, item } }
+        let mo = world::object{ w = &w, id = moved } ifnull { return none }
+        let mit = obj::item{ o = mo } ifnull { return none }
+        let mut displaced = obj::INVALID
+        if index == obj::SLOT_RIGHT_WEAPON and is_two_handed{ w = &w, id = moved } {
+            let left = vacate{ &w, who, index = obj::SLOT_LEFT_WEAPON }
+            if left != obj::INVALID { displaced = left }
+        }
+        let former = vacate{ &w, who, index }
+        if former != obj::INVALID { displaced = former }
+        c.equipped[index] = moved
+        mit.equipped_slot = @as(i32, index)
+        mit.possessor = who
+        return Swap{ equipped = moved, displaced }
+    }
+
+    // Takes the item in equipment index `index` off; the carried item that holds it. The left
+    // weapon moves to the right hand when the right one goes (RunUnequip, 4.5).
+    fn unequip { mut w: world::World, who: u32, index: usize } -> u32 {
+        let o = world::object{ w = &w, id = who } ifnull { return obj::INVALID }
+        let c = obj::creature{ o } ifnull { return obj::INVALID }
+        let back = vacate{ &w, who, index }
+        if index == obj::SLOT_RIGHT_WEAPON and c.equipped[obj::SLOT_LEFT_WEAPON] != obj::INVALID {
+            let left = c.equipped[obj::SLOT_LEFT_WEAPON]
+            c.equipped[obj::SLOT_LEFT_WEAPON] = obj::INVALID
+            c.equipped[obj::SLOT_RIGHT_WEAPON] = left
+            if item_of{ w = &w, id = left } is some{ value = it } { it.equipped_slot = @as(i32, obj::SLOT_RIGHT_WEAPON) }
+        }
+        return back
+    }
+
+    // Uses the item. PLACEHOLDER: using an item casts the spell of its CastSpell property on the
+    // user (the effects, the charges or the stack it spends are lib/rules'); the engine only has
+    // the module's OnActivateItem event, which is queued here for the scripts that care.
+    fn use_item { mut w: world::World, who: u32, item: u32 } {
+        let module = w.module
+        let e = events::script_event{ kind = events::ACTIVATE_ITEM, object = item }
+        events::post{ &w, delay_ms = 0, caller = who, target = module, payload = events::Payload::script{ e } }
+    }
+}

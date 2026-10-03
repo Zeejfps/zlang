@@ -1,0 +1,111 @@
+// The player's journal: which quests were started and the state each one is in. This is what
+// AddJournalQuestEntry / RemoveJournalQuestEntry / GetJournalEntry act on and what the party table
+// saves (JNL_Entries: JNL_PlotID, JNL_State, JNL_Date, JNL_Time). It knows nothing of the quests'
+// texts (those are global.jrl: journal_jrl.ctx) and nothing of the GUI, so the engine can hold one in
+// the world: see the PLACEHOLDER in journal_panel.ctx.
+//
+// A quest is named by its tag (the JRL category's Tag, compared ignoring case, like script strings).
+// The state is the ID of one of the category's entries; the entry's End flag decides whether the
+// quest is active or completed. The `new` flag is set whenever a quest is added or advances and is
+// cleared by the journal panel once the player has looked at it (the tab bar pulses while any
+// quest carries it).
+namespace journal {
+    const MAX_QUESTS: usize = 128           // global.jrl has 101 categories
+    const TAG_LEN: usize = 32               // the longest tag in global.jrl is 24 bytes
+
+    struct Quest {
+        tag: [32]u8,
+        tag_len: usize,
+        state: i32,
+        day: u32,               // the game day and time (ms into it) the state was set: JNL_Date, JNL_Time
+        time: u32,
+        seq: u32,               // order of the change within the journal; breaks ties between equal times
+        new: bool,
+    }
+
+    struct Journal {
+        quests: [128]Quest,
+        count: usize,
+        next_seq: u32,
+        version: u32,           // counts changes: a panel that is open refills when it moves
+    }
+
+    fn new_journal {} -> Journal {
+        let mut j: Journal
+        return j
+    }
+
+    // The tag of quest `i`.
+    fn tag_at { j: *Journal, i: usize } -> []u8 { return j.quests[i].tag[..j.quests[i].tag_len] }
+
+    // The quest with this tag, or null.
+    fn find { j: Journal, tag: []u8 } -> ?usize {
+        let want = if tag.len > TAG_LEN { tag[..TAG_LEN] } else { tag }
+        let mut i: usize = 0
+        while i < j.count {
+            if ci::eq{ a = j.quests[i].tag[..j.quests[i].tag_len], b = want } { return i }
+            i = i + 1
+        }
+        return null
+    }
+
+    // GetJournalEntry: the quest's state, 0 when it has none.
+    fn state_of { j: Journal, tag: []u8 } -> i32 {
+        let i = find{ j, tag } ifnull { return 0 }
+        return j.quests[i].state
+    }
+
+    // AddJournalQuestEntry: starts the quest or moves it to `state`. A lower state than the current
+    // one is ignored unless `allow_lower` (the script's bAllowOverrideHigher). `day` and `time` are
+    // the game clock. True when something changed.
+    fn set_state { mut j: Journal, tag: []u8, state: i32, allow_lower: bool, day: u32, time: u32 } -> bool {
+        let want = if tag.len > TAG_LEN { tag[..TAG_LEN] } else { tag }
+        let found = find{ j = j, tag = want }
+        let mut at: usize = j.count
+        if found != null {
+            if j.quests[found].state == state { return false }
+            if state < j.quests[found].state and not allow_lower { return false }
+            at = found
+        } else {
+            if j.count >= MAX_QUESTS { return false }
+            j.count = j.count + 1
+            j.quests[at].tag_len = want.len
+            slice::copy(u8){ dst = j.quests[at].tag[..want.len], src = want }
+        }
+        j.quests[at].state = state
+        j.quests[at].day = day
+        j.quests[at].time = time
+        j.quests[at].seq = j.next_seq
+        j.quests[at].new = true
+        j.next_seq = j.next_seq + 1
+        j.version = j.version + 1
+        return true
+    }
+
+    // RemoveJournalQuestEntry.
+    fn remove { mut j: Journal, tag: []u8 } {
+        let i = find{ j = j, tag } ifnull { return }
+        let mut k = i
+        while k + 1 < j.count {
+            j.quests[k] = j.quests[k + 1]
+            k = k + 1
+        }
+        j.count = j.count - 1
+        j.version = j.version + 1
+    }
+
+    // Whether any quest is marked new (the tab bar's journal tab pulses).
+    fn any_new { j: Journal } -> bool {
+        let mut i: usize = 0
+        while i < j.count {
+            if j.quests[i].new { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // The player has seen the quest.
+    fn clear_new { mut j: Journal, i: usize } {
+        if i < j.count { j.quests[i].new = false }
+    }
+}

@@ -1,0 +1,10 @@
+# the map menu: the area picture, the party arrows, map notes stepped with the arrows, and the
+# Party Selection refusal (Carth joins from the far end of the ship)
+3 ui join carth
+4 ui where
+5 ui note 25 20 First custom note near the leader.
+6 ui note 5 35 Second custom note, further down the hall.
+7 ui menu map
+10 ui click 881 512
+13 ui click 450 536
+18 ui key return

@@ -1,0 +1,4 @@
+# the HUD goes away while a conversation runs and comes back after
+#   sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/talk.txt 120 8:talk_a 100:talk_b
+3 ui join carth
+5 talk m01aa_c01 end_trask

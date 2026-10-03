@@ -1,0 +1,8 @@
+# The quest items panel: plot items the leader carries (the first three item objects of the module).
+# sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/journal_items.txt 30 12:q_items 20:q_back 23:q_again 28:q_escaped
+6 ui journal plot 3
+7 ui menu journal
+9 ui click 536 512
+16 ui click 785 545
+21 ui click 536 512
+24 ui key escape

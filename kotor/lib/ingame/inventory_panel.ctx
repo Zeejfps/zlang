@@ -1,0 +1,245 @@
+// Inventory (inventory.gui, menu 1): everything the party carries and wears, one filter at a
+// time, with the selected item's description and a button to use it (docs/re/gui.md
+// "CSWGuiInventory"). Items are not worn or dropped from here: the original refuses to equip from
+// this screen too and sends the player to the equipment menu. No drag and drop.
+//
+// PLACEHOLDER: the list is the player character's own bag (items::carried); the original shows
+// the party's one inventory.
+namespace inventory_panel {
+    const ICON: f32 = 36.0
+    const FILTERS: usize = 6
+    // The filters' names: all, new, quest, equippable, utility, useable items.
+    const FILTER_NAMES: [6]u32 = [41822, 42165, 41818, 41821, 41819, 41820]
+    const SHOW: u32 = 42359
+    const PARTY_INVENTORY: u32 = 32171
+
+    const FILTER_ALL: i32 = 0
+    const FILTER_NEW: i32 = 1
+    const FILTER_QUEST: i32 = 2
+    const FILTER_EQUIPPABLE: i32 = 3
+    const FILTER_UTILITY: i32 = 4
+    const FILTER_USEABLE: i32 = 5
+
+    // baseitems.2da ItemType of the medical items and of the squad recovery kit.
+    const TYPE_REPAIR_KIT: i32 = 26
+    const TYPE_MEDPAC: i32 = 45
+    const TYPE_RECOVERY_KIT: i32 = 47
+
+    struct State {
+        opened: bool,
+        who: u32,               // the creature shown: the leader
+        filter: i32,            // kept between openings, as the original keeps it
+        picked: u32,            // the selected item, INVALID none
+        box: u32,               // the refusal message box, 0 when none
+    }
+
+    fn new {} -> State {
+        return State{ opened = false, who = obj::INVALID, filter = FILTER_ALL, picked = obj::INVALID, box = 0 }
+    }
+
+    // The panel was just added, or the leader changed and it must be filled again.
+    fn open { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
+        s.who = party::leader{ w = &w }
+        s.picked = obj::INVALID
+        s.box = 0
+        gui::set_visible{ &g, panel, tag = "BTN_CHARLEFT", visible = false }
+        gui::set_visible{ &g, panel, tag = "BTN_CHARRIGHT", visible = false }
+        items::show_portrait{ &g, &w, &dev, panel, tag = "LBL_PORT", who = s.who }
+        try fill_numbers{ &s, &g, &w, panel }
+        try fill_filter{ &s, &g, &w, panel }
+        try fill_list{ &s, &g, &w, &dev, panel }
+        s.opened = true
+    }
+
+    // Every frame while the panel is shown.
+    fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, dt: f32 } {
+        if items::notice_done{ &g, box = s.box } { s.box = 0 }
+    }
+
+    // One of the panel's GUI events (BTN_EXIT, Escape and the BTN_CHANGE buttons are the
+    // framework's). True when it used the event.
+    fn on_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, ev: gui::Event } -> bool {
+        if ev.panel != panel or s.box != 0 { return false }
+        if slice::eq_bytes{ a = ev.tag, b = "LB_ITEMS" } {
+            if ev.kind == gui::EventKind::row_selected {
+                let r = pick{ &s, &g, &w, panel, user = ev.user }
+                report{ &w, what = r }
+                return true
+            }
+            if ev.kind == gui::EventKind::row_activated {
+                let r = use_picked{ &s, &g, &w, &dev, panel }
+                report{ &w, what = r }
+                return true
+            }
+        }
+        if ev.kind == gui::EventKind::activate and slice::eq_bytes{ a = ev.tag, b = "BTN_USEITEM" } {
+            let r = use_picked{ &s, &g, &w, &dev, panel }
+            report{ &w, what = r }
+            return true
+        }
+        if ev.kind == gui::EventKind::activate and slice::eq_bytes{ a = ev.tag, b = "BTN_QUESTITEMS" } {
+            // Despite its tag this is the filter button.
+            s.filter = (s.filter + 1) % @as(i32, FILTERS)
+            s.picked = obj::INVALID
+            let r = refill{ &s, &g, &w, &dev, panel }
+            report{ &w, what = r }
+            return true
+        }
+        return false
+    }
+
+    // The panel is going away.
+    fn close { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } {
+        if s.box != 0 { gui::close{ &g, id = s.box } }
+        s.box = 0
+        s.opened = false
+    }
+
+    // A failure of the work an event started is not the player's business: say it on the log.
+    fn report { mut w: world::World, what: !bool } {
+        match what {
+            ok{ value } => {}
+            err{ error } => { _ = @fmt(&w.io, "kotor: inventory panel: {}\n", error) }
+        }
+    }
+
+    // ---- the controls
+
+    // Vitality, defense and credits.
+    fn fill_numbers { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } -> ! {
+        let v = hud::vitality_of{ w = &w, id = s.who }
+        let mut b = items::new_text{ w = &w }
+        defer list::free{ list = &b.bytes }
+        try items::push_vitality{ &b, hp = v.hp, hp_max = v.hp_max }
+        try gui::set_text{ &g, panel, tag = "LBL_VIT", text = utf8::view{ b }.bytes }
+        list::clear{ list = &b.bytes }
+        try @fmt(&b, "{}", items::defense_of{ w = &w, who = s.who })
+        try gui::set_text{ &g, panel, tag = "LBL_DEF", text = utf8::view{ b }.bytes }
+        list::clear{ list = &b.bytes }
+        try @fmt(&b, "{}", items::credits{ w = &w, who = s.who })
+        try gui::set_text{ &g, panel, tag = "LBL_CREDITS_VALUE", text = utf8::view{ b }.bytes }
+    }
+
+    // The title names the filter; the filter button offers the next one.
+    fn fill_filter { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } -> ! {
+        let mut b = items::new_text{ w = &w }
+        defer list::free{ list = &b.bytes }
+        let now = @as(usize, s.filter)
+        try @fmt(&b, "{} - {}", world::string_by_strref{ w = &w, strref = PARTY_INVENTORY }, world::string_by_strref{ w = &w, strref = FILTER_NAMES[now] })
+        try gui::set_text{ &g, panel, tag = "LBL_INV", text = utf8::view{ b }.bytes }
+        list::clear{ list = &b.bytes }
+        let next = (now + 1) % FILTERS
+        try @fmt(&b, "{} {}", world::string_by_strref{ w = &w, strref = SHOW }, world::string_by_strref{ w = &w, strref = FILTER_NAMES[next] })
+        try gui::set_text{ &g, panel, tag = "BTN_QUESTITEMS", text = utf8::view{ b }.bytes }
+    }
+
+    // Whether the item shows under the current filter.
+    fn passes { mut s: State, mut w: world::World, id: u32 } -> bool {
+        if s.filter == FILTER_ALL { return true }
+        let o = world::object{ w = &w, id } ifnull { return false }
+        let slots = items::equipable_slots{ w = &w, id }
+        if s.filter == FILTER_NEW { return items::is_new{ w = &w, id } }
+        if s.filter == FILTER_QUEST { return o.plot }
+        if s.filter == FILTER_EQUIPPABLE { return slots != 0 }
+        if s.filter == FILTER_UTILITY { return not o.plot and slots == 0 }
+        return items::can_use{ &w, who = s.who, id }
+    }
+
+    // Rebuilds the list for the filter and the description for whatever is selected.
+    fn refill { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> !bool {
+        try fill_filter{ &s, &g, &w, panel }
+        try fill_list{ &s, &g, &w, &dev, panel }
+        return true
+    }
+
+    // The worn items first, marked, then the carried ones; the selection stays on the same item
+    // when it is still there, else goes to the first row.
+    fn fill_list { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
+        gui::list_clear{ &g, panel, tag = "LB_ITEMS" }
+        let c = hud::creature_of{ w = &w, id = s.who } ifnull { return }
+        let mut select: i32 = 0
+        let mut slot: usize = 0
+        while slot < 14 {
+            let id = c.equipped[slot]
+            slot = slot + 1
+            if id == obj::INVALID or not world::is_valid{ w = &w, id } or not passes{ &s, &w, id } { continue }
+            let row = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id, equipped = true, icon_size = ICON }
+            if id == s.picked { select = row }
+        }
+        let mut order: [512]u32
+        let carried = items::carried{ w = &w, who = s.who, into = order[..] }
+        let mut k: usize = 0
+        while k < carried.len {
+            let id = carried[k]
+            k = k + 1
+            if not world::is_valid{ w = &w, id } or not passes{ &s, &w, id } { continue }
+            let row = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id, equipped = false, icon_size = ICON }
+            if id == s.picked { select = row }
+        }
+        if gui::list_count{ &g, panel, tag = "LB_ITEMS" } == 0 {
+            _ = try pick{ &s, &g, &w, panel, user = 0 }
+            return
+        }
+        gui::list_select{ &g, panel, tag = "LB_ITEMS", row = select }
+        let user = row_user{ &g, panel, row = select }
+        _ = try pick{ &s, &g, &w, panel, user }
+    }
+
+    fn row_user { mut g: gui::Gui, panel: u32, row: i32 } -> i64 {
+        let c = gui::find_control{ &g, panel, tag = "LB_ITEMS" } ifnull { return 0 }
+        if row < 0 or row >= @as(i32, c.row_count) { return 0 }
+        return c.rows[@as(usize, row)].user
+    }
+
+    // A row was chosen: its description, and the use button's colour says whether it is usable.
+    fn pick { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32, user: i64 } -> !bool {
+        let id = if user > 0 { @as(u32, user) } else { obj::INVALID }
+        s.picked = id
+        try items::show_description{ &g, &w, panel, tag = "LB_DESCRIPTION", id = if id == obj::INVALID { 0 } else { id } }
+        let usable = id != obj::INVALID and items::can_use{ &w, who = s.who, id }
+        gui::set_text_color{ &g, panel, tag = "BTN_USEITEM", color = if usable { gui::color_menu{} } else { gui::color_disabled{} } }
+        return true
+    }
+
+    // ---- using an item
+
+    // The Use Item button, or a second click on the row (party-items-saves.md and re/gui.md:
+    // the refusals are the original's, in its order).
+    fn use_picked { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> !bool {
+        let id = s.picked
+        if id == obj::INVALID or not world::is_valid{ w = &w, id } { return false }
+        if not items::can_use{ &w, who = s.who, id } {
+            let slots = items::equipable_slots{ w = &w, id }
+            s.box = items::notice{ &g, &w, &dev, strref = if slots != 0 { 42485 } else { 42486 } }
+            return false
+        }
+        let kind = items::base_int{ w = &w, id, column = "itemtype", fallback = 0 }
+        if kind == TYPE_MEDPAC or kind == TYPE_REPAIR_KIT {
+            let v = hud::vitality_of{ w = &w, id = s.who }
+            if v.hp >= v.hp_max {
+                s.box = items::notice{ &g, &w, &dev, strref = 42499 }
+                return false
+            }
+        }
+        if kind == TYPE_RECOVERY_KIT and not any_injured{ &w } {
+            s.box = items::notice{ &g, &w, &dev, strref = 48494 }
+            return false
+        }
+        items::use_item{ &w, who = s.who, item = id }
+        gui::play_sound{ &g, n = 11 }
+        try fill_numbers{ &s, &g, &w, panel }
+        return try refill{ &s, &g, &w, &dev, panel }
+    }
+
+    // Whether any party member has lost hit points.
+    fn any_injured { mut w: world::World } -> bool {
+        let ids = hud::party_ids{ w = &w }
+        let mut k: usize = 0
+        while k < ids.len {
+            let v = hud::vitality_of{ w = &w, id = ids[k] }
+            if v.hp < v.hp_max { return true }
+            k = k + 1
+        }
+        return false
+    }
+}

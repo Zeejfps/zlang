@@ -1,0 +1,105 @@
+// The combat controls (docs/re/gui.md, "Combat mode, queue, clear buttons"): while the leader is in
+// combat the bar at the bottom centre shows the queue of its attack actions and the Disengage
+// button, and the message bar at the top announces combat mode for a few seconds.
+namespace hud {
+    // How long the "combat mode" message stays up.
+    const COMBAT_MESSAGE_SECONDS: f32 = 6.0
+
+    const COMBAT_TAGS: [8][]u8 = [
+        "LBL_COMBATBG1", "LBL_COMBATBG2", "LBL_COMBATBG3", "BTN_CLEARALL", "BTN_CLEARONE", "BTN_CLEARONE2",
+        "LBL_QUEUE0", "LBL_QUEUE1",
+    ]
+
+    fn leader_in_combat { w: *world::World } -> bool {
+        let c = creature_of{ w, id = party::leader{ w } } ifnull { return false }
+        return c.in_combat
+    }
+
+    // The icon a queued action shows (a texture of the GUI pack), "" for one the queue hides.
+    fn queue_icon { kind: actions::Kind } -> []u8 {
+        match kind {
+            attack_object => { return "i_attack" }
+            else => { return "" }
+        }
+    }
+
+    fn show_combat_controls { mut h: Hud, mut g: gui::Gui, on: bool } {
+        let mut i: usize = 0
+        while i < COMBAT_TAGS.len {
+            gui::set_visible{ &g, panel = h.panel, tag = COMBAT_TAGS[i], visible = on }
+            i = i + 1
+        }
+        gui::set_visible{ &g, panel = h.panel, tag = "LBL_QUEUE2", visible = on }
+        gui::set_visible{ &g, panel = h.panel, tag = "LBL_QUEUE3", visible = on }
+        if not on {
+            gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMSGBG", visible = false }
+            gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", visible = false }
+        }
+    }
+
+    // Shows the controls when combat starts, hides them when it ends, and fills the queue icons.
+    fn update_combat { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, dt: f32 } {
+        let on = leader_in_combat{ w = &w }
+        if on != h.combat {
+            h.combat = on
+            show_combat_controls{ &h, &g, on }
+            if on {
+                h.combat_message = COMBAT_MESSAGE_SECONDS
+                gui::set_strref{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", strref = 48208 } iferr {}
+                gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMSGBG", visible = true }
+                gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", visible = true }
+            }
+        }
+        if not on { return }
+        if h.combat_message > 0.0 {
+            h.combat_message = h.combat_message - dt
+            if h.combat_message <= 0.0 {
+                gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMSGBG", visible = false }
+                gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", visible = false }
+            }
+        }
+        // The queue: the leader's attack actions, the current one big.
+        let leader = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return }
+        let queue = list::items{ list = leader.actions }
+        let mut buf: [16]u8
+        let mut slot: usize = 0
+        let mut i: usize = 0
+        while i < queue.len and slot < 4 {
+            let icon = queue_icon{ kind = queue[i].kind }
+            i = i + 1
+            if icon.len == 0 { continue }
+            let tag = tag_n{ into = buf[..], prefix = "LBL_QUEUE", n = slot }
+            let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name = icon }
+            if img.ok { gui::set_picture{ &g, panel = h.panel, tag, texture = img.tex, w = img.w, h = img.h } }
+            gui::set_visible{ &g, panel = h.panel, tag, visible = true }
+            slot = slot + 1
+        }
+        while slot < 4 {
+            gui::set_visible{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "LBL_QUEUE", n = slot }, visible = false }
+            slot = slot + 1
+        }
+    }
+
+    // BTN_CLEARALL (Disengage) leaves combat and clears the leader's actions; BTN_CLEARONE drops
+    // the last queued action. True when the event was theirs.
+    fn combat_event { mut h: Hud, mut g: gui::Gui, mut w: world::World, ev: gui::Event } -> bool {
+        if ev.kind != gui::EventKind::activate { return false }
+        let leader = party::leader{ w = &w }
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_CLEARALL" } {
+            actions::clear_all{ &w, id = leader }
+            let c = creature_of{ w = &w, id = leader } ifnull { return true }
+            c.in_combat = false
+            return true
+        }
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_CLEARONE" } or slice::eq_bytes{ a = ev.tag, b = "BTN_CLEARONE2" } {
+            let o = world::object{ w = &w, id = leader } ifnull { return true }
+            if o.actions.len > 1 {
+                let last = o.actions.len - 1
+                actions::free_params{ &w, a = list::items{ list = o.actions }[last] }
+                o.actions.len = last
+            }
+            return true
+        }
+        return false
+    }
+}
