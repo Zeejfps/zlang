@@ -64,6 +64,7 @@ namespace os {
     extern fn ReadFile { mut fs: Fs, file: u64, buf: *mut u8, count: u32, mut done: u32, overlapped: ?*u8 } -> i32
     extern fn WriteFile { mut fs: Fs, file: u64, buf: *u8, count: u32, mut done: u32, overlapped: ?*u8 } -> i32
     extern fn CloseHandle { mut fs: Fs, handle: u64 } -> i32
+    extern fn SetFilePointerEx { mut fs: Fs, file: u64, distance: i64, moved_to: ?*mut i64, method: u32 } -> i32
     extern fn GetFileAttributesW { mut fs: Fs, name: *u16 } -> u32
     extern fn GetFileAttributesExW { mut fs: Fs, name: *u16, level: i32, mut data: FileData } -> i32
     extern fn DeleteFileW { mut fs: Fs, name: *u16 } -> i32
@@ -136,6 +137,14 @@ namespace os {
 
     fn file_close { mut fs: Fs, file: u64 } -> ! {
         if CloseHandle{ &fs, handle = file } == 0 { return failed{ code = GetLastError{ &fs } } }
+    }
+
+    // Moves the position to `offset` from the start (FILE_BEGIN).
+    fn file_seek { mut fs: Fs, file: u64, offset: u64 } -> ! {
+        if offset > 9223372036854775807 { return failed{ code = 131 } }      // ERROR_NEGATIVE_SEEK
+        if SetFilePointerEx{ &fs, file, distance = @as(i64, offset), moved_to = null, method = 0 } == 0 {
+            return failed{ code = GetLastError{ &fs } }
+        }
     }
 
     fn file_size { mut fs: Fs, path: []u8 } -> !u64 {

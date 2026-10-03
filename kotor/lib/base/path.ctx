@@ -1,0 +1,46 @@
+// File paths as bytes. The game names files inside its install by relative paths with mixed
+// case (`modules/M12ab.rim`, `TexturePacks/swpc_tex_tpa.erf`); `/` works as the separator on
+// every platform, Windows included.
+namespace path {
+    // `dir`, a `/` unless `dir` is empty or already ends in one, and `name`, into memory from
+    // `realloc`.
+    fn join(S) { realloc: alloc::Fn(S), mut heap: S, dir: []u8, name: []u8 } -> !alloc::Bytes {
+        let sep: usize = if dir.len > 0 and dir[dir.len - 1] != '/' and dir[dir.len - 1] != '\\' { 1 } else { 0 }
+        let out = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = dir.len + sep + name.len }
+        slice::copy(u8){ dst = out[..dir.len], src = dir }
+        if sep == 1 { out[dir.len] = '/' }
+        slice::copy(u8){ dst = out[dir.len + sep..], src = name }
+        return out
+    }
+
+    // The same into a caller's buffer; null if it doesn't fit.
+    fn join_into { dir: []u8, name: []u8, into: []mut u8 } -> ?[]mut u8 {
+        let sep: usize = if dir.len > 0 and dir[dir.len - 1] != '/' and dir[dir.len - 1] != '\\' { 1 } else { 0 }
+        let n = dir.len + sep + name.len
+        if n > into.len { return null }
+        slice::copy(u8){ dst = into[..dir.len], src = dir }
+        if sep == 1 { into[dir.len] = '/' }
+        slice::copy(u8){ dst = into[dir.len + sep..n], src = name }
+        return into[..n]
+    }
+
+    // The last component: what follows the last `/` or `\`.
+    fn base_name { p: []u8 } -> []u8 {
+        let mut i = p.len
+        while i > 0 and p[i - 1] != '/' and p[i - 1] != '\\' { i = i - 1 }
+        return p[i..]
+    }
+
+    // A file name without its extension: up to the first `.`, as the engine takes resrefs from
+    // file names (docs/formats/resource-types.md, "Extensions in directories").
+    fn stem { name: []u8 } -> []u8 {
+        let dot = text::find_byte{ s = name, c = '.' } ifnull { return name }
+        return name[..dot]
+    }
+
+    // The extension after the first `.`, or empty.
+    fn extension { name: []u8 } -> []u8 {
+        let dot = text::find_byte{ s = name, c = '.' } ifnull { return name[name.len..] }
+        return name[dot + 1..]
+    }
+}

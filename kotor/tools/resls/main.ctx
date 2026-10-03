@@ -1,0 +1,245 @@
+// resls: lists and extracts the game's resources as the engine's search finds them.
+//
+//   resls [OPTIONS] [PATTERN]          every resource the search finds (the winning copy of each
+//                                      name and type): name.ext, size, class, source
+//   resls [OPTIONS] get NAME.EXT...    write each resource to NAME.EXT (or -o PATH for one)
+//   resls [OPTIONS] --sources          the mounted sources, in search order
+//
+// Options:
+//   --game DIR       the install (default F:/Steam/steamapps/common/swkotor)
+//   --module NAME    mount a module first (end_m01aa, danm13, ...)
+//   --save PATH      with --module: take the module's state from this SAVEGAME.sav
+//   --type EXT       only resources of this type
+//   --texture NAME   which form of texture NAME the engine would load (tpc or tga), and where
+//   --crc            when listing, read each resource and print the CRC-32 of its bytes
+//   -o PATH          with get: the output path
+//
+// PATTERN matches resrefs with `*` and `?`, ignoring case.
+
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+struct Options {
+    game: []u8,
+    module: []u8,
+    save: []u8,
+    kind: ?restype::Type,
+    pattern: []u8,
+    out: []u8,
+    texture: []u8,
+    sources: bool,
+    crc: bool,
+    get: bool,
+    first_name: usize,          // with get: args[first_name..] are the names
+    bad: bool,
+}
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let opts = parse_args{ &io, args }
+    if opts.bad { return 2 }
+    let mut h = heap::new{ &mem }
+    let mut rm = res::open{ &fs, heap = &h, game = opts.game } iferr err{ error } {
+        _ = @fmt(&io, "resls: can't open the game at {}: {}\n", opts.game, error)
+        io::flush{ &io }
+        return 1
+    }
+    defer res::close{ &fs, &rm }
+    if opts.module.len > 0 {
+        res::mount_module{ &fs, &rm, name = opts.module, save = opts.save } iferr err{ error } {
+            _ = @fmt(&io, "resls: can't mount module {}: {}\n", opts.module, error)
+            io::flush{ &io }
+            return 1
+        }
+    }
+    let code = if opts.sources {
+        list_sources{ &io, rm }
+        0
+    } else if opts.texture.len > 0 {
+        show_texture{ &io, rm, name = opts.texture }
+    } else if opts.get {
+        get{ &io, &fs, &h, rm, opts, args }
+    } else {
+        list{ &io, &fs, &h, rm, opts }
+    }
+    io::flush{ &io }
+    return code
+}
+
+fn parse_args { mut io: Io, args: Args } -> Options {
+    let mut o = Options{
+        game = DEFAULT_GAME, module = "", save = "", kind = null, pattern = "*", out = "", texture = "",
+        sources = false, crc = false, get = false, first_name = 0, bad = false,
+    }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        let has_value = i + 1 < args.len
+        if slice::eq_bytes{ a, b = "--game" } and has_value {
+            o.game = args[i + 1]
+            i = i + 2
+        } else if slice::eq_bytes{ a, b = "--module" } and has_value {
+            o.module = args[i + 1]
+            i = i + 2
+        } else if slice::eq_bytes{ a, b = "--save" } and has_value {
+            o.save = args[i + 1]
+            i = i + 2
+        } else if slice::eq_bytes{ a, b = "--type" } and has_value {
+            o.kind = restype::of_ext{ ext = args[i + 1] }
+            if o.kind == null {
+                _ = @fmt(&io, "resls: unknown type {}\n", args[i + 1])
+                o.bad = true
+            }
+            i = i + 2
+        } else if slice::eq_bytes{ a, b = "--texture" } and has_value {
+            o.texture = args[i + 1]
+            i = i + 2
+        } else if slice::eq_bytes{ a, b = "-o" } and has_value {
+            o.out = args[i + 1]
+            i = i + 2
+        } else if slice::eq_bytes{ a, b = "--sources" } {
+            o.sources = true
+            i = i + 1
+        } else if slice::eq_bytes{ a, b = "--crc" } {
+            o.crc = true
+            i = i + 1
+        } else if slice::eq_bytes{ a, b = "get" } {
+            o.get = true
+            o.first_name = i + 1
+            // Names follow, but options may still come after them.
+            i = i + 1
+            while i < args.len and args[i].len > 0 and args[i][0] != '-' { i = i + 1 }
+        } else if a.len > 0 and a[0] != '-' {
+            o.pattern = a
+            i = i + 1
+        } else {
+            _ = @fmt(&io, "resls: unknown option {}\n", a)
+            o.bad = true
+            i = i + 1
+        }
+    }
+    return o
+}
+
+fn list_sources { mut io: Io, rm: res::Manager } {
+    let items = list::items{ list = rm.sources }
+    let mut i: usize = 0
+    while i < items.len {
+        let s = items[i]
+        _ = @fmt(&io, "{} {} {} members  {}\n", res::class_name{ class = s.class }, owner_name{ o = s.owner }, s.members.len, s.path)
+        i = i + 1
+    }
+}
+
+fn owner_name { o: res::Owner } -> []u8 {
+    return match o { game => { "game  " } module => { "module" } packs => { "packs " } }
+}
+
+fn list { mut io: Io, mut fs: Fs, mut h: heap::Heap, rm: res::Manager, opts: Options } -> i32 {
+    let mut shown: usize = 0
+    let mut t: usize = 0
+    while t < restype::COUNT {
+        let kind = @as(restype::Type, restype::TABLE[t].id)
+        t = t + 1
+        if opts.kind != null and opts.kind != kind { continue }
+        let found = res::list_type{ rm, kind, realloc = heap::alloc, heap = &h } iferr err{ error } {
+            _ = @fmt(&io, "resls: {}\n", error)
+            return 1
+        }
+        defer _ = alloc::resize(res::Found, heap::Heap){ realloc = heap::alloc, heap = &h, mem = found, count = 0 }
+        let mut i: usize = 0
+        while i < found.len {
+            let f = found[i]
+            i = i + 1
+            if not glob{ pat = opts.pattern, s = resref::bytes{ r = &f.name } } { continue }
+            let file = res::member_file{ rm, loc = f.loc }
+            _ = @fmt(&io, "{}.{}\t{}\t{}\t{}", f.name, restype::ext{ t = kind }, f.loc.size, res::class_name{ class = f.loc.class }, res::source_path{ rm, loc = f.loc })
+            if file.len > 0 { _ = @fmt(&io, ":{}", file) }
+            if opts.crc {
+                let data = res::read{ &fs, rm, loc = f.loc, realloc = heap::alloc, heap = &h } iferr err{ error } {
+                    _ = @fmt(&io, "\tERROR {}\n", error)
+                    continue
+                }
+                _ = @fmt(&io, "\t{}", out::hex{ n = png::crc32{ crc = 0, bytes = data }, _ })
+                _ = heap::alloc{ heap = &h, mem = data, new = 0, align = 1 }
+            }
+            _ = @fmt(&io, "\n")
+            shown = shown + 1
+        }
+    }
+    _ = @fmt(&io, "{} resources\n", shown)
+    return 0
+}
+
+fn get { mut io: Io, mut fs: Fs, mut h: heap::Heap, rm: res::Manager, opts: Options, args: Args } -> i32 {
+    let mut failed: i32 = 0
+    let mut i = opts.first_name
+    while i < args.len and args[i].len > 0 and args[i][0] != '-' {
+        let full = args[i]
+        i = i + 1
+        let dot = text::find_byte{ s = full, c = '.' } ifnull {
+            _ = @fmt(&io, "resls: {}: give NAME.EXT\n", full)
+            failed = 1
+            continue
+        }
+        let kind = restype::of_ext{ ext = full[dot + 1..] } ifnull {
+            _ = @fmt(&io, "resls: {}: unknown type\n", full)
+            failed = 1
+            continue
+        }
+        let data = res::load{ &fs, rm, name = full[..dot], kind, realloc = heap::alloc, heap = &h } iferr err{ error } {
+            _ = @fmt(&io, "resls: {}: {}\n", full, error)
+            failed = 1
+            continue
+        }
+        if data == null {
+            _ = @fmt(&io, "resls: {}: not found\n", full)
+            failed = 1
+            continue
+        }
+        defer _ = heap::alloc{ heap = &h, mem = data, new = 0, align = 1 }
+        let out = if opts.out.len > 0 { opts.out } else { full }
+        _ = fs::write_all{ &fs, path = out, bytes = data } iferr err{ error } {
+            _ = @fmt(&io, "resls: writing {}: {}\n", out, error)
+            failed = 1
+            continue
+        }
+        _ = @fmt(&io, "{}: {} bytes\n", out, data.len)
+    }
+    return failed
+}
+
+fn show_texture { mut io: Io, rm: res::Manager, name: []u8 } -> i32 {
+    let t = res::find_texture{ rm, name } ifnull {
+        _ = @fmt(&io, "{}: no texture\n", name)
+        return 1
+    }
+    _ = @fmt(&io, "{}.{}\t{}\t{}\t{}\n", name, restype::ext{ t = t.kind }, t.loc.size, res::class_name{ class = t.loc.class }, res::source_path{ rm, loc = t.loc })
+    return 0
+}
+
+// Whether `s` matches `pat`, where `*` is any run of bytes and `?` any one, ignoring case.
+fn glob { pat: []u8, s: []u8 } -> bool {
+    let mut p: usize = 0
+    let mut i: usize = 0
+    let mut star_p: usize = 0
+    let mut star_i: usize = 0
+    let mut have_star = false
+    while i < s.len {
+        if p < pat.len and (pat[p] == '?' or ascii::to_lower{ c = pat[p] } == ascii::to_lower{ c = s[i] }) {
+            p = p + 1
+            i = i + 1
+        } else if p < pat.len and pat[p] == '*' {
+            have_star = true
+            star_p = p
+            star_i = i
+            p = p + 1
+        } else if have_star {
+            p = star_p + 1
+            star_i = star_i + 1
+            i = star_i
+        } else {
+            return false
+        }
+    }
+    while p < pat.len and pat[p] == '*' { p = p + 1 }
+    return p == pat.len
+}
