@@ -1,0 +1,9 @@
+// gffdump: print a GFF as an indented tree.
+//   kotor/tools/ctxc run kotor/tools/gffdump -- [--game DIR] [--module NAME] NAME.EXT|FILE...
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "gffdump", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/base" }
+    build::add_sources{ &b, exe, dir = "../../lib/res" }
+    build::add_sources{ &b, exe, dir = "../../lib/formats" }
+    build::add_sources{ &b, exe, dir = "../common" }
+}
