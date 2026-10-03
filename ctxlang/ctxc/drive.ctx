@@ -15,23 +15,30 @@
 // (split at spaces, so `zig cc` works), with the flags tools/toolchain.py uses, run with its own
 // directory first on PATH, as toolchain.py runs it.
 //
+// An executable's C is in units (emit::units, ctxc/emit_c.ctx): one for a small program, and for a
+// big one units of about 256 KiB of C each (or CTX_UNIT_SIZE bytes), grouped by the files that
+// declare their functions, and one with `int main`. The units are compiled at once, as many at a
+// time as there are processors, and linked.
+//
 // What a build writes goes under HOME/build/run. Each program has a directory of its own there,
 // named after it and a hash of its absolute path, so ctxcs building different programs at once
 // share no file but the runtime's objects:
 //
 //   ctxrt-HASH.o                 the runtime, compiled once for each runtime, compiler and flags
 //   PROGRAM-HASH/                a program's
-//       EXE-HASH.o, EXE-HASH     an executable's object and the executable (EXE-HASH.exe on
-//                                Windows), HASH being of its C, the runtime's sources, the C
-//                                compiler and the flags; older ones are removed
-//       EXE.c                    its C, to read
+//       EXE-HASH.c, EXE-HASH.o   a unit's C, to read, and its object, HASH being of its C, the
+//                                runtime's sources, the C compiler and the flags
+//       EXE-HASH                 the executable (EXE-HASH.exe on Windows), HASH being of its
+//                                units' and the link flags; older files of EXE are removed
 //       build/                   the build program's, the same way, and its graph
 //
-// So an executable whose C, runtime, compiler and flags haven't changed since it was built isn't
-// compiled again: the front end runs, and the C compiler doesn't. A C compiler replaced in place
-// by another version goes unnoticed; removing build/run starts afresh. Files are written under
-// names no other ctxc writes to (`claim`) and renamed into place, so two ctxcs building the same
-// program at once at worst do the work twice.
+// So a unit whose C, runtime, compiler and flags haven't changed since it was built isn't
+// compiled again, nor linked if no unit changed: the front end runs, and the C compiler doesn't.
+// A unit's C depends only on its own functions and what they use, so an edit recompiles the
+// units of the files it touched. A C compiler replaced in place by another version goes
+// unnoticed; removing build/run starts afresh. Files are written under names no other ctxc writes
+// to (`claim`) and renamed into place, so two ctxcs building the same program at once at worst do
+// the work twice.
 
 namespace drive {
     type Heap = arena::Arena
@@ -45,10 +52,17 @@ namespace drive {
     const FNV_BASIS: u64 = 14695981039346656037
     const FNV_PRIME: u64 = 1099511628211
 
+    // About how many bytes of C a unit has, unless CTX_UNIT_SIZE says otherwise.
+    const UNIT_SIZE: usize = 262144
+
     // Where things are, and what the C compiler is and the environment entries it runs with: runs
     // is HOME/build/run, work the program's directory in it, and rt a hash of the runtime's
-    // sources.
-    struct Driver { home: []u8, runs: []u8, work: []u8, std: [][]u8, os: build::Os, cc: [][]u8, cc_env: [][]u8, rt: u64 }
+    // sources. unit is about how many bytes of C a unit has, and jobs how many C compilers run at
+    // once.
+    struct Driver { home: []u8, runs: []u8, work: []u8, std: [][]u8, os: build::Os, cc: [][]u8, cc_env: [][]u8, rt: u64, unit: usize, jobs: u32 }
+
+    // A C compiler compiling a unit, into o_tmp, from its C in c_tmp, to be renamed to o and c.
+    struct Job { child: proc::Child, c_tmp: []u8, o_tmp: []u8, c: []u8, o: []u8 }
 
     // An executable to build: its root and the directories added to it, its optimization level,
     // and the C compiler flags its build program gave.
@@ -91,7 +105,10 @@ namespace drive {
         let std = std_files{ &io, &fs, &heap, home, os } ifnull { return 1 }
         let rt = runtime_hash{ &io, &fs, &heap, home } ifnull { return 1 }
         let cc = compiler{ &fs, &proc, &heap, os }
-        let d = Driver{ home, runs, work, std, os, cc, cc_env = cc_env{ &proc, &heap, cc = cc[0], os }, rt }
+        let d = Driver{
+            home, runs, work, std, os, cc, cc_env = cc_env{ &proc, &heap, cc = cc[0], os }, rt,
+            unit = unit_size{ &proc }, jobs = proc::processors{ &proc },
+        }
 
         let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
         let build_file = normalize{ &heap, path = join{ &heap, a = path, b = "build.ctx" } }
@@ -183,7 +200,16 @@ namespace drive {
         add_all{ xs = &paths, ys = files }
         let argv = if args.len >= 3 { args[3..] } else { args[2..] }
         let stack = host_stack{ &proc } / 4 * 3
-        return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, mode = Mode::interp, out = stem{ path = base{ path } }, argv, stack }
+        let mut units: [][]u8 = slice::empty([]u8){}
+        return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, mode = Mode::interp, out = stem{ path = base{ path } }, argv, stack, size = 0, made = &units }
+    }
+
+    // About how many bytes of C a unit has: CTX_UNIT_SIZE, or UNIT_SIZE.
+    fn unit_size { mut proc: Proc } -> usize {
+        let set = proc::env{ &proc, name = "CTX_UNIT_SIZE" } ifnull { return UNIT_SIZE }
+        let n = utf8::parse_u64{ s = utf8::String{ bytes = set } } ifnull { return UNIT_SIZE }
+        if n == 0 { return UNIT_SIZE }
+        return @as(usize, n)
     }
 
     // The stack ctxrt.c lets this program use before it panics: CTX_STACK bytes, at most 200
@@ -353,48 +379,78 @@ namespace drive {
     // ---- compiling
 
     // Builds the program of files, with std's, into an executable: `out`, or if out is empty
-    // dir/NAME-HASH, which stays to be run again while HASH is the same. The C goes to
-    // dir/NAME.c. Returns the executable; null after saying why there is none.
+    // dir/NAME-HASH, which stays to be run again while HASH is the same. Each unit of its C is
+    // compiled into dir/NAME-HASH.o unless that is there, its C going to dir/NAME-HASH.c. Returns
+    // the executable; null after saying why there is none.
     fn compile { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, name: []u8, files: [][]u8, level: u8, flags: [][]u8, out: []u8 } -> ?[]u8 {
         let base = join{ &heap, a = dir, b = name }
-        let c_file = claim{ &io, &fs, &heap, base, ext = ".c" } ifnull { return null }
         let mut paths = list::new([]u8){ realloc = arena::alloc, &heap }
         add_all{ xs = &paths, ys = d.std }
         add_all{ xs = &paths, ys = files }
-        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = d.std.len, mode = Mode::build, out = c_file, argv = slice::empty([]u8){}, stack = 0 }
-        if code != 0 {
-            _ = fs::remove{ &fs, path = c_file }
-            return null
-        }
-        // Keeps the C under its own name for people to read, however this ends.
-        defer {
-            match fs::rename{ &fs, from = c_file, to = cat{ &heap, a = base, b = ".c" } } {
-                ok => {}
-                err => { _ = fs::remove{ &fs, path = c_file } }
-            }
-        }
+        let mut units: [][]u8 = slice::empty([]u8){}
+        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = d.std.len, mode = Mode::units, out = "", argv = slice::empty([]u8){}, stack = 0, size = d.unit, made = &units }
+        if code != 0 { return null }
 
+        // A unit's HASH is of its C, the runtime, the compiler, the flags and the program's name;
+        // the executable's, of its units' and the link flags.
         let cflags = c_flags{ &heap, level }
         let ldflags = link_flags{ &heap, os = d.os, flags }
         let mut h = mix_u64{ h = FNV_BASIS, n = d.rt }
         h = mix_all{ h, xs = d.cc }
         h = mix_all{ h, xs = cflags }
-        h = mix_all{ h, xs = ldflags }
         h = mix_all{ h, xs = one{ &heap, s = name } }
-        h = hash_file{ &fs, h, path = c_file } ifnull {
-            cannot{ &io, path = c_file, what = "cannot read" }
-            return null
+        let mut keep = list::new([]u8){ realloc = arena::alloc, &heap }
+        let mut x = mix_all{ h, xs = ldflags }
+        let mut i: usize = 0
+        while i < units.len {
+            let u = hex{ &heap, n = mix{ h, bytes = units[i] } }
+            try! list::push{ list = &keep, item = u }
+            x = mix{ h = x, bytes = u }
+            i = i + 1
         }
-        let hash = hex{ &heap, n = h }
-        let tag = cat{ &heap, a = cat{ &heap, a = base, b = "-" }, b = hash }
+        let hash = hex{ &heap, n = x }
+        try! list::push{ list = &keep, item = hash }
         let suffix: []u8 = if d.os == build::Os::windows { ".exe" } else { "" }
-        let exe = if out.len > 0 { out } else { cat{ &heap, a = tag, b = suffix } }
+        let exe = if out.len > 0 { out } else { cat{ &heap, a = cat{ &heap, a = cat{ &heap, a = base, b = "-" }, b = hash }, b = suffix } }
         if out.len == 0 and kind_of{ &fs, path = exe } == 1 { return exe }
 
+        // The units whose objects aren't there, d.jobs at a time.
         let rt = join{ &heap, a = d.home, b = "ctxc/rt" }
-        let obj = cat{ &heap, a = tag, b = ".o" }
-        if kind_of{ &fs, path = obj } != 1 {
-            let tmp = claim{ &io, &fs, &heap, base, ext = ".o" } ifnull { return null }
+        let hashes = list::items{ list = keep }
+        let mut objs = list::new([]u8){ realloc = arena::alloc, &heap }
+        let mut jobs = list::new(Job){ realloc = arena::alloc, &heap }
+        let mut waited: usize = 0                   // jobs[..waited] are done
+        let mut good = true
+        i = 0
+        while i < units.len {
+            let unit = units[i]
+            let tag = cat{ &heap, a = cat{ &heap, a = base, b = "-" }, b = hashes[i] }
+            let obj = cat{ &heap, a = tag, b = ".o" }
+            try! list::push{ list = &objs, item = obj }
+            i = i + 1
+            if not good or kind_of{ &fs, path = obj } == 1 { continue }
+            if jobs.len - waited >= @as(usize, d.jobs) {
+                if not finish{ &io, &fs, &proc, d, job = list::items{ list = jobs }[waited] } { good = false }
+                waited = waited + 1
+            }
+            let c_tmp = claim{ &io, &fs, &heap, base = tag, ext = ".c" } ifnull {
+                good = false
+                continue
+            }
+            match fs::write_all{ &fs, path = c_tmp, bytes = unit } {
+                ok => {}
+                err => {
+                    cannot{ &io, path = c_tmp, what = "cannot write" }
+                    _ = fs::remove{ &fs, path = c_tmp }
+                    good = false
+                    continue
+                }
+            }
+            let o_tmp = claim{ &io, &fs, &heap, base = tag, ext = ".o" } ifnull {
+                _ = fs::remove{ &fs, path = c_tmp }
+                good = false
+                continue
+            }
             let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
             add_all{ xs = &argv, ys = d.cc }
             add_all{ xs = &argv, ys = cflags }
@@ -402,15 +458,24 @@ namespace drive {
             try! list::push{ list = &argv, item = rt }
             try! list::push{ list = &argv, item = cat{ &heap, a = cat{ &heap, a = "-DCTX_PROGRAM_NAME=\"", b = name }, b = "\"" } }
             try! list::push{ list = &argv, item = "-c" }
-            try! list::push{ list = &argv, item = c_file }
+            try! list::push{ list = &argv, item = c_tmp }
             try! list::push{ list = &argv, item = "-o" }
-            try! list::push{ list = &argv, item = tmp }
-            if not compiled{ &io, &proc, d, argv = list::items{ list = argv } } {
-                _ = fs::remove{ &fs, path = tmp }
-                return null
+            try! list::push{ list = &argv, item = o_tmp }
+            match proc::spawn{ &proc, argv = list::items{ list = argv }, env = d.cc_env } {
+                ok{ value } => { try! list::push{ list = &jobs, item = Job{ child = value, c_tmp, o_tmp, c = cat{ &heap, a = tag, b = ".c" }, o = obj } } }
+                err{ error } => {
+                    _ = started{ &io, r = error, what = d.cc[0] }
+                    _ = fs::remove{ &fs, path = c_tmp }
+                    _ = fs::remove{ &fs, path = o_tmp }
+                    good = false
+                }
             }
-            if not publish{ &io, &fs, tmp, file = obj } { return null }
         }
+        while waited < jobs.len {
+            if not finish{ &io, &fs, &proc, d, job = list::items{ list = jobs }[waited] } { good = false }
+            waited = waited + 1
+        }
+        if not good { return null }
         let rt_obj = runtime_object{ &io, &fs, &proc, &heap, d, rt, cflags } ifnull { return null }
 
         let mut into = out
@@ -421,16 +486,72 @@ namespace drive {
         add_all{ xs = &argv, ys = d.cc }
         try! list::push{ list = &argv, item = "-o" }
         try! list::push{ list = &argv, item = into }
-        try! list::push{ list = &argv, item = obj }
+        // Many objects go in a response file: Windows takes a command line of 32K characters.
+        let mut rsp: []u8 = ""
+        if objs.len > 64 {
+            rsp = claim{ &io, &fs, &heap, base, ext = ".rsp" } ifnull { return null }
+            let ok = fs::write_all{ &fs, path = rsp, bytes = quoted{ &heap, xs = list::items{ list = objs } } } else {
+                cannot{ &io, path = rsp, what = "cannot write" }
+                _ = fs::remove{ &fs, path = rsp }
+                return null
+            }
+            try! list::push{ list = &argv, item = cat{ &heap, a = "@", b = rsp } }
+        } else {
+            add_all{ xs = &argv, ys = list::items{ list = objs } }
+        }
         try! list::push{ list = &argv, item = rt_obj }
         add_all{ xs = &argv, ys = ldflags }
-        if not compiled{ &io, &proc, d, argv = list::items{ list = argv } } {
+        let linked = compiled{ &io, &proc, d, argv = list::items{ list = argv } }
+        if rsp.len > 0 { _ = fs::remove{ &fs, path = rsp } }
+        if not linked {
             if out.len == 0 { _ = fs::remove{ &fs, path = into } }
             return null
         }
         if out.len == 0 and not publish{ &io, &fs, tmp = into, file = exe } { return null }
-        sweep{ &fs, &heap, dir, name, keep = hash, suffix }
+        sweep{ &fs, &heap, dir, name, keep = hashes, suffix }
         return exe
+    }
+
+    // xs as a response file's lines, for gcc's and clang's `@FILE`: each in double quotes, with
+    // `\` and `"` escaped.
+    fn quoted { mut heap: Heap, xs: [][]u8 } -> []u8 {
+        let mut out = list::new(u8){ realloc = arena::alloc, &heap }
+        let mut i: usize = 0
+        while i < xs.len {
+            try! list::push{ list = &out, item = '"' }
+            let x = xs[i]
+            let mut k: usize = 0
+            while k < x.len {
+                if x[k] == '\\' or x[k] == '"' { try! list::push{ list = &out, item = '\\' } }
+                try! list::push{ list = &out, item = x[k] }
+                k = k + 1
+            }
+            try! list::push{ list = &out, item = '"' }
+            try! list::push{ list = &out, item = '\n' }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // Waits for a unit's C compiler, and puts its object and C in place. False after saying it
+    // failed.
+    fn finish { mut io: Io, mut fs: Fs, mut proc: Proc, d: Driver, job: Job } -> bool {
+        let code = started{ &io, r = proc::wait{ &proc, child = job.child }, what = d.cc[0] }
+        if code != 0 {
+            io::eprintln{ &io, s = "ctxc: the C compiler failed" }
+            _ = fs::remove{ &fs, path = job.c_tmp }
+            _ = fs::remove{ &fs, path = job.o_tmp }
+            return false
+        }
+        if not publish{ &io, &fs, tmp = job.o_tmp, file = job.o } {
+            _ = fs::remove{ &fs, path = job.c_tmp }
+            return false
+        }
+        match fs::rename{ &fs, from = job.c_tmp, to = job.c } {
+            ok => {}
+            err => { _ = fs::remove{ &fs, path = job.c_tmp } }
+        }
+        return true
     }
 
     // The runtime compiled with cflags: HOME/build/run/ctxrt-HASH.o, which every program built
@@ -549,7 +670,7 @@ namespace drive {
 
     // Removes dir's objects and executables of NAME for hashes other than `keep`: older builds'.
     // Windows won't remove one that is running; that one goes next time.
-    fn sweep { mut fs: Fs, mut heap: Heap, dir: []u8, name: []u8, keep: []u8, suffix: []u8 } {
+    fn sweep { mut fs: Fs, mut heap: Heap, dir: []u8, name: []u8, keep: [][]u8, suffix: []u8 } {
         let names = fs::list{ &fs, &heap, realloc = arena::alloc, path = dir } iferr { return }
         let mut i: usize = 0
         while i < names.len {
@@ -558,8 +679,8 @@ namespace drive {
         }
     }
 
-    // Whether file is NAME-HASH.o or NAME-HASH SUFFIX for a HASH other than keep.
-    fn older { file: []u8, name: []u8, keep: []u8, suffix: []u8 } -> bool {
+    // Whether file is NAME-HASH.o, NAME-HASH.c or NAME-HASH SUFFIX for a HASH not in keep.
+    fn older { file: []u8, name: []u8, keep: [][]u8, suffix: []u8 } -> bool {
         let at = name.len + 1
         if file.len < at + 16 or not slice::eq_bytes{ a = file[..name.len], b = name } or file[name.len] != '-' { return false }
         let hash = file[at..at + 16]
@@ -570,8 +691,13 @@ namespace drive {
             i = i + 1
         }
         let rest = file[at + 16..]
-        if not (slice::eq_bytes{ a = rest, b = ".o" } or slice::eq_bytes{ a = rest, b = suffix }) { return false }
-        return not slice::eq_bytes{ a = hash, b = keep }
+        if not (slice::eq_bytes{ a = rest, b = ".o" } or slice::eq_bytes{ a = rest, b = ".c" } or slice::eq_bytes{ a = rest, b = suffix }) { return false }
+        i = 0
+        while i < keep.len {
+            if slice::eq_bytes{ a = hash, b = keep[i] } { return false }
+            i = i + 1
+        }
+        return true
     }
 
     // A hash of the runtime's sources, which every executable is compiled with.

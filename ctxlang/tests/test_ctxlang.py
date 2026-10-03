@@ -7594,7 +7594,7 @@ fn build { mut b: Build } {
         exe = '.exe' if os.name == 'nt' else ''
         self.assertEqual(len([n for n in os.listdir(work) if re.fullmatch(r't-[0-9a-f]{16}' + re.escape(exe), n)]), 1)
         self.assertEqual(len([n for n in os.listdir(work) if re.fullmatch(r't-[0-9a-f]{16}\.o', n)]), 1)
-        self.assertTrue(os.path.exists(os.path.join(work, 't.c')))
+        self.assertEqual(len([n for n in os.listdir(work) if re.fullmatch(r't-[0-9a-f]{16}\.c', n)]), 1)
         # `exe` links its object into OUT.
         out = os.path.join(d, 'prog' + exe)
         self.assertEqual(self.ctxc('exe', d, '-o', out, env=env)[0], 0)
@@ -7604,6 +7604,113 @@ fn build { mut b: Build } {
         got = io.StringIO()
         run_exe(out, out=got)
         self.assertEqual(got.getvalue(), 'two\n')
+
+    SPLIT = {
+        'build.ctx': """
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "split", root = "." }
+    build::add_sources{ &b, exe, dir = "lib" }
+}
+""",
+        'lib/a.ctx': """
+const ORIGIN: a::Point = a::Point{ x = 3, y = 4 }
+
+namespace a {
+    struct Point { x: i64, y: i64 }
+
+    extern fn labs { n: i64 } -> i64
+    extern fn qsort { base: *mut u8, n: usize, size: usize, cmp: extern fn{ x: *u8, y: *u8 } -> i32 }
+
+    #c::callback
+    fn descending { x: *u8, y: *u8 } -> i32 {
+        let p = @cast(*i32, x).*
+        let q = @cast(*i32, y).*
+        return if p < q { 1 } else if p > q { -1 } else { 0 }
+    }
+
+    fn sort { mut xs: [4]i32 } { qsort{ base = @cast(*mut u8, &xs), n = 4, size = 4, cmp = descending } }
+
+    // descending's address as C sees it, from this file's unit.
+    fn here {} -> usize {
+        let f: extern fn{ x: *u8, y: *u8 } -> i32 = descending
+        return @addr(@cast(*u8, f))
+    }
+
+    fn inc { x: i64 } -> i64 { return x + labs{ n = -1 } }
+
+    fn norm { p: Point } -> i64 { return labs{ n = p.x } + labs{ n = p.y } }
+}
+""",
+        'lib/b.ctx': """
+namespace b {
+    fn twice { f: fn{ x: i64 } -> i64, x: i64 } -> i64 { return f{ x = f{ x } } }
+
+    fn run { mut io: Io, deep: bool } -> i64 {
+        let mut xs: [4]i32 = [2, 9, 4, 7]
+        a::sort{ &xs }
+        _ = @fmt(&io, "{} {} {} {}\\n", xs[0], xs[1], xs[2], xs[3])
+        let f: extern fn{ x: *u8, y: *u8 } -> i32 = a::descending
+        _ = @fmt(&io, "same callback: {}\\n", @addr(@cast(*u8, f)) == a::here{})
+        let w: &fn{ mut io: Io } -> ! = @fmt("{} and {}", a::norm{ p = ORIGIN }, twice{ f = a::inc, x = 40 })
+        _ = @fmt(&io, "{}\\n", w)
+        if deep {
+            let zero = a::labs{ n = 0 }
+            return 1 / zero
+        }
+        return a::labs{ n = -5 }
+    }
+}
+""",
+        'main.ctx': """
+namespace out {
+    #write
+    fn text { mut io: Io, s: strlit } { io::write{ &io, to = io::Stream::out, bytes = s.bytes } }
+    #write
+    fn number { mut io: Io, n: i64 } { io::print_i64{ &io, n } }
+    #write
+    fn word { mut io: Io, n: i32 } { io::print_i64{ &io, n } }
+    #write
+    fn yes { mut io: Io, n: bool } { io::print_bool{ &io, n } }
+}
+
+fn main { mut io: Io, args: Args } -> i32 {
+    return @as(i32, b::run{ &io, deep = args.len > 0 })
+}
+""",
+    }
+
+    def test_split_into_units(self):
+        # CTX_UNIT_SIZE=1 puts each function in a unit of its own: callbacks, function values,
+        # binds, consts, extern fns and panic positions across units.
+        import re
+        d = self.project(dict(self.SPLIT))
+        env, logged = self.logging_cc(d)
+        env['CTX_UNIT_SIZE'] = '1'
+        code, out, err = self.ctxc('run', d, env=env)
+        self.assertEqual((code, out), (5, '9 7 4 2\nsame callback: true\n7 and 42\n'), err)
+        compiled = [line for line in logged() if ' -c ' in line and 'CTX_PROGRAM_NAME="split"' in line]
+        self.assertGreater(len(compiled), 10)
+        code, out, err = self.ctxc('run', d, '--', 'deep', env=env)
+        self.assertEqual(code, 134)
+        self.assertIn('lib/b.ctx:15:22: panic: division by zero', err)
+        self.assertEqual(logged(), [])
+        # An edit to one function recompiles its unit alone.
+        with open(os.path.join(d, 'lib', 'a.ctx'), encoding='utf-8') as f:
+            text = f.read()
+        with open(os.path.join(d, 'lib', 'a.ctx'), 'w', encoding='utf-8', newline='') as f:
+            f.write(text.replace('return x + labs{ n = -1 }', 'return x + labs{ n = -2 }'))
+        code, out, err = self.ctxc('run', d, env=env)
+        self.assertEqual((code, out), (5, '9 7 4 2\nsame callback: true\n7 and 44\n'), err)
+        lines = logged()
+        self.assertEqual(len([line for line in lines if ' -c ' in line]), 1, lines)
+        work = self.work_dir(d)
+        units = [n for n in os.listdir(work) if re.fullmatch(r'split-[0-9a-f]{16}\.o', n)]
+        self.assertEqual(len(units), len(compiled))
+        # Without CTX_UNIT_SIZE, so small a program is one unit.
+        del env['CTX_UNIT_SIZE']
+        code, out, err = self.ctxc('run', d, env=env)
+        self.assertEqual((code, out), (5, '9 7 4 2\nsame callback: true\n7 and 44\n'), err)
+        self.assertEqual(len([line for line in logged() if ' -c ' in line and 'CTX_PROGRAM_NAME="split"' in line]), 1)
 
     def test_optimization_level(self):
         d = self.project({'build.ctx': 'fn build { mut b: Build } { build::optimize{ &b, exe = build::exe{ &b, name = "t", root = "src" }, level = 2 } }\n',
