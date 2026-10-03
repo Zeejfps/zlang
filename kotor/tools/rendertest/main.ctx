@@ -86,7 +86,17 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut 
     let mut lib = kmodels::new_library{}
     try draw_room{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, dir = opts.out_dir }
     try draw_bastila{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, dir = opts.out_dir }
-    try draw_gallery{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, a = assets, dir = opts.out_dir }
+    let first: [4][]u8 = ["p_hk47", "c_drdastro", "w_lghtsbr_001", ""]
+    let first_views: [4]u32 = [0, 0, 1, 0]
+    try draw_gallery{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, a = assets, dir = opts.out_dir, names = first, views = first_views, name = "gallery.png" }
+    // Alpha on real data: a bump-mapped skin that must stay solid (c_rancor), punch-through fur
+    // (p_zaalbar), a body whose texture alpha blends at its edges (p_bastilabb), an astromech
+    // whose alpha is its reflection mask (c_drdastro); then Dantooine's bushes and leaves, blended
+    // by alpha without a keyword, from inside m14aa_01a.
+    let second: [4][]u8 = ["c_rancor", "p_zaalbar", "p_bastilabb", "c_drdastro"]
+    let second_views: [4]u32 = [1, 0, 0, 1]
+    try draw_gallery{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, a = assets, dir = opts.out_dir, names = second, views = second_views, name = "alpha.png" }
+    try draw_inside{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, dir = opts.out_dir, room_name = "m14aa_01a", yaw = 0.0, name = "foliage.png" }
     try draw_area{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, area = "m01aa", dir = opts.out_dir }
     try draw_ingame{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, dir = opts.out_dir }
 
@@ -777,20 +787,20 @@ fn draw_bastila {
 fn draw_gallery {
     mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena,
     mut lib: kmodels::Library, mut cache: material::Cache, rm: res::Manager, a: Assets, dir: []u8,
+    names: [4][]u8, views: [4]u32, name: []u8,
 } -> ! {
     let palette = try alloc::resize(math::Mat4, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(math::Mat4){}, count = 64 }
-    let names: [3][]u8 = ["p_hk47", "c_drdastro", "w_lghtsbr_001"]
     let w = @as(f32, WIDTH) / 4.0
     let mut k: usize = 0
     while k < 4 {
         render::begin_frame{ &frame, time = 0.0 }
         let viewport = render::rect{ x = @as(f32, k) * w, y = 0.0, w, h = @as(f32, HEIGHT) }
-        if k < 3 {
+        if names[k].len > 0 {
             let model = try kmodels::load{ &lib, &fs, rm, &heap, name = names[k] } ifnull { return kmodels::no_model{ name = names[k] } }
             let parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model, envmap = "" }
             let pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model }
             let box = kmodels::bounds{ model, pose, parts, instance = math::mat4::identity{}, box = math::aabb::empty{}, palette }
-            let mut view = render::make_view{ camera = ortho_camera{ box, r = view_rotation{ which = if k == 2 { 1 } else { 0 } }, aspect = w / @as(f32, HEIGHT) } }
+            let mut view = render::make_view{ camera = ortho_camera{ box, r = view_rotation{ which = views[k] }, aspect = w / @as(f32, HEIGHT) } }
             view.viewport = viewport
             view.clear_color = render::rgba{ r = 0.15, g = 0.15, b = 0.18, a = 1.0 }
             view.ambient = v3{ x = 0.4, y = 0.4, z = 0.42 }
@@ -814,7 +824,7 @@ fn draw_gallery {
         k = k + 1
     }
     _ = @fmt(&io, "gallery: textures {} loaded, {} missing\n", cache.loaded, cache.missing)
-    try save_screen{ &io, &fs, &dev, &heap, dir, name = "gallery.png" }
+    try save_screen{ &io, &fs, &dev, &heap, dir, name }
     report{ &io, &dev }
 }
 
@@ -985,5 +995,52 @@ fn draw_ingame {
     try gpu::submit{ &dev, frame = &frame }
     _ = @fmt(&io, "ingame: {} lights; shadow from ({}, {}, {})\n", frame.light_count, light.x, light.y, light.z)
     try save_screen{ &io, &fs, &dev, &heap, dir, name = "ingame.png" }
+    report{ &io, &dev }
+}
+
+// A room seen from inside at eye height, from the middle of its walkmesh, looking along `yaw`
+// (radians from +Y toward -X) and a little up: for areas whose interest is around the player
+// (Dantooine's courtyard, its bushes and trees blended by their alpha).
+fn draw_inside {
+    mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena,
+    mut lib: kmodels::Library, mut cache: material::Cache, rm: res::Manager, dir: []u8,
+    room_name: []u8, yaw: f32, name: []u8,
+} -> ! {
+    let room = try kmodels::load{ &lib, &fs, rm, &heap, name = room_name } ifnull { return kmodels::no_model{ name = room_name } }
+    let parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model = room, envmap = "" }
+    let pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = room }
+    let palette = try alloc::resize(math::Mat4, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(math::Mat4){}, count = 64 }
+    // The walkmesh's extent: the AABB meshes' vertices.
+    let mut walk = math::aabb::empty{}
+    let mut i: usize = 0
+    while i < room.meshes.len {
+        let mesh = &room.meshes[i]
+        i = i + 1
+        if mesh.aabb == null { continue }
+        let w = pose.world[mesh.node]
+        let mut v: usize = 0
+        while v < @as(usize, mesh.vertex_count) {
+            walk = math::aabb::extend{ b = walk, p = math::mat4::transform_point{ m = w, p = v3{ x = mesh.positions[v * 3], y = mesh.positions[v * 3 + 1], z = mesh.positions[v * 3 + 2] } } }
+            v = v + 1
+        }
+    }
+    let c = math::aabb::center{ b = walk }
+    let floor = floor_height{ model = room, pose, x = c.x, y = c.y } ifnull { walk.min.z }
+    let eye = v3{ x = c.x, y = c.y, z = floor + 1.7 }
+    let look = v3{ x = eye.x - math::sinf{ x = yaw } * 6.0, y = eye.y + math::cosf{ x = yaw } * 6.0, z = eye.z + 1.5 }
+    render::begin_frame{ &frame, time = 0.0 }
+    let mut view = render::make_view{ camera = render::Camera{
+        view = math::mat4::look_at{ eye, at = look, up = v3{ x = 0.0, y = 0.0, z = 1.0 } },
+        proj = math::mat4::perspective{ fovy = 1.1, aspect = @as(f32, WIDTH) / @as(f32, HEIGHT), near = 0.1, far = 500.0 },
+        eye,
+    } }
+    view.clear_color = render::rgba{ r = 0.45, g = 0.6, b = 0.8, a = 1.0 }
+    view.ambient = v3{ x = 0.6, y = 0.6, z = 0.6 }
+    let vi = render::add_view{ &frame, view } ifnull { return }
+    kmodels::add_lights{ &frame, model = room, pose, instance = math::mat4::identity{} }
+    _ = kmodels::draw{ &frame, view = vi, model = room, pose, parts, instance = math::mat4::identity{}, palette }
+    try gpu::submit{ &dev, frame = &frame }
+    _ = @fmt(&io, "{}: {} meshes drawn, walkmesh {} x {} m, eye at ({}, {}, {})\n", room_name, parts.len, walk.max.x - walk.min.x, walk.max.y - walk.min.y, eye.x, eye.y, eye.z)
+    try save_screen{ &io, &fs, &dev, &heap, dir, name }
     report{ &io, &dev }
 }
