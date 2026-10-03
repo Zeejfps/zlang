@@ -98,9 +98,13 @@ namespace test_items {
         let ids = items::bag_of{ w = &w, id = items::bag_holder{ w = &w, who = leader } }
         let mut k: usize = 0
         while k < ids.len {
-            let o = world::object{ w = &w, id = ids[k] } ifnull { continue }
-            _ = @fmt(&w.io, "  carried {} {} x{} tag {}\n", ids[k], items::name_of{ w = &w, id = ids[k] }, items::stack_of{ w = &w, id = ids[k] }, o.tag)
+            let id = ids[k]
             k = k + 1
+            let o = world::object{ w = &w, id } ifnull {
+                _ = @fmt(&w.io, "  carried {}: no such object\n", id)
+                continue
+            }
+            _ = @fmt(&w.io, "  carried {} {} x{} tag {}\n", id, items::name_of{ w = &w, id }, items::stack_of{ w = &w, id }, o.tag)
         }
     }
 }

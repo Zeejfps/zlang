@@ -17,5 +17,5 @@ while [ $# -gt 0 ] && [ "$1" != "--" ]; do
 done
 if [ "$1" = "--" ]; then shift; fi
 mkdir -p kotor/out/pt
-kotor/out/kotor.exe --headless --frames $frames --input $script $shots --log ${LOG:-scripts} "$@" > kotor/out/pt/$name.log 2>&1
+timeout ${TIMEOUT:-240} kotor/out/kotor.exe --headless --frames $frames --input $script $shots --log ${LOG:-scripts} "$@" > kotor/out/pt/$name.log 2>&1
 echo "exit $? lines $(wc -l < kotor/out/pt/$name.log)"
