@@ -1,0 +1,434 @@
+// animcheck: plays the install's animations through lib/mdl's mdl_anim and checks the poses.
+//
+//   kotor/tools/ctxc run kotor/tools/animcheck                      every model
+//   kotor/tools/ctxc run kotor/tools/animcheck -- --every 10        every tenth model
+//   kotor/tools/ctxc run kotor/tools/animcheck -- --model p_bastilabb
+//   kotor/tools/ctxc run kotor/tools/animcheck -- --dir DIR         another extraction
+//
+// The models come from the extraction (python kotor/tools/py/extract_models.py; see mdlcheck).
+// For each model it takes every animation its supermodel chain offers (the nearest of each
+// name, as the engine looks them up), binds it, and samples it at five times; every node
+// transform, alpha and skin palette matrix must be finite, every orientation unit, and in the
+// bind pose every palette matrix the identity. It plays each animation once through a player
+// (each event must fire once) and blends each into the next mid-transition. Supermodels are
+// loaded on demand, through the same lookup the engine will pass. Exits 1 on a failure.
+
+type Heap = arena::Arena
+
+struct Options { dir: []u8, every: usize, only: []u8, dump: []u8, time: f32 }
+
+struct Entry { container: []u8, resref: []u8 }
+
+// Models by resref, loaded once: supermodels, which many models share.
+struct Cache {
+    dir: []u8,
+    entries: []Entry,
+    index: map::Map([]u8, usize, Heap),              // resref -> its last entry, as kres resolves
+    loaded: map::Map([]u8, usize, Heap),             // resref -> index in models
+    models: list::List(*mdl::Model, Heap),
+    keep: *mut Heap,
+    missing: u32,                                    // lookups of models that aren't there
+    failed: u32,                                     // models that didn't load
+}
+
+struct Counts {
+    models: u64,
+    animated: u64,
+    animations: u64,
+    poses: u64,
+    palettes: u64,
+    events: u64,
+    unbound: u64,
+    failures: u64,
+}
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let opts = parse_args{ &io, args } ifnull { return 2 }
+    let keep_mem = mem::pages{ &mem, size = 2147483648 } ifnull { return out_of_memory{ &io } }
+    let scratch_mem = mem::pages{ &mem, size = 536870912 } ifnull { return out_of_memory{ &io } }
+    let mut keep = arena::new{ buf = keep_mem }
+    let mut scratch = arena::new{ buf = scratch_mem }
+    let c = run{ &io, &fs, &keep, &scratch, opts } iferr err{ error } {
+        _ = @fmt(&io, "animcheck: {}\n", error)
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return if c.failures == 0 { 0 } else { 1 }
+}
+
+fn out_of_memory { mut io: Io } -> i32 {
+    io::eprintln{ &io, s = "animcheck: out of memory" }
+    return 1
+}
+
+fn run { mut io: Io, mut fs: Fs, mut keep: Heap, mut scratch: Heap, opts: Options } -> !Counts {
+    let mut path: [1024]u8
+    let manifest = try fs::read_all{ &fs, heap = &keep, realloc = arena::alloc, path = append{ into = path[..], len = 0, s = opts.dir, more = "/models.txt" } }
+    let mut entries = list::new(Entry, Heap){ realloc = arena::alloc, heap = &keep }
+    let mut start: usize = 0
+    let mut i: usize = 0
+    while i < manifest.len {
+        if manifest[i] == '\n' {
+            let line = manifest[start..i]
+            let mut tab: usize = 0
+            while tab < line.len and line[tab] != '\t' { tab = tab + 1 }
+            if tab < line.len { try list::push{ list = &entries, item = Entry{ container = line[..tab], resref = line[tab + 1..] } } }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    let mut cache = Cache{
+        dir = opts.dir,
+        entries = list::items{ list = entries },
+        index = map::new([]u8, usize, Heap){ realloc = arena::alloc, heap = &keep, hash = map::hash_bytes, eq = slice::eq_bytes },
+        loaded = map::new([]u8, usize, Heap){ realloc = arena::alloc, heap = &keep, hash = map::hash_bytes, eq = slice::eq_bytes },
+        models = list::new(*mdl::Model, Heap){ realloc = arena::alloc, heap = &keep },
+        keep = &keep,
+        missing = 0,
+        failed = 0,
+    }
+    i = 0
+    while i < cache.entries.len {
+        try map::put{ m = &cache.index, key = cache.entries[i].resref, value = i }
+        i = i + 1
+    }
+
+    let mut c: Counts
+    i = 0
+    while i < cache.entries.len {
+        let e = cache.entries[i]
+        let pick = if opts.only.len > 0 { mdl::same_name{ a = e.resref, b = opts.only } } else { i % opts.every == 0 }
+        i = i + 1
+        if not pick { continue }
+        c.models = c.models + 1
+        arena::reset{ heap = &scratch }
+        let model = load{ &fs, heap = &scratch, dir = opts.dir, e } iferr err{ error } {
+            report{ &io, &c, what = "model doesn't load", name = e.resref, detail = @fmt("{}", error) }
+            continue
+        }
+        if opts.dump.len > 0 {
+            dump{ &io, &fs, &scratch, &cache, model = &model, anim = opts.dump, time = opts.time }
+            continue
+        }
+        check_model{ &io, &fs, &scratch, &cache, &c, name = e.resref, model = &model }
+    }
+
+    _ = @fmt(&io, "animcheck: {} models, {} with animations; {} animations, {} poses, {} skin palettes, {} events fired\n",
+        c.models, c.animated, c.animations, c.poses, c.palettes, c.events)
+    _ = @fmt(&io, "  {} supermodels loaded, {} lookups of missing models, {} models that failed to load\n",
+        map::len{ m = cache.loaded }, cache.missing, cache.failed)
+    _ = @fmt(&io, "  {} animation nodes drive no node of their model\n", c.unbound)
+    _ = @fmt(&io, "  {} failures\n", c.failures)
+    return c
+}
+
+// Checks every animation `model`'s chain offers.
+fn check_model { mut io: Io, mut fs: Fs, mut scratch: Heap, mut cache: Cache, mut c: Counts, name: []u8, model: *mdl::Model } {
+    let pose = mdl_anim::make_pose{ realloc = arena::alloc, heap = &scratch, model } iferr { return }
+    let mut palette: [64]math::Mat4
+    check_pose{ &io, &c, name, anim = "(bind pose)", model, pose, bind = true, palette = palette[..] }
+
+    // Every animation name the chain offers, nearest first.
+    let mut seen = map::new([]u8, bool, Heap){ realloc = arena::alloc, heap = &scratch, hash = map::hash_bytes, eq = slice::eq_bytes }
+    let mut bindings = list::new(mdl_anim::Binding, Heap){ realloc = arena::alloc, heap = &scratch }
+    let mut m = model
+    let mut depth = 0
+    while depth < 16 {
+        let mut k: usize = 0
+        while k < m.animations.len {
+            let a = &m.animations[k]
+            k = k + 1
+            let mut lower: [64]u8
+            let key = to_lower{ into = lower[..], s = a.name }
+            if map::has{ m = seen, key } { continue }
+            let kept = copy{ heap = &scratch, s = key } iferr { return }
+            map::put{ m = &seen, key = kept, value = true } iferr { return }
+            // The engine's lookup must find this very animation.
+            let found = mdl_anim::find{ model, name = a.name, lookup = lookup_model{ &fs, &cache, _ } }
+            if found == null or found.animation != a {
+                report{ &io, &c, what = "find disagrees with the chain", name, detail = @fmt("{}", a.name) }
+            }
+            let b = mdl_anim::bind{ realloc = arena::alloc, heap = &scratch, model, animation = a } iferr { return }
+            list::push{ list = &bindings, item = b } iferr { return }
+        }
+        if m.supermodel.len == 0 { break }
+        m = lookup_model{ &fs, &cache, name = m.supermodel } ifnull { break }
+        depth = depth + 1
+    }
+    let bs = list::items{ list = bindings }
+    if bs.len > 0 { c.animated = c.animated + 1 }
+
+    let mut i: usize = 0
+    while i < bs.len {
+        let b = bs[i]
+        let a = b.animation
+        c.animations = c.animations + 1
+        let mut k: usize = 0
+        while k < b.targets.len {
+            if b.targets[k] < 0 { c.unbound = c.unbound + 1 }
+            k = k + 1
+        }
+        // Five times across the animation.
+        k = 0
+        while k <= 4 {
+            let t = a.length * @as(f32, k) / 4.0
+            mdl_anim::pose_at{ model, binding = b, time = t, pose }
+            check_pose{ &io, &c, name, anim = a.name, model, pose, bind = false, palette = palette[..] }
+            k = k + 1
+        }
+        // Played once through, each event fires once.
+        let mut player = mdl_anim::new_player{}
+        mdl_anim::play{ &player, binding = b, looping = false, speed = 1.0, transition = -1.0 }
+        let mut fired: u64 = 0
+        let dt = if a.length > 0.0 { a.length / 30.0 } else { 0.1 }
+        k = 0
+        while k < 32 {
+            mdl_anim::advance{ &player, dt, on_event = count_event{ n = &fired, _ } }
+            k = k + 1
+        }
+        c.events = c.events + fired
+        if fired != a.events.len {
+            report{ &io, &c, what = "events fired once through", name, detail = @fmt("{}: {} of {}", a.name, fired, a.events.len) }
+        }
+        if not mdl_anim::is_done{ player } { report{ &io, &c, what = "player not done after the length", name, detail = @fmt("{}", a.name) } }
+        // Blend into the next animation, halfway through its transition.
+        if i + 1 < bs.len {
+            let next = bs[i + 1]
+            mdl_anim::play{ &player, binding = next, looping = true, speed = 1.0, transition = 0.25 }
+            mdl_anim::advance{ &player, dt = 0.125, on_event = count_event{ n = &fired, _ } }
+            mdl_anim::evaluate{ model, player, pose }
+            check_pose{ &io, &c, name, anim = next.animation.name, model, pose, bind = false, palette = palette[..] }
+        }
+        i = i + 1
+    }
+}
+
+// Prints each node's model-space position in `anim` at `time`, to compare with another
+// implementation (kotor/tools/py/mdlrender.py's node_transforms).
+fn dump { mut io: Io, mut fs: Fs, mut scratch: Heap, mut cache: Cache, model: *mdl::Model, anim: []u8, time: f32 } {
+    let pose = mdl_anim::make_pose{ realloc = arena::alloc, heap = &scratch, model } iferr { return }
+    let found = mdl_anim::find{ model, name = anim, lookup = lookup_model{ &fs, &cache, _ } } ifnull {
+        _ = @fmt(&io, "no animation {}\n", anim)
+        return
+    }
+    let b = mdl_anim::bind{ realloc = arena::alloc, heap = &scratch, model, animation = found.animation } iferr { return }
+    mdl_anim::pose_at{ model, binding = b, time, pose }
+    let mut i: usize = 0
+    while i < model.nodes.len {
+        let w = pose.world[i]
+        _ = @fmt(&io, "{} {} {} {}\n", model.nodes[i].name, w.m[12], w.m[13], w.m[14])
+        i = i + 1
+    }
+}
+
+fn count_event { mut n: u64, event: mdl::Event } {
+    n = n + 1
+}
+
+// Finite transforms and alphas, unit orientations, and sane skin palettes.
+fn check_pose { mut io: Io, mut c: Counts, name: []u8, anim: []u8, model: *mdl::Model, pose: mdl_anim::Pose, bind: bool, palette: []mut math::Mat4 } {
+    c.poses = c.poses + 1
+    let mut i: usize = 0
+    while i < model.nodes.len {
+        let s = pose.nodes[i]
+        let q = s.orientation
+        let ql = math::sqrtf{ x = q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z }
+        if not (math::abs{ x = ql - 1.0 } < 0.001) {
+            report{ &io, &c, what = "orientation not unit", name, detail = @fmt("{} node {}: |q| {}", anim, model.nodes[i].name, ql) }
+            return
+        }
+        if not finite_mat{ m = pose.world[i] } or not finite{ x = pose.alpha[i] } {
+            report{ &io, &c, what = "transform not finite", name, detail = @fmt("{} node {}", anim, model.nodes[i].name) }
+            return
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < model.meshes.len {
+        let mesh = &model.meshes[i]
+        i = i + 1
+        if mesh.skin == null { continue }
+        let n = mdl_anim::skin_palette{ model, mesh, pose, out = palette }
+        c.palettes = c.palettes + 1
+        let mut s: usize = 0
+        while s < n {
+            let m = palette[s]
+            if not finite_mat{ m } {
+                report{ &io, &c, what = "palette not finite", name, detail = @fmt("{} slot {}", anim, s) }
+                return
+            }
+            // A bone keeps its shape: the 3x3 part is a rotation times a positive scale.
+            let det = m.m[0] * (m.m[5] * m.m[10] - m.m[9] * m.m[6]) - m.m[4] * (m.m[1] * m.m[10] - m.m[9] * m.m[2]) + m.m[8] * (m.m[1] * m.m[6] - m.m[5] * m.m[2])
+            if not (det > 0.001) {
+                report{ &io, &c, what = "palette matrix not a rotation and scale", name, detail = @fmt("{} slot {}: det {}", anim, s, det) }
+                return
+            }
+            if bind and not near_identity{ m } {
+                report{ &io, &c, what = "bind-pose palette not the identity", name, detail = @fmt("slot {}", s) }
+                return
+            }
+            s = s + 1
+        }
+    }
+}
+
+fn finite { x: f32 } -> bool { return x > -1.0e30 and x < 1.0e30 }
+
+fn finite_mat { m: math::Mat4 } -> bool {
+    let mut i: usize = 0
+    while i < 16 {
+        if not finite{ x = m.m[i] } { return false }
+        i = i + 1
+    }
+    return true
+}
+
+fn near_identity { m: math::Mat4 } -> bool {
+    let id = math::mat4::identity{}
+    let mut i: usize = 0
+    while i < 16 {
+        if math::abs{ x = m.m[i] - id.m[i] } > 0.01 { return false }
+        i = i + 1
+    }
+    return true
+}
+
+fn report { mut io: Io, mut c: Counts, what: []u8, name: []u8, detail: utf8::Fmt(Heap) } {
+    c.failures = c.failures + 1
+    if c.failures > 40 { return }
+    let mut buf: [4096]u8
+    let mut heap = arena::new{ buf = buf[..] }
+    let mut b = utf8::builder(Heap){ realloc = arena::alloc, heap = &heap }
+    _ = detail{ &b }
+    _ = @fmt(&io, "FAIL {}: {}: {}\n", what, name, utf8::view{ b }.bytes)
+}
+
+// ---- models
+
+// The supermodel lookup the engine passes: a model by resref, loaded into the cache's arena
+// the first time.
+fn lookup_model { mut fs: Fs, mut cache: Cache, name: []u8 } -> ?*mdl::Model {
+    let mut lower: [64]u8
+    let key = to_lower{ into = lower[..], s = name }
+    // The index, not the pointer, goes through the map: a value found with a key in a local
+    // buffer counts as derived from it (docs/friction/models.md).
+    let have = map::get{ m = cache.loaded, key }
+    if have != null { return list::items{ list = cache.models }[have] }
+    let at = map::get{ m = cache.index, key } ifnull {
+        cache.missing = cache.missing + 1
+        return null
+    }
+    let e = cache.entries[at]
+    let model = load{ &fs, heap = cache.keep, dir = cache.dir, e } iferr {
+        cache.failed = cache.failed + 1
+        return null
+    }
+    let p = alloc::new(mdl::Model, Heap){ realloc = arena::alloc, heap = cache.keep, value = model } iferr { return null }
+    map::put{ m = &cache.loaded, key = e.resref, value = cache.models.len } iferr { return null }
+    list::push{ list = &cache.models, item = p } iferr { return null }
+    return p
+}
+
+fn load { mut fs: Fs, mut heap: Heap, dir: []u8, e: Entry } -> !mdl::Model {
+    // The paths are built in the arena, not on the stack: a result read through a path in a
+    // local buffer counts as derived from that buffer, and the model is returned
+    // (docs/friction/models.md).
+    let a = try alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = 1024 }
+    let b = try alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = 1024 }
+    let base_a = append{ into = a, len = 0, s = dir, more = "/" }
+    let base_b = append{ into = b, len = 0, s = dir, more = "/" }
+    let mid_a = append{ into = a, len = base_a.len, s = e.container, more = "/" }
+    let mid_b = append{ into = b, len = base_b.len, s = e.container, more = "/" }
+    let mdl_path = append{ into = a, len = mid_a.len, s = e.resref, more = ".mdl" }
+    let mdx_path = append{ into = b, len = mid_b.len, s = e.resref, more = ".mdx" }
+    // The file buffers go in the same arena as the model: a scratch arena is reset per model,
+    // and a supermodel's few megabytes of file stay with it.
+    let mdl_bytes = try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = mdl_path }
+    let mdx_bytes = try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = mdx_path }
+    return mdl::parse{ realloc = arena::alloc, &heap, mdl = mdl_bytes, mdx = mdx_bytes }
+}
+
+// ---- helpers
+
+// `s` then `more` after the first `len` bytes of `into`; the whole as a view.
+fn append { into: []mut u8, len: usize, s: []u8, more: []u8 } -> []u8 {
+    slice::copy(u8){ dst = into[len..len + s.len], src = s }
+    slice::copy(u8){ dst = into[len + s.len..len + s.len + more.len], src = more }
+    return into[..len + s.len + more.len]
+}
+
+fn to_lower { into: []mut u8, s: []u8 } -> []u8 {
+    let n = if s.len < into.len { s.len } else { into.len }
+    let mut i: usize = 0
+    while i < n {
+        into[i] = ascii::to_lower{ c = s[i] }
+        i = i + 1
+    }
+    return into[..n]
+}
+
+fn copy { mut heap: Heap, s: []u8 } -> ![]u8 {
+    let out = try alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = s.len }
+    slice::copy(u8){ dst = out, src = s }
+    return out
+}
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{ dir = "kotor/extract/models", every = 1, only = "", dump = "", time = 0.0 }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if i + 1 < args.len and slice::eq_bytes{ a, b = "--dir" } {
+            o.dir = args[i + 1]
+            i = i + 1
+        } else if i + 1 < args.len and slice::eq_bytes{ a, b = "--every" } {
+            let n = utf8::parse_u64{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } }
+            if n == 0 { return usage{ &io } }
+            o.every = @as(usize, n)
+            i = i + 1
+        } else if i + 2 < args.len and slice::eq_bytes{ a, b = "--dump" } {
+            o.dump = args[i + 1]
+            o.time = utf8::parse_f32{ s = utf8::of{ chars = args[i + 2] } } ifnull { return usage{ &io } }
+            i = i + 2
+        } else if i + 1 < args.len and slice::eq_bytes{ a, b = "--model" } {
+            o.only = args[i + 1]
+            i = i + 1
+        } else {
+            return usage{ &io }
+        }
+        i = i + 1
+    }
+    return o
+}
+
+fn usage { mut io: Io } -> ?Options {
+    io::eprintln{ &io, s = "usage: animcheck [--dir DIR] [--every N] [--model NAME [--dump ANIM TIME]]" }
+    return null
+}
+
+// ---- @fmt writers: to standard output, and bytes into a Builder
+
+namespace out {
+    #write
+    fn put_text { mut io: Io, s: strlit } { io::write{ &io, to = io::Stream::out, bytes = s.bytes } }
+    #write
+    fn put_bytes { mut io: Io, b: []u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
+    #write
+    fn put_u32 { mut io: Io, n: u32 } { io::print_u64{ &io, n } }
+    #write
+    fn put_u64 { mut io: Io, n: u64 } { io::print_u64{ &io, n } }
+    #write
+    fn put_usize { mut io: Io, n: usize } { io::print_u64{ &io, n } }
+    #write
+    fn put_f32 { mut io: Io, n: f32 } { io::print_f32{ &io, n } }
+
+    #write
+    fn push_bytes { mut b: utf8::Builder(arena::Arena), s: []u8 } -> ! {
+        let mut i: usize = 0
+        while i < s.len {
+            try list::push{ list = &b.bytes, item = s[i] }
+            i = i + 1
+        }
+    }
+}
