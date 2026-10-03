@@ -90,6 +90,17 @@ namespace gui {
         return "800x600"
     }
 
+    // The HUD file for a GUI pixel space of `w` x `h`: the largest of the five that fits
+    // (mipc28x6 is the 800x600 one and the fallback). The original picks by exact size; a size it
+    // doesn't list has no HUD there, so the nearest smaller one is the useful answer.
+    fn hud_name { w: i32, h: i32 } -> []u8 {
+        if w >= 1600 and h >= 1200 { return "mipc216x12" }
+        if w >= 1280 and h >= 1024 { return "mipc212x10" }
+        if w >= 1280 and h >= 960 { return "mipc212x9" }
+        if w >= 1024 and h >= 768 { return "mipc210x7" }
+        return "mipc28x6"
+    }
+
     fn backdrop_suffix { kind: u32 } -> []u8 {
         if kind == 1 { return "store" }
         if kind == 2 { return "pazaak" }
