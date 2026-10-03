@@ -1,0 +1,70 @@
+// The engine as the NWScript VM sees it (docs/design/engine.md, "Routines: many hands, one
+// dispatcher"): `call` is the nwvm::Engine, bound once to the world; `dispatch` asks each
+// category file in turn whether it implements the routine. One file per category, one namespace
+// per file (rt_*), each with
+//
+//   fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool
+//
+// returning false for routines it doesn't have. To add a category, add its line below; to add a
+// routine, add it to its category's `run` (see engine.md for the checklist).
+namespace routines {
+    // The nwvm::Engine: `let engine = routines::call{ w = world_ptr, _ }`.
+    fn call { mut w: world::World, mut vm: nwvm::Vm, call: nwvm::Call } -> nwvm::Reply {
+        match call {
+            action{ routine, argc } => {
+                dispatch{ &w, &vm, routine, argc } iferr { return nwvm::Reply::failed }
+                return nwvm::Reply::done
+            }
+            equal{ kind, a, b } => { return nwvm::Reply::equal{ same = values::equal{ s = &w.values, kind, a, b } } }
+        }
+    }
+
+    fn dispatch { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> ! {
+        if routine >= nwscript::COUNT {
+            nwvm::fail{ &vm, why = "no such routine" }
+            return nwvm::underflow
+        }
+        let r = @as(usize, routine)
+        w.stats.calls[r] = w.stats.calls[r] + 1
+        let sp = vm.sp
+        let done = try categories{ &w, &vm, routine, argc }
+        if not done {
+            w.stats.missing[r] = w.stats.missing[r] + 1
+            try nwstub::fallback{ &vm, routine, argc }
+        }
+        if w.log.routines { log_call{ &w, vm = &vm, routine, argc, sp, done } }
+    }
+
+    // Each category in turn. Add a line for a new category file.
+    fn categories { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        if try rt_core::run{ &w, &vm, routine, argc } { return true }
+        if try rt_vars::run{ &w, &vm, routine, argc } { return true }
+        if try rt_obj::run{ &w, &vm, routine, argc } { return true }
+        if try rt_cmd::run{ &w, &vm, routine, argc } { return true }
+        if try rt_act::run{ &w, &vm, routine, argc } { return true }
+        if try rt_party::run{ &w, &vm, routine, argc } { return true }
+        if try rt_pres::run{ &w, &vm, routine, argc } { return true }
+        return false
+    }
+
+    // `routine Name/argc -> result` (the result as the routine left it on the stack).
+    fn log_call { mut w: world::World, vm: *nwvm::Vm, routine: u16, argc: u8, sp: u32, done: bool } {
+        let r = nwscript::ROUTINES[@as(usize, routine)]
+        world::prefix{ w = &w }
+        let mark: []u8 = if done { "" } else { " (missing)" }
+        if vm.sp == 0 or r.ret == nwscript::Type::void {
+            _ = @fmt(&w.io, "routine {}/{}{}\n", r.name, argc, mark)
+            return
+        }
+        let top = vm.sp - 1
+        let t = vm.types[@as(usize, top)]
+        let v = vm.vals[@as(usize, top)]
+        if t == nwvm::INT { _ = @fmt(&w.io, "routine {}/{} -> {}{}\n", r.name, argc, v.i, mark) }
+        else if t == nwvm::FLOAT { _ = @fmt(&w.io, "routine {}/{} -> {}{}\n", r.name, argc, v.f, mark) }
+        else if t == nwvm::OBJECT { _ = @fmt(&w.io, "routine {}/{} -> object {}{}\n", r.name, argc, v.u, mark) }
+        else if t == nwvm::STRING {
+            let s = vm.strs[@as(usize, v.u)]
+            _ = @fmt(&w.io, "routine {}/{} -> \"{}\"{}\n", r.name, argc, s, mark)
+        } else { _ = @fmt(&w.io, "routine {}/{} -> handle {}{}\n", r.name, argc, v.u, mark) }
+    }
+}

@@ -1,0 +1,113 @@
+// Routines: running code later or elsewhere (AssignCommand, DelayCommand, ExecuteScript), events
+// (SignalEvent, EventUserDefined) and what event scripts ask about (GetEnteringObject, ...),
+// and the commandable flag (docs/re/gameloop.md 4.3; script.md, "Actions").
+namespace rt_cmd {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        if routine == nwscript::AssignCommand { try assign_command{ &w, &vm, argc } }
+        else if routine == nwscript::DelayCommand { try delay_command{ &w, &vm, argc } }
+        else if routine == nwscript::ExecuteScript { try execute_script{ &w, &vm, argc } }
+        else if routine == nwscript::SignalEvent { try signal_event{ &w, &vm, argc } }
+        else if routine == nwscript::EventUserDefined { try event_user_defined{ &w, &vm, argc } }
+        else if routine == nwscript::GetUserDefinedEventNumber { try nwvm::push_int{ &vm, v = self_ctx{ w = &w, vm = &vm }.user_event } }
+        else if routine == nwscript::GetEnteringObject { try nwvm::push_object{ &vm, id = self_ctx{ w = &w, vm = &vm }.entering } }
+        else if routine == nwscript::GetExitingObject { try nwvm::push_object{ &vm, id = self_ctx{ w = &w, vm = &vm }.exiting } }
+        else if routine == nwscript::GetLastUsedBy { try nwvm::push_object{ &vm, id = self_ctx{ w = &w, vm = &vm }.last_used_by } }
+        else if routine == nwscript::GetLastOpenedBy { try nwvm::push_object{ &vm, id = self_ctx{ w = &w, vm = &vm }.last_opened_by } }
+        else if routine == nwscript::GetLastClosedBy { try nwvm::push_object{ &vm, id = self_ctx{ w = &w, vm = &vm }.last_closed_by } }
+        else if routine == nwscript::GetClickingObject { try nwvm::push_object{ &vm, id = self_ctx{ w = &w, vm = &vm }.clicked_by } }
+        else if routine == nwscript::GetRunScriptVar { try nwvm::push_int{ &vm, v = self_ctx{ w = &w, vm = &vm }.run_script_var } }
+        else if routine == nwscript::SetCommandable { try set_commandable{ &w, &vm, argc } }
+        else if routine == nwscript::GetCommandable { try get_commandable{ &w, &vm, argc } }
+        else { return false }
+        return true
+    }
+
+    // The running script's OBJECT_SELF's context (empty for none).
+    fn self_ctx { w: *world::World, vm: *nwvm::Vm } -> obj::Context {
+        let o = world::object{ w, id = nwvm::self_object{ vm = vm.* } } ifnull { return obj::no_context{} }
+        return o.ctx
+    }
+
+    // void AssignCommand(object oActionSubject, action aActionToAssign): an event to the object,
+    // no delay; dropped if the object doesn't exist.
+    fn assign_command { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let target = try nwarg::object{ &vm, routine = nwscript::AssignCommand, argc, i = 0 }
+        let s = try scripts::take_situation{ &w, &vm }
+        if not world::is_valid{ w = &w, id = target } {
+            scripts::free_situation{ &w, s }
+            return
+        }
+        events::post{ &w, delay_ms = 0, caller = nwvm::self_object{ vm }, target, payload = events::Payload::situation{ s } }
+    }
+
+    // void DelayCommand(float fSeconds, action aActionToDelay): an event to OBJECT_SELF in
+    // (int)(s * 1000) ms; dropped when OBJECT_SELF is invalid, the delay negative or a game day or
+    // more (gameloop.md 4.3).
+    fn delay_command { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let seconds = try nwarg::float{ &vm, routine = nwscript::DelayCommand, argc, i = 0 }
+        let s = try scripts::take_situation{ &w, &vm }
+        let me = nwvm::self_object{ vm }
+        let ms_f = seconds * 1000.0
+        if not world::is_valid{ w = &w, id = me } or not (ms_f >= 0.0) or ms_f >= @as(f32, clock::ms_per_day{ c = w.clock }) {
+            scripts::free_situation{ &w, s }
+            return
+        }
+        events::post{ &w, delay_ms = @as(u64, @as(i64, ms_f)), caller = me, target = me, payload = events::Payload::situation{ s } }
+    }
+
+    // void ExecuteScript(string sScript, object oTarget, int nScriptVar = -1): now, nested, as
+    // oTarget. The engine is bound again for the nested run (engine.md, "Running one").
+    fn execute_script { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::ExecuteScript
+        let name = try nwarg::string{ &vm, routine = r, argc, i = 0 }
+        let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let var = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let program = scripts::program{ &w, name = resref::truncate{ name } } ifnull { return }
+        let o = world::object{ w = &w, id = target }
+        if o != null { o.ctx.run_script_var = var }
+        let wp: *mut world::World = &w
+        let engine = routines::call{ w = wp, _ }
+        w.stats.script_runs = w.stats.script_runs + 1
+        if w.log.scripts {
+            world::prefix{ w = wp }
+            _ = @fmt(&w.io, "execute {} self={}\n", program.name, target)
+        }
+        _ = nwvm::run{ &vm, program, self = if o != null { target } else { obj::INVALID }, engine } iferr {
+            scripts::report_fault{ w = wp, vm = &vm }
+            null
+        }
+    }
+
+    // void SignalEvent(object oObject, event evToRun): a SIGNAL_EVENT to the object, no delay.
+    fn signal_event { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let target = try nwarg::object{ &vm, routine = nwscript::SignalEvent, argc, i = 0 }
+        let h = try nwarg::engine{ &vm, routine = nwscript::SignalEvent, argc, i = 1, kind = nwvm::EngineType::event }
+        let e = values::event{ s = &w.values, handle = h }
+        if not world::is_valid{ w = &w, id = target } { return }
+        events::post{ &w, delay_ms = 0, caller = nwvm::self_object{ vm }, target, payload = events::Payload::script{ e } }
+    }
+
+    // event EventUserDefined(int nUserDefinedEventNumber)
+    fn event_user_defined { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::EventUserDefined, argc, i = 0 }
+        let mut e = values::no_event{}
+        e.kind = events::USER_DEFINED
+        e.ints[0] = n
+        let h = values::add{ s = &w.values, v = values::Value::event{ e } }
+        try nwvm::push_engine{ &vm, kind = nwvm::EngineType::event, handle = h }
+    }
+
+    // void SetCommandable(int bCommandable, object oTarget = OBJECT_SELF)
+    fn set_commandable { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let value = try nwarg::int{ &vm, routine = nwscript::SetCommandable, argc, i = 0 }
+        let id = try nwarg::object{ &vm, routine = nwscript::SetCommandable, argc, i = 1 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        o.commandable = value != 0
+    }
+
+    fn get_commandable { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetCommandable, argc, i = 0 }
+        let o = world::object{ w = &w, id }
+        try nwvm::push_int{ &vm, v = if o != null and o.commandable { 1 } else { 0 } }
+    }
+}

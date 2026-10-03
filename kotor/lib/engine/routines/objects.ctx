@@ -1,0 +1,263 @@
+// Routines: finding objects and asking where they are (tags, validity, position, facing,
+// distance, area, type, name), locations, making and destroying objects.
+namespace rt_obj {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        if routine == nwscript::GetObjectByTag { try get_object_by_tag{ &w, &vm, argc } }
+        else if routine == nwscript::GetWaypointByTag { try get_waypoint_by_tag{ &w, &vm, argc } }
+        else if routine == nwscript::GetIsObjectValid { try get_is_object_valid{ &w, &vm, argc } }
+        else if routine == nwscript::GetTag { try get_tag{ &w, &vm, argc } }
+        else if routine == nwscript::GetPosition { try get_position{ &w, &vm, argc } }
+        else if routine == nwscript::GetFacing { try get_facing{ &w, &vm, argc } }
+        else if routine == nwscript::GetArea { try get_area{ &w, &vm, argc } }
+        else if routine == nwscript::GetModule { try nwvm::push_object{ &vm, id = w.module } }
+        else if routine == nwscript::GetObjectType { try get_object_type{ &w, &vm, argc } }
+        else if routine == nwscript::GetDistanceBetween { try get_distance_between{ &w, &vm, argc, routine, flat = false } }
+        else if routine == nwscript::GetDistanceBetween2D { try get_distance_between{ &w, &vm, argc, routine, flat = true } }
+        else if routine == nwscript::GetDistanceToObject { try get_distance_to_object{ &w, &vm, argc, routine, flat = false } }
+        else if routine == nwscript::GetDistanceToObject2D { try get_distance_to_object{ &w, &vm, argc, routine, flat = true } }
+        else if routine == nwscript::GetLocation { try get_location{ &w, &vm, argc } }
+        else if routine == nwscript::Location { try location{ &w, &vm, argc } }
+        else if routine == nwscript::GetPositionFromLocation { try get_position_from_location{ &w, &vm, argc } }
+        else if routine == nwscript::GetFacingFromLocation { try get_facing_from_location{ &w, &vm, argc } }
+        else if routine == nwscript::DestroyObject { try destroy_object{ &w, &vm, argc } }
+        else if routine == nwscript::CreateObject { try create_object{ &w, &vm, argc } }
+        else if routine == nwscript::GetNearestObjectByTag { try get_nearest_object_by_tag{ &w, &vm, argc } }
+        else { return false }
+        return true
+    }
+
+    fn vec { v: nwvm::Vector } -> math::Vec3 { return math::Vec3{ x = v.x, y = v.y, z = v.z } }
+    fn nwvec { v: math::Vec3 } -> nwvm::Vector { return nwvm::Vector{ x = v.x, y = v.y, z = v.z } }
+
+    // object GetObjectByTag(string sTag, int nNth = 0)
+    fn get_object_by_tag { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let tag = try nwarg::string{ &vm, routine = nwscript::GetObjectByTag, argc, i = 0 }
+        let nth = try nwarg::int{ &vm, routine = nwscript::GetObjectByTag, argc, i = 1 }
+        try nwvm::push_object{ &vm, id = world::object_by_tag{ w = &w, tag, nth } }
+    }
+
+    // object GetWaypointByTag(string sWaypointTag): the first waypoint with the tag.
+    fn get_waypoint_by_tag { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let tag = try nwarg::string{ &vm, routine = nwscript::GetWaypointByTag, argc, i = 0 }
+        let all = list::items{ list = w.objects.all }
+        let mut found = obj::INVALID
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.kind != obj::Kind::waypoint or not ci::eq{ a = o.tag, b = tag } { continue }
+            found = o.id
+            break
+        }
+        try nwvm::push_object{ &vm, id = found }
+    }
+
+    fn get_is_object_valid { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetIsObjectValid, argc, i = 0 }
+        try nwvm::push_int{ &vm, v = if world::is_valid{ w = &w, id } { 1 } else { 0 } }
+    }
+
+    fn get_tag { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetTag, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_string{ &vm, s = "" }
+            return
+        }
+        try nwvm::push_string{ &vm, s = o.tag }
+    }
+
+    fn get_position { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetPosition, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_vector{ &vm, v = nwvm::Vector{ x = 0.0, y = 0.0, z = 0.0 } }
+            return
+        }
+        try nwvm::push_vector{ &vm, v = nwvec{ v = o.position } }
+    }
+
+    fn get_facing { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetFacing, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_float{ &vm, v = 0.0 }
+            return
+        }
+        try nwvm::push_float{ &vm, v = obj::facing_degrees{ o } }
+    }
+
+    fn get_area { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetArea, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        try nwvm::push_object{ &vm, id = if o.kind == obj::Kind::module { obj::INVALID } else { o.area } }
+    }
+
+    fn get_object_type { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetObjectType, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        try nwvm::push_int{ &vm, v = obj::object_type{ kind = o.kind } }
+    }
+
+    fn distance { a: math::Vec3, b: math::Vec3, flat: bool } -> f32 {
+        let dx = a.x - b.x
+        let dy = a.y - b.y
+        let dz = if flat { 0.0 } else { a.z - b.z }
+        return math::sqrtf{ x = dx * dx + dy * dy + dz * dz }
+    }
+
+    // float GetDistanceBetween(object oA, object oB): 0.0 if either is invalid or they are in
+    // different areas.
+    fn get_distance_between { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, flat: bool } -> ! {
+        let a = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let b = try nwarg::object{ &vm, routine, argc, i = 1 }
+        let oa = world::object{ w = &w, id = a }
+        let ob = world::object{ w = &w, id = b }
+        let mut d: f32 = 0.0
+        if oa != null and ob != null { d = distance{ a = oa.position, b = ob.position, flat } }
+        try nwvm::push_float{ &vm, v = d }
+    }
+
+    // float GetDistanceToObject(object oObject): from OBJECT_SELF; -1.0 if invalid.
+    fn get_distance_to_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, flat: bool } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let me = world::object{ w = &w, id = nwvm::self_object{ vm } }
+        let other = world::object{ w = &w, id }
+        let mut d: f32 = -1.0
+        if me != null and other != null { d = distance{ a = me.position, b = other.position, flat } }
+        try nwvm::push_float{ &vm, v = d }
+    }
+
+    fn push_location { mut w: world::World, mut vm: nwvm::Vm, l: values::Location } -> ! {
+        let h = values::add{ s = &w.values, v = values::Value::location{ l } }
+        try nwvm::push_engine{ &vm, kind = nwvm::EngineType::location, handle = h }
+    }
+
+    fn get_location { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetLocation, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try push_location{ &w, &vm, l = values::no_location{} }
+            return
+        }
+        try push_location{ &w, &vm, l = values::Location{ position = o.position, facing = obj::facing_degrees{ o }, area = o.area } }
+    }
+
+    // location Location(vector vPosition, float fOrientation): in the module's area (KOTOR's
+    // prototype has no area argument).
+    fn location { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let p = try nwarg::vector{ &vm, routine = nwscript::Location, argc, i = 0 }
+        let facing = try nwarg::float{ &vm, routine = nwscript::Location, argc, i = 1 }
+        try push_location{ &w, &vm, l = values::Location{ position = vec{ v = p }, facing, area = w.area } }
+    }
+
+    fn get_position_from_location { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let h = try nwarg::engine{ &vm, routine = nwscript::GetPositionFromLocation, argc, i = 0, kind = nwvm::EngineType::location }
+        let l = values::location{ s = &w.values, handle = h }
+        try nwvm::push_vector{ &vm, v = nwvec{ v = l.position } }
+    }
+
+    fn get_facing_from_location { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let h = try nwarg::engine{ &vm, routine = nwscript::GetFacingFromLocation, argc, i = 0, kind = nwvm::EngineType::location }
+        try nwvm::push_float{ &vm, v = values::location{ s = &w.values, handle = h }.facing }
+    }
+
+    // void DestroyObject(object oDestroy, float fDelay = 0.0, int bNoFade = FALSE, float fDelayUntilFade = 0.0)
+    fn destroy_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::DestroyObject
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let delay = try nwarg::float{ &vm, routine = r, argc, i = 1 }
+        if argc > 2 { _ = try nwarg::int{ &vm, routine = r, argc, i = 2 } }
+        if argc > 3 { _ = try nwarg::float{ &vm, routine = r, argc, i = 3 } }
+        let o = world::object{ w = &w, id } ifnull { return }
+        if o.kind == obj::Kind::module or o.kind == obj::Kind::area { return }
+        let ms = if delay > 0.0 { @as(u64, delay * 1000.0) } else { 0 }
+        events::post{ &w, delay_ms = ms, caller = nwvm::self_object{ vm }, target = id, payload = events::Payload::destroy }
+    }
+
+    // object CreateObject(int nObjectType, string sTemplate, location lLocation, int bUseAppearAnimation = FALSE)
+    fn create_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::CreateObject
+        let kind_constant = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let template = try nwarg::string{ &vm, routine = r, argc, i = 1 }
+        let h = try nwarg::engine{ &vm, routine = r, argc, i = 2, kind = nwvm::EngineType::location }
+        if argc > 3 { _ = try nwarg::int{ &vm, routine = r, argc, i = 3 } }
+        let l = values::location{ s = &w.values, handle = h }
+        let kind = kind_of_type{ t = kind_constant } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        let id = tmpl::spawn{ &w, kind, template, position = l.position, orientation = obj::direction_of{ degrees = l.facing } } iferr err{ error } {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "CreateObject {}: {}\n", template, error)
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        let o = world::object{ w = &w, id }
+        if o != null {
+            if kind == obj::Kind::creature {
+                movement::place{ &w, id, at = l.position }
+                o.ai_level = 1
+            } else if kind == obj::Kind::placeable or kind == obj::Kind::door {
+                o.ai_level = 1
+            }
+        }
+        try nwvm::push_object{ &vm, id }
+    }
+
+    fn kind_of_type { t: i32 } -> ?obj::Kind {
+        if t == 1 { return obj::Kind::creature }
+        if t == 2 { return obj::Kind::item }
+        if t == 4 { return obj::Kind::trigger }
+        if t == 8 { return obj::Kind::door }
+        if t == 32 { return obj::Kind::waypoint }
+        if t == 64 { return obj::Kind::placeable }
+        if t == 128 { return obj::Kind::store }
+        return null
+    }
+
+    // object GetNearestObjectByTag(string sTag, object oTarget = OBJECT_SELF, int nNth = 1)
+    fn get_nearest_object_by_tag { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetNearestObjectByTag
+        let tag = try nwarg::string{ &vm, routine = r, argc, i = 0 }
+        let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let nth = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let from = world::object{ w = &w, id = target } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        try nwvm::push_object{ &vm, id = nearest{ w = &w, from, tag, nth } }
+    }
+
+    // The nth (from 1) nearest object to `from` with the tag, other than `from`.
+    fn nearest { w: *world::World, from: *obj::Object, tag: []u8, nth: i32 } -> u32 {
+        let all = list::items{ list = w.objects.all }
+        let mut last: f32 = -1.0
+        let mut last_id: u32 = 0
+        let mut k: i32 = 0
+        while k < nth {
+            let mut best = obj::INVALID
+            let mut best_d: f32 = 1000000000.0
+            let mut i: usize = 0
+            while i < all.len {
+                let o = all[i]
+                i = i + 1
+                if o.destroyed or o.id == from.id or o.area != from.area or not ci::eq{ a = o.tag, b = tag } { continue }
+                let d = distance{ a = o.position, b = from.position, flat = false }
+                // Strictly after the previous pick in (distance, id) order.
+                if d < last or (d == last and o.id <= last_id) { continue }
+                if d < best_d or (d == best_d and o.id < best) {
+                    best = o.id
+                    best_d = d
+                }
+            }
+            if best == obj::INVALID { return obj::INVALID }
+            last = best_d
+            last_id = best
+            k = k + 1
+        }
+        return last_id
+    }
+}

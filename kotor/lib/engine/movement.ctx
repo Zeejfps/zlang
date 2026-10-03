@@ -1,0 +1,164 @@
+// Creatures moving on the walkmesh (docs/re/movement.md 3, 5): server-side moves along a path
+// (MOVETOPOINT and the approaches), placing objects on the floor, and the trigger bookkeeping
+// every move does (which volumes a creature left or entered).
+namespace movement {
+    // A move gives up after this many blocked steps in a row (movement.md 3.4).
+    const GIVE_UP: u32 = 6
+
+    // Puts an object at `at`, its z on the floor under it when there is one.
+    fn place { mut w: world::World, id: u32, at: math::Vec3 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let mut p = at
+        let f = walkmap::floor{ m = &w.walk, x = at.x, y = at.y, z = at.z + 0.5 }
+        if f != null { p.z = f.z }
+        let from = o.position
+        world::set_position{ o, p }
+        if o.kind == obj::Kind::creature { cross_volumes{ &w, id, from, to = p } }
+    }
+
+    // Stops a creature's walk: path cleared, speed 0.
+    fn stop { mut w: world::World, id: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        list::clear{ list = &c.path }
+        c.path_next = 0
+        c.moving = false
+        c.speed = 0.0
+    }
+
+    // MOVETOPOINT (actions.md 3.1): params 0 the point, 1 run (int), 2 range, 3 the target object
+    // (the point follows it), 4 timeout seconds (0 none). A straight path for now (ours: PTH and
+    // grid planning, movement.md 4, are milestone 2's).
+    fn move_to_point { mut w: world::World, id: u32, a: *mut actions::Action } -> actions::Status {
+        let o = world::object{ w = &w, id } ifnull { return actions::Status::failed }
+        let c = obj::creature{ o } ifnull { return actions::Status::failed }
+        let mut goal = actions::vector_param{ a, i = 0 }
+        let target = actions::object_param{ a, i = 3 }
+        if target != obj::INVALID {
+            let t = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
+            goal = t.position
+        }
+        let run = actions::int_param{ a, i = 1 } != 0
+        let range = math::max{ a = actions::float_param{ a, i = 2 }, b = 0.1 }
+        let timeout = actions::float_param{ a, i = 4 }
+        let now = clock::now_ms{ c = w.clock }
+        if timeout > 0.0 and @as(f32, now - a.started) > timeout * 1000.0 {
+            // Force moves jump when they time out (movement.md 3.2, step 4).
+            stop{ &w, id }
+            place{ &w, id, at = goal }
+            let back = world::object{ w = &w, id } ifnull { return actions::Status::done }
+            world::set_animation{ o = back, id = obj::ANIM_STAND, speed = 1.0 }
+            return actions::Status::done
+        }
+        let dx = goal.x - o.position.x
+        let dy = goal.y - o.position.y
+        let dist = math::sqrtf{ x = dx * dx + dy * dy }
+        if dist <= range {
+            stop{ &w, id }
+            world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+            return actions::Status::done
+        }
+        let dt_ms = w.clock.dt * 1000.0
+        if dt_ms <= 0.0 { return actions::Status::running }
+        c.moving = true
+        let rate = if run { c.run_rate } else { c.walk_rate }
+        // Acceleration and braking (movement.md 3.3): f rises to 1 over a second, and falls
+        // with the square root of what is left over the last half second's worth of path.
+        let brake = 0.5 * rate
+        let mut f: f32 = 1.0
+        let left = dist - range
+        if left < brake {
+            f = if left / brake < 0.01 { 0.1 } else { math::sqrtf{ x = left / brake } }
+            f = f - dt_ms / 1000.0
+        }
+        if c.speed_factor < 1.0 { f = math::min{ a = f, b = c.speed_factor + dt_ms / 1000.0 } }
+        f = math::max{ a = f, b = 0.1 }
+        let s = dt_ms * (f + c.speed_factor) * rate * 0.5 / 1000.0
+        c.speed_factor = f
+        let step = math::min{ a = s, b = dist }
+        let to = math::Vec3{ x = o.position.x + dx / dist * step, y = o.position.y + dy / dist * step, z = o.position.z }
+        world::set_orientation{ o, v = math::Vec3{ x = dx, y = dy, z = 0.0 } }
+        world::set_animation{ o, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, speed = 1.0 }
+        c.speed = step / (dt_ms / 1000.0)
+        let z = walkmap::step_to{ m = &w.walk, from = o.position, to } ifnull {
+            a.phase = a.phase + 1
+            if a.phase >= GIVE_UP {
+                stop{ &w, id }
+                world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+                return actions::Status::failed
+            }
+            return actions::Status::running
+        }
+        a.phase = 0
+        let from = o.position
+        world::set_position{ o, p = math::Vec3{ x = to.x, y = to.y, z } }
+        cross_volumes{ &w, id, from, to = o.position }
+        return actions::Status::running
+    }
+
+    // Whether (x, y) is inside a polygon seen from above (even-odd rule).
+    fn inside_polygon { poly: []math::Vec3, x: f32, y: f32 } -> bool {
+        if poly.len < 3 { return false }
+        let mut inside = false
+        let mut j = poly.len - 1
+        let mut i: usize = 0
+        while i < poly.len {
+            let a = poly[i]
+            let b = poly[j]
+            if (a.y > y) != (b.y > y) {
+                let cx = a.x + (y - a.y) * (b.x - a.x) / (b.y - a.y)
+                if x < cx { inside = not inside }
+            }
+            j = i
+            i = i + 1
+        }
+        return inside
+    }
+
+    // After a creature moved from `from` to `to`: OBJECT_EXIT to the triggers it left and
+    // OBJECT_ENTER to those it entered (movement.md 5.1; the crossing of a whole volume between
+    // two samples is milestone 2's).
+    fn cross_volumes { mut w: world::World, id: u32, from: math::Vec3, to: math::Vec3 } {
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed { continue }
+            let t = obj::trigger{ o } ifnull { continue }
+            let now_in = inside_polygon{ poly = t.polygon, x = to.x, y = to.y }
+            let was_in = contains{ l = &t.inside, id }
+            if now_in and not was_in {
+                list::push{ list = &t.inside, item = id } iferr {}
+                events::post{ &w, delay_ms = 0, caller = id, target = o.id, payload = events::Payload::script{ e = events::script_event{ kind = events::OBJECT_ENTER, object = id } } }
+            } else if was_in and not now_in {
+                remove{ l = &t.inside, id }
+                events::post{ &w, delay_ms = 0, caller = id, target = o.id, payload = events::Payload::script{ e = events::script_event{ kind = events::OBJECT_EXIT, object = id } } }
+            }
+        }
+    }
+
+    fn contains { l: *list::List(u32, heap::Heap), id: u32 } -> bool {
+        let items = list::items{ list = l.* }
+        let mut i: usize = 0
+        while i < items.len {
+            if items[i] == id { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    fn remove { l: *mut list::List(u32, heap::Heap), id: u32 } {
+        let items = list::items{ list = l.* }
+        let mut j: usize = 0
+        let mut i: usize = 0
+        while i < items.len {
+            if items[i] != id {
+                items[j] = items[i]
+                j = j + 1
+            }
+            i = i + 1
+        }
+        l.len = j
+    }
+}

@@ -1,0 +1,6 @@
+// The live and headless loop with rendering (docs/design/engine.md, "The frame").
+namespace play {
+    fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
+        return 0
+    }
+}

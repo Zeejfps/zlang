@@ -1,0 +1,114 @@
+// Doors and placeables being used (docs/re/actions.md 1.4, 3.5, 3.6): the approach pattern
+// (walk to the use point, then act), opening and closing doors, using placeables.
+namespace doors {
+    // How close the actor stands to act (ours, from GetUseRange: radius + 0.75).
+    const USE_EXTRA: f32 = 0.75
+
+    // Where an actor stands to use `target`, and how near it must be (actions.md 1.4).
+    struct UsePoint { point: math::Vec3, range: f32 }
+
+    fn use_point { w: *world::World, actor: *obj::Object, target: *obj::Object } -> UsePoint {
+        let mut radius: f32 = 0.5
+        if obj::creature{ o = actor } is some{ value = c } { radius = c.perspace }
+        if target.kind == obj::Kind::door {
+            // The nearer of the door's two sides.
+            let n = target.orientation
+            let a = math::vec3::add_scaled{ a = target.position, b = n, s = 1.0 }
+            let b = math::vec3::add_scaled{ a = target.position, b = n, s = -1.0 }
+            let da = math::vec3::distance{ a, b = actor.position }
+            let db = math::vec3::distance{ a = b, b = actor.position }
+            return UsePoint{ point = if da < db { a } else { b }, range = radius + USE_EXTRA }
+        }
+        if target.kind == obj::Kind::creature {
+            let mut other: f32 = 0.5
+            if obj::creature{ o = target } is some{ value = c } { other = c.perspace }
+            return UsePoint{ point = target.position, range = radius + other + 0.3 }
+        }
+        return UsePoint{ point = target.position, range = radius + USE_EXTRA + 0.5 }
+    }
+
+    fn distance_2d { a: math::Vec3, b: math::Vec3 } -> f32 {
+        let dx = a.x - b.x
+        let dy = a.y - b.y
+        return math::sqrtf{ x = dx * dx + dy * dy }
+    }
+
+    // For a creature out of range of `target`: queues, in front, a move to the use point, a
+    // turn to face the target and a copy of `a` (actions.md 1.4), and says so. Non-creatures act
+    // from where they are.
+    fn approach { mut w: world::World, id: u32, target: u32, a: *mut actions::Action } -> bool {
+        let actor = world::object{ w = &w, id } ifnull { return false }
+        if actor.kind != obj::Kind::creature { return false }
+        let t = world::object{ w = &w, id = target } ifnull { return false }
+        let up = use_point{ w = &w, actor, target = t }
+        if distance_2d{ a = actor.position, b = up.point } <= up.range + 0.1 or a.phase > 0 { return false }
+        let mut copy = a.*
+        copy.phase = 1
+        copy.has_started = false
+        actions::add_front{ &w, id, action = copy }
+        let mut face = actions::make{ kind = actions::Kind::face_object }
+        face.params[0] = actions::Param::object{ id = target }
+        actions::add_front{ &w, id, action = face }
+        let mut move = actions::make{ kind = actions::Kind::move_to_point }
+        move.params[0] = actions::Param::vector{ v = up.point }
+        move.params[1] = actions::Param::int{ v = 1 }
+        move.params[2] = actions::Param::float{ v = up.range }
+        actions::add_front{ &w, id, action = move }
+        // The parameters now belong to the copy.
+        a.params = [actions::Param::none; 8]
+        return true
+    }
+
+    // OPENDOOR (actions.md 3.6): param 0 the door.
+    fn open_door { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
+        let target = actions::object_param{ a, i = 0 }
+        let o = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
+        let d = obj::door{ o } ifnull { return actions::Status::failed }
+        if d.state != obj::DoorState::closed { return actions::Status::done }
+        if approach{ &w, id, target, a } { return actions::Status::done }
+        if d.locked {
+            events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::FAIL_TO_OPEN, object = id } } }
+            return actions::Status::failed
+        }
+        set_door_state{ &w, id = target, state = obj::DoorState::open1 }
+        events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::OPEN, object = id } } }
+        return actions::Status::done
+    }
+
+    // CLOSEDOOR: param 0 the door.
+    fn close_door { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
+        let target = actions::object_param{ a, i = 0 }
+        let o = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
+        let d = obj::door{ o } ifnull { return actions::Status::failed }
+        if d.state == obj::DoorState::closed { return actions::Status::done }
+        if approach{ &w, id, target, a } { return actions::Status::done }
+        set_door_state{ &w, id = target, state = obj::DoorState::closed }
+        events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::CLOSE, object = id } } }
+        return actions::Status::done
+    }
+
+    // USEOBJECT (actions.md 3.5): param 0 the placeable (or door: open it).
+    fn use_object { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
+        let target = actions::object_param{ a, i = 0 }
+        let o = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
+        if o.kind == obj::Kind::door { return open_door{ &w, &vm, engine, id, a } }
+        let p = obj::placeable{ o } ifnull { return actions::Status::failed }
+        if not p.useable { return actions::Status::failed }
+        if approach{ &w, id, target, a } { return actions::Status::done }
+        events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::USED, object = id } } }
+        return actions::Status::done
+    }
+
+    // A door's state: its walkmesh blocks only while closed; the scene animates the change.
+    fn set_door_state { mut w: world::World, id: u32, state: obj::DoorState } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let d = obj::door{ o } ifnull { return }
+        d.state = state
+        walkmap::set_active{ m = &w.walk, index = d.walk, active = state == obj::DoorState::closed }
+        o.dirty = o.dirty | obj::DIRTY_ANIMATION
+        if w.log.objects {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "door {} ({}) -> {}\n", id, o.tag, @as(u32, state))
+        }
+    }
+}

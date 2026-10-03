@@ -1,0 +1,117 @@
+// Routines: numbers, strings, dice, printing (docs/design/engine.md, "Routines"). Pure
+// functions of their arguments, except Random and the dice, which draw from the world's rng
+// (MSVC rand(), seeded: headless runs repeat).
+namespace rt_core {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        if routine == nwscript::Random { try random{ &w, &vm, argc } }
+        else if routine == nwscript::PrintString { try print_string{ &w, &vm, argc } }
+        else if routine == nwscript::PrintInteger { try print_integer{ &w, &vm, argc } }
+        else if routine == nwscript::IntToString { try int_to_string{ &vm, argc } }
+        else if routine == nwscript::IntToFloat { try int_to_float{ &vm, argc } }
+        else if routine == nwscript::FloatToInt { try float_to_int{ &vm, argc } }
+        else if routine == nwscript::StringToInt { try string_to_int{ &vm, argc } }
+        else if routine == nwscript::GetStringLength { try get_string_length{ &vm, argc } }
+        else if routine == nwscript::d2 { try dice{ &w, &vm, argc, routine, sides = 2 } }
+        else if routine == nwscript::d3 { try dice{ &w, &vm, argc, routine, sides = 3 } }
+        else if routine == nwscript::d4 { try dice{ &w, &vm, argc, routine, sides = 4 } }
+        else if routine == nwscript::d6 { try dice{ &w, &vm, argc, routine, sides = 6 } }
+        else if routine == nwscript::d8 { try dice{ &w, &vm, argc, routine, sides = 8 } }
+        else if routine == nwscript::d10 { try dice{ &w, &vm, argc, routine, sides = 10 } }
+        else if routine == nwscript::d12 { try dice{ &w, &vm, argc, routine, sides = 12 } }
+        else if routine == nwscript::d20 { try dice{ &w, &vm, argc, routine, sides = 20 } }
+        else if routine == nwscript::d100 { try dice{ &w, &vm, argc, routine, sides = 100 } }
+        else { return false }
+        return true
+    }
+
+    // int Random(int nMaxInteger): 0 .. n-1 (0 for n <= 0).
+    fn random { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::Random, argc, i = 0 }
+        let v = if n <= 0 { 0 } else { @as(i32, world::random{ &w } % @as(u32, n)) }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // int dN(int nNumDice = 1): the sum of n rolls.
+    fn dice { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, sides: u32 } -> ! {
+        let n = try nwarg::int{ &vm, routine, argc, i = 0 }
+        let mut total: i32 = 0
+        let mut k: i32 = 0
+        while k < n and k < 1000 {
+            total = total + @as(i32, world::random{ &w } % sides) + 1
+            k = k + 1
+        }
+        try nwvm::push_int{ &vm, v = total }
+    }
+
+    fn print_string { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let s = try nwarg::string{ &vm, routine = nwscript::PrintString, argc, i = 0 }
+        if w.log.scripts {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "print: {}\n", s)
+        }
+    }
+
+    fn print_integer { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::PrintInteger, argc, i = 0 }
+        if w.log.scripts {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "print: {}\n", n)
+        }
+    }
+
+    fn int_to_string { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::IntToString, argc, i = 0 }
+        let mut buf: [16]u8
+        try nwvm::push_string{ &vm, s = format_int{ into = buf[..], n } }
+    }
+
+    // A signed decimal into `into` (as sprintf("%d")).
+    fn format_int { into: []mut u8, n: i32 } -> []u8 {
+        let mut v: i64 = @as(i64, n)
+        let negative = v < 0
+        if negative { v = -v }
+        let mut tmp: [12]u8
+        let mut k: usize = 0
+        while true {
+            tmp[k] = @trunc(u8, v % 10) + '0'
+            k = k + 1
+            v = v / 10
+            if v == 0 { break }
+        }
+        let mut len: usize = 0
+        if negative {
+            into[0] = '-'
+            len = 1
+        }
+        while k > 0 {
+            k = k - 1
+            into[len] = tmp[k]
+            len = len + 1
+        }
+        return into[..len]
+    }
+
+    fn int_to_float { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::IntToFloat, argc, i = 0 }
+        try nwvm::push_float{ &vm, v = @as(f32, n) }
+    }
+
+    // FloatToInt truncates toward zero (the engine's _ftol); NaN and out-of-range give 0 (ours).
+    fn float_to_int { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let f = try nwarg::float{ &vm, routine = nwscript::FloatToInt, argc, i = 0 }
+        let v = if f == f and f > -2147483648.0 and f < 2147483648.0 { @as(i32, f) } else { 0 }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // StringToInt: atoi (a leading sign and digits; 0 when none).
+    fn string_to_int { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let s = try nwarg::string{ &vm, routine = nwscript::StringToInt, argc, i = 0 }
+        let n = text::scan_decimal{ s }
+        try nwvm::push_int{ &vm, v = @trunc(i32, n) }
+    }
+
+    fn get_string_length { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let s = try nwarg::string{ &vm, routine = nwscript::GetStringLength, argc, i = 0 }
+        try nwvm::push_int{ &vm, v = @as(i32, s.len) }
+    }
+}

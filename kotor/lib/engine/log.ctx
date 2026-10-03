@@ -1,0 +1,37 @@
+// Which engine logs are on, and the line prefix they share: `[frame seconds] `. Lines go to
+// standard output through tools/common's @fmt writers for Io.
+//
+//   if w.log.scripts { elog::prefix{ w = &w }; _ = @fmt(&w.io, "script {} self={}\n", name, self) }
+namespace elog {
+    struct Log {
+        scripts: bool,          // each script run and its result, faults always
+        routines: bool,         // each routine call
+        events: bool,           // each event delivered
+        actions: bool,          // each action started and ended
+        objects: bool,          // objects made and destroyed
+        module: bool,           // module loading
+    }
+
+    fn quiet {} -> Log {
+        return Log{ scripts = false, routines = false, events = false, actions = false, objects = false, module = true }
+    }
+
+    // Turns on the logs a comma-separated list names (`scripts,routines`, `all`).
+    fn enable { mut l: Log, list: []u8 } {
+        let mut start: usize = 0
+        let mut i: usize = 0
+        while i <= list.len {
+            if i == list.len or list[i] == ',' {
+                let word = list[start..i]
+                let all = ci::eq{ a = word, b = "all" }
+                if all or ci::eq{ a = word, b = "scripts" } { l.scripts = true }
+                if all or ci::eq{ a = word, b = "routines" } { l.routines = true }
+                if all or ci::eq{ a = word, b = "events" } { l.events = true }
+                if all or ci::eq{ a = word, b = "actions" } { l.actions = true }
+                if all or ci::eq{ a = word, b = "objects" } { l.objects = true }
+                start = i + 1
+            }
+            i = i + 1
+        }
+    }
+}

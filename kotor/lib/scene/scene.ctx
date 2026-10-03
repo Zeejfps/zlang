@@ -1,0 +1,4 @@
+// The presentation: see docs/design/engine.md, "The scene".
+namespace scene {
+    const VERSION: u32 = 0
+}

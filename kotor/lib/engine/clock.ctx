@@ -1,0 +1,73 @@
+// The world timer (docs/re/gameloop.md 1.6, 7): game time in microseconds, advanced once a frame
+// unless paused, and the calendar the IFO starts it at. Every time-based system reads it: events,
+// heartbeats, actions, effect durations. Event times are absolute world milliseconds (ours: the
+// original keeps (day, ms) pairs; saves convert).
+namespace clock {
+    // Longest frame step the world takes (ours: the original never clamps, gameloop.md 1.1).
+    const MAX_STEP: f32 = 0.25
+
+    struct Clock {
+        now_us: u64,            // world time since the module's clock started
+        dt: f32,                // this frame's step, seconds (0 while paused)
+        paused: bool,
+        speed: f32,             // 1.0; slow motion changes it
+        frame: u64,             // frames run
+        // The calendar (IFO Mod_Start*, Mod_MinPerHour): the time of day at now_us = 0.
+        year: u32,
+        month: u32,             // 1..12
+        day: u32,               // 1..28
+        hour: u32,
+        minute: u32,
+        min_per_hour: u32,      // real minutes per game hour (2 in KOTOR)
+    }
+
+    fn new {} -> Clock {
+        return Clock{
+            now_us = 0, dt = 0.0, paused = false, speed = 1.0, frame = 0, year = 1340, month = 6,
+            day = 1, hour = 13, minute = 0, min_per_hour = 2,
+        }
+    }
+
+    // Moves the clock by a frame of `seconds` of real time.
+    fn advance { mut c: Clock, seconds: f32 } {
+        c.frame = c.frame + 1
+        if c.paused or seconds <= 0.0 {
+            c.dt = 0.0
+            return
+        }
+        let mut s = seconds * c.speed
+        if s > MAX_STEP { s = MAX_STEP }
+        c.dt = s
+        c.now_us = c.now_us + @as(u64, s * 1000000.0)
+    }
+
+    fn now_ms { c: Clock } -> u64 { return c.now_us / 1000 }
+
+    // Milliseconds in a game hour and a game day.
+    fn ms_per_hour { c: Clock } -> u64 {
+        let m: u64 = if c.min_per_hour == 0 { 5 } else { c.min_per_hour }
+        return m * 60000
+    }
+    fn ms_per_day { c: Clock } -> u64 { return ms_per_hour{ c } * 24 }
+
+    // The time of day: hours, minutes, seconds, milliseconds since midnight of the game day.
+    struct TimeOfDay { hour: u32, minute: u32, second: u32, millisecond: u32, day_count: u64 }
+
+    fn time_of_day { c: Clock } -> TimeOfDay {
+        let per_hour = ms_per_hour{ c }
+        let start = (@as(u64, c.hour) * 60 + @as(u64, c.minute)) * (per_hour / 60)
+        let t = start + now_ms{ c }
+        let day_ms = ms_per_day{ c }
+        let in_day = t % day_ms
+        let hour = in_day / per_hour
+        // A game minute lasts per_hour / 60 ms of world time.
+        let in_hour = in_day % per_hour
+        let minute = in_hour * 60 / per_hour
+        let in_minute = in_hour - minute * per_hour / 60
+        let second = in_minute * 60 / (per_hour / 60)
+        return TimeOfDay{
+            hour = @trunc(u32, hour), minute = @trunc(u32, minute), second = @trunc(u32, second % 60),
+            millisecond = 0, day_count = t / day_ms,
+        }
+    }
+}

@@ -1,0 +1,59 @@
+// Routines whose effect is on the screen or the speakers: fades, movies, sounds, music, text.
+// They post outbox notes (docs/design/engine.md, "The outbox"); the presentation acts on them.
+namespace rt_pres {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        if routine == nwscript::SetGlobalFadeIn { try fade{ &w, &vm, argc, routine, out = false } }
+        else if routine == nwscript::SetGlobalFadeOut { try fade{ &w, &vm, argc, routine, out = true } }
+        else if routine == nwscript::PlayMovie { try play_movie{ &w, &vm, argc } }
+        else if routine == nwscript::SoundObjectPlay { try sound_object{ &w, &vm, argc, routine, play = true } }
+        else if routine == nwscript::SoundObjectStop { try sound_object{ &w, &vm, argc, routine, play = false } }
+        else if routine == nwscript::PlaySound { try play_sound{ &w, &vm, argc } }
+        else if routine == nwscript::NoClicksFor { try no_clicks_for{ &w, &vm, argc } }
+        else if routine == nwscript::PlayRumblePattern { try rumble{ &w, &vm, argc } }
+        else { return false }
+        return true
+    }
+
+    // SetGlobalFadeIn/Out(float fWait = 0.0, float fLength = 0.0, float fR = 0.0, float fG = 0.0, float fB = 0.0)
+    fn fade { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, out: bool } -> ! {
+        let wait = try nwarg::float{ &vm, routine, argc, i = 0 }
+        let length = try nwarg::float{ &vm, routine, argc, i = 1 }
+        let r = try nwarg::float{ &vm, routine, argc, i = 2 }
+        let g = try nwarg::float{ &vm, routine, argc, i = 3 }
+        let b = try nwarg::float{ &vm, routine, argc, i = 4 }
+        outbox::post{ out = &w.out, note = outbox::Note::fade{ out, wait, length, color = math::Vec3{ x = r, y = g, z = b } } }
+    }
+
+    fn play_movie { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let name = try nwarg::string{ &vm, routine = nwscript::PlayMovie, argc, i = 0 }
+        outbox::post{ out = &w.out, note = outbox::Note::movie{ name = resref::truncate{ name } } }
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "movie {}\n", name)
+    }
+
+    fn sound_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, play: bool } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        if obj::sound{ o } is some{ value = s } { s.active = play }
+        outbox::post{ out = &w.out, note = outbox::Note::sound_object{ id, play, volume = -1 } }
+    }
+
+    // void PlaySound(string sSoundName): at OBJECT_SELF.
+    fn play_sound { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let name = try nwarg::string{ &vm, routine = nwscript::PlaySound, argc, i = 0 }
+        let me = nwvm::self_object{ vm }
+        let o = world::object{ w = &w, id = me }
+        let at = if o != null { o.position } else { math::vec3::zero{} }
+        outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name }, object = me, position = at, positional = o != null } }
+    }
+
+    fn no_clicks_for { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let seconds = try nwarg::float{ &vm, routine = nwscript::NoClicksFor, argc, i = 0 }
+        outbox::post{ out = &w.out, note = outbox::Note::no_clicks{ seconds } }
+    }
+
+    fn rumble { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let pattern = try nwarg::int{ &vm, routine = nwscript::PlayRumblePattern, argc, i = 0 }
+        outbox::post{ out = &w.out, note = outbox::Note::rumble{ pattern } }
+    }
+}

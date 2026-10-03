@@ -1,0 +1,263 @@
+// The event queue (docs/re/gameloop.md 4; objects.md, "The AI master"): timed and signalled
+// work for objects, delivered by the server frame. DelayCommand and AssignCommand queue script
+// situations; SignalEvent and the engine itself queue script events, which run the target's
+// matching script slot.
+//
+//   events::post{ &w, delay_ms = 0, caller = self, target = area, payload = events::Payload::script{
+//       e = events::script_event{ kind = events::OBJECT_ENTER, object = creature } } }
+namespace events {
+    // Script event types (CSWSSCRIPTEVENT_EVENTTYPE_ON_*, objects.md).
+    const HEARTBEAT: i32 = 0
+    const PERCEPTION: i32 = 1
+    const SPELL_CAST_AT: i32 = 2
+    const MELEE_ATTACKED: i32 = 3
+    const DAMAGED: i32 = 4
+    const DISTURBED: i32 = 5
+    const END_COMBAT_ROUND: i32 = 6
+    const DIALOGUE: i32 = 7
+    const SPAWN_IN: i32 = 8
+    const RESTED: i32 = 9
+    const DEATH: i32 = 10
+    const USER_DEFINED: i32 = 11
+    const OBJECT_ENTER: i32 = 12
+    const OBJECT_EXIT: i32 = 13
+    const PLAYER_ENTER: i32 = 14
+    const PLAYER_EXIT: i32 = 15
+    const MODULE_START: i32 = 16
+    const MODULE_LOAD: i32 = 17
+    const ACTIVATE_ITEM: i32 = 18
+    const ACQUIRE_ITEM: i32 = 19
+    const LOSE_ITEM: i32 = 20
+    const ENCOUNTER_EXHAUSTED: i32 = 21
+    const OPEN: i32 = 22
+    const CLOSE: i32 = 23
+    const DISARM: i32 = 24
+    const USED: i32 = 25
+    const MINE_TRIGGERED: i32 = 26
+    const INVENTORY_DISTURBED: i32 = 27
+    const LOCKED: i32 = 28
+    const UNLOCKED: i32 = 29
+    const CLICKED: i32 = 30
+    const PATH_BLOCKED: i32 = 31
+    const PLAYER_DYING: i32 = 32
+    const RESPAWN_BUTTON: i32 = 33
+    const FAIL_TO_OPEN: i32 = 34
+    const PLAYER_REST: i32 = 35
+    const DESTROY_PLAYER: i32 = 36
+    const PLAYER_LEVEL_UP: i32 = 37
+    const EQUIP_ITEM: i32 = 38
+
+    union Payload {
+        situation{ s: *mut nwvm::Situation },     // 1 TIMED_EVENT: run it as the target
+        script{ e: values::ScriptEvent },           // 10 SIGNAL_EVENT: run the matching slot
+        destroy,                                    // 11 DESTROY_OBJECT
+        transition{ token: u8 },                    // 26 AREA_TRANSITION, phase 2 (gameloop.md 5.2)
+    }
+
+    struct Event { due: u64, caller: u32, target: u32, payload: Payload }
+
+    struct Queue { events: list::List(Event, heap::Heap) }
+
+    fn new_queue { heap: *mut heap::Heap } -> Queue {
+        return Queue{ events = list::new(Event, heap::Heap){ realloc = heap::alloc, heap } }
+    }
+
+    // A script event of `kind` about `object` (the entering object, the user-defined number's
+    // owner...): ints[0] carries the user-defined number.
+    fn script_event { kind: i32, object: u32 } -> values::ScriptEvent {
+        let mut e = values::no_event{}
+        e.kind = kind
+        e.objects[0] = object
+        return e
+    }
+
+    // Queues an event `delay_ms` of world time from now, after every event due at the same time
+    // (FIFO among equals).
+    fn post { mut w: world::World, delay_ms: u64, caller: u32, target: u32, payload: Payload } {
+        let due = clock::now_ms{ c = w.clock } + delay_ms
+        let ev = Event{ due, caller, target, payload }
+        let items = list::items{ list = w.queue.events }
+        let mut at = items.len
+        while at > 0 and items[at - 1].due > due { at = at - 1 }
+        list::push{ list = &w.queue.events, item = ev } iferr {
+            free_payload{ &w, payload }
+            return
+        }
+        let all = list::items{ list = w.queue.events }
+        let mut i = all.len - 1
+        while i > at {
+            all[i] = all[i - 1]
+            i = i - 1
+        }
+        all[at] = ev
+    }
+
+    fn has_due { w: *world::World } -> bool {
+        if w.queue.events.len == 0 { return false }
+        return list::items{ list = w.queue.events }[0].due <= clock::now_ms{ c = w.clock }
+    }
+
+    // Takes the first due event off the queue.
+    fn pop_due { mut w: world::World } -> ?Event {
+        if not has_due{ w = &w } { return null }
+        let all = list::items{ list = w.queue.events }
+        let ev = all[0]
+        let mut i: usize = 1
+        while i < all.len {
+            all[i - 1] = all[i]
+            i = i + 1
+        }
+        w.queue.events.len = w.queue.events.len - 1
+        return ev
+    }
+
+    // Delivers every event due now, including those posted while delivering (gameloop.md 4.2).
+    fn deliver_due { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
+        let mut guard: u32 = 0
+        while guard < 100000 {
+            let ev = pop_due{ &w } ifnull { return }
+            deliver{ &w, &vm, engine, ev }
+            guard = guard + 1
+        }
+    }
+
+    fn free_payload { mut w: world::World, payload: Payload } {
+        if payload is situation{ s } { scripts::free_situation{ &w, s } }
+    }
+
+    // Empties the queue (leaving a module: gameloop.md 4.5).
+    fn clear { mut w: world::World } {
+        let all = list::items{ list = w.queue.events }
+        let mut i: usize = 0
+        while i < all.len {
+            free_payload{ &w, payload = all[i].payload }
+            i = i + 1
+        }
+        list::clear{ list = &w.queue.events }
+    }
+
+    fn deliver { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, ev: Event } {
+        w.stats.events = w.stats.events + 1
+        let o = world::object{ w = &w, id = ev.target } ifnull {
+            free_payload{ &w, payload = ev.payload }
+            return
+        }
+        match ev.payload {
+            situation{ s } => {
+                if w.log.events {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "event situation {} -> {}\n", s.program.name, ev.target)
+                }
+                scripts::resume{ &w, &vm, engine, situation = s, self = ev.target }
+                scripts::free_situation{ &w, s }
+            }
+            script{ e } => { run_script_event{ &w, &vm, engine, o, e, caller = ev.caller } }
+            destroy => { world::destroy{ &w, id = ev.target } }
+            transition{ token } => { modload::transition_arrived{ &w, id = ev.target, token } }
+        }
+    }
+
+    // Sets the target's context from a script event and runs the slot its type names
+    // (objects.md, "How a script slot gets run"; gameloop.md 4.4).
+    fn run_script_event { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, o: *mut obj::Object, e: values::ScriptEvent, caller: u32 } {
+        let id = o.id
+        let slot = slot_for{ kind = o.kind, event = e.kind } ifnull {
+            if w.log.events {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "event {} to {}: no slot\n", e.kind, id)
+            }
+            return
+        }
+        if e.kind == OBJECT_ENTER { o.ctx.entering = e.objects[0] }
+        if e.kind == OBJECT_EXIT { o.ctx.exiting = e.objects[0] }
+        if e.kind == USER_DEFINED { o.ctx.user_event = e.ints[0] }
+        if e.kind == OPEN { o.ctx.last_opened_by = e.objects[0] }
+        if e.kind == CLOSE { o.ctx.last_closed_by = e.objects[0] }
+        if e.kind == USED { o.ctx.last_used_by = e.objects[0] }
+        if e.kind == LOCKED { o.ctx.last_locked_by = e.objects[0] }
+        if e.kind == UNLOCKED { o.ctx.last_unlocked_by = e.objects[0] }
+        if e.kind == CLICKED { o.ctx.clicked_by = e.objects[0] }
+        if e.kind == DIALOGUE { o.ctx.last_speaker = e.objects[0] }
+        if e.kind == PLAYER_ENTER { o.ctx.entering = e.objects[0] }
+        if e.kind == PLAYER_EXIT { o.ctx.exiting = e.objects[0] }
+        if e.kind == PATH_BLOCKED { o.ctx.blocker = e.objects[0] }
+        if w.log.events {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "event {} to {} ({}) from {}\n", e.kind, id, o.tag, caller)
+        }
+        if (o.kind == obj::Kind::module or o.kind == obj::Kind::area) and e.kind == HEARTBEAT {
+            // A SIGNAL_EVENT heartbeat to the module or area also restarts its timer (gameloop.md 2.6).
+            let now = clock::now_ms{ c = w.clock }
+            if obj::module{ o } is some{ value = m } { m.last_heartbeat = now }
+            if obj::area{ o } is some{ value = a } { a.last_heartbeat = now }
+        }
+        _ = scripts::run_slot{ &w, &vm, engine, id, slot }
+    }
+
+    // The script slot an event type runs on an object of `kind` (null: none).
+    fn slot_for { kind: obj::Kind, event: i32 } -> ?obj::Slot {
+        if event == USER_DEFINED { return obj::Slot::user_defined }
+        if event == HEARTBEAT and kind != obj::Kind::module { return obj::Slot::heartbeat }
+        match kind {
+            module => {
+                if event == HEARTBEAT { return obj::Slot::heartbeat }
+                if event == MODULE_LOAD { return obj::Slot::mod_load }
+                if event == MODULE_START { return obj::Slot::mod_start }
+                if event == PLAYER_ENTER { return obj::Slot::client_enter }
+                if event == PLAYER_EXIT { return obj::Slot::client_leave }
+                if event == ACTIVATE_ITEM { return obj::Slot::activate_item }
+                if event == ACQUIRE_ITEM { return obj::Slot::acquire_item }
+                if event == LOSE_ITEM { return obj::Slot::unacquire_item }
+                if event == DEATH { return obj::Slot::player_death }
+                if event == PLAYER_DYING { return obj::Slot::player_dying }
+                if event == RESPAWN_BUTTON { return obj::Slot::spawn_button }
+                if event == PLAYER_REST { return obj::Slot::player_rest }
+                if event == PLAYER_LEVEL_UP { return obj::Slot::player_level_up }
+                if event == EQUIP_ITEM { return obj::Slot::equip_item }
+                return null
+            }
+            area | trigger | encounter | aoe => {
+                if event == OBJECT_ENTER { return obj::Slot::enter }
+                if event == OBJECT_EXIT { return obj::Slot::exit }
+                if event == CLICKED { return obj::Slot::click }
+                if event == MINE_TRIGGERED { return obj::Slot::trap_triggered }
+                if event == DISARM { return obj::Slot::disarm }
+                if event == ENCOUNTER_EXHAUSTED { return obj::Slot::exhausted }
+                return null
+            }
+            creature => {
+                if event == PERCEPTION { return obj::Slot::notice }
+                if event == SPELL_CAST_AT { return obj::Slot::spell_at }
+                if event == MELEE_ATTACKED { return obj::Slot::attacked }
+                if event == DAMAGED { return obj::Slot::damaged }
+                if event == DISTURBED or event == INVENTORY_DISTURBED { return obj::Slot::disturbed }
+                if event == END_COMBAT_ROUND { return obj::Slot::end_round }
+                if event == DIALOGUE { return obj::Slot::dialogue }
+                if event == SPAWN_IN { return obj::Slot::spawn }
+                if event == RESTED { return obj::Slot::rested }
+                if event == DEATH { return obj::Slot::death }
+                if event == PATH_BLOCKED { return obj::Slot::blocked }
+                return null
+            }
+            door | placeable => {
+                if event == OPEN { return obj::Slot::open }
+                if event == CLOSE { return obj::Slot::closed }
+                if event == LOCKED { return obj::Slot::lock }
+                if event == UNLOCKED { return obj::Slot::unlock }
+                if event == USED { return obj::Slot::used }
+                if event == CLICKED { return obj::Slot::click }
+                if event == FAIL_TO_OPEN { return obj::Slot::fail_to_open }
+                if event == DAMAGED { return obj::Slot::damaged }
+                if event == DEATH { return obj::Slot::death }
+                if event == DISARM { return obj::Slot::disarm }
+                if event == MINE_TRIGGERED { return obj::Slot::trap_triggered }
+                if event == SPELL_CAST_AT { return obj::Slot::spell_at }
+                if event == MELEE_ATTACKED { return obj::Slot::melee_attacked }
+                if event == INVENTORY_DISTURBED { return obj::Slot::inv_disturbed }
+                if event == DIALOGUE { return obj::Slot::dialogue }
+                return null
+            }
+            else => { return null }
+        }
+    }
+}
