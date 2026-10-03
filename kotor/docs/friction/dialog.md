@@ -37,3 +37,31 @@ Where ctxlang got in the way. Each entry: what we wanted, what we wrote instead,
   in `lib/dialog/lipsync/`. A per-file `build::add_source` would let a tool pick files.
 - **`if` of string literals as a format argument** needs a typed `let s: []u8 = if ...` first
   (known, gui.md; hit three times in the tool's output code).
+
+## conversation flow and view (`lib/dialog/core`, `lib/dialog/view`)
+
+- **`iferr` and `ifnull` don't chain.** A `!?T` (`scene::load_model`, `res::load`,
+  `world::read_gff`) wants `f{ } iferr { return } ifnull { return }`; the parser stops after the
+  first ("expected a newline or ';' after statement, found 'ifnull'"). Wrote two statements,
+  `let made = f{ } iferr { return }` and `let x = made ifnull { return }`. Nine times in lib/dialog.
+- **A result read through a name in a local is "derived from" it.** `res::load{ name =
+  resref::bytes{ r = &key }, ... }` stored into the view's state fails with "cannot store the
+  address of local `key`" even though the bytes are heap memory. Wrote `dlg::load_resource`, which
+  copies the name into the heap first (and frees it with a `defer`), as `scripts::load` already
+  does; the same in `dlg::load`, `load_sound` and `sound_path`. Five places.
+- **A by-pointer argument ties the result to the local too.** `build{ &w, doc = &doc, bytes }`
+  returning a Dialog of slices into `bytes` fails "returned value holds the address of local
+  `doc`": the Dialog holds nothing of the Doc, but the checker can't know. Passing the `gff::Doc`
+  by value fixed it, which meant not using the engine's `tmpl::number` helpers (they take
+  `*gff::Doc`) but three of my own. Twice.
+- **`if x != null` narrows only a `let`, not a `let mut`, and not a field.** `w.tlk` and optional
+  results kept in `let mut` needed a `match` with `some{ value }` / `null`. About ten places.
+- **`@fmt` has no writer for `[N]u8` fields.** A `Part.anim: [32]u8` logged needs `anim[..len]`.
+  Once; and the `if` of string literals in a hole (known) four times.
+- **The shorthand `{ &a, &b }` doesn't work for a nested path** (`expected '}', found '.'`):
+  `&w.fs` as a bare argument needs its field name (`fs = &w.fs`). Every call into `fs::size`,
+  `fs::read_all` and `set_lock` names its fields. Six times.
+- **A script that edits `.ctx` text through a shell heredoc loses `\n`.** Writing a file with a
+  Python heredoc turned the two characters `\n` inside a ctxlang string into a real newline twice
+  ("unterminated literal"), which looks like a language problem and isn't; use the Write/Edit
+  tools.

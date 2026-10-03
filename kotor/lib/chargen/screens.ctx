@@ -1,0 +1,83 @@
+// Opening and closing the panels, and the controls each one starts with.
+namespace chargen {
+    fn screen_gui { screen: u32 } -> []u8 {
+        if screen == SCR_CLASS { return "classsel" }
+        if screen == SCR_MAIN { return "maincg" }
+        if screen == SCR_CHOICE { return "qorcpnl" }
+        if screen == SCR_QUICK { return "quickpnl" }
+        if screen == SCR_CUSTOM { return "custpnl" }
+        if screen == SCR_PORTRAIT { return "portcust" }
+        if screen == SCR_NAME { return "name" }
+        if screen == SCR_ABILITIES { return "abchrgen" }
+        if screen == SCR_SKILLS { return "skchrgen" }
+        return "ftchrgen"
+    }
+
+    fn top_screen { st: *State } -> u32 {
+        if st.depth == 0 { return 0 }
+        return st.stack[st.depth - 1].screen
+    }
+
+    fn top_panel { st: *State } -> u32 {
+        if st.depth == 0 { return 0 }
+        return st.stack[st.depth - 1].panel
+    }
+
+    fn screen_of { st: *State, panel: u32 } -> u32 {
+        let mut i: usize = 0
+        while i < st.depth {
+            if st.stack[i].panel == panel { return st.stack[i].screen }
+            i = i + 1
+        }
+        return 0
+    }
+
+    // The three lists over the summary sit in its right half; every other screen fills the frame.
+    fn screen_mode { screen: u32 } -> gui::Mode {
+        if screen == SCR_CHOICE or screen == SCR_QUICK or screen == SCR_CUSTOM { return gui::Mode::framed }
+        return gui::Mode::full_screen
+    }
+
+    fn open_screen { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, screen: u32 } -> ! {
+        if st.depth >= 10 { return }
+        let id = try gui::open{ &g, &fs, &dev, name = screen_gui{ screen }, mode = screen_mode{ screen }, modal = true }
+        gui::ensure_backdrop{ &g, &fs, &dev, kind = 0 }
+        st.stack[st.depth] = Entry{ screen, panel = id }
+        st.depth = st.depth + 1
+        try bind_screen{ st, &g, &fs, &dev, screen, p = id }
+    }
+
+    fn close_top { st: *mut State, mut g: gui::Gui } {
+        if st.depth == 0 { return }
+        gui::close{ &g, id = st.stack[st.depth - 1].panel }
+        st.depth = st.depth - 1
+        gui::play_sound{ &g, n = 5 }
+    }
+
+    // What a screen shows when it opens.
+    fn bind_screen { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, screen: u32, p: u32 } -> ! {
+        if screen == SCR_CLASS {
+            draw_slot_portraits{ st }
+            try show_class_name{ st, &g, p, slot = 0 }
+            gui::set_focus{ &g, panel = p, tag = "BTN_SEL1" }
+        } else if screen == SCR_MAIN {
+            try bind_main{ st, &g, &fs, &dev, p }
+        } else if screen == SCR_CHOICE {
+            try set_description{ &g, panel = p, tag = "LB_DESC", strref = 241 }
+            gui::set_focus{ &g, panel = p, tag = "QUICK_CHAR_BTN" }
+        } else if screen == SCR_QUICK or screen == SCR_CUSTOM {
+            bind_steps{ st, &g, p, screen }
+        } else if screen == SCR_PORTRAIT {
+            open_portrait{ st, &g, &fs, &dev, p }
+        } else if screen == SCR_NAME {
+            try open_name{ st, &g, &fs, &dev, p }
+        } else if screen == SCR_ABILITIES {
+            try open_abilities{ st, &g, p }
+        } else if screen == SCR_SKILLS {
+            try open_skills{ st, &g, p }
+        } else if screen == SCR_FEATS {
+            try open_feats{ st, &g, p }
+        }
+        refresh_views{ st, &g, &fs, &dev }
+    }
+}

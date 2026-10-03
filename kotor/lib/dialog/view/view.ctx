@@ -50,6 +50,7 @@ namespace dlgview {
         pull_back: f32,
         fov: f32,                   // the line's own field of view, 0 for the default
         static_id: i32,
+        seen_static: i32,           // the last SetDialogPlaceableCamera id taken
         blocked: bool,              // the framed shot hit a wall: the plain close-up for this line
         sides: [4]SideEntry,
         side_count: usize,
@@ -73,6 +74,8 @@ namespace dlgview {
         lip_elapsed: f32,
         track: lipsync::Track,      // the mouth of the line that speaks
         track_on: bool,
+        ambient: mix::Handle,       // the dialogue's AmbientTrack
+        ambient_bytes: []mut u8,
         // The panels.
         panels: dlgpanel::Panels,
     }
@@ -85,7 +88,7 @@ namespace dlgview {
             heap, m, up = false, seen_started = 0, seen_ended = 0, seen_line = 0, seen_choices = 0, wait = 0.0,
             mode = Mode::none, rig = dlgcam::Rig{ eye = math::vec3::zero{}, forward = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, up = dlgcam::zup{}, fov = dlgcam::FOV },
             have_rig = false, speaker = obj::INVALID, listener = obj::INVALID, angle = 0, cam_height = 0.0, tar_height = 0.0,
-            pull_back = 0.0, fov = 0.0, static_id = -1, blocked = false,
+            pull_back = 0.0, fov = 0.0, static_id = -1, seen_static = -1, blocked = false,
             sides = [SideEntry{ a = obj::INVALID, b = obj::INVALID, side = 1.0 }; 4], side_count = 0, side_next = 0,
             stops, saved_fov = dlgcam::FOV, overriding = false,
             camera_model = CameraModel{ loaded = false, part = 0, node = 0, model = null },
@@ -94,6 +97,7 @@ namespace dlgview {
             voice = none, voice_bytes = slice::empty(u8){}, voice_speaker = obj::INVALID, voice_delay = 0.0,
             lip_bytes = slice::empty(u8){}, lip_elapsed = 0.0,
             track = lipsync::make_track{ lip = lip::Lip{ length = 0.0, count = 0, keys = slice::empty(u8){} } }, track_on = false,
+            ambient = none, ambient_bytes = slice::empty(u8){},
             panels = dlgpanel::make{},
         }
     }
@@ -124,6 +128,14 @@ namespace dlgview {
         if w.conversation.choices.serial != v.seen_choices {
             v.seen_choices = w.conversation.choices.serial
             show_choices{ &v, &w, &sc, &g }
+        }
+        // SetDialogPlaceableCamera from a script: that camera now (10.4).
+        if w.conversation.static_camera != v.seen_static {
+            v.seen_static = w.conversation.static_camera
+            if v.seen_static >= 0 {
+                v.static_id = v.seen_static
+                v.mode = Mode::fixed
+            }
         }
         take_picks{ &v, &w, &g }
         update_voice{ &v, &w }
@@ -168,6 +180,7 @@ namespace dlgview {
         v.stunt_next = 0
         v.cast_count = 0
         v.blocked = false
+        v.seen_static = -1
         v.camera_model.loaded = false
         w.conversation.scene_ready = false
         let computer = w.conversation.d.conversation_type == dlg::TYPE_COMPUTER
@@ -176,6 +189,7 @@ namespace dlgview {
             _ = @fmt(&w.io, "dialog panels: {}\n", error)
         }
         sync_tokens{ &w, &g }
+        start_ambient_track{ &v, &w, name = w.conversation.d.ambient_track }
         // A conversation that follows a fade to black fades the world in on its first line.
         if w.conversation.hold_fade_in {
             w.conversation.hold_fade_in = false
@@ -199,6 +213,7 @@ namespace dlgview {
         }
         v.cast_count = 0
         stop_voice{ &v, &w, fade = 0.3 }
+        stop_ambient_track{ &v }
         dlgpanel::close{ p = &v.panels, g = &g }
         v.mode = Mode::none
         v.have_rig = false

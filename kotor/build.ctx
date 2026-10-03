@@ -16,6 +16,7 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "lib/video" }
     build::add_sources{ &b, exe, dir = "lib/gui" }
     build::add_sources{ &b, exe, dir = "lib/frontend" }
+    build::add_sources{ &b, exe, dir = "lib/chargen" }
     build::add_sources{ &b, exe, dir = "lib/platform" }
     build::add_sources{ &b, exe, dir = "lib/render" }
     build::add_sources{ &b, exe, dir = "lib/render_gl" }

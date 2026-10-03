@@ -1,0 +1,290 @@
+// chargenview: the 3D creature previews of character generation (lib/chargen/preview.ctx) drawn
+// headless to PNGs.
+//
+//   kotor/tools/ctxc run kotor/tools/chargenview -- --appearance 138 --kind body
+//   kotor/tools/ctxc run kotor/tools/chargenview -- --appearance 92 --female --kind head --turn 20 --size 800x300
+//
+// Options: --game DIR, --appearance N (appearance.2da row, a player's: 136..180 male,
+// 91..135 female; 138), --head N (heads.2da row; -1: the appearance's own), --female (the
+// portrait step's camera hook, and the sex of --appearance), --kind body|head|main (body: the
+// class selection screen's full-length model; head: the portrait step's close-up; main: the
+// summary panel's), --turn DEGREES (the creature turned about its axis), --alignment N (0..100,
+// the main panel's pose and light; 50), --at SECONDS (how long the idle has run; 1),
+// --size WxH (pixels; the original's rectangle at twice its 640x480 size: body 138x374, main
+// 324x372, head 1064x380), --out DIR (kotor/out/chargen), --change N --repeat K (switch K times
+// between the appearance and N with set_appearance before the picture, and print what the
+// creature's arena and the device hold: a leak would show; the picture is of the last one).
+//
+// Writes DIR/KIND_APPEARANCE[_hHEAD][_tDEG].png, the viewport cropped from a hidden window.
+
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+struct Options {
+    game: []u8, out: []u8, appearance: i32, head: i32, female: bool, kind: preview3d::Kind,
+    turn_degrees: f32, alignment: i32, at: f32, size: render::Size, change: i32, repeat: u32,
+}
+
+error no_table
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let opts = parse_args{ &io, args } ifnull { return 2 }
+    let pages = mem::reserve{ &mem, size = 1073741824 } ifnull {
+        io::eprintln{ &io, s = "chargenview: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    let tex_scratch = mem::pages{ &mem, size = 134217728 } ifnull {
+        io::eprintln{ &io, s = "chargenview: out of memory" }
+        return 1
+    }
+    let preview_pages = mem::reserve{ &mem, size = 8388608 } ifnull {
+        io::eprintln{ &io, s = "chargenview: out of memory" }
+        return 1
+    }
+    let mut h = heap::new{ &mem }
+    run{ &io, &fs, &sdl, &heap, &h, tex_scratch, preview_pages, opts } iferr err{ error } {
+        _ = @fmt(&io, "chargenview: failed: {}\n", error)
+        match error {
+            gpu::shader_failed{ log } => { _ = @fmt(&io, "{}\n", log) }
+            sdl::failed => { _ = @fmt(&io, "SDL: {}\n", c::bytes{ s = sdl::last_error{ &sdl } }) }
+            gui3d::no_model{ name } => { _ = @fmt(&io, "no model {}\n", name) }
+            gui3d::no_camera{ name } => { _ = @fmt(&io, "the light model has no node {}\n", name) }
+            else => {}
+        }
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return 0
+}
+
+fn run {
+    mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut h: heap::Heap,
+    tex_scratch: alloc::Bytes, preview_pages: alloc::Bytes, opts: Options,
+} -> ! {
+    let mut rm = try res::open{ &fs, heap = &h, game = opts.game }
+    defer res::close{ &fs, &rm }
+    let mut models = mdl_cache::new{ rm, keep = &heap }
+    let appearance_2da = try load_table{ &fs, &h, rm, name = "appearance" }
+    let heads_2da = try load_table{ &fs, &h, rm, name = "heads" }
+
+    try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
+    defer sdl::quit{ &sdl }
+    let win_w: u32 = if opts.size.width > 640 { opts.size.width } else { 640 }
+    let win_h: u32 = if opts.size.height > 480 { opts.size.height } else { 480 }
+    let config = render::make_config{ title = "chargenview", width = @as(i32, win_w), height = @as(i32, win_h), hidden = true }
+    let mut dev = try gpu::open{ &sdl, realloc = arena::alloc, &heap, config }
+    defer gpu::close{ &dev, &sdl }
+    let mut mats = material::new_cache{ heap = &h, scratch = tex_scratch }
+    defer material::free_cache{ cache = &mats, &dev }
+    let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, &heap, cap = render::default_capacity{} }
+    make_dir{ &fs, path = opts.out }
+
+    let mut preview = try preview3d::make{
+        &fs, &dev, buf = preview_pages, rm, &models, &mats, appearance_2da, heads_2da,
+        appearance = opts.appearance, head = opts.head, female = opts.female, kind = opts.kind, alignment = opts.alignment,
+    }
+    defer preview3d::free{ &preview, &dev }
+    _ = @fmt(&io, "appearance {}: {} textures ({} missing); light scene {} bytes, creature {} bytes\n",
+        opts.appearance, mats.loaded, mats.missing, preview.fixed.used, preview.creature.used)
+
+    // set_appearance, `repeat` times, alternating the other appearance and the first one: the
+    // creature's arena must not grow, nor the textures once they are loaded.
+    let mut k: u32 = 0
+    while opts.change >= 0 and k < opts.repeat {
+        let a = if k % 2 == 0 { opts.change } else { opts.appearance }
+        try preview3d::set_appearance{ &preview, &fs, &dev, rm, &models, &mats, appearance = a, head = -1 }
+        k = k + 1
+    }
+    if opts.change >= 0 {
+        _ = @fmt(&io, "after {} changes: creature arena {} bytes used, {} textures, {} meshes on the GPU\n", opts.repeat, preview.creature.used, mats.loaded, live_meshes{ dev })
+    }
+    preview3d::turn{ &preview, radians = math::radians{ degrees = opts.turn_degrees } }
+    let dt: f32 = 1.0 / 30.0
+    let mut t: f32 = 0.0
+    while t + 0.5 * dt < opts.at {
+        preview3d::update{ &preview, dt }
+        t = t + dt
+    }
+
+    try shoot{ &io, &fs, &dev, &frame, &heap, &preview, opts, t }
+}
+
+// One picture: the preview in a viewport at the top left of the screen, cropped out and saved.
+fn shoot {
+    mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena,
+    mut preview: preview3d::Preview, opts: Options, t: f32,
+} -> ! {
+    render::begin_frame{ &frame, time = t }
+    let vp = render::Rect{ x = 0.0, y = 0.0, w = @as(f32, opts.size.width), h = @as(f32, opts.size.height) }
+    _ = preview3d::add_to_frame{ &preview, &frame, viewport = vp } ifnull {
+        io::eprintln{ &io, s = "the frame has no room for the preview" }
+        return
+    }
+    try gpu::submit{ &dev, frame = &frame }
+    let s = gpu::get_stats{ dev }
+    _ = @fmt(&io, "{} draws, {} triangles, {} particles, camera height {}\n", s.draws, s.triangles, s.particles, preview.camera_height)
+    let m = gpu::messages{ dev }
+    if m.len > 0 { _ = @fmt(&io, "{}", m) }
+    let mut name_buf: [256]u8
+    let name = file_name{ into = name_buf[..], opts }
+    try save_crop{ &io, &fs, &dev, &heap, dir = opts.out, name, width = opts.size.width, height = opts.size.height }
+}
+
+fn load_table { mut fs: Fs, mut h: heap::Heap, rm: res::Manager, name: []u8 } -> !twoda::Table {
+    let bytes = try res::load{ &fs, rm, name, kind = restype::Type::twoda, realloc = heap::alloc, heap = &h } ifnull { return no_table }
+    return twoda::parse{ data = bytes, realloc = heap::alloc, heap = &h }
+}
+
+// KIND_APPEARANCE[_hHEAD][_tDEGREES].png
+fn file_name { into: []mut u8, opts: Options } -> []u8 {
+    let kind: []u8 = match opts.kind {
+        body => { "body" }
+        head => { "head" }
+        main => { "main" }
+    }
+    let mut n = put{ into, at = 0, s = kind }
+    let mut digits: [32]u8
+    n = put{ into, at = n, s = "_" }
+    n = put{ into, at = n, s = utf8::fmt_u64{ n = @as(u64, opts.appearance), into = digits[..] }.bytes }
+    if opts.head >= 0 {
+        n = put{ into, at = n, s = "_h" }
+        n = put{ into, at = n, s = utf8::fmt_u64{ n = @as(u64, opts.head), into = digits[..] }.bytes }
+    }
+    if opts.turn_degrees != 0.0 {
+        n = put{ into, at = n, s = "_t" }
+        let mut degrees = opts.turn_degrees
+        while degrees < 0.0 { degrees = degrees + 360.0 }
+        while degrees >= 360.0 { degrees = degrees - 360.0 }
+        n = put{ into, at = n, s = utf8::fmt_u64{ n = @as(u64, math::floorf{ x = degrees }), into = digits[..] }.bytes }
+    }
+    n = put{ into, at = n, s = ".png" }
+    return into[..n]
+}
+
+fn put { into: []mut u8, at: usize, s: []u8 } -> usize {
+    let n = if at + s.len <= into.len { s.len } else { into.len - at }
+    slice::copy(u8){ dst = into[at..at + n], src = s[..n] }
+    return at + n
+}
+
+// Saves the top-left width x height of the screen as DIR/NAME.
+fn save_crop { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, dir: []u8, name: []u8, width: u32, height: u32 } -> ! {
+    let mut path_buf: [512]u8
+    let mut n = put{ into = path_buf[..], at = 0, s = dir }
+    n = put{ into = path_buf[..], at = n, s = "/" }
+    n = put{ into = path_buf[..], at = n, s = name }
+    let path = path_buf[..n]
+    let size = gpu::screen_size{ dev }
+    let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+    _ = try gpu::read_screen{ &dev, into = pixels }
+    let w: usize = if width < size.width { width } else { size.width }
+    let h: usize = if height < size.height { height } else { size.height }
+    let out = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = w * h * 4 }
+    let stride = @as(usize, size.width) * 4
+    let mut y: usize = 0
+    while y < h {
+        slice::copy(u8){ dst = out[y * w * 4..(y + 1) * w * 4], src = pixels[y * stride..y * stride + w * 4] }
+        y = y + 1
+    }
+    let image = png::Image{ width = @as(u32, w), height = @as(u32, h), rgba = out }
+    try png::save{ &fs, realloc = arena::alloc, &heap, path, image, alpha = false, bottom_up = false }
+    _ = @fmt(&io, "wrote {} ({}x{})\n", path, w, h)
+}
+
+// Makes `path` and the directories above it that are missing.
+fn make_dir { mut fs: Fs, path: []u8 } {
+    let mut i: usize = 1
+    while i <= path.len {
+        if i == path.len or path[i] == '/' {
+            fs::make_dir{ &fs, path = path[..i] } iferr {}
+        }
+        i = i + 1
+    }
+}
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{
+        game = DEFAULT_GAME, out = "kotor/out/chargen", appearance = 138, head = -1, female = false,
+        kind = preview3d::Kind::body, turn_degrees = 0.0, alignment = 50, at = 1.0, size = render::Size{ width = 0, height = 0 }, change = -1, repeat = 1,
+    }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        let has = i + 1 < args.len
+        if slice::eq_bytes{ a, b = "--female" } {
+            o.female = true
+            i = i + 1
+        } else if has and slice::eq_bytes{ a, b = "--game" } {
+            o.game = args[i + 1]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--out" } {
+            o.out = args[i + 1]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--appearance" } {
+            o.appearance = @as(i32, utf8::parse_i64{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } })
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--head" } {
+            o.head = @as(i32, utf8::parse_i64{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } })
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--change" } {
+            o.change = @as(i32, utf8::parse_i64{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } })
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--repeat" } {
+            o.repeat = @as(u32, utf8::parse_u64{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } })
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--alignment" } {
+            o.alignment = @as(i32, utf8::parse_i64{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } })
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--turn" } {
+            o.turn_degrees = utf8::parse_f32{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } }
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--at" } {
+            o.at = utf8::parse_f32{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } }
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--kind" } {
+            let k = args[i + 1]
+            if slice::eq_bytes{ a = k, b = "body" } { o.kind = preview3d::Kind::body }
+            else if slice::eq_bytes{ a = k, b = "head" } { o.kind = preview3d::Kind::head }
+            else if slice::eq_bytes{ a = k, b = "main" } { o.kind = preview3d::Kind::main }
+            else { return usage{ &io } }
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--size" } {
+            let s = args[i + 1]
+            let mut k: usize = 0
+            while k < s.len and s[k] != 'x' { k = k + 1 }
+            if k == 0 or k + 1 >= s.len { return usage{ &io } }
+            let w = utf8::parse_u64{ s = utf8::of{ chars = s[..k] } } ifnull { return usage{ &io } }
+            let hh = utf8::parse_u64{ s = utf8::of{ chars = s[k + 1..] } } ifnull { return usage{ &io } }
+            if w < 16 or w > 4096 or hh < 16 or hh > 4096 { return usage{ &io } }
+            o.size = render::Size{ width = @as(u32, w), height = @as(u32, hh) }
+            i = i + 2
+        } else {
+            return usage{ &io }
+        }
+    }
+    if o.size.width == 0 {
+        o.size = match o.kind {
+            body => { render::Size{ width = 138, height = 374 } }
+            head => { render::Size{ width = 1064, height = 380 } }
+            main => { render::Size{ width = 324, height = 372 } }
+        }
+    }
+    return o
+}
+
+fn usage { mut io: Io } -> ?Options {
+    io::eprintln{ &io, s = "usage: chargenview [--game DIR] [--appearance N] [--head N] [--female] [--kind body|head|main] [--turn DEG] [--alignment N] [--change N --repeat K] [--at S] [--size WxH] [--out DIR]" }
+    return null
+}
+
+// How many meshes the device holds: a leak in set_appearance would show as growth.
+fn live_meshes { dev: gpu::Device } -> u32 {
+    let mut n: u32 = 0
+    let mut i: usize = 0
+    while i < dev.meshes.len {
+        if dev.meshes[i].live { n = n + 1 }
+        i = i + 1
+    }
+    return n
+}

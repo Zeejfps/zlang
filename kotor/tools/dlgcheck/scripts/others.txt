@@ -1,0 +1,14 @@
+# Other conversations, started on Trask (talk RESREF [TAG]; a running one is cut short):
+#   kotor/out/kotor.exe --module end_m01aa --headless --frames 1130 --log dialog \
+#       --input kotor/tools/dlgcheck/scripts/others.txt
+# end_door01..2 and end_bridgeseal are one-liners (bark bubbles); end_comp01 is a computer
+# terminal (computer.gui); end_room3, end_pop03, end_levelup and end_pop01 are ordinary ones.
+700 talk end_door01
+760 talk end_door02
+820 talk end_bridgeseal
+880 talk end_comp01
+940 talk end_room3
+1000 talk end_pop03
+1060 talk end_levelup
+# A cutscene with three stunt participants, a camera model and an AmbientTrack starts by itself:
+#   kotor/out/kotor.exe --module STUNT_07 --headless --frames 400 --log dialog

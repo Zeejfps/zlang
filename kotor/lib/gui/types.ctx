@@ -135,6 +135,7 @@ namespace gui {
         full_screen,                    // centred on the screen over the resolution's backdrop; hides panels below it
         dialog,                         // centred on the screen
         placed,                         // where its file puts it (the HUD, the main menu)
+        framed,                         // its file's place inside a centred 640x480 frame, nothing hidden (character generation's step lists)
     }
 
     struct Panel {

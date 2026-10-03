@@ -1,0 +1,19 @@
+// dlgcheck: reads every DLG of the install with lib/dialog's loader (the global ones, then each
+// module's) and checks what the flow relies on: links in range, scripts and sounds present, texts
+// in dialog.tlk, and the counts re/dialogue.md section 12 gives. `kotor/tools/ctxc run
+// kotor/tools/dlgcheck`.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "dlgcheck", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/base" }
+    build::add_sources{ &b, exe, dir = "../../lib/res" }
+    build::add_sources{ &b, exe, dir = "../../lib/formats" }
+    build::add_sources{ &b, exe, dir = "../../lib/mdl" }
+    build::add_sources{ &b, exe, dir = "../../lib/walk" }
+    build::add_sources{ &b, exe, dir = "../../lib/script" }
+    build::add_sources{ &b, exe, dir = "../../lib/engine" }
+    build::add_sources{ &b, exe, dir = "../../lib/dialog/core" }
+    build::add_sources{ &b, exe, dir = "../../lib/save" }
+    build::add_sources{ &b, exe, dir = "../../lib/rules" }
+    build::add_sources{ &b, exe, dir = "../common" }
+    build::optimize{ &b, exe, level = 2 }
+}

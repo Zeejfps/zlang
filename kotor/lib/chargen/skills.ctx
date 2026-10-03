@@ -1,0 +1,152 @@
+// The skills step (skchrgen): level-1 skill points over the eight skills (docs/re/chargen.md G).
+namespace chargen {
+    // The rows in skills.2da order: the control name of each skill's value button, the three
+    // letters the plus and minus buttons are named with, and the description strrefs.
+    const SK_POINTS_TAG: [SKILLS][]u8 = [
+        "COMPUTER_USE_POINTS_BTN", "DEMOLITIONS_POINTS_BTN", "STEALTH_POINTS_BTN", "AWARENESS_POINTS_BTN",
+        "PERSUADE_POINTS_BTN", "REPAIR_POINTS_BTN", "SECURITY_POINTS_BTN", "TREAT_INJURY_POINTS_BTN",
+    ]
+    const SK_SHORT: [SKILLS][]u8 = ["COM", "DEM", "STE", "AWA", "PER", "REP", "SEC", "TRE"]
+    const SK_DESC: [SKILLS]u32 = [244, 246, 248, 250, 252, 254, 256, 258]
+
+    // The row a control tag of this panel belongs to (its first three letters), -1 for none.
+    fn skill_row_of { tag: []u8 } -> i32 {
+        if tag.len < 4 { return -1 }
+        let mut r: usize = 0
+        while r < SKILLS {
+            if slice::eq_bytes{ a = tag[..3], b = SK_SHORT[r] } { return @as(i32, r) }
+            r = r + 1
+        }
+        return -1
+    }
+
+    fn skill_tag { into: []mut u8, row: usize, suffix: []u8 } -> []u8 {
+        let n = frontend::copy_into{ dst = into, src = SK_SHORT[row] }
+        let m = frontend::copy_into{ dst = into[n..], src = suffix }
+        return into[..n + m]
+    }
+
+    // A fresh scratch creature with the chosen scores and no class: what the rules are asked about.
+    fn reset_scratch { st: *mut State } {
+        let c = st.scratch
+        c.* = rules::make_creature{}
+        c.race = PLAYER_RACE
+        c.gender = st.ch.gender
+        c.abil = st.ch.abil
+        c.is_pc = true
+        c.pc_rules = true
+    }
+
+    // Skill points of the first level: (INT modifier + skillpointbase / 2) x 4, at least 4.
+    fn start_skill_points { st: *mut State } -> i32 {
+        reset_scratch{ st }
+        return rules::skill_points_for_level{ tables = st.tables, c = st.scratch, class = st.ch.class, class_level = 1 }
+    }
+
+    fn skill_cost_of { st: *State, row: usize } -> i32 {
+        return rules::skill_cost{ tables = st.tables, class = st.ch.class, skill = @as(i32, row) }
+    }
+
+    fn skill_cap_of { st: *State, row: usize } -> i32 {
+        return rules::skill_max_rank{ tables = st.tables, class = st.ch.class, skill = @as(i32, row), class_level = 1 }
+    }
+
+    // Opens with every rank zero and the points recomputed.
+    fn open_skills { st: *mut State, mut g: gui::Gui, p: u32 } -> ! {
+        st.sk = [0; SKILLS]
+        st.sk_points = start_skill_points{ st }
+        st.sk_focus = 0
+        try refresh_skills{ st, &g, p }
+        gui::set_focus{ &g, panel = p, tag = SK_POINTS_TAG[0] }
+    }
+
+    fn refresh_skills { st: *mut State, mut g: gui::Gui, p: u32 } -> ! {
+        let mut r: usize = 0
+        while r < SKILLS {
+            try set_number{ &g, panel = p, tag = SK_POINTS_TAG[r], n = st.sk[r] }
+            r = r + 1
+        }
+        try set_number{ &g, panel = p, tag = "REMAINING_SELECTIONS_LBL", n = st.sk_points }
+        try show_skill_focus{ st, &g, p }
+    }
+
+    // The focused skill's class label, price and description.
+    fn show_skill_focus { st: *mut State, mut g: gui::Gui, p: u32 } -> ! {
+        let r = st.sk_focus
+        let cost = skill_cost_of{ st, row = r }
+        try gui::set_strref{ &g, panel = p, tag = "CLASSSKL_LBL", strref = if cost == 1 { 38152 } else { 38153 } }
+        try set_number{ &g, panel = p, tag = "COST_POINTS_LBL", n = cost }
+        try set_description{ &g, panel = p, tag = "LB_DESC", strref = SK_DESC[r] }
+    }
+
+    fn focus_skill { st: *mut State, mut g: gui::Gui, p: u32, row: usize } {
+        if st.sk_focus == row { return }
+        st.sk_focus = row
+        show_skill_focus{ st, &g, p } iferr {}
+    }
+
+    fn raise_skill { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, p: u32, row: usize } -> ! {
+        st.sk_focus = row
+        let cost = skill_cost_of{ st, row }
+        let cap = skill_cap_of{ st, row }
+        if st.sk[row] >= cap {
+            // "Class skills can have a maximum skill rank of <CUSTOM0> (current level + 3)."
+            let mut buf: [16]u8
+            let len = frontend::put_int{ into = buf[..], at = 0, n = cap }
+            try gui::set_token{ &g, name = "CUSTOM0", value = buf[..len] }
+            try show_message{ st, &g, &fs, &dev, strref = if cost == 1 { 42178 } else { 42179 }, ask = Ask::info }
+            return
+        }
+        if cost > st.sk_points {
+            try show_message{ st, &g, &fs, &dev, strref = 42464, ask = Ask::info }
+            return
+        }
+        st.sk[row] = st.sk[row] + 1
+        st.sk_points = st.sk_points - cost
+        try refresh_skills{ st, &g, p }
+    }
+
+    fn lower_skill { st: *mut State, mut g: gui::Gui, p: u32, row: usize } -> ! {
+        st.sk_focus = row
+        if st.sk[row] <= 0 { return }
+        st.sk[row] = st.sk[row] - 1
+        st.sk_points = st.sk_points + skill_cost_of{ st, row }
+        try refresh_skills{ st, &g, p }
+    }
+
+    // The ranks the class's recommended order buys with `points` (the quick character's too): in
+    // rising `<class>_reco` rank, each skill up to its cap while the points last. The record is the
+    // auto-leveller's, which does exactly that.
+    fn recommended_skills { st: *mut State, mut out: [SKILLS]i32, mut left: i32 } {
+        reset_scratch{ st }
+        let mut rec: rules::LevelRecord
+        if not rules::prepare_auto_level{ tables = st.tables, c = st.scratch, class = st.ch.class, rec = &rec } {
+            out = [0; SKILLS]
+            left = 0
+            return
+        }
+        out = rec.skills
+        left = rec.skill_left
+    }
+
+    fn recommend_skills { st: *mut State, mut g: gui::Gui, p: u32 } -> ! {
+        let mut ranks = [0; SKILLS]
+        let mut left: i32 = 0
+        recommended_skills{ st, out = &ranks, left = &left }
+        st.sk = ranks
+        st.sk_points = left
+        try refresh_skills{ st, &g, p }
+    }
+
+    // Writes the ranks to the choices. With points left the player is asked first (the box's OK
+    // calls this again with `confirmed`).
+    fn accept_skills { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, confirmed: bool } -> !bool {
+        if st.sk_points > 0 and not confirmed {
+            try show_message{ st, &g, &fs, &dev, strref = 41815, ask = Ask::skills_left }
+            return false
+        }
+        st.ch.skills = st.sk
+        st.ch.skill_points = st.sk_points
+        return true
+    }
+}

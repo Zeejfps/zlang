@@ -1,0 +1,51 @@
+// The player creature the choices make, in lib/rules' terms (docs/design/chargen.md).
+namespace chargen {
+    // Humans only: the original offers no other race (portraits.2da race 6).
+    const PLAYER_RACE: i32 = 6
+
+    error bad_choices
+
+    // The finished character as GFF bytes in `State.player`, from the choices made.
+    fn make_player { st: *mut State } -> ! {
+        if not assemble{ tables = st.tables, ch = &st.ch, out = &st.scratch.* } { return bad_choices }
+        free_bytes{ b = st.player, heap = st.heap }
+        st.player = slice::empty(u8){}
+        st.player = try write_player{ heap = st.heap, ch = &st.ch, c = st.scratch, portrait_resref = portrait_resref{ d = &st.data, row = st.ch.portrait } }
+    }
+
+    // The creature after the first level, the way the level-up screen applies a record: a blank
+    // human with the chosen base scores, then one level of the class with the chosen skill ranks,
+    // unspent points and feats. False if the class is unknown or the level is refused.
+    fn assemble { tables: *rules::Tables, ch: *Choices, mut out: rules::Creature } -> bool {
+        out = rules::make_creature{}
+        out.race = PLAYER_RACE
+        out.gender = ch.gender
+        out.appearance = ch.appearance
+        out.abil = ch.abil
+        out.is_pc = true
+        out.pc_rules = true
+        let row = rules::get_class{ tables, row = ch.class } ifnull { return false }
+        let mut rec: rules::LevelRecord
+        rec.class = ch.class
+        rec.hp = row.hit_die
+        rec.fp = row.force_die
+        rec.ability = -1
+        rec.skill_left = ch.skill_points
+        let mut s: usize = 0
+        while s < 8 {
+            rec.skills[s] = ch.skills[s]
+            s = s + 1
+        }
+        rec.nfeats = ch.nfeats
+        let mut f: usize = 0
+        while f < 8 {
+            rec.feats[f] = ch.feats[f]
+            f = f + 1
+        }
+        rec.npowers = 0
+        let res = rules::apply_level_up{ tables, c = &out, rec, alive = true }
+        if not res.ok { return false }
+        out.loaded_hp = out.stats.max_hp
+        return true
+    }
+}

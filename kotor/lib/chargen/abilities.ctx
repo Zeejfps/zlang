@@ -1,0 +1,149 @@
+// The attributes step (abchrgen): 30 points over six scores of 8 to 18 (docs/re/chargen.md F).
+namespace chargen {
+    const ABILITY_POINTS: i32 = 30
+    const ABILITY_MIN: i32 = 8
+    const ABILITY_MAX: i32 = 18
+
+    // The panel lists STR DEX CON WIS INT CHA; the rules keep STR DEX CON INT WIS CHA.
+    const UI_STAT: [6]usize = [0, 1, 2, 4, 3, 5]
+    const AB_TAG: [6][]u8 = ["STR", "DEX", "CON", "WIS", "INT", "CHA"]
+    const AB_DESC: [6]u32 = [222, 223, 224, 225, 226, 227]
+
+    // Points a score costs to go up by one: 1 below 14, 2 for 14 and 15, 3 from 16 (0x006f8670).
+    fn price_up { score: i32 } -> i32 {
+        if score < 14 { return 1 }
+        if score < 16 { return 2 }
+        return 3
+    }
+
+    // What lowering a score gives back: what the step below cost.
+    fn refund_down { score: i32 } -> i32 {
+        return price_up{ score = score - 1 }
+    }
+
+    // The control `<ability>_<suffix>` ("STR_PLUS_BTN").
+    fn ability_tag { into: []mut u8, row: usize, suffix: []u8 } -> []u8 {
+        let n = frontend::copy_into{ dst = into, src = AB_TAG[row] }
+        let m = frontend::copy_into{ dst = into[n..], src = suffix }
+        return into[..n + m]
+    }
+
+    // The row a control tag of this panel belongs to (its first three letters), -1 for none.
+    fn ability_row_of { tag: []u8 } -> i32 {
+        if tag.len < 4 or tag[3] != '_' { return -1 }
+        let mut r: usize = 0
+        while r < 6 {
+            if slice::eq_bytes{ a = tag[..3], b = AB_TAG[r] } { return @as(i32, r) }
+            r = r + 1
+        }
+        return -1
+    }
+
+    fn open_abilities { st: *mut State, mut g: gui::Gui, p: u32 } -> ! {
+        let mut r: usize = 0
+        while r < 6 {
+            st.ab[r] = st.ch.abil[UI_STAT[r]]
+            r = r + 1
+        }
+        st.ab_points = st.ch.ability_points
+        st.ab_focus = 0
+        try refresh_abilities{ st, &g, p }
+        try show_ability_focus{ st, &g, p }
+        gui::set_focus{ &g, panel = p, tag = "STR_POINTS_BTN" }
+    }
+
+    fn refresh_abilities { st: *mut State, mut g: gui::Gui, p: u32 } -> ! {
+        let mut r: usize = 0
+        while r < 6 {
+            let mut buf: [24]u8
+            try set_number{ &g, panel = p, tag = ability_tag{ into = buf[..], row = r, suffix = "_POINTS_BTN" }, n = st.ab[r] }
+            let mut b2: [24]u8
+            gui::set_enabled{ &g, panel = p, tag = ability_tag{ into = b2[..], row = r, suffix = "_PLUS_BTN" }, enabled = st.ab[r] < ABILITY_MAX }
+            let mut b3: [24]u8
+            gui::set_enabled{ &g, panel = p, tag = ability_tag{ into = b3[..], row = r, suffix = "_MINUS_BTN" }, enabled = st.ab[r] > ABILITY_MIN }
+            r = r + 1
+        }
+        try set_number{ &g, panel = p, tag = "REMAINING_SELECTIONS_LBL", n = st.ab_points }
+        try show_ability_focus{ st, &g, p }
+    }
+
+    // The focused row's price, modifier and description.
+    fn show_ability_focus { st: *mut State, mut g: gui::Gui, p: u32 } -> ! {
+        let r = st.ab_focus
+        let score = st.ab[r]
+        try set_number{ &g, panel = p, tag = "COST_POINTS_LBL", n = if score >= ABILITY_MAX { 0 } else { price_up{ score } } }
+        let m = modifier_of{ score }
+        if m == 0 {
+            try gui::set_text{ &g, panel = p, tag = "LBL_ABILITY_MOD", text = "-" }
+        } else {
+            try set_modifier{ &g, panel = p, tag = "LBL_ABILITY_MOD", n = m }
+        }
+        try set_description{ &g, panel = p, tag = "LB_DESC", strref = AB_DESC[r] }
+    }
+
+    fn focus_ability { st: *mut State, mut g: gui::Gui, p: u32, row: usize } {
+        if st.ab_focus == row { return }
+        st.ab_focus = row
+        show_ability_focus{ st, &g, p } iferr {}
+    }
+
+    fn raise_ability { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, p: u32, row: usize } -> ! {
+        st.ab_focus = row
+        let score = st.ab[row]
+        if score >= ABILITY_MAX {
+            try show_message{ st, &g, &fs, &dev, strref = 42181, ask = Ask::info }
+            return
+        }
+        let cost = price_up{ score }
+        if cost > st.ab_points { return }
+        st.ab[row] = score + 1
+        st.ab_points = st.ab_points - cost
+        try refresh_abilities{ st, &g, p }
+    }
+
+    fn lower_ability { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, p: u32, row: usize } -> ! {
+        st.ab_focus = row
+        let score = st.ab[row]
+        if score <= ABILITY_MIN {
+            try show_message{ st, &g, &fs, &dev, strref = 42180, ask = Ask::info }
+            return
+        }
+        st.ab[row] = score - 1
+        st.ab_points = st.ab_points + refund_down{ score }
+        try refresh_abilities{ st, &g, p }
+    }
+
+    // The class's recommended scores (classes.2da), while points remain.
+    fn recommend_abilities { st: *mut State, mut g: gui::Gui, p: u32 } -> ! {
+        if st.ab_points <= 0 { return }
+        let mut r: usize = 0
+        while r < 6 {
+            st.ab[r] = class_score{ d = &st.data, class = st.ch.class, ability = UI_STAT[r] }
+            r = r + 1
+        }
+        st.ab_points = 0
+        try refresh_abilities{ st, &g, p }
+    }
+
+    // classes.2da's recommended score of ability `ability` (rules order) for the class.
+    fn class_score { d: *Data, class: i32, ability: usize } -> i32 {
+        let col: []u8 = if ability == 0 { "str" } else if ability == 1 { "dex" } else if ability == 2 { "con" }
+            else if ability == 3 { "int" } else if ability == 4 { "wis" } else { "cha" }
+        return twoda::get_int{ t = d.classes.t, row = @as(usize, class), column = col } ifnull 10
+    }
+
+    // Writes the scores to the choices; false (and a message) while points are left.
+    fn accept_abilities { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } -> !bool {
+        if st.ab_points > 0 {
+            try show_message{ st, &g, &fs, &dev, strref = 48217, ask = Ask::info }
+            return false
+        }
+        let mut r: usize = 0
+        while r < 6 {
+            st.ch.abil[UI_STAT[r]] = st.ab[r]
+            r = r + 1
+        }
+        st.ch.ability_points = 0
+        return true
+    }
+}

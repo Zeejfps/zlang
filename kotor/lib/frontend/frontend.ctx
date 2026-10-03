@@ -4,7 +4,7 @@
 //   try frontend::begin{ &fe, &g, &fs, &dev, &sdl, mixer }          // the start-up movies, then the menu
 //   // each frame, while the engine has no module running:
 //   for each event: used = frontend::handle_event{ &fe, &g, ev, sx, sy }
-//   match frontend::step{ &fe, &g, &fs, &dev, &sdl, output, mixer, dt } { running => {}, new_game{ module } => ..., ... }
+//   match frontend::step{ &fe, &g, &fs, &dev, &sdl, output, mixer, dt } { running => {}, new_game{ module, player } => ..., ... }
 //   render::begin_frame{ &frame, time }
 //   frontend::draw{ &fe, &g, &fs, &dev, &frame }                    // the movie or the 3D background, then the GUI
 //   gpu::submit{ &dev, &frame }
@@ -153,6 +153,8 @@ namespace frontend {
             return Outcome::running
         }
         update_scene{ &fe, dt }
+        let cg_active = fe.cg
+        if cg_active != null { chargen::update{ st = cg_active, dt } }
         start_music{ &fe, &g, &fs, mixer }
         let n = g.events.len
         let mut i: usize = 0
@@ -186,6 +188,8 @@ namespace frontend {
         gui::draw_backdrop_pass{ &g, &frame }
         draw_scene{ &fe, &g, &frame, target }
         gui::draw_panels{ &g, &frame }
+        let cg_active = fe.cg
+        if cg_active != null { chargen::draw_views{ st = cg_active, &g, &frame, target } }
     }
 
     // ---- music
@@ -219,6 +223,7 @@ namespace frontend {
         fe.depth = 0
         let m = mixer
         if m != null { mix::stop{ m, h = fe.music, fade = 1.0 } }
+        end_chargen{ &fe, &g, &dev }
         free_scene{ &fe, &dev }
         release_shot{ &fe, &dev }
     }

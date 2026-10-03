@@ -1,0 +1,48 @@
+// The 2DAs character generation reads beyond what lib/rules keeps: the classes' recommended
+// ability scores, the portraits and the appearance and head tables behind them.
+namespace chargen {
+    error table_missing{ name: resref::ResRef }
+
+    struct Held { t: twoda::Table, bytes: alloc::Bytes }
+
+    struct Data {
+        classes: Held,
+        portraits: Held,
+        appearance: Held,
+        heads: Held,
+        feat: Held,
+    }
+
+    fn load_held { mut fs: Fs, rm: res::Manager, heap: *mut heap::Heap, name: []u8 } -> !Held {
+        let bytes = try res::load{ &fs, rm, name, kind = restype::Type::twoda, realloc = heap::alloc, heap } ifnull {
+            return table_missing{ name = resref::truncate{ name } }
+        }
+        let t = twoda::parse{ data = bytes, realloc = heap::alloc, heap = &heap.* } iferr err{ error } {
+            free_bytes{ b = bytes, heap }
+            return error
+        }
+        return Held{ t, bytes }
+    }
+
+    fn free_held { h: Held, heap: *mut heap::Heap } {
+        twoda::free{ t = h.t, realloc = heap::alloc, heap = &heap.* }
+        free_bytes{ b = h.bytes, heap }
+    }
+
+    fn load_data { mut fs: Fs, rm: res::Manager, heap: *mut heap::Heap } -> !Data {
+        let classes = try load_held{ &fs, rm, heap, name = "classes" }
+        let portraits = try load_held{ &fs, rm, heap, name = "portraits" }
+        let appearance = try load_held{ &fs, rm, heap, name = "appearance" }
+        let heads = try load_held{ &fs, rm, heap, name = "heads" }
+        let feat = try load_held{ &fs, rm, heap, name = "feat" }
+        return Data{ classes, portraits, appearance, heads, feat }
+    }
+
+    fn free_data { d: Data, heap: *mut heap::Heap } {
+        free_held{ h = d.classes, heap }
+        free_held{ h = d.portraits, heap }
+        free_held{ h = d.appearance, heap }
+        free_held{ h = d.heads, heap }
+        free_held{ h = d.feat, heap }
+    }
+}
