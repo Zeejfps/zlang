@@ -139,9 +139,7 @@ fn dumps { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, trees: bool } -> i3
         let mut diags = diag::new{ &heap }
         let lexed = lexer::lex{ text, file = 0, &heap, &diags }
         let mut out = utf8::builder{ realloc = arena::alloc, &heap }
-        _ = utf8::push{ b = &out, s = "file " }
-        _ = utf8::push{ b = &out, s = utf8::String{ bytes = path } }
-        _ = utf8::push{ b = &out, s = "\n" }
+        _ = @fmt(&out, "file {}\n", utf8::String{ bytes = path })
         if trees {
             let f = parser::parse{ text, file = 0, tokens = lexed.tokens, &heap, &diags }
             tree::file{ &out, &heap, text, f, diags }
@@ -310,9 +308,7 @@ fn error { mut out: utf8::Builder(arena::Arena), c: check::Checker, d: diag::Dia
         let p = source::position{ text = f.text, lines = f.lines, offset = d.span.start }
         _ = @fmt(&out, "{}:{}:{}", check::str{ s = f.name }, p.line, p.col)
     }
-    _ = utf8::push{ b = &out, s = ": error: " }
-    _ = utf8::push{ b = &out, s = d.msg }
-    _ = utf8::push{ b = &out, s = "\n" }
+    _ = @fmt(&out, ": error: {}\n", d.msg)
 }
 
 // Lexes and parses a file into the program's list, where its index is its file id.
@@ -375,16 +371,10 @@ fn report { mut io: Io, path: []u8, text: []u8, at: usize, problem: ir_read::Pro
     let mut buf: [256]u8
     let mut heap = arena::new{ buf = buf[..] }
     let mut b = utf8::builder{ realloc = arena::alloc, &heap }
-    _ = utf8::push_char{ &b, c = ':' }
-    _ = utf8::push_u64{ &b, n = line }
-    _ = utf8::push_char{ &b, c = ':' }
-    _ = utf8::push_u64{ &b, n = col }
-    _ = utf8::push{ &b, s = ": error: " }
+    _ = @fmt(&b, ":{}:{}: error: ", line, col)
     match problem {
         expected{ c } => {
-            _ = utf8::push{ &b, s = "expected '" }
-            _ = utf8::push_char{ &b, c }
-            _ = utf8::push_char{ &b, c = '\'' }
+            _ = @fmt(&b, "expected '{}'", utf8::write_char{ c, _ })
         }
         expected_int => {
             _ = utf8::push{ &b, s = "expected an integer" }
