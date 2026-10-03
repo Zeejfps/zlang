@@ -110,6 +110,8 @@ namespace ingame {
             // Test helper: where the leader is, its hit points, its action and whether a conversation runs.
             let o = world::object{ w = &w, id = w.pc } ifnull { return }
             _ = @fmt(&w.io, "pos {} {} {} hp {}/{} talking {}\n", o.position.x, o.position.y, o.position.z, o.hp, o.hp_max, w.conversation.active)
+        } else if ci::eq{ a = cmd, b = "bot" } {
+            bot::run_command{ b = &ui.bot, &w, args = text::rest{ words } }
         } else if ci::eq{ a = cmd, b = "party" } {
             let ids = party::members{ w = &w }
             let mut i: usize = 0

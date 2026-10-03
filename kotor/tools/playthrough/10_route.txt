@@ -1,0 +1,24 @@
+# Survey route (cheats: door unlocks, gear): the ship from the first door on. Edited as the route grows.
+3 newgame
+4 ui replies 1 1 1 1 1 1 1 1
+2400 ui unlock end_door01
+2400 ui giveitem g_w_shortswrd01 equip
+2400 ui giveitem g_a_clothes01 equip
+2401 use end_door01
+2450 ui goto end_door02
+2700 ui goto end_door02
+2900 ui goto end_door02
+3100 ui goto end_door02
+3600 ui unlock end_door02
+3601 use end_door02
+3700 ui goto end_sith2
+3850 attack end_sith2
+3950 attack end_sith2
+4050 attack end_sith3
+4150 attack end_sith3
+4250 attack end_sith2
+4350 attack end_sith2
+4400 ui pos
+4400 ui where end_sith
+4400 ui where end_weld
+4400 ui where end_soldier2

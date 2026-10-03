@@ -24,6 +24,7 @@ namespace ingame {
         log: hud::MessageLog,
         pause_panel: u32,                   // the "PAUSED" banner, 0 when not shown
         hud_hidden: bool,
+        bot: bot::Bot,                      // the headless test player (bot.ctx); off unless a script turns it on
     }
 
     // Opens the interface for a window of `width` x `height`. `scratch` is the texture decoder's
@@ -45,7 +46,7 @@ namespace ingame {
             heap = w.heap, cache, gui = g, hud = h,
             text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
             width, height, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{}, log = hud::new_log{},
-            pause_panel = 0, hud_hidden = false,
+            pause_panel = 0, hud_hidden = false, bot = bot::new{},
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
         hud::set_tooltips{ h = &p.hud, g = &p.gui, &w, text = &p.text }
@@ -236,6 +237,7 @@ namespace ingame {
     // said.
     fn update { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, sc: scene::Scene, camera: cam::Camera, dt: f32 } {
         gui::update{ g = &ui.gui, dt }
+        bot::step{ b = &ui.bot, &w }
         hud::log_tick{ log = &ui.log, dt }
         // A conversation or cutscene takes the screen: the HUD and any menu go away for it
         // (re/gui.md, "SetHudMode"), and the world is not picked.
