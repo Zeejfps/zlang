@@ -1,0 +1,211 @@
+// mixtest: checks lib/audio's mixer on sounds made here, with known answers: gains, pans and
+// group volumes, 3D attenuation and panning, resampled lengths, ends, loops, fades, voice
+// stealing by priority, stale handles, feeds, and played-time. No device: it renders offline.
+//
+//   kotor/tools/ctxc run kotor/tools/mixtest
+//
+// Sounds are constant (DC) 16-bit PCM, which the interpolation passes unchanged, so every
+// expected sample is the value times the gains.
+
+struct Tally { passed: u32, failed: u32 }
+
+const RATE: u32 = 44100
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+    let pages = mem::pages{ &mem, size = 67108864 } ifnull { return 1 }
+    let mut heap = arena::new{ buf = pages }
+    let mut t = Tally{ passed = 0, failed = 0 }
+    run{ &io, &heap, &t } iferr err{ error } {
+        _ = @fmt(&io, "mixtest: {}\n", error)
+        t.failed = t.failed + 1
+    }
+    _ = @fmt(&io, "{} passed, {} failed\n", t.passed, t.failed)
+    io::flush{ &io }
+    return if t.failed > 0 { 1 } else { 0 }
+}
+
+fn expect { mut io: Io, mut t: Tally, ok: bool, what: []u8 } {
+    if ok {
+        t.passed = t.passed + 1
+    } else {
+        t.failed = t.failed + 1
+        _ = @fmt(&io, "FAIL {}\n", what)
+    }
+}
+
+fn near { a: f32, b: f32, tol: f32 } -> bool {
+    let d = a - b
+    return d <= tol and d >= -tol
+}
+
+// A RIFF/WAVE file of `frames` frames, every sample `value` (the right channel -value).
+fn make_wav { mut heap: arena::Arena, rate: u32, channels: u32, frames: usize, value: i16 } -> []u8 {
+    let size = 44 + frames * channels * 2
+    let b = try! alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = size }
+    wav::write_header{ into = b, channels, rate, frames }
+    let mut i: usize = 0
+    while i < frames * channels {
+        let v: i16 = if channels == 2 and i % 2 == 1 { -value } else { value }
+        let u = @as(u16, @as(i32, v) & 0xFFFF)
+        b[44 + 2 * i] = @trunc(u8, u)
+        b[45 + 2 * i] = @trunc(u8, u >> 8)
+        i = i + 1
+    }
+    return b
+}
+
+// Renders `frames` stereo frames into out (from the start).
+fn render { m: *mut mix::Mixer, out: []mut i16, frames: usize } -> []mut i16 {
+    mix::render{ m, into = out[..2 * frames] }
+    return out[..2 * frames]
+}
+
+fn run { mut io: Io, mut heap: arena::Arena, mut t: Tally } -> ! {
+    let out = try alloc::resize(i16, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(i16){}, count = 2 * 200000 }
+    let dc = make_wav{ &heap, rate = 22050, channels = 1, frames = 22050, value = 10000 }
+    let dc2 = make_wav{ &heap, rate = 44100, channels = 2, frames = 4410, value = 8000 }
+    let short = make_wav{ &heap, rate = 22050, channels = 1, frames = 100, value = 10000 }
+
+    // ---- 2D gains, pan, groups, master
+    let mut m = try mix::make{ realloc = arena::alloc, &heap, rate = RATE, voices_2d = 3, voices_3d = 2 }
+    let h = try mix::play{ m, bytes = dc, p = mix::sound_2d{ group = mix::Group::sfx, volume = 0.5 } }
+    let o = render{ m, out, frames = 1000 }
+    expect{ &io, &t, ok = o[200] == 5000 and o[201] == 5000, what = "2D centre at volume 0.5 gives half on both sides" }
+    mix::set_pan{ m, h, pan = 1.0 }
+    _ = render{ m, out, frames = 1024 }                  // the pan change ramps in over a block
+    let o2 = render{ m, out, frames = 100 }
+    expect{ &io, &t, ok = o2[0] == 0 and o2[1] == 5000, what = "pan 1 is all right" }
+    mix::set_pan{ m, h, pan = -0.5 }
+    _ = render{ m, out, frames = 1024 }
+    let o3 = render{ m, out, frames = 100 }
+    expect{ &io, &t, ok = o3[0] == 5000 and o3[1] == 2500, what = "pan -0.5 halves the right" }
+    mix::set_pan{ m, h, pan = 0.0 }
+    mix::set_group_volume{ m, group = mix::Group::sfx, volume = 0.5 }
+    mix::set_master{ m, volume = 0.5 }
+    _ = render{ m, out, frames = 1024 }
+    let o4 = render{ m, out, frames = 100 }
+    expect{ &io, &t, ok = o4[0] == 1250 and o4[1] == 1250, what = "group and master volumes multiply" }
+    mix::set_group_paused{ m, group = mix::Group::sfx, paused = true }
+    let o5 = render{ m, out, frames = 100 }
+    expect{ &io, &t, ok = o5[0] == 0 and mix::is_playing{ m, h }, what = "a paused group is silent and keeps its voice" }
+    mix::set_group_paused{ m, group = mix::Group::sfx, paused = false }
+    mix::set_group_volume{ m, group = mix::Group::sfx, volume = 1.0 }
+    mix::set_master{ m, volume = 1.0 }
+
+    // ---- length: 22,050 frames at 22,050 Hz end after 44,100 output frames
+    mix::stop{ m, h, fade = 0.0 }
+    expect{ &io, &t, ok = not mix::is_playing{ m, h }, what = "stop with no fade ends at once" }
+    let h2 = try mix::play{ m, bytes = dc, p = mix::sound_2d{ group = mix::Group::voice, volume = 1.0 } }
+    let mut rendered: usize = 0
+    while mix::is_playing{ m, h = h2 } and rendered < 100000 {
+        _ = render{ m, out, frames = 100 }
+        rendered = rendered + 100
+    }
+    expect{ &io, &t, ok = rendered >= 44100 and rendered <= 44200, what = "a 1 s sound at 22,050 Hz lasts 44,100 output frames" }
+    let after = render{ m, out, frames = 10 }
+    expect{ &io, &t, ok = after[0] == 0, what = "silence after the end" }
+    expect{ &io, &t, ok = mix::played{ m, h = h2 } == null, what = "an ended voice has no played time" }
+
+    // ---- played time, and stereo straight through at the output rate
+    let h3 = try mix::play{ m, bytes = dc2, p = mix::sound_2d{ group = mix::Group::music, volume = 1.0 } }
+    let o6 = render{ m, out, frames = 2205 }
+    let played = mix::played{ m, h = h3 } ifnull { -1.0 }
+    expect{ &io, &t, ok = played > 0.0499 and played < 0.0501, what = "played time is 0.05 s after 2,205 frames" }
+    expect{ &io, &t, ok = o6[100] == 8000 and o6[101] == -8000, what = "stereo keeps its channels" }
+    mix::stop{ m, h = h3, fade = 0.0 }
+
+    // ---- looping, and fades
+    try var_loop{ &io, &t, m, out, short }
+
+    // ---- voice stealing by priority: 3 2D voices
+    let mut p = mix::sound_2d{ group = mix::Group::sfx, volume = 0.1 }
+    p.looping = true
+    p.priority = 10
+    let a = try mix::play{ m, bytes = dc, p }
+    p.priority = 20
+    let b = try mix::play{ m, bytes = dc, p }
+    p.priority = 30
+    let c = try mix::play{ m, bytes = dc, p }
+    p.priority = 15
+    let d = try mix::play{ m, bytes = dc, p }
+    expect{ &io, &t, ok = not mix::is_playing{ m, h = a } and mix::is_playing{ m, h = b } and mix::is_playing{ m, h = c } and mix::is_playing{ m, h = d },
+        what = "a new sound takes the lowest-priority voice" }
+    p.priority = 5
+    let refused = match mix::play{ m, bytes = dc, p } { ok => { false } err => { true } }
+    expect{ &io, &t, ok = refused, what = "a lower priority than every voice gets none" }
+    mix::stop_all{ m, group = null, fade = 0.0 }
+    expect{ &io, &t, ok = not mix::is_playing{ m, h = b } and not mix::is_playing{ m, h = d }, what = "stop_all ends them" }
+    // A handle stays dead when its slot is reused.
+    let e = try mix::play{ m, bytes = dc, p }
+    expect{ &io, &t, ok = mix::is_playing{ m, h = e } and not mix::is_playing{ m, h = a }, what = "a reused slot doesn't revive an old handle" }
+    mix::stop{ m, h = e, fade = 0.0 }
+
+    // ---- 3D: listener at the origin facing +Y, Z up; a sound 5 m to the right
+    mix::set_listener{ m, position = math::vec3::zero{}, forward = math::vec3::make{ x = 0.0, y = 1.0, z = 0.0 }, up = math::vec3::make{ x = 0.0, y = 0.0, z = 1.0 } }
+    let mut q = mix::sound_3d{ group = mix::Group::sfx, volume = 1.0, position = math::vec3::make{ x = 5.0, y = 0.0, z = 0.0 }, min_distance = 1.0, max_distance = 20.0 }
+    q.looping = true
+    let s3 = try mix::play{ m, bytes = dc, p = q }
+    let o7 = render{ m, out, frames = 100 }
+    let g: f32 = 10000.0 * (1.0 / 5.0) * (15.0 / 19.0)
+    expect{ &io, &t, ok = near{ a = @as(f32, o7[1]), b = g, tol = 1.0 } and near{ a = @as(f32, o7[0]), b = g * 0.3, tol = 1.0 },
+        what = "3D: inverse distance faded to max, panned right" }
+    mix::set_position{ m, h = s3, position = math::vec3::make{ x = 0.0, y = 0.5, z = 0.0 } }
+    _ = render{ m, out, frames = 1024 }
+    let o8 = render{ m, out, frames = 100 }
+    expect{ &io, &t, ok = o8[0] == 10000 and o8[1] == 10000, what = "3D: inside min distance, in front: full on both" }
+    mix::set_position{ m, h = s3, position = math::vec3::make{ x = 0.0, y = -25.0, z = 0.0 } }
+    _ = render{ m, out, frames = 1024 }
+    let o9 = render{ m, out, frames = 100 }
+    expect{ &io, &t, ok = o9[0] == 0 and o9[1] == 0 and mix::is_playing{ m, h = s3 }, what = "3D: past max distance, silent but playing" }
+    mix::set_listener{ m, position = math::vec3::zero{}, forward = math::vec3::make{ x = 1.0, y = 0.0, z = 0.0 }, up = math::vec3::make{ x = 0.0, y = 0.0, z = 1.0 } }
+    mix::set_position{ m, h = s3, position = math::vec3::make{ x = 0.0, y = 5.0, z = 0.0 } }
+    _ = render{ m, out, frames = 1024 }
+    let o10 = render{ m, out, frames = 100 }
+    expect{ &io, &t, ok = o10[0] > o10[1], what = "3D: facing +X, a sound at +Y is on the left" }
+    mix::stop{ m, h = s3, fade = 0.0 }
+
+    // ---- a feed: samples pushed in, silence while it runs dry, the end after end_feed
+    let f = try mix::play_feed{ m, rate = 22050, channels = 2, p = mix::sound_2d{ group = mix::Group::movie, volume = 1.0 } }
+    let mut chunk: [2000]i16
+    let mut i: usize = 0
+    while i < 2000 {
+        chunk[i] = if i % 2 == 0 { 4000 } else { -4000 }
+        i = i + 1
+    }
+    let took = mix::feed{ m, h = f, samples = chunk[..] }
+    expect{ &io, &t, ok = took == 1000, what = "a feed takes whole frames" }
+    let o11 = render{ m, out, frames = 1000 }
+    expect{ &io, &t, ok = o11[200] == 4000 and o11[201] == -4000, what = "a feed plays what it was given" }
+    let o12 = render{ m, out, frames = 2000 }
+    expect{ &io, &t, ok = o12[3000] == 0 and mix::is_playing{ m, h = f }, what = "a dry feed is silent and keeps playing" }
+    _ = mix::feed{ m, h = f, samples = chunk[..] }
+    mix::end_feed{ m, h = f }
+    rendered = 0
+    while mix::is_playing{ m, h = f } and rendered < 10000 {
+        _ = render{ m, out, frames = 100 }
+        rendered = rendered + 100
+    }
+    expect{ &io, &t, ok = rendered >= 1900 and rendered <= 2200, what = "an ended feed plays out what it has, then ends" }
+    let bad = match mix::play_feed{ m, rate = 22050, channels = 3, p = mix::sound_2d{ group = mix::Group::movie, volume = 1.0 } } { ok => { false } err => { true } }
+    expect{ &io, &t, ok = bad, what = "a feed of 3 channels is refused" }
+    mix::free{ realloc = arena::alloc, &heap, m }
+}
+
+fn var_loop { mut io: Io, mut t: Tally, m: *mut mix::Mixer, out: []mut i16, short: []u8 } -> ! {
+    let mut p = mix::sound_2d{ group = mix::Group::sfx, volume = 1.0 }
+    p.looping = true
+    let h = try mix::play{ m, bytes = short, p }
+    let o = render{ m, out, frames = 20000 }
+    let mut steady = true
+    let mut i: usize = 10
+    while i < 20000 {
+        if o[2 * i] != 10000 { steady = false }
+        i = i + 1
+    }
+    expect{ &io, &t, ok = steady and mix::is_playing{ m, h }, what = "a 100-frame loop plays on without a seam" }
+    mix::stop{ m, h, fade = 0.01 }
+    _ = render{ m, out, frames = 300 }
+    expect{ &io, &t, ok = mix::is_playing{ m, h }, what = "a fade takes its time" }
+    let o2 = render{ m, out, frames = 1000 }
+    expect{ &io, &t, ok = not mix::is_playing{ m, h } and o2[1500] == 0, what = "a 10 ms fade ends the voice" }
+}
