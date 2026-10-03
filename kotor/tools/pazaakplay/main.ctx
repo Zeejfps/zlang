@@ -1,0 +1,415 @@
+// pazaakplay: a game of pazaak in the original's screens, headless with scripted input and
+// screenshots, or in a real window to play.
+//
+//   kotor/tools/ctxc run kotor/tools/pazaakplay -- [options] [commands...]
+//   kotor/tools/ctxc run kotor/tools/pazaakplay -- --interactive            play it
+//   kotor/tools/ctxc run kotor/tools/pazaakplay -- --wager 100 shot:wager click:BTN_WAGER pick:0,1,2,3,4,0,1,2,3,4 shot:setup \
+//       click:BTN_ATEXT click:BTN_OK shot:start bot:2000 shot:end
+//
+// Options: --game DIR, --out DIR (kotor/out/pazaak), --size WxH (800x600), --wager MAX (the
+// script's nMaxWager; 0 none), --deck N (the opponent's row of pazaakdecks.2da; -1 random),
+// --seed S, --tutorial, --rich (the player owns every card twice), --interactive, --audio,
+// --seconds N (leave an interactive run after N seconds: a smoke test).
+//
+// Commands (headless), one frame each unless noted:
+//   shot:NAME    one frame, saved as <out>/NAME.png
+//   wait:N       N frames of 1/30 s
+//   click:TAG    press and release on the control TAG of the top panel (or of the message box)
+//   pick:A,B,..  click available cards (ids 0..17) in the setup screen
+//   bot:N        up to N frames of a simple player (stands on 17, plays a card against a bust, OKs
+//                every message), stopping when the visit ends
+//   key:CHARS    e (enter) x (escape)
+// After the commands, a visit that has ended prints its result.
+
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+struct Options {
+    game: []u8, out: []u8, width: i32, height: i32, wager: i32, deck: i32, seed: u32, tutorial: bool, rich: bool,
+    interactive: bool, audio: bool, seconds: f64, first: usize,
+}
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let mut o = Options{
+        game = DEFAULT_GAME, out = "kotor/out/pazaak", width = 800, height = 600, wager = 100, deck = 1, seed = 1,
+        tutorial = false, rich = false, interactive = false, audio = false, seconds = 0.0, first = args.len,
+    }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if slice::eq_bytes{ a, b = "--game" } and i + 1 < args.len {
+            i = i + 1
+            o.game = args[i]
+        } else if slice::eq_bytes{ a, b = "--out" } and i + 1 < args.len {
+            i = i + 1
+            o.out = args[i]
+        } else if slice::eq_bytes{ a, b = "--wager" } and i + 1 < args.len {
+            i = i + 1
+            o.wager = number{ s = args[i] }
+        } else if slice::eq_bytes{ a, b = "--deck" } and i + 1 < args.len {
+            i = i + 1
+            o.deck = number{ s = args[i] }
+            if args[i].len > 0 and args[i][0] == '-' { o.deck = -1 }
+        } else if slice::eq_bytes{ a, b = "--seed" } and i + 1 < args.len {
+            i = i + 1
+            o.seed = @as(u32, number{ s = args[i] })
+        } else if slice::eq_bytes{ a, b = "--size" } and i + 1 < args.len {
+            i = i + 1
+            let s = args[i]
+            let mut x: usize = 0
+            while x < s.len and s[x] != 'x' { x = x + 1 }
+            o.width = number{ s = s[..x] }
+            o.height = number{ s = s[x + 1..] }
+        } else if slice::eq_bytes{ a, b = "--tutorial" } {
+            o.tutorial = true
+        } else if slice::eq_bytes{ a, b = "--rich" } {
+            o.rich = true
+        } else if slice::eq_bytes{ a, b = "--interactive" } {
+            o.interactive = true
+            o.audio = true
+        } else if slice::eq_bytes{ a, b = "--audio" } {
+            o.audio = true
+        } else if slice::eq_bytes{ a, b = "--seconds" } and i + 1 < args.len {
+            i = i + 1
+            o.seconds = @as(f64, number{ s = args[i] })
+        } else {
+            o.first = i
+            break
+        }
+        i = i + 1
+    }
+    let pages = mem::pages{ &mem, size = 536870912 } ifnull { return 1 }
+    let scratch = mem::pages{ &mem, size = 134217728 } ifnull { return 1 }
+    let mut heap = arena::new{ buf = pages }
+    let mut h = heap::new{ &mem }
+    run{ &io, &fs, &sdl, &heap, &h, scratch, o, args } iferr err{ error } {
+        _ = @fmt(&io, "pazaakplay: failed: {}\n", error)
+        match error {
+            gpu::shader_failed{ log } => { _ = @fmt(&io, "{}\n", log) }
+            sdl::failed => { _ = @fmt(&io, "SDL: {}\n", sdl::last_error{ &sdl }) }
+            else => {}
+        }
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return 0
+}
+
+struct World {
+    s: pazaak::Session,
+    mixer: ?*mut mix::Mixer,
+    frames: i32,
+}
+
+fn run {
+    mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut h: heap::Heap, scratch: alloc::Bytes,
+    o: Options, args: Args,
+} -> ! {
+    try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
+    defer sdl::quit{ &sdl }
+    let mut config = render::make_config{ title = "pazaak", width = o.width, height = o.height, hidden = not o.interactive }
+    let mut dev = try gpu::open{ &sdl, realloc = arena::alloc, &heap, config }
+    defer gpu::close{ &dev, &sdl }
+    let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, &heap, cap = render::default_capacity{} }
+    let mut rm = try res::open{ &fs, heap = &h, game = o.game }
+    defer res::close{ &fs, &rm }
+    let mut cache = material::new_cache{ heap = &h, scratch }
+    defer material::free_cache{ &cache, &dev }
+    let mut path_buf: [512]u8
+    let tlk_path = join{ into = path_buf[..], a = o.game, b = "/dialog.tlk" }
+    let table = try tlk::load{ &fs, realloc = heap::alloc, heap = &h, path = tlk_path }
+    defer tlk::free{ t = table, realloc = heap::alloc, heap = &h }
+    let mut g = try gui::make{ heap = &h, rm, cache = &cache, width = o.width, height = o.height }
+    defer gui::free{ &g }
+    gui::set_tlk{ &g, table = &table }
+    try gui::load_defaults{ &g, &fs, &dev }
+    gui::set_cursor_visible{ &g, visible = o.interactive }
+    if o.interactive { _ = sdl::SDL_ShowCursor{ &sdl, toggle = 0 } }
+    make_dir{ &fs, path = o.out }
+
+    let mut mixer: ?*mut mix::Mixer = null
+    let mut adev: ?*mut audio::Device = null
+    if o.audio {
+        let m = try mix::make(heap::Heap){ realloc = heap::alloc, heap = &h, rate = 44100, voices_2d = 24, voices_3d = 16 }
+        mixer = m
+        gui::set_mixer{ &g, mixer = m }
+        if o.interactive {
+            let opened = audio::open{ &sdl, rate = 44100, latency_ms = 80 } iferr { null }
+            if opened != null {
+                adev = try alloc::new(audio::Device, heap::Heap){ realloc = heap::alloc, heap = &h, value = opened }
+            }
+        }
+    }
+
+    // what the script would pass: the opponent's deck, the player's cards
+    let mut params = pazaak::make_params{}
+    params.max_wager = o.wager
+    params.tutorial = o.tutorial
+    params.seed = o.seed
+    params.opponent_deck = try pazaak::load_opponent_deck{ &fs, heap = &h, rm, row = o.deck, seed = o.seed }
+    params.player_name_len = pazaak::copy_text{ dst = params.player_name[..], src = "Revan" }
+    params.opponent_name_len = pazaak::copy_text{ dst = params.opponent_name[..], src = "Mission" }
+    let mut owned: [18]i32 = [0; 18]
+    let mut c: usize = 0
+    while c < 18 {
+        owned[c] = if o.rich { 2 } else if c < 5 { 2 } else { 0 }
+        c = c + 1
+    }
+    let mut w = World{ s = try pazaak::begin{ &g, &fs, &dev, mixer, params, owned, side_deck = [-1; 10] }, mixer, frames = 0 }
+    defer pazaak::end_session{ s = &w.s, g = &g }
+
+    if o.interactive {
+        try interactive{ &io, &sdl, &dev, &frame, &g, &fs, &w, adev, o }
+        return
+    }
+    let mut k = o.first
+    while k < args.len {
+        let cmd = args[k]
+        let mut colon: usize = 0
+        while colon < cmd.len and cmd[colon] != ':' { colon = colon + 1 }
+        let name = cmd[..colon]
+        let arg: []u8 = if colon < cmd.len { cmd[colon + 1..] } else { "" }
+        if slice::eq_bytes{ a = name, b = "shot" } {
+            try one_frame{ &fs, &dev, &frame, &g, &w }
+            let mut file: [96]u8
+            let path = join{ into = file[..], a = o.out, b = "/" }
+            let n = path.len
+            let full = join_more{ into = file[..], at = n, b = arg, c = ".png" }
+            try save_screen{ &io, &fs, &dev, &heap, path = full }
+        } else if slice::eq_bytes{ a = name, b = "wait" } {
+            let mut n = number{ s = arg }
+            while n > 0 {
+                try one_frame{ &fs, &dev, &frame, &g, &w }
+                n = n - 1
+            }
+        } else if slice::eq_bytes{ a = name, b = "click" } {
+            try click{ &io, &fs, &dev, &frame, &g, &w, tag = arg }
+        } else if slice::eq_bytes{ a = name, b = "pick" } {
+            let mut at: usize = 0
+            while at <= arg.len {
+                let mut e = at
+                while e < arg.len and arg[e] != ',' { e = e + 1 }
+                if e > at {
+                    let id = number{ s = arg[at..e] }
+                    let mut tb: [16]u8
+                    let tag = pazaak::tag_of{ into = tb[..], prefix = "BTN_AVAIL", a = @as(usize, id) / 6, b = @as(usize, id) % 6, two = true }
+                    click{ &io, &fs, &dev, &frame, &g, &w, tag } iferr {}
+                }
+                at = e + 1
+            }
+        } else if slice::eq_bytes{ a = name, b = "key" } {
+            let mut ci: usize = 0
+            while ci < arg.len {
+                let kc: i32 = if arg[ci] == 'e' { sdl::key::RETURN } else { sdl::key::ESCAPE }
+                _ = gui::handle_event{ &g, ev = sdl::Event::key{ down = true, repeat = false, scancode = 0, keycode = kc, mods = 0 }, scale_x = 1.0, scale_y = 1.0 }
+                try one_frame{ &fs, &dev, &frame, &g, &w }
+                ci = ci + 1
+            }
+        } else if slice::eq_bytes{ a = name, b = "bot" } {
+            let mut n = number{ s = arg }
+            while n > 0 and not w.s.done {
+                try bot_move{ &io, &fs, &dev, &g, &w }
+                try one_frame{ &fs, &dev, &frame, &g, &w }
+                n = n - 1
+            }
+        } else {
+            _ = @fmt(&io, "unknown command {}\n", cmd)
+        }
+        k = k + 1
+    }
+    report{ &io, w }
+}
+
+fn report { mut io: Io, w: World } {
+    if w.s.done {
+        let r = w.s.result
+        _ = @fmt(&io, "result: won {} forfeited {} wager {} side deck {} {} {} {} {} {} {} {} {} {}\n", r.won, r.forfeited, r.wager,
+            r.side_deck[0], r.side_deck[1], r.side_deck[2], r.side_deck[3], r.side_deck[4], r.side_deck[5], r.side_deck[6],
+            r.side_deck[7], r.side_deck[8], r.side_deck[9])
+    } else {
+        _ = @fmt(&io, "not finished: stage {} after {} frames\n", @as(u8, w.s.stage), w.frames)
+    }
+    let m = w.mixer
+    if m != null { _ = @fmt(&io, "mixer errors: {}\n", m.errors) }
+}
+
+// ---- frames
+
+fn one_frame { mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut g: gui::Gui, mut w: World } -> ! {
+    gui::update{ &g, dt = 1.0 / 30.0 }
+    try pazaak::update{ s = &w.s, g = &g, fs = &fs, dev = &dev, dt = 1.0 / 30.0 }
+    let mx = w.mixer
+    if mx != null {
+        let mut pcm: [1470]i16
+        mix::render{ m = mx, into = pcm[..] }
+    }
+    render::begin_frame{ &frame, time = 0.0 }
+    gui::draw{ &g, &frame }
+    try gpu::submit{ &dev, frame = &frame }
+    w.frames = w.frames + 1
+}
+
+fn press { mut g: gui::Gui, x: i32, y: i32 } {
+    _ = gui::handle_event{ &g, ev = sdl::Event::mouse_motion{ x, y, dx = 0, dy = 0, buttons = 0 }, scale_x = 1.0, scale_y = 1.0 }
+    _ = gui::handle_event{ &g, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
+    _ = gui::handle_event{ &g, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
+}
+
+// The panel input goes to: the message box, else the visit's current panel.
+fn top_panel { w: World } -> u32 {
+    if w.s.box != 0 { return w.s.box }
+    if w.s.wager_panel != 0 { return w.s.wager_panel }
+    if w.s.game != 0 { return w.s.game }
+    return w.s.setup
+}
+
+fn click { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut g: gui::Gui, mut w: World, tag: []u8 } -> ! {
+    let r = gui::control_rect{ &g, panel = top_panel{ w = w }, tag }
+    if r == null {
+        _ = @fmt(&io, "no control {} on the top panel\n", tag)
+        return
+    }
+    press{ &g, x = @as(i32, r.x + r.w / 2.0), y = @as(i32, r.y + r.h / 2.0) }
+    try one_frame{ &fs, &dev, &frame, &g, &w }
+}
+
+// A simple human proxy: answers messages, stands from 17, plays a card against a bust.
+fn bot_move { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut g: gui::Gui, mut w: World } -> ! {
+    if w.s.box != 0 {
+        let r = gui::control_rect{ &g, panel = w.s.box, tag = "BTN_OK" } ifnull { return }
+        press{ &g, x = @as(i32, r.x + r.w / 2.0), y = @as(i32, r.y + r.h / 2.0) }
+        return
+    }
+    if w.s.stage == pazaak::Stage::wager or w.s.stage == pazaak::Stage::setup { return }
+    if w.s.stage != pazaak::Stage::game { return }
+    let m = w.s.m
+    if not pazaak::can_choose{ m } { return }
+    let t = pazaak::total_of{ s = m.g.player }
+    let mut tag: []u8 = "BTN_XTEXT"
+    let mut tb: [16]u8
+    if t > 20 and m.phase == pazaak::Phase::choose {
+        let mut i: usize = 0
+        while i < 4 {
+            let c = m.g.player.hand[i]
+            if pazaak::is_card{ c } and pazaak::card_value{ c } < 0 or pazaak::is_flip_card{ c } {
+                tag = pazaak::tag_of{ into = tb[..], prefix = "BTN_PLRSIDE", a = i, b = 0, two = false }
+                if pazaak::is_flip_card{ c } and not c.flipped {
+                    let ft = pazaak::tag_of{ into = tb[..], prefix = "BTN_FLIP", a = i, b = 0, two = false }
+                    let fr = gui::control_rect{ &g, panel = w.s.game, tag = ft } ifnull { return }
+                    press{ &g, x = @as(i32, fr.x + fr.w / 2.0), y = @as(i32, fr.y + fr.h / 2.0) }
+                    return
+                }
+                break
+            }
+            i = i + 1
+        }
+    } else if t >= 17 {
+        tag = "BTN_YTEXT"
+    }
+    let r = gui::control_rect{ &g, panel = w.s.game, tag } ifnull { return }
+    press{ &g, x = @as(i32, r.x + r.w / 2.0), y = @as(i32, r.y + r.h / 2.0) }
+}
+
+// ---- playing for real
+
+fn interactive {
+    mut io: Io, mut sdl: sdl::Sdl, mut dev: gpu::Device, mut frame: render::Frame, mut g: gui::Gui, mut fs: Fs, mut w: World,
+    adev: ?*mut audio::Device, o: Options,
+} -> ! {
+    let freq = sdl::counter_frequency{ &sdl }
+    let start = sdl::counter{ &sdl }
+    let mut last = start
+    let mut running = true
+    while running and not w.s.done {
+        while true {
+            let ev = sdl::poll{ &sdl } ifnull { break }
+            if ev is quit | close { running = false }
+            _ = gui::handle_event{ &g, ev, scale_x = 1.0, scale_y = 1.0 }
+        }
+        let now = sdl::counter{ &sdl }
+        let dt = @as(f32, @as(f64, now - last) / @as(f64, freq))
+        last = now
+        if o.seconds > 0.0 and @as(f64, now - start) / @as(f64, freq) > o.seconds { running = false }
+        let ad = adev
+        let mx = w.mixer
+        if ad != null and mx != null { try audio::update{ &sdl, dev = ad, m = mx } }
+        gui::update{ &g, dt }
+        try pazaak::update{ s = &w.s, g = &g, fs = &fs, dev = &dev, dt }
+        render::begin_frame{ &frame, time = @as(f32, @as(f64, now - start) / @as(f64, freq)) }
+        gui::draw{ &g, &frame }
+        gpu::submit{ &dev, frame = &frame } iferr { running = false }
+        gpu::present{ &dev, &sdl }
+    }
+    report{ &io, w }
+}
+
+// ---- small helpers
+
+fn number { s: []u8 } -> i32 {
+    let mut n: i32 = 0
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] >= '0' and s[i] <= '9' { n = n * 10 + @as(i32, s[i] - '0') }
+        i = i + 1
+    }
+    return n
+}
+
+fn join { into: []mut u8, a: []u8, b: []u8 } -> []u8 {
+    let mut n: usize = 0
+    let mut i: usize = 0
+    while i < a.len {
+        into[n] = a[i]
+        n = n + 1
+        i = i + 1
+    }
+    i = 0
+    while i < b.len {
+        into[n] = b[i]
+        n = n + 1
+        i = i + 1
+    }
+    return into[..n]
+}
+
+fn join_more { into: []mut u8, at: usize, b: []u8, c: []u8 } -> []u8 {
+    let mut n = at
+    let mut i: usize = 0
+    while i < b.len {
+        into[n] = b[i]
+        n = n + 1
+        i = i + 1
+    }
+    i = 0
+    while i < c.len {
+        into[n] = c[i]
+        n = n + 1
+        i = i + 1
+    }
+    return into[..n]
+}
+
+fn save_screen { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, path: []u8 } -> ! {
+    let size = gpu::screen_size{ dev }
+    let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+    defer _ = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = pixels, count = 0 }
+    _ = try gpu::read_screen{ &dev, into = pixels }
+    let image = png::Image{ width = size.width, height = size.height, rgba = pixels }
+    try png::save{ &fs, realloc = arena::alloc, &heap, path, image, alpha = false, bottom_up = false }
+    _ = @fmt(&io, "wrote {} ({}x{})\n", path, size.width, size.height)
+}
+
+fn make_dir { mut fs: Fs, path: []u8 } {
+    let mut i: usize = 1
+    while i <= path.len {
+        if i == path.len or path[i] == '/' {
+            fs::make_dir{ &fs, path = path[..i] } iferr {}
+        }
+        i = i + 1
+    }
+}
+
+namespace pp_out {
+    #write
+    fn put_cstring { mut io: Io, s: c::String } { io::write{ &io, to = io::Stream::out, bytes = c::bytes{ s } } }
+}
