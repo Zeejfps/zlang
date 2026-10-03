@@ -1,0 +1,65 @@
+// Small helpers the screens share: numbers and strings into labels, message boxes, the panel of a
+// screen.
+namespace chargen {
+    // The panel id of the screen `screen` in the stack, 0 if it is not up.
+    fn panel_of_screen { st: *State, screen: u32 } -> u32 {
+        let mut i: usize = 0
+        while i < st.depth {
+            if st.stack[i].screen == screen { return st.stack[i].panel }
+            i = i + 1
+        }
+        return 0
+    }
+
+    fn set_number { mut g: gui::Gui, panel: u32, tag: []u8, n: i32 } -> ! {
+        let mut buf: [16]u8
+        let len = frontend::put_int{ into = buf[..], at = 0, n }
+        try gui::set_text{ &g, panel, tag, text = buf[..len] }
+    }
+
+    // A signed number as the modifier label shows it: "+2", "-1", "0".
+    fn set_modifier { mut g: gui::Gui, panel: u32, tag: []u8, n: i32 } -> ! {
+        let mut buf: [16]u8
+        let mut len: usize = 0
+        if n > 0 {
+            buf[0] = '+'
+            len = 1
+        }
+        len = frontend::put_int{ into = buf[..], at = len, n }
+        try gui::set_text{ &g, panel, tag, text = buf[..len] }
+    }
+
+    // A dialog.tlk string (its tokens expanded) as the wrapped text of a description list box.
+    fn set_description { mut g: gui::Gui, panel: u32, tag: []u8, strref: u32 } -> ! {
+        let text = try gui::tlk_text{ &g, strref }
+        defer gui::free_string{ &g, s = text }
+        try gui::set_list_text{ &g, panel, tag, text }
+    }
+
+    // A message over the panels. `info` has an OK only; the others also a Cancel. The answer comes
+    // as an activate event of the box (message_event).
+    fn show_message { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, strref: u32, ask: Ask } -> ! {
+        if st.msg_panel != 0 { return }
+        let text = try gui::tlk_text{ &g, strref }
+        defer gui::free_string{ &g, s = text }
+        st.msg_panel = try gui::message_box{ &g, &fs, &dev, text, cancel = ask != Ask::info }
+        st.msg_ask = ask
+    }
+
+    fn close_message { st: *mut State, mut g: gui::Gui } {
+        if st.msg_panel != 0 { gui::close{ &g, id = st.msg_panel } }
+        st.msg_panel = 0
+        st.msg_ask = Ask::nothing
+    }
+
+    // The text of an edit box or label.
+    fn text_of { mut g: gui::Gui, panel: u32, tag: []u8 } -> []u8 {
+        let c = gui::find_control{ &g, panel, tag } ifnull { return "" }
+        return c.text.text
+    }
+
+    // The ability modifier of a score: floor(score / 2) - 5.
+    fn modifier_of { score: i32 } -> i32 {
+        return rules::ability_modifier{ score }
+    }
+}

@@ -1,0 +1,193 @@
+// verify:FILE checks a finished player (the GFF chargentest wrote when Play was pressed): it reads
+// it back through lib/rules, as the engine will, and compares what rules derives with numbers
+// worked out here straight from the 2DAs (hit die, attack and save tables, defense bonus, skill
+// point price and pool, the feats the class grants, the portrait's body), so a slip in either
+// side shows. Every check prints one line; the command fails the run if one does not hold.
+
+struct Report { ok: i32, bad: i32 }
+
+error verify_failed{ bad: i32 }
+
+fn check { mut io: Io, mut r: Report, what: []u8, got: i32, want: i32 } {
+    if got == want {
+        r.ok = r.ok + 1
+        _ = @fmt(&io, "  ok    {} = {}\n", what, got)
+    } else {
+        r.bad = r.bad + 1
+        _ = @fmt(&io, "  FAIL  {} = {}, expected {}\n", what, got, want)
+    }
+}
+
+fn table { mut fs: Fs, h: *mut heap::Heap, rm: res::Manager, name: []u8 } -> !twoda::Table {
+    let bytes = try res::load{ &fs, rm, name, kind = restype::Type::twoda, realloc = heap::alloc, heap = h } ifnull { return verify_failed{ bad = 1 } }
+    return try twoda::parse{ data = bytes, realloc = heap::alloc, heap = &h.* }
+}
+
+fn num { t: twoda::Table, row: usize, col: []u8 } -> i32 {
+    return twoda::get_int{ t, row, column = col } ifnull 0
+}
+
+// floor(score / 2) - 5
+fn modifier { score: i32 } -> i32 {
+    return score / 2 - 5
+}
+
+// Points the point buy charges for a score: 1 a step up to 14, 2 for 14 and 15, 3 from 16.
+fn buy_cost { score: i32 } -> i32 {
+    let mut total: i32 = 0
+    let mut v: i32 = 8
+    while v < score {
+        total = total + (if v < 14 { 1 } else if v < 16 { 2 } else { 3 })
+        v = v + 1
+    }
+    return total
+}
+
+fn verify_player { mut io: Io, mut fs: Fs, h: *mut heap::Heap, rm: res::Manager, path: []u8, quick: bool } -> !i32 {
+    _ = @fmt(&io, "verify {}\n", path)
+    let bytes = try fs::read_all(heap::Heap){ fs = &fs, heap = h, realloc = heap::alloc, path }
+    let doc = try gff::parse{ data = bytes, realloc = heap::alloc, heap = &h.* }
+    let mut tables: rules::Tables
+    try rules::load_tables{ &fs, rm, heap = &h.*, out = &tables }
+    let mut c: rules::Creature
+    rules::read_creature{ tables = &tables, doc = &doc, s = gff::ROOT, out = &c }
+    let mut r = Report{ ok = 0, bad = 0 }
+
+    let class = c.classes[0].class
+    let cx = @as(usize, class)
+    let classes = try table{ &fs, h, rm, name = "classes" }
+    let skills = try table{ &fs, h, rm, name = "skills" }
+    let feats = try table{ &fs, h, rm, name = "feat" }
+    let featgain = try table{ &fs, h, rm, name = "featgain" }
+    let acbonus = try table{ &fs, h, rm, name = "acbonus" }
+    let portraits = try table{ &fs, h, rm, name = "portraits" }
+    let atk = try table{ &fs, h, rm, name = twoda::get_string{ t = classes, row = cx, column = "attackbonustable" } ifnull "" }
+    let saves = try table{ &fs, h, rm, name = twoda::get_string{ t = classes, row = cx, column = "savingthrowtable" } ifnull "" }
+    let skill_code = twoda::get_string{ t = classes, row = cx, column = "skillstable" } ifnull ""
+    let feat_code = twoda::get_string{ t = classes, row = cx, column = "featstable" } ifnull ""
+    let gain_code = twoda::get_string{ t = classes, row = cx, column = "featgain" } ifnull ""
+    let ac_code = twoda::get_string{ t = classes, row = cx, column = "armorclasscolumn" } ifnull ""
+    let mut col: [32]u8
+
+    _ = @fmt(&io, " identity\n")
+    check{ &io, &r, what = "classes", got = c.nclasses, want = 1 }
+    check{ &io, &r, what = "class level", got = c.classes[0].level, want = 1 }
+    check{ &io, &r, what = "level history records", got = c.nhistory, want = 1 }
+    check{ &io, &r, what = "race (human)", got = c.race, want = 6 }
+    check{ &io, &r, what = "is the player", got = if c.is_pc and c.pc_rules { 1 } else { 0 }, want = 1 }
+    check{ &io, &r, what = "class is soldier, scout or scoundrel", got = if class >= 0 and class <= 2 { 1 } else { 0 }, want = 1 }
+    check{ &io, &r, what = "experience", got = c.xp, want = 0 }
+    check{ &io, &r, what = "good-evil", got = c.good_evil, want = 50 }
+    let portrait = @as(i32, gff::get_number{ doc, s = gff::ROOT, label = "PortraitId" } ifnull -1)
+    let pr = @as(usize, portrait)
+    check{ &io, &r, what = "portrait is for the player", got = num{ t = portraits, row = pr, col = "forpc" }, want = 1 }
+    check{ &io, &r, what = "portrait's sex is the gender", got = num{ t = portraits, row = pr, col = "sex" }, want = c.gender }
+    let body_col: []u8 = if class == 0 { "appearance_l" } else if class == 1 { "appearancenumber" } else { "appearance_s" }
+    check{ &io, &r, what = "body is the portrait's for the class", got = c.appearance, want = num{ t = portraits, row = pr, col = body_col } }
+    let sound = @as(i32, gff::get_number{ doc, s = gff::ROOT, label = "SoundSetFile" } ifnull -1)
+    check{ &io, &r, what = "sound set", got = sound, want = if c.gender == 1 { 83 } else { 85 } }
+    let first = gff::get_locstring{ doc, s = gff::ROOT, label = "FirstName" } ifnull gff::LocString{ strref = -1, count = 0, body = slice::empty(u8){} }
+    check{ &io, &r, what = "name given", got = if first.count > 0 { 1 } else { 0 }, want = 1 }
+
+    _ = @fmt(&io, " abilities\n")
+    let mut spent: i32 = 0
+    let mut i: usize = 0
+    while i < 6 {
+        check{ &io, &r, what = "score within 8..18", got = if c.abil[i] >= 8 and c.abil[i] <= 18 { 1 } else { 0 }, want = 1 }
+        spent = spent + buy_cost{ score = c.abil[i] }
+        i = i + 1
+    }
+    check{ &io, &r, what = "ability points spent", got = spent, want = 30 }
+
+    _ = @fmt(&io, " derived (rules against the tables)\n")
+    let hit_die = num{ t = classes, row = cx, col = "hitdie" }
+    let con = modifier{ score = c.abil[2] }
+    let dex = modifier{ score = c.abil[1] }
+    let wis = modifier{ score = c.abil[4] }
+    let intel = modifier{ score = c.abil[3] }
+    let toughness = if rules::has_feat{ c = &c, feat = 84 } { 1 } else { 0 }
+    let mut hp = hit_die + con
+    if hp < 1 { hp = 1 }
+    check{ &io, &r, what = "maximum hit points", got = c.stats.max_hp, want = hp + toughness }
+    check{ &io, &r, what = "maximum force points", got = c.stats.max_fp, want = 0 }
+    check{ &io, &r, what = "attack bonus", got = c.stats.bab, want = num{ t = atk, row = 0, col = "bab" } }
+    check{ &io, &r, what = "fortitude", got = c.stats.save_base[0], want = num{ t = saves, row = 0, col = "fortsave" } + con }
+    check{ &io, &r, what = "reflex", got = c.stats.save_base[1], want = num{ t = saves, row = 0, col = "refsave" } + dex }
+    check{ &io, &r, what = "will", got = c.stats.save_base[2], want = num{ t = saves, row = 0, col = "willsave" } + wis }
+    let ac_class = num{ t = acbonus, row = 1, col = ac_code }
+    check{ &io, &r, what = "defense bonus of the class", got = c.stats.ac_class, want = ac_class }
+    check{ &io, &r, what = "defense", got = rules::armor_class_sheet{ tables = &tables, c = &c }, want = 10 + dex + ac_class }
+
+    _ = @fmt(&io, " skills\n")
+    let base = num{ t = classes, row = cx, col = "skillpointbase" }
+    let mut pool = (base / 2 + intel) * 4
+    if pool < 4 { pool = 4 }
+    let mut cost_total: i32 = 0
+    let mut s: usize = 0
+    while s < 8 {
+        let n = frontend::copy_into{ dst = col[..], src = skill_code }
+        let m = frontend::copy_into{ dst = col[n..], src = "_class" }
+        let price: i32 = if num{ t = skills, row = s, col = col[..n + m] } != 0 { 1 } else { 2 }
+        cost_total = cost_total + c.skills[s] * price
+        let cap = if price == 1 { 4 } else { 2 }
+        if c.skills[s] > cap {
+            check{ &io, &r, what = "skill rank within the cap", got = c.skills[s], want = cap }
+        }
+        s = s + 1
+    }
+    check{ &io, &r, what = "skill points spent plus kept", got = cost_total + c.skill_points, want = pool }
+
+    _ = @fmt(&io, " feats\n")
+    let mut granted_missing: i32 = 0
+    let mut extra: i32 = 0
+    let mut bad_extra: i32 = 0
+    let mut f: usize = 0
+    while f < twoda::rows{ t = feats } {
+        let n = frontend::copy_into{ dst = col[..], src = feat_code }
+        let a = frontend::copy_into{ dst = col[n..], src = "_list" }
+        let list = num{ t = feats, row = f, col = col[..n + a] }
+        let b = frontend::copy_into{ dst = col[n..], src = "_granted" }
+        let at = num{ t = feats, row = f, col = col[..n + b] }
+        let has = rules::has_feat{ c = &c, feat = @as(i32, f) }
+        if list == 3 and at == 1 and not has { granted_missing = granted_missing + 1 }
+        if has and not (list == 3 and at == 1) {
+            extra = extra + 1
+            if list != 0 and list != 1 { bad_extra = bad_extra + 1 }
+        }
+        f = f + 1
+    }
+    let g = frontend::copy_into{ dst = col[..], src = gain_code }
+    let g2 = frontend::copy_into{ dst = col[g..], src = "_reg" }
+    let regular = num{ t = featgain, row = 0, col = col[..g + g2] }
+    check{ &io, &r, what = "granted feats missing", got = granted_missing, want = 0 }
+    check{ &io, &r, what = "feats picked", got = extra, want = regular }
+    check{ &io, &r, what = "picked feats the class may pick", got = bad_extra, want = 0 }
+
+    if quick {
+        // Quick Character is the class's recommended build: its scores, the skills of its priority
+        // list bought to the cap in order, and the first feat of its priority list (docs/re/chargen.md C.4).
+        _ = @fmt(&io, " quick build\n")
+        let soldier_skills: [8]i32 = [0, 0, 0, 0, 0, 0, 0, 4]
+        let scout_skills: [8]i32 = [4, 4, 0, 4, 0, 4, 0, 4]
+        let scoundrel_skills: [8]i32 = [0, 4, 4, 4, 0, 2, 4, 2]
+        let quick_feat: [3]i32 = [30, 8, 113]
+        let want: [8]i32 = if class == 0 { soldier_skills } else if class == 1 { scout_skills } else { scoundrel_skills }
+        let mut k: usize = 0
+        while k < 8 {
+            check{ &io, &r, what = "recommended skill ranks", got = c.skills[k], want = want[k] }
+            k = k + 1
+        }
+        check{ &io, &r, what = "recommended feat", got = if rules::has_feat{ c = &c, feat = quick_feat[cx] } { 1 } else { 0 }, want = 1 }
+        let sc: [6]i32 = [16, 14, 14, 10, 12, 10]
+        let sct: [6]i32 = [12, 16, 12, 14, 12, 10]
+        let scd: [6]i32 = [10, 16, 10, 14, 12, 14]
+        let ab: [6]i32 = if class == 0 { sc } else if class == 1 { sct } else { scd }
+        let mut a: usize = 0
+        while a < 6 {
+            check{ &io, &r, what = "recommended score", got = c.abil[a], want = ab[a] }
+            a = a + 1
+        }
+    }
+    _ = @fmt(&io, "verify: {} checks hold, {} do not\n", r.ok, r.bad)
+    return r.bad
+}

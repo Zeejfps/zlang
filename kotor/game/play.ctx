@@ -301,8 +301,12 @@ namespace play {
                 _ = frontend::handle_event{ &fe, &g, ev, scale_x = 1.0, scale_y = 1.0 }
             }
             let mut forced = false
+            let mut forced_player: []u8 = ""            // `newgame FILE`: the player blueprint to start with (tests)
             while next_line < script.len and script[next_line].frame <= frame_no {
-                if script[next_line].command == Command::newgame { forced = true }
+                if script[next_line].command == Command::newgame {
+                    forced = true
+                    forced_player = script[next_line].key
+                }
                 next_line = next_line + 1
             }
             let now = sdl::counter{ &sdl }
@@ -315,10 +319,17 @@ namespace play {
             }
             gui::update{ &g, dt }
             let mut out = frontend::step{ &fe, &g, fs = &w.fs, &dev, &sdl, output = adev, mixer, dt }
-            if forced { out = frontend::Outcome::new_game{ module = resref::truncate{ name = "end_m01aa" } } }
+            if forced {
+                let blueprint = if forced_player.len > 0 {
+                    fs::read_all(heap::Heap){ fs = &w.fs, heap = w.heap, realloc = heap::alloc, path = forced_player } iferr { slice::empty(u8){} }
+                } else { slice::empty(u8){} }
+                out = frontend::Outcome::new_game{ module = resref::truncate{ name = "end_m01aa" }, player = blueprint }
+            }
             match out {
                 running => {}
-                new_game{ module } => {
+                new_game{ module, player } => {
+                    // The character the player made (empty: the engine's default soldier).
+                    try modload::set_player_blueprint{ &w, bytes = player }
                     let mut m = module
                     let name = resref::bytes{ r = &m }
                     let kept = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = name.len }

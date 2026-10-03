@@ -222,6 +222,10 @@ namespace gui {
         if p.mode == Mode::placed {
             p.sx = p.x
             p.sy = p.y
+        } else if p.mode == Mode::framed {
+            // Flags 0x20|0x40 of the original: as if inside a 640x480 frame centred on the screen.
+            p.sx = p.x + (g.ui_w - 640) / 2
+            p.sy = p.y + (g.ui_h - 480) / 2
         } else if p.mode == Mode::dialog {
             // A dialog ignores its file's position (CenterOnScreen).
             p.sx = (g.ui_w - p.w) / 2

@@ -1,0 +1,65 @@
+// The main panel (maincg): the character so far (docs/re/chargen.md B). The panel is shared with
+// the level-up screen; the old/new columns of that one are never made here.
+namespace chargen {
+    const AB_LABEL: [6][]u8 = ["STR_AB_LBL", "DEX_AB_LBL", "CON_AB_LBL", "WIS_AB_LBL", "INT_AB_LBL", "CHA_AB_LBL"]
+    const AB_LABEL_STAT: [6]usize = [0, 1, 2, 4, 3, 5]
+
+    // Controls of the level-up panel that character generation never creates.
+    const UNMADE: [16][]u8 = [
+        "OLD_FORT_LBL", "OLD_REFL_LBL", "OLD_WILL_LBL", "FORT_ARROW_LBL", "WILL_ARROW_LBL", "REFL_ARROW_LBL",
+        "OLD_VIT_LBL", "OLD_DEF_LBL", "NEW_VIT_LBL", "NEW_DEF_LBL", "VIT_ARROW_LBL", "DEF_ARROW_LBL",
+        "OLD_LBL", "NEW_LBL", "LBL_LEVEL", "LBL_LEVEL_VAL",
+    ]
+
+    const VALUE_LABELS: [11][]u8 = [
+        "STR_AB_LBL", "DEX_AB_LBL", "CON_AB_LBL", "WIS_AB_LBL", "INT_AB_LBL", "CHA_AB_LBL",
+        "LBL_DEF", "LBL_VIT", "NEW_FORT_LBL", "NEW_REFL_LBL", "NEW_WILL_LBL",
+    ]
+
+    fn bind_main { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, p: u32 } -> ! {
+        let mut i: usize = 0
+        while i < 16 {
+            gui::set_visible{ &g, panel = p, tag = UNMADE[i], visible = false }
+            i = i + 1
+        }
+        try gui::set_text{ &g, panel = p, tag = "LBL_NAME", text = "" }
+        let name = try gui::tlk_text{ &g, strref = @as(u32, st.tables.classes[@as(usize, st.ch.class)].name) }
+        defer gui::free_string{ &g, s = name }
+        try gui::set_text{ &g, panel = p, tag = "LBL_CLASS", text = name }
+        clear_summary{ &g, p }
+        show_portrait_picture{ st, &g, &fs, &dev, p, tag = "PORTRAIT_LBL", row = st.ch.portrait }
+    }
+
+    // Blanks the eleven value labels.
+    fn clear_summary { mut g: gui::Gui, p: u32 } {
+        let mut i: usize = 0
+        while i < 11 {
+            gui::set_text{ &g, panel = p, tag = VALUE_LABELS[i], text = "" } iferr {}
+            i = i + 1
+        }
+    }
+
+    // Writes the scores, defense, vitality and saves of the class's first level.
+    fn refresh_summary { st: *mut State, mut g: gui::Gui, p: u32 } -> ! {
+        let row = rules::get_class{ tables = st.tables, row = st.ch.class } ifnull { return }
+        let mut i: usize = 0
+        while i < 6 {
+            try set_number{ &g, panel = p, tag = AB_LABEL[i], n = st.ch.abil[AB_LABEL_STAT[i]] }
+            i = i + 1
+        }
+        let dex = modifier_of{ score = st.ch.abil[1] }
+        let con = modifier_of{ score = st.ch.abil[2] }
+        let wis = modifier_of{ score = st.ch.abil[4] }
+        try set_number{ &g, panel = p, tag = "LBL_DEF", n = 10 + dex + row.ac_bonus[1] }
+        try set_number{ &g, panel = p, tag = "LBL_VIT", n = row.hit_die + con }
+        try set_number{ &g, panel = p, tag = "NEW_FORT_LBL", n = con + row.fort[0] }
+        try set_number{ &g, panel = p, tag = "NEW_REFL_LBL", n = dex + row.refl[0] }
+        try set_number{ &g, panel = p, tag = "NEW_WILL_LBL", n = wis + row.will[0] }
+    }
+
+    fn show_main_name { st: *mut State, mut g: gui::Gui } {
+        let p = panel_of_screen{ st, screen = SCR_MAIN }
+        if p == 0 { return }
+        gui::set_text{ &g, panel = p, tag = "LBL_NAME", text = st.ch.name[..st.ch.name_len] } iferr {}
+    }
+}

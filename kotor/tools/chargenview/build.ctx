@@ -1,17 +1,21 @@
-// The build program for menutest: `kotor/tools/ctxc run kotor/tools/menutest`.
+// The build program for chargenview: `kotor/tools/ctxc run kotor/tools/chargenview`.
+//
+// The libraries the previews need (the GUI 3D scene, models, materials, the GL backend), and
+// lib/chargen for preview.ctx, which is one file of the character generation library: that
+// directory's other files need what chargentest's build lists, so this lists the same.
 fn build { mut b: Build } {
-    let exe = build::exe{ &b, name = "menutest", root = "." }
+    let exe = build::exe{ &b, name = "chargenview", root = "." }
     build::add_sources{ &b, exe, dir = "../../lib/base" }
     build::add_sources{ &b, exe, dir = "../../lib/res" }
     build::add_sources{ &b, exe, dir = "../../lib/formats" }
     build::add_sources{ &b, exe, dir = "../../lib/tex" }
-    build::add_sources{ &b, exe, dir = "../../lib/mdl" }
-    build::add_sources{ &b, exe, dir = "../../lib/mdl_cache" }
-    build::add_sources{ &b, exe, dir = "../../lib/mdl_render" }
     build::add_sources{ &b, exe, dir = "../../lib/material" }
     build::add_sources{ &b, exe, dir = "../../lib/platform" }
     build::add_sources{ &b, exe, dir = "../../lib/render" }
     build::add_sources{ &b, exe, dir = "../../lib/render_gl" }
+    build::add_sources{ &b, exe, dir = "../../lib/mdl" }
+    build::add_sources{ &b, exe, dir = "../../lib/mdl_cache" }
+    build::add_sources{ &b, exe, dir = "../../lib/mdl_render" }
     build::add_sources{ &b, exe, dir = "../../lib/audio" }
     build::add_sources{ &b, exe, dir = "../../lib/video" }
     build::add_sources{ &b, exe, dir = "../../lib/gui" }

@@ -1,0 +1,174 @@
+// The finished player as the bytes of a UTC-shaped GFF: the fields the original's character file
+// has (docs/re/chargen-creature.md, 4.1), which are the fields of a saved game's Mod_PlayerList
+// entry that a new character has, so the engine's template reader and lib/rules' read_creature
+// both read it as they read any creature.
+namespace chargen {
+    // Sound sets by gender (soundset.2da: p_playermw, p_playerfw).
+    const SOUNDSET_MALE: u16 = 85
+    const SOUNDSET_FEMALE: u16 = 83
+
+    // The player's custom locstring: no strref, one string of language 0 (English, male).
+    fn put_text { mut b: gffw::Builder(heap::Heap), heap: *mut heap::Heap, owner: u32, label: []u8, text: []u8 } -> ! {
+        let body = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(u8){}, count = 8 + text.len }
+        defer free_bytes{ b = body, heap }
+        let mut i: usize = 0
+        while i < 4 {
+            body[i] = 0
+            i = i + 1
+        }
+        body[4] = @trunc(u8, text.len)
+        body[5] = @trunc(u8, text.len >> 8)
+        body[6] = 0
+        body[7] = 0
+        slice::copy(u8){ dst = body[8..], src = text }
+        _ = try gffw::add_value{ &b, owner, label, value = gff::Value::locstring{ v = gff::LocString{ strref = -1, count = 1, body } } }
+    }
+
+    fn put_empty_text { mut b: gffw::Builder(heap::Heap), owner: u32, label: []u8 } -> ! {
+        _ = try gffw::add_value{ &b, owner, label, value = gff::Value::locstring{ v = gff::LocString{ strref = -1, count = 0, body = slice::empty(u8){} } } }
+    }
+
+    fn put_byte { mut b: gffw::Builder(heap::Heap), owner: u32, label: []u8, v: i32 } -> ! {
+        _ = try gffw::add_value{ &b, owner, label, value = gff::Value::byte{ v = @trunc(u8, v) } }
+    }
+
+    fn put_word { mut b: gffw::Builder(heap::Heap), owner: u32, label: []u8, v: i32 } -> ! {
+        _ = try gffw::add_value{ &b, owner, label, value = gff::Value::word{ v = @trunc(u16, v) } }
+    }
+
+    fn put_short { mut b: gffw::Builder(heap::Heap), owner: u32, label: []u8, v: i32 } -> ! {
+        _ = try gffw::add_value{ &b, owner, label, value = gff::Value::short{ v = @trunc(i16, v) } }
+    }
+
+    fn put_int { mut b: gffw::Builder(heap::Heap), owner: u32, label: []u8, v: i32 } -> ! {
+        _ = try gffw::add_value{ &b, owner, label, value = gff::Value::int{ v } }
+    }
+
+    fn put_dword { mut b: gffw::Builder(heap::Heap), owner: u32, label: []u8, v: u32 } -> ! {
+        _ = try gffw::add_value{ &b, owner, label, value = gff::Value::dword{ v } }
+    }
+
+    fn put_resref { mut b: gffw::Builder(heap::Heap), owner: u32, label: []u8, v: []u8 } -> ! {
+        _ = try gffw::add_value{ &b, owner, label, value = gff::Value::resref{ v } }
+    }
+
+    fn put_string { mut b: gffw::Builder(heap::Heap), owner: u32, label: []u8, v: []u8 } -> ! {
+        _ = try gffw::add_value{ &b, owner, label, value = gff::Value::exostring{ v } }
+    }
+
+    // The ranks of the eight skills as a list of structs with one BYTE `Rank` each.
+    fn put_skill_list { mut b: gffw::Builder(heap::Heap), owner: u32, ranks: []i32 } -> ! {
+        let list = try gffw::put_list{ &b, owner, label = "SkillList" }
+        let mut i: usize = 0
+        while i < ranks.len {
+            let e = try gffw::add_element{ &b, list, id = 0 }
+            try put_byte{ &b, owner = e, label = "Rank", v = ranks[i] }
+            i = i + 1
+        }
+    }
+
+    // Every feat the creature has, as a list of structs with one WORD `Feat` each.
+    fn put_feat_list { mut b: gffw::Builder(heap::Heap), owner: u32, c: *rules::Creature, id: u32 } -> ! {
+        let list = try gffw::put_list{ &b, owner, label = "FeatList" }
+        let mut f: i32 = 0
+        while f < 256 {
+            if rules::has_feat{ c, feat = f } {
+                let e = try gffw::add_element{ &b, list, id }
+                try put_word{ &b, owner = e, label = "Feat", v = f }
+            }
+            f = f + 1
+        }
+    }
+
+    // The script slots the original's player has (the henchman scripts).
+    fn put_scripts { mut b: gffw::Builder(heap::Heap), owner: u32 } -> ! {
+        try put_resref{ &b, owner, label = "ScriptHeartbeat", v = "k_hen_heartbt01" }
+        try put_resref{ &b, owner, label = "ScriptOnNotice", v = "k_hen_percept01" }
+        try put_resref{ &b, owner, label = "ScriptSpellAt", v = "k_def_spellat01" }
+        try put_resref{ &b, owner, label = "ScriptAttacked", v = "k_hen_attacked01" }
+        try put_resref{ &b, owner, label = "ScriptDamaged", v = "k_def_damage01" }
+        try put_resref{ &b, owner, label = "ScriptDisturbed", v = "" }
+        try put_resref{ &b, owner, label = "ScriptEndRound", v = "k_hen_combend01" }
+        try put_resref{ &b, owner, label = "ScriptDialogue", v = "k_hen_dialogue01" }
+        try put_resref{ &b, owner, label = "ScriptSpawn", v = "k_hen_spawn01" }
+        try put_resref{ &b, owner, label = "ScriptRested", v = "" }
+        try put_resref{ &b, owner, label = "ScriptDeath", v = "" }
+        try put_resref{ &b, owner, label = "ScriptUserDefine", v = "k_def_userdef01" }
+        try put_resref{ &b, owner, label = "ScriptOnBlocked", v = "k_def_blocked01" }
+        try put_resref{ &b, owner, label = "ScriptEndDialogu", v = "" }
+    }
+
+    // The creature `c` (from `assemble`) with the choices' name, portrait and appearance. Hit
+    // points are written absolute (the loaders of ours read them so; the original's are relative
+    // and ignored for a new player).
+    fn write_player { heap: *mut heap::Heap, ch: *Choices, c: *rules::Creature, portrait_resref: []u8 } -> !alloc::Bytes {
+        let mut b = try gffw::new{ realloc = heap::alloc, heap, tag = "UTC " }
+        defer gffw::free{ &b }
+        let r = gffw::ROOT
+        try put_text{ &b, heap, owner = r, label = "FirstName", text = ch.name[..ch.name_len] }
+        try put_empty_text{ &b, owner = r, label = "LastName" }
+        try put_empty_text{ &b, owner = r, label = "Description" }
+        try put_dword{ &b, owner = r, label = "Gold", v = 0 }
+        try put_resref{ &b, owner = r, label = "Conversation", v = "" }
+        try put_string{ &b, owner = r, label = "Tag", v = "" }
+        try put_int{ &b, owner = r, label = "Age", v = 0 }
+        try put_byte{ &b, owner = r, label = "Gender", v = ch.gender }
+        try put_byte{ &b, owner = r, label = "Race", v = c.race }
+        try put_byte{ &b, owner = r, label = "SubraceIndex", v = 0 }
+        try put_byte{ &b, owner = r, label = "StartingPackage", v = 0 }
+        try put_byte{ &b, owner = r, label = "IsPC", v = 1 }
+        try put_byte{ &b, owner = r, label = "Interruptable", v = 1 }
+        try put_byte{ &b, owner = r, label = "Disarmable", v = 1 }
+        try put_byte{ &b, owner = r, label = "MClassLevUpIn", v = 0 }
+        try put_word{ &b, owner = r, label = "FactionID", v = 0 }
+        try put_word{ &b, owner = r, label = "SoundSetFile", v = if ch.gender == 1 { @as(i32, SOUNDSET_FEMALE) } else { @as(i32, SOUNDSET_MALE) } }
+        let classes = try gffw::put_list{ &b, owner = r, label = "ClassList" }
+        let cl = try gffw::add_element{ &b, list = classes, id = 2 }
+        try put_short{ &b, owner = cl, label = "ClassLevel", v = 1 }
+        try put_int{ &b, owner = cl, label = "Class", v = ch.class }
+        try put_word{ &b, owner = r, label = "SkillPoints", v = c.skill_points }
+        try put_skill_list{ &b, owner = r, ranks = c.skills[..] }
+        try put_feat_list{ &b, owner = r, c, id = 1 }
+        try put_byte{ &b, owner = r, label = "Str", v = c.abil[0] }
+        try put_byte{ &b, owner = r, label = "Dex", v = c.abil[1] }
+        try put_byte{ &b, owner = r, label = "Con", v = c.abil[2] }
+        try put_byte{ &b, owner = r, label = "Int", v = c.abil[3] }
+        try put_byte{ &b, owner = r, label = "Wis", v = c.abil[4] }
+        try put_byte{ &b, owner = r, label = "Cha", v = c.abil[5] }
+        try put_byte{ &b, owner = r, label = "NaturalAC", v = 0 }
+        try put_short{ &b, owner = r, label = "HitPoints", v = 0 }
+        try put_short{ &b, owner = r, label = "MaxHitPoints", v = c.stats.max_hp }
+        try put_short{ &b, owner = r, label = "PregameCurrent", v = c.stats.max_hp }
+        try put_short{ &b, owner = r, label = "CurrentHitPoints", v = c.stats.max_hp }
+        try put_short{ &b, owner = r, label = "ForcePoints", v = 0 }
+        try put_short{ &b, owner = r, label = "MaxForcePoints", v = c.stats.max_fp }
+        try put_short{ &b, owner = r, label = "CurrentForce", v = 0 }
+        let levels = try gffw::put_list{ &b, owner = r, label = "LvlStatList" }
+        let lv = try gffw::add_element{ &b, list = levels, id = 0 }
+        let rec = c.history[0]
+        try put_byte{ &b, owner = lv, label = "LvlStatHitDie", v = rec.hp }
+        try put_byte{ &b, owner = lv, label = "LvlStatClass", v = rec.class }
+        try put_byte{ &b, owner = lv, label = "LvlStatForce", v = rec.fp }
+        try put_word{ &b, owner = lv, label = "SkillPoints", v = rec.skill_left }
+        try put_skill_list{ &b, owner = lv, ranks = rec.skills[..] }
+        try put_feat_list{ &b, owner = lv, c, id = 0 }
+        try put_dword{ &b, owner = r, label = "Experience", v = 0 }
+        try put_word{ &b, owner = r, label = "PortraitId", v = ch.portrait }
+        try put_resref{ &b, owner = r, label = "Portrait", v = portrait_resref }
+        try put_byte{ &b, owner = r, label = "GoodEvil", v = c.good_evil }
+        try put_byte{ &b, owner = r, label = "Color_Skin", v = 0 }
+        try put_byte{ &b, owner = r, label = "Color_Hair", v = 0 }
+        try put_byte{ &b, owner = r, label = "Color_Tattoo1", v = 0 }
+        try put_byte{ &b, owner = r, label = "Color_Tattoo2", v = 0 }
+        try put_int{ &b, owner = r, label = "Phenotype", v = 0 }
+        try put_word{ &b, owner = r, label = "Appearance_Type", v = ch.appearance }
+        try put_byte{ &b, owner = r, label = "Appearance_Head", v = 1 }
+        try put_byte{ &b, owner = r, label = "DuplicatingHead", v = 255 }
+        try put_byte{ &b, owner = r, label = "UseBackupHead", v = 0 }
+        try put_byte{ &b, owner = r, label = "Tail", v = 0 }
+        try put_byte{ &b, owner = r, label = "Wings", v = 0 }
+        _ = try gffw::put_list{ &b, owner = r, label = "ItemList" }
+        try put_scripts{ &b, owner = r }
+        return try gffw::finish{ &b, layout = gffw::ENGINE }
+    }
+}
