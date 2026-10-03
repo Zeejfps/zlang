@@ -1,0 +1,22 @@
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let mut h = heap::new{ &mem }
+    let mut rm = res::open{ &fs, heap = &h, game = DEFAULT_GAME } iferr err{ error } {
+        _ = @fmt(&io, "rulescheck: can't open the game: {}\n", error)
+        io::flush{ &io }
+        return 1
+    }
+    defer res::close{ &fs, &rm }
+    let mut tables: rules::Tables
+    rules::load_tables{ &fs, rm, heap = &h, out = &tables } iferr err{ error } {
+        _ = @fmt(&io, "rulescheck: tables: {}\n", error)
+        io::flush{ &io }
+        return 1
+    }
+    defer rules::free_tables{ out = &tables, heap = &h }
+    _ = @fmt(&io, "feats {} spells {} baseitems {} sizes {}\n", tables.feats.len, tables.spells.len, tables.baseitems.len, tables.appearance_size.len)
+    _ = @fmt(&io, "soldier hitdie {} bab20 {} fort1 {} fort20 {}\n", tables.classes[0].hit_die, tables.classes[0].bab[19], tables.classes[0].fort[0], tables.classes[0].fort[19])
+    io::flush{ &io }
+    return 0
+}

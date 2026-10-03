@@ -1,0 +1,407 @@
+// Effect values: the internal effect types (rules.md 1.3) and the constructors the script
+// routines Effect* map to (1.2). A constructor returns an Effect with the script defaults
+// (magical, instant, no creator, no spell); the caller sets duration and creator, links groups
+// and applies them with rules::apply_effect_group.
+//
+//   let mut e = fx::make_ac_increase{ amount = 2, kind = 0 }
+//   fx::set_timing{ &e, dur = dur::TEMPORARY, seconds = 30.0 }
+//
+// An effect with kind 0 is "invalid": the engine's constructors return one for arguments they
+// reject (EffectTemporaryHitpoints with an amount of 0), and applying it does nothing.
+namespace rules {
+namespace fx {
+    const INVALID: i32 = 0
+    const HASTE: i32 = 0x01
+    const DAMAGE_RESISTANCE: i32 = 0x02
+    const SLOW: i32 = 0x03
+    const RESURRECTION: i32 = 0x04
+    const DISEASE: i32 = 0x05
+    const SUMMON_CREATURE: i32 = 0x06
+    const REGENERATE: i32 = 0x07
+    const SETSTATE: i32 = 0x08
+    const SETSTATE_INTERNAL: i32 = 0x09
+    const ATTACK_INCREASE: i32 = 0x0a
+    const ATTACK_DECREASE: i32 = 0x0b
+    const DAMAGE_REDUCTION: i32 = 0x0c
+    const DAMAGE_INCREASE: i32 = 0x0d
+    const DAMAGE_DECREASE: i32 = 0x0e
+    const TEMPORARY_HITPOINTS: i32 = 0x0f
+    const DAMAGE_IMMUNITY_INCREASE: i32 = 0x10
+    const DAMAGE_IMMUNITY_DECREASE: i32 = 0x11
+    const ENTANGLE: i32 = 0x12
+    const DEATH: i32 = 0x13
+    const KNOCKDOWN: i32 = 0x14
+    const DEAF: i32 = 0x15
+    const IMMUNITY: i32 = 0x16
+    const SET_AI_STATE: i32 = 0x17
+    const ENEMY_ATTACK_BONUS: i32 = 0x18
+    const ARCANE_SPELL_FAILURE: i32 = 0x19
+    const SAVING_THROW_INCREASE: i32 = 0x1a
+    const SAVING_THROW_DECREASE: i32 = 0x1b
+    const MOVEMENT_SPEED_INCREASE: i32 = 0x1c
+    const MOVEMENT_SPEED_DECREASE: i32 = 0x1d
+    const VISUALEFFECT: i32 = 0x1e
+    const AREA_OF_EFFECT: i32 = 0x1f
+    const BEAM: i32 = 0x20
+    const FORCE_RESISTANCE_INCREASE: i32 = 0x21
+    const FORCE_RESISTANCE_DECREASE: i32 = 0x22
+    const POISON: i32 = 0x23
+    const ABILITY_INCREASE: i32 = 0x24
+    const ABILITY_DECREASE: i32 = 0x25
+    const DAMAGE: i32 = 0x26
+    const HEAL: i32 = 0x27
+    const LINK: i32 = 0x28
+    const HASTE_INTERNAL: i32 = 0x29
+    const SLOW_INTERNAL: i32 = 0x2a
+    const MODIFY_NUM_ATTACKS: i32 = 0x2c
+    const CURSE: i32 = 0x2d
+    const SILENCE: i32 = 0x2e
+    const INVISIBILITY: i32 = 0x2f
+    const AC_INCREASE: i32 = 0x30
+    const AC_DECREASE: i32 = 0x31
+    const SPELL_IMMUNITY: i32 = 0x32
+    const DISPEL_MAGIC_ALL: i32 = 0x33
+    const DISPEL_MAGIC_BEST: i32 = 0x34
+    const TAUNT: i32 = 0x35
+    const LIGHT: i32 = 0x36
+    const SKILL_INCREASE: i32 = 0x37
+    const SKILL_DECREASE: i32 = 0x38
+    const HP_CHANGE_WHEN_DYING: i32 = 0x39
+    const SET_WALK_ANIMATION: i32 = 0x3a
+    const LIMIT_MOVEMENT_SPEED: i32 = 0x3b
+    const FORCE_PUSH: i32 = 0x3c
+    const DAMAGE_SHIELD: i32 = 0x3d
+    const DISGUISE: i32 = 0x3e
+    const SANCTUARY: i32 = 0x3f
+    const TIMESTOP: i32 = 0x40
+    const SPELL_LEVEL_ABSORPTION: i32 = 0x41
+    const ICON: i32 = 0x43
+    const SEE_INVISIBLE: i32 = 0x46
+    const ULTRAVISION: i32 = 0x47
+    const TRUE_SEEING: i32 = 0x48
+    const BLINDNESS: i32 = 0x49
+    const DARKNESS: i32 = 0x4a
+    const MISS_CHANCE: i32 = 0x4b
+    const CONCEALMENT: i32 = 0x4c
+    const NEGATIVE_LEVEL: i32 = 0x52
+    const BONUS_FEAT: i32 = 0x53
+    const FORCE_DRAIN: i32 = 0x5a
+    const TEMPORARY_FORCE_POINTS: i32 = 0x5b
+    const BLASTER_DEFLECTION_INCREASE: i32 = 0x5c
+    const BLASTER_DEFLECTION_DECREASE: i32 = 0x5d
+    const DAMAGE_FORCE_POINTS: i32 = 0x5f
+    const HEAL_FORCE_POINTS: i32 = 0x60
+    const BODY_FUEL: i32 = 0x62
+    const PSYCHIC_STATIC: i32 = 0x63
+    const LIGHTSABER_THROW: i32 = 0x64
+    const ASSURED_HIT: i32 = 0x65
+    const FORCE_JUMP: i32 = 0x66
+    const ASSURED_DEFLECTION: i32 = 0x68
+    const FORCE_RESISTED: i32 = 0x69
+    const FORCE_FIZZLE: i32 = 0x6a
+    const FORCE_SHIELD: i32 = 0x6b
+    const LIGHT_SIDE_MASTERY: i32 = 0x6c
+    const DARK_SIDE_MASTERY: i32 = 0x6d
+    const TYPE_COUNT: i32 = 0x6e
+
+    // SETSTATE's state numbers (rules.md 1.10).
+    const STATE_CONFUSED: i32 = 1
+    const STATE_FRIGHTENED: i32 = 2
+    const STATE_DROID_STUN: i32 = 3
+    const STATE_STUNNED: i32 = 4
+    const STATE_PARALYZED: i32 = 5
+    const STATE_SLEEP: i32 = 6
+    const STATE_CHOKE: i32 = 7
+    const STATE_HORRIFIED: i32 = 8
+    const STATE_WHIRLWIND: i32 = 10
+
+    // The "all damage types" values of an AC effect's damage filter: the exe tests 0x4007 while
+    // the script constant is 0x2007 (combat.md 5, a slip in the original); both mean "all" here.
+    const AC_ALL_A: i32 = 0x4007
+    const AC_ALL_B: i32 = 0x2007
+
+    // ---- building
+
+    // A blank effect of a kind with the script defaults.
+    fn make_effect { kind: i32 } -> rules::Effect {
+        return rules::Effect{
+            id = 0, kind, dur = dur::INSTANT, sub = sub::MAGICAL, duration = 0.0,
+            expire = rules::Time{ day = 0, ms = 0 }, creator = rules::OBJECT_INVALID, spell_id = -1,
+            caster_level = -1, exposed = true, ints = [0; 8], floats = [0.0; 4],
+            objects = [rules::OBJECT_INVALID; 4], handles = [0; 3],
+        }
+    }
+
+    fn make_with { kind: i32, a: i32, b: i32 } -> rules::Effect {
+        let mut e = make_effect{ kind }
+        e.ints[0] = a
+        e.ints[1] = b
+        return e
+    }
+
+    // Sets how long an effect lasts: dur::TEMPORARY with `seconds`, dur::PERMANENT, dur::INSTANT...
+    fn set_timing { mut e: rules::Effect, dur: i32, seconds: f32 } {
+        e.dur = dur
+        e.duration = seconds
+    }
+
+    fn set_creator { mut e: rules::Effect, creator: u32, spell_id: i32 } {
+        e.creator = creator
+        e.spell_id = spell_id
+    }
+
+    // MagicalEffect, SupernaturalEffect, ExtraordinaryEffect.
+    fn set_subtype { mut e: rules::Effect, sub: i32 } {
+        e.sub = sub
+    }
+
+    // ---- constructors of the script routines (rules.md 1.2)
+
+    fn make_assured_hit {} -> rules::Effect { return make_effect{ kind = ASSURED_HIT } }
+    fn make_heal { amount: i32 } -> rules::Effect { return make_with{ kind = HEAL, a = amount, b = 0 } }
+    fn make_heal_force_points { amount: i32 } -> rules::Effect { return make_with{ kind = HEAL_FORCE_POINTS, a = amount, b = 0 } }
+    fn make_damage_force_points { amount: i32 } -> rules::Effect { return make_with{ kind = DAMAGE_FORCE_POINTS, a = amount, b = 0 } }
+    fn make_force_drain { amount: i32 } -> rules::Effect { return make_with{ kind = FORCE_DRAIN, a = amount, b = 0 } }
+    fn make_temporary_force_points { amount: i32 } -> rules::Effect { return make_with{ kind = TEMPORARY_FORCE_POINTS, a = amount, b = 0 } }
+    fn make_resurrection {} -> rules::Effect { return make_effect{ kind = RESURRECTION } }
+    fn make_entangle {} -> rules::Effect { return make_effect{ kind = ENTANGLE } }
+    fn make_knockdown {} -> rules::Effect { return make_effect{ kind = KNOCKDOWN } }
+    fn make_haste {} -> rules::Effect { return make_effect{ kind = HASTE } }
+    fn make_slow {} -> rules::Effect { return make_effect{ kind = SLOW } }
+    fn make_true_seeing {} -> rules::Effect { return make_effect{ kind = TRUE_SEEING } }
+    fn make_see_invisible {} -> rules::Effect { return make_effect{ kind = SEE_INVISIBLE } }
+    fn make_timestop {} -> rules::Effect { return make_effect{ kind = TIMESTOP } }
+    fn make_body_fuel {} -> rules::Effect { return make_effect{ kind = BODY_FUEL } }
+    fn make_psychic_static {} -> rules::Effect { return make_effect{ kind = PSYCHIC_STATIC } }
+    fn make_force_fizzle {} -> rules::Effect { return make_effect{ kind = FORCE_FIZZLE } }
+    fn make_force_pushed {} -> rules::Effect { return make_effect{ kind = FORCE_PUSH } }
+
+    // EffectDeath: spectacular, display feedback.
+    fn make_death { spectacular: bool, feedback: bool } -> rules::Effect {
+        let mut e = make_effect{ kind = DEATH }
+        e.ints[0] = if spectacular { 1 } else { 0 }
+        e.ints[1] = if feedback { 1 } else { 0 }
+        return e
+    }
+
+    // A SETSTATE effect; `cutscene` skips immunity (EffectCutScene*).
+    fn make_state { state: i32, cutscene: bool } -> rules::Effect {
+        let mut e = make_effect{ kind = SETSTATE }
+        e.ints[0] = state
+        e.ints[1] = if cutscene { 1 } else { 0 }
+        return e
+    }
+
+    fn make_paralyze {} -> rules::Effect { return make_state{ state = STATE_PARALYZED, cutscene = false } }
+    fn make_sleep {} -> rules::Effect { return make_state{ state = STATE_SLEEP, cutscene = false } }
+    fn make_confused {} -> rules::Effect { return make_state{ state = STATE_CONFUSED, cutscene = false } }
+    fn make_frightened {} -> rules::Effect { return make_state{ state = STATE_FRIGHTENED, cutscene = false } }
+    fn make_choke {} -> rules::Effect { return make_state{ state = STATE_CHOKE, cutscene = false } }
+    fn make_stunned {} -> rules::Effect { return make_state{ state = STATE_STUNNED, cutscene = false } }
+    fn make_droid_stun {} -> rules::Effect { return make_state{ state = STATE_DROID_STUN, cutscene = false } }
+    fn make_horrified {} -> rules::Effect { return make_state{ state = STATE_HORRIFIED, cutscene = false } }
+    fn make_whirlwind {} -> rules::Effect { return make_state{ state = STATE_WHIRLWIND, cutscene = false } }
+
+    // EffectDamage(amount, damageType, power): the 21 integers of the engine are reduced to the
+    // ones that matter: 0 amount, 1 damage type bits, 2 power, 3 "combat damage" (already
+    // mitigated: skips immunity, resistance and reduction), 4 "no feedback".
+    fn make_damage { amount: i32, types: i32, power: i32 } -> rules::Effect {
+        let mut e = make_effect{ kind = DAMAGE }
+        e.ints[0] = if amount < 0 or amount > 10000 { 1 } else { amount }
+        e.ints[1] = if types < 0 or types > 0x2000 { dmg::UNIVERSAL } else { types }
+        e.ints[2] = if power < 0 or power > 6 { 0 } else { power }
+        return e
+    }
+
+    fn make_ability_increase { ability: i32, amount: i32 } -> rules::Effect { return make_with{ kind = ABILITY_INCREASE, a = ability, b = amount } }
+    fn make_ability_decrease { ability: i32, amount: i32 } -> rules::Effect { return make_with{ kind = ABILITY_DECREASE, a = ability, b = amount } }
+
+    // EffectDamageResistance(type, amount, limit)
+    fn make_damage_resistance { types: i32, amount: i32, limit: i32 } -> rules::Effect {
+        let mut e = make_with{ kind = DAMAGE_RESISTANCE, a = types, b = amount }
+        e.ints[2] = limit
+        return e
+    }
+
+    // EffectDamageReduction(amount, power, limit)
+    fn make_damage_reduction { amount: i32, power: i32, limit: i32 } -> rules::Effect {
+        let mut e = make_with{ kind = DAMAGE_REDUCTION, a = amount, b = power }
+        e.ints[2] = limit
+        return e
+    }
+
+    // EffectACIncrease/Decrease(amount, modifier type 0 dodge .. 4 deflection, damage filter).
+    fn make_ac { kind: i32, amount: i32, mod_type: i32, types: i32 } -> rules::Effect {
+        let mut e = make_effect{ kind }
+        e.ints[0] = if mod_type < 0 or mod_type > 4 { 0 } else { mod_type }
+        e.ints[1] = amount
+        e.ints[2] = race::ANY
+        e.ints[5] = types
+        return e
+    }
+
+    fn make_ac_increase { amount: i32, mod_type: i32 } -> rules::Effect { return make_ac{ kind = AC_INCREASE, amount, mod_type, types = AC_ALL_B } }
+    fn make_ac_decrease { amount: i32, mod_type: i32 } -> rules::Effect { return make_ac{ kind = AC_DECREASE, amount, mod_type, types = AC_ALL_B } }
+
+    // EffectSavingThrowIncrease/Decrease(amount, save 0 all .. 3 will, save type)
+    fn make_save { kind: i32, amount: i32, which: i32, save_type: i32 } -> rules::Effect {
+        let mut e = make_effect{ kind }
+        e.ints[0] = amount
+        e.ints[1] = which
+        e.ints[2] = save_type
+        e.ints[3] = race::ANY
+        return e
+    }
+
+    fn make_save_increase { amount: i32, which: i32, save_type: i32 } -> rules::Effect { return make_save{ kind = SAVING_THROW_INCREASE, amount, which, save_type } }
+    fn make_save_decrease { amount: i32, which: i32, save_type: i32 } -> rules::Effect { return make_save{ kind = SAVING_THROW_DECREASE, amount, which, save_type } }
+
+    // EffectAttackIncrease/Decrease(amount, 0 misc, 1 on-hand, 2 off-hand)
+    fn make_attack { kind: i32, amount: i32, hand: i32 } -> rules::Effect {
+        let mut e = make_effect{ kind }
+        e.ints[0] = amount
+        e.ints[1] = hand
+        e.ints[2] = race::ANY
+        return e
+    }
+
+    fn make_attack_increase { amount: i32, hand: i32 } -> rules::Effect { return make_attack{ kind = ATTACK_INCREASE, amount, hand } }
+    fn make_attack_decrease { amount: i32, hand: i32 } -> rules::Effect { return make_attack{ kind = ATTACK_DECREASE, amount, hand } }
+
+    // EffectDamageIncrease/Decrease(amount (an iprp_damagecost row), damage type)
+    fn make_damage_change { kind: i32, amount: i32, types: i32 } -> rules::Effect {
+        let mut e = make_effect{ kind }
+        e.ints[0] = amount
+        e.ints[1] = types
+        e.ints[2] = race::ANY
+        return e
+    }
+
+    fn make_damage_increase { amount: i32, types: i32 } -> rules::Effect { return make_damage_change{ kind = DAMAGE_INCREASE, amount, types } }
+    fn make_damage_decrease { amount: i32, types: i32 } -> rules::Effect { return make_damage_change{ kind = DAMAGE_DECREASE, amount, types } }
+
+    fn make_damage_immunity_increase { types: i32, percent: i32 } -> rules::Effect { return make_with{ kind = DAMAGE_IMMUNITY_INCREASE, a = types, b = percent } }
+    fn make_damage_immunity_decrease { types: i32, percent: i32 } -> rules::Effect { return make_with{ kind = DAMAGE_IMMUNITY_DECREASE, a = types, b = percent } }
+
+    fn make_immunity { immunity: i32 } -> rules::Effect {
+        let mut e = make_effect{ kind = IMMUNITY }
+        e.ints[0] = immunity
+        e.ints[1] = race::ANY
+        return e
+    }
+
+    fn make_spell_immunity { spell: i32 } -> rules::Effect { return make_with{ kind = SPELL_IMMUNITY, a = spell, b = 0 } }
+
+    // EffectSkillIncrease/Decrease(skill, amount)
+    fn make_skill { kind: i32, skill: i32, amount: i32 } -> rules::Effect {
+        let mut e = make_effect{ kind }
+        e.ints[0] = skill
+        e.ints[1] = amount
+        e.ints[2] = race::ANY
+        return e
+    }
+
+    fn make_skill_increase { skill: i32, amount: i32 } -> rules::Effect { return make_skill{ kind = SKILL_INCREASE, skill, amount } }
+    fn make_skill_decrease { skill: i32, amount: i32 } -> rules::Effect { return make_skill{ kind = SKILL_DECREASE, skill, amount } }
+
+    fn make_force_resistance_increase { amount: i32 } -> rules::Effect { return make_with{ kind = FORCE_RESISTANCE_INCREASE, a = amount, b = 0 } }
+    fn make_force_resistance_decrease { amount: i32 } -> rules::Effect { return make_with{ kind = FORCE_RESISTANCE_DECREASE, a = amount, b = 0 } }
+    fn make_movement_speed_increase { percent: i32 } -> rules::Effect { return make_with{ kind = MOVEMENT_SPEED_INCREASE, a = percent, b = 0 } }
+    fn make_movement_speed_decrease { percent: i32 } -> rules::Effect { return make_with{ kind = MOVEMENT_SPEED_DECREASE, a = percent, b = 0 } }
+    fn make_blaster_deflection_increase { amount: i32 } -> rules::Effect { return make_with{ kind = BLASTER_DEFLECTION_INCREASE, a = amount, b = 0 } }
+    fn make_blaster_deflection_decrease { amount: i32 } -> rules::Effect { return make_with{ kind = BLASTER_DEFLECTION_DECREASE, a = amount, b = 0 } }
+    fn make_poison { poison_row: i32 } -> rules::Effect { return make_with{ kind = POISON, a = poison_row, b = 0 } }
+    fn make_modify_attacks { attacks: i32 } -> rules::Effect { return make_with{ kind = MODIFY_NUM_ATTACKS, a = attacks, b = 0 } }
+    fn make_visual_effect { vfx: i32, miss: bool } -> rules::Effect {
+        let mut e = make_with{ kind = VISUALEFFECT, a = vfx, b = 0 }
+        e.ints[2] = if miss { 1 } else { 0 }
+        return e
+    }
+    fn make_icon { icon: i32 } -> rules::Effect { return make_with{ kind = ICON, a = icon, b = 0 } }
+    fn make_disguise { appearance: i32 } -> rules::Effect { return make_with{ kind = DISGUISE, a = appearance, b = 0 } }
+    fn make_force_shield { shield: i32 } -> rules::Effect { return make_with{ kind = FORCE_SHIELD, a = shield, b = 0 } }
+
+    // EffectTemporaryHitpoints: an amount below 1 gives an invalid effect.
+    fn make_temporary_hitpoints { amount: i32 } -> rules::Effect {
+        if amount <= 0 { return make_effect{ kind = INVALID } }
+        return make_with{ kind = TEMPORARY_HITPOINTS, a = amount, b = 0 }
+    }
+
+    // EffectRegenerate(amount, interval in seconds): int1 is in milliseconds.
+    fn make_regenerate { amount: i32, seconds: f32 } -> rules::Effect {
+        let mut e = make_with{ kind = REGENERATE, a = amount, b = @as(i32, seconds * 1000.0) }
+        e.ints[4] = 0
+        return e
+    }
+
+    // EffectConcealment/EffectMissChance: a percentage outside 1..100 gives an invalid effect.
+    fn make_concealment { percent: i32 } -> rules::Effect {
+        if percent < 1 or percent > 100 { return make_effect{ kind = INVALID } }
+        let mut e = make_with{ kind = CONCEALMENT, a = percent, b = race::ANY }
+        return e
+    }
+
+    fn make_invisibility { invisibility_type: i32 } -> rules::Effect {
+        return make_with{ kind = INVISIBILITY, a = invisibility_type, b = race::ANY }
+    }
+
+    // EffectDamageShield(amount, random amount, damage type)
+    fn make_damage_shield { amount: i32, random: i32, types: i32 } -> rules::Effect {
+        let mut e = make_with{ kind = DAMAGE_SHIELD, a = amount, b = random }
+        e.ints[2] = types
+        return e
+    }
+
+    // ---- groups (EffectLinkEffects)
+
+    fn make_group { e: rules::Effect } -> rules::EffectGroup {
+        let mut g: rules::EffectGroup
+        g.len = 1
+        g.items[0] = e
+        return g
+    }
+
+    // Link(child, parent): the leaves of both, the parent's first (the order they are applied in
+    // is the order of the list). Leaves beyond rules::GROUP_MAX are dropped.
+    fn link_groups { child: rules::EffectGroup, parent: rules::EffectGroup } -> rules::EffectGroup {
+        let mut g = parent
+        let mut i: usize = 0
+        while i < @as(usize, child.len) and @as(usize, g.len) < rules::GROUP_MAX {
+            g.items[@as(usize, g.len)] = child.items[i]
+            g.len = g.len + 1
+            i = i + 1
+        }
+        return g
+    }
+
+    // Stamps a fresh id on every leaf of a group: one id for the whole link, taken from the
+    // world's counter. Call it once when a script creates or links an effect.
+    fn assign_id { mut ids: rules::EffectIds, mut g: rules::EffectGroup } {
+        ids.next = ids.next + 1
+        let mut i: usize = 0
+        while i < @as(usize, g.len) {
+            g.items[i].id = ids.next
+            i = i + 1
+        }
+    }
+
+    // SetEffectDuration-like helpers applied to every leaf (ApplyEffectToObject does this).
+    fn set_group_timing { mut g: rules::EffectGroup, dur: i32, seconds: f32 } {
+        let mut i: usize = 0
+        while i < @as(usize, g.len) {
+            g.items[i].dur = dur
+            g.items[i].duration = seconds
+            i = i + 1
+        }
+    }
+
+    fn set_group_creator { mut g: rules::EffectGroup, creator: u32, spell_id: i32 } {
+        let mut i: usize = 0
+        while i < @as(usize, g.len) {
+            g.items[i].creator = creator
+            g.items[i].spell_id = spell_id
+            i = i + 1
+        }
+    }
+}
+}

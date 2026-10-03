@@ -1,0 +1,11 @@
+// rulescheck: loads every creature and item blueprint in the install, computes the rules' derived
+// stats for each and checks the worked examples of docs/re/*.md.
+//   kotor/tools/ctxc run kotor/tools/rulescheck -- [--game DIR] [--only tables|creatures|items|examples]
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "rulescheck", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/base" }
+    build::add_sources{ &b, exe, dir = "../../lib/formats" }
+    build::add_sources{ &b, exe, dir = "../../lib/res" }
+    build::add_sources{ &b, exe, dir = "../../lib/rules" }
+    build::add_sources{ &b, exe, dir = "../common" }
+}
