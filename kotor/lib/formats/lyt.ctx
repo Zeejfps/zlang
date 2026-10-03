@@ -1,0 +1,192 @@
+// LYT area layouts (docs/formats/lyt.md): the room models an area is built from and where each
+// sits, plus minigame track and obstacle models, and the door hooks of the designer's scene.
+//
+//   let l = try lyt::parse{ data, realloc, &heap }
+//   defer lyt::free{ l, realloc, &heap }
+//   draw room model l.rooms[i].model at (x, y, z), unrotated; its walkmesh is already in place
+//
+// The text is BioWare's 3ds Max exporter's (`#MAXLAYOUT ASCII`). The reader follows lyt.md's rule:
+// lines split on any run of spaces and tabs, indentation ignored; `#` lines skipped; before
+// `beginlayout` only `filedependancy`; inside, a `...count n` line opens a section whose next n
+// non-blank lines are its entries; `donelayout` ends the file, and whatever follows it is ignored.
+// Model names are resrefs, so they come back lower-cased (`M01aa_08c` is `m01aa_08c`).
+//
+// The arrays are in memory from `realloc`; the layout keeps nothing of `data`.
+namespace lyt {
+    // A line that fits no rule: an unknown keyword, or anything but `filedependancy` before
+    // `beginlayout`. Lines count from 1.
+    error bad_line{ line: u32 }
+    // A count that isn't a non-negative decimal number.
+    error bad_count{ line: u32 }
+    // An entry with the wrong number of fields, a name longer than a resref, or a field that isn't
+    // a number.
+    error bad_entry{ line: u32 }
+    // A section's count runs past `donelayout` or the end of the text, or there is no
+    // `donelayout`.
+    error unfinished{ line: u32 }
+
+    // A room, track or obstacle: its model, placed at (x, y, z) in the area's frame (metres, Z up).
+    struct Placement { model: resref::ResRef, x: f32, y: f32, z: f32 }
+
+    // A door position from the designer's scene. Doors come from the GIT, not from these; the
+    // orientation is a unit quaternion in the order w, x, y, z (a yaw: qx and qy are 0).
+    struct DoorHook {
+        room: resref::ResRef,
+        door: resref::ResRef,
+        flag: i32,                  // 0 in every shipped hook
+        x: f32, y: f32, z: f32,
+        qw: f32, qx: f32, qy: f32, qz: f32,
+    }
+
+    struct Layout {
+        rooms: []mut Placement,
+        tracks: []mut Placement,        // minigames only
+        obstacles: []mut Placement,     // minigames only
+        doorhooks: []mut DoorHook,
+        blanked: u32,                   // `****` room lines: a cutscene layout's "no room here", skipped
+    }
+
+    enum Section: u8 { none, rooms, tracks, obstacles, doorhooks }
+
+    fn parse(S) { data: []u8, realloc: alloc::Fn(S), mut heap: S } -> !Layout {
+        let mut rooms = list::new(Placement, S){ realloc, heap = &heap }
+        let mut tracks = list::new(Placement, S){ realloc, heap = &heap }
+        let mut obstacles = list::new(Placement, S){ realloc, heap = &heap }
+        let mut hooks = list::new(DoorHook, S){ realloc, heap = &heap }
+        // On success the lists are empty by then (lists::take), so these free only on an error.
+        defer list::free{ list = &rooms }
+        defer list::free{ list = &tracks }
+        defer list::free{ list = &obstacles }
+        defer list::free{ list = &hooks }
+
+        let mut blanked: u32 = 0
+        let mut begun = false
+        let mut done = false
+        let mut section = Section::none
+        let mut remaining: u64 = 0
+        let mut lines = text::lines{ data }
+        let mut line: u32 = 0
+        while true {
+            let raw = text::next_line{ &lines } ifnull { break }
+            line = line + 1
+            let mut w: [11][]u8
+            let n = split{ s = raw, into = w[..] }
+            if n == 0 or w[0][0] == '#' { continue }
+            if not begun {
+                if ci::eq{ a = w[0], b = "filedependancy" } { continue }
+                if n == 1 and ci::eq{ a = w[0], b = "beginlayout" } {
+                    begun = true
+                    continue
+                }
+                return bad_line{ line }
+            }
+            if remaining > 0 {
+                remaining = remaining - 1
+                if section == Section::doorhooks {
+                    if n != 10 or not text::is_integer{ s = w[2] } { return bad_entry{ line } }
+                    let mut f: [7]f32
+                    if not read_floats{ words = w[3..10], into = f[..] } { return bad_entry{ line } }
+                    try list::push{ list = &hooks, item = DoorHook{
+                        room = resref::from{ name = w[0] } iferr { return bad_entry{ line } },
+                        door = resref::from{ name = w[1] } iferr { return bad_entry{ line } },
+                        flag = @trunc(i32, text::scan_decimal{ s = w[2] }),
+                        x = f[0], y = f[1], z = f[2], qw = f[3], qx = f[4], qy = f[5], qz = f[6],
+                    } }
+                    continue
+                }
+                if n != 4 { return bad_entry{ line } }
+                if slice::eq_bytes{ a = w[0], b = "****" } {
+                    blanked = blanked + 1
+                    continue
+                }
+                let mut f: [3]f32
+                if not read_floats{ words = w[1..4], into = f[..] } { return bad_entry{ line } }
+                let p = Placement{
+                    model = resref::from{ name = w[0] } iferr { return bad_entry{ line } },
+                    x = f[0], y = f[1], z = f[2],
+                }
+                match section {
+                    rooms     => { try list::push{ list = &rooms, item = p } }
+                    tracks    => { try list::push{ list = &tracks, item = p } }
+                    obstacles => { try list::push{ list = &obstacles, item = p } }
+                    else      => { @panic("lyt::parse: entry outside a section") }
+                }
+                continue
+            }
+            let s = section_of{ word = w[0] }
+            if s != Section::none {
+                if n != 2 or not text::is_integer{ s = w[1] } or w[1][0] == '-' { return bad_count{ line } }
+                section = s
+                remaining = @as(u64, text::scan_decimal{ s = w[1] })
+                continue
+            }
+            if n == 1 and ci::eq{ a = w[0], b = "donelayout" } {
+                done = true
+                break
+            }
+            return bad_line{ line }
+        }
+        if remaining > 0 or not done { return unfinished{ line } }
+        return Layout{
+            rooms = try lists::take{ list = &rooms },
+            tracks = try lists::take{ list = &tracks },
+            obstacles = try lists::take{ list = &obstacles },
+            doorhooks = try lists::take{ list = &hooks },
+            blanked,
+        }
+    }
+
+    // Gives back what `parse` took from `realloc`.
+    fn free(S) { l: Layout, realloc: alloc::Fn(S), mut heap: S } {
+        _ = alloc::resize(Placement, S){ realloc, &heap, mem = l.rooms, count = 0 }
+        _ = alloc::resize(Placement, S){ realloc, &heap, mem = l.tracks, count = 0 }
+        _ = alloc::resize(Placement, S){ realloc, &heap, mem = l.obstacles, count = 0 }
+        _ = alloc::resize(DoorHook, S){ realloc, &heap, mem = l.doorhooks, count = 0 }
+    }
+
+    // The room whose model is `name`, ignoring case: VIS names rooms by model, in its own case.
+    fn find_room { l: Layout, name: []u8 } -> ?usize {
+        let mut i: usize = 0
+        while i < l.rooms.len {
+            if resref::matches{ r = l.rooms[i].model, name } { return i }
+            i = i + 1
+        }
+        return null
+    }
+
+    // ---- internals
+
+    fn section_of { word: []u8 } -> Section {
+        if ci::eq{ a = word, b = "roomcount" } { return Section::rooms }
+        if ci::eq{ a = word, b = "trackcount" } { return Section::tracks }
+        if ci::eq{ a = word, b = "obstaclecount" } { return Section::obstacles }
+        if ci::eq{ a = word, b = "doorhookcount" } { return Section::doorhooks }
+        return Section::none
+    }
+
+    // Splits `s` on runs of spaces and tabs into `into`; returns how many words there are, which
+    // may be more than `into` holds (only those fit are stored).
+    fn split { s: []u8, into: []mut []u8 } -> usize {
+        let mut ws = text::words{ s }
+        let mut n: usize = 0
+        while true {
+            let word = text::next_word{ words = &ws } ifnull { break }
+            if n < into.len { into[n] = word }
+            n = n + 1
+        }
+        return n
+    }
+
+    // Each word as a float, the whole word (printf's %g output: `39.4685`, `-1.26441e-007`).
+    // False if one isn't.
+    fn read_floats { words: [][]u8, into: []mut f32 } -> bool {
+        let mut i: usize = 0
+        while i < words.len {
+            if not text::is_float{ s = words[i] } { return false }
+            into[i] = text::scan_f32{ s = words[i] } ifnull { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+}

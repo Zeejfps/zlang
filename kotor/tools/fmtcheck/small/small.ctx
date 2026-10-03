@@ -1,29 +1,401 @@
-// The corpus checks of the small formats (TLK, SSF, LIP, LTR, LYT, VIS, TXI). A stub: fmtcheck's
-// driver (../main.ctx) calls these.
+// The corpus checks of the small formats (TLK, SSF, LIP, LTR, LYT, VIS, TXI), which fmtcheck's
+// driver (../main.ctx) calls: every copy of each type is parsed with lib/formats' readers, and the
+// counts printed are the ones docs/formats/*.md report under "Checked" from the Python probes, so
+// the two can be compared line by line. TXI is read both as standalone resources and from the end
+// of every TPC. dialog.tlk is a file, not a resource: check_tlk fetches every StrRef in it.
 namespace fmt_small {
-    struct Stats { copies: u64 }
+    struct Count { copies: u64, failed: u64 }
+
+    struct Stats {
+        ssf: Count,
+        ssf_long: u64,              // NWN-layout files: 49 entries
+        ssf_filled: u64,            // slots 1..28 with a StrRef
+        lip: Count,
+        lip_keys: u64,
+        lip_rest: u64,              // first key at t = 0 and last at t = length, both shape 0
+        ltr: Count,
+        lyt: Count,
+        lyt_rooms: u64,             // room lines, `****` included
+        lyt_blanked: u64,
+        lyt_tracks: u64,
+        lyt_obstacles: u64,
+        lyt_hooks: u64,
+        vis: Count,
+        vis_entries: u64,
+        vis_names: u64,
+        vis_mismatches: u64,
+        txi: Count,                 // standalone .txi
+        tpc: Count,                 // TPCs whose pixel data was sized and whose tail was read
+        tpc_cube: u64,
+        tpc_cube_txi: u64,          // cube maps whose TXI says `cube 1`
+        tpc_flipbook: u64,
+        tpc_flipbook_txi: u64,      // flipbooks whose TXI says `proceduretype cycle` and whose frames fill the data
+        tpc_text: u64,              // TPCs with TXI text, parsed
+        fonts: u64,                 // TXIs with numchars
+        fonts_ok: u64,              // ... whose glyph blocks have numchars lines each
+    }
 
     fn new_stats {} -> Stats {
-        return Stats{ copies = 0 }
+        let mut st: Stats
+        return st
     }
 
     // Whether this file checks resources of type `kind`.
     fn wants { kind: u16 } -> bool {
-        return false
+        let t = restype::of_id{ id = kind } ifnull { return false }
+        return t is ssf | lip | ltr | lyt | vis | txi | tpc
     }
 
     // One copy of a wanted type. `scratch` is reset after each copy.
     fn check { mut io: Io, mut st: Stats, mut scratch: arena::Arena, copy: corpus::Copy, data: []u8, verbose: bool } {
-        st.copies = st.copies + 1
+        let t = restype::of_id{ id = copy.kind } ifnull { return }
+        match t {
+            ssf  => { check_ssf{ &io, &st, copy, data } }
+            lip  => { check_lip{ &io, &st, copy, data } }
+            ltr  => { check_ltr{ &io, &st, copy, data, verbose } }
+            lyt  => { check_lyt{ &io, &st, &scratch, copy, data } }
+            vis  => { check_vis{ &io, &st, &scratch, copy, data, verbose } }
+            txi  => {
+                st.txi.copies = st.txi.copies + 1
+                if check_txi{ &io, &st, &scratch, copy, data, verbose } == null { st.txi.failed = st.txi.failed + 1 }
+            }
+            tpc  => { check_tpc{ &io, &st, &scratch, copy, data, verbose } }
+            else => { }
+        }
     }
 
     // Prints the results; returns how many copies failed.
     fn report { mut io: Io, st: Stats } -> u64 {
-        return 0
+        _ = @fmt(&io, "ssf: {} copies, {} failures; {} with 40 entries, {} with 49; {} filled slots\n",
+            st.ssf.copies, st.ssf.failed, st.ssf.copies - st.ssf.failed - st.ssf_long, st.ssf_long, st.ssf_filled)
+        _ = @fmt(&io, "lip: {} copies, {} failures; {} keys; first key t=0 shape 0 and last key t=length shape 0: {}\n",
+            st.lip.copies, st.lip.failed, st.lip_keys, st.lip_rest)
+        _ = @fmt(&io, "ltr: {} copies, {} failures\n", st.ltr.copies, st.ltr.failed)
+        _ = @fmt(&io, "lyt: {} copies, {} failures; {} room lines ({} ****), {} tracks, {} obstacles, {} door hooks\n",
+            st.lyt.copies, st.lyt.failed, st.lyt_rooms, st.lyt_blanked, st.lyt_tracks, st.lyt_obstacles, st.lyt_hooks)
+        _ = @fmt(&io, "vis: {} copies, {} failures; {} entries, {} visible-room lines, {} count mismatches\n",
+            st.vis.copies, st.vis.failed, st.vis_entries, st.vis_names, st.vis_mismatches)
+        _ = @fmt(&io, "txi: {} standalone parsed, {} failures; {} appended to TPCs parsed; {} fonts, {} with numchars glyph lines\n",
+            st.txi.copies, st.txi.failed, st.tpc_text, st.fonts, st.fonts_ok)
+        _ = @fmt(&io, "tpc: {} copies, {} failures; {} cube maps ({} with `cube 1`), {} flipbooks ({} cycle, frames filling the data)\n",
+            st.tpc.copies, st.tpc.failed, st.tpc_cube, st.tpc_cube_txi, st.tpc_flipbook, st.tpc_flipbook_txi)
+        return st.ssf.failed + st.lip.failed + st.ltr.failed + st.lyt.failed + st.vis.failed + st.txi.failed + st.tpc.failed
     }
 
-    // dialog.tlk, which is a file, not a resource. Returns how many failures.
+    // ---- per format
+
+    fn check_ssf { mut io: Io, mut st: Stats, copy: corpus::Copy, data: []u8 } {
+        st.ssf.copies = st.ssf.copies + 1
+        let set = ssf::parse{ data } iferr err{ error } {
+            st.ssf.failed = st.ssf.failed + 1
+            _ = @fmt(&io, "ssf FAIL {}: {}\n", copy, error)
+            return
+        }
+        if set.entries == 49 { st.ssf_long = st.ssf_long + 1 }
+        let mut k: u32 = 1
+        while k <= 28 {
+            if ssf::get{ set, k } != null { st.ssf_filled = st.ssf_filled + 1 }
+            k = k + 1
+        }
+    }
+
+    fn check_lip { mut io: Io, mut st: Stats, copy: corpus::Copy, data: []u8 } {
+        st.lip.copies = st.lip.copies + 1
+        let l = lip::parse{ data } iferr err{ error } {
+            st.lip.failed = st.lip.failed + 1
+            _ = @fmt(&io, "lip FAIL {}: {}\n", copy, error)
+            return
+        }
+        st.lip_keys = st.lip_keys + l.count
+        if l.count == 0 { return }
+        let first = lip::get_key{ l, i = 0 }
+        let last = lip::get_key{ l, i = @as(usize, l.count) - 1 }
+        if first.time == 0.0 and first.shape == lip::Shape::ee and last.time == l.length and last.shape == lip::Shape::ee {
+            st.lip_rest = st.lip_rest + 1
+        }
+    }
+
+    // Every value of every array must be a probability; with -v, five names from the generator.
+    fn check_ltr { mut io: Io, mut st: Stats, copy: corpus::Copy, data: []u8, verbose: bool } {
+        st.ltr.copies = st.ltr.copies + 1
+        let t = ltr::parse{ data } iferr err{ error } {
+            st.ltr.failed = st.ltr.failed + 1
+            _ = @fmt(&io, "ltr FAIL {}: {}\n", copy, error)
+            return
+        }
+        let n = t.letters
+        let blocks = 1 + n + n * n
+        let mut k: usize = 0
+        while k < blocks {
+            let b = if k == 0 { ltr::get_singles{ t } } else if k <= n { ltr::get_doubles{ t, a = k - 1 } } else {
+                ltr::get_triples{ t, a = (k - 1 - n) / n, b = (k - 1 - n) % n }
+            }
+            let mut part: u8 = 0
+            while part < 3 {
+                let mut i: usize = 0
+                while i < n {
+                    let v = ltr::get_value{ b, part = @as(ltr::Part, part), i }
+                    if not (v >= 0.0 and v <= 1.0001) {
+                        st.ltr.failed = st.ltr.failed + 1
+                        _ = @fmt(&io, "ltr FAIL {}: block {} array {} letter {} is {}\n", copy, k, part, i, v)
+                        return
+                    }
+                    i = i + 1
+                }
+                part = part + 1
+            }
+            k = k + 1
+        }
+        if verbose {
+            let mut rng = ltr::seed_rng{ seed = 1 }
+            _ = @fmt(&io, "ltr {}: {} letters; names:", copy, n)
+            let mut i: usize = 0
+            while i < 5 {
+                let mut buf: [32]u8
+                let name = ltr::generate{ t, &rng, max_len = 0, into = buf[..] }
+                _ = @fmt(&io, " {}", name)
+                i = i + 1
+            }
+            _ = @fmt(&io, "\n")
+        }
+    }
+
+    fn check_lyt { mut io: Io, mut st: Stats, mut scratch: arena::Arena, copy: corpus::Copy, data: []u8 } {
+        st.lyt.copies = st.lyt.copies + 1
+        let l = lyt::parse{ data, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
+            st.lyt.failed = st.lyt.failed + 1
+            _ = @fmt(&io, "lyt FAIL {}: {}\n", copy, error)
+            return
+        }
+        st.lyt_rooms = st.lyt_rooms + l.rooms.len + l.blanked
+        st.lyt_blanked = st.lyt_blanked + l.blanked
+        st.lyt_tracks = st.lyt_tracks + l.tracks.len
+        st.lyt_obstacles = st.lyt_obstacles + l.obstacles.len
+        st.lyt_hooks = st.lyt_hooks + l.doorhooks.len
+    }
+
+    // With -v, each entry whose count is missing or wrong.
+    fn check_vis { mut io: Io, mut st: Stats, mut scratch: arena::Arena, copy: corpus::Copy, data: []u8, verbose: bool } {
+        st.vis.copies = st.vis.copies + 1
+        let v = vis::parse{ data, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
+            st.vis.failed = st.vis.failed + 1
+            _ = @fmt(&io, "vis FAIL {}: {}\n", copy, error)
+            return
+        }
+        st.vis_entries = st.vis_entries + v.entries.len
+        st.vis_names = st.vis_names + v.names.len
+        st.vis_mismatches = st.vis_mismatches + v.mismatches
+        if not verbose { return }
+        let mut i: usize = 0
+        while i < v.entries.len {
+            let e = v.entries[i]
+            i = i + 1
+            match e.declared {
+                null => { _ = @fmt(&io, "vis {}: {} has no count ({} names follow)\n", copy, e.room, e.count) }
+                some{ value } => {
+                    if value != e.count { _ = @fmt(&io, "vis {}: {} declares {}, {} names follow\n", copy, e.room, value, e.count) }
+                }
+            }
+        }
+    }
+
+    // Parses TXI text and checks a font's glyph blocks; null if it failed (out of memory: the
+    // parser takes any text).
+    fn check_txi { mut io: Io, mut st: Stats, mut scratch: arena::Arena, copy: corpus::Copy, data: []u8, verbose: bool } -> ?txi::Txi {
+        let t = txi::parse{ data, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
+            _ = @fmt(&io, "txi FAIL {}: {}\n", copy, error)
+            return null
+        }
+        if t.numchars > 0 {
+            st.fonts = st.fonts + 1
+            let n = @as(usize, t.numchars)
+            if t.upperleftcoords.len == n and t.lowerrightcoords.len == n {
+                st.fonts_ok = st.fonts_ok + 1
+            } else {
+                _ = @fmt(&io, "txi {}: numchars {}, but {} upper-left and {} lower-right corners\n",
+                    copy, t.numchars, t.upperleftcoords.len, t.lowerrightcoords.len)
+            }
+            if verbose and n > 65 {
+                let a = t.upperleftcoords[65]
+                let b = t.lowerrightcoords[65]
+                _ = @fmt(&io, "txi {}: font, {} glyphs, height {}, 'A' from ({}, {}) to ({}, {})\n",
+                    copy, t.numchars, t.fontheight, a.u, a.v, b.u, b.v)
+            }
+        }
+        return t
+    }
+
+    // Sizes the pixel data, checks that what follows is text, parses it, and cross-checks cube
+    // maps and flipbooks against their TXI (tpc.md: both hold for every shipped TPC).
+    fn check_tpc { mut io: Io, mut st: Stats, mut scratch: arena::Arena, copy: corpus::Copy, data: []u8, verbose: bool } {
+        st.tpc.copies = st.tpc.copies + 1
+        let px = txi::size_tpc_pixels{ data } iferr err{ error } {
+            st.tpc.failed = st.tpc.failed + 1
+            _ = @fmt(&io, "tpc FAIL {}: {}\n", copy, error)
+            return
+        }
+        let text = txi::find_in_tpc{ data } iferr err{ error } {
+            st.tpc.failed = st.tpc.failed + 1
+            _ = @fmt(&io, "tpc FAIL {}: {}\n", copy, error)
+            return
+        }
+        // All of the tail, not just up to a NUL, must be text.
+        let tail = data[128 + @as(usize, px.bytes)..]
+        let mut i: usize = 0
+        while i < tail.len {
+            let c = tail[i]
+            if not (c == '\t' or c == '\r' or c == '\n' or (c >= 32 and c < 127)) {
+                st.tpc.failed = st.tpc.failed + 1
+                _ = @fmt(&io, "tpc FAIL {}: byte {} of the {} after the pixel data is {}\n", copy, i, tail.len, c)
+                return
+            }
+            i = i + 1
+        }
+        if px.kind == txi::TpcKind::cube { st.tpc_cube = st.tpc_cube + 1 }
+        if px.kind == txi::TpcKind::flipbook { st.tpc_flipbook = st.tpc_flipbook + 1 }
+        let mut t = txi::defaults{}
+        if text.len > 0 {
+            t = check_txi{ &io, &st, &scratch, copy, data = text, verbose } ifnull {
+                st.tpc.failed = st.tpc.failed + 1
+                return
+            }
+            st.tpc_text = st.tpc_text + 1
+        }
+        if px.kind == txi::TpcKind::cube {
+            if t.cube {
+                st.tpc_cube_txi = st.tpc_cube_txi + 1
+            } else {
+                st.tpc.failed = st.tpc.failed + 1
+                _ = @fmt(&io, "tpc FAIL {}: a cube map whose TXI doesn't say `cube 1`\n", copy)
+            }
+        }
+        if px.kind == txi::TpcKind::flipbook {
+            if t.proceduretype == txi::Procedure::cycle and fills_frames{ data, t } {
+                st.tpc_flipbook_txi = st.tpc_flipbook_txi + 1
+            } else {
+                st.tpc.failed = st.tpc.failed + 1
+                _ = @fmt(&io, "tpc FAIL {}: a flipbook whose TXI frames (numx {}, numy {}) don't fill its data\n", copy, t.numx, t.numy)
+            }
+        }
+    }
+
+    // Whether a flipbook's data size is numx * numy frames of (w / numx) x (h / numy), each with a
+    // full mip chain down to 1 x 1 (txi.md, rule 5).
+    fn fills_frames { data: []u8, t: txi::Txi } -> bool {
+        if t.numx <= 0 or t.numy <= 0 { return false }
+        let size = @as(u64, le::get_u32{ data, at = 0 } iferr 0)
+        let w = @as(u64, le::get_u16{ data, at = 8 } iferr 0)
+        let h = @as(u64, le::get_u16{ data, at = 10 } iferr 0)
+        let nx = @as(u64, t.numx)
+        let ny = @as(u64, t.numy)
+        let fw = w / nx
+        let fh = h / ny
+        let mut big = if fw > fh { fw } else { fh }
+        let mut levels: u8 = 0
+        while big > 0 {
+            levels = levels + 1
+            big = big / 2
+        }
+        let frame = txi::chain_bytes{ w = fw, h = fh, encoding = data[12], compressed = true, mips = levels }
+        return size == nx * ny * frame
+    }
+
+    // ---- dialog.tlk
+
+    // Fetches every StrRef of dialog.tlk, counts the flag combinations, texts and sounds tlk.md
+    // reports, and checks the lookup rules at the edges. Returns how many failures.
     fn check_tlk { mut io: Io, mut fs: Fs, mut h: heap::Heap, game: []u8, verbose: bool } -> u64 {
-        return 0
+        let found = res::find_in{ &fs, h = &h, dir = game, name = "dialog.tlk" } iferr err{ error } {
+            _ = @fmt(&io, "tlk FAIL: looking for dialog.tlk: {}\n", error)
+            return 1
+        }
+        let path = found ifnull {
+            _ = @fmt(&io, "tlk FAIL: no dialog.tlk in {}\n", game)
+            return 1
+        }
+        defer res::free_bytes{ h = &h, b = path }
+        let t = tlk::load{ &fs, realloc = heap::alloc, heap = &h, path } iferr err{ error } {
+            _ = @fmt(&io, "tlk FAIL {}: {}\n", path, error)
+            return 1
+        }
+        defer tlk::free{ t, realloc = heap::alloc, heap = &h }
+
+        let mut failed: u64 = 0
+        let mut full: u64 = 0           // flags 0x0007
+        let mut voice: u64 = 0          // 0x0006
+        let mut holes: u64 = 0          // 0x8000
+        let mut other: u64 = 0
+        let mut texts: u64 = 0
+        let mut bytes: u64 = 0
+        let mut longest: usize = 0
+        let mut breaks: u64 = 0         // texts with a line break
+        let mut high: u64 = 0           // texts with bytes outside printable ASCII and LF
+        let mut sounds: u64 = 0
+        let mut s: u32 = 0
+        while s < t.count {
+            let r = s
+            s = s + 1
+            let got = tlk::get{ t, strref = r } iferr err{ error } {
+                failed = failed + 1
+                _ = @fmt(&io, "tlk FAIL {}: {}\n", path, error)
+                continue
+            }
+            let e = got ifnull {
+                holes = holes + 1
+                continue
+            }
+            if e.flags == 7 { full = full + 1 } else if e.flags == 6 { voice = voice + 1 } else { other = other + 1 }
+            if not resref::is_empty{ r = e.sound } { sounds = sounds + 1 }
+            if e.flags & tlk::TEXT_PRESENT != 0 {
+                texts = texts + 1
+                bytes = bytes + e.text.len
+                if e.text.len > longest { longest = e.text.len }
+                if text::find_byte{ s = e.text, c = '\n' } != null { breaks = breaks + 1 }
+                let mut i: usize = 0
+                while i < e.text.len {
+                    let c = e.text[i]
+                    if c != '\n' and (c < 32 or c >= 127) {
+                        high = high + 1
+                        break
+                    }
+                    i = i + 1
+                }
+            }
+        }
+        // The table's own shape, and the lookup rules at the edges.
+        if @as(u64, t.strings_at) != 20 + 40 * @as(u64, t.count) {
+            failed = failed + 1
+            _ = @fmt(&io, "tlk FAIL {}: the entry table ends at {}, the strings start at {}\n", path, 20 + 40 * @as(u64, t.count), t.strings_at)
+        }
+        let none = (tlk::get{ t, strref = tlk::NONE } iferr { return failed + 1 }) ifnull { return failed + 1 }
+        if none.text.len != 0 or not resref::is_empty{ r = none.sound } {
+            failed = failed + 1
+            _ = @fmt(&io, "tlk FAIL: StrRef 0xFFFFFFFF isn't empty\n")
+        }
+        if (tlk::get{ t, strref = t.count } iferr null) != null {
+            failed = failed + 1
+            _ = @fmt(&io, "tlk FAIL: StrRef {} (the count) is in the table\n", t.count)
+        }
+        let first = tlk::get_text{ t, strref = 0 } iferr { return failed + 1 }
+        let alias = tlk::get_text{ t, strref = 0x01000000 } iferr { return failed + 1 }
+        if not slice::eq_bytes{ a = first, b = alias } {
+            failed = failed + 1
+            _ = @fmt(&io, "tlk FAIL: StrRef 0x01000000 isn't StrRef 0 with the top byte dropped\n")
+        }
+        _ = @fmt(&io, "tlk: {}, language {}, {} entries, {} failures; flags 0x0007 {}, 0x0006 {}, 0x8000 holes {}, other {}\n",
+            path, t.language, t.count, failed, full, voice, holes, other)
+        _ = @fmt(&io, "tlk: {} texts ({} bytes, longest {}, {} with a line break, {} with other bytes than printable ASCII and LF); {} sound resrefs; StrRef 0 is \"{}\"\n",
+            texts, bytes, longest, breaks, high, sounds, first)
+        if verbose {
+            // 36865: Bastila's death cry, which has a sound.
+            let samples: [4]u32 = [1, 2, 36865, 49264]
+            let mut i: usize = 0
+            while i < samples.len {
+                let e = (tlk::get{ t, strref = samples[i] } iferr { return failed + 1 }) ifnull { return failed + 1 }
+                _ = @fmt(&io, "tlk {}: flags {}, sound '{}': {}\n", samples[i], e.flags, e.sound, e.text)
+                i = i + 1
+            }
+        }
+        return failed
     }
 }

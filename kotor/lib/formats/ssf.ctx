@@ -1,0 +1,95 @@
+// SSF sound sets (docs/formats/ssf.md): the StrRefs of the barks a creature makes on fixed
+// occasions. KOTOR's `V1.1` is a bare array of StrRefs; the sound to play is the voice-over resref
+// dialog.tlk stores with each StrRef, and the subtitle its text.
+//
+//   let set = try ssf::parse{ data }
+//   let strref = ssf::get_slot{ set, slot = ssf::Slot::dead } ifnull { return }   // null: silent
+//   let line = try tlk::get{ t, strref } ...
+//
+// The engine reads slots by a 1-based k from 1 to 28 and nothing else: the 12 padding entries of
+// a 40-entry file, and the NWN-layout files' 49, are never read. A SoundSet copies the 28 it can
+// read, so it doesn't refer to the file's bytes.
+namespace ssf {
+    // Not `SSF `.
+    error bad_magic
+    // Not `V1.1`: NWN's `V1.0` pairs each StrRef with a resref and needs another reader.
+    error bad_version
+    // The header is cut short, or the table offset is outside the file, or the table isn't a
+    // whole number of StrRefs.
+    error bad_table{ offset: u32, size: usize }
+
+    // No bark for this slot.
+    const NONE: u32 = 0xFFFFFFFF
+    // Slots the engine reads.
+    const SLOTS: usize = 28
+
+    // The slots by the engine's k. Their meanings come from the data: in nearly every set, each
+    // slot's StrRefs carry voice-overs ending in the same suffix (`_bat1`, `_slct1`, `_dead`, ...).
+    enum Slot: u8 {
+        battle_cry_1 = 1,
+        battle_cry_2,
+        battle_cry_3,
+        battle_cry_4,
+        battle_cry_5,
+        battle_cry_6,
+        selected_1,
+        selected_2,
+        selected_3,
+        attack_grunt_1,
+        attack_grunt_2,
+        attack_grunt_3,
+        pain_grunt_1,
+        pain_grunt_2,
+        low_health,
+        dead,
+        critical_hit,
+        target_immune,
+        lay_mine,
+        disarm_mine,
+        begin_stealth,
+        begin_search,
+        begin_unlock,
+        unlock_failed,
+        unlock_success,
+        separated_from_party,
+        rejoined_party,
+        poisoned,
+    }
+
+    struct SoundSet {
+        strrefs: [28]u32,           // slot k is strrefs[k - 1]; NONE where the file has nothing
+        entries: u32,               // StrRefs in the file: 40, or 49 in the NWN-layout ones
+    }
+
+    fn parse { data: []u8 } -> !SoundSet {
+        if data.len < 12 { return bad_table{ offset = 0, size = data.len } }
+        if not slice::eq_bytes{ a = data[..4], b = "SSF " } { return bad_magic }
+        if not slice::eq_bytes{ a = data[4..8], b = "V1.1" } { return bad_version }
+        let offset = try le::get_u32{ data, at = 8 }
+        // No count in the header: the table runs to the end of the file.
+        if offset < 12 or @as(usize, offset) > data.len or (data.len - @as(usize, offset)) % 4 != 0 {
+            return bad_table{ offset, size = data.len }
+        }
+        let entries = (data.len - @as(usize, offset)) / 4
+        let mut set = SoundSet{ strrefs = [NONE; 28], entries = @trunc(u32, entries) }
+        let mut i: usize = 0
+        while i < SLOTS and i < entries {
+            set.strrefs[i] = try le::get_u32{ data, at = @as(usize, offset) + 4 * i }
+            i = i + 1
+        }
+        return set
+    }
+
+    // The StrRef of slot k (1..28), as the engine reads it: null for k outside 1..28 (which the
+    // engine rejects) and for NONE.
+    fn get { set: SoundSet, k: u32 } -> ?u32 {
+        if k == 0 or k > @as(u32, SLOTS) { return null }
+        let r = set.strrefs[@as(usize, k - 1)]
+        if r == NONE { return null }
+        return r
+    }
+
+    fn get_slot { set: SoundSet, slot: Slot } -> ?u32 {
+        return get{ set, k = @as(u32, slot) }
+    }
+}

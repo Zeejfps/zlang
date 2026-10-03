@@ -1,0 +1,385 @@
+// TXI texture info (docs/formats/txi.md, meanings in txi-render.md): `keyword value` lines that
+// say how to use a texture: blending, sampling, environment and bump maps, flipbooks, procedural
+// generation, font glyphs. It lives in standalone `.txi` resources and appended to TPC textures.
+//
+//   let text = try txi::find_in_tpc{ data }                   // or a .txi resource's bytes
+//   let t = try txi::parse{ data = text, realloc, &heap }      // fails only for want of memory
+//   defer txi::free{ t, realloc, &heap }
+//
+// Reader rules, from the data: lines end in CR, LF or CRLF; words are split on runs of spaces and
+// tabs; keywords match ignoring case; a later repeat wins; unknown keywords and values that don't
+// read are ignored (the files hold tool hints such as `islightmap` and misspellings such as
+// `compresstexure`); there are no comments. Four keywords take a count and are followed by lines of
+// numbers (font glyph corners, channel lists): a line whose first word is a number belongs to the
+// block before it, however many the count said.
+//
+// A Txi holds every keyword txi.md lists as read by the engine, with the defaults of a texture that
+// has no TXI. The glyph arrays are in memory from `realloc` (`free` gives them back); nothing
+// refers to the text.
+namespace txi {
+    enum Blending: u8 { default, additive, punchthrough }
+
+    // `proceduretype`: none, a flipbook (cycle), or one of the engine's generators.
+    enum Procedure: u8 { none, cycle, arturo, water, ringtexdistort, random, wave, perlin, life }
+
+    // A font glyph's corner in texture coordinates 0..1; `v` counts from the first stored pixel
+    // row. `w` is always 0.
+    struct Coord { u: f32, v: f32, w: f32 }
+
+    struct Color { r: f32, g: f32, b: f32 }
+
+    struct Txi {
+        // blending and sampling
+        blending: Blending,
+        decal: bool,
+        mipmap: bool,
+        filter: bool,                   // false: nearest-texel sampling
+        clamp: i32,                     // bit 0: clamp u, bit 1: clamp v
+        downsamplemin: i32,
+        downsamplemax: i32,
+        alphamean: ?f32,                // overrides the TPC header's mean alpha
+        gamma: f32,
+        cube: bool,
+        // environment and bump maps (empty resrefs: none)
+        envmaptexture: resref::ResRef,
+        bumpyshinytexture: resref::ResRef,
+        bumpmaptexture: resref::ResRef,
+        isbumpmap: bool,
+        bumpmapscaling: f32,
+        isdiffusebumpmap: bool,
+        isspecularbumpmap: bool,
+        specularcolor: ?Color,
+        wateralpha: ?f32,
+        // read by the engine but used by no shipped texture: the number given, if any
+        envmapalpha: ?f32,
+        isenvironmentmapped: ?f32,
+        bumpintensity: ?f32,
+        diffusebumpintensity: ?f32,
+        specularbumpintensity: ?f32,
+        useglobalalpha: ?f32,
+        temporary: ?f32,
+        maptexelstopixels: ?f32,
+        renderbmlmtype: ?f32,
+        // flipbooks
+        proceduretype: Procedure,
+        numx: i32,
+        numy: i32,
+        fps: i32,
+        // procedural textures
+        defaultwidth: i32,
+        defaultheight: i32,
+        channelscale: [4]f32,           // R, G, B, A
+        channeltranslate: [4]f32,
+        distort: f32,
+        distortionamplitude: f32,
+        speed: f32,
+        arturowidth: i32,
+        arturoheight: i32,
+        waterwidth: i32,
+        waterheight: i32,
+        distortangle: ?f32,             // unused by the shipped textures, like the next two
+        anglecyclespeed: ?f32,
+        forcecyclespeed: ?f32,
+        // fonts
+        numchars: i32,
+        fontheight: f32,                // cell height / 100 texels
+        baselineheight: f32,
+        texturewidth: f32,              // texture width / 100
+        spacingr: f32,
+        spacingb: f32,
+        upperleftcoords: []mut Coord,   // glyph i's corners; as many as the block's lines
+        lowerrightcoords: []mut Coord,
+    }
+
+    // A texture with no TXI, and the starting point of every parse (txi.md, Defaults; the NWN
+    // values where KOTOR's are unknown: gamma 1, downsamplemax 15).
+    fn defaults {} -> Txi {
+        return Txi{
+            blending = Blending::default, decal = false, mipmap = true, filter = true, clamp = 0,
+            downsamplemin = 0, downsamplemax = 15, alphamean = null, gamma = 1.0, cube = false,
+            envmaptexture = resref::empty{}, bumpyshinytexture = resref::empty{}, bumpmaptexture = resref::empty{},
+            isbumpmap = false, bumpmapscaling = 1.0, isdiffusebumpmap = false, isspecularbumpmap = false,
+            specularcolor = null, wateralpha = null,
+            envmapalpha = null, isenvironmentmapped = null, bumpintensity = null, diffusebumpintensity = null,
+            specularbumpintensity = null, useglobalalpha = null, temporary = null, maptexelstopixels = null,
+            renderbmlmtype = null,
+            proceduretype = Procedure::none, numx = 1, numy = 1, fps = 0,
+            defaultwidth = 0, defaultheight = 0,
+            channelscale = [1.0, 1.0, 1.0, 1.0], channeltranslate = [0.0, 0.0, 0.0, 0.0],
+            distort = 0.0, distortionamplitude = 0.0, speed = 0.0,
+            arturowidth = 0, arturoheight = 0, waterwidth = 0, waterheight = 0,
+            distortangle = null, anglecyclespeed = null, forcecyclespeed = null,
+            numchars = 0, fontheight = 0.0, baselineheight = 0.0, texturewidth = 0.0, spacingr = 0.0, spacingb = 0.0,
+            upperleftcoords = slice::empty(Coord){}, lowerrightcoords = slice::empty(Coord){},
+        }
+    }
+
+    // Which block the number lines go to.
+    enum Block: u8 { none, upper, lower, scale, translate }
+
+    fn parse(S) { data: []u8, realloc: alloc::Fn(S), mut heap: S } -> !Txi {
+        let mut t = defaults{}
+        let mut upper = list::new(Coord, S){ realloc, heap = &heap }
+        let mut lower = list::new(Coord, S){ realloc, heap = &heap }
+        // On success the lists are empty by then (lists::take), so these free only on an error.
+        defer list::free{ list = &upper }
+        defer list::free{ list = &lower }
+        let mut block = Block::none
+        let mut filled: usize = 0               // values read into the current channel block
+
+        let mut lines = text::lines{ data }
+        while true {
+            let line = text::next_line{ &lines } ifnull { break }
+            let mut ws = text::words{ s = line }
+            let k = text::next_word{ words = &ws } ifnull { continue }
+            if text::float_prefix{ s = k } > 0 {
+                // A line of numbers: the next line of the block before it, if there is one
+                // (grassinfo.txi's lone line of grass numbers has none).
+                match block {
+                    upper => { try list::push{ list = &upper, item = read_coord{ line } } }
+                    lower => { try list::push{ list = &lower, item = read_coord{ line } } }
+                    scale => {
+                        if filled < 4 { t.channelscale[filled] = text::scan_f32{ s = k } ifnull t.channelscale[filled] }
+                        filled = filled + 1
+                    }
+                    translate => {
+                        if filled < 4 { t.channeltranslate[filled] = text::scan_f32{ s = k } ifnull t.channeltranslate[filled] }
+                        filled = filled + 1
+                    }
+                    none => { }
+                }
+                continue
+            }
+            // A block keyword opens its block whatever its count says, or without one.
+            block = Block::none
+            if ci::eq{ a = k, b = "upperleftcoords" } {
+                block = Block::upper
+                list::clear{ list = &upper }
+                continue
+            }
+            if ci::eq{ a = k, b = "lowerrightcoords" } {
+                block = Block::lower
+                list::clear{ list = &lower }
+                continue
+            }
+            if ci::eq{ a = k, b = "channelscale" } or ci::eq{ a = k, b = "channeltranslate" } {
+                block = if k.len == 12 { Block::scale } else { Block::translate }
+                filled = 0
+                continue
+            }
+            let v = text::next_word{ words = &ws } ifnull { continue }     // a keyword without a value
+            // blending and sampling
+            if ci::eq{ a = k, b = "blending" } { t.blending = read_blending{ s = v } }
+            else if ci::eq{ a = k, b = "decal" } { t.decal = read_bool{ s = v } ifnull t.decal }
+            else if ci::eq{ a = k, b = "mipmap" } { t.mipmap = read_bool{ s = v } ifnull t.mipmap }
+            else if ci::eq{ a = k, b = "filter" } { t.filter = read_bool{ s = v } ifnull t.filter }
+            else if ci::eq{ a = k, b = "clamp" } { t.clamp = read_int{ s = v } ifnull t.clamp }
+            else if ci::eq{ a = k, b = "downsamplemin" } { t.downsamplemin = read_int{ s = v } ifnull t.downsamplemin }
+            else if ci::eq{ a = k, b = "downsamplemax" } { t.downsamplemax = read_int{ s = v } ifnull t.downsamplemax }
+            else if ci::eq{ a = k, b = "alphamean" } { t.alphamean = text::scan_f32{ s = v } ifnull t.alphamean }
+            else if ci::eq{ a = k, b = "gamma" } { t.gamma = text::scan_f32{ s = v } ifnull t.gamma }
+            else if ci::eq{ a = k, b = "cube" } { t.cube = read_bool{ s = v } ifnull t.cube }
+            // environment and bump maps
+            else if ci::eq{ a = k, b = "envmaptexture" } { t.envmaptexture = read_name{ s = v } ifnull t.envmaptexture }
+            else if ci::eq{ a = k, b = "bumpyshinytexture" } { t.bumpyshinytexture = read_name{ s = v } ifnull t.bumpyshinytexture }
+            else if ci::eq{ a = k, b = "bumpmaptexture" } { t.bumpmaptexture = read_name{ s = v } ifnull t.bumpmaptexture }
+            else if ci::eq{ a = k, b = "isbumpmap" } { t.isbumpmap = read_bool{ s = v } ifnull t.isbumpmap }
+            else if ci::eq{ a = k, b = "bumpmapscaling" } { t.bumpmapscaling = text::scan_f32{ s = v } ifnull t.bumpmapscaling }
+            else if ci::eq{ a = k, b = "isdiffusebumpmap" } { t.isdiffusebumpmap = read_bool{ s = v } ifnull t.isdiffusebumpmap }
+            else if ci::eq{ a = k, b = "isspecularbumpmap" } { t.isspecularbumpmap = read_bool{ s = v } ifnull t.isspecularbumpmap }
+            else if ci::eq{ a = k, b = "specularcolor" } { t.specularcolor = read_color{ first = v, words = ws } ifnull t.specularcolor }
+            else if ci::eq{ a = k, b = "wateralpha" } { t.wateralpha = text::scan_f32{ s = v } ifnull t.wateralpha }
+            else if ci::eq{ a = k, b = "envmapalpha" } { t.envmapalpha = text::scan_f32{ s = v } ifnull t.envmapalpha }
+            else if ci::eq{ a = k, b = "isenvironmentmapped" } { t.isenvironmentmapped = text::scan_f32{ s = v } ifnull t.isenvironmentmapped }
+            else if ci::eq{ a = k, b = "bumpintensity" } { t.bumpintensity = text::scan_f32{ s = v } ifnull t.bumpintensity }
+            else if ci::eq{ a = k, b = "diffusebumpintensity" } { t.diffusebumpintensity = text::scan_f32{ s = v } ifnull t.diffusebumpintensity }
+            else if ci::eq{ a = k, b = "specularbumpintensity" } { t.specularbumpintensity = text::scan_f32{ s = v } ifnull t.specularbumpintensity }
+            else if ci::eq{ a = k, b = "useglobalalpha" } { t.useglobalalpha = text::scan_f32{ s = v } ifnull t.useglobalalpha }
+            else if ci::eq{ a = k, b = "temporary" } { t.temporary = text::scan_f32{ s = v } ifnull t.temporary }
+            else if ci::eq{ a = k, b = "maptexelstopixels" } { t.maptexelstopixels = text::scan_f32{ s = v } ifnull t.maptexelstopixels }
+            else if ci::eq{ a = k, b = "renderbmlmtype" } { t.renderbmlmtype = text::scan_f32{ s = v } ifnull t.renderbmlmtype }
+            // flipbooks
+            else if ci::eq{ a = k, b = "proceduretype" } { t.proceduretype = read_procedure{ s = v } }
+            else if ci::eq{ a = k, b = "numx" } { t.numx = read_int{ s = v } ifnull t.numx }
+            else if ci::eq{ a = k, b = "numy" } { t.numy = read_int{ s = v } ifnull t.numy }
+            else if ci::eq{ a = k, b = "fps" } { t.fps = read_int{ s = v } ifnull t.fps }
+            // procedural textures
+            else if ci::eq{ a = k, b = "defaultwidth" } { t.defaultwidth = read_int{ s = v } ifnull t.defaultwidth }
+            else if ci::eq{ a = k, b = "defaultheight" } { t.defaultheight = read_int{ s = v } ifnull t.defaultheight }
+            else if ci::starts_with{ s = k, prefix = "channelscale" } and k.len == 13 and k[12] >= '0' and k[12] <= '3' {
+                let i = @as(usize, k[12] - '0')
+                t.channelscale[i] = text::scan_f32{ s = v } ifnull t.channelscale[i]
+            }
+            else if ci::starts_with{ s = k, prefix = "channeltranslate" } and k.len == 17 and k[16] >= '0' and k[16] <= '3' {
+                let i = @as(usize, k[16] - '0')
+                t.channeltranslate[i] = text::scan_f32{ s = v } ifnull t.channeltranslate[i]
+            }
+            else if ci::eq{ a = k, b = "distort" } { t.distort = text::scan_f32{ s = v } ifnull t.distort }
+            else if ci::eq{ a = k, b = "distortionamplitude" } { t.distortionamplitude = text::scan_f32{ s = v } ifnull t.distortionamplitude }
+            else if ci::eq{ a = k, b = "speed" } { t.speed = text::scan_f32{ s = v } ifnull t.speed }
+            else if ci::eq{ a = k, b = "arturowidth" } { t.arturowidth = read_int{ s = v } ifnull t.arturowidth }
+            else if ci::eq{ a = k, b = "arturoheight" } { t.arturoheight = read_int{ s = v } ifnull t.arturoheight }
+            else if ci::eq{ a = k, b = "waterwidth" } { t.waterwidth = read_int{ s = v } ifnull t.waterwidth }
+            else if ci::eq{ a = k, b = "waterheight" } { t.waterheight = read_int{ s = v } ifnull t.waterheight }
+            else if ci::eq{ a = k, b = "distortangle" } { t.distortangle = text::scan_f32{ s = v } ifnull t.distortangle }
+            else if ci::eq{ a = k, b = "anglecyclespeed" } { t.anglecyclespeed = text::scan_f32{ s = v } ifnull t.anglecyclespeed }
+            else if ci::eq{ a = k, b = "forcecyclespeed" } { t.forcecyclespeed = text::scan_f32{ s = v } ifnull t.forcecyclespeed }
+            // fonts
+            else if ci::eq{ a = k, b = "numchars" } { t.numchars = read_int{ s = v } ifnull t.numchars }
+            else if ci::eq{ a = k, b = "fontheight" } { t.fontheight = text::scan_f32{ s = v } ifnull t.fontheight }
+            else if ci::eq{ a = k, b = "baselineheight" } { t.baselineheight = text::scan_f32{ s = v } ifnull t.baselineheight }
+            else if ci::eq{ a = k, b = "texturewidth" } { t.texturewidth = text::scan_f32{ s = v } ifnull t.texturewidth }
+            else if ci::eq{ a = k, b = "spacingr" } { t.spacingr = text::scan_f32{ s = v } ifnull t.spacingr }
+            else if ci::eq{ a = k, b = "spacingb" } { t.spacingb = text::scan_f32{ s = v } ifnull t.spacingb }
+        }
+        t.upperleftcoords = try lists::take{ list = &upper }
+        t.lowerrightcoords = try lists::take{ list = &lower }
+        return t
+    }
+
+    // Gives back the glyph arrays `parse` took from `realloc`.
+    fn free(S) { t: Txi, realloc: alloc::Fn(S), mut heap: S } {
+        _ = alloc::resize(Coord, S){ realloc, &heap, mem = t.upperleftcoords, count = 0 }
+        _ = alloc::resize(Coord, S){ realloc, &heap, mem = t.lowerrightcoords, count = 0 }
+    }
+
+    // ---- TXI appended to a TPC (txi.md, "TXI inside TPC")
+
+    enum TpcKind: u8 { plain, cube, flipbook }
+
+    // Where a TPC's pixel data ends: it is `bytes` long after the 128-byte header.
+    struct TpcPixels { kind: TpcKind, bytes: u64 }
+
+    // The header or the pixel data runs past the end of the file.
+    error tpc_truncated{ need: u64, size: usize }
+    // An encoding other than 1 (grey), 2 (RGB/DXT1), 4 (RGBA/DXT5), or a compressed grey one.
+    error tpc_bad_encoding{ encoding: u8 }
+
+    const TPC_HEADER_SIZE: usize = 128
+
+    // The TXI text after a TPC's pixel data, a view of `data`: up to its end or a NUL (the engine
+    // reads it as a C string). Empty when the texture has none.
+    fn find_in_tpc { data: []u8 } -> ![]u8 {
+        let px = try size_tpc_pixels{ data }
+        let start = @as(u64, TPC_HEADER_SIZE) + px.bytes
+        if start > data.len { return tpc_truncated{ need = start, size = data.len } }
+        let rest = data[@as(usize, start)..]
+        let end = text::find_byte{ s = rest, c = 0 } ifnull rest.len
+        return rest[..end]
+    }
+
+    // How long a TPC's pixel data is, by txi.md's rule, which holds for every shipped TPC: the
+    // header's data size is only the top level's for ordinary compressed textures, so the size
+    // comes from the dimensions, mip count and encoding; a cube map (height = 6 x width) is six
+    // faces with a chain each; a compressed texture whose data size is larger than that is a
+    // flipbook, and the data size is then the whole of it. (This belongs with the TPC reader in
+    // lib/tex once there is one.)
+    fn size_tpc_pixels { data: []u8 } -> !TpcPixels {
+        if data.len < TPC_HEADER_SIZE { return tpc_truncated{ need = @as(u64, TPC_HEADER_SIZE), size = data.len } }
+        let size = try le::get_u32{ data, at = 0 }
+        let w = @as(u64, try le::get_u16{ data, at = 8 })
+        let h = @as(u64, try le::get_u16{ data, at = 10 })
+        let encoding = data[12]
+        let mips = data[13]
+        let compressed = size != 0
+        if not (encoding == 1 or encoding == 2 or encoding == 4) or (compressed and encoding == 1) {
+            return tpc_bad_encoding{ encoding }
+        }
+        let faces: u64 = if h == 6 * w { 6 } else { 1 }
+        let standard = faces * chain_bytes{ w, h = h / faces, encoding, compressed, mips }
+        if compressed and @as(u64, size) > standard { return TpcPixels{ kind = TpcKind::flipbook, bytes = @as(u64, size) } }
+        let kind = if faces == 6 { TpcKind::cube } else { TpcKind::plain }
+        return TpcPixels{ kind, bytes = standard }
+    }
+
+    // The bytes of `mips` levels from w x h down, each half the last (never below 1).
+    fn chain_bytes { w: u64, h: u64, encoding: u8, compressed: bool, mips: u8 } -> u64 {
+        let mut total: u64 = 0
+        let mut x = w
+        let mut y = h
+        let mut i: u8 = 0
+        while i < mips {
+            total = total + level_bytes{ w = x, h = y, encoding, compressed }
+            x = if x / 2 > 1 { x / 2 } else { 1 }
+            y = if y / 2 > 1 { y / 2 } else { 1 }
+            i = i + 1
+        }
+        return total
+    }
+
+    // One level: DXT1 is 8 bytes per 4x4 block, DXT5 16; uncompressed 1, 3 or 4 bytes a texel.
+    fn level_bytes { w: u64, h: u64, encoding: u8, compressed: bool } -> u64 {
+        if compressed {
+            let bw = if (w + 3) / 4 > 1 { (w + 3) / 4 } else { 1 }
+            let bh = if (h + 3) / 4 > 1 { (h + 3) / 4 } else { 1 }
+            let block: u64 = if encoding == 2 { 8 } else { 16 }
+            return bw * bh * block
+        }
+        let texel: u64 = if encoding == 1 { 1 } else if encoding == 2 { 3 } else { 4 }
+        return w * h * texel
+    }
+
+    // ---- internals
+
+    // An integer value, read as C's atol does (decimal, stopping at the first other character):
+    // null if it doesn't start with a number.
+    fn read_int { s: []u8 } -> ?i32 {
+        if text::float_prefix{ s } == 0 { return null }
+        return @trunc(i32, text::scan_decimal{ s })
+    }
+
+    fn read_bool { s: []u8 } -> ?bool {
+        let n = read_int{ s } ifnull { return null }
+        return n != 0
+    }
+
+    // A texture name: a resref, lower-cased. Null if it is longer than one.
+    fn read_name { s: []u8 } -> ?resref::ResRef {
+        let r = resref::from{ name = s } iferr { return null }
+        return r
+    }
+
+    // The engine knows `additive` and `punchthrough`; anything else (`default`, the typo
+    // `addititive`) is normal alpha blending.
+    fn read_blending { s: []u8 } -> Blending {
+        if ci::eq{ a = s, b = "additive" } { return Blending::additive }
+        if ci::eq{ a = s, b = "punchthrough" } { return Blending::punchthrough }
+        return Blending::default
+    }
+
+    // A procedure the engine doesn't know is none: the texture is used as it is.
+    fn read_procedure { s: []u8 } -> Procedure {
+        if ci::eq{ a = s, b = "cycle" } { return Procedure::cycle }
+        if ci::eq{ a = s, b = "arturo" } { return Procedure::arturo }
+        if ci::eq{ a = s, b = "water" } { return Procedure::water }
+        if ci::eq{ a = s, b = "ringtexdistort" } { return Procedure::ringtexdistort }
+        if ci::eq{ a = s, b = "random" } { return Procedure::random }
+        if ci::eq{ a = s, b = "wave" } { return Procedure::wave }
+        if ci::eq{ a = s, b = "perlin" } { return Procedure::perlin }
+        if ci::eq{ a = s, b = "life" } { return Procedure::life }
+        return Procedure::none
+    }
+
+    // Three numbers: `first` and the next two words. Null unless all three read.
+    fn read_color { first: []u8, words: text::Words } -> ?Color {
+        let mut ws = words
+        let r = text::scan_f32{ s = first } ifnull { return null }
+        let g = text::scan_f32{ s = text::next_word{ words = &ws } ifnull { return null } } ifnull { return null }
+        let b = text::scan_f32{ s = text::next_word{ words = &ws } ifnull { return null } } ifnull { return null }
+        return Color{ r, g, b }
+    }
+
+    // A glyph corner line, `u v w`: a number that is missing or doesn't read is 0.
+    fn read_coord { line: []u8 } -> Coord {
+        let mut ws = text::words{ s = line }
+        let mut c: [3]f32
+        let mut i: usize = 0
+        while i < 3 {
+            let word = text::next_word{ words = &ws } ifnull { break }
+            c[i] = text::scan_f32{ s = word } ifnull 0.0
+            i = i + 1
+        }
+        return Coord{ u = c[0], v = c[1], w = c[2] }
+    }
+
+}

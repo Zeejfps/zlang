@@ -1,0 +1,109 @@
+// TLK talk tables (docs/formats/tlk.md): every piece of player-visible text, by StrRef, with the
+// voice-over sound that goes with it. Only `dialog.tlk` exists, opened by path, not as a resource.
+//
+//   let t = try tlk::load{ &fs, realloc = heap::alloc, heap = &h, path }
+//   defer tlk::free{ t, realloc = heap::alloc, heap = &h }
+//   let e = try tlk::get{ t, strref } ifnull { ... }      // null: not in the table
+//   draw{ e.text }                                          // bytes in the table's code page
+//
+// A Table is the file's bytes and the header's numbers: entries are read when asked for, not
+// decoded up front (dialog.tlk has 49,265 of them, most never shown in a session). An entry's
+// text is a view into the table's bytes, valid while they are. Text comes back raw: the code page
+// (LanguageID 0-4 cp1252, 5 cp1250) and `<token>` replacement are the text layer's business.
+namespace tlk {
+    // Not `TLK `.
+    error bad_magic
+    // Not `V3.0`: the engine would read 36-byte entries for any other version, and no KOTOR file
+    // has one, so we don't guess at the layout.
+    error bad_version
+    // The header or the entry table runs past the end of the file.
+    error truncated
+    // An entry whose text lies outside the file.
+    error bad_entry{ strref: u32 }
+
+    // The invalid StrRef: empty text, no sound, and not an error.
+    const NONE: u32 = 0xFFFFFFFF
+
+    // Entry flags.
+    const TEXT_PRESENT: u32 = 0x0001
+    const SND_PRESENT: u32 = 0x0002
+    const SNDLENGTH_PRESENT: u32 = 0x0004
+    // KOTOR's own: the engine treats the entry as missing from this table (a hole in the numbering).
+    const ABSENT: u32 = 0x8000
+
+    const HEADER_SIZE: usize = 20
+    const ENTRY_SIZE: usize = 40
+
+    struct Table {
+        data: []u8,                 // the whole file
+        owned: alloc::Bytes,        // `data` again when `load` read it, which `free` gives back; else empty
+        language: u32,              // LanguageID: 0 English .. 5 Polish, 128-131 Asian
+        count: u32,                 // StringCount
+        strings_at: u32,            // StringEntriesOffset
+    }
+
+    // What a StrRef fetches. `text` is empty without TEXT_PRESENT, `sound` empty without
+    // SND_PRESENT (and often empty with it: the flag says nothing in dialog.tlk), `length` 0 without
+    // SNDLENGTH_PRESENT (and 0.0 in every entry of dialog.tlk: take lengths from the WAVs).
+    struct Entry { flags: u32, text: []u8, sound: resref::ResRef, length: f32 }
+
+    // Checks the header and that the entry table fits; reads no entry. `data` must outlive the
+    // table.
+    fn parse { data: []u8 } -> !Table {
+        if data.len < HEADER_SIZE { return truncated }
+        if not slice::eq_bytes{ a = data[..4], b = "TLK " } { return bad_magic }
+        if not slice::eq_bytes{ a = data[4..8], b = "V3.0" } { return bad_version }
+        let language = try le::get_u32{ data, at = 8 }
+        let count = try le::get_u32{ data, at = 12 }
+        let strings_at = try le::get_u32{ data, at = 16 }
+        let table_end = @as(u64, count) * @as(u64, ENTRY_SIZE) + @as(u64, HEADER_SIZE)
+        if table_end > data.len or @as(usize, strings_at) > data.len { return truncated }
+        return Table{ data, owned = slice::empty(u8){}, language, count, strings_at }
+    }
+
+    // Reads the file at `path` into memory from `realloc` and parses it. Give it back with `free`.
+    fn load(S) { mut fs: Fs, realloc: alloc::Fn(S), mut heap: S, path: []u8 } -> !Table {
+        let bytes = try fs::read_all{ &fs, &heap, realloc, path }
+        let t = parse{ data = bytes } iferr err{ error } {
+            _ = alloc::resize(u8, S){ realloc, &heap, mem = bytes, count = 0 }
+            return error
+        }
+        return Table{ data = t.data, owned = bytes, language = t.language, count = t.count, strings_at = t.strings_at }
+    }
+
+    // Gives back what `load` read; does nothing for a table `parse` made over the caller's bytes.
+    fn free(S) { t: Table, realloc: alloc::Fn(S), mut heap: S } {
+        _ = alloc::resize(u8, S){ realloc, &heap, mem = t.owned, count = 0 }
+    }
+
+    // StrRef `strref` as the engine fetches it from its one table (tlk.md, Lookup): NONE is an
+    // empty entry; otherwise the top byte is dropped (KOTOR has no alternate-table bit), and a
+    // StrRef past the end or on an ABSENT hole is not in the table (null). Fails with bad_entry if
+    // the entry's text lies outside the file, which the engine would read past the end.
+    fn get { t: Table, strref: u32 } -> !?Entry {
+        if strref == NONE { return Entry{ flags = 0, text = t.data[..0], sound = resref::empty{}, length = 0.0 } }
+        let s = strref & 0x00FFFFFF
+        if s >= t.count { return null }
+        let at = HEADER_SIZE + @as(usize, s) * ENTRY_SIZE
+        let flags = try le::get_u32{ data = t.data, at }
+        if flags & ABSENT != 0 { return null }
+        let mut text = t.data[..0]
+        if flags & TEXT_PRESENT != 0 {
+            let offset = try le::get_u32{ data = t.data, at = at + 28 }
+            let size = try le::get_u32{ data = t.data, at = at + 32 }
+            let start = @as(u64, t.strings_at) + @as(u64, offset)
+            if start + @as(u64, size) > t.data.len { return bad_entry{ strref = s } }
+            text = t.data[@as(usize, start)..@as(usize, start + @as(u64, size))]
+        }
+        let sound = if flags & SND_PRESENT != 0 { resref::from_field{ raw = t.data[at + 4..at + 20] } } else { resref::empty{} }
+        let length = if flags & SNDLENGTH_PRESENT != 0 { try le::get_f32{ data = t.data, at = at + 36 } } else { 0.0 }
+        return Entry{ flags, text, sound, length }
+    }
+
+    // The text of `strref`, empty when it isn't in the table: what a caller that only shows text
+    // wants. Fails as `get` does.
+    fn get_text { t: Table, strref: u32 } -> ![]u8 {
+        let e = try get{ t, strref } ifnull { return t.data[..0] }
+        return e.text
+    }
+}
