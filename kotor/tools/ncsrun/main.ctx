@@ -1,0 +1,254 @@
+// ncsrun: runs NCS scripts on the stub engine (lib/script/nwstub.ctx) and reports how they end.
+//
+//   kotor/tools/ctxc run kotor/tools/ncsrun                        every script in kotor/extract/ncs
+//   kotor/tools/ctxc run kotor/tools/ncsrun -- PATH... [OPTIONS]   .ncs files or directories of them
+//
+// Each script runs from its entry as object nwstub::SELF; then the actions it handed to
+// AssignCommand, DelayCommand and ActionDoCommand run, oldest first, with those they hand on in
+// turn (up to --actions per script). A run ends normally or faults; faults are counted in three
+// classes: the VM's own (the bytecode did something the VM refuses), a routine's (its
+// arguments weren't what the prototype says, which only scripts compiled against an older
+// nwscript.nss do), and the instruction budget (a script that runs away on the stub's results).
+// The time is the runs' alone (not reading or decoding files), at -O2.
+//
+// Options: -v (each script's routine calls and how its runs end), --actions N (32), --show N
+// (faults listed per class, 20), --repeat N (run every script N times, for timing), --budget N
+// (instructions per run; the game's is 131072).
+
+struct Options { verbose: bool, actions: usize, show: u64, repeat: u32, budget: u32 }
+
+// How runs ended.
+struct Tally {
+    runs: u64,
+    ok: u64,
+    vm: u64,                    // VM faults
+    routine: u64,               // routine faults
+    budget: u64,                // ran out of instructions
+    kinds: [24]u64,             // VM faults by nwvm::FaultKind
+}
+
+const DEFAULT_DIR: []u8 = "kotor/extract/ncs"
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let base = mem::pages{ &mem, size = 268435456 } ifnull { return out_of_memory{ &io } }
+    let mut keep = arena::new{ buf = base }                    // for the whole run
+    let scratch = mem::pages{ &mem, size = 134217728 } ifnull { return out_of_memory{ &io } }
+    let mut work = arena::new{ buf = scratch }                 // one script at a time
+    let mut opts = Options{ verbose = false, actions = 32, show = 20, repeat = 1, budget = nwvm::LIMITS.budget }
+    let mut paths = list::new([]u8, arena::Arena){ realloc = arena::alloc, heap = &keep }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if slice::eq_bytes{ a, b = "-v" } {
+            opts.verbose = true
+        } else if slice::eq_bytes{ a, b = "--actions" } or slice::eq_bytes{ a, b = "--show" } or
+            slice::eq_bytes{ a, b = "--repeat" } or slice::eq_bytes{ a, b = "--budget" } {
+            if i + 1 >= args.len { return usage{ &io } }
+            let text = utf8::from{ bytes = args[i + 1] } iferr { return usage{ &io } }
+            let n = utf8::parse_u64{ s = text } ifnull { return usage{ &io } }
+            if slice::eq_bytes{ a, b = "--actions" } { opts.actions = @as(usize, n) }
+            else if slice::eq_bytes{ a, b = "--show" } { opts.show = n }
+            else if slice::eq_bytes{ a, b = "--repeat" } { opts.repeat = @trunc(u32, n) }
+            else { opts.budget = @trunc(u32, n) }
+            i = i + 1
+        } else if a.len > 0 and a[0] == '-' {
+            return usage{ &io }
+        } else {
+            list::push{ list = &paths, item = a } iferr { return out_of_memory{ &io } }
+        }
+        i = i + 1
+    }
+    if paths.len == 0 { list::push{ list = &paths, item = DEFAULT_DIR } iferr { return out_of_memory{ &io } } }
+
+    // Every script file: a path given, or each .ncs in a directory given, by name.
+    let mut files = list::new([]u8, arena::Arena){ realloc = arena::alloc, heap = &keep }
+    i = 0
+    while i < paths.len {
+        let p = list::items{ list = paths }[i]
+        if ends_with{ s = p, suffix = ".ncs" } {
+            list::push{ list = &files, item = p } iferr { return out_of_memory{ &io } }
+        } else {
+            let names = fs::list{ &fs, heap = &keep, realloc = arena::alloc, path = p } iferr err{ error } {
+                _ = @fmt(&io, "ncsrun: {}: {}\n", p, error)
+                return 1
+            }
+            let mut k: usize = 0
+            while k < names.len {
+                if ends_with{ s = names[k], suffix = ".ncs" } {
+                    let joined = join{ heap = &keep, dir = p, name = names[k] } ifnull { return out_of_memory{ &io } }
+                    list::push{ list = &files, item = joined } iferr { return out_of_memory{ &io } }
+                }
+                k = k + 1
+            }
+        }
+        i = i + 1
+    }
+
+    let mut limits = nwvm::LIMITS
+    limits.budget = opts.budget
+    let mut vm = nwvm::new(arena::Arena){ realloc = arena::alloc, heap = &keep, limits } iferr { return out_of_memory{ &io } }
+    let mut stub = nwstub::new{ heap = &work, actions = opts.actions, verbose = opts.verbose }
+    let engine = nwstub::call{ &stub, &io, _ }
+
+    let mut scripts = Tally{ runs = 0, ok = 0, vm = 0, routine = 0, budget = 0, kinds = [0; 24] }
+    let mut actions = scripts
+    let mut shown = Tally{ runs = 0, ok = 0, vm = 0, routine = 0, budget = 0, kinds = [0; 24] }
+    let mut load_failed: u64 = 0
+    let mut ticks: u64 = 0
+    let mut fault_line: [512]u8
+
+    let mut f: usize = 0
+    while f < files.len {
+        let path = list::items{ list = files }[f]
+        f = f + 1
+        nwstub::clear{ &stub }
+        arena::reset{ heap = &work }
+        let name = script_name{ path }
+        let bytes = fs::read_all{ &fs, heap = &work, realloc = arena::alloc, path } iferr err{ error } {
+            _ = @fmt(&io, "{}: {}\n", path, error)
+            load_failed = load_failed + 1
+            continue
+        }
+        let program = nwvm::load(arena::Arena){ realloc = arena::alloc, heap = &work, name, bytes } iferr err{ error } {
+            _ = @fmt(&io, "{}: {}\n", path, error)
+            load_failed = load_failed + 1
+            continue
+        }
+        let mut r: u32 = 0
+        while r < opts.repeat {
+            r = r + 1
+            nwstub::clear{ &stub }
+            if opts.verbose { _ = @fmt(&io, "{}:\n", name) }
+            let t0 = sdl::counter{ &sdl }
+            let ran = nwvm::run{ &vm, program = &program, self = nwstub::SELF, engine }
+            ticks = ticks + (sdl::counter{ &sdl } - t0)
+            let ok = match ran { ok => { true } err => { false } }
+            tally{ &io, t = &scripts, &shown, vm, ok, show = opts.show, verbose = opts.verbose, line = fault_line[..] }
+            // The actions it handed on, and theirs, oldest first.
+            while true {
+                let s = nwstub::next_action{ &stub } ifnull { break }
+                if opts.verbose { _ = @fmt(&io, "  action at {}:\n", nwvm::Hex{ n = s.program.at[s.resume] }) }
+                let t1 = sdl::counter{ &sdl }
+                let done = nwvm::resume{ &vm, situation = s, self = nwstub::SELF, engine }
+                ticks = ticks + (sdl::counter{ &sdl } - t1)
+                let fine = match done { ok => { true } err => { false } }
+                tally{ &io, t = &actions, &shown, vm, ok = fine, show = opts.show, verbose = opts.verbose, line = fault_line[..] }
+            }
+        }
+    }
+
+    let seconds = @as(f64, ticks) / @as(f64, sdl::counter_frequency{ &sdl })
+    _ = @fmt(&io, "\nscripts: {} files, {} failed to load\n", files.len, load_failed)
+    summary{ &io, what = "script runs", t = scripts }
+    summary{ &io, what = "action runs", t = actions }
+    _ = @fmt(&io, "dropped actions (over --actions): {}\n", stub.dropped)
+    _ = @fmt(&io, "routine calls: {}\n", stub.calls)
+    let rate = if seconds > 0.0 { @as(f64, vm.total) / seconds / 1000000.0 } else { 0.0 }
+    _ = @fmt(&io, "instructions: {} in {} ms: {} million instructions per second\n",
+        vm.total, @as(u64, seconds * 1000.0), @as(u64, rate * 10.0) / 10)
+    io::flush{ &io }
+    return if scripts.vm + actions.vm > 0 { 1 } else { 0 }
+}
+
+// Counts one run's end, and prints its fault if it is among the first `show` of its class (or
+// with -v).
+fn tally { mut io: Io, mut t: Tally, mut shown: Tally, vm: nwvm::Vm, ok: bool, show: u64, verbose: bool, line: []mut u8 } {
+    t.runs = t.runs + 1
+    if ok {
+        t.ok = t.ok + 1
+        if verbose { _ = @fmt(&io, "  ended normally\n") }
+        return
+    }
+    let f = vm.fault
+    let mut print = verbose
+    if f.kind == nwvm::FaultKind::budget {
+        t.budget = t.budget + 1
+        shown.budget = shown.budget + 1
+        print = print or shown.budget <= show
+    } else if f.routine >= 0 {
+        t.routine = t.routine + 1
+        shown.routine = shown.routine + 1
+        print = print or shown.routine <= show
+    } else {
+        t.vm = t.vm + 1
+        t.kinds[@as(usize, f.kind)] = t.kinds[@as(usize, f.kind)] + 1
+        shown.vm = shown.vm + 1
+        print = print or shown.vm <= show
+    }
+    if print {
+        let text = nwvm::describe{ f, into = line }
+        _ = @fmt(&io, "  fault: {}\n", text)
+    }
+}
+
+fn summary { mut io: Io, what: []u8, t: Tally } {
+    _ = @fmt(&io, "{}: {}: ended normally {}, VM faults {}, routine faults {}, out of budget {}\n",
+        what, t.runs, t.ok, t.vm, t.routine, t.budget)
+    let mut k: usize = 0
+    while k < t.kinds.len {
+        if t.kinds[k] > 0 {
+            _ = @fmt(&io, "    {}: {}\n", nwvm::kind_name{ kind = @as(nwvm::FaultKind, @as(u8, k)) }, t.kinds[k])
+        }
+        k = k + 1
+    }
+}
+
+// "dir/k_foo.ncs" -> "k_foo"
+fn script_name { path: []u8 } -> []u8 {
+    let mut start: usize = 0
+    let mut i: usize = 0
+    while i < path.len {
+        if path[i] == '/' or path[i] == '\\' { start = i + 1 }
+        i = i + 1
+    }
+    let end = if ends_with{ s = path, suffix = ".ncs" } { path.len - 4 } else { path.len }
+    return path[start..end]
+}
+
+fn ends_with { s: []u8, suffix: []u8 } -> bool {
+    return s.len >= suffix.len and slice::eq_bytes{ a = s[s.len - suffix.len..], b = suffix }
+}
+
+fn join { mut heap: arena::Arena, dir: []u8, name: []u8 } -> ?[]u8 {
+    let out = arena::alloc{ &heap, mem = slice::empty(u8){}, new = dir.len + 1 + name.len, align = 1 } ifnull { return null }
+    slice::copy(u8){ dst = out[..dir.len], src = dir }
+    out[dir.len] = '/'
+    slice::copy(u8){ dst = out[dir.len + 1..], src = name }
+    return out
+}
+
+fn usage { mut io: Io } -> i32 {
+    io::eprintln{ &io, s = "usage: ncsrun [PATH...] [-v] [--actions N] [--show N] [--repeat N] [--budget N]" }
+    return 2
+}
+
+fn out_of_memory { mut io: Io } -> i32 {
+    io::eprintln{ &io, s = "ncsrun: out of memory" }
+    return 1
+}
+
+namespace out {
+    #write
+    fn put_text { mut io: Io, s: strlit } { io::write{ &io, to = io::Stream::out, bytes = s.bytes } }
+    #write
+    fn put_bytes { mut io: Io, b: []u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
+    #write
+    fn put_i32 { mut io: Io, n: i32 } { io::print_i64{ &io, n } }
+    #write
+    fn put_i64 { mut io: Io, n: i64 } { io::print_i64{ &io, n } }
+    #write
+    fn put_u32 { mut io: Io, n: u32 } { io::print_u64{ &io, n } }
+    #write
+    fn put_u64 { mut io: Io, n: u64 } { io::print_u64{ &io, n } }
+    #write
+    fn put_usize { mut io: Io, n: usize } { io::print_u64{ &io, n } }
+    #write
+    fn put_f64 { mut io: Io, n: f64 } { io::print_f64{ &io, n } }
+    #write
+    fn put_hex { mut io: Io, h: nwvm::Hex } {
+        let mut buf: [16]u8
+        let mut t = nwvm::Text{ buf = buf[..], len = 0 }
+        nwvm::text_hex{ &t, h }
+        io::write{ &io, to = io::Stream::out, bytes = buf[..t.len] }
+    }
+}

@@ -1,0 +1,15 @@
+// The build program for ncsrun: `kotor/tools/ctxc run kotor/tools/ncsrun -- [PATH...]`.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "ncsrun", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/script" }
+    build::add_sources{ &b, exe, dir = "../../lib/platform" }
+    build::optimize{ &b, exe, level = 2 }
+    match build::os{ &b } {
+        macos => {
+            build::lib_path{ &b, exe, path = "/opt/homebrew/lib" }
+            build::link{ &b, exe, lib = "SDL2" }
+        }
+        windows => { build::link{ &b, exe, lib = "SDL2" } }
+        linux => { build::link{ &b, exe, lib = "SDL2" } }
+    }
+}
