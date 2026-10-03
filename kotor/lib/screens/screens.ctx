@@ -66,6 +66,7 @@ namespace screens {
     fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, events: []gui::Event, dt: f32 } {
         store_panel::tick{ s = &s.store, &g, &w }
         galaxy::update{ s = &s.galaxy, &w, dt }
+        lvl::update_view{ s = &s.level, dt }
         let mut i: usize = 0
         while i < events.len {
             let ev = events[i]
@@ -96,6 +97,12 @@ namespace screens {
     // Between the backdrop and the panels: the 3D views some screens have (the galaxy map's).
     fn draw_views { mut s: State, mut g: gui::Gui, mut frame: render::Frame, target: render::Size } {
         galaxy::draw_views{ s = &s.galaxy, &g, &frame, target }
+    }
+
+    // After the panels: views that must not hide behind a full-screen panel of their own (the
+    // level-up screen's creature, which sits in a hole of maincg).
+    fn draw_over { mut s: State, mut g: gui::Gui, mut frame: render::Frame, target: render::Size } {
+        if not msgbox::is_open{ b = s.level.box } { lvl::draw_view{ s = &s.level, &g, &frame, target } }
     }
 
     fn open_request { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, r: Request } {

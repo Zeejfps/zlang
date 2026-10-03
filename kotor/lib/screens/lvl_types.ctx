@@ -81,12 +81,14 @@ namespace lvl {
         // feat.2da, for the descriptions the rules do not keep
         feat_table: twoda::Table,
         has_feat_table: bool,
+        view: ?*mut View,                // the creature on MODEL_LBL
     }
 
     fn new {} -> State {
         let mut s: State
         s.open = false
         s.who = obj::INVALID
+        s.view = null
         s.box = msgbox::blank{}
         s.step_kind = NO_STEP
         return s

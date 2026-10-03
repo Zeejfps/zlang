@@ -52,19 +52,22 @@ namespace lvl {
         s.list = try gui::open{ &g, fs = &w.fs, &dev, name = "leveluppnl", mode = gui::Mode::framed, modal = true }
         s.open = true
         gui::play_sound{ &g, n = 4 }
+        s.view = make_view{ &w, &g, &dev, who }
         try bind_main{ &s, &g, &w, &dev }
         try refresh_main{ &s, &g, &w }
         refresh_steps{ &s, &g }
     }
 
     // Gives the panels back without applying anything.
-    fn close_panels { mut s: State, mut g: gui::Gui } {
+    fn close_panels { mut s: State, mut g: gui::Gui, mut dev: gpu::Device } {
         if not s.open { return }
         msgbox::close{ &g, b = &s.box }
         if s.step != 0 { gui::close{ &g, id = s.step } }
         gui::close{ &g, id = s.list }
         gui::close{ &g, id = s.main }
         gui::play_sound{ &g, n = 5 }
+        if s.view is some{ value = v } { free_view{ v, &dev } }
+        s.view = null
         s.step = 0
         s.step_kind = NO_STEP
         s.open = false
@@ -83,7 +86,6 @@ namespace lvl {
         // the new-value labels here.
         gui::set_visible{ &g, panel = p, tag = "LBL_VIT", visible = false }
         gui::set_visible{ &g, panel = p, tag = "LBL_DEF", visible = false }
-        gui::set_visible{ &g, panel = p, tag = "MODEL_LBL", visible = false }
     }
 
     // The ability scores, level, vitality, defense and saves: the creature now, and with the level
@@ -206,7 +208,7 @@ namespace lvl {
         let k = step_number{ tag = ev.tag }
         if k < 0 { return }
         if k == STEP_ACCEPT {
-            finish{ &s, &g, &w }
+            finish{ &s, &g, &w, &dev }
             return
         }
         try open_step{ &s, &g, &w, &dev, k }
@@ -223,12 +225,12 @@ namespace lvl {
         if any {
             try say{ &s, &g, &w, &dev, strref = STR_SURE_CANCEL, ask = ASK_CANCEL }
         } else {
-            close_panels{ &s, &g }
+            close_panels{ &s, &g, &dev }
         }
     }
 
     fn answered { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ask: i32, ok: bool } -> ! {
-        if ask == ASK_CANCEL and ok { close_panels{ &s, &g } }
+        if ask == ASK_CANCEL and ok { close_panels{ &s, &g, &dev } }
         if ask == ASK_SKILLS_LEFT and ok { try accept_skills_now{ &s, &g, &w } }
     }
 
@@ -263,7 +265,7 @@ namespace lvl {
 
     // Accept: the record goes into the creature through the engine, which heals it and tells the
     // module; the panels close.
-    fn finish { mut s: State, mut g: gui::Gui, mut w: world::World } {
+    fn finish { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
         let mut k: usize = 0
         while k < STEPS - 1 {
             if s.needed[k] and not s.done[k] { return }
@@ -271,6 +273,6 @@ namespace lvl {
         }
         let ok = levelup::apply{ &w, id = s.who, rec = s.rec }
         if ok { gui::play_sound{ &g, n = 11 } }
-        close_panels{ &s, &g }
+        close_panels{ &s, &g, &dev }
     }
 }

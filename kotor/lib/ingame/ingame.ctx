@@ -313,5 +313,6 @@ namespace ingame {
         gui::draw_backdrop_pass{ g = &ui.gui, &frame }
         screens::draw_views{ s = &ui.screens, g = &ui.gui, &frame, target = gpu::screen_size{ dev } }
         gui::draw_panels{ g = &ui.gui, &frame }
+        screens::draw_over{ s = &ui.screens, g = &ui.gui, &frame, target = gpu::screen_size{ dev } }
     }
 }
