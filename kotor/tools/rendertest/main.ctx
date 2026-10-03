@@ -1,0 +1,427 @@
+// rendertest: draws test scenes through the render seam (render:: data, gpu:: device) offscreen
+// and writes each as a PNG, to look at.
+//
+//   kotor/tools/ctxc run kotor/tools/rendertest                     every scene, into kotor/out/render/
+//   kotor/tools/ctxc run kotor/tools/rendertest -- --show 5         and show the last one for 5 s
+//
+// Scenes: `materials` (lit, lightmapped, cube and sphere env maps, bump, alpha, additive, punch,
+// self-illumination, skinning, dangly, particles, shadows, fog, debug lines, a second viewport),
+// `ui` (quads, clipping, rotation, colour, a render target, a YUV video frame, text in a game
+// font when kotor/extract/tex has it).
+
+struct Options { show: f64, out_dir: []u8, font_dir: []u8 }
+
+const WIDTH: i32 = 960
+const HEIGHT: i32 = 600
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let opts = parse_args{ &io, args } ifnull { return 2 }
+    let pages = mem::pages{ &mem, size = 536870912 } ifnull {
+        io::eprintln{ &io, s = "rendertest: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    run{ &io, &fs, &sdl, &heap, opts } iferr err{ error } {
+        _ = @fmt(&io, "rendertest: failed: {}\n", error)
+        match error {
+            gpu::shader_failed{ log } => { _ = @fmt(&io, "{}\n", log) }
+            sdl::failed => { _ = @fmt(&io, "SDL: {}\n", sdl::last_error{ &sdl }) }
+            else => {}
+        }
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return 0
+}
+
+fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, opts: Options } -> ! {
+    try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
+    defer sdl::quit{ &sdl }
+    let mut config = render::make_config{ title = "rendertest", width = WIDTH, height = HEIGHT, hidden = opts.show <= 0.0 }
+    config.debug = true
+    let mut dev = try gpu::open{ &sdl, realloc = arena::alloc, &heap, config }
+    defer gpu::close{ &dev, &sdl }
+    let info = gpu::describe{ dev }
+    _ = @fmt(&io, "{} on {}; DXT {}\n", info.api, info.device, info.dxt)
+    let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, &heap, cap = render::default_capacity{} }
+    make_dir{ &fs, path = opts.out_dir }
+
+    let mut assets = try make_assets{ &dev, &heap }
+    try draw_materials{ &dev, &frame, a = assets, t = 0.7 }
+    try save_screen{ &io, &fs, &dev, &heap, dir = opts.out_dir, name = "materials.png" }
+    report{ &io, &dev }
+
+    if opts.show > 0.0 {
+        let freq = sdl::counter_frequency{ &sdl }
+        let start = sdl::counter{ &sdl }
+        while true {
+            let mut quit = false
+            while true {
+                let e = sdl::poll{ &sdl } ifnull { break }
+                if e is quit | close { quit = true }
+                if e is key{ down, keycode } and down and keycode == sdl::key::ESCAPE { quit = true }
+            }
+            let elapsed = @as(f64, sdl::counter{ &sdl } - start) / @as(f64, freq)
+            if quit or elapsed > opts.show { break }
+            try draw_materials{ &dev, &frame, a = assets, t = 0.7 + @as(f32, elapsed) }
+            gpu::present{ &dev, &sdl }
+        }
+    }
+}
+
+fn report { mut io: Io, mut dev: gpu::Device } {
+    let s = gpu::get_stats{ dev }
+    _ = @fmt(&io, "  {} draws, {} triangles, {} culled, {} quads, {} particles\n", s.draws, s.triangles, s.culled, s.quads, s.particles)
+    let m = gpu::messages{ dev }
+    if m.len > 0 { _ = @fmt(&io, "{}", m) }
+    gpu::clear_messages{ &dev }
+}
+
+// ---- assets
+
+struct Assets {
+    cube: render::Mesh,
+    sphere: render::Mesh,
+    ground: render::Mesh,
+    tube: render::Mesh,
+    cloth: render::Mesh,
+    card: render::Mesh,                 // a 1x1 upright quad facing -Y
+    checker: render::Texture,
+    holes: render::Texture,
+    lightmap: render::Texture,
+    bumps: render::Texture,
+    sky: render::Texture,
+    sprites: render::Texture,
+    shiny: render::Texture,             // grey with low alpha: mostly reflection
+}
+
+fn make_assets { mut dev: gpu::Device, mut heap: arena::Arena } -> !Assets {
+    let mut verts = try alloc::resize(f32, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(f32){}, count = 65536 * shapes::FLOATS }
+    let mut indices = try alloc::resize(u16, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u16){}, count = 393216 }
+
+    let mut b = shapes::builder{ verts, indices }
+    shapes::cube{ &b, h = 0.5 }
+    let cube = try upload_mesh{ &dev, b }
+    b = shapes::builder{ verts, indices }
+    shapes::sphere{ &b, r = 0.6, rings = 24, segments = 48 }
+    let sphere = try upload_mesh{ &dev, b }
+    b = shapes::builder{ verts, indices }
+    shapes::grid{ &b, origin = math::Vec3{ x = -8.0, y = -6.0, z = 0.0 }, u = math::Vec3{ x = 16.0, y = 0.0, z = 0.0 }, v = math::Vec3{ x = 0.0, y = 14.0, z = 0.0 }, nu = 16, nv = 14 }
+    // The ground's uv0 repeats the checker every metre.
+    let mut k: usize = 0
+    while k < b.vertex_count {
+        b.verts[k * shapes::FLOATS + 6] = b.verts[k * shapes::FLOATS + 6] * 16.0
+        b.verts[k * shapes::FLOATS + 7] = b.verts[k * shapes::FLOATS + 7] * 14.0
+        k = k + 1
+    }
+    let ground = try upload_mesh{ &dev, b }
+    b = shapes::builder{ verts, indices }
+    shapes::tube{ &b, r = 0.25, height = 2.0, rings = 16, segments = 24 }
+    let tube = try upload_mesh{ &dev, b }
+    b = shapes::builder{ verts, indices }
+    shapes::cloth{ &b, w = 1.2, h = 1.6, n = 12 }
+    let cloth = try upload_mesh{ &dev, b }
+    b = shapes::builder{ verts, indices }
+    shapes::grid{ &b, origin = math::Vec3{ x = -0.5, y = 0.0, z = 0.0 }, u = math::Vec3{ x = 1.0, y = 0.0, z = 0.0 }, v = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, nu = 1, nv = 1 }
+    let card = try upload_mesh{ &dev, b }
+
+    let px = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = 256 * 256 * 4 * 6 }
+    shapes::checker{ px, size = 256, holes = false }
+    let checker = try upload_rgba{ &dev, px, size = 256, mipmap = true }
+    shapes::checker{ px, size = 256, holes = true }
+    let holes = try upload_rgba{ &dev, px, size = 256, mipmap = true }
+    shapes::lightmap{ px, size = 64 }
+    let lightmap = try upload_rgba{ &dev, px, size = 64, mipmap = false }
+    shapes::bumps{ px, size = 256 }
+    let bumps = try upload_rgba{ &dev, px, size = 256, mipmap = true }
+    shapes::sprites{ px, size = 128 }
+    let sprites = try upload_rgba{ &dev, px, size = 128, mipmap = true }
+    let mut i: usize = 0
+    while i < 16 {
+        px[i * 4] = 120
+        px[i * 4 + 1] = 125
+        px[i * 4 + 2] = 135
+        px[i * 4 + 3] = 40
+        i = i + 1
+    }
+    let shiny = try upload_rgba{ &dev, px, size = 4, mipmap = false }
+    let face_bytes: usize = 64 * 64 * 4
+    let mut face: u32 = 0
+    while face < 6 {
+        shapes::sky_face{ px = px[@as(usize, face) * face_bytes..], size = 64, face }
+        face = face + 1
+    }
+    let mut sky_desc = render::make_texture_desc{ format = render::PixelFormat::rgba8, width = 64, height = 64, levels = 1 }
+    sky_desc.kind = render::TextureKind::cube
+    let sky = try gpu::create_texture{ &dev, desc = sky_desc, data = px[..face_bytes * 6] }
+    return Assets{ cube, sphere, ground, tube, cloth, card, checker, holes, lightmap, bumps, sky, sprites, shiny }
+}
+
+fn upload_mesh { mut dev: gpu::Device, b: shapes::Builder } -> !render::Mesh {
+    let desc = render::MeshDesc{
+        layout = shapes::layout{}, vertex_count = @as(u32, b.vertex_count), index_count = @as(u32, b.index_count),
+        primitive = render::Primitive::triangles, dynamic = false,
+    }
+    let bytes = gl::bytes_of(f32){ s = b.verts[..b.vertex_count * shapes::FLOATS] }
+    return gpu::create_mesh{ &dev, desc, vertices = bytes, indices = b.indices[..b.index_count] }
+}
+
+fn upload_rgba { mut dev: gpu::Device, px: []u8, size: u32, mipmap: bool } -> !render::Texture {
+    let mut desc = render::make_texture_desc{ format = render::PixelFormat::rgba8, width = size, height = size, levels = 1 }
+    desc.mipmap = mipmap
+    return gpu::create_texture{ &dev, desc, data = px[..@as(usize, size * size * 4)] }
+}
+
+// ---- the materials scene
+
+fn v3 { x: f32, y: f32, z: f32 } -> math::Vec3 { return math::Vec3{ x, y, z } }
+fn at { x: f32, y: f32, z: f32 } -> math::Mat4 { return math::mat4::translation{ t = v3{ x, y, z } } }
+
+fn draw_materials { mut dev: gpu::Device, mut frame: render::Frame, a: Assets, t: f32 } -> ! {
+    render::begin_frame{ &frame, time = t }
+    let aspect = @as(f32, WIDTH) / @as(f32, HEIGHT)
+    let up = v3{ x = 0.0, y = 0.0, z = 1.0 }
+    let eye = v3{ x = 0.0, y = -10.5, z = 5.5 }
+    let cam = render::Camera{
+        view = math::mat4::look_at{ eye, at = v3{ x = 0.0, y = 0.8, z = 0.8 }, up },
+        proj = math::mat4::perspective{ fovy = 0.85, aspect, near = 0.1, far = 200.0 },
+        eye,
+    }
+    let mut view = render::make_view{ camera = cam }
+    view.clear_color = render::rgba{ r = 0.32, g = 0.36, b = 0.42, a = 1.0 }
+    view.ambient = v3{ x = 0.25, y = 0.25, z = 0.28 }
+    view.fog = render::Fog{ on = true, color = v3{ x = 0.32, y = 0.36, z = 0.42 }, near = 12.0, far = 30.0 }
+    let vi = render::add_view{ &frame, view } ifnull { return }
+
+    render::add_light{ &frame, light = render::Light{ position = v3{ x = -5.5, y = 0.5, z = 2.0 }, color = v3{ x = 1.4, y = 0.3, z = 0.2 }, radius = 6.0 } }
+    render::add_light{ &frame, light = render::Light{ position = v3{ x = -1.5, y = -0.5, z = 2.5 }, color = v3{ x = 0.3, y = 0.5, z = 1.6 }, radius = 6.0 } }
+    render::add_light{ &frame, light = render::Light{ position = v3{ x = 3.0, y = -3.0, z = 5.0 }, color = v3{ x = 0.9, y = 0.85, z = 0.75 }, radius = 14.0 } }
+
+    // The ground: lit, checkered, fogged into the distance.
+    let mut ground = render::make_material{}
+    ground.diffuse = a.checker
+    _ = render::add_draw{ &frame, draw = render::make_draw{ view = vi, mesh = a.ground, transform = math::mat4::identity{}, material = ground } }
+
+    // Back row, left to right: lit, lightmapped, cube env, sphere env, bump.
+    let spin = math::quat::from_axis_angle{ axis = up, angle = t * 0.6 }
+    let mut lit = render::make_material{}
+    lit.diffuse = a.checker
+    _ = render::add_draw{ &frame, draw = render::make_draw{ view = vi, mesh = a.sphere, transform = math::mat4::compose{ t = v3{ x = -5.0, y = 2.0, z = 0.6 }, r = spin, s = v3{ x = 1.0, y = 1.0, z = 1.0 } }, material = lit } }
+
+    let mut lightmapped = render::make_material{}
+    lightmapped.diffuse = a.checker
+    lightmapped.lightmap = a.lightmap
+    _ = render::add_draw{ &frame, draw = render::make_draw{ view = vi, mesh = a.cube, transform = math::mat4::compose{ t = v3{ x = -2.5, y = 2.0, z = 0.6 }, r = spin, s = v3{ x = 1.2, y = 1.2, z = 1.2 } }, material = lightmapped } }
+
+    let mut cube_env = render::make_material{}
+    cube_env.diffuse = a.shiny
+    cube_env.envmap = a.sky
+    _ = render::add_draw{ &frame, draw = render::make_draw{ view = vi, mesh = a.sphere, transform = at{ x = 0.0, y = 2.0, z = 0.6 }, material = cube_env } }
+
+    let mut sphere_env = render::make_material{}
+    sphere_env.diffuse = a.shiny
+    sphere_env.envmap = a.checker
+    _ = render::add_draw{ &frame, draw = render::make_draw{ view = vi, mesh = a.sphere, transform = at{ x = 2.5, y = 2.0, z = 0.6 }, material = sphere_env } }
+
+    let mut bumped = render::make_material{}
+    bumped.bumpmap = a.bumps
+    bumped.color = render::rgba{ r = 0.8, g = 0.8, b = 0.8, a = 1.0 }
+    _ = render::add_draw{ &frame, draw = render::make_draw{ view = vi, mesh = a.sphere, transform = math::mat4::compose{ t = v3{ x = 5.0, y = 2.0, z = 0.6 }, r = spin, s = v3{ x = 1.0, y = 1.0, z = 1.0 } }, material = bumped } }
+
+    // Front row: alpha, additive, punch, self-illumination, skinning, dangly.
+    let mut glass = render::make_material{}
+    glass.blend = render::Blend::alpha
+    glass.color = render::rgba{ r = 0.4, g = 0.9, b = 0.6, a = 0.45 }
+    _ = render::add_draw{ &frame, draw = render::make_draw{ view = vi, mesh = a.sphere, transform = at{ x = -5.0, y = -1.0, z = 0.6 }, material = glass } }
+
+    let mut glow = render::make_material{}
+    glow.diffuse = a.checker
+    glow.blend = render::Blend::additive
+    glow.lit = false
+    glow.color = render::rgba{ r = 0.6, g = 0.6, b = 0.6, a = 1.0 }
+    _ = render::add_draw{ &frame, draw = render::make_draw{ view = vi, mesh = a.cube, transform = math::mat4::compose{ t = v3{ x = -3.0, y = -1.0, z = 0.6 }, r = spin, s = v3{ x = 1.1, y = 1.1, z = 1.1 } }, material = glow } }
+
+    let mut fence = render::make_material{}
+    fence.diffuse = a.holes
+    fence.blend = render::Blend::punch
+    fence.two_sided = true
+    _ = render::add_draw{ &frame, draw = render::make_draw{ view = vi, mesh = a.card, transform = math::mat4::compose{ t = v3{ x = -1.0, y = -1.0, z = 0.0 }, r = math::quat::from_axis_angle{ axis = up, angle = 0.3 }, s = v3{ x = 1.4, y = 1.4, z = 1.4 } }, material = fence } }
+
+    let mut ember = render::make_material{}
+    ember.color = render::rgba{ r = 0.2, g = 0.2, b = 0.2, a = 1.0 }
+    ember.selfillum = v3{ x = 0.9, y = 0.45, z = 0.1 }
+    _ = render::add_draw{ &frame, draw = render::make_draw{ view = vi, mesh = a.sphere, transform = at{ x = 1.0, y = -1.0, z = 0.6 }, material = ember } }
+
+    // A tube bent at 0.7 m by bone 1 turning about X.
+    let pivot = v3{ x = 0.0, y = 0.0, z = 0.9 }
+    let bend = math::quat::from_axis_angle{ axis = v3{ x = 1.0, y = 0.0, z = 0.0 }, angle = 0.6 + 0.3 * math::sinf{ x = t * 2.0 } }
+    let mut palette: [2]math::Mat4
+    palette[0] = math::mat4::identity{}
+    palette[1] = math::mat4::mul{ a = math::mat4::translation{ t = pivot }, b = math::mat4::mul{ a = math::quat::to_mat4{ q = bend }, b = math::mat4::translation{ t = math::vec3::negate{ v = pivot } } } }
+    let first_bone = render::add_bones{ &frame, palette = palette[..] } ifnull { 0 }
+    let mut skin = render::make_material{}
+    skin.diffuse = a.checker
+    let mut tube = render::make_draw{ view = vi, mesh = a.tube, transform = at{ x = 3.0, y = -1.0, z = 0.0 }, material = skin }
+    tube.bones = first_bone
+    tube.bone_count = 2
+    let tube_index = render::add_draw{ &frame, draw = tube } ifnull { 0 }
+    render::add_shadow{ &frame, shadow = render::Shadow{
+        draw = tube_index, light = v3{ x = -2.0, y = -1.5, z = 7.0 }, directional = false,
+        plane = math::plane::from_normal_point{ n = up, p = math::vec3::zero{} }, strength = 0.55,
+    } }
+    render::add_box_lines{ &frame, view = vi, box = math::aabb::make{ min = v3{ x = 2.6, y = -1.4, z = 0.0 }, max = v3{ x = 3.4, y = -0.0, z = 2.1 } }, color = render::rgba{ r = 1.0, g = 1.0, b = 0.2, a = 1.0 }, depth_test = true }
+
+    let mut cloth = render::make_material{}
+    cloth.diffuse = a.checker
+    cloth.two_sided = true
+    let mut hanging = render::make_draw{ view = vi, mesh = a.cloth, transform = at{ x = 5.2, y = -1.0, z = 2.0 }, material = cloth }
+    hanging.dangle = v3{ x = 0.35 * math::sinf{ x = t * 3.0 }, y = 0.5, z = 0.1 }
+    _ = render::add_draw{ &frame, draw = hanging }
+
+    // Particles: a ring of camera-facing dots cycling through the sprite grid, and a column of
+    // flames turning about Z.
+    let mut parts: [48]render::Particle
+    let mut i: u32 = 0
+    while i < 48 {
+        let ang = @as(f32, i) / 48.0 * math::TAU + t * 0.5
+        parts[i] = render::Particle{
+            position = v3{ x = 2.2 * math::cosf{ x = ang }, y = 2.2 * math::sinf{ x = ang }, z = 0.35 + 0.15 * math::sinf{ x = ang * 3.0 } },
+            size = math::Vec2{ x = 0.35, y = 0.35 }, angle = 0.0,
+            color = render::rgba{ r = 1.0, g = 1.0, b = 1.0, a = 0.9 }, frame = i % 4, dir = up,
+        }
+        i = i + 1
+    }
+    render::add_emitter{ &frame, emitter = render::Emitter{
+        view = vi, texture = a.sprites, blend = render::Blend::additive, grid_x = 2, grid_y = 2,
+        facing = render::Facing::camera, axis = up, transform = at{ x = 0.0, y = 5.0, z = 0.0 }, first = 0, count = 0, fog = true, sort = 0,
+    }, particles = parts[..] }
+    let mut column: [8]render::Particle
+    i = 0
+    while i < 8 {
+        column[i] = render::Particle{
+            position = v3{ x = 0.0, y = 0.0, z = 0.4 + 0.35 * @as(f32, i) }, size = math::Vec2{ x = 0.5, y = 0.5 }, angle = 0.0,
+            color = render::rgba{ r = 1.0, g = 0.7, b = 0.3, a = 0.8 }, frame = 0, dir = up,
+        }
+        i = i + 1
+    }
+    render::add_emitter{ &frame, emitter = render::Emitter{
+        view = vi, texture = a.sprites, blend = render::Blend::additive, grid_x = 2, grid_y = 2,
+        facing = render::Facing::axis, axis = up, transform = at{ x = 6.5, y = 2.0, z = 0.0 }, first = 0, count = 0, fog = true, sort = 0,
+    }, particles = column[..] }
+
+    // A walkmesh-like patch of debug triangles and its edges, drawn over everything.
+    let p0 = v3{ x = -7.0, y = -3.5, z = 0.02 }
+    let p1 = v3{ x = -5.5, y = -3.5, z = 0.02 }
+    let p2 = v3{ x = -6.2, y = -2.2, z = 0.02 }
+    render::add_tri{ &frame, tri = render::Tri{ view = vi, a = p0, b = p1, c = p2, color = render::rgba{ r = 0.1, g = 1.0, b = 0.3, a = 0.35 }, depth_test = true } }
+    render::add_line{ &frame, line = render::Line{ view = vi, a = p0, b = p1, color = render::white{}, depth_test = false } }
+    render::add_line{ &frame, line = render::Line{ view = vi, a = p1, b = p2, color = render::white{}, depth_test = false } }
+    render::add_line{ &frame, line = render::Line{ view = vi, a = p2, b = p0, color = render::white{}, depth_test = false } }
+
+    // A second view: the scene from above, top right.
+    let top_eye = v3{ x = 0.0, y = 0.0, z = 18.0 }
+    let mut top = render::make_view{ camera = render::Camera{
+        view = math::mat4::look_at{ eye = top_eye, at = math::vec3::zero{}, up = v3{ x = 0.0, y = 1.0, z = 0.0 } },
+        proj = math::mat4::perspective{ fovy = 0.9, aspect = 1.5, near = 0.1, far = 100.0 },
+        eye = top_eye,
+    } }
+    top.viewport = render::rect{ x = 700.0, y = 16.0, w = 240.0, h = 160.0 }
+    top.clear_color = render::rgba{ r = 0.1, g = 0.1, b = 0.12, a = 1.0 }
+    let ti = render::add_view{ &frame, view = top } ifnull { return }
+    _ = render::add_draw{ &frame, draw = render::make_draw{ view = ti, mesh = a.ground, transform = math::mat4::identity{}, material = ground } }
+    _ = render::add_draw{ &frame, draw = render::make_draw{ view = ti, mesh = a.sphere, transform = at{ x = -5.0, y = 2.0, z = 0.6 }, material = lit } }
+    _ = render::add_draw{ &frame, draw = render::make_draw{ view = ti, mesh = a.sphere, transform = at{ x = 0.0, y = 2.0, z = 0.6 }, material = cube_env } }
+
+    try gpu::submit{ &dev, frame = &frame }
+}
+
+// ---- output
+
+fn save_screen { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, dir: []u8, name: []u8 } -> ! {
+    let size = gpu::screen_size{ dev }
+    let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+    defer _ = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = pixels, count = 0 }
+    _ = try gpu::read_screen{ &dev, into = pixels }
+    let mut path_buf: [512]u8
+    let path = join{ into = path_buf[..], a = dir, b = name }
+    let image = png::Image{ width = size.width, height = size.height, rgba = pixels }
+    try png::save{ &fs, realloc = arena::alloc, &heap, path, image, alpha = false, bottom_up = false }
+    _ = @fmt(&io, "wrote {} ({}x{})\n", path, size.width, size.height)
+}
+
+fn join { into: []mut u8, a: []u8, b: []u8 } -> []u8 {
+    let mut n: usize = 0
+    let mut i: usize = 0
+    while i < a.len and n < into.len {
+        into[n] = a[i]
+        n = n + 1
+        i = i + 1
+    }
+    if n > 0 and into[n - 1] != '/' and n < into.len {
+        into[n] = '/'
+        n = n + 1
+    }
+    i = 0
+    while i < b.len and n < into.len {
+        into[n] = b[i]
+        n = n + 1
+        i = i + 1
+    }
+    return into[..n]
+}
+
+// Makes `path` and the directories above it that are missing.
+fn make_dir { mut fs: Fs, path: []u8 } {
+    let mut i: usize = 1
+    while i <= path.len {
+        if i == path.len or path[i] == '/' {
+            fs::make_dir{ &fs, path = path[..i] } iferr {}
+        }
+        i = i + 1
+    }
+}
+
+// ---- options
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{ show = 0.0, out_dir = "kotor/out/render", font_dir = "G:/Dev/zlang/kotor/extract/tex" }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if slice::eq_bytes{ a, b = "--show" } and i + 1 < args.len {
+            i = i + 1
+            let text = utf8::from{ bytes = args[i] } iferr { return usage{ &io } }
+            o.show = utf8::parse_f64{ s = text } ifnull { return usage{ &io } }
+        } else if slice::eq_bytes{ a, b = "--out" } and i + 1 < args.len {
+            i = i + 1
+            o.out_dir = args[i]
+        } else {
+            return usage{ &io }
+        }
+        i = i + 1
+    }
+    return o
+}
+
+fn usage { mut io: Io } -> ?Options {
+    io::eprintln{ &io, s = "usage: rendertest [--show SECONDS] [--out DIR]" }
+    return null
+}
+
+// ---- @fmt into standard output
+
+namespace out {
+    #write
+    fn put_text { mut io: Io, s: strlit } { io::write{ &io, to = io::Stream::out, bytes = s.bytes } }
+    #write
+    fn put_bytes { mut io: Io, b: []u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
+    #write
+    fn put_cstring { mut io: Io, s: c::String } { io::write{ &io, to = io::Stream::out, bytes = c::bytes{ s } } }
+    #write
+    fn put_bool { mut io: Io, b: bool } { io::print_bool{ &io, n = b } }
+    #write
+    fn put_u32 { mut io: Io, n: u32 } { io::print_u64{ &io, n } }
+    #write
+    fn put_usize { mut io: Io, n: usize } { io::print_u64{ &io, n } }
+}
