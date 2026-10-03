@@ -8,7 +8,7 @@ namespace hud {
     const HOSTILE_BELOW: i32 = 11
 
     // What a slot does when pressed.
-    enum Act: u8 { none, open, bash, use_place, open_place, talk, attack }
+    enum Act: u8 { none, open, bash, use_place, open_place, talk, attack, unlock }
 
     // One choice in a slot: its icon (a texture in the GUI pack) and the dialog.tlk string that
     // names it.
@@ -70,10 +70,17 @@ namespace hud {
         let o = world::object{ w, id } ifnull { return l }
         match o.ext {
             door{ d } => {
+                // A locked door the leader can pick (Security trained): that comes first.
+                if d.locked and not d.key_required and can_pick_locks{ w } {
+                    push_entry{ &l, e = entry{ act = Act::unlock, icon = "isk_security", strref = 329 } }
+                }
                 push_entry{ &l, e = entry{ act = Act::open, icon = "i_opendoor", strref = 365 } }
                 push_entry{ &l, e = entry{ act = Act::bash, icon = "i_attack", strref = 368 } }
             }
             placeable{ p } => {
+                if p.locked and p.key.len == 0 and can_pick_locks{ w } {
+                    push_entry{ &l, e = entry{ act = Act::unlock, icon = "isk_security", strref = 329 } }
+                }
                 if p.has_inventory { push_entry{ &l, e = entry{ act = Act::open_place, icon = "i_openplace", strref = 365 } } }
                 else { push_entry{ &l, e = entry{ act = Act::use_place, icon = "i_useplace", strref = 366 } } }
             }
@@ -86,6 +93,14 @@ namespace hud {
         return l
     }
 
+    // Whether the party leader has the Security skill trained.
+    fn can_pick_locks { w: *world::World } -> bool {
+        let o = world::object{ w, id = party::leader{ w } } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        let f = c.fighter ifnull { return false }
+        return rt_talent::has_skill{ w, f, skill = rules::skill::SECURITY }
+    }
+
     // The pointer's picture for what a click on `id` would do.
     fn cursor_for { w: *world::World, id: u32 } -> u32 {
         let l = default_actions{ w, id }
@@ -93,7 +108,7 @@ namespace hud {
         match l.entries[0].act {
             open => { return gui::CURSOR_DOOR }
             bash => { return gui::CURSOR_BASH }
-            use_place | open_place => { return gui::CURSOR_USE }
+            use_place | open_place | unlock => { return gui::CURSOR_USE }
             talk => { return gui::CURSOR_TALK }
             attack => { return gui::CURSOR_ATTACK }
             else => { return gui::CURSOR_DEFAULT }
@@ -190,6 +205,7 @@ namespace hud {
         let kind: actions::Kind = match act {
             open => { actions::Kind::open_door }
             use_place | open_place => { actions::Kind::use_object }
+            unlock => { actions::Kind::open_lock }
             talk => { actions::Kind::dialog_object }
             attack | bash => { actions::Kind::attack_object }
             else => { return }
