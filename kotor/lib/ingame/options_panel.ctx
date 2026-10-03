@@ -1,28 +1,168 @@
-// In-game options (optionsingame.gui, menu 7): save, load, options, quit.
-// SKELETON: the panel opens as the file draws it; the panel's owner fills `open`, `update` and
-// `on_event` (the protocol is in menus.ctx).
+// In-game options (optionsingame.gui, menu 7): Load Game, Save Game, the option screens and Exit
+// Game (docs/re/gui.md, "Options").
+//
+// The option screens are the front end's (lib/frontend): this panel keeps a `frontend::Front`
+// with the same settings file the main menu uses, opens its screens with frontend::open_screen
+// and feeds their events to frontend::on_event. The screens are modal panels of their own on top
+// of the menu, so their events never reach `on_event` (the framework passes only the menu
+// panel's); `update` takes them from the GUI's list by panel id instead. The front end's stack
+// has a stand-in main-menu entry at the bottom so that its screens can close themselves.
+//
+// What the owner (play.ctx) can ask of it: `ingame::wants_quit` (Exit Game was confirmed),
+// `options_panel::take_display_change` (resolution, v-sync, gamma ... changed: apply
+// `options_panel::settings`).
 namespace options_panel {
-    struct State { opened: bool, quit: bool }   // quit: the Exit Game button was confirmed
+    // What the open message box is for.
+    const BOX_NONE: u32 = 0
+    const BOX_NOTICE: u32 = 1
+    const BOX_QUIT: u32 = 2
 
-    fn new {} -> State { return State{ opened = false, quit = false } }
+    struct State {
+        opened: bool,
+        quit: bool,                         // the Exit Game button was confirmed
+        fe: ?*mut frontend::Front,          // the option screens' state and settings
+        box: u32,                           // the message box on screen, 0 when none
+        box_for: u32,
+    }
+
+    fn new {} -> State {
+        return State{ opened = false, quit = false, fe = null, box = 0, box_for = BOX_NONE }
+    }
+
+    // The front end's settings, once the panel has been opened (null before).
+    fn settings { s: *State } -> ?*frontend::Settings {
+        let fe = s.fe ifnull { return null }
+        return &fe.settings
+    }
+
+    // True once when an option that needs the display changed (resolution, full screen, gamma,
+    // v-sync ...): the owner applies `settings`.
+    fn take_display_change { mut s: State } -> bool {
+        let fe = s.fe ifnull { return false }
+        return frontend::take_display_change{ fe }
+    }
+
+    // ---- opening
+
+    // The front end for this session: the settings file is the one play.ctx loads for the main
+    // menu. Made on first use, kept.
+    fn make_front { mut s: State, mut w: world::World } -> ! {
+        if s.fe != null { return }
+        let fe = try alloc::new(frontend::Front, heap::Heap){
+            realloc = heap::alloc, heap = w.heap,
+            value = frontend::make{ fs = &w.fs, heap = w.heap, game = w.rm.game, config_path = "kotor/out/kotor-settings.ini" },
+        }
+        // The screens close themselves down to the main menu, which is not here: a stand-in entry
+        // for it keeps close_top from refusing.
+        fe.stack[0] = frontend::Entry{ screen = frontend::SCR_MAIN, panel = 0 }
+        fe.depth = 1
+        s.fe = fe
+    }
 
     // The panel was just added, or the leader changed and it must be filled again.
     fn open { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
         s.opened = true
+        try make_front{ &s, &w }
+        gui::set_focus{ &g, panel, tag = "BTN_GAMEPLAY" }
     }
 
-    // Every frame while the panel is shown.
-    fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, dt: f32 } {
+    // ---- the buttons
+
+    // The option screen a button opens (0: not one of them).
+    fn screen_of_tag { tag: []u8 } -> u32 {
+        if slice::eq_bytes{ a = tag, b = "BTN_GAMEPLAY" } { return frontend::SCR_GAMEPLAY }
+        if slice::eq_bytes{ a = tag, b = "BTN_FEEDBACK" } { return frontend::SCR_FEEDBACK }
+        if slice::eq_bytes{ a = tag, b = "BTN_AUTOPAUSE" } { return frontend::SCR_AUTOPAUSE }
+        if slice::eq_bytes{ a = tag, b = "BTN_GRAPHICS" } { return frontend::SCR_GRAPHICS }
+        if slice::eq_bytes{ a = tag, b = "BTN_SOUND" } { return frontend::SCR_SOUND }
+        return 0
+    }
+
+    // A box with a message of dialog.tlk's; `ask` adds Cancel.
+    fn say { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, strref: u32, ask: bool, for_what: u32 } {
+        if s.box != 0 { return }
+        let text = world::string_by_strref{ w = &w, strref }
+        s.box = gui::message_box{ g = &g, fs = &w.fs, &dev, text, cancel = ask } iferr { 0 }
+        if s.box != 0 { s.box_for = for_what }
     }
 
     // One of the panel's GUI events (BTN_EXIT, Escape and the BTN_CHANGE buttons are the
     // framework's). True when it used the event.
     fn on_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, ev: gui::Event } -> bool {
-        return false
+        if ev.kind != gui::EventKind::activate { return false }
+        let screen = screen_of_tag{ tag = ev.tag }
+        if screen != 0 {
+            let fe = s.fe ifnull { return true }
+            frontend::open_screen{ fe, &g, fs = &w.fs, &dev, screen } iferr {}
+        } else if slice::eq_bytes{ a = ev.tag, b = "BTN_LOADGAME" } or slice::eq_bytes{ a = ev.tag, b = "BTN_SAVEGAME" } {
+            // PLACEHOLDER: saving and loading games have no owner yet (HOOK(save) in play.ctx).
+            // The original's panels (saveload.gui with a save name box) go here; the front end's
+            // Load Game screen can already list the install's saves. 38451 is "That function is
+            // unavailable at this time."
+            say{ &s, &g, &w, &dev, strref = 38451, ask = false, for_what = BOX_NOTICE }
+        } else if slice::eq_bytes{ a = ev.tag, b = "BTN_QUIT" } {
+            // "Do you really want to quit?"; OK ends the game loop (ingame::wants_quit).
+            say{ &s, &g, &w, &dev, strref = 42348, ask = true, for_what = BOX_QUIT }
+        } else {
+            return false
+        }
+        return true
     }
 
-    // The panel is going away.
+    // ---- the option screens and the box, which are panels of their own
+
+    // Every frame while the panel is shown.
+    fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, dt: f32 } {
+        let fe = s.fe ifnull { return }
+        let n = gui::take_events{ g = &g }.len
+        let mut i: usize = 0
+        while i < n {
+            let evs = gui::take_events{ g = &g }
+            if i >= evs.len { break }
+            let ev = evs[i]
+            i = i + 1
+            if ev.panel == 0 or ev.panel == panel { continue }
+            if s.box != 0 and ev.panel == s.box {
+                box_event{ &s, &g, &w, ev }
+            } else if frontend::screen_of{ fe, panel = ev.panel } != 0 {
+                // Only Outcome::running can come out of an options screen.
+                _ = frontend::on_event{ fe, &g, fs = &w.fs, &dev, ev }
+                // Volumes go to the mixer's groups at once, as in the main menu.
+                if fe.sound_pending { frontend::apply_sound{ fe, mixer = g.mixer } }
+                // The Feedback screen's tooltip switch is the GUI's own.
+                if frontend::screen_of{ fe, panel = ev.panel } == frontend::SCR_FEEDBACK {
+                    gui::set_tooltip_delay{ &g, seconds = g.tooltip_delay, enabled = fe.settings.tooltips }
+                }
+            }
+        }
+    }
+
+    // The message box was answered.
+    fn box_event { mut s: State, mut g: gui::Gui, mut w: world::World, ev: gui::Event } {
+        let ok = ev.kind == gui::EventKind::activate and slice::eq_bytes{ a = ev.tag, b = "BTN_OK" }
+        let no = ev.kind == gui::EventKind::cancel or (ev.kind == gui::EventKind::activate and slice::eq_bytes{ a = ev.tag, b = "BTN_CANCEL" })
+        if not ok and not no { return }
+        gui::close{ &g, id = s.box }
+        s.box = 0
+        if ok and s.box_for == BOX_QUIT { s.quit = true }
+        s.box_for = BOX_NONE
+    }
+
+    // The panel is going away: so do the screens and box that were over it.
     fn close { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } {
         s.opened = false
+        if s.box != 0 {
+            gui::close{ &g, id = s.box }
+            s.box = 0
+            s.box_for = BOX_NONE
+        }
+        let fe = s.fe ifnull { return }
+        if fe.depth <= 1 { return }
+        while fe.depth > 1 {
+            fe.depth = fe.depth - 1
+            gui::close{ &g, id = fe.stack[fe.depth].panel }
+        }
+        // A screen was still up: the options it changed are kept, as when it closes itself.
+        frontend::persist{ fe, fs = &w.fs }
     }
 }
