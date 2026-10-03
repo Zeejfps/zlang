@@ -185,6 +185,15 @@ namespace events {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "event {} to {} ({}) from {}\n", e.kind, id, o.tag, caller)
         }
+        // A click on a transition door, or the PC entering a transition trigger, starts the
+        // transition handshake (gameloop.md 5.1, 5.2); a transition door runs no OnClick.
+        if e.kind == CLICKED and o.kind == obj::Kind::door and modload::link_of{ o } != null {
+            modload::begin_transition{ &w, id, actor = e.objects[0] }
+            return
+        }
+        if e.kind == OBJECT_ENTER and o.kind == obj::Kind::trigger and modload::link_of{ o } != null {
+            modload::begin_transition{ &w, id, actor = e.objects[0] }
+        }
         if (o.kind == obj::Kind::module or o.kind == obj::Kind::area) and e.kind == HEARTBEAT {
             // A SIGNAL_EVENT heartbeat to the module or area also restarts its timer (gameloop.md 2.6).
             let now = clock::now_ms{ c = w.clock }

@@ -66,6 +66,10 @@ namespace doors {
         let d = obj::door{ o } ifnull { return actions::Status::failed }
         if d.state != obj::DoorState::closed { return actions::Status::done }
         if approach{ &w, id, target, a } { return actions::Status::done }
+        if id == w.pc and modload::link_of{ o } != null {
+            events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::CLICKED, object = id } } }
+            return actions::Status::done
+        }
         if d.locked {
             events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::FAIL_TO_OPEN, object = id } } }
             return actions::Status::failed

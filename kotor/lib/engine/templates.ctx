@@ -231,7 +231,9 @@ namespace tmpl {
 
     fn read_door { mut w: world::World, o: *mut obj::Object, d: *mut obj::Door, doc: *gff::Doc, s: u32 } -> ! {
         try read_common{ &w, o, doc, s, name_label = "LocName" }
-        d.appearance = @trunc(u32, number{ doc, s, label = "Appearance", default = @as(i64, d.appearance) })
+        // KOTOR's doors name their genericdoors.2da row in GenericType (Appearance is NWN's tileset
+        // door, 0 in every UTD).
+        d.appearance = @trunc(u32, number{ doc, s, label = "GenericType", default = number{ doc, s, label = "Appearance", default = @as(i64, d.appearance) } })
         d.locked = flag{ doc, s, label = "Locked", default = d.locked }
         d.lockable = flag{ doc, s, label = "Lockable", default = d.lockable }
         d.key_required = flag{ doc, s, label = "KeyRequired", default = d.key_required }
@@ -245,7 +247,7 @@ namespace tmpl {
         }
         o.hp_max = @trunc(i32, number{ doc, s, label = "HP", default = @as(i64, o.hp_max) })
         o.hp = @trunc(i32, number{ doc, s, label = "CurrentHP", default = @as(i64, o.hp_max) })
-        let state = number{ doc, s, label = "OpenState", default = -1 }
+        let state = number{ doc, s, label = "OpenState", default = number{ doc, s, label = "AnimationState", default = -1 } }
         if state == 1 { d.state = obj::DoorState::open1 }
         if state == 2 { d.state = obj::DoorState::open2 }
         try read_link{ &w, doc, s, linked_to = &d.linked_to, module = &d.linked_to_module, flags = &d.linked_flags, name = &d.transition_name }

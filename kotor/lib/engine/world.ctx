@@ -75,6 +75,8 @@ namespace world {
         globals: globals::Globals,
         out: outbox::Outbox,
         transition: ?Transition,
+        arrival_waypoint: [64]u8,           // where the PC arrives in the module being entered
+        arrival_waypoint_len: usize,
         rng: Rng,
         stats: Stats,
         log: elog::Log,
@@ -82,6 +84,8 @@ namespace world {
         module_frame: bool,                 // module and area heartbeats alternate frames
         serial: u32,                        // action serial numbers
         heartbeats: map::Map(u32, u64, heap::Heap),   // last heartbeat of doors, placeables, triggers
+        cursor_area: usize,                 // GetNextObjectInArea: where in objects.all to go on from
+        cursor_shape: usize,                // GetNextObjectInShape: likewise
         // HOOK(rules): tables: *rules::Tables, rng: rules::Rng, effect ids: rules::Counter
         // HOOK(dialog): conversation: dlg::State
         // HOOK(party): the party table
@@ -108,6 +112,7 @@ namespace world {
             tables, tlk = null, globals,
             out = outbox::new{ heap },
             transition = null,
+            arrival_waypoint = [0; 64], arrival_waypoint_len = 0,
             rng = Rng{ state = seed },
             stats = Stats{ calls = [0; 772], missing = [0; 772], script_runs = 0, faults = 0, events = 0, objects_made = 0 },
             log = elog::quiet{},
@@ -115,6 +120,7 @@ namespace world {
             module_frame = false,
             serial = 0,
             heartbeats = map::new(u32, u64, heap::Heap){ realloc = heap::alloc, heap, hash = map::hash_u32, eq = map::eq_u32 },
+            cursor_area = 0, cursor_shape = 0,
         }
         return try alloc::new(World, heap::Heap){ realloc = heap::alloc, heap, value = w }
     }

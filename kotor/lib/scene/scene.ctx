@@ -145,6 +145,16 @@ namespace scene {
                     transparency_hint = m.transparency_hint, alpha = 1.0, self_illum = math::vec3::zero{}, envmap,
                 } }
                 mat.sort = mats[i].sort
+                if mat.diffuse == null and diffuse.len > 0 and w.log.objects {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "model {}: no texture {}\n", name, diffuse)
+                }
+                // A door's `trans` plane (texture NULL) is the transition marker the toolset shows;
+                // the game draws nothing there (ours: its alpha controller isn't always 0).
+                if ci::eq{ a = model.nodes[m.node].name, b = "trans" } {
+                    mat.blend = render::Blend::alpha
+                    mat.color.a = 0.0
+                }
                 mats[i] = mat
             }
             i = i + 1
@@ -261,6 +271,17 @@ namespace scene {
             }
             i = i + 1
         }
+    }
+
+    // Gives back the GPU's meshes and textures (leaving the area; the arena is the caller's).
+    fn release { mut sc: Scene, mut dev: gpu::Device } {
+        let loaded = list::items{ list = sc.loaded }
+        let mut i: usize = 0
+        while i < loaded.len {
+            mdl_render::release{ &dev, g = loaded[i].gpu }
+            i = i + 1
+        }
+        material::free_cache{ cache = &sc.materials, &dev }
     }
 
     // ---- each frame

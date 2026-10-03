@@ -200,6 +200,18 @@ namespace obj {
         in_combat: bool,
         dead: bool,
         triggers: list::List(u32, heap::Heap),      // the triggers it stands in
+        // Appended by routines/creature.ctx and items.ctx.
+        xp: u32,                            // GetXP/SetXP (stats +0x68)
+        gold: u32,                          // GetGold (UTC Gold); the party purse is HOOK(party)
+        inv_cursor: usize,                  // GetFirstItemInInventory/GetNextItemInInventory
+        listening: bool,                    // SetListening
+        listen_text: [4][32]u8,             // SetListenPattern: up to four patterns
+        listen_len: [4]u8,
+        listen_number: [4]i32,
+        listen_count: u8,
+        destroyable: bool,                  // SetIsDestroyable (the caller's corpse fades or stays)
+        raiseable: bool,
+        selectable_dead: bool,
     }
 
     struct Item {
@@ -499,6 +511,9 @@ namespace obj {
             path = list::new(math::Vec3, heap::Heap){ realloc = heap::alloc, heap },
             path_next = 0, moving = false, in_combat = false, dead = false,
             triggers = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
+            xp = 0, gold = 0, inv_cursor = 0, listening = false, listen_text = [[0; 32]; 4],
+            listen_len = [0; 4], listen_number = [0; 4], listen_count = 0,
+            destroyable = true, raiseable = true, selectable_dead = false,
         }
     }
 }

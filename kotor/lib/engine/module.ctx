@@ -292,16 +292,16 @@ namespace modload {
         let m = obj::module{ o = mo } ifnull { return }
         let mut at = m.entry_position
         let mut facing = m.entry_direction
-        let pending = w.transition
-        if pending != null and pending.waypoint_len > 0 {
-            let wp = world::object_by_tag{ w = &w, tag = pending.waypoint[..pending.waypoint_len], nth = 0 }
+        if w.arrival_waypoint_len > 0 {
+            let tag = w.arrival_waypoint
+            let wp = world::object_by_tag{ w = &w, tag = tag[..w.arrival_waypoint_len], nth = 0 }
             let wo = world::object{ w = &w, id = wp }
             if wo != null {
                 at = wo.position
                 facing = wo.orientation
             }
+            w.arrival_waypoint_len = 0
         }
-        w.transition = null
         let pc = world::object{ w = &w, id = w.pc } ifnull { return }
         pc.area = w.area
         world::set_orientation{ o = pc, v = facing }
@@ -361,9 +361,119 @@ namespace modload {
         return o.id
     }
 
-    // Phase 2 of a door's or trigger's transition (gameloop.md 5.2): milestone 2.
+    // ---- transitions (gameloop.md 5)
+
+    // Whether a door or trigger leads to another module, and where.
+    fn link_of { o: *obj::Object } -> ?world::Transition {
+        let mut t = world::Transition{ module = resref::empty{}, waypoint = [0; 64], waypoint_len = 0 }
+        let mut to: []u8 = ""
+        if obj::door{ o } is some{ value = d } {
+            if d.linked_flags == 0 { return null }
+            t.module = d.linked_to_module
+            to = d.linked_to
+        } else if obj::trigger{ o } is some{ value = tr } {
+            t.module = tr.linked_to_module
+            to = tr.linked_to
+        } else { return null }
+        if resref::is_empty{ r = t.module } { return null }
+        let n = if to.len < 64 { to.len } else { 64 }
+        let mut i: usize = 0
+        while i < n {
+            t.waypoint[i] = to[i]
+            i = i + 1
+        }
+        t.waypoint_len = n
+        return t
+    }
+
+    // Phase 1 of a door's or trigger's transition (gameloop.md 5.2), when the PC clicks or
+    // enters it: a fresh token from the area, the event back to the object 500 ms later, a 0.5 s
+    // fade to black. The party-distance check (30 m) waits for the party table (HOOK(party)).
+    fn begin_transition { mut w: world::World, id: u32, actor: u32 } {
+        if actor != w.pc { return }
+        let o = world::object{ w = &w, id } ifnull { return }
+        if link_of{ o } == null { return }
+        let ao = world::object{ w = &w, id = w.area } ifnull { return }
+        let a = obj::area{ o = ao } ifnull { return }
+        a.transition_token = if a.transition_token == 255 { 1 } else { a.transition_token + 1 }
+        a.transition_pending = a.transition_token
+        events::post{ &w, delay_ms = 500, caller = actor, target = id, payload = events::Payload::transition{ token = a.transition_token } }
+        outbox::post{ out = &w.out, note = outbox::Note::fade{ out = true, wait = 0.0, length = 0.5, color = math::vec3::zero{} } }
+        if w.log.module {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "transition started by {} at {} ({})\n", actor, id, o.tag)
+        }
+    }
+
+    // Phase 2: the token still current, the PC alive: the transition request is set.
     fn transition_arrived { mut w: world::World, id: u32, token: u8 } {
-        world::prefix{ w = &w }
-        _ = @fmt(&w.io, "transition from {} (token {}): not yet\n", id, token)
+        let ao = world::object{ w = &w, id = w.area } ifnull { return }
+        let a = obj::area{ o = ao } ifnull { return }
+        if a.transition_pending != token { return }
+        a.transition_pending = 0
+        let o = world::object{ w = &w, id } ifnull { return }
+        let t = link_of{ o } ifnull { return }
+        w.transition = t
+        if w.log.module {
+            world::prefix{ w = &w }
+            let mut m = t.module
+            _ = @fmt(&w.io, "transition to {} at {}\n", resref::bytes{ r = &m }, t.waypoint[..t.waypoint_len])
+        }
+    }
+
+    // Leaves the module (gameloop.md 5.3): the area's OnExit for the PC, the PC's queue
+    // cleared, every object but the PC and what it carries destroyed, the event queue, scripts,
+    // walkmeshes and module memory let go. The module's state isn't kept yet (HOOK(save):
+    // GAMEINPROGRESS).
+    fn leave { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
+        let ao = world::object{ w = &w, id = w.area }
+        if ao != null {
+            ao.ctx.exiting = w.pc
+            _ = scripts::run_slot{ &w, &vm, engine, id = w.area, slot = obj::Slot::exit }
+        }
+        actions::clear_queue{ &w, o = world::object{ w = &w, id = w.pc } ifnull { return } }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.id == w.pc or o.destroyed { continue }
+            if obj::item{ o } is some{ value = it } {
+                if it.possessor == w.pc { continue }
+            }
+            o.destroyed = true
+            list::push{ list = &w.doomed, item = o.id } iferr {}
+        }
+        events::clear{ &w }
+        world::sweep{ &w }
+        scripts::clear_cache{ &w }
+        walkmap::clear{ m = &w.walk }
+        map::clear{ m = &w.heartbeats }
+        w.layout = null
+        w.vis = null
+        w.module = obj::INVALID
+        w.area = obj::INVALID
+        let pc = world::object{ w = &w, id = w.pc }
+        if pc != null {
+            pc.area = obj::INVALID
+            if obj::creature{ o = pc } is some{ value = c } { list::clear{ list = &c.triggers } }
+        }
+        arena::reset{ heap = w.mod_arena }
+    }
+
+    // Takes a pending transition: leave, then enter the next module with the PC arriving at the
+    // link's waypoint. True if it happened (the presentation must rebuild its scene).
+    fn take_transition { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } -> !bool {
+        let t = w.transition ifnull { return false }
+        w.transition = null
+        leave{ &w, &vm, engine }
+        w.arrival_waypoint = t.waypoint
+        w.arrival_waypoint_len = t.waypoint_len
+        let mut m = t.module
+        let name = resref::bytes{ r = &m }
+        let kept = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = name.len }
+        slice::copy(u8){ dst = kept, src = name }
+        try enter{ &w, name = kept }
+        return true
     }
 }

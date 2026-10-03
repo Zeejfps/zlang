@@ -1,0 +1,129 @@
+// Routines: the game clock and the time of day (docs/re/gameloop.md section 7). The world timer
+// is w.clock: a calendar origin (year, month, day, hour, minute) and the world time since. A game
+// minute is a real minute: within a game hour the minute runs 0..MinPerHour-1, seconds and
+// milliseconds are real (7.1, 7.3), so GetTimeMinute is not clock::time_of_day's scaled minute.
+// KOTOR's nwscript.nss has no calendar routines (GetCalendarYear, SetCalendar are NWN's).
+namespace rt_time {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        if routine == nwscript::GetTimeHour { try get_time{ &w, &vm, part = 0 } }
+        else if routine == nwscript::GetTimeMinute { try get_time{ &w, &vm, part = 1 } }
+        else if routine == nwscript::GetTimeSecond { try get_time{ &w, &vm, part = 2 } }
+        else if routine == nwscript::GetTimeMillisecond { try get_time{ &w, &vm, part = 3 } }
+        else if routine == nwscript::SetTime { try set_time{ &w, &vm, argc } }
+        else if routine == nwscript::GetIsDay { try get_is_phase{ &w, &vm, phase = DAY } }
+        else if routine == nwscript::GetIsNight { try get_is_phase{ &w, &vm, phase = NIGHT } }
+        else if routine == nwscript::GetIsDawn { try get_is_phase{ &w, &vm, phase = DAWN } }
+        else if routine == nwscript::GetIsDusk { try get_is_phase{ &w, &vm, phase = DUSK } }
+        else { return false }
+        return true
+    }
+
+    // The module's day phase, as CSWSModule::UpdateTime numbers them (7.4).
+    const DAY: i32 = 1
+    const NIGHT: i32 = 2
+    const DAWN: i32 = 3
+    const DUSK: i32 = 4
+
+    // Milliseconds since midnight of the game day at this instant.
+    fn time_of_day_ms { c: *clock::Clock } -> u64 {
+        let per_hour = clock::ms_per_hour{ c = c.* }
+        let start = @as(u64, c.hour) * per_hour + @as(u64, c.minute) * 60000
+        return (start + clock::now_ms{ c = c.* }) % (per_hour * 24)
+    }
+
+    // int GetTimeHour / GetTimeMinute / GetTimeSecond / GetTimeMillisecond
+    fn get_time { mut w: world::World, mut vm: nwvm::Vm, part: u32 } -> ! {
+        let t = time_of_day_ms{ c = &w.clock }
+        let per_hour = clock::ms_per_hour{ c = w.clock }
+        let mut v: u64 = 0
+        if part == 0 { v = t / per_hour }
+        else if part == 1 { v = (t / 60000) % (per_hour / 60000) }
+        else if part == 2 { v = (t / 1000) % 60 }
+        else { v = t % 1000 }
+        try nwvm::push_int{ &vm, v = @as(i32, v) }
+    }
+
+    // The phase of the day at hour `hour`, from the module's dawn and dusk hours: equal hours
+    // are always day; the dawn hour is dawn, the dusk hour dusk; between dusk and dawn is night.
+    fn phase_at { hour: u32, dawn: u32, dusk: u32 } -> i32 {
+        if dawn == dusk { return DAY }
+        if hour == dawn { return DAWN }
+        if hour == dusk { return DUSK }
+        if dawn < dusk {
+            return if hour < dawn or hour > dusk { NIGHT } else { DAY }
+        }
+        return if hour >= dusk and hour <= dawn { NIGHT } else { DAY }
+    }
+
+    // The module's phase now (dawn 6 and dusk 18 when there is no module).
+    fn phase_now { w: *world::World } -> i32 {
+        let mut dawn: u32 = 6
+        let mut dusk: u32 = 18
+        let mo = world::object{ w, id = w.module }
+        if mo != null {
+            if obj::module{ o = mo } is some{ value = m } {
+                dawn = m.dawn_hour
+                dusk = m.dusk_hour
+            }
+        }
+        let hour = time_of_day_ms{ c = &w.clock } / clock::ms_per_hour{ c = w.clock }
+        return phase_at{ hour = @trunc(u32, hour), dawn, dusk }
+    }
+
+    // int GetIsDay / GetIsNight / GetIsDawn / GetIsDusk
+    fn get_is_phase { mut w: world::World, mut vm: nwvm::Vm, phase: i32 } -> ! {
+        try nwvm::push_int{ &vm, v = if phase_now{ w = &w } == phase { 1 } else { 0 } }
+    }
+
+    // void SetTime(int nHour, int nMinute, int nSecond, int nMillisecond): the engine's
+    // CWorldTimer::SetTime (0x004ae260). A negative argument ignores the call. The fields carry
+    // upward (1000 ms, 60 s, 60 min; whole days from the hours), and the time only moves forward:
+    // without a day carried, a time earlier than now means tomorrow.
+    fn set_time { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::SetTime
+        let hour = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let minute = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let second = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let ms = try nwarg::int{ &vm, routine = r, argc, i = 3 }
+        if hour < 0 or minute < 0 or second < 0 or ms < 0 { return }
+        move_clock{ c = &w.clock, hour = @as(i64, hour), minute = @as(i64, minute), second = @as(i64, second), ms = @as(i64, ms) }
+    }
+
+    // Days since year 0 of a date, 12 months of 28 days (ConvertDateToDayIndex 0x004adca0: a year
+    // above 32000 is 1340, a month outside 1..12 is 6, a day outside 1..28 is 1).
+    fn day_index { year: u32, month: u32, day: u32 } -> i64 {
+        let y: i64 = if year > 32000 { 1340 } else { @as(i64, year) }
+        let m: i64 = if month < 1 or month > 12 { 6 } else { @as(i64, month) }
+        let d: i64 = if day < 1 or day > 28 { 1 } else { @as(i64, day) }
+        return y * 336 + (m - 1) * 28 + (d - 1)
+    }
+
+    // Moves the clock's origin so that "now" reads hour:minute:second.ms (see set_time). The
+    // origin has no seconds, so it is rounded up to a whole minute: the clock then reads up to
+    // 59.999 s later than asked, never earlier. Events are untouched (they are in world ms).
+    fn move_clock { mut c: clock::Clock, hour: i64, minute: i64, second: i64, ms: i64 } {
+        let per_hour = @as(i64, clock::ms_per_hour{ c })
+        let day_ms = per_hour * 24
+        let secs = second + ms / 1000
+        let mins = minute + secs / 60
+        let hours = hour + mins / 60
+        let carried_days = hours / 24
+        let target = (hours % 24) * per_hour + (mins % 60) * 60000 + (secs % 60) * 1000 + ms % 1000
+        let now_ms = @as(i64, clock::now_ms{ c })
+        let start = day_index{ year = c.year, month = c.month, day = c.day } * day_ms +
+            @as(i64, c.hour) * per_hour + @as(i64, c.minute) * 60000
+        let current = start + now_ms
+        let mut day = current / day_ms + carried_days
+        if carried_days == 0 and target < current % day_ms { day = day + 1 }
+        let mut origin = day * day_ms + target - now_ms
+        if origin < 0 { origin = 0 }
+        origin = (origin + 59999) / 60000 * 60000
+        let days = origin / day_ms
+        let tod = origin % day_ms
+        c.year = @trunc(u32, days / 336)
+        c.month = @trunc(u32, (days % 336) / 28 + 1)
+        c.day = @trunc(u32, days % 28 + 1)
+        c.hour = @trunc(u32, tod / per_hour)
+        c.minute = @trunc(u32, (tod % per_hour) / 60000)
+    }
+}

@@ -333,16 +333,27 @@ namespace actions {
     // DIALOGOBJECT (actions.md 3.12): params speaker, dialog resref (string), private, ...
     // HOOK(dialog): dlg::start. Until then the outbox carries the request.
     fn dialog_object { mut w: world::World, id: u32, a: *mut Action } -> Status {
-        let speaker = object_param{ a, i = 0 }
+        let mut speaker = object_param{ a, i = 0 }
+        let mut owner = id
         let mut dialog = resref::empty{}
         if a.params[1] is string{ s } { dialog = resref::truncate{ name = s } }
         if resref::is_empty{ r = dialog } {
             let o = world::object{ w = &w, id } ifnull { return Status::failed }
             dialog = o.conversation
+            // The player talking to someone: the conversation is theirs (ours: actions.md 3.12
+            // has the player's order queue DIALOGOBJECT on the player with the other as target).
+            if id == w.pc or resref::is_empty{ r = dialog } {
+                let t = world::object{ w = &w, id = speaker } ifnull { return Status::failed }
+                if not resref::is_empty{ r = t.conversation } {
+                    dialog = t.conversation
+                    owner = speaker
+                    speaker = id
+                }
+            }
         }
-        outbox::post{ out = &w.out, note = outbox::Note::conversation{ owner = id, speaker, dialog } }
+        outbox::post{ out = &w.out, note = outbox::Note::conversation{ owner, speaker, dialog } }
         world::prefix{ w = &w }
-        _ = @fmt(&w.io, "conversation {} owner={} speaker={} (no dialogue system yet)\n", dialog, id, speaker)
+        _ = @fmt(&w.io, "conversation {} owner={} speaker={} (no dialogue system yet)\n", dialog, owner, speaker)
         return Status::done
     }
 }

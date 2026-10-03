@@ -44,6 +44,11 @@ namespace routines {
         if try rt_act::run{ &w, &vm, routine, argc } { return true }
         if try rt_party::run{ &w, &vm, routine, argc } { return true }
         if try rt_pres::run{ &w, &vm, routine, argc } { return true }
+        if try rt_time::run{ &w, &vm, routine, argc } { return true }
+        if try rt_mod::run{ &w, &vm, routine, argc } { return true }
+        if try rt_crea::run{ &w, &vm, routine, argc } { return true }
+        if try rt_item::run{ &w, &vm, routine, argc } { return true }
+        if try rt_fx::run{ &w, &vm, routine, argc } { return true }
         return false
     }
 

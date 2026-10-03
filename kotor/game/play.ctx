@@ -1,20 +1,23 @@
 // The loop with a window (docs/design/engine.md, "The frame"): input, the world, the scene, the
 // camera, the frame drawn; live, or headless with a fixed step, scripted input and screenshots.
 namespace play {
-    // One scripted input line: `FRAME down KEY`, `FRAME up KEY`.
-    struct Scripted { frame: u64, down: bool, key: []u8 }
+    // One scripted input line: `FRAME down KEY`, `FRAME up KEY`, and for tests `FRAME warp TAG`
+    // (the leader jumps next to the object) and `FRAME use TAG` (the leader's default action on it).
+    enum Command: u8 { down, up, warp, use }
+    struct Scripted { frame: u64, command: Command, key: []u8 }
 
     fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
         try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
         defer sdl::quit{ &sdl }
         let scene_pages = mem::pages{ &mem, size = 805306368 } ifnull { return 1 }
         let mut scene_arena = arena::new{ buf = scene_pages }
+        let device_pages = mem::pages{ &mem, size = 134217728 } ifnull { return 1 }
+        let mut device_arena = arena::new{ buf = device_pages }
         let texture_scratch = mem::pages{ &mem, size = 100663296 } ifnull { return 1 }
         let config = render::make_config{ title = "kotor", width = @as(i32, opts.width), height = @as(i32, opts.height), hidden = opts.headless }
-        let mut dev = try gpu::open(arena::Arena){ &sdl, realloc = arena::alloc, heap = &scene_arena, config }
+        let mut dev = try gpu::open(arena::Arena){ &sdl, realloc = arena::alloc, heap = &device_arena, config }
         defer gpu::close{ &dev, &sdl }
-        let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, heap = &scene_arena, cap = render::default_capacity{} }
-        // The scene's own memory starts after the device's and the frame's.
+        let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, heap = &device_arena, cap = render::default_capacity{} }
         let mut sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
         try scene::load_area{ &sc, &w, &dev }
         let mut camera = cam::new{}
@@ -26,6 +29,20 @@ namespace play {
                 ctl::set_style{ ctl = &control, t = w.tables.camerastyle, row = a.camera_style }
             }
         }
+        // Sound: a device when there is a window; headless, the mixer runs on without one (as the
+        // original does with no sound device, audio.md), so sounds still start and end.
+        let mut device: ?audio::Device = null
+        if not opts.headless {
+            device = audio::open{ &sdl, rate = 44100, latency_ms = 60 } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: no sound: {}\n", error)
+                null
+            }
+        }
+        let rate: u32 = match device { some{ value } => { value.rate } null => { 44100 } }
+        let mixer = try mix::make(heap::Heap){ realloc = heap::alloc, heap = w.heap, rate, voices_2d = 24, voices_3d = 16 }
+        let mut amb = ambience::make{ heap = w.heap, m = mixer }
+        ambience::start_area{ a = &amb, &w }
+        let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
         let script = try read_script{ &w, path = opts.input }
         let mut next_line: usize = 0
         let mut keys = ctl::no_keys{}
@@ -52,7 +69,12 @@ namespace play {
             while next_line < script.len and script[next_line].frame <= frame_no {
                 let s = script[next_line]
                 next_line = next_line + 1
-                apply_key{ keys = &keys, keycode = keycode_of{ name = s.key }, down = s.down }
+                match s.command {
+                    down => { apply_key{ keys = &keys, keycode = keycode_of{ name = s.key }, down = true } }
+                    up => { apply_key{ keys = &keys, keycode = keycode_of{ name = s.key }, down = false } }
+                    warp => { warp_to{ &w, tag = s.key } }
+                    use => { use_tagged{ &w, tag = s.key } }
+                }
             }
             // The step: fixed when headless, measured otherwise.
             let now = sdl::counter{ &sdl }
@@ -63,7 +85,36 @@ namespace play {
             clock::advance{ c = &w.clock, seconds = dt }
             ctl::update{ ctl = &control, &w, keys, yaw = camera.yaw, dt = w.clock.dt }
             world::tick{ &w, &vm, engine }
-            // 8. The outbox (HOOK(gui), the ambience lead's sound).
+            // 6. A transition: the next module, and a new scene and sound for it.
+            if w.transition != null {
+                ambience::stop_area{ a = &amb }
+                scene::release{ &sc, &dev }
+                arena::reset{ heap = &scene_arena }
+                let moved = modload::take_transition{ &w, &vm, engine } iferr err{ error } {
+                    _ = @fmt(&w.io, "kotor: transition failed: {}\n", error)
+                    return 1
+                }
+                if moved {
+                    sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
+                    try scene::load_area{ &sc, &w, &dev }
+                    camera = cam::new{}
+                    let next_area = world::object{ w = &w, id = w.area }
+                    if next_area != null {
+                        if obj::area{ o = next_area } is some{ value = a } {
+                            cam::set_style{ c = &camera, t = w.tables.camerastyle, row = a.camera_style }
+                            ctl::set_style{ ctl = &control, t = w.tables.camerastyle, row = a.camera_style }
+                        }
+                    }
+                    ambience::start_area{ a = &amb, &w }
+                }
+            }
+            // 8. The outbox: sounds to the ambience (HOOK(gui): fades, movies, text).
+            let notes = outbox::notes{ out = &w.out }
+            let mut n: usize = 0
+            while n < notes.len {
+                ambience::take{ a = &amb, &w, note = notes[n] }
+                n = n + 1
+            }
             outbox::clear{ out = &w.out }
             // 9-10. Scene and camera.
             scene::sync{ &sc, &w, &dev, dt = w.clock.dt }
@@ -72,6 +123,19 @@ namespace play {
             let pc = world::object{ w = &w, id = w.pc }
             let room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
             scene::update_visibility{ &sc, w = &w, room }
+            // 11. Sound at the camera.
+            ambience::update{ a = &amb, &w, eye = camera.eye, forward = camera.dir, dt }
+            match device {
+                some{ value } => {
+                    let mut d = value
+                    audio::update{ &sdl, dev = &d, m = mixer } iferr {}
+                    device = d
+                }
+                null => {
+                    let frames = math::min{ a = @as(f32, rate) * dt, b = 22050.0 }
+                    mix::render{ m = mixer, into = silent[..@as(usize, frames) * 2] }
+                }
+            }
             // 12. Render.
             let size = gpu::screen_size{ dev }
             render::begin_frame{ &frame, time = sc.time }
@@ -94,6 +158,7 @@ namespace play {
         }
         _ = @fmt(&w.io, "scene: {} rooms drawn of {}, {} objects drawn, {} visuals; textures {} loaded, {} missing\n",
             sc.drawn_rooms, sc.rooms.len, sc.drawn_objects, sc.visuals.len, sc.materials.loaded, sc.materials.missing)
+        _ = @fmt(&w.io, "sound: {} sounds started\n", amb.started)
         report::summary{ &w, routines = opts.report }
         return 0
     }
@@ -142,9 +207,39 @@ namespace play {
             if f.len == 0 or f[0] == '#' { continue }
             let what = text::next_word{ &words } ifnull { continue }
             let key = text::next_word{ &words } ifnull { continue }
-            try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), down = ci::eq{ a = what, b = "down" }, key } }
+            let command = if ci::eq{ a = what, b = "down" } { Command::down } else if ci::eq{ a = what, b = "warp" } { Command::warp } else if ci::eq{ a = what, b = "use" } { Command::use } else { Command::up }
+            try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), command, key } }
         }
         return list::items{ list = out }
+    }
+
+    // Test helpers for scripted runs: jump the leader 1.5 m in front of a tagged object, facing
+    // it; queue the leader's default action on it.
+    fn warp_to { mut w: world::World, tag: []u8 } {
+        let id = world::object_by_tag{ w = &w, tag, nth = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            _ = @fmt(&w.io, "warp: no {}\n", tag)
+            return
+        }
+        let at = math::vec3::add_scaled{ a = o.position, b = o.orientation, s = 1.5 }
+        let face = math::vec3::negate{ v = o.orientation }
+        movement::place{ &w, id = w.pc, at }
+        let pc = world::object{ w = &w, id = w.pc } ifnull { return }
+        world::set_orientation{ o = pc, v = face }
+        _ = @fmt(&w.io, "warp: to {} ({} {} {})\n", tag, pc.position.x, pc.position.y, pc.position.z)
+    }
+
+    fn use_tagged { mut w: world::World, tag: []u8 } {
+        let id = world::object_by_tag{ w = &w, tag, nth = 0 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        let kind = match o.kind {
+            door => { actions::Kind::open_door }
+            placeable => { actions::Kind::use_object }
+            else => { actions::Kind::dialog_object }
+        }
+        let mut a = actions::make{ kind }
+        a.params[0] = actions::Param::object{ id }
+        _ = actions::add{ &w, id = w.pc, action = a, force = false }
     }
 
     fn screenshot { mut w: world::World, mut dev: gpu::Device, mut heap: arena::Arena, path: []u8, frame_no: u64 } -> ! {
