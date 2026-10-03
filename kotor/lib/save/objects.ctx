@@ -117,9 +117,33 @@ namespace save {
             sound{ s = snd } => { try write_sound{ &b, &w, s, o, snd } }
             encounter{ e } => { try write_encounter{ &b, &w, s, o, e } }
             item{ i } => { try write_item{ &b, &w, s, o, i } }
+            store{ st } => { try write_merchant{ &b, &w, s, o, st } }
             else => { try put_common{ &b, &w, owner = s, o, name_label = "LocName" } }
         }
         return s
+    }
+
+    // A merchant: its percentages and what it holds now (whole items, the infinite ones marked), so
+    // a module entered again finds what the player left (docs/design/screens.md).
+    fn write_merchant { mut b: Builder, mut w: world::World, s: u32, o: *obj::Object, st: *obj::Store } -> ! {
+        try put_common{ &b, &w, owner = s, o, name_label = "LocName" }
+        try put_int{ &b, owner = s, label = "MarkUp", v = st.markup }
+        try put_int{ &b, owner = s, label = "MarkDown", v = st.markdown }
+        try put_byte{ &b, owner = s, label = "BuySellFlag", v = st.buy_sell }
+        try put_script{ &b, owner = s, o, label = "OnOpenStore", slot = obj::Slot::open_store }
+        let items = try gffw::put_list{ &b, owner = s, label = "ItemList" }
+        let stock = list::items{ list = st.stock }
+        let mut k: usize = 0
+        while k < stock.len {
+            let io = world::object{ w = &w, id = stock[k] }
+            k = k + 1
+            if io == null { continue }
+            if obj::item{ o = io } is some{ value = it } {
+                let e = try gffw::add_element{ &b, list = items, id = @trunc(u32, k - 1) }
+                try write_item{ &b, &w, s = e, o = io, i = it }
+                try put_bool{ &b, owner = e, label = "Infinite", v = it.infinite }
+            }
+        }
     }
 
     fn write_creature { mut b: Builder, mut w: world::World, s: u32, o: *obj::Object, c: *obj::Creature } -> ! {

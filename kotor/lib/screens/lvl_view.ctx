@@ -1,0 +1,60 @@
+// The creature on maincg's MODEL_LBL (docs/re/gui.md 10.2): chargen's main-panel preview, a body
+// and head from appearance.2da standing in the light of charrec_light, posed by alignment. The
+// original shows the creature as it is dressed; this shows the unarmoured body of its appearance
+// (docs/design/screens.md), and nothing for an appearance that is not a body with a head.
+namespace lvl {
+    const VIEW_MEMORY: usize = 33554432
+    const PREVIEW_MEMORY: usize = 4194304
+
+    struct View {
+        heap: *mut heap::Heap,
+        mem: alloc::Bytes,
+        keep: *mut arena::Arena,
+        models: *mut mdl_cache::Cache,
+        pmem: alloc::Bytes,
+        preview: *mut preview3d::Preview,
+    }
+
+    // The preview of creature `who`; null when its appearance does not make one.
+    fn make_view { mut w: world::World, mut g: gui::Gui, mut dev: gpu::Device, who: u32 } -> ?*mut View {
+        let c = hud::creature_of{ w = &w, id = who } ifnull { return null }
+        let heap = w.heap
+        let mem = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(u8){}, count = VIEW_MEMORY } iferr { return null }
+        let keep = alloc::new(arena::Arena, heap::Heap){ realloc = heap::alloc, heap, value = arena::new{ buf = mem } } iferr { return null }
+        let models = alloc::new(mdl_cache::Cache, heap::Heap){ realloc = heap::alloc, heap, value = mdl_cache::new{ rm = w.rm.*, keep } } iferr { return null }
+        let pmem = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(u8){}, count = PREVIEW_MEMORY } iferr { return null }
+        let p = preview3d::make{
+            fs = &w.fs, &dev, buf = pmem, rm = w.rm.*, models, mats = g.cache,
+            appearance_2da = w.tables.appearance, heads_2da = w.tables.heads, appearance = @as(i32, c.appearance),
+            head = if c.head >= 0 { c.head } else { -1 }, female = c.gender == 1, kind = preview3d::Kind::main, alignment = @as(i32, c.good_evil),
+        } iferr { return null }
+        let slot = alloc::new(preview3d::Preview, heap::Heap){ realloc = heap::alloc, heap, value = p } iferr { return null }
+        return alloc::new(View, heap::Heap){ realloc = heap::alloc, heap, value = View{ heap, mem, keep, models, pmem, preview = slot } } iferr { return null }
+    }
+
+    fn free_view { mut v: View, mut dev: gpu::Device } {
+        preview3d::free{ preview = v.preview, &dev }
+        alloc::free(preview3d::Preview, heap::Heap){ realloc = heap::alloc, heap = v.heap, p = v.preview }
+        _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.pmem, count = 0 }
+        alloc::free(mdl_cache::Cache, heap::Heap){ realloc = heap::alloc, heap = v.heap, p = v.models }
+        alloc::free(arena::Arena, heap::Heap){ realloc = heap::alloc, heap = v.heap, p = v.keep }
+        _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.mem, count = 0 }
+        alloc::free(View, heap::Heap){ realloc = heap::alloc, heap = v.heap, p = &v }
+    }
+
+    fn update_view { mut s: State, dt: f32 } {
+        if not s.open { return }
+        let v = s.view ifnull { return }
+        preview3d::update{ preview = v.preview, dt }
+    }
+
+    // Over MODEL_LBL, between the backdrop and the panels.
+    fn draw_view { mut s: State, mut g: gui::Gui, mut frame: render::Frame, target: render::Size } {
+        if not s.open or s.step != 0 { return }
+        let v = s.view ifnull { return }
+        let r = gui::control_rect{ &g, panel = s.main, tag = "MODEL_LBL" } ifnull { return }
+        let sx = @as(f32, target.width) / @as(f32, g.ui_w)
+        let sy = @as(f32, target.height) / @as(f32, g.ui_h)
+        _ = preview3d::add_to_frame{ preview = v.preview, &frame, viewport = render::Rect{ x = r.x * sx, y = r.y * sy, w = r.w * sx, h = r.h * sy } }
+    }
+}

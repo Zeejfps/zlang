@@ -1,0 +1,103 @@
+// The upgrade bench (docs/re/party-items-saves.md 5.11, docs/re/gui.md "Upgrade bench"): three
+// panels, upgradesel (the four categories), upgradeitems (the items of one) and upgrade (the
+// slots of one item). An item is taken out of play when it is picked, its upgrade bits and the
+// party's stock of upgrade items change on the bench only as a ledger, and Assemble makes the
+// ledger true and puts the item back; Cancel puts the item back as it was.
+namespace ups {
+    const CAT_NONE: i32 = 0
+    const CAT_LIGHTSABER: i32 = 1
+    const CAT_RANGED: i32 = 2
+    const CAT_MELEE: i32 = 3
+    const CAT_ARMOUR: i32 = 4
+
+    // Which screen is on top.
+    const MODE_CATEGORIES: i32 = 0
+    const MODE_ITEMS: i32 = 1
+    const MODE_BENCH: i32 = 2
+
+    // upgrade.2da has 25 rows; upcrystals.2da 7.
+    const ROWS: usize = 25
+    const COLOURS: usize = 7
+    const MAX_ITEMS: usize = 96
+    const MAX_CHOICES: usize = 32
+    const NO_ROW: i32 = -1
+
+    // What a bench slot holds. A lightsaber has two power-crystal slots and the colour crystal;
+    // the others have one slot per upgrade type.
+    const KIND_NONE: i32 = 0
+    const KIND_TYPED: i32 = 1           // one upgrade.2da row fits (`row`)
+    const KIND_POWER: i32 = 2           // any power crystal
+    const KIND_COLOUR: i32 = 3          // the colour crystal
+
+    // dialog.tlk
+    const STR_POWER_CRYSTAL: u32 = 36977
+    const STR_COLOUR_CRYSTAL: u32 = 36978
+    const STR_NO_REEQUIP: u32 = 42489
+    const ASK_NOTHING: i32 = 0
+    const ASK_REEQUIP: i32 = 1
+
+    struct Listed { item: u32, owner: u32, slot: i32 }
+
+    struct Slot {
+        kind: i32,
+        type_: i32,                     // upgrade type the slot takes (0 for the lightsaber's)
+        row: i32,                       // the upgrade.2da row installed, NO_ROW empty
+        fixed: i32,                     // KIND_TYPED: the one row that fits
+    }
+
+    struct State {
+        open: bool,
+        mode: i32,
+        sel: u32,                       // upgradesel
+        list: u32,                      // upgradeitems
+        bench: u32,                     // upgrade
+        box: msgbox::Box,
+        ask: i32,
+        category: i32,                  // the category the buttons or the item named
+        hot: i32,                       // the category button under the pointer
+        // the items list
+        listed: [96]Listed,
+        nlisted: usize,
+        // the item on the bench
+        item: u32,                      // taken out of play (OBJECT_INVALID: none)
+        original: u32,                  // the saber that was on the bench before a colour change
+        owner: u32,                     // who wore it, OBJECT_INVALID when it came from the bag
+        slot_worn: i32,                 // and in which equipment slot
+        orig_bits: u32,
+        bits: u32,
+        lightsaber: bool,
+        slots: [4]Slot,
+        nslots: usize,
+        // the ledger of the session: upgrade items to take from the party at Assemble and to give
+        consume: [25]bool,
+        give: [25]bool,
+        col_consume: [7]bool,
+        col_give: [7]bool,
+        colour_now: i32,                // the colour crystal the saber has (upcrystals row), -1 unknown
+        colour_new: i32,                // the one chosen, -1 no change
+        // choosing a crystal for a slot
+        choosing: bool,
+        choosing_slot: usize,
+        choices: [32]i32,               // upgrade.2da rows, or upcrystals rows for the colour slot
+        nchoices: usize,
+        // tables and the item previews (items made for their icon and name, never in the world)
+        upgrade_t: twoda::Table,
+        crystals_t: twoda::Table,
+        loaded: bool,
+        preview_up: [25]u32,
+        preview_col: [7]u32,
+    }
+
+    fn new {} -> State {
+        let mut s: State
+        s.open = false
+        s.box = msgbox::blank{}
+        s.item = obj::INVALID
+        s.original = obj::INVALID
+        s.owner = obj::INVALID
+        s.slot_worn = -1
+        s.preview_up = [obj::INVALID; 25]
+        s.preview_col = [obj::INVALID; 7]
+        return s
+    }
+}

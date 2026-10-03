@@ -40,6 +40,21 @@ namespace levelup {
         return res.levels
     }
 
+    // The "Auto Level Up NPCs" option (rules::Settings.auto_level): when XP was just given, every
+    // companion in the party whose XP allows a level takes it (the player character does not; the
+    // option is named for the NPCs).
+    fn after_xp { mut w: world::World } {
+        if not w.rules.settings.auto_level { return }
+        let members = party::members{ w = &w }
+        let mut i: usize = 0
+        while i < members.len {
+            let id = members[i]
+            i = i + 1
+            if id == w.player { continue }
+            _ = auto_level{ &w, id }
+        }
+    }
+
     // After the rules changed the creature: the object's maximum hit points, a full heal, the
     // alignment bonuses for the new level.
     fn settle { mut w: world::World, o: *mut obj::Object, f: *mut fight::Fighter, heal: bool } {

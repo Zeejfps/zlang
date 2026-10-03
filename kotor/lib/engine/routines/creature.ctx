@@ -726,6 +726,7 @@ namespace rt_crea {
                 c.xp = if total > 4000000000 { 4000000000 } else { @trunc(u32, total) }
             }
         }
+        levelup::after_xp{ &w }
     }
 
     // void GiveXPToCreature(object oCreature, int nXpAmount): the creature only has to be one; the

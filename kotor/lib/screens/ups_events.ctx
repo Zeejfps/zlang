@@ -1,0 +1,232 @@
+// The bench's events: clicking slots, choosing crystals, Assemble and Cancel.
+namespace ups {
+    // One GUI event of this frame; true when it belonged to the bench.
+    fn on_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> bool {
+        if not s.open { return false }
+        let a = msgbox::answer{ b = s.box, ev }
+        if a != msgbox::Answer::none {
+            let ask = s.ask
+            let row = s.box.item
+            msgbox::close{ &g, b = &s.box }
+            s.ask = ASK_NOTHING
+            if ask == ASK_REEQUIP and a == msgbox::Answer::cancel {
+                // Undo the install the question was about.
+                remove_row{ &s, row = @as(usize, row) }
+                fill_bench{ &s, &g, &w, &dev } iferr err{ error } { _ = @fmt(&w.io, "kotor: upgrade bench: {}\n", error) }
+            }
+            return true
+        }
+        let mine = ev.panel == s.sel or ev.panel == s.list or ev.panel == s.bench
+        if not mine { return false }
+        if msgbox::is_open{ b = s.box } { return true }
+        let top = if s.mode == MODE_BENCH { s.bench } else if s.mode == MODE_ITEMS { s.list } else { s.sel }
+        if ev.panel != top { return true }
+        if s.mode == MODE_BENCH {
+            bench_event{ &s, &g, &w, &dev, ev } iferr err{ error } { _ = @fmt(&w.io, "kotor: upgrade bench: {}\n", error) }
+        } else if s.mode == MODE_ITEMS {
+            items_event{ &s, &g, &w, &dev, ev } iferr err{ error } { _ = @fmt(&w.io, "kotor: upgrade bench: {}\n", error) }
+        } else {
+            categories_event{ &s, &g, &w, &dev, ev } iferr err{ error } { _ = @fmt(&w.io, "kotor: upgrade bench: {}\n", error) }
+        }
+        return true
+    }
+
+    // ---- the ledger
+
+    // Installs upgrade row `row` in the item: from the party's stock, or the unit this session gave back.
+    fn install_row { mut s: State, row: usize } {
+        s.bits = s.bits | (@as(u32, 1) << @as(u32, row))
+        if s.give[row] { s.give[row] = false } else { s.consume[row] = true }
+    }
+
+    // Takes it out again: the unit goes back to the party (at Assemble), or was never taken.
+    fn remove_row { mut s: State, row: usize } {
+        s.bits = s.bits & ((@as(u32, 1) << @as(u32, row)) ^ 0xFFFFFFFF)
+        if s.consume[row] { s.consume[row] = false } else { s.give[row] = true }
+    }
+
+    // Whether the wearer can still wear the item with these bits (a feat an upgrade added a need for).
+    fn wearer_still_fits { mut s: State, mut w: world::World } -> bool {
+        if s.owner == obj::INVALID or s.slot_worn < 0 { return true }
+        set_bits{ &w, item = s.item, bits = s.bits }
+        let mask = @as(u32, 1) << @as(u32, s.slot_worn)
+        return equip::may_equip{ w = &w, id = s.owner, item = s.item, mask }
+    }
+
+    // ---- the bench
+
+    fn bench_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> ! {
+        if ev.kind == gui::EventKind::cancel {
+            if s.choosing {
+                s.choosing = false
+                try fill_bench{ &s, &g, &w, &dev }
+            } else {
+                try leave_bench{ &s, &g, &w, &dev, assemble = false }
+            }
+            return
+        }
+        if ev.kind == gui::EventKind::hilight and not s.choosing {
+            let k = slot_of_tag{ s = &s, tag = ev.tag }
+            if k >= 0 { try describe_slot{ &s, &g, &w, k = @as(usize, k) } }
+            return
+        }
+        if s.choosing and ev.kind == gui::EventKind::row_activated {
+            if slice::eq_bytes{ a = ev.tag, b = "LB_ITEMS" } and ev.user >= 0 { try choose{ &s, &g, &w, &dev, index = @as(usize, ev.user) } }
+            return
+        }
+        if ev.kind != gui::EventKind::activate { return }
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_ASSEMBLE" } {
+            if s.choosing {
+                let row = gui::list_selected{ &g, panel = s.bench, tag = "LB_ITEMS" }
+                if row >= 0 { try choose{ &s, &g, &w, &dev, index = @as(usize, row) } }
+            } else {
+                try leave_bench{ &s, &g, &w, &dev, assemble = true }
+            }
+        } else if slice::eq_bytes{ a = ev.tag, b = "BTN_BACK" } {
+            if s.choosing {
+                s.choosing = false
+                try fill_bench{ &s, &g, &w, &dev }
+            } else {
+                try leave_bench{ &s, &g, &w, &dev, assemble = false }
+            }
+        } else if not s.choosing {
+            let k = slot_of_tag{ s = &s, tag = ev.tag }
+            if k >= 0 { try slot_click{ &s, &g, &w, &dev, k = @as(usize, k) } }
+        }
+    }
+
+    // The hovered slot's name and the description of what is in it (or of the item).
+    fn describe_slot { mut s: State, mut g: gui::Gui, mut w: world::World, k: usize } -> ! {
+        let slot = s.slots[k]
+        let p = s.bench
+        let name = slot_name{ &s, &w, k }
+        try gui::set_text{ &g, panel = p, tag = if s.lightsaber { "LBL_LSSLOTNAME" } else { "LBL_SLOTNAME" }, text = name }
+        let row = if slot.row != NO_ROW { slot.row } else { slot.fixed }
+        let mut id = s.item
+        if slot.kind == KIND_COLOUR {
+            let c = if s.colour_new >= 0 { s.colour_new } else { s.colour_now }
+            if c >= 0 { id = preview_of_colour{ &s, &w, row = @as(usize, c) } }
+        } else if row >= 0 {
+            id = preview_of_row{ &s, &w, row = @as(usize, row) }
+        }
+        try items::show_description{ &g, &w, panel = p, tag = desc_tag{ s = &s }, id }
+    }
+
+    // OnSlotClicked: an installed upgrade comes out; an empty slot takes the upgrade that fits from
+    // the party's stock, or opens the list of crystals to choose from.
+    fn slot_click { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, k: usize } -> ! {
+        let slot = s.slots[k]
+        if slot.kind == KIND_COLOUR {
+            try start_choosing{ &s, &g, &w, &dev, k }
+            return
+        }
+        if slot.row != NO_ROW {
+            remove_row{ &s, row = @as(usize, slot.row) }
+            gui::play_sound{ &g, n = 11 }
+        } else if slot.kind == KIND_TYPED {
+            if slot.fixed < 0 or not upgrade_available{ s = &s, w = &w, row = @as(usize, slot.fixed) } { return }
+            install_row{ &s, row = @as(usize, slot.fixed) }
+            try check_wearer{ &s, &g, &w, &dev, row = @as(usize, slot.fixed) }
+        } else {
+            try start_choosing{ &s, &g, &w, &dev, k }
+            return
+        }
+        try fill_bench{ &s, &g, &w, &dev }
+    }
+
+    // After an install: the wearer may not be able to use the item any more; the original asks.
+    fn check_wearer { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, row: usize } -> ! {
+        if wearer_still_fits{ &s, &w } { return }
+        s.box = msgbox::show_strref{ &g, &w, &dev, strref = STR_NO_REEQUIP, cancel = true, what = ASK_REEQUIP, item = @as(u32, row) }
+        s.ask = ASK_REEQUIP
+    }
+
+    // A crystal picked from the list.
+    fn choose { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, index: usize } -> ! {
+        if index >= s.nchoices { return }
+        let row = s.choices[index]
+        let slot = s.slots[s.choosing_slot]
+        s.choosing = false
+        if slot.kind == KIND_COLOUR {
+            let old = if s.colour_new >= 0 { s.colour_new } else { s.colour_now }
+            // The old crystal goes back to the party, the new one comes out of its stock.
+            if old >= 0 {
+                if s.col_consume[@as(usize, old)] { s.col_consume[@as(usize, old)] = false } else { s.col_give[@as(usize, old)] = true }
+            }
+            if s.col_give[@as(usize, row)] { s.col_give[@as(usize, row)] = false } else { s.col_consume[@as(usize, row)] = true }
+            s.colour_new = if row == s.colour_now { -1 } else { row }
+        } else {
+            install_row{ &s, row = @as(usize, row) }
+            try check_wearer{ &s, &g, &w, &dev, row = @as(usize, row) }
+        }
+        gui::play_sound{ &g, n = 11 }
+        try fill_bench{ &s, &g, &w, &dev }
+    }
+
+    // ---- leaving
+
+    // Assemble makes the ledger true and puts the item back; Cancel puts it back as it was. The
+    // bench then returns to the list it came from (or closes when a script gave the item).
+    fn leave_bench { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, assemble: bool } -> ! {
+        if assemble { settle{ &s, &g, &w } } else { set_bits{ &w, item = s.item, bits = s.orig_bits } }
+        put_back_item{ &s, &w }
+        s.item = obj::INVALID
+        s.original = obj::INVALID
+        gui::close{ &g, id = s.bench }
+        s.bench = 0
+        if s.list != 0 {
+            s.mode = MODE_ITEMS
+            try fill_items{ &s, &g, &w, &dev }
+        } else if s.sel != 0 {
+            s.mode = MODE_CATEGORIES
+        } else {
+            close_all{ &s, &g, &w }
+        }
+    }
+
+    // The upgrade items the ledger names leave or enter the party's stock, and a new colour
+    // crystal replaces the saber.
+    fn settle { mut s: State, mut g: gui::Gui, mut w: world::World } {
+        let mut r: usize = 0
+        while r < ROWS {
+            if s.consume[r] { _ = consume_one{ &w, template = template_of_row{ s = &s, row = r } } }
+            if s.give[r] { _ = rt_item::create_item{ &w, template = template_of_row{ s = &s, row = r }, target = w.player, stack = 1 } }
+            r = r + 1
+        }
+        r = 0
+        while r < COLOURS {
+            let t = twoda::get_string{ t = s.crystals_t, row = r, column = "template" } ifnull ""
+            if s.col_consume[r] { _ = consume_one{ &w, template = t } }
+            if s.col_give[r] { _ = rt_item::create_item{ &w, template = t, target = w.player, stack = 1 } }
+            r = r + 1
+        }
+        set_bits{ &w, item = s.item, bits = s.bits }
+        if s.colour_new >= 0 {
+            // The saber is replaced by the one of the new colour that has the same kind, keeping
+            // the upgrades (CSWGuiUpgrade 0x006c5510).
+            let t = twoda::get_string{ t = s.crystals_t, row = @as(usize, s.colour_new), column = saber_column{ w = &w, item = s.item } } ifnull ""
+            let fresh = make_preview{ &w, template = t }
+            if fresh != obj::INVALID {
+                set_bits{ &w, item = fresh, bits = s.bits }
+                if items::item_of{ w = &w, id = s.item } is some{ value = old } {
+                    if items::item_of{ w = &w, id = fresh } is some{ value = nw } {
+                        if old.rules is some{ value = ro } {
+                            if nw.rules is some{ value = rn } { rn.stolen = ro.stolen }
+                        }
+                    }
+                }
+                s.original = s.item
+                s.item = fresh
+            }
+        }
+    }
+
+    // The item goes back where it came from, if it still fits there, else into the party's bag.
+    fn put_back_item { mut s: State, mut w: world::World } {
+        if s.original != obj::INVALID { world::destroy{ &w, id = s.original } }
+        if s.owner != obj::INVALID and s.slot_worn >= 0 {
+            if equip::equip_item{ &w, id = s.owner, item = s.item, slot = @as(usize, s.slot_worn) } { return }
+        }
+        _ = xfer::to_party{ &w, item = s.item }
+    }
+}

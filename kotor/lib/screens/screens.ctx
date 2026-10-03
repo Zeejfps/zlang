@@ -17,6 +17,9 @@ namespace screens {
     struct State {
         store: store_panel::State,
         container: container_panel::State,
+        level: lvl::State,
+        bench: ups::State,
+        galaxy: galaxy::State,
         queue: [4]Request,
         queued: usize,
         paused: bool,                   // we hold PAUSE_MENU
@@ -24,7 +27,7 @@ namespace screens {
 
     fn new {} -> State {
         return State{
-            store = store_panel::new{}, container = container_panel::new{},
+            store = store_panel::new{}, container = container_panel::new{}, level = lvl::new{}, bench = ups::new{}, galaxy = galaxy::new{},
             queue = [Request{ kind = Kind::none, id = 0, n = 0 }; 4], queued = 0, paused = false,
         }
     }
@@ -43,13 +46,29 @@ namespace screens {
                 ask{ &s, kind = Kind::store, id = store, n = 0 }
             }
             open_container{ placeable, user } => { ask{ &s, kind = Kind::container, id = placeable, n = 0 } }
+            level_up{ who } => { ask{ &s, kind = Kind::level_up, id = who, n = 0 } }
+            upgrade_screen{ item } => { ask{ &s, kind = Kind::upgrade, id = item, n = 0 } }
+            galaxy_map{ planet } => { ask{ &s, kind = Kind::galaxy, id = 0, n = planet } }
             else => {}
         }
     }
 
+    // Gives back the 2DAs the screens loaded (the interface is made again after a module change).
+    fn free { mut s: State, heap: *mut heap::Heap } {
+        if s.level.has_feat_table { twoda::free{ t = s.level.feat_table, realloc = heap::alloc, heap } }
+        if s.bench.loaded {
+            twoda::free{ t = s.bench.upgrade_t, realloc = heap::alloc, heap }
+            twoda::free{ t = s.bench.crystals_t, realloc = heap::alloc, heap }
+        }
+        if s.galaxy.loaded { twoda::free{ t = s.galaxy.table, realloc = heap::alloc, heap } }
+        s.level.has_feat_table = false
+        s.bench.loaded = false
+        s.galaxy.loaded = false
+    }
+
     // Whether a screen is on the screen.
     fn is_open { s: *State } -> bool {
-        return s.store.open or s.container.open
+        return s.store.open or s.container.open or s.level.open or s.bench.open or s.galaxy.open
     }
 
     // Whether a request waits for the interface to make room (a menu open).
@@ -59,12 +78,17 @@ namespace screens {
     // pause follows what is on the screen.
     fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, events: []gui::Event, dt: f32 } {
         store_panel::tick{ s = &s.store, &g, &w }
+        galaxy::update{ s = &s.galaxy, &w, dt }
+        lvl::update_view{ s = &s.level, dt }
         let mut i: usize = 0
         while i < events.len {
             let ev = events[i]
             i = i + 1
             if store_panel::on_event{ s = &s.store, &g, &w, &dev, ev } { continue }
             if container_panel::on_event{ s = &s.container, &g, &w, &dev, ev } { continue }
+            if lvl::on_event{ s = &s.level, &g, &w, &dev, ev } { continue }
+            if ups::on_event{ s = &s.bench, &g, &w, &dev, ev } { continue }
+            if galaxy::on_event{ s = &s.galaxy, &g, &w, &dev, ev } { continue }
         }
         if not is_open{ &s } and s.queued > 0 {
             let r = s.queue[0]
@@ -83,10 +107,33 @@ namespace screens {
         }
     }
 
+    // Between the backdrop and the panels: the 3D views some screens have (the galaxy map's).
+    fn draw_views { mut s: State, mut g: gui::Gui, mut frame: render::Frame, target: render::Size } {
+        galaxy::draw_views{ s = &s.galaxy, &g, &frame, target }
+    }
+
+    // After the panels: views that must not hide behind a full-screen panel of their own (the
+    // level-up screen's creature, which sits in a hole of maincg).
+    fn draw_over { mut s: State, mut g: gui::Gui, mut frame: render::Frame, target: render::Size } {
+        if not msgbox::is_open{ b = s.level.box } { lvl::draw_view{ s = &s.level, &g, &frame, target } }
+    }
+
     fn open_request { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, r: Request } {
         if r.kind == Kind::store {
             store_panel::begin{ s = &s.store, &g, &w, &dev, merchant = r.id } iferr err{ error } {
                 _ = @fmt(&w.io, "kotor: store: {}\n", error)
+            }
+        } else if r.kind == Kind::galaxy {
+            galaxy::begin{ s = &s.galaxy, &g, &w, &dev, planet = r.n } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: galaxy map: {}\n", error)
+            }
+        } else if r.kind == Kind::upgrade {
+            ups::begin{ s = &s.bench, &g, &w, &dev, item = r.id } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: upgrade bench: {}\n", error)
+            }
+        } else if r.kind == Kind::level_up {
+            lvl::begin{ s = &s.level, &g, &w, &dev, who = r.id } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: level up: {}\n", error)
             }
         } else if r.kind == Kind::container {
             container_panel::begin{ s = &s.container, &g, &w, &dev, placeable = r.id } iferr err{ error } {

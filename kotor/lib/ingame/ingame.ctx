@@ -40,6 +40,8 @@ namespace ingame {
             gui::set_tlk{ &g, table = t }
         }
         try gui::load_defaults{ &g, fs = &w.fs, &dev }
+        // The game options the rules read: Auto Level Up NPCs (the options menu keeps it current).
+        w.rules.settings.auto_level = frontend::load_settings{ fs = &w.fs, heap = w.heap, path = "kotor/out/kotor-settings.ini" }.auto_level_up
         if mixer != null { gui::set_mixer{ &g, mixer } }
         let h = try hud::open{ &g, &w, &dev }
         let ui = Ingame{
@@ -56,6 +58,7 @@ namespace ingame {
     // Closes every panel and frees the interface (a module change makes a new one).
     fn free { mut ui: Ingame, mut dev: gpu::Device } {
         gui::free{ g = &ui.gui }
+        screens::free{ s = &ui.screens, heap = ui.heap }
         list::free{ list = &ui.text.bytes }
         material::free_cache{ cache = ui.cache, &dev }
     }
@@ -239,6 +242,7 @@ namespace ingame {
     fn update { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, sc: scene::Scene, camera: cam::Camera, dt: f32 } {
         gui::update{ g = &ui.gui, dt }
         hud::log_tick{ log = &ui.log, dt }
+        if options_panel::settings{ s = &ui.menus.options } is some{ value = st } { w.rules.settings.auto_level = st.auto_level_up }
         // A conversation or cutscene takes the screen: the HUD and any menu go away for it
         // (re/gui.md, "SetHudMode"), and the world is not picked.
         if w.conversation.active != ui.hud_hidden {
@@ -307,6 +311,9 @@ namespace ingame {
         if ui.menu == NO_MENU and not ui.hud_hidden { hud::draw{ h = &ui.hud, g = &ui.gui, &w, &dev, &frame, log = &ui.log } }
         // A menu that draws into a render target before the panels (the map's picture with its arrows).
         if ui.menu == MENU_MAP { map_panel::draw{ s = &ui.menus.map, g = &ui.gui, &w, &dev, &frame, panel = ui.menu_panel } }
-        gui::draw{ g = &ui.gui, &frame }
+        gui::draw_backdrop_pass{ g = &ui.gui, &frame }
+        screens::draw_views{ s = &ui.screens, g = &ui.gui, &frame, target = gpu::screen_size{ dev } }
+        gui::draw_panels{ g = &ui.gui, &frame }
+        screens::draw_over{ s = &ui.screens, g = &ui.gui, &frame, target = gpu::screen_size{ dev } }
     }
 }
