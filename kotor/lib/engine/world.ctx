@@ -1,0 +1,471 @@
+// The game state: one World holds everything a running game is (docs/design/engine.md, "The
+// World"), and `tick` is the server frame (docs/re/gameloop.md 1.3, 2.2).
+//
+//   let w = try world::make{ fs, io, heap = &h, rm = &rm, module_arena = &ma, scratch = &sa }
+//   try modload::enter{ w, name = "end_m01aa" }
+//   let engine = routines::call{ w, _ }                 // once
+//   each frame: clock::advance{ c = &w.clock, seconds }; world::tick{ w, &vm, engine }
+//
+// Pass the world as `mut w: world::World` (from a `*mut World`: `w = ptr`); never read-only, which
+// would copy it.
+namespace world {
+    error no_table{ name: []u8 }
+
+    // The 2DAs the engine itself reads, loaded once (bytes kept in the session heap).
+    struct Tables {
+        appearance: twoda::Table,
+        heads: twoda::Table,
+        genericdoors: twoda::Table,
+        placeables: twoda::Table,
+        baseitems: twoda::Table,
+        creaturespeed: twoda::Table,
+        camerastyle: twoda::Table,
+        surfacemat: twoda::Table,
+        animations: twoda::Table,
+        ambientmusic: twoda::Table,
+        ambientsound: twoda::Table,
+        globalcat: twoda::Table,
+        ranges: twoda::Table,
+        prioritygroups: twoda::Table,
+        portraits: twoda::Table,
+    }
+
+    // A pending module change (gameloop.md 5.1).
+    struct Transition { module: resref::ResRef, waypoint: [64]u8, waypoint_len: usize }
+
+    // MSVC's rand(), which the original's timers use (heartbeat intervals, ...).
+    struct Rng { state: u32 }
+
+    fn rand { mut r: Rng } -> u32 {
+        r.state = @wrap_add(@wrap_mul(r.state, 214013), 2531011)
+        return (r.state >> 16) & 0x7FFF
+    }
+
+    // Counts for the end-of-run report.
+    struct Stats {
+        calls: [772]u32,            // routine calls by id
+        missing: [772]u32,          // calls no category implements (fell back to nwstub)
+        script_runs: u32,
+        faults: u32,
+        events: u32,
+        objects_made: u32,
+    }
+
+    struct World {
+        fs: Fs,
+        io: Io,
+        heap: *mut heap::Heap,
+        rm: *mut res::Manager,
+        mod_arena: *mut arena::Arena,       // module memory: reset when the module is left
+        scratch: *mut arena::Arena,         // frame memory: reset after each frame
+        clock: clock::Clock,
+        objects: obj::Table,
+        module: u32,
+        area: u32,
+        pc: u32,
+        arrival: u32,                       // frames until the PC is placed (gameloop.md 5.5)
+        queue: events::Queue,
+        scripts: scripts::Cache,
+        values: values::Store,
+        walk: walkmap::Map,
+        layout: ?lyt::Layout,
+        vis: ?vis::Vis,
+        tables: Tables,
+        tlk: ?tlk::Table,                   // dialog.tlk (game/main loads it)
+        globals: globals::Globals,
+        out: outbox::Outbox,
+        transition: ?Transition,
+        arrival_waypoint: [64]u8,           // where the PC arrives in the module being entered
+        arrival_waypoint_len: usize,
+        rng: Rng,
+        stats: Stats,
+        log: elog::Log,
+        doomed: list::List(u32, heap::Heap),   // destroyed this frame, removed by sweep
+        module_frame: bool,                 // module and area heartbeats alternate frames
+        serial: u32,                        // action serial numbers
+        heartbeats: map::Map(u32, u64, heap::Heap),   // last heartbeat of doors, placeables, triggers
+        cursor_area: usize,                 // GetNextObjectInArea: where in objects.all to go on from
+        cursor_shape: usize,                // GetNextObjectInShape: likewise
+        // HOOK(rules): tables: *rules::Tables, rng: rules::Rng, effect ids: rules::Counter
+        // HOOK(dialog): conversation: dlg::State
+        // HOOK(party): the party table
+    }
+
+    // A world with the session's tables loaded and no module yet.
+    fn make {
+        fs: Fs, io: Io, heap: *mut heap::Heap, rm: *mut res::Manager, module_arena: *mut arena::Arena,
+        scratch: *mut arena::Arena, seed: u32,
+    } -> !*mut World {
+        let mut f = fs
+        let tables = try load_tables{ fs = &f, heap, rm = rm.* }
+        let globals = try globals::make{ heap, table = tables.globalcat }
+        let w = World{
+            fs, io, heap, rm, mod_arena = module_arena, scratch,
+            clock = clock::new{},
+            objects = obj::new_table{ heap },
+            module = obj::INVALID, area = obj::INVALID, pc = obj::INVALID, arrival = 0,
+            queue = events::new_queue{ heap },
+            scripts = scripts::new_cache{ heap },
+            values = values::new{ heap },
+            walk = walkmap::empty{ heap },
+            layout = null, vis = null,
+            tables, tlk = null, globals,
+            out = outbox::new{ heap },
+            transition = null,
+            arrival_waypoint = [0; 64], arrival_waypoint_len = 0,
+            rng = Rng{ state = seed },
+            stats = Stats{ calls = [0; 772], missing = [0; 772], script_runs = 0, faults = 0, events = 0, objects_made = 0 },
+            log = elog::quiet{},
+            doomed = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
+            module_frame = false,
+            serial = 0,
+            heartbeats = map::new(u32, u64, heap::Heap){ realloc = heap::alloc, heap, hash = map::hash_u32, eq = map::eq_u32 },
+            cursor_area = 0, cursor_shape = 0,
+        }
+        return try alloc::new(World, heap::Heap){ realloc = heap::alloc, heap, value = w }
+    }
+
+    fn load_tables { mut fs: Fs, heap: *mut heap::Heap, rm: res::Manager } -> !Tables {
+        return Tables{
+            appearance = try load_table{ &fs, heap, rm, name = "appearance" },
+            heads = try load_table{ &fs, heap, rm, name = "heads" },
+            genericdoors = try load_table{ &fs, heap, rm, name = "genericdoors" },
+            placeables = try load_table{ &fs, heap, rm, name = "placeables" },
+            baseitems = try load_table{ &fs, heap, rm, name = "baseitems" },
+            creaturespeed = try load_table{ &fs, heap, rm, name = "creaturespeed" },
+            camerastyle = try load_table{ &fs, heap, rm, name = "camerastyle" },
+            surfacemat = try load_table{ &fs, heap, rm, name = "surfacemat" },
+            animations = try load_table{ &fs, heap, rm, name = "animations" },
+            ambientmusic = try load_table{ &fs, heap, rm, name = "ambientmusic" },
+            ambientsound = try load_table{ &fs, heap, rm, name = "ambientsound" },
+            globalcat = try load_table{ &fs, heap, rm, name = "globalcat" },
+            ranges = try load_table{ &fs, heap, rm, name = "ranges" },
+            prioritygroups = try load_table{ &fs, heap, rm, name = "prioritygroups" },
+            portraits = try load_table{ &fs, heap, rm, name = "portraits" },
+        }
+    }
+
+    fn load_table { mut fs: Fs, heap: *mut heap::Heap, rm: res::Manager, name: []u8 } -> !twoda::Table {
+        let bytes = try res::load{ &fs, rm, name, kind = restype::Type::twoda, realloc = heap::alloc, heap } ifnull { return no_table{ name } }
+        return twoda::parse{ data = bytes, realloc = heap::alloc, heap }
+    }
+
+    // ---- reading resources
+
+    // A resource's bytes in the frame's scratch memory (gone after the frame); null if none.
+    fn read_scratch { mut w: World, name: []u8, kind: restype::Type } -> !?alloc::Bytes {
+        return res::load{ fs = &w.fs, rm = w.rm.*, name, kind, realloc = arena::alloc, heap = w.scratch }
+    }
+
+    // A resource's bytes in module memory (kept until the module is left); null if none.
+    fn read_module { mut w: World, name: []u8, kind: restype::Type } -> !?alloc::Bytes {
+        return res::load{ fs = &w.fs, rm = w.rm.*, name, kind, realloc = arena::alloc, heap = w.mod_arena }
+    }
+
+    // A GFF resource parsed in scratch memory; null if there is none.
+    fn read_gff { mut w: World, name: []u8, kind: restype::Type } -> !?gff::Doc {
+        let bytes = try read_scratch{ &w, name, kind } ifnull { return null }
+        return try gff::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch }
+    }
+
+    // ---- objects
+
+    // The live object with this id; null for none, OBJECT_INVALID or one being destroyed.
+    fn object { w: *World, id: u32 } -> ?*mut obj::Object {
+        let o = map::get{ m = w.objects.by_id, key = id } ifnull { return null }
+        if o.destroyed { return null }
+        return o
+    }
+
+    fn is_valid { w: *World, id: u32 } -> bool { return object{ w, id } != null }
+
+    // The `nth` (from 0) live object whose tag is `tag` (ignoring case), in creation order.
+    fn object_by_tag { w: *World, tag: []u8, nth: i32 } -> u32 {
+        let all = list::items{ list = w.objects.all }
+        let mut left = nth
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or not ci::eq{ a = o.tag, b = tag } { continue }
+            if left == 0 { return o.id }
+            left = left - 1
+        }
+        return obj::INVALID
+    }
+
+    // A new object of `kind`, registered, with its kind data at the defaults. `id` 0 takes a
+    // fresh one (a character id for player characters).
+    fn add_object { mut w: World, kind: obj::Kind, id: u32, character: bool } -> !*mut obj::Object {
+        let the_id = if id != 0 { id } else { obj::next_id{ t = &w.objects, character } }
+        let o = try alloc::new(obj::Object, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = obj::make{ heap = w.heap, id = the_id, kind } }
+        o.ext = try make_ext{ heap = w.heap, kind }
+        if kind == obj::Kind::waypoint or kind == obj::Kind::sound or kind == obj::Kind::store { o.ai_level = -1 }
+        try map::put{ m = &w.objects.by_id, key = the_id, value = o }
+        try list::push{ list = &w.objects.all, item = o }
+        if id != 0 and id >= w.objects.next_low and id < 0x40000000 { w.objects.next_low = id + 1 }
+        w.stats.objects_made = w.stats.objects_made + 1
+        return o
+    }
+
+    fn make_ext { heap: *mut heap::Heap, kind: obj::Kind } -> !obj::Ext {
+        let h = heap
+        match kind {
+            creature => { return obj::Ext::creature{ c = try alloc::new(obj::Creature, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::make_creature{ heap = h } } } }
+            door => {
+                return obj::Ext::door{ d = try alloc::new(obj::Door, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Door{
+                    appearance = 0, state = obj::DoorState::closed, locked = false, lockable = false, key_required = false,
+                    key = slice::empty(u8){}, open_dc = 0, linked_to = slice::empty(u8){}, linked_to_module = resref::empty{},
+                    linked_flags = 0, transition_name = obj::Name{ strref = 0xFFFFFFFF, text = slice::empty(u8){} },
+                    static = false, walk = -1, model = resref::empty{},
+                } } }
+            }
+            placeable => {
+                return obj::Ext::placeable{ p = try alloc::new(obj::Placeable, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Placeable{
+                    appearance = 0, open = false, on = false, useable = false, has_inventory = false, party_interact = false,
+                    static = false, locked = false, key = slice::empty(u8){},
+                    inventory = list::new(u32, heap::Heap){ realloc = heap::alloc, heap = h }, walk = -1,
+                    model = resref::empty{}, anim = obj::ANIM_STAND,
+                } } }
+            }
+            trigger => {
+                return obj::Ext::trigger{ t = try alloc::new(obj::Trigger, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Trigger{
+                    polygon = slice::empty(math::Vec3){}, trigger_type = 0, linked_to = slice::empty(u8){},
+                    linked_to_module = resref::empty{}, linked_flags = 0,
+                    transition_name = obj::Name{ strref = 0xFFFFFFFF, text = slice::empty(u8){} },
+                    inside = list::new(u32, heap::Heap){ realloc = heap::alloc, heap = h },
+                } } }
+            }
+            item => {
+                return obj::Ext::item{ i = try alloc::new(obj::Item, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Item{
+                    base = 0, model_variation = 1, body_variation = 1, texture_variation = 1, stack = 1, charges = 0,
+                    possessor = obj::INVALID, identified = true, equipped_slot = -1,
+                } } }
+            }
+            waypoint => {
+                return obj::Ext::waypoint{ wp = try alloc::new(obj::Waypoint, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Waypoint{
+                    has_map_note = false, map_note_enabled = false, map_note = obj::Name{ strref = 0xFFFFFFFF, text = slice::empty(u8){} },
+                } } }
+            }
+            sound => {
+                return obj::Ext::sound{ s = try alloc::new(obj::Sound, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Sound{
+                    active = false, continuous = false, looping = false, positional = false, random = false,
+                    random_position = false, interval = 0, interval_variation = 0, volume = 127, volume_variation = 0,
+                    pitch_variation = 0.0, elevation = 0.0, min_distance = 1.0, max_distance = 10.0, random_range_x = 0.0,
+                    random_range_y = 0.0, priority = 0, sounds = slice::empty(resref::ResRef){},
+                } } }
+            }
+            encounter => {
+                return obj::Ext::encounter{ e = try alloc::new(obj::Encounter, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Encounter{ active = true, polygon = slice::empty(math::Vec3){} } } }
+            }
+            store => {
+                return obj::Ext::store{ st = try alloc::new(obj::Store, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Store{ markup = 100, markdown = 100 } } }
+            }
+            aoe => {
+                return obj::Ext::aoe{ a = try alloc::new(obj::Aoe, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Aoe{ creator = obj::INVALID, radius = 1.0 } } }
+            }
+            area => {
+                return obj::Ext::area{ a = try alloc::new(obj::Area, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Area{
+                    resref = resref::empty{}, name = obj::Name{ strref = 0xFFFFFFFF, text = slice::empty(u8){} },
+                    music_day = 0, music_night = 0, music_battle = 0, music_delay = 0, ambient_day = 0, ambient_night = 0,
+                    ambient_day_volume = 0, ambient_night_volume = 0, env_audio = 0, camera_style = 0, restrict_mode = 0,
+                    unescapable = false, is_night = false, dyn_ambient = 0, sun_ambient = 0, sun_diffuse = 0, fog_on = false,
+                    fog_near = 99.0, fog_far = 100.0, fog_color = 0, load_screen = 0, last_heartbeat = 0,
+                    transition_token = 0, transition_pending = 0,
+                } } }
+            }
+            module => {
+                return obj::Ext::module{ m = try alloc::new(obj::Module, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Module{
+                    name = resref::empty{}, area_name = resref::empty{}, entry_position = math::vec3::zero{},
+                    entry_direction = math::Vec3{ x = 1.0, y = 0.0, z = 0.0 }, min_per_hour = 2, dawn_hour = 6, dusk_hour = 18,
+                    xp_scale = 10, vo_id = slice::empty(u8){}, last_heartbeat = 0,
+                } } }
+            }
+        }
+    }
+
+    // Marks an object destroyed: invalid from now on, removed by sweep at the end of the frame.
+    fn destroy { mut w: World, id: u32 } {
+        let o = object{ w = &w, id } ifnull { return }
+        o.destroyed = true
+        list::push{ list = &w.doomed, item = id } iferr {}
+        if w.log.objects {
+            prefix{ w = &w }
+            _ = @fmt(&w.io, "destroy {} {}\n", id, o.tag)
+        }
+    }
+
+    // Removes the objects destroyed this frame and gives their memory back.
+    fn sweep { mut w: World } {
+        let doomed = list::items{ list = w.doomed }
+        let mut i: usize = 0
+        while i < doomed.len {
+            let id = doomed[i]
+            i = i + 1
+            let o = map::remove{ m = &w.objects.by_id, key = id } ifnull { continue }
+            remove_from_all{ &w, o }
+            free_object{ &w, o }
+        }
+        list::clear{ list = &w.doomed }
+    }
+
+    fn remove_from_all { mut w: World, o: *mut obj::Object } {
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        let mut j: usize = 0
+        while i < all.len {
+            if all[i] != o {
+                all[j] = all[i]
+                j = j + 1
+            }
+            i = i + 1
+        }
+        w.objects.all.len = j
+    }
+
+    // Gives back everything an object owns.
+    fn free_object { mut w: World, o: *mut obj::Object } {
+        actions::clear_queue{ &w, o }
+        list::free{ list = &o.actions }
+        obj::free_bytes{ heap = w.heap, s = o.tag }
+        obj::free_bytes{ heap = w.heap, s = o.name.text }
+        match o.ext {
+            creature{ c } => {
+                list::free{ list = &c.inventory }
+                list::free{ list = &c.path }
+                list::free{ list = &c.triggers }
+                _ = alloc::resize(obj::Creature, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(c, 1), count = 0 }
+            }
+            door{ d } => {
+                obj::free_bytes{ heap = w.heap, s = d.key }
+                obj::free_bytes{ heap = w.heap, s = d.linked_to }
+                obj::free_bytes{ heap = w.heap, s = d.transition_name.text }
+                _ = alloc::resize(obj::Door, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(d, 1), count = 0 }
+            }
+            placeable{ p } => {
+                obj::free_bytes{ heap = w.heap, s = p.key }
+                list::free{ list = &p.inventory }
+                _ = alloc::resize(obj::Placeable, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(p, 1), count = 0 }
+            }
+            trigger{ t } => {
+                obj::free_bytes{ heap = w.heap, s = t.linked_to }
+                obj::free_bytes{ heap = w.heap, s = t.transition_name.text }
+                list::free{ list = &t.inside }
+                _ = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = t.polygon, count = 0 }
+                _ = alloc::resize(obj::Trigger, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(t, 1), count = 0 }
+            }
+            item{ i } => { _ = alloc::resize(obj::Item, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(i, 1), count = 0 } }
+            waypoint{ wp } => {
+                obj::free_bytes{ heap = w.heap, s = wp.map_note.text }
+                _ = alloc::resize(obj::Waypoint, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(wp, 1), count = 0 }
+            }
+            sound{ s } => {
+                _ = alloc::resize(resref::ResRef, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = s.sounds, count = 0 }
+                _ = alloc::resize(obj::Sound, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(s, 1), count = 0 }
+            }
+            encounter{ e } => {
+                _ = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = e.polygon, count = 0 }
+                _ = alloc::resize(obj::Encounter, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(e, 1), count = 0 }
+            }
+            store{ st } => { _ = alloc::resize(obj::Store, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(st, 1), count = 0 } }
+            aoe{ a } => { _ = alloc::resize(obj::Aoe, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(a, 1), count = 0 } }
+            area{ a } => {
+                obj::free_bytes{ heap = w.heap, s = a.name.text }
+                _ = alloc::resize(obj::Area, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(a, 1), count = 0 }
+            }
+            module{ m } => {
+                obj::free_bytes{ heap = w.heap, s = m.vo_id }
+                _ = alloc::resize(obj::Module, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(m, 1), count = 0 }
+            }
+            none => {}
+        }
+        _ = alloc::resize(obj::Object, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(o, 1), count = 0 }
+    }
+
+    // Sets an object's tag (lower-cased, as SetTag does).
+    fn set_tag { mut w: World, o: *mut obj::Object, tag: []u8 } -> ! {
+        let copy = try obj::copy_lower{ heap = w.heap, s = tag }
+        obj::free_bytes{ heap = w.heap, s = o.tag }
+        o.tag = copy
+    }
+
+    fn set_name { mut w: World, name: *mut obj::Name, strref: u32, text: []u8 } -> ! {
+        let copy = try obj::copy_bytes{ heap = w.heap, s = text }
+        obj::free_bytes{ heap = w.heap, s = name.text }
+        name.text = copy
+        name.strref = strref
+    }
+
+    fn set_position { o: *mut obj::Object, p: math::Vec3 } {
+        o.position = p
+        o.dirty = o.dirty | obj::DIRTY_POSITION
+    }
+
+    fn set_orientation { o: *mut obj::Object, v: math::Vec3 } {
+        let len = math::sqrtf{ x = v.x * v.x + v.y * v.y }
+        if len < 0.000001 { return }
+        o.orientation = math::Vec3{ x = v.x / len, y = v.y / len, z = 0.0 }
+        o.dirty = o.dirty | obj::DIRTY_ORIENTATION
+    }
+
+    fn set_animation { o: *mut obj::Object, id: u32, speed: f32 } {
+        if o.animation == id and o.anim_speed == speed { return }
+        o.animation = id
+        o.anim_speed = speed
+        o.dirty = o.dirty | obj::DIRTY_ANIMATION
+    }
+
+    // ---- the server frame
+
+    // One server frame (gameloop.md 1.3 steps 3-6, 2.2): due events, then every object's
+    // update by AI level 4 down to 0 (events posted meanwhile are delivered at the next delivery
+    // point), the module and area heartbeats, the PC's arrival, and the sweep of destroyed objects.
+    fn tick { mut w: World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
+        events::deliver_due{ &w, &vm, engine }
+        let mut level: i32 = 4
+        while level >= 0 {
+            let count = w.objects.all.len
+            let mut i: usize = 0
+            while i < count and i < w.objects.all.len {
+                let o = list::items{ list = w.objects.all }[i]
+                i = i + 1
+                if o.destroyed or o.ai_level != level { continue }
+                ai::update{ &w, &vm, engine, id = o.id }
+                if events::has_due{ w = &w } { events::deliver_due{ &w, &vm, engine } }
+            }
+            level = level - 1
+        }
+        ai::update_module_and_area{ &w, &vm, engine }
+        events::deliver_due{ &w, &vm, engine }
+        if w.arrival > 0 {
+            w.arrival = w.arrival - 1
+            if w.arrival == 0 { modload::place_player{ &w } }
+        }
+        sweep{ &w }
+    }
+
+    // The log line prefix: `[frame seconds] `.
+    fn prefix { w: *mut World } {
+        let ms = clock::now_ms{ c = w.clock }
+        _ = @fmt(&w.io, "[{} {}.{}] ", w.clock.frame, ms / 1000, pad3{ n = ms % 1000 })
+    }
+
+    struct Pad3 { n: u64 }
+    fn pad3 { n: u64 } -> Pad3 { return Pad3{ n } }
+
+    #write
+    fn write_pad3 { mut io: Io, v: Pad3 } {
+        if v.n < 100 { io::write{ &io, to = io::Stream::out, bytes = "0" } }
+        if v.n < 10 { io::write{ &io, to = io::Stream::out, bytes = "0" } }
+        io::print_u64{ &io, n = v.n }
+    }
+
+    // A dialog.tlk string ("" for none or no table).
+    fn string_by_strref { w: *World, strref: u32 } -> []u8 {
+        let t = w.tlk ifnull { return "" }
+        return tlk::get_text{ t, strref } iferr ""
+    }
+
+    // MSVC rand() on the world's generator.
+    fn random { mut w: World } -> u32 { return rand{ r = &w.rng } }
+}

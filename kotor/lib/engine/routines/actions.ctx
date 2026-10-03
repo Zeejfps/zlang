@@ -1,0 +1,191 @@
+// Routines that queue actions on OBJECT_SELF (docs/re/actions.md 2) and the ones that act at
+// once on an object's queue, facing or animation.
+namespace rt_act {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        if routine == nwscript::ClearAllActions { actions::clear_all{ &w, id = nwvm::self_object{ vm } } }
+        else if routine == nwscript::ActionDoCommand { try action_do_command{ &w, &vm, argc } }
+        else if routine == nwscript::ActionWait { try action_wait{ &w, &vm, argc } }
+        else if routine == nwscript::ActionPlayAnimation { try action_play_animation{ &w, &vm, argc } }
+        else if routine == nwscript::PlayAnimation { try play_animation{ &w, &vm, argc } }
+        else if routine == nwscript::ActionMoveToObject { try move_to_object{ &w, &vm, argc, routine, force = false } }
+        else if routine == nwscript::ActionForceMoveToObject { try move_to_object{ &w, &vm, argc, routine, force = true } }
+        else if routine == nwscript::ActionMoveToLocation { try move_to_location{ &w, &vm, argc, routine, force = false } }
+        else if routine == nwscript::ActionForceMoveToLocation { try move_to_location{ &w, &vm, argc, routine, force = true } }
+        else if routine == nwscript::ActionJumpToObject { try jump_to_object{ &w, &vm, argc, routine, queue = true } }
+        else if routine == nwscript::JumpToObject { try jump_to_object{ &w, &vm, argc, routine, queue = false } }
+        else if routine == nwscript::ActionJumpToLocation { try jump_to_location{ &w, &vm, argc, routine, queue = true } }
+        else if routine == nwscript::JumpToLocation { try jump_to_location{ &w, &vm, argc, routine, queue = false } }
+        else if routine == nwscript::SetFacing { try set_facing{ &w, &vm, argc } }
+        else if routine == nwscript::SetFacingPoint { try set_facing_point{ &w, &vm, argc } }
+        else if routine == nwscript::ActionOpenDoor { try door_action{ &w, &vm, argc, routine, kind = actions::Kind::open_door } }
+        else if routine == nwscript::ActionCloseDoor { try door_action{ &w, &vm, argc, routine, kind = actions::Kind::close_door } }
+        else if routine == nwscript::ActionStartConversation { try action_start_conversation{ &w, &vm, argc } }
+        else { return false }
+        return true
+    }
+
+    fn self_of { vm: *nwvm::Vm } -> u32 { return nwvm::self_object{ vm = vm.* } }
+
+    // void ActionDoCommand(action aActionToDo): dropped on a non-commandable object.
+    fn action_do_command { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let s = try scripts::take_situation{ &w, &vm }
+        let mut a = actions::make{ kind = actions::Kind::do_command }
+        a.params[0] = actions::Param::situation{ s }
+        _ = actions::add{ &w, id = self_of{ vm = &vm }, action = a, force = false }
+    }
+
+    fn action_wait { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let seconds = try nwarg::float{ &vm, routine = nwscript::ActionWait, argc, i = 0 }
+        let mut a = actions::make{ kind = actions::Kind::wait }
+        a.params[0] = actions::Param::float{ v = seconds }
+        _ = actions::add{ &w, id = self_of{ vm = &vm }, action = a, force = false }
+    }
+
+    // void ActionPlayAnimation(int nAnimation, float fSpeed = 1.0, float fDurationSeconds = 0.0)
+    fn action_play_animation { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::ActionPlayAnimation
+        let constant = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let speed = try nwarg::float{ &vm, routine = r, argc, i = 1 }
+        let duration = try nwarg::float{ &vm, routine = r, argc, i = 2 }
+        let me = self_of{ vm = &vm }
+        let o = world::object{ w = &w, id = me } ifnull { return }
+        let id = animname::from_script{ constant, kind = o.kind }
+        if duration < 0.0 and constant >= 0 and constant <= 32 {
+            // A negative duration loops the animation at once, without queuing (actions.md 3.9).
+            world::set_animation{ o, id, speed }
+            return
+        }
+        let mut a = actions::make{ kind = actions::Kind::play_animation }
+        a.params[0] = actions::Param::int{ v = @as(i32, id) }
+        a.params[1] = actions::Param::float{ v = speed }
+        a.params[2] = actions::Param::float{ v = duration }
+        _ = actions::add{ &w, id = me, action = a, force = false }
+    }
+
+    // void PlayAnimation(int nAnimation, float fSpeed = 1.0, float fSeconds = 0.0): at once, as the
+    // front of the queue (ours: the original plays it on the object directly).
+    fn play_animation { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::PlayAnimation
+        let constant = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let speed = try nwarg::float{ &vm, routine = r, argc, i = 1 }
+        let seconds = try nwarg::float{ &vm, routine = r, argc, i = 2 }
+        let me = self_of{ vm = &vm }
+        let o = world::object{ w = &w, id = me } ifnull { return }
+        let id = animname::from_script{ constant, kind = o.kind }
+        if seconds < 0.0 or o.kind != obj::Kind::creature {
+            world::set_animation{ o, id, speed }
+            if obj::placeable{ o } is some{ value = p } { p.anim = id }
+            return
+        }
+        let mut a = actions::make{ kind = actions::Kind::play_animation }
+        a.params[0] = actions::Param::int{ v = @as(i32, id) }
+        a.params[1] = actions::Param::float{ v = speed }
+        a.params[2] = actions::Param::float{ v = seconds }
+        actions::add_front{ &w, id = me, action = a }
+    }
+
+    // ActionMoveToObject(object oMoveTo, int bRun = FALSE, float fRange = 1.0);
+    // ActionForceMoveToObject(object oMoveTo, int bRun = FALSE, float fRange = 1.0, float fTimeout = 30.0)
+    fn move_to_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, force: bool } -> ! {
+        let target = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let run = try nwarg::int{ &vm, routine, argc, i = 1 }
+        let range = try nwarg::float{ &vm, routine, argc, i = 2 }
+        let timeout = if force { try nwarg::float{ &vm, routine, argc, i = 3 } } else { 0.0 }
+        let t = world::object{ w = &w, id = target } ifnull { return }
+        let mut a = actions::make{ kind = actions::Kind::move_to_point }
+        a.params[0] = actions::Param::vector{ v = t.position }
+        a.params[1] = actions::Param::int{ v = run }
+        a.params[2] = actions::Param::float{ v = range }
+        a.params[3] = actions::Param::object{ id = target }
+        a.params[4] = actions::Param::float{ v = timeout }
+        _ = actions::add{ &w, id = self_of{ vm = &vm }, action = a, force = false }
+    }
+
+    // ActionMoveToLocation(location lDestination, int bRun = FALSE);
+    // ActionForceMoveToLocation(location lDestination, int bRun = FALSE, float fTimeout = 30.0):
+    // both queue on a non-commandable object (actions.md 1.6).
+    fn move_to_location { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, force: bool } -> ! {
+        let h = try nwarg::engine{ &vm, routine, argc, i = 0, kind = nwvm::EngineType::location }
+        let run = try nwarg::int{ &vm, routine, argc, i = 1 }
+        let timeout = if force { try nwarg::float{ &vm, routine, argc, i = 2 } } else { 0.0 }
+        let l = values::location{ s = &w.values, handle = h }
+        let mut a = actions::make{ kind = actions::Kind::move_to_point }
+        a.params[0] = actions::Param::vector{ v = l.position }
+        a.params[1] = actions::Param::int{ v = run }
+        a.params[2] = actions::Param::float{ v = 0.1 }
+        a.params[4] = actions::Param::float{ v = timeout }
+        _ = actions::add{ &w, id = self_of{ vm = &vm }, action = a, force = true }
+    }
+
+    // (Action)JumpToObject(object oToJumpTo, int bWalkStraightLineToPoint = TRUE)
+    fn jump_to_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, queue: bool } -> ! {
+        let target = try nwarg::object{ &vm, routine, argc, i = 0 }
+        if argc > 1 { _ = try nwarg::int{ &vm, routine, argc, i = 1 } }
+        let mut a = actions::make{ kind = actions::Kind::jump_to_object }
+        a.params[0] = actions::Param::object{ id = target }
+        let me = self_of{ vm = &vm }
+        if queue { _ = actions::add{ &w, id = me, action = a, force = false } } else {
+            actions::clear_all{ &w, id = me }
+            actions::add_front{ &w, id = me, action = a }
+        }
+    }
+
+    // (Action)JumpToLocation(location lLocation)
+    fn jump_to_location { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, queue: bool } -> ! {
+        let h = try nwarg::engine{ &vm, routine, argc, i = 0, kind = nwvm::EngineType::location }
+        let l = values::location{ s = &w.values, handle = h }
+        let mut a = actions::make{ kind = actions::Kind::jump_to_point }
+        a.params[0] = actions::Param::vector{ v = l.position }
+        a.params[1] = actions::Param::float{ v = l.facing }
+        let me = self_of{ vm = &vm }
+        if queue { _ = actions::add{ &w, id = me, action = a, force = false } } else {
+            actions::clear_all{ &w, id = me }
+            actions::add_front{ &w, id = me, action = a }
+        }
+    }
+
+    // void SetFacing(float fDirection): degrees counter-clockwise from east, at once.
+    fn set_facing { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let degrees = try nwarg::float{ &vm, routine = nwscript::SetFacing, argc, i = 0 }
+        let o = world::object{ w = &w, id = self_of{ vm = &vm } } ifnull { return }
+        world::set_orientation{ o, v = obj::direction_of{ degrees } }
+    }
+
+    // void SetFacingPoint(vector vTarget)
+    fn set_facing_point { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let v = try nwarg::vector{ &vm, routine = nwscript::SetFacingPoint, argc, i = 0 }
+        let o = world::object{ w = &w, id = self_of{ vm = &vm } } ifnull { return }
+        world::set_orientation{ o, v = math::Vec3{ x = v.x - o.position.x, y = v.y - o.position.y, z = 0.0 } }
+    }
+
+    // void ActionOpenDoor(object oDoor), ActionCloseDoor(object oDoor)
+    fn door_action { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, kind: actions::Kind } -> ! {
+        let door = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let mut a = actions::make{ kind }
+        a.params[0] = actions::Param::object{ id = door }
+        _ = actions::add{ &w, id = self_of{ vm = &vm }, action = a, force = false }
+    }
+
+    // void ActionStartConversation(object oObjectToConverse, string sDialogResRef = "",
+    //   int bPrivateConversation = FALSE, int nConversationType = 0, int bIgnoreStartRange = FALSE,
+    //   string sNameObjectToIgnore1..6 = "", int bUseLeader = FALSE)
+    fn action_start_conversation { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::ActionStartConversation
+        let with = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let dialog = try nwarg::string{ &vm, routine = r, argc, i = 1 }
+        let mut i: usize = 2
+        let count = @as(usize, nwscript::ROUTINES[@as(usize, r)].count)
+        while i < count {
+            match nwscript::PARAMS[@as(usize, nwscript::ROUTINES[@as(usize, r)].first) + i].kind {
+                int => { _ = try nwarg::int{ &vm, routine = r, argc, i } }
+                string => { _ = try nwarg::string{ &vm, routine = r, argc, i } }
+                else => {}
+            }
+            i = i + 1
+        }
+        let mut a = actions::make{ kind = actions::Kind::dialog_object }
+        a.params[0] = actions::Param::object{ id = with }
+        if dialog.len > 0 { a.params[1] = actions::Param::string{ s = try obj::copy_bytes{ heap = w.heap, s = dialog } } }
+        _ = actions::add{ &w, id = self_of{ vm = &vm }, action = a, force = false }
+    }
+}

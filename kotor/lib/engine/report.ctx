@@ -1,0 +1,33 @@
+// The end-of-run report: script runs, faults, events, objects, and (with --report routines) the
+// routines scripts called that no category implements, most-called first.
+namespace report {
+    fn summary { mut w: world::World, routines: bool } {
+        _ = @fmt(&w.io, "run: {} frames, {} s of world time; {} script runs, {} faults, {} events, {} objects made, {} live\n",
+            w.clock.frame, clock::now_ms{ c = w.clock } / 1000, w.stats.script_runs, w.stats.faults, w.stats.events,
+            w.stats.objects_made, w.objects.all.len)
+        let mut implemented: u32 = 0
+        let mut missing: u32 = 0
+        let mut i: usize = 0
+        while i < 772 {
+            if w.stats.calls[i] > 0 {
+                if w.stats.missing[i] == 0 { implemented = implemented + 1 } else { missing = missing + 1 }
+            }
+            i = i + 1
+        }
+        _ = @fmt(&w.io, "routines called: {} implemented, {} missing\n", implemented, missing)
+        if not routines { return }
+        // Missing routines by calls, most first (a selection sort over a copy of the counts).
+        let mut counts = w.stats.missing
+        while true {
+            let mut best: usize = 772
+            let mut j: usize = 0
+            while j < 772 {
+                if counts[j] > 0 and (best == 772 or counts[j] > counts[best]) { best = j }
+                j = j + 1
+            }
+            if best == 772 { break }
+            _ = @fmt(&w.io, "  missing {} {} x{}\n", best, nwscript::ROUTINES[best].name, counts[best])
+            counts[best] = 0
+        }
+    }
+}

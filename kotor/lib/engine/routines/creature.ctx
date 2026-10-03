@@ -1,0 +1,444 @@
+// Routines: what a creature is and has (race, gender, class, abilities, hit points, plot and
+// death flags), who likes whom (factions and repute.2da), what it is listening for, its alignment
+// and experience, and the nearest-creature search. Skills, feats and spells are placeholders
+// (zero) until lib/rules brings the creature's stats (HOOK(rules)).
+namespace rt_crea {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        match routine {
+            nwscript::GetRacialType => { try get_creature_field{ &w, &vm, argc, routine, none = nwconst::RACIAL_TYPE_INVALID } }
+            nwscript::GetSubRace => { try get_creature_field{ &w, &vm, argc, routine, none = 0 } }
+            nwscript::GetGender => { try get_creature_field{ &w, &vm, argc, routine, none = 0 } }
+            nwscript::GetHitDice => { try get_creature_field{ &w, &vm, argc, routine, none = 0 } }
+            nwscript::GetGoodEvilValue => { try get_creature_field{ &w, &vm, argc, routine, none = -1 } }
+            nwscript::GetXP => { try get_creature_field{ &w, &vm, argc, routine, none = 0 } }
+            nwscript::GetIsDead => { try get_creature_field{ &w, &vm, argc, routine, none = 0 } }
+            nwscript::GetIsListening => { try get_creature_field{ &w, &vm, argc, routine, none = 0 } }
+            nwscript::GetIsEncounterCreature => { try get_creature_field{ &w, &vm, argc, routine, none = 0 } }
+            nwscript::GetClassByPosition => { try get_class_stat{ &w, &vm, argc, routine, none = nwconst::CLASS_TYPE_INVALID } }
+            nwscript::GetLevelByPosition => { try get_class_stat{ &w, &vm, argc, routine, none = 0 } }
+            nwscript::GetLevelByClass => { try get_class_stat{ &w, &vm, argc, routine, none = 0 } }
+            nwscript::GetHasSkill => { try get_class_stat{ &w, &vm, argc, routine, none = 0 } }
+            nwscript::GetSkillRank => { try get_class_stat{ &w, &vm, argc, routine, none = 0 } }
+            nwscript::GetHasFeat => { try get_class_stat{ &w, &vm, argc, routine, none = 0 } }
+            nwscript::GetHasSpell => { try get_class_stat{ &w, &vm, argc, routine, none = 0 } }
+            nwscript::GetAbilityScore => { try get_ability_score{ &w, &vm, argc } }
+            nwscript::GetCurrentHitPoints => { try get_object_field{ &w, &vm, argc, routine } }
+            nwscript::GetMaxHitPoints => { try get_object_field{ &w, &vm, argc, routine } }
+            nwscript::GetPlotFlag => { try get_object_field{ &w, &vm, argc, routine } }
+            nwscript::GetMinOneHP => { try get_object_field{ &w, &vm, argc, routine } }
+            nwscript::SetMaxHitPoints => { try set_object_field{ &w, &vm, argc, routine } }
+            nwscript::SetPlotFlag => { try set_object_field{ &w, &vm, argc, routine } }
+            nwscript::SetMinOneHP => { try set_object_field{ &w, &vm, argc, routine } }
+            nwscript::SetIsDestroyable => { try set_is_destroyable{ &w, &vm, argc } }
+            nwscript::GetStandardFaction => { try get_standard_faction{ &w, &vm, argc } }
+            nwscript::ChangeToStandardFaction => { try change_to_standard_faction{ &w, &vm, argc } }
+            nwscript::GetFactionEqual => { try get_faction_equal{ &w, &vm, argc } }
+            nwscript::GetIsEnemy => { try get_reputation_test{ &w, &vm, argc, routine } }
+            nwscript::GetIsFriend => { try get_reputation_test{ &w, &vm, argc, routine } }
+            nwscript::GetIsNeutral => { try get_reputation_test{ &w, &vm, argc, routine } }
+            nwscript::SetListenPattern => { try set_listen_pattern{ &w, &vm, argc } }
+            nwscript::SetListening => { try set_listening{ &w, &vm, argc } }
+            nwscript::GetNearestCreature => { try get_nearest_creature{ &w, &vm, argc } }
+            nwscript::GetSoloMode => { try nwvm::push_int{ &vm, v = 0 } }
+            nwscript::AdjustAlignment => { try adjust_alignment{ &w, &vm, argc } }
+            nwscript::GiveXPToCreature => { try give_xp_to_creature{ &w, &vm, argc } }
+            nwscript::SetXP => { try set_xp{ &w, &vm, argc } }
+            nwscript::GetName => { try get_name{ &w, &vm, argc } }
+            else => { return false }
+        }
+        return true
+    }
+
+    fn creature_of { w: *world::World, id: u32 } -> ?*mut obj::Creature {
+        let o = world::object{ w, id } ifnull { return null }
+        return obj::creature{ o }
+    }
+
+    fn flag { b: bool } -> i32 { return if b { 1 } else { 0 } }
+
+    // The `int GetX(object oCreature)` routines that read one field of the creature's record;
+    // `none` is what a missing or non-creature object gives.
+    fn get_creature_field { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, none: i32 } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let c = creature_of{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = none }
+            return
+        }
+        let v: i32 = match routine {
+            nwscript::GetRacialType => { @as(i32, c.race) }
+            nwscript::GetSubRace => { @as(i32, c.subrace) }
+            nwscript::GetGender => { @as(i32, c.gender) }
+            nwscript::GetHitDice => { @as(i32, c.hit_dice) }
+            nwscript::GetGoodEvilValue => { @as(i32, c.good_evil) }
+            nwscript::GetXP => { @as(i32, c.xp) }
+            nwscript::GetIsDead => { flag{ b = c.dead } }
+            nwscript::GetIsListening => { flag{ b = c.listening } }
+            else => { 0 }               // GetIsEncounterCreature: ours are never spawned by an encounter
+        }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // The `int GetX(int n, object oCreature = OBJECT_SELF)` routines about classes, skills,
+    // feats and spells. A creature has up to three classes (position 1..3). Skills, feats and
+    // spells await lib/rules and read as "none".
+    fn get_class_stat { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, none: i32 } -> ! {
+        let n = try nwarg::int{ &vm, routine, argc, i = 0 }
+        let id = try nwarg::object{ &vm, routine, argc, i = 1 }
+        let c = creature_of{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = none }
+            return
+        }
+        let mut v = none
+        if routine == nwscript::GetClassByPosition {
+            if n >= 1 and n <= 3 and c.class_levels[@as(usize, n - 1)] > 0 { v = @as(i32, c.classes[@as(usize, n - 1)]) }
+        } else if routine == nwscript::GetLevelByPosition {
+            if n >= 1 and n <= 3 { v = @as(i32, c.class_levels[@as(usize, n - 1)]) }
+        } else if routine == nwscript::GetLevelByClass {
+            let mut k: usize = 0
+            v = 0
+            while k < 3 {
+                if c.class_levels[k] > 0 and @as(i32, c.classes[k]) == n { v = v + @as(i32, c.class_levels[k]) }
+                k = k + 1
+            }
+        }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // int GetAbilityScore(object oCreature, int nAbilityType): 0 STR .. 5 CHA.
+    fn get_ability_score { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetAbilityScore
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let kind = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let c = creature_of{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        try nwvm::push_int{ &vm, v = if kind >= 0 and kind < 6 { @as(i32, c.abilities[@as(usize, kind)]) } else { 0 } }
+    }
+
+    // The `int GetX(object oObject = OBJECT_SELF)` routines on the common header, which every
+    // kind has (doors and placeables have hit points and plot flags too).
+    fn get_object_field { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        let v: i32 = match routine {
+            nwscript::GetCurrentHitPoints => { o.hp + o.hp_temp }
+            nwscript::GetMaxHitPoints => { o.hp_max }
+            nwscript::GetPlotFlag => { flag{ b = o.plot } }
+            else => { flag{ b = o.min_one_hp } }       // GetMinOneHP
+        }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // void SetMaxHitPoints(object, int), SetPlotFlag(object, int), SetMinOneHP(object, int).
+    // SetMaxHitPoints sets the current points too (nwscript.nss).
+    fn set_object_field { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let n = try nwarg::int{ &vm, routine, argc, i = 1 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        if routine == nwscript::SetMaxHitPoints {
+            if n < 1 { return }
+            o.hp_max = n
+            o.hp = n
+        } else if routine == nwscript::SetPlotFlag {
+            o.plot = n != 0
+        } else {
+            o.min_one_hp = n != 0
+        }
+    }
+
+    // void SetIsDestroyable(int bDestroyable, int bRaiseable = TRUE, int bSelectableWhenDead = FALSE):
+    // about OBJECT_SELF; recorded for the death handling (HOOK(rules)).
+    fn set_is_destroyable { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::SetIsDestroyable
+        let destroyable = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let raiseable = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let selectable = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let c = creature_of{ w = &w, id = nwvm::self_object{ vm } } ifnull { return }
+        c.destroyable = destroyable != 0
+        c.raiseable = raiseable != 0
+        c.selectable_dead = selectable != 0
+    }
+
+    // ---- factions
+
+    // repute.2da has one row per standard faction (0 is the player's) and, after the label, one
+    // column per faction from 1. A cell is how the row's faction feels about the column's.
+    const STANDARD_FACTIONS: u32 = 21
+
+    // repute.2da parsed into the frame's scratch memory; null when it cannot be read.
+    // (World could cache it once: see the report.)
+    fn repute_table { mut w: world::World } -> ?twoda::Table {
+        let found = world::read_scratch{ &w, name = "repute", kind = restype::Type::twoda } iferr { return null }
+        let bytes = found ifnull { return null }
+        let t = twoda::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch } iferr { return null }
+        return t
+    }
+
+    // How faction `from` feels about faction `toward`, 0..100: 100 for itself, and 50 (neutral)
+    // for a faction the table lacks (custom ones, until repute.fac is read). The table has no
+    // column for the player, so what the player's row says about `from` stands for it.
+    fn standing { t: ?twoda::Table, from: u32, toward: u32 } -> i32 {
+        if from == toward { return 100 }
+        let table = t ifnull { return 50 }
+        if from >= STANDARD_FACTIONS or toward >= STANDARD_FACTIONS { return 50 }
+        let mut row = @as(usize, from)
+        let mut col = @as(usize, toward)
+        if toward == 0 {
+            row = 0
+            col = @as(usize, from)
+        }
+        return twoda::get_int_at{ t = table, row, col } ifnull 50
+    }
+
+    // int GetStandardFaction(object oObject)
+    fn get_standard_faction { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetStandardFaction, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = nwconst::INVALID_STANDARD_FACTION }
+            return
+        }
+        try nwvm::push_int{ &vm, v = if o.faction < STANDARD_FACTIONS { @as(i32, o.faction) } else { nwconst::INVALID_STANDARD_FACTION } }
+    }
+
+    // void ChangeToStandardFaction(object oCreatureToChange, int nStandardFaction)
+    fn change_to_standard_faction { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::ChangeToStandardFaction
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let faction = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        if obj::creature{ o } == null or faction < 0 or faction >= @as(i32, STANDARD_FACTIONS) { return }
+        o.faction = @as(u32, faction)
+    }
+
+    // int GetFactionEqual(object oFirstObject, object oSecondObject = OBJECT_SELF)
+    fn get_faction_equal { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetFactionEqual
+        let a = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let b = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let oa = world::object{ w = &w, id = a } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        let ob = world::object{ w = &w, id = b } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        try nwvm::push_int{ &vm, v = flag{ b = oa.faction == ob.faction } }
+    }
+
+    // int GetIsEnemy / GetIsFriend / GetIsNeutral(object oTarget, object oSource = OBJECT_SELF):
+    // what oSource's faction feels about oTarget's: enemy up to 10, friend from 90 (the game's
+    // thresholds, 0x00537ce0), neutral between. An object that is not there is none of them.
+    fn get_reputation_test { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let target = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let source = try nwarg::object{ &vm, routine, argc, i = 1 }
+        let ot = world::object{ w = &w, id = target } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        let os = world::object{ w = &w, id = source } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        let rep = if ot.id == os.id { 100 } else { standing{ t = repute_table{ &w }, from = os.faction, toward = ot.faction } }
+        let yes = if routine == nwscript::GetIsEnemy { rep <= 10 }
+            else if routine == nwscript::GetIsFriend { rep >= 90 }
+            else { rep > 10 and rep < 90 }
+        try nwvm::push_int{ &vm, v = flag{ b = yes } }
+    }
+
+    // ---- listening
+
+    // void SetListenPattern(object oObject, string sPattern, int nNumber = 0): remembered on the
+    // creature (up to four patterns; one already there takes the new number). Nothing says what
+    // was heard yet, so it only records.
+    fn set_listen_pattern { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::SetListenPattern
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let pattern = try nwarg::string{ &vm, routine = r, argc, i = 1 }
+        let number = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let c = creature_of{ w = &w, id } ifnull { return }
+        let n = if pattern.len < 32 { pattern.len } else { 32 }
+        let mut slot: usize = @as(usize, c.listen_count)
+        let mut k: usize = 0
+        while k < @as(usize, c.listen_count) {
+            if @as(usize, c.listen_len[k]) == n and ci::eq{ a = c.listen_text[k][0..n], b = pattern[0..n] } { slot = k }
+            k = k + 1
+        }
+        if slot >= 4 { slot = 3 }
+        if slot == @as(usize, c.listen_count) { c.listen_count = c.listen_count + 1 }
+        k = 0
+        while k < n {
+            c.listen_text[slot][k] = pattern[k]
+            k = k + 1
+        }
+        c.listen_len[slot] = @trunc(u8, n)
+        c.listen_number[slot] = number
+    }
+
+    // void SetListening(object oObject, int bValue)
+    fn set_listening { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::SetListening, argc, i = 0 }
+        let on = try nwarg::int{ &vm, routine = nwscript::SetListening, argc, i = 1 }
+        let c = creature_of{ w = &w, id } ifnull { return }
+        c.listening = on != 0
+    }
+
+    // ---- alignment and experience
+
+    // void AdjustAlignment(object oSubject, int nAlignment, int nShift): good is 100, evil 0.
+    // Light shifts up, dark down, neutral towards 50 and no further.
+    fn adjust_alignment { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::AdjustAlignment
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let alignment = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let shift = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let c = creature_of{ w = &w, id } ifnull { return }
+        let now = @as(i32, c.good_evil)
+        let mut v = now
+        if alignment == nwconst::ALIGNMENT_LIGHT_SIDE { v = now + shift }
+        else if alignment == nwconst::ALIGNMENT_DARK_SIDE { v = now - shift }
+        else if alignment == nwconst::ALIGNMENT_NEUTRAL {
+            if now > 50 { v = if now - shift < 50 { 50 } else { now - shift } }
+            else if now < 50 { v = if now + shift > 50 { 50 } else { now + shift } }
+        }
+        if v < 0 { v = 0 }
+        if v > 100 { v = 100 }
+        c.good_evil = @as(u32, v)
+    }
+
+    // void GiveXPToCreature(object oCreature, int nXpAmount)
+    fn give_xp_to_creature { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GiveXPToCreature, argc, i = 0 }
+        let amount = try nwarg::int{ &vm, routine = nwscript::GiveXPToCreature, argc, i = 1 }
+        let c = creature_of{ w = &w, id } ifnull { return }
+        let total = @as(i64, c.xp) + @as(i64, amount)
+        c.xp = if total < 0 { 0 } else { @trunc(u32, total) }
+    }
+
+    // void SetXP(object oCreature, int nXpAmount)
+    fn set_xp { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::SetXP, argc, i = 0 }
+        let amount = try nwarg::int{ &vm, routine = nwscript::SetXP, argc, i = 1 }
+        let c = creature_of{ w = &w, id } ifnull { return }
+        c.xp = if amount < 0 { 0 } else { @as(u32, amount) }
+    }
+
+    // ---- names
+
+    // string GetName(object oObject): the dialog.tlk text of a strref name, else the name's own
+    // text. An area's name is the ARE's.
+    fn get_name { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetName, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_string{ &vm, s = "" }
+            return
+        }
+        let mut name = o.name
+        if obj::area{ o } is some{ value = a } { name = a.name }
+        if name.strref != 0xFFFFFFFF {
+            let text = world::string_by_strref{ w = &w, strref = name.strref }
+            if text.len > 0 {
+                try nwvm::push_string{ &vm, s = text }
+                return
+            }
+        }
+        try nwvm::push_string{ &vm, s = name.text }
+    }
+
+    // ---- the nearest creature
+
+    // Whether creature `o` meets one CREATURE_TYPE_* criterion (-1 and unknown types: all do).
+    // There is no perception yet: every creature in the area counts as seen and heard, and no
+    // creature has a spell effect (effects are not kept: rt_fx).
+    fn meets { w: *world::World, repute: ?twoda::Table, from: *obj::Object, o: *obj::Object, c: *obj::Creature, t: i32, v: i32 } -> bool {
+        match t {
+            nwconst::CREATURE_TYPE_RACIAL_TYPE => { return @as(i32, c.race) == v }
+            nwconst::CREATURE_TYPE_PLAYER_CHAR => {
+                let pc = o.id == w.pc or c.is_pc
+                return if v == nwconst::PLAYER_CHAR_IS_PC { pc } else { not pc }
+            }
+            nwconst::CREATURE_TYPE_CLASS => {
+                let mut k: usize = 0
+                while k < 3 {
+                    if c.class_levels[k] > 0 and @as(i32, c.classes[k]) == v { return true }
+                    k = k + 1
+                }
+                return false
+            }
+            nwconst::CREATURE_TYPE_REPUTATION => {
+                let rep = standing{ t = repute, from = from.faction, toward = o.faction }
+                if v == nwconst::REPUTATION_TYPE_FRIEND { return rep >= 90 }
+                if v == nwconst::REPUTATION_TYPE_ENEMY { return rep <= 10 }
+                return rep > 10 and rep < 90
+            }
+            nwconst::CREATURE_TYPE_IS_ALIVE => { return if v != 0 { not c.dead } else { c.dead } }
+            nwconst::CREATURE_TYPE_HAS_SPELL_EFFECT => { return false }
+            nwconst::CREATURE_TYPE_DOES_NOT_HAVE_SPELL_EFFECT => { return true }
+            nwconst::CREATURE_TYPE_PERCEPTION => {
+                return v == nwconst::PERCEPTION_SEEN_AND_HEARD or v == nwconst::PERCEPTION_HEARD or v == nwconst::PERCEPTION_SEEN
+            }
+            else => { return true }
+        }
+    }
+
+    // object GetNearestCreature(int nFirstCriteriaType, int nFirstCriteriaValue,
+    //     object oTarget = OBJECT_SELF, int nNth = 1, int nSecondCriteriaType = -1,
+    //     int nSecondCriteriaValue = -1, int nThirdCriteriaType = -1, int nThirdCriteriaValue = -1)
+    // The nth nearest creature (other than oTarget) in oTarget's area meeting every criterion.
+    fn get_nearest_creature { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetNearestCreature
+        let t1 = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let v1 = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let target = try nwarg::object{ &vm, routine = r, argc, i = 2 }
+        let nth = try nwarg::int{ &vm, routine = r, argc, i = 3 }
+        let t2 = try nwarg::int{ &vm, routine = r, argc, i = 4 }
+        let v2 = try nwarg::int{ &vm, routine = r, argc, i = 5 }
+        let t3 = try nwarg::int{ &vm, routine = r, argc, i = 6 }
+        let v3 = try nwarg::int{ &vm, routine = r, argc, i = 7 }
+        let from = world::object{ w = &w, id = target } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        let wants_reputation = t1 == nwconst::CREATURE_TYPE_REPUTATION or t2 == nwconst::CREATURE_TYPE_REPUTATION
+            or t3 == nwconst::CREATURE_TYPE_REPUTATION
+        let repute: ?twoda::Table = if wants_reputation { repute_table{ &w } } else { null }
+        let all = list::items{ list = w.objects.all }
+        let mut last: f32 = -1.0
+        let mut last_id: u32 = 0
+        let mut k: i32 = 0
+        while k < nth {
+            let mut best = obj::INVALID
+            let mut best_d: f32 = 1000000000.0
+            let mut i: usize = 0
+            while i < all.len {
+                let o = all[i]
+                i = i + 1
+                if o.destroyed or o.id == from.id or o.area != from.area { continue }
+                let c = obj::creature{ o } ifnull { continue }
+                if not meets{ w = &w, repute, from, o, c, t = t1, v = v1 } { continue }
+                if not meets{ w = &w, repute, from, o, c, t = t2, v = v2 } { continue }
+                if not meets{ w = &w, repute, from, o, c, t = t3, v = v3 } { continue }
+                let d = rt_obj::distance{ a = o.position, b = from.position, flat = false }
+                // Strictly after the previous pick in (distance, id) order.
+                if d < last or (d == last and o.id <= last_id) { continue }
+                if d < best_d or (d == best_d and o.id < best) {
+                    best = o.id
+                    best_d = d
+                }
+            }
+            if best == obj::INVALID {
+                try nwvm::push_object{ &vm, id = obj::INVALID }
+                return
+            }
+            last = best_d
+            last_id = best
+            k = k + 1
+        }
+        try nwvm::push_object{ &vm, id = if nth < 1 { obj::INVALID } else { last_id } }
+    }
+}

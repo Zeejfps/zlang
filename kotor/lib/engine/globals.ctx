@@ -1,0 +1,82 @@
+// Global variables (GetGlobalBoolean/Number/String/Location): the names globalcat.2da declares,
+// each with its type. A name globalcat doesn't declare has no global (reads give the default,
+// writes are ignored), as in the game. Numbers are kept as the game saves them, a byte
+// (gff-save.md, globalvars.res: -128..127 read back signed).
+namespace globals {
+    enum Type: u8 { boolean, number, string, location }
+
+    struct Global { name: []u8, kind: Type, number: i32, text: []mut u8, location: values::Location }
+
+    struct Globals {
+        heap: *mut heap::Heap,
+        all: list::List(Global, heap::Heap),
+        by_name: map::Map([]u8, usize, heap::Heap),       // lower-case name -> index
+    }
+
+    fn make { heap: *mut heap::Heap, table: twoda::Table } -> !Globals {
+        let mut g = Globals{
+            heap,
+            all = list::new(Global, heap::Heap){ realloc = heap::alloc, heap },
+            by_name = map::new([]u8, usize, heap::Heap){ realloc = heap::alloc, heap, hash = ci::hash, eq = ci::eq },
+        }
+        let n = twoda::rows{ t = table }
+        let mut i: usize = 0
+        while i < n {
+            let name = twoda::get_string{ t = table, row = i, column = "name" } ifnull ""
+            let type_name = twoda::get_string{ t = table, row = i, column = "type" } ifnull ""
+            i = i + 1
+            if name.len == 0 { continue }
+            let kind = if ci::eq{ a = type_name, b = "number" } { Type::number }
+                else if ci::eq{ a = type_name, b = "string" } { Type::string }
+                else if ci::eq{ a = type_name, b = "location" } { Type::location }
+                else { Type::boolean }
+            try list::push{ list = &g.all, item = Global{ name, kind, number = 0, text = slice::empty(u8){}, location = values::no_location{} } }
+            try map::put{ m = &g.by_name, key = name, value = g.all.len - 1 }
+        }
+        return g
+    }
+
+    fn find { g: *Globals, name: []u8, kind: Type } -> ?*mut Global {
+        let i = map::get{ m = g.by_name, key = name } ifnull { return null }
+        let p = list::at{ list = g.all, i }
+        if p.kind != kind { return null }
+        return p
+    }
+
+    fn boolean { g: *Globals, name: []u8 } -> bool {
+        let v = find{ g, name, kind = Type::boolean } ifnull { return false }
+        return v.number != 0
+    }
+    fn set_boolean { g: *Globals, name: []u8, value: bool } {
+        let v = find{ g, name, kind = Type::boolean } ifnull { return }
+        v.number = if value { 1 } else { 0 }
+    }
+    fn number { g: *Globals, name: []u8 } -> i32 {
+        let v = find{ g, name, kind = Type::number } ifnull { return 0 }
+        return v.number
+    }
+    fn set_number { g: *Globals, name: []u8, value: i32 } {
+        let v = find{ g, name, kind = Type::number } ifnull { return }
+        // Stored as a signed byte, as the save keeps it.
+        let b = @trunc(u8, value)
+        v.number = if b >= 128 { @as(i32, b) - 256 } else { @as(i32, b) }
+    }
+    fn string { g: *Globals, name: []u8 } -> []u8 {
+        let v = find{ g, name, kind = Type::string } ifnull { return "" }
+        return v.text
+    }
+    fn set_string { g: *Globals, name: []u8, value: []u8 } -> ! {
+        let v = find{ g, name, kind = Type::string } ifnull { return }
+        let copy = try obj::copy_bytes{ heap = g.heap, s = value }
+        obj::free_bytes{ heap = g.heap, s = v.text }
+        v.text = copy
+    }
+    fn location { g: *Globals, name: []u8 } -> values::Location {
+        let v = find{ g, name, kind = Type::location } ifnull { return values::no_location{} }
+        return v.location
+    }
+    fn set_location { g: *Globals, name: []u8, value: values::Location } {
+        let v = find{ g, name, kind = Type::location } ifnull { return }
+        v.location = value
+    }
+}

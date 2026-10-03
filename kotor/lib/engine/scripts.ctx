@@ -1,0 +1,118 @@
+// Running NWScript for the world (docs/design/engine.md, "Scripts"): programs loaded once per
+// module, runs of an object's script slot, situations (the actions DelayCommand, AssignCommand
+// and ActionDoCommand keep), and fault logging.
+//
+//   _ = scripts::run_slot{ &w, &vm, engine, id, slot = obj::Slot::heartbeat }     // -> ?i32
+//   _ = scripts::run{ &w, &vm, engine, name = "k_pend_area01", self = area }
+namespace scripts {
+    struct Cache {
+        loaded: map::Map(resref::ResRef, usize, heap::Heap),   // resref -> index in programs
+        programs: list::List(?*nwvm::Program, heap::Heap),     // null: no such script
+    }
+
+    fn new_cache { heap: *mut heap::Heap } -> Cache {
+        return Cache{
+            loaded = map::new(resref::ResRef, usize, heap::Heap){ realloc = heap::alloc, heap, hash = resref::hash, eq = resref::eq },
+            programs = list::new(?*nwvm::Program, heap::Heap){ realloc = heap::alloc, heap },
+        }
+    }
+
+    // Forgets every program (leaving a module: their memory is the module arena's).
+    fn clear_cache { mut w: world::World } {
+        map::clear{ m = &w.scripts.loaded }
+        list::clear{ list = &w.scripts.programs }
+    }
+
+    // The program called `name`, loaded into module memory the first time; null if there is no
+    // such script or it doesn't load (logged once).
+    fn program { mut w: world::World, name: resref::ResRef } -> ?*nwvm::Program {
+        if resref::is_empty{ r = name } { return null }
+        let have = map::get{ m = w.scripts.loaded, key = name }
+        if have != null { return list::items{ list = w.scripts.programs }[have] }
+        let p = load{ &w, name } iferr err{ error } {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "script {}: {}\n", name, error)
+            null
+        }
+        list::push{ list = &w.scripts.programs, item = p } iferr { return p }
+        map::put{ m = &w.scripts.loaded, key = name, value = w.scripts.programs.len - 1 } iferr {}
+        return p
+    }
+
+    fn load { mut w: world::World, name: resref::ResRef } -> !?*nwvm::Program {
+        // The name goes to module memory first: a read through a name in a local would tie the
+        // program to the local (friction/engine.md).
+        let mut key = name
+        let text = resref::bytes{ r = &key }
+        let kept = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, mem = slice::empty(u8){}, count = text.len }
+        slice::copy(u8){ dst = kept, src = text }
+        let bytes = try world::read_module{ &w, name = kept, kind = restype::Type::ncs } ifnull { return null }
+        let program = try nwvm::load(arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, name = kept, bytes }
+        return try alloc::new(nwvm::Program, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, value = program }
+    }
+
+    // Runs script `name` as `self`; its int result (a conditional's answer) or null. A missing
+    // script is no script; a fault is logged and counted.
+    fn run { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, name: resref::ResRef, self: u32 } -> ?i32 {
+        let p = program{ &w, name } ifnull { return null }
+        return run_program{ &w, &vm, engine, p, self }
+    }
+
+    fn run_program { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, p: *nwvm::Program, self: u32 } -> ?i32 {
+        let outermost = vm.depth == 0
+        w.stats.script_runs = w.stats.script_runs + 1
+        if w.log.scripts {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "script {} self={}\n", p.name, self)
+        }
+        let r = nwvm::run{ &vm, program = p, self, engine } iferr {
+            report_fault{ &w, vm = &vm }
+            if outermost { values::end_run{ s = &w.values } }
+            return null
+        }
+        if outermost { values::end_run{ s = &w.values } }
+        return r
+    }
+
+    // Runs an object's script for `slot`, if it has one.
+    fn run_slot { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, slot: obj::Slot } -> ?i32 {
+        let o = world::object{ w = &w, id } ifnull { return null }
+        let name = obj::script{ o, slot }
+        if resref::is_empty{ r = name } { return null }
+        return run{ &w, &vm, engine, name, self = id }
+    }
+
+    // Runs a kept situation as `self` (a delayed or assigned command, a DoCommand action).
+    fn resume { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, situation: *mut nwvm::Situation, self: u32 } {
+        if vm.depth != 0 { return }
+        w.stats.script_runs = w.stats.script_runs + 1
+        if w.log.scripts {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "resume {} self={}\n", situation.program.name, self)
+        }
+        nwvm::resume{ &vm, situation = situation.*, self, engine } iferr { report_fault{ &w, vm = &vm } }
+        values::end_run{ s = &w.values }
+    }
+
+    // Takes the action argument a routine was given (AssignCommand, DelayCommand,
+    // ActionDoCommand): the situation, in the heap, its engine values kept.
+    fn take_situation { mut w: world::World, mut vm: nwvm::Vm } -> !*mut nwvm::Situation {
+        let s = try nwvm::pop_situation(heap::Heap){ &vm, realloc = heap::alloc, heap = w.heap }
+        values::keep_cells{ s = &w.values, situation = s }
+        return try alloc::new(nwvm::Situation, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = s }
+    }
+
+    fn free_situation { mut w: world::World, s: *mut nwvm::Situation } {
+        values::release_cells{ s = &w.values, situation = s.* }
+        nwvm::free_situation(heap::Heap){ realloc = heap::alloc, heap = w.heap, situation = s.* }
+        _ = alloc::resize(nwvm::Situation, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(s, 1), count = 0 }
+    }
+
+    fn report_fault { mut w: world::World, vm: *nwvm::Vm } {
+        w.stats.faults = w.stats.faults + 1
+        let mut buf: [512]u8
+        let line = nwvm::describe{ f = vm.fault, into = buf[..] }
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "fault: {}\n", line)
+    }
+}

@@ -1,0 +1,152 @@
+// Routines: changing modules, the module's identity, and the parts of the game that have no
+// system behind them yet (journal, galaxy map, autosave, party selection): those pop their
+// arguments, say what they were asked under `--log scripts`, and return the neutral value.
+namespace rt_mod {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        if routine == nwscript::StartNewModule { try start_new_module{ &w, &vm, argc } }
+        else if routine == nwscript::GetLoadFromSaveGame { try nwvm::push_int{ &vm, v = 0 } }
+        else if routine == nwscript::GetModuleFileName { try get_module_file_name{ &w, &vm } }
+        else if routine == nwscript::SetReturnStrref { try set_return_strref{ &vm, argc } }
+        else if routine == nwscript::AddJournalQuestEntry { try add_journal_quest_entry{ &w, &vm, argc } }
+        else if routine == nwscript::RemoveJournalQuestEntry { try remove_journal_quest_entry{ &w, &vm, argc } }
+        else if routine == nwscript::GetJournalEntry { try get_journal_entry{ &vm, argc } }
+        else if routine == nwscript::RevealMap { try reveal_map{ &vm, argc } }
+        else if routine == nwscript::DoSinglePlayerAutoSave { return true }
+        else if routine == nwscript::SetPlanetAvailable { try set_planet{ &w, &vm, argc, routine } }
+        else if routine == nwscript::SetPlanetSelectable { try set_planet{ &w, &vm, argc, routine } }
+        else if routine == nwscript::GetPlanetAvailable { try get_planet{ &vm, argc, routine } }
+        else if routine == nwscript::GetPlanetSelectable { try get_planet{ &vm, argc, routine } }
+        else if routine == nwscript::AurPostString { try aur_post_string{ &w, &vm, argc } }
+        else if routine == nwscript::ShowPartySelectionGUI { try show_party_selection_gui{ &vm, argc } }
+        else { return false }
+        return true
+    }
+
+    // void StartNewModule(string sModuleName, string sWayPoint = "", string sMovie1 = "", ... sMovie6)
+    // (0x00544390): the transition request, which the game loop acts on at the end of the frame
+    // (gameloop.md 5.1, 5.3), and the movies queued to play during the load. An empty module
+    // name asks for nothing.
+    fn start_new_module { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::StartNewModule
+        let name = try nwarg::string{ &vm, routine = r, argc, i = 0 }
+        let waypoint = try nwarg::string{ &vm, routine = r, argc, i = 1 }
+        let mut k: usize = 0
+        while k < 6 {
+            let movie = try nwarg::string{ &vm, routine = r, argc, i = 2 + k }
+            if name.len > 0 and movie.len > 0 {
+                outbox::post{ out = &w.out, note = outbox::Note::movie{ name = resref::truncate{ name = movie } } }
+            }
+            k = k + 1
+        }
+        if name.len == 0 { return }
+        let mut t = world::Transition{ module = resref::truncate{ name }, waypoint = [0; 64], waypoint_len = 0 }
+        let n = if waypoint.len > 64 { 64 } else { waypoint.len }
+        let mut i: usize = 0
+        while i < n {
+            t.waypoint[i] = waypoint[i]
+            i = i + 1
+        }
+        t.waypoint_len = n
+        w.transition = t
+        if w.log.module {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "StartNewModule {} at {}\n", name, waypoint)
+        }
+    }
+
+    // string GetModuleFileName(): the module's resref (end_m01aa).
+    fn get_module_file_name { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let mo = world::object{ w = &w, id = w.module } ifnull {
+            try nwvm::push_string{ &vm, s = "" }
+            return
+        }
+        let m = obj::module{ o = mo } ifnull {
+            try nwvm::push_string{ &vm, s = "" }
+            return
+        }
+        let name = m.name
+        try nwvm::push_string{ &vm, s = resref::bytes{ r = &name } }
+    }
+
+    // void SetReturnStrref(int bShow, int srStringRef = 0, int srReturnQueryStrRef = 0): the
+    // "return to the ship" prompt of a module's exit; nothing shows it yet.
+    fn set_return_strref { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::SetReturnStrref
+        _ = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        _ = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        _ = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+    }
+
+    // The journal has no system yet: entries are logged and not kept.
+
+    // void AddJournalQuestEntry(string szPlotID, int nState, int bAllowOverrideHigher = FALSE)
+    fn add_journal_quest_entry { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::AddJournalQuestEntry
+        let plot = try nwarg::string{ &vm, routine = r, argc, i = 0 }
+        let state = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        _ = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        if w.log.scripts {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "journal: {} -> state {}\n", plot, state)
+        }
+    }
+
+    // void RemoveJournalQuestEntry(string szPlotID)
+    fn remove_journal_quest_entry { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let plot = try nwarg::string{ &vm, routine = nwscript::RemoveJournalQuestEntry, argc, i = 0 }
+        if w.log.scripts {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "journal: {} removed\n", plot)
+        }
+    }
+
+    // int GetJournalEntry(string szPlotID): 0, no entry.
+    fn get_journal_entry { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        _ = try nwarg::string{ &vm, routine = nwscript::GetJournalEntry, argc, i = 0 }
+        try nwvm::push_int{ &vm, v = 0 }
+    }
+
+    // void RevealMap(vector vPoint = [0,0,0], int nRadius = -1)
+    fn reveal_map { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        _ = try nwarg::vector{ &vm, routine = nwscript::RevealMap, argc, i = 0 }
+        _ = try nwarg::int{ &vm, routine = nwscript::RevealMap, argc, i = 1 }
+    }
+
+    // void SetPlanetAvailable / SetPlanetSelectable(int nPlanet, int bValue): the galaxy map
+    // has no system yet.
+    fn set_planet { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let planet = try nwarg::int{ &vm, routine, argc, i = 0 }
+        let value = try nwarg::int{ &vm, routine, argc, i = 1 }
+        if w.log.scripts {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "planet {}: {} = {}\n", planet, nwscript::ROUTINES[@as(usize, routine)].name, value)
+        }
+    }
+
+    // int GetPlanetAvailable / GetPlanetSelectable(int nPlanet): 0.
+    fn get_planet { mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        _ = try nwarg::int{ &vm, routine, argc, i = 0 }
+        try nwvm::push_int{ &vm, v = 0 }
+    }
+
+    // void AurPostString(string sString, int nX, int nY, float fLife): debug text on the screen.
+    fn aur_post_string { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::AurPostString
+        let s = try nwarg::string{ &vm, routine = r, argc, i = 0 }
+        let x = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let y = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let life = try nwarg::float{ &vm, routine = r, argc, i = 3 }
+        let text = outbox::keep_text{ out = &w.out, s }
+        outbox::post{ out = &w.out, note = outbox::Note::post_string{ text, x, y, life } }
+    }
+
+    // void ShowPartySelectionGUI(string sExitScript = "", int nForceNPC1 = -1, int nForceNPC2 = -1):
+    // the party selection screen is not built; the party stays as it is and the exit script
+    // does not run.
+    fn show_party_selection_gui { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::ShowPartySelectionGUI
+        _ = try nwarg::string{ &vm, routine = r, argc, i = 0 }
+        _ = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        _ = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+    }
+}

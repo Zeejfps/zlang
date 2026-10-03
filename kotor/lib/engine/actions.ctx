@@ -1,0 +1,359 @@
+// The action queue (docs/re/actions.md 1): what an object will do, in order. Routines append
+// (ActionMoveToObject, ActionDoCommand, ...), the player's orders append, and each object's AI
+// update runs the head with `run`, as CSWSObject::RunActions does (actions.md 1.3).
+//
+//   actions::add{ &w, id, action = actions::make{ kind = actions::Kind::wait, p0 = actions::Param::float{ v = 2.0 } } }
+//
+// A handler is one function per Kind, called from `step`; it returns running (stays at the
+// head, the frame's run stops), retry (to the tail), done or failed (removed). A new action is a
+// Kind value, a handler and a line in `step`.
+namespace actions {
+    // The original's internal action ids (actions.md 1.9).
+    enum Kind: u8 {
+        move_to_point = 1,
+        jump_to_point = 5,
+        play_animation = 6,
+        pickup_item = 7,
+        equip_item = 8,
+        drop_item = 9,
+        unequip_item = 0xb,
+        attack_object = 0xc,
+        speak = 0xe,
+        cast_spell = 0xf,
+        face_object = 0x13,
+        open_door = 0x14,
+        close_door = 0x15,
+        play_sound = 0x17,
+        dialog_object = 0x18,
+        wait = 0x1e,
+        resume_conversation = 0x20,
+        speak_strref = 0x21,
+        give_item = 0x22,
+        take_item = 0x23,
+        do_command = 0x25,
+        open_lock = 0x26,
+        lock = 0x27,
+        use_object = 0x28,
+        move_away_from_location = 0x2c,
+        random_walk = 0x2d,
+        jump_to_object = 0x30,
+        face_point = 0x31,
+        follow = 0x37,
+        follow_leader = 0x3d,
+        bark = 0x3e,
+    }
+
+    union Param {
+        none,
+        int{ v: i32 },
+        float{ v: f32 },
+        object{ id: u32 },
+        vector{ v: math::Vec3 },
+        string{ s: []mut u8 },                    // heap, freed with the action
+        situation{ s: *mut nwvm::Situation },     // freed with the action
+    }
+
+    struct Action {
+        kind: Kind,
+        group: u16,
+        params: [8]Param,
+        started: u64,           // world ms when it first ran
+        has_started: bool,
+        serial: u32,
+        phase: u32,             // a handler's own progress (approach, then act)
+    }
+
+    enum Status: u8 { running, retry, done, failed }
+
+    // An action of `kind` with its parameters (the rest none).
+    fn make { kind: Kind } -> Action {
+        return Action{ kind, group = 0, params = [Param::none; 8], started = 0, has_started = false, serial = 0, phase = 0 }
+    }
+
+    fn int_param { a: *Action, i: usize } -> i32 {
+        if a.params[i] is int{ v } { return v }
+        return 0
+    }
+    fn float_param { a: *Action, i: usize } -> f32 {
+        if a.params[i] is float{ v } { return v }
+        return 0.0
+    }
+    fn object_param { a: *Action, i: usize } -> u32 {
+        if a.params[i] is object{ id } { return id }
+        return obj::INVALID
+    }
+    fn vector_param { a: *Action, i: usize } -> math::Vec3 {
+        if a.params[i] is vector{ v } { return v }
+        return math::vec3::zero{}
+    }
+
+    // Appends an action to the object's queue; a non-commandable object refuses unless `force`
+    // (actions.md 1.6). The action's parameters are the queue's from now on (freed if refused).
+    fn add { mut w: world::World, id: u32, action: Action, force: bool } -> bool {
+        let o = world::object{ w = &w, id } ifnull {
+            free_params{ &w, a = action }
+            return false
+        }
+        if not o.commandable and not force {
+            free_params{ &w, a = action }
+            return false
+        }
+        let mut a = action
+        o.action_group = o.action_group + 1
+        a.group = o.action_group
+        a.serial = next_serial{ &w }
+        list::push{ list = &o.actions, item = a } iferr {
+            free_params{ &w, a = action }
+            return false
+        }
+        if w.log.actions {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "action {} queued on {} ({} queued)\n", @as(u32, a.kind), id, o.actions.len)
+        }
+        return true
+    }
+
+    // Puts an action at the front of the queue (a handler's sub-steps: the approach pattern).
+    fn add_front { mut w: world::World, id: u32, action: Action } {
+        let o = world::object{ w = &w, id } ifnull {
+            free_params{ &w, a = action }
+            return
+        }
+        let mut a = action
+        a.serial = next_serial{ &w }
+        insert_head{ &w, o, a }
+    }
+
+    fn next_serial { mut w: world::World } -> u32 {
+        w.serial = @wrap_add(w.serial, 1)
+        return w.serial
+    }
+
+    fn insert_head { mut w: world::World, o: *mut obj::Object, a: Action } {
+        list::push{ list = &o.actions, item = a } iferr {
+            free_params{ &w, a }
+            return
+        }
+        let items = list::items{ list = o.actions }
+        let mut i = items.len - 1
+        while i > 0 {
+            items[i] = items[i - 1]
+            i = i - 1
+        }
+        items[0] = a
+    }
+
+    fn take_head { o: *mut obj::Object } -> ?Action {
+        if o.actions.len == 0 { return null }
+        let items = list::items{ list = o.actions }
+        let a = items[0]
+        let mut i: usize = 1
+        while i < items.len {
+            items[i - 1] = items[i]
+            i = i + 1
+        }
+        o.actions.len = o.actions.len - 1
+        return a
+    }
+
+    fn free_params { mut w: world::World, a: Action } {
+        let mut i: usize = 0
+        while i < 8 {
+            match a.params[i] {
+                string{ s } => { obj::free_bytes{ heap = w.heap, s } }
+                situation{ s } => { scripts::free_situation{ &w, s } }
+                else => {}
+            }
+            i = i + 1
+        }
+    }
+
+    // Frees every queued action without asking (an object being destroyed).
+    fn clear_queue { mut w: world::World, o: *mut obj::Object } {
+        while true {
+            let a = take_head{ o } ifnull { return }
+            free_params{ &w, a }
+        }
+    }
+
+    // ClearAllActions (actions.md 1.5): nothing on a non-commandable object; else every action
+    // goes, a creature stops walking and stands.
+    fn clear_all { mut w: world::World, id: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        if not o.commandable { return }
+        clear_queue{ &w, o }
+        let c = obj::creature{ o } ifnull { return }
+        if c.moving {
+            movement::stop{ &w, id }
+            world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+        }
+    }
+
+    // Runs the head of the object's queue (actions.md 1.3): instant actions chain within the
+    // frame; a running action, a retry, a move or a jump ends the frame's run.
+    fn run { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32 } {
+        let mut steps: u32 = 0
+        while steps < 16 {
+            steps = steps + 1
+            let o = world::object{ w = &w, id } ifnull { return }
+            let mut a = take_head{ o } ifnull { return }
+            if not a.has_started {
+                a.has_started = true
+                a.started = clock::now_ms{ c = w.clock }
+            }
+            let status = step{ &w, &vm, engine, id, a = &a }
+            if w.log.actions and status != Status::running {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "action {} on {}: {}\n", @as(u32, a.kind), id, @as(u32, status))
+            }
+            let back = world::object{ w = &w, id } ifnull {
+                free_params{ &w, a }
+                return
+            }
+            match status {
+                running => {
+                    insert_head{ &w, o = back, a }
+                    return
+                }
+                retry => {
+                    list::push{ list = &back.actions, item = a } iferr { free_params{ &w, a } }
+                    return
+                }
+                done | failed => { free_params{ &w, a } }
+            }
+            if a.kind == Kind::move_to_point or a.kind == Kind::jump_to_point or a.kind == Kind::jump_to_object { return }
+        }
+    }
+
+    // One action's handler.
+    fn step { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut Action } -> Status {
+        let o = world::object{ w = &w, id } ifnull { return Status::failed }
+        let c = obj::creature{ o }
+        if c != null and c.dead { return Status::failed }
+        match a.kind {
+            do_command => { return do_command{ &w, &vm, engine, id, a } }
+            wait => { return wait{ &w, a } }
+            play_animation => { return play_animation{ &w, id, a } }
+            move_to_point => { return movement::move_to_point{ &w, id, a } }
+            jump_to_point => { return jump_to_point{ &w, id, a } }
+            jump_to_object => { return jump_to_object{ &w, id, a } }
+            face_object => { return face_object{ &w, id, a } }
+            face_point => { return face_point{ &w, id, a } }
+            open_door => { return doors::open_door{ &w, &vm, engine, id, a } }
+            close_door => { return doors::close_door{ &w, &vm, engine, id, a } }
+            use_object => { return doors::use_object{ &w, &vm, engine, id, a } }
+            dialog_object => { return dialog_object{ &w, id, a } }
+            else => {
+                // Not written yet: done, so queues behind it keep moving.
+                if w.log.actions {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "action {} on {}: not implemented\n", @as(u32, a.kind), id)
+                }
+                return Status::done
+            }
+        }
+    }
+
+    // ---- handlers
+
+    // DOCOMMAND (actions.md 3.10): run the situation as the object, now.
+    fn do_command { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut Action } -> Status {
+        if a.params[0] is situation{ s } {
+            a.params[0] = Param::none
+            scripts::resume{ &w, &vm, engine, situation = s, self = id }
+            scripts::free_situation{ &w, s }
+            return Status::done
+        }
+        return Status::failed
+    }
+
+    // WAIT (actions.md 3.10): seconds of world time since it started.
+    fn wait { mut w: world::World, a: *mut Action } -> Status {
+        let seconds = float_param{ a, i = 0 }
+        let elapsed = clock::now_ms{ c = w.clock } - a.started
+        if @as(f32, elapsed) < seconds * 1000.0 { return Status::running }
+        return Status::done
+    }
+
+    // PLAYANIMATION (actions.md 3.9): params internal id, speed, duration (s). The length of a
+    // fire-and-forget animation would come from the model (ours, until the server reads model
+    // lengths: 1.5 s); a looping one plays for the duration, or one cycle (1 s) when it is 0.
+    fn play_animation { mut w: world::World, id: u32, a: *mut Action } -> Status {
+        let o = world::object{ w = &w, id } ifnull { return Status::failed }
+        let anim = @as(u32, int_param{ a, i = 0 })
+        let speed = float_param{ a, i = 1 }
+        let duration = float_param{ a, i = 2 }
+        let mut length: f32 = 1000.0
+        if animname::is_fire_forget{ w = &w, id = anim } { length = 1500.0 } else if duration > 0.0 { length = duration * 1000.0 }
+        if speed != 0.0 and duration <= 0.0 { length = length / math::abs{ x = speed } }
+        let elapsed = @as(f32, clock::now_ms{ c = w.clock } - a.started)
+        if elapsed < length {
+            world::set_animation{ o, id = anim, speed = if speed == 0.0 { 1.0 } else { speed } }
+            return Status::running
+        }
+        if o.kind == obj::Kind::creature { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }
+        return Status::done
+    }
+
+    fn jump_to_point { mut w: world::World, id: u32, a: *mut Action } -> Status {
+        let o = world::object{ w = &w, id } ifnull { return Status::failed }
+        let to = vector_param{ a, i = 0 }
+        movement::stop{ &w, id }
+        movement::place{ &w, id, at = to }
+        let facing = float_param{ a, i = 1 }
+        if a.params[1] is float { world::set_orientation{ o, v = obj::direction_of{ degrees = facing } } }
+        return Status::done
+    }
+
+    fn jump_to_object { mut w: world::World, id: u32, a: *mut Action } -> Status {
+        let target = world::object{ w = &w, id = object_param{ a, i = 0 } } ifnull { return Status::failed }
+        let at = target.position
+        let facing = target.orientation
+        movement::stop{ &w, id }
+        movement::place{ &w, id, at }
+        let o = world::object{ w = &w, id } ifnull { return Status::failed }
+        world::set_orientation{ o, v = facing }
+        return Status::done
+    }
+
+    fn face_object { mut w: world::World, id: u32, a: *mut Action } -> Status {
+        let target = world::object{ w = &w, id = object_param{ a, i = 0 } } ifnull { return Status::failed }
+        let at = target.position
+        let o = world::object{ w = &w, id } ifnull { return Status::failed }
+        world::set_orientation{ o, v = math::vec3::sub{ a = at, b = o.position } }
+        return Status::done
+    }
+
+    fn face_point { mut w: world::World, id: u32, a: *mut Action } -> Status {
+        let o = world::object{ w = &w, id } ifnull { return Status::failed }
+        world::set_orientation{ o, v = math::vec3::sub{ a = vector_param{ a, i = 0 }, b = o.position } }
+        return Status::done
+    }
+
+    // DIALOGOBJECT (actions.md 3.12): params speaker, dialog resref (string), private, ...
+    // HOOK(dialog): dlg::start. Until then the outbox carries the request.
+    fn dialog_object { mut w: world::World, id: u32, a: *mut Action } -> Status {
+        let mut speaker = object_param{ a, i = 0 }
+        let mut owner = id
+        let mut dialog = resref::empty{}
+        if a.params[1] is string{ s } { dialog = resref::truncate{ name = s } }
+        if resref::is_empty{ r = dialog } {
+            let o = world::object{ w = &w, id } ifnull { return Status::failed }
+            dialog = o.conversation
+            // The player talking to someone: the conversation is theirs (ours: actions.md 3.12
+            // has the player's order queue DIALOGOBJECT on the player with the other as target).
+            if id == w.pc or resref::is_empty{ r = dialog } {
+                let t = world::object{ w = &w, id = speaker } ifnull { return Status::failed }
+                if not resref::is_empty{ r = t.conversation } {
+                    dialog = t.conversation
+                    owner = speaker
+                    speaker = id
+                }
+            }
+        }
+        outbox::post{ out = &w.out, note = outbox::Note::conversation{ owner, speaker, dialog } }
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "conversation {} owner={} speaker={} (no dialogue system yet)\n", dialog, owner, speaker)
+        return Status::done
+    }
+}

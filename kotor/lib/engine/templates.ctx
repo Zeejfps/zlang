@@ -1,0 +1,400 @@
+// Objects from blueprints and GIT entries (docs/re/objects.md 3; formats/gff-templates.md,
+// gff-module.md). Each reader takes a GFF struct, so one reader serves a template's root, a full
+// GIT struct and a saved object: fields the struct lacks keep what the object has.
+//
+//   let id = try tmpl::spawn{ &w, kind = obj::Kind::creature, template = "end_trask", position, orientation }
+namespace tmpl {
+    error no_template{ name: []u8 }
+
+    fn restype_of { kind: obj::Kind } -> restype::Type {
+        match kind {
+            creature => { return restype::Type::utc }
+            door => { return restype::Type::utd }
+            placeable => { return restype::Type::utp }
+            trigger => { return restype::Type::utt }
+            waypoint => { return restype::Type::utw }
+            sound => { return restype::Type::uts }
+            encounter => { return restype::Type::ute }
+            store => { return restype::Type::utm }
+            item => { return restype::Type::uti }
+            else => { return restype::Type::gff }
+        }
+    }
+
+    // A new object from blueprint `template`, placed; its id. GIT-only fields are applied by the
+    // caller after.
+    fn spawn { mut w: world::World, kind: obj::Kind, template: []u8, position: math::Vec3, orientation: math::Vec3 } -> !u32 {
+        let doc = try world::read_gff{ &w, name = template, kind = restype_of{ kind } } ifnull { return no_template{ name = template } }
+        let o = try world::add_object{ &w, kind, id = 0, character = false }
+        o.template = resref::truncate{ name = template }
+        o.area = w.area
+        try read{ &w, o, doc = &doc, s = gff::ROOT }
+        o.position = position
+        world::set_orientation{ o, v = orientation }
+        if w.log.objects {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "spawn {} {} tag={}\n", o.id, template, o.tag)
+        }
+        return o.id
+    }
+
+    // Reads a struct of the object's kind into it.
+    fn read { mut w: world::World, o: *mut obj::Object, doc: *gff::Doc, s: u32 } -> ! {
+        match o.ext {
+            creature{ c } => { try read_creature{ &w, o, c, doc, s } }
+            door{ d } => { try read_door{ &w, o, d, doc, s } }
+            placeable{ p } => { try read_placeable{ &w, o, p, doc, s } }
+            trigger{ t } => { try read_trigger{ &w, o, t, doc, s } }
+            waypoint{ wp } => { try read_waypoint{ &w, o, wp, doc, s } }
+            sound{ s = snd } => { try read_sound{ &w, o, snd, doc, s } }
+            item{ i } => { try read_item{ &w, o, i, doc, s } }
+            else => { try read_common{ &w, o, doc, s, name_label = "LocName" } }
+        }
+    }
+
+    // ---- fields every kind shares
+
+    fn number { doc: *gff::Doc, s: u32, label: []u8, default: i64 } -> i64 {
+        return gff::get_number{ doc = doc.*, s, label } ifnull default
+    }
+
+    fn real { doc: *gff::Doc, s: u32, label: []u8, default: f32 } -> f32 {
+        return gff::get_float{ doc = doc.*, s, label } ifnull default
+    }
+
+    fn flag { doc: *gff::Doc, s: u32, label: []u8, default: bool } -> bool {
+        let n = gff::get_number{ doc = doc.*, s, label } ifnull { return default }
+        return n != 0
+    }
+
+    fn script { doc: *gff::Doc, s: u32, o: *mut obj::Object, label: []u8, slot: obj::Slot } {
+        let name = gff::get_resref{ doc = doc.*, s, label } ifnull { return }
+        obj::set_script{ o, slot, name = resref::truncate{ name } }
+    }
+
+    // A CExoLocString field into a Name: its strref and, when it carries text, the first one.
+    fn read_name { mut w: world::World, doc: *gff::Doc, s: u32, label: []u8, into: *mut obj::Name } -> ! {
+        let ls = gff::get_locstring{ doc = doc.*, s, label } ifnull { return }
+        let mut text: []u8 = ""
+        if ls.count > 0 {
+            let sub = gff::loc_substring{ ls, i = 0 }
+            if sub != null { text = sub.text }
+        }
+        try world::set_name{ &w, name = into, strref = @trunc(u32, ls.strref), text }
+    }
+
+    fn read_common { mut w: world::World, o: *mut obj::Object, doc: *gff::Doc, s: u32, name_label: []u8 } -> ! {
+        let tag = gff::get_string{ doc = doc.*, s, label = "Tag" }
+        if tag != null { try world::set_tag{ &w, o, tag } }
+        try read_name{ &w, doc, s, label = name_label, into = &o.name }
+        let conv = gff::get_resref{ doc = doc.*, s, label = "Conversation" }
+        if conv != null { o.conversation = resref::truncate{ name = conv } }
+        o.plot = flag{ doc, s, label = "Plot", default = o.plot }
+        o.min_one_hp = flag{ doc, s, label = "Min1HP", default = o.min_one_hp }
+        o.faction = @trunc(u32, number{ doc, s, label = "Faction", default = number{ doc, s, label = "FactionID", default = @as(i64, o.faction) } })
+        o.commandable = flag{ doc, s, label = "Commandable", default = o.commandable }
+    }
+
+    // ---- creatures (UTC; objects.md, "Creature template load")
+
+    fn read_creature { mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature, doc: *gff::Doc, s: u32 } -> ! {
+        try read_common{ &w, o, doc, s, name_label = "FirstName" }
+        c.appearance = @trunc(u32, number{ doc, s, label = "Appearance_Type", default = @as(i64, c.appearance) })
+        c.gender = @trunc(u32, number{ doc, s, label = "Gender", default = @as(i64, c.gender) })
+        c.race = @trunc(u32, number{ doc, s, label = "Race", default = @as(i64, c.race) })
+        c.subrace = @trunc(u32, number{ doc, s, label = "SubraceIndex", default = @as(i64, c.subrace) })
+        c.portrait = @trunc(u32, number{ doc, s, label = "PortraitId", default = @as(i64, c.portrait) })
+        c.soundset = @trunc(u32, number{ doc, s, label = "SoundSetFile", default = @as(i64, c.soundset) })
+        c.body_variation = @trunc(u8, number{ doc, s, label = "BodyVariation", default = @as(i64, c.body_variation) })
+        c.texture_variation = @trunc(u8, number{ doc, s, label = "TextureVar", default = @as(i64, c.texture_variation) })
+        c.good_evil = @trunc(u32, number{ doc, s, label = "GoodEvil", default = @as(i64, c.good_evil) })
+        c.perception_range = @trunc(u32, number{ doc, s, label = "PerceptionRange", default = @as(i64, c.perception_range) })
+        c.is_pc = flag{ doc, s, label = "IsPC", default = c.is_pc }
+        let labels: [6][]u8 = ["Str", "Dex", "Con", "Int", "Wis", "Cha"]
+        let mut k: usize = 0
+        while k < 6 {
+            c.abilities[k] = @trunc(u8, number{ doc, s, label = labels[k], default = @as(i64, c.abilities[k]) })
+            k = k + 1
+        }
+        let hp = number{ doc, s, label = "HitPoints", default = @as(i64, o.hp_max) }
+        o.hp_max = @trunc(i32, number{ doc, s, label = "MaxHitPoints", default = hp })
+        o.hp = @trunc(i32, number{ doc, s, label = "CurrentHitPoints", default = @as(i64, o.hp_max) })
+        let classes = gff::get_list{ doc = doc.*, s, label = "ClassList" } ifnull slice::empty(u32){}
+        let mut levels: u32 = 0
+        k = 0
+        while k < classes.len and k < 3 {
+            c.classes[k] = @trunc(u32, number{ doc, s = classes[k], label = "Class", default = 0 })
+            c.class_levels[k] = @trunc(u32, number{ doc, s = classes[k], label = "ClassLevel", default = 1 })
+            levels = levels + c.class_levels[k]
+            k = k + 1
+        }
+        if levels > 0 { c.hit_dice = levels }
+        script{ doc, s, o, label = "ScriptHeartbeat", slot = obj::Slot::heartbeat }
+        script{ doc, s, o, label = "ScriptOnNotice", slot = obj::Slot::notice }
+        script{ doc, s, o, label = "ScriptSpellAt", slot = obj::Slot::spell_at }
+        script{ doc, s, o, label = "ScriptAttacked", slot = obj::Slot::attacked }
+        script{ doc, s, o, label = "ScriptDamaged", slot = obj::Slot::damaged }
+        script{ doc, s, o, label = "ScriptDisturbed", slot = obj::Slot::disturbed }
+        script{ doc, s, o, label = "ScriptEndRound", slot = obj::Slot::end_round }
+        script{ doc, s, o, label = "ScriptDialogue", slot = obj::Slot::dialogue }
+        script{ doc, s, o, label = "ScriptSpawn", slot = obj::Slot::spawn }
+        script{ doc, s, o, label = "ScriptRested", slot = obj::Slot::rested }
+        script{ doc, s, o, label = "ScriptDeath", slot = obj::Slot::death }
+        script{ doc, s, o, label = "ScriptUserDefine", slot = obj::Slot::user_defined }
+        script{ doc, s, o, label = "ScriptOnBlocked", slot = obj::Slot::blocked }
+        script{ doc, s, o, label = "ScriptEndDialogu", slot = obj::Slot::end_dialogue }
+        // HOOK(rules): c.stats = try rules::read_creature{ tables, doc, s }
+        set_movement{ &w, c }
+        // Items: equipped (struct id = 1 << slot) and carried.
+        let equipped = gff::get_list{ doc = doc.*, s, label = "Equip_ItemList" } ifnull slice::empty(u32){}
+        k = 0
+        while k < equipped.len {
+            let e = equipped[k]
+            k = k + 1
+            let name = gff::get_resref{ doc = doc.*, s = e, label = "EquippedRes" } ifnull { continue }
+            let slot = slot_of_bit{ bits = gff::struct_id{ doc = doc.*, s = e } }
+            if slot < 0 or name.len == 0 { continue }
+            let item = spawn_item{ &w, template = name, possessor = o.id } iferr { continue }
+            c.equipped[@as(usize, slot)] = item
+            let io = world::object{ w = &w, id = item }
+            if io != null {
+                if obj::item{ o = io } is some{ value = it } { it.equipped_slot = slot }
+            }
+        }
+        let carried = gff::get_list{ doc = doc.*, s, label = "ItemList" } ifnull slice::empty(u32){}
+        k = 0
+        while k < carried.len {
+            let e = carried[k]
+            k = k + 1
+            let name = gff::get_resref{ doc = doc.*, s = e, label = "InventoryRes" } ifnull { continue }
+            if name.len == 0 { continue }
+            let item = spawn_item{ &w, template = name, possessor = o.id } iferr { continue }
+            list::push{ list = &c.inventory, item } iferr {}
+        }
+    }
+
+    fn slot_of_bit { bits: u32 } -> i32 {
+        let mut i: i32 = 0
+        while i < 20 {
+            if bits == (@as(u32, 1) << @as(u32, i)) { return i }
+            i = i + 1
+        }
+        return -1
+    }
+
+    // Walk and run rates and sizes from creaturespeed.2da and appearance.2da (movement.md 3.1).
+    fn set_movement { mut w: world::World, c: *mut obj::Creature } {
+        let t = w.tables.appearance
+        let row = @as(usize, c.appearance)
+        c.perspace = twoda::get_float{ t, row, column = "perspace" } ifnull c.perspace
+        c.creperspace = twoda::get_float{ t, row, column = "creperspace" } ifnull c.perspace
+        c.height = twoda::get_float{ t, row, column = "height" } ifnull c.height
+        let rate = twoda::get_string{ t, row, column = "moverate" } ifnull "NORM"
+        let speeds = w.tables.creaturespeed
+        let n = twoda::rows{ t = speeds }
+        let mut i: usize = 0
+        while i < n {
+            let name = twoda::get_string{ t = speeds, row = i, column = "2daname" } ifnull ""
+            if ci::eq{ a = name, b = rate } {
+                c.walk_rate = twoda::get_float{ t = speeds, row = i, column = "walkrate" } ifnull c.walk_rate
+                c.run_rate = twoda::get_float{ t = speeds, row = i, column = "runrate" } ifnull c.run_rate
+                return
+            }
+            i = i + 1
+        }
+    }
+
+    // ---- items (UTI)
+
+    fn spawn_item { mut w: world::World, template: []u8, possessor: u32 } -> !u32 {
+        let id = try spawn{ &w, kind = obj::Kind::item, template, position = math::vec3::zero{}, orientation = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 } }
+        let o = world::object{ w = &w, id } ifnull { return id }
+        let i = obj::item{ o } ifnull { return id }
+        i.possessor = possessor
+        o.ai_level = -1
+        return id
+    }
+
+    fn read_item { mut w: world::World, o: *mut obj::Object, i: *mut obj::Item, doc: *gff::Doc, s: u32 } -> ! {
+        try read_common{ &w, o, doc, s, name_label = "LocalizedName" }
+        i.base = @trunc(u32, number{ doc, s, label = "BaseItem", default = @as(i64, i.base) })
+        i.model_variation = @trunc(u32, number{ doc, s, label = "ModelVariation", default = @as(i64, i.model_variation) })
+        i.body_variation = @trunc(u32, number{ doc, s, label = "BodyVariation", default = @as(i64, i.body_variation) })
+        i.texture_variation = @trunc(u32, number{ doc, s, label = "TextureVar", default = @as(i64, i.texture_variation) })
+        i.stack = @trunc(u32, number{ doc, s, label = "StackSize", default = @as(i64, i.stack) })
+        i.charges = @trunc(u32, number{ doc, s, label = "Charges", default = @as(i64, i.charges) })
+        i.identified = flag{ doc, s, label = "Identified", default = i.identified }
+        // HOOK(rules): rules::read_item{ tables, doc, s }
+    }
+
+    // ---- doors (UTD) and the GIT door entry
+
+    fn read_door { mut w: world::World, o: *mut obj::Object, d: *mut obj::Door, doc: *gff::Doc, s: u32 } -> ! {
+        try read_common{ &w, o, doc, s, name_label = "LocName" }
+        // KOTOR's doors name their genericdoors.2da row in GenericType (Appearance is NWN's tileset
+        // door, 0 in every UTD).
+        d.appearance = @trunc(u32, number{ doc, s, label = "GenericType", default = number{ doc, s, label = "Appearance", default = @as(i64, d.appearance) } })
+        d.locked = flag{ doc, s, label = "Locked", default = d.locked }
+        d.lockable = flag{ doc, s, label = "Lockable", default = d.lockable }
+        d.key_required = flag{ doc, s, label = "KeyRequired", default = d.key_required }
+        d.open_dc = @trunc(u32, number{ doc, s, label = "OpenLockDC", default = @as(i64, d.open_dc) })
+        d.static = flag{ doc, s, label = "Static", default = d.static }
+        let key = gff::get_string{ doc = doc.*, s, label = "KeyName" }
+        if key != null {
+            let copy = try obj::copy_bytes{ heap = w.heap, s = key }
+            obj::free_bytes{ heap = w.heap, s = d.key }
+            d.key = copy
+        }
+        o.hp_max = @trunc(i32, number{ doc, s, label = "HP", default = @as(i64, o.hp_max) })
+        o.hp = @trunc(i32, number{ doc, s, label = "CurrentHP", default = @as(i64, o.hp_max) })
+        let state = number{ doc, s, label = "OpenState", default = number{ doc, s, label = "AnimationState", default = -1 } }
+        if state == 1 { d.state = obj::DoorState::open1 }
+        if state == 2 { d.state = obj::DoorState::open2 }
+        try read_link{ &w, doc, s, linked_to = &d.linked_to, module = &d.linked_to_module, flags = &d.linked_flags, name = &d.transition_name }
+        script{ doc, s, o, label = "OnOpen", slot = obj::Slot::open }
+        script{ doc, s, o, label = "OnClosed", slot = obj::Slot::closed }
+        script{ doc, s, o, label = "OnDamaged", slot = obj::Slot::damaged }
+        script{ doc, s, o, label = "OnDeath", slot = obj::Slot::death }
+        script{ doc, s, o, label = "OnDisarm", slot = obj::Slot::disarm }
+        script{ doc, s, o, label = "OnHeartbeat", slot = obj::Slot::heartbeat }
+        script{ doc, s, o, label = "OnLock", slot = obj::Slot::lock }
+        script{ doc, s, o, label = "OnMeleeAttacked", slot = obj::Slot::melee_attacked }
+        script{ doc, s, o, label = "OnSpellCastAt", slot = obj::Slot::spell_at }
+        script{ doc, s, o, label = "OnTrapTriggered", slot = obj::Slot::trap_triggered }
+        script{ doc, s, o, label = "OnUnlock", slot = obj::Slot::unlock }
+        script{ doc, s, o, label = "OnUserDefined", slot = obj::Slot::user_defined }
+        script{ doc, s, o, label = "OnClick", slot = obj::Slot::click }
+        script{ doc, s, o, label = "OnFailToOpen", slot = obj::Slot::fail_to_open }
+        script{ doc, s, o, label = "OnDialog", slot = obj::Slot::dialogue }
+        let model = twoda::get_string{ t = w.tables.genericdoors, row = @as(usize, d.appearance), column = "modelname" } ifnull ""
+        d.model = resref::truncate{ name = model }
+    }
+
+    // LinkedTo, LinkedToModule, LinkedToFlags, TransitionDestin (doors and triggers).
+    fn read_link {
+        mut w: world::World, doc: *gff::Doc, s: u32, linked_to: *mut []mut u8, module: *mut resref::ResRef,
+        flags: *mut u8, name: *mut obj::Name,
+    } -> ! {
+        let to = gff::get_string{ doc = doc.*, s, label = "LinkedTo" }
+        if to != null {
+            let copy = try obj::copy_bytes{ heap = w.heap, s = to }
+            obj::free_bytes{ heap = w.heap, s = linked_to.* }
+            linked_to.* = copy
+        }
+        let m = gff::get_resref{ doc = doc.*, s, label = "LinkedToModule" }
+        if m != null { module.* = resref::truncate{ name = m } }
+        flags.* = @trunc(u8, number{ doc, s, label = "LinkedToFlags", default = @as(i64, flags.*) })
+        try read_name{ &w, doc, s, label = "TransitionDestin", into = name }
+    }
+
+    // ---- placeables (UTP)
+
+    fn read_placeable { mut w: world::World, o: *mut obj::Object, p: *mut obj::Placeable, doc: *gff::Doc, s: u32 } -> ! {
+        try read_common{ &w, o, doc, s, name_label = "LocName" }
+        p.appearance = @trunc(u32, number{ doc, s, label = "Appearance", default = @as(i64, p.appearance) })
+        p.useable = flag{ doc, s, label = "Useable", default = p.useable }
+        p.has_inventory = flag{ doc, s, label = "HasInventory", default = p.has_inventory }
+        p.party_interact = flag{ doc, s, label = "PartyInteract", default = p.party_interact }
+        p.static = flag{ doc, s, label = "Static", default = p.static }
+        p.locked = flag{ doc, s, label = "Locked", default = p.locked }
+        o.hp_max = @trunc(i32, number{ doc, s, label = "HP", default = @as(i64, o.hp_max) })
+        o.hp = @trunc(i32, number{ doc, s, label = "CurrentHP", default = @as(i64, o.hp_max) })
+        let state = number{ doc, s, label = "AnimationState", default = 0 }
+        p.anim = if state == 1 { 10075 } else if state == 2 { 10076 } else { obj::ANIM_STAND }
+        p.open = state == 1
+        script{ doc, s, o, label = "OnClosed", slot = obj::Slot::closed }
+        script{ doc, s, o, label = "OnDamaged", slot = obj::Slot::damaged }
+        script{ doc, s, o, label = "OnDeath", slot = obj::Slot::death }
+        script{ doc, s, o, label = "OnDisarm", slot = obj::Slot::disarm }
+        script{ doc, s, o, label = "OnHeartbeat", slot = obj::Slot::heartbeat }
+        script{ doc, s, o, label = "OnInvDisturbed", slot = obj::Slot::inv_disturbed }
+        script{ doc, s, o, label = "OnLock", slot = obj::Slot::lock }
+        script{ doc, s, o, label = "OnMeleeAttacked", slot = obj::Slot::melee_attacked }
+        script{ doc, s, o, label = "OnOpen", slot = obj::Slot::open }
+        script{ doc, s, o, label = "OnSpellCastAt", slot = obj::Slot::spell_at }
+        script{ doc, s, o, label = "OnTrapTriggered", slot = obj::Slot::trap_triggered }
+        script{ doc, s, o, label = "OnUnlock", slot = obj::Slot::unlock }
+        script{ doc, s, o, label = "OnUsed", slot = obj::Slot::used }
+        script{ doc, s, o, label = "OnUserDefined", slot = obj::Slot::user_defined }
+        script{ doc, s, o, label = "OnEndDialogue", slot = obj::Slot::end_dialogue }
+        script{ doc, s, o, label = "OnDialog", slot = obj::Slot::dialogue }
+        let model = twoda::get_string{ t = w.tables.placeables, row = @as(usize, p.appearance), column = "modelname" } ifnull ""
+        p.model = resref::truncate{ name = model }
+        o.animation = p.anim
+        if p.static { o.ai_level = 0 }
+    }
+
+    // ---- triggers (UTT) and the GIT trigger entry
+
+    fn read_trigger { mut w: world::World, o: *mut obj::Object, t: *mut obj::Trigger, doc: *gff::Doc, s: u32 } -> ! {
+        try read_common{ &w, o, doc, s, name_label = "LocalizedName" }
+        t.trigger_type = @trunc(u32, number{ doc, s, label = "Type", default = @as(i64, t.trigger_type) })
+        try read_link{ &w, doc, s, linked_to = &t.linked_to, module = &t.linked_to_module, flags = &t.linked_flags, name = &t.transition_name }
+        script{ doc, s, o, label = "ScriptHeartbeat", slot = obj::Slot::heartbeat }
+        script{ doc, s, o, label = "ScriptOnEnter", slot = obj::Slot::enter }
+        script{ doc, s, o, label = "ScriptOnExit", slot = obj::Slot::exit }
+        script{ doc, s, o, label = "ScriptUserDefine", slot = obj::Slot::user_defined }
+        script{ doc, s, o, label = "OnTrapTriggered", slot = obj::Slot::trap_triggered }
+        script{ doc, s, o, label = "OnDisarm", slot = obj::Slot::disarm }
+        script{ doc, s, o, label = "OnClick", slot = obj::Slot::click }
+    }
+
+    // The GIT's Geometry list: points relative to the trigger's position, into area space.
+    fn read_geometry { mut w: world::World, t: *mut obj::Trigger, doc: *gff::Doc, s: u32, origin: math::Vec3 } -> ! {
+        let points = gff::get_list{ doc = doc.*, s, label = "Geometry" } ifnull { return }
+        let poly = try alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(math::Vec3){}, count = points.len }
+        let mut i: usize = 0
+        while i < points.len {
+            let p = points[i]
+            poly[i] = math::Vec3{
+                x = origin.x + real{ doc, s = p, label = "PointX", default = 0.0 },
+                y = origin.y + real{ doc, s = p, label = "PointY", default = 0.0 },
+                z = origin.z + real{ doc, s = p, label = "PointZ", default = 0.0 },
+            }
+            i = i + 1
+        }
+        _ = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = t.polygon, count = 0 }
+        t.polygon = poly
+    }
+
+    // ---- waypoints (UTW; the GIT carries every field)
+
+    fn read_waypoint { mut w: world::World, o: *mut obj::Object, wp: *mut obj::Waypoint, doc: *gff::Doc, s: u32 } -> ! {
+        try read_common{ &w, o, doc, s, name_label = "LocalizedName" }
+        wp.has_map_note = flag{ doc, s, label = "HasMapNote", default = wp.has_map_note }
+        wp.map_note_enabled = flag{ doc, s, label = "MapNoteEnabled", default = wp.map_note_enabled }
+        try read_name{ &w, doc, s, label = "MapNote", into = &wp.map_note }
+    }
+
+    // ---- sound objects (UTS)
+
+    fn read_sound { mut w: world::World, o: *mut obj::Object, snd: *mut obj::Sound, doc: *gff::Doc, s: u32 } -> ! {
+        try read_common{ &w, o, doc, s, name_label = "LocName" }
+        snd.active = flag{ doc, s, label = "Active", default = snd.active }
+        snd.continuous = flag{ doc, s, label = "Continuous", default = snd.continuous }
+        snd.looping = flag{ doc, s, label = "Looping", default = snd.looping }
+        snd.positional = flag{ doc, s, label = "Positional", default = snd.positional }
+        snd.random = flag{ doc, s, label = "Random", default = snd.random }
+        snd.random_position = flag{ doc, s, label = "RandomPosition", default = snd.random_position }
+        snd.interval = @trunc(u32, number{ doc, s, label = "Interval", default = @as(i64, snd.interval) })
+        snd.interval_variation = @trunc(u32, number{ doc, s, label = "IntervalVrtn", default = @as(i64, snd.interval_variation) })
+        snd.volume = @trunc(u32, number{ doc, s, label = "Volume", default = @as(i64, snd.volume) })
+        snd.volume_variation = @trunc(u32, number{ doc, s, label = "VolumeVrtn", default = @as(i64, snd.volume_variation) })
+        snd.pitch_variation = real{ doc, s, label = "PitchVariation", default = snd.pitch_variation }
+        snd.elevation = real{ doc, s, label = "Elevation", default = snd.elevation }
+        snd.min_distance = real{ doc, s, label = "MinDistance", default = snd.min_distance }
+        snd.max_distance = real{ doc, s, label = "MaxDistance", default = snd.max_distance }
+        snd.random_range_x = real{ doc, s, label = "RandomRangeX", default = snd.random_range_x }
+        snd.random_range_y = real{ doc, s, label = "RandomRangeY", default = snd.random_range_y }
+        snd.priority = @trunc(u32, number{ doc, s, label = "Priority", default = @as(i64, snd.priority) })
+        let list = gff::get_list{ doc = doc.*, s, label = "Sounds" } ifnull { return }
+        let names = try alloc::resize(resref::ResRef, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(resref::ResRef){}, count = list.len }
+        let mut i: usize = 0
+        while i < list.len {
+            names[i] = resref::truncate{ name = gff::get_resref{ doc = doc.*, s = list[i], label = "Sound" } ifnull "" }
+            i = i + 1
+        }
+        _ = alloc::resize(resref::ResRef, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = snd.sounds, count = 0 }
+        snd.sounds = names
+    }
+}

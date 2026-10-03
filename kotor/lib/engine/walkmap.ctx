@@ -1,0 +1,153 @@
+// The area's walkable surface (docs/re/movement.md 3.5): one walkmesh per LYT room, in LYT order
+// (the order GetRoomAtPoint tries them), plus the placed walkmeshes of doors (DWK) and
+// placeables (PWK) that block while they are active. Walkmeshes live in module memory.
+//
+//   let f = walkmap::floor{ m = &w.walk, x, y, z } ifnull { ... }       // Floor{ room, face, z }
+//   let z = walkmap::step_to{ m = &w.walk, from, to } ifnull { blocked }
+namespace walkmap {
+    // How far up a floor may be from where a creature stands and still be stepped onto, and how
+    // far down it may drop (ours: the original follows face adjacency instead, movement.md 3.5).
+    const STEP_UP: f32 = 0.6
+    const STEP_DOWN: f32 = 1.5
+    // Spacing of the samples along a step.
+    const SAMPLE: f32 = 0.15
+
+    struct Room { name: resref::ResRef, position: math::Vec3, mesh: ?bwm::Walkmesh }
+
+    struct Placed { owner: u32, mesh: bwm::Walkmesh, active: bool }
+
+    struct Map {
+        rooms: list::List(Room, heap::Heap),
+        placed: list::List(Placed, heap::Heap),
+        walkable: []mut bool,               // by surface material: surfacemat.2da Walk
+        sees: []mut bool,                   // by surface material: surfacemat.2da LineOfSight
+    }
+
+    struct Floor { room: i32, face: u32, z: f32 }
+
+    fn empty { heap: *mut heap::Heap } -> Map {
+        return Map{
+            rooms = list::new(Room, heap::Heap){ realloc = heap::alloc, heap },
+            placed = list::new(Placed, heap::Heap){ realloc = heap::alloc, heap },
+            walkable = slice::empty(bool){}, sees = slice::empty(bool){},
+        }
+    }
+
+    // The material tables from surfacemat.2da (kept in the session heap).
+    fn load_materials { mut m: Map, heap: *mut heap::Heap, table: twoda::Table } -> ! {
+        let n = twoda::rows{ t = table }
+        m.walkable = try alloc::resize(bool, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(bool){}, count = n }
+        m.sees = try alloc::resize(bool, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(bool){}, count = n }
+        let mut i: usize = 0
+        while i < n {
+            m.walkable[i] = (twoda::get_int{ t = table, row = i, column = "walk" } ifnull 0) != 0
+            m.sees[i] = (twoda::get_int{ t = table, row = i, column = "lineofsight" } ifnull 1) != 0
+            i = i + 1
+        }
+    }
+
+    // Forgets the rooms and placed walkmeshes (their memory is the module arena's).
+    fn clear { mut m: Map } {
+        list::clear{ list = &m.rooms }
+        list::clear{ list = &m.placed }
+    }
+
+    fn add_room { mut m: Map, room: Room } -> ! { try list::push{ list = &m.rooms, item = room } }
+
+    // Adds a placed walkmesh (already in area space); its index.
+    fn add_placed { mut m: Map, placed: Placed } -> !i32 {
+        try list::push{ list = &m.placed, item = placed }
+        return @as(i32, m.placed.len - 1)
+    }
+
+    fn set_active { mut m: Map, index: i32, active: bool } {
+        if index < 0 or @as(usize, index) >= m.placed.len { return }
+        list::items{ list = m.placed }[@as(usize, index)].active = active
+    }
+
+    // The highest walkable floor under (x, y) no higher than z + STEP_UP, searching the rooms in
+    // LYT order (the first room with a floor there wins, as GetRoomAtPoint).
+    fn floor { m: *Map, x: f32, y: f32, z: f32 } -> ?Floor {
+        let rooms = list::items{ list = m.rooms }
+        let mut best: ?Floor = null
+        let mut i: usize = 0
+        while i < rooms.len {
+            let mesh = rooms[i].mesh
+            i = i + 1
+            if mesh == null { continue }
+            let f = bwm::find_face_under{ w = mesh, x, y, z, step = STEP_UP, walkable = m.walkable } ifnull { continue }
+            let better = match best { null => { true } some{ value } => { f.z > value.z } }
+            if better { best = Floor{ room = @as(i32, i - 1), face = f.face, z = f.z } }
+        }
+        return best
+    }
+
+    // Any floor at all under (x, y), from high up: for placing objects whose z is unknown.
+    fn floor_anywhere { m: *Map, x: f32, y: f32 } -> ?Floor { return floor{ m, x, y, z = 1000.0 } }
+
+    // The height under (x, y) near z, or null off the walkmesh.
+    fn height { m: *Map, x: f32, y: f32, z: f32 } -> ?f32 {
+        let f = floor{ m, x, y, z } ifnull { return null }
+        return f.z
+    }
+
+    // The room index (LYT order) under (x, y), -1 for none.
+    fn room_at { m: *Map, x: f32, y: f32, z: f32 } -> i32 {
+        let f = floor{ m, x, y, z } ifnull { return -1 }
+        return f.room
+    }
+
+    // Whether an active placed walkmesh (a closed door, a placeable) has a face that doesn't let
+    // anyone walk over (x, y) at about height z.
+    fn blocked { m: *Map, x: f32, y: f32, z: f32 } -> bool {
+        let placed = list::items{ list = m.placed }
+        let mut i: usize = 0
+        while i < placed.len {
+            let p = placed[i]
+            i = i + 1
+            if not p.active { continue }
+            if over_blocking_face{ w = &p.mesh, walkable = m.walkable, x, y, z } { return true }
+        }
+        return false
+    }
+
+    fn over_blocking_face { w: *bwm::Walkmesh, walkable: []bool, x: f32, y: f32, z: f32 } -> bool {
+        let mut f: usize = 0
+        while f < w.faces.len {
+            let face = f
+            f = f + 1
+            if w.flat[face] { continue }
+            let mat = w.materials[face]
+            if mat < walkable.len and walkable[mat] { continue }
+            let c = bwm::face_corners{ w = w.*, face }
+            if not bwm::is_over_triangle{ c, x, y } { continue }
+            let lo = math::min{ a = math::min{ a = c[0].z, b = c[1].z }, b = c[2].z }
+            let hi = math::max{ a = math::max{ a = c[0].z, b = c[1].z }, b = c[2].z }
+            if hi >= z - 0.5 and lo <= z + 2.0 { return true }
+        }
+        return false
+    }
+
+    // Walks the straight segment from `from` to `to` (x, y; z follows the floor): the floor
+    // height at `to`, or null if the walk leaves the walkmesh, climbs or drops too far, or meets
+    // a blocking placed walkmesh.
+    fn step_to { m: *Map, from: math::Vec3, to: math::Vec3 } -> ?f32 {
+        let dx = to.x - from.x
+        let dy = to.y - from.y
+        let len = math::sqrtf{ x = dx * dx + dy * dy }
+        let n = if len <= SAMPLE { 1 } else { @as(u32, math::ceilf{ x = len / SAMPLE }) }
+        let mut z = from.z
+        let mut i: u32 = 1
+        while i <= n {
+            let t = @as(f32, i) / @as(f32, n)
+            let x = from.x + dx * t
+            let y = from.y + dy * t
+            let f = floor{ m, x, y, z } ifnull { return null }
+            if f.z < z - STEP_DOWN { return null }
+            if blocked{ m, x, y, z = f.z } { return null }
+            z = f.z
+            i = i + 1
+        }
+        return z
+    }
+}

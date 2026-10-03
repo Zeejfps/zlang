@@ -1,0 +1,625 @@
+// Routines: numbers, strings, dice, printing (docs/design/engine.md, "Routines"). Pure
+// functions of their arguments, except Random and the dice, which draw from the world's rng
+// (MSVC rand(), seeded: headless runs repeat).
+namespace rt_core {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        if routine == nwscript::Random { try random{ &w, &vm, argc } }
+        else if routine == nwscript::PrintString { try print_string{ &w, &vm, argc } }
+        else if routine == nwscript::PrintInteger { try print_integer{ &w, &vm, argc } }
+        else if routine == nwscript::IntToString { try int_to_string{ &vm, argc } }
+        else if routine == nwscript::IntToFloat { try int_to_float{ &vm, argc } }
+        else if routine == nwscript::FloatToInt { try float_to_int{ &vm, argc } }
+        else if routine == nwscript::StringToInt { try string_to_int{ &vm, argc } }
+        else if routine == nwscript::GetStringLength { try get_string_length{ &vm, argc } }
+        else if routine == nwscript::GetStringLeft { try get_string_left{ &vm, argc } }
+        else if routine == nwscript::GetStringRight { try get_string_right{ &vm, argc } }
+        else if routine == nwscript::GetSubString { try get_sub_string{ &vm, argc } }
+        else if routine == nwscript::FindSubString { try find_sub_string{ &vm, argc } }
+        else if routine == nwscript::GetStringUpperCase { try change_case{ &vm, argc, routine, upper = true } }
+        else if routine == nwscript::GetStringLowerCase { try change_case{ &vm, argc, routine, upper = false } }
+        else if routine == nwscript::InsertString { try insert_string{ &vm, argc } }
+        else if routine == nwscript::StringToFloat { try string_to_float{ &vm, argc } }
+        else if routine == nwscript::FloatToString { try float_to_string{ &vm, argc } }
+        else if routine == nwscript::PrintFloat { try print_float{ &w, &vm, argc } }
+        else if routine == nwscript::PrintObject { try print_object{ &w, &vm, argc } }
+        else if routine == nwscript::PrintVector { try print_vector{ &w, &vm, argc } }
+        else if routine == nwscript::ObjectToString { try object_to_string{ &vm, argc } }
+        else if routine == nwscript::IntToHexString { try int_to_hex_string{ &vm, argc } }
+        else if routine == nwscript::GetStringByStrRef { try get_string_by_strref{ &w, &vm, argc } }
+        else if routine == nwscript::abs { try abs{ &vm, argc } }
+        else if is_math_one{ routine } { try math_one{ &vm, argc, routine } }
+        else if routine == nwscript::pow { try pow{ &vm, argc } }
+        else if routine == nwscript::FeetToMeters { try convert_length{ &vm, argc, routine, per_unit = 0.3048 } }
+        else if routine == nwscript::YardsToMeters { try convert_length{ &vm, argc, routine, per_unit = 0.9144 } }
+        else if routine == nwscript::VectorMagnitude { try vector_magnitude{ &vm, argc } }
+        else if routine == nwscript::VectorNormalize { try vector_normalize{ &vm, argc } }
+        else if routine == nwscript::Vector { try make_vector{ &vm, argc } }
+        else if routine == nwscript::AngleToVector { try angle_to_vector{ &vm, argc } }
+        else if routine == nwscript::VectorToAngle { try vector_to_angle{ &vm, argc } }
+        else if routine == nwscript::RoundsToSeconds { try to_seconds{ &vm, argc, routine, per_unit = 3.0 } }
+        else if routine == nwscript::TurnsToSeconds { try to_seconds{ &vm, argc, routine, per_unit = 30.0 } }
+        else if routine == nwscript::HoursToSeconds { try hours_to_seconds{ &w, &vm, argc } }
+        else if routine == nwscript::d2 { try dice{ &w, &vm, argc, routine, sides = 2 } }
+        else if routine == nwscript::d3 { try dice{ &w, &vm, argc, routine, sides = 3 } }
+        else if routine == nwscript::d4 { try dice{ &w, &vm, argc, routine, sides = 4 } }
+        else if routine == nwscript::d6 { try dice{ &w, &vm, argc, routine, sides = 6 } }
+        else if routine == nwscript::d8 { try dice{ &w, &vm, argc, routine, sides = 8 } }
+        else if routine == nwscript::d10 { try dice{ &w, &vm, argc, routine, sides = 10 } }
+        else if routine == nwscript::d12 { try dice{ &w, &vm, argc, routine, sides = 12 } }
+        else if routine == nwscript::d20 { try dice{ &w, &vm, argc, routine, sides = 20 } }
+        else if routine == nwscript::d100 { try dice{ &w, &vm, argc, routine, sides = 100 } }
+        else { return false }
+        return true
+    }
+
+    // int Random(int nMaxInteger): 0 .. n-1 (0 for n <= 0).
+    fn random { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::Random, argc, i = 0 }
+        let v = if n <= 0 { 0 } else { @as(i32, world::random{ &w } % @as(u32, n)) }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // int dN(int nNumDice = 1): the sum of n rolls.
+    fn dice { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, sides: u32 } -> ! {
+        let n = try nwarg::int{ &vm, routine, argc, i = 0 }
+        let mut total: i32 = 0
+        let mut k: i32 = 0
+        while k < n and k < 1000 {
+            total = total + @as(i32, world::random{ &w } % sides) + 1
+            k = k + 1
+        }
+        try nwvm::push_int{ &vm, v = total }
+    }
+
+    fn print_string { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let s = try nwarg::string{ &vm, routine = nwscript::PrintString, argc, i = 0 }
+        if w.log.scripts {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "print: {}\n", s)
+        }
+    }
+
+    fn print_integer { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::PrintInteger, argc, i = 0 }
+        if w.log.scripts {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "print: {}\n", n)
+        }
+    }
+
+    fn int_to_string { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::IntToString, argc, i = 0 }
+        let mut buf: [16]u8
+        try nwvm::push_string{ &vm, s = format_int{ into = buf[..], n } }
+    }
+
+    // A signed decimal into `into` (as sprintf("%d")).
+    fn format_int { into: []mut u8, n: i32 } -> []u8 {
+        let mut v: i64 = @as(i64, n)
+        let negative = v < 0
+        if negative { v = -v }
+        let mut tmp: [12]u8
+        let mut k: usize = 0
+        while true {
+            tmp[k] = @trunc(u8, v % 10) + '0'
+            k = k + 1
+            v = v / 10
+            if v == 0 { break }
+        }
+        let mut len: usize = 0
+        if negative {
+            into[0] = '-'
+            len = 1
+        }
+        while k > 0 {
+            k = k - 1
+            into[len] = tmp[k]
+            len = len + 1
+        }
+        return into[..len]
+    }
+
+    fn int_to_float { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::IntToFloat, argc, i = 0 }
+        try nwvm::push_float{ &vm, v = @as(f32, n) }
+    }
+
+    // FloatToInt truncates toward zero (the engine's _ftol); NaN and out-of-range give 0 (ours).
+    fn float_to_int { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let f = try nwarg::float{ &vm, routine = nwscript::FloatToInt, argc, i = 0 }
+        let v = if f == f and f > -2147483648.0 and f < 2147483648.0 { @as(i32, f) } else { 0 }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // StringToInt: atoi (a leading sign and digits; 0 when none).
+    fn string_to_int { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let s = try nwarg::string{ &vm, routine = nwscript::StringToInt, argc, i = 0 }
+        let n = text::scan_decimal{ s }
+        try nwvm::push_int{ &vm, v = @trunc(i32, n) }
+    }
+
+    fn get_string_length { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let s = try nwarg::string{ &vm, routine = nwscript::GetStringLength, argc, i = 0 }
+        try nwvm::push_int{ &vm, v = @as(i32, s.len) }
+    }
+
+    // ---- strings
+    //
+    // The engine's CExoString operations, as RE'd from the handlers (0x0053d720 GetStringLeft,
+    // 0x0053da40 Right, 0x0053dda0 SubString, 0x00535c90 FindSubString, 0x0053e960 InsertString).
+    // Results that are pieces of an argument are pushed straight from the argument's view.
+
+    // How many of `len` characters a count asks for: none for a negative count, all if it is more.
+    fn count_within { n: i32, len: usize } -> usize {
+        if n <= 0 { return 0 }
+        let want = @as(usize, n)
+        return if want > len { len } else { want }
+    }
+
+    // string GetStringLeft(string sString, int nCount): the first nCount characters.
+    fn get_string_left { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetStringLeft
+        let s = try nwarg::string{ &vm, routine = r, argc, i = 0 }
+        let n = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let take = count_within{ n, len = s.len }
+        try nwvm::push_string{ &vm, s = s[..take] }
+    }
+
+    // string GetStringRight(string sString, int nCount): the last nCount characters.
+    fn get_string_right { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetStringRight
+        let s = try nwarg::string{ &vm, routine = r, argc, i = 0 }
+        let n = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let take = count_within{ n, len = s.len }
+        try nwvm::push_string{ &vm, s = s[s.len - take..] }
+    }
+
+    // string GetSubString(string sString, int nStart, int nCount): "" when nStart is outside the
+    // string or nCount is 0; a negative nCount takes the rest.
+    fn get_sub_string { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetSubString
+        let s = try nwarg::string{ &vm, routine = r, argc, i = 0 }
+        let start = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let count = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        if start < 0 or @as(usize, start) >= s.len or count == 0 {
+            try nwvm::push_string{ &vm, s = "" }
+            return
+        }
+        let from = @as(usize, start)
+        let rest = s.len - from
+        let take = if count < 0 or @as(usize, count) > rest { rest } else { @as(usize, count) }
+        try nwvm::push_string{ &vm, s = s[from..from + take] }
+    }
+
+    // int FindSubString(string sString, string sSubString): the first position, case sensitive;
+    // -1 for none, and for an empty string or substring.
+    fn find_sub_string { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::FindSubString
+        let s = try nwarg::string{ &vm, routine = r, argc, i = 0 }
+        let sub = try nwarg::string{ &vm, routine = r, argc, i = 1 }
+        let mut found: i32 = -1
+        if s.len > 0 and sub.len > 0 and sub.len <= s.len {
+            let last = s.len - sub.len
+            let mut i: usize = 0
+            while i <= last {
+                if slice::eq_bytes{ a = s[i..i + sub.len], b = sub } {
+                    found = @as(i32, i)
+                    break
+                }
+                i = i + 1
+            }
+        }
+        try nwvm::push_int{ &vm, v = found }
+    }
+
+    // Longest string the case and insert routines build (longer ones are cut).
+    const STRING_WORK: usize = 1024
+
+    // `s` appended to `into` after its first `used` bytes (cut at the buffer's end); the new length.
+    fn append { into: []mut u8, used: usize, s: []u8 } -> usize {
+        let room = into.len - used
+        let n = if s.len > room { room } else { s.len }
+        let mut i: usize = 0
+        while i < n {
+            into[used + i] = s[i]
+            i = i + 1
+        }
+        return used + n
+    }
+
+    // string GetStringUpperCase / GetStringLowerCase(string sString): ASCII case, as C's toupper.
+    fn change_case { mut vm: nwvm::Vm, argc: u8, routine: u16, upper: bool } -> ! {
+        let s = try nwarg::string{ &vm, routine, argc, i = 0 }
+        let mut buf: [1024]u8
+        let n = if s.len > STRING_WORK { STRING_WORK } else { s.len }
+        let mut i: usize = 0
+        while i < n {
+            buf[i] = if upper { ascii::to_upper{ c = s[i] } } else { ascii::to_lower{ c = s[i] } }
+            i = i + 1
+        }
+        try nwvm::push_string{ &vm, s = buf[..n] }
+    }
+
+    // string InsertString(string sDestination, string sString, int nPosition): sString goes in
+    // before character nPosition. Unchanged when sString is empty or nPosition is not inside
+    // sDestination (appending at its end is not allowed).
+    fn insert_string { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::InsertString
+        let dest = try nwarg::string{ &vm, routine = r, argc, i = 0 }
+        let ins = try nwarg::string{ &vm, routine = r, argc, i = 1 }
+        let pos = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        if ins.len == 0 or pos < 0 or @as(usize, pos) >= dest.len {
+            try nwvm::push_string{ &vm, s = dest }
+            return
+        }
+        let at = @as(usize, pos)
+        let mut buf: [1024]u8
+        let mut n = append{ into = buf[..], used = 0, s = dest[..at] }
+        n = append{ into = buf[..], used = n, s = ins }
+        n = append{ into = buf[..], used = n, s = dest[at..] }
+        try nwvm::push_string{ &vm, s = buf[..n] }
+    }
+
+    // float StringToFloat(string sNumber): C's atof (0.0 when there is no number).
+    fn string_to_float { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let s = try nwarg::string{ &vm, routine = nwscript::StringToFloat, argc, i = 0 }
+        let v = text::scan_f32{ s } ifnull 0.0
+        try nwvm::push_float{ &vm, v }
+    }
+
+    // string GetStringByStrRef(int nStrRef): dialog.tlk's text ("" for none).
+    fn get_string_by_strref { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::GetStringByStrRef, argc, i = 0 }
+        let text = if n < 0 { "" } else { world::string_by_strref{ w = &w, strref = @trunc(u32, n) } }
+        try nwvm::push_string{ &vm, s = text }
+    }
+
+    // ---- numbers as text
+
+    // The engine's FloatToString result ends with a newline: its format string is "%W.Df\n"
+    // (0x00536000, string at 0x0074869c). Set false to drop it.
+    const FLOAT_TEXT_NEWLINE: bool = true
+
+    // `v` in lowercase hexadecimal at `into[0..]`, with at least `digits` digits; the length.
+    fn write_hex { into: []mut u8, v: u32, digits: usize } -> usize {
+        let mut tmp: [8]u8
+        let mut n: usize = 0
+        let mut x = v
+        while x > 0 or n < digits {
+            let d = @trunc(u8, x % 16)
+            tmp[n] = if d < 10 { '0' + d } else { 'a' + (d - 10) }
+            n = n + 1
+            x = x / 16
+        }
+        let mut i: usize = 0
+        while i < n {
+            into[i] = tmp[n - 1 - i]
+            i = i + 1
+        }
+        return n
+    }
+
+    // string ObjectToString(object oObject): the id in hexadecimal, as sprintf("%x").
+    fn object_to_string { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::ObjectToString, argc, i = 0 }
+        let mut buf: [8]u8
+        let n = write_hex{ into = buf[..], v = id, digits = 1 }
+        try nwvm::push_string{ &vm, s = buf[..n] }
+    }
+
+    // string IntToHexString(int nInteger): "0x" and eight hexadecimal digits (sprintf("0x%08x")).
+    fn int_to_hex_string { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::IntToHexString, argc, i = 0 }
+        let mut buf: [10]u8
+        buf[0] = '0'
+        buf[1] = 'x'
+        let len = write_hex{ into = buf[2..], v = le::bits_of_i32{ v = n }, digits = 8 }
+        try nwvm::push_string{ &vm, s = buf[..2 + len] }
+    }
+
+    // `f` as C's "%{width}.{decimals}f" writes it, with the float exact: the decimal expansion of
+    // f's bits, rounded half up at the last place (as the CRT's). Width and decimals are
+    // clamped to 0..18 and 0..9 as the engine does. `into` needs 64 bytes. NaN and infinities
+    // give "nan" and "inf" (the CRT's "1.#QNAN" and "1.#INF" are not reproduced).
+    fn format_fixed { into: []mut u8, f: f32, width: i32, decimals: i32 } -> []u8 {
+        let wd = if width < 0 { 0 } else if width > 18 { 18 } else { width }
+        let dec = if decimals < 0 { 0 } else if decimals > 9 { 9 } else { decimals }
+        let bits = le::bits_of_f32{ v = f }
+        let negative = (bits >> 31) != 0
+        let exp_bits = @as(i32, (bits >> 23) & 0xFF)
+        let frac = bits & 0x7FFFFF
+        let mut body: [64]u8
+        let mut n: usize = 0
+        if negative {
+            body[n] = '-'
+            n = n + 1
+        }
+        if exp_bits == 255 {
+            let word: []u8 = if frac == 0 { "inf" } else { "nan" }
+            n = append{ into = body[..], used = n, s = word }
+        } else {
+            // f = m * 2^e. Its digits, least significant first, are those of m * 2^e (e >= 0) or
+            // of m * 5^-e with the point -e places in (m / 2^k = m * 5^k / 10^k).
+            let m: u32 = if exp_bits == 0 { frac } else { frac | 0x800000 }
+            let e: i32 = (if exp_bits == 0 { 1 } else { exp_bits }) - 150
+            let mut dig: [160]u8
+            let mut len: usize = 0
+            let mut t = m
+            while t > 0 {
+                dig[len] = @trunc(u8, t % 10)
+                len = len + 1
+                t = t / 10
+            }
+            if len == 0 { len = 1 }
+            let times = if e < 0 { -e } else { e }
+            let factor: u32 = if e < 0 { 5 } else { 2 }
+            let mut k: i32 = 0
+            while m != 0 and k < times {
+                let mut carry: u32 = 0
+                let mut i: usize = 0
+                while i < len {
+                    let v = @as(u32, dig[i]) * factor + carry
+                    dig[i] = @trunc(u8, v % 10)
+                    carry = v / 10
+                    i = i + 1
+                }
+                while carry > 0 {
+                    dig[len] = @trunc(u8, carry % 10)
+                    len = len + 1
+                    carry = carry / 10
+                }
+                k = k + 1
+            }
+            let point: i32 = if e < 0 and m != 0 { -e } else { 0 }
+            // The digits from 10^top down to 10^-dec, in out[1..]; out[0] takes a carry.
+            let ilen = @as(i32, len)
+            let top: i32 = if ilen - point - 1 > 0 { ilen - point - 1 } else { 0 }
+            let count = @as(usize, top + 1 + dec)
+            let mut out: [64]u8
+            let mut j: usize = 0
+            while j < count {
+                let at = (top - @as(i32, j)) + point
+                out[1 + j] = if at >= 0 and at < ilen { dig[@as(usize, at)] } else { 0 }
+                j = j + 1
+            }
+            let drop = point - dec - 1
+            if drop >= 0 and drop < ilen and dig[@as(usize, drop)] >= 5 {
+                let mut p = count
+                while true {
+                    if out[p] == 9 {
+                        out[p] = 0
+                        p = p - 1
+                    } else {
+                        out[p] = out[p] + 1
+                        break
+                    }
+                }
+            }
+            let int_end = @as(usize, top) + 2
+            let mut i: usize = if out[0] != 0 { 0 } else { 1 }
+            while i < int_end {
+                body[n] = '0' + out[i]
+                n = n + 1
+                i = i + 1
+            }
+            if dec > 0 {
+                body[n] = '.'
+                n = n + 1
+                while i < int_end + @as(usize, dec) {
+                    body[n] = '0' + out[i]
+                    n = n + 1
+                    i = i + 1
+                }
+            }
+        }
+        let pad = if @as(usize, wd) > n { @as(usize, wd) - n } else { 0 }
+        let mut used: usize = 0
+        while used < pad {
+            into[used] = ' '
+            used = used + 1
+        }
+        return into[..append{ into, used, s = body[..n] }]
+    }
+
+    // string FloatToString(float fFloat, int nWidth = 18, int nDecimals = 9)
+    fn float_to_string { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::FloatToString
+        let f = try nwarg::float{ &vm, routine = r, argc, i = 0 }
+        let width = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let decimals = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let mut buf: [96]u8
+        let mut len = format_fixed{ into = buf[..], f, width, decimals }.len
+        if FLOAT_TEXT_NEWLINE {
+            buf[len] = '\n'
+            len = len + 1
+        }
+        try nwvm::push_string{ &vm, s = buf[..len] }
+    }
+
+    // void PrintFloat(float fFloat, int nWidth = 18, int nDecimals = 9): to the log.
+    fn print_float { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::PrintFloat
+        let f = try nwarg::float{ &vm, routine = r, argc, i = 0 }
+        let width = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let decimals = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        if w.log.scripts {
+            let mut buf: [96]u8
+            let text = format_fixed{ into = buf[..], f, width, decimals }
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "print: {}\n", text)
+        }
+    }
+
+    // void PrintObject(object oObject): the engine's handler only pops it; we log the id.
+    fn print_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::PrintObject, argc, i = 0 }
+        if w.log.scripts {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "print: object {}\n", id)
+        }
+    }
+
+    // void PrintVector(vector vVector, int bPrepend): likewise.
+    fn print_vector { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::PrintVector
+        let v = try nwarg::vector{ &vm, routine = r, argc, i = 0 }
+        let prepend = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        if w.log.scripts {
+            world::prefix{ w = &w }
+            let head: []u8 = if prepend != 0 { "PRINTVECTOR:" } else { "" }
+            _ = @fmt(&w.io, "print: {}({}, {}, {})\n", head, v.x, v.y, v.z)
+        }
+    }
+
+    // ---- math
+    //
+    // One engine handler serves routines 67..77 (0x0053f5c0); the trigonometric routines work in
+    // degrees, in double precision here as the engine's x87 does.
+
+    #c::symbol{ name = "cos" }
+    extern fn libm_cos { x: f64 } -> f64
+    #c::symbol{ name = "sin" }
+    extern fn libm_sin { x: f64 } -> f64
+    #c::symbol{ name = "tan" }
+    extern fn libm_tan { x: f64 } -> f64
+    #c::symbol{ name = "acos" }
+    extern fn libm_acos { x: f64 } -> f64
+    #c::symbol{ name = "asin" }
+    extern fn libm_asin { x: f64 } -> f64
+    #c::symbol{ name = "atan" }
+    extern fn libm_atan { x: f64 } -> f64
+    #c::symbol{ name = "log" }
+    extern fn libm_log { x: f64 } -> f64
+    #c::symbol{ name = "pow" }
+    extern fn libm_pow { x: f64, y: f64 } -> f64
+    #c::symbol{ name = "sqrt" }
+    extern fn libm_sqrt { x: f64 } -> f64
+
+    const RADIANS_PER_DEGREE: f64 = 0.017453292519943295
+    const DEGREES_PER_RADIAN: f64 = 57.29578
+
+    // A double as a float without a trap on overflow or NaN.
+    fn to_f32 { x: f64 } -> f32 {
+        if x != x { return le::f32_of_bits{ bits = 0x7FC00000 } }
+        if x > 3.4028234663852886e38 { return le::f32_of_bits{ bits = 0x7F800000 } }
+        if x < -3.4028234663852886e38 { return le::f32_of_bits{ bits = 0xFF800000 } }
+        return @as(f32, x)
+    }
+
+    fn is_math_one { routine: u16 } -> bool {
+        return routine == nwscript::fabs or routine == nwscript::cos or routine == nwscript::sin or
+            routine == nwscript::tan or routine == nwscript::acos or routine == nwscript::asin or
+            routine == nwscript::atan or routine == nwscript::log or routine == nwscript::sqrt
+    }
+
+    // fabs, cos, sin, tan (degrees), acos, asin (degrees; 0 outside -1..1), atan (degrees), log
+    // (natural; 0 for x <= 0), sqrt (0 for x <= 0).
+    fn math_one { mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let f = try nwarg::float{ &vm, routine, argc, i = 0 }
+        let x = @as(f64, f)
+        let mut y: f64 = 0.0
+        if routine == nwscript::fabs { y = if x < 0.0 { -x } else { x } }
+        else if routine == nwscript::cos { y = libm_cos{ x = x * RADIANS_PER_DEGREE } }
+        else if routine == nwscript::sin { y = libm_sin{ x = x * RADIANS_PER_DEGREE } }
+        else if routine == nwscript::tan { y = libm_tan{ x = x * RADIANS_PER_DEGREE } }
+        else if routine == nwscript::acos { if x >= -1.0 and x <= 1.0 { y = libm_acos{ x } * DEGREES_PER_RADIAN } }
+        else if routine == nwscript::asin { if x >= -1.0 and x <= 1.0 { y = libm_asin{ x } * DEGREES_PER_RADIAN } }
+        else if routine == nwscript::atan { y = libm_atan{ x } * DEGREES_PER_RADIAN }
+        else if routine == nwscript::log { if x > 0.0 { y = libm_log{ x } } }
+        else if routine == nwscript::sqrt { if x > 0.0 { y = libm_sqrt{ x } } }
+        try nwvm::push_float{ &vm, v = to_f32{ x = y } }
+    }
+
+    // int abs(int nValue): the most negative number stays itself.
+    fn abs { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::abs, argc, i = 0 }
+        try nwvm::push_int{ &vm, v = if n < 0 { @wrap_sub(0, n) } else { n } }
+    }
+
+    // float pow(float fValue, float fExponent): 0 for 0 raised to a negative power.
+    fn pow { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::pow
+        let base = try nwarg::float{ &vm, routine = r, argc, i = 0 }
+        let exponent = try nwarg::float{ &vm, routine = r, argc, i = 1 }
+        let mut y: f64 = 0.0
+        if base != 0.0 or exponent >= 0.0 { y = libm_pow{ x = @as(f64, base), y = @as(f64, exponent) } }
+        try nwvm::push_float{ &vm, v = to_f32{ x = y } }
+    }
+
+    // float FeetToMeters / YardsToMeters
+    fn convert_length { mut vm: nwvm::Vm, argc: u8, routine: u16, per_unit: f32 } -> ! {
+        let v = try nwarg::float{ &vm, routine, argc, i = 0 }
+        try nwvm::push_float{ &vm, v = v * per_unit }
+    }
+
+    // float RoundsToSeconds (3 s) / TurnsToSeconds (30 s) (0x00544e50; the prototype's comment
+    // says 6 s rounds, the engine uses 3).
+    fn to_seconds { mut vm: nwvm::Vm, argc: u8, routine: u16, per_unit: f32 } -> ! {
+        let n = try nwarg::int{ &vm, routine, argc, i = 0 }
+        try nwvm::push_float{ &vm, v = @as(f32, n) * per_unit }
+    }
+
+    // float HoursToSeconds(int nHours): the module's real minutes per game hour, 60 s each.
+    fn hours_to_seconds { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::HoursToSeconds, argc, i = 0 }
+        let per_hour = @as(f32, clock::ms_per_hour{ c = w.clock } / 60000)
+        try nwvm::push_float{ &vm, v = per_hour * @as(f32, n) * 60.0 }
+    }
+
+    // ---- vectors
+
+    // float VectorMagnitude(vector vVector)
+    fn vector_magnitude { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let v = try nwarg::vector{ &vm, routine = nwscript::VectorMagnitude, argc, i = 0 }
+        try nwvm::push_float{ &vm, v = math::sqrtf{ x = v.x * v.x + v.y * v.y + v.z * v.z } }
+    }
+
+    // vector VectorNormalize(vector vVector): the zero vector stays; a vector shorter than 1e-9
+    // becomes (1, 0, 0) (Vector::Normalize).
+    fn vector_normalize { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let v = try nwarg::vector{ &vm, routine = nwscript::VectorNormalize, argc, i = 0 }
+        if v.x == 0.0 and v.y == 0.0 and v.z == 0.0 {
+            try nwvm::push_vector{ &vm, v }
+            return
+        }
+        let length = math::sqrtf{ x = v.x * v.x + v.y * v.y + v.z * v.z }
+        if length < 0.000000001 {
+            try nwvm::push_vector{ &vm, v = nwvm::Vector{ x = 1.0, y = 0.0, z = 0.0 } }
+            return
+        }
+        let k = 1.0 / length
+        try nwvm::push_vector{ &vm, v = nwvm::Vector{ x = v.x * k, y = v.y * k, z = v.z * k } }
+    }
+
+    // vector Vector(float x = 0.0, float y = 0.0, float z = 0.0)
+    fn make_vector { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::Vector
+        let x = try nwarg::float{ &vm, routine = r, argc, i = 0 }
+        let y = try nwarg::float{ &vm, routine = r, argc, i = 1 }
+        let z = try nwarg::float{ &vm, routine = r, argc, i = 2 }
+        try nwvm::push_vector{ &vm, v = nwvm::Vector{ x, y, z } }
+    }
+
+    // vector AngleToVector(float fAngle): the unit vector at fAngle degrees from +X.
+    fn angle_to_vector { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let a = try nwarg::float{ &vm, routine = nwscript::AngleToVector, argc, i = 0 }
+        let rad = @as(f64, a) * RADIANS_PER_DEGREE
+        let x = to_f32{ x = libm_cos{ x = rad } }
+        let y = to_f32{ x = libm_sin{ x = rad } }
+        try nwvm::push_vector{ &vm, v = nwvm::Vector{ x, y, z = 0.0 } }
+    }
+
+    // float VectorToAngle(vector vVector): degrees from +X, 0..360 (the inverse of
+    // AngleToVector; the engine's handler 0x005451c0 is acos of the normalised x, which is not
+    // in degrees for y >= 0, and no shipped script calls it).
+    fn vector_to_angle { mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let v = try nwarg::vector{ &vm, routine = nwscript::VectorToAngle, argc, i = 0 }
+        let length = math::sqrtf{ x = v.x * v.x + v.y * v.y + v.z * v.z }
+        let mut angle: f32 = 0.0
+        if length >= 0.000000001 {
+            angle = math::degrees{ radians = math::atan2f{ y = v.y, x = v.x } }
+            if angle < 0.0 { angle = angle + 360.0 }
+        }
+        try nwvm::push_float{ &vm, v = angle }
+    }
+}

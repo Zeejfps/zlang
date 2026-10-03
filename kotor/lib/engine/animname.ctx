@@ -1,0 +1,98 @@
+// Internal animation ids (objects.md `+0xd4`: 10000 stand, 10002 walk, ...) and the model
+// animation names they play. The client's own table (0x0069f650) hasn't been read; this one is
+// ours, from the meaning of each id (actions.md 3.9's routine mapping, movement.md 3.6) and the
+// names in animations.2da (models-usage.md, Animation names). Creature models of type S and L use
+// the `c` prefix (cpause1, cwalk), which `name_for` adds.
+namespace animname {
+    struct Entry { id: u32, name: []u8, looping: bool }
+
+    const TABLE: [44]Entry = [
+        Entry{ id = 10000, name = "pause1", looping = true },
+        Entry{ id = 10001, name = "pause1", looping = true },
+        Entry{ id = 10002, name = "walk", looping = true },
+        Entry{ id = 10003, name = "walk", looping = true },
+        Entry{ id = 10004, name = "run", looping = true },
+        Entry{ id = 10006, name = "dead", looping = true },
+        Entry{ id = 10023, name = "spasm", looping = true },
+        Entry{ id = 10028, name = "taunt", looping = false },
+        Entry{ id = 10029, name = "greeting", looping = false },
+        Entry{ id = 10030, name = "listen", looping = true },
+        Entry{ id = 10032, name = "meditate", looping = true },
+        Entry{ id = 10033, name = "meditate", looping = true },
+        Entry{ id = 10034, name = "salute", looping = false },
+        Entry{ id = 10035, name = "bow", looping = false },
+        Entry{ id = 10038, name = "tlknorm", looping = true },
+        Entry{ id = 10039, name = "tlkplead", looping = true },
+        Entry{ id = 10040, name = "tlkforce", looping = true },
+        Entry{ id = 10041, name = "tlklaugh", looping = true },
+        Entry{ id = 10042, name = "tlksad", looping = true },
+        Entry{ id = 10044, name = "victory", looping = false },
+        Entry{ id = 10052, name = "pause2", looping = true },
+        Entry{ id = 10053, name = "hturnl", looping = false },
+        Entry{ id = 10054, name = "hturnr", looping = false },
+        Entry{ id = 10055, name = "pausesh", looping = false },
+        Entry{ id = 10056, name = "pausebrd", looping = false },
+        Entry{ id = 10057, name = "pausetrd", looping = true },
+        Entry{ id = 10058, name = "pausedrnk", looping = true },
+        Entry{ id = 10059, name = "getfromgnd", looping = false },
+        Entry{ id = 10060, name = "getfromcntr", looping = false },
+        Entry{ id = 10070, name = "inject", looping = false },
+        Entry{ id = 10073, name = "on", looping = false },
+        Entry{ id = 10074, name = "off", looping = false },
+        Entry{ id = 10075, name = "open", looping = false },
+        Entry{ id = 10076, name = "close", looping = false },
+        Entry{ id = 10118, name = "ready", looping = false },
+        Entry{ id = 10120, name = "flirt", looping = true },
+        Entry{ id = 10121, name = "usecomp", looping = false },
+        Entry{ id = 10122, name = "dance", looping = true },
+        Entry{ id = 10123, name = "dance1", looping = true },
+        Entry{ id = 10124, name = "horror", looping = true },
+        Entry{ id = 10125, name = "usecomplp", looping = true },
+        Entry{ id = 10127, name = "activate", looping = false },
+        Entry{ id = 10137, name = "sleep", looping = true },
+        Entry{ id = 10151, name = "pause3", looping = true },
+    ]
+
+    fn find { id: u32 } -> ?Entry {
+        let mut i: usize = 0
+        while i < TABLE.len {
+            if TABLE[i].id == id { return TABLE[i] }
+            i = i + 1
+        }
+        return null
+    }
+
+    // The model animation an internal id plays ("" for none), and whether it loops.
+    fn name_of { id: u32 } -> []u8 {
+        let e = find{ id } ifnull { return "" }
+        return e.name
+    }
+
+    fn loops { id: u32 } -> bool {
+        let e = find{ id } ifnull { return true }
+        return e.looping
+    }
+
+    // Plays once and ends (animations.2da FireForget), as PLAYANIMATION times it.
+    fn is_fire_forget { w: *world::World, id: u32 } -> bool { return not loops{ id } }
+
+    // A script's ANIMATION_* constant as the internal id it plays on a creature (actions.md 3.9;
+    // `0x00540550`), placeables 200..213 as theirs; anything else as it is.
+    fn from_script { constant: i32, kind: obj::Kind } -> u32 {
+        if kind == obj::Kind::placeable {
+            if constant >= 200 and constant <= 203 { return @as(u32, 10073 + constant - 200) }
+            if constant >= 204 and constant <= 206 { return @as(u32, 10106 + constant - 204) }
+            if constant >= 207 and constant <= 213 { return @as(u32, 10110 + constant - 207) }
+            return 10000
+        }
+        if kind != obj::Kind::creature { return @as(u32, constant) }
+        let ids: [33]u32 = [10000, 10052, 10030, 10032, 10033, 10038, 10039, 10040, 10041, 10042,
+            10059, 10060, 10057, 10058, 10120, 10121, 10122, 10123, 10124, 10118, 10118, 10023,
+            10137, 10139, 10151, 10152, 10006, 10154, 10155, 10160, 10156, 10163, 10164]
+        if constant >= 0 and constant < 33 { return ids[@as(usize, constant)] }
+        let high: [21]u32 = [10053, 10054, 10055, 10056, 10034, 10035, 10029, 10028, 10044, 10044,
+            10044, 10000, 10070, 10125, 10126, 10127, 10150, 10129, 10130, 10142, 10159]
+        if constant >= 100 and constant <= 120 { return high[@as(usize, constant - 100)] }
+        return 10000
+    }
+}

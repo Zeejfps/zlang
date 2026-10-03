@@ -1,0 +1,178 @@
+// Engine values: the effects, events, locations and talents scripts make and pass around as
+// handles (docs/design/script.md, "Objects, strings and engine values"; engine.md, "Engine
+// values"). Two handle spaces (ours):
+//
+// - transient (bit 31 clear, from 1): made during a run, all forgotten when the outermost run
+//   ends (end_run). Handle 0 is each type's default value (RSADD pushes it).
+// - kept (bit 31 set): a copy owned by whoever kept it (a situation's cell, ...) until released.
+//
+//   let h = values::add{ s = &w.values, v = values::Value::location{ l } }     // push_engine(h)
+//   let l = values::location{ s = &w.values, handle = h }                   // default if unknown
+namespace values {
+    const KEPT: u32 = 0x80000000
+
+    // A script event (EventUserDefined, EventSpellCastAt, ...): objects.md, CScriptEvent.
+    struct ScriptEvent { kind: i32, ints: [4]i32, floats: [2]f32, objects: [4]u32 }
+
+    struct Location { position: math::Vec3, facing: f32, area: u32 }      // facing in degrees
+
+    struct Talent { kind: i32, id: i32, sub: i32, item: u32 }
+
+    // An effect until lib/rules is in (HOOK(rules): rules::Effect). Type ids are nwscript's
+    // EFFECT_TYPE_* where one fits.
+    struct Effect {
+        kind: i32,
+        subtype: i32,
+        duration_type: i32,     // DURATION_TYPE_INSTANT 0, TEMPORARY 1, PERMANENT 2
+        duration: f32,
+        ints: [8]i32,
+        floats: [4]f32,
+        objects: [2]u32,
+        creator: u32,
+        id: u32,
+    }
+
+    union Value {
+        none,
+        effect{ e: Effect },
+        event{ e: ScriptEvent },
+        location{ l: Location },
+        talent{ t: Talent },
+    }
+
+    struct Store {
+        transient: list::List(Value, heap::Heap),
+        kept: list::List(Value, heap::Heap),
+        free: list::List(u32, heap::Heap),
+        next_effect: u32,
+    }
+
+    fn new { heap: *mut heap::Heap } -> Store {
+        return Store{
+            transient = list::new(Value, heap::Heap){ realloc = heap::alloc, heap },
+            kept = list::new(Value, heap::Heap){ realloc = heap::alloc, heap },
+            free = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
+            next_effect = 1,
+        }
+    }
+
+    // A transient handle for `v`; 0 (the default value) if memory ran out.
+    fn add { mut s: Store, v: Value } -> u32 {
+        list::push{ list = &s.transient, item = v } iferr { return 0 }
+        return @trunc(u32, s.transient.len)
+    }
+
+    fn get { s: *Store, handle: u32 } -> Value {
+        if handle == 0 { return Value::none }
+        if handle & KEPT != 0 {
+            let i = @as(usize, handle & (KEPT - 1))
+            if i >= s.kept.len { return Value::none }
+            return list::items{ list = s.kept }[i]
+        }
+        let i = @as(usize, handle - 1)
+        if i >= s.transient.len { return Value::none }
+        return list::items{ list = s.transient }[i]
+    }
+
+    // A kept copy of the value behind `handle` (0 stays 0), owned by the caller until release.
+    fn keep { mut s: Store, handle: u32 } -> u32 {
+        if handle == 0 { return 0 }
+        let v = get{ s = &s, handle }
+        if v is none { return 0 }
+        let slot = list::pop{ list = &s.free }
+        if slot != null {
+            list::items{ list = s.kept }[@as(usize, slot)] = v
+            return KEPT | slot
+        }
+        list::push{ list = &s.kept, item = v } iferr { return 0 }
+        return KEPT | @trunc(u32, s.kept.len - 1)
+    }
+
+    fn release { mut s: Store, handle: u32 } {
+        if handle & KEPT == 0 { return }
+        let i = handle & (KEPT - 1)
+        if @as(usize, i) >= s.kept.len { return }
+        list::items{ list = s.kept }[@as(usize, i)] = Value::none
+        list::push{ list = &s.free, item = i } iferr {}
+    }
+
+    // The outermost script run ended: its transient values are gone.
+    fn end_run { mut s: Store } { list::clear{ list = &s.transient } }
+
+    fn is_engine_cell { t: u8 } -> bool { return t >= nwvm::EFFECT and t <= nwvm::TALENT }
+
+    // Gives each engine value a situation holds a kept copy of its own, so it outlives the run
+    // that took it (script.md, "Actions").
+    fn keep_cells { mut s: Store, situation: nwvm::Situation } {
+        let mut i: usize = 0
+        while i < situation.types.len {
+            if is_engine_cell{ t = situation.types[i] } {
+                situation.vals[i].u = keep{ &s, handle = situation.vals[i].u }
+            }
+            i = i + 1
+        }
+    }
+
+    fn release_cells { mut s: Store, situation: nwvm::Situation } {
+        let mut i: usize = 0
+        while i < situation.types.len {
+            if is_engine_cell{ t = situation.types[i] } { release{ &s, handle = situation.vals[i].u } }
+            i = i + 1
+        }
+    }
+
+    // Typed reads: the default value for handle 0, an unknown handle or another type.
+    fn no_event {} -> ScriptEvent { return ScriptEvent{ kind = 0, ints = [0; 4], floats = [0.0; 2], objects = [obj::INVALID; 4] } }
+    fn no_location {} -> Location { return Location{ position = math::vec3::zero{}, facing = 0.0, area = obj::INVALID } }
+    fn no_talent {} -> Talent { return Talent{ kind = -1, id = -1, sub = -1, item = obj::INVALID } }
+    fn no_effect {} -> Effect {
+        return Effect{ kind = 0, subtype = 0, duration_type = 0, duration = 0.0, ints = [0; 8], floats = [0.0; 4], objects = [obj::INVALID; 2], creator = obj::INVALID, id = 0 }
+    }
+
+    fn event { s: *Store, handle: u32 } -> ScriptEvent {
+        if get{ s, handle } is event{ e } { return e }
+        return no_event{}
+    }
+    fn location { s: *Store, handle: u32 } -> Location {
+        if get{ s, handle } is location{ l } { return l }
+        return no_location{}
+    }
+    fn talent { s: *Store, handle: u32 } -> Talent {
+        if get{ s, handle } is talent{ t } { return t }
+        return no_talent{}
+    }
+    fn effect { s: *Store, handle: u32 } -> Effect {
+        if get{ s, handle } is effect{ e } { return e }
+        return no_effect{}
+    }
+
+    // EQUAL/NEQUAL on two engine values, as the game compares them (script.md).
+    fn equal { s: *Store, kind: nwvm::EngineType, a: u32, b: u32 } -> bool {
+        if a == b { return true }
+        let va = get{ s, handle = a }
+        let vb = get{ s, handle = b }
+        match va {
+            none => { return vb is none }
+            effect{ e = x } => {
+                if vb is effect{ e = y } { return x.id == y.id }
+                return false
+            }
+            event{ e = x } => {
+                if vb is event{ e = y } {
+                    return x.kind == y.kind and x.ints[0] == y.ints[0] and x.ints[1] == y.ints[1] and x.objects[0] == y.objects[0]
+                }
+                return false
+            }
+            location{ l = x } => {
+                if vb is location{ l = y } {
+                    return x.position.x == y.position.x and x.position.y == y.position.y and x.position.z == y.position.z and x.facing == y.facing
+                }
+                return false
+            }
+            talent{ t = x } => {
+                if vb is talent{ t = y } { return x.kind == y.kind and x.id == y.id and x.sub == y.sub and x.item == y.item }
+                return false
+            }
+        }
+    }
+}

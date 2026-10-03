@@ -1,0 +1,68 @@
+// Notes from the world to the presentation (docs/design/engine.md, "The outbox"): what the
+// original sends the client as messages. Routines and world code append; the game loop drains
+// them each frame to the scene, audio, GUI or dialogue. lib/engine never calls those itself.
+namespace outbox {
+    enum Music: u8 { day, night, battle }
+
+    union Note {
+        play_sound{ name: resref::ResRef, object: u32, position: math::Vec3, positional: bool },
+        sound_object{ id: u32, play: bool, volume: i32 },
+        music{ kind: Music, play: bool },
+        music_row{ kind: Music, row: i32 },
+        ambient{ play: bool },
+        fade{ out: bool, wait: f32, length: f32, color: math::Vec3 },
+        movie{ name: resref::ResRef },
+        bark{ speaker: u32, strref: u32, text: Text },
+        feedback{ strref: u32, text: Text },
+        post_string{ text: Text, x: i32, y: i32, life: f32 },
+        no_clicks{ seconds: f32 },
+        conversation{ owner: u32, speaker: u32, dialog: resref::ResRef },
+        rumble{ pattern: i32 },
+    }
+
+    // Text copied into the outbox's buffer, valid until the outbox is drained.
+    struct Text { at: usize, len: usize }
+
+    struct Outbox {
+        notes: list::List(Note, heap::Heap),
+        text: list::List(u8, heap::Heap),
+        dropped: u32,
+    }
+
+    fn new { heap: *mut heap::Heap } -> Outbox {
+        return Outbox{
+            notes = list::new(Note, heap::Heap){ realloc = heap::alloc, heap },
+            text = list::new(u8, heap::Heap){ realloc = heap::alloc, heap },
+            dropped = 0,
+        }
+    }
+
+    fn post { mut out: Outbox, note: Note } {
+        list::push{ list = &out.notes, item = note } iferr { out.dropped = out.dropped + 1 }
+    }
+
+    // Copies `s` into the buffer for a note's text field.
+    fn keep_text { mut out: Outbox, s: []u8 } -> Text {
+        let at = out.text.len
+        let mut i: usize = 0
+        while i < s.len {
+            list::push{ list = &out.text, item = s[i] } iferr { return Text{ at, len = i } }
+            i = i + 1
+        }
+        return Text{ at, len = s.len }
+    }
+
+    fn text_of { out: *Outbox, t: Text } -> []u8 {
+        let all = list::items{ list = out.text }
+        if t.at + t.len > all.len { return slice::empty(u8){} }
+        return all[t.at..t.at + t.len]
+    }
+
+    fn notes { out: *Outbox } -> []mut Note { return list::items{ list = out.notes } }
+
+    // Forgets every note, after the presentation took them.
+    fn clear { mut out: Outbox } {
+        list::clear{ list = &out.notes }
+        list::clear{ list = &out.text }
+    }
+}

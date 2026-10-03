@@ -1,0 +1,408 @@
+// Routines: items and gold. Creating an item in an inventory, looking through inventories,
+// equipping (instantly: there is no equip action yet), stack sizes and credits (docs/re/
+// party-items-saves.md, 5.5 and 5.6). Until the party table exists (HOOK(party)) every creature,
+// the player included, keeps its own inventory and purse.
+namespace rt_item {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        match routine {
+            nwscript::CreateItemOnObject => { try create_item_on_object{ &w, &vm, argc } }
+            nwscript::GetItemInSlot => { try get_item_in_slot{ &w, &vm, argc } }
+            nwscript::GetFirstItemInInventory => { try get_first_item_in_inventory{ &w, &vm, argc } }
+            nwscript::GetNextItemInInventory => { try get_next_item_in_inventory{ &w, &vm, argc } }
+            nwscript::GetItemPossessedBy => { try get_item_possessed_by{ &w, &vm, argc } }
+            nwscript::GetItemPossessor => { try get_item_possessor{ &w, &vm, argc } }
+            nwscript::GetBaseItemType => { try get_base_item_type{ &w, &vm, argc } }
+            nwscript::GetItemStackSize => { try get_item_stack_size{ &w, &vm, argc } }
+            nwscript::SetItemStackSize => { try set_item_stack_size{ &w, &vm, argc } }
+            nwscript::GiveGoldToCreature => { try give_gold_to_creature{ &w, &vm, argc } }
+            nwscript::TakeGoldFromCreature => { try take_gold_from_creature{ &w, &vm, argc } }
+            nwscript::GetGold => { try get_gold{ &w, &vm, argc } }
+            nwscript::ActionEquipItem => { try action_equip_item{ &w, &vm, argc } }
+            nwscript::ActionUnequipItem => { try action_unequip_item{ &w, &vm, argc } }
+            else => { return false }
+        }
+        return true
+    }
+
+    // baseitems.2da's ItemType of the credits item, which becomes gold wherever it is put.
+    const ITEM_TYPE_CREDITS: i32 = 23
+    const MAX_GOLD: u32 = 999999999
+
+    // GetFirstItemInInventory's cursor on a placeable lives in World's heartbeat map (which keys
+    // doors, placeables and triggers by id) under the id with this bit set, which no object has;
+    // a creature has the field `inv_cursor`.
+    const CURSOR_KEY: u32 = 0x40000000
+
+    // ---- inventories
+
+    // The ids an object's inventory holds (a creature's or a placeable's; nothing for the rest).
+    fn inventory_of { o: *obj::Object } -> []mut u32 {
+        if o.ext is creature{ c } { return list::items{ list = c.inventory } }
+        if o.ext is placeable{ p } { return list::items{ list = p.inventory } }
+        return slice::empty(u32){}
+    }
+
+    fn holds_items { o: *obj::Object } -> bool { return o.ext is creature | placeable }
+
+    fn add_to_inventory { o: *mut obj::Object, item: u32 } -> bool {
+        if o.ext is creature{ c } {
+            list::push{ list = &c.inventory, item } iferr { return false }
+            return true
+        }
+        if o.ext is placeable{ p } {
+            list::push{ list = &p.inventory, item } iferr { return false }
+            return true
+        }
+        return false
+    }
+
+    // Takes `item` out of the inventory; false if it was not there.
+    fn remove_from_inventory { o: *mut obj::Object, item: u32 } -> bool {
+        let mut at: usize = 0
+        let ids = inventory_of{ o }
+        while at < ids.len and ids[at] != item { at = at + 1 }
+        if at == ids.len { return false }
+        while at + 1 < ids.len {
+            ids[at] = ids[at + 1]
+            at = at + 1
+        }
+        if o.ext is creature{ c } { c.inventory.len = c.inventory.len - 1 }
+        if o.ext is placeable{ p } { p.inventory.len = p.inventory.len - 1 }
+        return true
+    }
+
+    fn cursor_of { w: *world::World, o: *obj::Object } -> usize {
+        if o.ext is creature{ c } { return c.inv_cursor }
+        return @as(usize, map::get{ m = w.heartbeats, key = CURSOR_KEY | o.id } ifnull 0)
+    }
+
+    fn set_cursor { mut w: world::World, o: *mut obj::Object, at: usize } {
+        if o.ext is creature{ c } {
+            c.inv_cursor = at
+            return
+        }
+        map::put{ m = &w.heartbeats, key = CURSOR_KEY | o.id, value = @as(u64, at) } iferr {}
+    }
+
+    // The item at the cursor or after it, the cursor moved past it; OBJECT_INVALID at the end.
+    fn step_cursor { mut w: world::World, o: *mut obj::Object } -> u32 {
+        let ids = inventory_of{ o }
+        let mut at = cursor_of{ w = &w, o }
+        while at < ids.len {
+            let id = ids[at]
+            at = at + 1
+            if world::is_valid{ w = &w, id } {
+                set_cursor{ &w, o, at }
+                return id
+            }
+        }
+        set_cursor{ &w, o, at }
+        return obj::INVALID
+    }
+
+    // object GetFirstItemInInventory(object oTarget = OBJECT_SELF)
+    fn get_first_item_in_inventory { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetFirstItemInInventory, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        set_cursor{ &w, o, at = 0 }
+        try nwvm::push_object{ &vm, id = step_cursor{ &w, o } }
+    }
+
+    // object GetNextItemInInventory(object oTarget = OBJECT_SELF)
+    fn get_next_item_in_inventory { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetNextItemInInventory, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        try nwvm::push_object{ &vm, id = step_cursor{ &w, o } }
+    }
+
+    // object GetItemPossessedBy(object oCreature, string sItemTag): carried, not equipped.
+    fn get_item_possessed_by { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetItemPossessedBy, argc, i = 0 }
+        let tag = try nwarg::string{ &vm, routine = nwscript::GetItemPossessedBy, argc, i = 1 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        let ids = inventory_of{ o }
+        let mut found = obj::INVALID
+        let mut k: usize = 0
+        while k < ids.len {
+            let it = world::object{ w = &w, id = ids[k] }
+            k = k + 1
+            if it != null and ci::eq{ a = it.tag, b = tag } {
+                found = it.id
+                break
+            }
+        }
+        try nwvm::push_object{ &vm, id = found }
+    }
+
+    // object GetItemPossessor(object oItem)
+    fn get_item_possessor { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetItemPossessor, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        let it = obj::item{ o } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        try nwvm::push_object{ &vm, id = if world::is_valid{ w = &w, id = it.possessor } { it.possessor } else { obj::INVALID } }
+    }
+
+    // object GetItemInSlot(int nInventorySlot, object oCreature = OBJECT_SELF)
+    fn get_item_in_slot { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let slot = try nwarg::int{ &vm, routine = nwscript::GetItemInSlot, argc, i = 0 }
+        let id = try nwarg::object{ &vm, routine = nwscript::GetItemInSlot, argc, i = 1 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        let c = obj::creature{ o } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        if slot < 0 or slot >= @as(i32, obj::EQUIP_SLOTS) {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        let item = c.equipped[@as(usize, slot)]
+        try nwvm::push_object{ &vm, id = if world::is_valid{ w = &w, id = item } { item } else { obj::INVALID } }
+    }
+
+    // ---- item records
+
+    // How many of a base item fit in one stack (baseitems.2da Stacking, at least 1).
+    fn max_stack { w: *world::World, base: u32 } -> u32 {
+        let n = twoda::get_int{ t = w.tables.baseitems, row = @as(usize, base), column = "stacking" } ifnull 1
+        return if n < 1 { 1 } else { @as(u32, n) }
+    }
+
+    fn is_credits { w: *world::World, base: u32 } -> bool {
+        let t = twoda::get_int{ t = w.tables.baseitems, row = @as(usize, base), column = "itemtype" } ifnull 0
+        return t == ITEM_TYPE_CREDITS
+    }
+
+    // int GetBaseItemType(object oItem)
+    fn get_base_item_type { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetBaseItemType, argc, i = 0 }
+        let none = nwconst::BASE_ITEM_INVALID
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = none }
+            return
+        }
+        let it = obj::item{ o } ifnull {
+            try nwvm::push_int{ &vm, v = none }
+            return
+        }
+        try nwvm::push_int{ &vm, v = @as(i32, it.base) }
+    }
+
+    // int GetItemStackSize(object oItem)
+    fn get_item_stack_size { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetItemStackSize, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        let it = obj::item{ o } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        try nwvm::push_int{ &vm, v = @as(i32, it.stack) }
+    }
+
+    // void SetItemStackSize(object oItem, int nStackSize): clamped to 1..the base item's maximum.
+    fn set_item_stack_size { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::SetItemStackSize, argc, i = 0 }
+        let n = try nwarg::int{ &vm, routine = nwscript::SetItemStackSize, argc, i = 1 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        let it = obj::item{ o } ifnull { return }
+        let most = max_stack{ w = &w, base = it.base }
+        it.stack = if n < 1 { 1 } else if @as(u32, n) > most { most } else { @as(u32, n) }
+    }
+
+    // ---- creating items
+
+    // An item made from `template` in `target`'s inventory, as AcquireItem does it: the stack is
+    // clamped to what the base item allows and merged into a stack of the same template with
+    // room; credits become gold. Returns the item that holds the new ones (OBJECT_INVALID when
+    // nothing was made, and for credits).
+    fn create_item { mut w: world::World, template: []u8, target: u32, stack: i32 } -> u32 {
+        let holder = world::object{ w = &w, id = target } ifnull { return obj::INVALID }
+        if not holds_items{ o = holder } or stack < 1 { return obj::INVALID }
+        let id = tmpl::spawn_item{ &w, template, possessor = target } iferr { return obj::INVALID }
+        let o = world::object{ w = &w, id } ifnull { return obj::INVALID }
+        let it = obj::item{ o } ifnull { return id }
+        let most = max_stack{ w = &w, base = it.base }
+        it.stack = if @as(u32, stack) > most { most } else { @as(u32, stack) }
+        if is_credits{ w = &w, base = it.base } {
+            if obj::creature{ o = holder } is some{ value = c } { c.gold = add_gold{ have = c.gold, n = @as(i64, it.stack) } }
+            world::destroy{ &w, id }
+            return obj::INVALID
+        }
+        if most > 1 {
+            let ids = inventory_of{ o = holder }
+            let mut k: usize = 0
+            while k < ids.len {
+                let other = world::object{ w = &w, id = ids[k] }
+                k = k + 1
+                if other == null or not resref::eq{ a = other.template, b = o.template } { continue }
+                let oi = obj::item{ o = other } ifnull { continue }
+                if oi.stack >= most { continue }
+                let room = most - oi.stack
+                if it.stack <= room {
+                    oi.stack = oi.stack + it.stack
+                    world::destroy{ &w, id }
+                    return other.id
+                }
+                oi.stack = most
+                it.stack = it.stack - room
+            }
+        }
+        if not add_to_inventory{ o = holder, item = id } {
+            world::destroy{ &w, id }
+            return obj::INVALID
+        }
+        return id
+    }
+
+    // object CreateItemOnObject(string sItemTemplate, object oTarget = OBJECT_SELF, int nStackSize = 1)
+    fn create_item_on_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::CreateItemOnObject
+        let template = try nwarg::string{ &vm, routine = r, argc, i = 0 }
+        let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let stack = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        try nwvm::push_object{ &vm, id = create_item{ &w, template, target, stack } }
+    }
+
+    // ---- gold
+
+    fn add_gold { have: u32, n: i64 } -> u32 {
+        let total = @as(i64, have) + n
+        if total < 0 { return 0 }
+        if total > @as(i64, MAX_GOLD) { return MAX_GOLD }
+        return @trunc(u32, total)
+    }
+
+    // void GiveGoldToCreature(object oCreature, int nGP)
+    fn give_gold_to_creature { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GiveGoldToCreature, argc, i = 0 }
+        let n = try nwarg::int{ &vm, routine = nwscript::GiveGoldToCreature, argc, i = 1 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        c.gold = add_gold{ have = c.gold, n = @as(i64, n) }
+    }
+
+    // void TakeGoldFromCreature(int nAmount, object oCreatureToTakeFrom, int bDestroy = FALSE):
+    // at most what the creature has; unless destroyed it goes to the caller, as gold to a
+    // creature and as a credits item to a placeable.
+    fn take_gold_from_creature { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::TakeGoldFromCreature
+        let n = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let destroy = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let amount: u32 = if n < 1 { 0 } else if @as(u32, n) > c.gold { c.gold } else { @as(u32, n) }
+        if amount == 0 { return }
+        c.gold = c.gold - amount
+        if destroy != 0 { return }
+        let me = nwvm::self_object{ vm }
+        let caller = world::object{ w = &w, id = me } ifnull { return }
+        if obj::creature{ o = caller } is some{ value = cc } {
+            cc.gold = add_gold{ have = cc.gold, n = @as(i64, amount) }
+        } else if obj::placeable{ o = caller } != null {
+            _ = create_item{ &w, template = "g_i_credits001", target = me, stack = @as(i32, amount) }
+        }
+    }
+
+    // int GetGold(object oTarget = OBJECT_SELF): a creature's purse; a placeable's is its first
+    // credits item's stack.
+    fn get_gold { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetGold, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        if obj::creature{ o } is some{ value = c } {
+            try nwvm::push_int{ &vm, v = @as(i32, c.gold) }
+            return
+        }
+        let ids = inventory_of{ o }
+        let mut k: usize = 0
+        while k < ids.len {
+            let other = world::object{ w = &w, id = ids[k] }
+            k = k + 1
+            if other == null { continue }
+            let it = obj::item{ o = other } ifnull { continue }
+            if is_credits{ w = &w, base = it.base } {
+                try nwvm::push_int{ &vm, v = @as(i32, it.stack) }
+                return
+            }
+        }
+        try nwvm::push_int{ &vm, v = 0 }
+    }
+
+    // ---- equipping
+
+    // Takes whatever is in `slot` off and into the inventory.
+    fn unequip_slot { mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature, slot: usize } {
+        let id = c.equipped[slot]
+        c.equipped[slot] = obj::INVALID
+        let held = world::object{ w = &w, id } ifnull { return }
+        if obj::item{ o = held } is some{ value = it } { it.equipped_slot = -1 }
+        _ = add_to_inventory{ o, item = id }
+    }
+
+    // void ActionEquipItem(object oItem, int nInventorySlot, int bInstant = FALSE): done at
+    // once whatever bInstant says; the occupant of the slot goes back to the inventory. A stack
+    // is equipped whole.
+    fn action_equip_item { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::ActionEquipItem
+        let item = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let slot = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        if argc > 2 { _ = try nwarg::int{ &vm, routine = r, argc, i = 2 } }
+        let me = world::object{ w = &w, id = nwvm::self_object{ vm } } ifnull { return }
+        let c = obj::creature{ o = me } ifnull { return }
+        let io = world::object{ w = &w, id = item } ifnull { return }
+        let it = obj::item{ o = io } ifnull { return }
+        if slot < 0 or slot >= @as(i32, obj::EQUIP_SLOTS) { return }
+        // Only what this creature carries, or what lies about, can be equipped.
+        if it.possessor != me.id and world::is_valid{ w = &w, id = it.possessor } { return }
+        let s = @as(usize, slot)
+        if c.equipped[s] == item { return }
+        if it.equipped_slot >= 0 and it.equipped_slot < @as(i32, obj::EQUIP_SLOTS) {
+            c.equipped[@as(usize, it.equipped_slot)] = obj::INVALID
+        }
+        unequip_slot{ &w, o = me, c, slot = s }
+        _ = remove_from_inventory{ o = me, item }
+        c.equipped[s] = item
+        it.equipped_slot = slot
+        it.possessor = me.id
+    }
+
+    // void ActionUnequipItem(object oItem, int bInstant = FALSE)
+    fn action_unequip_item { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::ActionUnequipItem
+        let item = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        if argc > 1 { _ = try nwarg::int{ &vm, routine = r, argc, i = 1 } }
+        let me = world::object{ w = &w, id = nwvm::self_object{ vm } } ifnull { return }
+        let c = obj::creature{ o = me } ifnull { return }
+        let mut s: usize = 0
+        while s < obj::EQUIP_SLOTS {
+            if c.equipped[s] == item {
+                unequip_slot{ &w, o = me, c, slot = s }
+                return
+            }
+            s = s + 1
+        }
+    }
+}

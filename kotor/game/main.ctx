@@ -1,0 +1,68 @@
+// The game: start-up and the frame loop (docs/design/engine.md, "The frame").
+//
+//   kotor/tools/ctxc run kotor -- --module end_m01aa
+//   kotor/tools/ctxc run kotor -- --module end_m01aa --headless --frames 90 --screenshot-at 60:kotor/out/game/m1.png
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let opts = options::parse{ &io, args } ifnull { return 2 }
+    let mut h = heap::new{ &mem }
+    let module_pages = mem::pages{ &mem, size = 268435456 } ifnull { return oom{ &io } }
+    let scratch_pages = mem::pages{ &mem, size = 134217728 } ifnull { return oom{ &io } }
+    let mut module_arena = arena::new{ buf = module_pages }
+    let mut scratch = arena::new{ buf = scratch_pages }
+    let mut rm = res::open{ &fs, heap = &h, game = opts.game } iferr err{ error } {
+        _ = @fmt(&io, "kotor: no game data at {}: {}\n", opts.game, error)
+        io::flush{ &io }
+        return 1
+    }
+    let code = run{ &io, &fs, &mem, &sdl, &h, &rm, &module_arena, &scratch, opts } iferr err{ error } {
+        _ = @fmt(&io, "kotor: failed: {}\n", error)
+        io::flush{ &io }
+        1
+    }
+    io::flush{ &io }
+    return code
+}
+
+fn oom { mut io: Io } -> i32 {
+    io::eprintln{ &io, s = "kotor: out of memory" }
+    return 1
+}
+
+fn run {
+    mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, mut h: heap::Heap, mut rm: res::Manager,
+    mut module_arena: arena::Arena, mut scratch: arena::Arena, opts: options::Options,
+} -> !i32 {
+    let w = try world::make{ fs, io, heap = &h, rm = &rm, module_arena = &module_arena, scratch = &scratch, seed = opts.seed }
+    try walkmap::load_materials{ m = &w.walk, heap = &h, table = w.tables.surfacemat }
+    elog::enable{ l = &w.log, list = opts.log }
+    let tlk_path = try path::join(heap::Heap){ realloc = heap::alloc, heap = &h, dir = opts.game, name = "dialog.tlk" }
+    w.tlk = tlk::load(heap::Heap){ &fs, realloc = heap::alloc, heap = &h, path = tlk_path } iferr err{ error } {
+        _ = @fmt(&io, "kotor: dialog.tlk: {}\n", error)
+        null
+    }
+    let mut vm = try nwvm::new(heap::Heap){ realloc = heap::alloc, heap = &h, limits = nwvm::LIMITS }
+    let engine = routines::call{ w, _ }
+    try modload::enter{ w, name = opts.module }
+    arena::reset{ heap = &scratch }
+
+    if opts.no_render {
+        let mut frame: u64 = 0
+        let dt = if opts.dt > 0.0 { opts.dt } else { 1.0 / 30.0 }
+        while opts.frames == 0 or frame < opts.frames {
+            clock::advance{ c = &w.clock, seconds = dt }
+            world::tick{ w, &vm, engine }
+            outbox::clear{ out = &w.out }
+            arena::reset{ heap = &scratch }
+            frame = frame + 1
+        }
+        report::summary{ w, routines = opts.report }
+        return 0
+    }
+    return try play::run{ &sdl, w, &vm, engine, &mem, opts }
+}
+
+// @fmt of C strings (SDL's error text) to standard output; tools/common has the rest.
+namespace kotor_out {
+    #write
+    fn put_cstring { mut io: Io, s: c::String } { io::write{ &io, to = io::Stream::out, bytes = c::bytes{ s } } }
+}

@@ -1,0 +1,226 @@
+// The area's sound (docs/design/audio.md, "How the engine should use it"): its music
+// (ambientmusic.2da, replayed after MusicDelay), its ambient bed (ambientsound.2da, looping),
+// the placed sound objects (UTS: continuous loops or sounds at intervals, positional or not),
+// and the outbox's sound notes (PlaySound, SoundObjectPlay/Stop). The listener is the camera.
+//
+//   let mut amb = ambience::make{ heap = &h, m = mixer }
+//   ambience::start_area{ &amb, &w }
+//   each frame: ambience::take{ &amb, &w, note } for each outbox note; ambience::update{ &amb, &w, eye, forward, dt }
+namespace ambience {
+    // A placed sound object's player.
+    struct Placed {
+        id: u32,
+        handle: mix::Handle,
+        wait: f32,                      // seconds until its next sound
+        next: usize,                    // its next sound in order (not Random)
+        playing: bool,                  // a continuous loop is on
+    }
+
+    struct Ambience {
+        heap: *mut heap::Heap,
+        m: *mut mix::Mixer,
+        music: mix::Handle,
+        music_bytes: []mut u8,
+        music_wait: f32,                // seconds until the track plays again; < 0 none pending
+        music_delay: f32,
+        ambient: mix::Handle,
+        ambient_bytes: []mut u8,
+        placed: list::List(Placed, heap::Heap),
+        sounds: map::Map(resref::ResRef, usize, heap::Heap),      // wave index by name
+        waves: list::List([]mut u8, heap::Heap),                  // their bytes (empty: none)
+        rng: u32,
+        started: u32,                   // sounds started, for the report
+        listener: math::Vec3,
+    }
+
+    fn make { heap: *mut heap::Heap, m: *mut mix::Mixer } -> Ambience {
+        return Ambience{
+            heap, m, music = mix::Handle{ slot = 0, id = 0 }, music_bytes = slice::empty(u8){}, music_wait = -1.0,
+            music_delay = 0.0, ambient = mix::Handle{ slot = 0, id = 0 }, ambient_bytes = slice::empty(u8){},
+            placed = list::new(Placed, heap::Heap){ realloc = heap::alloc, heap },
+            sounds = map::new(resref::ResRef, usize, heap::Heap){ realloc = heap::alloc, heap, hash = resref::hash, eq = resref::eq },
+            waves = list::new([]mut u8, heap::Heap){ realloc = heap::alloc, heap },
+            rng = 12345, started = 0, listener = math::vec3::zero{},
+        }
+    }
+
+    fn random { mut a: Ambience } -> f32 {
+        a.rng = @wrap_add(@wrap_mul(a.rng, 214013), 2531011)
+        return @as(f32, (a.rng >> 16) & 0x7FFF) / 32768.0
+    }
+
+    // A file from streammusic/ (music and ambient beds) in the heap; empty if there is none.
+    fn read_stream { mut a: Ambience, mut w: world::World, name: []u8 } -> []mut u8 {
+        if name.len == 0 { return slice::empty(u8){} }
+        let path = res::music_path(heap::Heap){ rm = w.rm.*, name, realloc = heap::alloc, heap = a.heap } iferr { return slice::empty(u8){} }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = a.heap, mem = path, count = 0 }
+        return fs::read_all(heap::Heap){ fs = &w.fs, heap = a.heap, realloc = heap::alloc, path } iferr { slice::empty(u8){} }
+    }
+
+    // A wave by name through the resource search (sound objects, PlaySound), loaded once. The
+    // bytes are kept in a list and found by index: a value looked up with a key from a local
+    // would be "derived from" it (friction/models.md).
+    fn wave { mut a: Ambience, mut w: world::World, name: resref::ResRef } -> []u8 {
+        let have = map::get{ m = a.sounds, key = name }
+        if have != null { return list::items{ list = a.waves }[have] }
+        let mut key = name
+        let found = res::load{ fs = &w.fs, rm = w.rm.*, name = resref::bytes{ r = &key }, kind = restype::Type::wav, realloc = heap::alloc, heap = a.heap } iferr { null }
+        let bytes: []mut u8 = found ifnull { slice::empty(u8){} }
+        list::push{ list = &a.waves, item = bytes } iferr { return slice::empty(u8){} }
+        map::put{ m = &a.sounds, key = name, value = a.waves.len - 1 } iferr {}
+        return list::items{ list = a.waves }[a.waves.len - 1]
+    }
+
+    fn stop_bytes { mut a: Ambience, bytes: []mut u8 } {
+        if bytes.len > 0 { _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = a.heap, mem = bytes, count = 0 } }
+    }
+
+    // Stops every sound of the area being left and forgets its sound objects (the waves stay
+    // cached in the heap; ours: a module's are few).
+    fn stop_area { mut a: Ambience } {
+        mix::stop_all{ m = a.m, group = null, fade = 0.0 }
+        stop_bytes{ &a, bytes = a.music_bytes }
+        a.music_bytes = slice::empty(u8){}
+        stop_bytes{ &a, bytes = a.ambient_bytes }
+        a.ambient_bytes = slice::empty(u8){}
+        a.music_wait = -1.0
+        list::clear{ list = &a.placed }
+    }
+
+    // The area's music and ambient bed, and a player for each sound object.
+    fn start_area { mut a: Ambience, mut w: world::World } {
+        let ao = world::object{ w = &w, id = w.area } ifnull { return }
+        let area = obj::area{ o = ao } ifnull { return }
+        a.music_delay = @as(f32, area.music_delay) / 1000.0
+        play_music{ &a, &w, row = area.music_day }
+        let bed = twoda::get_string{ t = w.tables.ambientsound, row = @as(usize, area.ambient_day), column = "resource" } ifnull ""
+        mix::stop{ m = a.m, h = a.ambient, fade = 0.0 }
+        stop_bytes{ &a, bytes = a.ambient_bytes }
+        a.ambient_bytes = read_stream{ &a, &w, name = bed }
+        if a.ambient_bytes.len > 0 {
+            let mut p = mix::sound_2d{ group = mix::Group::sfx, volume = @as(f32, area.ambient_day_volume) / 127.0 }
+            p.looping = true
+            a.ambient = mix::play{ m = a.m, bytes = a.ambient_bytes, p } iferr { mix::Handle{ slot = 0, id = 0 } }
+            a.started = a.started + 1
+        }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.kind != obj::Kind::sound or o.destroyed { continue }
+            list::push{ list = &a.placed, item = Placed{ id = o.id, handle = mix::Handle{ slot = 0, id = 0 }, wait = random{ &a } * 2.0, next = 0, playing = false } } iferr {}
+        }
+    }
+
+    // Starts ambientmusic.2da row `row` (stopping what plays); row 0 or a blank resource: silence.
+    fn play_music { mut a: Ambience, mut w: world::World, row: i32 } {
+        mix::stop{ m = a.m, h = a.music, fade = 1.0 }
+        stop_bytes{ &a, bytes = a.music_bytes }
+        a.music_bytes = slice::empty(u8){}
+        a.music_wait = -1.0
+        if row <= 0 { return }
+        let name = twoda::get_string{ t = w.tables.ambientmusic, row = @as(usize, row), column = "resource" } ifnull ""
+        a.music_bytes = read_stream{ &a, &w, name }
+        if a.music_bytes.len == 0 { return }
+        // prioritygroups.2da's Streams_Music volume, 64 of 127 (audio.md).
+        a.music = mix::play{ m = a.m, bytes = a.music_bytes, p = mix::sound_2d{ group = mix::Group::music, volume = 0.5 } } iferr { mix::Handle{ slot = 0, id = 0 } }
+        a.started = a.started + 1
+        if w.log.module {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "music {} ({} bytes)\n", name, a.music_bytes.len)
+        }
+    }
+
+    // One outbox note, if it is a sound.
+    fn take { mut a: Ambience, mut w: world::World, note: outbox::Note } {
+        match note {
+            play_sound{ name, position, positional } => {
+                let bytes = wave{ &a, &w, name }
+                if bytes.len == 0 { return }
+                let p = if positional { mix::sound_3d{ group = mix::Group::sfx, volume = 1.0, position, min_distance = 3.0, max_distance = 30.0 } } else { mix::sound_2d{ group = mix::Group::sfx, volume = 1.0 } }
+                _ = mix::play{ m = a.m, bytes, p } iferr { mix::Handle{ slot = 0, id = 0 } }
+                a.started = a.started + 1
+            }
+            sound_object{ id, play } => {
+                if play { return }
+                let placed = list::items{ list = a.placed }
+                let mut i: usize = 0
+                while i < placed.len {
+                    if placed[i].id == id {
+                        mix::stop{ m = a.m, h = placed[i].handle, fade = 0.2 }
+                        placed[i].playing = false
+                    }
+                    i = i + 1
+                }
+            }
+            music_row{ kind, row } => { if kind == outbox::Music::day { play_music{ &a, &w, row } } }
+            else => {}
+        }
+    }
+
+    // Moves the listener to the camera, replays the music after its delay, and runs the sound
+    // objects' schedules.
+    fn update { mut a: Ambience, mut w: world::World, eye: math::Vec3, forward: math::Vec3, dt: f32 } {
+        mix::set_listener{ m = a.m, position = eye, forward, up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } }
+        a.listener = eye
+        if a.music_bytes.len > 0 and not mix::is_playing{ m = a.m, h = a.music } {
+            if a.music_wait < 0.0 { a.music_wait = a.music_delay } else {
+                a.music_wait = a.music_wait - dt
+                if a.music_wait <= 0.0 {
+                    a.music = mix::play{ m = a.m, bytes = a.music_bytes, p = mix::sound_2d{ group = mix::Group::music, volume = 0.5 } } iferr { mix::Handle{ slot = 0, id = 0 } }
+                    a.music_wait = -1.0
+                }
+            }
+        }
+        let placed = list::items{ list = a.placed }
+        let mut i: usize = 0
+        while i < placed.len {
+            update_placed{ &a, &w, p = &placed[i], dt }
+            i = i + 1
+        }
+    }
+
+    fn update_placed { mut a: Ambience, mut w: world::World, p: *mut Placed, dt: f32 } {
+        let o = world::object{ w = &w, id = p.id } ifnull { return }
+        let s = obj::sound{ o } ifnull { return }
+        if not s.active or s.sounds.len == 0 { return }
+        if s.continuous {
+            if p.playing and mix::is_playing{ m = a.m, h = p.handle } { return }
+            if s.positional and math::vec3::distance{ a = o.position, b = a.listener } > s.max_distance + 2.0 { return }
+            p.handle = start_one{ &a, &w, s, o, index = 0, looping = true }
+            p.playing = mix::is_playing{ m = a.m, h = p.handle }
+            return
+        }
+        if mix::is_playing{ m = a.m, h = p.handle } { return }
+        p.wait = p.wait - dt
+        if p.wait > 0.0 { return }
+        // Out of earshot: try again in a second (ours: no voice for what can't be heard).
+        if s.positional and math::vec3::distance{ a = o.position, b = a.listener } > s.max_distance {
+            p.wait = 1.0
+            return
+        }
+        let index = if s.random { @as(usize, random{ &a } * @as(f32, s.sounds.len)) % s.sounds.len } else { p.next % s.sounds.len }
+        p.next = index + 1
+        p.handle = start_one{ &a, &w, s, o, index, looping = false }
+        let variation = @as(f32, s.interval_variation) * (random{ &a } * 2.0 - 1.0)
+        p.wait = math::max{ a = (@as(f32, s.interval) + variation) / 1000.0, b = 1.0 }
+        if not s.looping and not s.continuous and index + 1 >= s.sounds.len and not s.random { s.active = false }
+    }
+
+    fn start_one { mut a: Ambience, mut w: world::World, s: *obj::Sound, o: *obj::Object, index: usize, looping: bool } -> mix::Handle {
+        let bytes = wave{ &a, &w, name = s.sounds[index] }
+        let none = mix::Handle{ slot = 0, id = 0 }
+        if bytes.len == 0 { return none }
+        let volume = @as(f32, s.volume) / 127.0
+        let mut p = if s.positional {
+            let mut at = o.position
+            at.z = at.z + s.elevation
+            mix::sound_3d{ group = mix::Group::sfx, volume, position = at, min_distance = s.min_distance, max_distance = s.max_distance }
+        } else { mix::sound_2d{ group = mix::Group::sfx, volume } }
+        p.looping = looping
+        let h = mix::play{ m = a.m, bytes, p } iferr { return none }
+        a.started = a.started + 1
+        return h
+    }
+}

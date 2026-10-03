@@ -1,0 +1,519 @@
+// Game objects: the common header every object has, its kind's own data, and the table that
+// finds an object by id (docs/design/engine.md, "Objects"; docs/re/objects.md).
+//
+//   let o = world::object{ w = &w, id } ifnull { ... }          // ?*mut obj::Object
+//   let c = obj::creature{ o } ifnull { ... }                   // its creature data, if it is one
+//
+// Objects live one by one in the session heap, so a *mut Object stays valid until the object is
+// destroyed (world::sweep). Code that keeps one across a script run looks the id up again.
+namespace obj {
+    // The id no object has (OBJECT_INVALID).
+    const INVALID: u32 = 0x7F000000
+    // Player characters count down from here (objects.md, Ids).
+    const FIRST_CHARACTER: u32 = 0x7FFFFFFF
+
+    enum Kind: u8 { module, area, creature, item, trigger, placeable, door, aoe, waypoint, encounter, store, sound }
+
+    // The script's OBJECT_TYPE_* for a kind (objects.md, Object types); 0 for the module and area.
+    fn object_type { kind: Kind } -> i32 {
+        match kind {
+            creature => { return 1 }
+            item => { return 2 }
+            trigger => { return 4 }
+            door => { return 8 }
+            aoe => { return 16 }
+            waypoint => { return 32 }
+            placeable => { return 64 }
+            store => { return 128 }
+            encounter => { return 256 }
+            sound => { return 512 }
+            module | area => { return 0 }
+        }
+    }
+
+    // Every kind's script hooks, one enum: each kind fills the slots it has (objects.md, Script
+    // slots; the module's 15 from the IFO, the area's 4 from the ARE).
+    enum Slot: u8 {
+        heartbeat, notice, spell_at, attacked, damaged, disturbed, end_round, dialogue, spawn,
+        rested, death, user_defined, blocked, end_dialogue,
+        open, closed, lock, unlock, used, click, fail_to_open, enter, exit, trap_triggered, disarm,
+        melee_attacked, inv_disturbed, exhausted, open_store,
+        mod_load, mod_start, client_enter, client_leave, activate_item, acquire_item,
+        unacquire_item, player_death, player_dying, spawn_button, player_rest, player_level_up,
+        equip_item,
+    }
+    const SLOT_COUNT: usize = 42
+
+    // Dirty bits the scene reads (objects.md, `+0x1fc`).
+    const DIRTY_ANIMATION: u32 = 1
+    const DIRTY_POSITION: u32 = 2
+    const DIRTY_ORIENTATION: u32 = 4
+
+    // Internal animation ids (objects.md `+0xd4`; movement.md 3.6). The scene maps them to model
+    // animation names (lib/scene/animname.ctx).
+    const ANIM_STAND: u32 = 10000
+    const ANIM_READY: u32 = 10001
+    const ANIM_WALK: u32 = 10002
+    const ANIM_WALK_BACK: u32 = 10003
+    const ANIM_RUN: u32 = 10004
+    const ANIM_DEAD: u32 = 10006
+
+    // A display name: a dialog.tlk strref (0xFFFFFFFF none) or text of its own (heap).
+    struct Name { strref: u32, text: []mut u8 }
+
+    // KOTOR's local variables (SWVarTable): 96 booleans, 8 numbers (gff-save.md).
+    struct Locals { bools: [3]u32, numbers: [8]u8 }
+
+    // What event scripts ask about, recorded on the object before its slot runs (engine.md,
+    // "The common header"). Add fields as routines need them; event delivery sets them.
+    struct Context {
+        entering: u32,            // GetEnteringObject (area, trigger, encounter)
+        exiting: u32,             // GetExitingObject
+        user_event: i32,          // GetUserDefinedEventNumber
+        last_opened_by: u32,
+        last_closed_by: u32,
+        last_used_by: u32,
+        last_locked_by: u32,
+        last_unlocked_by: u32,
+        last_perceived: u32,
+        perceived_seen: bool,
+        perceived_heard: bool,
+        perceived_vanished: bool,
+        perceived_inaudible: bool,
+        last_attacker: u32,
+        last_damager: u32,
+        last_speaker: u32,
+        last_disturbed: u32,
+        run_script_var: i32,      // ExecuteScript's nScriptVar, read by GetRunScriptVar
+        clicked_by: u32,
+        blocker: u32,             // OnBlocked: GetBlockingDoor
+    }
+
+    fn no_context {} -> Context {
+        return Context{
+            entering = INVALID, exiting = INVALID, user_event = 0, last_opened_by = INVALID,
+            last_closed_by = INVALID, last_used_by = INVALID, last_locked_by = INVALID,
+            last_unlocked_by = INVALID, last_perceived = INVALID, perceived_seen = false,
+            perceived_heard = false, perceived_vanished = false, perceived_inaudible = false,
+            last_attacker = INVALID, last_damager = INVALID, last_speaker = INVALID,
+            last_disturbed = INVALID, run_script_var = 0, clicked_by = INVALID, blocker = INVALID,
+        }
+    }
+
+    // The header every object has (objects.md, CSWSObject members).
+    struct Object {
+        id: u32,
+        kind: Kind,
+        tag: []mut u8,                        // lower-cased, as SetTag does; heap
+        template: resref::ResRef,           // the blueprint it came from
+        name: Name,
+        area: u32,
+        position: math::Vec3,
+        orientation: math::Vec3,            // unit facing vector, z = 0
+        scripts: [42]resref::ResRef,        // by Slot; empty: none
+        locals: Locals,
+        actions: list::List(actions::Action, heap::Heap),
+        action_group: u16,                  // the group of the last action added
+        commandable: bool,
+        hp: i32,
+        hp_max: i32,
+        hp_temp: i32,
+        plot: bool,
+        min_one_hp: bool,
+        animation: u32,                     // internal animation id; 10000 stands
+        anim_speed: f32,
+        dirty: u32,
+        ai_level: i32,                      // 0..4; -1: not updated
+        conversation: resref::ResRef,
+        faction: u32,
+        ctx: Context,
+        destroyed: bool,
+        ext: Ext,
+    }
+
+    union Ext {
+        none,
+        module{ m: *mut Module },
+        area{ a: *mut Area },
+        creature{ c: *mut Creature },
+        item{ i: *mut Item },
+        trigger{ t: *mut Trigger },
+        placeable{ p: *mut Placeable },
+        door{ d: *mut Door },
+        waypoint{ wp: *mut Waypoint },
+        sound{ s: *mut Sound },
+        encounter{ e: *mut Encounter },
+        store{ st: *mut Store },
+        aoe{ a: *mut Aoe },
+    }
+
+    // Equipment slots (inventory.md: the UTC Equip_ItemList struct id is 1 << slot).
+    const SLOT_HEAD: usize = 0
+    const SLOT_BODY: usize = 1
+    const SLOT_HANDS: usize = 3
+    const SLOT_RIGHT_WEAPON: usize = 4
+    const SLOT_LEFT_WEAPON: usize = 5
+    const SLOT_LEFT_ARM: usize = 7
+    const SLOT_RIGHT_ARM: usize = 8
+    const SLOT_IMPLANT: usize = 9
+    const SLOT_BELT: usize = 10
+    const SLOT_CLAW1: usize = 14
+    const SLOT_CLAW2: usize = 15
+    const SLOT_CLAW3: usize = 16
+    const SLOT_HIDE: usize = 17
+    const EQUIP_SLOTS: usize = 20
+
+    struct Creature {
+        appearance: u32,                    // appearance.2da row
+        gender: u32,
+        race: u32,
+        subrace: u32,
+        body_variation: u8,
+        texture_variation: u8,
+        portrait: u32,
+        soundset: u32,
+        is_pc: bool,
+        walk_rate: f32,                     // m/s (creaturespeed.2da, movement.md 3.1)
+        run_rate: f32,
+        perspace: f32,                      // appearance.2da PERSPACE
+        creperspace: f32,
+        height: f32,
+        equipped: [20]u32,                  // item ids by equipment slot; INVALID: empty
+        inventory: list::List(u32, heap::Heap),
+        // Placeholder stats until lib/rules (HOOK(rules): stats: rules::Creature).
+        abilities: [6]u8,
+        hit_dice: u32,
+        classes: [3]u32,
+        class_levels: [3]u32,
+        good_evil: u32,
+        perception_range: u32,
+        // AI timers (gameloop.md 2.4).
+        spawn_fired: bool,
+        last_heartbeat: u64,                // world ms
+        heartbeat_interval: u32,            // ms: 3000 + rand() % 1200
+        // Movement (movement.md 3).
+        speed: f32,                         // current speed, m/s: drives walk/run animation
+        speed_factor: f32,                  // GetSpeedFactor's f_prev
+        path: list::List(math::Vec3, heap::Heap),   // waypoints still to walk
+        path_next: usize,
+        moving: bool,
+        in_combat: bool,
+        dead: bool,
+        triggers: list::List(u32, heap::Heap),      // the triggers it stands in
+        // Appended by routines/creature.ctx and items.ctx.
+        xp: u32,                            // GetXP/SetXP (stats +0x68)
+        gold: u32,                          // GetGold (UTC Gold); the party purse is HOOK(party)
+        inv_cursor: usize,                  // GetFirstItemInInventory/GetNextItemInInventory
+        listening: bool,                    // SetListening
+        listen_text: [4][32]u8,             // SetListenPattern: up to four patterns
+        listen_len: [4]u8,
+        listen_number: [4]i32,
+        listen_count: u8,
+        destroyable: bool,                  // SetIsDestroyable (the caller's corpse fades or stays)
+        raiseable: bool,
+        selectable_dead: bool,
+    }
+
+    struct Item {
+        base: u32,                          // baseitems.2da row
+        model_variation: u32,
+        body_variation: u32,
+        texture_variation: u32,
+        stack: u32,
+        charges: u32,
+        possessor: u32,
+        identified: bool,
+        equipped_slot: i32,                 // -1: not equipped
+    }
+
+    enum DoorState: u8 { closed, open1, open2, destroyed }
+
+    struct Door {
+        appearance: u32,                    // genericdoors.2da row
+        state: DoorState,
+        locked: bool,
+        lockable: bool,
+        key_required: bool,
+        key: []mut u8,                          // the key item's tag
+        open_dc: u32,
+        linked_to: []mut u8,
+        linked_to_module: resref::ResRef,
+        linked_flags: u8,                   // 0 none, 1 door, 2 waypoint
+        transition_name: Name,
+        static: bool,
+        walk: i32,                          // index of its placed walkmesh in walkmap, -1 none
+        model: resref::ResRef,              // genericdoors modelname
+    }
+
+    struct Placeable {
+        appearance: u32,                    // placeables.2da row
+        open: bool,
+        on: bool,                           // active (`on`/`off` animations)
+        useable: bool,
+        has_inventory: bool,
+        party_interact: bool,
+        static: bool,
+        locked: bool,
+        key: []mut u8,
+        inventory: list::List(u32, heap::Heap),
+        walk: i32,
+        model: resref::ResRef,              // placeables modelname
+        anim: u32,                          // the placeable's own animation state (10073..)
+    }
+
+    struct Trigger {
+        polygon: []mut math::Vec3,              // area space; heap
+        trigger_type: u32,                  // 0 generic, 1 transition, 2 trap
+        linked_to: []mut u8,
+        linked_to_module: resref::ResRef,
+        linked_flags: u8,
+        transition_name: Name,
+        inside: list::List(u32, heap::Heap),
+    }
+
+    struct Waypoint { has_map_note: bool, map_note_enabled: bool, map_note: Name }
+
+    struct Sound {
+        active: bool,
+        continuous: bool,
+        looping: bool,
+        positional: bool,
+        random: bool,
+        random_position: bool,
+        interval: u32,                      // ms
+        interval_variation: u32,
+        volume: u32,                        // 0..127
+        volume_variation: u32,
+        pitch_variation: f32,
+        elevation: f32,
+        min_distance: f32,
+        max_distance: f32,
+        random_range_x: f32,
+        random_range_y: f32,
+        priority: u32,                      // prioritygroups.2da row
+        sounds: []mut resref::ResRef,           // heap
+    }
+
+    struct Encounter { active: bool, polygon: []mut math::Vec3 }
+
+    struct Store { markup: i32, markdown: i32 }
+
+    struct Aoe { creator: u32, radius: f32 }
+
+    struct Area {
+        resref: resref::ResRef,
+        name: Name,
+        music_day: i32,
+        music_night: i32,
+        music_battle: i32,
+        music_delay: i32,                   // ms
+        ambient_day: i32,
+        ambient_night: i32,
+        ambient_day_volume: i32,
+        ambient_night_volume: i32,
+        env_audio: i32,
+        camera_style: u32,                  // camerastyle.2da row
+        restrict_mode: u32,
+        unescapable: bool,
+        is_night: bool,
+        dyn_ambient: u32,                   // DynAmbientColor, 0x00BBGGRR
+        sun_ambient: u32,
+        sun_diffuse: u32,
+        fog_on: bool,
+        fog_near: f32,
+        fog_far: f32,
+        fog_color: u32,
+        load_screen: u32,
+        last_heartbeat: u64,
+        transition_token: u8,               // gameloop.md 5.2
+        transition_pending: u8,
+    }
+
+    struct Module {
+        name: resref::ResRef,               // the module's resref (end_m01aa)
+        area_name: resref::ResRef,
+        entry_position: math::Vec3,
+        entry_direction: math::Vec3,
+        min_per_hour: u32,
+        dawn_hour: u32,
+        dusk_hour: u32,
+        xp_scale: u32,
+        vo_id: []mut u8,
+        last_heartbeat: u64,
+    }
+
+    // The kind's data, if `o` is that kind.
+    fn creature { o: *Object } -> ?*mut Creature {
+        if o.ext is creature{ c } { return c }
+        return null
+    }
+    fn door { o: *Object } -> ?*mut Door {
+        if o.ext is door{ d } { return d }
+        return null
+    }
+    fn placeable { o: *Object } -> ?*mut Placeable {
+        if o.ext is placeable{ p } { return p }
+        return null
+    }
+    fn trigger { o: *Object } -> ?*mut Trigger {
+        if o.ext is trigger{ t } { return t }
+        return null
+    }
+    fn item { o: *Object } -> ?*mut Item {
+        if o.ext is item{ i } { return i }
+        return null
+    }
+    fn waypoint { o: *Object } -> ?*mut Waypoint {
+        if o.ext is waypoint{ wp } { return wp }
+        return null
+    }
+    fn sound { o: *Object } -> ?*mut Sound {
+        if o.ext is sound{ s } { return s }
+        return null
+    }
+    fn area { o: *Object } -> ?*mut Area {
+        if o.ext is area{ a } { return a }
+        return null
+    }
+    fn module { o: *Object } -> ?*mut Module {
+        if o.ext is module{ m } { return m }
+        return null
+    }
+
+    // The script hook for a slot.
+    fn script { o: *Object, slot: Slot } -> resref::ResRef { return o.scripts[@as(usize, slot)] }
+
+    fn set_script { o: *mut Object, slot: Slot, name: resref::ResRef } { o.scripts[@as(usize, slot)] = name }
+
+    // GetFacing: degrees counter-clockwise from +x, 0..360.
+    fn facing_degrees { o: *Object } -> f32 {
+        let mut d = math::degrees{ radians = math::atan2f{ y = o.orientation.y, x = o.orientation.x } }
+        if d < 0.0 { d = d + 360.0 }
+        return d
+    }
+
+    // The facing vector for a heading in degrees (SetFacing, GetFacing's inverse).
+    fn direction_of { degrees: f32 } -> math::Vec3 {
+        let r = math::radians{ degrees }
+        return math::Vec3{ x = math::cosf{ x = r }, y = math::sinf{ x = r }, z = 0.0 }
+    }
+
+    // A door's or placeable's Bearing (radians counter-clockwise from +Y) as a facing vector.
+    fn direction_of_bearing { bearing: f32 } -> math::Vec3 {
+        return math::Vec3{ x = -math::sinf{ x = bearing }, y = math::cosf{ x = bearing }, z = 0.0 }
+    }
+
+    // The rotation about Z that turns a model (facing +Y) to face along `orientation`.
+    fn model_yaw { orientation: math::Vec3 } -> f32 {
+        return math::atan2f{ y = orientation.y, x = orientation.x } - math::PI * 0.5
+    }
+
+    // Local booleans and numbers (GetLocalBoolean/Number). Index out of range: false / 0.
+    fn local_bool { l: Locals, index: i32 } -> bool {
+        if index < 0 or index >= 96 { return false }
+        let i = @as(usize, index)
+        return (l.bools[i / 32] >> @as(u32, i % 32)) & 1 != 0
+    }
+    fn set_local_bool { mut l: Locals, index: i32, value: bool } {
+        if index < 0 or index >= 96 { return }
+        let i = @as(usize, index)
+        let bit: u32 = 1 << @as(u32, i % 32)
+        if value { l.bools[i / 32] = l.bools[i / 32] | bit } else { l.bools[i / 32] = l.bools[i / 32] & (bit ^ 0xFFFFFFFF) }
+    }
+    fn local_number { l: Locals, index: i32 } -> i32 {
+        if index < 0 or index >= 8 { return 0 }
+        return @as(i32, l.numbers[@as(usize, index)])
+    }
+    fn set_local_number { mut l: Locals, index: i32, value: i32 } {
+        if index < 0 or index >= 8 { return }
+        l.numbers[@as(usize, index)] = @trunc(u8, value)
+    }
+
+    // ---- the id table
+
+    struct Table {
+        by_id: map::Map(u32, *mut Object, heap::Heap),
+        all: list::List(*mut Object, heap::Heap),    // creation order; destroyed ones removed by sweep
+        next_low: u32,
+        next_high: u32,
+    }
+
+    fn new_table { heap: *mut heap::Heap } -> Table {
+        return Table{
+            by_id = map::new(u32, *mut Object, heap::Heap){ realloc = heap::alloc, heap, hash = map::hash_u32, eq = map::eq_u32 },
+            all = list::new(*mut Object, heap::Heap){ realloc = heap::alloc, heap },
+            next_low = 1,
+            next_high = FIRST_CHARACTER,
+        }
+    }
+
+    // A fresh id: low for ordinary objects, high (counting down) for player characters.
+    fn next_id { mut t: Table, character: bool } -> u32 {
+        if character {
+            let id = t.next_high
+            t.next_high = t.next_high - 1
+            return id
+        }
+        let id = t.next_low
+        t.next_low = t.next_low + 1
+        return id
+    }
+
+    // A lower-cased heap copy of `s`.
+    fn copy_lower { mut heap: heap::Heap, s: []u8 } -> ![]mut u8 {
+        let out = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, &heap, mem = slice::empty(u8){}, count = s.len }
+        let mut i: usize = 0
+        while i < s.len {
+            out[i] = ascii::to_lower{ c = s[i] }
+            i = i + 1
+        }
+        return out
+    }
+
+    // A heap copy of `s`.
+    fn copy_bytes { mut heap: heap::Heap, s: []u8 } -> ![]mut u8 {
+        let out = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, &heap, mem = slice::empty(u8){}, count = s.len }
+        slice::copy(u8){ dst = out, src = s }
+        return out
+    }
+
+    fn free_bytes { mut heap: heap::Heap, s: []mut u8 } {
+        if s.len == 0 { return }
+        _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, &heap, mem = s, count = 0 }
+    }
+
+    // A new object of `kind` with id `id` and no kind data yet: everything at the defaults the
+    // constructors give (objects.md: commandable, AI level 0, animation 10000).
+    fn make { heap: *mut heap::Heap, id: u32, kind: Kind } -> Object {
+        return Object{
+            id, kind, tag = slice::empty(u8){}, template = resref::empty{},
+            name = Name{ strref = 0xFFFFFFFF, text = slice::empty(u8){} },
+            area = INVALID, position = math::vec3::zero{}, orientation = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 },
+            scripts = [resref::empty{}; 42], locals = Locals{ bools = [0; 3], numbers = [0; 8] },
+            actions = list::new(actions::Action, heap::Heap){ realloc = heap::alloc, heap },
+            action_group = 0, commandable = true, hp = 1, hp_max = 1, hp_temp = 0, plot = false,
+            min_one_hp = false, animation = ANIM_STAND, anim_speed = 1.0, dirty = 7,
+            ai_level = 0, conversation = resref::empty{}, faction = 0, ctx = no_context{},
+            destroyed = false, ext = Ext::none,
+        }
+    }
+
+    // The creature data's defaults.
+    fn make_creature { heap: *mut heap::Heap } -> Creature {
+        return Creature{
+            appearance = 0, gender = 0, race = 6, subrace = 0, body_variation = 0, texture_variation = 1,
+            portrait = 0, soundset = 0xFFFFFFFF, is_pc = false, walk_rate = 1.7, run_rate = 5.4,
+            perspace = 0.35, creperspace = 0.4, height = 1.6, equipped = [INVALID; 20],
+            inventory = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
+            abilities = [10; 6], hit_dice = 1, classes = [0; 3], class_levels = [0; 3], good_evil = 50,
+            perception_range = 11, spawn_fired = false, last_heartbeat = 0, heartbeat_interval = 3000,
+            speed = 0.0, speed_factor = 0.1,
+            path = list::new(math::Vec3, heap::Heap){ realloc = heap::alloc, heap },
+            path_next = 0, moving = false, in_combat = false, dead = false,
+            triggers = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
+            xp = 0, gold = 0, inv_cursor = 0, listening = false, listen_text = [[0; 32]; 4],
+            listen_len = [0; 4], listen_number = [0; 4], listen_count = 0,
+            destroyable = true, raiseable = true, selectable_dead = false,
+        }
+    }
+}

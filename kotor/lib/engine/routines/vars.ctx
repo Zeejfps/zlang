@@ -1,0 +1,93 @@
+// Routines: KOTOR's local variables (96 booleans and 8 numbers per object, gff-save.md) and the
+// globals globalcat.2da declares.
+namespace rt_vars {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        if routine == nwscript::GetLocalBoolean { try get_local_boolean{ &w, &vm, argc } }
+        else if routine == nwscript::SetLocalBoolean { try set_local_boolean{ &w, &vm, argc } }
+        else if routine == nwscript::GetLocalNumber { try get_local_number{ &w, &vm, argc } }
+        else if routine == nwscript::SetLocalNumber { try set_local_number{ &w, &vm, argc } }
+        else if routine == nwscript::GetGlobalBoolean { try get_global_boolean{ &w, &vm, argc } }
+        else if routine == nwscript::SetGlobalBoolean { try set_global_boolean{ &w, &vm, argc } }
+        else if routine == nwscript::GetGlobalNumber { try get_global_number{ &w, &vm, argc } }
+        else if routine == nwscript::SetGlobalNumber { try set_global_number{ &w, &vm, argc } }
+        else if routine == nwscript::GetGlobalString { try get_global_string{ &w, &vm, argc } }
+        else if routine == nwscript::SetGlobalString { try set_global_string{ &w, &vm, argc } }
+        else { return false }
+        return true
+    }
+
+    // int GetLocalBoolean(object oObject, int nIndex)
+    fn get_local_boolean { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetLocalBoolean
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let index = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let mut v = false
+        let o = world::object{ w = &w, id }
+        if o != null { v = obj::local_bool{ l = o.locals, index } }
+        try nwvm::push_int{ &vm, v = if v { 1 } else { 0 } }
+    }
+
+    // void SetLocalBoolean(object oObject, int nIndex, int nValue)
+    fn set_local_boolean { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::SetLocalBoolean
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let index = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let value = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        obj::set_local_bool{ l = &o.locals, index, value = value != 0 }
+    }
+
+    // int GetLocalNumber(object oObject, int nIndex)
+    fn get_local_number { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetLocalNumber
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let index = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let mut v: i32 = 0
+        let o = world::object{ w = &w, id }
+        if o != null { v = obj::local_number{ l = o.locals, index } }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // void SetLocalNumber(object oObject, int nIndex, int nValue)
+    fn set_local_number { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::SetLocalNumber
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let index = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let value = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        obj::set_local_number{ l = &o.locals, index, value }
+    }
+
+    fn get_global_boolean { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let name = try nwarg::string{ &vm, routine = nwscript::GetGlobalBoolean, argc, i = 0 }
+        try nwvm::push_int{ &vm, v = if globals::boolean{ g = &w.globals, name } { 1 } else { 0 } }
+    }
+
+    fn set_global_boolean { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let name = try nwarg::string{ &vm, routine = nwscript::SetGlobalBoolean, argc, i = 0 }
+        let value = try nwarg::int{ &vm, routine = nwscript::SetGlobalBoolean, argc, i = 1 }
+        globals::set_boolean{ g = &w.globals, name, value = value != 0 }
+    }
+
+    fn get_global_number { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let name = try nwarg::string{ &vm, routine = nwscript::GetGlobalNumber, argc, i = 0 }
+        try nwvm::push_int{ &vm, v = globals::number{ g = &w.globals, name } }
+    }
+
+    fn set_global_number { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let name = try nwarg::string{ &vm, routine = nwscript::SetGlobalNumber, argc, i = 0 }
+        let value = try nwarg::int{ &vm, routine = nwscript::SetGlobalNumber, argc, i = 1 }
+        globals::set_number{ g = &w.globals, name, value }
+    }
+
+    fn get_global_string { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let name = try nwarg::string{ &vm, routine = nwscript::GetGlobalString, argc, i = 0 }
+        try nwvm::push_string{ &vm, s = globals::string{ g = &w.globals, name } }
+    }
+
+    fn set_global_string { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let name = try nwarg::string{ &vm, routine = nwscript::SetGlobalString, argc, i = 0 }
+        let value = try nwarg::string{ &vm, routine = nwscript::SetGlobalString, argc, i = 1 }
+        try globals::set_string{ g = &w.globals, name, value }
+    }
+}

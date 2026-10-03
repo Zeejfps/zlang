@@ -1,0 +1,479 @@
+// Entering a module (docs/re/modules.md; gameloop.md 5): mount its files, read the IFO, the one
+// area's ARE, LYT, VIS and walkmeshes, make the GIT's objects from their blueprints, and queue
+// the arrival events in the original's order (gameloop.md 5.5): the area's OnEnter for each GIT
+// creature, OnModLoad, then, a few frames later as the login handshake would, the PC placed with
+// OnClientEnter and the area's OnEnter for it. OnSpawn fires on each creature's first update.
+//
+//   try modload::enter{ &w, name = "end_m01aa" }
+namespace modload {
+    error no_ifo{ module: []u8 }
+    error no_area{ area: []u8 }
+    error bad_layout{ area: []u8 }
+
+    // Frames between OnModLoad and placing the PC (the original's handshake takes a few).
+    const ARRIVAL_FRAMES: u32 = 2
+
+    fn enter { mut w: world::World, name: []u8 } -> ! {
+        try res::mount_module{ fs = &w.fs, rm = w.rm, name, save = "" }
+        let ifo = try world::read_gff{ &w, name = "module", kind = restype::Type::ifo } ifnull { return no_ifo{ module = name } }
+        let mo = try world::add_object{ &w, kind = obj::Kind::module, id = 0, character = false }
+        w.module = mo.id
+        let m = obj::module{ o = mo } ifnull { return no_ifo{ module = name } }
+        m.name = resref::truncate{ name }
+        try read_ifo{ &w, o = mo, m, doc = &ifo }
+        let area_name = m.area_name
+        // The area's name in module memory: errors that carry it outlive this function.
+        let mut area_key = area_name
+        let area_local = resref::bytes{ r = &area_key }
+        let area_text = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, mem = slice::empty(u8){}, count = area_local.len }
+        slice::copy(u8){ dst = area_text, src = area_local }
+        if w.log.module {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "module {}: area {}\n", name, area_text)
+        }
+
+        let are = try world::read_gff{ &w, name = area_text, kind = restype::Type::are } ifnull { return no_area{ area = name } }
+        let ao = try world::add_object{ &w, kind = obj::Kind::area, id = 0, character = false }
+        w.area = ao.id
+        ao.area = ao.id
+        mo.area = ao.id
+        let a = obj::area{ o = ao } ifnull { return no_area{ area = name } }
+        a.resref = area_name
+        try read_are{ &w, o = ao, a, doc = &are }
+
+        try load_layout{ &w, area = area_text }
+
+        let git = try world::read_gff{ &w, name = area_text, kind = restype::Type::git }
+        if git != null { try read_git{ &w, doc = &git } }
+        if w.log.module {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "module {}: {} objects, {} rooms with walkmeshes\n", name, w.objects.all.len, w.walk.rooms.len)
+        }
+
+        // The arrival (gameloop.md 5.5): the area's OnEnter for each GIT creature, then OnModLoad.
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.kind != obj::Kind::creature { continue }
+            events::post{ &w, delay_ms = 0, caller = o.id, target = w.area, payload = events::Payload::script{ e = events::script_event{ kind = events::OBJECT_ENTER, object = o.id } } }
+        }
+        events::post{ &w, delay_ms = 0, caller = w.module, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::MODULE_LOAD, object = obj::INVALID } } }
+        w.arrival = ARRIVAL_FRAMES
+    }
+
+    fn read_ifo { mut w: world::World, o: *mut obj::Object, m: *mut obj::Module, doc: *gff::Doc } -> ! {
+        let s = gff::ROOT
+        let tag = gff::get_string{ doc = doc.*, s, label = "Mod_Tag" }
+        if tag != null { try world::set_tag{ &w, o, tag } }
+        try tmpl::read_name{ &w, doc, s, label = "Mod_Name", into = &o.name }
+        let areas = gff::get_list{ doc = doc.*, s, label = "Mod_Area_list" } ifnull slice::empty(u32){}
+        if areas.len > 0 {
+            m.area_name = resref::truncate{ name = gff::get_resref{ doc = doc.*, s = areas[0], label = "Area_Name" } ifnull "" }
+        }
+        m.entry_position = math::Vec3{
+            x = tmpl::real{ doc, s, label = "Mod_Entry_X", default = 0.0 },
+            y = tmpl::real{ doc, s, label = "Mod_Entry_Y", default = 0.0 },
+            z = tmpl::real{ doc, s, label = "Mod_Entry_Z", default = 0.0 },
+        }
+        m.entry_direction = math::Vec3{
+            x = tmpl::real{ doc, s, label = "Mod_Entry_Dir_X", default = 1.0 },
+            y = tmpl::real{ doc, s, label = "Mod_Entry_Dir_Y", default = 0.0 },
+            z = 0.0,
+        }
+        m.min_per_hour = @trunc(u32, tmpl::number{ doc, s, label = "Mod_MinPerHour", default = 2 })
+        m.dawn_hour = @trunc(u32, tmpl::number{ doc, s, label = "Mod_DawnHour", default = 6 })
+        m.dusk_hour = @trunc(u32, tmpl::number{ doc, s, label = "Mod_DuskHour", default = 18 })
+        m.xp_scale = @trunc(u32, tmpl::number{ doc, s, label = "Mod_XPScale", default = 10 })
+        let vo = gff::get_string{ doc = doc.*, s, label = "Mod_VO_ID" }
+        if vo != null { m.vo_id = try obj::copy_bytes{ heap = w.heap, s = vo } }
+        w.clock.min_per_hour = m.min_per_hour
+        w.clock.year = @trunc(u32, tmpl::number{ doc, s, label = "Mod_StartYear", default = 1340 })
+        w.clock.month = @trunc(u32, tmpl::number{ doc, s, label = "Mod_StartMonth", default = 6 })
+        w.clock.day = @trunc(u32, tmpl::number{ doc, s, label = "Mod_StartDay", default = 1 })
+        w.clock.hour = @trunc(u32, tmpl::number{ doc, s, label = "Mod_StartHour", default = 13 })
+        tmpl::script{ doc, s, o, label = "Mod_OnHeartbeat", slot = obj::Slot::heartbeat }
+        tmpl::script{ doc, s, o, label = "Mod_OnUsrDefined", slot = obj::Slot::user_defined }
+        tmpl::script{ doc, s, o, label = "Mod_OnClientEntr", slot = obj::Slot::client_enter }
+        tmpl::script{ doc, s, o, label = "Mod_OnClientLeav", slot = obj::Slot::client_leave }
+        tmpl::script{ doc, s, o, label = "Mod_OnActvtItem", slot = obj::Slot::activate_item }
+        tmpl::script{ doc, s, o, label = "Mod_OnAcquirItem", slot = obj::Slot::acquire_item }
+        tmpl::script{ doc, s, o, label = "Mod_OnUnAqreItem", slot = obj::Slot::unacquire_item }
+        tmpl::script{ doc, s, o, label = "Mod_OnModLoad", slot = obj::Slot::mod_load }
+        tmpl::script{ doc, s, o, label = "Mod_OnModStart", slot = obj::Slot::mod_start }
+        tmpl::script{ doc, s, o, label = "Mod_OnPlrDeath", slot = obj::Slot::player_death }
+        tmpl::script{ doc, s, o, label = "Mod_OnPlrDying", slot = obj::Slot::player_dying }
+        tmpl::script{ doc, s, o, label = "Mod_OnSpawnBtnDn", slot = obj::Slot::spawn_button }
+        tmpl::script{ doc, s, o, label = "Mod_OnPlrRest", slot = obj::Slot::player_rest }
+        tmpl::script{ doc, s, o, label = "Mod_OnPlrLvlUp", slot = obj::Slot::player_level_up }
+        tmpl::script{ doc, s, o, label = "Mod_OnEquipItem", slot = obj::Slot::equip_item }
+    }
+
+    fn read_are { mut w: world::World, o: *mut obj::Object, a: *mut obj::Area, doc: *gff::Doc } -> ! {
+        let s = gff::ROOT
+        let tag = gff::get_string{ doc = doc.*, s, label = "Tag" }
+        if tag != null { try world::set_tag{ &w, o, tag } }
+        try tmpl::read_name{ &w, doc, s, label = "Name", into = &a.name }
+        try tmpl::read_name{ &w, doc, s, label = "Name", into = &o.name }
+        a.camera_style = @trunc(u32, tmpl::number{ doc, s, label = "CameraStyle", default = 0 })
+        a.restrict_mode = @trunc(u32, tmpl::number{ doc, s, label = "RestrictMode", default = 0 })
+        a.unescapable = tmpl::flag{ doc, s, label = "Unescapable", default = false }
+        a.is_night = tmpl::flag{ doc, s, label = "IsNight", default = false }
+        a.dyn_ambient = @trunc(u32, tmpl::number{ doc, s, label = "DynAmbientColor", default = 0 })
+        a.sun_ambient = @trunc(u32, tmpl::number{ doc, s, label = "SunAmbientColor", default = 0 })
+        a.sun_diffuse = @trunc(u32, tmpl::number{ doc, s, label = "SunDiffuseColor", default = 0 })
+        a.fog_on = tmpl::flag{ doc, s, label = "SunFogOn", default = false }
+        a.fog_near = tmpl::real{ doc, s, label = "SunFogNear", default = 99.0 }
+        a.fog_far = tmpl::real{ doc, s, label = "SunFogFar", default = 100.0 }
+        a.fog_color = @trunc(u32, tmpl::number{ doc, s, label = "SunFogColor", default = 0 })
+        a.load_screen = @trunc(u32, tmpl::number{ doc, s, label = "LoadScreenID", default = 0 })
+        tmpl::script{ doc, s, o, label = "OnEnter", slot = obj::Slot::enter }
+        tmpl::script{ doc, s, o, label = "OnExit", slot = obj::Slot::exit }
+        tmpl::script{ doc, s, o, label = "OnHeartbeat", slot = obj::Slot::heartbeat }
+        tmpl::script{ doc, s, o, label = "OnUserDefined", slot = obj::Slot::user_defined }
+    }
+
+    // The LYT's rooms with their walkmeshes, and the VIS table, in module memory.
+    fn load_layout { mut w: world::World, area: []u8 } -> ! {
+        let text = try world::read_module{ &w, name = area, kind = restype::Type::lyt } ifnull { return bad_layout{ area } }
+        let layout = try lyt::parse(arena::Arena){ data = text, realloc = arena::alloc, heap = w.mod_arena }
+        w.layout = layout
+        let vis_bytes = try world::read_module{ &w, name = area, kind = restype::Type::vis }
+        if vis_bytes != null { w.vis = try vis::parse(arena::Arena){ data = vis_bytes, realloc = arena::alloc, heap = w.mod_arena } }
+        let mut i: usize = 0
+        while i < layout.rooms.len {
+            let r = layout.rooms[i]
+            i = i + 1
+            let mut key = r.model
+            let room_name = resref::bytes{ r = &key }
+            let wok = try world::read_module{ &w, name = room_name, kind = restype::Type::wok }
+            let mut mesh: ?bwm::Walkmesh = null
+            if wok != null {
+                mesh = bwm::parse(arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, bytes = wok } iferr err{ error } {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "walkmesh {}: {}\n", room_name, error)
+                    null
+                }
+            }
+            try walkmap::add_room{ m = &w.walk, room = walkmap::Room{ name = r.model, position = math::Vec3{ x = r.x, y = r.y, z = r.z }, mesh } }
+        }
+    }
+
+    // Makes the GIT's objects, in the original's list order (modules.md, LoadGIT).
+    fn read_git { mut w: world::World, doc: *gff::Doc } -> ! {
+        let s = gff::ROOT
+        let props = gff::get_struct{ doc = doc.*, s, label = "AreaProperties" }
+        let ao = world::object{ w = &w, id = w.area }
+        if props != null and ao != null {
+            if obj::area{ o = ao } is some{ value = a } {
+                a.music_day = @trunc(i32, tmpl::number{ doc, s = props, label = "MusicDay", default = 0 })
+                a.music_night = @trunc(i32, tmpl::number{ doc, s = props, label = "MusicNight", default = 0 })
+                a.music_battle = @trunc(i32, tmpl::number{ doc, s = props, label = "MusicBattle", default = 0 })
+                a.music_delay = @trunc(i32, tmpl::number{ doc, s = props, label = "MusicDelay", default = 0 })
+                a.ambient_day = @trunc(i32, tmpl::number{ doc, s = props, label = "AmbientSndDay", default = 0 })
+                a.ambient_night = @trunc(i32, tmpl::number{ doc, s = props, label = "AmbientSndNight", default = 0 })
+                a.ambient_day_volume = @trunc(i32, tmpl::number{ doc, s = props, label = "AmbientSndDayVol", default = 0 })
+                a.ambient_night_volume = @trunc(i32, tmpl::number{ doc, s = props, label = "AmbientSndNitVol", default = 0 })
+                a.env_audio = @trunc(i32, tmpl::number{ doc, s = props, label = "EnvAudio", default = 0 })
+            }
+        }
+        try read_list{ &w, doc, label = "Creature List", kind = obj::Kind::creature }
+        try read_list{ &w, doc, label = "List", kind = obj::Kind::item }
+        try read_list{ &w, doc, label = "Door List", kind = obj::Kind::door }
+        try read_list{ &w, doc, label = "TriggerList", kind = obj::Kind::trigger }
+        try read_list{ &w, doc, label = "Encounter List", kind = obj::Kind::encounter }
+        try read_list{ &w, doc, label = "WaypointList", kind = obj::Kind::waypoint }
+        try read_list{ &w, doc, label = "SoundList", kind = obj::Kind::sound }
+        try read_list{ &w, doc, label = "Placeable List", kind = obj::Kind::placeable }
+        try read_list{ &w, doc, label = "StoreList", kind = obj::Kind::store }
+    }
+
+    fn read_list { mut w: world::World, doc: *gff::Doc, label: []u8, kind: obj::Kind } -> ! {
+        let items = gff::get_list{ doc = doc.*, s = gff::ROOT, label } ifnull { return }
+        let mut i: usize = 0
+        while i < items.len {
+            let s = items[i]
+            i = i + 1
+            read_instance{ &w, doc, s, kind } iferr err{ error } {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "GIT {} entry {}: {}\n", label, i - 1, error)
+            }
+        }
+    }
+
+    // One GIT instance: position and facing (XOrientation/YOrientation, or Bearing for doors and
+    // placeables), the blueprint, then the instance's own fields.
+    fn read_instance { mut w: world::World, doc: *gff::Doc, s: u32, kind: obj::Kind } -> ! {
+        let bearing_kind = kind == obj::Kind::door or kind == obj::Kind::placeable
+        let position = if bearing_kind {
+            math::Vec3{ x = tmpl::real{ doc, s, label = "X", default = 0.0 }, y = tmpl::real{ doc, s, label = "Y", default = 0.0 }, z = tmpl::real{ doc, s, label = "Z", default = 0.0 } }
+        } else {
+            math::Vec3{ x = tmpl::real{ doc, s, label = "XPosition", default = 0.0 }, y = tmpl::real{ doc, s, label = "YPosition", default = 0.0 }, z = tmpl::real{ doc, s, label = "ZPosition", default = 0.0 } }
+        }
+        let bearing = tmpl::real{ doc, s, label = "Bearing", default = 0.0 }
+        let orientation = if bearing_kind { obj::direction_of_bearing{ bearing } } else {
+            math::Vec3{ x = tmpl::real{ doc, s, label = "XOrientation", default = 0.0 }, y = tmpl::real{ doc, s, label = "YOrientation", default = 1.0 }, z = 0.0 }
+        }
+        let field: []u8 = if kind == obj::Kind::store { "ResRef" } else { "TemplateResRef" }
+        let template = gff::get_resref{ doc = doc.*, s, label = field } ifnull ""
+        let mut id: u32 = 0
+        if template.len > 0 and kind != obj::Kind::waypoint {
+            id = try tmpl::spawn{ &w, kind, template, position, orientation }
+        } else {
+            // Waypoints (and blueprint-less entries) carry every field in the GIT.
+            let o = try world::add_object{ &w, kind, id = 0, character = false }
+            o.template = resref::truncate{ name = template }
+            o.area = w.area
+            o.position = position
+            world::set_orientation{ o, v = orientation }
+            id = o.id
+        }
+        let o = world::object{ w = &w, id } ifnull { return }
+        // The instance's own fields over the blueprint's.
+        try tmpl::read{ &w, o, doc, s }
+        o.position = position
+        if kind == obj::Kind::trigger {
+            if obj::trigger{ o } is some{ value = t } { try tmpl::read_geometry{ &w, t, doc, s, origin = position } }
+        }
+        if kind == obj::Kind::door or kind == obj::Kind::placeable { try place_walkmesh{ &w, id, bearing } }
+        if kind == obj::Kind::creature {
+            // Snap to the floor (GIT creatures stand on the walkmesh).
+            let f = walkmap::floor{ m = &w.walk, x = position.x, y = position.y, z = position.z + 0.5 }
+            if f != null { o.position.z = f.z }
+        }
+    }
+
+    // A door's closed DWK (`<model>0.dwk`) or a placeable's PWK, placed into area space.
+    fn place_walkmesh { mut w: world::World, id: u32, bearing: f32 } -> ! {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let mut name_buf: [24]u8
+        let mut n: usize = 0
+        let mut model = resref::empty{}
+        let mut kind = restype::Type::pwk
+        if obj::door{ o } is some{ value = d } {
+            model = d.model
+            kind = restype::Type::dwk
+        }
+        if obj::placeable{ o } is some{ value = p } { model = p.model }
+        if resref::is_empty{ r = model } { return }
+        let text = resref::bytes{ r = &model }
+        while n < text.len and n < 20 {
+            name_buf[n] = text[n]
+            n = n + 1
+        }
+        if kind == restype::Type::dwk {
+            name_buf[n] = '0'
+            n = n + 1
+        }
+        let bytes = try world::read_scratch{ &w, name = name_buf[..n], kind } ifnull { return }
+        let raw = try bwm::parse(arena::Arena){ realloc = arena::alloc, heap = w.scratch, bytes }
+        let placed = try bwm::transform_placed(arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, w = raw, at = bwm::Placement{ position = o.position, bearing } }
+        let index = try walkmap::add_placed{ m = &w.walk, placed = walkmap::Placed{ owner = id, mesh = placed, active = true } }
+        if obj::door{ o } is some{ value = d } {
+            d.walk = index
+            walkmap::set_active{ m = &w.walk, index, active = d.state == obj::DoorState::closed }
+        }
+        if obj::placeable{ o } is some{ value = p } { p.walk = index }
+    }
+
+    // The player arrives (gameloop.md 5.5 steps 7-11): the PC is made if there is none, placed
+    // at the transition waypoint or the IFO's entry point on the walkmesh, OnClientEnter queued
+    // to the module, and the area's OnEnter for the PC.
+    fn place_player { mut w: world::World } {
+        if not world::is_valid{ w = &w, id = w.pc } {
+            w.pc = make_default_player{ &w } iferr err{ error } {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "no player: {}\n", error)
+                return
+            }
+        }
+        let mo = world::object{ w = &w, id = w.module } ifnull { return }
+        let m = obj::module{ o = mo } ifnull { return }
+        let mut at = m.entry_position
+        let mut facing = m.entry_direction
+        if w.arrival_waypoint_len > 0 {
+            let tag = w.arrival_waypoint
+            let wp = world::object_by_tag{ w = &w, tag = tag[..w.arrival_waypoint_len], nth = 0 }
+            let wo = world::object{ w = &w, id = wp }
+            if wo != null {
+                at = wo.position
+                facing = wo.orientation
+            }
+            w.arrival_waypoint_len = 0
+        }
+        let pc = world::object{ w = &w, id = w.pc } ifnull { return }
+        pc.area = w.area
+        world::set_orientation{ o = pc, v = facing }
+        movement::place{ &w, id = w.pc, at }
+        let ao = world::object{ w = &w, id = w.area }
+        if ao != null { raise_area{ &w } }
+        events::post{ &w, delay_ms = 0, caller = w.pc, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::PLAYER_ENTER, object = w.pc } } }
+        events::post{ &w, delay_ms = 0, caller = w.pc, target = w.area, payload = events::Payload::script{ e = events::script_event{ kind = events::OBJECT_ENTER, object = w.pc } } }
+        if w.log.module {
+            world::prefix{ w = &w }
+            let p = world::object{ w = &w, id = w.pc }
+            if p != null { _ = @fmt(&w.io, "player {} placed at {} {} {}\n", w.pc, p.position.x, p.position.y, p.position.z) }
+        }
+    }
+
+    // The first player in the area lifts its active objects to AI level 1 (gameloop.md 2.1).
+    fn raise_area { mut w: world::World } {
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.ai_level == 0 and o.kind != obj::Kind::item { o.ai_level = 1 }
+            if o.kind == obj::Kind::placeable {
+                if obj::placeable{ o } is some{ value = p } {
+                    if p.static { o.ai_level = 0 }
+                }
+            }
+        }
+        let pc = world::object{ w = &w, id = w.pc }
+        if pc != null { pc.ai_level = 4 }
+    }
+
+    // The player character until character creation exists: a soldier (appearance 137,
+    // P_MAL_A_MED_01: body PMBAM, head PMHA01), named by `w`'s player template if one is set.
+    fn make_default_player { mut w: world::World } -> !u32 {
+        let o = try world::add_object{ &w, kind = obj::Kind::creature, id = 0, character = true }
+        try world::set_tag{ &w, o, tag = "" }
+        try world::set_name{ &w, name = &o.name, strref = 0xFFFFFFFF, text = "Player" }
+        let c = obj::creature{ o } ifnull { return o.id }
+        c.appearance = 137
+        c.gender = 0
+        c.race = 6
+        c.is_pc = true
+        c.spawn_fired = true
+        c.hit_dice = 1
+        c.classes[0] = 0
+        c.class_levels[0] = 1
+        o.hp = 20
+        o.hp_max = 20
+        tmpl::set_movement{ &w, c }
+        // The PC runs at PC_Movement (creaturespeed row 0).
+        c.walk_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "walkrate" } ifnull 3.2
+        c.run_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "runrate" } ifnull 5.4
+        o.area = w.area
+        o.ai_level = 4
+        return o.id
+    }
+
+    // ---- transitions (gameloop.md 5)
+
+    // Whether a door or trigger leads to another module, and where.
+    fn link_of { o: *obj::Object } -> ?world::Transition {
+        let mut t = world::Transition{ module = resref::empty{}, waypoint = [0; 64], waypoint_len = 0 }
+        let mut to: []u8 = ""
+        if obj::door{ o } is some{ value = d } {
+            if d.linked_flags == 0 { return null }
+            t.module = d.linked_to_module
+            to = d.linked_to
+        } else if obj::trigger{ o } is some{ value = tr } {
+            t.module = tr.linked_to_module
+            to = tr.linked_to
+        } else { return null }
+        if resref::is_empty{ r = t.module } { return null }
+        let n = if to.len < 64 { to.len } else { 64 }
+        let mut i: usize = 0
+        while i < n {
+            t.waypoint[i] = to[i]
+            i = i + 1
+        }
+        t.waypoint_len = n
+        return t
+    }
+
+    // Phase 1 of a door's or trigger's transition (gameloop.md 5.2), when the PC clicks or
+    // enters it: a fresh token from the area, the event back to the object 500 ms later, a 0.5 s
+    // fade to black. The party-distance check (30 m) waits for the party table (HOOK(party)).
+    fn begin_transition { mut w: world::World, id: u32, actor: u32 } {
+        if actor != w.pc { return }
+        let o = world::object{ w = &w, id } ifnull { return }
+        if link_of{ o } == null { return }
+        let ao = world::object{ w = &w, id = w.area } ifnull { return }
+        let a = obj::area{ o = ao } ifnull { return }
+        a.transition_token = if a.transition_token == 255 { 1 } else { a.transition_token + 1 }
+        a.transition_pending = a.transition_token
+        events::post{ &w, delay_ms = 500, caller = actor, target = id, payload = events::Payload::transition{ token = a.transition_token } }
+        outbox::post{ out = &w.out, note = outbox::Note::fade{ out = true, wait = 0.0, length = 0.5, color = math::vec3::zero{} } }
+        if w.log.module {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "transition started by {} at {} ({})\n", actor, id, o.tag)
+        }
+    }
+
+    // Phase 2: the token still current, the PC alive: the transition request is set.
+    fn transition_arrived { mut w: world::World, id: u32, token: u8 } {
+        let ao = world::object{ w = &w, id = w.area } ifnull { return }
+        let a = obj::area{ o = ao } ifnull { return }
+        if a.transition_pending != token { return }
+        a.transition_pending = 0
+        let o = world::object{ w = &w, id } ifnull { return }
+        let t = link_of{ o } ifnull { return }
+        w.transition = t
+        if w.log.module {
+            world::prefix{ w = &w }
+            let mut m = t.module
+            _ = @fmt(&w.io, "transition to {} at {}\n", resref::bytes{ r = &m }, t.waypoint[..t.waypoint_len])
+        }
+    }
+
+    // Leaves the module (gameloop.md 5.3): the area's OnExit for the PC, the PC's queue
+    // cleared, every object but the PC and what it carries destroyed, the event queue, scripts,
+    // walkmeshes and module memory let go. The module's state isn't kept yet (HOOK(save):
+    // GAMEINPROGRESS).
+    fn leave { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
+        let ao = world::object{ w = &w, id = w.area }
+        if ao != null {
+            ao.ctx.exiting = w.pc
+            _ = scripts::run_slot{ &w, &vm, engine, id = w.area, slot = obj::Slot::exit }
+        }
+        actions::clear_queue{ &w, o = world::object{ w = &w, id = w.pc } ifnull { return } }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.id == w.pc or o.destroyed { continue }
+            if obj::item{ o } is some{ value = it } {
+                if it.possessor == w.pc { continue }
+            }
+            o.destroyed = true
+            list::push{ list = &w.doomed, item = o.id } iferr {}
+        }
+        events::clear{ &w }
+        world::sweep{ &w }
+        scripts::clear_cache{ &w }
+        walkmap::clear{ m = &w.walk }
+        map::clear{ m = &w.heartbeats }
+        w.layout = null
+        w.vis = null
+        w.module = obj::INVALID
+        w.area = obj::INVALID
+        let pc = world::object{ w = &w, id = w.pc }
+        if pc != null {
+            pc.area = obj::INVALID
+            if obj::creature{ o = pc } is some{ value = c } { list::clear{ list = &c.triggers } }
+        }
+        arena::reset{ heap = w.mod_arena }
+    }
+
+    // Takes a pending transition: leave, then enter the next module with the PC arriving at the
+    // link's waypoint. True if it happened (the presentation must rebuild its scene).
+    fn take_transition { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } -> !bool {
+        let t = w.transition ifnull { return false }
+        w.transition = null
+        leave{ &w, &vm, engine }
+        w.arrival_waypoint = t.waypoint
+        w.arrival_waypoint_len = t.waypoint_len
+        let mut m = t.module
+        let name = resref::bytes{ r = &m }
+        let kept = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = name.len }
+        slice::copy(u8){ dst = kept, src = name }
+        try enter{ &w, name = kept }
+        return true
+    }
+}
