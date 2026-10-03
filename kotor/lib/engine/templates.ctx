@@ -88,6 +88,11 @@ namespace tmpl {
     fn read_common { mut w: world::World, o: *mut obj::Object, doc: *gff::Doc, s: u32, name_label: []u8 } -> ! {
         let tag = gff::get_string{ doc = doc.*, s, label = "Tag" }
         if tag != null { try world::set_tag{ &w, o, tag } }
+        // A saved object names the blueprint it came from (items are copied and compared by it).
+        if resref::is_empty{ r = o.template } {
+            let made_from = gff::get_resref{ doc = doc.*, s, label = "TemplateResRef" }
+            if made_from != null { o.template = resref::truncate{ name = made_from } }
+        }
         try read_name{ &w, doc, s, label = name_label, into = &o.name }
         let conv = gff::get_resref{ doc = doc.*, s, label = "Conversation" }
         if conv != null { o.conversation = resref::truncate{ name = conv } }
