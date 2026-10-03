@@ -7621,15 +7621,31 @@ namespace check {
 
     // The writers of a t to a sink of type b that code in namespace ns sees (§13): `#write` fns
     // whose fields' types, with some generic arguments, are exactly b and t. No widening: a u32
-    // widens to both an i64 and a u64.
+    // widens to both an i64 and a u64. The program's writers come first: std's are looked at
+    // only if it has none. A `[]mut T` with none of its own takes those of `[]T`.
     fn writers_of { mut c: Checker, b: Id, t: Id, ns: u32 } -> Writers {
+        let mine = writers_in{ &c, b, t, ns, in_std = false }
+        if mine.one.decl != NONE { return mine }
+        let found = writers_in{ &c, b, t, ns, in_std = true }
+        if found.one.decl != NONE { return found }
+        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is slice{ elem, mutable } {
+            if mutable {
+                let ro = types::slice{ s = &c.ty, elem, mutable = false }
+                return writers_of{ &c, b, t = ro, ns }
+            }
+        }
+        return found
+    }
+
+    // writers_of, among std's writers (those outside the program's top level) or the program's.
+    fn writers_in { mut c: Checker, b: Id, t: Id, ns: u32, in_std: bool } -> Writers {
         let ws = list::items{ list = c.writers }
         let mut one = no_writer{}
         let mut i: usize = 0
         while i < ws.len {
             let d = ws[i]
             let x = get_decl{ c, d }
-            if reaches{ c, from = ns, ns = x.ns } {
+            if encloses{ c, outer = ROOT, inner = x.ns } != in_std and reaches{ c, from = ns, ns = x.ns } {
                 let args = no_args{ &c, n = x.tparams.len }
                 if types::instance{ s = c.ty, p = sink_field{ c, d }.ty, t = b, decl = d, args } and types::instance{ s = c.ty, p = value_field{ c, d }.ty, t, decl = d, args } {
                     if one.decl != NONE { return Writers{ one, two = d } }
