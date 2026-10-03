@@ -1,0 +1,101 @@
+// The quests the game knows: global.jrl (docs/formats/gff-dialog.md, "JRL: journal"). A category is
+// one quest (tag, title, priority, the planet it is filed under) and its entries are the quest's
+// states, each with the text shown while the quest is in it and whether it ends the quest.
+// Titles and texts stay dialog.tlk strrefs; the panel resolves them when it shows them.
+namespace journal {
+    const MAX_CATEGORIES: usize = 128       // global.jrl has 101
+    const MAX_ENTRIES: usize = 1024         // and 643 entries in all
+    const NO_STRREF: u32 = 0xFFFFFFFF
+
+    error no_journal
+    error journal_too_big
+
+    struct Entry {
+        id: u32,                // the state number scripts use
+        end: bool,              // reaching it completes the quest
+        text: u32,              // dialog.tlk strref
+    }
+
+    struct Category {
+        tag: [32]u8,
+        tag_len: usize,
+        name: u32,              // dialog.tlk strref of the title
+        priority: u32,          // 0 first .. 4 last
+        planet: i32,            // planetary.2da row the quest is filed under, -1 none
+        first: usize,           // its entries are Jrl.entries[first .. first + count]
+        count: usize,
+    }
+
+    // All categories and entries, in the file's order. Fixed capacity so one allocation holds it.
+    struct Jrl {
+        categories: [128]Category,
+        category_count: usize,
+        entries: [1024]Entry,
+        entry_count: usize,
+    }
+
+    // Reads global.jrl into `jrl` (which starts zeroed). The file is parsed in frame memory.
+    fn load { mut w: world::World, jrl: *mut Jrl } -> ! {
+        let doc = try world::read_gff{ &w, name = "global", kind = restype::Type::jrl } ifnull { return no_journal }
+        let cats = gff::get_list{ doc, s = gff::ROOT, label = "Categories" } ifnull { return no_journal }
+        jrl.category_count = 0
+        jrl.entry_count = 0
+        let mut i: usize = 0
+        while i < cats.len {
+            let c = cats[i]
+            i = i + 1
+            if jrl.category_count >= MAX_CATEGORIES { return journal_too_big }
+            let at = jrl.category_count
+            let tag = gff::get_string{ doc, s = c, label = "Tag" } ifnull ""
+            let tag_len = if tag.len > TAG_LEN { TAG_LEN } else { tag.len }
+            slice::copy(u8){ dst = jrl.categories[at].tag[..tag_len], src = tag[..tag_len] }
+            jrl.categories[at].tag_len = tag_len
+            jrl.categories[at].name = strref_of{ doc, s = c, label = "Name" }
+            jrl.categories[at].priority = @trunc(u32, gff::get_number{ doc, s = c, label = "Priority" } ifnull 0)
+            jrl.categories[at].planet = @trunc(i32, gff::get_number{ doc, s = c, label = "PlanetID" } ifnull -1)
+            jrl.categories[at].first = jrl.entry_count
+            let es = gff::get_list{ doc, s = c, label = "EntryList" } ifnull slice::empty(u32){}
+            let mut k: usize = 0
+            while k < es.len {
+                if jrl.entry_count >= MAX_ENTRIES { return journal_too_big }
+                let e = es[k]
+                k = k + 1
+                let n = jrl.entry_count
+                jrl.entries[n].id = @trunc(u32, gff::get_number{ doc, s = e, label = "ID" } ifnull 0)
+                jrl.entries[n].end = (gff::get_number{ doc, s = e, label = "End" } ifnull 0) != 0
+                jrl.entries[n].text = strref_of{ doc, s = e, label = "Text" }
+                jrl.entry_count = n + 1
+            }
+            jrl.categories[at].count = jrl.entry_count - jrl.categories[at].first
+            jrl.category_count = at + 1
+        }
+    }
+
+    // A localized string field's dialog.tlk strref (NO_STRREF when it has none).
+    fn strref_of { doc: gff::Doc, s: u32, label: []u8 } -> u32 {
+        let ls = gff::get_locstring{ doc, s, label } ifnull { return NO_STRREF }
+        return @trunc(u32, ls.strref)
+    }
+
+    // The category with this tag (ignoring case), or null.
+    fn find_category { jrl: *Jrl, tag: []u8 } -> ?usize {
+        let want = if tag.len > TAG_LEN { tag[..TAG_LEN] } else { tag }
+        let mut i: usize = 0
+        while i < jrl.category_count {
+            if ci::eq{ a = jrl.categories[i].tag[..jrl.categories[i].tag_len], b = want } { return i }
+            i = i + 1
+        }
+        return null
+    }
+
+    // The entry of category `cat` whose ID is `id`, as an index into Jrl.entries, or null.
+    fn find_entry { jrl: *Jrl, cat: usize, id: u32 } -> ?usize {
+        let first = jrl.categories[cat].first
+        let mut k: usize = 0
+        while k < jrl.categories[cat].count {
+            if jrl.entries[first + k].id == id { return first + k }
+            k = k + 1
+        }
+        return null
+    }
+}
