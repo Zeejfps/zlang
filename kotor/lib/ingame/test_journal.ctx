@@ -6,6 +6,7 @@
 //   FRAME ui journal complete TAG     ... to the first entry that ends the quest (it turns completed)
 //   FRAME ui journal remove TAG       RemoveJournalQuestEntry
 //   FRAME ui journal fill N           the first N quests of global.jrl, each at its first entry
+//   FRAME ui journal plot N           the first N item objects in the world become plot items the leader carries
 //   FRAME ui journal list             print every quest with its state
 //   FRAME ui log TEXT...              a feedback line in the message log
 //   FRAME ui dialog TEXT...           a dialogue line ("Speaker: text" as the original shows it)
@@ -73,6 +74,24 @@ namespace test_journal {
                 if c.count == 0 { continue }
                 _ = journal::set_state{ j = jn, tag = c.tag[..c.tag_len], state = @as(i32, jrl.entries[c.first].id), allow_lower = true, day, time }
             }
+        } else if ci::eq{ a = sub, b = "plot" } {
+            // The first N item objects in the world become plot items in the leader's inventory.
+            let n = @as(usize, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
+            let ids = party::members{ w = &w }
+            if ids.len == 0 { return }
+            let c = hud::creature_of{ w = &w, id = ids[0] } ifnull { return }
+            let all = list::items{ list = w.objects.all }
+            let mut given: usize = 0
+            let mut i: usize = 0
+            while i < all.len and given < n {
+                let o = all[i]
+                i = i + 1
+                if o.kind != obj::Kind::item or o.destroyed { continue }
+                o.plot = true
+                _ = list::push{ list = &c.inventory, item = o.id }
+                given = given + 1
+            }
+            _ = @fmt(&w.io, "journal: {} plot items given to {}\n", given, hud::name_of{ w = &w, id = ids[0] })
         } else if ci::eq{ a = sub, b = "list" } {
             let mut i: usize = 0
             while i < jn.count {

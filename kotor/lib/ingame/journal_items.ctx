@@ -1,0 +1,98 @@
+// The journal's quest items panel (questitem.gui, docs/re/gui.md "CSWGuiQuestItems"): the plot items in
+// the leader's inventory and the text of the selected one. It opens on top of the journal as a modal
+// panel; its events are not the framework's (they come from a panel other than the menu's), so the
+// journal's `update` reads them from the GUI (journal_panel.update).
+namespace journal_panel {
+    const MAX_QUEST_ITEMS: usize = 64
+
+    // BTN_QUESTITEMS: lists the leader's plot items and selects the first.
+    fn open_items { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        if s.items_panel != 0 { return }
+        let id = try gui::open{ &g, fs = &w.fs, &dev, name = "questitem", mode = gui::Mode::full_screen, modal = true }
+        gui::set_backdrop{ &g, fs = &w.fs, &dev, panel = id, kind = 0 }
+        s.items_panel = id
+        collect_items{ &s, &w }
+        let mut i: usize = 0
+        while i < s.item_count {
+            let name = hud::name_of{ w = &w, id = s.items[i] }
+            _ = try gui::list_add{ &g, panel = id, tag = "LB_ITEMS", text = name, user = @as(i64, s.items[i]) }
+            i = i + 1
+        }
+        if s.item_count > 0 { gui::list_select{ &g, panel = id, tag = "LB_ITEMS", row = 0 } }
+        gui::play_sound{ &g, n = 0 }
+        try show_item{ &s, &g, &w, row = if s.item_count > 0 { 0 } else { -1 } }
+    }
+
+    // The plot items the leader carries, in inventory order.
+    fn collect_items { mut s: State, w: *world::World } {
+        s.item_count = 0
+        let ids = hud::party_ids{ w }
+        if ids.len == 0 { return }
+        let c = hud::creature_of{ w, id = ids[0] } ifnull { return }
+        let inv = list::items{ list = c.inventory }
+        let mut i: usize = 0
+        while i < inv.len and s.item_count < MAX_QUEST_ITEMS {
+            let o = world::object{ w, id = inv[i] }
+            i = i + 1
+            if o == null { continue }
+            if o.kind != obj::Kind::item or not o.plot { continue }
+            s.items[s.item_count] = o.id
+            s.item_count = s.item_count + 1
+        }
+    }
+
+    // The description of the item on row `row`. PLACEHOLDER: the engine's Item keeps no description,
+    // so it is read from the blueprint (UTI DescIdentified, falling back to Description); when the
+    // engine reads it into the object, take it from there. The item's icon (the original puts it
+    // beside the name) waits for the same data.
+    fn show_item { mut s: State, mut g: gui::Gui, mut w: world::World, row: i32 } -> ! {
+        if s.items_panel == 0 { return }
+        if row < 0 or @as(usize, row) >= s.item_count {
+            try journal::show_text{ &g, panel = s.items_panel, tag = "LB_ITEM_DESCRIPTION", text = "" }
+            return
+        }
+        let strref = description_of{ &w, id = s.items[@as(usize, row)] }
+        let t = try text_of{ &g, strref }
+        defer gui::free_string{ &g, s = t }
+        try journal::show_text{ &g, panel = s.items_panel, tag = "LB_ITEM_DESCRIPTION", text = t }
+    }
+
+    // The strref of the examine text in an item's blueprint (NO_STRREF for none).
+    fn description_of { mut w: world::World, id: u32 } -> u32 {
+        let o = world::object{ w = &w, id } ifnull { return journal::NO_STRREF }
+        let mut template = o.template
+        let found = world::read_gff{ &w, name = resref::bytes{ r = &template }, kind = restype::Type::uti } iferr { null }
+        let doc = found ifnull { return journal::NO_STRREF }
+        let identified = journal::strref_of{ doc, s = gff::ROOT, label = "DescIdentified" }
+        if identified != journal::NO_STRREF { return identified }
+        return journal::strref_of{ doc, s = gff::ROOT, label = "Description" }
+    }
+
+    // The sub-panel's events: a row picked, Back or Escape.
+    fn items_events { mut s: State, mut g: gui::Gui, mut w: world::World } {
+        if s.items_panel == 0 { return }
+        let events = gui::take_events{ &g }
+        let mut i: usize = 0
+        while i < events.len {
+            let ev = events[i]
+            i = i + 1
+            if ev.panel != s.items_panel { continue }
+            if ev.kind == gui::EventKind::cancel or (ev.kind == gui::EventKind::activate and slice::eq_bytes{ a = ev.tag, b = "BTN_BACK" }) {
+                close_items{ &s, &g }
+                return
+            }
+            if ev.kind == gui::EventKind::row_selected and slice::eq_bytes{ a = ev.tag, b = "LB_ITEMS" } {
+                show_item{ &s, &g, &w, row = ev.row } iferr err{ error } {
+                    _ = @fmt(&w.io, "kotor: quest items: {}\n", error)
+                }
+            }
+        }
+    }
+
+    fn close_items { mut s: State, mut g: gui::Gui } {
+        if s.items_panel == 0 { return }
+        gui::close{ &g, id = s.items_panel }
+        s.items_panel = 0
+        gui::play_sound{ &g, n = 5 }
+    }
+}

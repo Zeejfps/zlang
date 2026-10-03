@@ -11,7 +11,7 @@
 //  - Selecting a quest shows its current entry's text, headed by the planet's name when the quest has
 //    one. Quests the player has not looked at yet ("new") are drawn in the new-item colour until the
 //    list is left (swapped or closed).
-//  - BTN_QUESTITEMS is not built: it needs the leader's plot items (questitem.gui).
+//  - BTN_QUESTITEMS opens the plot items the leader carries (journal_items.ctx).
 namespace journal_panel {
     const COMPLETED_STRREF: u32 = 32177     // "Completed Quests"
     const ACTIVE_STRREF: u32 = 32178        // "Active Quests"
@@ -52,6 +52,9 @@ namespace journal_panel {
         view: View,
         seen: [128]bool,                // quests selected since the list was built: no longer new
         shown_version: u32,             // the journal's version the list was built from
+        items_panel: u32,               // the quest items panel on top, 0 when closed (journal_items.ctx)
+        items: [64]u32,                 // its rows: item ids
+        item_count: usize,
     }
 
     fn new {} -> State {
@@ -81,6 +84,7 @@ namespace journal_panel {
 
     // Every frame while the panel is shown.
     fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, dt: f32 } {
+        items_events{ &s, &g, &w }
         let jn = journal_of{ &s, w = &w }
         if jn.version == s.shown_version { return }
         refill{ &s, &g, &w, panel } iferr err{ error } {
@@ -107,6 +111,12 @@ namespace journal_panel {
             }
             return true
         }
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_QUESTITEMS" } {
+            open_items{ &s, &g, &w, &dev } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: quest items: {}\n", error)
+            }
+            return true
+        }
         if slice::eq_bytes{ a = ev.tag, b = "BTN_SORT" } {
             let list: usize = if s.completed { 1 } else { 0 }
             s.sort[list] = (s.sort[list] + 1) % SORT_COUNT
@@ -121,6 +131,7 @@ namespace journal_panel {
 
     // The panel is going away.
     fn close { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } {
+        close_items{ &s, &g }
         clear_seen{ &s, w = &w }
         s.opened = false
     }
