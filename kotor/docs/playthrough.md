@@ -70,7 +70,7 @@ engine lead, merged), **open**.
 | 27 | Upper City North (`tar_m02ab`): the Sith guard's conversation at the lower city door; Lower City (`tar_m03aa`): the Black Vulkar fight, Canderous's conversation `tar03_cand032`, a Sith patrol; the door to the Undercity | works | `10_endar_spire.txt` |
 | 28 | The Undercity (`tar_m04aa`, 466 objects): arrival at the elevator, the outcast woman's gate conversation | works up to the panic below | `10_endar_spire.txt` |
 | 29 | About 30 minutes in: `actions.ctx:102 panic: integer overflow` (a u16 action group wrapped by a polling script) | reported to engine | `10_endar_spire.txt` |
-| 30 | Every Taris module loads headless with 0 script faults (`smoke.sh tar_m02aa ... tar_m11ab`) | works | `smoke.sh` |
+| 30 | Every module of the install (115: Endar Spire, Taris, Dantooine, Kashyyyk, Tatooine, Manaan, Korriban, Lehon, the Ebon Hawk, the Star Forge, the stunt cutscene modules) loads headless for 100 frames with 0 script faults, 0 missing routines and a picture (`smoke.sh MODULE...`, pictures `kotor/out/pt/smoke_MODULE.png`); the default player alone in a hostile module can die in seconds (`tar_m09aa`) | works | `smoke.sh` |
 | 31 | Trask's entry: after the dream cutscene he opens the bunk room door himself, runs in and stops 1 m from the player, facing him, before "We've been ambushed..." (the user found him speaking through the closed door: `GetObjectByTag("")` is the player, k_pend_traskdl40) | engine (7ab46dc); checked by `13_trask_entry.txt` + `kotor/tools/py/check_trask_entry.py` | `13_trask_entry.txt` |
 | 32 | Staging audit of every conversation of the route (`dialog stage:` log lines per line, `kotor/tools/py/stage_audit.py LOG`): who stands how far from whom, in which rooms; remote comm conversations (Carth) and cutscene scene objects are far by design | works (nothing else far or behind walls in the ordinary conversations) | `10_endar_spire.txt` with LOG=dialog |
 
@@ -88,3 +88,8 @@ about 5 minutes of wall time), with 0 script faults.
 - The yellow arrow over the leader's portrait after the Security tutorial: looks like the switch-leader
   hint; check against the original.
 - Dialogue reply texts begin with the tutorial's "[Left-click this answer...]" line as the data has it.
+
+## Known and benign
+
+- Scripts that run out of instructions: at the end of a conversation in the Upper City, 14 creatures' `k_def_endconv` -> `k_ai_master` hit the VM's 131,072-instruction budget (`fault: k_ai_master ... the instruction budget ran out`). The loop in `k_ai_master` ("Commoner AI": nearest enemy by reputation, `GetStandardFaction` hostile, `GetDistanceBetween <= 20`) never advances when the nearest enemy is farther than 20 m; the original has the same budget (vm.md) and the same script, so this is BioWare's bug and the original aborts the script the same way. Counted in the run's "faults".
+- The conversation reply queue holds 128 numbers; `ui replies default N` answers every list after it.

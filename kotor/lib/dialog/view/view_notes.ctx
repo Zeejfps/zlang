@@ -61,11 +61,16 @@ namespace dlgview {
             return true
         }
         if ci::eq{ a = cmd, b = "replies" } {
+            // `replies default N` answers every list after the queue with reply N (past the list: the last).
             // `replies 1 2 1`: queues replies, each picked when a list opens (the queue outlives conversations).
             while true {
                 let word = text::next_word{ &words } ifnull { break }
+                if ci::eq{ a = word, b = "default" } {
+                    w.conversation.scripted_default = @trunc(u8, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+                    break
+                }
                 let c = &w.conversation
-                if c.scripted_count < 32 {
+                if c.scripted_count < c.scripted.len {
                     c.scripted[c.scripted_count] = @trunc(u8, text::scan_decimal{ s = word })
                     c.scripted_count = c.scripted_count + 1
                 }
