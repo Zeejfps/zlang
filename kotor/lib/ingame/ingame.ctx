@@ -47,7 +47,9 @@ namespace ingame {
             width, height, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{}, log = hud::new_log{},
             pause_panel = 0, hud_hidden = false,
         }
-        return try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
+        let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
+        hud::set_tooltips{ h = &p.hud, g = &p.gui, &w, text = &p.text }
+        return p
     }
 
     // Closes every panel and frees the interface (a module change makes a new one).
@@ -211,6 +213,7 @@ namespace ingame {
     // block's slots.
     fn hud_event { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } {
         if hud::block_event{ h = &ui.hud, g = &ui.gui, &w, &dev, ev } { return }
+        if hud::combat_event{ h = &ui.hud, g = &ui.gui, &w, ev } { return }
         if ev.kind == gui::EventKind::activate {
             let n = menu_of_tag{ tag = ev.tag }
             if n >= 0 {
@@ -233,7 +236,7 @@ namespace ingame {
 
     // Adds the interface to the frame: the HUD's own render targets, then the panels.
     fn draw { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame } {
-        if ui.menu == NO_MENU and not ui.hud_hidden { hud::draw{ h = &ui.hud, g = &ui.gui, &w, &dev, &frame } }
+        if ui.menu == NO_MENU and not ui.hud_hidden { hud::draw{ h = &ui.hud, g = &ui.gui, &w, &dev, &frame, log = &ui.log } }
         gui::draw{ g = &ui.gui, &frame }
     }
 }

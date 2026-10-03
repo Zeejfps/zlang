@@ -1,0 +1,77 @@
+// Feedback text on the HUD, and the tooltips of its buttons. The log (log.ctx) keeps the lines;
+// the last few that are young are drawn under the minimap's notification icons, fading out.
+namespace hud {
+    // Feedback lines on the screen at once, and how long one stays at full strength / in all.
+    const FEEDBACK_LINES: usize = 5
+    const FEEDBACK_HOLD: f32 = 6.0
+    const FEEDBACK_FADE: f32 = 2.0
+
+    // Draws the young feedback lines, newest at the bottom, in the HUD's blue.
+    fn draw_feedback { mut h: Hud, mut g: gui::Gui, log: *MessageLog, mut frame: render::Frame } {
+        if h.font < 0 { return }
+        let font = gui::font_of{ g = &g, slot = h.font }
+        let n = log_count{ log }
+        // The youngest feedback lines, oldest of them first.
+        let mut picked: [5]usize
+        let mut count: usize = 0
+        let mut i: usize = n
+        while i > 0 and count < FEEDBACK_LINES {
+            i = i - 1
+            if log_kind{ log, i } != LOG_FEEDBACK { continue }
+            if log_age{ log, i } > FEEDBACK_HOLD + FEEDBACK_FADE { break }
+            picked[count] = i
+            count = count + 1
+        }
+        if count == 0 { return }
+        let area = gui::control_rect{ g = &g, panel = h.panel, tag = "LBL_MAPBORDER" } ifnull { return }
+        let x = area.x + area.w + 70.0
+        let mut y = area.y + 62.0
+        render::begin_ui{ &frame, width = h.projector.w, height = h.projector.h, target = null }
+        let mut k = count
+        while k > 0 {
+            k = k - 1
+            let age = log_age{ log, i = picked[k] }
+            let a = if age <= FEEDBACK_HOLD { 1.0 } else { math::max{ a = 0.0, b = 1.0 - (age - FEEDBACK_HOLD) / FEEDBACK_FADE } }
+            _ = render::draw_text{ &frame, font, x, y, text = log_text{ log, i = picked[k] }, color = render::Color{ r = 0.0, g = 0.66, b = 0.98, a }, scale = 1.0, clip = null }
+            y = y + font.height + 2.0
+        }
+    }
+
+    // ---- tooltips
+
+    // The menu buttons' tooltips are the menu's name and the key that opens it (docs/re/gui.md).
+    const MENU_TIPS: [8]u32 = [48219, 48220, 48225, 48224, 48223, 48218, 48221, 48222]
+    const MENU_KEYS: [8][]u8 = ["U", "I", "P", "K", "J", "L", "M", "O"]
+
+    fn set_tooltips { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut text: utf8::Builder(heap::Heap) } {
+        let tags: [8][]u8 = ["BTN_EQU", "BTN_INV", "BTN_CHAR", "BTN_ABI", "BTN_MSG", "BTN_JOU", "BTN_MAP", "BTN_OPT"]
+        let mut k: usize = 0
+        while k < 8 {
+            list::clear{ list = &text.bytes }
+            @fmt(&text, "{} : {}", world::string_by_strref{ w = &w, strref = MENU_TIPS[k] }, MENU_KEYS[k]) iferr { continue }
+            gui::set_tooltip{ &g, panel = h.panel, tag = tags[k], text = utf8::view{ b = text }.bytes } iferr {}
+            k = k + 1
+        }
+        let more: [3]u32 = [48019, 48035, 247]
+        let more_tags: [3][]u8 = ["TB_PAUSE", "TB_SOLO", "TB_STEALTH"]
+        k = 0
+        while k < 3 {
+            gui::set_tooltip{ &g, panel = h.panel, tag = more_tags[k], text = world::string_by_strref{ w = &w, strref = more[k] } } iferr {}
+            k = k + 1
+        }
+        gui::set_tooltip{ &g, panel = h.panel, tag = "BTN_MINIMAP", text = world::string_by_strref{ w = &w, strref = MENU_TIPS[6] } } iferr {}
+        gui::set_tooltip{ &g, panel = h.panel, tag = "BTN_CLEARALL", text = world::string_by_strref{ w = &w, strref = 48518 } } iferr {}
+    }
+
+    // A party button's tooltip: the name and its vitality, Force and level (strrefs 1061, 1060,
+    // 32154 as the original builds it).
+    fn set_member_tooltip { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut text: utf8::Builder(heap::Heap), n: usize, id: u32, v: Vitality, f: Force, level: i32 } {
+        let mut buf: [24]u8
+        list::clear{ list = &text.bytes }
+        @fmt(&text, "{}\n{}: {}/{}\n{}: {}/{}\n{}: {}", name_of{ w = &w, id },
+            world::string_by_strref{ w = &w, strref = 1061 }, v.hp, v.hp_max,
+            world::string_by_strref{ w = &w, strref = 1060 }, f.fp, f.fp_max,
+            world::string_by_strref{ w = &w, strref = 32154 }, level) iferr { return }
+        gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_CHAR", n = n + 1 }, text = utf8::view{ b = text }.bytes } iferr {}
+    }
+}

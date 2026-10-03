@@ -1,0 +1,6 @@
+# combat mode with a queued attack, and feedback lines
+3 ui join carth
+5 ui say You have received 3 credits.
+6 ui say Attack hit: 7 damage.
+8 ui combat end_trask
+9 ui say Trask is hostile.

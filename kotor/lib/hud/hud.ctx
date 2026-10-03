@@ -29,6 +29,9 @@ namespace hud {
         widgets: [3]Widget,
         block: [16]BlockPart,               // by BLOCK_TAGS
         minimap: MiniMap,
+        font: i32,                          // the feedback lines' font slot, -1 none
+        combat: bool,                       // the combat controls are up
+        combat_message: f32,                // seconds left of the combat-mode message
         shown_target: u32,                  // the target the block was built for
         lists: [3]ActionList,               // the block's slots
         pressed: u32,                       // the object under the pointer when the button went down
@@ -69,6 +72,7 @@ namespace hud {
             widgets = [Widget{ id = obj::INVALID, portrait = 0, hp = -1, hp_max = -1, fp = -1, fp_max = -1, level = -1, down = false }; 3],
             block = [BlockPart{ index = -1, x = 0, y = 0 }; 16],
             minimap = open_minimap{ &g, &w, &dev, panel },
+            font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }, combat = false, combat_message = 0.0,
             shown_target = obj::INVALID, lists = [empty_list{}; 3], pressed = obj::INVALID,
             projector = Projector{ vp = math::mat4::identity{}, eye = math::vec3::zero{}, w = 1.0, h = 1.0 },
         }
@@ -192,9 +196,10 @@ namespace hud {
     }
 
     // Adds the HUD's own passes to the frame, before the panels (the minimap's target).
-    fn draw { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame } {
+    fn draw { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame, log: *MessageLog } {
         draw_minimap{ mm = &h.minimap, &g, &w, &dev, &frame, panel = h.panel }
         draw_reticle{ &h, &g, &w, &dev, &frame }
+        draw_feedback{ &h, &g, log, &frame }
     }
 
     // One frame: everything the HUD shows that the world decides. `blocked` says a menu or
@@ -207,6 +212,7 @@ namespace hud {
         update_party{ &h, &g, &w, &dev, &text }
         update_hover{ &h, &g, &w, blocked }
         update_block{ &h, &g, &w, &dev }
+        update_combat{ &h, &g, &w, &dev, dt }
     }
 
     // Portraits, vitality and Force bars, level-up and down marks of the party members.
@@ -266,6 +272,7 @@ namespace hud {
             gui::set_value{ &g, panel, tag = tag_n{ into = buf[..], prefix = "PB_VIT", n = n + 1 }, value = v.hp }
             wd.hp = v.hp
             wd.hp_max = v.hp_max
+            set_member_tooltip{ &h, &g, &w, &text, n, id, v, f, level }
         }
         if fresh or wd.fp != f.fp or wd.fp_max != f.fp_max {
             gui::set_max{ &g, panel, tag = tag_n{ into = buf[..], prefix = "PB_FORCE", n = n + 1 }, max = f.fp_max }
@@ -276,8 +283,8 @@ namespace hud {
         if fresh or wd.level != level or wd.down != down {
             wd.level = level
             wd.down = down
+            set_member_tooltip{ &h, &g, &w, &text, n, id, v, f, level }
         }
         _ = c
-        _ = text
     }
 }

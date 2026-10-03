@@ -35,6 +35,16 @@ namespace ingame {
         } else if ci::eq{ a = cmd, b = "target" } {
             let tag = text::next_word{ &words } ifnull { return }
             w.target = world::object_by_tag{ w = &w, tag, nth = 0 }
+        } else if ci::eq{ a = cmd, b = "combat" } {
+            // Puts the leader in combat mode (there is no combat yet) and queues an attack on TAG.
+            let c = hud::creature_of{ w = &w, id = party::leader{ w = &w } } ifnull { return }
+            c.in_combat = true
+            let tag = text::next_word{ &words } ifnull { return }
+            let mut a = actions::make{ kind = actions::Kind::attack_object }
+            a.params[0] = actions::Param::object{ id = world::object_by_tag{ w = &w, tag, nth = 0 } }
+            _ = actions::add{ &w, id = party::leader{ w = &w }, action = a, force = false }
+        } else if ci::eq{ a = cmd, b = "say" } {
+            hud::log_add{ log = &ui.log, text = text::rest{ words }, kind = hud::LOG_FEEDBACK }
         } else if ci::eq{ a = cmd, b = "join" } {
             // The object joins the party (play will have the party lead's routines for this).
             let tag = text::next_word{ &words } ifnull { return }
