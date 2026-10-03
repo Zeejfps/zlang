@@ -20,6 +20,8 @@ namespace rt_act {
         else if routine == nwscript::ActionOpenDoor { try door_action{ &w, &vm, argc, routine, kind = actions::Kind::open_door } }
         else if routine == nwscript::ActionCloseDoor { try door_action{ &w, &vm, argc, routine, kind = actions::Kind::close_door } }
         else if routine == nwscript::ActionStartConversation { try action_start_conversation{ &w, &vm, argc } }
+        else if routine == nwscript::ActionRandomWalk { _ = actions::add{ &w, id = self_of{ vm = &vm }, action = actions::make{ kind = actions::Kind::random_walk }, force = false } }
+        else if routine == nwscript::ActionForceFollowObject { try force_follow{ &w, &vm, argc } }
         else { return false }
         return true
     }
@@ -164,6 +166,18 @@ namespace rt_act {
         let mut a = actions::make{ kind }
         a.params[0] = actions::Param::object{ id = door }
         _ = actions::add{ &w, id = self_of{ vm = &vm }, action = a, force = false }
+    }
+
+    // void ActionForceFollowObject(object oFollow, float fFollowDistance = 0.0): queues even on a
+    // non-commandable object (actions.md 1.6).
+    fn force_follow { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::ActionForceFollowObject
+        let target = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let dist = try nwarg::float{ &vm, routine = r, argc, i = 1 }
+        let mut a = actions::make{ kind = actions::Kind::follow }
+        a.params[0] = actions::Param::object{ id = target }
+        a.params[1] = actions::Param::float{ v = dist }
+        _ = actions::add{ &w, id = self_of{ vm = &vm }, action = a, force = true }
     }
 
     // void ActionStartConversation(object oObjectToConverse, string sDialogResRef = "",

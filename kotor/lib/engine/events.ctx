@@ -181,6 +181,13 @@ namespace events {
         if e.kind == PLAYER_ENTER { o.ctx.entering = e.objects[0] }
         if e.kind == PLAYER_EXIT { o.ctx.exiting = e.objects[0] }
         if e.kind == PATH_BLOCKED { o.ctx.blocker = e.objects[0] }
+        if e.kind == PERCEPTION {
+            o.ctx.last_perceived = e.objects[0]
+            o.ctx.perceived_seen = e.ints[0] & perception::SEEN != 0
+            o.ctx.perceived_heard = e.ints[0] & perception::HEARD != 0
+            o.ctx.perceived_vanished = e.ints[0] & perception::VANISHED != 0
+            o.ctx.perceived_inaudible = e.ints[0] & perception::INAUDIBLE != 0
+        }
         if w.log.events {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "event {} to {} ({}) from {}\n", e.kind, id, o.tag, caller)

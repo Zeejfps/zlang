@@ -32,6 +32,17 @@ Where ctxlang got in the way while writing the world, the routines, the scene an
   continue }`): split into two statements with a narrowed `let`.
 - **No tuples.** `let (opening, opened) = if two { (a, b) } else { (c, d) }` became two `let`s
   with the same condition.
+- **A struct literal names every field.** Adding a field to a struct that many places build
+  (obj::Placeable's literal in world::make_ext) breaks them all; a sub-agent that couldn't edit
+  that file kept a placeable's inventory cursor in an unrelated map under made-up keys instead.
+  Defaults for fields (or a `..default` spread in literals) would let kinds grow by many hands.
+- **No module-level state.** Anything "remembered once" (a log-once flag, a parsed table) must be
+  a World field; the routine files can't keep a private cache, so every new cache touches
+  world.ctx, the one file every agent needs.
+- **`@fmt` has no fixed-point floats** (FloatToString's `%18.9f`): an exact decimal expansion
+  was written by hand (rt_core::format_fixed). f64 libm functions needed their own externs.
+- Fixed since: integer `match` (routine chains can be `match routine { nwscript::X => ... }`),
+  big read-only arguments passed by reference.
 - **`#write` needs one writer per exact type**: the log prefix's zero-padded milliseconds needed
   its own wrapper struct and writer (`world::Pad3`), and SDL's `c::String` error text another in
   game/main (`kotor_out`), since tools/common has neither.

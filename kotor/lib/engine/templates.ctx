@@ -48,6 +48,7 @@ namespace tmpl {
             waypoint{ wp } => { try read_waypoint{ &w, o, wp, doc, s } }
             sound{ s = snd } => { try read_sound{ &w, o, snd, doc, s } }
             item{ i } => { try read_item{ &w, o, i, doc, s } }
+            encounter{ e } => { try read_encounter{ &w, o, e, doc, s } }
             else => { try read_common{ &w, o, doc, s, name_label = "LocName" } }
         }
     }
@@ -364,6 +365,63 @@ namespace tmpl {
         wp.has_map_note = flag{ doc, s, label = "HasMapNote", default = wp.has_map_note }
         wp.map_note_enabled = flag{ doc, s, label = "MapNoteEnabled", default = wp.map_note_enabled }
         try read_name{ &w, doc, s, label = "MapNote", into = &wp.map_note }
+    }
+
+    // ---- encounters (UTE) and the GIT encounter entry
+
+    fn read_encounter { mut w: world::World, o: *mut obj::Object, e: *mut obj::Encounter, doc: *gff::Doc, s: u32 } -> ! {
+        try read_common{ &w, o, doc, s, name_label = "LocalizedName" }
+        e.active = flag{ doc, s, label = "Active", default = e.active }
+        e.player_only = flag{ doc, s, label = "PlayerOnly", default = e.player_only }
+        e.max_creatures = @trunc(u32, number{ doc, s, label = "MaxCreatures", default = @as(i64, e.max_creatures) })
+        e.rec_creatures = @trunc(u32, number{ doc, s, label = "RecCreatures", default = @as(i64, e.rec_creatures) })
+        script{ doc, s, o, label = "OnEntered", slot = obj::Slot::enter }
+        script{ doc, s, o, label = "OnExit", slot = obj::Slot::exit }
+        script{ doc, s, o, label = "OnExhausted", slot = obj::Slot::exhausted }
+        script{ doc, s, o, label = "OnHeartbeat", slot = obj::Slot::heartbeat }
+        script{ doc, s, o, label = "OnUserDefined", slot = obj::Slot::user_defined }
+        let list = gff::get_list{ doc = doc.*, s, label = "CreatureList" }
+        if list != null {
+            let names = try alloc::resize(resref::ResRef, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(resref::ResRef){}, count = list.len }
+            let mut i: usize = 0
+            while i < list.len {
+                names[i] = resref::truncate{ name = gff::get_resref{ doc = doc.*, s = list[i], label = "ResRef" } ifnull "" }
+                i = i + 1
+            }
+            _ = alloc::resize(resref::ResRef, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = e.creatures, count = 0 }
+            e.creatures = names
+        }
+        let points = gff::get_list{ doc = doc.*, s, label = "Geometry" }
+        if points != null {
+            let poly = try alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(math::Vec3){}, count = points.len }
+            let mut i: usize = 0
+            while i < points.len {
+                poly[i] = math::Vec3{
+                    x = o.position.x + real{ doc, s = points[i], label = "X", default = 0.0 },
+                    y = o.position.y + real{ doc, s = points[i], label = "Y", default = 0.0 },
+                    z = o.position.z + real{ doc, s = points[i], label = "Z", default = 0.0 },
+                }
+                i = i + 1
+            }
+            _ = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = e.polygon, count = 0 }
+            e.polygon = poly
+        }
+        let spawns = gff::get_list{ doc = doc.*, s, label = "SpawnPointList" }
+        if spawns != null {
+            let at = try alloc::resize(math::Vec4, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(math::Vec4){}, count = spawns.len }
+            let mut i: usize = 0
+            while i < spawns.len {
+                at[i] = math::Vec4{
+                    x = real{ doc, s = spawns[i], label = "X", default = 0.0 },
+                    y = real{ doc, s = spawns[i], label = "Y", default = 0.0 },
+                    z = real{ doc, s = spawns[i], label = "Z", default = 0.0 },
+                    w = real{ doc, s = spawns[i], label = "Orientation", default = 0.0 },
+                }
+                i = i + 1
+            }
+            _ = alloc::resize(math::Vec4, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = e.spawn_points, count = 0 }
+            e.spawn_points = at
+        }
     }
 
     // ---- sound objects (UTS)

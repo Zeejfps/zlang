@@ -14,10 +14,11 @@ The engine is two layers, as the original is (server and client halves in one pr
 
 | Directory | Namespaces | What | Depends on |
 |---|---|---|---|
-| `lib/engine` | `world`, `obj`, `clock`, `modload`, `tmpl`, `walkmap`, `events`, `scripts`, `values`, `actions`, `ai`, `movement`, `outbox`, `elog` | the game state and its rules of change: objects, time, events, actions, scripts, walking. **No render, SDL or audio device**: it runs headless, in tests and tools | base, formats, res, script, walk, mdl (animation lengths, hooks) |
+| `lib/engine` | `world`, `obj`, `clock`, `modload`, `tmpl`, `walkmap`, `events`, `scripts`, `values`, `actions`, `doors`, `ai`, `movement`, `paths`, `perception`, `party`, `globals`, `animname`, `outbox`, `elog`, `report` | the game state and its rules of change: objects, time, events, actions, scripts, walking. **No render, SDL or audio device**: it runs headless, in tests and tools | base, formats, res, script, walk, mdl (animation lengths, hooks) |
 | `lib/engine/routines` | `routines` (dispatch) + one `rt_*` namespace per category file | the engine routines scripts call | lib/engine |
-| `lib/scene` | `scene`, `visual`, `animname`, `cam`, `ctl`, `ambience` | the presentation: rooms and VIS, a visual per object (models, animation), the camera, keyboard control, area music and sound objects | lib/engine, render, mdl_cache, mdl_render, material, audio |
-| `game/` | top level | `fn main`, options, the loop (live and headless), screens | everything |
+| `lib/scene` | `scene`, `visual`, `cam`, `ctl`, `ambience` | the presentation: rooms and VIS, a visual per object (models, animation), the camera, keyboard control, area music and sound objects | lib/engine, render, mdl_cache, mdl_render, material, audio |
+| `game/` | top level, `options`, `play` | `fn main`, options, the front end and the game loop (live and headless) | everything |
+| `tools/enginetest` | top level | lib/engine alone, headless, for routine and script work: `--module M --frames N --log LIST --report` | lib/engine |
 | `build.ctx` | | the `kotor` executable (-O2) | |
 
 Other leads add their own directories beside these (below, "Plugging in"): `lib/rules` (`rules`),
@@ -42,7 +43,11 @@ struct World {
     clock: clock::Clock,             // world time (µs), calendar, pause
     objects: obj::Table,             // id → *mut Object, creation order, next ids
     module: u32, area: u32,          // the module's and its one area's object ids
-    pc: u32,                         // the player's creature (the party leader)
+    pc: u32,                         // the player's creature (keyboard control moves it)
+    party: party::Party,             // members in the area (leader first), NPC slots, the purse
+    target: u32, hover: u32,         // the HUD's selected and hovered objects (it picks them)
+    repute: [32][32]u8,              // repute.2da standings; world::standing{ w, from, toward }
+    paths: ?pth::Graph,              // the area's path points (module memory)
     queue: events::Queue,            // timed events (DelayCommand, AssignCommand, SignalEvent, ...)
     scripts: scripts::Cache,         // programs by resref, for this module
     values: values::Store,           // engine values (effect, event, location, talent) by handle
@@ -185,7 +190,9 @@ waypoints, sounds, placeables, stores). Creatures join AI level 0, become 1 when
 unless paused, the calendar origin (year, month, day, hour from the IFO), `min_per_hour`
 (`Mod_MinPerHour`, 2 in KOTOR), and `world_ms` = `now_us / 1000`. Event times are absolute world
 milliseconds (*ours*; the original keeps (day, ms) pairs, which saves convert to and from).
-Pause (gameloop.md 6) freezes it; the GUI and camera use real time. The delta every system reads
+Pause (gameloop.md 6) freezes it: `clock::set_pause{ c = &w.clock, bit, on }` with
+`PAUSE_PLAYER`, `PAUSE_MENU`, `PAUSE_ENGINE`; any bit set stops the clock, but `world::tick` still
+runs, so zero-delay events go through (6.2). The GUI and camera use real time. The delta every system reads
 is `clock.dt` (seconds, 0 while paused), clamped to 0.25 s (*ours*: the original never clamps).
 
 ## The frame
@@ -341,8 +348,11 @@ and `routines::dispatch` asks each category in turn (`if try rt_vars::run{ &w, &
 argc } { return }`), and when none takes it, counts it in `w.stats.missing[routine]` and lets
 `nwstub::fallback` pop the arguments and push a zero result, so a script goes on. A function with
 an inferred error set can't be a function value, so this is a chain of direct calls, not a table;
-an `if` chain of ~70 compares per category costs nothing next to a script's run. (When the
-language's integer `match` lands, a category may switch to `match routine { ... }`.)
+an `if` chain (or an integer `match routine { nwscript::GetHitDice => {...} else => { return false } }`)
+costs nothing next to a script's run. **The dispatcher checks every call's stack balance**: the
+arguments the script passed must be gone and the result pushed, as the prototype says; a handler
+that slips is reported once as `BUG: routine X left N stack cells, wanted M` (one such slip,
+PlayRumblePattern's missing int, made a later DelayCommand fault in another script).
 
 **Adding a routine** (any agent):
 
@@ -378,7 +388,17 @@ turning at the camerastyle rates, moved by `ctl::move_leader` with up to six sli
 leader's new position goes straight into the world object (as the original writes the server
 creature) with the trigger bookkeeping (`movement::cross_volumes`). The leader's animation is set
 from its speed (10000 stand, 10002 walk, 10004 run). **NPC movement** is server side: MOVETOPOINT
-and its relatives in `movement`, with the acceleration and braking of movement.md 3.3.
+and its relatives in `movement`, with the acceleration and braking of movement.md 3.3, along a
+path from `paths::plan` (the straight walk if clear, else A* over the area's PTH points, string
+pulled, else the farthest clear point; movement.md 4). FOLLOW, FOLLOWLEADER and RANDOMWALK push a
+move, a wait and themselves in front, as actions.md 3.3 has it.
+
+**Perception** (`perception`, gameloop.md 2.4): each creature checks the party every update and
+everyone in its area every 4 s (0.2 s in combat); seen = within ranges.2da's sight range with a
+clear line at eye height through the rooms' walkmeshes (LineOfSight materials), heard = within
+the hearing range. Changes post script event 1 (PERCEPTION) with what changed in `ints[0]`
+(1 seen, 2 heard, 4 vanished, 8 inaudible); the object's `ctx` keeps them for
+GetLastPerception*. Stealth and the rules' checks are HOOK(rules).
 
 ## The scene
 
@@ -441,11 +461,26 @@ routine needs a new kind of client effect.
 
 ## Plugging in
 
-- **GUI and front end** (lib/gui, lib/frontend; agreed with the GUI lead). Per frame game/main
-  calls `gui::handle_event{ &g, ev, scale_x, scale_y }` for each event (a `true` result means the
-  GUI took it: not a game key or a world click), `gui::update{ &g, dt }`, while no module runs
-  `frontend::step` (→ `running`, `new_game{ module }`, `load_game{ save }`, `quit`), and after
-  the 3D views `gui::draw{ &g, &frame }`. `gui::is_modal_open` pauses the world. In-game panels
+The loop in `game/play.ctx`, with the hooks the leads agreed (each lead adds its own lines, in a
+marked block):
+
+```
+front end (lib/frontend) until New Game        -> modload::enter
+each frame:
+  events: ingame::handle_event (HUD lead) / dlgview input when it wants it (dialogue lead) / ctl keys
+  clock::advance; ctl::update; world::tick
+  a pending transition: modload::take_transition, scene and ambience rebuilt
+  dlg::update (dialogue pump), ingame::update (HUD)
+  outbox notes -> ambience::take, ingame::take, ...
+  scene::sync; cam::update; dlgview::apply_camera; dlgview::update; ambience::update; audio
+  render: scene::draw, ingame::draw / gui::draw, gpu::submit, screenshots, present
+```
+
+- **GUI and front end** (lib/gui, lib/frontend; docs/design/gui.md). Without `--module`,
+  `play::front_end` runs `frontend::handle_event`/`step`/`draw` until New Game (`end_m01aa`;
+  Load Game also starts a new game until saves exist), then `frontend::leave`. In game, the
+  in-game UI lead's `ingame` (lib/hud, lib/ingame) owns its `gui::Gui` (HUD, panels) and
+  `gui::handle_event`'s `true` means the event isn't a game key or a world click. `gui::is_modal_open` pauses the world. In-game panels
   are poll-style (`gui::clicked`) so engine code dispatches with plain calls. The GUI never reads
   SDL or the clock itself: headless runs feed it scripted events and a fixed dt. The HUD reads the
   world (`w`) read-only for portraits, health and the party.
@@ -458,11 +493,13 @@ routine needs a new kind of client effect.
   `rules::roll_attack` etc. with `rules::Combatant` views and apply the results (HP, animations,
   script events: damaged, death, end of round); `rules::update_effects` events are routed the same
   way. `rules::Time{ day, ms }` comes from `w.clock`; one `rules::Rng` per world.
-- **Dialogue** (lib/dialog, `dlg`): the DIALOGOBJECT action (ActionStartConversation) calls
-  `dlg::start{ &w, &vm, engine, owner, speaker, dlg_resref, ... }`; the conversation's state is a
-  World field (`w.conversation`); its conditionals and scripts run through `scripts::run` with the
-  engine; it shows through the GUI and moves the camera (HOOK(dialog) in game/main's step 7).
-  `Action/Pause/ResumeConversation`, `GetPCSpeaker`, `GetIsInConversation` are rt_dlg's.
+- **Dialogue** (lib/dialog: `dlg`, `dlgview`, routines `rt_dlg`; agreed with the dialogue lead):
+  DIALOGOBJECT posts script event 7 (DIALOGUE) to the target with the resref; `events` calls
+  `dlg::note_event` before the slot runs, and an empty OnDialogue runs `k_hen_dialogue01`, which
+  calls BeginConversation. The state is `w.conversation: dlg::State`; `dlg::update` pumps it after
+  the transition step; `dlgview` takes input while it wants it, overrides the camera after
+  `cam::update` (shots), and drives VO, lip sync and animations after `scene::sync`. Dialogue
+  animations (dialoganimations.2da ids) are looked up by `animname::name_in`.
 - **Saves** (lib/save): all game state is in the World, so a save writes it (module state as a GIT
   of full structs, the IFO with the event queue, globals, party), and a load enters the module
   through `modload::enter{ ..., from_save }`, whose object readers (`tmpl::*`) take full structs.
@@ -472,15 +509,18 @@ routine needs a new kind of client effect.
 
 ## Headless and logs
 
-`kotor --module end_m01aa [--game DIR] [--headless] [--frames N] [--dt S] [--input FILE]
-[--screenshot-at FRAME:PATH]... [--log scripts,routines,events,actions] [--report routines]
-[--seed N]`:
+`kotor [--module end_m01aa] [--game DIR] [--headless] [--no-render] [--frames N] [--dt S]
+[--input FILE] [--screenshot-at FRAME:PATH]... [--log scripts,routines,events,actions,objects]
+[--report routines] [--seed N] [--size WxH]` (no `--module`: the front end first):
 
 - `--headless`: a hidden window (the GL backend renders the same pixels offscreen), a fixed time
   step (`--dt`, default 1/30 s), the rng seeded (`--seed`, default 1), so a run is reproducible.
-- `--input FILE`: one event per line, `FRAME down KEY` / `FRAME up KEY` / `FRAME mouse DX DY` /
-  `FRAME click X Y`, keys by SDL name (`w`, `a`, `space`, `escape`); applied at the start of that
-  frame.
+- `--input FILE`: one command per line, applied at the start of that frame: `FRAME down KEY` /
+  `FRAME up KEY` (a letter, `up`, `down`, `left`, `right`, `space`, `escape`), and for tests
+  `FRAME warp TAG` (the leader 1.5 m in front of the object), `FRAME use TAG` (the leader's default
+  action on it), `FRAME newgame` (the front end's New Game). Keys: W/S or arrows forward and back,
+  Z/C strafe, A/D or arrows turn the camera, R or Space the default action (the nearest door,
+  useable placeable or creature with a conversation in front, within 3 m).
 - `--screenshot-at F:PATH` (repeatable) reads the screen after frame F's render and writes a PNG.
 - Logs go to stdout, one line each, prefixed with the frame and world time: `[12 0.400] script
   k_pend_area01 self=2 -> 0`, `[12 0.400] routine GetObjectByTag("end_trask", 0) -> 7`.
@@ -489,6 +529,9 @@ routine needs a new kind of client effect.
 
 - Ids from 1, not 0; event times as world ms; no AI time budget; delta clamped to 0.25 s; the
   internal animation id → name table; arrows also move the leader.
-- Open: the client's animation id → name mapping (`0x0069f650`), the exact TestWalkLine sliding,
-  door DWK use while opening, perception details (rules lead and RE), the 10 ms budget if a big
-  module needs it.
+- A door's `trans` plane is never drawn; PLAYANIMATION's fire-and-forget length is 1.5 s until
+  the server reads model animation lengths; perception has no stealth yet; the player faces its
+  input from standstill at once; camera collision is one ray against the walkmeshes.
+- Open: the client's animation id → name mapping (`0x0069f650`), the exact TestWalkLine sliding
+  and creature collision, the grid planner, door DWK use while opening, the 10 ms budget if a big
+  module needs it, the module state kept on leaving (HOOK(save): GAMEINPROGRESS).
