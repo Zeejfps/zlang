@@ -99,8 +99,13 @@ fn run {
     try frontend::begin{ &fe, &g, &fs, &dev, &sdl, mixer }
 
     let mut k = o.first
+    let mut again: i32 = 0                          // runs of the current command still to come (NAME:ARG*N repeats it N times)
     while k < args.len {
-        let cmd = args[k]
+        let full = args[k]
+        let mut star = full.len
+        while star > 0 and full[star - 1] != '*' { star = star - 1 }
+        let cmd = if star > 0 { full[..star - 1] } else { full }
+        if again == 0 { again = if star > 0 { number{ s = full[star..] } } else { 1 } }
         let mut colon: usize = 0
         while colon < cmd.len and cmd[colon] != ':' { colon = colon + 1 }
         let name = cmd[..colon]
@@ -205,7 +210,8 @@ fn run {
         } else {
             _ = @fmt(&io, "unknown command {}\n", cmd)
         }
-        k = k + 1
+        again = again - 1
+        if again <= 0 { k = k + 1 }
     }
     _ = @fmt(&io, "settings: {}x{} music {} gamma {} difficulty {}\n", fe.settings.width, fe.settings.height, fe.settings.music, fe.settings.gamma, fe.settings.difficulty)
     let mx2 = mixer
@@ -275,7 +281,10 @@ fn make_dir { mut fs: Fs, path: []u8 } {
 // The panel commands act on: character generation's top panel while it runs, else the front end's.
 fn current_panel { fe: *frontend::Front } -> u32 {
     let cg = fe.cg
-    if cg != null { return chargen::top_panel{ st = cg } }
+    if cg != null {
+        if cg.msg_panel != 0 { return cg.msg_panel }
+        return chargen::top_panel{ st = cg }
+    }
     return frontend::top_panel{ fe }
 }
 
