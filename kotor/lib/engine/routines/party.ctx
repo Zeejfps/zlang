@@ -189,6 +189,11 @@ namespace rt_party {
         let facing = obj::direction_of{ degrees = l.facing }
         let mut id = w.party.npcs[s]
         if not world::is_valid{ w = &w, id } {
+            // The companion as it was last kept (AVAILNPC<n>), else its blueprint.
+            let kept = save::npc_from_store{ &w, slot = s } iferr { null }
+            if kept is some{ value = k } { id = k }
+        }
+        if not world::is_valid{ w = &w, id } {
             if resref::is_empty{ r = w.party.templates[s] } { return obj::INVALID }
             let mut blueprint = w.party.templates[s]
             id = tmpl::spawn{ &w, kind = obj::Kind::creature, template = resref::bytes{ r = &blueprint }, position = l.position, orientation = facing } iferr err{ error } {

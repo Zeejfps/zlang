@@ -52,6 +52,59 @@ namespace save {
         return into[..n]
     }
 
+    // The slot a new manual save takes: one past the highest number in our saves directory, at
+    // least 2 (0 and 1 are the quick and auto saves).
+    fn next_slot { mut w: world::World } -> u32 {
+        let names = fs::list(arena::Arena){ fs = &w.fs, heap = w.scratch, realloc = arena::alloc, path = w.gip.root } iferr { return 2 }
+        let mut best: u32 = 1
+        let mut i: usize = 0
+        while i < names.len {
+            let n = names[i]
+            i = i + 1
+            if n.len < 6 { continue }
+            let mut v: u32 = 0
+            let mut k: usize = 0
+            let mut digits = true
+            while k < 6 {
+                if n[k] < '0' or n[k] > '9' { digits = false }
+                v = v * 10 + @as(u32, n[k] - '0')
+                k = k + 1
+            }
+            if digits and v > best and v < 999999 { best = v }
+        }
+        return best + 1
+    }
+
+    // A save asked for by name: QUICKSAVE (slot 0), AUTOSAVE (slot 1), anything else a new manual
+    // save in the next slot, its folder `Game<slot>` and `name` what the player typed.
+    fn save_named { mut w: world::World, name: []u8, screen: []u8, width: u32, height: u32 } -> ! {
+        if ci::eq{ a = name, b = "QUICKSAVE" } {
+            try save_game{ &w, slot = 0, folder_name = "QUICKSAVE", save_name = "Quick Save", screen, width, height }
+            return
+        }
+        if ci::eq{ a = name, b = "AUTOSAVE" } {
+            try save_game{ &w, slot = 1, folder_name = "AUTOSAVE", save_name = "Auto Save", screen, width, height }
+            return
+        }
+        let slot = next_slot{ &w }
+        let mut buf: [16]u8 = ['G', 'a', 'm', 'e', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        let mut digits: [8]u8
+        let mut d: usize = 0
+        let mut v = slot - 1          // the install's "000002 - Game1": the game number is one less
+        while v > 0 and d < 8 {
+            digits[d] = @trunc(u8, '0' + v % 10)
+            v = v / 10
+            d = d + 1
+        }
+        let mut n: usize = 4
+        while d > 0 {
+            d = d - 1
+            buf[n] = digits[d]
+            n = n + 1
+        }
+        try save_game{ &w, slot, folder_name = buf[..n], save_name = name, screen, width, height }
+    }
+
     fn file_in { mut w: world::World, folder: []u8, name: []u8 } -> ![]mut u8 {
         return try path::join(arena::Arena){ realloc = arena::alloc, heap = w.scratch, dir = folder, name }
     }
@@ -60,6 +113,10 @@ namespace save {
     // typed it; `screen` is the last frame (RGBA8, top row first; empty for none).
     fn save_game { mut w: world::World, slot: u32, folder_name: []u8, save_name: []u8, screen: []u8, width: u32, height: u32 } -> ! {
         try save_module_state{ &w }
+        try keep_party{ &w }
+        try keep_inventory{ &w }
+        w.party.saved_count = 0
+        w.autosave_ms = 0.0
         let mut buf: [512]u8
         let local = folder_path{ root = w.gip.root, slot, name = folder_name, into = buf[..] }
         let folder = try obj::copy_bytes{ heap = w.heap, s = local }
@@ -167,6 +224,8 @@ namespace save {
         defer obj::free_bytes{ heap = w.heap, s = module }
         // Leave what is running, the player too (the save brings its own).
         if w.module != obj::INVALID { modload::leave_keeping{ &w, &vm, engine, keep = false } }
+        if w.player != obj::INVALID { world::destroy{ &w, id = w.player } }
+        w.player = obj::INVALID
         if w.pc != obj::INVALID {
             world::destroy{ &w, id = w.pc }
             world::sweep{ &w }

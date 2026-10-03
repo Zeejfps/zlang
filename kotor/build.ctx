@@ -23,6 +23,7 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "lib/engine" }
     build::add_sources{ &b, exe, dir = "lib/save" }
     build::add_sources{ &b, exe, dir = "lib/rules" }
+    build::add_sources{ &b, exe, dir = "lib/minigame" }
     build::add_sources{ &b, exe, dir = "lib/scene" }
     build::add_sources{ &b, exe, dir = "lib/dialog/core" }
     build::add_sources{ &b, exe, dir = "lib/dialog/view" }
@@ -30,6 +31,7 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "lib/dialog/lipsync" }
     build::add_sources{ &b, exe, dir = "lib/hud" }
     build::add_sources{ &b, exe, dir = "lib/ingame" }
+    build::add_sources{ &b, exe, dir = "lib/pazaak" }
     build::add_sources{ &b, exe, dir = "tools/common" }
     build::optimize{ &b, exe, level = 2 }
     match build::os{ &b } {

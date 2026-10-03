@@ -59,7 +59,8 @@ struct World {
     rng: world::Rng,                 // MSVC rand(), seeded; deterministic headless
     stats: world::Stats,             // routine call counts, unimplemented calls, faults
     log: elog::Log,                  // which logs are on (scripts, routines, events, actions)
-    // HOOK(rules): tables: *rules::Tables, rng: rules::Rng, effect ids: rules::Counter
+    rules: *mut rules::Tables, dice: rules::Rng, fx_ids: rules::EffectIds, rev: rules::Events
+    gip: save::Store                 // GAMEINPROGRESS (lib/save)
     // HOOK(dialog): conversation: dlg::State
     // HOOK(party): party table
 }
@@ -283,8 +284,8 @@ handles (script.md, Engine values). Two spaces (*ours*):
 
 Values: `ScriptEvent { type, ints, floats, strings, objects }` (EventUserDefined, EventSpellCastAt,
 ...), `Location { position, facing, area }`, `Talent { type, id, ... }`, and effects
-(`rules::Effect` once lib/rules is in; HOOK(rules)). `Call::equal` compares by the rules in
-script.md.
+(a `rules::EffectGroup`: one effect or an EffectLinkEffects' leaves under one id, made by
+routines/effects.ctx with `rules::fx::make_*`). `Call::equal` compares by the rules in script.md.
 
 ### Actions
 
@@ -485,15 +486,29 @@ each frame:
   are poll-style (`gui::clicked`) so engine code dispatches with plain calls. The GUI never reads
   SDL or the clock itself: headless runs feed it scripted events and a fixed dt. The HUD reads the
   world (`w`) read-only for portraits, health and the party.
-- **Rules** (lib/rules; agreed with the rules lead): `rules::Tables` loaded once; each creature
-  holds `stats: rules::Creature` read by `rules::read_creature{ tables, doc, s }` beside the
-  engine's own UTC reading (the engine reads identity, appearance, scripts, inventory resrefs and
-  makes the item objects, then `rules::equip{ ..., item_id, item }`); current and temporary HP
-  stay on the object header (doors and placeables have HP too), max HP comes from the rules'
-  stats. The effect list lives in `rules::Creature` (stacking needs it). Combat actions call
-  `rules::roll_attack` etc. with `rules::Combatant` views and apply the results (HP, animations,
-  script events: damaged, death, end of round); `rules::update_effects` events are routed the same
-  way. `rules::Time{ day, ms }` comes from `w.clock`; one `rules::Rng` per world.
+- **Rules and combat** (lib/rules; lib/engine/fight.ctx, namespace `fight`): the world holds
+  `rules: *rules::Tables`, `dice: rules::Rng`, `fx_ids: rules::EffectIds` and `rev:
+  rules::Events`. Every creature has a heap `fighter: ?*mut fight::Fighter` (the
+  `rules::Creature`, its combat round, combat timer, dying timer); every item a `rules:
+  ?*mut rules::Item`. `tmpl::read` calls `fight::read_creature` on any struct with a ClassList
+  (UTC, saved creature, player entry; plus the saved EffectList) and `fight::equip_loaded` after
+  the items (the worn ones equipped "while loading", max HP from the rules); a default player
+  gets `fight::default_stats`. Current HP stay on the object header. Every rules call fills
+  `w.rev`; `fight::drain{ &w, id }` turns its events into the world: HP, OnDamaged, the death
+  effect and `fight::died` (OnDeath, die/dead animations, kill XP, destroy after the appearance's
+  delay; a party member only goes down and gets up when no enemy is in combat), crowd control.
+  Effects from scripts go through `fight::apply_group` (routines/effects.ctx).
+  ATTACKOBJECT (`fight::attack_object`) walks into reach and starts a 3 s round
+  (`fight::start_round`): all attacks are resolved by `rules::resolve_attack` at the start and
+  land at their hit times (combatanimations.2da hit1..3; weapondischarge.2da shots for ranged)
+  with OnAttacked, the DAMAGE effects (`rules::make_damage_effects`), the other effects and the
+  defender's reaction animation; OnEndRound at the end (the AI's next move); the player's own
+  creature attacks on while its target lives. Doors and placeables are targets too (an AC 10
+  stand-in defender; bashed doors open, placeables die). CASTSPELL (`fight::cast_spell`):
+  approach to the power's range, `rules::begin_cast`, conjure and cast animations for the
+  spells.2da times, the impact script as the caster with `ctx.spell_*` set, the catch time, then
+  OnEndRound. Combat animations are animations.2da rows (`animname::ROW_BASE + row`; the scene
+  plays the row's name). The combat camera is camerastyle row 8 while the leader is in combat.
 - **Dialogue** (lib/dialog: `dlg`, `dlgview`, routines `rt_dlg`; agreed with the dialogue lead):
   DIALOGOBJECT posts script event 7 (DIALOGUE) to the target with the resref; `events` calls
   `dlg::note_event` before the slot runs, and an empty OnDialogue runs `k_hen_dialogue01`, which
@@ -501,10 +516,29 @@ each frame:
   the transition step; `dlgview` takes input while it wants it, overrides the camera after
   `cam::update` (shots), and drives VO, lip sync and animations after `scene::sync`. Dialogue
   animations (dialoganimations.2da ids) are looked up by `animname::name_in`.
-- **Saves** (lib/save): all game state is in the World, so a save writes it (module state as a GIT
-  of full structs, the IFO with the event queue, globals, party), and a load enters the module
-  through `modload::enter{ ..., from_save }`, whose object readers (`tmpl::*`) take full structs.
-  Situations go through `nwvm::saved_cell`/`make_situation` (script.md).
+- **Saves** (lib/save, namespace `save`): `w.gip: save::Store` is GAMEINPROGRESS: in memory,
+  written to `<saves>/gameinprogress.sav` (our saves directory, `--saves`, default
+  kotor/out/saves; never the install's) when a module is mounted from it. Leaving a module
+  (`modload::leave`) puts `<module>.sav` in it (`save::save_module_state`: the IFO with the
+  calendar, counters, locals, the event queue as VM situations and Mod_PlayerList; the area's GIT
+  with every object whole, ObjectIds, locals, action queues, items, rules state; the ARE) and the
+  companions as AVAILNPC<n>.utc (`save::keep_party`). Entering a module that has one mounts it
+  and reads the saved IFO/GIT (`UseTemplates` 0: no blueprints, no OnEnter for its creatures),
+  then `save::restore_party` brings the members back next to the player. `save::save_game{ &w,
+  slot, folder_name, save_name, screen }` writes `%06d - <name>/` (SAVEGAME.sav, GLOBALVARS.res,
+  PARTYTABLE.res, savenfo.res, Screen.tga; 0 QUICKSAVE, 1 AUTOSAVE, 2+ manual);
+  `save::load_game{ &w, &vm, engine, folder }` replaces the game in progress, reads globals and
+  the party table, and enters LASTMODULE with `w.restoring` (the player and the companions where
+  the save says). `save::find_save` looks in our directory, then the install's Saves/. Play:
+  F4 quick save, F5 quick load, the front end's Load Game; headless `save NAME`, `load FOLDER`.
+  A new game clears the store; character creation hands its player over with
+  `modload::set_player_blueprint{ &w, bytes }` (UTC GFF bytes).
+- **The party's state in the world**: `w.player` is the player character, `w.pc` the creature
+  the player controls (the leader; the HUD changes it); saves and transitions use `w.player`,
+  and a module is entered under its control (the party table's leader takes over again when the
+  companions are restored). `w.bag` is the party's shared inventory (`party::inventory_of`,
+  `party::merge_into_party`; INVENTORY.res in saves), `w.party.gold` the purse, `w.journal` the
+  quests (lib/engine/journal.ctx; JNL_Entries in PARTYTABLE.res).
 - **Minigames** take over the frame between steps 4 and 9 (their own scene and input) while the
   world's clock keeps running or not, as they need.
 
@@ -519,7 +553,9 @@ each frame:
 - `--input FILE`: one command per line, applied at the start of that frame: `FRAME down KEY` /
   `FRAME up KEY` (a letter, `up`, `down`, `left`, `right`, `space`, `escape`), and for tests
   `FRAME warp TAG` (the leader 1.5 m in front of the object), `FRAME use TAG` (the leader's default
-  action on it), `FRAME newgame` (the front end's New Game). Keys: W/S or arrows forward and back,
+  action on it), `FRAME attack TAG` (the leader attacks the nearest live one), `FRAME save NAME`,
+  `FRAME load FOLDER`, `FRAME hush` (ends the running conversation), `FRAME newgame` (the front
+  end's New Game). Keys: W/S or arrows forward and back,
   Z/C strafe, A/D or arrows turn the camera, R or Space the default action (the nearest door,
   useable placeable or creature with a conversation in front, within 3 m).
 - `--screenshot-at F:PATH` (repeatable) reads the screen after frame F's render and writes a PNG.
@@ -533,6 +569,24 @@ each frame:
 - A door's `trans` plane is never drawn; PLAYANIMATION's fire-and-forget length is 1.5 s until
   the server reads model animation lengths; perception has no stealth yet; the player faces its
   input from standstill at once; camera collision is one ray against the walkmeshes.
+- Combat (ours where combat.md leaves it open): the attack animation by stance (the digit of the
+  names: 0 creature, 1 stun baton, 2 one melee weapon, 3 two-handed, 4 two weapons, 5 pistol,
+  6 two pistols, 7 rifle/heavy, 8 unarmed; duel `c` sets when both fight in melee, `g` sets
+  otherwise, `b` sets for ranged); the round is not paused by the animation (the impacts run on
+  the round timer); no master/slave pairing yet; the leader re-attacks its live target each
+  round; downed party members get up with 1 HP when no enemy is in combat; cast animations
+  hand/self → castout1, dark → castout2, up → castout3, throw → throwsab; spell ranges from the
+  range letter's ranges.2da row; GetObjectByTag("") is OBJECT_INVALID.
+- Body bags: a dead creature's droppable items (the Dropable flag of its UTC list entries,
+  carried or worn) go into a placeable of its bodybag.2da row when it is destroyed. The whole
+  party fallen stops the world (the death camera and panel are not built; Load Game goes on).
+- Hit points in GFFs: `CurrentHitPoints` is relative to the base `HitPoints` (the level and CON
+  bonus is not in it): current = CurrentHitPoints + (max - HitPoints). Read from the install's
+  save (Bandon 10/40/10 at full health, the player 0/10/-6 at 4 HP; not yet confirmed in the
+  code); blueprints agree (Cur = HitPoints at full health).
+- Saves (ours): the effects of a saved creature are restored into its rules list without being
+  applied again; equipped and innate effects are not saved (equip while loading remakes them);
+  companions arrive 1.5 m behind the player, one to each side.
 - Open: the client's animation id → name mapping (`0x0069f650`), the exact TestWalkLine sliding
   and creature collision, the grid planner, door DWK use while opening, the 10 ms budget if a big
-  module needs it, the module state kept on leaving (HOOK(save): GAMEINPROGRESS).
+  module needs it, the death camera and game-over panel, attack pairing (GetCanEngage).

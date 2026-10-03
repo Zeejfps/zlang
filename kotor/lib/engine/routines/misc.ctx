@@ -8,6 +8,12 @@
 // Custom tokens (SetCustomToken) are kept in `w.tokens` (tokens.ctx) for the whole session, as
 // number and text; dialogue and GUI strings that say <CUSTOMnnn> read them with `tokens::get`.
 namespace rt_misc {
+    // The calling object's event context (no object: the defaults).
+    fn self_ctx_of { w: *world::World, vm: *nwvm::Vm } -> obj::Context {
+        let o = world::object{ w, id = nwvm::self_object{ vm = vm.* } } ifnull { return obj::no_context{} }
+        return o.ctx
+    }
+
     fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
         match routine {
             // ---- the area and its objects
@@ -52,11 +58,15 @@ namespace rt_misc {
             nwscript::GetListenPatternNumber => { try nwvm::push_int{ &vm, v = self_ctx{ w = &w, vm = &vm }.listen_pattern } }
             nwscript::GetLastAttacker => { try get_last_attacker{ &w, &vm, argc } }
             nwscript::GetLastSpeaker => { try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = self_ctx{ w = &w, vm = &vm }.last_speaker } } }
-            nwscript::GetLastSpell => { try nwvm::push_int{ &vm, v = -1 } }
-            nwscript::GetSpellId => { try nwvm::push_int{ &vm, v = -1 } }
-            nwscript::GetSpellTargetObject => { try nwvm::push_object{ &vm, id = obj::INVALID } }
-            nwscript::GetSpellTargetLocation => { try rt_obj::push_location{ &w, &vm, l = values::no_location{} } }
-            nwscript::GetLastSpellCaster => { try nwvm::push_object{ &vm, id = obj::INVALID } }
+            nwscript::GetLastSpell => { try nwvm::push_int{ &vm, v = self_ctx_of{ w = &w, vm = &vm }.last_spell } }
+            nwscript::GetSpellId => { try nwvm::push_int{ &vm, v = self_ctx_of{ w = &w, vm = &vm }.spell_id } }
+            nwscript::GetSpellTargetObject => { try nwvm::push_object{ &vm, id = self_ctx_of{ w = &w, vm = &vm }.spell_target } }
+            nwscript::GetSpellTargetLocation => {
+                let cx = self_ctx_of{ w = &w, vm = &vm }
+                let l = values::Location{ position = cx.spell_location, facing = 0.0, area = w.area }
+                try rt_obj::push_location{ &w, &vm, l }
+            }
+            nwscript::GetLastSpellCaster => { try nwvm::push_object{ &vm, id = self_ctx_of{ w = &w, vm = &vm }.last_spell_caster } }
             nwscript::GetAttemptedSpellTarget => { try nwvm::push_object{ &vm, id = obj::INVALID } }
             nwscript::GetAttemptedMovementTarget => { try nwvm::push_object{ &vm, id = obj::INVALID } }
             nwscript::GetSpellTarget => { try get_spell_target{ &w, &vm, argc } }
@@ -310,24 +320,8 @@ namespace rt_misc {
     // XP to the party (CSWPartyTable::AddExperience, rules.md 4.2): the pool takes all of it; each
     // member gets it times its npc.2da PercentXP (80 for a companion, 100 for the player), rounded up.
     fn award_party_xp { mut w: world::World, amount: i32 } {
-        if amount <= 0 { return }
-        let pool = @as(i64, w.party.xp_pool) + @as(i64, amount)
-        w.party.xp_pool = if pool > 2000000000 { 2000000000 } else { @trunc(i32, pool) }
-        let npc = scratch_table{ &w, name = "npc" }
-        let mut i: usize = 0
-        while i < w.party.count {
-            let id = w.party.members[i]
-            i = i + 1
-            let o = world::object{ w = &w, id } ifnull { continue }
-            let c = obj::creature{ o } ifnull { continue }
-            let slot = party::slot_of{ w = &w, id }
-            let mut percent: i64 = 100
-            if slot >= 0 {
-                if npc != null { percent = @as(i64, twoda::get_int{ t = npc, row = @as(usize, slot), column = "percentxp" } ifnull 100) }
-            }
-            let total = @as(i64, c.xp) + (@as(i64, amount) * percent + 99) / 100
-            c.xp = if total > 4000000000 { 4000000000 } else { @trunc(u32, total) }
-        }
+        // The rules' per-member share and the pool (routines/creature.ctx).
+        rt_crea::give_party_xp{ &w, amount }
     }
 
     // void GivePlotXP(string sPlotName, int nPercentage): plot.2da's XP for the plot, that
@@ -369,16 +363,21 @@ namespace rt_misc {
         if not rt_item::holds_items{ o = target } { return false }
         let from = it.possessor
         if from == to and it.equipped_slot < 0 { return true }
+        // Within the party's shared inventory nothing moves.
+        if it.equipped_slot < 0 and party::holds{ w = &w, item } and (to == w.player or party::is_member{ w = &w, id = to }) { return true }
         let old = world::object{ w = &w, id = from }
         let mut old_creature = false
         if old != null {
             if obj::creature{ o = old } is some{ value = oc } {
                 old_creature = true
                 if it.equipped_slot >= 0 and it.equipped_slot < @as(i32, obj::EQUIP_SLOTS) {
-                    oc.equipped[@as(usize, it.equipped_slot)] = obj::INVALID
+                    // Taken off (the rules lose its effects), into the inventory it leaves next.
+                    if not equip::unequip_item{ &w, id = from, slot = @as(usize, it.equipped_slot) } {
+                        oc.equipped[@as(usize, it.equipped_slot)] = obj::INVALID
+                    }
                 }
             }
-            _ = rt_item::remove_from_inventory{ o = old, item }
+            _ = rt_item::remove_from_inventory{ &w, o = old, item }
         }
         it.equipped_slot = -1
         it.possessor = obj::INVALID
@@ -398,7 +397,7 @@ namespace rt_misc {
         let most = rt_item::max_stack{ w = &w, base = it.base }
         let mut merged = false
         if most > 1 {
-            let ids = rt_item::inventory_of{ o = target }
+            let ids = rt_item::inventory_of{ &w, o = target }
             let mut k: usize = 0
             while k < ids.len and not merged {
                 let other = world::object{ w = &w, id = ids[k] }
@@ -420,8 +419,7 @@ namespace rt_misc {
         if merged {
             world::destroy{ &w, id = item }
         } else {
-            if not rt_item::add_to_inventory{ o = target, item } { return false }
-            it.possessor = to
+            if not rt_item::add_to_inventory{ &w, o = target, item } { return false }
         }
         announce_move{ &w, item = acquired, from, to, old_is_creature = old_creature }
         return true

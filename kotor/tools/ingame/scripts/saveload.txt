@@ -1,0 +1,35 @@
+# Save Game and Load Game in the in-game options (lib/frontend saves.ctx and events.ctx, lib/ingame/options_panel.ctx).
+# sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/saveload.txt 210 127:sl_options 133:sl_save_list 139:sl_name 145:sl_name_typed 151:sl_after_save 163:sl_load_list 168:sl_load_picked 180:sl_after_load 196:sl_replace 204:sl_cancelled
+# The log lines start with a bracket, which go.sh hides: run kotor.exe by hand and grep for "saved" (after frame 147) and "loaded" (after frame 170, "(end_m01aa)").
+# The saves go to kotor/out/saves (a new slot each run).
+# The two conversations at the start of the Endar Spire are ended first (a menu cannot be used under one).
+20 hush
+110 hush
+125 ui menu options
+# Save Game: the list with "New Slot" selected
+130 ui click 500 282
+# Save: the name box with the default name
+136 ui click 640 544
+# replace the play time of the default name
+141 ui key backspace
+141 ui key backspace
+141 ui key backspace
+141 ui key backspace
+141 ui key backspace
+142 ui type Endar Spire
+# Enter accepts: the menus close and the game is saved
+147 ui key return
+# Load Game: the merged list, the new save is the first manual one
+155 ui menu options
+158 ui click 500 247
+# the third row (quick save, auto save, then the newest manual save)
+165 ui click 512 341
+# Load
+170 ui click 640 544
+# Save Game again: an existing save's row gives its name to the box; Escape and Cancel back out
+185 ui menu options
+188 ui click 500 282
+191 ui click 512 287
+194 ui click 640 544
+197 ui key escape
+200 ui click 778 544

@@ -1,0 +1,132 @@
+// Routines: what the fighting leaves behind for scripts (killer, damager, damage dealt), spell
+// events, and surrendering (lib/engine/fight.ctx keeps the state).
+namespace rt_fight {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        match routine {
+            nwscript::GetLastKiller => { try get_last_killer{ &w, &vm } }
+            nwscript::GetLastDamager => { try get_last_damager{ &w, &vm } }
+            nwscript::GetTotalDamageDealt => { try get_total_damage{ &w, &vm } }
+            nwscript::GetDamageDealtByType => { try get_damage_by_type{ &w, &vm, argc } }
+            nwscript::GetLastSpellHarmful => { try get_last_spell_harmful{ &w, &vm } }
+            nwscript::EventSpellCastAt => { try event_spell_cast_at{ &w, &vm, argc } }
+            nwscript::SurrenderByFaction => { try surrender_by_faction{ &w, &vm, argc } }
+            nwscript::SurrenderRetainBuffs => { surrender_retain_buffs{ &w, &vm } }
+            else => { return false }
+        }
+        return true
+    }
+
+    fn fighter_of_self { w: *world::World, vm: *nwvm::Vm } -> ?*mut fight::Fighter {
+        let o = world::object{ w, id = nwvm::self_object{ vm = vm.* } } ifnull { return null }
+        return fight::of{ o }
+    }
+
+    // object GetLastKiller(): who killed the caller (its OnDeath).
+    fn get_last_killer { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let f = fighter_of_self{ w = &w, vm = &vm } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        try nwvm::push_object{ &vm, id = f.killer }
+    }
+
+    // object GetLastDamager(): who last damaged the caller (its OnDamaged).
+    fn get_last_damager { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let o = world::object{ w = &w, id = nwvm::self_object{ vm } } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        try nwvm::push_object{ &vm, id = o.ctx.last_damager }
+    }
+
+    // int GetTotalDamageDealt(): the caller's last damage, all types (its OnDamaged).
+    fn get_total_damage { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let f = fighter_of_self{ w = &w, vm = &vm } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        try nwvm::push_int{ &vm, v = f.last_damage }
+    }
+
+    // int GetDamageDealtByType(int nDamageType): the part of the caller's last damage of that
+    // type (DAMAGE_TYPE_* bits), -1 when none of it was.
+    fn get_damage_by_type { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let types = try nwarg::int{ &vm, routine = nwscript::GetDamageDealtByType, argc, i = 0 }
+        let f = fighter_of_self{ w = &w, vm = &vm } ifnull {
+            try nwvm::push_int{ &vm, v = -1 }
+            return
+        }
+        let mut total: i32 = 0
+        let mut any = false
+        let mut s: u32 = 0
+        while s < 15 {
+            if (types >> s) & 1 != 0 and f.damage_types[@as(usize, s)] > 0 {
+                total = total + f.damage_types[@as(usize, s)]
+                any = true
+            }
+            s = s + 1
+        }
+        try nwvm::push_int{ &vm, v = if any { total } else { -1 } }
+    }
+
+    // int GetLastSpellHarmful(): whether the last spell cast at the caller was harmful.
+    fn get_last_spell_harmful { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let o = world::object{ w = &w, id = nwvm::self_object{ vm } } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        try nwvm::push_int{ &vm, v = if o.ctx.last_spell_harmful { 1 } else { 0 } }
+    }
+
+    // event EventSpellCastAt(object oCaster, int nSpell, int bHarmful = TRUE): signalled to a
+    // target, it runs its OnSpellCastAt with GetLastSpellCaster/GetLastSpell/GetLastSpellHarmful.
+    fn event_spell_cast_at { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::EventSpellCastAt
+        let caster = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let spell = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let harmful = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let mut e = values::no_event{}
+        e.kind = events::SPELL_CAST_AT
+        e.ints[0] = spell
+        e.ints[1] = harmful
+        e.objects[0] = caster
+        let h = values::add{ s = &w.values, v = values::Value::event{ e } }
+        try nwvm::push_engine{ &vm, kind = nwvm::EngineType::event, handle = h }
+    }
+
+    // void SurrenderByFaction(int nFactionFrom, int nFactionTo): every creature of the area in
+    // faction nFactionFrom joins nFactionTo, its actions cleared and its fighting over.
+    fn surrender_by_faction { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::SurrenderByFaction
+        let from = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let to = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.kind != obj::Kind::creature or o.area != w.area { continue }
+            if @as(i32, o.faction) != from { continue }
+            o.faction = @as(u32, to)
+            fight::stop_fighting{ &w, id = o.id, others = true }
+        }
+    }
+
+    // void SurrenderRetainBuffs(): as SurrenderToEnemies (the caller and everyone within 10 m stop
+    // fighting), keeping the effects they put on themselves.
+    fn surrender_retain_buffs { mut w: world::World, mut vm: nwvm::Vm } {
+        let me = world::object{ w = &w, id = nwvm::self_object{ vm } } ifnull { return }
+        if me.id == w.pc or me.id == w.player { return }
+        let at = me.position
+        let area = me.area
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.kind != obj::Kind::creature or o.area != area { continue }
+            if math::vec3::distance{ a = o.position, b = at } > 10.0 { continue }
+            fight::stop_fighting{ &w, id = o.id, others = false }
+        }
+    }
+}

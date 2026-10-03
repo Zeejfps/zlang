@@ -1,7 +1,11 @@
-// The save list: the folders of the install's Saves/ (read-only), each with its savenfo.res
-// (docs/re/party-items-saves.md, "Save folder"): the name the player gave, the area, the play
-// time, the party's portraits, and Screen.tga for the picture. Folders are `NNNNNN - Name`: 0 is
-// the quick save, 1 the autosave, manual saves are 2 and up.
+// The save list: the folders of our saves directory and of the install's Saves/ (read-only), each
+// with its savenfo.res (docs/re/party-items-saves.md, "Save folder"): the name the player gave,
+// the area, the play time, the party's portraits, and Screen.tga for the picture. Folders are
+// `NNNNNN - Name`: 0 is the quick save, 1 the autosave, manual saves are 2 and up.
+//
+// The Load Game list merges both directories: quick and auto saves first (ours hide the install's
+// of the same number), then the manual saves, newest number first (on a tie ours first). The Save
+// Game list is ours only, manual saves only, with a "New Slot" row first.
 namespace frontend {
     struct SaveEntry {
         number: i32,
@@ -12,6 +16,9 @@ namespace frontend {
         seconds: u32,
         portraits: [3]resref::ResRef, portrait_count: usize,
         corrupt: bool,
+        path: [300]u8, path_len: usize,         // the folder: what save::find_save resolves
+        ours: bool,                             // from our saves directory, not the install's
+        new_slot: bool,                         // the Save Game list's "New Slot" row (no folder)
     }
 
     struct SaveList {
@@ -50,24 +57,76 @@ namespace frontend {
         return into[..n]
     }
 
-    // Lists the saves under `dir` (the install's Saves/): newest numbers last, quick and auto
-    // saves first. Folders without a readable savenfo.res are listed as corrupt.
-    fn list_saves { mut fs: Fs, heap: *mut heap::Heap, dir: []u8 } -> !SaveList {
-        let names = try fs::list(heap::Heap){ &fs, heap, realloc = heap::alloc, path = dir }
-        let entries = try alloc::resize(SaveEntry, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(SaveEntry){}, count = if names.len == 0 { 1 } else { names.len } }
+    // The Load Game list (`for_save` false: ours and the install's) or the Save Game list (`for_save`
+    // true: ours, manual saves, a "New Slot" row first). Folders without a readable savenfo.res are
+    // listed as corrupt. `scratch` holds the directory listings and is reset after.
+    fn list_saves {
+        mut fs: Fs, heap: *mut heap::Heap, mut scratch: arena::Arena, own: []u8, install: []u8, for_save: bool,
+    } -> !SaveList {
+        let own_names = if own.len > 0 { fs::list(arena::Arena){ &fs, heap = &scratch, realloc = arena::alloc, path = own } iferr { slice::empty([]u8){} } } else { slice::empty([]u8){} }
+        let install_names = if install.len > 0 and not for_save { fs::list(arena::Arena){ &fs, heap = &scratch, realloc = arena::alloc, path = install } iferr { slice::empty([]u8){} } } else { slice::empty([]u8){} }
+        let entries = try alloc::resize(SaveEntry, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(SaveEntry){}, count = own_names.len + install_names.len + 1 }
         let mut list = SaveList{ entries, count = 0 }
-        let mut i: usize = 0
-        while i < names.len {
-            let number = folder_number{ name = names[i] }
-            if number >= 0 and names[i].len < 64 {
-                let mut e = read_save{ &fs, heap, dir, folder = names[i], number }
-                list.entries[list.count] = e
-                list.count = list.count + 1
-            }
-            i = i + 1
+        if for_save {
+            let mut slot: SaveEntry
+            slot.number = -1
+            slot.new_slot = true
+            slot.ours = true
+            slot.label_len = copy_into{ dst = slot.label[..], src = "New Slot" }
+            list.entries[0] = slot
+            list.count = 1
         }
+        add_saves{ &fs, heap, &list, dir = own, names = own_names, ours = true, for_save }
+        add_saves{ &fs, heap, &list, dir = install, names = install_names, ours = false, for_save }
+        arena::reset{ heap = &scratch }
         sort_saves{ list = list.entries[..list.count] }
         return list
+    }
+
+    fn has_number { list: *SaveList, number: i32 } -> bool {
+        let mut i: usize = 0
+        while i < list.count {
+            if list.entries[i].number == number { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Reads each `NNNNNN - Name` folder of `dir` into the list. The quick and auto saves of the
+    // install are left out when ours exist; the Save Game list has no quick or auto saves (the
+    // game makes those).
+    fn add_saves {
+        mut fs: Fs, heap: *mut heap::Heap, mut list: SaveList, dir: []u8, names: [][]u8, ours: bool, for_save: bool,
+    } {
+        let mut i: usize = 0
+        while i < names.len {
+            let name = names[i]
+            i = i + 1
+            let number = folder_number{ name }
+            if number < 0 or name.len >= 64 { continue }
+            if for_save and number < 2 { continue }
+            if not ours and number < 2 and has_number{ &list, number } { continue }
+            let e = read_save{ &fs, heap, dir, folder = name, number, ours }
+            list.entries[list.count] = e
+            list.count = list.count + 1
+        }
+    }
+
+    // Quick save, auto save, then the manual saves.
+    fn rank_of { e: *SaveEntry } -> i32 {
+        if e.new_slot { return -1 }
+        if e.number == 0 { return 0 }
+        if e.number == 1 { return 1 }
+        return 2
+    }
+
+    // Whether `a` is listed before `b`.
+    fn listed_before { a: *SaveEntry, b: *SaveEntry } -> bool {
+        let ra = rank_of{ e = a }
+        let rb = rank_of{ e = b }
+        if ra != rb { return ra < rb }
+        if ra == 2 and a.number != b.number { return a.number > b.number }
+        return a.ours and not b.ours
     }
 
     fn sort_saves { list: []mut SaveEntry } {
@@ -75,7 +134,7 @@ namespace frontend {
         while i < list.len {
             let tmp = list[i]
             let mut j = i
-            while j > 0 and list[j - 1].number > tmp.number {
+            while j > 0 and listed_before{ a = &tmp, b = &list[j - 1] } {
                 list[j] = list[j - 1]
                 j = j - 1
             }
@@ -84,10 +143,12 @@ namespace frontend {
         }
     }
 
-    fn read_save { mut fs: Fs, heap: *mut heap::Heap, dir: []u8, folder: []u8, number: i32 } -> SaveEntry {
+    fn read_save { mut fs: Fs, heap: *mut heap::Heap, dir: []u8, folder: []u8, number: i32, ours: bool } -> SaveEntry {
         let mut e: SaveEntry
         e.number = number
+        e.ours = ours
         e.folder_len = copy_into{ dst = e.folder[..], src = folder }
+        e.path_len = join_path{ into = e.path[..], a = dir, b = folder, c = "" }.len
         let mut pb: [300]u8
         let path = join_path{ into = pb[..], a = dir, b = folder, c = "savenfo.res" }
         let bytes = fs::read_all(heap::Heap){ &fs, heap, realloc = heap::alloc, path } iferr {
@@ -133,13 +194,13 @@ namespace frontend {
         _ = alloc::resize(SaveEntry, heap::Heap){ realloc = heap::alloc, heap, mem = list.entries, count = 0 }
     }
 
-    // Loads a save's Screen.tga as a texture (null when it has none); `scratch` is decoding space
-    // (the shared cache's) and is reset after.
+    // Loads the Screen.tga of the save in `folder` (its path) as a texture (null when it has none);
+    // `scratch` is decoding space (the shared cache's) and is reset after.
     fn load_screenshot {
-        mut fs: Fs, mut dev: gpu::Device, heap: *mut heap::Heap, mut scratch: arena::Arena, dir: []u8, folder: []u8,
+        mut fs: Fs, mut dev: gpu::Device, heap: *mut heap::Heap, mut scratch: arena::Arena, folder: []u8,
     } -> !?render::Texture {
-        let mut pb: [300]u8
-        let path = join_path{ into = pb[..], a = dir, b = folder, c = "Screen.tga" }
+        let mut pb: [330]u8
+        let path = join_path{ into = pb[..], a = folder, b = "Screen.tga", c = "" }
         let bytes = fs::read_all(heap::Heap){ &fs, heap, realloc = heap::alloc, path } iferr { return null }
         defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = bytes, count = 0 }
         let t = tex::read_tga{ realloc = arena::alloc, heap = &scratch, bytes } iferr { return null }

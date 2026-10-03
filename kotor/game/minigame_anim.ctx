@@ -1,0 +1,127 @@
+// Animations of a minigame's models (SWMG_PlayAnimation / RemoveAnimation, docs/re/minigames-swoop-turret.md
+// 2.1 and 3). A model plays one main animation (a new one replaces it, `queue` waits for it) and any
+// number of overlays on top: the HUD's digits, lights and gauges are one-frame animations that each
+// set their own nodes, so they must all hold at once. A pose is the bind pose with the main
+// animation applied, then the overlays in the order they were started.
+namespace mg_game {
+    const MAX_OVERLAYS: usize = 24
+
+    struct Layer {
+        name: [28]u8, name_len: usize,
+        binding: ?mdl_anim::Binding,
+        time: f32, length: f32,
+        looping: bool,
+    }
+
+    struct Anim {
+        has_main: bool, main: Layer,
+        has_queued: bool, queued: Layer,
+        overlays: [24]Layer, overlay_count: usize,
+    }
+
+    fn make_layer { name: []u8, binding: ?mdl_anim::Binding, looping: bool } -> Layer {
+        let length = match binding { some{ value } => { value.animation.length } null => { 0.0 } }
+        let mut l = Layer{ name = [0; 28], name_len = 0, binding, time = 0.0, length, looping }
+        let n = if name.len < 28 { name.len } else { 28 }
+        let mut i: usize = 0
+        while i < n {
+            l.name[i] = ascii::to_lower{ c = name[i] }
+            i = i + 1
+        }
+        l.name_len = n
+        return l
+    }
+
+    fn make_anim {} -> Anim {
+        let none = make_layer{ name = "", binding = null, looping = false }
+        return Anim{ has_main = false, main = none, has_queued = false, queued = none, overlays = [none; 24], overlay_count = 0 }
+    }
+
+    fn layer_is { l: *Layer, name: []u8 } -> bool {
+        return l.name_len == name.len and ci::eq{ a = l.name[..l.name_len], b = name }
+    }
+
+    // Starts `name` on a model: as the main animation, queued after it, or as an overlay.
+    fn start_layer { mut a: Anim, layer: Layer, queue: bool, overlay: bool } {
+        if overlay {
+            let mut i: usize = 0
+            while i < a.overlay_count {
+                if layer_is{ l = &a.overlays[i], name = layer.name[..layer.name_len] } {
+                    a.overlays[i] = layer
+                    return
+                }
+                i = i + 1
+            }
+            if a.overlay_count >= MAX_OVERLAYS {
+                // the oldest goes
+                let mut k: usize = 1
+                while k < a.overlay_count {
+                    a.overlays[k - 1] = a.overlays[k]
+                    k = k + 1
+                }
+                a.overlay_count = a.overlay_count - 1
+            }
+            a.overlays[a.overlay_count] = layer
+            a.overlay_count = a.overlay_count + 1
+        } else if queue and a.has_main and not (a.main.length > 0.0 and a.main.time >= a.main.length and not a.main.looping) {
+            a.queued = layer
+            a.has_queued = true
+        } else {
+            a.main = layer
+            a.has_main = true
+            a.has_queued = false
+        }
+    }
+
+    fn remove_layer { mut a: Anim, name: []u8 } {
+        if a.has_main and layer_is{ l = &a.main, name } { a.has_main = false }
+        let mut i: usize = 0
+        while i < a.overlay_count {
+            if layer_is{ l = &a.overlays[i], name } {
+                let mut k = i + 1
+                while k < a.overlay_count {
+                    a.overlays[k - 1] = a.overlays[k]
+                    k = k + 1
+                }
+                a.overlay_count = a.overlay_count - 1
+            } else {
+                i = i + 1
+            }
+        }
+    }
+
+    fn step_layer { mut l: Layer, dt: f32 } {
+        l.time = l.time + dt
+        if l.looping and l.length > 0.0 {
+            l.time = math::fmodf{ x = l.time, y = l.length }
+        } else if l.time > l.length {
+            l.time = l.length
+        }
+    }
+
+    // Advances the layers and poses the model.
+    fn pose_anim { mut a: Anim, model: *mdl::Model, pose: mdl_anim::Pose, dt: f32 } {
+        if a.has_main {
+            step_layer{ l = &a.main, dt }
+            if a.has_queued and not a.main.looping and a.main.time >= a.main.length {
+                a.main = a.queued
+                a.has_queued = false
+            }
+        }
+        let mut i: usize = 0
+        while i < a.overlay_count {
+            step_layer{ l = &a.overlays[i], dt }
+            i = i + 1
+        }
+        mdl_anim::reset{ model, pose }
+        if a.has_main {
+            if a.main.binding is some{ value = b } { mdl_anim::apply{ model, binding = b, time = a.main.time, weight = 1.0, pose } }
+        }
+        i = 0
+        while i < a.overlay_count {
+            if a.overlays[i].binding is some{ value = b } { mdl_anim::apply{ model, binding = b, time = a.overlays[i].time, weight = 1.0, pose } }
+            i = i + 1
+        }
+        mdl_anim::finish{ model, pose }
+    }
+}

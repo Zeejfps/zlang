@@ -1,0 +1,483 @@
+// A minigame in progress (docs/re/minigames-swoop-turret.md section 4): the player's vehicle and
+// everything else on rails, steered by the player and judged each step, with the script events
+// the module's NWScripts react to. No models, no scene: the host (game/minigame.ctx) samples the
+// rails, shows the objects and runs the scripts the events name.
+//
+//   let run = try mg::make_run(heap::Heap){ realloc = heap::alloc, heap = &h, area, layout, lookup }
+//   each frame: run.input = ...; mg::step_run{ run, dt }; then take_event / take_request
+namespace mg {
+    // Minigame objects are named to scripts by ids no world object can have (the world's count up
+    // from 1 and its characters down from 0x7FFFFFFF).
+    const ID_BASE: u32 = 0x7E000000
+    const MAX_OBJECTS: usize = 255
+    const MAX_EVENTS: usize = 64
+    const MAX_REQUESTS: usize = 64
+    const PLAYER: usize = 0
+
+    enum ObjKind: u8 { none, player, enemy, obstacle }
+
+    struct Obj {
+        kind: ObjKind,
+        index: usize,                   // the enemy's place in Area.enemies, the obstacle's in Area.obstacles
+        name: resref::ResRef,           // the track or obstacle model
+        hit_points: i32, max_hit_points: i32,
+        sphere: f32,
+        num_loops: i32,
+        invincible: f32,                // seconds left
+        dead: bool,
+        removed: bool,
+        remove_at: f32,                 // time a dead object leaves the scene (its `die` animation)
+        trigger: bool,
+        rail: i32,                      // in Run.rails, -1 none
+        t: f32,                         // seconds along the rail
+        origin: math::Vec3,             // where the layout puts the track or obstacle model
+        position: math::Vec3,           // in the area, as of the last step
+        bounds: math::Aabb,             // obstacles: in the area
+    }
+
+    // A script to run: slot (ON_*) of the object's scripts.
+    struct Event { slot: usize, object: u32 }
+
+    // An animation for the host to play on an object's models (SWMG_PlayAnimation / RemoveAnimation).
+    struct Request { object: u32, name: [28]u8, name_len: usize, looping: bool, queue: bool, overlay: bool, remove: bool }
+
+    // The player's controls this step: axes in [-1, 1] and the fire key.
+    struct Input { x: f32, y: f32, fire: bool }
+
+    struct Run {
+        area: *mut Area,
+        objs: [255]Obj,
+        count: usize,
+        rails: []mut Rail,
+        time: f32,
+        // the player's progress and steering
+        speed: f32, min_speed: f32, max_speed: f32, accel: f32,
+        offset: math::Vec3, velocity: math::Vec3,
+        origin: math::Vec3,             // the centre of the tunnel (SetPlayerOrigin)
+        tunnel_pos: math::Vec3, tunnel_neg: math::Vec3, tunnel_infinite: [3]bool,
+        lateral_accel: f32,
+        invincibility: f32,             // seconds the player is safe after a hit (SetPlayerInvincibility)
+        input: Input,
+        fire_cooldown: f32,
+        // for the scripts
+        events: [64]Event, event_count: usize,
+        requests: [64]Request, request_count: usize,
+        last_follower_hit: u32, last_obstacle_hit: u32, last_hp_change: i32,
+        blur_on: bool, blur_ratio: f32,
+        started: bool,
+    }
+
+    fn id_of { n: usize } -> u32 { return ID_BASE + @as(u32, n) }
+
+    // The registry slot an id names, if it is one of ours.
+    fn slot_of { run: *Run, id: u32 } -> ?usize {
+        if id < ID_BASE or id >= ID_BASE + @as(u32, MAX_OBJECTS) { return null }
+        let n = @as(usize, id - ID_BASE)
+        if n >= run.count { return null }
+        return n
+    }
+
+    fn no_obj {} -> Obj {
+        return Obj{
+            kind = ObjKind::none, index = 0, name = resref::empty{}, hit_points = 1, max_hit_points = 1, sphere = 1.0, num_loops = -1,
+            invincible = 0.0, dead = false, removed = false, remove_at = 0.0, trigger = false, rail = -1, t = 0.0,
+            origin = math::vec3::zero{}, position = math::vec3::zero{}, bounds = math::aabb::empty{},
+        }
+    }
+
+    // ---- making a run
+
+    // The layout's placement of the model called `name` among `places`, if it has one.
+    fn placement_of { places: []lyt::Placement, name: []u8 } -> ?math::Vec3 {
+        let mut i: usize = 0
+        while i < places.len {
+            let mut m = places[i].model
+            if ci::eq{ a = resref::bytes{ r = &m }, b = name } { return math::Vec3{ x = places[i].x, y = places[i].y, z = places[i].z } }
+            i = i + 1
+        }
+        return null
+    }
+
+    // The box of a model's meshes in its bind pose.
+    fn model_bounds(S) { realloc: alloc::Fn(S), mut heap: S, model: *mdl::Model } -> !math::Aabb {
+        let pose = try mdl_anim::make_pose(S){ realloc, &heap, model }
+        mdl_anim::reset{ model, pose }
+        mdl_anim::finish{ model, pose }
+        let mut box = math::aabb::empty{}
+        let mut i: usize = 0
+        while i < model.meshes.len {
+            let mesh = &model.meshes[i]
+            let m = pose.world[mesh.node]
+            let mut v: usize = 0
+            while v + 2 < mesh.positions.len {
+                let p = math::mat4::transform_point{ m, p = math::Vec3{ x = mesh.positions[v], y = mesh.positions[v + 1], z = mesh.positions[v + 2] } }
+                box = math::aabb::extend{ b = box, p }
+                v = v + 3
+            }
+            i = i + 1
+        }
+        return box
+    }
+
+    fn follower_obj { kind: ObjKind, index: usize, f: Follower, origin: math::Vec3, rail: i32 } -> Obj {
+        let mut o = no_obj{}
+        o.kind = kind
+        o.index = index
+        o.name = f.track
+        o.hit_points = @as(i32, f.hit_points)
+        o.max_hit_points = @as(i32, f.max_hit_points)
+        o.sphere = f.sphere_radius
+        o.num_loops = f.num_loops
+        o.trigger = f.trigger
+        o.rail = rail
+        o.origin = origin
+        o.position = origin
+        return o
+    }
+
+    // The run of `area`: objects for the player, every enemy and every obstacle, the rails
+    // sampled from the track models (`lookup` gives a model by name), obstacles boxed. `layout`
+    // places the track and obstacle models.
+    fn make_run(S) {
+        realloc: alloc::Fn(S), mut heap: S, area: *mut Area, layout: lyt::Layout, lookup: &fn{ name: []u8 } -> ?*mdl::Model,
+    } -> !*mut Run {
+        let rails = try alloc::resize(Rail, S){ realloc, &heap, mem = slice::empty(Rail){}, count = 1 + area.enemies.len }
+        let mut run = Run{
+            area, objs = [no_obj{}; 255], count = 0, rails, time = 0.0,
+            speed = 100.0, min_speed = 100.0, max_speed = 100.0, accel = 0.0,
+            offset = math::vec3::zero{}, velocity = math::vec3::zero{}, origin = math::vec3::zero{},
+            tunnel_pos = area.player.tunnel_pos, tunnel_neg = area.player.tunnel_neg, tunnel_infinite = area.player.tunnel_infinite,
+            lateral_accel = area.lateral_accel, invincibility = area.player.invincibility,
+            input = Input{ x = 0.0, y = 0.0, fire = false }, fire_cooldown = 0.0,
+            events = [Event{ slot = 0, object = 0 }; 64], event_count = 0,
+            requests = [Request{ object = 0, name = [0; 28], name_len = 0, looping = false, queue = false, overlay = false, remove = false }; 64], request_count = 0,
+            last_follower_hit = 0, last_obstacle_hit = 0, last_hp_change = 0, blur_on = false, blur_ratio = 0.75, started = false,
+        }
+        let mut nrails: usize = 0
+        // the player on its track
+        let pf = area.player
+        let mut pname = pf.track
+        let porigin = placement_of{ places = layout.tracks, name = resref::bytes{ r = &pname } } ifnull math::vec3::zero{}
+        let mut prail: i32 = -1
+        let pmodel = lookup{ name = resref::bytes{ r = &area.player.track } }
+        if pmodel != null {
+            let r = try sample_rail(S){ realloc, &heap, model = pmodel, lookup }
+            if r != null {
+                rails[nrails] = r
+                prail = @as(i32, nrails)
+                nrails = nrails + 1
+            }
+        }
+        run.objs[0] = follower_obj{ kind = ObjKind::player, index = 0, f = pf, origin = porigin, rail = prail }
+        run.count = 1
+        run.origin = math::vec3::zero{}
+        run.min_speed = pf.min_speed
+        run.max_speed = pf.max_speed
+        run.accel = if pf.accel_secs > 0.0 { (pf.max_speed - pf.min_speed) / pf.accel_secs } else { 0.0 }
+        run.speed = pf.min_speed
+        run.offset = pf.start_offset
+        // the enemies
+        let mut i: usize = 0
+        while i < area.enemies.len and run.count < MAX_OBJECTS {
+            let f = area.enemies[i]
+            let mut tname = f.track
+            let origin = placement_of{ places = layout.tracks, name = resref::bytes{ r = &tname } } ifnull math::vec3::zero{}
+            let mut rail: i32 = -1
+            let tm = lookup{ name = resref::bytes{ r = &area.enemies[i].track } }
+            if tm != null {
+                let r = try sample_rail(S){ realloc, &heap, model = tm, lookup }
+                if r != null {
+                    rails[nrails] = r
+                    rail = @as(i32, nrails)
+                    nrails = nrails + 1
+                }
+            }
+            run.objs[run.count] = follower_obj{ kind = ObjKind::enemy, index = i, f, origin, rail }
+            run.count = run.count + 1
+            i = i + 1
+        }
+        // the obstacles
+        i = 0
+        while i < area.obstacles.len and run.count < MAX_OBJECTS {
+            let mut oname = area.obstacles[i]
+            let origin = placement_of{ places = layout.obstacles, name = resref::bytes{ r = &oname } } ifnull math::vec3::zero{}
+            let mut o = no_obj{}
+            o.kind = ObjKind::obstacle
+            o.index = i
+            o.name = oname
+            o.origin = origin
+            o.position = origin
+            let om = lookup{ name = resref::bytes{ r = &area.obstacles[i] } }
+            if om != null {
+                let b = try model_bounds(S){ realloc, &heap, model = om }
+                if not math::aabb::is_empty{ b } {
+                    o.bounds = math::aabb::make{ min = math::vec3::add{ a = b.min, b = origin }, max = math::vec3::add{ a = b.max, b = origin } }
+                }
+            }
+            run.objs[run.count] = o
+            run.count = run.count + 1
+            i = i + 1
+        }
+        run.rails = rails[..nrails]
+        update_positions{ &run }
+        return try alloc::new(Run, S){ realloc, &heap, value = run }
+    }
+
+    // ---- positions
+
+    fn rail_of { run: *Run, o: *Obj } -> ?*Rail {
+        if o.rail < 0 { return null }
+        return &run.rails[@as(usize, o.rail)]
+    }
+
+    // The follower's transform: its model's origin in the area, then the hook's place on its rail.
+    fn follower_matrix { run: *Run, o: *Obj } -> math::Mat4 {
+        let base = math::mat4::translation{ t = o.origin }
+        let r = rail_of{ run, o } ifnull { return base }
+        return math::mat4::mul{ a = base, b = rail_at{ rail = r.*, t = o.t, loops = o.num_loops } }
+    }
+
+    // Where the player's vehicle is: its rail's transform and the steering offset on top.
+    fn player_matrix { run: *Run } -> math::Mat4 {
+        return math::mat4::mul{ a = follower_matrix{ run, o = &run.objs[PLAYER] }, b = math::mat4::translation{ t = run.offset } }
+    }
+
+    fn update_positions { mut run: Run } {
+        let mut i: usize = 0
+        while i < run.count {
+            let o = &run.objs[i]
+            if o.kind == ObjKind::player {
+                o.position = math::mat4::get_translation{ m = player_matrix{ run = &run } }
+            } else if o.kind == ObjKind::enemy {
+                o.position = math::mat4::get_translation{ m = follower_matrix{ run = &run, o } }
+            }
+            i = i + 1
+        }
+    }
+
+    // ---- events and requests
+
+    fn push_event { mut run: Run, slot: usize, object: u32 } {
+        if run.event_count >= MAX_EVENTS { return }
+        run.events[run.event_count] = Event{ slot, object }
+        run.event_count = run.event_count + 1
+    }
+
+    // The oldest script waiting to run.
+    fn take_event { mut run: Run } -> ?Event {
+        if run.event_count == 0 { return null }
+        let e = run.events[0]
+        let mut i: usize = 1
+        while i < run.event_count {
+            run.events[i - 1] = run.events[i]
+            i = i + 1
+        }
+        run.event_count = run.event_count - 1
+        return e
+    }
+
+    fn push_request { mut run: Run, object: u32, name: []u8, looping: bool, queue: bool, overlay: bool, remove: bool } {
+        if run.request_count >= MAX_REQUESTS { return }
+        let mut r = Request{ object, name = [0; 28], name_len = 0, looping, queue, overlay, remove }
+        let n = if name.len < 28 { name.len } else { 28 }
+        let mut i: usize = 0
+        while i < n {
+            r.name[i] = name[i]
+            i = i + 1
+        }
+        r.name_len = n
+        run.requests[run.request_count] = r
+        run.request_count = run.request_count + 1
+    }
+
+    fn take_request { mut run: Run } -> ?Request {
+        if run.request_count == 0 { return null }
+        let r = run.requests[0]
+        let mut i: usize = 1
+        while i < run.request_count {
+            run.requests[i - 1] = run.requests[i]
+            i = i + 1
+        }
+        run.request_count = run.request_count - 1
+        return r
+    }
+
+    // The script of an object's slot, empty for none. The player's come from the area, an
+    // enemy's from its entry; obstacles have none in any shipped area.
+    fn script_of { run: *Run, slot: usize, object: u32 } -> resref::ResRef {
+        let n = slot_of{ run, id = object } ifnull { return resref::empty{} }
+        let o = run.objs[n]
+        if o.kind == ObjKind::player { return run.area.player.scripts[slot] }
+        if o.kind == ObjKind::enemy { return run.area.enemies[o.index].scripts[slot] }
+        return resref::empty{}
+    }
+
+    // ---- defaults of the damage and death slots (SWMG_OnDamage / SWMG_OnDeath run these)
+
+    // Applies the pending change of hit points; at zero or less the object dies.
+    fn default_damage { mut run: Run, n: usize } {
+        let o = &run.objs[n]
+        let hp = o.hit_points + run.last_hp_change
+        o.hit_points = if hp > o.max_hit_points { o.max_hit_points } else { hp }
+        if o.hit_points <= 0 and not o.dead {
+            o.dead = true
+            push_event{ &run, slot = ON_DEATH, object = id_of{ n } }
+        }
+    }
+
+    // Plays `die` on the object's models and takes it away a little later.
+    fn default_death { mut run: Run, n: usize } {
+        let o = &run.objs[n]
+        o.dead = true
+        o.remove_at = run.time + 1.0
+        push_request{ &run, object = id_of{ n }, name = "die", looping = false, queue = false, overlay = false, remove = false }
+    }
+
+    // A change of hit points from outside (a bullet, a script): the OnDamage script decides, or the default.
+    fn damage_object { mut run: Run, n: usize, delta: i32 } {
+        run.last_hp_change = delta
+        let mut object = id_of{ n }
+        let script = script_of{ run = &run, slot = ON_DAMAGE, object }
+        if resref::is_empty{ r = script } { default_damage{ &run, n } } else { push_event{ &run, slot = ON_DAMAGE, object } }
+    }
+
+    // ---- stepping
+
+    // The player's speed toward its maximum at `accel` a second, not below the minimum.
+    fn step_speed { mut run: Run, dt: f32 } {
+        let step = run.accel * dt
+        if run.speed < run.max_speed {
+            run.speed = math::min{ a = run.speed + step, b = run.max_speed }
+        } else if run.speed > run.max_speed {
+            run.speed = math::max{ a = run.speed - step, b = run.max_speed }
+        }
+        if run.speed < run.min_speed { run.speed = run.min_speed }
+    }
+
+    // One axis of lateral motion: dv/dt = L u - (L/M) v, dx/dt = v for a step of constant input,
+    // solved exactly (the original integrates it with a fourth-order Runge-Kutta step). Without
+    // inertia the position follows the input directly. Returns (position, velocity).
+    fn step_axis { x: f32, v: f32, u: f32, lateral: f32, movement: f32, inertia: bool, dt: f32 } -> [2]f32 {
+        if not inertia or lateral <= 0.0 { return [x + movement * u * dt, movement * u] }
+        let k = lateral / movement
+        let target = movement * u
+        let e = math::expf{ x = -k * dt }
+        let nv = target + (v - target) * e
+        let nx = x + target * dt + (v - target) / k * (1.0 - e)
+        return [nx, nv]
+    }
+
+    fn clamp_axis { x: f32, v: f32, pos: f32, neg: f32, origin: f32, infinite: bool } -> [2]f32 {
+        if infinite { return [x, v] }
+        let hi = pos + origin
+        let lo = neg + origin
+        if x > hi { return [hi, 0.0] }
+        if x < lo { return [lo, 0.0] }
+        return [x, v]
+    }
+
+    fn step_steering { mut run: Run, dt: f32 } {
+        let a = run.area
+        let movement = a.movement_per_sec
+        if movement <= 0.0 { return }
+        let ux = math::clamp{ x = run.input.x, lo = -1.0, hi = 1.0 }
+        let uy = math::clamp{ x = run.input.y, lo = -1.0, hi = 1.0 }
+        let sx = step_axis{ x = run.offset.x, v = run.velocity.x, u = ux, lateral = run.lateral_accel, movement, inertia = a.use_inertia, dt }
+        let cx = clamp_axis{ x = sx[0], v = sx[1], pos = run.tunnel_pos.x, neg = run.tunnel_neg.x, origin = run.origin.x, infinite = run.tunnel_infinite[0] }
+        run.offset.x = cx[0]
+        run.velocity.x = cx[1]
+        if a.kind == TURRET {
+            let sz = step_axis{ x = run.offset.z, v = run.velocity.z, u = uy, lateral = run.lateral_accel, movement, inertia = a.use_inertia, dt }
+            let cz = clamp_axis{ x = sz[0], v = sz[1], pos = run.tunnel_pos.z, neg = run.tunnel_neg.z, origin = run.origin.z, infinite = run.tunnel_infinite[2] }
+            run.offset.z = cz[0]
+            run.velocity.z = cz[1]
+        }
+    }
+
+    // Starts a run: the scripts' OnCreate.
+    fn start_run { mut run: Run } {
+        if run.started { return }
+        run.started = true
+        let mut i: usize = 0
+        while i < run.count {
+            let id = id_of{ n = i }
+            if not resref::is_empty{ r = script_of{ run = &run, slot = ON_CREATE, object = id } } { push_event{ &run, slot = ON_CREATE, object = id } }
+            i = i + 1
+        }
+    }
+
+    // One step of `dt` seconds: the player's speed, position on the rail and offset, the followers
+    // on their rails, collisions, timers, and the heartbeat and fire scripts.
+    fn step_run { mut run: Run, dt: f32 } {
+        start_run{ &run }
+        run.time = run.time + dt
+        step_speed{ &run, dt }
+        let player = &run.objs[PLAYER]
+        player.t = player.t + dt * run.speed * 0.01
+        step_steering{ &run, dt }
+        let mut i: usize = 1
+        while i < run.count {
+            let o = &run.objs[i]
+            if o.kind == ObjKind::enemy and not o.dead { o.t = o.t + dt }
+            i = i + 1
+        }
+        update_positions{ &run }
+        // timers
+        i = 0
+        while i < run.count {
+            let o = &run.objs[i]
+            if o.invincible > 0.0 { o.invincible = math::max{ a = o.invincible - dt, b = 0.0 } }
+            if o.dead and not o.removed and o.remove_at > 0.0 and run.time >= o.remove_at { o.removed = true }
+            i = i + 1
+        }
+        if run.fire_cooldown > 0.0 { run.fire_cooldown = run.fire_cooldown - dt }
+        collide{ &run }
+        // the player's fire key: OnFire, at the first bank's rate
+        if run.input.fire and run.fire_cooldown <= 0.0 {
+            let rate = if run.area.player.bank_count > 0 { run.area.player.banks[0].rate_of_fire } else { 0.0 }
+            run.fire_cooldown = rate
+            push_event{ &run, slot = ON_FIRE, object = id_of{ n = PLAYER } }
+        }
+        // heartbeats: every object with the script
+        i = 0
+        while i < run.count {
+            let id = id_of{ n = i }
+            if run.objs[i].kind != ObjKind::obstacle and not run.objs[i].removed {
+                if not resref::is_empty{ r = script_of{ run = &run, slot = ON_HEARTBEAT, object = id } } { push_event{ &run, slot = ON_HEARTBEAT, object = id } }
+            }
+            i = i + 1
+        }
+    }
+
+    fn start_invulnerability { mut run: Run, n: usize } {
+        let o = &run.objs[n]
+        let period = if o.kind == ObjKind::player { run.invincibility } else { run.area.enemies[o.index].invincibility }
+        o.invincible = if period > 0.0 { period } else { 0.0 }
+    }
+
+    // The player against the pads (spheres) and the obstacles (boxes); the scripts decide what a hit does.
+    fn collide { mut run: Run } {
+        let p = &run.objs[PLAYER]
+        let mut i: usize = 1
+        while i < run.count {
+            let o = &run.objs[i]
+            i = i + 1
+            if o.dead or o.removed { continue }
+            if o.kind == ObjKind::enemy {
+                if not (o.trigger or run.area.do_bumping) { continue }
+                let d = math::vec3::distance{ a = p.position, b = o.position }
+                if d < o.sphere + p.sphere {
+                    run.last_follower_hit = id_of{ n = i - 1 }
+                    push_event{ &run, slot = ON_HIT_FOLLOWER, object = id_of{ n = PLAYER } }
+                }
+            } else if o.kind == ObjKind::obstacle {
+                if math::aabb::is_empty{ b = o.bounds } or p.invincible > 0.0 { continue }
+                if math::aabb::contains{ b = o.bounds, p = p.position } {
+                    run.last_obstacle_hit = id_of{ n = i - 1 }
+                    start_invulnerability{ &run, n = PLAYER }
+                    push_event{ &run, slot = ON_HIT_OBSTACLE, object = id_of{ n = PLAYER } }
+                }
+            }
+        }
+    }
+}

@@ -59,48 +59,18 @@ namespace save {
 
     fn put_char { mut b: Builder, owner: u32, label: []u8, v: i32 } -> ! { _ = try gffw::add_value{ &b, owner, label, value = gff::Value::char{ v = @trunc(i8, v) } } }
 
-    // An engine value's game-defined struct: an effect as the EffectList has it (gff-save.md);
-    // locations, events and talents in fields of our own (the original's labels are unknown).
+    // An engine value's game-defined struct: an effect as an EffectList of its leaves (the
+    // original's holds the one effect's fields in the struct itself, read_engine_value takes
+    // both); locations, events and talents in fields of our own (the original's labels are unknown).
     fn write_engine_value { mut b: Builder, owner: u32, v: values::Value } -> ! {
         match v {
-            effect{ e } => {
-                _ = try gffw::add_value{ &b, owner, label = "Id", value = gff::Value::dword64{ v = @as(u64, e.id) } }
-                try put_word{ &b, owner, label = "Type", v = @trunc(u32, e.kind) }
-                try put_word{ &b, owner, label = "SubType", v = @trunc(u32, e.subtype) }
-                try put_float{ &b, owner, label = "Duration", v = e.duration }
-                try put_byte{ &b, owner, label = "SkipOnLoad", v = 0 }
-                try put_dword{ &b, owner, label = "ExpireDay", v = 0 }
-                try put_dword{ &b, owner, label = "ExpireTime", v = 0 }
-                try put_dword{ &b, owner, label = "CreatorId", v = e.creator }
-                try put_dword{ &b, owner, label = "SpellId", v = 0xFFFFFFFF }
-                try put_int{ &b, owner, label = "IsExposed", v = 1 }
-                try put_int{ &b, owner, label = "NumIntegers", v = 8 }
-                let ints = try gffw::put_list{ &b, owner, label = "IntList" }
+            effect{ g } => {
+                // The leaves of the group, each as an EffectList entry (save/rules.ctx put_effect).
+                let list = try gffw::put_list{ &b, owner, label = "EffectList" }
                 let mut i: usize = 0
-                while i < 8 {
-                    let el = try gffw::add_element{ &b, list = ints, id = 3 }
-                    try put_int{ &b, owner = el, label = "Value", v = e.ints[i] }
-                    i = i + 1
-                }
-                let floats = try gffw::put_list{ &b, owner, label = "FloatList" }
-                i = 0
-                while i < 4 {
-                    let el = try gffw::add_element{ &b, list = floats, id = 4 }
-                    try put_float{ &b, owner = el, label = "Value", v = e.floats[i] }
-                    i = i + 1
-                }
-                let strings = try gffw::put_list{ &b, owner, label = "StringList" }
-                i = 0
-                while i < 6 {
-                    let el = try gffw::add_element{ &b, list = strings, id = 5 }
-                    try put_string{ &b, owner = el, label = "Value", v = "" }
-                    i = i + 1
-                }
-                let objects = try gffw::put_list{ &b, owner, label = "ObjectList" }
-                i = 0
-                while i < 4 {
-                    let el = try gffw::add_element{ &b, list = objects, id = 6 }
-                    try put_dword{ &b, owner = el, label = "Value", v = if i < 2 { e.objects[i] } else { obj::INVALID } }
+                while i < @as(usize, g.len) {
+                    let el = try gffw::add_element{ &b, list, id = 2 }
+                    try put_effect{ &b, owner = el, e = &g.items[i] }
                     i = i + 1
                 }
             }
@@ -191,31 +161,21 @@ namespace save {
     fn read_engine_value { doc: *gff::Doc, s: u32, kind: nwvm::EngineType } -> values::Value {
         match kind {
             effect => {
-                let mut e = values::no_effect{}
-                e.id = @trunc(u32, number_at{ doc, s, label = "Id", default = 0 })
-                e.kind = @trunc(i32, number_at{ doc, s, label = "Type", default = 0 })
-                e.subtype = @trunc(i32, number_at{ doc, s, label = "SubType", default = 0 })
-                e.duration = float_at{ doc, s, label = "Duration" }
-                e.creator = @trunc(u32, number_at{ doc, s, label = "CreatorId", default = 0x7F000000 })
-                let ints = gff::get_list{ doc = doc.*, s, label = "IntList" } ifnull slice::empty(u32){}
-                let mut i: usize = 0
-                while i < ints.len and i < 8 {
-                    e.ints[i] = @trunc(i32, number_at{ doc, s = ints[i], label = "Value", default = 0 })
-                    i = i + 1
+                let mut g = values::no_effect{}
+                let list = gff::get_list{ doc = doc.*, s, label = "EffectList" }
+                if list != null {
+                    let mut i: usize = 0
+                    while i < list.len and @as(usize, g.len) < rules::GROUP_MAX {
+                        g.items[@as(usize, g.len)] = read_effect{ doc, s = list[i] }
+                        g.len = g.len + 1
+                        i = i + 1
+                    }
+                } else if gff::get_number{ doc = doc.*, s, label = "Type" } != null {
+                    // The original's layout: the effect's own fields.
+                    g.items[0] = read_effect{ doc, s }
+                    g.len = 1
                 }
-                let floats = gff::get_list{ doc = doc.*, s, label = "FloatList" } ifnull slice::empty(u32){}
-                i = 0
-                while i < floats.len and i < 4 {
-                    e.floats[i] = float_at{ doc, s = floats[i], label = "Value" }
-                    i = i + 1
-                }
-                let objects = gff::get_list{ doc = doc.*, s, label = "ObjectList" } ifnull slice::empty(u32){}
-                i = 0
-                while i < objects.len and i < 2 {
-                    e.objects[i] = @trunc(u32, number_at{ doc, s = objects[i], label = "Value", default = 0x7F000000 })
-                    i = i + 1
-                }
-                return values::Value::effect{ e }
+                return values::Value::effect{ g }
             }
             location => {
                 return values::Value::location{ l = values::Location{

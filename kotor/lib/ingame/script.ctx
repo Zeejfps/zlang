@@ -3,7 +3,8 @@
 //
 //   FRAME ui move X Y          the pointer (window pixels)
 //   FRAME ui click X Y         press and release the left button there
-//   FRAME ui key NAME          a key (escape, return, space, up, down, left, right, a letter)
+//   FRAME ui key NAME          a key (escape, return, space, up, down, left, right, backspace, a letter)
+//   FRAME ui type TEXT         typed text, for an edit box with the focus (the save name box)
 //   FRAME ui menu NAME|N       open a menu: equip inventory character abilities messages journal map options
 //   FRAME ui close             close the open menu
 //   FRAME ui target TAG        select the object with the tag;  ui join TAG: it joins the party
@@ -26,6 +27,17 @@ namespace ingame {
             if code != 0 {
                 send{ &ui, &w, &dev, ev = sdl::Event::key{ down = true, repeat = false, scancode = 0, keycode = code, mods = 0 } }
                 send{ &ui, &w, &dev, ev = sdl::Event::key{ down = false, repeat = false, scancode = 0, keycode = code, mods = 0 } }
+            }
+        } else if ci::eq{ a = cmd, b = "type" } {
+            // Typed text for a focused edit box (the save name), in the pieces the platform delivers.
+            let typed = text::rest{ words }
+            let mut at: usize = 0
+            while at < typed.len {
+                let n = if typed.len - at > 32 { 32 } else { typed.len - at }
+                let mut piece: [32]u8
+                slice::copy(u8){ dst = piece[..n], src = typed[at..at + n] }
+                send{ &ui, &w, &dev, ev = sdl::Event::text{ bytes = piece, len = n } }
+                at = at + n
             }
         } else if ci::eq{ a = cmd, b = "menu" } {
             let name = text::next_word{ &words } ifnull { return }
@@ -121,6 +133,7 @@ namespace ingame {
         if ci::eq{ a = name, b = "return" } { return sdl::key::RETURN }
         if ci::eq{ a = name, b = "space" } { return sdl::key::SPACE }
         if ci::eq{ a = name, b = "tab" } { return sdl::key::TAB }
+        if ci::eq{ a = name, b = "backspace" } { return sdl::key::BACKSPACE }
         if ci::eq{ a = name, b = "up" } { return sdl::key::UP }
         if ci::eq{ a = name, b = "down" } { return sdl::key::DOWN }
         if ci::eq{ a = name, b = "left" } { return sdl::key::LEFT }

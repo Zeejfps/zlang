@@ -16,6 +16,8 @@ namespace modload {
     fn enter { mut w: world::World, name: []u8 } -> ! {
         // A module visited before (or loaded from a save) comes back from the game in progress
         // (party-items-saves.md 1.2): its <module>.sav, mounted from the store's file.
+        // DeleteSaveGroupOnEnter: the kept states of every module of that save group go.
+        save::delete_save_group{ &w, module = name }
         let saved = save::find{ st = &w.gip, name, kind = 2057 } != null
         if saved { try save::write_store{ fs = &w.fs, st = &w.gip } }
         try res::mount_module{ fs = &w.fs, rm = w.rm, name, save = if saved { w.gip.path } else { "" } }
@@ -125,6 +127,8 @@ namespace modload {
             w.calendar_set = true
         }
         if saved {
+            let next_fx = @as(u64, tmpl::number{ doc, s, label = "Mod_Effect_NxtId", default = 0 })
+            if next_fx > w.fx_ids.next { w.fx_ids.next = next_fx }
             let next = @trunc(u32, tmpl::number{ doc, s, label = "Mod_NextObjId0", default = 0 })
             if next > w.objects.next_low { w.objects.next_low = next }
         }
@@ -163,6 +167,10 @@ namespace modload {
         a.fog_far = tmpl::real{ doc, s, label = "SunFogFar", default = 100.0 }
         a.fog_color = @trunc(u32, tmpl::number{ doc, s, label = "SunFogColor", default = 0 })
         a.load_screen = @trunc(u32, tmpl::number{ doc, s, label = "LoadScreenID", default = 0 })
+        // the four minigame areas carry a MiniGame struct (docs/design/minigames.md)
+        a.minigame = null
+        let setup = try mg::read_are(arena::Arena){ doc = doc.*, realloc = arena::alloc, heap = w.mod_arena }
+        if setup is some{ value = m } { a.minigame = try alloc::new(mg::Area, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, value = m } }
         tmpl::script{ doc, s, o, label = "OnEnter", slot = obj::Slot::enter }
         tmpl::script{ doc, s, o, label = "OnExit", slot = obj::Slot::exit }
         tmpl::script{ doc, s, o, label = "OnHeartbeat", slot = obj::Slot::heartbeat }
@@ -332,13 +340,17 @@ namespace modload {
     // at the transition waypoint or the IFO's entry point on the walkmesh, OnClientEnter queued
     // to the module, and the area's OnEnter for the PC.
     fn place_player { mut w: world::World } {
-        if not world::is_valid{ w = &w, id = w.pc } {
-            w.pc = make_default_player{ &w } iferr err{ error } {
+        if not world::is_valid{ w = &w, id = w.player } {
+            w.player = make_default_player{ &w } iferr err{ error } {
                 world::prefix{ w = &w }
                 _ = @fmt(&w.io, "no player: {}\n", error)
                 return
             }
         }
+        // A module is entered under the player character's control (the leader comes back with
+        // the party, save::restore_party).
+        w.pc = w.player
+        party::merge_into_party{ &w, id = w.player }
         let mo = world::object{ w = &w, id = w.module } ifnull { return }
         let m = obj::module{ o = mo } ifnull { return }
         let mut at = m.entry_position
@@ -356,6 +368,7 @@ namespace modload {
         if not party::is_member{ w = &w, id = w.pc } { party::set_leader{ &w, id = w.pc } }
         let pc = world::object{ w = &w, id = w.pc } ifnull { return }
         pc.area = w.area
+        let from_save = w.restoring
         if w.restoring {
             // A loaded save's player stands where it was saved (party-items-saves.md 1.6, step 7).
             at = pc.position
@@ -364,6 +377,25 @@ namespace modload {
         }
         world::set_orientation{ o = pc, v = facing }
         movement::place{ &w, id = w.pc, at }
+        // A loaded save's party inventory (INVENTORY.res, RestoreParty step 3).
+        if from_save {
+            save::restore_inventory{ &w } iferr err{ error } {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "restoring the inventory: {}\n", error)
+            }
+        }
+        // The companions come back next to the player (RestoreParty, 3.3); not in a minigame,
+        // where the player is a vehicle.
+        let mut minigame = false
+        if world::object{ w = &w, id = w.area } is some{ value = mao } {
+            if obj::area{ o = mao } is some{ value = ma } { minigame = ma.minigame != null }
+        }
+        if not minigame {
+            save::restore_party{ &w, at_saved = from_save } iferr err{ error } {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "restoring the party: {}\n", error)
+            }
+        }
         let ao = world::object{ w = &w, id = w.area }
         if ao != null { raise_area{ &w } }
         events::post{ &w, delay_ms = 0, caller = w.pc, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::PLAYER_ENTER, object = w.pc } } }
@@ -382,9 +414,11 @@ namespace modload {
         if players.len == 0 { return }
         let s = players[0]
         let saved_id = @trunc(u32, gff::get_number{ doc = doc.*, s, label = "ObjectId" } ifnull 0)
-        if world::object{ w = &w, id = w.pc } != null { world::destroy{ &w, id = w.pc } ; world::sweep{ &w } }
+        if world::object{ w = &w, id = w.player } != null { world::destroy{ &w, id = w.player } ; world::sweep{ &w } }
         let fresh = saved_id != 0 and world::object{ w = &w, id = saved_id } == null
         let o = try world::add_object{ &w, kind = obj::Kind::creature, id = if fresh { saved_id } else { 0 }, character = not fresh }
+        // The player character before it is read: its rules use the level history (pc_rules).
+        w.player = o.id
         o.area = w.area
         o.position = math::Vec3{ x = tmpl::real{ doc, s, label = "XPosition", default = 0.0 }, y = tmpl::real{ doc, s, label = "YPosition", default = 0.0 }, z = tmpl::real{ doc, s, label = "ZPosition", default = 0.0 } }
         world::set_orientation{ o, v = math::Vec3{ x = tmpl::real{ doc, s, label = "XOrientation", default = 0.0 }, y = tmpl::real{ doc, s, label = "YOrientation", default = 1.0 }, z = 0.0 } }
@@ -397,6 +431,7 @@ namespace modload {
         }
         o.ai_level = 4
         w.pc = o.id
+        w.player = o.id
         save::read_actions{ &w, doc, s, id = o.id }
     }
 
@@ -440,6 +475,7 @@ namespace modload {
             defer obj::free_bytes{ heap = w.heap, s = bytes }
             let doc = try gff::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch }
             let o = try world::add_object{ &w, kind = obj::Kind::creature, id = 0, character = true }
+            w.player = o.id
             try tmpl::read{ &w, o, doc = &doc, s = gff::ROOT }
             try world::set_tag{ &w, o, tag = "" }
             if obj::creature{ o } is some{ value = c } {
@@ -453,6 +489,7 @@ namespace modload {
             return o.id
         }
         let o = try world::add_object{ &w, kind = obj::Kind::creature, id = 0, character = true }
+        w.player = o.id
         try world::set_tag{ &w, o, tag = "" }
         try world::set_name{ &w, name = &o.name, strref = 0xFFFFFFFF, text = "Player" }
         let c = obj::creature{ o } ifnull { return o.id }
@@ -553,11 +590,27 @@ namespace modload {
                 world::prefix{ w = &w }
                 _ = @fmt(&w.io, "saving the module's state: {}\n", error)
             }
+            // The companions travel as AVAILNPC files (SavePlayerCharacters, party-items-saves.md 3.3).
+            save::keep_party{ &w } iferr err{ error } {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "keeping the party: {}\n", error)
+            }
         }
         let ao = world::object{ w = &w, id = w.area }
         if ao != null {
             ao.ctx.exiting = w.pc
             _ = scripts::run_slot{ &w, &vm, engine, id = w.area, slot = obj::Slot::exit }
+        }
+        // Control returns to the player character; a companion leading goes with the others.
+        if world::is_valid{ w = &w, id = w.player } { w.pc = w.player }
+        // The party's inventory travels with the player character.
+        let bag = list::items{ list = w.bag }
+        let mut b: usize = 0
+        while b < bag.len {
+            if world::object{ w = &w, id = bag[b] } is some{ value = bo } {
+                if obj::item{ o = bo } is some{ value = bi } { bi.possessor = w.player }
+            }
+            b = b + 1
         }
         actions::clear_queue{ &w, o = world::object{ w = &w, id = w.pc } ifnull { return } }
         let all = list::items{ list = w.objects.all }
@@ -567,7 +620,7 @@ namespace modload {
             i = i + 1
             if o.id == w.pc or o.destroyed { continue }
             if obj::item{ o } is some{ value = it } {
-                if it.possessor == w.pc { continue }
+                if it.possessor == w.pc or it.possessor == w.player { continue }
             }
             o.destroyed = true
             list::push{ list = &w.doomed, item = o.id } iferr {}
@@ -580,6 +633,7 @@ namespace modload {
         w.layout = null
         w.paths = null
         w.vis = null
+        w.minigame = null
         w.module = obj::INVALID
         w.area = obj::INVALID
         let pc = world::object{ w = &w, id = w.pc }
@@ -603,6 +657,16 @@ namespace modload {
         let kept = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = name.len }
         slice::copy(u8){ dst = kept, src = name }
         try enter{ &w, name = kept }
+        // An autosave on arrival (gameloop.md 5.7): modulesave.2da AutoSaveOnEnter of the target
+        // says force (always), no (never) or yes (when the 15 min timer is due); no row: always.
+        let row = twoda::find_row{ t = w.tables.modulesave, label = kept }
+        if row is some{ value = r } {
+            let how = twoda::get_string{ t = w.tables.modulesave, row = r, column = "autosaveonenter" } ifnull "yes"
+            if ci::eq{ a = how, b = "force" } { w.autosave_due = true }
+            else if ci::eq{ a = how, b = "yes" } and w.autosave_ms >= 900000.0 { w.autosave_due = true }
+        } else {
+            w.autosave_due = true
+        }
         return true
     }
 }

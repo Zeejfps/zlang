@@ -1,5 +1,5 @@
 // Routines: items and gold. Creating an item in an inventory, looking through inventories,
-// equipping (instantly: there is no equip action yet), stack sizes and credits (docs/re/
+// equipping (as queued EQUIPITEM / UNEQUIPITEM actions, lib/engine/equip.ctx), stack sizes and credits (docs/re/
 // party-items-saves.md, 5.5 and 5.6). Until the party table exists (HOOK(party)) every creature,
 // the player included, keeps its own inventory and purse.
 namespace rt_item {
@@ -19,6 +19,10 @@ namespace rt_item {
             nwscript::GetGold => { try get_gold{ &w, &vm, argc } }
             nwscript::ActionEquipItem => { try action_equip_item{ &w, &vm, argc } }
             nwscript::ActionUnequipItem => { try action_unequip_item{ &w, &vm, argc } }
+            nwscript::ActionEquipMostEffectiveArmor => { try action_equip_most_effective_armor{ &w, &vm } }
+            nwscript::GetItemACValue => { try get_item_ac_value{ &w, &vm, argc } }
+            nwscript::GetWeaponRanged => { try get_weapon_ranged{ &w, &vm, argc } }
+            nwscript::GetItemHasItemProperty => { try get_item_has_item_property{ &w, &vm, argc } }
             else => { return false }
         }
         return true
@@ -35,40 +39,72 @@ namespace rt_item {
 
     // ---- inventories
 
-    // The ids an object's inventory holds (a creature's or a placeable's; nothing for the rest).
-    fn inventory_of { o: *obj::Object } -> []mut u32 {
-        if o.ext is creature{ c } { return list::items{ list = c.inventory } }
-        if o.ext is placeable{ p } { return list::items{ list = p.inventory } }
-        return slice::empty(u32){}
+    // The ids an object's inventory holds: the party's shared inventory for the player character
+    // and the party's members (w.bag), a creature's own list otherwise, a placeable's container
+    // (party::inventory_of); nothing for the rest.
+    fn inventory_of { mut w: world::World, o: *obj::Object } -> []mut u32 {
+        let l = party::inventory_of{ &w, id = o.id } ifnull { return slice::empty(u32){} }
+        return list::items{ list = l.* }
     }
 
     fn holds_items { o: *obj::Object } -> bool { return o.ext is creature | placeable }
 
-    fn add_to_inventory { o: *mut obj::Object, item: u32 } -> bool {
-        if o.ext is creature{ c } {
-            list::push{ list = &c.inventory, item } iferr { return false }
-            return true
+    // Puts `item` in the inventory of `o`; an item in the party's inventory belongs to the player
+    // character (possessor w.player), in any other to its holder.
+    fn add_to_inventory { mut w: world::World, o: *mut obj::Object, item: u32 } -> bool {
+        let l = party::inventory_of{ &w, id = o.id } ifnull { return false }
+        list::push{ list = l, item } iferr { return false }
+        if world::object{ w = &w, id = item } is some{ value = io } {
+            if obj::item{ o = io } is some{ value = it } {
+                it.possessor = if o.id == w.player or party::is_member{ w = &w, id = o.id } { w.player } else { o.id }
+            }
         }
-        if o.ext is placeable{ p } {
-            list::push{ list = &p.inventory, item } iferr { return false }
-            return true
-        }
-        return false
+        return true
     }
 
     // Takes `item` out of the inventory; false if it was not there.
-    fn remove_from_inventory { o: *mut obj::Object, item: u32 } -> bool {
+    fn remove_from_inventory { mut w: world::World, o: *mut obj::Object, item: u32 } -> bool {
+        let l = party::inventory_of{ &w, id = o.id } ifnull { return false }
+        let ids = list::items{ list = l.* }
         let mut at: usize = 0
-        let ids = inventory_of{ o }
         while at < ids.len and ids[at] != item { at = at + 1 }
         if at == ids.len { return false }
         while at + 1 < ids.len {
             ids[at] = ids[at + 1]
             at = at + 1
         }
-        if o.ext is creature{ c } { c.inventory.len = c.inventory.len - 1 }
-        if o.ext is placeable{ p } { p.inventory.len = p.inventory.len - 1 }
+        l.len = l.len - 1
         return true
+    }
+
+    // Drops the ids of destroyed objects from an inventory.
+    fn purge_dead { mut w: world::World, o: *obj::Object } {
+        let l = party::inventory_of{ &w, id = o.id } ifnull { return }
+        let ids = list::items{ list = l.* }
+        let mut i: usize = 0
+        let mut j: usize = 0
+        while i < ids.len {
+            if world::is_valid{ w = &w, id = ids[i] } {
+                ids[j] = ids[i]
+                j = j + 1
+            }
+            i = i + 1
+        }
+        l.len = j
+    }
+
+    // An item that is about to be destroyed leaves the inventory and the equipment that hold it.
+    // Call it before world::destroy marks the object (HOOK: the destroy event does not yet); until
+    // then the inventories skip the ids of dead objects (purge_dead).
+    fn forget_item { mut w: world::World, item: u32 } {
+        let io = world::object{ w = &w, id = item } ifnull { return }
+        let it = obj::item{ o = io } ifnull { return }
+        let holder = world::object{ w = &w, id = it.possessor } ifnull { return }
+        if holder.destroyed { return }          // going too (a module being left)
+        if it.equipped_slot >= 0 and it.equipped_slot < @as(i32, obj::EQUIP_SLOTS) {
+            _ = equip::unequip_item{ &w, id = holder.id, slot = @as(usize, it.equipped_slot) }
+        }
+        _ = remove_from_inventory{ &w, o = holder, item }
     }
 
     fn cursor_of { w: *world::World, o: *obj::Object } -> usize {
@@ -86,7 +122,7 @@ namespace rt_item {
 
     // The item at the cursor or after it, the cursor moved past it; OBJECT_INVALID at the end.
     fn step_cursor { mut w: world::World, o: *mut obj::Object } -> u32 {
-        let ids = inventory_of{ o }
+        let ids = inventory_of{ &w, o }
         let mut at = cursor_of{ w = &w, o }
         while at < ids.len {
             let id = ids[at]
@@ -107,6 +143,7 @@ namespace rt_item {
             try nwvm::push_object{ &vm, id = obj::INVALID }
             return
         }
+        purge_dead{ &w, o }
         set_cursor{ &w, o, at = 0 }
         try nwvm::push_object{ &vm, id = step_cursor{ &w, o } }
     }
@@ -129,7 +166,7 @@ namespace rt_item {
             try nwvm::push_object{ &vm, id = obj::INVALID }
             return
         }
-        let ids = inventory_of{ o }
+        let ids = inventory_of{ &w, o }
         let mut found = obj::INVALID
         let mut k: usize = 0
         while k < ids.len {
@@ -243,13 +280,24 @@ namespace rt_item {
         let it = obj::item{ o } ifnull { return id }
         let most = max_stack{ w = &w, base = it.base }
         it.stack = if @as(u32, stack) > most { most } else { @as(u32, stack) }
+        let party_holder = target == w.player or party::is_member{ w = &w, id = target }
         if is_credits{ w = &w, base = it.base } {
-            if obj::creature{ o = holder } is some{ value = c } { c.gold = add_gold{ have = c.gold, n = @as(i64, it.stack) } }
+            // The party's credits are the purse (party-items-saves.md 3.6).
+            if party_holder {
+                party::add_gold{ &w, n = @as(i64, it.stack) }
+            } else if obj::creature{ o = holder } is some{ value = c } {
+                c.gold = add_gold{ have = c.gold, n = @as(i64, it.stack) }
+            }
+            world::destroy{ &w, id }
+            return obj::INVALID
+        }
+        // A pazaak card the party finds is counted, not kept (5.9).
+        if party_holder and rt_mg::take_card{ &w, base = it.base, variation = it.model_variation, stack = it.stack } {
             world::destroy{ &w, id }
             return obj::INVALID
         }
         if most > 1 {
-            let ids = inventory_of{ o = holder }
+            let ids = inventory_of{ &w, o = holder }
             let mut k: usize = 0
             while k < ids.len {
                 let other = world::object{ w = &w, id = ids[k] }
@@ -267,7 +315,7 @@ namespace rt_item {
                 it.stack = it.stack - room
             }
         }
-        if not add_to_inventory{ o = holder, item = id } {
+        if not add_to_inventory{ &w, o = holder, item = id } {
             world::destroy{ &w, id }
             return obj::INVALID
         }
@@ -347,7 +395,7 @@ namespace rt_item {
             try nwvm::push_int{ &vm, v = if party::is_member{ w = &w, id } { w.party.gold } else { @as(i32, c.gold) } }
             return
         }
-        let ids = inventory_of{ o }
+        let ids = inventory_of{ &w, o }
         let mut k: usize = 0
         while k < ids.len {
             let other = world::object{ w = &w, id = ids[k] }
@@ -362,58 +410,108 @@ namespace rt_item {
         try nwvm::push_int{ &vm, v = 0 }
     }
 
-    // ---- equipping
+    // ---- equipping (equip.ctx keeps the inventory and the rules together)
 
-    // Takes whatever is in `slot` off and into the inventory.
-    fn unequip_slot { mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature, slot: usize } {
-        let id = c.equipped[slot]
-        c.equipped[slot] = obj::INVALID
-        let held = world::object{ w = &w, id } ifnull { return }
-        if obj::item{ o = held } is some{ value = it } { it.equipped_slot = -1 }
-        _ = add_to_inventory{ o, item = id }
-    }
-
-    // void ActionEquipItem(object oItem, int nInventorySlot, int bInstant = FALSE): done at
-    // once whatever bInstant says; the occupant of the slot goes back to the inventory. A stack
-    // is equipped whole.
+    // void ActionEquipItem(object oItem, int nInventorySlot, int bInstant = FALSE): the EQUIPITEM
+    // action is queued behind what the creature is doing (actions.md 3.8; bInstant only rides along),
+    // and a slot the item already fills queues nothing (AddEquipItemActions).
     fn action_equip_item { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let r = nwscript::ActionEquipItem
         let item = try nwarg::object{ &vm, routine = r, argc, i = 0 }
         let slot = try nwarg::int{ &vm, routine = r, argc, i = 1 }
-        if argc > 2 { _ = try nwarg::int{ &vm, routine = r, argc, i = 2 } }
-        let me = world::object{ w = &w, id = nwvm::self_object{ vm } } ifnull { return }
-        let c = obj::creature{ o = me } ifnull { return }
-        let io = world::object{ w = &w, id = item } ifnull { return }
-        let it = obj::item{ o = io } ifnull { return }
-        if slot < 0 or slot >= @as(i32, obj::EQUIP_SLOTS) { return }
-        // Only what this creature carries, or what lies about, can be equipped.
-        if it.possessor != me.id and world::is_valid{ w = &w, id = it.possessor } { return }
-        let s = @as(usize, slot)
-        if c.equipped[s] == item { return }
-        if it.equipped_slot >= 0 and it.equipped_slot < @as(i32, obj::EQUIP_SLOTS) {
-            c.equipped[@as(usize, it.equipped_slot)] = obj::INVALID
-        }
-        unequip_slot{ &w, o = me, c, slot = s }
-        _ = remove_from_inventory{ o = me, item }
-        c.equipped[s] = item
-        it.equipped_slot = slot
-        it.possessor = me.id
+        let instant = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let me = nwvm::self_object{ vm }
+        if slot < 0 or slot >= @as(i32, obj::EQUIP_SLOTS) or not world::is_valid{ w = &w, id = item } { return }
+        if equip::slot_of_item{ w = &w, id = me, item } == slot { return }
+        let mut a = actions::make{ kind = actions::Kind::equip_item }
+        a.params[0] = actions::Param::object{ id = item }
+        a.params[1] = actions::Param::int{ v = slot }
+        a.params[2] = actions::Param::int{ v = instant }
+        _ = actions::add{ &w, id = me, action = a, force = false }
     }
 
     // void ActionUnequipItem(object oItem, int bInstant = FALSE)
     fn action_unequip_item { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let r = nwscript::ActionUnequipItem
         let item = try nwarg::object{ &vm, routine = r, argc, i = 0 }
-        if argc > 1 { _ = try nwarg::int{ &vm, routine = r, argc, i = 1 } }
-        let me = world::object{ w = &w, id = nwvm::self_object{ vm } } ifnull { return }
-        let c = obj::creature{ o = me } ifnull { return }
-        let mut s: usize = 0
-        while s < obj::EQUIP_SLOTS {
-            if c.equipped[s] == item {
-                unequip_slot{ &w, o = me, c, slot = s }
-                return
-            }
-            s = s + 1
+        let instant = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let me = nwvm::self_object{ vm }
+        if equip::slot_of_item{ w = &w, id = me, item } < 0 { return }
+        let mut a = actions::make{ kind = actions::Kind::unequip_item }
+        a.params[0] = actions::Param::object{ id = item }
+        a.params[1] = actions::Param::int{ v = instant }
+        _ = actions::add{ &w, id = me, action = a, force = false }
+    }
+
+    // ---- armour and weapons as items
+
+    // The base item row of an item object (null for anything else).
+    fn base_row_of { w: *world::World, item: u32 } -> ?*rules::BaseItemRow {
+        let io = world::object{ w, id = item } ifnull { return null }
+        let it = obj::item{ o = io } ifnull { return null }
+        return rules::get_baseitem{ tables = w.rules, row = @as(i32, it.base) }
+    }
+
+    // int GetItemACValue(object oItem): the armour's base AC; 0 for anything that is none.
+    fn get_item_ac_value { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetItemACValue, argc, i = 0 }
+        let row = base_row_of{ w = &w, item = id } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
         }
+        try nwvm::push_int{ &vm, v = if row.base_ac > 0 { row.base_ac } else { 0 } }
+    }
+
+    // int GetWeaponRanged(object oItem)
+    fn get_weapon_ranged { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetWeaponRanged, argc, i = 0 }
+        let row = base_row_of{ w = &w, item = id } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        try nwvm::push_int{ &vm, v = if row.ranged { 1 } else { 0 } }
+    }
+
+    // int GetItemHasItemProperty(object oItem, int nProperty): an active property of that type.
+    fn get_item_has_item_property { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetItemHasItemProperty, argc, i = 0 }
+        let name = try nwarg::int{ &vm, routine = nwscript::GetItemHasItemProperty, argc, i = 1 }
+        let mut has = 0
+        if world::object{ w = &w, id } is some{ value = io } {
+            if obj::item{ o = io } is some{ value = it } {
+                if it.rules is some{ value = ri } {
+                    if rules::has_property{ item = ri, name } { has = 1 }
+                }
+            }
+        }
+        try nwvm::push_int{ &vm, v = has }
+    }
+
+    // void ActionEquipMostEffectiveArmor(): the carried armour with the highest base AC that the
+    // creature may wear and that beats the armour it has on; queued as an EQUIPITEM action.
+    fn action_equip_most_effective_armor { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let me = nwvm::self_object{ vm }
+        let o = world::object{ w = &w, id = me } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let mut best_ac: i32 = 0
+        if base_row_of{ w = &w, item = c.equipped[obj::SLOT_BODY] } is some{ value = worn } { best_ac = worn.base_ac }
+        let mut best = obj::INVALID
+        let ids = inventory_of{ &w, o }
+        let mut k: usize = 0
+        while k < ids.len {
+            let item = ids[k]
+            k = k + 1
+            let row = base_row_of{ w = &w, item } ifnull { continue }
+            if (row.equip_slots & 2) == 0 or row.base_ac <= best_ac { continue }
+            if not equip::may_equip{ w = &w, id = me, item, mask = 2 } { continue }
+            best = item
+            best_ac = row.base_ac
+        }
+        if best == obj::INVALID { return }
+        let mut a = actions::make{ kind = actions::Kind::equip_item }
+        a.params[0] = actions::Param::object{ id = best }
+        a.params[1] = actions::Param::int{ v = @as(i32, obj::SLOT_BODY) }
+        a.params[2] = actions::Param::int{ v = 0 }
+        _ = actions::add{ &w, id = me, action = a, force = false }
     }
 }

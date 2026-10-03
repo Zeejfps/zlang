@@ -31,6 +31,9 @@ namespace world {
         dialoganimations: twoda::Table,
         combatanimations: twoda::Table,
         weapondischarge: twoda::Table,
+        spells: twoda::Table,
+        bodybag: twoda::Table,
+        modulesave: twoda::Table,
     }
 
     // A pending module change (gameloop.md 5.1).
@@ -88,6 +91,12 @@ namespace world {
         restoring: bool,                    // the module being entered comes from a loaded save
         played_seconds: f64,                // time played (real time in game; PT_PLAYEDSECONDS)
         player_blueprint: []mut u8,         // character creation's player (UTC GFF bytes, heap); empty: the default
+        autosave_due: bool,                 // an AUTOSAVE is wanted (a transition or DoSinglePlayerAutoSave)
+        journal: journal::Journal,          // the player's quests (AddJournalQuestEntry; JNL_Entries)
+        player: u32,                        // the player character (w.pc is whoever the player controls: the leader)
+        bag: list::List(u32, heap::Heap),   // the party's shared inventory (party::inventory_of); items' possessor = w.player
+        journal_sort: i32,                  // JNL_SortOrder
+        autosave_ms: f64,                   // real ms since the last save (the 15 min timer, gameloop.md 5.7)
         out: outbox::Outbox,
         transition: ?Transition,
         arrival_waypoint: [64]u8,           // where the PC arrives in the module being entered
@@ -113,6 +122,7 @@ namespace world {
         fx_ids: rules::EffectIds,
         rev: rules::Events,
         conversation: dlg::State,           // the running conversation (lib/dialog)
+        minigame: ?*mut mg::Run,              // the swoop race or turret in progress, set up by the game loop (game/minigame.ctx); the SWMG_ routines' state
         // HOOK(party): the party table
     }
 
@@ -138,7 +148,7 @@ namespace world {
             values = values::new{ heap },
             walk = walkmap::empty{ heap },
             layout = null, paths = null, vis = null,
-            tables, tlk = null, globals, gip = try save::new_store{ heap, root = saves }, calendar_set = false, restoring = false, played_seconds = 0.0, player_blueprint = slice::empty(u8){},
+            tables, tlk = null, globals, gip = try save::new_store{ heap, root = saves }, calendar_set = false, restoring = false, played_seconds = 0.0, player_blueprint = slice::empty(u8){}, autosave_due = false, journal = journal::new_journal{}, journal_sort = 0, player = obj::INVALID, bag = list::new(u32, heap::Heap){ realloc = heap::alloc, heap }, autosave_ms = 0.0,
             out = outbox::new{ heap },
             transition = null,
             arrival_waypoint = [0; 64], arrival_waypoint_len = 0,
@@ -149,7 +159,7 @@ namespace world {
             module_frame = false,
             serial = 0,
             heartbeats = map::new(u32, u64, heap::Heap){ realloc = heap::alloc, heap, hash = map::hash_u32, eq = map::eq_u32 },
-            cursor_area = 0, cursor_shape = 0,
+            cursor_area = 0, cursor_shape = 0, minigame = null,
             conversation = dlg::new_state{},
             cursor_inside = 0, tokens = tokens::new{ heap }, last_acquired = obj::INVALID, last_acquired_from = obj::INVALID,
             rules = try alloc::new(rules::Tables, heap::Heap){ realloc = heap::alloc, heap, value = blank_rules },
@@ -212,6 +222,9 @@ namespace world {
             dialoganimations = try load_table{ &fs, heap, rm, name = "dialoganimations" },
             combatanimations = try load_table{ &fs, heap, rm, name = "combatanimations" },
             weapondischarge = try load_table{ &fs, heap, rm, name = "weapondischarge" },
+            spells = try load_table{ &fs, heap, rm, name = "spells" },
+            bodybag = try load_table{ &fs, heap, rm, name = "bodybag" },
+            modulesave = try load_table{ &fs, heap, rm, name = "modulesave" },
         }
     }
 
@@ -316,7 +329,7 @@ namespace world {
             item => {
                 return obj::Ext::item{ i = try alloc::new(obj::Item, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Item{
                     base = 0, model_variation = 1, body_variation = 1, texture_variation = 1, stack = 1, charges = 0,
-                    possessor = obj::INVALID, identified = true, equipped_slot = -1, non_equippable = false, rules = null,
+                    possessor = obj::INVALID, identified = true, equipped_slot = -1, non_equippable = false, rules = null, droppable = false,
                 } } }
             }
             waypoint => {
@@ -352,7 +365,7 @@ namespace world {
                     unescapable = false, is_night = false, dyn_ambient = 0, sun_ambient = 0, sun_diffuse = 0, fog_on = false,
                     fog_near = 99.0, fog_far = 100.0, fog_color = 0, load_screen = 0, last_heartbeat = 0,
                     transition_token = 0, transition_pending = 0,
-                    stealth_xp_max = 0, stealth_xp_current = 0, stealth_xp_decrement = 0, stealth_xp_enabled = false,
+                    stealth_xp_max = 0, stealth_xp_current = 0, stealth_xp_decrement = 0, stealth_xp_enabled = false, minigame = null,
                 } } }
             }
             module => {
@@ -368,7 +381,11 @@ namespace world {
     // Marks an object destroyed: invalid from now on, removed by sweep at the end of the frame.
     fn destroy { mut w: World, id: u32 } {
         let o = object{ w = &w, id } ifnull { return }
-        o.destroyed = true
+        if o.destroyed { return }
+        // An item leaves the inventory or equipment it is in.
+        if o.kind == obj::Kind::item { rt_item::forget_item{ &w, item = id } }
+        let back = object{ w = &w, id } ifnull { return }
+        back.destroyed = true
         list::push{ list = &w.doomed, item = id } iferr {}
         if w.log.objects {
             prefix{ w = &w }

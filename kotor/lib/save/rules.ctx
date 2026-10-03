@@ -1,0 +1,208 @@
+// A creature's rules state in a saved creature struct (gff-save.md, the UTC fields a save keeps):
+// the template numbers, classes with their known powers, skills, feats, the level-up history,
+// Force points and the effects (EffectList). rules::read_creature reads all of it back but the
+// effects, which fight::read_creature restores with read_effect_list.
+//
+//   try save::put_rules_creature{ &b, owner = s, o, c = &fighter.c }
+//   save::read_effect_list{ doc, s, c = &fighter.c }
+namespace save {
+    // An i32's bits as a u32 (-1 is 0xFFFFFFFF, as the original writes "none").
+    fn bits { v: i32 } -> u32 {
+        let low = @as(u32, v & 0x7FFFFFFF)
+        return if v < 0 { low | 0x80000000 } else { low }
+    }
+
+    fn put_rules_creature { mut b: Builder, owner: u32, o: *obj::Object, c: *rules::Creature } -> ! {
+        let s = owner
+        let labels: [6][]u8 = ["Str", "Dex", "Con", "Int", "Wis", "Cha"]
+        let mut k: usize = 0
+        while k < 6 {
+            try put_byte{ &b, owner = s, label = labels[k], v = @trunc(u8, bits{ v = c.abil[k] }) }
+            k = k + 1
+        }
+        try put_byte{ &b, owner = s, label = "NaturalAC", v = @trunc(u8, bits{ v = c.natural_ac }) }
+        try put_short{ &b, owner = s, label = "HitPoints", v = c.hp_base }
+        try put_short{ &b, owner = s, label = "MaxHitPoints", v = o.hp_max }
+        // Relative to the base hit points, as the original keeps them (fight::equip_loaded).
+        try put_short{ &b, owner = s, label = "CurrentHitPoints", v = o.hp - (o.hp_max - c.hp_base) }
+        try put_short{ &b, owner = s, label = "ForcePoints", v = c.fp_base }
+        try put_short{ &b, owner = s, label = "MaxForcePoints", v = c.stats.max_fp }
+        try put_short{ &b, owner = s, label = "CurrentForce", v = c.fp }
+        try put_short{ &b, owner = s, label = "fortbonus", v = c.save_bonus[0] }
+        try put_short{ &b, owner = s, label = "refbonus", v = c.save_bonus[1] }
+        try put_short{ &b, owner = s, label = "willbonus", v = c.save_bonus[2] }
+        try put_float{ &b, owner = s, label = "ChallengeRating", v = c.challenge }
+        try put_dword{ &b, owner = s, label = "Experience", v = bits{ v = c.xp } }
+        try put_word{ &b, owner = s, label = "SkillPoints", v = bits{ v = c.skill_points } }
+        // Classes; the known Force powers go in the first class's KnownList0 (rules::read_creature
+        // learns every listed power whichever class lists it).
+        let classes = try gffw::put_list{ &b, owner = s, label = "ClassList" }
+        k = 0
+        while k < @as(usize, c.nclasses) and k < rules::MAX_CLASSES {
+            let slot = c.classes[k]
+            k = k + 1
+            if slot.class < 0 { continue }
+            let e = try gffw::add_element{ &b, list = classes, id = 2 }
+            try put_int{ &b, owner = e, label = "Class", v = slot.class }
+            try put_short{ &b, owner = e, label = "ClassLevel", v = slot.level }
+            if k == 1 {
+                let known = try gffw::put_list{ &b, owner = e, label = "KnownList0" }
+                let mut spell: i32 = 0
+                while spell < 256 {
+                    if rules::knows_power{ c, spell } {
+                        let p = try gffw::add_element{ &b, list = known, id = 3 }
+                        try put_word{ &b, owner = p, label = "Spell", v = bits{ v = spell } }
+                        try put_byte{ &b, owner = p, label = "SpellFlags", v = 1 }
+                        try put_byte{ &b, owner = p, label = "SpellMetaMagic", v = 0 }
+                    }
+                    spell = spell + 1
+                }
+            }
+        }
+        let skills = try gffw::put_list{ &b, owner = s, label = "SkillList" }
+        k = 0
+        while k < rules::NUM_SKILLS {
+            let e = try gffw::add_element{ &b, list = skills, id = 0 }
+            try put_byte{ &b, owner = e, label = "Rank", v = @trunc(u8, bits{ v = c.skills[k] }) }
+            k = k + 1
+        }
+        let feats = try gffw::put_list{ &b, owner = s, label = "FeatList" }
+        let mut feat: i32 = 0
+        while feat < 256 {
+            let word = c.feats[@as(usize, feat >> 5)]
+            if (word >> bits{ v = feat & 31 }) & 1 != 0 {
+                let e = try gffw::add_element{ &b, list = feats, id = 1 }
+                try put_word{ &b, owner = e, label = "Feat", v = bits{ v = feat } }
+            }
+            feat = feat + 1
+        }
+        // The player's level-up history (LvlStatList).
+        if c.nhistory > 0 {
+            let levels = try gffw::put_list{ &b, owner = s, label = "LvlStatList" }
+            k = 0
+            while k < @as(usize, c.nhistory) and k < rules::MAX_LEVELS {
+                let r = c.history[k]
+                k = k + 1
+                let e = try gffw::add_element{ &b, list = levels, id = 0 }
+                try put_byte{ &b, owner = e, label = "LvlStatClass", v = @trunc(u8, bits{ v = r.class }) }
+                try put_byte{ &b, owner = e, label = "LvlStatHitDie", v = @trunc(u8, bits{ v = r.hp }) }
+                try put_byte{ &b, owner = e, label = "LvlStatForce", v = @trunc(u8, bits{ v = r.fp }) }
+                try put_byte{ &b, owner = e, label = "LvlStatAbility", v = @trunc(u8, bits{ v = r.ability }) }
+                try put_short{ &b, owner = e, label = "SkillPoints", v = r.skill_left }
+                let ranks = try gffw::put_list{ &b, owner = e, label = "SkillList" }
+                let mut j: usize = 0
+                while j < rules::NUM_SKILLS {
+                    let rk = try gffw::add_element{ &b, list = ranks, id = 0 }
+                    try put_byte{ &b, owner = rk, label = "Rank", v = @trunc(u8, bits{ v = r.skills[j] }) }
+                    j = j + 1
+                }
+                let hf = try gffw::put_list{ &b, owner = e, label = "FeatList" }
+                j = 0
+                while j < @as(usize, r.nfeats) and j < 8 {
+                    let fe = try gffw::add_element{ &b, list = hf, id = 0 }
+                    try put_word{ &b, owner = fe, label = "Feat", v = bits{ v = r.feats[j] } }
+                    j = j + 1
+                }
+            }
+        }
+        // The effects a script or an attack put on it; equipped items' and innate effects come
+        // back by themselves (equip while loading, the engine's own bookkeeping).
+        let list = try gffw::put_list{ &b, owner = s, label = "EffectList" }
+        k = 0
+        while k < @as(usize, c.nfx) {
+            let e = c.fx[k]
+            k = k + 1
+            if e.dur == rules::dur::EQUIPPED or e.dur == rules::dur::INNATE { continue }
+            let el = try gffw::add_element{ &b, list, id = 2 }
+            try put_effect{ &b, owner = el, e = &e }
+        }
+    }
+
+    // One effect with the EffectList fields (gff-save.md): Id, Type (the engine's kind), SubType
+    // (duration kind | subtype bits), Duration, ExpireDay/ExpireTime, CreatorId, SpellId,
+    // IsExposed, the integer, float and object parameters; CasterLevel is ours.
+    fn put_effect { mut b: Builder, owner: u32, e: *rules::Effect } -> ! {
+        _ = try gffw::add_value{ &b, owner, label = "Id", value = gff::Value::dword64{ v = e.id } }
+        try put_word{ &b, owner, label = "Type", v = bits{ v = e.kind } }
+        try put_word{ &b, owner, label = "SubType", v = bits{ v = e.sub | e.dur } }
+        try put_float{ &b, owner, label = "Duration", v = e.duration }
+        try put_byte{ &b, owner, label = "SkipOnLoad", v = 0 }
+        try put_dword{ &b, owner, label = "ExpireDay", v = e.expire.day }
+        try put_dword{ &b, owner, label = "ExpireTime", v = e.expire.ms }
+        try put_dword{ &b, owner, label = "CreatorId", v = e.creator }
+        try put_dword{ &b, owner, label = "SpellId", v = bits{ v = e.spell_id } }
+        try put_int{ &b, owner, label = "CasterLevel", v = e.caster_level }
+        try put_int{ &b, owner, label = "IsExposed", v = if e.exposed { 1 } else { 0 } }
+        try put_int{ &b, owner, label = "NumIntegers", v = 8 }
+        let ints = try gffw::put_list{ &b, owner, label = "IntList" }
+        let mut i: usize = 0
+        while i < 8 {
+            let el = try gffw::add_element{ &b, list = ints, id = 3 }
+            try put_int{ &b, owner = el, label = "Value", v = e.ints[i] }
+            i = i + 1
+        }
+        let floats = try gffw::put_list{ &b, owner, label = "FloatList" }
+        i = 0
+        while i < 4 {
+            let el = try gffw::add_element{ &b, list = floats, id = 4 }
+            try put_float{ &b, owner = el, label = "Value", v = e.floats[i] }
+            i = i + 1
+        }
+        let objects = try gffw::put_list{ &b, owner, label = "ObjectList" }
+        i = 0
+        while i < 4 {
+            let el = try gffw::add_element{ &b, list = objects, id = 6 }
+            try put_dword{ &b, owner = el, label = "Value", v = e.objects[i] }
+            i = i + 1
+        }
+    }
+
+    // An effect back from put_effect's fields (a save of ours, or the original's EffectList).
+    fn read_effect { doc: *gff::Doc, s: u32 } -> rules::Effect {
+        let mut e: rules::Effect
+        e.id = @as(u64, gff::get_number{ doc = doc.*, s, label = "Id" } ifnull 0)
+        e.kind = @trunc(i32, gff::get_number{ doc = doc.*, s, label = "Type" } ifnull 0)
+        let subtype = @trunc(i32, gff::get_number{ doc = doc.*, s, label = "SubType" } ifnull 0)
+        e.dur = subtype & 7
+        e.sub = subtype & 0x18
+        e.duration = gff::get_float{ doc = doc.*, s, label = "Duration" } ifnull 0.0
+        e.expire = rules::Time{ day = @trunc(u32, gff::get_number{ doc = doc.*, s, label = "ExpireDay" } ifnull 0), ms = @trunc(u32, gff::get_number{ doc = doc.*, s, label = "ExpireTime" } ifnull 0) }
+        e.creator = @trunc(u32, gff::get_number{ doc = doc.*, s, label = "CreatorId" } ifnull 0x7F000000)
+        e.spell_id = @trunc(i32, gff::get_number{ doc = doc.*, s, label = "SpellId" } ifnull -1)
+        e.caster_level = @trunc(i32, gff::get_number{ doc = doc.*, s, label = "CasterLevel" } ifnull -1)
+        e.exposed = (gff::get_number{ doc = doc.*, s, label = "IsExposed" } ifnull 1) != 0
+        let ints = gff::get_list{ doc = doc.*, s, label = "IntList" } ifnull slice::empty(u32){}
+        let mut i: usize = 0
+        while i < ints.len and i < 8 {
+            e.ints[i] = @trunc(i32, gff::get_number{ doc = doc.*, s = ints[i], label = "Value" } ifnull 0)
+            i = i + 1
+        }
+        let floats = gff::get_list{ doc = doc.*, s, label = "FloatList" } ifnull slice::empty(u32){}
+        i = 0
+        while i < floats.len and i < 4 {
+            e.floats[i] = gff::get_float{ doc = doc.*, s = floats[i], label = "Value" } ifnull 0.0
+            i = i + 1
+        }
+        let objects = gff::get_list{ doc = doc.*, s, label = "ObjectList" } ifnull slice::empty(u32){}
+        i = 0
+        while i < 4 {
+            e.objects[i] = if i < objects.len { @trunc(u32, gff::get_number{ doc = doc.*, s = objects[i], label = "Value" } ifnull 0x7F000000) } else { 0x7F000000 }
+            i = i + 1
+        }
+        return e
+    }
+
+    // A saved creature's EffectList appended to its rules effects (they were applied when it was
+    // saved: nothing is re-applied, the derived stats are recomputed by the caller).
+    fn read_effect_list { doc: *gff::Doc, s: u32, mut c: rules::Creature } {
+        let list = gff::get_list{ doc = doc.*, s, label = "EffectList" } ifnull { return }
+        let mut i: usize = 0
+        while i < list.len and @as(usize, c.nfx) < rules::MAX_FX {
+            let e = read_effect{ doc, s = list[i] }
+            i = i + 1
+            if e.dur == rules::dur::EQUIPPED or e.dur == rules::dur::INNATE { continue }
+            c.fx[@as(usize, c.nfx)] = e
+            c.nfx = c.nfx + 1
+        }
+    }
+}

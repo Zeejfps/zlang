@@ -1,7 +1,8 @@
-// Routines: what a creature is and has (race, gender, class, abilities, hit points, plot and
-// death flags), who likes whom (factions and repute.2da), what it is listening for, its alignment
-// and experience, and the nearest-creature search. Skills, feats and spells are placeholders
-// (zero) until lib/rules brings the creature's stats (HOOK(rules)).
+// Routines: what a creature is and has (race, gender, class, abilities, skills, feats, powers,
+// saves, armour class, Force points, hit points, plot and death flags), who likes whom (factions
+// and repute.2da), what it is listening for, its alignment and experience, and the nearest-creature
+// search. The numbers are the rules creature's (fight::Fighter.c, lib/rules) once it has been read;
+// a creature without one answers from the placeholder fields on obj::Creature.
 namespace rt_crea {
     fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
         match routine {
@@ -10,7 +11,10 @@ namespace rt_crea {
             nwscript::GetGender => { try get_creature_field{ &w, &vm, argc, routine, none = 0 } }
             nwscript::GetHitDice => { try get_creature_field{ &w, &vm, argc, routine, none = 0 } }
             nwscript::GetGoodEvilValue => { try get_creature_field{ &w, &vm, argc, routine, none = -1 } }
+            nwscript::GetAlignmentGoodEvil => { try get_creature_field{ &w, &vm, argc, routine, none = -1 } }
             nwscript::GetXP => { try get_creature_field{ &w, &vm, argc, routine, none = 0 } }
+            nwscript::GetCreatureSize => { try get_creature_field{ &w, &vm, argc, routine, none = 0 } }
+            nwscript::GetAppearanceType => { try get_creature_field{ &w, &vm, argc, routine, none = 0 } }
             nwscript::GetIsDead => { try get_creature_field{ &w, &vm, argc, routine, none = 0 } }
             nwscript::GetIsListening => { try get_creature_field{ &w, &vm, argc, routine, none = 0 } }
             nwscript::GetIsEncounterCreature => { try get_creature_field{ &w, &vm, argc, routine, none = 0 } }
@@ -18,10 +22,25 @@ namespace rt_crea {
             nwscript::GetLevelByPosition => { try get_class_stat{ &w, &vm, argc, routine, none = 0 } }
             nwscript::GetLevelByClass => { try get_class_stat{ &w, &vm, argc, routine, none = 0 } }
             nwscript::GetHasSkill => { try get_class_stat{ &w, &vm, argc, routine, none = 0 } }
-            nwscript::GetSkillRank => { try get_class_stat{ &w, &vm, argc, routine, none = 0 } }
+            nwscript::GetSkillRank => { try get_class_stat{ &w, &vm, argc, routine, none = -1 } }
             nwscript::GetHasFeat => { try get_class_stat{ &w, &vm, argc, routine, none = 0 } }
             nwscript::GetHasSpell => { try get_class_stat{ &w, &vm, argc, routine, none = 0 } }
             nwscript::GetAbilityScore => { try get_ability_score{ &w, &vm, argc } }
+            nwscript::GetAbilityModifier => { try get_ability_modifier{ &w, &vm, argc } }
+            nwscript::GetCurrentForcePoints => { try get_force_points{ &w, &vm, argc, routine } }
+            nwscript::GetMaxForcePoints => { try get_force_points{ &w, &vm, argc, routine } }
+            nwscript::GetAC => { try get_armour_class{ &w, &vm, argc } }
+            nwscript::GetFortitudeSavingThrow => { try get_base_save{ &w, &vm, argc, routine } }
+            nwscript::GetReflexSavingThrow => { try get_base_save{ &w, &vm, argc, routine } }
+            nwscript::GetWillSavingThrow => { try get_base_save{ &w, &vm, argc, routine } }
+            nwscript::FortitudeSave => { try saving_throw_routine{ &w, &vm, argc, routine } }
+            nwscript::ReflexSave => { try saving_throw_routine{ &w, &vm, argc, routine } }
+            nwscript::WillSave => { try saving_throw_routine{ &w, &vm, argc, routine } }
+            nwscript::GetReflexAdjustedDamage => { try get_reflex_adjusted_damage{ &w, &vm, argc } }
+            nwscript::GetSpellSaveDC => { try get_spell_save_dc{ &w, &vm } }
+            nwscript::GetCasterLevel => { try get_caster_level{ &w, &vm, argc } }
+            nwscript::ResistForce => { try resist_force{ &w, &vm, argc } }
+            nwscript::GetChallengeRating => { try get_challenge_rating{ &w, &vm, argc } }
             nwscript::GetCurrentHitPoints => { try get_object_field{ &w, &vm, argc, routine } }
             nwscript::GetMaxHitPoints => { try get_object_field{ &w, &vm, argc, routine } }
             nwscript::GetPlotFlag => { try get_object_field{ &w, &vm, argc, routine } }
@@ -41,6 +60,7 @@ namespace rt_crea {
             nwscript::GetNearestCreature => { try get_nearest_creature{ &w, &vm, argc } }
             nwscript::GetSoloMode => { try nwvm::push_int{ &vm, v = 0 } }
             nwscript::AdjustAlignment => { try adjust_alignment{ &w, &vm, argc } }
+            nwscript::SetGoodEvilValue => { try set_good_evil_value{ &w, &vm, argc } }
             nwscript::GiveXPToCreature => { try give_xp_to_creature{ &w, &vm, argc } }
             nwscript::SetXP => { try set_xp{ &w, &vm, argc } }
             nwscript::GetName => { try get_name{ &w, &vm, argc } }
@@ -56,6 +76,56 @@ namespace rt_crea {
 
     fn flag { b: bool } -> i32 { return if b { 1 } else { 0 } }
 
+    // The creature's rules state once it has been read (stats, feats, powers, effects); null for a
+    // creature that never had one.
+    fn rules_of { c: *obj::Creature } -> ?*mut fight::Fighter {
+        let f = c.fighter ifnull { return null }
+        if not f.loaded { return null }
+        return f
+    }
+
+    // The creature's rules state by object id, for any kind of object.
+    fn fighter_of { w: *world::World, id: u32 } -> ?*mut fight::Fighter {
+        let c = creature_of{ w, id } ifnull { return null }
+        return rules_of{ c }
+    }
+
+    // ---- the fields of a creature
+
+    fn race_of { c: *obj::Creature } -> i32 {
+        if rules_of{ c } is some{ value = f } { return f.c.race }
+        return @as(i32, c.race)
+    }
+
+    fn subrace_of { c: *obj::Creature } -> i32 {
+        if rules_of{ c } is some{ value = f } { return f.c.subrace }
+        return @as(i32, c.subrace)
+    }
+
+    fn gender_of { c: *obj::Creature } -> i32 {
+        if rules_of{ c } is some{ value = f } { return f.c.gender }
+        return @as(i32, c.gender)
+    }
+
+    // The total level.
+    fn hit_dice_of { c: *obj::Creature } -> i32 {
+        if rules_of{ c } is some{ value = f } {
+            if f.c.stats.level > 0 { return f.c.stats.level }
+        }
+        return @as(i32, c.hit_dice)
+    }
+
+    // 0 (dark) .. 100 (light).
+    fn good_evil_of { c: *obj::Creature } -> i32 {
+        if rules_of{ c } is some{ value = f } { return f.c.good_evil }
+        return @as(i32, c.good_evil)
+    }
+
+    fn xp_of { c: *obj::Creature } -> i32 {
+        if rules_of{ c } is some{ value = f } { return f.c.xp }
+        return @as(i32, c.xp)
+    }
+
     // The `int GetX(object oCreature)` routines that read one field of the creature's record;
     // `none` is what a missing or non-creature object gives.
     fn get_creature_field { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, none: i32 } -> ! {
@@ -65,12 +135,15 @@ namespace rt_crea {
             return
         }
         let v: i32 = match routine {
-            nwscript::GetRacialType => { @as(i32, c.race) }
-            nwscript::GetSubRace => { @as(i32, c.subrace) }
-            nwscript::GetGender => { @as(i32, c.gender) }
-            nwscript::GetHitDice => { @as(i32, c.hit_dice) }
-            nwscript::GetGoodEvilValue => { @as(i32, c.good_evil) }
-            nwscript::GetXP => { @as(i32, c.xp) }
+            nwscript::GetRacialType => { race_of{ c } }
+            nwscript::GetSubRace => { subrace_of{ c } }
+            nwscript::GetGender => { gender_of{ c } }
+            nwscript::GetHitDice => { hit_dice_of{ c } }
+            nwscript::GetGoodEvilValue => { good_evil_of{ c } }
+            nwscript::GetAlignmentGoodEvil => { rules::alignment_group{ good_evil = good_evil_of{ c } } }
+            nwscript::GetXP => { xp_of{ c } }
+            nwscript::GetCreatureSize => { size_of{ w = &w, c } }
+            nwscript::GetAppearanceType => { @as(i32, c.appearance) }
             nwscript::GetIsDead => { flag{ b = c.dead } }
             nwscript::GetIsListening => { flag{ b = c.listening } }
             else => { 0 }               // GetIsEncounterCreature: ours are never spawned by an encounter
@@ -78,9 +151,17 @@ namespace rt_crea {
         try nwvm::push_int{ &vm, v }
     }
 
+    // CREATURE_SIZE_*: the rules' size (appearance.2da's category), medium without them.
+    fn size_of { w: *world::World, c: *obj::Creature } -> i32 {
+        if rules_of{ c } is some{ value = f } { return f.c.stats.size }
+        return rules::size_of_appearance{ tables = w.rules, appearance = @as(i32, c.appearance) }
+    }
+
+    // ---- classes, skills, feats and powers
+
     // The `int GetX(int n, object oCreature = OBJECT_SELF)` routines about classes, skills,
     // feats and spells. A creature has up to three classes (position 1..3). Skills, feats and
-    // spells await lib/rules and read as "none".
+    // powers are the rules creature's; one without it has none.
     fn get_class_stat { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, none: i32 } -> ! {
         let n = try nwarg::int{ &vm, routine, argc, i = 0 }
         let id = try nwarg::object{ &vm, routine, argc, i = 1 }
@@ -89,7 +170,9 @@ namespace rt_crea {
             return
         }
         let mut v = none
-        if routine == nwscript::GetClassByPosition {
+        if rules_of{ c } is some{ value = f } {
+            v = rules_class_stat{ w = &w, f, routine, n, none }
+        } else if routine == nwscript::GetClassByPosition {
             if n >= 1 and n <= 3 and c.class_levels[@as(usize, n - 1)] > 0 { v = @as(i32, c.classes[@as(usize, n - 1)]) }
         } else if routine == nwscript::GetLevelByPosition {
             if n >= 1 and n <= 3 { v = @as(i32, c.class_levels[@as(usize, n - 1)]) }
@@ -100,11 +183,36 @@ namespace rt_crea {
                 if c.class_levels[k] > 0 and @as(i32, c.classes[k]) == n { v = v + @as(i32, c.class_levels[k]) }
                 k = k + 1
             }
+        } else if routine == nwscript::GetSkillRank {
+            v = 0
         }
         try nwvm::push_int{ &vm, v }
     }
 
-    // int GetAbilityScore(object oCreature, int nAbilityType): 0 STR .. 5 CHA.
+    fn rules_class_stat { w: *world::World, f: *fight::Fighter, routine: u16, n: i32, none: i32 } -> i32 {
+        if routine == nwscript::GetClassByPosition {
+            if n >= 1 and n <= f.c.nclasses and n <= 3 and f.c.classes[@as(usize, n - 1)].level > 0 { return f.c.classes[@as(usize, n - 1)].class }
+            return none
+        }
+        if routine == nwscript::GetLevelByPosition {
+            if n >= 1 and n <= f.c.nclasses and n <= 3 { return f.c.classes[@as(usize, n - 1)].level }
+            return 0
+        }
+        if routine == nwscript::GetLevelByClass { return rules::class_level{ c = &f.c, class = n } }
+        if routine == nwscript::GetSkillRank {
+            // skills.2da: the ranks, the effects, the key ability, the feat line; 0 for an untrained
+            // skill that needs training, -1 for no such skill.
+            if n < 0 or n >= @as(i32, rules::NUM_SKILLS) { return -1 }
+            return rules::skill_rank{ tables = w.rules, c = &f.c, skill = n, vs = rules::no_versus{}, base_only = false }
+        }
+        if routine == nwscript::GetHasSkill { return flag{ b = rt_talent::has_skill{ w, f, skill = n } } }
+        if routine == nwscript::GetHasFeat { return flag{ b = rules::has_feat{ c = &f.c, feat = n } } }
+        return flag{ b = rules::knows_power{ c = &f.c, spell = n } }               // GetHasSpell
+    }
+
+    // ---- abilities
+
+    // int GetAbilityScore(object oCreature, int nAbilityType): 0 STR .. 5 CHA, with the effects.
     fn get_ability_score { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let r = nwscript::GetAbilityScore
         let id = try nwarg::object{ &vm, routine = r, argc, i = 0 }
@@ -113,7 +221,182 @@ namespace rt_crea {
             try nwvm::push_int{ &vm, v = 0 }
             return
         }
-        try nwvm::push_int{ &vm, v = if kind >= 0 and kind < 6 { @as(i32, c.abilities[@as(usize, kind)]) } else { 0 } }
+        try nwvm::push_int{ &vm, v = ability_score{ c, kind } }
+    }
+
+    fn ability_score { c: *obj::Creature, kind: i32 } -> i32 {
+        if kind < 0 or kind >= 6 { return 0 }
+        if rules_of{ c } is some{ value = f } { return f.c.stats.abil[@as(usize, kind)] }
+        return @as(i32, c.abilities[@as(usize, kind)])
+    }
+
+    // int GetAbilityModifier(int nAbility, object oCreature = OBJECT_SELF)
+    fn get_ability_modifier { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetAbilityModifier
+        let kind = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let c = creature_of{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        if kind < 0 or kind >= 6 {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        if rules_of{ c } is some{ value = f } {
+            try nwvm::push_int{ &vm, v = f.c.stats.abil_mod[@as(usize, kind)] }
+            return
+        }
+        try nwvm::push_int{ &vm, v = rules::ability_modifier{ score = ability_score{ c, kind } } }
+    }
+
+    // ---- Force points, armour class, saves
+
+    // int GetCurrentForcePoints(object oObject = OBJECT_SELF) (the pool and the temporary pool),
+    // int GetMaxForcePoints(object oObject = OBJECT_SELF)
+    fn get_force_points { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let f = fighter_of{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        try nwvm::push_int{ &vm, v = if routine == nwscript::GetCurrentForcePoints { f.c.fp + f.c.temp_fp } else { f.c.stats.max_fp } }
+    }
+
+    // int GetAC(object oObject, int nForFutureUse = 0): a creature's armour class (the sheet's: the
+    // armour, shield, natural, class, deflection, dodge and capped DEX pieces), 0 for a door,
+    // placeable or item, -1 for anything else.
+    fn get_armour_class { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetAC, argc, i = 0 }
+        _ = try nwarg::int{ &vm, routine = nwscript::GetAC, argc, i = 1 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = -1 }
+            return
+        }
+        if obj::creature{ o } is some{ value = c } {
+            if rules_of{ c } is some{ value = f } {
+                try nwvm::push_int{ &vm, v = rules::armor_class_sheet{ tables = w.rules, c = &f.c } }
+            } else {
+                try nwvm::push_int{ &vm, v = 10 }
+            }
+            return
+        }
+        try nwvm::push_int{ &vm, v = if o.kind == obj::Kind::door or o.kind == obj::Kind::placeable or o.kind == obj::Kind::item { 0 } else { -1 } }
+    }
+
+    // int GetFortitudeSavingThrow / GetReflexSavingThrow / GetWillSavingThrow(object oTarget): the
+    // base value, without the effects (rules.md 2.1).
+    fn get_base_save { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let f = fighter_of{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        let which: usize = if routine == nwscript::GetFortitudeSavingThrow { 0 } else if routine == nwscript::GetReflexSavingThrow { 1 } else { 2 }
+        try nwvm::push_int{ &vm, v = f.c.stats.save_base[which] }
+    }
+
+    // Whether the script's caller is casting a Force power or special ability now (death saves are
+    // then blocked by death immunity, rules.md 2.2): its spell id is a spells.2da UserType 1 or 2.
+    fn casting_power { w: *world::World, me: u32 } -> bool {
+        let o = world::object{ w, id = me } ifnull { return false }
+        let row = rules::get_spell{ tables = w.rules, row = o.ctx.spell_id } ifnull { return false }
+        return row.user_type == 1 or row.user_type == 2
+    }
+
+    // A save roll of creature `id`: 0 failed, 1 passed, 2 immune (0 for anything that is not a
+    // creature with stats). `which`: rules::save::FORT, REFLEX or WILL.
+    fn roll_save { mut w: world::World, id: u32, which: i32, dc: i32, save_type: i32, versus: u32, me: u32 } -> i32 {
+        let f = fighter_of{ w = &w, id } ifnull { return 0 }
+        let mut vs = rules::no_versus{}
+        if fighter_of{ w = &w, id = versus } is some{ value = vf } { vs = rules::versus_creature{ c = &vf.c } }
+        let power = casting_power{ w = &w, me }
+        let res = rules::saving_throw{ c = &f.c, which, dc, save_type, vs, force_power = power, rng = &w.dice }
+        if w.log.combat {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "save {} of {} vs DC {}: d20 {} + {} + {} = {}\n", which, id, dc, res.roll, res.bonus, res.base, res.result)
+        }
+        return res.result
+    }
+
+    // int FortitudeSave / ReflexSave / WillSave(object oCreature, int nDC, int nSaveType = 0,
+    //     object oSaveVersus = OBJECT_SELF)
+    fn saving_throw_routine { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let dc = try nwarg::int{ &vm, routine, argc, i = 1 }
+        let save_type = try nwarg::int{ &vm, routine, argc, i = 2 }
+        let versus = try nwarg::object{ &vm, routine, argc, i = 3 }
+        let which = if routine == nwscript::FortitudeSave { rules::save::FORT } else if routine == nwscript::ReflexSave { rules::save::REFLEX } else { rules::save::WILL }
+        try nwvm::push_int{ &vm, v = roll_save{ &w, id, which, dc, save_type, versus, me = nwvm::self_object{ vm } } }
+    }
+
+    // int GetReflexAdjustedDamage(int nDamage, object oTarget, int nDC, int nSaveType = 0,
+    //     object oSaveVersus = OBJECT_SELF): a passed reflex save halves the damage, an immune
+    // target takes none (KOTOR has no evasion feat).
+    fn get_reflex_adjusted_damage { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetReflexAdjustedDamage
+        let damage = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let dc = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let save_type = try nwarg::int{ &vm, routine = r, argc, i = 3 }
+        let versus = try nwarg::object{ &vm, routine = r, argc, i = 4 }
+        let result = roll_save{ &w, id, which = rules::save::REFLEX, dc, save_type, versus, me = nwvm::self_object{ vm } }
+        try nwvm::push_int{ &vm, v = if result == 1 { damage / 2 } else if result == 2 { 0 } else { damage } }
+    }
+
+    // ---- Force powers: the DC, the caster level, resistance
+
+    // int GetSpellSaveDC(): 5 + the caster's level + WIS and CHA modifiers + Force Focus, for the
+    // creature running the script; 14 without a caster (rules.md 3.5).
+    fn get_spell_save_dc { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let f = fighter_of{ w = &w, id = nwvm::self_object{ vm } } ifnull {
+            try nwvm::push_int{ &vm, v = rules::DC_NO_CASTER }
+            return
+        }
+        try nwvm::push_int{ &vm, v = rules::force_power_dc{ c = &f.c } }
+    }
+
+    // int GetCasterLevel(object oCreature): the creature's total level.
+    fn get_caster_level { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetCasterLevel, argc, i = 0 }
+        let c = creature_of{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        try nwvm::push_int{ &vm, v = hit_dice_of{ c } }
+    }
+
+    // int ResistForce(object oSource, object oTarget): TRUE when the target's Force resistance or a
+    // spell immunity turned the caster's power (the script's current spell) away (rules.md 3.6).
+    fn resist_force { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::ResistForce
+        let source = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let tf = fighter_of{ w = &w, id = target } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        let so = world::object{ w = &w, id = source } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        let mut level = 10
+        if obj::creature{ o = so } is some{ value = sc } { level = hit_dice_of{ c = sc } }
+        let me = world::object{ w = &w, id = nwvm::self_object{ vm } }
+        let mut spell = -1
+        if me != null { spell = me.ctx.spell_id }
+        let res = rules::resist_force{ tables = w.rules, target = &tf.c, spell, caster_level = level, rng = &w.dice }
+        try nwvm::push_int{ &vm, v = flag{ b = res != rules::resist::NONE } }
+    }
+
+    // float GetChallengeRating(object oCreature)
+    fn get_challenge_rating { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetChallengeRating, argc, i = 0 }
+        let f = fighter_of{ w = &w, id } ifnull {
+            try nwvm::push_float{ &vm, v = 0.0 }
+            return
+        }
+        try nwvm::push_float{ &vm, v = f.c.challenge }
     }
 
     // The `int GetX(object oObject = OBJECT_SELF)` routines on the common header, which every
@@ -290,6 +573,22 @@ namespace rt_crea {
 
     // ---- alignment and experience
 
+    // The creature's good-evil value (0 dark .. 100 light) set, in the rules creature and on the
+    // object, and the light or dark mastery bonuses put on or taken off as it crosses 100 or 0.
+    fn set_alignment { mut w: world::World, id: u32, to: i32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let v = if to < 0 { 0 } else if to > 100 { 100 } else { to }
+        c.good_evil = @as(u32, v)
+        if rules_of{ c } is some{ value = f } {
+            f.c.good_evil = v
+            fight::sync_flags{ w = &w, o, f }
+            rules::clear_events{ ev = &w.rev }
+            rules::update_alignment_mastery{ env = fight::env_of{ w = &w, o }, c = &f.c, ids = &w.fx_ids, rng = &w.dice, ev = &w.rev }
+            fight::drain{ &w, id }
+        }
+    }
+
     // void AdjustAlignment(object oSubject, int nAlignment, int nShift): good is 100, evil 0.
     // Light shifts up, dark down, neutral towards 50 and no further.
     fn adjust_alignment { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
@@ -298,7 +597,7 @@ namespace rt_crea {
         let alignment = try nwarg::int{ &vm, routine = r, argc, i = 1 }
         let shift = try nwarg::int{ &vm, routine = r, argc, i = 2 }
         let c = creature_of{ w = &w, id } ifnull { return }
-        let now = @as(i32, c.good_evil)
+        let now = good_evil_of{ c }
         let mut v = now
         if alignment == nwconst::ALIGNMENT_LIGHT_SIDE { v = now + shift }
         else if alignment == nwconst::ALIGNMENT_DARK_SIDE { v = now - shift }
@@ -306,26 +605,61 @@ namespace rt_crea {
             if now > 50 { v = if now - shift < 50 { 50 } else { now - shift } }
             else if now < 50 { v = if now + shift > 50 { 50 } else { now + shift } }
         }
-        if v < 0 { v = 0 }
-        if v > 100 { v = 100 }
-        c.good_evil = @as(u32, v)
+        set_alignment{ &w, id, to = v }
     }
 
-    // void GiveXPToCreature(object oCreature, int nXpAmount)
+    // void SetGoodEvilValue(object oCreature, int nAlignment)
+    fn set_good_evil_value { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::SetGoodEvilValue, argc, i = 0 }
+        let to = try nwarg::int{ &vm, routine = nwscript::SetGoodEvilValue, argc, i = 1 }
+        set_alignment{ &w, id, to }
+    }
+
+    // XP to the party (CSWPartyTable::AddExperience, rules.md 4.2): the pool takes all of it; each
+    // member is credited its share (npc.2da PercentXP: 80 for a companion, 100 for the player) of it
+    // times the general XP percentage, rounded up (rules::add_experience), in the rules creature
+    // and on the object. Levelling is the level-up screen's.
+    fn give_party_xp { mut w: world::World, amount: i32 } {
+        if amount <= 0 { return }
+        let pool = @as(i64, w.party.xp_pool) + @as(i64, amount)
+        w.party.xp_pool = if pool > 2000000000 { 2000000000 } else { @trunc(i32, pool) }
+        let members = party::members{ w = &w }
+        let mut i: usize = 0
+        while i < members.len {
+            let id = members[i]
+            i = i + 1
+            let c = creature_of{ w = &w, id } ifnull { continue }
+            let slot = party::slot_of{ w = &w, id }
+            let share = rules::npc_percent_xp{ tables = w.rules, row = slot }
+            if rules_of{ c } is some{ value = f } {
+                _ = rules::add_experience{ tables = w.rules, c = &f.c, xp = amount, percent_xp = share }
+                c.xp = @as(u32, f.c.xp)
+            } else {
+                let got = rules::scale_experience{ tables = w.rules, xp = amount, percent_xp = share }
+                let total = @as(i64, c.xp) + @as(i64, got)
+                c.xp = if total > 4000000000 { 4000000000 } else { @trunc(u32, total) }
+            }
+        }
+    }
+
+    // void GiveXPToCreature(object oCreature, int nXpAmount): the creature only has to be one; the
+    // amount goes to the whole party (GiveXPToCreature, 0x0053e750).
     fn give_xp_to_creature { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GiveXPToCreature, argc, i = 0 }
         let amount = try nwarg::int{ &vm, routine = nwscript::GiveXPToCreature, argc, i = 1 }
-        let c = creature_of{ w = &w, id } ifnull { return }
-        let total = @as(i64, c.xp) + @as(i64, amount)
-        c.xp = if total < 0 { 0 } else { @trunc(u32, total) }
+        if creature_of{ w = &w, id } == null { return }
+        give_party_xp{ &w, amount }
     }
 
-    // void SetXP(object oCreature, int nXpAmount)
+    // void SetXP(object oCreature, int nXpAmount): XP never goes down ("Cannot reduce XP",
+    // SetExperience 0x005af480).
     fn set_xp { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::SetXP, argc, i = 0 }
         let amount = try nwarg::int{ &vm, routine = nwscript::SetXP, argc, i = 1 }
         let c = creature_of{ w = &w, id } ifnull { return }
-        c.xp = if amount < 0 { 0 } else { @as(u32, amount) }
+        if amount <= xp_of{ c } { return }
+        c.xp = @as(u32, amount)
+        if rules_of{ c } is some{ value = f } { f.c.xp = amount }
     }
 
     // ---- names

@@ -88,6 +88,14 @@ namespace obj {
         clicked_by: u32,
         blocker: u32,             // OnBlocked: GetBlockingDoor
         listen_pattern: i32,      // GetListenPatternNumber: the SetListenPattern number that matched, -1 none
+        // Force powers (fight::cast_spell): the caster's own cast while its impact script runs,
+        // and on the target the last power cast at it (OnSpellCastAt).
+        spell_id: i32,            // GetSpellId (-1 none)
+        spell_target: u32,        // GetSpellTargetObject
+        spell_location: math::Vec3,   // GetSpellTargetLocation
+        last_spell: i32,          // GetLastSpell
+        last_spell_caster: u32,   // GetLastSpellCaster
+        last_spell_harmful: bool, // GetLastSpellHarmful
     }
 
     fn no_context {} -> Context {
@@ -98,7 +106,8 @@ namespace obj {
             perceived_heard = false, perceived_vanished = false, perceived_inaudible = false,
             last_attacker = INVALID, last_damager = INVALID, last_speaker = INVALID,
             last_disturbed = INVALID, run_script_var = 0, clicked_by = INVALID, blocker = INVALID,
-            listen_pattern = -1,
+            listen_pattern = -1, spell_id = -1, spell_target = INVALID, spell_location = math::vec3::zero{},
+            last_spell = -1, last_spell_caster = INVALID, last_spell_harmful = false,
         }
     }
 
@@ -234,6 +243,8 @@ namespace obj {
         ai_style: i32,                      // GetNPCAIStyle (NPC_AISTYLE_*)
         party_ai_style: i32,                // GetPartyAIStyle, kept on the player's character (the party table is HOOK(party))
         fighter: ?*mut fight::Fighter,      // the rules creature and the combat round (heap; lib/engine/fight.ctx)
+        // Appended by routines/effects.ctx.
+        fx_cursor: usize,                   // GetFirstEffect/GetNextEffect: the next index into the rules' effect list
     }
 
     // One creature another perceives (gameloop.md 2.4).
@@ -251,6 +262,7 @@ namespace obj {
         equipped_slot: i32,                 // -1: not equipped
         non_equippable: bool,               // SetItemNonEquippable: the equip checks refuse it
         rules: ?*mut rules::Item,           // the item as the rules see it (heap; fight::read_item)
+        droppable: bool,                    // Dropable: it goes into the body bag when its owner dies
     }
 
     enum DoorState: u8 { closed, open1, open2, destroyed }
@@ -372,6 +384,7 @@ namespace obj {
         stealth_xp_current: i32,
         stealth_xp_decrement: i32,
         stealth_xp_enabled: bool,
+        minigame: ?*mut mg::Area,               // the ARE's MiniGame struct (lib/minigame); null for every other area. Module memory
     }
 
     struct Module {
@@ -568,7 +581,7 @@ namespace obj {
             attack_target = INVALID, attempted_target = INVALID, last_hostile_actor = INVALID,
             last_hostile_target = INVALID, last_attack_action = 65535, last_force_power = -1,
             last_combat_feat = -1, last_attack_result = 0, force_power_ok = false, ai_style = 0,
-            party_ai_style = 0, fighter = null,
+            party_ai_style = 0, fighter = null, fx_cursor = 0,
         }
     }
 }

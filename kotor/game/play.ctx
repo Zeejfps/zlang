@@ -3,7 +3,7 @@
 namespace play {
     // One scripted input line: `FRAME down KEY`, `FRAME up KEY`, and for tests `FRAME warp TAG`
     // (the leader jumps next to the object) and `FRAME use TAG` (the leader's default action on it).
-    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk }
+    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk, hush }
     struct Scripted { frame: u64, command: Command, key: []u8 }
 
     fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
@@ -48,6 +48,7 @@ namespace play {
         let mut sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
         try scene::load_area{ &sc, &w, &dev }
         let mut camera = cam::new{}
+        let mut camera_row: u32 = 0xFFFFFFFF    // the camerastyle.2da row the camera uses
         let mut control = ctl::new{}
         let ao = world::object{ w = &w, id = w.area }
         if ao != null {
@@ -60,6 +61,10 @@ namespace play {
         let mut dview = dlgview::make{ heap = w.heap, m = mixer }
         dlgview::attach{ v = &dview, w = &w }
         ambience::start_area{ a = &amb, &w }
+        // HOOK(minigames): a minigame area has a run, its own stage and its own frames (game/minigame*.ctx).
+        let mut mg_models = mdl_cache::new{ rm = w.rm.*, keep = w.mod_arena }
+        _ = try mg_game::enter{ &w, models = &mg_models }
+        let mut mg_stage = mg_game::make_stage{}
         // HOOK(ingame): the HUD and the in-game menus (docs/design/hud.md).
         let ui = try ingame::make{ &w, &dev, mixer, scratch = texture_scratch, width = @as(i32, opts.width), height = @as(i32, opts.height) }
         if not opts.headless { _ = sdl::SDL_ShowCursor{ &sdl, toggle = 0 } }    // HOOK(ingame): the GUI draws the pointer
@@ -68,6 +73,7 @@ namespace play {
         let freq = sdl::counter_frequency{ &sdl }
         let mut last = sdl::counter{ &sdl }
         let mut quit = false
+        let mut game_over = false
         let mut want_save: []u8 = ""            // a save asked for this frame: its folder name
         let mut want_load: []u8 = ""            // a load asked for: a folder (ours, then the install's)
         let mut real_total: f64 = 0.0
@@ -105,6 +111,7 @@ namespace play {
                     attack => { attack_tagged{ &w, tag = s.key } }
                     newgame => {}
                     talk => { talk_to{ &w, &vm, engine, text = s.key } }
+                    hush => { dlg::abort{ &w, &vm, engine } }
                     ui => {
                         if not dlgview::run_command{ v = &dview, w = &w, g = &ui.gui, text = s.key } { ingame::run_command{ ui, &w, &dev, text = s.key } }    // HOOK(ingame)
                     }
@@ -129,9 +136,14 @@ namespace play {
                 if folder == null {
                     _ = @fmt(&w.io, "kotor: no such save\n")
                 } else {
+                    // As a transition: no conversation survives the world it ran in.
+                    dlg::abort{ &w, &vm, engine }
+                    dlgview::leave{ v = &dview, w = &w, sc = &sc, g = &ui.gui }
                     ambience::stop_area{ a = &amb }
                     scene::release{ &sc, &dev }
                     arena::reset{ heap = &scene_arena }
+                    game_over = false
+                    clock::set_pause{ c = &w.clock, bit = clock::PAUSE_ENGINE, on = false }
                     save::load_game{ &w, &vm, engine, folder } iferr err{ error } {
                         _ = @fmt(&w.io, "kotor: load failed: {}\n", error)
                         return 1
@@ -150,12 +162,34 @@ namespace play {
                 }
             }
             w.played_seconds = w.played_seconds + @as(f64, real)
+            w.autosave_ms = w.autosave_ms + @as(f64, real) * 1000.0
+            // An autosave wanted by a transition or a script, once the area is in place.
+            if w.autosave_due and w.transition == null and w.arrival == 0 and want_save.len == 0 {
+                w.autosave_due = false
+                want_save = "AUTOSAVE"
+            }
+            // HOOK(minigames): in a minigame area the frame is the minigame's, until a module change is pending.
+            if mg_game::active{ w = &w } {
+                // No saving in a minigame (modulesave.2da keeps none of them).
+                want_save = ""
+                w.autosave_due = false
+                let leaving = try mg_game::frame{ &sdl, &w, &vm, engine, &dev, &frame, &sc, stage = &mg_stage, &amb, mixer, adev, silent, rate, opts, keys, dt, frame_no, shot_heap = &scene_arena }
+                if not leaving { continue }
+            }
             // 3-6. The world.
             clock::advance{ c = &w.clock, seconds = dt }
             // The player doesn't walk while a conversation runs (re/dialogue.md 4.9).
             if w.conversation.active { keys = ctl::no_keys{} }
             ctl::update{ ctl = &control, &w, keys, yaw = camera.yaw, dt = w.clock.dt }
             world::tick{ &w, &vm, engine }
+            // The whole party fallen: the game is over (ours: the world stops, the options menu's
+            // Load Game is the way on; the original's death camera and panel are not built).
+            if not game_over and w.arrival == 0 and w.transition == null and fight::party_fallen{ w = &w } {
+                game_over = true
+                clock::set_pause{ c = &w.clock, bit = clock::PAUSE_ENGINE, on = true }
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "kotor: {}\n", world::string_by_strref{ w = &w, strref = 42351 })
+            }
             // 7. The conversation's pump: the next line, the replies, the end.
             dlg::update{ &w, &vm, engine }
             // 6. A transition: the next module, and a new scene and sound for it.
@@ -182,24 +216,45 @@ namespace play {
                         }
                     }
                     ambience::start_area{ a = &amb, &w }
+                    mg_stage = mg_game::make_stage{}
+                    _ = try mg_game::enter{ &w, models = &mg_models }
                 }
             }
             // 8. The outbox: sounds to the ambience (HOOK(gui): fades, movies, text).
             let notes = outbox::notes{ out = &w.out }
             let mut n: usize = 0
+            let mut pazaak_asked: ?pz_game::Request = null    // HOOK(minigames)
             while n < notes.len {
                 ambience::take{ a = &amb, &w, note = notes[n] }
                 ingame::take{ ui, &w, note = notes[n] }    // HOOK(ingame)
                 dlgview::take_note{ v = &dview, w = &w, g = &ui.gui, dev = &dev, note = notes[n] }
+                if pz_game::request_of{ note = notes[n] } is some{ value = asked } { pazaak_asked = asked }
                 n = n + 1
             }
             outbox::clear{ out = &w.out }
+            // HOOK(minigames): a script asked for a game of pazaak; the visit takes over the frame (game/pazaak.ctx).
+            if pazaak_asked is some{ value = asked } {
+                if opts.headless {
+                    try pz_game::visit_auto{ &w, &vm, engine, r = asked }
+                } else if try pz_game::visit{ &sdl, &w, &vm, engine, &dev, &frame, ui, mixer, adev, r = asked } {
+                    quit = true
+                }
+                last = sdl::counter{ &sdl }
+            }
             // 9-10. Scene and camera (which snaps behind the leader again once it is placed).
             if w.arrival > 0 { camera.started = false }
             dlgview::pre_sync{ v = &dview, w = &w, sc = &sc, dev = &dev, g = &ui.gui, dt = w.clock.dt }
             scene::sync{ &sc, &w, &dev, dt = w.clock.dt }
             dlgview::post_sync{ v = &dview, w = &w, sc = &sc, dt = w.clock.dt }
             let look_height = leader_height{ w = &w }
+            // Combat mode: the combat camera's style (camerastyle.2da row 8) while the leader
+            // fights, the area's otherwise (movement.md 2.1, 2.2).
+            let wanted_row = camera_row_now{ w = &w }
+            if wanted_row != camera_row {
+                camera_row = wanted_row
+                cam::set_style{ c = &camera, t = w.tables.camerastyle, row = wanted_row }
+                ctl::set_style{ ctl = &control, t = w.tables.camerastyle, row = wanted_row }
+            }
             cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt }
             dlgview::apply_camera{ v = &dview, w = &w, sc = &sc, camera = &camera }
             let pc = world::object{ w = &w, id = w.pc }
@@ -208,6 +263,9 @@ namespace play {
             scene::update_visibility{ &sc, w = &w, room }
             ingame::update{ ui, &w, &dev, sc, camera, dt }    // HOOK(ingame)
             if ingame::wants_quit{ ui } { quit = true }    // HOOK(ingame)
+            // The options menu's Save Game and Load Game (the menus have closed themselves).
+            if ingame::take_save_request{ ui } is some{ value = n } { want_save = n }    // HOOK(ingame)
+            if ingame::take_load_request{ ui } is some{ value = n } { want_load = n }    // HOOK(ingame)
             // 11. Sound at the camera.
             ambience::update{ a = &amb, &w, eye = camera.eye, forward = camera.dir, dt }
             match adev {
@@ -244,11 +302,10 @@ namespace play {
                 s = s + 1
             }
             if want_save.len > 0 {
-                let slot: u32 = if ci::eq{ a = want_save, b = "QUICKSAVE" } { 0 } else if ci::eq{ a = want_save, b = "AUTOSAVE" } { 1 } else { 2 }
                 let size = gpu::screen_size{ dev }
                 let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scene_arena, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
                 _ = gpu::read_screen{ &dev, into = pixels } iferr { size }
-                save::save_game{ &w, slot, folder_name = want_save, save_name = want_save, screen = pixels, width = size.width, height = size.height } iferr err{ error } {
+                save::save_named{ &w, name = want_save, screen = pixels, width = size.width, height = size.height } iferr err{ error } {
                     _ = @fmt(&w.io, "kotor: save failed: {}\n", error)
                 }
                 _ = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scene_arena, mem = pixels, count = 0 }
@@ -285,6 +342,7 @@ namespace play {
         gui::set_cursor_visible{ &g, visible = not opts.headless }
         gui::set_mixer{ &g, mixer }
         let mut fe = frontend::make{ fs = &w.fs, heap = w.heap, game = opts.game, config_path = "kotor/out/kotor-settings.ini" }
+        frontend::set_own_saves{ &fe, dir = opts.saves }
         fe.settings.disable_movies = fe.settings.disable_movies or opts.headless
         gui::set_screen{ &g, fs = &w.fs, &dev, width = @as(i32, opts.width), height = @as(i32, opts.height), scale = fe.settings.gui_scale }
         try frontend::begin{ &fe, &g, fs = &w.fs, &dev, &sdl, mixer }
@@ -414,7 +472,8 @@ namespace play {
             let command = if ci::eq{ a = what, b = "down" } { Command::down } else if ci::eq{ a = what, b = "warp" } { Command::warp } else if ci::eq{ a = what, b = "warpxy" } { Command::warpxy }
                 else if ci::eq{ a = what, b = "use" } { Command::use } else if ci::eq{ a = what, b = "newgame" } { Command::newgame }
                 else if ci::eq{ a = what, b = "ui" } { Command::ui } else if ci::eq{ a = what, b = "save" } { Command::save } else if ci::eq{ a = what, b = "talk" } { Command::talk }
-                else if ci::eq{ a = what, b = "load" } { Command::load } else if ci::eq{ a = what, b = "attack" } { Command::attack } else { Command::up }
+                else if ci::eq{ a = what, b = "load" } { Command::load } else if ci::eq{ a = what, b = "attack" } { Command::attack }
+                else if ci::eq{ a = what, b = "hush" } { Command::hush } else { Command::up }
             // `ui`, `talk`, `load` and `save` take the rest of the line; the others one word.
             let key = if command == Command::ui or command == Command::load or command == Command::save or command == Command::talk { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
             try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), command, key } }
@@ -477,6 +536,17 @@ namespace play {
         let mut a = actions::make{ kind }
         a.params[0] = actions::Param::object{ id }
         _ = actions::add{ &w, id = w.pc, action = a, force = false }
+    }
+
+    fn camera_row_now { w: *world::World } -> u32 {
+        let lead = party::leader{ w }
+        let id = if lead == obj::INVALID { w.pc } else { lead }
+        if world::object{ w, id } is some{ value = o } {
+            if obj::creature{ o } is some{ value = c } { if c.in_combat and not c.dead { return 8 } }
+        }
+        let ao = world::object{ w, id = w.area } ifnull { return 0 }
+        let a = obj::area{ o = ao } ifnull { return 0 }
+        return a.camera_style
     }
 
     // `attack TAG`: the leader attacks the nearest live object with that tag.

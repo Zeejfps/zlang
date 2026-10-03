@@ -1,0 +1,250 @@
+// Routines: the minigame's SWMG_* (docs/re/minigames-swoop-turret.md section 2.1). They read and
+// write the run in `w.minigame` (lib/minigame): objects are named by ids in mg's reserved range,
+// OBJECT_SELF is the object whose script runs. Outside a minigame every one answers with a
+// default. 25 of the 97 are used by the shipped scripts; the rest are the same shape.
+namespace rt_swmg {
+    // A routine's arguments by position, popped in declaration order.
+    struct Args {
+        ints: [5]i32, floats: [5]f32, objs: [5]u32, strs: [5][]u8, vecs: [5]nwvm::Vector,
+    }
+
+    fn is_swmg { r: u16 } -> bool {
+        return r == nwscript::SWMG_SetLateralAccelerationPerSecond or r == nwscript::SWMG_GetLateralAccelerationPerSecond or
+            r == nwscript::SWMG_SetSpeedBlurEffect or (r >= 583 and r <= 668) or (r >= 683 and r <= 688) or r == 717 or r == 718
+    }
+
+    fn collect { mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !Args {
+        let mut a = Args{
+            ints = [0; 5], floats = [0.0; 5], objs = [0; 5], strs = ["", "", "", "", ""],
+            vecs = [nwvm::Vector{ x = 0.0, y = 0.0, z = 0.0 }; 5],
+        }
+        let r = nwscript::ROUTINES[@as(usize, routine)]
+        let mut i: usize = 0
+        while i < @as(usize, r.count) and i < 5 {
+            match nwscript::PARAMS[@as(usize, r.first) + i].kind {
+                int => { a.ints[i] = try nwarg::int{ &vm, routine, argc, i } }
+                float => { a.floats[i] = try nwarg::float{ &vm, routine, argc, i } }
+                string => { a.strs[i] = try nwarg::string{ &vm, routine, argc, i } }
+                object => { a.objs[i] = try nwarg::object{ &vm, routine, argc, i } }
+                vector => { a.vecs[i] = try nwarg::vector{ &vm, routine, argc, i } }
+                else => {}
+            }
+            i = i + 1
+        }
+        return a
+    }
+
+    // The result a routine gives when there is no minigame: zero of its type.
+    fn push_default { mut vm: nwvm::Vm, routine: u16 } -> ! {
+        match nwscript::ROUTINES[@as(usize, routine)].ret {
+            int => { try nwvm::push_int{ &vm, v = 0 } }
+            float => { try nwvm::push_float{ &vm, v = 0.0 } }
+            string => { try nwvm::push_string{ &vm, s = "" } }
+            object => { try nwvm::push_object{ &vm, id = obj::INVALID } }
+            vector => { try nwvm::push_vector{ &vm, v = nwvm::Vector{ x = 0.0, y = 0.0, z = 0.0 } } }
+            else => {}
+        }
+    }
+
+    fn vec_of { v: math::Vec3 } -> nwvm::Vector { return nwvm::Vector{ x = v.x, y = v.y, z = v.z } }
+
+    fn vec3_of { v: nwvm::Vector } -> math::Vec3 { return math::Vec3{ x = v.x, y = v.y, z = v.z } }
+
+    fn flag { b: bool } -> i32 { return if b { 1 } else { 0 } }
+
+    // The registry slot of an object id.
+    fn slot { run: *mg::Run, id: u32 } -> ?usize { return mg::slot_of{ run, id } }
+
+    // The follower record (the area's) behind a player or enemy object.
+    fn follower { run: *mg::Run, id: u32 } -> ?*mut mg::Follower {
+        let n = slot{ run, id } ifnull { return null }
+        let o = run.objs[n]
+        if o.kind == mg::ObjKind::player { return &run.area.player }
+        if o.kind == mg::ObjKind::enemy { return &run.area.enemies[o.index] }
+        return null
+    }
+
+    fn bank_of { run: *mg::Run, id: u32, index: i32 } -> ?*mut mg::Bank {
+        let f = follower{ run, id } ifnull { return null }
+        if index < 0 or @as(usize, index) >= f.bank_count { return null }
+        return &f.banks[@as(usize, index)]
+    }
+
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        if not is_swmg{ r = routine } { return false }
+        let a = try collect{ &vm, routine, argc }
+        let r = w.minigame
+        if r == null {
+            try push_default{ &vm, routine }
+            return true
+        }
+        try handle{ &vm, run = r, routine, a }
+        return true
+    }
+
+    fn handle { mut vm: nwvm::Vm, mut run: mg::Run, routine: u16, a: Args } -> ! {
+        let id = a.objs[0]
+        let n = slot{ run = &run, id }
+        match routine {
+            // ---- objects
+            nwscript::SWMG_GetPlayer => { try nwvm::push_object{ &vm, id = mg::id_of{ n = mg::PLAYER } } }
+            nwscript::SWMG_GetEnemyCount => { try nwvm::push_int{ &vm, v = @as(i32, run.area.enemies.len) } }
+            nwscript::SWMG_GetEnemy => {
+                let i = a.ints[0]
+                try nwvm::push_object{ &vm, id = if i >= 0 and @as(usize, i) < run.area.enemies.len { mg::id_of{ n = 1 + @as(usize, i) } } else { obj::INVALID } }
+            }
+            nwscript::SWMG_GetObstacleCount => { try nwvm::push_int{ &vm, v = @as(i32, run.area.obstacles.len) } }
+            nwscript::SWMG_GetObstacle => {
+                let i = a.ints[0]
+                try nwvm::push_object{ &vm, id = if i >= 0 and @as(usize, i) < run.area.obstacles.len { mg::id_of{ n = 1 + run.area.enemies.len + @as(usize, i) } } else { obj::INVALID } }
+            }
+            nwscript::SWMG_GetObjectByName => {
+                let mut found = obj::INVALID
+                let mut k: usize = 0
+                while k < run.count {
+                    let mut nm = run.objs[k].name
+                    if ci::eq{ a = resref::bytes{ r = &nm }, b = a.strs[0] } { found = mg::id_of{ n = k } }
+                    k = k + 1
+                }
+                try nwvm::push_object{ &vm, id = found }
+            }
+            nwscript::SWMG_GetObjectName => {
+                if n == null { try nwvm::push_string{ &vm, s = "" } } else {
+                    let mut nm = run.objs[n].name
+                    try nwvm::push_string{ &vm, s = resref::bytes{ r = &nm } }
+                }
+            }
+            nwscript::SWMG_IsFollower => { try nwvm::push_int{ &vm, v = if n == null { 0 } else { flag{ b = run.objs[n].kind == mg::ObjKind::player or run.objs[n].kind == mg::ObjKind::enemy } } } }
+            nwscript::SWMG_IsPlayer => { try nwvm::push_int{ &vm, v = if n == null { 0 } else { flag{ b = run.objs[n].kind == mg::ObjKind::player } } } }
+            nwscript::SWMG_IsEnemy => { try nwvm::push_int{ &vm, v = if n == null { 0 } else { flag{ b = run.objs[n].kind == mg::ObjKind::enemy } } } }
+            nwscript::SWMG_IsTrigger => { try nwvm::push_int{ &vm, v = if n == null { 0 } else { flag{ b = run.objs[n].trigger } } } }
+            nwscript::SWMG_IsObstacle => { try nwvm::push_int{ &vm, v = if n == null { 0 } else { flag{ b = run.objs[n].kind == mg::ObjKind::obstacle } } } }
+            // ---- animation
+            nwscript::SWMG_PlayAnimation => {
+                if n != null { mg::push_request{ &run, object = id, name = a.strs[1], looping = a.ints[2] != 0, queue = a.ints[3] != 0, overlay = a.ints[4] != 0, remove = false } }
+            }
+            nwscript::SWMG_RemoveAnimation => {
+                if n != null { mg::push_request{ &run, object = id, name = a.strs[1], looping = false, queue = false, overlay = false, remove = true } }
+            }
+            // ---- events and the defaults a script can ask for
+            nwscript::SWMG_GetLastEvent | nwscript::SWMG_GetLastEventModelName => { try nwvm::push_string{ &vm, s = "" } }
+            nwscript::SWMG_GetLastBulletHitDamage | nwscript::SWMG_GetLastBulletHitTarget | nwscript::SWMG_GetLastBulletFiredDamage |
+            nwscript::SWMG_GetLastBulletFiredTarget => { try nwvm::push_int{ &vm, v = 0 } }
+            nwscript::SWMG_GetLastBulletHitShooter => { try nwvm::push_object{ &vm, id = obj::INVALID } }
+            nwscript::SWMG_GetLastBulletHitPart => { try nwvm::push_string{ &vm, s = "" } }
+            nwscript::SWMG_OnBulletHit | nwscript::SWMG_OnObstacleHit => {}
+            nwscript::SWMG_GetLastFollowerHit => { try nwvm::push_object{ &vm, id = if run.last_follower_hit == 0 { obj::INVALID } else { run.last_follower_hit } } }
+            nwscript::SWMG_GetLastObstacleHit => { try nwvm::push_object{ &vm, id = if run.last_obstacle_hit == 0 { obj::INVALID } else { run.last_obstacle_hit } } }
+            nwscript::SWMG_GetLastHPChange => { try nwvm::push_int{ &vm, v = run.last_hp_change } }
+            nwscript::SWMG_OnDamage => {
+                let me = slot{ run = &run, id = nwvm::self_object{ vm } }
+                if me != null { mg::default_damage{ &run, n = me } }
+            }
+            nwscript::SWMG_OnDeath => {
+                let me = slot{ run = &run, id = nwvm::self_object{ vm } }
+                if me != null { mg::default_death{ &run, n = me } }
+            }
+            // ---- any follower
+            nwscript::SWMG_AdjustFollowerHitPoints => {
+                if n == null { try nwvm::push_int{ &vm, v = 0 } } else {
+                    mg::damage_object{ &run, n, delta = a.ints[1] }
+                    try nwvm::push_int{ &vm, v = run.objs[n].hit_points }
+                }
+            }
+            nwscript::SWMG_SetFollowerHitPoints => {
+                if n != null {
+                    run.objs[n].hit_points = a.ints[1]
+                    if a.ints[1] <= 0 and not run.objs[n].dead { mg::default_death{ &run, n } }
+                }
+            }
+            nwscript::SWMG_GetHitPoints => { try nwvm::push_int{ &vm, v = if n == null { 0 } else { run.objs[n].hit_points } } }
+            nwscript::SWMG_GetMaxHitPoints => { try nwvm::push_int{ &vm, v = if n == null { 0 } else { run.objs[n].max_hit_points } } }
+            nwscript::SWMG_SetMaxHitPoints => { if n != null { run.objs[n].max_hit_points = a.ints[1] } }
+            nwscript::SWMG_GetSphereRadius => { try nwvm::push_float{ &vm, v = if n == null { 0.0 } else { run.objs[n].sphere } } }
+            nwscript::SWMG_SetSphereRadius => { if n != null { run.objs[n].sphere = a.floats[1] } }
+            nwscript::SWMG_GetNumLoops => { try nwvm::push_int{ &vm, v = if n == null { 0 } else { run.objs[n].num_loops } } }
+            nwscript::SWMG_SetNumLoops => { if n != null { run.objs[n].num_loops = a.ints[1] } }
+            nwscript::SWMG_GetPosition => { try nwvm::push_vector{ &vm, v = if n == null { vec_of{ v = math::vec3::zero{} } } else { vec_of{ v = run.objs[n].position } } } }
+            nwscript::SWMG_GetIsInvulnerable => { try nwvm::push_int{ &vm, v = if n == null { 0 } else { flag{ b = run.objs[n].invincible > 0.0 } } } }
+            nwscript::SWMG_StartInvulnerability => { if n != null { mg::start_invulnerability{ &run, n } } }
+            // ---- player
+            nwscript::SWMG_GetPlayerOffset => { try nwvm::push_vector{ &vm, v = vec_of{ v = run.offset } } }
+            nwscript::SWMG_SetPlayerOffset => { run.offset = vec3_of{ v = a.vecs[0] } }
+            nwscript::SWMG_GetPlayerInvincibility => { try nwvm::push_float{ &vm, v = run.invincibility } }
+            nwscript::SWMG_SetPlayerInvincibility => { run.invincibility = a.floats[0] }
+            nwscript::SWMG_GetPlayerSpeed => { try nwvm::push_float{ &vm, v = run.speed } }
+            nwscript::SWMG_SetPlayerSpeed => { if a.floats[0] >= 0.0 { run.speed = a.floats[0] } }
+            nwscript::SWMG_GetPlayerMinSpeed => { try nwvm::push_float{ &vm, v = run.min_speed } }
+            nwscript::SWMG_SetPlayerMinSpeed => { if a.floats[0] >= 0.0 { run.min_speed = a.floats[0] } }
+            nwscript::SWMG_GetPlayerMaxSpeed => { try nwvm::push_float{ &vm, v = run.max_speed } }
+            nwscript::SWMG_SetPlayerMaxSpeed => { if a.floats[0] >= 0.0 { run.max_speed = a.floats[0] } }
+            nwscript::SWMG_GetPlayerAccelerationPerSecond => { try nwvm::push_float{ &vm, v = run.accel } }
+            nwscript::SWMG_SetPlayerAccelerationPerSecond => { if a.floats[0] >= 0.0 { run.accel = a.floats[0] } }
+            nwscript::SWMG_GetPlayerTunnelPos => { try nwvm::push_vector{ &vm, v = vec_of{ v = run.tunnel_pos } } }
+            nwscript::SWMG_SetPlayerTunnelPos => { run.tunnel_pos = vec3_of{ v = a.vecs[0] } }
+            nwscript::SWMG_GetPlayerTunnelNeg => { try nwvm::push_vector{ &vm, v = vec_of{ v = run.tunnel_neg } } }
+            nwscript::SWMG_SetPlayerTunnelNeg => { run.tunnel_neg = vec3_of{ v = a.vecs[0] } }
+            nwscript::SWMG_GetPlayerTunnelInfinite => {
+                try nwvm::push_vector{ &vm, v = nwvm::Vector{
+                    x = if run.tunnel_infinite[0] { 1.0 } else { 0.0 }, y = if run.tunnel_infinite[1] { 1.0 } else { 0.0 }, z = if run.tunnel_infinite[2] { 1.0 } else { 0.0 },
+                } }
+            }
+            nwscript::SWMG_SetPlayerTunnelInfinite => { run.tunnel_infinite = [a.vecs[0].x != 0.0, a.vecs[0].y != 0.0, a.vecs[0].z != 0.0] }
+            nwscript::SWMG_GetPlayerOrigin => { try nwvm::push_vector{ &vm, v = vec_of{ v = run.origin } } }
+            nwscript::SWMG_SetPlayerOrigin => { run.origin = vec3_of{ v = a.vecs[0] } }
+            nwscript::SWMG_GetLateralAccelerationPerSecond => { try nwvm::push_float{ &vm, v = run.lateral_accel } }
+            nwscript::SWMG_SetLateralAccelerationPerSecond => { run.lateral_accel = a.floats[0] }
+            nwscript::SWMG_SetSpeedBlurEffect => {
+                run.blur_on = a.ints[0] != 0
+                run.blur_ratio = a.floats[1]
+            }
+            // ---- camera
+            nwscript::SWMG_GetCameraNearClip => { try nwvm::push_float{ &vm, v = run.area.near_clip } }
+            nwscript::SWMG_GetCameraFarClip => { try nwvm::push_float{ &vm, v = run.area.far_clip } }
+            nwscript::SWMG_SetCameraClip => {
+                run.area.near_clip = a.floats[0]
+                run.area.far_clip = a.floats[1]
+            }
+            // ---- gun banks
+            nwscript::SWMG_GetGunBankCount => { try nwvm::push_int{ &vm, v = match follower{ run = &run, id } { some{ value } => { @as(i32, value.bank_count) } null => { 0 } } } }
+            nwscript::SWMG_IsGunBankTargetting => { try nwvm::push_int{ &vm, v = 0 } }
+            nwscript::SWMG_GetGunBankBulletModel => {
+                let b = bank_of{ run = &run, id, index = a.ints[1] }
+                if b == null { try nwvm::push_string{ &vm, s = "" } } else {
+                    let mut m = b.bullet_model
+                    try nwvm::push_string{ &vm, s = resref::bytes{ r = &m } }
+                }
+            }
+            nwscript::SWMG_GetGunBankGunModel => {
+                let b = bank_of{ run = &run, id, index = a.ints[1] }
+                if b == null { try nwvm::push_string{ &vm, s = "" } } else {
+                    let mut m = b.gun_model
+                    try nwvm::push_string{ &vm, s = resref::bytes{ r = &m } }
+                }
+            }
+            nwscript::SWMG_SetGunBankBulletModel => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.bullet_model = resref::truncate{ name = a.strs[2] } } }
+            nwscript::SWMG_SetGunBankGunModel => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.gun_model = resref::truncate{ name = a.strs[2] } } }
+            nwscript::SWMG_GetGunBankDamage => { try nwvm::push_int{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { @as(i32, value.damage) } null => { 0 } } } }
+            nwscript::SWMG_GetGunBankTimeBetweenShots => { try nwvm::push_float{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { value.rate_of_fire } null => { 0.0 } } } }
+            nwscript::SWMG_GetGunBankLifespan => { try nwvm::push_float{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { value.lifespan } null => { 0.0 } } } }
+            nwscript::SWMG_GetGunBankSpeed => { try nwvm::push_float{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { value.speed } null => { 0.0 } } } }
+            nwscript::SWMG_GetGunBankTarget => { try nwvm::push_int{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { @as(i32, value.target_type) } null => { 0 } } } }
+            nwscript::SWMG_SetGunBankDamage => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.damage = @as(u32, a.ints[2]) } }
+            nwscript::SWMG_SetGunBankTimeBetweenShots => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.rate_of_fire = a.floats[2] } }
+            nwscript::SWMG_SetGunBankLifespan => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.lifespan = a.floats[2] } }
+            nwscript::SWMG_SetGunBankSpeed => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.speed = a.floats[2] } }
+            nwscript::SWMG_SetGunBankTarget => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.target_type = @as(u32, a.ints[2]) } }
+            nwscript::SWMG_GetGunBankHorizontalSpread => { try nwvm::push_float{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { value.horiz_spread } null => { 0.0 } } } }
+            nwscript::SWMG_GetGunBankVerticalSpread => { try nwvm::push_float{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { value.vert_spread } null => { 0.0 } } } }
+            nwscript::SWMG_GetGunBankSensingRadius => { try nwvm::push_float{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { value.sensing_radius } null => { 0.0 } } } }
+            nwscript::SWMG_GetGunBankInaccuracy => { try nwvm::push_float{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { value.inaccuracy } null => { 0.0 } } } }
+            nwscript::SWMG_SetGunBankHorizontalSpread => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.horiz_spread = a.floats[2] } }
+            nwscript::SWMG_SetGunBankVerticalSpread => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.vert_spread = a.floats[2] } }
+            nwscript::SWMG_SetGunBankSensingRadius => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.sensing_radius = a.floats[2] } }
+            nwscript::SWMG_SetGunBankInaccuracy => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.inaccuracy = a.floats[2] } }
+            // ---- per-object sounds (no shipped script touches them): nothing is kept
+            nwscript::SWMG_GetSoundFrequency | nwscript::SWMG_GetSoundFrequencyIsRandom | nwscript::SWMG_GetSoundVolume => { try nwvm::push_int{ &vm, v = 0 } }
+            else => {}
+        }
+    }
+}

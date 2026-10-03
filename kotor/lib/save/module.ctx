@@ -9,6 +9,11 @@ namespace save {
     fn save_module_state { mut w: world::World } -> ! {
         let mo = world::object{ w = &w, id = w.module } ifnull { return }
         let m = obj::module{ o = mo } ifnull { return }
+        // modulesave.2da IncludeInSave 0: the module starts afresh every time.
+        let mut key = m.name
+        if twoda::find_row{ t = w.tables.modulesave, label = resref::bytes{ r = &key } } is some{ value = r } {
+            if (twoda::get_int{ t = w.tables.modulesave, row = r, column = "includeinsave" } ifnull 1) == 0 { return }
+        }
         let ao = world::object{ w = &w, id = w.area } ifnull { return }
         let mut module_name = m.name
         let mut area_name = m.area_name
@@ -22,6 +27,26 @@ namespace save {
         ]
         let nested = try erf::write(arena::Arena){ realloc = arena::alloc, heap = w.scratch, sig = erf::Sig::mod, members = members[..], year = 0, day = 0 }
         try put{ st = &w.gip, name = resref::bytes{ r = &module_name }, kind = 2057, bytes = nested }
+    }
+
+    // DeleteModuleSaveGroup (gameloop.md 5.3 step 7): entering `module`, whose modulesave.2da
+    // row names a group in DeleteSaveGroupOnEnter, drops the kept states of that group's modules.
+    fn delete_save_group { mut w: world::World, module: []u8 } {
+        let t = w.tables.modulesave
+        let r = twoda::find_row{ t, label = module } ifnull { return }
+        let group = twoda::get_int{ t, row = r, column = "deletesavegrouponenter" } ifnull { return }
+        let rows = twoda::rows{ t }
+        let mut i: usize = 0
+        while i < rows {
+            let g = twoda::get_int{ t, row = i, column = "savegroup" }
+            if g is some{ value = gv } {
+                if gv == group {
+                    let name = twoda::get_string{ t, row = i, column = "modulename" } ifnull ""
+                    if name.len > 0 { remove{ st = &w.gip, name, kind = 2057 } }
+                }
+            }
+            i = i + 1
+        }
     }
 
     fn write_ifo { mut w: world::World, mo: *obj::Object, m: *obj::Module } -> ![]u8 {
@@ -60,7 +85,7 @@ namespace save {
         try put_dword{ &b, owner = r, label = "Mod_NextObjId1", v = 0 }
         try put_dword{ &b, owner = r, label = "Mod_NextCharId0", v = w.objects.next_high }
         try put_dword{ &b, owner = r, label = "Mod_NextCharId1", v = obj::FIRST_CHARACTER }
-        _ = try gffw::add_value{ &b, owner = r, label = "Mod_Effect_NxtId", value = gff::Value::dword64{ v = @as(u64, w.values.next_effect) } }
+        _ = try gffw::add_value{ &b, owner = r, label = "Mod_Effect_NxtId", value = gff::Value::dword64{ v = w.fx_ids.next } }
         let scripts: [15][]u8 = ["Mod_OnHeartbeat", "Mod_OnUsrDefined", "Mod_OnClientEntr", "Mod_OnClientLeav", "Mod_OnActvtItem",
             "Mod_OnAcquirItem", "Mod_OnUnAqreItem", "Mod_OnModLoad", "Mod_OnModStart", "Mod_OnPlrDeath", "Mod_OnPlrDying",
             "Mod_OnSpawnBtnDn", "Mod_OnPlrRest", "Mod_OnPlrLvlUp", "Mod_OnEquipItem"]
@@ -85,7 +110,7 @@ namespace save {
         try write_event_queue{ &b, &w, owner = r }
         // The player, as a saved creature plus the Mod_* names (struct id 48813).
         let players = try gffw::put_list{ &b, owner = r, label = "Mod_PlayerList" }
-        let pc = world::object{ w = &w, id = w.pc }
+        let pc = world::object{ w = &w, id = w.player }
         if pc != null {
             let s = try write_object{ &b, &w, list = players, o = pc, id = 48813 }
             try put_string{ &b, owner = s, label = "Mod_CommntyName", v = "Bad StrRef" }
@@ -100,7 +125,7 @@ namespace save {
     // the area, the party (saved with the player and the party table) and carried items.
     fn in_git { w: *world::World, o: *obj::Object } -> bool {
         if o.destroyed or o.kind == obj::Kind::module or o.kind == obj::Kind::area { return false }
-        if o.id == w.pc or party::is_member{ w, id = o.id } { return false }
+        if o.id == w.pc or o.id == w.player or party::is_member{ w, id = o.id } { return false }
         if obj::item{ o } is some{ value = it } { return it.possessor == obj::INVALID }
         return true
     }

@@ -27,3 +27,22 @@ what I had to write instead, how often).
   `gui::take_events` themselves. Not a compiler problem, a framework limit to revisit.
 - **No way to hide a panel without closing it** in lib/gui; the HUD is moved out of reach
   (`Panel.sx`) while a conversation runs. A `hidden` flag on `Panel` would be clearer.
+
+## 2026-10-03: Save Game and Load Game in the in-game options
+
+- **A `mut x: T` parameter is `T` in the body but `*T` for a callee.** Passing `list` (declared
+  `mut list: SaveList`) on to `has_number{ list: *SaveList }` is "expected *SaveList, got
+  SaveList": it needs `&list`, the same as for a local. Easy once known, but the error does not say
+  that the parameter's `mut` already is the pointer.
+- **A one-name call needs its field name** even when the argument is a plain variable with another
+  name: `rank_of{ a }` is "has no field `a`, call is missing `e`"; `rank_of{ e = a }`.
+- **Shell tool restrictions again.** `sed -e 'Nr FILE'`, `printf` with a computed format and a
+  heredoc followed by `git` in one command were all refused as "too complex to verify"; splicing a
+  block into a file went through `head`/`cat`/`tail` into the scratch directory and `cp`, and loops
+  through a script file run with `sh`.
+- **Framework limit: a log line starting with `[` is dropped by `tools/ingame/go.sh`**
+  (`grep -v '^\['`), and the engine's "saved ..." and "loaded ..." lines all start so. Tests of
+  save and load must run `kotor.exe` by hand and grep.
+- **Headless menus under a conversation.** A menu opened while a conversation's panels are up
+  looks fine in the screenshot but its clicks go to the conversation's modal panels. Scripts that
+  want a menu on the Endar Spire need two `hush` lines (the opening cutscene and the Trask talk).

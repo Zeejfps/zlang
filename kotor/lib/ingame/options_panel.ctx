@@ -8,9 +8,15 @@
 // panel's); `update` takes them from the GUI's list by panel id instead. The front end's stack
 // has a stand-in main-menu entry at the bottom so that its screens can close themselves.
 //
+// Load Game and Save Game are the front end's saveload screen too (lib/frontend, saves.ctx and
+// events.ctx): Load Game lists our saves and the install's, Save Game ours with a "New Slot" row
+// and asks for a name. What they pick comes out as a request, kept in this state until the
+// owner takes it (`take_save`, `take_load`).
+//
 // What the owner (play.ctx) can ask of it: `ingame::wants_quit` (Exit Game was confirmed),
 // `options_panel::take_display_change` (resolution, v-sync, gamma ... changed: apply
-// `options_panel::settings`).
+// `options_panel::settings`), `ingame::take_save_request` and `ingame::take_load_request` (a game
+// to save under a name, or a save's folder to load).
 namespace options_panel {
     // What the open message box is for.
     const BOX_NONE: u32 = 0
@@ -23,10 +29,38 @@ namespace options_panel {
         fe: ?*mut frontend::Front,          // the option screens' state and settings
         box: u32,                           // the message box on screen, 0 when none
         box_for: u32,
+        save_req: [64]u8, save_len: usize,  // the name a game is to be saved under, once chosen
+        load_req: [300]u8, load_len: usize, // the folder (a path) of the save to load, once chosen
     }
 
     fn new {} -> State {
-        return State{ opened = false, quit = false, fe = null, box = 0, box_for = BOX_NONE }
+        return State{
+            opened = false, quit = false, fe = null, box = 0, box_for = BOX_NONE,
+            save_req = [0; 64], save_len = 0, load_req = [0; 300], load_len = 0,
+        }
+    }
+
+    // Whether a save or a load was chosen and not yet taken: the menu closes itself then, so that
+    // the saved picture is the game's frame and a load starts from a clear screen.
+    fn has_request { s: *State } -> bool {
+        return s.save_len > 0 or s.load_len > 0
+    }
+
+    // The name to save the game under, once (null when none was chosen). The bytes stay in the
+    // state, valid until the next request.
+    fn take_save { mut s: State } -> ?[]u8 {
+        if s.save_len == 0 { return null }
+        let n = s.save_len
+        s.save_len = 0
+        return s.save_req[..n]
+    }
+
+    // The folder (a path save::find_save resolves) of the save to load, once (null when none).
+    fn take_load { mut s: State } -> ?[]u8 {
+        if s.load_len == 0 { return null }
+        let n = s.load_len
+        s.load_len = 0
+        return s.load_req[..n]
     }
 
     // The front end's settings, once the panel has been opened (null before).
@@ -56,6 +90,7 @@ namespace options_panel {
         // for it keeps close_top from refusing.
         fe.stack[0] = frontend::Entry{ screen = frontend::SCR_MAIN, panel = 0 }
         fe.depth = 1
+        frontend::set_own_saves{ fe, dir = w.gip.root }
         s.fe = fe
     }
 
@@ -94,12 +129,13 @@ namespace options_panel {
         if screen != 0 {
             let fe = s.fe ifnull { return true }
             frontend::open_screen{ fe, &g, fs = &w.fs, &dev, screen } iferr {}
-        } else if slice::eq_bytes{ a = ev.tag, b = "BTN_LOADGAME" } or slice::eq_bytes{ a = ev.tag, b = "BTN_SAVEGAME" } {
-            // PLACEHOLDER: saving and loading games have no owner yet (HOOK(save) in play.ctx).
-            // The original's panels (saveload.gui with a save name box) go here; the front end's
-            // Load Game screen can already list the install's saves. 38451 is "That function is
-            // unavailable at this time."
-            say{ &s, &g, &w, &dev, strref = 38451, ask = false, for_what = BOX_NOTICE }
+        } else if slice::eq_bytes{ a = ev.tag, b = "BTN_LOADGAME" } {
+            let fe = s.fe ifnull { return true }
+            frontend::open_screen{ fe, &g, fs = &w.fs, &dev, screen = frontend::SCR_LOAD } iferr {}
+        } else if slice::eq_bytes{ a = ev.tag, b = "BTN_SAVEGAME" } {
+            let fe = s.fe ifnull { return true }
+            fe.played_seconds = @trunc(u32, @as(u64, w.played_seconds))
+            frontend::open_screen{ fe, &g, fs = &w.fs, &dev, screen = frontend::SCR_SAVE } iferr {}
         } else if slice::eq_bytes{ a = ev.tag, b = "BTN_QUIT" } {
             // "Do you really want to quit?"; OK ends the game loop (ingame::wants_quit).
             say{ &s, &g, &w, &dev, strref = 42348, ask = true, for_what = BOX_QUIT }
@@ -125,8 +161,12 @@ namespace options_panel {
             if s.box != 0 and ev.panel == s.box {
                 box_event{ &s, &g, &w, ev }
             } else if frontend::screen_of{ fe, panel = ev.panel } != 0 {
-                // Only Outcome::running can come out of an options screen.
-                _ = frontend::on_event{ fe, &g, fs = &w.fs, &dev, ev }
+                // The options screens only run; Load Game says which save was picked.
+                let outcome = frontend::on_event{ fe, &g, fs = &w.fs, &dev, ev }
+                match outcome {
+                    load_game{ folder, folder_len } => { s.load_len = frontend::copy_into{ dst = s.load_req[..], src = folder[..folder_len] } }
+                    else => {}
+                }
                 // Volumes go to the mixer's groups at once, as in the main menu.
                 if fe.sound_pending { frontend::apply_sound{ fe, mixer = g.mixer } }
                 // The Feedback screen's tooltip switch is the GUI's own.
@@ -135,6 +175,8 @@ namespace options_panel {
                 }
             }
         }
+        // Save Game was answered with a name.
+        if s.save_len == 0 { s.save_len = frontend::take_save_request{ fe, into = s.save_req[..] } }
     }
 
     // The message box was answered.

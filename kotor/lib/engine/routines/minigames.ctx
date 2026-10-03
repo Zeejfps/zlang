@@ -1,0 +1,43 @@
+// Routines: the minigames. Pazaak (docs/re/pazaak.md, docs/design/minigames.md): PlayPazaak
+// posts a note for the game loop, which runs the visit (game/pazaak.ctx) and writes the outcome
+// back into the party (gold, the side deck, the last result) before the end script runs.
+namespace rt_mg {
+    const ITEM_TYPE_PAZAAK_CARD: i32 = 42       // baseitems.2da's ItemType of the pazaak cards (base item 86)
+    const MAX_CARDS: i32 = 99
+
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        if routine == nwscript::PlayPazaak { try play_pazaak{ &w, &vm, argc } }
+        else if routine == nwscript::GetLastPazaakResult { try nwvm::push_int{ &vm, v = if w.party.pazaak_won { 1 } else { 0 } } }
+        else { return false }
+        return true
+    }
+
+    // void PlayPazaak(int nOpponentPazaakDeck, string sEndScript, int nMaxWager, int bShowTutorial = FALSE,
+    // object oOpponent = OBJECT_INVALID). The wager can't be more than the party has: when the gold is
+    // no more than the limit, the gold is the limit, as the original clamps it.
+    fn play_pazaak { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::PlayPazaak
+        let deck = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let script = try nwarg::string{ &vm, routine = r, argc, i = 1 }
+        let wager = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let tutorial = try nwarg::int{ &vm, routine = r, argc, i = 3 }
+        let opponent = try nwarg::object{ &vm, routine = r, argc, i = 4 }
+        let mut limit = wager
+        if limit > 0 and w.party.gold <= limit { limit = w.party.gold }
+        outbox::post{ out = &w.out, note = outbox::Note::pazaak{
+            deck, end_script = resref::truncate{ name = script }, max_wager = limit, tutorial = tutorial != 0, opponent,
+        } }
+    }
+
+    // Item pickup: a pazaak card entering the party's inventory is not kept as an item, only counted
+    // (CSWSCreature::AddPazaakCard; the count is at the card number, ModelVariation + 11 mod 18).
+    // True if the item was a card; the caller then destroys it.
+    fn take_card { mut w: world::World, base: u32, variation: u32, stack: u32 } -> bool {
+        let t = twoda::get_int{ t = w.tables.baseitems, row = @as(usize, base), column = "itemtype" } ifnull 0
+        if t != ITEM_TYPE_PAZAAK_CARD { return false }
+        let id = @as(usize, (variation + 11) % 18)
+        let n = w.party.pazaak_cards[id] + @as(i32, stack)
+        w.party.pazaak_cards[id] = if n > MAX_CARDS { MAX_CARDS } else { n }
+        return true
+    }
+}
