@@ -31,6 +31,7 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "lib/dialog/lipsync" }
     build::add_sources{ &b, exe, dir = "lib/hud" }
     build::add_sources{ &b, exe, dir = "lib/ingame" }
+    build::add_sources{ &b, exe, dir = "lib/screens" }
     build::add_sources{ &b, exe, dir = "lib/pazaak" }
     build::add_sources{ &b, exe, dir = "tools/common" }
     build::optimize{ &b, exe, level = 2 }

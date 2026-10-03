@@ -18,7 +18,7 @@ namespace container {
     fn open { mut w: world::World, placeable: u32, user: u32 } -> bool {
         let o = world::object{ w = &w, id = placeable } ifnull { return false }
         let p = obj::placeable{ o } ifnull { return false }
-        if not p.has_inventory or p.open { return false }
+        if not p.has_inventory or p.user != obj::INVALID { return false }
         p.open = true
         p.user = user
         play{ o, p, anim = ANIM_OPEN }
@@ -69,7 +69,7 @@ namespace container {
     fn close { mut w: world::World, placeable: u32, take_all: bool } {
         let o = world::object{ w = &w, id = placeable } ifnull { return }
         let p = obj::placeable{ o } ifnull { return }
-        if not p.open { return }
+        if p.user == obj::INVALID { return }
         let user = p.user
         if take_all {
             let mut guard: usize = 0
