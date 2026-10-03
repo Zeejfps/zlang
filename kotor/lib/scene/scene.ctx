@@ -175,6 +175,11 @@ namespace scene {
     fn add_part { mut sc: Scene, loaded: usize, parent: i32, hook: []u8 } -> !usize {
         let model = loaded_at{ sc = &sc, i = loaded }.model
         let pose = try mdl_anim::make_pose(arena::Arena){ realloc = arena::alloc, heap = sc.arena, model }
+        if parent >= 0 {
+            // What the parent's pose already moves is not animated again at the hook.
+            let parent_model = loaded_at{ sc = &sc, i = part_at{ sc = &sc, i = @as(usize, parent) }.loaded }.model
+            mdl_anim::hold_shared{ model, pose, parent = parent_model, hook }
+        }
         try list::push{ list = &sc.parts, item = Part{
             loaded, pose, player = mdl_anim::new_player{}, anim = [0; 32], anim_len = 0, next = [0; 32], next_len = 0, parent, hook, source = null,
         } }

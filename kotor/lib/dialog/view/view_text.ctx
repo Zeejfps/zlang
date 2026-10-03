@@ -17,9 +17,11 @@ namespace dlgview {
             let last: []u8 = if space < full.len { full[space + 1..] } else { full[..0] }
             set_token{ &g, name = "LastName", value = last }
         }
+        // <CUSTOMn> from SetCustomToken (the world keeps them for the whole session).
+        let all = list::items{ list = w.tokens.all }
         let mut i: usize = 0
-        while i < w.conversation.custom_count {
-            let c = w.conversation.custom[i]
+        while i < all.len {
+            let c = all[i]
             i = i + 1
             // "CUSTOM" and the number's digits.
             let mut name: [16]u8
@@ -42,7 +44,7 @@ namespace dlgview {
                 name[n] = digits[count]
                 n = n + 1
             }
-            set_token{ &g, name = name[..n], value = c.text[..c.len] }
+            set_token{ &g, name = name[..n], value = c.text }
         }
     }
 }

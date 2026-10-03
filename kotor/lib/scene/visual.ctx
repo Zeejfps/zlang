@@ -181,11 +181,23 @@ namespace visual {
         if v.animation == o.animation { return }
         v.animation = o.animation
         let mut named: [34]u8
-        let base = animname::name_in{ w = &w, id = o.animation, into = named[..] }
-        let looping = animname::loops_in{ w = &w, id = o.animation }
-        let mut buf: [34]u8
+        let mut base = animname::name_of{ id = o.animation }
+        let mut looping = animname::loops{ id = o.animation }
+        let mut prefixed = v.creature_prefix
+        if animname::is_row{ id = o.animation } {
+            // An animations.2da row (the combat animations): its own name, no prefix.
+            let row = animname::row_of{ id = o.animation }
+            base = twoda::get_string{ t = w.tables.animations, row, column = "name" } ifnull ""
+            looping = (twoda::get_int{ t = w.tables.animations, row, column = "fireforget" } ifnull 1) == 0
+            prefixed = false
+        } else if base.len == 0 {
+            // A conversation's animation numbers and the cutscene models' (animname::name_in).
+            base = animname::name_in{ w = &w, id = o.animation, into = named[..] }
+            looping = animname::loops_in{ w = &w, id = o.animation }
+        }
         // Cutscene models name theirs `cutNNNw` whatever their kind.
-        let prefixed = v.creature_prefix and not ci::starts_with{ s = base, prefix = "cut" }
+        if ci::starts_with{ s = base, prefix = "cut" } { prefixed = false }
+        let mut buf: [34]u8
         let name = with_prefix{ into = buf[..], name = if base.len > 0 { base } else { "pause1" }, prefix = prefixed }
         let mut fallback: [34]u8
         let pause = with_prefix{ into = fallback[..], name = "pause1", prefix = v.creature_prefix }

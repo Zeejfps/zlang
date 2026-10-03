@@ -10,8 +10,6 @@ namespace rt_dlg {
         else if routine == nwscript::GetIsInConversation { try get_is_in_conversation{ &w, &vm, argc } }
         else if routine == nwscript::GetIsConversationActive { try nwvm::push_int{ &vm, v = if w.conversation.pending or w.conversation.active { 1 } else { 0 } } }
         else if routine == nwscript::GetLastConversation { try get_last_conversation{ &w, &vm } }
-        else if routine == nwscript::GetLastSpeaker { try get_last_speaker{ &w, &vm } }
-        else if routine == nwscript::GetListenPatternNumber { try get_listen_pattern_number{ &w, &vm } }
         else if routine == nwscript::EventConversation { try event_conversation{ &w, &vm } }
         else if routine == nwscript::BarkString { try bark_string{ &w, &vm, argc } }
         else if routine == nwscript::ActionBarkString { try action_bark_string{ &w, &vm, argc } }
@@ -26,7 +24,6 @@ namespace rt_dlg {
         else if routine == nwscript::HoldWorldFadeInForDialog { w.conversation.hold_fade_in = true }
         else if routine == nwscript::CancelPostDialogCharacterSwitch { }
         else if routine == nwscript::EnableVideoEffect { try enable_video_effect{ &w, &vm, argc } }
-        else if routine == nwscript::SetCustomToken { try set_custom_token{ &w, &vm, argc } }
         else if routine == nwscript::DisableVideoEffect { w.conversation.video_effect = -2 }
         else { return false }
         return true
@@ -70,18 +67,6 @@ namespace rt_dlg {
     fn get_last_conversation { mut w: world::World, mut vm: nwvm::Vm } -> ! {
         let mut r = w.conversation.last_resref
         try nwvm::push_string{ &vm, s = resref::bytes{ r = &r } }
-    }
-
-    // object GetLastSpeaker(): who last spoke to OBJECT_SELF (the ON_DIALOGUE caller).
-    fn get_last_speaker { mut w: world::World, mut vm: nwvm::Vm } -> ! {
-        let o = world::object{ w = &w, id = self_of{ vm = &vm } }
-        try nwvm::push_object{ &vm, id = if o != null { o.ctx.last_speaker } else { obj::INVALID } }
-    }
-
-    // int GetListenPatternNumber(): -1 when the event is a conversation, else the pattern's number.
-    fn get_listen_pattern_number { mut w: world::World, mut vm: nwvm::Vm } -> ! {
-        let o = world::object{ w = &w, id = self_of{ vm = &vm } }
-        try nwvm::push_int{ &vm, v = if o != null { o.ctx.listen_pattern } else { 0 } }
     }
 
     // event EventConversation()
@@ -141,14 +126,6 @@ namespace rt_dlg {
         let value = try nwarg::int{ &vm, routine, argc, i = 1 }
         if head { dlg::set_lock{ ids = &w.conversation.locked_head, count = &w.conversation.locked_head_count, id, lock = value != 0 } }
         else { dlg::set_lock{ ids = &w.conversation.locked_orientation, count = &w.conversation.locked_orientation_count, id, lock = value != 0 } }
-    }
-
-    // void SetCustomToken(int nCustomTokenNumber, string sTokenValue): the text of <CUSTOMn> in
-    // dialogue and GUI strings (tlk.md); the first 80 bytes are kept.
-    fn set_custom_token { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
-        let n = try nwarg::int{ &vm, routine = nwscript::SetCustomToken, argc, i = 0 }
-        let text = try nwarg::string{ &vm, routine = nwscript::SetCustomToken, argc, i = 1 }
-        dlg::set_custom_token{ &w, number = n, text }
     }
 
     // void EnableVideoEffect(int nEffectType): a videoeffects.2da row for the 3D view (9.6).

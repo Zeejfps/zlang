@@ -20,6 +20,8 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "lib/render" }
     build::add_sources{ &b, exe, dir = "lib/render_gl" }
     build::add_sources{ &b, exe, dir = "lib/engine" }
+    build::add_sources{ &b, exe, dir = "lib/save" }
+    build::add_sources{ &b, exe, dir = "lib/rules" }
     build::add_sources{ &b, exe, dir = "lib/scene" }
     build::add_sources{ &b, exe, dir = "lib/dialog/core" }
     build::add_sources{ &b, exe, dir = "lib/dialog/view" }

@@ -1,0 +1,193 @@
+// Saving and loading a game (docs/re/party-items-saves.md 1.3, 1.6): a save folder in our own
+// saves directory (never the install's), `%06d - <name>` (0 QUICKSAVE, 1 AUTOSAVE, manual from 2),
+// holding savenfo.res, PARTYTABLE.res, GLOBALVARS.res, SAVEGAME.sav (the game in progress, the
+// module being played saved into it first) and Screen.tga. Loading reads one back (ours or the
+// install's Saves/) and enters its LASTMODULE from it, the player where it was saved.
+//
+//   try save::save_game{ &w, slot = 0, folder_name = "QUICKSAVE", save_name = "Quick Save", screen = pixels, width, height }
+//   try save::load_game{ &w, &vm, engine, folder = path }        // then the presentation starts over
+namespace save {
+    error no_save{ folder: []u8 }
+
+    // `<root>/%06d - <name>` into `into`.
+    fn folder_path { root: []u8, slot: u32, name: []u8, into: []mut u8 } -> []u8 {
+        let mut n: usize = 0
+        let mut i: usize = 0
+        while i < root.len and n < into.len {
+            into[n] = root[i]
+            n = n + 1
+            i = i + 1
+        }
+        if n > 0 and into[n - 1] != '/' and n < into.len {
+            into[n] = '/'
+            n = n + 1
+        }
+        let mut digits: [6]u8
+        let mut v = slot
+        let mut k: usize = 6
+        while k > 0 {
+            k = k - 1
+            digits[k] = @trunc(u8, '0' + v % 10)
+            v = v / 10
+        }
+        i = 0
+        while i < 6 and n < into.len {
+            into[n] = digits[i]
+            n = n + 1
+            i = i + 1
+        }
+        let sep: [3]u8 = [' ', '-', ' ']
+        i = 0
+        while i < 3 and n < into.len {
+            into[n] = sep[i]
+            n = n + 1
+            i = i + 1
+        }
+        i = 0
+        while i < name.len and n < into.len {
+            into[n] = name[i]
+            n = n + 1
+            i = i + 1
+        }
+        return into[..n]
+    }
+
+    fn file_in { mut w: world::World, folder: []u8, name: []u8 } -> ![]mut u8 {
+        return try path::join(arena::Arena){ realloc = arena::alloc, heap = w.scratch, dir = folder, name }
+    }
+
+    // Saves the game into slot `slot` (folder `%06d - folder_name`), `save_name` as the player
+    // typed it; `screen` is the last frame (RGBA8, top row first; empty for none).
+    fn save_game { mut w: world::World, slot: u32, folder_name: []u8, save_name: []u8, screen: []u8, width: u32, height: u32 } -> ! {
+        try save_module_state{ &w }
+        let mut buf: [512]u8
+        let local = folder_path{ root = w.gip.root, slot, name = folder_name, into = buf[..] }
+        let folder = try obj::copy_bytes{ heap = w.heap, s = local }
+        defer obj::free_bytes{ heap = w.heap, s = folder }
+        make_dirs{ fs = &w.fs, path = folder }
+        // SAVEGAME.sav: the game in progress, as it is now.
+        let image = try store_image{ st = &w.gip }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = image, count = 0 }
+        _ = try fs::write_all{ fs = &w.fs, path = try file_in{ &w, folder, name = "SAVEGAME.sav" }, bytes = image }
+        let globals_bytes = try write_globals(arena::Arena){ realloc = arena::alloc, heap = w.scratch, g = &w.globals }
+        _ = try fs::write_all{ fs = &w.fs, path = try file_in{ &w, folder, name = "GLOBALVARS.res" }, bytes = globals_bytes }
+        let played = @trunc(u32, @as(u64, w.played_seconds))
+        let party_bytes = try write_party_table(arena::Arena){ realloc = arena::alloc, heap = w.scratch, w = &w, played_seconds = played }
+        _ = try fs::write_all{ fs = &w.fs, path = try file_in{ &w, folder, name = "PARTYTABLE.res" }, bytes = party_bytes }
+        let info_bytes = try write_info(arena::Arena){ realloc = arena::alloc, heap = w.scratch, info = info_now{ &w, save_name, played } }
+        _ = try fs::write_all{ fs = &w.fs, path = try file_in{ &w, folder, name = "savenfo.res" }, bytes = info_bytes }
+        if screen.len > 0 {
+            let tga = try write_screenshot(arena::Arena){ realloc = arena::alloc, heap = w.scratch, rgba = screen, width, height }
+            _ = try fs::write_all{ fs = &w.fs, path = try file_in{ &w, folder, name = "Screen.tga" }, bytes = tga }
+        }
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "saved {}\n", folder)
+    }
+
+    // savenfo's fields for the game now: the area's name, the module (upper case, as the
+    // original writes LASTMODULE), the time played, the portraits of the party.
+    fn info_now { mut w: world::World, save_name: []u8, played: u32 } -> Info {
+        let mut info = Info{
+            area_name = "", last_module = "", time_played = played, save_name, portraits = [resref::empty{}; 3],
+            portrait_count = 0, cheat_used = false, autosave = false,
+        }
+        let ao = world::object{ w = &w, id = w.area }
+        if ao != null {
+            if obj::area{ o = ao } is some{ value = a } {
+                info.area_name = if a.name.text.len > 0 { a.name.text } else { world::string_by_strref{ w = &w, strref = a.name.strref } }
+            }
+        }
+        let mo = world::object{ w = &w, id = w.module }
+        if mo != null {
+            if obj::module{ o = mo } is some{ value = m } {
+                let mut name = m.name
+                let low = resref::bytes{ r = &name }
+                let up = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(u8){}, count = low.len } iferr { return info }
+                let mut i: usize = 0
+                while i < low.len {
+                    up[i] = ascii::to_upper{ c = low[i] }
+                    i = i + 1
+                }
+                info.last_module = up
+            }
+        }
+        let members = party::members{ w = &w }
+        let mut i: usize = 0
+        while i < members.len and info.portrait_count < 3 {
+            let o = world::object{ w = &w, id = members[i] }
+            i = i + 1
+            if o == null { continue }
+            if obj::creature{ o } is some{ value = c } {
+                let name = twoda::get_string{ t = w.tables.portraits, row = @as(usize, c.portrait), column = "baseresref" } ifnull ""
+                info.portraits[info.portrait_count] = resref::truncate{ name }
+                info.portrait_count = info.portrait_count + 1
+            }
+        }
+        return info
+    }
+
+    // The folder of save `name` (a folder name, or a path): ours first, then the install's Saves/.
+    fn find_save { mut w: world::World, game: []u8, name: []u8 } -> ?[]u8 {
+        let candidates: [3][]u8 = [w.gip.root, "", ""]
+        let mut buf: [512]u8
+        let mut i: usize = 0
+        while i < 3 {
+            let mut dir: []u8 = candidates[i]
+            if i == 1 { dir = path::join(arena::Arena){ realloc = arena::alloc, heap = w.scratch, dir = game, name = "saves" } iferr { "" } }
+            if i == 2 { dir = "" }
+            i = i + 1
+            let joined = if dir.len == 0 { name } else { path::join_into{ dir, name, into = buf[..] } ifnull { continue } }
+            let check = path::join(arena::Arena){ realloc = arena::alloc, heap = w.scratch, dir = joined, name = "SAVEGAME.sav" } iferr { continue }
+            if fs::size{ fs = &w.fs, path = check } iferr { 0 } > 0 {
+                let out = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = joined.len } iferr { return null }
+                slice::copy(u8){ dst = out, src = joined }
+                return out
+            }
+        }
+        return null
+    }
+
+    // Loads the save in `folder` (party-items-saves.md 1.6): the game in progress replaced by its
+    // SAVEGAME.sav, the globals and the party table read, the module left without keeping its
+    // state, then its LASTMODULE entered with the player where it was saved.
+    fn load_game { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, folder: []u8 } -> ! {
+        let image = try fs::read_all(heap::Heap){ fs = &w.fs, heap = w.heap, realloc = heap::alloc, path = try file_in{ &w, folder, name = "SAVEGAME.sav" } }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = image, count = 0 }
+        let info_bytes = try fs::read_all(arena::Arena){ fs = &w.fs, heap = w.scratch, realloc = arena::alloc, path = try file_in{ &w, folder, name = "savenfo.res" } }
+        let info_doc = try gff::parse{ data = info_bytes, realloc = arena::alloc, heap = w.scratch }
+        let info = read_info{ doc = &info_doc }
+        if info.last_module.len == 0 { return no_save{ folder } }
+        // A fresh copy (a call's result counts as derived from its arguments: friction/engine.md).
+        let module = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = info.last_module.len }
+        let mut k: usize = 0
+        while k < module.len {
+            module[k] = ascii::to_lower{ c = info.last_module[k] }
+            k = k + 1
+        }
+        defer obj::free_bytes{ heap = w.heap, s = module }
+        // Leave what is running, the player too (the save brings its own).
+        if w.module != obj::INVALID { modload::leave_keeping{ &w, &vm, engine, keep = false } }
+        if w.pc != obj::INVALID {
+            world::destroy{ &w, id = w.pc }
+            world::sweep{ &w }
+            w.pc = obj::INVALID
+        }
+        w.party = party::new{}
+        try read_store{ st = &w.gip, image }
+        let globals_bytes = fs::read_all(arena::Arena){ fs = &w.fs, heap = w.scratch, realloc = arena::alloc, path = try file_in{ &w, folder, name = "GLOBALVARS.res" } } iferr { slice::empty(u8){} }
+        if globals_bytes.len > 0 {
+            let doc = try gff::parse{ data = globals_bytes, realloc = arena::alloc, heap = w.scratch }
+            try read_globals{ g = &w.globals, doc = &doc }
+        }
+        let party_bytes = fs::read_all(arena::Arena){ fs = &w.fs, heap = w.scratch, realloc = arena::alloc, path = try file_in{ &w, folder, name = "PARTYTABLE.res" } } iferr { slice::empty(u8){} }
+        if party_bytes.len > 0 {
+            let doc = try gff::parse{ data = party_bytes, realloc = arena::alloc, heap = w.scratch }
+            try read_party_table{ &w, doc = &doc }
+        }
+        w.played_seconds = @as(f64, info.time_played)
+        w.restoring = true
+        try modload::enter{ &w, name = module }
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "loaded {} ({})\n", folder, module)
+    }
+}

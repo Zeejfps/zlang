@@ -1,0 +1,201 @@
+// GLOBALVARS.res: every global variable of a game (docs/formats/gff-save.md, "GLOBALVARS.res";
+// docs/re/party-items-saves.md 1.9 and 2.3). The file carries its own name lists, one per kind
+// (CatBoolean, CatNumber, CatLocation, CatString), and the values packed by position in them:
+//
+//   ValBoolean   one bit per name, most significant bit first (name k is bit 0x80 >> (k & 7) of
+//                byte k >> 3), count / 8 + 1 bytes
+//   ValNumber    one signed byte per name
+//   ValLocation  always 100 slots of 6 floats: position x, y, z, orientation x, y, z
+//   ValString    a list, one struct with `String` per name
+//
+// The engine writes the names in the order of its hash table; we write them in globalcat.2da's
+// order, which the reader doesn't care about because it maps by name.
+//
+//   let bytes = try save::write_globals{ realloc = heap::alloc, &h, g = &w.globals }
+//   try save::read_globals{ g = &w.globals, doc = &doc }
+namespace save {
+    const LOCATION_SLOTS: usize = 100
+    const LOCATION_BYTES: usize = 2400
+
+    fn write_globals(S) { realloc: alloc::Fn(S), mut heap: S, g: *globals::Globals } -> !alloc::Bytes {
+        let mut b = try gffw::new{ realloc, heap = &heap, tag = "GVT " }
+        defer gffw::free{ &b }
+        let all = list::items{ list = g.all }
+        try put_global_names{ &b, all, kind = globals::Type::boolean, label = "CatBoolean" }
+        try put_global_names{ &b, all, kind = globals::Type::number, label = "CatNumber" }
+        try put_global_names{ &b, all, kind = globals::Type::location, label = "CatLocation" }
+        try put_global_names{ &b, all, kind = globals::Type::string, label = "CatString" }
+
+        let mut vals = list::new(u8, S){ realloc, heap = &heap }
+        defer list::free{ list = &vals }
+
+        // Booleans: bits, MSB first.
+        let n_bool = count_globals{ all, kind = globals::Type::boolean }
+        try le::put_zeros{ out = &vals, n = n_bool / 8 + 1 }
+        let bits = list::items{ list = vals }
+        let top: u8 = 0x80
+        let mut k: usize = 0
+        let mut i: usize = 0
+        while i < all.len {
+            if all[i].kind == globals::Type::boolean {
+                if all[i].number != 0 { bits[k >> 3] = bits[k >> 3] | (top >> (k & 7)) }
+                k = k + 1
+            }
+            i = i + 1
+        }
+        _ = try gffw::add_value{ &b, owner = gffw::ROOT, label = "ValBoolean", value = gff::Value::void{ v = bits } }
+
+        // Numbers: the low byte of the value, read back signed.
+        list::clear{ list = &vals }
+        i = 0
+        while i < all.len {
+            if all[i].kind == globals::Type::number { try le::put_u8{ out = &vals, v = @trunc(u8, all[i].number) } }
+            i = i + 1
+        }
+        _ = try gffw::add_value{ &b, owner = gffw::ROOT, label = "ValNumber", value = gff::Value::void{ v = list::items{ list = vals } } }
+
+        // Locations: 6 floats a slot, zero-filled to the 100 slots the engine always writes.
+        list::clear{ list = &vals }
+        k = 0
+        i = 0
+        while i < all.len {
+            if all[i].kind == globals::Type::location and k < LOCATION_SLOTS {
+                try put_location_slot{ out = &vals, l = all[i].location }
+                k = k + 1
+            }
+            i = i + 1
+        }
+        try le::put_zeros{ out = &vals, n = LOCATION_BYTES - vals.len }
+        _ = try gffw::add_value{ &b, owner = gffw::ROOT, label = "ValLocation", value = gff::Value::void{ v = list::items{ list = vals } } }
+
+        // Strings: one struct each.
+        let strings = try gffw::put_list{ &b, owner = gffw::ROOT, label = "ValString" }
+        i = 0
+        while i < all.len {
+            if all[i].kind == globals::Type::string {
+                let e = try gffw::add_element{ &b, list = strings, id = 0 }
+                _ = try gffw::add_value{ &b, owner = e, label = "String", value = gff::Value::exostring{ v = all[i].text } }
+            }
+            i = i + 1
+        }
+        return try gffw::finish{ &b, layout = gffw::ENGINE }
+    }
+
+    fn count_globals { all: []globals::Global, kind: globals::Type } -> usize {
+        let mut n: usize = 0
+        let mut i: usize = 0
+        while i < all.len {
+            if all[i].kind == kind { n = n + 1 }
+            i = i + 1
+        }
+        return n
+    }
+
+    // A List field with one `Name` struct for each global of `kind`.
+    fn put_global_names(S) { mut b: gffw::Builder(S), all: []globals::Global, kind: globals::Type, label: []u8 } -> ! {
+        let l = try gffw::put_list{ &b, owner = gffw::ROOT, label }
+        let mut i: usize = 0
+        while i < all.len {
+            if all[i].kind == kind {
+                let e = try gffw::add_element{ &b, list = l, id = 0 }
+                _ = try gffw::add_value{ &b, owner = e, label = "Name", value = gff::Value::exostring{ v = all[i].name } }
+            }
+            i = i + 1
+        }
+    }
+
+    // One location slot: position, then the facing as a unit vector (AngleToVector's, degrees from
+    // +X). A location nobody set, which the install's save shows as all zeros, stays all zeros.
+    fn put_location_slot(S) { mut out: list::List(u8, S), l: values::Location } -> ! {
+        let unset = l.area == obj::INVALID and l.facing == 0.0
+        try le::put_f32{ &out, v = l.position.x }
+        try le::put_f32{ &out, v = l.position.y }
+        try le::put_f32{ &out, v = l.position.z }
+        let rad = math::radians{ degrees = l.facing }
+        try le::put_f32{ &out, v = if unset { 0.0 } else { math::cosf{ x = rad } } }
+        try le::put_f32{ &out, v = if unset { 0.0 } else { math::sinf{ x = rad } } }
+        try le::put_f32{ &out, v = 0.0 }
+    }
+
+    // Loads a GLOBALVARS.res into the catalogue the game has. As the engine does, everything is
+    // cleared first, then each saved name is looked up and its value copied: a name the catalogue
+    // doesn't declare is ignored (the engine adds it; we have no room for mod globals yet).
+    fn read_globals { g: *globals::Globals, doc: *gff::Doc } -> ! {
+        clear_globals{ g }
+        let none = slice::empty(u32){}
+
+        let bool_names = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "CatBoolean" } ifnull none
+        let bits = gff::get_void{ doc = doc.*, s = gff::ROOT, label = "ValBoolean" } ifnull ""
+        let top: u8 = 0x80
+        let mut k: usize = 0
+        while k < bool_names.len {
+            let name = gff::get_string{ doc = doc.*, s = bool_names[k], label = "Name" } ifnull ""
+            let on = (k >> 3) < bits.len and (bits[k >> 3] & (top >> (k & 7))) != 0
+            globals::set_boolean{ g, name, value = on }
+            k = k + 1
+        }
+
+        let number_names = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "CatNumber" } ifnull none
+        let numbers = gff::get_void{ doc = doc.*, s = gff::ROOT, label = "ValNumber" } ifnull ""
+        k = 0
+        while k < number_names.len and k < numbers.len {
+            let name = gff::get_string{ doc = doc.*, s = number_names[k], label = "Name" } ifnull ""
+            // Signed bytes: -128..127.
+            let raw = @as(i32, numbers[k])
+            globals::set_number{ g, name, value = if raw >= 128 { raw - 256 } else { raw } }
+            k = k + 1
+        }
+
+        let location_names = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "CatLocation" } ifnull none
+        let locations = gff::get_void{ doc = doc.*, s = gff::ROOT, label = "ValLocation" } ifnull ""
+        k = 0
+        while k < location_names.len and k < LOCATION_SLOTS and 24 * (k + 1) <= locations.len {
+            let name = gff::get_string{ doc = doc.*, s = location_names[k], label = "Name" } ifnull ""
+            let value = try read_location_slot{ data = locations, at = 24 * k }
+            globals::set_location{ g, name, value }
+            k = k + 1
+        }
+
+        let string_names = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "CatString" } ifnull none
+        let string_values = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "ValString" } ifnull none
+        k = 0
+        while k < string_names.len and k < string_values.len {
+            let name = gff::get_string{ doc = doc.*, s = string_names[k], label = "Name" } ifnull ""
+            let text = gff::get_string{ doc = doc.*, s = string_values[k], label = "String" } ifnull ""
+            try globals::set_string{ g, name, value = text }
+            k = k + 1
+        }
+    }
+
+    // Every global back to its start value: false, 0, "" and no location.
+    fn clear_globals { g: *globals::Globals } {
+        let mut i: usize = 0
+        while i < g.all.len {
+            let p = list::at{ list = g.all, i }
+            match p.kind {
+                string => {
+                    obj::free_bytes{ heap = g.heap, s = p.text }
+                    p.text = slice::empty(u8){}
+                }
+                location => { p.location = values::no_location{} }
+                else => { p.number = 0 }
+            }
+            i = i + 1
+        }
+    }
+
+    fn read_location_slot { data: []u8, at: usize } -> !values::Location {
+        let x = try le::get_f32{ data, at }
+        let y = try le::get_f32{ data, at = at + 4 }
+        let z = try le::get_f32{ data, at = at + 8 }
+        let ox = try le::get_f32{ data, at = at + 12 }
+        let oy = try le::get_f32{ data, at = at + 16 }
+        let mut facing: f32 = 0.0
+        if math::abs{ x = ox } + math::abs{ x = oy } >= math::EPSILON {
+            facing = math::degrees{ radians = math::atan2f{ y = oy, x = ox } }
+            if facing < 0.0 { facing = facing + 360.0 }
+        }
+        // The saved location has no area (CScriptLocation: position and orientation only).
+        return values::Location{ position = math::Vec3{ x, y, z }, facing, area = obj::INVALID }
+    }
+}

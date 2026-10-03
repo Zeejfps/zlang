@@ -142,12 +142,18 @@ namespace ctl {
         let all = list::items{ list = w.objects.all }
         let mut best = obj::INVALID
         let mut best_d: f32 = 3.0
+        let mut best_hostile = false
         let mut i: usize = 0
         while i < all.len {
             let o = all[i]
             i = i + 1
-            if o.destroyed or o.id == id { continue }
-            let usable = match o.ext {
+            if o.destroyed or o.id == id or o.area != me.area { continue }
+            // A live enemy in front, up to 12 m away, is attacked (ours: the HUD's target).
+            let hostile = match o.ext {
+                creature{ c } => { not c.dead and world::standing{ w = &w, from = me.faction, toward = o.faction } <= 10 }
+                else => { false }
+            }
+            let usable = hostile or match o.ext {
                 door{ d } => { d.state == obj::DoorState::closed and not d.static }
                 placeable{ p } => { p.useable }
                 creature => { not resref::is_empty{ r = o.conversation } }
@@ -157,17 +163,21 @@ namespace ctl {
             let dx = o.position.x - me.position.x
             let dy = o.position.y - me.position.y
             let d = math::sqrtf{ x = dx * dx + dy * dy }
-            if d >= best_d or d < 0.001 { continue }
+            let limit = if hostile { 12.0 } else { best_d }
+            if (d >= limit and not (hostile and not best_hostile)) or d >= 12.0 or d < 0.001 { continue }
+            if best_hostile and not hostile { continue }
+            if hostile and best_hostile and d >= best_d { continue }
             if (dx * me.orientation.x + dy * me.orientation.y) / d < 0.3 { continue }
             best = o.id
             best_d = d
+            best_hostile = hostile
         }
         let target = world::object{ w = &w, id = best } ifnull { return }
-        let kind = match target.kind {
+        let kind = if best_hostile { actions::Kind::attack_object } else { match target.kind {
             door => { actions::Kind::open_door }
             placeable => { actions::Kind::use_object }
             else => { actions::Kind::dialog_object }
-        }
+        } }
         let mut a = actions::make{ kind }
         a.params[0] = actions::Param::object{ id = best }
         if w.log.actions {

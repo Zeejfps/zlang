@@ -1,16 +1,51 @@
 // Routines whose effect is on the screen or the speakers: fades, movies, sounds, music, text.
 // They post outbox notes (docs/design/engine.md, "The outbox"); the presentation acts on them.
+// An area's music and ambient rows are state, kept on the obj::Area (routines change them first, so
+// they save, and a later area load plays the new ones); the note tells the sound to follow.
 namespace rt_pres {
     fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
-        if routine == nwscript::SetGlobalFadeIn { try fade{ &w, &vm, argc, routine, out = false } }
-        else if routine == nwscript::SetGlobalFadeOut { try fade{ &w, &vm, argc, routine, out = true } }
-        else if routine == nwscript::PlayMovie { try play_movie{ &w, &vm, argc } }
-        else if routine == nwscript::SoundObjectPlay { try sound_object{ &w, &vm, argc, routine, play = true } }
-        else if routine == nwscript::SoundObjectStop { try sound_object{ &w, &vm, argc, routine, play = false } }
-        else if routine == nwscript::PlaySound { try play_sound{ &w, &vm, argc } }
-        else if routine == nwscript::NoClicksFor { try no_clicks_for{ &w, &vm, argc } }
-        else if routine == nwscript::PlayRumblePattern { try rumble{ &w, &vm, argc } }
-        else { return false }
+        match routine {
+            nwscript::SetGlobalFadeIn => { try fade{ &w, &vm, argc, routine, out = false } }
+            nwscript::SetGlobalFadeOut => { try fade{ &w, &vm, argc, routine, out = true } }
+            nwscript::PlayMovie => { try play_movie{ &w, &vm, argc } }
+            nwscript::SoundObjectPlay => { try sound_object{ &w, &vm, argc, routine, play = true } }
+            nwscript::SoundObjectStop => { try sound_object{ &w, &vm, argc, routine, play = false } }
+            nwscript::PlaySound => { try play_sound{ &w, &vm, argc } }
+            nwscript::NoClicksFor => { try no_clicks_for{ &w, &vm, argc } }
+            nwscript::PlayRumblePattern => { try rumble{ &w, &vm, argc } }
+            // ---- the area's music and ambient bed
+            nwscript::MusicBackgroundPlay => { try music{ &w, &vm, argc, routine } }
+            nwscript::MusicBackgroundStop => { try music{ &w, &vm, argc, routine } }
+            nwscript::MusicBackgroundChangeDay => { try music{ &w, &vm, argc, routine } }
+            nwscript::MusicBackgroundChangeNight => { try music{ &w, &vm, argc, routine } }
+            nwscript::MusicBattlePlay => { try music{ &w, &vm, argc, routine } }
+            nwscript::MusicBattleStop => { try music{ &w, &vm, argc, routine } }
+            nwscript::MusicBattleChange => { try music{ &w, &vm, argc, routine } }
+            nwscript::MusicBackgroundGetDayTrack => { try music_track{ &w, &vm, argc, routine } }
+            nwscript::MusicBackgroundGetNightTrack => { try music_track{ &w, &vm, argc, routine } }
+            nwscript::MusicBackgroundGetBattleTrack => { try music_track{ &w, &vm, argc, routine } }
+            nwscript::AmbientSoundPlay => { try ambient{ &w, &vm, argc, routine } }
+            nwscript::AmbientSoundStop => { try ambient{ &w, &vm, argc, routine } }
+            nwscript::AmbientSoundChangeDay => { try ambient{ &w, &vm, argc, routine } }
+            nwscript::AmbientSoundChangeNight => { try ambient{ &w, &vm, argc, routine } }
+            nwscript::AmbientSoundSetDayVolume => { try ambient{ &w, &vm, argc, routine } }
+            nwscript::AmbientSoundSetNightVolume => { try ambient{ &w, &vm, argc, routine } }
+            // ---- placed sound objects
+            nwscript::SoundObjectSetVolume => { try sound_set{ &w, &vm, argc, routine } }
+            nwscript::SoundObjectFadeAndStop => { try sound_set{ &w, &vm, argc, routine } }
+            nwscript::SoundObjectSetFixedVariance => { try sound_set{ &w, &vm, argc, routine } }
+            nwscript::SoundObjectSetPitchVariance => { try sound_set{ &w, &vm, argc, routine } }
+            nwscript::SoundObjectGetVolume => { try sound_get{ &w, &vm, argc, routine } }
+            nwscript::SoundObjectGetFixedVariance => { try sound_get{ &w, &vm, argc, routine } }
+            nwscript::SoundObjectGetPitchVariance => { try sound_get{ &w, &vm, argc, routine } }
+            // ---- the rest of what the player sees and hears
+            nwscript::PlayRoomAnimation => { try play_room_animation{ &w, &vm, argc } }
+            nwscript::SetLightsaberPowered => { try set_lightsaber_powered{ &w, &vm, argc } }
+            nwscript::ShowTutorialWindow => { try show_tutorial_window{ &w, &vm, argc } }
+            nwscript::PauseGame => { try pause_game{ &w, &vm, argc } }
+            nwscript::EndGame => { try end_game{ &w, &vm, argc } }
+            else => { return false }
+        }
         return true
     }
 
@@ -57,5 +92,188 @@ namespace rt_pres {
         let pattern = try nwarg::int{ &vm, routine = nwscript::PlayRumblePattern, argc, i = 0 }
         outbox::post{ out = &w.out, note = outbox::Note::rumble{ pattern } }
         try nwvm::push_int{ &vm, v = 0 }
+    }
+
+    // ---- music
+
+    // The area an `oArea` argument names: the area object (there is only one loaded, so a script
+    // that names another one changes nothing).
+    fn area_of { w: *world::World, id: u32 } -> ?*mut obj::Area {
+        let o = world::object{ w, id } ifnull { return null }
+        return obj::area{ o }
+    }
+
+    // void MusicBackgroundPlay/Stop(object oArea), MusicBackgroundChangeDay/Night(object oArea, int nTrack),
+    // MusicBattlePlay/Stop(object oArea), MusicBattleChange(object oArea, int nTrack). The tracks are
+    // rows of ambientmusic.2da, kept on the area; play and stop say which track the sound follows (the
+    // background one for the time of day, or the battle one).
+    fn music { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let wants_track = routine == nwscript::MusicBackgroundChangeDay or routine == nwscript::MusicBackgroundChangeNight or
+            routine == nwscript::MusicBattleChange
+        let track = if wants_track { try nwarg::int{ &vm, routine, argc, i = 1 } } else { 0 }
+        let a = area_of{ w = &w, id } ifnull { return }
+        let background = if a.is_night { outbox::Music::night } else { outbox::Music::day }
+        match routine {
+            nwscript::MusicBackgroundPlay => { outbox::post{ out = &w.out, note = outbox::Note::music{ kind = background, play = true } } }
+            nwscript::MusicBackgroundStop => { outbox::post{ out = &w.out, note = outbox::Note::music{ kind = background, play = false } } }
+            nwscript::MusicBattlePlay => { outbox::post{ out = &w.out, note = outbox::Note::music{ kind = outbox::Music::battle, play = true } } }
+            nwscript::MusicBattleStop => { outbox::post{ out = &w.out, note = outbox::Note::music{ kind = outbox::Music::battle, play = false } } }
+            nwscript::MusicBackgroundChangeDay => {
+                a.music_day = track
+                outbox::post{ out = &w.out, note = outbox::Note::music_row{ kind = outbox::Music::day, row = track } }
+            }
+            nwscript::MusicBackgroundChangeNight => {
+                a.music_night = track
+                outbox::post{ out = &w.out, note = outbox::Note::music_row{ kind = outbox::Music::night, row = track } }
+            }
+            else => {
+                a.music_battle = track
+                outbox::post{ out = &w.out, note = outbox::Note::music_row{ kind = outbox::Music::battle, row = track } }
+            }
+        }
+    }
+
+    // int MusicBackgroundGetDayTrack/GetNightTrack/GetBattleTrack(object oArea): -1 for no area.
+    fn music_track { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let a = area_of{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = -1 }
+            return
+        }
+        let row = match routine {
+            nwscript::MusicBackgroundGetDayTrack => { a.music_day }
+            nwscript::MusicBackgroundGetNightTrack => { a.music_night }
+            else => { a.music_battle }
+        }
+        try nwvm::push_int{ &vm, v = row }
+    }
+
+    // void AmbientSoundPlay/Stop(object oArea), AmbientSoundChangeDay/Night(object oArea, int nTrack),
+    // AmbientSoundSetDayVolume/NightVolume(object oArea, int nVolume): ambientsound.2da rows and
+    // volumes (0..127, as the ARE keeps them), kept on the area.
+    fn ambient { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let plain = routine == nwscript::AmbientSoundPlay or routine == nwscript::AmbientSoundStop
+        let n = if plain { 0 } else { try nwarg::int{ &vm, routine, argc, i = 1 } }
+        let a = area_of{ w = &w, id } ifnull { return }
+        match routine {
+            nwscript::AmbientSoundPlay => { outbox::post{ out = &w.out, note = outbox::Note::ambient{ play = true } } }
+            nwscript::AmbientSoundStop => { outbox::post{ out = &w.out, note = outbox::Note::ambient{ play = false } } }
+            nwscript::AmbientSoundChangeDay => {
+                a.ambient_day = n
+                outbox::post{ out = &w.out, note = outbox::Note::ambient_row{ night = false } }
+            }
+            nwscript::AmbientSoundChangeNight => {
+                a.ambient_night = n
+                outbox::post{ out = &w.out, note = outbox::Note::ambient_row{ night = true } }
+            }
+            nwscript::AmbientSoundSetDayVolume => {
+                a.ambient_day_volume = if n < 0 { 0 } else if n > 127 { 127 } else { n }
+                outbox::post{ out = &w.out, note = outbox::Note::ambient_row{ night = false } }
+            }
+            else => {
+                a.ambient_night_volume = if n < 0 { 0 } else if n > 127 { 127 } else { n }
+                outbox::post{ out = &w.out, note = outbox::Note::ambient_row{ night = true } }
+            }
+        }
+    }
+
+    // ---- placed sound objects
+
+    fn sound_of { w: *world::World, id: u32 } -> ?*mut obj::Sound {
+        let o = world::object{ w, id } ifnull { return null }
+        return obj::sound{ o }
+    }
+
+    // void SoundObjectSetVolume(object oSound, int nVolume) (0..127), SoundObjectFadeAndStop(object
+    // oSound, float fSeconds), SoundObjectSetFixedVariance(object oSound, float fFixedVariance) and
+    // SoundObjectSetPitchVariance(object oSound, float fVariance).
+    fn sound_set { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        match routine {
+            nwscript::SoundObjectSetVolume => {
+                let n = try nwarg::int{ &vm, routine, argc, i = 1 }
+                let s = sound_of{ w = &w, id } ifnull { return }
+                s.volume = @as(u32, if n < 0 { 0 } else if n > 127 { 127 } else { n })
+                outbox::post{ out = &w.out, note = outbox::Note::sound_object{ id, play = s.active, volume = @as(i32, s.volume) } }
+            }
+            nwscript::SoundObjectFadeAndStop => {
+                let seconds = try nwarg::float{ &vm, routine, argc, i = 1 }
+                let s = sound_of{ w = &w, id } ifnull { return }
+                s.active = false
+                outbox::post{ out = &w.out, note = outbox::Note::sound_fade{ id, seconds } }
+            }
+            nwscript::SoundObjectSetFixedVariance => {
+                let v = try nwarg::float{ &vm, routine, argc, i = 1 }
+                let s = sound_of{ w = &w, id } ifnull { return }
+                s.fixed_variance = v
+            }
+            else => {
+                let v = try nwarg::float{ &vm, routine, argc, i = 1 }
+                let s = sound_of{ w = &w, id } ifnull { return }
+                s.pitch_variation = v
+            }
+        }
+    }
+
+    // int SoundObjectGetVolume(object oSound), float SoundObjectGetFixedVariance(object oSound),
+    // float SoundObjectGetPitchVariance(object oSound): 0 for anything that is not a sound object.
+    fn sound_get { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let s = sound_of{ w = &w, id }
+        if routine == nwscript::SoundObjectGetVolume {
+            try nwvm::push_int{ &vm, v = if s != null { @as(i32, s.volume) } else { 0 } }
+            return
+        }
+        let mut v: f32 = 0.0
+        if s != null {
+            v = if routine == nwscript::SoundObjectGetFixedVariance { s.fixed_variance } else { s.pitch_variation }
+        }
+        try nwvm::push_float{ &vm, v }
+    }
+
+    // ---- the rest
+
+    // void PlayRoomAnimation(string sRoom, int nAnimation): a looping animation on a LYT room.
+    fn play_room_animation { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let room = try nwarg::string{ &vm, routine = nwscript::PlayRoomAnimation, argc, i = 0 }
+        let animation = try nwarg::int{ &vm, routine = nwscript::PlayRoomAnimation, argc, i = 1 }
+        let text = outbox::keep_text{ out = &w.out, s = room }
+        outbox::post{ out = &w.out, note = outbox::Note::room_animation{ room = text, animation } }
+    }
+
+    // void SetLightsaberPowered(object oCreature, int bOverride, int bPowered = TRUE, int bShowTransition = FALSE)
+    fn set_lightsaber_powered { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::SetLightsaberPowered
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let forced = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let powered = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let transition = try nwarg::int{ &vm, routine = r, argc, i = 3 }
+        if not world::is_valid{ w = &w, id } { return }
+        outbox::post{ out = &w.out, note = outbox::Note::lightsaber{ id, forced = forced != 0, powered = powered != 0, transition = transition != 0 } }
+    }
+
+    // void ShowTutorialWindow(int nWindow): the HUD shows the tutorial window (once; it keeps
+    // which it has shown).
+    fn show_tutorial_window { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let window = try nwarg::int{ &vm, routine = nwscript::ShowTutorialWindow, argc, i = 0 }
+        outbox::post{ out = &w.out, note = outbox::Note::tutorial{ window } }
+    }
+
+    // void PauseGame(int bPause): the engine's pause bit (gameloop.md 6), which stops the clock
+    // but lets world::tick run; the player's own pause is the HUD's.
+    fn pause_game { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let pause = try nwarg::int{ &vm, routine = nwscript::PauseGame, argc, i = 0 }
+        clock::set_pause{ c = &w.clock, bit = clock::PAUSE_ENGINE, on = pause != 0 }
+    }
+
+    // void EndGame(int nShowEndGameGui = TRUE): back to the start screen, which the game loop
+    // does on the note (the end-game panel first when asked).
+    fn end_game { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let show = try nwarg::int{ &vm, routine = nwscript::EndGame, argc, i = 0 }
+        outbox::post{ out = &w.out, note = outbox::Note::end_game{ show_gui = show != 0 } }
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "EndGame {}\n", show)
     }
 }

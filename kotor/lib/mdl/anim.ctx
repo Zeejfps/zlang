@@ -51,6 +51,7 @@ namespace mdl_anim {
         world: []mut math::Mat4,               // model space
         alpha: []mut f32,                      // the node's alpha times its ancestors'
         swings: []mut Swing,                   // per Model.meshes entry: a dangly mesh's swing (`swing`)
+        held: []mut bool,                      // per node: animations leave it at its bind state (`hold_shared`)
     }
 
     // A pose for `model`, in its bind pose (the rest state of every node, world transforms done).
@@ -63,7 +64,9 @@ namespace mdl_anim {
             world = try alloc::resize(math::Mat4, S){ realloc, &heap, mem = slice::empty(math::Mat4){}, count = n },
             alpha = try alloc::resize(f32, S){ realloc, &heap, mem = slice::empty(f32){}, count = n },
             swings = try alloc::resize(Swing, S){ realloc, &heap, mem = slice::empty(Swing){}, count = model.meshes.len },
+            held = try alloc::resize(bool, S){ realloc, &heap, mem = slice::empty(bool){}, count = n },
         }
+        slice::fill(bool){ s = pose.held, v = false }
         let still = Swing{ offset = math::vec3::zero{}, velocity = math::vec3::zero{}, last = math::vec3::zero{}, started = false }
         slice::fill(Swing){ s = pose.swings, v = still }
         reset{ model, pose }
@@ -157,6 +160,23 @@ namespace mdl_anim {
         return Binding{ animation, targets, scale }
     }
 
+    // Keeps still the nodes of an attachment's model that its parent already moves: the ones
+    // named as the ancestors of `hook` in the parent (a head's rootdummy, torso_g and torsoUpr_g
+    // copy the body's chain down to the neck, and the body's animation drives them there). The
+    // attachment's root sits at the hook's transform, which has all of that in it; animating
+    // them again would carry the head off the neck by the body's root offset and tilt it by its
+    // torso's turn. Call it once after making the attachment's pose.
+    fn hold_shared { model: *mdl::Model, pose: Pose, parent: *mdl::Model, hook: []u8 } {
+        let h = mdl::find_node{ model = parent, name = hook } ifnull { return }
+        let mut a = parent.nodes[@as(usize, h)].parent
+        while a >= 0 {
+            let up = parent.nodes[@as(usize, a)]
+            let mine = mdl::find_node{ model, name = up.name }
+            if mine != null { pose.held[@as(usize, mine)] = true }
+            a = up.parent
+        }
+    }
+
     // Whether `node` is `root` or below it.
     fn is_within { model: *mdl::Model, node: u32, root: u32 } -> bool {
         if root == 0 { return true }
@@ -180,7 +200,7 @@ namespace mdl_anim {
         let mut i: usize = 0
         while i < a.nodes.len {
             let target = binding.targets[i]
-            if target >= 0 {
+            if target >= 0 and not pose.held[@as(usize, target)] {
                 apply_node{ model, node = @as(usize, target), cs = a.nodes[i].controllers, time, weight, scale = binding.scale, pose }
             }
             i = i + 1
