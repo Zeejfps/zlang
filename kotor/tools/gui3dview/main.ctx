@@ -1,0 +1,318 @@
+// gui3dview: the GUI 3D scene of the main menu (lib/frontend/gui3d) drawn headless to PNGs.
+//
+//   kotor/tools/ctxc run kotor/tools/gui3dview
+//   kotor/tools/ctxc run kotor/tools/gui3dview -- --at 0 4 8 --size 800x600 --size 1280x720
+//
+// Options: --game DIR, --model NAME (mainmenu), --camera NODE (camerahook), --anim NAME
+// (default), --fov DEGREES (22.7, vertical), --warm SECONDS (simulated before the first frame;
+// 0: the original runs 1), --at T... (animation times in seconds, ascending; 0 4 8), --size WxH
+// (repeat for several; 800x600 and 1280x720), --out DIR (kotor/out/gui).
+//
+// The scene is stepped at 30 steps a second up to each time, then drawn into a viewport
+// at the top left of a window as big as the biggest size, and the viewport is cropped out and
+// saved as menu3d_<t>.png (the first size) and menu3d_<t>_<W>x<H>.png (the others). A last
+// picture, menu3d_composite.png, is the scene in a smaller, off-centre viewport of a 1280x720
+// screen with GUI quads drawn over it. Also printed: draw and particle counts, and what
+// update and add_to_frame cost per call.
+
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+const MAX_TIMES: usize = 16
+const MAX_SIZES: usize = 4
+
+struct Options {
+    game: []u8, model: []u8, camera: []u8, anim: []u8, out: []u8, fov: f32, warm: f32,
+    times: [MAX_TIMES]f32, time_count: usize,
+    sizes: [MAX_SIZES]render::Size, size_count: usize,
+}
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let opts = parse_args{ &io, args } ifnull { return 2 }
+    let pages = mem::pages{ &mem, size = 1073741824 } ifnull {
+        io::eprintln{ &io, s = "gui3dview: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    let tex_scratch = mem::pages{ &mem, size = 134217728 } ifnull {
+        io::eprintln{ &io, s = "gui3dview: out of memory" }
+        return 1
+    }
+    let mut h = heap::new{ &mem }
+    run{ &io, &fs, &sdl, &heap, &h, tex_scratch, opts } iferr err{ error } {
+        _ = @fmt(&io, "gui3dview: failed: {}\n", error)
+        match error {
+            gpu::shader_failed{ log } => { _ = @fmt(&io, "{}\n", log) }
+            sdl::failed => { _ = @fmt(&io, "SDL: {}\n", c::bytes{ s = sdl::last_error{ &sdl } }) }
+            gui3d::no_model{ name } => { _ = @fmt(&io, "no model {}\n", name) }
+            gui3d::no_camera{ name } => { _ = @fmt(&io, "the model has no node {}\n", name) }
+            else => {}
+        }
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return 0
+}
+
+fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut h: heap::Heap, tex_scratch: alloc::Bytes, opts: Options } -> ! {
+    let mut rm = try res::open{ &fs, heap = &h, game = opts.game }
+    defer res::close{ &fs, &rm }
+    let mut models = mdl_cache::new{ rm, keep = &heap }
+
+    try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
+    defer sdl::quit{ &sdl }
+    // One window for every picture: the biggest size asked for, and at least the composite's.
+    let mut win_w: u32 = 1280
+    let mut win_h: u32 = 720
+    let mut i: usize = 0
+    while i < opts.size_count {
+        if opts.sizes[i].width > win_w { win_w = opts.sizes[i].width }
+        if opts.sizes[i].height > win_h { win_h = opts.sizes[i].height }
+        i = i + 1
+    }
+    let config = render::make_config{ title = "gui3dview", width = @as(i32, win_w), height = @as(i32, win_h), hidden = true }
+    let mut dev = try gpu::open{ &sdl, realloc = arena::alloc, &heap, config }
+    defer gpu::close{ &dev, &sdl }
+    let mut mats = material::new_cache{ heap = &h, scratch = tex_scratch }
+    defer material::free_cache{ cache = &mats, &dev }
+    let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, &heap, cap = render::default_capacity{} }
+    make_dir{ &fs, path = opts.out }
+
+    let freq = @as(f32, sdl::counter_frequency{ &sdl })
+    let t0 = sdl::counter{ &sdl }
+    let mut scene = try gui3d::load{
+        &fs, &dev, &heap, rm, &models, &mats, model = opts.model, camera_node = opts.camera,
+        fov_degrees = opts.fov, animation = opts.anim, warm_up = opts.warm,
+    }
+    defer gui3d::free{ &scene, &dev }
+    let load_ms = @as(f32, sdl::counter{ &sdl } - t0) / freq * 1000.0
+    let playing: []u8 = if scene.playing { "playing" } else { "not found" }
+    _ = @fmt(&io, "{}: loaded in {} ms, {} meshes, {} emitters, {} textures ({} missing), animation {}\n", opts.model, load_ms,
+        scene.model.meshes.len, scene.model.emitters.len, mats.loaded, mats.missing, playing)
+
+    let dt: f32 = 1.0 / 30.0
+    let mut steps: u32 = 0
+    let mut step_ticks: u64 = 0
+    let mut shots: u32 = 0
+    let mut shot_ticks: u64 = 0
+    let mut last_time: f32 = 0.0
+    let mut ti: usize = 0
+    while ti < opts.time_count {
+        let at = opts.times[ti]
+        ti = ti + 1
+        last_time = at
+        while scene.time + 0.5 * dt < at {
+            let a = sdl::counter{ &sdl }
+            gui3d::update{ &scene, dt }
+            step_ticks = step_ticks + (sdl::counter{ &sdl } - a)
+            steps = steps + 1
+        }
+        let mut k: usize = 0
+        while k < opts.size_count {
+            try shoot{ &io, &fs, &dev, &frame, &heap, &scene, opts, t = at, size = opts.sizes[k], first = k == 0, ticks = &shot_ticks, sdl = &sdl }
+            shots = shots + 1
+            k = k + 1
+        }
+    }
+    try composite{ &io, &fs, &dev, &frame, &heap, &scene, opts, t = last_time }
+
+    if steps > 0 and shots > 0 {
+        let update_ms = @as(f32, step_ticks) / freq * 1000.0 / @as(f32, steps)
+        let frame_ms = @as(f32, shot_ticks) / freq * 1000.0 / @as(f32, shots)
+        _ = @fmt(&io, "update: {} ms per step (30/s, {} steps); add_to_frame: {} ms per call ({} calls)\n", update_ms, steps, frame_ms, shots)
+    }
+}
+
+// One picture: the scene in a viewport at the top left of the screen, cropped out and saved.
+fn shoot {
+    mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena, mut scene: gui3d::Scene,
+    opts: Options, t: f32, size: render::Size, first: bool, mut ticks: u64, mut sdl: sdl::Sdl,
+} -> ! {
+    render::begin_frame{ &frame, time = scene.time }
+    let a = sdl::counter{ &sdl }
+    let vp = render::Rect{ x = 0.0, y = 0.0, w = @as(f32, size.width), h = @as(f32, size.height) }
+    _ = gui3d::add_to_frame{ &scene, &frame, viewport = vp } ifnull {
+        _ = @fmt(&io, "the frame has no room for the scene\n")
+        return
+    }
+    ticks = ticks + (sdl::counter{ &sdl } - a)
+    try gpu::submit{ &dev, frame = &frame }
+    let s = gpu::get_stats{ dev }
+    _ = @fmt(&io, "t = {} s, {}x{}: {} draws ({} from the model), {} triangles, {} particles ({} emitted), {} culled\n",
+        t, size.width, size.height, s.draws, scene.draws, s.triangles, s.particles, scene.particles, s.culled)
+    let m = gpu::messages{ dev }
+    if m.len > 0 { _ = @fmt(&io, "{}", m) }
+    let mut name_buf: [256]u8
+    let name = file_name{ into = name_buf[..], opts, t, size, first }
+    try save_crop{ &io, &fs, &dev, &heap, dir = opts.out, name, width = size.width, height = size.height }
+}
+
+// The scene in a viewport that is neither at the corner nor the whole screen, with GUI quads
+// drawn before and after it: the way a panel uses it.
+fn composite {
+    mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena,
+    mut scene: gui3d::Scene, opts: Options, t: f32,
+} -> ! {
+    let screen = gpu::screen_size{ dev }
+    let sw = @as(f32, screen.width)
+    let sh = @as(f32, screen.height)
+    render::begin_frame{ &frame, time = scene.time }
+    render::begin_ui{ &frame, width = sw, height = sh, target = null }
+    render::fill_rect{ &frame, rect = render::Rect{ x = 0.0, y = 0.0, w = sw, h = sh }, color = render::rgba{ r = 0.10, g = 0.12, b = 0.16, a = 1.0 } }
+    let area = render::Rect{ x = 120.0, y = 60.0, w = sw - 240.0, h = sh - 120.0 }
+    let vp = gui3d::fit_aspect{ area, aspect = 4.0 / 3.0 }
+    _ = gui3d::add_to_frame{ &scene, &frame, viewport = vp } ifnull { return }
+    render::begin_ui{ &frame, width = sw, height = sh, target = null }
+    let mut b: u32 = 0
+    while b < 4 {
+        let y = vp.y + 250.0 + 50.0 * @as(f32, b)
+        render::fill_rect{ &frame, rect = render::Rect{ x = vp.x + 60.0, y, w = 260.0, h = 40.0 }, color = render::rgba{ r = 1.0, g = 1.0, b = 1.0, a = 0.22 } }
+        b = b + 1
+    }
+    try gpu::submit{ &dev, frame = &frame }
+    let mut path_buf: [512]u8
+    let mut n = put{ into = path_buf[..], at = 0, s = opts.out }
+    n = put{ into = path_buf[..], at = n, s = "/menu3d_composite.png" }
+    try save_screen{ &io, &fs, &dev, &heap, path = path_buf[..n], crop_w = screen.width, crop_h = screen.height }
+}
+
+// PREFIX_T[_WxH].png
+fn file_name { into: []mut u8, opts: Options, t: f32, size: render::Size, first: bool } -> []u8 {
+    let prefix: []u8 = if slice::eq_bytes{ a = opts.model, b = "mainmenu" } { "menu3d" } else { opts.model }
+    let mut n = put{ into, at = 0, s = prefix }
+    n = put{ into, at = n, s = "_" }
+    let mut digits: [32]u8
+    let tt = utf8::fmt_f32{ n = t, into = digits[..] }
+    let mut tb = tt.bytes
+    if tb.len > 2 and tb[tb.len - 2] == '.' and tb[tb.len - 1] == '0' { tb = tb[..tb.len - 2] }
+    n = put{ into, at = n, s = tb }
+    if not first {
+        n = put{ into, at = n, s = "_" }
+        let w = utf8::fmt_u64{ n = size.width, into = digits[..] }
+        n = put{ into, at = n, s = w.bytes }
+        n = put{ into, at = n, s = "x" }
+        let h = utf8::fmt_u64{ n = size.height, into = digits[..] }
+        n = put{ into, at = n, s = h.bytes }
+    }
+    n = put{ into, at = n, s = ".png" }
+    return into[..n]
+}
+
+fn put { into: []mut u8, at: usize, s: []u8 } -> usize {
+    let n = if at + s.len <= into.len { s.len } else { into.len - at }
+    slice::copy(u8){ dst = into[at..at + n], src = s[..n] }
+    return at + n
+}
+
+// Saves the top-left width x height of the screen as DIR/NAME.
+fn save_crop { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, dir: []u8, name: []u8, width: u32, height: u32 } -> ! {
+    let mut path_buf: [512]u8
+    let mut n = put{ into = path_buf[..], at = 0, s = dir }
+    n = put{ into = path_buf[..], at = n, s = "/" }
+    n = put{ into = path_buf[..], at = n, s = name }
+    try save_screen{ &io, &fs, &dev, &heap, path = path_buf[..n], crop_w = width, crop_h = height }
+}
+
+fn save_screen { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, path: []u8, crop_w: u32, crop_h: u32 } -> ! {
+    let size = gpu::screen_size{ dev }
+    let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+    _ = try gpu::read_screen{ &dev, into = pixels }
+    let w: usize = if crop_w < size.width { crop_w } else { size.width }
+    let h: usize = if crop_h < size.height { crop_h } else { size.height }
+    let out = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = w * h * 4 }
+    let stride = @as(usize, size.width) * 4
+    let mut y: usize = 0
+    while y < h {
+        slice::copy(u8){ dst = out[y * w * 4..(y + 1) * w * 4], src = pixels[y * stride..y * stride + w * 4] }
+        y = y + 1
+    }
+    let image = png::Image{ width = @as(u32, w), height = @as(u32, h), rgba = out }
+    try png::save{ &fs, realloc = arena::alloc, &heap, path, image, alpha = false, bottom_up = false }
+    _ = @fmt(&io, "wrote {} ({}x{})\n", path, w, h)
+}
+
+// Makes `path` and the directories above it that are missing.
+fn make_dir { mut fs: Fs, path: []u8 } {
+    let mut i: usize = 1
+    while i <= path.len {
+        if i == path.len or path[i] == '/' {
+            fs::make_dir{ &fs, path = path[..i] } iferr {}
+        }
+        i = i + 1
+    }
+}
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o: Options
+    o.game = DEFAULT_GAME
+    o.model = "mainmenu"
+    o.camera = "camerahook"
+    o.anim = "default"
+    o.out = "kotor/out/gui"
+    o.fov = 22.70
+    o.warm = 0.0
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        let has = i + 1 < args.len
+        if has and slice::eq_bytes{ a, b = "--game" } {
+            o.game = args[i + 1]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--model" } {
+            o.model = args[i + 1]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--camera" } {
+            o.camera = args[i + 1]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--anim" } {
+            o.anim = args[i + 1]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--out" } {
+            o.out = args[i + 1]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--fov" } {
+            o.fov = utf8::parse_f32{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } }
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--warm" } {
+            o.warm = utf8::parse_f32{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } }
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--size" } {
+            let s = args[i + 1]
+            let mut k: usize = 0
+            while k < s.len and s[k] != 'x' { k = k + 1 }
+            if k == 0 or k + 1 >= s.len or o.size_count >= MAX_SIZES { return usage{ &io } }
+            let w = utf8::parse_u64{ s = utf8::of{ chars = s[..k] } } ifnull { return usage{ &io } }
+            let hh = utf8::parse_u64{ s = utf8::of{ chars = s[k + 1..] } } ifnull { return usage{ &io } }
+            if w < 16 or w > 4096 or hh < 16 or hh > 4096 { return usage{ &io } }
+            o.sizes[o.size_count] = render::Size{ width = @as(u32, w), height = @as(u32, hh) }
+            o.size_count = o.size_count + 1
+            i = i + 2
+        } else if slice::eq_bytes{ a, b = "--at" } {
+            i = i + 1
+            while i < args.len and args[i].len > 0 and args[i][0] != '-' {
+                if o.time_count >= MAX_TIMES { return usage{ &io } }
+                o.times[o.time_count] = utf8::parse_f32{ s = utf8::of{ chars = args[i] } } ifnull { return usage{ &io } }
+                o.time_count = o.time_count + 1
+                i = i + 1
+            }
+        } else {
+            return usage{ &io }
+        }
+    }
+    if o.time_count == 0 {
+        o.times[0] = 0.0
+        o.times[1] = 4.0
+        o.times[2] = 8.0
+        o.time_count = 3
+    }
+    if o.size_count == 0 {
+        o.sizes[0] = render::Size{ width = 800, height = 600 }
+        o.sizes[1] = render::Size{ width = 1280, height = 720 }
+        o.size_count = 2
+    }
+    return o
+}
+
+fn usage { mut io: Io } -> ?Options {
+    io::eprintln{ &io, s = "usage: gui3dview [--game DIR] [--model NAME] [--camera NODE] [--anim NAME] [--fov DEG] [--warm S] [--at T...] [--size WxH]... [--out DIR]" }
+    return null
+}
