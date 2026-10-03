@@ -515,6 +515,7 @@ namespace gui {
         if keycode == sdl::key::UP { dir = DIR_UP } else if keycode == sdl::key::DOWN { dir = DIR_DOWN }
         else if keycode == sdl::key::LEFT { dir = DIR_LEFT } else if keycode == sdl::key::RIGHT { dir = DIR_RIGHT }
         if dir == 9 { return false }
+        if p.key_events { push_event{ &g, kind = EventKind::arrow, p, ci = p.focus, value = @as(i32, dir), row = -1, user = 0 } }
         if p.focus >= 0 and key_in_control{ &g, p, ci = p.focus, dir } { return true }
         move_focus{ &g, p, dir }
         return true

@@ -199,6 +199,15 @@ namespace gui {
         if p.overlay_from == 0 { p.overlay_from = -1 }
     }
 
+    // The original's panels see the arrow keys (events 0x3d..0x40) before their active control
+    // does, and some use them (the portrait arrows, the +/- of the abilities and skills). A panel
+    // that asks gets an `arrow` event for each press, then the focus moves or the slider steps as
+    // always.
+    fn set_key_events { mut g: Gui, panel: u32, on: bool } {
+        let p = find_panel{ &g, id = panel } ifnull { return }
+        p.key_events = on
+    }
+
     fn set_backdrop { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, panel: u32, kind: u32 } {
         let p = find_panel{ &g, id = panel } ifnull { return }
         p.backdrop = kind
