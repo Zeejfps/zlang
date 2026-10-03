@@ -242,6 +242,7 @@ namespace actions {
             open_door => { return doors::open_door{ &w, &vm, engine, id, a } }
             close_door => { return doors::close_door{ &w, &vm, engine, id, a } }
             use_object => { return doors::use_object{ &w, &vm, engine, id, a } }
+            open_lock => { return doors::open_lock{ &w, &vm, engine, id, a } }
             dialog_object => { return dialog_object{ &w, id, a } }
             resume_conversation => { return resume_conversation{ &w } }
             follow => { return follow{ &w, id, a, leader = false } }

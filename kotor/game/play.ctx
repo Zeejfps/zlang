@@ -5,7 +5,7 @@ namespace play {
     // (the leader jumps next to the object), `FRAME use TAG` (the leader's default action on it) and
     // `FRAME gunner` (a bot aims and fires the turret) and `FRAME mouse DX DY` (the mouse moves by
     // those counts, aiming the turret) and `FRAME pause` (Escape in a minigame: game/minigame_scene.ctx).
-    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk, hush, drop, gunner, mouse, pause }
+    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk, hush, drop, join, cutatk, pick, gunner, mouse, pause }
     struct Scripted { frame: u64, command: Command, key: []u8 }
 
     fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
@@ -132,6 +132,9 @@ namespace play {
                     talk => { talk_to{ &w, &vm, engine, text = s.key } }
                     hush => { dlg::abort{ &w, &vm, engine } }
                     drop => { drop_item{ &w, template = s.key } }
+                    join => { join_template{ &w, template = s.key } }
+                    pick => { pick_lock{ &w, tag = s.key } }
+                    cutatk => { cut_attack{ &w, text = s.key } }
                     ui => {
                         if not dlgview::run_command{ v = &dview, w = &w, g = &ui.gui, text = s.key } { ingame::run_command{ ui, &w, &dev, text = s.key } }    // HOOK(ingame)
                     }
@@ -284,6 +287,8 @@ namespace play {
             scene::update_visibility{ &sc, w = &w, room }
             ingame::update{ ui, &w, &dev, sc, camera, dt }    // HOOK(ingame)
             if ingame::wants_quit{ ui } { quit = true }    // HOOK(ingame)
+            // The party selection screen was applied: its exit script (ShowPartySelectionGUI's), with no caller.
+            if ingame::take_exit_script{ ui } is some{ value = exit_script } { _ = scripts::run{ &w, &vm, engine, name = exit_script, self = obj::INVALID } }    // HOOK(ingame)
             // The options menu's Save Game and Load Game (the menus have closed themselves).
             if ingame::take_save_request{ ui } is some{ value = n } { want_save = n }    // HOOK(ingame)
             if ingame::take_load_request{ ui } is some{ value = n } { want_load = n }    // HOOK(ingame)
@@ -494,10 +499,10 @@ namespace play {
                 else if ci::eq{ a = what, b = "use" } { Command::use } else if ci::eq{ a = what, b = "newgame" } { Command::newgame }
                 else if ci::eq{ a = what, b = "ui" } { Command::ui } else if ci::eq{ a = what, b = "save" } { Command::save } else if ci::eq{ a = what, b = "talk" } { Command::talk }
                 else if ci::eq{ a = what, b = "load" } { Command::load } else if ci::eq{ a = what, b = "attack" } { Command::attack }
-                else if ci::eq{ a = what, b = "hush" } { Command::hush } else if ci::eq{ a = what, b = "drop" } { Command::drop }
+                else if ci::eq{ a = what, b = "hush" } { Command::hush } else if ci::eq{ a = what, b = "drop" } { Command::drop } else if ci::eq{ a = what, b = "join" } { Command::join } else if ci::eq{ a = what, b = "cutatk" } { Command::cutatk } else if ci::eq{ a = what, b = "pick" } { Command::pick }
                 else if ci::eq{ a = what, b = "gunner" } { Command::gunner } else if ci::eq{ a = what, b = "mouse" } { Command::mouse } else if ci::eq{ a = what, b = "pause" } { Command::pause } else { Command::up }
-            // `ui`, `talk`, `load` and `save` take the rest of the line; the others one word.
-            let key = if command == Command::ui or command == Command::load or command == Command::save or command == Command::talk or command == Command::mouse { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
+            // `ui`, `talk`, `load`, `save`, `cutatk` and `mouse` take the rest of the line; the others one word.
+            let key = if command == Command::ui or command == Command::load or command == Command::save or command == Command::talk or command == Command::cutatk or command == Command::mouse { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
             try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), command, key } }
         }
         return list::items{ list = out }
@@ -573,6 +578,49 @@ namespace play {
         a.params[1] = actions::Param::object{ id = obj::INVALID }
         a.params[2] = actions::Param::int{ v = 0 }
         _ = actions::add{ &w, id = me.id, action = a, force = false }
+    }
+
+    // `cutatk ATTACKER TARGET ANIMATION RESULT DAMAGE` (tags): CutsceneAttack as the attacker.
+    fn cut_attack { mut w: world::World, text: []u8 } {
+        let mut words = text::words{ s = text }
+        let attacker = text::next_word{ &words } ifnull { return }
+        let target = text::next_word{ &words } ifnull { return }
+        let animation = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "239" })
+        let result = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
+        let damage = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+        let from = world::object_by_tag{ w = &w, tag = attacker, nth = 0 }
+        let to = world::object_by_tag{ w = &w, tag = target, nth = 0 }
+        if from == obj::INVALID or to == obj::INVALID { return }
+        let mut a = actions::make{ kind = actions::Kind::attack_object }
+        a.params[0] = actions::Param::object{ id = to }
+        a.params[1] = actions::Param::int{ v = 1 }
+        a.params[2] = actions::Param::int{ v = 0 }
+        a.params[3] = actions::Param::int{ v = 1 }
+        a.params[4] = actions::Param::int{ v = animation }
+        a.params[5] = actions::Param::int{ v = result }
+        a.params[6] = actions::Param::int{ v = damage }
+        _ = actions::add{ &w, id = from, action = a, force = false }
+    }
+
+    // `pick TAG`: the leader uses Security on the locked door or container (OPENLOCK).
+    fn pick_lock { mut w: world::World, tag: []u8 } {
+        let id = world::object_by_tag{ w = &w, tag, nth = 0 }
+        if id == obj::INVALID { return }
+        let lead = party::leader{ w = &w }
+        let mut a = actions::make{ kind = actions::Kind::open_lock }
+        a.params[0] = actions::Param::object{ id }
+        a.params[1] = actions::Param::object{ id = obj::INVALID }
+        a.params[2] = actions::Param::int{ v = 0 }
+        _ = actions::add{ &w, id = if lead == obj::INVALID { w.pc } else { lead }, action = a, force = false }
+    }
+
+    // `join TEMPLATE`: the creature of that blueprint becomes available in slot 1 and joins the
+    // party next to the leader (what the party selection screen does on Done).
+    fn join_template { mut w: world::World, template: []u8 } {
+        w.party.available[1] = true
+        w.party.selectable[1] = true
+        w.party.templates[1] = resref::truncate{ name = template }
+        _ = rt_party::bring_member{ &w, n = 1 }
     }
 
     fn camera_row_now { w: *world::World } -> u32 {

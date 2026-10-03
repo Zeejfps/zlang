@@ -578,6 +578,13 @@ each frame:
   round; downed party members get up with 1 HP when no enemy is in combat; cast animations
   hand/self → castout1, dark → castout2, up → castout3, throw → throwsab; spell ranges from the
   range letter's ranges.2da row; GetObjectByTag("") is OBJECT_INVALID.
+- Party selection, containers and pickups: `ShowPartySelectionGUI` posts `Note::party_selection`;
+  the screen's Done calls `rt_party::bring_member` (spawn at the formation point behind the
+  leader, join, take control) and `dismiss_member`, then runs the exit script
+  (`scripts::run`, no caller). A placeable with an inventory opens through `container::open`
+  (OnOpen, the loot panel, OnInvDisturbed per item taken, OnClose); PICKUPITEM
+  (`equip::pickup_action`) walks to an item, plays the get animation and takes it into the
+  party's bag.
 - Body bags: a dead creature's droppable items (the Dropable flag of its UTC list entries,
   carried or worn) go into a placeable of its bodybag.2da row when it is destroyed. The whole
   party fallen stops the world (the death camera and panel are not built; Load Game goes on).

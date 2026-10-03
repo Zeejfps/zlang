@@ -25,10 +25,6 @@ namespace partysel_panel {
     const TAGS: [9][]u8 = ["Bastila", "Cand", "Carth", "HK47", "Jolee", "Juhani", "Mission", "T3M3", "Zaalbar"]
     const TEMPLATES: [9][]u8 = ["p_bastilla", "p_cand", "p_carth", "p_hk47", "p_jolee", "p_juhani", "p_mission", "p_t3m4", "p_zaalbar"]
 
-    // Where a companion that has to be spawned stands, as (right, back) metres from the leader:
-    // the first free one. PLACEHOLDER for the party's formation (re/party-items-saves.md 3.8
-    // computes a point next to the leader and snaps it to a free spot within 5 m).
-    const SPOTS: [6][2]f32 = [[1.5, 0.0], [-1.5, 0.0], [0.0, 1.5], [1.5, 1.5], [-1.5, 1.5], [0.0, -1.5]]
 
     struct State {
         opened: bool,
@@ -39,16 +35,27 @@ namespace partysel_panel {
         box: u32,                           // the message box on screen, 0 for none
         confirming: bool,                   // that box asks whether to apply the party
         finished: bool,                     // closed since the last take_finished
+        exit_script: resref::ResRef,        // ShowPartySelectionGUI's script, run once the party was applied
+        applied: bool,                      // Done was pressed (not Back or Escape) since the last take_exit_script
     }
 
     fn new {} -> State {
         return State{
             opened = false, panel = 0, selected = [false; 9], forced = [false; 9], hilit = -1, box = 0,
-            confirming = false, finished = false,
+            confirming = false, finished = false, exit_script = resref::empty{}, applied = false,
         }
     }
 
     fn is_open { s: *State } -> bool { return s.opened }
+
+    // The exit script ShowPartySelectionGUI named, once, after Done applied the party; null when
+    // there is none or the panel was left with Back.
+    fn take_exit_script { mut s: State } -> ?resref::ResRef {
+        if not s.applied { return null }
+        s.applied = false
+        if resref::is_empty{ r = s.exit_script } { return null }
+        return s.exit_script
+    }
 
     // True once after the panel closed.
     fn take_finished { mut s: State } -> bool {
@@ -92,16 +99,22 @@ namespace partysel_panel {
 
     struct Slot { name: []u8, portrait: []u8, level: i32 }
 
-    // What the panel shows of a slot: from its creature when there is one, else from the blueprint
-    // (PLACEHOLDER: the party table should keep the template AddAvailableNPCByTemplate was given,
-    // the original reads the saved AVAILNPC<n> creature).
+    // The blueprint a slot was made available from (AddAvailableNPCByTemplate keeps it: the
+    // Endar Spire puts end_trask in Bastila's slot), else the companion npc.2da names.
+    fn template_of { mut w: world::World, n: usize } -> []u8 {
+        if not resref::is_empty{ r = w.party.templates[n] } { return resref::bytes{ r = &w.party.templates[n] } }
+        return TEMPLATES[n]
+    }
+
+    // What the panel shows of a slot: from its creature when there is one, else from its blueprint
+    // (the original reads the saved AVAILNPC<n> creature).
     fn slot_info { mut w: world::World, n: usize } -> Slot {
         let id = slot_creature{ w = &w, n }
         if id != obj::INVALID {
             return Slot{ name = hud::name_of{ w = &w, id }, portrait = hud::portrait_of{ w = &w, id }, level = hud::level_of{ w = &w, id } }
         }
         let none = Slot{ name = "", portrait = "", level = 1 }
-        let doc = world::read_gff{ &w, name = TEMPLATES[n], kind = restype::Type::utc } iferr { return none }
+        let doc = world::read_gff{ &w, name = template_of{ w = &w, n }, kind = restype::Type::utc } iferr { return none }
         let d = doc ifnull { return none }
         let mut name: []u8 = ""
         let ls = gff::get_locstring{ doc = d, s = gff::ROOT, label = "FirstName" }
@@ -197,7 +210,7 @@ namespace partysel_panel {
 
     // Puts the panel on the screen. `force1` and `force2` are NPC slots (or -1) that must be in
     // the party (ShowPartySelectionGUI's nForce arguments).
-    fn open_modal { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, force1: i32, force2: i32 } -> ! {
+    fn open_modal { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, force1: i32, force2: i32, exit_script: resref::ResRef } -> ! {
         if s.opened { return }
         let id = try gui::open{ g = &g, fs = &w.fs, &dev, name = "partyselection", mode = gui::Mode::full_screen, modal = true }
         gui::set_backdrop{ g = &g, fs = &w.fs, &dev, panel = id, kind = 0 }
@@ -207,6 +220,8 @@ namespace partysel_panel {
         s.box = 0
         s.confirming = false
         s.finished = false
+        s.applied = false
+        s.exit_script = exit_script
         let mut n: usize = 0
         while n < SLOTS {
             s.forced[n] = (force1 >= 0 and @as(usize, force1) == n) or (force2 >= 0 and @as(usize, force2) == n)
@@ -324,7 +339,15 @@ namespace partysel_panel {
             if s.forced[n] { forced = forced + 1 }
             n = n + 1
         }
-        if count == 0 or (count == MAX_COMPANIONS and forced == MAX_COMPANIONS) {
+        // Nothing left to pick (every companion the party can take is picked: the Endar Spire has only
+        // Trask) is as good as a full party. PLACEHOLDER for the original's counting, which is not traced.
+        let mut pickable: i32 = 0
+        n = 0
+        while n < SLOTS {
+            if slot_pickable{ w = &w, n } { pickable = pickable + 1 }
+            n = n + 1
+        }
+        if count == 0 or (count == MAX_COMPANIONS and forced == MAX_COMPANIONS) or count >= pickable {
             apply{ &s, &g, &w, &dev }
             return
         }
@@ -334,69 +357,24 @@ namespace partysel_panel {
 
     // ---- applying
 
-    // Rebuilds the party: companions put back leave it (and stay where they stand), newly picked
-    // ones join, spawned next to the leader if they are not in the area.
+    // Rebuilds the party (party-items-saves.md 3.8): companions put back leave it and stay where
+    // they stand, newly picked ones join at their formation point next to the leader.
     fn apply { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
         let mut n: usize = 0
         while n < SLOTS {
-            let id = slot_creature{ w = &w, n }
-            if id != obj::INVALID and party::is_member{ w = &w, id } and not s.selected[n] { party::remove{ &w, id } }
+            if in_party{ w = &w, n } and not s.selected[n] { rt_party::dismiss_member{ &w, n = @as(i32, n) } }
             n = n + 1
         }
         n = 0
         while n < SLOTS {
-            if s.selected[n] and not in_party{ w = &w, n } {
-                let mut id = slot_creature{ w = &w, n }
-                if id == obj::INVALID { id = spawn_companion{ &w, n } }
-                if id != obj::INVALID {
-                    w.party.npcs[n] = id
-                    _ = party::add{ &w, id }
-                }
-            }
+            if s.selected[n] and not in_party{ w = &w, n } { _ = rt_party::bring_member{ &w, n = @as(i32, n) } }
             n = n + 1
         }
         // The player character leads the party; if the leader was put back, the first member does.
         if party::leader{ w = &w } != obj::INVALID and not party::is_member{ w = &w, id = w.pc } {
             w.pc = party::leader{ w = &w }
         }
+        s.applied = true
         close{ &s, &g, &w }
-    }
-
-    // A creature of slot `n`'s blueprint beside the leader. PLACEHOLDER: the party lead's spawn
-    // (SpawnAvailableNPC: formation point, a free spot within 5 m, fade-in, player control with
-    // follow AI). This one picks the first of a few points near the leader that the walkmesh has
-    // floor for, and returns obj::INVALID when it cannot spawn.
-    fn spawn_companion { mut w: world::World, n: usize } -> u32 {
-        let lo = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return obj::INVALID }
-        let fx = lo.orientation.x
-        let fy = lo.orientation.y
-        let mut at = lo.position
-        let mut k: usize = 0
-        while k < 6 {
-            // (right, back) in metres: right of facing (fx, fy) is (fy, -fx).
-            let x = lo.position.x + fy * SPOTS[k][0] - fx * SPOTS[k][1]
-            let y = lo.position.y - fx * SPOTS[k][0] - fy * SPOTS[k][1]
-            k = k + 1
-            let z = walkmap::height{ m = &w.walk, x, y, z = lo.position.z } ifnull { continue }
-            if walkmap::blocked{ m = &w.walk, x, y, z } or spot_taken{ w = &w, x, y } { continue }
-            at = math::Vec3{ x, y, z }
-            break
-        }
-        return tmpl::spawn{ &w, kind = obj::Kind::creature, template = TEMPLATES[n], position = at, orientation = lo.orientation } iferr { obj::INVALID }
-    }
-
-    // Whether a party member already stands within a metre of (x, y).
-    fn spot_taken { w: *world::World, x: f32, y: f32 } -> bool {
-        let ids = party::members{ w }
-        let mut i: usize = 0
-        while i < ids.len {
-            let o = world::object{ w, id = ids[i] }
-            i = i + 1
-            if o == null { continue }
-            let dx = o.position.x - x
-            let dy = o.position.y - y
-            if dx * dx + dy * dy < 1.0 { return true }
-        }
-        return false
     }
 }

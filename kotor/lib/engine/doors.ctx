@@ -108,6 +108,53 @@ namespace doors {
         return actions::Status::done
     }
 
+    // OPENLOCK (actions.md 3.7): params 0 the door or placeable, 1 a security spike (or OBJECT_INVALID),
+    // 2 unused. Walk up, kneel at the lock for 1.5 s (unlockdr/unlockcntr), then the Security check
+    // against the lock's DC: success unlocks it (UNLOCKED) and the user opens it (a door opens, a
+    // container is used); failure shows feedback 14 and leaves it locked. A key-locked object
+    // tells the user it fails to open (FAIL_TO_OPEN, feedback 15).
+    fn open_lock { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
+        let target = actions::object_param{ a, i = 0 }
+        let o = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
+        let me = world::object{ w = &w, id } ifnull { return actions::Status::failed }
+        let mut locked = false
+        let mut needs_key = false
+        if obj::door{ o } is some{ value = d } {
+            locked = d.locked
+            needs_key = d.key_required
+        } else if obj::placeable{ o } is some{ value = p } {
+            locked = p.locked
+            needs_key = p.key.len > 0
+        } else { return actions::Status::failed }
+        if not locked { return actions::Status::done }
+        if approach{ &w, id, target, a } { return actions::Status::done }
+        let now = clock::now_ms{ c = w.clock }
+        if a.phase < 2 {
+            a.phase = 2
+            a.started = now
+            let dir = math::vec3::sub{ a = o.position, b = me.position }
+            if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o = me, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
+            world::set_animation{ o = me, id = animname::ROW_BASE + (if o.kind == obj::Kind::door { @as(u32, 47) } else { @as(u32, 48) }), speed = 1.0 }
+            return actions::Status::running
+        }
+        if now - a.started < 1500 { return actions::Status::running }
+        world::set_animation{ o = me, id = obj::ANIM_STAND, speed = 1.0 }
+        if needs_key {
+            outbox::post{ out = &w.out, note = outbox::Note::feedback{ strref = 36847 + 15, text = outbox::keep_text{ out = &w.out, s = "" } } }
+            events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::FAIL_TO_OPEN, object = id } } }
+            return actions::Status::failed
+        }
+        if not rt_act::unlock_attempt{ &w, who = id, target, spike_bonus = 0 } {
+            outbox::post{ out = &w.out, note = outbox::Note::feedback{ strref = 36847 + 14, text = outbox::keep_text{ out = &w.out, s = "" } } }
+            return actions::Status::failed
+        }
+        // Unlocked: the user goes on to open it.
+        let mut next = actions::make{ kind = if o.kind == obj::Kind::door { actions::Kind::open_door } else { actions::Kind::use_object } }
+        next.params[0] = actions::Param::object{ id = target }
+        actions::add_front{ &w, id, action = next }
+        return actions::Status::done
+    }
+
     // A door's state: its walkmesh blocks only while closed; the scene animates the change.
     fn set_door_state { mut w: world::World, id: u32, state: obj::DoorState } {
         let o = world::object{ w = &w, id } ifnull { return }

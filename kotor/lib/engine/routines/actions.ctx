@@ -270,6 +270,11 @@ namespace rt_act {
     // The Security skill on a locked door or placeable: the skill roll against the lock's DC
     // (rules::open_lock_check; no key, no spike). Success unlocks it and tells it UNLOCKED from `who`.
     fn unlock_with_security { mut w: world::World, who: u32, target: u32 } -> bool {
+        return unlock_attempt{ &w, who, target, spike_bonus = 0 }
+    }
+
+    // The same with a security spike's bonus.
+    fn unlock_attempt { mut w: world::World, who: u32, target: u32, spike_bonus: i32 } -> bool {
         let t = world::object{ w = &w, id = target } ifnull { return false }
         let me = world::object{ w = &w, id = who } ifnull { return false }
         let c = obj::creature{ o = me } ifnull { return false }
@@ -281,7 +286,7 @@ namespace rt_act {
         } else if t.ext is placeable{ p } {
             if not p.locked or p.key.len > 0 { return false }
         } else { return false }
-        let check = rules::open_lock_check{ tables = w.rules, c = &f.c, lock_dc = dc, spike_bonus = 0, in_combat = c.in_combat, rng = &w.dice }
+        let check = rules::open_lock_check{ tables = w.rules, c = &f.c, lock_dc = dc, spike_bonus, in_combat = c.in_combat, rng = &w.dice }
         if not check.success { return false }
         if t.ext is door{ d } { d.locked = false } else if t.ext is placeable{ p } { p.locked = false }
         events::post{ &w, delay_ms = 0, caller = who, target, payload = events::Payload::script{ e = events::script_event{ kind = events::UNLOCKED, object = who } } }

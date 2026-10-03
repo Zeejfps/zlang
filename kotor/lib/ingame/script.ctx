@@ -8,6 +8,8 @@
 //   FRAME ui menu NAME|N       open a menu: equip inventory character abilities messages journal map options
 //   FRAME ui close             close the open menu
 //   FRAME ui target TAG        select the object with the tag;  ui join TAG: it joins the party
+//   FRAME ui unlock TAG | ui global NAME N | ui goto TAG | ui where [PART]     test helpers: unlock a door or placeable;
+//                              set a number global; the leader walks to a tagged object; print objects by tag part
 //   FRAME ui list | pick | info | party    print selectable objects / the pick under the pointer / the target / the party
 namespace ingame {
     fn run_command { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, text: []u8 } {
@@ -68,6 +70,60 @@ namespace ingame {
             // The object joins the party (play will have the party lead's routines for this).
             let tag = text::next_word{ &words } ifnull { return }
             _ = party::add{ &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } }
+        } else if ci::eq{ a = cmd, b = "unlock" } {
+            // Test helper: opens the lock of a door or placeable (a path the story would open).
+            let tag = text::next_word{ &words } ifnull { return }
+            let o = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } ifnull { return }
+            if o.ext is door{ d } { d.locked = false }
+            else if o.ext is placeable{ p } { p.locked = false }
+        } else if ci::eq{ a = cmd, b = "global" } {
+            // Test helper: a number global (`ui global K_SWG_TELEPORT 1`).
+            let name = text::next_word{ &words } ifnull { return }
+            let v = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            globals::set_number{ g = &w.globals, name, value = v }
+        } else if ci::eq{ a = cmd, b = "where" } {
+            // Test helper: every object whose tag contains the word (none given: all), with its place.
+            let part = text::next_word{ &words } ifnull ""
+            let all = list::items{ list = w.objects.all }
+            let mut i: usize = 0
+            while i < all.len {
+                let o = all[i]
+                i = i + 1
+                if o.destroyed { continue }
+                let tag: []u8 = o.tag
+                if not has_part{ s = tag, part } { continue }
+                _ = @fmt(&w.io, "where {} k{} {} at {} {} {} hp {}\n", o.id, @as(u32, o.kind), tag, o.position.x, o.position.y, o.position.z, o.hp)
+            }
+        } else if ci::eq{ a = cmd, b = "goto" } {
+            // Test helper: the leader walks (runs) to the object with the tag, as a click on the floor there would.
+            let tag = text::next_word{ &words } ifnull { return }
+            let target = world::object_by_tag{ w = &w, tag, nth = 0 }
+            let t = world::object{ w = &w, id = target } ifnull { return }
+            let mut a = actions::make{ kind = actions::Kind::move_to_point }
+            a.params[0] = actions::Param::vector{ v = t.position }
+            a.params[1] = actions::Param::int{ v = 1 }
+            a.params[2] = actions::Param::float{ v = 1.0 }
+            a.params[3] = actions::Param::object{ id = target }
+            a.params[4] = actions::Param::float{ v = 0.0 }
+            _ = actions::add{ &w, id = w.pc, action = a, force = true }
+        } else if ci::eq{ a = cmd, b = "pos" } {
+            // Test helper: where the leader is, its hit points, its action and whether a conversation runs.
+            let o = world::object{ w = &w, id = w.pc } ifnull { return }
+            _ = @fmt(&w.io, "pos {} {} {} hp {}/{} talking {} pc {} leader {} player {}\n", o.position.x, o.position.y, o.position.z, o.hp, o.hp_max, w.conversation.active, w.pc, party::leader{ w = &w }, w.player)
+        } else if ci::eq{ a = cmd, b = "locals" } {
+            // Test helper: the local variables that are set on the object with the tag.
+            let tag = text::next_word{ &words } ifnull { return }
+            let o = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } ifnull { return }
+            _ = @fmt(&w.io, "locals {} bools:", tag)
+            let mut k: i32 = 0
+            while k < 96 {
+                if obj::local_bool{ l = o.locals, index = k } { _ = @fmt(&w.io, " {}", k) }
+                k = k + 1
+            }
+            _ = @fmt(&w.io, " numbers: {} {} {} {} {} {} {} {}", o.locals.numbers[0], o.locals.numbers[1], o.locals.numbers[2], o.locals.numbers[3], o.locals.numbers[4], o.locals.numbers[5], o.locals.numbers[6], o.locals.numbers[7])
+            _ = @fmt(&w.io, "\n")
+        } else if ci::eq{ a = cmd, b = "bot" } {
+            bot::run_command{ b = &ui.bot, &w, args = text::rest{ words } }
         } else if ci::eq{ a = cmd, b = "party" } {
             let ids = party::members{ w = &w }
             let mut i: usize = 0
@@ -109,6 +165,18 @@ namespace ingame {
             if test_screens::run{ &ui, &w, &dev, cmd, args } { return }
             _ = @fmt(&w.io, "ui: unknown command {}\n", cmd)
         }
+    }
+
+    // True when `part` occurs in `s`, ignoring case (empty: always).
+    fn has_part { s: []u8, part: []u8 } -> bool {
+        if part.len == 0 { return true }
+        if part.len > s.len { return false }
+        let mut i: usize = 0
+        while i + part.len <= s.len {
+            if ci::eq{ a = s[i..i + part.len], b = part } { return true }
+            i = i + 1
+        }
+        return false
     }
 
     // A synthetic event, as if the window had delivered it.
