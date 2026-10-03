@@ -87,6 +87,7 @@ namespace obj {
         run_script_var: i32,      // ExecuteScript's nScriptVar, read by GetRunScriptVar
         clicked_by: u32,
         blocker: u32,             // OnBlocked: GetBlockingDoor
+        listen_pattern: i32,      // GetListenPatternNumber: the SetListenPattern number that matched, -1 none
     }
 
     fn no_context {} -> Context {
@@ -97,6 +98,7 @@ namespace obj {
             perceived_heard = false, perceived_vanished = false, perceived_inaudible = false,
             last_attacker = INVALID, last_damager = INVALID, last_speaker = INVALID,
             last_disturbed = INVALID, run_script_var = 0, clicked_by = INVALID, blocker = INVALID,
+            listen_pattern = -1,
         }
     }
 
@@ -314,6 +316,7 @@ namespace obj {
         random_range_y: f32,
         priority: u32,                      // prioritygroups.2da row
         sounds: []mut resref::ResRef,           // heap
+        fixed_variance: f32,                // SoundObjectSetFixedVariance: a constant pitch multiplier, 0 none
     }
 
     // An encounter (UTE + the GIT's polygon and spawn points): creatures it spawns when the party
@@ -360,6 +363,12 @@ namespace obj {
         last_heartbeat: u64,
         transition_token: u8,               // gameloop.md 5.2
         transition_pending: u8,
+        // The stealth XP bonus (a script-side system: the scripts set all of it, AwardStealthXP pays
+        // the current amount to the party and switches it off).
+        stealth_xp_max: i32,
+        stealth_xp_current: i32,
+        stealth_xp_decrement: i32,
+        stealth_xp_enabled: bool,
     }
 
     struct Module {

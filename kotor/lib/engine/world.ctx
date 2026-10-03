@@ -294,7 +294,7 @@ namespace world {
                     active = false, continuous = false, looping = false, positional = false, random = false,
                     random_position = false, interval = 0, interval_variation = 0, volume = 127, volume_variation = 0,
                     pitch_variation = 0.0, elevation = 0.0, min_distance = 1.0, max_distance = 10.0, random_range_x = 0.0,
-                    random_range_y = 0.0, priority = 0, sounds = slice::empty(resref::ResRef){},
+                    random_range_y = 0.0, priority = 0, sounds = slice::empty(resref::ResRef){}, fixed_variance = 0.0,
                 } } }
             }
             encounter => {
@@ -317,6 +317,7 @@ namespace world {
                     unescapable = false, is_night = false, dyn_ambient = 0, sun_ambient = 0, sun_diffuse = 0, fog_on = false,
                     fog_near = 99.0, fog_far = 100.0, fog_color = 0, load_screen = 0, last_heartbeat = 0,
                     transition_token = 0, transition_pending = 0,
+                    stealth_xp_max = 0, stealth_xp_current = 0, stealth_xp_decrement = 0, stealth_xp_enabled = false,
                 } } }
             }
             module => {
