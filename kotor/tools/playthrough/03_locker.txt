@@ -2,7 +2,7 @@
 # (the loot panel), take the sword, then the rest with Get Items; the equipment screen puts on the
 # clothing and the sword. Lines must be in frame order.
 3 newgame
-4 ui replies 1 1 1 2 1 1 1 1
+4 ui replies 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1 1
 2900 use end_locker01
 2980 ui click 560 413
 3020 ui click 640 452
@@ -16,4 +16,7 @@
 3135 ui inv
 3160 ui close
 3400 use end_door01
+4000 use end_door01
+3900 ui click 640 545
+3930 ui party
 4000 use end_door01

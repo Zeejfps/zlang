@@ -264,7 +264,7 @@ namespace map_panel {
             if why != 0 {
                 say{ &s, &g, &w, &dev, strref = why, ask = false }
             } else {
-                partysel_panel::open_modal{ s = &s.sel, g = &g, w = &w, dev = &dev, force1 = -1, force2 = -1 } iferr {}
+                partysel_panel::open_modal{ s = &s.sel, g = &g, w = &w, dev = &dev, force1 = -1, force2 = -1, exit_script = resref::empty{} } iferr {}
             }
         } else if slice::eq_bytes{ a = ev.tag, b = "BTN_RETURN" } {
             // The question is the party table's second strref (42120 by default).

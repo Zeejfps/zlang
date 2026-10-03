@@ -25,6 +25,9 @@ namespace ingame {
         pause_panel: u32,                   // the "PAUSED" banner, 0 when not shown
         screens: screens::State,            // the store, loot, level-up, workbench and galaxy map panels (lib/screens)
         hud_hidden: bool,
+        psel_wait: bool,                    // ShowPartySelectionGUI asked: the screen opens when no conversation is up
+        psel_exit: resref::ResRef,          // its exit script, forced slots
+        psel_force1: i32, psel_force2: i32,
         bot: bot::Bot,                      // the headless test player (bot.ctx); off unless a script turns it on
     }
 
@@ -48,6 +51,7 @@ namespace ingame {
             text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
             width, height, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{}, log = hud::new_log{},
             pause_panel = 0, hud_hidden = false, screens = screens::new{}, bot = bot::new{},
+            psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1,
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
         hud::set_tooltips{ h = &p.hud, g = &p.gui, &w, text = &p.text }
@@ -192,6 +196,12 @@ namespace ingame {
     fn take { mut ui: Ingame, mut w: world::World, note: outbox::Note } {
         screens::take{ s = &ui.screens, &w, note }
         match note {
+            party_selection{ exit_script, force1, force2 } => {
+                ui.psel_wait = true
+                ui.psel_exit = exit_script
+                ui.psel_force1 = force1
+                ui.psel_force2 = force2
+            }
             feedback{ strref, text } => {
                 let sent = outbox::text_of{ out = &w.out, t = text }
                 let said = if sent.len > 0 { sent } else { world::string_by_strref{ w = &w, strref } }
@@ -274,6 +284,21 @@ namespace ingame {
         // by a script closes the menu first.
         if screens::is_waiting{ s = &ui.screens } and ui.menu != NO_MENU { close_menu{ &ui, &w } }
         screens::update{ s = &ui.screens, g = &ui.gui, &w, &dev, events, dt }
+        // The party selection screen (a script's ShowPartySelectionGUI), once the conversation that asked is over.
+        if ui.psel_wait and not w.conversation.active and not gui::is_modal_open{ g = &ui.gui } {
+            ui.psel_wait = false
+            if ui.menu != NO_MENU { close_menu{ &ui, &w } }
+            partysel_panel::open_modal{ s = &ui.menus.partysel, g = &ui.gui, &w, &dev, force1 = ui.psel_force1, force2 = ui.psel_force2, exit_script = ui.psel_exit } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: party selection: {}\n", error)
+            }
+        }
+        partysel_panel::update{ s = &ui.menus.partysel, g = &ui.gui, &w, &dev, dt }
+    }
+
+    // The exit script of a party selection that was just applied, once: the owner of the VM runs it
+    // (scripts::run with no caller).
+    fn take_exit_script { mut ui: Ingame } -> ?resref::ResRef {
+        return partysel_panel::take_exit_script{ s = &ui.menus.partysel }
     }
 
     // What the HUD's own controls ask for: a menu, the pause toggle, a party portrait, the target

@@ -265,6 +265,8 @@ namespace play {
             scene::update_visibility{ &sc, w = &w, room }
             ingame::update{ ui, &w, &dev, sc, camera, dt }    // HOOK(ingame)
             if ingame::wants_quit{ ui } { quit = true }    // HOOK(ingame)
+            // The party selection screen was applied: its exit script (ShowPartySelectionGUI's), with no caller.
+            if ingame::take_exit_script{ ui } is some{ value = exit_script } { _ = scripts::run{ &w, &vm, engine, name = exit_script, self = obj::INVALID } }    // HOOK(ingame)
             // The options menu's Save Game and Load Game (the menus have closed themselves).
             if ingame::take_save_request{ ui } is some{ value = n } { want_save = n }    // HOOK(ingame)
             if ingame::take_load_request{ ui } is some{ value = n } { want_load = n }    // HOOK(ingame)
