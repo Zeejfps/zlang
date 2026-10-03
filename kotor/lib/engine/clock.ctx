@@ -9,7 +9,8 @@ namespace clock {
     struct Clock {
         now_us: u64,            // world time since the module's clock started
         dt: f32,                // this frame's step, seconds (0 while paused)
-        paused: bool,
+        paused: bool,           // any pause bit set (gameloop.md 6)
+        pause_bits: u32,
         speed: f32,             // 1.0; slow motion changes it
         frame: u64,             // frames run
         // The calendar (IFO Mod_Start*, Mod_MinPerHour): the time of day at now_us = 0.
@@ -23,9 +24,21 @@ namespace clock {
 
     fn new {} -> Clock {
         return Clock{
-            now_us = 0, dt = 0.0, paused = false, speed = 1.0, frame = 0, year = 1340, month = 6,
+            now_us = 0, dt = 0.0, paused = false, pause_bits = 0, speed = 1.0, frame = 0, year = 1340, month = 6,
             day = 1, hour = 13, minute = 0, min_per_hour = 2,
         }
+    }
+
+    // Pause types (gameloop.md 6.1): the player's pause key, a menu or panel open, the engine's
+    // own (time stop, movies). Any bit set stops the world clock; the world still ticks, so
+    // zero-delay events go on (6.2).
+    const PAUSE_PLAYER: u32 = 1
+    const PAUSE_MENU: u32 = 2
+    const PAUSE_ENGINE: u32 = 4
+
+    fn set_pause { mut c: Clock, bit: u32, on: bool } {
+        c.pause_bits = if on { c.pause_bits | bit } else { c.pause_bits & (bit ^ 0xFFFFFFFF) }
+        c.paused = c.pause_bits != 0
     }
 
     // Moves the clock by a frame of `seconds` of real time.

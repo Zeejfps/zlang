@@ -23,13 +23,13 @@ namespace visual {
             door{ d } => {
                 let mut m = d.model
                 if resref::is_empty{ r = m } { return null }
-                let loaded = try scene::load_model{ &sc, &w, &dev, name = resref::bytes{ r = &m }, body_texture = "", envmap = "" } ifnull { return null }
+                let loaded = try scene::load_model{ &sc, &w, &dev, name = resref::bytes{ r = &m }, body_texture = "", envmap = "", hide_null = false } ifnull { return null }
                 _ = try scene::add_part{ &sc, loaded, parent = -1, hook = "" }
             }
             placeable{ p } => {
                 let mut m = p.model
                 if resref::is_empty{ r = m } { return null }
-                let loaded = try scene::load_model{ &sc, &w, &dev, name = resref::bytes{ r = &m }, body_texture = "", envmap = "" } ifnull { return null }
+                let loaded = try scene::load_model{ &sc, &w, &dev, name = resref::bytes{ r = &m }, body_texture = "", envmap = "", hide_null = false } ifnull { return null }
                 _ = try scene::add_part{ &sc, loaded, parent = -1, hook = "" }
             }
             else => { return null }
@@ -104,7 +104,7 @@ namespace visual {
             }
         }
         if body_name.len == 0 { return null }
-        let body_loaded = try scene::load_model{ &sc, &w, &dev, name = body_name, body_texture = texture[..texture_len], envmap } ifnull {
+        let body_loaded = try scene::load_model{ &sc, &w, &dev, name = body_name, body_texture = texture[..texture_len], envmap, hide_null = false } ifnull {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "creature {} ({}): no model {}\n", o.id, o.tag, body_name)
             return null
@@ -115,7 +115,7 @@ namespace visual {
             if head_row != null and head_row >= 0 {
                 let head = cell{ t = w.tables.heads, row = @as(usize, head_row), column = "head" }
                 if head.len > 0 {
-                    let hl = try scene::load_model{ &sc, &w, &dev, name = head, body_texture = "", envmap }
+                    let hl = try scene::load_model{ &sc, &w, &dev, name = head, body_texture = "", envmap, hide_null = false }
                     if hl != null { _ = try scene::add_part{ &sc, loaded = hl, parent = @as(i32, body), hook = mdl_anim::HOOK_HEAD } }
                 }
             }
@@ -142,7 +142,7 @@ namespace visual {
         name[i + 1] = @trunc(u8, '0' + (v / 100) % 10)
         name[i + 2] = @trunc(u8, '0' + (v / 10) % 10)
         name[i + 3] = @trunc(u8, '0' + v % 10)
-        let loaded = try scene::load_model{ &sc, &w, &dev, name = name[..i + 4], body_texture = "", envmap = "" } ifnull { return }
+        let loaded = try scene::load_model{ &sc, &w, &dev, name = name[..i + 4], body_texture = "", envmap = "", hide_null = false } ifnull { return }
         _ = try scene::add_part{ &sc, loaded, parent = @as(i32, body), hook }
     }
 

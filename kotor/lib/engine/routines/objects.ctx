@@ -22,6 +22,12 @@ namespace rt_obj {
         else if routine == nwscript::DestroyObject { try destroy_object{ &w, &vm, argc } }
         else if routine == nwscript::CreateObject { try create_object{ &w, &vm, argc } }
         else if routine == nwscript::GetNearestObjectByTag { try get_nearest_object_by_tag{ &w, &vm, argc } }
+        else if routine == nwscript::GetFirstObjectInArea { try get_in_area{ &w, &vm, argc, routine, first = true } }
+        else if routine == nwscript::GetNextObjectInArea { try get_in_area{ &w, &vm, argc, routine, first = false } }
+        else if routine == nwscript::GetFirstObjectInShape { try get_in_shape{ &w, &vm, argc, routine, first = true } }
+        else if routine == nwscript::GetNextObjectInShape { try get_in_shape{ &w, &vm, argc, routine, first = false } }
+        else if routine == nwscript::GetNearestObject { try get_nearest_object{ &w, &vm, argc } }
+        else if routine == nwscript::GetNearestObjectToLocation { try get_nearest_object_to_location{ &w, &vm, argc } }
         else { return false }
         return true
     }
@@ -259,5 +265,173 @@ namespace rt_obj {
             k = k + 1
         }
         return last_id
+    }
+
+    // ---- searching by area, shape and nearness
+    //
+    // The first/next pairs keep their place in w.cursor_area / w.cursor_shape (an index into the
+    // creation-ordered objects.all), so a loop's own calls move it and nothing else should.
+
+    // Whether the object stands in an area: not on its way out, not the module or an area, and
+    // not an item in someone's pack.
+    fn placed { o: *obj::Object } -> bool {
+        if o.destroyed or o.kind == obj::Kind::module or o.kind == obj::Kind::area { return false }
+        if obj::item{ o } is some{ value = it } {
+            if it.possessor != obj::INVALID { return false }
+        }
+        return true
+    }
+
+    // The area a search means: the one `id` is (or is in), else the caller's, else the module's.
+    fn area_for { w: *world::World, id: u32, caller: u32 } -> u32 {
+        let given = world::object{ w, id }
+        if given != null {
+            if given.kind == obj::Kind::area { return given.id }
+            if given.kind != obj::Kind::module and given.area != obj::INVALID { return given.area }
+        }
+        let me = world::object{ w, id = caller }
+        if me != null {
+            if me.kind == obj::Kind::area { return me.id }
+            if me.kind != obj::Kind::module and me.area != obj::INVALID { return me.area }
+        }
+        return w.area
+    }
+
+    // object GetFirstObjectInArea(object oArea = OBJECT_INVALID, int nObjectFilter = OBJECT_TYPE_CREATURE)
+    // object GetNextObjectInArea(...same...): the objects of the area whose type is in the
+    // filter, in creation order.
+    fn get_in_area { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, first: bool } -> ! {
+        let area_arg = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let filter = try nwarg::int{ &vm, routine, argc, i = 1 }
+        let area = area_for{ w = &w, id = area_arg, caller = nwvm::self_object{ vm } }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = if first { 0 } else { w.cursor_area }
+        let mut found = obj::INVALID
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if not placed{ o } or o.area != area or (obj::object_type{ kind = o.kind } & filter) == 0 { continue }
+            found = o.id
+            break
+        }
+        w.cursor_area = i
+        try nwvm::push_object{ &vm, id = found }
+    }
+
+    // Whether point `p` is in a spell shape (SHAPE_*): sphere 4 (radius `size`); cube 2 (half a
+    // side); spell cylinder 0 (radius `size` about the line from `origin` to `centre`, flat);
+    // cone 1 and spell cone 3 (from `origin` widening to radius `size` at `centre`, flat).
+    // The engine's own tests (0x0054a260) are more elaborate; these are the shapes they describe.
+    fn in_shape { shape: i32, size: f32, centre: math::Vec3, origin: math::Vec3, p: math::Vec3 } -> bool {
+        if shape == 2 {
+            return math::abs{ x = p.x - centre.x } <= size and math::abs{ x = p.y - centre.y } <= size and
+                math::abs{ x = p.z - centre.z } <= size
+        }
+        if shape == 0 or shape == 1 or shape == 3 {
+            let ax = centre.x - origin.x
+            let ay = centre.y - origin.y
+            let length = math::sqrtf{ x = ax * ax + ay * ay }
+            if length > 0.001 {
+                let dx = p.x - origin.x
+                let dy = p.y - origin.y
+                let along = (dx * ax + dy * ay) / length
+                let side = math::abs{ x = (dx * ay - dy * ax) / length }
+                if shape == 0 {
+                    let t = if along < 0.0 { 0.0 } else if along > length { length } else { along }
+                    let s = along - t
+                    return s * s + side * side <= size * size
+                }
+                return along >= 0.0 and along <= length and side <= size * (along / length)
+            }
+        }
+        return distance{ a = p, b = centre, flat = false } <= size
+    }
+
+    // object GetFirstObjectInShape(int nShape, float fSize, location lTarget, int bLineOfSight = FALSE,
+    //     int nObjectFilter = OBJECT_TYPE_CREATURE, vector vOrigin = [0,0,0]) and ...Next...
+    // Line of sight is not checked. A cylinder or spell cone starts at the caller (the engine
+    // does so); a cone starts at vOrigin, or at the caller when that is the zero vector.
+    fn get_in_shape { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, first: bool } -> ! {
+        let shape = try nwarg::int{ &vm, routine, argc, i = 0 }
+        let size = try nwarg::float{ &vm, routine, argc, i = 1 }
+        let h = try nwarg::engine{ &vm, routine, argc, i = 2, kind = nwvm::EngineType::location }
+        _ = try nwarg::int{ &vm, routine, argc, i = 3 }
+        let filter = try nwarg::int{ &vm, routine, argc, i = 4 }
+        let origin_arg = try nwarg::vector{ &vm, routine, argc, i = 5 }
+        let l = values::location{ s = &w.values, handle = h }
+        let area = if world::is_valid{ w = &w, id = l.area } { l.area } else { w.area }
+        let me = world::object{ w = &w, id = nwvm::self_object{ vm } }
+        let mut origin = l.position
+        if me != null { origin = me.position }
+        let given = origin_arg.x != 0.0 or origin_arg.y != 0.0 or origin_arg.z != 0.0
+        if shape == 1 and given { origin = vec{ v = origin_arg } }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = if first { 0 } else { w.cursor_shape }
+        let mut found = obj::INVALID
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if not placed{ o } or o.area != area or (obj::object_type{ kind = o.kind } & filter) == 0 { continue }
+            if not in_shape{ shape, size, centre = l.position, origin, p = o.position } { continue }
+            found = o.id
+            break
+        }
+        w.cursor_shape = i
+        try nwvm::push_object{ &vm, id = found }
+    }
+
+    // The nth (from 1) nearest to `at` of the objects standing in `area` whose type is in
+    // `filter`, other than `skip`; equal distances go by id.
+    fn nth_nearest { w: *world::World, area: u32, at: math::Vec3, skip: u32, filter: i32, nth: i32 } -> u32 {
+        let all = list::items{ list = w.objects.all }
+        let mut last: f32 = -1.0
+        let mut last_id: u32 = obj::INVALID
+        let mut k: i32 = 0
+        while k < nth {
+            let mut best = obj::INVALID
+            let mut best_d: f32 = 1000000000.0
+            let mut i: usize = 0
+            while i < all.len {
+                let o = all[i]
+                i = i + 1
+                if not placed{ o } or o.id == skip or o.area != area or (obj::object_type{ kind = o.kind } & filter) == 0 { continue }
+                let d = distance{ a = o.position, b = at, flat = false }
+                if d < last or (d == last and o.id <= last_id) { continue }
+                if d < best_d or (d == best_d and o.id < best) {
+                    best = o.id
+                    best_d = d
+                }
+            }
+            if best == obj::INVALID { return obj::INVALID }
+            last = best_d
+            last_id = best
+            k = k + 1
+        }
+        return last_id
+    }
+
+    // object GetNearestObject(int nObjectType = OBJECT_TYPE_ALL, object oTarget = OBJECT_SELF, int nNth = 1)
+    fn get_nearest_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetNearestObject
+        let filter = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let nth = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let from = world::object{ w = &w, id = target } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        let area = area_for{ w = &w, id = from.id, caller = obj::INVALID }
+        try nwvm::push_object{ &vm, id = nth_nearest{ w = &w, area, at = from.position, skip = from.id, filter, nth } }
+    }
+
+    // object GetNearestObjectToLocation(int nObjectType, location lLocation, int nNth = 1)
+    fn get_nearest_object_to_location { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetNearestObjectToLocation
+        let filter = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let h = try nwarg::engine{ &vm, routine = r, argc, i = 1, kind = nwvm::EngineType::location }
+        let nth = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let l = values::location{ s = &w.values, handle = h }
+        let area = if world::is_valid{ w = &w, id = l.area } { l.area } else { w.area }
+        try nwvm::push_object{ &vm, id = nth_nearest{ w = &w, area, at = l.position, skip = obj::INVALID, filter, nth } }
     }
 }
