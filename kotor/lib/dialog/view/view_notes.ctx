@@ -5,6 +5,10 @@ namespace dlgview {
     fn take_note { mut v: View, mut w: world::World, mut g: gui::Gui, mut dev: gpu::Device, note: outbox::Note } {
         match note {
             fade{ out, wait, length, color } => {
+                if w.log.dialog {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "dialog fade out {} after {} s over {} s\n", out, wait, length)
+                }
                 dlgpanel::start_fade{ p = &v.panels, out, delay = wait, length, color }
             }
             bark{ speaker, text, sound } => {

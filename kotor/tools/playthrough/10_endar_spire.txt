@@ -11,7 +11,7 @@
 # Lines must be in frame order. The frames are those of the 1/30 s headless run and shift if the engine's
 # timing of a cutscene or a voice changes: check the log's `dialog end` lines when a click misses.
 3 newgame
-4 ui replies 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+4 ui replies 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 3 1 1 1 1 1 1 1 1 3 4 1 9 9 9 9 9 9 9 9 9 9
 2900 use end_locker01
 2980 ui click 560 413
 3020 ui click 640 452
@@ -37,3 +37,18 @@
 32030 ui close
 32040 use end_pod
 33000 ui pos
+39500 use tar02_aptdoor
+40250 ui click 640 545
+40400 ui party
+40400 ui pos
+40500 ui bot route bp_jump0_wp wp_01_01 wp_02_01 wp_02_04 ptar_stnddr p_exit k_exit
+40501 ui bot on
+50320 ui click 783 545
+53100 ui bot route tar02_cantdoor
+53101 ui bot on
+56000 ui bot status
+56000 ui pos
+56400 ui bot off
+56410 down a
+56470 up a
+56480 ui pos

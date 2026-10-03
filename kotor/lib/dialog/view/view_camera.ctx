@@ -96,10 +96,6 @@ namespace dlgview {
     fn framed_rig { mut v: View, mut w: world::World, sc: *scene::Scene } -> ?dlgcam::Rig {
         let s = eye_point{ w = &w, sc, id = v.speaker } ifnull { return null }
         let l = eye_point{ w = &w, sc, id = v.listener } ifnull { return null }
-        if w.log.dialog {
-            world::prefix{ w = &w }
-            _ = @fmt(&w.io, "dialog eyes: speaker {} at {} {} {}, listener {} at {} {} {}\n", v.speaker, s.x, s.y, s.z, v.listener, l.x, l.y, l.z)
-        }
         let side = side_of{ &v, w = &w, speaker = v.speaker, listener = v.listener, s, l }
         let fov = if v.fov > 0.0 { v.fov } else { dlgcam::FOV }
         let rig = if v.angle == dlg::ANGLE_SHOULDER {

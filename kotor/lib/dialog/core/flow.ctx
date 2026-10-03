@@ -652,7 +652,9 @@ namespace dlg {
         }
         // A test script's queued replies (`ui replies 1 2`) answer each list as it opens.
         if w.conversation.pick < 0 and w.conversation.choices.open and w.conversation.scripted_pos < w.conversation.scripted_count {
-            w.conversation.pick = @as(i32, w.conversation.scripted[w.conversation.scripted_pos]) - 1
+            // A number past the list picks the last reply (a test script cannot know how long a list is).
+            let want = @as(usize, w.conversation.scripted[w.conversation.scripted_pos])
+            w.conversation.pick = @as(i32, if want > w.conversation.choices.count { w.conversation.choices.count } else { want }) - 1
             w.conversation.scripted_pos = w.conversation.scripted_pos + 1
             if w.log.dialog {
                 world::prefix{ w = &w }
