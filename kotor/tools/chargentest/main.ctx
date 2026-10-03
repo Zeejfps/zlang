@@ -125,6 +125,22 @@ fn run {
             let mut c4: usize = 0
             while c4 < arg.len and arg[c4] != ':' { c4 = c4 + 1 }
             if c4 < arg.len { try gui::set_tooltip{ &g, panel = current_panel{ &fe }, tag = arg[..c4], text = arg[c4 + 1..] } }
+        } else if slice::eq_bytes{ a = name, b = "slots" } {
+            // Prints what class selection built for each slot: class, gender, portrait, body and head.
+            let cg = fe.cg
+            if cg != null {
+                let mut s: usize = 0
+                while s < chargen::SLOTS {
+                    let row = cg.slot_portrait[s]
+                    let app = chargen::portrait_appearance{ d = &cg.data, row, class = chargen::SLOT_CLASS[s] }
+                    let at = twoda::get_string{ t = cg.data.appearance.t, row = @as(usize, app), column = "label" } ifnull ""
+                    let head_row = twoda::get_int{ t = cg.data.appearance.t, row = @as(usize, app), column = "normalhead" } ifnull -1
+                    let head = if head_row >= 0 { twoda::get_string{ t = cg.data.heads.t, row = @as(usize, head_row), column = "head" } ifnull "" } else { "" }
+                    _ = @fmt(&io, "slot {} (BTN_SEL{}): class {} gender {} portrait {} {} appearance {} {} head {}\n", s, s + 1, chargen::SLOT_CLASS[s], chargen::SLOT_GENDER[s],
+                        row, chargen::portrait_resref{ d = &cg.data, row }, app, at, head)
+                    s = s + 1
+                }
+            }
         } else if slice::eq_bytes{ a = name, b = "wait" } {
             let mut n = number{ s = arg }
             while n > 0 {
