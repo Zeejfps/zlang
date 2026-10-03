@@ -127,9 +127,14 @@ reference: 48752/48752 frames exact; audio: 143378834 samples compared, 113172 d
 Video is **bit-exact**: every frame of every movie is byte for byte FFmpeg's yuv420p output.
 Audio differs by at most 1, in 0.08% of the samples: both round half to even, but FFmpeg
 computes in 32-bit float and we in 64-bit, so values near a half round differently now and then.
-Every packet decodes to exactly the sample count its header field gives. The audio decoder was
-also fuzzed (145,000 cut, bit-flipped and random packets: errors, no panics), and its FFT-based
-DCT-III checked against the direct cosine sum (error under 1e-8).
+Every packet decodes to exactly the sample count its header field gives. The audio decoder's
+FFT-based DCT-III was also checked against the direct cosine sum (error under 1e-8).
+
+**Corrupt data.** `binkcheck --fuzz SEED` decodes, next to each movie, a damaged copy of every
+packet (1 to 8 bits flipped, cut short, or a span overwritten with random bytes) with a second
+pair of decoders that never see a clean packet. Three seeds over all 61 movies: 255,291 corrupted
+packets, about 95% rejected with an error (the rest decode to wrong pictures), no panic and no
+crash. The audio decoder alone was also given 145,000 cut, bit-flipped and random packets.
 
 ## Speed
 
@@ -143,8 +148,11 @@ packet and its video) at `-O2`, on an AMD Ryzen 9 5900X, one thread:
 | 3 at 640 x 480 | 674 | 0.97 ms | 2.55 ms |
 | all 61 | 48752 | 0.93 ms | 3.70 ms |
 
+Five runs over the corpus gave averages of 0.78 to 0.93 ms and slowest frames of 3.3 to 10 ms
+(the outliers come and go between runs: a file read or the scheduler, not a frame's content).
 A frame lasts 33.4 ms at 29.97 fps, so decoding takes about 3% of a core while a movie plays
-(all 27 minutes of movies decode in 45 s), and the slowest frame is a tenth of the budget. Audio
+(all 27 minutes of movies decode in about 40 s), and even the worst frame seen is well inside
+the budget. Audio
 is a small part of it: about 36 us per stereo block, one block every 1.3 frames.
 
 What helped (and what a reader should keep): the bit reader refills 32 bits at a time and decodes

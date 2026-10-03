@@ -1,7 +1,7 @@
 # Language friction: Bink video and audio (`lib/video`, `tools/bink2png`, `tools/binkcheck`)
 
-Where ctxlang got in the way while writing the Bink decoders (about 2,100 lines of library and
-700 of tools). Each entry: what we wanted, what we wrote instead, how often.
+Where ctxlang got in the way while writing the Bink decoders (about 2,200 lines of library and
+800 of tools). Each entry: what we wanted, what we wrote instead, how often.
 
 - **An error whose payload holds a slice taints every `try` near a local.** `error
   bad_header{ what: []u8 }`, only ever given string literals, made `try read_exact{ &fs, file,
