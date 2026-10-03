@@ -571,9 +571,10 @@ namespace gpu {
 
     // ---- meshes
 
-    // A mesh from `vertices` (vertex_count rows of layout.stride bytes) and `indices`.
+    // A mesh from `vertices` (laid out as desc.layout says: render::layout_size bytes) and
+    // `indices`.
     fn create_mesh { mut dev: Device, desc: render::MeshDesc, vertices: []u8, indices: []u16 } -> !render::Mesh {
-        let vbytes = @as(usize, desc.vertex_count) * @as(usize, desc.layout.stride)
+        let vbytes = render::layout_size{ layout = desc.layout, vertex_count = desc.vertex_count }
         if vertices.len < vbytes { return bad_data{ need = vbytes, got = vertices.len } }
         if indices.len < @as(usize, desc.index_count) { return bad_data{ need = @as(usize, desc.index_count), got = indices.len } }
         let mut index = NO_SLOT
@@ -593,20 +594,23 @@ namespace gpu {
         let vbo = gl::make_buffer{ gl = &dev.gl, target = gl::ARRAY_BUFFER, bytes = vertices[..vbytes], usage }
         let ibo = gl::make_buffer{ gl = &dev.gl, target = gl::ELEMENT_ARRAY_BUFFER, bytes = gl::bytes_of(u16){ s = indices[..@as(usize, desc.index_count)] }, usage }
         let l = desc.layout
-        let stride = @as(i32, l.stride)
-        float_attrib{ &dev, index = 0, size = 3, stride, offset = l.position }
-        float_attrib{ &dev, index = 1, size = 3, stride, offset = l.normal }
-        float_attrib{ &dev, index = 2, size = 2, stride, offset = l.uv0 }
-        float_attrib{ &dev, index = 3, size = 2, stride, offset = l.uv1 }
-        float_attrib{ &dev, index = 4, size = 3, stride, offset = l.tangent_space }
-        float_attrib{ &dev, index = 5, size = 3, stride, offset = if l.tangent_space >= 0 { l.tangent_space + 12 } else { -1 } }
-        float_attrib{ &dev, index = 6, size = 4, stride, offset = l.weights }
-        float_attrib{ &dev, index = 7, size = 4, stride, offset = l.bones }
-        if l.color >= 0 {
-            dev.gl.enable_vertex_attrib_array{ index = 8 }
-            dev.gl.vertex_attrib_pointer{ index = 8, size = 4, kind = gl::UNSIGNED_BYTE, normalized = gl::TRUE, stride, offset = @as(usize, l.color) }
+        // Interleaved rows share one stride; planar arrays are each as wide as one element.
+        let row = @as(i32, l.stride)
+        float_attrib{ &dev, index = 0, size = 3, stride = if l.planar { 12 } else { row }, offset = l.position }
+        float_attrib{ &dev, index = 1, size = 3, stride = if l.planar { 12 } else { row }, offset = l.normal }
+        float_attrib{ &dev, index = 2, size = 2, stride = if l.planar { 8 } else { row }, offset = l.uv0 }
+        float_attrib{ &dev, index = 3, size = 2, stride = if l.planar { 8 } else { row }, offset = l.uv1 }
+        float_attrib{ &dev, index = 4, size = 3, stride = if l.planar { 36 } else { row }, offset = l.tangent_space }
+        float_attrib{ &dev, index = 5, size = 3, stride = if l.planar { 36 } else { row }, offset = if l.tangent_space >= 0 { l.tangent_space + 12 } else { -1 } }
+        float_attrib{ &dev, index = 6, size = 4, stride = if l.planar { 16 } else { row }, offset = l.weights }
+        if l.bones_u8 {
+            // Slot numbers as they are (0..255), read as floats.
+            byte_attrib{ &dev, index = 7, stride = if l.planar { 4 } else { row }, offset = l.bones, normalized = false }
+        } else {
+            float_attrib{ &dev, index = 7, size = 4, stride = if l.planar { 16 } else { row }, offset = l.bones }
         }
-        float_attrib{ &dev, index = 9, size = 1, stride, offset = l.constraint }
+        byte_attrib{ &dev, index = 8, stride = if l.planar { 4 } else { row }, offset = l.color, normalized = true }
+        float_attrib{ &dev, index = 9, size = 1, stride = if l.planar { 4 } else { row }, offset = l.constraint }
         dev.gl.bind_vertex_array{ array = 0 }
         dev.state.vao = 0
         let slot = &dev.meshes[index]
@@ -624,6 +628,13 @@ namespace gpu {
         if offset < 0 { return }
         dev.gl.enable_vertex_attrib_array{ index }
         dev.gl.vertex_attrib_pointer{ index, size, kind = gl::FLOAT, normalized = gl::FALSE, stride, offset = @as(usize, offset) }
+    }
+
+    // Four u8 per vertex, as 0..1 when normalized, else 0..255.
+    fn byte_attrib { mut dev: Device, index: u32, stride: i32, offset: i32, normalized: bool } {
+        if offset < 0 { return }
+        dev.gl.enable_vertex_attrib_array{ index }
+        dev.gl.vertex_attrib_pointer{ index, size = 4, kind = gl::UNSIGNED_BYTE, normalized = if normalized { gl::TRUE } else { gl::FALSE }, stride, offset = @as(usize, offset) }
     }
 
     // Replaces vertex bytes from `offset` on (a dynamic mesh's, say a lightsaber blade's).

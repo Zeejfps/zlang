@@ -1,0 +1,315 @@
+// KOTOR's textures on the GPU, and what a model's mesh looks like as a render::Material.
+//
+// A `Cache` loads a texture by resref the first time it is asked for, through the resource
+// manager (the engine's TPC-or-TGA rule, res::find_texture), decodes it with lib/tex, uploads it
+// through gpu::, and keeps what its TXI says about drawing it. `for_mesh` turns a mesh's texture
+// names and flags into a material by the rules of docs/design/render.md ("How KOTOR's materials
+// map"), loading the environment and bump maps the diffuse texture's TXI names.
+//
+//   let mut cache = material::new_cache{ heap = &h, scratch = pages }
+//   let m = material::for_mesh{ &cache, &fs, &dev, rm, desc = material::MeshDesc{ diffuse = mesh.textures[0], ... } }
+//
+// Missing or unreadable textures are remembered as missing (and counted), never errors: a mesh
+// whose texture is gone draws untextured, as the engine does.
+namespace material {
+    // What a texture's TXI says about drawing it (txi-render.md). Data-core's TXI parser will be
+    // the full reading; this takes the keywords materials need.
+    struct Props {
+        blend: render::Blend,       // `blending additive` / `punchthrough`
+        envmap: resref::ResRef,     // `envmaptexture` or `bumpyshinytexture`; empty for none
+        bumpmap: resref::ResRef,    // `bumpmaptexture`
+        decal: bool,
+        water_alpha: f32,           // `wateralpha`; negative when absent
+        mipmap: bool,               // false for `mipmap 0`
+        nearest: bool,              // `filter 0`
+        clamp: bool,                // `clamp` non-zero
+        cycle: bool,                // `proceduretype cycle`
+        fps: f32,
+    }
+
+    // A texture in the cache. A missing one has texture null.
+    struct Entry {
+        name: resref::ResRef,
+        texture: ?render::Texture,
+        cube: bool,
+        normal_map: bool,           // rgb(a) data fit to be a bump map (grey height maps aren't, yet)
+        alpha_mean: f32,            // the TPC header's mean alpha (1 for TGA, and for no alpha)
+        frames_x: u32,              // a flipbook's grid (an atlas once uploaded), 1 by 1 otherwise
+        frames_y: u32,
+        props: Props,
+    }
+
+    struct Cache {
+        heap: *mut heap::Heap,
+        entries: list::List(Entry, heap::Heap),
+        index: map::Map(resref::ResRef, u32, heap::Heap),
+        scratch: arena::Arena,      // decoding space, emptied after each texture
+        loaded: u32,
+        missing: u32,
+        bytes: usize,               // uploaded
+    }
+
+    fn new_cache { heap: *mut heap::Heap, scratch: alloc::Bytes } -> Cache {
+        return Cache{
+            heap,
+            entries = list::new(Entry, heap::Heap){ realloc = heap::alloc, heap },
+            index = map::new(resref::ResRef, u32, heap::Heap){ realloc = heap::alloc, heap, hash = resref::hash, eq = resref::eq },
+            scratch = arena::new{ buf = scratch },
+            loaded = 0, missing = 0, bytes = 0,
+        }
+    }
+
+    // Frees every texture and the cache's tables.
+    fn free_cache { mut cache: Cache, mut dev: gpu::Device } {
+        let entries = list::items{ list = cache.entries }
+        let mut i: usize = 0
+        while i < entries.len {
+            let t = entries[i].texture
+            if t != null { gpu::free_texture{ &dev, t } }
+            i = i + 1
+        }
+        list::free{ list = &cache.entries }
+        map::free{ m = &cache.index }
+    }
+
+    fn no_props {} -> Props {
+        return Props{
+            blend = render::Blend::opaque, envmap = resref::empty{}, bumpmap = resref::empty{}, decal = false,
+            water_alpha = -1.0, mipmap = true, nearest = false, clamp = false, cycle = false, fps = 0.0,
+        }
+    }
+
+    // The keywords materials need from TXI text.
+    fn read_props { txi: []u8 } -> Props {
+        let mut p = no_props{}
+        let blending = tex::txi_value{ txi, key = "blending" }
+        if blending != null {
+            if ci::eq{ a = blending, b = "additive" } { p.blend = render::Blend::additive }
+            if ci::eq{ a = blending, b = "punchthrough" } { p.blend = render::Blend::punch }
+        }
+        let env = tex::txi_value{ txi, key = "envmaptexture" }
+        if env != null { p.envmap = resref::truncate{ name = env } }
+        let shiny = tex::txi_value{ txi, key = "bumpyshinytexture" }
+        if shiny != null { p.envmap = resref::truncate{ name = shiny } }
+        let bump = tex::txi_value{ txi, key = "bumpmaptexture" }
+        if bump != null { p.bumpmap = resref::truncate{ name = bump } }
+        p.decal = (tex::txi_number{ txi, key = "decal" } ifnull 0) != 0
+        let water = tex::txi_value{ txi, key = "wateralpha" }
+        if water != null { p.water_alpha = number{ text = water } }
+        let mip = tex::txi_number{ txi, key = "mipmap" }
+        if mip != null and mip == 0 { p.mipmap = false }
+        let filter = tex::txi_number{ txi, key = "filter" }
+        if filter != null and filter == 0 { p.nearest = true }
+        p.clamp = (tex::txi_number{ txi, key = "clamp" } ifnull 0) != 0
+        let procedure = tex::txi_value{ txi, key = "proceduretype" }
+        if procedure != null and ci::eq{ a = procedure, b = "cycle" } { p.cycle = true }
+        let fps = tex::txi_value{ txi, key = "fps" }
+        if fps != null { p.fps = number{ text = fps } }
+        return p
+    }
+
+    fn number { text: []u8 } -> f32 {
+        let s = utf8::from{ bytes = text } iferr { return 0.0 }
+        return utf8::parse_f32{ s } ifnull { 0.0 }
+    }
+
+    // A name a mesh gives for "no texture".
+    fn is_none { name: []u8 } -> bool {
+        return name.len == 0 or ci::eq{ a = name, b = "NULL" }
+    }
+
+    // The texture named `name`, loading it the first time; an entry with texture null when it is
+    // missing or can't be read.
+    fn get { mut cache: Cache, mut fs: Fs, mut dev: gpu::Device, rm: res::Manager, name: []u8 } -> Entry {
+        let key = resref::truncate{ name }
+        let found = map::get{ m = cache.index, key }
+        if found != null { return list::get{ list = cache.entries, i = @as(usize, found) } ifnull { missing_entry{ key } } }
+        let entry = load{ &cache, &fs, &dev, rm, key, name } iferr { missing_entry{ key } }
+        if entry.texture == null { cache.missing = cache.missing + 1 } else { cache.loaded = cache.loaded + 1 }
+        arena::reset{ heap = &cache.scratch }
+        let at = @as(u32, cache.entries.len)
+        list::push{ list = &cache.entries, item = entry } iferr { return entry }
+        map::put{ m = &cache.index, key, value = at } iferr {}
+        return entry
+    }
+
+    fn missing_entry { key: resref::ResRef } -> Entry {
+        return Entry{ name = key, texture = null, cube = false, normal_map = false, alpha_mean = 1.0, frames_x = 1, frames_y = 1, props = no_props{} }
+    }
+
+    // Reads, decodes and uploads one texture, in the scratch arena.
+    fn load { mut cache: Cache, mut fs: Fs, mut dev: gpu::Device, rm: res::Manager, key: resref::ResRef, name: []u8 } -> !Entry {
+        // `name` is the caller's bytes, not the key's: the key is a local, and an error passed up
+        // must not be taken to hold its address.
+        let found = res::find_texture{ rm, name } ifnull { return missing_entry{ key } }
+        let bytes = try res::read{ &fs, rm, loc = found.loc, realloc = arena::alloc, heap = &cache.scratch }
+        let mut t: tex::Texture
+        let mut txi: []u8 = ""
+        if found.kind == restype::Type::tpc {
+            t = try tex::read_tpc{ realloc = arena::alloc, heap = &cache.scratch, bytes }
+            txi = t.txi
+        } else if found.kind == restype::Type::tga {
+            t = try tex::read_tga{ realloc = arena::alloc, heap = &cache.scratch, bytes }
+        } else {
+            return missing_entry{ key }
+        }
+        if txi.len == 0 {
+            // A standalone TXI: the TGAs' (lightmaps, water) and any loose one.
+            let loose = try res::load{ &fs, rm, name, kind = restype::Type::txi, realloc = arena::alloc, heap = &cache.scratch }
+            if loose != null { txi = loose }
+        }
+        if found.kind == restype::Type::tga and txi.len > 0 { t = try tex::apply_txi{ t, txi } }
+        let props = read_props{ txi }
+        if t.kind == tex::Kind::flipbook and t.images > 1 {
+            t = try tex::to_atlas{ realloc = arena::alloc, heap = &cache.scratch, t }
+        }
+        let texture = try upload{ &dev, scratch = &cache.scratch, t, props }
+        cache.bytes = cache.bytes + t.data.len
+        return Entry{
+            name = key, texture, cube = t.kind == tex::Kind::cube,
+            normal_map = t.format != tex::Format::grey8,
+            alpha_mean = t.alpha_mean,
+            frames_x = t.frames_x, frames_y = t.frames_y, props,
+        }
+    }
+
+    // A decoded texture onto the GPU: cube maps as cubes, everything else flat (flipbooks as
+    // their atlas). DXT is decoded to RGBA here where the device can't take it as it is.
+    fn upload { mut dev: gpu::Device, mut scratch: arena::Arena, t: tex::Texture, props: Props } -> !render::Texture {
+        let info = gpu::describe{ dev }
+        let compressed = t.format == tex::Format::dxt1 or t.format == tex::Format::dxt5
+        let images: u32 = if t.kind == tex::Kind::cube { 6 } else { 1 }
+        // `mipmap 0` (lightmaps, GUI art): the top level alone, no mips.
+        let levels = if props.mipmap { t.levels } else { 1 }
+        let mut desc = render::make_texture_desc{ format = pixel_format{ f = t.format }, width = t.width, height = t.height, levels }
+        desc.kind = if t.kind == tex::Kind::cube { render::TextureKind::cube } else { render::TextureKind::flat }
+        desc.mipmap = props.mipmap
+        if props.nearest { desc.filter = render::Filter::nearest }
+        if props.clamp {
+            desc.wrap_u = render::Wrap::clamp
+            desc.wrap_v = render::Wrap::clamp
+        }
+        if compressed and not info.dxt {
+            desc.format = render::PixelFormat::rgba8
+            let size = render::texture_size{ desc }
+            let out = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scratch, mem = slice::empty(u8){}, count = size }
+            let mut at: usize = 0
+            let mut image: u32 = 0
+            while image < images {
+                let mut k: u32 = 0
+                while k < levels {
+                    let rgba = try tex::decode_level{ realloc = arena::alloc, heap = &scratch, t, image, level = k }
+                    slice::copy(u8){ dst = out[at..at + rgba.len], src = rgba }
+                    at = at + rgba.len
+                    k = k + 1
+                }
+                image = image + 1
+            }
+            return gpu::create_texture{ &dev, desc, data = out }
+        }
+        if levels == t.levels {
+            return gpu::create_texture{ &dev, desc, data = t.data[..tex::image_size{ t } * @as(usize, images)] }
+        }
+        // Fewer levels than stored: gather each image's leading levels.
+        let size = render::texture_size{ desc }
+        let out = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scratch, mem = slice::empty(u8){}, count = size }
+        let mut at: usize = 0
+        let mut image: u32 = 0
+        while image < images {
+            let mut k: u32 = 0
+            while k < levels {
+                let src = tex::level{ t, image, level = k }
+                slice::copy(u8){ dst = out[at..at + src.len], src }
+                at = at + src.len
+                k = k + 1
+            }
+            image = image + 1
+        }
+        return gpu::create_texture{ &dev, desc, data = out }
+    }
+
+    fn pixel_format { f: tex::Format } -> render::PixelFormat {
+        return match f {
+            grey8 => { render::PixelFormat::grey8 }
+            rgb8 => { render::PixelFormat::rgb8 }
+            rgba8 => { render::PixelFormat::rgba8 }
+            dxt1 => { render::PixelFormat::dxt1 }
+            dxt5 => { render::PixelFormat::dxt5 }
+        }
+    }
+
+    // What a mesh says about its surface (lib/mdl's Mesh, and the pose for alpha and
+    // self-illumination).
+    struct MeshDesc {
+        diffuse: []u8,              // textures[0]
+        lightmap: []u8,             // textures[1]
+        lightmapped: bool,
+        transparency_hint: u32,
+        alpha: f32,                 // the node's alpha (the pose's, times its ancestors')
+        self_illum: math::Vec3,
+        envmap: []u8,               // an override, as appearance.2da's `envmap` column; "" or DEFAULT for none
+    }
+
+    // The material for a mesh: its diffuse texture and what that texture's TXI says (blending,
+    // environment and bump maps, decal, water opacity), its lightmap, and its alpha and
+    // self-illumination. A flipbook diffuse shows frame 0: set_flipbook_frame moves it on.
+    fn for_mesh { mut cache: Cache, mut fs: Fs, mut dev: gpu::Device, rm: res::Manager, desc: MeshDesc } -> render::Material {
+        let mut m = render::make_material{}
+        let mut props = no_props{}
+        let mut has_diffuse = false
+        let mut alpha_mean: f32 = 1.0
+        if not is_none{ name = desc.diffuse } {
+            let d = get{ &cache, &fs, &dev, rm, name = desc.diffuse }
+            if d.texture != null {
+                m.diffuse = d.texture
+                has_diffuse = true
+                props = d.props
+                alpha_mean = d.alpha_mean
+                if d.frames_x * d.frames_y > 1 {
+                    render::set_flipbook_frame{ &m, cols = d.frames_x, rows = d.frames_y, frame = 0 }
+                }
+            }
+        }
+        if desc.lightmapped and not is_none{ name = desc.lightmap } {
+            let l = get{ &cache, &fs, &dev, rm, name = desc.lightmap }
+            if l.texture != null { m.lightmap = l.texture }
+        }
+        m.blend = props.blend
+        m.decal = props.decal
+        let mut env_name = resref::bytes{ r = &props.envmap }
+        if desc.envmap.len > 0 and not ci::eq{ a = desc.envmap, b = "DEFAULT" } { env_name = desc.envmap }
+        if not is_none{ name = env_name } {
+            let e = get{ &cache, &fs, &dev, rm, name = env_name }
+            if e.texture != null { m.envmap = e.texture }
+        }
+        if not resref::is_empty{ r = props.bumpmap } {
+            let b = get{ &cache, &fs, &dev, rm, name = resref::bytes{ r = &props.bumpmap } }
+            if b.texture != null and b.normal_map { m.bumpmap = b.texture }
+        }
+        // Water: blended at its opacity.
+        if props.water_alpha >= 0.0 {
+            m.blend = render::Blend::alpha
+            m.color.a = props.water_alpha
+        }
+        // Without a blending keyword, a diffuse alpha that isn't the reflection mask (no envmap)
+        // is transparency: the original keeps alpha test and blending on for everything
+        // (re/render-gui.md, GL_SetDefaultState), and scorch marks such as LHR_blst02 (AlphaMean
+        // 0.07, no TXI, transparency hint 0 on some meshes) show it. Our split, by the TPC's
+        // AlphaMean, until RE says more: mostly clear textures, or meshes with a transparency
+        // hint, blend; mostly solid ones with holes are cut out, keeping their depth.
+        if desc.transparency_hint != 0 { m.sort = @as(i32, desc.transparency_hint) }
+        if m.blend == render::Blend::opaque and m.envmap == null and has_diffuse and alpha_mean < 0.99 {
+            m.blend = if desc.transparency_hint != 0 or alpha_mean < 0.6 { render::Blend::alpha } else { render::Blend::punch }
+        }
+        set_alpha{ &m, alpha = desc.alpha }
+        m.selfillum = desc.self_illum
+        return m
+    }
+
+    // Applies a node's alpha (its controller, faded by its ancestors'): below 1 the surface blends.
+    fn set_alpha { mut m: render::Material, alpha: f32 } {
+        if alpha >= 0.999 { return }
+        if m.blend == render::Blend::opaque or m.blend == render::Blend::punch { m.blend = render::Blend::alpha }
+        m.color.a = m.color.a * math::clamp{ x = alpha, lo = 0.0, hi = 1.0 }
+    }
+}

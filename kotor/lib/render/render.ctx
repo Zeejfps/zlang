@@ -116,23 +116,122 @@ namespace render {
 
     // ---- meshes
 
-    // Where each attribute sits in a vertex: a byte offset into the `stride`-byte row, or -1 when
-    // the mesh hasn't it. The shapes follow MDX rows, so a model's MDX block uploads as it is.
+    // Where each attribute sits: a byte offset, or -1 when the mesh hasn't it. Interleaved, the
+    // offset is into each `stride`-byte row, whose shapes follow MDX rows, so an MDX block uploads
+    // as it is. `planar`, each attribute is a tightly packed array of its own starting at its
+    // offset, as pack_streams lays out lib/mdl's per-attribute arrays.
     struct VertexLayout {
-        stride: u32,
+        stride: u32,            // bytes per row, interleaved; unused when planar
+        planar: bool,
         position: i32,          // 3 f32
         normal: i32,            // 3 f32
         uv0: i32,               // 2 f32: the diffuse (and bump) texture
         uv1: i32,               // 2 f32: the lightmap
         tangent_space: i32,     // 9 f32, as MDX keeps them: +dP/dv, -dP/du, the normal
         weights: i32,           // 4 f32: skin weights
-        bones: i32,             // 4 f32: bone slots as numbers, -1 for none (MDX)
+        bones: i32,             // 4 bone slots: f32 numbers with -1 for none (MDX), or u8 (bones_u8)
+        bones_u8: bool,
         color: i32,             // 4 u8: RGBA, 0..255
         constraint: i32,        // 1 f32: how freely a dangly vertex moves, 0 (pinned) .. 255
     }
 
     fn make_layout { stride: u32 } -> VertexLayout {
-        return VertexLayout{ stride, position = -1, normal = -1, uv0 = -1, uv1 = -1, tangent_space = -1, weights = -1, bones = -1, color = -1, constraint = -1 }
+        return VertexLayout{
+            stride, planar = false, position = -1, normal = -1, uv0 = -1, uv1 = -1, tangent_space = -1,
+            weights = -1, bones = -1, bones_u8 = false, color = -1, constraint = -1,
+        }
+    }
+
+    // Bytes the vertices of a layout take: what create_mesh's vertex data must hold.
+    fn layout_size { layout: VertexLayout, vertex_count: u32 } -> usize {
+        let n = @as(usize, vertex_count)
+        if not layout.planar { return n * @as(usize, layout.stride) }
+        let mut end: usize = 0
+        end = attribute_end{ end, offset = layout.position, bytes = n * 12 }
+        end = attribute_end{ end, offset = layout.normal, bytes = n * 12 }
+        end = attribute_end{ end, offset = layout.uv0, bytes = n * 8 }
+        end = attribute_end{ end, offset = layout.uv1, bytes = n * 8 }
+        end = attribute_end{ end, offset = layout.tangent_space, bytes = n * 36 }
+        end = attribute_end{ end, offset = layout.weights, bytes = n * 16 }
+        end = attribute_end{ end, offset = layout.bones, bytes = n * (if layout.bones_u8 { 4 } else { 16 }) }
+        end = attribute_end{ end, offset = layout.color, bytes = n * 4 }
+        end = attribute_end{ end, offset = layout.constraint, bytes = n * 4 }
+        return end
+    }
+
+    fn attribute_end { end: usize, offset: i32, bytes: usize } -> usize {
+        if offset < 0 { return end }
+        let e = @as(usize, offset) + bytes
+        return if e > end { e } else { end }
+    }
+
+    // A mesh's vertices as separate arrays, as lib/mdl holds them. An array shorter than
+    // vertex_count times its width counts as absent.
+    struct Streams {
+        vertex_count: u32,
+        positions: []f32,       // 3 per vertex
+        normals: []f32,         // 3
+        uv0: []f32,             // 2
+        uv1: []f32,             // 2
+        tangents: []f32,        // 9, as MDX keeps them
+        weights: []f32,         // 4
+        bones: []u8,            // 4 palette slots
+        colors: []u8,           // 4, RGBA
+        constraints: []f32,     // 1
+    }
+
+    // Bytes pack_streams needs for `s`.
+    fn streams_size { s: Streams } -> usize {
+        let n = @as(usize, s.vertex_count)
+        let mut size: usize = 0
+        if s.positions.len >= n * 3 { size = size + n * 12 }
+        if s.normals.len >= n * 3 { size = size + n * 12 }
+        if s.uv0.len >= n * 2 { size = size + n * 8 }
+        if s.uv1.len >= n * 2 { size = size + n * 8 }
+        if s.tangents.len >= n * 9 { size = size + n * 36 }
+        if s.weights.len >= n * 4 { size = size + n * 16 }
+        if s.constraints.len >= n { size = size + n * 4 }
+        if s.bones.len >= n * 4 { size = size + n * 4 }
+        if s.colors.len >= n * 4 { size = size + n * 4 }
+        return size
+    }
+
+    // Copies the arrays one after another into `into` (streams_size bytes) and returns their
+    // planar layout, or null if `into` is too small. The f32 arrays come first, so each starts on
+    // a 4-byte boundary of the buffer.
+    fn pack_streams { s: Streams, into: []mut u8 } -> ?VertexLayout {
+        if into.len < streams_size{ s } { return null }
+        let n = @as(usize, s.vertex_count)
+        let mut l = make_layout{ stride = 0 }
+        l.planar = true
+        let mut at: usize = 0
+        if s.positions.len >= n * 3 { l.position = put_floats{ into, at = &at, src = s.positions[..n * 3] } }
+        if s.normals.len >= n * 3 { l.normal = put_floats{ into, at = &at, src = s.normals[..n * 3] } }
+        if s.uv0.len >= n * 2 { l.uv0 = put_floats{ into, at = &at, src = s.uv0[..n * 2] } }
+        if s.uv1.len >= n * 2 { l.uv1 = put_floats{ into, at = &at, src = s.uv1[..n * 2] } }
+        if s.tangents.len >= n * 9 { l.tangent_space = put_floats{ into, at = &at, src = s.tangents[..n * 9] } }
+        if s.weights.len >= n * 4 { l.weights = put_floats{ into, at = &at, src = s.weights[..n * 4] } }
+        if s.constraints.len >= n { l.constraint = put_floats{ into, at = &at, src = s.constraints[..n] } }
+        if s.bones.len >= n * 4 {
+            l.bones = @as(i32, at)
+            l.bones_u8 = true
+            slice::copy(u8){ dst = into[at..at + n * 4], src = s.bones[..n * 4] }
+            at = at + n * 4
+        }
+        if s.colors.len >= n * 4 {
+            l.color = @as(i32, at)
+            slice::copy(u8){ dst = into[at..at + n * 4], src = s.colors[..n * 4] }
+            at = at + n * 4
+        }
+        return l
+    }
+
+    fn put_floats { into: []mut u8, mut at: usize, src: []f32 } -> i32 {
+        let start = at
+        let bytes = @slice(@cast(*u8, src.ptr), src.len * 4)
+        slice::copy(u8){ dst = into[start..start + bytes.len], src = bytes }
+        at = start + bytes.len
+        return @as(i32, start)
     }
 
     enum Primitive: u8 { triangles, lines }

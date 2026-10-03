@@ -79,6 +79,14 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut 
     }
     try draw_ui_and_save{ &io, &fs, &dev, &frame, &heap, a = assets, fonts = fonts[..font_count], dir = opts.out_dir }
 
+    // Real models, with their textures through lib/material.
+    let scratch = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = 100663296 }
+    let mut cache = material::new_cache{ heap = &h, scratch }
+    defer material::free_cache{ &cache, &dev }
+    let mut lib = kmodels::new_library{}
+    try draw_room{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, dir = opts.out_dir }
+    try draw_bastila{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, dir = opts.out_dir }
+
     if opts.show > 0.0 {
         let freq = sdl::counter_frequency{ &sdl }
         let start = sdl::counter{ &sdl }
@@ -619,4 +627,161 @@ fn frame_rect { mut frame: render::Frame, r: render::Rect, color: render::Color 
     render::fill_rect{ &frame, rect = render::rect{ x = r.x, y = r.y + r.h - 1.0, w = r.w, h = 1.0 }, color }
     render::fill_rect{ &frame, rect = render::rect{ x = r.x, y = r.y, w = 1.0, h = r.h }, color }
     render::fill_rect{ &frame, rect = render::rect{ x = r.x + r.w - 1.0, y = r.y, w = 1.0, h = r.h }, color }
+}
+
+// ---- real models
+
+// An orthographic camera that frames `box` seen along rotation `r` (rows: screen right, screen
+// up, toward the camera; as tools/py/mdlrender.py's views), in a viewport of `aspect`.
+fn ortho_camera { box: math::Aabb, r: math::Mat3, aspect: f32 } -> render::Camera {
+    let c = math::aabb::center{ b = box }
+    let radius = math::vec3::length{ v = math::aabb::extents{ b = box } } + 0.01
+    // Screen extents of the box's corners around its centre.
+    let mut wx: f32 = 0.0
+    let mut wy: f32 = 0.0
+    let mut k: u32 = 0
+    while k < 8 {
+        let corner = v3{
+            x = if (k & 1) != 0 { box.max.x } else { box.min.x },
+            y = if (k & 2) != 0 { box.max.y } else { box.min.y },
+            z = if (k & 4) != 0 { box.max.z } else { box.min.z },
+        }
+        let p = math::mat3::transform{ m = r, v = math::vec3::sub{ a = corner, b = c } }
+        wx = math::max{ a = wx, b = math::abs{ x = p.x } }
+        wy = math::max{ a = wy, b = math::abs{ x = p.y } }
+        k = k + 1
+    }
+    let half_h = math::max{ a = wy, b = wx / aspect } * 1.04
+    let half_w = half_h * aspect
+    // The eye sits 2 radii back along the view's +Z (toward the camera).
+    let back = math::Vec3{ x = r.m[2], y = r.m[5], z = r.m[8] }
+    let eye = math::vec3::add_scaled{ a = c, b = back, s = 2.0 * radius }
+    let mut view = math::mat4::from_mat3{ r }
+    let t = math::mat3::transform{ m = r, v = eye }
+    view.m[12] = -t.x
+    view.m[13] = -t.y
+    view.m[14] = -t.z
+    return render::Camera{
+        view, proj = math::mat4::ortho{ left = -half_w, right = half_w, bottom = -half_h, top = half_h, near = 0.5 * radius, far = 3.5 * radius },
+        eye,
+    }
+}
+
+// mdlrender.py's view rotations, rows as screen right, up, and toward the camera.
+fn view_rotation { which: u32 } -> math::Mat3 {
+    let mut r: math::Mat3
+    if which == 0 {
+        // front: the camera on +Y, looking at a creature's face
+        r = mat3_rows{ a = v3{ x = -1.0, y = 0.0, z = 0.0 }, b = v3{ x = 0.0, y = 0.0, z = 1.0 }, c = v3{ x = 0.0, y = 1.0, z = 0.0 } }
+    } else if which == 1 {
+        // side
+        r = mat3_rows{ a = v3{ x = 0.0, y = 1.0, z = 0.0 }, b = v3{ x = 0.0, y = 0.0, z = 1.0 }, c = v3{ x = 1.0, y = 0.0, z = 0.0 } }
+    } else {
+        // iso: turned -35 degrees about Z, then tipped 30 degrees
+        let a = math::radians{ degrees = -35.0 }
+        let b = math::radians{ degrees = 30.0 }
+        let rz = mat3_rows{ a = v3{ x = math::cosf{ x = a }, y = -math::sinf{ x = a }, z = 0.0 }, b = v3{ x = math::sinf{ x = a }, y = math::cosf{ x = a }, z = 0.0 }, c = v3{ x = 0.0, y = 0.0, z = 1.0 } }
+        let rx = mat3_rows{ a = v3{ x = 1.0, y = 0.0, z = 0.0 }, b = v3{ x = 0.0, y = math::cosf{ x = b }, z = -math::sinf{ x = b } }, c = v3{ x = 0.0, y = math::sinf{ x = b }, z = math::cosf{ x = b } } }
+        let base = mat3_rows{ a = v3{ x = 1.0, y = 0.0, z = 0.0 }, b = v3{ x = 0.0, y = 0.0, z = 1.0 }, c = v3{ x = 0.0, y = -1.0, z = 0.0 } }
+        r = math::mat3::mul{ a = rx, b = math::mat3::mul{ a = base, b = rz } }
+    }
+    return r
+}
+
+fn mat3_rows { a: math::Vec3, b: math::Vec3, c: math::Vec3 } -> math::Mat3 {
+    let mut m: math::Mat3
+    m.m[0] = a.x
+    m.m[3] = a.y
+    m.m[6] = a.z
+    m.m[1] = b.x
+    m.m[4] = b.y
+    m.m[7] = b.z
+    m.m[2] = c.x
+    m.m[5] = c.y
+    m.m[8] = c.z
+    return m
+}
+
+// The m01aa_02a room (lightmapped) from above at an angle, as mdlrender.py's m01aa_02a_iso.png.
+fn draw_room {
+    mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena,
+    mut lib: kmodels::Library, mut cache: material::Cache, rm: res::Manager, dir: []u8,
+} -> ! {
+    let room = try kmodels::load{ &lib, &fs, rm, &heap, name = "m01aa_02a" } ifnull { return kmodels::no_model{ name = "m01aa_02a" } }
+    let parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model = room, envmap = "" }
+    let pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = room }
+    let palette = try alloc::resize(math::Mat4, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(math::Mat4){}, count = 64 }
+    let box = kmodels::bounds{ model = room, pose, parts, instance = math::mat4::identity{}, box = math::aabb::empty{}, palette }
+    render::begin_frame{ &frame, time = 0.0 }
+    let mut view = render::make_view{ camera = ortho_camera{ box, r = view_rotation{ which = 2 }, aspect = @as(f32, WIDTH) / @as(f32, HEIGHT) } }
+    view.clear_color = render::rgba{ r = 0.15, g = 0.15, b = 0.18, a = 1.0 }
+    view.ambient = v3{ x = 0.6, y = 0.6, z = 0.6 }
+    let vi = render::add_view{ &frame, view } ifnull { return }
+    kmodels::add_lights{ &frame, model = room, pose, instance = math::mat4::identity{} }
+    _ = kmodels::draw{ &frame, view = vi, model = room, pose, parts, instance = math::mat4::identity{}, palette }
+    try gpu::submit{ &dev, frame = &frame }
+    _ = @fmt(&io, "m01aa_02a: {} meshes drawn of {}; textures {} loaded, {} missing\n", parts.len, room.meshes.len, cache.loaded, cache.missing)
+    try save_screen{ &io, &fs, &dev, &heap, dir, name = "m01aa_02a_iso.png" }
+    report{ &io, &dev }
+}
+
+// Bastila: body and head (at the headhook) in the bind pose, pause1 at 0.5 s and run at 0.2 s,
+// the last from the side, as mdlrender.py's bastila_skinned.png.
+fn draw_bastila {
+    mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena,
+    mut lib: kmodels::Library, mut cache: material::Cache, rm: res::Manager, dir: []u8,
+} -> ! {
+    let body = try kmodels::load{ &lib, &fs, rm, &heap, name = "p_bastilabb" } ifnull { return kmodels::no_model{ name = "p_bastilabb" } }
+    let head = try kmodels::load{ &lib, &fs, rm, &heap, name = "p_bastilah" } ifnull { return kmodels::no_model{ name = "p_bastilah" } }
+    let body_parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model = body, envmap = "" }
+    let head_parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model = head, envmap = "" }
+    let body_pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = body }
+    let head_pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = head }
+    let palette = try alloc::resize(math::Mat4, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(math::Mat4){}, count = 64 }
+    let lookup = kmodels::find{ lib = &lib, _ }
+
+    render::begin_frame{ &frame, time = 0.0 }
+    let names: [3][]u8 = ["", "pause1", "run"]
+    let times: [3]f32 = [0.0, 0.5, 0.2]
+    let w = @as(f32, WIDTH) / 3.0
+    let mut k: usize = 0
+    while k < 3 {
+        // Pose body and head: the head plays its own animation of the same name, if its chain has one.
+        mdl_anim::reset{ model = body, pose = body_pose }
+        mdl_anim::finish{ model = body, pose = body_pose }
+        mdl_anim::reset{ model = head, pose = head_pose }
+        mdl_anim::finish{ model = head, pose = head_pose }
+        if names[k].len > 0 {
+            let found = mdl_anim::find{ model = body, name = names[k], lookup }
+            if found != null {
+                let binding = try mdl_anim::bind{ realloc = arena::alloc, &heap, model = body, animation = found.animation }
+                mdl_anim::pose_at{ model = body, binding, time = times[k], pose = body_pose }
+            }
+            let head_found = mdl_anim::find{ model = head, name = names[k], lookup }
+            if head_found != null {
+                let binding = try mdl_anim::bind{ realloc = arena::alloc, &heap, model = head, animation = head_found.animation }
+                mdl_anim::pose_at{ model = head, binding, time = times[k], pose = head_pose }
+            }
+        }
+        let hook = mdl_anim::hook_transform{ model = body, pose = body_pose, name = mdl_anim::HOOK_HEAD } ifnull { math::mat4::identity{} }
+        let body_box = kmodels::bounds{ model = body, pose = body_pose, parts = body_parts, instance = math::mat4::identity{}, box = math::aabb::empty{}, palette }
+        let box = kmodels::bounds{ model = head, pose = head_pose, parts = head_parts, instance = hook, box = body_box, palette }
+        let mut view = render::make_view{ camera = ortho_camera{ box, r = view_rotation{ which = if k == 2 { 1 } else { 0 } }, aspect = w / @as(f32, HEIGHT) } }
+        view.viewport = render::rect{ x = @as(f32, k) * w, y = 0.0, w, h = @as(f32, HEIGHT) }
+        view.clear_color = render::rgba{ r = 0.15, g = 0.15, b = 0.18, a = 1.0 }
+        view.ambient = v3{ x = 0.4, y = 0.4, z = 0.42 }
+        let vi = render::add_view{ &frame, view } ifnull { return }
+        _ = kmodels::draw{ &frame, view = vi, model = body, pose = body_pose, parts = body_parts, instance = math::mat4::identity{}, palette }
+        _ = kmodels::draw{ &frame, view = vi, model = head, pose = head_pose, parts = head_parts, instance = hook, palette }
+        // The frame's palettes are copied in, so the next pose can reuse the scratch.
+        k = k + 1
+        // Each view is submitted on its own: the poses are re-used for the next one.
+        render::add_light{ &frame, light = render::Light{ position = v3{ x = 3.0, y = 6.0, z = 5.0 }, color = v3{ x = 0.9, y = 0.88, z = 0.85 }, radius = 40.0 } }
+        try gpu::submit{ &dev, frame = &frame }
+        render::begin_frame{ &frame, time = 0.0 }
+        // Keep the previous views' pixels: later views clear only their own viewport.
+    }
+    _ = @fmt(&io, "bastila: body {} meshes, head {} meshes; textures {} loaded, {} missing\n", body_parts.len, head_parts.len, cache.loaded, cache.missing)
+    try save_screen{ &io, &fs, &dev, &heap, dir, name = "bastila.png" }
+    report{ &io, &dev }
 }
