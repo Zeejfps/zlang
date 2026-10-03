@@ -59,10 +59,46 @@ namespace test_sheet {
         else if ci::eq{ a = key, b = "level" } { c.class_levels[0] = @as(u32, n) }
         else if ci::eq{ a = key, b = "class2" } { c.classes[1] = @as(u32, n) }
         else if ci::eq{ a = key, b = "level2" } { c.class_levels[1] = @as(u32, n) }
-        else if ci::eq{ a = key, b = "template" } { o.template = resref::truncate{ name = value } }
+        else if ci::eq{ a = key, b = "template" } {
+            o.template = resref::truncate{ name = value }
+            read_template{ &w, o, c, name = value }
+        }
         else { return false }
         c.hit_dice = c.class_levels[0] + c.class_levels[1] + c.class_levels[2]
+        sync_rules{ &w, o, c }
         return true
+    }
+
+    // The template's skill ranks, feats, powers and saves go into the rules creature (the numbers
+    // the other commands set are copied over afterwards by `sync_rules`).
+    fn read_template { mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature, name: []u8 } {
+        let f = c.fighter ifnull { return }
+        let found = world::read_gff{ &w, name, kind = restype::Type::utc } iferr { null }
+        let doc = found ifnull { return }
+        rules::read_creature{ tables = w.rules, doc = &doc, s = gff::ROOT, out = &f.c }
+        fight::sync_flags{ w = &w, o, f }
+        // The history formulas of the player would leave the template's pools out.
+        f.c.pc_rules = false
+        f.loaded = true
+    }
+
+    // The engine fields this command set writes (abilities, classes, XP, alignment) copied into the
+    // rules creature, which then rebuilds its stats.
+    fn sync_rules { mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature } {
+        let f = c.fighter ifnull { return }
+        if not f.loaded { return }
+        let mut k: usize = 0
+        while k < 6 {
+            f.c.abil[k] = @as(i32, c.abilities[k])
+            k = k + 1
+        }
+        f.c.xp = @as(i32, c.xp)
+        f.c.good_evil = @as(i32, c.good_evil)
+        f.c.classes[0] = rules::ClassSlot{ class = @as(i32, c.classes[0]), level = @as(i32, c.class_levels[0]) }
+        f.c.classes[1] = rules::ClassSlot{ class = @as(i32, c.classes[1]), level = @as(i32, c.class_levels[1]) }
+        f.c.nclasses = if c.class_levels[1] > 0 { 2 } else { 1 }
+        rules::recompute{ tables = w.rules, c = &f.c }
+        f.c.fp = f.c.stats.max_fp
     }
 
     // Fills the open menu again from the world.

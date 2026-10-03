@@ -46,3 +46,22 @@ what I had to write instead, how often).
 - **Headless menus under a conversation.** A menu opened while a conversation's panels are up
   looks fine in the screenshot but its clicks go to the conversation's modal panels. Scripts that
   want a menu on the Endar Spire need two `hush` lines (the opening cutscene and the Trask talk).
+
+## 2026-10-03: the HUD and panels on the rules creature
+
+- **No default arguments, so adding an input to a shared helper edits its callers.** `items::damage_text`
+  needed the wielder (Strength and Weapon Specialization come from the rules creature), and every call
+  site (one, in equip_panel.ctx, another owner's file by assignment) had to change with it. A
+  defaulted parameter, or a second name for the extended form, would have kept the old call valid.
+- **A tree in the middle of a merge cannot be built, and `ctxc exe` reports the conflict markers as
+  nine unrelated syntax errors** (`expected an expression, found '<<'`) with no hint that the file
+  holds a merge conflict. I built a copy instead (`git archive HEAD` into the scratchpad, my files
+  copied over, `ctxc exe <copy>/kotor`), which works because `ctxc` finds the compiler from its own
+  location, not from the project.
+- **Shell tool, not the compiler.** The worktree-isolated shell refuses any command that expands a
+  variable in a command position, or runs `sh` on a script, with "cannot be shown not to be git";
+  the run script had to be written with the Write tool and invoked as `sh <absolute path>`. Two tool
+  calls issued in one block run concurrently, so a build and a run of its output raced.
+- **Windows paths in program arguments.** The game exe takes `--screenshot-at 12:/c/Users/...` as a
+  path it cannot open (`fs::not_found`, no path in the message); the `C:/Users/...` spelling works. An
+  error that named the file would have saved a run.

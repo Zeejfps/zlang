@@ -32,12 +32,23 @@ namespace rt_party {
             nwscript::SaveNPCState => { try save_npc_state{ &w, &vm, argc } }
             nwscript::SwitchPlayerCharacter => { try switch_player_character{ &w, &vm, argc } }
             nwscript::SetSoloMode => { try set_solo_mode{ &w, &vm, argc } }
+            nwscript::AddToParty => { try pc_party{ &w, &vm, argc, routine } }
+            nwscript::RemoveFromParty => { try pc_party{ &w, &vm, argc, routine } }
             else => { return false }
         }
         return true
     }
 
     fn flag { b: bool } -> i32 { return if b { 1 } else { 0 } }
+
+    // void AddToParty(object oPC, object oPartyLeader), void RemoveFromParty(object oPC): NWN's
+    // multiplayer party, "only for two PCs" (nwscript.nss). There is one player character and its
+    // companions are the party table's, so there is no party of PCs to join or leave: the arguments go
+    // and nothing changes. (k_ptar_jandro20x passes a droid, k_psta_partyleav the PC.)
+    fn pc_party { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        _ = try nwarg::object{ &vm, routine, argc, i = 0 }
+        if routine == nwscript::AddToParty { _ = try nwarg::object{ &vm, routine, argc, i = 1 } }
+    }
 
     fn get_is_pc { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetIsPC, argc, i = 0 }

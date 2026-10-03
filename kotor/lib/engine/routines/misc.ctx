@@ -59,6 +59,13 @@ namespace rt_misc {
             nwscript::GetLastAttacker => { try get_last_attacker{ &w, &vm, argc } }
             nwscript::GetLastSpeaker => { try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = self_ctx{ w = &w, vm = &vm }.last_speaker } } }
             nwscript::GetLastSpell => { try nwvm::push_int{ &vm, v = self_ctx_of{ w = &w, vm = &vm }.last_spell } }
+            // KOTOR has no metamagic (ActionCastSpellAt* takes the argument and nothing keeps it): the caster
+            // that is there cast with METAMAGIC_NONE (0), nwscript.nss's -1 is for no caster.
+            nwscript::GetMetaMagicFeat => { try nwvm::push_int{ &vm, v = if world::is_valid{ w = &w, id = nwvm::self_object{ vm } } { 0 } else { -1 } } }
+            // ---- things this build has no part of
+            nwscript::GetCheatCode => { try cheat_or_live_content{ &w, &vm, argc, routine } }
+            nwscript::GetIsLiveContentAvailable => { try cheat_or_live_content{ &w, &vm, argc, routine } }
+            nwscript::YavinHackCloseDoor => { try yavin_hack_close_door{ &w, &vm, argc } }
             nwscript::GetSpellId => { try nwvm::push_int{ &vm, v = self_ctx_of{ w = &w, vm = &vm }.spell_id } }
             nwscript::GetSpellTargetObject => { try nwvm::push_object{ &vm, id = self_ctx_of{ w = &w, vm = &vm }.spell_target } }
             nwscript::GetSpellTargetLocation => {
@@ -686,5 +693,23 @@ namespace rt_misc {
     fn show_upgrade_screen { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let item = try nwarg::object{ &vm, routine = nwscript::ShowUpgradeScreen, argc, i = 0 }
         outbox::post{ out = &w.out, note = outbox::Note::upgrade_screen{ item = live_or_invalid{ w = &w, id = item } } }
+    }
+
+    // int GetCheatCode(int nCode): whether the cheat code was entered at the console, which has none
+    // here, so FALSE (k_psta_easter asks for code 0). int GetIsLiveContentAvailable(int nPkg): the
+    // downloadable packages of the console release are not part of the PC game, so FALSE.
+    fn cheat_or_live_content { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        _ = try nwarg::int{ &vm, routine, argc, i = 0 }
+        try nwvm::push_int{ &vm, v = 0 }
+    }
+
+    // void YavinHackCloseDoor(object oidDoor): yav50_load, loading a save, shuts the doors the save
+    // left looking open: the door is closed at once, its walkmesh blocking again, without a
+    // CLOSE event or anyone to close it. (A door that is not a door is left alone.)
+    fn yavin_hack_close_door { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::YavinHackCloseDoor, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        if obj::door{ o } == null { return }
+        doors::set_door_state{ &w, id, state = obj::DoorState::closed }
     }
 }

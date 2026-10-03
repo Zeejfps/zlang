@@ -2,19 +2,17 @@
 // attack bonus, hit points, Force points, level, XP, class names, skill ranks, feats and Force
 // powers for the character sheet and the abilities menu (docs/design/hud.md, "Reading the game").
 //
-// PLACEHOLDER: lib/rules is not merged yet. Everything below that works out a number from the
-// creature (`read`, `skill_total`, `known_of`) computes it from the d20 formulas of
-// docs/re/rules.md and combat.md and the game's own 2DAs, on the engine's placeholder creature
-// (obj::Creature: abilities, class levels, XP) plus the creature's blueprint, so the rules lead's
-// merge replaces exactly these functions with reads of `rules::Creature.stats`:
+// The numbers are the creature's rules state (fight::Fighter.c, read from its GFF): `read_ruled`
+// takes them from rules::Stats (abilities, base attack bonus, saves, Force points, level),
+// rules::armor_class_sheet (defence), rules::xp_to_reach_level / can_level_up, and `known_ruled`
+// from the creature's skill ranks, feat and power bit sets and rules::skill_rank.
+// A creature with no rules state (`hud::ruled_of` is null) falls back to `read_standin` and
+// `known_standin`, which compute the same numbers from the d20 formulas of docs/re/rules.md and
+// combat.md and the game's own 2DAs on the engine's own creature fields (obj::Creature) and its
+// blueprint.
 //
-//   sheet::read        -> rules::Stats (abil, abil_mod, bab, save_base + save_effect, max_hp, max_fp)
-//                         and rules::armor_class_sheet for the defence
-//   sheet::known_of    -> rules::Creature.skills / .feats / .powers (the bit sets), has_feat, knows_power
-//   sheet::skill_total -> rules::skill_rank
-//
-// Every 2DA is read into the frame's scratch memory (nothing to free), so a caller uses what these
-// return in the frame it asked in.
+// Every 2DA the fallback reads goes into the frame's scratch memory (nothing to free), so a caller
+// uses what these return in the frame it asked in.
 namespace sheet {
     const SKILLS: usize = 8
     const MAX_FEATS: usize = 192
@@ -29,6 +27,8 @@ namespace sheet {
 
     // What the creature knows how to do, beyond the numbers the engine keeps on it.
     struct Known {
+        ruled: bool,                        // from the rules creature (else the fallback below)
+        total: [8]i32,                      // rules::skill_rank with effects, by skills.2da row (ruled only)
         from_template: bool,                // read from the blueprint (else derived from the classes)
         skill_rank: [8]i32,                 // ranks bought, by skills.2da row
         nfeats: usize,
@@ -58,6 +58,7 @@ namespace sheet {
         save: [3]i32,                       // fortitude, reflex, will
         bab: i32,
         xp: i32,
+        attack: i32,                        // the attack modifier with the right-hand weapon (ruled only; else bab)
         xp_next: i32,                       // the XP of the next level; -1 at the level cap
         can_level: bool,
         light: i32,                         // good_evil: 0 dark .. 100 light
@@ -139,11 +140,38 @@ namespace sheet {
         return gff::get_number{ doc, s, label } ifnull default
     }
 
-    // Skill ranks, feats and Force powers of a creature. The engine does not keep them on the
-    // creature yet, so they come from its blueprint (the UTC the object was made from: real data);
-    // a creature with no blueprint (the default player) gets the feats its classes grant at its
-    // levels, from feat.2da's `<class>_granted` columns.
+    // Skill ranks, feats and Force powers of a creature: the rules creature's.
     fn known_of { mut w: world::World, id: u32 } -> Known {
+        if hud::ruled_of{ w = &w, id } is some{ value = f } { return known_ruled{ &w, f } }
+        return known_standin{ &w, id }
+    }
+
+    // From the rules creature: the ranks bought, every feat and power its bit sets hold, and the
+    // skill totals (ranks + key ability + feat line + effects) as the rules count them.
+    fn known_ruled { mut w: world::World, f: *mut fight::Fighter } -> Known {
+        let mut k: Known
+        k.ruled = true
+        k.from_template = true
+        k.force_now = -1
+        let mut i: usize = 0
+        while i < SKILLS {
+            k.skill_rank[i] = f.c.skills[i]
+            k.total[i] = rules::skill_rank{ tables = w.rules, c = &f.c, skill = @as(i32, i), vs = rules::no_versus{}, base_only = false }
+            i = i + 1
+        }
+        let mut row: i32 = 0
+        while row < 256 {
+            if rules::has_feat{ c = &f.c, feat = row } { add_feat{ &k, feat = @trunc(u16, row) } }
+            if rules::knows_power{ c = &f.c, spell = row } { add_power{ &k, spell = @trunc(u16, row) } }
+            row = row + 1
+        }
+        return k
+    }
+
+    // The fallback for a creature with no rules state. The ranks, feats and powers come from its
+    // blueprint (the UTC the object was made from: real data); a creature with no blueprint gets
+    // the feats its classes grant at its levels, from feat.2da's `<class>_granted` columns.
+    fn known_standin { mut w: world::World, id: u32 } -> Known {
         let mut k: Known
         k.force_now = -1
         let o = world::object{ w = &w, id } ifnull { return k }
@@ -193,9 +221,8 @@ namespace sheet {
         return k
     }
 
-    // PLACEHOLDER: what the level-up choices will have picked. For now a creature with no blueprint
-    // knows the feats its classes grant outright up to its class levels (armour and weapon
-    // proficiencies, mostly).
+    // Fallback: a creature with no blueprint and no rules state knows the feats its classes grant
+    // outright up to its class levels (armour and weapon proficiencies, mostly).
     fn grant_class_feats { mut k: Known, mut w: world::World, c: *obj::Creature } {
         let classes = table_of{ &w, name = "classes" } ifnull { return }
         let feats = table_of{ &w, name = "feat" } ifnull { return }
@@ -253,6 +280,7 @@ namespace sheet {
     // CSWSCreatureStats::GetSkillRank without effects (rules.md 5.1): ranks + key attribute modifier
     // + the feat line; 0 for a skill that needs training and has none. `skills` is skills.2da.
     fn skill_total { skills: twoda::Table, k: Known, abil_mod: [6]i32, skill: usize } -> i32 {
+        if k.ruled and skill < SKILLS { return k.total[skill] }
         let ranks = k.skill_rank[skill]
         let untrained = twoda::get_int{ t = skills, row = skill, column = "untrained" } ifnull 0
         if untrained == 0 and ranks == 0 { return 0 }
@@ -313,8 +341,71 @@ namespace sheet {
 
     struct Armour { base_ac: i32, dex_mod: i32 }
 
-    // Everything the character sheet shows for creature `id`.
+    // Everything the character sheet shows for creature `id`: the rules creature's numbers, or the
+    // fallback's for a creature that has none.
     fn read { mut w: world::World, id: u32, known: Known } -> Sheet {
+        if hud::ruled_of{ w = &w, id } is some{ value = f } { return read_ruled{ &w, id, f } }
+        return read_standin{ &w, id, known }
+    }
+
+    // From the rules creature (Creature.stats were rebuilt by rules::recompute when anything
+    // changed): abilities, level, attack bonus, saves and Force points as the stats hold them, the
+    // defence of rules::armor_class_sheet, the XP thresholds and the level-up test of lib/rules.
+    fn read_ruled { mut w: world::World, id: u32, f: *mut fight::Fighter } -> Sheet {
+        let mut s: Sheet
+        let st = &f.c.stats
+        s.valid = true
+        s.droid = f.c.race == rules::race::DROID
+        let mut a: usize = 0
+        while a < 6 {
+            s.abil[a] = st.abil[a]
+            s.abil_mod[a] = st.abil_mod[a]
+            a = a + 1
+        }
+        let mut i: usize = 0
+        while i < @as(usize, f.c.nclasses) and i < rules::MAX_CLASSES {
+            let slot = f.c.classes[i]
+            i = i + 1
+            if slot.class < 0 or slot.level < 1 or s.nclasses >= 3 { continue }
+            let n = s.nclasses
+            s.nclasses = n + 1
+            s.class_level[n] = slot.level
+            if rules::get_class{ tables = w.rules, row = slot.class } is some{ value = row } {
+                s.class_name[n] = @trunc(u32, row.name)
+                if row.caster { s.force_user = true }
+            }
+        }
+        s.level = if st.level < 1 { 1 } else { st.level }
+        s.bab = st.bab
+        s.attack = items::attack_with{ w = &w, f, off_hand = false }
+        s.defense = rules::armor_class_sheet{ tables = w.rules, c = &f.c }
+        let mut sv: i32 = 1
+        while sv <= 3 {
+            s.save[@as(usize, sv - 1)] = rules::save_value{ c = &f.c, which = sv }
+            sv = sv + 1
+        }
+
+        // Hit points are the object's; Force points the rules creature's current and maximum.
+        let v = hud::vitality_of{ w = &w, id }
+        s.hp = v.hp
+        s.hp_max = v.hp_max
+        s.fp_max = st.max_fp
+        s.fp = if f.c.fp < 0 { 0 } else if f.c.fp > st.max_fp { st.max_fp } else { f.c.fp }
+
+        s.light = if f.c.good_evil > 100 { 100 } else if f.c.good_evil < 0 { 0 } else { f.c.good_evil }
+        s.xp = f.c.xp
+        s.xp_next = -1
+        if s.level < MAX_LEVEL { s.xp_next = rules::xp_to_reach_level{ tables = w.rules, level = s.level + 1 } }
+        // PLACEHOLDER: nothing awards a companion the XP its level implies (the party's joining and
+        // catch-up XP are not in the engine); a creature is never shown below the XP its level starts at.
+        let floor = rules::xp_to_reach_level{ tables = w.rules, level = s.level }
+        if s.xp < floor { s.xp = floor }
+        s.can_level = hud::can_level_up{ w = &w, id }
+        return s
+    }
+
+    // The fallback for a creature with no rules state (see the head of the file).
+    fn read_standin { mut w: world::World, id: u32, known: Known } -> Sheet {
         let mut s: Sheet
         let o = world::object{ w = &w, id } ifnull { return s }
         let c = obj::creature{ o } ifnull { return s }
@@ -395,7 +486,7 @@ namespace sheet {
             let mods = s.abil_mod[4] + s.abil_mod[5]
             let mut max: i32 = 0
             if c.is_pc and w.pc == id {
-                // PLACEHOLDER: the level-up history is not kept, so a Jedi level counts as its class's die.
+                // Fallback: with no level-up history a Jedi level counts as its class's die.
                 let mut j: usize = 0
                 while j < 3 {
                     let level = @as(i32, c.class_levels[j])
@@ -414,8 +505,7 @@ namespace sheet {
             }
             if has_feat{ k = known, feat = FEAT_FORCE_SENSITIVE } { max = max + 40 }
             s.fp_max = max
-            // PLACEHOLDER: the current pool is not kept on the creature yet. A companion's is its
-            // blueprint's; the player's is full.
+            // Fallback: with no current pool a companion's is its blueprint's; the player's is full.
             let own = known.force_now >= 0 and known.force_now <= max and not (c.is_pc and w.pc == id)
             s.fp = if own { known.force_now } else { max }
         }
@@ -428,13 +518,13 @@ namespace sheet {
         let exp = table_of{ &w, name = "exptable" }
         if exp != null {
             let et = exp
-            // PLACEHOLDER: nothing awards a companion the XP its level implies; a creature is never
-            // below the XP its level starts at.
+            // Fallback: a creature is never below the XP its level starts at.
             let floor = twoda::get_int{ t = et, row = clamp_row{ t = et, row = s.level - 1 }, column = "xp" } ifnull 0
             if s.xp < floor { s.xp = floor }
             if s.level < MAX_LEVEL { s.xp_next = twoda::get_int{ t = et, row = clamp_row{ t = et, row = s.level }, column = "xp" } ifnull -1 }
         }
         s.can_level = s.xp_next >= 0 and s.xp >= s.xp_next and not hud::is_down{ w = &w, id }
+        s.attack = s.bab
         return s
     }
 }

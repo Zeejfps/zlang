@@ -224,7 +224,7 @@ namespace equip_panel {
         while k < 2 {
             let item = c.equipped[hands[k]]
             list::clear{ list = &b.bytes }
-            if item != obj::INVALID { try items::damage_text{ &b, w = &w, item } }
+            if item != obj::INVALID { try items::damage_text{ &b, w = &w, who = s.who, item } }
             try gui::set_text{ &g, panel, tag = damage_tags[k], text = utf8::view{ b }.bytes }
             list::clear{ list = &b.bytes }
             if item != obj::INVALID { try items::push_signed{ &b, n = items::attack_bonus_of{ w = &w, who = s.who, item } } }

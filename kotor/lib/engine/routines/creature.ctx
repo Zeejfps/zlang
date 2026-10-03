@@ -55,6 +55,10 @@ namespace rt_crea {
             nwscript::GetIsEnemy => { try get_reputation_test{ &w, &vm, argc, routine } }
             nwscript::GetIsFriend => { try get_reputation_test{ &w, &vm, argc, routine } }
             nwscript::GetIsNeutral => { try get_reputation_test{ &w, &vm, argc, routine } }
+            nwscript::GetFactionAverageReputation => { try get_faction_average_reputation{ &w, &vm, argc } }
+            nwscript::GetCreatureMovmentType => { try get_creature_movement_type{ &w, &vm, argc } }
+            nwscript::AddMultiClass => { try add_multi_class{ &w, &vm, argc } }
+            nwscript::DuplicateHeadAppearance => { try duplicate_head_appearance{ &w, &vm, argc } }
             nwscript::SetListenPattern => { try set_listen_pattern{ &w, &vm, argc } }
             nwscript::SetListening => { try set_listening{ &w, &vm, argc } }
             nwscript::GetNearestCreature => { try get_nearest_creature{ &w, &vm, argc } }
@@ -532,6 +536,88 @@ namespace rt_crea {
             else if routine == nwscript::GetIsFriend { rep >= 90 }
             else { rep > 10 and rep < 90 }
         try nwvm::push_int{ &vm, v = flag{ b = yes } }
+    }
+
+    // int GetFactionAverageReputation(object oSourceFactionMember, object oTarget): 0..100, how the
+    // source's faction feels about the target (the NWN average of each member's own feeling; there
+    // are no personal standings here, so it is the faction row, as GetIsEnemy reads it), -1 when
+    // either is not there.
+    fn get_faction_average_reputation { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetFactionAverageReputation
+        let source = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let os = world::object{ w = &w, id = source } ifnull {
+            try nwvm::push_int{ &vm, v = -1 }
+            return
+        }
+        let ot = world::object{ w = &w, id = target } ifnull {
+            try nwvm::push_int{ &vm, v = -1 }
+            return
+        }
+        try nwvm::push_int{ &vm, v = world::standing{ w = &w, from = os.faction, toward = ot.faction } }
+    }
+
+    // int GetCreatureMovmentType(object oidCreature): the creaturespeed.2da row (MOVEMENT_SPEED_*) of
+    // the creature's rate: the player's own character is 0 (PC_Movement), any other the row whose
+    // 2daname is its appearance's moverate (Normal, 4, when the table has none), and an object that
+    // is not a creature is MOVEMENT_SPEED_IMMOBILE (1). Effects that slow or hold it do not show.
+    fn get_creature_movement_type { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetCreatureMovmentType, argc, i = 0 }
+        let c = creature_of{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = 1 }
+            return
+        }
+        if c.is_pc {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        let rate = twoda::get_string{ t = w.tables.appearance, row = @as(usize, c.appearance), column = "moverate" } ifnull "NORM"
+        let speeds = w.tables.creaturespeed
+        let n = twoda::rows{ t = speeds }
+        let mut i: usize = 0
+        while i < n {
+            let name = twoda::get_string{ t = speeds, row = i, column = "2daname" } ifnull ""
+            if ci::eq{ a = name, b = rate } {
+                try nwvm::push_int{ &vm, v = @as(i32, i) }
+                return
+            }
+            i = i + 1
+        }
+        try nwvm::push_int{ &vm, v = 4 }
+    }
+
+    // void AddMultiClass(int nClassType, object oSource): a new class on the creature, at level 0
+    // (the class of the next level-up: k_pdan_makejedi calls it, then raises the level; ShowLevelUpGUI).
+    // The rules' creature gets the slot, and the placeholder class list the class; both hide a class
+    // of level 0 from GetClassByPosition and GetLevelByClass until it has a level. Nothing happens for
+    // an unknown class, a class it has, or a third slot (LevelUp's limit, rules.md).
+    fn add_multi_class { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::AddMultiClass
+        let class = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let c = creature_of{ w = &w, id } ifnull { return }
+        let f = c.fighter ifnull { return }
+        if rules::get_class{ tables = w.rules, row = class } == null { return }
+        if rules::class_slot_of{ c = &f.c, class } >= 0 { return }
+        if f.c.nclasses >= rules::MAX_LEVEL_CLASSES { return }
+        let at = @as(usize, f.c.nclasses)
+        f.c.classes[at] = rules::ClassSlot{ class, level = 0 }
+        f.c.nclasses = f.c.nclasses + 1
+        if at < 3 { c.classes[at] = @as(u32, class) }
+    }
+
+    // void DuplicateHeadAppearance(object oidCreatureToChange, object oidCreatureToMatch): the first
+    // gets the second's head (its heads.2da row: its own if it was given one, else its appearance's
+    // normalhead). The row is kept on the creature (head); scene/visual.ctx builds a head from the
+    // appearance only so far and should prefer a head of 0 or more.
+    fn duplicate_head_appearance { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::DuplicateHeadAppearance
+        let change = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let match_with = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let a = creature_of{ w = &w, id = change } ifnull { return }
+        let b = creature_of{ w = &w, id = match_with } ifnull { return }
+        a.head = if b.head >= 0 { b.head }
+            else { twoda::get_int{ t = w.tables.appearance, row = @as(usize, b.appearance), column = "normalhead" } ifnull -1 }
     }
 
     // ---- listening
