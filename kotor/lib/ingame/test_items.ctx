@@ -81,7 +81,13 @@ namespace test_items {
 
     fn dump { mut w: world::World, leader: u32 } {
         let c = hud::creature_of{ w = &w, id = leader } ifnull { return }
-        _ = @fmt(&w.io, "leader {} {} race {} gold {}\n", leader, hud::name_of{ w = &w, id = leader }, c.race, c.gold)
+        _ = @fmt(&w.io, "leader {} {} race {} gold {} portrait {}\n", leader, hud::name_of{ w = &w, id = leader }, c.race, c.gold, hud::portrait_of{ w = &w, id = leader })
+        let members = party::members{ w = &w }
+        let mut m: usize = 1
+        while m < members.len {
+            _ = @fmt(&w.io, "member {} {} portrait {}\n", members[m], hud::name_of{ w = &w, id = members[m] }, hud::portrait_of{ w = &w, id = members[m] })
+            m = m + 1
+        }
         let mut slot: usize = 0
         while slot < obj::EQUIP_SLOTS {
             let id = c.equipped[slot]
