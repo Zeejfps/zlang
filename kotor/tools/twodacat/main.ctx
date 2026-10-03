@@ -1,0 +1,67 @@
+// twodacat: prints a 2DA from the install, one row a line, tab separated, with the row number
+// and label first.
+//
+//   twodacat [--game DIR] [--from N] [--to N] NAME...
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let mut game: []u8 = DEFAULT_GAME
+    let mut from: usize = 0
+    let mut to: usize = 100000
+    let mut h = heap::new{ &mem }
+    let mut rm = res::open{ &fs, heap = &h, game } iferr err{ error } {
+        _ = @fmt(&io, "twodacat: can't open the game: {}\n", error)
+        io::flush{ &io }
+        return 1
+    }
+    defer res::close{ &fs, &rm }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if slice::eq_bytes{ a, b = "--from" } and i + 1 < args.len {
+            from = @as(usize, text::scan_decimal{ s = args[i + 1] })
+            i = i + 2
+        } else if slice::eq_bytes{ a, b = "--to" } and i + 1 < args.len {
+            to = @as(usize, text::scan_decimal{ s = args[i + 1] })
+            i = i + 2
+        } else {
+            show{ &io, &fs, &h, rm, name = a, from, to }
+            i = i + 1
+        }
+    }
+    io::flush{ &io }
+    return 0
+}
+
+fn show { mut io: Io, mut fs: Fs, mut h: heap::Heap, rm: res::Manager, name: []u8, from: usize, to: usize } {
+    let data = res::load{ &fs, rm, name, kind = restype::Type::twoda, realloc = heap::alloc, heap = &h } iferr err{ error } {
+        _ = @fmt(&io, "{}: {}\n", name, error)
+        return
+    }
+    if data == null {
+        _ = @fmt(&io, "{}: not found\n", name)
+        return
+    }
+    let t = twoda::parse{ data, realloc = heap::alloc, heap = &h } iferr err{ error } {
+        _ = @fmt(&io, "{}: {}\n", name, error)
+        return
+    }
+    _ = @fmt(&io, "{} ({} rows)\n#\tlabel", name, twoda::rows{ t })
+    let mut c: usize = 0
+    while c < t.columns.len {
+        _ = @fmt(&io, "\t{}", t.columns[c])
+        c = c + 1
+    }
+    _ = @fmt(&io, "\n")
+    let mut r = from
+    while r < twoda::rows{ t } and r <= to {
+        _ = @fmt(&io, "{}\t{}", r, t.labels[r])
+        c = 0
+        while c < t.columns.len {
+            _ = @fmt(&io, "\t{}", twoda::cell{ t, row = r, col = c })
+            c = c + 1
+        }
+        _ = @fmt(&io, "\n")
+        r = r + 1
+    }
+}
