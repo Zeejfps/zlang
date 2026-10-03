@@ -1,0 +1,135 @@
+// pazaaksim: plays thousands of pazaak matches with the AI on both sides, for sanity: no match
+// hangs or breaks a rule, and the win rates of the four decks in pazaakdecks.2da make sense.
+//
+//   kotor/tools/ctxc run kotor/tools/pazaaksim -- [--games N] [--seed S] [--game DIR]
+//
+// For every pair of decks (A for the "player", B for the opponent) it prints how often A wins,
+// the share of sets that tied and the average number of sets and of turns a match takes.
+
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+struct Tally {
+    games: i32, won: i32, sets: i32, ties: i32, turns: i32, longest: i32,
+    player_sets: i32, opponent_sets: i32,
+}
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let mut game: []u8 = DEFAULT_GAME
+    let mut games: i32 = 2000
+    let mut seed: u32 = 1
+    let mut i: usize = 0
+    while i < args.len {
+        if slice::eq_bytes{ a = args[i], b = "--game" } and i + 1 < args.len {
+            game = args[i + 1]
+            i = i + 2
+        } else if slice::eq_bytes{ a = args[i], b = "--games" } and i + 1 < args.len {
+            games = number{ s = args[i + 1] }
+            i = i + 2
+        } else if slice::eq_bytes{ a = args[i], b = "--seed" } and i + 1 < args.len {
+            seed = @as(u32, number{ s = args[i + 1] })
+            i = i + 2
+        } else {
+            i = i + 1
+        }
+    }
+    let mut h = heap::new{ &mem }
+    let mut rm = res::open{ &fs, heap = &h, game } iferr err{ error } {
+        _ = @fmt(&io, "pazaaksim: can't open the game at {}: {}\n", game, error)
+        io::flush{ &io }
+        return 1
+    }
+    let loaded = res::load{ &fs, rm, name = "pazaakdecks", kind = restype::Type::twoda, realloc = heap::alloc, heap = &h } iferr err{ error } {
+        _ = @fmt(&io, "pazaaksim: pazaakdecks: {}\n", error)
+        io::flush{ &io }
+        return 1
+    }
+    let bytes = loaded ifnull {
+        io::println{ &io, s = "pazaaksim: pazaakdecks.2da not found" }
+        io::flush{ &io }
+        return 1
+    }
+    let table = twoda::parse{ data = bytes, realloc = heap::alloc, heap = &h } iferr err{ error } {
+        _ = @fmt(&io, "pazaaksim: pazaakdecks: {}\n", error)
+        io::flush{ &io }
+        return 1
+    }
+    let n = twoda::rows{ t = table }
+    let mut decks: [8][10]i32 = [[-1; 10]; 8]
+    let mut count: usize = 0
+    while count < n and count < 8 {
+        decks[count] = pazaak::opponent_deck{ t = table, row = count } ifnull { [-1; 10] }
+        count = count + 1
+    }
+    _ = @fmt(&io, "{} matches per pair, seed {}; rows are the player's deck, columns the opponent's\n", games, seed)
+    _ = @fmt(&io, "deck       | player wins %  (ties %, sets, turns, longest)\n")
+    let mut a: usize = 0
+    while a < count {
+        let mut b: usize = 0
+        while b < count {
+            let t = play_many{ a = decks[a], b = decks[b], games, seed = @wrap_add(seed, @wrap_mul(@as(u32, a * 100 + b), 7919)) }
+            let pct = if t.games > 0 { t.won * 1000 / t.games } else { 0 }
+            let tie_pct = if t.sets > 0 { t.ties * 1000 / t.sets } else { 0 }
+            _ = @fmt(&io, "{} vs {} | {}.{} %  ties {}.{} %  sets {}.{}  turns {}  longest {}\n", a, b,
+                pct / 10, pct % 10, tie_pct / 10, tie_pct % 10, t.sets / t.games, t.sets * 10 / t.games % 10,
+                t.turns / t.games, t.longest)
+            io::flush{ &io }
+            b = b + 1
+        }
+        a = a + 1
+    }
+    res::close{ &fs, &rm }
+    return 0
+}
+
+fn play_many { a: [10]i32, b: [10]i32, games: i32, seed: u32 } -> Tally {
+    let mut t = Tally{ games = 0, won = 0, sets = 0, ties = 0, turns = 0, longest = 0, player_sets = 0, opponent_sets = 0 }
+    let mut k: i32 = 0
+    while k < games {
+        play_one{ &t, a, b, seed = @wrap_add(seed, @wrap_mul(@as(u32, k), 2654435)) }
+        k = k + 1
+    }
+    return t
+}
+
+// One match; checks the rules' invariants and panics if one fails.
+fn play_one { mut t: Tally, a: [10]i32, b: [10]i32, seed: u32 } {
+    let mut m = pazaak::new_match{ seed, wager = 0, player_deck = a, opponent_deck = b, tutorial = false, auto_player = true }
+    let mut steps: i32 = 0
+    let mut sets: i32 = 0
+    while not m.finished {
+        pazaak::step_match{ &m, dt = 1.0 }
+        if pazaak::has_prompt{ m } {
+            sets = sets + 1
+            t.sets = t.sets + 1
+            if m.last_set == pazaak::SetResult::tie { t.ties = t.ties + 1 }
+            pazaak::answer_prompt{ &m, yes = true }
+        }
+        steps = steps + 1
+        check{ cond = steps < 20000 }                       // a match always ends
+        check{ cond = m.g.player.sets <= 3 and m.g.opponent.sets <= 3 }
+        check{ cond = pazaak::total_of{ s = m.g.player } <= 29 and pazaak::total_of{ s = m.g.opponent } <= 29 }
+    }
+    check{ cond = m.g.player.sets == 3 or m.g.opponent.sets == 3 }
+    check{ cond = not (m.g.player.sets == 3 and m.g.opponent.sets == 3) }
+    check{ cond = m.won == (m.g.player.sets == 3) }
+    t.games = t.games + 1
+    if m.won { t.won = t.won + 1 }
+    t.turns = t.turns + m.turns
+    if m.turns > t.longest { t.longest = m.turns }
+    t.player_sets = t.player_sets + m.g.player.sets
+    t.opponent_sets = t.opponent_sets + m.g.opponent.sets
+}
+
+fn check { cond: bool } {
+    if not cond { @panic("pazaaksim: an invariant failed") }
+}
+
+fn number { s: []u8 } -> i32 {
+    let mut n: i32 = 0
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] >= '0' and s[i] <= '9' { n = n * 10 + @as(i32, s[i] - '0') }
+        i = i + 1
+    }
+    return n
+}
