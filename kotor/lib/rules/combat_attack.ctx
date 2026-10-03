@@ -1,0 +1,543 @@
+// The attack roll: the attack modifier (combat.md 4.2), defense (5), deflection (4.6) and
+// roll_attack, which puts them in the engine's order (4.1). See combat.ctx for the overview, the
+// shared types and the decisions.
+//
+// API
+//   attack_modifier{ tables, atk, def, sit, attack_index, combat_feat } -> AttackModifier
+//   defense_versus{ tables, def, atk, sit, attack_index, combat_feat, touch } -> DefenseBreakdown
+//   deflection_roll{ tables, &rng, atk, def, sit, attack_total } -> Deflection
+//   roll_attack{ tables, &rng, atk, def, sit, attack_index, combat_feat } -> AttackRoll
+//   is_hit_result{ result } -> bool                       results 1..3
+// Types: AttackModifier (every term), DefenseBreakdown (every piece), Deflection, AttackRoll.
+// Private helpers are named combat_*.
+namespace rules {
+    // ---- one attack of the round, looked up once
+
+    struct AttackView {
+        feat: i32,                  // the combat feat in effect (0: none, or the creature lacks it)
+        index: i32,                 // the attack's index in the round, clamped to the round
+        off_hand: bool,
+        wtype: i32,                 // watk::*
+        ranged: bool,
+        counts: AttackCounts,
+    }
+
+    fn combat_look_up_attack { tables: *Tables, atk: *Creature, attack_index: i32, combat_feat: i32 } -> AttackView {
+        let feat = combat_pick_feat{ c = atk, combat_feat }
+        let counts = attack_counts{ tables, c = atk, combat_feat = feat }
+        let mut idx = attack_index
+        if idx >= counts.total { idx = counts.total - 1 }
+        if idx < 0 { idx = 0 }
+        let u = @as(usize, idx)
+        return AttackView{
+            feat, index = idx, off_hand = counts.is_off_hand[u], wtype = counts.weapon_type[u],
+            ranged = combat_is_ranged{ tables, c = atk }, counts,
+        }
+    }
+
+    // ---- attack modifier (4.2)
+
+    // Every term of GetAttackModifierVersus, in the engine's order, so the combat log can show them.
+    struct AttackModifier {
+        total: i32,
+        bab: i32,                   // 1: base attack bonus
+        dual_base: i32,             // 2: -6 (on-hand) or -10 (off-hand) when wielding two weapons, else 0
+        dual_light: i32,            //    +2 when the off-hand weapon is one size smaller or a double weapon
+        dual_feat: i32,             //    the Two-Weapon feat's offset: +2/+4 (on-hand), +4/+6/+8 (off-hand)
+        dual_feat_id: i32,          //    that feat's row, 0 none
+        special: i32,               // 3: the combat feat's to-hit
+        dueling: i32,               // 4: Dueling +1/+2/+3 (one one-handed weapon or pistol, nothing in the left hand)
+        dueling_feat: i32,
+        close_range: i32,           // 5: +10 ranged within 5 m
+        melee_vs_ranged: i32,       // 6: +10 melee against a target holding a ranged weapon
+        str_mod: i32,               // 7: the STR modifier (melee, unless a lightsaber uses DEX)
+        dex_mod: i32,               //    the DEX modifier (ranged, or a lightsaber); capped at 0 when debilitated
+        focus: i32,                 // 8: Weapon Focus +1
+        effects: i32,               // 9: attack effects (hand and versus filters) plus the state penalties
+        off_hand: bool,
+        weapon_type: i32,
+        ranged: bool,
+    }
+
+    // The to-hit of a combat feat (GetSpecialAttackModifier 0x005a4ec0).
+    fn combat_get_special_modifier { feat: i32 } -> i32 {
+        if feat == 11 or feat == 30 { return -4 }
+        if feat == 91 or feat == 92 { return -2 }
+        if feat == 53 or feat == 26 { return -1 }
+        if feat == 28 or feat == 17 or feat == 83 or feat == 29 or feat == 18 or feat == 82 { return -3 }
+        if feat == 102 { return 2 }
+        if feat == 103 { return 4 }
+        return 0
+    }
+
+    // The damage a combat feat adds (GetSpecialAttackDamageBonus 0x005a4fb0): Power Attack and
+    // Power Blast +5, the improved ones +8, the master ones +10, Force Jump 0/+2/+4.
+    fn combat_get_special_damage { feat: i32 } -> i32 {
+        if feat == 28 or feat == 29 { return 5 }
+        if feat == 17 or feat == 18 { return 8 }
+        if feat == 83 or feat == 82 { return 10 }
+        if feat == 102 { return 2 }
+        if feat == 103 { return 4 }
+        return 0
+    }
+
+    // The highest Dueling feat (113..115) when the creature fights with one one-handed melee
+    // weapon (WeaponWield 2) or one pistol (4) and nothing in the left hand, else 0.
+    fn combat_find_dueling_feat { tables: *Tables, c: *Creature } -> i32 {
+        let right = equipped_item{ c, mask = slot::RIGHT } ifnull { return 0 }
+        if equipped_item{ c, mask = slot::LEFT } != null { return 0 }
+        let w = combat_get_wield{ tables, item = right }
+        if w != 2 and w != 4 { return 0 }
+        if has_feat{ c, feat = feat::MASTER_DUELING } { return feat::MASTER_DUELING }
+        if has_feat{ c, feat = feat::ADVANCED_DUELING } { return feat::ADVANCED_DUELING }
+        if has_feat{ c, feat = feat::DUELING } { return feat::DUELING }
+        return 0
+    }
+
+    fn combat_get_dueling_bonus { feat: i32 } -> i32 {
+        if feat == feat::MASTER_DUELING { return 3 }
+        if feat == feat::ADVANCED_DUELING { return 2 }
+        if feat == feat::DUELING { return 1 }
+        return 0
+    }
+
+    // The DEX modifier of a debilitated creature counts only when it is negative.
+    fn combat_get_capped_dex { c: *Creature } -> i32 {
+        let dex = c.stats.abil_mod[1]
+        if is_debilitated{ c } and dex > 0 { return 0 }
+        return dex
+    }
+
+    fn attack_modifier { tables: *Tables, atk: *Creature, def: *Creature, sit: *AttackSituation, attack_index: i32, combat_feat: i32 } -> AttackModifier {
+        let v = combat_look_up_attack{ tables, atk, attack_index, combat_feat }
+        let mut m: AttackModifier
+        m.off_hand = v.off_hand
+        m.weapon_type = v.wtype
+        m.ranged = v.ranged
+        m.bab = atk.stats.bab
+
+        // 2: wielding a second weapon. An on-hand attack pays -6 (-4 when the off-hand weapon is a size
+        // smaller than the wielder or a double weapon) and wins back +4 with Two-Weapon Mastery or
+        // +2 with Advanced; an off-hand attack pays -10 and wins back +8, +6 or +4 with Mastery,
+        // Advanced or Two-Weapon Fighting. Other attacks (creature weapons, unarmed) pay nothing.
+        let ohw = combat_find_off_hand_weapon{ tables, c = atk }
+        if ohw != null {
+            if v.wtype == watk::RIGHT {
+                let ob = get_baseitem{ tables, row = ohw.base_item }
+                if ob != null {
+                    if ob.weapon_type != 0 {
+                        m.dual_base = -6
+                        if combat_get_relative_size{ tables, c = atk, item = ohw } == -1 or ob.wield == 3 { m.dual_light = 2 }
+                        if has_feat{ c = atk, feat = feat::TWO_WEAPON_MASTERY } {
+                            m.dual_feat = 4
+                            m.dual_feat_id = feat::TWO_WEAPON_MASTERY
+                        } else if has_feat{ c = atk, feat = feat::TWO_WEAPON_ADVANCED } {
+                            m.dual_feat = 2
+                            m.dual_feat_id = feat::TWO_WEAPON_ADVANCED
+                        }
+                    }
+                }
+            } else if v.wtype == watk::LEFT {
+                m.dual_base = -10
+                if has_feat{ c = atk, feat = feat::TWO_WEAPON_MASTERY } {
+                    m.dual_feat = 8
+                    m.dual_feat_id = feat::TWO_WEAPON_MASTERY
+                } else if has_feat{ c = atk, feat = feat::TWO_WEAPON_ADVANCED } {
+                    m.dual_feat = 6
+                    m.dual_feat_id = feat::TWO_WEAPON_ADVANCED
+                } else if has_feat{ c = atk, feat = feat::TWO_WEAPON_FIGHTING } {
+                    m.dual_feat = 4
+                    m.dual_feat_id = feat::TWO_WEAPON_FIGHTING
+                }
+            }
+        }
+
+        // 3, 4
+        m.special = combat_get_special_modifier{ feat = v.feat }
+        m.dueling_feat = combat_find_dueling_feat{ tables, c = atk }
+        m.dueling = combat_get_dueling_bonus{ feat = m.dueling_feat }
+
+        // 5, 6: only against a creature (the exe passes no target for doors and placeables)
+        if not sit.target_object {
+            if v.ranged and sit.dist2 <= 25.0 { m.close_range = 10 }
+            if not v.ranged and combat_is_ranged{ tables, c = def } { m.melee_vs_ranged = 10 }
+        }
+
+        // 7: ranged attacks use DEX; melee uses STR, or DEX for a lightsaber when DEX is higher
+        let weapon = combat_find_weapon{ tables, c = atk, wtype = v.wtype }
+        let dex = combat_get_capped_dex{ c = atk }
+        let str = atk.stats.abil_mod[0]
+        if v.ranged {
+            m.dex_mod = dex
+        } else {
+            let mut use_dex = false
+            if weapon != null {
+                if combat_is_lightsaber{ item = weapon } and str < dex { use_dex = true }
+            }
+            if use_dex { m.dex_mod = dex } else { m.str_mod = str }
+        }
+
+        // 8: Weapon Focus
+        if weapon != null {
+            let wb = get_baseitem{ tables, row = weapon.base_item }
+            if wb != null {
+                if wb.foc_feat > 0 and has_feat{ c = atk, feat = wb.foc_feat } { m.focus = 1 }
+            }
+        }
+
+        // 9: the effects. The state penalties (entangled, slowed) are attack-decrease effects in the
+        // engine and share its caps.
+        let vs = if sit.target_object { no_versus{} } else { versus_creature{ c = def } }
+        let b = effect_bonus{ c = atk, q = BonusQuery{ category = cat::ATTACK, a = 0, b = 0, hand = v.wtype, vs } }
+        let mut plus = b.plus
+        let mut minus = b.minus
+        if atk.stats.attack_misc < 0 { minus = minus - atk.stats.attack_misc } else { plus = plus + atk.stats.attack_misc }
+        if plus > 20 { plus = 20 }
+        if minus > 20 { minus = 20 }
+        m.effects = plus - minus
+
+        m.total = m.bab + m.dual_base + m.dual_light + m.dual_feat + m.special + m.dueling + m.close_range +
+            m.melee_vs_ranged + m.str_mod + m.dex_mod + m.focus + m.effects
+        return m
+    }
+
+    // ---- defense (5)
+
+    struct DefenseBreakdown {
+        total: i32,
+        base: i32,                  // 10
+        class_bonus: i32,           // acbonus.2da by class level
+        natural: i32,
+        armour: i32,
+        shield: i32,
+        dodge: i32,                 // the dodge bonus counted (at most 10), 0 when the attacker is hidden or unseen
+        dex: i32,                   // the DEX modifier counted (armour cap, debilitated cap, hidden rule)
+        versus_dodge: i32,          // conditional dodge effects (versus a race, alignment or damage type)
+        deflection: i32,
+        dueling: i32,
+        debilitated: i32,           // -4 for a debilitated defender
+        hidden: bool,               // the attacker is invisible to the defender
+        aware: bool,                // the defender perceives the attacker
+    }
+
+    // The defender's DEX modifier for AC (GetDexModifierForDefense): capped by the body armour's
+    // DexBonus when it is real armour (ModelType 1 and BaseAC above 0; robes have BaseAC 0 and no
+    // cap) and at most 0 when the defender is debilitated.
+    fn combat_get_defense_dex { tables: *Tables, c: *Creature } -> i32 {
+        let dex = c.stats.abil_mod[1]
+        if is_debilitated{ c } { return if dex < 0 { dex } else { 0 } }
+        let body = equipped_item{ c, mask = slot::BODY }
+        if body != null {
+            let bi = get_baseitem{ tables, row = body.base_item }
+            if bi != null {
+                if bi.model_type == 1 and bi.base_ac > 0 and dex > bi.dex_bonus { return bi.dex_bonus }
+            }
+        }
+        return dex
+    }
+
+    // GetIsHiddenFrom (0x00501950): the first invisibility effect (0x2f) of the attacker that
+    // admits the defender hides it unless the defender's vision bits see through its kind: type 1
+    // and 4 by bits 0x5 (see invisible), type 2 (darkness) by bits 0x6. The stealth branch of the
+    // exe (an Awareness save) is not modelled.
+    fn combat_is_hidden_from { atk: *Creature, def: *Creature } -> bool {
+        let mut i: usize = 0
+        while i < @as(usize, atk.nfx) {
+            let e = &atk.fx[i]
+            i = i + 1
+            if e.kind != fx::INVISIBILITY { continue }
+            let race_ok = e.ints[1] == def.race or e.ints[1] == race::ANY
+            let align_ok = e.ints[3] == 0 or e.ints[3] == def.good_evil
+            if not (race_ok and align_ok) { continue }
+            let t = e.ints[0]
+            if t == 1 or t == 4 {
+                if (def.stats.vision & 5) != 0 { return false }
+            } else if t == 2 and (def.stats.vision & 6) != 0 {
+                return false
+            }
+            return true
+        }
+        return false
+    }
+
+    // Does an AC effect's damage-type filter admit the attacker's weapon? Decision: 0x4007 (the
+    // exe's sentinel) and 0x2007 (the script constant) both mean every type. The exe compares the
+    // filter values 1, 2, 4 with the weapon's DamageFlags as 0, 1, 2 (an index mismatch that
+    // makes them match the wrong weapons); that is reproduced, because it is what the game does.
+    fn combat_ac_filter_admits { filter: i32, weapon_flags: i32 } -> bool {
+        if filter == fx::AC_ALL_A or filter == fx::AC_ALL_B { return true }
+        return (filter == 1 and weapon_flags == 0) or (filter == 2 and weapon_flags == 1) or
+            (filter == 4 and weapon_flags == 2)
+    }
+
+    // The attacker's current weapon's damage flags (1 when unarmed), as the AC filter sees them.
+    fn combat_get_weapon_flags { tables: *Tables, c: *Creature, wtype: i32 } -> i32 {
+        let w = combat_find_weapon{ tables, c, wtype } ifnull { return 1 }
+        return damage_flags_of{ tables, item = w }
+    }
+
+    // GetArmorClassVersus (0x005ad0e0). `touch` skips natural, armour and shield (touch attacks).
+    // 10 + class bonus + natural + armour + shield, then DEX and dodge (the DEX modifier and a
+    // dodge up to 10 when the defender perceives an attacker that is not hidden; a hidden
+    // attacker gets no dodge and only a negative DEX; an unperceived one neither), then the
+    // conditional AC effects (dodge type summed, deflection the best of the plain value and the
+    // matching bonuses), the Dueling bonus and -4 when debilitated.
+    fn defense_versus { tables: *Tables, def: *Creature, atk: *Creature, sit: *AttackSituation, attack_index: i32, combat_feat: i32, touch: bool } -> DefenseBreakdown {
+        let v = combat_look_up_attack{ tables, atk, attack_index, combat_feat }
+        let mut d: DefenseBreakdown
+        d.base = 10
+        d.class_bonus = def.stats.ac_class
+        if not touch {
+            d.natural = def.stats.ac_natural
+            d.armour = def.stats.ac_armour
+            d.shield = def.stats.ac_shield
+        }
+        d.hidden = combat_is_hidden_from{ atk, def }
+        d.aware = sit.defender_sees
+        let dex = combat_get_defense_dex{ tables, c = def }
+        if not d.hidden {
+            if sit.defender_sees {
+                d.dodge = if def.stats.ac_dodge > 10 { 10 } else { def.stats.ac_dodge }
+                d.dex = dex
+            }
+        } else if dex < 0 {
+            d.dex = dex
+        }
+
+        // conditional AC effects: a race, an alignment group or a damage-type filter
+        let wflags = combat_get_weapon_flags{ tables, c = atk, wtype = v.wtype }
+        let agroup = alignment_group{ good_evil = atk.good_evil }
+        let mut deflect = if def.stats.ac_deflection > 0 { def.stats.ac_deflection } else { 0 }
+        let mut i: usize = 0
+        while i < @as(usize, def.nfx) {
+            let e = &def.fx[i]
+            i = i + 1
+            let up = e.kind == fx::AC_INCREASE
+            if not up and e.kind != fx::AC_DECREASE { continue }
+            if ac_unconditional{ e } { continue }
+            let race_ok = e.ints[2] == race::ANY or e.ints[2] == atk.race
+            let align_ok = e.ints[4] == 0 or e.ints[4] == agroup
+            if not (race_ok and align_ok and combat_ac_filter_admits{ filter = e.ints[5], weapon_flags = wflags }) { continue }
+            let amount = e.ints[1]
+            if e.ints[0] == 0 {
+                d.versus_dodge = if up { d.versus_dodge + amount } else { d.versus_dodge - amount }
+            } else if e.ints[0] == 4 and up and amount > deflect {
+                deflect = amount
+            }
+        }
+        d.deflection = deflect
+        d.dueling = combat_get_dueling_bonus{ feat = combat_find_dueling_feat{ tables, c = def } }
+        if is_debilitated{ c = def } { d.debilitated = -4 }
+        d.total = d.base + d.class_bonus + d.natural + d.armour + d.shield + d.dodge + d.dex + d.versus_dodge +
+            d.deflection + d.dueling + d.debilitated
+        return d
+    }
+
+    // ---- deflecting blaster bolts (4.6)
+
+    struct Deflection {
+        result: i32,                // 0 the bolt was not deflected, outcome::DEFLECTED or outcome::RETURNED
+        can: bool,                  // the defender is able to deflect this shot
+        assured: bool,              // an assured-deflection effect skipped the roll
+        d20: i32,
+        jedi_feat: i32,             // Master Jedi Defense 24 (+6), Advanced 1 (+3), Jedi Defense 55 (+0), 0 none
+        jedi_bonus: i32,
+        bab: i32,
+        effects: i32,               // blaster-deflection effects
+        total: i32,
+        attack_total: i32,          // d20 + modifier of the shot
+    }
+
+    // GetCanDeflectProjectile for a ranged attack: a Jedi Defense feat (55, 1 or 24), a defender
+    // that is not debilitated, down or dying, holding a lightsaber, not busy and facing the shooter.
+    // Decision: a lightsaber in either hand counts (the exe asks the right-hand weapon helper).
+    fn combat_can_deflect { atk: *Creature, def: *Creature, sit: *AttackSituation } -> bool {
+        if sit.target_object { return false }
+        let skilled = has_feat{ c = def, feat = feat::JEDI_DEFENSE } or has_feat{ c = def, feat = feat::ADVANCED_JEDI_DEFENSE } or
+            has_feat{ c = def, feat = feat::MASTER_JEDI_DEFENSE }
+        if not skilled { return false }
+        if is_debilitated{ c = def } or sit.defender_hp < 1 or sit.defender_busy { return false }
+        if sit.facing_dot > 0.0 { return false }
+        let right = equipped_item{ c = def, mask = slot::RIGHT }
+        let left = equipped_item{ c = def, mask = slot::LEFT }
+        if right != null {
+            if combat_is_lightsaber{ item = right } { return true }
+        }
+        if left != null {
+            if combat_is_lightsaber{ item = left } { return true }
+        }
+        return false
+    }
+
+    // ResolveProjectileDeflection (0x005b8e50), made before the attack is resolved: a d20 plus 6
+    // (Master Jedi Defense) or 3 (Advanced), plus the defender's base attack bonus, plus the
+    // blaster-deflection effects (increases add, decreases subtract), against the shot's d20 +
+    // modifier. Lower: not deflected. Six or more above: sent back at the shooter (9), else
+    // knocked away (8). Assured deflection skips the roll. The two unexplained stat bytes of the
+    // exe (+0x16c/+0x16d) count 0. Only ranged attacks are deflected.
+    fn deflection_roll { tables: *Tables, mut rng: Rng, atk: *Creature, def: *Creature, sit: *AttackSituation, attack_total: i32 } -> Deflection {
+        let mut r: Deflection
+        r.attack_total = attack_total
+        if not combat_is_ranged{ tables, c = atk } { return r }
+        r.can = combat_can_deflect{ atk, def, sit }
+        if not r.can { return r }
+        if def.stats.assured_deflection {
+            r.assured = true
+            r.result = if def.stats.deflection_returns { outcome::RETURNED } else { outcome::DEFLECTED }
+            return r
+        }
+        r.d20 = roll_dice{ &rng, count = 1, sides = 20 }
+        if has_feat{ c = def, feat = feat::MASTER_JEDI_DEFENSE } {
+            r.jedi_feat = feat::MASTER_JEDI_DEFENSE
+            r.jedi_bonus = 6
+        } else if has_feat{ c = def, feat = feat::ADVANCED_JEDI_DEFENSE } {
+            r.jedi_feat = feat::ADVANCED_JEDI_DEFENSE
+            r.jedi_bonus = 3
+        } else {
+            r.jedi_feat = feat::JEDI_DEFENSE
+        }
+        r.bab = def.stats.bab
+        let mut i: usize = 0
+        while i < @as(usize, def.nfx) {
+            let e = &def.fx[i]
+            i = i + 1
+            // a script's constructor stores the amount in int0, an item property in int1 (int0 is
+            // its subtype, 0): the sum of both is the amount
+            if e.kind == fx::BLASTER_DEFLECTION_INCREASE { r.effects = r.effects + e.ints[0] + e.ints[1] }
+            if e.kind == fx::BLASTER_DEFLECTION_DECREASE { r.effects = r.effects - e.ints[0] - e.ints[1] }
+        }
+        r.total = r.d20 + r.jedi_bonus + r.bab + r.effects
+        if r.total < attack_total { return r }
+        r.result = if r.total >= attack_total + 6 { outcome::RETURNED } else { outcome::DEFLECTED }
+        return r
+    }
+
+    // ---- the attack roll (4.1)
+
+    struct AttackRoll {
+        result: i32,                // outcome::*
+        d20: i32,                   // the die as shown (20 for a coup de grace)
+        modifier: AttackModifier,
+        defense: DefenseBreakdown,
+        attack_total: i32,          // d20 + modifier.total
+        missed_by: i32,             // defense - attack_total on a miss
+        natural_1: bool,
+        natural_20: bool,
+        threat_range: i32,          // the lowest threatening d20
+        threat: bool,
+        confirm_d20: i32,
+        confirmed: bool,
+        multiplier: i32,            // critical multiplier when confirmed
+        crit_immune: bool,          // confirmed, but the defender is immune to critical hits: a plain hit (feedback 0x7e)
+        coup_de_grace: bool,
+        assured_hit: bool,
+        sneak: bool,                // the hit gets sneak attack dice
+        sneak_immune: bool,
+        deflection: Deflection,
+        off_hand: bool,
+        weapon_type: i32,
+        ranged: bool,
+        combat_feat: i32,           // the feat in effect
+        forced: bool,
+    }
+
+    // Results 1..3 are hits.
+    fn is_hit_result { result: i32 } -> bool {
+        return result >= outcome::HIT and result <= outcome::AUTOMATIC_HIT
+    }
+
+    // Coup de grace (ResolveMeleeAttack): a melee attack against a debilitated or dying creature of
+    // level below 5 that is not under the player's control. Decision: "player-controlled" is the
+    // player character and the party members (Creature.is_pc, Creature.party).
+    fn combat_is_coup_de_grace { atk: *Creature, def: *Creature, sit: *AttackSituation, ranged: bool } -> bool {
+        if ranged or sit.target_object { return false }
+        if def.is_pc or def.party { return false }
+        let down = def.stats.state != 0 or sit.defender_hp < 1
+        return down and def.stats.level < 5
+    }
+
+    // ResolveAttackRoll (0x005baca0): d20, attack modifier, defense (0 for doors and placeables) and
+    // the sneak attack check; then a forced result (cutscene), coup de grace (automatic hit),
+    // assured hit, the deflection check, natural 1 (miss), a total below defense (miss unless a
+    // natural 20), the critical threat, its confirmation and the defender's critical immunity.
+    // Draws, in order: the d20, the deflection d20, the confirmation d20.
+    fn roll_attack { tables: *Tables, mut rng: Rng, atk: *Creature, def: *Creature, sit: *AttackSituation, attack_index: i32, combat_feat: i32 } -> AttackRoll {
+        let v = combat_look_up_attack{ tables, atk, attack_index, combat_feat }
+        let d20 = roll_dice{ &rng, count = 1, sides = 20 }
+        let modifier = attack_modifier{ tables, atk, def, sit, attack_index, combat_feat }
+        let mut r: AttackRoll
+        r.d20 = d20
+        r.modifier = modifier
+        r.attack_total = d20 + modifier.total
+        r.off_hand = v.off_hand
+        r.weapon_type = v.wtype
+        r.ranged = v.ranged
+        r.combat_feat = v.feat
+        if not sit.target_object {
+            r.defense = defense_versus{ tables, def, atk, sit, attack_index, combat_feat, touch = false }
+            let s = sneak_attack_eligible{ tables, atk, def, sit }
+            r.sneak = s.eligible
+            r.sneak_immune = s.immune
+        }
+        let defense = r.defense.total
+        if sit.forced {
+            r.forced = true
+            r.result = sit.forced_result
+            return r
+        }
+        if combat_is_coup_de_grace{ atk, def, sit, ranged = v.ranged } {
+            r.coup_de_grace = true
+            r.d20 = 20
+            r.attack_total = 20 + modifier.total
+            r.result = outcome::AUTOMATIC_HIT
+            return r
+        }
+        if atk.stats.assured_hit {
+            r.assured_hit = true
+            r.result = outcome::HIT
+            return r
+        }
+        if v.ranged and not sit.target_object {
+            r.deflection = deflection_roll{ tables, &rng, atk, def, sit, attack_total = r.attack_total }
+            if r.deflection.result != 0 {
+                r.result = r.deflection.result
+                return r
+            }
+        }
+        if d20 == 1 {
+            r.natural_1 = true
+            return combat_finish_miss{ r, v, sit }
+        }
+        r.natural_20 = d20 == 20
+        if r.attack_total < defense and not r.natural_20 { return combat_finish_miss{ r, v, sit } }
+        r.threat_range = critical_threat_roll{ tables, c = atk, off_hand = v.off_hand, combat_feat = v.feat }
+        if d20 < r.threat_range {
+            r.result = outcome::HIT
+            return r
+        }
+        r.threat = true
+        r.confirm_d20 = roll_dice{ &rng, count = 1, sides = 20 }
+        if r.confirm_d20 + modifier.total < defense {
+            r.result = outcome::HIT
+            return r
+        }
+        r.confirmed = true
+        r.multiplier = critical_multiplier{ tables, c = atk, off_hand = v.off_hand }
+        if not sit.target_object and has_immunity{ c = def, kind = imm::CRITICAL_HIT, vs = versus_creature{ c = atk } } {
+            r.crit_immune = true
+            r.result = outcome::HIT
+            return r
+        }
+        r.result = outcome::CRITICAL
+        return r
+    }
+
+    // A miss: how far off, and an energy shield may still absorb a missed bolt (result 10).
+    fn combat_finish_miss { r: AttackRoll, v: AttackView, sit: *AttackSituation } -> AttackRoll {
+        let mut out = r
+        out.result = outcome::MISS
+        out.missed_by = if out.defense.total > out.attack_total { out.defense.total - out.attack_total } else { 0 }
+        if v.ranged and sit.shield_absorbs and not sit.target_object { out.result = outcome::SHIELD }
+        return out
+    }
+}

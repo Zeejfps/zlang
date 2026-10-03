@@ -44,6 +44,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     if opts.census { check::run_census{ &io, &fs, heap = &h, &r, tables = &tables, game = opts.game } }
     if opts.saved { check::run_saved{ &io, &fs, heap = &h, &r, tables = &tables, game = opts.game } }
     if opts.items { check::run_items{ &io, &fs, &r, heap = &h, rm, tables = &tables } }
+    if opts.combat { check::run_combat{ &io, &fs, &r, heap = &h, tables = &tables, game = opts.game } }
     if opts.progress { check::run_progress{ &io, &fs, &r, heap = &h, rm, tables = &tables } }
     return check::summarize{ &io, title = "rulescheck", r }
 }
