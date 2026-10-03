@@ -1,14 +1,16 @@
 // ncsdis: the NCS disassembler (docs/formats/ncs.md). It writes the same text as
 // tools/py/ncsdis.py, byte for byte, so the two check each other.
 //
-//   kotor/tools/ctxc run kotor/tools/ncsdis -- FILE.ncs [-x] [--no-names]
+//   kotor/tools/ctxc run kotor/tools/ncsdis -- FILE.ncs|RESREF [-x] [--no-names] [--module M] [--game DIR]
 //   kotor/tools/ctxc run kotor/tools/ncsdis -- --corpus [DIR] [-o OUT]
 //
 // One file: its listing to standard output, in UTF-8 with \n line ends. -x shows each
 // instruction's bytes, --no-names leaves ACTION's routine names out. Exits 1 if a jump target or a
 // STORE_STATE resume point isn't an instruction start (the `; ERROR` lines at the end), or if the
-// file doesn't decode: then `PATH: MESSAGE` goes to standard error, in ncsdis.py's words. Unlike
-// ncsdis.py it takes only a path, not a resref to look up in the install.
+// file doesn't decode: then `PATH: MESSAGE` goes to standard error, in ncsdis.py's words. An
+// argument that isn't a file is a resref, looked up through the resource manager (lib/res) in the
+// install at --game (F:/Steam/steamapps/common/swkotor), with module M mounted if --module gives
+// one, as the game would find it.
 //
 // --corpus: every *.ncs in DIR (kotor/extract/ncs), in the byte order of their names, into OUT
 // (kotor/out/ncsdis-ctx.txt): for each, a line `=== NAME`, then its listing, or `NAME: MESSAGE`
@@ -18,7 +20,7 @@
 type Text = utf8::Builder(arena::Arena)
 type Instrs = list::List(ncs::Raw, arena::Arena)
 
-struct Options { path: []u8, raw: bool, names: bool, corpus: bool, dir: []u8, out: []u8 }
+struct Options { path: []u8, raw: bool, names: bool, corpus: bool, dir: []u8, out: []u8, game: []u8, module: []u8 }
 
 // One file's work: its bytes, instructions, marks and listing. Reset for each file of a corpus.
 const WORK_SIZE: usize = 268435456         // 256 MiB
@@ -41,18 +43,19 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let opts = parse_args{ &io, args } ifnull { return 2 }
     let work_pages = mem::pages{ &mem, size = WORK_SIZE } ifnull { return no_memory{ &io } }
     let mut work = arena::new{ buf = work_pages }
-    if not opts.corpus { return one{ &io, &fs, &work, opts } }
+    if not opts.corpus { return one{ &io, &fs, &mem, &work, opts } }
     let keep_pages = mem::pages{ &mem, size = KEEP_SIZE } ifnull { return no_memory{ &io } }
     let mut keep = arena::new{ buf = keep_pages }
     return corpus{ &io, &fs, &keep, &work, opts }
 }
 
-const USAGE: utf8::String = "usage: ncsdis FILE.ncs [-x] [--no-names]\n       ncsdis --corpus [DIR] [-o OUT]"
+const USAGE: utf8::String = "usage: ncsdis FILE.ncs|RESREF [-x] [--no-names] [--module M] [--game DIR]\n       ncsdis --corpus [DIR] [-o OUT]"
 
 fn parse_args { mut io: Io, args: Args } -> ?Options {
     let mut o = Options{
         path = "", raw = false, names = true, corpus = false,
         dir = "kotor/extract/ncs", out = "kotor/out/ncsdis-ctx.txt",
+        game = "F:/Steam/steamapps/common/swkotor", module = "",
     }
     let mut have_path = false
     let mut i: usize = 0
@@ -67,6 +70,12 @@ fn parse_args { mut io: Io, args: Args } -> ?Options {
         } else if slice::eq_bytes{ a, b = "-o" } and i + 1 < args.len {
             i = i + 1
             o.out = args[i]
+        } else if slice::eq_bytes{ a, b = "--game" } and i + 1 < args.len {
+            i = i + 1
+            o.game = args[i]
+        } else if slice::eq_bytes{ a, b = "--module" } and i + 1 < args.len {
+            i = i + 1
+            o.module = args[i]
         } else if a.len > 0 and a[0] == '-' {
             io::eprintln{ &io, s = USAGE }
             return null
@@ -92,11 +101,14 @@ fn no_memory { mut io: Io } -> i32 {
 
 // ---- one file
 
-fn one { mut io: Io, mut fs: Fs, mut work: arena::Arena, opts: Options } -> i32 {
+fn one { mut io: Io, mut fs: Fs, mut mem: Mem, mut work: arena::Arena, opts: Options } -> i32 {
     let mut t = utf8::builder{ realloc = arena::alloc, heap = &work }
     let mut why = utf8::builder{ realloc = arena::alloc, heap = &work }
+    let mut h = heap::new{ &mem }
     let data = fs::read_all{ &fs, heap = &work, realloc = arena::alloc, path = opts.path } iferr {
-        return complain{ &io, path = opts.path, what = "no such file or NCS resource" }
+        lookup{ &fs, &h, &work, opts } ifnull {
+            return complain{ &io, path = opts.path, what = "no such file or NCS resource" }
+        }
     }
     let got = disassemble{ &t, &why, heap = &work, data, names = opts.names, raw = opts.raw } iferr {
         return no_memory{ &io }
@@ -106,6 +118,16 @@ fn one { mut io: Io, mut fs: Fs, mut work: arena::Arena, opts: Options } -> i32 
     io::flush{ &io }
     if got > 0 { return 1 }
     return 0
+}
+
+// The NCS resource `opts.path` names (with or without .ncs), as the game's search finds it.
+fn lookup { mut fs: Fs, mut h: heap::Heap, mut work: arena::Arena, opts: Options } -> ?alloc::Bytes {
+    let p = opts.path
+    let name = if p.len > 4 and slice::eq_bytes{ a = p[p.len - 4..], b = ".ncs" } { p[..p.len - 4] } else { p }
+    let mut rm = res::open{ &fs, heap = &h, game = opts.game } iferr { return null }
+    defer res::close{ &fs, &rm }
+    if opts.module.len > 0 { res::mount_module{ &fs, &rm, name = opts.module, save = "" } iferr { return null } }
+    return res::load{ &fs, rm, name, kind = restype::Type::ncs, realloc = arena::alloc, heap = &work } iferr { null }
 }
 
 // `PATH: WHAT` to standard error, as ncsdis.py reports a file that doesn't decode.
