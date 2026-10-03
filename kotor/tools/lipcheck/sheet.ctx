@@ -1,0 +1,235 @@
+// lipcheck's pictures: a head drawn offscreen through the render seam (as tools/mdlview does), many
+// times with the same camera, each tile a different mouth pose, laid out into one contact sheet
+// PNG. The camera is fitted once per head to its bind pose, so tiles can be compared by eye.
+
+struct Cam { view: math::Mat4, proj: math::Mat4, eye: math::Vec3 }
+
+// A head's meshes on the GPU and their materials.
+struct Gfx { gpu: mdl_render::Gpu, materials: []render::Material }
+
+fn upload_head {
+    mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, mut mats: material::Cache, rm: res::Manager, model: *mdl::Model,
+} -> !Gfx {
+    let g = try mdl_render::upload{ &dev, realloc = arena::alloc, &heap, model }
+    let materials = try alloc::resize(render::Material, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(render::Material){}, count = model.meshes.len }
+    let mut i: usize = 0
+    while i < materials.len {
+        let m = model.meshes[i]
+        materials[i] = if not mdl_render::draws{ mesh = m } { mdl_render::base_material{ mesh = m } } else {
+            material::for_mesh{ cache = &mats, &fs, &dev, rm, desc = material::MeshDesc{
+                diffuse = m.textures[0], lightmap = m.textures[1], lightmapped = m.lightmapped,
+                transparency_hint = m.transparency_hint, alpha = 1.0, self_illum = math::vec3::zero{}, envmap = "",
+            } }
+        }
+        i = i + 1
+    }
+    return Gfx{ gpu = g, materials }
+}
+
+// An orthographic camera on the head's +Y side (where creatures face), fitted to the bind pose's
+// geometry. `zoom` > 1 closes in on the face; `shift` moves the view up (positive) or down in
+// fractions of the view's half size, to keep the mouth in the middle.
+fn fit_camera { h: Head, zoom: f32, shift: f32 } -> Cam {
+    let mut box = math::aabb::empty{}
+    extend_posed{ &box, model = h.model, pose = h.bind }
+    if math::aabb::is_empty{ b = box } { box = math::Aabb{ min = math::vec3::splat{ s = -1.0 }, max = math::vec3::splat{ s = 1.0 } } }
+    let center = math::aabb::center{ b = box }
+    let radius = math::max{ a = math::vec3::length{ v = math::aabb::extents{ b = box } }, b = 0.01 }
+    let dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }
+    let up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }
+    let eye = math::vec3::add_scaled{ a = center, b = dir, s = 3.0 * radius }
+    let view_m = math::mat4::look_at{ eye, at = center, up }
+    let mut lo = math::vec3::splat{ s = 1.0e30 }
+    let mut hi = math::vec3::splat{ s = -1.0e30 }
+    let mut c: u32 = 0
+    while c < 8 {
+        let corner = math::Vec3{
+            x = if (c & 1) != 0 { box.max.x } else { box.min.x },
+            y = if (c & 2) != 0 { box.max.y } else { box.min.y },
+            z = if (c & 4) != 0 { box.max.z } else { box.min.z },
+        }
+        let p = math::mat4::transform_point{ m = view_m, p = corner }
+        lo = math::vec3::min{ a = lo, b = p }
+        hi = math::vec3::max{ a = hi, b = p }
+        c = c + 1
+    }
+    let half = math::max{ a = hi.x - lo.x, b = hi.y - lo.y } / 2.0 / 0.92 / zoom
+    let cx = (lo.x + hi.x) / 2.0
+    let cy = (lo.y + hi.y) / 2.0 + shift * half
+    let proj = math::mat4::ortho{ left = cx - half, right = cx + half, bottom = cy - half, top = cy + half, near = 0.01, far = 6.0 * radius }
+    return Cam{ view = view_m, proj, eye }
+}
+
+// Grows `box` by every drawn vertex of `model` where `pose` puts it (skinned vertices through
+// their palettes, as the GPU will).
+fn extend_posed { mut box: math::Aabb, model: *mdl::Model, pose: mdl_anim::Pose } {
+    let mut palette: [32]math::Mat4
+    let mut i: usize = 0
+    while i < model.meshes.len {
+        let mesh = &model.meshes[i]
+        i = i + 1
+        if not mdl_render::draws{ mesh = mesh.* } { continue }
+        let world = pose.world[mesh.node]
+        let skin = mesh.skin
+        let slots = mdl_anim::skin_palette{ model, mesh, pose, out = palette[..] }
+        let mut v: usize = 0
+        while v < @as(usize, mesh.vertex_count) {
+            let p = math::Vec3{ x = mesh.positions[3 * v], y = mesh.positions[3 * v + 1], z = mesh.positions[3 * v + 2] }
+            let mut q = p
+            if skin != null and slots > 0 and skin.weights.len > 0 {
+                q = math::vec3::zero{}
+                let mut k: usize = 0
+                while k < 4 {
+                    let w = skin.weights[4 * v + k]
+                    let s: usize = skin.bones[4 * v + k]
+                    if w > 0.0 and s < slots {
+                        q = math::vec3::add_scaled{ a = q, b = math::mat4::transform_point{ m = palette[s], p }, s = w }
+                    }
+                    k = k + 1
+                }
+            }
+            box = math::aabb::extend{ b = box, p = math::mat4::transform_point{ m = world, p = q } }
+            v = v + 1
+        }
+    }
+}
+
+// Draws the head in its work pose through `cam` and reads the picture into `into` (size x size
+// RGBA, rows top to bottom as mdlview saves them).
+fn draw_tile {
+    mut dev: gpu::Device, mut frame: render::Frame, h: Head, g: Gfx, cam: Cam, into: []mut u8,
+} -> ! {
+    render::begin_frame{ &frame, time = 0.0 }
+    let mut view = render::make_view{ camera = render::Camera{ view = cam.view, proj = cam.proj, eye = cam.eye } }
+    view.clear_color = render::rgba{ r = 0.15, g = 0.15, b = 0.18, a = 1.0 }
+    view.ambient = math::vec3::splat{ s = 0.3 }
+    let vi = render::add_view{ &frame, view } ifnull { return }
+    let light_dir = math::vec3::normalize{ v = math::Vec3{ x = 0.3, y = 1.2, z = 0.6 } }
+    render::add_light{ &frame, light = render::Light{ position = math::vec3::scale{ v = light_dir, s = 100.0 }, color = math::vec3::splat{ s = 0.6 }, radius = 10000.0 } }
+    _ = mdl_render::add_draws{ &frame, view = vi, model = h.model, pose = h.work, g = g.gpu, transform = math::mat4::identity{}, materials = g.materials, time = 0.0 }
+    try gpu::submit{ &dev, frame = &frame }
+    _ = try gpu::read_screen{ &dev, into }
+}
+
+// Copies a size x size tile into cell (col, row) of a sheet `sheet_w` pixels wide.
+fn blit { sheet: []mut u8, sheet_w: usize, tile: []u8, size: usize, col: usize, row: usize } {
+    let mut y: usize = 0
+    while y < size {
+        let dst = ((row * size + y) * sheet_w + col * size) * 4
+        let src = y * size * 4
+        slice::copy(u8){ dst = sheet[dst..dst + size * 4], src = tile[src..src + size * 4] }
+        y = y + 1
+    }
+}
+
+// OUT/PREFIX_A[_B].png
+fn make_path { into: []mut u8, dir: []u8, prefix: []u8, a: []u8, b: []u8 } -> []u8 {
+    let mut n = put{ into, at = 0, s = dir }
+    n = put{ into, at = n, s = "/" }
+    n = put{ into, at = n, s = prefix }
+    n = put{ into, at = n, s = "_" }
+    n = put{ into, at = n, s = a }
+    if b.len > 0 {
+        n = put{ into, at = n, s = "_" }
+        n = put{ into, at = n, s = b }
+    }
+    n = put{ into, at = n, s = ".png" }
+    return into[..n]
+}
+
+fn put { into: []mut u8, at: usize, s: []u8 } -> usize {
+    let n = if at + s.len <= into.len { s.len } else { into.len - at }
+    slice::copy(u8){ dst = into[at..at + n], src = s[..n] }
+    return at + n
+}
+
+// Makes `path` and the directories above it that are missing.
+fn make_dir { mut fs: Fs, path: []u8 } {
+    let mut i: usize = 1
+    while i <= path.len {
+        if i == path.len or path[i] == '/' {
+            fs::make_dir{ &fs, path = path[..i] } iferr {}
+        }
+        i = i + 1
+    }
+}
+
+fn save_sheet { mut io: Io, mut fs: Fs, mut heap: arena::Arena, path: []u8, rgba: []u8, width: u32, height: u32 } -> ! {
+    let image = png::Image{ width, height, rgba }
+    try png::save{ &fs, realloc = arena::alloc, &heap, path, image, alpha = false, bottom_up = false }
+    _ = @fmt(&io, "wrote {} ({}x{})\n", path, width, height)
+}
+
+// The mapping contact sheet of one head: 8 columns; rows 0-1 are shapes 0..15 sampled the way
+// swkotor.exe does ((s+1)/16 of the talk animation), rows 2-3 the same shapes at s/30 s.
+fn render_mapping { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena, opts: Options, h: Head, g: Gfx, cam: Cam } -> ! {
+    let talk = h.talk ifnull { return }
+    let size = @as(usize, opts.size)
+    let tile = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = size * size * 4 }
+    let sheet_w = size * 8
+    let sheet = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = sheet_w * size * 4 * 4 }
+    let mut m: usize = 0
+    while m < 2 {
+        let mapping = if m == 0 { lipsync::Mapping::ratio } else { lipsync::Mapping::frame }
+        let mut s: usize = 0
+        while s < 16 {
+            show_shape{ h, talk, shape = @as(lip::Shape, @trunc(u8, s)), mapping }
+            try draw_tile{ &dev, &frame, h, g, cam, into = tile }
+            blit{ sheet, sheet_w, tile, size, col = s % 8, row = m * 2 + s / 8 }
+            s = s + 1
+        }
+        m = m + 1
+    }
+    make_dir{ &fs, path = opts.out }
+    let mut buf: [512]u8
+    let path = make_path{ into = buf[..], dir = opts.out, prefix = "mapping", a = h.name, b = "" }
+    try save_sheet{ &io, &fs, &heap, path, rgba = sheet, width = @as(u32, sheet_w), height = @as(u32, size * 4) }
+}
+
+// The line contact sheet of one head: the mouth at 8 times from the line's start to its end,
+// 4 columns, left to right and top to bottom, printed with the LIP's shape there.
+fn render_line { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena, opts: Options, h: Head, g: Gfx, cam: Cam, track: *lipsync::Track } -> ! {
+    let talk = h.talk ifnull { return }
+    let size = @as(usize, opts.size)
+    let tile = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = size * size * 4 }
+    let sheet_w = size * 4
+    let sheet = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = sheet_w * size * 4 * 2 }
+    let len = lipsync::length{ t = track }
+    _ = @fmt(&io, "{}: {} keys over {} s; tiles left to right, top to bottom:\n", h.name, track.lip.count, len)
+    let mut i: usize = 0
+    while i < 8 {
+        let t = len * @as(f32, i) / 7.0
+        mouth_at{ h, talk, track, t }
+        try draw_tile{ &dev, &frame, h, g, cam, into = tile }
+        blit{ sheet, sheet_w, tile, size, col = i % 4, row = i / 4 }
+        let b = lipsync::locate{ t = track, time = t }
+        _ = @fmt(&io, "  {} t={} shape {} ({}) -> {} ({}) at {}\n", i, fixed{ x = t, places = 3, _ },
+            @as(u32, b.from), shape_name{ s = b.from }, @as(u32, b.to), shape_name{ s = b.to }, fixed{ x = b.f, places = 2, _ })
+        i = i + 1
+    }
+    make_dir{ &fs, path = opts.out }
+    let mut buf: [512]u8
+    let path = make_path{ into = buf[..], dir = opts.out, prefix = "line", a = opts.lip, b = h.name }
+    try save_sheet{ &io, &fs, &heap, path, rgba = sheet, width = @as(u32, sheet_w), height = @as(u32, size * 2) }
+}
+
+fn shape_name { s: lip::Shape } -> []u8 {
+    return match s {
+        ee => { "ee" }
+        eh => { "eh" }
+        schwa => { "schwa" }
+        ah => { "ah" }
+        oh => { "oh" }
+        ooh => { "ooh" }
+        y => { "y" }
+        s_ts => { "s_ts" }
+        f_v => { "f_v" }
+        n_ng => { "n_ng" }
+        th => { "th" }
+        m_p_b => { "m_p_b" }
+        t_d => { "t_d" }
+        j_sh => { "j_sh" }
+        l_r => { "l_r" }
+        k_g => { "k_g" }
+    }
+}
