@@ -53,8 +53,8 @@ namespace frontend {
         defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = fe.heap, mem = bytes, count = 0 }
         let t = twoda::parse{ data = bytes, realloc = heap::alloc, heap = fe.heap } iferr { return 0 }
         defer twoda::free{ t, realloc = heap::alloc, heap = fe.heap }
-        let label = twoda::get_string_at{ t, row = @as(usize, row), col = 0 } ifnull { return 0 }
-        return copy_into{ dst = into, src = label }
+        if row < 0 or @as(usize, row) >= twoda::rows{ t } { return 0 }
+        return copy_into{ dst = into, src = t.labels[@as(usize, row)] }
     }
 
     // ---- Load Game

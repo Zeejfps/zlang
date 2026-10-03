@@ -40,3 +40,33 @@ Where ctxlang got in the way. Each entry: what we wanted, what we wrote instead,
   compiles. Once.
 - No other trouble: the library (about 500 lines, `try`, `ifnull`, slices of `mut` structs,
   `&scene.emitting[i]` as a `mut` argument) compiled and ran at the second attempt.
+
+## lib/gui and lib/frontend (the GUI lead)
+
+About 5,000 lines of ctxlang; it compiled in a handful of passes. What cost something:
+
+- **No bitwise not.** Clearing a flag is `f & ~F_X` in C; there is no `~`. Wrote
+  `clear_bits{ f, bits }` as `f & (4294967295 ^ bits)` and used it 8 times.
+- **A struct literal must name every field, and a struct is zero-initialised only if every field has a
+  zero value** (no enums, pointers, functions, lists). `Control` (about 90 fields) is built with
+  `let mut c: Control` and field assignments, which works because its kind is a `u8` constant and its
+  rows a slice with a count, not a `list::List`. The price: `K_*` constants and `kind == K_LIST` chains
+  instead of an enum and `match`; and `Event` (an enum field) can't be a zero array element, so the
+  event queue is a `list::List` that is cleared instead of a `[N]Event`. Once each decided the design.
+- **`ifnull`/`iferr` bind tighter than comparison**, so `x == f{} ifnull y` reads as `x == (f{} ifnull y)`;
+  `a != null and b` needs care too. Always put the `ifnull` call in a `let` first. Twice.
+- **`is` is a keyword**, so `let is = gff::get_struct{...}` (an "image struct") is a syntax error with
+  an unhelpful message ("expected a name, found 'is'"). Once.
+- **The escape check follows every read-only argument into the result.** `font::load{ name = buf[..] }`
+  with a local `buf` made the returned font "hold" `buf` (declare `buf` before the local that receives
+  it); a `try` whose error "may hold the address of local `pb`" because `pb` was a path buffer (kept the
+  path in the owning struct instead, `Front.saves_dir`). Three sites.
+- **`fs::list` returns `[][]u8`, read-only**, so its outer slice can't be passed back to
+  `alloc::resize(..., count = 0)` (`*T` doesn't convert to `*mut T`); the front end leaks that one small
+  allocation per Load Game opening. A `list_free` beside `list` would fix it.
+- **`&p.*` doesn't parse**; for a `mut` field and a `*mut T` local, pass the pointer itself
+  (`movie::skip{ p }`). The error was "expected '}', found '.'". Four sites.
+- **Everything takes `mut g: Gui`**, even readers, because a read-only `Gui` argument is copied (6 KB).
+  Harmless, but every call site then writes `&g` and every function needs `mut`.
+- **String literals as array values**: `let pre = "gui_mp_"` is a `[7]u8`, so `slice::copy{ src = pre }`
+  fails; annotated `: []u8` six times (the same entry as the other leads').
