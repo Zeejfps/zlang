@@ -58,6 +58,7 @@ namespace ingame {
     // Closes every panel and frees the interface (a module change makes a new one).
     fn free { mut ui: Ingame, mut dev: gpu::Device } {
         gui::free{ g = &ui.gui }
+        screens::free{ s = &ui.screens, heap = ui.heap }
         list::free{ list = &ui.text.bytes }
         material::free_cache{ cache = ui.cache, &dev }
     }

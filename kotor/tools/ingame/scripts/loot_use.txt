@@ -1,0 +1,8 @@
+# The way a player opens a container: the leader walks up to the Endar Spire's footlocker and uses it
+# (the engine's `use` command is the default action), the panel opens, Get Items takes everything.
+#   kotor.exe --module end_m01aa --headless --frames 120 --input kotor/tools/ingame/scripts/loot_use.txt --screenshot-at 60:kotor/out/loot_use.png --log events
+3 warp end_locker01
+5 use end_locker01
+60 ui bag
+64 ui click 640 452
+80 ui bag

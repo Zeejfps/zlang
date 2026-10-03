@@ -53,6 +53,19 @@ namespace screens {
         }
     }
 
+    // Gives back the 2DAs the screens loaded (the interface is made again after a module change).
+    fn free { mut s: State, heap: *mut heap::Heap } {
+        if s.level.has_feat_table { twoda::free{ t = s.level.feat_table, realloc = heap::alloc, heap } }
+        if s.bench.loaded {
+            twoda::free{ t = s.bench.upgrade_t, realloc = heap::alloc, heap }
+            twoda::free{ t = s.bench.crystals_t, realloc = heap::alloc, heap }
+        }
+        if s.galaxy.loaded { twoda::free{ t = s.galaxy.table, realloc = heap::alloc, heap } }
+        s.level.has_feat_table = false
+        s.bench.loaded = false
+        s.galaxy.loaded = false
+    }
+
     // Whether a screen is on the screen.
     fn is_open { s: *State } -> bool {
         return s.store.open or s.container.open or s.level.open or s.bench.open or s.galaxy.open
