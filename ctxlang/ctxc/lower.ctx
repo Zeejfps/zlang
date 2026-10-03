@@ -2209,6 +2209,11 @@ namespace lower {
             let n = if slice::eq_bytes{ a = name, b = "size_of" } { lay.size } else { lay.align }
             return int_lit{ &l, t, n }
         }
+        if slice::eq_bytes{ a = name, b = "offset_of" } {
+            let off = check::offset_of{ c = l.c, t = T{ &l, t = targ_type{ l, targ } }, arg = args[0], report = false }
+            if off == null { @panic("lower: @offset_of of no field") }
+            return int_lit{ &l, t, n = off }
+        }
         if slice::eq_bytes{ a = name, b = "addr" } {
             let ty = tid{ &l, t }
             return mk{ ty, k = ir::ExprKind::ptraddr{ e = box{ l, e = ex{ &l, e = args[0] } } } }

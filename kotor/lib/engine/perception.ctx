@@ -1,0 +1,153 @@
+// Perception (docs/re/gameloop.md 2.4): which creatures each creature sees and hears, and the
+// ON_PERCEPTION events (script event 1) when that changes. Two passes, as the original: the
+// party is checked on every update (timer A, whose last run the original never stores), and
+// everyone in range every 4 s out of combat, 0.2 s in combat (timer B).
+//
+// A creature is seen within its sight range with a clear line between the two at eye height,
+// heard within its hearing range. Ranges: the PC ranges.2da row 12 (PercepRngPlayer); others the
+// UTC's PerceptionRange row, 11 meaning appearance.2da PERCEPTIONDIST (itself a ranges row).
+// Stealth and the rules' checks are HOOK(rules).
+namespace perception {
+    const FULL_PASS_MS: u64 = 4000
+    const COMBAT_PASS_MS: u64 = 200
+    const EYE: f32 = 1.5
+
+    // Event payload bits in ScriptEvent.ints[0] (ours): what changed.
+    const SEEN: i32 = 1
+    const HEARD: i32 = 2
+    const VANISHED: i32 = 4
+    const INAUDIBLE: i32 = 8
+
+    fn ranges_of { mut w: world::World, c: *mut obj::Creature } {
+        let mut row: usize = 12
+        if not c.is_pc {
+            row = @as(usize, c.perception_range)
+            if row == 11 {
+                let dist = twoda::get_int{ t = w.tables.appearance, row = @as(usize, c.appearance), column = "perceptiondist" }
+                row = if dist != null and dist >= 0 { @as(usize, dist) } else { 11 }
+            }
+        }
+        c.sight_range = twoda::get_float{ t = w.tables.ranges, row, column = "primaryrange" } ifnull 20.0
+        c.hearing_range = twoda::get_float{ t = w.tables.ranges, row, column = "secondaryrange" } ifnull 20.0
+    }
+
+    // One creature's perception step, from its AI update.
+    fn update { mut w: world::World, id: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        if c.dead { return }
+        if c.sight_range <= 0.0 { ranges_of{ &w, c } }
+        let now = clock::now_ms{ c = w.clock }
+        let period = if c.in_combat { COMBAT_PASS_MS } else { FULL_PASS_MS }
+        let full = c.last_perception == 0 or now - c.last_perception >= period
+        if full { c.last_perception = if now == 0 { 1 } else { now } }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let t = all[i]
+            i = i + 1
+            if t.id == id or t.destroyed or t.kind != obj::Kind::creature or t.area != o.area { continue }
+            if not full and not party::is_member{ w = &w, id = t.id } { continue }
+            check{ &w, viewer = id, target = t.id }
+        }
+        // The party pass also forgets creatures that are gone.
+        if full { forget_gone{ &w, id } }
+    }
+
+    // Whether `viewer` sees and hears `target` now, and the events for what changed.
+    fn check { mut w: world::World, viewer: u32, target: u32 } {
+        let v = world::object{ w = &w, id = viewer } ifnull { return }
+        let vc = obj::creature{ o = v } ifnull { return }
+        let t = world::object{ w = &w, id = target } ifnull { return }
+        let tc = obj::creature{ o = t } ifnull { return }
+        let d = math::vec3::distance{ a = v.position, b = t.position }
+        let heard = d <= vc.hearing_range and not tc.dead
+        let seen = d <= vc.sight_range and clear_line{ w = &w, a = v.position, b = t.position }
+        let entries = list::items{ list = vc.perceived }
+        let mut k: usize = 0
+        while k < entries.len and entries[k].id != target { k = k + 1 }
+        let had = k < entries.len
+        let was_seen = had and entries[k].seen
+        let was_heard = had and entries[k].heard
+        if seen == was_seen and heard == was_heard { return }
+        let mut change: i32 = 0
+        if seen and not was_seen { change = change | SEEN }
+        if heard and not was_heard { change = change | HEARD }
+        if was_seen and not seen { change = change | VANISHED }
+        if was_heard and not heard { change = change | INAUDIBLE }
+        if had {
+            entries[k].seen = seen
+            entries[k].heard = heard
+            if not seen and not heard { remove_at{ l = &vc.perceived, at = k } }
+        } else {
+            list::push{ list = &vc.perceived, item = obj::Perceived{ id = target, seen, heard } } iferr {}
+        }
+        let mut e = events::script_event{ kind = events::PERCEPTION, object = target }
+        e.ints[0] = change
+        events::post{ &w, delay_ms = 0, caller = target, target = viewer, payload = events::Payload::script{ e } }
+    }
+
+    // A clear line between two creatures' eyes through the rooms' walkmeshes (faces whose
+    // surface material blocks sight, surfacemat.2da LineOfSight).
+    fn clear_line { w: *world::World, a: math::Vec3, b: math::Vec3 } -> bool {
+        let from = math::Vec3{ x = a.x, y = a.y, z = a.z + EYE }
+        let to = math::Vec3{ x = b.x, y = b.y, z = b.z + EYE }
+        let d = math::vec3::sub{ a = to, b = from }
+        let len = math::vec3::length{ v = d }
+        if len < 0.01 { return true }
+        let ray = math::ray::make{ origin = from, dir = math::vec3::scale{ v = d, s = 1.0 / len } }
+        let mut blocks: [64]bool
+        let mut m: usize = 0
+        while m < 64 {
+            blocks[m] = m < w.walk.sees.len and not w.walk.sees[m]
+            m = m + 1
+        }
+        let rooms = list::items{ list = w.walk.rooms }
+        let mut i: usize = 0
+        while i < rooms.len {
+            let mesh = rooms[i].mesh
+            i = i + 1
+            if mesh == null { continue }
+            if bwm::cast_ray{ w = mesh, ray, max_t = len, stops = blocks[..] } != null { return false }
+        }
+        return true
+    }
+
+    // Drops perceived creatures that were destroyed (the original's vanish on its full pass).
+    fn forget_gone { mut w: world::World, id: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let mut k: usize = 0
+        while k < c.perceived.len {
+            let entry = list::items{ list = c.perceived }[k]
+            if world::is_valid{ w = &w, id = entry.id } {
+                k = k + 1
+                continue
+            }
+            remove_at{ l = &c.perceived, at = k }
+        }
+    }
+
+    fn remove_at { l: *mut list::List(obj::Perceived, heap::Heap), at: usize } {
+        let items = list::items{ list = l.* }
+        let mut i = at + 1
+        while i < items.len {
+            items[i - 1] = items[i]
+            i = i + 1
+        }
+        l.len = l.len - 1
+    }
+
+    // What `viewer` knows of `target` (GetObjectSeen, GetObjectHeard).
+    fn entry_of { w: *world::World, viewer: u32, target: u32 } -> ?obj::Perceived {
+        let v = world::object{ w, id = viewer } ifnull { return null }
+        let c = obj::creature{ o = v } ifnull { return null }
+        let entries = list::items{ list = c.perceived }
+        let mut k: usize = 0
+        while k < entries.len {
+            if entries[k].id == target { return entries[k] }
+            k = k + 1
+        }
+        return null
+    }
+}

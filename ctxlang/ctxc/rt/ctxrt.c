@@ -37,6 +37,58 @@ void *ctx_io_out(void) {
     return &stdout_buf;
 }
 
+// ---- memory for arenas (std/mem.ctx, `reserve`; std/arena.ctx, `alloc`)
+//
+// On Windows a region is reserved, which costs address space alone, and committed as an arena
+// reaches it: ctx_commit commits the region up to the end of the MiB that holds `last`, and an
+// arena calls it for its first allocation and for each one that ends in another MiB than the
+// one before. The MiB that holds the region's start is committed from the outset. Elsewhere
+// calloc gives zeroed memory that the OS supplies on first touch: it takes a big block from
+// mmap without clearing it.
+
+#ifdef _WIN32
+#define CTX_REGIONS 64
+static struct ctx_region { uint8_t *base; uint64_t size, committed; } ctx_regions[CTX_REGIONS];
+static int ctx_nregions;
+#endif
+
+uint8_t *ctx_reserve(uint64_t size) {
+#ifdef _WIN32
+    if (ctx_nregions == CTX_REGIONS) return VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    uint8_t *p = VirtualAlloc(NULL, size, MEM_RESERVE, PAGE_NOACCESS);
+    if (!p) return NULL;
+    uint64_t first = (((uintptr_t)p | 0xFFFFF) + 1) - (uintptr_t)p;
+    if (first > size) first = size;
+    if (!VirtualAlloc(p, first, MEM_COMMIT, PAGE_READWRITE)) {
+        VirtualFree(p, 0, MEM_RELEASE);
+        return NULL;
+    }
+    ctx_regions[ctx_nregions++] = (struct ctx_region){ p, size, first };
+    return p;
+#else
+    uint8_t *p = calloc(1, size + 4096);
+    if (!p) return NULL;
+    return (uint8_t *)(((uintptr_t)p + 4095) & ~(uintptr_t)4095);
+#endif
+}
+
+bool ctx_commit(const uint8_t *last) {
+#ifdef _WIN32
+    for (int i = ctx_nregions - 1; i >= 0; i--) {
+        struct ctx_region *r = &ctx_regions[i];
+        if (last < r->base || last >= r->base + r->size) continue;
+        uint64_t to = (((uintptr_t)last | 0xFFFFF) + 1) - (uintptr_t)r->base;
+        if (to > r->size) to = r->size;
+        if (to <= r->committed) return true;
+        if (!VirtualAlloc(r->base + r->committed, to - r->committed, MEM_COMMIT, PAGE_READWRITE)) return false;
+        r->committed = to;
+        return true;
+    }
+#endif
+    (void)last;
+    return true;
+}
+
 static void write_all(int fd, const void *p, size_t n) {
     const char *c = p;
     while (n > 0) {

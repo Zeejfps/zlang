@@ -1,0 +1,466 @@
+// A creature's derived numbers: abilities, level, base attack bonus, saves, hit points and Force
+// points, skill ranks, armour class pieces (rules.md 2, 3.8, 4.5, 5.1 and combat.md 5). The
+// results live in Creature.stats; rules::recompute rebuilds them from the template numbers, the
+// equipment and the effect list, and every function that changes any of those calls it.
+namespace rules {
+    // ---- feat and power sets
+
+    // HasFeat: the creature's own feats, or one a BONUS_FEAT effect (an item's property) grants.
+    fn has_feat { c: *Creature, feat: i32 } -> bool {
+        if feat < 0 or feat >= 256 { return false }
+        let w = @as(usize, feat) >> 5
+        let b = @as(u32, feat) & 31
+        if ((c.feats[w] >> b) & 1) != 0 { return true }
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            if c.fx[i].kind == fx::BONUS_FEAT and c.fx[i].ints[0] == feat { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    fn grant_feat { mut c: Creature, feat: i32 } {
+        if feat < 0 or feat >= 256 { return }
+        let w = @as(usize, feat) >> 5
+        let b = @as(u32, feat) & 31
+        c.feats[w] = c.feats[w] | (@as(u32, 1) << b)
+    }
+
+    fn revoke_feat { mut c: Creature, feat: i32 } {
+        if feat < 0 or feat >= 256 { return }
+        let w = @as(usize, feat) >> 5
+        let b = @as(u32, feat) & 31
+        c.feats[w] = c.feats[w] & ((@as(u32, 1) << b) ^ 0xffffffff)
+    }
+
+    fn knows_power { c: *Creature, spell: i32 } -> bool {
+        if spell < 0 or spell >= 256 { return false }
+        let w = @as(usize, spell) >> 5
+        let b = @as(u32, spell) & 31
+        return ((c.powers[w] >> b) & 1) != 0
+    }
+
+    fn learn_power { mut c: Creature, spell: i32 } {
+        if spell < 0 or spell >= 256 { return }
+        let w = @as(usize, spell) >> 5
+        let b = @as(u32, spell) & 31
+        c.powers[w] = c.powers[w] | (@as(u32, 1) << b)
+    }
+
+    fn forget_power { mut c: Creature, spell: i32 } {
+        if spell < 0 or spell >= 256 { return }
+        let w = @as(usize, spell) >> 5
+        let b = @as(u32, spell) & 31
+        c.powers[w] = c.powers[w] & ((@as(u32, 1) << b) ^ 0xffffffff)
+    }
+
+    // ---- levels and classes
+
+    fn total_level { c: *Creature } -> i32 {
+        let mut n = 0
+        let mut i: usize = 0
+        while i < @as(usize, c.nclasses) {
+            n = n + c.classes[i].level
+            i = i + 1
+        }
+        return n
+    }
+
+    fn class_level { c: *Creature, class: i32 } -> i32 {
+        let mut i: usize = 0
+        while i < @as(usize, c.nclasses) {
+            if c.classes[i].class == class { return c.classes[i].level }
+            i = i + 1
+        }
+        return 0
+    }
+
+    fn has_class { c: *Creature, class: i32 } -> bool {
+        let mut i: usize = 0
+        while i < @as(usize, c.nclasses) {
+            if c.classes[i].class == class { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Whether the class is one that uses the Force (classes.2da spellcaster).
+    fn is_force_class { tables: *Tables, class: i32 } -> bool {
+        let row = get_class{ tables, row = class } ifnull { return false }
+        return row.caster
+    }
+
+    // A level clamped into a table's 1..N range as the 0-based row; -1 below level 1.
+    fn level_row { level: i32, rows: usize } -> i32 {
+        if level < 1 { return -1 }
+        let max = @as(i32, rows) - 1
+        return if level - 1 > max { max } else { level - 1 }
+    }
+
+    fn ability_modifier { score: i32 } -> i32 {
+        return (score - 10) >> 1
+    }
+
+    // ---- base attack bonus and saves
+
+    fn base_attack_bonus { tables: *Tables, c: *Creature } -> i32 {
+        let mut total = 0
+        let mut i: usize = 0
+        while i < @as(usize, c.nclasses) {
+            let row = get_class{ tables, row = c.classes[i].class } ifnull {
+                i = i + 1
+                continue
+            }
+            let l = level_row{ level = c.classes[i].level, rows = MAX_LEVEL }
+            if l >= 0 { total = total + row.bab[@as(usize, l)] }
+            i = i + 1
+        }
+        return total
+    }
+
+    // The class part of a save plus the Conditioning feats; which = 0 fortitude, 1 reflex, 2 will.
+    fn base_save { tables: *Tables, c: *Creature, which: usize } -> i32 {
+        let mut total = 0
+        let mut i: usize = 0
+        while i < @as(usize, c.nclasses) {
+            let row = get_class{ tables, row = c.classes[i].class } ifnull {
+                i = i + 1
+                continue
+            }
+            let l = level_row{ level = c.classes[i].level, rows = MAX_LEVEL }
+            if l >= 0 {
+                let li = @as(usize, l)
+                total = total + (if which == 0 { row.fort[li] } else if which == 1 { row.refl[li] } else { row.will[li] })
+            }
+            i = i + 1
+        }
+        if has_feat{ c, feat = feat::MASTER_CONDITIONING } {
+            total = total + 3
+        } else if has_feat{ c, feat = feat::IMPROVED_CONDITIONING } {
+            total = total + 2
+        } else if has_feat{ c, feat = feat::CONDITIONING } {
+            total = total + 1
+        }
+        return total
+    }
+
+    // ---- hit points and Force points
+
+    // The per-level hit point bonus feats give (Master Toughness 2, else Toughness 1), when
+    // bonuses are asked for. Improved Toughness adds nothing of its own here (rules.md 4.5).
+    fn toughness_bonus { c: *Creature } -> i32 {
+        if has_feat{ c, feat = feat::MASTER_TOUGHNESS } { return 2 }
+        if has_feat{ c, feat = feat::TOUGHNESS } { return 1 }
+        return 0
+    }
+
+    // CSWSCreature::GetMaxHitPoints (0x004ed310). Player character: the sum over the level history
+    // of max(1, hit die + CON modifier) plus the Toughness bonus each level. Everyone else: the
+    // template's HP plus level x (CON modifier + feat bonuses), but at least 1 HP per level.
+    fn max_hit_points { c: *Creature, con_mod: i32, include_bonus: bool } -> i32 {
+        let tough = if include_bonus { toughness_bonus{ c } } else { 0 }
+        if c.pc_rules {
+            let mut total = 0
+            let mut i: usize = 0
+            while i < @as(usize, c.nhistory) {
+                let mut per = c.history[i].hp + con_mod
+                if per < 1 { per = 1 }
+                total = total + per + tough
+                i = i + 1
+            }
+            return total
+        }
+        let level = total_level{ c }
+        let wook = if has_feat{ c, feat = feat::WOOKIEE_ENDURANCE } { 2 } else { 0 }
+        let per_level = tough + wook
+        if level <= level * con_mod + c.hp_base {
+            return level * (con_mod + per_level) + c.hp_base
+        }
+        return level * per_level + level
+    }
+
+    // CSWSCreature::GetMaxForcePoints (0x004fd490). Zero for droids and for creatures with no
+    // Force class. Player character: the history's Force dice plus WIS and CHA modifiers (at
+    // least 1 per level with a Force die); others: base + level x (WIS + CHA modifier), at least
+    // the level. +40 with Force Sensitive; +50 for a Consular under the dark side's mastery.
+    fn max_force_points { tables: *Tables, c: *Creature, wis_mod: i32, cha_mod: i32 } -> i32 {
+        if c.race == race::DROID { return 0 }
+        let level = total_level{ c }
+        let mut total = 0
+        if c.pc_rules {
+            if c.nclasses < 1 { return 0 }
+            if not is_force_class{ tables, class = c.classes[@as(usize, c.nclasses - 1)].class } { return 0 }
+            let mut i: usize = 0
+            while i < @as(usize, c.nhistory) {
+                if c.history[i].fp != 0 {
+                    let mut per = wis_mod + c.history[i].fp + cha_mod
+                    if per < 1 { per = 1 }
+                    total = total + per
+                }
+                i = i + 1
+            }
+        } else {
+            total = c.fp_base + level * wis_mod + level * cha_mod
+        }
+        if has_feat{ c, feat = feat::FORCE_SENSITIVE } { total = total + 40 }
+        if has_class{ c, class = cls::JEDI_CONSULAR } and has_effect_kind{ c, kind = fx::DARK_SIDE_MASTERY } { total = total + 50 }
+        if not c.pc_rules {
+            // Only creatures with a Jedi class have a pool; they have at least one point per level.
+            if not (has_class{ c, class = cls::JEDI_GUARDIAN } or has_class{ c, class = cls::JEDI_CONSULAR } or has_class{ c, class = cls::JEDI_SENTINEL }) { return 0 }
+            if total < level { return level }
+        }
+        return total
+    }
+
+    // ---- skills
+
+    // The best tier of a skill's feat line (rules.md 5.1).
+    fn skill_feat_bonus { c: *Creature, skill: i32 } -> i32 {
+        if skill == skill::COMPUTER_USE or skill == skill::REPAIR or skill == skill::SECURITY {
+            if has_feat{ c, feat = feat::GEAR_HEAD_MASTER } { return 3 }
+            if has_feat{ c, feat = feat::GEAR_HEAD_ADEPT } { return 2 }
+            if has_feat{ c, feat = feat::GEAR_HEAD } { return 1 }
+        } else if skill == skill::DEMOLITIONS or skill == skill::STEALTH {
+            if has_feat{ c, feat = feat::MASTER_CAUTION } { return 3 }
+            if has_feat{ c, feat = feat::IMPROVED_CAUTION } { return 2 }
+            if has_feat{ c, feat = feat::CAUTIOUS } { return 1 }
+        } else if skill == skill::AWARENESS or skill == skill::PERSUADE or skill == skill::TREAT_INJURY {
+            if has_feat{ c, feat = feat::MASTER_EMPATHY } { return 3 }
+            if has_feat{ c, feat = feat::IMPROVED_EMPATHY } { return 2 }
+            if has_feat{ c, feat = feat::EMPATHY } { return 1 }
+        }
+        return 0
+    }
+
+    // CSWSCreatureStats::GetSkillRank (0x005aa570): ranks + effects + key ability + feat line,
+    // 0 for a skill that needs training and has none. `base_only` returns just the ranks.
+    fn skill_rank { tables: *Tables, c: *Creature, skill: i32, vs: Versus, base_only: bool } -> i32 {
+        if skill < 0 or skill >= @as(i32, NUM_SKILLS) { return 0 }
+        let si = @as(usize, skill)
+        let ranks = c.skills[si]
+        if base_only { return ranks }
+        let row = &tables.skills[si]
+        if not row.untrained and ranks == 0 { return 0 }
+        let mut r = ranks
+        r = r + net{ b = effect_bonus{ c, q = BonusQuery{ category = cat::SKILL, a = skill, b = 0, hand = -1, vs } } }
+        let key = row.key_ability
+        let mut key_mod = c.stats.abil_mod[@as(usize, key)]
+        // DEX only counts when it is negative while the creature is helpless.
+        if key == abil::DEX and is_debilitated{ c } and key_mod > 0 { key_mod = 0 }
+        r = r + key_mod
+        if (key == abil::STR or key == abil::DEX) and (c.stats.vision & 8) != 0 { r = r - 4 }
+        r = r + skill_feat_bonus{ c, skill }
+        if r < -127 { r = -127 }
+        if r > 127 { r = 127 }
+        return r
+    }
+
+    // ---- recompute
+
+    // The size category of the creature: appearance.2da's, in creaturesize.2da's numbering.
+    fn creature_size { tables: *Tables, c: *Creature } -> i32 {
+        return size_of_appearance{ tables, appearance = c.appearance }
+    }
+
+    // The slot's cell index (storage order of rules.md 4.1) for a mask, or -1.
+    fn slot_index { mask: u32 } -> i32 {
+        if mask == slot::HEAD { return 0 }
+        if mask == slot::BODY { return 1 }
+        if mask == 4 { return 2 }
+        if mask == slot::HANDS { return 3 }
+        if mask == slot::RIGHT { return 4 }
+        if mask == slot::LEFT { return 5 }
+        if mask == 0x40 { return 6 }
+        if mask == slot::LEFT_ARM { return 7 }
+        if mask == slot::RIGHT_ARM { return 8 }
+        if mask == slot::IMPLANT { return 9 }
+        if mask == slot::BELT { return 10 }
+        if mask == slot::CREATURE_L { return 11 }
+        if mask == slot::CREATURE_R { return 12 }
+        if mask == slot::CREATURE_B { return 13 }
+        if mask == slot::CREATURE_HIDE { return 14 }
+        return -1
+    }
+
+    // The item in a slot, or null when empty.
+    fn equipped_item { c: *Creature, mask: u32 } -> ?*Item {
+        let i = slot_index{ mask }
+        if i < 0 { return null }
+        let cell = &c.equip[@as(usize, i)]
+        if not cell.used { return null }
+        return &cell.item
+    }
+
+    // GetDexModifierForDefense (0x005a5330): the DEX modifier, capped by the body armour's DEXBONUS
+    // when that is real armour (ModelType 1 with a BaseAC; robes have BaseAC 0 and no cap), and
+    // capped at 0 while the creature is debilitated.
+    fn dex_modifier_for_defense { tables: *Tables, c: *Creature } -> i32 {
+        let mut m = c.stats.abil_mod[1]
+        let body = equipped_item{ c, mask = slot::BODY }
+        if body != null {
+            let bi = get_baseitem{ tables, row = body.base_item }
+            if bi != null and bi.model_type == 1 and bi.base_ac > 0 and bi.dex_bonus >= 0 and m > bi.dex_bonus { m = bi.dex_bonus }
+        }
+        if is_debilitated{ c } and m > 0 { m = 0 }
+        return m
+    }
+
+    // The armour class the character sheet shows (GetArmorClass with nobody attacking): 10, the
+    // class bonus, natural, armour, shield and deflection, dodge (at most 10) and the capped DEX
+    // modifier. Attack-time defense, with the attacker's visibility and conditional effects, is
+    // rules::defense_versus in combat.
+    fn armor_class_sheet { tables: *Tables, c: *Creature } -> i32 {
+        let s = &c.stats
+        let dodge = if s.ac_dodge > 10 { 10 } else { s.ac_dodge }
+        return 10 + s.ac_class + s.ac_natural + s.ac_armour + s.ac_shield + s.ac_deflection + dodge + dex_modifier_for_defense{ tables, c }
+    }
+
+    // Rebuilds Creature.stats. The order follows the engine: abilities first (everything else
+    // reads the modifiers), then the pieces that need them.
+    fn recompute { tables: *Tables, mut c: Creature } {
+        let mut s = Stats{
+            level = 0, size = 3, abil = [10; 6], abil_mod = [0; 6], bab = 0, save_base = [0; 3], save_effect = [0; 3],
+            max_hp = 0, max_fp = 0, skill = [0; NUM_SKILLS], ac_natural = 0, ac_armour = 0, ac_shield = 0,
+            ac_deflection = 0, ac_dodge = 0, ac_class = 0, force_resistance = 0, speed_factor = 1.0, state = 0,
+            ai_mask = 0xffff, vision = 0, assured_hit = false, assured_deflection = false,
+            deflection_returns = false, walk_only = false, extra_attacks = 0, temp_hp_pool = c.temp_hp,
+            poisoned = false, attack_misc = 0, entangled = false, dirty = false,
+        }
+        s.level = total_level{ c = &c }
+        s.size = creature_size{ tables, c = &c }
+        let none = no_versus{}
+
+        // abilities: base + effects (entangled: DEX -4), never below 3
+        let entangled = has_effect_kind{ c = &c, kind = fx::ENTANGLE }
+        let mut a: usize = 0
+        while a < 6 {
+            let b = effect_bonus{ c = &c, q = BonusQuery{ category = cat::ABILITY, a = @as(i32, a), b = 0, hand = -1, vs = none } }
+            let mut v = c.abil[a] + net{ b }
+            if entangled and a == 1 { v = v - 4 }
+            if v < 3 { v = 3 }
+            s.abil[a] = v
+            s.abil_mod[a] = ability_modifier{ score = v }
+            a = a + 1
+        }
+        c.stats = s
+
+        // crowd control
+        let state = active_state{ c = &c }
+        c.stats.state = state
+        c.stats.ai_mask = state_mask{ state }
+        c.stats.entangled = entangled
+        if entangled { c.stats.ai_mask = c.stats.ai_mask & 0xfffd }
+
+        // flags read off single effects
+        let mut i: usize = 0
+        let mut haste = 0
+        let mut speed_up = 0.0
+        let mut speed_down = 0.0
+        while i < @as(usize, c.nfx) {
+            let e = &c.fx[i]
+            i = i + 1
+            if e.kind == fx::HASTE { haste = haste + 1 }
+            if e.kind == fx::SLOW { haste = haste - 1 }
+            if e.kind == fx::ASSURED_HIT { c.stats.assured_hit = true }
+            if e.kind == fx::ASSURED_DEFLECTION {
+                c.stats.assured_deflection = true
+                if e.ints[0] != 0 { c.stats.deflection_returns = true }
+            }
+            if e.kind == fx::TRUE_SEEING { c.stats.vision = c.stats.vision | 2 }
+            if e.kind == fx::SEE_INVISIBLE { c.stats.vision = c.stats.vision | 1 | 4 }
+            if e.kind == fx::BLINDNESS { c.stats.vision = c.stats.vision | 8 }
+            if e.kind == fx::DARKNESS { c.stats.vision = c.stats.vision | 0x10 }
+            if e.kind == fx::LIMIT_MOVEMENT_SPEED { c.stats.walk_only = true }
+            if e.kind == fx::MODIFY_NUM_ATTACKS { c.stats.extra_attacks = c.stats.extra_attacks + e.ints[0] }
+            if e.kind == fx::POISON { c.stats.poisoned = true }
+            if e.kind == fx::MOVEMENT_SPEED_INCREASE {
+                let p = if e.ints[0] < 100 { 100 + e.ints[0] } else { e.ints[0] }
+                speed_up = speed_up + @as(f32, p) / 100.0
+            }
+            if e.kind == fx::MOVEMENT_SPEED_DECREASE and e.ints[0] < 100 { speed_down = speed_down + @as(f32, e.ints[0]) / 100.0 }
+            if e.kind == fx::FORCE_RESISTANCE_INCREASE {
+                let v = if e.ints[0] > 128 { 128 } else { e.ints[0] }
+                if v > c.stats.force_resistance { c.stats.force_resistance = v }
+            }
+        }
+        if c.stats.extra_attacks < 0 { c.stats.extra_attacks = 0 }
+        if c.stats.extra_attacks > 2 { c.stats.extra_attacks = 2 }
+        let mut fr_down = 0
+        i = 0
+        while i < @as(usize, c.nfx) {
+            if c.fx[i].kind == fx::FORCE_RESISTANCE_DECREASE and c.fx[i].ints[0] > fr_down { fr_down = c.fx[i].ints[0] }
+            i = i + 1
+        }
+        c.stats.force_resistance = c.stats.force_resistance - fr_down
+        if c.stats.force_resistance < 0 { c.stats.force_resistance = 0 }
+
+        // movement: HASTE_INTERNAL 150 %, SLOW_INTERNAL 50 % (the engine's net-sign rule), then
+        // the speed effects, clamped to [0.125, 1.5].
+        let mut speed: f32 = 1.0
+        if haste > 0 { speed = speed * 1.5 }
+        if haste < 0 { speed = speed * 0.5 }
+        if speed_up > 0.0 { speed = speed * speed_up }
+        if speed_down > 0.0 { speed = speed * (1.0 - speed_down) }
+        if speed < 0.125 { speed = 0.125 }
+        if speed > 1.5 { speed = 1.5 }
+        c.stats.speed_factor = speed
+        c.stats.attack_misc = (if entangled { -2 } else { 0 }) + (if haste < 0 { -2 } else { 0 })
+
+        // attack, saves
+        c.stats.bab = base_attack_bonus{ tables, c = &c }
+        let helpless = is_debilitated{ c = &c }
+        let con = c.stats.abil_mod[2]
+        let dex = c.stats.abil_mod[1]
+        let wis = c.stats.abil_mod[4]
+        let dex_for_save = if helpless and dex > 0 { 0 } else { dex }
+        c.stats.save_base[0] = base_save{ tables, c = &c, which = 0 } + con + c.save_bonus[0]
+        c.stats.save_base[1] = base_save{ tables, c = &c, which = 1 } + dex_for_save + c.save_bonus[1]
+        c.stats.save_base[2] = base_save{ tables, c = &c, which = 2 } + wis + c.save_bonus[2]
+        let mut w: usize = 0
+        while w < 3 {
+            let b = effect_bonus{ c = &c, q = BonusQuery{ category = cat::SAVE, a = @as(i32, w) + 1, b = 0, hand = -1, vs = none } }
+            let extra = net{ b } + state_save_penalty{ c = &c, which = w }
+            c.stats.save_effect[w] = extra
+            w = w + 1
+        }
+
+        // hit points and Force points
+        c.stats.max_hp = max_hit_points{ c = &c, con_mod = c.stats.abil_mod[2], include_bonus = true }
+        c.stats.max_fp = max_force_points{ tables, c = &c, wis_mod = c.stats.abil_mod[4], cha_mod = c.stats.abil_mod[5] }
+
+        // armour class
+        let mut class_ac = 0
+        i = 0
+        while i < @as(usize, c.nclasses) {
+            let row = get_class{ tables, row = c.classes[i].class } ifnull {
+                i = i + 1
+                continue
+            }
+            let lv = c.classes[i].level
+            if lv >= 0 { class_ac = class_ac + row.ac_bonus[if lv > 20 { 20 } else { @as(usize, lv) }] }
+            i = i + 1
+        }
+        c.stats.ac_class = class_ac
+        let pieces = ac_effects{ c = &c }
+        c.stats.ac_natural = c.natural_ac + pieces.natural
+        c.stats.ac_dodge = pieces.dodge
+        if haste > 0 { c.stats.ac_dodge = c.stats.ac_dodge + 4 }
+        if haste < 0 { c.stats.ac_dodge = c.stats.ac_dodge - 2 }
+        c.stats.ac_deflection = pieces.deflection
+        c.stats.ac_shield = pieces.shield
+        let mut armour_base = 0
+        let body = equipped_item{ c = &c, mask = slot::BODY }
+        if body != null {
+            let bi = get_baseitem{ tables, row = body.base_item }
+            if bi != null { armour_base = bi.base_ac }
+        }
+        c.stats.ac_armour = armour_base + pieces.armour
+
+        // skills last: they read the ability modifiers and the vision bits
+        let mut k: usize = 0
+        while k < NUM_SKILLS {
+            c.stats.skill[k] = skill_rank{ tables, c = &c, skill = @as(i32, k), vs = none, base_only = false }
+            k = k + 1
+        }
+    }
+}

@@ -3,7 +3,7 @@
 namespace play {
     // One scripted input line: `FRAME down KEY`, `FRAME up KEY`, and for tests `FRAME warp TAG`
     // (the leader jumps next to the object) and `FRAME use TAG` (the leader's default action on it).
-    enum Command: u8 { down, up, warp, use, newgame, ui }
+    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui }
     struct Scripted { frame: u64, command: Command, key: []u8 }
 
     fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
@@ -60,6 +60,9 @@ namespace play {
         let freq = sdl::counter_frequency{ &sdl }
         let mut last = sdl::counter{ &sdl }
         let mut quit = false
+        let mut real_total: f64 = 0.0
+        let mut real_worst: f32 = 0.0
+        let mut timed: u64 = 0
         while not quit {
             frame_no = frame_no + 1
             if opts.frames > 0 and frame_no > opts.frames { break }
@@ -85,6 +88,7 @@ namespace play {
                     down => { apply_key{ keys = &keys, keycode = keycode_of{ name = s.key }, down = true } }
                     up => { apply_key{ keys = &keys, keycode = keycode_of{ name = s.key }, down = false } }
                     warp => { warp_to{ &w, tag = s.key } }
+                    warpxy => { warp_xy{ &w, at = s.key } }
                     use => { use_tagged{ &w, tag = s.key } }
                     newgame => {}
                     ui => { ingame::run_command{ ui, &w, &dev, text = s.key } }    // HOOK(ingame)
@@ -94,6 +98,11 @@ namespace play {
             let now = sdl::counter{ &sdl }
             let real = @as(f32, @as(f64, now - last) / @as(f64, freq))
             last = now
+            if timed > 0 {
+                real_total = real_total + @as(f64, real)
+                if real > real_worst { real_worst = real }
+            }
+            timed = timed + 1
             let dt = if opts.dt > 0.0 { opts.dt } else { math::min{ a = real, b = 0.25 } }
             // 3-6. The world.
             clock::advance{ c = &w.clock, seconds = dt }
@@ -135,7 +144,7 @@ namespace play {
             if w.arrival > 0 { camera.started = false }
             scene::sync{ &sc, &w, &dev, dt = w.clock.dt }
             let look_height = leader_height{ w = &w }
-            cam::update{ c = &camera, w = &w, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt }
+            cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt }
             let pc = world::object{ w = &w, id = w.pc }
             let room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
             scene::update_visibility{ &sc, w = &w, room }
@@ -165,7 +174,14 @@ namespace play {
             }
             let mut s: usize = 0
             while s < opts.shot_count {
-                if opts.shots[s].frame == frame_no { try screenshot{ &w, &dev, heap = &scene_arena, path = opts.shots[s].path, frame_no } }
+                if opts.shots[s].frame == frame_no {
+                    try screenshot{ &w, &dev, heap = &scene_arena, path = opts.shots[s].path, frame_no }
+                    let p = world::object{ w = &w, id = w.pc }
+                    if p != null {
+                        _ = @fmt(&w.io, "  leader at {} {} {} (room {}), camera at {} {} {} looking at {} {} {}\n", p.position.x, p.position.y, p.position.z,
+                            room, camera.eye.x, camera.eye.y, camera.eye.z, camera.look.x, camera.look.y, camera.look.z)
+                    }
+                }
                 s = s + 1
             }
             if not opts.headless { gpu::present{ &dev, &sdl } }
@@ -174,6 +190,9 @@ namespace play {
         _ = @fmt(&w.io, "scene: {} rooms drawn of {}, {} objects drawn, {} visuals; textures {} loaded, {} missing\n",
             sc.drawn_rooms, sc.rooms.len, sc.drawn_objects, sc.visuals.len, sc.materials.loaded, sc.materials.missing)
         _ = @fmt(&w.io, "sound: {} sounds started\n", amb.started)
+        if timed > 1 {
+            _ = @fmt(&w.io, "frames: {}, {} ms each on average, {} ms the slowest\n", timed, @as(f32, real_total * 1000.0 / @as(f64, timed - 1)), real_worst * 1000.0)
+        }
         report::summary{ &w, routines = opts.report }
         return 0
     }
@@ -302,7 +321,7 @@ namespace play {
             let f = text::next_word{ &words } ifnull { continue }
             if f.len == 0 or f[0] == '#' { continue }
             let what = text::next_word{ &words } ifnull { continue }
-            let command = if ci::eq{ a = what, b = "down" } { Command::down } else if ci::eq{ a = what, b = "warp" } { Command::warp }
+            let command = if ci::eq{ a = what, b = "down" } { Command::down } else if ci::eq{ a = what, b = "warp" } { Command::warp } else if ci::eq{ a = what, b = "warpxy" } { Command::warpxy }
                 else if ci::eq{ a = what, b = "use" } { Command::use } else if ci::eq{ a = what, b = "newgame" } { Command::newgame }
                 else if ci::eq{ a = what, b = "ui" } { Command::ui } else { Command::up }
             // `ui` takes the rest of the line (ingame::run_command); the others one word.
@@ -326,6 +345,16 @@ namespace play {
         let pc = world::object{ w = &w, id = w.pc } ifnull { return }
         world::set_orientation{ o = pc, v = face }
         _ = @fmt(&w.io, "warp: to {} ({} {} {})\n", tag, pc.position.x, pc.position.y, pc.position.z)
+    }
+
+    // `FRAME warpxy X,Y`: the leader onto the walkmesh at (X, Y).
+    fn warp_xy { mut w: world::World, at: []u8 } {
+        let comma = text::find_byte{ s = at, c = ',' } ifnull { return }
+        let x = text::scan_f32{ s = at[..comma] } ifnull { return }
+        let y = text::scan_f32{ s = at[comma + 1..] } ifnull { return }
+        let f = walkmap::floor_anywhere{ m = &w.walk, x, y }
+        let z = if f != null { f.z } else { 0.0 }
+        movement::place{ &w, id = w.pc, at = math::Vec3{ x, y, z } }
     }
 
     fn use_tagged { mut w: world::World, tag: []u8 } {

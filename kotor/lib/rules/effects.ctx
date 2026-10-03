@@ -1,0 +1,755 @@
+// Applying, removing and expiring effects (rules.md 1.3-1.10). The engine hands in an effect
+// (or a group of linked ones) and gets back whether it took hold, plus events for the things
+// only the world can do (hit points, death, actions). The effect list itself is Creature.fx,
+// kept sorted by type as the engine keeps it, and every change ends in rules::recompute, so the
+// getters are always current.
+namespace rules {
+    // What the apply and update calls need from the engine.
+    struct Env {
+        tables: *Tables,
+        now: Time,
+        hp: i32,                // the creature's current hit points (dead and dying checks, regeneration)
+    }
+
+    struct ApplyResult {
+        kept: bool,             // the effect is on the creature (lasting)
+        refused: bool,          // an immunity or a rule turned it away
+        feedback: i32,          // the engine's feedback message number for the refusal, 0 none
+    }
+
+    // ---- time
+
+    fn time_after { a: Time, b: Time } -> bool {
+        return a.day > b.day or (a.day == b.day and a.ms > b.ms)
+    }
+
+    // t + seconds, carrying into the day at ms_per_day.
+    fn time_add_seconds { t: Time, seconds: f32, ms_per_day: i32 } -> Time {
+        let add = @as(i64, seconds * 1000.0)
+        let total = @as(i64, t.ms) + add
+        let day_len = @as(i64, ms_per_day)
+        let days = total / day_len
+        let ms = total % day_len
+        return Time{ day = t.day + @as(u32, days), ms = @as(u32, ms) }
+    }
+
+    // a - b in milliseconds (negative when b is later).
+    fn time_diff_ms { a: Time, b: Time, ms_per_day: i32 } -> i64 {
+        return (@as(i64, a.day) - @as(i64, b.day)) * @as(i64, ms_per_day) + @as(i64, a.ms) - @as(i64, b.ms)
+    }
+
+    // ---- events
+
+    fn clear_events { mut ev: Events } {
+        ev.len = 0
+        ev.lost = 0
+    }
+
+    fn emit { mut ev: Events, kind: i32, a: i32, b: i32, who: u32 } {
+        if @as(usize, ev.len) >= EVENTS_MAX {
+            ev.lost = ev.lost + 1
+            return
+        }
+        ev.items[@as(usize, ev.len)] = Event{ kind, a, b, who }
+        ev.len = ev.len + 1
+    }
+
+    // ---- damage mitigation (combat.md 6.4)
+
+    // The slot a damage flag mask lands in: the nearest integer to log2 of the mask (combat.md 6.3).
+    // 7 (blaster-like B|P|S) is 3, 4096 is 12; no flags counts as universal (3).
+    fn damage_slot { flags: i32 } -> usize {
+        if flags <= 0 { return 3 }
+        let mut hi: usize = 0
+        let mut f = flags
+        while f > 1 {
+            f = f >> 1
+            hi = hi + 1
+        }
+        // flags lie between 2^hi and 2^(hi+1): the nearest log2 rounds up from 2^hi x sqrt(2)
+        let low = @as(i32, 1) << @as(u32, hi)
+        if flags * flags >= 2 * low * low { return hi + 1 }
+        return hi
+    }
+
+    // The damage immunity (percent, negative for vulnerability) of a creature against one damage
+    // slot: increases add, decreases subtract (the engine's per-type table, rules.md 1.3), 100 at most.
+    fn immunity_percent { c: *Creature, slot: usize } -> i32 {
+        let mut pct = 0
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            let e = &c.fx[i]
+            i = i + 1
+            let up = e.kind == fx::DAMAGE_IMMUNITY_INCREASE
+            if not up and e.kind != fx::DAMAGE_IMMUNITY_DECREASE { continue }
+            if ((e.ints[0] >> @as(u32, slot)) & 1) == 0 { continue }
+            pct = if up { pct + e.ints[1] } else { pct - e.ints[1] }
+        }
+        if pct > 100 { pct = 100 }
+        return pct
+    }
+
+    // DoDamageImmunity: the share of the damage an immunity absorbs, at least 1 when there is any
+    // immunity (truncated towards zero); a vulnerability adds damage.
+    fn apply_damage_immunity { c: *Creature, amount: i32, flags: i32 } -> i32 {
+        let pct = immunity_percent{ c, slot = damage_slot{ flags } }
+        if pct == 0 { return amount }
+        let mut absorbed = amount * pct / 100
+        if pct > 0 and absorbed < 1 { absorbed = 1 }
+        return amount - absorbed
+    }
+
+    // DoDamageResistance: the largest matching DAMAGE_RESISTANCE absorbs up to its amount; a
+    // limited one (int2 > 0) loses what it absorbed and is removed when it is spent. `simulate`
+    // leaves the effect alone.
+    fn apply_damage_resistance { mut c: Creature, amount: i32, flags: i32, simulate: bool, mut ev: Events } -> i32 {
+        let mut best = -1
+        let mut best_amount = 0
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            let e = &c.fx[i]
+            if e.kind == fx::DAMAGE_RESISTANCE and (e.ints[0] & flags) != 0 and e.ints[1] > best_amount {
+                best = @as(i32, i)
+                best_amount = e.ints[1]
+            }
+            i = i + 1
+        }
+        if best < 0 { return amount }
+        // A limited resistance (int2 > 0) counts down by the whole damage, not by what it absorbed;
+        // when the damage reaches the limit it absorbs what limit is left and goes (0x004d0e40).
+        let mut absorbed = best_amount
+        let limit = c.fx[@as(usize, best)].ints[2]
+        if limit > 0 {
+            if limit - amount < 1 {
+                absorbed = limit
+                if not simulate { remove_one{ c = &c, index = @as(usize, best), ev = &ev } }
+            } else if not simulate {
+                c.fx[@as(usize, best)].ints[2] = limit - amount
+            }
+        }
+        if absorbed > amount { absorbed = amount }
+        return amount - absorbed
+    }
+
+    // DoDamageReduction: the strongest DAMAGE_REDUCTION absorbs up to its amount from attacks whose
+    // power is below its own power (int1); a limited one counts down and goes when spent.
+    fn apply_damage_reduction { mut c: Creature, amount: i32, power: i32, simulate: bool, mut ev: Events } -> i32 {
+        let mut best = -1
+        let mut best_amount = 0
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            let e = &c.fx[i]
+            if e.kind == fx::DAMAGE_REDUCTION and e.ints[0] > best_amount {
+                best = @as(i32, i)
+                best_amount = e.ints[0]
+            }
+            i = i + 1
+        }
+        if best < 0 { return amount }
+        let e = &c.fx[@as(usize, best)]
+        if power >= e.ints[1] { return amount }
+        let mut absorbed = best_amount
+        let limit = e.ints[2]
+        if limit > 0 {
+            if limit - amount < 1 {
+                absorbed = limit
+                if not simulate { remove_one{ c = &c, index = @as(usize, best), ev = &ev } }
+            } else if not simulate {
+                c.fx[@as(usize, best)].ints[2] = limit - amount
+            }
+        }
+        if absorbed > amount { absorbed = amount }
+        return amount - absorbed
+    }
+
+    // Immunity, then resistance, then reduction, never below 0 (combat.md 6.1).
+    fn mitigate_damage { mut c: Creature, amount: i32, flags: i32, power: i32, simulate: bool, mut ev: Events } -> i32 {
+        let mut d = apply_damage_immunity{ c = &c, amount, flags }
+        if d < 0 { d = 0 }
+        d = apply_damage_resistance{ c = &c, amount = d, flags, simulate, ev = &ev }
+        d = apply_damage_reduction{ c = &c, amount = d, power, simulate, ev = &ev }
+        if d < 0 { d = 0 }
+        return d
+    }
+
+    // Temporary hit points absorb damage in list order; spent ones are removed (combat.md 6.7).
+    // Returns the damage that gets through.
+    fn absorb_temp_hp { mut c: Creature, damage: i32, mut ev: Events } -> i32 {
+        let mut left = damage
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) and left > 0 {
+            if c.fx[i].kind == fx::TEMPORARY_HITPOINTS {
+                let have = c.fx[i].ints[0]
+                if have <= left {
+                    left = left - have
+                    c.temp_hp = c.temp_hp - have
+                    if c.temp_hp < 0 { c.temp_hp = 0 }
+                    remove_one{ c = &c, index = i, ev = &ev }
+                    continue
+                }
+                c.fx[i].ints[0] = have - left
+                c.temp_hp = c.temp_hp - left
+                left = 0
+            }
+            i = i + 1
+        }
+        if c.temp_hp < 0 { c.temp_hp = 0 }
+        return left
+    }
+
+    // The damage a party member takes is scaled by the difficulty option (difficultyopt.2da
+    // MULTIPLIER: easy 0.5, normal 1, difficult 1.5), truncated.
+    fn scale_damage_by_difficulty { tables: *Tables, c: *Creature, amount: i32 } -> i32 {
+        if not c.party { return amount }
+        let t = raw_table{ tables, which = Tab::difficultyopt }
+        let d = @as(usize, tables.settings.difficulty)
+        let m = twoda::get_float{ t, row = d, column = "multiplier" } ifnull 1.0
+        return @as(i32, @as(f32, amount) * m)
+    }
+
+    // ---- immunity to an effect (rules.md 1.8)
+
+    // The gameeffects.2da row of an effect, 0 (INVALIDEFFECT) when it has none.
+    fn game_effect_row { e: *Effect } -> usize {
+        if e.kind == fx::ENTANGLE { return 1 }
+        if e.kind == fx::POISON { return 2 }
+        if e.kind == fx::ABILITY_DECREASE { return 3 }
+        if e.kind == fx::ATTACK_DECREASE { return 4 }
+        if e.kind == fx::DAMAGE_DECREASE { return 5 }
+        if e.kind == fx::DAMAGE_IMMUNITY_DECREASE { return 6 }
+        if e.kind == fx::AC_DECREASE { return 7 }
+        if e.kind == fx::MOVEMENT_SPEED_DECREASE { return 8 }
+        if e.kind == fx::SAVING_THROW_DECREASE { return 9 }
+        if e.kind == fx::FORCE_RESISTANCE_DECREASE { return 10 }
+        if e.kind == fx::SKILL_DECREASE { return 11 }
+        if e.kind == fx::BLASTER_DEFLECTION_DECREASE { return 12 }
+        if e.kind == fx::DAMAGE_FORCE_POINTS { return 14 }
+        if e.kind == fx::PSYCHIC_STATIC { return 16 }
+        if e.kind == fx::LIGHTSABER_THROW { return 17 }
+        if e.kind == fx::DEATH { return 20 }
+        if e.kind == fx::SETSTATE {
+            let s = e.ints[0]
+            if s == fx::STATE_HORRIFIED { return 13 }
+            if s == fx::STATE_CHOKE { return 15 }
+            if s == fx::STATE_PARALYZED { return 18 }
+            if s == fx::STATE_STUNNED { return 19 }
+            if s == fx::STATE_DROID_STUN { return 21 }
+            if s == fx::STATE_CONFUSED { return 22 }
+            if s == fx::STATE_SLEEP { return 23 }
+            if s == fx::STATE_FRIGHTENED { return 24 }
+        }
+        return 0
+    }
+
+    // GetIsImmuneToEffect (0x005a6a90): for each immunity column the effect's gameeffects row sets,
+    // does the creature have that immunity? Returns the immunity type found, or 0.
+    fn immune_to_effect { tables: *Tables, c: *Creature, e: *Effect, vs: Versus } -> i32 {
+        let row = game_effect_row{ e }
+        if row == 0 { return 0 }
+        let t = raw_table{ tables, which = Tab::gameeffects }
+        let mut k: usize = 0
+        while k < 32 {
+            if (twoda::get_int_at{ t, row, col = k + 1 } ifnull 0) != 0 and has_immunity{ c, kind = @as(i32, k), vs } {
+                return if k == 0 { 1 } else { @as(i32, k) }
+            }
+            k = k + 1
+        }
+        return 0
+    }
+
+    // ---- list surgery
+
+    // Removes the effect at `index`, running its removal hooks (temporary points given back, the
+    // visuals and icon taken off) and closing the gap. The caller recomputes.
+    fn remove_one { mut c: Creature, index: usize, mut ev: Events } {
+        if index >= @as(usize, c.nfx) { return }
+        let e = c.fx[index]
+        if e.kind == fx::TEMPORARY_HITPOINTS {
+            c.temp_hp = c.temp_hp - e.ints[0]
+            if c.temp_hp < 0 { c.temp_hp = 0 }
+        }
+        if e.kind == fx::TEMPORARY_FORCE_POINTS {
+            c.temp_fp = c.temp_fp - e.ints[0]
+            if c.temp_fp < 0 { c.temp_fp = 0 }
+        }
+        if e.kind == fx::VISUALEFFECT { emit{ ev = &ev, kind = ev::VISUAL_OFF, a = e.ints[0], b = 0, who = e.creator } }
+        if e.kind == fx::ICON { emit{ ev = &ev, kind = ev::ICON_OFF, a = e.ints[0], b = 0, who = e.creator } }
+        if e.kind == fx::DISGUISE { emit{ ev = &ev, kind = ev::APPEARANCE, a = 0, b = 0, who = e.creator } }
+        emit{ ev = &ev, kind = ev::EFFECT_ENDED, a = e.kind, b = 0, who = e.creator }
+        let mut i = index
+        while i + 1 < @as(usize, c.nfx) {
+            c.fx[i] = c.fx[i + 1]
+            i = i + 1
+        }
+        c.nfx = c.nfx - 1
+    }
+
+    // Inserts after the last effect of the same or a lower type (the engine's order). Returns
+    // false when the list is full.
+    fn insert_sorted { mut c: Creature, e: Effect } -> bool {
+        if @as(usize, c.nfx) >= MAX_FX { return false }
+        let mut at: usize = @as(usize, c.nfx)
+        while at > 0 and c.fx[at - 1].kind > e.kind { at = at - 1 }
+        let mut i = @as(usize, c.nfx)
+        while i > at {
+            c.fx[i] = c.fx[i - 1]
+            i = i - 1
+        }
+        c.fx[at] = e
+        c.nfx = c.nfx + 1
+        return true
+    }
+
+    // ---- the change report
+
+    // What the world needs to know after the list changed: the crowd-control state, the maximum hit
+    // points (the engine keeps the deficit) and the Force pool.
+    struct Snapshot { state: i32, max_hp: i32, max_fp: i32 }
+
+    fn take_snapshot { c: *Creature } -> Snapshot {
+        return Snapshot{ state = c.stats.state, max_hp = c.stats.max_hp, max_fp = c.stats.max_fp }
+    }
+
+    fn report_changes { tables: *Tables, mut c: Creature, before: Snapshot, mut ev: Events } {
+        recompute{ tables, c = &c }
+        let after = c.stats
+        if after.max_hp != before.max_hp {
+            emit{ ev = &ev, kind = ev::MAX_HP_CHANGED, a = before.max_hp, b = after.max_hp, who = OBJECT_INVALID }
+        }
+        if after.max_fp != before.max_fp {
+            // keep the Force-point deficit
+            let mut fp = after.max_fp - (before.max_fp - c.fp)
+            if fp > after.max_fp { fp = after.max_fp }
+            if fp < 0 { fp = 0 }
+            c.fp = fp
+        }
+        if after.state != before.state {
+            if before.state == 0 {
+                emit{ ev = &ev, kind = ev::CLEAR_ACTIONS, a = 0, b = 0, who = OBJECT_INVALID }
+                emit{ ev = &ev, kind = ev::COMMANDABLE, a = 0, b = 0, who = OBJECT_INVALID }
+                emit{ ev = &ev, kind = ev::COMBAT_ROUND_ABORT, a = 0, b = 0, who = OBJECT_INVALID }
+            }
+            if after.state == 0 { emit{ ev = &ev, kind = ev::COMMANDABLE, a = 1, b = 0, who = OBJECT_INVALID } }
+            emit{ ev = &ev, kind = ev::STATE, a = after.state, b = before.state, who = OBJECT_INVALID }
+        }
+    }
+
+    // ---- apply
+
+    fn refuse { feedback: i32 } -> ApplyResult {
+        return ApplyResult{ kept = false, refused = true, feedback }
+    }
+
+    fn dropped {} -> ApplyResult {
+        return ApplyResult{ kept = false, refused = false, feedback = 0 }
+    }
+
+    fn kept_effect {} -> ApplyResult {
+        return ApplyResult{ kept = true, refused = false, feedback = 0 }
+    }
+
+    // The feedback message numbers (SendFeedbackMessage ids) used for immunities, by immunity type.
+    fn immune_feedback { immunity: i32 } -> i32 {
+        if immunity == imm::FEAR { return 0x80 }
+        if immunity == imm::PARALYSIS { return 0x82 }
+        if immunity == imm::SLEEP { return 0x87 }
+        if immunity == imm::CONFUSED { return 0x89 }
+        if immunity == imm::STUN { return 0x8a }
+        if immunity == imm::SLOW { return 0x92 }
+        return 0x7d
+    }
+
+    fn is_decrease_of_plot { kind: i32 } -> bool {
+        return kind == fx::ABILITY_DECREASE or kind == fx::ATTACK_DECREASE or kind == fx::AC_DECREASE or
+            kind == fx::MOVEMENT_SPEED_DECREASE or kind == fx::ENTANGLE or kind == fx::KNOCKDOWN or kind == fx::POISON
+    }
+
+    // Applies one effect as the engine's CSWSObject::ApplyEffect does (rules.md 1.4): the kind's
+    // handler decides to keep it or not, a kept temporary effect gets its expiry, it joins the list in
+    // type order, and the creature is recomputed. `rng` is for the saves some handlers roll.
+    fn apply_leaf { env: Env, mut c: Creature, e0: Effect, mut rng: Rng, mut ev: Events } -> ApplyResult {
+        let tables = env.tables
+        let mut e = e0
+        let none = no_versus{}
+        if e.kind == fx::INVALID or e.kind >= fx::TYPE_COUNT { return dropped{} }
+        let cutscene = e.kind == fx::SETSTATE and e.ints[1] != 0
+        let dead = env.hp < 1
+
+        // immunity to the effect (table-driven), except cutscene states
+        if not cutscene {
+            let im = immune_to_effect{ tables, c = &c, e = &e, vs = none }
+            if im != 0 { return refuse{ feedback = immune_feedback{ immunity = im } } }
+        }
+        if c.plot and is_decrease_of_plot{ kind = e.kind } { return refuse{ feedback = 0x7d } }
+
+        if e.kind == fx::HEAL {
+            if e.ints[1] == 0x36 {
+                // Force points
+                let max = c.stats.max_fp
+                c.fp = if c.fp + e.ints[0] > max { max } else { c.fp + e.ints[0] }
+                return dropped{}
+            }
+            if dead { return dropped{} }
+            emit{ ev = &ev, kind = ev::HEAL_HP, a = e.ints[0], b = 0, who = e.creator }
+            emit{ ev = &ev, kind = ev::FEEDBACK, a = 0x97, b = e.ints[0], who = e.creator }
+            return dropped{}
+        }
+        if e.kind == fx::DAMAGE {
+            if c.plot or dead { return dropped{} }
+            let mut d = e.ints[0]
+            if e.ints[3] == 0 {
+                d = mitigate_damage{ c = &c, amount = d, flags = e.ints[1], power = e.ints[2], simulate = false, ev = &ev }
+            }
+            d = scale_damage_by_difficulty{ tables, c = &c, amount = d }
+            d = absorb_temp_hp{ c = &c, damage = d, ev = &ev }
+            if d > 0 { emit{ ev = &ev, kind = ev::DAMAGE_HP, a = d, b = e.ints[1], who = e.creator } }
+            return dropped{}
+        }
+        if e.kind == fx::DEATH { return apply_death{ env, c = &c, e = &e, ev = &ev } }
+        if e.kind == fx::RESURRECTION {
+            if dead {
+                emit{ ev = &ev, kind = ev::RESURRECT, a = 1, b = 0, who = e.creator }
+                // drop the temporary dying effects
+                let mut i: usize = 0
+                while i < @as(usize, c.nfx) {
+                    if c.fx[i].kind == fx::HP_CHANGE_WHEN_DYING and c.fx[i].dur == dur::TEMPORARY {
+                        remove_one{ c = &c, index = i, ev = &ev }
+                        continue
+                    }
+                    i = i + 1
+                }
+            }
+            return dropped{}
+        }
+        if e.kind == fx::DAMAGE_FORCE_POINTS or e.kind == fx::FORCE_DRAIN {
+            let left = c.fp + c.temp_fp - e.ints[0]
+            c.fp = if left < 0 { 0 } else { left }
+            return dropped{}
+        }
+        if e.kind == fx::HEAL_FORCE_POINTS {
+            let total = c.fp + c.temp_fp + e.ints[0]
+            c.fp = if total > c.stats.max_fp { c.stats.max_fp } else { total }
+            emit{ ev = &ev, kind = ev::FEEDBACK, a = 0xe4, b = e.ints[0], who = e.creator }
+            return dropped{}
+        }
+        if e.kind == fx::LINK or e.kind == fx::DISPEL_MAGIC_ALL or e.kind == fx::DISPEL_MAGIC_BEST { return dropped{} }
+
+        // the lasting kinds
+        if e.kind == fx::ABILITY_INCREASE or e.kind == fx::ABILITY_DECREASE {
+            if e.ints[1] <= 0 or dead { return dropped{} }
+            if e.kind == fx::ABILITY_DECREASE and (c.plot or has_immunity{ c = &c, kind = imm::ABILITY_DECREASE, vs = none }) { return refuse{ feedback = 0x7d } }
+        }
+        if e.kind == fx::ATTACK_INCREASE and e.ints[0] <= 0 { return dropped{} }
+        if e.kind == fx::TEMPORARY_HITPOINTS {
+            c.temp_hp = c.temp_hp + e.ints[0]
+        }
+        if e.kind == fx::TEMPORARY_FORCE_POINTS {
+            c.temp_fp = c.temp_fp + e.ints[0]
+        }
+        if e.kind == fx::SETSTATE {
+            let s = e.ints[0]
+            if not cutscene {
+                if s == fx::STATE_STUNNED and (has_feat{ c = &c, feat = feat::FORCE_IMMUNITY_STUN } or has_feat{ c = &c, feat = feat::FORCE_IMMUNITY_PARALYSIS }) { return refuse{ feedback = 0x8a } }
+                if s == fx::STATE_PARALYZED and has_feat{ c = &c, feat = feat::FORCE_IMMUNITY_PARALYSIS } { return refuse{ feedback = 0x82 } }
+                if s == fx::STATE_HORRIFIED and has_feat{ c = &c, feat = feat::FORCE_IMMUNITY_FEAR } { return refuse{ feedback = 0xe3 } }
+            }
+        }
+        if e.kind == fx::ENTANGLE {
+            emit{ ev = &ev, kind = ev::CLEAR_ACTIONS, a = 0, b = 0, who = e.creator }
+        }
+        if e.kind == fx::KNOCKDOWN {
+            if dead { return dropped{} }
+            emit{ ev = &ev, kind = ev::KNOCKDOWN, a = 0, b = 0, who = e.creator }
+        }
+        if e.kind == fx::POISON {
+            let r = apply_poison{ env, c = &c, e = &e, rng = &rng, ev = &ev }
+            if not r.kept { return r }
+        }
+        if e.kind == fx::REGENERATE {
+            e.ints[2] = @as(i32, env.now.day)
+            e.ints[3] = @as(i32, env.now.ms)
+        }
+        if e.kind == fx::VISUALEFFECT {
+            emit{ ev = &ev, kind = ev::VISUAL_ON, a = e.ints[0], b = if e.dur == dur::INSTANT { 1 } else { 0 }, who = e.creator }
+            if e.dur == dur::INSTANT { return dropped{} }
+        }
+        if e.kind == fx::ICON {
+            if e.dur == dur::INSTANT { return dropped{} }
+            emit{ ev = &ev, kind = ev::ICON_ON, a = e.ints[0], b = 0, who = e.creator }
+        }
+        if e.kind == fx::DISGUISE { emit{ ev = &ev, kind = ev::APPEARANCE, a = e.ints[0], b = 0, who = e.creator } }
+        if e.kind == fx::FORCE_PUSH { emit{ ev = &ev, kind = ev::FORCE_PUSH, a = 0, b = 0, who = e.creator } }
+
+        if e.dur == dur::TEMPORARY {
+            e.expire = time_add_seconds{ t = env.now, seconds = e.duration, ms_per_day = tables.settings.ms_per_day }
+        }
+        if not insert_sorted{ c = &c, e } {
+            // the list is full: undo the pool changes of the kinds above
+            if e.kind == fx::TEMPORARY_HITPOINTS { c.temp_hp = c.temp_hp - e.ints[0] }
+            if e.kind == fx::TEMPORARY_FORCE_POINTS { c.temp_fp = c.temp_fp - e.ints[0] }
+            return dropped{}
+        }
+        return kept_effect{}
+    }
+
+    // DEATH (0x13, rules.md 1.9): nothing for a plot creature, hit point 1 for Min1HP, immunity for
+    // a magical death with a spell id; otherwise the creature dies: every effect goes except the
+    // equipped and innate ones and what removefxondeath.2da keeps.
+    fn apply_death { env: Env, mut c: Creature, e: *Effect, mut ev: Events } -> ApplyResult {
+        if c.plot { return dropped{} }
+        if c.min1hp {
+            emit{ ev = &ev, kind = ev::RESURRECT, a = 1, b = 0, who = e.creator }
+            return dropped{}
+        }
+        let none = no_versus{}
+        if (e.sub & 8) != 0 and e.spell_id >= 0 and has_immunity{ c = &c, kind = imm::DEATH, vs = none } {
+            emit{ ev = &ev, kind = ev::FEEDBACK, a = 0x7f, b = 0, who = e.creator }
+            return refuse{ feedback = 0x7f }
+        }
+        emit{ ev = &ev, kind = ev::DEATH, a = e.ints[0], b = e.ints[1], who = e.creator }
+        strip_effects_on_death{ tables = env.tables, c = &c, ev = &ev }
+        return dropped{}
+    }
+
+    // On death every effect goes except the equipped (3) and innate (4) ones and the kinds
+    // removefxondeath.2da lists (a misleading name: they are the ones kept - disguise and beam).
+    fn strip_effects_on_death { tables: *Tables, mut c: Creature, mut ev: Events } {
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            let d = c.fx[i].dur
+            let k = c.fx[i].kind
+            if d == dur::EQUIPPED or d == dur::INNATE or k == fx::DISGUISE or k == fx::BEAM {
+                i = i + 1
+                continue
+            }
+            remove_one{ c = &c, index = i, ev = &ev }
+        }
+        c.temp_hp = 0
+        c.temp_fp = 0
+    }
+
+    // POISON (0x23, rules.md 1.9): refused for plot, dead or poison-immune creatures; otherwise a
+    // Fortitude save against poison.2da's DC; failing it the effect lasts DURATION seconds and ticks
+    // every PERIOD seconds. ints: 0 row, 1-2 start, 3-4 last tick, 5 duration, 6 period.
+    fn apply_poison { env: Env, mut c: Creature, e: *mut Effect, mut rng: Rng, mut ev: Events } -> ApplyResult {
+        if c.plot or env.hp < 1 { return refuse{ feedback = 0 } }
+        let none = no_versus{}
+        if has_immunity{ c = &c, kind = imm::POISON, vs = none } { return refuse{ feedback = 0x7d } }
+        let t = raw_table{ tables = env.tables, which = Tab::poison }
+        let row = @as(usize, e.ints[0])
+        let dc = cell_int{ t, row, col = "dc_save", dflt = 15 }
+        let duration = cell_int{ t, row, col = "duration", dflt = 30 }
+        let period = cell_int{ t, row, col = "period", dflt = 6 }
+        let res = saving_throw{ c = &c, which = save::FORT, dc, save_type = save::TYPE_POISON, vs = none, force_power = false, rng = &rng }
+        if res.result != 0 { return refuse{ feedback = 0 } }
+        e.ints[1] = @as(i32, env.now.day)
+        e.ints[2] = @as(i32, env.now.ms)
+        e.ints[3] = e.ints[1]
+        e.ints[4] = e.ints[2]
+        e.ints[5] = duration
+        e.ints[6] = period
+        e.dur = dur::TEMPORARY
+        e.duration = @as(f32, duration)
+        poison_tick{ env, c = &c, e = e, ev = &ev }
+        return kept_effect{}
+    }
+
+    // One poison tick: hit points, Force points and the ability drains of poison.2da's dam_*
+    // columns. Hit point damage goes out as an event; the engine applies it.
+    fn poison_tick { env: Env, mut c: Creature, e: *Effect, mut ev: Events } {
+        let t = raw_table{ tables = env.tables, which = Tab::poison }
+        let row = @as(usize, e.ints[0])
+        let hp = cell_int{ t, row, col = "dam_hp", dflt = 0 }
+        let fp = cell_int{ t, row, col = "dam_fp", dflt = 0 }
+        if hp > 0 { emit{ ev = &ev, kind = ev::DAMAGE_HP, a = hp, b = dmg::UNIVERSAL, who = e.creator } }
+        if fp > 0 {
+            c.fp = c.fp - fp
+            if c.fp < 0 { c.fp = 0 }
+        }
+        // ability drains are applied as temporary penalties by the caller of update_effects (the
+        // list may not grow while it is being walked): record them as events
+        let cols0 = twoda::find_column{ t, name = "dam_str" } ifnull 0
+        let mut a: usize = 0
+        while a < 6 {
+            if (twoda::get_int_at{ t, row, col = cols0 + a } ifnull 0) != 0 {
+                emit{ ev = &ev, kind = ev::FEEDBACK, a = 0x1000 + @as(i32, a), b = cell_int{ t, row, col = "abil_dur", dflt = 60 }, who = e.creator }
+            }
+            a = a + 1
+        }
+    }
+
+    // Applies an effect and reports what changed (state, maximum points). `e` must already carry
+    // its duration kind, duration, creator and id.
+    fn apply_effect { env: Env, mut c: Creature, e: Effect, mut rng: Rng, mut ev: Events } -> ApplyResult {
+        let before = take_snapshot{ c = &c }
+        let r = apply_leaf{ env, c = &c, e0 = e, rng = &rng, ev = &ev }
+        report_changes{ tables = env.tables, c = &c, before, ev = &ev }
+        return r
+    }
+
+    fn is_cosmetic { kind: i32 } -> bool {
+        return kind == fx::VISUALEFFECT or kind == fx::ICON or kind == fx::BEAM
+    }
+
+    // Applies the leaves of a group in order (they share one id). If a non-cosmetic leaf is turned
+    // away and none sticks, the cosmetic ones already applied are removed again (rules.md 1.4,
+    // "linkPending").
+    fn apply_group { env: Env, mut c: Creature, g: EffectGroup, mut rng: Rng, mut ev: Events } -> ApplyResult {
+        let before = take_snapshot{ c = &c }
+        let mut any_kept = false
+        let mut real_kept = false
+        let mut real_refused = false
+        let mut feedback = 0
+        let mut i: usize = 0
+        while i < @as(usize, g.len) {
+            let r = apply_leaf{ env, c = &c, e0 = g.items[i], rng = &rng, ev = &ev }
+            if r.kept { any_kept = true }
+            if r.kept and not is_cosmetic{ kind = g.items[i].kind } { real_kept = true }
+            if r.refused and not is_cosmetic{ kind = g.items[i].kind } {
+                real_refused = true
+                feedback = r.feedback
+            }
+            i = i + 1
+        }
+        if g.len > 1 and real_refused and not real_kept {
+            _ = remove_by_id_quiet{ c = &c, id = g.items[0].id, ev = &ev }
+            any_kept = false
+        }
+        report_changes{ tables = env.tables, c = &c, before, ev = &ev }
+        return ApplyResult{ kept = any_kept, refused = real_refused and not real_kept, feedback }
+    }
+
+    // ---- remove
+
+    fn remove_by_id_quiet { mut c: Creature, id: u64, mut ev: Events } -> i32 {
+        let mut n = 0
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            if c.fx[i].id == id {
+                remove_one{ c = &c, index = i, ev = &ev }
+                n = n + 1
+                continue
+            }
+            i = i + 1
+        }
+        return n
+    }
+
+    // RemoveEffectById: every effect with the id (a link is removed whole). Returns how many.
+    fn remove_effect_id { tables: *Tables, mut c: Creature, id: u64, mut ev: Events } -> i32 {
+        let before = take_snapshot{ c = &c }
+        let n = remove_by_id_quiet{ c = &c, id, ev = &ev }
+        report_changes{ tables, c = &c, before, ev = &ev }
+        return n
+    }
+
+    // RemoveEffectsByCreator: what an item's removal does to the effects it made.
+    fn remove_effects_by_creator { tables: *Tables, mut c: Creature, creator: u32, only_dur: i32, mut ev: Events } -> i32 {
+        let before = take_snapshot{ c = &c }
+        let mut n = 0
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            if c.fx[i].creator == creator and (only_dur < 0 or c.fx[i].dur == only_dur) {
+                remove_one{ c = &c, index = i, ev = &ev }
+                n = n + 1
+                continue
+            }
+            i = i + 1
+        }
+        report_changes{ tables, c = &c, before, ev = &ev }
+        return n
+    }
+
+    // ClearAllEffects (RemoveAllEffects 0x004d0940): everything but the equipped and innate ones.
+    fn clear_effects { tables: *Tables, mut c: Creature, mut ev: Events } {
+        let before = take_snapshot{ c = &c }
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            let d = c.fx[i].dur
+            if d == dur::EQUIPPED or d == dur::INNATE {
+                i = i + 1
+                continue
+            }
+            remove_one{ c = &c, index = i, ev = &ev }
+        }
+        report_changes{ tables, c = &c, before, ev = &ev }
+    }
+
+    // ---- per-update work (UpdateEffectList 0x004d1730)
+
+    // Runs the periodic effects (regeneration, poison) and expires the temporary ones whose time is
+    // up. The engine calls it every time it updates the creature (normally every frame).
+    fn update_effects { env: Env, mut c: Creature, mut rng: Rng, mut ev: Events } {
+        let tables = env.tables
+        let mpd = tables.settings.ms_per_day
+        let before = take_snapshot{ c = &c }
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            let e = &c.fx[i]
+            if e.kind == fx::REGENERATE {
+                let alive = env.hp > 0
+                let for_fp = e.ints[4] == 0x36
+                let hurt = if for_fp { c.fp < c.stats.max_fp } else { env.hp < c.stats.max_hp + c.temp_hp }
+                let stamp = Time{ day = @as(u32, e.ints[2]), ms = @as(u32, e.ints[3]) }
+                if alive and hurt and time_diff_ms{ a = env.now, b = stamp, ms_per_day = mpd } > @as(i64, e.ints[1]) {
+                    if for_fp {
+                        let t = c.fp + e.ints[0]
+                        c.fp = if t > c.stats.max_fp { c.stats.max_fp } else { t }
+                    } else {
+                        emit{ ev = &ev, kind = ev::HEAL_HP, a = e.ints[0], b = 0, who = e.creator }
+                    }
+                    e.ints[2] = @as(i32, env.now.day)
+                    e.ints[3] = @as(i32, env.now.ms)
+                }
+            } else if e.kind == fx::POISON {
+                let start = Time{ day = @as(u32, e.ints[1]), ms = @as(u32, e.ints[2]) }
+                let last = Time{ day = @as(u32, e.ints[3]), ms = @as(u32, e.ints[4]) }
+                let since_start = time_diff_ms{ a = env.now, b = start, ms_per_day = mpd }
+                if since_start > @as(i64, e.ints[5]) * 1000 {
+                    // spent: expiry below removes it
+                } else if time_diff_ms{ a = env.now, b = last, ms_per_day = mpd } >= @as(i64, e.ints[6]) * 1000 {
+                    poison_tick{ env, c = &c, e = e, ev = &ev }
+                    e.ints[3] = @as(i32, env.now.day)
+                    e.ints[4] = @as(i32, env.now.ms)
+                }
+            }
+            if e.dur == dur::TEMPORARY and time_after{ a = env.now, b = e.expire } {
+                let id = e.id
+                _ = remove_by_id_quiet{ c = &c, id, ev = &ev }
+                i = 0
+                continue
+            }
+            i = i + 1
+        }
+        report_changes{ tables, c = &c, before, ev = &ev }
+    }
+
+    // ---- Force point regeneration (rules.md 3.8)
+
+    // regeneration.2da: row 0 in combat, row 1 out of it; percent of the maximum per second. Only
+    // party members the player controls regenerate, and only while alive. Accumulates fractions.
+    fn regenerate_pools { tables: *Tables, mut c: Creature, dt_ms: i32, in_combat: bool, alive: bool } -> i32 {
+        if not alive or not c.party { return 0 }
+        let t = raw_table{ tables, which = Tab::regeneration }
+        let row = if in_combat { 0 } else { 1 }
+        let hr = twoda::get_float{ t, row, column = "healthregen" } ifnull 0.0
+        let fr = twoda::get_float{ t, row, column = "forceregen" } ifnull 0.0
+        let dt = @as(f32, dt_ms) / 1000.0
+        // returns the whole hit points gained; Force points are added to the creature
+        if fr > 0.0 and c.stats.max_fp > 0 {
+            c.fp_frac = c.fp_frac + fr / 100.0 * @as(f32, c.stats.max_fp + c.temp_fp) * dt
+            let whole = @as(i32, c.fp_frac)
+            if whole > 0 {
+                c.fp_frac = c.fp_frac - @as(f32, whole)
+                c.fp = if c.fp + whole > c.stats.max_fp { c.stats.max_fp } else { c.fp + whole }
+            }
+        }
+        let mut hp_gain = 0
+        if hr > 0.0 {
+            c.hp_frac = c.hp_frac + hr / 100.0 * @as(f32, c.stats.max_hp) * dt
+            hp_gain = @as(i32, c.hp_frac)
+            if hp_gain > 0 { c.hp_frac = c.hp_frac - @as(f32, hp_gain) }
+        }
+        return hp_gain
+    }
+}

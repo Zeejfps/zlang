@@ -1,0 +1,168 @@
+// The original's own numbers as ground truth: a saved game stores, for every creature, the totals
+// the engine computed (fortitude, reflex and will saves, armour class, maximum hit points and
+// Force points). The creatures in the install's saves (the player in a module's IFO, the creatures
+// in a module state's GIT) are read through rules::read_creature, their equipped items are put on
+// with rules::equip, and our totals are compared with the saved ones.
+namespace check {
+    struct SavedStats {
+        creatures: i32,
+        with_effects: i32,        // creatures with temporary effects saved: not compared
+        compared: i32,
+        fort_wrong: i32,
+        reflex_wrong: i32,
+        will_wrong: i32,
+        hp_wrong: i32,
+        fp_wrong: i32,
+        ac_wrong: i32,
+        attacks_wrong: i32,
+        attack_mod_wrong: i32,
+        crit_wrong: i32,
+        mult_wrong: i32,
+        dice_wrong: i32,
+        resist_wrong: i32,
+        printed: i32,
+    }
+
+    fn new_saved_stats {} -> SavedStats {
+        return SavedStats{
+            creatures = 0, with_effects = 0, compared = 0, fort_wrong = 0, reflex_wrong = 0, will_wrong = 0,
+            hp_wrong = 0, fp_wrong = 0, ac_wrong = 0, attacks_wrong = 0, attack_mod_wrong = 0, crit_wrong = 0,
+            mult_wrong = 0, dice_wrong = 0, resist_wrong = 0, printed = 0,
+        }
+    }
+
+    fn wants_save_doc { kind: u16 } -> bool {
+        return kind == @as(u16, restype::Type::ifo) or kind == @as(u16, restype::Type::git)
+    }
+
+    fn mismatch { mut io: Io, mut st: SavedStats, copy: corpus::Copy, tag: []u8, field: []u8, got: i32, want: i32 } {
+        if st.printed < 40 {
+            st.printed = st.printed + 1
+            _ = @fmt(&io, "saved: {} {} in {}: computed {} saved {}\n", tag, field, copy.name, got, want)
+        }
+    }
+
+    // Compares one saved creature struct (s of doc) with what we compute for it.
+    fn compare_saved_creature { mut io: Io, mut st: SavedStats, tables: *rules::Tables, doc: *gff::Doc, s: u32, copy: corpus::Copy } {
+        st.creatures = st.creatures + 1
+        let mut c: rules::Creature
+        rules::read_creature{ tables, doc, s, out = &c }
+        let tag = gff::get_string{ doc = doc.*, s, label = "Tag" } ifnull ""
+        let saved_fort = rules::read_number{ doc, s, label = "FortSaveThrow", dflt = -1000 }
+        if saved_fort == -1000 { return }
+        let saved_ref = rules::read_number{ doc, s, label = "RefSaveThrow", dflt = 0 }
+        let saved_will = rules::read_number{ doc, s, label = "WillSaveThrow", dflt = 0 }
+        let saved_ac = rules::read_number{ doc, s, label = "ArmorClass", dflt = 0 }
+        let saved_hp = rules::read_number{ doc, s, label = "MaxHitPoints", dflt = 0 }
+        let saved_fp = rules::read_number{ doc, s, label = "MaxForcePoints", dflt = 0 }
+
+        // Put on the equipped items (their structs are full items; the struct id is the slot).
+        let items = gff::get_list{ doc = doc.*, s, label = "Equip_ItemList" } ifnull slice::empty(u32){}
+        let mut ev: rules::Events
+        let mut rng = rules::seed_rng{ seed = 1 }
+        let env = rules::Env{ tables, now = rules::Time{ day = 0, ms = 0 }, hp = 10 }
+        let mut i: usize = 0
+        while i < items.len {
+            let mut it: rules::Item
+            rules::read_item{ tables, doc, s = items[i], out = &it }
+            let slot_mask = gff::struct_id{ doc = doc.*, s = items[i] }
+            let obj = @as(u32, rules::read_number{ doc, s = items[i], label = "ObjectId", dflt = 1 })
+            _ = rules::equip{ env, c = &c, slot = slot_mask, id = obj, item = &it, loading = true, rng = &rng, ev = &ev }
+            i = i + 1
+        }
+        // creatures with saved effects other than equipment are not comparable
+        let fxs = gff::get_list{ doc = doc.*, s, label = "EffectList" } ifnull slice::empty(u32){}
+        let mut k: usize = 0
+        while k < fxs.len {
+            let subtype = rules::read_number{ doc, s = fxs[k], label = "SubType", dflt = 0 }
+            if (subtype & 7) != rules::dur::EQUIPPED and (subtype & 7) != rules::dur::INNATE { st.with_effects = st.with_effects + 1; return }
+            k = k + 1
+        }
+        st.compared = st.compared + 1
+        let fort = rules::save_value{ c = &c, which = rules::save::FORT }
+        let refl = rules::save_value{ c = &c, which = rules::save::REFLEX }
+        let will = rules::save_value{ c = &c, which = rules::save::WILL }
+        if fort != saved_fort { st.fort_wrong = st.fort_wrong + 1; mismatch{ &io, &st, copy, tag, field = "fortitude", got = fort, want = saved_fort } }
+        if refl != saved_ref { st.reflex_wrong = st.reflex_wrong + 1; mismatch{ &io, &st, copy, tag, field = "reflex", got = refl, want = saved_ref } }
+        if will != saved_will { st.will_wrong = st.will_wrong + 1; mismatch{ &io, &st, copy, tag, field = "will", got = will, want = saved_will } }
+        if c.stats.max_hp != saved_hp { st.hp_wrong = st.hp_wrong + 1; mismatch{ &io, &st, copy, tag, field = "max HP", got = c.stats.max_hp, want = saved_hp } }
+        if c.stats.max_fp != saved_fp { st.fp_wrong = st.fp_wrong + 1; mismatch{ &io, &st, copy, tag, field = "max FP", got = c.stats.max_fp, want = saved_fp } }
+        let ac = rules::armor_class_sheet{ tables, c = &c }
+        if ac != saved_ac { st.ac_wrong = st.ac_wrong + 1; mismatch{ &io, &st, copy, tag, field = "armour class", got = ac, want = saved_ac } }
+
+        // CombatInfo: the engine's own attack numbers (UpdateCombatInformation) for the on-hand weapon.
+        let info = gff::get_struct{ doc = doc.*, s, label = "CombatInfo" } ifnull { return }
+        let saved_attacks = rules::read_number{ doc, s = info, label = "NumAttacks", dflt = -1 }
+        let saved_atk_mod = rules::read_number{ doc, s = info, label = "OnHandAttackMod", dflt = -1000 }
+        let saved_crit = rules::read_number{ doc, s = info, label = "OnHandCritRng", dflt = -1 }
+        let saved_mult = rules::read_number{ doc, s = info, label = "OnHandCritMult", dflt = -1 }
+        let saved_dice = rules::read_number{ doc, s = info, label = "DamageDice", dflt = -1 }
+        let saved_die = rules::read_number{ doc, s = info, label = "DamageDie", dflt = -1 }
+        let saved_fr = rules::read_number{ doc, s = info, label = "ForceResistance", dflt = -1 }
+        let counts = rules::attack_counts{ tables, c = &c, combat_feat = 0 }
+        let dummy = rules::make_creature{}
+        let sit = rules::make_situation{}
+        let am = rules::attack_modifier{ tables, atk = &c, def = &dummy, sit = &sit, attack_index = 0, combat_feat = 0 }
+        let width = 21 - rules::critical_threat_roll{ tables, c = &c, off_hand = false, combat_feat = 0 }
+        let mult = rules::critical_multiplier{ tables, c = &c, off_hand = false }
+        if counts.on_hand != saved_attacks { st.attacks_wrong = st.attacks_wrong + 1; mismatch{ &io, &st, copy, tag, field = "attacks per round", got = counts.on_hand, want = saved_attacks } }
+        // The sheet number is GetMeleeAttackBonus(0, no base, ...): ability, Weapon Focus and the dual-wield terms, without BAB or effects.
+        // (the dual-wield terms only when the left slot holds something: a double weapon alone has none on the sheet)
+        let left_held = rules::equipped_item{ c = &c, mask = rules::slot::LEFT } != null
+        let sheet_mod = am.str_mod + am.dex_mod + am.focus + (if left_held { am.dual_base + am.dual_light + am.dual_feat } else { 0 })
+        if sheet_mod != saved_atk_mod { st.attack_mod_wrong = st.attack_mod_wrong + 1; mismatch{ &io, &st, copy, tag, field = "on-hand attack modifier (no BAB)", got = sheet_mod, want = saved_atk_mod } }
+        if width != saved_crit { st.crit_wrong = st.crit_wrong + 1; mismatch{ &io, &st, copy, tag, field = "critical threat width", got = width, want = saved_crit } }
+        if mult != saved_mult { st.mult_wrong = st.mult_wrong + 1; mismatch{ &io, &st, copy, tag, field = "critical multiplier", got = mult, want = saved_mult } }
+        if c.stats.force_resistance != saved_fr { st.resist_wrong = st.resist_wrong + 1; mismatch{ &io, &st, copy, tag, field = "force resistance", got = c.stats.force_resistance, want = saved_fr } }
+        let right = rules::equipped_item{ c = &c, mask = rules::slot::RIGHT }
+        if right != null {
+            let bi = rules::get_baseitem{ tables, row = right.base_item }
+            if bi != null and (bi.num_dice != saved_dice or bi.die != saved_die) {
+                st.dice_wrong = st.dice_wrong + 1
+                mismatch{ &io, &st, copy, tag, field = "weapon dice x1000 + die", got = bi.num_dice * 1000 + bi.die, want = saved_dice * 1000 + saved_die }
+            }
+        }
+    }
+
+    fn visit_save_doc { mut io: Io, mut st: SavedStats, tables: *rules::Tables, mut scratch: arena::Arena, copy: corpus::Copy, data: []u8 } {
+        let in_save = ci::find{ s = copy.path, needle = "/saves/" } != null or ci::find{ s = copy.path, needle = "\\saves\\" } != null
+        if not in_save { return }
+        arena::reset{ heap = &scratch }
+        let doc = gff::parse{ data, realloc = arena::alloc, heap = &scratch } iferr err{ error } { return }
+        if copy.kind == @as(u16, restype::Type::ifo) {
+            let players = gff::get_list{ doc, s = gff::ROOT, label = "Mod_PlayerList" } ifnull slice::empty(u32){}
+            let mut i: usize = 0
+            while i < players.len {
+                compare_saved_creature{ &io, &st, tables, doc = &doc, s = players[i], copy }
+                i = i + 1
+            }
+        } else {
+            let list = gff::get_list{ doc, s = gff::ROOT, label = "Creature List" } ifnull slice::empty(u32){}
+            let mut i: usize = 0
+            while i < list.len {
+                compare_saved_creature{ &io, &st, tables, doc = &doc, s = list[i], copy }
+                i = i + 1
+            }
+        }
+    }
+
+    fn run_saved { mut io: Io, mut fs: Fs, mut heap: heap::Heap, mut r: Report, tables: *rules::Tables, game: []u8 } {
+        let buf = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(u8){}, count = 16 * 1024 * 1024 } iferr err{ error } {
+            fail{ &io, &r, name = "saved: no memory for the scratch arena", detail = 0 }
+            return
+        }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = buf, count = 0 }
+        let mut scratch = arena::new{ buf }
+        let mut st = new_saved_stats{}
+        _ = corpus::each{ &fs, h = &heap, game, want = wants_save_doc, visit = visit_save_doc{ &io, &st, tables, &scratch, _ } } iferr err{ error } {
+            fail{ &io, &r, name = "saved: walking the install failed", detail = 0 }
+            return
+        }
+        _ = @fmt(&io, "saved: {} creatures in saves, {} compared ({} skipped for saved effects)\n", st.creatures, st.compared, st.with_effects)
+        _ = @fmt(&io, "saved: wrong: fortitude {} reflex {} will {} max HP {} max FP {} armour class {}\n",
+            st.fort_wrong, st.reflex_wrong, st.will_wrong, st.hp_wrong, st.fp_wrong, st.ac_wrong)
+        _ = @fmt(&io, "saved: combat info wrong: attacks {} attack modifier {} threat width {} multiplier {} weapon dice {} force resistance {}\n",
+            st.attacks_wrong, st.attack_mod_wrong, st.crit_wrong, st.mult_wrong, st.dice_wrong, st.resist_wrong)
+        expect_eq{ &io, &r, name = "saved: computed totals differing from the saved ones", got = @as(i64, st.fort_wrong + st.reflex_wrong + st.will_wrong + st.hp_wrong + st.fp_wrong + st.ac_wrong + st.attacks_wrong + st.attack_mod_wrong + st.crit_wrong + st.mult_wrong + st.dice_wrong + st.resist_wrong), want = 0 }
+    }
+}

@@ -1,0 +1,160 @@
+// Path planning for server-side moves (docs/re/movement.md 4.3-4.7), simplified: the straight
+// walk when it is clear; otherwise the area's PTH graph from the path point nearest the start
+// (reachable in a straight walk) to the one nearest the goal, searched with A* (ours: the
+// original's iterative-deepening depth-first search finds the same kind of route), then string
+// pulling (skip route points while the straight walk past them is clear). Without PTH points or
+// a route, the farthest clear point along the straight line (the original's fallback, 4.3 step 6).
+namespace paths {
+    // Whether a creature can walk straight from `a` to `b` on the walkmesh.
+    fn clear { w: *world::World, a: math::Vec3, b: math::Vec3 } -> bool {
+        return walkmap::step_to{ m = &w.walk, from = a, to = b } != null
+    }
+
+    fn point_at { w: *world::World, g: pth::Graph, i: u32, near_z: f32 } -> math::Vec3 {
+        let p = g.points[@as(usize, i)]
+        let mut z = near_z
+        let f = walkmap::floor{ m = &w.walk, x = p.x, y = p.y, z = near_z + 2.0 }
+        if f != null { z = f.z }
+        return math::Vec3{ x = p.x, y = p.y, z }
+    }
+
+    // The nearest path point whose straight walk from `at` is clear (the 8 nearest tried).
+    fn nearest_point { w: *world::World, g: pth::Graph, at: math::Vec3 } -> ?u32 {
+        let mut tried: [8]u32
+        let mut n: usize = 0
+        while n < 8 {
+            let mut best: ?u32 = null
+            let mut best_d: f32 = 1000000000.0
+            let mut i: usize = 0
+            while i < g.points.len {
+                let p = g.points[i]
+                let dx = p.x - at.x
+                let dy = p.y - at.y
+                let d = dx * dx + dy * dy
+                let mut skip = false
+                let mut k: usize = 0
+                while k < n {
+                    if tried[k] == @as(u32, i) { skip = true }
+                    k = k + 1
+                }
+                if not skip and d < best_d {
+                    best = @as(u32, i)
+                    best_d = d
+                }
+                i = i + 1
+            }
+            let b = best ifnull { return null }
+            if clear{ w, a = at, b = point_at{ w, g, i = b, near_z = at.z } } { return b }
+            tried[n] = b
+            n = n + 1
+        }
+        return null
+    }
+
+    // A route from `from` to `goal` into `out` (the points to walk to, `goal` last); false when
+    // even the fallback has nowhere to go. Scratch memory for the search comes from w.scratch.
+    fn plan { mut w: world::World, from: math::Vec3, goal: math::Vec3, out: *mut list::List(math::Vec3, heap::Heap) } -> bool {
+        list::clear{ list = out }
+        if clear{ w = &w, a = from, b = goal } {
+            list::push{ list = out, item = goal } iferr { return false }
+            return true
+        }
+        let g = w.paths
+        if g != null and g.points.len > 0 {
+            if route{ &w, g, from, goal, out } { return true }
+        }
+        // The farthest clear point along the straight line, by bisection.
+        let mut lo: f32 = 0.0
+        let mut hi: f32 = 1.0
+        let mut k: u32 = 0
+        while k < 12 {
+            let mid = (lo + hi) * 0.5
+            let p = math::vec3::lerp{ a = from, b = goal, t = mid }
+            if clear{ w = &w, a = from, b = p } { lo = mid } else { hi = mid }
+            k = k + 1
+        }
+        if lo < 0.01 { return false }
+        list::push{ list = out, item = math::vec3::lerp{ a = from, b = goal, t = lo } } iferr { return false }
+        return true
+    }
+
+    fn route { mut w: world::World, g: pth::Graph, from: math::Vec3, goal: math::Vec3, out: *mut list::List(math::Vec3, heap::Heap) } -> bool {
+        let s = nearest_point{ w = &w, g, at = from } ifnull { return false }
+        let t = nearest_point{ w = &w, g, at = goal } ifnull { return false }
+        let n = g.points.len
+        let cost = alloc::resize(f32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(f32){}, count = n } iferr { return false }
+        let prev = alloc::resize(i32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(i32){}, count = n } iferr { return false }
+        let done = alloc::resize(bool, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(bool){}, count = n } iferr { return false }
+        let mut i: usize = 0
+        while i < n {
+            cost[i] = 1000000000.0
+            prev[i] = -1
+            done[i] = false
+            i = i + 1
+        }
+        cost[@as(usize, s)] = 0.0
+        let gp = g.points[@as(usize, t)]
+        while true {
+            // The open point with the least cost plus the straight distance to the goal.
+            let mut best: i32 = -1
+            let mut best_f: f32 = 1000000000.0
+            i = 0
+            while i < n {
+                if not done[i] and cost[i] < 1000000000.0 {
+                    let p = g.points[i]
+                    let h = math::sqrtf{ x = (p.x - gp.x) * (p.x - gp.x) + (p.y - gp.y) * (p.y - gp.y) }
+                    if cost[i] + h < best_f {
+                        best_f = cost[i] + h
+                        best = @as(i32, i)
+                    }
+                }
+                i = i + 1
+            }
+            if best < 0 { return false }
+            let b = @as(usize, best)
+            if b == @as(usize, t) { break }
+            done[b] = true
+            let links = pth::links_of{ g, point = @as(u32, b) }
+            let bp = g.points[b]
+            let mut k: usize = 0
+            while k < links.len {
+                let to = @as(usize, links[k])
+                k = k + 1
+                if to >= n or done[to] { continue }
+                let q = g.points[to]
+                let c = cost[b] + math::sqrtf{ x = (q.x - bp.x) * (q.x - bp.x) + (q.y - bp.y) * (q.y - bp.y) }
+                if c < cost[to] {
+                    cost[to] = c
+                    prev[to] = @as(i32, b)
+                }
+            }
+        }
+        // The route from s to t, reversed into order.
+        let mut chain: list::List(u32, arena::Arena) = list::new(u32, arena::Arena){ realloc = arena::alloc, heap = w.scratch }
+        let mut at: i32 = @as(i32, t)
+        while at >= 0 {
+            list::push{ list = &chain, item = @as(u32, at) } iferr { return false }
+            at = prev[@as(usize, at)]
+        }
+        let ids = list::items{ list = chain }
+        let mut raw = list::new(math::Vec3, arena::Arena){ realloc = arena::alloc, heap = w.scratch }
+        let mut j = ids.len
+        while j > 0 {
+            j = j - 1
+            list::push{ list = &raw, item = point_at{ w = &w, g, i = ids[j], near_z = from.z } } iferr { return false }
+        }
+        list::push{ list = &raw, item = goal } iferr { return false }
+        // String pulling: from where we are, go to the farthest point the straight walk reaches.
+        let pts = list::items{ list = raw }
+        let mut here = from
+        let mut next: usize = 0
+        while next < pts.len {
+            let mut far = pts.len - 1
+            while far > next and not clear{ w = &w, a = here, b = pts[far] } { far = far - 1 }
+            list::push{ list = out, item = pts[far] } iferr { return false }
+            here = pts[far]
+            next = far + 1
+        }
+        return true
+    }
+}

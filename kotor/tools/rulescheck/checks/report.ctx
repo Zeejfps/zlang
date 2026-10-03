@@ -1,0 +1,45 @@
+// The tiny assertion harness of rulescheck's checks:
+//
+//   let mut r = check::new_report{}
+//   check::expect_eq{ &io, &r, name = "soldier level 1 BAB", got = bab, want = 1 }
+//   ... at the end: check::summarize{ &io, r } -> exit code
+//
+// A check prints one line per failure (never per success), so a clean run is short.
+namespace check {
+    struct Report { passed: i32, failed: i32 }
+
+    fn new_report {} -> Report {
+        return Report{ passed = 0, failed = 0 }
+    }
+
+    fn expect_eq { mut io: Io, mut r: Report, name: []u8, got: i64, want: i64 } {
+        if got == want {
+            r.passed = r.passed + 1
+            return
+        }
+        r.failed = r.failed + 1
+        _ = @fmt(&io, "FAIL {}: got {} want {}\n", name, got, want)
+    }
+
+    fn expect_true { mut io: Io, mut r: Report, name: []u8, cond: bool } {
+        if cond {
+            r.passed = r.passed + 1
+            return
+        }
+        r.failed = r.failed + 1
+        _ = @fmt(&io, "FAIL {}\n", name)
+    }
+
+    // Counts a failure with a message the check built itself.
+    fn fail { mut io: Io, mut r: Report, name: []u8, detail: i64 } {
+        r.failed = r.failed + 1
+        _ = @fmt(&io, "FAIL {}: {}\n", name, detail)
+    }
+
+    // Prints the totals; returns the process exit code (0 when nothing failed).
+    fn summarize { mut io: Io, title: []u8, r: Report } -> i32 {
+        _ = @fmt(&io, "{}: {} passed, {} failed\n", title, r.passed, r.failed)
+        io::flush{ &io }
+        return if r.failed == 0 { 0 } else { 1 }
+    }
+}

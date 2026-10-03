@@ -1,0 +1,1594 @@
+// Checks for lib/rules combat.ctx, combat_attack.ctx and combat_damage.ctx (docs/re/combat.md 3.2,
+// 4, 5, 6):
+//
+//   check::run_combat{ &io, &fs, &r, &heap, tables, game }    (same shape as run_census; the brief's rm is not needed)
+//
+// (a) hand-computed worked examples as exact tests: attack counts and weapon attack types, every
+//     term of the attack modifier (dual wielding, combat feats, Dueling, close range, lightsaber
+//     DEX, Weapon Focus, effects), defense (class bonus, armour DEX caps, dodge, the hidden
+//     attacker, the debilitated -4), threat ranges, the order of the attack roll with seeds chosen
+//     from the generator's own sequence, deflection, sneak attacks, damage (dice, bonuses,
+//     criticals, Massive Criticals, creature weapons, unarmed, difficulty, mitigation, effect
+//     bonuses) and the effects a hit makes (combat feat penalties, the stun, on-hit properties,
+//     coup de grace); the same seed gives the same fight;
+// (b) statistics over many seeds: hit rates with the natural 1 and 20 rules, the critical rate, the
+//     mean of 2d8, the difficulty scaling;
+// (c) every UTC of the install as an attacker against a medium-armour dummy: attack counts, attack
+//     modifier, defense and an unarmed attack in plausible ranges.
+// A clean run prints a few summary lines and nothing per success.
+namespace check {
+    const CB_ATTACKER: u32 = 0x7f000a01
+
+    // ---- fixtures
+
+    // A medium human of one class and level with two ability scores set.
+    fn cb_fighter { tables: *rules::Tables, mut c: rules::Creature, class: i32, level: i32, strength: i32, dexterity: i32 } {
+        c = rules::make_creature{}
+        c.appearance = 1
+        c.race = rules::race::HUMAN
+        c.abil[0] = strength
+        c.abil[1] = dexterity
+        c.hp_base = 30
+        c.nclasses = 1
+        c.classes[0] = rules::ClassSlot{ class, level }
+        rules::recompute{ tables, c = &c }
+    }
+
+    fn cb_wield { tables: *rules::Tables, mut c: rules::Creature, mask: u32, base_item: i32 } {
+        let i = @as(usize, rules::slot_index{ mask })
+        c.equip[i].used = true
+        c.equip[i].id = 0x7f000200 + @trunc(u32, i)
+        c.equip[i].item = rules::make_item{}
+        c.equip[i].item.base_item = base_item
+        rules::recompute{ tables, c = &c }
+    }
+
+    fn cb_prop { tables: *rules::Tables, mut c: rules::Creature, mask: u32, name: i32, subtype: i32, cost: i32, param1_value: i32 } {
+        let i = @as(usize, rules::slot_index{ mask })
+        let n = @as(usize, c.equip[i].item.nprops)
+        c.equip[i].item.props[n] = rules::Prop{
+            name = @trunc(u16, name), subtype = @trunc(u16, subtype), cost_table = 0, cost_value = @trunc(u16, cost),
+            param1 = 255, param1_value = @trunc(u16, param1_value), upgrade = 255, uses_per_day = 255,
+        }
+        c.equip[i].item.nprops = c.equip[i].item.nprops + 1
+        rules::recompute{ tables, c = &c }
+    }
+
+    fn cb_effect { tables: *rules::Tables, mut c: rules::Creature, e: rules::Effect } {
+        _ = rules::insert_sorted{ c = &c, e }
+        rules::recompute{ tables, c = &c }
+    }
+
+    fn cb_feat { mut c: rules::Creature, feat: i32 } {
+        rules::grant_feat{ c = &c, feat }
+    }
+
+    fn cb_eq { mut io: Io, mut r: Report, name: []u8, got: i32, want: i32 } {
+        expect_eq{ &io, &r, name, got = @as(i64, got), want = @as(i64, want) }
+    }
+
+    fn cb_modifier { tables: *rules::Tables, a: *rules::Creature, d: *rules::Creature, sit: *rules::AttackSituation, idx: i32, feat: i32 } -> rules::AttackModifier {
+        return rules::attack_modifier{ tables, atk = a, def = d, sit, attack_index = idx, combat_feat = feat }
+    }
+
+    fn cb_defense { tables: *rules::Tables, d: *rules::Creature, a: *rules::Creature, sit: *rules::AttackSituation } -> rules::DefenseBreakdown {
+        return rules::defense_versus{ tables, def = d, atk = a, sit, attack_index = 0, combat_feat = 0, touch = false }
+    }
+
+    // The first seed whose first two d20 draws are d1 and something in lo2..hi2.
+    fn cb_find_seed { d1: i32, lo2: i32, hi2: i32 } -> u32 {
+        let mut s: u32 = 1
+        while s < 4000000 {
+            let mut p = rules::seed_rng{ seed = s }
+            let a = rules::roll_dice{ rng = &p, count = 1, sides = 20 }
+            let b = rules::roll_dice{ rng = &p, count = 1, sides = 20 }
+            if a == d1 and b >= lo2 and b <= hi2 { return s }
+            s = s + 1
+        }
+        return 0
+    }
+
+    // The n-th (from 0) d20 of a seed.
+    fn cb_nth_d20 { seed: u32, n: i32 } -> i32 {
+        let mut p = rules::seed_rng{ seed }
+        let mut k = 0
+        let mut v = 0
+        while k <= n {
+            v = rules::roll_dice{ rng = &p, count = 1, sides = 20 }
+            k = k + 1
+        }
+        return v
+    }
+
+    // A pseudo-random seed from a master stream, for the statistics.
+    fn cb_next_seed { mut master: rules::Rng } -> u32 {
+        let hi = rules::next_rand{ rng = &master }
+        let lo = rules::next_rand{ rng = &master }
+        return @trunc(u32, hi) * 32768 + @trunc(u32, lo)
+    }
+
+    fn cb_attack { tables: *rules::Tables, atk: *rules::Creature, def: *rules::Creature, sit: *rules::AttackSituation, seed: u32, idx: i32, feat: i32 } -> rules::AttackRoll {
+        let mut g = rules::seed_rng{ seed }
+        return rules::roll_attack{ tables, rng = &g, atk, def, sit, attack_index = idx, combat_feat = feat }
+    }
+
+    fn cb_effects_of { fxs: *rules::CombatEffects, kind: i32, to_attacker: bool } -> i32 {
+        let mut n = 0
+        let mut i: usize = 0
+        while i < @as(usize, fxs.len) {
+            if fxs.items[i].effect.kind == kind and fxs.items[i].to_attacker == to_attacker { n = n + 1 }
+            i = i + 1
+        }
+        return n
+    }
+
+    fn cb_find_effect { fxs: *rules::CombatEffects, kind: i32, to_attacker: bool } -> rules::Effect {
+        let mut i: usize = 0
+        while i < @as(usize, fxs.len) {
+            if fxs.items[i].effect.kind == kind and fxs.items[i].to_attacker == to_attacker { return fxs.items[i].effect }
+            i = i + 1
+        }
+        return rules::fx::make_effect{ kind = 0 }
+    }
+
+    // ---- attack counts (3.2)
+
+    fn cb_test_counts { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut a: rules::Creature
+        cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 8 }
+        let c1 = rules::attack_counts{ tables, c = &a, combat_feat = 0 }
+        cb_eq{ &io, &r, name = "counts: one lightsaber on-hand", got = c1.on_hand, want = 1 }
+        cb_eq{ &io, &r, name = "counts: one lightsaber off-hand", got = c1.off_hand, want = 0 }
+        cb_eq{ &io, &r, name = "counts: one lightsaber total", got = c1.total, want = 1 }
+        cb_eq{ &io, &r, name = "counts: right weapon type", got = c1.weapon_type[0], want = 1 }
+        // a combat feat the creature lacks adds nothing; with it, Flurry adds an on-hand attack
+        let c2 = rules::attack_counts{ tables, c = &a, combat_feat = rules::feat::FLURRY }
+        cb_eq{ &io, &r, name = "counts: Flurry without the feat", got = c2.total, want = 1 }
+        cb_feat{ c = &a, feat = rules::feat::FLURRY }
+        let c3 = rules::attack_counts{ tables, c = &a, combat_feat = rules::feat::FLURRY }
+        cb_eq{ &io, &r, name = "counts: Flurry on-hand", got = c3.on_hand, want = 2 }
+        cb_eq{ &io, &r, name = "counts: Flurry second attack is on-hand", got = c3.weapon_type[1], want = 1 }
+        expect_true{ &io, &r, name = "counts: Flurry second attack not off-hand", cond = not c3.is_off_hand[1] }
+        // Power Attack adds none
+        cb_feat{ c = &a, feat = rules::feat::POWER_ATTACK }
+        let c4 = rules::attack_counts{ tables, c = &a, combat_feat = rules::feat::POWER_ATTACK }
+        cb_eq{ &io, &r, name = "counts: Power Attack", got = c4.total, want = 1 }
+
+        // two weapons: a short lightsaber (one size smaller, WeaponWield 2) in the left hand
+        cb_wield{ tables, c = &a, mask = rules::slot::LEFT, base_item = 10 }
+        let c5 = rules::attack_counts{ tables, c = &a, combat_feat = 0 }
+        cb_eq{ &io, &r, name = "counts: dual total", got = c5.total, want = 2 }
+        cb_eq{ &io, &r, name = "counts: dual off-hand", got = c5.off_hand, want = 1 }
+        cb_eq{ &io, &r, name = "counts: dual attack 0 type", got = c5.weapon_type[0], want = 1 }
+        cb_eq{ &io, &r, name = "counts: dual attack 1 type", got = c5.weapon_type[1], want = 2 }
+        expect_true{ &io, &r, name = "counts: dual attack 1 is off-hand", cond = c5.is_off_hand[1] and not c5.is_off_hand[0] }
+        // Flurry with two weapons: two on-hand, one off-hand
+        let c6 = rules::attack_counts{ tables, c = &a, combat_feat = rules::feat::FLURRY }
+        cb_eq{ &io, &r, name = "counts: dual Flurry total", got = c6.total, want = 3 }
+        cb_eq{ &io, &r, name = "counts: dual Flurry last is off-hand", got = c6.weapon_type[2], want = 2 }
+        // two extra attacks from effects (haste-like MODIFYNUMATTACKS) and Flurry: 1 + 2 + 1 on-hand
+        cb_effect{ tables, c = &a, e = rules::fx::make_modify_attacks{ attacks = 2 } }
+        let c7 = rules::attack_counts{ tables, c = &a, combat_feat = rules::feat::FLURRY }
+        cb_eq{ &io, &r, name = "counts: five attacks", got = c7.total, want = 5 }
+        cb_eq{ &io, &r, name = "counts: five attacks, on-hand", got = c7.on_hand, want = 4 }
+
+        // a double-bladed lightsaber (WeaponSize 4 is larger than a medium creature, WeaponWield 3)
+        let mut b: rules::Creature
+        cb_fighter{ tables, c = &b, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &b, mask = rules::slot::RIGHT, base_item = 9 }
+        let d1 = rules::attack_counts{ tables, c = &b, combat_feat = 0 }
+        cb_eq{ &io, &r, name = "counts: double blade total", got = d1.total, want = 2 }
+        cb_eq{ &io, &r, name = "counts: double blade second type", got = d1.weapon_type[1], want = 2 }
+        // a quarterstaff-sized weapon that is not a double weapon (Ghaffi stick is wield 3; the
+        // Gammorean battleaxe, size 4 wield 2, is not): no off-hand attack
+        cb_wield{ tables, c = &b, mask = rules::slot::RIGHT, base_item = 80 }
+        let d2 = rules::attack_counts{ tables, c = &b, combat_feat = 0 }
+        cb_eq{ &io, &r, name = "counts: oversized single weapon", got = d2.total, want = 1 }
+        // an off-hand item that is not a weapon (a belt, WeaponType 0) gives no attack
+        let mut e: rules::Creature
+        cb_fighter{ tables, c = &e, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &e, mask = rules::slot::RIGHT, base_item = 4 }
+        cb_wield{ tables, c = &e, mask = rules::slot::LEFT, base_item = 47 }
+        let e1 = rules::attack_counts{ tables, c = &e, combat_feat = 0 }
+        cb_eq{ &io, &r, name = "counts: non-weapon in the left hand", got = e1.total, want = 1 }
+
+        // no hand weapon: unarmed (7); creature weapons only: the first one (3), or none (0)
+        let mut u: rules::Creature
+        cb_fighter{ tables, c = &u, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let u1 = rules::attack_counts{ tables, c = &u, combat_feat = 0 }
+        cb_eq{ &io, &r, name = "counts: unarmed type", got = u1.weapon_type[0], want = 7 }
+        cb_wield{ tables, c = &u, mask = rules::slot::CREATURE_L, base_item = 81 }
+        let u2 = rules::attack_counts{ tables, c = &u, combat_feat = 0 }
+        cb_eq{ &io, &r, name = "counts: creature weapon type", got = u2.weapon_type[0], want = 3 }
+        let mut v: rules::Creature
+        cb_fighter{ tables, c = &v, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &v, mask = rules::slot::CREATURE_R, base_item = 81 }
+        let v1 = rules::attack_counts{ tables, c = &v, combat_feat = 0 }
+        cb_eq{ &io, &r, name = "counts: only the second creature slot", got = v1.weapon_type[0], want = 0 }
+        cb_eq{ &io, &r, name = "round length", got = rules::ROUND_LENGTH_MS, want = 3000 }
+    }
+
+    // ---- attack modifier (4.2)
+
+    fn cb_test_modifier { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut d: rules::Creature
+        cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let mut sit = rules::make_situation{}
+        let mut a: rules::Creature
+        cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 8 }
+        let m0 = cb_modifier{ tables, a = &a, d = &d, &sit, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "modifier: level 1 soldier STR 16 BAB", got = m0.bab, want = 1 }
+        cb_eq{ &io, &r, name = "modifier: level 1 soldier STR 16 total", got = m0.total, want = 4 }
+        cb_eq{ &io, &r, name = "modifier: lightsaber, STR higher: STR part", got = m0.str_mod, want = 3 }
+        cb_eq{ &io, &r, name = "modifier: lightsaber, STR higher: no DEX part", got = m0.dex_mod, want = 0 }
+        // Weapon Focus (Lightsaber, feat 36) +1
+        cb_feat{ c = &a, feat = 36 }
+        cb_eq{ &io, &r, name = "modifier: Weapon Focus", got = cb_modifier{ tables, a = &a, d = &d, &sit, idx = 0, feat = 0 }.total, want = 5 }
+        // an attack effect with no hand applies; one made for the off-hand does not
+        cb_effect{ tables, c = &a, e = rules::fx::make_attack_increase{ amount = 3, hand = 0 } }
+        cb_eq{ &io, &r, name = "modifier: attack increase", got = cb_modifier{ tables, a = &a, d = &d, &sit, idx = 0, feat = 0 }.effects, want = 3 }
+        cb_effect{ tables, c = &a, e = rules::fx::make_attack_increase{ amount = 2, hand = 2 } }
+        cb_eq{ &io, &r, name = "modifier: off-hand effect ignored on-hand", got = cb_modifier{ tables, a = &a, d = &d, &sit, idx = 0, feat = 0 }.effects, want = 3 }
+        // entangled and slowed creatures carry flat penalties
+        a.stats.attack_misc = -2
+        cb_eq{ &io, &r, name = "modifier: state penalties", got = cb_modifier{ tables, a = &a, d = &d, &sit, idx = 0, feat = 0 }.effects, want = 1 }
+
+        // a lightsaber uses DEX when it is the better modifier; other melee weapons never do
+        let mut f: rules::Creature
+        cb_fighter{ tables, c = &f, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 16 }
+        cb_wield{ tables, c = &f, mask = rules::slot::RIGHT, base_item = 8 }
+        let f0 = cb_modifier{ tables, a = &f, d = &d, &sit, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "modifier: lightsaber DEX 16 total", got = f0.total, want = 4 }
+        cb_eq{ &io, &r, name = "modifier: lightsaber DEX part", got = f0.dex_mod, want = 3 }
+        cb_wield{ tables, c = &f, mask = rules::slot::RIGHT, base_item = 2 }
+        cb_eq{ &io, &r, name = "modifier: long sword never uses DEX", got = cb_modifier{ tables, a = &f, d = &d, &sit, idx = 0, feat = 0 }.total, want = 1 }
+        // a debilitated attacker's positive DEX counts as 0
+        cb_wield{ tables, c = &f, mask = rules::slot::RIGHT, base_item = 8 }
+        f.stats.state = rules::fx::STATE_STUNNED
+        cb_eq{ &io, &r, name = "modifier: debilitated DEX", got = cb_modifier{ tables, a = &f, d = &d, &sit, idx = 0, feat = 0 }.total, want = 1 }
+
+        // dual wielding: -6 on-hand (-4 against a light off-hand weapon), -10 off-hand, and the feats
+        let mut w: rules::Creature
+        cb_fighter{ tables, c = &w, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &w, mask = rules::slot::RIGHT, base_item = 8 }
+        cb_wield{ tables, c = &w, mask = rules::slot::LEFT, base_item = 10 }
+        let w0 = cb_modifier{ tables, a = &w, d = &d, &sit, idx = 0, feat = 0 }
+        let w1 = cb_modifier{ tables, a = &w, d = &d, &sit, idx = 1, feat = 0 }
+        cb_eq{ &io, &r, name = "dual: on-hand base", got = w0.dual_base, want = -6 }
+        cb_eq{ &io, &r, name = "dual: on-hand light bonus", got = w0.dual_light, want = 2 }
+        cb_eq{ &io, &r, name = "dual: on-hand total", got = w0.total, want = 0 }
+        cb_eq{ &io, &r, name = "dual: off-hand base", got = w1.dual_base, want = -10 }
+        cb_eq{ &io, &r, name = "dual: off-hand total", got = w1.total, want = -6 }
+        expect_true{ &io, &r, name = "dual: off-hand flag", cond = w1.off_hand and not w0.off_hand }
+        cb_feat{ c = &w, feat = rules::feat::TWO_WEAPON_FIGHTING }
+        cb_eq{ &io, &r, name = "dual: TWF on-hand unchanged", got = cb_modifier{ tables, a = &w, d = &d, &sit, idx = 0, feat = 0 }.total, want = 0 }
+        cb_eq{ &io, &r, name = "dual: TWF off-hand", got = cb_modifier{ tables, a = &w, d = &d, &sit, idx = 1, feat = 0 }.total, want = -2 }
+        cb_feat{ c = &w, feat = rules::feat::TWO_WEAPON_ADVANCED }
+        cb_eq{ &io, &r, name = "dual: Advanced on-hand", got = cb_modifier{ tables, a = &w, d = &d, &sit, idx = 0, feat = 0 }.total, want = 2 }
+        cb_eq{ &io, &r, name = "dual: Advanced off-hand", got = cb_modifier{ tables, a = &w, d = &d, &sit, idx = 1, feat = 0 }.total, want = 0 }
+        cb_feat{ c = &w, feat = rules::feat::TWO_WEAPON_MASTERY }
+        cb_eq{ &io, &r, name = "dual: Mastery on-hand", got = cb_modifier{ tables, a = &w, d = &d, &sit, idx = 0, feat = 0 }.total, want = 4 }
+        cb_eq{ &io, &r, name = "dual: Mastery off-hand", got = cb_modifier{ tables, a = &w, d = &d, &sit, idx = 1, feat = 0 }.total, want = 2 }
+        // a left weapon of the creature's own size is not light: -6 on-hand
+        cb_wield{ tables, c = &w, mask = rules::slot::LEFT, base_item = 2 }
+        w.feats = [0; 8]
+        cb_eq{ &io, &r, name = "dual: same-size off-hand weapon", got = cb_modifier{ tables, a = &w, d = &d, &sit, idx = 0, feat = 0 }.total, want = -2 }
+        // a double-bladed lightsaber alone: -6 + 2 on-hand, -10 off-hand
+        let mut db: rules::Creature
+        cb_fighter{ tables, c = &db, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &db, mask = rules::slot::RIGHT, base_item = 9 }
+        cb_eq{ &io, &r, name = "double blade: on-hand", got = cb_modifier{ tables, a = &db, d = &d, &sit, idx = 0, feat = 0 }.total, want = 0 }
+        cb_eq{ &io, &r, name = "double blade: off-hand", got = cb_modifier{ tables, a = &db, d = &d, &sit, idx = 1, feat = 0 }.total, want = -6 }
+
+        // combat feats: the special-attack to-hit and the extra attack
+        let mut s: rules::Creature
+        cb_fighter{ tables, c = &s, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &s, mask = rules::slot::RIGHT, base_item = 8 }
+        cb_feat{ c = &s, feat = rules::feat::FLURRY }
+        cb_feat{ c = &s, feat = rules::feat::POWER_ATTACK }
+        cb_feat{ c = &s, feat = rules::feat::IMPROVED_FLURRY }
+        cb_feat{ c = &s, feat = rules::feat::WHIRLWIND_ATTACK }
+        cb_feat{ c = &s, feat = rules::feat::CRITICAL_STRIKE }
+        cb_eq{ &io, &r, name = "feat: Flurry -4", got = cb_modifier{ tables, a = &s, d = &d, &sit, idx = 0, feat = rules::feat::FLURRY }.total, want = 0 }
+        cb_eq{ &io, &r, name = "feat: Flurry applies to its second attack", got = cb_modifier{ tables, a = &s, d = &d, &sit, idx = 1, feat = rules::feat::FLURRY }.total, want = 0 }
+        cb_eq{ &io, &r, name = "feat: Improved Flurry -2", got = cb_modifier{ tables, a = &s, d = &d, &sit, idx = 0, feat = rules::feat::IMPROVED_FLURRY }.total, want = 2 }
+        cb_eq{ &io, &r, name = "feat: Master Flurry -1", got = cb_modifier{ tables, a = &s, d = &d, &sit, idx = 0, feat = rules::feat::WHIRLWIND_ATTACK }.total, want = 3 }
+        cb_eq{ &io, &r, name = "feat: Power Attack -3", got = cb_modifier{ tables, a = &s, d = &d, &sit, idx = 0, feat = rules::feat::POWER_ATTACK }.total, want = 1 }
+        cb_eq{ &io, &r, name = "feat: Critical Strike 0", got = cb_modifier{ tables, a = &s, d = &d, &sit, idx = 0, feat = rules::feat::CRITICAL_STRIKE }.total, want = 4 }
+        cb_eq{ &io, &r, name = "feat: a feat not owned counts as none", got = cb_modifier{ tables, a = &s, d = &d, &sit, idx = 0, feat = rules::feat::RAPID_SHOT }.total, want = 4 }
+    }
+
+    fn cb_test_modifier_ranged { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut d: rules::Creature
+        cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let mut sit = rules::make_situation{}
+        // a level 1 soldier, DEX 14, blaster pistol, Rapid Shot: BAB 1, -4, +10 close range, +2 DEX
+        let mut b: rules::Creature
+        cb_fighter{ tables, c = &b, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 14 }
+        cb_wield{ tables, c = &b, mask = rules::slot::RIGHT, base_item = 12 }
+        cb_feat{ c = &b, feat = rules::feat::RAPID_SHOT }
+        let b1 = cb_modifier{ tables, a = &b, d = &d, &sit, idx = 0, feat = rules::feat::RAPID_SHOT }
+        cb_eq{ &io, &r, name = "ranged: Rapid Shot close range total", got = b1.total, want = 9 }
+        cb_eq{ &io, &r, name = "ranged: close range term", got = b1.close_range, want = 10 }
+        cb_eq{ &io, &r, name = "ranged: DEX not STR", got = b1.dex_mod, want = 2 }
+        cb_eq{ &io, &r, name = "ranged: no STR", got = b1.str_mod, want = 0 }
+        sit.dist2 = 25.0
+        cb_eq{ &io, &r, name = "ranged: exactly 5 m is close", got = cb_modifier{ tables, a = &b, d = &d, &sit, idx = 0, feat = rules::feat::RAPID_SHOT }.close_range, want = 10 }
+        sit.dist2 = 25.5
+        cb_eq{ &io, &r, name = "ranged: beyond 5 m", got = cb_modifier{ tables, a = &b, d = &d, &sit, idx = 0, feat = rules::feat::RAPID_SHOT }.total, want = -1 }
+        sit.dist2 = 4.0
+        sit.target_object = true
+        cb_eq{ &io, &r, name = "ranged: a door gets no close-range bonus", got = cb_modifier{ tables, a = &b, d = &d, &sit, idx = 0, feat = 0 }.close_range, want = 0 }
+        sit.target_object = false
+        // Dueling with a pistol and an empty left hand: +1, Master +3
+        cb_feat{ c = &b, feat = rules::feat::DUELING }
+        cb_eq{ &io, &r, name = "dueling: pistol +1", got = cb_modifier{ tables, a = &b, d = &d, &sit, idx = 0, feat = 0 }.dueling, want = 1 }
+        cb_feat{ c = &b, feat = rules::feat::MASTER_DUELING }
+        cb_eq{ &io, &r, name = "dueling: master +3", got = cb_modifier{ tables, a = &b, d = &d, &sit, idx = 0, feat = 0 }.dueling, want = 3 }
+        // a rifle (wield 5) gets no Dueling bonus
+        cb_wield{ tables, c = &b, mask = rules::slot::RIGHT, base_item = 20 }
+        cb_eq{ &io, &r, name = "dueling: rifle none", got = cb_modifier{ tables, a = &b, d = &d, &sit, idx = 0, feat = 0 }.dueling, want = 0 }
+
+        // melee against a target holding a ranged weapon: +10
+        let mut a: rules::Creature
+        cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 8 }
+        cb_eq{ &io, &r, name = "melee vs ranged: plain target", got = cb_modifier{ tables, a = &a, d = &d, &sit, idx = 0, feat = 0 }.melee_vs_ranged, want = 0 }
+        cb_wield{ tables, c = &d, mask = rules::slot::RIGHT, base_item = 12 }
+        cb_eq{ &io, &r, name = "melee vs ranged: +10", got = cb_modifier{ tables, a = &a, d = &d, &sit, idx = 0, feat = 0 }.melee_vs_ranged, want = 10 }
+        cb_eq{ &io, &r, name = "melee vs ranged: total", got = cb_modifier{ tables, a = &a, d = &d, &sit, idx = 0, feat = 0 }.total, want = 14 }
+        sit.target_object = true
+        cb_eq{ &io, &r, name = "melee vs ranged: not against a door", got = cb_modifier{ tables, a = &a, d = &d, &sit, idx = 0, feat = 0 }.melee_vs_ranged, want = 0 }
+    }
+
+    // ---- defense (5)
+
+    fn cb_test_defense { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut a: rules::Creature
+        cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let mut sit = rules::make_situation{}
+        // a level 6 Jedi Guardian: 10 + 4 (acbonus column JDG, row 6) + DEX 14 (+2)
+        let mut g: rules::Creature
+        cb_fighter{ tables, c = &g, class = rules::cls::JEDI_GUARDIAN, level = 6, strength = 10, dexterity = 14 }
+        let g0 = cb_defense{ tables, d = &g, a = &a, &sit }
+        cb_eq{ &io, &r, name = "defense: level 6 guardian class bonus", got = g0.class_bonus, want = 4 }
+        cb_eq{ &io, &r, name = "defense: level 6 guardian total", got = g0.total, want = 16 }
+        let mut s1: rules::Creature
+        cb_fighter{ tables, c = &s1, class = rules::cls::SCOUNDREL, level = 12, strength = 10, dexterity = 10 }
+        cb_eq{ &io, &r, name = "defense: level 12 scoundrel", got = cb_defense{ tables, d = &s1, a = &a, &sit }.total, want = 16 }
+        let mut s2: rules::Creature
+        cb_fighter{ tables, c = &s2, class = rules::cls::SOLDIER, level = 20, strength = 10, dexterity = 10 }
+        cb_eq{ &io, &r, name = "defense: soldiers get no class bonus", got = cb_defense{ tables, d = &s2, a = &a, &sit }.total, want = 10 }
+
+        // armour: base AC 4 with a DEX cap of 5; robes have BaseAC 0 and no cap
+        let mut ar: rules::Creature
+        cb_fighter{ tables, c = &ar, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 24 }
+        cb_eq{ &io, &r, name = "defense: DEX 24 unarmoured", got = cb_defense{ tables, d = &ar, a = &a, &sit }.total, want = 17 }
+        cb_wield{ tables, c = &ar, mask = rules::slot::BODY, base_item = 38 }
+        let ar1 = cb_defense{ tables, d = &ar, a = &a, &sit }
+        cb_eq{ &io, &r, name = "defense: armour 4 capped DEX +5", got = ar1.total, want = 19 }
+        cb_eq{ &io, &r, name = "defense: armour piece", got = ar1.armour, want = 4 }
+        cb_wield{ tables, c = &ar, mask = rules::slot::BODY, base_item = 35 }
+        cb_eq{ &io, &r, name = "defense: robe has no DEX cap", got = cb_defense{ tables, d = &ar, a = &a, &sit }.total, want = 17 }
+
+        // natural armour counts, but not against a touch attack
+        let mut nat: rules::Creature
+        cb_fighter{ tables, c = &nat, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        nat.natural_ac = 2
+        rules::recompute{ tables, c = &nat }
+        cb_eq{ &io, &r, name = "defense: natural armour", got = cb_defense{ tables, d = &nat, a = &a, &sit }.total, want = 12 }
+        cb_eq{ &io, &r, name = "defense: touch skips natural armour", got = rules::defense_versus{ tables, def = &nat, atk = &a, sit = &sit, attack_index = 0, combat_feat = 0, touch = true }.total, want = 10 }
+
+        // dodge, the hidden attacker, the unaware defender, a negative DEX
+        let mut dg: rules::Creature
+        cb_fighter{ tables, c = &dg, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 14 }
+        cb_effect{ tables, c = &dg, e = rules::fx::make_ac_increase{ amount = 2, mod_type = 0 } }
+        cb_eq{ &io, &r, name = "defense: dodge and DEX", got = cb_defense{ tables, d = &dg, a = &a, &sit }.total, want = 14 }
+        let mut hid: rules::Creature
+        cb_fighter{ tables, c = &hid, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_effect{ tables, c = &hid, e = rules::fx::make_invisibility{ invisibility_type = 1 } }
+        let h1 = cb_defense{ tables, d = &dg, a = &hid, &sit }
+        expect_true{ &io, &r, name = "defense: hidden attacker flag", cond = h1.hidden }
+        cb_eq{ &io, &r, name = "defense: hidden attacker gets no dodge or DEX", got = h1.total, want = 10 }
+        dg.stats.vision = 1 | 4
+        cb_eq{ &io, &r, name = "defense: see-invisible defender", got = cb_defense{ tables, d = &dg, a = &hid, &sit }.total, want = 14 }
+        dg.stats.vision = 0
+        sit.defender_sees = false
+        cb_eq{ &io, &r, name = "defense: unaware defender", got = cb_defense{ tables, d = &dg, a = &a, &sit }.total, want = 10 }
+        sit.defender_sees = true
+        let mut ng: rules::Creature
+        cb_fighter{ tables, c = &ng, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 6 }
+        cb_eq{ &io, &r, name = "defense: negative DEX", got = cb_defense{ tables, d = &ng, a = &a, &sit }.total, want = 8 }
+        cb_eq{ &io, &r, name = "defense: negative DEX against a hidden attacker", got = cb_defense{ tables, d = &ng, a = &hid, &sit }.total, want = 8 }
+
+        // debilitated: DEX counts only below 0, the dodge stays, -4
+        dg.stats.state = rules::fx::STATE_SLEEP
+        let h2 = cb_defense{ tables, d = &dg, a = &a, &sit }
+        cb_eq{ &io, &r, name = "defense: debilitated", got = h2.total, want = 8 }
+        cb_eq{ &io, &r, name = "defense: debilitated piece", got = h2.debilitated, want = -4 }
+
+        // Dueling defense, and the conditional effects
+        let mut du: rules::Creature
+        cb_fighter{ tables, c = &du, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &du, mask = rules::slot::RIGHT, base_item = 8 }
+        cb_feat{ c = &du, feat = rules::feat::MASTER_DUELING }
+        cb_eq{ &io, &r, name = "defense: Master Dueling", got = cb_defense{ tables, d = &du, a = &a, &sit }.total, want = 13 }
+        let mut vs: rules::Creature
+        cb_fighter{ tables, c = &vs, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let mut e = rules::fx::make_ac{ kind = rules::fx::AC_INCREASE, amount = 3, mod_type = 0, types = rules::fx::AC_ALL_A }
+        e.ints[2] = rules::race::DROID
+        cb_effect{ tables, c = &vs, e }
+        cb_eq{ &io, &r, name = "defense: bonus versus droids, human attacker", got = cb_defense{ tables, d = &vs, a = &a, &sit }.total, want = 10 }
+        a.race = rules::race::DROID
+        cb_eq{ &io, &r, name = "defense: bonus versus droids, droid attacker", got = cb_defense{ tables, d = &vs, a = &a, &sit }.total, want = 13 }
+        a.race = rules::race::HUMAN
+        // the same bonus made with the script's sentinel 0x2007 counts too
+        let mut e2 = rules::fx::make_ac{ kind = rules::fx::AC_INCREASE, amount = 2, mod_type = 4, types = rules::fx::AC_ALL_B }
+        e2.ints[2] = rules::race::DROID
+        cb_effect{ tables, c = &vs, e = e2 }
+        a.race = rules::race::DROID
+        cb_eq{ &io, &r, name = "defense: conditional deflection with either sentinel", got = cb_defense{ tables, d = &vs, a = &a, &sit }.total, want = 15 }
+
+        // an alignment group: the attacker's good-evil axis 80 is light (2), 20 is dark (3)
+        let mut al: rules::Creature
+        cb_fighter{ tables, c = &al, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let mut ea = rules::fx::make_ac{ kind = rules::fx::AC_INCREASE, amount = 4, mod_type = 0, types = rules::fx::AC_ALL_A }
+        ea.ints[4] = 3
+        cb_effect{ tables, c = &al, e = ea }
+        a.race = rules::race::HUMAN
+        a.good_evil = 80
+        cb_eq{ &io, &r, name = "defense: versus dark attackers, light attacker", got = cb_defense{ tables, d = &al, a = &a, &sit }.total, want = 10 }
+        a.good_evil = 20
+        cb_eq{ &io, &r, name = "defense: versus dark attackers, dark attacker", got = cb_defense{ tables, d = &al, a = &a, &sit }.total, want = 14 }
+
+        // the exe's damage-type filter compares 1, 2, 4 with the weapon's DamageFlags as 0, 1, 2:
+        // an unarmed attacker (flags 1) meets the "2" filter, a lightsaber (4096) meets none
+        let mut df: rules::Creature
+        cb_fighter{ tables, c = &df, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let ef = rules::fx::make_ac{ kind = rules::fx::AC_INCREASE, amount = 3, mod_type = 0, types = 2 }
+        cb_effect{ tables, c = &df, e = ef }
+        let mut sab: rules::Creature
+        cb_fighter{ tables, c = &sab, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &sab, mask = rules::slot::RIGHT, base_item = 8 }
+        cb_eq{ &io, &r, name = "defense: damage-type filter, unarmed attacker", got = cb_defense{ tables, d = &df, a = &a, &sit }.total, want = 13 }
+        cb_eq{ &io, &r, name = "defense: damage-type filter, lightsaber attacker", got = cb_defense{ tables, d = &df, a = &sab, &sit }.total, want = 10 }
+    }
+
+    // ---- critical hits (4.3), sneak attacks (4.7)
+
+    fn cb_test_critical { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut a: rules::Creature
+        cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_eq{ &io, &r, name = "threat: unarmed", got = rules::critical_threat_roll{ tables, c = &a, off_hand = false, combat_feat = 0 }, want = 20 }
+        cb_eq{ &io, &r, name = "multiplier: unarmed", got = rules::critical_multiplier{ tables, c = &a, off_hand = false }, want = 2 }
+        cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 8 }
+        cb_eq{ &io, &r, name = "threat: lightsaber 19", got = rules::critical_threat_roll{ tables, c = &a, off_hand = false, combat_feat = 0 }, want = 19 }
+        cb_eq{ &io, &r, name = "threat: lightsaber Critical Strike 17", got = rules::critical_threat_roll{ tables, c = &a, off_hand = false, combat_feat = 8 }, want = 17 }
+        cb_eq{ &io, &r, name = "threat: lightsaber Improved Critical Strike 15", got = rules::critical_threat_roll{ tables, c = &a, off_hand = false, combat_feat = 19 }, want = 15 }
+        cb_eq{ &io, &r, name = "threat: lightsaber Master Critical Strike 13", got = rules::critical_threat_roll{ tables, c = &a, off_hand = false, combat_feat = 81 }, want = 13 }
+        cb_eq{ &io, &r, name = "threat: lightsaber Sniper Shot", got = rules::critical_threat_roll{ tables, c = &a, off_hand = false, combat_feat = 31 }, want = 17 }
+        cb_eq{ &io, &r, name = "multiplier: lightsaber", got = rules::critical_multiplier{ tables, c = &a, off_hand = false }, want = 2 }
+        cb_prop{ tables, c = &a, mask = rules::slot::RIGHT, name = 28, subtype = 0, cost = 0, param1_value = 0 }
+        cb_eq{ &io, &r, name = "threat: keen lightsaber 17", got = rules::critical_threat_roll{ tables, c = &a, off_hand = false, combat_feat = 0 }, want = 17 }
+        cb_eq{ &io, &r, name = "threat: keen with Critical Strike 15", got = rules::critical_threat_roll{ tables, c = &a, off_hand = false, combat_feat = 8 }, want = 15 }
+        // an off-hand attack uses the left weapon unless the right one is a double weapon
+        cb_wield{ tables, c = &a, mask = rules::slot::LEFT, base_item = 2 }
+        cb_eq{ &io, &r, name = "threat: off-hand long sword", got = rules::critical_threat_roll{ tables, c = &a, off_hand = true, combat_feat = 0 }, want = 20 }
+        cb_eq{ &io, &r, name = "threat: on-hand still keen", got = rules::critical_threat_roll{ tables, c = &a, off_hand = false, combat_feat = 0 }, want = 17 }
+        // gloves count when nothing is held
+        let mut g: rules::Creature
+        cb_fighter{ tables, c = &g, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &g, mask = rules::slot::HANDS, base_item = 45 }
+        cb_eq{ &io, &r, name = "threat: gauntlets", got = rules::critical_threat_roll{ tables, c = &g, off_hand = false, combat_feat = 0 }, want = 20 }
+    }
+
+    fn cb_test_sneak { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut d: rules::Creature
+        cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let mut a: rules::Creature
+        cb_fighter{ tables, c = &a, class = rules::cls::SCOUNDREL, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 4 }
+        let mut sit = rules::make_situation{}
+        sit.defender_sees = false
+        expect_true{ &io, &r, name = "sneak: needs the feat", cond = not rules::sneak_attack_eligible{ tables, atk = &a, def = &d, sit = &sit }.eligible }
+        cb_feat{ c = &a, feat = rules::feat::SNEAK_ATTACK_1 }
+        expect_true{ &io, &r, name = "sneak: melee against an unaware defender", cond = rules::sneak_attack_eligible{ tables, atk = &a, def = &d, sit = &sit }.eligible }
+        sit.defender_sees = true
+        expect_true{ &io, &r, name = "sneak: a defender that sees and faces the attacker", cond = not rules::sneak_attack_eligible{ tables, atk = &a, def = &d, sit = &sit }.eligible }
+        sit.facing_cos = 0.5
+        expect_true{ &io, &r, name = "sneak: from outside the front cone", cond = rules::sneak_attack_eligible{ tables, atk = &a, def = &d, sit = &sit }.eligible }
+        sit.facing_cos = 0.707
+        expect_true{ &io, &r, name = "sneak: exactly on the cone edge is not behind", cond = not rules::sneak_attack_eligible{ tables, atk = &a, def = &d, sit = &sit }.eligible }
+        sit.facing_cos = 1.0
+        d.stats.state = rules::fx::STATE_PARALYZED
+        expect_true{ &io, &r, name = "sneak: a debilitated defender", cond = rules::sneak_attack_eligible{ tables, atk = &a, def = &d, sit = &sit }.eligible }
+        d.stats.state = 0
+        // immunity (on the unaware path only)
+        sit.defender_sees = false
+        cb_effect{ tables, c = &d, e = rules::fx::make_immunity{ immunity = rules::imm::SNEAK_ATTACK } }
+        let im = rules::sneak_attack_eligible{ tables, atk = &a, def = &d, sit = &sit }
+        expect_true{ &io, &r, name = "sneak: immune defender", cond = im.immune and not im.eligible }
+        sit.defender_sees = true
+        sit.facing_cos = 0.0
+        expect_true{ &io, &r, name = "sneak: the cone path ignores immunity", cond = rules::sneak_attack_eligible{ tables, atk = &a, def = &d, sit = &sit }.eligible }
+        // ranged: beyond 10 m an unaware defender is checked by the cone
+        let mut b: rules::Creature
+        cb_fighter{ tables, c = &b, class = rules::cls::SCOUNDREL, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &b, mask = rules::slot::RIGHT, base_item = 12 }
+        cb_feat{ c = &b, feat = rules::feat::SNEAK_ATTACK_1 }
+        let mut d2: rules::Creature
+        cb_fighter{ tables, c = &d2, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let mut s2 = rules::make_situation{}
+        s2.defender_sees = false
+        s2.dist2 = 81.0
+        expect_true{ &io, &r, name = "sneak: ranged within 10 m, unaware", cond = rules::sneak_attack_eligible{ tables, atk = &b, def = &d2, sit = &s2 }.eligible }
+        s2.dist2 = 121.0
+        expect_true{ &io, &r, name = "sneak: ranged beyond 10 m, facing", cond = not rules::sneak_attack_eligible{ tables, atk = &b, def = &d2, sit = &s2 }.eligible }
+        s2.defender_sees = true
+        s2.facing_cos = 0.0
+        expect_true{ &io, &r, name = "sneak: ranged beyond 10 m, behind", cond = not rules::sneak_attack_eligible{ tables, atk = &b, def = &d2, sit = &s2 }.eligible }
+        s2.dist2 = 81.0
+        expect_true{ &io, &r, name = "sneak: ranged within 10 m, behind", cond = rules::sneak_attack_eligible{ tables, atk = &b, def = &d2, sit = &s2 }.eligible }
+        s2.target_object = true
+        expect_true{ &io, &r, name = "sneak: not against a door", cond = not rules::sneak_attack_eligible{ tables, atk = &b, def = &d2, sit = &s2 }.eligible }
+    }
+
+    // ---- the attack roll (4.1), with seeds chosen from the generator's own sequence
+
+    fn cb_test_roll { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        // the attacker: modifier +4 (BAB 1, STR +3) with a lightsaber (threat 19); the defender: defense 10
+        let mut a: rules::Creature
+        cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 8 }
+        let mut d: rules::Creature
+        cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let sit = rules::make_situation{}
+
+        // natural 1: a miss whatever the modifier
+        let s1 = cb_find_seed{ d1 = 1, lo2 = 1, hi2 = 20 }
+        let r1 = cb_attack{ tables, atk = &a, def = &d, sit = &sit, seed = s1, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "roll: natural 1 is a miss", got = r1.result, want = rules::outcome::MISS }
+        expect_true{ &io, &r, name = "roll: natural 1 flagged", cond = r1.natural_1 }
+        cb_eq{ &io, &r, name = "roll: natural 1 missed by", got = r1.missed_by, want = 5 }
+        cb_eq{ &io, &r, name = "roll: attack total", got = r1.attack_total, want = 5 }
+        cb_eq{ &io, &r, name = "roll: defense recorded", got = r1.defense.total, want = 10 }
+        // 5 + 4 = 9 misses by one, 6 + 4 = 10 hits
+        let s5 = cb_find_seed{ d1 = 5, lo2 = 1, hi2 = 20 }
+        let r5 = cb_attack{ tables, atk = &a, def = &d, sit = &sit, seed = s5, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "roll: 9 against 10 misses", got = r5.result, want = rules::outcome::MISS }
+        cb_eq{ &io, &r, name = "roll: missed by one", got = r5.missed_by, want = 1 }
+        let s6 = cb_find_seed{ d1 = 6, lo2 = 1, hi2 = 20 }
+        let r6 = cb_attack{ tables, atk = &a, def = &d, sit = &sit, seed = s6, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "roll: 10 against 10 hits", got = r6.result, want = rules::outcome::HIT }
+        // 18 is no threat (19 and 20 are), 19 and 20 threaten and are confirmed by a second d20 + 4 >= 10
+        let s18 = cb_find_seed{ d1 = 18, lo2 = 1, hi2 = 20 }
+        let r18 = cb_attack{ tables, atk = &a, def = &d, sit = &sit, seed = s18, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "roll: 18 is a plain hit", got = r18.result, want = rules::outcome::HIT }
+        expect_true{ &io, &r, name = "roll: 18 no threat", cond = not r18.threat }
+        cb_eq{ &io, &r, name = "roll: threat range", got = r18.threat_range, want = 19 }
+        let s19 = cb_find_seed{ d1 = 19, lo2 = 6, hi2 = 20 }
+        let r19 = cb_attack{ tables, atk = &a, def = &d, sit = &sit, seed = s19, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "roll: confirmed 19 is critical", got = r19.result, want = rules::outcome::CRITICAL }
+        cb_eq{ &io, &r, name = "roll: critical multiplier", got = r19.multiplier, want = 2 }
+        expect_true{ &io, &r, name = "roll: confirmed flags", cond = r19.threat and r19.confirmed }
+        let s19b = cb_find_seed{ d1 = 19, lo2 = 1, hi2 = 5 }
+        let r19b = cb_attack{ tables, atk = &a, def = &d, sit = &sit, seed = s19b, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "roll: unconfirmed threat is a hit", got = r19b.result, want = rules::outcome::HIT }
+        expect_true{ &io, &r, name = "roll: threat, not confirmed", cond = r19b.threat and not r19b.confirmed }
+        let s20 = cb_find_seed{ d1 = 20, lo2 = 6, hi2 = 20 }
+        let r20 = cb_attack{ tables, atk = &a, def = &d, sit = &sit, seed = s20, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "roll: natural 20 confirmed", got = r20.result, want = rules::outcome::CRITICAL }
+        expect_true{ &io, &r, name = "roll: natural 20 flagged", cond = r20.natural_20 }
+        // Critical Strike widens the threat to 17
+        cb_feat{ c = &a, feat = rules::feat::CRITICAL_STRIKE }
+        let s17 = cb_find_seed{ d1 = 17, lo2 = 6, hi2 = 20 }
+        let r17 = cb_attack{ tables, atk = &a, def = &d, sit = &sit, seed = s17, idx = 0, feat = rules::feat::CRITICAL_STRIKE }
+        cb_eq{ &io, &r, name = "roll: Critical Strike threat 17", got = r17.result, want = rules::outcome::CRITICAL }
+        cb_eq{ &io, &r, name = "roll: Critical Strike threat range", got = r17.threat_range, want = 17 }
+        let r17n = cb_attack{ tables, atk = &a, def = &d, sit = &sit, seed = s17, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "roll: 17 without the feat", got = r17n.result, want = rules::outcome::HIT }
+        // a natural 20 hits whatever the defense; the confirmation does not
+        let mut tough: rules::Creature
+        cb_fighter{ tables, c = &tough, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        tough.natural_ac = 30
+        rules::recompute{ tables, c = &tough }
+        let t20 = cb_attack{ tables, atk = &a, def = &tough, sit = &sit, seed = s20, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "roll: natural 20 beats defense 40", got = t20.result, want = rules::outcome::HIT }
+        expect_true{ &io, &r, name = "roll: ... without confirming", cond = t20.natural_20 and t20.threat and not t20.confirmed }
+        let t18 = cb_attack{ tables, atk = &a, def = &tough, sit = &sit, seed = s18, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "roll: 18 + 4 against 40", got = t18.result, want = rules::outcome::MISS }
+        // immunity to critical hits turns the critical into a plain hit
+        cb_effect{ tables, c = &d, e = rules::fx::make_immunity{ immunity = rules::imm::CRITICAL_HIT } }
+        let ri = cb_attack{ tables, atk = &a, def = &d, sit = &sit, seed = s20, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "roll: critical immunity", got = ri.result, want = rules::outcome::HIT }
+        expect_true{ &io, &r, name = "roll: critical immunity flagged", cond = ri.crit_immune and ri.confirmed }
+        // assured hit
+        a.stats.assured_hit = true
+        let ra = cb_attack{ tables, atk = &a, def = &d, sit = &sit, seed = s1, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "roll: assured hit beats a natural 1", got = ra.result, want = rules::outcome::HIT }
+        a.stats.assured_hit = false
+        // a door: defense 0, only a natural 1 misses
+        let mut door = rules::make_situation{}
+        door.target_object = true
+        let rd = cb_attack{ tables, atk = &a, def = &d, sit = &door, seed = s5, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "roll: door defense", got = rd.defense.total, want = 0 }
+        cb_eq{ &io, &r, name = "roll: door is hit", got = rd.result, want = rules::outcome::HIT }
+        let rd1 = cb_attack{ tables, atk = &a, def = &d, sit = &door, seed = s1, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "roll: door natural 1", got = rd1.result, want = rules::outcome::MISS }
+        // a forced result from a cutscene
+        let mut forced = rules::make_situation{}
+        forced.forced = true
+        forced.forced_result = rules::outcome::MISS
+        cb_eq{ &io, &r, name = "roll: forced miss", got = cb_attack{ tables, atk = &a, def = &d, sit = &forced, seed = s20, idx = 0, feat = 0 }.result, want = rules::outcome::MISS }
+        // coup de grace: a melee attack on a sleeping level 1 creature that no one controls
+        d.stats.state = rules::fx::STATE_SLEEP
+        let rc = cb_attack{ tables, atk = &a, def = &d, sit = &sit, seed = s1, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "roll: coup de grace", got = rc.result, want = rules::outcome::AUTOMATIC_HIT }
+        cb_eq{ &io, &r, name = "roll: coup de grace shows 20", got = rc.d20, want = 20 }
+        d.party = true
+        cb_eq{ &io, &r, name = "roll: no coup de grace on a party member", got = cb_attack{ tables, atk = &a, def = &d, sit = &sit, seed = s1, idx = 0, feat = 0 }.result, want = rules::outcome::MISS }
+        d.party = false
+        d.stats.level = 5
+        cb_eq{ &io, &r, name = "roll: no coup de grace at level 5", got = cb_attack{ tables, atk = &a, def = &d, sit = &sit, seed = s1, idx = 0, feat = 0 }.result, want = rules::outcome::MISS }
+        // the same seed is the same roll; the draws come in the engine's order (d20, then the confirmation d20)
+        let mut fresh: rules::Creature
+        cb_fighter{ tables, c = &fresh, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let ra1 = cb_attack{ tables, atk = &a, def = &fresh, sit = &sit, seed = s19, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "roll: d20 is the first draw", got = ra1.d20, want = cb_nth_d20{ seed = s19, n = 0 } }
+        cb_eq{ &io, &r, name = "roll: confirmation is the second draw", got = ra1.confirm_d20, want = cb_nth_d20{ seed = s19, n = 1 } }
+    }
+
+    // ---- deflecting blaster bolts (4.6)
+
+    fn cb_test_deflection { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        // the shooter: modifier 13 at 3 m (BAB 1, close range +10, DEX +2)
+        let mut b: rules::Creature
+        cb_fighter{ tables, c = &b, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 14 }
+        cb_wield{ tables, c = &b, mask = rules::slot::RIGHT, base_item = 12 }
+        // the defender: a Guardian with Master Jedi Defense and a lightsaber (BAB 1, defense 12)
+        let mut g: rules::Creature
+        cb_fighter{ tables, c = &g, class = rules::cls::JEDI_GUARDIAN, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &g, mask = rules::slot::RIGHT, base_item = 8 }
+        cb_feat{ c = &g, feat = rules::feat::MASTER_JEDI_DEFENSE }
+        let mut sit = rules::make_situation{}
+        cb_eq{ &io, &r, name = "deflect: shooter modifier", got = cb_modifier{ tables, a = &b, d = &g, sit = &sit, idx = 0, feat = 0 }.total, want = 13 }
+        cb_eq{ &io, &r, name = "deflect: defender defense", got = cb_defense{ tables, d = &g, a = &b, sit = &sit }.total, want = 12 }
+        // x = the shot's d20, y = the deflection d20: deflect = y + 6 + BAB 1 against x + 13
+        let s_knock = cb_find_seed{ d1 = 5, lo2 = 15, hi2 = 15 }          // 22 against 18: knocked away
+        let s_back = cb_find_seed{ d1 = 2, lo2 = 20, hi2 = 20 }           // 27 against 15: six over, sent back
+        let s_fail = cb_find_seed{ d1 = 15, lo2 = 3, hi2 = 3 }            // 10 against 28: not deflected
+        let k = cb_attack{ tables, atk = &b, def = &g, sit = &sit, seed = s_knock, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "deflect: knocked away", got = k.result, want = rules::outcome::DEFLECTED }
+        cb_eq{ &io, &r, name = "deflect: total", got = k.deflection.total, want = 22 }
+        cb_eq{ &io, &r, name = "deflect: roll recorded", got = k.deflection.d20, want = 15 }
+        cb_eq{ &io, &r, name = "deflect: the Jedi Defense bonus", got = k.deflection.jedi_bonus, want = 6 }
+        let bk = cb_attack{ tables, atk = &b, def = &g, sit = &sit, seed = s_back, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "deflect: sent back", got = bk.result, want = rules::outcome::RETURNED }
+        let f = cb_attack{ tables, atk = &b, def = &g, sit = &sit, seed = s_fail, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "deflect: not deflected is an ordinary hit", got = f.result, want = rules::outcome::HIT }
+        expect_true{ &io, &r, name = "deflect: not deflected but able", cond = f.deflection.can and f.deflection.result == 0 }
+        // Advanced adds 3, plain Jedi Defense nothing
+        let mut adv: rules::Creature
+        cb_fighter{ tables, c = &adv, class = rules::cls::JEDI_GUARDIAN, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &adv, mask = rules::slot::RIGHT, base_item = 8 }
+        cb_feat{ c = &adv, feat = rules::feat::ADVANCED_JEDI_DEFENSE }
+        cb_eq{ &io, &r, name = "deflect: Advanced 15 + 3 + 1 against 18", got = cb_attack{ tables, atk = &b, def = &adv, sit = &sit, seed = s_knock, idx = 0, feat = 0 }.result, want = rules::outcome::DEFLECTED }
+        let mut basic: rules::Creature
+        cb_fighter{ tables, c = &basic, class = rules::cls::JEDI_GUARDIAN, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &basic, mask = rules::slot::RIGHT, base_item = 8 }
+        cb_feat{ c = &basic, feat = rules::feat::JEDI_DEFENSE }
+        cb_eq{ &io, &r, name = "deflect: Jedi Defense 15 + 1 against 18", got = cb_attack{ tables, atk = &b, def = &basic, sit = &sit, seed = s_knock, idx = 0, feat = 0 }.result, want = rules::outcome::HIT }
+        // blaster-deflection effects: a script's amount in int0, an item property's in int1
+        cb_effect{ tables, c = &basic, e = rules::fx::make_blaster_deflection_increase{ amount = 10 } }
+        let mut item_fx = rules::fx::make_effect{ kind = rules::fx::BLASTER_DEFLECTION_INCREASE }
+        item_fx.ints[1] = 4
+        cb_effect{ tables, c = &basic, e = item_fx }
+        let s_low = cb_find_seed{ d1 = 5, lo2 = 3, hi2 = 3 }              // 3 + 1 + 14 = 18 against 18
+        let bl = cb_attack{ tables, atk = &b, def = &basic, sit = &sit, seed = s_low, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "deflect: effects add int0 and int1", got = bl.deflection.effects, want = 14 }
+        cb_eq{ &io, &r, name = "deflect: equal is deflected", got = bl.result, want = rules::outcome::DEFLECTED }
+        // not facing the shooter, no lightsaber, no feat, melee, busy, debilitated: no deflection
+        sit.facing_dot = 1.0
+        expect_true{ &io, &r, name = "deflect: facing away", cond = not cb_attack{ tables, atk = &b, def = &g, sit = &sit, seed = s_knock, idx = 0, feat = 0 }.deflection.can }
+        sit.facing_dot = -1.0
+        sit.defender_busy = true
+        expect_true{ &io, &r, name = "deflect: busy", cond = not cb_attack{ tables, atk = &b, def = &g, sit = &sit, seed = s_knock, idx = 0, feat = 0 }.deflection.can }
+        sit.defender_busy = false
+        let mut bare: rules::Creature
+        cb_fighter{ tables, c = &bare, class = rules::cls::JEDI_GUARDIAN, level = 1, strength = 10, dexterity = 10 }
+        cb_feat{ c = &bare, feat = rules::feat::MASTER_JEDI_DEFENSE }
+        expect_true{ &io, &r, name = "deflect: no lightsaber", cond = not cb_attack{ tables, atk = &b, def = &bare, sit = &sit, seed = s_knock, idx = 0, feat = 0 }.deflection.can }
+        let mut plain: rules::Creature
+        cb_fighter{ tables, c = &plain, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &plain, mask = rules::slot::RIGHT, base_item = 8 }
+        expect_true{ &io, &r, name = "deflect: no feat", cond = not cb_attack{ tables, atk = &b, def = &plain, sit = &sit, seed = s_knock, idx = 0, feat = 0 }.deflection.can }
+        let mut sword: rules::Creature
+        cb_fighter{ tables, c = &sword, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &sword, mask = rules::slot::RIGHT, base_item = 8 }
+        expect_true{ &io, &r, name = "deflect: melee attacks are never deflected", cond = not cb_attack{ tables, atk = &sword, def = &g, sit = &sit, seed = s_knock, idx = 0, feat = 0 }.deflection.can }
+        g.stats.state = rules::fx::STATE_STUNNED
+        expect_true{ &io, &r, name = "deflect: debilitated", cond = not cb_attack{ tables, atk = &b, def = &g, sit = &sit, seed = s_knock, idx = 0, feat = 0 }.deflection.can }
+        g.stats.state = 0
+        // assured deflection needs no roll
+        g.stats.assured_deflection = true
+        let as1 = cb_attack{ tables, atk = &b, def = &g, sit = &sit, seed = s_fail, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "deflect: assured", got = as1.result, want = rules::outcome::DEFLECTED }
+        g.stats.deflection_returns = true
+        cb_eq{ &io, &r, name = "deflect: assured, returning", got = cb_attack{ tables, atk = &b, def = &g, sit = &sit, seed = s_fail, idx = 0, feat = 0 }.result, want = rules::outcome::RETURNED }
+        // an energy shield absorbs a missed bolt
+        let mut tough: rules::Creature
+        cb_fighter{ tables, c = &tough, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        tough.natural_ac = 30
+        rules::recompute{ tables, c = &tough }
+        let mut sh = rules::make_situation{}
+        cb_eq{ &io, &r, name = "shield: a miss", got = cb_attack{ tables, atk = &b, def = &tough, sit = &sh, seed = s_fail, idx = 0, feat = 0 }.result, want = rules::outcome::MISS }
+        sh.shield_absorbs = true
+        cb_eq{ &io, &r, name = "shield: absorbed", got = cb_attack{ tables, atk = &b, def = &tough, sit = &sh, seed = s_fail, idx = 0, feat = 0 }.result, want = rules::outcome::SHIELD }
+    }
+
+    // ---- damage (6)
+
+    fn cb_dmg { tables: *rules::Tables, atk: *rules::Creature, mut def: rules::Creature, sit: *rules::AttackSituation, seed: u32, idx: i32, feat: i32, critical: bool, sneak: bool, simulate: bool } -> rules::DamageRoll {
+        let mut g = rules::seed_rng{ seed }
+        let mut ev: rules::Events
+        return rules::roll_damage{ tables, rng = &g, atk, def = &def, ev = &ev, sit, attack_index = idx, combat_feat = feat, critical, sneak, simulate }
+    }
+
+    // Shorthand: an ordinary damage roll.
+    fn cb_hit { tables: *rules::Tables, atk: *rules::Creature, mut def: rules::Creature, seed: u32, critical: bool } -> rules::DamageRoll {
+        let sit = rules::make_situation{}
+        return cb_dmg{ tables, atk, def = &def, sit = &sit, seed, idx = 0, feat = 0, critical, sneak = false, simulate = false }
+    }
+
+    // Sum of `n` dice of `sides` sides drawn the way the engine does, after `skip` draws of a seed.
+    fn cb_expected_dice { seed: u32, skip: i32, n: i32, sides: i32 } -> i32 {
+        let mut p = rules::seed_rng{ seed }
+        let mut k = 0
+        while k < skip {
+            _ = rules::next_rand{ rng = &p }
+            k = k + 1
+        }
+        return rules::roll_dice{ rng = &p, count = n, sides }
+    }
+
+    fn cb_test_damage { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut d: rules::Creature
+        cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let sit = rules::make_situation{}
+        let mut a: rules::Creature
+        cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 8 }
+        // 2d8 + STR 3; the dice are the first two draws of the seed
+        let x = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }
+        cb_eq{ &io, &r, name = "damage: 2d8 draws", got = x.dice, want = cb_expected_dice{ seed = 777, skip = 0, n = 2, sides = 8 } }
+        cb_eq{ &io, &r, name = "damage: total = dice + STR", got = x.total, want = x.dice + 3 }
+        cb_eq{ &io, &r, name = "damage: dice count", got = x.dice_count, want = 2 }
+        cb_eq{ &io, &r, name = "damage: die", got = x.dice_sides, want = 8 }
+        cb_eq{ &io, &r, name = "damage: STR bonus", got = x.str_bonus, want = 3 }
+        cb_eq{ &io, &r, name = "damage: blaster slot", got = x.weapon_slot, want = 12 }
+        cb_eq{ &io, &r, name = "damage: the slot holds it all", got = x.slots[12], want = x.total }
+        // a critical rolls the dice twice and doubles the bonuses
+        let c = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = true }
+        cb_eq{ &io, &r, name = "damage: critical dice are 4d8 from one stream", got = c.dice, want = cb_expected_dice{ seed = 777, skip = 0, n = 4, sides = 8 } }
+        cb_eq{ &io, &r, name = "damage: critical total", got = c.total, want = c.dice + 6 }
+        cb_eq{ &io, &r, name = "damage: critical multiplier", got = c.multiplier, want = 2 }
+        // Weapon Specialization (feat 50 for lightsabers) +2, doubled on a critical
+        cb_feat{ c = &a, feat = 50 }
+        cb_eq{ &io, &r, name = "damage: specialization", got = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }.total, want = x.dice + 5 }
+        cb_eq{ &io, &r, name = "damage: specialization on a critical", got = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = true }.total, want = c.dice + 10 }
+        // Power Attack +5, Improved +8, Master +10; the feat counts only if known
+        let pa = cb_dmg{ tables, atk = &a, def = &d, sit = &sit, seed = 777, idx = 0, feat = rules::feat::POWER_ATTACK, critical = false, sneak = false, simulate = false }
+        cb_eq{ &io, &r, name = "damage: Power Attack not known", got = pa.special_bonus, want = 0 }
+        cb_feat{ c = &a, feat = rules::feat::POWER_ATTACK }
+        cb_feat{ c = &a, feat = rules::feat::IMPROVED_POWER_ATTACK }
+        cb_feat{ c = &a, feat = rules::feat::MASTER_POWER_ATTACK }
+        let pb = cb_dmg{ tables, atk = &a, def = &d, sit = &sit, seed = 777, idx = 0, feat = rules::feat::POWER_ATTACK, critical = false, sneak = false, simulate = false }
+        cb_eq{ &io, &r, name = "damage: Power Attack", got = pb.special_bonus, want = 5 }
+        cb_eq{ &io, &r, name = "damage: Power Attack total", got = pb.total, want = x.dice + 3 + 2 + 5 }
+        let pc = cb_dmg{ tables, atk = &a, def = &d, sit = &sit, seed = 777, idx = 0, feat = rules::feat::IMPROVED_POWER_ATTACK, critical = false, sneak = false, simulate = false }
+        cb_eq{ &io, &r, name = "damage: Improved Power Attack", got = pc.special_bonus, want = 8 }
+        let pd = cb_dmg{ tables, atk = &a, def = &d, sit = &sit, seed = 777, idx = 0, feat = rules::feat::MASTER_POWER_ATTACK, critical = false, sneak = false, simulate = false }
+        cb_eq{ &io, &r, name = "damage: Master Power Attack", got = pd.special_bonus, want = 10 }
+
+        // sneak attack: Sneak Attack 4 is 4d6, added once whatever the multiplier
+        let mut sn: rules::Creature
+        cb_fighter{ tables, c = &sn, class = rules::cls::SCOUNDREL, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &sn, mask = rules::slot::RIGHT, base_item = 4 }
+        cb_feat{ c = &sn, feat = rules::feat::SNEAK_ATTACK_1 + 3 }
+        let n0 = cb_hit{ tables, atk = &sn, def = &d, seed = 31, critical = false }
+        cb_eq{ &io, &r, name = "sneak: no sneak dice without the flag", got = n0.sneak, want = 0 }
+        let n1 = cb_dmg{ tables, atk = &sn, def = &d, sit = &sit, seed = 31, idx = 0, feat = 0, critical = false, sneak = true, simulate = false }
+        cb_eq{ &io, &r, name = "sneak: 4d6", got = n1.sneak_dice, want = 4 }
+        cb_eq{ &io, &r, name = "sneak: the draws follow the weapon dice", got = n1.sneak, want = cb_expected_dice{ seed = 31, skip = 1, n = 4, sides = 6 } }
+        cb_eq{ &io, &r, name = "sneak: total", got = n1.total, want = n1.dice + n1.sneak }
+        let n2 = cb_dmg{ tables, atk = &sn, def = &d, sit = &sit, seed = 31, idx = 0, feat = 0, critical = true, sneak = true, simulate = false }
+        cb_eq{ &io, &r, name = "sneak: not multiplied by a critical", got = n2.sneak_dice, want = 4 }
+        cb_eq{ &io, &r, name = "sneak: critical total", got = n2.total, want = n2.dice + n2.sneak }
+        expect_true{ &io, &r, name = "sneak: 4d6 range", cond = n2.sneak >= 4 and n2.sneak <= 24 }
+
+        // Massive Criticals (49): a die or a flat row, on criticals only, never multiplied
+        let mut mc: rules::Creature
+        cb_fighter{ tables, c = &mc, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &mc, mask = rules::slot::RIGHT, base_item = 8 }
+        cb_prop{ tables, c = &mc, mask = rules::slot::RIGHT, name = 49, subtype = 0, cost = 8, param1_value = 0 }
+        let m0 = cb_hit{ tables, atk = &mc, def = &d, seed = 5, critical = false }
+        cb_eq{ &io, &r, name = "massive: none without a critical", got = m0.massive, want = 0 }
+        let m1 = cb_hit{ tables, atk = &mc, def = &d, seed = 5, critical = true }
+        cb_eq{ &io, &r, name = "massive: 1d8 after the four weapon dice", got = m1.massive, want = cb_expected_dice{ seed = 5, skip = 4, n = 1, sides = 8 } }
+        cb_eq{ &io, &r, name = "massive: total", got = m1.total, want = m1.dice + m1.massive }
+        let mut mf: rules::Creature
+        cb_fighter{ tables, c = &mf, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &mf, mask = rules::slot::RIGHT, base_item = 8 }
+        cb_prop{ tables, c = &mf, mask = rules::slot::RIGHT, name = 49, subtype = 0, cost = 3, param1_value = 0 }
+        cb_eq{ &io, &r, name = "massive: a flat row", got = cb_hit{ tables, atk = &mf, def = &d, seed = 5, critical = true }.massive, want = 3 }
+
+        // DamageNone (31): only the bonuses are left, at least 1
+        let mut dn: rules::Creature
+        cb_fighter{ tables, c = &dn, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &dn, mask = rules::slot::RIGHT, base_item = 8 }
+        cb_prop{ tables, c = &dn, mask = rules::slot::RIGHT, name = 31, subtype = 0, cost = 0, param1_value = 0 }
+        cb_eq{ &io, &r, name = "damage none: bonuses only", got = cb_hit{ tables, atk = &dn, def = &d, seed = 5, critical = false }.total, want = 3 }
+        dn.abil[0] = 6
+        rules::recompute{ tables, c = &dn }
+        cb_eq{ &io, &r, name = "damage none: at least 1", got = cb_hit{ tables, atk = &dn, def = &d, seed = 5, critical = false }.total, want = 1 }
+
+        // unarmed: 1d1 for medium creatures, 1d2 for small ones; gauntlets are unarmed too
+        let mut u: rules::Creature
+        cb_fighter{ tables, c = &u, class = rules::cls::SOLDIER, level = 1, strength = 14, dexterity = 10 }
+        let u0 = cb_hit{ tables, atk = &u, def = &d, seed = 9, critical = false }
+        expect_true{ &io, &r, name = "unarmed: flagged", cond = u0.unarmed }
+        cb_eq{ &io, &r, name = "unarmed: 1 + STR 2", got = u0.total, want = 3 }
+        cb_eq{ &io, &r, name = "unarmed: bludgeoning slot", got = u0.weapon_slot, want = 0 }
+        cb_eq{ &io, &r, name = "unarmed: critical", got = cb_hit{ tables, atk = &u, def = &d, seed = 9, critical = true }.total, want = 2 + 4 }
+        u.stats.size = 2
+        let u1 = cb_hit{ tables, atk = &u, def = &d, seed = 9, critical = false }
+        cb_eq{ &io, &r, name = "unarmed small: 1d2 draw", got = u1.dice, want = cb_expected_dice{ seed = 9, skip = 0, n = 1, sides = 2 } }
+        cb_wield{ tables, c = &u, mask = rules::slot::HANDS, base_item = 45 }
+        expect_true{ &io, &r, name = "unarmed: gauntlets", cond = cb_hit{ tables, atk = &u, def = &d, seed = 9, critical = false }.unarmed }
+        let mut weak: rules::Creature
+        cb_fighter{ tables, c = &weak, class = rules::cls::SOLDIER, level = 1, strength = 6, dexterity = 10 }
+        cb_eq{ &io, &r, name = "unarmed: at least 1", got = cb_hit{ tables, atk = &weak, def = &d, seed = 9, critical = false }.total, want = 1 }
+
+        // creature weapons: Monster damage (51), 2d6 for iprp_monstcost row 9
+        let mut cw: rules::Creature
+        cb_fighter{ tables, c = &cw, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &cw, mask = rules::slot::CREATURE_L, base_item = 81 }
+        cb_prop{ tables, c = &cw, mask = rules::slot::CREATURE_L, name = 51, subtype = 0, cost = 9, param1_value = 0 }
+        let w0 = cb_hit{ tables, atk = &cw, def = &d, seed = 11, critical = false }
+        cb_eq{ &io, &r, name = "creature weapon: 2d6", got = w0.dice, want = cb_expected_dice{ seed = 11, skip = 0, n = 2, sides = 6 } }
+        cb_eq{ &io, &r, name = "creature weapon: type 3", got = w0.weapon_type, want = 3 }
+        let mut cw2: rules::Creature
+        cb_fighter{ tables, c = &cw2, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &cw2, mask = rules::slot::CREATURE_L, base_item = 81 }
+        cb_eq{ &io, &r, name = "creature weapon: no property, no dice", got = cb_hit{ tables, atk = &cw2, def = &d, seed = 11, critical = false }.total, want = 1 }
+
+        // ranged: no STR bonus, the pistol's 1d6
+        let mut b: rules::Creature
+        cb_fighter{ tables, c = &b, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 14 }
+        cb_wield{ tables, c = &b, mask = rules::slot::RIGHT, base_item = 12 }
+        let b0 = cb_hit{ tables, atk = &b, def = &d, seed = 13, critical = false }
+        cb_eq{ &io, &r, name = "ranged damage: 1d6, no STR", got = b0.total, want = cb_expected_dice{ seed = 13, skip = 0, n = 1, sides = 6 } }
+
+        // an off-hand attack deals the left weapon's dice
+        let mut w: rules::Creature
+        cb_fighter{ tables, c = &w, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &w, mask = rules::slot::RIGHT, base_item = 2 }
+        cb_wield{ tables, c = &w, mask = rules::slot::LEFT, base_item = 10 }
+        let o0 = cb_dmg{ tables, atk = &w, def = &d, sit = &sit, seed = 17, idx = 1, feat = 0, critical = false, sneak = false, simulate = false }
+        cb_eq{ &io, &r, name = "off-hand: the short lightsaber's d6", got = o0.dice_sides, want = 6 }
+        expect_true{ &io, &r, name = "off-hand: flagged", cond = o0.off_hand }
+        let o1 = cb_hit{ tables, atk = &w, def = &d, seed = 17, critical = false }
+        cb_eq{ &io, &r, name = "on-hand: the long sword's d12", got = o1.dice_sides, want = 12 }
+
+        // a cutscene attack deals what it says; a plot target takes nothing
+        let mut f = rules::make_situation{}
+        f.forced = true
+        f.forced_result = rules::outcome::HIT
+        f.forced_damage = 7
+        let fd = cb_dmg{ tables, atk = &a, def = &d, sit = &f, seed = 777, idx = 0, feat = 0, critical = false, sneak = false, simulate = false }
+        cb_eq{ &io, &r, name = "damage: forced amount", got = fd.total, want = 7 }
+        cb_eq{ &io, &r, name = "damage: forced amount in the weapon slot", got = fd.slots[12], want = 7 }
+        d.plot = true
+        cb_eq{ &io, &r, name = "damage: plot", got = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }.total, want = 0 }
+        d.plot = false
+        let mut door = rules::make_situation{}
+        door.target_object = true
+        door.target_plot = true
+        cb_eq{ &io, &r, name = "damage: a plot door", got = cb_dmg{ tables, atk = &a, def = &d, sit = &door, seed = 777, idx = 0, feat = 0, critical = false, sneak = false, simulate = false }.total, want = 0 }
+    }
+
+    fn cb_clear_effects { tables: *rules::Tables, mut c: rules::Creature } {
+        c.nfx = 0
+        rules::recompute{ tables, c = &c }
+    }
+
+    // ---- the defender's mitigation (6.4)
+
+    fn cb_test_mitigation { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut a: rules::Creature
+        cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 8 }
+        let mut d: rules::Creature
+        cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let raw = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }.weapon_raw
+        // immunity: a share of the damage, at least 1
+        cb_effect{ tables, c = &d, e = rules::fx::make_damage_immunity_increase{ types = rules::dmg::BLASTER, percent = 50 } }
+        let im = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }
+        cb_eq{ &io, &r, name = "immunity: unmitigated damage", got = im.weapon_raw, want = raw }
+        cb_eq{ &io, &r, name = "immunity: absorbed", got = im.absorbed_immunity, want = raw * 50 / 100 }
+        cb_eq{ &io, &r, name = "immunity: what is left", got = im.weapon_damage, want = raw - raw * 50 / 100 }
+        cb_eq{ &io, &r, name = "immunity: the total", got = im.total, want = raw - raw * 50 / 100 }
+        // resistance after immunity
+        cb_effect{ tables, c = &d, e = rules::fx::make_damage_resistance{ types = rules::dmg::BLASTER, amount = 3, limit = 0 } }
+        let left = raw - raw * 50 / 100 - 3
+        cb_eq{ &io, &r, name = "resistance: after immunity", got = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }.weapon_damage, want = if left < 0 { 0 } else { left } }
+        // a limited resistance counts down by the whole damage when rolled for real and is left alone
+        // by a preview; one that the damage exceeds absorbs what is left of its limit and goes
+        let mut lim: rules::Creature
+        cb_fighter{ tables, c = &lim, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_effect{ tables, c = &lim, e = rules::fx::make_damage_resistance{ types = rules::dmg::BLASTER, amount = 3, limit = 100 } }
+        let sit = rules::make_situation{}
+        let pv = cb_dmg{ tables, atk = &a, def = &lim, sit = &sit, seed = 777, idx = 0, feat = 0, critical = false, sneak = false, simulate = true }
+        cb_eq{ &io, &r, name = "resistance: preview damage", got = pv.weapon_damage, want = raw - 3 }
+        cb_eq{ &io, &r, name = "resistance: preview leaves the limit", got = lim.fx[0].ints[2], want = 100 }
+        _ = cb_dmg{ tables, atk = &a, def = &lim, sit = &sit, seed = 777, idx = 0, feat = 0, critical = false, sneak = false, simulate = false }
+        cb_eq{ &io, &r, name = "resistance: a real roll spends the damage", got = lim.fx[0].ints[2], want = 100 - raw }
+        let mut sm: rules::Creature
+        cb_fighter{ tables, c = &sm, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_effect{ tables, c = &sm, e = rules::fx::make_damage_resistance{ types = rules::dmg::BLASTER, amount = 30, limit = 4 } }
+        cb_eq{ &io, &r, name = "resistance: a spent one absorbs its limit", got = cb_dmg{ tables, atk = &a, def = &sm, sit = &sit, seed = 777, idx = 0, feat = 0, critical = false, sneak = false, simulate = false }.weapon_damage, want = raw - 4 }
+        cb_eq{ &io, &r, name = "resistance: ... and goes", got = sm.nfx, want = 0 }
+        // reduction: absorbs what its power exceeds; the weapon's enhancement is the power
+        let mut red: rules::Creature
+        cb_fighter{ tables, c = &red, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_effect{ tables, c = &red, e = rules::fx::make_damage_reduction{ amount = 5, power = 2, limit = 0 } }
+        let rd = cb_hit{ tables, atk = &a, def = &red, seed = 777, critical = false }
+        cb_eq{ &io, &r, name = "reduction: power 0 against 2", got = rd.weapon_damage, want = if raw - 5 < 0 { 0 } else { raw - 5 } }
+        cb_eq{ &io, &r, name = "reduction: unarmoured power", got = rd.power, want = 0 }
+        cb_prop{ tables, c = &a, mask = rules::slot::RIGHT, name = 5, subtype = 0, cost = 1, param1_value = 0 }
+        cb_eq{ &io, &r, name = "reduction: power 1 against 2", got = cb_hit{ tables, atk = &a, def = &red, seed = 777, critical = false }.weapon_damage, want = if raw - 5 < 0 { 0 } else { raw - 5 } }
+        cb_prop{ tables, c = &a, mask = rules::slot::RIGHT, name = 5, subtype = 0, cost = 3, param1_value = 0 }
+        let rp = cb_hit{ tables, atk = &a, def = &red, seed = 777, critical = false }
+        cb_eq{ &io, &r, name = "reduction: the best enhancement is the power", got = rp.power, want = 3 }
+        cb_eq{ &io, &r, name = "reduction: power 3 passes a +2 reduction", got = rp.weapon_damage, want = raw }
+        // doors and placeables have no mitigation here
+        cb_check_door{ &io, &r, tables, a = &a }
+    }
+
+    fn cb_check_door { mut io: Io, mut r: Report, tables: *rules::Tables, a: *rules::Creature } {
+        let mut d: rules::Creature
+        cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_effect{ tables, c = &d, e = rules::fx::make_damage_immunity_increase{ types = rules::dmg::BLASTER, percent = 100 } }
+        let mut door = rules::make_situation{}
+        door.target_object = true
+        let x = cb_dmg{ tables, atk = a, def = &d, sit = &door, seed = 777, idx = 0, feat = 0, critical = false, sneak = false, simulate = false }
+        cb_eq{ &io, &r, name = "door: no mitigation", got = x.weapon_damage, want = x.weapon_raw }
+    }
+
+    // ---- effect damage bonuses (rules.md 1.7)
+
+    fn cb_damage_effect { amount: i32, types: i32, hand: i32, spell: i32, decrease: bool } -> rules::Effect {
+        let mut e = if decrease { rules::fx::make_damage_decrease{ amount, types } } else { rules::fx::make_damage_increase{ amount, types } }
+        e.ints[5] = hand
+        e.spell_id = spell
+        return e
+    }
+
+    fn cb_test_effect_damage { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut d: rules::Creature
+        cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let mut a: rules::Creature
+        cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 8 }
+        let w = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }.weapon_damage
+        let wc = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = true }.weapon_damage
+        // a flat bonus made for the on-hand weapon, in the weapon's damage type
+        cb_effect{ tables, c = &a, e = cb_damage_effect{ amount = 3, types = rules::dmg::BLASTER, hand = 1, spell = -1, decrease = false } }
+        let x = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }
+        cb_eq{ &io, &r, name = "effect damage: flat", got = x.effect_plus, want = 3 }
+        cb_eq{ &io, &r, name = "effect damage: total", got = x.total, want = w + 3 }
+        cb_eq{ &io, &r, name = "effect damage: in the blaster slot", got = x.slots[12], want = w + 3 }
+        cb_eq{ &io, &r, name = "effect damage: doubled on a critical", got = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = true }.effect_plus, want = 6 }
+        // made for the off-hand it does not apply to an on-hand attack
+        cb_clear_effects{ tables, c = &a }
+        cb_effect{ tables, c = &a, e = cb_damage_effect{ amount = 3, types = rules::dmg::BLASTER, hand = 2, spell = -1, decrease = false } }
+        cb_eq{ &io, &r, name = "effect damage: other hand", got = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }.effect_plus, want = 0 }
+        // another damage type goes to its own slot
+        cb_clear_effects{ tables, c = &a }
+        cb_effect{ tables, c = &a, e = cb_damage_effect{ amount = 3, types = rules::dmg::FIRE, hand = 0, spell = -1, decrease = false } }
+        let fx1 = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }
+        cb_eq{ &io, &r, name = "effect damage: fire slot", got = fx1.slots[8], want = 3 }
+        cb_eq{ &io, &r, name = "effect damage: weapon slot untouched", got = fx1.slots[12], want = w }
+        let dfx = rules::make_damage_effects{ roll = &fx1, creator = CB_ATTACKER }
+        cb_eq{ &io, &r, name = "damage effects: one per type", got = dfx.len, want = 2 }
+        cb_eq{ &io, &r, name = "damage effects: fire first", got = dfx.items[0].ints[1], want = rules::dmg::FIRE }
+        cb_eq{ &io, &r, name = "damage effects: fire amount", got = dfx.items[0].ints[0], want = 3 }
+        cb_eq{ &io, &r, name = "damage effects: blaster", got = dfx.items[1].ints[1], want = rules::dmg::BLASTER }
+        cb_eq{ &io, &r, name = "damage effects: they add up to the roll", got = dfx.items[0].ints[0] + dfx.items[1].ints[0], want = fx1.total }
+        cb_eq{ &io, &r, name = "damage effects: marked as combat damage", got = dfx.items[1].ints[3], want = 1 }
+        cb_eq{ &io, &r, name = "damage effects: kind", got = dfx.items[1].kind, want = rules::fx::DAMAGE }
+        // a die: iprp_damagecost row 7 is 1d6, rolled after the weapon dice
+        cb_clear_effects{ tables, c = &a }
+        cb_effect{ tables, c = &a, e = cb_damage_effect{ amount = 7, types = rules::dmg::BLASTER, hand = 1, spell = -1, decrease = false } }
+        let dx = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }
+        cb_eq{ &io, &r, name = "effect damage: 1d6 draw", got = dx.effect_plus, want = cb_expected_dice{ seed = 777, skip = 2, n = 1, sides = 6 } }
+        let dc = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = true }
+        cb_eq{ &io, &r, name = "effect damage: 2d6 over a critical", got = dc.effect_plus, want = cb_expected_dice{ seed = 777, skip = 4, n = 2, sides = 6 } }
+        cb_eq{ &io, &r, name = "effect damage: critical total", got = dc.total, want = wc + dc.effect_plus }
+        // spell effects of one spell for the same types: the better counts
+        cb_clear_effects{ tables, c = &a }
+        cb_effect{ tables, c = &a, e = cb_damage_effect{ amount = 3, types = rules::dmg::BLASTER, hand = 0, spell = 5, decrease = false } }
+        cb_effect{ tables, c = &a, e = cb_damage_effect{ amount = 5, types = rules::dmg::BLASTER, hand = 0, spell = 5, decrease = false } }
+        cb_eq{ &io, &r, name = "effect damage: one spell, the better row", got = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }.effect_plus, want = 5 }
+        cb_clear_effects{ tables, c = &a }
+        cb_effect{ tables, c = &a, e = cb_damage_effect{ amount = 3, types = rules::dmg::BLASTER, hand = 0, spell = 5, decrease = false } }
+        cb_effect{ tables, c = &a, e = cb_damage_effect{ amount = 5, types = rules::dmg::BLASTER, hand = 0, spell = 6, decrease = false } }
+        cb_eq{ &io, &r, name = "effect damage: two spells add", got = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }.effect_plus, want = 8 }
+        cb_clear_effects{ tables, c = &a }
+        cb_effect{ tables, c = &a, e = cb_damage_effect{ amount = 3, types = rules::dmg::BLASTER, hand = 0, spell = -1, decrease = false } }
+        cb_effect{ tables, c = &a, e = cb_damage_effect{ amount = 5, types = rules::dmg::BLASTER, hand = 0, spell = -1, decrease = false } }
+        cb_eq{ &io, &r, name = "effect damage: no spell, no grouping", got = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }.effect_plus, want = 8 }
+        // decreases
+        cb_clear_effects{ tables, c = &a }
+        cb_effect{ tables, c = &a, e = cb_damage_effect{ amount = 2, types = rules::dmg::BLASTER, hand = 0, spell = -1, decrease = true } }
+        let dd = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }
+        cb_eq{ &io, &r, name = "effect damage: decrease", got = dd.effect_minus, want = 2 }
+        cb_eq{ &io, &r, name = "effect damage: decrease total", got = dd.total, want = w - 2 }
+        cb_clear_effects{ tables, c = &a }
+        cb_effect{ tables, c = &a, e = cb_damage_effect{ amount = 4, types = rules::dmg::BLASTER, hand = 1, spell = -1, decrease = true } }
+        cb_eq{ &io, &r, name = "effect damage: hand decrease", got = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }.effect_minus, want = 4 }
+        // the caps: twelve bonuses of 5 make 36
+        cb_clear_effects{ tables, c = &a }
+        let mut k = 0
+        while k < 12 {
+            cb_effect{ tables, c = &a, e = cb_damage_effect{ amount = 5, types = rules::dmg::BLASTER, hand = 0, spell = -1, decrease = false } }
+            k = k + 1
+        }
+        let cap = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }
+        cb_eq{ &io, &r, name = "effect damage: cap", got = cap.effect_plus, want = 36 }
+        cb_eq{ &io, &r, name = "effect damage: cap total", got = cap.total, want = w + 36 }
+        // a bonus versus a race
+        cb_clear_effects{ tables, c = &a }
+        let mut vs = cb_damage_effect{ amount = 3, types = rules::dmg::BLASTER, hand = 0, spell = -1, decrease = false }
+        vs.ints[2] = rules::race::DROID
+        cb_effect{ tables, c = &a, e = vs }
+        cb_eq{ &io, &r, name = "effect damage: versus droids, human target", got = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }.effect_plus, want = 0 }
+        d.race = rules::race::DROID
+        cb_eq{ &io, &r, name = "effect damage: versus droids, droid target", got = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }.effect_plus, want = 3 }
+    }
+
+    // ---- difficulty scaling (6.1)
+
+    fn cb_test_difficulty { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        // ApplyDifficultyToDamageRoll, with the draw taken from a copy of the generator
+        let mut probe = rules::seed_rng{ seed = 99 }
+        let draw = rules::next_rand{ rng = &probe }
+        let mut g = rules::seed_rng{ seed = 99 }
+        let p1 = rules::apply_difficulty_to_damage_roll{ rng = &g, roll = 5, max = 16, pc_attacker = true, npc_vs_pc = false, percent = 50 }
+        let v1 = ((draw % 50 + 50) * 16) / 100 + 5
+        cb_eq{ &io, &r, name = "difficulty: PC attacker, 50 percent", got = p1, want = if v1 < 16 { v1 } else { 16 } }
+        let mut g2 = rules::seed_rng{ seed = 99 }
+        cb_eq{ &io, &r, name = "difficulty: PC attacker, 100 percent is the maximum", got = rules::apply_difficulty_to_damage_roll{ rng = &g2, roll = 5, max = 16, pc_attacker = true, npc_vs_pc = false, percent = 100 }, want = 16 }
+        cb_eq{ &io, &r, name = "difficulty: ... without a draw", got = cb_flag{ b = g2.state == 99 }, want = 1 }
+        cb_eq{ &io, &r, name = "difficulty: PC attacker, 0 percent", got = rules::apply_difficulty_to_damage_roll{ rng = &g2, roll = 5, max = 16, pc_attacker = true, npc_vs_pc = false, percent = 0 }, want = 5 }
+        cb_eq{ &io, &r, name = "difficulty: NPC against PC, 50 percent", got = rules::apply_difficulty_to_damage_roll{ rng = &g2, roll = 9, max = 16, pc_attacker = false, npc_vs_pc = true, percent = 50 }, want = 1 }
+        cb_eq{ &io, &r, name = "difficulty: NPC against PC, a high roll", got = rules::apply_difficulty_to_damage_roll{ rng = &g2, roll = 16, max = 16, pc_attacker = false, npc_vs_pc = true, percent = 50 }, want = 8 }
+        cb_eq{ &io, &r, name = "difficulty: NPC against PC, never below 1", got = rules::apply_difficulty_to_damage_roll{ rng = &g2, roll = 3, max = 16, pc_attacker = false, npc_vs_pc = true, percent = 50 }, want = 1 }
+        cb_eq{ &io, &r, name = "difficulty: NPC against PC, 100 percent", got = rules::apply_difficulty_to_damage_roll{ rng = &g2, roll = 7, max = 16, pc_attacker = false, npc_vs_pc = true, percent = 100 }, want = 7 }
+        let mut g3 = rules::seed_rng{ seed = 99 }
+        cb_eq{ &io, &r, name = "difficulty: NPC against PC, 150 percent", got = rules::apply_difficulty_to_damage_roll{ rng = &g3, roll = 7, max = 16, pc_attacker = false, npc_vs_pc = true, percent = 150 }, want = (draw % 50) * 16 / 100 + 7 }
+
+        // the shipped diffsettings columns by difficulty
+        let mut t2 = tables.*
+        t2.settings.difficulty = 0
+        cb_eq{ &io, &r, name = "diffsettings: easy MinPCDamagePercent", got = rules::combat_get_difficulty_setting{ tables = &t2, row = 3 }, want = 50 }
+        cb_eq{ &io, &r, name = "diffsettings: easy MaxNPCDamagePercent", got = rules::combat_get_difficulty_setting{ tables = &t2, row = 4 }, want = 50 }
+        t2.settings.difficulty = 1
+        cb_eq{ &io, &r, name = "diffsettings: normal MinPCDamagePercent", got = rules::combat_get_difficulty_setting{ tables = &t2, row = 3 }, want = 0 }
+        cb_eq{ &io, &r, name = "diffsettings: normal MaxNPCDamagePercent", got = rules::combat_get_difficulty_setting{ tables = &t2, row = 4 }, want = 100 }
+        t2.settings.difficulty = 2
+        cb_eq{ &io, &r, name = "diffsettings: difficult MaxNPCDamagePercent", got = rules::combat_get_difficulty_setting{ tables = &t2, row = 4 }, want = 100 }
+
+        // through the damage roll: a PC attacker on easy, an NPC attacking the PC on easy
+        let mut a: rules::Creature
+        cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 8 }
+        let mut d: rules::Creature
+        cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let plain = cb_hit{ tables = &t2, atk = &a, def = &d, seed = 321, critical = false }
+        cb_eq{ &io, &r, name = "difficulty: nobody is the PC", got = plain.pc_percent, want = 100 }
+        let raw = cb_expected_dice{ seed = 321, skip = 0, n = 2, sides = 8 }
+        cb_eq{ &io, &r, name = "difficulty: nobody is the PC, dice", got = plain.dice, want = raw }
+        a.is_pc = true
+        t2.settings.difficulty = 0
+        let easy = cb_hit{ tables = &t2, atk = &a, def = &d, seed = 321, critical = false }
+        cb_eq{ &io, &r, name = "difficulty: PC on easy, percent", got = easy.pc_percent, want = 50 }
+        let mut p = rules::seed_rng{ seed = 321 }
+        _ = rules::roll_dice{ rng = &p, count = 2, sides = 8 }
+        let dr = rules::next_rand{ rng = &p }
+        let ve = ((dr % 50 + 50) * 16) / 100 + raw
+        cb_eq{ &io, &r, name = "difficulty: PC on easy, dice", got = easy.dice, want = if ve < 16 { ve } else { 16 } }
+        t2.settings.difficulty = 1
+        cb_eq{ &io, &r, name = "difficulty: PC on normal", got = cb_hit{ tables = &t2, atk = &a, def = &d, seed = 321, critical = false }.dice, want = raw }
+        a.is_pc = false
+        d.is_pc = true
+        t2.settings.difficulty = 0
+        let ne = cb_hit{ tables = &t2, atk = &a, def = &d, seed = 321, critical = false }
+        cb_eq{ &io, &r, name = "difficulty: NPC against the PC on easy", got = ne.dice, want = if raw - 8 < 1 { 1 } else { raw - 8 } }
+        t2.settings.difficulty = 1
+        cb_eq{ &io, &r, name = "difficulty: NPC against the PC on normal", got = cb_hit{ tables = &t2, atk = &a, def = &d, seed = 321, critical = false }.dice, want = raw }
+    }
+
+    // ---- resolve_attack: the combat feats' effects, the stun, on-hit properties, coup de grace
+
+    fn cb_resolve { tables: *rules::Tables, atk: *rules::Creature, mut def: rules::Creature, sit: *rules::AttackSituation, seed: u32, idx: i32, feat: i32 } -> rules::AttackResolution {
+        let mut g = rules::seed_rng{ seed }
+        let mut ev: rules::Events
+        return rules::resolve_attack{ tables, rng = &g, atk, def = &def, ev = &ev, sit, attack_index = idx, combat_feat = feat, simulate = false }
+    }
+
+    fn cb_flag { b: bool } -> i32 {
+        return if b { 1 } else { 0 }
+    }
+
+    // The first effect of a kind a resolved attack makes (a blank invalid effect when none).
+    fn cb_resolved_effect { tables: *rules::Tables, atk: *rules::Creature, mut def: rules::Creature, sit: *rules::AttackSituation, seed: u32, idx: i32, feat: i32, kind: i32, to_attacker: bool } -> rules::Effect {
+        let res = cb_resolve{ tables, atk, def = &def, sit, seed, idx, feat }
+        return cb_find_effect{ fxs = &res.effects, kind, to_attacker }
+    }
+
+    fn cb_resolved_count { tables: *rules::Tables, atk: *rules::Creature, mut def: rules::Creature, sit: *rules::AttackSituation, seed: u32, idx: i32, feat: i32, kind: i32, to_attacker: bool } -> i32 {
+        let res = cb_resolve{ tables, atk, def = &def, sit, seed, idx, feat }
+        return cb_effects_of{ fxs = &res.effects, kind, to_attacker }
+    }
+
+    fn cb_test_resolve { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut sit = rules::make_situation{}
+        sit.attacker_id = CB_ATTACKER
+        // the defender cannot pass a save: -20 to all of them
+        let mut d: rules::Creature
+        cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_effect{ tables, c = &d, e = rules::fx::make_save_decrease{ amount = 20, which = rules::save::ALL, save_type = 0 } }
+        let mut a: rules::Creature
+        cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 8 }
+        cb_feat{ c = &a, feat = rules::feat::CRITICAL_STRIKE }
+        cb_feat{ c = &a, feat = rules::feat::FLURRY }
+        cb_feat{ c = &a, feat = rules::feat::IMPROVED_FLURRY }
+        cb_feat{ c = &a, feat = rules::feat::WHIRLWIND_ATTACK }
+        cb_feat{ c = &a, feat = rules::feat::POWER_ATTACK }
+        let s_hit = cb_find_seed{ d1 = 15, lo2 = 1, hi2 = 20 }
+        let s_miss = cb_find_seed{ d1 = 1, lo2 = 1, hi2 = 20 }
+
+        // a plain hit makes no effects; a miss does no damage
+        let p0 = cb_resolve{ tables, atk = &a, def = &d, sit = &sit, seed = s_hit, idx = 0, feat = 0 }
+        expect_true{ &io, &r, name = "resolve: plain hit", cond = p0.hit and p0.damage.total > 0 }
+        cb_eq{ &io, &r, name = "resolve: plain hit, no effects", got = p0.effects.len, want = 0 }
+        let p1 = cb_resolve{ tables, atk = &a, def = &d, sit = &sit, seed = s_miss, idx = 0, feat = 0 }
+        expect_true{ &io, &r, name = "resolve: miss", cond = not p1.hit and p1.damage.total == 0 }
+
+        // Critical Strike: -5 dodge for 3 s on the attacker, then the stun after the Fortitude save
+        let cs = cb_resolve{ tables, atk = &a, def = &d, sit = &sit, seed = s_hit, idx = 0, feat = rules::feat::CRITICAL_STRIKE }
+        let pen = cb_find_effect{ fxs = &cs.effects, kind = rules::fx::AC_DECREASE, to_attacker = true }
+        cb_eq{ &io, &r, name = "Critical Strike: penalty", got = pen.ints[1], want = 5 }
+        cb_eq{ &io, &r, name = "Critical Strike: penalty is dodge", got = pen.ints[0], want = 0 }
+        cb_eq{ &io, &r, name = "Critical Strike: penalty lasts", got = @as(i32, pen.duration), want = 3 }
+        cb_eq{ &io, &r, name = "Critical Strike: penalty is temporary", got = pen.dur, want = rules::dur::TEMPORARY }
+        cb_eq{ &io, &r, name = "Critical Strike: penalty creator", got = cb_flag{ b = pen.creator == CB_ATTACKER }, want = 1 }
+        cb_eq{ &io, &r, name = "Critical Strike: penalty against everything", got = pen.ints[5], want = rules::fx::AC_ALL_A }
+        expect_true{ &io, &r, name = "Critical Strike: save rolled", cond = cs.stun_tried }
+        cb_eq{ &io, &r, name = "Critical Strike: DC = level + STR", got = cs.stun_save.dc, want = 4 }
+        cb_eq{ &io, &r, name = "Critical Strike: failed save", got = cs.stun_save.result, want = 0 }
+        let stun = cb_find_effect{ fxs = &cs.effects, kind = rules::fx::SETSTATE, to_attacker = false }
+        cb_eq{ &io, &r, name = "Critical Strike: stun state", got = stun.ints[0], want = rules::fx::STATE_STUNNED }
+        cb_eq{ &io, &r, name = "Critical Strike: stun lasts", got = @as(i32, stun.duration), want = 6 }
+        // only the first attack of the round carries it
+        let cs1 = cb_resolve{ tables, atk = &a, def = &d, sit = &sit, seed = s_hit, idx = 1, feat = rules::feat::CRITICAL_STRIKE }
+        cb_eq{ &io, &r, name = "Critical Strike: second attack has no effects", got = cs1.effects.len, want = 0 }
+        // a miss still costs the attacker its guard, but there is no stun
+        let cm = cb_resolve{ tables, atk = &a, def = &d, sit = &sit, seed = s_miss, idx = 0, feat = rules::feat::CRITICAL_STRIKE }
+        cb_eq{ &io, &r, name = "Critical Strike: miss, penalty", got = cb_effects_of{ fxs = &cm.effects, kind = rules::fx::AC_DECREASE, to_attacker = true }, want = 1 }
+        expect_true{ &io, &r, name = "Critical Strike: miss, no save", cond = not cm.stun_tried }
+        // a defender immune to stun
+        let mut im: rules::Creature
+        cb_fighter{ tables, c = &im, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_effect{ tables, c = &im, e = rules::fx::make_immunity{ immunity = rules::imm::STUN } }
+        let ci = cb_resolve{ tables, atk = &a, def = &im, sit = &sit, seed = s_hit, idx = 0, feat = rules::feat::CRITICAL_STRIKE }
+        expect_true{ &io, &r, name = "Critical Strike: immune defender is not asked to save", cond = not ci.stun_tried }
+        // the Flurry line costs 4, 2 and 1 and makes no stun
+        let fl = cb_resolve{ tables, atk = &a, def = &d, sit = &sit, seed = s_hit, idx = 0, feat = rules::feat::FLURRY }
+        cb_eq{ &io, &r, name = "Flurry: penalty", got = cb_find_effect{ fxs = &fl.effects, kind = rules::fx::AC_DECREASE, to_attacker = true }.ints[1], want = 4 }
+        cb_eq{ &io, &r, name = "Flurry: no stun", got = cb_effects_of{ fxs = &fl.effects, kind = rules::fx::SETSTATE, to_attacker = false }, want = 0 }
+        cb_eq{ &io, &r, name = "Improved Flurry: penalty", got = cb_resolved_effect{ tables, atk = &a, def = &d, sit = &sit, seed = s_hit, idx = 0, feat = rules::feat::IMPROVED_FLURRY, kind = rules::fx::AC_DECREASE, to_attacker = true }.ints[1], want = 2 }
+        cb_eq{ &io, &r, name = "Master Flurry: penalty", got = cb_resolved_effect{ tables, atk = &a, def = &d, sit = &sit, seed = s_hit, idx = 0, feat = rules::feat::WHIRLWIND_ATTACK, kind = rules::fx::AC_DECREASE, to_attacker = true }.ints[1], want = 1 }
+        cb_eq{ &io, &r, name = "Power Attack: no effects", got = cb_resolve{ tables, atk = &a, def = &d, sit = &sit, seed = s_hit, idx = 0, feat = rules::feat::POWER_ATTACK }.effects.len, want = 0 }
+
+        cb_check_resolve_ranged{ &io, &r, tables, d = &d }
+        cb_check_resolve_onhit{ &io, &r, tables, d = &d }
+        cb_check_resolve_misc{ &io, &r, tables, d = &d }
+    }
+
+    fn cb_check_resolve_ranged { mut io: Io, mut r: Report, tables: *rules::Tables, d: *rules::Creature } {
+        let mut sit = rules::make_situation{}
+        sit.attacker_id = CB_ATTACKER
+        let mut dd = d.*
+        let mut b: rules::Creature
+        cb_fighter{ tables, c = &b, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 14 }
+        b.abil[3] = 14
+        rules::recompute{ tables, c = &b }
+        cb_wield{ tables, c = &b, mask = rules::slot::RIGHT, base_item = 12 }
+        cb_feat{ c = &b, feat = rules::feat::SNIPER_SHOT }
+        cb_feat{ c = &b, feat = rules::feat::RAPID_SHOT }
+        cb_feat{ c = &b, feat = rules::feat::FLURRY }
+        let s_hit = cb_find_seed{ d1 = 15, lo2 = 1, hi2 = 20 }
+        let sn = cb_resolve{ tables, atk = &b, def = &dd, sit = &sit, seed = s_hit, idx = 0, feat = rules::feat::SNIPER_SHOT }
+        cb_eq{ &io, &r, name = "Sniper Shot: penalty", got = cb_find_effect{ fxs = &sn.effects, kind = rules::fx::AC_DECREASE, to_attacker = true }.ints[1], want = 5 }
+        cb_eq{ &io, &r, name = "Sniper Shot: DC = level + INT", got = sn.stun_save.dc, want = 3 }
+        expect_true{ &io, &r, name = "Sniper Shot: stunned", cond = sn.stun_tried and cb_effects_of{ fxs = &sn.effects, kind = rules::fx::SETSTATE, to_attacker = false } == 1 }
+        let rs = cb_resolve{ tables, atk = &b, def = &dd, sit = &sit, seed = s_hit, idx = 0, feat = rules::feat::RAPID_SHOT }
+        cb_eq{ &io, &r, name = "Rapid Shot: penalty", got = cb_find_effect{ fxs = &rs.effects, kind = rules::fx::AC_DECREASE, to_attacker = true }.ints[1], want = 4 }
+        cb_eq{ &io, &r, name = "a melee feat in a ranged attack does nothing", got = cb_resolve{ tables, atk = &b, def = &dd, sit = &sit, seed = s_hit, idx = 0, feat = rules::feat::FLURRY }.effects.len, want = 0 }
+    }
+
+    fn cb_check_resolve_onhit { mut io: Io, mut r: Report, tables: *rules::Tables, d: *rules::Creature } {
+        let mut sit = rules::make_situation{}
+        sit.attacker_id = CB_ATTACKER
+        let mut dd = d.*
+        let s_hit = cb_find_seed{ d1 = 15, lo2 = 1, hi2 = 20 }
+        let mut a: rules::Creature
+        cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 4 }
+        // OnHit (32), Stun (iprp_onhit row 1), duration row 6 (100 percent, 2 rounds), DC row 0 (10)
+        cb_prop{ tables, c = &a, mask = rules::slot::RIGHT, name = 32, subtype = 1, cost = 0, param1_value = 6 }
+        let st = cb_resolve{ tables, atk = &a, def = &dd, sit = &sit, seed = s_hit, idx = 0, feat = 0 }
+        let e = cb_find_effect{ fxs = &st.effects, kind = rules::fx::SETSTATE, to_attacker = false }
+        cb_eq{ &io, &r, name = "on-hit stun: state", got = e.ints[0], want = rules::fx::STATE_STUNNED }
+        cb_eq{ &io, &r, name = "on-hit stun: two rounds", got = @as(i32, e.duration), want = 12 }
+        cb_eq{ &io, &r, name = "on-hit stun: creator", got = cb_flag{ b = e.creator == CB_ATTACKER }, want = 1 }
+        // a defender that can pass the save is untouched (DC 10 against +30)
+        let mut strong: rules::Creature
+        cb_fighter{ tables, c = &strong, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_effect{ tables, c = &strong, e = rules::fx::make_save_increase{ amount = 20, which = rules::save::ALL, save_type = 0 } }
+        cb_eq{ &io, &r, name = "on-hit stun: passed save", got = cb_resolved_count{ tables, atk = &a, def = &strong, sit = &sit, seed = s_hit, idx = 0, feat = 0, kind = rules::fx::SETSTATE, to_attacker = false }, want = 0 }
+        // poison, ability drain, instant death
+        let mut p: rules::Creature
+        cb_fighter{ tables, c = &p, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &p, mask = rules::slot::RIGHT, base_item = 4 }
+        cb_prop{ tables, c = &p, mask = rules::slot::RIGHT, name = 32, subtype = 7, cost = 0, param1_value = 3 }
+        let pe = cb_resolved_effect{ tables, atk = &p, def = &dd, sit = &sit, seed = s_hit, idx = 0, feat = 0, kind = rules::fx::POISON, to_attacker = false }
+        cb_eq{ &io, &r, name = "on-hit poison: row", got = pe.ints[0], want = 3 }
+        let mut dr: rules::Creature
+        cb_fighter{ tables, c = &dr, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &dr, mask = rules::slot::RIGHT, base_item = 4 }
+        cb_prop{ tables, c = &dr, mask = rules::slot::RIGHT, name = 32, subtype = 6, cost = 0, param1_value = 2 }
+        let de = cb_resolved_effect{ tables, atk = &dr, def = &dd, sit = &sit, seed = s_hit, idx = 0, feat = 0, kind = rules::fx::ABILITY_DECREASE, to_attacker = false }
+        cb_eq{ &io, &r, name = "on-hit drain: ability", got = de.ints[0], want = 2 }
+        cb_eq{ &io, &r, name = "on-hit drain: one point", got = de.ints[1], want = 1 }
+        cb_eq{ &io, &r, name = "on-hit drain: 30 s", got = @as(i32, de.duration), want = 30 }
+        let mut dk: rules::Creature
+        cb_fighter{ tables, c = &dk, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &dk, mask = rules::slot::RIGHT, base_item = 4 }
+        cb_prop{ tables, c = &dk, mask = rules::slot::RIGHT, name = 32, subtype = 10, cost = 0, param1_value = 0 }
+        cb_eq{ &io, &r, name = "on-hit instant death", got = cb_resolved_count{ tables, atk = &dk, def = &dd, sit = &sit, seed = s_hit, idx = 0, feat = 0, kind = rules::fx::DEATH, to_attacker = false }, want = 1 }
+        // the chance: 25 percent for duration row 0; counted over many fights
+        let mut ch: rules::Creature
+        cb_fighter{ tables, c = &ch, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &ch, mask = rules::slot::RIGHT, base_item = 4 }
+        cb_prop{ tables, c = &ch, mask = rules::slot::RIGHT, name = 32, subtype = 1, cost = 0, param1_value = 0 }
+        let mut master = rules::seed_rng{ seed = 4242 }
+        let mut hits = 0
+        let mut stuns = 0
+        let mut i = 0
+        while i < 6000 {
+            let res = cb_resolve{ tables, atk = &ch, def = &dd, sit = &sit, seed = cb_next_seed{ master = &master }, idx = 0, feat = 0 }
+            if res.hit {
+                hits = hits + 1
+                if cb_effects_of{ fxs = &res.effects, kind = rules::fx::SETSTATE, to_attacker = false } > 0 { stuns = stuns + 1 }
+            }
+            i = i + 1
+        }
+        _ = @fmt(&io, "combat: on-hit stun at 25 percent: {} of {} hits\n", stuns, hits)
+        expect_true{ &io, &r, name = "on-hit: 25 percent chance", cond = hits > 3000 and stuns * 100 > hits * 21 and stuns * 100 < hits * 29 }
+    }
+
+    fn cb_check_resolve_misc { mut io: Io, mut r: Report, tables: *rules::Tables, d: *rules::Creature } {
+        let mut sit = rules::make_situation{}
+        sit.attacker_id = CB_ATTACKER
+        let mut dd = d.*
+        let mut a: rules::Creature
+        cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 8 }
+        let s_any = cb_find_seed{ d1 = 15, lo2 = 1, hi2 = 20 }
+        let s_nat = cb_find_seed{ d1 = 20, lo2 = 1, hi2 = 20 }
+        // coup de grace: a sleeping level 1 creature is killed by an automatic hit
+        let mut sl: rules::Creature
+        cb_fighter{ tables, c = &sl, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        sl.stats.state = rules::fx::STATE_SLEEP
+        let cg = cb_resolve{ tables, atk = &a, def = &sl, sit = &sit, seed = s_any, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "coup de grace: result", got = cg.roll.result, want = rules::outcome::AUTOMATIC_HIT }
+        let death = cb_find_effect{ fxs = &cg.effects, kind = rules::fx::DEATH, to_attacker = false }
+        cb_eq{ &io, &r, name = "coup de grace: death effect", got = death.kind, want = rules::fx::DEATH }
+        cb_eq{ &io, &r, name = "coup de grace: creator", got = cb_flag{ b = death.creator == CB_ATTACKER }, want = 1 }
+        // killing blow
+        sit.defender_hp = 1
+        expect_true{ &io, &r, name = "killing blow", cond = cb_resolve{ tables, atk = &a, def = &dd, sit = &sit, seed = s_any, idx = 0, feat = 0 }.killing_blow }
+        sit.defender_hp = 1000
+        expect_true{ &io, &r, name = "no killing blow", cond = not cb_resolve{ tables, atk = &a, def = &dd, sit = &sit, seed = s_any, idx = 0, feat = 0 }.killing_blow }
+        // a cutscene attack
+        let mut f = rules::make_situation{}
+        f.forced = true
+        f.forced_result = rules::outcome::HIT
+        f.forced_damage = 7
+        let fr = cb_resolve{ tables, atk = &a, def = &dd, sit = &f, seed = s_any, idx = 0, feat = rules::feat::CRITICAL_STRIKE }
+        expect_true{ &io, &r, name = "forced: hit", cond = fr.hit and fr.roll.forced }
+        cb_eq{ &io, &r, name = "forced: damage", got = fr.damage.total, want = 7 }
+        cb_eq{ &io, &r, name = "forced: no combat feat effects", got = fr.effects.len, want = 0 }
+        // a door
+        let mut door = rules::make_situation{}
+        door.target_object = true
+        let dr = cb_resolve{ tables, atk = &a, def = &dd, sit = &door, seed = s_any, idx = 0, feat = 0 }
+        expect_true{ &io, &r, name = "door: hit", cond = dr.hit and dr.roll.defense.total == 0 and dr.damage.total > 0 }
+        // two weapons: the second attack is the off-hand one
+        cb_wield{ tables, c = &a, mask = rules::slot::LEFT, base_item = 10 }
+        let oh = cb_resolve{ tables, atk = &a, def = &dd, sit = &sit, seed = s_nat, idx = 1, feat = 0 }
+        expect_true{ &io, &r, name = "dual: off-hand resolution", cond = oh.roll.off_hand and oh.damage.off_hand and oh.roll.weapon_type == 2 }
+        // the same seed is the same fight; different seeds are not
+        let mut seed: u32 = 1
+        let mut same = 0
+        let mut distinct = 0
+        let mut last = -1
+        while seed <= 40 {
+            let x1 = cb_resolve{ tables, atk = &a, def = &dd, sit = &sit, seed, idx = 0, feat = 0 }
+            let x2 = cb_resolve{ tables, atk = &a, def = &dd, sit = &sit, seed, idx = 0, feat = 0 }
+            if x1.roll.d20 == x2.roll.d20 and x1.roll.result == x2.roll.result and x1.damage.total == x2.damage.total and
+                x1.effects.len == x2.effects.len and x1.roll.confirm_d20 == x2.roll.confirm_d20 {
+                same = same + 1
+            }
+            if x1.damage.total != last { distinct = distinct + 1 }
+            last = x1.damage.total
+            seed = seed + 1
+        }
+        cb_eq{ &io, &r, name = "determinism: same seed, same fight", got = same, want = 40 }
+        expect_true{ &io, &r, name = "determinism: different seeds differ", cond = distinct > 10 }
+    }
+
+    // ---- statistics over many seeds
+
+    fn cb_between { mut io: Io, mut r: Report, name: []u8, got: i32, lo: i32, hi: i32 } {
+        if got >= lo and got <= hi {
+            r.passed = r.passed + 1
+            return
+        }
+        r.failed = r.failed + 1
+        _ = @fmt(&io, "FAIL {}: got {}, expected {}..{}\n", name, got, lo, hi)
+    }
+
+    fn cb_test_stats { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut a: rules::Creature
+        cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
+        cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 8 }
+        let mut d: rules::Creature
+        cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let mut tough: rules::Creature
+        cb_fighter{ tables, c = &tough, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        tough.natural_ac = 30
+        rules::recompute{ tables, c = &tough }
+        let sit = rules::make_situation{}
+        let mut door = rules::make_situation{}
+        door.target_object = true
+        // the attacker needs 6 on the die against defense 10 (modifier +4): 15 of 20 hit, 19 and 20
+        // threaten (a tenth) and a second 6+ confirms: 7.5 percent critical; a natural 1 is 5 percent
+        let mut master = rules::seed_rng{ seed = 20260310 }
+        let n = 40000
+        let mut hits = 0
+        let mut crits = 0
+        let mut threats = 0
+        let mut ones = 0
+        let mut hits_tough = 0
+        let mut hits_door = 0
+        let mut i = 0
+        while i < n {
+            let seed = cb_next_seed{ master = &master }
+            let x = cb_attack{ tables, atk = &a, def = &d, sit = &sit, seed, idx = 0, feat = 0 }
+            if rules::is_hit_result{ result = x.result } { hits = hits + 1 }
+            if x.result == rules::outcome::CRITICAL { crits = crits + 1 }
+            if x.threat { threats = threats + 1 }
+            if x.natural_1 { ones = ones + 1 }
+            if rules::is_hit_result{ result = cb_attack{ tables, atk = &a, def = &tough, sit = &sit, seed, idx = 0, feat = 0 }.result } { hits_tough = hits_tough + 1 }
+            if rules::is_hit_result{ result = cb_attack{ tables, atk = &a, def = &d, sit = &door, seed, idx = 0, feat = 0 }.result } { hits_door = hits_door + 1 }
+            i = i + 1
+        }
+        _ = @fmt(&io, "combat: {} fights: hits {} crits {} threats {} natural 1s {} (per 1000); defense 40: {}; door: {}\n",
+            n, hits * 1000 / n, crits * 1000 / n, threats * 1000 / n, ones * 1000 / n, hits_tough * 1000 / n, hits_door * 1000 / n)
+        cb_between{ &io, &r, name = "stats: hit rate needing 6", got = hits * 1000 / n, lo = 738, hi = 762 }
+        cb_between{ &io, &r, name = "stats: critical rate", got = crits * 1000 / n, lo = 67, hi = 83 }
+        cb_between{ &io, &r, name = "stats: threat rate", got = threats * 1000 / n, lo = 92, hi = 108 }
+        cb_between{ &io, &r, name = "stats: natural 1 rate", got = ones * 1000 / n, lo = 42, hi = 58 }
+        cb_between{ &io, &r, name = "stats: only a natural 20 hits defense 40", got = hits_tough * 1000 / n, lo = 42, hi = 58 }
+        cb_between{ &io, &r, name = "stats: a door is missed only by a natural 1", got = hits_door * 1000 / n, lo = 942, hi = 958 }
+
+        // damage: the mean of 2d8 is 9, of a critical's 4d8 is 18
+        let mut a2: rules::Creature
+        cb_fighter{ tables, c = &a2, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &a2, mask = rules::slot::RIGHT, base_item = 8 }
+        let mut g = rules::seed_rng{ seed = 555 }
+        let mut ev: rules::Events
+        let mut sum = 0
+        let mut sum_crit = 0
+        let mut k = 0
+        while k < 40000 {
+            sum = sum + rules::roll_damage{ tables, rng = &g, atk = &a2, def = &d, ev = &ev, sit = &sit, attack_index = 0, combat_feat = 0, critical = false, sneak = false, simulate = true }.total
+            if k < 20000 {
+                sum_crit = sum_crit + rules::roll_damage{ tables, rng = &g, atk = &a2, def = &d, ev = &ev, sit = &sit, attack_index = 0, combat_feat = 0, critical = true, sneak = false, simulate = true }.total
+            }
+            k = k + 1
+        }
+        _ = @fmt(&io, "combat: mean of 2d8 x100 {}, of a critical's 4d8 x100 {}\n", sum / 400, sum_crit / 200)
+        cb_between{ &io, &r, name = "stats: mean of 2d8 x100", got = sum / 400, lo = 890, hi = 910 }
+        cb_between{ &io, &r, name = "stats: mean of 4d8 x100", got = sum_crit / 200, lo = 1780, hi = 1820 }
+
+        // unarmed small creatures: 1d2
+        let mut u: rules::Creature
+        cb_fighter{ tables, c = &u, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        u.stats.size = 2
+        let mut su = 0
+        k = 0
+        while k < 20000 {
+            su = su + rules::roll_damage{ tables, rng = &g, atk = &u, def = &d, ev = &ev, sit = &sit, attack_index = 0, combat_feat = 0, critical = false, sneak = false, simulate = true }.total
+            k = k + 1
+        }
+        cb_between{ &io, &r, name = "stats: mean of an unarmed 1d2 x100", got = su / 200, lo = 148, hi = 152 }
+
+        // difficulty: the PC on easy hits for 8..16 more (capped), an NPC against the PC loses 8 (at least 1 is left)
+        let mut t2 = tables.*
+        t2.settings.difficulty = 0
+        a2.is_pc = true
+        let mut se = 0
+        k = 0
+        while k < 20000 {
+            se = se + rules::roll_damage{ tables = &t2, rng = &g, atk = &a2, def = &d, ev = &ev, sit = &sit, attack_index = 0, combat_feat = 0, critical = false, sneak = false, simulate = true }.total
+            k = k + 1
+        }
+        a2.is_pc = false
+        d.is_pc = true
+        let mut sn = 0
+        k = 0
+        while k < 20000 {
+            sn = sn + rules::roll_damage{ tables = &t2, rng = &g, atk = &a2, def = &d, ev = &ev, sit = &sit, attack_index = 0, combat_feat = 0, critical = false, sneak = false, simulate = true }.total
+            k = k + 1
+        }
+        _ = @fmt(&io, "combat: easy, PC attacking x100 {}, NPC attacking the PC x100 {}\n", se / 200, sn / 200)
+        cb_between{ &io, &r, name = "stats: the PC on easy", got = se / 200, lo = 1450, hi = 1600 }
+        cb_between{ &io, &r, name = "stats: an NPC against the PC on easy", got = sn / 200, lo = 225, hi = 237 }
+    }
+
+    // ---- every creature template in the install
+
+    struct CbCensus {
+        n: i32,
+        parse_failed: i32,
+        anomalies: i32,
+        printed: i32,
+        hits: i32,
+        mod_min: i32,
+        mod_max: i32,
+        def_min: i32,
+        def_max: i32,
+        dmg_min: i32,
+        dmg_max: i32,
+        dmg_sum: i64,
+        on_hand_max: i32,
+    }
+
+    fn cb_note { mut io: Io, mut st: CbCensus, name: resref::ResRef, what: []u8, value: i32 } {
+        st.anomalies = st.anomalies + 1
+        if st.printed < 20 {
+            st.printed = st.printed + 1
+            _ = @fmt(&io, "combat census: {} in {}: {}\n", what, name, value)
+        }
+    }
+
+    // One creature as an attacker against the dummy, and the dummy against it.
+    fn cb_census_one { mut io: Io, mut st: CbCensus, tables: *rules::Tables, c: *rules::Creature, mut dummy: rules::Creature, name: resref::ResRef, seed: u32 } {
+        let sit = rules::make_situation{}
+        let counts = rules::attack_counts{ tables, c, combat_feat = 0 }
+        if counts.on_hand < 1 or counts.on_hand > 3 or counts.off_hand != 0 or counts.total != counts.on_hand {
+            cb_note{ &io, &st, name, what = "attack counts", value = counts.total }
+        }
+        if counts.on_hand > st.on_hand_max { st.on_hand_max = counts.on_hand }
+        if counts.weapon_type[0] != 7 { cb_note{ &io, &st, name, what = "weapon type of a creature with no equipment", value = counts.weapon_type[0] } }
+        let m = rules::attack_modifier{ tables, atk = c, def = &dummy, sit = &sit, attack_index = 0, combat_feat = 0 }
+        if m.total < -30 or m.total > 70 or m.bab != c.stats.bab { cb_note{ &io, &st, name, what = "attack modifier", value = m.total } }
+        if m.total < st.mod_min { st.mod_min = m.total }
+        if m.total > st.mod_max { st.mod_max = m.total }
+        let d = rules::defense_versus{ tables, def = c, atk = &dummy, sit = &sit, attack_index = 0, combat_feat = 0, touch = false }
+        if d.total < 5 or d.total > 80 { cb_note{ &io, &st, name, what = "defense", value = d.total } }
+        if d.total < st.def_min { st.def_min = d.total }
+        if d.total > st.def_max { st.def_max = d.total }
+        let mut g = rules::seed_rng{ seed }
+        let mut ev: rules::Events
+        let res = rules::resolve_attack{ tables, rng = &g, atk = c, def = &dummy, ev = &ev, sit = &sit, attack_index = 0, combat_feat = 0, simulate = true }
+        let ok = res.roll.result >= 1 and res.roll.result <= 4
+        if not ok { cb_note{ &io, &st, name, what = "attack result", value = res.roll.result } }
+        if res.hit {
+            st.hits = st.hits + 1
+            let t = res.damage.total
+            if t < 1 or t > 60 { cb_note{ &io, &st, name, what = "unarmed damage", value = t } }
+            if t < st.dmg_min { st.dmg_min = t }
+            if t > st.dmg_max { st.dmg_max = t }
+            st.dmg_sum = st.dmg_sum + @as(i64, t)
+        } else if res.damage.total != 0 {
+            cb_note{ &io, &st, name, what = "damage on a miss", value = res.damage.total }
+        }
+        // and the other way round, against this creature's defense
+        let back = rules::roll_attack{ tables, rng = &g, atk = &dummy, def = c, sit = &sit, attack_index = 0, combat_feat = 0 }
+        if back.result < 1 or back.result > 4 or back.defense.total != d.total { cb_note{ &io, &st, name, what = "attack against it", value = back.result } }
+    }
+
+    fn cb_wants_utc { kind: u16 } -> bool {
+        return kind == @as(u16, restype::Type::utc)
+    }
+
+    fn cb_visit_utc { mut io: Io, mut st: CbCensus, tables: *rules::Tables, mut scratch: arena::Arena, mut dummy: rules::Creature, copy: corpus::Copy, data: []u8 } {
+        arena::reset{ heap = &scratch }
+        let doc = gff::parse{ data, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
+            st.parse_failed = st.parse_failed + 1
+            return
+        }
+        let mut c: rules::Creature
+        rules::read_creature{ tables, doc = &doc, s = gff::ROOT, out = &c }
+        st.n = st.n + 1
+        cb_census_one{ &io, &st, tables, c = &c, dummy = &dummy, name = copy.name, seed = @trunc(u32, st.n) * 7919 + 1 }
+    }
+
+    // Every copy of every UTC in the install (modules and saved games included, like the creature
+    // census) as an attacker against a medium-armour dummy and as a defender against it.
+    fn cb_census { mut io: Io, mut fs: Fs, mut r: Report, mut heap: heap::Heap, tables: *rules::Tables, game: []u8 } {
+        let buf = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(u8){}, count = 8 * 1024 * 1024 } iferr err{ error } {
+            fail{ &io, &r, name = "combat census: no memory for the scratch arena", detail = 0 }
+            return
+        }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = buf, count = 0 }
+        let mut scratch = arena::new{ buf }
+        // the dummy: a level 5 soldier with natural armour 5, defense 15
+        let mut dummy: rules::Creature
+        cb_fighter{ tables, c = &dummy, class = rules::cls::SOLDIER, level = 5, strength = 12, dexterity = 10 }
+        dummy.natural_ac = 5
+        rules::recompute{ tables, c = &dummy }
+        let mut st = CbCensus{
+            n = 0, parse_failed = 0, anomalies = 0, printed = 0, hits = 0, mod_min = 1000, mod_max = -1000,
+            def_min = 1000, def_max = -1000, dmg_min = 1000, dmg_max = -1000, dmg_sum = 0, on_hand_max = 0,
+        }
+        _ = corpus::each{ &fs, h = &heap, game, want = cb_wants_utc, visit = cb_visit_utc{ &io, &st, tables, &scratch, &dummy, _ } } iferr err{ error } {
+            fail{ &io, &r, name = "combat census: walking the install failed", detail = 0 }
+            return
+        }
+        _ = @fmt(&io, "combat census: {} creature templates ({} unreadable), {} anomalies\n", st.n, st.parse_failed, st.anomalies)
+        _ = @fmt(&io, "combat census: unarmed attacks on the dummy: {} hits; attack modifier {}..{}, defense {}..{}, damage {}..{} (mean x100 {}), up to {} attacks\n",
+            st.hits, st.mod_min, st.mod_max, st.def_min, st.def_max, st.dmg_min, st.dmg_max,
+            if st.hits > 0 { st.dmg_sum * 100 / @as(i64, st.hits) } else { 0 }, st.on_hand_max)
+        expect_eq{ &io, &r, name = "combat census: creatures with anomalies", got = @as(i64, st.anomalies), want = 0 }
+        expect_eq{ &io, &r, name = "combat census: unreadable templates", got = @as(i64, st.parse_failed), want = 0 }
+        expect_true{ &io, &r, name = "combat census: read some", cond = st.n > 100 }
+    }
+
+    fn run_combat { mut io: Io, mut fs: Fs, mut r: Report, mut heap: heap::Heap, tables: *rules::Tables, game: []u8 } {
+        cb_test_counts{ &io, &r, tables }
+        cb_test_modifier{ &io, &r, tables }
+        cb_test_modifier_ranged{ &io, &r, tables }
+        cb_test_defense{ &io, &r, tables }
+        cb_test_critical{ &io, &r, tables }
+        cb_test_sneak{ &io, &r, tables }
+        cb_test_roll{ &io, &r, tables }
+        cb_test_deflection{ &io, &r, tables }
+        cb_test_damage{ &io, &r, tables }
+        cb_test_mitigation{ &io, &r, tables }
+        cb_test_effect_damage{ &io, &r, tables }
+        cb_test_difficulty{ &io, &r, tables }
+        cb_test_resolve{ &io, &r, tables }
+        cb_test_stats{ &io, &r, tables }
+        cb_census{ &io, &fs, &r, &heap, tables, game }
+    }
+}
