@@ -1,0 +1,1160 @@
+// walkcheck: runs lib/walk/bwm.ctx over every walkmesh and checks the files and the library
+// against what kotor/docs/formats/bwm.md says of them. Two entry points, for this tool and for
+// others that build this directory in (tools/mdlcheck):
+//
+//   let summary = try walkcheck::run_install{ &io, &fs, &heap, rm }
+//       every WOK, PWK and DWK the resource manager's search finds (the winning copy of each name)
+//   let summary = try walkcheck::run_extract{ &io, &fs, &heap, dir = "kotor/extract/models" }
+//       every copy an extraction wrote: `dir` holds walk.txt, one line per file
+//       (`<container>\t<resref>\t<ext>`), and the files as walk/<container>/<resref>.<ext>
+//
+// Per file it checks the layout and header, the faces, normals and walkable order, the stored AABB
+// tree (read from the bytes, since parse refits it), the tree parse keeps, adjacency, the perimeter
+// and its loops; then it compares the library's tree queries with searches of every face at
+// sampled walkable-face centroids, casts rays down at them, places each PWK and DWK with a test
+// bearing, and parses damaged copies of the bytes. It prints counts and every failure class with
+// an example, next to the count bwm.md documents. `heap` (an arena) holds the listing; it is reset
+// to just after it between files. `summary.surprises` counts the classes whose count isn't
+// bwm.md's.
+//
+// Output goes through `Con`, a sink of this namespace's own, so a program that also has writers
+// over Io (tools/common's `out`) builds with this file without two writers for one type.
+//
+// The walkable set is surfacemat.2da's `walk` column as bwm.md section 8 gives it; the library
+// leaves the table to the engine.
+namespace walkcheck {
+    error bad_manifest{ line: u32 }
+
+    struct Summary {
+        files: u32,
+        kinds: [3]u32,              // WOK, PWK, DWK
+        empty: [3]u32,              // without vertices
+        parsed: u32,
+        faces: u64,
+        walkable_faces: u64,        // WOK faces before the non-walkable ones
+        stored_nodes: u64,          // AABB nodes in the files
+        perimeter_edges: u64,
+        transitions: u64,           // perimeter edges into another room
+        loops: u64,
+        samples: u32,               // walkable-face centroids queried
+        rays: u32,
+        placed: u32,                // PWKs and DWKs placed by transform_placed
+        damaged: u32,               // damaged copies parsed
+        damaged_rejected: u32,      // of which parse returned an error
+        surprises: u32,             // classes whose count isn't bwm.md's
+    }
+
+    struct Entry { container: []u8, resref: []u8, ext: []u8 }
+
+    const WOK: u32 = 0
+    const PWK: u32 = 1
+    const DWK: u32 = 2
+
+    // ---- classes: failures and tallies, each with the count bwm.md gives (-1: none)
+
+    const CLASS_COUNT: usize = 57
+
+    enum Class: u32 {
+        read_failed, outside_models_bif, parse_failed, kind_mismatch, tables_not_packed, bytes_after_tables,
+        wok_hooks_set, dwk_abs_hook, pwk_abs_hook,
+        repeated_index, zero_area_wok, stored_plane_unusable, normal_winding, walkable_not_first,
+        adjacency_count,
+        wok_without_tree, placed_with_area_tables, node_count, node_twice, node_unreachable,
+        node_constant, plane_value, leaf_shape, leaf_box, child_outside_parent, not_preorder,
+        interior_no_plane, interior_not_union, faces_missing, face_twice,
+        adjacency_self, adjacency_asymmetric, adjacency_vertices,
+        no_perimeter, perimeter_twice, perimeter_not_open, perimeter_missing, loop_open,
+        loaded_tree_bad, tree_query_mismatch, ray_tree_mismatch, ray_height,
+        transform_vertex, transform_hook, transform_tree, transform_ray,
+        // tallies
+        zero_area_placed, unused_vertex, walkable_steep, pwk_planes_computed, plane_disagrees,
+        tree_rebuilt, stored_query_mismatch, stored_tree_misses, sample_without_floor, header108_junk, ray_no_floor,
+        count,
+    }
+
+    struct Info { text: []u8, expect: i64, failure: bool, a: []u8, b: []u8 }
+
+    fn describe { c: Class } -> Info {
+        return match c {
+            read_failed => { fail{ text = "file not readable", expect = 0, a = "", b = "" } }
+            outside_models_bif => { fail{ text = "walkmeshes from a container other than models.bif", expect = 0, a = "", b = "" } }
+            parse_failed => { fail{ text = "parse failed", expect = 0, a = "", b = "" } }
+            kind_mismatch => { fail{ text = "walkmesh type does not match the extension", expect = 0, a = "type", b = "" } }
+            tables_not_packed => { fail{ text = "tables not packed in the documented order", expect = 0, a = "offset", b = "expected" } }
+            bytes_after_tables => { fail{ text = "bytes after the last table", expect = 0, a = "bytes", b = "" } }
+            wok_hooks_set => { fail{ text = "WOK with nonzero use hooks", expect = 0, a = "", b = "" } }
+            dwk_abs_hook => { fail{ text = "DWK absolute hook != relative hook + position", expect = 0, a = "hook", b = "" } }
+            pwk_abs_hook => { fail{ text = "PWK absolute hook neither zero nor relative + position", expect = 0, a = "hook", b = "" } }
+            repeated_index => { fail{ text = "faces repeating a vertex index", expect = 3, a = "face", b = "" } }
+            zero_area_wok => { fail{ text = "zero-area WOK faces", expect = 113, a = "face", b = "" } }
+            stored_plane_unusable => { fail{ text = "WOK/DWK faces whose stored plane parse replaced", expect = 0, a = "face", b = "" } }
+            normal_winding => { fail{ text = "faces whose normal disagrees with their winding", expect = 0, a = "face", b = "dot x1000" } }
+            walkable_not_first => { fail{ text = "WOKs with a walkable face after a non-walkable one", expect = 0, a = "face", b = "" } }
+            adjacency_count => { fail{ text = "WOKs whose adjacency count != walkable face count", expect = 0, a = "adjacency", b = "walkable" } }
+            wok_without_tree => { fail{ text = "WOKs with faces but no AABB tree", expect = 0, a = "", b = "" } }
+            placed_with_area_tables => { fail{ text = "PWK/DWK with AABB, adjacency or perimeter tables", expect = 0, a = "", b = "" } }
+            node_count => { fail{ text = "stored trees with nodes != 2 * faces - 1", expect = 1, a = "nodes", b = "faces" } }
+            node_twice => { fail{ text = "stored tree nodes reached twice", expect = 0, a = "node", b = "" } }
+            node_unreachable => { fail{ text = "stored trees with nodes unreachable from node 0", expect = 0, a = "unreachable", b = "" } }
+            node_constant => { fail{ text = "stored nodes whose +28 is not 4", expect = 0, a = "node", b = "value" } }
+            plane_value => { fail{ text = "stored nodes with an unknown split plane value", expect = 0, a = "node", b = "value" } }
+            leaf_shape => { fail{ text = "stored leaves with children or a plane", expect = 0, a = "node", b = "" } }
+            leaf_box => { fail{ text = "stored leaf boxes not containing their face (> 1 mm)", expect = 87, a = "face", b = "mm out" } }
+            child_outside_parent => { fail{ text = "stored child boxes outside their parent's", expect = 0, a = "node", b = "" } }
+            not_preorder => { fail{ text = "stored interior nodes whose left child is not the next node", expect = 0, a = "node", b = "left" } }
+            interior_no_plane => { fail{ text = "stored interior nodes without a split plane", expect = 0, a = "node", b = "" } }
+            interior_not_union => { fail{ text = "stored interior boxes != union of their children", expect = 0, a = "node", b = "" } }
+            faces_missing => { fail{ text = "stored trees missing faces", expect = 1, a = "missing", b = "first" } }
+            face_twice => { fail{ text = "faces in a stored tree more than once", expect = 0, a = "face", b = "" } }
+            adjacency_self => { fail{ text = "adjacency entries into their own face", expect = 0, a = "face", b = "edge" } }
+            adjacency_asymmetric => { fail{ text = "adjacency entries not pointed back at", expect = 2, a = "face", b = "edge" } }
+            adjacency_vertices => { fail{ text = "adjacent edges not sharing their vertices reversed", expect = 0, a = "face", b = "edge" } }
+            no_perimeter => { fail{ text = "WOKs with walkable faces but no perimeter", expect = 0, a = "", b = "" } }
+            perimeter_twice => { fail{ text = "perimeter edges listed twice", expect = 0, a = "edge", b = "" } }
+            perimeter_not_open => { fail{ text = "perimeter edges that are not walkable edges without adjacency", expect = 0, a = "edge", b = "" } }
+            perimeter_missing => { fail{ text = "WOKs with walkable edges without adjacency missing from the perimeter", expect = 0, a = "missing", b = "" } }
+            loop_open => { fail{ text = "perimeter loops not chaining end to start", expect = 0, a = "loop", b = "at" } }
+            loaded_tree_bad => { fail{ text = "parsed trees breaking an invariant (pre-order, union, leaf = face + 0.01, each face once)", expect = 0, a = "node", b = "" } }
+            tree_query_mismatch => { fail{ text = "find_face_under: tree != every-face search", expect = 0, a = "face", b = "" } }
+            ray_tree_mismatch => { fail{ text = "cast_ray: tree != every-face search", expect = 0, a = "face", b = "" } }
+            ray_height => { fail{ text = "rays down not stopping at the floor find_face_under gives", expect = 0, a = "face", b = "mm off" } }
+            transform_vertex => { fail{ text = "placed vertices not where the GIT formula puts them", expect = 0, a = "vertex", b = "" } }
+            transform_hook => { fail{ text = "placed use hooks not where the GIT formula puts them", expect = 0, a = "hook", b = "" } }
+            transform_tree => { fail{ text = "placed walkmeshes whose tree breaks an invariant", expect = 0, a = "node", b = "" } }
+            transform_ray => { fail{ text = "rays at placed faces missing them, or tree != every face", expect = 0, a = "face", b = "" } }
+            zero_area_placed => { note{ text = "zero-area PWK/DWK faces", expect = -1, a = "face", b = "" } }
+            unused_vertex => { note{ text = "WOKs with vertices no face uses", expect = 10, a = "unused", b = "" } }
+            walkable_steep => { note{ text = "walkable WOK faces vertical or facing down", expect = 142, a = "face", b = "" } }
+            pwk_planes_computed => { note{ text = "PWKs with geometry whose every plane parse computed", expect = 122, a = "", b = "" } }
+            plane_disagrees => { note{ text = "stored split planes whose sign disagrees with the children's centres", expect = 4951, a = "node", b = "" } }
+            tree_rebuilt => { note{ text = "trees parse rebuilt", expect = 1, a = "", b = "" } }
+            stored_query_mismatch => { note{ text = "samples where the stored boxes give another floor than every-face search", expect = -1, a = "face", b = "" } }
+            stored_tree_misses => { note{ text = "samples where the stored boxes miss a face under the point (bwmprobe's measure)", expect = 4, a = "face", b = "missed" } }
+            sample_without_floor => { note{ text = "samples with no floor at the centroid (zero-area or steep face)", expect = -1, a = "face", b = "" } }
+            header108_junk => { note{ text = "WOKs whose unused header +108 is not 0", expect = 29, a = "value", b = "" } }
+            ray_no_floor => { note{ text = "rays down from samples with no floor below to compare", expect = -1, a = "face", b = "" } }
+            count => { @panic("walkcheck: Class::count is not a class") }
+        }
+    }
+
+    fn fail { text: []u8, expect: i64, a: []u8, b: []u8 } -> Info { return Info{ text, expect, failure = true, a, b } }
+    fn note { text: []u8, expect: i64, a: []u8, b: []u8 } -> Info { return Info{ text, expect, failure = false, a, b } }
+
+    struct Example { entry: u32, a: i64, b: i64 }
+
+    struct Tally {
+        counts: [CLASS_COUNT]u64,
+        seen: [CLASS_COUNT]bool,
+        examples: [CLASS_COUNT]Example,
+    }
+
+    fn add { mut t: Tally, c: Class, entry: u32, a: i64, b: i64 } {
+        add_n{ &t, c, entry, a, b, n = 1 }
+    }
+
+    fn add_n { mut t: Tally, c: Class, entry: u32, a: i64, b: i64, n: u64 } {
+        let i = @as(usize, c)
+        t.counts[i] = t.counts[i] + n
+        if not t.seen[i] {
+            t.seen[i] = true
+            t.examples[i] = Example{ entry, a, b }
+        }
+    }
+
+    // ---- the runs
+
+    // What a run accumulates, and the material sets it queries with.
+    struct Run { s: Summary, t: Tally, walkable: [32]bool, every: [64]bool }
+
+    fn start_run {} -> Run {
+        if @as(usize, Class::count) != CLASS_COUNT { @panic("walkcheck: CLASS_COUNT is not the number of classes") }
+        let mut r: Run
+        let walk_ids: [13]u32 = [1, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 18, 30]
+        let mut i: usize = 0
+        while i < walk_ids.len {
+            r.walkable[walk_ids[i]] = true
+            i = i + 1
+        }
+        slice::fill{ s = r.every[..], v = true }
+        return r
+    }
+
+    const TYPES: [3]restype::Type = [restype::Type::wok, restype::Type::pwk, restype::Type::dwk]
+    const EXTS: [3][]u8 = ["wok", "pwk", "dwk"]
+
+    fn run_install { mut io: Io, mut fs: Fs, mut heap: arena::Arena, rm: res::Manager } -> !Summary {
+        let mut con = Con{ io }
+        let mut r = start_run{}
+        // Each type's listing, then the entries naming them, stay below the mark.
+        let mut lists: [3][]res::Found
+        let mut total: usize = 0
+        let mut k: usize = 0
+        while k < 3 {
+            lists[k] = try res::list_type{ rm, kind = TYPES[k], realloc = arena::alloc, &heap }
+            total = total + lists[k].len
+            k = k + 1
+        }
+        let entries = try make(Entry){ &heap, count = total, fill = Entry{ container = "", resref = "", ext = "" } }
+        let locs = try alloc::resize(res::Loc, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(res::Loc){}, count = total }
+        let mut n: usize = 0
+        k = 0
+        while k < 3 {
+            let found = lists[k]
+            let mut i: usize = 0
+            while i < found.len {
+                // A KEY's member names its BIF (`data\models.bif`); other sources are their file.
+                let bif = res::member_file{ rm, loc = found[i].loc }
+                let source = if bif.len > 0 { bif } else { res::source_path{ rm, loc = found[i].loc } }
+                entries[n] = Entry{ container = path::base_name{ p = source }, resref = resref::bytes{ r = &found[i].name }, ext = EXTS[k] }
+                locs[n] = found[i].loc
+                n = n + 1
+                i = i + 1
+            }
+            k = k + 1
+        }
+        let mark = heap.used
+        let mut i: usize = 0
+        while i < n {
+            let entry = @as(u32, i)
+            let bytes = res::read{ &fs, rm, loc = locs[i], realloc = arena::alloc, &heap } iferr {
+                count_unreadable{ &r, entry, ext = ext_kind{ ext = entries[i].ext } }
+                i = i + 1
+                continue
+            }
+            try check_file{ &con, &heap, &r, bytes, entry, e = entries[i] }
+            heap.used = mark
+            i = i + 1
+        }
+        report{ &con, &r, entries, from = "the install" }
+        return r.s
+    }
+
+    fn run_extract { mut io: Io, mut fs: Fs, mut heap: arena::Arena, dir: []u8 } -> !Summary {
+        let mut con = Con{ io }
+        let mut r = start_run{}
+        let mut pathbuf: [4096]u8
+        let manifest_parts: [2][]u8 = [dir, "/walk.txt"]
+        let manifest_path = join{ buf = pathbuf[..], parts = manifest_parts[..] } ifnull { return bad_manifest{ line = 0 } }
+        let text = try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = manifest_path }
+        let entries = try read_manifest{ &heap, text }
+        // Everything a file needs goes after this mark; the manifest stays below it.
+        let mark = heap.used
+        let mut i: usize = 0
+        while i < entries.len {
+            let e = entries[i]
+            let entry = @as(u32, i)
+            let parts: [7][]u8 = [dir, "/walk/", e.container, "/", e.resref, ".", e.ext]
+            let path = join{ buf = pathbuf[..], parts = parts[..] } ifnull { return bad_manifest{ line = entry + 1 } }
+            let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr {
+                count_unreadable{ &r, entry, ext = ext_kind{ ext = e.ext } }
+                i = i + 1
+                continue
+            }
+            try check_file{ &con, &heap, &r, bytes, entry, e }
+            heap.used = mark
+            i = i + 1
+        }
+        report{ &con, &r, entries, from = "the extraction" }
+        return r.s
+    }
+
+    fn count_unreadable { mut r: Run, entry: u32, ext: u32 } {
+        r.s.files = r.s.files + 1
+        r.s.kinds[ext] = r.s.kinds[ext] + 1
+        add{ t = &r.t, c = Class::read_failed, entry, a = 0, b = 0 }
+    }
+
+    fn ext_kind { ext: []u8 } -> u32 {
+        if slice::eq_bytes{ a = ext, b = "pwk" } { return PWK }
+        if slice::eq_bytes{ a = ext, b = "dwk" } { return DWK }
+        return WOK
+    }
+
+    // The manifest's lines as entries viewing its bytes.
+    fn read_manifest { mut heap: arena::Arena, text: []u8 } -> ![]Entry {
+        let mut lines: usize = 0
+        let mut i: usize = 0
+        while i < text.len {
+            if text[i] == '\n' { lines = lines + 1 }
+            i = i + 1
+        }
+        let entries = try alloc::resize(Entry, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(Entry){}, count = lines + 1 }
+        let mut n: usize = 0
+        let mut start: usize = 0
+        i = 0
+        while i <= text.len {
+            if i == text.len or text[i] == '\n' {
+                let mut end = i
+                if end > start and text[end - 1] == '\r' { end = end - 1 }
+                if end > start {
+                    entries[n] = split_entry{ line = text[start..end] } ifnull { return bad_manifest{ line = @as(u32, n) + 1 } }
+                    n = n + 1
+                }
+                start = i + 1
+            }
+            i = i + 1
+        }
+        return entries[..n]
+    }
+
+    fn split_entry { line: []u8 } -> ?Entry {
+        let mut tabs: [2]usize
+        let mut k: usize = 0
+        let mut i: usize = 0
+        while i < line.len {
+            if line[i] == '\t' {
+                if k == 2 { return null }
+                tabs[k] = i
+                k = k + 1
+            }
+            i = i + 1
+        }
+        if k != 2 { return null }
+        return Entry{ container = line[..tabs[0]], resref = line[tabs[0] + 1..tabs[1]], ext = line[tabs[1] + 1..] }
+    }
+
+    // The parts one after another in buf, or null if they don't fit.
+    fn join { buf: []mut u8, parts: [][]u8 } -> ?[]u8 {
+        let mut n: usize = 0
+        let mut i: usize = 0
+        while i < parts.len {
+            let p = parts[i]
+            if n + p.len > buf.len { return null }
+            slice::copy(u8){ dst = buf[n..n + p.len], src = p }
+            n = n + p.len
+            i = i + 1
+        }
+        return buf[..n]
+    }
+
+    // ---- one file
+
+    // One walkmesh's bytes, which the damage pass changes and puts back. `e` names it.
+    fn check_file { mut con: Con, mut heap: arena::Arena, mut r: Run, bytes: []mut u8, entry: u32, e: Entry } -> ! {
+        try check_bytes{ &con, &heap, s = &r.s, t = &r.t, bytes, entry, e, walkable = r.walkable[..], every = r.every[..] }
+    }
+
+    fn check_bytes {
+        mut con: Con, mut heap: arena::Arena, mut s: Summary, mut t: Tally,
+        bytes: []mut u8, entry: u32, e: Entry, walkable: []bool, every: []bool,
+    } -> ! {
+        let ext = ext_kind{ ext = e.ext }
+        s.files = s.files + 1
+        s.kinds[ext] = s.kinds[ext] + 1
+        if not slice::eq_bytes{ a = e.container, b = "models.bif" } { add{ &t, c = Class::outside_models_bif, entry, a = 0, b = 0 } }
+        let w = bwm::parse{ realloc = arena::alloc, &heap, bytes } iferr err{ error } {
+            add{ &t, c = Class::parse_failed, entry, a = 0, b = 0 }
+            _ = @fmt(&con, "parse failed: {}/{}.{}: {}\n", e.container, e.resref, e.ext, error)
+            return
+        }
+        s.parsed = s.parsed + 1
+        if w.vertices.len == 0 { s.empty[ext] = s.empty[ext] + 1 }
+        s.faces = s.faces + w.faces.len
+        s.stored_nodes = s.stored_nodes + bwm::u32_at{ bytes, at = 100 }
+        if ext == WOK {
+            s.walkable_faces = s.walkable_faces + w.adjacency.len
+            s.perimeter_edges = s.perimeter_edges + w.perimeter.len
+            s.loops = s.loops + w.loop_ends.len
+            let mut i: usize = 0
+            while i < w.perimeter.len {
+                if w.perimeter[i].transition >= 0 { s.transitions = s.transitions + 1 }
+                i = i + 1
+            }
+        }
+
+        check_layout{ &t, bytes, entry }
+        check_header{ &t, w, bytes, entry, ext }
+        try check_faces{ &t, &heap, w, entry, ext, walkable }
+        let stored = try check_stored_tree{ &t, &heap, w, bytes, entry, ext }
+        try check_loaded_tree{ &t, &heap, w, entry, class = Class::loaded_tree_bad }
+        if w.tree_rebuilt { add{ &t, c = Class::tree_rebuilt, entry, a = 0, b = 0 } }
+        check_adjacency{ &t, w, entry }
+        try check_perimeter{ &t, &heap, w, entry }
+        if ext == WOK and w.nodes.len > 0 {
+            try check_queries{ &t, &s, &heap, w, stored, entry, walkable }
+        }
+        if ext != WOK {
+            try check_placing{ &t, &s, &heap, w, entry, every }
+        }
+        check_damage{ &s, &heap, bytes, seed = name_seed{ e }, walkable, every }
+    }
+
+    // A seed from the file's name, so both runs damage a file alike whatever order it comes in.
+    fn name_seed { e: Entry } -> u32 {
+        let mut h: u32 = 0x811C9DC5
+        let parts: [2][]u8 = [e.resref, e.ext]
+        let mut k: usize = 0
+        while k < 2 {
+            let p = parts[k]
+            let mut i: usize = 0
+            while i < p.len {
+                h = @wrap_mul(h ^ @as(u32, ascii::to_lower{ c = p[i] }), 0x01000193)
+                i = i + 1
+            }
+            k = k + 1
+        }
+        return h
+    }
+
+    // Damaged copies of a file must each give an error or a walkmesh the queries run on, never
+    // a panic (which would end the run): the file cut short, each header count and offset set to
+    // extremes, and bytes changed at random (a fixed seed per file). The bytes are changed in
+    // place and put back; w, parsed from them before, owns copies and isn't touched.
+    fn check_damage { mut s: Summary, mut heap: arena::Arena, bytes: []mut u8, seed: u32, walkable: []bool, every: []bool } {
+        let n = bytes.len
+        let cuts: [5]usize = [0, 8, bwm::HEADER_SIZE - 1, n / 2, if n > 0 { n - 1 } else { 0 }]
+        let mut i: usize = 0
+        while i < cuts.len {
+            if cuts[i] < n { try_damaged{ &s, &heap, bytes = bytes[..cuts[i]], walkable, every } }
+            i = i + 1
+        }
+        if n < bwm::HEADER_SIZE { return }
+        let values: [3]u32 = [0xFFFFFFFF, 0x80000000, @as(u32, n)]
+        // The type at 8, then the counts and offsets from 72 on.
+        let mut field: usize = 68
+        while field < bwm::HEADER_SIZE {
+            let at = if field == 68 { 8 } else { field }
+            let mut saved: [4]u8
+            slice::copy(u8){ dst = saved[..], src = bytes[at..at + 4] }
+            let mut k: usize = 0
+            while k < values.len {
+                write_u32{ bytes, at, v = values[k] }
+                try_damaged{ &s, &heap, bytes, walkable, every }
+                k = k + 1
+            }
+            slice::copy(u8){ dst = bytes[at..at + 4], src = saved[..] }
+            field = field + 4
+        }
+        let mut state = @wrap_mul(seed, 0x9E3779B1) | 1
+        let mut round: u32 = 0
+        while round < 8 {
+            let mut spot: [4]usize
+            let mut was: [4]u8
+            let mut k: usize = 0
+            while k < 4 {
+                state = xorshift{ x = state }
+                spot[k] = @as(usize, state) % n
+                was[k] = bytes[spot[k]]
+                state = xorshift{ x = state }
+                bytes[spot[k]] = @trunc(u8, state)
+                k = k + 1
+            }
+            try_damaged{ &s, &heap, bytes, walkable, every }
+            // Put back in reverse, in case two positions are one.
+            k = 4
+            while k > 0 {
+                k = k - 1
+                bytes[spot[k]] = was[k]
+            }
+            round = round + 1
+        }
+    }
+
+    fn try_damaged { mut s: Summary, mut heap: arena::Arena, bytes: []u8, walkable: []bool, every: []bool } {
+        let mark = heap.used
+        defer heap.used = mark
+        s.damaged = s.damaged + 1
+        let w = bwm::parse{ realloc = arena::alloc, &heap, bytes } iferr {
+            s.damaged_rejected = s.damaged_rejected + 1
+            return
+        }
+        let nf = w.faces.len
+        let mut f: usize = 0
+        while f < nf {
+            let c = bwm::centroid{ w, face = f }
+            _ = bwm::find_face_under{ w, x = c.x, y = c.y, z = c.z, step = 0.5, walkable }
+            let ray = math::Ray{ origin = math::Vec3{ x = c.x, y = c.y, z = c.z + 1.0 }, dir = math::Vec3{ x = 0.3, y = 0.2, z = -1.0 } }
+            _ = bwm::cast_ray{ w, ray, max_t = 100.0, stops = every }
+            f = f + 1 + nf / 16
+        }
+        if nf < 4096 {
+            _ = bwm::transform_placed{ realloc = arena::alloc, &heap, w, at = bwm::Placement{ position = math::Vec3{ x = 1.0, y = 2.0, z = 3.0 }, bearing = 2.5 } }
+        }
+    }
+
+    fn write_u32 { bytes: []mut u8, at: usize, v: u32 } {
+        bytes[at] = @trunc(u8, v)
+        bytes[at + 1] = @trunc(u8, v >> 8)
+        bytes[at + 2] = @trunc(u8, v >> 16)
+        bytes[at + 3] = @trunc(u8, v >> 24)
+    }
+
+    fn xorshift { x: u32 } -> u32 {
+        let a = x ^ (x << 13)
+        let b = a ^ (a >> 17)
+        return b ^ (b << 5)
+    }
+
+    // Tables come in the documented order, packed after the header, and end the file (4).
+    fn check_layout { mut t: Tally, bytes: []u8, entry: u32 } {
+        // (offset field, count field, element size) for each table, in file order.
+        let tables: [9][3]usize = [
+            [76, 72, 12], [84, 80, 12], [88, 80, 4], [92, 80, 12], [96, 80, 4],
+            [104, 100, 44], [116, 112, 12], [124, 120, 8], [132, 128, 4],
+        ]
+        let mut pos: usize = bwm::HEADER_SIZE
+        let mut i: usize = 0
+        while i < tables.len {
+            let off: usize = bwm::u32_at{ bytes, at = tables[i][0] }
+            let size = @as(usize, bwm::u32_at{ bytes, at = tables[i][1] }) * tables[i][2]
+            if size > 0 {
+                if off != pos { add{ &t, c = Class::tables_not_packed, entry, a = @as(i64, off), b = @as(i64, pos) } }
+                pos = off + size
+            }
+            i = i + 1
+        }
+        if pos != bytes.len { add{ &t, c = Class::bytes_after_tables, entry, a = @as(i64, bytes.len) - @as(i64, pos), b = 0 } }
+    }
+
+    fn check_header { mut t: Tally, w: bwm::Walkmesh, bytes: []u8, entry: u32, ext: u32 } {
+        let area = w.kind == bwm::Kind::area
+        if area != (ext == WOK) { add{ &t, c = Class::kind_mismatch, entry, a = @as(i64, w.kind), b = 0 } }
+        if ext == WOK {
+            let junk = bwm::u32_at{ bytes, at = 108 }
+            if junk != 0 { add{ &t, c = Class::header108_junk, entry, a = junk, b = 0 } }
+            let mut k: usize = 0
+            while k < 2 {
+                if not is_zero{ v = w.rel_hooks[k] } or not is_zero{ v = w.abs_hooks[k] } {
+                    add{ &t, c = Class::wok_hooks_set, entry, a = 0, b = 0 }
+                    return
+                }
+                k = k + 1
+            }
+            return
+        }
+        let mut k: usize = 0
+        while k < 2 {
+            let summed = math::vec3::add{ a = w.rel_hooks[k], b = w.position }
+            let same = near3{ a = w.abs_hooks[k], b = summed, tol = 0.0001 }
+            if ext == DWK and not same { add{ &t, c = Class::dwk_abs_hook, entry, a = @as(i64, k) + 1, b = 0 } }
+            if ext == PWK and not same and not is_zero{ v = w.abs_hooks[k] } { add{ &t, c = Class::pwk_abs_hook, entry, a = @as(i64, k) + 1, b = 0 } }
+            k = k + 1
+        }
+    }
+
+    fn check_faces { mut t: Tally, mut heap: arena::Arena, w: bwm::Walkmesh, entry: u32, ext: u32, walkable: []bool } -> ! {
+        let used = try make(bool){ &heap, count = w.vertices.len, fill = false }
+        let mut walk_count: usize = 0
+        let mut f: usize = 0
+        while f < w.faces.len {
+            let tri = w.faces[f]
+            used[tri[0]] = true
+            used[tri[1]] = true
+            used[tri[2]] = true
+            if tri[0] == tri[1] or tri[1] == tri[2] or tri[2] == tri[0] { add{ &t, c = Class::repeated_index, entry, a = @as(i64, f), b = 0 } }
+            if bwm::is_walkable{ w, face = f, walkable } { walk_count = walk_count + 1 }
+            if w.flat[f] {
+                add{ &t, c = if ext == WOK { Class::zero_area_wok } else { Class::zero_area_placed }, entry, a = @as(i64, f), b = 0 }
+            } else {
+                let c = bwm::face_corners{ w, face = f }
+                let n = math::vec3::normalize{ v = math::vec3::cross{ a = math::vec3::sub{ a = c[1], b = c[0] }, b = math::vec3::sub{ a = c[2], b = c[0] } } }
+                let agree = math::vec3::dot{ a = n, b = w.planes[f].n }
+                if not (agree >= 0.999) { add{ &t, c = Class::normal_winding, entry, a = @as(i64, f), b = @as(i64, agree * 1000.0) } }
+                if ext == WOK and f < w.adjacency.len and n.z <= 0.0 { add{ &t, c = Class::walkable_steep, entry, a = @as(i64, f), b = 0 } }
+            }
+            f = f + 1
+        }
+        let mut unused: i64 = 0
+        let mut v: usize = 0
+        while v < used.len {
+            if not used[v] { unused = unused + 1 }
+            v = v + 1
+        }
+        if unused > 0 and ext == WOK { add{ &t, c = Class::unused_vertex, entry, a = unused, b = 0 } }
+
+        if ext == PWK {
+            let mut with_area: u32 = 0
+            f = 0
+            while f < w.faces.len {
+                if not w.flat[f] { with_area = with_area + 1 }
+                f = f + 1
+            }
+            if with_area > 0 and w.planes_computed == with_area { add{ &t, c = Class::pwk_planes_computed, entry, a = 0, b = 0 } }
+        } else if w.planes_computed > 0 {
+            add_n{ &t, c = Class::stored_plane_unusable, entry, a = 0, b = 0, n = w.planes_computed }
+        }
+
+        if ext == WOK and w.faces.len > 0 {
+            // Walkable faces first (5.1), as many as adjacency rows (5.5).
+            f = walk_count
+            while f < w.faces.len {
+                if bwm::is_walkable{ w, face = f, walkable } {
+                    add{ &t, c = Class::walkable_not_first, entry, a = @as(i64, f), b = 0 }
+                    break
+                }
+                f = f + 1
+            }
+            if w.adjacency.len != walk_count { add{ &t, c = Class::adjacency_count, entry, a = @as(i64, w.adjacency.len), b = @as(i64, walk_count) } }
+        }
+    }
+
+    // The tree as the file stores it, read from the bytes since parse refits its boxes. Returns
+    // the stored nodes for queries through the stored boxes, or an empty slice when following
+    // them could loop (a child not after its parent).
+    fn check_stored_tree { mut t: Tally, mut heap: arena::Arena, w: bwm::Walkmesh, bytes: []u8, entry: u32, ext: u32 } -> ![]bwm::Node {
+        let n: usize = bwm::u32_at{ bytes, at = 100 }
+        let off: usize = bwm::u32_at{ bytes, at = 104 }
+        let nf = w.faces.len
+        if ext != WOK {
+            if n > 0 or bwm::u32_at{ bytes, at = 112 } > 0 or bwm::u32_at{ bytes, at = 120 } > 0 or bwm::u32_at{ bytes, at = 128 } > 0 {
+                add{ &t, c = Class::placed_with_area_tables, entry, a = 0, b = 0 }
+            }
+        } else if n == 0 and nf > 0 {
+            add{ &t, c = Class::wok_without_tree, entry, a = 0, b = 0 }
+        }
+        if n == 0 { return slice::empty(bwm::Node){} }
+        if n != 2 * nf - 1 { add{ &t, c = Class::node_count, entry, a = @as(i64, n), b = @as(i64, nf) } }
+
+        // parse has checked every child and leaf face is in range.
+        let nodes = try alloc::resize(bwm::Node, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(bwm::Node){}, count = n }
+        let mut acyclic = true
+        let mut i: usize = 0
+        while i < n {
+            let at = off + i * 44
+            nodes[i] = bwm::Node{
+                box = math::Aabb{ min = bwm::vec3_at{ bytes, at }, max = bwm::vec3_at{ bytes, at = at + 12 } },
+                face = bwm::i32_at{ bytes, at = at + 24 }, plane = bwm::u32_at{ bytes, at = at + 32 },
+                left = bwm::i32_at{ bytes, at = at + 36 }, right = bwm::i32_at{ bytes, at = at + 40 },
+            }
+            let constant = bwm::u32_at{ bytes, at = at + 28 }
+            if constant != 4 { add{ &t, c = Class::node_constant, entry, a = @as(i64, i), b = constant } }
+            let p = nodes[i].plane
+            if p != 0 and p != 1 and p != 2 and p != 4 and p != 8 and p != 16 and p != 32 { add{ &t, c = Class::plane_value, entry, a = @as(i64, i), b = p } }
+            if nodes[i].face < 0 and (@as(usize, nodes[i].left) <= i or @as(usize, nodes[i].right) <= i) { acyclic = false }
+            i = i + 1
+        }
+
+        let visited = try make(bool){ &heap, count = n, fill = false }
+        let face_seen = try make(u32){ &heap, count = nf, fill = 0 }
+        let stack = try make(u32){ &heap, count = n, fill = 0 }
+        let parent = try make(i64){ &heap, count = n, fill = -1 }
+        let mut sp: usize = 1
+        visited[0] = true
+        while sp > 0 {
+            sp = sp - 1
+            let k = @as(usize, stack[sp])
+            let node = nodes[k]
+            let b = node.box
+            if parent[k] >= 0 {
+                let pb = nodes[@as(usize, parent[k])].box
+                if b.min.x < pb.min.x - 0.00001 or b.min.y < pb.min.y - 0.00001 or b.min.z < pb.min.z - 0.00001 or
+                    b.max.x > pb.max.x + 0.00001 or b.max.y > pb.max.y + 0.00001 or b.max.z > pb.max.z + 0.00001 {
+                    add{ &t, c = Class::child_outside_parent, entry, a = @as(i64, k), b = 0 }
+                }
+            }
+            if node.face >= 0 {
+                let f = @as(usize, node.face)
+                if node.left != -1 or node.right != -1 or node.plane != 0 { add{ &t, c = Class::leaf_shape, entry, a = @as(i64, k), b = 0 } }
+                face_seen[f] = face_seen[f] + 1
+                let fb = bounds{ c = bwm::face_corners{ w, face = f } }
+                let slack = max6{
+                    a = b.min.x - fb.min.x, b = b.min.y - fb.min.y, c = b.min.z - fb.min.z,
+                    d = fb.max.x - b.max.x, e = fb.max.y - b.max.y, f = fb.max.z - b.max.z,
+                }
+                if slack > 0.001 { add{ &t, c = Class::leaf_box, entry, a = @as(i64, f), b = to_mm{ m = slack } } }
+                continue
+            }
+            let l = @as(usize, node.left)
+            let r = @as(usize, node.right)
+            if l != k + 1 { add{ &t, c = Class::not_preorder, entry, a = @as(i64, k), b = @as(i64, l) } }
+            if node.plane == 0 { add{ &t, c = Class::interior_no_plane, entry, a = @as(i64, k), b = 0 } }
+            let u = math::aabb::merge{ a = nodes[l].box, b = nodes[r].box }
+            if not near_box{ a = u, b, tol = 0.0001 } { add{ &t, c = Class::interior_not_union, entry, a = @as(i64, k), b = 0 } }
+            let axis_sign = plane_axis{ plane = node.plane }
+            if axis_sign.sign != 0 {
+                let lc = along{ v = math::vec3::add{ a = nodes[l].box.min, b = nodes[l].box.max }, axis = axis_sign.axis }
+                let rc = along{ v = math::vec3::add{ a = nodes[r].box.min, b = nodes[r].box.max }, axis = axis_sign.axis }
+                if not ((rc - lc) * @as(f32, axis_sign.sign) > 0.0) { add{ &t, c = Class::plane_disagrees, entry, a = @as(i64, k), b = 0 } }
+            }
+            // Right first, so the left child is visited next, as pre-order stores it.
+            let kids: [2]usize = [r, l]
+            let mut j: usize = 0
+            while j < 2 {
+                let child = kids[j]
+                if visited[child] {
+                    add{ &t, c = Class::node_twice, entry, a = @as(i64, child), b = 0 }
+                } else {
+                    visited[child] = true
+                    parent[child] = @as(i64, k)
+                    stack[sp] = @as(u32, child)
+                    sp = sp + 1
+                }
+                j = j + 1
+            }
+        }
+        let mut unreachable: i64 = 0
+        i = 0
+        while i < n {
+            if not visited[i] { unreachable = unreachable + 1 }
+            i = i + 1
+        }
+        if unreachable > 0 { add{ &t, c = Class::node_unreachable, entry, a = unreachable, b = 0 } }
+        let mut missing: i64 = 0
+        let mut first: i64 = -1
+        i = 0
+        while i < nf {
+            if face_seen[i] == 0 {
+                if first < 0 { first = @as(i64, i) }
+                missing = missing + 1
+            }
+            if face_seen[i] > 1 { add{ &t, c = Class::face_twice, entry, a = @as(i64, i), b = 0 } }
+            i = i + 1
+        }
+        if missing > 0 { add{ &t, c = Class::faces_missing, entry, a = missing, b = first } }
+        if not acyclic { return slice::empty(bwm::Node){} }
+        return nodes
+    }
+
+    // The tree parse keeps (refit or rebuilt): node 0 the root, pre-order, interior boxes the
+    // union of their children, leaves their face's bounds grown by 0.01, each face in one leaf.
+    fn check_loaded_tree { mut t: Tally, mut heap: arena::Arena, w: bwm::Walkmesh, entry: u32, class: Class } -> ! {
+        let n = w.nodes.len
+        let nf = w.faces.len
+        if n == 0 { return }
+        if n != 2 * nf - 1 {
+            add{ &t, c = class, entry, a = -1, b = 0 }
+            return
+        }
+        let seen = try make(bool){ &heap, count = nf, fill = false }
+        let mut i: usize = 0
+        while i < n {
+            let node = w.nodes[i]
+            if node.face >= 0 {
+                let f = @as(usize, node.face)
+                let fb = bounds{ c = bwm::face_corners{ w, face = f } }
+                let pad = math::vec3::splat{ s = 0.01 }
+                let want = math::Aabb{ min = math::vec3::sub{ a = fb.min, b = pad }, max = math::vec3::add{ a = fb.max, b = pad } }
+                if seen[f] or not near_box{ a = want, b = node.box, tol = 0.000001 } {
+                    add{ &t, c = class, entry, a = @as(i64, i), b = 0 }
+                    return
+                }
+                seen[f] = true
+            } else {
+                let ok = node.face == -1 and @as(i64, node.left) == @as(i64, i) + 1 and @as(i64, node.right) > @as(i64, i) and
+                    @as(i64, node.right) < @as(i64, n) and node.plane != 0
+                if not ok {
+                    add{ &t, c = class, entry, a = @as(i64, i), b = 0 }
+                    return
+                }
+                let u = math::aabb::merge{ a = w.nodes[@as(usize, node.left)].box, b = w.nodes[@as(usize, node.right)].box }
+                if not near_box{ a = u, b = node.box, tol = 0.0 } {
+                    add{ &t, c = class, entry, a = @as(i64, i), b = 0 }
+                    return
+                }
+            }
+            i = i + 1
+        }
+        i = 0
+        while i < nf {
+            if not seen[i] {
+                add{ &t, c = class, entry, a = -2, b = @as(i64, i) }
+                return
+            }
+            i = i + 1
+        }
+    }
+
+    // Each link's edge is linked back, and the two share their vertices reversed (5.5).
+    fn check_adjacency { mut t: Tally, w: bwm::Walkmesh, entry: u32 } {
+        let nw = w.adjacency.len
+        let mut f: usize = 0
+        while f < nw {
+            let mut k: usize = 0
+            while k < 3 {
+                let link = w.adjacency[f][k]
+                if link >= 0 {
+                    let to = @as(usize, link)
+                    let g = to / 3
+                    let j = to % 3
+                    if g == f { add{ &t, c = Class::adjacency_self, entry, a = @as(i64, f), b = @as(i64, k) } }
+                    if @as(i64, w.adjacency[g][j]) != @as(i64, 3 * f + k) { add{ &t, c = Class::adjacency_asymmetric, entry, a = @as(i64, f), b = @as(i64, k) } }
+                    let mine = bwm::edge_vertices{ w, edge = 3 * f + k }
+                    let theirs = bwm::edge_vertices{ w, edge = to }
+                    if mine[0] != theirs[1] or mine[1] != theirs[0] { add{ &t, c = Class::adjacency_vertices, entry, a = @as(i64, f), b = @as(i64, k) } }
+                }
+                k = k + 1
+            }
+            f = f + 1
+        }
+    }
+
+    // The perimeter is exactly the walkable edges without adjacency, in loops that close (5.6, 5.7).
+    fn check_perimeter { mut t: Tally, mut heap: arena::Arena, w: bwm::Walkmesh, entry: u32 } -> ! {
+        let nw = w.adjacency.len
+        if nw > 0 and w.perimeter.len == 0 { add{ &t, c = Class::no_perimeter, entry, a = 0, b = 0 } }
+        if w.perimeter.len == 0 { return }
+        let listed = try make(bool){ &heap, count = 3 * w.faces.len, fill = false }
+        let mut i: usize = 0
+        while i < w.perimeter.len {
+            let e = @as(usize, w.perimeter[i].edge)
+            if listed[e] { add{ &t, c = Class::perimeter_twice, entry, a = @as(i64, e), b = 0 } }
+            listed[e] = true
+            if e >= 3 * nw or w.adjacency[e / 3][e % 3] != -1 { add{ &t, c = Class::perimeter_not_open, entry, a = @as(i64, e), b = 0 } }
+            i = i + 1
+        }
+        let mut missing: i64 = 0
+        let mut e: usize = 0
+        while e < 3 * nw {
+            if w.adjacency[e / 3][e % 3] == -1 and not listed[e] { missing = missing + 1 }
+            e = e + 1
+        }
+        if missing > 0 { add{ &t, c = Class::perimeter_missing, entry, a = missing, b = 0 } }
+        let mut start: usize = 0
+        let mut l: usize = 0
+        while l < w.loop_ends.len {
+            let end = @as(usize, w.loop_ends[l])
+            let mut k = start
+            while k < end {
+                let next = if k + 1 == end { start } else { k + 1 }
+                let here = bwm::edge_vertices{ w, edge = w.perimeter[k].edge }
+                let there = bwm::edge_vertices{ w, edge = w.perimeter[next].edge }
+                if here[1] != there[0] {
+                    add{ &t, c = Class::loop_open, entry, a = @as(i64, l), b = @as(i64, k - start) }
+                    break
+                }
+                k = k + 1
+            }
+            start = end
+            l = l + 1
+        }
+    }
+
+    // At about 25 walkable-face centroids: the tree finds the floor a search of every face finds,
+    // and a ray straight down stops on it.
+    fn check_queries { mut t: Tally, mut s: Summary, mut heap: arena::Arena, w: bwm::Walkmesh, stored: []bwm::Node, entry: u32, walkable: []bool } -> ! {
+        let mut flat_w = w
+        flat_w.nodes = slice::empty(bwm::Node){}
+        let mut stored_w = w
+        stored_w.nodes = stored
+        let found = try make(bool){ &heap, count = w.faces.len, fill = false }
+        let stack = try make(u32){ &heap, count = stored.len + 2, fill = 0 }
+        let nw = w.adjacency.len
+        let stride = if nw / 25 > 1 { nw / 25 } else { 1 }
+        let mut f: usize = 0
+        while f < nw {
+            s.samples = s.samples + 1
+            let c = bwm::centroid{ w, face = f }
+            let tree = bwm::find_face_under{ w, x = c.x, y = c.y, z = c.z, step = 0.5, walkable }
+            let every = bwm::find_face_under{ w = flat_w, x = c.x, y = c.y, z = c.z, step = 0.5, walkable }
+            if not same_floor{ a = tree, b = every } { add{ &t, c = Class::tree_query_mismatch, entry, a = @as(i64, f), b = 0 } }
+            if every == null { add{ &t, c = Class::sample_without_floor, entry, a = @as(i64, f), b = 0 } }
+            if stored.len > 0 {
+                let old = bwm::find_face_under{ w = stored_w, x = c.x, y = c.y, z = c.z, step = 0.5, walkable }
+                if not same_floor{ a = old, b = every } { add{ &t, c = Class::stored_query_mismatch, entry, a = @as(i64, f), b = 0 } }
+                let missed = count_stored_misses{ w, stored, found, stack, face = f }
+                if missed > 0 { add{ &t, c = Class::stored_tree_misses, entry, a = @as(i64, f), b = missed } }
+            }
+
+            s.rays = s.rays + 1
+            let ray = math::Ray{ origin = math::Vec3{ x = c.x, y = c.y, z = c.z + 1.0 }, dir = math::Vec3{ x = 0.0, y = 0.0, z = -1.0 } }
+            let hit = bwm::cast_ray{ w, ray, max_t = 10000.0, stops = walkable }
+            let hit_every = bwm::cast_ray{ w = flat_w, ray, max_t = 10000.0, stops = walkable }
+            if not same_hit{ a = hit, b = hit_every } { add{ &t, c = Class::ray_tree_mismatch, entry, a = @as(i64, f), b = 0 } }
+            // The first walkable face below the ray's origin is the floor there, unless it is no
+            // floor (steep, or facing down, as 142 walkable faces are): then it is above the floor.
+            let below = bwm::find_face_under{ w = flat_w, x = c.x, y = c.y, z = c.z + 1.0, step = 0.0, walkable }
+            if below == null {
+                add{ &t, c = Class::ray_no_floor, entry, a = @as(i64, f), b = 0 }
+            } else if hit == null {
+                add{ &t, c = Class::ray_height, entry, a = @as(i64, f), b = 1000000000 }
+            } else {
+                let off = hit.point.z - below.z
+                let is_floor = w.planes[hit.face].n.z >= bwm::FLOOR_MIN_NZ
+                if (is_floor and math::abs{ x = off } > 0.001) or off < -0.001 {
+                    add{ &t, c = Class::ray_height, entry, a = @as(i64, f), b = to_mm{ m = off } }
+                }
+            }
+            f = f + stride
+        }
+    }
+
+    // bwmprobe.py's measure of the stored tree (check_tree_queries), to compare with bwm.md's
+    // count: at the face's centroid, taken in f64, how many faces of any material and height
+    // hold the point seen from above (the probe's test, below) but aren't reached through the
+    // stored boxes. `found` and `stack` are scratch, as long as the faces and the nodes + 2.
+    fn count_stored_misses { w: bwm::Walkmesh, stored: []bwm::Node, found: []mut bool, stack: []mut u32, face: usize } -> i64 {
+        let c = bwm::face_corners{ w, face }
+        let x = (@as(f64, c[0].x) + @as(f64, c[1].x) + @as(f64, c[2].x)) / 3.0
+        let y = (@as(f64, c[0].y) + @as(f64, c[1].y) + @as(f64, c[2].y)) / 3.0
+        slice::fill{ s = found, v = false }
+        stack[0] = 0
+        let mut sp: usize = 1
+        while sp > 0 {
+            sp = sp - 1
+            let node = stored[stack[sp]]
+            let b = node.box
+            if x < @as(f64, b.min.x) or x > @as(f64, b.max.x) or y < @as(f64, b.min.y) or y > @as(f64, b.max.y) { continue }
+            if node.face >= 0 {
+                let g = @as(usize, node.face)
+                if is_under_probe{ c = bwm::face_corners{ w, face = g }, x, y } { found[g] = true }
+                continue
+            }
+            if sp + 2 > stack.len { continue }
+            stack[sp] = @as(u32, node.right)
+            stack[sp + 1] = @as(u32, node.left)
+            sp = sp + 2
+        }
+        let mut missed: i64 = 0
+        let mut g: usize = 0
+        while g < w.faces.len {
+            if not found[g] and is_under_probe{ c = bwm::face_corners{ w, face = g }, x, y } { missed = missed + 1 }
+            g = g + 1
+        }
+        return missed
+    }
+
+    // bwmprobe.py's point_in_triangle_xy and its vertical-face test, in f64 as Python has them.
+    fn is_under_probe { c: [3]math::Vec3, x: f64, y: f64 } -> bool {
+        let ax: f64 = c[0].x
+        let ay: f64 = c[0].y
+        let bx: f64 = c[1].x
+        let by: f64 = c[1].y
+        let cx: f64 = c[2].x
+        let cy: f64 = c[2].y
+        let d0 = (bx - ax) * (y - ay) - (by - ay) * (x - ax)
+        let d1 = (cx - bx) * (y - by) - (cy - by) * (x - bx)
+        let d2 = (ax - cx) * (y - cy) - (ay - cy) * (x - cx)
+        let eps: f64 = 0.000001
+        let inside = (d0 >= -eps and d1 >= -eps and d2 >= -eps) or (d0 <= eps and d1 <= eps and d2 <= eps)
+        let nz = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+        return inside and (nz > 0.000000001 or nz < -0.000000001)
+    }
+
+    // Places a PWK or DWK with a test placement and checks it lands where bwm.md section 3's
+    // formula says, computed here in f64, and that rays find its faces.
+    fn check_placing { mut t: Tally, mut s: Summary, mut heap: arena::Arena, w: bwm::Walkmesh, entry: u32, every: []bool } -> ! {
+        let at = bwm::Placement{ position = math::Vec3{ x = 12.5, y = -7.25, z = 1.5 }, bearing = 0.7 }
+        let p = try bwm::transform_placed{ realloc = arena::alloc, &heap, w, at }
+        s.placed = s.placed + 1
+        let mut i: usize = 0
+        while i < w.vertices.len {
+            if not near_placed{ got = p.vertices[i], v = w.vertices[i], offset = w.position, at } {
+                add{ &t, c = Class::transform_vertex, entry, a = @as(i64, i), b = 0 }
+            }
+            i = i + 1
+        }
+        let zero = math::vec3::zero{}
+        i = 0
+        while i < 2 {
+            let rel_ok = if is_zero{ v = w.rel_hooks[i] } { is_zero{ v = p.rel_hooks[i] } } else {
+                near_placed{ got = p.rel_hooks[i], v = w.rel_hooks[i], offset = w.position, at }
+            }
+            let abs_ok = near_placed{ got = p.abs_hooks[i], v = w.abs_hooks[i], offset = zero, at }
+            if not rel_ok or not abs_ok { add{ &t, c = Class::transform_hook, entry, a = @as(i64, i), b = 0 } }
+            i = i + 1
+        }
+        try check_loaded_tree{ &t, &heap, w = p, entry, class = Class::transform_tree }
+
+        // From half a metre in front of each face, back along its normal: the face, or one
+        // nearer, stops the ray.
+        let mut flat_p = p
+        flat_p.nodes = slice::empty(bwm::Node){}
+        let mut f: usize = 0
+        while f < p.faces.len {
+            if not p.flat[f] {
+                let n = p.planes[f].n
+                let ray = math::Ray{ origin = math::vec3::add_scaled{ a = bwm::centroid{ w = p, face = f }, b = n, s = 0.5 }, dir = math::vec3::negate{ v = n } }
+                let hit = bwm::cast_ray{ w = p, ray, max_t = 1.0, stops = every }
+                let hit_every = bwm::cast_ray{ w = flat_p, ray, max_t = 1.0, stops = every }
+                if hit == null or hit.t > 0.501 or not same_hit{ a = hit, b = hit_every } {
+                    add{ &t, c = Class::transform_ray, entry, a = @as(i64, f), b = 0 }
+                }
+            }
+            f = f + 1
+        }
+    }
+
+    // got is v + add placed by at, to within 0.1 mm, the placement computed in f64.
+    fn near_placed { got: math::Vec3, v: math::Vec3, offset: math::Vec3, at: bwm::Placement } -> bool {
+        let c = cos{ x = at.bearing }
+        let sn = sin{ x = at.bearing }
+        let x: f64 = @as(f64, v.x) + @as(f64, offset.x)
+        let y: f64 = @as(f64, v.y) + @as(f64, offset.y)
+        let z: f64 = @as(f64, v.z) + @as(f64, offset.z)
+        let ex = @as(f64, at.position.x) + x * c - y * sn
+        let ey = @as(f64, at.position.y) + x * sn + y * c
+        let ez = @as(f64, at.position.z) + z
+        return near64{ a = got.x, b = ex } and near64{ a = got.y, b = ey } and near64{ a = got.z, b = ez }
+    }
+
+    fn near64 { a: f32, b: f64 } -> bool {
+        let d = @as(f64, a) - b
+        return d <= 0.0001 and d >= -0.0001
+    }
+
+    extern fn cos { x: f64 } -> f64
+    extern fn sin { x: f64 } -> f64
+
+    // ---- small helpers
+
+    fn same_floor { a: ?bwm::Floor, b: ?bwm::Floor } -> bool {
+        if a == null or b == null { return a == null and b == null }
+        return a.face == b.face and a.z == b.z
+    }
+
+    fn same_hit { a: ?bwm::RayHit, b: ?bwm::RayHit } -> bool {
+        if a == null or b == null { return a == null and b == null }
+        return a.face == b.face and a.t == b.t
+    }
+
+    fn is_zero { v: math::Vec3 } -> bool { return v.x == 0.0 and v.y == 0.0 and v.z == 0.0 }
+
+    fn near3 { a: math::Vec3, b: math::Vec3, tol: f32 } -> bool {
+        return math::abs{ x = a.x - b.x } <= tol and math::abs{ x = a.y - b.y } <= tol and math::abs{ x = a.z - b.z } <= tol
+    }
+
+    fn near_box { a: math::Aabb, b: math::Aabb, tol: f32 } -> bool {
+        return near3{ a = a.min, b = b.min, tol } and near3{ a = a.max, b = b.max, tol }
+    }
+
+    fn bounds { c: [3]math::Vec3 } -> math::Aabb {
+        return math::Aabb{
+            min = math::vec3::min{ a = math::vec3::min{ a = c[0], b = c[1] }, b = c[2] },
+            max = math::vec3::max{ a = math::vec3::max{ a = c[0], b = c[1] }, b = c[2] },
+        }
+    }
+
+    // Metres as whole millimetres for an example, clamped: a stored box may hold anything.
+    fn to_mm { m: f32 } -> i64 {
+        let mm = m * 1000.0
+        if mm >= 1000000000.0 { return 1000000000 }
+        if not (mm > -1000000000.0) { return -1000000000 }
+        return @as(i64, mm)
+    }
+
+    fn max6 { a: f32, b: f32, c: f32, d: f32, e: f32, f: f32 } -> f32 {
+        return math::max{ a = math::max{ a = math::max{ a, b }, b = math::max{ a = c, b = d } }, b = math::max{ a = e, b = f } }
+    }
+
+    struct AxisSign { axis: u32, sign: i32 }
+
+    // A split plane value as an axis and the side the right child is on; sign 0 for none.
+    fn plane_axis { plane: u32 } -> AxisSign {
+        if plane == 1 { return AxisSign{ axis = 0, sign = 1 } }
+        if plane == 2 { return AxisSign{ axis = 1, sign = 1 } }
+        if plane == 4 { return AxisSign{ axis = 2, sign = 1 } }
+        if plane == 8 { return AxisSign{ axis = 0, sign = -1 } }
+        if plane == 16 { return AxisSign{ axis = 1, sign = -1 } }
+        if plane == 32 { return AxisSign{ axis = 2, sign = -1 } }
+        return AxisSign{ axis = 0, sign = 0 }
+    }
+
+    fn along { v: math::Vec3, axis: u32 } -> f32 {
+        return if axis == 0 { v.x } else if axis == 1 { v.y } else { v.z }
+    }
+
+    fn make(T) { mut heap: arena::Arena, count: usize, fill: T } -> ![]mut T {
+        let out = try alloc::resize(T, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(T){}, count }
+        slice::fill(T){ s = out, v = fill }
+        return out
+    }
+
+    // ---- the report
+
+    fn report { mut con: Con, mut r: Run, entries: []Entry, from: strlit } {
+        report_counts{ &con, s = &r.s, t = r.t, entries, from }
+    }
+
+    fn report_counts { mut con: Con, mut s: Summary, t: Tally, entries: []Entry, from: strlit } {
+        _ = @fmt(&con, "walkcheck: {} walkmeshes from {} (wok {}, pwk {}, dwk {}), {} parsed\n", s.files, from, s.kinds[0], s.kinds[1], s.kinds[2], s.parsed)
+        _ = @fmt(&con, "  empty (no vertices): wok {}, pwk {}, dwk {}\n", s.empty[0], s.empty[1], s.empty[2])
+        _ = @fmt(&con, "  faces {} (walkable, in WOKs: {}), stored AABB nodes {}\n", s.faces, s.walkable_faces, s.stored_nodes)
+        _ = @fmt(&con, "  perimeter edges {} ({} with a transition), loops {}\n", s.perimeter_edges, s.transitions, s.loops)
+        _ = @fmt(&con, "  queries: {} walkable-face centroids, {} rays down, {} PWK/DWK placed\n", s.samples, s.rays, s.placed)
+        _ = @fmt(&con, "  damaged copies: {} parsed without a panic, {} rejected with an error, {} queried and placed\n",
+            s.damaged, s.damaged_rejected, s.damaged - s.damaged_rejected)
+        let mut pass: u32 = 0
+        while pass < 2 {
+            let failures = pass == 0
+            if failures { _ = @fmt(&con, "\n== failure classes (count, bwm.md's count)\n") } else { _ = @fmt(&con, "\n== tallies (count, bwm.md's count)\n") }
+            let mut i: usize = 0
+            while i < CLASS_COUNT {
+                let info = describe{ c = @as(Class, @as(u32, i)) }
+                let n = t.counts[i]
+                if info.failure == failures and (n > 0 or info.expect > 0) {
+                    let differs = info.expect >= 0 and @as(i64, n) != info.expect
+                    if differs { s.surprises = s.surprises + 1 }
+                    let tag: []u8 = if differs { "DIFF" } else { "    " }
+                    _ = @fmt(&con, "{} {} {}", tag, pad{ n }, info.text)
+                    if info.expect >= 0 { _ = @fmt(&con, " (bwm.md: {})", info.expect) }
+                    if t.seen[i] {
+                        let ex = t.examples[i]
+                        let e = entries[ex.entry]
+                        _ = @fmt(&con, "   e.g. {}/{}.{}", e.container, e.resref, e.ext)
+                        if info.a.len > 0 { _ = @fmt(&con, " {} {}", info.a, ex.a) }
+                        if info.b.len > 0 { _ = @fmt(&con, " {} {}", info.b, ex.b) }
+                    }
+                    _ = @fmt(&con, "\n")
+                }
+                i = i + 1
+            }
+            pass = pass + 1
+        }
+        if s.surprises == 0 {
+            _ = @fmt(&con, "\nwalkcheck: every count is bwm.md's\n")
+        } else {
+            _ = @fmt(&con, "\nwalkcheck: {} counts differ from bwm.md\n", s.surprises)
+        }
+    }
+
+    // A count right-aligned in 8 columns.
+    struct Padded { n: u64 }
+
+    fn pad { n: u64 } -> Padded { return Padded{ n } }
+
+    // ---- @fmt into standard output, through a sink of our own so that a program that also
+    // writes to Io directly (as tools do, with writers of their own) has no two writers for one
+    // type (spec 13, Formatting).
+
+    struct Con { io: Io }
+
+    #write
+    fn put_text { mut c: Con, s: strlit } { io::write{ io = &c.io, to = io::Stream::out, bytes = s.bytes } }
+    #write
+    fn put_bytes { mut c: Con, b: []u8 } { io::write{ io = &c.io, to = io::Stream::out, bytes = b } }
+    #write
+    fn put_string { mut c: Con, s: utf8::String } { io::write{ io = &c.io, to = io::Stream::out, bytes = s.bytes } }
+    #write
+    fn put_bool { mut c: Con, b: bool } { io::print_bool{ io = &c.io, n = b } }
+    #write
+    fn put_i32 { mut c: Con, n: i32 } { io::print_i64{ io = &c.io, n } }
+    #write
+    fn put_i64 { mut c: Con, n: i64 } { io::print_i64{ io = &c.io, n } }
+    #write
+    fn put_u32 { mut c: Con, n: u32 } { io::print_u64{ io = &c.io, n } }
+    #write
+    fn put_u64 { mut c: Con, n: u64 } { io::print_u64{ io = &c.io, n } }
+    #write
+    fn put_usize { mut c: Con, n: usize } { io::print_u64{ io = &c.io, n } }
+    #write
+    fn put_f32 { mut c: Con, n: f32 } { io::print_f32{ io = &c.io, n } }
+    #write
+    fn put_f64 { mut c: Con, n: f64 } { io::print_f64{ io = &c.io, n } }
+    #write
+    fn put_padded { mut c: Con, p: Padded } {
+        let mut buf: [20]u8
+        let text = utf8::fmt_u64{ n = p.n, into = buf[..] }
+        let mut k = text.bytes.len
+        while k < 8 {
+            io::write{ io = &c.io, to = io::Stream::out, bytes = " " }
+            k = k + 1
+        }
+        io::write{ io = &c.io, to = io::Stream::out, bytes = text.bytes }
+    }
+    #write
+    fn put_table { mut c: Con, t: bwm::Table } {
+        let name: []u8 = match t {
+            header => { "header" }
+            vertices => { "vertices" }
+            faces => { "faces" }
+            materials => { "materials" }
+            normals => { "normals" }
+            distances => { "distances" }
+            nodes => { "nodes" }
+            adjacency => { "adjacency" }
+            perimeter => { "perimeter" }
+            loops => { "loops" }
+        }
+        io::write{ io = &c.io, to = io::Stream::out, bytes = name }
+    }
+}
