@@ -6,11 +6,11 @@ The orchestrator keeps this file current. Rules and layout are in [AGENTS.md](AG
 
 | Stage | What | State |
 |---|---|---|
-| 0 | [Foundations](#0-foundations): multi-directory builds, RE pipeline, format docs, SDL+GL spike | done but 0.5 |
-| 1 | [Data layer](#1-data-layer): resources, GFF and tables, textures, models, walkmeshes, audio, NCS VM, Bink | in progress |
+| 0 | [Foundations](#0-foundations): multi-directory builds, RE pipeline, format docs, SDL+GL spike | done |
+| 1 | [Data layer](#1-data-layer): resources, GFF and tables, textures, models, walkmeshes, audio, NCS VM, Bink | done |
 | 2 | [Rendering](#2-rendering): the render seam, GL 4.1 backend, viewers | in progress |
-| 3 | [Engine core](#3-engine-core): modules, objects, scene, camera, movement, scripting runtime | planned |
-| 4 | [GUI and presentation](#4-gui-and-presentation): GUI system, menus, HUD, dialogue, movies | planned |
+| 3 | [Engine core](#3-engine-core): modules, objects, scene, camera, movement, scripting runtime | in progress |
+| 4 | [GUI and presentation](#4-gui-and-presentation): GUI system, menus, HUD, dialogue, movies | in progress |
 | 5 | [Rules](#5-rules): d20 combat, feats, powers, effects, items, party, AI | planned |
 | 6 | [Persistence](#6-persistence): saves and loads | planned |
 | 7 | [Minigames](#7-minigames): pazaak, swoop racing, turrets | planned |
@@ -40,6 +40,9 @@ Done: 1 (driver, `e16a186`), 2 (`8f14e74`; behaviour RE continues for stage 3), 
 ## 1. Data layer
 
 Each reader comes with a corpus tool that runs it over every resource of its kind.
+
+*Done:* all eight, each checked over the whole install (`fmtcheck`, `texcheck`, `mdlcheck`,
+`animcheck`, `walkcheck`, `sndcheck`, `ncsrun`/`ncsdis`, `binkcheck`). Designs in `docs/design/`.
 
 1. `res`: resource types, KEY/BIF, ERF/MOD/SAV, RIM, Override, TexturePacks, the resource manager
    and its search order.
