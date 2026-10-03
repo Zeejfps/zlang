@@ -141,6 +141,8 @@ namespace modload {
         w.layout = layout
         let vis_bytes = try world::read_module{ &w, name = area, kind = restype::Type::vis }
         if vis_bytes != null { w.vis = try vis::parse(arena::Arena){ data = vis_bytes, realloc = arena::alloc, heap = w.mod_arena } }
+        let pth_doc = try world::read_gff{ &w, name = area, kind = restype::Type::pth }
+        if pth_doc != null { w.paths = try pth::read(arena::Arena){ doc = pth_doc, realloc = arena::alloc, heap = w.mod_arena } }
         let mut i: usize = 0
         while i < layout.rooms.len {
             let r = layout.rooms[i]
@@ -451,6 +453,7 @@ namespace modload {
         walkmap::clear{ m = &w.walk }
         map::clear{ m = &w.heartbeats }
         w.layout = null
+        w.paths = null
         w.vis = null
         w.module = obj::INVALID
         w.area = obj::INVALID

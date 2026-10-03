@@ -27,8 +27,8 @@ namespace movement {
     }
 
     // MOVETOPOINT (actions.md 3.1): params 0 the point, 1 run (int), 2 range, 3 the target object
-    // (the point follows it), 4 timeout seconds (0 none). A straight path for now (ours: PTH and
-    // grid planning, movement.md 4, are milestone 2's).
+    // (the point follows it), 4 timeout seconds (0 none). The path comes from lib/engine/paths.ctx
+    // and is planned again when the goal moves 2 m or more (movement.md 3.2 step 12).
     fn move_to_point { mut w: world::World, id: u32, a: *mut actions::Action } -> actions::Status {
         let o = world::object{ w = &w, id } ifnull { return actions::Status::failed }
         let c = obj::creature{ o } ifnull { return actions::Status::failed }
@@ -50,50 +50,97 @@ namespace movement {
             world::set_animation{ o = back, id = obj::ANIM_STAND, speed = 1.0 }
             return actions::Status::done
         }
-        let dx = goal.x - o.position.x
-        let dy = goal.y - o.position.y
-        let dist = math::sqrtf{ x = dx * dx + dy * dy }
-        if dist <= range {
+        if distance_2d{ a = o.position, b = goal } <= range {
             stop{ &w, id }
             world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
             return actions::Status::done
         }
         let dt_ms = w.clock.dt * 1000.0
         if dt_ms <= 0.0 { return actions::Status::running }
+        if c.path.len == 0 or c.path_next >= c.path.len or distance_2d{ a = c.path_goal, b = goal } >= 2.0 {
+            c.path_next = 0
+            c.path_goal = goal
+            if not paths::plan{ &w, from = o.position, goal, out = &c.path } {
+                a.phase = a.phase + 1
+                if a.phase >= GIVE_UP {
+                    stop{ &w, id }
+                    world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+                    return actions::Status::failed
+                }
+                return actions::Status::running
+            }
+        }
         c.moving = true
         let rate = if run { c.run_rate } else { c.walk_rate }
-        // Acceleration and braking (movement.md 3.3): f rises to 1 over a second, and falls
-        // with the square root of what is left over the last half second's worth of path.
+        // Acceleration and braking (movement.md 3.3): f rises to 1 over a second, and falls with
+        // the square root of what is left over the last half second's worth of path.
+        let left = remaining{ from = o.position, path = list::items{ list = c.path }, next = c.path_next } - range
         let brake = 0.5 * rate
         let mut f: f32 = 1.0
-        let left = dist - range
         if left < brake {
-            f = if left / brake < 0.01 { 0.1 } else { math::sqrtf{ x = left / brake } }
+            f = if left / brake < 0.01 { 0.1 } else { math::sqrtf{ x = math::max{ a = left, b = 0.0 } / brake } }
             f = f - dt_ms / 1000.0
         }
         if c.speed_factor < 1.0 { f = math::min{ a = f, b = c.speed_factor + dt_ms / 1000.0 } }
         f = math::max{ a = f, b = 0.1 }
-        let s = dt_ms * (f + c.speed_factor) * rate * 0.5 / 1000.0
+        let mut s = dt_ms * (f + c.speed_factor) * rate * 0.5 / 1000.0
         c.speed_factor = f
-        let step = math::min{ a = s, b = dist }
-        let to = math::Vec3{ x = o.position.x + dx / dist * step, y = o.position.y + dy / dist * step, z = o.position.z }
-        world::set_orientation{ o, v = math::Vec3{ x = dx, y = dy, z = 0.0 } }
+        c.speed = s / (dt_ms / 1000.0)
         world::set_animation{ o, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, speed = 1.0 }
-        c.speed = step / (dt_ms / 1000.0)
-        let z = walkmap::step_to{ m = &w.walk, from = o.position, to } ifnull {
-            a.phase = a.phase + 1
-            if a.phase >= GIVE_UP {
-                stop{ &w, id }
-                world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
-                return actions::Status::failed
-            }
-            return actions::Status::running
-        }
-        a.phase = 0
+        // Along the path's points (StepAlongPath, movement.md 3.4).
         let from = o.position
-        world::set_position{ o, p = math::Vec3{ x = to.x, y = to.y, z } }
-        cross_volumes{ &w, id, from, to = o.position }
+        let mut here = o.position
+        while s > 0.0001 and c.path_next < c.path.len {
+            let p = list::items{ list = c.path }[c.path_next]
+            let d = distance_2d{ a = here, b = p }
+            let last = c.path_next + 1 == c.path.len
+            let stop_at = if last { math::max{ a = d - range + 0.05, b = 0.0 } } else { d }
+            let step = math::min{ a = s, b = stop_at }
+            if d < 0.0001 {
+                c.path_next = c.path_next + 1
+                continue
+            }
+            let to = math::Vec3{ x = here.x + (p.x - here.x) / d * step, y = here.y + (p.y - here.y) / d * step, z = here.z }
+            let z = walkmap::step_to{ m = &w.walk, from = here, to } ifnull {
+                // Blocked: plan again next frame, give up after six times in a row.
+                c.path_next = c.path.len
+                a.phase = a.phase + 1
+                if a.phase >= GIVE_UP {
+                    stop{ &w, id }
+                    world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+                    return actions::Status::failed
+                }
+                break
+            }
+            a.phase = 0
+            world::set_orientation{ o, v = math::Vec3{ x = p.x - here.x, y = p.y - here.y, z = 0.0 } }
+            here = math::Vec3{ x = to.x, y = to.y, z }
+            s = s - step
+            if step >= stop_at { c.path_next = c.path_next + 1 }
+            if last and step >= stop_at { break }
+        }
+        world::set_position{ o, p = here }
+        cross_volumes{ &w, id, from, to = here }
         return actions::Status::running
+    }
+
+    fn distance_2d { a: math::Vec3, b: math::Vec3 } -> f32 {
+        let dx = a.x - b.x
+        let dy = a.y - b.y
+        return math::sqrtf{ x = dx * dx + dy * dy }
+    }
+
+    // What is left of a path from `from`: to its next point, then point to point.
+    fn remaining { from: math::Vec3, path: []math::Vec3, next: usize } -> f32 {
+        let mut total: f32 = 0.0
+        let mut here = from
+        let mut i = next
+        while i < path.len {
+            total = total + distance_2d{ a = here, b = path[i] }
+            here = path[i]
+            i = i + 1
+        }
+        return total
     }
 
     // Whether (x, y) is inside a polygon seen from above (even-odd rule).

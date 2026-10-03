@@ -75,6 +75,7 @@ namespace world {
         values: values::Store,
         walk: walkmap::Map,
         layout: ?lyt::Layout,
+        paths: ?pth::Graph,                 // the area's path points (module memory)
         vis: ?vis::Vis,
         tables: Tables,
         tlk: ?tlk::Table,                   // dialog.tlk (game/main loads it)
@@ -116,7 +117,7 @@ namespace world {
             scripts = scripts::new_cache{ heap },
             values = values::new{ heap },
             walk = walkmap::empty{ heap },
-            layout = null, vis = null,
+            layout = null, paths = null, vis = null,
             tables, tlk = null, globals,
             out = outbox::new{ heap },
             transition = null,
