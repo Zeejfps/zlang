@@ -1,8 +1,9 @@
 # Minigames: pazaak, swoop racing, turrets
 
 Pazaak is built and plays through (rules, the original's opponent, the three screens, the engine
-hooks). Swoop racing and the turret sequences are surveyed and planned (the last section); nothing
-of them is implemented. What the original does is in [re/pazaak.md](../re/pazaak.md) and
+hooks). The three swoop races run with the original's own scripts (rails, steering, pads and
+obstacles, the HUD, the camera, the start and the finish); the Ebon Hawk turret is surveyed and
+planned but not built (the last section). What the original does is in [re/pazaak.md](../re/pazaak.md) and
 [re/minigames-swoop-turret.md](../re/minigames-swoop-turret.md).
 
 | Directory | Namespace | What |
@@ -17,6 +18,12 @@ of them is implemented. What the original does is in [re/pazaak.md](../re/pazaak
 | `game/pazaak.ctx` | `pz_game` | the loop's side: a visit to the table, the outcome into the party |
 | `tools/pazaakplay` | | a visit headless from a script (or a bot), with PNGs; `--interactive` plays it |
 | `tools/pazaaksim` | | thousands of AI-vs-AI matches; `--selftest` |
+| `lib/minigame/area.ctx` | `mg` | the ARE's `MiniGame` struct read into plain structs (`mg::Area`, `Follower`, `Bank`) |
+| `lib/minigame/rail.ctx` | `mg` | a track model's `track` animation sampled into a `Rail` |
+| `lib/minigame/run.ctx` | `mg` | `Run`: the objects of a race, the player's speed and steering, collisions, script events |
+| `lib/engine/routines/swmg.ctx` | `rt_swmg` | the 97 `SWMG_*` routines over `w.minigame` |
+| `game/minigame*.ctx` | `mg_game` | the run's scripts, the scene (models, animation layers, camera) and the minigame frame |
+| `tools/mgdump`, `tools/mgrun` | | the four areas' setup dumped; the physics alone, without scripts or window |
 
 `lib/pazaak/core` needs `base res formats` only (the engine and the simulation take it alone);
 `lib/pazaak` as a whole adds the GUI libraries (`tex material platform render render_gl audio gui`).
@@ -186,6 +193,39 @@ starting). The shape of what we found:
 
 ### Status
 
-Hooks 1 and 2 are not in the engine yet (the engine lead confirmed `read_are` does not read the
-struct), so **only step 1 is implemented**; the rest waits for the engine lead's agreement on the
-hook above.
+Hooks 1 and 2 were agreed with the engine lead and are in: `obj::Area.minigame` is filled by
+`read_are`, `w.minigame` holds the run, the loop calls `mg_game::frame` instead of its own step
+while the area has a run. Minigame object ids are in `mg::ID_BASE` (0x7E000000) + slot, so the
+world's generic routines answer "no such object" for them.
+
+**Done (the swoop slice, steps 1-4 and part of 6):**
+
+- The setup of all four areas is read and dumped (`mgdump`); the ARE's numbers equal the survey's.
+- The player rides its rail at `speed/100` playback rate, accelerates toward `MaxSpeed` at the
+  script's rate and steers with the original's lateral model (exact solution of its Runge-Kutta
+  equation), clamped to the tunnel; pads (spheres) and obstacles (boxes of their models) raise
+  `OnHitFollower` and `OnHitObstacle` (`mgrun`: at speed 200 on Taris the pads and obstacles are
+  hit where the layout puts them).
+- The unmodified `oncreate`, `heartbeat`, `onfire`, `accelpad` and `obstacle` scripts of all three
+  races run against the routines with no fault: the start lights, gear shifts, the timer, the speed
+  gauge and the finish (a fade, the time into the `*_SWOOP_*` globals and `StartNewModule` back
+  home) all happen. Headless (`--no-render`) the fire key is pressed twice a second; windowed it is
+  Space, steering is A/D or the arrows.
+- The picture: the bike, pads and obstacles as scene parts, the camera on the camera model's
+  `camerahook` (so the shake animations move it), the HUD models with their animations layered
+  per model (`game/minigame_anim.ctx`), screenshots with `--screenshot-at` and scripted keys:
+  `kotor --module tar_m03mg --headless --frames 700 --input FILE --screenshot-at 690:out.png`.
+
+**Not done:**
+
+- The turret (step 5): aiming and the mouse, the rotating models, bullets, enemy fire, the HUD
+  animations of `k_heartbeat`; `rt_swmg` already covers its routines.
+- The bike's lean (`BankL_01..10`) and the speed blur and heat distortion (`blur_on` is recorded,
+  nothing draws it); particle emitters in the models; the gear sounds on the bike's own models.
+- Pauses and the pause menu (Escape quits the game, as in the ordinary loop).
+- The Tatooine ground near the bike is black in `tat_m17mg` (the far desert is right): a room
+  material, not the minigame; the missing engine routines the race scripts call
+  (`SoundObjectSetVolume`, `SoundObjectSetFixedVariance`, `ShowTutorialWindow`) are the engine
+  lead's: with them missing the engine sounds do not follow the gears.
+- Obstacle hit geometry is the model's bounding box (the original tests its AABB tree), the
+  invulnerability after a bump is `Invince_Period`: both ours.
