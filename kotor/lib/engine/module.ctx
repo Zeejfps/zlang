@@ -302,6 +302,7 @@ namespace modload {
             }
             w.arrival_waypoint_len = 0
         }
+        if not party::is_member{ w = &w, id = w.pc } { party::set_leader{ &w, id = w.pc } }
         let pc = world::object{ w = &w, id = w.pc } ifnull { return }
         pc.area = w.area
         world::set_orientation{ o = pc, v = facing }

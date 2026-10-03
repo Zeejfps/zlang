@@ -244,7 +244,7 @@ namespace rt_crea {
             try nwvm::push_int{ &vm, v = 0 }
             return
         }
-        let rep = if ot.id == os.id { 100 } else { standing{ t = repute_table{ &w }, from = os.faction, toward = ot.faction } }
+        let rep = if ot.id == os.id { 100 } else { world::standing{ w = &w, from = os.faction, toward = ot.faction } }
         let yes = if routine == nwscript::GetIsEnemy { rep <= 10 }
             else if routine == nwscript::GetIsFriend { rep >= 90 }
             else { rep > 10 and rep < 90 }
@@ -371,7 +371,7 @@ namespace rt_crea {
                 return false
             }
             nwconst::CREATURE_TYPE_REPUTATION => {
-                let rep = standing{ t = repute, from = from.faction, toward = o.faction }
+                let rep = world::standing{ w, from = from.faction, toward = o.faction }
                 if v == nwconst::REPUTATION_TYPE_FRIEND { return rep >= 90 }
                 if v == nwconst::REPUTATION_TYPE_ENEMY { return rep <= 10 }
                 return rep > 10 and rep < 90

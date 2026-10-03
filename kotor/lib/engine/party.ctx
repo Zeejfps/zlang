@@ -1,0 +1,84 @@
+// The party (docs/re/party-items-saves.md): the leader and up to two members in the area, the
+// party table's NPC slots (which companions exist, can be picked, are spawned), and the shared
+// purse. The party lead fills in selection and following (HOOK(party)); the HUD reads it.
+//
+//   let ids = party::members{ w = &w }         // leader first
+namespace party {
+    // Party table NPC slots (KOTOR's nine companions, with room).
+    const SLOTS: usize = 12
+
+    struct Party {
+        members: [3]u32,            // in the area, leader first; obj::INVALID past count
+        count: usize,
+        npcs: [12]u32,              // a slot's creature when it is spawned, else obj::INVALID
+        available: [12]bool,
+        selectable: [12]bool,
+        gold: i32,
+        solo: bool,
+    }
+
+    fn new {} -> Party {
+        return Party{
+            members = [obj::INVALID; 3], count = 0, npcs = [obj::INVALID; 12], available = [false; 12],
+            selectable = [false; 12], gold = 0, solo = false,
+        }
+    }
+
+    // The members in the area, leader first.
+    fn members { w: *world::World } -> []u32 { return w.party.members[..w.party.count] }
+
+    fn leader { w: *world::World } -> u32 {
+        if w.party.count == 0 { return obj::INVALID }
+        return w.party.members[0]
+    }
+
+    fn is_member { w: *world::World, id: u32 } -> bool {
+        let mut i: usize = 0
+        while i < w.party.count {
+            if w.party.members[i] == id { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Adds a member (at the end); false when the party is full or it is one already.
+    fn add { mut w: world::World, id: u32 } -> bool {
+        if is_member{ w = &w, id } or w.party.count >= 3 { return false }
+        w.party.members[w.party.count] = id
+        w.party.count = w.party.count + 1
+        return true
+    }
+
+    fn remove { mut w: world::World, id: u32 } {
+        let mut j: usize = 0
+        let mut i: usize = 0
+        while i < w.party.count {
+            if w.party.members[i] != id {
+                w.party.members[j] = w.party.members[i]
+                j = j + 1
+            }
+            i = i + 1
+        }
+        while j < w.party.count {
+            w.party.members[j] = obj::INVALID
+            j = j + 1
+        }
+        w.party.count = if w.party.count > 0 and i != j { w.party.count - 1 } else { w.party.count }
+        let mut k: usize = 0
+        while k < 3 and w.party.members[k] != obj::INVALID { k = k + 1 }
+        w.party.count = k
+    }
+
+    // Makes a member the leader (first), the one keyboard control moves (w.pc follows it).
+    fn set_leader { mut w: world::World, id: u32 } {
+        if not is_member{ w = &w, id } { _ = add{ &w, id } }
+        let mut i: usize = 0
+        while i < w.party.count and w.party.members[i] != id { i = i + 1 }
+        if i >= w.party.count { return }
+        while i > 0 {
+            w.party.members[i] = w.party.members[i - 1]
+            i = i - 1
+        }
+        w.party.members[0] = id
+    }
+}
