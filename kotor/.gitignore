@@ -1,8 +1,8 @@
 # Derived from the copyrighted game binary or data: never commit.
-re/
-extract/
+/re/
+/extract/
 # Build and run outputs.
-out/
+/out/
 *.exe
 *.tmp
 __pycache__/

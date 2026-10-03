@@ -14,8 +14,13 @@ As a library:
     kres.read_container(path)             # entries of one ERF/MOD/SAV/RIM file
 
 Search order here (lowest priority first): chitin.key's BIFs, TexturePacks (tpa), then every
-module RIM/MOD and lips MOD as separate containers, then Override. A probe that wants a specific
-module should use read_container on its files.
+module RIM/MOD and lips MOD as separate containers, then Override. This is NOT the engine's order
+(see kotor/docs/formats/resources.md); a probe that wants a specific module should use
+read_container on its files.
+
+Corpus probes that must see every copy of every resource (all texture packs, patch.erf, rims/,
+saves and the module ERFs nested inside SAVEGAME.sav, loose save files) use
+`Game.every_entry(ext)` instead: it does not deduplicate and has no priority order.
 """
 
 import fnmatch
@@ -29,7 +34,7 @@ DEFAULT_DIR = r'F:\Steam\steamapps\common\swkotor'
 # Resource type ids (Aurora / Odyssey). Unknown ids show as their number.
 TYPES = {
     0: 'res', 1: 'bmp', 2: 'mve', 3: 'tga', 4: 'wav', 6: 'plt', 7: 'ini', 8: 'mp3', 9: 'mpg',
-    10: 'txt', 11: 'wma', 12: 'wmv', 13: 'xmv', 2000: 'plh', 2001: 'tex', 2002: 'mdl',
+    10: 'txt', 11: 'wma', 12: 'wmv', 13: 'xmv', 14: 'log', 2000: 'plh', 2001: 'tex', 2002: 'mdl',
     2003: 'thg', 2005: 'fnt', 2007: 'lua', 2008: 'slt', 2009: 'nss', 2010: 'ncs', 2011: 'mod',
     2012: 'are', 2013: 'set', 2014: 'ifo', 2015: 'bic', 2016: 'wok', 2017: '2da', 2018: 'tlk',
     2022: 'txi', 2023: 'git', 2024: 'bti', 2025: 'uti', 2026: 'btc', 2027: 'utc', 2029: 'dlg',
@@ -101,31 +106,33 @@ def _bif_table(path):
     return table
 
 
-def read_container(path):
-    """Entries of an ERF/MOD/SAV (V1.0) or RIM (V1.0) file."""
+def read_container(path, base=0):
+    """Entries of an ERF/MOD/SAV (V1.0) or RIM (V1.0) file, or of one nested in another file at
+    byte offset `base` (a save's module .sav inside SAVEGAME.sav). Offsets are absolute in `path`."""
     with open(path, 'rb') as f:
+        f.seek(base)
         head = f.read(160)
         magic = head[:8]
         out = []
         if magic[4:] == b'V1.0' and magic[:4] in (b'ERF ', b'MOD ', b'SAV ', b'HAK '):
             _lang, _locsize, count, _off_loc, off_keys, off_res = struct.unpack_from('<6I', head, 8)
-            f.seek(off_keys)
+            f.seek(base + off_keys)
             keys = f.read(24 * count)
-            f.seek(off_res)
+            f.seek(base + off_res)
             res = f.read(8 * count)
             for i in range(count):
                 resref = _resref(keys[24 * i:24 * i + 16])
                 _rid, rtype = struct.unpack_from('<IH', keys, 24 * i + 16)
                 off, size = struct.unpack_from('<II', res, 8 * i)
-                out.append(Entry(resref, type_name(rtype), path, off, size))
+                out.append(Entry(resref, type_name(rtype), path, base + off, size))
         elif magic == b'RIM V1.0':
             _res, count, off_keys = struct.unpack_from('<3I', head, 8)
-            f.seek(off_keys)
+            f.seek(base + off_keys)
             keys = f.read(32 * count)
             for i in range(count):
                 resref = _resref(keys[32 * i:32 * i + 16])
                 rtype, _rid, off, size = struct.unpack_from('<4I', keys, 32 * i + 16)
-                out.append(Entry(resref, type_name(rtype), path, off, size))
+                out.append(Entry(resref, type_name(rtype), path, base + off, size))
         else:
             raise ValueError(f'{path}: unknown container {magic!r}')
     return out
@@ -172,6 +179,46 @@ class Game:
         if ext is None:
             return list(self._entries)
         return [e for e in self._entries if e.ext == ext]
+
+    def every_entry(self, ext=None):
+        """Every copy of every resource in the install, no priority and no deduplication:
+        chitin.key's BIFs, all four texture packs, modules/, lips/, rims/, patch.erf, Override,
+        and each save (SAVEGAME.sav, the module .sav files nested in it, and the loose
+        GLOBALVARS/PARTYTABLE/savenfo .res and Screen.tga files)."""
+        es = read_key(self.dir)
+        conts = self.containers()
+        patch = os.path.join(self.dir, 'patch.erf')
+        if os.path.isfile(patch):
+            conts.append(patch)
+        for c in conts:
+            es.extend(read_container(c))
+        ov = os.path.join(self.dir, 'Override')
+        if os.path.isdir(ov):
+            for n in sorted(os.listdir(ov)):
+                stem, dot, x = n.rpartition('.')
+                if dot:
+                    p = os.path.join(ov, n)
+                    es.append(Entry(stem.lower(), x.lower(), p, 0, os.path.getsize(p)))
+        saves = os.path.join(self.dir, 'Saves')
+        if os.path.isdir(saves):
+            for s in sorted(os.listdir(saves)):
+                sd = os.path.join(saves, s)
+                if not os.path.isdir(sd):
+                    continue
+                for n in sorted(os.listdir(sd)):
+                    p = os.path.join(sd, n)
+                    stem, dot, x = n.rpartition('.')
+                    if x.lower() == 'sav':
+                        inner = read_container(p)
+                        es.extend(inner)
+                        for e in inner:
+                            if e.ext == 'sav':
+                                es.extend(read_container(p, e.offset))
+                    elif dot:
+                        es.append(Entry(stem.lower(), x.lower(), p, 0, os.path.getsize(p)))
+        if ext is None:
+            return es
+        return [e for e in es if e.ext == ext]
 
     def find(self, resref, ext):
         """Every entry for resref.ext, lowest priority first."""
