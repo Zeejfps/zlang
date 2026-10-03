@@ -200,6 +200,11 @@ namespace obj {
         in_combat: bool,
         dead: bool,
         triggers: list::List(u32, heap::Heap),      // the triggers it stands in
+        // Perception (gameloop.md 2.4): who it sees and hears, its ranges, the full pass's timer.
+        perceived: list::List(Perceived, heap::Heap),
+        sight_range: f32,                           // 0 until first computed
+        hearing_range: f32,
+        last_perception: u64,
         // Appended by routines/creature.ctx and items.ctx.
         xp: u32,                            // GetXP/SetXP (stats +0x68)
         gold: u32,                          // GetGold (UTC Gold); the party purse is HOOK(party)
@@ -213,6 +218,9 @@ namespace obj {
         raiseable: bool,
         selectable_dead: bool,
     }
+
+    // One creature another perceives (gameloop.md 2.4).
+    struct Perceived { id: u32, seen: bool, heard: bool }
 
     struct Item {
         base: u32,                          // baseitems.2da row
@@ -511,6 +519,8 @@ namespace obj {
             path = list::new(math::Vec3, heap::Heap){ realloc = heap::alloc, heap },
             path_next = 0, moving = false, in_combat = false, dead = false,
             triggers = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
+            perceived = list::new(Perceived, heap::Heap){ realloc = heap::alloc, heap },
+            sight_range = 0.0, hearing_range = 0.0, last_perception = 0,
             xp = 0, gold = 0, inv_cursor = 0, listening = false, listen_text = [[0; 32]; 4],
             listen_len = [0; 4], listen_number = [0; 4], listen_count = 0,
             destroyable = true, raiseable = true, selectable_dead = false,

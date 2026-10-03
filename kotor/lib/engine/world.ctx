@@ -375,6 +375,7 @@ namespace world {
                 list::free{ list = &c.inventory }
                 list::free{ list = &c.path }
                 list::free{ list = &c.triggers }
+                list::free{ list = &c.perceived }
                 _ = alloc::resize(obj::Creature, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(c, 1), count = 0 }
             }
             door{ d } => {

@@ -32,7 +32,8 @@ namespace ai {
             let cc = obj::creature{ o = again } ifnull { return }
             if now - cc.last_heartbeat >= @as(u64, cc.heartbeat_interval) { heartbeat{ &w, &vm, engine, id, now } }
         }
-        // HOOK(rules): UpdateCombat, UpdateEffectList, perception.
+        perception::update{ &w, id }
+        // HOOK(rules): UpdateCombat, UpdateEffectList.
         actions::run{ &w, &vm, engine, id }
         let after = world::object{ w = &w, id } ifnull { return }
         let ac = obj::creature{ o = after } ifnull { return }
