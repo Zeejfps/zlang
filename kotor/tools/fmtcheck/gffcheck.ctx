@@ -21,6 +21,7 @@ namespace gff_check {
         explained: u64,
         types: [18]u64,                 // fields by type
         classes: [2][37]Class,          // shipped, save
+        pth: Paths,
     }
 
     fn new_stats {} -> Stats {
@@ -28,6 +29,7 @@ namespace gff_check {
         return Stats{
             copies = 0, parse_failed = 0, semantic_failed = 0, engine_identical = 0, explained = 0,
             types = [0; 18], classes = [[empty; 37]; 2],
+            pth = Paths{ files = 0, failed = 0, empty = 0, points = 0, links = 0, self_links = 0, isolated = 0, one_way = 0, unpacked = 0, split = 0 },
         }
     }
 
@@ -45,6 +47,7 @@ namespace gff_check {
             return
         }
         count_types{ st = &st, doc }
+        if copy.kind == @as(u16, restype::Type::pth) { check_paths{ &io, p = &st.pth, &scratch, doc, copy } }
         let save = ci::find{ s = copy.path, needle = "/saves/" } != null or ci::find{ s = copy.path, needle = "\\saves\\" } != null
         let source: usize = if save { 1 } else { 0 }
         let tag = doc.tag
@@ -267,6 +270,74 @@ namespace gff_check {
                 t = t + 1
             }
         }
-        return st.parse_failed + st.semantic_failed + (st.copies - st.parse_failed - st.explained)
+        let p = st.pth
+        _ = @fmt(&io, "pth: {} files, {} failures, {} empty; {} points, {} links, {} self links, {} isolated points, {} one-way links, {} files not packed, {} files with more than one component\n",
+            p.files, p.failed, p.empty, p.points, p.links, p.self_links, p.isolated, p.one_way, p.unpacked, p.split)
+        return st.parse_failed + st.semantic_failed + (st.copies - st.parse_failed - st.explained) + p.failed
+    }
+
+    // ---- PTH graphs (docs/formats/pth.md, "Checked")
+
+    struct Paths { files: u32, failed: u32, empty: u32, points: u64, links: u64, self_links: u32, isolated: u32, one_way: u32, unpacked: u32, split: u32 }
+
+    fn check_paths { mut io: Io, p: *mut Paths, mut scratch: arena::Arena, doc: gff::Doc, copy: corpus::Copy } {
+        p.files = p.files + 1
+        let g = pth::read{ doc, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
+            p.failed = p.failed + 1
+            _ = @fmt(&io, "pth FAIL {}: {}\n", copy, error)
+            return
+        }
+        let n = g.points.len
+        if n == 0 { p.empty = p.empty + 1 }
+        p.points = p.points + n
+        p.links = p.links + g.links.len
+        if not pth::is_packed{ g } { p.unpacked = p.unpacked + 1 }
+        // Components by union-find over the links.
+        let root = alloc::resize(u32, arena::Arena){ realloc = arena::alloc, heap = &scratch, mem = slice::empty(u32){}, count = n } iferr { return }
+        let mut i: usize = 0
+        while i < n {
+            root[i] = @trunc(u32, i)
+            i = i + 1
+        }
+        i = 0
+        while i < n {
+            let a = @trunc(u32, i)
+            let links = pth::links_of{ g, point = a }
+            if links.len == 0 { p.isolated = p.isolated + 1 }
+            let mut k: usize = 0
+            while k < links.len {
+                let b = links[k]
+                if b == a {
+                    p.self_links = p.self_links + 1
+                } else {
+                    let back = pth::links_of{ g, point = b }
+                    let mut found = false
+                    let mut j: usize = 0
+                    while j < back.len {
+                        if back[j] == a { found = true }
+                        j = j + 1
+                    }
+                    if not found { p.one_way = p.one_way + 1 }
+                    let ra = find_root{ root, x = a }
+                    let rb = find_root{ root, x = b }
+                    if ra != rb { root[ra] = rb }
+                }
+                k = k + 1
+            }
+            i = i + 1
+        }
+        let mut components: u32 = 0
+        i = 0
+        while i < n {
+            if find_root{ root, x = @trunc(u32, i) } == @trunc(u32, i) { components = components + 1 }
+            i = i + 1
+        }
+        if components > 1 { p.split = p.split + 1 }
+    }
+
+    fn find_root { root: []mut u32, x: u32 } -> u32 {
+        let mut r = x
+        while root[r] != r { r = root[r] }
+        return r
     }
 }

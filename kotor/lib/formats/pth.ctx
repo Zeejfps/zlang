@@ -1,0 +1,80 @@
+// PTH, an area's path-finding graph (docs/formats/pth.md): a GFF of points on the floor (X, Y)
+// and, for each, the points it links to, stored as one list of links grouped by point.
+//
+//   let doc = try gff::parse{ data, realloc, &heap }
+//   let g = try pth::read{ doc, realloc, &heap }
+//   let near = pth::links_of{ g, point = 3 }            // []u32: the points point 3 links to
+//
+// The labels are BioWare's misspellings: `Path_Conections`, `Conections`, `First_Conection`.
+// `read` checks what the engine's data always satisfies: every point's links lie inside the link
+// list and every destination is a point. Self links (18 in the install) are kept; skip them when
+// searching.
+namespace pth {
+    // No `Path_Points` or `Path_Conections` list, or a point without its fields.
+    error bad_schema{ point: u32 }
+    // A point's links outside the link list, or a link to a point that doesn't exist.
+    error bad_link{ point: u32 }
+
+    struct Point { x: f32, y: f32, first: u32, count: u32 }
+
+    struct Graph { points: []mut Point, links: []mut u32 }
+
+    // The graph of a parsed PTH, in memory from `realloc`.
+    fn read(S) { doc: gff::Doc, realloc: alloc::Fn(S), mut heap: S } -> !Graph {
+        let points = gff::get_list{ doc, s = gff::ROOT, label = "Path_Points" } ifnull { return bad_schema{ point = 0 } }
+        let links = gff::get_list{ doc, s = gff::ROOT, label = "Path_Conections" } ifnull { return bad_schema{ point = 0 } }
+        let ps = try alloc::resize(Point, S){ realloc, &heap, mem = slice::empty(Point){}, count = points.len }
+        let ls = alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count = links.len } iferr err{ error } {
+            _ = alloc::resize(Point, S){ realloc, &heap, mem = ps, count = 0 }
+            return error
+        }
+        let g = Graph{ points = ps, links = ls }
+        let mut ok = false
+        defer { if not ok { free{ g, realloc, &heap } } }
+        let mut i: usize = 0
+        while i < links.len {
+            let d = gff::get_dword{ doc, s = links[i], label = "Destination" } ifnull { return bad_schema{ point = @trunc(u32, i) } }
+            if @as(usize, d) >= points.len { return bad_link{ point = @trunc(u32, i) } }
+            ls[i] = d
+            i = i + 1
+        }
+        i = 0
+        while i < points.len {
+            let s = points[i]
+            let p = @trunc(u32, i)
+            let count = gff::get_dword{ doc, s, label = "Conections" } ifnull { return bad_schema{ point = p } }
+            let first = gff::get_dword{ doc, s, label = "First_Conection" } ifnull { return bad_schema{ point = p } }
+            let x = gff::get_float{ doc, s, label = "X" } ifnull { return bad_schema{ point = p } }
+            let y = gff::get_float{ doc, s, label = "Y" } ifnull { return bad_schema{ point = p } }
+            if @as(u64, first) + @as(u64, count) > @as(u64, links.len) { return bad_link{ point = p } }
+            ps[i] = Point{ x, y, first, count }
+            i = i + 1
+        }
+        ok = true
+        return g
+    }
+
+    fn free(S) { g: Graph, realloc: alloc::Fn(S), mut heap: S } {
+        _ = alloc::resize(Point, S){ realloc, &heap, mem = g.points, count = 0 }
+        _ = alloc::resize(u32, S){ realloc, &heap, mem = g.links, count = 0 }
+    }
+
+    // The points `point` links to (it may list itself).
+    fn links_of { g: Graph, point: u32 } -> []u32 {
+        let p = g.points[point]
+        return g.links[p.first..p.first + p.count]
+    }
+
+    // Whether the ranges are contiguous and in point order (the first at 0, each starting where
+    // the one before ended, the last ending at the end of the links), as in every shipped file.
+    fn is_packed { g: Graph } -> bool {
+        let mut next: u32 = 0
+        let mut i: usize = 0
+        while i < g.points.len {
+            if g.points[i].first != next { return false }
+            next = next + g.points[i].count
+            i = i + 1
+        }
+        return @as(usize, next) == g.links.len
+    }
+}
