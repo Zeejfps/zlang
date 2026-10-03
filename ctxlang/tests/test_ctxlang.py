@@ -2121,6 +2121,32 @@ fn main { mut io: Io } -> i32 {
         ]:
             self.assertCompileError(src, msg)
 
+    def test_offset_of(self):
+        # C's offsetof: a folded const, so it may be a const's value; an extern union's are 0.
+        self.assertOutput("""
+struct Event { kind: u32, time: u64, x: i16, y: i16, b: u8 }
+struct Pair(T) { a: u8, b: T }
+extern union Bits { i: i32, f: f32 }
+const TIME: usize = @offset_of(Event, time)
+const SIZES: [2]usize = [@offset_of(Event, y), @offset_of(Pair(u64), b)]
+
+fn main { mut io: Io } {
+    _ = @fmt(&io, "{} {} {} {} {}\\n", TIME, SIZES[0], SIZES[1], @offset_of(Event, b), @offset_of(Bits, f))
+    let x = @offset_of(Pair(u16), b) + @size_of(Event)
+    _ = @fmt(&io, "{}\\n", x)
+}
+""", '8 18 8 20 0\n26\n')
+        head = 'struct Event { kind: u32, time: u64 }\nfn main { mut io: Io } {\n    let n = '
+        for arg, msg in [
+            ('@offset_of(Event, z)', 'Event has no field `z`'),
+            ('@offset_of(i32, z)', '@offset_of needs a struct, got i32'),
+            ('@offset_of(Event, 1)', "@offset_of takes a field's name: @offset_of(T, field)"),
+            ('@offset_of(Event, a::time)', "@offset_of takes a field's name: @offset_of(T, field)"),
+            ('@offset_of(Event)', 'wrong number of arguments: @offset_of(T, field)'),
+        ]:
+            self.assertCompileError(head + arg + '\n}', msg)
+
+
 
 class LoopControl(Base):
     def test_break_and_continue(self):

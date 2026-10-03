@@ -609,6 +609,7 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 |---|---|---|
 | `@size_of(T)` | `usize` | The size of `T` in bytes. |
 | `@align_of(T)` | `usize` | The required alignment of `T`. A power of two. |
+| `@offset_of(T, f)` | `usize` | The offset in bytes of field `f` of struct `T` from its start, as C's `offsetof`: 0 for an extern union's. `f` is a field's name. |
 | `@as(T, x)` | `T` | Converts number `x` to numeric type `T`. Panics if the value isn't representable in `T`. Float to integer rounds toward zero and panics on NaN. Integer to float rounds to nearest. Also converts between an enum and an integer type (§12, Enums). |
 | `@trunc(T, x)` | `T` | Converts integer `x` to integer type `T`, keeping the low bits. |
 | `@cast(*U, q)`, `@cast(*mut U, q)`, `@cast(extern fn{C} -> R, q)` | the target | Reinterprets `q`, a pointer or a C function pointer (§12), as a pointer or a C function pointer. Unchecked, except that a `*T` can't be cast to a `*mut U`, and `q` can't be optional: check it for `null` first. |
@@ -654,7 +655,7 @@ namespace utf8 {
 ## 14. Memory
 
 1. The only static memory is the bytes of string literals, with the hidden zero after them (§11 Literals), which are read-only. `const NAME: T = e` declares a constant, whose value is computed while compiling. `e` may be any expression of type `T`, calls included. A const has no context, so it holds no capability (§15), and nothing it runs reaches outside the program. `const` data is immutable and its location is unobservable: a const is a value, not a place, so `&C` is an error.
-   - An `e` made of literals, folded consts, enum values, operators, `@size_of`, `@align_of`, and struct, union and array literals of these is **folded** before the bodies are checked. What would panic at run time is an error at the operation.
+   - An `e` made of literals, folded consts, enum values, operators, `@size_of`, `@align_of`, `@offset_of`, and struct, union and array literals of these is **folded** before the bodies are checked. What would panic at run time is an error at the operation.
    - Any other `e`, one that uses a const that isn't folded included, is **run** once every body is checked and the error sets are inferred, the first time its value is needed. What stops it is an error at the const: a panic, with its message and position; too many steps, or too deep a recursion; or calling an extern fn (§18), since none can run while compiling.
    - A const whose value needs its own, directly or through the functions it calls, is an error.
    - The value may hold no pointer, slice or function value, except a `[]u8`, a `strlit` or a `*u8` that points into a string literal's bytes (part of them is fine; a `*u8` is followed by the rest of them and the hidden zero), or a struct over one, such as `utf8::String` or `c::String`. Anything else would point to memory that doesn't outlive compiling.

@@ -93,7 +93,7 @@ fn build { mut b: Build } {
   parallel, each cached by its hash: ~100K lines build in ~8 s from scratch (63 s as one C file),
   and an edit to one function rebuilds in ~3 s. Inserting lines recompiles every unit of that
   file. Tools that include only the libraries they need still build faster than the whole game.
-- `@size_of` checks are your friend for C structs; there's no `@offset_of` yet.
+- `@size_of` and `@offset_of(T, field)` check bindings' structs against C's layouts.
 
 ## Layout
 

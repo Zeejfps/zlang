@@ -2476,6 +2476,7 @@ namespace check {
             }
             builtin{ name, args } => {
                 let mut ok = true
+                if slice::eq_bytes{ a = name.text, b = "offset_of" } { return true }       // its arg is a field's name
                 if not slice::eq_bytes{ a = name.text, b = "size_of" } and not slice::eq_bytes{ a = name.text, b = "align_of" } {
                     if strict {
                         errorf{ &c, at, msg = @fmt("@{} is not allowed in an attribute", str{ s = name.text }) }
@@ -2696,11 +2697,16 @@ namespace check {
                 let p = try! alloc::new{ realloc = arena::alloc, heap = c.heap, value = v }
                 return Val::repeat{ ty = t, elem = p }
             }
-            builtin{ name, targ } => {
+            builtin{ name, targ, args } => {
                 if targ == null { return null }
                 let te = targ.*
                 let tt = map::get{ m = c.type_of, key = key{ file = te.span.file, id = te.id } }
                 if tt == null { return null }
+                if slice::eq_bytes{ a = name.text, b = "offset_of" } {
+                    if args.len != 1 { return null }
+                    let off = offset_of{ &c, t = tt, arg = args[0], report = false } ifnull { return null }
+                    return Val::int{ ty = t, negative = false, magnitude = off }
+                }
                 let lay = layout{ &c, t = types::prune{ s = c.ty, t = tt } }
                 if lay == null { return null }
                 let n = if slice::eq_bytes{ a = name.text, b = "size_of" } { lay.size } else { lay.align }
@@ -5578,7 +5584,9 @@ namespace check {
             }
             array{ elems } => { scan_list{ &c, sc, xs = elems } }
             repeat{ elem } => { scan{ &c, sc, e = elem.* } }
-            builtin{ args } => { scan_list{ &c, sc, xs = args } }
+            builtin{ name, args } => {
+                if not slice::eq_bytes{ a = name.text, b = "offset_of" } { scan_list{ &c, sc, xs = args } }
+            }
             range{ base, lo, hi } => {
                 scan{ &c, sc, e = base.* }
                 if lo != null { scan{ &c, sc, e = lo.* } }
@@ -7137,6 +7145,33 @@ namespace check {
         return segs.len == 1 and segs[0].targs == null and slice::eq_bytes{ a = segs[0].name.text, b = "_" }
     }
 
+    // `@offset_of(T, f)` (§13): the offset of field f of struct T, f being the path arg. Null if
+    // there is none, after reporting why if report.
+    fn offset_of { mut c: Checker, t: Id, arg: syntax::Expr, report: bool } -> ?u64 {
+        let st = types::prune{ s = c.ty, t }
+        let mut name: []u8 = ""
+        if arg.k is path{ segs } {
+            if segs.len == 1 and segs[0].targs == null { name = segs[0].name.text }
+        }
+        if name.len == 0 {
+            if report { error{ &c, at = expr_at{ e = arg }, msg = "@offset_of takes a field's name: @offset_of(T, field)" } }
+            return null
+        }
+        if not (types::get{ s = c.ty, id = st } is record) {
+            if report { errorf{ &c, at = expr_at{ e = arg }, msg = @fmt("@offset_of needs a struct, got {}", tstr{ c, t = st }) } }
+            return null
+        }
+        let fields = struct_fields{ &c, t = st }
+        let mut i: usize = 0
+        while i < fields.len and not slice::eq_bytes{ a = fields[i].name, b = name } { i = i + 1 }
+        if i == fields.len {
+            if report { errorf{ &c, at = expr_at{ e = arg }, msg = @fmt("{} has no field `{}`", tstr{ c, t = st }, str{ s = name }) } }
+            return null
+        }
+        let offs = struct_offsets{ &c, t = st } ifnull { return null }
+        return offs.offs[i]
+    }
+
     // The type `_` stands for in @as, @trunc or @cast: the type expected, or its payload if that
     // is optional, as for a string literal (§11 Literals).
     fn expected_targ { mut c: Checker, name: []u8, exp: Id, at: source::Span } -> Id {
@@ -7169,6 +7204,10 @@ namespace check {
             }
         }
         if slice::eq_bytes{ a = n, b = "size_of" } or slice::eq_bytes{ a = n, b = "align_of" } { return types::USIZE }
+        if slice::eq_bytes{ a = n, b = "offset_of" } {
+            if tt != types::ERROR and tt != types::NO_TYPE and args.len == 1 { _ = offset_of{ &c, t = tt, arg = args[0], report = true } }
+            return types::USIZE
+        }
         // After a syntax error, a builtin may lack arguments the parser has reported missing.
         let need: usize = if typed_arg or slice::eq_bytes{ a = n, b = "addr" } { 1 } else if slice::eq_bytes{ a = n, b = "panic" } or slice::eq_bytes{ a = n, b = "fmt" } { 0 } else { 2 }
         if args.len < need or (typed_arg and targ == null) { return types::ERROR }

@@ -33,10 +33,7 @@ Counts are from the spike's sources (sdl.ctx, gl.ctx, png.ctx, main.ctx, about 2
   address of local `n`". Declared `mut numkeys: i32` instead, whose arguments don't count, giving
   up passing null. The rule is right for a C function that returns into its argument (`strchr`);
   bindings just have to use `mut` fields for out-parameters.
-- **No `@offset_of`.** A binding's structs can be checked against C's only by size
-  (`sdl::check_layout` compares `@size_of`/`@align_of` with SDL's); a field out of place inside
-  a struct of the right size goes unseen. The offsets were checked with a C program against
-  SDL's headers instead, and a real resize event from SDL is read back at run time.
+
 - **No pointer from an integer.** GL takes buffer offsets as `const void *`
   (`glVertexAttribPointer`, `glDrawElements`). Nothing makes a pointer from a `usize`, so the
   binding declares those parameters `offset: usize`, which works because 64-bit ABIs pass the two
