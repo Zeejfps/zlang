@@ -6,6 +6,9 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "../../lib/base" }
     build::add_sources{ &b, exe, dir = "../../lib/res" }
     build::add_sources{ &b, exe, dir = "../../lib/formats" }
+    build::add_sources{ &b, exe, dir = "../../lib/tex" }
+    build::add_sources{ &b, exe, dir = "../../lib/mdl" }
+    build::add_sources{ &b, exe, dir = "../../lib/material" }
     build::add_sources{ &b, exe, dir = "../../lib/platform" }
     build::add_sources{ &b, exe, dir = "../../lib/render" }
     build::add_sources{ &b, exe, dir = "../../lib/render_gl" }

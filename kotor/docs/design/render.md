@@ -13,6 +13,8 @@ and a Metal, Vulkan or D3D backend must be addable without touching game code.
 | `lib/render_gl/shaders.ctx` | `glsl` | its GLSL 410 sources |
 | `lib/render_gl/gl.ctx` | `gl` | the GL binding (platform.md) |
 | `lib/tex` | `tex` | TPC and TGA decoding into data `gpu::create_texture` takes |
+| `lib/material` | `material` | KOTOR textures on the GPU (a cache over `res` + `tex`) and a model mesh's `render::Material` |
+| `lib/mdl_render` (models lead) | `mdl_render` | a model's meshes uploaded, and a pose's draws added to a frame |
 
 ## The shape
 
@@ -90,13 +92,16 @@ replaces a rectangle of an uncompressed level (video planes, generated textures)
 `render::Info.dxt` says whether DXT uploads as it is; where it doesn't, decode with `tex` first.
 
 **Meshes** (`render::MeshDesc` + vertex bytes + u16 indices): a `VertexLayout` gives the byte
-offset of each attribute within a `stride`-byte row, -1 where absent: position, normal, uv0,
-uv1, tangent space (9 floats as MDX keeps them: +dP/dv, -dP/du, normal), skin weights (4 f32),
-bone slots (4 f32, -1 unused, as MDX stores them), colour (4 u8) and dangly constraint (1 f32,
-0..255). These are MDX's shapes, so a model's MDX block uploads as it is: the models code fills a
-layout from the mesh header's offsets (`mdl.md`, Mesh header 252..304). Triangles wind
-counterclockwise from the front (MDL's winding); lines are a primitive too. `gpu::update_mesh`
-rewrites vertex bytes (lightsaber blades, anything CPU-animated).
+offset of each attribute, -1 where absent: position, normal, uv0, uv1, tangent space (9 floats as
+MDX keeps them: +dP/dv, -dP/du, normal), skin weights (4 f32), bone slots (4 f32 with -1 unused,
+as MDX stores them, or 4 u8 with `bones_u8`), colour (4 u8) and dangly constraint (1 f32,
+0..255). Interleaved, offsets are into `stride`-byte rows of MDX's shapes, so an MDX block
+uploads as it is. `planar`, each attribute is its own packed array: `render::pack_streams` lays
+out lib/mdl's per-attribute arrays (`render::Streams`) that way in one buffer
+(`streams_size` bytes), with u8 bone slots, and returns the layout; `layout_size` says how many
+bytes any layout needs. Triangles wind counterclockwise from the front (MDL's winding); lines are
+a primitive too. `gpu::update_mesh` rewrites vertex bytes (lightsaber blades, anything
+CPU-animated).
 
 **Targets**: `gpu::create_target{ width, height }` makes an offscreen RGBA8 colour texture
 (`gpu::target_texture`) with its own depth and stencil. A view can draw into one and a quad or
@@ -130,18 +135,36 @@ write), `env_amount`, and `sort` (the MDL transparency hint: lower draws first a
 surfaces). With an envmap on an opaque or punch surface, the diffuse alpha is the reflection
 mask (txi-render.md): reflection × (1 − alpha), the surface stays opaque.
 
-What maps from KOTOR data to these is the game's job (TXI keywords, MDL mesh flags and
-controllers, appearance.2da's envmap): the seam says what a surface does, not where that came
-from. The usual mapping: TXI `blending additive` → `additive`, `punchthrough` → `punch`,
-`decal 1` → `decal`, `envmaptexture`/`bumpyshinytexture` → `envmap`, `bumpmaptexture` →
-`bumpmap`, `wateralpha` → `blend = alpha` with that opacity, mesh `lightmapped` + texture 1 →
-`lightmap`, `selfillumcolor` → `selfillum`, `alpha` controller < 1 → `alpha` with that opacity,
-transparency hint → `sort`; flipbooks (`proceduretype cycle`) → an atlas from `tex::to_atlas` and
-`set_flipbook_frame` each frame.
+### How KOTOR's materials map
 
-**Skinning**: a draw's palette slot k is `Bone_k(now) · InvBind_k`, taking a mesh-space vertex to
-the space `transform` takes to world: for an MDL skin, the model root's space, with `transform`
-the model's world matrix (mdl.md, Skin). Up to 32 slots (KOTOR uses at most 17).
+The seam says what a surface does, not where that came from; `lib/material` maps KOTOR's data onto
+it (`material::for_mesh`, given a mesh's texture names and flags), loading textures through its
+`Cache` (res's TPC-or-TGA rule, tex's decoding, the standalone TXI for TGAs):
+
+| KOTOR | Material |
+|---|---|
+| texture 0 | `diffuse` (a TPC flipbook as its atlas, frame 0: `set_flipbook_frame` animates it) |
+| `lightmapped` + texture 1 | `lightmap` |
+| TXI `blending additive` / `punchthrough` | `additive` / `punch` |
+| TXI `decal 1` | `decal` |
+| TXI `envmaptexture`, `bumpyshinytexture`; appearance.2da `envmap` (not `DEFAULT`) | `envmap` (cube or sphere by the texture) |
+| TXI `bumpmaptexture` (an RGB(A) normal map; grey height maps not yet) | `bumpmap` |
+| TXI `wateralpha` | `alpha` at that opacity |
+| transparency hint | `sort` |
+| no blending keyword, no envmap, TPC AlphaMean < 0.99 | `alpha` if the hint is set or AlphaMean < 0.6, else `punch` (our heuristic, below) |
+| node alpha (pose, times ancestors') < 1 | `alpha`, colour.a times it (`material::set_alpha`) |
+| `selfillumcolor` | `selfillum` |
+| TXI `mipmap 0`, `filter 0`, `clamp` | the texture's sampling |
+
+The alpha heuristic: the original keeps alpha test and blending on for everything
+(re/render-gui.md, `GL_SetDefaultState`), so texture alpha is transparency unless something says
+otherwise; scorch marks (`LHR_blst02`: AlphaMean 0.07, no TXI, transparency hint 0 on one of its
+meshes in `m01aa_02a`) draw as black squares without it.
+
+**Skinning**: a draw's palette slot k takes a mesh-space vertex to the space `transform` takes to
+world. lib/mdl's `mdl_anim::skin_palette` gives palettes in the skin node's own space (identity at
+bind), so a skinned mesh draws with `transform = instance · pose.world[mesh.node]` like a rigid
+one. Up to 32 slots (KOTOR uses at most 17).
 
 **Dangly meshes**: the vertex shader moves each vertex by `dangle × constraint / 255`. The spring
 (displacement, tightness, period from the dangly header) is simulated by whoever animates the
@@ -188,10 +211,15 @@ wide it is. Wrapping and alignment are the GUI's.
 
 ## Checking it
 
-`kotor/tools/ctxc run kotor/tools/rendertest` writes `kotor/out/render/materials.png` (every
-material path, skinning, dangly, particles, shadows, fog, debug geometry, a second viewport) and
-`ui.png` (game fonts loaded through `res`, clipping, rotation, additive quads, a render target,
-a YUV frame, alpha steps). `kotor/tools/mathcheck` checks the math identities.
+`kotor/tools/ctxc run kotor/tools/rendertest` writes, in `kotor/out/render/`: `materials.png`
+(every material path, skinning, dangly, particles, shadows, fog, debug geometry, a second
+viewport), `ui.png` (game fonts loaded through `res`, clipping, rotation, additive quads, a render
+target, a YUV frame, alpha steps), `m01aa_02a_iso.png` (the lightmapped room, as
+`tools/py/mdlrender.py`'s `out/mdl/m01aa_02a_iso.png`) and `bastila.png` (`p_bastilabb` with
+`p_bastilah` at the headhook: bind pose, `pause1` at 0.5 s, `run` at 0.2 s from the side, GPU
+skinned; as `out/mdl/bastila_skinned.png`). `kotor/tools/texcheck` decodes every TPC and TGA of
+the install (11,536 + 5,602, 0 failures) and writes a contact sheet and single textures to
+`kotor/out/tex/`; `kotor/tools/mathcheck` checks the math identities.
 
 ## Open
 
