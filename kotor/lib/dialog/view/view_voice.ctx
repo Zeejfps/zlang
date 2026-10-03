@@ -52,4 +52,42 @@ namespace dlgview {
             v.voice_bytes = slice::empty(u8){}
         }
     }
+
+    // The dialogue's AmbientTrack (2.7): a file of streammusic/, played in the music group for as
+    // long as the conversation lasts. The area's own music keeps playing under it (ours: the
+    // original's handling of it was not traced).
+    fn start_ambient_track { mut v: View, mut w: world::World, name: resref::ResRef } {
+        if resref::is_empty{ r = name } { return }
+        // The last conversation's track is gone by now (its fade-out was half a second).
+        mix::stop{ m = v.m, h = v.ambient, fade = 0.0 }
+        if v.ambient_bytes.len > 0 {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.ambient_bytes, count = 0 }
+            v.ambient_bytes = slice::empty(u8){}
+        }
+        let mut key = name
+        let text = resref::bytes{ r = &key }
+        let kept = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = text.len } iferr { return }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = kept, count = 0 }
+        slice::copy(u8){ dst = kept, src = text }
+        let path = res::music_path(heap::Heap){ rm = w.rm.*, name = kept, realloc = heap::alloc, heap = w.heap } iferr { return }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = path, count = 0 }
+        let bytes = fs::read_all(heap::Heap){ fs = &w.fs, heap = v.heap, realloc = heap::alloc, path } iferr { return }
+        let mut p = mix::sound_2d{ group = mix::Group::music, volume = 0.5 }
+        p.looping = true
+        v.ambient = mix::play{ m = v.m, bytes, p } iferr {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = bytes, count = 0 }
+            return
+        }
+        v.ambient_bytes = bytes
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog ambient track {} ({} bytes)\n", name, bytes.len)
+        }
+    }
+
+    fn stop_ambient_track { mut v: View } {
+        mix::stop{ m = v.m, h = v.ambient, fade = 0.5 }
+        // The bytes stay until the next conversation's track replaces them: the sound fades out
+        // reading them.
+    }
 }

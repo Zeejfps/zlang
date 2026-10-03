@@ -203,7 +203,8 @@ namespace play {
             cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt }
             dlgview::apply_camera{ v = &dview, w = &w, sc = &sc, camera = &camera }
             let pc = world::object{ w = &w, id = w.pc }
-            let room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
+            let player_room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
+            let room = dlgview::view_room{ v = &dview, w = &w, player_room }
             scene::update_visibility{ &sc, w = &w, room }
             ingame::update{ ui, &w, &dev, sc, camera, dt }    // HOOK(ingame)
             if ingame::wants_quit{ ui } { quit = true }    // HOOK(ingame)
@@ -418,7 +419,11 @@ namespace play {
         let name = text::next_word{ &words } ifnull { return }
         let tag = text::next_word{ &words } ifnull "end_trask"
         let owner = world::object_by_tag{ w = &w, tag, nth = 0 }
-        if owner == obj::INVALID or not dlg::order{ &w } { return }
+        if owner == obj::INVALID { return }
+        // A conversation already running is cut short.
+        dlg::abort{ &w, &vm, engine }
+        w.conversation.pending = false
+        if not dlg::order{ &w } { return }
         if not dlg::start{ &w, &vm, engine, owner, other = w.pc, name = resref::truncate{ name }, private = false } {
             w.conversation.pending = false
         }

@@ -165,7 +165,7 @@ namespace dlgview {
                 if r != null { rig = r; have = true }
             }
             fixed => {
-                let id = if w.conversation.static_camera >= 0 { w.conversation.static_camera } else { v.static_id }
+                let id = v.static_id
                 let c = dlg::camera_by_id{ s = &w.conversation, id }
                 if c != null { rig = dlgcam::static_rig{ c }; have = true }
             }
@@ -188,5 +188,12 @@ namespace dlgview {
         camera.up = rig.up
         camera.look = math::vec3::add{ a = rig.eye, b = rig.forward }
         camera.style.fov = rig.fov
+    }
+
+    // The room the picture is seen from: the player's, unless a shot is up, then the room under
+    // the camera (none, which shows every room, when it hangs outside the walkmeshes).
+    fn view_room { v: *View, w: *world::World, player_room: i32 } -> i32 {
+        if not v.overriding { return player_room }
+        return walkmap::room_at{ m = &w.walk, x = v.rig.eye.x, y = v.rig.eye.y, z = v.rig.eye.z }
     }
 }
