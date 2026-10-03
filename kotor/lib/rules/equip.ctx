@@ -1,0 +1,406 @@
+// Equipment: whether a creature may wear an item, and what wearing and taking it off do
+// (party-items-saves.md 4.1-4.5, 4.8).
+//
+// API (namespace rules; `place::` and `eqmsg::` hold the placement and feedback numbers)
+//   can_equip_item{ tables, c, item, slot, from_player, in_combat_attacked } -> EquipCheck
+//       CanEquipItem checks 1-9 in order. Pure: reads the creature, changes nothing.
+//   equip{ env, &c, slot, id, item, loading, &rng, &ev } -> EquipResult
+//       RunEquip + EquipItem: validate, take out the occupant(s), store the cell, apply the item's
+//       passive properties as EQUIPPED effects (creator = id), recompute.
+//   unequip{ env, &c, slot, &ev } -> UnequipResult
+//       RunUnequip + UnequipItem: remove the item's effects by creator, clear the cell, recompute;
+//       taking out the right weapon while a left one is held moves the left one to the right hand.
+//   armour_change_refused{ slot, in_combat_attacked, equipping } -> i32
+//       the action layer's "no armour changes while being attacked" refusal (feedback number or 0).
+//   compare_items{ a, b } -> bool     CSWSItem::CompareItem: two items that would stack.
+//
+// What stays with the caller (the engine layer): the inventory move (the displaced items in
+// EquipResult/UnequipResult go back to the repository or the floor; a stack must have one item
+// split off before it is passed in), the combat state a weapon in hand puts the creature in, the
+// weight sum, the module's OnEquipItem event, and the armour-in-combat check before queueing.
+namespace rules {
+    // What a successful CanEquipItem says about the slot (the engine's result 1, 2 and 3).
+    namespace place {
+        const NONE: i32 = 0             // refused
+        const PLAIN: i32 = 1            // the slot is free
+        const SWAP: i32 = 2             // the occupant of the slot comes out first
+        const BOTH_HANDS: i32 = 3       // both weapon hands are cleared, the item goes to the right hand
+    }
+
+    // The feedback numbers equipping sends (SendFeedbackMessage ids, party-items-saves.md 4.3).
+    namespace eqmsg {
+        const LEVEL: i32 = 0x62             // 1470: not the required level (the check is dead, see can_equip_item)
+        const NOT_PROFICIENT: i32 = 0x77    // 1475: unreachable through CanEquipItem
+        const SWAPPED: i32 = 0x7b           // 1478: "Equipped item swapped out." (information)
+        const ALIGNMENT: i32 = 0xcf         // 1512
+        const CLASS: i32 = 0xd0             // 1513
+        const RACE: i32 = 0xd1              // 1514
+        const FEAT: i32 = 0x6b              // empty string in the original
+        const ARMOUR_EQUIP: i32 = 0xc1      // 1506: no armour changes in combat
+        const ARMOUR_UNEQUIP: i32 = 0xc2    // 1507
+    }
+
+    // `slot` is the mask to use (a left-hand request may become right-hand), `how` is place::*,
+    // `feedback` the message number: the reason when `ok` is false (0: refused silently), the
+    // "swapped out" information (eqmsg::SWAPPED) when ok and the slot is occupied.
+    struct EquipCheck { ok: bool, slot: u32, how: i32, feedback: i32 }
+
+    // `displaced` holds what came out of the creature to make room (right hand first, then left):
+    // the caller puts them back in an inventory. `applied` counts the effects that took hold.
+    struct EquipResult {
+        ok: bool,
+        slot: u32,
+        how: i32,
+        feedback: i32,
+        ndisplaced: i32,
+        displaced: [2]Equipped,
+        applied: i32,
+    }
+
+    // `moved_left`: the left-hand weapon was moved to the right hand.
+    struct UnequipResult { ok: bool, id: u32, item: Item, moved_left: bool }
+
+    // ---- weapon wield types (baseitems.2da WeaponWield, 4.3 "Weapon hands")
+
+    fn is_two_handed { wield: i32 } -> bool { return wield == 3 or wield == 5 or wield == 6 }
+    fn is_one_handed { wield: i32 } -> bool { return wield == 1 or wield == 2 or wield == 4 }
+
+    // ---- the use limitations (checks 3-7)
+
+    // HasFeatInLists: the creature's own feats and the bonus feats worn items grant (property 9 makes
+    // a BONUS_FEAT effect whose int0 is the feat; the engine keeps those in the stats' bonus feat
+    // list). Decision: rules::has_feat reads only Creature.feats, so the equipment checks look at
+    // the effects too, to see a proficiency or a limit-satisfying feat that another item grants.
+    fn has_feat_or_bonus { c: *Creature, feat: i32 } -> bool {
+        if has_feat{ c, feat } { return true }
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            if c.fx[i].kind == fx::BONUS_FEAT and c.fx[i].ints[0] == feat { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // CheckProficiencies: the base item must fit some slot, then every ReqFeat0..4 (unset ones are
+    // -1) must be known unless the creature has PROFICIENCY_ALL. The slot test comes first, so the
+    // all-proficiency feat does not make a grenade wearable.
+    fn check_proficiency { c: *Creature, bi: *BaseItemRow } -> bool {
+        if bi.equip_slots == 0 { return false }
+        if has_feat_or_bonus{ c, feat = feat::PROFICIENCY_ALL } { return true }
+        let mut i: usize = 0
+        while i < 5 {
+            let f = bi.req_feat[i]
+            if f >= 0 and not has_feat_or_bonus{ c, feat = f } { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // CheckUseLimitationAlignment: every active property 43 must name the creature's alignment group.
+    fn check_limit_alignment { c: *Creature, item: *Item } -> bool {
+        if not has_property{ item, name = ip::LIMIT_ALIGNMENT } { return true }
+        if has_feat_or_bonus{ c, feat = feat::PROFICIENCY_ALL } { return true }
+        let group = alignment_group{ good_evil = c.good_evil }
+        let mut i: usize = 0
+        while i < @as(usize, item.nprops) {
+            let p = &item.props[i]
+            i = i + 1
+            if @as(i32, p.name) == ip::LIMIT_ALIGNMENT and prop_active{ item, p } and @as(i32, p.subtype) != group { return false }
+        }
+        return true
+    }
+
+    // CheckUseLimitationClass: one of the creature's classes must equal the subtype of some active
+    // property 44.
+    fn check_limit_class { c: *Creature, item: *Item } -> bool {
+        if not has_property{ item, name = ip::LIMIT_CLASS } { return true }
+        if has_feat_or_bonus{ c, feat = feat::PROFICIENCY_ALL } { return true }
+        let mut i: usize = 0
+        while i < @as(usize, item.nprops) {
+            let p = &item.props[i]
+            i = i + 1
+            if @as(i32, p.name) != ip::LIMIT_CLASS or not prop_active{ item, p } { continue }
+            let mut k: usize = 0
+            while k < @as(usize, c.nclasses) and k < MAX_CLASSES {
+                if c.classes[k].class == @as(i32, p.subtype) { return true }
+                k = k + 1
+            }
+        }
+        return false
+    }
+
+    // CheckUseLimitationFeat: the creature must know every feat named by an active property 57.
+    fn check_limit_feat { c: *Creature, item: *Item } -> bool {
+        if not has_property{ item, name = ip::LIMIT_FEAT } { return true }
+        if has_feat_or_bonus{ c, feat = feat::PROFICIENCY_ALL } { return true }
+        let mut i: usize = 0
+        while i < @as(usize, item.nprops) {
+            let p = &item.props[i]
+            i = i + 1
+            if @as(i32, p.name) == ip::LIMIT_FEAT and prop_active{ item, p } and not has_feat_or_bonus{ c, feat = @as(i32, p.subtype) } { return false }
+        }
+        return true
+    }
+
+    // CheckUseLimitationRace: the base item's DroidOrHuman (1 humans only, 2 droids only; waived for
+    // an item that casts spell 129, the recovery stim), its DenySubrace mask against the creature's
+    // subrace, then property 45 (some racial type must match). Feat 93 does not bypass this one.
+    fn check_limit_race { c: *Creature, item: *Item, bi: *BaseItemRow } -> bool {
+        let stim = has_property_subtype{ item, name = ip::CAST_SPELL, subtype = 129 }
+        if bi.droid_or_human != 0 and not stim {
+            if bi.droid_or_human == 1 and c.race != race::HUMAN { return false }
+            if bi.droid_or_human == 2 and c.race != race::DROID { return false }
+        }
+        let sub = c.subrace
+        if sub >= 0 and sub < 32 and ((@trunc(u32, bi.deny_subrace) >> @as(u32, sub)) & 1) != 0 { return false }
+        if not has_property{ item, name = ip::LIMIT_RACE } { return true }
+        let mut i: usize = 0
+        while i < @as(usize, item.nprops) {
+            let p = &item.props[i]
+            i = i + 1
+            if @as(i32, p.name) == ip::LIMIT_RACE and prop_active{ item, p } and @as(i32, p.subtype) == c.race { return true }
+        }
+        return false
+    }
+
+    // The action layer's refusal (AddEquipItemActions / AddUnequipActions): the body slot may not be
+    // changed while the creature is in combat because it is being attacked. Returns the feedback
+    // number, 0 when the change is allowed. Not part of CanEquipItem, so equip() does not call it.
+    fn armour_change_refused { slot: u32, in_combat_attacked: bool, equipping: bool } -> i32 {
+        if slot != slot::BODY or not in_combat_attacked { return 0 }
+        return if equipping { eqmsg::ARMOUR_EQUIP } else { eqmsg::ARMOUR_UNEQUIP }
+    }
+
+    // ---- the weapon hands (CanEquipWeapon)
+
+    struct HandRule { how: i32, slot: u32 }
+
+    // R = right-hand item, L = left-hand item, N = the new one (the table in 4.3). A request for
+    // the left hand with both hands empty becomes a right-hand placement.
+    fn rule_weapon_hand { tables: *Tables, c: *Creature, bi: *BaseItemRow, slot: u32 } -> HandRule {
+        let r = equipped_item{ c, mask = slot::RIGHT }
+        let l = equipped_item{ c, mask = slot::LEFT }
+        if r == null {
+            if l == null { return HandRule{ how = place::PLAIN, slot = slot::RIGHT } }
+            // a left weapon with an empty right hand cannot happen in normal play
+            return HandRule{ how = place::NONE, slot }
+        }
+        let rb = get_baseitem{ tables, row = r.base_item }
+        let r_one = rb != null and is_one_handed{ wield = rb.wield }
+        let r_ranged = rb != null and rb.ranged
+        let n_two = is_two_handed{ wield = bi.wield }
+        if l == null {
+            if n_two { return HandRule{ how = place::BOTH_HANDS, slot = slot::RIGHT } }
+            let same_family = r_ranged == bi.ranged
+            // dual wielding: a one-handed right weapon and a left one of the same family
+            if r_one and same_family and slot == slot::LEFT { return HandRule{ how = place::PLAIN, slot = slot::LEFT } }
+            return HandRule{ how = place::SWAP, slot = slot::RIGHT }
+        }
+        if n_two or r_ranged != bi.ranged { return HandRule{ how = place::BOTH_HANDS, slot = slot::RIGHT } }
+        return HandRule{ how = place::SWAP, slot }
+    }
+
+    fn deny_equip { slot: u32, feedback: i32 } -> EquipCheck {
+        return EquipCheck{ ok = false, slot, how = place::NONE, feedback }
+    }
+
+    // CSWSCreature::CanEquipItem for an item and a requested slot mask (4.3). Checks, in order:
+    //   (armour in combat, when the caller says the creature is being attacked)
+    //   1 item level: skipped. Decision: the check only applies to a PC with the server's "item
+    //     level restriction" option, which is on, but the level an item needs is 1 + the first row
+    //     of itemvalue.2da whose MAXSINGLEITEMVALUE is >= the cost, and every row of the shipped
+    //     table is 13,500,000, so it never fails; `from_player` is kept in the signature for it.
+    //   2 NonEquippable  3 proficiency  4 alignment  5 class  6 race / droid  7 feat
+    //   8 the slot (CanEquipWeapon for the two weapon hands, otherwise occupied = swap)
+    //   9 the (possibly rewritten) slot must be in the base item's EquipableSlots
+    fn can_equip_item { tables: *Tables, c: *Creature, item: *Item, slot: u32, from_player: bool, in_combat_attacked: bool } -> EquipCheck {
+        let refused = armour_change_refused{ slot, in_combat_attacked, equipping = true }
+        if refused != 0 { return deny_equip{ slot, feedback = refused } }
+        if item.non_equippable { return deny_equip{ slot, feedback = 0 } }
+        let bi = get_baseitem{ tables, row = item.base_item } ifnull { return deny_equip{ slot, feedback = 0 } }
+        if not check_proficiency{ c, bi } { return deny_equip{ slot, feedback = 0 } }
+        if not check_limit_alignment{ c, item } { return deny_equip{ slot, feedback = eqmsg::ALIGNMENT } }
+        if not check_limit_class{ c, item } { return deny_equip{ slot, feedback = eqmsg::CLASS } }
+        if not check_limit_race{ c, item, bi } { return deny_equip{ slot, feedback = eqmsg::RACE } }
+        if not check_limit_feat{ c, item } { return deny_equip{ slot, feedback = eqmsg::FEAT } }
+
+        let mut how = place::PLAIN
+        let mut at = slot
+        if slot == slot::RIGHT or slot == slot::LEFT {
+            let h = rule_weapon_hand{ tables, c, bi, slot }
+            if h.how == place::NONE { return deny_equip{ slot, feedback = 0 } }
+            how = h.how
+            at = h.slot
+        } else {
+            let index = slot_index{ mask = slot }
+            if index < 0 { return deny_equip{ slot, feedback = 0 } }
+            if c.equip[@as(usize, index)].used { how = place::SWAP }
+        }
+        if (bi.equip_slots & at) == 0 { return deny_equip{ slot = at, feedback = 0 } }
+        return EquipCheck{ ok = true, slot = at, how, feedback = if how != place::PLAIN { eqmsg::SWAPPED } else { 0 } }
+    }
+
+    // ---- stacking test of an occupied slot
+
+    // CSWSItem::CompareItem: same base item, upgrades, property list, plot, charges, stolen flag and
+    // model / body / texture variation, tag and name. Decision: the tag and name are not in Item, so
+    // the blueprint resref stands in for them (two items of one blueprint share both).
+    fn compare_items { a: *Item, b: *Item } -> bool {
+        if a.base_item != b.base_item or a.upgrades != b.upgrades or a.nprops != b.nprops { return false }
+        if a.plot != b.plot or a.charges != b.charges or a.stolen != b.stolen { return false }
+        if a.model_variation != b.model_variation or a.body_variation != b.body_variation or a.texture_var != b.texture_var { return false }
+        if not resref::eq{ a = a.resref, b = b.resref } { return false }
+        let mut i: usize = 0
+        while i < @as(usize, a.nprops) {
+            let p = &a.props[i]
+            let q = &b.props[i]
+            if p.name != q.name or p.subtype != q.subtype or p.cost_table != q.cost_table or p.cost_value != q.cost_value { return false }
+            if p.param1 != q.param1 or p.param1_value != q.param1_value or p.upgrade != q.upgrade or p.uses_per_day != q.uses_per_day { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // ---- UnequipItem and EquipItem
+
+    // UnequipItem: clears the cell, takes away every effect the item created, recomputes (which also
+    // refreshes the armour base of the defense formula). The cell must be in use.
+    fn unequip_cell { tables: *Tables, mut c: Creature, index: usize, mut ev: Events } {
+        let id = c.equip[index].id
+        let base = c.equip[index].item.base_item
+        c.equip[index] = Equipped{ used = false, id = OBJECT_INVALID, item = make_item{} }
+        _ = remove_effects_by_creator{ tables, c = &c, creator = id, only_dur = -1, ev = &ev }
+        // a stealth unit coming off ends stealth mode (ItemType 44); the engine knows whether it was on
+        let bi = get_baseitem{ tables, row = base }
+        if bi != null and bi.item_type == 44 {
+            emit{ ev = &ev, kind = ev::LEAVE_STEALTH, a = 0, b = 0, who = id }
+        }
+    }
+
+    // EquipItem with bApplyProperties = 1: stores the item (one of a stack: the caller has split it
+    // off) and applies its passive properties. Returns how many effects took hold. The cell is
+    // filled first so every recompute sees the armour. Decision: the engine applies the properties
+    // before storing the id; the difference is not observable.
+    fn put_item_in_cell { env: Env, mut c: Creature, index: usize, slot: u32, id: u32, item: *Item, mut rng: Rng, mut ev: Events } -> i32 {
+        let tables = env.tables
+        let mut stored = item.*
+        stored.stack = 1
+        c.equip[index] = Equipped{ used = true, id, item = stored }
+        let mut fxs: ItemFx
+        item_effects{ tables, item, slot, creator = id, out = &fxs }
+        let mut applied = 0
+        let mut i: usize = 0
+        while i < @as(usize, fxs.len) {
+            let r = apply_effect{ env, c = &c, e = fxs.items[i], rng = &rng, ev = &ev }
+            if r.kept { applied = applied + 1 }
+            i = i + 1
+        }
+        recompute{ tables, c = &c }
+        return applied
+    }
+
+    fn fail_equip { feedback: i32, slot: u32, how: i32 } -> EquipResult {
+        let mut r: EquipResult
+        r.ok = false
+        r.feedback = feedback
+        r.slot = slot
+        r.how = how
+        return r
+    }
+
+    // RunEquip's body once the item is in hand (4.2 steps 2-6): CanEquipItem, then the occupant(s) of
+    // the slot come out, then EquipItem. `slot` is the requested mask; the result says where the item
+    // went. Feedback (a failure's reason, or "swapped out") is returned and also emitted as an
+    // ev::FEEDBACK event unless `loading`; a load (ReadItemsFromGff) passes loading = true and
+    // handles a refusal itself by keeping the item in the inventory. `id` is the item's object id,
+    // `item` its data.
+    //
+    // Refusals that leave the creature untouched: any CanEquipItem failure; asking for the slot the
+    // item is already in (the action layer ignores such requests); swapping with an occupant that is
+    // identical to the new item (4.2 step 3, "nothing would change").
+    fn equip { env: Env, mut c: Creature, slot: u32, id: u32, item: *Item, loading: bool, mut rng: Rng, mut ev: Events } -> EquipResult {
+        let tables = env.tables
+        let chk = can_equip_item{ tables, c = &c, item, slot, from_player = true, in_combat_attacked = false }
+        if not chk.ok {
+            if chk.feedback != 0 and not loading { emit{ ev = &ev, kind = ev::FEEDBACK, a = chk.feedback, b = 0, who = OBJECT_INVALID } }
+            return fail_equip{ feedback = chk.feedback, slot = chk.slot, how = chk.how }
+        }
+        let index = @as(usize, slot_index{ mask = chk.slot })
+        if c.equip[index].used and c.equip[index].id == id { return fail_equip{ feedback = 0, slot = chk.slot, how = chk.how } }
+
+        let mut r: EquipResult
+        r.slot = chk.slot
+        r.how = chk.how
+        r.feedback = chk.feedback
+        if chk.how == place::SWAP {
+            let occupant = &c.equip[index]
+            let bi = get_baseitem{ tables, row = item.base_item }
+            let stacks = bi != null and bi.stacking >= 2
+            if stacks and compare_items{ a = &occupant.item, b = item } { return fail_equip{ feedback = 0, slot = chk.slot, how = chk.how } }
+        }
+        // take out the occupants: the slot's for a swap, both hands' for result 3 (right, then left)
+        let mut out_index: [2]usize = [index, 0]
+        let mut n_out: usize = 0
+        if chk.how == place::SWAP { n_out = 1 }
+        if chk.how == place::BOTH_HANDS {
+            out_index[0] = @as(usize, slot_index{ mask = slot::RIGHT })
+            out_index[1] = @as(usize, slot_index{ mask = slot::LEFT })
+            n_out = 2
+        }
+        let mut k: usize = 0
+        while k < n_out {
+            let cell = c.equip[out_index[k]]
+            if cell.used {
+                // the item itself leaving one slot for another is not "displaced"
+                if cell.id != id {
+                    r.displaced[@as(usize, r.ndisplaced)] = cell
+                    r.ndisplaced = r.ndisplaced + 1
+                }
+                unequip_cell{ tables, c = &c, index = out_index[k], ev = &ev }
+            }
+            k = k + 1
+        }
+        // EquipItem step 1: an item already worn somewhere else is taken off first
+        let mut j: usize = 0
+        while j < NUM_SLOTS {
+            if c.equip[j].used and c.equip[j].id == id { unequip_cell{ tables, c = &c, index = j, ev = &ev } }
+            j = j + 1
+        }
+        r.applied = put_item_in_cell{ env, c = &c, index, slot = chk.slot, id, item, rng = &rng, ev = &ev }
+        r.ok = true
+        if r.feedback != 0 and not loading { emit{ ev = &ev, kind = ev::FEEDBACK, a = r.feedback, b = 0, who = OBJECT_INVALID } }
+        return r
+    }
+
+    // RunUnequip's body (4.5 steps 1, 3-5): the item in `slot` comes off with its effects. Taking the
+    // right-hand weapon while a left-hand weapon (WeaponType != 0) is held moves the left one to the
+    // right hand: its effects are rebuilt for hand 1. The returned item goes back to the inventory
+    // (or the floor) by the caller. The armour-in-combat refusal is armour_change_refused's.
+    fn unequip { env: Env, mut c: Creature, slot: u32, mut ev: Events } -> UnequipResult {
+        let tables = env.tables
+        let mut r = UnequipResult{ ok = false, id = OBJECT_INVALID, item = make_item{}, moved_left = false }
+        let index = slot_index{ mask = slot }
+        if index < 0 { return r }
+        let cell = c.equip[@as(usize, index)]
+        if not cell.used { return r }
+        let left_index = @as(usize, slot_index{ mask = slot::LEFT })
+        let mut move_left = false
+        if slot == slot::RIGHT and c.equip[left_index].used {
+            let lb = get_baseitem{ tables, row = c.equip[left_index].item.base_item }
+            if lb != null and lb.weapon_type != 0 { move_left = true }
+        }
+        unequip_cell{ tables, c = &c, index = @as(usize, index), ev = &ev }
+        r.ok = true
+        r.id = cell.id
+        r.item = cell.item
+        if move_left {
+            let left = c.equip[left_index]
+            unequip_cell{ tables, c = &c, index = left_index, ev = &ev }
+            // the item effects never roll (no saves are involved), so a throwaway generator will do
+            let mut rng = seed_rng{ seed = 1 }
+            _ = put_item_in_cell{ env, c = &c, index = @as(usize, index), slot = slot::RIGHT, id = left.id, item = &left.item, rng = &rng, ev = &ev }
+            r.moved_left = true
+        }
+        return r
+    }
+}

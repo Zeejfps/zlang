@@ -901,6 +901,69 @@ Power prerequisites: a power is offered when the class's spells.2da level column
 low). The ability point buy of character creation is in the GUI, not the rules code
 ([gui.md](gui.md)). (med)
 
+### 6.1 The level-up helpers read in detail (for lib/rules/progress.ctx and force.ctx)
+
+All of this was read from the decompiled functions named; it refines 4.4 and 6. (high unless marked)
+
+- **Class feat table** (`CSWClass::LoadFeatTable` `0x005bd0f0`): one 8-byte entry per valid feat
+  whose `<class>_list` is not 4, in feat order: feat, granted level (`<class>_granted`), a pool
+  mask, rank (`<class>_recom`). Pool mask from `_list`: 0 → general only, 1 → general or bonus, 2 →
+  bonus only, 3 → granted by the class (mask 0, never selectable). Blank cells read as 0.
+  `GetFeatSelectableAs` (`0x005a6fe0`) is bit 0 = general, bit 1 = bonus. Only granted entries
+  carry a usable level (`0x005be220`).
+- **Priority lists** (feats `0x005be3c0`, skills `0x005be430`, powers `0x005be6d0`) share one
+  shape: position *p* returns the entry whose rank is *p*; if none has it, the (*p*+1)-th entry
+  with rank 0 in table order, or the last such. Powers: entries are the UserType 1/5 spells, the
+  rank is `light_recom` for a character with good-evil above 40, else `dark_recom`.
+- **MeetsFeatRequirements** (`0x005afb00`): a granted feat needs the total level to have reached
+  its granted level; `minspelllvl` asks `0x005bcd60`, which can only answer for spell level 0
+  (cls_spgn_jedi.2da lists one spell level per class level), so a nonzero value never passes; BAB,
+  then `minstr/mindex/minint/minwis` against the base scores; both `prereqfeat` entries; the
+  `orreqfeat` list needs at least one named feat to be known or pending (`0x005a7230`; no entries,
+  no condition); `reqskill` needs ranks unless skills.2da's untrained flag is set. **`mincharlevel`
+  is not tested here**: AutoLevelUp compares it with the new class level before calling
+  `CanSelectFeat`. The shipped feat.2da uses only `mincharlevel` and `prereqfeat1/2`.
+- **CanSelectFeat** (`0x005b2530`) has the level's totals (general, bonus) and the feats already
+  picked. Feats that fit one pool take it first, flexible ones take what remains (general first),
+  and a candidate that fits one pool needs it free; a flexible candidate needs any slot left.
+- **CanLearnForcePower** (`0x005ac8f0`): UserType 1 or 5, a Force class, not known (any slot), not
+  pending, every `prerequisites` spell known or pending (`0x005a7110`; the helper `0x005a6e70` is
+  called with a flag that also asks for the Force points to cast the prerequisite, which looks
+  like a decompiler or naming accident (low)), the total level before the level-up at least the
+  class column (`FUN_0059b650`: guardian/consular/sentinel columns for classes 3 to 5, 255 for
+  classes 0 to 2, `inate` otherwise), and the count still to gain above the number pending. The
+  last test is made with the count already decremented by the caller, so AutoLevelUp can never
+  take a second power in one level.
+- **Powers per level**: GetNumForcePowersToGain gives 2 when the slot is at level 1 *before* the
+  level (so for the step to level 2, not to level 1), else 1; classpowergain.2da (2 at levels 1, 5,
+  9, 13, 17 for Consulars, 2 at level 1 for the others) is only loaded. Our code uses the table.
+- **AutoLevelUp skills** (`0x005b27e0`): positions 1 to 8 of the class's skill list; a skill is
+  used when the creature has player rules, or skills.2da `npccanuse` is set (and `droidcanuse` for a
+  droid); max rank = new class level + 3, halved (rounded down) for a cross-class skill, which
+  costs 2 points per rank; `allclassescanuse` or a class entry makes a skill usable. Points: new
+  class level 1: 4 × max(1, skillpointbase/2 + INT mod); later max(1, (INT mod + skillpointbase)/2),
+  INT mod from the base score, plus the unspent points.
+- **ApplyLevelUp** (`0x005af950`) calls `CanLevelUp` itself; `LevelUp` (`0x005aabf0`) has no limit on
+  the number of class slots and does not add the class's granted feats: AutoLevelUp adds them with
+  `AddFeat` before choosing. Powers are added only for Force classes when the creature is a
+  player character. `GetMaxForcePoints` is taken before and after; the difference is added to
+  current Force points.
+- **XP arithmetic** (the constant 0.01 is a single-precision float everywhere): `AddExperience`
+  (`0x004ef930`) builds factor = float(NPC percent × 0.01f), then float(row 9 percent × 0.01f ×
+  factor), and credits ceil(XP × factor) with the product in double precision: 100 XP at 80 %
+  is ceil(79.9999952) = 80, the player's factor is exactly 1. `GivePlotXP` is ceil(XP × percent ×
+  0.01f). `GetKillXPValue` (`0x004f19e0`) is row-9 percent × 0.01f × the table cell stored as a
+  float; `AwardKillXP` multiplies by (1 + PER_NPC_Bonus × 0.01 × party size) when the bonus is
+  above 0, rounds up, and gives the result to the party pool. The party level is the highest
+  level whose threshold the player's XP reaches.
+- **Spending Force points** (`0x005a55c0`) never refuses: temporary points first, then current,
+  floored at 0; `HasEnoughForcePoints` is the gate. The cost multiplication is done in the x87
+  unit with the float cell widened, so 20 × 0.9 truncates to 17.
+- **ResistForce** (`0x00541cc0`): spell immunity first (an effect of type 0x32 whose first integer
+  is the spell or −1 → immune, feedback 0x44), then for UserType 1 only, when the target's Force
+  resistance is above 0, `d20 + caster level < FR` resists. Caster level is the override, or the
+  caster's total level (class-slot casts), or 2 × `inate` − 1.
+
 ## 7. Open questions
 
 - Internal types without constructors (0x2b, 0x42, 0x44, 0x45, 0x4d–0x51, 0x53, 0x54,
@@ -914,8 +977,8 @@ low). The ability point buy of character creation is in the GUI, not the rules c
 - `ResistForce` return path for immunity (1 or 2) and the second check `0x004ccfc0`.
 - The stealth/awareness formula: which animations count as moving, the distance term, and how
   often it is evaluated (the caller is in the perception code, [movement.md](movement.md)).
-- Whether the GUI level-up uses classpowergain.2da while `AutoLevelUp` gives 2-then-1 powers.
-- `CanLearnForcePower` (`0x005ac8f0`) and the OR-prerequisite logic (`0x005a7230`) were not read.
+- Whether the GUI level-up uses classpowergain.2da (we assume so; 6.1). The level-up screens'
+  own power and feat counts were not read.
 - Treat Injury's effect on the healed amount (medpac items carry their own heal properties).
 - Resting (the party rest GUI) and how it removes effects; not found in the rules code.
 - Feat 109 + Consular +50 FP: confirm the helper `0x004f7880` is "has feat".

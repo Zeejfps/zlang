@@ -1,0 +1,537 @@
+// Item properties: which ones are active, and the effects an equipped item's passive properties
+// make (party-items-saves.md 4.6, rules.md 1.7 and 1.12), plus the small read-only questions
+// combat asks of a weapon at attack time (combat.md 4.3, 6.1).
+//
+// API (all in namespace rules; `ip::` holds the itempropdef.2da rows)
+//   find_property{ item, name } -> ?*Prop        first property of that type that is active
+//   has_property{ item, name } -> bool
+//   has_property_subtype{ item, name, subtype } -> bool
+//   prop_active{ item, p } -> bool                the upgrade rule (UpgradeType 255, or bit set)
+//   is_usable_property{ name } -> bool            10, 37, 46, 53: never applied on equip
+//   hand_for_slot{ slot } -> i32                  the attack/damage hand a slot implies
+//   build_property_effects{ tables, item, p, slot, creator, &out: PropFx }   one property -> 0..4 effects
+//   item_effects{ tables, item, slot, creator, &out: ItemFx }                every passive property
+//   weapon_keen{ item } -> bool
+//   weapon_damage_none{ item } -> bool
+//   weapon_massive_criticals_row{ item } -> i32   iprp_damagecost row, -1 none
+//   weapon_on_hit_properties{ item } -> OnHitList  the active OnHit (32) properties
+//   weapon_monster_damage{ tables, item } -> Dice  creature weapons: iprp_monstcost dice, count 0 none
+//   weapon_enhancement{ tables, item } -> i32     the largest enhancement (5, 6, 7) bonus, 0 none
+//   damage_row_dice{ tables, row } -> Dice        iprp_damagecost row -> dice (count 0 for the flat rows)
+//
+// Every amount comes from the iprp_* tables in Tables.raw. The effects are the ones the engine's
+// item property handlers build: duration kind EQUIPPED, creator = the item's object id, subtype
+// bits 0 (so Dispel Magic leaves them alone), not exposed to scripts (they are engine-made).
+namespace rules {
+    // itempropdef.2da rows (party-items-saves.md 4.6)
+    namespace ip {
+        const ABILITY: i32 = 0
+        const ARMOR: i32 = 1
+        const ARMOR_ALIGN: i32 = 2
+        const ARMOR_DAMAGE: i32 = 3
+        const ARMOR_RACE: i32 = 4
+        const ENHANCEMENT: i32 = 5
+        const ENHANCEMENT_ALIGN: i32 = 6
+        const ENHANCEMENT_RACE: i32 = 7
+        const ATTACK_PENALTY: i32 = 8
+        const BONUS_FEATS: i32 = 9
+        const CAST_SPELL: i32 = 10
+        const DAMAGE: i32 = 11
+        const DAMAGE_ALIGN: i32 = 12
+        const DAMAGE_RACE: i32 = 13
+        const DAMAGE_IMMUNITY: i32 = 14
+        const DAMAGE_PENALTY: i32 = 15
+        const DAMAGE_REDUCED: i32 = 16
+        const DAMAGE_RESIST: i32 = 17
+        const DAMAGE_VULNERABILITY: i32 = 18
+        const DECREASE_ABILITY: i32 = 19
+        const DECREASE_AC: i32 = 20
+        const DECREASE_SKILL: i32 = 21
+        const MELEE_DAMAGE_TYPE: i32 = 22
+        const RANGED_DAMAGE_TYPE: i32 = 23
+        const IMMUNITY: i32 = 24
+        const MAGIC_RESIST: i32 = 25
+        const SAVE_ELEMENT: i32 = 26
+        const SAVE_SPECIFIC: i32 = 27
+        const KEEN: i32 = 28
+        const LIGHT: i32 = 29
+        const MIGHTY: i32 = 30
+        const DAMAGE_NONE: i32 = 31
+        const ON_HIT: i32 = 32
+        const REDUCED_SAVE: i32 = 33
+        const REDUCED_SAVE_SPECIFIC: i32 = 34
+        const REGENERATION: i32 = 35
+        const SKILL: i32 = 36
+        const THIEVES_TOOLS: i32 = 37
+        const ATTACK_BONUS: i32 = 38
+        const ATTACK_BONUS_ALIGN: i32 = 39
+        const ATTACK_BONUS_RACE: i32 = 40
+        const TO_HIT_PENALTY: i32 = 41
+        const UNLIMITED_AMMO: i32 = 42
+        const LIMIT_ALIGNMENT: i32 = 43
+        const LIMIT_CLASS: i32 = 44
+        const LIMIT_RACE: i32 = 45
+        const TRAP: i32 = 46
+        const TRUE_SEEING: i32 = 47
+        const ON_MONSTER_HIT: i32 = 48
+        const MASSIVE_CRITICALS: i32 = 49
+        const FREEDOM_OF_MOVEMENT: i32 = 50
+        const MONSTER_DAMAGE: i32 = 51
+        const SPECIAL_WALK: i32 = 52
+        const COMPUTER_SPIKE: i32 = 53
+        const REGENERATION_FORCE: i32 = 54
+        const DEFLECT_INCREASE: i32 = 55
+        const DEFLECT_DECREASE: i32 = 56
+        const LIMIT_FEAT: i32 = 57
+        const DROID_REPAIR_KIT: i32 = 58
+        const DISGUISE: i32 = 59
+        const NATIVE: u16 = 255             // UpgradeType of a property that needs no upgrade
+    }
+
+    // The most effects one property makes: an enhancement bonus on a double weapon is an attack and
+    // a damage effect for each end; Freedom of Movement is four immunities. (The task brief said 2;
+    // the doc's "second copy with hand 2" makes it 4.)
+    const PROP_FX_MAX: usize = 4
+
+    // The most effects one item makes. A creature holds MAX_FX effects altogether; an item that
+    // would make more is cut off and `lost` counts what was dropped.
+    const ITEM_FX_MAX: usize = 96
+
+    struct PropFx { len: i32, items: [PROP_FX_MAX]Effect }
+    struct ItemFx { len: i32, lost: i32, items: [ITEM_FX_MAX]Effect }
+
+    // The OnHit properties of a weapon. Shipped weapons carry at most a few; more are ignored.
+    const MAX_ONHIT: usize = 8
+    struct OnHitList { len: i32, items: [MAX_ONHIT]Prop }
+
+    // NumDice d Die from a cost table row; count 0 means "no dice" (a missing property, or a flat
+    // row of iprp_damagecost).
+    struct Dice { count: i32, die: i32 }
+
+    // ---- active properties
+
+    // The upgrade rule (4.6): a property with UpgradeType 255 is always active, any other counts
+    // only while bit `1 << UpgradeType` is set in the item's Upgrades mask. The engine masks the shift
+    // count to five bits (`1 << (b & 0x1f)`), which this repeats.
+    fn prop_active { item: *Item, p: *Prop } -> bool {
+        if p.upgrade == ip::NATIVE { return true }
+        let bit = @as(u32, 1) << (@as(u32, p.upgrade) & 31)
+        return (item.upgrades & bit) != 0
+    }
+
+    // The properties the engine files under "usable" (activate this item): never applied on equip.
+    fn is_usable_property { name: i32 } -> bool {
+        return name == ip::CAST_SPELL or name == ip::THIEVES_TOOLS or name == ip::TRAP or name == ip::COMPUTER_SPIKE
+    }
+
+    // GetPropertyByType: the first active property of a type, or null.
+    fn find_property { item: *Item, name: i32 } -> ?*Prop {
+        let mut i: usize = 0
+        while i < @as(usize, item.nprops) {
+            let p = &item.props[i]
+            i = i + 1
+            if @as(i32, p.name) == name and prop_active{ item, p } { return p }
+        }
+        return null
+    }
+
+    fn has_property { item: *Item, name: i32 } -> bool {
+        return find_property{ item, name } != null
+    }
+
+    // An active property of a type with this subtype (a cast-spell property for spell 129, say).
+    fn has_property_subtype { item: *Item, name: i32, subtype: i32 } -> bool {
+        let mut i: usize = 0
+        while i < @as(usize, item.nprops) {
+            let p = &item.props[i]
+            i = i + 1
+            if @as(i32, p.name) == name and @as(i32, p.subtype) == subtype and prop_active{ item, p } { return true }
+        }
+        return false
+    }
+
+    // ---- amounts from the cost tables
+
+    // A cell of one of the iprp_* tables, 0 when the row or column is missing.
+    fn table_value { tables: *Tables, which: Tab, row: i32, col: []u8 } -> i32 {
+        if row < 0 { return 0 }
+        let t = raw_table{ tables, which }
+        return cell_int{ t, row = @as(usize, row), col, dflt = 0 }
+    }
+
+    fn bonus_value { tables: *Tables, row: i32 } -> i32 { return table_value{ tables, which = Tab::iprp_bonuscost, row, col = "value" } }
+    fn melee_value { tables: *Tables, row: i32 } -> i32 { return table_value{ tables, which = Tab::iprp_meleecost, row, col = "value" } }
+    // The two penalty tables hold negative numbers; the handlers negate them.
+    fn neg5_value { tables: *Tables, row: i32 } -> i32 { return table_value{ tables, which = Tab::iprp_neg5cost, row, col = "value" } }
+    fn neg10_value { tables: *Tables, row: i32 } -> i32 { return table_value{ tables, which = Tab::iprp_neg10cost, row, col = "value" } }
+
+    // 1 << n as a damage type mask (subtype n of iprp_damagetype); 0 for an impossible n.
+    fn bit_of { n: i32 } -> i32 {
+        if n < 0 or n > 30 { return 0 }
+        return @as(i32, @as(u32, 1) << @as(u32, n))
+    }
+
+    // iprp_damagecost: rows 1..5 are flat amounts (no dice), 6 and up roll NumDice d Die.
+    fn damage_row_dice { tables: *Tables, row: i32 } -> Dice {
+        let n = table_value{ tables, which = Tab::iprp_damagecost, row, col = "numdice" }
+        let d = table_value{ tables, which = Tab::iprp_damagecost, row, col = "die" }
+        if n <= 0 or d <= 0 { return Dice{ count = 0, die = 0 } }
+        return Dice{ count = n, die = d }
+    }
+
+    // ---- hands
+
+    // The hand an attack or damage effect carries for the slot its item sits in (4.6, "Hand"):
+    // 1 on-hand, 2 off-hand, 3/4/5 the creature weapons, 7 unarmed (gauntlets); any other slot is
+    // 0, "misc", which applies to every attack.
+    fn hand_for_slot { slot: u32 } -> i32 {
+        if slot == slot::RIGHT { return 1 }
+        if slot == slot::LEFT { return 2 }
+        if slot == slot::CREATURE_L { return 3 }
+        if slot == slot::CREATURE_R { return 4 }
+        if slot == slot::CREATURE_B { return 5 }
+        if slot == slot::HANDS { return 7 }
+        return 0
+    }
+
+    // WeaponWield 3 is the double-bladed weapon (and the staff): its attack and damage bonuses are
+    // applied a second time for hand 2, so both ends get them.
+    fn is_double_weapon { tables: *Tables, item: *Item } -> bool {
+        let bi = get_baseitem{ tables, row = item.base_item } ifnull { return false }
+        return bi.wield == 3
+    }
+
+    // An item's damage type flags for the damage effects of enhancement properties: the base
+    // item's DamageFlags, 8 (universal) when it has none (4.6, property 5-7).
+    fn damage_flags_of { tables: *Tables, item: *Item } -> i32 {
+        let bi = get_baseitem{ tables, row = item.base_item } ifnull { return dmg::UNIVERSAL }
+        if bi.damage_flags == 0 { return dmg::UNIVERSAL }
+        return bi.damage_flags
+    }
+
+    // ---- building effects
+
+    // What every item effect has in common: equipped duration, subtype bits 0, hidden from scripts.
+    // The creator is stamped by the caller.
+    fn mark_item_effect { mut e: Effect } {
+        e.dur = dur::EQUIPPED
+        e.sub = 0
+        e.exposed = false
+    }
+
+    fn push_fx { mut out: PropFx, e: Effect } {
+        if @as(usize, out.len) >= PROP_FX_MAX { return }
+        out.items[@as(usize, out.len)] = e
+        out.len = out.len + 1
+    }
+
+    // The "versus" clause of an attack or damage effect (enhancement, damage and attack-bonus
+    // families). `align` is the alignment group subtype (1 neutral, 2 light, 3 dark) of the
+    // alignment variants, -1 for the other variants; `race` the racial type of the race variants.
+    // Quirk kept from the original (4.6): "versus Neutral" is stored in int3, which no reader looks
+    // at, so it filters nothing; light and dark go to int4 where the attack filter finds them.
+    fn set_attack_filter { mut e: Effect, align: i32, race: i32 } {
+        if align == 1 { e.ints[3] = 1 }
+        if align == 2 or align == 3 { e.ints[4] = align }
+        if race >= 0 { e.ints[2] = race }
+    }
+
+    fn make_item_attack { kind: i32, amount: i32, hand: i32, align: i32, race: i32 } -> Effect {
+        let mut e = fx::make_attack{ kind, amount, hand }
+        set_attack_filter{ e = &e, align, race }
+        mark_item_effect{ e = &e }
+        return e
+    }
+
+    // A damage effect: int0 = amount (an iprp_damagecost row), int1 = damage type mask, int2 race,
+    // int5 = hand.
+    fn make_item_damage { kind: i32, amount: i32, types: i32, hand: i32, align: i32, race: i32 } -> Effect {
+        let mut e = fx::make_damage_change{ kind, amount, types }
+        e.ints[5] = hand
+        set_attack_filter{ e = &e, align, race }
+        mark_item_effect{ e = &e }
+        return e
+    }
+
+    // An AC effect: int0 = AC type (0 dodge .. 4 deflection), int1 = amount, int2 race, int4
+    // alignment group, int5 damage type filter (0x4007: all, the exe's own sentinel).
+    fn make_item_ac { kind: i32, ac_type: i32, amount: i32, align: i32, damage_filter: i32, race: i32 } -> Effect {
+        let mut e = fx::make_effect{ kind }
+        e.ints[0] = ac_type
+        e.ints[1] = amount
+        e.ints[2] = if race >= 0 { race } else { race::ANY }
+        e.ints[4] = if align > 0 { align } else { 0 }
+        e.ints[5] = if damage_filter >= 0 { damage_filter } else { fx::AC_ALL_A }
+        mark_item_effect{ e = &e }
+        return e
+    }
+
+    // Wraps a leaf made by an fx constructor.
+    fn mark_item_fx { e: Effect } -> Effect {
+        let mut m = e
+        mark_item_effect{ e = &m }
+        return m
+    }
+
+    // The attack and damage effects of the enhancement, damage and attack-bonus families, for the
+    // hand of the slot and, on a double weapon, for hand 2 as well. kind_a / kind_d are the effect
+    // types (0 for none), amount_a / amount_d their numbers.
+    fn push_hand_effects { mut out: PropFx, double: bool, hand: i32, kind_a: i32, amount_a: i32, kind_d: i32, amount_d: i32, types: i32, align: i32, race: i32 } {
+        let copies: usize = if double { 2 } else { 1 }
+        let mut k: usize = 0
+        while k < copies {
+            let h = if k == 0 { hand } else { 2 }
+            if kind_a != 0 { push_fx{ out = &out, e = make_item_attack{ kind = kind_a, amount = amount_a, hand = h, align, race } } }
+            if kind_d != 0 { push_fx{ out = &out, e = make_item_damage{ kind = kind_d, amount = amount_d, types, hand = h, align, race } } }
+            k = k + 1
+        }
+    }
+
+    // The saving throw selector of a save property's subtype: 1..3 Fortitude, Reflex, Will, any
+    // other value all saves (the shared handler reads iprp_saveelement as a save type, 4.6 quirks).
+    fn save_selector { subtype: i32 } -> i32 {
+        if subtype >= 1 and subtype <= 3 { return subtype }
+        return save::ALL
+    }
+
+    // A saving throw effect from a signed amount: negative gives a decrease of the absolute value.
+    fn make_item_save { amount: i32, subtype: i32 } -> Effect {
+        let which = save_selector{ subtype }
+        if amount < 0 { return mark_item_fx{ e = fx::make_save_decrease{ amount = 0 - amount, which, save_type = 0 } } }
+        return mark_item_fx{ e = fx::make_save_increase{ amount, which, save_type = 0 } }
+    }
+
+    // IMMUNITY_TYPE_* a subtype of iprp_immunity stands for (the mapping is in the engine, not in
+    // the 2DA). Subtype 1 stands for two immunities, the second is returned by immunity_second.
+    fn immunity_type_of { subtype: i32 } -> i32 {
+        if subtype == 0 { return imm::SNEAK_ATTACK }
+        if subtype == 1 { return imm::NEGATIVE_LEVEL }
+        if subtype == 2 { return imm::MIND }
+        if subtype == 3 { return imm::POISON }
+        if subtype == 4 { return imm::DISEASE }
+        if subtype == 5 { return imm::FEAR }
+        if subtype == 6 { return imm::KNOCKDOWN }
+        if subtype == 7 { return imm::PARALYSIS }
+        if subtype == 8 { return imm::CRITICAL_HIT }
+        if subtype == 9 { return imm::DEATH }
+        return 0
+    }
+
+    fn make_item_immunity { immunity: i32 } -> Effect {
+        return mark_item_fx{ e = fx::make_immunity{ immunity } }
+    }
+
+    // Builds the effects of one property for an item worn in `slot`, in the order the handlers make
+    // them. `out` is overwritten. A usable property, one with no handler (Keen, OnHit, the use
+    // limitations ...) or an unknown one makes none. The upgrade rule is the caller's
+    // (item_effects); this builds whatever it is given.
+    fn build_property_effects { tables: *Tables, item: *Item, p: *Prop, slot: u32, creator: u32, mut out: PropFx } {
+        out.len = 0
+        let name = @as(i32, p.name)
+        let sub = @as(i32, p.subtype)
+        let cv = @as(i32, p.cost_value)
+        let hand = hand_for_slot{ slot }
+        let double = is_double_weapon{ tables, item }
+
+        if name == ip::ABILITY {
+            push_fx{ out = &out, e = mark_item_fx{ e = fx::make_ability_increase{ ability = sub, amount = bonus_value{ tables, row = cv } } } }
+        } else if name >= ip::ARMOR and name <= ip::ARMOR_RACE {
+            // int0 is the base item's AC_Enchant column (0, dodge, for every shipped row)
+            let ac_type = table_value{ tables, which = Tab::baseitems, row = item.base_item, col = "ac_enchant" }
+            let amount = bonus_value{ tables, row = cv }
+            // Armour versus an alignment group uses int4 for all three groups (no Neutral quirk here).
+            let align = if name == ip::ARMOR_ALIGN { sub } else { 0 }
+            let filter = if name == ip::ARMOR_DAMAGE { sub } else { -1 }
+            let race = if name == ip::ARMOR_RACE { sub } else { -1 }
+            push_fx{ out = &out, e = make_item_ac{ kind = fx::AC_INCREASE, ac_type, amount, align, damage_filter = filter, race } }
+        } else if name >= ip::ENHANCEMENT and name <= ip::ENHANCEMENT_RACE {
+            let amount = melee_value{ tables, row = cv }
+            let align = if name == ip::ENHANCEMENT_ALIGN { sub } else { -1 }
+            let race = if name == ip::ENHANCEMENT_RACE { sub } else { -1 }
+            let types = damage_flags_of{ tables, item }
+            push_hand_effects{ out = &out, double, hand, kind_a = fx::ATTACK_INCREASE, amount_a = amount, kind_d = fx::DAMAGE_INCREASE, amount_d = amount, types, align, race }
+        } else if name == ip::ATTACK_PENALTY {
+            // Only the attack decrease: the table entry for 8 was overwritten by the attack-only pair.
+            let amount = 0 - neg5_value{ tables, row = cv }
+            push_hand_effects{ out = &out, double, hand, kind_a = fx::ATTACK_DECREASE, amount_a = amount, kind_d = 0, amount_d = 0, types = 0, align = -1, race = -1 }
+        } else if name == ip::BONUS_FEATS {
+            push_fx{ out = &out, e = mark_item_fx{ e = fx::make_with{ kind = fx::BONUS_FEAT, a = sub, b = 0 } } }
+        } else if name >= ip::DAMAGE and name <= ip::DAMAGE_RACE {
+            // CostValue goes through as the damage constant (an iprp_damagecost row); the damage type
+            // is the subtype for the plain variant and Param1Value for the two "versus" variants.
+            let types = if name == ip::DAMAGE { bit_of{ n = sub } } else { bit_of{ n = @as(i32, p.param1_value) } }
+            let align = if name == ip::DAMAGE_ALIGN { sub } else { -1 }
+            let race = if name == ip::DAMAGE_RACE { sub } else { -1 }
+            push_hand_effects{ out = &out, double, hand, kind_a = 0, amount_a = 0, kind_d = fx::DAMAGE_INCREASE, amount_d = cv, types, align, race }
+        } else if name == ip::DAMAGE_IMMUNITY {
+            // The property's own cost table is iprp_immuncost in every shipped item (checked by itemcheck).
+            let pct = table_value{ tables, which = Tab::iprp_immuncost, row = cv, col = "value" }
+            push_fx{ out = &out, e = mark_item_fx{ e = fx::make_damage_immunity_increase{ types = bit_of{ n = sub }, percent = pct } } }
+        } else if name == ip::DAMAGE_PENALTY {
+            let amount = 0 - neg5_value{ tables, row = cv }
+            let types = damage_flags_of{ tables, item }
+            push_hand_effects{ out = &out, double, hand, kind_a = 0, amount_a = 0, kind_d = fx::DAMAGE_DECREASE, amount_d = amount, types, align = -1, race = -1 }
+        } else if name == ip::DAMAGE_REDUCED {
+            let amount = table_value{ tables, which = Tab::iprp_soakcost, row = cv, col = "amount" }
+            push_fx{ out = &out, e = mark_item_fx{ e = fx::make_damage_reduction{ amount, power = sub + 1, limit = 0 } } }
+        } else if name == ip::DAMAGE_RESIST {
+            let amount = table_value{ tables, which = Tab::iprp_resistcost, row = cv, col = "amount" }
+            push_fx{ out = &out, e = mark_item_fx{ e = fx::make_damage_resistance{ types = bit_of{ n = sub }, amount, limit = 0 } } }
+        } else if name == ip::DAMAGE_VULNERABILITY {
+            let pct = table_value{ tables, which = Tab::iprp_damvulcost, row = cv, col = "value" }
+            push_fx{ out = &out, e = mark_item_fx{ e = fx::make_damage_immunity_decrease{ types = bit_of{ n = sub }, percent = pct } } }
+        } else if name == ip::DECREASE_ABILITY {
+            push_fx{ out = &out, e = mark_item_fx{ e = fx::make_ability_decrease{ ability = sub, amount = 0 - neg10_value{ tables, row = cv } } } }
+        } else if name == ip::DECREASE_AC {
+            let amount = 0 - neg5_value{ tables, row = cv }
+            push_fx{ out = &out, e = make_item_ac{ kind = fx::AC_DECREASE, ac_type = sub, amount, align = 0, damage_filter = -1, race = -1 } }
+        } else if name == ip::DECREASE_SKILL {
+            push_fx{ out = &out, e = mark_item_fx{ e = fx::make_skill_decrease{ skill = sub, amount = 0 - neg10_value{ tables, row = cv } } } }
+        } else if name == ip::IMMUNITY {
+            let first = immunity_type_of{ subtype = sub }
+            if first != 0 { push_fx{ out = &out, e = make_item_immunity{ immunity = first } } }
+            // level / ability drain is two immunities
+            if sub == 1 { push_fx{ out = &out, e = make_item_immunity{ immunity = imm::ABILITY_DECREASE } } }
+        } else if name == ip::MAGIC_RESIST {
+            let amount = table_value{ tables, which = Tab::iprp_srcost, row = cv, col = "value" }
+            push_fx{ out = &out, e = mark_item_fx{ e = fx::make_force_resistance_increase{ amount } } }
+        } else if name == ip::SAVE_ELEMENT or name == ip::SAVE_SPECIFIC {
+            push_fx{ out = &out, e = make_item_save{ amount = bonus_value{ tables, row = cv }, subtype = sub } }
+        } else if name == ip::REDUCED_SAVE or name == ip::REDUCED_SAVE_SPECIFIC {
+            push_fx{ out = &out, e = make_item_save{ amount = neg5_value{ tables, row = cv }, subtype = sub } }
+        } else if name == ip::LIGHT {
+            push_fx{ out = &out, e = mark_item_fx{ e = fx::make_with{ kind = fx::LIGHT, a = 5000, b = 0 } } }
+        } else if name == ip::REGENERATION or name == ip::REGENERATION_FORCE {
+            // CostValue hit (or Force) points every 6 seconds; int4 says which pool (35 / 54).
+            let mut e = fx::make_with{ kind = fx::REGENERATE, a = cv, b = 6000 }
+            e.ints[4] = name
+            push_fx{ out = &out, e = mark_item_fx{ e } }
+        } else if name == ip::SKILL {
+            push_fx{ out = &out, e = mark_item_fx{ e = fx::make_skill_increase{ skill = sub, amount = cv } } }
+        } else if name >= ip::ATTACK_BONUS and name <= ip::ATTACK_BONUS_RACE {
+            let amount = melee_value{ tables, row = cv }
+            let align = if name == ip::ATTACK_BONUS_ALIGN { sub } else { -1 }
+            let race = if name == ip::ATTACK_BONUS_RACE { sub } else { -1 }
+            push_hand_effects{ out = &out, double, hand, kind_a = fx::ATTACK_INCREASE, amount_a = amount, kind_d = 0, amount_d = 0, types = 0, align, race }
+        } else if name == ip::TRUE_SEEING {
+            push_fx{ out = &out, e = mark_item_fx{ e = fx::make_true_seeing{} } }
+        } else if name == ip::FREEDOM_OF_MOVEMENT {
+            push_fx{ out = &out, e = make_item_immunity{ immunity = imm::PARALYSIS } }
+            push_fx{ out = &out, e = make_item_immunity{ immunity = imm::SLOW } }
+            push_fx{ out = &out, e = make_item_immunity{ immunity = imm::ENTANGLE } }
+            push_fx{ out = &out, e = make_item_immunity{ immunity = imm::SPEED_DECREASE } }
+        } else if name == ip::SPECIAL_WALK {
+            push_fx{ out = &out, e = mark_item_fx{ e = fx::make_with{ kind = fx::SET_WALK_ANIMATION, a = sub, b = 0 } } }
+            push_fx{ out = &out, e = mark_item_fx{ e = fx::make_effect{ kind = fx::LIMIT_MOVEMENT_SPEED } } }
+        } else if name == ip::DEFLECT_INCREASE or name == ip::DEFLECT_DECREASE {
+            // int1 is what the deflection roll sums (combat.md 4.6); int0 is the subtype.
+            let kind = if name == ip::DEFLECT_INCREASE { fx::BLASTER_DEFLECTION_INCREASE } else { fx::BLASTER_DEFLECTION_DECREASE }
+            push_fx{ out = &out, e = mark_item_fx{ e = fx::make_with{ kind, a = sub, b = cv } } }
+        } else if name == ip::DISGUISE {
+            push_fx{ out = &out, e = mark_item_fx{ e = fx::make_with{ kind = fx::DISGUISE, a = sub, b = 0 } } }
+        }
+
+        // creator = the item, no spell
+        let mut i: usize = 0
+        while i < @as(usize, out.len) {
+            out.items[i].creator = creator
+            out.items[i].spell_id = -1
+            i = i + 1
+        }
+    }
+
+    // Equipped effects get ids that cannot meet the world counter's (which counts up from 1): the high
+    // bit, then the item's object id, then the effect's number among the item's effects. Decision:
+    // ids are derived rather than drawn from a counter so equip needs no EffectIds, and re-equipping
+    // the same item gives the same ids.
+    const ITEM_FX_ID_BASE: u64 = 0x8000000000000000
+
+    fn item_effect_id { creator: u32, k: usize } -> u64 {
+        return ITEM_FX_ID_BASE + @as(u64, creator) * 4096 + @as(u64, k)
+    }
+
+    // Every effect an item worn in `slot` makes: each passive, active property in order. `out` is
+    // overwritten. This is what equip applies and unequip takes away again (by creator).
+    fn item_effects { tables: *Tables, item: *Item, slot: u32, creator: u32, mut out: ItemFx } {
+        out.len = 0
+        out.lost = 0
+        let mut one: PropFx
+        let mut i: usize = 0
+        while i < @as(usize, item.nprops) {
+            let p = &item.props[i]
+            i = i + 1
+            if is_usable_property{ name = @as(i32, p.name) } or not prop_active{ item, p } { continue }
+            build_property_effects{ tables, item, p, slot, creator, out = &one }
+            let mut k: usize = 0
+            while k < @as(usize, one.len) {
+                if @as(usize, out.len) >= ITEM_FX_MAX {
+                    out.lost = out.lost + 1
+                } else {
+                    out.items[@as(usize, out.len)] = one.items[k]
+                    out.items[@as(usize, out.len)].id = item_effect_id{ creator, k = @as(usize, out.len) }
+                    out.len = out.len + 1
+                }
+                k = k + 1
+            }
+        }
+    }
+
+    // ---- what combat reads off a weapon (combat.md 4.3, 6.1)
+
+    // Keen (28): the threat range is added to itself.
+    fn weapon_keen { item: *Item } -> bool { return has_property{ item, name = ip::KEEN } }
+
+    // DamageNone (31): the weapon does no damage of its own.
+    fn weapon_damage_none { item: *Item } -> bool { return has_property{ item, name = ip::DAMAGE_NONE } }
+
+    // Massive Criticals (49): the iprp_damagecost row of the extra damage on a critical hit, -1 when
+    // the weapon has none (row 0 is "Random", which has no dice).
+    fn weapon_massive_criticals_row { item: *Item } -> i32 {
+        let p = find_property{ item, name = ip::MASSIVE_CRITICALS } ifnull { return -1 }
+        return @as(i32, p.cost_value)
+    }
+
+    // OnHit (32) properties in list order (up to MAX_ONHIT): subtype = iprp_onhit row, CostValue =
+    // the chance row, Param1Value = the duration row. Combat reads the tables.
+    fn weapon_on_hit_properties { item: *Item } -> OnHitList {
+        let mut out: OnHitList
+        let mut i: usize = 0
+        while i < @as(usize, item.nprops) {
+            let p = &item.props[i]
+            i = i + 1
+            if @as(i32, p.name) != ip::ON_HIT or not prop_active{ item, p } { continue }
+            if @as(usize, out.len) < MAX_ONHIT {
+                out.items[@as(usize, out.len)] = p.*
+                out.len = out.len + 1
+            }
+        }
+        return out
+    }
+
+    // Monster damage (51) of a creature weapon: NumDice d Die from iprp_monstcost at CostValue.
+    fn weapon_monster_damage { tables: *Tables, item: *Item } -> Dice {
+        let p = find_property{ item, name = ip::MONSTER_DAMAGE } ifnull { return Dice{ count = 0, die = 0 } }
+        let row = @as(i32, p.cost_value)
+        let n = table_value{ tables, which = Tab::iprp_monstcost, row, col = "numdice" }
+        let d = table_value{ tables, which = Tab::iprp_monstcost, row, col = "die" }
+        if n <= 0 or d <= 0 { return Dice{ count = 0, die = 0 } }
+        return Dice{ count = n, die = d }
+    }
+
+    // The largest enhancement bonus of the weapon, used as the "power" of its attacks. Decision: the
+    // three enhancement properties (5, 6, 7) all count, the conditional ones too, because the doc
+    // gives no rule for the versus variants; attack-bonus properties (38-40) do not.
+    fn weapon_enhancement { tables: *Tables, item: *Item } -> i32 {
+        let mut best = 0
+        let mut i: usize = 0
+        while i < @as(usize, item.nprops) {
+            let p = &item.props[i]
+            i = i + 1
+            let name = @as(i32, p.name)
+            if name < ip::ENHANCEMENT or name > ip::ENHANCEMENT_RACE or not prop_active{ item, p } { continue }
+            let v = melee_value{ tables, row = @as(i32, p.cost_value) }
+            if v > best { best = v }
+        }
+        return best
+    }
+}

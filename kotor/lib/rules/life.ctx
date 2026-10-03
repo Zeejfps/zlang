@@ -1,0 +1,31 @@
+// Who counts as dead, dying or helpless (combat.md 8.1). The hit points are the engine's; these
+// take them as an argument so every part of the game agrees.
+namespace rules {
+    // A killed creature's hit points are set to this if they are higher (OnApplyDeath).
+    const DEATH_HP: i32 = -11
+
+    // CSWSObject::GetDead / CSWSCreature::GetDead: hit points below 1, below -9 for the player
+    // character; a member of the player's party is never dead, only incapacitated.
+    fn is_dead { c: *Creature, hp: i32 } -> bool {
+        if c.party { return false }
+        if c.is_pc { return hp < -9 }
+        return hp < 1
+    }
+
+    // GetIsIncapacitatedPartyMember: a party member at 0 hit points or fewer. Such a member is
+    // helpless (Creature.down) and gets the death effect when it falls, but is not destroyed.
+    fn is_downed_party_member { c: *Creature, hp: i32 } -> bool {
+        return c.party and hp < 1
+    }
+
+    // Whether the creature takes part in combat: not dead, not down and not a crowd-control victim
+    // that cannot attack.
+    fn can_fight { c: *Creature, hp: i32 } -> bool {
+        return not is_dead{ c, hp } and not is_downed_party_member{ c, hp } and can_attack{ c }
+    }
+
+    // Current hit points plus the temporary ones (GetCurrentHitPoints with bonuses).
+    fn hit_points_with_temporary { c: *Creature, hp: i32 } -> i32 {
+        return hp + c.temp_hp
+    }
+}
