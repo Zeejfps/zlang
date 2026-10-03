@@ -95,6 +95,7 @@ namespace obj {
         spell_location: math::Vec3,   // GetSpellTargetLocation
         last_spell: i32,          // GetLastSpell
         last_spell_caster: u32,   // GetLastSpellCaster
+        last_spell_harmful: bool, // GetLastSpellHarmful
     }
 
     fn no_context {} -> Context {
@@ -106,7 +107,7 @@ namespace obj {
             last_attacker = INVALID, last_damager = INVALID, last_speaker = INVALID,
             last_disturbed = INVALID, run_script_var = 0, clicked_by = INVALID, blocker = INVALID,
             listen_pattern = -1, spell_id = -1, spell_target = INVALID, spell_location = math::vec3::zero{},
-            last_spell = -1, last_spell_caster = INVALID,
+            last_spell = -1, last_spell_caster = INVALID, last_spell_harmful = false,
         }
     }
 
@@ -261,6 +262,7 @@ namespace obj {
         equipped_slot: i32,                 // -1: not equipped
         non_equippable: bool,               // SetItemNonEquippable: the equip checks refuse it
         rules: ?*mut rules::Item,           // the item as the rules see it (heap; fight::read_item)
+        droppable: bool,                    // Dropable: it goes into the body bag when its owner dies
     }
 
     enum DoorState: u8 { closed, open1, open2, destroyed }

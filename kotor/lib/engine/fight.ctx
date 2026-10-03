@@ -57,6 +57,7 @@ namespace fight {
         variant: u32,                   // alternates animation ids so a row can replay
         killer: u32,                    // GetLastKiller
         last_damage: i32,               // GetTotalDamageDealt
+        damage_types: [15]i32,          // GetDamageDealtByType: the last hit's damage by type slot
         dying_ms: i32,                  // > 0: the die animation plays, then dead
     }
 
@@ -73,7 +74,7 @@ namespace fight {
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
         let mut c: rules::Creature
         c.loaded_hp = -1
-        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, dying_ms = 0 }
+        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], dying_ms = 0 }
         return try alloc::new(Fighter, heap::Heap){ realloc = heap::alloc, heap, value = f }
     }
 
@@ -243,7 +244,7 @@ namespace fight {
             o.hp = o.hp + e.a
             if o.hp > o.hp_max { o.hp = o.hp_max }
         } else if k == rules::ev::DAMAGE_HP {
-            take_damage{ &w, id, amount = e.a, who = e.who }
+            take_damage{ &w, id, amount = e.a, types = e.b, who = e.who }
         } else if k == rules::ev::DEATH {
             died{ &w, id, killer = e.who, melee = e.a != 0 }
         } else if k == rules::ev::RESURRECT {
@@ -269,7 +270,7 @@ namespace fight {
 
     // ---- hit points, death (6.6, 6.7, 8)
 
-    fn take_damage { mut w: world::World, id: u32, amount: i32, who: u32 } {
+    fn take_damage { mut w: world::World, id: u32, amount: i32, types: i32, who: u32 } {
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
         let f = c.fighter ifnull { return }
@@ -277,6 +278,12 @@ namespace fight {
         o.hp = o.hp - amount
         if o.min_one_hp and o.hp < 1 { o.hp = 1 }
         f.last_damage = amount
+        f.damage_types = [0; 15]
+        let mut slot: u32 = 0
+        while slot < 15 {
+            if (types >> slot) & 1 != 0 { f.damage_types[@as(usize, slot)] = amount }
+            slot = slot + 1
+        }
         if w.log.combat {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "{} takes {} damage from {}: {}/{}\n", id, amount, who, o.hp, o.hp_max)
@@ -1111,5 +1118,107 @@ namespace fight {
             if not f.c.down and o.hp >= 1 { return false }
         }
         return true
+    }
+
+    // SpawnBodyBag (combat.md 8.4): a dead creature being destroyed leaves a placeable with what
+    // it drops (its own droppable items, carried or worn) when it has any, or when its
+    // bodybag.2da row is a corpse; the row is the creature's appearance's BODY_BAG.
+    fn spawn_body_bag { mut w: world::World, id: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        if not c.dead or party::is_member{ w = &w, id } { return }
+        // What drops.
+        let mut drops: [64]u32 = [obj::INVALID; 64]
+        let mut n: usize = 0
+        let carried = list::items{ list = c.inventory }
+        let mut k: usize = 0
+        while k < carried.len and n < 64 {
+            if droppable{ w = &w, item = carried[k] } {
+                drops[n] = carried[k]
+                n = n + 1
+            }
+            k = k + 1
+        }
+        k = 0
+        while k < obj::EQUIP_SLOTS and n < 64 {
+            let item = c.equipped[k]
+            if item != obj::INVALID and droppable{ w = &w, item } {
+                drops[n] = item
+                n = n + 1
+                c.equipped[k] = obj::INVALID
+            }
+            k = k + 1
+        }
+        let row = twoda::get_int{ t = w.tables.appearance, row = @as(usize, c.appearance), column = "body_bag" } ifnull 0
+        let corpse = (twoda::get_int{ t = w.tables.bodybag, row = @as(usize, row), column = "corpse" } ifnull 0) != 0
+        if n == 0 and not corpse { return }
+        let look = twoda::get_int{ t = w.tables.bodybag, row = @as(usize, row), column = "appearance" } ifnull 0
+        let name = twoda::get_int{ t = w.tables.bodybag, row = @as(usize, row), column = "name" } ifnull 38151
+        let at = o.position
+        let facing = o.orientation
+        let bag = world::add_object{ &w, kind = obj::Kind::placeable, id = 0, character = false } iferr { return }
+        bag.area = w.area
+        bag.position = at
+        world::set_orientation{ o = bag, v = facing }
+        world::set_name{ &w, name = &bag.name, strref = @as(u32, name), text = "" } iferr {}
+        bag.plot = not corpse
+        let bag_id = bag.id
+        if obj::placeable{ o = bag } is some{ value = p } {
+            p.appearance = @as(u32, look)
+            p.useable = true
+            p.has_inventory = true
+            let model = twoda::get_string{ t = w.tables.placeables, row = @as(usize, look), column = "modelname" } ifnull ""
+            p.model = resref::truncate{ name = model }
+            k = 0
+            while k < n {
+                let item = drops[k]
+                k = k + 1
+                list::push{ list = &p.inventory, item } iferr { continue }
+                if world::object{ w = &w, id = item } is some{ value = io } {
+                    if obj::item{ o = io } is some{ value = it } {
+                        it.possessor = bag_id
+                        it.equipped_slot = -1
+                    }
+                }
+            }
+        }
+        // Its items are the bag's now: the creature lets go of them.
+        if world::object{ w = &w, id } is some{ value = back } {
+            if obj::creature{ o = back } is some{ value = bc } {
+                let mut keep = list::new(u32, heap::Heap){ realloc = heap::alloc, heap = w.heap }
+                let own = list::items{ list = bc.inventory }
+                k = 0
+                while k < own.len {
+                    if not droppable{ w = &w, item = own[k] } { list::push{ list = &keep, item = own[k] } iferr {} }
+                    k = k + 1
+                }
+                list::free{ list = &bc.inventory }
+                bc.inventory = keep
+            }
+        }
+        if w.log.combat {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "{} leaves a body bag {} with {} items\n", id, bag_id, n)
+        }
+    }
+
+    fn droppable { w: *world::World, item: u32 } -> bool {
+        let io = world::object{ w, id = item } ifnull { return false }
+        let it = obj::item{ o = io } ifnull { return false }
+        return it.droppable
+    }
+
+    // A creature stops fighting (surrender, CancelCombat): its round ends without OnEndRound, its
+    // actions and targets are cleared, it leaves combat; with `others` everyone attacking it stops.
+    fn stop_fighting { mut w: world::World, id: u32, others: bool } {
+        end_round{ &w, id, script = false }
+        actions::clear_all{ &w, id }
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        c.in_combat = false
+        c.attack_target = obj::INVALID
+        c.attempted_target = obj::INVALID
+        if c.fighter is some{ value = f } { f.combat_ms = 0 }
+        if others { clear_attackers{ &w, id } }
     }
 }

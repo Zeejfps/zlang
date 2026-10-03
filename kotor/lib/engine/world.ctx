@@ -32,6 +32,7 @@ namespace world {
         combatanimations: twoda::Table,
         weapondischarge: twoda::Table,
         spells: twoda::Table,
+        bodybag: twoda::Table,
         modulesave: twoda::Table,
     }
 
@@ -221,6 +222,7 @@ namespace world {
             combatanimations = try load_table{ &fs, heap, rm, name = "combatanimations" },
             weapondischarge = try load_table{ &fs, heap, rm, name = "weapondischarge" },
             spells = try load_table{ &fs, heap, rm, name = "spells" },
+            bodybag = try load_table{ &fs, heap, rm, name = "bodybag" },
             modulesave = try load_table{ &fs, heap, rm, name = "modulesave" },
         }
     }
@@ -326,7 +328,7 @@ namespace world {
             item => {
                 return obj::Ext::item{ i = try alloc::new(obj::Item, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Item{
                     base = 0, model_variation = 1, body_variation = 1, texture_variation = 1, stack = 1, charges = 0,
-                    possessor = obj::INVALID, identified = true, equipped_slot = -1, non_equippable = false, rules = null,
+                    possessor = obj::INVALID, identified = true, equipped_slot = -1, non_equippable = false, rules = null, droppable = false,
                 } } }
             }
             waypoint => {

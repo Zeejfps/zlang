@@ -533,6 +533,12 @@ each frame:
   F4 quick save, F5 quick load, the front end's Load Game; headless `save NAME`, `load FOLDER`.
   A new game clears the store; character creation hands its player over with
   `modload::set_player_blueprint{ &w, bytes }` (UTC GFF bytes).
+- **The party's state in the world**: `w.player` is the player character, `w.pc` the creature
+  the player controls (the leader; the HUD changes it); saves and transitions use `w.player`,
+  and a module is entered under its control (the party table's leader takes over again when the
+  companions are restored). `w.bag` is the party's shared inventory (`party::inventory_of`,
+  `party::merge_into_party`; INVENTORY.res in saves), `w.party.gold` the purse, `w.journal` the
+  quests (lib/engine/journal.ctx; JNL_Entries in PARTYTABLE.res).
 - **Minigames** take over the frame between steps 4 and 9 (their own scene and input) while the
   world's clock keeps running or not, as they need.
 
@@ -571,9 +577,12 @@ each frame:
   round; downed party members get up with 1 HP when no enemy is in combat; cast animations
   hand/self → castout1, dark → castout2, up → castout3, throw → throwsab; spell ranges from the
   range letter's ranges.2da row; GetObjectByTag("") is OBJECT_INVALID.
+- Body bags: a dead creature's droppable items (the Dropable flag of its UTC list entries,
+  carried or worn) go into a placeable of its bodybag.2da row when it is destroyed. The whole
+  party fallen stops the world (the death camera and panel are not built; Load Game goes on).
 - Saves (ours): the effects of a saved creature are restored into its rules list without being
   applied again; equipped and innate effects are not saved (equip while loading remakes them);
   companions arrive 1.5 m behind the player, one to each side.
 - Open: the client's animation id → name mapping (`0x0069f650`), the exact TestWalkLine sliding
   and creature collision, the grid planner, door DWK use while opening, the 10 ms budget if a big
-  module needs it, body bags, the death camera and game over, attack pairing (GetCanEngage).
+  module needs it, the death camera and game-over panel, attack pairing (GetCanEngage).
