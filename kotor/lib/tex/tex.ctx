@@ -1,0 +1,780 @@
+// KOTOR's textures, TPC and TGA, read into what a renderer uploads, and decoded to RGBA8 where a
+// renderer (or a PNG) wants texels. docs/formats/tpc.md, tga.md and txi-render.md are the spec;
+// the rules below are theirs.
+//
+//   let bytes = try fs::read_all{ &fs, &heap, realloc = arena::alloc, path }
+//   let t = try tex::read_tpc{ realloc = arena::alloc, &heap, bytes }
+//   let top = tex::level{ t, image = 0, level = 0 }        // as stored: DXT blocks or texels
+//   let rgba = try tex::decode_level{ realloc = arena::alloc, &heap, t, image = 0, level = 0 }
+//   let atlas = try tex::to_atlas{ realloc = arena::alloc, &heap, t }   // a flipbook as one image
+//
+//   let g = try tex::apply_txi{ t = try tex::read_tga{ realloc = arena::alloc, &heap, bytes }, txi }
+//
+// Conventions every user shares:
+//
+// - **Rows are bottom first**, as both formats store them and as GL takes them: upload a level as
+//   it is and v = 0 is its first row. Something that wants the picture upright (a PNG) reverses
+//   the rows. A TGA stored top down or right to left is turned round when it is read.
+// - **Uncompressed texels are R, G, B(, A) bytes.** TPC stores them so; a TGA's B, G, R is swapped
+//   when it is read, and a TGA always comes out as grey8 (8-bit grey) or rgba8.
+// - **Images**: a plain texture has 1, a cube map 6 faces in GL's order (+X -X +Y -Y +Z -Z, face 5
+//   already turned the right way up, tpc.md "Cube maps"), a TPC flipbook one per frame. Each
+//   image has `levels` mip levels, largest first, and `data` holds image 0's levels, then image
+//   1's, and so on. A flipbook whose frames are cells of one image (a TGA water map once
+//   apply_txi has seen its TXI, or what to_atlas makes) has kind flipbook, images 1 and its grid
+//   in frames_x by frames_y.
+// - **Memory**: a Texture from read_tpc views the bytes it was read from (`data` and `txi` are
+//   slices of them), except a cube map's `data`, which is a copy from the allocator. Keep the
+//   bytes alive as long as the Texture. Everything else a function returns comes from its
+//   allocator.
+// - **Nothing here trusts a file**: a malformed one is an error, never a panic. The image and level
+//   numbers a caller passes are the caller's to get right: `level` panics out of range.
+namespace tex {
+    // grey8, rgb8, rgba8: 1, 3, 4 bytes per texel, R G B A. dxt1, dxt5: S3TC BC1 / BC3 blocks.
+    enum Format: u8 { grey8, rgb8, rgba8, dxt1, dxt5 }
+    enum Kind: u8 { plain, cube, flipbook }
+
+    struct Texture {
+        format: Format,
+        kind: Kind,
+        width: u32,             // one image (cube face, flipbook frame), its top level
+        height: u32,
+        levels: u32,            // mip levels per image, largest first
+        images: u32,            // 1; 6 for a cube map; numx * numy for a TPC flipbook
+        frames_x: u32,          // a flipbook's grid; 1 by 1 otherwise
+        frames_y: u32,
+        data: []u8,             // image 0's levels, then image 1's, ...; rows bottom first
+        txi: []u8,              // the TXI text after a TPC's pixels, raw; empty if none
+        alpha_mean: f32,        // the TPC header's float; 1.0 for a TGA
+    }
+
+    // ---- errors
+
+    error truncated{ need: usize, have: usize }         // the file is `have` bytes; its data needs `need`
+    error empty{ width: u32, height: u32 }              // no texels
+    error bad_encoding{ encoding: u8 }                  // a TPC encoding other than 1, 2 and 4
+    error compressed_grey                               // a TPC with DataSize != 0 and encoding 1 (grey)
+    error bad_mip_count{ levels: u32, max: u32 }        // none, or more than halving down to 1x1 gives
+    error no_grid                                       // a TPC flipbook whose TXI lacks numx or numy
+    error bad_grid{ numx: u32, numy: u32 }              // a flipbook grid that doesn't divide the image
+    error bad_frames{ data_size: u32, frames: usize }   // a TPC flipbook's DataSize isn't its frames' chains
+    error unflippable{ height: u32 }                    // a DXT cube face level whose rows can't be reversed by blocks
+    error bad_tga_type{ image_type: u8 }                // not 1, 2, 3, 9, 10 or 11
+    error bad_tga_depth{ image_type: u8, bits: u8 }     // bits per texel the image type doesn't have
+    error interleaved                                   // a TGA with descriptor bits 6-7 set
+    error bad_colour_map{ map_type: u8, bits: u8 }      // a colour map that is missing, of an unknown type or depth
+    error bad_colour_index{ index: u32 }                // a TGA texel outside its colour map
+    error rle_overrun{ at: usize }                      // a TGA run-length packet, at this offset, passes the last texel
+    error not_flipbook                                  // to_atlas of something else
+
+    // ---- sizes
+
+    // The bytes of one level of `width` x `height` texels: a DXT level takes whole 4x4 blocks, at
+    // least one, however small.
+    fn level_size { format: Format, width: u32, height: u32 } -> usize {
+        let w: usize = width
+        let h: usize = height
+        return match format {
+            grey8 => { w * h }
+            rgb8 => { w * h * 3 }
+            rgba8 => { w * h * 4 }
+            dxt1 => { blocks{ n = w } * blocks{ n = h } * 8 }
+            dxt5 => { blocks{ n = w } * blocks{ n = h } * 16 }
+        }
+    }
+
+    // The bytes of one image: its whole mip chain.
+    fn image_size { t: Texture } -> usize {
+        return chain_size{ format = t.format, width = t.width, height = t.height, levels = t.levels }
+    }
+
+    // The bytes of level `level` of image `image`, as stored. Panics if either is out of range.
+    fn level { t: Texture, image: u32, level: u32 } -> []u8 {
+        if image >= t.images or level >= t.levels { @panic("tex::level: no such image or level") }
+        let at = @as(usize, image) * image_size{ t } + chain_size{ format = t.format, width = t.width, height = t.height, levels = level }
+        let n = level_size{ format = t.format, width = mip_dim{ n = t.width, k = level }, height = mip_dim{ n = t.height, k = level } }
+        return t.data[at..at + n]
+    }
+
+    // The width or height of mip level k of a side of n texels: halved k times, at least 1.
+    fn mip_dim { n: u32, k: u32 } -> u32 {
+        if k >= 32 { return 1 }
+        let m = n >> k
+        return if m == 0 { 1 } else { m }
+    }
+
+    // ---- TPC
+
+    const TPC_HEADER: usize = 128
+
+    // Reads a TPC (tpc.md). The kind comes from the header, in the doc's order: a cube map if the
+    // height is six widths, a flipbook if DataSize is more than one level of a one-level texture
+    // (its grid from `numx` and `numy` in the TXI after the pixels), and plain otherwise. Level
+    // sizes come from the dimensions, never from DataSize, which some small files get wrong.
+    fn read_tpc(S) { realloc: alloc::Fn(S), mut heap: S, bytes: []u8 } -> !Texture {
+        if bytes.len < TPC_HEADER { return truncated{ need = TPC_HEADER, have = bytes.len } }
+        let data_size = get_u32{ bytes, at = 0 }
+        let mean_bits = get_u32{ bytes, at = 4 }
+        let alpha_mean = @cast(*f32, &mean_bits).*
+        let width = get_u16{ bytes, at = 8 }
+        let height = get_u16{ bytes, at = 10 }
+        let encoding = bytes[12]
+        let mips: u32 = bytes[13]
+        let format = try tpc_format{ data_size, encoding }
+        if width == 0 or height == 0 { return empty{ width, height } }
+
+        if height == 6 * width {
+            // Six square faces, face-major, each with the header's mip count.
+            let max = full_levels{ width, height = width }
+            if mips == 0 or mips > max { return bad_mip_count{ levels = mips, max } }
+            let face = chain_size{ format, width, height = width, levels = mips }
+            let end = TPC_HEADER + 6 * face
+            if end > bytes.len { return truncated{ need = end, have = bytes.len } }
+            let data = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = 6 * face }
+            slice::copy(u8){ dst = data, src = bytes[TPC_HEADER..end] }
+            // Face 5 (-Z) is stored upside down: reverse its rows at every level.
+            let mut at = 5 * face
+            let mut k: u32 = 0
+            while k < mips {
+                let side = mip_dim{ n = width, k }
+                let n = level_size{ format, width = side, height = side }
+                flip_rows{ level = data[at..at + n], format, width = side, height = side } iferr err{ error } {
+                    _ = alloc::resize(u8, S){ realloc, &heap, mem = data, count = 0 }
+                    return error
+                }
+                at = at + n
+                k = k + 1
+            }
+            return Texture{
+                format, kind = Kind::cube, width, height = width, levels = mips, images = 6,
+                frames_x = 1, frames_y = 1, data, txi = bytes[end..], alpha_mean,
+            }
+        }
+
+        if data_size != 0 and mips == 1 and @as(usize, data_size) > level_size{ format, width, height } {
+            // A flipbook: DataSize counts every frame, each with a full chain of its own.
+            let end = TPC_HEADER + @as(usize, data_size)
+            if end > bytes.len { return truncated{ need = end, have = bytes.len } }
+            let txi = bytes[end..]
+            let numx = txi_number{ txi, key = "numx" } ifnull { return no_grid }
+            let numy = txi_number{ txi, key = "numy" } ifnull { return no_grid }
+            // A grid that divides the image has numx <= width and numy <= height, so nothing
+            // below overflows.
+            if numx == 0 or numy == 0 or width % numx != 0 or height % numy != 0 { return bad_grid{ numx, numy } }
+            let fw = width / numx
+            let fh = height / numy
+            let levels = full_levels{ width = fw, height = fh }
+            let frames = @as(usize, numx * numy) * chain_size{ format, width = fw, height = fh, levels }
+            if frames != @as(usize, data_size) { return bad_frames{ data_size, frames } }
+            return Texture{
+                format, kind = Kind::flipbook, width = fw, height = fh, levels, images = numx * numy,
+                frames_x = numx, frames_y = numy, data = bytes[TPC_HEADER..end], txi, alpha_mean,
+            }
+        }
+
+        let max = full_levels{ width, height }
+        if mips == 0 or mips > max { return bad_mip_count{ levels = mips, max } }
+        let end = TPC_HEADER + chain_size{ format, width, height, levels = mips }
+        if end > bytes.len { return truncated{ need = end, have = bytes.len } }
+        return Texture{
+            format, kind = Kind::plain, width, height, levels = mips, images = 1,
+            frames_x = 1, frames_y = 1, data = bytes[TPC_HEADER..end], txi = bytes[end..], alpha_mean,
+        }
+    }
+
+    // The encoding byte picks the format; DataSize only says whether it is compressed.
+    fn tpc_format { data_size: u32, encoding: u8 } -> !Format {
+        if data_size != 0 {
+            if encoding == 2 { return Format::dxt1 }
+            if encoding == 4 { return Format::dxt5 }
+            if encoding == 1 { return compressed_grey }
+            return bad_encoding{ encoding }
+        }
+        if encoding == 1 { return Format::grey8 }
+        if encoding == 2 { return Format::rgb8 }
+        if encoding == 4 { return Format::rgba8 }
+        return bad_encoding{ encoding }
+    }
+
+    // ---- TGA
+
+    const TGA_HEADER: usize = 18
+
+    // Reads a TGA (tga.md): colour-mapped, true-colour or grey, raw or run-length encoded, 8, 15,
+    // 16, 24 or 32 bits per texel. 8-bit grey stays grey8; everything else becomes rgba8, with
+    // alpha from a 32-bit texel's fourth byte whatever the descriptor says (most lightmaps declare
+    // none and hold some), from a 16-bit texel's top bit only when the descriptor gives it alpha
+    // bits, and 255 otherwise. Rows come out bottom first, columns left to right, whatever the
+    // file's order. The image ID, the TGA 2.0 extension area and footer are skipped. A TGA has no
+    // mips and no TXI of its own: apply_txi takes its standalone one.
+    fn read_tga(S) { realloc: alloc::Fn(S), mut heap: S, bytes: []u8 } -> !Texture {
+        if bytes.len < TGA_HEADER { return truncated{ need = TGA_HEADER, have = bytes.len } }
+        let id_len: usize = bytes[0]
+        let map_type = bytes[1]
+        let image_type = bytes[2]
+        let map_first = get_u16{ bytes, at = 3 }
+        let map_len = get_u16{ bytes, at = 5 }
+        let map_bits = bytes[7]
+        let width = get_u16{ bytes, at = 12 }
+        let height = get_u16{ bytes, at = 14 }
+        let bits = bytes[16]
+        let descriptor = bytes[17]
+
+        let base = image_type & 7                   // 1 colour-mapped, 2 true-colour, 3 grey
+        let rle = (image_type & 8) != 0
+        if base < 1 or base > 3 or image_type > 11 { return bad_tga_type{ image_type } }
+        if (descriptor >> 6) != 0 { return interleaved }
+        if width == 0 or height == 0 { return empty{ width, height } }
+        let true_colour = bits == 15 or bits == 16 or bits == 24 or bits == 32
+        let depth_ok = if base == 2 { true_colour } else { bits == 8 or bits == 16 }
+        if not depth_ok { return bad_tga_depth{ image_type, bits } }
+
+        let mut at = TGA_HEADER + id_len
+        let mut map: []u8
+        if map_type == 1 {
+            if not (map_bits == 15 or map_bits == 16 or map_bits == 24 or map_bits == 32) { return bad_colour_map{ map_type, bits = map_bits } }
+            let n = @as(usize, map_len) * ((@as(usize, map_bits) + 7) / 8)
+            if at + n > bytes.len { return truncated{ need = at + n, have = bytes.len } }
+            map = bytes[at..at + n]
+            at = at + n
+        } else if map_type != 0 {
+            return bad_colour_map{ map_type, bits = map_bits }
+        }
+        if base == 1 and (map_type != 1 or map_len == 0) { return bad_colour_map{ map_type, bits = map_bits } }
+
+        let bpp = (@as(usize, bits) + 7) / 8
+        let count = @as(usize, width) * @as(usize, height)
+        let mut texels: []u8
+        let mut unpacked: []mut u8              // a run-length encoded file's texels, freed on the way out
+        defer _ = alloc::resize(u8, S){ realloc, &heap, mem = unpacked, count = 0 }
+        if rle {
+            unpacked = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = count * bpp }
+            try unpack_rle{ src = bytes, at, bpp, into = unpacked }
+            texels = unpacked
+        } else {
+            let end = at + count * bpp
+            if end > bytes.len { return truncated{ need = end, have = bytes.len } }
+            texels = bytes[at..end]
+        }
+
+        let grey8 = base == 3 and bits == 8
+        let channels: usize = if grey8 { 1 } else { 4 }
+        let out = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = count * channels }
+        let alpha16 = (descriptor & 15) != 0
+        let top_down = (descriptor & 0x20) != 0
+        let right_to_left = (descriptor & 0x10) != 0
+        let map_entry = (@as(usize, map_bits) + 7) / 8
+        let w: usize = width
+        let h: usize = height
+        let mut row: usize = 0
+        while row < h {
+            let out_row = if top_down { h - 1 - row } else { row }
+            let mut col: usize = 0
+            while col < w {
+                let out_col = if right_to_left { w - 1 - col } else { col }
+                let texel = texels[(row * w + col) * bpp..(row * w + col + 1) * bpp]
+                let o = (out_row * w + out_col) * channels
+                if grey8 {
+                    out[o] = texel[0]
+                } else if base == 3 {
+                    out[o] = texel[0]
+                    out[o + 1] = texel[0]
+                    out[o + 2] = texel[0]
+                    out[o + 3] = texel[1]
+                } else if base == 2 {
+                    put_colour{ texel, bits, alpha16, into = out[o..o + 4] }
+                } else {
+                    let index: u32 = if bpp == 1 { texel[0] } else { get_u16{ bytes = texel, at = 0 } }
+                    if index < map_first or index - map_first >= map_len {
+                        _ = alloc::resize(u8, S){ realloc, &heap, mem = out, count = 0 }
+                        return bad_colour_index{ index }
+                    }
+                    let e = @as(usize, index - map_first) * map_entry
+                    put_colour{ texel = map[e..e + map_entry], bits = map_bits, alpha16, into = out[o..o + 4] }
+                }
+                col = col + 1
+            }
+            row = row + 1
+        }
+        return Texture{
+            format = if grey8 { Format::grey8 } else { Format::rgba8 }, kind = Kind::plain,
+            width, height, levels = 1, images = 1, frames_x = 1, frames_y = 1,
+            data = out, txi = slice::empty(u8){}, alpha_mean = 1.0,
+        }
+    }
+
+    // One true-colour texel (or colour map entry) of `bits` bits as R, G, B, A.
+    fn put_colour { texel: []u8, bits: u8, alpha16: bool, into: []mut u8 } {
+        if bits == 24 or bits == 32 {
+            into[0] = texel[2]
+            into[1] = texel[1]
+            into[2] = texel[0]
+            into[3] = if bits == 32 { texel[3] } else { 255 }
+            return
+        }
+        // 15 or 16 bits: A RRRRR GGGGG BBBBB
+        let v = get_u16{ bytes = texel, at = 0 }
+        into[0] = widen5{ v = (v >> 10) & 31 }
+        into[1] = widen5{ v = (v >> 5) & 31 }
+        into[2] = widen5{ v = v & 31 }
+        into[3] = if bits == 16 and alpha16 and (v & 0x8000) == 0 { 0 } else { 255 }
+    }
+
+    fn widen5 { v: u32 } -> u8 {
+        return @trunc(u8, (v << 3) | (v >> 2))
+    }
+
+    // Expands run-length packets from src[at..] until `into` is full.
+    fn unpack_rle { src: []u8, at: usize, bpp: usize, into: []mut u8 } -> ! {
+        let mut i = at
+        let mut n: usize = 0
+        while n < into.len {
+            if i >= src.len { return truncated{ need = i + 1, have = src.len } }
+            let head = src[i]
+            let count = @as(usize, head & 0x7F) + 1
+            if n + count * bpp > into.len { return rle_overrun{ at = i } }
+            i = i + 1
+            if (head & 0x80) != 0 {
+                if i + bpp > src.len { return truncated{ need = i + bpp, have = src.len } }
+                let mut k: usize = 0
+                while k < count {
+                    slice::copy(u8){ dst = into[n..n + bpp], src = src[i..i + bpp] }
+                    n = n + bpp
+                    k = k + 1
+                }
+                i = i + bpp
+            } else {
+                let size = count * bpp
+                if i + size > src.len { return truncated{ need = i + size, have = src.len } }
+                slice::copy(u8){ dst = into[n..n + size], src = src[i..i + size] }
+                n = n + size
+                i = i + size
+            }
+        }
+    }
+
+    // ---- TXI
+
+    // A texture read alone (a TGA) with its standalone TXI: `proceduretype cycle` with `numx` and
+    // `numy` makes it a flipbook whose frames are cells of its one image, frame i at column
+    // i % numx and row i / numx counted from the first stored row (tga.md, Flipbooks). Anything
+    // else, and anything that isn't a plain single image, comes back as it was. The TXI isn't
+    // kept: lib/formats parses TXI text.
+    fn apply_txi { t: Texture, txi: []u8 } -> !Texture {
+        if t.kind != Kind::plain or t.images != 1 { return t }
+        let procedure = txi_value{ txi, key = "proceduretype" } ifnull { return t }
+        if not same_word{ a = procedure, b = "cycle" } { return t }
+        let numx = txi_number{ txi, key = "numx" } ifnull { return t }
+        let numy = txi_number{ txi, key = "numy" } ifnull { return t }
+        if numx == 0 or numy == 0 or t.width % numx != 0 or t.height % numy != 0 { return bad_grid{ numx, numy } }
+        let mut out = t
+        out.kind = Kind::flipbook
+        out.frames_x = numx
+        out.frames_y = numy
+        return out
+    }
+
+    // The first value of the first line whose keyword is `key` (in any case), or null. A line is
+    // a keyword and values separated by spaces or tabs; the TXI's CRLF ends are spaces here. This
+    // is the little the loader needs (a flipbook's grid); lib/formats owns TXI parsing.
+    fn txi_value { txi: []u8, key: []u8 } -> ?[]u8 {
+        let mut start: usize = 0
+        while start < txi.len {
+            let mut end = start
+            while end < txi.len and txi[end] != '\n' { end = end + 1 }
+            let line = txi[start..end]
+            let a = skip_space{ s = line, at = 0 }
+            let b = skip_word{ s = line, at = a }
+            if b > a and same_word{ a = line[a..b], b = key } {
+                let c = skip_space{ s = line, at = b }
+                let d = skip_word{ s = line, at = c }
+                if d > c { return line[c..d] }
+                return null
+            }
+            start = end + 1
+        }
+        return null
+    }
+
+    // `key`'s value as a whole number, or null if it is missing, isn't one, or is past a billion.
+    fn txi_number { txi: []u8, key: []u8 } -> ?u32 {
+        let v = txi_value{ txi, key } ifnull { return null }
+        let mut n: u32 = 0
+        let mut i: usize = 0
+        while i < v.len {
+            if not ascii::is_digit{ c = v[i] } or n >= 100000000 { return null }
+            n = n * 10 + @as(u32, v[i] - '0')
+            i = i + 1
+        }
+        return n
+    }
+
+    fn is_blank { c: u8 } -> bool { return c == ' ' or c == '\t' or c == '\r' }
+
+    fn skip_space { s: []u8, at: usize } -> usize {
+        let mut i = at
+        while i < s.len and is_blank{ c = s[i] } { i = i + 1 }
+        return i
+    }
+
+    fn skip_word { s: []u8, at: usize } -> usize {
+        let mut i = at
+        while i < s.len and not is_blank{ c = s[i] } { i = i + 1 }
+        return i
+    }
+
+    // a and b, ignoring ASCII case.
+    fn same_word { a: []u8, b: []u8 } -> bool {
+        if a.len != b.len { return false }
+        let mut i: usize = 0
+        while i < a.len {
+            if ascii::to_lower{ c = a[i] } != ascii::to_lower{ c = b[i] } { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // ---- decoding
+
+    // Level `level` of image `image` as RGBA8, rows bottom first, in memory from the allocator.
+    // DXT1 is opaque (alpha 255; tpc.md: its transparent index never lands inside an image), grey
+    // and RGB get alpha 255.
+    fn decode_level(S) { realloc: alloc::Fn(S), mut heap: S, t: Texture, image: u32, level: u32 } -> ![]mut u8 {
+        let w = mip_dim{ n = t.width, k = level }
+        let h = mip_dim{ n = t.height, k = level }
+        let src = tex::level{ t, image, level }
+        let out = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = @as(usize, w) * @as(usize, h) * 4 }
+        decode_into{ src, format = t.format, width = w, height = h, out }
+        return out
+    }
+
+    // A flipbook as one RGBA8 image of frames_x by frames_y cells: frame i at column i % frames_x
+    // and row i / frames_x, counted from the first stored row (the bottom), the layout of a TGA
+    // flipbook. The result has kind flipbook, images 1 and the same grid, so a renderer treats it
+    // as it treats a TGA one. Atlas level k holds the frames' level k; a frame side that stops
+    // halving evenly (an odd size) ends the chain there, so each atlas level is exactly half the
+    // one before, as GL wants. The shipped flipbooks' frames are square powers of two, which
+    // keep every level. A flipbook that is already one image comes back as RGBA8.
+    fn to_atlas(S) { realloc: alloc::Fn(S), mut heap: S, t: Texture } -> !Texture {
+        if t.kind != Kind::flipbook { return not_flipbook }
+        let nx = t.frames_x
+        let ny = t.frames_y
+        if t.images == 1 {
+            let data = try alloc::resize(u8, S){
+                realloc, &heap, mem = slice::empty(u8){},
+                count = chain_size{ format = Format::rgba8, width = t.width, height = t.height, levels = t.levels },
+            }
+            let mut at: usize = 0
+            let mut k: u32 = 0
+            while k < t.levels {
+                let w = mip_dim{ n = t.width, k }
+                let h = mip_dim{ n = t.height, k }
+                let n = @as(usize, w) * @as(usize, h) * 4
+                decode_into{ src = level{ t, image = 0, level = k }, format = t.format, width = w, height = h, out = data[at..at + n] }
+                at = at + n
+                k = k + 1
+            }
+            return Texture{
+                format = Format::rgba8, kind = Kind::flipbook, width = t.width, height = t.height,
+                levels = t.levels, images = 1, frames_x = nx, frames_y = ny, data, txi = t.txi,
+                alpha_mean = t.alpha_mean,
+            }
+        }
+        if nx == 0 or ny == 0 or t.images != nx * ny { return bad_grid{ numx = nx, numy = ny } }
+        let mut levels: u32 = 0
+        while levels < t.levels and halves_evenly{ n = t.width, k = levels } and halves_evenly{ n = t.height, k = levels } {
+            levels = levels + 1
+        }
+        let aw = t.width * nx
+        let ah = t.height * ny
+        let data = try alloc::resize(u8, S){
+            realloc, &heap, mem = slice::empty(u8){},
+            count = chain_size{ format = Format::rgba8, width = aw, height = ah, levels },
+        }
+        let cell = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = @as(usize, t.width) * @as(usize, t.height) * 4 }
+        let mut at: usize = 0
+        let mut k: u32 = 0
+        while k < levels {
+            let cw: usize = t.width >> k
+            let ch: usize = t.height >> k
+            let lw: usize = aw >> k
+            let lh: usize = ah >> k
+            let mut frame: u32 = 0
+            while frame < t.images {
+                decode_into{ src = level{ t, image = frame, level = k }, format = t.format, width = t.width >> k, height = t.height >> k, out = cell }
+                let x0 = @as(usize, frame % nx) * cw
+                let y0 = @as(usize, frame / nx) * ch
+                let mut r: usize = 0
+                while r < ch {
+                    let to = at + ((y0 + r) * lw + x0) * 4
+                    slice::copy(u8){ dst = data[to..to + cw * 4], src = cell[r * cw * 4..(r + 1) * cw * 4] }
+                    r = r + 1
+                }
+                frame = frame + 1
+            }
+            at = at + lw * lh * 4
+            k = k + 1
+        }
+        _ = alloc::resize(u8, S){ realloc, &heap, mem = cell, count = 0 }
+        return Texture{
+            format = Format::rgba8, kind = Kind::flipbook, width = aw, height = ah, levels, images = 1,
+            frames_x = nx, frames_y = ny, data, txi = t.txi, alpha_mean = t.alpha_mean,
+        }
+    }
+
+    // Whether n halved k times is exact and at least 1.
+    fn halves_evenly { n: u32, k: u32 } -> bool {
+        if k >= 32 { return false }
+        let m = n >> k
+        return m > 0 and (m << k) == n
+    }
+
+    // One level of `width` x `height` texels in `format` into `out` as RGBA8 (width * height * 4
+    // bytes at its start). `src` is level_size bytes, which level() guarantees.
+    fn decode_into { src: []u8, format: Format, width: u32, height: u32, out: []mut u8 } {
+        let n = @as(usize, width) * @as(usize, height)
+        match format {
+            grey8 => {
+                let mut i: usize = 0
+                while i < n {
+                    let g = src[i]
+                    out[i * 4] = g
+                    out[i * 4 + 1] = g
+                    out[i * 4 + 2] = g
+                    out[i * 4 + 3] = 255
+                    i = i + 1
+                }
+            }
+            rgb8 => {
+                let mut i: usize = 0
+                while i < n {
+                    out[i * 4] = src[i * 3]
+                    out[i * 4 + 1] = src[i * 3 + 1]
+                    out[i * 4 + 2] = src[i * 3 + 2]
+                    out[i * 4 + 3] = 255
+                    i = i + 1
+                }
+            }
+            rgba8 => { slice::copy(u8){ dst = out[..n * 4], src = src[..n * 4] } }
+            dxt1 => { decode_dxt{ src, dxt5 = false, width, height, out } }
+            dxt5 => { decode_dxt{ src, dxt5 = true, width, height, out } }
+        }
+    }
+
+    // S3TC: blocks of 4x4 texels, left to right, block rows in file order. A colour block is two
+    // RGB565 endpoints and 2-bit indices, a row of four per byte, first texel in the low bits.
+    // DXT1 has four colours when color0 > color1 and three plus black otherwise; DXT5's colour is
+    // always four. A DXT5 block starts with an alpha block: two endpoints and 3-bit indices in 48
+    // bits, eight values when alpha0 > alpha1, else six plus 0 and 255. Texels past the image's
+    // edge (levels smaller than a block) are dropped.
+    fn decode_dxt { src: []u8, dxt5: bool, width: u32, height: u32, out: []mut u8 } {
+        let w: usize = width
+        let h: usize = height
+        let bw = blocks{ n = w }
+        let bh = blocks{ n = h }
+        let size: usize = if dxt5 { 16 } else { 8 }
+        let colour: usize = if dxt5 { 8 } else { 0 }
+        let mut palette: [16]u8          // four colours, RGBA
+        let mut alphas: [8]u8
+        let mut by: usize = 0
+        while by < bh {
+            let mut bx: usize = 0
+            while bx < bw {
+                let b = src[(by * bw + bx) * size..(by * bw + bx + 1) * size]
+                let c0 = get_u16{ bytes = b, at = colour }
+                let c1 = get_u16{ bytes = b, at = colour + 2 }
+                put_565{ c = c0, into = palette[0..4] }
+                put_565{ c = c1, into = palette[4..8] }
+                let four = dxt5 or c0 > c1
+                let mut k: usize = 0
+                while k < 3 {
+                    let p0: u32 = palette[k]
+                    let p1: u32 = palette[4 + k]
+                    if four {
+                        palette[8 + k] = @trunc(u8, (2 * p0 + p1 + 1) / 3)
+                        palette[12 + k] = @trunc(u8, (p0 + 2 * p1 + 1) / 3)
+                    } else {
+                        palette[8 + k] = @trunc(u8, (p0 + p1) / 2)
+                        palette[12 + k] = 0
+                    }
+                    k = k + 1
+                }
+                let indices = get_u32{ bytes = b, at = colour + 4 }
+                let mut abits: u64 = 0
+                if dxt5 {
+                    let a0: u32 = b[0]
+                    let a1: u32 = b[1]
+                    alphas[0] = b[0]
+                    alphas[1] = b[1]
+                    if a0 > a1 {
+                        let mut i: u32 = 1
+                        while i <= 6 {
+                            alphas[@as(usize, 1 + i)] = @trunc(u8, ((7 - i) * a0 + i * a1 + 3) / 7)
+                            i = i + 1
+                        }
+                    } else {
+                        let mut i: u32 = 1
+                        while i <= 4 {
+                            alphas[@as(usize, 1 + i)] = @trunc(u8, ((5 - i) * a0 + i * a1 + 2) / 5)
+                            i = i + 1
+                        }
+                        alphas[6] = 0
+                        alphas[7] = 255
+                    }
+                    let mut i: usize = 0
+                    while i < 6 {
+                        abits = abits | (@as(u64, b[2 + i]) << (8 * i))
+                        i = i + 1
+                    }
+                }
+                let mut j: usize = 0
+                while j < 4 and by * 4 + j < h {
+                    let y = by * 4 + j
+                    let mut i: usize = 0
+                    while i < 4 and bx * 4 + i < w {
+                        let x = bx * 4 + i
+                        let texel = j * 4 + i
+                        let c = @as(usize, (indices >> (2 * texel)) & 3) * 4
+                        let o = (y * w + x) * 4
+                        out[o] = palette[c]
+                        out[o + 1] = palette[c + 1]
+                        out[o + 2] = palette[c + 2]
+                        out[o + 3] = if dxt5 { alphas[@as(usize, (abits >> (3 * texel)) & 7)] } else { 255 }
+                        i = i + 1
+                    }
+                    j = j + 1
+                }
+                bx = bx + 1
+            }
+            by = by + 1
+        }
+    }
+
+    // An RGB565 colour as three bytes, each widened by repeating its top bits.
+    fn put_565 { c: u32, into: []mut u8 } {
+        let r = (c >> 11) & 31
+        let g = (c >> 5) & 63
+        let b = c & 31
+        into[0] = @trunc(u8, (r << 3) | (r >> 2))
+        into[1] = @trunc(u8, (g << 2) | (g >> 4))
+        into[2] = @trunc(u8, (b << 3) | (b >> 2))
+        into[3] = 255
+    }
+
+    // ---- cube map faces
+
+    // Reverses the rows of one level in place. DXT data stays compressed: the block rows swap end
+    // for end, and inside each block the four rows of colour indices (one byte each) and of alpha
+    // indices (12 bits each) reverse. A level under 4 texels high sits in its blocks' first rows,
+    // which reverse among themselves. A taller level that isn't whole blocks high can't be done
+    // without decoding; no cube map has one (their faces are powers of two).
+    fn flip_rows { level: []mut u8, format: Format, width: u32, height: u32 } -> ! {
+        let dxt = format == Format::dxt1 or format == Format::dxt5
+        if not dxt {
+            reverse_runs{ s = level, run = level_size{ format, width, height = 1 }, count = height }
+            return
+        }
+        if height > 4 and height % 4 != 0 { return unflippable{ height } }
+        let size: usize = if format == Format::dxt5 { 16 } else { 8 }
+        let bw = blocks{ n = width }
+        let bh = blocks{ n = height }
+        reverse_runs{ s = level, run = bw * size, count = @trunc(u32, bh) }
+        let rows: usize = if height < 4 { height } else { 4 }
+        let mut i: usize = 0
+        while i < bw * bh {
+            flip_block{ b = level[i * size..(i + 1) * size], alpha = format == Format::dxt5, rows }
+            i = i + 1
+        }
+    }
+
+    // Swaps the first `count` runs of `run` bytes end for end.
+    fn reverse_runs { s: []mut u8, run: usize, count: u32 } {
+        if count < 2 { return }
+        let mut lo: usize = 0
+        let mut hi: usize = count - 1
+        while lo < hi {
+            let mut k: usize = 0
+            while k < run {
+                let x = s[lo * run + k]
+                s[lo * run + k] = s[hi * run + k]
+                s[hi * run + k] = x
+                k = k + 1
+            }
+            lo = lo + 1
+            hi = hi - 1
+        }
+    }
+
+    // Reverses the first `rows` texel rows of one DXT block (with an alpha block first if `alpha`).
+    fn flip_block { b: []mut u8, alpha: bool, rows: usize } {
+        if rows < 2 { return }
+        let c: usize = if alpha { 12 } else { 4 }
+        let mut lo: usize = 0
+        let mut hi = rows - 1
+        while lo < hi {
+            let x = b[c + lo]
+            b[c + lo] = b[c + hi]
+            b[c + hi] = x
+            lo = lo + 1
+            hi = hi - 1
+        }
+        if not alpha { return }
+        let mut bits: u64 = 0
+        let mut k: usize = 0
+        while k < 6 {
+            bits = bits | (@as(u64, b[2 + k]) << (8 * k))
+            k = k + 1
+        }
+        let mut flipped: u64 = 0
+        let mut r: usize = 0
+        while r < 4 {
+            let from = if r < rows { rows - 1 - r } else { r }
+            flipped = flipped | (((bits >> (12 * from)) & 4095) << (12 * r))
+            r = r + 1
+        }
+        k = 0
+        while k < 6 {
+            b[2 + k] = @trunc(u8, flipped >> (8 * k))
+            k = k + 1
+        }
+    }
+
+    // ---- small helpers
+
+    // 4x4 blocks across n texels, at least one.
+    fn blocks { n: usize } -> usize {
+        let b = (n + 3) / 4
+        return if b == 0 { 1 } else { b }
+    }
+
+    // The number of levels from width x height halving down to 1x1.
+    fn full_levels { width: u32, height: u32 } -> u32 {
+        let mut n: u32 = 1
+        let mut w = width
+        let mut h = height
+        while w > 1 or h > 1 {
+            w = if w > 1 { w / 2 } else { 1 }
+            h = if h > 1 { h / 2 } else { 1 }
+            n = n + 1
+        }
+        return n
+    }
+
+    fn chain_size { format: Format, width: u32, height: u32, levels: u32 } -> usize {
+        let mut total: usize = 0
+        let mut k: u32 = 0
+        while k < levels {
+            total = total + level_size{ format, width = mip_dim{ n = width, k }, height = mip_dim{ n = height, k } }
+            k = k + 1
+        }
+        return total
+    }
+
+    fn get_u16 { bytes: []u8, at: usize } -> u32 {
+        return @as(u32, bytes[at]) | (@as(u32, bytes[at + 1]) << 8)
+    }
+
+    fn get_u32 { bytes: []u8, at: usize } -> u32 {
+        return get_u16{ bytes, at } | (get_u16{ bytes, at = at + 2 } << 16)
+    }
+}
