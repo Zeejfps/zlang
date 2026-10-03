@@ -237,6 +237,9 @@ namespace play {
             scene::update_visibility{ &sc, w = &w, room }
             ingame::update{ ui, &w, &dev, sc, camera, dt }    // HOOK(ingame)
             if ingame::wants_quit{ ui } { quit = true }    // HOOK(ingame)
+            // The options menu's Save Game and Load Game (the menus have closed themselves).
+            if ingame::take_save_request{ ui } is some{ value = n } { want_save = n }    // HOOK(ingame)
+            if ingame::take_load_request{ ui } is some{ value = n } { want_load = n }    // HOOK(ingame)
             // 11. Sound at the camera.
             ambience::update{ a = &amb, &w, eye = camera.eye, forward = camera.dir, dt }
             match adev {
@@ -313,6 +316,7 @@ namespace play {
         gui::set_cursor_visible{ &g, visible = not opts.headless }
         gui::set_mixer{ &g, mixer }
         let mut fe = frontend::make{ fs = &w.fs, heap = w.heap, game = opts.game, config_path = "kotor/out/kotor-settings.ini" }
+        frontend::set_own_saves{ &fe, dir = opts.saves }
         fe.settings.disable_movies = fe.settings.disable_movies or opts.headless
         gui::set_screen{ &g, fs = &w.fs, &dev, width = @as(i32, opts.width), height = @as(i32, opts.height), scale = fe.settings.gui_scale }
         try frontend::begin{ &fe, &g, fs = &w.fs, &dev, &sdl, mixer }

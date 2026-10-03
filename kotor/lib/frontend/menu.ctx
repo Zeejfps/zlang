@@ -16,12 +16,14 @@ namespace frontend {
     const SCR_MOUSE: u32 = 11
     const SCR_LOAD: u32 = 12
     const SCR_MOVIES: u32 = 13
+    const SCR_SAVE: u32 = 14                // the Save Game list (saveload.gui in save mode); in game only
+    const SCR_SAVENAME: u32 = 15            // its name box (savename.gui), over it
 
     // What the engine does next.
     union Outcome {
         running,                                            // keep stepping
         new_game{ module: resref::ResRef },                 // start this module as a new game
-        load_game{ folder: [64]u8, folder_len: usize },     // load the save in this folder of Saves/
+        load_game{ folder: [300]u8, folder_len: usize },    // load the save in this folder (a path, ours or the install's: save::find_save resolves it)
         quit,
     }
 
@@ -36,6 +38,10 @@ namespace frontend {
     struct Front {
         heap: *mut heap::Heap,
         game: []u8,                         // the install, for Saves/
+        own_saves: [300]u8, own_saves_len: usize,   // our saves directory (set_own_saves), listed with the install's
+        played_seconds: u32,                // the game's play time, for the default save name (in game)
+        save_name: [64]u8, save_len: usize, // the name the Save Game screen was given: take_save_request
+        name_default: [64]u8, name_default_len: usize,  // what the name box starts with
         settings: Settings,
         config_path: [256]u8, config_len: usize,
         stack: [10]Entry, depth: usize,
@@ -67,7 +73,9 @@ namespace frontend {
     // A front end with the options from `config_path` (the defaults if there is no such file).
     fn make { mut fs: Fs, heap: *mut heap::Heap, game: []u8, config_path: []u8 } -> Front {
         let mut fe = Front{
-            heap, game, settings = load_settings{ &fs, heap, path = config_path },
+            heap, game, own_saves = [0; 300], own_saves_len = 0, played_seconds = 0,
+            save_name = [0; 64], save_len = 0, name_default = [0; 64], name_default_len = 0,
+            settings = load_settings{ &fs, heap, path = config_path },
             config_path = [0; 256], config_len = 0, stack = [Entry{ screen = 0, panel = 0 }; 10], depth = 0,
             saves = SaveList{ entries = slice::empty(SaveEntry){}, count = 0 }, saves_loaded = false, shot = null,
             display_pending = false, sound_pending = true,
@@ -87,6 +95,19 @@ namespace frontend {
         return fe
     }
 
+    // Our saves directory: the Load Game list shows its saves with the install's, and the Save
+    // Game list is made of them. Empty (the default): the install's only.
+    fn set_own_saves { mut fe: Front, dir: []u8 } {
+        fe.own_saves_len = copy_into{ dst = fe.own_saves[..], src = dir }
+    }
+
+    // The name typed in the Save Game screen, once: copied into `into`, its length (0 when none).
+    fn take_save_request { mut fe: Front, into: []mut u8 } -> usize {
+        let n = copy_into{ dst = into, src = fe.save_name[..fe.save_len] }
+        fe.save_len = 0
+        return n
+    }
+
     fn screen_gui { screen: u32 } -> []u8 {
         if screen == SCR_MAIN { return "mainmenu" }
         if screen == SCR_OPTIONS { return "optionsmain" }
@@ -99,7 +120,8 @@ namespace frontend {
         if screen == SCR_SOUND { return "optsound" }
         if screen == SCR_SOUND_ADV { return "optsoundadv" }
         if screen == SCR_MOUSE { return "optmouse" }
-        if screen == SCR_LOAD { return "saveload" }
+        if screen == SCR_LOAD or screen == SCR_SAVE { return "saveload" }
+        if screen == SCR_SAVENAME { return "savename" }
         return "titlemovie"
     }
 
@@ -131,7 +153,7 @@ namespace frontend {
     // Opens `screen` on top. Panels past the main menu are modal full-screen menus.
     fn open_screen { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, screen: u32 } -> ! {
         if fe.depth >= 10 { return }
-        let mode = if screen == SCR_RESOLUTION { gui::Mode::dialog } else { gui::Mode::full_screen }
+        let mode = if screen == SCR_RESOLUTION or screen == SCR_SAVENAME { gui::Mode::dialog } else { gui::Mode::full_screen }
         if screen == SCR_GRAPHICS_ADV or screen == SCR_SOUND_ADV { fe.snapshot = fe.settings }
         let id = try gui::open{ &g, &fs, &dev, name = screen_gui{ screen }, mode, modal = screen != SCR_MAIN }
         gui::ensure_backdrop{ &g, &fs, &dev, kind = 0 }
@@ -146,7 +168,7 @@ namespace frontend {
         let top = fe.stack[fe.depth - 1]
         gui::close{ &g, id = top.panel }
         fe.depth = fe.depth - 1
-        if top.screen == SCR_LOAD { release_shot{ &fe, &dev } }
+        if top.screen == SCR_LOAD or top.screen == SCR_SAVE { release_shot{ &fe, &dev } }
         if top.screen >= SCR_OPTIONS and top.screen <= SCR_MOUSE and top.screen != SCR_RESOLUTION { persist{ &fe, &fs } }
         gui::play_sound{ &g, n = 5 }
     }
@@ -220,7 +242,11 @@ namespace frontend {
             gui::set_value{ &g, panel = p, tag = "SLI_MOUSESEN", value = s.mouse_sensitivity }
             gui::set_checked{ &g, panel = p, tag = "CB_REVBUTTONS", on = s.reverse_buttons }
         } else if screen == SCR_LOAD {
-            try open_load{ &fe, &g, &fs, &dev, p }
+            try fill_saves{ &fe, &g, &fs, &dev, p, for_save = false }
+        } else if screen == SCR_SAVE {
+            try fill_saves{ &fe, &g, &fs, &dev, p, for_save = true }
+        } else if screen == SCR_SAVENAME {
+            try open_save_name{ &fe, &g, p }
         } else if screen == SCR_MOVIES {
             try fill_movies{ &fe, &g, &fs, p }
         }

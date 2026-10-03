@@ -223,11 +223,20 @@ if frontend::take_display_change{ &fe } { apply fe.settings (resolution, full sc
 - **New Game** returns `new_game` with the start module `end_m01aa`. The original goes through
   character generation (class selection) first; those panels are a later task, and when they exist
   the outcome will carry the chosen creature (appearance, class, gender, portrait, name).
-- **Load Game** (`saveload.gui`): lists the install's `Saves/` read-only (folder `NNNNNN - Name`;
-  0 quick save, 1 autosave, 2+ manual), each row's `savenfo.res` (name, area as "Planet - Place",
-  play time, up to three party portraits) and `Screen.tga` for the picture. A click selects and
-  shows the details, a second click or Load returns `load_game`. Delete is hidden: the install is
-  never written. Saving is the engine's, with `savename.gui` (`make_edit`) on top.
+- **Load Game** (`saveload.gui`): lists our saves directory (`set_own_saves`, the engine's `--saves`)
+  and the install's `Saves/` (folder `NNNNNN - Name`; 0 quick save, 1 autosave, 2+ manual): quick
+  and auto first (ours hide the install's of the same number), then the manual saves, newest number
+  first. Each row's `savenfo.res` (name, area as "Planet - Place", play time, up to three party
+  portraits) and `Screen.tga` give the details. A click selects and shows them, a second click or
+  Load returns `load_game` with the save's folder as a path (`save::find_save` resolves it, ours or
+  the install's). Delete is hidden: the install is never written.
+- **Save Game** (in game only, from the options menu; `SCR_SAVE`): the same screen in save mode:
+  our manual saves with a "New Slot" row first (selected). Save (or a second click) opens
+  `savename.gui` over it (`make_edit` on `EDITBOX`) with "Game N - Hh Mm" (dialog.tlk 1594) for a
+  new slot or the chosen save's name; OK or Enter makes the request (`take_save_request`, a name
+  for `save::save_named`) and the screens close. Overwriting makes a new slot (the old save stays),
+  so the original's "Are you sure you want to overwrite" (1591) is not asked. The options menu
+  closes itself on a save or load request, so the saved picture is the game's frame.
 - **Movies** (`titlemovie.gui`): rows of `movies.2da` whose `alwaysshow` is 1 or that the player
   has seen (`[Movies Shown]` in our settings file); activating one plays it over the menu.
 - **Options**: `optionsmain` opens `optgameplay`, `optfeedback`, `optautopause`, `optgraphics`

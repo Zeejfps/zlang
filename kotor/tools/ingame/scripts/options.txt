@@ -1,11 +1,11 @@
-# the in-game options: the front end's screens over the menu, the save/load notice and Exit Game
+# the in-game options: the front end's screens over the menu, the save and load lists (see saveload.txt) and Exit Game
 3 ui menu options
 5 ui click 500 317
 8 ui key escape
 10 ui click 500 457
 14 ui key escape
 16 ui click 500 282
-20 ui key return
+20 ui key escape
 22 ui click 500 247
 26 ui key escape
 28 ui click 500 501

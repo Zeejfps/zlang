@@ -86,6 +86,7 @@ fn run {
     make_dir{ &fs, path = o.out }
 
     let mut fe = frontend::make{ &fs, heap = &h, game = o.game, config_path = "kotor/out/menutest-settings.ini" }
+    frontend::set_own_saves{ &fe, dir = "kotor/out/saves" }    // the saves the game makes, listed with the install's
     fe.settings.disable_movies = not o.movies
     // With --audio there is a mixer (no device): the GUI's sounds and the menu's music play into
     // it and it is rendered each frame, so a failing sound shows in its error count.

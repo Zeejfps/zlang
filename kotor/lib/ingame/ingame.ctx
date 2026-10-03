@@ -95,6 +95,20 @@ namespace ingame {
         return ui.menus.options.quit
     }
 
+    // The options menu's Save Game, once: the name to save under (a new slot; "QUICKSAVE" and
+    // "AUTOSAVE" are the game's own slots) for save::save_named. The menus closed themselves when
+    // it was chosen, so the frame that is then saved is the game's. The bytes stay valid until the
+    // next request.
+    fn take_save_request { mut ui: Ingame } -> ?[]u8 {
+        return options_panel::take_save{ s = &ui.menus.options }
+    }
+
+    // The options menu's Load Game, once: the folder (a path) of the save for save::find_save.
+    // The menus have closed.
+    fn take_load_request { mut ui: Ingame } -> ?[]u8 {
+        return options_panel::take_load{ s = &ui.menus.options }
+    }
+
     // ---- events
 
     // Offers a platform event to the interface; true when it used it, so the game does not also
@@ -249,6 +263,8 @@ namespace ingame {
         if ui.menu != NO_MENU {
             menu_events{ &ui, &w, &dev, events }
             if ui.menu != NO_MENU { panel_update{ &ui, &w, &dev, n = ui.menu, panel = ui.menu_panel, dt } }
+            // A game to save or load was chosen in the options: the menus go, the owner takes the request.
+            if ui.menu == MENU_OPTIONS and options_panel::has_request{ s = &ui.menus.options } { close_menu{ &ui, &w } }
         }
     }
 

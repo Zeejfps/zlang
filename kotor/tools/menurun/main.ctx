@@ -72,6 +72,7 @@ fn run {
     }
 
     let mut fe = frontend::make{ &fs, heap = &h, game = o.game, config_path = "kotor/out/kotor-settings.ini" }
+    frontend::set_own_saves{ &fe, dir = "kotor/out/saves" }    // the saves the game makes, listed with the install's
     fe.settings.disable_movies = fe.settings.disable_movies or not o.movies
     fe.settings.gui_scale = o.scale
     gui::set_screen{ &g, &fs, &dev, width = o.width, height = o.height, scale = fe.settings.gui_scale }
