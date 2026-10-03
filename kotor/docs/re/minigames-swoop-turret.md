@@ -284,8 +284,9 @@ collision step `0x006732f0` once with up to **3 iterations** of player-vs-follow
 
 ### 4.5 Guns, bullets, enemy aim (med)
 
-Gun banks are `Gun_Banks` entries; the gun model is attached to node `gunbank<BankID>` of the vehicle model (`0x0066e490`). Fire pressed (`HandleInputAction` case 0xd9 ->
-`0x0066dc50` -> controller `0x006daec0`): if the bank's cooldown is 0, cooldown = `Rate_Of_Fire`, play `fire` then `ready` on the gun model and the fire sound. The `fire<N>`
+Gun banks are `Gun_Banks` entries; the gun model is attached to node `gunbank<BankID>` of the vehicle model (`0x0066e490`). Fire pressed (`HandleInputAction` case 0xd9, once per
+key press: the `MGshoot` row is not repeatable; ignored while paused -> `0x0066dc50` -> controller `0x006daec0`): if the bank's cooldown is 0, cooldown = `Rate_Of_Fire`, play `fire`
+then `ready` on the gun model and the fire sound. The `fire<N>`
 event spawns the bullet model at `bullethook<N>` (`FireGunCallback`), with direction from the gun orientation (player: straight; enemy: toward the player with a random error
 `normalize(rand) * Inaccuracy * distance`), speed `Speed`, lifespan `Lifespan`. Enemy gun controller (`0x006db180`, `0x006db3d0`, each frame): if the player is within
 `Sensing_Radius` it turns the gun toward it, limited to +-`Horiz_Spread` / +-`Vert_Spread` degrees; it may fire only while inside both limits and cooldown is 0. Player's
@@ -302,7 +303,7 @@ renderer features. The HUD models are children of the camera model, so they foll
 
 - Exact obstacle and bullet hit geometry (`FUN_004abdd0`, the model vtable `+0x88` test); whether the obstacle test uses a radius.
 - `DOF`, `Bump_Plane`, the `+0xac` mode switch (nothing in the exe writes 0), `Mouse` flags are read but their only visible effect is above.
-- How the server omits the party in minigame areas (no controlled creature) and how `GetFirstPC` behaves there.
+- How the server omits the party in minigame areas (no controlled creature) and how `GetFirstPC` behaves there; whether a mouse button also fires the turret (only Space is bound).
 - Lateral axis sign for `Bank<L|R>`; the per-vehicle sound `Sounds.Engine` (empty in all data) path `0x0066e130`.
 - Whether `OnTrackLoop` ever fires (`Num_Loops` 1 on Taris/Tatooine): the finish is script-driven by position, not by the loop event.
 

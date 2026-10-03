@@ -316,7 +316,7 @@ namespace world {
                     ambient_day_volume = 0, ambient_night_volume = 0, env_audio = 0, camera_style = 0, restrict_mode = 0,
                     unescapable = false, is_night = false, dyn_ambient = 0, sun_ambient = 0, sun_diffuse = 0, fog_on = false,
                     fog_near = 99.0, fog_far = 100.0, fog_color = 0, load_screen = 0, last_heartbeat = 0,
-                    transition_token = 0, transition_pending = 0,
+                    transition_token = 0, transition_pending = 0, minigame = null,
                 } } }
             }
             module => {

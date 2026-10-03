@@ -360,6 +360,7 @@ namespace obj {
         last_heartbeat: u64,
         transition_token: u8,               // gameloop.md 5.2
         transition_pending: u8,
+        minigame: ?*mg::Area,               // the ARE's MiniGame struct (lib/minigame); null for every other area. Module memory
     }
 
     struct Module {
