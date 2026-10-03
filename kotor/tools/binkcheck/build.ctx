@@ -1,0 +1,13 @@
+// The build program for binkcheck: `kotor/tools/ctxc run kotor/tools/binkcheck -- [--ref] [MOVIE...]`.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "binkcheck", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/video" }
+    build::add_sources{ &b, exe, dir = "../../lib/platform" }        // SDL's performance counter
+    build::optimize{ &b, exe, level = 2 }
+    build::link{ &b, exe, lib = "SDL2" }
+    match build::os{ &b } {
+        macos => { build::lib_path{ &b, exe, path = "/opt/homebrew/lib" } }
+        windows => {}
+        linux => {}
+    }
+}
