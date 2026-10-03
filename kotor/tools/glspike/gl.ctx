@@ -1,0 +1,827 @@
+// OpenGL 4.1 core profile, the newest macOS has, looked up at run time.
+//
+// `Gl` is a capability (spec §15) whose fields are GL's functions: holding one is the permission
+// to call GL, and only `load` makes one, from the current context's function lookup (SDL's
+// SDL_GL_GetProcAddress, bound as `sdl::gl_proc{ &sdl, _ }`). Code that draws takes
+// `mut gl: gl::Gl` and calls `gl.clear{ mask }`. A field is GL's function without its `gl`
+// prefix, in snake case (`glTexImage2D` is `tex_image_2d`), and its parameters keep GL's names and
+// order, with GL's types as ctxlang's: GLenum, GLuint and GLbitfield `u32`, GLint and GLsizei
+// `i32`, GLsizeiptr and GLintptr `i64`, GLboolean `u8` (TRUE, FALSE), GLfloat `f32`, a pointer
+// to data GL reads `?*u8` (null allowed) or `*T`, and a buffer offset that GL takes as a pointer
+// (`glVertexAttribPointer`, `glDrawElements`) a `usize`, which a 64-bit ABI passes the same way.
+//
+// Everything here is in 4.1 core. KHR_debug (4.3, absent on macOS) is `Debug`, loaded apart by
+// `load_debug`, which gives null where the context hasn't it. Extensions are looked for by name
+// with `has_extension`; S3TC (DXT1/3/5) is EXT_texture_compression_s3tc, which every desktop
+// driver has and core never did.
+//
+// GLSL 410 has no `layout(binding = N)`: a sampler's unit is a uniform (`uniform1i`) and a block's
+// binding is `uniform_block_binding`, after linking.
+namespace gl {
+    error too_old{ major: i32, minor: i32 }     // the context's version, older than 4.1
+    error missing{ name: c::String }            // a 4.1 function the context didn't give
+    error failed{ code: u32, what: c::String }  // glGetError's code after `what`
+    error compile_failed{ stage: u32, log_len: usize }      // the info log is in the caller's buffer
+    error link_failed{ log_len: usize }
+    error incomplete{ status: u32 }             // glCheckFramebufferStatus
+
+    capability Gl {
+        // state and queries
+        get_error: extern fn{} -> u32,
+        get_string: extern fn{ name: u32 } -> ?c::String,
+        get_stringi: extern fn{ name: u32, index: u32 } -> ?c::String,
+        get_integerv: extern fn{ pname: u32, data: *mut i32 },
+        get_floatv: extern fn{ pname: u32, data: *mut f32 },
+        enable: extern fn{ cap: u32 },
+        disable: extern fn{ cap: u32 },
+        viewport: extern fn{ x: i32, y: i32, width: i32, height: i32 },
+        scissor: extern fn{ x: i32, y: i32, width: i32, height: i32 },
+        clear_color: extern fn{ red: f32, green: f32, blue: f32, alpha: f32 },
+        clear_depth: extern fn{ depth: f64 },
+        clear_stencil: extern fn{ s: i32 },
+        clear: extern fn{ mask: u32 },
+        blend_func: extern fn{ sfactor: u32, dfactor: u32 },
+        blend_func_separate: extern fn{ sfactor_rgb: u32, dfactor_rgb: u32, sfactor_alpha: u32, dfactor_alpha: u32 },
+        blend_equation: extern fn{ mode: u32 },
+        blend_equation_separate: extern fn{ mode_rgb: u32, mode_alpha: u32 },
+        blend_color: extern fn{ red: f32, green: f32, blue: f32, alpha: f32 },
+        depth_func: extern fn{ func: u32 },
+        depth_mask: extern fn{ flag: u8 },
+        depth_range: extern fn{ near: f64, far: f64 },
+        color_mask: extern fn{ red: u8, green: u8, blue: u8, alpha: u8 },
+        stencil_func: extern fn{ func: u32, ref: i32, mask: u32 },
+        stencil_op: extern fn{ fail: u32, zfail: u32, zpass: u32 },
+        stencil_mask: extern fn{ mask: u32 },
+        stencil_func_separate: extern fn{ face: u32, func: u32, ref: i32, mask: u32 },
+        stencil_op_separate: extern fn{ face: u32, sfail: u32, dpfail: u32, dppass: u32 },
+        cull_face: extern fn{ mode: u32 },
+        front_face: extern fn{ mode: u32 },
+        polygon_offset: extern fn{ factor: f32, units: f32 },
+        polygon_mode: extern fn{ face: u32, mode: u32 },
+        line_width: extern fn{ width: f32 },
+        pixel_storei: extern fn{ pname: u32, param: i32 },
+        finish: extern fn{},
+        flush: extern fn{},
+
+        // shaders and programs
+        create_shader: extern fn{ kind: u32 } -> u32,
+        shader_source: extern fn{ shader: u32, count: i32, strings: *c::String, lengths: ?*i32 },
+        compile_shader: extern fn{ shader: u32 },
+        get_shaderiv: extern fn{ shader: u32, pname: u32, params: *mut i32 },
+        get_shader_info_log: extern fn{ shader: u32, buf_size: i32, length: *mut i32, info_log: *mut u8 },
+        delete_shader: extern fn{ shader: u32 },
+        create_program: extern fn{} -> u32,
+        attach_shader: extern fn{ program: u32, shader: u32 },
+        detach_shader: extern fn{ program: u32, shader: u32 },
+        link_program: extern fn{ program: u32 },
+        get_programiv: extern fn{ program: u32, pname: u32, params: *mut i32 },
+        get_program_info_log: extern fn{ program: u32, buf_size: i32, length: *mut i32, info_log: *mut u8 },
+        use_program: extern fn{ program: u32 },
+        delete_program: extern fn{ program: u32 },
+        get_uniform_location: extern fn{ program: u32, name: c::String } -> i32,
+        get_attrib_location: extern fn{ program: u32, name: c::String } -> i32,
+        bind_attrib_location: extern fn{ program: u32, index: u32, name: c::String },
+        bind_frag_data_location: extern fn{ program: u32, color: u32, name: c::String },
+        get_uniform_block_index: extern fn{ program: u32, name: c::String } -> u32,
+        uniform_block_binding: extern fn{ program: u32, block_index: u32, binding: u32 },
+        uniform1i: extern fn{ location: i32, v0: i32 },
+        uniform1f: extern fn{ location: i32, v0: f32 },
+        uniform2f: extern fn{ location: i32, v0: f32, v1: f32 },
+        uniform3f: extern fn{ location: i32, v0: f32, v1: f32, v2: f32 },
+        uniform4f: extern fn{ location: i32, v0: f32, v1: f32, v2: f32, v3: f32 },
+        uniform1iv: extern fn{ location: i32, count: i32, value: *i32 },
+        uniform1fv: extern fn{ location: i32, count: i32, value: *f32 },
+        uniform2fv: extern fn{ location: i32, count: i32, value: *f32 },
+        uniform3fv: extern fn{ location: i32, count: i32, value: *f32 },
+        uniform4fv: extern fn{ location: i32, count: i32, value: *f32 },
+        uniform_matrix3fv: extern fn{ location: i32, count: i32, transpose: u8, value: *f32 },
+        uniform_matrix4fv: extern fn{ location: i32, count: i32, transpose: u8, value: *f32 },
+
+        // buffers
+        gen_buffers: extern fn{ n: i32, buffers: *mut u32 },
+        delete_buffers: extern fn{ n: i32, buffers: *u32 },
+        bind_buffer: extern fn{ target: u32, buffer: u32 },
+        buffer_data: extern fn{ target: u32, size: i64, data: ?*u8, usage: u32 },
+        buffer_sub_data: extern fn{ target: u32, offset: i64, size: i64, data: *u8 },
+        bind_buffer_base: extern fn{ target: u32, index: u32, buffer: u32 },
+        bind_buffer_range: extern fn{ target: u32, index: u32, buffer: u32, offset: i64, size: i64 },
+        map_buffer_range: extern fn{ target: u32, offset: i64, length: i64, access: u32 } -> ?*mut u8,
+        unmap_buffer: extern fn{ target: u32 } -> u8,
+
+        // vertex arrays and drawing
+        gen_vertex_arrays: extern fn{ n: i32, arrays: *mut u32 },
+        delete_vertex_arrays: extern fn{ n: i32, arrays: *u32 },
+        bind_vertex_array: extern fn{ array: u32 },
+        enable_vertex_attrib_array: extern fn{ index: u32 },
+        disable_vertex_attrib_array: extern fn{ index: u32 },
+        vertex_attrib_pointer: extern fn{ index: u32, size: i32, kind: u32, normalized: u8, stride: i32, offset: usize },
+        vertex_attrib_ipointer: extern fn{ index: u32, size: i32, kind: u32, stride: i32, offset: usize },
+        vertex_attrib_divisor: extern fn{ index: u32, divisor: u32 },
+        vertex_attrib4f: extern fn{ index: u32, x: f32, y: f32, z: f32, w: f32 },
+        draw_arrays: extern fn{ mode: u32, first: i32, count: i32 },
+        draw_elements: extern fn{ mode: u32, count: i32, kind: u32, offset: usize },
+        draw_elements_base_vertex: extern fn{ mode: u32, count: i32, kind: u32, offset: usize, base_vertex: i32 },
+        draw_arrays_instanced: extern fn{ mode: u32, first: i32, count: i32, instance_count: i32 },
+        draw_elements_instanced: extern fn{ mode: u32, count: i32, kind: u32, offset: usize, instance_count: i32 },
+
+        // textures and samplers
+        gen_textures: extern fn{ n: i32, textures: *mut u32 },
+        delete_textures: extern fn{ n: i32, textures: *u32 },
+        bind_texture: extern fn{ target: u32, texture: u32 },
+        active_texture: extern fn{ texture: u32 },
+        tex_image_2d: extern fn{ target: u32, level: i32, internal_format: i32, width: i32, height: i32, border: i32, format: u32, kind: u32, pixels: ?*u8 },
+        tex_sub_image_2d: extern fn{ target: u32, level: i32, xoffset: i32, yoffset: i32, width: i32, height: i32, format: u32, kind: u32, pixels: *u8 },
+        compressed_tex_image_2d: extern fn{ target: u32, level: i32, internal_format: u32, width: i32, height: i32, border: i32, image_size: i32, data: *u8 },
+        compressed_tex_sub_image_2d: extern fn{ target: u32, level: i32, xoffset: i32, yoffset: i32, width: i32, height: i32, format: u32, image_size: i32, data: *u8 },
+        tex_parameteri: extern fn{ target: u32, pname: u32, param: i32 },
+        tex_parameterf: extern fn{ target: u32, pname: u32, param: f32 },
+        tex_parameterfv: extern fn{ target: u32, pname: u32, params: *f32 },
+        generate_mipmap: extern fn{ target: u32 },
+        get_tex_image: extern fn{ target: u32, level: i32, format: u32, kind: u32, pixels: *mut u8 },
+        gen_samplers: extern fn{ count: i32, samplers: *mut u32 },
+        delete_samplers: extern fn{ count: i32, samplers: *u32 },
+        bind_sampler: extern fn{ unit: u32, sampler: u32 },
+        sampler_parameteri: extern fn{ sampler: u32, pname: u32, param: i32 },
+        sampler_parameterf: extern fn{ sampler: u32, pname: u32, param: f32 },
+
+        // framebuffers
+        gen_framebuffers: extern fn{ n: i32, framebuffers: *mut u32 },
+        delete_framebuffers: extern fn{ n: i32, framebuffers: *u32 },
+        bind_framebuffer: extern fn{ target: u32, framebuffer: u32 },
+        framebuffer_texture_2d: extern fn{ target: u32, attachment: u32, textarget: u32, texture: u32, level: i32 },
+        framebuffer_renderbuffer: extern fn{ target: u32, attachment: u32, renderbuffer_target: u32, renderbuffer: u32 },
+        check_framebuffer_status: extern fn{ target: u32 } -> u32,
+        gen_renderbuffers: extern fn{ n: i32, renderbuffers: *mut u32 },
+        delete_renderbuffers: extern fn{ n: i32, renderbuffers: *u32 },
+        bind_renderbuffer: extern fn{ target: u32, renderbuffer: u32 },
+        renderbuffer_storage: extern fn{ target: u32, internal_format: u32, width: i32, height: i32 },
+        renderbuffer_storage_multisample: extern fn{ target: u32, samples: i32, internal_format: u32, width: i32, height: i32 },
+        blit_framebuffer: extern fn{ src_x0: i32, src_y0: i32, src_x1: i32, src_y1: i32, dst_x0: i32, dst_y0: i32, dst_x1: i32, dst_y1: i32, mask: u32, filter: u32 },
+        draw_buffers: extern fn{ n: i32, bufs: *u32 },
+        draw_buffer: extern fn{ buf: u32 },
+        read_buffer: extern fn{ src: u32 },
+        read_pixels: extern fn{ x: i32, y: i32, width: i32, height: i32, format: u32, kind: u32, pixels: *mut u8 },
+
+        // timer queries (3.3)
+        gen_queries: extern fn{ n: i32, ids: *mut u32 },
+        delete_queries: extern fn{ n: i32, ids: *u32 },
+        begin_query: extern fn{ target: u32, id: u32 },
+        end_query: extern fn{ target: u32 },
+        query_counter: extern fn{ id: u32, target: u32 },
+        get_query_objectiv: extern fn{ id: u32, pname: u32, params: *mut i32 },
+        get_query_objectui64v: extern fn{ id: u32, pname: u32, params: *mut u64 },
+    }
+
+    // Loads every function of `Gl` from `get_proc`, which finds one by name in the context current
+    // on this thread. Fails with `too_old` for a context before 4.1, and `missing` if one wasn't
+    // found.
+    fn load { get_proc: &fn{ name: c::String } -> ?extern fn{} } -> !Gl {
+        // The version first, through glGetIntegerv alone: on an old context the rest needn't exist.
+        let get_integerv = @cast(extern fn{ pname: u32, data: *mut i32 }, try proc{ get_proc, name = "glGetIntegerv" })
+        let mut major: i32 = 0
+        let mut minor: i32 = 0
+        get_integerv{ pname = MAJOR_VERSION, data = &major }     // GL_INVALID_ENUM before 3.0: stays 0
+        get_integerv{ pname = MINOR_VERSION, data = &minor }
+        if major < 4 or (major == 4 and minor < 1) { return too_old{ major, minor } }
+        return Gl{
+            get_error = @cast(_, try proc{ get_proc, name = "glGetError" }),
+            get_string = @cast(_, try proc{ get_proc, name = "glGetString" }),
+            get_stringi = @cast(_, try proc{ get_proc, name = "glGetStringi" }),
+            get_integerv = @cast(_, try proc{ get_proc, name = "glGetIntegerv" }),
+            get_floatv = @cast(_, try proc{ get_proc, name = "glGetFloatv" }),
+            enable = @cast(_, try proc{ get_proc, name = "glEnable" }),
+            disable = @cast(_, try proc{ get_proc, name = "glDisable" }),
+            viewport = @cast(_, try proc{ get_proc, name = "glViewport" }),
+            scissor = @cast(_, try proc{ get_proc, name = "glScissor" }),
+            clear_color = @cast(_, try proc{ get_proc, name = "glClearColor" }),
+            clear_depth = @cast(_, try proc{ get_proc, name = "glClearDepth" }),
+            clear_stencil = @cast(_, try proc{ get_proc, name = "glClearStencil" }),
+            clear = @cast(_, try proc{ get_proc, name = "glClear" }),
+            blend_func = @cast(_, try proc{ get_proc, name = "glBlendFunc" }),
+            blend_func_separate = @cast(_, try proc{ get_proc, name = "glBlendFuncSeparate" }),
+            blend_equation = @cast(_, try proc{ get_proc, name = "glBlendEquation" }),
+            blend_equation_separate = @cast(_, try proc{ get_proc, name = "glBlendEquationSeparate" }),
+            blend_color = @cast(_, try proc{ get_proc, name = "glBlendColor" }),
+            depth_func = @cast(_, try proc{ get_proc, name = "glDepthFunc" }),
+            depth_mask = @cast(_, try proc{ get_proc, name = "glDepthMask" }),
+            depth_range = @cast(_, try proc{ get_proc, name = "glDepthRange" }),
+            color_mask = @cast(_, try proc{ get_proc, name = "glColorMask" }),
+            stencil_func = @cast(_, try proc{ get_proc, name = "glStencilFunc" }),
+            stencil_op = @cast(_, try proc{ get_proc, name = "glStencilOp" }),
+            stencil_mask = @cast(_, try proc{ get_proc, name = "glStencilMask" }),
+            stencil_func_separate = @cast(_, try proc{ get_proc, name = "glStencilFuncSeparate" }),
+            stencil_op_separate = @cast(_, try proc{ get_proc, name = "glStencilOpSeparate" }),
+            cull_face = @cast(_, try proc{ get_proc, name = "glCullFace" }),
+            front_face = @cast(_, try proc{ get_proc, name = "glFrontFace" }),
+            polygon_offset = @cast(_, try proc{ get_proc, name = "glPolygonOffset" }),
+            polygon_mode = @cast(_, try proc{ get_proc, name = "glPolygonMode" }),
+            line_width = @cast(_, try proc{ get_proc, name = "glLineWidth" }),
+            pixel_storei = @cast(_, try proc{ get_proc, name = "glPixelStorei" }),
+            finish = @cast(_, try proc{ get_proc, name = "glFinish" }),
+            flush = @cast(_, try proc{ get_proc, name = "glFlush" }),
+
+            create_shader = @cast(_, try proc{ get_proc, name = "glCreateShader" }),
+            shader_source = @cast(_, try proc{ get_proc, name = "glShaderSource" }),
+            compile_shader = @cast(_, try proc{ get_proc, name = "glCompileShader" }),
+            get_shaderiv = @cast(_, try proc{ get_proc, name = "glGetShaderiv" }),
+            get_shader_info_log = @cast(_, try proc{ get_proc, name = "glGetShaderInfoLog" }),
+            delete_shader = @cast(_, try proc{ get_proc, name = "glDeleteShader" }),
+            create_program = @cast(_, try proc{ get_proc, name = "glCreateProgram" }),
+            attach_shader = @cast(_, try proc{ get_proc, name = "glAttachShader" }),
+            detach_shader = @cast(_, try proc{ get_proc, name = "glDetachShader" }),
+            link_program = @cast(_, try proc{ get_proc, name = "glLinkProgram" }),
+            get_programiv = @cast(_, try proc{ get_proc, name = "glGetProgramiv" }),
+            get_program_info_log = @cast(_, try proc{ get_proc, name = "glGetProgramInfoLog" }),
+            use_program = @cast(_, try proc{ get_proc, name = "glUseProgram" }),
+            delete_program = @cast(_, try proc{ get_proc, name = "glDeleteProgram" }),
+            get_uniform_location = @cast(_, try proc{ get_proc, name = "glGetUniformLocation" }),
+            get_attrib_location = @cast(_, try proc{ get_proc, name = "glGetAttribLocation" }),
+            bind_attrib_location = @cast(_, try proc{ get_proc, name = "glBindAttribLocation" }),
+            bind_frag_data_location = @cast(_, try proc{ get_proc, name = "glBindFragDataLocation" }),
+            get_uniform_block_index = @cast(_, try proc{ get_proc, name = "glGetUniformBlockIndex" }),
+            uniform_block_binding = @cast(_, try proc{ get_proc, name = "glUniformBlockBinding" }),
+            uniform1i = @cast(_, try proc{ get_proc, name = "glUniform1i" }),
+            uniform1f = @cast(_, try proc{ get_proc, name = "glUniform1f" }),
+            uniform2f = @cast(_, try proc{ get_proc, name = "glUniform2f" }),
+            uniform3f = @cast(_, try proc{ get_proc, name = "glUniform3f" }),
+            uniform4f = @cast(_, try proc{ get_proc, name = "glUniform4f" }),
+            uniform1iv = @cast(_, try proc{ get_proc, name = "glUniform1iv" }),
+            uniform1fv = @cast(_, try proc{ get_proc, name = "glUniform1fv" }),
+            uniform2fv = @cast(_, try proc{ get_proc, name = "glUniform2fv" }),
+            uniform3fv = @cast(_, try proc{ get_proc, name = "glUniform3fv" }),
+            uniform4fv = @cast(_, try proc{ get_proc, name = "glUniform4fv" }),
+            uniform_matrix3fv = @cast(_, try proc{ get_proc, name = "glUniformMatrix3fv" }),
+            uniform_matrix4fv = @cast(_, try proc{ get_proc, name = "glUniformMatrix4fv" }),
+
+            gen_buffers = @cast(_, try proc{ get_proc, name = "glGenBuffers" }),
+            delete_buffers = @cast(_, try proc{ get_proc, name = "glDeleteBuffers" }),
+            bind_buffer = @cast(_, try proc{ get_proc, name = "glBindBuffer" }),
+            buffer_data = @cast(_, try proc{ get_proc, name = "glBufferData" }),
+            buffer_sub_data = @cast(_, try proc{ get_proc, name = "glBufferSubData" }),
+            bind_buffer_base = @cast(_, try proc{ get_proc, name = "glBindBufferBase" }),
+            bind_buffer_range = @cast(_, try proc{ get_proc, name = "glBindBufferRange" }),
+            map_buffer_range = @cast(_, try proc{ get_proc, name = "glMapBufferRange" }),
+            unmap_buffer = @cast(_, try proc{ get_proc, name = "glUnmapBuffer" }),
+
+            gen_vertex_arrays = @cast(_, try proc{ get_proc, name = "glGenVertexArrays" }),
+            delete_vertex_arrays = @cast(_, try proc{ get_proc, name = "glDeleteVertexArrays" }),
+            bind_vertex_array = @cast(_, try proc{ get_proc, name = "glBindVertexArray" }),
+            enable_vertex_attrib_array = @cast(_, try proc{ get_proc, name = "glEnableVertexAttribArray" }),
+            disable_vertex_attrib_array = @cast(_, try proc{ get_proc, name = "glDisableVertexAttribArray" }),
+            vertex_attrib_pointer = @cast(_, try proc{ get_proc, name = "glVertexAttribPointer" }),
+            vertex_attrib_ipointer = @cast(_, try proc{ get_proc, name = "glVertexAttribIPointer" }),
+            vertex_attrib_divisor = @cast(_, try proc{ get_proc, name = "glVertexAttribDivisor" }),
+            vertex_attrib4f = @cast(_, try proc{ get_proc, name = "glVertexAttrib4f" }),
+            draw_arrays = @cast(_, try proc{ get_proc, name = "glDrawArrays" }),
+            draw_elements = @cast(_, try proc{ get_proc, name = "glDrawElements" }),
+            draw_elements_base_vertex = @cast(_, try proc{ get_proc, name = "glDrawElementsBaseVertex" }),
+            draw_arrays_instanced = @cast(_, try proc{ get_proc, name = "glDrawArraysInstanced" }),
+            draw_elements_instanced = @cast(_, try proc{ get_proc, name = "glDrawElementsInstanced" }),
+
+            gen_textures = @cast(_, try proc{ get_proc, name = "glGenTextures" }),
+            delete_textures = @cast(_, try proc{ get_proc, name = "glDeleteTextures" }),
+            bind_texture = @cast(_, try proc{ get_proc, name = "glBindTexture" }),
+            active_texture = @cast(_, try proc{ get_proc, name = "glActiveTexture" }),
+            tex_image_2d = @cast(_, try proc{ get_proc, name = "glTexImage2D" }),
+            tex_sub_image_2d = @cast(_, try proc{ get_proc, name = "glTexSubImage2D" }),
+            compressed_tex_image_2d = @cast(_, try proc{ get_proc, name = "glCompressedTexImage2D" }),
+            compressed_tex_sub_image_2d = @cast(_, try proc{ get_proc, name = "glCompressedTexSubImage2D" }),
+            tex_parameteri = @cast(_, try proc{ get_proc, name = "glTexParameteri" }),
+            tex_parameterf = @cast(_, try proc{ get_proc, name = "glTexParameterf" }),
+            tex_parameterfv = @cast(_, try proc{ get_proc, name = "glTexParameterfv" }),
+            generate_mipmap = @cast(_, try proc{ get_proc, name = "glGenerateMipmap" }),
+            get_tex_image = @cast(_, try proc{ get_proc, name = "glGetTexImage" }),
+            gen_samplers = @cast(_, try proc{ get_proc, name = "glGenSamplers" }),
+            delete_samplers = @cast(_, try proc{ get_proc, name = "glDeleteSamplers" }),
+            bind_sampler = @cast(_, try proc{ get_proc, name = "glBindSampler" }),
+            sampler_parameteri = @cast(_, try proc{ get_proc, name = "glSamplerParameteri" }),
+            sampler_parameterf = @cast(_, try proc{ get_proc, name = "glSamplerParameterf" }),
+
+            gen_framebuffers = @cast(_, try proc{ get_proc, name = "glGenFramebuffers" }),
+            delete_framebuffers = @cast(_, try proc{ get_proc, name = "glDeleteFramebuffers" }),
+            bind_framebuffer = @cast(_, try proc{ get_proc, name = "glBindFramebuffer" }),
+            framebuffer_texture_2d = @cast(_, try proc{ get_proc, name = "glFramebufferTexture2D" }),
+            framebuffer_renderbuffer = @cast(_, try proc{ get_proc, name = "glFramebufferRenderbuffer" }),
+            check_framebuffer_status = @cast(_, try proc{ get_proc, name = "glCheckFramebufferStatus" }),
+            gen_renderbuffers = @cast(_, try proc{ get_proc, name = "glGenRenderbuffers" }),
+            delete_renderbuffers = @cast(_, try proc{ get_proc, name = "glDeleteRenderbuffers" }),
+            bind_renderbuffer = @cast(_, try proc{ get_proc, name = "glBindRenderbuffer" }),
+            renderbuffer_storage = @cast(_, try proc{ get_proc, name = "glRenderbufferStorage" }),
+            renderbuffer_storage_multisample = @cast(_, try proc{ get_proc, name = "glRenderbufferStorageMultisample" }),
+            blit_framebuffer = @cast(_, try proc{ get_proc, name = "glBlitFramebuffer" }),
+            draw_buffers = @cast(_, try proc{ get_proc, name = "glDrawBuffers" }),
+            draw_buffer = @cast(_, try proc{ get_proc, name = "glDrawBuffer" }),
+            read_buffer = @cast(_, try proc{ get_proc, name = "glReadBuffer" }),
+            read_pixels = @cast(_, try proc{ get_proc, name = "glReadPixels" }),
+
+            gen_queries = @cast(_, try proc{ get_proc, name = "glGenQueries" }),
+            delete_queries = @cast(_, try proc{ get_proc, name = "glDeleteQueries" }),
+            begin_query = @cast(_, try proc{ get_proc, name = "glBeginQuery" }),
+            end_query = @cast(_, try proc{ get_proc, name = "glEndQuery" }),
+            query_counter = @cast(_, try proc{ get_proc, name = "glQueryCounter" }),
+            get_query_objectiv = @cast(_, try proc{ get_proc, name = "glGetQueryObjectiv" }),
+            get_query_objectui64v = @cast(_, try proc{ get_proc, name = "glGetQueryObjectui64v" }),
+        }
+    }
+
+    // get_proc's function `name`. The literal names it for get_proc and the error alike.
+    fn proc { get_proc: &fn{ name: c::String } -> ?extern fn{}, name: c::String } -> !extern fn{} {
+        return get_proc{ name } ifnull { return missing{ name } }
+    }
+
+    // ---- KHR_debug (core in 4.3; not on macOS)
+
+    // Messages the driver reported, as lines, until the program reads them out with `take_debug`.
+    // The driver writes them during the GL call that caused them, with DEBUG_OUTPUT_SYNCHRONOUS
+    // on, so a call's messages are here when it returns.
+    struct DebugLog { text: [8192]u8, used: usize, count: u32, dropped: u32 }
+
+    // GLDEBUGPROC, its userParam typed as the DebugLog this file gives it.
+    type DebugProc = extern fn{ source: u32, kind: u32, id: u32, severity: u32, length: i32, message: *u8, log: *mut DebugLog }
+
+    capability Debug {
+        debug_message_callback: extern fn{ callback: ?DebugProc, log: ?*mut DebugLog },
+        debug_message_control: extern fn{ source: u32, kind: u32, severity: u32, count: i32, ids: ?*u32, enabled: u8 },
+        object_label: extern fn{ identifier: u32, name: u32, length: i32, label: c::String },
+        push_debug_group: extern fn{ source: u32, id: u32, length: i32, message: c::String },
+        pop_debug_group: extern fn{},
+    }
+
+    // KHR_debug's functions, or null if the context hasn't them.
+    fn load_debug { get_proc: &fn{ name: c::String } -> ?extern fn{}, mut gl: Gl } -> ?Debug {
+        if not has_extension{ &gl, name = "GL_KHR_debug" } { return null }
+        return Debug{
+            debug_message_callback = @cast(_, get_proc{ name = "glDebugMessageCallback" } ifnull { return null }),
+            debug_message_control = @cast(_, get_proc{ name = "glDebugMessageControl" } ifnull { return null }),
+            object_label = @cast(_, get_proc{ name = "glObjectLabel" } ifnull { return null }),
+            push_debug_group = @cast(_, get_proc{ name = "glPushDebugGroup" } ifnull { return null }),
+            pop_debug_group = @cast(_, get_proc{ name = "glPopDebugGroup" } ifnull { return null }),
+        }
+    }
+
+    // Sends the driver's messages to `log`, synchronously, leaving out notifications (which some
+    // drivers send for every buffer they place). `log` must outlive the context, or the next
+    // `start_debug`.
+    fn start_debug { mut gl: Gl, mut debug: Debug, log: *mut DebugLog } {
+        gl.enable{ cap = DEBUG_OUTPUT }
+        gl.enable{ cap = DEBUG_OUTPUT_SYNCHRONOUS }
+        debug.debug_message_callback{ callback = on_debug_message, log }
+        debug.debug_message_control{ source = DONT_CARE, kind = DONT_CARE, severity = DONT_CARE, count = 0, ids = null, enabled = TRUE }
+        debug.debug_message_control{ source = DONT_CARE, kind = DONT_CARE, severity = DEBUG_SEVERITY_NOTIFICATION, count = 0, ids = null, enabled = FALSE }
+    }
+
+    // The driver calls this within a GL call. It appends "severity: message\n" to the log, or
+    // counts the message as dropped when the log is full.
+    #c::callback
+    fn on_debug_message { severity: u32, length: i32, message: *u8, log: *mut DebugLog } {
+        let prefix: []u8 = if severity == DEBUG_SEVERITY_HIGH { "high: " }
+            else if severity == DEBUG_SEVERITY_MEDIUM { "medium: " }
+            else if severity == DEBUG_SEVERITY_LOW { "low: " } else { "note: " }
+        let mut n: usize = 0
+        if length >= 0 { n = @as(usize, length) } else { while message[n] != 0 { n = n + 1 } }
+        log.count = log.count + 1
+        if log.used + prefix.len + n + 1 > log.text.len {
+            log.dropped = log.dropped + 1
+            return
+        }
+        let mut i: usize = 0
+        while i < prefix.len {
+            log.text[log.used] = prefix[i]
+            log.used = log.used + 1
+            i = i + 1
+        }
+        i = 0
+        while i < n {
+            log.text[log.used] = message[i]
+            log.used = log.used + 1
+            i = i + 1
+        }
+        log.text[log.used] = '\n'
+        log.used = log.used + 1
+    }
+
+    // ---- helpers over the raw functions
+
+    // Whether the context has extension `name`, as glGetStringi lists them.
+    fn has_extension { mut gl: Gl, name: []u8 } -> bool {
+        let n = get_int{ &gl, pname = NUM_EXTENSIONS }
+        let mut i: i32 = 0
+        while i < n {
+            let s = gl.get_stringi{ name = EXTENSIONS, index = @as(u32, i) }
+            if s != null and slice::eq_bytes{ a = c::bytes{ s }, b = name } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    fn get_int { mut gl: Gl, pname: u32 } -> i32 {
+        let mut n: i32 = 0
+        gl.get_integerv{ pname, data = &n }
+        return n
+    }
+
+    // glGetString's text, or "" if the driver gives none.
+    fn string { mut gl: Gl, name: u32 } -> []u8 {
+        let s = gl.get_string{ name } ifnull { return "" }
+        return c::bytes{ s }
+    }
+
+    // Fails with `failed` if a GL call since the last check went wrong; `what` says where.
+    fn check { mut gl: Gl, what: c::String } -> ! {
+        let code = gl.get_error{}
+        if code != NO_ERROR {
+            while gl.get_error{} != NO_ERROR {}     // GL may hold several
+            return failed{ code, what }
+        }
+    }
+
+    // glGetError's code by name.
+    fn error_name { code: u32 } -> []u8 {
+        if code == INVALID_ENUM { return "GL_INVALID_ENUM" }
+        if code == INVALID_VALUE { return "GL_INVALID_VALUE" }
+        if code == INVALID_OPERATION { return "GL_INVALID_OPERATION" }
+        if code == OUT_OF_MEMORY { return "GL_OUT_OF_MEMORY" }
+        if code == INVALID_FRAMEBUFFER_OPERATION { return "GL_INVALID_FRAMEBUFFER_OPERATION" }
+        return "unknown GL error"
+    }
+
+    // Compiles one shader stage from `source`, lines GL joins as they are. On failure, the
+    // driver's log is in log[..log_len].
+    fn compile { mut gl: Gl, stage: u32, source: []c::String, log: []mut u8 } -> !u32 {
+        let shader = gl.create_shader{ kind = stage }
+        gl.shader_source{ shader, count = @as(i32, source.len), strings = source.ptr, lengths = null }
+        gl.compile_shader{ shader }
+        let mut ok: i32 = 0
+        gl.get_shaderiv{ shader, pname = COMPILE_STATUS, params = &ok }
+        if ok == 0 {
+            let mut n: i32 = 0
+            if log.len > 0 { gl.get_shader_info_log{ shader, buf_size = @as(i32, log.len), length = &n, info_log = log.ptr } }
+            gl.delete_shader{ shader }
+            return compile_failed{ stage, log_len = @as(usize, n) }
+        }
+        return shader
+    }
+
+    // A program of a vertex and a fragment stage. Its attributes and outputs are placed by
+    // `layout(location = N)` in the source.
+    fn link { mut gl: Gl, vertex: []c::String, fragment: []c::String, log: []mut u8 } -> !u32 {
+        let vs = try compile{ &gl, stage = VERTEX_SHADER, source = vertex, log }
+        let fs = compile{ &gl, stage = FRAGMENT_SHADER, source = fragment, log } iferr err{ error } {
+            gl.delete_shader{ shader = vs }
+            return error
+        }
+        let program = gl.create_program{}
+        gl.attach_shader{ program, shader = vs }
+        gl.attach_shader{ program, shader = fs }
+        gl.link_program{ program }
+        gl.detach_shader{ program, shader = vs }
+        gl.detach_shader{ program, shader = fs }
+        gl.delete_shader{ shader = vs }
+        gl.delete_shader{ shader = fs }
+        let mut ok: i32 = 0
+        gl.get_programiv{ program, pname = LINK_STATUS, params = &ok }
+        if ok == 0 {
+            let mut n: i32 = 0
+            if log.len > 0 { gl.get_program_info_log{ program, buf_size = @as(i32, log.len), length = &n, info_log = log.ptr } }
+            gl.delete_program{ program }
+            return link_failed{ log_len = @as(usize, n) }
+        }
+        return program
+    }
+
+    // One new name from a glGen* function.
+    fn gen_buffer { mut gl: Gl } -> u32 { let mut id: u32 = 0; gl.gen_buffers{ n = 1, buffers = &id }; return id }
+    fn gen_vertex_array { mut gl: Gl } -> u32 { let mut id: u32 = 0; gl.gen_vertex_arrays{ n = 1, arrays = &id }; return id }
+    fn gen_texture { mut gl: Gl } -> u32 { let mut id: u32 = 0; gl.gen_textures{ n = 1, textures = &id }; return id }
+    fn gen_sampler { mut gl: Gl } -> u32 { let mut id: u32 = 0; gl.gen_samplers{ count = 1, samplers = &id }; return id }
+    fn gen_framebuffer { mut gl: Gl } -> u32 { let mut id: u32 = 0; gl.gen_framebuffers{ n = 1, framebuffers = &id }; return id }
+    fn gen_renderbuffer { mut gl: Gl } -> u32 { let mut id: u32 = 0; gl.gen_renderbuffers{ n = 1, renderbuffers = &id }; return id }
+
+    fn delete_buffer { mut gl: Gl, id: u32 } { gl.delete_buffers{ n = 1, buffers = &id } }
+    fn delete_vertex_array { mut gl: Gl, id: u32 } { gl.delete_vertex_arrays{ n = 1, arrays = &id } }
+    fn delete_texture { mut gl: Gl, id: u32 } { gl.delete_textures{ n = 1, textures = &id } }
+    fn delete_sampler { mut gl: Gl, id: u32 } { gl.delete_samplers{ count = 1, samplers = &id } }
+    fn delete_framebuffer { mut gl: Gl, id: u32 } { gl.delete_framebuffers{ n = 1, framebuffers = &id } }
+    fn delete_renderbuffer { mut gl: Gl, id: u32 } { gl.delete_renderbuffers{ n = 1, renderbuffers = &id } }
+
+    // A new buffer bound to `target`, holding `bytes`.
+    fn make_buffer { mut gl: Gl, target: u32, bytes: []u8, usage: u32 } -> u32 {
+        let id = gen_buffer{ &gl }
+        gl.bind_buffer{ target, buffer = id }
+        gl.buffer_data{ target, size = @as(i64, bytes.len), data = if bytes.len == 0 { null } else { bytes.ptr }, usage }
+        return id
+    }
+
+    // The bytes of a slice of anything, for GL to read.
+    fn bytes_of(T) { s: []T } -> []u8 {
+        if s.len == 0 { return "" }
+        return @slice(@cast(*u8, s.ptr), s.len * @size_of(T))
+    }
+
+    // An offscreen target: a colour texture and a depth-stencil renderbuffer.
+    struct Target { framebuffer: u32, color: u32, depth_stencil: u32, width: i32, height: i32 }
+
+    // An RGBA8 colour texture (linear filtering, clamped) and a 24-bit depth, 8-bit stencil
+    // renderbuffer of width by height. Leaves the target's framebuffer bound.
+    fn make_target { mut gl: Gl, width: i32, height: i32 } -> !Target {
+        let color = gen_texture{ &gl }
+        gl.bind_texture{ target = TEXTURE_2D, texture = color }
+        gl.tex_image_2d{ target = TEXTURE_2D, level = 0, internal_format = @as(i32, RGBA8), width, height, border = 0, format = RGBA, kind = UNSIGNED_BYTE, pixels = null }
+        gl.tex_parameteri{ target = TEXTURE_2D, pname = TEXTURE_MIN_FILTER, param = @as(i32, LINEAR) }
+        gl.tex_parameteri{ target = TEXTURE_2D, pname = TEXTURE_MAG_FILTER, param = @as(i32, LINEAR) }
+        gl.tex_parameteri{ target = TEXTURE_2D, pname = TEXTURE_WRAP_S, param = @as(i32, CLAMP_TO_EDGE) }
+        gl.tex_parameteri{ target = TEXTURE_2D, pname = TEXTURE_WRAP_T, param = @as(i32, CLAMP_TO_EDGE) }
+        let depth_stencil = gen_renderbuffer{ &gl }
+        gl.bind_renderbuffer{ target = RENDERBUFFER, renderbuffer = depth_stencil }
+        gl.renderbuffer_storage{ target = RENDERBUFFER, internal_format = DEPTH24_STENCIL8, width, height }
+        let framebuffer = gen_framebuffer{ &gl }
+        gl.bind_framebuffer{ target = FRAMEBUFFER, framebuffer }
+        gl.framebuffer_texture_2d{ target = FRAMEBUFFER, attachment = COLOR_ATTACHMENT0, textarget = TEXTURE_2D, texture = color, level = 0 }
+        gl.framebuffer_renderbuffer{ target = FRAMEBUFFER, attachment = DEPTH_STENCIL_ATTACHMENT, renderbuffer_target = RENDERBUFFER, renderbuffer = depth_stencil }
+        let status = gl.check_framebuffer_status{ target = FRAMEBUFFER }
+        if status != FRAMEBUFFER_COMPLETE {
+            free_target{ &gl, t = Target{ framebuffer, color, depth_stencil, width, height } }
+            return incomplete{ status }
+        }
+        return Target{ framebuffer, color, depth_stencil, width, height }
+    }
+
+    fn free_target { mut gl: Gl, t: Target } {
+        gl.bind_framebuffer{ target = FRAMEBUFFER, framebuffer = 0 }
+        delete_framebuffer{ &gl, id = t.framebuffer }
+        delete_renderbuffer{ &gl, id = t.depth_stencil }
+        delete_texture{ &gl, id = t.color }
+    }
+
+    // Reads the target's colour as RGBA8 into `into` (width * height * 4 bytes), rows bottom to
+    // top as GL keeps them.
+    fn read_rgba { mut gl: Gl, t: Target, into: []mut u8 } {
+        let need = @as(usize, t.width) * @as(usize, t.height) * 4
+        if into.len < need { @panic("gl::read_rgba: the buffer is too small") }
+        gl.bind_framebuffer{ target = READ_FRAMEBUFFER, framebuffer = t.framebuffer }
+        gl.read_buffer{ src = COLOR_ATTACHMENT0 }
+        gl.pixel_storei{ pname = PACK_ALIGNMENT, param = 1 }
+        gl.read_pixels{ x = 0, y = 0, width = t.width, height = t.height, format = RGBA, kind = UNSIGNED_BYTE, pixels = into.ptr }
+    }
+
+    // Copies the target's colour to the default framebuffer, scaled to width by height.
+    fn present { mut gl: Gl, t: Target, width: i32, height: i32 } {
+        gl.bind_framebuffer{ target = READ_FRAMEBUFFER, framebuffer = t.framebuffer }
+        gl.bind_framebuffer{ target = DRAW_FRAMEBUFFER, framebuffer = 0 }
+        gl.blit_framebuffer{
+            src_x0 = 0, src_y0 = 0, src_x1 = t.width, src_y1 = t.height,
+            dst_x0 = 0, dst_y0 = 0, dst_x1 = width, dst_y1 = height,
+            mask = COLOR_BUFFER_BIT, filter = LINEAR,
+        }
+    }
+
+    // ---- enums (glcorearb.h)
+
+    const NO_ERROR: u32 = 0
+    const INVALID_ENUM: u32 = 0x0500
+    const INVALID_VALUE: u32 = 0x0501
+    const INVALID_OPERATION: u32 = 0x0502
+    const OUT_OF_MEMORY: u32 = 0x0505
+    const INVALID_FRAMEBUFFER_OPERATION: u32 = 0x0506
+
+    const FALSE: u8 = 0
+    const TRUE: u8 = 1
+    const NONE: u32 = 0
+    const INVALID_INDEX: u32 = 0xFFFFFFFF
+
+    const VENDOR: u32 = 0x1F00
+    const RENDERER: u32 = 0x1F01
+    const VERSION: u32 = 0x1F02
+    const EXTENSIONS: u32 = 0x1F03
+    const SHADING_LANGUAGE_VERSION: u32 = 0x8B8C
+    const NUM_EXTENSIONS: u32 = 0x821D
+    const MAJOR_VERSION: u32 = 0x821B
+    const MINOR_VERSION: u32 = 0x821C
+    const CONTEXT_FLAGS: u32 = 0x821E
+    const CONTEXT_PROFILE_MASK: u32 = 0x9126
+    const CONTEXT_CORE_PROFILE_BIT: i32 = 0x1
+    const CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT: i32 = 0x1
+    const CONTEXT_FLAG_DEBUG_BIT: i32 = 0x2
+    const MAX_TEXTURE_SIZE: u32 = 0x0D33
+    const MAX_CUBE_MAP_TEXTURE_SIZE: u32 = 0x851C
+    const MAX_TEXTURE_IMAGE_UNITS: u32 = 0x8872
+    const MAX_COMBINED_TEXTURE_IMAGE_UNITS: u32 = 0x8B4D
+    const MAX_VERTEX_ATTRIBS: u32 = 0x8869
+    const MAX_UNIFORM_BLOCK_SIZE: u32 = 0x8A30
+    const MAX_VERTEX_UNIFORM_COMPONENTS: u32 = 0x8B4A
+    const MAX_SAMPLES: u32 = 0x8D57
+    const UNIFORM_BUFFER_OFFSET_ALIGNMENT: u32 = 0x8A34
+    const NUM_COMPRESSED_TEXTURE_FORMATS: u32 = 0x86A2
+
+    const DEPTH_BUFFER_BIT: u32 = 0x0100
+    const STENCIL_BUFFER_BIT: u32 = 0x0400
+    const COLOR_BUFFER_BIT: u32 = 0x4000
+
+    const POINTS: u32 = 0x0000
+    const LINES: u32 = 0x0001
+    const LINE_STRIP: u32 = 0x0003
+    const TRIANGLES: u32 = 0x0004
+    const TRIANGLE_STRIP: u32 = 0x0005
+    const TRIANGLE_FAN: u32 = 0x0006
+
+    const BYTE: u32 = 0x1400
+    const UNSIGNED_BYTE: u32 = 0x1401
+    const SHORT: u32 = 0x1402
+    const UNSIGNED_SHORT: u32 = 0x1403
+    const INT: u32 = 0x1404
+    const UNSIGNED_INT: u32 = 0x1405
+    const FLOAT: u32 = 0x1406
+    const HALF_FLOAT: u32 = 0x140B
+    const UNSIGNED_INT_24_8: u32 = 0x84FA
+
+    // capabilities for enable and disable
+    const DEPTH_TEST: u32 = 0x0B71
+    const STENCIL_TEST: u32 = 0x0B90
+    const BLEND: u32 = 0x0BE2
+    const CULL_FACE: u32 = 0x0B44
+    const SCISSOR_TEST: u32 = 0x0C11
+    const POLYGON_OFFSET_FILL: u32 = 0x8037
+    const MULTISAMPLE: u32 = 0x809D
+    const FRAMEBUFFER_SRGB: u32 = 0x8DB9
+    const TEXTURE_CUBE_MAP_SEAMLESS: u32 = 0x884F
+    const PROGRAM_POINT_SIZE: u32 = 0x8642
+    const DEBUG_OUTPUT: u32 = 0x92E0
+    const DEBUG_OUTPUT_SYNCHRONOUS: u32 = 0x8242
+
+    const NEVER: u32 = 0x0200
+    const LESS: u32 = 0x0201
+    const EQUAL: u32 = 0x0202
+    const LEQUAL: u32 = 0x0203
+    const GREATER: u32 = 0x0204
+    const NOTEQUAL: u32 = 0x0205
+    const GEQUAL: u32 = 0x0206
+    const ALWAYS: u32 = 0x0207
+
+    const ZERO: u32 = 0
+    const ONE: u32 = 1
+    const SRC_COLOR: u32 = 0x0300
+    const ONE_MINUS_SRC_COLOR: u32 = 0x0301
+    const SRC_ALPHA: u32 = 0x0302
+    const ONE_MINUS_SRC_ALPHA: u32 = 0x0303
+    const DST_ALPHA: u32 = 0x0304
+    const ONE_MINUS_DST_ALPHA: u32 = 0x0305
+    const DST_COLOR: u32 = 0x0306
+    const ONE_MINUS_DST_COLOR: u32 = 0x0307
+    const CONSTANT_COLOR: u32 = 0x8001
+    const FUNC_ADD: u32 = 0x8006
+    const FUNC_SUBTRACT: u32 = 0x800A
+    const FUNC_REVERSE_SUBTRACT: u32 = 0x800B
+    const MIN: u32 = 0x8007
+    const MAX: u32 = 0x8008
+
+    const KEEP: u32 = 0x1E00
+    const REPLACE: u32 = 0x1E01
+    const INCR: u32 = 0x1E02
+    const DECR: u32 = 0x1E03
+    const INVERT: u32 = 0x150A
+    const INCR_WRAP: u32 = 0x8507
+    const DECR_WRAP: u32 = 0x8508
+
+    const FRONT: u32 = 0x0404
+    const BACK: u32 = 0x0405
+    const FRONT_AND_BACK: u32 = 0x0408
+    const CW: u32 = 0x0900
+    const CCW: u32 = 0x0901
+    const LINE: u32 = 0x1B01
+    const FILL: u32 = 0x1B02
+
+    const VERTEX_SHADER: u32 = 0x8B31
+    const FRAGMENT_SHADER: u32 = 0x8B30
+    const GEOMETRY_SHADER: u32 = 0x8DD9
+    const COMPILE_STATUS: u32 = 0x8B81
+    const LINK_STATUS: u32 = 0x8B82
+    const VALIDATE_STATUS: u32 = 0x8B83
+    const INFO_LOG_LENGTH: u32 = 0x8B84
+
+    const ARRAY_BUFFER: u32 = 0x8892
+    const ELEMENT_ARRAY_BUFFER: u32 = 0x8893
+    const UNIFORM_BUFFER: u32 = 0x8A11
+    const COPY_READ_BUFFER: u32 = 0x8F36
+    const COPY_WRITE_BUFFER: u32 = 0x8F37
+    const PIXEL_PACK_BUFFER: u32 = 0x88EB
+    const PIXEL_UNPACK_BUFFER: u32 = 0x88EC
+    const STREAM_DRAW: u32 = 0x88E0
+    const STATIC_DRAW: u32 = 0x88E4
+    const DYNAMIC_DRAW: u32 = 0x88E8
+    const MAP_READ_BIT: u32 = 0x0001
+    const MAP_WRITE_BIT: u32 = 0x0002
+    const MAP_INVALIDATE_RANGE_BIT: u32 = 0x0004
+    const MAP_INVALIDATE_BUFFER_BIT: u32 = 0x0008
+    const MAP_UNSYNCHRONIZED_BIT: u32 = 0x0020
+
+    const TEXTURE_2D: u32 = 0x0DE1
+    const TEXTURE_2D_ARRAY: u32 = 0x8C1A
+    const TEXTURE_CUBE_MAP: u32 = 0x8513
+    const TEXTURE_CUBE_MAP_POSITIVE_X: u32 = 0x8515      // the six faces follow in this order
+    const TEXTURE_CUBE_MAP_NEGATIVE_X: u32 = 0x8516
+    const TEXTURE_CUBE_MAP_POSITIVE_Y: u32 = 0x8517
+    const TEXTURE_CUBE_MAP_NEGATIVE_Y: u32 = 0x8518
+    const TEXTURE_CUBE_MAP_POSITIVE_Z: u32 = 0x8519
+    const TEXTURE_CUBE_MAP_NEGATIVE_Z: u32 = 0x851A
+    const TEXTURE0: u32 = 0x84C0
+    const TEXTURE_MIN_FILTER: u32 = 0x2801
+    const TEXTURE_MAG_FILTER: u32 = 0x2800
+    const TEXTURE_WRAP_S: u32 = 0x2802
+    const TEXTURE_WRAP_T: u32 = 0x2803
+    const TEXTURE_WRAP_R: u32 = 0x8072
+    const TEXTURE_BASE_LEVEL: u32 = 0x813C
+    const TEXTURE_MAX_LEVEL: u32 = 0x813D
+    const TEXTURE_LOD_BIAS: u32 = 0x8501
+    const TEXTURE_COMPARE_MODE: u32 = 0x884C
+    const TEXTURE_COMPARE_FUNC: u32 = 0x884D
+    const TEXTURE_SWIZZLE_R: u32 = 0x8E42
+    const TEXTURE_SWIZZLE_A: u32 = 0x8E45
+    const TEXTURE_SWIZZLE_RGBA: u32 = 0x8E46
+    const TEXTURE_MAX_ANISOTROPY: u32 = 0x84FE          // EXT_texture_filter_anisotropic
+    const MAX_TEXTURE_MAX_ANISOTROPY: u32 = 0x84FF
+    const NEAREST: u32 = 0x2600
+    const LINEAR: u32 = 0x2601
+    const NEAREST_MIPMAP_NEAREST: u32 = 0x2700
+    const LINEAR_MIPMAP_NEAREST: u32 = 0x2701
+    const NEAREST_MIPMAP_LINEAR: u32 = 0x2702
+    const LINEAR_MIPMAP_LINEAR: u32 = 0x2703
+    const REPEAT: u32 = 0x2901
+    const CLAMP_TO_EDGE: u32 = 0x812F
+    const MIRRORED_REPEAT: u32 = 0x8370
+    const CLAMP_TO_BORDER: u32 = 0x812D
+
+    const RED: u32 = 0x1903
+    const RG: u32 = 0x8227
+    const RGB: u32 = 0x1907
+    const RGBA: u32 = 0x1908
+    const BGR: u32 = 0x80E0
+    const BGRA: u32 = 0x80E1
+    const DEPTH_COMPONENT: u32 = 0x1902
+    const DEPTH_STENCIL: u32 = 0x84F9
+    const R8: u32 = 0x8229
+    const RG8: u32 = 0x822B
+    const RGB8: u32 = 0x8051
+    const RGBA8: u32 = 0x8058
+    const SRGB8: u32 = 0x8C41
+    const SRGB8_ALPHA8: u32 = 0x8C43
+    const R16F: u32 = 0x822D
+    const R32F: u32 = 0x822E
+    const RGBA16F: u32 = 0x881A
+    const RGBA32F: u32 = 0x8814
+    const DEPTH_COMPONENT16: u32 = 0x81A5
+    const DEPTH_COMPONENT24: u32 = 0x81A6
+    const DEPTH_COMPONENT32F: u32 = 0x8CAC
+    const DEPTH24_STENCIL8: u32 = 0x88F0
+    const UNPACK_ALIGNMENT: u32 = 0x0CF5
+    const PACK_ALIGNMENT: u32 = 0x0D05
+    const UNPACK_ROW_LENGTH: u32 = 0x0CF2
+    const PACK_ROW_LENGTH: u32 = 0x0D02
+
+    // EXT_texture_compression_s3tc: 4x4 blocks of 8 bytes (DXT1) or 16 (DXT3, DXT5)
+    const COMPRESSED_RGB_S3TC_DXT1: u32 = 0x83F0
+    const COMPRESSED_RGBA_S3TC_DXT1: u32 = 0x83F1
+    const COMPRESSED_RGBA_S3TC_DXT3: u32 = 0x83F2
+    const COMPRESSED_RGBA_S3TC_DXT5: u32 = 0x83F3
+
+    const FRAMEBUFFER: u32 = 0x8D40
+    const READ_FRAMEBUFFER: u32 = 0x8CA8
+    const DRAW_FRAMEBUFFER: u32 = 0x8CA9
+    const RENDERBUFFER: u32 = 0x8D41
+    const COLOR_ATTACHMENT0: u32 = 0x8CE0
+    const COLOR_ATTACHMENT1: u32 = 0x8CE1
+    const DEPTH_ATTACHMENT: u32 = 0x8D00
+    const STENCIL_ATTACHMENT: u32 = 0x8D20
+    const DEPTH_STENCIL_ATTACHMENT: u32 = 0x821A
+    const FRAMEBUFFER_COMPLETE: u32 = 0x8CD5
+    const FRAMEBUFFER_UNDEFINED: u32 = 0x8219
+    const FRAMEBUFFER_INCOMPLETE_ATTACHMENT: u32 = 0x8CD6
+    const FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: u32 = 0x8CD7
+    const FRAMEBUFFER_UNSUPPORTED: u32 = 0x8CDD
+    const FRAMEBUFFER_INCOMPLETE_MULTISAMPLE: u32 = 0x8D56
+    const BACK_LEFT: u32 = 0x0402
+
+    const TIME_ELAPSED: u32 = 0x88BF
+    const TIMESTAMP: u32 = 0x8E28
+    const QUERY_RESULT: u32 = 0x8866
+    const QUERY_RESULT_AVAILABLE: u32 = 0x8867
+
+    // KHR_debug
+    const DONT_CARE: u32 = 0x1100
+    const DEBUG_SOURCE_API: u32 = 0x8246
+    const DEBUG_SOURCE_APPLICATION: u32 = 0x824A
+    const DEBUG_TYPE_ERROR: u32 = 0x824C
+    const DEBUG_TYPE_PERFORMANCE: u32 = 0x8250
+    const DEBUG_TYPE_OTHER: u32 = 0x8251
+    const DEBUG_TYPE_MARKER: u32 = 0x8268
+    const DEBUG_SEVERITY_HIGH: u32 = 0x9146
+    const DEBUG_SEVERITY_MEDIUM: u32 = 0x9147
+    const DEBUG_SEVERITY_LOW: u32 = 0x9148
+    const DEBUG_SEVERITY_NOTIFICATION: u32 = 0x826B
+    const BUFFER: u32 = 0x82E0
+    const SHADER: u32 = 0x82E1
+    const PROGRAM: u32 = 0x82E2
+    const QUERY: u32 = 0x82E3
+    const SAMPLER: u32 = 0x82E6
+    const TEXTURE: u32 = 0x1702
+    const VERTEX_ARRAY: u32 = 0x8074
+}

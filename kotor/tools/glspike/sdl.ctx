@@ -1,0 +1,604 @@
+// SDL2's functions and types (SDL.h, 2.0.18 or later), as the game uses them: a window with an
+// OpenGL context, input events, timing and queued audio out.
+//
+// The extern fns are SDL's own, under their C names. The fns below them wrap the ones whose C shape
+// is awkward (out-parameters, SDL_bool, flags) in ctxlang shapes, and `poll` turns SDL_Event, a C
+// union read by its first field, into the tagged union `Event`, which a `match` takes apart.
+//
+// Layouts are those of 64-bit targets. Every struct below matches SDL's field for field, padding
+// included, so a struct's offsets are C's (ctxc lays a struct out as C does); `check_layout` checks
+// the sizes against SDL's, for want of an @offset_of.
+//
+// ctxlang has no threads, so audio is queued (SDL_QueueAudio) and never pulled by a callback.
+namespace sdl {
+    // Permission to call SDL.
+    capability Sdl
+
+    // ---- SDL_Init
+
+    const INIT_TIMER: u32 = 0x1
+    const INIT_AUDIO: u32 = 0x10
+    const INIT_VIDEO: u32 = 0x20                 // implies INIT_EVENTS
+    const INIT_GAMECONTROLLER: u32 = 0x2000
+    const INIT_EVENTS: u32 = 0x4000
+
+    extern fn SDL_Init { mut sdl: Sdl, flags: u32 } -> i32
+    extern fn SDL_InitSubSystem { mut sdl: Sdl, flags: u32 } -> i32
+    extern fn SDL_QuitSubSystem { mut sdl: Sdl, flags: u32 }
+    extern fn SDL_Quit { mut sdl: Sdl }
+    extern fn SDL_GetError { mut sdl: Sdl } -> c::String          // the last error, owned by SDL
+    extern fn SDL_SetHint { mut sdl: Sdl, name: c::String, value: c::String } -> i32
+    extern fn SDL_free { mut sdl: Sdl, mem: ?*mut u8 }
+
+    struct Version { major: u8, minor: u8, patch: u8 }
+    extern fn SDL_GetVersion { mut sdl: Sdl, mut version: Version }
+
+    // ---- windows
+
+    struct Window {}                               // opaque: only ever behind a pointer
+    struct GlContext {}                            // SDL_GLContext, a void *
+
+    const WINDOW_FULLSCREEN: u32 = 0x1
+    const WINDOW_OPENGL: u32 = 0x2
+    const WINDOW_SHOWN: u32 = 0x4
+    const WINDOW_HIDDEN: u32 = 0x8
+    const WINDOW_BORDERLESS: u32 = 0x10
+    const WINDOW_RESIZABLE: u32 = 0x20
+    const WINDOW_MINIMIZED: u32 = 0x40
+    const WINDOW_MAXIMIZED: u32 = 0x80
+    const WINDOW_INPUT_FOCUS: u32 = 0x200
+    const WINDOW_FULLSCREEN_DESKTOP: u32 = 0x1001
+    const WINDOW_ALLOW_HIGHDPI: u32 = 0x2000       // macOS: a drawable in pixels, larger than the window
+    const WINDOWPOS_UNDEFINED: i32 = 0x1FFF0000
+    const WINDOWPOS_CENTERED: i32 = 0x2FFF0000
+
+    extern fn SDL_CreateWindow { mut sdl: Sdl, title: c::String, x: i32, y: i32, w: i32, h: i32, flags: u32 } -> ?*mut Window
+    extern fn SDL_DestroyWindow { mut sdl: Sdl, window: *mut Window }
+    extern fn SDL_GetWindowFlags { mut sdl: Sdl, window: *mut Window } -> u32
+    extern fn SDL_SetWindowTitle { mut sdl: Sdl, window: *mut Window, title: c::String }
+    extern fn SDL_GetWindowSize { mut sdl: Sdl, window: *mut Window, w: ?*mut i32, h: ?*mut i32 }
+    extern fn SDL_SetWindowSize { mut sdl: Sdl, window: *mut Window, w: i32, h: i32 }
+    extern fn SDL_ShowWindow { mut sdl: Sdl, window: *mut Window }
+    extern fn SDL_HideWindow { mut sdl: Sdl, window: *mut Window }
+    extern fn SDL_RaiseWindow { mut sdl: Sdl, window: *mut Window }
+    extern fn SDL_SetWindowFullscreen { mut sdl: Sdl, window: *mut Window, flags: u32 } -> i32
+
+    const MESSAGEBOX_ERROR: u32 = 0x10
+    const MESSAGEBOX_WARNING: u32 = 0x20
+    const MESSAGEBOX_INFORMATION: u32 = 0x40
+    extern fn SDL_ShowSimpleMessageBox { mut sdl: Sdl, flags: u32, title: c::String, message: c::String, window: ?*mut Window } -> i32
+
+    // ---- OpenGL
+
+    // SDL_GLattr, a C enum.
+    enum GlAttr: i32 {
+        red_size, green_size, blue_size, alpha_size, buffer_size, doublebuffer, depth_size,
+        stencil_size, accum_red_size, accum_green_size, accum_blue_size, accum_alpha_size, stereo,
+        multisamplebuffers, multisamplesamples, accelerated_visual, retained_backing,
+        context_major_version, context_minor_version, context_egl, context_flags,
+        context_profile_mask, share_with_current_context, framebuffer_srgb_capable,
+        context_release_behavior, context_reset_notification, context_no_error, floatbuffers,
+    }
+
+    const GL_CONTEXT_PROFILE_CORE: i32 = 0x1
+    const GL_CONTEXT_PROFILE_COMPATIBILITY: i32 = 0x2
+    const GL_CONTEXT_DEBUG_FLAG: i32 = 0x1
+    const GL_CONTEXT_FORWARD_COMPATIBLE_FLAG: i32 = 0x2
+
+    extern fn SDL_GL_SetAttribute { mut sdl: Sdl, attr: GlAttr, value: i32 } -> i32
+    extern fn SDL_GL_GetAttribute { mut sdl: Sdl, attr: GlAttr, mut value: i32 } -> i32
+    extern fn SDL_GL_ResetAttributes { mut sdl: Sdl }
+    extern fn SDL_GL_CreateContext { mut sdl: Sdl, window: *mut Window } -> ?*mut GlContext
+    extern fn SDL_GL_DeleteContext { mut sdl: Sdl, context: *mut GlContext }
+    extern fn SDL_GL_MakeCurrent { mut sdl: Sdl, window: *mut Window, context: *mut GlContext } -> i32
+    extern fn SDL_GL_SetSwapInterval { mut sdl: Sdl, interval: i32 } -> i32
+    extern fn SDL_GL_GetSwapInterval { mut sdl: Sdl } -> i32
+    extern fn SDL_GL_SwapWindow { mut sdl: Sdl, window: *mut Window }
+    extern fn SDL_GL_GetDrawableSize { mut sdl: Sdl, window: *mut Window, w: ?*mut i32, h: ?*mut i32 }
+    // The address of GL function `name` in the current context, or null. Typed as a C function
+    // of no particular type, for gl.ctx to cast to each function's own.
+    extern fn SDL_GL_GetProcAddress { mut sdl: Sdl, name: c::String } -> ?extern fn{}
+
+    // ---- input state
+
+    extern fn SDL_SetRelativeMouseMode { mut sdl: Sdl, enabled: i32 } -> i32
+    extern fn SDL_GetRelativeMouseMode { mut sdl: Sdl } -> i32
+    extern fn SDL_ShowCursor { mut sdl: Sdl, toggle: i32 } -> i32
+    extern fn SDL_StartTextInput { mut sdl: Sdl }
+    extern fn SDL_StopTextInput { mut sdl: Sdl }
+    extern fn SDL_IsTextInputActive { mut sdl: Sdl } -> i32
+    // SDL's array of key states, indexed by scancode: NUM_SCANCODES bytes, 1 for a key held. It
+    // lives as long as SDL and changes as events are pumped.
+    extern fn SDL_GetKeyboardState { mut sdl: Sdl, mut numkeys: i32 } -> *u8
+    extern fn SDL_GetModState { mut sdl: Sdl } -> i32
+    extern fn SDL_GetMouseState { mut sdl: Sdl, x: ?*mut i32, y: ?*mut i32 } -> u32
+    extern fn SDL_GetRelativeMouseState { mut sdl: Sdl, x: ?*mut i32, y: ?*mut i32 } -> u32
+    extern fn SDL_GetKeyName { mut sdl: Sdl, key: i32 } -> c::String
+    extern fn SDL_GetScancodeName { mut sdl: Sdl, scancode: i32 } -> c::String
+
+    // ---- time
+
+    extern fn SDL_GetTicks { mut sdl: Sdl } -> u32
+    extern fn SDL_GetTicks64 { mut sdl: Sdl } -> u64
+    extern fn SDL_GetPerformanceCounter { mut sdl: Sdl } -> u64
+    extern fn SDL_GetPerformanceFrequency { mut sdl: Sdl } -> u64
+    extern fn SDL_Delay { mut sdl: Sdl, ms: u32 }
+
+    // ---- audio
+
+    const AUDIO_U8: u16 = 0x0008
+    const AUDIO_S16: u16 = 0x8010                  // little-endian, as every target is
+    const AUDIO_S32: u16 = 0x8020
+    const AUDIO_F32: u16 = 0x8120
+    const AUDIO_ALLOW_FREQUENCY_CHANGE: i32 = 0x1
+    const AUDIO_ALLOW_FORMAT_CHANGE: i32 = 0x2
+    const AUDIO_ALLOW_CHANNELS_CHANGE: i32 = 0x4
+    const AUDIO_ALLOW_SAMPLES_CHANGE: i32 = 0x8
+
+    // SDL_AudioCallback. Never set here: it would run on SDL's audio thread.
+    type AudioCallback = extern fn{ userdata: ?*mut u8, stream: *mut u8, len: i32 }
+
+    struct AudioSpec {
+        freq: i32,
+        format: u16,
+        channels: u8,
+        silence: u8,
+        samples: u16,                              // the device buffer, in sample frames
+        padding: u16,
+        size: u32,
+        callback: ?AudioCallback,                  // null: the device plays what SDL_QueueAudio gave it
+        userdata: ?*mut u8,
+    }
+
+    // SDL_AudioStatus
+    const AUDIO_STOPPED: i32 = 0
+    const AUDIO_PLAYING: i32 = 1
+    const AUDIO_PAUSED: i32 = 2
+
+    extern fn SDL_GetCurrentAudioDriver { mut sdl: Sdl } -> ?c::String
+    extern fn SDL_OpenAudioDevice { mut sdl: Sdl, device: ?c::String, iscapture: i32, desired: *AudioSpec, obtained: ?*mut AudioSpec, allowed_changes: i32 } -> u32
+    extern fn SDL_CloseAudioDevice { mut sdl: Sdl, dev: u32 }
+    extern fn SDL_PauseAudioDevice { mut sdl: Sdl, dev: u32, pause_on: i32 }
+    extern fn SDL_GetAudioDeviceStatus { mut sdl: Sdl, dev: u32 } -> i32
+    extern fn SDL_QueueAudio { mut sdl: Sdl, dev: u32, data: *u8, len: u32 } -> i32
+    extern fn SDL_GetQueuedAudioSize { mut sdl: Sdl, dev: u32 } -> u32
+    extern fn SDL_ClearQueuedAudio { mut sdl: Sdl, dev: u32 }
+
+    // ---- events: SDL_Event and the members of it that `poll` reads
+
+    const QUIT: u32 = 0x100
+    const WINDOWEVENT: u32 = 0x200
+    const KEYDOWN: u32 = 0x300
+    const KEYUP: u32 = 0x301
+    const TEXTEDITING: u32 = 0x302
+    const TEXTINPUT: u32 = 0x303
+    const KEYMAPCHANGED: u32 = 0x304
+    const MOUSEMOTION: u32 = 0x400
+    const MOUSEBUTTONDOWN: u32 = 0x401
+    const MOUSEBUTTONUP: u32 = 0x402
+    const MOUSEWHEEL: u32 = 0x403
+    const DROPFILE: u32 = 0x1000
+    const DROPTEXT: u32 = 0x1001
+    const AUDIODEVICEADDED: u32 = 0x1100
+    const AUDIODEVICEREMOVED: u32 = 0x1101
+    const RENDER_TARGETS_RESET: u32 = 0x2000
+    const RENDER_DEVICE_RESET: u32 = 0x2001
+
+    // SDL_WindowEventID: WindowEvent.event
+    const WINDOWEVENT_SHOWN: u8 = 1
+    const WINDOWEVENT_HIDDEN: u8 = 2
+    const WINDOWEVENT_EXPOSED: u8 = 3
+    const WINDOWEVENT_MOVED: u8 = 4
+    const WINDOWEVENT_RESIZED: u8 = 5
+    const WINDOWEVENT_SIZE_CHANGED: u8 = 6
+    const WINDOWEVENT_MINIMIZED: u8 = 7
+    const WINDOWEVENT_MAXIMIZED: u8 = 8
+    const WINDOWEVENT_RESTORED: u8 = 9
+    const WINDOWEVENT_ENTER: u8 = 10
+    const WINDOWEVENT_LEAVE: u8 = 11
+    const WINDOWEVENT_FOCUS_GAINED: u8 = 12
+    const WINDOWEVENT_FOCUS_LOST: u8 = 13
+    const WINDOWEVENT_CLOSE: u8 = 14
+
+    const BUTTON_LEFT: u8 = 1
+    const BUTTON_MIDDLE: u8 = 2
+    const BUTTON_RIGHT: u8 = 3
+    const BUTTON_X1: u8 = 4
+    const BUTTON_X2: u8 = 5
+
+    // SDL_Keymod bits
+    const KMOD_LSHIFT: u16 = 0x1
+    const KMOD_RSHIFT: u16 = 0x2
+    const KMOD_LCTRL: u16 = 0x40
+    const KMOD_RCTRL: u16 = 0x80
+    const KMOD_LALT: u16 = 0x100
+    const KMOD_RALT: u16 = 0x200
+    const KMOD_LGUI: u16 = 0x400
+    const KMOD_RGUI: u16 = 0x800
+    const KMOD_NUM: u16 = 0x1000
+    const KMOD_CAPS: u16 = 0x2000
+    const KMOD_SHIFT: u16 = 0x3
+    const KMOD_CTRL: u16 = 0xC0
+    const KMOD_ALT: u16 = 0x300
+    const KMOD_GUI: u16 = 0xC00
+
+    struct CommonEvent { kind: u32, timestamp: u32 }
+    struct WindowEvent { kind: u32, timestamp: u32, window_id: u32, event: u8, padding1: u8, padding2: u8, padding3: u8, data1: i32, data2: i32 }
+    struct Keysym { scancode: i32, sym: i32, mods: u16, unused: u32 }
+    struct KeyboardEvent { kind: u32, timestamp: u32, window_id: u32, state: u8, repeat: u8, padding2: u8, padding3: u8, keysym: Keysym }
+    struct TextEditingEvent { kind: u32, timestamp: u32, window_id: u32, text: [32]u8, start: i32, length: i32 }
+    struct TextInputEvent { kind: u32, timestamp: u32, window_id: u32, text: [32]u8 }
+    struct MouseMotionEvent { kind: u32, timestamp: u32, window_id: u32, which: u32, state: u32, x: i32, y: i32, xrel: i32, yrel: i32 }
+    struct MouseButtonEvent { kind: u32, timestamp: u32, window_id: u32, which: u32, button: u8, state: u8, clicks: u8, padding1: u8, x: i32, y: i32 }
+    struct MouseWheelEvent { kind: u32, timestamp: u32, window_id: u32, which: u32, x: i32, y: i32, direction: u32, precise_x: f32, precise_y: f32, mouse_x: i32, mouse_y: i32 }
+    struct DropEvent { kind: u32, timestamp: u32, file: ?*mut u8, window_id: u32 }      // file: SDL_free it
+    struct UserEvent { kind: u32, timestamp: u32, window_id: u32, code: i32, data1: ?*mut u8, data2: ?*mut u8 }
+
+    // SDL_Event: 56 bytes, 8-aligned (its pointer members), on 64-bit targets.
+    extern union RawEvent {
+        kind: u32,
+        common: CommonEvent,
+        window: WindowEvent,
+        key: KeyboardEvent,
+        edit: TextEditingEvent,
+        text: TextInputEvent,
+        motion: MouseMotionEvent,
+        button: MouseButtonEvent,
+        wheel: MouseWheelEvent,
+        drop: DropEvent,
+        user: UserEvent,
+        padding: [56]u8,
+    }
+
+    extern fn SDL_PollEvent { mut sdl: Sdl, mut event: RawEvent } -> i32
+    extern fn SDL_WaitEventTimeout { mut sdl: Sdl, mut event: RawEvent, timeout: i32 } -> i32
+    extern fn SDL_PushEvent { mut sdl: Sdl, mut event: RawEvent } -> i32
+
+    // An event as the game sees it.
+    union Event {
+        quit,                                      // the last window closed, or the OS asked
+        close,                                     // a window's close button
+        resized{ width: i32, height: i32 },        // in window coordinates: see drawable_size
+        focus{ gained: bool },
+        minimized,
+        restored,
+        exposed,                                   // the window needs drawing again
+        key{ down: bool, repeat: bool, scancode: i32, keycode: i32, mods: u16 },
+        text{ bytes: [32]u8, len: usize },         // UTF-8 typed while text input is on
+        mouse_motion{ x: i32, y: i32, dx: i32, dy: i32, buttons: u32 },
+        mouse_button{ down: bool, button: u8, clicks: u8, x: i32, y: i32 },
+        mouse_wheel{ dx: f32, dy: f32 },           // positive dy away from the user
+        other{ kind: u32 },                        // anything else, by SDL's event type
+    }
+
+    // The next pending event, or null when there are none.
+    fn poll { mut sdl: Sdl } -> ?Event {
+        let mut raw: RawEvent
+        if SDL_PollEvent{ &sdl, event = &raw } == 0 { return null }
+        return decode{ &sdl, raw }
+    }
+
+    fn decode { mut sdl: Sdl, raw: RawEvent } -> Event {
+        let kind = raw.kind
+        if kind == QUIT { return Event::quit }
+        if kind == WINDOWEVENT {
+            let w = raw.window
+            if w.event == WINDOWEVENT_SIZE_CHANGED { return Event::resized{ width = w.data1, height = w.data2 } }
+            if w.event == WINDOWEVENT_FOCUS_GAINED { return Event::focus{ gained = true } }
+            if w.event == WINDOWEVENT_FOCUS_LOST { return Event::focus{ gained = false } }
+            if w.event == WINDOWEVENT_MINIMIZED { return Event::minimized }
+            if w.event == WINDOWEVENT_RESTORED { return Event::restored }
+            if w.event == WINDOWEVENT_EXPOSED { return Event::exposed }
+            if w.event == WINDOWEVENT_CLOSE { return Event::close }
+            return Event::other{ kind }
+        }
+        if kind == KEYDOWN or kind == KEYUP {
+            let k = raw.key
+            return Event::key{
+                down = kind == KEYDOWN, repeat = k.repeat != 0,
+                scancode = k.keysym.scancode, keycode = k.keysym.sym, mods = k.keysym.mods,
+            }
+        }
+        if kind == TEXTINPUT {
+            let t = raw.text
+            let mut len: usize = 0
+            while len < t.text.len and t.text[len] != 0 { len = len + 1 }
+            return Event::text{ bytes = t.text, len }
+        }
+        if kind == MOUSEMOTION {
+            let m = raw.motion
+            return Event::mouse_motion{ x = m.x, y = m.y, dx = m.xrel, dy = m.yrel, buttons = m.state }
+        }
+        if kind == MOUSEBUTTONDOWN or kind == MOUSEBUTTONUP {
+            let b = raw.button
+            return Event::mouse_button{ down = kind == MOUSEBUTTONDOWN, button = b.button, clicks = b.clicks, x = b.x, y = b.y }
+        }
+        if kind == MOUSEWHEEL {
+            let w = raw.wheel
+            // SDL_MOUSEWHEEL_FLIPPED: the OS reversed the wheel ("natural scrolling").
+            let sign: f32 = if w.direction == 1 { -1.0 } else { 1.0 }
+            return Event::mouse_wheel{ dx = w.precise_x * sign, dy = w.precise_y * sign }
+        }
+        if kind == DROPFILE or kind == DROPTEXT {
+            SDL_free{ &sdl, mem = raw.drop.file }
+        }
+        return Event::other{ kind }
+    }
+
+    // Whether this file's structs have SDL's sizes on this target. Checked once, at start.
+    fn check_layout {} -> bool {
+        return @size_of(RawEvent) == 56 and @align_of(RawEvent) == 8
+            and @size_of(WindowEvent) == 24 and @size_of(Keysym) == 16
+            and @size_of(KeyboardEvent) == 32 and @size_of(TextEditingEvent) == 52
+            and @size_of(TextInputEvent) == 44 and @size_of(MouseMotionEvent) == 36
+            and @size_of(MouseButtonEvent) == 28 and @size_of(MouseWheelEvent) == 44
+            and @size_of(DropEvent) == 24 and @size_of(UserEvent) == 32
+            and @size_of(AudioSpec) == 32
+    }
+
+    // ---- the platform calls, in ctxlang shapes
+
+    // An SDL call that failed; SDL_GetError (`last_error`) says why.
+    error failed{ call: c::String }
+
+    fn init { mut sdl: Sdl, flags: u32 } -> ! {
+        if SDL_Init{ &sdl, flags } != 0 { return failed{ call = "SDL_Init" } }
+    }
+
+    fn quit { mut sdl: Sdl } { SDL_Quit{ &sdl } }
+
+    // The message of the SDL call that failed last. It is SDL's, valid until the next SDL call.
+    fn last_error { mut sdl: Sdl } -> c::String { return SDL_GetError{ &sdl } }
+
+    // A window with an OpenGL context, current on this thread.
+    struct GlWindow { window: *mut Window, context: *mut GlContext }
+
+    // Opens a window with an OpenGL `major`.`minor` core, forward-compatible context, which is
+    // what macOS gives above 2.1, with a 24-bit depth and 8-bit stencil double-buffered default
+    // framebuffer. `hidden` makes no visible window, for rendering offscreen. `debug` asks for a
+    // debug context, which drivers that have KHR_debug report through; macOS ignores it.
+    fn open_gl_window {
+        mut sdl: Sdl, title: c::String, width: i32, height: i32,
+        major: i32, minor: i32, hidden: bool, resizable: bool, debug: bool,
+    } -> !GlWindow {
+        SDL_GL_ResetAttributes{ &sdl }
+        let mut flags = GL_CONTEXT_FORWARD_COMPATIBLE_FLAG
+        if debug { flags = flags | GL_CONTEXT_DEBUG_FLAG }
+        try set_gl{ &sdl, attr = GlAttr::context_major_version, value = major }
+        try set_gl{ &sdl, attr = GlAttr::context_minor_version, value = minor }
+        try set_gl{ &sdl, attr = GlAttr::context_profile_mask, value = GL_CONTEXT_PROFILE_CORE }
+        try set_gl{ &sdl, attr = GlAttr::context_flags, value = flags }
+        try set_gl{ &sdl, attr = GlAttr::red_size, value = 8 }
+        try set_gl{ &sdl, attr = GlAttr::green_size, value = 8 }
+        try set_gl{ &sdl, attr = GlAttr::blue_size, value = 8 }
+        try set_gl{ &sdl, attr = GlAttr::alpha_size, value = 8 }
+        try set_gl{ &sdl, attr = GlAttr::depth_size, value = 24 }
+        try set_gl{ &sdl, attr = GlAttr::stencil_size, value = 8 }
+        try set_gl{ &sdl, attr = GlAttr::doublebuffer, value = 1 }
+
+        let mut wflags = WINDOW_OPENGL | WINDOW_ALLOW_HIGHDPI
+        wflags = wflags | (if hidden { WINDOW_HIDDEN } else { WINDOW_SHOWN })
+        if resizable { wflags = wflags | WINDOW_RESIZABLE }
+        let window = SDL_CreateWindow{
+            &sdl, title, x = WINDOWPOS_CENTERED, y = WINDOWPOS_CENTERED, w = width, h = height, flags = wflags,
+        } ifnull { return failed{ call = "SDL_CreateWindow" } }
+        let context = SDL_GL_CreateContext{ &sdl, window } ifnull {
+            SDL_DestroyWindow{ &sdl, window }
+            return failed{ call = "SDL_GL_CreateContext" }
+        }
+        if SDL_GL_MakeCurrent{ &sdl, window, context } != 0 {
+            SDL_GL_DeleteContext{ &sdl, context }
+            SDL_DestroyWindow{ &sdl, window }
+            return failed{ call = "SDL_GL_MakeCurrent" }
+        }
+        return GlWindow{ window, context }
+    }
+
+    fn close_gl_window { mut sdl: Sdl, w: GlWindow } {
+        SDL_GL_DeleteContext{ &sdl, context = w.context }
+        SDL_DestroyWindow{ &sdl, window = w.window }
+    }
+
+    fn set_gl { mut sdl: Sdl, attr: GlAttr, value: i32 } -> ! {
+        if SDL_GL_SetAttribute{ &sdl, attr, value } != 0 { return failed{ call = "SDL_GL_SetAttribute" } }
+    }
+
+    // What the context got, which may be more than was asked: a 4.6 context for 4.1, say.
+    fn gl_attribute { mut sdl: Sdl, attr: GlAttr } -> i32 {
+        let mut value: i32 = 0
+        _ = SDL_GL_GetAttribute{ &sdl, attr, value = &value }
+        return value
+    }
+
+    // The GL function `name` of the current context, or null: what gl::load takes, bound to an
+    // Sdl as `sdl::gl_proc{ &sdl, _ }`.
+    fn gl_proc { mut sdl: Sdl, name: c::String } -> ?extern fn{} {
+        return SDL_GL_GetProcAddress{ &sdl, name }
+    }
+
+    // 1 waits for the vertical blank, 0 doesn't, -1 adapts (late frames don't wait). Fails if the
+    // driver can't.
+    fn set_swap_interval { mut sdl: Sdl, interval: i32 } -> ! {
+        if SDL_GL_SetSwapInterval{ &sdl, interval } != 0 { return failed{ call = "SDL_GL_SetSwapInterval" } }
+    }
+
+    fn swap { mut sdl: Sdl, w: GlWindow } { SDL_GL_SwapWindow{ &sdl, window = w.window } }
+
+    struct Size { width: i32, height: i32 }
+
+    // The default framebuffer's size in pixels: the window's, or more on a high-DPI display.
+    fn drawable_size { mut sdl: Sdl, w: GlWindow } -> Size {
+        let mut width: i32 = 0
+        let mut height: i32 = 0
+        SDL_GL_GetDrawableSize{ &sdl, window = w.window, w = &width, h = &height }
+        return Size{ width, height }
+    }
+
+    fn window_size { mut sdl: Sdl, w: GlWindow } -> Size {
+        let mut width: i32 = 0
+        let mut height: i32 = 0
+        SDL_GetWindowSize{ &sdl, window = w.window, w = &width, h = &height }
+        return Size{ width, height }
+    }
+
+    // Relative mode hides the cursor and reports only motion, for mouse look.
+    fn set_relative_mouse { mut sdl: Sdl, on: bool } -> ! {
+        if SDL_SetRelativeMouseMode{ &sdl, enabled = if on { 1 } else { 0 } } != 0 {
+            return failed{ call = "SDL_SetRelativeMouseMode" }
+        }
+    }
+
+    fn relative_mouse { mut sdl: Sdl } -> bool { return SDL_GetRelativeMouseMode{ &sdl } != 0 }
+
+    // Text input on: `text` events carry what is typed, through the OS's input method.
+    fn set_text_input { mut sdl: Sdl, on: bool } {
+        if on { SDL_StartTextInput{ &sdl } } else { SDL_StopTextInput{ &sdl } }
+    }
+
+    // Which keys are held now, by scancode: NUM_SCANCODES entries.
+    fn keyboard { mut sdl: Sdl } -> []u8 {
+        let mut n: i32 = 0
+        let keys = SDL_GetKeyboardState{ &sdl, numkeys = &n }
+        return @slice(keys, @as(usize, n))
+    }
+
+    fn counter { mut sdl: Sdl } -> u64 { return SDL_GetPerformanceCounter{ &sdl } }
+    fn counter_frequency { mut sdl: Sdl } -> u64 { return SDL_GetPerformanceFrequency{ &sdl } }
+    fn ticks { mut sdl: Sdl } -> u64 { return SDL_GetTicks64{ &sdl } }
+    fn delay { mut sdl: Sdl, ms: u32 } { SDL_Delay{ &sdl, ms } }
+
+    // An audio device that plays what is queued to it.
+    struct AudioOut { device: u32, freq: i32, channels: u8, samples: u16 }
+
+    // Opens the default output for signed 16-bit samples, interleaved, at `freq` Hz. SDL may
+    // change neither the format nor the channels, but may pick another rate: `freq` in the result
+    // is the device's. `samples` is the device's buffer in frames (a power of two: 1024 is 23 ms at
+    // 44.1 kHz). The device starts paused.
+    fn open_audio { mut sdl: Sdl, freq: i32, channels: u8, samples: u16 } -> !AudioOut {
+        let want = AudioSpec{
+            freq, format = AUDIO_S16, channels, silence = 0, samples, padding = 0, size = 0,
+            callback = null, userdata = null,
+        }
+        let mut have = want
+        let device = SDL_OpenAudioDevice{
+            &sdl, device = null, iscapture = 0, desired = &want, obtained = &have,
+            allowed_changes = AUDIO_ALLOW_FREQUENCY_CHANGE,
+        }
+        if device == 0 { return failed{ call = "SDL_OpenAudioDevice" } }
+        return AudioOut{ device, freq = have.freq, channels = have.channels, samples = have.samples }
+    }
+
+    fn close_audio { mut sdl: Sdl, out: AudioOut } { SDL_CloseAudioDevice{ &sdl, dev = out.device } }
+
+    fn pause_audio { mut sdl: Sdl, out: AudioOut, paused: bool } {
+        SDL_PauseAudioDevice{ &sdl, dev = out.device, pause_on = if paused { 1 } else { 0 } }
+    }
+
+    // Appends interleaved frames to what the device will play.
+    fn queue_audio { mut sdl: Sdl, out: AudioOut, frames: []i16 } -> ! {
+        if frames.len == 0 { return }
+        if SDL_QueueAudio{ &sdl, dev = out.device, data = @cast(*u8, frames.ptr), len = @as(u32, frames.len * 2) } != 0 {
+            return failed{ call = "SDL_QueueAudio" }
+        }
+    }
+
+    // Bytes queued and not yet played.
+    fn queued_audio { mut sdl: Sdl, out: AudioOut } -> u32 {
+        return SDL_GetQueuedAudioSize{ &sdl, dev = out.device }
+    }
+
+    fn clear_audio { mut sdl: Sdl, out: AudioOut } { SDL_ClearQueuedAudio{ &sdl, dev = out.device } }
+
+    const NUM_SCANCODES: usize = 512
+
+    // SDL_Scancode: a key by its place on a US keyboard, whatever the layout prints on it.
+    namespace scan {
+        const A: i32 = 4
+        const B: i32 = 5
+        const C: i32 = 6
+        const D: i32 = 7
+        const E: i32 = 8
+        const F: i32 = 9
+        const G: i32 = 10
+        const H: i32 = 11
+        const I: i32 = 12
+        const J: i32 = 13
+        const K: i32 = 14
+        const L: i32 = 15
+        const M: i32 = 16
+        const N: i32 = 17
+        const O: i32 = 18
+        const P: i32 = 19
+        const Q: i32 = 20
+        const R: i32 = 21
+        const S: i32 = 22
+        const T: i32 = 23
+        const U: i32 = 24
+        const V: i32 = 25
+        const W: i32 = 26
+        const X: i32 = 27
+        const Y: i32 = 28
+        const Z: i32 = 29
+        const N1: i32 = 30                         // 1 to 9, then 0
+        const N0: i32 = 39
+        const RETURN: i32 = 40
+        const ESCAPE: i32 = 41
+        const BACKSPACE: i32 = 42
+        const TAB: i32 = 43
+        const SPACE: i32 = 44
+        const MINUS: i32 = 45
+        const EQUALS: i32 = 46
+        const LEFTBRACKET: i32 = 47
+        const RIGHTBRACKET: i32 = 48
+        const BACKSLASH: i32 = 49
+        const SEMICOLON: i32 = 51
+        const APOSTROPHE: i32 = 52
+        const GRAVE: i32 = 53
+        const COMMA: i32 = 54
+        const PERIOD: i32 = 55
+        const SLASH: i32 = 56
+        const CAPSLOCK: i32 = 57
+        const F1: i32 = 58                         // F1 to F12 in order
+        const F12: i32 = 69
+        const PRINTSCREEN: i32 = 70
+        const PAUSE: i32 = 72
+        const INSERT: i32 = 73
+        const HOME: i32 = 74
+        const PAGEUP: i32 = 75
+        const DELETE: i32 = 76
+        const END: i32 = 77
+        const PAGEDOWN: i32 = 78
+        const RIGHT: i32 = 79
+        const LEFT: i32 = 80
+        const DOWN: i32 = 81
+        const UP: i32 = 82
+        const KP_ENTER: i32 = 88
+        const LCTRL: i32 = 224
+        const LSHIFT: i32 = 225
+        const LALT: i32 = 226
+        const LGUI: i32 = 227
+        const RCTRL: i32 = 228
+        const RSHIFT: i32 = 229
+        const RALT: i32 = 230
+        const RGUI: i32 = 231
+    }
+
+    // SDL_Keycode: a key by what the layout makes it. A printable key's is its character;
+    // others' are their scancode with bit 30 set (`of_scancode`).
+    namespace key {
+        const BACKSPACE: i32 = 8
+        const TAB: i32 = 9
+        const RETURN: i32 = 13
+        const ESCAPE: i32 = 27
+        const SPACE: i32 = 32
+        const DELETE: i32 = 127
+        const F1: i32 = 0x4000003A
+        const RIGHT: i32 = 0x4000004F
+        const LEFT: i32 = 0x40000050
+        const DOWN: i32 = 0x40000051
+        const UP: i32 = 0x40000052
+        const LSHIFT: i32 = 0x400000E1
+
+        fn of_scancode { scancode: i32 } -> i32 { return scancode | 0x40000000 }
+    }
+}

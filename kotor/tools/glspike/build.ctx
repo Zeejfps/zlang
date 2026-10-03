@@ -1,0 +1,12 @@
+// The build program for glspike: `kotor/tools/ctxc run kotor/tools/glspike -- --headless`.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "glspike", root = "." }
+    match build::os{ &b } {
+        macos => {
+            build::lib_path{ &b, exe, path = "/opt/homebrew/lib" }        // Homebrew's SDL2
+            build::link{ &b, exe, lib = "SDL2" }
+        }
+        windows => { build::link{ &b, exe, lib = "SDL2" } }
+        linux => { build::link{ &b, exe, lib = "SDL2" } }
+    }
+}

@@ -1,0 +1,1000 @@
+// glspike: SDL2 and OpenGL 4.1 core from ctxlang, and the screenshot path.
+//
+//   kotor/tools/ctxc run kotor/tools/glspike                       a window for 3 seconds
+//   kotor/tools/ctxc run kotor/tools/glspike -- --headless         no window: render, write the PNG
+//
+// Options: --headless, --out PATH (kotor/out/glspike.png, from the working directory),
+// --seconds N (how long the window stays; 0 closes it at once), --no-audio, --beep (a quiet tone
+// instead of silence on the audio check).
+//
+// It opens a 4.1 core context (a hidden window with --headless), says what the driver is and
+// whether S3TC is there, and draws one frame into an offscreen framebuffer: a cube-mapped sky, a
+// cube with a mipmapped RGBA8 checker texture, a cube with a DXT1 texture (a red X on each face),
+// and in front of them a DXT5 disc blended by its alpha, masked by stencil off the left cube. The
+// frame is read back and written as a PNG. Then it checks sdl::poll against a resize SDL reports
+// and events pushed through SDL's queue, sends a quarter second of silence through SDL's audio
+// queue, and without --headless shows the scene turning in the window, printing the input events
+// it gets, until Escape, the close button, or the time is up. It exits 1 if any step fails.
+
+error bad_layout                   // sdl.ctx's structs aren't SDL's size on this target
+error bad_event{ step: u32 }       // check_events got something other than it should have
+
+struct Options { headless: bool, out: []u8, seconds: f64, audio: bool, beep: bool }
+
+const WIDTH: i32 = 640
+const HEIGHT: i32 = 480
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let opts = parse_args{ &io, args } ifnull { return 2 }
+    let pages = mem::pages{ &mem, size = 33554432 } ifnull {
+        io::eprintln{ &io, s = "glspike: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    let mut log: [8192]u8
+    run{ &io, &fs, &sdl, &heap, opts, log = log[..] } iferr err{ error } {
+        _ = @fmt(&io, "glspike: failed: {}\n", error)
+        match error {
+            gl::compile_failed{ log_len } | gl::link_failed{ log_len } => { _ = @fmt(&io, "{}\n", log[..log_len]) }
+            sdl::failed => { _ = @fmt(&io, "SDL: {}\n", sdl::last_error{ &sdl }) }
+            else => {}
+        }
+        io::flush{ &io }
+        return 1
+    }
+    return 0
+}
+
+fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, opts: Options, log: []mut u8 } -> ! {
+    if not sdl::check_layout{} { return bad_layout }
+    try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
+    defer sdl::quit{ &sdl }
+    let mut version: sdl::Version
+    sdl::SDL_GetVersion{ &sdl, version = &version }
+    _ = @fmt(&io, "SDL {}.{}.{}\n", version.major, version.minor, version.patch)
+
+    let win = try sdl::open_gl_window{
+        &sdl, title = "glspike", width = WIDTH, height = HEIGHT, major = 4, minor = 1,
+        hidden = opts.headless, resizable = true, debug = true,
+    }
+    defer sdl::close_gl_window{ &sdl, w = win }
+    let mut gl = try gl::load{ get_proc = sdl::gl_proc{ &sdl, _ } }
+    describe{ &io, &gl, &sdl }
+
+    // KHR_debug where the driver has it; its messages are printed after each step.
+    let mut debug_log: gl::DebugLog
+    let found = gl::load_debug{ get_proc = sdl::gl_proc{ &sdl, _ }, &gl }
+    if found != null {
+        let mut debug = found
+        gl::start_debug{ &gl, &debug, log = &debug_log }
+    }
+    let state: []u8 = if found != null { "on" } else { "absent" }
+    _ = @fmt(&io, "KHR_debug: {}\n", state)
+
+    let scene = try make_scene{ &gl, log }
+    defer free_scene{ &gl, scene }
+    try gl::check{ &gl, what = "make_scene" }
+    print_debug{ &io, log = &debug_log }
+
+    // One frame offscreen, timed on the GPU, read back and written as a PNG.
+    let mut query: u32 = 0
+    gl.gen_queries{ n = 1, ids = &query }
+    gl.begin_query{ target = gl::TIME_ELAPSED, id = query }
+    draw_frame{ &gl, scene, t = 0.6 }
+    gl.end_query{ target = gl::TIME_ELAPSED }
+    let mut gpu_ns: u64 = 0
+    gl.get_query_objectui64v{ id = query, pname = gl::QUERY_RESULT, params = &gpu_ns }
+    gl.delete_queries{ n = 1, ids = &query }
+    try gl::check{ &gl, what = "draw_frame" }
+    print_debug{ &io, log = &debug_log }
+    _ = @fmt(&io, "frame: {} us on the GPU\n", gpu_ns / 1000)
+    try screenshot{ &io, &fs, &gl, &heap, t = scene.target, path = opts.out }
+    try gl::check{ &gl, what = "screenshot" }
+    print_debug{ &io, log = &debug_log }
+
+    try check_events{ &io, &sdl, win }
+
+    if opts.audio { check_audio{ &io, &sdl, beep = opts.beep } }
+
+    if not opts.headless and opts.seconds > 0.0 {
+        try show{ &io, &sdl, &gl, win, scene, seconds = opts.seconds }
+        print_debug{ &io, log = &debug_log }
+    }
+    io::flush{ &io }
+}
+
+// What the context is: version, renderer, profile, framebuffer, and the extensions the game needs.
+fn describe { mut io: Io, mut gl: gl::Gl, mut sdl: sdl::Sdl } {
+    _ = @fmt(&io, "GL_VERSION: {}\n", gl::string{ &gl, name = gl::VERSION })
+    _ = @fmt(&io, "GL_RENDERER: {}\n", gl::string{ &gl, name = gl::RENDERER })
+    _ = @fmt(&io, "GL_VENDOR: {}\n", gl::string{ &gl, name = gl::VENDOR })
+    _ = @fmt(&io, "GLSL: {}\n", gl::string{ &gl, name = gl::SHADING_LANGUAGE_VERSION })
+    let profile = gl::get_int{ &gl, pname = gl::CONTEXT_PROFILE_MASK }
+    let flags = gl::get_int{ &gl, pname = gl::CONTEXT_FLAGS }
+    let kind: []u8 = if (profile & gl::CONTEXT_CORE_PROFILE_BIT) != 0 { "core" } else { "compatibility" }
+    _ = @fmt(&io, "context: {}.{}, {} profile, forward-compatible {}, debug {}\n",
+        gl::get_int{ &gl, pname = gl::MAJOR_VERSION }, gl::get_int{ &gl, pname = gl::MINOR_VERSION },
+        kind,
+        (flags & gl::CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT) != 0, (flags & gl::CONTEXT_FLAG_DEBUG_BIT) != 0)
+    _ = @fmt(&io, "default framebuffer: depth {}, stencil {}, double-buffered {}\n",
+        sdl::gl_attribute{ &sdl, attr = sdl::GlAttr::depth_size },
+        sdl::gl_attribute{ &sdl, attr = sdl::GlAttr::stencil_size },
+        sdl::gl_attribute{ &sdl, attr = sdl::GlAttr::doublebuffer })
+    _ = @fmt(&io, "extensions: {}; S3TC {}, anisotropic filtering {}\n",
+        gl::get_int{ &gl, pname = gl::NUM_EXTENSIONS },
+        gl::has_extension{ &gl, name = "GL_EXT_texture_compression_s3tc" },
+        has_anisotropy{ &gl })
+    _ = @fmt(&io, "limits: texture {}, cube map {}, texture units {}, uniform block {} bytes, UBO offset alignment {}\n",
+        gl::get_int{ &gl, pname = gl::MAX_TEXTURE_SIZE }, gl::get_int{ &gl, pname = gl::MAX_CUBE_MAP_TEXTURE_SIZE },
+        gl::get_int{ &gl, pname = gl::MAX_COMBINED_TEXTURE_IMAGE_UNITS }, gl::get_int{ &gl, pname = gl::MAX_UNIFORM_BLOCK_SIZE },
+        gl::get_int{ &gl, pname = gl::UNIFORM_BUFFER_OFFSET_ALIGNMENT })
+}
+
+fn has_anisotropy { mut gl: gl::Gl } -> bool {
+    return gl::has_extension{ &gl, name = "GL_EXT_texture_filter_anisotropic" }
+        or gl::has_extension{ &gl, name = "GL_ARB_texture_filter_anisotropic" }
+}
+
+fn print_debug { mut io: Io, log: *mut gl::DebugLog } {
+    if log.used > 0 { _ = @fmt(&io, "{}", log.text[..log.used]) }
+    if log.dropped > 0 { _ = @fmt(&io, "({} more GL debug messages dropped)\n", log.dropped) }
+    log.used = 0
+    log.dropped = 0
+}
+
+// ---- the scene
+
+struct Scene {
+    target: gl::Target,
+    mesh: u32,                     // program
+    sky: u32,                      // program
+    model_at: i32,                 // mesh's uniforms
+    alpha_at: i32,
+    vbo: u32,
+    ibo: u32,
+    ubo: u32,                      // the shaders' Frame block, at binding 0
+    mesh_vao: u32,
+    empty_vao: u32,                // the sky's three vertices come from gl_VertexID
+    checker: u32,                  // textures
+    dxt1: u32,
+    dxt5: u32,
+    cube: u32,
+    mipmapped: u32,                // samplers
+    clamped: u32,
+}
+
+const MESH_VS: [17]c::String = [
+    "#version 410 core\n",
+    "layout(std140) uniform Frame {\n",
+    "    mat4 view;\n",
+    "    mat4 proj;\n",
+    "    vec4 light_dir;\n",
+    "};\n",
+    "uniform mat4 model;\n",
+    "layout(location = 0) in vec3 position;\n",
+    "layout(location = 1) in vec2 uv;\n",
+    "layout(location = 2) in vec3 normal;\n",
+    "out vec2 v_uv;\n",
+    "out vec3 v_normal;\n",
+    "void main() {\n",
+    "    v_uv = uv;\n",
+    "    v_normal = mat3(model) * normal;\n",
+    "    gl_Position = proj * view * model * vec4(position, 1.0);\n",
+    "}\n",
+]
+
+const MESH_FS: [17]c::String = [
+    "#version 410 core\n",
+    "layout(std140) uniform Frame {\n",
+    "    mat4 view;\n",
+    "    mat4 proj;\n",
+    "    vec4 light_dir;\n",
+    "};\n",
+    "uniform sampler2D tex;\n",
+    "uniform float alpha;\n",
+    "in vec2 v_uv;\n",
+    "in vec3 v_normal;\n",
+    "layout(location = 0) out vec4 color;\n",
+    "void main() {\n",
+    "    vec4 c = texture(tex, v_uv);\n",
+    "    float lambert = max(dot(normalize(v_normal), -light_dir.xyz), 0.0);\n",
+    "    float light = 0.35 + 0.65 * lambert;\n",
+    "    color = vec4(c.rgb * light, c.a * alpha);\n",
+    "}\n",
+]
+
+const SKY_VS: [13]c::String = [
+    "#version 410 core\n",
+    "layout(std140) uniform Frame {\n",
+    "    mat4 view;\n",
+    "    mat4 proj;\n",
+    "    vec4 light_dir;\n",
+    "};\n",
+    "out vec3 v_dir;\n",
+    "void main() {\n",
+    "    vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)) * 2.0 - 1.0;\n",
+    "    vec4 eye = inverse(proj) * vec4(p, 1.0, 1.0);\n",
+    "    v_dir = transpose(mat3(view)) * (eye.xyz / eye.w);\n",
+    "    gl_Position = vec4(p, 1.0, 1.0);\n",
+    "}\n",
+]
+
+const SKY_FS: [7]c::String = [
+    "#version 410 core\n",
+    "uniform samplerCube sky;\n",
+    "in vec3 v_dir;\n",
+    "layout(location = 0) out vec4 color;\n",
+    "void main() {\n",
+    "    color = texture(sky, normalize(v_dir));\n",
+    "}\n",
+]
+
+fn make_scene { mut gl: gl::Gl, log: []mut u8 } -> !Scene {
+    let target = try gl::make_target{ &gl, width = WIDTH, height = HEIGHT }
+
+    let mesh_vs = MESH_VS
+    let mesh_fs = MESH_FS
+    let sky_vs = SKY_VS
+    let sky_fs = SKY_FS
+    let mesh = try gl::link{ &gl, vertex = &mesh_vs, fragment = &mesh_fs, log }
+    let sky = try gl::link{ &gl, vertex = &sky_vs, fragment = &sky_fs, log }
+    // GLSL 410 can't place a block or a sampler itself (layout(binding) is 4.2).
+    gl.uniform_block_binding{ program = mesh, block_index = gl.get_uniform_block_index{ program = mesh, name = "Frame" }, binding = 0 }
+    gl.uniform_block_binding{ program = sky, block_index = gl.get_uniform_block_index{ program = sky, name = "Frame" }, binding = 0 }
+    gl.use_program{ program = mesh }
+    gl.uniform1i{ location = gl.get_uniform_location{ program = mesh, name = "tex" }, v0 = 0 }
+    gl.use_program{ program = sky }
+    gl.uniform1i{ location = gl.get_uniform_location{ program = sky, name = "sky" }, v0 = 0 }
+    gl.use_program{ program = 0 }
+
+    // A cube's 24 vertices (position, uv, normal) and then a quad's 4; the cube's 36 indices and
+    // then the quad's 6, counted from its own first vertex (drawn with a base vertex of 24).
+    let mut verts: [224]f32
+    let mut indices: [42]u16
+    let mut f: usize = 0
+    while f < 6 {
+        let n = vec3_at{ i = f * 9 }
+        let u = vec3_at{ i = f * 9 + 3 }
+        let v = vec3_at{ i = f * 9 + 6 }
+        let mut k: usize = 0
+        while k < 4 {
+            let su: f32 = if k == 1 or k == 2 { 0.5 } else { -0.5 }
+            let sv: f32 = if k >= 2 { 0.5 } else { -0.5 }
+            let p = Vec3{ x = n.x * 0.5 + u.x * su + v.x * sv, y = n.y * 0.5 + u.y * su + v.y * sv, z = n.z * 0.5 + u.z * su + v.z * sv }
+            put_vertex{ verts = verts[..], i = f * 4 + k, p, s = su + 0.5, t = sv + 0.5, n }
+            k = k + 1
+        }
+        let first = @as(u16, f * 4)
+        put_quad{ indices = indices[..], at = f * 6, first }
+        f = f + 1
+    }
+    let front = Vec3{ x = 0.0, y = 0.0, z = 1.0 }
+    put_vertex{ verts = verts[..], i = 24, p = Vec3{ x = -1.0, y = -0.6, z = 0.0 }, s = 0.0, t = 0.0, n = front }
+    put_vertex{ verts = verts[..], i = 25, p = Vec3{ x = 1.0, y = -0.6, z = 0.0 }, s = 1.0, t = 0.0, n = front }
+    put_vertex{ verts = verts[..], i = 26, p = Vec3{ x = 1.0, y = 0.6, z = 0.0 }, s = 1.0, t = 1.0, n = front }
+    put_vertex{ verts = verts[..], i = 27, p = Vec3{ x = -1.0, y = 0.6, z = 0.0 }, s = 0.0, t = 1.0, n = front }
+    put_quad{ indices = indices[..], at = 36, first = 0 }
+
+    let mesh_vao = gl::gen_vertex_array{ &gl }
+    gl.bind_vertex_array{ array = mesh_vao }
+    let vbo = gl::make_buffer{ &gl, target = gl::ARRAY_BUFFER, bytes = gl::bytes_of(f32){ s = verts[..] }, usage = gl::STATIC_DRAW }
+    let ibo = gl::make_buffer{ &gl, target = gl::ELEMENT_ARRAY_BUFFER, bytes = gl::bytes_of(u16){ s = indices[..] }, usage = gl::STATIC_DRAW }
+    gl.enable_vertex_attrib_array{ index = 0 }
+    gl.vertex_attrib_pointer{ index = 0, size = 3, kind = gl::FLOAT, normalized = gl::FALSE, stride = 32, offset = 0 }
+    gl.enable_vertex_attrib_array{ index = 1 }
+    gl.vertex_attrib_pointer{ index = 1, size = 2, kind = gl::FLOAT, normalized = gl::FALSE, stride = 32, offset = 12 }
+    gl.enable_vertex_attrib_array{ index = 2 }
+    gl.vertex_attrib_pointer{ index = 2, size = 3, kind = gl::FLOAT, normalized = gl::FALSE, stride = 32, offset = 20 }
+    gl.bind_vertex_array{ array = 0 }
+    let empty_vao = gl::gen_vertex_array{ &gl }
+    // The Frame block, std140: view, projection, light direction (draw_frame fills it).
+    let mut frame: [36]f32
+    let ubo = gl::make_buffer{ &gl, target = gl::UNIFORM_BUFFER, bytes = gl::bytes_of(f32){ s = frame[..] }, usage = gl::DYNAMIC_DRAW }
+
+    gl.pixel_storei{ pname = gl::UNPACK_ALIGNMENT, param = 1 }
+
+    // RGBA8, mipmapped by the driver.
+    let mut checker_px: [16384]u8
+    fill_checker{ into = checker_px[..] }
+    let checker = gl::gen_texture{ &gl }
+    gl.bind_texture{ target = gl::TEXTURE_2D, texture = checker }
+    gl.tex_image_2d{ target = gl::TEXTURE_2D, level = 0, internal_format = @as(i32, gl::RGBA8), width = 64, height = 64, border = 0, format = gl::RGBA, kind = gl::UNSIGNED_BYTE, pixels = &checker_px[0] }
+    gl.generate_mipmap{ target = gl::TEXTURE_2D }
+
+    // DXT1 and DXT5, one level each.
+    let mut dxt1_blocks: [2048]u8
+    fill_dxt1{ into = dxt1_blocks[..] }
+    let dxt1 = gl::gen_texture{ &gl }
+    gl.bind_texture{ target = gl::TEXTURE_2D, texture = dxt1 }
+    gl.compressed_tex_image_2d{ target = gl::TEXTURE_2D, level = 0, internal_format = gl::COMPRESSED_RGB_S3TC_DXT1, width = 64, height = 64, border = 0, image_size = 2048, data = &dxt1_blocks[0] }
+    gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_MAX_LEVEL, param = 0 }
+    let mut dxt5_blocks: [4096]u8
+    fill_dxt5{ into = dxt5_blocks[..] }
+    let dxt5 = gl::gen_texture{ &gl }
+    gl.bind_texture{ target = gl::TEXTURE_2D, texture = dxt5 }
+    gl.compressed_tex_image_2d{ target = gl::TEXTURE_2D, level = 0, internal_format = gl::COMPRESSED_RGBA_S3TC_DXT5, width = 64, height = 64, border = 0, image_size = 4096, data = &dxt5_blocks[0] }
+    gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_MAX_LEVEL, param = 0 }
+    try gl::check{ &gl, what = "compressed textures" }
+
+    // A cube map: six 32x32 faces in GL's order, +X -X +Y -Y +Z -Z.
+    let cube = gl::gen_texture{ &gl }
+    gl.bind_texture{ target = gl::TEXTURE_CUBE_MAP, texture = cube }
+    let mut face_px: [4096]u8
+    let mut face: u32 = 0
+    while face < 6 {
+        fill_sky_face{ face, into = face_px[..] }
+        gl.tex_image_2d{ target = gl::TEXTURE_CUBE_MAP_POSITIVE_X + face, level = 0, internal_format = @as(i32, gl::RGBA8), width = 32, height = 32, border = 0, format = gl::RGBA, kind = gl::UNSIGNED_BYTE, pixels = &face_px[0] }
+        face = face + 1
+    }
+    gl.tex_parameteri{ target = gl::TEXTURE_CUBE_MAP, pname = gl::TEXTURE_MAX_LEVEL, param = 0 }
+    gl.enable{ cap = gl::TEXTURE_CUBE_MAP_SEAMLESS }
+    gl.bind_texture{ target = gl::TEXTURE_2D, texture = 0 }
+    gl.bind_texture{ target = gl::TEXTURE_CUBE_MAP, texture = 0 }
+
+    let mipmapped = gl::gen_sampler{ &gl }
+    gl.sampler_parameteri{ sampler = mipmapped, pname = gl::TEXTURE_MIN_FILTER, param = @as(i32, gl::LINEAR_MIPMAP_LINEAR) }
+    gl.sampler_parameteri{ sampler = mipmapped, pname = gl::TEXTURE_MAG_FILTER, param = @as(i32, gl::LINEAR) }
+    gl.sampler_parameteri{ sampler = mipmapped, pname = gl::TEXTURE_WRAP_S, param = @as(i32, gl::REPEAT) }
+    gl.sampler_parameteri{ sampler = mipmapped, pname = gl::TEXTURE_WRAP_T, param = @as(i32, gl::REPEAT) }
+    if has_anisotropy{ &gl } { gl.sampler_parameterf{ sampler = mipmapped, pname = gl::TEXTURE_MAX_ANISOTROPY, param = 8.0 } }
+    let clamped = gl::gen_sampler{ &gl }
+    gl.sampler_parameteri{ sampler = clamped, pname = gl::TEXTURE_MIN_FILTER, param = @as(i32, gl::LINEAR) }
+    gl.sampler_parameteri{ sampler = clamped, pname = gl::TEXTURE_MAG_FILTER, param = @as(i32, gl::LINEAR) }
+    gl.sampler_parameteri{ sampler = clamped, pname = gl::TEXTURE_WRAP_S, param = @as(i32, gl::CLAMP_TO_EDGE) }
+    gl.sampler_parameteri{ sampler = clamped, pname = gl::TEXTURE_WRAP_T, param = @as(i32, gl::CLAMP_TO_EDGE) }
+    gl.sampler_parameteri{ sampler = clamped, pname = gl::TEXTURE_WRAP_R, param = @as(i32, gl::CLAMP_TO_EDGE) }
+
+    return Scene{
+        target, mesh, sky,
+        model_at = gl.get_uniform_location{ program = mesh, name = "model" },
+        alpha_at = gl.get_uniform_location{ program = mesh, name = "alpha" },
+        vbo, ibo, ubo, mesh_vao, empty_vao, checker, dxt1, dxt5, cube, mipmapped, clamped,
+    }
+}
+
+fn free_scene { mut gl: gl::Gl, scene: Scene } {
+    gl::free_target{ &gl, t = scene.target }
+    gl.delete_program{ program = scene.mesh }
+    gl.delete_program{ program = scene.sky }
+    gl::delete_buffer{ &gl, id = scene.vbo }
+    gl::delete_buffer{ &gl, id = scene.ibo }
+    gl::delete_buffer{ &gl, id = scene.ubo }
+    gl::delete_vertex_array{ &gl, id = scene.mesh_vao }
+    gl::delete_vertex_array{ &gl, id = scene.empty_vao }
+    gl::delete_texture{ &gl, id = scene.checker }
+    gl::delete_texture{ &gl, id = scene.dxt1 }
+    gl::delete_texture{ &gl, id = scene.dxt5 }
+    gl::delete_texture{ &gl, id = scene.cube }
+    gl::delete_sampler{ &gl, id = scene.mipmapped }
+    gl::delete_sampler{ &gl, id = scene.clamped }
+}
+
+// Each face of the cube: its normal and two edges, u then v, with u x v the normal, so that
+// (-u,-v) (+u,-v) (+u,+v) (-u,+v) go counterclockwise seen from outside.
+const FACES: [54]f32 = [
+    1.0, 0.0, 0.0,    0.0, 0.0, -1.0,   0.0, 1.0, 0.0,
+    -1.0, 0.0, 0.0,   0.0, 0.0, 1.0,    0.0, 1.0, 0.0,
+    0.0, 1.0, 0.0,    1.0, 0.0, 0.0,    0.0, 0.0, -1.0,
+    0.0, -1.0, 0.0,   1.0, 0.0, 0.0,    0.0, 0.0, 1.0,
+    0.0, 0.0, 1.0,    1.0, 0.0, 0.0,    0.0, 1.0, 0.0,
+    0.0, 0.0, -1.0,   -1.0, 0.0, 0.0,   0.0, 1.0, 0.0,
+]
+
+fn vec3_at { i: usize } -> Vec3 {
+    return Vec3{ x = FACES[i], y = FACES[i + 1], z = FACES[i + 2] }
+}
+
+fn put_vertex { verts: []mut f32, i: usize, p: Vec3, s: f32, t: f32, n: Vec3 } {
+    let at = i * 8
+    verts[at] = p.x
+    verts[at + 1] = p.y
+    verts[at + 2] = p.z
+    verts[at + 3] = s
+    verts[at + 4] = t
+    verts[at + 5] = n.x
+    verts[at + 6] = n.y
+    verts[at + 7] = n.z
+}
+
+// Two counterclockwise triangles of the quad whose corners are first .. first + 3.
+fn put_quad { indices: []mut u16, at: usize, first: u16 } {
+    indices[at] = first
+    indices[at + 1] = first + 1
+    indices[at + 2] = first + 2
+    indices[at + 3] = first
+    indices[at + 4] = first + 2
+    indices[at + 5] = first + 3
+}
+
+// ---- drawing
+
+fn draw_frame { mut gl: gl::Gl, scene: Scene, t: f32 } {
+    let w = scene.target.width
+    let h = scene.target.height
+    gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = scene.target.framebuffer }
+    gl.viewport{ x = 0, y = 0, width = w, height = h }
+    gl.depth_mask{ flag = gl::TRUE }
+    gl.stencil_mask{ mask = 0xFF }
+    gl.clear_color{ red = 0.08, green = 0.08, blue = 0.1, alpha = 1.0 }
+    gl.clear_depth{ depth = 1.0 }
+    gl.clear_stencil{ s = 0 }
+    gl.clear{ mask = gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT }
+
+    let eye = Vec3{ x = 3.0 * sinf{ x = t * 0.25 }, y = 1.4, z = 4.6 * cosf{ x = t * 0.25 } }
+    let view = look_at{ eye, at = Vec3{ x = 0.0, y = 0.0, z = 0.0 }, up = Vec3{ x = 0.0, y = 1.0, z = 0.0 } }
+    let proj = perspective{ fovy = 1.0, aspect = @as(f32, w) / @as(f32, h), near = 0.1, far = 100.0 }
+    let light = normalize{ v = Vec3{ x = -0.4, y = -1.0, z = -0.6 } }
+    let mut frame: [36]f32
+    let mut i: usize = 0
+    while i < 16 {
+        frame[i] = view[i]
+        frame[16 + i] = proj[i]
+        i = i + 1
+    }
+    frame[32] = light.x
+    frame[33] = light.y
+    frame[34] = light.z
+    gl.bind_buffer{ target = gl::UNIFORM_BUFFER, buffer = scene.ubo }
+    gl.buffer_sub_data{ target = gl::UNIFORM_BUFFER, offset = 0, size = 144, data = @cast(*u8, &frame) }
+    gl.bind_buffer_base{ target = gl::UNIFORM_BUFFER, index = 0, buffer = scene.ubo }
+
+    // The sky: no depth, behind everything.
+    gl.disable{ cap = gl::DEPTH_TEST }
+    gl.disable{ cap = gl::CULL_FACE }
+    gl.disable{ cap = gl::BLEND }
+    gl.disable{ cap = gl::STENCIL_TEST }
+    gl.depth_mask{ flag = gl::FALSE }
+    gl.use_program{ program = scene.sky }
+    gl.active_texture{ texture = gl::TEXTURE0 }
+    gl.bind_texture{ target = gl::TEXTURE_CUBE_MAP, texture = scene.cube }
+    gl.bind_sampler{ unit = 0, sampler = scene.clamped }
+    gl.bind_vertex_array{ array = scene.empty_vao }
+    gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
+
+    // The cubes, depth-tested and back-face culled. The left one marks the stencil with 1.
+    gl.enable{ cap = gl::DEPTH_TEST }
+    gl.depth_func{ func = gl::LESS }
+    gl.depth_mask{ flag = gl::TRUE }
+    gl.enable{ cap = gl::CULL_FACE }
+    gl.cull_face{ mode = gl::BACK }
+    gl.front_face{ mode = gl::CCW }
+    gl.use_program{ program = scene.mesh }
+    gl.bind_vertex_array{ array = scene.mesh_vao }
+    gl.bind_sampler{ unit = 0, sampler = scene.mipmapped }
+    gl.uniform1f{ location = scene.alpha_at, v0 = 1.0 }
+
+    gl.enable{ cap = gl::STENCIL_TEST }
+    gl.stencil_func{ func = gl::ALWAYS, ref = 1, mask = 0xFF }
+    gl.stencil_op{ fail = gl::KEEP, zfail = gl::KEEP, zpass = gl::REPLACE }
+    let left = mul{ a = translate{ x = -1.2, y = 0.0, z = 0.0 }, b = mul{ a = rotate_y{ angle = t }, b = rotate_x{ angle = t * 0.7 } } }
+    gl.uniform_matrix4fv{ location = scene.model_at, count = 1, transpose = gl::FALSE, value = &left[0] }
+    gl.bind_texture{ target = gl::TEXTURE_2D, texture = scene.checker }
+    gl.draw_elements{ mode = gl::TRIANGLES, count = 36, kind = gl::UNSIGNED_SHORT, offset = 0 }
+    gl.disable{ cap = gl::STENCIL_TEST }
+
+    let right = mul{ a = translate{ x = 1.2, y = 0.0, z = 0.0 }, b = mul{ a = rotate_y{ angle = -1.3 * t }, b = rotate_x{ angle = 0.5 } } }
+    gl.uniform_matrix4fv{ location = scene.model_at, count = 1, transpose = gl::FALSE, value = &right[0] }
+    gl.bind_texture{ target = gl::TEXTURE_2D, texture = scene.dxt1 }
+    gl.draw_elements{ mode = gl::TRIANGLES, count = 36, kind = gl::UNSIGNED_SHORT, offset = 0 }
+
+    // The disc in front, blended, kept off the left cube by the stencil.
+    gl.enable{ cap = gl::BLEND }
+    gl.blend_func{ sfactor = gl::SRC_ALPHA, dfactor = gl::ONE_MINUS_SRC_ALPHA }
+    gl.depth_mask{ flag = gl::FALSE }
+    gl.disable{ cap = gl::CULL_FACE }
+    gl.enable{ cap = gl::STENCIL_TEST }
+    gl.stencil_func{ func = gl::NOTEQUAL, ref = 1, mask = 0xFF }
+    gl.stencil_op{ fail = gl::KEEP, zfail = gl::KEEP, zpass = gl::KEEP }
+    let disc = mul{ a = translate{ x = 0.0, y = -0.1, z = 1.3 }, b = rotate_y{ angle = 0.3 * sinf{ x = t } } }
+    gl.uniform_matrix4fv{ location = scene.model_at, count = 1, transpose = gl::FALSE, value = &disc[0] }
+    gl.uniform1f{ location = scene.alpha_at, v0 = 0.85 }
+    gl.bind_texture{ target = gl::TEXTURE_2D, texture = scene.dxt5 }
+    gl.draw_elements_base_vertex{ mode = gl::TRIANGLES, count = 6, kind = gl::UNSIGNED_SHORT, offset = 72, base_vertex = 24 }
+
+    gl.disable{ cap = gl::STENCIL_TEST }
+    gl.disable{ cap = gl::BLEND }
+    gl.depth_mask{ flag = gl::TRUE }
+    gl.bind_vertex_array{ array = 0 }
+    gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = 0 }
+}
+
+// Reads the target back and writes it to `path` as an RGB PNG, top row first.
+fn screenshot { mut io: Io, mut fs: Fs, mut gl: gl::Gl, mut heap: arena::Arena, t: gl::Target, path: []u8 } -> ! {
+    let size = @as(usize, t.width) * @as(usize, t.height) * 4
+    let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = size }
+    defer _ = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = pixels, count = 0 }
+    gl::read_rgba{ &gl, t, into = pixels }
+    make_parent{ &fs, path }
+    let image = png::Image{ width = @as(u32, t.width), height = @as(u32, t.height), rgba = pixels }
+    try png::save{ &fs, realloc = arena::alloc, &heap, path, image, alpha = false, bottom_up = true }
+    // The middle pixel, as a quick check that something was drawn.
+    let mid = (@as(usize, t.height / 2) * @as(usize, t.width) + @as(usize, t.width / 2)) * 4
+    _ = @fmt(&io, "wrote {} ({}x{}); middle pixel {} {} {}\n", path, t.width, t.height, pixels[mid], pixels[mid + 1], pixels[mid + 2])
+}
+
+// Makes the directory `path` is in, if it isn't there.
+fn make_parent { mut fs: Fs, path: []u8 } {
+    let mut i = path.len
+    while i > 0 and path[i - 1] != '/' and path[i - 1] != '\\' { i = i - 1 }
+    if i <= 1 { return }
+    fs::make_dir{ &fs, path = path[..i - 1] } iferr {}
+}
+
+// Checks sdl::poll's reading of SDL_Event: a resize, which SDL makes itself from the OS's
+// message, and a key, text, mouse button and wheel event pushed through SDL's queue.
+fn check_events { mut io: Io, mut sdl: sdl::Sdl, win: sdl::GlWindow } -> ! {
+    while sdl::poll{ &sdl } != null {}
+    sdl::SDL_SetWindowSize{ &sdl, window = win.window, w = 800, h = 600 }
+    let mut resized = false
+    while true {
+        let e = sdl::poll{ &sdl } ifnull { break }
+        if e is resized{ width, height } {
+            if width != 800 or height != 600 { return bad_event{ step = 1 } }
+            resized = true
+        }
+    }
+    sdl::SDL_SetWindowSize{ &sdl, window = win.window, w = WIDTH, h = HEIGHT }
+    while sdl::poll{ &sdl } != null {}
+
+    let keysym = sdl::Keysym{ scancode = sdl::scan::ESCAPE, sym = sdl::key::ESCAPE, mods = sdl::KMOD_LSHIFT, unused = 0 }
+    let mut raw = sdl::RawEvent{ key = sdl::KeyboardEvent{
+        kind = sdl::KEYDOWN, timestamp = 0, window_id = 0, state = 1, repeat = 0, padding2 = 0, padding3 = 0, keysym,
+    } }
+    _ = sdl::SDL_PushEvent{ &sdl, event = &raw }
+    let mut chars: [32]u8
+    chars[0] = 'o'
+    chars[1] = 'k'
+    raw = sdl::RawEvent{ text = sdl::TextInputEvent{ kind = sdl::TEXTINPUT, timestamp = 0, window_id = 0, text = chars } }
+    _ = sdl::SDL_PushEvent{ &sdl, event = &raw }
+    raw = sdl::RawEvent{ button = sdl::MouseButtonEvent{
+        kind = sdl::MOUSEBUTTONDOWN, timestamp = 0, window_id = 0, which = 0, button = sdl::BUTTON_RIGHT, state = 1,
+        clicks = 2, padding1 = 0, x = 10, y = 20,
+    } }
+    _ = sdl::SDL_PushEvent{ &sdl, event = &raw }
+    raw = sdl::RawEvent{ wheel = sdl::MouseWheelEvent{
+        kind = sdl::MOUSEWHEEL, timestamp = 0, window_id = 0, which = 0, x = 0, y = 1, direction = 1,
+        precise_x = 0.0, precise_y = 1.5, mouse_x = 0, mouse_y = 0,
+    } }
+    _ = sdl::SDL_PushEvent{ &sdl, event = &raw }
+
+    let mut step: u32 = 2
+    while step <= 5 {
+        let e = sdl::poll{ &sdl } ifnull { return bad_event{ step } }
+        let ok = match e {
+            key{ down, repeat, scancode, keycode, mods } => {
+                step == 2 and down and not repeat and scancode == sdl::scan::ESCAPE and keycode == sdl::key::ESCAPE and mods == sdl::KMOD_LSHIFT
+            }
+            text{ bytes, len } => { step == 3 and len == 2 and bytes[0] == 'o' and bytes[1] == 'k' }
+            mouse_button{ down, button, clicks, x, y } => {
+                step == 4 and down and button == sdl::BUTTON_RIGHT and clicks == 2 and x == 10 and y == 20
+            }
+            mouse_wheel{ dx, dy } => { step == 5 and dx == 0.0 and dy == -1.5 }     // flipped
+            else => { false }
+        }
+        if not ok { return bad_event{ step } }
+        step = step + 1
+    }
+    let how: []u8 = if resized { "a resize from SDL" } else { "no resize from SDL (hidden window)" }
+    _ = @fmt(&io, "events: {}; pushed key, text, button and wheel read back\n", how)
+}
+
+// Shows the scene turning in the window until Escape, the close button, or `seconds` pass,
+// printing the input it gets. R toggles relative mouse mode, T text input.
+fn show { mut io: Io, mut sdl: sdl::Sdl, mut gl: gl::Gl, win: sdl::GlWindow, scene: Scene, seconds: f64 } -> ! {
+    sdl::set_swap_interval{ &sdl, interval = 1 } iferr { _ = @fmt(&io, "no vsync: {}\n", sdl::last_error{ &sdl }) }
+    let freq = sdl::counter_frequency{ &sdl }
+    let start = sdl::counter{ &sdl }
+    let mut frames: u32 = 0
+    let mut motions: u32 = 0
+    let mut text_on = true
+    sdl::set_text_input{ &sdl, on = text_on }
+    run:
+    while true {
+        while true {
+            let e = sdl::poll{ &sdl } ifnull { break }
+            match e {
+                quit | close => {
+                    _ = @fmt(&io, "event: close\n")
+                    break run
+                }
+                key{ down, repeat, scancode, keycode, mods } => {
+                    if down and not repeat {
+                        _ = @fmt(&io, "event: key {} (scancode {}, keycode {}, mods {})\n", sdl::SDL_GetKeyName{ &sdl, key = keycode }, scancode, keycode, mods)
+                    }
+                    if down and keycode == sdl::key::ESCAPE { break run }
+                    if down and not repeat and scancode == sdl::scan::R {
+                        let on = not sdl::relative_mouse{ &sdl }
+                        sdl::set_relative_mouse{ &sdl, on } iferr {}
+                        _ = @fmt(&io, "relative mouse: {}\n", on)
+                    }
+                    if down and not repeat and scancode == sdl::scan::T {
+                        text_on = not text_on
+                        sdl::set_text_input{ &sdl, on = text_on }
+                        _ = @fmt(&io, "text input: {}\n", text_on)
+                    }
+                }
+                text{ bytes, len } => { _ = @fmt(&io, "event: text \"{}\"\n", bytes[..len]) }
+                mouse_motion => { motions = motions + 1 }
+                mouse_button{ down, button, clicks, x, y } => {
+                    let how: []u8 = if down { "down" } else { "up" }
+                    _ = @fmt(&io, "event: mouse button {} {} x{} at {},{}\n", button, how, clicks, x, y)
+                }
+                mouse_wheel{ dx, dy } => { _ = @fmt(&io, "event: wheel {} {}\n", dx, dy) }
+                resized{ width, height } => { _ = @fmt(&io, "event: resized to {}x{}\n", width, height) }
+                focus{ gained } => {
+                    let how: []u8 = if gained { "gained" } else { "lost" }
+                    _ = @fmt(&io, "event: focus {}\n", how)
+                }
+                minimized => { _ = @fmt(&io, "event: minimized\n") }
+                restored => { _ = @fmt(&io, "event: restored\n") }
+                exposed | other => {}
+            }
+        }
+        let elapsed = @as(f64, sdl::counter{ &sdl } - start) / @as(f64, freq)
+        if elapsed >= seconds { break }
+        draw_frame{ &gl, scene, t = 0.6 + @as(f32, elapsed) }
+        let size = sdl::drawable_size{ &sdl, w = win }
+        gl::present{ &gl, t = scene.target, width = size.width, height = size.height }
+        sdl::swap{ &sdl, w = win }
+        frames = frames + 1
+    }
+    let elapsed = @as(f64, sdl::counter{ &sdl } - start) / @as(f64, freq)
+    _ = @fmt(&io, "window: {} frames in {} s, {} mouse motions\n", frames, elapsed, motions)
+    if sdl::relative_mouse{ &sdl } { sdl::set_relative_mouse{ &sdl, on = false } iferr {} }
+    try gl::check{ &gl, what = "show" }
+}
+
+// Opens the default audio output, queues a quarter second (silence, or a quiet 440 Hz tone with
+// `beep`), and waits for the queue to drain.
+fn check_audio { mut io: Io, mut sdl: sdl::Sdl, beep: bool } {
+    if sdl::SDL_InitSubSystem{ &sdl, flags = sdl::INIT_AUDIO } != 0 {
+        _ = @fmt(&io, "audio: no audio ({})\n", sdl::last_error{ &sdl })
+        return
+    }
+    defer sdl::SDL_QuitSubSystem{ &sdl, flags = sdl::INIT_AUDIO }
+    let out = sdl::open_audio{ &sdl, freq = 44100, channels = 2, samples = 1024 } iferr {
+        _ = @fmt(&io, "audio: no device ({})\n", sdl::last_error{ &sdl })
+        return
+    }
+    defer sdl::close_audio{ &sdl, out }
+    let driver = sdl::SDL_GetCurrentAudioDriver{ &sdl } ifnull { "?" }
+    let mut frames: [22050]i16              // 0.25 s of stereo at 44.1 kHz
+    if beep {
+        let mut i: usize = 0
+        while i < 11025 {
+            let s = @as(i16, 3000.0 * sinf{ x = @as(f32, i) * 6.2831853 * 440.0 / @as(f32, out.freq) })
+            frames[2 * i] = s
+            frames[2 * i + 1] = s
+            i = i + 1
+        }
+    }
+    sdl::queue_audio{ &sdl, out, frames = frames[..] } iferr {
+        _ = @fmt(&io, "audio: queueing failed ({})\n", sdl::last_error{ &sdl })
+        return
+    }
+    let queued = sdl::queued_audio{ &sdl, out }
+    sdl::pause_audio{ &sdl, out, paused = false }
+    let start = sdl::ticks{ &sdl }
+    while sdl::queued_audio{ &sdl, out } > 0 and sdl::ticks{ &sdl } - start < 2000 { sdl::delay{ &sdl, ms = 5 } }
+    let left = sdl::queued_audio{ &sdl, out }
+    _ = @fmt(&io, "audio: {} at {} Hz, {} channels, {}-frame buffer; queued {} bytes, {} left after {} ms\n",
+        driver, out.freq, out.channels, out.samples, queued, left, sdl::ticks{ &sdl } - start)
+}
+
+// ---- textures, made here
+
+// 64x64 RGBA: 8-pixel squares of gold and blue, each shaded toward its corner.
+fn fill_checker { into: []mut u8 } {
+    let mut y: u32 = 0
+    while y < 64 {
+        let mut x: u32 = 0
+        while x < 64 {
+            let shade = 255 - ((x % 8) + (y % 8)) * 6
+            let gold = ((x / 8) + (y / 8)) % 2 == 0
+            let at = (y * 64 + x) * 4
+            into[at] = @trunc(u8, if gold { 235 * shade / 255 } else { 40 * shade / 255 })
+            into[at + 1] = @trunc(u8, if gold { 190 * shade / 255 } else { 70 * shade / 255 })
+            into[at + 2] = @trunc(u8, if gold { 60 * shade / 255 } else { 200 * shade / 255 })
+            into[at + 3] = 255
+            x = x + 1
+        }
+        y = y + 1
+    }
+}
+
+fn rgb565 { r: u32, g: u32, b: u32 } -> u16 {
+    return @trunc(u16, ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3))
+}
+
+// A DXT1 colour block's 2-bit index for step 0..3 from colour 0 to colour 1: 0 and 1 are the
+// ends, 2 and 3 the thirds between.
+fn ramp4 { step: u32 } -> u32 {
+    if step == 0 { return 0 }
+    if step == 1 { return 2 }
+    if step == 2 { return 3 }
+    return 1
+}
+
+fn put_u16_le { into: []mut u8, at: usize, n: u16 } {
+    into[at] = @trunc(u8, n)
+    into[at + 1] = @trunc(u8, n >> 8)
+}
+
+fn put_u32_le { into: []mut u8, at: usize, n: u32 } {
+    into[at] = @trunc(u8, n)
+    into[at + 1] = @trunc(u8, n >> 8)
+    into[at + 2] = @trunc(u8, n >> 16)
+    into[at + 3] = @trunc(u8, n >> 24)
+}
+
+// 64x64 DXT1: 16x16 blocks of 8 bytes. Blocks on the diagonals are red, the rest white, each
+// shaded diagonally inside.
+fn fill_dxt1 { into: []mut u8 } {
+    let mut by: u32 = 0
+    while by < 16 {
+        let mut bx: u32 = 0
+        while bx < 16 {
+            let on_x = bx == by or bx + by == 15
+            let c0 = if on_x { rgb565{ r = 230, g = 40, b = 40 } } else { rgb565{ r = 245, g = 245, b = 235 } }
+            let c1 = if on_x { rgb565{ r = 90, g = 10, b = 10 } } else { rgb565{ r = 140, g = 140, b = 160 } }
+            let mut bits: u32 = 0
+            let mut p: u32 = 0
+            while p < 16 {
+                let step = ((p % 4) + (p / 4)) / 2                  // 0..3 along the diagonal
+                bits = bits | (ramp4{ step } << (2 * p))
+                p = p + 1
+            }
+            let at = @as(usize, (by * 16 + bx) * 8)
+            put_u16_le{ into, at, n = c0 }                          // c0 > c1: four colours
+            put_u16_le{ into, at = at + 2, n = c1 }
+            put_u32_le{ into, at = at + 4, n = bits }
+            bx = bx + 1
+        }
+        by = by + 1
+    }
+}
+
+// 64x64 DXT5: 16x16 blocks of 16 bytes, an alpha block then a colour block. A disc, opaque in
+// the middle and fading out to the edge; green to blue across each block.
+fn fill_dxt5 { into: []mut u8 } {
+    let mut by: u32 = 0
+    while by < 16 {
+        let mut bx: u32 = 0
+        while bx < 16 {
+            // Alpha: a0 = 255 > a1 = 0, so index 0 is 255, 1 is 0, and 2..7 step down by sevenths.
+            let mut abits: u64 = 0
+            let mut p: u32 = 0
+            while p < 16 {
+                let x = @as(i32, bx * 4 + p % 4) * 2 - 63
+                let y = @as(i32, by * 4 + p / 4) * 2 - 63
+                let r2 = @as(u32, x * x + y * y)                    // 4 * the squared distance from the middle
+                let level = if r2 >= 4096 { 7 } else { r2 * 8 / 4096 }
+                let index: u64 = if level == 0 { 0 } else if level == 7 { 1 } else { @as(u64, level + 1) }
+                abits = abits | (index << @as(u64, 3 * p))
+                p = p + 1
+            }
+            let at = @as(usize, (by * 16 + bx) * 16)
+            into[at] = 255
+            into[at + 1] = 0
+            let mut k: usize = 0
+            while k < 6 {
+                into[at + 2 + k] = @trunc(u8, abits >> @as(u64, 8 * k))
+                k = k + 1
+            }
+            let mut cbits: u32 = 0
+            p = 0
+            while p < 16 {
+                cbits = cbits | (ramp4{ step = p % 4 } << (2 * p))
+                p = p + 1
+            }
+            put_u16_le{ into, at = at + 8, n = rgb565{ r = 60, g = 220, b = 120 } }
+            put_u16_le{ into, at = at + 10, n = rgb565{ r = 40, g = 80, b = 230 } }
+            put_u32_le{ into, at = at + 12, n = cbits }
+            bx = bx + 1
+        }
+        by = by + 1
+    }
+}
+
+// 32x32 RGBA for cube face `face` (GL's order): its own colour, darker toward the bottom row,
+// framed in white so the seams show.
+fn fill_sky_face { face: u32, into: []mut u8 } {
+    let r: u32 = if face == 0 { 200 } else if face == 1 { 70 } else if face == 2 { 120 } else if face == 3 { 90 } else if face == 4 { 90 } else { 200 }
+    let g: u32 = if face == 0 { 80 } else if face == 1 { 190 } else if face == 2 { 170 } else if face == 3 { 70 } else if face == 4 { 190 } else { 170 }
+    let b: u32 = if face == 0 { 80 } else if face == 1 { 200 } else if face == 2 { 250 } else if face == 3 { 50 } else if face == 4 { 90 } else { 80 }
+    let mut y: u32 = 0
+    while y < 32 {
+        let mut x: u32 = 0
+        while x < 32 {
+            let at = (y * 32 + x) * 4
+            let edge = x == 0 or y == 0 or x == 31 or y == 31
+            let shade = 255 - y * 4
+            into[at] = @trunc(u8, if edge { 255 } else { r * shade / 255 })
+            into[at + 1] = @trunc(u8, if edge { 255 } else { g * shade / 255 })
+            into[at + 2] = @trunc(u8, if edge { 255 } else { b * shade / 255 })
+            into[at + 3] = 255
+            x = x + 1
+        }
+        y = y + 1
+    }
+}
+
+// ---- matrices: column-major [16]f32, as GL takes them
+
+type Mat4 = [16]f32
+
+struct Vec3 { x: f32, y: f32, z: f32 }
+
+extern fn sinf { x: f32 } -> f32
+extern fn cosf { x: f32 } -> f32
+extern fn tanf { x: f32 } -> f32
+extern fn sqrtf { x: f32 } -> f32
+
+fn identity {} -> Mat4 {
+    let mut m: Mat4
+    m[0] = 1.0
+    m[5] = 1.0
+    m[10] = 1.0
+    m[15] = 1.0
+    return m
+}
+
+fn mul { a: Mat4, b: Mat4 } -> Mat4 {
+    let mut m: Mat4
+    let mut col: usize = 0
+    while col < 4 {
+        let mut row: usize = 0
+        while row < 4 {
+            let mut sum: f32 = 0.0
+            let mut k: usize = 0
+            while k < 4 {
+                sum = sum + a[k * 4 + row] * b[col * 4 + k]
+                k = k + 1
+            }
+            m[col * 4 + row] = sum
+            row = row + 1
+        }
+        col = col + 1
+    }
+    return m
+}
+
+fn translate { x: f32, y: f32, z: f32 } -> Mat4 {
+    let mut m = identity{}
+    m[12] = x
+    m[13] = y
+    m[14] = z
+    return m
+}
+
+fn rotate_y { angle: f32 } -> Mat4 {
+    let c = cosf{ x = angle }
+    let s = sinf{ x = angle }
+    let mut m = identity{}
+    m[0] = c
+    m[2] = -s
+    m[8] = s
+    m[10] = c
+    return m
+}
+
+fn rotate_x { angle: f32 } -> Mat4 {
+    let c = cosf{ x = angle }
+    let s = sinf{ x = angle }
+    let mut m = identity{}
+    m[5] = c
+    m[6] = s
+    m[9] = -s
+    m[10] = c
+    return m
+}
+
+// A right-handed projection onto GL's clip space, depth -1 at near to 1 at far.
+fn perspective { fovy: f32, aspect: f32, near: f32, far: f32 } -> Mat4 {
+    let f = 1.0 / tanf{ x = fovy * 0.5 }
+    let mut m: Mat4
+    m[0] = f / aspect
+    m[5] = f
+    m[10] = (far + near) / (near - far)
+    m[11] = -1.0
+    m[14] = 2.0 * far * near / (near - far)
+    return m
+}
+
+fn look_at { eye: Vec3, at: Vec3, up: Vec3 } -> Mat4 {
+    let f = normalize{ v = sub{ a = at, b = eye } }
+    let s = normalize{ v = cross{ a = f, b = up } }
+    let u = cross{ a = s, b = f }
+    let mut m = identity{}
+    m[0] = s.x
+    m[4] = s.y
+    m[8] = s.z
+    m[1] = u.x
+    m[5] = u.y
+    m[9] = u.z
+    m[2] = -f.x
+    m[6] = -f.y
+    m[10] = -f.z
+    m[12] = -dot{ a = s, b = eye }
+    m[13] = -dot{ a = u, b = eye }
+    m[14] = dot{ a = f, b = eye }
+    return m
+}
+
+fn sub { a: Vec3, b: Vec3 } -> Vec3 { return Vec3{ x = a.x - b.x, y = a.y - b.y, z = a.z - b.z } }
+fn dot { a: Vec3, b: Vec3 } -> f32 { return a.x * b.x + a.y * b.y + a.z * b.z }
+fn cross { a: Vec3, b: Vec3 } -> Vec3 {
+    return Vec3{ x = a.y * b.z - a.z * b.y, y = a.z * b.x - a.x * b.z, z = a.x * b.y - a.y * b.x }
+}
+fn normalize { v: Vec3 } -> Vec3 {
+    let n = sqrtf{ x = dot{ a = v, b = v } }
+    return Vec3{ x = v.x / n, y = v.y / n, z = v.z / n }
+}
+
+// ---- options
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{ headless = false, out = "kotor/out/glspike.png", seconds = 3.0, audio = true, beep = false }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if slice::eq_bytes{ a, b = "--headless" } {
+            o.headless = true
+        } else if slice::eq_bytes{ a, b = "--out" } and i + 1 < args.len {
+            i = i + 1
+            o.out = args[i]
+        } else if slice::eq_bytes{ a, b = "--seconds" } and i + 1 < args.len {
+            i = i + 1
+            let text = utf8::from{ bytes = args[i] } iferr { return usage{ &io } }
+            o.seconds = utf8::parse_f64{ s = text } ifnull { return usage{ &io } }
+        } else if slice::eq_bytes{ a, b = "--no-audio" } {
+            o.audio = false
+        } else if slice::eq_bytes{ a, b = "--beep" } {
+            o.beep = true
+        } else {
+            return usage{ &io }
+        }
+        i = i + 1
+    }
+    return o
+}
+
+fn usage { mut io: Io } -> ?Options {
+    io::eprintln{ &io, s = "usage: glspike [--headless] [--out PATH] [--seconds N] [--no-audio] [--beep]" }
+    return null
+}
+
+// ---- @fmt into standard output: each hole's type has a writer here (spec §13, Formatting)
+
+namespace out {
+    #write
+    fn put_text { mut io: Io, s: strlit } { io::write{ &io, to = io::Stream::out, bytes = s.bytes } }
+    #write
+    fn put_string { mut io: Io, s: utf8::String } { io::print{ &io, s } }
+    #write
+    fn put_bytes { mut io: Io, b: []u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
+    #write
+    fn put_mut_bytes { mut io: Io, b: []mut u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
+    #write
+    fn put_cstring { mut io: Io, s: c::String } { io::write{ &io, to = io::Stream::out, bytes = c::bytes{ s } } }
+    #write
+    fn put_bool { mut io: Io, b: bool } { io::print_bool{ &io, n = b } }
+    #write
+    fn put_i32 { mut io: Io, n: i32 } { io::print_i64{ &io, n } }
+    #write
+    fn put_i64 { mut io: Io, n: i64 } { io::print_i64{ &io, n } }
+    #write
+    fn put_u8 { mut io: Io, n: u8 } { io::print_u64{ &io, n } }
+    #write
+    fn put_u16 { mut io: Io, n: u16 } { io::print_u64{ &io, n } }
+    #write
+    fn put_u32 { mut io: Io, n: u32 } { io::print_u64{ &io, n } }
+    #write
+    fn put_u64 { mut io: Io, n: u64 } { io::print_u64{ &io, n } }
+    #write
+    fn put_usize { mut io: Io, n: usize } { io::print_u64{ &io, n } }
+    #write
+    fn put_f32 { mut io: Io, n: f32 } { io::print_f32{ &io, n } }
+    #write
+    fn put_f64 { mut io: Io, n: f64 } { io::print_f64{ &io, n } }
+}
