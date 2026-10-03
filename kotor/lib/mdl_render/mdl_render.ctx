@@ -90,8 +90,8 @@ namespace mdl_render {
     // Adds a draw for every mesh of `model` that draws, posed by `pose` and placed by
     // `transform` (the model's world matrix), with `materials[i]` for Model.meshes[i]. The pose
     // adds opacity (its accumulated alpha: below 1 an opaque or punch-through surface blends),
-    // self-illumination, UV scrolling at `time` (seconds) and skin palettes. Returns how many
-    // draws the frame took.
+    // self-illumination, UV scrolling at `time` (seconds), skin palettes and dangly meshes' swing
+    // (mdl_anim::swing). Returns how many draws the frame took.
     fn add_draws {
         mut frame: render::Frame, view: u32, model: *mdl::Model, pose: mdl_anim::Pose, g: Gpu,
         transform: math::Mat4, materials: []render::Material, time: f32,
@@ -130,6 +130,7 @@ namespace mdl_render {
                 d.center = mesh.average
                 d.radius = mesh.radius
             }
+            if mesh.dangly != null and i - 1 < pose.swings.len { d.dangle = pose.swings[i - 1].offset }
             if render::add_draw{ &frame, draw = d } != null { added = added + 1 }
         }
         return added

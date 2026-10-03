@@ -157,7 +157,15 @@ fn make_part {
         let found = mdl_anim::find{ model, name = anim, lookup = mdl_cache::get{ &fs, &cache, _ } }
         if found != null {
             let b = try mdl_anim::bind{ realloc = arena::alloc, &heap, model, animation = found.animation }
-            mdl_anim::pose_at{ model, binding = b, time, pose }
+            // Played up to `time` at 30 frames a second, so dangly meshes have swung as they
+            // would have by then.
+            let steps = @as(u32, math::min{ a = time * 30.0, b = 3000.0 }) + 1
+            let mut k: u32 = 0
+            while k <= steps {
+                mdl_anim::pose_at{ model, binding = b, time = time * @as(f32, k) / @as(f32, steps), pose }
+                mdl_anim::swing{ model, pose, transform = base, dt = time / @as(f32, steps) }
+                k = k + 1
+            }
             _ = @fmt(&io, "{}: {} from {} ({} s)\n", model.name, anim, found.owner.name, found.animation.length)
         } else {
             _ = @fmt(&io, "{}: no animation {} along its chain; bind pose\n", model.name, anim)
