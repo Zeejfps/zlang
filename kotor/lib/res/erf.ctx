@@ -16,6 +16,8 @@ namespace erf {
     error bad_table
     // A member name longer than 16 bytes, given to the writer.
     error name_too_long{ index: usize }
+    // An archive past 4 GB, which 32-bit offsets can't address.
+    error too_big
 
     const HEADER: usize = 160
     const KEY: usize = 24
@@ -111,23 +113,63 @@ namespace erf {
     // A member to write: its name as it should be stored (case kept), type and bytes.
     struct NewMember { name: []u8, kind: u16, data: []u8 }
 
+    // A member of an index: its name as stored, type and size.
+    struct Entry { name: []u8, kind: u16, size: u32 }
+
     // An ERF holding `members` in order, laid out as the engine writes saves: header, keys (ResID
     // = index), resource list, then the data packed in key order. No localized strings; the
     // description StrRef and reserved bytes are 0. `year` is years since 1900, `day` days since 1
     // January from 0.
     fn write(S) { realloc: alloc::Fn(S), mut heap: S, sig: Sig, members: []NewMember, year: u32, day: u32 } -> !alloc::Bytes {
         let n = members.len
-        let mut total = HEADER + n * (KEY + RESOURCE)
+        let entries = try alloc::resize(Entry, S){ realloc, &heap, mem = slice::empty(Entry){}, count = n }
+        defer _ = alloc::resize(Entry, S){ realloc, &heap, mem = entries, count = 0 }
+        let mut total: u64 = 0
         let mut i: usize = 0
         while i < n {
-            if members[i].name.len > resref::MAX { return name_too_long{ index = i } }
-            total = total + members[i].data.len
+            if members[i].data.len > 4294967295 { return too_big }
+            entries[i] = Entry{ name = members[i].name, kind = members[i].kind, size = @trunc(u32, members[i].data.len) }
+            total = total + @as(u64, members[i].data.len)
             i = i + 1
         }
-        let mut out = list::new(u8, S){ realloc, heap = &heap }
-        try list::reserve{ list = &out, extra = total }
+        let head = try write_index{ realloc, &heap, sig, entries, year, day }
+        let out = alloc::resize(u8, S){ realloc, &heap, mem = head, count = head.len + @as(usize, total) } iferr err{ error } {
+            _ = alloc::resize(u8, S){ realloc, &heap, mem = head, count = 0 }
+            return error
+        }
+        let mut at = index_size{ n }
+        i = 0
+        while i < n {
+            slice::copy(u8){ dst = out[at..at + members[i].data.len], src = members[i].data }
+            at = at + members[i].data.len
+            i = i + 1
+        }
+        return out
+    }
+
+    // The bytes an ERF of `n` members has before its data.
+    fn index_size { n: usize } -> usize {
+        return HEADER + n * (KEY + RESOURCE)
+    }
+
+    // The header, keys and resource list of an ERF whose data, the members' bytes packed in this
+    // order, follows them: for an archive too big to build in memory, whose data is then written
+    // after it member by member.
+    fn write_index(S) { realloc: alloc::Fn(S), mut heap: S, sig: Sig, entries: []Entry, year: u32, day: u32 } -> !alloc::Bytes {
+        let n = entries.len
         let keys_at = HEADER
         let resources_at = keys_at + n * KEY
+        let size = index_size{ n }
+        let mut total = @as(u64, size)
+        let mut i: usize = 0
+        while i < n {
+            if entries[i].name.len > resref::MAX { return name_too_long{ index = i } }
+            total = total + @as(u64, entries[i].size)
+            i = i + 1
+        }
+        if total > 4294967295 { return too_big }
+        let mut out = list::new(u8, S){ realloc, heap = &heap }
+        try list::reserve{ list = &out, extra = size }
         try le::put_bytes{ &out, bytes = sig_bytes{ sig } }
         try le::put_bytes{ &out, bytes = "V1.0" }
         try le::put_u32{ &out, v = 0 }                              // LanguageCount
@@ -142,25 +184,20 @@ namespace erf {
         try le::put_zeros{ &out, n = 116 }
         i = 0
         while i < n {
-            try le::put_padded{ &out, bytes = members[i].name, width = 16 }
+            try le::put_padded{ &out, bytes = entries[i].name, width = 16 }
             try le::put_u32{ &out, v = @trunc(u32, i) }
-            try le::put_u16{ &out, v = members[i].kind }
+            try le::put_u16{ &out, v = entries[i].kind }
             try le::put_u16{ &out, v = 0 }
             i = i + 1
         }
-        let mut at = resources_at + n * RESOURCE
+        let mut at = @trunc(u32, size)
         i = 0
         while i < n {
-            try le::put_u32{ &out, v = @trunc(u32, at) }
-            try le::put_u32{ &out, v = @trunc(u32, members[i].data.len) }
-            at = at + members[i].data.len
+            try le::put_u32{ &out, v = at }
+            try le::put_u32{ &out, v = entries[i].size }
+            at = at + entries[i].size
             i = i + 1
         }
-        i = 0
-        while i < n {
-            try le::put_bytes{ &out, bytes = members[i].data }
-            i = i + 1
-        }
-        return list::items{ list = out }
+        return try alloc::resize(u8, S){ realloc, &heap, mem = out.items, count = out.len }
     }
 }

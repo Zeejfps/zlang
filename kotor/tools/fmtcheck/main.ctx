@@ -4,13 +4,13 @@
 //
 //   fmtcheck [--game DIR] [--only FORMAT]... [-v]
 //
-// FORMAT: census (copies by type), 2da, gff, small (TLK, SSF, LIP, LTR, LYT, VIS, TXI), res
+// FORMAT: census (copies by type), 2da, gff, small (TLK, SSF, LIP, LTR, LYT, VIS, TXI), erf (rebuild every ERF), res
 // (mount and unmount every module, checking the heap returns to where it was). Without --only,
 // all of them. -v prints a line for every failure and more detail. Exits 1 if anything failed.
 
 const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
 
-struct Options { game: []u8, census: bool, twoda: bool, gff: bool, small: bool, res: bool, verbose: bool, bad: bool }
+struct Options { game: []u8, census: bool, twoda: bool, gff: bool, small: bool, res: bool, erf: bool, verbose: bool, bad: bool }
 
 struct Stats {
     census: [65536]u32,                 // copies by type id
@@ -67,13 +67,14 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
         failures = failures + fmt_small::check_tlk{ &io, &fs, &h, game = opts.game, verbose = opts.verbose }
     }
     if opts.res { failures = failures + check_modules{ &io, &fs, &h, game = opts.game, verbose = opts.verbose } }
+    if opts.erf { failures = failures + archive_check::run{ &io, &fs, &h, game = opts.game, verbose = opts.verbose } }
     _ = @fmt(&io, "fmtcheck: {} failures\n", failures)
     io::flush{ &io }
     return if failures == 0 { 0 } else { 1 }
 }
 
 fn parse_args { mut io: Io, args: Args } -> Options {
-    let mut o = Options{ game = DEFAULT_GAME, census = false, twoda = false, gff = false, small = false, res = false, verbose = false, bad = false }
+    let mut o = Options{ game = DEFAULT_GAME, census = false, twoda = false, gff = false, small = false, res = false, erf = false, verbose = false, bad = false }
     let mut any = false
     let mut i: usize = 0
     while i < args.len {
@@ -91,6 +92,7 @@ fn parse_args { mut io: Io, args: Args } -> Options {
             else if slice::eq_bytes{ a = f, b = "gff" } { o.gff = true }
             else if slice::eq_bytes{ a = f, b = "small" } { o.small = true }
             else if slice::eq_bytes{ a = f, b = "res" } { o.res = true }
+            else if slice::eq_bytes{ a = f, b = "erf" } { o.erf = true }
             else {
                 _ = @fmt(&io, "fmtcheck: unknown format {}\n", f)
                 o.bad = true
@@ -113,6 +115,7 @@ fn parse_args { mut io: Io, args: Args } -> Options {
         o.gff = true
         o.small = true
         o.res = true
+        o.erf = true
     }
     return o
 }
@@ -196,7 +199,9 @@ fn check_modules { mut io: Io, mut fs: Fs, mut h: heap::Heap, game: []u8, verbos
         return 1
     }
     defer corpus::free_names{ h = &h, names }
-    let base = h.live
+    // The first mount grows the source list once; after that every unmount must leave the heap
+    // exactly where the first one did.
+    let mut base: ?usize = null
     let mut failed: u64 = 0
     let mut mounted: u32 = 0
     let mut i: usize = 0
@@ -216,8 +221,10 @@ fn check_modules { mut io: Io, mut fs: Fs, mut h: heap::Heap, game: []u8, verbos
             failed = failed + 1
         }
         res::unmount_module{ &fs, &rm }
-        if h.live != base {
-            _ = @fmt(&io, "res FAIL: {} left {} bytes live\n", name, h.live - base)
+        let expected = base ifnull h.live
+        base = expected
+        if h.live != expected {
+            _ = @fmt(&io, "res FAIL: {} left the heap at {} bytes, not {}\n", name, h.live, expected)
             failed = failed + 1
         }
     }

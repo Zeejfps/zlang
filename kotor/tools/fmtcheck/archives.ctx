@@ -1,0 +1,179 @@
+// The ERF writer's check: every ERF-family archive in the install (texture packs, patch.erf, the
+// lips MODs, each saved game and the module states nested in it) is rebuilt from its own members
+// (names as stored, types, sizes) and compared with the original.
+//
+// The writer makes the layout the engine writes saves in (docs/formats/erf.md): every shipped
+// archive has the same block layout, but BioWare's packer left uninitialised memory in the
+// DescriptionStrRef, which the writer sets to 0, as the engine does. So shipped archives are
+// compared with that field masked, and the saves, which the engine wrote, byte for byte and whole.
+namespace archive_check {
+    struct Stats { archives: u32, identical: u32, masked: u32, saves: u32, saves_identical: u32, failed: u32 }
+
+    fn run { mut io: Io, mut fs: Fs, mut h: heap::Heap, game: []u8, verbose: bool } -> u64 {
+        let mut st = Stats{ archives = 0, identical = 0, masked = 0, saves = 0, saves_identical = 0, failed = 0 }
+        let dirs: [3][]u8 = ["texturepacks", "lips", "modules"]
+        let mut d: usize = 0
+        while d < dirs.len {
+            let dir = res::find_in{ &fs, h = &h, dir = game, name = dirs[d] } iferr { null }
+            d = d + 1
+            if dir == null { continue }
+            defer res::free_bytes{ h = &h, b = dir }
+            let names = corpus::list_dir{ &fs, h = &h, dir } iferr { continue }
+            defer corpus::free_names{ h = &h, names }
+            let mut i: usize = 0
+            while i < names.spans.len {
+                let n = corpus::name_at{ names, i }
+                i = i + 1
+                if ci::ends_with{ s = n, suffix = ".erf" } or ci::ends_with{ s = n, suffix = ".mod" } or ci::ends_with{ s = n, suffix = ".sav" } {
+                    let p = path::join{ realloc = heap::alloc, heap = &h, dir, name = n } iferr { continue }
+                    defer res::free_bytes{ h = &h, b = p }
+                    check_file{ &io, &fs, &h, &st, path = p, save = false, verbose }
+                }
+            }
+        }
+        let patch = res::find_in{ &fs, h = &h, dir = game, name = "patch.erf" } iferr { null }
+        if patch != null {
+            defer res::free_bytes{ h = &h, b = patch }
+            check_file{ &io, &fs, &h, &st, path = patch, save = false, verbose }
+        }
+        let saves = res::find_in{ &fs, h = &h, dir = game, name = "saves" } iferr { null }
+        if saves != null {
+            defer res::free_bytes{ h = &h, b = saves }
+            let slots = corpus::list_dir{ &fs, h = &h, dir = saves } iferr { return 1 }
+            defer corpus::free_names{ h = &h, names = slots }
+            let mut i: usize = 0
+            while i < slots.spans.len {
+                let slot = path::join{ realloc = heap::alloc, heap = &h, dir = saves, name = corpus::name_at{ names = slots, i } } iferr { return 1 }
+                i = i + 1
+                defer res::free_bytes{ h = &h, b = slot }
+                let files = corpus::list_dir{ &fs, h = &h, dir = slot } iferr { continue }
+                defer corpus::free_names{ h = &h, names = files }
+                let mut k: usize = 0
+                while k < files.spans.len {
+                    let f = corpus::name_at{ names = files, i = k }
+                    k = k + 1
+                    if not ci::ends_with{ s = f, suffix = ".sav" } { continue }
+                    let p = path::join{ realloc = heap::alloc, heap = &h, dir = slot, name = f } iferr { continue }
+                    defer res::free_bytes{ h = &h, b = p }
+                    check_file{ &io, &fs, &h, &st, path = p, save = true, verbose }
+                }
+            }
+        }
+        _ = @fmt(&io, "erf: {} archives rebuilt: {} identical, {} identical but for the DescriptionStrRef, {} failures; saves {} of {} identical whole\n",
+            st.archives, st.identical, st.masked, st.failed, st.saves_identical, st.saves)
+        return st.failed
+    }
+
+    fn check_file { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut st: Stats, path: []u8, save: bool, verbose: bool } {
+        if save {
+            // Saves are small: read whole, rebuilt whole, and so are the module states inside.
+            let data = fs::read_all{ &fs, heap = &h, realloc = heap::alloc, path } iferr err{ error } {
+                st.failed = st.failed + 1
+                _ = @fmt(&io, "erf FAIL {}: {}\n", path, error)
+                return
+            }
+            defer res::free_bytes{ h = &h, b = data }
+            check_whole{ &io, &h, &st, data, what = path }
+            let members = erf::parse{ data, realloc = heap::alloc, heap = &h } iferr { return }
+            defer _ = alloc::resize(res::Member, heap::Heap){ realloc = heap::alloc, heap = &h, mem = members, count = 0 }
+            let mut i: usize = 0
+            while i < members.len {
+                let m = members[i]
+                i = i + 1
+                if m.kind == @as(u16, restype::Type::sav) { check_whole{ &io, &h, &st, data = data[m.offset..m.offset + m.size], what = path } }
+            }
+            return
+        }
+        // Shipped archives can be 400 MB: rebuild the index only. The data follows packed in key
+        // order, which the rebuilt resource list then describes exactly.
+        let file = fs::open{ &fs, path, mode = fs::Mode::read } iferr { return }
+        defer _ = fs::close{ &fs, file }
+        let size = res::file_size32{ &fs, path } iferr { return }
+        let mut head: [160]u8
+        let got = fs::read_at{ &fs, file, offset = 0, into = head[..] } iferr { return }
+        let hd = erf::parse_header{ data = head[..got] } iferr err{ error } {
+            st.failed = st.failed + 1
+            _ = @fmt(&io, "erf FAIL {}: {}\n", path, error)
+            return
+        }
+        let n = erf::index_size{ n = hd.count }
+        if n > @as(usize, size) {
+            st.failed = st.failed + 1
+            _ = @fmt(&io, "erf FAIL {}: index past the end\n", path)
+            return
+        }
+        let index = res::read_block{ &fs, h = &h, file, offset = 0, len = n } iferr { return }
+        defer res::free_bytes{ h = &h, b = index }
+        compare{ &io, &h, &st, data = index, total = size, what = path, whole = false }
+    }
+
+    fn check_whole { mut io: Io, mut h: heap::Heap, mut st: Stats, data: []u8, what: []u8 } {
+        st.saves = st.saves + 1
+        let before = st.identical
+        compare{ &io, &h, &st, data, total = @trunc(u32, data.len), what, whole = true }
+        if st.identical > before { st.saves_identical = st.saves_identical + 1 }
+    }
+
+    // Rebuilds the archive whose first bytes are `data` (all of it with `whole`) and `total` bytes
+    // long, and counts how it compares.
+    fn compare { mut io: Io, mut h: heap::Heap, mut st: Stats, data: []u8, total: u32, what: []u8, whole: bool } {
+        st.archives = st.archives + 1
+        let hd = erf::parse_header{ data } iferr { return }
+        let n = @as(usize, hd.count)
+        let entries = alloc::resize(erf::Entry, heap::Heap){ realloc = heap::alloc, heap = &h, mem = slice::empty(erf::Entry){}, count = n } iferr { return }
+        defer _ = alloc::resize(erf::Entry, heap::Heap){ realloc = heap::alloc, heap = &h, mem = entries, count = 0 }
+        let mut members = alloc::resize(erf::NewMember, heap::Heap){ realloc = heap::alloc, heap = &h, mem = slice::empty(erf::NewMember){}, count = n } iferr { return }
+        defer _ = alloc::resize(erf::NewMember, heap::Heap){ realloc = heap::alloc, heap = &h, mem = members, count = 0 }
+        let mut i: usize = 0
+        while i < n {
+            let k = @as(usize, hd.keys_at) + erf::KEY * i
+            let r = @as(usize, hd.resources_at) + erf::RESOURCE * i
+            let raw = le::get_bytes{ data, at = k, len = 16 } iferr { return }
+            let name = raw[..text::find_byte{ s = raw, c = 0 } ifnull 16]
+            let kind = le::get_u16{ data, at = k + 20 } iferr { return }
+            let offset = le::get_u32{ data, at = r } iferr { return }
+            let len = le::get_u32{ data, at = r + 4 } iferr { return }
+            entries[i] = erf::Entry{ name, kind, size = len }
+            if whole { members[i] = erf::NewMember{ name, kind, data = le::get_bytes{ data, at = offset, len } iferr { return } } }
+            i = i + 1
+        }
+        let built = if whole {
+            erf::write{ realloc = heap::alloc, heap = &h, sig = hd.sig, members, year = hd.build_year, day = hd.build_day } iferr err{ error } {
+                st.failed = st.failed + 1
+                _ = @fmt(&io, "erf FAIL {}: {}\n", what, error)
+                return
+            }
+        } else {
+            erf::write_index{ realloc = heap::alloc, heap = &h, sig = hd.sig, entries, year = hd.build_year, day = hd.build_day } iferr err{ error } {
+                st.failed = st.failed + 1
+                _ = @fmt(&io, "erf FAIL {}: {}\n", what, error)
+                return
+            }
+        }
+        defer res::free_bytes{ h = &h, b = built }
+        let mut size: u64 = erf::index_size{ n }
+        i = 0
+        while i < n {
+            size = size + entries[i].size
+            i = i + 1
+        }
+        if size != @as(u64, total) or built.len > data.len {
+            st.failed = st.failed + 1
+            _ = @fmt(&io, "erf FAIL {}: rebuilt {} bytes, the file has {}\n", what, size, total)
+            return
+        }
+        let original = data[..built.len]
+        if slice::eq_bytes{ a = built, b = original } {
+            st.identical = st.identical + 1
+            return
+        }
+        if slice::eq_bytes{ a = built[..40], b = original[..40] } and slice::eq_bytes{ a = built[44..], b = original[44..] } {
+            st.masked = st.masked + 1
+            return
+        }
+        st.failed = st.failed + 1
+        let mut at: usize = 0
+        while at < built.len and built[at] == original[at] { at = at + 1 }
+        _ = @fmt(&io, "erf FAIL {}: differs from byte {}\n", what, at)
+    }
+}
