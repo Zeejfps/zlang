@@ -1,0 +1,182 @@
+// mathcheck: checks lib/base/math.ctx against identities it must keep. Exits 1 on a failure.
+//
+//   kotor/tools/ctxc run kotor/tools/mathcheck
+
+struct Count { passed: u32, failed: u32 }
+
+fn main { mut io: Io } -> i32 {
+    let mut n = Count{ passed = 0, failed = 0 }
+    check_matrices{ &io, &n }
+    check_quaternions{ &io, &n }
+    check_projection{ &io, &n }
+    check_queries{ &io, &n }
+    _ = @fmt(&io, "mathcheck: {} passed, {} failed\n", n.passed, n.failed)
+    io::flush{ &io }
+    return if n.failed == 0 { 0 } else { 1 }
+}
+
+fn expect { mut io: Io, mut n: Count, what: strlit, ok: bool } {
+    if ok {
+        n.passed = n.passed + 1
+    } else {
+        n.failed = n.failed + 1
+        _ = @fmt(&io, "FAIL: {}\n", what)
+    }
+}
+
+fn near { a: f32, b: f32 } -> bool { return math::abs{ x = a - b } < 0.0001 }
+fn near3 { a: math::Vec3, b: math::Vec3 } -> bool { return near{ a = a.x, b = b.x } and near{ a = a.y, b = b.y } and near{ a = a.z, b = b.z } }
+fn near_mat { a: math::Mat4, b: math::Mat4 } -> bool {
+    let mut i: usize = 0
+    while i < 16 {
+        if not near{ a = a.m[i], b = b.m[i] } { return false }
+        i = i + 1
+    }
+    return true
+}
+
+fn v3 { x: f32, y: f32, z: f32 } -> math::Vec3 { return math::Vec3{ x, y, z } }
+
+fn check_matrices { mut io: Io, mut n: Count } {
+    let q = math::quat::from_axis_angle{ axis = v3{ x = 1.0, y = 2.0, z = 3.0 }, angle = 0.7 }
+    let m = math::mat4::compose{ t = v3{ x = 1.0, y = -2.0, z = 3.5 }, r = q, s = v3{ x = 2.0, y = 0.5, z = 1.5 } }
+    let inv = math::mat4::inverse{ m } ifnull { math::mat4::identity{} }
+    let id = math::mat4::identity{}
+    expect{ &io, &n, what = "inverse: m * inverse(m) = I", ok = near_mat{ a = math::mat4::mul{ a = m, b = inv }, b = id } }
+    expect{ &io, &n, what = "inverse: inverse(m) * m = I", ok = near_mat{ a = math::mat4::mul{ a = inv, b = m }, b = id } }
+    expect{ &io, &n, what = "inverse_affine = inverse", ok = near_mat{ a = math::mat4::inverse_affine{ m }, b = inv } }
+    let p = v3{ x = 0.3, y = -1.2, z = 2.0 }
+    let there = math::mat4::transform_point{ m, p }
+    expect{ &io, &n, what = "transform_point round trip", ok = near3{ a = math::mat4::transform_point{ m = inv, p = there }, b = p } }
+    // compose is T * R * S
+    let rs = math::mat4::mul{ a = math::quat::to_mat4{ q }, b = math::mat4::scaling{ s = v3{ x = 2.0, y = 0.5, z = 1.5 } } }
+    let trs = math::mat4::mul{ a = math::mat4::translation{ t = v3{ x = 1.0, y = -2.0, z = 3.5 } }, b = rs }
+    expect{ &io, &n, what = "compose = T * R * S", ok = near_mat{ a = m, b = trs } }
+    expect{ &io, &n, what = "transpose twice", ok = near_mat{ a = math::mat4::transpose{ m = math::mat4::transpose{ m } }, b = m } }
+    let singular = math::mat4::scaling{ s = v3{ x = 1.0, y = 0.0, z = 1.0 } }
+    expect{ &io, &n, what = "singular inverse is null", ok = math::mat4::inverse{ m = singular } == null }
+    // The normal matrix of a non-uniform scale keeps normals perpendicular to surfaces.
+    let nm = math::mat3::normal_matrix{ m }
+    let tangent = v3{ x = 1.0, y = 1.0, z = 0.0 }
+    let normal = v3{ x = 1.0, y = -1.0, z = 0.5 }
+    let t2 = math::mat4::transform_dir{ m, v = tangent }
+    let n2 = math::mat3::transform{ m = nm, v = normal }
+    expect{ &io, &n, what = "normal matrix keeps perpendicular", ok = near{ a = math::vec3::dot{ a = t2, b = n2 }, b = 0.0 } }
+    // The box of a transformed box holds every transformed corner.
+    let box = math::aabb::make{ min = v3{ x = -1.0, y = -2.0, z = 0.0 }, max = v3{ x = 1.0, y = 3.0, z = 2.0 } }
+    let moved = math::aabb::transform{ b = box, m }
+    let grown = math::aabb::make{
+        min = math::vec3::sub{ a = moved.min, b = math::vec3::splat{ s = 0.0001 } },
+        max = math::vec3::add{ a = moved.max, b = math::vec3::splat{ s = 0.0001 } },
+    }
+    let mut corners_in = true
+    let mut c: u32 = 0
+    while c < 8 {
+        let corner = v3{
+            x = if (c & 1) != 0 { box.max.x } else { box.min.x },
+            y = if (c & 2) != 0 { box.max.y } else { box.min.y },
+            z = if (c & 4) != 0 { box.max.z } else { box.min.z },
+        }
+        let w = math::mat4::transform_point{ m, p = corner }
+        if not math::aabb::contains{ b = grown, p = w } { corners_in = false }
+        c = c + 1
+    }
+    expect{ &io, &n, what = "aabb::transform holds the corners", ok = corners_in }
+}
+
+fn check_quaternions { mut io: Io, mut n: Count } {
+    // 90 degrees about Z takes +X to +Y.
+    let qz = math::quat::from_axis_angle{ axis = v3{ x = 0.0, y = 0.0, z = 1.0 }, angle = math::PI * 0.5 }
+    let x_axis = v3{ x = 1.0, y = 0.0, z = 0.0 }
+    let y_axis = v3{ x = 0.0, y = 1.0, z = 0.0 }
+    expect{ &io, &n, what = "rotate +X by 90 about Z = +Y", ok = near3{ a = math::quat::rotate{ q = qz, v = x_axis }, b = y_axis } }
+    let r = math::quat::to_mat3{ q = qz }
+    expect{ &io, &n, what = "to_mat3 agrees with rotate", ok = near3{ a = math::mat3::transform{ m = r, v = x_axis }, b = y_axis } }
+    let a = math::quat::from_axis_angle{ axis = v3{ x = 1.0, y = 0.2, z = -0.4 }, angle = 1.1 }
+    let b = math::quat::from_axis_angle{ axis = v3{ x = -0.3, y = 1.0, z = 0.8 }, angle = -2.3 }
+    let ab = math::quat::mul{ a, b }
+    let p = v3{ x = 0.5, y = -0.7, z = 1.9 }
+    let twice = math::quat::rotate{ q = a, v = math::quat::rotate{ q = b, v = p } }
+    expect{ &io, &n, what = "mul: rotate by b then a", ok = near3{ a = math::quat::rotate{ q = ab, v = p }, b = twice } }
+    let mab = math::mat4::mul{ a = math::quat::to_mat4{ q = a }, b = math::quat::to_mat4{ q = b } }
+    expect{ &io, &n, what = "to_mat4(a b) = to_mat4(a) to_mat4(b)", ok = near_mat{ a = math::quat::to_mat4{ q = ab }, b = mab } }
+    let back = math::quat::from_mat3{ r = math::quat::to_mat3{ q = ab } }
+    expect{ &io, &n, what = "from_mat3 inverts to_mat3", ok = near{ a = math::abs{ x = math::quat::dot{ a = back, b = ab } }, b = 1.0 } }
+    let s0 = math::quat::slerp{ a, b, t = 0.0 }
+    let s1 = math::quat::slerp{ a, b, t = 1.0 }
+    expect{ &io, &n, what = "slerp at 0", ok = near{ a = math::abs{ x = math::quat::dot{ a = s0, b = a } }, b = 1.0 } }
+    expect{ &io, &n, what = "slerp at 1", ok = near{ a = math::abs{ x = math::quat::dot{ a = s1, b = b } }, b = 1.0 } }
+    // Halfway about one axis is half the angle.
+    let z_axis = v3{ x = 0.0, y = 0.0, z = 1.0 }
+    let q1 = math::quat::from_axis_angle{ axis = z_axis, angle = 2.0 }
+    let half = math::quat::slerp{ a = math::quat::identity{}, b = q1, t = 0.5 }
+    let want = math::quat::from_axis_angle{ axis = z_axis, angle = 1.0 }
+    expect{ &io, &n, what = "slerp halfway", ok = near{ a = math::quat::dot{ a = half, b = want }, b = 1.0 } }
+    let none = math::quat::mul{ a, b = math::quat::inverse{ q = a } }
+    expect{ &io, &n, what = "q * inverse(q) = 1", ok = near{ a = none.w, b = 1.0 } }
+}
+
+fn check_projection { mut io: Io, mut n: Count } {
+    let proj = math::mat4::perspective{ fovy = 1.0, aspect = 1.5, near = 0.5, far = 100.0 }
+    let up = v3{ x = 0.0, y = 0.0, z = 1.0 }
+    let view = math::mat4::look_at{ eye = v3{ x = 0.0, y = -5.0, z = 1.0 }, at = v3{ x = 0.0, y = 0.0, z = 1.0 }, up }
+    let vp = math::mat4::mul{ a = proj, b = view }
+    let centre = math::mat4::project_point{ m = vp, p = v3{ x = 0.0, y = 0.0, z = 1.0 } }
+    expect{ &io, &n, what = "look_at target projects to the centre", ok = near{ a = centre.x, b = 0.0 } and near{ a = centre.y, b = 0.0 } }
+    let at_near = math::mat4::project_point{ m = vp, p = v3{ x = 0.0, y = -4.5, z = 1.0 } }
+    let at_far = math::mat4::project_point{ m = vp, p = v3{ x = 0.0, y = 95.0, z = 1.0 } }
+    expect{ &io, &n, what = "near plane at depth -1", ok = near{ a = at_near.z, b = -1.0 } }
+    expect{ &io, &n, what = "far plane at depth 1", ok = near{ a = at_far.z, b = 1.0 } }
+    let above = math::mat4::project_point{ m = vp, p = v3{ x = 0.0, y = 0.0, z = 2.0 } }
+    expect{ &io, &n, what = "Z up is screen up", ok = above.y > 0.0 }
+    let right = math::mat4::project_point{ m = vp, p = v3{ x = 1.0, y = 0.0, z = 1.0 } }
+    expect{ &io, &n, what = "+X is screen right looking down +Y", ok = right.x > 0.0 }
+    let f = math::frustum::from_matrix{ m = vp }
+    expect{ &io, &n, what = "frustum holds the target", ok = math::frustum::intersects_sphere{ f, center = v3{ x = 0.0, y = 0.0, z = 1.0 }, radius = 0.1 } }
+    expect{ &io, &n, what = "frustum rejects behind", ok = not math::frustum::intersects_sphere{ f, center = v3{ x = 0.0, y = -20.0, z = 1.0 }, radius = 1.0 } }
+    let far_box = math::aabb::make{ min = v3{ x = 50.0, y = 0.0, z = 0.0 }, max = v3{ x = 60.0, y = 1.0, z = 1.0 } }
+    expect{ &io, &n, what = "frustum rejects a box off to the side", ok = not math::frustum::intersects_aabb{ f, box = far_box } }
+    let o = math::mat4::ortho{ left = 0.0, right = 800.0, bottom = 600.0, top = 0.0, near = -1.0, far = 1.0 }
+    let tl = math::mat4::project_point{ m = o, p = v3{ x = 0.0, y = 0.0, z = 0.0 } }
+    let br = math::mat4::project_point{ m = o, p = v3{ x = 800.0, y = 600.0, z = 0.0 } }
+    expect{ &io, &n, what = "ortho pixels: top left", ok = near{ a = tl.x, b = -1.0 } and near{ a = tl.y, b = 1.0 } }
+    expect{ &io, &n, what = "ortho pixels: bottom right", ok = near{ a = br.x, b = 1.0 } and near{ a = br.y, b = -1.0 } }
+}
+
+fn check_queries { mut io: Io, mut n: Count } {
+    let down_dir = v3{ x = 0.0, y = 0.0, z = -1.0 }
+    let down = math::ray::make{ origin = v3{ x = 0.25, y = 0.25, z = 10.0 }, dir = down_dir }
+    let a = v3{ x = 0.0, y = 0.0, z = 1.0 }
+    let b = v3{ x = 1.0, y = 0.0, z = 1.0 }
+    let c = v3{ x = 0.0, y = 1.0, z = 1.0 }
+    let ok = match math::ray::intersect_triangle{ ray = down, a, b, c, max_t = 100.0 } {
+        null => { false }
+        some{ value } => { near{ a = value.t, b = 9.0 } and near{ a = value.u, b = 0.25 } and near{ a = value.v, b = 0.25 } }
+    }
+    expect{ &io, &n, what = "ray hits the triangle at t 9, u v 0.25", ok }
+    expect{ &io, &n, what = "max_t limits the hit", ok = math::ray::intersect_triangle{ ray = down, a, b, c, max_t = 5.0 } == null }
+    let miss = math::ray::make{ origin = v3{ x = 0.9, y = 0.9, z = 10.0 }, dir = down_dir }
+    expect{ &io, &n, what = "ray misses outside the triangle", ok = math::ray::intersect_triangle{ ray = miss, a, b, c, max_t = 100.0 } == null }
+    let box = math::aabb::make{ min = v3{ x = -1.0, y = -1.0, z = -1.0 }, max = v3{ x = 1.0, y = 1.0, z = 1.0 } }
+    let r = math::ray::make{ origin = v3{ x = -5.0, y = 0.5, z = 0.0 }, dir = v3{ x = 1.0, y = 0.0, z = 0.0 } }
+    let t = math::ray::intersect_aabb{ ray = r, box, max_t = 100.0 } ifnull { -1.0 }
+    expect{ &io, &n, what = "ray enters the box at t 4", ok = near{ a = t, b = 4.0 } }
+    let from_inside = math::ray::make{ origin = math::vec3::zero{}, dir = v3{ x = 0.0, y = 1.0, z = 0.0 } }
+    let inside = math::ray::intersect_aabb{ ray = from_inside, box, max_t = 100.0 } ifnull { -1.0 }
+    expect{ &io, &n, what = "ray from inside the box: t 0", ok = near{ a = inside, b = 0.0 } }
+    let away = math::ray::make{ origin = v3{ x = -5.0, y = 2.0, z = 0.0 }, dir = v3{ x = 1.0, y = 0.0, z = 0.0 } }
+    expect{ &io, &n, what = "ray passes the box", ok = math::ray::intersect_aabb{ ray = away, box, max_t = 100.0 } == null }
+    let pl = math::plane::from_points{ a, b, c }
+    expect{ &io, &n, what = "plane from counterclockwise points faces +Z", ok = near3{ a = pl.n, b = v3{ x = 0.0, y = 0.0, z = 1.0 } } and near{ a = pl.d, b = -1.0 } }
+    let pt = math::plane::intersect_ray{ p = pl, ray = down, max_t = 100.0 } ifnull { -1.0 }
+    expect{ &io, &n, what = "plane meets the ray at t 9", ok = near{ a = pt, b = 9.0 } }
+}
+
+// ---- @fmt into standard output
+
+namespace out {
+    #write
+    fn put_text { mut io: Io, s: strlit } { io::write{ &io, to = io::Stream::out, bytes = s.bytes } }
+    #write
+    fn put_u32 { mut io: Io, n: u32 } { io::print_u64{ &io, n } }
+}

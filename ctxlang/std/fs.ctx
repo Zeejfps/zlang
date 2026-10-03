@@ -59,6 +59,26 @@ namespace fs {
         return done
     }
 
+    // Moves the file's position to `offset` bytes from its start: the next read or write starts
+    // there. An offset past the end is allowed; reading there reads nothing.
+    fn seek { mut fs: Fs, file: File, offset: u64 } -> ! {
+        try os::file_seek{ &fs, file = file.id, offset }
+    }
+
+    // Reads into `into` from `offset` bytes into the file: all of it, or as much as there is
+    // before the end of the file. Returns how many bytes it read. Leaves the file's position after
+    // them. For archives, whose members are read by offset without loading the whole file.
+    fn read_at { mut fs: Fs, file: File, offset: u64, into: []mut u8 } -> !usize {
+        try seek{ &fs, file, offset }
+        let mut n: usize = 0
+        while n < into.len {
+            let got = try read{ &fs, file, into = into[n..] }
+            if got == 0 { break }
+            n = n + got
+        }
+        return n
+    }
+
     // Files still open when the program ends are closed then.
     fn close { mut fs: Fs, file: File } -> ! {
         try os::file_close{ &fs, file = file.id }

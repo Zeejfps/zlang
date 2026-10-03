@@ -1,0 +1,5 @@
+// The build program for mathcheck: `kotor/tools/ctxc run kotor/tools/mathcheck`.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "mathcheck", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/base" }
+}

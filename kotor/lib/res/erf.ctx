@@ -1,0 +1,166 @@
+// The ERF family (docs/formats/erf.md): ERF, MOD, SAV and HAK, one layout under four signatures.
+// The texture packs, patch.erf, the lips archives and saved games are ERFs; a saved game nests a
+// module's saved state, itself an ERF, inside SAVEGAME.sav.
+//
+//   let h = try erf::parse_header{ data = first_160_bytes }
+//   let members = try erf::parse_members{ h, keys, resources, base, size, realloc, &heap }
+//
+//   let bytes = try erf::write{ realloc, &heap, sig = erf::Sig::mod, members, year = 123, day = 344 }
+//
+// Offsets inside an ERF are relative to its own start; `base` makes them absolute in the file that
+// holds it (0 for an ERF file, the member's offset for one nested in a save).
+namespace erf {
+    // Not one of the four signatures with `V1.0`.
+    error bad_header
+    // The key or resource list, or a member's data, outside the archive.
+    error bad_table
+    // A member name longer than 16 bytes, given to the writer.
+    error name_too_long{ index: usize }
+
+    const HEADER: usize = 160
+    const KEY: usize = 24
+    const RESOURCE: usize = 8
+
+    // The signature: which kind of ERF. The game writes saves as `MOD `.
+    enum Sig: u8 { erf, mod, sav, hak }
+
+    struct Header {
+        sig: Sig,
+        languages: u32,
+        loc_size: u32,
+        count: u32,
+        loc_at: u32,
+        keys_at: u32,
+        resources_at: u32,
+        build_year: u32,            // years since 1900
+        build_day: u32,             // days since 1 January, from 0
+    }
+
+    // The first 160 bytes of an ERF.
+    fn parse_header { data: []u8 } -> !Header {
+        if data.len < HEADER { return bad_header }
+        let sig = sig_of{ b = data[..4] } ifnull { return bad_header }
+        if not slice::eq_bytes{ a = data[4..8], b = "V1.0" } { return bad_header }
+        return Header{
+            sig,
+            languages = try le::get_u32{ data, at = 8 },
+            loc_size = try le::get_u32{ data, at = 12 },
+            count = try le::get_u32{ data, at = 16 },
+            loc_at = try le::get_u32{ data, at = 20 },
+            keys_at = try le::get_u32{ data, at = 24 },
+            resources_at = try le::get_u32{ data, at = 28 },
+            build_year = try le::get_u32{ data, at = 32 },
+            build_day = try le::get_u32{ data, at = 36 },
+        }
+    }
+
+    fn sig_of { b: []u8 } -> ?Sig {
+        if slice::eq_bytes{ a = b, b = "ERF " } { return Sig::erf }
+        if slice::eq_bytes{ a = b, b = "MOD " } { return Sig::mod }
+        if slice::eq_bytes{ a = b, b = "SAV " } { return Sig::sav }
+        if slice::eq_bytes{ a = b, b = "HAK " } { return Sig::hak }
+        return null
+    }
+
+    fn sig_bytes { sig: Sig } -> []u8 {
+        return match sig { erf => { "ERF " } mod => { "MOD " } sav => { "SAV " } hak => { "HAK " } }
+    }
+
+    // The members, from the bytes of the key list (`count` x 24) and the resource list (x 8).
+    // `size` is the ERF's size: every member must lie inside it. Offsets come out absolute: plus
+    // `base`. Member.file is 0.
+    fn parse_members(S) { h: Header, keys: []u8, resources: []u8, base: u32, size: u32, realloc: alloc::Fn(S), mut heap: S } -> ![]mut res::Member {
+        let n = @as(usize, h.count)
+        if keys.len < n * KEY or resources.len < n * RESOURCE { return bad_table }
+        if @as(u64, base) + @as(u64, size) > 4294967295 { return bad_table }
+        let out = try alloc::resize(res::Member, S){ realloc, &heap, mem = slice::empty(res::Member){}, count = n }
+        let mut i: usize = 0
+        while i < n {
+            let k = KEY * i
+            let r = RESOURCE * i
+            let offset = try le::get_u32{ data = resources, at = r }
+            let len = try le::get_u32{ data = resources, at = r + 4 }
+            if @as(u64, offset) + @as(u64, len) > @as(u64, size) {
+                _ = alloc::resize(res::Member, S){ realloc, &heap, mem = out, count = 0 }
+                return bad_table
+            }
+            out[i] = res::Member{
+                name = resref::from_field{ raw = keys[k..k + 16] },
+                kind = try le::get_u16{ data = keys, at = k + 20 },
+                file = 0,
+                offset = base + offset,
+                size = len,
+            }
+            i = i + 1
+        }
+        return out
+    }
+
+    // Parses a whole ERF held in memory: its members, offsets relative to `data`.
+    fn parse(S) { data: []u8, realloc: alloc::Fn(S), mut heap: S } -> ![]mut res::Member {
+        let h = try parse_header{ data }
+        let n = @as(usize, h.count)
+        let keys = le::get_bytes{ data, at = h.keys_at, len = n * KEY } iferr { return bad_table }
+        let resources = le::get_bytes{ data, at = h.resources_at, len = n * RESOURCE } iferr { return bad_table }
+        if data.len > 4294967295 { return bad_table }
+        return parse_members{ h, keys, resources, base = 0, size = @trunc(u32, data.len), realloc, &heap }
+    }
+
+    // ---- writing
+
+    // A member to write: its name as it should be stored (case kept), type and bytes.
+    struct NewMember { name: []u8, kind: u16, data: []u8 }
+
+    // An ERF holding `members` in order, laid out as the engine writes saves: header, keys (ResID
+    // = index), resource list, then the data packed in key order. No localized strings; the
+    // description StrRef and reserved bytes are 0. `year` is years since 1900, `day` days since 1
+    // January from 0.
+    fn write(S) { realloc: alloc::Fn(S), mut heap: S, sig: Sig, members: []NewMember, year: u32, day: u32 } -> !alloc::Bytes {
+        let n = members.len
+        let mut total = HEADER + n * (KEY + RESOURCE)
+        let mut i: usize = 0
+        while i < n {
+            if members[i].name.len > resref::MAX { return name_too_long{ index = i } }
+            total = total + members[i].data.len
+            i = i + 1
+        }
+        let mut out = list::new(u8, S){ realloc, heap = &heap }
+        try list::reserve{ list = &out, extra = total }
+        let keys_at = HEADER
+        let resources_at = keys_at + n * KEY
+        try le::put_bytes{ &out, bytes = sig_bytes{ sig } }
+        try le::put_bytes{ &out, bytes = "V1.0" }
+        try le::put_u32{ &out, v = 0 }                              // LanguageCount
+        try le::put_u32{ &out, v = 0 }                              // LocalizedStringSize
+        try le::put_u32{ &out, v = @trunc(u32, n) }
+        try le::put_u32{ &out, v = @trunc(u32, keys_at) }           // no strings: they start where the keys do
+        try le::put_u32{ &out, v = @trunc(u32, keys_at) }
+        try le::put_u32{ &out, v = @trunc(u32, resources_at) }
+        try le::put_u32{ &out, v = year }
+        try le::put_u32{ &out, v = day }
+        try le::put_u32{ &out, v = 0 }                              // DescriptionStrRef
+        try le::put_zeros{ &out, n = 116 }
+        i = 0
+        while i < n {
+            try le::put_padded{ &out, bytes = members[i].name, width = 16 }
+            try le::put_u32{ &out, v = @trunc(u32, i) }
+            try le::put_u16{ &out, v = members[i].kind }
+            try le::put_u16{ &out, v = 0 }
+            i = i + 1
+        }
+        let mut at = resources_at + n * RESOURCE
+        i = 0
+        while i < n {
+            try le::put_u32{ &out, v = @trunc(u32, at) }
+            try le::put_u32{ &out, v = @trunc(u32, members[i].data.len) }
+            at = at + members[i].data.len
+            i = i + 1
+        }
+        i = 0
+        while i < n {
+            try le::put_bytes{ &out, bytes = members[i].data }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+}

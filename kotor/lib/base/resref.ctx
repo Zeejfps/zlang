@@ -1,0 +1,94 @@
+// Resource names. A resref is 1 to 16 bytes and case-insensitive (docs/formats/resources.md):
+// chitin.key stores lower case, ERFs and RIMs whatever case their packer had. A ResRef holds its
+// name folded to ASCII lower case, so two that name one resource are equal byte for byte, and it
+// is a value: 17 bytes, no pointers, usable as a map key.
+//
+//   let r = try resref::from{ name = "P_Bastila" }          // "p_bastila"
+//   let s = resref::bytes{ r = &r }                          // a view of the 9 bytes
+//   let mut m = map::new(resref::ResRef, u32){ realloc, &heap, hash = resref::hash, eq = resref::eq }
+//
+// Names are bytes, not identifiers: `-`, `+`, `!` and a space occur in the install. Nothing is
+// validated but the length.
+namespace resref {
+    const MAX: usize = 16
+
+    struct ResRef { len: u8, chars: [16]u8 }
+
+    // A name longer than 16 bytes.
+    error too_long{ len: usize }
+
+    // The empty name, which GFF fields use for "no resource".
+    fn empty {} -> ResRef {
+        return ResRef{ len = 0, chars = [0; 16] }
+    }
+
+    // `name`, lower-cased. Fails with too_long if it has more than 16 bytes.
+    fn from { name: []u8 } -> !ResRef {
+        if name.len > MAX { return too_long{ len = name.len } }
+        return truncate{ name }
+    }
+
+    // The first 16 bytes of `name`, lower-cased: how the engine names a file in a directory source
+    // whose stem is longer.
+    fn truncate { name: []u8 } -> ResRef {
+        let mut r = empty{}
+        let n = if name.len > MAX { MAX } else { name.len }
+        let mut i: usize = 0
+        while i < n {
+            r.chars[i] = ascii::to_lower{ c = name[i] }
+            i = i + 1
+        }
+        r.len = @trunc(u8, n)
+        return r
+    }
+
+    // A 16-byte resref field of an archive: the bytes up to the first NUL, or all 16 when there
+    // is none. `raw` may be shorter than 16 bytes; only its first 16 count.
+    fn from_field { raw: []u8 } -> ResRef {
+        let n = if raw.len > MAX { MAX } else { raw.len }
+        let mut k: usize = 0
+        while k < n and raw[k] != 0 { k = k + 1 }
+        return truncate{ name = raw[..k] }
+    }
+
+    // The name's bytes.
+    fn bytes { r: *ResRef } -> []u8 {
+        return r.chars[..@as(usize, r.len)]
+    }
+
+    fn is_empty { r: ResRef } -> bool {
+        return r.len == 0
+    }
+
+    fn eq { a: ResRef, b: ResRef } -> bool {
+        if a.len != b.len { return false }
+        let mut i: usize = 0
+        while i < @as(usize, a.len) {
+            if a.chars[i] != b.chars[i] { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // Whether `r` names the same resource as `name`, in any case.
+    fn matches { r: ResRef, name: []u8 } -> bool {
+        if name.len != @as(usize, r.len) { return false }
+        let mut i: usize = 0
+        while i < name.len {
+            if r.chars[i] != ascii::to_lower{ c = name[i] } { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // FNV-1a over the name, for map::Map.
+    fn hash { key: ResRef } -> u64 {
+        let mut h: u64 = 14695981039346656037
+        let mut i: usize = 0
+        while i < @as(usize, key.len) {
+            h = @wrap_mul(h ^ @as(u64, key.chars[i]), 1099511628211)
+            i = i + 1
+        }
+        return h
+    }
+}

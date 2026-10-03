@@ -1,0 +1,236 @@
+// Helpers for the game's text formats (LYT, VIS, TXI, text 2DA, swkotor.ini): lines, tokens, and
+// numbers read the way the engine's C code reads them (sscanf's %i and %f, atol, atof), which
+// stop at the first character that doesn't fit instead of rejecting the text.
+//
+//   let mut lines = text::lines{ data }
+//   while true {
+//       let line = text::next_line{ &lines } ifnull { break }
+//       let mut words = text::words{ s = line }
+//       let key = text::next_word{ &words } ifnull { continue }
+//       ...
+//   }
+//
+// The text is bytes: Windows-1252 in the game, ASCII in practice.
+namespace text {
+    // ---- lines
+
+    struct Lines { data: []u8, pos: usize }
+
+    fn lines { data: []u8 } -> Lines {
+        return Lines{ data, pos = 0 }
+    }
+
+    // The next line without its ending (CR LF, LF or a lone CR), or null at the end. The last
+    // line needn't end in a newline. An empty text has no lines.
+    fn next_line { mut lines: Lines } -> ?[]u8 {
+        let data = lines.data
+        if lines.pos >= data.len { return null }
+        let start = lines.pos
+        let mut i = start
+        while i < data.len and data[i] != '\n' and data[i] != '\r' { i = i + 1 }
+        let line = data[start..i]
+        if i < data.len and data[i] == '\r' { i = i + 1 }
+        if i < data.len and data[i] == '\n' { i = i + 1 }
+        lines.pos = i
+        return line
+    }
+
+    // ---- words: runs of bytes separated by spaces and tabs
+
+    struct Words { s: []u8, pos: usize }
+
+    fn words { s: []u8 } -> Words {
+        return Words{ s, pos = 0 }
+    }
+
+    fn next_word { mut words: Words } -> ?[]u8 {
+        let s = words.s
+        let mut i = words.pos
+        while i < s.len and is_blank{ c = s[i] } { i = i + 1 }
+        if i >= s.len {
+            words.pos = i
+            return null
+        }
+        let start = i
+        while i < s.len and not is_blank{ c = s[i] } { i = i + 1 }
+        words.pos = i
+        return s[start..i]
+    }
+
+    // The words not read yet, from the next one to the end of the line.
+    fn rest { words: Words } -> []u8 {
+        let s = words.s
+        let mut i = words.pos
+        while i < s.len and is_blank{ c = s[i] } { i = i + 1 }
+        return s[i..]
+    }
+
+    // How many words `s` has.
+    fn count_words { s: []u8 } -> usize {
+        let mut ws = words{ s }
+        let mut n: usize = 0
+        while next_word{ words = &ws } != null { n = n + 1 }
+        return n
+    }
+
+    // A space or a tab.
+    fn is_blank { c: u8 } -> bool {
+        return c == ' ' or c == '\t'
+    }
+
+    // Without leading and trailing spaces, tabs, CRs and LFs.
+    fn trim { s: []u8 } -> []u8 {
+        let mut a: usize = 0
+        let mut b = s.len
+        while a < b and ascii::is_space{ c = s[a] } { a = a + 1 }
+        while b > a and ascii::is_space{ c = s[b - 1] } { b = b - 1 }
+        return s[a..b]
+    }
+
+    // The index of the first `c` in `s`, or null.
+    fn find_byte { s: []u8, c: u8 } -> ?usize {
+        let mut i: usize = 0
+        while i < s.len {
+            if s[i] == c { return i }
+            i = i + 1
+        }
+        return null
+    }
+
+    fn is_empty_or_blank { s: []u8 } -> bool {
+        return trim{ s }.len == 0
+    }
+
+    // ---- numbers, as C reads them
+
+    // C's sscanf "%i": leading whitespace, a sign, then `0x` hexadecimal, a leading `0` octal or
+    // decimal, up to the first character that doesn't fit. Null when no digit converts. The value
+    // wraps to 64 bits as the digits overflow; callers truncate it to their width, so `0xFFFFFFFF`
+    // read as an i32 is -1, as in the engine.
+    fn scan_int { s: []u8 } -> ?i64 {
+        let mut i = skip_space{ s, i = 0 }
+        let mut neg = false
+        if i < s.len and (s[i] == '+' or s[i] == '-') {
+            neg = s[i] == '-'
+            i = i + 1
+        }
+        let mut base: u64 = 10
+        if i < s.len and s[i] == '0' {
+            if i + 2 < s.len and (s[i + 1] == 'x' or s[i + 1] == 'X') and digit_value{ c = s[i + 2] } < 16 {
+                base = 16
+                i = i + 2
+            } else {
+                base = 8
+            }
+        }
+        let mut v: u64 = 0
+        let mut any = false
+        while i < s.len {
+            let d = digit_value{ c = s[i] }
+            if d >= base { break }
+            v = @wrap_add(@wrap_mul(v, base), d)
+            any = true
+            i = i + 1
+        }
+        if not any { return null }
+        let signed = le::i64_of_bits{ bits = v }
+        return if neg { @wrap_sub(0, signed) } else { signed }
+    }
+
+    // C's atol: leading whitespace, a sign, decimal digits up to the first other character; 0 if
+    // there are none. Wraps as scan_int does.
+    fn scan_decimal { s: []u8 } -> i64 {
+        let mut i = skip_space{ s, i = 0 }
+        let mut neg = false
+        if i < s.len and (s[i] == '+' or s[i] == '-') {
+            neg = s[i] == '-'
+            i = i + 1
+        }
+        let mut v: u64 = 0
+        while i < s.len and ascii::is_digit{ c = s[i] } {
+            v = @wrap_add(@wrap_mul(v, 10), @as(u64, s[i] - '0'))
+            i = i + 1
+        }
+        let signed = le::i64_of_bits{ bits = v }
+        return if neg { @wrap_sub(0, signed) } else { signed }
+    }
+
+    // The length of the longest prefix of `s` (after leading whitespace, which counts) that C's
+    // strtod reads as a decimal number: a sign, digits with an optional `.` and more digits (at
+    // least one digit in all), then optionally `e` or `E`, a sign and digits. 0 if there is none.
+    fn float_prefix { s: []u8 } -> usize {
+        let mut i = skip_space{ s, i = 0 }
+        if i < s.len and (s[i] == '+' or s[i] == '-') { i = i + 1 }
+        let mut digits: usize = 0
+        while i < s.len and ascii::is_digit{ c = s[i] } {
+            i = i + 1
+            digits = digits + 1
+        }
+        if i < s.len and s[i] == '.' {
+            i = i + 1
+            while i < s.len and ascii::is_digit{ c = s[i] } {
+                i = i + 1
+                digits = digits + 1
+            }
+        }
+        if digits == 0 { return 0 }
+        if i < s.len and (s[i] == 'e' or s[i] == 'E') {
+            let mut j = i + 1
+            if j < s.len and (s[j] == '+' or s[j] == '-') { j = j + 1 }
+            let start = j
+            while j < s.len and ascii::is_digit{ c = s[j] } { j = j + 1 }
+            if j > start { i = j }
+        }
+        return i
+    }
+
+    // C's sscanf "%f" (and atof): the number float_prefix finds, rounded to the nearest f64.
+    // Null when there is none (atof would give 0).
+    fn scan_f64 { s: []u8 } -> ?f64 {
+        let n = float_prefix{ s }
+        if n == 0 { return null }
+        let start = skip_space{ s, i = 0 }
+        return ascii::f64_parse{ text = s[start..n] }
+    }
+
+    // The same, rounded once, directly to the nearest f32.
+    fn scan_f32 { s: []u8 } -> ?f32 {
+        let n = float_prefix{ s }
+        if n == 0 { return null }
+        let start = skip_space{ s, i = 0 }
+        return ascii::f32_parse{ text = s[start..n] }
+    }
+
+    // Whether all of `s` is one decimal number as float_prefix reads it, with nothing around it.
+    fn is_float { s: []u8 } -> bool {
+        return s.len > 0 and not ascii::is_space{ c = s[0] } and float_prefix{ s } == s.len
+    }
+
+    // Whether all of `s` is an optional sign and decimal digits.
+    fn is_integer { s: []u8 } -> bool {
+        let mut i: usize = 0
+        if i < s.len and (s[i] == '+' or s[i] == '-') { i = i + 1 }
+        if i == s.len { return false }
+        while i < s.len {
+            if not ascii::is_digit{ c = s[i] } { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // ---- internals
+
+    fn skip_space { s: []u8, i: usize } -> usize {
+        let mut k = i
+        while k < s.len and (ascii::is_space{ c = s[k] } or s[k] == 11 or s[k] == 12) { k = k + 1 }
+        return k
+    }
+
+    // A digit's value in base up to 16, or 99 for anything else.
+    fn digit_value { c: u8 } -> u64 {
+        if c >= '0' and c <= '9' { return @as(u64, c - '0') }
+        if c >= 'a' and c <= 'f' { return @as(u64, c - 'a') + 10 }
+        if c >= 'A' and c <= 'F' { return @as(u64, c - 'A') + 10 }
+        return 99
+    }
+}
