@@ -129,6 +129,10 @@ namespace options_panel {
                 _ = frontend::on_event{ fe, &g, fs = &w.fs, &dev, ev }
                 // Volumes go to the mixer's groups at once, as in the main menu.
                 if fe.sound_pending { frontend::apply_sound{ fe, mixer = g.mixer } }
+                // The Feedback screen's tooltip switch is the GUI's own.
+                if frontend::screen_of{ fe, panel = ev.panel } == frontend::SCR_FEEDBACK {
+                    gui::set_tooltip_delay{ &g, seconds = g.tooltip_delay, enabled = fe.settings.tooltips }
+                }
             }
         }
     }
