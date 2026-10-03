@@ -18,6 +18,7 @@ namespace rt_item {
             nwscript::TakeGoldFromCreature => { try take_gold_from_creature{ &w, &vm, argc } }
             nwscript::GetGold => { try get_gold{ &w, &vm, argc } }
             nwscript::ActionEquipItem => { try action_equip_item{ &w, &vm, argc } }
+            nwscript::ActionPickUpItem => { try action_pickup_item{ &w, &vm, argc } }
             nwscript::ActionUnequipItem => { try action_unequip_item{ &w, &vm, argc } }
             nwscript::ActionEquipMostEffectiveArmor => { try action_equip_most_effective_armor{ &w, &vm } }
             nwscript::GetItemACValue => { try get_item_ac_value{ &w, &vm, argc } }
@@ -429,6 +430,17 @@ namespace rt_item {
         a.params[1] = actions::Param::int{ v = slot }
         a.params[2] = actions::Param::int{ v = instant }
         _ = actions::add{ &w, id = me, action = a, force = false }
+    }
+
+    // void ActionPickUpItem(object oItem): the PICKUPITEM action (the item on the ground).
+    fn action_pickup_item { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let item = try nwarg::object{ &vm, routine = nwscript::ActionPickUpItem, argc, i = 0 }
+        if not world::is_valid{ w = &w, id = item } { return }
+        let mut a = actions::make{ kind = actions::Kind::pickup_item }
+        a.params[0] = actions::Param::object{ id = item }
+        a.params[1] = actions::Param::object{ id = obj::INVALID }
+        a.params[2] = actions::Param::int{ v = 0 }
+        _ = actions::add{ &w, id = nwvm::self_object{ vm }, action = a, force = false }
     }
 
     // void ActionUnequipItem(object oItem, int bInstant = FALSE)

@@ -3,7 +3,7 @@
 namespace play {
     // One scripted input line: `FRAME down KEY`, `FRAME up KEY`, and for tests `FRAME warp TAG`
     // (the leader jumps next to the object) and `FRAME use TAG` (the leader's default action on it).
-    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk, hush }
+    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk, hush, drop }
     struct Scripted { frame: u64, command: Command, key: []u8 }
 
     fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
@@ -112,6 +112,7 @@ namespace play {
                     newgame => {}
                     talk => { talk_to{ &w, &vm, engine, text = s.key } }
                     hush => { dlg::abort{ &w, &vm, engine } }
+                    drop => { drop_item{ &w, template = s.key } }
                     ui => {
                         if not dlgview::run_command{ v = &dview, w = &w, g = &ui.gui, text = s.key } { ingame::run_command{ ui, &w, &dev, text = s.key } }    // HOOK(ingame)
                     }
@@ -473,7 +474,7 @@ namespace play {
                 else if ci::eq{ a = what, b = "use" } { Command::use } else if ci::eq{ a = what, b = "newgame" } { Command::newgame }
                 else if ci::eq{ a = what, b = "ui" } { Command::ui } else if ci::eq{ a = what, b = "save" } { Command::save } else if ci::eq{ a = what, b = "talk" } { Command::talk }
                 else if ci::eq{ a = what, b = "load" } { Command::load } else if ci::eq{ a = what, b = "attack" } { Command::attack }
-                else if ci::eq{ a = what, b = "hush" } { Command::hush } else { Command::up }
+                else if ci::eq{ a = what, b = "hush" } { Command::hush } else if ci::eq{ a = what, b = "drop" } { Command::drop } else { Command::up }
             // `ui`, `talk`, `load` and `save` take the rest of the line; the others one word.
             let key = if command == Command::ui or command == Command::load or command == Command::save or command == Command::talk { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
             try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), command, key } }
@@ -536,6 +537,21 @@ namespace play {
         let mut a = actions::make{ kind }
         a.params[0] = actions::Param::object{ id }
         _ = actions::add{ &w, id = w.pc, action = a, force = false }
+    }
+
+    // `drop TEMPLATE`: an item 3 m in front of the leader on the ground, and the leader picks it up.
+    fn drop_item { mut w: world::World, template: []u8 } {
+        let me = world::object{ w = &w, id = w.pc } ifnull { return }
+        let at = math::vec3::add_scaled{ a = me.position, b = me.orientation, s = 3.0 }
+        let id = tmpl::spawn{ &w, kind = obj::Kind::item, template, position = at, orientation = me.orientation } iferr { return }
+        let io = world::object{ w = &w, id } ifnull { return }
+        io.area = me.area
+        io.position = at
+        let mut a = actions::make{ kind = actions::Kind::pickup_item }
+        a.params[0] = actions::Param::object{ id }
+        a.params[1] = actions::Param::object{ id = obj::INVALID }
+        a.params[2] = actions::Param::int{ v = 0 }
+        _ = actions::add{ &w, id = me.id, action = a, force = false }
     }
 
     fn camera_row_now { w: *world::World } -> u32 {

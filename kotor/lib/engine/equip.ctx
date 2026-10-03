@@ -281,4 +281,58 @@ namespace equip {
         if unequip_item{ &w, id, slot = @as(usize, slot) } { return actions::Status::done }
         return actions::Status::failed
     }
+
+    // ---- picking things up (actions.md 3.8, PICKUPITEM)
+
+    // PICKUPITEM: params 0 the item, 1 the container it is in (OBJECT_INVALID: the ground), 2 quiet.
+    // Walks to within 1.1 m (a move to within 0.5 m and a turn, then this again), crouches for the
+    // get animation (10059 low, 10060 mid; 1.5 s) and takes the item into the party's inventory
+    // at its middle (the original acquires on the second pass). Fails when someone else holds it.
+    fn pickup_action { mut w: world::World, id: u32, a: *mut actions::Action } -> actions::Status {
+        let o = world::object{ w = &w, id } ifnull { return actions::Status::failed }
+        let item = actions::object_param{ a, i = 0 }
+        let source = actions::object_param{ a, i = 1 }
+        let io = world::object{ w = &w, id = item } ifnull { return actions::Status::done }
+        let it = obj::item{ o = io } ifnull { return actions::Status::failed }
+        if o.kind != obj::Kind::creature or helpless{ w = &w, id } { return actions::Status::failed }
+        // Someone's already: only the container it is in may hand it over.
+        let mine = it.possessor == id or (it.possessor == w.player and (id == w.player or party::is_member{ w = &w, id }))
+        if mine and source == obj::INVALID { return actions::Status::done }
+        if it.possessor != obj::INVALID and it.possessor != source { return actions::Status::failed }
+        let at = if source != obj::INVALID {
+            if world::object{ w = &w, id = source } is some{ value = so } { so.position } else { return actions::Status::failed }
+        } else { io.position }
+        let now = clock::now_ms{ c = w.clock }
+        if a.phase == 0 {
+            if doors::distance_2d{ a = o.position, b = at } > 1.1 {
+                if a.serial > 0 and a.started + 20000 < now { return actions::Status::failed }
+                let mut copy = a.*
+                copy.has_started = false
+                actions::add_front{ &w, id, action = copy }
+                let mut face = actions::make{ kind = actions::Kind::face_object }
+                face.params[0] = actions::Param::object{ id = if source != obj::INVALID { source } else { item } }
+                actions::add_front{ &w, id, action = face }
+                let mut move = actions::make{ kind = actions::Kind::move_to_point }
+                move.params[0] = actions::Param::vector{ v = at }
+                move.params[1] = actions::Param::int{ v = if doors::distance_2d{ a = o.position, b = at } > 2.0 { 1 } else { 0 } }
+                move.params[2] = actions::Param::float{ v = 0.5 }
+                actions::add_front{ &w, id, action = move }
+                a.params = [actions::Param::none; 8]
+                return actions::Status::done
+            }
+            a.phase = 1
+            a.started = now
+            let low = at.z - o.position.z <= 1.0
+            world::set_animation{ o, id = if low { 10059 } else { 10060 }, speed = 1.0 }
+            return actions::Status::running
+        }
+        let elapsed = now - a.started
+        if a.phase == 1 and elapsed >= 750 {
+            a.phase = 2
+            if not rt_misc::move_item{ &w, item, to = id } { return actions::Status::failed }
+        }
+        if elapsed < 1500 { return actions::Status::running }
+        world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+        return actions::Status::done
+    }
 }
