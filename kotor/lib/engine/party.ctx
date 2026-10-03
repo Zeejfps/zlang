@@ -30,13 +30,13 @@ namespace party {
         pazaak_cards: [18]i32,
         pazaak_deck: [10]i32,
         pazaak_won: bool,
+        // Appended by routines/items.ctx: ChangeItemCost's price multiplier per baseitems.2da row (1.0
+        // until a script changes it; PT_COST_MULT_LIST in the party table). Rows past the array keep 1.0.
+        cost_mult: [160]f32,
         // The galaxy map (re/party-items-saves.md 3.1, GlxyMap*): bit p of the mask is "planet p is
         // available", bit 16 + p "selectable"; the planet the map has selected, -1 for none.
         planet_mask: u32,
         planet_selected: i32,
-        // Appended by routines/items.ctx: ChangeItemCost's price multiplier per baseitems.2da row (1.0
-        // until a script changes it; PT_COST_MULT_LIST in the party table). Rows past the array keep 1.0.
-        cost_mult: [160]f32,
     }
 
     const PLANETS: i32 = 16
