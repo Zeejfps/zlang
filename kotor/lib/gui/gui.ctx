@@ -360,10 +360,14 @@ namespace gui {
     }
 
     // Black behind, the resolution's picture stretched over the whole screen. The original does just
-    // that, at the sizes it has pictures for, where the 640x480 panel in the middle then covers the
-    // art that the store, pazaak and map pictures hold for it (the frame, the table). On a bigger or
-    // wider window the stretched art would run past the panel as a second, larger frame, so those
-    // pictures are drawn at the size they were made for, centred, with black around them.
+    // that, at the sizes it has pictures for (800x600, 1024x768, 1280x960, 1280x1024, 1600x1200), where
+    // the 640x480 panel in the middle covers most of the picture and the rest is the frame around
+    // it; the store, pazaak and map pictures even hold the art that goes under the panel (the
+    // frame, the table, the map's bars). On any other window the stretched picture is the wrong
+    // shape and size for the panel: a second, larger frame around it, art that no longer lines up
+    // with the controls. So the picture is drawn at the size it was made for (the 800x600 one for
+    // a size the original has none for), centred, with black around it. The loading screen's
+    // picture (kind 5) is a whole picture and stays stretched.
     fn draw_backdrop { mut g: Gui, mut frame: render::Frame, kind: u32 } {
         let screen = rect_of{ x = 0, y = 0, w = g.ui_w, h = g.ui_h }
         put_fill{ &frame, x = 0.0, y = 0.0, w = @as(f32, g.ui_w), h = @as(f32, g.ui_h), color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }, clip = screen }
@@ -372,7 +376,7 @@ namespace gui {
         let id = resolution_id{ w = g.ui_w, h = g.ui_h }
         let mut w = g.ui_w
         let mut h = g.ui_h
-        if kind >= 1 and kind <= 3 {
+        if kind <= 4 {
             if w > design_w{ id } { w = design_w{ id } }
             if h > design_h{ id } { h = design_h{ id } }
         }

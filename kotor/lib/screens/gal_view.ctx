@@ -101,7 +101,8 @@ namespace galview {
             let m = sh.scene.model
             let found = mdl_anim::find{ model = m, name = "rotate", lookup = mdl_cache::get{ fs = &w.fs, cache = sh.models, _ } } ifnull { return }
             let b = mdl_anim::bind{ realloc = arena::alloc, heap = sh.arena, model = m, animation = found.animation } iferr { return }
-            mdl_anim::play{ player = &sh.scene.player, binding = b, looping = true, speed = 1.0, transition = 0.0 }
+            // The planet turns with the camera where the zoom left it (rotate moves only the planet).
+            mdl_anim::play_after{ player = &sh.scene.player, binding = b, looping = true, speed = 1.0, transition = 0.0 }
         }
     }
 
