@@ -28,6 +28,8 @@ namespace world {
         ranges: twoda::Table,
         prioritygroups: twoda::Table,
         portraits: twoda::Table,
+        combatanimations: twoda::Table,
+        weapondischarge: twoda::Table,
     }
 
     // A pending module change (gameloop.md 5.1).
@@ -80,6 +82,11 @@ namespace world {
         tables: Tables,
         tlk: ?tlk::Table,                   // dialog.tlk (game/main loads it)
         globals: globals::Globals,
+        gip: save::Store,                   // the game in progress: visited modules' states (lib/save)
+        calendar_set: bool,                 // the clock's calendar came from a new game or a save
+        restoring: bool,                    // the module being entered comes from a loaded save
+        played_seconds: f64,                // time played (real time in game; PT_PLAYEDSECONDS)
+        player_blueprint: []mut u8,         // character creation's player (UTC GFF bytes, heap); empty: the default
         out: outbox::Outbox,
         transition: ?Transition,
         arrival_waypoint: [64]u8,           // where the PC arrives in the module being entered
@@ -93,7 +100,17 @@ namespace world {
         heartbeats: map::Map(u32, u64, heap::Heap),   // last heartbeat of doors, placeables, triggers
         cursor_area: usize,                 // GetNextObjectInArea: where in objects.all to go on from
         cursor_shape: usize,                // GetNextObjectInShape: likewise
-        // HOOK(rules): tables: *rules::Tables, rng: rules::Rng, effect ids: rules::Counter
+        // Appended by routines/misc.ctx.
+        cursor_inside: usize,               // GetNextInPersistentObject: where in the trigger's list to go on from
+        tokens: tokens::Table,              // SetCustomToken: <CUSTOMnnn> texts, for the whole session
+        last_acquired: u32,                 // GetModuleItemAcquired: the item the last transfer gave a creature
+        last_acquired_from: u32,            // GetModuleItemAcquiredFrom: who had it (OBJECT_INVALID: the ground)
+        // The rules (lib/rules): their tables, the dice (the C runtime's rand(), as the world's),
+        // the effect id counter and the event buffer every rules call fills (fight::drain).
+        rules: *mut rules::Tables,
+        dice: rules::Rng,
+        fx_ids: rules::EffectIds,
+        rev: rules::Events,
         // HOOK(dialog): conversation: dlg::State
         // HOOK(party): the party table
     }
@@ -101,10 +118,12 @@ namespace world {
     // A world with the session's tables loaded and no module yet.
     fn make {
         fs: Fs, io: Io, heap: *mut heap::Heap, rm: *mut res::Manager, module_arena: *mut arena::Arena,
-        scratch: *mut arena::Arena, seed: u32,
+        scratch: *mut arena::Arena, seed: u32, saves: []u8,
     } -> !*mut World {
         let mut f = fs
         let tables = try load_tables{ fs = &f, heap, rm = rm.* }
+        let mut blank_rules: rules::Tables
+        let mut blank_events: rules::Events
         let globals = try globals::make{ heap, table = tables.globalcat }
         let w = World{
             fs, io, heap, rm, mod_arena = module_arena, scratch,
@@ -118,7 +137,7 @@ namespace world {
             values = values::new{ heap },
             walk = walkmap::empty{ heap },
             layout = null, paths = null, vis = null,
-            tables, tlk = null, globals,
+            tables, tlk = null, globals, gip = try save::new_store{ heap, root = saves }, calendar_set = false, restoring = false, played_seconds = 0.0, player_blueprint = slice::empty(u8){},
             out = outbox::new{ heap },
             transition = null,
             arrival_waypoint = [0; 64], arrival_waypoint_len = 0,
@@ -130,8 +149,12 @@ namespace world {
             serial = 0,
             heartbeats = map::new(u32, u64, heap::Heap){ realloc = heap::alloc, heap, hash = map::hash_u32, eq = map::eq_u32 },
             cursor_area = 0, cursor_shape = 0,
+            cursor_inside = 0, tokens = tokens::new{ heap }, last_acquired = obj::INVALID, last_acquired_from = obj::INVALID,
+            rules = try alloc::new(rules::Tables, heap::Heap){ realloc = heap::alloc, heap, value = blank_rules },
+            dice = rules::seed_rng{ seed }, fx_ids = rules::EffectIds{ next = 1 }, rev = blank_events,
         }
         let p = try alloc::new(World, heap::Heap){ realloc = heap::alloc, heap, value = w }
+        try rules::load_tables{ fs = &f, rm = rm.*, heap = heap, out = p.rules }
         load_repute{ w = p }
         return p
     }
@@ -184,6 +207,8 @@ namespace world {
             ranges = try load_table{ &fs, heap, rm, name = "ranges" },
             prioritygroups = try load_table{ &fs, heap, rm, name = "prioritygroups" },
             portraits = try load_table{ &fs, heap, rm, name = "portraits" },
+            combatanimations = try load_table{ &fs, heap, rm, name = "combatanimations" },
+            weapondischarge = try load_table{ &fs, heap, rm, name = "weapondischarge" },
         }
     }
 
@@ -223,6 +248,9 @@ namespace world {
 
     // The `nth` (from 0) live object whose tag is `tag` (ignoring case), in creation order.
     fn object_by_tag { w: *World, tag: []u8, nth: i32 } -> u32 {
+        // An empty tag names nothing (ours: k_pend_traskdl40 moves Trask to GetObjectByTag(""),
+        // which only makes sense as OBJECT_INVALID, a move that fails at once).
+        if tag.len == 0 { return obj::INVALID }
         let all = list::items{ list = w.objects.all }
         let mut left = nth
         let mut i: usize = 0
@@ -253,7 +281,11 @@ namespace world {
     fn make_ext { heap: *mut heap::Heap, kind: obj::Kind } -> !obj::Ext {
         let h = heap
         match kind {
-            creature => { return obj::Ext::creature{ c = try alloc::new(obj::Creature, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::make_creature{ heap = h } } } }
+            creature => {
+                let c = try alloc::new(obj::Creature, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::make_creature{ heap = h } }
+                c.fighter = try fight::new_fighter{ heap = h }
+                return obj::Ext::creature{ c }
+            }
             door => {
                 return obj::Ext::door{ d = try alloc::new(obj::Door, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Door{
                     appearance = 0, state = obj::DoorState::closed, locked = false, lockable = false, key_required = false,
@@ -281,7 +313,7 @@ namespace world {
             item => {
                 return obj::Ext::item{ i = try alloc::new(obj::Item, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Item{
                     base = 0, model_variation = 1, body_variation = 1, texture_variation = 1, stack = 1, charges = 0,
-                    possessor = obj::INVALID, identified = true, equipped_slot = -1,
+                    possessor = obj::INVALID, identified = true, equipped_slot = -1, non_equippable = false, rules = null,
                 } } }
             }
             waypoint => {
@@ -294,7 +326,7 @@ namespace world {
                     active = false, continuous = false, looping = false, positional = false, random = false,
                     random_position = false, interval = 0, interval_variation = 0, volume = 127, volume_variation = 0,
                     pitch_variation = 0.0, elevation = 0.0, min_distance = 1.0, max_distance = 10.0, random_range_x = 0.0,
-                    random_range_y = 0.0, priority = 0, sounds = slice::empty(resref::ResRef){},
+                    random_range_y = 0.0, priority = 0, sounds = slice::empty(resref::ResRef){}, fixed_variance = 0.0,
                 } } }
             }
             encounter => {
@@ -317,6 +349,7 @@ namespace world {
                     unescapable = false, is_night = false, dyn_ambient = 0, sun_ambient = 0, sun_diffuse = 0, fog_on = false,
                     fog_near = 99.0, fog_far = 100.0, fog_color = 0, load_screen = 0, last_heartbeat = 0,
                     transition_token = 0, transition_pending = 0,
+                    stealth_xp_max = 0, stealth_xp_current = 0, stealth_xp_decrement = 0, stealth_xp_enabled = false,
                 } } }
             }
             module => {
@@ -380,6 +413,7 @@ namespace world {
                 list::free{ list = &c.path }
                 list::free{ list = &c.triggers }
                 list::free{ list = &c.perceived }
+                if c.fighter is some{ value = f } { fight::free_fighter{ heap = w.heap, f } }
                 _ = alloc::resize(obj::Creature, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(c, 1), count = 0 }
             }
             door{ d } => {
@@ -400,7 +434,10 @@ namespace world {
                 _ = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = t.polygon, count = 0 }
                 _ = alloc::resize(obj::Trigger, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(t, 1), count = 0 }
             }
-            item{ i } => { _ = alloc::resize(obj::Item, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(i, 1), count = 0 } }
+            item{ i } => {
+                if i.rules is some{ value = ri } { _ = alloc::resize(rules::Item, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(ri, 1), count = 0 } }
+                _ = alloc::resize(obj::Item, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(i, 1), count = 0 }
+            }
             waypoint{ wp } => {
                 obj::free_bytes{ heap = w.heap, s = wp.map_note.text }
                 _ = alloc::resize(obj::Waypoint, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(wp, 1), count = 0 }

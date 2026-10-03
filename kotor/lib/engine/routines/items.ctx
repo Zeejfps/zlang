@@ -298,6 +298,11 @@ namespace rt_item {
         let n = try nwarg::int{ &vm, routine = nwscript::GiveGoldToCreature, argc, i = 1 }
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
+        // The party has one purse (party-items-saves.md, 3.6); anyone else keeps their own.
+        if party::is_member{ w = &w, id } {
+            party::add_gold{ &w, n = @as(i64, n) }
+            return
+        }
         c.gold = add_gold{ have = c.gold, n = @as(i64, n) }
     }
 
@@ -311,14 +316,20 @@ namespace rt_item {
         let destroy = try nwarg::int{ &vm, routine = r, argc, i = 2 }
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
-        let amount: u32 = if n < 1 { 0 } else if @as(u32, n) > c.gold { c.gold } else { @as(u32, n) }
+        let shared = party::is_member{ w = &w, id }
+        let have: u32 = if shared { @as(u32, w.party.gold) } else { c.gold }
+        let amount: u32 = if n < 1 { 0 } else if @as(u32, n) > have { have } else { @as(u32, n) }
         if amount == 0 { return }
-        c.gold = c.gold - amount
+        if shared { party::add_gold{ &w, n = 0 - @as(i64, amount) } } else { c.gold = c.gold - amount }
         if destroy != 0 { return }
         let me = nwvm::self_object{ vm }
         let caller = world::object{ w = &w, id = me } ifnull { return }
         if obj::creature{ o = caller } is some{ value = cc } {
-            cc.gold = add_gold{ have = cc.gold, n = @as(i64, amount) }
+            if party::is_member{ w = &w, id = me } {
+                party::add_gold{ &w, n = @as(i64, amount) }
+            } else {
+                cc.gold = add_gold{ have = cc.gold, n = @as(i64, amount) }
+            }
         } else if obj::placeable{ o = caller } != null {
             _ = create_item{ &w, template = "g_i_credits001", target = me, stack = @as(i32, amount) }
         }
@@ -333,7 +344,7 @@ namespace rt_item {
             return
         }
         if obj::creature{ o } is some{ value = c } {
-            try nwvm::push_int{ &vm, v = @as(i32, c.gold) }
+            try nwvm::push_int{ &vm, v = if party::is_member{ w = &w, id } { w.party.gold } else { @as(i32, c.gold) } }
             return
         }
         let ids = inventory_of{ o }

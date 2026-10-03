@@ -180,10 +180,18 @@ namespace visual {
     fn animate_creature { mut sc: scene::Scene, mut w: world::World, v: *mut scene::Visual, o: *obj::Object } {
         if v.animation == o.animation { return }
         v.animation = o.animation
-        let base = animname::name_of{ id = o.animation }
-        let looping = animname::loops{ id = o.animation }
+        let mut base = animname::name_of{ id = o.animation }
+        let mut looping = animname::loops{ id = o.animation }
+        let mut prefixed = v.creature_prefix
+        if animname::is_row{ id = o.animation } {
+            // An animations.2da row (the combat animations): its own name, no prefix.
+            let row = animname::row_of{ id = o.animation }
+            base = twoda::get_string{ t = w.tables.animations, row, column = "name" } ifnull ""
+            looping = (twoda::get_int{ t = w.tables.animations, row, column = "fireforget" } ifnull 1) == 0
+            prefixed = false
+        }
         let mut buf: [34]u8
-        let name = with_prefix{ into = buf[..], name = if base.len > 0 { base } else { "pause1" }, prefix = v.creature_prefix }
+        let name = with_prefix{ into = buf[..], name = if base.len > 0 { base } else { "pause1" }, prefix = prefixed }
         let mut fallback: [34]u8
         let pause = with_prefix{ into = fallback[..], name = "pause1", prefix = v.creature_prefix }
         if not scene::play{ &sc, &w, part = v.first, name, looping, speed = o.anim_speed, transition = 0.25 } {

@@ -94,6 +94,24 @@ namespace tmpl {
         o.min_one_hp = flag{ doc, s, label = "Min1HP", default = o.min_one_hp }
         o.faction = @trunc(u32, number{ doc, s, label = "Faction", default = number{ doc, s, label = "FactionID", default = @as(i64, o.faction) } })
         o.commandable = flag{ doc, s, label = "Commandable", default = o.commandable }
+        read_locals{ doc, s, o }
+    }
+
+    // A saved object's locals (SWVarTable: 3 DWORDs of booleans, 8 bytes of numbers).
+    fn read_locals { doc: *gff::Doc, s: u32, o: *mut obj::Object } {
+        let sw = gff::get_struct{ doc = doc.*, s, label = "SWVarTable" } ifnull { return }
+        let bits = gff::get_list{ doc = doc.*, s = sw, label = "BitArray" } ifnull slice::empty(u32){}
+        let mut i: usize = 0
+        while i < bits.len and i < 3 {
+            o.locals.bools[i] = @trunc(u32, number{ doc, s = bits[i], label = "Variable", default = 0 })
+            i = i + 1
+        }
+        let bytes = gff::get_list{ doc = doc.*, s = sw, label = "ByteArray" } ifnull slice::empty(u32){}
+        i = 0
+        while i < bytes.len and i < 8 {
+            o.locals.numbers[i] = @trunc(u8, number{ doc, s = bytes[i], label = "Variable", default = 0 })
+            i = i + 1
+        }
     }
 
     // ---- creatures (UTC; objects.md, "Creature template load")
@@ -111,6 +129,7 @@ namespace tmpl {
         c.good_evil = @trunc(u32, number{ doc, s, label = "GoodEvil", default = @as(i64, c.good_evil) })
         c.perception_range = @trunc(u32, number{ doc, s, label = "PerceptionRange", default = @as(i64, c.perception_range) })
         c.is_pc = flag{ doc, s, label = "IsPC", default = c.is_pc }
+        c.spawn_fired = flag{ doc, s, label = "CreatnScrptFird", default = c.spawn_fired }
         let labels: [6][]u8 = ["Str", "Dex", "Con", "Int", "Wis", "Cha"]
         let mut k: usize = 0
         while k < 6 {
@@ -144,7 +163,7 @@ namespace tmpl {
         script{ doc, s, o, label = "ScriptUserDefine", slot = obj::Slot::user_defined }
         script{ doc, s, o, label = "ScriptOnBlocked", slot = obj::Slot::blocked }
         script{ doc, s, o, label = "ScriptEndDialogu", slot = obj::Slot::end_dialogue }
-        // HOOK(rules): c.stats = try rules::read_creature{ tables, doc, s }
+        fight::read_creature{ &w, o, c, doc, s }
         set_movement{ &w, c }
         // Items: equipped (struct id = 1 << slot) and carried.
         let equipped = gff::get_list{ doc = doc.*, s, label = "Equip_ItemList" } ifnull slice::empty(u32){}
@@ -152,10 +171,9 @@ namespace tmpl {
         while k < equipped.len {
             let e = equipped[k]
             k = k + 1
-            let name = gff::get_resref{ doc = doc.*, s = e, label = "EquippedRes" } ifnull { continue }
             let slot = slot_of_bit{ bits = gff::struct_id{ doc = doc.*, s = e } }
-            if slot < 0 or name.len == 0 { continue }
-            let item = spawn_item{ &w, template = name, possessor = o.id } iferr { continue }
+            if slot < 0 { continue }
+            let item = item_of{ &w, doc, s = e, label = "EquippedRes", possessor = o.id } ifnull { continue }
             c.equipped[@as(usize, slot)] = item
             let io = world::object{ w = &w, id = item }
             if io != null {
@@ -167,11 +185,27 @@ namespace tmpl {
         while k < carried.len {
             let e = carried[k]
             k = k + 1
-            let name = gff::get_resref{ doc = doc.*, s = e, label = "InventoryRes" } ifnull { continue }
-            if name.len == 0 { continue }
-            let item = spawn_item{ &w, template = name, possessor = o.id } iferr { continue }
+            let item = item_of{ &w, doc, s = e, label = "InventoryRes", possessor = o.id } ifnull { continue }
             list::push{ list = &c.inventory, item } iferr {}
         }
+        fight::equip_loaded{ &w, o, c }
+    }
+
+    // An item from an ItemList/Equip_ItemList element: a blueprint named by `label`, or a saved
+    // item whole (it has a BaseItem) with its runtime id.
+    fn item_of { mut w: world::World, doc: *gff::Doc, s: u32, label: []u8, possessor: u32 } -> ?u32 {
+        if gff::get_number{ doc = doc.*, s, label = "BaseItem" } != null {
+            let saved_id = @trunc(u32, gff::get_number{ doc = doc.*, s, label = "ObjectId" } ifnull 0)
+            let fresh = saved_id != 0 and saved_id != obj::INVALID and world::object{ w = &w, id = saved_id } == null
+            let o = world::add_object{ &w, kind = obj::Kind::item, id = if fresh { saved_id } else { 0 }, character = false } iferr { return null }
+            o.ai_level = -1
+            read{ &w, o, doc, s } iferr { return null }
+            if obj::item{ o } is some{ value = it } { it.possessor = possessor }
+            return o.id
+        }
+        let name = gff::get_resref{ doc = doc.*, s, label } ifnull { return null }
+        if name.len == 0 { return null }
+        return spawn_item{ &w, template = name, possessor } iferr { null }
     }
 
     fn slot_of_bit { bits: u32 } -> i32 {
@@ -225,7 +259,7 @@ namespace tmpl {
         i.stack = @trunc(u32, number{ doc, s, label = "StackSize", default = @as(i64, i.stack) })
         i.charges = @trunc(u32, number{ doc, s, label = "Charges", default = @as(i64, i.charges) })
         i.identified = flag{ doc, s, label = "Identified", default = i.identified }
-        // HOOK(rules): rules::read_item{ tables, doc, s }
+        try fight::read_item{ &w, i, doc, s }
     }
 
     // ---- doors (UTD) and the GIT door entry

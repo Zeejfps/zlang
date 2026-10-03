@@ -1,0 +1,72 @@
+// Screen.tga: the thumbnail beside a save (docs/formats/gff-save.md, "Layout of a save"): 256 by
+// 256, 24-bit, uncompressed (image type 2), bottom row first, blue-green-red. The screen as
+// gpu::read_screen gives it (RGBA8, top row first, any size) is shrunk with a box filter: each
+// thumbnail pixel is the mean of the screen pixels it covers (at least one, so a screen smaller
+// than 256 is stretched by nearest).
+//
+//   let tga = try save::write_screenshot{ realloc = heap::alloc, &h, rgba, width, height }
+namespace save {
+    // A screen with no pixels, or fewer bytes than width * height * 4.
+    error bad_screenshot{ width: u32, height: u32 }
+
+    const THUMB: usize = 256
+    const TGA_HEADER: usize = 18
+
+    fn write_screenshot(S) { realloc: alloc::Fn(S), mut heap: S, rgba: []u8, width: u32, height: u32 } -> !alloc::Bytes {
+        let sw = @as(usize, width)
+        let sh = @as(usize, height)
+        if sw == 0 or sh == 0 or rgba.len / 4 / sw < sh { return bad_screenshot{ width, height } }
+        let out = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = TGA_HEADER + THUMB * THUMB * 3 }
+
+        // No image id, no colour map, type 2, origin 0,0, 256 x 256, 24 bits, bottom-left origin.
+        slice::fill(u8){ s = out[..TGA_HEADER], v = 0 }
+        out[2] = 2
+        out[13] = 1             // width 256, little-endian
+        out[15] = 1             // height 256
+        out[16] = 24
+
+        let mut at = TGA_HEADER
+        let mut row: usize = 0
+        while row < THUMB {
+            // The file runs bottom up: its first row is the screen's last.
+            let ty = THUMB - 1 - row
+            let y0 = ty * sh / THUMB
+            let y1 = box_end{ start = y0, end = (ty + 1) * sh / THUMB, limit = sh }
+            let mut tx: usize = 0
+            while tx < THUMB {
+                let x0 = tx * sw / THUMB
+                let x1 = box_end{ start = x0, end = (tx + 1) * sw / THUMB, limit = sw }
+                let mut r: u64 = 0
+                let mut g: u64 = 0
+                let mut bl: u64 = 0
+                let mut y = y0
+                while y < y1 {
+                    let mut x = x0
+                    while x < x1 {
+                        let p = (y * sw + x) * 4
+                        r = r + rgba[p]
+                        g = g + rgba[p + 1]
+                        bl = bl + rgba[p + 2]
+                        x = x + 1
+                    }
+                    y = y + 1
+                }
+                let n = @as(u64, (y1 - y0) * (x1 - x0))
+                out[at] = @trunc(u8, (bl + n / 2) / n)
+                out[at + 1] = @trunc(u8, (g + n / 2) / n)
+                out[at + 2] = @trunc(u8, (r + n / 2) / n)
+                at = at + 3
+                tx = tx + 1
+            }
+            row = row + 1
+        }
+        return out
+    }
+
+    // The end of a box that starts at `start`: `end` when that covers a pixel, else the next
+    // pixel on; never past `limit`.
+    fn box_end { start: usize, end: usize, limit: usize } -> usize {
+        let e = if end > start { end } else { start + 1 }
+        return if e > limit { limit } else { e }
+    }
+}

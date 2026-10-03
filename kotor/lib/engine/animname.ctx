@@ -6,6 +6,13 @@
 namespace animname {
     struct Entry { id: u32, name: []u8, looping: bool }
 
+    // Ids from here on name an animations.2da row (id - ROW_BASE, low 16 bits; bit 16 only makes a
+    // replay of the same row a new id): the combat animations fight.ctx picks.
+    const ROW_BASE: u32 = 0x100000
+
+    fn is_row { id: u32 } -> bool { return id >= ROW_BASE }
+    fn row_of { id: u32 } -> usize { return @as(usize, (id - ROW_BASE) & 0xFFFF) }
+
     const TABLE: [44]Entry = [
         Entry{ id = 10000, name = "pause1", looping = true },
         Entry{ id = 10001, name = "pause1", looping = true },

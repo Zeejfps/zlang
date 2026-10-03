@@ -1,0 +1,692 @@
+// Routines: what scripts reach for that has no larger home. The area (map pins, unescapable,
+// stealth XP, the encounters and the creatures inside a trigger), the world's records (custom
+// tokens, reputation, factions, plot XP), items handed from one holder to another, door and
+// placeable locks, the questions an event script asks of what just happened, and the cutscene
+// verbs that only look like combat (CutsceneAttack, fake spells). Spells and what the rules decide
+// (HOOK(rules)) answer with placeholders: no spell was cast, nobody is the target.
+//
+// Custom tokens (SetCustomToken) are kept in `w.tokens` (tokens.ctx) for the whole session, as
+// number and text; dialogue and GUI strings that say <CUSTOMnnn> read them with `tokens::get`.
+namespace rt_misc {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        match routine {
+            // ---- the area and its objects
+            nwscript::SetMapPinEnabled => { try set_map_pin_enabled{ &w, &vm, argc } }
+            nwscript::SetAreaUnescapable => { try set_area_unescapable{ &w, &vm, argc } }
+            nwscript::GetAreaUnescapable => { try get_area_unescapable{ &w, &vm } }
+            nwscript::GetFirstInPersistentObject => { try get_in_persistent{ &w, &vm, argc, routine, first = true } }
+            nwscript::GetNextInPersistentObject => { try get_in_persistent{ &w, &vm, argc, routine, first = false } }
+            nwscript::SetEncounterActive => { try set_encounter_active{ &w, &vm, argc } }
+            nwscript::GetEncounterActive => { try get_encounter_active{ &w, &vm, argc } }
+            nwscript::GetHasInventory => { try get_has_inventory{ &w, &vm, argc } }
+            nwscript::GetIsInCombat => { try get_is_in_combat{ &w, &vm, argc } }
+            nwscript::SetMaxStealthXP => { try stealth_set{ &w, &vm, argc, routine } }
+            nwscript::SetCurrentStealthXP => { try stealth_set{ &w, &vm, argc, routine } }
+            nwscript::SetStealthXPEnabled => { try stealth_set{ &w, &vm, argc, routine } }
+            nwscript::SetStealthXPDecrement => { try stealth_set{ &w, &vm, argc, routine } }
+            nwscript::GetMaxStealthXP => { try stealth_get{ &w, &vm, routine } }
+            nwscript::GetCurrentStealthXP => { try stealth_get{ &w, &vm, routine } }
+            nwscript::GetStealthXPEnabled => { try stealth_get{ &w, &vm, routine } }
+            nwscript::GetStealthXPDecrement => { try stealth_get{ &w, &vm, routine } }
+            nwscript::AwardStealthXP => { try award_stealth_xp{ &w, &vm, argc } }
+            // ---- the world's records
+            nwscript::SetCustomToken => { try set_custom_token{ &w, &vm, argc } }
+            nwscript::AdjustReputation => { try adjust_reputation{ &w, &vm, argc } }
+            nwscript::ChangeFactionByFaction => { try change_faction_by_faction{ &w, &vm, argc } }
+            nwscript::GivePlotXP => { try give_plot_xp{ &w, &vm, argc } }
+            nwscript::GetGlobalLocation => { try get_global_location{ &w, &vm, argc } }
+            nwscript::SetGlobalLocation => { try set_global_location{ &w, &vm, argc } }
+            // ---- items changing hands, locks
+            nwscript::ActionTakeItem => { try action_take_item{ &w, &vm, argc } }
+            nwscript::ActionGiveItem => { try give_item{ &w, &vm, argc, routine } }
+            nwscript::GiveItem => { try give_item{ &w, &vm, argc, routine } }
+            nwscript::GetNumStackedItems => { try get_num_stacked_items{ &w, &vm, argc } }
+            nwscript::GetModuleItemAcquired => { try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = w.last_acquired } } }
+            nwscript::GetModuleItemAcquiredFrom => { try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = w.last_acquired_from } } }
+            nwscript::SetItemNonEquippable => { try set_item_non_equippable{ &w, &vm, argc } }
+            nwscript::CreateItemOnFloor => { try create_item_on_floor{ &w, &vm, argc } }
+            nwscript::ActionUnlockObject => { try lock_object{ &w, &vm, argc, routine, locked = false } }
+            nwscript::ActionLockObject => { try lock_object{ &w, &vm, argc, routine, locked = true } }
+            // ---- what an event script asks about
+            nwscript::GetCurrentAction => { try get_current_action{ &w, &vm, argc } }
+            nwscript::GetListenPatternNumber => { try nwvm::push_int{ &vm, v = self_ctx{ w = &w, vm = &vm }.listen_pattern } }
+            nwscript::GetLastAttacker => { try get_last_attacker{ &w, &vm, argc } }
+            nwscript::GetLastSpeaker => { try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = self_ctx{ w = &w, vm = &vm }.last_speaker } } }
+            nwscript::GetLastSpell => { try nwvm::push_int{ &vm, v = -1 } }
+            nwscript::GetSpellId => { try nwvm::push_int{ &vm, v = -1 } }
+            nwscript::GetSpellTargetObject => { try nwvm::push_object{ &vm, id = obj::INVALID } }
+            nwscript::GetSpellTargetLocation => { try rt_obj::push_location{ &w, &vm, l = values::no_location{} } }
+            nwscript::GetLastSpellCaster => { try nwvm::push_object{ &vm, id = obj::INVALID } }
+            nwscript::GetAttemptedSpellTarget => { try nwvm::push_object{ &vm, id = obj::INVALID } }
+            nwscript::GetAttemptedMovementTarget => { try nwvm::push_object{ &vm, id = obj::INVALID } }
+            nwscript::GetSpellTarget => { try get_spell_target{ &w, &vm, argc } }
+            nwscript::GetInventoryDisturbType => { try nwvm::push_int{ &vm, v = 0 } }
+            nwscript::GetInventoryDisturbItem => { try nwvm::push_object{ &vm, id = obj::INVALID } }
+            nwscript::GetItemActivated => { try nwvm::push_object{ &vm, id = obj::INVALID } }
+            nwscript::GetItemActivator => { try nwvm::push_object{ &vm, id = obj::INVALID } }
+            // ---- cutscene verbs
+            nwscript::CutsceneAttack => { try cutscene_attack{ &w, &vm, argc } }
+            nwscript::ActionCastFakeSpellAtObject => { try action_cast_fake_spell{ &w, &vm, argc, routine } }
+            nwscript::ActionCastFakeSpellAtLocation => { try action_cast_fake_spell{ &w, &vm, argc, routine } }
+            nwscript::SurrenderToEnemies => { try surrender_to_enemies{ &w, &vm } }
+            nwscript::ActionSurrenderToEnemies => { try surrender_to_enemies{ &w, &vm } }
+            // ---- screens for the HUD
+            nwscript::OpenStore => { try open_store{ &w, &vm, argc } }
+            nwscript::ShowUpgradeScreen => { try show_upgrade_screen{ &w, &vm, argc } }
+            else => { return false }
+        }
+        return true
+    }
+
+    fn flag { b: bool } -> i32 { return if b { 1 } else { 0 } }
+
+    // `id` if it is an object that is there, else OBJECT_INVALID.
+    fn live_or_invalid { w: *world::World, id: u32 } -> u32 {
+        return if world::is_valid{ w, id } { id } else { obj::INVALID }
+    }
+
+    // The running script's OBJECT_SELF's context (empty for none).
+    fn self_ctx { w: *world::World, vm: *nwvm::Vm } -> obj::Context {
+        let o = world::object{ w, id = nwvm::self_object{ vm = vm.* } } ifnull { return obj::no_context{} }
+        return o.ctx
+    }
+
+    // The area the player is in.
+    fn current_area { w: *world::World } -> ?*mut obj::Area {
+        let ao = world::object{ w, id = w.area } ifnull { return null }
+        return obj::area{ o = ao }
+    }
+
+    // ---- the area
+
+    // void SetMapPinEnabled(object oMapPin, int nEnabled): a waypoint's map note.
+    fn set_map_pin_enabled { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::SetMapPinEnabled, argc, i = 0 }
+        let on = try nwarg::int{ &vm, routine = nwscript::SetMapPinEnabled, argc, i = 1 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        let wp = obj::waypoint{ o } ifnull { return }
+        wp.map_note_enabled = on != 0
+    }
+
+    // void SetAreaUnescapable(int bUnescapable) / int GetAreaUnescapable(): the current area.
+    fn set_area_unescapable { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let on = try nwarg::int{ &vm, routine = nwscript::SetAreaUnescapable, argc, i = 0 }
+        let a = current_area{ w = &w } ifnull { return }
+        a.unescapable = on != 0
+    }
+
+    fn get_area_unescapable { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let a = current_area{ w = &w } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        try nwvm::push_int{ &vm, v = flag{ b = a.unescapable } }
+    }
+
+    // object GetFirstInPersistentObject(object oPersistentObject = OBJECT_SELF, int nResidentObjectType
+    //     = OBJECT_TYPE_CREATURE, int nPersistentZone = PERSISTENT_ZONE_ACTIVE) and ...Next...: the
+    // objects of the types inside a trigger (the list movement keeps), in the order they came in.
+    // Areas of effect have no residents here, and anything but a trigger has none.
+    fn get_in_persistent { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, first: bool } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let filter = try nwarg::int{ &vm, routine, argc, i = 1 }
+        _ = try nwarg::int{ &vm, routine, argc, i = 2 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        let t = obj::trigger{ o } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        let ids = list::items{ list = t.inside }
+        let mut i: usize = if first { 0 } else { w.cursor_inside }
+        let mut found = obj::INVALID
+        while i < ids.len {
+            let other = world::object{ w = &w, id = ids[i] }
+            i = i + 1
+            if other == null or (obj::object_type{ kind = other.kind } & filter) == 0 { continue }
+            found = other.id
+            break
+        }
+        w.cursor_inside = i
+        try nwvm::push_object{ &vm, id = found }
+    }
+
+    // void SetEncounterActive(int nNewValue, object oEncounter = OBJECT_SELF) / int GetEncounterActive(...)
+    fn set_encounter_active { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let on = try nwarg::int{ &vm, routine = nwscript::SetEncounterActive, argc, i = 0 }
+        let id = try nwarg::object{ &vm, routine = nwscript::SetEncounterActive, argc, i = 1 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        let e = obj::encounter{ o } ifnull { return }
+        e.active = on != 0
+    }
+
+    fn get_encounter_active { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetEncounterActive, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        let e = obj::encounter{ o } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        try nwvm::push_int{ &vm, v = flag{ b = e.active } }
+    }
+
+    // int GetHasInventory(object oObject): creatures and stores, and placeables that have one.
+    fn get_has_inventory { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetHasInventory, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        let mut has = o.kind == obj::Kind::creature or o.kind == obj::Kind::store
+        if obj::placeable{ o } is some{ value = p } { has = p.has_inventory }
+        try nwvm::push_int{ &vm, v = flag{ b = has } }
+    }
+
+    // int GetIsInCombat(object oCreature = OBJECT_SELF)
+    fn get_is_in_combat { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetIsInCombat, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        let c = obj::creature{ o } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        try nwvm::push_int{ &vm, v = flag{ b = c.in_combat } }
+    }
+
+    // ---- stealth XP (a script-side system on the area: the scripts set the maximum, the current
+    // amount, the decrement and whether it pays; AwardStealthXP pays and switches it off)
+
+    // void SetMaxStealthXP(int), SetCurrentStealthXP(int), SetStealthXPEnabled(int), SetStealthXPDecrement(int)
+    fn stealth_set { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let n = try nwarg::int{ &vm, routine, argc, i = 0 }
+        let a = current_area{ w = &w } ifnull { return }
+        match routine {
+            nwscript::SetMaxStealthXP => { a.stealth_xp_max = n }
+            nwscript::SetCurrentStealthXP => { a.stealth_xp_current = n }
+            nwscript::SetStealthXPEnabled => { a.stealth_xp_enabled = n != 0 }
+            else => { a.stealth_xp_decrement = n }
+        }
+    }
+
+    // int GetMaxStealthXP(), GetCurrentStealthXP(), GetStealthXPEnabled(), GetStealthXPDecrement()
+    fn stealth_get { mut w: world::World, mut vm: nwvm::Vm, routine: u16 } -> ! {
+        let a = current_area{ w = &w } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        let v: i32 = match routine {
+            nwscript::GetMaxStealthXP => { a.stealth_xp_max }
+            nwscript::GetCurrentStealthXP => { a.stealth_xp_current }
+            nwscript::GetStealthXPEnabled => { flag{ b = a.stealth_xp_enabled } }
+            else => { a.stealth_xp_decrement }
+        }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // void AwardStealthXP(object oTarget): creatures only; when it pays and there is some, the
+    // current amount goes to the party, and it is spent (0x00508770).
+    fn award_stealth_xp { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::AwardStealthXP, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        if obj::creature{ o } == null { return }
+        let a = current_area{ w = &w } ifnull { return }
+        if not a.stealth_xp_enabled or a.stealth_xp_current == 0 { return }
+        award_party_xp{ &w, amount = a.stealth_xp_current }
+        a.stealth_xp_current = 0
+        a.stealth_xp_enabled = false
+    }
+
+    // ---- records
+
+    // void SetCustomToken(int nCustomTokenNumber, string sTokenValue)
+    fn set_custom_token { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let number = try nwarg::int{ &vm, routine = nwscript::SetCustomToken, argc, i = 0 }
+        let text = try nwarg::string{ &vm, routine = nwscript::SetCustomToken, argc, i = 1 }
+        tokens::set{ t = &w.tokens, number, text } iferr {}
+    }
+
+    // The cell that holds how faction `from` feels about faction `toward` (world::standing's:
+    // the table has no column for the player's faction 0, so its row stands for "about the
+    // player"). null for factions the table lacks.
+    struct StandingCell { row: usize, col: usize }
+
+    fn standing_cell { w: *world::World, from: u32, toward: u32 } -> ?StandingCell {
+        if from == toward { return null }
+        if @as(usize, from) >= w.repute_rows or @as(usize, toward) >= w.repute_rows { return null }
+        if toward == 0 { return StandingCell{ row = 0, col = @as(usize, from) } }
+        return StandingCell{ row = @as(usize, from), col = @as(usize, toward) }
+    }
+
+    // void AdjustReputation(object oTarget, object oSourceFactionMember, int nAdjustment): how the
+    // source's faction feels about the target's, by nAdjustment, kept within 0..100.
+    fn adjust_reputation { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::AdjustReputation
+        let target = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let source = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let by = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let t = world::object{ w = &w, id = target } ifnull { return }
+        let s = world::object{ w = &w, id = source } ifnull { return }
+        let cell = standing_cell{ w = &w, from = s.faction, toward = t.faction } ifnull { return }
+        let now = @as(i32, w.repute[cell.row][cell.col]) + by
+        w.repute[cell.row][cell.col] = @trunc(u8, if now < 0 { 0 } else if now > 100 { 100 } else { now })
+    }
+
+    // void ChangeFactionByFaction(int nFactionFrom, int nFactionTo): every creature of the caller's
+    // area in the first faction joins the second (the original also stirs up perception).
+    fn change_faction_by_faction { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::ChangeFactionByFaction
+        let from = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let to = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        if from < 0 or to < 0 { return }
+        let me = world::object{ w = &w, id = nwvm::self_object{ vm } }
+        let area = if me != null and me.area != obj::INVALID { me.area } else { w.area }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.kind != obj::Kind::creature or o.area != area { continue }
+            if o.faction == @as(u32, from) { o.faction = @as(u32, to) }
+        }
+    }
+
+    // A table of the game's 2DAs the engine does not keep, read for one question (in the frame's
+    // scratch memory); null if there is none.
+    fn scratch_table { mut w: world::World, name: []u8 } -> ?twoda::Table {
+        let found = world::read_scratch{ &w, name, kind = restype::Type::twoda } iferr { return null }
+        let bytes = found ifnull { return null }
+        let table = twoda::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch } iferr { return null }
+        return table
+    }
+
+    // XP to the party (CSWPartyTable::AddExperience, rules.md 4.2): the pool takes all of it; each
+    // member gets it times its npc.2da PercentXP (80 for a companion, 100 for the player), rounded up.
+    fn award_party_xp { mut w: world::World, amount: i32 } {
+        if amount <= 0 { return }
+        let pool = @as(i64, w.party.xp_pool) + @as(i64, amount)
+        w.party.xp_pool = if pool > 2000000000 { 2000000000 } else { @trunc(i32, pool) }
+        let npc = scratch_table{ &w, name = "npc" }
+        let mut i: usize = 0
+        while i < w.party.count {
+            let id = w.party.members[i]
+            i = i + 1
+            let o = world::object{ w = &w, id } ifnull { continue }
+            let c = obj::creature{ o } ifnull { continue }
+            let slot = party::slot_of{ w = &w, id }
+            let mut percent: i64 = 100
+            if slot >= 0 {
+                if npc != null { percent = @as(i64, twoda::get_int{ t = npc, row = @as(usize, slot), column = "percentxp" } ifnull 100) }
+            }
+            let total = @as(i64, c.xp) + (@as(i64, amount) * percent + 99) / 100
+            c.xp = if total > 4000000000 { 4000000000 } else { @trunc(u32, total) }
+        }
+    }
+
+    // void GivePlotXP(string sPlotName, int nPercentage): plot.2da's XP for the plot, that
+    // percentage of it (rounded up), to the party.
+    fn give_plot_xp { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let plot = try nwarg::string{ &vm, routine = nwscript::GivePlotXP, argc, i = 0 }
+        let percent = try nwarg::int{ &vm, routine = nwscript::GivePlotXP, argc, i = 1 }
+        let table = scratch_table{ &w, name = "plot" } ifnull { return }
+        let row = twoda::find_row{ t = table, label = plot } ifnull { return }
+        let xp = twoda::get_int{ t = table, row, column = "xp" } ifnull { return }
+        let total = @as(i64, xp) * @as(i64, percent)
+        if total <= 0 { return }
+        award_party_xp{ &w, amount = @trunc(i32, (total + 99) / 100) }
+    }
+
+    // location GetGlobalLocation(string sIdentifier) / void SetGlobalLocation(string sIdentifier, location lValue)
+    fn get_global_location { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let name = try nwarg::string{ &vm, routine = nwscript::GetGlobalLocation, argc, i = 0 }
+        try rt_obj::push_location{ &w, &vm, l = globals::location{ g = &w.globals, name } }
+    }
+
+    fn set_global_location { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let name = try nwarg::string{ &vm, routine = nwscript::SetGlobalLocation, argc, i = 0 }
+        let h = try nwarg::engine{ &vm, routine = nwscript::SetGlobalLocation, argc, i = 1, kind = nwvm::EngineType::location }
+        globals::set_location{ g = &w.globals, name, value = values::location{ s = &w.values, handle = h } }
+    }
+
+    // ---- items changing hands
+
+    // Moves `item` into the inventory of `to` (a creature or a placeable), at once: out of whoever
+    // holds it (taken off first), merged into a stack of the same template that has room, credits
+    // into the gold of a creature (the party's purse for a member). The module hears ON_ACQUIRE_ITEM
+    // for a creature that gets it and ON_LOSE_ITEM for one that loses it, as SetPossessor sends
+    // them (party-items-saves.md, 5.4). False if `to` cannot hold items or `item` is not one.
+    fn move_item { mut w: world::World, item: u32, to: u32 } -> bool {
+        let io = world::object{ w = &w, id = item } ifnull { return false }
+        let it = obj::item{ o = io } ifnull { return false }
+        let target = world::object{ w = &w, id = to } ifnull { return false }
+        if not rt_item::holds_items{ o = target } { return false }
+        let from = it.possessor
+        if from == to and it.equipped_slot < 0 { return true }
+        let old = world::object{ w = &w, id = from }
+        let mut old_creature = false
+        if old != null {
+            if obj::creature{ o = old } is some{ value = oc } {
+                old_creature = true
+                if it.equipped_slot >= 0 and it.equipped_slot < @as(i32, obj::EQUIP_SLOTS) {
+                    oc.equipped[@as(usize, it.equipped_slot)] = obj::INVALID
+                }
+            }
+            _ = rt_item::remove_from_inventory{ o = old, item }
+        }
+        it.equipped_slot = -1
+        it.possessor = obj::INVALID
+        if rt_item::is_credits{ w = &w, base = it.base } {
+            if obj::creature{ o = target } is some{ value = receiver } {
+                if party::is_member{ w = &w, id = to } {
+                    party::add_gold{ &w, n = @as(i64, it.stack) }
+                } else {
+                    receiver.gold = rt_item::add_gold{ have = receiver.gold, n = @as(i64, it.stack) }
+                }
+                world::destroy{ &w, id = item }
+                announce_move{ &w, item, from, to, old_is_creature = old_creature }
+                return true
+            }
+        }
+        let mut acquired = item
+        let most = rt_item::max_stack{ w = &w, base = it.base }
+        let mut merged = false
+        if most > 1 {
+            let ids = rt_item::inventory_of{ o = target }
+            let mut k: usize = 0
+            while k < ids.len and not merged {
+                let other = world::object{ w = &w, id = ids[k] }
+                k = k + 1
+                if other == null or not resref::eq{ a = other.template, b = io.template } { continue }
+                let oi = obj::item{ o = other } ifnull { continue }
+                if oi.stack >= most { continue }
+                let room = most - oi.stack
+                if it.stack <= room {
+                    oi.stack = oi.stack + it.stack
+                    acquired = other.id
+                    merged = true
+                } else {
+                    oi.stack = most
+                    it.stack = it.stack - room
+                }
+            }
+        }
+        if merged {
+            world::destroy{ &w, id = item }
+        } else {
+            if not rt_item::add_to_inventory{ o = target, item } { return false }
+            it.possessor = to
+        }
+        announce_move{ &w, item = acquired, from, to, old_is_creature = old_creature }
+        return true
+    }
+
+    // The events of a transfer, and what GetModuleItemAcquired answers.
+    fn announce_move { mut w: world::World, item: u32, from: u32, to: u32, old_is_creature: bool } {
+        let target = world::object{ w = &w, id = to } ifnull { return }
+        if obj::creature{ o = target } != null {
+            w.last_acquired = item
+            w.last_acquired_from = from
+            events::post{ &w, delay_ms = 0, caller = to, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::ACQUIRE_ITEM, object = item } } }
+        }
+        if old_is_creature {
+            events::post{ &w, delay_ms = 0, caller = from, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::LOSE_ITEM, object = item } } }
+        }
+    }
+
+    // void ActionGiveItem(object oItem, object oGiveTo) and void GiveItem(object oItem, object oGiveTo):
+    // both at once (ours: the action walks to the receiver first). Whoever holds the item gives it.
+    fn give_item { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let item = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let to = try nwarg::object{ &vm, routine, argc, i = 1 }
+        _ = move_item{ &w, item, to }
+    }
+
+    // void ActionTakeItem(object oItem, object oTakeFrom): the caller takes the item from the
+    // holder it names, at once. The party shares one inventory, so any member's will do for another's.
+    fn action_take_item { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let item = try nwarg::object{ &vm, routine = nwscript::ActionTakeItem, argc, i = 0 }
+        let from = try nwarg::object{ &vm, routine = nwscript::ActionTakeItem, argc, i = 1 }
+        let io = world::object{ w = &w, id = item } ifnull { return }
+        let it = obj::item{ o = io } ifnull { return }
+        let holder = it.possessor
+        let same = holder == from or (party::is_member{ w = &w, id = holder } and party::is_member{ w = &w, id = from })
+        if not same or not world::is_valid{ w = &w, id = from } { return }
+        _ = move_item{ &w, item, to = nwvm::self_object{ vm } }
+    }
+
+    // int GetNumStackedItems(object oItem): the stack size, -1 for anything but an item.
+    fn get_num_stacked_items { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetNumStackedItems, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = -1 }
+            return
+        }
+        let it = obj::item{ o } ifnull {
+            try nwvm::push_int{ &vm, v = -1 }
+            return
+        }
+        try nwvm::push_int{ &vm, v = @as(i32, it.stack) }
+    }
+
+    // void SetItemNonEquippable(object oItem, int bNonEquippable): what is worn stays on.
+    fn set_item_non_equippable { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::SetItemNonEquippable, argc, i = 0 }
+        let flag_on = try nwarg::int{ &vm, routine = nwscript::SetItemNonEquippable, argc, i = 1 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        let it = obj::item{ o } ifnull { return }
+        it.non_equippable = flag_on != 0
+    }
+
+    // object CreateItemOnFloor(string sTemplate, location lLocation, int bUseAppearAnimation = FALSE):
+    // an item lying in the area at the spot.
+    fn create_item_on_floor { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::CreateItemOnFloor
+        let template = try nwarg::string{ &vm, routine = r, argc, i = 0 }
+        let h = try nwarg::engine{ &vm, routine = r, argc, i = 1, kind = nwvm::EngineType::location }
+        _ = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let l = values::location{ s = &w.values, handle = h }
+        let id = tmpl::spawn_item{ &w, template, possessor = obj::INVALID } iferr err{ error } {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "CreateItemOnFloor {}: {}\n", template, error)
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        o.area = if world::is_valid{ w = &w, id = l.area } { l.area } else { w.area }
+        world::set_position{ o, p = l.position }
+        world::set_orientation{ o, v = obj::direction_of{ degrees = l.facing } }
+        try nwvm::push_object{ &vm, id }
+    }
+
+    // void ActionUnlockObject(object oTarget) / ActionLockObject(object oTarget): a door or
+    // placeable; at once (ours: the original walks there and works at it), and the object hears
+    // UNLOCKED / LOCKED from the caller.
+    fn lock_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, locked: bool } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        if o.ext is door{ d } { d.locked = locked } else if o.ext is placeable{ p } { p.locked = locked } else { return }
+        let me = nwvm::self_object{ vm }
+        let kind = if locked { events::LOCKED } else { events::UNLOCKED }
+        events::post{ &w, delay_ms = 0, caller = me, target = id, payload = events::Payload::script{ e = events::script_event{ kind, object = me } } }
+    }
+
+    // ---- what an event script asks about
+
+    // The script's ACTION_* for an action kind (actions.md 1.9), -1 for the kinds without one.
+    fn script_action_id { kind: actions::Kind } -> i32 {
+        match kind {
+            move_to_point => { return 0 }
+            pickup_item => { return 1 }
+            drop_item => { return 2 }
+            attack_object => { return 3 }
+            cast_spell => { return 4 }
+            open_door => { return 5 }
+            close_door => { return 6 }
+            dialog_object => { return 7 }
+            open_lock => { return 13 }
+            lock => { return 14 }
+            use_object => { return 15 }
+            follow => { return 35 }
+            wait => { return 36 }
+            follow_leader => { return 38 }
+            else => { return -1 }
+        }
+    }
+
+    // int GetCurrentAction(object oObject = OBJECT_SELF): ACTION_QUEUEEMPTY (65534) for an empty
+    // queue, else the script id of the last action in the head's group that has one, ACTION_INVALID
+    // (65535) if none does (and for an object that is not there).
+    fn get_current_action { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetCurrentAction, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = 65535 }
+            return
+        }
+        let queue = list::items{ list = o.actions }
+        if queue.len == 0 {
+            try nwvm::push_int{ &vm, v = 65534 }
+            return
+        }
+        let group = queue[0].group
+        let mut answer: i32 = 65535
+        let mut i: usize = 0
+        while i < queue.len and queue[i].group == group {
+            let sid = script_action_id{ kind = queue[i].kind }
+            if sid >= 0 { answer = sid }
+            i = i + 1
+        }
+        try nwvm::push_int{ &vm, v = answer }
+    }
+
+    // object GetLastAttacker(object oAttackee = OBJECT_SELF)
+    fn get_last_attacker { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetLastAttacker, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = o.ctx.last_attacker } }
+    }
+
+    // object GetSpellTarget(object oCreature = OBJECT_SELF): no spell is being cast.
+    fn get_spell_target { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        _ = try nwarg::object{ &vm, routine = nwscript::GetSpellTarget, argc, i = 0 }
+        try nwvm::push_object{ &vm, id = obj::INVALID }
+    }
+
+    // ---- cutscene verbs
+
+    // Queues the caller turning to face `target` and playing animation row `animation` of
+    // animations.2da (internal id 10000 + row) once.
+    fn queue_cutscene_animation { mut w: world::World, me: u32, target: u32, at: ?math::Vec3, animation: i32 } {
+        let point = at
+        if world::is_valid{ w = &w, id = target } {
+            let mut face = actions::make{ kind = actions::Kind::face_object }
+            face.params[0] = actions::Param::object{ id = target }
+            _ = actions::add{ &w, id = me, action = face, force = false }
+        } else if point != null {
+            let mut face = actions::make{ kind = actions::Kind::face_point }
+            face.params[0] = actions::Param::vector{ v = point }
+            _ = actions::add{ &w, id = me, action = face, force = false }
+        }
+        let mut a = actions::make{ kind = actions::Kind::play_animation }
+        a.params[0] = actions::Param::int{ v = 10000 + animation }
+        a.params[1] = actions::Param::float{ v = 1.0 }
+        a.params[2] = actions::Param::float{ v = 1.5 }
+        _ = actions::add{ &w, id = me, action = a, force = false }
+    }
+
+    // void CutsceneAttack(object oTarget, int nAnimation, int nAttackResult, int nDamage): the
+    // designer's own combat round: the caller turns to the target and plays the attack animation.
+    // Who is hit, and for how much, is the rules' (HOOK(rules)): logged, nothing is rolled.
+    fn cutscene_attack { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::CutsceneAttack
+        let target = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let animation = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let result = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let damage = try nwarg::int{ &vm, routine = r, argc, i = 3 }
+        let me = nwvm::self_object{ vm }
+        if w.log.actions {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "CutsceneAttack {} -> {} animation {} result {} damage {}: animation only (no lib/rules)\n", me, target, animation, result, damage)
+        }
+        queue_cutscene_animation{ &w, me, target, at = null, animation }
+    }
+
+    // void ActionCastFakeSpellAtObject(int nSpell, object oTarget, int nProjectilePathType = ...) and
+    // ...AtLocation(int nSpell, location lTarget, int nProjectilePathType = ...): the cast animation
+    // (animations.2da row 62, castout1) toward the target, and nothing else, as the routine says.
+    fn action_cast_fake_spell { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let spell = try nwarg::int{ &vm, routine, argc, i = 0 }
+        let me = nwvm::self_object{ vm }
+        let mut target = obj::INVALID
+        let mut at: ?math::Vec3 = null
+        if routine == nwscript::ActionCastFakeSpellAtObject {
+            target = try nwarg::object{ &vm, routine, argc, i = 1 }
+        } else {
+            let h = try nwarg::engine{ &vm, routine, argc, i = 1, kind = nwvm::EngineType::location }
+            at = values::location{ s = &w.values, handle = h }.position
+        }
+        _ = try nwarg::int{ &vm, routine, argc, i = 2 }
+        if w.log.actions {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "ActionCastFakeSpell {} by {} at {}: animation only\n", spell, me, target)
+        }
+        queue_cutscene_animation{ &w, me, target, at, animation = 62 }
+    }
+
+    // void SurrenderToEnemies() and void ActionSurrenderToEnemies(): a creature (never the
+    // player) stops the fight for itself and every creature within 10 m: combat flags and queues
+    // cleared. The enemies' attitude toward it stays the factions' business.
+    fn surrender_to_enemies { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let me = world::object{ w = &w, id = nwvm::self_object{ vm } } ifnull { return }
+        let c = obj::creature{ o = me } ifnull { return }
+        if c.is_pc or me.id == w.pc { return }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.kind != obj::Kind::creature or o.area != me.area { continue }
+            if math::vec3::distance{ a = o.position, b = me.position } > 10.0 { continue }
+            let oc = obj::creature{ o } ifnull { continue }
+            oc.in_combat = false
+            oc.attack_target = obj::INVALID
+            oc.attempted_target = obj::INVALID
+            actions::clear_all{ &w, id = o.id }
+        }
+    }
+
+    // ---- screens for the HUD
+
+    // void OpenStore(object oStore, object oPC, int nBonusMarkUp = 0, int nBonusMarkDown = 0): the
+    // bonuses are clamped to -100..100; the HUD opens the panel on the note.
+    fn open_store { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::OpenStore
+        let store = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let customer = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let up = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let down = try nwarg::int{ &vm, routine = r, argc, i = 3 }
+        let o = world::object{ w = &w, id = store } ifnull { return }
+        if o.kind != obj::Kind::store { return }
+        let markup = if up < -100 { -100 } else if up > 100 { 100 } else { up }
+        let markdown = if down < -100 { -100 } else if down > 100 { 100 } else { down }
+        outbox::post{ out = &w.out, note = outbox::Note::open_store{ store, customer, markup, markdown } }
+    }
+
+    // void ShowUpgradeScreen(object oItem = OBJECT_INVALID)
+    fn show_upgrade_screen { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let item = try nwarg::object{ &vm, routine = nwscript::ShowUpgradeScreen, argc, i = 0 }
+        outbox::post{ out = &w.out, note = outbox::Note::upgrade_screen{ item = live_or_invalid{ w = &w, id = item } } }
+    }
+}
