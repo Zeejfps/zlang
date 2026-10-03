@@ -125,7 +125,26 @@ fn run { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut keep: Heap, mut scratch:
     print_classes{ &io, title = "failures", m = st.r.failures }
     print_classes{ &io, title = "parser notes", m = st.r.notes }
     print_classes{ &io, title = "tallies", m = st.r.tallies }
-    return st.all_parsed
+
+    // The walkmeshes, on a whole run: tools/walkcheck's checks (lib/walk against bwm.md).
+    let mut walk_ok = true
+    if opts.only.len == 0 and opts.limit == 0 {
+        _ = @fmt(&io, "\n")
+        arena::reset{ heap = &scratch }
+        let summary = if opts.extract.len > 0 {
+            try walkcheck::run_extract{ &io, &fs, heap = &scratch, dir = opts.extract }
+        } else {
+            try check_walkmeshes{ &io, &fs, &h, &scratch, game = opts.game }
+        }
+        walk_ok = summary.surprises == 0
+    }
+    return st.all_parsed and walk_ok
+}
+
+fn check_walkmeshes { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut scratch: Heap, game: []u8 } -> !walkcheck::Summary {
+    let mut rm = try res::open{ &fs, heap = &h, game }
+    defer res::close{ &fs, &rm }
+    return try walkcheck::run_install{ &io, &fs, heap = &scratch, rm }
 }
 
 // Every model the engine's search finds, with the MDX it finds for it.
@@ -629,7 +648,7 @@ fn describe { mut io: Io, model: *mdl::Model } {
     let mut i: usize = 0
     while i < model.nodes.len {
         let n = model.nodes[i]
-        _ = @fmt(&io, "  {} {} flags {} parent {} pos {} {} {} quat {} {} {} {}\n", i, n.name, n.flags, n.parent,
+        _ = @fmt(&io, "  {} {} flags {} parent {} alpha {} pos {} {} {} quat {} {} {} {}\n", i, n.name, n.flags, n.parent, n.alpha,
             n.position.x, n.position.y, n.position.z, n.orientation.w, n.orientation.x, n.orientation.y, n.orientation.z)
         i = i + 1
     }

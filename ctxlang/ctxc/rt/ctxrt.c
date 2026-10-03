@@ -70,8 +70,24 @@ static void put_err(const char *s) {
 
 // ---- panics
 
+// How a position names its file (ctxc/emit_c.ctx): FNV-1a of the name, with the top bit set, so
+// that a file's id doesn't depend on which other files the program has. An id below the table's
+// length is an index into it, as C from an older ctxc has it.
+static uint32_t file_id(const char *name) {
+    uint32_t h = 2166136261u;
+    for (; *name; name++) h = (h ^ (uint8_t)*name) * 16777619u;
+    return h | 0x80000000u;
+}
+
 static const char *file_name(uint32_t file) {
-    if (file < ctx_nfiles && ctx_files[file][0]) return ctx_files[file];
+    const char *name = NULL;
+    if (file < ctx_nfiles) {
+        name = ctx_files[file];
+    } else {
+        for (uint32_t i = 0; i < ctx_nfiles && !name; i++)
+            if (file_id(ctx_files[i]) == file) name = ctx_files[i];
+    }
+    if (name && name[0]) return name;
     return program_name;
 }
 
@@ -291,10 +307,12 @@ static int64_t os_error(int e) {
 
 // ---- proc: other programs, and this one's environment
 
-// Runs argv[0], found on PATH unless it holds a path separator, with this program's
-// environment plus the "KEY=VALUE" entries of `env` (an entry replaces one of the same key),
-// sharing standard input, output and error, and waits for it. Returns 0 and sets *code to its
-// exit code, 128 + N if signal N killed it, or returns a status < 0 if it couldn't start.
+// ctx_proc_spawn starts argv[0], found on PATH unless it holds a path separator, with this
+// program's environment plus the "KEY=VALUE" entries of `env` (an entry replaces one of the same
+// key), sharing standard input, output and error. Returns 0 and sets *id to the child's id (a
+// process HANDLE on Windows, a pid elsewhere), or returns a status < 0 if it couldn't start.
+// ctx_proc_wait waits for the child with that id, once: returns 0 and sets *code to its exit
+// code, 128 + N if signal N killed it. ctx_proc_run is the two at once.
 #ifdef _WIN32
 // Appends arg to the command line as CommandLineToArgvW reads it back: quoted if it is empty or
 // holds a space, a tab or a quote, with backslashes doubled before a quote.
@@ -362,7 +380,7 @@ static int overridden(const char *entry, ctx_slice env) {
     return 0;
 }
 
-int64_t ctx_proc_run(ctx_slice argv, ctx_slice env, int32_t *code) {
+int64_t ctx_proc_spawn(ctx_slice argv, ctx_slice env, uint64_t *id) {
     ctx_slice *args = argv.ptr;
     ctx_slice *extra = env.ptr;
     if (argv.len == 0) ctx_panic_nopos("proc: run needs a program to run");
@@ -427,12 +445,8 @@ int64_t ctx_proc_run(ctx_slice argv, ctx_slice env, int32_t *code) {
         if (e == ERROR_ACCESS_DENIED) return PERMISSION;
         return -1000 - (int64_t)e;
     }
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    DWORD exit_code = 0;
-    GetExitCodeProcess(pi.hProcess, &exit_code);
-    CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
-    *code = (int32_t)exit_code;
+    *id = (uint64_t)(uintptr_t)pi.hProcess;
     return 0;
 #else
     char **cargv = malloc((argv.len + 1) * sizeof *cargv);
@@ -455,14 +469,46 @@ int64_t ctx_proc_run(ctx_slice argv, ctx_slice env, int32_t *code) {
     for (size_t i = k - env.len; i < k; i++) free(cenv[i]);
     free(cenv);
     if (r != 0) return os_error(r);
+    *id = (uint64_t)pid;
+    return 0;
+#endif
+}
+
+int64_t ctx_proc_wait(uint64_t id, int32_t *code) {
+#ifdef _WIN32
+    HANDLE h = (HANDLE)(uintptr_t)id;
+    if (WaitForSingleObject(h, INFINITE) == WAIT_FAILED) return -1000 - (int64_t)GetLastError();
+    DWORD exit_code = 0;
+    GetExitCodeProcess(h, &exit_code);
+    CloseHandle(h);
+    *code = (int32_t)exit_code;
+    return 0;
+#else
     int status;
-    while (waitpid(pid, &status, 0) < 0)
+    while (waitpid((pid_t)id, &status, 0) < 0)
         if (errno != EINTR) return os_error(errno);
     if (WIFEXITED(status)) *code = WEXITSTATUS(status);
     else if (WIFSIGNALED(status)) *code = 128 + WTERMSIG(status);
     else *code = 255;
     return 0;
 #endif
+}
+
+int64_t ctx_proc_run(ctx_slice argv, ctx_slice env, int32_t *code) {
+    uint64_t id;
+    int64_t r = ctx_proc_spawn(argv, env, &id);
+    if (r < 0) return r;
+    return ctx_proc_wait(id, code);
+}
+
+// How many processors this program may run on: at least 1.
+uint32_t ctx_proc_processors(void) {
+#ifdef _WIN32
+    DWORD n = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+#else
+    long n = sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+    return n > 0 ? (uint32_t)n : 1;
 }
 
 // Environment variable `name` into *value, which lives until the program ends. 0 if it isn't set.

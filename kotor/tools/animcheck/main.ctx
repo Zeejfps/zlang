@@ -21,16 +21,6 @@ const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
 
 struct Options { game: []u8, every: usize, only: []u8, dump: []u8, time: f32 }
 
-// Models by resref, loaded once: supermodels, which many models share.
-struct Cache {
-    rm: res::Manager,
-    loaded: map::Map([]u8, usize, Heap),             // resref -> index in models
-    models: list::List(*mdl::Model, Heap),
-    keep: *mut Heap,
-    missing: u32,                                    // lookups of models that aren't there
-    failed: u32,                                     // models that didn't load
-}
-
 struct Counts {
     models: u64,
     animated: u64,
@@ -39,6 +29,7 @@ struct Counts {
     palettes: u64,
     events: u64,
     unbound: u64,
+    swings: u64,
     failures: u64,
 }
 
@@ -65,14 +56,7 @@ fn out_of_memory { mut io: Io } -> i32 {
 
 fn run { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut keep: Heap, mut scratch: Heap, opts: Options } -> !Counts {
     let rm = try res::open{ &fs, heap = &h, game = opts.game }
-    let mut cache = Cache{
-        rm,
-        loaded = map::new([]u8, usize, Heap){ realloc = arena::alloc, heap = &keep, hash = map::hash_bytes, eq = slice::eq_bytes },
-        models = list::new(*mdl::Model, Heap){ realloc = arena::alloc, heap = &keep },
-        keep = &keep,
-        missing = 0,
-        failed = 0,
-    }
+    let mut cache = mdl_cache::new{ rm, keep = &keep }
     defer res::close{ &fs, rm = &cache.rm }
     let found = try res::list_type{ rm = cache.rm, kind = restype::Type::mdl, realloc = arena::alloc, heap = &keep }
 
@@ -86,7 +70,7 @@ fn run { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut keep: Heap, mut scratch:
         if not pick { continue }
         c.models = c.models + 1
         arena::reset{ heap = &scratch }
-        let model = load{ &fs, rm = cache.rm, heap = &scratch, name } iferr err{ error } {
+        let model = mdl_cache::load{ &fs, rm = cache.rm, heap = &scratch, name } iferr err{ error } {
             report{ &io, &c, what = "model doesn't load", name, detail = @fmt("{}", error) }
             continue
         }
@@ -102,15 +86,17 @@ fn run { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut keep: Heap, mut scratch:
     _ = @fmt(&io, "  {} supermodels loaded, {} lookups of missing models, {} models that failed to load\n",
         map::len{ m = cache.loaded }, cache.missing, cache.failed)
     _ = @fmt(&io, "  {} animation nodes drive no node of their model\n", c.unbound)
+    _ = @fmt(&io, "  {} dangly meshes swung through 3 s of movement\n", c.swings)
     _ = @fmt(&io, "  {} failures\n", c.failures)
     return c
 }
 
 // Checks every animation `model`'s chain offers.
-fn check_model { mut io: Io, mut fs: Fs, mut scratch: Heap, mut cache: Cache, mut c: Counts, name: []u8, model: *mdl::Model } {
+fn check_model { mut io: Io, mut fs: Fs, mut scratch: Heap, mut cache: mdl_cache::Cache, mut c: Counts, name: []u8, model: *mdl::Model } {
     let pose = mdl_anim::make_pose{ realloc = arena::alloc, heap = &scratch, model } iferr { return }
     let mut palette: [64]math::Mat4
     check_pose{ &io, &c, name, anim = "(bind pose)", model, pose, bind = true, palette = palette[..] }
+    check_swings{ &io, &c, name, model, pose }
 
     // Every animation name the chain offers, nearest first.
     let mut seen = map::new([]u8, bool, Heap){ realloc = arena::alloc, heap = &scratch, hash = map::hash_bytes, eq = slice::eq_bytes }
@@ -128,7 +114,7 @@ fn check_model { mut io: Io, mut fs: Fs, mut scratch: Heap, mut cache: Cache, mu
             let kept = copy{ heap = &scratch, s = key } iferr { return }
             map::put{ m = &seen, key = kept, value = true } iferr { return }
             // The engine's lookup must find this very animation.
-            let found = mdl_anim::find{ model, name = a.name, lookup = lookup_model{ &fs, &cache, _ } }
+            let found = mdl_anim::find{ model, name = a.name, lookup = mdl_cache::get{ &fs, &cache, _ } }
             if found == null or found.animation != a {
                 report{ &io, &c, what = "find disagrees with the chain", name, detail = @fmt("{}", a.name) }
             }
@@ -136,7 +122,7 @@ fn check_model { mut io: Io, mut fs: Fs, mut scratch: Heap, mut cache: Cache, mu
             list::push{ list = &bindings, item = b } iferr { return }
         }
         if m.supermodel.len == 0 { break }
-        m = lookup_model{ &fs, &cache, name = m.supermodel } ifnull { break }
+        m = mdl_cache::get{ &fs, &cache, name = m.supermodel } ifnull { break }
         depth = depth + 1
     }
     let bs = list::items{ list = bindings }
@@ -189,9 +175,9 @@ fn check_model { mut io: Io, mut fs: Fs, mut scratch: Heap, mut cache: Cache, mu
 
 // Prints each node's model-space position in `anim` at `time`, to compare with another
 // implementation (kotor/tools/py/mdlrender.py's node_transforms).
-fn dump { mut io: Io, mut fs: Fs, mut scratch: Heap, mut cache: Cache, model: *mdl::Model, anim: []u8, time: f32 } {
+fn dump { mut io: Io, mut fs: Fs, mut scratch: Heap, mut cache: mdl_cache::Cache, model: *mdl::Model, anim: []u8, time: f32 } {
     let pose = mdl_anim::make_pose{ realloc = arena::alloc, heap = &scratch, model } iferr { return }
-    let found = mdl_anim::find{ model, name = anim, lookup = lookup_model{ &fs, &cache, _ } } ifnull {
+    let found = mdl_anim::find{ model, name = anim, lookup = mdl_cache::get{ &fs, &cache, _ } } ifnull {
         _ = @fmt(&io, "no animation {}\n", anim)
         return
     }
@@ -201,6 +187,35 @@ fn dump { mut io: Io, mut fs: Fs, mut scratch: Heap, mut cache: Cache, model: *m
     while i < model.nodes.len {
         let w = pose.world[i]
         _ = @fmt(&io, "{} {} {} {}\n", model.nodes[i].name, w.m[12], w.m[13], w.m[14])
+        i = i + 1
+    }
+}
+
+// Moved about for three seconds (sliding, bobbing and turning), every dangly mesh's swing stays
+// finite and within its displacement.
+fn check_swings { mut io: Io, mut c: Counts, name: []u8, model: *mdl::Model, pose: mdl_anim::Pose } {
+    let mut f: u32 = 0
+    while f < 90 {
+        let t = @as(f32, f) / 30.0
+        let place = math::mat4::compose{
+            t = math::Vec3{ x = 2.0 * math::sinf{ x = 3.0 * t }, y = 0.5 * t, z = 0.3 * math::sinf{ x = 5.0 * t } },
+            r = math::quat::from_axis_angle{ axis = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, angle = t },
+            s = math::vec3::splat{ s = 1.0 },
+        }
+        mdl_anim::swing{ model, pose, transform = place, dt = 1.0 / 30.0 }
+        f = f + 1
+    }
+    let mut i: usize = 0
+    while i < model.meshes.len {
+        let d = model.meshes[i].dangly
+        if d != null {
+            c.swings = c.swings + 1
+            let o = pose.swings[i].offset
+            let len = math::vec3::length{ v = o }
+            if not finite{ x = len } or len > math::max{ a = d.displacement, b = 0.0 } + 0.0001 {
+                report{ &io, &c, what = "dangly swing out of reach", name, detail = @fmt("{}: {} of {}", model.nodes[model.meshes[i].node].name, len, d.displacement) }
+            }
+        }
         i = i + 1
     }
 }
@@ -285,43 +300,6 @@ fn report { mut io: Io, mut c: Counts, what: []u8, name: []u8, detail: utf8::Fmt
     let mut b = utf8::builder(Heap){ realloc = arena::alloc, heap = &heap }
     _ = detail{ &b }
     _ = @fmt(&io, "FAIL {}: {}: {}\n", what, name, utf8::view{ b }.bytes)
-}
-
-// ---- models
-
-// The supermodel lookup the engine passes: a model by resref, loaded into the cache's arena
-// the first time.
-fn lookup_model { mut fs: Fs, mut cache: Cache, name: []u8 } -> ?*mdl::Model {
-    let mut lower: [64]u8
-    let key = to_lower{ into = lower[..], s = name }
-    // The index, not the pointer, goes through the map: a value found with a key in a local
-    // buffer counts as derived from it (docs/friction/models.md).
-    let have = map::get{ m = cache.loaded, key }
-    if have != null { return list::items{ list = cache.models }[have] }
-    let model = load{ &fs, rm = cache.rm, heap = cache.keep, name } iferr err{ error } {
-        match error {
-            not_found => { cache.missing = cache.missing + 1 }
-            else => { cache.failed = cache.failed + 1 }
-        }
-        return null
-    }
-    let kept = copy{ heap = cache.keep, s = key } iferr { return null }
-    let p = alloc::new(mdl::Model, Heap){ realloc = arena::alloc, heap = cache.keep, value = model } iferr { return null }
-    map::put{ m = &cache.loaded, key = kept, value = cache.models.len } iferr { return null }
-    list::push{ list = &cache.models, item = p } iferr { return null }
-    return p
-}
-
-error not_found
-
-// A model and its MDX (empty if there is none) through the resource manager. The file buffers
-// go in the same arena as the model: a scratch arena is reset per model, and a supermodel's few
-// megabytes of file stay with it.
-fn load { mut fs: Fs, rm: res::Manager, mut heap: Heap, name: []u8 } -> !mdl::Model {
-    let mdl_bytes = try res::load{ &fs, rm, name, kind = restype::Type::mdl, realloc = arena::alloc, &heap } ifnull { return not_found }
-    let mdx_found = try res::load{ &fs, rm, name, kind = restype::Type::mdx, realloc = arena::alloc, &heap }
-    let mdx_bytes: []u8 = mdx_found ifnull { slice::empty(u8){} }
-    return mdl::parse{ realloc = arena::alloc, &heap, mdl = mdl_bytes, mdx = mdx_bytes }
 }
 
 // ---- helpers

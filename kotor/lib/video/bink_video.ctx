@@ -1,0 +1,1072 @@
+// Bink 1 video, revision `i`: one packet in, three YUV 4:2:0 planes out
+// (docs/formats/bink.md, "Video bitstream" has the format; docs/design/video.md the design).
+//
+//   let mut dec = try bink_video::new{ realloc, &heap, width, height, tables = &tables }
+//   try bink_video::decode{ d = &dec, packet }          // each frame's video packet, in order
+//   let y = bink_video::plane{ d = dec, p = 0 }          // the picture just decoded: 0 Y, 1 U, 2 V
+//   bink_video::free{ realloc, &heap, d = &dec }
+//
+// A plane is coded as rows of 8x8 blocks. Most of a block's values don't sit next to it but in
+// nine "bundles", streams of values refilled at the start of each row; a block takes from them
+// what its type needs and reads the rest (run flags, coefficients) straight from the bitstream.
+// Blocks that copy (skip, motion, residue, inter) read the previous picture, so the decoder keeps
+// two pictures and flips between them.
+//
+// A corrupt packet is an error, never a panic or a read outside the planes: the bit reader gives
+// zeros past the end of the packet, bundles that run dry give zeros and are reported at the end
+// of the row, and motion vectors are checked against the previous picture before copying.
+namespace bink_video {
+    error bad_size{ width: u32, height: u32 }               // 0, or larger than we allow
+    error overrun{ plane: u32, row: u32 }                   // the plane's bits run past the packet
+    error starved{ plane: u32, row: u32 }                   // a block took a value its bundle didn't have
+    error bad_values{ plane: u32, row: u32 }                // a bundle's values overflow its count or range
+    error bad_block{ plane: u32, row: u32, col: u32, kind: i32 }
+    error bad_run{ plane: u32, row: u32, col: u32 }         // a run block's runs cover more than 64 pixels
+    error bad_motion{ plane: u32, row: u32, col: u32, x: i32, y: i32 }
+
+    const MAX_SIDE: u32 = 4096
+
+    // Block types.
+    const SKIP: i32 = 0           // copy the block from the previous picture
+    const SCALED: i32 = 1         // a 16x16 block: an 8x8 block of another type, doubled
+    const MOTION: i32 = 2         // copy from elsewhere in the previous picture
+    const RUN: i32 = 3            // runs of colors along one of 16 scan patterns
+    const RESIDUE: i32 = 4        // motion copy plus pixel differences
+    const INTRA: i32 = 5          // DCT
+    const FILL: i32 = 6           // one color
+    const INTER: i32 = 7          // motion copy plus DCT differences
+    const PATTERN: i32 = 8        // two colors and a bit per pixel
+    const RAW: i32 = 9            // 64 colors
+
+    // Symbols 12..15 of a block-type bundle repeat the previous type this many times.
+    const TYPE_REPEATS: [4]u32 = [4, 8, 12, 32]
+
+    // The IDCT's multipliers, in Q11 (times 2048, rounded): the factors of the Arai-Agui-Nakajima
+    // fast DCT as IJG's jidctfst.c uses them, 1.414213562 (sqrt 2), 1.847759065 (2 cos pi/8),
+    // 1.082392200 (2 sqrt 2 cos 3pi/8) and -2.613125930 (-2 sqrt 2 cos pi/8).
+    const K_SQRT2: i32 = 2896
+    const K_1847: i32 = 3784
+    const K_1082: i32 = 2217
+    const K_M2613: i32 = -5352
+
+    // One plane's pixels: rows of `stride` bytes, enough rows for whole 16x16 blocks.
+    struct Buffer { pixels: []mut u8, stride: usize, rows: usize }
+
+    // What a caller sees of a plane of the last picture decoded: `width` x `height` pixels,
+    // row r starting at pixels[r * stride].
+    struct Plane { pixels: []u8, stride: usize, width: u32, height: u32 }
+
+    // A prefix code (one of the 16 in the tables) and the symbols its 16 codes stand for.
+    struct Tree { base: usize, syms: [16]u8 }
+
+    // A stream of values of one kind for the blocks of a plane: refilled with a run of `end`
+    // values at the start of a row once the previous run is used up.
+    struct Bundle {
+        values: []mut i32,
+        pos: usize,                  // next value to take
+        end: usize,
+        closed: bool,                // a run of 0 values ends the bundle for the rest of the plane
+        starved: bool,               // a block asked for a value past `end`
+        count_bits: u32,             // width of a run's count, which depends on the plane's width
+        tree: Tree,
+    }
+
+    struct Decoder {
+        tables: *bink_tables::Tables,
+        width: u32,
+        height: u32,
+        buffers: [6]Buffer,          // picture f's plane p (0 Y, 1 U, 2 V) is buffers[3f + p]
+        shown: usize,                // the picture decoded last, 0 or 1; the next one goes to the other
+        pixel_mem: alloc::Bytes,
+        value_mem: []mut i32,
+        types: Bundle,               // the nine bundles, in the order they are refilled
+        subtypes: Bundle,
+        colors: Bundle,
+        patterns: Bundle,
+        xoff: Bundle,
+        yoff: Bundle,
+        intra_dc: Bundle,
+        inter_dc: Bundle,
+        runs: Bundle,
+        high: [16]Tree,              // a color's high nibble: the tree chosen by the previous one's
+        last_high: u32,
+        plane: u32,                  // where decoding is, for errors
+        row: u32,
+    }
+
+    // ---- setup
+
+    // A decoder for pictures of width x height. Its pictures start black.
+    fn new(S) { realloc: alloc::Fn(S), mut heap: S, width: u32, height: u32, tables: *bink_tables::Tables } -> !Decoder {
+        if width == 0 or height == 0 or width > MAX_SIDE or height > MAX_SIDE { return bad_size{ width, height } }
+        let luma = buffer_size{ blocks_wide = (width + 7) / 8, blocks_high = (height + 7) / 8 }
+        let chroma = buffer_size{ blocks_wide = (width + 15) / 16, blocks_high = (height + 15) / 16 }
+        let pixel_mem = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = 2 * (luma.rows * luma.stride + 2 * chroma.rows * chroma.stride) }
+        // Every bundle can hold its longest run: a count is at most 2^bits - 1, and the luma
+        // plane, the widest, needs the most bits.
+        let cap = bundle_capacity{ width }
+        let value_mem = alloc::resize(i32, S){ realloc, &heap, mem = slice::empty(i32){}, count = 9 * cap } iferr err{ error } {
+            _ = alloc::resize(u8, S){ realloc, &heap, mem = pixel_mem, count = 0 }
+            return error
+        }
+        let mut buffers: [6]Buffer
+        let mut at: usize = 0
+        let mut i: usize = 0
+        while i < 6 {
+            let size = if i % 3 == 0 { luma } else { chroma }
+            let n = size.rows * size.stride
+            buffers[i] = Buffer{ pixels = pixel_mem[at..at + n], stride = size.stride, rows = size.rows }
+            slice::fill(u8){ s = buffers[i].pixels, v = if i % 3 == 0 { 16 } else { 128 } }
+            at = at + n
+            i = i + 1
+        }
+        let tree = Tree{ base = 0, syms = [0; 16] }
+        return Decoder{
+            tables, width, height, buffers, shown = 0, pixel_mem, value_mem,
+            types = new_bundle{ values = value_mem[0..cap], tree },
+            subtypes = new_bundle{ values = value_mem[cap..2 * cap], tree },
+            colors = new_bundle{ values = value_mem[2 * cap..3 * cap], tree },
+            patterns = new_bundle{ values = value_mem[3 * cap..4 * cap], tree },
+            xoff = new_bundle{ values = value_mem[4 * cap..5 * cap], tree },
+            yoff = new_bundle{ values = value_mem[5 * cap..6 * cap], tree },
+            intra_dc = new_bundle{ values = value_mem[6 * cap..7 * cap], tree },
+            inter_dc = new_bundle{ values = value_mem[7 * cap..8 * cap], tree },
+            runs = new_bundle{ values = value_mem[8 * cap..9 * cap], tree },
+            high = [tree; 16], last_high = 0, plane = 0, row = 0,
+        }
+    }
+
+    fn free(S) { realloc: alloc::Fn(S), mut heap: S, mut d: Decoder } {
+        _ = alloc::resize(u8, S){ realloc, &heap, mem = d.pixel_mem, count = 0 }
+        _ = alloc::resize(i32, S){ realloc, &heap, mem = d.value_mem, count = 0 }
+        d.pixel_mem = slice::empty(u8){}
+        d.value_mem = slice::empty(i32){}
+    }
+
+    struct Size { stride: usize, rows: usize }
+
+    // A 16x16 block on the last row or column of an odd count writes 8 pixels past the plane, so
+    // a buffer has its block rows and columns rounded up to even.
+    fn buffer_size { blocks_wide: u32, blocks_high: u32 } -> Size {
+        let w: usize = (blocks_wide + 1) / 2 * 2
+        let h: usize = (blocks_high + 1) / 2 * 2
+        return Size{ stride = w * 8, rows = h * 8 }
+    }
+
+    fn new_bundle { values: []mut i32, tree: Tree } -> Bundle {
+        return Bundle{ values, pos = 0, end = 0, closed = false, starved = false, count_bits = 0, tree }
+    }
+
+    // The values the largest bundle run of a picture `width` wide can hold.
+    fn bundle_capacity { width: u32 } -> usize {
+        let bw = (width + 7) / 8
+        let mut bits = count_bits{ n = bw * 64 }                   // colors, the widest
+        let runs = count_bits{ n = bw * 48 }
+        if runs > bits { bits = runs }
+        let one: usize = 1
+        return one << bits
+    }
+
+    // Width of the count that starts a bundle run of at most about n values: floor(log2(n + 511)) + 1.
+    fn count_bits { n: u32 } -> u32 {
+        let mut v = n + 511
+        let mut bits: u32 = 0
+        while v > 0 {
+            v = v >> 1
+            bits = bits + 1
+        }
+        return bits
+    }
+
+    // The last picture decoded, plane p: 0 Y, 1 U (Cb), 2 V (Cr).
+    fn plane { d: Decoder, p: u32 } -> Plane {
+        let b = d.buffers[3 * d.shown + p]
+        if p == 0 { return Plane{ pixels = b.pixels, stride = b.stride, width = d.width, height = d.height } }
+        return Plane{ pixels = b.pixels, stride = b.stride, width = (d.width + 1) / 2, height = (d.height + 1) / 2 }
+    }
+
+    // ---- a picture
+
+    // Decodes one frame's video packet into the next picture. Planes a packet doesn't code (it
+    // ends first) keep the previous picture's.
+    fn decode { mut d: Decoder, packet: []u8 } -> ! {
+        let mut r = bink_bits::new{ data = packet }
+        _ = bink_bits::read{ &r, n = 32 }        // revision i: where the chroma planes start; not needed
+        let next = 1 - d.shown
+        // Revisions h and i code V before U.
+        let order = [0, 2, 1]
+        let mut k: usize = 0
+        while k < 3 {
+            let p: u32 = order[k]
+            if bink_bits::position{ r } >= packet.len * 8 {
+                let src = d.buffers[3 * d.shown + p].pixels
+                slice::copy(u8){ dst = d.buffers[3 * next + p].pixels, src }
+            } else {
+                try decode_plane{ &d, &r, p, into = next }
+            }
+            k = k + 1
+        }
+        d.shown = next
+    }
+
+    fn decode_plane { mut d: Decoder, mut r: bink_bits::Reader, p: u32, into: usize } -> ! {
+        d.plane = p
+        d.row = 0
+        let chroma = p > 0
+        let dst = d.buffers[3 * into + p]
+        let src = d.buffers[3 * (1 - into) + p]
+        let stride = dst.stride
+        let width = if chroma { d.width >> 1 } else { d.width }
+        let bw = if chroma { (d.width + 15) / 16 } else { (d.width + 7) / 8 }
+        let bh = if chroma { (d.height + 15) / 16 } else { (d.height + 7) / 8 }
+        start_bundles{ &d, &r, width }
+        // A copied block must lie in the previous picture: its top-left byte at most at the last
+        // block's, counting through the rows as one array (as RAD's decoder does).
+        let last_block: usize = (bh - 1) * 8 * stride + (bw - 1) * 8
+        let mut ublock: [64]u8
+        let mut coefs: [64]i32
+        let mut set: [64]u8
+        let t = d.tables
+        let mut by: u32 = 0
+        while by < bh {
+            d.row = by
+            if not refill_bundles{ &d, &r } { return bad_values{ plane = p, row = by } }
+            let mut bx: u32 = 0
+            while bx < bw {
+                let at: usize = by * 8 * stride + bx * 8
+                let out = dst.pixels.ptr + at
+                let kind = take{ b = &d.types }
+                if kind == SKIP {
+                    copy8{ dst = out, src = src.pixels.ptr + at, stride }
+                } else if kind == SCALED {
+                    // A 16x16 block covers this column, the next and the row below; on those, its
+                    // type stands as a placeholder.
+                    if (by & 1) != 0 or (bx & 1) != 0 {
+                        bx = bx + 2
+                        continue
+                    }
+                    let sub = take{ b = &d.subtypes }
+                    let tiny = @cast(*mut u8, &ublock)
+                    if sub == FILL {
+                        fill{ out, stride, size = 16, v = @trunc(u8, take{ b = &d.colors }) }
+                    } else {
+                        if sub == RUN {
+                            if not run_block{ &d, &r, out = tiny, stride = 8 } { return bad_run{ plane = p, row = by, col = bx } }
+                        } else if sub == INTRA {
+                            intra_block{ &d, &r, &coefs, &set, out = tiny, stride = 8 }
+                        } else if sub == PATTERN {
+                            pattern_block{ &d, out = tiny, stride = 8 }
+                        } else if sub == RAW {
+                            raw_block{ &d, out = tiny, stride = 8 }
+                        } else {
+                            return bad_block{ plane = p, row = by, col = bx, kind = 16 + sub }
+                        }
+                        scale{ out, stride, block = &ublock }
+                    }
+                    bx = bx + 1
+                } else if kind == MOTION {
+                    let from = try motion{ &d, at, stride, last_block, col = bx }
+                    copy8{ dst = out, src = src.pixels.ptr + from, stride }
+                } else if kind == RUN {
+                    if not run_block{ &d, &r, out, stride } { return bad_run{ plane = p, row = by, col = bx } }
+                } else if kind == RESIDUE {
+                    let from = try motion{ &d, at, stride, last_block, col = bx }
+                    copy8{ dst = out, src = src.pixels.ptr + from, stride }
+                    let masks = bink_bits::read{ &r, n = 7 }
+                    read_residue{ &r, scan = &t.scan, values = &coefs, masks }
+                    add_residue{ out, stride, values = &coefs }
+                } else if kind == INTRA {
+                    intra_block{ &d, &r, &coefs, &set, out, stride }
+                } else if kind == FILL {
+                    fill{ out, stride, size = 8, v = @trunc(u8, take{ b = &d.colors }) }
+                } else if kind == INTER {
+                    let from = try motion{ &d, at, stride, last_block, col = bx }
+                    copy8{ dst = out, src = src.pixels.ptr + from, stride }
+                    inter_block{ &d, &r, &coefs, &set, out, stride }
+                } else if kind == PATTERN {
+                    pattern_block{ &d, out, stride }
+                } else if kind == RAW {
+                    raw_block{ &d, out, stride }
+                } else {
+                    return bad_block{ plane = p, row = by, col = bx, kind }
+                }
+                bx = bx + 1
+            }
+            if bink_bits::overrun{ r } { return overrun{ plane = p, row = by } }
+            if starved_any{ d } { return starved{ plane = p, row = by } }
+            by = by + 1
+        }
+        bink_bits::align32{ &r }
+    }
+
+    // ---- bundles
+
+    // At the start of a plane: each bundle's count width and prefix code, read from the stream.
+    fn start_bundles { mut d: Decoder, mut r: bink_bits::Reader, width: u32 } {
+        let w = if width < 8 { 8 } else { (width + 7) / 8 * 8 }
+        let bw = if d.plane > 0 { (d.width + 15) / 16 } else { (d.width + 7) / 8 }
+        let per_block = count_bits{ n = w / 8 }
+        d.types.count_bits = per_block
+        d.subtypes.count_bits = count_bits{ n = w / 16 }
+        d.colors.count_bits = count_bits{ n = bw * 64 }
+        d.patterns.count_bits = count_bits{ n = bw * 8 }
+        d.xoff.count_bits = per_block
+        d.yoff.count_bits = per_block
+        d.intra_dc.count_bits = per_block
+        d.inter_dc.count_bits = per_block
+        d.runs.count_bits = count_bits{ n = bw * 48 }
+
+        d.types.tree = read_tree{ &r }
+        d.subtypes.tree = read_tree{ &r }
+        let mut i: usize = 0
+        while i < 16 {
+            d.high[i] = read_tree{ &r }
+            i = i + 1
+        }
+        d.last_high = 0
+        d.colors.tree = read_tree{ &r }
+        d.patterns.tree = read_tree{ &r }
+        d.xoff.tree = read_tree{ &r }
+        d.yoff.tree = read_tree{ &r }
+        d.runs.tree = read_tree{ &r }       // the DC bundles code their values without one
+
+        reset{ b = &d.types }
+        reset{ b = &d.subtypes }
+        reset{ b = &d.colors }
+        reset{ b = &d.patterns }
+        reset{ b = &d.xoff }
+        reset{ b = &d.yoff }
+        reset{ b = &d.intra_dc }
+        reset{ b = &d.inter_dc }
+        reset{ b = &d.runs }
+    }
+
+    fn reset { mut b: Bundle } {
+        b.pos = 0
+        b.end = 0
+        b.closed = false
+        b.starved = false
+    }
+
+    // Which code a bundle uses, and the symbols its codes stand for: either the first few listed
+    // and the rest in increasing order, or 0..15 shuffled by merging runs of 1, 2, 4 and 8.
+    fn read_tree { mut r: bink_bits::Reader } -> Tree {
+        let mut tree = Tree{ base = 0, syms = [0; 16] }
+        let code = bink_bits::read{ &r, n = 4 }
+        tree.base = 128 * code
+        let mut i: usize = 0
+        while i < 16 {
+            tree.syms[i] = @trunc(u8, i)
+            i = i + 1
+        }
+        if code == 0 { return tree }
+        if bink_bits::bit{ &r } == 1 {
+            let listed: usize = bink_bits::read{ &r, n = 3 } + 1
+            let mut used: [16]bool
+            i = 0
+            while i < listed {
+                let s = bink_bits::read{ &r, n = 4 }
+                tree.syms[i] = @trunc(u8, s)
+                used[s] = true
+                i = i + 1
+            }
+            let mut s: usize = 0
+            while s < 16 and i < 16 {
+                if not used[s] {
+                    tree.syms[i] = @trunc(u8, s)
+                    i = i + 1
+                }
+                s = s + 1
+            }
+            return tree
+        }
+        let depth: usize = bink_bits::read{ &r, n = 2 }
+        let mut a = tree.syms
+        let mut b: [16]u8
+        let mut level: usize = 0
+        while level <= depth {
+            let size: usize = 1 << level
+            let mut start: usize = 0
+            while start < 16 {
+                merge{ &r, from = &a, into = &b, start, size }
+                start = start + 2 * size
+            }
+            a = b
+            level = level + 1
+        }
+        tree.syms = a
+        return tree
+    }
+
+    // Merges the runs from[start ..+size] and from[start+size ..+size] into into[start ..]: each
+    // bit says which run gives the next element (0 the first), until one is used up.
+    fn merge { mut r: bink_bits::Reader, from: *[16]u8, mut into: [16]u8, start: usize, size: usize } {
+        let mut i = start
+        let mut j = start + size
+        let i_end = start + size
+        let j_end = start + 2 * size
+        let mut k = start
+        while i < i_end and j < j_end {
+            if bink_bits::bit{ &r } == 0 {
+                into[k] = from[i]
+                i = i + 1
+            } else {
+                into[k] = from[j]
+                j = j + 1
+            }
+            k = k + 1
+        }
+        while i < i_end {
+            into[k] = from[i]
+            i = i + 1
+            k = k + 1
+        }
+        while j < j_end {
+            into[k] = from[j]
+            j = j + 1
+            k = k + 1
+        }
+    }
+
+    // One symbol of a bundle's prefix code.
+    fn huff { mut r: bink_bits::Reader, t: *bink_tables::Tables, tree: *Tree } -> u32 {
+        let e: u32 = t.lookup[tree.base + bink_bits::peek{ &r, n = bink_tables::MAX_CODE_BITS }]
+        bink_bits::skip{ &r, n = e >> 4 }
+        return tree.syms[e & 15]
+    }
+
+    // The count of a bundle's next run, or 0 if it reads none now: it is closed, or still holds
+    // values from the last run (a bundle is refilled only once used up).
+    fn begin { mut r: bink_bits::Reader, mut b: Bundle } -> u32 {
+        if b.closed or b.pos < b.end { return 0 }
+        let n = bink_bits::read{ &r, n = b.count_bits }
+        if n == 0 { b.closed = true }
+        b.pos = 0
+        b.end = 0
+        return n
+    }
+
+    // The next value of a bundle, or 0 (and `starved` set) if it has none.
+    fn take { mut b: Bundle } -> i32 {
+        let p = b.pos
+        if p >= b.end {
+            b.starved = true
+            return 0
+        }
+        b.pos = p + 1
+        return b.values.ptr[p]
+    }
+
+    fn starved_any { d: Decoder } -> bool {
+        return d.types.starved or d.subtypes.starved or d.colors.starved or d.patterns.starved or d.xoff.starved
+            or d.yoff.starved or d.intra_dc.starved or d.inter_dc.starved or d.runs.starved
+    }
+
+    // At the start of each row of blocks, every bundle that is used up reads its next run.
+    // False if a run is malformed.
+    fn refill_bundles { mut d: Decoder, mut r: bink_bits::Reader } -> bool {
+        let t = d.tables
+        if not fill_types{ &r, b = &d.types, t } { return false }
+        if not fill_types{ &r, b = &d.subtypes, t } { return false }
+        fill_colors{ &d, &r }
+        fill_patterns{ &r, b = &d.patterns, t }
+        fill_motion{ &r, b = &d.xoff, t }
+        fill_motion{ &r, b = &d.yoff, t }
+        if not fill_dc{ &r, b = &d.intra_dc, has_sign = false } { return false }
+        if not fill_dc{ &r, b = &d.inter_dc, has_sign = true } { return false }
+        fill_runs{ &r, b = &d.runs, t }
+        return true
+    }
+
+    // Block types: one type repeated, or coded ones, where symbols 12..15 repeat the last type.
+    fn fill_types { mut r: bink_bits::Reader, mut b: Bundle, t: *bink_tables::Tables } -> bool {
+        let n: usize = begin{ &r, &b }
+        if n == 0 { return true }
+        if bink_bits::bit{ &r } == 1 {
+            let v = @trunc(i32, bink_bits::read{ &r, n = 4 })
+            slice::fill(i32){ s = b.values[..n], v }
+        } else {
+            let mut last: i32 = 0
+            let mut k: usize = 0
+            while k < n {
+                let v = huff{ &r, t, tree = &b.tree }
+                if v < 12 {
+                    last = @trunc(i32, v)
+                    b.values[k] = last
+                    k = k + 1
+                } else {
+                    let repeat: usize = TYPE_REPEATS[v - 12]
+                    if n - k < repeat { return false }
+                    slice::fill(i32){ s = b.values[k..k + repeat], v = last }
+                    k = k + repeat
+                }
+            }
+        }
+        b.end = n
+        return true
+    }
+
+    // Colors: a high nibble, coded with the tree the previous high nibble picks, and a low one.
+    fn fill_colors { mut d: Decoder, mut r: bink_bits::Reader } {
+        let n: usize = begin{ &r, b = &d.colors }
+        if n == 0 { return }
+        let t = d.tables
+        if bink_bits::bit{ &r } == 1 {
+            slice::fill(i32){ s = d.colors.values[..n], v = color{ &d, &r, t } }
+        } else {
+            let mut k: usize = 0
+            while k < n {
+                d.colors.values[k] = color{ &d, &r, t }
+                k = k + 1
+            }
+        }
+        d.colors.end = n
+    }
+
+    fn color { mut d: Decoder, mut r: bink_bits::Reader, t: *bink_tables::Tables } -> i32 {
+        let high = huff{ &r, t, tree = &d.high[d.last_high] }
+        d.last_high = high
+        let low = huff{ &r, t, tree = &d.colors.tree }
+        return @trunc(i32, (high << 4) | low)
+    }
+
+    // Patterns: a byte each, low nibble first.
+    fn fill_patterns { mut r: bink_bits::Reader, mut b: Bundle, t: *bink_tables::Tables } {
+        let n: usize = begin{ &r, &b }
+        if n == 0 { return }
+        let mut k: usize = 0
+        while k < n {
+            let low = huff{ &r, t, tree = &b.tree }
+            let high = huff{ &r, t, tree = &b.tree }
+            b.values[k] = @trunc(i32, low | (high << 4))
+            k = k + 1
+        }
+        b.end = n
+    }
+
+    // Motion vector components: a magnitude, then a sign bit (1 negative) unless it is 0.
+    fn fill_motion { mut r: bink_bits::Reader, mut b: Bundle, t: *bink_tables::Tables } {
+        let n: usize = begin{ &r, &b }
+        if n == 0 { return }
+        if bink_bits::bit{ &r } == 1 {
+            let v = signed{ &r, magnitude = bink_bits::read{ &r, n = 4 } }
+            slice::fill(i32){ s = b.values[..n], v }
+        } else {
+            let mut k: usize = 0
+            while k < n {
+                b.values[k] = signed{ &r, magnitude = huff{ &r, t, tree = &b.tree } }
+                k = k + 1
+            }
+        }
+        b.end = n
+    }
+
+    // DCs: a start value (11 bits; 10 and a sign for inter blocks), then differences in groups of
+    // up to 8, all of a group `width` bits plus a sign.
+    fn fill_dc { mut r: bink_bits::Reader, mut b: Bundle, has_sign: bool } -> bool {
+        let n: usize = begin{ &r, &b }
+        if n == 0 { return true }
+        let mut v: i32 = 0
+        if has_sign {
+            v = signed{ &r, magnitude = bink_bits::read{ &r, n = 10 } }
+        } else {
+            v = @trunc(i32, bink_bits::read{ &r, n = 11 })
+        }
+        b.values[0] = v
+        let mut k: usize = 1
+        while k < n {
+            let group = if n - k < 8 { n - k } else { 8 }
+            let width = bink_bits::read{ &r, n = 4 }
+            let mut j: usize = 0
+            while j < group {
+                if width != 0 {
+                    v = v + signed{ &r, magnitude = bink_bits::read{ &r, n = width } }
+                    if v < -32768 or v > 32767 { return false }
+                }
+                b.values[k] = v
+                k = k + 1
+                j = j + 1
+            }
+        }
+        b.end = n
+        return true
+    }
+
+    // Run lengths minus one.
+    fn fill_runs { mut r: bink_bits::Reader, mut b: Bundle, t: *bink_tables::Tables } {
+        let n: usize = begin{ &r, &b }
+        if n == 0 { return }
+        if bink_bits::bit{ &r } == 1 {
+            let v = @trunc(i32, bink_bits::read{ &r, n = 4 })
+            slice::fill(i32){ s = b.values[..n], v }
+        } else {
+            let mut k: usize = 0
+            while k < n {
+                b.values[k] = @trunc(i32, huff{ &r, t, tree = &b.tree })
+                k = k + 1
+            }
+        }
+        b.end = n
+    }
+
+    // A magnitude followed, unless 0, by a sign bit.
+    fn signed { mut r: bink_bits::Reader, magnitude: u32 } -> i32 {
+        let v = @trunc(i32, magnitude)
+        if v != 0 and bink_bits::bit{ &r } == 1 { return -v }
+        return v
+    }
+
+    // ---- blocks
+
+    // Where a motion-compensated block reads the previous picture: the offset of its top-left
+    // pixel, checked to lie between the plane's first block and its last.
+    fn motion { mut d: Decoder, at: usize, stride: usize, last_block: usize, col: u32 } -> !usize {
+        let x = take{ b = &d.xoff }
+        let y = take{ b = &d.yoff }
+        let from = @trunc(i64, at) + @trunc(i64, stride) * y + x
+        if from < 0 or from > @trunc(i64, last_block) { return bad_motion{ plane = d.plane, row = d.row, col, x, y } }
+        return @trunc(usize, from)
+    }
+
+    fn copy8 { dst: *mut u8, src: *u8, stride: usize } {
+        let mut row: usize = 0
+        while row < 8 {
+            let o = row * stride
+            let mut i: usize = 0
+            while i < 8 {
+                dst[o + i] = src[o + i]
+                i = i + 1
+            }
+            row = row + 1
+        }
+    }
+
+    fn fill { out: *mut u8, stride: usize, size: usize, v: u8 } {
+        let mut row: usize = 0
+        while row < size {
+            let o = row * stride
+            let mut i: usize = 0
+            while i < size {
+                out[o + i] = v
+                i = i + 1
+            }
+            row = row + 1
+        }
+    }
+
+    // An 8x8 block doubled into 16x16.
+    fn scale { out: *mut u8, stride: usize, block: *[64]u8 } {
+        let mut row: usize = 0
+        while row < 8 {
+            let o = 2 * row * stride
+            let mut i: usize = 0
+            while i < 8 {
+                let v = block[8 * row + i]
+                out[o + 2 * i] = v
+                out[o + 2 * i + 1] = v
+                out[o + stride + 2 * i] = v
+                out[o + stride + 2 * i + 1] = v
+                i = i + 1
+            }
+            row = row + 1
+        }
+    }
+
+    // Runs of colors along one of 16 orders of the block's pixels: each run one color, or a color
+    // per pixel. False if the runs overflow the block.
+    fn run_block { mut d: Decoder, mut r: bink_bits::Reader, out: *mut u8, stride: usize } -> bool {
+        let base: usize = 64 * bink_bits::read{ &r, n = 4 }
+        let order = &d.tables.patterns
+        let mut done: usize = 0
+        while true {
+            let run: usize = @trunc(usize, take{ b = &d.runs }) + 1
+            if done + run > 64 { return false }
+            if bink_bits::bit{ &r } == 1 {
+                let v = @trunc(u8, take{ b = &d.colors })
+                let mut j: usize = 0
+                while j < run {
+                    put{ out, stride, p = order[base + done + j], v }
+                    j = j + 1
+                }
+            } else {
+                let mut j: usize = 0
+                while j < run {
+                    put{ out, stride, p = order[base + done + j], v = @trunc(u8, take{ b = &d.colors }) }
+                    j = j + 1
+                }
+            }
+            done = done + run
+            if done >= 63 { break }
+        }
+        // With one pixel left the last color is coded alone.
+        if done == 63 { put{ out, stride, p = order[base + 63], v = @trunc(u8, take{ b = &d.colors }) } }
+        return true
+    }
+
+    // Pixel p (raster order in an 8x8 block) of a block at `out`.
+    fn put { out: *mut u8, stride: usize, p: u8, v: u8 } {
+        let i: usize = p
+        out[(i >> 3) * stride + (i & 7)] = v
+    }
+
+    fn pattern_block { mut d: Decoder, out: *mut u8, stride: usize } {
+        let c0 = @trunc(u8, take{ b = &d.colors })
+        let c1 = @trunc(u8, take{ b = &d.colors })
+        let mut row: usize = 0
+        while row < 8 {
+            let bits = take{ b = &d.patterns }
+            let o = row * stride
+            let mut i: usize = 0
+            while i < 8 {
+                out[o + i] = if ((bits >> i) & 1) != 0 { c1 } else { c0 }
+                i = i + 1
+            }
+            row = row + 1
+        }
+    }
+
+    fn raw_block { mut d: Decoder, out: *mut u8, stride: usize } {
+        let mut row: usize = 0
+        while row < 8 {
+            let o = row * stride
+            let mut i: usize = 0
+            while i < 8 {
+                out[o + i] = @trunc(u8, take{ b = &d.colors })
+                i = i + 1
+            }
+            row = row + 1
+        }
+    }
+
+    // An intra DCT block: DC from its bundle, the rest from the stream, written to `out`.
+    // `coefs` is all zero before and after.
+    fn intra_block { mut d: Decoder, mut r: bink_bits::Reader, mut coefs: [64]i32, mut set: [64]u8, out: *mut u8, stride: usize } {
+        coefs[0] = take{ b = &d.intra_dc }
+        let mut count: usize = 0
+        let t = d.tables
+        let q: usize = read_coefs{ &r, scan = &t.scan, &coefs, &set, &count }
+        dequantize{ &coefs, set = &set, count, quant = t.intra[64 * q..64 * q + 64] }
+        idct_put{ coefs = &coefs, out, stride }
+        clear{ &coefs, set = &set, count }
+    }
+
+    // An inter DCT block: the same with the inter quantizers, added to the motion copy in `out`.
+    fn inter_block { mut d: Decoder, mut r: bink_bits::Reader, mut coefs: [64]i32, mut set: [64]u8, out: *mut u8, stride: usize } {
+        coefs[0] = take{ b = &d.inter_dc }
+        let mut count: usize = 0
+        let t = d.tables
+        let q: usize = read_coefs{ &r, scan = &t.scan, &coefs, &set, &count }
+        dequantize{ &coefs, set = &set, count, quant = t.inter[64 * q..64 * q + 64] }
+        idct_add{ coefs = &coefs, out, stride }
+        clear{ &coefs, set = &set, count }
+    }
+
+    // Each coefficient (the DC and those listed) times its quantizer, in Q11.
+    fn dequantize { mut coefs: [64]i32, set: *[64]u8, count: usize, quant: []i32 } {
+        coefs[0] = @wrap_mul(coefs[0], quant[0]) >> 11
+        let mut i: usize = 0
+        while i < count {
+            let p = set[i]
+            coefs[p] = @wrap_mul(coefs[p], quant[p]) >> 11
+            i = i + 1
+        }
+    }
+
+    fn clear { mut coefs: [64]i32, set: *[64]u8, count: usize } {
+        coefs[0] = 0
+        let mut i: usize = 0
+        while i < count {
+            coefs[set[i]] = 0
+            i = i + 1
+        }
+    }
+
+    // ---- coefficients
+    //
+    // Both DCT coefficients and residues are sent bit plane by bit plane, over a list of groups of
+    // coefficients (in scan order) that are split as they turn out to hold non-zero values. An
+    // entry is a group of 20, 16 or 4 coefficients, or a single one; entries are added at the back
+    // (visited later in the same pass) or the front (visited from the next pass on).
+
+    const DEAD: u8 = 0
+    const GROUP20: u8 = 1
+    const GROUP16: u8 = 2
+    const GROUP4: u8 = 3
+    const SINGLE: u8 = 4
+
+    struct List { at: [128]u8, kind: [128]u8, front: usize, back: usize }
+
+    fn push_back { mut l: List, at: u8, kind: u8 } {
+        l.at[l.back] = at
+        l.kind[l.back] = kind
+        l.back = l.back + 1
+    }
+
+    fn push_front { mut l: List, at: u8, kind: u8 } {
+        l.front = l.front - 1
+        l.at[l.front] = at
+        l.kind[l.front] = kind
+    }
+
+    // The 63 AC coefficients of a DCT block, at their raster positions in `coefs`; `set` lists
+    // the positions given a value. Returns the quantizer index that follows them.
+    fn read_coefs { mut r: bink_bits::Reader, scan: *[64]u8, mut coefs: [64]i32, mut set: [64]u8, mut count: usize } -> u32 {
+        let mut l = List{ at = [0; 128], kind = [0; 128], front = 64, back = 64 }
+        push_back{ &l, at = 4, kind = GROUP20 }
+        push_back{ &l, at = 24, kind = GROUP20 }
+        push_back{ &l, at = 44, kind = GROUP20 }
+        push_back{ &l, at = 1, kind = SINGLE }
+        push_back{ &l, at = 2, kind = SINGLE }
+        push_back{ &l, at = 3, kind = SINGLE }
+        let mut plane = bink_bits::read{ &r, n = 4 }
+        while plane > 0 {
+            plane = plane - 1
+            let mut i = l.front
+            while i < l.back {
+                let kind = l.kind[i]
+                if kind == DEAD or bink_bits::bit{ &r } == 0 {
+                    i = i + 1
+                    continue
+                }
+                let c = l.at[i]
+                if kind == GROUP20 {
+                    // Its first four are resolved now; the other 16 are looked at again at once.
+                    l.at[i] = c + 4
+                    l.kind[i] = GROUP16
+                    resolve_coefs{ &r, &l, scan, &coefs, &set, &count, first = c, plane }
+                } else if kind == GROUP16 {
+                    l.kind[i] = GROUP4
+                    push_back{ &l, at = c + 4, kind = GROUP4 }
+                    push_back{ &l, at = c + 8, kind = GROUP4 }
+                    push_back{ &l, at = c + 12, kind = GROUP4 }
+                } else if kind == GROUP4 {
+                    l.kind[i] = DEAD
+                    i = i + 1
+                    resolve_coefs{ &r, &l, scan, &coefs, &set, &count, first = c, plane }
+                } else {
+                    put_coef{ &r, scan, &coefs, &set, &count, c, plane }
+                    l.kind[i] = DEAD
+                    i = i + 1
+                }
+            }
+        }
+        return bink_bits::read{ &r, n = 4 }
+    }
+
+    // Four coefficients: each either gets its value now (bit 0) or waits at the front of the list.
+    fn resolve_coefs { mut r: bink_bits::Reader, mut l: List, scan: *[64]u8, mut coefs: [64]i32, mut set: [64]u8, mut count: usize, first: u8, plane: u32 } {
+        let mut k: u8 = 0
+        while k < 4 {
+            if bink_bits::bit{ &r } == 1 {
+                push_front{ &l, at = first + k, kind = SINGLE }
+            } else {
+                put_coef{ &r, scan, &coefs, &set, &count, c = first + k, plane }
+            }
+            k = k + 1
+        }
+    }
+
+    // A coefficient whose highest set bit is `plane`: its lower bits and a sign.
+    fn put_coef { mut r: bink_bits::Reader, scan: *[64]u8, mut coefs: [64]i32, mut set: [64]u8, mut count: usize, c: u8, plane: u32 } {
+        let mut v: i32 = 1
+        if plane > 0 {
+            let one: u32 = 1
+            v = @trunc(i32, bink_bits::read{ &r, n = plane } | (one << plane))
+        }
+        if bink_bits::bit{ &r } == 1 { v = -v }
+        let p = scan[c]
+        coefs[p] = v
+        set[count] = p
+        count = count + 1
+    }
+
+    // A residue block's pixel differences: `masks` + 1 bits of magnitude are handed out, from the
+    // largest first, to the coefficients already non-zero and to new ones found through the list.
+    fn read_residue { mut r: bink_bits::Reader, scan: *[64]u8, mut values: [64]i32, masks: u32 } {
+        let mut l = List{ at = [0; 128], kind = [0; 128], front = 64, back = 64 }
+        push_back{ &l, at = 4, kind = GROUP20 }
+        push_back{ &l, at = 24, kind = GROUP20 }
+        push_back{ &l, at = 44, kind = GROUP20 }
+        push_back{ &l, at = 0, kind = GROUP4 }
+        let mut nz: [64]u8
+        let mut nz_count: usize = 0
+        let mut left: i32 = @trunc(i32, masks)
+        let mut mask: i32 = 1 << bink_bits::read{ &r, n = 3 }
+        while mask != 0 {
+            // Coefficients already non-zero may grow by the mask.
+            let mut j: usize = 0
+            while j < nz_count {
+                if bink_bits::bit{ &r } == 1 {
+                    let p = nz[j]
+                    if values[p] < 0 { values[p] = values[p] - mask } else { values[p] = values[p] + mask }
+                    left = left - 1
+                    if left < 0 { return }
+                }
+                j = j + 1
+            }
+            let mut i = l.front
+            while i < l.back {
+                let kind = l.kind[i]
+                if kind == DEAD or bink_bits::bit{ &r } == 0 {
+                    i = i + 1
+                    continue
+                }
+                let c = l.at[i]
+                let mut first: u8 = 0
+                let mut resolve = false
+                if kind == GROUP20 {
+                    l.at[i] = c + 4
+                    l.kind[i] = GROUP16
+                    first = c
+                    resolve = true
+                } else if kind == GROUP16 {
+                    l.kind[i] = GROUP4
+                    push_back{ &l, at = c + 4, kind = GROUP4 }
+                    push_back{ &l, at = c + 8, kind = GROUP4 }
+                    push_back{ &l, at = c + 12, kind = GROUP4 }
+                } else if kind == GROUP4 {
+                    l.kind[i] = DEAD
+                    i = i + 1
+                    first = c
+                    resolve = true
+                } else {
+                    l.kind[i] = DEAD
+                    i = i + 1
+                    let p = scan[c]
+                    nz[nz_count] = p
+                    nz_count = nz_count + 1
+                    values[p] = if bink_bits::bit{ &r } == 1 { -mask } else { mask }
+                    left = left - 1
+                    if left < 0 { return }
+                }
+                if resolve {
+                    let mut k: u8 = 0
+                    while k < 4 {
+                        if bink_bits::bit{ &r } == 1 {
+                            push_front{ &l, at = first + k, kind = SINGLE }
+                        } else {
+                            let p = scan[first + k]
+                            nz[nz_count] = p
+                            nz_count = nz_count + 1
+                            values[p] = if bink_bits::bit{ &r } == 1 { -mask } else { mask }
+                            left = left - 1
+                            if left < 0 { return }
+                        }
+                        k = k + 1
+                    }
+                }
+            }
+            mask = mask >> 1
+        }
+    }
+
+    // Adds the residue to the block's pixels (wrapping, as the format does) and clears it.
+    fn add_residue { out: *mut u8, stride: usize, mut values: [64]i32 } {
+        let mut row: usize = 0
+        while row < 8 {
+            let o = row * stride
+            let mut i: usize = 0
+            while i < 8 {
+                let v = values[8 * row + i]
+                let px: i32 = out[o + i]
+                out[o + i] = @trunc(u8, @wrap_add(px, v))
+                values[8 * row + i] = 0
+                i = i + 1
+            }
+            row = row + 1
+        }
+    }
+
+    // ---- inverse DCT
+
+    fn mul11 { a: i32, k: i32 } -> i32 {
+        return @wrap_mul(a, k) >> 11
+    }
+
+    // The 8-point inverse transform: IJG's fast-IDCT butterfly with products in Q11, truncated.
+    // Wrapping arithmetic: a corrupt block gives garbage pixels, not a panic.
+    fn butterfly { s: [8]i32 } -> [8]i32 {
+        let a0 = @wrap_add(s[0], s[4])
+        let a1 = @wrap_sub(s[0], s[4])
+        let a2 = @wrap_add(s[2], s[6])
+        let a3 = mul11{ a = @wrap_sub(s[2], s[6]), k = K_SQRT2 }
+        let z13 = @wrap_add(s[5], s[3])
+        let z10 = @wrap_sub(s[5], s[3])
+        let z11 = @wrap_add(s[1], s[7])
+        let z12 = @wrap_sub(s[1], s[7])
+        let t7 = @wrap_add(z13, z11)
+        let z5 = mul11{ a = @wrap_add(z10, z12), k = K_1847 }
+        let t6 = @wrap_add(@wrap_sub(mul11{ a = z10, k = K_M2613 }, t7), z5)
+        let t5 = @wrap_sub(mul11{ a = @wrap_sub(z11, z13), k = K_SQRT2 }, t6)
+        let t4 = @wrap_sub(@wrap_add(mul11{ a = z12, k = K_1082 }, t5), z5)
+        let e0 = @wrap_add(a0, a2)
+        let e3 = @wrap_sub(a0, a2)
+        let e1 = @wrap_sub(@wrap_add(a1, a3), a2)
+        let e2 = @wrap_add(@wrap_sub(a1, a3), a2)
+        return [
+            @wrap_add(e0, t7), @wrap_add(e1, t6), @wrap_add(e2, t5), @wrap_sub(e3, t4),
+            @wrap_add(e3, t4), @wrap_sub(e2, t5), @wrap_sub(e1, t6), @wrap_sub(e0, t7),
+        ]
+    }
+
+    // The column pass, into `tmp`; a column with only a DC transforms to that DC.
+    fn columns { coefs: *[64]i32, mut tmp: [64]i32 } {
+        let mut c: usize = 0
+        while c < 8 {
+            let s = [coefs[c], coefs[c + 8], coefs[c + 16], coefs[c + 24], coefs[c + 32], coefs[c + 40], coefs[c + 48], coefs[c + 56]]
+            if (s[1] | s[2] | s[3] | s[4] | s[5] | s[6] | s[7]) == 0 {
+                let mut k: usize = 0
+                while k < 8 {
+                    tmp[c + 8 * k] = s[0]
+                    k = k + 1
+                }
+            } else {
+                let o = butterfly{ s }
+                let mut k: usize = 0
+                while k < 8 {
+                    tmp[c + 8 * k] = o[k]
+                    k = k + 1
+                }
+            }
+            c = c + 1
+        }
+    }
+
+    fn row_of { tmp: *[64]i32, row: usize } -> [8]i32 {
+        let o = 8 * row
+        return [tmp[o], tmp[o + 1], tmp[o + 2], tmp[o + 3], tmp[o + 4], tmp[o + 5], tmp[o + 6], tmp[o + 7]]
+    }
+
+    fn idct_put { coefs: *[64]i32, out: *mut u8, stride: usize } {
+        let mut tmp: [64]i32
+        columns{ coefs, &tmp }
+        let mut row: usize = 0
+        while row < 8 {
+            let v = butterfly{ s = row_of{ tmp = &tmp, row } }
+            let o = row * stride
+            let mut i: usize = 0
+            while i < 8 {
+                out[o + i] = @trunc(u8, @wrap_add(v[i], 127) >> 8)
+                i = i + 1
+            }
+            row = row + 1
+        }
+    }
+
+    fn idct_add { coefs: *[64]i32, out: *mut u8, stride: usize } {
+        let mut tmp: [64]i32
+        columns{ coefs, &tmp }
+        let mut row: usize = 0
+        while row < 8 {
+            let v = butterfly{ s = row_of{ tmp = &tmp, row } }
+            let o = row * stride
+            let mut i: usize = 0
+            while i < 8 {
+                let px: i32 = out[o + i]
+                out[o + i] = @trunc(u8, @wrap_add(px, @wrap_add(v[i], 127) >> 8))
+                i = i + 1
+            }
+            row = row + 1
+        }
+    }
+}

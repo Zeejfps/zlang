@@ -41,14 +41,16 @@ namespace mdl_anim {
     }
 
     // A model's state at one moment. `nodes`, `lights` and `emitters` are what animations set;
-    // `world` and `alpha` follow from them (`finish`). Every array is indexed as the model's:
-    // nodes and world by tree index, lights and emitters as Model.lights and Model.emitters.
+    // `world` and `alpha` follow from them (`finish`); `swings` carry dangly meshes' springs from
+    // frame to frame (`swing`). Every array is indexed as the model's: nodes and world by tree
+    // index, lights, emitters and swings as Model.lights, Model.emitters and Model.meshes.
     struct Pose {
         nodes: []mut NodeState,
         lights: []mut mdl::LightProps,
         emitters: []mut mdl::EmitterProps,
         world: []mut math::Mat4,               // model space
         alpha: []mut f32,                      // the node's alpha times its ancestors'
+        swings: []mut Swing,                   // per Model.meshes entry: a dangly mesh's swing (`swing`)
     }
 
     // A pose for `model`, in its bind pose (the rest state of every node, world transforms done).
@@ -60,7 +62,10 @@ namespace mdl_anim {
             emitters = try alloc::resize(mdl::EmitterProps, S){ realloc, &heap, mem = slice::empty(mdl::EmitterProps){}, count = model.emitters.len },
             world = try alloc::resize(math::Mat4, S){ realloc, &heap, mem = slice::empty(math::Mat4){}, count = n },
             alpha = try alloc::resize(f32, S){ realloc, &heap, mem = slice::empty(f32){}, count = n },
+            swings = try alloc::resize(Swing, S){ realloc, &heap, mem = slice::empty(Swing){}, count = model.meshes.len },
         }
+        let still = Swing{ offset = math::vec3::zero{}, velocity = math::vec3::zero{}, last = math::vec3::zero{}, started = false }
+        slice::fill(Swing){ s = pose.swings, v = still }
         reset{ model, pose }
         finish{ model, pose }
         return pose
@@ -396,6 +401,59 @@ namespace mdl_anim {
             apply{ model, binding = cur.binding, time = cur.time, weight = w, pose }
         }
         finish{ model, pose }
+    }
+
+    // ---- dangly meshes
+
+    // A dangly mesh's swing: how far its free vertices (constraint 255) trail where the mesh is,
+    // in the mesh node's space; a vertex of constraint c moves c / 255 of it (render's
+    // Draw.dangle). Inferred, not read from the engine yet (mdl.md, Dangly): a damped spring the
+    // node's own movement drives, which rings at the mesh's `period` (seconds), with `tightness`
+    // as its damping ratio, never further than `displacement`.
+    struct Swing { offset: math::Vec3, velocity: math::Vec3, last: math::Vec3, started: bool }
+
+    // Moves every dangly mesh's swing on by `dt` seconds, for where `transform` (the model's
+    // world matrix) and the pose put its node now. Call once a frame after evaluate.
+    fn swing { model: *mdl::Model, pose: Pose, transform: math::Mat4, dt: f32 } {
+        let mut i: usize = 0
+        while i < model.meshes.len and i < pose.swings.len {
+            let mesh = &model.meshes[i]
+            let s = &pose.swings[i]
+            i = i + 1
+            let d = mesh.dangly ifnull { continue }
+            let world = math::mat4::mul{ a = transform, b = pose.world[mesh.node] }
+            let p = math::mat4::get_translation{ m = world }
+            if not s.started or not (dt > 0.0) {
+                s.last = p
+                s.started = true
+                continue
+            }
+            // The free vertices stay where they were in the world: in the node's space, they
+            // move back by however far the node moved.
+            let moved = math::mat4::transform_dir{ m = math::mat4::inverse_affine{ m = world }, v = math::vec3::sub{ a = p, b = s.last } }
+            s.last = p
+            s.offset = math::vec3::sub{ a = s.offset, b = moved }
+            let omega = math::TAU / math::max{ a = d.period, b = 0.05 }
+            let zeta = math::clamp{ x = d.tightness, lo = 0.05, hi = 1.0 }
+            // Small steps keep the spring stable at any frame rate.
+            let mut left = math::min{ a = dt, b = 0.5 }
+            while left > 0.0 {
+                let h = math::min{ a = left, b = 1.0 / 120.0 }
+                let accel = math::vec3::add{
+                    a = math::vec3::scale{ v = s.offset, s = -omega * omega },
+                    b = math::vec3::scale{ v = s.velocity, s = -2.0 * zeta * omega },
+                }
+                s.velocity = math::vec3::add_scaled{ a = s.velocity, b = accel, s = h }
+                s.offset = math::vec3::add_scaled{ a = s.offset, b = s.velocity, s = h }
+                left = left - h
+            }
+            let reach = math::max{ a = d.displacement, b = 0.0 }
+            let len = math::vec3::length{ v = s.offset }
+            if len > reach {
+                s.offset = if len > 0.0 { math::vec3::scale{ v = s.offset, s = reach / len } } else { math::vec3::zero{} }
+                s.velocity = math::vec3::zero{}
+            }
+        }
     }
 
     // ---- what a renderer takes from a pose

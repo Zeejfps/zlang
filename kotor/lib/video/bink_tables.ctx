@@ -1,0 +1,213 @@
+// Bink video's constant tables, read at run time from the game's own `binkw32.dll`.
+//
+//   let tables = try bink_tables::load{ &fs, realloc = arena::alloc, &heap, path = "<install>/binkw32.dll" }
+//
+// The decoder needs 16 prefix codes, the coefficient scan order, the 16 run-block scan patterns
+// and the intra and inter quantizer matrices. Their only public text form is LGPL code, which we
+// can't copy, and the quantizers can't be rebuilt exactly from their description; RAD's DLL ships
+// with every install, so we take them from it (docs/design/video.md, "Tables").
+//
+// Each table is found by its shape (a scan is a permutation of 0..63 starting at the DC, say)
+// and then accepted only if its CRC-32 is the one recorded in docs/formats/bink.md, so the search
+// works on any build of the DLL that holds them, wherever its linker put them, and a DLL with
+// different tables is refused rather than decoded into garbage. The game then skips its movies.
+namespace bink_tables {
+    // A table the DLL doesn't hold (no region with its shape has its CRC).
+    error no_code_lengths
+    error no_codes
+    error no_scan
+    error no_patterns
+    error no_intra_quantizers
+    error no_inter_quantizers
+    // The prefix codes don't form 16 complete codes of at most 7 bits.
+    error bad_codes{ tree: u32 }
+
+    // Longest code of any of the 16 prefix codes, in bits.
+    const MAX_CODE_BITS: u32 = 7
+    const LOOKUP_SIZE: usize = 128            // 1 << MAX_CODE_BITS
+
+    struct Tables {
+        code_len: [256]u8,                    // tree t, code index k at [16t + k]
+        code_bits: [256]u8,                   // the code's bits, the first one read in bit 0
+        lookup: [2048]u8,                     // tree t, the next 7 bits p at [128t + p]: len << 4 | index
+        scan: [64]u8,                         // raster position of each coefficient, in coding order
+        patterns: [1024]u8,                   // run block pattern i: [64i ..], raster positions in fill order
+        intra: [1024]i32,                     // quantizer q: [64q + raster position], Q11 with the IDCT's scale
+        inter: [1024]i32,
+    }
+
+    // What a table looks like where it is stored: its size, how its candidates are aligned, its
+    // CRC-32, and a quick test of its shape at a position.
+    struct Shape { size: usize, step: usize, crc: u32, test: fn{ dll: []u8, at: usize } -> bool }
+
+    const CODE_LEN_CRC: u32 = 0xf2c3ec57
+    const CODE_BITS_CRC: u32 = 0xa2739da1
+    const SCAN_CRC: u32 = 0x8fbdd9f2
+    const PATTERNS_CRC: u32 = 0xf9e3218a
+    const INTRA_CRC: u32 = 0xd53c4639
+    const INTER_CRC: u32 = 0xc4f4dcd3
+
+    // Reads the DLL at `path` and takes the tables from it. The DLL's bytes are freed again.
+    fn load(S) { mut fs: Fs, realloc: alloc::Fn(S), mut heap: S, path: []u8 } -> !Tables {
+        let dll = try fs::read_all{ &fs, &heap, realloc, path }
+        defer _ = alloc::resize(u8, S){ realloc, &heap, mem = dll, count = 0 }
+        return find{ dll }
+    }
+
+    // The tables, from the bytes of a binkw32.dll.
+    fn find { dll: []u8 } -> !Tables {
+        let mut t: Tables
+        let len_at = locate{ dll, shape = Shape{ size = 256, step = 1, crc = CODE_LEN_CRC, test = flat_code_lengths } } ifnull { return no_code_lengths }
+        let bits_at = locate{ dll, shape = Shape{ size = 256, step = 1, crc = CODE_BITS_CRC, test = flat_codes } } ifnull { return no_codes }
+        let scan_at = locate{ dll, shape = Shape{ size = 64, step = 1, crc = SCAN_CRC, test = scan_order } } ifnull { return no_scan }
+        let pat_at = locate{ dll, shape = Shape{ size = 1024, step = 1, crc = PATTERNS_CRC, test = permutation } } ifnull { return no_patterns }
+        let intra_at = locate{ dll, shape = Shape{ size = 4096, step = 4, crc = INTRA_CRC, test = quantizers } } ifnull { return no_intra_quantizers }
+        let inter_at = locate{ dll, shape = Shape{ size = 4096, step = 4, crc = INTER_CRC, test = quantizers } } ifnull { return no_inter_quantizers }
+        slice::copy(u8){ dst = t.code_len[..], src = dll[len_at..len_at + 256] }
+        slice::copy(u8){ dst = t.code_bits[..], src = dll[bits_at..bits_at + 256] }
+        slice::copy(u8){ dst = t.scan[..], src = dll[scan_at..scan_at + 64] }
+        slice::copy(u8){ dst = t.patterns[..], src = dll[pat_at..pat_at + 1024] }
+        let mut i: usize = 0
+        while i < 1024 {
+            t.intra[i] = read_i32{ dll, at = intra_at + 4 * i }
+            t.inter[i] = read_i32{ dll, at = inter_at + 4 * i }
+            i = i + 1
+        }
+        try build_lookup{ &t }
+        return t
+    }
+
+    // The first position, a multiple of the shape's step, where a table of that shape and CRC is.
+    fn locate { dll: []u8, shape: Shape } -> ?usize {
+        let mut at: usize = 0
+        while at + shape.size <= dll.len {
+            if shape.test{ dll, at } and crc32{ bytes = dll[at..at + shape.size] } == shape.crc {
+                return at
+            }
+            at = at + shape.step
+        }
+        return null
+    }
+
+    // Code 0 is plain 4-bit values: sixteen lengths of 4.
+    fn flat_code_lengths { dll: []u8, at: usize } -> bool {
+        let mut i: usize = 0
+        while i < 16 {
+            if dll[at + i] != 4 { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // ... whose bits are the values themselves: 0, 1, ..., 15.
+    fn flat_codes { dll: []u8, at: usize } -> bool {
+        let mut i: usize = 0
+        while i < 16 {
+            if dll[at + i] != i { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // A scan order starts with the DC, at raster position 0, and visits every position once.
+    fn scan_order { dll: []u8, at: usize } -> bool {
+        return dll[at] == 0 and permutation{ dll, at }
+    }
+
+    // 64 bytes that are 0..63 in some order.
+    fn permutation { dll: []u8, at: usize } -> bool {
+        let mut seen: u64 = 0
+        let one: u64 = 1
+        let mut i: usize = 0
+        while i < 64 {
+            let v = dll[at + i]
+            if v >= 64 or (seen & (one << v)) != 0 { return false }
+            seen = seen | (one << v)
+            i = i + 1
+        }
+        return true
+    }
+
+    // 16 matrices of positive i32 whose second is the first scaled by 4/3 (the quantizer steps
+    // run 1, 4/3, 5/3, 2, ...): checked on the DC.
+    fn quantizers { dll: []u8, at: usize } -> bool {
+        let q0: i64 = read_i32{ dll, at }
+        let q1: i64 = read_i32{ dll, at = at + 256 }
+        if q0 <= 0 or q1 <= 0 { return false }
+        let d = 3 * q1 - 4 * q0
+        return d >= -4 and d <= 4
+    }
+
+    fn read_i32 { dll: []u8, at: usize } -> i32 {
+        let b0: u32 = dll[at]
+        let b1: u32 = dll[at + 1]
+        let b2: u32 = dll[at + 2]
+        let b3: u32 = dll[at + 3]
+        return @trunc(i32, b0 | (b1 << 8) | (b2 << 16) | (b3 << 24))
+    }
+
+    // For each code and each value of the next 7 bits, which code index they start with and its
+    // length: one lookup decodes a symbol. Also checks that the codes are complete prefix codes,
+    // so every lookup entry is set exactly once.
+    fn build_lookup { mut t: Tables } -> ! {
+        let one: usize = 1
+        let mut tree: u32 = 0
+        while tree < 16 {
+            let base: usize = 128 * tree
+            let mut p: usize = 0
+            while p < LOOKUP_SIZE {
+                t.lookup[base + p] = 0
+                p = p + 1
+            }
+            let mut filled: usize = 0
+            let mut k: usize = 0
+            while k < 16 {
+                let len: u32 = t.code_len[16 * tree + k]
+                let code: usize = t.code_bits[16 * tree + k]
+                if len == 0 or len > MAX_CODE_BITS or code >= (one << len) { return bad_codes{ tree } }
+                // Every 7-bit continuation of the code's bits.
+                let mut rest: usize = 0
+                while rest < (one << (MAX_CODE_BITS - len)) {
+                    let at = base + (code | (rest << len))
+                    if t.lookup[at] != 0 { return bad_codes{ tree } }
+                    t.lookup[at] = @trunc(u8, (len << 4) | @trunc(u32, k))
+                    filled = filled + 1
+                    rest = rest + 1
+                }
+                k = k + 1
+            }
+            if filled != LOOKUP_SIZE { return bad_codes{ tree } }
+            tree = tree + 1
+        }
+    }
+
+    // CRC-32 (ISO 3309, zlib's) of `bytes`.
+    const CRC_TABLE: [256]u32 = crc_table{}
+
+    fn crc_table {} -> [256]u32 {
+        let mut t: [256]u32
+        let mut n: u32 = 0
+        while n < 256 {
+            let mut c = n
+            let mut k = 0
+            while k < 8 {
+                c = if (c & 1) != 0 { 0xEDB88320 ^ (c >> 1) } else { c >> 1 }
+                k = k + 1
+            }
+            t[n] = c
+            n = n + 1
+        }
+        return t
+    }
+
+    fn crc32 { bytes: []u8 } -> u32 {
+        let table = CRC_TABLE
+        let mut c: u32 = 0xFFFFFFFF
+        let mut i: usize = 0
+        while i < bytes.len {
+            c = table[(c ^ bytes[i]) & 0xFF] ^ (c >> 8)
+            i = i + 1
+        }
+        return c ^ 0xFFFFFFFF
+    }
+}

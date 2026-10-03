@@ -9,8 +9,15 @@ and [../formats/bwm.md](../formats/bwm.md).
 |---|---|---|
 | `lib/mdl/mdl.ctx` | `mdl` | MDL/MDX parsed into a `mdl::Model` |
 | `lib/mdl/anim.ctx` | `mdl_anim` | animation: supermodel lookup, poses, blending, events, skin palettes, hooks |
+| `lib/mdl_cache` | `mdl_cache` | models by resref through lib/res, parsed once and kept: the supermodel lookup |
+| `lib/mdl_render` | `mdl_render` | a model's meshes uploaded through the render seam, and a pose turned into draws |
 | `lib/walk/bwm.ctx` | `bwm` | walkmeshes and their queries |
 | `tools/mdlcheck`, `tools/animcheck`, `tools/walkcheck` | | corpus checks over the whole install |
+| `tools/mdlview` | | a model drawn headless to a PNG, posed, with a head or attachment |
+
+lib/mdl needs only lib/base; lib/mdl_cache adds lib/res; lib/mdl_render adds lib/render and a
+backend (render.md). The engine takes what it needs: a server-side check of a creature's hooks
+needs no GPU.
 
 Conventions are lib/base's `math`: Z up, creatures face +Y, metres; `math::Vec3`, `math::Quat`
 (unit, `w` first), `math::Mat4` column-major (`m[col * 4 + row]`), points as columns, so
@@ -160,6 +167,59 @@ For a placed object with transform `instance` (from the GIT or LYT):
 with its own player and pose, playing its own animations through its own supermodel chain (which
 leads to the body's), never the body's (models-usage.md, Heads).
 
+## Drawing through the render seam
+
+Agreed with the render lead: `mdl_render` (ours) owns meshes and per-frame draws; textures and
+materials (TXI, environment maps) are the render lead's `material` library.
+
+```
+let g = try mdl_render::upload{ &dev, realloc, &heap, model = &m }          // once per model
+let mats[i] = material::for_mesh{ &cache, &fs, &dev, rm, desc = material::MeshDesc{ diffuse = mesh.textures[0], ... } }
+                                                                             // once per mesh that draws (mdl_render::draws)
+each frame:
+mdl_anim::evaluate{ model = &m, player, pose }
+mdl_anim::swing{ model = &m, pose, transform = instance, dt }                // dangly meshes
+_ = mdl_render::add_draws{ &frame, view, model = &m, pose, g, transform = instance, materials = mats, time }
+```
+
+`upload` hands each mesh's streams to `render::pack_streams` (planar arrays, u8 bone slots) and
+builds lightsaber blades from their saber arrays (mdl.md, Saber: the strip across columns 23,
+22, 0, 1). `add_draws` fills each draw's mesh, `transform = instance * pose.world[mesh.node]`,
+the material patched by the pose (opacity from `pose.alpha`: below 1 an opaque or punch surface
+blends; self-illumination; scrolling UVs at `time`, added to the material's own offset), the
+skin palette through `render::add_bones`, `dangle` from the pose's swing, two-sided blades, and
+for rigid meshes the bounding sphere (`mesh.average`, `mesh.radius`, in node space) for culling
+and light choice.
+
+**Dangly meshes** (`mdl_anim::swing`, inferred: the engine's spring isn't read yet): per dangly
+mesh the pose keeps how far its free vertices trail the node, in node space. Each frame the
+node's movement pushes them back, a spring ringing at the mesh's `period` with `tightness` as its
+damping ratio pulls them home, and they never go past `displacement`; render moves a vertex by
+that times its constraint / 255.
+
+`mdl_cache::get{ &fs, &cache, name }` is the lookup `mdl_anim::find` takes, bound over a cache:
+each model is parsed once into the cache's arena, which must outlive every binding.
+
+## Walkmeshes
+
+```
+let w = try bwm::parse{ realloc, &heap, bytes }                                   // a WOK, PWK or DWK
+let floor = bwm::find_face_under{ w, x, y, z, step = 0.5, walkable } ifnull { ... }  // Floor{ face, z }
+let hit = bwm::cast_ray{ w, ray, max_t, stops } ifnull { ... }                    // RayHit{ face, t, point }
+let placed = try bwm::transform_placed{ realloc, &heap, w = door_closed, at = bwm::Placement{ position, bearing } }
+```
+
+A `Walkmesh` is self-contained (nothing points into the file) and lives in the allocator given to
+`parse` or `transform_placed`: an arena per module. Loading checks every table and index, computes
+the planes a file leaves unusable (every PWK), marks zero-area faces, refits the AABB boxes from
+the faces and rebuilds a tree that doesn't cover every face once (bwm.md section 9). Material
+sets (`walkable`, `stops`) are `[]bool` by surface material id, from `surfacemat.2da`'s `walk` and
+`lineofsight` columns, which the engine reads. Frames (bwm.md section 3): a WOK is in area space
+as stored; a PWK or DWK is in its node's space, and `transform_placed` takes vertex + `position`
+on through the GIT placement into area space, with its hooks (`hook_point`), so the same queries
+work on placed doors and placeables. Adjacency (`3 * face + edge`, −1 none), `edge_perimeter`
+and the perimeter's room transitions are there for walking and pathfinding.
+
 ## Checked
 
 - `tools/mdlcheck`: every model through lib/res (2,832) or every copy of every model
@@ -171,9 +231,25 @@ leads to the body's), never the body's (models-usage.md, Heads).
   palettes, each event once per pass, blends mid-transition. `--dump` prints a pose; it agrees
   with `tools/py/mdlrender.py` to 2e-6 once both slerp (Bastila `run`, rancor `cwalk`, door
   `opening1`).
+- `tools/walkcheck` (and mdlcheck's whole runs): all 1,554 walkmeshes; every count and failure
+  class equals bwm.md's; the refitted trees find the brute-force floor at all 22,794 sampled
+  centroids; damaged copies never panic.
+- `animcheck` also moves every model for three seconds: all 2,619 dangly meshes' swings stay
+  finite and within their displacement.
+- `tools/mdlview`: textured renders in `kotor/out/mdlview/` (`pmhc01_front`,
+  `c_rancor_side_cwalk0.4`, `p_bastilabb_front_pause10.5` and `p_bastilabb_side_run0.2` with
+  `p_bastilah`, `dor_lda03_front_opening10.5`, `m01aa_02a_iso`) look as the Python renders in
+  `kotor/out/mdl/` do (the head nearly pixel for pixel). Differences are ours to keep: the door's
+  `trans` plane, which the Python render draws grey, is hidden (its alpha controller is 0), and
+  `w_lghtsbr_001` shows its blade only when an animation powers it (`..._powered0`,
+  `..._powerup0.4`), since the bind pose scales it to 0.
 
 ## Open
 
-- The bezier curve's exact form, the dangly spring, the particle simulation (mdl.md, open).
+- The engine's own dangly spring and saber swing trail (RE: the dangly part is constructed at
+  0x00447980 under vtable 0x00740d78, which the RTTI export names `CAurPartAABB`, while 0x00741048
+  `CAurPartDanglyMesh` is built for flags 0x221, the AABB meshes: the export's names, or
+  re/render-gui.md's table, have dangly and AABB swapped).
+- The particle simulation (emitters' data and animated properties are all here), the bezier
+  curve's exact form (mdl.md).
 - Whether the engine scales supermodel position keys by `anim_scale` (models-usage.md).
-- `mdlview`: a headless render through lib/render once that API lands.

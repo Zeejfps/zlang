@@ -67,30 +67,29 @@ The goal is real programs over C libraries: OpenGL or Vulkan rendering, windowin
      in the signatures: `run`, `env` and `exe_path` take an allocator, as `fs::list` does, and
      `run` takes `Io` for the flush. *To settle.*
 2. **`const OS` in each layer**, so that `proc::os` and `build::os` stop calling `ctx_build_os`.
-3. **Several C files, compiled at once.** The driver writes a program's C as one file, and for a
-   big program the C compiler is the bottleneck. 96K lines (four copies of ctxc's source, each
-   a namespace in a file of its own, and std) take 1.7 s in the front end, which writes 13.8 MB
-   of C; gcc compiles that in 25 s at -O0, 61 s at -O1 and 108 s at -O2 (gcc 15 on Windows), and
-   links it in 0.1 s. Split by hand into a header (types, prototypes, and the bind records and
-   thunks, `static`) and 16 files of bodies, with the fns made extern, compiled 16 at a time it
-   took 5.8 s at -O1 (85 s of CPU time), and ran. gcc's own `-flto=auto` doesn't help on Windows,
-   where lto-wrapper runs its 92 jobs one after another (20 s, then 53 s).
-   - emit_c writes the header once and the bodies into N buffers. A fn loses `static`, and takes
-     a prefix (`ctx_f12`) so that no library's symbol meets it; consts and the file table stay
-     `static` in the header, one copy per file. Bind records and thunks, made while bodies are
-     emitted, go in the header. `ctxc build OUT.c` keeps writing one file, for the bootstraps.
-   - The driver compiles the files at once, which needs `proc::spawn` and `wait` (6.4 wants
-     them too), caches each file's object by its hash, and links them.
-   - An edit recompiles only the files whose text changed, and so only if names don't move: fns
-     are numbered across the whole program, so a new one renumbers every fn after it. Names
-     numbered within their namespace, say, would keep the other files the same.
-   - N follows the size of the C and the number of processors; a small program stays one file.
-4. **`#c::export{ name }`**, for a public symbol, over the callback thunk.
-5. **Loading a library at run time**, where the capability means "it loaded".
+3. **`#c::export{ name }`**, for a public symbol, over the callback thunk.
+4. **Loading a library at run time**, where the capability means "it loaded".
+
+*Done: several C files, compiled at once* (emit_c.ctx's "Units", drive.ctx). A big program's C is
+units of about 256 KiB, grouped by the files that declare their functions, compiled as many at a
+time as there are processors and cached each by its hash. 99K lines (four copies of ctxc's
+source, each a namespace in a file of its own, and std): 63 s at -O1 as one file, 8.4 s as 61
+units on 24 processors (of which the front end is 1.9 s), and 3.2 s to rebuild after an edit to
+one function, which recompiles its unit alone. Unit sizes from 128 KiB to 1 MiB all took 7.5 to
+9 s. gcc's own `-flto=auto` doesn't help on Windows, where lto-wrapper runs its jobs one after
+another.
 
 *Later, for the driver* (ctxc/drive.ctx), if they get in the way:
-- The front end runs on every `ctxc run`, changed or not: 1.7 s for 96K lines. A hash of the
-  sources and of ctxc itself could skip it too.
+- The front end runs on every `ctxc run`, changed or not: 1.9 s for 99K lines, now the largest
+  part of a rebuild. A hash of the sources and of ctxc itself could skip it too; checking and
+  lowering only the files that changed is a bigger change.
+- A unit's C holds the declarations its functions use, so a big program's units hold about a
+  third more C than one file does. The layouts are checked (`_Static_assert`) only in main's.
+- Inserting a line moves the positions after it, so every unit of that file is recompiled, though
+  only one function changed. Positions relative to their function's first line would keep them.
+- A file's units are its functions by a hash of their names; files smaller than a unit share one
+  with the next files of their directory, so one that grows past a boundary moves the files after
+  it into other units.
 - A file reached twice is found by its absolute path, without looking at links, so a file
   reached through a symbolic link or a junction and directly is compiled twice.
 - A C compiler replaced in place by another version isn't noticed: removing build/run starts
@@ -263,9 +262,9 @@ alone; step 5 gives programs a test framework of their own. None blocks the othe
    fixtures all read the same files, and `tools/toolchain.py`'s harness (building ctxc from the
    bootstrap, caching by hash, mapping positions back) moves into the runner. Do this before
    stage 5.
-4. **`corpus.py` and `recover.py` in ctxlang.** Both run many processes at once, and `proc::run`
-   waits for its child, so this needs a way to start a process and wait later (`proc::spawn`
-   and `wait`). With tests as files, the corpus is mostly the test directory itself.
+4. **`corpus.py` and `recover.py` in ctxlang.** Both run many processes at once, with
+   `proc::spawn` and `wait`, which the driver's parallel compiles use too. With tests as files,
+   the corpus is mostly the test directory itself.
 5. **`#test` functions** for std, ctxc's internals and programs, next to the code they test. The
    compiler's own suite stays as files (6.3): a program can't catch its own compile error.
    ```
@@ -294,8 +293,8 @@ alone; step 5 gives programs a test framework of their own. None blocks the othe
    - **The compiler knows nothing of tests.** `#test` is std's attribute, and a build program
      finds the tests with `build::check` (3.2) and writes a runner `main` with `build::gen_file`
      (3.1). Only `@expect` is the compiler's. A test that expects a panic runs in its own
-     process, which needs 6.4's `proc::spawn`.
-   - *Needs* 3.1 and 3.2, and 6.4 for expected panics. It is a first real user of
+     process, with `proc::spawn`.
+   - *Needs* 3.1 and 3.2. It is a first real user of
      `build::check`, next to the JSON generator.
    - *Considered:* finding tests by name (Go's `TestXxx`) is magic by name; `test "name" { }`
      blocks (Zig) are syntax an attribute already gives; fixtures by parameter name (pytest) are
@@ -318,9 +317,10 @@ cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctx
 
 - On macOS the bootstrap is `bootstrap/ctxc.macos.c`, and on Windows `bootstrap/ctxc.windows.c`. ctxc finds std/ and ctxc/rt/ through
   CTX_HOME, or above its executable or the working directory, and builds in HOME/build/run, in a
-  directory for each program. An executable whose C, runtime, compiler and flags haven't
-  changed isn't compiled again: `ctxc run` of an unchanged small program takes about 40 ms, the
-  front end included (drive.ctx).
+  directory for each program. A big program's C is several units, compiled at once, and a unit
+  whose C, runtime, compiler and flags haven't changed isn't compiled again: `ctxc run` of an
+  unchanged small program takes about 40 ms, the front end included (drive.ctx). `ctxc build`
+  writes one file, as the bootstraps are.
 - That ctxc is the bootstrap's; `tools/toolchain.py` builds the current source's into
   `build/ctxc` (about 7 s the first time, cached after).
 - `python tools/ctxc.py PROGRAM --run [args...]` compiles and runs a program with it.
@@ -390,7 +390,8 @@ program asks for one (spec §19).
 | const of array, struct or union type | `static const qvN = VALUE;` | The checker folds the value to literals; `[x; N]` is a GNU range designator. A scalar const is its value at each use. |
 | `if`/`match` expressions | GNU statement expressions | A branch that leaves uses `return`, `break` or `continue`. |
 | argument order | temporaries | C leaves argument evaluation order unspecified; ctxlang evaluates left to right. |
-| `@panic`, runtime panics | `ctx_panic(file, line, col, msg)` | `file:line:col: panic: msg`, exit code 134. |
+| `@panic`, runtime panics | `ctx_panic(line, col, file, msg)` | `file:line:col: panic: msg`, exit code 134. `file` is FNV-1a of the file's name with the top bit set, which the runtime finds in main's file table, so a unit's C doesn't depend on the program's other files. |
+| fn | `f_NAME`, after its qualified name | Global across units, `static` in a program of one; a name that isn't an identifier, or a long one, is cut and gets a hash. Types, consts and the rest are numbered within each unit (emit_c.ctx, "Units"). |
 | stack overflow | check in each function prologue | Compares the frame address to a limit set at startup (16 MB, or `CTX_STACK`). Linked with a 256 MB stack on Windows and macOS; on Linux, raises `RLIMIT_STACK` to 256 MB and runs itself again. No sibling calls, so every call takes a frame. |
 
 ## Testing
