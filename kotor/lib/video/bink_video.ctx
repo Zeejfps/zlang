@@ -2,9 +2,9 @@
 // (docs/formats/bink.md, "Video bitstream" has the format; docs/design/video.md the design).
 //
 //   let mut dec = try bink_video::new{ realloc, &heap, width, height, tables = &tables }
-//   try bink_video::decode{ &dec, packet }              // each frame's video packet, in order
-//   let y = bink_video::plane{ dec, p = 0 }              // the picture just decoded: 0 Y, 1 U, 2 V
-//   bink_video::free{ realloc, &heap, &dec }
+//   try bink_video::decode{ d = &dec, packet }          // each frame's video packet, in order
+//   let y = bink_video::plane{ d = dec, p = 0 }          // the picture just decoded: 0 Y, 1 U, 2 V
+//   bink_video::free{ realloc, &heap, d = &dec }
 //
 // A plane is coded as rows of 8x8 blocks. Most of a block's values don't sit next to it but in
 // nine "bundles", streams of values refilled at the start of each row; a block takes from them

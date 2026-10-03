@@ -67,9 +67,11 @@ bink::close{ &fs, realloc, &heap, m = &movie }
   errors. On an error the game should end the movie as if it had finished.
 - **Memory**, per open movie, all from the caller's allocator and freed by `close`: two pictures
   (640 x 480: 0.9 MB; 640 x 272: 0.5 MB), the bundles' value buffers (0.3 MB), the frame index
-  (4 bytes a frame), one frame of the file (the largest, under 0.2 MB), the audio decoder (about
+  (4 bytes a frame), one frame of the file (KOTOR's largest is 53 KB), the audio decoder (about
   0.13 MB) and its PCM buffer (0.14 MB).
-- **Lower levels**, for other uses (tests, a different container reader): `bink::parse_header`,
+- **Lower levels**, for other uses (tests, another way of reading files): `bink::read_frame`
+  (the next frame's bytes) and `bink::decode_frame` (them decoded), which `next` is made of;
+  `bink::parse_header` and `bink::split` (a frame's audio and video packets);
   `bink_video::new/decode/plane/free` (one video packet in, the next picture out) and
   `bink_audio::new/decode_packet/free` (one audio packet in, samples out).
 
@@ -98,7 +100,7 @@ first times 4/3 (the documented second step). Each candidate is accepted only if
 whole table is the one recorded in [bink.md](../formats/bink.md#tables-where-to-get-them), so
 another build of the DLL that holds the same tables anywhere works, and one with different tables
 is refused. The prefix codes are then checked to form 16 complete codes of at most 7 bits, and
-turned into 7-bit lookup tables. The search reads 375 KB once and takes a few milliseconds.
+turned into 7-bit lookup tables. Reading the 375 KB DLL and searching it takes about 7 ms, once.
 
 What is embedded instead is public prose or arithmetic: the block-type repeat counts 4, 8, 12, 32
 and the audio decoder's critical-band frequencies and coefficient run lengths (all printed on
