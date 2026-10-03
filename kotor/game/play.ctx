@@ -3,7 +3,7 @@
 namespace play {
     // One scripted input line: `FRAME down KEY`, `FRAME up KEY`, and for tests `FRAME warp TAG`
     // (the leader jumps next to the object) and `FRAME use TAG` (the leader's default action on it).
-    enum Command: u8 { down, up, warp, use, newgame }
+    enum Command: u8 { down, up, warp, use, newgame, ui }
     struct Scripted { frame: u64, command: Command, key: []u8 }
 
     fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
@@ -53,6 +53,8 @@ namespace play {
         }
         let mut amb = ambience::make{ heap = w.heap, m = mixer }
         ambience::start_area{ a = &amb, &w }
+        // HOOK(ingame): the HUD and the in-game menus (docs/design/hud.md).
+        let ui = try ingame::make{ &w, &dev, mixer, scratch = texture_scratch, width = @as(i32, opts.width), height = @as(i32, opts.height) }
         let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
         let mut keys = ctl::no_keys{}
         let freq = sdl::counter_frequency{ &sdl }
@@ -65,6 +67,7 @@ namespace play {
             // 1. Input: the window's events, or the script's lines for this frame.
             while true {
                 let e = sdl::poll{ &sdl } ifnull { break }
+                if ingame::handle_event{ ui, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }    // HOOK(ingame)
                 match e {
                     quit | close => { quit = true }
                     key{ down, repeat, keycode } => {
@@ -83,6 +86,7 @@ namespace play {
                     warp => { warp_to{ &w, tag = s.key } }
                     use => { use_tagged{ &w, tag = s.key } }
                     newgame => {}
+                    ui => { ingame::run_command{ ui, &w, &dev, text = s.key } }    // HOOK(ingame)
                 }
             }
             // The step: fixed when headless, measured otherwise.
@@ -133,6 +137,7 @@ namespace play {
             let pc = world::object{ w = &w, id = w.pc }
             let room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
             scene::update_visibility{ &sc, w = &w, room }
+            ingame::update{ ui, &w, &dev, camera, dt }    // HOOK(ingame)
             // 11. Sound at the camera.
             ambience::update{ a = &amb, &w, eye = camera.eye, forward = camera.dir, dt }
             match adev {
@@ -150,6 +155,7 @@ namespace play {
             view.fog = sc.fog
             let vi = render::add_view{ &frame, view } ifnull { 0 }
             scene::draw{ &sc, w = &w, &frame, view = vi }
+            ingame::draw{ ui, &w, &dev, &frame }    // HOOK(ingame)
             gpu::submit{ &dev, frame = &frame } iferr err{ error } {
                 _ = @fmt(&w.io, "kotor: submit failed: {}\n", error)
                 return 1
@@ -294,8 +300,10 @@ namespace play {
             if f.len == 0 or f[0] == '#' { continue }
             let what = text::next_word{ &words } ifnull { continue }
             let command = if ci::eq{ a = what, b = "down" } { Command::down } else if ci::eq{ a = what, b = "warp" } { Command::warp }
-                else if ci::eq{ a = what, b = "use" } { Command::use } else if ci::eq{ a = what, b = "newgame" } { Command::newgame } else { Command::up }
-            let key = text::next_word{ &words } ifnull ""
+                else if ci::eq{ a = what, b = "use" } { Command::use } else if ci::eq{ a = what, b = "newgame" } { Command::newgame }
+                else if ci::eq{ a = what, b = "ui" } { Command::ui } else { Command::up }
+            // `ui` takes the rest of the line (ingame::run_command); the others one word.
+            let key = if command == Command::ui { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
             try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), command, key } }
         }
         return list::items{ list = out }
