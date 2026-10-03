@@ -1,0 +1,342 @@
+// 2DA tables (docs/formats/2da.md): named columns, labelled rows, one string per cell. The game
+// ships them all in the binary form `2DA V2.b`; the engine also reads the text form `2DA V2.0`,
+// which a player's Override may hold, so both are read here.
+//
+//   let t = try twoda::parse{ data, realloc, &heap }
+//   let col = twoda::find_column{ t, name = "Texture" } ifnull { ... }      // ignoring case
+//   let s = twoda::get_string{ t, row = 2, column = "texture" } ifnull { ... }
+//   let n = twoda::get_int{ t, row = 7, column = "switchmask" }            // ?i32
+//
+// The getters follow the engine's (2da.md, Semantics): a cell that is empty, a row out of range or
+// an unknown column is null ("not found"); anything else is found. Integers read as C's sscanf
+// "%i" does in a binary table (0x hex, a leading 0 octal, a non-number 0) and as atol, or hex
+// after 0x, in a text table; floats as "%f" / atof.
+//
+// A binary table's names and cells are views into `data`, which must outlive the table. A text
+// table copies them into memory from `realloc`.
+namespace twoda {
+    // Neither `2DA V2.b` nor `2DA V2.0`.
+    error bad_magic
+    // The parts of a binary table run past the end of the file.
+    error truncated
+    // A cell's offset outside the string pool, or with no NUL after it in the pool.
+    error bad_cell{ row: u32, column: u32 }
+    // A text table with no line of column names.
+    error no_columns
+
+    struct Table {
+        columns: []mut []u8,
+        labels: []mut []u8,         // one per row
+        cells: []mut u32,           // row-major: rows x columns offsets into `pool`
+        pool: []u8,                 // NUL-terminated strings
+        owned: alloc::Bytes,        // a text table's pool, which it owns; empty for a binary one
+        binary: bool,
+        default: []u8,              // a text table's DEFAULT: value, else empty
+    }
+
+    fn rows { t: Table } -> usize {
+        return t.labels.len
+    }
+
+    fn parse(S) { data: []u8, realloc: alloc::Fn(S), mut heap: S } -> !Table {
+        if data.len < 8 { return bad_magic }
+        if slice::eq_bytes{ a = data[..8], b = "2DA V2.b" } { return parse_binary{ data, realloc, &heap } }
+        if slice::eq_bytes{ a = data[..8], b = "2DA V2.0" } { return parse_text{ data, realloc, &heap } }
+        return bad_magic
+    }
+
+    // Gives back the memory `parse` took from `realloc`: for a binary table its arrays, for a text
+    // table its pool too.
+    fn free(S) { t: Table, realloc: alloc::Fn(S), mut heap: S } {
+        _ = alloc::resize([]u8, S){ realloc, &heap, mem = t.columns, count = 0 }
+        _ = alloc::resize([]u8, S){ realloc, &heap, mem = t.labels, count = 0 }
+        _ = alloc::resize(u32, S){ realloc, &heap, mem = t.cells, count = 0 }
+        _ = alloc::resize(u8, S){ realloc, &heap, mem = t.owned, count = 0 }
+    }
+
+    // ---- lookups
+
+    // The first column called `name`, ignoring case.
+    fn find_column { t: Table, name: []u8 } -> ?usize {
+        let mut i: usize = 0
+        while i < t.columns.len {
+            if ci::eq{ a = t.columns[i], b = name } { return i }
+            i = i + 1
+        }
+        return null
+    }
+
+    // The first row labelled `label`, ignoring case. Labels are usually the row number, but not
+    // always (visualeffects.2da's are VFX ids; keymap.2da's are names).
+    fn find_row { t: Table, label: []u8 } -> ?usize {
+        let mut i: usize = 0
+        while i < t.labels.len {
+            if ci::eq{ a = t.labels[i], b = label } { return i }
+            i = i + 1
+        }
+        return null
+    }
+
+    // The cell's bytes, empty when it is blank or out of range.
+    fn cell { t: Table, row: usize, col: usize } -> []u8 {
+        if row >= t.labels.len or col >= t.columns.len { return t.pool[..0] }
+        let start = @as(usize, t.cells[row * t.columns.len + col])
+        let mut end = start
+        while t.pool[end] != 0 { end = end + 1 }
+        return t.pool[start..end]
+    }
+
+    // The cell, or null if it is blank, the row is out of range or there is no such column.
+    fn get_string { t: Table, row: usize, column: []u8 } -> ?[]u8 {
+        let col = find_column{ t, name = column } ifnull { return null }
+        return get_string_at{ t, row, col }
+    }
+
+    fn get_string_at { t: Table, row: usize, col: usize } -> ?[]u8 {
+        let s = cell{ t, row, col }
+        if s.len == 0 { return null }
+        return s
+    }
+
+    // The cell as an integer, null as get_string. A cell that isn't a number is 0.
+    fn get_int { t: Table, row: usize, column: []u8 } -> ?i32 {
+        let col = find_column{ t, name = column } ifnull { return null }
+        return get_int_at{ t, row, col }
+    }
+
+    fn get_int_at { t: Table, row: usize, col: usize } -> ?i32 {
+        let s = get_string_at{ t, row, col } ifnull { return null }
+        return int_of{ t, s }
+    }
+
+    // The cell as a float, null as get_string. A cell that isn't a number is 0.
+    fn get_float { t: Table, row: usize, column: []u8 } -> ?f32 {
+        let col = find_column{ t, name = column } ifnull { return null }
+        return get_float_at{ t, row, col }
+    }
+
+    fn get_float_at { t: Table, row: usize, col: usize } -> ?f32 {
+        let s = get_string_at{ t, row, col } ifnull { return null }
+        return text::scan_f32{ s } ifnull 0.0
+    }
+
+    // How the engine turns a cell into an integer, for this table's form.
+    fn int_of { t: Table, s: []u8 } -> i32 {
+        if t.binary { return @trunc(i32, text::scan_int{ s } ifnull 0) }
+        if s.len > 2 and s[0] == '0' and (s[1] == 'x' or s[1] == 'X') {
+            return @trunc(i32, text::scan_int{ s } ifnull 0)
+        }
+        return @trunc(i32, text::scan_decimal{ s })
+    }
+
+    // ---- binary
+
+    fn parse_binary(S) { data: []u8, realloc: alloc::Fn(S), mut heap: S } -> !Table {
+        let mut p: usize = 8
+        while p < data.len and (data[p] == '\n' or data[p] == '\r' or data[p] == ' ' or data[p] == '\t') { p = p + 1 }
+
+        // Column names: each ends at a TAB or a NUL; a NUL where a name would start ends the list.
+        let names_at = p
+        let mut ncols: usize = 0
+        while true {
+            if p >= data.len { return truncated }
+            if data[p] == 0 { break }
+            p = skip_name{ data, p } ifnull { return truncated }
+            ncols = ncols + 1
+        }
+        p = p + 1
+        let nrows = le::get_u32{ data, at = p } iferr { return truncated }
+        p = p + 4
+        let labels_at = p
+        let mut r: usize = 0
+        while r < @as(usize, nrows) {
+            p = skip_name{ data, p } ifnull { return truncated }
+            r = r + 1
+        }
+        let ncells = @as(u64, nrows) * @as(u64, ncols)
+        if ncells * 2 + 2 > @as(u64, data.len - p) { return truncated }
+        let offsets_at = p
+        let pool = data[p + @as(usize, ncells) * 2 + 2..]
+
+        let columns = try alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count = ncols }
+        let labels = try alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count = nrows }
+        let cells = try alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count = @as(usize, ncells) }
+        fill_names{ data, at = names_at, into = columns }
+        fill_names{ data, at = labels_at, into = labels }
+        let mut k: usize = 0
+        while k < cells.len {
+            let off = @as(usize, le::get_u16{ data, at = offsets_at + 2 * k } iferr 0)
+            if off >= pool.len or text::find_byte{ s = pool[off..], c = 0 } == null {
+                return bad_cell{ row = @trunc(u32, k / ncols), column = @trunc(u32, k % ncols) }
+            }
+            cells[k] = @trunc(u32, off)
+            k = k + 1
+        }
+        return Table{ columns, labels, cells, pool, owned = slice::empty(u8){}, binary = true, default = pool[..0] }
+    }
+
+    // Past the name at p and its terminator (TAB or NUL); null if no terminator comes before the
+    // end.
+    fn skip_name { data: []u8, p: usize } -> ?usize {
+        let mut i = p
+        while i < data.len and data[i] != '\t' and data[i] != 0 { i = i + 1 }
+        if i >= data.len { return null }
+        return i + 1
+    }
+
+    // into.len names starting at `at`, each ended by a TAB or NUL (already checked).
+    fn fill_names { data: []u8, at: usize, into: []mut []u8 } {
+        let mut p = at
+        let mut i: usize = 0
+        while i < into.len {
+            let start = p
+            while data[p] != '\t' and data[p] != 0 { p = p + 1 }
+            into[i] = data[start..p]
+            p = p + 1
+            i = i + 1
+        }
+    }
+
+    // ---- text
+
+    // A word of a text table's line: where it is in the pool being built.
+    struct Span { start: usize, len: usize }
+
+    fn parse_text(S) { data: []u8, realloc: alloc::Fn(S), mut heap: S } -> !Table {
+        // Names, labels, the default and the cells all go into one pool, each with a NUL after
+        // it; views are taken once it stops growing.
+        let mut pool = list::new(u8, S){ realloc, heap = &heap }
+        let mut col_spans = list::new(Span, S){ realloc, heap = &heap }
+        let mut label_spans = list::new(Span, S){ realloc, heap = &heap }
+        let mut cells = list::new(u32, S){ realloc, heap = &heap }
+        try le::put_u8{ out = &pool, v = 0 }                    // offset 0: the empty string
+        let mut default_span = Span{ start = 0, len = 0 }
+
+        let mut lines = text::lines{ data = data[8..] }
+        let mut have_columns = false
+        let mut first = true
+        while true {
+            let line = text::next_line{ &lines } ifnull { break }
+            let mut toks = Tokens{ s = line, pos = 0 }
+            let first_tok = next_token{ &toks } ifnull { continue }       // a blank line
+            if first and not have_columns and is_default{ word = first_tok } {
+                first = false
+                // DEFAULT: value, DEFAULT :value or DEFAULT : value
+                let mut value = after_colon{ word = first_tok }
+                if value.len == 0 {
+                    let next = next_token{ &toks } ifnull line[..0]
+                    value = if next.len > 0 and next[0] == ':' { next[1..] } else { next }
+                    if value.len == 0 { value = next_token{ &toks } ifnull line[..0] }
+                }
+                if not slice::eq_bytes{ a = value, b = "****" } {
+                    default_span = try push_lower{ &pool, word = value, lower = false }
+                }
+                continue
+            }
+            first = false
+            if not have_columns {
+                have_columns = true
+                try list::push{ list = &col_spans, item = try push_lower{ &pool, word = first_tok, lower = true } }
+                while true {
+                    let w = next_token{ &toks } ifnull { break }
+                    try list::push{ list = &col_spans, item = try push_lower{ &pool, word = w, lower = true } }
+                }
+                continue
+            }
+            try list::push{ list = &label_spans, item = try push_lower{ &pool, word = first_tok, lower = true } }
+            let mut c: usize = 0
+            while c < col_spans.len {
+                let at = match next_token{ &toks } {
+                    null => { default_span.start }
+                    some{ value } => {
+                        if slice::eq_bytes{ a = value, b = "****" } { 0 } else { (try push_lower{ &pool, word = value, lower = false }).start }
+                    }
+                }
+                try list::push{ list = &cells, item = @trunc(u32, at) }
+                c = c + 1
+            }
+        }
+        if not have_columns {
+            list::free{ list = &pool }
+            list::free{ list = &col_spans }
+            list::free{ list = &label_spans }
+            list::free{ list = &cells }
+            return no_columns
+        }
+        // Exactly sized, so `free` can give them back.
+        let all = try alloc::resize(u8, S){ realloc, &heap, mem = pool.items, count = pool.len }
+        let cell_offsets = try alloc::resize(u32, S){ realloc, &heap, mem = cells.items, count = cells.len }
+        let columns = try alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count = col_spans.len }
+        let labels = try alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count = label_spans.len }
+        let mut i: usize = 0
+        while i < columns.len {
+            let sp = list::items{ list = col_spans }[i]
+            columns[i] = all[sp.start..sp.start + sp.len]
+            i = i + 1
+        }
+        i = 0
+        while i < labels.len {
+            let sp = list::items{ list = label_spans }[i]
+            labels[i] = all[sp.start..sp.start + sp.len]
+            i = i + 1
+        }
+        list::free{ list = &col_spans }
+        list::free{ list = &label_spans }
+        return Table{
+            columns, labels, cells = cell_offsets, pool = all, owned = all, binary = false,
+            default = all[default_span.start..default_span.start + default_span.len],
+        }
+    }
+
+    // The words of a text table's line, as the engine's tokenizer splits them: spaces, tabs and
+    // NULs separate; a word starting with `"` runs to the next `"`.
+    struct Tokens { s: []u8, pos: usize }
+
+    fn next_token { mut toks: Tokens } -> ?[]u8 {
+        let s = toks.s
+        let mut i = toks.pos
+        while i < s.len and (s[i] == ' ' or s[i] == '\t' or s[i] == 0) { i = i + 1 }
+        if i >= s.len {
+            toks.pos = i
+            return null
+        }
+        if s[i] == '"' {
+            let start = i + 1
+            let mut j = start
+            while j < s.len and s[j] != '"' { j = j + 1 }
+            toks.pos = if j < s.len { j + 1 } else { j }
+            return s[start..j]
+        }
+        let start = i
+        while i < s.len and s[i] != ' ' and s[i] != '\t' and s[i] != 0 { i = i + 1 }
+        toks.pos = i
+        return s[start..i]
+    }
+
+    // Whether `word` begins the DEFAULT line: `DEFAULT:`, `DEFAULT:value` or `DEFAULT`, any case.
+    fn is_default { word: []u8 } -> bool {
+        return ci::starts_with{ s = word, prefix = "default" } and (word.len == 7 or word[7] == ':')
+    }
+
+    // What follows `DEFAULT:` in the same word.
+    fn after_colon { word: []u8 } -> []u8 {
+        if word.len > 8 { return word[8..] }
+        return word[word.len..]
+    }
+
+    // Appends `word` and a NUL to the pool, lower-cased if `lower`; returns where it is.
+    fn push_lower(S) { mut pool: list::List(u8, S), word: []u8, lower: bool } -> !Span {
+        let start = pool.len
+        try list::reserve{ list = &pool, extra = word.len + 1 }
+        let mut i: usize = 0
+        while i < word.len {
+            let c = word[i]
+            pool.items[pool.len] = if lower { ascii::to_lower{ c } } else { c }
+            pool.len = pool.len + 1
+            i = i + 1
+        }
+        pool.items[pool.len] = 0
+        pool.len = pool.len + 1
+        return Span{ start, len = word.len }
+    }
+}

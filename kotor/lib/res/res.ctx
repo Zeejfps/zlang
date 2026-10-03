@@ -1,0 +1,943 @@
+// The resource manager: resref + type to bytes, searching the game's sources in the engine's
+// order (docs/formats/resources.md, docs/re/resman.md).
+//
+//   let mut h = heap::new{ &mem }
+//   let mut rm = try res::open{ &fs, heap = &h, game = "F:/Steam/steamapps/common/swkotor" }
+//   defer res::close{ &fs, &rm }
+//   try res::mount_module{ &fs, &rm, name = "end_m01aa", save = "" }
+//
+//   let bytes = try res::load{ &fs, rm, name = "p_bastila", kind = restype::Type::utc, realloc, &heap } ifnull { ... }
+//
+//   let loc = res::find{ rm, name = "m01aa", kind = restype::Type::git } ifnull { ... }
+//   let bytes = try res::read{ &fs, rm, loc, realloc, &heap }       // into the caller's allocator
+//
+// Sources fall in five classes, searched in this order, each newest first, the first hit winning:
+//
+//   dir    Override/, then the top level of movies/, streamwaves/, streammusic/ (newer)
+//   erf1   patch.erf, and Override/textures.* if present
+//   rim    the module's <m>.rim, then its <m>_s.rim
+//   erf2   the saved module or <m>.mod, lips/localization.mod, lips/<m>_loc.mod, the GUI and
+//          chosen texture packs
+//   key    chitin.key's BIFs
+//
+// Only the index (names, offsets, sizes) is kept in memory; `read` reads one member's bytes from
+// its archive. Archive files stay open while mounted. rims/ is never mounted: everything in it is
+// in chitin too (resources.md, "Our engine").
+//
+// Memory: the manager's index lives in the heap::Heap it is opened with, which must outlive it.
+// What `read` and `load` return comes from the caller's allocator and is the caller's.
+namespace res {
+    // chitin.key is missing from the game directory.
+    error no_chitin
+    // No modules/<name>.mod or .rim to mount.
+    error no_module
+    // A Loc whose source has been unmounted.
+    error stale
+    // An archive ended before a member's data did.
+    error short_read
+    // A path longer than the buffers here allow (4096 bytes).
+    error path_too_long
+    // An archive larger than 4 GB, which the formats' 32-bit offsets can't address.
+    error too_big
+
+    // A resource in a source: its name and type, which of the source's files holds it (a KEY's
+    // BIF; a directory's file, by index; 0 for an ERF or a RIM), and where in that file.
+    struct Member { name: resref::ResRef, kind: u16, file: u32, offset: u32, size: u32 }
+
+    // The lookup key: resref (lower case) and type id.
+    struct Key { name: resref::ResRef, kind: u16 }
+
+    fn hash_key { key: Key } -> u64 {
+        return resref::hash{ key = key.name } ^ @wrap_mul(@as(u64, key.kind) + 1, 11400714819323198485)
+    }
+
+    fn eq_key { a: Key, b: Key } -> bool {
+        return a.kind == b.kind and resref::eq{ a = a.name, b = b.name }
+    }
+
+    // The search classes, in search order.
+    enum Class: u8 { dir, erf1, rim, erf2, key }
+
+    // Who mounted a source, so it can be unmounted with the rest of its kind.
+    enum Owner: u8 { game, module, packs }
+
+    struct Span { start: u32, len: u32 }
+
+    struct Source {
+        id: u32,                                // stable while mounted; Locs name it
+        class: Class,
+        owner: Owner,
+        path: alloc::Bytes,                     // the archive file, or the directory
+        base: u32,                              // where a nested ERF starts in its file
+        files: []mut fs::File,                  // open: the archive, or a KEY's BIFs
+        names: []mut Span,                      // a directory's file names, or a KEY's BIF names, in pool
+        pool: alloc::Bytes,
+        members: []mut Member,
+        index: map::Map(Key, u32, heap::Heap),  // key to member
+    }
+
+    // The install's directories that exist, by their names on disk; empty if absent.
+    struct Dirs {
+        override_: alloc::Bytes,
+        modules: alloc::Bytes,
+        lips: alloc::Bytes,
+        packs: alloc::Bytes,
+        movies: alloc::Bytes,
+        streamwaves: alloc::Bytes,
+        streammusic: alloc::Bytes,
+        streamsounds: alloc::Bytes,
+    }
+
+    struct Manager {
+        heap: *mut heap::Heap,
+        game: alloc::Bytes,
+        dirs: Dirs,
+        sources: list::List(Source, heap::Heap),   // in search order
+        next_id: u32,
+        module: alloc::Bytes,                       // the mounted module's name, or empty
+        quality: u32,                               // the texture pack row in use
+    }
+
+    // Where a resource was found: valid while its source stays mounted.
+    struct Loc { source: u32, member: u32, size: u32, class: Class }
+
+    // ---- opening
+
+    // Opens the game in directory `game`: Override/, chitin.key, patch.erf, the stream folders,
+    // and the texture packs of swkotor.ini's Texture Quality (texpacks.2da's row; 0 if unset).
+    fn open { mut fs: Fs, heap: *mut heap::Heap, game: []u8 } -> !Manager {
+        let mut rm = Manager{
+            heap,
+            game = try copy_bytes{ h = heap, b = game },
+            dirs = Dirs{
+                override_ = slice::empty(u8){}, modules = slice::empty(u8){}, lips = slice::empty(u8){},
+                packs = slice::empty(u8){}, movies = slice::empty(u8){}, streamwaves = slice::empty(u8){},
+                streammusic = slice::empty(u8){}, streamsounds = slice::empty(u8){},
+            },
+            sources = list::new(Source, heap::Heap){ realloc = heap::alloc, heap },
+            next_id = 1,
+            module = slice::empty(u8){},
+            quality = 0,
+        }
+        let mut ok = false
+        defer { if not ok { close{ &fs, &rm } } }
+
+        rm.dirs.override_ = try find_in{ &fs, h = heap, dir = game, name = "override" } ifnull slice::empty(u8){}
+        rm.dirs.modules = try find_in{ &fs, h = heap, dir = game, name = "modules" } ifnull slice::empty(u8){}
+        rm.dirs.lips = try find_in{ &fs, h = heap, dir = game, name = "lips" } ifnull slice::empty(u8){}
+        rm.dirs.packs = try find_in{ &fs, h = heap, dir = game, name = "texturepacks" } ifnull slice::empty(u8){}
+        rm.dirs.movies = try find_in{ &fs, h = heap, dir = game, name = "movies" } ifnull slice::empty(u8){}
+        rm.dirs.streamwaves = try find_in{ &fs, h = heap, dir = game, name = "streamwaves" } ifnull slice::empty(u8){}
+        rm.dirs.streammusic = try find_in{ &fs, h = heap, dir = game, name = "streammusic" } ifnull slice::empty(u8){}
+        rm.dirs.streamsounds = try find_in{ &fs, h = heap, dir = game, name = "streamsounds" } ifnull slice::empty(u8){}
+
+        // In the engine's start-up order (resman.md, 0x005f8550), less the absent Xbox and NWN
+        // sources and rims/.
+        if rm.dirs.override_.len > 0 { try mount_dir{ &fs, &rm, path = rm.dirs.override_, owner = Owner::game } }
+        let chitin = try find_in{ &fs, h = heap, dir = game, name = "chitin.key" } ifnull { return no_chitin }
+        defer free_bytes{ h = heap, b = chitin }
+        try mount_key{ &fs, &rm, path = chitin }
+        if rm.dirs.override_.len > 0 {
+            let textures = try find_archive{ &fs, h = heap, dir = rm.dirs.override_, stem = "textures" }
+            if textures != null {
+                defer free_bytes{ h = heap, b = textures }
+                try mount_erf{ &fs, &rm, path = textures, base = 0, size = null, class = Class::erf1, owner = Owner::game }
+            }
+        }
+        let patch = try find_in{ &fs, h = heap, dir = game, name = "patch.erf" }
+        if patch != null {
+            defer free_bytes{ h = heap, b = patch }
+            try mount_erf{ &fs, &rm, path = patch, base = 0, size = null, class = Class::erf1, owner = Owner::game }
+        }
+        if rm.dirs.movies.len > 0 { try mount_dir{ &fs, &rm, path = rm.dirs.movies, owner = Owner::game } }
+        if rm.dirs.streamwaves.len > 0 { try mount_dir{ &fs, &rm, path = rm.dirs.streamwaves, owner = Owner::game } }
+        if rm.dirs.streammusic.len > 0 { try mount_dir{ &fs, &rm, path = rm.dirs.streammusic, owner = Owner::game } }
+
+        try mount_texture_packs{ &fs, &rm, quality = try ini_quality{ &fs, h = heap, game } }
+        ok = true
+        return rm
+    }
+
+    // Unmounts everything and frees the manager's memory.
+    fn close { mut fs: Fs, mut rm: Manager } {
+        let h = rm.heap
+        let items = list::items{ list = rm.sources }
+        let mut i: usize = 0
+        while i < items.len {
+            free_source{ &fs, h, src = &items[i] }
+            i = i + 1
+        }
+        list::free{ list = &rm.sources }
+        free_bytes{ h, b = rm.game }
+        free_bytes{ h, b = rm.module }
+        free_bytes{ h, b = rm.dirs.override_ }
+        free_bytes{ h, b = rm.dirs.modules }
+        free_bytes{ h, b = rm.dirs.lips }
+        free_bytes{ h, b = rm.dirs.packs }
+        free_bytes{ h, b = rm.dirs.movies }
+        free_bytes{ h, b = rm.dirs.streamwaves }
+        free_bytes{ h, b = rm.dirs.streammusic }
+        free_bytes{ h, b = rm.dirs.streamsounds }
+        rm.game = slice::empty(u8){}
+        rm.module = slice::empty(u8){}
+        rm.dirs = Dirs{
+            override_ = slice::empty(u8){}, modules = slice::empty(u8){}, lips = slice::empty(u8){},
+            packs = slice::empty(u8){}, movies = slice::empty(u8){}, streamwaves = slice::empty(u8){},
+            streammusic = slice::empty(u8){}, streamsounds = slice::empty(u8){},
+        }
+    }
+
+    // swkotor.ini's [Graphics Options] Texture Quality, 0 if the file or the key is missing.
+    fn ini_quality { mut fs: Fs, h: *mut heap::Heap, game: []u8 } -> !u32 {
+        let p = try find_in{ &fs, h, dir = game, name = "swkotor.ini" } ifnull { return 0 }
+        defer free_bytes{ h, b = p }
+        let data = fs::read_all{ &fs, heap = h, realloc = heap::alloc, path = p } iferr { return 0 }
+        defer free_bytes{ h, b = data }
+        let v = ini::get{ data, section = "Graphics Options", key = "Texture Quality" } ifnull { return 0 }
+        let n = text::scan_int{ s = v } ifnull 0
+        if n < 0 or n > 3 { return 0 }
+        return @trunc(u32, n)
+    }
+
+    // ---- modules
+
+    // Mounts module `name` (`end_m01aa`, `danm13`) as the engine does on entering it
+    // (resources.md, "What is mounted"): lips/<m>_loc and lips/localization; modules/<m>.mod if it
+    // exists, else <m>_s.rim; then the module's own state: <m>.sav from the saved game at path
+    // `save` if it holds one (a SAVEGAME.sav; empty for none), else <m>.rim unless a .mod was
+    // mounted. Unmounts the module mounted before. Fails with no_module if there is neither a .mod
+    // nor a .rim.
+    fn mount_module { mut fs: Fs, mut rm: Manager, name: []u8, save: []u8 } -> ! {
+        unmount_module{ &fs, &rm }
+        let h = rm.heap
+        let mut ok = false
+        defer { if not ok { unmount_module{ &fs, &rm } } }
+        let mut buf: [256]u8
+        if name.len + 8 > buf.len { return no_module }
+
+        if rm.dirs.lips.len > 0 {
+            let loc = try find_archive{ &fs, h, dir = rm.dirs.lips, stem = concat{ a = name, b = "_loc", into = buf[..] } }
+            if loc != null {
+                defer free_bytes{ h, b = loc }
+                try mount_erf{ &fs, &rm, path = loc, base = 0, size = null, class = Class::erf2, owner = Owner::module }
+            }
+            let global = try find_archive{ &fs, h, dir = rm.dirs.lips, stem = "localization" }
+            if global != null {
+                defer free_bytes{ h, b = global }
+                try mount_erf{ &fs, &rm, path = global, base = 0, size = null, class = Class::erf2, owner = Owner::module }
+            }
+        }
+        let mut have_mod = false
+        let mut have_area = false
+        if rm.dirs.modules.len > 0 {
+            let packed = try find_in{ &fs, h, dir = rm.dirs.modules, name = concat{ a = name, b = ".mod", into = buf[..] } }
+            if packed != null {
+                defer free_bytes{ h, b = packed }
+                try mount_erf{ &fs, &rm, path = packed, base = 0, size = null, class = Class::erf2, owner = Owner::module }
+                have_mod = true
+                have_area = true
+            } else {
+                let rest = try find_in{ &fs, h, dir = rm.dirs.modules, name = concat{ a = name, b = "_s.rim", into = buf[..] } }
+                if rest != null {
+                    defer free_bytes{ h, b = rest }
+                    try mount_rim{ &fs, &rm, path = rest, owner = Owner::module }
+                }
+            }
+        }
+        if save.len > 0 {
+            let at = try find_saved_module{ &fs, h, save, name }
+            if at != null {
+                try mount_erf{ &fs, &rm, path = save, base = at.offset, size = at.size, class = Class::erf2, owner = Owner::module }
+                have_area = true
+            }
+        }
+        if not have_area and not have_mod and rm.dirs.modules.len > 0 {
+            let area = try find_in{ &fs, h, dir = rm.dirs.modules, name = concat{ a = name, b = ".rim", into = buf[..] } }
+            if area != null {
+                defer free_bytes{ h, b = area }
+                try mount_rim{ &fs, &rm, path = area, owner = Owner::module }
+                have_area = true
+            }
+        }
+        if not have_area { return no_module }
+        rm.module = try copy_bytes{ h, b = name }
+        ok = true
+    }
+
+    // Unmounts the module's sources, if one is mounted.
+    fn unmount_module { mut fs: Fs, mut rm: Manager } {
+        unmount_owner{ &fs, &rm, owner = Owner::module }
+        free_bytes{ h = rm.heap, b = rm.module }
+        rm.module = slice::empty(u8){}
+    }
+
+    // The module `name`'s saved state in the saved game at `save`: its member `<name>.sav`.
+    fn find_saved_module { mut fs: Fs, h: *mut heap::Heap, save: []u8, name: []u8 } -> !?Member {
+        if name.len > resref::MAX { return null }
+        let file = try fs::open{ &fs, path = save, mode = fs::Mode::read }
+        defer _ = fs::close{ &fs, file }
+        let size = try file_size32{ &fs, path = save }
+        let members = try read_erf_members{ &fs, h, file, base = 0, size }
+        defer _ = alloc::resize(Member, heap::Heap){ realloc = heap::alloc, heap = h, mem = members, count = 0 }
+        let want = resref::truncate{ name }
+        let mut i: usize = 0
+        while i < members.len {
+            if members[i].kind == @as(u16, restype::Type::sav) and resref::eq{ a = members[i].name, b = want } { return members[i] }
+            i = i + 1
+        }
+        return null
+    }
+
+    // ---- texture packs
+
+    // Mounts the texture packs of row `quality` of texpacks.2da, as the engine does for swkotor.ini's
+    // Texture Quality (resources.md, "Texture packs"): above 3 means 0, and 3 has no row, so no
+    // pack. Replaces the packs mounted before.
+    fn mount_texture_packs { mut fs: Fs, mut rm: Manager, quality: u32 } -> ! {
+        unmount_owner{ &fs, &rm, owner = Owner::packs }
+        let row = if quality > 3 { 0 } else { quality }
+        rm.quality = row
+        if row == 3 or rm.dirs.packs.len == 0 { return }
+        let h = rm.heap
+        let loc = find{ rm, name = "texpacks", kind = restype::Type::twoda } ifnull { return }
+        let data = try read{ &fs, rm, loc, realloc = heap::alloc, heap = h }
+        defer free_bytes{ h, b = data }
+        let t = try twoda::parse{ data, realloc = heap::alloc, heap = h }
+        defer twoda::free{ t, realloc = heap::alloc, heap = h }
+        let mut texture: [64]u8
+        let mut gui: [64]u8
+        let tn = copy_name{ s = twoda::get_string{ t, row = row, column = "texture" } ifnull "", into = texture[..] }
+        let gn = copy_name{ s = twoda::get_string{ t, row = row, column = "gui" } ifnull "", into = gui[..] }
+        // The texture pack goes in first, so the GUI pack, newer, is searched before it.
+        try mount_pack{ &fs, &rm, stem = tn }
+        try mount_pack{ &fs, &rm, stem = gn }
+    }
+
+    fn mount_pack { mut fs: Fs, mut rm: Manager, stem: []u8 } -> ! {
+        if stem.len == 0 { return }
+        let p = try find_archive{ &fs, h = rm.heap, dir = rm.dirs.packs, stem } ifnull { return }
+        defer free_bytes{ h = rm.heap, b = p }
+        try mount_erf{ &fs, &rm, path = p, base = 0, size = null, class = Class::erf2, owner = Owner::packs }
+    }
+
+    fn copy_name { s: []u8, into: []mut u8 } -> []u8 {
+        let n = if s.len < into.len { s.len } else { into.len }
+        slice::copy(u8){ dst = into[..n], src = s[..n] }
+        return into[..n]
+    }
+
+    // ---- lookup
+
+    // The resource `name` (at most 16 bytes, any case) of type `kind` in the first source that
+    // has it, or null.
+    fn find { rm: Manager, name: []u8, kind: restype::Type } -> ?Loc {
+        if name.len > resref::MAX or name.len == 0 { return null }
+        return find_key{ rm, key = Key{ name = resref::truncate{ name }, kind = @as(u16, kind) } }
+    }
+
+    fn find_ref { rm: Manager, name: resref::ResRef, kind: restype::Type } -> ?Loc {
+        return find_key{ rm, key = Key{ name, kind = @as(u16, kind) } }
+    }
+
+    fn find_key { rm: Manager, key: Key } -> ?Loc {
+        let items = list::items{ list = rm.sources }
+        let mut i: usize = 0
+        while i < items.len {
+            let m = map::get{ m = items[i].index, key }
+            if m != null {
+                return Loc{ source = items[i].id, member = m, size = items[i].members[m].size, class = items[i].class }
+            }
+            i = i + 1
+        }
+        return null
+    }
+
+    // The resource's bytes, in memory from `realloc`.
+    fn read(S) { mut fs: Fs, rm: Manager, loc: Loc, realloc: alloc::Fn(S), mut heap: S } -> !alloc::Bytes {
+        let src = source_by_id{ rm, id = loc.source } ifnull { return stale }
+        let m = src.members[loc.member]
+        if src.class == Class::dir {
+            // The path is on the heap: a result computed from a stack buffer couldn't be returned.
+            let p = try path::join{ realloc = heap::alloc, heap = rm.heap, dir = src.path, name = name_of{ src, i = m.file } }
+            defer free_bytes{ h = rm.heap, b = p }
+            return try fs::read_all{ &fs, &heap, realloc, path = p }
+        }
+        let out = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = m.size }
+        let n = fs::read_at{ &fs, file = src.files[m.file], offset = m.offset, into = out } iferr err{ error } {
+            _ = alloc::resize(u8, S){ realloc, &heap, mem = out, count = 0 }
+            return error
+        }
+        if n < out.len {
+            _ = alloc::resize(u8, S){ realloc, &heap, mem = out, count = 0 }
+            return short_read
+        }
+        return out
+    }
+
+    // Reads part of the resource, from `offset` bytes into it, into `into`: for streaming a large
+    // one. Returns how many bytes; fewer than into.len only at its end.
+    fn read_part { mut fs: Fs, rm: Manager, loc: Loc, offset: u32, into: []mut u8 } -> !usize {
+        let src = source_by_id{ rm, id = loc.source } ifnull { return stale }
+        let m = src.members[loc.member]
+        if offset >= m.size { return 0 }
+        let want = if into.len > @as(usize, m.size - offset) { @as(usize, m.size - offset) } else { into.len }
+        if src.class == Class::dir {
+            let mut buf: [4096]u8
+            let p = path::join_into{ dir = src.path, name = name_of{ src, i = m.file }, into = buf[..] } ifnull { return path_too_long }
+            let file = try fs::open{ &fs, path = p, mode = fs::Mode::read }
+            defer _ = fs::close{ &fs, file }
+            return try fs::read_at{ &fs, file, offset, into = into[..want] }
+        }
+        return try fs::read_at{ &fs, file = src.files[m.file], offset = @as(u64, m.offset) + offset, into = into[..want] }
+    }
+
+    // Finds and reads a resource: null if no source has it.
+    fn load(S) { mut fs: Fs, rm: Manager, name: []u8, kind: restype::Type, realloc: alloc::Fn(S), mut heap: S } -> !?alloc::Bytes {
+        let loc = find{ rm, name, kind } ifnull { return null }
+        return try read{ &fs, rm, loc, realloc, &heap }
+    }
+
+    // A texture found by name: which type to load, and where.
+    struct Texture { kind: restype::Type, loc: Loc }
+
+    // How the engine picks between a texture's forms (resources.md, "Textures: TPC, TGA, TXI"):
+    // it asks which class of source holds the name as tpc, dds, 4pc and tga, ranks the classes
+    // directory > RIM > ERF > KEY, and loads the TPC when its class ranks at least as high as the
+    // best of the others'. Otherwise the TGA (or, if there is none, the best of dds and 4pc).
+    fn find_texture { rm: Manager, name: []u8 } -> ?Texture {
+        let tpc = find{ rm, name, kind = restype::Type::tpc }
+        let dds = find{ rm, name, kind = restype::Type::dds }
+        let fourpc = find{ rm, name, kind = restype::Type::fourpc }
+        let tga = find{ rm, name, kind = restype::Type::tga }
+        let mut best_other: u32 = 0
+        best_other = max_rank{ r = best_other, loc = dds }
+        best_other = max_rank{ r = best_other, loc = fourpc }
+        best_other = max_rank{ r = best_other, loc = tga }
+        if tpc != null and rank{ class = tpc.class } >= best_other { return Texture{ kind = restype::Type::tpc, loc = tpc } }
+        if tga != null { return Texture{ kind = restype::Type::tga, loc = tga } }
+        if dds != null { return Texture{ kind = restype::Type::dds, loc = dds } }
+        if fourpc != null { return Texture{ kind = restype::Type::fourpc, loc = fourpc } }
+        if tpc != null { return Texture{ kind = restype::Type::tpc, loc = tpc } }
+        return null
+    }
+
+    // The texture ranking's order of classes: directory 4, RIM 3, ERF (either group) 2, KEY 1.
+    fn rank { class: Class } -> u32 {
+        return match class { dir => { 4 } rim => { 3 } erf1 | erf2 => { 2 } key => { 1 } }
+    }
+
+    fn max_rank { r: u32, loc: ?Loc } -> u32 {
+        if loc == null { return r }
+        let k = rank{ class = loc.class }
+        return if k > r { k } else { r }
+    }
+
+    // A resource of a listing: its name and where the search finds it.
+    struct Found { name: resref::ResRef, loc: Loc }
+
+    // Every resource of type `kind` the search can find, once each, where the search finds it
+    // (the first source that has the name), in search order, in memory from `realloc`.
+    fn list_type(S) { rm: Manager, kind: restype::Type, realloc: alloc::Fn(S), mut heap: S } -> ![]mut Found {
+        let id = @as(u16, kind)
+        let mut seen = map::new(resref::ResRef, u8, S){ realloc, heap = &heap, hash = resref::hash, eq = resref::eq }
+        defer map::free{ m = &seen }
+        let mut out = list::new(Found, S){ realloc, heap = &heap }
+        let items = list::items{ list = rm.sources }
+        let mut i: usize = 0
+        while i < items.len {
+            let src = items[i]
+            let mut k: usize = 0
+            while k < src.members.len {
+                let mb = src.members[k]
+                if mb.kind == id and not map::has{ m = seen, key = mb.name } {
+                    // A source may hold one name twice; its index has the one the search finds.
+                    let first = map::get{ m = src.index, key = Key{ name = mb.name, kind = id } } ifnull @trunc(u32, k)
+                    if first == @trunc(u32, k) {
+                        try map::put{ m = &seen, key = mb.name, value = 1 }
+                        try list::push{ list = &out, item = Found{ name = mb.name, loc = Loc{ source = src.id, member = first, size = mb.size, class = src.class } } }
+                    }
+                }
+                k = k + 1
+            }
+            i = i + 1
+        }
+        return try alloc::resize(Found, S){ realloc, &heap, mem = out.items, count = out.len }
+    }
+
+    // ---- describing where things are, for tools
+
+    // The path of the file or directory a Loc's source is: an archive, or for a directory source
+    // the directory. Empty for a stale Loc.
+    fn source_path { rm: Manager, loc: Loc } -> []u8 {
+        let src = source_by_id{ rm, id = loc.source } ifnull { return rm.game[..0] }
+        return src.path
+    }
+
+    // The file inside the source that holds the resource: a KEY's BIF (`data\models.bif`), a
+    // directory's file name; empty for an ERF or a RIM.
+    fn member_file { rm: Manager, loc: Loc } -> []u8 {
+        let src = source_by_id{ rm, id = loc.source } ifnull { return rm.game[..0] }
+        if src.names.len == 0 { return src.path[..0] }
+        return name_of{ src, i = src.members[loc.member].file }
+    }
+
+    fn member_of { rm: Manager, loc: Loc } -> ?Member {
+        let src = source_by_id{ rm, id = loc.source } ifnull { return null }
+        return src.members[loc.member]
+    }
+
+    fn class_name { class: Class } -> []u8 {
+        return match class { dir => { "dir" } erf1 => { "erf1" } rim => { "rim" } erf2 => { "erf2" } key => { "key" } }
+    }
+
+    // ---- streams (resources.md, "Streams"), found by path, not by the search
+
+    // The path of voice-over `name`: streamwaves/<1-5>/<6-11>/<name>.wav for a 16-character name
+    // that starts with `n` and whose second character isn't `_`, else streamwaves/<name>.wav.
+    // Characters counted from 0. Whether the file exists isn't checked.
+    fn voice_path(S) { rm: Manager, name: []u8, realloc: alloc::Fn(S), mut heap: S } -> !alloc::Bytes {
+        let nested = name.len == 16 and (name[0] == 'n' or name[0] == 'N') and name[1] != '_'
+        let rel = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = name.len + 4 + if nested { 13 } else { 0 } }
+        defer _ = alloc::resize(u8, S){ realloc, &heap, mem = rel, count = 0 }
+        let mut n: usize = 0
+        if nested {
+            n = append{ into = rel, at = n, b = name[1..6] }
+            n = append{ into = rel, at = n, b = "/" }
+            n = append{ into = rel, at = n, b = name[6..12] }
+            n = append{ into = rel, at = n, b = "/" }
+        }
+        n = append{ into = rel, at = n, b = name }
+        n = append{ into = rel, at = n, b = ".wav" }
+        return try path::join{ realloc, &heap, dir = rm.dirs.streamwaves, name = rel }
+    }
+
+    // streammusic/<name>.wav and streamsounds/<name>.wav.
+    fn music_path(S) { rm: Manager, name: []u8, realloc: alloc::Fn(S), mut heap: S } -> !alloc::Bytes {
+        return try stream_file{ dir = rm.dirs.streammusic, name, realloc, &heap }
+    }
+
+    fn sound_path(S) { rm: Manager, name: []u8, realloc: alloc::Fn(S), mut heap: S } -> !alloc::Bytes {
+        return try stream_file{ dir = rm.dirs.streamsounds, name, realloc, &heap }
+    }
+
+    fn stream_file(S) { dir: []u8, name: []u8, realloc: alloc::Fn(S), mut heap: S } -> !alloc::Bytes {
+        let rel = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = name.len + 4 }
+        defer _ = alloc::resize(u8, S){ realloc, &heap, mem = rel, count = 0 }
+        let n = append{ into = rel, at = 0, b = name }
+        _ = append{ into = rel, at = n, b = ".wav" }
+        return try path::join{ realloc, &heap, dir, name = rel }
+    }
+
+    fn append { into: []mut u8, at: usize, b: []u8 } -> usize {
+        slice::copy(u8){ dst = into[at..at + b.len], src = b }
+        return at + b.len
+    }
+
+    // ---- mounting sources
+
+    // A directory: every file in it (not its subdirectories), named as the engine names them:
+    // the resref is the name up to the first `.`, cut to 16 bytes; the type the three characters
+    // after it. Files with no `.`, a leading `.` or an unknown type are skipped.
+    fn mount_dir { mut fs: Fs, mut rm: Manager, path: []u8, owner: Owner } -> ! {
+        let h = rm.heap
+        let mut src = try new_source{ h, class = Class::dir, owner, path }
+        let mut pool = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = h }
+        let mut names = list::new(Span, heap::Heap){ realloc = heap::alloc, heap = h }
+        let mut members = list::new(Member, heap::Heap){ realloc = heap::alloc, heap = h }
+        let mut ok = false
+        defer {
+            if not ok {
+                free_source{ &fs, h, src = &src }
+                list::free{ list = &pool }
+                list::free{ list = &names }
+                list::free{ list = &members }
+            }
+        }
+        let mut dir = try os::dir_open{ &fs, path }
+        defer os::dir_close{ &fs, &dir }
+        let mut buf: [4096]u8
+        while true {
+            let name = os::dir_next{ &fs, &dir } ifnull { break }
+            let dot = text::find_byte{ s = name, c = '.' } ifnull { continue }
+            if dot == 0 { continue }
+            let end = if name.len - dot - 1 > 3 { dot + 4 } else { name.len }
+            let kind = restype::of_ext{ ext = name[dot + 1..end] } ifnull { continue }
+            let full = path::join_into{ dir = path, name, into = buf[..] } ifnull { continue }
+            let size = fs::size{ &fs, path = full } iferr { continue }        // a directory, or gone
+            if size > 4294967295 { continue }
+            let start = pool.len
+            try le::put_bytes{ out = &pool, bytes = name }
+            try list::push{ list = &names, item = Span{ start = @trunc(u32, start), len = @trunc(u32, name.len) } }
+            try list::push{ list = &members, item = Member{
+                name = resref::truncate{ name = name[..dot] }, kind = @as(u16, kind),
+                file = @trunc(u32, names.len - 1), offset = 0, size = @trunc(u32, size),
+            } }
+        }
+        src.pool = try exact(u8){ h, l = &pool }
+        src.names = try exact(Span){ h, l = &names }
+        src.members = try exact(Member){ h, l = &members }
+        ok = true
+        try add_source{ &fs, &rm, src }
+    }
+
+    // An ERF at `path`, or nested in it at `base` with `size` bytes (a module's state in a save).
+    fn mount_erf { mut fs: Fs, mut rm: Manager, path: []u8, base: u32, size: ?u32, class: Class, owner: Owner } -> ! {
+        let h = rm.heap
+        let file = try fs::open{ &fs, path, mode = fs::Mode::read }
+        let total = size ifnull (file_size32{ &fs, path } iferr err{ error } {
+            _ = fs::close{ &fs, file }
+            return error
+        })
+        let members = read_erf_members{ &fs, h, file, base, size = total } iferr err{ error } {
+            _ = fs::close{ &fs, file }
+            return error
+        }
+        let mut src = new_source{ h, class, owner, path } iferr err{ error } {
+            _ = alloc::resize(Member, heap::Heap){ realloc = heap::alloc, heap = h, mem = members, count = 0 }
+            _ = fs::close{ &fs, file }
+            return error
+        }
+        src.members = members
+        src.base = base
+        src.files = alloc::resize(fs::File, heap::Heap){ realloc = heap::alloc, heap = h, mem = slice::empty(fs::File){}, count = 1 } iferr err{ error } {
+            free_source{ &fs, h, src = &src }
+            _ = fs::close{ &fs, file }
+            return error
+        }
+        src.files[0] = file
+        try add_source{ &fs, &rm, src }
+    }
+
+    fn read_erf_members { mut fs: Fs, h: *mut heap::Heap, file: fs::File, base: u32, size: u32 } -> ![]mut Member {
+        let mut head: [160]u8
+        let got = try fs::read_at{ &fs, file, offset = base, into = head[..] }
+        let hd = try erf::parse_header{ data = head[..got] }
+        let n = @as(usize, hd.count)
+        if @as(u64, n) * 32 > @as(u64, size) { return erf::bad_table }
+        let keys = try read_block{ &fs, h, file, offset = @as(u64, base) + hd.keys_at, len = n * erf::KEY }
+        defer free_bytes{ h, b = keys }
+        let resources = try read_block{ &fs, h, file, offset = @as(u64, base) + hd.resources_at, len = n * erf::RESOURCE }
+        defer free_bytes{ h, b = resources }
+        return try erf::parse_members{ h = hd, keys, resources, base, size, realloc = heap::alloc, heap = h }
+    }
+
+    fn mount_rim { mut fs: Fs, mut rm: Manager, path: []u8, owner: Owner } -> ! {
+        let h = rm.heap
+        let file = try fs::open{ &fs, path, mode = fs::Mode::read }
+        let members = read_rim_members{ &fs, h, file, path } iferr err{ error } {
+            _ = fs::close{ &fs, file }
+            return error
+        }
+        let mut src = new_source{ h, class = Class::rim, owner, path } iferr err{ error } {
+            _ = alloc::resize(Member, heap::Heap){ realloc = heap::alloc, heap = h, mem = members, count = 0 }
+            _ = fs::close{ &fs, file }
+            return error
+        }
+        src.members = members
+        src.files = alloc::resize(fs::File, heap::Heap){ realloc = heap::alloc, heap = h, mem = slice::empty(fs::File){}, count = 1 } iferr err{ error } {
+            free_source{ &fs, h, src = &src }
+            _ = fs::close{ &fs, file }
+            return error
+        }
+        src.files[0] = file
+        try add_source{ &fs, &rm, src }
+    }
+
+    fn read_rim_members { mut fs: Fs, h: *mut heap::Heap, file: fs::File, path: []u8 } -> ![]mut Member {
+        let size = try file_size32{ &fs, path }
+        let mut head: [120]u8
+        let got = try fs::read_at{ &fs, file, offset = 0, into = head[..] }
+        let hd = try rim::parse_header{ data = head[..got] }
+        let n = @as(usize, hd.count)
+        if @as(u64, n) * 32 > @as(u64, size) { return rim::bad_table }
+        let keys = try read_block{ &fs, h, file, offset = hd.keys_at, len = n * rim::KEY }
+        defer free_bytes{ h, b = keys }
+        return try rim::parse_members{ h = hd, keys, base = 0, size, realloc = heap::alloc, heap = h }
+    }
+
+    // chitin.key and its BIFs. A key whose BIF entry is missing or outside the BIF is left out.
+    fn mount_key { mut fs: Fs, mut rm: Manager, path: []u8 } -> ! {
+        let h = rm.heap
+        let data = try fs::read_all{ &fs, heap = h, realloc = heap::alloc, path }
+        defer free_bytes{ h, b = data }
+        let k = try key::parse{ data, realloc = heap::alloc, heap = h }
+        defer _ = alloc::resize(key::Bif, heap::Heap){ realloc = heap::alloc, heap = h, mem = k.bifs, count = 0 }
+        defer _ = alloc::resize(key::Entry, heap::Heap){ realloc = heap::alloc, heap = h, mem = k.entries, count = 0 }
+
+        let mut src = try new_source{ h, class = Class::key, owner = Owner::game, path }
+        let mut ok = false
+        defer { if not ok { free_source{ &fs, h, src = &src } } }
+        src.names = try alloc::resize(Span, heap::Heap){ realloc = heap::alloc, heap = h, mem = slice::empty(Span){}, count = k.bifs.len }
+        let mut pool = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = h }
+        defer list::free{ list = &pool }
+        let mut i: usize = 0
+        while i < k.bifs.len {
+            src.names[i] = Span{ start = @trunc(u32, pool.len), len = @trunc(u32, k.bifs[i].name.len) }
+            try le::put_bytes{ out = &pool, bytes = k.bifs[i].name }
+            i = i + 1
+        }
+        src.pool = try exact(u8){ h, l = &pool }
+
+        // Open each BIF and read its variable table. The files array grows as BIFs open, so a
+        // failure part way closes only those.
+        let mut files = list::new(fs::File, heap::Heap){ realloc = heap::alloc, heap = h }
+        let mut tables = list::new(alloc::Bytes, heap::Heap){ realloc = heap::alloc, heap = h }
+        let mut sizes = list::new(u64, heap::Heap){ realloc = heap::alloc, heap = h }
+        defer {
+            let ts = list::items{ list = tables }
+            let mut j: usize = 0
+            while j < ts.len {
+                free_bytes{ h, b = ts[j] }
+                j = j + 1
+            }
+            list::free{ list = &tables }
+            list::free{ list = &sizes }
+        }
+        defer {
+            if not ok {
+                let fl = list::items{ list = files }
+                let mut j: usize = 0
+                while j < fl.len {
+                    _ = fs::close{ &fs, file = fl[j] }
+                    j = j + 1
+                }
+                list::free{ list = &files }
+            }
+        }
+        i = 0
+        while i < k.bifs.len {
+            let full = try find_path{ &fs, h, dir = rm.game, rel = k.bifs[i].name } ifnull { return key::bad_bif }
+            defer free_bytes{ h, b = full }
+            let size = try fs::size{ &fs, path = full }
+            let file = try fs::open{ &fs, path = full, mode = fs::Mode::read }
+            list::push{ list = &files, item = file } iferr err{ error } {
+                _ = fs::close{ &fs, file }
+                return error
+            }
+            try list::push{ list = &sizes, item = size }
+            let mut head: [20]u8
+            let got = try fs::read_at{ &fs, file, offset = 0, into = head[..] }
+            let bh = try key::parse_bif_header{ data = head[..got] }
+            let table = try read_block{ &fs, h, file, offset = bh.table_at, len = @as(usize, bh.count) * key::BIF_ENTRY }
+            list::push{ list = &tables, item = table } iferr err{ error } {
+                free_bytes{ h, b = table }
+                return error
+            }
+            i = i + 1
+        }
+
+        let mut members = list::new(Member, heap::Heap){ realloc = heap::alloc, heap = h }
+        defer { if not ok { list::free{ list = &members } } }
+        try list::reserve{ list = &members, extra = k.entries.len }
+        let ts = list::items{ list = tables }
+        let ss = list::items{ list = sizes }
+        let mut e: usize = 0
+        while e < k.entries.len {
+            let ke = k.entries[e]
+            e = e + 1
+            let be = key::bif_entry{ table = ts[ke.bif], index = ke.index } iferr { continue }
+            if @as(u64, be.offset) + @as(u64, be.size) > ss[ke.bif] { continue }
+            try list::push{ list = &members, item = Member{ name = ke.name, kind = ke.kind, file = ke.bif, offset = be.offset, size = be.size } }
+        }
+        src.members = try exact(Member){ h, l = &members }
+        src.files = try exact(fs::File){ h, l = &files }
+        ok = true
+        try add_source{ &fs, &rm, src }
+    }
+
+    // ---- sources
+
+    fn new_source { h: *mut heap::Heap, class: Class, owner: Owner, path: []u8 } -> !Source {
+        return Source{
+            id = 0, class, owner,
+            path = try copy_bytes{ h, b = path },
+            base = 0,
+            files = slice::empty(fs::File){},
+            names = slice::empty(Span){},
+            pool = slice::empty(u8){},
+            members = slice::empty(Member){},
+            index = map::new(Key, u32, heap::Heap){ realloc = heap::alloc, heap = h, hash = hash_key, eq = eq_key },
+        }
+    }
+
+    // Indexes `src`'s members and puts it in the search order: after every source of an earlier
+    // class, before the others of its own (newest first). On failure, frees `src`.
+    fn add_source { mut fs: Fs, mut rm: Manager, src: Source } -> ! {
+        let mut s = src
+        let mut i: usize = 0
+        while i < s.members.len {
+            let k = Key{ name = s.members[i].name, kind = s.members[i].kind }
+            // The first of a name wins inside one source.
+            if not map::has{ m = s.index, key = k } {
+                map::put{ m = &s.index, key = k, value = @trunc(u32, i) } iferr err{ error } {
+                    free_source{ &fs, h = rm.heap, src = &s }
+                    return error
+                }
+            }
+            i = i + 1
+        }
+        s.id = rm.next_id
+        rm.next_id = rm.next_id + 1
+        list::push{ list = &rm.sources, item = s } iferr err{ error } {
+            free_source{ &fs, h = rm.heap, src = &s }
+            return error
+        }
+        let items = list::items{ list = rm.sources }
+        let mut j = items.len - 1
+        while j > 0 and @as(u8, items[j - 1].class) >= @as(u8, s.class) {
+            items[j] = items[j - 1]
+            j = j - 1
+        }
+        items[j] = s
+    }
+
+    fn unmount_owner { mut fs: Fs, mut rm: Manager, owner: Owner } {
+        let items = list::items{ list = rm.sources }
+        let mut kept: usize = 0
+        let mut i: usize = 0
+        while i < items.len {
+            if items[i].owner == owner {
+                free_source{ &fs, h = rm.heap, src = &items[i] }
+            } else {
+                items[kept] = items[i]
+                kept = kept + 1
+            }
+            i = i + 1
+        }
+        rm.sources.len = kept
+    }
+
+    fn free_source { mut fs: Fs, h: *mut heap::Heap, src: *mut Source } {
+        let mut i: usize = 0
+        while i < src.files.len {
+            _ = fs::close{ &fs, file = src.files[i] }
+            i = i + 1
+        }
+        _ = alloc::resize(fs::File, heap::Heap){ realloc = heap::alloc, heap = h, mem = src.files, count = 0 }
+        _ = alloc::resize(Span, heap::Heap){ realloc = heap::alloc, heap = h, mem = src.names, count = 0 }
+        _ = alloc::resize(Member, heap::Heap){ realloc = heap::alloc, heap = h, mem = src.members, count = 0 }
+        free_bytes{ h, b = src.pool }
+        free_bytes{ h, b = src.path }
+        map::free{ m = &src.index }
+        src.files = slice::empty(fs::File){}
+        src.names = slice::empty(Span){}
+        src.members = slice::empty(Member){}
+        src.pool = slice::empty(u8){}
+        src.path = slice::empty(u8){}
+    }
+
+    fn source_by_id { rm: Manager, id: u32 } -> ?*mut Source {
+        let items = list::items{ list = rm.sources }
+        let mut i: usize = 0
+        while i < items.len {
+            if items[i].id == id { return &items[i] }
+            i = i + 1
+        }
+        return null
+    }
+
+    fn name_of { src: *Source, i: u32 } -> []u8 {
+        let sp = src.names[i]
+        return src.pool[sp.start..sp.start + sp.len]
+    }
+
+    // ---- files and paths
+
+    // The entry of directory `dir` called `name`, ignoring case, joined to `dir`: its path with
+    // the entry's own spelling. Null if there is none, or no such directory.
+    fn find_in { mut fs: Fs, h: *mut heap::Heap, dir: []u8, name: []u8 } -> !?alloc::Bytes {
+        let mut d = os::dir_open{ &fs, path = dir } iferr { return null }
+        defer os::dir_close{ &fs, dir = &d }
+        while true {
+            let e = os::dir_next{ &fs, dir = &d } ifnull { break }
+            if ci::eq{ a = e, b = name } { return try path::join{ realloc = heap::alloc, heap = h, dir, name = e } }
+        }
+        return null
+    }
+
+    // An archive `stem` in `dir` with the first extension of .nwm, .mod, .sav, .erf, .hak that
+    // exists, as the engine's ERF opener tries them.
+    fn find_archive { mut fs: Fs, h: *mut heap::Heap, dir: []u8, stem: []u8 } -> !?alloc::Bytes {
+        let exts: [5][]u8 = [".nwm", ".mod", ".sav", ".erf", ".hak"]
+        let mut i: usize = 0
+        while i < exts.len {
+            // The name is on the heap: find_in's result would hold a stack buffer's address.
+            let name = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = h, mem = slice::empty(u8){}, count = stem.len + exts[i].len }
+            defer free_bytes{ h, b = name }
+            _ = concat{ a = stem, b = exts[i], into = name }
+            let p = try find_in{ &fs, h, dir, name }
+            if p != null { return p }
+            i = i + 1
+        }
+        return null
+    }
+
+    // `rel`, a path under `dir` with `\` or `/` between its parts, each part found ignoring case.
+    fn find_path { mut fs: Fs, h: *mut heap::Heap, dir: []u8, rel: []u8 } -> !?alloc::Bytes {
+        let mut cur = try copy_bytes{ h, b = dir }
+        let mut start: usize = 0
+        let mut i: usize = 0
+        while i <= rel.len {
+            if i == rel.len or rel[i] == '\\' or rel[i] == '/' {
+                if i > start {
+                    let next = find_in{ &fs, h, dir = cur, name = rel[start..i] } iferr err{ error } {
+                        free_bytes{ h, b = cur }
+                        return error
+                    }
+                    free_bytes{ h, b = cur }
+                    cur = next ifnull { return null }
+                }
+                start = i + 1
+            }
+            i = i + 1
+        }
+        return cur
+    }
+
+    fn concat { a: []u8, b: []u8, into: []mut u8 } -> []u8 {
+        slice::copy(u8){ dst = into[..a.len], src = a }
+        slice::copy(u8){ dst = into[a.len..a.len + b.len], src = b }
+        return into[..a.len + b.len]
+    }
+
+    fn file_size32 { mut fs: Fs, path: []u8 } -> !u32 {
+        let n = try fs::size{ &fs, path }
+        if n > 4294967295 { return too_big }
+        return @trunc(u32, n)
+    }
+
+    // `len` bytes of `file` at `offset`, in memory from the heap; fails with short_read if the file
+    // ends first.
+    fn read_block { mut fs: Fs, h: *mut heap::Heap, file: fs::File, offset: u64, len: usize } -> !alloc::Bytes {
+        let buf = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = h, mem = slice::empty(u8){}, count = len }
+        let n = fs::read_at{ &fs, file, offset, into = buf } iferr err{ error } {
+            free_bytes{ h, b = buf }
+            return error
+        }
+        if n < len {
+            free_bytes{ h, b = buf }
+            return short_read
+        }
+        return buf
+    }
+
+    fn copy_bytes { h: *mut heap::Heap, b: []u8 } -> !alloc::Bytes {
+        let out = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = h, mem = slice::empty(u8){}, count = b.len }
+        slice::copy(u8){ dst = out, src = b }
+        return out
+    }
+
+    fn free_bytes { h: *mut heap::Heap, b: alloc::Bytes } {
+        if b.len == 0 { return }
+        _ = heap::alloc{ heap = h, mem = b, new = 0, align = 1 }
+    }
+
+    // A list's items in an allocation of exactly their size, which can then be freed as a slice.
+    // The list is left empty, owning nothing.
+    fn exact(T) { h: *mut heap::Heap, mut l: list::List(T, heap::Heap) } -> ![]mut T {
+        let out = try alloc::resize(T, heap::Heap){ realloc = heap::alloc, heap = h, mem = l.items, count = l.len }
+        l.items = slice::empty(T){}
+        l.len = 0
+        return out
+    }
+}
