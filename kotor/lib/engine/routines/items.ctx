@@ -47,7 +47,7 @@ namespace rt_item {
         return list::items{ list = l.* }
     }
 
-    fn holds_items { o: *obj::Object } -> bool { return o.ext is creature | placeable }
+    fn holds_items { o: *obj::Object } -> bool { return o.ext is creature | placeable | store }
 
     // Puts `item` in the inventory of `o`; an item in the party's inventory belongs to the player
     // character (possessor w.player), in any other to its holder.

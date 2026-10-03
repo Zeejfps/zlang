@@ -71,6 +71,13 @@ namespace events {
         return e
     }
 
+    // An OnInvDisturbed event: the item and what happened to it (0 added, 1 removed, 2 stolen).
+    fn disturbed_event { item: u32, kind: i32 } -> values::ScriptEvent {
+        let mut e = script_event{ kind = INVENTORY_DISTURBED, object = item }
+        e.ints[0] = kind
+        return e
+    }
+
     // Queues an event `delay_ms` of world time from now, after every event due at the same time
     // (FIFO among equals).
     fn post { mut w: world::World, delay_ms: u64, caller: u32, target: u32, payload: Payload } {
@@ -177,6 +184,7 @@ namespace events {
         if e.kind == OPEN { o.ctx.last_opened_by = e.objects[0] }
         if e.kind == CLOSE { o.ctx.last_closed_by = e.objects[0] }
         if e.kind == USED { o.ctx.last_used_by = e.objects[0] }
+        if e.kind == INVENTORY_DISTURBED { o.ctx.last_disturbed = e.objects[0]; o.ctx.disturb_type = e.ints[0] }
         if e.kind == LOCKED { o.ctx.last_locked_by = e.objects[0] }
         if e.kind == UNLOCKED { o.ctx.last_unlocked_by = e.objects[0] }
         if e.kind == CLICKED { o.ctx.clicked_by = e.objects[0] }

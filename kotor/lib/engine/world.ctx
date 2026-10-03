@@ -315,7 +315,7 @@ namespace world {
                     appearance = 0, open = false, on = false, useable = false, has_inventory = false, party_interact = false,
                     static = false, locked = false, key = slice::empty(u8){},
                     inventory = list::new(u32, heap::Heap){ realloc = heap::alloc, heap = h }, walk = -1,
-                    model = resref::empty{}, anim = obj::ANIM_STAND,
+                    model = resref::empty{}, anim = obj::ANIM_STAND, die_when_empty = false, user = obj::INVALID,
                 } } }
             }
             trigger => {
@@ -329,7 +329,7 @@ namespace world {
             item => {
                 return obj::Ext::item{ i = try alloc::new(obj::Item, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Item{
                     base = 0, model_variation = 1, body_variation = 1, texture_variation = 1, stack = 1, charges = 0,
-                    possessor = obj::INVALID, identified = true, equipped_slot = -1, non_equippable = false, rules = null, droppable = false,
+                    possessor = obj::INVALID, identified = true, equipped_slot = -1, non_equippable = false, rules = null, droppable = false, infinite = false,
                 } } }
             }
             waypoint => {
@@ -352,7 +352,10 @@ namespace world {
                 } } }
             }
             store => {
-                return obj::Ext::store{ st = try alloc::new(obj::Store, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Store{ markup = 100, markdown = 100 } } }
+                return obj::Ext::store{ st = try alloc::new(obj::Store, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Store{
+                    markup = 100, markdown = 100, bonus_markup = 0, bonus_markdown = 0, buy_sell = 3,
+                    stock = list::new(u32, heap::Heap){ realloc = heap::alloc, heap = h },
+                } } }
             }
             aoe => {
                 return obj::Ext::aoe{ a = try alloc::new(obj::Aoe, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Aoe{ creator = obj::INVALID, radius = 1.0 } } }
@@ -472,7 +475,10 @@ namespace world {
                 _ = alloc::resize(resref::ResRef, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = e.creatures, count = 0 }
                 _ = alloc::resize(obj::Encounter, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(e, 1), count = 0 }
             }
-            store{ st } => { _ = alloc::resize(obj::Store, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(st, 1), count = 0 } }
+            store{ st } => {
+                list::free{ list = &st.stock }
+                _ = alloc::resize(obj::Store, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(st, 1), count = 0 }
+            }
             aoe{ a } => { _ = alloc::resize(obj::Aoe, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(a, 1), count = 0 } }
             area{ a } => {
                 obj::free_bytes{ heap = w.heap, s = a.name.text }
