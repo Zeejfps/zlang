@@ -1,0 +1,98 @@
+// The panels a script or the world opens over the game: the merchant's, the loot panel, the
+// level-up panels, the upgrade workbench and the galaxy map (docs/design/screens.md). They are
+// modal panels on the in-game interface's one Gui; this module owns their state, opens them from
+// the engine's outbox notes and hands them the GUI events.
+//
+//   screens::take{ &s, &w, note }                       per outbox note (records a request)
+//   screens::update{ &s, &g, &w, &dev, events, dt }     every frame: the events, then a request
+//   screens::is_open{ &s }                              a screen is up (the world stands still)
+namespace screens {
+    // What was asked for and not yet opened (opening needs the device, which notes do not carry).
+    enum Kind: u8 { none, store, container, level_up, upgrade, galaxy }
+
+    struct Request { kind: Kind, id: u32, n: i32 }
+
+    const MAX_REQUESTS: usize = 4
+
+    struct State {
+        store: store_panel::State,
+        container: container_panel::State,
+        queue: [4]Request,
+        queued: usize,
+        paused: bool,                   // we hold PAUSE_MENU
+    }
+
+    fn new {} -> State {
+        return State{
+            store = store_panel::new{}, container = container_panel::new{},
+            queue = [Request{ kind = Kind::none, id = 0, n = 0 }; 4], queued = 0, paused = false,
+        }
+    }
+
+    fn ask { mut s: State, kind: Kind, id: u32, n: i32 } {
+        if s.queued >= MAX_REQUESTS { return }
+        s.queue[s.queued] = Request{ kind, id, n }
+        s.queued = s.queued + 1
+    }
+
+    // The outbox notes that open a screen.
+    fn take { mut s: State, mut w: world::World, note: outbox::Note } {
+        match note {
+            open_store{ store, customer, markup, markdown } => {
+                store::open{ &w, store, markup, markdown }
+                ask{ &s, kind = Kind::store, id = store, n = 0 }
+            }
+            open_container{ placeable, user } => { ask{ &s, kind = Kind::container, id = placeable, n = 0 } }
+            else => {}
+        }
+    }
+
+    // Whether a screen is on the screen.
+    fn is_open { s: *State } -> bool {
+        return s.store.open or s.container.open
+    }
+
+    // Whether a request waits for the interface to make room (a menu open).
+    fn is_waiting { s: *State } -> bool { return s.queued > 0 }
+
+    // The frame: the panels' events, then the next request when nothing is up, then the world's
+    // pause follows what is on the screen.
+    fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, events: []gui::Event, dt: f32 } {
+        store_panel::tick{ s = &s.store, &g, &w }
+        let mut i: usize = 0
+        while i < events.len {
+            let ev = events[i]
+            i = i + 1
+            if store_panel::on_event{ s = &s.store, &g, &w, &dev, ev } { continue }
+            if container_panel::on_event{ s = &s.container, &g, &w, &dev, ev } { continue }
+        }
+        if not is_open{ &s } and s.queued > 0 {
+            let r = s.queue[0]
+            let mut k: usize = 1
+            while k < s.queued {
+                s.queue[k - 1] = s.queue[k]
+                k = k + 1
+            }
+            s.queued = s.queued - 1
+            open_request{ &s, &g, &w, &dev, r }
+        }
+        let open = is_open{ &s }
+        if open != s.paused {
+            s.paused = open
+            clock::set_pause{ c = &w.clock, bit = clock::PAUSE_MENU, on = open }
+        }
+    }
+
+    fn open_request { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, r: Request } {
+        if r.kind == Kind::store {
+            store_panel::begin{ s = &s.store, &g, &w, &dev, merchant = r.id } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: store: {}\n", error)
+            }
+        } else if r.kind == Kind::container {
+            container_panel::begin{ s = &s.container, &g, &w, &dev, placeable = r.id } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: container: {}\n", error)
+                container::close{ &w, placeable = r.id, take_all = false }
+            }
+        }
+    }
+}

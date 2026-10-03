@@ -76,6 +76,7 @@ namespace routines {
         if try rt_perc::run{ &w, &vm, routine, argc } { return true }
         if try rt_time::run{ &w, &vm, routine, argc } { return true }
         if try rt_mod::run{ &w, &vm, routine, argc } { return true }
+        if try rt_galaxy::run{ &w, &vm, routine, argc } { return true }
         if try rt_crea::run{ &w, &vm, routine, argc } { return true }
         if try rt_item::run{ &w, &vm, routine, argc } { return true }
         if try rt_fx::run{ &w, &vm, routine, argc } { return true }

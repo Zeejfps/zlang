@@ -70,8 +70,8 @@ namespace save {
 
         let galaxy = try gffw::put_struct{ &b, owner = root, label = "GlxyMap", id = 0 }
         try put_gff_value{ &b, owner = galaxy, label = "GlxyMapNumPnts", value = gff::Value::dword{ v = 16 } }
-        try put_gff_value{ &b, owner = galaxy, label = "GlxyMapPlntMsk", value = gff::Value::dword{ v = 0 } }
-        try put_gff_value{ &b, owner = galaxy, label = "GlxyMapSelPnt", value = gff::Value::int{ v = -1 } }
+        try put_gff_value{ &b, owner = galaxy, label = "GlxyMapPlntMsk", value = gff::Value::dword{ v = w.party.planet_mask } }
+        try put_gff_value{ &b, owner = galaxy, label = "GlxyMapSelPnt", value = gff::Value::int{ v = w.party.planet_selected } }
 
         // Pazaak: the cards owned. The engine writes 18 counts as INTs and a 19th entry as a BYTE
         // (its slip: PT_CHEAT_USED again); the file has all 19.
@@ -161,6 +161,16 @@ namespace save {
                 w.party.selectable[slot] = (gff::get_number{ doc = doc.*, s = e, label = "PT_NPC_SELECT" } ifnull 1) != 0
             }
             slot = slot + 1
+        }
+
+        // The galaxy map: the mask is ignored unless the file says 16 planets.
+        w.party.planet_mask = 0
+        w.party.planet_selected = -1
+        if gff::get_struct{ doc = doc.*, s = gff::ROOT, label = "GlxyMap" } is some{ value = galaxy } {
+            if (gff::get_number{ doc = doc.*, s = galaxy, label = "GlxyMapNumPnts" } ifnull 0) == 16 {
+                w.party.planet_mask = @trunc(u32, gff::get_number{ doc = doc.*, s = galaxy, label = "GlxyMapPlntMsk" } ifnull 0)
+            }
+            w.party.planet_selected = @trunc(i32, gff::get_number{ doc = doc.*, s = galaxy, label = "GlxyMapSelPnt" } ifnull -1)
         }
 
         // Pazaak: the cards owned and the side deck chosen last.

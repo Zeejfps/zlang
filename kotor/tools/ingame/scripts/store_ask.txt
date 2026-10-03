@@ -1,0 +1,14 @@
+# The merchant's refusals: too few credits, then a price over 50 x level (a question, with OpenStore's
+# bonus mark-up doubling the prices), answered Cancel and then OK.
+#   MODULE=danm13 sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/store_ask.txt 50 8:store_poor 24:store_ask 40:store_asked
+3 ui gold 30
+4 ui store dan_general 100 0
+10 ui click 494 544
+14 ui key return
+18 ui gold 2000
+22 ui click 494 544
+30 ui key escape
+34 ui bag
+36 ui click 494 544
+40 ui key return
+44 ui bag

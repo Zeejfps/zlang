@@ -1,0 +1,45 @@
+// Routines: the galaxy map and the level-up screen, the two panels a script opens that have no
+// world behind them but the party table's planet flags (docs/re/party-items-saves.md 3.3,
+// docs/re/gui.md "CSWGuiGalaxyMap"; the panels are lib/screens).
+namespace rt_galaxy {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        if routine == nwscript::SetPlanetAvailable { try set_planet{ &w, &vm, argc, routine, bit = party::PLANET_AVAILABLE_SHIFT } }
+        else if routine == nwscript::SetPlanetSelectable { try set_planet{ &w, &vm, argc, routine, bit = party::PLANET_SELECTABLE_SHIFT } }
+        else if routine == nwscript::GetPlanetAvailable { try get_planet{ &w, &vm, argc, routine, bit = party::PLANET_AVAILABLE_SHIFT } }
+        else if routine == nwscript::GetPlanetSelectable { try get_planet{ &w, &vm, argc, routine, bit = party::PLANET_SELECTABLE_SHIFT } }
+        else if routine == nwscript::GetSelectedPlanet { try nwvm::push_int{ &vm, v = w.party.planet_selected } }
+        else if routine == nwscript::ShowGalaxyMap { try show_galaxy_map{ &w, &vm, argc } }
+        else if routine == nwscript::ShowLevelUpGUI { try show_level_up_gui{ &w, &vm } }
+        else { return false }
+        return true
+    }
+
+    // void SetPlanetAvailable / SetPlanetSelectable(int nPlanet, int bValue)
+    fn set_planet { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, bit: u32 } -> ! {
+        let planet = try nwarg::int{ &vm, routine, argc, i = 0 }
+        let value = try nwarg::int{ &vm, routine, argc, i = 1 }
+        party::set_planet_flag{ &w, planet, bit, on = value != 0 }
+    }
+
+    // int GetPlanetAvailable / GetPlanetSelectable(int nPlanet)
+    fn get_planet { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, bit: u32 } -> ! {
+        let planet = try nwarg::int{ &vm, routine, argc, i = 0 }
+        try nwvm::push_int{ &vm, v = if party::planet_flag{ w = &w, planet, bit } { 1 } else { 0 } }
+    }
+
+    // void ShowGalaxyMap(int nPlanet): the planet is selected (the party table's selected planet)
+    // and the map opens on it; the Accept button runs k_sup_galaxymap, which reads the selection.
+    fn show_galaxy_map { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let planet = try nwarg::int{ &vm, routine = nwscript::ShowGalaxyMap, argc, i = 0 }
+        if planet >= 0 and planet < party::PLANETS { w.party.planet_selected = planet }
+        outbox::post{ out = &w.out, note = outbox::Note::galaxy_map{ planet = w.party.planet_selected } }
+    }
+
+    // int ShowLevelUpGUI(): the player character's level-up panels; 1 when the character can level
+    // up (CanLevelUp) and the panels are on their way, else 0.
+    fn show_level_up_gui { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let ok = levelup::can_level{ w = &w, id = w.player }
+        if ok { outbox::post{ out = &w.out, note = outbox::Note::level_up{ who = w.player } } }
+        try nwvm::push_int{ &vm, v = if ok { 1 } else { 0 } }
+    }
+}

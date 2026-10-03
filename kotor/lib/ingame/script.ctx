@@ -150,6 +150,7 @@ namespace ingame {
             if test_sheet::run{ &ui, &w, &dev, cmd, args } { return }
             if test_journal::run{ &ui, &w, &dev, cmd, args } { return }
             if test_map::run{ &ui, &w, &dev, cmd, args } { return }
+            if test_screens::run{ &ui, &w, &dev, cmd, args } { return }
             _ = @fmt(&w.io, "ui: unknown command {}\n", cmd)
         }
     }

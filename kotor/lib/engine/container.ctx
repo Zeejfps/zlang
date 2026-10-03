@@ -1,0 +1,95 @@
+// Placeables with an inventory: chests, footlockers, droids' remains, body bags (docs/re/
+// party-items-saves.md 5.7). The panel (lib/screens) shows what `open` posts and ends with
+// `close`; the item moves in between are `rt_misc::move_item`'s.
+//
+//   container::open{ &w, placeable, user }            USEOBJECT's last step
+//   container::take{ &w, placeable, item }           one item to the party
+//   container::close{ &w, placeable, take_all }      the panel's Close or Get Items
+namespace container {
+    const ANIM_OPEN: u32 = 10075
+    const ANIM_CLOSE: u32 = 10076
+
+    // The inventory holders' disturb types (INVENTORY_DISTURB_TYPE_*).
+    const DISTURB_ADDED: i32 = 0
+    const DISTURB_REMOVED: i32 = 1
+
+    // CSWSPlaceable::OpenInventory: only a closed container with an inventory. It plays the open
+    // animation, sends OnOpen and asks the presentation for the panel. False when it did not open.
+    fn open { mut w: world::World, placeable: u32, user: u32 } -> bool {
+        let o = world::object{ w = &w, id = placeable } ifnull { return false }
+        let p = obj::placeable{ o } ifnull { return false }
+        if not p.has_inventory or p.user != obj::INVALID { return false }
+        p.open = true
+        p.user = user
+        play{ o, p, anim = ANIM_OPEN }
+        events::post{ &w, delay_ms = 0, caller = user, target = placeable, payload = events::Payload::script{ e = events::script_event{ kind = events::OPEN, object = user } } }
+        outbox::post{ out = &w.out, note = outbox::Note::open_container{ placeable, user } }
+        return true
+    }
+
+    fn play { o: *mut obj::Object, p: *mut obj::Placeable, anim: u32 } {
+        p.anim = anim
+        o.animation = anim
+        o.dirty = o.dirty | obj::DIRTY_ANIMATION
+    }
+
+    // The player takes one item out (the panel's row): it goes into the party's inventory and the
+    // container's OnInvDisturbed hears it (type removed, the item), unless the container is a bag
+    // that vanishes when emptied. False when the item is not in the container.
+    fn take { mut w: world::World, placeable: u32, item: u32 } -> bool {
+        let o = world::object{ w = &w, id = placeable } ifnull { return false }
+        let p = obj::placeable{ o } ifnull { return false }
+        let ids = list::items{ list = p.inventory }
+        let mut at: usize = 0
+        while at < ids.len and ids[at] != item { at = at + 1 }
+        if at == ids.len { return false }
+        if not xfer::to_party{ &w, item } { return false }
+        disturbed{ &w, o, p, item, kind = DISTURB_REMOVED }
+        return true
+    }
+
+    // The player puts an item of the party's in (the panel's Switch To list).
+    fn give { mut w: world::World, placeable: u32, item: u32 } -> bool {
+        let o = world::object{ w = &w, id = placeable } ifnull { return false }
+        let p = obj::placeable{ o } ifnull { return false }
+        if not party::holds{ w = &w, item } { return false }
+        if not rt_misc::move_item{ &w, item, to = placeable } { return false }
+        disturbed{ &w, o, p, item, kind = DISTURB_ADDED }
+        return true
+    }
+
+    fn disturbed { mut w: world::World, o: *obj::Object, p: *obj::Placeable, item: u32, kind: i32 } {
+        if p.die_when_empty and kind == DISTURB_REMOVED { return }
+        events::post{ &w, delay_ms = 0, caller = w.player, target = o.id, payload = events::Payload::script{ e = events::disturbed_event{ item, kind } } }
+    }
+
+    // CSWSPlaceable::CloseInventory: with `take_all` everything goes to the party, last item
+    // first; then OnClose, the close animation, and a bag that is empty and dies when empty goes
+    // away. Does nothing when it is not open.
+    fn close { mut w: world::World, placeable: u32, take_all: bool } {
+        let o = world::object{ w = &w, id = placeable } ifnull { return }
+        let p = obj::placeable{ o } ifnull { return }
+        if p.user == obj::INVALID { return }
+        let user = p.user
+        if take_all {
+            let mut guard: usize = 0
+            while p.inventory.len > 0 and guard < 512 {
+                let ids = list::items{ list = p.inventory }
+                let last = ids[ids.len - 1]
+                guard = guard + 1
+                if not take{ &w, placeable, item = last } {
+                    // Could not move it (a full party list): leave it, stop.
+                    break
+                }
+            }
+        }
+        p.open = false
+        p.user = obj::INVALID
+        play{ o, p, anim = ANIM_CLOSE }
+        events::post{ &w, delay_ms = 0, caller = user, target = placeable, payload = events::Payload::script{ e = events::script_event{ kind = events::CLOSE, object = user } } }
+        if p.has_inventory and p.die_when_empty and p.inventory.len == 0 {
+            p.useable = false
+            world::destroy{ &w, id = placeable }
+        }
+    }
+}

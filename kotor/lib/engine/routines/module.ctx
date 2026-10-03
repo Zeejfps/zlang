@@ -12,10 +12,6 @@ namespace rt_mod {
         else if routine == nwscript::GetJournalEntry { try get_journal_entry{ &w, &vm, argc } }
         else if routine == nwscript::RevealMap { try reveal_map{ &vm, argc } }
         else if routine == nwscript::DoSinglePlayerAutoSave { w.autosave_due = true }
-        else if routine == nwscript::SetPlanetAvailable { try set_planet{ &w, &vm, argc, routine } }
-        else if routine == nwscript::SetPlanetSelectable { try set_planet{ &w, &vm, argc, routine } }
-        else if routine == nwscript::GetPlanetAvailable { try get_planet{ &vm, argc, routine } }
-        else if routine == nwscript::GetPlanetSelectable { try get_planet{ &vm, argc, routine } }
         else if routine == nwscript::AurPostString { try aur_post_string{ &w, &vm, argc } }
         else if routine == nwscript::ShowPartySelectionGUI { try show_party_selection_gui{ &vm, argc } }
         else { return false }
@@ -114,23 +110,6 @@ namespace rt_mod {
     fn reveal_map { mut vm: nwvm::Vm, argc: u8 } -> ! {
         _ = try nwarg::vector{ &vm, routine = nwscript::RevealMap, argc, i = 0 }
         _ = try nwarg::int{ &vm, routine = nwscript::RevealMap, argc, i = 1 }
-    }
-
-    // void SetPlanetAvailable / SetPlanetSelectable(int nPlanet, int bValue): the galaxy map
-    // has no system yet.
-    fn set_planet { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
-        let planet = try nwarg::int{ &vm, routine, argc, i = 0 }
-        let value = try nwarg::int{ &vm, routine, argc, i = 1 }
-        if w.log.scripts {
-            world::prefix{ w = &w }
-            _ = @fmt(&w.io, "planet {}: {} = {}\n", planet, nwscript::ROUTINES[@as(usize, routine)].name, value)
-        }
-    }
-
-    // int GetPlanetAvailable / GetPlanetSelectable(int nPlanet): 0.
-    fn get_planet { mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
-        _ = try nwarg::int{ &vm, routine, argc, i = 0 }
-        try nwvm::push_int{ &vm, v = 0 }
     }
 
     // void AurPostString(string sString, int nX, int nY, float fLife): debug text on the screen.

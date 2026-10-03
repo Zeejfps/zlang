@@ -23,6 +23,7 @@ namespace ingame {
         menus: Menus,
         log: hud::MessageLog,
         pause_panel: u32,                   // the "PAUSED" banner, 0 when not shown
+        screens: screens::State,            // the store, loot, level-up, workbench and galaxy map panels (lib/screens)
         hud_hidden: bool,
         bot: bot::Bot,                      // the headless test player (bot.ctx); off unless a script turns it on
     }
@@ -46,7 +47,7 @@ namespace ingame {
             heap = w.heap, cache, gui = g, hud = h,
             text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
             width, height, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{}, log = hud::new_log{},
-            pause_panel = 0, hud_hidden = false, bot = bot::new{},
+            pause_panel = 0, hud_hidden = false, screens = screens::new{}, bot = bot::new{},
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
         hud::set_tooltips{ h = &p.hud, g = &p.gui, &w, text = &p.text }
@@ -88,7 +89,7 @@ namespace ingame {
     // Whether the world should not be picked or clicked: a menu or modal panel is up, or the HUD
     // is hidden.
     fn is_blocked { mut ui: Ingame } -> bool {
-        return ui.menu != NO_MENU or ui.hud_hidden or gui::is_modal_open{ g = &ui.gui }
+        return ui.menu != NO_MENU or ui.hud_hidden or gui::is_modal_open{ g = &ui.gui } or screens::is_open{ s = &ui.screens }
     }
 
     // Whether the player confirmed Exit Game in the options menu: the loop should end.
@@ -189,6 +190,7 @@ namespace ingame {
     // Text the game wants shown (docs/design/engine.md, the outbox): feedback goes to the log and
     // the lines on the HUD.
     fn take { mut ui: Ingame, mut w: world::World, note: outbox::Note } {
+        screens::take{ s = &ui.screens, &w, note }
         match note {
             feedback{ strref, text } => {
                 let sent = outbox::text_of{ out = &w.out, t = text }
@@ -268,6 +270,10 @@ namespace ingame {
             // A game to save or load was chosen in the options: the menus go, the owner takes the request.
             if ui.menu == MENU_OPTIONS and options_panel::has_request{ s = &ui.menus.options } { close_menu{ &ui, &w } }
         }
+        // The store, loot, level-up, workbench and galaxy map panels (lib/screens): one asked for
+        // by a script closes the menu first.
+        if screens::is_waiting{ s = &ui.screens } and ui.menu != NO_MENU { close_menu{ &ui, &w } }
+        screens::update{ s = &ui.screens, g = &ui.gui, &w, &dev, events, dt }
     }
 
     // What the HUD's own controls ask for: a menu, the pause toggle, a party portrait, the target
