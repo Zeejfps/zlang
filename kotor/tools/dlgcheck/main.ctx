@@ -75,7 +75,7 @@ fn run { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut rm: res::Manager, mut mo
         scripts = 0, scripts_missing = 0, sounds = 0, sounds_missing = 0, texts = 0, texts_missing = 0, voiced = 0, explicit_delay = 0, angles = [0; 8],
     }
     if only.len == 0 {
-        try check_all{ w, &seen, &t }
+        try check_all{ w, module = "", &seen, &t }
         let dir = try path::join(heap::Heap){ realloc = heap::alloc, heap = &h, dir = game, name = "modules" }
         let names = try fs::list{ &fs, heap = &h, realloc = heap::alloc, path = dir }
         let mut i: usize = 0
@@ -102,11 +102,11 @@ fn run { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut rm: res::Manager, mut mo
 
 fn mount_and_check { mut w: world::World, mut fs: Fs, mut rm: res::Manager, name: []u8, seen: *mut map::Map(u64, u8, heap::Heap), t: *mut Totals } -> ! {
     try res::mount_module{ &fs, &rm, name, save = "" }
-    try check_all{ &w, seen, t }
+    try check_all{ &w, module = name, seen, t }
 }
 
 // Every DLG the search finds now that has not been read yet.
-fn check_all { mut w: world::World, seen: *mut map::Map(u64, u8, heap::Heap), t: *mut Totals } -> ! {
+fn check_all { mut w: world::World, module: []u8, seen: *mut map::Map(u64, u8, heap::Heap), t: *mut Totals } -> ! {
     let found = try res::list_type(arena::Arena){ rm = w.rm.*, kind = restype::Type::dlg, realloc = arena::alloc, heap = w.scratch }
     let mut i: usize = 0
     while i < found.len {
@@ -122,7 +122,7 @@ fn check_all { mut w: world::World, seen: *mut map::Map(u64, u8, heap::Heap), t:
             _ = @fmt(&w.io, "{}: {}\n", name, error)
             continue
         }
-        check_one{ &w, d = &d, name, t }
+        check_one{ &w, d = &d, name, module, t }
         dlg::free{ &w, d = &d }
     }
     arena::reset{ heap = w.scratch }
@@ -156,10 +156,11 @@ fn check_node { mut w: world::World, n: *dlg::Node, t: *mut Totals } {
     t.links = t.links + @trunc(u32, n.links.len)
 }
 
-fn check_one { mut w: world::World, d: *dlg::Dialog, name: resref::ResRef, t: *mut Totals } {
+fn check_one { mut w: world::World, d: *dlg::Dialog, name: resref::ResRef, module: []u8, t: *mut Totals } {
     let ct = d.conversation_type
     if ct >= 0 and ct <= 2 { t.types[@as(usize, ct)] = t.types[@as(usize, ct)] + 1 }
     if d.animated_cut { t.animated = t.animated + 1 }
+    if not resref::is_empty{ r = d.ambient_track } { _ = @fmt(&w.io, "{} has AmbientTrack {} (module '{}')\n", name, d.ambient_track, module) }
     script_ok{ &w, name = d.end_script, t }
     script_ok{ &w, name = d.abort_script, t }
     t.entries = t.entries + @trunc(u32, d.entries.len)
