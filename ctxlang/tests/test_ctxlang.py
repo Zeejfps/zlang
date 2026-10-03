@@ -7423,17 +7423,19 @@ class CtxcDriver(Base):
         return work
 
     def logging_cc(self, d):
-        """CTX_CC for a C compiler that appends each command line to d/cc.log before running the
-        test's compiler, and a function that returns the lines logged since it last did."""
+        """The environment for ctxc to use a C compiler that appends each command line to
+        d/cc.log before running the test's compiler, and a function that returns the lines logged
+        since it last did. The compiler's command is the same for every test, so they share
+        their runtime objects."""
         import sys
-        script, log = os.path.join(d, 'cc.py'), os.path.join(d, 'cc.log')
+        script, log = os.path.join(ROOT, 'build', 'logging_cc.py'), os.path.join(d, 'cc.log')
         if ' ' in sys.executable + script:
             self.skipTest('CTX_CC is split at spaces')
         with open(script, 'w', encoding='utf-8') as f:
-            f.write(f"""import subprocess, sys
+            f.write(f"""import os, subprocess, sys
 sys.path.insert(0, {os.path.join(ROOT, 'tools')!r})
 from toolchain import compiler
-with open({log!r}, 'a') as f:
+with open(os.environ['CTX_TEST_CC_LOG'], 'a') as f:
     f.write(' '.join(sys.argv[1:]) + '\\n')
 cc, env = compiler()
 sys.exit(subprocess.run(cc + sys.argv[1:], env=env).returncode)
@@ -7442,11 +7444,11 @@ sys.exit(subprocess.run(cc + sys.argv[1:], env=env).returncode)
 
         def logged():
             with open(log, encoding='utf-8') as f:
-                lines = f.read().splitlines() if os.path.exists(log) else []
+                lines = f.read().splitlines()
             new, seen[0] = lines[seen[0]:], len(lines)
             return new
         open(log, 'w').close()
-        return f'{sys.executable} {script}', logged
+        return {'CTX_CC': f'{sys.executable} {script}', 'CTX_TEST_CC_LOG': log}, logged
 
     def test_run_a_file_with_arguments(self):
         d = self.project({'hello.ctx': """
@@ -7538,8 +7540,7 @@ fn build { mut b: Build } {
         import re
         d = self.project({'build.ctx': 'fn build { mut b: Build } { _ = build::exe{ &b, name = "t", root = "src" } }\n',
                           'src/main.ctx': 'fn main { mut io: Io } { io::println{ &io, s = "one" } }\n'})
-        cc, logged = self.logging_cc(d)
-        env = {'CTX_CC': cc}
+        env, logged = self.logging_cc(d)
         self.assertEqual(self.ctxc('run', d, env=env)[:2], (0, 'one\n'))
         work = self.work_dir(d)
         self.assertTrue(os.path.isdir(os.path.join(work, 'build')))
@@ -7574,8 +7575,8 @@ fn build { mut b: Build } {
     def test_optimization_level(self):
         d = self.project({'build.ctx': 'fn build { mut b: Build } { build::optimize{ &b, exe = build::exe{ &b, name = "t", root = "src" }, level = 2 } }\n',
                           'src/main.ctx': 'fn main { mut io: Io } { io::println_i64{ &io, n = @as(i64, 6) * 7 } }\n'})
-        cc, logged = self.logging_cc(d)
-        self.assertEqual(self.ctxc('run', d, env={'CTX_CC': cc})[:2], (0, '42\n'))
+        env, logged = self.logging_cc(d)
+        self.assertEqual(self.ctxc('run', d, env=env)[:2], (0, '42\n'))
         program = [line for line in logged() if 'CTX_PROGRAM_NAME="t"' in line]
         self.assertTrue(program and all('-O2' in line and '-fwrapv' in line and '-O1' not in line for line in program), program)
 
