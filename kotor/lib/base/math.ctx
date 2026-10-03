@@ -1,0 +1,791 @@
+// Vectors, quaternions, matrices and the geometric queries the game needs, in f32.
+//
+// Conventions, which every user of this file shares:
+//
+// - **Space** is KOTOR's: right-handed, Z up, creatures face +Y (docs/formats/mdl.md). Nothing
+//   here assumes an up axis except where a function takes `up`.
+// - **Quaternions** are `Quat{ w, x, y, z }`: the scalar first, as the MDL header and the LYT
+//   store them, and in that order in memory. MDL orientation *keys* are stored x, y, z, w: build
+//   them with `quat::make{ w = k[3], x = k[0], y = k[1], z = k[2] }`. A rotation quaternion is a
+//   unit one; `quat::mul{ a, b }` is the rotation b, then a, as matrices compose.
+// - **Matrices** are column-major, as GL takes them: `Mat4.m[col * 4 + row]`, so `m[12..15]` is
+//   the translation. `mat4::mul{ a, b }` is a·b: it applies b first. Vectors are columns:
+//   `mat4::transform_point{ m, p }` is m·(p, 1).
+// - **Clip space** is GL's: `mat4::perspective` and `mat4::ortho` map depth to -1 at near and 1
+//   at far. A backend whose clip depth is 0..1 converts in its own code.
+// - **Planes** are `n · p + d = 0` with `n` a unit normal, the form MDL and BWM faces store;
+//   a point with `n · p + d > 0` is in front.
+//
+// Math operations keep their mathematical names (`dot`, `cross`, `length`, `lerp`) rather than
+// verb phrases; constructors are `make`, `from_*` and `identity`.
+namespace math {
+    // ---- libm (every program links it). Pure: they take no capability.
+    extern fn sqrtf { x: f32 } -> f32
+    extern fn sinf { x: f32 } -> f32
+    extern fn cosf { x: f32 } -> f32
+    extern fn tanf { x: f32 } -> f32
+    extern fn atan2f { y: f32, x: f32 } -> f32
+    extern fn acosf { x: f32 } -> f32
+    extern fn asinf { x: f32 } -> f32
+    extern fn floorf { x: f32 } -> f32
+    extern fn ceilf { x: f32 } -> f32
+    extern fn powf { x: f32, y: f32 } -> f32
+    extern fn fabsf { x: f32 } -> f32
+    extern fn fmodf { x: f32, y: f32 } -> f32
+    extern fn expf { x: f32 } -> f32
+    extern fn logf { x: f32 } -> f32
+
+    const PI: f32 = 3.14159265358979
+    const TAU: f32 = 6.28318530717959
+    // Below this a length, determinant or denominator counts as zero.
+    const EPSILON: f32 = 0.000001
+
+    fn abs { x: f32 } -> f32 { return if x < 0.0 { -x } else { x } }
+    fn min { a: f32, b: f32 } -> f32 { return if a < b { a } else { b } }
+    fn max { a: f32, b: f32 } -> f32 { return if a > b { a } else { b } }
+    fn clamp { x: f32, lo: f32, hi: f32 } -> f32 { return if x < lo { lo } else if x > hi { hi } else { x } }
+    fn lerp { a: f32, b: f32, t: f32 } -> f32 { return a + (b - a) * t }
+    fn radians { degrees: f32 } -> f32 { return degrees * (PI / 180.0) }
+    fn degrees { radians: f32 } -> f32 { return radians * (180.0 / PI) }
+
+    struct Vec2 { x: f32, y: f32 }
+    struct Vec3 { x: f32, y: f32, z: f32 }
+    struct Vec4 { x: f32, y: f32, z: f32, w: f32 }
+    struct Quat { w: f32, x: f32, y: f32, z: f32 }
+    struct Mat3 { m: [9]f32 }          // column-major: m[col * 3 + row]
+    struct Mat4 { m: [16]f32 }         // column-major: m[col * 4 + row]
+
+    // An axis-aligned box. `aabb::empty` has min above max, so the first `extend` sets both.
+    struct Aabb { min: Vec3, max: Vec3 }
+    // The points p with n · p + d = 0; n is a unit normal.
+    struct Plane { n: Vec3, d: f32 }
+    // A ray from `origin` along `dir` (not necessarily unit: distances are in units of |dir|).
+    struct Ray { origin: Vec3, dir: Vec3 }
+    // Where a ray met a triangle: origin + t · dir, with barycentric weights u for the second
+    // corner and v for the third (1 - u - v for the first).
+    struct TriangleHit { t: f32, u: f32, v: f32 }
+    // The six planes of a view volume, normals pointing in: left, right, bottom, top, near, far.
+    struct Frustum { planes: [6]Plane }
+
+    namespace vec2 {
+        fn make { x: f32, y: f32 } -> Vec2 { return Vec2{ x, y } }
+        fn add { a: Vec2, b: Vec2 } -> Vec2 { return Vec2{ x = a.x + b.x, y = a.y + b.y } }
+        fn sub { a: Vec2, b: Vec2 } -> Vec2 { return Vec2{ x = a.x - b.x, y = a.y - b.y } }
+        fn scale { v: Vec2, s: f32 } -> Vec2 { return Vec2{ x = v.x * s, y = v.y * s } }
+        fn dot { a: Vec2, b: Vec2 } -> f32 { return a.x * b.x + a.y * b.y }
+        fn length { v: Vec2 } -> f32 { return sqrtf{ x = v.x * v.x + v.y * v.y } }
+        fn lerp { a: Vec2, b: Vec2, t: f32 } -> Vec2 {
+            return Vec2{ x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t }
+        }
+        // v scaled to length 1; the zero vector stays zero.
+        fn normalize { v: Vec2 } -> Vec2 {
+            let n = length{ v }
+            if n < EPSILON { return Vec2{ x = 0.0, y = 0.0 } }
+            return scale{ v, s = 1.0 / n }
+        }
+    }
+
+    namespace vec3 {
+        fn make { x: f32, y: f32, z: f32 } -> Vec3 { return Vec3{ x, y, z } }
+        fn zero {} -> Vec3 { return Vec3{ x = 0.0, y = 0.0, z = 0.0 } }
+        fn splat { s: f32 } -> Vec3 { return Vec3{ x = s, y = s, z = s } }
+        fn add { a: Vec3, b: Vec3 } -> Vec3 { return Vec3{ x = a.x + b.x, y = a.y + b.y, z = a.z + b.z } }
+        fn sub { a: Vec3, b: Vec3 } -> Vec3 { return Vec3{ x = a.x - b.x, y = a.y - b.y, z = a.z - b.z } }
+        // Component by component.
+        fn mul { a: Vec3, b: Vec3 } -> Vec3 { return Vec3{ x = a.x * b.x, y = a.y * b.y, z = a.z * b.z } }
+        fn scale { v: Vec3, s: f32 } -> Vec3 { return Vec3{ x = v.x * s, y = v.y * s, z = v.z * s } }
+        fn negate { v: Vec3 } -> Vec3 { return Vec3{ x = -v.x, y = -v.y, z = -v.z } }
+        // a + b · s, the step of most integrators and ray walks.
+        fn add_scaled { a: Vec3, b: Vec3, s: f32 } -> Vec3 {
+            return Vec3{ x = a.x + b.x * s, y = a.y + b.y * s, z = a.z + b.z * s }
+        }
+        fn dot { a: Vec3, b: Vec3 } -> f32 { return a.x * b.x + a.y * b.y + a.z * b.z }
+        fn cross { a: Vec3, b: Vec3 } -> Vec3 {
+            return Vec3{ x = a.y * b.z - a.z * b.y, y = a.z * b.x - a.x * b.z, z = a.x * b.y - a.y * b.x }
+        }
+        fn length_sq { v: Vec3 } -> f32 { return v.x * v.x + v.y * v.y + v.z * v.z }
+        fn length { v: Vec3 } -> f32 { return sqrtf{ x = length_sq{ v } } }
+        fn distance { a: Vec3, b: Vec3 } -> f32 { return length{ v = sub{ a, b } } }
+        // v scaled to length 1; the zero vector stays zero.
+        fn normalize { v: Vec3 } -> Vec3 {
+            let n = length{ v }
+            if n < EPSILON { return zero{} }
+            return scale{ v, s = 1.0 / n }
+        }
+        fn lerp { a: Vec3, b: Vec3, t: f32 } -> Vec3 {
+            return Vec3{ x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t, z = a.z + (b.z - a.z) * t }
+        }
+        fn min { a: Vec3, b: Vec3 } -> Vec3 {
+            return Vec3{ x = math::min{ a = a.x, b = b.x }, y = math::min{ a = a.y, b = b.y }, z = math::min{ a = a.z, b = b.z } }
+        }
+        fn max { a: Vec3, b: Vec3 } -> Vec3 {
+            return Vec3{ x = math::max{ a = a.x, b = b.x }, y = math::max{ a = a.y, b = b.y }, z = math::max{ a = a.z, b = b.z } }
+        }
+    }
+
+    namespace vec4 {
+        fn make { x: f32, y: f32, z: f32, w: f32 } -> Vec4 { return Vec4{ x, y, z, w } }
+        fn from_vec3 { v: Vec3, w: f32 } -> Vec4 { return Vec4{ x = v.x, y = v.y, z = v.z, w } }
+        fn xyz { v: Vec4 } -> Vec3 { return Vec3{ x = v.x, y = v.y, z = v.z } }
+        fn add { a: Vec4, b: Vec4 } -> Vec4 { return Vec4{ x = a.x + b.x, y = a.y + b.y, z = a.z + b.z, w = a.w + b.w } }
+        fn scale { v: Vec4, s: f32 } -> Vec4 { return Vec4{ x = v.x * s, y = v.y * s, z = v.z * s, w = v.w * s } }
+        fn dot { a: Vec4, b: Vec4 } -> f32 { return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w }
+        fn lerp { a: Vec4, b: Vec4, t: f32 } -> Vec4 {
+            return Vec4{ x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t, z = a.z + (b.z - a.z) * t, w = a.w + (b.w - a.w) * t }
+        }
+    }
+
+    namespace quat {
+        fn identity {} -> Quat { return Quat{ w = 1.0, x = 0.0, y = 0.0, z = 0.0 } }
+        fn make { w: f32, x: f32, y: f32, z: f32 } -> Quat { return Quat{ w, x, y, z } }
+
+        // The rotation by `angle` radians about `axis` (any length but zero), counterclockwise
+        // looking down the axis toward the origin.
+        fn from_axis_angle { axis: Vec3, angle: f32 } -> Quat {
+            let a = vec3::normalize{ v = axis }
+            let s = sinf{ x = angle * 0.5 }
+            return Quat{ w = cosf{ x = angle * 0.5 }, x = a.x * s, y = a.y * s, z = a.z * s }
+        }
+
+        // The rotation a 3x3 rotation matrix (orthonormal columns) holds.
+        fn from_mat3 { r: Mat3 } -> Quat {
+            let m = r.m
+            let trace = m[0] + m[4] + m[8]
+            // Pick the largest diagonal term to divide by, for precision.
+            if trace > 0.0 {
+                let s = sqrtf{ x = trace + 1.0 } * 2.0
+                return normalize{ q = Quat{ w = 0.25 * s, x = (m[5] - m[7]) / s, y = (m[6] - m[2]) / s, z = (m[1] - m[3]) / s } }
+            }
+            if m[0] > m[4] and m[0] > m[8] {
+                let s = sqrtf{ x = 1.0 + m[0] - m[4] - m[8] } * 2.0
+                return normalize{ q = Quat{ w = (m[5] - m[7]) / s, x = 0.25 * s, y = (m[3] + m[1]) / s, z = (m[6] + m[2]) / s } }
+            }
+            if m[4] > m[8] {
+                let s = sqrtf{ x = 1.0 + m[4] - m[0] - m[8] } * 2.0
+                return normalize{ q = Quat{ w = (m[6] - m[2]) / s, x = (m[3] + m[1]) / s, y = 0.25 * s, z = (m[7] + m[5]) / s } }
+            }
+            let s = sqrtf{ x = 1.0 + m[8] - m[0] - m[4] } * 2.0
+            return normalize{ q = Quat{ w = (m[1] - m[3]) / s, x = (m[6] + m[2]) / s, y = (m[7] + m[5]) / s, z = 0.25 * s } }
+        }
+
+        // a · b: rotate by b, then by a.
+        fn mul { a: Quat, b: Quat } -> Quat {
+            return Quat{
+                w = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+                x = a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+                y = a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+                z = a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+            }
+        }
+
+        fn dot { a: Quat, b: Quat } -> f32 { return a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z }
+        fn conjugate { q: Quat } -> Quat { return Quat{ w = q.w, x = -q.x, y = -q.y, z = -q.z } }
+
+        // The inverse rotation of any non-zero quaternion (the conjugate, for a unit one).
+        fn inverse { q: Quat } -> Quat {
+            let n = dot{ a = q, b = q }
+            if n < EPSILON { return identity{} }
+            return Quat{ w = q.w / n, x = -q.x / n, y = -q.y / n, z = -q.z / n }
+        }
+
+        // q scaled to length 1; a zero quaternion becomes the identity.
+        fn normalize { q: Quat } -> Quat {
+            let n = sqrtf{ x = dot{ a = q, b = q } }
+            if n < EPSILON { return identity{} }
+            return Quat{ w = q.w / n, x = q.x / n, y = q.y / n, z = q.z / n }
+        }
+
+        // v rotated by the unit quaternion q.
+        fn rotate { q: Quat, v: Vec3 } -> Vec3 {
+            // v + 2w(u x v) + 2 u x (u x v), with u the vector part.
+            let u = Vec3{ x = q.x, y = q.y, z = q.z }
+            let t = vec3::scale{ v = vec3::cross{ a = u, b = v }, s = 2.0 }
+            return vec3::add{ a = vec3::add_scaled{ a = v, b = t, s = q.w }, b = vec3::cross{ a = u, b = t } }
+        }
+
+        fn to_mat3 { q: Quat } -> Mat3 {
+            let xx = q.x * q.x
+            let yy = q.y * q.y
+            let zz = q.z * q.z
+            let xy = q.x * q.y
+            let xz = q.x * q.z
+            let yz = q.y * q.z
+            let wx = q.w * q.x
+            let wy = q.w * q.y
+            let wz = q.w * q.z
+            let mut r: Mat3
+            r.m[0] = 1.0 - 2.0 * (yy + zz)
+            r.m[1] = 2.0 * (xy + wz)
+            r.m[2] = 2.0 * (xz - wy)
+            r.m[3] = 2.0 * (xy - wz)
+            r.m[4] = 1.0 - 2.0 * (xx + zz)
+            r.m[5] = 2.0 * (yz + wx)
+            r.m[6] = 2.0 * (xz + wy)
+            r.m[7] = 2.0 * (yz - wx)
+            r.m[8] = 1.0 - 2.0 * (xx + yy)
+            return r
+        }
+
+        fn to_mat4 { q: Quat } -> Mat4 { return mat4::from_mat3{ r = to_mat3{ q } } }
+
+        // Normalized linear interpolation: cheap, constant direction, uneven speed. Takes the
+        // shorter way round.
+        fn nlerp { a: Quat, b: Quat, t: f32 } -> Quat {
+            let s: f32 = if dot{ a, b } < 0.0 { -1.0 } else { 1.0 }
+            return normalize{ q = Quat{
+                w = a.w + (b.w * s - a.w) * t, x = a.x + (b.x * s - a.x) * t,
+                y = a.y + (b.y * s - a.y) * t, z = a.z + (b.z * s - a.z) * t,
+            } }
+        }
+
+        // Spherical linear interpolation of unit quaternions at constant angular speed, the
+        // shorter way round. Nearly equal rotations fall back to nlerp.
+        fn slerp { a: Quat, b: Quat, t: f32 } -> Quat {
+            let mut d = dot{ a, b }
+            let mut c = b
+            if d < 0.0 {
+                d = -d
+                c = Quat{ w = -b.w, x = -b.x, y = -b.y, z = -b.z }
+            }
+            if d > 0.9995 { return nlerp{ a, b = c, t } }
+            let theta = acosf{ x = d }
+            let s = sinf{ x = theta }
+            let wa = sinf{ x = (1.0 - t) * theta } / s
+            let wb = sinf{ x = t * theta } / s
+            return Quat{ w = a.w * wa + c.w * wb, x = a.x * wa + c.x * wb, y = a.y * wa + c.y * wb, z = a.z * wa + c.z * wb }
+        }
+    }
+
+    namespace mat3 {
+        fn identity {} -> Mat3 {
+            let mut r: Mat3
+            r.m[0] = 1.0
+            r.m[4] = 1.0
+            r.m[8] = 1.0
+            return r
+        }
+
+        // The upper-left 3x3 of m: its rotation and scale.
+        fn from_mat4 { m: Mat4 } -> Mat3 {
+            let mut r: Mat3
+            let mut c: usize = 0
+            while c < 3 {
+                let mut k: usize = 0
+                while k < 3 {
+                    r.m[c * 3 + k] = m.m[c * 4 + k]
+                    k = k + 1
+                }
+                c = c + 1
+            }
+            return r
+        }
+
+        fn mul { a: Mat3, b: Mat3 } -> Mat3 {
+            let mut r: Mat3
+            let mut c: usize = 0
+            while c < 3 {
+                let mut row: usize = 0
+                while row < 3 {
+                    r.m[c * 3 + row] = a.m[row] * b.m[c * 3] + a.m[3 + row] * b.m[c * 3 + 1] + a.m[6 + row] * b.m[c * 3 + 2]
+                    row = row + 1
+                }
+                c = c + 1
+            }
+            return r
+        }
+
+        fn transform { m: Mat3, v: Vec3 } -> Vec3 {
+            return Vec3{
+                x = m.m[0] * v.x + m.m[3] * v.y + m.m[6] * v.z,
+                y = m.m[1] * v.x + m.m[4] * v.y + m.m[7] * v.z,
+                z = m.m[2] * v.x + m.m[5] * v.y + m.m[8] * v.z,
+            }
+        }
+
+        fn transpose { m: Mat3 } -> Mat3 {
+            let mut r: Mat3
+            let mut c: usize = 0
+            while c < 3 {
+                let mut row: usize = 0
+                while row < 3 {
+                    r.m[c * 3 + row] = m.m[row * 3 + c]
+                    row = row + 1
+                }
+                c = c + 1
+            }
+            return r
+        }
+
+        fn determinant { m: Mat3 } -> f32 {
+            let a = m.m
+            return a[0] * (a[4] * a[8] - a[7] * a[5]) - a[3] * (a[1] * a[8] - a[7] * a[2]) + a[6] * (a[1] * a[5] - a[4] * a[2])
+        }
+
+        // The inverse, or null for a singular matrix.
+        fn inverse { m: Mat3 } -> ?Mat3 {
+            let a = m.m
+            let det = determinant{ m }
+            if abs{ x = det } < EPSILON * EPSILON { return null }
+            let inv = 1.0 / det
+            let mut r: Mat3
+            r.m[0] = (a[4] * a[8] - a[7] * a[5]) * inv
+            r.m[1] = (a[7] * a[2] - a[1] * a[8]) * inv
+            r.m[2] = (a[1] * a[5] - a[4] * a[2]) * inv
+            r.m[3] = (a[6] * a[5] - a[3] * a[8]) * inv
+            r.m[4] = (a[0] * a[8] - a[6] * a[2]) * inv
+            r.m[5] = (a[3] * a[2] - a[0] * a[5]) * inv
+            r.m[6] = (a[3] * a[7] - a[6] * a[4]) * inv
+            r.m[7] = (a[6] * a[1] - a[0] * a[7]) * inv
+            r.m[8] = (a[0] * a[4] - a[3] * a[1]) * inv
+            return r
+        }
+
+        // What transforms normals for a model matrix m: the inverse transpose of its 3x3, which
+        // is the 3x3 itself for a rotation. A singular m gives its 3x3 unchanged.
+        fn normal_matrix { m: Mat4 } -> Mat3 {
+            let r = from_mat4{ m }
+            let inv = inverse{ m = r } ifnull { return r }
+            return transpose{ m = inv }
+        }
+    }
+
+    namespace mat4 {
+        fn identity {} -> Mat4 {
+            let mut r: Mat4
+            r.m[0] = 1.0
+            r.m[5] = 1.0
+            r.m[10] = 1.0
+            r.m[15] = 1.0
+            return r
+        }
+
+        // A matrix from 16 numbers in GL's (column-major) order.
+        fn from_array { a: [16]f32 } -> Mat4 { return Mat4{ m = a } }
+
+        fn from_mat3 { r: Mat3 } -> Mat4 {
+            let mut m = identity{}
+            let mut c: usize = 0
+            while c < 3 {
+                let mut k: usize = 0
+                while k < 3 {
+                    m.m[c * 4 + k] = r.m[c * 3 + k]
+                    k = k + 1
+                }
+                c = c + 1
+            }
+            return m
+        }
+
+        // The element at `row`, `col`.
+        fn at { m: Mat4, row: usize, col: usize } -> f32 { return m.m[col * 4 + row] }
+
+        fn translation { t: Vec3 } -> Mat4 {
+            let mut m = identity{}
+            m.m[12] = t.x
+            m.m[13] = t.y
+            m.m[14] = t.z
+            return m
+        }
+
+        fn scaling { s: Vec3 } -> Mat4 {
+            let mut m = identity{}
+            m.m[0] = s.x
+            m.m[5] = s.y
+            m.m[10] = s.z
+            return m
+        }
+
+        fn rotation { q: Quat } -> Mat4 { return quat::to_mat4{ q } }
+
+        // T · R · S: scale, then rotate, then translate, as a node's transform is built.
+        fn compose { t: Vec3, r: Quat, s: Vec3 } -> Mat4 {
+            let rot = quat::to_mat3{ q = r }
+            let mut m: Mat4
+            m.m[0] = rot.m[0] * s.x
+            m.m[1] = rot.m[1] * s.x
+            m.m[2] = rot.m[2] * s.x
+            m.m[4] = rot.m[3] * s.y
+            m.m[5] = rot.m[4] * s.y
+            m.m[6] = rot.m[5] * s.y
+            m.m[8] = rot.m[6] * s.z
+            m.m[9] = rot.m[7] * s.z
+            m.m[10] = rot.m[8] * s.z
+            m.m[12] = t.x
+            m.m[13] = t.y
+            m.m[14] = t.z
+            m.m[15] = 1.0
+            return m
+        }
+
+        // T · R, the rigid transform of a position and an orientation.
+        fn from_rotation_translation { r: Quat, t: Vec3 } -> Mat4 {
+            return compose{ t, r, s = Vec3{ x = 1.0, y = 1.0, z = 1.0 } }
+        }
+
+        fn get_translation { m: Mat4 } -> Vec3 { return Vec3{ x = m.m[12], y = m.m[13], z = m.m[14] } }
+
+        // a · b: applies b first.
+        fn mul { a: Mat4, b: Mat4 } -> Mat4 {
+            let mut r: Mat4
+            let mut c: usize = 0
+            while c < 4 {
+                let b0 = b.m[c * 4]
+                let b1 = b.m[c * 4 + 1]
+                let b2 = b.m[c * 4 + 2]
+                let b3 = b.m[c * 4 + 3]
+                let mut row: usize = 0
+                while row < 4 {
+                    r.m[c * 4 + row] = a.m[row] * b0 + a.m[4 + row] * b1 + a.m[8 + row] * b2 + a.m[12 + row] * b3
+                    row = row + 1
+                }
+                c = c + 1
+            }
+            return r
+        }
+
+        fn transform { m: Mat4, v: Vec4 } -> Vec4 {
+            return Vec4{
+                x = m.m[0] * v.x + m.m[4] * v.y + m.m[8] * v.z + m.m[12] * v.w,
+                y = m.m[1] * v.x + m.m[5] * v.y + m.m[9] * v.z + m.m[13] * v.w,
+                z = m.m[2] * v.x + m.m[6] * v.y + m.m[10] * v.z + m.m[14] * v.w,
+                w = m.m[3] * v.x + m.m[7] * v.y + m.m[11] * v.z + m.m[15] * v.w,
+            }
+        }
+
+        // m · (p, 1) without the divide: for affine m, the transformed point.
+        fn transform_point { m: Mat4, p: Vec3 } -> Vec3 {
+            return Vec3{
+                x = m.m[0] * p.x + m.m[4] * p.y + m.m[8] * p.z + m.m[12],
+                y = m.m[1] * p.x + m.m[5] * p.y + m.m[9] * p.z + m.m[13],
+                z = m.m[2] * p.x + m.m[6] * p.y + m.m[10] * p.z + m.m[14],
+            }
+        }
+
+        // m · (v, 0): a direction, unaffected by translation.
+        fn transform_dir { m: Mat4, v: Vec3 } -> Vec3 {
+            return Vec3{
+                x = m.m[0] * v.x + m.m[4] * v.y + m.m[8] * v.z,
+                y = m.m[1] * v.x + m.m[5] * v.y + m.m[9] * v.z,
+                z = m.m[2] * v.x + m.m[6] * v.y + m.m[10] * v.z,
+            }
+        }
+
+        // m · (p, 1) divided by w: a point through a projection.
+        fn project_point { m: Mat4, p: Vec3 } -> Vec3 {
+            let v = transform{ m, v = Vec4{ x = p.x, y = p.y, z = p.z, w = 1.0 } }
+            let w = if abs{ x = v.w } < EPSILON { EPSILON } else { v.w }
+            return Vec3{ x = v.x / w, y = v.y / w, z = v.z / w }
+        }
+
+        fn transpose { m: Mat4 } -> Mat4 {
+            let mut r: Mat4
+            let mut c: usize = 0
+            while c < 4 {
+                let mut row: usize = 0
+                while row < 4 {
+                    r.m[c * 4 + row] = m.m[row * 4 + c]
+                    row = row + 1
+                }
+                c = c + 1
+            }
+            return r
+        }
+
+        // The inverse of any invertible matrix, or null for a singular one. Through the 2x2
+        // minors of the top two and bottom two rows (Laplace expansion).
+        fn inverse { m: Mat4 } -> ?Mat4 {
+            let a = m.m
+            // a(row, col) is a[col * 4 + row].
+            let a00 = a[0]
+            let a01 = a[4]
+            let a02 = a[8]
+            let a03 = a[12]
+            let a10 = a[1]
+            let a11 = a[5]
+            let a12 = a[9]
+            let a13 = a[13]
+            let a20 = a[2]
+            let a21 = a[6]
+            let a22 = a[10]
+            let a23 = a[14]
+            let a30 = a[3]
+            let a31 = a[7]
+            let a32 = a[11]
+            let a33 = a[15]
+            let s0 = a00 * a11 - a10 * a01
+            let s1 = a00 * a12 - a10 * a02
+            let s2 = a00 * a13 - a10 * a03
+            let s3 = a01 * a12 - a11 * a02
+            let s4 = a01 * a13 - a11 * a03
+            let s5 = a02 * a13 - a12 * a03
+            let c5 = a22 * a33 - a32 * a23
+            let c4 = a21 * a33 - a31 * a23
+            let c3 = a21 * a32 - a31 * a22
+            let c2 = a20 * a33 - a30 * a23
+            let c1 = a20 * a32 - a30 * a22
+            let c0 = a20 * a31 - a30 * a21
+            let det = s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0
+            if abs{ x = det } < EPSILON * EPSILON { return null }
+            let k = 1.0 / det
+            let mut r: Mat4
+            // r(row, col) goes to r.m[col * 4 + row].
+            r.m[0] = (a11 * c5 - a12 * c4 + a13 * c3) * k
+            r.m[4] = (-a01 * c5 + a02 * c4 - a03 * c3) * k
+            r.m[8] = (a31 * s5 - a32 * s4 + a33 * s3) * k
+            r.m[12] = (-a21 * s5 + a22 * s4 - a23 * s3) * k
+            r.m[1] = (-a10 * c5 + a12 * c2 - a13 * c1) * k
+            r.m[5] = (a00 * c5 - a02 * c2 + a03 * c1) * k
+            r.m[9] = (-a30 * s5 + a32 * s2 - a33 * s1) * k
+            r.m[13] = (a20 * s5 - a22 * s2 + a23 * s1) * k
+            r.m[2] = (a10 * c4 - a11 * c2 + a13 * c0) * k
+            r.m[6] = (-a00 * c4 + a01 * c2 - a03 * c0) * k
+            r.m[10] = (a30 * s4 - a31 * s2 + a33 * s0) * k
+            r.m[14] = (-a20 * s4 + a21 * s2 - a23 * s0) * k
+            r.m[3] = (-a10 * c3 + a11 * c1 - a12 * c0) * k
+            r.m[7] = (a00 * c3 - a01 * c1 + a02 * c0) * k
+            r.m[11] = (-a30 * s3 + a31 * s1 - a32 * s0) * k
+            r.m[15] = (a20 * s3 - a21 * s1 + a22 * s0) * k
+            return r
+        }
+
+        // The inverse of an affine matrix (bottom row 0 0 0 1), such as a node's transform: the
+        // 3x3's inverse and the translation taken back through it. A singular 3x3 gives the
+        // identity.
+        fn inverse_affine { m: Mat4 } -> Mat4 {
+            let r = mat3::inverse{ m = mat3::from_mat4{ m } } ifnull { return identity{} }
+            let t = mat3::transform{ m = r, v = get_translation{ m } }
+            let mut out = from_mat3{ r }
+            out.m[12] = -t.x
+            out.m[13] = -t.y
+            out.m[14] = -t.z
+            return out
+        }
+
+        // A right-handed perspective projection onto GL's clip space: the camera looks down its
+        // -Z, `fovy` is the vertical field of view in radians, depth -1 at near to 1 at far.
+        fn perspective { fovy: f32, aspect: f32, near: f32, far: f32 } -> Mat4 {
+            let f = 1.0 / tanf{ x = fovy * 0.5 }
+            let mut m: Mat4
+            m.m[0] = f / aspect
+            m.m[5] = f
+            m.m[10] = (far + near) / (near - far)
+            m.m[11] = -1.0
+            m.m[14] = 2.0 * far * near / (near - far)
+            return m
+        }
+
+        // An orthographic projection of the box left..right, bottom..top, -near..-far onto GL's
+        // clip space. For 2D in pixels with y down: ortho{ left = 0, right = w, bottom = h,
+        // top = 0, near = -1, far = 1 }.
+        fn ortho { left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32 } -> Mat4 {
+            let mut m: Mat4
+            m.m[0] = 2.0 / (right - left)
+            m.m[5] = 2.0 / (top - bottom)
+            m.m[10] = -2.0 / (far - near)
+            m.m[12] = -(right + left) / (right - left)
+            m.m[13] = -(top + bottom) / (top - bottom)
+            m.m[14] = -(far + near) / (far - near)
+            m.m[15] = 1.0
+            return m
+        }
+
+        // The view matrix of a camera at `eye` looking at `at`, with `up` (Z for KOTOR) as the
+        // screen's up as nearly as it can be. The camera looks down its own -Z.
+        fn look_at { eye: Vec3, at: Vec3, up: Vec3 } -> Mat4 {
+            let f = vec3::normalize{ v = vec3::sub{ a = at, b = eye } }
+            let s = vec3::normalize{ v = vec3::cross{ a = f, b = up } }
+            let u = vec3::cross{ a = s, b = f }
+            let mut m = identity{}
+            m.m[0] = s.x
+            m.m[4] = s.y
+            m.m[8] = s.z
+            m.m[1] = u.x
+            m.m[5] = u.y
+            m.m[9] = u.z
+            m.m[2] = -f.x
+            m.m[6] = -f.y
+            m.m[10] = -f.z
+            m.m[12] = -vec3::dot{ a = s, b = eye }
+            m.m[13] = -vec3::dot{ a = u, b = eye }
+            m.m[14] = vec3::dot{ a = f, b = eye }
+            return m
+        }
+    }
+
+    namespace aabb {
+        // A box that holds nothing: min above max, so extending it by a point gives that point.
+        fn empty {} -> Aabb {
+            let big: f32 = 3.0e38
+            return Aabb{ min = Vec3{ x = big, y = big, z = big }, max = Vec3{ x = -big, y = -big, z = -big } }
+        }
+        fn make { min: Vec3, max: Vec3 } -> Aabb { return Aabb{ min, max } }
+        fn is_empty { b: Aabb } -> bool { return b.min.x > b.max.x or b.min.y > b.max.y or b.min.z > b.max.z }
+        fn extend { b: Aabb, p: Vec3 } -> Aabb { return Aabb{ min = vec3::min{ a = b.min, b = p }, max = vec3::max{ a = b.max, b = p } } }
+        fn merge { a: Aabb, b: Aabb } -> Aabb { return Aabb{ min = vec3::min{ a = a.min, b = b.min }, max = vec3::max{ a = a.max, b = b.max } } }
+        fn center { b: Aabb } -> Vec3 { return vec3::scale{ v = vec3::add{ a = b.min, b = b.max }, s = 0.5 } }
+        // Half the size along each axis.
+        fn extents { b: Aabb } -> Vec3 { return vec3::scale{ v = vec3::sub{ a = b.max, b = b.min }, s = 0.5 } }
+        fn contains { b: Aabb, p: Vec3 } -> bool {
+            return p.x >= b.min.x and p.x <= b.max.x and p.y >= b.min.y and p.y <= b.max.y and p.z >= b.min.z and p.z <= b.max.z
+        }
+        fn overlaps { a: Aabb, b: Aabb } -> bool {
+            return a.min.x <= b.max.x and a.max.x >= b.min.x and a.min.y <= b.max.y and a.max.y >= b.min.y
+                and a.min.z <= b.max.z and a.max.z >= b.min.z
+        }
+
+        // The smallest box around b transformed by the affine m: each output axis takes, from
+        // each input axis, the smaller and the larger of m's contributions.
+        fn transform { b: Aabb, m: Mat4 } -> Aabb {
+            if is_empty{ b } { return b }
+            let mut lo: [3]f32
+            let mut hi: [3]f32
+            lo[0] = m.m[12]
+            lo[1] = m.m[13]
+            lo[2] = m.m[14]
+            hi = lo
+            let bmin: [3]f32 = [b.min.x, b.min.y, b.min.z]
+            let bmax: [3]f32 = [b.max.x, b.max.y, b.max.z]
+            let mut row: usize = 0
+            while row < 3 {
+                let mut col: usize = 0
+                while col < 3 {
+                    let e = m.m[col * 4 + row] * bmin[col]
+                    let f = m.m[col * 4 + row] * bmax[col]
+                    lo[row] = lo[row] + math::min{ a = e, b = f }
+                    hi[row] = hi[row] + math::max{ a = e, b = f }
+                    col = col + 1
+                }
+                row = row + 1
+            }
+            return Aabb{ min = Vec3{ x = lo[0], y = lo[1], z = lo[2] }, max = Vec3{ x = hi[0], y = hi[1], z = hi[2] } }
+        }
+    }
+
+    namespace plane {
+        // The plane through three points, facing the side from which a, b, c run counterclockwise
+        // (the MDL and BWM winding). Degenerate points give a zero normal.
+        fn from_points { a: Vec3, b: Vec3, c: Vec3 } -> Plane {
+            let n = vec3::normalize{ v = vec3::cross{ a = vec3::sub{ a = b, b = a }, b = vec3::sub{ a = c, b = a } } }
+            return Plane{ n, d = -vec3::dot{ a = n, b = a } }
+        }
+        fn from_normal_point { n: Vec3, p: Vec3 } -> Plane {
+            let u = vec3::normalize{ v = n }
+            return Plane{ n = u, d = -vec3::dot{ a = u, b = p } }
+        }
+        // Signed distance of p: positive in front.
+        fn distance { p: Plane, point: Vec3 } -> f32 { return vec3::dot{ a = p.n, b = point } + p.d }
+        // Rescales (n, d) so n has length 1, for planes read from matrices.
+        fn normalize { p: Plane } -> Plane {
+            let len = vec3::length{ v = p.n }
+            if len < EPSILON { return p }
+            return Plane{ n = vec3::scale{ v = p.n, s = 1.0 / len }, d = p.d / len }
+        }
+        // Where the ray meets the plane, as its t, or null if it runs parallel or the point is
+        // behind the origin or beyond max_t.
+        fn intersect_ray { p: Plane, ray: Ray, max_t: f32 } -> ?f32 {
+            let denom = vec3::dot{ a = p.n, b = ray.dir }
+            if abs{ x = denom } < EPSILON { return null }
+            let t = -(vec3::dot{ a = p.n, b = ray.origin } + p.d) / denom
+            if t < 0.0 or t > max_t { return null }
+            return t
+        }
+    }
+
+    namespace ray {
+        fn make { origin: Vec3, dir: Vec3 } -> Ray { return Ray{ origin, dir } }
+        fn at { ray: Ray, t: f32 } -> Vec3 { return vec3::add_scaled{ a = ray.origin, b = ray.dir, s = t } }
+
+        // Where the ray meets triangle a, b, c from either side, with 0 <= t <= max_t, or null.
+        // Moller and Trumbore's method: solve origin + t dir = a + u (b - a) + v (c - a).
+        fn intersect_triangle { ray: Ray, a: Vec3, b: Vec3, c: Vec3, max_t: f32 } -> ?TriangleHit {
+            let e1 = vec3::sub{ a = b, b = a }
+            let e2 = vec3::sub{ a = c, b = a }
+            let p = vec3::cross{ a = ray.dir, b = e2 }
+            let det = vec3::dot{ a = e1, b = p }
+            if abs{ x = det } < EPSILON * EPSILON { return null }
+            let inv = 1.0 / det
+            let s = vec3::sub{ a = ray.origin, b = a }
+            let u = vec3::dot{ a = s, b = p } * inv
+            if u < 0.0 or u > 1.0 { return null }
+            let q = vec3::cross{ a = s, b = e1 }
+            let v = vec3::dot{ a = ray.dir, b = q } * inv
+            if v < 0.0 or u + v > 1.0 { return null }
+            let t = vec3::dot{ a = e2, b = q } * inv
+            if t < 0.0 or t > max_t { return null }
+            return TriangleHit{ t, u, v }
+        }
+
+        // Where the ray enters the box, as its t (0 if it starts inside), if it does so with
+        // t <= max_t; null if it misses. The slab method, axis by axis.
+        fn intersect_aabb { ray: Ray, box: Aabb, max_t: f32 } -> ?f32 {
+            let o: [3]f32 = [ray.origin.x, ray.origin.y, ray.origin.z]
+            let d: [3]f32 = [ray.dir.x, ray.dir.y, ray.dir.z]
+            let lo: [3]f32 = [box.min.x, box.min.y, box.min.z]
+            let hi: [3]f32 = [box.max.x, box.max.y, box.max.z]
+            let mut near: f32 = 0.0
+            let mut far = max_t
+            let mut i: usize = 0
+            while i < 3 {
+                if abs{ x = d[i] } < EPSILON {
+                    if o[i] < lo[i] or o[i] > hi[i] { return null }
+                } else {
+                    let inv = 1.0 / d[i]
+                    let t0 = (lo[i] - o[i]) * inv
+                    let t1 = (hi[i] - o[i]) * inv
+                    near = math::max{ a = near, b = math::min{ a = t0, b = t1 } }
+                    far = math::min{ a = far, b = math::max{ a = t0, b = t1 } }
+                    if near > far { return null }
+                }
+                i = i + 1
+            }
+            return near
+        }
+    }
+
+    namespace frustum {
+        // The planes of the view volume of a projection-times-view matrix `m` (clip = m · world),
+        // in world space, normals inward (Gribb and Hartmann's rows-of-the-matrix method).
+        fn from_matrix { m: Mat4 } -> Frustum {
+            let mut f: Frustum
+            // Row r of m is (m[r], m[4 + r], m[8 + r], m[12 + r]).
+            let mut i: usize = 0
+            while i < 6 {
+                let row = i / 2
+                let s: f32 = if i % 2 == 0 { 1.0 } else { -1.0 }
+                f.planes[i] = plane::normalize{ p = Plane{
+                    n = Vec3{ x = m.m[3] + s * m.m[row], y = m.m[7] + s * m.m[4 + row], z = m.m[11] + s * m.m[8 + row] },
+                    d = m.m[15] + s * m.m[12 + row],
+                } }
+                i = i + 1
+            }
+            return f
+        }
+
+        // False only if the sphere lies wholly outside one plane: it may be outside anyway.
+        fn intersects_sphere { f: Frustum, center: Vec3, radius: f32 } -> bool {
+            let mut i: usize = 0
+            while i < 6 {
+                if plane::distance{ p = f.planes[i], point = center } < -radius { return false }
+                i = i + 1
+            }
+            return true
+        }
+
+        // False only if the box lies wholly outside one plane.
+        fn intersects_aabb { f: Frustum, box: Aabb } -> bool {
+            let mut i: usize = 0
+            while i < 6 {
+                let p = f.planes[i]
+                // The box's corner furthest along the plane's normal.
+                let far = Vec3{
+                    x = if p.n.x >= 0.0 { box.max.x } else { box.min.x },
+                    y = if p.n.y >= 0.0 { box.max.y } else { box.min.y },
+                    z = if p.n.z >= 0.0 { box.max.z } else { box.min.z },
+                }
+                if plane::distance{ p, point = far } < 0.0 { return false }
+                i = i + 1
+            }
+            return true
+        }
+    }
+}

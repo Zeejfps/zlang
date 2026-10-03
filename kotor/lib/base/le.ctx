@@ -1,0 +1,258 @@
+// Little-endian numbers in byte buffers: every binary format the game ships is little-endian and
+// packed, with values at unaligned offsets (BIF data, a LIP keyframe's float at 16 + 5i), so
+// everything here goes byte by byte.
+//
+// Reading never trusts the data: a read past the end is the error `truncated`, never a panic.
+//
+//   let n = try le::get_u32{ data, at = 8 }              // at a fixed offset
+//
+//   let mut r = le::reader{ data }                         // or in sequence
+//   let magic = try le::read_bytes{ &r, len = 8 }
+//   let count = try le::read_u32{ &r }
+//
+// Writing appends to a list of bytes from any allocator (`put_*`), or patches bytes already there
+// (`set_*`), for writers that fill in offsets once they know them.
+namespace le {
+    // A read of `want` bytes at offset `at` that runs past the end of the data.
+    error truncated{ at: usize, want: usize }
+
+    // ---- reading at an offset
+
+    fn get_u8 { data: []u8, at: usize } -> !u8 {
+        if at >= data.len { return truncated{ at, want = 1 } }
+        return data[at]
+    }
+
+    fn get_u16 { data: []u8, at: usize } -> !u16 {
+        if not fits{ data, at, want = 2 } { return truncated{ at, want = 2 } }
+        return @as(u16, data[at]) | (@as(u16, data[at + 1]) << 8)
+    }
+
+    fn get_u32 { data: []u8, at: usize } -> !u32 {
+        if not fits{ data, at, want = 4 } { return truncated{ at, want = 4 } }
+        return u32_of{ data, at }
+    }
+
+    fn get_u64 { data: []u8, at: usize } -> !u64 {
+        if not fits{ data, at, want = 8 } { return truncated{ at, want = 8 } }
+        return @as(u64, u32_of{ data, at }) | (@as(u64, u32_of{ data, at = at + 4 }) << 32)
+    }
+
+    fn get_i16 { data: []u8, at: usize } -> !i16 {
+        return i16_of_bits{ bits = try get_u16{ data, at } }
+    }
+
+    fn get_i32 { data: []u8, at: usize } -> !i32 {
+        return i32_of_bits{ bits = try get_u32{ data, at } }
+    }
+
+    fn get_i64 { data: []u8, at: usize } -> !i64 {
+        return i64_of_bits{ bits = try get_u64{ data, at } }
+    }
+
+    fn get_f32 { data: []u8, at: usize } -> !f32 {
+        return f32_of_bits{ bits = try get_u32{ data, at } }
+    }
+
+    fn get_f64 { data: []u8, at: usize } -> !f64 {
+        return f64_of_bits{ bits = try get_u64{ data, at } }
+    }
+
+    // A view of `len` bytes at `at`.
+    fn get_bytes { data: []u8, at: usize, len: usize } -> ![]u8 {
+        if not fits{ data, at, want = len } { return truncated{ at, want = len } }
+        return data[at..at + len]
+    }
+
+    // Whether `want` bytes at `at` are inside the data, without overflowing.
+    fn fits { data: []u8, at: usize, want: usize } -> bool {
+        return at <= data.len and want <= data.len - at
+    }
+
+    // ---- reading in sequence
+
+    struct Reader { data: []u8, pos: usize }
+
+    fn reader { data: []u8 } -> Reader {
+        return Reader{ data, pos = 0 }
+    }
+
+    // A reader that starts at `at`, which may be past the end: the first read fails then.
+    fn reader_at { data: []u8, at: usize } -> Reader {
+        return Reader{ data, pos = at }
+    }
+
+    fn read_u8 { mut r: Reader } -> !u8 {
+        let v = try get_u8{ data = r.data, at = r.pos }
+        r.pos = r.pos + 1
+        return v
+    }
+
+    fn read_u16 { mut r: Reader } -> !u16 {
+        let v = try get_u16{ data = r.data, at = r.pos }
+        r.pos = r.pos + 2
+        return v
+    }
+
+    fn read_u32 { mut r: Reader } -> !u32 {
+        let v = try get_u32{ data = r.data, at = r.pos }
+        r.pos = r.pos + 4
+        return v
+    }
+
+    fn read_u64 { mut r: Reader } -> !u64 {
+        let v = try get_u64{ data = r.data, at = r.pos }
+        r.pos = r.pos + 8
+        return v
+    }
+
+    fn read_i16 { mut r: Reader } -> !i16 {
+        return i16_of_bits{ bits = try read_u16{ &r } }
+    }
+
+    fn read_i32 { mut r: Reader } -> !i32 {
+        return i32_of_bits{ bits = try read_u32{ &r } }
+    }
+
+    fn read_f32 { mut r: Reader } -> !f32 {
+        return f32_of_bits{ bits = try read_u32{ &r } }
+    }
+
+    fn read_bytes { mut r: Reader, len: usize } -> ![]u8 {
+        let v = try get_bytes{ data = r.data, at = r.pos, len }
+        r.pos = r.pos + len
+        return v
+    }
+
+    fn skip { mut r: Reader, len: usize } -> ! {
+        if not fits{ data = r.data, at = r.pos, want = len } { return truncated{ at = r.pos, want = len } }
+        r.pos = r.pos + len
+    }
+
+    // Bytes not read yet.
+    fn remaining { r: Reader } -> usize {
+        if r.pos >= r.data.len { return 0 }
+        return r.data.len - r.pos
+    }
+
+    // ---- bits
+
+    fn i16_of_bits { bits: u16 } -> i16 {
+        let b = bits
+        return @cast(*i16, &b).*
+    }
+
+    fn i32_of_bits { bits: u32 } -> i32 {
+        let b = bits
+        return @cast(*i32, &b).*
+    }
+
+    fn i64_of_bits { bits: u64 } -> i64 {
+        let b = bits
+        return @cast(*i64, &b).*
+    }
+
+    fn f32_of_bits { bits: u32 } -> f32 {
+        let b = bits
+        return @cast(*f32, &b).*
+    }
+
+    fn f64_of_bits { bits: u64 } -> f64 {
+        let b = bits
+        return @cast(*f64, &b).*
+    }
+
+    fn bits_of_i32 { v: i32 } -> u32 {
+        let x = v
+        return @cast(*u32, &x).*
+    }
+
+    fn bits_of_i64 { v: i64 } -> u64 {
+        let x = v
+        return @cast(*u64, &x).*
+    }
+
+    fn bits_of_f32 { v: f32 } -> u32 {
+        let x = v
+        return @cast(*u32, &x).*
+    }
+
+    fn bits_of_f64 { v: f64 } -> u64 {
+        let x = v
+        return @cast(*u64, &x).*
+    }
+
+    // ---- writing
+
+    fn put_u8(S) { mut out: list::List(u8, S), v: u8 } -> ! {
+        try list::push{ list = &out, item = v }
+    }
+
+    fn put_u16(S) { mut out: list::List(u8, S), v: u16 } -> ! {
+        try list::reserve{ list = &out, extra = 2 }
+        set_u16{ buf = out.items, at = out.len, v }
+        out.len = out.len + 2
+    }
+
+    fn put_u32(S) { mut out: list::List(u8, S), v: u32 } -> ! {
+        try list::reserve{ list = &out, extra = 4 }
+        set_u32{ buf = out.items, at = out.len, v }
+        out.len = out.len + 4
+    }
+
+    fn put_u64(S) { mut out: list::List(u8, S), v: u64 } -> ! {
+        try list::reserve{ list = &out, extra = 8 }
+        set_u32{ buf = out.items, at = out.len, v = @trunc(u32, v) }
+        set_u32{ buf = out.items, at = out.len + 4, v = @trunc(u32, v >> 32) }
+        out.len = out.len + 8
+    }
+
+    fn put_i32(S) { mut out: list::List(u8, S), v: i32 } -> ! {
+        try put_u32{ &out, v = bits_of_i32{ v } }
+    }
+
+    fn put_f32(S) { mut out: list::List(u8, S), v: f32 } -> ! {
+        try put_u32{ &out, v = bits_of_f32{ v } }
+    }
+
+    fn put_bytes(S) { mut out: list::List(u8, S), bytes: []u8 } -> ! {
+        try list::reserve{ list = &out, extra = bytes.len }
+        slice::copy(u8){ dst = out.items[out.len..out.len + bytes.len], src = bytes }
+        out.len = out.len + bytes.len
+    }
+
+    fn put_zeros(S) { mut out: list::List(u8, S), n: usize } -> ! {
+        try list::reserve{ list = &out, extra = n }
+        slice::fill(u8){ s = out.items[out.len..out.len + n], v = 0 }
+        out.len = out.len + n
+    }
+
+    // `bytes` in a field of `width` bytes, padded with NULs (a resref or a label). Bytes past
+    // the width are cut.
+    fn put_padded(S) { mut out: list::List(u8, S), bytes: []u8, width: usize } -> ! {
+        let n = if bytes.len < width { bytes.len } else { width }
+        try put_bytes{ &out, bytes = bytes[..n] }
+        try put_zeros{ &out, n = width - n }
+    }
+
+    // Overwrite bytes already in a buffer. Panics outside it: the writer's own bug, not the data's.
+    fn set_u16 { buf: []mut u8, at: usize, v: u16 } {
+        buf[at] = @trunc(u8, v)
+        buf[at + 1] = @trunc(u8, v >> 8)
+    }
+
+    fn set_u32 { buf: []mut u8, at: usize, v: u32 } {
+        buf[at + 3] = @trunc(u8, v >> 24)
+        buf[at] = @trunc(u8, v)
+        buf[at + 1] = @trunc(u8, v >> 8)
+        buf[at + 2] = @trunc(u8, v >> 16)
+    }
+
+    // ---- internals
+
+    // The u32 at `at`; the caller has checked that it fits.
+    fn u32_of { data: []u8, at: usize } -> u32 {
+        let p = data.ptr + at
+        return @as(u32, p[0]) | (@as(u32, p[1]) << 8) | (@as(u32, p[2]) << 16) | (@as(u32, p[3]) << 24)
+    }
+}

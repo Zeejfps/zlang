@@ -1,0 +1,60 @@
+// RIM (docs/formats/rim.md): the read-only archives every module ships as two of (`<m>.rim` with
+// the area's ARE, GIT and IFO, `<m>_s.rim` with the rest). A 120-byte header, then 32-byte keys
+// that carry their own offset and size.
+//
+//   let h = try rim::parse_header{ data = first_120_bytes }
+//   let members = try rim::parse_members{ h, keys, base, size, realloc, &heap }
+namespace rim {
+    // Not `RIM V1.0`.
+    error bad_header
+    // The key table, or a member's data, outside the archive.
+    error bad_table
+
+    const HEADER: usize = 120
+    const KEY: usize = 32
+
+    struct Header { count: u32, keys_at: u32 }
+
+    fn parse_header { data: []u8 } -> !Header {
+        if data.len < HEADER { return bad_header }
+        if not slice::eq_bytes{ a = data[..8], b = "RIM V1.0" } { return bad_header }
+        return Header{ count = try le::get_u32{ data, at = 12 }, keys_at = try le::get_u32{ data, at = 16 } }
+    }
+
+    // The members from the key table's bytes (`count` x 32). `size` is the archive's size; every
+    // member must lie inside it. Offsets come out plus `base`; Member.file is 0.
+    fn parse_members(S) { h: Header, keys: []u8, base: u32, size: u32, realloc: alloc::Fn(S), mut heap: S } -> ![]mut res::Member {
+        let n = @as(usize, h.count)
+        if keys.len < n * KEY { return bad_table }
+        if @as(u64, base) + @as(u64, size) > 4294967295 { return bad_table }
+        let out = try alloc::resize(res::Member, S){ realloc, &heap, mem = slice::empty(res::Member){}, count = n }
+        let mut i: usize = 0
+        while i < n {
+            let k = KEY * i
+            let kind = try le::get_u32{ data = keys, at = k + 16 }
+            let offset = try le::get_u32{ data = keys, at = k + 24 }
+            let len = try le::get_u32{ data = keys, at = k + 28 }
+            if kind > 65535 or @as(u64, offset) + @as(u64, len) > @as(u64, size) {
+                _ = alloc::resize(res::Member, S){ realloc, &heap, mem = out, count = 0 }
+                return bad_table
+            }
+            out[i] = res::Member{
+                name = resref::from_field{ raw = keys[k..k + 16] },
+                kind = @trunc(u16, kind),
+                file = 0,
+                offset = base + offset,
+                size = len,
+            }
+            i = i + 1
+        }
+        return out
+    }
+
+    // Parses a whole RIM held in memory.
+    fn parse(S) { data: []u8, realloc: alloc::Fn(S), mut heap: S } -> ![]mut res::Member {
+        let h = try parse_header{ data }
+        let keys = le::get_bytes{ data, at = h.keys_at, len = @as(usize, h.count) * KEY } iferr { return bad_table }
+        if data.len > 4294967295 { return bad_table }
+        return parse_members{ h, keys, base = 0, size = @trunc(u32, data.len), realloc, &heap }
+    }
+}
