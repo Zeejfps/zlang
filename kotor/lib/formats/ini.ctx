@@ -1,0 +1,26 @@
+// INI text, as swkotor.ini holds the game's options: `[Section]` lines, then `Key=Value` lines.
+// Section and key names compare ignoring case, as Windows' GetPrivateProfileString does; values
+// are the text after the first `=`, without surrounding spaces.
+//
+//   let q = ini::get{ data, section = "Graphics Options", key = "Texture Quality" } ifnull "0"
+namespace ini {
+    // The value of `key` in `section`, or null. The first one wins if a key repeats.
+    fn get { data: []u8, section: []u8, key: []u8 } -> ?[]u8 {
+        let mut lines = text::lines{ data }
+        let mut inside = false
+        while true {
+            let raw = text::next_line{ &lines } ifnull { break }
+            let line = text::trim{ s = raw }
+            if line.len == 0 or line[0] == ';' { continue }
+            if line[0] == '[' {
+                let close = text::find_byte{ s = line, c = ']' } ifnull line.len
+                inside = ci::eq{ a = text::trim{ s = line[1..close] }, b = section }
+                continue
+            }
+            if not inside { continue }
+            let eq = text::find_byte{ s = line, c = '=' } ifnull { continue }
+            if ci::eq{ a = text::trim{ s = line[..eq] }, b = key } { return text::trim{ s = line[eq + 1..] } }
+        }
+        return null
+    }
+}
