@@ -45,6 +45,7 @@ namespace scene {
         room: i32,                      // the room under it, -1 unknown
         creature_prefix: bool,          // S and L models name their animations with a `c` prefix
         alive: bool,
+        signature: u64,                 // what the models were made from (visual::signature_of)
     }
 
     struct Scene {
@@ -318,9 +319,17 @@ namespace scene {
                 index = made
             }
             if index == NO_VISUAL { continue }
+            // A creature whose appearance or equipment changed gets new models.
+            let sig = visual::signature_of{ o }
+            if list::at{ list = sc.visuals, i = index }.signature != sig {
+                let made = visual::create{ &sc, &w, &dev, o } iferr { null }
+                if made == null { continue }
+                index = made
+            }
             let v = list::at{ list = sc.visuals, i = index }
             v.alive = true
             visual::update{ &sc, &w, v, o, dt }
+            o.dirty = 0
         }
         // Rooms animate too.
         let rooms = list::items{ list = sc.rooms }

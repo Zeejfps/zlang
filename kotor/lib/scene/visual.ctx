@@ -37,11 +37,21 @@ namespace visual {
         if sc.parts.len == first { return null }
         try list::push{ list = &sc.visuals, item = scene::Visual{
             id = o.id, first, count = sc.parts.len - first, animation = 0xFFFFFFFF, state = 0xFFFFFFFF,
-            room = -1, creature_prefix = prefix, alive = true,
+            room = -1, creature_prefix = prefix, alive = true, signature = signature_of{ o },
         } }
         let index = sc.visuals.len - 1
         try map::put{ m = &sc.by_id, key = o.id, value = index }
         return index
+    }
+
+    // What a visual's models depend on: a creature's appearance and its armour and weapons.
+    fn signature_of { o: *obj::Object } -> u64 {
+        let c = obj::creature{ o } ifnull { return 0 }
+        let mut h: u64 = @as(u64, c.appearance)
+        h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, c.equipped[obj::SLOT_BODY]))
+        h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, c.equipped[obj::SLOT_RIGHT_WEAPON]))
+        h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, c.equipped[obj::SLOT_LEFT_WEAPON]))
+        return h
     }
 
     // A cell of appearance.2da ("" for a blank or "****").
