@@ -358,6 +358,7 @@ namespace modload {
         if not party::is_member{ w = &w, id = w.pc } { party::set_leader{ &w, id = w.pc } }
         let pc = world::object{ w = &w, id = w.pc } ifnull { return }
         pc.area = w.area
+        let from_save = w.restoring
         if w.restoring {
             // A loaded save's player stands where it was saved (party-items-saves.md 1.6, step 7).
             at = pc.position
@@ -366,6 +367,11 @@ namespace modload {
         }
         world::set_orientation{ o = pc, v = facing }
         movement::place{ &w, id = w.pc, at }
+        // The companions come back next to the player (RestoreParty, 3.3).
+        save::restore_party{ &w, at_saved = from_save } iferr err{ error } {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "restoring the party: {}\n", error)
+        }
         let ao = world::object{ w = &w, id = w.area }
         if ao != null { raise_area{ &w } }
         events::post{ &w, delay_ms = 0, caller = w.pc, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::PLAYER_ENTER, object = w.pc } } }
@@ -554,6 +560,11 @@ namespace modload {
             save::save_module_state{ &w } iferr err{ error } {
                 world::prefix{ w = &w }
                 _ = @fmt(&w.io, "saving the module's state: {}\n", error)
+            }
+            // The companions travel as AVAILNPC files (SavePlayerCharacters, party-items-saves.md 3.3).
+            save::keep_party{ &w } iferr err{ error } {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "keeping the party: {}\n", error)
             }
         }
         let ao = world::object{ w = &w, id = w.area }

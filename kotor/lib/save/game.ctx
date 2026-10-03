@@ -60,6 +60,8 @@ namespace save {
     // typed it; `screen` is the last frame (RGBA8, top row first; empty for none).
     fn save_game { mut w: world::World, slot: u32, folder_name: []u8, save_name: []u8, screen: []u8, width: u32, height: u32 } -> ! {
         try save_module_state{ &w }
+        try keep_party{ &w }
+        w.party.saved_count = 0
         let mut buf: [512]u8
         let local = folder_path{ root = w.gip.root, slot, name = folder_name, into = buf[..] }
         let folder = try obj::copy_bytes{ heap = w.heap, s = local }
