@@ -10,7 +10,7 @@
 //   _ = mdl_render::add_draws{ &frame, view, model = &m, pose, g, transform = instance, materials = mats, time }
 //
 // Which meshes draw (models.md): those with `render` set, except AABB meshes (the walkmesh's
-// copy) and lightsaber blades (built from Saber's arrays, not drawn as meshes).
+// copy). A lightsaber blade draws from geometry built out of its Saber arrays, two-sided.
 //
 // A program that adds this directory adds lib/render and a backend (lib/render_gl).
 namespace mdl_render {
@@ -18,7 +18,9 @@ namespace mdl_render {
     struct Gpu { meshes: []?render::Mesh }
 
     fn draws { mesh: mdl::Mesh } -> bool {
-        return mesh.render and mesh.aabb == null and mesh.saber == null and mesh.indices.len > 0 and mesh.vertex_count > 0
+        if not mesh.render or mesh.aabb != null { return false }
+        if mesh.saber != null { return has_blade{ mesh } }
+        return mesh.indices.len > 0 and mesh.vertex_count > 0
     }
 
     // Uploads every mesh that draws. Vertex arrays are packed in memory from `realloc` and given
@@ -30,15 +32,96 @@ namespace mdl_render {
             out[i] = null
             let m = model.meshes[i]
             if draws{ mesh = m } {
-                let s = streams{ mesh = m }
-                let bytes = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = render::streams_size{ s } }
-                let made = upload_streams{ &dev, s, bytes, indices = m.indices }
-                _ = alloc::resize(u8, S){ realloc, &heap, mem = bytes, count = 0 }
-                out[i] = try made
+                if m.saber != null {
+                    out[i] = try upload_blade{ &dev, realloc, &heap, mesh = m }
+                } else {
+                    let s = streams{ mesh = m }
+                    let bytes = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = render::streams_size{ s } }
+                    let made = upload_streams{ &dev, s, bytes, indices = m.indices }
+                    _ = alloc::resize(u8, S){ realloc, &heap, mem = bytes, count = 0 }
+                    out[i] = try made
+                }
             }
             i = i + 1
         }
         return Gpu{ meshes = out }
+    }
+
+    // ---- lightsaber blades
+    //
+    // A saber mesh's 176 vertices are 44 columns of 4 along the blade (base cap, base, tip, tip
+    // cap). Columns 23, 22, 0 and 1 cross the blade: one edge (u = 0), the axis twice (u = 0.5),
+    // the other edge (u = 1); the rest repeat the axis (for the swing trail, inferred). The blade
+    // is the strip edge to axis to edge, 3 quads along each half: 12 triangles, as many as the
+    // mesh's placeholder faces. Each saber model crosses two such meshes at right angles, and
+    // its `powerup` and `powerdown` animations scale them out and in. mdl.md, Saber.
+    const BLADE_COLUMNS: [4]usize = [23, 22, 0, 1]
+    const SABER_VERTICES: usize = 176
+
+    fn has_blade { mesh: mdl::Mesh } -> bool {
+        let s = mesh.saber ifnull { return false }
+        return s.positions.len >= 3 * SABER_VERTICES and s.uvs.len >= 2 * SABER_VERTICES
+    }
+
+    fn upload_blade(S) { mut dev: gpu::Device, realloc: alloc::Fn(S), mut heap: S, mesh: mdl::Mesh } -> !render::Mesh {
+        let saber = mesh.saber ifnull { @panic("mdl_render: upload_blade without a saber") }
+        let floats = try alloc::resize(f32, S){ realloc, &heap, mem = slice::empty(f32){}, count = 16 * 8 }
+        let positions = floats[..48]
+        let normals = floats[48..96]
+        let uvs = floats[96..128]
+        let has_normals = saber.normals.len >= 3 * SABER_VERTICES
+        let columns = BLADE_COLUMNS
+        let mut c: usize = 0
+        while c < 4 {
+            let mut r: usize = 0
+            while r < 4 {
+                let from = 4 * columns[c] + r
+                let to = 4 * c + r
+                let mut k: usize = 0
+                while k < 3 {
+                    positions[3 * to + k] = saber.positions[3 * from + k]
+                    normals[3 * to + k] = if has_normals { saber.normals[3 * from + k] } else if k == 1 { 1.0 } else { 0.0 }
+                    k = k + 1
+                }
+                uvs[2 * to] = saber.uvs[2 * from]
+                uvs[2 * to + 1] = saber.uvs[2 * from + 1]
+                r = r + 1
+            }
+            c = c + 1
+        }
+        // From the allocator, not the stack: what create_mesh fails with may be taken to hold
+        // its arguments' addresses (docs/friction/models.md).
+        let indices = try alloc::resize(u16, S){ realloc, &heap, mem = slice::empty(u16){}, count = 36 }
+        let mut n: usize = 0
+        let halves: [2]u16 = [0, 2]
+        let mut h: usize = 0
+        while h < 2 {
+            let a = halves[h]
+            let mut r: u16 = 0
+            while r < 3 {
+                let p = 4 * a + r
+                let q = 4 * (a + 1) + r
+                indices[n] = p
+                indices[n + 1] = q
+                indices[n + 2] = q + 1
+                indices[n + 3] = p
+                indices[n + 4] = q + 1
+                indices[n + 5] = p + 1
+                n = n + 6
+                r = r + 1
+            }
+            h = h + 1
+        }
+        let s = render::Streams{
+            vertex_count = 16, positions, normals, uv0 = uvs, uv1 = slice::empty(f32){}, tangents = slice::empty(f32){},
+            weights = slice::empty(f32){}, bones = slice::empty(u8){}, colors = slice::empty(u8){}, constraints = slice::empty(f32){},
+        }
+        let bytes = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = render::streams_size{ s } }
+        let made = upload_streams{ &dev, s, bytes, indices }
+        _ = alloc::resize(u8, S){ realloc, &heap, mem = bytes, count = 0 }
+        _ = alloc::resize(u16, S){ realloc, &heap, mem = indices, count = 0 }
+        _ = alloc::resize(f32, S){ realloc, &heap, mem = floats, count = 0 }
+        return try made
     }
 
     fn upload_streams { mut dev: gpu::Device, s: render::Streams, bytes: []mut u8, indices: []u16 } -> !render::Mesh {
@@ -119,6 +202,7 @@ namespace mdl_render {
                     y = mat.uv_offset.y + fract{ x = mesh.uv_direction.y * time },
                 }
             }
+            if mesh.saber != null { mat.two_sided = true }
             let mut d = render::make_draw{ view, mesh = handle, transform = math::mat4::mul{ a = transform, b = pose.world[node] }, material = mat }
             let skin = mesh.skin
             if skin != null {
@@ -126,7 +210,7 @@ namespace mdl_render {
                 let first = render::add_bones{ &frame, palette = palette[..n] } ifnull { continue }
                 d.bones = first
                 d.bone_count = @as(u32, n)
-            } else {
+            } else if mesh.saber == null {
                 d.center = mesh.average
                 d.radius = mesh.radius
             }
