@@ -65,6 +65,20 @@ namespace gui {
 
     fn set_tlk { mut g: Gui, table: *tlk::Table } { g.tlk = table }
 
+    // The `Use Small Fonts` option: panels opened afterwards load the `a` fonts instead of the
+    // `b` ones (docs/re/gui.md section 5). Fonts of panels already open stay; call it when none is.
+    fn set_small_fonts { mut g: Gui, on: bool } {
+        if g.small_fonts == on { return }
+        g.small_fonts = on
+        let fs = list::items{ list = g.fonts }
+        let mut i: usize = 0
+        while i < fs.len {
+            if fs[i].ok { _ = alloc::resize(render::Glyph, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = fs[i].glyphs, count = 0 } }
+            i = i + 1
+        }
+        list::clear{ list = &g.fonts }
+    }
+
     fn set_mixer { mut g: Gui, mixer: *mut mix::Mixer } { g.mixer = mixer }
 
     // While hidden the GUI draws nothing and takes no input.

@@ -20,6 +20,7 @@ original does is in [re/gui.md](../re/gui.md), [re/render-gui.md](../re/render-g
 | `lib/frontend/*.ctx` | `frontend` | settings file, saves, the screens, the front end's loop, loading screen |
 | `tools/guiview` | | any `.gui` to a PNG; `--all` renders every one and reports what the loader doesn't read |
 | `tools/menutest` | | the front end driven headless by a script of clicks and keys, with PNGs |
+| `tools/menurun` | | the front end in a real window with real sound and time: a reference engine loop (`--seconds N` makes it a smoke test) |
 | `tools/movietest`, `tools/gui3dview` | | the player and the 3D scene on their own |
 
 A program that uses them adds `lib/base res formats tex mdl mdl_cache mdl_render material platform

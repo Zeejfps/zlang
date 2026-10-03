@@ -34,6 +34,7 @@ namespace frontend {
             fe.tables = t
         }
         fe.audio_clock = mixer != null
+        gui::set_small_fonts{ &g, on = fe.settings.small_fonts }
         if not fe.settings.disable_movies and fe.tables != null {
             queue_startup{ &fe }
             fe.stage = STAGE_MOVIES
