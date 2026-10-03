@@ -175,6 +175,8 @@ namespace items {
 
     // A creature's own list of carried items.
     fn bag_of { w: *world::World, id: u32 } -> []u32 {
+        // The player character and the party share the party's inventory (party::inventory_of).
+        if id == w.player or party::is_member{ w, id } { return list::items{ list = w.bag } }
         let c = hud::creature_of{ w, id } ifnull { return slice::empty(u32){} }
         return list::items{ list = c.inventory }
     }
@@ -218,6 +220,8 @@ namespace items {
 
     // The party's credits.
     fn credits { w: *world::World, who: u32 } -> u32 {
+        // The party's purse (party-items-saves.md 3.6).
+        if who == w.player or party::is_member{ w, id = who } { return @as(u32, if w.party.gold < 0 { 0 } else { w.party.gold }) }
         let c = hud::creature_of{ w, id = bag_holder{ w, who } } ifnull { return 0 }
         return c.gold
     }
