@@ -449,7 +449,14 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 
    In an `if` or `match` expression without an expected type, a branch that is a literal takes the type of another branch that is a `strlit`, a `[]u8` or a type a `#convert` fn gives, or of another literal branch that became one. Otherwise, as in `let msg = match p { a => { "one" } b => { "three" } }`, each literal is an array and the lengths must agree; annotate the `let` to get views.
 7. A character literal `'a'` is an integer literal whose value is the character's byte.
-8. String and character literals hold ASCII characters only. Escapes: `\n`, `\t`, `\r`, `\0`, `\\`, `\"`, `\'`, and `\xNN` for any byte.
+8. String and character literals hold ASCII characters only. Escapes, except in a multi-line literal: `\n`, `\t`, `\r`, `\0`, `\\`, `\"`, `\'`, and `\xNN` for any byte.
+9. A **multi-line literal** is a string literal written as lines that each start with `\\`, with only spaces and tabs before it on its line. Each line's text is what follows its `\\`, as it is: there are no escapes, and a `\r` that ends the line isn't part of it. The literal's bytes are those texts joined with `\n`, with none after the last; an empty `\\` line at the end adds one. It ends at the first line that doesn't start with `\\`, so a comment can't be among its lines. Otherwise it is a string literal like any other (rule 6), for GLSL or any other text:
+   ```
+   const MESH_VS: c::String =
+       \\#version 410 core
+       \\layout(location = 0) in vec3 pos;
+       \\void main() { gl_Position = vec4(pos, 1.0); }
+   ```
 
 ### Places
 
