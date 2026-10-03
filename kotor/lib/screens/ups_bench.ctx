@@ -1,0 +1,461 @@
+// The bench panels: opening, the category and item lists, and the slots of one item.
+namespace ups {
+    const CAT_TAGS: [4][]u8 = ["BTN_LIGHTSABER", "BTN_RANGED", "BTN_MELEE", "BTN_ARMOR"]
+    const CAT_ICON_LABELS: [4][]u8 = ["LBL_LSABER", "LBL_RANGED", "LBL_MELEE", "LBL_ARMOR"]
+    const ICON: f32 = 36.0
+
+    fn report { mut w: world::World, text: []u8 } {
+        _ = @fmt(&w.io, "kotor: upgrade bench: {}\n", text)
+    }
+
+    // ---- opening and closing
+
+    // CGuiInGame::ShowUpgradeScreen: `item` (when it is one) goes straight to the bench, else the
+    // categories come first.
+    fn begin { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, item: u32 } -> ! {
+        if s.open { return }
+        if not s.loaded {
+            s.upgrade_t = try world::load_table{ fs = &w.fs, heap = w.heap, rm = w.rm.*, name = "upgrade" }
+            s.crystals_t = try world::load_table{ fs = &w.fs, heap = w.heap, rm = w.rm.*, name = "upcrystals" }
+            s.loaded = true
+        }
+        s.consume = [false; 25]
+        s.give = [false; 25]
+        s.col_consume = [false; 7]
+        s.col_give = [false; 7]
+        s.item = obj::INVALID
+        s.original = obj::INVALID
+        s.choosing = false
+        s.box = msgbox::blank{}
+        s.ask = ASK_NOTHING
+        s.sel = 0
+        s.list = 0
+        s.bench = 0
+        s.open = true
+        gui::play_sound{ &g, n = 4 }
+        if item != obj::INVALID and world::is_valid{ w = &w, id = item } {
+            s.category = category_of{ s = &s, w = &w, item }
+            if s.category != CAT_NONE {
+                try take_item{ &s, &g, &w, &dev, item, owner = holder_of{ w = &w, item }, slot = worn_slot_of{ w = &w, item } }
+                return
+            }
+        }
+        try open_categories{ &s, &g, &w, &dev }
+    }
+
+    fn close_all { mut s: State, mut g: gui::Gui, mut w: world::World } {
+        if not s.open { return }
+        msgbox::close{ &g, b = &s.box }
+        if s.bench != 0 { gui::close{ &g, id = s.bench } }
+        if s.list != 0 { gui::close{ &g, id = s.list } }
+        if s.sel != 0 { gui::close{ &g, id = s.sel } }
+        s.bench = 0
+        s.list = 0
+        s.sel = 0
+        drop_previews{ &s, &w }
+        gui::play_sound{ &g, n = 5 }
+        s.open = false
+    }
+
+    // Who wears the item, or OBJECT_INVALID when it is in the bag.
+    fn holder_of { w: *world::World, item: u32 } -> u32 {
+        let members = party::members{ w }
+        let mut m: usize = 0
+        while m < members.len {
+            if equip::slot_of_item{ w, id = members[m], item } >= 0 { return members[m] }
+            m = m + 1
+        }
+        return obj::INVALID
+    }
+
+    fn worn_slot_of { w: *world::World, item: u32 } -> i32 {
+        let who = holder_of{ w, item }
+        if who == obj::INVALID { return -1 }
+        return equip::slot_of_item{ w, id = who, item }
+    }
+
+    // ---- upgradesel
+
+    fn open_categories { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        s.sel = try gui::open{ &g, fs = &w.fs, &dev, name = "upgradesel", mode = gui::Mode::full_screen, modal = true }
+        gui::ensure_backdrop{ &g, fs = &w.fs, &dev, kind = 0 }
+        s.mode = MODE_CATEGORIES
+        s.hot = 0
+        let mut first: i32 = -1
+        let mut c: i32 = 1
+        while c <= 4 {
+            let n = collect{ &s, w = &w, category = c }
+            let tag = CAT_TAGS[@as(usize, c - 1)]
+            gui::set_enabled{ &g, panel = s.sel, tag, enabled = n > 0 }
+            gui::set_text_color{ &g, panel = s.sel, tag, color = if n > 0 { gui::color_menu{} } else { gui::color_disabled{} } }
+            if n > 0 and first < 0 { first = c }
+            c = c + 1
+        }
+        if first > 0 {
+            s.hot = first
+            gui::set_focus{ &g, panel = s.sel, tag = CAT_TAGS[@as(usize, first - 1)] }
+        }
+    }
+
+    // The upgradeable items of a category: what the party's members wear, then the party's bag.
+    fn collect { mut s: State, w: *world::World, category: i32 } -> usize {
+        s.nlisted = 0
+        let members = party::members{ w }
+        let mut m: usize = 0
+        while m < members.len {
+            if hud::creature_of{ w, id = members[m] } is some{ value = c } {
+                let mut slot: usize = 0
+                while slot < obj::EQUIP_SLOTS {
+                    let id = c.equipped[slot]
+                    slot = slot + 1
+                    if id == obj::INVALID or not world::is_valid{ w, id } or s.nlisted >= MAX_ITEMS { continue }
+                    if category_of{ s = &s, w, item = id } == category {
+                        s.listed[s.nlisted] = Listed{ item = id, owner = members[m], slot = @as(i32, slot - 1) }
+                        s.nlisted = s.nlisted + 1
+                    }
+                }
+            }
+            m = m + 1
+        }
+        let bag = list::items{ list = w.bag }
+        let mut k: usize = 0
+        while k < bag.len and s.nlisted < MAX_ITEMS {
+            let id = bag[k]
+            k = k + 1
+            if not world::is_valid{ w, id } { continue }
+            if category_of{ s = &s, w, item = id } == category {
+                s.listed[s.nlisted] = Listed{ item = id, owner = obj::INVALID, slot = -1 }
+                s.nlisted = s.nlisted + 1
+            }
+        }
+        return s.nlisted
+    }
+
+    fn categories_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> ! {
+        if ev.kind == gui::EventKind::cancel {
+            close_all{ &s, &g, &w }
+            return
+        }
+        let mut cat: i32 = 0
+        let mut c: usize = 0
+        while c < 4 {
+            if slice::eq_bytes{ a = ev.tag, b = CAT_TAGS[c] } { cat = @as(i32, c + 1) }
+            c = c + 1
+        }
+        if cat > 0 and (ev.kind == gui::EventKind::hilight or ev.kind == gui::EventKind::activate) { s.hot = cat }
+        if ev.kind != gui::EventKind::activate { return }
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_BACK" } {
+            close_all{ &s, &g, &w }
+            return
+        }
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_UPGRADEITEMS" } { cat = s.hot }
+        if cat > 0 and collect{ &s, w = &w, category = cat } > 0 {
+            s.category = cat
+            try open_items{ &s, &g, &w, &dev }
+        }
+    }
+
+    // ---- upgradeitems
+
+    fn open_items { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        s.list = try gui::open{ &g, fs = &w.fs, &dev, name = "upgradeitems", mode = gui::Mode::full_screen, modal = true }
+        gui::ensure_backdrop{ &g, fs = &w.fs, &dev, kind = 0 }
+        s.mode = MODE_ITEMS
+        try fill_items{ &s, &g, &w, &dev }
+    }
+
+    fn fill_items { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        let p = s.list
+        gui::list_clear{ &g, panel = p, tag = "LB_ITEMS" }
+        _ = collect{ &s, w = &w, category = s.category }
+        let mut k: usize = 0
+        while k < s.nlisted {
+            let l = s.listed[k]
+            _ = try items::add_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", id = l.item, equipped = l.owner != obj::INVALID, icon_size = ICON }
+            k = k + 1
+        }
+        if s.nlisted > 0 {
+            gui::list_select{ &g, panel = p, tag = "LB_ITEMS", row = 0 }
+            try items::show_description{ &g, &w, panel = p, tag = "LB_DESCRIPTION", id = s.listed[0].item }
+        } else {
+            try items::show_description{ &g, &w, panel = p, tag = "LB_DESCRIPTION", id = 0 }
+        }
+        gui::set_enabled{ &g, panel = p, tag = "BTN_UPGRADEITEM", enabled = s.nlisted > 0 }
+    }
+
+    fn items_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> ! {
+        let p = s.list
+        if ev.kind == gui::EventKind::cancel {
+            gui::close{ &g, id = s.list }
+            s.list = 0
+            s.mode = MODE_CATEGORIES
+            return
+        }
+        if ev.kind == gui::EventKind::row_selected {
+            try items::show_description{ &g, &w, panel = p, tag = "LB_DESCRIPTION", id = if ev.user > 0 { @as(u32, ev.user) } else { 0 } }
+        } else if ev.kind == gui::EventKind::row_activated {
+            try pick_row{ &s, &g, &w, &dev, row = ev.row }
+        } else if ev.kind == gui::EventKind::activate {
+            if slice::eq_bytes{ a = ev.tag, b = "BTN_BACK" } {
+                gui::close{ &g, id = s.list }
+                s.list = 0
+                s.mode = MODE_CATEGORIES
+            } else if slice::eq_bytes{ a = ev.tag, b = "BTN_UPGRADEITEM" } {
+                try pick_row{ &s, &g, &w, &dev, row = gui::list_selected{ &g, panel = p, tag = "LB_ITEMS" } }
+            }
+        }
+    }
+
+    fn pick_row { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, row: i32 } -> ! {
+        if row < 0 or @as(usize, row) >= s.nlisted { return }
+        let l = s.listed[@as(usize, row)]
+        try take_item{ &s, &g, &w, &dev, item = l.item, owner = l.owner, slot = l.slot }
+    }
+
+    // ---- taking an item to the bench
+
+    // OnUpgradeItem: a worn item comes off, a stacked one gives one unit, a loose one leaves the
+    // bag; the bench opens on it.
+    fn take_item { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, item: u32, owner: u32, slot: i32 } -> ! {
+        if owner != obj::INVALID and slot >= 0 {
+            if not equip::unequip_item{ &w, id = owner, slot = @as(usize, slot) } { return }
+        }
+        let unit = xfer::take_one{ &w, item }
+        if unit == obj::INVALID { return }
+        if unit == item {
+            let pc = world::object{ w = &w, id = w.player } ifnull { return }
+            _ = rt_item::remove_from_inventory{ &w, o = pc, item }
+            if world::object{ w = &w, id = item } is some{ value = io } {
+                if obj::item{ o = io } is some{ value = it } { it.possessor = obj::INVALID }
+            }
+        }
+        s.item = unit
+        s.original = obj::INVALID
+        s.owner = owner
+        s.slot_worn = slot
+        s.orig_bits = bits_of{ w = &w, item = unit }
+        s.bits = s.orig_bits
+        s.consume = [false; 25]
+        s.give = [false; 25]
+        s.col_consume = [false; 7]
+        s.col_give = [false; 7]
+        s.colour_new = -1
+        s.choosing = false
+        try open_bench{ &s, &g, &w, &dev }
+    }
+
+    // ---- upgrade
+
+    fn open_bench { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        s.category = category_of{ s = &s, w = &w, item = s.item }
+        s.lightsaber = s.category == CAT_LIGHTSABER
+        s.nslots = slots_of{ category = s.category, out = &s.slots }
+        s.colour_now = if s.lightsaber { colour_row_of{ s = &s, w = &w, item = s.item } } else { -1 }
+        s.bench = try gui::open{ &g, fs = &w.fs, &dev, name = "upgrade", mode = gui::Mode::full_screen, modal = true }
+        gui::ensure_backdrop{ &g, fs = &w.fs, &dev, kind = 0 }
+        s.mode = MODE_BENCH
+        try fill_bench{ &s, &g, &w, &dev }
+    }
+
+    const SLOT_LABEL3: [3][]u8 = ["LBL_UPGRADE31", "LBL_UPGRADE32", "LBL_UPGRADE33"]
+    const SLOT_BTN3: [3][]u8 = ["BTN_UPGRADE31", "BTN_UPGRADE32", "BTN_UPGRADE33"]
+    const SLOT_LABEL4: [4][]u8 = ["LBL_UPGRADE41", "LBL_UPGRADE42", "LBL_UPGRADE43", "LBL_UPGRADE44"]
+    const SLOT_BTN4: [4][]u8 = ["BTN_UPGRADE41", "BTN_UPGRADE42", "BTN_UPGRADE43", "BTN_UPGRADE44"]
+
+    // The four-slot row serves the ranged weapons and the lightsaber, the three-slot row the rest.
+    fn four_slots { s: *State } -> bool { return s.category == CAT_RANGED or s.category == CAT_LIGHTSABER }
+
+    fn slot_label { s: *State, k: usize } -> []u8 { return if four_slots{ s } { SLOT_LABEL4[k] } else { SLOT_LABEL3[k] } }
+    fn slot_button { s: *State, k: usize } -> []u8 { return if four_slots{ s } { SLOT_BTN4[k] } else { SLOT_BTN3[k] } }
+
+    // The slot a button tag names, -1 for none.
+    fn slot_of_tag { s: *State, tag: []u8 } -> i32 {
+        let mut k: usize = 0
+        while k < s.nslots {
+            if slice::eq_bytes{ a = tag, b = slot_button{ s, k } } { return @as(i32, k) }
+            k = k + 1
+        }
+        return -1
+    }
+
+    // Which upgrade rows are installed, in which slot.
+    fn assign_slots { mut s: State } {
+        let mut k: usize = 0
+        while k < s.nslots {
+            s.slots[k].row = NO_ROW
+            if s.slots[k].kind == KIND_TYPED {
+                s.slots[k].fixed = row_of_type{ s = &s, type_ = s.slots[k].type_ }
+                if s.slots[k].fixed >= 0 and (s.bits & (@as(u32, 1) << @as(u32, s.slots[k].fixed))) != 0 { s.slots[k].row = s.slots[k].fixed }
+            }
+            k = k + 1
+        }
+        if s.lightsaber {
+            let mut found: usize = 0
+            let mut r: usize = 0
+            while r < ROWS and found < 2 {
+                if type_of_row{ s = &s, row = r } == 0 and (s.bits & (@as(u32, 1) << @as(u32, r))) != 0 {
+                    s.slots[if found == 0 { 0 } else { 2 }].row = @as(i32, r)
+                    found = found + 1
+                }
+                r = r + 1
+            }
+        }
+    }
+
+    fn installed_count { s: *State } -> i32 {
+        let mut n: i32 = 0
+        let mut k: usize = 0
+        while k < s.nslots {
+            if s.slots[k].kind != KIND_COLOUR and s.slots[k].row != NO_ROW { n = n + 1 }
+            k = k + 1
+        }
+        return n
+    }
+
+    // The picture of a slot: what is installed, else what would fit, dimmed when the party has none.
+    fn show_slot { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, k: usize } {
+        let p = s.bench
+        let slot = s.slots[k]
+        let lbl = slot_label{ s = &s, k }
+        gui::set_visible{ &g, panel = p, tag = lbl, visible = true }
+        gui::set_visible{ &g, panel = p, tag = slot_button{ s = &s, k }, visible = true }
+        let mut preview: u32 = obj::INVALID
+        let mut generic: []u8 = ""
+        let mut dim = false
+        if slot.kind == KIND_COLOUR {
+            let c = if s.colour_new >= 0 { s.colour_new } else { s.colour_now }
+            if c >= 0 { preview = preview_of_colour{ &s, &w, row = @as(usize, c) } } else { generic = "i_colorc" }
+        } else if slot.row != NO_ROW {
+            preview = preview_of_row{ &s, &w, row = @as(usize, slot.row) }
+        } else if slot.kind == KIND_TYPED and slot.fixed >= 0 {
+            preview = preview_of_row{ &s, &w, row = @as(usize, slot.fixed) }
+            dim = not upgrade_available{ s = &s, w = &w, row = @as(usize, slot.fixed) }
+        } else {
+            generic = "i_powerc"
+            dim = not any_power_available{ s = &s, w = &w }
+        }
+        let img = if preview != obj::INVALID { items::icon_of{ &g, &w, &dev, id = preview } } else { gui::resolve_img{ &g, fs = &w.fs, &dev, name = generic } }
+        if img.ok { gui::set_picture{ &g, panel = p, tag = lbl, texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel = p, tag = lbl } }
+        if gui::find_control{ &g, panel = p, tag = lbl } is some{ value = c } {
+            c.border.tinted = dim
+            c.border.color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 0.25 }
+        }
+    }
+
+    fn any_power_available { s: *State, w: *world::World } -> bool {
+        let mut r: usize = 0
+        while r < ROWS {
+            if type_of_row{ s, row = r } == 0 and (s.bits & (@as(u32, 1) << @as(u32, r))) == 0 and upgrade_available{ s, w, row = r } { return true }
+            r = r + 1
+        }
+        return false
+    }
+
+    // The slot's name: the generic name of a lightsaber slot, else its upgrade item's.
+    fn slot_name { mut s: State, mut w: world::World, k: usize } -> []u8 {
+        let slot = s.slots[k]
+        if slot.kind == KIND_COLOUR { return world::string_by_strref{ w = &w, strref = STR_COLOUR_CRYSTAL } }
+        if slot.row == NO_ROW and slot.kind == KIND_POWER { return world::string_by_strref{ w = &w, strref = STR_POWER_CRYSTAL } }
+        let row = if slot.row != NO_ROW { slot.row } else { slot.fixed }
+        if row < 0 { return "" }
+        return items::name_of{ w = &w, id = preview_of_row{ &s, &w, row = @as(usize, row) } }
+    }
+
+    fn desc_tag { s: *State } -> []u8 { return if s.lightsaber { "LB_DESC_LS" } else { "LB_DESC" } }
+
+    // The bench's controls for the item, its slots and the description of the item.
+    fn fill_bench { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        let p = s.bench
+        assign_slots{ &s }
+        let ls = s.lightsaber
+        let layout_ls: [4][]u8 = ["LB_DESC_LS", "LBL_DESCBG_LS", "3D_MODEL_LS", "LBL_LSSLOTNAME"]
+        let layout_other: [7][]u8 = ["LB_DESC", "LBL_DESCBG", "3D_MODEL", "LBL_SLOTNAME", "LBL_UPGRADES", "LBL_UPGRADE_COUNT", "LBL_PROPERTY"]
+        let mut i: usize = 0
+        while i < 4 {
+            gui::set_visible{ &g, panel = p, tag = layout_ls[i], visible = ls }
+            i = i + 1
+        }
+        i = 0
+        while i < 7 {
+            gui::set_visible{ &g, panel = p, tag = layout_other[i], visible = not ls }
+            i = i + 1
+        }
+        i = 0
+        while i < 3 {
+            gui::set_visible{ &g, panel = p, tag = SLOT_LABEL3[i], visible = false }
+            gui::set_visible{ &g, panel = p, tag = SLOT_BTN3[i], visible = false }
+            i = i + 1
+        }
+        i = 0
+        while i < 4 {
+            gui::set_visible{ &g, panel = p, tag = SLOT_LABEL4[i], visible = false }
+            gui::set_visible{ &g, panel = p, tag = SLOT_BTN4[i], visible = false }
+            i = i + 1
+        }
+        gui::set_visible{ &g, panel = p, tag = "LB_ITEMS", visible = s.choosing }
+        if s.choosing {
+            try fill_choices{ &s, &g, &w, &dev }
+            return
+        }
+        let mut k: usize = 0
+        while k < s.nslots {
+            show_slot{ &s, &g, &w, &dev, k }
+            k = k + 1
+        }
+        try gui::set_text{ &g, panel = p, tag = if ls { "LBL_LSSLOTNAME" } else { "LBL_SLOTNAME" }, text = items::name_of{ w = &w, id = s.item } }
+        try chargen::set_number{ &g, panel = p, tag = "LBL_UPGRADE_COUNT", n = installed_count{ s = &s } }
+        let mut b = items::new_text{ w = &w }
+        defer list::free{ list = &b.bytes }
+        try items::describe{ &w, &b, id = s.item }
+        try gui::set_text{ &g, panel = p, tag = "LBL_PROPERTY", text = utf8::view{ b }.bytes }
+        try items::show_description{ &g, &w, panel = p, tag = desc_tag{ s = &s }, id = s.item }
+    }
+
+    // ---- choosing a crystal for a lightsaber slot
+
+    fn start_choosing { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, k: usize } -> ! {
+        s.choosing_slot = k
+        s.nchoices = 0
+        if s.slots[k].kind == KIND_COLOUR {
+            let mut r: usize = 0
+            while r < COLOURS and s.nchoices < MAX_CHOICES {
+                if @as(i32, r) != (if s.colour_new >= 0 { s.colour_new } else { s.colour_now }) and (crystal_available{ s = &s, w = &w, row = r } or s.col_give[r]) {
+                    s.choices[s.nchoices] = @as(i32, r)
+                    s.nchoices = s.nchoices + 1
+                }
+                r = r + 1
+            }
+        } else {
+            let mut r: usize = 0
+            while r < ROWS and s.nchoices < MAX_CHOICES {
+                if type_of_row{ s = &s, row = r } == 0 and (s.bits & (@as(u32, 1) << @as(u32, r))) == 0 and upgrade_available{ s = &s, w = &w, row = r } {
+                    s.choices[s.nchoices] = @as(i32, r)
+                    s.nchoices = s.nchoices + 1
+                }
+                r = r + 1
+            }
+        }
+        if s.nchoices == 0 { return }
+        s.choosing = true
+        try fill_bench{ &s, &g, &w, &dev }
+    }
+
+    fn fill_choices { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        let p = s.bench
+        gui::list_clear{ &g, panel = p, tag = "LB_ITEMS" }
+        let colour = s.slots[s.choosing_slot].kind == KIND_COLOUR
+        let mut k: usize = 0
+        while k < s.nchoices {
+            let row = @as(usize, s.choices[k])
+            let preview = if colour { preview_of_colour{ &s, &w, row } } else { preview_of_row{ &s, &w, row } }
+            if preview != obj::INVALID {
+                let r = try gui::list_add{ &g, panel = p, tag = "LB_ITEMS", text = items::name_of{ w = &w, id = preview }, user = @as(i64, k) }
+                let img = items::icon_of{ &g, &w, &dev, id = preview }
+                if img.ok { gui::list_set_icon{ &g, panel = p, tag = "LB_ITEMS", row = r, texture = img.tex, w = ICON, h = ICON } }
+            }
+            k = k + 1
+        }
+        if gui::list_count{ &g, panel = p, tag = "LB_ITEMS" } > 0 { gui::list_select{ &g, panel = p, tag = "LB_ITEMS", row = 0 } }
+        gui::set_text{ &g, panel = p, tag = "LBL_PROPERTY", text = "" } iferr {}
+    }
+}

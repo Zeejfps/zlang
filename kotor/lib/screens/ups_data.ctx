@@ -1,0 +1,180 @@
+// The bench's facts: which items can be upgraded, in which category, what each row of upgrade.2da
+// and upcrystals.2da is, and how many of an upgrade item the party has.
+namespace ups {
+    fn template_of_row { s: *State, row: usize } -> []u8 {
+        return twoda::get_string{ t = s.upgrade_t, row, column = "template" } ifnull ""
+    }
+
+    fn type_of_row { s: *State, row: usize } -> i32 {
+        return twoda::get_int{ t = s.upgrade_t, row, column = "upgradetype" } ifnull -1
+    }
+
+    // The saber each colour crystal makes, by the kind of the saber (baseitems itemtype 39 double,
+    // 40 short, 41 long): the column of upcrystals.2da.
+    fn saber_column { w: *world::World, item: u32 } -> []u8 {
+        let kind = items::base_int{ w, id = item, column = "itemtype", fallback = 0 }
+        if kind == 39 { return "doublemdlvar" }
+        if kind == 40 { return "shortmdlvar" }
+        return "longmdlvar"
+    }
+
+    // The colour crystal a lightsaber has: the upcrystals.2da row whose saber of this kind has the
+    // item's tag, -1 for a saber that is none of them.
+    fn colour_row_of { s: *State, w: *world::World, item: u32 } -> i32 {
+        let o = world::object{ w, id = item } ifnull { return -1 }
+        let col = saber_column{ w, item }
+        let mut r: usize = 0
+        while r < twoda::rows{ t = s.crystals_t } {
+            let tpl = twoda::get_string{ t = s.crystals_t, row = r, column = col } ifnull ""
+            if tpl.len > 0 and ci::eq{ a = tpl, b = o.tag } { return @as(i32, r) }
+            r = r + 1
+        }
+        return -1
+    }
+
+    // The party's units of the upgrade item made from `template` (by blueprint).
+    fn bag_count { w: *world::World, template: []u8 } -> i32 {
+        let ids = list::items{ list = w.bag }
+        let mut n: i32 = 0
+        let mut k: usize = 0
+        while k < ids.len {
+            if world::object{ w, id = ids[k] } is some{ value = o } {
+                if resref::matches{ r = o.template, name = template } {
+                    n = n + (if obj::item{ o } is some{ value = it } { @as(i32, it.stack) } else { 1 })
+                }
+            }
+            k = k + 1
+        }
+        return n
+    }
+
+    // Takes one unit of the upgrade item made from `template` out of the party's inventory and
+    // destroys it. False when there is none.
+    fn consume_one { mut w: world::World, template: []u8 } -> bool {
+        let ids = list::items{ list = w.bag }
+        let mut k: usize = 0
+        while k < ids.len {
+            let id = ids[k]
+            k = k + 1
+            let o = world::object{ w = &w, id } ifnull { continue }
+            if not resref::matches{ r = o.template, name = template } { continue }
+            let one = xfer::take_one{ &w, item = id }
+            if one == obj::INVALID { return false }
+            world::destroy{ &w, id = one }
+            return true
+        }
+        return false
+    }
+
+    // The item's upgrade bits (bit n = row n of upgrade.2da installed).
+    fn bits_of { w: *world::World, item: u32 } -> u32 {
+        let it = items::item_of{ w, id = item } ifnull { return 0 }
+        let ri = it.rules ifnull { return 0 }
+        return ri.upgrades
+    }
+
+    fn set_bits { mut w: world::World, item: u32, bits: u32 } {
+        let it = items::item_of{ w = &w, id = item } ifnull { return }
+        let ri = it.rules ifnull { return }
+        ri.upgrades = bits
+    }
+
+    // CSWSItem::GetUpgradeCategory: over the item's properties that carry an upgrade tag, the type
+    // of the first one's row: 0 lightsaber, 1..3 melee, 4..7 ranged, 8..9 armour; none: 0.
+    fn category_of { s: *State, w: *world::World, item: u32 } -> i32 {
+        let it = items::item_of{ w, id = item } ifnull { return CAT_NONE }
+        let ri = it.rules ifnull { return CAT_NONE }
+        let mut k: usize = 0
+        while k < @as(usize, ri.nprops) {
+            let tag = ri.props[k].upgrade
+            k = k + 1
+            if tag == 255 or @as(usize, tag) >= twoda::rows{ t = s.upgrade_t } { continue }
+            let t = type_of_row{ s, row = @as(usize, tag) }
+            if t == 0 { return CAT_LIGHTSABER }
+            if t >= 1 and t <= 3 { return CAT_MELEE }
+            if t >= 4 and t <= 7 { return CAT_RANGED }
+            if t >= 8 and t <= 9 { return CAT_ARMOUR }
+        }
+        return CAT_NONE
+    }
+
+    // The slots of a category (the table at 0x00756fb0): the upgrade type each takes.
+    fn slots_of { category: i32, mut out: [4]Slot } -> usize {
+        let none = Slot{ kind = KIND_NONE, type_ = -1, row = NO_ROW, fixed = NO_ROW }
+        out = [none; 4]
+        if category == CAT_LIGHTSABER {
+            out[0] = Slot{ kind = KIND_POWER, type_ = 0, row = NO_ROW, fixed = NO_ROW }
+            out[1] = Slot{ kind = KIND_COLOUR, type_ = 0, row = NO_ROW, fixed = NO_ROW }
+            out[2] = Slot{ kind = KIND_POWER, type_ = 0, row = NO_ROW, fixed = NO_ROW }
+            return 3
+        }
+        let first: i32 = if category == CAT_RANGED { 4 } else if category == CAT_MELEE { 1 } else { 8 }
+        let count: usize = if category == CAT_RANGED { 4 } else if category == CAT_MELEE { 3 } else { 2 }
+        let mut k: usize = 0
+        while k < count {
+            out[k] = Slot{ kind = KIND_TYPED, type_ = first + @as(i32, k), row = NO_ROW, fixed = NO_ROW }
+            k = k + 1
+        }
+        return count
+    }
+
+    // The upgrade.2da row of a type that has only one (types 1 to 9), NO_ROW for none.
+    fn row_of_type { s: *State, type_: i32 } -> i32 {
+        let mut r: usize = 0
+        while r < twoda::rows{ t = s.upgrade_t } {
+            if type_of_row{ s, row = r } == type_ { return @as(i32, r) }
+            r = r + 1
+        }
+        return NO_ROW
+    }
+
+    fn upgrade_available { s: *State, w: *world::World, row: usize } -> bool {
+        if row >= ROWS { return false }
+        return s.give[row] or bag_count{ w, template = template_of_row{ s, row } } > 0
+    }
+
+    fn crystal_available { s: *State, w: *world::World, row: usize } -> bool {
+        let t = twoda::get_string{ t = s.crystals_t, row, column = "template" } ifnull ""
+        return bag_count{ w, template = t } > 0
+    }
+
+    // An item made from `template` for its icon and name; kept until the bench closes.
+    fn make_preview { mut w: world::World, template: []u8 } -> u32 {
+        if template.len == 0 { return obj::INVALID }
+        let id = tmpl::spawn_item{ &w, template, possessor = obj::INVALID } iferr { return obj::INVALID }
+        if world::object{ w = &w, id } is some{ value = o } { o.ai_level = -1 }
+        return id
+    }
+
+    fn preview_of_row { mut s: State, mut w: world::World, row: usize } -> u32 {
+        if row >= ROWS { return obj::INVALID }
+        if s.preview_up[row] == obj::INVALID or not world::is_valid{ w = &w, id = s.preview_up[row] } {
+            s.preview_up[row] = make_preview{ &w, template = template_of_row{ s = &s, row } }
+        }
+        return s.preview_up[row]
+    }
+
+    fn preview_of_colour { mut s: State, mut w: world::World, row: usize } -> u32 {
+        if row >= COLOURS { return obj::INVALID }
+        if s.preview_col[row] == obj::INVALID or not world::is_valid{ w = &w, id = s.preview_col[row] } {
+            let t = twoda::get_string{ t = s.crystals_t, row, column = "template" } ifnull ""
+            s.preview_col[row] = make_preview{ &w, template = t }
+        }
+        return s.preview_col[row]
+    }
+
+    fn drop_previews { mut s: State, mut w: world::World } {
+        let mut r: usize = 0
+        while r < ROWS {
+            if s.preview_up[r] != obj::INVALID { world::destroy{ &w, id = s.preview_up[r] } }
+            s.preview_up[r] = obj::INVALID
+            r = r + 1
+        }
+        r = 0
+        while r < COLOURS {
+            if s.preview_col[r] != obj::INVALID { world::destroy{ &w, id = s.preview_col[r] } }
+            s.preview_col[r] = obj::INVALID
+            r = r + 1
+        }
+    }
+}

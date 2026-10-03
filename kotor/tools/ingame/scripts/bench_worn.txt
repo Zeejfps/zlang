@@ -1,0 +1,11 @@
+# The bench for a worn weapon: it comes off for the bench and goes back on in the same hand on Assemble.
+#   MODULE=danm13 sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/bench_worn.txt 50 14:bw_items
+3 ui giveitem g_w_vbroswrd05 equip
+3 ui giveitem g_i_upgrade007
+3 ui inv
+4 ui bench
+10 ui click 568 420
+16 ui click 523 545
+22 ui click 445 477
+28 ui click 523 545
+34 ui inv

@@ -1,0 +1,19 @@
+# The upgrade bench for a vibrosword (the three-slot layout): a vibration cell put in and Assemble,
+# then the same slot taken out again and Cancel (the sword keeps the cell).
+#   MODULE=danm13 sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/bench_melee.txt 70 8:bm_cat 20:bm_bench 26:bm_cell 40:bm_again 50:bm_cancelled
+3 ui giveitem g_w_vbroswrd05
+3 ui giveitem g_i_upgrade007
+3 ui giveitem g_w_blstrpstl005
+3 ui giveitem g_i_upgrade001
+3 ui giveitem g_a_class4006
+3 ui bag
+4 ui bench
+10 ui click 568 420
+16 ui click 523 545
+22 ui click 445 477
+28 ui click 523 545
+34 ui bag
+36 ui click 523 545
+42 ui click 445 477
+46 ui click 754 545
+52 ui bag

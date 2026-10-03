@@ -18,6 +18,7 @@ namespace screens {
         store: store_panel::State,
         container: container_panel::State,
         level: lvl::State,
+        bench: ups::State,
         queue: [4]Request,
         queued: usize,
         paused: bool,                   // we hold PAUSE_MENU
@@ -25,7 +26,7 @@ namespace screens {
 
     fn new {} -> State {
         return State{
-            store = store_panel::new{}, container = container_panel::new{}, level = lvl::new{},
+            store = store_panel::new{}, container = container_panel::new{}, level = lvl::new{}, bench = ups::new{},
             queue = [Request{ kind = Kind::none, id = 0, n = 0 }; 4], queued = 0, paused = false,
         }
     }
@@ -45,13 +46,14 @@ namespace screens {
             }
             open_container{ placeable, user } => { ask{ &s, kind = Kind::container, id = placeable, n = 0 } }
             level_up{ who } => { ask{ &s, kind = Kind::level_up, id = who, n = 0 } }
+            upgrade_screen{ item } => { ask{ &s, kind = Kind::upgrade, id = item, n = 0 } }
             else => {}
         }
     }
 
     // Whether a screen is on the screen.
     fn is_open { s: *State } -> bool {
-        return s.store.open or s.container.open or s.level.open
+        return s.store.open or s.container.open or s.level.open or s.bench.open
     }
 
     // Whether a request waits for the interface to make room (a menu open).
@@ -68,6 +70,7 @@ namespace screens {
             if store_panel::on_event{ s = &s.store, &g, &w, &dev, ev } { continue }
             if container_panel::on_event{ s = &s.container, &g, &w, &dev, ev } { continue }
             if lvl::on_event{ s = &s.level, &g, &w, &dev, ev } { continue }
+            if ups::on_event{ s = &s.bench, &g, &w, &dev, ev } { continue }
         }
         if not is_open{ &s } and s.queued > 0 {
             let r = s.queue[0]
@@ -90,6 +93,10 @@ namespace screens {
         if r.kind == Kind::store {
             store_panel::begin{ s = &s.store, &g, &w, &dev, merchant = r.id } iferr err{ error } {
                 _ = @fmt(&w.io, "kotor: store: {}\n", error)
+            }
+        } else if r.kind == Kind::upgrade {
+            ups::begin{ s = &s.bench, &g, &w, &dev, item = r.id } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: upgrade bench: {}\n", error)
             }
         } else if r.kind == Kind::level_up {
             lvl::begin{ s = &s.level, &g, &w, &dev, who = r.id } iferr err{ error } {

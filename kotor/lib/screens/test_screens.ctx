@@ -78,6 +78,32 @@ namespace test_screens {
                 f.c.classes[@as(usize, f.c.nclasses)] = rules::ClassSlot{ class, level = 0 }
                 f.c.nclasses = f.c.nclasses + 1
             }
+        } else if ci::eq{ a = cmd, b = "bench" } {
+            // The upgrade bench; with a tag, straight on the party's item with that tag.
+            let tag = text::next_word{ &words } ifnull ""
+            let mut item = obj::INVALID
+            if tag.len > 0 {
+                let ids = list::items{ list = w.bag }
+                let mut k: usize = 0
+                while k < ids.len {
+                    if world::object{ w = &w, id = ids[k] } is some{ value = o } {
+                        if ci::eq{ a = o.tag, b = tag } { item = ids[k]; break }
+                    }
+                    k = k + 1
+                }
+            }
+            outbox::post{ out = &w.out, note = outbox::Note::upgrade_screen{ item } }
+        } else if ci::eq{ a = cmd, b = "upcheck" } {
+            // Prints the bench category of each item blueprint named (0: not upgradeable).
+            let mut sc = ups::new{}
+            sc.upgrade_t = world::load_table{ fs = &w.fs, heap = w.heap, rm = w.rm.*, name = "upgrade" } iferr { return true }
+            while true {
+                let name = text::next_word{ &words } ifnull { break }
+                let id = tmpl::spawn_item{ &w, template = name, possessor = obj::INVALID } iferr { continue }
+                let cat = ups::category_of{ s = &sc, w = &w, item = id }
+                if cat != 0 { _ = @fmt(&w.io, "upgradeable {} category {}\n", name, cat) }
+                world::destroy{ &w, id }
+            }
         } else if ci::eq{ a = cmd, b = "autoopt" } {
             w.rules.settings.auto_level = text::scan_decimal{ s = args } != 0
         } else if ci::eq{ a = cmd, b = "levels" } {
