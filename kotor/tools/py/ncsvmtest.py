@@ -165,8 +165,12 @@ ints('mulfv', 1, ('CONSTF', 2.0), *VEC123, ('MULFV',), *VEC246, ('EQUALTT', 12))
 ints('divvf', 1, *VEC246, ('CONSTF', 2.0), ('DIVVF',), *VEC123, ('EQUALTT', 12))
 test('divvf_zero', ('fault', 'div_zero'), *VEC246, ('CONSTF', 0.0), ('DIVVF',), ('RETN',))
 ints('nequaltt', 1, *VEC123, *VEC246, ('NEQUALTT', 12))
-test('equaltt_mixed_types', ('fault', 'not_comparable'),
-     ('CONSTI', 1), ('CONSTF', 1.0), ('CONSTI', 1), ('CONSTI', 1), ('EQUALTT', 8), ('RETN',))
+# Cells compare by the top operand's types: an int against a float compares their bits.
+ints('equaltt_mixed_types', 0, ('CONSTI', 1), ('CONSTF', 1.0), ('CONSTI', 1), ('CONSTI', 1), ('EQUALTT', 8))
+ints('equalii_int_against_float_bits', 1, ('CONSTI', 0x3F800000), ('CONSTF', 1.0), ('EQUALII',))
+test('equalss_against_int', ('fault', 'not_comparable'), ('CONSTI', 1), ('CONSTS', 'a'), ('EQUALSS',), ('RETN',))
+# INC/DEC change only an int cell, and skip any other.
+ints('incisp_skips_float', 1, ('CONSTF', 1.5), ('INCISPI', -4), ('CONSTF', 1.5), ('EQUALFF',))
 ints('destruct_middle', 2, ('CONSTI', 1), ('CONSTI', 2), ('CONSTI', 3), ('DESTRUCT', 12, 4, 4))
 ints('destruct_last', 3, ('CONSTI', 1), ('CONSTI', 2), ('CONSTI', 3), ('DESTRUCT', 12, 8, 4))
 

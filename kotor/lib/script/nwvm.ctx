@@ -827,18 +827,17 @@ namespace nwvm {
                     v[sp - 1].i = @wrap_add(v[sp - 1].i, v[sp].i)
                 }
                 incisp => {
+                    // Only an int cell changes: the engine skips any other.
                     let d: usize = x.a
                     if d == 0 or d > sp { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
                     let i = @wrap_sub(sp, d)
-                    if t[i] != INT { vm.count = count; return wrong_cell{ &vm, program, ip = cur, sp, want = INT, found = t[i] } }
-                    v[i].i = @wrap_add(v[i].i, 1)
+                    if t[i] == INT { v[i].i = @wrap_add(v[i].i, 1) }
                 }
                 decisp => {
                     let d: usize = x.a
                     if d == 0 or d > sp { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
                     let i = @wrap_sub(sp, d)
-                    if t[i] != INT { vm.count = count; return wrong_cell{ &vm, program, ip = cur, sp, want = INT, found = t[i] } }
-                    v[i].i = @wrap_sub(v[i].i, 1)
+                    if t[i] == INT { v[i].i = @wrap_sub(v[i].i, 1) }
                 }
                 store_state => {
                     vm.saved = Saved{ valid = true, program, resume = x.a, globals = ncs::i32_of_bits{ bits = x.b }, frame = x.c }
@@ -1069,18 +1068,17 @@ namespace nwvm {
                     v[sp - 1].f = v[sp - 1].f / @as(f32, v[sp].i)
                 }
                 incibp => {
+                    // Only an int cell changes: the engine skips any other.
                     let at = @as(i64, vm.bp) + @as(i64, x.c)
                     if at < 0 or at >= @as(i64, sp) { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
                     let i = @as(usize, at)
-                    if t[i] != INT { vm.count = count; return wrong_cell{ &vm, program, ip = cur, sp, want = INT, found = t[i] } }
-                    v[i].i = @wrap_add(v[i].i, 1)
+                    if t[i] == INT { v[i].i = @wrap_add(v[i].i, 1) }
                 }
                 decibp => {
                     let at = @as(i64, vm.bp) + @as(i64, x.c)
                     if at < 0 or at >= @as(i64, sp) { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
                     let i = @as(usize, at)
-                    if t[i] != INT { vm.count = count; return wrong_cell{ &vm, program, ip = cur, sp, want = INT, found = t[i] } }
-                    v[i].i = @wrap_sub(v[i].i, 1)
+                    if t[i] == INT { v[i].i = @wrap_sub(v[i].i, 1) }
                 }
                 add_vv => {
                     if sp < 6 or not floats{ t, from = sp - 6, n = 6 } { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 3, top = FLOAT, top_n = 3 } }
@@ -1178,9 +1176,11 @@ namespace nwvm {
         return trap{ &vm, program, ip, sp, kind = FaultKind::wrong_type }
     }
 
-    // EQUAL/NEQUAL: pops two operands of n cells and compares them cell by cell, each by its
-    // own type: ints, floats and objects by their 32 bits (so 0.0 isn't -0.0), strings ignoring
-    // ASCII case, engine values through the engine. Null after a fault.
+    // EQUAL/NEQUAL: pops two operands of n cells and compares them cell by cell, as the engine
+    // does: by the type of the top operand's cell, so ints, floats and objects compare their 32
+    // bits (0.0 isn't -0.0) whatever the other cell holds, strings ignore ASCII case, and engine
+    // values go to the engine. A string or engine value against a cell of another type, which
+    // the engine would read as a pointer, faults. Null after a fault.
     fn compare { mut vm: Vm, program: *Program, engine: Engine, ip: usize, n: usize } -> ?bool {
         let sp = @as(usize, vm.sp)
         if n == 0 or 2 * n > sp { _ = trap{ &vm, program, ip, sp, kind = FaultKind::underflow }; return null }
@@ -1191,16 +1191,15 @@ namespace nwvm {
         while k < n {
             let ta = vm.types[a + k]
             let tb = vm.types[b + k]
-            if ta != tb {
-                _ = trap{ &vm, program, ip, sp, kind = FaultKind::not_comparable }
-                vm.fault.want = ta
-                vm.fault.found = tb
-                return null
-            }
             let va = vm.vals[a + k].u
             let vb = vm.vals[b + k].u
-            if ta == INT or ta == FLOAT or ta == OBJECT {
+            if tb == INT or tb == FLOAT or tb == OBJECT {
                 if va != vb { same = false }
+            } else if ta != tb {
+                _ = trap{ &vm, program, ip, sp, kind = FaultKind::not_comparable }
+                vm.fault.want = tb
+                vm.fault.found = ta
+                return null
             } else if ta == STRING {
                 if not same_text{ a = vm.strs[va], b = vm.strs[vb] } { same = false }
             } else if ta >= EFFECT and ta <= TALENT {
