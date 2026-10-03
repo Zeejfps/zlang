@@ -89,7 +89,6 @@ namespace play {
                         if down and not repeat and keycode == sdl::key::F1 + 3 { want_save = "QUICKSAVE" }
                         if down and not repeat and keycode == sdl::key::F1 + 4 { want_load = "000000 - QUICKSAVE" }
                         if not repeat { apply_key{ keys = &keys, keycode, down } }
-                        if down and keycode == sdl::key::ESCAPE { quit = true }
                     }
                     else => {}
                 }
