@@ -3,7 +3,7 @@
 namespace play {
     // One scripted input line: `FRAME down KEY`, `FRAME up KEY`, and for tests `FRAME warp TAG`
     // (the leader jumps next to the object) and `FRAME use TAG` (the leader's default action on it).
-    enum Command: u8 { down, up, warp, use }
+    enum Command: u8 { down, up, warp, use, newgame }
     struct Scripted { frame: u64, command: Command, key: []u8 }
 
     fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
@@ -18,6 +18,28 @@ namespace play {
         let mut dev = try gpu::open(arena::Arena){ &sdl, realloc = arena::alloc, heap = &device_arena, config }
         defer gpu::close{ &dev, &sdl }
         let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, heap = &device_arena, cap = render::default_capacity{} }
+        // Sound: a device when there is a window; headless, the mixer runs on without one (as the
+        // original does with no sound device, audio.md), so sounds still start and end.
+        let mut adev: ?*mut audio::Device = null
+        if not opts.headless {
+            let opened = audio::open{ &sdl, rate = 44100, latency_ms = 60 } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: no sound: {}\n", error)
+                null
+            }
+            if opened != null { adev = try alloc::new(audio::Device, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = opened } }
+        }
+        let rate: u32 = match adev { some{ value } => { value.rate } null => { 44100 } }
+        let mixer = try mix::make(heap::Heap){ realloc = heap::alloc, heap = w.heap, rate, voices_2d = 24, voices_3d = 16 }
+        let script = try read_script{ &w, path = opts.input }
+        let mut next_line: usize = 0
+        let mut frame_no: u64 = 0
+        // No module named: the front end (movies, main menu) until New Game.
+        if w.module == obj::INVALID {
+            let chosen = try front_end{ &sdl, &w, &dev, &frame, mixer, adev, scratch = texture_scratch, opts, script, &next_line, &frame_no }
+            if chosen.len == 0 { return 0 }
+            try modload::enter{ &w, name = chosen }
+            arena::reset{ heap = w.scratch }
+        }
         let mut sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
         try scene::load_area{ &sc, &w, &dev }
         let mut camera = cam::new{}
@@ -29,26 +51,12 @@ namespace play {
                 ctl::set_style{ ctl = &control, t = w.tables.camerastyle, row = a.camera_style }
             }
         }
-        // Sound: a device when there is a window; headless, the mixer runs on without one (as the
-        // original does with no sound device, audio.md), so sounds still start and end.
-        let mut device: ?audio::Device = null
-        if not opts.headless {
-            device = audio::open{ &sdl, rate = 44100, latency_ms = 60 } iferr err{ error } {
-                _ = @fmt(&w.io, "kotor: no sound: {}\n", error)
-                null
-            }
-        }
-        let rate: u32 = match device { some{ value } => { value.rate } null => { 44100 } }
-        let mixer = try mix::make(heap::Heap){ realloc = heap::alloc, heap = w.heap, rate, voices_2d = 24, voices_3d = 16 }
         let mut amb = ambience::make{ heap = w.heap, m = mixer }
         ambience::start_area{ a = &amb, &w }
         let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
-        let script = try read_script{ &w, path = opts.input }
-        let mut next_line: usize = 0
         let mut keys = ctl::no_keys{}
         let freq = sdl::counter_frequency{ &sdl }
         let mut last = sdl::counter{ &sdl }
-        let mut frame_no: u64 = 0
         let mut quit = false
         while not quit {
             frame_no = frame_no + 1
@@ -74,6 +82,7 @@ namespace play {
                     up => { apply_key{ keys = &keys, keycode = keycode_of{ name = s.key }, down = false } }
                     warp => { warp_to{ &w, tag = s.key } }
                     use => { use_tagged{ &w, tag = s.key } }
+                    newgame => {}
                 }
             }
             // The step: fixed when headless, measured otherwise.
@@ -125,12 +134,8 @@ namespace play {
             scene::update_visibility{ &sc, w = &w, room }
             // 11. Sound at the camera.
             ambience::update{ a = &amb, &w, eye = camera.eye, forward = camera.dir, dt }
-            match device {
-                some{ value } => {
-                    let mut d = value
-                    audio::update{ &sdl, dev = &d, m = mixer } iferr {}
-                    device = d
-                }
+            match adev {
+                some{ value } => { audio::update{ &sdl, dev = value, m = mixer } iferr {} }
                 null => {
                     let frames = math::min{ a = @as(f32, rate) * dt, b = 22050.0 }
                     mix::render{ m = mixer, into = silent[..@as(usize, frames) * 2] }
@@ -161,6 +166,87 @@ namespace play {
         _ = @fmt(&w.io, "sound: {} sounds started\n", amb.started)
         report::summary{ &w, routines = opts.report }
         return 0
+    }
+
+    // The front end (docs/design/gui.md, "The front end"): start-up movies and the main menu
+    // through lib/frontend until New Game (its module's name, in the heap) or Quit (""). Headless,
+    // the input script's `FRAME newgame` stands for the New Game button.
+    fn front_end {
+        mut sdl: sdl::Sdl, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame, mixer: *mut mix::Mixer,
+        adev: ?*mut audio::Device, scratch: alloc::Bytes, opts: options::Options, script: []Scripted,
+        mut next_line: usize, mut frame_no: u64,
+    } -> ![]u8 {
+        let mut cache = material::new_cache{ heap = w.heap, scratch }
+        defer material::free_cache{ &cache, &dev }
+        let mut g = try gui::make{ heap = w.heap, rm = w.rm.*, cache = &cache, width = @as(i32, opts.width), height = @as(i32, opts.height) }
+        defer gui::free{ &g }
+        let table = w.tlk
+        if table != null { gui::set_tlk{ &g, table = &table } }
+        try gui::load_defaults{ &g, fs = &w.fs, &dev }
+        gui::set_cursor_visible{ &g, visible = not opts.headless }
+        gui::set_mixer{ &g, mixer }
+        let mut fe = frontend::make{ fs = &w.fs, heap = w.heap, game = opts.game, config_path = "kotor/out/kotor-settings.ini" }
+        fe.settings.disable_movies = fe.settings.disable_movies or opts.headless
+        gui::set_screen{ &g, fs = &w.fs, &dev, width = @as(i32, opts.width), height = @as(i32, opts.height), scale = fe.settings.gui_scale }
+        try frontend::begin{ &fe, &g, fs = &w.fs, &dev, &sdl, mixer }
+        let freq = sdl::counter_frequency{ &sdl }
+        let mut last = sdl::counter{ &sdl }
+        let mut chosen: []u8 = ""
+        let mut done = false
+        while not done {
+            frame_no = frame_no + 1
+            if opts.frames > 0 and frame_no > opts.frames { break }
+            while true {
+                let ev = sdl::poll{ &sdl } ifnull { break }
+                if ev is quit | close { done = true }
+                _ = frontend::handle_event{ &fe, &g, ev, scale_x = 1.0, scale_y = 1.0 }
+            }
+            let mut forced = false
+            while next_line < script.len and script[next_line].frame <= frame_no {
+                if script[next_line].command == Command::newgame { forced = true }
+                next_line = next_line + 1
+            }
+            let now = sdl::counter{ &sdl }
+            let real = @as(f32, @as(f64, now - last) / @as(f64, freq))
+            last = now
+            let dt = if opts.dt > 0.0 { opts.dt } else { math::min{ a = real, b = 0.25 } }
+            match adev {
+                some{ value } => { audio::update{ &sdl, dev = value, m = mixer } iferr {} }
+                null => {}
+            }
+            gui::update{ &g, dt }
+            let mut out = frontend::step{ &fe, &g, fs = &w.fs, &dev, &sdl, output = adev, mixer, dt }
+            if forced { out = frontend::Outcome::new_game{ module = resref::truncate{ name = "end_m01aa" } } }
+            match out {
+                running => {}
+                new_game{ module } => {
+                    let mut m = module
+                    let name = resref::bytes{ r = &m }
+                    let kept = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = name.len }
+                    slice::copy(u8){ dst = kept, src = name }
+                    chosen = kept
+                    done = true
+                }
+                load_game{ folder, folder_len } => {
+                    // HOOK(save): loading a game. Until then, a new game.
+                    _ = @fmt(&w.io, "kotor: load game {}: not yet, starting a new game\n", folder[..folder_len])
+                    chosen = "end_m01aa"
+                    done = true
+                }
+                quit => { done = true }
+            }
+            render::begin_frame{ &frame, time = 0.0 }
+            frontend::draw{ &fe, &g, &frame, target = gpu::screen_size{ dev } }
+            gpu::submit{ &dev, frame = &frame } iferr { done = true }
+            let mut s: usize = 0
+            while s < opts.shot_count {
+                if opts.shots[s].frame == frame_no { try screenshot{ &w, &dev, heap = w.scratch, path = opts.shots[s].path, frame_no } }
+                s = s + 1
+            }
+            if not opts.headless { gpu::present{ &dev, &sdl } }
+        }
+        frontend::leave{ &fe, &g, &dev, mixer }
+        return chosen
     }
 
     // How high above the leader's feet the camera looks (ours: a humanoid's head; the original
@@ -206,8 +292,9 @@ namespace play {
             let f = text::next_word{ &words } ifnull { continue }
             if f.len == 0 or f[0] == '#' { continue }
             let what = text::next_word{ &words } ifnull { continue }
-            let key = text::next_word{ &words } ifnull { continue }
-            let command = if ci::eq{ a = what, b = "down" } { Command::down } else if ci::eq{ a = what, b = "warp" } { Command::warp } else if ci::eq{ a = what, b = "use" } { Command::use } else { Command::up }
+            let command = if ci::eq{ a = what, b = "down" } { Command::down } else if ci::eq{ a = what, b = "warp" } { Command::warp }
+                else if ci::eq{ a = what, b = "use" } { Command::use } else if ci::eq{ a = what, b = "newgame" } { Command::newgame } else { Command::up }
+            let key = text::next_word{ &words } ifnull ""
             try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), command, key } }
         }
         return list::items{ list = out }

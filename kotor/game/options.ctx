@@ -25,7 +25,7 @@ namespace options {
 
     fn defaults {} -> Options {
         return Options{
-            module = "end_m01aa", game = "F:/Steam/steamapps/common/swkotor", headless = false, no_render = false,
+            module = "", game = "F:/Steam/steamapps/common/swkotor", headless = false, no_render = false,
             frames = 0, dt = 0.0, input = "", shots = [Shot{ frame = 0, path = "" }; 16], shot_count = 0,
             log = "", report = false, seed = 1, width = 1280, height = 720,
         }
