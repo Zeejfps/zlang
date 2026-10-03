@@ -68,6 +68,9 @@ namespace os {
     extern fn lseek { mut fs: Fs, fd: i32, offset: i64, whence: i32 } -> i64
     extern fn unlink { mut fs: Fs, path: *u8 } -> i32
     extern fn mkdir { mut fs: Fs, path: *u8, mode: u32 } -> i32
+    #c::symbol{ name = "rename" }
+    extern fn c_rename { mut fs: Fs, from: *u8, to: *u8 } -> i32
+    extern fn getcwd { mut fs: Fs, buf: *mut u8, size: usize } -> ?*u8
     // A DIR * is opaque, so it is a number here, 0 for null: as a pointer, the escape check
     // would take it to hold the path opendir was given.
     extern fn opendir { mut fs: Fs, path: *u8 } -> u64
@@ -143,6 +146,26 @@ namespace os {
         let mut buf: [4096]u8
         let p = c_path{ path, buf = buf[..] } ifnull { return failed{ code = sys::ENAMETOOLONG } }
         if mkdir{ &fs, path = p, mode = 511 } < 0 { return failed{ code = sys::errno{ &fs }.* } }     // 0777, less the umask
+    }
+
+    fn rename { mut fs: Fs, from: []u8, to: []u8 } -> ! {
+        let mut a: [4096]u8
+        let mut b: [4096]u8
+        let p = c_path{ path = from, buf = a[..] } ifnull { return failed{ code = sys::ENAMETOOLONG } }
+        let q = c_path{ path = to, buf = b[..] } ifnull { return failed{ code = sys::ENAMETOOLONG } }
+        if c_rename{ &fs, from = p, to = q } < 0 { return failed{ code = sys::errno{ &fs }.* } }
+    }
+
+    // The working directory's path into `into`. Returns its length.
+    fn working_dir { mut fs: Fs, into: []mut u8 } -> !usize {
+        if getcwd{ &fs, buf = into.ptr, size = into.len } == null { return failed{ code = sys::errno{ &fs }.* } }
+        let mut n: usize = 0
+        while n < into.len and into[n] != 0 { n = n + 1 }
+        return n
+    }
+
+    fn is_absolute { path: []u8 } -> bool {
+        return path.len > 0 and path[0] == '/'
     }
 
     fn dir_open { mut fs: Fs, path: []u8 } -> !Dir {

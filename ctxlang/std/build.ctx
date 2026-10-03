@@ -3,10 +3,13 @@
 // A program that is a directory may have a `build.ctx` at its top: a build program, which the
 // driver compiles and runs first. Its entry point is `fn build` instead of `fn main`, and only it
 // receives a `Build`. It describes what to build: each executable, from the .ctx files of a
-// directory, and what to link it with. Choices by platform are ordinary code:
+// directory and of any directories added to it, and how to compile and link it. Choices by
+// platform are ordinary code:
 //
 //   fn build { mut b: Build } {
 //       let exe = build::exe{ &b, name = "demo", root = "src" }
+//       build::add_sources{ &b, exe, dir = "../lib/formats" }
+//       build::optimize{ &b, exe, level = 2 }
 //       build::link{ &b, exe, lib = "glfw" }
 //       match build::os{ &b } {
 //           macos => { build::lib_path{ &b, exe, path = "/opt/homebrew/lib" } }
@@ -15,8 +18,9 @@
 //       }
 //   }
 //
-// Names, roots, libraries and paths are bytes without tabs or line breaks. Paths are relative to
-// the directory build.ctx is in.
+// Names, roots, directories, libraries and paths are bytes without tabs or line breaks. Paths
+// are relative to the directory build.ctx is in, and may leave it with `..`. A file named
+// build.ctx is never one of an executable's files.
 
 // Permission to describe a build: only a build program's `fn build` receives one.
 capability Build
@@ -28,9 +32,19 @@ namespace build {
     // The operating system the build is for: the one it runs on, for now.
     enum Os: u32 { windows, macos, linux }
 
-    // An executable `name`, from the .ctx files in directory `root` (build.ctx never is one).
+    // An executable `name`, from the .ctx files in directory `root`, but not in its
+    // subdirectories. A name is also the name of its files, so it can't hold `/`, `\` or `"`.
     #c::symbol{ name = "ctx_build_exe_new" }
     extern fn exe { mut b: Build, name: []u8, root: []u8 } -> Exe
+
+    // Adds the .ctx files under directory `dir` to exe: those in it and, at any depth, in its
+    // subdirectories. A file that two directories reach is compiled once.
+    #c::symbol{ name = "ctx_build_add_sources" }
+    extern fn add_sources { mut b: Build, exe: Exe, dir: []u8 }
+
+    // Compiles exe's C at optimization level `level`, 0 to 3 (`-O0` to `-O3`), instead of 1.
+    #c::symbol{ name = "ctx_build_optimize" }
+    extern fn optimize { mut b: Build, exe: Exe, level: u32 }
 
     // Links exe with library `lib`: `-l lib`.
     #c::symbol{ name = "ctx_build_link" }

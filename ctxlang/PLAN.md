@@ -67,10 +67,34 @@ The goal is real programs over C libraries: OpenGL or Vulkan rendering, windowin
      in the signatures: `run`, `env` and `exe_path` take an allocator, as `fs::list` does, and
      `run` takes `Io` for the flush. *To settle.*
 2. **`const OS` in each layer**, so that `proc::os` and `build::os` stop calling `ctx_build_os`.
-3. **Driver caching.** `ctxc run` compiles the runtime and the program again every time (about
-   0.5 s).
+3. **Several C files, compiled at once.** The driver writes a program's C as one file, and for a
+   big program the C compiler is the bottleneck. 96K lines (four copies of ctxc's source, each
+   a namespace in a file of its own, and std) take 1.7 s in the front end, which writes 13.8 MB
+   of C; gcc compiles that in 25 s at -O0, 61 s at -O1 and 108 s at -O2 (gcc 15 on Windows), and
+   links it in 0.1 s. Split by hand into a header (types, prototypes, and the bind records and
+   thunks, `static`) and 16 files of bodies, with the fns made extern, compiled 16 at a time it
+   took 5.8 s at -O1 (85 s of CPU time), and ran. gcc's own `-flto=auto` doesn't help on Windows,
+   where lto-wrapper runs its 92 jobs one after another (20 s, then 53 s).
+   - emit_c writes the header once and the bodies into N buffers. A fn loses `static`, and takes
+     a prefix (`ctx_f12`) so that no library's symbol meets it; consts and the file table stay
+     `static` in the header, one copy per file. Bind records and thunks, made while bodies are
+     emitted, go in the header. `ctxc build OUT.c` keeps writing one file, for the bootstraps.
+   - The driver compiles the files at once, which needs `proc::spawn` and `wait` (6.4 wants
+     them too), caches each file's object by its hash, and links them.
+   - An edit recompiles only the files whose text changed, and so only if names don't move: fns
+     are numbered across the whole program, so a new one renumbers every fn after it. Names
+     numbered within their namespace, say, would keep the other files the same.
+   - N follows the size of the C and the number of processors; a small program stays one file.
 4. **`#c::export{ name }`**, for a public symbol, over the callback thunk.
 5. **Loading a library at run time**, where the capability means "it loaded".
+
+*Later, for the driver* (ctxc/drive.ctx), if they get in the way:
+- The front end runs on every `ctxc run`, changed or not: 1.7 s for 96K lines. A hash of the
+  sources and of ctxc itself could skip it too.
+- A file reached twice is found by its absolute path, without looking at links, so a file
+  reached through a symbolic link or a junction and directly is compiled twice.
+- A C compiler replaced in place by another version isn't noticed: removing build/run starts
+  afresh. Nor are the files a killed build leaves, `NAME.N.c` and the like, ever removed.
 
 *Later,* each waiting for a target that needs it:
 - macOS on x86_64: its `readdir` returns the old `struct dirent` unless it is called as
@@ -293,7 +317,10 @@ cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctx
 ```
 
 - On macOS the bootstrap is `bootstrap/ctxc.macos.c`, and on Windows `bootstrap/ctxc.windows.c`. ctxc finds std/ and ctxc/rt/ through
-  CTX_HOME, or above its executable or the working directory, and builds in HOME/build/run.
+  CTX_HOME, or above its executable or the working directory, and builds in HOME/build/run, in a
+  directory for each program. An executable whose C, runtime, compiler and flags haven't
+  changed isn't compiled again: `ctxc run` of an unchanged small program takes about 40 ms, the
+  front end included (drive.ctx).
 - That ctxc is the bootstrap's; `tools/toolchain.py` builds the current source's into
   `build/ctxc` (about 7 s the first time, cached after).
 - `python tools/ctxc.py PROGRAM --run [args...]` compiles and runs a program with it.
@@ -333,7 +360,8 @@ in one step; `fixpoint.py` says when one is out of date.
 
 C11 with GNU extensions (overflow builtins, empty structs, statement expressions), built with gcc
 (MinGW on Windows), Apple clang on macOS, or `zig cc` (`CTX_CC=zig`). Flags: `-std=gnu11 -O1 -w
--fwrapv -fno-optimize-sibling-calls -fno-strict-aliasing`.
+-fwrapv -fno-optimize-sibling-calls -fno-strict-aliasing`, with another `-O` level where a build
+program asks for one (spec §19).
 
 | ctxlang | C | Notes |
 |---|---|---|

@@ -150,6 +150,8 @@ ctx_slice ctx_proc_exe_path(void);
 
 typedef struct { uint32_t id; } ctx_build_exe;            // build::Exe
 ctx_build_exe ctx_build_exe_new(ctx_slice name, ctx_slice root);
+void ctx_build_add_sources(ctx_build_exe exe, ctx_slice dir);
+void ctx_build_optimize(ctx_build_exe exe, uint32_t level);
 void ctx_build_link(ctx_build_exe exe, ctx_slice lib);
 void ctx_build_framework(ctx_build_exe exe, ctx_slice name);
 void ctx_build_lib_path(ctx_build_exe exe, ctx_slice path);
