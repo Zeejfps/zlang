@@ -183,6 +183,9 @@ namespace rt_act {
             }
             i = i + 1
         }
+        // Only when no conversation is ordered or running, from a commandable OBJECT_SELF (2.2).
+        let me = world::object{ w = &w, id = self_of{ vm = &vm } } ifnull { return }
+        if not me.commandable or not dlg::order{ &w } { return }
         let mut a = actions::make{ kind = actions::Kind::dialog_object }
         a.params[0] = actions::Param::object{ id = with }
         if dialog.len > 0 { a.params[1] = actions::Param::string{ s = try obj::copy_bytes{ heap = w.heap, s = dialog } } }

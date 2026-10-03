@@ -10,10 +10,11 @@ namespace elog {
         actions: bool,          // each action started and ended
         objects: bool,          // objects made and destroyed
         module: bool,           // module loading
+        dialog: bool,           // each conversation node shown, reply chosen, script run (lib/dialog)
     }
 
     fn quiet {} -> Log {
-        return Log{ scripts = false, routines = false, events = false, actions = false, objects = false, module = true }
+        return Log{ scripts = false, routines = false, events = false, actions = false, objects = false, module = true, dialog = false }
     }
 
     // Turns on the logs a comma-separated list names (`scripts,routines`, `all`).
@@ -29,6 +30,7 @@ namespace elog {
                 if all or ci::eq{ a = word, b = "events" } { l.events = true }
                 if all or ci::eq{ a = word, b = "actions" } { l.actions = true }
                 if all or ci::eq{ a = word, b = "objects" } { l.objects = true }
+                if all or ci::eq{ a = word, b = "dialog" } { l.dialog = true }
                 start = i + 1
             }
             i = i + 1

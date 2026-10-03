@@ -83,6 +83,7 @@ namespace obj {
         last_attacker: u32,
         last_damager: u32,
         last_speaker: u32,
+        listen_pattern: i32,       // GetListenPatternNumber: -1 for a conversation (the ON_DIALOGUE int 1)
         last_disturbed: u32,
         run_script_var: i32,      // ExecuteScript's nScriptVar, read by GetRunScriptVar
         clicked_by: u32,
@@ -95,7 +96,7 @@ namespace obj {
             last_closed_by = INVALID, last_used_by = INVALID, last_locked_by = INVALID,
             last_unlocked_by = INVALID, last_perceived = INVALID, perceived_seen = false,
             perceived_heard = false, perceived_vanished = false, perceived_inaudible = false,
-            last_attacker = INVALID, last_damager = INVALID, last_speaker = INVALID,
+            last_attacker = INVALID, last_damager = INVALID, last_speaker = INVALID, listen_pattern = 0,
             last_disturbed = INVALID, run_script_var = 0, clicked_by = INVALID, blocker = INVALID,
         }
     }

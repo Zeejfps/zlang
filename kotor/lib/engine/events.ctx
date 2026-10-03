@@ -177,7 +177,7 @@ namespace events {
         if e.kind == LOCKED { o.ctx.last_locked_by = e.objects[0] }
         if e.kind == UNLOCKED { o.ctx.last_unlocked_by = e.objects[0] }
         if e.kind == CLICKED { o.ctx.clicked_by = e.objects[0] }
-        if e.kind == DIALOGUE { o.ctx.last_speaker = e.objects[0] }
+        if e.kind == DIALOGUE { o.ctx.last_speaker = e.objects[0]; o.ctx.listen_pattern = e.ints[1] }
         if e.kind == PLAYER_ENTER { o.ctx.entering = e.objects[0] }
         if e.kind == PLAYER_EXIT { o.ctx.exiting = e.objects[0] }
         if e.kind == PATH_BLOCKED { o.ctx.blocker = e.objects[0] }
@@ -199,6 +199,15 @@ namespace events {
             let now = clock::now_ms{ c = w.clock }
             if obj::module{ o } is some{ value = m } { m.last_heartbeat = now }
             if obj::area{ o } is some{ value = a } { a.last_heartbeat = now }
+        }
+        // A creature with no dialogue script, or "default", runs the stock one, which calls
+        // BeginConversation (re/dialogue.md 2.4).
+        if e.kind == DIALOGUE and o.kind == obj::Kind::creature {
+            let own = obj::script{ o, slot }
+            if resref::is_empty{ r = own } or resref::matches{ r = own, name = "default" } {
+                _ = scripts::run{ &w, &vm, engine, name = resref::truncate{ name = "k_hen_dialogue01" }, self = id }
+                return
+            }
         }
         _ = scripts::run_slot{ &w, &vm, engine, id, slot }
     }

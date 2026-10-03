@@ -9,6 +9,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut dt: f32 = 1.0 / 30.0
     let mut log: []u8 = ""
     let mut report = false
+    let mut replies: []u8 = ""
     let mut seed: u32 = 1
     let mut i: usize = 0
     while i < args.len {
@@ -21,6 +22,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
         else if slice::eq_bytes{ a, b = "--log" } and has { i = i + 1; log = args[i] }
         else if slice::eq_bytes{ a, b = "--seed" } and has { i = i + 1; seed = @trunc(u32, text::scan_decimal{ s = args[i] }) }
         else if slice::eq_bytes{ a, b = "--report" } { report = true }
+        else if slice::eq_bytes{ a, b = "--replies" } and has { i = i + 1; replies = args[i] }
         else {
             io::eprintln{ &io, s = "usage: enginetest [--module M] [--game DIR] [--frames N] [--dt S] [--log LIST] [--report] [--seed N]" }
             return 2
@@ -37,7 +39,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
         io::flush{ &io }
         return 1
     }
-    run{ &io, &fs, &h, &rm, &module_arena, &scratch, module, game, frames, dt, log, report, seed } iferr err{ error } {
+    run{ &io, &fs, &h, &rm, &module_arena, &scratch, module, game, frames, dt, log, report, seed, replies } iferr err{ error } {
         _ = @fmt(&io, "enginetest: failed: {}\n", error)
         io::flush{ &io }
         return 1
@@ -49,6 +51,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
 fn run {
     mut io: Io, mut fs: Fs, mut h: heap::Heap, mut rm: res::Manager, mut module_arena: arena::Arena,
     mut scratch: arena::Arena, module: []u8, game: []u8, frames: u64, dt: f32, log: []u8, report: bool, seed: u32,
+    replies: []u8,
 } -> ! {
     let w = try world::make{ fs, io, heap = &h, rm = &rm, module_arena = &module_arena, scratch = &scratch, seed }
     try walkmap::load_materials{ m = &w.walk, heap = &h, table = w.tables.surfacemat }
@@ -60,12 +63,38 @@ fn run {
     try modload::enter{ w, name = module }
     arena::reset{ heap = &scratch }
     let mut frame: u64 = 0
+    let mut next_reply: usize = 0
     while frame < frames {
         clock::advance{ c = &w.clock, seconds = dt }
         world::tick{ w, &vm, engine }
+        dlg::update{ w, &vm, engine }
+        pick_reply{ w, &vm, engine, replies, next = &next_reply }
         outbox::clear{ out = &w.out }
         arena::reset{ heap = &scratch }
         frame = frame + 1
     }
     report::summary{ w, routines = report }
+}
+
+// Plays the player's side of a conversation without a view: the next number of `replies` (a comma
+// list, then 0) picks the reply to take when a list is offered.
+fn pick_reply { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, replies: []u8, mut next: usize } {
+    if not w.conversation.active or not w.conversation.choices.open or w.conversation.choices.auto { return }
+    let mut start: usize = 0
+    let mut index: usize = 0
+    let mut i: usize = 0
+    let mut pick: usize = 0
+    while i <= replies.len {
+        if i == replies.len or replies[i] == ',' {
+            if index == next {
+                pick = @as(usize, text::scan_decimal{ s = replies[start..i] })
+                break
+            }
+            index = index + 1
+            start = i + 1
+        }
+        i = i + 1
+    }
+    next = next + 1
+    dlg::choose{ &w, &vm, engine, choice = pick }
 }

@@ -1,0 +1,149 @@
+// Routines: conversations, barks and the dialogue camera hooks (docs/re/dialogue.md section 11).
+// The work is lib/dialog's (`dlg`); these pop the arguments and push the results.
+// ActionStartConversation is rt_act's: it queues the DIALOGOBJECT action, which sends the
+// target the ON_DIALOGUE event whose script calls BeginConversation below.
+namespace rt_dlg {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        if routine == nwscript::BeginConversation { try begin_conversation{ &w, &vm, argc } }
+        else if routine == nwscript::ActionPauseConversation { try pause_conversation{ &w, &vm } }
+        else if routine == nwscript::ActionResumeConversation { try resume_conversation{ &w, &vm } }
+        else if routine == nwscript::GetIsInConversation { try get_is_in_conversation{ &w, &vm, argc } }
+        else if routine == nwscript::GetIsConversationActive { try nwvm::push_int{ &vm, v = if w.conversation.pending or w.conversation.active { 1 } else { 0 } } }
+        else if routine == nwscript::GetLastConversation { try get_last_conversation{ &w, &vm } }
+        else if routine == nwscript::GetLastSpeaker { try get_last_speaker{ &w, &vm } }
+        else if routine == nwscript::GetListenPatternNumber { try get_listen_pattern_number{ &w, &vm } }
+        else if routine == nwscript::EventConversation { try event_conversation{ &w, &vm } }
+        else if routine == nwscript::BarkString { try bark_string{ &w, &vm, argc } }
+        else if routine == nwscript::ActionBarkString { try action_bark_string{ &w, &vm, argc } }
+        else if routine == nwscript::SpeakString { try speak_string{ &w, &vm, argc } }
+        else if routine == nwscript::ActionSpeakString { try speak_string{ &w, &vm, argc } }
+        else if routine == nwscript::ActionSpeakStringByStrRef { try speak_string_by_strref{ &w, &vm, argc } }
+        else if routine == nwscript::SpeakOneLinerConversation { try speak_one_liner{ &w, &vm, argc } }
+        else if routine == nwscript::SetDialogPlaceableCamera { try set_dialog_placeable_camera{ &w, &vm, argc } }
+        else if routine == nwscript::SetLockOrientationInDialog { try lock_in_dialog{ &w, &vm, argc, routine, head = false } }
+        else if routine == nwscript::SetLockHeadFollowInDialog { try lock_in_dialog{ &w, &vm, argc, routine, head = true } }
+        else if routine == nwscript::ResetDialogState { w.conversation.pending = w.conversation.active }
+        else if routine == nwscript::HoldWorldFadeInForDialog { w.conversation.hold_fade_in = true }
+        else if routine == nwscript::CancelPostDialogCharacterSwitch { }
+        else if routine == nwscript::EnableVideoEffect { try enable_video_effect{ &w, &vm, argc } }
+        else if routine == nwscript::DisableVideoEffect { w.conversation.video_effect = -2 }
+        else { return false }
+        return true
+    }
+
+    fn self_of { vm: *nwvm::Vm } -> u32 { return nwvm::self_object{ vm = vm.* } }
+
+    // int BeginConversation(string sResRef = "", object oObjectToDialog = OBJECT_INVALID)
+    fn begin_conversation { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::BeginConversation
+        let name = try nwarg::string{ &vm, routine = r, argc, i = 0 }
+        let other = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let me = self_of{ vm = &vm }
+        // A nested bind for the scripts the conversation runs (as ExecuteScript does).
+        let wp: *mut world::World = &w
+        let engine = routines::call{ w = wp, _ }
+        let ok = dlg::begin{ w = wp, &vm, engine, self = me, name, other_arg = other }
+        try nwvm::push_int{ &vm, v = if ok { 1 } else { 0 } }
+    }
+
+    // void ActionPauseConversation(): at once, on a commandable, living OBJECT_SELF (4.10).
+    fn pause_conversation { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let o = world::object{ w = &w, id = self_of{ vm = &vm } } ifnull { return }
+        if o.commandable { w.conversation.paused = true }
+    }
+
+    // void ActionResumeConversation(): queued, so the conversation goes on when the actions
+    // before it are done.
+    fn resume_conversation { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let a = actions::make{ kind = actions::Kind::resume_conversation }
+        _ = actions::add{ &w, id = self_of{ vm = &vm }, action = a, force = false }
+    }
+
+    // int GetIsInConversation(object oObject)
+    fn get_is_in_conversation { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetIsInConversation, argc, i = 0 }
+        try nwvm::push_int{ &vm, v = if dlg::is_participant{ s = &w.conversation, id } { 1 } else { 0 } }
+    }
+
+    // string GetLastConversation()
+    fn get_last_conversation { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let mut r = w.conversation.last_resref
+        try nwvm::push_string{ &vm, s = resref::bytes{ r = &r } }
+    }
+
+    // object GetLastSpeaker(): who last spoke to OBJECT_SELF (the ON_DIALOGUE caller).
+    fn get_last_speaker { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let o = world::object{ w = &w, id = self_of{ vm = &vm } }
+        try nwvm::push_object{ &vm, id = if o != null { o.ctx.last_speaker } else { obj::INVALID } }
+    }
+
+    // int GetListenPatternNumber(): -1 when the event is a conversation, else the pattern's number.
+    fn get_listen_pattern_number { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let o = world::object{ w = &w, id = self_of{ vm = &vm } }
+        try nwvm::push_int{ &vm, v = if o != null { o.ctx.listen_pattern } else { 0 } }
+    }
+
+    // event EventConversation()
+    fn event_conversation { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let mut e = values::no_event{}
+        e.kind = events::DIALOGUE
+        let h = values::add{ s = &w.values, v = values::Value::event{ e } }
+        try nwvm::push_engine{ &vm, kind = nwvm::EngineType::event, handle = h }
+    }
+
+    // void BarkString(object oCreature, int strRef)
+    fn bark_string { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let who = try nwarg::object{ &vm, routine = nwscript::BarkString, argc, i = 0 }
+        let strref = try nwarg::int{ &vm, routine = nwscript::BarkString, argc, i = 1 }
+        dlg::bark_string{ &w, speaker = who, strref = @trunc(u32, strref) }
+    }
+
+    // void ActionBarkString(int strRef): ours plays at once (the original queues action 0x3e).
+    fn action_bark_string { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let strref = try nwarg::int{ &vm, routine = nwscript::ActionBarkString, argc, i = 0 }
+        dlg::bark_string{ &w, speaker = self_of{ vm = &vm }, strref = @trunc(u32, strref) }
+    }
+
+    // void SpeakString(string sStringToSpeak, int nTalkVolume = TALKVOLUME_TALK): ours shows the
+    // text as a bubble over OBJECT_SELF (10.2).
+    fn speak_string { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let text = try nwarg::string{ &vm, routine = nwscript::SpeakString, argc, i = 0 }
+        let volume = try nwarg::int{ &vm, routine = nwscript::SpeakString, argc, i = 1 }
+        if volume == 2 or volume == 3 { return }
+        dlg::post_bark{ &w, speaker = self_of{ vm = &vm }, strref = 0xFFFFFFFF, text, sound = resref::empty{} }
+    }
+
+    // void ActionSpeakStringByStrRef(int nStrRef, int nTalkVolume = TALKVOLUME_TALK)
+    fn speak_string_by_strref { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let strref = try nwarg::int{ &vm, routine = nwscript::ActionSpeakStringByStrRef, argc, i = 0 }
+        dlg::bark_string{ &w, speaker = self_of{ vm = &vm }, strref = @trunc(u32, strref) }
+    }
+
+    // void SpeakOneLinerConversation(string sDialogResRef = "", object oTokenTarget = OBJECT_TYPE_INVALID)
+    fn speak_one_liner { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let name = try nwarg::string{ &vm, routine = nwscript::SpeakOneLinerConversation, argc, i = 0 }
+        let token = try nwarg::object{ &vm, routine = nwscript::SpeakOneLinerConversation, argc, i = 1 }
+        let wp: *mut world::World = &w
+        let engine = routines::call{ w = wp, _ }
+        dlg::speak_one_liner{ w = wp, &vm, engine, self = self_of{ vm = &vm }, name = resref::truncate{ name }, token }
+    }
+
+    // void SetDialogPlaceableCamera(int nCameraId): only while a conversation runs (9.5).
+    fn set_dialog_placeable_camera { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::int{ &vm, routine = nwscript::SetDialogPlaceableCamera, argc, i = 0 }
+        if w.conversation.active { w.conversation.static_camera = id }
+    }
+
+    // void SetLockOrientationInDialog(object oObject, int nValue), SetLockHeadFollowInDialog
+    fn lock_in_dialog { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, head: bool } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let value = try nwarg::int{ &vm, routine, argc, i = 1 }
+        if head { dlg::set_lock{ ids = &w.conversation.locked_head, count = &w.conversation.locked_head_count, id, lock = value != 0 } }
+        else { dlg::set_lock{ ids = &w.conversation.locked_orientation, count = &w.conversation.locked_orientation_count, id, lock = value != 0 } }
+    }
+
+    // void EnableVideoEffect(int nEffectType): a videoeffects.2da row for the 3D view (9.6).
+    fn enable_video_effect { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        w.conversation.video_effect = try nwarg::int{ &vm, routine = nwscript::EnableVideoEffect, argc, i = 0 }
+    }
+}

@@ -92,8 +92,12 @@ namespace play {
             let dt = if opts.dt > 0.0 { opts.dt } else { math::min{ a = real, b = 0.25 } }
             // 3-6. The world.
             clock::advance{ c = &w.clock, seconds = dt }
+            // The player doesn't walk while a conversation runs (re/dialogue.md 4.9).
+            if w.conversation.active { keys = ctl::no_keys{} }
             ctl::update{ ctl = &control, &w, keys, yaw = camera.yaw, dt = w.clock.dt }
             world::tick{ &w, &vm, engine }
+            // 7. The conversation's pump: the next line, the replies, the end.
+            dlg::update{ &w, &vm, engine }
             // 6. A transition: the next module, and a new scene and sound for it.
             if w.transition != null {
                 ambience::stop_area{ a = &amb }

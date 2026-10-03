@@ -1,0 +1,204 @@
+// The running conversation (docs/re/dialogue.md sections 1 to 6): the server's dialogue object
+// (CSWSDialog) and the owner's node timer, plus the record of what the presentation is to show,
+// which the original sends the client as messages and we keep here for `dlgview` to read.
+//
+// One conversation runs at a time (`w.conversation`). `dlg::update` is its pump; the view reads
+// `line` and `choices` (each has a serial that changes when the content does) and answers with
+// `choose`, `skip` and the few flags it owns (`vo_playing`, `scene_ready`, ...).
+namespace dlg {
+    const MAX_CHOICES: usize = 32
+    const MAX_PARTICIPANTS: usize = 16
+    const MAX_TAGS: usize = 16
+
+    // What the pump does when the current node is over.
+    enum Step: u8 { none, entry, replies }
+
+    // How the conversation ended or why it did not start (for the log and the view).
+    enum Outcome: u8 { running, normal, aborted }
+
+    // The line on screen: an entry the owner (or another speaker) says, or a reply the player's
+    // creature speaks (a chosen one, or an empty one the engine picks).
+    struct Line {
+        serial: u32,                // 0 until a first line is shown
+        reply: bool,
+        node: u32,                  // index in the dialogue's entries or replies
+        speaker: u32,
+        listener: u32,              // 0 if the shot has none
+        angle: u32,                 // CameraAngle with 0 resolved
+        has_voice: bool,            // the voice file exists and is to be played
+        show_text: bool,            // show the text even with subtitles off
+    }
+
+    // The replies on offer. `links[i]` indexes the current entry's links; NO_INDEX is the empty
+    // placeholder shown when nothing passes. `auto` is the single empty reply the engine picks.
+    struct Choices {
+        serial: u32,
+        count: usize,
+        links: [32]u32,
+        enabled: [32]bool,
+        speaker: u32,               // who speaks them (the party leader)
+        listener: u32,
+        angle: u32,
+        auto: bool,
+        open: bool,                 // offered and not yet chosen
+    }
+
+    struct TagEntry { tag: [32]u8, len: usize, id: u32 }
+
+    struct State {
+        active: bool,
+        d: Dialog,                  // valid while active
+        name: resref::ResRef,
+        owner: u32,
+        other: u32,                 // "the PC": the player's side (+0x7c)
+        private: bool,
+        gender: u32,                // of the player's creature: picks male or female text
+        saved_ai_level: i32,
+        // BeginConversation's hand-off from the target's ON_DIALOGUE event, and the "pending"
+        // flag of CGuiInGame (set when a conversation is ordered, cleared when it ends).
+        event_pending: bool,
+        event_resref: resref::ResRef,
+        event_private: bool,
+        pending: bool,
+        last_resref: resref::ResRef,    // GetLastConversation
+        // The walk through the graph.
+        entry: i32,                 // the current entry, -1 none (+0x70)
+        chosen: i32,                // the chosen link of its replies, -1 none (+0x74)
+        step: Step,
+        step_entry: u32,
+        node_end_ms: u64,
+        wait_flags: u32,
+        paused: bool,
+        end_flag: bool,             // ends normally (+0x6c)
+        ending: bool,               // leave once nothing is pending and the voice is done (+0x60)
+        end_ran: bool,              // the normal end's scripts have run
+        skip: bool,                 // the player asked to skip the line (+0x1f4)
+        vo_cut: bool,
+        // The presentation's side.
+        client: bool,               // a view is attached and answers the flags below
+        scene_ready: bool,
+        vo_playing: bool,           // set when a voiced line starts; the view clears it at the end
+        vo_stop: bool,              // asks the view to stop the voice
+        vo_virtual_end: u64,        // with no view: when the voice is taken to have ended
+        anim_busy: bool,
+        camera_busy: bool,
+        fade_busy: bool,
+        line: Line,
+        choices: Choices,
+        // Speaker and listener bookkeeping (5.2).
+        speaker: u32,
+        listener: u32,
+        prev_speaker: u32,
+        prev_listener: u32,
+        lines_shown: u32,
+        // The 19-entry camera angle cycle (9.1).
+        cycle: i32,
+        first_entry: bool,
+        first_replies: bool,
+        // Who takes part, and tags resolved so far.
+        participants: [16]u32,
+        participant_count: usize,
+        tags: [16]TagEntry,
+        tag_count: usize,
+        ignore: [4]resref::ResRef,  // AnimList participants that don't hold the scene up
+        ignore_count: usize,
+        use_leader: bool,           // the replies are spoken by the party leader
+        locked_orientation: [8]u32,
+        locked_head: [8]u32,
+        locked_orientation_count: usize,
+        locked_head_count: usize,
+        static_camera: i32,         // SetDialogPlaceableCamera's id, -1 none
+        hold_fade_in: bool,         // HoldWorldFadeInForDialog
+        video_effect: i32,          // EnableVideoEffect's row; -2 off, -1 leave
+        outcome: Outcome,
+        ended_serial: u32,          // counts finished conversations, for the view
+        started_serial: u32,
+        nodes_shown: u32,
+        scripts_run: u32,
+    }
+
+    fn new_state {} -> State {
+        return State{
+            active = false, d = empty_dialog{}, name = resref::empty{}, owner = obj::INVALID, other = obj::INVALID,
+            private = false, gender = 0, saved_ai_level = 0,
+            event_pending = false, event_resref = resref::empty{}, event_private = false, pending = false,
+            last_resref = resref::empty{},
+            entry = -1, chosen = -1, step = Step::none, step_entry = 0, node_end_ms = 0, wait_flags = 0,
+            paused = false, end_flag = false, ending = false, end_ran = false, skip = false, vo_cut = false,
+            client = false, scene_ready = false, vo_playing = false, vo_stop = false, vo_virtual_end = 0,
+            anim_busy = false, camera_busy = false, fade_busy = false,
+            line = no_line{}, choices = no_choices{},
+            speaker = obj::INVALID, listener = obj::INVALID, prev_speaker = obj::INVALID, prev_listener = obj::INVALID,
+            lines_shown = 0, cycle = 0, first_entry = true, first_replies = true,
+            participants = [obj::INVALID; 16], participant_count = 0,
+            tags = [TagEntry{ tag = [0; 32], len = 0, id = obj::INVALID }; 16], tag_count = 0,
+            ignore = [resref::empty{}; 4], ignore_count = 0, use_leader = false,
+            locked_orientation = [obj::INVALID; 8], locked_head = [obj::INVALID; 8],
+            locked_orientation_count = 0, locked_head_count = 0,
+            static_camera = -1, hold_fade_in = false, video_effect = -2, outcome = Outcome::normal, ended_serial = 0, started_serial = 0,
+            nodes_shown = 0, scripts_run = 0,
+        }
+    }
+
+    fn empty_dialog {} -> Dialog {
+        return Dialog{
+            bytes = slice::empty(u8){}, entries = slice::empty(Node){}, replies = slice::empty(Node){},
+            starting = slice::empty(Link){}, stunts = slice::empty(Stunt){}, links = slice::empty(Link){},
+            anims = slice::empty(Anim){}, camera_model = resref::empty{}, end_script = resref::empty{},
+            abort_script = resref::empty{}, ambient_track = resref::empty{}, skippable = true, conversation_type = 0,
+            computer_type = 0, unequip_items = false, unequip_held = false, animated_cut = false, old_hit_check = false,
+            delay_entry = 0,
+        }
+    }
+
+    fn no_line {} -> Line {
+        return Line{ serial = 0, reply = false, node = 0, speaker = obj::INVALID, listener = obj::INVALID, angle = 0, has_voice = false, show_text = true }
+    }
+
+    fn no_choices {} -> Choices {
+        return Choices{
+            serial = 0, count = 0, links = [NO_INDEX; 32], enabled = [true; 32], speaker = obj::INVALID,
+            listener = obj::INVALID, angle = 0, auto = false, open = false,
+        }
+    }
+
+    // ---- questions the rest of the engine asks
+
+    fn is_active { s: *State } -> bool { return s.active }
+
+    // GetIsInConversation: the object takes part in the running conversation.
+    fn is_participant { s: *State, id: u32 } -> bool {
+        if not s.active { return false }
+        if id == s.owner or id == s.other { return true }
+        let mut i: usize = 0
+        while i < s.participant_count {
+            if s.participants[i] == id { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // The conversation's entry nodes' current node, for the view.
+    fn current_node { s: *State } -> ?*Node {
+        if not s.active { return null }
+        if s.line.serial == 0 { return null }
+        if s.line.reply {
+            if @as(usize, s.line.node) >= s.d.replies.len { return null }
+            return &s.d.replies[@as(usize, s.line.node)]
+        }
+        if @as(usize, s.line.node) >= s.d.entries.len { return null }
+        return &s.d.entries[@as(usize, s.line.node)]
+    }
+
+    // The reply node a choice names.
+    fn choice_node { s: *State, i: usize } -> ?*Node {
+        if not s.active or s.entry < 0 or i >= s.choices.count { return null }
+        let link = s.choices.links[i]
+        if link == NO_INDEX { return null }
+        let e = &s.d.entries[@as(usize, s.entry)]
+        if @as(usize, link) >= e.links.len { return null }
+        let target = @as(usize, e.links[@as(usize, link)].index)
+        if target >= s.d.replies.len { return null }
+        return &s.d.replies[target]
+    }
+}

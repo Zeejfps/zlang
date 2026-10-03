@@ -1,0 +1,52 @@
+// Finding the sound a line plays: a resource (sounds.bif and the like), a voice-over under
+// streamwaves/ (the module's, by the resref's own layout), or a sound under streamsounds/. A name
+// that exists nowhere is silence, never an error (docs/design/audio.md).
+namespace dlg {
+    // The sound as a file path in the heap, or empty when there is none; the caller frees it.
+    fn sound_path { mut w: world::World, name: resref::ResRef } -> !alloc::Bytes {
+        let mut key = name
+        let text = resref::bytes{ r = &key }
+        let kept = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = text.len }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = kept, count = 0 }
+        slice::copy(u8){ dst = kept, src = text }
+        let path = try res::voice_path{ rm = w.rm.*, name = kept, realloc = heap::alloc, heap = w.heap }
+        if file_exists{ &w, path } { return path }
+        _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = path, count = 0 }
+        let other = try res::sound_path{ rm = w.rm.*, name = kept, realloc = heap::alloc, heap = w.heap }
+        if file_exists{ &w, path = other } { return other }
+        _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = other, count = 0 }
+        return slice::empty(u8){}
+    }
+
+    fn file_exists { mut w: world::World, path: []u8 } -> bool {
+        _ = fs::size{ fs = &w.fs, path } iferr { return false }
+        return true
+    }
+
+    // Whether a sound named `name` has a file.
+    fn sound_exists { mut w: world::World, name: resref::ResRef } -> bool {
+        if resref::is_empty{ r = name } { return false }
+        if res::find_ref{ rm = w.rm.*, name, kind = restype::Type::wav } != null { return true }
+        let path = sound_path{ &w, name } iferr { return false }
+        if path.len == 0 { return false }
+        _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = path, count = 0 }
+        return true
+    }
+
+    // The sound file's bytes (a resource first, then streamwaves, then streamsounds) in the heap
+    // given; null if there is none. Give them back with alloc::resize(..., count = 0).
+    fn load_sound { mut w: world::World, name: resref::ResRef } -> !?alloc::Bytes {
+        if resref::is_empty{ r = name } { return null }
+        let mut key = name
+        let text = resref::bytes{ r = &key }
+        let kept = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = text.len }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = kept, count = 0 }
+        slice::copy(u8){ dst = kept, src = text }
+        let packed = try res::load{ fs = &w.fs, rm = w.rm.*, name = kept, kind = restype::Type::wav, realloc = heap::alloc, heap = w.heap }
+        if packed != null { return packed }
+        let path = try sound_path{ &w, name }
+        if path.len == 0 { return null }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = path, count = 0 }
+        return try fs::read_all(heap::Heap){ fs = &w.fs, heap = w.heap, realloc = heap::alloc, path }
+    }
+}

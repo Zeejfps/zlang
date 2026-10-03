@@ -1,0 +1,702 @@
+// The conversation's server side (docs/re/dialogue.md sections 2, 4 and 6): starting one from
+// BeginConversation, picking the first entry, running entries and offering replies, the node
+// timers, choosing a reply, and ending. `update` is the pump the game loop calls once a frame
+// (step 7); the presentation (lib/dialog/view) reads the state this leaves in `w.conversation`.
+//
+//   _ = dlg::begin{ &w, &vm, engine, self, name = "", other = obj::INVALID }   // the routine
+//   dlg::update{ &w, &vm, engine }                                                // each frame
+//   dlg::choose{ &w, &vm, engine, choice = 0 }                                    // the player picks
+namespace dlg {
+    // The cycle of camera angles an angle-0 node takes (9.1): stepped down by one per node sent.
+    const CYCLE: [19]u32 = [1, 3, 1, 3, 2, 2, 1, 3, 1, 2, 1, 2, 1, 3, 2, 3, 1, 1, 1]
+
+    // The shortest node (0.01 s) a voiced or flag-held entry lasts.
+    const MIN_NODE_MS: u64 = 10
+
+    // ---- logging
+
+    fn log_text { w: *world::World, text: []u8 } -> []u8 {
+        return if text.len > 70 { text[..70] } else { text }
+    }
+
+    // ---- scripts
+
+    // Runs a conversation script with the owner as OBJECT_SELF; its int result.
+    fn run_script { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, name: resref::ResRef, what: []u8 } {
+        _ = run_script_value{ &w, &vm, engine, name, what }
+    }
+
+    fn run_script_value { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, name: resref::ResRef, what: []u8 } -> ?i32 {
+        if resref::is_empty{ r = name } { return null }
+        w.conversation.scripts_run = w.conversation.scripts_run + 1
+        let owner = w.conversation.owner
+        let r = scripts::run{ &w, &vm, engine, name, self = owner }
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            match r {
+                some{ value } => { _ = @fmt(&w.io, "dialog {} script {} self={} -> {}\n", what, name, owner, value) }
+                null => { _ = @fmt(&w.io, "dialog {} script {} self={}\n", what, name, owner) }
+            }
+        }
+        return r
+    }
+
+    // A link's Active script (4.2): empty is TRUE; a missing script is FALSE.
+    fn check_condition { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, name: resref::ResRef } -> bool {
+        if resref::is_empty{ r = name } { return true }
+        let r = run_script_value{ &w, &vm, engine, name, what = "condition" } ifnull { return false }
+        return r != 0
+    }
+
+    // ---- starting
+
+    // The ON_DIALOGUE event arriving on `target`: the hand-off to BeginConversation, which the
+    // target's dialogue script calls (2.4).
+    fn note_event { mut w: world::World, target: u32, caller: u32, name: resref::ResRef, private: bool } {
+        w.conversation.event_pending = true
+        w.conversation.event_resref = name
+        w.conversation.event_private = private
+        w.conversation.last_resref = name
+    }
+
+    // Orders a conversation (ActionStartConversation / the player's click): false if one is
+    // already ordered or running.
+    fn order { mut w: world::World } -> bool {
+        if w.conversation.pending or w.conversation.active { return false }
+        w.conversation.pending = true
+        return true
+    }
+
+    // BeginConversation(sResRef, oObjectToDialog) run by `self` (2.5).
+    fn begin { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, self: u32, name: []u8, other_arg: u32 } -> bool {
+        let latched = w.conversation.event_pending
+        w.conversation.event_pending = false
+        if not latched and w.conversation.pending { return false }
+        let so = world::object{ w = &w, id = self } ifnull { return false }
+        let other = if other_arg != obj::INVALID { other_arg } else { so.ctx.last_speaker }
+        let oo = world::object{ w = &w, id = other } ifnull {
+            w.conversation.pending = false
+            return false
+        }
+        // Each side that is not the player stops what it was doing and stands.
+        let mut facings: [2]math::Vec3 = [so.orientation, oo.orientation]
+        let sides: [2]u32 = [self, other]
+        let mut i: usize = 0
+        while i < 2 {
+            if sides[i] != w.pc {
+                actions::clear_all{ &w, id = sides[i] }
+                let s = world::object{ w = &w, id = sides[i] }
+                if s != null { world::set_animation{ o = s, id = obj::ANIM_STAND, speed = 1.0 } }
+            }
+            i = i + 1
+        }
+        let mut resname = resref::truncate{ name }
+        if resref::is_empty{ r = resname } { resname = w.conversation.event_resref }
+        // The owner is never the player; two party members talking leave it to the other.
+        let mut owner = self
+        let mut side = other
+        if other == w.pc { owner = self }
+        else if self == w.pc { owner = other; side = self }
+        else if party::is_member{ w = &w, id = self } { owner = other; side = self }
+        let ok = start{ &w, &vm, engine, owner, other = side, name = resname, private = w.conversation.event_private }
+        if not ok {
+            // Failure puts the sides back as they faced.
+            let a = world::object{ w = &w, id = self }
+            if a != null { world::set_orientation{ o = a, v = facings[0] } }
+            let b = world::object{ w = &w, id = other }
+            if b != null { world::set_orientation{ o = b, v = facings[1] } }
+            w.conversation.pending = false
+        }
+        return ok
+    }
+
+    // StartConversation (2.6): load the DLG, take the sides in, pick the first entry and run it.
+    fn start { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, owner: u32, other: u32, name: resref::ResRef, private: bool } -> bool {
+        if w.conversation.active { return true }
+        let oo = world::object{ w = &w, id = owner } ifnull { return false }
+        let mut resname = name
+        if resref::is_empty{ r = resname } { resname = oo.conversation }
+        if resref::is_empty{ r = resname } { return false }
+        let d = load{ &w, name = resname } iferr err{ error } {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog {}: {}\n", resname, error)
+            return false
+        }
+        w.conversation.d = d
+        w.conversation.active = true
+        w.conversation.name = resname
+        w.conversation.last_resref = resname
+        w.conversation.owner = owner
+        w.conversation.other = other
+        w.conversation.private = private
+        w.conversation.gender = gender_of{ w = &w, id = other }
+        w.conversation.pending = true
+        w.conversation.entry = -1
+        w.conversation.chosen = -1
+        w.conversation.step = Step::none
+        w.conversation.paused = false
+        w.conversation.end_flag = false
+        w.conversation.ending = false
+        w.conversation.end_ran = false
+        w.conversation.skip = false
+        w.conversation.vo_cut = false
+        w.conversation.vo_playing = false
+        w.conversation.vo_stop = false
+        w.conversation.scene_ready = not w.conversation.client
+        w.conversation.line = no_line{}
+        w.conversation.choices = no_choices{}
+        w.conversation.speaker = obj::INVALID
+        w.conversation.listener = obj::INVALID
+        w.conversation.prev_speaker = obj::INVALID
+        w.conversation.prev_listener = obj::INVALID
+        w.conversation.lines_shown = 0
+        w.conversation.cycle = 0
+        w.conversation.first_entry = true
+        w.conversation.first_replies = true
+        w.conversation.participant_count = 0
+        w.conversation.tag_count = 0
+        w.conversation.outcome = Outcome::running
+        w.conversation.nodes_shown = 0
+        w.conversation.started_serial = w.conversation.started_serial + 1
+        join{ &w, id = owner }
+        join{ &w, id = other }
+        w.conversation.saved_ai_level = oo.ai_level
+        if oo.ai_level < 3 { oo.ai_level = 3 }
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            let kind: []u8 = if w.conversation.d.animated_cut { " animated" } else { "" }
+            _ = @fmt(&w.io, "dialog start {} owner={} ({}) other={} type={} entries={} replies={}{}\n",
+                resname, owner, oo.tag, other, w.conversation.d.conversation_type, w.conversation.d.entries.len,
+                w.conversation.d.replies.len, kind)
+        }
+        let first = starting_entry{ &w, &vm, engine }
+        if first < 0 {
+            if w.log.dialog {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "dialog no starting entry passes\n")
+            }
+            finish{ &w, &vm, engine, normal = false }
+            return false
+        }
+        // An entry with nothing to answer is a bark, not a conversation (4.1).
+        if w.conversation.d.conversation_type != TYPE_ALWAYS and is_one_liner{ d = &w.conversation.d, entry = @as(usize, first) } {
+            play_one_liner{ &w, &vm, engine, entry = @as(usize, first) }
+            finish_one_liner{ &w, &vm, engine }
+            return false
+        }
+        if not run_entry{ &w, &vm, engine, index = @as(usize, first) } {
+            finish{ &w, &vm, engine, normal = false }
+            return false
+        }
+        return true
+    }
+
+    // GetStartingEntry (4.1): the first starting link whose speaker can be found and whose Active
+    // script passes; -1 for none.
+    fn starting_entry { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } -> i32 {
+        let mut i: usize = 0
+        while i < w.conversation.d.starting.len {
+            let link = w.conversation.d.starting[i]
+            i = i + 1
+            if @as(usize, link.index) >= w.conversation.d.entries.len { continue }
+            if not speaker_available{ &w, entry = @as(usize, link.index) } { continue }
+            if check_condition{ &w, &vm, engine, name = link.active } { return @as(i32, link.index) }
+        }
+        return -1
+    }
+
+    // The entry's speaker is the owner, nobody in particular, or an object that can be found.
+    fn speaker_available { mut w: world::World, entry: usize } -> bool {
+        let tag = w.conversation.d.entries[entry].speaker
+        if tag.len == 0 { return true }
+        if ci::eq{ a = tag, b = object_tag{ w = &w, id = w.conversation.owner } } { return true }
+        return resolve_tag{ &w, tag } != obj::INVALID
+    }
+
+    // No replies, or one reply that leads nowhere (4.1).
+    fn is_one_liner { d: *Dialog, entry: usize } -> bool {
+        let links = d.entries[entry].links
+        if links.len == 0 { return true }
+        if links.len == 1 {
+            let r = @as(usize, links[0].index)
+            return r < d.replies.len and d.replies[r].links.len == 0
+        }
+        return false
+    }
+
+    // ---- running an entry
+
+    // The camera angle of a node sent now: its own, or for 0 the first-of-conversation 2 and
+    // then the cycle, which steps for every node whatever its angle (9.1).
+    fn resolve_angle { mut w: world::World, angle: u32, entry: bool } -> u32 {
+        let value = CYCLE[@as(usize, w.conversation.cycle)]
+        w.conversation.cycle = if w.conversation.cycle == 0 { 18 } else { w.conversation.cycle - 1 }
+        let mut first = false
+        if entry { first = w.conversation.first_entry; w.conversation.first_entry = false }
+        else { first = w.conversation.first_replies; w.conversation.first_replies = false }
+        if angle != ANGLE_AUTO { return angle }
+        return if first { 2 } else { value }
+    }
+
+    // The text timer (6): floor(len x 0.11 + 1.0) whole seconds, none for no text.
+    fn text_timer { len: usize } -> f32 {
+        if len == 0 { return 0.0 }
+        return math::floorf{ x = @as(f32, len) * 0.11 + 1.0 }
+    }
+
+    fn ms_of { seconds: f32 } -> u64 {
+        if seconds <= 0.0 { return 0 }
+        return @as(u64, seconds * 1000.0 + 0.5)
+    }
+
+    // How long an entry holds the scene before the next step (SetNodeDuration, 6), in ms.
+    fn entry_duration { w: *world::World, n: *Node, has_voice: bool } -> u64 {
+        if n.wait_flags & WAIT_EXPLICIT_DELAY != 0 { return ms_of{ seconds = @as(f32, n.delay) } }
+        let animated = w.conversation.d.animated_cut
+        if has_voice { return if animated { 0 } else { MIN_NODE_MS } }
+        let text = text_of{ w, n, gender = w.conversation.gender }
+        if not resref::is_empty{ r = n.sound } { return ms_of{ seconds = text_timer{ len = text.len } } }
+        if n.timer_marker == 0 { return if animated { 0 } else { MIN_NODE_MS } }
+        if animated { return 0 }
+        return ms_of{ seconds = text_timer{ len = text.len } }
+    }
+
+    // A spoken reply's duration (6): only a sound-waiting reply uses its Delay.
+    fn reply_duration { w: *world::World, n: *Node } -> u64 {
+        if n.wait_flags & WAIT_VOICE != 0 { return ms_of{ seconds = @as(f32, n.delay) } }
+        if n.timer_marker == 0 { return 0 }
+        if w.conversation.d.animated_cut { return 0 }
+        let text = text_of{ w, n, gender = w.conversation.gender }
+        return ms_of{ seconds = text_timer{ len = text.len } }
+    }
+
+    // Whether the node's sound has a file to play.
+    fn node_has_sound { mut w: world::World, n: *Node } -> bool {
+        if resref::is_empty{ r = n.sound } { return false }
+        return sound_exists{ &w, name = n.sound }
+    }
+
+    // RunEntry (4.3). False ends the conversation (a bad index or a speaker nobody can find).
+    fn run_entry { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, index: usize } -> bool {
+        if index >= w.conversation.d.entries.len { return false }
+        let n = &w.conversation.d.entries[index]
+        let owner = w.conversation.owner
+        let mut speaker = owner
+        if n.speaker.len != 0 and not ci::eq{ a = n.speaker, b = object_tag{ w = &w, id = owner } } {
+            speaker = resolve_tag{ &w, tag = n.speaker }
+            if speaker == obj::INVALID {
+                if w.log.dialog {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "dialog entry {}: speaker '{}' is not available\n", index, n.speaker)
+                }
+                return false
+            }
+        }
+        let node_listener = find_listener{ &w, tag = n.listener }
+        // The client's bookkeeping of who talks to whom (5.2).
+        let mut listener = node_listener
+        let pc = w.conversation.other
+        if w.conversation.lines_shown == 0 {
+            if listener == obj::INVALID { listener = pc }
+        } else if listener == obj::INVALID {
+            listener = if speaker == w.conversation.speaker { pc } else { w.conversation.speaker }
+        }
+        w.conversation.prev_speaker = w.conversation.speaker
+        w.conversation.prev_listener = w.conversation.listener
+        w.conversation.speaker = speaker
+        w.conversation.listener = listener
+        w.conversation.lines_shown = w.conversation.lines_shown + 1
+        w.conversation.nodes_shown = w.conversation.nodes_shown + 1
+        let angle = resolve_angle{ &w, angle = n.camera_angle, entry = true }
+        let has_voice = node_has_sound{ &w, n }
+        let sound_exists_bits = n.sound_exists
+        // Subtitles are shown even with them off when the line is not a voice line, or has no
+        // sound to hear (4.4).
+        let show_text = not n.voice or (sound_exists_bits & 2) != 0 or (sound_exists_bits & 1) == 0 or not has_voice
+        w.conversation.line = Line{
+            serial = w.conversation.line.serial + 1, reply = false, node = @trunc(u32, index), speaker, listener,
+            angle, has_voice, show_text,
+        }
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            let text = text_of{ w = &w, n, gender = w.conversation.gender }
+            _ = @fmt(&w.io, "dialog entry {} speaker={} listener={} angle={} voice={} \"{}\"\n",
+                index, speaker, listener, angle, if has_voice { n.sound } else { resref::empty{} }, log_text{ w = &w, text })
+        }
+        if not w.conversation.d.animated_cut and w.conversation.d.conversation_type != TYPE_COMPUTER {
+            face{ &w, id = listener, target = speaker }
+            face{ &w, id = speaker, target = listener }
+        }
+        // Animations are the view's; it starts them from the line. The journal and the plot XP
+        // are the player's.
+        apply_quest{ &w, n }
+        if has_voice {
+            w.conversation.vo_playing = true
+            w.conversation.vo_stop = false
+            let text = text_of{ w = &w, n, gender = w.conversation.gender }
+            w.conversation.vo_virtual_end = now_ms{ w = &w } + ms_of{ seconds = text_timer{ len = text.len } }
+        }
+        w.conversation.vo_cut = false
+        w.conversation.skip = false
+        w.conversation.node_end_ms = now_ms{ w = &w } + entry_duration{ w = &w, n, has_voice }
+        w.conversation.wait_flags = n.wait_flags
+        run_script{ &w, &vm, engine, name = n.script, what = "entry" }
+        // The script may have ended the conversation.
+        if not w.conversation.active { return true }
+        w.conversation.entry = @as(i32, @trunc(i32, index))
+        w.conversation.step = Step::replies
+        run_replies{ &w, &vm, engine }
+        return true
+    }
+
+    // RunDialogReplies: the replies go out now when the node is already over, else at its end.
+    fn run_replies { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
+        if not w.conversation.paused and not node_running{ &w } {
+            w.conversation.step = Step::none
+            send_replies{ &w, &vm, engine }
+        } else {
+            w.conversation.step = Step::replies
+        }
+    }
+
+    // The journal and plot XP a node carries (4.8): a hook until those systems exist.
+    fn apply_quest { mut w: world::World, n: *Node } {
+        if n.quest.len > 0 and w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog journal {} entry {}\n", n.quest, n.quest_entry)
+        }
+        if n.plot_index != -1 and n.plot_xp > 0.0 and w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog plot xp {} x {}\n", n.plot_index, n.plot_xp)
+        }
+        // HOOK(journal): journal::update{ quest, entry }; HOOK(rules): rules::award_plot_xp.
+    }
+
+    // ---- replies
+
+    // SendReplies (4.6) for the current entry.
+    fn send_replies { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
+        let entry = w.conversation.entry
+        if entry < 0 { return }
+        let links = w.conversation.d.entries[@as(usize, entry)].links
+        let mut passing: [32]u32
+        let mut inactive: [32]u32
+        let mut np: usize = 0
+        let mut ni: usize = 0
+        let mut i: usize = 0
+        while i < links.len {
+            let link = links[i]
+            if @as(usize, link.index) < w.conversation.d.replies.len {
+                if check_condition{ &w, &vm, engine, name = link.active } {
+                    if np < 32 { passing[np] = @trunc(u32, i); np = np + 1 }
+                } else if link.display_inactive and ni < 32 {
+                    inactive[ni] = @trunc(u32, i)
+                    ni = ni + 1
+                }
+            }
+            i = i + 1
+        }
+        if not w.conversation.active { return }
+        // Empty and non-empty replies together are the designers' error (4.6).
+        let mut empties: usize = 0
+        i = 0
+        while i < np {
+            let r = &w.conversation.d.replies[@as(usize, links[@as(usize, passing[i])].index)]
+            if text_of{ w = &w, n = r, gender = w.conversation.gender }.len == 0 { empties = empties + 1 }
+            i = i + 1
+        }
+        if empties != 0 and empties != np {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog CONVERSATION ERROR: last conversation node contains either an end node or continue node (entry {})\n", entry)
+            finish{ &w, &vm, engine, normal = false }
+            return
+        }
+        // Nothing to offer, or one reply that leads nowhere: the conversation ends after it.
+        if np == 0 { w.conversation.end_flag = true }
+        else if np == 1 {
+            let r = @as(usize, links[@as(usize, passing[0])].index)
+            if w.conversation.d.replies[r].links.len == 0 { w.conversation.end_flag = true }
+        }
+        let pc = if w.conversation.use_leader { party::leader{ w = &w } } else { w.conversation.other }
+        let leader = if pc == obj::INVALID { w.conversation.other } else { pc }
+        let first_reply: ?*Node = if np > 0 { &w.conversation.d.replies[@as(usize, links[@as(usize, passing[0])].index)] } else { null }
+        let mut listener = w.conversation.speaker
+        if first_reply != null {
+            let l = find_listener{ &w, tag = first_reply.listener }
+            if l != obj::INVALID { listener = l }
+        }
+        let angle = resolve_angle{ &w, angle = if first_reply != null { first_reply.camera_angle } else { ANGLE_AUTO }, entry = false }
+        let mut ch = no_choices{}
+        ch.serial = w.conversation.choices.serial + 1
+        ch.speaker = leader
+        ch.listener = listener
+        ch.angle = angle
+        ch.open = true
+        i = 0
+        while i < np {
+            ch.links[ch.count] = passing[i]
+            ch.enabled[ch.count] = true
+            ch.count = ch.count + 1
+            i = i + 1
+        }
+        i = 0
+        while i < ni and ch.count < 32 {
+            ch.links[ch.count] = inactive[i]
+            ch.enabled[ch.count] = false
+            ch.count = ch.count + 1
+            i = i + 1
+        }
+        if ch.count == 0 {
+            ch.count = 1
+            ch.links[0] = NO_INDEX
+        }
+        // One empty reply is chosen by the engine (the "continue" link).
+        ch.auto = ch.count == 1 and (ch.links[0] == NO_INDEX or empties == 1)
+        w.conversation.choices = ch
+        w.conversation.chosen = -1
+        // The shot while the list is up shows the player speaking to the last speaker.
+        w.conversation.prev_speaker = w.conversation.speaker
+        w.conversation.prev_listener = w.conversation.listener
+        w.conversation.speaker = leader
+        w.conversation.listener = listener
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            let how: []u8 = if ch.auto { " (auto)" } else { "" }
+            _ = @fmt(&w.io, "dialog replies {}{}:", ch.count, how)
+            let mut k: usize = 0
+            while k < ch.count {
+                _ = @fmt(&w.io, " {}", ch.links[k])
+                k = k + 1
+            }
+            _ = @fmt(&w.io, "\n")
+            k = 0
+            while k < ch.count {
+                let rn = choice_node{ s = &w.conversation, i = k }
+                if rn != null and not ch.auto {
+                    _ = @fmt(&w.io, "dialog   [{}] \"{}\"\n", k, log_text{ w = &w, text = text_of{ w = &w, n = rn, gender = w.conversation.gender } })
+                }
+                k = k + 1
+            }
+        }
+        if ch.auto { speak_reply{ &w, &vm, engine, choice = 0 } }
+    }
+
+    // The player picks reply `choice` of the list (the view's call). A click replaces the line
+    // by the reply and the next entry follows at once (4.7).
+    fn choose { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, choice: usize } {
+        if not w.conversation.active or not w.conversation.choices.open { return }
+        if choice >= w.conversation.choices.count or not w.conversation.choices.enabled[choice] { return }
+        let link = w.conversation.choices.links[choice]
+        w.conversation.choices.open = false
+        if link != NO_INDEX {
+            let rn = choice_node{ s = &w.conversation, i = choice }
+            if rn != null { show_reply{ &w, node = reply_index{ s = &w.conversation, i = choice }, spoken = false } }
+        }
+        handle_reply{ &w, &vm, engine, choice, timer = false }
+    }
+
+    // The reply index (in the dialogue's list) a choice names.
+    fn reply_index { s: *State, i: usize } -> u32 {
+        let link = s.choices.links[i]
+        let e = &s.d.entries[@as(usize, s.entry)]
+        return e.links[@as(usize, link)].index
+    }
+
+    // The engine picks the empty reply (SpeakDialogReply): the player's creature speaks it, with
+    // its camera and its timer.
+    fn speak_reply { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, choice: usize } {
+        w.conversation.choices.open = false
+        if w.conversation.choices.links[choice] != NO_INDEX {
+            show_reply{ &w, node = reply_index{ s = &w.conversation, i = choice }, spoken = true }
+        }
+        handle_reply{ &w, &vm, engine, choice, timer = true }
+    }
+
+    // The reply becomes the line on screen.
+    fn show_reply { mut w: world::World, node: u32, spoken: bool } {
+        let n = &w.conversation.d.replies[@as(usize, node)]
+        let ch = w.conversation.choices
+        let mut listener = ch.listener
+        let l = find_listener{ &w, tag = n.listener }
+        if l != obj::INVALID { listener = l }
+        let angle = if spoken { resolve_angle{ &w, angle = n.camera_angle, entry = false } } else { ch.angle }
+        w.conversation.line = Line{
+            serial = w.conversation.line.serial + 1, reply = true, node, speaker = ch.speaker, listener, angle,
+            has_voice = false, show_text = true,
+        }
+        w.conversation.nodes_shown = w.conversation.nodes_shown + 1
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            let how: []u8 = if spoken { " (continue)" } else { " (chosen)" }
+            _ = @fmt(&w.io, "dialog reply {} \"{}\"{}\n", node, log_text{ w = &w, text = text_of{ w = &w, n, gender = w.conversation.gender } }, how)
+        }
+    }
+
+    // HandleReply (4.7) for the chosen link; with `timer` the reply holds the scene by its duration.
+    fn handle_reply { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, choice: usize, timer: bool } {
+        let link = w.conversation.choices.links[choice]
+        let entry = w.conversation.entry
+        if link == NO_INDEX or entry < 0 {
+            // The placeholder: nothing follows, the conversation ends normally.
+            w.conversation.end_flag = true
+            w.conversation.ending = true
+            return
+        }
+        w.conversation.chosen = @as(i32, link)
+        let node = reply_index{ s = &w.conversation, i = choice }
+        let n = &w.conversation.d.replies[@as(usize, node)]
+        apply_quest{ &w, n }
+        if timer {
+            w.conversation.node_end_ms = now_ms{ w = &w } + reply_duration{ w = &w, n }
+            w.conversation.wait_flags = if w.conversation.d.animated_cut { 0 } else { n.wait_flags }
+        } else {
+            w.conversation.node_end_ms = now_ms{ w = &w }
+            w.conversation.wait_flags = 0
+        }
+        run_script{ &w, &vm, engine, name = n.script, what = "reply" }
+        if not w.conversation.active { return }
+        // The first entry the reply leads to whose speaker exists and whose Active passes.
+        let nlinks = n.links.len
+        let mut i: usize = 0
+        while i < nlinks {
+            let l = n.links[i]
+            i = i + 1
+            // A reply's link may point one past the entries (the original's check allows it); that
+            // is nowhere.
+            if @as(usize, l.index) >= w.conversation.d.entries.len { continue }
+            if not speaker_available{ &w, entry = @as(usize, l.index) } { continue }
+            if check_condition{ &w, &vm, engine, name = l.active } {
+                w.conversation.step = Step::entry
+                w.conversation.step_entry = l.index
+                return
+            }
+            if not w.conversation.active { return }
+        }
+        w.conversation.end_flag = true
+        w.conversation.ending = true
+    }
+
+    // ---- the pump
+
+    // GetIsDialogNodeRunning (4.5): the node still holds the scene.
+    fn node_running { mut w: world::World } -> bool {
+        let now = now_ms{ w = &w }
+        if not w.conversation.scene_ready { return true }
+        if w.conversation.skip {
+            w.conversation.skip = false
+            if w.conversation.d.skippable {
+                w.conversation.vo_stop = true
+                w.conversation.vo_playing = false
+                w.conversation.vo_cut = true
+                w.conversation.node_end_ms = now + 1
+                return false
+            }
+        }
+        // With no view to play it, a voice lasts as long as its text timer says.
+        if not w.conversation.client and w.conversation.vo_playing and now >= w.conversation.vo_virtual_end {
+            w.conversation.vo_playing = false
+        }
+        let f = w.conversation.wait_flags
+        if f & WAIT_VOICE != 0 and w.conversation.vo_playing { return true }
+        if f & WAIT_ANIMATION != 0 and w.conversation.anim_busy { return true }
+        if f & WAIT_CAMERA != 0 and w.conversation.camera_busy { return true }
+        if f & WAIT_FADE != 0 and w.conversation.fade_busy { return true }
+        return now < w.conversation.node_end_ms
+    }
+
+    // UpdateDialog (4.5): once a frame, runs the pending step when the node is over, or leaves
+    // when the conversation is finished.
+    fn update { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
+        if not w.conversation.active { return }
+        if w.conversation.paused { return }
+        if node_running{ &w } { return }
+        // A cut voice that still plays holds an ordinary conversation (not a cutscene) back.
+        if w.conversation.vo_cut and w.conversation.vo_playing and not w.conversation.d.animated_cut { return }
+        match w.conversation.step {
+            entry => {
+                let index = @as(usize, w.conversation.step_entry)
+                w.conversation.step = Step::none
+                if not run_entry{ &w, &vm, engine, index } { finish{ &w, &vm, engine, normal = false } }
+            }
+            replies => {
+                w.conversation.step = Step::none
+                send_replies{ &w, &vm, engine }
+            }
+            none => {
+                if w.conversation.ending and not w.conversation.vo_playing {
+                    finish{ &w, &vm, engine, normal = w.conversation.end_flag }
+                }
+            }
+        }
+    }
+
+    // ---- ending
+
+    // Leaves the conversation with an abort (a participant left, the player pressed Escape, ...).
+    fn abort { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
+        if w.conversation.active { finish{ &w, &vm, engine, normal = false } }
+    }
+
+    // The player asks to skip the line on screen.
+    fn skip { mut w: world::World } {
+        if w.conversation.active { w.conversation.skip = true }
+    }
+
+    // EndConversation (4.9): the normal end runs the DLG's end script once and then every
+    // creature's and placeable's end-of-dialogue script in the owner's area; an abort (or any
+    // call after the normal end) runs the abort script. Then the state is cleared.
+    fn finish { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, normal: bool } {
+        if not w.conversation.active { return }
+        if normal and not w.conversation.end_ran {
+            w.conversation.end_ran = true
+            run_script{ &w, &vm, engine, name = w.conversation.d.end_script, what = "end" }
+            let owner = world::object{ w = &w, id = w.conversation.owner }
+            let area = if owner != null { owner.area } else { obj::INVALID }
+            let mut i: usize = 0
+            while i < w.objects.all.len {
+                let o = list::items{ list = w.objects.all }[i]
+                i = i + 1
+                if o.destroyed or o.area != area { continue }
+                if o.kind == obj::Kind::creature or o.kind == obj::Kind::placeable {
+                    _ = scripts::run_slot{ &w, &vm, engine, id = o.id, slot = obj::Slot::end_dialogue }
+                }
+            }
+        } else {
+            run_script{ &w, &vm, engine, name = w.conversation.d.abort_script, what = "abort" }
+        }
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            let how: []u8 = if normal { "normal" } else { "aborted" }
+            _ = @fmt(&w.io, "dialog end {} ({}), {} nodes shown, {} scripts run\n", w.conversation.name,
+                how, w.conversation.nodes_shown, w.conversation.scripts_run)
+        }
+        clear{ &w, normal }
+    }
+
+    // Puts the owner back and forgets the conversation; the view sees `ended_serial` change.
+    fn clear { mut w: world::World, normal: bool } {
+        let owner = world::object{ w = &w, id = w.conversation.owner }
+        if owner != null { owner.ai_level = w.conversation.saved_ai_level }
+        free{ &w, d = &w.conversation.d }
+        w.conversation.d = empty_dialog{}
+        w.conversation.active = false
+        w.conversation.pending = false
+        w.conversation.paused = false
+        w.conversation.step = Step::none
+        w.conversation.entry = -1
+        w.conversation.ending = false
+        w.conversation.end_flag = false
+        w.conversation.vo_playing = false
+        w.conversation.vo_stop = true
+        w.conversation.choices.open = false
+        w.conversation.participant_count = 0
+        w.conversation.locked_orientation_count = 0
+        w.conversation.locked_head_count = 0
+        w.conversation.static_camera = -1
+        w.conversation.hold_fade_in = false
+        w.conversation.ignore_count = 0
+        w.conversation.use_leader = false
+        w.conversation.outcome = if normal { Outcome::normal } else { Outcome::aborted }
+        w.conversation.ended_serial = w.conversation.ended_serial + 1
+    }
+}

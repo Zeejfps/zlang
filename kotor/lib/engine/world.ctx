@@ -28,6 +28,7 @@ namespace world {
         ranges: twoda::Table,
         prioritygroups: twoda::Table,
         portraits: twoda::Table,
+        dialoganimations: twoda::Table,
     }
 
     // A pending module change (gameloop.md 5.1).
@@ -92,7 +93,7 @@ namespace world {
         cursor_area: usize,                 // GetNextObjectInArea: where in objects.all to go on from
         cursor_shape: usize,                // GetNextObjectInShape: likewise
         // HOOK(rules): tables: *rules::Tables, rng: rules::Rng, effect ids: rules::Counter
-        // HOOK(dialog): conversation: dlg::State
+        conversation: dlg::State,           // the running conversation (lib/dialog)
         // HOOK(party): the party table
     }
 
@@ -128,6 +129,7 @@ namespace world {
             serial = 0,
             heartbeats = map::new(u32, u64, heap::Heap){ realloc = heap::alloc, heap, hash = map::hash_u32, eq = map::eq_u32 },
             cursor_area = 0, cursor_shape = 0,
+            conversation = dlg::new_state{},
         }
         let p = try alloc::new(World, heap::Heap){ realloc = heap::alloc, heap, value = w }
         load_repute{ w = p }
@@ -182,6 +184,7 @@ namespace world {
             ranges = try load_table{ &fs, heap, rm, name = "ranges" },
             prioritygroups = try load_table{ &fs, heap, rm, name = "prioritygroups" },
             portraits = try load_table{ &fs, heap, rm, name = "portraits" },
+            dialoganimations = try load_table{ &fs, heap, rm, name = "dialoganimations" },
         }
     }
 
