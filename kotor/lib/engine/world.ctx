@@ -93,6 +93,7 @@ namespace world {
         heartbeats: map::Map(u32, u64, heap::Heap),   // last heartbeat of doors, placeables, triggers
         cursor_area: usize,                 // GetNextObjectInArea: where in objects.all to go on from
         cursor_shape: usize,                // GetNextObjectInShape: likewise
+        minigame: ?*mut mg::Run,              // the swoop race or turret in progress, set up by the game loop (game/minigame.ctx); the SWMG_ routines' state
         // HOOK(rules): tables: *rules::Tables, rng: rules::Rng, effect ids: rules::Counter
         // HOOK(dialog): conversation: dlg::State
         // HOOK(party): the party table
@@ -129,7 +130,7 @@ namespace world {
             module_frame = false,
             serial = 0,
             heartbeats = map::new(u32, u64, heap::Heap){ realloc = heap::alloc, heap, hash = map::hash_u32, eq = map::eq_u32 },
-            cursor_area = 0, cursor_shape = 0,
+            cursor_area = 0, cursor_shape = 0, minigame = null,
         }
         let p = try alloc::new(World, heap::Heap){ realloc = heap::alloc, heap, value = w }
         load_repute{ w = p }

@@ -459,6 +459,7 @@ namespace modload {
         w.layout = null
         w.paths = null
         w.vis = null
+        w.minigame = null
         w.module = obj::INVALID
         w.area = obj::INVALID
         let pc = world::object{ w = &w, id = w.pc }

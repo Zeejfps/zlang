@@ -45,7 +45,7 @@ namespace mg {
     struct Input { x: f32, y: f32, fire: bool }
 
     struct Run {
-        area: *Area,
+        area: *mut Area,
         objs: [255]Obj,
         count: usize,
         rails: []mut Rail,
@@ -56,7 +56,7 @@ namespace mg {
         origin: math::Vec3,             // the centre of the tunnel (SetPlayerOrigin)
         tunnel_pos: math::Vec3, tunnel_neg: math::Vec3, tunnel_infinite: [3]bool,
         lateral_accel: f32,
-        invincible_player: bool,        // SetPlayerInvincibility
+        invincibility: f32,             // seconds the player is safe after a hit (SetPlayerInvincibility)
         input: Input,
         fire_cooldown: f32,
         // for the scripts
@@ -139,7 +139,7 @@ namespace mg {
     // sampled from the track models (`lookup` gives a model by name), obstacles boxed. `layout`
     // places the track and obstacle models.
     fn make_run(S) {
-        realloc: alloc::Fn(S), mut heap: S, area: *Area, layout: lyt::Layout, lookup: &fn{ name: []u8 } -> ?*mdl::Model,
+        realloc: alloc::Fn(S), mut heap: S, area: *mut Area, layout: lyt::Layout, lookup: &fn{ name: []u8 } -> ?*mdl::Model,
     } -> !*mut Run {
         let rails = try alloc::resize(Rail, S){ realloc, &heap, mem = slice::empty(Rail){}, count = 1 + area.enemies.len }
         let mut run = Run{
@@ -147,7 +147,7 @@ namespace mg {
             speed = 100.0, min_speed = 100.0, max_speed = 100.0, accel = 0.0,
             offset = math::vec3::zero{}, velocity = math::vec3::zero{}, origin = math::vec3::zero{},
             tunnel_pos = area.player.tunnel_pos, tunnel_neg = area.player.tunnel_neg, tunnel_infinite = area.player.tunnel_infinite,
-            lateral_accel = area.lateral_accel, invincible_player = false,
+            lateral_accel = area.lateral_accel, invincibility = area.player.invincibility,
             input = Input{ x = 0.0, y = 0.0, fire = false }, fire_cooldown = 0.0,
             events = [Event{ slot = 0, object = 0 }; 64], event_count = 0,
             requests = [Request{ object = 0, name = [0; 28], name_len = 0, looping = false, queue = false, overlay = false, remove = false }; 64], request_count = 0,
@@ -451,7 +451,7 @@ namespace mg {
 
     fn start_invulnerability { mut run: Run, n: usize } {
         let o = &run.objs[n]
-        let period = if o.kind == ObjKind::player { run.area.player.invincibility } else { run.area.enemies[o.index].invincibility }
+        let period = if o.kind == ObjKind::player { run.invincibility } else { run.area.enemies[o.index].invincibility }
         o.invincible = if period > 0.0 { period } else { 0.0 }
     }
 
@@ -471,7 +471,7 @@ namespace mg {
                     push_event{ &run, slot = ON_HIT_FOLLOWER, object = id_of{ n = PLAYER } }
                 }
             } else if o.kind == ObjKind::obstacle {
-                if math::aabb::is_empty{ b = o.bounds } or p.invincible > 0.0 or run.invincible_player { continue }
+                if math::aabb::is_empty{ b = o.bounds } or p.invincible > 0.0 { continue }
                 if math::aabb::contains{ b = o.bounds, p = p.position } {
                     run.last_obstacle_hit = id_of{ n = i - 1 }
                     start_invulnerability{ &run, n = PLAYER }
