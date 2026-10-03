@@ -389,7 +389,10 @@ use the creatures' PERSPACE circles.
 turning at the camerastyle rates, moved by `ctl::move_leader` with up to six slide attempts; the
 leader's new position goes straight into the world object (as the original writes the server
 creature) with the trigger bookkeeping (`movement::cross_volumes`). The leader's animation is set
-from its speed (10000 stand, 10002 walk, 10004 run). **NPC movement** is server side: MOVETOPOINT
+from its speed (10000 stand, 10002 walk, 10004 run) and it is `moving` while under way, which the AI
+update needs to leave the animation alone (`ai::update_creature` stands a creature that is neither moving
+nor busy). Strafing and backing are the same walk or run: the creature turns to the input and moves
+along its facing (movement.md 1.2), and the camera keys (A/D) turn only the camera. **NPC movement** is server side: MOVETOPOINT
 and its relatives in `movement`, with the acceleration and braking of movement.md 3.3, along a
 path from `paths::plan` (the straight walk if clear, else A* over the area's PTH points, string
 pulled, else the farthest clear point; movement.md 4). FOLLOW, FOLLOWLEADER and RANDOMWALK push a
