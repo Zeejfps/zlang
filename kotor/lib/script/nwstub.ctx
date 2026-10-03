@@ -1,0 +1,338 @@
+// A stand-in engine for running scripts without a game: it implements every routine from its
+// prototype alone (nwscript::ROUTINES), popping the arguments the script passed and pushing a
+// result of the right type, and keeps the actions scripts hand to AssignCommand, DelayCommand
+// and ActionDoCommand so they can be run after. For tests and tools (tools/ncsrun):
+//
+//   let mut stub = nwstub::new{ heap = &heap, actions = 32, log = slice::empty(u8){} }
+//   let engine = nwstub::call{ &stub, _ }
+//   _ = nwvm::run{ &vm, program = &program, self = nwstub::SELF, engine }
+//   let next = nwstub::next_action{ &stub }          // a Situation to nwvm::resume, or null
+//
+// Results are plausible rather than defaults, so scripts get further: object routines give
+// valid objects (but GetNext*, nNth/nIndex lookups and any one routine run out after a few, so
+// loops that wait for a lookup to fail end), GetIsObjectValid says whether its object is, Random
+// is deterministic, IntToString, IntToFloat, GetStringLength and StringToInt compute, dice roll 1,
+// hit points and hit dice are 10, and engine values are fresh handles that compare equal only to
+// themselves. ExecuteScript runs a script of stub.scripts, if it has one by that name, nested.
+// With a log buffer, each call is written there as one line: the routine and the arguments as the
+// script passed them.
+namespace nwstub {
+    // The object scripts run as.
+    const SELF: u32 = 0x10
+
+    // How many GetNext* calls give an object after each GetFirst*, the largest nNth/nIndex that
+    // does, and how many objects one routine gives a script (with its actions) in all: scripts
+    // loop until a lookup fails, as `while (GetIsObjectValid(GetWaypointByTag("WP_" +
+    // IntToString(n))))` does.
+    const ITERATION: u32 = 2
+    const NTH: i32 = 3
+    const LOOKUPS: u16 = 16
+
+    // One argument a routine was passed, kept for its result and the log.
+    union Arg {
+        none,
+        int{ v: i32 },
+        float{ v: f32 },
+        string{ s: []u8 },
+        object{ id: u32 },
+        vector{ v: nwvm::Vector },
+        engine{ handle: u32 },
+        action,
+    }
+
+    // The most arguments any routine takes (ActionStartConversation's 12), with room.
+    const MAX_ARGS: usize = 16
+
+    struct Stub {
+        heap: *mut arena::Arena,                    // memory for the actions kept
+        actions: list::List(nwvm::Situation, arena::Arena),
+        limit: usize,                               // actions kept at most; more are dropped
+        taken: usize,                               // actions handed out by next_action
+        dropped: u64,
+        calls: u64,
+        log: nwvm::Text,                            // the calls, if its buffer isn't empty
+        next_object: u32,
+        next_handle: u32,
+        iteration: u32,                             // GetNext* calls since the last GetFirst*
+        dice: u32,
+        lookups: [772]u16,                          // objects each routine has given
+        scripts: []nwvm::Program,                   // what ExecuteScript can run, by name
+    }
+
+    error no_routine{ routine: u16 }
+
+    fn new { heap: *mut arena::Arena, actions: usize, log: []mut u8 } -> Stub {
+        return Stub{
+            heap, actions = list::new(nwvm::Situation, arena::Arena){ realloc = arena::alloc, heap },
+            limit = actions, taken = 0, dropped = 0, calls = 0, log = nwvm::Text{ buf = log, len = 0 },
+            next_object = 0x100, next_handle = 1, iteration = 0, dice = 12345, lookups = [0; 772],
+            scripts = slice::empty(nwvm::Program){},
+        }
+    }
+
+    // Forgets the actions kept and starts the plausible results over: before each script, and
+    // before the arena the actions came from is reset.
+    fn clear { mut stub: Stub } {
+        list::free{ list = &stub.actions }
+        stub.taken = 0
+        stub.next_object = 0x100
+        stub.next_handle = 1
+        stub.iteration = 0
+        stub.dice = 12345
+        slice::fill{ s = stub.lookups[..], v = 0 }
+    }
+
+    // The next action kept and not yet handed out, oldest first.
+    fn next_action { mut stub: Stub } -> ?nwvm::Situation {
+        let s = list::get{ list = stub.actions, i = stub.taken } ifnull { return null }
+        stub.taken = stub.taken + 1
+        return s
+    }
+
+    // The engine: bind it as `nwstub::call{ &stub, _ }`.
+    fn call { mut stub: Stub, mut vm: nwvm::Vm, call: nwvm::Call } -> nwvm::Reply {
+        match call {
+            action{ routine, argc } => {
+                act{ &stub, &vm, routine, argc } iferr { return nwvm::Reply::failed }
+                return nwvm::Reply::done
+            }
+            equal{ a, b } => { return nwvm::Reply::equal{ same = a == b } }
+        }
+    }
+
+    fn act { mut stub: Stub, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> ! {
+        if routine >= nwscript::COUNT {
+            nwvm::fail{ &vm, why = "no such routine" }
+            return no_routine{ routine }
+        }
+        stub.calls = stub.calls + 1
+        let r = nwscript::ROUTINES[routine]
+        // The script passed `argc` arguments, the first on top. Older scripts pass fewer than the
+        // prototype has, and the rest take their defaults (nwarg), or, in four places, more:
+        // those stay on the stack, as the game's handlers leave them.
+        let n = @as(usize, r.count)
+        let mut args = [Arg::none; 16]
+        let mut i: usize = 0
+        while i < n {
+            let p = nwscript::PARAMS[@as(usize, r.first) + i]
+            args[i] = try pop_arg{ &stub, &vm, kind = p.kind, routine, argc, i }
+            i = i + 1
+        }
+        if stub.log.buf.len > 0 { log{ log = &stub.log, routine, r, args = &args, n } }
+        if routine == nwscript::ExecuteScript { execute{ &stub, &vm, args = &args } }
+        try push_result{ &stub, &vm, routine, r, args = &args }
+    }
+
+    // ExecuteScript(sScript, oTarget): runs the script now, nested in the caller's run, as
+    // oTarget, if stub.scripts has it. As in the game, how it ends is no concern of the caller.
+    fn execute { mut stub: Stub, mut vm: nwvm::Vm, args: *[16]Arg } {
+        let name = match args[0] { string{ s } => { s } else => { return } }
+        let target = match args[1] { object{ id } => { id } else => { nwvm::OBJECT_INVALID } }
+        let mut i: usize = 0
+        while i < stub.scripts.len {
+            if nwvm::same_text{ a = stub.scripts[i].name, b = name } {
+                _ = nwvm::run{ &vm, program = &stub.scripts[i], self = target, engine = call{ &stub, _ } }
+                return
+            }
+            i = i + 1
+        }
+    }
+
+    // For an engine that writes its routines one at a time: what a routine not written yet does.
+    // It pops the arguments the script passed (an action argument stays the VM's, untaken) and
+    // pushes the zero value of the result type: 0, 0.0, "", OBJECT_INVALID, a zero vector, or
+    // engine handle 0, the type's default value. No state, no plausibility.
+    fn fallback { mut vm: nwvm::Vm, routine: u16, argc: u8 } -> ! {
+        if routine >= nwscript::COUNT {
+            nwvm::fail{ &vm, why = "no such routine" }
+            return no_routine{ routine }
+        }
+        let r = nwscript::ROUTINES[routine]
+        let n = if @as(usize, argc) < @as(usize, r.count) { @as(usize, argc) } else { @as(usize, r.count) }
+        let mut i: usize = 0
+        while i < n {
+            match nwscript::PARAMS[@as(usize, r.first) + i].kind {
+                int => { _ = try nwvm::pop_int{ &vm } }
+                float => { _ = try nwvm::pop_float{ &vm } }
+                string => { _ = try nwvm::pop_string{ &vm } }
+                object => { _ = try nwvm::pop_object{ &vm } }
+                vector => { _ = try nwvm::pop_vector{ &vm } }
+                effect => { _ = try nwvm::pop_engine{ &vm, kind = nwvm::EngineType::effect } }
+                event => { _ = try nwvm::pop_engine{ &vm, kind = nwvm::EngineType::event } }
+                location => { _ = try nwvm::pop_engine{ &vm, kind = nwvm::EngineType::location } }
+                talent => { _ = try nwvm::pop_engine{ &vm, kind = nwvm::EngineType::talent } }
+                action => {}
+                void => {}
+            }
+            i = i + 1
+        }
+        match r.ret {
+            int => { try nwvm::push_int{ &vm, v = 0 } }
+            float => { try nwvm::push_float{ &vm, v = 0.0 } }
+            string => { try nwvm::push_string{ &vm, s = "" } }
+            object => { try nwvm::push_object{ &vm, id = nwvm::OBJECT_INVALID } }
+            vector => { try nwvm::push_vector{ &vm, v = nwvm::Vector{ x = 0.0, y = 0.0, z = 0.0 } } }
+            effect => { try nwvm::push_engine{ &vm, kind = nwvm::EngineType::effect, handle = 0 } }
+            event => { try nwvm::push_engine{ &vm, kind = nwvm::EngineType::event, handle = 0 } }
+            location => { try nwvm::push_engine{ &vm, kind = nwvm::EngineType::location, handle = 0 } }
+            talent => { try nwvm::push_engine{ &vm, kind = nwvm::EngineType::talent, handle = 0 } }
+            void => {}
+            action => {}
+        }
+    }
+
+    // Argument i of `routine`, of type `kind`: popped if the script passed it, else its default.
+    fn pop_arg { mut stub: Stub, mut vm: nwvm::Vm, kind: nwscript::Type, routine: u16, argc: u8, i: usize } -> !Arg {
+        return match kind {
+            int => { Arg::int{ v = try nwarg::int{ &vm, routine, argc, i } } }
+            float => { Arg::float{ v = try nwarg::float{ &vm, routine, argc, i } } }
+            string => { Arg::string{ s = try nwarg::string{ &vm, routine, argc, i } } }
+            object => { Arg::object{ id = try nwarg::object{ &vm, routine, argc, i } } }
+            vector => { Arg::vector{ v = try nwarg::vector{ &vm, routine, argc, i } } }
+            effect => { Arg::engine{ handle = try nwarg::engine{ &vm, routine, argc, i, kind = nwvm::EngineType::effect } } }
+            event => { Arg::engine{ handle = try nwarg::engine{ &vm, routine, argc, i, kind = nwvm::EngineType::event } } }
+            location => { Arg::engine{ handle = try nwarg::engine{ &vm, routine, argc, i, kind = nwvm::EngineType::location } } }
+            talent => { Arg::engine{ handle = try nwarg::engine{ &vm, routine, argc, i, kind = nwvm::EngineType::talent } } }
+            action => {
+                if i >= @as(usize, argc) { return nwarg::no_default{ routine, i } }
+                let s = try nwvm::pop_situation(arena::Arena){ &vm, realloc = arena::alloc, heap = stub.heap }
+                if stub.actions.len < stub.limit {
+                    try list::push{ list = &stub.actions, item = s }
+                } else {
+                    stub.dropped = stub.dropped + 1
+                }
+                Arg::action
+            }
+            void => { Arg::none }
+        }
+    }
+
+    fn arg_int { a: Arg } -> i32 {
+        return match a { int{ v } => { v } else => { 0 } }
+    }
+
+    fn push_result { mut stub: Stub, mut vm: nwvm::Vm, routine: u16, r: nwscript::Routine, args: *[16]Arg } -> ! {
+        match r.ret {
+            void => {}
+            int => { try nwvm::push_int{ &vm, v = int_result{ &stub, routine, args } } }
+            float => {
+                let f: f32 = if routine == nwscript::IntToFloat { @as(f32, arg_int{ a = args[0] }) } else { 0.0 }
+                try nwvm::push_float{ &vm, v = f }
+            }
+            string => {
+                if routine == nwscript::IntToString {
+                    let mut buf: [24]u8
+                    try nwvm::push_string{ &vm, s = utf8::fmt_i64{ n = arg_int{ a = args[0] }, into = buf[..] }.bytes }
+                } else {
+                    try nwvm::push_string{ &vm, s = "" }
+                }
+            }
+            object => { try nwvm::push_object{ &vm, id = object_result{ &stub, routine, r, args } } }
+            vector => { try nwvm::push_vector{ &vm, v = nwvm::Vector{ x = 0.0, y = 0.0, z = 0.0 } } }
+            effect => { try nwvm::push_engine{ &vm, kind = nwvm::EngineType::effect, handle = handle{ &stub } } }
+            event => { try nwvm::push_engine{ &vm, kind = nwvm::EngineType::event, handle = handle{ &stub } } }
+            location => { try nwvm::push_engine{ &vm, kind = nwvm::EngineType::location, handle = handle{ &stub } } }
+            talent => { try nwvm::push_engine{ &vm, kind = nwvm::EngineType::talent, handle = handle{ &stub } } }
+            action => {}
+        }
+    }
+
+    fn handle { mut stub: Stub } -> u32 {
+        let h = stub.next_handle
+        stub.next_handle = stub.next_handle + 1
+        return h
+    }
+
+    fn int_result { mut stub: Stub, routine: u16, args: *[16]Arg } -> i32 {
+        if routine == nwscript::GetIsObjectValid {
+            return match args[0] { object{ id } => { if id != nwvm::OBJECT_INVALID { 1 } else { 0 } } else => { 0 } }
+        }
+        if routine == nwscript::Random {
+            let n = arg_int{ a = args[0] }
+            stub.dice = @wrap_add(@wrap_mul(stub.dice, 1103515245), 12345)
+            if n <= 0 { return 0 }
+            return @as(i32, (stub.dice >> 8) % @as(u32, n))
+        }
+        if routine == nwscript::GetStringLength {
+            return match args[0] { string{ s } => { @as(i32, s.len) } else => { 0 } }
+        }
+        if routine == nwscript::StringToInt {
+            return match args[0] {
+                string{ s } => {
+                    let text = utf8::from{ bytes = s } iferr { utf8::empty{} }
+                    @trunc(i32, utf8::parse_i64{ s = text } ifnull { 0 })
+                }
+                else => { 0 }
+            }
+        }
+        if routine == nwscript::FindSubString { return -1 }
+        if routine >= nwscript::d2 and routine <= nwscript::d100 { return 1 }
+        // Quantities scripts divide by.
+        if routine == nwscript::GetMaxHitPoints or routine == nwscript::GetCurrentHitPoints or routine == nwscript::GetHitDice {
+            return 10
+        }
+        return 0
+    }
+
+    fn object_result { mut stub: Stub, routine: u16, r: nwscript::Routine, args: *[16]Arg } -> u32 {
+        let given = stub.lookups[routine]
+        if given >= LOOKUPS { return nwvm::OBJECT_INVALID }
+        stub.lookups[routine] = given + 1
+        if starts_with{ s = r.name, prefix = "GetFirst" } { stub.iteration = 0 }
+        if starts_with{ s = r.name, prefix = "GetNext" } {
+            stub.iteration = stub.iteration + 1
+            if stub.iteration > ITERATION { return nwvm::OBJECT_INVALID }
+        }
+        // A lookup by position (nNth, nIndex): the first few are there.
+        let mut i: usize = 0
+        while i < @as(usize, r.count) and i < MAX_ARGS {
+            let p = nwscript::PARAMS[@as(usize, r.first) + i]
+            if p.kind == nwscript::Type::int and (slice::eq_bytes{ a = p.name, b = "nNth" } or slice::eq_bytes{ a = p.name, b = "nIndex" }) {
+                if arg_int{ a = args[i] } > NTH { return nwvm::OBJECT_INVALID }
+            }
+            i = i + 1
+        }
+        let id = stub.next_object
+        stub.next_object = stub.next_object + 1
+        return id
+    }
+
+    fn starts_with { s: []u8, prefix: []u8 } -> bool {
+        return s.len >= prefix.len and slice::eq_bytes{ a = s[..prefix.len], b = prefix }
+    }
+
+    // ---- the log: one line per call, the arguments as the script passed them
+
+    fn log { mut log: nwvm::Text, routine: u16, r: nwscript::Routine, args: *[16]Arg, n: usize } {
+        _ = @fmt(&log, "    {} {}(", @as(u32, routine), r.name)
+        let mut i: usize = 0
+        while i < n and i < MAX_ARGS {
+            if i > 0 { _ = @fmt(&log, ", ") }
+            match args[i] {
+                none => { _ = @fmt(&log, "?") }
+                int{ v } => { _ = @fmt(&log, "{}", v) }
+                float{ v } => { put_float{ t = &log, f = v } }
+                string{ s } => { _ = @fmt(&log, "\"{}\"", s) }
+                object{ id } => { _ = @fmt(&log, "object {}", nwvm::Hex{ n = id }) }
+                vector{ v } => {
+                    _ = @fmt(&log, "[")
+                    put_float{ t = &log, f = v.x }
+                    _ = @fmt(&log, ", ")
+                    put_float{ t = &log, f = v.y }
+                    _ = @fmt(&log, ", ")
+                    put_float{ t = &log, f = v.z }
+                    _ = @fmt(&log, "]")
+                }
+                engine{ handle } => { _ = @fmt(&log, "#{}", handle) }
+                action => { _ = @fmt(&log, "<action>") }
+            }
+            i = i + 1
+        }
+        _ = @fmt(&log, ")\n")
+    }
+
+    fn put_float { mut t: nwvm::Text, f: f32 } {
+        let mut buf: [32]u8
+        _ = @fmt(&t, "{}", utf8::fmt_f32{ n = f, into = buf[..] }.bytes)
+    }
+}

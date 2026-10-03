@@ -296,17 +296,20 @@ Inside functions:
   stood when the script was compiled (many `k_inc_utility` users carry its 21 older globals, not
   the 27 of the shipped source).
 
-## Open questions (for RE of swkotor.exe)
+## Answered by RE
 
-- What exactly `RSADD` pushes for each type, and how the engine represents `OBJECT_SELF` and
-  `OBJECT_INVALID` (0 and 1 in the bytecode) internally.
-- What the engine does when `argc` is larger than the routine's parameter count, or when the
-  pushed types don't match (the four sites in Checked), and how it fills omitted trailing
-  defaults. The routine handlers pop typed values and return an error on a type mismatch
-  ([../re/nwscript-routines.md](../re/nwscript-routines.md)), so the VM's stack cells are typed;
-  what the VM does with that error is open.
-- Division and modulo by zero, and integer overflow.
-- Instruction limits or recursion limits the engine enforces (NWN had an instruction cap).
+The questions this section held are settled by [../re/vm.md](../re/vm.md), and our VM follows
+the answers ([../design/script.md](../design/script.md)):
+
+- `RSADD` pushes 0, 0.0, "", OBJECT_INVALID (0x7F000000) or a default-constructed engine value.
+  `CONSTO 0` pushes the running script's object when it has a valid one, any other operand
+  OBJECT_INVALID.
+- A routine handler pops typed values; a wrong type or an empty stack fails the handler, and the
+  VM stops the script (silently, in the game). Extra arguments stay on the stack. Omitted
+  trailing ones take the prototype's defaults (`lib/script/nwarg.ctx`).
+- Int arithmetic wraps; division and modulo by zero (int, float, vector) stop the script.
+- An outermost run (with the scripts it runs through ExecuteScript) stops at its 131,072nd
+  instruction; at most 8 scripts nest, and the return-address stack holds 128 entries.
 
 ## Checked
 
