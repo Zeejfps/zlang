@@ -296,4 +296,46 @@ namespace rt_party {
         }
         try nwvm::push_int{ &vm, v = flag{ b = ok } }
     }
+
+    // ---- the party selection screen's apply step (party-items-saves.md 3.8)
+
+    // Where the `index`-th member (1, 2) stands: behind the leader, one to each side, on the
+    // walkmesh (the leader's own spot when the point is off it).
+    fn formation_point { w: *world::World, index: usize } -> values::Location {
+        let lead = world::object{ w, id = party::leader{ w } } ifnull { return values::no_location{} }
+        let face = lead.orientation
+        let side: f32 = if index % 2 == 1 { -1.0 } else { 1.0 }
+        let at = math::Vec3{
+            x = lead.position.x - face.x * 1.5 + face.y * side * 1.0,
+            y = lead.position.y - face.y * 1.5 - face.x * side * 1.0,
+            z = lead.position.z,
+        }
+        let f = walkmap::floor{ m = &w.walk, x = at.x, y = at.y, z = at.z + 0.5 }
+        let degrees = math::degrees{ radians = math::atan2f{ y = face.y, x = face.x } }
+        return values::Location{ position = if f != null { at } else { lead.position }, facing = degrees, area = lead.area }
+    }
+
+    // A companion joining the party from the selection screen: made (or fetched) at its formation
+    // point next to the leader, joined and put under the player's control. OBJECT_INVALID when the
+    // slot is not available or has nothing to make it from.
+    fn bring_member { mut w: world::World, n: i32 } -> u32 {
+        party::prune{ &w }
+        if not party::valid_slot{ n } { return obj::INVALID }
+        let l = formation_point{ w = &w, index = w.party.count }
+        let id = spawn_available{ &w, n, l }
+        if id == obj::INVALID { return obj::INVALID }
+        if not join_party{ &w, n, id } { return obj::INVALID }
+        if world::object{ w = &w, id } is some{ value = o } {
+            world::set_orientation{ o, v = obj::direction_of{ degrees = l.facing } }
+        }
+        return id
+    }
+
+    // A member the selection screen put back: out of the party, standing where it is.
+    fn dismiss_member { mut w: world::World, n: i32 } {
+        party::prune{ &w }
+        if not party::valid_slot{ n } { return }
+        let id = w.party.npcs[@as(usize, n)]
+        if party::is_member{ w = &w, id } { release_member{ &w, id } }
+    }
 }

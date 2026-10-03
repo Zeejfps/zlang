@@ -13,7 +13,7 @@ namespace rt_mod {
         else if routine == nwscript::RevealMap { try reveal_map{ &vm, argc } }
         else if routine == nwscript::DoSinglePlayerAutoSave { w.autosave_due = true }
         else if routine == nwscript::AurPostString { try aur_post_string{ &w, &vm, argc } }
-        else if routine == nwscript::ShowPartySelectionGUI { try show_party_selection_gui{ &vm, argc } }
+        else if routine == nwscript::ShowPartySelectionGUI { try show_party_selection_gui{ &w, &vm, argc } }
         else { return false }
         return true
     }
@@ -124,12 +124,14 @@ namespace rt_mod {
     }
 
     // void ShowPartySelectionGUI(string sExitScript = "", int nForceNPC1 = -1, int nForceNPC2 = -1):
-    // the party selection screen is not built; the party stays as it is and the exit script
-    // does not run.
-    fn show_party_selection_gui { mut vm: nwvm::Vm, argc: u8 } -> ! {
+    // the party selection screen (lib/ingame/partysel_panel) opens on the note with the two forced
+    // slots; when it closes the exit script runs with no caller (scripts::run, self OBJECT_INVALID),
+    // and rt_party::bring_member / dismiss_member apply the choice.
+    fn show_party_selection_gui { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let r = nwscript::ShowPartySelectionGUI
-        _ = try nwarg::string{ &vm, routine = r, argc, i = 0 }
-        _ = try nwarg::int{ &vm, routine = r, argc, i = 1 }
-        _ = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let exit = try nwarg::string{ &vm, routine = r, argc, i = 0 }
+        let force1 = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let force2 = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        outbox::post{ out = &w.out, note = outbox::Note::party_selection{ exit_script = resref::truncate{ name = exit }, force1, force2 } }
     }
 }
