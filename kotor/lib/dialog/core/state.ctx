@@ -60,6 +60,7 @@ namespace dlg {
         event_resref: resref::ResRef,
         event_private: bool,
         pending: bool,
+        pending_since: u64,         // world ms the pending flag was set, so a lost order can be given up
         last_resref: resref::ResRef,    // GetLastConversation
         // The walk through the graph.
         entry: i32,                 // the current entry, -1 none (+0x70)
@@ -124,7 +125,7 @@ namespace dlg {
         return State{
             active = false, d = empty_dialog{}, name = resref::empty{}, owner = obj::INVALID, other = obj::INVALID,
             private = false, gender = 0, saved_ai_level = 0,
-            event_pending = false, event_resref = resref::empty{}, event_private = false, pending = false,
+            event_pending = false, event_resref = resref::empty{}, event_private = false, pending = false, pending_since = 0,
             last_resref = resref::empty{},
             entry = -1, chosen = -1, step = Step::none, step_entry = 0, node_end_ms = 0, wait_flags = 0,
             paused = false, end_flag = false, ending = false, end_ran = false, skip = false, pick = -1, vo_cut = false,
