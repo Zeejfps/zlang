@@ -353,8 +353,8 @@ namespace rt_crea {
     // ---- the nearest creature
 
     // Whether creature `o` meets one CREATURE_TYPE_* criterion (-1 and unknown types: all do).
-    // There is no perception yet: every creature in the area counts as seen and heard, and no
-    // creature has a spell effect (effects are not kept: rt_fx).
+    // Perception criteria read lib/engine/perception.ctx; no creature has a spell effect yet
+    // (effects are not kept: rt_fx, HOOK(rules)).
     fn meets { w: *world::World, repute: ?twoda::Table, from: *obj::Object, o: *obj::Object, c: *obj::Creature, t: i32, v: i32 } -> bool {
         match t {
             nwconst::CREATURE_TYPE_RACIAL_TYPE => { return @as(i32, c.race) == v }
@@ -380,7 +380,20 @@ namespace rt_crea {
             nwconst::CREATURE_TYPE_HAS_SPELL_EFFECT => { return false }
             nwconst::CREATURE_TYPE_DOES_NOT_HAVE_SPELL_EFFECT => { return true }
             nwconst::CREATURE_TYPE_PERCEPTION => {
-                return v == nwconst::PERCEPTION_SEEN_AND_HEARD or v == nwconst::PERCEPTION_HEARD or v == nwconst::PERCEPTION_SEEN
+                let e = perception::entry_of{ w, viewer = from.id, target = o.id }
+                let seen = e != null and e.seen
+                let heard = e != null and e.heard
+                match v {
+                    nwconst::PERCEPTION_SEEN_AND_HEARD => { return seen and heard }
+                    nwconst::PERCEPTION_NOT_SEEN_AND_NOT_HEARD => { return not seen and not heard }
+                    nwconst::PERCEPTION_HEARD_AND_NOT_SEEN => { return heard and not seen }
+                    nwconst::PERCEPTION_SEEN_AND_NOT_HEARD => { return seen and not heard }
+                    nwconst::PERCEPTION_NOT_HEARD => { return not heard }
+                    nwconst::PERCEPTION_HEARD => { return heard }
+                    nwconst::PERCEPTION_NOT_SEEN => { return not seen }
+                    nwconst::PERCEPTION_SEEN => { return seen }
+                    else => { return true }
+                }
             }
             else => { return true }
         }
