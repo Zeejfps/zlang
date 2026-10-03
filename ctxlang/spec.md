@@ -638,7 +638,8 @@ namespace utf8 {
    - Pages are never freed. They live until the program ends.
 4. The size of every local is known at compile time.
 5. Structs, unions and arrays are values. Assignment and `return` copy them.
-6. A `mut` context field is passed as a pointer. A read-only context field is passed by copy or by reference, at the compiler's choice. §3.1 makes the choice unobservable for checked arguments. A bind always copies (§4).
+6. A `mut` context field is passed as a pointer. A read-only context field is passed by copy or by reference, at the compiler's choice. Either way the callee sees the value the argument had when it was evaluated: §3.1 makes the choice unobservable for checked arguments. Only a change made during the call through a pointer §3.1 doesn't check (rule 6) may be seen by a callee given a reference. A bind always copies (§4).
+   - ctxc passes a read-only struct, union or array of more than 32 bytes by reference, to any function but an extern fn (§18), which C passes it to by value. The reference is to the argument's place if it is one and nothing else in the call can change it: no argument after it may call a function or run statements, and no other argument, nor the function value called, holds a pointer that comes from the same local (`&x`, `x[..]`, a pointer `p` for `p.*`, or a bind holding `&x`; any `&fn` local counts). Otherwise it is to a copy made when the argument is evaluated.
 7. Stack size is finite. Exceeding it panics.
 
 ### Escape check
