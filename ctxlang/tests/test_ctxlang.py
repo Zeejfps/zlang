@@ -586,6 +586,39 @@ fn main { mut io: Io } {
 }
 """, '1257\n104\n102.5\n')
 
+    def test_multiline_literals(self):
+        # `\\` lines (spec §11, Literals): raw text, joined with \n; a \r that ends a line isn't
+        # part of it.
+        src = r"""
+const VS: c::String =
+    \\#version 410 core
+    \\void main() {
+    \\    gl_Position = vec4(pos, "1.0" \n);
+    \\}
+
+fn main { mut io: Io } {
+    let text: []u8 =
+        \\one
+        \\
+        \\three\\
+    io::println_u64{ &io, n = text.len }
+    io::println{ &io, s = utf8::of{ chars = text } }
+    io::println{ &io, s = utf8::of{ chars = c::bytes{ s = VS } } }
+    let empty: []u8 = \\
+    let s: utf8::String = \\a "quoted" word
+    _ = @fmt(&io, "{} {}\n", empty.len, s)
+}
+"""
+        self.assertOutput(src, '12\none\n\nthree\\\\\n#version 410 core\nvoid main() {\n'
+                               '    gl_Position = vec4(pos, "1.0" \\n);\n}\n0 a "quoted" word\n')
+        self.assertOutput('fn main { mut io: Io } {\r\n    let t: []u8 =\r\n        \\\\a\r\n'
+                          '        \\\\b\r\n    io::println_u64{ &io, n = t.len }\r\n}\r\n', '3\n')
+
+    def test_multiline_literal_errors(self):
+        self.assertLexError('fn main {} {\n    let t: []u8 = \\\\caf\u00e9\n}',
+                            'a multi-line literal holds ASCII characters only', 2, 24)
+
+
 
 class Parser(Base):
     """Every syntax error, at its exact position: tools/parsetest.py compares ctxc's first

@@ -113,7 +113,14 @@ pass them down to what needs them (`&fs`). Code without capabilities is pure. C 
 x, y)` (§13) prints formatted text; `let mut err = io::to_stderr{ &io }`, then `@fmt(&err, ...)`,
 goes to standard error. Into a `utf8::Builder`: `try @fmt(&b, ...)`, then `utf8::view{ b }`;
 `[]u8` holes are written as text. A tool's own `#write` fns for a type replace std's. String
-literals convert to `[]u8`, `utf8::String` or `c::String` as the context expects.
+literals convert to `[]u8`, `utf8::String` or `c::String` as the context expects. A multi-line
+literal (GLSL) is lines that each start with `\\`, raw, joined with `\n` (§11, Literals, rule 9):
+
+```
+const MESH_VS: c::String =
+    \\#version 410 core
+    \\void main() { gl_Position = vec4(0.0); }
+```
 
 ## Building and checking
 

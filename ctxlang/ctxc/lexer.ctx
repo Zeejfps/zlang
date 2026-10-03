@@ -149,6 +149,8 @@ namespace lexer {
             number{ &lx }
         } else if c == '"' or c == '\'' {
             literal{ &lx, quote = c }
+        } else if c == '\\' and byte{ s = text, i = start + 1 } == '\\' {
+            raw_lines{ &lx }
         } else if c == '@' {
             lx.pos = word_end{ text, i = start + 1 }
             if lx.pos == start + 1 {
@@ -272,6 +274,45 @@ namespace lexer {
         while i < lx.pos {
             i = if i == skip { i + 1 } else { skip_char{ &lx, i } }
         }
+    }
+
+    // A multi-line literal (spec §11, Literals): `\\` and the rest of the line, and the same on
+    // each next line that starts with `\\` after spaces and tabs. One str token, from the first
+    // `\\` to the end of the last line, whose value str_value joins.
+    fn raw_lines { mut lx: Lexer } {
+        let text = lx.text
+        let start = lx.pos
+        let mut bad = text.len                     // the first byte above 127
+        let mut i = start
+        let mut end = start
+        while true {
+            let mut j = i + 2
+            while j < text.len and text[j] != '\n' {
+                if text[j] >= 128 and bad == text.len { bad = j }
+                j = j + 1
+            }
+            end = j
+            let mut k = j + 1
+            while k < text.len and (text[k] == ' ' or text[k] == '\t') { k = k + 1 }
+            if k + 1 >= text.len or text[k] != '\\' or text[k + 1] != '\\' { break }
+            i = k
+        }
+        lx.pos = end
+        if bad == text.len {
+            add{ &lx, kind = tok::Kind::str, start }
+            return
+        }
+        // As with a quoted literal: the first non-ASCII character, then any invalid UTF-8.
+        let n = utf8::seq_len{ bytes = text, i = bad }
+        let mut k = bad + 1
+        if n == 0 {
+            report{ &lx, start = bad, end = k, msg = "invalid UTF-8" }
+        } else {
+            k = bad + n
+            report{ &lx, start = bad, end = k, msg = "a multi-line literal holds ASCII characters only" }
+        }
+        while k < end { k = skip_char{ &lx, i = k } }
+        add{ &lx, kind = tok::Kind::error, start }
     }
 
     fn scan_literal { text: []u8, start: usize, quote: u8 } -> Scanned {
@@ -537,6 +578,7 @@ namespace lexer {
 
     // A string token's bytes, with escapes decoded. A view of text if it has no escapes.
     fn str_value { mut heap: arena::Arena, text: []u8 } -> []u8 {
+        if text[0] == '\\' { return raw_value{ &heap, text } }
         let body = text[1..text.len - 1]
         let mut i: usize = 0
         while i < body.len and body[i] != '\\' { i = i + 1 }
@@ -547,6 +589,28 @@ namespace lexer {
             let d = decode_char{ text = body, j }
             try! list::push{ list = &xs, item = d.b }
             j = d.next
+        }
+        return list::items{ list = xs }
+    }
+
+    // A multi-line literal's value: each line's text after its `\\`, without a `\r` that ends
+    // it, joined with `\n`.
+    fn raw_value { mut heap: arena::Arena, text: []u8 } -> []u8 {
+        let mut xs = list::new(u8){ realloc = arena::alloc, &heap }
+        let mut i: usize = 0
+        while i < text.len {
+            while text[i] == ' ' or text[i] == '\t' { i = i + 1 }
+            if i > 0 { try! list::push{ list = &xs, item = '\n' } }
+            i = i + 2
+            let mut j = i
+            while j < text.len and text[j] != '\n' { j = j + 1 }
+            let mut e = j
+            if e > i and text[e - 1] == '\r' { e = e - 1 }
+            while i < e {
+                try! list::push{ list = &xs, item = text[i] }
+                i = i + 1
+            }
+            i = j + 1
         }
         return list::items{ list = xs }
     }

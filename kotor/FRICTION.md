@@ -9,13 +9,7 @@ Remove an entry once a language change fixes it, and say which commit did.
 
 Counts are from the spike's sources (sdl.ctx, gl.ctx, png.ctx, main.ctx, about 2,650 lines).
 
-- **No multi-line string literal, and no way to join literals.** GLSL source wanted to be one
-  literal per shader. Written instead as `const MESH_VS: [17]c::String = [ "#version 410 core\n",
-  ... ]`, one element per line, passed to `glShaderSource` as `count` strings. The length is
-  counted by hand (a wrong count is caught: `expected [18]c::String, got [17]c::String`), and a
-  const isn't a place, so each array is copied to a local (`let mesh_vs = MESH_VS`) to take
-  `&mesh_vs`. 4 shaders, 54 lines here; the GL backend will have dozens. A raw or multi-line
-  literal, or `[_]T` for a const's length, would do.
+
 - **An `if` of literals as an `@fmt` hole** (ctxlang FRICTION #11): `@fmt(&io, "{}", if on {
   "on" } else { "absent" })` is "branches have different types: [2]u8 and [6]u8". Each needed a
   typed `let s: []u8 = if ...` first: 5 times in main.ctx.
