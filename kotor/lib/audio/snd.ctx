@@ -1,0 +1,197 @@
+// A sound file decoded a piece at a time: whatever wav::probe finds (PCM, IMA ADPCM or MP3) comes
+// out as interleaved 16-bit samples at the file's own rate and channels, a block or a frame at a
+// time, so music and voice-over never decode whole files up front.
+//
+//   let s = try snd::make{ realloc, &heap }      // ~40 KB, opened in place (the mixer's voices
+//   try snd::open{ s, bytes }                    //   hold theirs); bytes must outlive the stream
+//   let n = try snd::read{ s, into = buf[..] }   // sample frames; 0 at the end
+//   snd::rewind{ s }                             // back to the start, for loops
+//
+// A stream doesn't own the file's bytes: the caller keeps them (from the resource manager, or a
+// file read whole) until it is done with the stream.
+namespace snd {
+    error bad_block             // an IMA ADPCM block too big for the stream's buffer
+
+    const BUFFER: usize = 4096  // samples: a stereo IMA block of 2,041 frames, an MP3 frame
+
+    struct Stream {
+        bytes: []u8,
+        info: wav::Info,
+        pos: usize,             // the next byte to decode
+        end: usize,             // the end of the coded samples
+        frames: u64,            // sample frames handed out since the start
+        lost_sync: u32,         // MP3: times the next frame wasn't where the last one ended
+        buf: [4096]i16,         // decoded and not yet handed out: buf[buf_at..buf_len]
+        buf_at: usize,
+        buf_len: usize,
+        mp3: mp3::Decoder,
+    }
+
+    // A Stream in memory from `realloc`, not yet opened: one is too big to want on the stack,
+    // and has no zero value to start from.
+    fn make(S) { realloc: alloc::Fn(S), mut heap: S } -> !*mut Stream {
+        let one = try alloc::resize(Stream, S){ realloc, &heap, mem = slice::empty(Stream){}, count = 1 }
+        return &one[0]
+    }
+
+    // Opens `bytes` (a whole sound file) for decoding from its start.
+    fn open { mut s: Stream, bytes: []u8 } -> ! {
+        s.info = try wav::probe{ bytes }
+        s.bytes = bytes
+        s.lost_sync = 0
+        rewind{ &s }
+    }
+
+    // Back to the start.
+    fn rewind { mut s: Stream } {
+        s.pos = s.info.data
+        s.end = s.info.data + s.info.size
+        s.frames = 0
+        s.buf_at = 0
+        s.buf_len = 0
+        if s.info.codec == wav::Codec::mp3 { mp3::reset{ d = &s.mp3 } }
+    }
+
+    // Decodes into `into`: as many whole sample frames (info.channels samples each) as fit, up to
+    // the end. Returns how many; 0 only at the end.
+    fn read { mut s: Stream, into: []mut i16 } -> !usize {
+        let ch: usize = s.info.channels
+        let want = into.len / ch
+        let mut done: usize = 0
+        while done < want {
+            if s.info.codec == wav::Codec::pcm {
+                let n = read_pcm{ &s, into = into[done * ch..want * ch] }
+                s.frames = s.frames + n
+                done = done + n
+                break
+            }
+            if s.buf_at == s.buf_len {
+                if not try refill{ &s } { break }
+                continue
+            }
+            let have = (s.buf_len - s.buf_at) / ch
+            let n = if have < want - done { have } else { want - done }
+            slice::copy(i16){ dst = into[done * ch..(done + n) * ch], src = s.buf[s.buf_at..s.buf_at + n * ch] }
+            s.buf_at = s.buf_at + n * ch
+            s.frames = s.frames + n
+            done = done + n
+        }
+        return done
+    }
+
+    // PCM needs no buffer: samples go straight from the file into `into`.
+    fn read_pcm { mut s: Stream, into: []mut i16 } -> usize {
+        let ch: usize = s.info.channels
+        let frame_bytes: usize = s.info.block_align
+        let left = (s.end - s.pos) / frame_bytes
+        let want = into.len / ch
+        let n = if left < want { left } else { want }
+        let src = s.bytes[s.pos..s.pos + n * frame_bytes]
+        let count = n * ch
+        let mut i: usize = 0
+        if s.info.bits == 16 {
+            while i < count {
+                let lo: u32 = src[2 * i]
+                let hi: u32 = src[2 * i + 1]
+                let v = lo | (hi << 8)
+                into[i] = @as(i16, if v >= 0x8000 { @as(i32, v) - 0x10000 } else { @as(i32, v) })
+                i = i + 1
+            }
+        } else {
+            // 8-bit samples are unsigned, 128 the middle.
+            while i < count {
+                into[i] = @as(i16, (@as(i32, src[i]) - 128) * 256)
+                i = i + 1
+            }
+        }
+        s.pos = s.pos + n * frame_bytes
+        return n
+    }
+
+    // Decodes the next IMA block or MP3 frame into the buffer, which is empty. False at the end.
+    fn refill { mut s: Stream } -> !bool {
+        s.buf_at = 0
+        s.buf_len = 0
+        let ch: usize = s.info.channels
+        if s.info.codec == wav::Codec::ima {
+            while s.buf_len == 0 {
+                if s.pos >= s.end or s.frames >= s.info.frames { return false }
+                let size: usize = s.info.block_align
+                let stop = if s.pos + size > s.end { s.end } else { s.pos + size }
+                let block = s.bytes[s.pos..stop]
+                s.pos = stop
+                let n = ima::frames_in{ size = block.len, channels = ch }
+                if n * ch > BUFFER { return bad_block }
+                let got = ima::decode_block{ block, channels = ch, into = s.buf[..] }
+                // The last block is padded: stop at the length `fact` gives.
+                let left = s.info.frames - s.frames
+                let keep: usize = if @as(u64, got) > left { @as(usize, left) } else { got }
+                s.buf_len = keep * ch
+            }
+            return true
+        }
+        // MP3: the next frame, past a leading Info frame (which decodes to nothing).
+        while s.buf_len == 0 {
+            let f = next_frame{ &s } ifnull { return false }
+            s.pos = f.at + f.size
+            let got = try mp3::decode{ d = &s.mp3, f = s.bytes[f.at..f.at + f.size], into = s.buf[..] }
+            s.buf_len = @as(usize, got) * ch
+        }
+        return true
+    }
+
+    struct Frame { at: usize, size: usize }
+
+    // The next whole Layer III frame at or after s.pos: the stream should hold nothing but
+    // frames, but junk is skipped (counted in lost_sync). Null at the end.
+    fn next_frame { mut s: Stream } -> ?Frame {
+        let mut at = s.pos
+        let mut skipped = false
+        while at + 4 <= s.end {
+            let h = mp3::read_header{ b = s.bytes[at..s.end] }
+            if h != null and h.layer == 3 and h.size > 0 and at + @as(usize, h.size) <= s.end {
+                if skipped { s.lost_sync = s.lost_sync + 1 }
+                return Frame{ at, size = h.size }
+            }
+            skipped = true
+            at = at + 1
+        }
+        return null
+    }
+
+    // How many sample frames the stream holds: what its header says for PCM and IMA, and for MP3
+    // its audio frames (found by walking their headers, without decoding) times 1,152.
+    fn count_frames { s: *Stream } -> u64 {
+        if s.info.codec != wav::Codec::mp3 { return s.info.frames }
+        let mut at = s.info.data
+        let end = s.info.data + s.info.size
+        let mut n: u64 = 0
+        let mut first = true
+        while at + 4 <= end {
+            let h = mp3::read_header{ b = s.bytes[at..end] }
+            if h == null or h.size == 0 or at + @as(usize, h.size) > end {
+                at = at + 1
+                continue
+            }
+            if not (first and mp3::is_info{ f = s.bytes[at..at + h.size], h }) { n = n + h.samples }
+            first = false
+            at = at + h.size
+        }
+        return n
+    }
+
+    // An MP3 stream's leading Xing/Info frame, which says how many frames follow and how many
+    // samples the encoder padded it with; null for other streams.
+    fn read_xing { s: *Stream } -> ?mp3::Xing {
+        if s.info.codec != wav::Codec::mp3 { return null }
+        let end = s.info.data + s.info.size
+        let h = mp3::read_header{ b = s.bytes[s.info.data..end] } ifnull { return null }
+        if s.info.data + @as(usize, h.size) > end { return null }
+        return mp3::read_xing{ f = s.bytes[s.info.data..s.info.data + h.size], h }
+    }
+
+    // Seconds of sound in `frames` sample frames.
+    fn seconds { s: *Stream, frames: u64 } -> f64 {
+        return @as(f64, frames) / @as(f64, s.info.rate)
+    }
+}

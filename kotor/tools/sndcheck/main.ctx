@@ -1,0 +1,513 @@
+// sndcheck: decode every sound in the install with lib/audio, and say what failed.
+//
+//   kotor/tools/ctxc run kotor/tools/sndcheck                   every sound (below)
+//   kotor/tools/ctxc run kotor/tools/sndcheck -- DIR ...        the .wav and .mp3 files under DIRs
+//   kotor/tools/ctxc run kotor/tools/sndcheck -- --ref [N]      also compare with ffmpeg (below)
+//
+// Every sound is: each .wav and .mp3 file under the install's streamwaves/, streamsounds/,
+// streammusic/ and launcher/ (--game DIR, default F:/Steam/steamapps/common/swkotor), then every
+// WAV resource that lib/res's search finds in an archive (chitin's BIFs, patch.erf, ...). rims/
+// isn't mounted by the resource manager (it copies chitin), so its WAVs are reached only by
+// pointing sndcheck at files kotor/tools/py/sndextract.py extracted.
+//
+// Each sound is classified (wrapper and codec, as docs/formats/audio.md names them), decoded to
+// the end, and its decoded length checked against what its headers say: the data size for PCM,
+// the `fact` chunk for IMA ADPCM, and for MP3 the frames found by walking their headers and, when
+// there is one, the Info frame's count. Decode time is measured per class: "x real-time" is
+// seconds of sound decoded per second of decoding.
+//
+// --ref N decodes every Nth MP3 (default 40) and every music MP3 a second time with ffmpeg's
+// floating-point MP3 decoder (`ffmpeg -c:a mp3float`, on PATH, or --ffmpeg PATH; a dev tool,
+// never part of the game), over the same frames (the Info frame left out), and reports the
+// largest and the RMS difference between the two decodes in 16-bit steps.
+
+struct Options {
+    dirs: [8][]u8,
+    ndirs: usize,
+    game: []u8,
+    every: u32,                 // --ref: every Nth MP3; 0 = no comparison
+    ffmpeg: []u8,
+    verbose: bool,
+}
+
+// What one class of files added up to.
+struct Class {
+    files: u32,
+    frames: u64,
+    seconds: f64,
+    ticks: u64,                 // decoding time, in SDL's performance counter
+}
+
+// One file compared with ffmpeg.
+struct Ref { path: [256]u8, len: usize, max: i32, rms: f64 }
+
+struct Check {
+    classes: [6]Class,          // CLASS_NAMES
+    failed: u32,
+    mismatched: u32,
+    lost_sync: u32,
+    seen: u32,
+    mp3s: u32,                  // MP3 files met, for --ref's every Nth
+    refs: u32,
+    ref_failed: u32,
+    ref_samples: u64,
+    ref_differing: u64,
+    ref_sum_sq: f64,
+    ref_max: i32,
+    ref_length_differs: u32,
+    worst: [8]Ref,              // the largest differences, largest first
+    nworst: usize,
+}
+
+const CLASS_NAMES: [6][]u8 = ["riffstub/mp3", "none/pcm", "mp3pad/pcm", "mp3pad/ima-adpcm", "none/ima-adpcm", "other"]
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let opts = parse_args{ &io, args } ifnull { return 2 }
+    let walk_pages = mem::pages{ &mem, size = 67108864 } ifnull { return oom{ &io } }
+    let file_pages = mem::pages{ &mem, size = 536870912 } ifnull { return oom{ &io } }
+    let mut walk_heap = arena::new{ buf = walk_pages }
+    let mut file_heap = arena::new{ buf = file_pages }
+    let mut c: Check
+    let stream = snd::make{ realloc = arena::alloc, heap = &walk_heap } iferr { return oom{ &io } }
+    if opts.every > 0 { _ = fs::make_dir{ &fs, path = "kotor/out" }; _ = fs::make_dir{ &fs, path = "kotor/out/sndcheck" } }
+    let start = sdl::counter{ &sdl }
+    if opts.ndirs > 0 {
+        let mut i: usize = 0
+        while i < opts.ndirs {
+            walk{ &io, &fs, &proc, &sdl, &c, &walk_heap, &file_heap, stream, opts, dir = opts.dirs[i] }
+            i = i + 1
+        }
+    } else {
+        let subdirs: [4][]u8 = ["streamwaves", "streamsounds", "streammusic", "launcher"]
+        let mut i: usize = 0
+        while i < 4 {
+            let dir = join{ heap = &walk_heap, a = opts.game, b = subdirs[i] }
+            walk{ &io, &fs, &proc, &sdl, &c, &walk_heap, &file_heap, stream, opts, dir }
+            i = i + 1
+        }
+        let mut h = heap::new{ &mem }
+        check_archives{ &io, &fs, &proc, &sdl, &c, &h, &file_heap, stream, opts } iferr err{ error } {
+            _ = @fmt(&io, "FAIL the resource manager: {}\n", error)
+            c.failed = c.failed + 1
+        }
+    }
+    let elapsed = seconds_since{ &sdl, start }
+    report{ &io, &sdl, c, opts, elapsed }
+    io::flush{ &io }
+    return if c.failed > 0 or c.mismatched > 0 { 1 } else { 0 }
+}
+
+fn oom { mut io: Io } -> i32 {
+    io::eprintln{ &io, s = "sndcheck: out of memory" }
+    return 1
+}
+
+fn seconds_since { mut sdl: sdl::Sdl, start: u64 } -> f64 {
+    return @as(f64, sdl::counter{ &sdl } - start) / @as(f64, sdl::counter_frequency{ &sdl })
+}
+
+// a + "/" + b, from the arena.
+fn join { mut heap: arena::Arena, a: []u8, b: []u8 } -> []u8 {
+    let out = try! alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = a.len + 1 + b.len }
+    slice::copy(u8){ dst = out[..a.len], src = a }
+    out[a.len] = '/'
+    slice::copy(u8){ dst = out[a.len + 1..], src = b }
+    return out
+}
+
+fn ends_with_ci { s: []u8, suffix: []u8 } -> bool {
+    if s.len < suffix.len { return false }
+    let mut i: usize = 0
+    while i < suffix.len {
+        if ascii::to_lower{ c = s[s.len - suffix.len + i] } != suffix[i] { return false }
+        i = i + 1
+    }
+    return true
+}
+
+// Every .wav and .mp3 under `dir`, in name order, depth first. Other entries are tried as
+// directories, quietly.
+fn walk {
+    mut io: Io, mut fs: Fs, mut proc: Proc, mut sdl: sdl::Sdl, mut c: Check,
+    mut walk_heap: arena::Arena, mut file_heap: arena::Arena, stream: *mut snd::Stream, opts: Options, dir: []u8,
+} {
+    let names = fs::list{ &fs, heap = &walk_heap, realloc = arena::alloc, path = dir } iferr { return }
+    let mut i: usize = 0
+    while i < names.len {
+        let name = names[i]
+        let path = join{ heap = &walk_heap, a = dir, b = name }
+        if ends_with_ci{ s = name, suffix = ".wav" } or ends_with_ci{ s = name, suffix = ".mp3" } {
+            let mark = file_heap.used
+            let bytes = fs::read_all{ &fs, heap = &file_heap, realloc = arena::alloc, path }
+            match bytes {
+                ok{ value } => { check_sound{ &io, &fs, &proc, &sdl, &c, heap = &file_heap, stream, opts, label = path, bytes = value } }
+                err{ error } => {
+                    c.seen = c.seen + 1
+                    c.failed = c.failed + 1
+                    _ = @fmt(&io, "FAIL {}: can't read: {}\n", path, error)
+                }
+            }
+            file_heap.used = mark
+        } else if name.len > 0 and name[0] != '.' {
+            walk{ &io, &fs, &proc, &sdl, &c, &walk_heap, &file_heap, stream, opts, dir = path }
+        }
+        i = i + 1
+    }
+}
+
+// Every WAV resource the resource manager's search finds in an archive (the directories it
+// searches are walked above).
+fn check_archives {
+    mut io: Io, mut fs: Fs, mut proc: Proc, mut sdl: sdl::Sdl, mut c: Check,
+    mut h: heap::Heap, mut file_heap: arena::Arena, stream: *mut snd::Stream, opts: Options,
+} -> ! {
+    let mut rm = try res::open{ &fs, heap = &h, game = opts.game }
+    defer res::close{ &fs, &rm }
+    let found = try res::list_type{ rm, kind = restype::Type::wav, realloc = heap::alloc, heap = &h }
+    defer _ = alloc::resize(res::Found, heap::Heap){ realloc = heap::alloc, heap = &h, mem = found, count = 0 }
+    let mut i: usize = 0
+    while i < found.len {
+        let f = found[i]
+        i = i + 1
+        if f.loc.class == res::Class::dir { continue }
+        let mark = file_heap.used
+        let mut label: [512]u8
+        let mut n = append{ into = label[..], at = 0, b = res::source_path{ rm, loc = f.loc } }
+        let member = res::member_file{ rm, loc = f.loc }
+        if member.len > 0 {
+            n = append{ into = label[..], at = n, b = ":" }
+            n = append{ into = label[..], at = n, b = member }
+        }
+        n = append{ into = label[..], at = n, b = "/" }
+        n = append{ into = label[..], at = n, b = resref::bytes{ r = &f.name } }
+        n = append{ into = label[..], at = n, b = ".wav" }
+        let bytes = res::read{ &fs, rm, loc = f.loc, realloc = arena::alloc, heap = &file_heap }
+        match bytes {
+            ok{ value } => { check_sound{ &io, &fs, &proc, &sdl, &c, heap = &file_heap, stream, opts, label = label[..n], bytes = value } }
+            err{ error } => {
+                c.seen = c.seen + 1
+                c.failed = c.failed + 1
+                _ = @fmt(&io, "FAIL {}: can't read: {}\n", label[..n], error)
+            }
+        }
+        file_heap.used = mark
+    }
+}
+
+fn append { into: []mut u8, at: usize, b: []u8 } -> usize {
+    let n = if at + b.len > into.len { into.len - at } else { b.len }
+    slice::copy(u8){ dst = into[at..at + n], src = b[..n] }
+    return at + n
+}
+
+fn class_of { info: wav::Info } -> usize {
+    return match info.codec {
+        mp3 => { if info.wrapper == wav::Wrapper::riffstub { 0 } else { 5 } }
+        pcm => { if info.wrapper == wav::Wrapper::none { 1 } else if info.wrapper == wav::Wrapper::mp3pad { 2 } else { 5 } }
+        ima => { if info.wrapper == wav::Wrapper::mp3pad { 3 } else if info.wrapper == wav::Wrapper::none { 4 } else { 5 } }
+    }
+}
+
+fn check_sound {
+    mut io: Io, mut fs: Fs, mut proc: Proc, mut sdl: sdl::Sdl, mut c: Check,
+    mut heap: arena::Arena, stream: *mut snd::Stream, opts: Options, label: []u8, bytes: []u8,
+} {
+    let path = label
+    c.seen = c.seen + 1
+    snd::open{ s = stream, bytes } iferr err{ error } {
+        c.failed = c.failed + 1
+        _ = @fmt(&io, "FAIL {}: {}\n", path, error)
+        return
+    }
+    let info = stream.info
+    let class = class_of{ info }
+    let ch: usize = info.channels
+    let expected = snd::count_frames{ s = stream }
+    let xing = snd::read_xing{ s = stream }
+    if xing != null {
+        let counted = xing.frames
+        if counted != null and @as(u64, counted) * 1152 != expected {
+            c.mismatched = c.mismatched + 1
+            _ = @fmt(&io, "MISMATCH {}: the Info frame says {} frames, the stream has {}\n", path, counted, expected / 1152)
+        }
+    }
+    // Compare with ffmpeg?
+    let mut compare = false
+    if info.codec == wav::Codec::mp3 {
+        c.mp3s = c.mp3s + 1
+        compare = opts.every > 0 and (c.mp3s % opts.every == 0 or info.channels == 2)
+    }
+    let mut keep = slice::empty(i16){}
+    if compare {
+        keep = alloc::resize(i16, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(i16){}, count = @as(usize, expected) * ch } iferr {
+            compare = false
+            slice::empty(i16){}
+        }
+    }
+    let mut buf: [32768]i16
+    let mut got: u64 = 0
+    let t0 = sdl::counter{ &sdl }
+    while true {
+        let n = snd::read{ s = stream, into = buf[..] } iferr err{ error } {
+            c.failed = c.failed + 1
+            _ = @fmt(&io, "FAIL {}: after {} frames: {}\n", path, got, error)
+            return
+        }
+        if n == 0 { break }
+        if compare and got + n <= expected {
+            let at = @as(usize, got) * ch
+            slice::copy(i16){ dst = keep[at..at + n * ch], src = buf[..n * ch] }
+        }
+        got = got + n
+    }
+    let t1 = sdl::counter{ &sdl }
+    let k = &c.classes[class]
+    k.files = k.files + 1
+    k.frames = k.frames + got
+    k.seconds = k.seconds + @as(f64, got) / @as(f64, info.rate)
+    k.ticks = k.ticks + (t1 - t0)
+    if got != expected {
+        c.mismatched = c.mismatched + 1
+        _ = @fmt(&io, "MISMATCH {}: decoded {} frames, the headers say {}\n", path, got, expected)
+    }
+    if stream.lost_sync > 0 {
+        c.lost_sync = c.lost_sync + 1
+        _ = @fmt(&io, "LOST SYNC {}: {} times\n", path, stream.lost_sync)
+    }
+    if opts.verbose {
+        _ = @fmt(&io, "{}: {} {} Hz x{}, {} frames\n", path, CLASS_NAMES[class], info.rate, info.channels, got)
+    }
+    if compare {
+        compare_ref{ &io, &fs, &proc, &c, &heap, stream, opts, path, ours = keep[..@as(usize, got) * ch] }
+    }
+}
+
+// Decodes the file's MPEG frames with ffmpeg too, and compares.
+fn compare_ref {
+    mut io: Io, mut fs: Fs, mut proc: Proc, mut c: Check, mut heap: arena::Arena,
+    stream: *mut snd::Stream, opts: Options, path: []u8, ours: []i16,
+} {
+    let info = stream.info
+    let mut start = info.data
+    let end = info.data + info.size
+    if snd::read_xing{ s = stream } != null {
+        let h = mp3::read_header{ b = stream.bytes[start..end] } ifnull { return }
+        start = start + h.size
+    }
+    let mp3_path: []u8 = "kotor/out/sndcheck/ref.mp3"
+    let pcm_path: []u8 = "kotor/out/sndcheck/ref.pcm"
+    _ = fs::write_all{ &fs, path = mp3_path, bytes = stream.bytes[start..end] } iferr err{ error } {
+        c.ref_failed = c.ref_failed + 1
+        _ = @fmt(&io, "REF {}: can't write {}: {}\n", path, mp3_path, error)
+        return
+    }
+    let argv: [11][]u8 = [opts.ffmpeg, "-v", "error", "-y", "-c:a", "mp3float", "-i", mp3_path, "-f", "s16le", pcm_path]
+    let code = proc::run{ &proc, argv = argv[..], env = slice::empty([]u8){} } iferr err{ error } {
+        c.ref_failed = c.ref_failed + 1
+        _ = @fmt(&io, "REF {}: can't run {}: {}\n", path, opts.ffmpeg, error)
+        return
+    }
+    if code != 0 {
+        c.ref_failed = c.ref_failed + 1
+        _ = @fmt(&io, "REF {}: ffmpeg exited with {}\n", path, code)
+        return
+    }
+    let raw = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = pcm_path } iferr err{ error } {
+        c.ref_failed = c.ref_failed + 1
+        _ = @fmt(&io, "REF {}: can't read {}: {}\n", path, pcm_path, error)
+        return
+    }
+    let theirs = @slice(@cast(*i16, raw.ptr), raw.len / 2)
+    if theirs.len != ours.len {
+        c.ref_length_differs = c.ref_length_differs + 1
+        _ = @fmt(&io, "REF {}: ffmpeg decoded {} samples, we decoded {}\n", path, theirs.len, ours.len)
+    }
+    let n = if theirs.len < ours.len { theirs.len } else { ours.len }
+    let mut max: i32 = 0
+    let mut sum: f64 = 0.0
+    let mut differing: u64 = 0
+    let mut i: usize = 0
+    while i < n {
+        let d = @as(i32, theirs[i]) - @as(i32, ours[i])
+        if d != 0 {
+            let a = if d < 0 { -d } else { d }
+            if a > max { max = a }
+            sum = sum + @as(f64, d) * @as(f64, d)
+            differing = differing + 1
+        }
+        i = i + 1
+    }
+    c.refs = c.refs + 1
+    c.ref_samples = c.ref_samples + n
+    c.ref_differing = c.ref_differing + differing
+    c.ref_sum_sq = c.ref_sum_sq + sum
+    if max > c.ref_max { c.ref_max = max }
+    let rms = if n > 0 { sqrt{ x = sum / @as(f64, n) } } else { 0.0 }
+    note_worst{ &c, path, max, rms }
+}
+
+extern fn sqrt { x: f64 } -> f64
+
+// Keeps the 8 files with the largest differences.
+fn note_worst { mut c: Check, path: []u8, max: i32, rms: f64 } {
+    let mut at = c.nworst
+    while at > 0 and (c.worst[at - 1].max < max or (c.worst[at - 1].max == max and c.worst[at - 1].rms < rms)) { at = at - 1 }
+    if at >= 8 { return }
+    let mut i: usize = if c.nworst < 8 { c.nworst } else { 7 }
+    while i > at {
+        c.worst[i] = c.worst[i - 1]
+        i = i - 1
+    }
+    let mut r: Ref
+    let len = if path.len > 256 { 256 } else { path.len }
+    slice::copy(u8){ dst = r.path[..len], src = path[path.len - len..] }
+    r.len = len
+    r.max = max
+    r.rms = rms
+    c.worst[at] = r
+    if c.nworst < 8 { c.nworst = c.nworst + 1 }
+}
+
+fn report { mut io: Io, mut sdl: sdl::Sdl, c: Check, opts: Options, elapsed: f64 } {
+    let freq = @as(f64, sdl::counter_frequency{ &sdl })
+    _ = @fmt(&io, "\n{} files in {} s\n", c.seen, Fixed{ v = elapsed, places = 1, width = 0 })
+    _ = @fmt(&io, "class               files      hours   decode s   x real-time\n")
+    let mut i: usize = 0
+    let mut files: u32 = 0
+    let mut secs: f64 = 0.0
+    let mut ticks: u64 = 0
+    while i < 6 {
+        let k = c.classes[i]
+        if k.files > 0 {
+            let dec = @as(f64, k.ticks) / freq
+            _ = @fmt(&io, "{}{} {} {} {} {}\n", CLASS_NAMES[i], Pad{ n = 17 - CLASS_NAMES[i].len }, Right{ v = k.files, width = 7 },
+                Fixed{ v = k.seconds / 3600.0, places = 3, width = 10 }, Fixed{ v = dec, places = 2, width = 10 },
+                Fixed{ v = if dec > 0.0 { k.seconds / dec } else { 0.0 }, places = 0, width = 13 })
+            files = files + k.files
+            secs = secs + k.seconds
+            ticks = ticks + k.ticks
+        }
+        i = i + 1
+    }
+    let dec = @as(f64, ticks) / freq
+    _ = @fmt(&io, "all              {} {} {} {}\n", Right{ v = files, width = 7 }, Fixed{ v = secs / 3600.0, places = 3, width = 10 },
+        Fixed{ v = dec, places = 2, width = 10 }, Fixed{ v = if dec > 0.0 { secs / dec } else { 0.0 }, places = 0, width = 13 })
+    _ = @fmt(&io, "failed {}, length mismatches {}, lost sync {}\n", c.failed, c.mismatched, c.lost_sync)
+    if opts.every > 0 {
+        let rms = if c.ref_samples > 0 { sqrt{ x = c.ref_sum_sq / @as(f64, c.ref_samples) } } else { 0.0 }
+        _ = @fmt(&io, "\nffmpeg (mp3float) comparison: {} files, {} samples; max difference {}, RMS {}, samples differing {} ({}%)\n",
+            c.refs, c.ref_samples, c.ref_max, Fixed{ v = rms, places = 4, width = 0 }, c.ref_differing,
+            Fixed{ v = if c.ref_samples > 0 { 100.0 * @as(f64, c.ref_differing) / @as(f64, c.ref_samples) } else { 0.0 }, places = 3, width = 0 })
+        _ = @fmt(&io, "failed to compare {}, length differs {}\n", c.ref_failed, c.ref_length_differs)
+        let mut w: usize = 0
+        while w < c.nworst {
+            let r = c.worst[w]
+            _ = @fmt(&io, "  max {} rms {}  {}\n", r.max, Fixed{ v = r.rms, places = 4, width = 0 }, r.path[..r.len])
+            w = w + 1
+        }
+    }
+}
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{
+        dirs = ["", "", "", "", "", "", "", ""], ndirs = 0, game = "F:/Steam/steamapps/common/swkotor",
+        every = 0, ffmpeg = "ffmpeg", verbose = false,
+    }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if slice::eq_bytes{ a, b = "--ref" } {
+            o.every = 40
+            if i + 1 < args.len and args[i + 1].len > 0 and ascii::is_digit{ c = args[i + 1][0] } {
+                i = i + 1
+                let text = utf8::from{ bytes = args[i] } iferr { return usage{ &io } }
+                let n = utf8::parse_u64{ s = text } ifnull { return usage{ &io } }
+                if n == 0 or n > 1000000 { return usage{ &io } }
+                o.every = @trunc(u32, n)
+            }
+        } else if slice::eq_bytes{ a, b = "--game" } and i + 1 < args.len {
+            i = i + 1
+            o.game = args[i]
+        } else if slice::eq_bytes{ a, b = "--ffmpeg" } and i + 1 < args.len {
+            i = i + 1
+            o.ffmpeg = args[i]
+        } else if slice::eq_bytes{ a, b = "-v" } {
+            o.verbose = true
+        } else if a.len > 0 and a[0] != '-' and o.ndirs < 8 {
+            o.dirs[o.ndirs] = a
+            o.ndirs = o.ndirs + 1
+        } else {
+            return usage{ &io }
+        }
+        i = i + 1
+    }
+    return o
+}
+
+fn usage { mut io: Io } -> ?Options {
+    io::eprintln{ &io, s = "usage: sndcheck [DIR ...] [--ref [N]] [--game DIR] [--ffmpeg PATH] [-v]" }
+    return null
+}
+
+// ---- @fmt into standard output
+
+struct Fixed { v: f64, places: u32, width: usize }
+struct Right { v: u32, width: usize }
+struct Pad { n: usize }
+
+// Table cells; ../common's `out` has the plain writers.
+namespace cells {
+    #write
+    fn put_pad { mut io: Io, p: Pad } {
+        let mut i: usize = 0
+        while i < p.n {
+            io::write{ &io, to = io::Stream::out, bytes = " " }
+            i = i + 1
+        }
+    }
+    #write
+    fn put_right { mut io: Io, r: Right } {
+        let mut buf: [20]u8
+        let s = utf8::fmt_u64{ n = r.v, into = buf[..] }
+        put_pad{ &io, p = Pad{ n = if s.bytes.len < r.width { r.width - s.bytes.len } else { 0 } } }
+        io::print{ &io, s }
+    }
+    // A number with `places` decimals, right-aligned to `width`.
+    #write
+    fn put_fixed { mut io: Io, f: Fixed } {
+        let mut scale: f64 = 1.0
+        let mut k: u32 = 0
+        while k < f.places {
+            scale = scale * 10.0
+            k = k + 1
+        }
+        let neg = f.v < 0.0
+        let a = if neg { -f.v } else { f.v }
+        let whole = @as(u64, a * scale + 0.5)
+        let int_part = whole / @as(u64, scale)
+        let frac = whole % @as(u64, scale)
+        let mut buf: [48]u8
+        let mut n: usize = 0
+        let mut ibuf: [20]u8
+        let text = utf8::fmt_u64{ n = int_part, into = ibuf[..] }
+        if neg { buf[n] = '-'; n = n + 1 }
+        slice::copy(u8){ dst = buf[n..n + text.bytes.len], src = text.bytes }
+        n = n + text.bytes.len
+        if f.places > 0 {
+            buf[n] = '.'
+            n = n + 1
+            let mut digits: [20]u8
+            let mut p: usize = f.places
+            let mut x = frac
+            while p > 0 {
+                digits[p - 1] = @trunc(u8, '0' + x % 10)
+                x = x / 10
+                p = p - 1
+            }
+            slice::copy(u8){ dst = buf[n..n + f.places], src = digits[..f.places] }
+            n = n + f.places
+        }
+        put_pad{ &io, p = Pad{ n = if n < f.width { f.width - n } else { 0 } } }
+        io::write{ &io, to = io::Stream::out, bytes = buf[..n] }
+    }
+}

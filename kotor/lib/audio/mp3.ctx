@@ -1,0 +1,1069 @@
+// MPEG-1 Layer III decoding (ISO/IEC 11172-3), for KOTOR's voice-over and music streams
+// (docs/formats/audio.md): 32, 44.1 and 48 kHz, mono, stereo, joint stereo with MS stereo, dual
+// channel; long, start, short and stop blocks; scfsi; the bit reservoir; every Huffman table.
+// What KOTOR never uses fails with an error rather than playing noise: Layers I and II, MPEG-2
+// and 2.5 (LSF), free-format bitrates, intensity stereo and mixed blocks.
+//
+//   let mut dec: mp3::Decoder                        // zero is a fresh decoder
+//   let n = try mp3::decode{ &dec, frame, into }    // one frame: 1,152 sample frames, or 0
+//
+// `header` reads a frame header of any MPEG audio version and layer, so callers can walk frames
+// (and skip KOTOR's MPEG-2 prefix). `decode` takes one whole frame, header first, and writes
+// 1,152 interleaved 16-bit sample frames, or none for a stream's leading Xing/Info frame.
+//
+// The decode follows the standard's stages for each granule and channel: side information,
+// scalefactors and Huffman codes from the bit reservoir, requantization, MS stereo, short-block
+// reordering, alias reduction, the IMDCT with overlap-add, frequency inversion, and the 32-band
+// polyphase synthesis filterbank. Tables that are formulas are consts computed while compiling
+// (below); the Huffman codes and the synthesis window are data (mp3_tab.ctx).
+namespace mp3 {
+    error bad_header            // not an MPEG audio frame header
+    error truncated             // the frame is shorter than its header says
+    error not_layer3            // Layer I or II
+    error not_mpeg1             // MPEG-2 or 2.5 (lower sampling frequencies)
+    error free_format           // bitrate index 0
+    error intensity_stereo
+    error mixed_blocks
+    error bad_side_info         // a block type of 0 with window switching on
+
+    // ---- frame headers
+
+    // A frame header (4 bytes, big-endian bit fields).
+    struct Header {
+        version: u32,           // 1 for MPEG-1, 2 for MPEG-2, 25 for MPEG-2.5
+        layer: u32,             // 1, 2 or 3
+        crc: bool,              // a 16-bit CRC follows the header
+        bitrate: u32,           // kbit/s; 0 is free format
+        rate: u32,              // Hz
+        padding: u32,           // 0 or 1 (a slot: 4 bytes in Layer I, 1 byte otherwise)
+        mode: u32,              // 0 stereo, 1 joint stereo, 2 dual channel, 3 mono
+        mode_ext: u32,          // joint stereo, Layer III: bit 1 MS stereo, bit 0 intensity stereo
+        channels: u32,
+        size: u32,              // bytes in the frame, header included; 0 for free format
+        samples: u32,           // sample frames it decodes to
+    }
+
+    // kbit/s by bitrate index: MPEG-1 Layers I, II, III, then MPEG-2/2.5 Layer I, then II and III.
+    const BITRATES: [5][16]u32 = [
+        [0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 0],
+        [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 0],
+        [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0],
+        [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 0],
+        [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
+    ]
+
+    // The header at the start of `b`, or null if it isn't one: no sync, a reserved version,
+    // layer, bitrate or sample rate, or fewer than 4 bytes.
+    fn read_header { b: []u8 } -> ?Header {
+        if b.len < 4 { return null }
+        if b[0] != 0xFF or (b[1] & 0xE0) != 0xE0 { return null }
+        let id = (b[1] >> 3) & 3                    // 3 MPEG-1, 2 MPEG-2, 0 MPEG-2.5, 1 reserved
+        let layer_bits = (b[1] >> 1) & 3            // 1 Layer III, 2 II, 3 I, 0 reserved
+        let rate_index = (b[2] >> 2) & 3
+        let bitrate_index = b[2] >> 4
+        if id == 1 or layer_bits == 0 or rate_index == 3 or bitrate_index == 15 { return null }
+        let layer: u32 = 4 - @as(u32, layer_bits)
+        let version: u32 = if id == 3 { 1 } else if id == 2 { 2 } else { 25 }
+        let row: usize = if version == 1 { @as(usize, layer) - 1 } else if layer == 1 { 3 } else { 4 }
+        let bitrate = BITRATES[row][bitrate_index]
+        let base: [3]u32 = [44100, 48000, 32000]
+        let rate = if version == 1 { base[rate_index] } else if version == 2 { base[rate_index] / 2 } else { base[rate_index] / 4 }
+        let padding: u32 = (b[2] >> 1) & 1
+        let mode: u32 = b[3] >> 6
+        let samples: u32 = if layer == 1 { 384 } else if layer == 3 and version != 1 { 576 } else { 1152 }
+        let mut size: u32 = 0
+        if bitrate != 0 {
+            if layer == 1 {
+                size = (12 * bitrate * 1000 / rate + padding) * 4
+            } else {
+                // samples / 8 bytes per bit/s of bitrate: 144 for 1,152 samples, 72 for 576
+                size = samples / 8 * bitrate * 1000 / rate + padding
+            }
+        }
+        return Header{
+            version, layer, crc = (b[1] & 1) == 0, bitrate, rate, padding, mode,
+            mode_ext = (b[3] >> 4) & 3, channels = if mode == 3 { 1 } else { 2 }, size, samples,
+        }
+    }
+
+    // Whether frame `f` (whole, header first) is a Xing or Info frame: a silent frame whose
+    // side information is followed by the tag, which encoders put first in a stream to say how
+    // long it is. A decoder skips it.
+    fn is_info { f: []u8, h: Header } -> bool {
+        let side: usize = if h.version != 1 { if h.channels == 1 { 9 } else { 17 } } else if h.channels == 1 { 17 } else { 32 }
+        let at: usize = (if h.crc { 6 } else { 4 }) + side
+        if f.len >= at + 4 {
+            let t = f[at..at + 4]
+            if slice::eq_bytes{ a = t, b = "Info" } or slice::eq_bytes{ a = t, b = "Xing" } { return true }
+        }
+        return f.len >= 40 and slice::eq_bytes{ a = f[36..40], b = "VBRI" }
+    }
+
+    // What a Xing/Info frame says (LAME's layout): the audio frames after it, and the samples
+    // the encoder added before (its delay) and after (padding to a whole frame), when it says.
+    struct Xing { frames: ?u32, delay: u32, padding: u32 }
+
+    fn read_xing { f: []u8, h: Header } -> ?Xing {
+        if not is_info{ f, h } { return null }
+        let side: usize = if h.version != 1 { if h.channels == 1 { 9 } else { 17 } } else if h.channels == 1 { 17 } else { 32 }
+        let mut at: usize = (if h.crc { 6 } else { 4 }) + side + 4
+        if at + 4 > f.len { return null }
+        let flags = read_be32{ b = f[at..] }
+        at = at + 4
+        let mut x = Xing{ frames = null, delay = 0, padding = 0 }
+        if (flags & 1) != 0 and at + 4 <= f.len {
+            x.frames = read_be32{ b = f[at..] }
+            at = at + 4
+        }
+        if (flags & 2) != 0 { at = at + 4 }                // byte count
+        if (flags & 4) != 0 { at = at + 100 }              // seek table
+        if (flags & 8) != 0 { at = at + 4 }                // quality
+        // LAME's tag: a 9-byte encoder name, 12 bytes, then 12 bits of delay, 12 of padding.
+        if at + 24 <= f.len and slice::eq_bytes{ a = f[at..at + 4], b = "LAME" } {
+            let p = f[at + 21..at + 24]
+            x.delay = (@as(u32, p[0]) << 4) | (@as(u32, p[1]) >> 4)
+            x.padding = ((@as(u32, p[1]) & 15) << 8) | @as(u32, p[2])
+        }
+        return x
+    }
+
+    fn read_be32 { b: []u8 } -> u32 {
+        return (@as(u32, b[0]) << 24) | (@as(u32, b[1]) << 16) | (@as(u32, b[2]) << 8) | @as(u32, b[3])
+    }
+
+    // ---- reading bits
+
+    // A bit position in `buf`, read most significant bit first. Reads past the end give zeros,
+    // so corrupt lengths can't read outside it.
+    struct Bits { buf: []u8, pos: usize }
+
+    // The next n bits (0..25), without moving.
+    fn peek { b: Bits, n: u32 } -> u32 {
+        if n == 0 { return 0 }
+        let i = b.pos >> 3
+        let mut w: u32 = 0
+        if i + 4 <= b.buf.len {
+            let p = b.buf.ptr + i
+            w = (@as(u32, p[0]) << 24) | (@as(u32, p[1]) << 16) | (@as(u32, p[2]) << 8) | @as(u32, p[3])
+        } else {
+            let mut k: usize = 0
+            while k < 4 {
+                w = w << 8
+                if i + k < b.buf.len { w = w | @as(u32, b.buf[i + k]) }
+                k = k + 1
+            }
+        }
+        return (w << (b.pos & 7)) >> (32 - n)
+    }
+
+    // The next n bits (0..25).
+    fn read { mut b: Bits, n: u32 } -> u32 {
+        let v = peek{ b, n }
+        b.pos = b.pos + n
+        return v
+    }
+
+    // ---- side information
+
+    // One granule of one channel.
+    struct Granule {
+        part23: u32,            // bits of scalefactors and Huffman codes
+        big_values: u32,        // pairs in the big-values region
+        global_gain: u32,
+        sfc: u32,               // scalefac_compress
+        switching: bool,        // window_switching_flag
+        block_type: u32,        // 0 long, 1 start, 2 short, 3 stop
+        table: [3]u32,          // Huffman table of each big-values region
+        subblock_gain: [3]u32,
+        region0: u32,           // region0_count, region1_count (long blocks)
+        region1: u32,
+        preflag: u32,
+        sf_scale: u32,          // scalefac_scale
+        count1: u32,            // count1table_select: 0 table A, 1 table B
+    }
+
+    struct Side {
+        main_data_begin: usize,
+        scfsi: [2][4]u32,
+        gr: [2][2]Granule,      // [granule][channel]
+    }
+
+    fn read_side { mut b: Bits, channels: u32 } -> !Side {
+        let mut s: Side
+        s.main_data_begin = read{ &b, n = 9 }
+        _ = read{ &b, n = if channels == 1 { 5 } else { 3 } }       // private bits
+        let mut ch: usize = 0
+        while ch < channels {
+            let mut band: usize = 0
+            while band < 4 {
+                s.scfsi[ch][band] = read{ &b, n = 1 }
+                band = band + 1
+            }
+            ch = ch + 1
+        }
+        let mut gr: usize = 0
+        while gr < 2 {
+            ch = 0
+            while ch < channels {
+                let mut g: Granule
+                g.part23 = read{ &b, n = 12 }
+                g.big_values = read{ &b, n = 9 }
+                g.global_gain = read{ &b, n = 8 }
+                g.sfc = read{ &b, n = 4 }
+                g.switching = read{ &b, n = 1 } == 1
+                if g.switching {
+                    g.block_type = read{ &b, n = 2 }
+                    if read{ &b, n = 1 } == 1 { return mixed_blocks }
+                    if g.block_type == 0 { return bad_side_info }
+                    g.table[0] = read{ &b, n = 5 }
+                    g.table[1] = read{ &b, n = 5 }
+                    g.subblock_gain[0] = read{ &b, n = 3 }
+                    g.subblock_gain[1] = read{ &b, n = 3 }
+                    g.subblock_gain[2] = read{ &b, n = 3 }
+                } else {
+                    g.table[0] = read{ &b, n = 5 }
+                    g.table[1] = read{ &b, n = 5 }
+                    g.table[2] = read{ &b, n = 5 }
+                    g.region0 = read{ &b, n = 4 }
+                    g.region1 = read{ &b, n = 3 }
+                }
+                g.preflag = read{ &b, n = 1 }
+                g.sf_scale = read{ &b, n = 1 }
+                g.count1 = read{ &b, n = 1 }
+                s.gr[gr][ch] = g
+                ch = ch + 1
+            }
+            gr = gr + 1
+        }
+        return s
+    }
+
+    // ---- scalefactor bands
+
+    // Band boundaries in spectral lines, by sample rate index (44.1, 48, 32 kHz): 22 long bands,
+    // and 13 short bands (per window).
+    const SFB_LONG: [3][23]u32 = [
+        [0, 4, 8, 12, 16, 20, 24, 30, 36, 44, 52, 62, 74, 90, 110, 134, 162, 196, 238, 288, 342, 418, 576],
+        [0, 4, 8, 12, 16, 20, 24, 30, 36, 42, 50, 60, 72, 88, 106, 128, 156, 190, 230, 276, 330, 384, 576],
+        [0, 4, 8, 12, 16, 20, 24, 30, 36, 44, 54, 66, 82, 102, 126, 156, 194, 240, 296, 364, 448, 550, 576],
+    ]
+    const SFB_SHORT: [3][14]u32 = [
+        [0, 4, 8, 12, 16, 22, 30, 40, 52, 66, 84, 106, 136, 192],
+        [0, 4, 8, 12, 16, 22, 28, 38, 50, 64, 80, 100, 126, 192],
+        [0, 4, 8, 12, 16, 22, 30, 42, 58, 78, 104, 138, 180, 192],
+    ]
+
+    // scalefac_compress -> bits per scalefactor in bands 0-10 (slen1) and 11-20 (slen2) of a
+    // long block, or 0-5 and 6-11 of a short one.
+    const SLEN1: [16]u32 = [0, 0, 0, 0, 3, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4]
+    const SLEN2: [16]u32 = [0, 1, 2, 3, 0, 1, 2, 3, 1, 2, 3, 1, 2, 3, 2, 3]
+
+    // The four groups of long bands that scfsi can carry from granule 0 into granule 1.
+    const SCFSI_BANDS: [5]usize = [0, 6, 11, 16, 21]
+
+    // preflag's boost to each long band's scalefactor.
+    const PRETAB: [22]u32 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 3, 3, 3, 2, 0]
+
+    // Scalefactors of one channel, kept from granule 0 for scfsi: long bands 0..21 (21 is
+    // always 0), and short bands 0..12 by window, [band * 3 + window] (band 12 is always 0).
+    struct Scalefactors { long: [22]u32, short: [39]u32 }
+
+    fn read_scalefactors { mut b: Bits, mut sf: Scalefactors, g: Granule, gr: usize, scfsi: [4]u32 } {
+        let slen1 = SLEN1[g.sfc]
+        let slen2 = SLEN2[g.sfc]
+        if g.block_type == 2 {
+            let mut i: usize = 0
+            while i < 18 {
+                sf.short[i] = read{ &b, n = slen1 }
+                i = i + 1
+            }
+            while i < 36 {
+                sf.short[i] = read{ &b, n = slen2 }
+                i = i + 1
+            }
+            sf.short[36] = 0
+            sf.short[37] = 0
+            sf.short[38] = 0
+            return
+        }
+        let mut group: usize = 0
+        while group < 4 {
+            if gr == 0 or scfsi[group] == 0 {
+                let n = if group < 2 { slen1 } else { slen2 }
+                let mut band = SCFSI_BANDS[group]
+                while band < SCFSI_BANDS[group + 1] {
+                    sf.long[band] = read{ &b, n }
+                    band = band + 1
+                }
+            }
+            group = group + 1
+        }
+        sf.long[21] = 0
+    }
+
+    // ---- Huffman decoding
+
+    // Decodes the Huffman-coded values of one granule into ix[0..576], reading `b` up to bit
+    // `end`. Returns how many values may be nonzero (those after are 0).
+    fn read_huffman { mut b: Bits, end: usize, g: Granule, rate: usize, ix: []mut i32 } -> usize {
+        let big_end: usize = if g.big_values * 2 > 576 { 576 } else { @as(usize, g.big_values) * 2 }
+        // Where regions 1 and 2 start. Window-switched blocks have two regions; the first ends
+        // at line 36 at every MPEG-1 rate (8 short bands, or 8 long ones for start and stop).
+        let mut r1: usize = 36
+        let mut r2: usize = 576
+        if not g.switching {
+            let a = g.region0 + 1
+            let c = g.region0 + g.region1 + 2
+            r1 = SFB_LONG[rate][if a > 22 { 22 } else { a }]
+            r2 = SFB_LONG[rate][if c > 22 { 22 } else { c }]
+        }
+        if r1 > big_end { r1 = big_end }
+        if r2 > big_end { r2 = big_end }
+        let mut i: usize = 0
+        let mut region: usize = 0
+        while region < 3 {
+            let stop = if region == 0 { r1 } else if region == 1 { r2 } else { big_end }
+            let t = g.table[region]
+            region = region + 1
+            if i >= stop { continue }
+            if t == 0 or t == 4 or t == 14 {
+                // Table 0 codes zeros; 4 and 14 don't exist, and an encoder never selects them.
+                while i < stop {
+                    ix[i] = 0
+                    i = i + 1
+                }
+                continue
+            }
+            let lin = mp3_tab::LINBITS[t]
+            let root = mp3_tab::ROOT_BITS[t]
+            let start: usize = mp3_tab::START[t]
+            while i < stop {
+                let mut w = root
+                let mut e = mp3_tab::HUFF[start + peek{ b, n = w }]
+                while (e & mp3_tab::LINK) != 0 {
+                    b.pos = b.pos + w
+                    w = (e >> 24) & 0x7F
+                    e = mp3_tab::HUFF[@as(usize, e & 0xFFFFFF) + peek{ b, n = w }]
+                }
+                b.pos = b.pos + (e >> 16)
+                let mut x: i32 = @as(i32, (e >> 4) & 15)
+                let mut y: i32 = @as(i32, e & 15)
+                if x == 15 and lin > 0 { x = x + @as(i32, read{ &b, n = lin }) }
+                if x != 0 and read{ &b, n = 1 } == 1 { x = -x }
+                if y == 15 and lin > 0 { y = y + @as(i32, read{ &b, n = lin }) }
+                if y != 0 and read{ &b, n = 1 } == 1 { y = -y }
+                ix[i] = x
+                ix[i + 1] = y
+                i = i + 2
+            }
+        }
+        // The count1 region: quadruples of -1, 0 or 1, to the end of the granule's bits. A
+        // quadruple that runs past the end is a stray: drop it.
+        while i + 4 <= 576 and b.pos < end {
+            let mut v: u32 = 0
+            if g.count1 == 1 {
+                v = 15 - read{ &b, n = 4 }
+            } else {
+                let e = mp3_tab::COUNT1A[peek{ b, n = 6 }]
+                b.pos = b.pos + (e >> 4)
+                v = e & 15
+            }
+            let mut q: [4]i32
+            let mut k: usize = 0
+            while k < 4 {
+                if ((v >> (3 - k)) & 1) != 0 {
+                    q[k] = if read{ &b, n = 1 } == 1 { -1 } else { 1 }
+                }
+                k = k + 1
+            }
+            if b.pos > end { break }
+            ix[i] = q[0]
+            ix[i + 1] = q[1]
+            ix[i + 2] = q[2]
+            ix[i + 3] = q[3]
+            i = i + 4
+        }
+        let nonzero = i
+        while i < 576 {
+            ix[i] = 0
+            i = i + 1
+        }
+        return nonzero
+    }
+
+    // ---- requantization
+
+    // xr = sign(ix) |ix|^(4/3) 2^(q/4), where q is the global gain less the band's scalefactor
+    // (and a short window's subblock gain), in quarter steps.
+    fn requantize { g: Granule, sf: Scalefactors, rate: usize, ix: []i32, nonzero: usize, xr: []mut f32 } {
+        let gain: i32 = @as(i32, g.global_gain) - 210
+        let shift: u32 = if g.sf_scale == 1 { 4 } else { 2 }        // quarter steps per scalefactor step
+        let mut i: usize = 0
+        if g.block_type == 2 {
+            let mut band: usize = 0
+            while band < 13 and i < nonzero {
+                let width: usize = SFB_SHORT[rate][band + 1] - SFB_SHORT[rate][band]
+                let mut w: usize = 0
+                while w < 3 {
+                    let q = gain - 8 * @as(i32, g.subblock_gain[w]) - @as(i32, shift * sf.short[band * 3 + w])
+                    let scale = POW2Q[@as(usize, q + POW2Q_ZERO)]
+                    let stop = i + width
+                    while i < stop {
+                        xr[i] = scale * expand{ v = ix[i] }
+                        i = i + 1
+                    }
+                    w = w + 1
+                }
+                band = band + 1
+            }
+        } else {
+            let mut band: usize = 0
+            while band < 22 and i < nonzero {
+                let q = gain - @as(i32, shift * (sf.long[band] + g.preflag * PRETAB[band]))
+                let scale = POW2Q[@as(usize, q + POW2Q_ZERO)]
+                let stop: usize = SFB_LONG[rate][band + 1]
+                while i < stop {
+                    xr[i] = scale * expand{ v = ix[i] }
+                    i = i + 1
+                }
+                band = band + 1
+            }
+        }
+        while i < 576 {
+            xr[i] = 0.0
+            i = i + 1
+        }
+    }
+
+    fn expand { v: i32 } -> f32 {
+        if v >= 0 { return POW43[if v > 8206 { 8206 } else { @as(usize, v) }] }
+        return -POW43[if v < -8206 { 8206 } else { @as(usize, -v) }]
+    }
+
+    // ---- the hybrid filterbank: alias reduction, IMDCT, overlap-add, frequency inversion
+
+    // Short blocks come as [band][window][line]; the IMDCT wants each window's lines of a
+    // subband together. Writes them as [line][window]: line f of window w at 3f + w.
+    fn reorder { rate: usize, xr: []f32, out: []mut f32 } {
+        let mut band: usize = 0
+        while band < 13 {
+            let start: usize = SFB_SHORT[rate][band]
+            let width: usize = SFB_SHORT[rate][band + 1] - start
+            let mut w: usize = 0
+            while w < 3 {
+                let src = 3 * start + w * width
+                let mut k: usize = 0
+                while k < width {
+                    out[3 * (start + k) + w] = xr[src + k]
+                    k = k + 1
+                }
+                w = w + 1
+            }
+            band = band + 1
+        }
+    }
+
+    // The butterflies between neighbouring subbands that undo the analysis filterbank's
+    // aliasing, for long blocks; `subbands` are the ones that may be nonzero.
+    fn reduce_aliases { xr: []mut f32, subbands: usize } {
+        let mut sb: usize = 1
+        while sb < subbands {
+            let mut i: usize = 0
+            while i < 8 {
+                let lo = 18 * sb - 1 - i
+                let hi = 18 * sb + i
+                let a = xr[lo]
+                let c = xr[hi]
+                xr[lo] = a * ALIAS_CS[i] - c * ALIAS_CA[i]
+                xr[hi] = c * ALIAS_CS[i] + a * ALIAS_CA[i]
+                i = i + 1
+            }
+            sb = sb + 1
+        }
+    }
+
+    // One granule of one channel through the hybrid filterbank: spectral lines `xr` (576) into
+    // time samples `out`, as 32 subbands of 18 ([subband * 18 + slot]). `overlap` holds the
+    // second half of each subband's previous IMDCT.
+    fn invert_hybrid { g: Granule, rate: usize, xr: []mut f32, nonzero: usize, overlap: []mut f32, tmp: []mut f32, out: []mut f32 } {
+        let short = g.block_type == 2
+        // The lines that may be nonzero, in the order the IMDCT takes them: reordering spreads a
+        // short band's three windows over the whole band.
+        let mut bound = nonzero
+        if short and bound > 0 {
+            let mut band: usize = 0
+            while 3 * SFB_SHORT[rate][band + 1] < bound { band = band + 1 }
+            bound = 3 * SFB_SHORT[rate][band + 1]
+        }
+        let mut subbands: usize = 0
+        if bound > 0 {
+            subbands = (bound - 1) / 18 + 2
+            if subbands > 32 { subbands = 32 }
+        }
+        if short {
+            reorder{ rate, xr, out = tmp }
+        } else {
+            reduce_aliases{ xr, subbands }
+        }
+        let mut sb: usize = 0
+        while sb < 32 {
+            let at = sb * 18
+            let prev = overlap[at..at + 18]
+            let dst = out[at..at + 18]
+            if sb >= subbands {
+                let mut i: usize = 0
+                while i < 18 {
+                    dst[i] = prev[i]
+                    prev[i] = 0.0
+                    i = i + 1
+                }
+            } else if short {
+                transform_short{ x = tmp[at..at + 18], prev, out = dst }
+            } else {
+                transform_long{ x = xr[at..at + 18], block_type = g.block_type, prev, out = dst }
+            }
+            // Frequency inversion: odd subbands' odd samples change sign.
+            if (sb & 1) == 1 {
+                let mut i: usize = 1
+                while i < 18 {
+                    dst[i] = -dst[i]
+                    i = i + 2
+                }
+            }
+            sb = sb + 1
+        }
+    }
+
+    // The 36-point IMDCT of 18 lines, windowed for the block type: the first half overlap-added
+    // with `prev` into `out`, the second half kept in `prev`.
+    fn transform_long { x: []f32, block_type: u32, prev: []mut f32, out: []mut f32 } {
+        let win = @as(usize, block_type) * 36
+        // Only 18 of the 36 outputs are distinct: y[17 - i] = -y[i] for i = 0..8, and
+        // y[53 - i] = y[i] for i = 18..26 (the cosines' arguments add to pi and 2 pi times odd).
+        let mut y: [36]f32
+        let xs = x[..18].ptr
+        let mut i: usize = 0
+        while i < 9 {
+            let a = i * 18
+            let b = (i + 18) * 18
+            let mut s: f32 = 0.0
+            let mut t: f32 = 0.0
+            let mut k: usize = 0
+            while k < 18 {
+                s = s + xs[k] * COS36[a + k]
+                t = t + xs[k] * COS36[b + k]
+                k = k + 1
+            }
+            y[i] = s
+            y[17 - i] = -s
+            y[18 + i] = t
+            y[35 - i] = t
+            i = i + 1
+        }
+        i = 0
+        while i < 18 {
+            out[i] = y[i] * WINDOWS[win + i] + prev[i]
+            prev[i] = y[18 + i] * WINDOWS[win + 18 + i]
+            i = i + 1
+        }
+    }
+
+    // Three 12-point IMDCTs, one per short window, of the [line][window] lines of one subband
+    // (x[3k + w]), windowed and overlapped at 6, 12 and 18 within the 36-sample block.
+    fn transform_short { x: []f32, prev: []mut f32, out: []mut f32 } {
+        let mut z: [36]f32
+        let mut w: usize = 0
+        while w < 3 {
+            let mut i: usize = 0
+            while i < 12 {
+                let row = i * 6
+                let mut s: f32 = 0.0
+                let mut k: usize = 0
+                while k < 6 {
+                    s = s + x[3 * k + w] * COS12[row + k]
+                    k = k + 1
+                }
+                z[6 + 6 * w + i] = z[6 + 6 * w + i] + s * SHORT_WINDOW[i]
+                i = i + 1
+            }
+            w = w + 1
+        }
+        let mut i: usize = 0
+        while i < 18 {
+            out[i] = z[i] + prev[i]
+            prev[i] = z[18 + i]
+            i = i + 1
+        }
+    }
+
+    // The DCT-II of x, in place: x[j] = sum over k of x[k] cos(pi j (2k + 1) / (2n)), for n a
+    // power of two from 8 up, by Lee's split: the even outputs are the half-size DCT of
+    // x[k] + x[n-1-k], the odd ones sums of neighbours of the half-size DCT of
+    // (x[k] - x[n-1-k]) / (2 cos(pi (2k + 1) / (2n))). 8 points are a matrix product.
+    fn transform_dct { x: []mut f32, tmp: []mut f32 } {
+        let n = x.len
+        if n == 8 {
+            let mut i: usize = 0
+            while i < 8 {
+                tmp[i] = x[i]
+                i = i + 1
+            }
+            let mut j: usize = 0
+            while j < 8 {
+                let row = j * 8
+                let mut s: f32 = 0.0
+                let mut k: usize = 0
+                while k < 8 {
+                    s = s + tmp[k] * DCT8[row + k]
+                    k = k + 1
+                }
+                x[j] = s
+                j = j + 1
+            }
+            return
+        }
+        let h = n / 2
+        let mut k: usize = 0
+        while k < h {
+            let a = x[k]
+            let b = x[n - 1 - k]
+            tmp[k] = a + b
+            tmp[h + k] = (a - b) * LEE[h + k]
+            k = k + 1
+        }
+        transform_dct{ x = tmp[..h], tmp = x[..h] }
+        transform_dct{ x = tmp[h..n], tmp = x[h..n] }
+        let mut m: usize = 0
+        while m < h {
+            x[2 * m] = tmp[m]
+            m = m + 1
+        }
+        m = 0
+        while m + 1 < h {
+            x[2 * m + 1] = tmp[h + m] + tmp[h + m + 1]
+            m = m + 1
+        }
+        x[n - 1] = tmp[n - 1]
+    }
+
+    // ---- polyphase synthesis
+
+    // 18 slots of 32 subband samples (in[sb * 18 + slot]) into 18 * 32 output samples, written
+    // to out[(slot * 32 + j) * stride]. `v` is the channel's 1,024-sample history, and `at` where
+    // its newest 64 samples start; returns the new `at`.
+    fn synthesize { input: []f32, v: []mut f32, at: usize, out: []mut i16, stride: usize } -> usize {
+        let mut off = at
+        let mut c: [33]f32
+        let mut tmp: [32]f32
+        let mut slot: usize = 0
+        while slot < 18 {
+            off = (off + 960) & 1023                       // back by 64
+            // c[j] = sum over k of S[k] cos(j (2k + 1) pi / 64), a DCT-II: V is these, by symmetry.
+            let mut k: usize = 0
+            while k < 32 {
+                c[k] = input[k * 18 + slot]
+                k = k + 1
+            }
+            transform_dct{ x = c[..32], tmp = tmp[..32] }
+            c[32] = 0.0
+            // V[i] = c[i + 16] for i = 0..16, -c[48 - i] for 17..47, -c[i - 48] for 48..63.
+            let mut i: usize = 0
+            while i < 17 {
+                v[(off + i) & 1023] = c[i + 16]
+                i = i + 1
+            }
+            while i < 48 {
+                v[(off + i) & 1023] = -c[48 - i]
+                i = i + 1
+            }
+            while i < 64 {
+                v[(off + i) & 1023] = -c[i - 48]
+                i = i + 1
+            }
+            // Window the 512 samples U (from V) and add each 32nd.
+            let mut j: usize = 0
+            while j < 32 {
+                let mut s: f32 = 0.0
+                let mut m: usize = 0
+                while m < 8 {
+                    s = s + v[(off + 128 * m + j) & 1023] * SYNTH_WINDOW[64 * m + j]
+                    s = s + v[(off + 128 * m + 96 + j) & 1023] * SYNTH_WINDOW[64 * m + 32 + j]
+                    m = m + 1
+                }
+                out[(slot * 32 + j) * stride] = round_to_i16{ x = s }
+                j = j + 1
+            }
+            slot = slot + 1
+        }
+        return off
+    }
+
+    // A sample in 16-bit units, rounded to nearest (ties to even) and clipped.
+    fn round_to_i16 { x: f32 } -> i16 {
+        if x >= 32767.0 { return 32767 }
+        if not (x > -32768.0) { return -32768 }        // NaN too
+        // Adding and taking away 1.5 * 2^23 rounds to an integer in round-to-nearest.
+        let r = (x + 12582912.0) - 12582912.0
+        return @as(i16, r)
+    }
+
+    // ---- the decoder
+
+    const RESERVOIR: usize = 4096       // main-data bytes kept; a frame adds at most 1,441 - 21
+
+    struct Decoder {
+        started: bool,                  // a frame was seen: the next can't be an Info frame
+        res: [4096]u8,                  // the bit reservoir: recent frames' main data
+        res_len: usize,
+        sf: [2]Scalefactors,
+        ix: [576]i32,
+        xr: [2][576]f32,
+        nonzero: [2]usize,
+        tmp: [576]f32,
+        time: [576]f32,                 // one granule of one channel out of the hybrid filterbank
+        overlap: [2][576]f32,
+        v: [2][1024]f32,
+        v_at: [2]usize,
+    }
+
+    // Back to the state of a fresh decoder, for a new stream or a jump within one.
+    fn reset { mut d: Decoder } {
+        d.started = false
+        d.res_len = 0
+        d.overlap = [[0.0; 576]; 2]
+        d.v = [[0.0; 1024]; 2]
+        d.v_at = [0, 0]
+    }
+
+    // Decodes frame `f` (whole, header first) into `into`: 1,152 sample frames of interleaved
+    // 16-bit samples, as many channels as the header says. Returns how many sample frames it
+    // wrote: 1,152, or 0 for a leading Xing/Info frame.
+    fn decode { mut d: Decoder, f: []u8, into: []mut i16 } -> !u32 {
+        let h = read_header{ b = f } ifnull { return bad_header }
+        if h.layer != 3 { return not_layer3 }
+        if h.version != 1 { return not_mpeg1 }
+        if h.bitrate == 0 { return free_format }
+        if f.len < @as(usize, h.size) { return truncated }
+        if h.mode == 1 and (h.mode_ext & 1) != 0 { return intensity_stereo }
+        let channels: usize = h.channels
+        let head: usize = if h.crc { 6 } else { 4 }
+        let side_len: usize = if channels == 1 { 17 } else { 32 }
+        if @as(usize, h.size) < head + side_len { return truncated }
+        if not d.started {
+            d.started = true
+            if is_info{ f, h } { return 0 }
+        }
+        let mut sbits = Bits{ buf = f[head..head + side_len], pos = 0 }
+        let side = try read_side{ b = &sbits, channels = h.channels }
+        let rate: usize = if h.rate == 44100 { 0 } else if h.rate == 48000 { 1 } else { 2 }
+
+        // This frame's main data joins the reservoir; the granules' bits start main_data_begin
+        // bytes before it. Without that many bytes (the stream started mid-way), the frame is
+        // silent, but its main data is kept for the frames after it.
+        let main = f[head + side_len..h.size]
+        if d.res_len + main.len > RESERVOIR {
+            let keep: usize = if d.res_len > 511 { 511 } else { d.res_len }
+            let from = d.res_len - keep
+            let mut i: usize = 0
+            while i < keep {
+                d.res[i] = d.res[from + i]
+                i = i + 1
+            }
+            d.res_len = keep
+        }
+        let complete = side.main_data_begin <= d.res_len
+        let begin = if complete { d.res_len - side.main_data_begin } else { 0 }
+        slice::copy(u8){ dst = d.res[d.res_len..d.res_len + main.len], src = main }
+        d.res_len = d.res_len + main.len
+
+        let mut bits = Bits{ buf = d.res[..d.res_len], pos = begin * 8 }
+        let ms = h.mode == 1 and (h.mode_ext & 2) != 0
+        let mut gr: usize = 0
+        while gr < 2 {
+            let mut ch: usize = 0
+            while ch < channels {
+                let g = side.gr[gr][ch]
+                let end = bits.pos + g.part23
+                if complete {
+                    read_scalefactors{ b = &bits, sf = &d.sf[ch], g, gr, scfsi = side.scfsi[ch] }
+                    d.nonzero[ch] = read_huffman{ b = &bits, end, g, rate, ix = d.ix[..] }
+                    requantize{ g, sf = d.sf[ch], rate, ix = d.ix[..], nonzero = d.nonzero[ch], xr = d.xr[ch][..] }
+                } else {
+                    d.nonzero[ch] = 0
+                    d.xr[ch] = [0.0; 576]
+                }
+                bits.pos = end
+                ch = ch + 1
+            }
+            if ms {
+                let n = if d.nonzero[0] > d.nonzero[1] { d.nonzero[0] } else { d.nonzero[1] }
+                unmix_ms{ a = d.xr[0][..], b = d.xr[1][..], n }
+                d.nonzero[0] = n
+                d.nonzero[1] = n
+            }
+            ch = 0
+            while ch < channels {
+                invert_hybrid{
+                    g = side.gr[gr][ch], rate, xr = d.xr[ch][..], nonzero = d.nonzero[ch],
+                    overlap = d.overlap[ch][..], tmp = d.tmp[..], out = d.time[..],
+                }
+                d.v_at[ch] = synthesize{
+                    input = d.time[..], v = d.v[ch][..], at = d.v_at[ch],
+                    out = into[gr * 576 * channels + ch..], stride = channels,
+                }
+                ch = ch + 1
+            }
+            gr = gr + 1
+        }
+        return 1152
+    }
+
+    // MS stereo: the channels hold the sum and the difference.
+    fn unmix_ms { a: []mut f32, b: []mut f32, n: usize } {
+        let mut i: usize = 0
+        while i < n {
+            let m = a[i]
+            let s = b[i]
+            a[i] = (m + s) * SQRT_HALF
+            b[i] = (m - s) * SQRT_HALF
+            i = i + 1
+        }
+    }
+
+    // ---- tables computed while compiling
+
+    const SQRT_HALF: f32 = 0.70710678118654752
+
+    // |v|^(4/3) for the largest value a Huffman code can give, 15 + 2^13 - 1.
+    const POW43: [8207]f32 = make_pow43{}
+
+    // 2^(q/4) for q = -POW2Q_ZERO .. 63, at POW2Q[q + POW2Q_ZERO].
+    const POW2Q_ZERO: i32 = 512
+    const POW2Q: [576]f32 = make_pow2q{}
+
+    // The alias-reduction butterflies' coefficients, from the standard's c[i]:
+    // cs = 1 / sqrt(1 + c^2), ca = c / sqrt(1 + c^2).
+    const ALIAS_C: [8]f64 = [-0.6, -0.535, -0.33, -0.185, -0.095, -0.041, -0.0142, -0.0037]
+    const ALIAS_CS: [8]f32 = make_alias{ sine = false }
+    const ALIAS_CA: [8]f32 = make_alias{ sine = true }
+
+    // cos(pi / 72 (2i + 19)(2k + 1)), [i * 18 + k]: the 36-point IMDCT.
+    const COS36: [648]f32 = make_cos36{}
+    // cos(pi / 24 (2i + 7)(2k + 1)), [i * 6 + k]: the 12-point IMDCT.
+    const COS12: [72]f32 = make_cos12{}
+    // The windows of block types 0..3, 36 samples each ([type * 36 + i]; type 2's is unused).
+    const WINDOWS: [144]f32 = make_windows{}
+    // sin(pi / 12 (i + 1/2)): a short window.
+    const SHORT_WINDOW: [12]f32 = make_short_window{}
+    // The 8-point DCT-II, cos(pi j (2k + 1) / 16) at [j * 8 + k], and Lee's factors
+    // 1 / (2 cos(pi (2k + 1) / (2n))) for n = 2h at LEE[h + k], h = 4, 8, 16.
+    const DCT8: [64]f32 = make_dct8{}
+    const LEE: [32]f32 = make_lee{}
+    // The synthesis window D, scaled by 32,768 for 16-bit output: D * 65536 / 2, exact.
+    const SYNTH_WINDOW: [512]f32 = make_synth_window{}
+
+    fn make_pow43 {} -> [8207]f32 {
+        let mut t: [8207]f32
+        let mut i: usize = 0
+        while i < 8207 {
+            let x = @as(f64, @as(u32, @trunc(u32, i)))
+            t[i] = @as(f32, x * compute_cbrt{ x })
+            i = i + 1
+        }
+        return t
+    }
+
+    fn make_pow2q {} -> [576]f32 {
+        let quarter: [4]f64 = [1.0, compute_sqrt{ x = compute_sqrt{ x = 2.0 } }, compute_sqrt{ x = 2.0 }, compute_sqrt{ x = compute_sqrt{ x = 8.0 } }]
+        let mut t: [576]f32
+        let mut i: usize = 0
+        while i < 576 {
+            let q = @as(i32, @trunc(u32, i)) - POW2Q_ZERO
+            // q = 4 e + r with r in 0..3
+            let r = ((q % 4) + 4) % 4
+            let e = (q - r) / 4
+            t[i] = @as(f32, scale_by_pow2{ x = quarter[@as(usize, r)], e })
+            i = i + 1
+        }
+        return t
+    }
+
+    fn make_alias { sine: bool } -> [8]f32 {
+        let mut t: [8]f32
+        let mut i: usize = 0
+        while i < 8 {
+            let c = ALIAS_C[i]
+            let n = compute_sqrt{ x = 1.0 + c * c }
+            t[i] = @as(f32, if sine { c / n } else { 1.0 / n })
+            i = i + 1
+        }
+        return t
+    }
+
+    fn make_cos36 {} -> [648]f32 {
+        let mut t: [648]f32
+        let mut i: i64 = 0
+        while i < 36 {
+            let mut k: i64 = 0
+            while k < 18 {
+                t[@as(usize, i * 18 + k)] = @as(f32, compute_cos{ n = (2 * i + 19) * (2 * k + 1), d = 72 })
+                k = k + 1
+            }
+            i = i + 1
+        }
+        return t
+    }
+
+    fn make_cos12 {} -> [72]f32 {
+        let mut t: [72]f32
+        let mut i: i64 = 0
+        while i < 12 {
+            let mut k: i64 = 0
+            while k < 6 {
+                t[@as(usize, i * 6 + k)] = @as(f32, compute_cos{ n = (2 * i + 7) * (2 * k + 1), d = 24 })
+                k = k + 1
+            }
+            i = i + 1
+        }
+        return t
+    }
+
+    // sin(pi (2i + 1) / (2 n)): sin(pi / n (i + 1/2)).
+    fn half_sine { i: i64, n: i64 } -> f64 {
+        return compute_sin{ n = 2 * i + 1, d = 2 * n }
+    }
+
+    fn make_windows {} -> [144]f32 {
+        let mut t: [144]f32
+        let mut i: i64 = 0
+        while i < 36 {
+            let u = @as(usize, i)
+            let long = half_sine{ i, n = 36 }
+            t[u] = @as(f32, long)                                       // normal
+            let start: f64 = if i < 18 { long } else if i < 24 { 1.0 } else if i < 30 { half_sine{ i = i - 18, n = 12 } } else { 0.0 }
+            t[36 + u] = @as(f32, start)
+            let stop: f64 = if i < 6 { 0.0 } else if i < 12 { half_sine{ i = i - 6, n = 12 } } else if i < 18 { 1.0 } else { long }
+            t[108 + u] = @as(f32, stop)
+            i = i + 1
+        }
+        return t
+    }
+
+    fn make_short_window {} -> [12]f32 {
+        let mut t: [12]f32
+        let mut i: i64 = 0
+        while i < 12 {
+            t[@as(usize, i)] = @as(f32, half_sine{ i, n = 12 })
+            i = i + 1
+        }
+        return t
+    }
+
+    fn make_dct8 {} -> [64]f32 {
+        let mut t: [64]f32
+        let mut j: i64 = 0
+        while j < 8 {
+            let mut k: i64 = 0
+            while k < 8 {
+                t[@as(usize, j * 8 + k)] = @as(f32, compute_cos{ n = j * (2 * k + 1), d = 16 })
+                k = k + 1
+            }
+            j = j + 1
+        }
+        return t
+    }
+
+    fn make_lee {} -> [32]f32 {
+        let mut t: [32]f32
+        let mut h: i64 = 4
+        while h <= 16 {
+            let mut k: i64 = 0
+            while k < h {
+                t[@as(usize, h + k)] = @as(f32, 0.5 / compute_cos{ n = 2 * k + 1, d = 4 * h })
+                k = k + 1
+            }
+            h = h * 2
+        }
+        return t
+    }
+
+    fn make_synth_window {} -> [512]f32 {
+        let mut t: [512]f32
+        let mut i: usize = 0
+        while i < 512 {
+            t[i] = @as(f32, mp3_tab::WINDOW[i]) / 2.0
+            i = i + 1
+        }
+        return t
+    }
+
+    // Math for computing tables while compiling, where libm can't run: f64, to well under an f32's
+    // precision.
+    const PI: f64 = 3.141592653589793
+
+    // cos(pi n / d), d > 0.
+    fn compute_cos { n: i64, d: i64 } -> f64 {
+        // Reduce n into [-d, d], exactly, then sum the series for cos x, |x| <= pi.
+        let mut m = n % (2 * d)
+        if m < 0 { m = m + 2 * d }
+        if m > d { m = m - 2 * d }
+        let x = PI * @as(f64, m) / @as(f64, d)
+        let x2 = x * x
+        let mut term: f64 = 1.0
+        let mut sum: f64 = 1.0
+        let mut k: f64 = 0.0
+        while k < 60.0 {
+            term = -term * x2 / ((k + 1.0) * (k + 2.0))
+            sum = sum + term
+            k = k + 2.0
+        }
+        return sum
+    }
+
+    // sin(pi n / d) = cos(pi (n / d - 1/2)).
+    fn compute_sin { n: i64, d: i64 } -> f64 {
+        return compute_cos{ n = 2 * n - d, d = 2 * d }
+    }
+
+    fn compute_sqrt { x: f64 } -> f64 {
+        if x <= 0.0 { return 0.0 }
+        let mut y: f64 = if x > 1.0 { x } else { 1.0 }
+        let mut i = 0
+        while i < 200 {
+            let next = 0.5 * (y + x / y)
+            if next >= y { break }
+            y = next
+            i = i + 1
+        }
+        return y
+    }
+
+    // x^(1/3), x >= 0.
+    fn compute_cbrt { x: f64 } -> f64 {
+        if x <= 0.0 { return 0.0 }
+        let mut y: f64 = if x > 1.0 { x } else { 1.0 }
+        let mut i = 0
+        while i < 400 {
+            let next = y - (y * y * y - x) / (3.0 * y * y)
+            if next >= y { break }
+            y = next
+            i = i + 1
+        }
+        return y
+    }
+
+    // x * 2^e.
+    fn scale_by_pow2 { x: f64, e: i32 } -> f64 {
+        let mut r = x
+        let mut n = e
+        while n > 0 {
+            r = r * 2.0
+            n = n - 1
+        }
+        while n < 0 {
+            r = r * 0.5
+            n = n + 1
+        }
+        return r
+    }
+}

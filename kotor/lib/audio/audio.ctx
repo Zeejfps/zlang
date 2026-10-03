@@ -1,0 +1,96 @@
+// The sound device: SDL's queued audio, kept topped up from a mix::Mixer. ctxlang has no threads,
+// so nothing pulls samples from us: the game calls `update` once a frame, and it mixes as much as
+// the device's queue lacks to stay `latency` ahead of what is playing.
+//
+//   let mut dev = try audio::open{ &sdl, rate = 44100, latency_ms = 60 }
+//   defer audio::close{ &sdl, &dev }
+//   let m = try mix::make{ realloc, &heap, rate = dev.rate, voices_2d = 24, voices_3d = 16 }
+//   ...
+//   while running {
+//       ... game update: mix::play, mix::set_listener, ...
+//       try audio::update{ &sdl, &dev, m }
+//   }
+//
+// The latency is what a frame may take before the queue runs dry and the sound stutters: 60 ms
+// covers a 30 fps frame and a hitch. Before work known to stall the loop (loading a module),
+// `fill` queues more, so music keeps playing over it.
+namespace audio {
+    struct Device {
+        out: sdl::AudioOut,
+        rate: u32,              // the device's: the mixer must run at it
+        ahead: u32,             // frames to keep queued
+        underruns: u32,         // updates that found the queue empty (the sound stuttered)
+        started: bool,
+        buf: [2048]i16,         // a mix::BLOCK of stereo frames on its way to SDL
+    }
+
+    // Opens the default output, stereo 16-bit, at `rate` Hz or whatever rate the device wants
+    // (dev.rate says which).
+    fn open { mut sdl: sdl::Sdl, rate: u32, latency_ms: u32 } -> !Device {
+        try init_subsystem{ &sdl }
+        let out = sdl::open_audio{ &sdl, freq = @as(i32, rate), channels = 2, samples = 1024 } iferr err{ error } {
+            sdl::SDL_QuitSubSystem{ &sdl, flags = sdl::INIT_AUDIO }
+            return error
+        }
+        let actual = @as(u32, out.freq)
+        let mut dev = Device{ out, rate = actual, ahead = 0, underruns = 0, started = false, buf = [0; 2048] }
+        set_latency{ &dev, latency_ms }
+        return dev
+    }
+
+    fn init_subsystem { mut sdl: sdl::Sdl } -> ! {
+        if sdl::SDL_InitSubSystem{ &sdl, flags = sdl::INIT_AUDIO } != 0 { return sdl::failed{ call = "SDL_InitSubSystem" } }
+    }
+
+    fn close { mut sdl: sdl::Sdl, mut dev: Device } {
+        sdl::close_audio{ &sdl, out = dev.out }
+        sdl::SDL_QuitSubSystem{ &sdl, flags = sdl::INIT_AUDIO }
+    }
+
+    // How far ahead of the speakers the mixer stays.
+    fn set_latency { mut dev: Device, latency_ms: u32 } {
+        dev.ahead = dev.rate * latency_ms / 1000
+        if dev.ahead < 256 { dev.ahead = 256 }
+    }
+
+    // Stereo frames queued and not yet played.
+    fn queued { mut sdl: sdl::Sdl, dev: Device } -> u32 {
+        return sdl::queued_audio{ &sdl, out = dev.out } / 4
+    }
+
+    // Mixes what the queue lacks to be `ahead` frames long. Once a frame.
+    fn update { mut sdl: sdl::Sdl, mut dev: Device, m: *mut mix::Mixer } -> ! {
+        try fill{ &sdl, &dev, m, frames = dev.ahead }
+    }
+
+    // Mixes until `frames` are queued: `update`'s, or more before a known stall.
+    fn fill { mut sdl: sdl::Sdl, mut dev: Device, m: *mut mix::Mixer, frames: u32 } -> ! {
+        let mut have = queued{ &sdl, dev }
+        if have == 0 and dev.started { dev.underruns = dev.underruns + 1 }
+        while have < frames {
+            let want: usize = frames - have
+            let n = if want < mix::BLOCK { want } else { mix::BLOCK }
+            mix::render{ m, into = dev.buf[..2 * n] }
+            try sdl::queue_audio{ &sdl, out = dev.out, frames = dev.buf[..2 * n] }
+            have = have + @trunc(u32, n)
+        }
+        if not dev.started {
+            sdl::pause_audio{ &sdl, out = dev.out, paused = false }
+            dev.started = true
+        }
+    }
+
+    // How far into its sound voice `h` is as heard now: what the mixer has played less what
+    // is still queued and the device's own buffer. For lip sync and subtitles timed to
+    // voice-over.
+    fn heard { mut sdl: sdl::Sdl, dev: Device, m: *mix::Mixer, h: mix::Handle } -> ?f64 {
+        let played = mix::played{ m, h } ifnull { return null }
+        let behind = @as(f64, queued{ &sdl, dev } + @as(u32, dev.out.samples)) / @as(f64, dev.rate)
+        return if played > behind { played - behind } else { 0.0 }
+    }
+
+    // Drops what is queued, for a cut that must be heard at once (leaving the game).
+    fn flush { mut sdl: sdl::Sdl, dev: Device } {
+        sdl::clear_audio{ &sdl, out = dev.out }
+    }
+}

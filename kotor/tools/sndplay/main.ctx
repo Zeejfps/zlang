@@ -1,0 +1,365 @@
+// sndplay: play a KOTOR sound file through lib/audio's mixer, or decode it to a plain WAV.
+//
+//   kotor/tools/ctxc run kotor/tools/sndplay -- FILE [OPTIONS]        play it through SDL
+//   kotor/tools/ctxc run kotor/tools/sndplay -- FILE --wav OUT        its samples as 16-bit PCM
+//   kotor/tools/ctxc run kotor/tools/sndplay -- FILE --mixed OUT      what the mixer makes of it
+//
+// FILE is any sound the game has (streamwaves/, streamsounds/, streammusic/, a WAV extracted from
+// a BIF): PCM, IMA ADPCM, or MP3 behind KOTOR's wrappers. A FILE that isn't a file and has no
+// `/` or `.` is a resref: a WAV resource as lib/res's search finds it (BIFs, Override, ...), or
+// else the voice-over, sound or music file of that name in the stream folders (--game DIR, default
+// F:/Steam/steamapps/common/swkotor). --wav writes the decoded samples at the
+// file's own rate and channels, untouched by the mixer. --mixed renders the mixer's stereo output
+// at --rate offline, as the device would get it.
+//
+// Options for playing and --mixed:
+//   --rate HZ        the output rate (44100)
+//   --volume V       the voice's volume, 0..1 (1)
+//   --pan P          -1 left .. 1 right (0)
+//   --pitch P        rate multiplier (1)
+//   --loop           loop it (stop with --seconds)
+//   --orbit R        a 3D sound circling the listener at R metres, once every 4 s
+//   --seconds S      stop after S seconds
+//   --latency MS     how far ahead the device queue stays (60)
+//   --feed           (with --mixed) decode here and push the samples into a feed voice, as a
+//                    movie player does
+//   --voices N       (with --mixed) N - 1 more looping copies, half of them 3D, and the time the
+//                    mixing took
+
+error bad_args
+error no_such_sound
+
+struct Options {
+    path: []u8,
+    wav: ?[]u8,
+    mixed: ?[]u8,
+    rate: u32,
+    volume: f32,
+    pan: f32,
+    pitch: f32,
+    looping: bool,
+    orbit: f32,
+    seconds: f64,
+    latency: u32,
+    feed: bool,
+    voices: u32,
+    game: []u8,
+}
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let opts = parse_args{ &io, args } ifnull { return 2 }
+    let pages = mem::pages{ &mem, size = 268435456 } ifnull {
+        io::eprintln{ &io, s = "sndplay: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    let mut h = heap::new{ &mem }
+    run{ &io, &fs, &sdl, &heap, &h, opts } iferr err{ error } {
+        _ = @fmt(&io, "sndplay: {}: {}\n", opts.path, error)
+        match error {
+            sdl::failed => { _ = @fmt(&io, "SDL: {}\n", sdl::last_error{ &sdl }) }
+            else => {}
+        }
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return 0
+}
+
+fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut h: heap::Heap, opts: Options } -> ! {
+    let bytes = match fs::read_all{ &fs, &heap, realloc = arena::alloc, path = opts.path } {
+        ok{ value } => { value }
+        err{ error } => {
+            if has_path_chars{ s = opts.path } { return error }
+            try load_by_name{ &io, &fs, &h, &heap, game = opts.game, name = opts.path }
+        }
+    }
+    let s = try snd::make{ realloc = arena::alloc, &heap }
+    try snd::open{ s, bytes }
+    let total = snd::count_frames{ s }
+    _ = @fmt(&io, "{}: {} Hz, {} channels, {} frames ({} s)\n",
+        codec_name{ c = s.info.codec }, s.info.rate, s.info.channels, total, snd::seconds{ s, frames = total })
+    let xing = snd::read_xing{ s }
+    if xing != null { _ = @fmt(&io, "LAME tag: encoder delay {}, end padding {}\n", xing.delay, xing.padding) }
+    let wav_out = opts.wav
+    if wav_out != null {
+        try write_decoded{ &io, &fs, s, total, out = wav_out }
+        return
+    }
+    let mixed_out = opts.mixed
+    if mixed_out != null {
+        try write_mixed{ &io, &fs, &sdl, &heap, bytes, opts, out = mixed_out }
+        return
+    }
+    try play{ &io, &sdl, &heap, bytes, opts }
+}
+
+// The stream's own samples, into a WAV.
+fn write_decoded { mut io: Io, mut fs: Fs, s: *mut snd::Stream, total: u64, out: []u8 } -> ! {
+    let file = try fs::open{ &fs, path = out, mode = fs::Mode::write }
+    defer _ = fs::close{ &fs, file }
+    let mut head: [44]u8
+    wav::write_header{ into = head[..], channels = s.info.channels, rate = s.info.rate, frames = total }
+    _ = try fs::write{ &fs, file, bytes = head[..] }
+    let mut buf: [16384]i16
+    let mut got: u64 = 0
+    while true {
+        let n = try snd::read{ s, into = buf[..] }
+        if n == 0 { break }
+        _ = try fs::write{ &fs, file, bytes = slice::cast(i16, u8){ s = buf[..n * s.info.channels] } }
+        got = got + n
+    }
+    _ = @fmt(&io, "wrote {} frames to {}\n", got, out)
+    if got != total { _ = @fmt(&io, "warning: decoded {} frames, the headers say {}\n", got, total) }
+}
+
+fn params_of { opts: Options } -> mix::Params {
+    let mut p = mix::sound_2d{ group = mix::Group::sfx, volume = opts.volume }
+    if opts.orbit > 0.0 {
+        p = mix::sound_3d{ group = mix::Group::sfx, volume = opts.volume, position = orbit_at{ r = opts.orbit, t = 0.0 },
+            min_distance = 1.0, max_distance = opts.orbit * 4.0 }
+    }
+    p.pan = opts.pan
+    p.pitch = opts.pitch
+    p.looping = opts.looping
+    return p
+}
+
+// Where --orbit's sound is at time t: a circle round the listener (at the origin, facing +Y).
+fn orbit_at { r: f32, t: f64 } -> math::Vec3 {
+    let a = @as(f32, t) * 6.2831853 / 4.0
+    return math::vec3::make{ x = r * math::sinf{ x = a }, y = r * math::cosf{ x = a }, z = 0.0 }
+}
+
+// The mixer's output, rendered offline into a WAV.
+fn write_mixed { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, bytes: []u8, opts: Options, out: []u8 } -> ! {
+    let m = try mix::make{ realloc = arena::alloc, &heap, rate = opts.rate, voices_2d = 24, voices_3d = 16 }
+    // --feed: the file decoded here and pushed into a feed voice as a movie's sound would be.
+    let src = try snd::make{ realloc = arena::alloc, &heap }
+    let mut h: mix::Handle
+    if opts.feed {
+        try snd::open{ s = src, bytes }
+        h = try mix::play_feed{ m, rate = src.info.rate, channels = src.info.channels, p = params_of{ opts } }
+    } else {
+        h = try mix::play{ m, bytes, p = params_of{ opts } }
+    }
+    // --voices N: N - 1 more copies, looping, every other one 3D around the listener, to time
+    // a busy mix.
+    let mut extra: u32 = 1
+    while extra < opts.voices {
+        let mut p = params_of{ opts }
+        p.looping = true
+        if extra % 2 == 1 {
+            p = mix::sound_3d{ group = mix::Group::sfx, volume = 0.3, position = orbit_at{ r = 4.0, t = @as(f64, extra) * 0.37 },
+                min_distance = 1.0, max_distance = 30.0 }
+            p.looping = true
+        }
+        p.pitch = 0.9 + 0.01 * @as(f32, extra)
+        _ = try mix::play{ m, bytes, p }
+        extra = extra + 1
+    }
+    let limit: u64 = if opts.seconds > 0.0 { @as(u64, opts.seconds * @as(f64, opts.rate)) } else { 0xFFFFFFFFFFFF }
+    let mut ticks: u64 = 0
+    // Rendered whole first, to know the length for the header: up to 10 minutes.
+    let frames_mem = try alloc::resize(i16, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(i16){}, count = 2 * 48000 * 600 }
+    let mut pending: [4096]i16
+    let mut pending_frames: usize = 0
+    let mut n: usize = 0
+    let mut t: f64 = 0.0
+    while mix::is_playing{ m, h } and @as(u64, n) < limit and n + 1024 <= frames_mem.len / 2 {
+        if opts.orbit > 0.0 { mix::set_position{ m, h, position = orbit_at{ r = opts.orbit, t } } }
+        if opts.feed { try push_feed{ m, h, src, pending = pending[..], &pending_frames } }
+        let t0 = sdl::counter{ &sdl }
+        mix::render{ m, into = frames_mem[2 * n..2 * n + 2048] }
+        ticks = ticks + (sdl::counter{ &sdl } - t0)
+        n = n + 1024
+        t = t + 1024.0 / @as(f64, opts.rate)
+    }
+    let file = try fs::open{ &fs, path = out, mode = fs::Mode::write }
+    defer _ = fs::close{ &fs, file }
+    let mut head: [44]u8
+    wav::write_header{ into = head[..], channels = 2, rate = opts.rate, frames = n }
+    _ = try fs::write{ &fs, file, bytes = head[..] }
+    _ = try fs::write{ &fs, file, bytes = slice::cast(i16, u8){ s = frames_mem[..2 * n] } }
+    let secs = @as(f64, ticks) / @as(f64, sdl::counter_frequency{ &sdl })
+    _ = @fmt(&io, "mixed {} frames at {} Hz into {}: {} voices, {} ms of mixing, {} x real-time\n", n, opts.rate, out,
+        opts.voices, secs * 1000.0, if secs > 0.0 { @as(f64, n) / @as(f64, opts.rate) / secs } else { 0.0 })
+}
+
+// Keeps a feed voice's ring full from `src`, carrying what didn't fit in `pending`.
+fn push_feed { m: *mut mix::Mixer, h: mix::Handle, src: *mut snd::Stream, pending: []mut i16, mut pending_frames: usize } -> ! {
+    let ch: usize = src.info.channels
+    while true {
+        if pending_frames == 0 {
+            pending_frames = try snd::read{ s = src, into = pending }
+            if pending_frames == 0 {
+                mix::end_feed{ m, h }
+                return
+            }
+        }
+        let took = mix::feed{ m, h, samples = pending[..pending_frames * ch] }
+        if took == 0 { return }
+        let mut i: usize = 0
+        while i < (pending_frames - took) * ch {
+            pending[i] = pending[took * ch + i]
+            i = i + 1
+        }
+        pending_frames = pending_frames - took
+    }
+}
+
+// Through SDL, until the sound ends, --seconds pass, or Ctrl+C.
+fn play { mut io: Io, mut sdl: sdl::Sdl, mut heap: arena::Arena, bytes: []u8, opts: Options } -> ! {
+    if not sdl::check_layout{} { return bad_args }
+    try sdl::init{ &sdl, flags = sdl::INIT_TIMER }
+    defer sdl::quit{ &sdl }
+    let mut dev = try audio::open{ &sdl, rate = opts.rate, latency_ms = opts.latency }
+    defer audio::close{ &sdl, &dev }
+    let driver = sdl::SDL_GetCurrentAudioDriver{ &sdl } ifnull { "?" }
+    _ = @fmt(&io, "playing through {} at {} Hz, {} ms ahead\n", driver, dev.rate, opts.latency)
+    io::flush{ &io }
+    let m = try mix::make{ realloc = arena::alloc, &heap, rate = dev.rate, voices_2d = 24, voices_3d = 16 }
+    let h = try mix::play{ m, bytes, p = params_of{ opts } }
+    let start = sdl::ticks{ &sdl }
+    let mut last_print: u64 = 0
+    while mix::is_playing{ m, h } {
+        let t = @as(f64, sdl::ticks{ &sdl } - start) / 1000.0
+        if opts.seconds > 0.0 and t >= opts.seconds {
+            mix::stop{ m, h, fade = 0.05 }
+        }
+        if opts.orbit > 0.0 { mix::set_position{ m, h, position = orbit_at{ r = opts.orbit, t } } }
+        try audio::update{ &sdl, &dev, m }
+        let now = sdl::ticks{ &sdl } - start
+        if now - last_print >= 1000 {
+            let heard = audio::heard{ &sdl, dev, m, h } ifnull { 0.0 }
+            _ = @fmt(&io, "  {} s heard, {} frames queued\n", heard, audio::queued{ &sdl, dev })
+            io::flush{ &io }
+            last_print = now
+        }
+        sdl::delay{ &sdl, ms = 10 }
+    }
+    // Let the queue play out.
+    while audio::queued{ &sdl, dev } > 0 { sdl::delay{ &sdl, ms = 10 } }
+    _ = @fmt(&io, "done; underruns {}, stream errors {}\n", dev.underruns, m.errors)
+}
+
+fn has_path_chars { s: []u8 } -> bool {
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] == '/' or s[i] == '\\' or s[i] == '.' { return true }
+        i = i + 1
+    }
+    return false
+}
+
+// Sound `name`, where the engine would find it: a WAV resource through the resource manager's
+// search, else voice-over, a sound or music in the stream folders, by path.
+fn load_by_name { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut heap: arena::Arena, game: []u8, name: []u8 } -> !alloc::Bytes {
+    let mut rm = try res::open{ &fs, heap = &h, game }
+    defer res::close{ &fs, &rm }
+    let loc = res::find{ rm, name, kind = restype::Type::wav }
+    if loc != null {
+        _ = @fmt(&io, "{}: {} {}\n", name, res::source_path{ rm, loc }, res::member_file{ rm, loc })
+        return try res::read{ &fs, rm, loc, realloc = arena::alloc, &heap }
+    }
+    let mut k = 0
+    while k < 3 {
+        let path = if k == 0 {
+            try res::voice_path{ rm, name, realloc = arena::alloc, &heap }
+        } else if k == 1 {
+            try res::sound_path{ rm, name, realloc = arena::alloc, &heap }
+        } else {
+            try res::music_path{ rm, name, realloc = arena::alloc, &heap }
+        }
+        match fs::read_all{ &fs, &heap, realloc = arena::alloc, path } {
+            ok{ value } => {
+                _ = @fmt(&io, "{}: {}\n", name, path)
+                return value
+            }
+            err => {}
+        }
+        k = k + 1
+    }
+    return no_such_sound
+}
+
+fn codec_name { c: wav::Codec } -> []u8 {
+    return match c {
+        pcm => { "PCM" }
+        ima => { "IMA ADPCM" }
+        mp3 => { "MP3" }
+    }
+}
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{
+        path = "", wav = null, mixed = null, rate = 44100, volume = 1.0, pan = 0.0, pitch = 1.0,
+        looping = false, orbit = 0.0, seconds = 0.0, latency = 60, feed = false, voices = 1, game = "F:/Steam/steamapps/common/swkotor",
+    }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        let more = i + 1 < args.len
+        if slice::eq_bytes{ a, b = "--wav" } and more {
+            i = i + 1
+            o.wav = args[i]
+        } else if slice::eq_bytes{ a, b = "--mixed" } and more {
+            i = i + 1
+            o.mixed = args[i]
+        } else if slice::eq_bytes{ a, b = "--rate" } and more {
+            i = i + 1
+            o.rate = @as(u32, number{ a = args[i] } ifnull { return usage{ &io } })
+        } else if slice::eq_bytes{ a, b = "--volume" } and more {
+            i = i + 1
+            o.volume = @as(f32, number{ a = args[i] } ifnull { return usage{ &io } })
+        } else if slice::eq_bytes{ a, b = "--pan" } and more {
+            i = i + 1
+            o.pan = @as(f32, number{ a = args[i] } ifnull { return usage{ &io } })
+        } else if slice::eq_bytes{ a, b = "--pitch" } and more {
+            i = i + 1
+            o.pitch = @as(f32, number{ a = args[i] } ifnull { return usage{ &io } })
+        } else if slice::eq_bytes{ a, b = "--orbit" } and more {
+            i = i + 1
+            o.orbit = @as(f32, number{ a = args[i] } ifnull { return usage{ &io } })
+        } else if slice::eq_bytes{ a, b = "--seconds" } and more {
+            i = i + 1
+            o.seconds = number{ a = args[i] } ifnull { return usage{ &io } }
+        } else if slice::eq_bytes{ a, b = "--latency" } and more {
+            i = i + 1
+            o.latency = @as(u32, number{ a = args[i] } ifnull { return usage{ &io } })
+        } else if slice::eq_bytes{ a, b = "--voices" } and more {
+            i = i + 1
+            o.voices = @as(u32, number{ a = args[i] } ifnull { return usage{ &io } })
+        } else if slice::eq_bytes{ a, b = "--game" } and more {
+            i = i + 1
+            o.game = args[i]
+        } else if slice::eq_bytes{ a, b = "--feed" } {
+            o.feed = true
+        } else if slice::eq_bytes{ a, b = "--loop" } {
+            o.looping = true
+        } else if o.path.len == 0 and a.len > 0 and a[0] != '-' {
+            o.path = a
+        } else {
+            return usage{ &io }
+        }
+        i = i + 1
+    }
+    if o.path.len == 0 or o.rate < 8000 or o.rate > 192000 or o.latency == 0 { return usage{ &io } }
+    return o
+}
+
+fn number { a: []u8 } -> ?f64 {
+    let s = utf8::from{ bytes = a } iferr { return null }
+    return utf8::parse_f64{ s }
+}
+
+fn usage { mut io: Io } -> ?Options {
+    io::eprintln{ &io, s = "usage: sndplay FILE [--wav OUT | --mixed OUT] [--rate HZ] [--volume V] [--pan P] [--pitch P] [--loop] [--orbit R] [--seconds S] [--latency MS] [--feed] [--voices N] [--game DIR]" }
+    return null
+}
+
+namespace cstrings {
+    #write
+    fn put_cstring { mut io: Io, s: c::String } { io::write{ &io, to = io::Stream::out, bytes = c::bytes{ s } } }
+}

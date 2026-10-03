@@ -1,0 +1,19 @@
+// The build program for sndcheck: `kotor/tools/ctxc run kotor/tools/sndcheck -- [--ref]`.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "sndcheck", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/base" }
+    build::add_sources{ &b, exe, dir = "../../lib/res" }
+    build::add_sources{ &b, exe, dir = "../../lib/formats" }
+    build::add_sources{ &b, exe, dir = "../../lib/audio" }
+    build::add_sources{ &b, exe, dir = "../common" }
+    build::add_sources{ &b, exe, dir = "../../lib/platform" }       // SDL's clock, for timing
+    build::optimize{ &b, exe, level = 2 }
+    match build::os{ &b } {
+        macos => {
+            build::lib_path{ &b, exe, path = "/opt/homebrew/lib" }
+            build::link{ &b, exe, lib = "SDL2" }
+        }
+        windows => { build::link{ &b, exe, lib = "SDL2" } }
+        linux => { build::link{ &b, exe, lib = "SDL2" } }
+    }
+}

@@ -503,6 +503,12 @@ groups 17,019.6.
 Durations: VO 0.25–26.0 s (25.3 h total); MP3 music 11.8–469.7 s (1.6 h); IMA beds 14.3–141.4 s
 (0.54 h); `streamsounds` PCM 0.14–63.6 s (0.69 h); BIF PCM 0.003–21.9 s (1.17 h).
 
+The game's own decoders (`kotor/lib/audio`: `wav::probe` for the detection above, `ima`, `mp3`;
+[design/audio.md](../design/audio.md)) are checked by `kotor/tools/sndcheck`: every sound in the
+install decodes, each to the length its headers give (data size, `fact`, MP3 frames, the Info
+count), and a sample of the MP3s (every 40th voice-over line and all the music) decodes within 1
+of ffmpeg's decoder in every sample (RMS 0.04).
+
 ## Sources
 
 - Microsoft, *Multimedia Programming Interface and Data Specifications 1.0* (1991): RIFF and the
