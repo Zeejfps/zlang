@@ -116,7 +116,4 @@ namespace vis {
         }
         return false
     }
-
-    // ---- internals
-
 }

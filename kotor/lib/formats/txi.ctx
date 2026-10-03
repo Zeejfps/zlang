@@ -381,5 +381,4 @@ namespace txi {
         }
         return Coord{ u = c[0], v = c[1], w = c[2] }
     }
-
 }
