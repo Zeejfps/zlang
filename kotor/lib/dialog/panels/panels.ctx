@@ -1,0 +1,494 @@
+// The presentation of a conversation (docs/re/gui.md "Conversation panels" and "Letterbox bars and
+// conversation fade", docs/re/dialogue.md 4.4-4.6, 6, 9.6, 9.7, 10.1): the cinematic panel with
+// its letterbox bars, the computer panel, the dialogue fade layer and the bark bubble. It depends
+// on lib/gui and what that needs, never on the world or the dialogue state: the owner of the
+// conversation tells it what to show (`set_line`, `set_replies`) and asks what the player did
+// (`poll`).
+//
+//   let mut dp = dlgpanel::make{}
+//   try dlgpanel::open{ &dp, &g, &fs, &dev, computer = false, computer_type = 0 }
+//   try dlgpanel::set_line{ &dp, &g, speaker, text }
+//   each frame: dlgpanel::handle_event for every platform event while it is open, then
+//     dlgpanel::update{ &dp, &g, dt }, match dlgpanel::poll{ &dp, &g } { reply{ index } => ..., skip => ..., none => {} },
+//     and to draw: the 3D view, dlgpanel::draw_overlays{ &dp, &frame }, then gui::draw
+//
+// Files: panels.ctx (state, open, layout, line and replies), panels_input.ctx (keys, clicks, poll),
+// panels_fx.ctx (bars, fade, bark bubble, drawing). They live in a directory of their own so the
+// test tool (tools/dialogpanels) can build them without the rest of lib/dialog, which needs the world.
+//
+// Decisions (what the original does, and where we chose):
+//  - The cinematic panel is `dialog.gui` laid out by code as CSWGuiDialogLetterbox::Layout does: the
+//    visible 3D area is 3/7 of the screen width tall, the bars take the rest in halves, the panel is
+//    (width - 96) x 100 at x = 48, starting where the bottom bar starts. Where a bar would be shorter
+//    than the panel (16:9 windows) both bars are made 100 pixels, so the text never leaves the screen.
+//  - The original draws no speaker name. `set_line` takes one and ignores it; the line is in the menu
+//    blue (0, 0.66, 0.98) that the panel's constructor gives LBL_MESSAGE and the reply rows.
+//  - A line taller than the 100 pixel panel grows it upward and the bottom bar with it (0x006a7d30).
+//  - While replies are shown, the last NPC line stays in the top bar (CSWGuiDialogLetterbox's second
+//    panel, 0x006a78c0: x 48, y 36, width - 96, bottom centred, white): a second `dialog.gui` with its
+//    list hidden does for that.
+//  - Replies are rows "1. text" .. "9. text", then "-. text" (at most 20). lib/gui's list rows have one
+//    height, so a reply that wraps takes several rows (all with the reply's index as `user`); a click
+//    on any of them, or the number key, picks it. The selected reply (and the one under the pointer)
+//    is yellow (0.98, 1, 0), a disabled one dim blue.
+//  - The bars slide in 0.5 s (top grows down, bottom slides up, 2 x height per second, steps of at
+//    most 0.5 s), text and replies appear when both have arrived. `bars_instant` skips that.
+//  - The computer panel is `computer.gui` full screen over the backdrop `WxHcomp0` / `WxHcomp1`; its NPC
+//    line and reply list are both on screen. Its reply colour is the file's.
+//  - Because the panels are not modal (the world goes on), lib/gui does not give them keys: send every
+//    platform event through `handle_event`, which takes number keys, Enter, Space, Up and Down, and a
+//    left press while only a line is shown, and passes the rest on to `gui::handle_event`.
+//  - The bars are drawn by `draw_overlays` (with the fade), not by lib/gui, which has no panel
+//    without a .gui; call it after the 3D view and before `gui::draw`. The HUD is drawn after it, so
+//    hide the HUD during a cinematic conversation.
+//  - The panels hide their text and replies until the bars have arrived, and `poll` takes this panel's
+//    events out of `gui::take_events`. `update` wants the real frame time (0 while the game is
+//    paused: the fade and the bars use it, as the original's clocks stop with the pause).
+//  - Replies are wrapped when `set_replies` runs; after a window change (`resize`) send them again.
+//    A mixer set on the Gui gives the click when a reply is picked (guisounds row 0).
+namespace dlgpanel {
+    const MAX_REPLIES: usize = 20
+    const MARGIN: i32 = 48              // FUN_00409ee0: the side margin of the conversation panels
+    const TOP_MARGIN: i32 = 36          // and the top of the "last line" text
+    const PANEL_H: i32 = 100            // dialog.gui's panel and LBL_MESSAGE height
+    const REPLIES_H: i32 = 98           // LB_REPLIES
+    const BAR_RATIO: f32 = 0.42857143   // DAT_00755788: the visible 3D area is this fraction of the width tall (7:3)
+    const MAX_EXTRA: i32 = 220          // how far a tall line may grow the panel
+
+    // What the panel shows.
+    const SHOWN_NONE: u8 = 0
+    const SHOWN_LINE: u8 = 1
+    const SHOWN_REPLIES: u8 = 2
+
+    const PENDING_NONE: u8 = 0
+    const PENDING_REPLY: u8 = 1
+    const PENDING_SKIP: u8 = 2
+
+    // What the player did since the last `poll`.
+    union Pick { none, reply{ index: usize }, skip }
+
+    struct Panels {
+        main: u32,                      // dialog.gui or computer.gui, 0 when none is open
+        last: u32,                      // the second dialog.gui showing the last NPC line in the top bar
+        bark: u32,                      // barkbubble.gui
+        computer: bool,
+        skin: u8,                       // computer: 0 or 1
+        ui_w: i32, ui_h: i32,           // the GUI's pixel space at the last open / update / resize
+        shown: u8,
+        extra: i32,                     // pixels the panel grew upward for a tall line
+        // replies, by index in the list the owner gave
+        reply_count: usize,
+        reply_enabled: [20]bool,
+        reply_first: [20]i32,           // the first list row of each, -1 for an empty text
+        selected: i32,                  // the reply Enter picks, -1 none
+        last_hover: i32,                // the row the pointer was over at the last update
+        pending: u8,                    // a pick made by a key or a press, for `poll`
+        pending_index: usize,
+        // letterbox bars (cinematic only)
+        bars_on: bool,
+        bars_instant: bool,             // set before `open` to have the bars in at once
+        bars_done: bool,
+        bar: i32,                       // the bar height the screen asks for
+        top_need: i32,                  // the top bar must be at least this tall (a tall last line)
+        top_h: i32, top_target: i32,
+        bottom_y: i32, bottom_target: i32,
+        // the dialogue fade layer
+        fade_on: bool, fade_out: bool,
+        fade_delay: f32, fade_length: f32, fade_time: f32,
+        fade_color: math::Vec3, fade_alpha: f32,
+        // the bark bubble
+        bark_on: bool, bark_time: f32,
+    }
+
+    fn make {} -> Panels {
+        let mut p: Panels
+        p.selected = -1
+        p.last_hover = -1
+        return p
+    }
+
+    fn is_open { p: Panels } -> bool { return p.main != 0 }
+
+    // ---- small helpers
+
+    fn max_i { a: i32, b: i32 } -> i32 { return if a > b { a } else { b } }
+    fn min_i { a: i32, b: i32 } -> i32 { return if a < b { a } else { b } }
+
+    fn set_rect { mut g: gui::Gui, panel: u32, tag: []u8, x: i32, y: i32, w: i32, h: i32 } {
+        let c = gui::find_control{ &g, panel, tag } ifnull { return }
+        c.x = x
+        c.y = y
+        c.w = w
+        c.h = h
+    }
+
+    // ---- bar geometry
+
+    // The height of one letterbox bar for a screen (InitTopBar: (height - width * 3/7) / 2), at
+    // least the conversation panel's own height.
+    fn bar_height { w: i32, h: i32 } -> i32 {
+        let visible = @as(i32, @as(f32, w) * BAR_RATIO)
+        return max_i{ a = (h - visible) / 2, b = PANEL_H }
+    }
+
+    // Puts the cinematic panel where Layout does: x 48, starting where the bottom bar starts,
+    // (width - 96) wide, `PANEL_H + extra` tall, the controls filling it. Retargets the bars.
+    fn place_cinematic { mut p: Panels, mut g: gui::Gui } {
+        let pn = gui::find_panel{ &g, id = p.main } ifnull { return }
+        p.ui_w = g.ui_w
+        p.ui_h = g.ui_h
+        p.bar = bar_height{ w = g.ui_w, h = g.ui_h }
+        let pw = g.ui_w - 2 * MARGIN
+        pn.x = MARGIN
+        pn.y = g.ui_h - p.bar - p.extra
+        pn.w = pw
+        pn.h = PANEL_H + p.extra
+        set_rect{ &g, panel = p.main, tag = "LBL_MESSAGE", x = 0, y = 0, w = pw, h = PANEL_H + p.extra }
+        let rc = gui::find_control{ &g, panel = p.main, tag = "LB_REPLIES" } ifnull { return }
+        rc.x = 0
+        rc.y = 0
+        rc.w = pw
+        rc.h = REPLIES_H
+        if rc.scrollbar >= 0 and @as(usize, rc.scrollbar) < pn.controls.len {
+            let sb = list::at{ list = pn.controls, i = @as(usize, rc.scrollbar) }
+            sb.x = 0
+            sb.y = 0
+            sb.h = REPLIES_H
+        }
+        gui::place{ &g, p = pn }
+        retarget_bars{ &p, panel_y = pn.y }
+    }
+
+    // New bar targets after a change; the bars jump there when they have arrived already (or are
+    // to be instant).
+    fn retarget_bars { mut p: Panels, panel_y: i32 } {
+        p.top_target = max_i{ a = p.bar, b = p.top_need }
+        p.bottom_target = min_i{ a = p.ui_h - p.bar, b = panel_y }
+        if p.bars_instant or p.bars_done {
+            p.top_h = p.top_target
+            p.bottom_y = p.bottom_target
+            p.bars_done = true
+        } else {
+            p.bars_done = p.top_h >= p.top_target and p.bottom_y <= p.bottom_target
+        }
+    }
+
+    // The "last line" panel: the second dialog.gui, its text bottom-centred in the top bar.
+    fn place_last { mut p: Panels, mut g: gui::Gui } {
+        if p.last == 0 { return }
+        let pn = gui::find_panel{ &g, id = p.last } ifnull { return }
+        let pw = g.ui_w - 2 * MARGIN
+        let mut h = p.bar - TOP_MARGIN - 5
+        let lm = gui::find_control{ &g, panel = p.last, tag = "LBL_MESSAGE" } ifnull { return }
+        if lm.text.font >= 0 and @as(usize, lm.text.font) < g.fonts.len {
+            let font = list::items{ list = g.fonts }[@as(usize, lm.text.font)].font
+            let n = gui::layout{ font, text = lm.text.text, width = pw, lines = g.lines }
+            let th = gui::lines_height{ font, count = n }
+            // A taller line grows the top bar (FUN_006a7ae0).
+            if th > h {
+                h = th
+                p.top_need = TOP_MARGIN + th + 5
+            } else {
+                p.top_need = 0
+            }
+        }
+        pn.x = MARGIN
+        pn.y = TOP_MARGIN
+        pn.w = pw
+        pn.h = h
+        lm.x = 0
+        lm.y = 0
+        lm.w = pw
+        lm.h = h
+        lm.text.align = gui::A_CENTRE | gui::A_BOTTOM
+        lm.text.color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 1.0 }
+        lm.text.file_color = lm.text.color
+        gui::place{ &g, p = pn }
+        let by = gui::find_panel{ &g, id = p.main }
+        if by != null { retarget_bars{ &p, panel_y = by.y } }
+    }
+
+    // ---- open and close
+
+    // Opens `dialog.gui` as the cinematic panel with its letterbox bars, or `computer.gui` (skin
+    // `computer_type` 0 or 1). Not modal: the world goes on, the panel takes keys through
+    // `handle_event`. Replaces a conversation panel that is open.
+    fn open { mut p: Panels, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, computer: bool, computer_type: u8 } -> ! {
+        if p.main != 0 { close{ &p, &g } }
+        reset_state{ &p }
+        p.computer = computer
+        p.skin = if computer_type == 0 { 0 } else { 1 }
+        p.ui_w = g.ui_w
+        p.ui_h = g.ui_h
+        if computer {
+            let id = try gui::open{ &g, &fs, &dev, name = "computer", mode = gui::Mode::full_screen, modal = false }
+            p.main = id
+            gui::set_backdrop{ &g, &fs, &dev, panel = id, kind = 4 }
+            load_computer_backdrop{ &p, &g, &fs, &dev }
+            return
+        }
+        let id = try gui::open{ &g, &fs, &dev, name = "dialog", mode = gui::Mode::placed, modal = false }
+        p.main = id
+        gui::set_text_color{ &g, panel = id, tag = "LBL_MESSAGE", color = gui::color_menu{} }
+        gui::set_visible{ &g, panel = id, tag = "LBL_MESSAGE", visible = false }
+        gui::set_visible{ &g, panel = id, tag = "LB_REPLIES", visible = false }
+        // The second dialog.gui, for the last line in the top bar; it has nothing to show until replies do.
+        let lid = try gui::open{ &g, &fs, &dev, name = "dialog", mode = gui::Mode::placed, modal = false }
+        p.last = lid
+        gui::set_visible{ &g, panel = lid, tag = "LBL_MESSAGE", visible = false }
+        gui::set_visible{ &g, panel = lid, tag = "LB_REPLIES", visible = false }
+        p.bars_on = true
+        p.top_h = 0
+        p.bottom_y = g.ui_h
+        place_cinematic{ &p, &g }
+    }
+
+    // The comp backdrop is `<resolution>comp0` or `comp1` (CSWGuiDialogComputer::GetResolutionTag adds
+    // the skin digit); lib/gui's table has only `comp`, so the picture is put in its slot here.
+    fn load_computer_backdrop { mut p: Panels, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } {
+        gui::ensure_backdrop{ &g, &fs, &dev, kind = 4 }
+        let a = gui::resolution_name{ id = gui::resolution_id{ w = g.ui_w, h = g.ui_h } }
+        let mut buf: [24]u8
+        slice::copy(u8){ dst = buf[..a.len], src = a }
+        slice::copy(u8){ dst = buf[a.len..a.len + 4], src = "comp" }
+        buf[a.len + 4] = if p.skin == 0 { '0' } else { '1' }
+        g.backdrops[4] = gui::resolve_img{ &g, &fs, &dev, name = buf[..a.len + 5] }
+    }
+
+    fn reset_state { mut p: Panels } {
+        p.shown = SHOWN_NONE
+        p.extra = 0
+        p.reply_count = 0
+        p.selected = -1
+        p.last_hover = -1
+        p.pending = PENDING_NONE
+        p.pending_index = 0
+        p.bars_on = false
+        p.bars_done = false
+        p.top_need = 0
+        p.top_h = 0
+        p.top_target = 0
+        p.bottom_y = 0
+        p.bottom_target = 0
+        let mut i: usize = 0
+        while i < MAX_REPLIES {
+            p.reply_enabled[i] = false
+            p.reply_first[i] = -1
+            i = i + 1
+        }
+    }
+
+    // Removes the conversation panels (and the bars). The fade layer and the bark bubble stay.
+    fn close { mut p: Panels, mut g: gui::Gui } {
+        if p.main != 0 { gui::close{ &g, id = p.main } }
+        if p.last != 0 { gui::close{ &g, id = p.last } }
+        p.main = 0
+        p.last = 0
+        reset_state{ &p }
+    }
+
+    // The window changed (call after `gui::set_screen`): lays the panels out again, bars in.
+    fn resize { mut p: Panels, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } {
+        if p.main == 0 { return }
+        if p.computer {
+            p.ui_w = g.ui_w
+            p.ui_h = g.ui_h
+            load_computer_backdrop{ &p, &g, &fs, &dev }
+            return
+        }
+        let was = p.bars_instant
+        p.bars_instant = true
+        place_cinematic{ &p, &g }
+        place_last{ &p, &g }
+        p.bars_instant = was
+    }
+
+    // ---- the NPC's line
+
+    // Shows the NPC's line (cinematic: LBL_MESSAGE, computer: LB_MESSAGE) with its `<tokens>`
+    // expanded, and clears the replies. `speaker` is not drawn: the original has no name there.
+    fn set_line { mut p: Panels, mut g: gui::Gui, speaker: []u8, text: []u8 } -> ! {
+        if p.main == 0 { return }
+        clear_replies{ &p, &g }
+        p.shown = SHOWN_LINE
+        if p.computer {
+            let s = try gui::expand_tokens{ &g, src = text }
+            defer gui::free_string{ &g, s }
+            try gui::set_list_text{ &g, panel = p.main, tag = "LB_MESSAGE", text = s }
+            return
+        }
+        if p.last != 0 {
+            try gui::set_text{ &g, panel = p.last, tag = "LBL_MESSAGE", text = "" }
+            p.top_need = 0
+        }
+        try gui::set_text_tokens{ &g, panel = p.main, tag = "LBL_MESSAGE", text }
+        // A line taller than the panel grows it upward, and the bottom bar with it.
+        p.extra = 0
+        let lm = gui::find_control{ &g, panel = p.main, tag = "LBL_MESSAGE" } ifnull { return }
+        if lm.text.font >= 0 and @as(usize, lm.text.font) < g.fonts.len {
+            let font = list::items{ list = g.fonts }[@as(usize, lm.text.font)].font
+            let n = gui::layout{ font, text = lm.text.text, width = g.ui_w - 2 * MARGIN, lines = g.lines }
+            let over = gui::lines_height{ font, count = n } - PANEL_H
+            if over > 0 { p.extra = min_i{ a = over, b = MAX_EXTRA } }
+        }
+        place_cinematic{ &p, &g }
+    }
+
+    // ---- the replies
+
+    fn clear_replies { mut p: Panels, mut g: gui::Gui } {
+        if p.main == 0 { return }
+        gui::list_clear{ &g, panel = p.main, tag = "LB_REPLIES" }
+        p.reply_count = 0
+        p.selected = -1
+        p.last_hover = -1
+        let mut i: usize = 0
+        while i < MAX_REPLIES {
+            p.reply_enabled[i] = false
+            p.reply_first[i] = -1
+            i = i + 1
+        }
+        if p.shown == SHOWN_REPLIES { p.shown = SHOWN_LINE }
+    }
+
+    // Shows the replies of the current line: rows "1. text" ..., wrapped, the first enabled one
+    // selected; `enabled[i]` false dims a reply and makes it unpickable (missing entries count as
+    // enabled). In the cinematic panel the NPC's line moves to the top bar.
+    fn set_replies { mut p: Panels, mut g: gui::Gui, texts: [][]u8, enabled: []bool } -> ! {
+        if p.main == 0 { return }
+        clear_replies{ &p, &g }
+        if not p.computer {
+            try show_last_line{ &p, &g }
+            p.extra = 0
+            place_cinematic{ &p, &g }
+        }
+        let n = if texts.len < MAX_REPLIES { texts.len } else { MAX_REPLIES }
+        p.reply_count = n
+        let mut i: usize = 0
+        while i < n {
+            let on = if i < enabled.len { enabled[i] } else { true }
+            if texts[i].len > 0 {
+                p.reply_enabled[i] = on
+                try add_reply_rows{ &p, &g, index = i, text = texts[i] }
+            }
+            i = i + 1
+        }
+        i = 0
+        while i < n {
+            if p.reply_first[i] >= 0 and p.reply_enabled[i] {
+                p.selected = @as(i32, i)
+                break
+            }
+            i = i + 1
+        }
+        if p.selected >= 0 {
+            gui::list_select{ &g, panel = p.main, tag = "LB_REPLIES", row = p.reply_first[@as(usize, p.selected)] }
+        }
+        p.shown = SHOWN_REPLIES
+        tint_rows{ &p, &g }
+    }
+
+    // The NPC's line goes up to the top bar while the player chooses.
+    fn show_last_line { mut p: Panels, mut g: gui::Gui } -> ! {
+        let lm = gui::find_control{ &g, panel = p.main, tag = "LBL_MESSAGE" } ifnull { return }
+        if lm.text.text.len == 0 or p.last == 0 { return }
+        try gui::set_text{ &g, panel = p.last, tag = "LBL_MESSAGE", text = lm.text.text }
+        place_last{ &p, &g }
+    }
+
+    // One reply as list rows: the number, the text with its tokens expanded, broken into lines
+    // that fit a row; every row carries the reply's index in `user`.
+    fn add_reply_rows { mut p: Panels, mut g: gui::Gui, index: usize, text: []u8 } -> ! {
+        let pn = gui::find_panel{ &g, id = p.main } ifnull { return }
+        let c = gui::find_control{ &g, panel = p.main, tag = "LB_REPLIES" } ifnull { return }
+        let l = gui::list_layout{ p = pn, c }
+        let width = l.aw - 2 * c.padding
+        let mut font_slot: i32 = -1
+        if c.proto >= 0 {
+            font_slot = list::at{ list = pn.controls, i = @as(usize, c.proto) }.text.font
+        }
+        let s = try gui::expand_tokens{ &g, src = text }
+        defer gui::free_string{ &g, s }
+        let mut buf: [1400]u8
+        let mut len: usize = 0
+        if index < 9 {
+            buf[0] = '1' + @as(u8, index)
+            buf[1] = '.'
+            buf[2] = ' '
+        } else {
+            buf[0] = '-'
+            buf[1] = '.'
+            buf[2] = ' '
+        }
+        len = 3
+        let take = if s.len < buf.len - 3 { s.len } else { buf.len - 3 }
+        slice::copy(u8){ dst = buf[len..len + take], src = s[..take] }
+        len = len + take
+        p.reply_first[index] = @as(i32, c.row_count)
+        let user = @as(i64, index)
+        if font_slot < 0 or @as(usize, font_slot) >= g.fonts.len {
+            _ = try gui::list_add{ &g, panel = p.main, tag = "LB_REPLIES", text = buf[..len], user }
+            return
+        }
+        let font = list::items{ list = g.fonts }[@as(usize, font_slot)].font
+        let n = gui::layout{ font, text = buf[..len], width, lines = g.lines }
+        if n == 0 {
+            _ = try gui::list_add{ &g, panel = p.main, tag = "LB_REPLIES", text = buf[..len], user }
+            return
+        }
+        let mut k: usize = 0
+        while k < n {
+            let ln = g.lines[k]
+            let a = @as(usize, ln.start)
+            let b = a + @as(usize, ln.len)
+            let mut row: [260]u8
+            let m = if b - a < 258 { b - a } else { 258 }
+            slice::copy(u8){ dst = row[..m], src = buf[a..a + m] }
+            let mut rl = m
+            if ln.hyphen {
+                row[rl] = '-'
+                rl = rl + 1
+            }
+            _ = try gui::list_add{ &g, panel = p.main, tag = "LB_REPLIES", text = row[..rl], user }
+            k = k + 1
+        }
+        if not p.reply_enabled[index] {
+            let mut r = @as(usize, p.reply_first[index])
+            while r < @as(usize, c.row_count) and c.rows[r].user == user {
+                c.rows[r].enabled = false
+                r = r + 1
+            }
+        }
+    }
+
+    // The computer panel's four counters (LBL_COMP_SKILL_VAL, LBL_COMP_SPIKES_VAL, LBL_REP_SKILL_VAL,
+    // LBL_REP_UNITS_VAL).
+    fn set_computer_stats { mut p: Panels, mut g: gui::Gui, skill: i32, spikes: i32, repair_skill: i32, repair_parts: i32 } -> ! {
+        if p.main == 0 or not p.computer { return }
+        try set_number{ &g, panel = p.main, tag = "LBL_COMP_SKILL_VAL", n = skill }
+        try set_number{ &g, panel = p.main, tag = "LBL_COMP_SPIKES_VAL", n = spikes }
+        try set_number{ &g, panel = p.main, tag = "LBL_REP_SKILL_VAL", n = repair_skill }
+        try set_number{ &g, panel = p.main, tag = "LBL_REP_UNITS_VAL", n = repair_parts }
+    }
+
+    fn set_number { mut g: gui::Gui, panel: u32, tag: []u8, n: i32 } -> ! {
+        let mut buf: [12]u8
+        let mut k: usize = 12
+        let neg = n < 0
+        let mut v: i64 = if neg { 0 - @as(i64, n) } else { @as(i64, n) }
+        if v == 0 {
+            k = k - 1
+            buf[k] = '0'
+        }
+        while v > 0 {
+            k = k - 1
+            buf[k] = '0' + @as(u8, v % 10)
+            v = v / 10
+        }
+        if neg {
+            k = k - 1
+            buf[k] = '-'
+        }
+        try gui::set_text{ &g, panel, tag, text = buf[k..] }
+    }
+}

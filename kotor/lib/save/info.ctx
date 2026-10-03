@@ -1,0 +1,93 @@
+// savenfo.res: what the save list shows about a save (docs/formats/gff-save.md, "savenfo.res";
+// docs/re/party-items-saves.md 1.4, 1.5 and 1.9). A transition autosave (`autosave`) sets
+// PCAUTOSAVE and has no SAVEGAMENAME and no LIVE* fields; we leave out its SCREENSHOT and
+// AUTOSAVEPARAMS, which our own loader doesn't need.
+//
+//   let bytes = try save::write_info{ realloc = heap::alloc, &h, info }
+//   let info = save::read_info{ doc = &doc }          // text views into the doc's bytes
+namespace save {
+    struct Info {
+        area_name: []u8,            // the name the load list shows
+        last_module: []u8,          // the module to load
+        time_played: u32,           // seconds
+        save_name: []u8,            // what the player typed; empty in an autosave
+        portraits: [3]resref::ResRef,   // the party in the client's order, leader first
+        portrait_count: usize,
+        cheat_used: bool,
+        autosave: bool,
+    }
+
+    const INFO_PORTRAITS: usize = 3
+    const INFO_LIVE_SLOTS: usize = 6
+
+    fn write_info(S) { realloc: alloc::Fn(S), mut heap: S, info: Info } -> !alloc::Bytes {
+        let mut b = try gffw::new{ realloc, heap = &heap, tag = "NFO " }
+        defer gffw::free{ &b }
+        let root = gffw::ROOT
+        try put_gff_value{ &b, owner = root, label = "AREANAME", value = gff::Value::exostring{ v = info.area_name } }
+        try put_gff_value{ &b, owner = root, label = "LASTMODULE", value = gff::Value::exostring{ v = info.last_module } }
+        try put_gff_value{ &b, owner = root, label = "TIMEPLAYED", value = gff::Value::dword{ v = info.time_played } }
+        try put_gff_value{ &b, owner = root, label = "CHEATUSED", value = gff::Value::byte{ v = if info.cheat_used { 1 } else { 0 } } }
+        if info.autosave {
+            try put_gff_value{ &b, owner = root, label = "PCAUTOSAVE", value = gff::Value::byte{ v = 1 } }
+        } else {
+            try put_gff_value{ &b, owner = root, label = "SAVEGAMENAME", value = gff::Value::exostring{ v = info.save_name } }
+        }
+        try put_gff_value{ &b, owner = root, label = "GAMEPLAYHINT", value = gff::Value::byte{ v = 0 } }
+        try put_gff_value{ &b, owner = root, label = "STORYHINT", value = gff::Value::byte{ v = 0 } }
+        if not info.autosave {
+            let mut k: usize = 0
+            while k < INFO_LIVE_SLOTS {
+                try put_gff_value{ &b, owner = root, label = live_label{ i = k }, value = gff::Value::exostring{ v = "" } }
+                k = k + 1
+            }
+            try put_gff_value{ &b, owner = root, label = "LIVECONTENT", value = gff::Value::byte{ v = 0 } }
+        }
+        let mut p: usize = 0
+        while p < info.portrait_count and p < INFO_PORTRAITS {
+            try put_gff_value{ &b, owner = root, label = portrait_label{ i = p }, value = gff::Value::resref{ v = resref::bytes{ r = &info.portraits[p] } } }
+            p = p + 1
+        }
+        return try gffw::finish{ &b, layout = gffw::ENGINE }
+    }
+
+    fn live_label { i: usize } -> []u8 {
+        return match i {
+            0 => { "LIVE1" }
+            1 => { "LIVE2" }
+            2 => { "LIVE3" }
+            3 => { "LIVE4" }
+            4 => { "LIVE5" }
+            else => { "LIVE6" }
+        }
+    }
+
+    fn portrait_label { i: usize } -> []u8 {
+        return match i {
+            0 => { "PORTRAIT0" }
+            1 => { "PORTRAIT1" }
+            else => { "PORTRAIT2" }
+        }
+    }
+
+    // Missing fields read as empty or zero. The portraits are the leading PORTRAIT0..2 present.
+    fn read_info { doc: *gff::Doc } -> Info {
+        let mut info = Info{
+            area_name = gff::get_string{ doc = doc.*, s = gff::ROOT, label = "AREANAME" } ifnull "",
+            last_module = gff::get_string{ doc = doc.*, s = gff::ROOT, label = "LASTMODULE" } ifnull "",
+            time_played = 0,
+            save_name = gff::get_string{ doc = doc.*, s = gff::ROOT, label = "SAVEGAMENAME" } ifnull "",
+            portraits = [resref::empty{}; 3], portrait_count = 0,
+            cheat_used = (gff::get_number{ doc = doc.*, s = gff::ROOT, label = "CHEATUSED" } ifnull 0) != 0,
+            autosave = (gff::get_number{ doc = doc.*, s = gff::ROOT, label = "PCAUTOSAVE" } ifnull 0) != 0,
+        }
+        let seconds = gff::get_number{ doc = doc.*, s = gff::ROOT, label = "TIMEPLAYED" } ifnull 0
+        info.time_played = if seconds < 0 { 0 } else if seconds > 4294967295 { 4294967295 } else { @as(u32, seconds) }
+        while info.portrait_count < INFO_PORTRAITS {
+            let name = gff::get_resref{ doc = doc.*, s = gff::ROOT, label = portrait_label{ i = info.portrait_count } } ifnull { return info }
+            info.portraits[info.portrait_count] = resref::truncate{ name }
+            info.portrait_count = info.portrait_count + 1
+        }
+        return info
+    }
+}

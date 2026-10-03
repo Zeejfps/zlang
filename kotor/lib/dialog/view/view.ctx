@@ -1,0 +1,217 @@
+// The conversation as the player sees and hears it (the client half of docs/re/dialogue.md):
+// the camera for each line, the participants' animations, the cutscene's camera model and stunt
+// models, the voice-over and the mouth that follows it, the panels. It reads the state `dlg`
+// leaves in `w.conversation` (the line and the replies, each with a serial that changes with
+// their content) and answers through the few flags the flow waits on.
+//
+//   let mut view = dlgview::make{ heap, m = mixer }
+//   dlgview::attach{ &view, &w }                              // once: a view is there to answer
+//   each frame, after dlg::update:
+//     dlgview::pre_sync{ &view, &w, &sc, &dev, dt }           // before scene::sync
+//     scene::sync{ ... }; cam::update{ ... }
+//     dlgview::post_sync{ &view, &w, &sc, dt }                // lips, after the poses are made
+//     dlgview::apply_camera{ &view, &w, &camera }             // the shot over the chase camera
+namespace dlgview {
+    // What the camera does now.
+    enum Mode: u8 { none, framed, fixed, animated, keep }
+
+    // A pair of speakers and the side of the line between them the camera keeps to (9.3).
+    struct SideEntry { a: u32, b: u32, side: f32 }
+
+    // The camera model of an animated cutscene (9.4).
+    struct CameraModel {
+        loaded: bool,
+        part: usize,                // in Scene.parts
+        node: u32,                  // its camerahook, in the model's tree
+        model: ?*mdl::Model,
+    }
+
+    // A participant whose body is a stunt model while the conversation runs (2.7).
+    struct Swap { id: u32, visual: usize, original: usize, active: bool }
+
+    struct View {
+        heap: *mut heap::Heap,
+        m: *mut mix::Mixer,
+        up: bool,                   // a conversation is being presented
+        seen_started: u32,
+        seen_ended: u32,
+        seen_line: u32,
+        seen_choices: u32,
+        wait: f32,                  // seconds spent waiting for the scene to be ready
+        // The camera.
+        mode: Mode,
+        rig: dlgcam::Rig,
+        have_rig: bool,
+        speaker: u32,
+        listener: u32,
+        angle: u32,
+        cam_height: f32,
+        tar_height: f32,
+        pull_back: f32,
+        fov: f32,                   // the line's own field of view, 0 for the default
+        static_id: i32,
+        blocked: bool,              // the framed shot hit a wall: the plain close-up for this line
+        sides: [4]SideEntry,
+        side_count: usize,
+        side_next: usize,
+        stops: [64]bool,            // surface materials a camera ray stops at
+        saved_fov: f32,
+        overriding: bool,
+        camera_model: CameraModel,
+        swaps: [8]Swap,
+        swap_count: usize,
+        stunt_next: usize,          // the next of the dialogue's stunt models to put on
+        // Animations the view set, so they are put back.
+        cast: [16]u32,
+        cast_count: usize,
+        // The voice.
+        voice: mix::Handle,
+        voice_bytes: []mut u8,
+        voice_speaker: u32,
+        voice_delay: f32,           // seconds the device buffers beyond what the mixer has played
+        lip_bytes: []mut u8,
+        lip_elapsed: f32,
+        track: lipsync::Track,      // the mouth of the line that speaks
+        track_on: bool,
+        // The panels.
+        panels: dlgpanel::Panels,
+    }
+
+    fn make { heap: *mut heap::Heap, m: *mut mix::Mixer } -> View {
+        let mut stops = [true; 64]
+        stops[30] = false
+        let none = mix::Handle{ slot = 0, id = 0 }
+        return View{
+            heap, m, up = false, seen_started = 0, seen_ended = 0, seen_line = 0, seen_choices = 0, wait = 0.0,
+            mode = Mode::none, rig = dlgcam::Rig{ eye = math::vec3::zero{}, forward = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, up = dlgcam::zup{}, fov = dlgcam::FOV },
+            have_rig = false, speaker = obj::INVALID, listener = obj::INVALID, angle = 0, cam_height = 0.0, tar_height = 0.0,
+            pull_back = 0.0, fov = 0.0, static_id = -1, blocked = false,
+            sides = [SideEntry{ a = obj::INVALID, b = obj::INVALID, side = 1.0 }; 4], side_count = 0, side_next = 0,
+            stops, saved_fov = dlgcam::FOV, overriding = false,
+            camera_model = CameraModel{ loaded = false, part = 0, node = 0, model = null },
+            swaps = [Swap{ id = obj::INVALID, visual = 0, original = 0, active = false }; 8], swap_count = 0, stunt_next = 0,
+            cast = [obj::INVALID; 16], cast_count = 0,
+            voice = none, voice_bytes = slice::empty(u8){}, voice_speaker = obj::INVALID, voice_delay = 0.0,
+            lip_bytes = slice::empty(u8){}, lip_elapsed = 0.0,
+            track = lipsync::make_track{ lip = lip::Lip{ length = 0.0, count = 0, keys = slice::empty(u8){} } }, track_on = false,
+            panels = dlgpanel::make{},
+        }
+    }
+
+    // Tells the flow a view answers it (so a conversation waits for the scene and the voice).
+    fn attach { mut v: View, mut w: world::World } {
+        w.conversation.client = true
+    }
+
+    // ---- once a frame, before the scene's sync
+
+    fn pre_sync { mut v: View, mut w: world::World, mut sc: scene::Scene, mut dev: gpu::Device, mut g: gui::Gui, dt: f32 } {
+        // A conversation that ended, or one that replaced it.
+        if v.up and (not w.conversation.active or w.conversation.started_serial != v.seen_started) {
+            finish{ &v, &w, &sc, &g }
+        }
+        if not v.up and w.conversation.active { begin{ &v, &w, &dev, &g } }
+        dlgpanel::update{ p = &v.panels, g = &g, dt }
+        if not v.up { return }
+        if not w.conversation.scene_ready {
+            v.wait = v.wait + dt
+            if prepare{ &v, &w, &sc, &dev } or v.wait > 1.5 { w.conversation.scene_ready = true }
+        }
+        if w.conversation.line.serial != v.seen_line {
+            v.seen_line = w.conversation.line.serial
+            show_line{ &v, &w, &sc, &g }
+        }
+        if w.conversation.choices.serial != v.seen_choices {
+            v.seen_choices = w.conversation.choices.serial
+            show_choices{ &v, &w, &sc, &g }
+        }
+        take_picks{ &v, &w, &g }
+        update_voice{ &v, &w }
+        update_camera_model{ &v, &w, &sc, dt }
+        w.conversation.fade_busy = w.conversation.fade_busy and dlgpanel::fade_running{ p = v.panels }
+    }
+
+    // The module is about to change: the presentation of a running conversation ends here, while
+    // the scene it touched still exists.
+    fn leave { mut v: View, mut w: world::World, mut sc: scene::Scene, mut g: gui::Gui } {
+        if v.up { finish{ &v, &w, &sc, &g } }
+        v.camera_model.loaded = false
+        v.swap_count = 0
+    }
+
+    // What the player did in the panels, as requests the flow acts on at its next pump.
+    fn take_picks { mut v: View, mut w: world::World, mut g: gui::Gui } {
+        match dlgpanel::poll{ p = &v.panels, g = &g } {
+            reply{ index } => { w.conversation.pick = @as(i32, @trunc(i32, index)) }
+            skip => { w.conversation.skip = true }
+            none => {}
+        }
+    }
+
+    // After the scene's sync has made this frame's poses: the mouth of whoever is speaking.
+    fn post_sync { mut v: View, mut w: world::World, mut sc: scene::Scene, dt: f32 } {
+        apply_lips{ &v, &w, &sc }
+    }
+
+    // A conversation starts being presented.
+    fn begin { mut v: View, mut w: world::World, mut dev: gpu::Device, mut g: gui::Gui } {
+        v.up = true
+        v.seen_started = w.conversation.started_serial
+        v.seen_line = 0
+        v.seen_choices = 0
+        v.wait = 0.0
+        v.mode = Mode::none
+        v.have_rig = false
+        v.side_count = 0
+        v.side_next = 0
+        v.swap_count = 0
+        v.stunt_next = 0
+        v.cast_count = 0
+        v.blocked = false
+        v.camera_model.loaded = false
+        w.conversation.scene_ready = false
+        let computer = w.conversation.d.conversation_type == dlg::TYPE_COMPUTER
+        dlgpanel::open{ p = &v.panels, g = &g, fs = &w.fs, dev = &dev, computer, computer_type = w.conversation.d.computer_type } iferr err{ error } {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog panels: {}\n", error)
+        }
+        sync_tokens{ &w, &g }
+        // A conversation that follows a fade to black fades the world in on its first line.
+        if w.conversation.hold_fade_in {
+            w.conversation.hold_fade_in = false
+            dlgpanel::start_fade{ p = &v.panels, out = false, delay = 0.0, length = 1.0, color = math::vec3::zero{} }
+        }
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog view: begin\n")
+        }
+    }
+
+    // The conversation is over: stunt models back, animations back to standing, the voice and
+    // the camera released.
+    fn finish { mut v: View, mut w: world::World, mut sc: scene::Scene, mut g: gui::Gui } {
+        restore_stunts{ &v, &w, &sc }
+        let mut i: usize = 0
+        while i < v.cast_count {
+            let o = world::object{ w = &w, id = v.cast[i] }
+            if o != null { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }
+            i = i + 1
+        }
+        v.cast_count = 0
+        stop_voice{ &v, &w, fade = 0.3 }
+        dlgpanel::close{ p = &v.panels, g = &g }
+        v.mode = Mode::none
+        v.have_rig = false
+        v.up = false
+        v.seen_ended = w.conversation.ended_serial
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog view: finish\n")
+        }
+    }
+
+    // The fade and bars are drawn after the 3D view and before the GUI's own panels.
+    fn draw { v: *View, mut frame: render::Frame } {
+        dlgpanel::draw_overlays{ p = v.panels, &frame }
+    }
+}

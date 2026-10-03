@@ -1,0 +1,114 @@
+// Lip sync: the mouth of a talking head for one line of voice-over (docs/formats/lip.md). A LIP
+// is a list of times, each with a mouth shape 0..15, and a shape is a pose of the head's `talk`
+// animation. This file turns (LIP, time) into face-bone states on a pose the caller owns; it
+// knows nothing of the scene, the world or the audio.
+//
+//   let track = lipsync::make_track{ lip = try lip::parse{ data } }       // data must outlive it
+//   ... each frame of the line, after the head's own animation was evaluated into `pose`:
+//   lipsync::apply{ model = head, talk = talk_binding, track = &track, t = seconds_since_line_start, &pose }
+//
+// `apply` layers on top of whatever the pose holds: only the nodes the `talk` animation drives
+// (the face bones) are replaced, everything else stays, and the transforms are finished again.
+// A head whose chain has no `talk` animation has no binding, and the caller skips it.
+//
+// Mapping of a shape id to a `talk` time (docs/formats/lip.md, Playback; tools/lipcheck prints
+// the evidence): swkotor.exe samples the `talk` animation at (shape + 1) / 16 of its length, so
+// shape 0 is the pose a thirty-second of a second in (a hair off the bind pose: the jaw is
+// open under half a degree) and shape 15 is the animation's last key. lip.md's first guess,
+// shape s at s/30 s, differs from that by up to one key and is kept as `frame` for the tool.
+namespace lipsync {
+    // How a shape id picks a time of the `talk` animation.
+    enum Mapping: u8 {
+        ratio,          // (s + 1) / 16 of the animation's length: what the exe does
+        frame,          // s / 30 seconds, the id as the key number: lip.md's first guess
+    }
+
+    // The keys per second `talk` is authored at.
+    const FRAME_RATE: f32 = 30.0
+
+    // One line's mouth. The keys stay in the LIP's own bytes.
+    struct Track {
+        lip: lip::Lip,
+    }
+
+    // Where a time falls between the keys: `from` at the start of the stretch, `to` at its end,
+    // `f` in [0, 1] of the way. Outside the keys both are the rest shape and `f` is 0.
+    struct Blend {
+        from: lip::Shape,
+        to: lip::Shape,
+        f: f32,
+    }
+
+    // The data stays where it is: `lip.keys` must outlive the track.
+    fn make_track { lip: lip::Lip } -> Track {
+        return Track{ lip }
+    }
+
+    // Seconds of the line (the last key's time in every shipped LIP).
+    fn length { t: *Track } -> f32 {
+        return t.lip.length
+    }
+
+    // The shape the LIP has in force at `time`: the last key at or before it, and the rest shape
+    // (0) before the first key and from the last one on. For logs and tests; `apply` blends.
+    fn shape_at { t: *Track, time: f32 } -> lip::Shape {
+        let b = locate{ t, time }
+        return b.from
+    }
+
+    // Layers the mouth for `t` seconds into the line on `pose`: the head's own pose (its idle
+    // animation, evaluated and finished) with the face bones the `talk` animation drives
+    // replaced by the blend of the two shapes around `t`. Before the first key and after the last
+    // the mouth is at rest. A NaN or negative `t` is the start of the line.
+    fn apply { model: *mdl::Model, talk: mdl_anim::Binding, track: *Track, t: f32, mut pose: mdl_anim::Pose } {
+        apply_mapped{ model, talk, track, t, mapping = Mapping::ratio, pose }
+    }
+
+    // `apply` with the shape-to-time mapping chosen, for the tool that compares them.
+    fn apply_mapped { model: *mdl::Model, talk: mdl_anim::Binding, track: *Track, t: f32, mapping: Mapping, pose: mdl_anim::Pose } {
+        let b = locate{ t = track, time = t }
+        let len = talk.animation.length
+        // Sampling both shapes' poses with weights 1 then f leaves exactly lerp(A, B, f) on the
+        // driven nodes (positions linearly, orientations by slerp), whatever the pose held.
+        mdl_anim::apply{ model, binding = talk, time = pose_time{ shape = b.from, mapping, length = len }, weight = 1.0, pose }
+        if b.f > 0.0 and b.to != b.from {
+            mdl_anim::apply{ model, binding = talk, time = pose_time{ shape = b.to, mapping, length = len }, weight = b.f, pose }
+        }
+        mdl_anim::finish{ model, pose }
+    }
+
+    // The time of the `talk` animation (of `length` seconds) that shape `shape` stands for;
+    // sampling clamps it to the animation's keys.
+    fn pose_time { shape: lip::Shape, mapping: Mapping, length: f32 } -> f32 {
+        let s = @as(f32, @as(u32, shape))
+        return match mapping {
+            frame => { s / FRAME_RATE }
+            ratio => { (s + 1.0) / 16.0 * length }
+        }
+    }
+
+    // The stretch of the line `time` is in. Repeated key times are an instant change to the
+    // later key, and the gap is never divided when it is zero.
+    fn locate { t: *Track, time: f32 } -> Blend {
+        let rest = Blend{ from = lip::Shape::ee, to = lip::Shape::ee, f = 0.0 }
+        let n = @as(usize, t.lip.count)
+        if n == 0 or not (time >= 0.0) { return rest }              // no keys, or NaN or before the start
+        let first = lip::get_key{ l = t.lip, i = 0 }
+        if time < first.time { return rest }
+        let last = lip::get_key{ l = t.lip, i = n - 1 }
+        if time >= last.time { return rest }
+        // Here n >= 2 and key[0].time <= time < key[n-1].time; find the last key at or before
+        // `time` (keys never decrease): key[lo].time <= time < key[hi].time.
+        let mut lo: usize = 0
+        let mut hi: usize = n - 1
+        while hi - lo > 1 {
+            let mid = (lo + hi) / 2
+            if lip::get_key{ l = t.lip, i = mid }.time <= time { lo = mid } else { hi = mid }
+        }
+        let a = lip::get_key{ l = t.lip, i = lo }
+        let b = lip::get_key{ l = t.lip, i = hi }
+        let gap = b.time - a.time
+        let f = if gap > 0.0 { math::clamp{ x = (time - a.time) / gap, lo = 0.0, hi = 1.0 } } else { 1.0 }
+        return Blend{ from = a.shape, to = b.shape, f }
+    }
+}

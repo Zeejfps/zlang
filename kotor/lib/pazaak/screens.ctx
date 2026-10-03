@@ -1,0 +1,518 @@
+// The pazaak screens: the wager, the side-deck setup and the game, each a .gui file of the original
+// driven over lib/gui (docs/design/minigames.md; the original's panels are in docs/re/pazaak.md).
+// A `Session` is one visit to the table. The host (the engine's loop) owns it:
+//
+//   var s = try pazaak::begin{ &g, &fs, &dev, mixer, params, owned, side_deck }
+//   each frame, while not s.done:
+//       gui::handle_event{ &g, ... } for the input, then
+//       try pazaak::update{ &s, &g, &fs, &dev, dt }
+//   when s.done: s.result says who won, what is at stake and the side deck the player chose
+//
+// The session never touches the party's gold, items or the end script: that is the host's.
+namespace pazaak {
+    const IMG_BACK: usize = 0
+    const IMG_PLUS: usize = 1
+    const IMG_MINUS: usize = 2
+    const IMG_FLIP: usize = 3
+    const IMG_FLIPPED: usize = 4
+    const IMG_MAIN: usize = 5
+    const IMG_WIN: usize = 6
+
+    enum Stage: u8 { wager, setup, game, done }
+
+    // What the open message box is asking.
+    enum Ask: u8 { none, quit_setup, use_deck, quit_game, prompt }
+
+    // What the script asked for (PlayPazaak) and what the host knows.
+    struct Params {
+        opponent_deck: [10]i32,         // card ids, from pazaakdecks.2da
+        max_wager: i32,                 // already clamped to the party's gold; 0 or less: no wager
+        tutorial: bool,
+        seed: u32,
+        player_name: [64]u8, player_name_len: usize,
+        opponent_name: [64]u8, opponent_name_len: usize,
+    }
+
+    fn make_params {} -> Params {
+        return Params{
+            opponent_deck = [-1; 10], max_wager = 0, tutorial = false, seed = 1,
+            player_name = [0; 64], player_name_len = 0, opponent_name = [0; 64], opponent_name_len = 0,
+        }
+    }
+
+    // How the visit ended. `wager` is the stake that changes hands (0: nothing was at risk, as when
+    // the player leaves before the game starts); the side deck is what to remember for next time.
+    struct Result { won: bool, forfeited: bool, wager: i32, side_deck: [10]i32 }
+
+    struct Session {
+        stage: Stage,
+        ask: Ask,
+        params: Params,
+        owned: [18]i32,                 // the cards the player has, by id
+        left: [18]i32,                  // and the ones not in the chosen deck
+        chosen: [10]i32,                // the side deck so far (-1: empty slot)
+        wager: i32,
+        setup: u32, wager_panel: u32, game: u32, box: u32,      // panel ids; 0 none
+        focus_group: i32, focus_card: i32,                      // setup: 1 an available card has the focus, 2 a chosen one
+        hold_time: f32, hold_steps: i32,                        // the wager buttons repeat while held
+        stake: i32,                     // the wager of the game being played
+        start_requested: bool,          // the player confirmed the side deck
+        m: Match,
+        imgs: [7]gui::Img,
+        sounds: [8]alloc::Bytes,
+        mixer: ?*mut mix::Mixer,
+        drawn: u64,                     // a signature of the game panel as last drawn
+        done: bool,
+        result: Result,
+    }
+
+    // ---- small helpers
+
+    // `prefix` + the decimal `a` (+ `b` for two-digit tags) as a tag, in `into`.
+    fn tag_of { into: []mut u8, prefix: []u8, a: usize, b: usize, two: bool } -> []u8 {
+        let mut n: usize = 0
+        while n < prefix.len {
+            into[n] = prefix[n]
+            n = n + 1
+        }
+        into[n] = '0' + @as(u8, a)
+        n = n + 1
+        if two {
+            into[n] = '0' + @as(u8, b)
+            n = n + 1
+        }
+        return into[..n]
+    }
+
+    // Copies `src` into `dst` (cut to fit); the length.
+    fn copy_text { dst: []mut u8, src: []u8 } -> usize {
+        let mut n: usize = 0
+        while n < src.len and n < dst.len {
+            dst[n] = src[n]
+            n = n + 1
+        }
+        return n
+    }
+
+    fn int_text { into: []mut u8, n: i32 } -> usize {
+        if n <= 0 {
+            into[0] = '0'
+            return 1
+        }
+        let mut digits: [12]u8 = [0; 12]
+        let mut k: usize = 0
+        let mut v = n
+        while v > 0 {
+            digits[k] = '0' + @as(u8, v % 10)
+            v = v / 10
+            k = k + 1
+        }
+        let mut i: usize = 0
+        while i < k {
+            into[i] = digits[k - 1 - i]
+            i = i + 1
+        }
+        return k
+    }
+
+    fn set_label { mut g: gui::Gui, panel: u32, tag: []u8, text: []u8 } {
+        gui::set_text{ &g, panel, tag, text } iferr {}
+    }
+
+    fn set_number { mut g: gui::Gui, panel: u32, tag: []u8, n: i32 } {
+        let mut b: [12]u8 = [0; 12]
+        let len = int_text{ into = b[..], n }
+        set_label{ &g, panel, tag, text = b[..len] }
+    }
+
+    fn img_index { c: Card, hidden: bool } -> usize {
+        if hidden { return IMG_BACK }
+        if c.id < FIRST_MINUS { return IMG_PLUS }
+        if c.id < FIRST_FLIP { return IMG_MINUS }
+        if c.id < FIRST_MAIN { return if c.flipped { IMG_FLIPPED } else { IMG_FLIP } }
+        return IMG_MAIN
+    }
+
+    // A card on a button and its label: the face (or the back), the value as text. An empty slot
+    // clears both (`hide`: and takes the button away, as for empty hand slots).
+    fn show_card { mut s: Session, mut g: gui::Gui, panel: u32, button: []u8, label: []u8, c: Card, hidden: bool, hand: bool, hide: bool } {
+        if not is_card{ c } {
+            gui::clear_picture{ &g, panel, tag = button }
+            set_label{ &g, panel, tag = label, text = "" }
+            if hide {
+                gui::set_visible{ &g, panel, tag = button, visible = false }
+                gui::set_visible{ &g, panel, tag = label, visible = false }
+            }
+            return
+        }
+        let img = s.imgs[img_index{ c, hidden }]
+        gui::set_visible{ &g, panel, tag = button, visible = true }
+        gui::set_visible{ &g, panel, tag = label, visible = true }
+        if img.ok { gui::set_picture{ &g, panel, tag = button, texture = img.tex, w = img.w, h = img.h } }
+        let mut b: [4]u8 = [0; 4]
+        let n = if hidden { 0 } else if hand { write_hand_text{ c, into = b[..] } } else { write_card_text{ c, into = b[..] } }
+        set_label{ &g, panel, tag = label, text = b[..n] }
+    }
+
+    fn play_sound { mut s: Session, mut g: gui::Gui, which: Sound } {
+        if which == Sound::click {
+            gui::play_sound{ &g, n = 0 }
+            return
+        }
+        let m = s.mixer ifnull { return }
+        let bytes = s.sounds[@as(usize, which)]
+        if bytes.len == 0 { return }
+        _ = mix::play{ m, bytes, p = mix::sound_2d{ group = mix::Group::sfx, volume = g.sound_volume } } iferr { mix::Handle{ slot = 0, id = 0 } }
+    }
+
+    // ---- starting
+
+    // Opens the visit: the side-deck screen, with the wager question over it when there is a
+    // stake. `owned` counts the player's cards by id, `side_deck` is the deck chosen last time.
+    fn begin {
+        mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, mixer: ?*mut mix::Mixer, params: Params,
+        owned: [18]i32, side_deck: [10]i32,
+    } -> !Session {
+        let none = gui::no_img{}
+        let mut s = Session{
+            stage = Stage::setup, ask = Ask::none, params, owned, left = owned, chosen = [-1; 10],
+            wager = params.max_wager, setup = 0, wager_panel = 0, game = 0, box = 0,
+            focus_group = 0, focus_card = 0, hold_time = 0.0, hold_steps = 0, stake = 0, start_requested = false,
+            m = new_match{ seed = 1, wager = 0, player_deck = [-1; 10], opponent_deck = [-1; 10], tutorial = false, auto_player = false },
+            imgs = [none; 7], sounds = [slice::empty(u8){}; 8], mixer, drawn = 0, done = false,
+            result = Result{ won = false, forfeited = false, wager = 0, side_deck },
+        }
+        if s.wager < 1 and params.max_wager > 0 { s.wager = 1 }
+        // the last deck, as far as the player still has its cards
+        let mut i: usize = 0
+        while i < SIDE_DECK_SIZE {
+            let c = side_deck[i]
+            if c >= 0 and c < @as(i32, SIDE_KINDS) and s.left[@as(usize, c)] > 0 {
+                s.chosen[i] = c
+                s.left[@as(usize, c)] = s.left[@as(usize, c)] - 1
+            }
+            i = i + 1
+        }
+        load_assets{ &s, &g, &fs, &dev }
+        s.setup = try gui::open{ &g, &fs, &dev, name = "pazaaksetup", mode = gui::Mode::full_screen, modal = true }
+        gui::set_backdrop{ &g, &fs, &dev, panel = s.setup, kind = 2 }
+        refresh_setup{ &s, &g }
+        if params.max_wager > 0 {
+            s.stage = Stage::wager
+            s.wager_panel = try gui::open{ &g, &fs, &dev, name = "pazaakwager", mode = gui::Mode::dialog, modal = true }
+            refresh_wager{ &s, &g }
+        }
+        return s
+    }
+
+    fn load_assets { mut s: Session, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } {
+        s.imgs[IMG_BACK] = gui::resolve_img{ &g, &fs, &dev, name = "lbl_cardback" }
+        s.imgs[IMG_PLUS] = gui::resolve_img{ &g, &fs, &dev, name = "lbl_cardmpos" }
+        s.imgs[IMG_MINUS] = gui::resolve_img{ &g, &fs, &dev, name = "lbl_cardmneg" }
+        s.imgs[IMG_FLIP] = gui::resolve_img{ &g, &fs, &dev, name = "lbl_cardrarem" }
+        s.imgs[IMG_FLIPPED] = gui::resolve_img{ &g, &fs, &dev, name = "lbl_cardraref" }
+        s.imgs[IMG_MAIN] = gui::resolve_img{ &g, &fs, &dev, name = "lbl_cardstand" }
+        s.imgs[IMG_WIN] = gui::resolve_img{ &g, &fs, &dev, name = "lbl_winmark02" }
+        if s.mixer == null { return }
+        let mut k: usize = 0
+        while k < 8 {
+            let name = sound_name{ s = @as(Sound, k) }
+            let loaded = res::load{ &fs, rm = g.rm, name, kind = restype::Type::wav, realloc = heap::alloc, heap = g.heap } iferr { null }
+            s.sounds[k] = loaded ifnull { slice::empty(u8){} }
+            k = k + 1
+        }
+    }
+
+    // Frees what the session holds (the sounds) and closes its panels.
+    fn end_session { mut s: Session, mut g: gui::Gui } {
+        close_all{ &s, &g }
+        let mut k: usize = 0
+        while k < 8 {
+            if s.sounds[k].len > 0 {
+                _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = s.sounds[k], count = 0 }
+                s.sounds[k] = slice::empty(u8){}
+            }
+            k = k + 1
+        }
+    }
+
+    fn close_all { mut s: Session, mut g: gui::Gui } {
+        if s.box != 0 { gui::close{ &g, id = s.box } }
+        if s.wager_panel != 0 { gui::close{ &g, id = s.wager_panel } }
+        if s.game != 0 { gui::close{ &g, id = s.game } }
+        if s.setup != 0 { gui::close{ &g, id = s.setup } }
+        s.box = 0
+        s.wager_panel = 0
+        s.game = 0
+        s.setup = 0
+    }
+
+    fn finish { mut s: Session, mut g: gui::Gui, won: bool, forfeited: bool, wager: i32 } {
+        s.result = Result{ won, forfeited, wager, side_deck = s.chosen }
+        s.stage = Stage::done
+        s.done = true
+        close_all{ &s, &g }
+    }
+
+    // ---- message boxes
+
+    fn open_box { mut s: Session, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, strref: u32, cancel: bool, ask: Ask } -> ! {
+        if s.box != 0 { return }
+        let text = try gui::tlk_text{ &g, strref }
+        defer gui::free_string{ &g, s = text }
+        s.box = try gui::message_box{ &g, &fs, &dev, text, cancel }
+        s.ask = ask
+    }
+
+    fn close_box { mut s: Session, mut g: gui::Gui } {
+        if s.box != 0 { gui::close{ &g, id = s.box } }
+        s.box = 0
+        s.ask = Ask::none
+    }
+
+    // ---- the wager
+
+    fn refresh_wager { mut s: Session, mut g: gui::Gui } {
+        set_number{ &g, panel = s.wager_panel, tag = "LBL_WAGERVAL", n = s.wager }
+        let head = gui::tlk_text{ &g, strref = 32321 } iferr { slice::empty(u8){} }
+        let mut b: [96]u8 = [0; 96]
+        let mut n: usize = 0
+        while n < head.len and n < 80 {
+            b[n] = head[n]
+            n = n + 1
+        }
+        gui::free_string{ &g, s = head }
+        b[n] = ' '
+        n = n + 1
+        n = n + int_text{ into = b[n..], n = s.params.max_wager }
+        set_label{ &g, panel = s.wager_panel, tag = "LBL_MAXIMUM", text = b[..n] }
+    }
+
+    fn change_wager { mut s: Session, mut g: gui::Gui, by: i32 } {
+        let w = s.wager + by
+        if w < 1 or w > s.params.max_wager { return }
+        s.wager = w
+        refresh_wager{ &s, &g }
+    }
+
+    // The tag of the control the pointer holds pressed, if it is in panel `panel`.
+    fn pressed_tag { mut g: gui::Gui, panel: u32 } -> []u8 {
+        if g.capture.panel != panel or g.capture.control < 0 { return "" }
+        let p = gui::find_panel{ &g, id = panel } ifnull { return "" }
+        let cs = list::items{ list = p.controls }
+        let at = @as(usize, g.capture.control)
+        if at >= cs.len { return "" }
+        return cs[at].tag
+    }
+
+    // Holding BTN_LESS or BTN_MORE repeats: after a pause, 20 steps a second.
+    fn repeat_wager { mut s: Session, mut g: gui::Gui, dt: f32 } {
+        if s.wager_panel == 0 { return }
+        let tag = pressed_tag{ &g, panel = s.wager_panel }
+        let dir: i32 = if slice::eq_bytes{ a = tag, b = "BTN_LESS" } { -1 } else if slice::eq_bytes{ a = tag, b = "BTN_MORE" } { 1 } else { 0 }
+        if dir == 0 {
+            s.hold_time = 0.0
+            return
+        }
+        let before = s.hold_time
+        s.hold_time = before + dt
+        if s.hold_time > 0.4 {
+            let steps = @as(i32, (s.hold_time - 0.4) * 20.0)
+            let had = @as(i32, (before - 0.4) * 20.0)
+            let mut k = if before > 0.4 { steps - had } else { steps + 1 }
+            while k > 0 {
+                change_wager{ &s, &g, by = dir }
+                s.hold_steps = s.hold_steps + 1
+                k = k - 1
+            }
+        }
+    }
+
+    // ---- the side deck
+
+    fn refresh_setup { mut s: Session, mut g: gui::Gui } {
+        let p = s.setup
+        let mut t1: [16]u8 = [0; 16]
+        let mut t2: [16]u8 = [0; 16]
+        let mut t3: [16]u8 = [0; 16]
+        let mut c: usize = 0
+        while c < SIDE_KINDS {
+            let b = tag_of{ into = t1[..], prefix = "BTN_AVAIL", a = c / 6, b = c % 6, two = true }
+            let l = tag_of{ into = t2[..], prefix = "LBL_AVAIL", a = c / 6, b = c % 6, two = true }
+            let nn = tag_of{ into = t3[..], prefix = "LBL_AVAILNUM", a = c / 6, b = c % 6, two = true }
+            let have = s.owned[c] > 0
+            gui::set_visible{ &g, panel = p, tag = b, visible = have }
+            gui::set_visible{ &g, panel = p, tag = l, visible = have }
+            gui::set_visible{ &g, panel = p, tag = nn, visible = have }
+            if have {
+                set_number{ &g, panel = p, tag = nn, n = s.left[c] }
+                gui::set_enabled{ &g, panel = p, tag = b, enabled = s.left[c] > 0 }
+                let dim = s.left[c] == 0
+                let tint = if dim { render::Color{ r = 0.0, g = 0.33, b = 0.49, a = 1.0 } } else { render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 1.0 } }
+                gui::set_text_color{ &g, panel = p, tag = l, color = tint }
+                gui::set_text_color{ &g, panel = p, tag = nn, color = tint }
+            }
+            c = c + 1
+        }
+        let mut full = true
+        let mut slot: usize = 0
+        while slot < SIDE_DECK_SIZE {
+            let b = tag_of{ into = t1[..], prefix = "BTN_CHOSEN", a = slot, b = 0, two = false }
+            let l = tag_of{ into = t2[..], prefix = "LBL_CHOSEN", a = slot, b = 0, two = false }
+            let id = s.chosen[slot]
+            if id < 0 {
+                full = false
+                gui::clear_picture{ &g, panel = p, tag = b }
+                set_label{ &g, panel = p, tag = l, text = "" }
+            } else {
+                show_card{ &s, &g, panel = p, button = b, label = l, c = make_card{ id }, hidden = false, hand = true, hide = false }
+            }
+            slot = slot + 1
+        }
+        gui::set_enabled{ &g, panel = p, tag = "BTN_ATEXT", enabled = full }
+        // Add card / Remove card, by what the pointer or keys rest on
+        let on_chosen = s.focus_group == 2
+        gui::set_enabled{ &g, panel = p, tag = "BTN_YTEXT", enabled = s.focus_group != 0 }
+        gui::set_strref{ &g, panel = p, tag = "BTN_YTEXT", strref = if on_chosen { 38602 } else { 38601 } } iferr {}
+    }
+
+    // Moves available card `c` into the first free slot of the deck.
+    fn choose_card { mut s: Session, mut g: gui::Gui, c: usize } {
+        if c >= SIDE_KINDS or s.left[c] <= 0 { return }
+        let mut slot: usize = 0
+        while slot < SIDE_DECK_SIZE and s.chosen[slot] >= 0 { slot = slot + 1 }
+        if slot >= SIDE_DECK_SIZE { return }
+        s.chosen[slot] = @as(i32, c)
+        s.left[c] = s.left[c] - 1
+        refresh_setup{ &s, &g }
+    }
+
+    fn unchoose_card { mut s: Session, mut g: gui::Gui, slot: usize } {
+        if slot >= SIDE_DECK_SIZE or s.chosen[slot] < 0 { return }
+        let c = @as(usize, s.chosen[slot])
+        s.chosen[slot] = -1
+        s.left[c] = s.left[c] + 1
+        refresh_setup{ &s, &g }
+    }
+
+    // A tag of the form PREFIX + digit(s): the number, or -1.
+    fn tag_number { tag: []u8, prefix: []u8 } -> i32 {
+        if tag.len <= prefix.len { return -1 }
+        let mut i: usize = 0
+        while i < prefix.len {
+            if tag[i] != prefix[i] { return -1 }
+            i = i + 1
+        }
+        let mut n: i32 = 0
+        while i < tag.len {
+            if tag[i] < '0' or tag[i] > '9' { return -1 }
+            n = n * 10 + @as(i32, tag[i] - '0')
+            i = i + 1
+        }
+        return n
+    }
+
+    fn is_tag { tag: []u8, name: []u8 } -> bool { return slice::eq_bytes{ a = tag, b = name } }
+
+    // Stage-wise handling of one GUI event.
+    fn on_event { mut s: Session, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> ! {
+        if s.done { return }
+        // the message box
+        if s.box != 0 and ev.panel == s.box {
+            if ev.kind == gui::EventKind::activate or ev.kind == gui::EventKind::cancel {
+                let yes = ev.kind == gui::EventKind::activate and is_tag{ tag = ev.tag, name = "BTN_OK" }
+                answer_box{ &s, &g, yes, ended_tutorial = is_tag{ tag = ev.tag, name = "BTN_CANCEL" } or ev.kind == gui::EventKind::cancel }
+            }
+            return
+        }
+        if s.box != 0 { return }
+        if s.wager_panel != 0 and ev.panel == s.wager_panel {
+            try on_wager_event{ &s, &g, &fs, &dev, ev }
+        } else if s.setup != 0 and ev.panel == s.setup {
+            try on_setup_event{ &s, &g, &fs, &dev, ev }
+        } else if s.game != 0 and ev.panel == s.game {
+            try on_game_event{ &s, &g, &fs, &dev, ev }
+        }
+    }
+
+    fn on_wager_event { mut s: Session, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> ! {
+        if ev.kind == gui::EventKind::cancel {
+            try open_box{ &s, &g, &fs, &dev, strref = 42424, cancel = true, ask = Ask::quit_setup }
+            return
+        }
+        if ev.kind != gui::EventKind::activate { return }
+        let repeated = s.hold_steps > 0
+        if is_tag{ tag = ev.tag, name = "BTN_LESS" } {
+            if not repeated { change_wager{ &s, &g, by = -1 } }
+        } else if is_tag{ tag = ev.tag, name = "BTN_MORE" } {
+            if not repeated { change_wager{ &s, &g, by = 1 } }
+        } else if is_tag{ tag = ev.tag, name = "BTN_WAGER" } {
+            gui::close{ &g, id = s.wager_panel }
+            s.wager_panel = 0
+            s.stage = Stage::setup
+        } else if is_tag{ tag = ev.tag, name = "BTN_QUIT" } {
+            try open_box{ &s, &g, &fs, &dev, strref = 42424, cancel = true, ask = Ask::quit_setup }
+        }
+    }
+
+    fn on_setup_event { mut s: Session, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> ! {
+        if ev.kind == gui::EventKind::cancel {
+            try open_box{ &s, &g, &fs, &dev, strref = 42424, cancel = true, ask = Ask::quit_setup }
+            return
+        }
+        let card = tag_number{ tag = ev.tag, prefix = "BTN_AVAIL" }
+        let slot = tag_number{ tag = ev.tag, prefix = "BTN_CHOSEN" }
+        if ev.kind == gui::EventKind::hilight {
+            if card >= 0 {
+                s.focus_group = 1
+                s.focus_card = (card / 10) * 6 + card % 10
+                refresh_setup{ &s, &g }
+            } else if slot >= 0 {
+                s.focus_group = 2
+                s.focus_card = slot
+                refresh_setup{ &s, &g }
+            }
+            return
+        }
+        if ev.kind != gui::EventKind::activate { return }
+        if card >= 0 {
+            choose_card{ &s, &g, c = @as(usize, (card / 10) * 6 + card % 10) }
+        } else if slot >= 0 {
+            unchoose_card{ &s, &g, slot = @as(usize, slot) }
+        } else if is_tag{ tag = ev.tag, name = "BTN_YTEXT" } {
+            if s.focus_group == 1 { choose_card{ &s, &g, c = @as(usize, s.focus_card) } }
+            if s.focus_group == 2 { unchoose_card{ &s, &g, slot = @as(usize, s.focus_card) } }
+        } else if is_tag{ tag = ev.tag, name = "BTN_ATEXT" } {
+            let mut full = true
+            let mut i: usize = 0
+            while i < SIDE_DECK_SIZE {
+                if s.chosen[i] < 0 { full = false }
+                i = i + 1
+            }
+            if full {
+                try open_box{ &s, &g, &fs, &dev, strref = 32322, cancel = true, ask = Ask::use_deck }
+            } else {
+                try open_box{ &s, &g, &fs, &dev, strref = 38630, cancel = false, ask = Ask::none }
+            }
+        }
+    }
+
+    // The player pressed OK (`yes`) or Cancel in the message box.
+    fn answer_box { mut s: Session, mut g: gui::Gui, yes: bool, ended_tutorial: bool } {
+        let ask = s.ask
+        close_box{ &s, &g }
+        if ask == Ask::quit_setup and yes {
+            finish{ &s, &g, won = false, forfeited = true, wager = 0 }
+        } else if ask == Ask::quit_game and yes {
+            forfeit_match{ m = &s.m }
+            finish{ &s, &g, won = false, forfeited = true, wager = s.stake }
+        } else if ask == Ask::use_deck and yes {
+            s.start_requested = true
+        } else if ask == Ask::prompt {
+            if has_prompt{ m = s.m } {
+                if s.m.prompt.kind == PromptKind::info and ended_tutorial { s.m.tutorial = false }
+                answer_prompt{ m = &s.m, yes }
+            }
+        }
+    }
+}

@@ -1,0 +1,453 @@
+// Objects written as a saved game holds them (docs/formats/gff-save.md, "The saved module"):
+// every instance whole (UseTemplates 0), with its runtime ObjectId, its locals (SWVarTable) and
+// its queued script actions, in the field labels the blueprints and the original's saves use, so
+// lib/engine/templates.ctx reads them back (and reads the original's saves).
+//
+//   let s = try save::write_object{ &b, w = &w, owner = list, o, id = struct_id }
+namespace save {
+    type Builder = gffw::Builder(arena::Arena)
+
+    fn put_byte { mut b: Builder, owner: u32, label: []u8, v: u8 } -> ! { _ = try gffw::add_value{ &b, owner, label, value = gff::Value::byte{ v } } }
+    fn put_bool { mut b: Builder, owner: u32, label: []u8, v: bool } -> ! { try put_byte{ &b, owner, label, v = if v { 1 } else { 0 } } }
+    fn put_word { mut b: Builder, owner: u32, label: []u8, v: u32 } -> ! { _ = try gffw::add_value{ &b, owner, label, value = gff::Value::word{ v = @trunc(u16, v) } } }
+    fn put_short { mut b: Builder, owner: u32, label: []u8, v: i32 } -> ! { _ = try gffw::add_value{ &b, owner, label, value = gff::Value::short{ v = @trunc(i16, v) } } }
+    fn put_dword { mut b: Builder, owner: u32, label: []u8, v: u32 } -> ! { _ = try gffw::add_value{ &b, owner, label, value = gff::Value::dword{ v } } }
+    fn put_int { mut b: Builder, owner: u32, label: []u8, v: i32 } -> ! { _ = try gffw::add_value{ &b, owner, label, value = gff::Value::int{ v } } }
+    fn put_float { mut b: Builder, owner: u32, label: []u8, v: f32 } -> ! { _ = try gffw::add_value{ &b, owner, label, value = gff::Value::float{ v } } }
+    fn put_string { mut b: Builder, owner: u32, label: []u8, v: []u8 } -> ! { _ = try gffw::add_value{ &b, owner, label, value = gff::Value::exostring{ v } } }
+    fn put_resref { mut b: Builder, owner: u32, label: []u8, v: resref::ResRef } -> ! {
+        let mut r = v
+        _ = try gffw::add_value{ &b, owner, label, value = gff::Value::resref{ v = resref::bytes{ r = &r } } }
+    }
+
+    // A CExoLocString: the strref and, when the name has text of its own, that text (id 0).
+    fn put_name { mut b: Builder, mut scratch: arena::Arena, owner: u32, label: []u8, name: obj::Name } -> ! {
+        let mut body: []u8 = slice::empty(u8){}
+        let mut count: u32 = 0
+        if name.text.len > 0 {
+            let buf = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scratch, mem = slice::empty(u8){}, count = 8 + name.text.len }
+            let n = name.text.len
+            buf[0] = 0
+            buf[1] = 0
+            buf[2] = 0
+            buf[3] = 0
+            buf[4] = @trunc(u8, n)
+            buf[5] = @trunc(u8, n >> 8)
+            buf[6] = @trunc(u8, n >> 16)
+            buf[7] = @trunc(u8, n >> 24)
+            slice::copy(u8){ dst = buf[8..], src = name.text }
+            body = buf
+            count = 1
+        }
+        _ = try gffw::add_value{ &b, owner, label, value = gff::Value::locstring{ v = gff::LocString{ strref = @trunc(i32, name.strref), count, body } } }
+    }
+
+    // KOTOR's locals: 3 DWORDs of booleans, 8 bytes of numbers (gff-save.md).
+    fn put_locals { mut b: Builder, owner: u32, l: obj::Locals } -> ! {
+        _ = try gffw::put_list{ &b, owner, label = "VarTable" }
+        let sw = try gffw::put_struct{ &b, owner, label = "SWVarTable", id = 0 }
+        let bits = try gffw::put_list{ &b, owner = sw, label = "BitArray" }
+        let mut i: usize = 0
+        while i < 3 {
+            let e = try gffw::add_element{ &b, list = bits, id = 0 }
+            try put_dword{ &b, owner = e, label = "Variable", v = l.bools[i] }
+            i = i + 1
+        }
+        let bytes = try gffw::put_list{ &b, owner = sw, label = "ByteArray" }
+        i = 0
+        while i < 8 {
+            let e = try gffw::add_element{ &b, list = bytes, id = 0 }
+            try put_byte{ &b, owner = e, label = "Variable", v = l.numbers[i] }
+            i = i + 1
+        }
+    }
+
+    fn put_position { mut b: Builder, owner: u32, o: *obj::Object } -> ! {
+        if o.kind == obj::Kind::door or o.kind == obj::Kind::placeable {
+            try put_float{ &b, owner, label = "X", v = o.position.x }
+            try put_float{ &b, owner, label = "Y", v = o.position.y }
+            try put_float{ &b, owner, label = "Z", v = o.position.z }
+            // Bearing turns +Y onto the facing (gff-module.md).
+            try put_float{ &b, owner, label = "Bearing", v = math::atan2f{ y = -o.orientation.x, x = o.orientation.y } }
+            return
+        }
+        try put_float{ &b, owner, label = "XPosition", v = o.position.x }
+        try put_float{ &b, owner, label = "YPosition", v = o.position.y }
+        try put_float{ &b, owner, label = "ZPosition", v = o.position.z }
+        try put_float{ &b, owner, label = "XOrientation", v = o.orientation.x }
+        try put_float{ &b, owner, label = "YOrientation", v = o.orientation.y }
+        try put_float{ &b, owner, label = "ZOrientation", v = 0.0 }
+    }
+
+    fn put_script { mut b: Builder, owner: u32, o: *obj::Object, label: []u8, slot: obj::Slot } -> ! {
+        try put_resref{ &b, owner, label, v = obj::script{ o, slot } }
+    }
+
+    // The header's fields (Tag, name, template, id, conversation, flags, HP, locals, actions).
+    fn put_common { mut b: Builder, mut w: world::World, owner: u32, o: *obj::Object, name_label: []u8 } -> ! {
+        try put_dword{ &b, owner, label = "ObjectId", v = o.id }
+        try put_string{ &b, owner, label = "Tag", v = o.tag }
+        try put_resref{ &b, owner, label = "TemplateResRef", v = o.template }
+        try put_name{ &b, scratch = w.scratch, owner, label = name_label, name = o.name }
+        try put_resref{ &b, owner, label = "Conversation", v = o.conversation }
+        try put_bool{ &b, owner, label = "Plot", v = o.plot }
+        try put_bool{ &b, owner, label = "Min1HP", v = o.min_one_hp }
+        try put_bool{ &b, owner, label = "Commandable", v = o.commandable }
+        if o.kind == obj::Kind::creature {
+            try put_word{ &b, owner, label = "FactionID", v = o.faction }
+        } else {
+            try put_dword{ &b, owner, label = "Faction", v = o.faction }
+        }
+        try put_position{ &b, owner, o }
+        try put_locals{ &b, owner, l = o.locals }
+        try put_actions{ &b, &w, owner, o }
+    }
+
+    // ---- per kind
+
+    // Writes object `o` as an element (struct id `id`) of list `list`; the struct's index.
+    fn write_object { mut b: Builder, mut w: world::World, list: u32, o: *obj::Object, id: u32 } -> !u32 {
+        let s = try gffw::add_element{ &b, list, id }
+        match o.ext {
+            creature{ c } => { try write_creature{ &b, &w, s, o, c } }
+            door{ d } => { try write_door{ &b, &w, s, o, d } }
+            placeable{ p } => { try write_placeable{ &b, &w, s, o, p } }
+            trigger{ t } => { try write_trigger{ &b, &w, s, o, t } }
+            waypoint{ wp } => { try write_waypoint{ &b, &w, s, o, wp } }
+            sound{ s = snd } => { try write_sound{ &b, &w, s, o, snd } }
+            encounter{ e } => { try write_encounter{ &b, &w, s, o, e } }
+            item{ i } => { try write_item{ &b, &w, s, o, i } }
+            else => { try put_common{ &b, &w, owner = s, o, name_label = "LocName" } }
+        }
+        return s
+    }
+
+    fn write_creature { mut b: Builder, mut w: world::World, s: u32, o: *obj::Object, c: *obj::Creature } -> ! {
+        try put_common{ &b, &w, owner = s, o, name_label = "FirstName" }
+        try put_word{ &b, owner = s, label = "Appearance_Type", v = c.appearance }
+        try put_byte{ &b, owner = s, label = "Gender", v = @trunc(u8, c.gender) }
+        try put_byte{ &b, owner = s, label = "Race", v = @trunc(u8, c.race) }
+        try put_byte{ &b, owner = s, label = "SubraceIndex", v = @trunc(u8, c.subrace) }
+        try put_word{ &b, owner = s, label = "PortraitId", v = c.portrait }
+        try put_word{ &b, owner = s, label = "SoundSetFile", v = c.soundset }
+        try put_byte{ &b, owner = s, label = "BodyVariation", v = c.body_variation }
+        try put_byte{ &b, owner = s, label = "TextureVar", v = c.texture_variation }
+        try put_byte{ &b, owner = s, label = "GoodEvil", v = @trunc(u8, c.good_evil) }
+        try put_byte{ &b, owner = s, label = "PerceptionRange", v = @trunc(u8, c.perception_range) }
+        try put_bool{ &b, owner = s, label = "IsPC", v = c.is_pc }
+        try put_bool{ &b, owner = s, label = "CreatnScrptFird", v = c.spawn_fired }
+        let labels: [6][]u8 = ["Str", "Dex", "Con", "Int", "Wis", "Cha"]
+        let mut k: usize = 0
+        while k < 6 {
+            try put_byte{ &b, owner = s, label = labels[k], v = c.abilities[k] }
+            k = k + 1
+        }
+        try put_short{ &b, owner = s, label = "HitPoints", v = o.hp_max }
+        try put_short{ &b, owner = s, label = "MaxHitPoints", v = o.hp_max }
+        try put_short{ &b, owner = s, label = "CurrentHitPoints", v = o.hp }
+        let classes = try gffw::put_list{ &b, owner = s, label = "ClassList" }
+        k = 0
+        while k < 3 {
+            if c.class_levels[k] > 0 {
+                let e = try gffw::add_element{ &b, list = classes, id = 2 }
+                try put_int{ &b, owner = e, label = "Class", v = @as(i32, c.classes[k]) }
+                try put_short{ &b, owner = e, label = "ClassLevel", v = @as(i32, c.class_levels[k]) }
+            }
+            k = k + 1
+        }
+        try put_script{ &b, owner = s, o, label = "ScriptHeartbeat", slot = obj::Slot::heartbeat }
+        try put_script{ &b, owner = s, o, label = "ScriptOnNotice", slot = obj::Slot::notice }
+        try put_script{ &b, owner = s, o, label = "ScriptSpellAt", slot = obj::Slot::spell_at }
+        try put_script{ &b, owner = s, o, label = "ScriptAttacked", slot = obj::Slot::attacked }
+        try put_script{ &b, owner = s, o, label = "ScriptDamaged", slot = obj::Slot::damaged }
+        try put_script{ &b, owner = s, o, label = "ScriptDisturbed", slot = obj::Slot::disturbed }
+        try put_script{ &b, owner = s, o, label = "ScriptEndRound", slot = obj::Slot::end_round }
+        try put_script{ &b, owner = s, o, label = "ScriptDialogue", slot = obj::Slot::dialogue }
+        try put_script{ &b, owner = s, o, label = "ScriptSpawn", slot = obj::Slot::spawn }
+        try put_script{ &b, owner = s, o, label = "ScriptRested", slot = obj::Slot::rested }
+        try put_script{ &b, owner = s, o, label = "ScriptDeath", slot = obj::Slot::death }
+        try put_script{ &b, owner = s, o, label = "ScriptUserDefine", slot = obj::Slot::user_defined }
+        try put_script{ &b, owner = s, o, label = "ScriptOnBlocked", slot = obj::Slot::blocked }
+        try put_script{ &b, owner = s, o, label = "ScriptEndDialogu", slot = obj::Slot::end_dialogue }
+        // Equipment: struct id = the slot's bit (gff-save.md); then the backpack.
+        let equipped = try gffw::put_list{ &b, owner = s, label = "Equip_ItemList" }
+        k = 0
+        while k < obj::EQUIP_SLOTS {
+            let io = world::object{ w = &w, id = c.equipped[k] }
+            if io != null {
+                if obj::item{ o = io } is some{ value = it } {
+                    let e = try gffw::add_element{ &b, list = equipped, id = @as(u32, 1) << @as(u32, k) }
+                    try write_item{ &b, &w, s = e, o = io, i = it }
+                }
+            }
+            k = k + 1
+        }
+        let carried = try gffw::put_list{ &b, owner = s, label = "ItemList" }
+        let inv = list::items{ list = c.inventory }
+        k = 0
+        while k < inv.len {
+            let io = world::object{ w = &w, id = inv[k] }
+            k = k + 1
+            if io == null { continue }
+            if obj::item{ o = io } is some{ value = it } {
+                let e = try gffw::add_element{ &b, list = carried, id = @trunc(u32, k - 1) }
+                try write_item{ &b, &w, s = e, o = io, i = it }
+            }
+        }
+    }
+
+    fn write_item { mut b: Builder, mut w: world::World, s: u32, o: *obj::Object, i: *obj::Item } -> ! {
+        try put_common{ &b, &w, owner = s, o, name_label = "LocalizedName" }
+        try put_int{ &b, owner = s, label = "BaseItem", v = @as(i32, i.base) }
+        try put_byte{ &b, owner = s, label = "ModelVariation", v = @trunc(u8, i.model_variation) }
+        try put_byte{ &b, owner = s, label = "BodyVariation", v = @trunc(u8, i.body_variation) }
+        try put_byte{ &b, owner = s, label = "TextureVar", v = @trunc(u8, i.texture_variation) }
+        try put_word{ &b, owner = s, label = "StackSize", v = i.stack }
+        try put_byte{ &b, owner = s, label = "Charges", v = @trunc(u8, i.charges) }
+        try put_bool{ &b, owner = s, label = "Identified", v = i.identified }
+        // HOOK(rules): PropertiesList from rules::Item.
+    }
+
+    fn write_door { mut b: Builder, mut w: world::World, s: u32, o: *obj::Object, d: *obj::Door } -> ! {
+        try put_common{ &b, &w, owner = s, o, name_label = "LocName" }
+        try put_byte{ &b, owner = s, label = "GenericType", v = @trunc(u8, d.appearance) }
+        try put_dword{ &b, owner = s, label = "Appearance", v = 0 }
+        try put_bool{ &b, owner = s, label = "Locked", v = d.locked }
+        try put_bool{ &b, owner = s, label = "Lockable", v = d.lockable }
+        try put_bool{ &b, owner = s, label = "KeyRequired", v = d.key_required }
+        try put_string{ &b, owner = s, label = "KeyName", v = d.key }
+        try put_byte{ &b, owner = s, label = "OpenLockDC", v = @trunc(u8, d.open_dc) }
+        try put_bool{ &b, owner = s, label = "Static", v = d.static }
+        try put_short{ &b, owner = s, label = "HP", v = o.hp_max }
+        try put_short{ &b, owner = s, label = "CurrentHP", v = o.hp }
+        try put_byte{ &b, owner = s, label = "OpenState", v = @as(u8, d.state) }
+        try put_string{ &b, owner = s, label = "LinkedTo", v = d.linked_to }
+        try put_resref{ &b, owner = s, label = "LinkedToModule", v = d.linked_to_module }
+        try put_byte{ &b, owner = s, label = "LinkedToFlags", v = d.linked_flags }
+        try put_name{ &b, scratch = w.scratch, owner = s, label = "TransitionDestin", name = d.transition_name }
+        try put_script{ &b, owner = s, o, label = "OnOpen", slot = obj::Slot::open }
+        try put_script{ &b, owner = s, o, label = "OnClosed", slot = obj::Slot::closed }
+        try put_script{ &b, owner = s, o, label = "OnDamaged", slot = obj::Slot::damaged }
+        try put_script{ &b, owner = s, o, label = "OnDeath", slot = obj::Slot::death }
+        try put_script{ &b, owner = s, o, label = "OnDisarm", slot = obj::Slot::disarm }
+        try put_script{ &b, owner = s, o, label = "OnHeartbeat", slot = obj::Slot::heartbeat }
+        try put_script{ &b, owner = s, o, label = "OnLock", slot = obj::Slot::lock }
+        try put_script{ &b, owner = s, o, label = "OnMeleeAttacked", slot = obj::Slot::melee_attacked }
+        try put_script{ &b, owner = s, o, label = "OnSpellCastAt", slot = obj::Slot::spell_at }
+        try put_script{ &b, owner = s, o, label = "OnTrapTriggered", slot = obj::Slot::trap_triggered }
+        try put_script{ &b, owner = s, o, label = "OnUnlock", slot = obj::Slot::unlock }
+        try put_script{ &b, owner = s, o, label = "OnUserDefined", slot = obj::Slot::user_defined }
+        try put_script{ &b, owner = s, o, label = "OnClick", slot = obj::Slot::click }
+        try put_script{ &b, owner = s, o, label = "OnFailToOpen", slot = obj::Slot::fail_to_open }
+        try put_script{ &b, owner = s, o, label = "OnDialog", slot = obj::Slot::dialogue }
+    }
+
+    fn write_placeable { mut b: Builder, mut w: world::World, s: u32, o: *obj::Object, p: *obj::Placeable } -> ! {
+        try put_common{ &b, &w, owner = s, o, name_label = "LocName" }
+        try put_dword{ &b, owner = s, label = "Appearance", v = p.appearance }
+        try put_bool{ &b, owner = s, label = "Useable", v = p.useable }
+        try put_bool{ &b, owner = s, label = "HasInventory", v = p.has_inventory }
+        try put_bool{ &b, owner = s, label = "PartyInteract", v = p.party_interact }
+        try put_bool{ &b, owner = s, label = "Static", v = p.static }
+        try put_bool{ &b, owner = s, label = "Locked", v = p.locked }
+        try put_string{ &b, owner = s, label = "KeyName", v = p.key }
+        try put_short{ &b, owner = s, label = "HP", v = o.hp_max }
+        try put_short{ &b, owner = s, label = "CurrentHP", v = o.hp }
+        let state: u8 = if p.anim == 10075 { 1 } else if p.anim == 10076 { 2 } else { 0 }
+        try put_byte{ &b, owner = s, label = "AnimationState", v = state }
+        try put_script{ &b, owner = s, o, label = "OnClosed", slot = obj::Slot::closed }
+        try put_script{ &b, owner = s, o, label = "OnDamaged", slot = obj::Slot::damaged }
+        try put_script{ &b, owner = s, o, label = "OnDeath", slot = obj::Slot::death }
+        try put_script{ &b, owner = s, o, label = "OnDisarm", slot = obj::Slot::disarm }
+        try put_script{ &b, owner = s, o, label = "OnHeartbeat", slot = obj::Slot::heartbeat }
+        try put_script{ &b, owner = s, o, label = "OnInvDisturbed", slot = obj::Slot::inv_disturbed }
+        try put_script{ &b, owner = s, o, label = "OnLock", slot = obj::Slot::lock }
+        try put_script{ &b, owner = s, o, label = "OnMeleeAttacked", slot = obj::Slot::melee_attacked }
+        try put_script{ &b, owner = s, o, label = "OnOpen", slot = obj::Slot::open }
+        try put_script{ &b, owner = s, o, label = "OnSpellCastAt", slot = obj::Slot::spell_at }
+        try put_script{ &b, owner = s, o, label = "OnTrapTriggered", slot = obj::Slot::trap_triggered }
+        try put_script{ &b, owner = s, o, label = "OnUnlock", slot = obj::Slot::unlock }
+        try put_script{ &b, owner = s, o, label = "OnUsed", slot = obj::Slot::used }
+        try put_script{ &b, owner = s, o, label = "OnUserDefined", slot = obj::Slot::user_defined }
+        try put_script{ &b, owner = s, o, label = "OnEndDialogue", slot = obj::Slot::end_dialogue }
+        try put_script{ &b, owner = s, o, label = "OnDialog", slot = obj::Slot::dialogue }
+        let items = try gffw::put_list{ &b, owner = s, label = "ItemList" }
+        let inv = list::items{ list = p.inventory }
+        let mut k: usize = 0
+        while k < inv.len {
+            let io = world::object{ w = &w, id = inv[k] }
+            k = k + 1
+            if io == null { continue }
+            if obj::item{ o = io } is some{ value = it } {
+                let e = try gffw::add_element{ &b, list = items, id = @trunc(u32, k - 1) }
+                try write_item{ &b, &w, s = e, o = io, i = it }
+            }
+        }
+    }
+
+    fn write_trigger { mut b: Builder, mut w: world::World, s: u32, o: *obj::Object, t: *obj::Trigger } -> ! {
+        try put_common{ &b, &w, owner = s, o, name_label = "LocalizedName" }
+        try put_byte{ &b, owner = s, label = "Type", v = @trunc(u8, t.trigger_type) }
+        try put_string{ &b, owner = s, label = "LinkedTo", v = t.linked_to }
+        try put_resref{ &b, owner = s, label = "LinkedToModule", v = t.linked_to_module }
+        try put_byte{ &b, owner = s, label = "LinkedToFlags", v = t.linked_flags }
+        try put_name{ &b, scratch = w.scratch, owner = s, label = "TransitionDestin", name = t.transition_name }
+        try put_script{ &b, owner = s, o, label = "ScriptHeartbeat", slot = obj::Slot::heartbeat }
+        try put_script{ &b, owner = s, o, label = "ScriptOnEnter", slot = obj::Slot::enter }
+        try put_script{ &b, owner = s, o, label = "ScriptOnExit", slot = obj::Slot::exit }
+        try put_script{ &b, owner = s, o, label = "ScriptUserDefine", slot = obj::Slot::user_defined }
+        try put_script{ &b, owner = s, o, label = "OnTrapTriggered", slot = obj::Slot::trap_triggered }
+        try put_script{ &b, owner = s, o, label = "OnDisarm", slot = obj::Slot::disarm }
+        try put_script{ &b, owner = s, o, label = "OnClick", slot = obj::Slot::click }
+        let geometry = try gffw::put_list{ &b, owner = s, label = "Geometry" }
+        let mut k: usize = 0
+        while k < t.polygon.len {
+            let e = try gffw::add_element{ &b, list = geometry, id = 3 }
+            try put_float{ &b, owner = e, label = "PointX", v = t.polygon[k].x - o.position.x }
+            try put_float{ &b, owner = e, label = "PointY", v = t.polygon[k].y - o.position.y }
+            try put_float{ &b, owner = e, label = "PointZ", v = t.polygon[k].z - o.position.z }
+            k = k + 1
+        }
+    }
+
+    fn write_waypoint { mut b: Builder, mut w: world::World, s: u32, o: *obj::Object, wp: *obj::Waypoint } -> ! {
+        try put_common{ &b, &w, owner = s, o, name_label = "LocalizedName" }
+        try put_bool{ &b, owner = s, label = "HasMapNote", v = wp.has_map_note }
+        try put_bool{ &b, owner = s, label = "MapNoteEnabled", v = wp.map_note_enabled }
+        try put_name{ &b, scratch = w.scratch, owner = s, label = "MapNote", name = wp.map_note }
+    }
+
+    fn write_sound { mut b: Builder, mut w: world::World, s: u32, o: *obj::Object, snd: *obj::Sound } -> ! {
+        try put_common{ &b, &w, owner = s, o, name_label = "LocName" }
+        try put_bool{ &b, owner = s, label = "Active", v = snd.active }
+        try put_bool{ &b, owner = s, label = "Continuous", v = snd.continuous }
+        try put_bool{ &b, owner = s, label = "Looping", v = snd.looping }
+        try put_bool{ &b, owner = s, label = "Positional", v = snd.positional }
+        try put_bool{ &b, owner = s, label = "Random", v = snd.random }
+        try put_bool{ &b, owner = s, label = "RandomPosition", v = snd.random_position }
+        try put_dword{ &b, owner = s, label = "Interval", v = snd.interval }
+        try put_dword{ &b, owner = s, label = "IntervalVrtn", v = snd.interval_variation }
+        try put_byte{ &b, owner = s, label = "Volume", v = @trunc(u8, snd.volume) }
+        try put_byte{ &b, owner = s, label = "VolumeVrtn", v = @trunc(u8, snd.volume_variation) }
+        try put_float{ &b, owner = s, label = "PitchVariation", v = snd.pitch_variation }
+        try put_float{ &b, owner = s, label = "Elevation", v = snd.elevation }
+        try put_float{ &b, owner = s, label = "MinDistance", v = snd.min_distance }
+        try put_float{ &b, owner = s, label = "MaxDistance", v = snd.max_distance }
+        try put_float{ &b, owner = s, label = "RandomRangeX", v = snd.random_range_x }
+        try put_float{ &b, owner = s, label = "RandomRangeY", v = snd.random_range_y }
+        try put_byte{ &b, owner = s, label = "Priority", v = @trunc(u8, snd.priority) }
+        let sounds = try gffw::put_list{ &b, owner = s, label = "Sounds" }
+        let mut k: usize = 0
+        while k < snd.sounds.len {
+            let e = try gffw::add_element{ &b, list = sounds, id = 0 }
+            try put_resref{ &b, owner = e, label = "Sound", v = snd.sounds[k] }
+            k = k + 1
+        }
+    }
+
+    fn write_encounter { mut b: Builder, mut w: world::World, s: u32, o: *obj::Object, e: *obj::Encounter } -> ! {
+        try put_common{ &b, &w, owner = s, o, name_label = "LocalizedName" }
+        try put_bool{ &b, owner = s, label = "Active", v = e.active }
+        try put_bool{ &b, owner = s, label = "PlayerOnly", v = e.player_only }
+        try put_int{ &b, owner = s, label = "MaxCreatures", v = @as(i32, e.max_creatures) }
+        try put_int{ &b, owner = s, label = "RecCreatures", v = @as(i32, e.rec_creatures) }
+        try put_bool{ &b, owner = s, label = "Started", v = e.spawned }
+        try put_script{ &b, owner = s, o, label = "OnEntered", slot = obj::Slot::enter }
+        try put_script{ &b, owner = s, o, label = "OnExit", slot = obj::Slot::exit }
+        try put_script{ &b, owner = s, o, label = "OnExhausted", slot = obj::Slot::exhausted }
+        try put_script{ &b, owner = s, o, label = "OnHeartbeat", slot = obj::Slot::heartbeat }
+        try put_script{ &b, owner = s, o, label = "OnUserDefined", slot = obj::Slot::user_defined }
+        let creatures = try gffw::put_list{ &b, owner = s, label = "CreatureList" }
+        let mut k: usize = 0
+        while k < e.creatures.len {
+            let el = try gffw::add_element{ &b, list = creatures, id = 0 }
+            try put_resref{ &b, owner = el, label = "ResRef", v = e.creatures[k] }
+            k = k + 1
+        }
+        let geometry = try gffw::put_list{ &b, owner = s, label = "Geometry" }
+        k = 0
+        while k < e.polygon.len {
+            let el = try gffw::add_element{ &b, list = geometry, id = 1 }
+            try put_float{ &b, owner = el, label = "X", v = e.polygon[k].x - o.position.x }
+            try put_float{ &b, owner = el, label = "Y", v = e.polygon[k].y - o.position.y }
+            try put_float{ &b, owner = el, label = "Z", v = e.polygon[k].z - o.position.z }
+            k = k + 1
+        }
+        let spawns = try gffw::put_list{ &b, owner = s, label = "SpawnPointList" }
+        k = 0
+        while k < e.spawn_points.len {
+            let el = try gffw::add_element{ &b, list = spawns, id = 2 }
+            try put_float{ &b, owner = el, label = "X", v = e.spawn_points[k].x }
+            try put_float{ &b, owner = el, label = "Y", v = e.spawn_points[k].y }
+            try put_float{ &b, owner = el, label = "Z", v = e.spawn_points[k].z }
+            try put_float{ &b, owner = el, label = "Orientation", v = e.spawn_points[k].w }
+            k = k + 1
+        }
+    }
+
+    // ---- actions (gff-save.md, ActionList)
+
+    // The object's queued actions: ActionId, GroupActionId, NumParams, Paramaters (Type, Value:
+    // 1 int, 2 float, 3 object, 4 string, 5 script situation). Vectors go as three floats (ours).
+    fn put_actions { mut b: Builder, mut w: world::World, owner: u32, o: *obj::Object } -> ! {
+        let list = try gffw::put_list{ &b, owner, label = "ActionList" }
+        let queue = list::items{ list = o.actions }
+        let mut i: usize = 0
+        while i < queue.len {
+            let a = queue[i]
+            i = i + 1
+            let e = try gffw::add_element{ &b, list, id = 0 }
+            try put_dword{ &b, owner = e, label = "ActionId", v = @as(u32, a.kind) }
+            try put_word{ &b, owner = e, label = "GroupActionId", v = @as(u32, a.group) }
+            let params = try gffw::put_list{ &b, owner = e, label = "Paramaters" }
+            let mut n: u32 = 0
+            let mut k: usize = 0
+            while k < 8 {
+                match a.params[k] {
+                    none => {}
+                    int{ v } => { try put_param_int{ &b, list = params, v }; n = n + 1 }
+                    float{ v } => { try put_param_float{ &b, list = params, v }; n = n + 1 }
+                    object{ id } => {
+                        let p = try gffw::add_element{ &b, list = params, id = 1 }
+                        try put_dword{ &b, owner = p, label = "Type", v = 3 }
+                        try put_dword{ &b, owner = p, label = "Value", v = id }
+                        n = n + 1
+                    }
+                    vector{ v } => {
+                        try put_param_float{ &b, list = params, v = v.x }
+                        try put_param_float{ &b, list = params, v = v.y }
+                        try put_param_float{ &b, list = params, v = v.z }
+                        n = n + 3
+                    }
+                    string{ s } => {
+                        let p = try gffw::add_element{ &b, list = params, id = 1 }
+                        try put_dword{ &b, owner = p, label = "Type", v = 4 }
+                        try put_string{ &b, owner = p, label = "Value", v = s }
+                        n = n + 1
+                    }
+                    situation{ s } => {
+                        let p = try gffw::add_element{ &b, list = params, id = 1 }
+                        try put_dword{ &b, owner = p, label = "Type", v = 5 }
+                        let v = try gffw::put_struct{ &b, owner = p, label = "Value", id = 0x7777 }
+                        try write_situation{ &b, &w, owner = v, s }
+                        n = n + 1
+                    }
+                }
+                k = k + 1
+            }
+            try put_word{ &b, owner = e, label = "NumParams", v = n }
+        }
+    }
+
+    fn put_param_int { mut b: Builder, list: u32, v: i32 } -> ! {
+        let p = try gffw::add_element{ &b, list, id = 1 }
+        try put_dword{ &b, owner = p, label = "Type", v = 1 }
+        try put_int{ &b, owner = p, label = "Value", v }
+    }
+
+    fn put_param_float { mut b: Builder, list: u32, v: f32 } -> ! {
+        let p = try gffw::add_element{ &b, list, id = 1 }
+        try put_dword{ &b, owner = p, label = "Type", v = 2 }
+        try put_float{ &b, owner = p, label = "Value", v }
+    }
+}

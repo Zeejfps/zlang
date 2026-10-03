@@ -32,7 +32,7 @@ fn run {
     mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, mut h: heap::Heap, mut rm: res::Manager,
     mut module_arena: arena::Arena, mut scratch: arena::Arena, opts: options::Options,
 } -> !i32 {
-    let w = try world::make{ fs, io, heap = &h, rm = &rm, module_arena = &module_arena, scratch = &scratch, seed = opts.seed }
+    let w = try world::make{ fs, io, heap = &h, rm = &rm, module_arena = &module_arena, scratch = &scratch, seed = opts.seed, saves = opts.saves }
     try walkmap::load_materials{ m = &w.walk, heap = &h, table = w.tables.surfacemat }
     elog::enable{ l = &w.log, list = opts.log }
     let tlk_path = try path::join(heap::Heap){ realloc = heap::alloc, heap = &h, dir = opts.game, name = "dialog.tlk" }

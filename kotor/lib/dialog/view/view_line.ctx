@@ -1,0 +1,148 @@
+// What a new line or list of replies does to the scene (docs/re/dialogue.md 4.4, 4.6, 8.1): the
+// participants' animations, the shot, the voice, the panel text.
+namespace dlgview {
+    // The default animations of a conversation (8.1): the speaker talks, the listener listens;
+    // a creature under a fifth of its health does it hurt.
+    const TALK: u32 = 10038
+    const LISTEN: u32 = 10030
+    const TALK_INJURED: u32 = 10154
+    const LISTEN_INJURED: u32 = 10155
+    const NO_ANIMATION: u32 = 10098
+
+    fn injured { w: *world::World, id: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return false }
+        return o.hp_max > 0 and @as(f32, o.hp) < 0.2 * @as(f32, o.hp_max)
+    }
+
+    // Plays `number` on a participant; the same number again keeps playing.
+    fn play_animation { mut v: View, mut w: world::World, id: u32, number: u32, mut mark: [16]u32, mut marked: usize } {
+        if id == obj::INVALID or number == NO_ANIMATION { return }
+        let o = world::object{ w = &w, id } ifnull { return }
+        if obj::creature{ o } is some{ value = c } { if c.dead { return } }
+        world::set_animation{ o, id = number, speed = 1.0 }
+        if marked < 16 {
+            mark[marked] = id
+            marked = marked + 1
+        }
+        if v.cast_count < 16 {
+            let mut k: usize = 0
+            let mut known = false
+            while k < v.cast_count {
+                if v.cast[k] == id { known = true }
+                k = k + 1
+            }
+            if not known {
+                v.cast[v.cast_count] = id
+                v.cast_count = v.cast_count + 1
+            }
+        }
+    }
+
+    // UpdateDialogAnimations: the node's AnimList, then the talk and listen loops for the speaker
+    // and listener it doesn't name; whoever was animated for the last line and isn't now stands.
+    fn update_animations { mut v: View, mut w: world::World, node: *dlg::Node, speaker: u32, listener: u32 } {
+        let mut mark: [16]u32 = [obj::INVALID; 16]
+        let mut marked: usize = 0
+        let mut speaker_named = false
+        let mut listener_named = false
+        let mut i: usize = 0
+        while i < node.anims.len {
+            let a = node.anims[i]
+            i = i + 1
+            let id = dlg::find_participant{ &w, name = a.participant }
+            if id == obj::INVALID { continue }
+            if id == speaker { speaker_named = true }
+            if id == listener { listener_named = true }
+            play_animation{ &v, &w, id, number = a.animation, mark = &mark, marked = &marked }
+        }
+        if not speaker_named and speaker != obj::INVALID {
+            let n = if injured{ w = &w, id = speaker } { TALK_INJURED } else { TALK }
+            play_animation{ &v, &w, id = speaker, number = n, mark = &mark, marked = &marked }
+        }
+        if not listener_named and listener != obj::INVALID and listener != speaker {
+            let n = if injured{ w = &w, id = listener } { LISTEN_INJURED } else { LISTEN }
+            play_animation{ &v, &w, id = listener, number = n, mark = &mark, marked = &marked }
+        }
+        // Back to standing for those the last line animated and this one doesn't.
+        let mut k: usize = 0
+        while k < v.cast_count {
+            let id = v.cast[k]
+            k = k + 1
+            let mut still = false
+            let mut j: usize = 0
+            while j < marked {
+                if mark[j] == id { still = true }
+                j = j + 1
+            }
+            if still { continue }
+            let o = world::object{ w = &w, id } ifnull { continue }
+            world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+        }
+    }
+
+    // The name the panel would head a line with: the speaker's own (the original draws none).
+    fn name_of { w: *world::World, id: u32 } -> []u8 {
+        let o = world::object{ w, id } ifnull { return "" }
+        return o.name.text
+    }
+
+    // A node's fade (9.6): 3 in and 4 out over FadeLength after FadeDelay; 1 and 2 the same at
+    // once, in a colour.
+    fn start_node_fade { mut v: View, node: *dlg::Node } {
+        if node.fade_type == 0 { return }
+        let out = node.fade_type == 4 or node.fade_type == 1
+        dlgpanel::start_fade{ p = &v.panels, out, delay = node.fade_delay, length = node.fade_length, color = node.fade_color }
+    }
+
+    // A new entry, or a reply the player's creature speaks.
+    fn show_line { mut v: View, mut w: world::World, mut sc: scene::Scene, mut g: gui::Gui } {
+        let line = w.conversation.line
+        let node = dlg::current_node{ s = &w.conversation } ifnull { return }
+        sync_tokens{ &w, &g }
+        update_animations{ &v, &w, node, speaker = line.speaker, listener = line.listener }
+        v.pull_back = 0.0
+        if node.anims.len > 0 {
+            let mut i: usize = 0
+            while i < node.anims.len {
+                if dlg::find_participant{ &w, name = node.anims[i].participant } == line.speaker { v.pull_back = pull_back_of{ w = &w, number = node.anims[i].animation } }
+                i = i + 1
+            }
+        }
+        set_shot{ &v, &w, &sc, node, speaker = line.speaker, listener = line.listener, angle = line.angle, spoken_reply = line.reply }
+        start_node_fade{ &v, node }
+        w.conversation.fade_busy = node.wait_flags & dlg::WAIT_FADE != 0 and dlgpanel::fade_running{ p = v.panels }
+        let text = dlg::text_of{ w = &w, n = node, gender = w.conversation.gender }
+        if line.has_voice and not line.reply {
+            if not play_voice{ &v, &w, speaker = line.speaker, name = node.sound } { w.conversation.vo_playing = false }
+        }
+        if text.len > 0 or not line.reply {
+            dlgpanel::set_line{ p = &v.panels, g = &g, speaker = name_of{ w = &w, id = line.speaker }, text } iferr {}
+        }
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog view: line {} camera mode {}\n", line.serial, @as(u32, v.mode))
+        }
+    }
+
+    // The list of replies goes up (or the engine's empty one is about to be chosen).
+    fn show_choices { mut v: View, mut w: world::World, mut sc: scene::Scene, mut g: gui::Gui } {
+        let ch = w.conversation.choices
+        if ch.auto { return }
+        // The shot shows the player's creature speaking to the last speaker, with the first
+        // reply's camera (4.6).
+        let first = dlg::choice_node{ s = &w.conversation, i = 0 } ifnull { return }
+        update_animations{ &v, &w, node = first, speaker = ch.speaker, listener = ch.listener }
+        v.pull_back = 0.0
+        set_shot{ &v, &w, &sc, node = first, speaker = ch.speaker, listener = ch.listener, angle = ch.angle, spoken_reply = false }
+        let mut texts: [32][]u8
+        let mut enabled: [32]bool
+        let mut i: usize = 0
+        while i < ch.count {
+            let n = dlg::choice_node{ s = &w.conversation, i }
+            texts[i] = if n != null { dlg::text_of{ w = &w, n, gender = w.conversation.gender } } else { "" }
+            enabled[i] = ch.enabled[i]
+            i = i + 1
+        }
+        dlgpanel::set_replies{ p = &v.panels, g = &g, texts = texts[..ch.count], enabled = enabled[..ch.count] } iferr {}
+    }
+}

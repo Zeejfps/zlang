@@ -732,6 +732,7 @@ fn draw_bastila {
     let head_parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model = head, envmap = "" }
     let body_pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = body }
     let head_pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = head }
+    mdl_anim::hold_shared{ model = head, pose = head_pose, parent = body, hook = mdl_anim::HOOK_HEAD }
     let palette = try alloc::resize(math::Mat4, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(math::Mat4){}, count = 64 }
     let lookup = mdl_cache::get{ &fs, cache = &models, _ }
 
@@ -930,6 +931,7 @@ fn draw_ingame {
     let room_pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = room }
     let body_pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = body }
     let head_pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = head }
+    mdl_anim::hold_shared{ model = head, pose = head_pose, parent = body, hook = mdl_anim::HOOK_HEAD }
     let palette = try alloc::resize(math::Mat4, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(math::Mat4){}, count = 64 }
     let lookup = mdl_cache::get{ &fs, cache = &models, _ }
     let found = mdl_anim::find{ model = body, name = "pause1", lookup }

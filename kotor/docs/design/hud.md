@@ -57,7 +57,25 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   box), so the boxes are ours: creature height scaled by `PERSPACE`, typical door and placeable
   sizes. Slot 1 holds the default actions (open/bash, use, talk, attack); the Force-power and item
   slots are empty until lib/rules gives the leader any (PLACEHOLDER).
+- **Combat** (`combat.ctx`): while the leader's `in_combat` flag is set the combat bar (queue
+  icons from the leader's attack actions, Disengage, clear-one) and for six seconds the combat-mode
+  message show; Disengage clears the actions and the flag. There is no combat system to set the
+  flag yet, so `ui combat TAG` sets it for tests.
+- **Feedback** (`feedback.ctx`, `log.ctx`): outbox `feedback` notes go to a 64-line ring
+  (`hud::MessageLog`, also read by the Messages menu); the young ones draw as blue lines under the
+  minimap's notification icons and fade after six seconds.
+- **Notification icons** (`notify.ctx`): `ingame::notify{ ui, hud::NOTE_* }` lights the journal,
+  credits, experience, alignment and item icons for four seconds. No engine routine calls it yet
+  (the outbox has no note for them).
+- **Tooltips**: menu buttons carry their name and key (`Messages : J`), the toggles theirs, a party
+  button its name, vitality, Force and level.
 - **Pause**: Space or `TB_PAUSE` toggles `PAUSE_PLAYER` and shows `pause.gui`.
+- **Level-up and downed marks** on the party widgets, from `exptable.2da` and the hit points.
+- **Window resizes** reopen the HUD fitted to the new size (`ingame::resize` also calls
+  `gpu::resize`: nothing else in the loop handles `resized`).
+- **Not built**: the four self action slots (Force powers, medical items, other items, mines) stay
+  hidden until lib/rules gives the leader powers and items an activation; the leader-swap
+  animation, effect-count icons, stealth toggle and bark bubbles (the dialogue lead's).
 
 ## Menus
 

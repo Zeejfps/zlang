@@ -1,0 +1,103 @@
+// The lighter-weight speech paths (docs/re/dialogue.md section 10): the one-liner that plays an
+// entry as a bark bubble, BarkString, and SpeakString. They post `bark` notes; dlgview shows the
+// bubble, plays the sound and moves the mouth.
+namespace dlg {
+    // A bark of the node's text and sound from `speaker` (PlayOneLiner, 10.1).
+    fn post_bark { mut w: world::World, speaker: u32, strref: u32, text: []u8, sound: resref::ResRef } {
+        let kept = outbox::keep_text{ out = &w.out, s = text }
+        outbox::post{ out = &w.out, note = outbox::Note::bark{ speaker, strref, text = kept, sound } }
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog bark {} \"{}\" sound={}\n", speaker, log_text{ w = &w, text }, sound)
+        }
+    }
+
+    // PlayOneLiner: the starting entry as a bubble over its speaker, with its script (and the
+    // single reply's) run. The speaker is entry 0's Speaker, not the chosen entry's (the
+    // original's quirk): empty is the owner, else the object with the tag nearest the player.
+    fn play_one_liner { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, entry: usize } {
+        let n = &w.conversation.d.entries[entry]
+        let tag = w.conversation.d.entries[0].speaker
+        let mut speaker = w.conversation.owner
+        if tag.len != 0 {
+            let near = nearest_with_tag{ w = &w, tag, to = w.pc }
+            if near != obj::INVALID { speaker = near }
+        }
+        let text = text_of{ w = &w, n, gender = w.conversation.gender }
+        w.conversation.nodes_shown = w.conversation.nodes_shown + 1
+        if text.len > 0 or not resref::is_empty{ r = n.sound } {
+            post_bark{ &w, speaker, strref = @trunc(u32, n.text.strref), text, sound = n.sound }
+        }
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog one-liner entry {}\n", entry)
+        }
+        apply_quest{ &w, n }
+        run_script{ &w, &vm, engine, name = n.script, what = "entry" }
+        if n.links.len == 1 and w.conversation.active {
+            let r = @as(usize, n.links[0].index)
+            if r < w.conversation.d.replies.len {
+                run_script{ &w, &vm, engine, name = w.conversation.d.replies[r].script, what = "reply" }
+            }
+        }
+    }
+
+    // After a one-liner the conversation ends normally with only the owner's end-of-dialogue
+    // script, and then, because starting failed, the abort path runs as well (4.1).
+    fn finish_one_liner { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
+        if not w.conversation.active { return }
+        w.conversation.end_ran = true
+        run_script{ &w, &vm, engine, name = w.conversation.d.end_script, what = "end" }
+        _ = scripts::run_slot{ &w, &vm, engine, id = w.conversation.owner, slot = obj::Slot::end_dialogue }
+        run_script{ &w, &vm, engine, name = w.conversation.d.abort_script, what = "abort" }
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog end {} (one-liner)\n", w.conversation.name)
+        }
+        clear{ &w, normal = true }
+    }
+
+    // BarkString(oCreature, nStrRef) and ActionBarkString (10.1): nothing while a conversation runs.
+    fn bark_string { mut w: world::World, speaker: u32, strref: u32 } {
+        if w.conversation.active { return }
+        let text = world::string_by_strref{ w = &w, strref }
+        let mut sound = resref::empty{}
+        match w.tlk {
+            some{ value } => {
+                let e = tlk::get{ t = value, strref } iferr null
+                if e != null { sound = e.sound }
+            }
+            null => {}
+        }
+        post_bark{ &w, speaker, strref, text, sound }
+    }
+
+    // SpeakOneLinerConversation (10.3): the first starting entry with no speaker, a passing
+    // Active script and no replies, as a bubble over `self`; its script runs on `self`. No
+    // conversation, no camera.
+    fn speak_one_liner { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, self: u32, name: resref::ResRef, token: u32 } {
+        let so = world::object{ w = &w, id = self } ifnull { return }
+        let mut resname = name
+        if resref::is_empty{ r = resname } { resname = so.conversation }
+        if resref::is_empty{ r = resname } { return }
+        let mut d = load{ &w, name = resname } iferr { return }
+        let gender = gender_of{ w = &w, id = if token != obj::INVALID { token } else { w.pc } }
+        let mut i: usize = 0
+        while i < d.starting.len {
+            let link = d.starting[i]
+            i = i + 1
+            if @as(usize, link.index) >= d.entries.len { continue }
+            let n = &d.entries[@as(usize, link.index)]
+            if n.speaker.len != 0 or n.links.len != 0 { continue }
+            if not resref::is_empty{ r = link.active } {
+                let r = scripts::run{ &w, &vm, engine, name = link.active, self } ifnull { continue }
+                if r == 0 { continue }
+            }
+            let text = text_of{ w = &w, n, gender }
+            post_bark{ &w, speaker = self, strref = @trunc(u32, n.text.strref), text, sound = n.sound }
+            _ = scripts::run{ &w, &vm, engine, name = n.script, self }
+            break
+        }
+        free{ &w, d = &d }
+    }
+}

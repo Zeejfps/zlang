@@ -1,0 +1,46 @@
+// Custom tokens (SetCustomToken): the numbered texts that dialogue lines and GUI strings splice in
+// where they say <CUSTOMnnn>. The original keeps them in the game, not the module, so they live in
+// the World for the whole session and a module change leaves them alone. The dialogue lead's
+// text expansion reads them with `tokens::get`; scripts write them through rt_misc.
+//
+//   try tokens::set{ t = &w.tokens, number = 1000, text = "Zaalbar" }
+//   let text = tokens::get{ t = &w.tokens, number = 1000 } ifnull ""
+namespace tokens {
+    struct Token { number: i32, text: []mut u8 }       // text: heap
+
+    struct Table {
+        heap: *mut heap::Heap,
+        all: list::List(Token, heap::Heap),            // in the order they were first set
+    }
+
+    fn new { heap: *mut heap::Heap } -> Table {
+        return Table{ heap, all = list::new(Token, heap::Heap){ realloc = heap::alloc, heap } }
+    }
+
+    // The text of token `number`; null when no script ever set it.
+    fn get { t: *Table, number: i32 } -> ?[]u8 {
+        let items = list::items{ list = t.all }
+        let mut i: usize = 0
+        while i < items.len {
+            if items[i].number == number { return items[i].text }
+            i = i + 1
+        }
+        return null
+    }
+
+    // Sets token `number` to a copy of `text` (replacing its text if it had one).
+    fn set { mut t: Table, number: i32, text: []u8 } -> ! {
+        let copy = try obj::copy_bytes{ heap = t.heap, s = text }
+        let items = list::items{ list = t.all }
+        let mut i: usize = 0
+        while i < items.len {
+            if items[i].number == number {
+                obj::free_bytes{ heap = t.heap, s = items[i].text }
+                items[i].text = copy
+                return
+            }
+            i = i + 1
+        }
+        try list::push{ list = &t.all, item = Token{ number, text = copy } }
+    }
+}

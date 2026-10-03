@@ -1,0 +1,181 @@
+// What moves and what is drawn outside the panels: the letterbox bars, the dialogue fade layer and
+// the bark bubble, and the per-frame update of all of dlgpanel (docs/re/gui.md "Letterbox bars and
+// conversation fade" and "CSWGuiBarkBubble", docs/re/dialogue.md 9.6 and 10.1).
+namespace dlgpanel {
+    const BAR_STEP_MAX: f32 = 0.5       // CSWGuiLetterbox::Render: a frame counts for at most this long
+    const FADE_START: f32 = 0.1         // the fade's clock starts here (0x3dcccccd in StartFade)
+    const BARK_PAD: i32 = 5             // LBL_BARKTEXT's margin in barkbubble.gui
+
+    // ---- per frame
+
+    // Advances the bars, the fade and the bark timer by `dt` seconds, shows the text once the bars
+    // have arrived, and keeps the reply rows' colours. Call once a frame, with `gui::update`.
+    fn update { mut p: Panels, mut g: gui::Gui, dt: f32 } {
+        step_fade{ &p, dt }
+        step_bark{ &p, &g, dt }
+        let moved = g.ui_w != p.ui_w or g.ui_h != p.ui_h
+        p.ui_w = g.ui_w
+        p.ui_h = g.ui_h
+        if p.main == 0 { return }
+        if moved and not p.computer {
+            let was = p.bars_instant
+            p.bars_instant = true
+            place_cinematic{ &p, &g }
+            place_last{ &p, &g }
+            p.bars_instant = was
+        }
+        if p.bars_on { step_bars{ &p, dt } }
+        if not p.computer {
+            let on = p.bars_done
+            gui::set_visible{ &g, panel = p.main, tag = "LBL_MESSAGE", visible = on and p.shown == SHOWN_LINE }
+            gui::set_visible{ &g, panel = p.main, tag = "LB_REPLIES", visible = on and p.shown == SHOWN_REPLIES }
+            if p.last != 0 {
+                gui::set_visible{ &g, panel = p.last, tag = "LBL_MESSAGE", visible = on and p.shown == SHOWN_REPLIES }
+            }
+        }
+        if p.shown == SHOWN_REPLIES {
+            follow_pointer{ &p, &g }
+            tint_rows{ &p, &g }
+        }
+    }
+
+    // ---- letterbox bars
+
+    // The top bar grows down and the bottom bar slides up, each by twice its height per second
+    // (so in half a second), a frame counting for at most 0.5 s (0x006a7680).
+    fn step_bars { mut p: Panels, dt: f32 } {
+        if p.bars_done or dt <= 0.0 { return }
+        let d = if dt > BAR_STEP_MAX { BAR_STEP_MAX } else { dt }
+        if p.top_h < p.top_target {
+            let mut s = @as(i32, 2.0 * @as(f32, p.top_target) * d)
+            if s < 1 { s = 1 }
+            p.top_h = min_i{ a = p.top_h + s, b = p.top_target }
+        }
+        if p.bottom_y > p.bottom_target {
+            let mut s = @as(i32, 2.0 * @as(f32, p.ui_h - p.bottom_target) * d)
+            if s < 1 { s = 1 }
+            p.bottom_y = max_i{ a = p.bottom_y - s, b = p.bottom_target }
+        }
+        p.bars_done = p.top_h >= p.top_target and p.bottom_y <= p.bottom_target
+    }
+
+    // Whether the bars are all the way in (the owner may wait for it before the first line).
+    fn bars_arrived { p: Panels } -> bool { return p.bars_on and p.bars_done }
+
+    // ---- the dialogue fade layer
+
+    // Starts a fade of the full-screen layer: `out` goes from clear to `color`, otherwise from
+    // `color` to clear, `length` seconds after `delay`; a length of 0 is instant (at the end of
+    // the delay). A finished fade-out stays at `color` until another fade or `clear_fade`.
+    fn start_fade { mut p: Panels, out: bool, delay: f32, length: f32, color: math::Vec3 } {
+        p.fade_on = true
+        p.fade_out = out
+        p.fade_delay = delay
+        p.fade_length = length
+        p.fade_color = color
+        p.fade_time = FADE_START
+        p.fade_alpha = if out { 0.0 } else { 1.0 }
+        step_fade{ &p, dt = 0.0 }
+    }
+
+    fn step_fade { mut p: Panels, dt: f32 } {
+        if not p.fade_on { return }
+        if dt < 5.0 { p.fade_time = p.fade_time + dt }
+        if p.fade_time <= p.fade_delay { return }
+        let t = if p.fade_length > 0.0 { (p.fade_time - p.fade_delay) / p.fade_length } else { 1.0 }
+        if p.fade_out {
+            p.fade_alpha = if t > 1.0 { 1.0 } else { t }
+        } else {
+            let a = 1.0 - t
+            p.fade_alpha = if a < 0.0 { 0.0 } else { a }
+        }
+        if t >= 1.0 { p.fade_on = false }
+    }
+
+    // True from `start_fade` until the fade has run its delay and length.
+    fn fade_running { p: Panels } -> bool { return p.fade_on }
+
+    // How opaque the layer is now, 0 clear to 1 solid.
+    fn fade_alpha { p: Panels } -> f32 { return p.fade_alpha }
+
+    // Takes the layer away at once.
+    fn clear_fade { mut p: Panels } {
+        p.fade_on = false
+        p.fade_alpha = 0.0
+    }
+
+    // ---- the bark bubble
+
+    // Shows `text` (tokens expanded) in barkbubble.gui, replacing a bubble that is up. It stays
+    // len x 0.11 + 1 seconds, or until `stop_bark`.
+    fn show_bark { mut p: Panels, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, text: []u8 } -> ! {
+        stop_bark{ &p, &g }
+        let id = try gui::open{ &g, &fs, &dev, name = "barkbubble", mode = gui::Mode::placed, modal = false }
+        p.bark = id
+        try gui::set_text_tokens{ &g, panel = id, tag = "LBL_BARKTEXT", text }
+        place_bark{ &p, &g }
+        p.bark_time = @as(f32, text.len) * 0.11 + 1.0
+        p.bark_on = true
+    }
+
+    // The box is the screen wide less the conversation margins, at the file's position, as high as
+    // its text plus 10 plus the border twice (0x006a9920).
+    fn place_bark { mut p: Panels, mut g: gui::Gui } {
+        let pn = gui::find_panel{ &g, id = p.bark } ifnull { return }
+        let lb = gui::find_control{ &g, panel = p.bark, tag = "LBL_BARKTEXT" } ifnull { return }
+        let pw = g.ui_w - 2 * MARGIN
+        let inner = pw - 2 * BARK_PAD
+        let mut th: i32 = 0
+        if lb.text.font >= 0 and @as(usize, lb.text.font) < g.fonts.len {
+            let font = list::items{ list = g.fonts }[@as(usize, lb.text.font)].font
+            let n = gui::layout{ font, text = lb.text.text, width = inner, lines = g.lines }
+            th = gui::lines_height{ font, count = n }
+        }
+        let thick = gui::border_metrics{ b = pn.border }.thick
+        pn.w = pw
+        pn.h = th + 10 + 2 * thick
+        lb.x = BARK_PAD
+        lb.y = BARK_PAD
+        lb.w = inner
+        lb.h = pn.h - 2 * BARK_PAD
+        gui::place{ &g, p = pn }
+    }
+
+    fn stop_bark { mut p: Panels, mut g: gui::Gui } {
+        if p.bark != 0 { gui::close{ &g, id = p.bark } }
+        p.bark = 0
+        p.bark_on = false
+    }
+
+    // True while the bubble's timer runs.
+    fn bark_running { p: Panels } -> bool { return p.bark_on }
+
+    // The timer counts down by the frame time, for frames under 1.5 s (0x006a9ce0).
+    fn step_bark { mut p: Panels, mut g: gui::Gui, dt: f32 } {
+        if not p.bark_on { return }
+        if dt < 1.5 { p.bark_time = p.bark_time - dt }
+        if p.bark_time <= 0.0 { stop_bark{ &p, &g } }
+    }
+
+    // ---- drawing
+
+    // The letterbox bars and the fade layer, in a UI pass of their own. Draw them after the 3D view
+    // and before `gui::draw`, so the panels and the HUD are above them. Draws nothing when there
+    // are no bars and the fade is clear.
+    fn draw_overlays { p: Panels, mut frame: render::Frame } {
+        let bars = p.main != 0 and p.bars_on and not p.computer
+        if (not bars and p.fade_alpha <= 0.0) or p.ui_w <= 0 { return }
+        render::begin_ui{ &frame, width = @as(f32, p.ui_w), height = @as(f32, p.ui_h), target = null }
+        let screen = gui::rect_of{ x = 0, y = 0, w = p.ui_w, h = p.ui_h }
+        let w = @as(f32, p.ui_w)
+        if bars {
+            let black = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }
+            gui::put_fill{ &frame, x = 0.0, y = 0.0, w, h = @as(f32, p.top_h), color = black, clip = screen }
+            gui::put_fill{ &frame, x = 0.0, y = @as(f32, p.bottom_y), w, h = @as(f32, p.ui_h - p.bottom_y), color = black, clip = screen }
+        }
+        if p.fade_alpha > 0.0 {
+            let c = render::Color{ r = p.fade_color.x, g = p.fade_color.y, b = p.fade_color.z, a = p.fade_alpha }
+            gui::put_fill{ &frame, x = 0.0, y = 0.0, w, h = @as(f32, p.ui_h), color = c, clip = screen }
+        }
+    }
+}

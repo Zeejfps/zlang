@@ -1,0 +1,373 @@
+// A loaded conversation (docs/formats/gff-dialog.md, docs/re/dialogue.md section 3): the DLG's
+// entries (the owner's lines) and replies (the player's), the links between them and the
+// starting list, with the load-time rules of LoadDialog applied so the flow reads one meaning
+// of each field.
+//
+//   let d = try dlg::load{ &w, name = resref::truncate{ name = "end_trask01" } }
+//   defer dlg::free{ &w, &d }
+//   let first = d.entries[d.starting[0].index]
+//
+// Everything a node points at (text, tags, quest tag) is a view into `bytes`, the file as read;
+// links and animation lists are two flat arrays the nodes slice, so a dialogue is a handful of
+// allocations in the session heap, all given back by `free`.
+namespace dlg {
+    error no_such_dialog
+    // A link past the end of the list it targets (LoadDialog fails the whole file on it).
+    error bad_link
+
+    const NO_INDEX: u32 = 0xFFFFFFFF
+    // `Delay` and the node's text-timer marker when the field says "default".
+    const DELAY_DEFAULT: u32 = 0xFFFFFFFF
+    const NO_STRREF: u32 = 0xFFFFFFFF
+
+    // WaitFlags: the data uses 1 and 8 (and 9); the loader adds 2 and 0x10 (re/dialogue.md 6).
+    const WAIT_CAMERA: u32 = 1
+    const WAIT_VOICE: u32 = 2
+    const WAIT_ANIMATION: u32 = 4
+    const WAIT_FADE: u32 = 8
+    const WAIT_EXPLICIT_DELAY: u32 = 0x10
+
+    // CameraAngle.
+    const ANGLE_AUTO: u32 = 0
+    const ANGLE_CLOSE: u32 = 1
+    const ANGLE_SHOULDER: u32 = 2
+    const ANGLE_WIDE: u32 = 3
+    const ANGLE_ANIMATED: u32 = 4
+    const ANGLE_KEEP: u32 = 5
+    const ANGLE_STATIC: u32 = 6
+
+    // ConversationType.
+    const TYPE_CINEMATIC: i32 = 0
+    const TYPE_COMPUTER: i32 = 1
+    const TYPE_ALWAYS: i32 = 2
+
+    // A link to the other list's node. Entry to reply links carry DisplayInactive; the other
+    // kind never has it.
+    struct Link { index: u32, active: resref::ResRef, display_inactive: bool }
+
+    // One AnimList record: who plays which animation number while the node is shown.
+    struct Anim { participant: []u8, animation: u32 }
+
+    struct Stunt { participant: []u8, model: resref::ResRef }
+
+    struct Node {
+        speaker: []u8,                  // tag; empty is the owner (entries only)
+        listener: []u8,                 // tag, PLAYER, OWNER or empty
+        text: gff::LocString,
+        script: resref::ResRef,
+        sound: resref::ResRef,          // Sound if set, else VO_ResRef
+        voice: bool,                    // the sound is VO_ResRef (a voice line), not Sound
+        sound_exists: i32,              // 0x80 when the field is absent
+        wait_flags: u32,
+        delay: u32,                     // seconds, DELAY_DEFAULT: use the text timer
+        timer_marker: i32,              // -1; 0: no sound, but WaitFlags are set
+        quest: []u8,
+        quest_entry: u32,
+        plot_index: i32,
+        plot_xp: f32,
+        anims: []Anim,
+        fade_type: u32,
+        fade_color: math::Vec3,
+        fade_length: f32,
+        fade_delay: f32,
+        camera_angle: u32,
+        camera_id: i32,
+        cam_height: f32,
+        tar_height: f32,
+        camera_anim: u32,
+        cam_fov: f32,                   // degrees, -1: keep the camera's
+        cam_vid_effect: i32,
+        links: []Link,
+    }
+
+    struct Dialog {
+        bytes: alloc::Bytes,
+        entries: []mut Node,
+        replies: []mut Node,
+        starting: []mut Link,
+        stunts: []mut Stunt,
+        links: []mut Link,              // the storage the nodes' link slices point into
+        anims: []mut Anim,
+        camera_model: resref::ResRef,
+        end_script: resref::ResRef,
+        abort_script: resref::ResRef,
+        ambient_track: resref::ResRef,
+        skippable: bool,
+        conversation_type: i32,
+        computer_type: u8,
+        unequip_items: bool,
+        unequip_held: bool,
+        animated_cut: bool,
+        old_hit_check: bool,
+        delay_entry: u32,
+    }
+
+    // Where the flat arrays are filled.
+    struct Cursor { links: []mut Link, link_at: usize, anims: []mut Anim, anim_at: usize }
+
+    // Reads the DLG called `name` from the resources, in the session heap. Free it with `free`.
+    fn load { mut w: world::World, name: resref::ResRef } -> !Dialog {
+        let mut key = name
+        let text = resref::bytes{ r = &key }
+        // The name goes to the heap first: a result read through a name in a local would be tied
+        // to the local (friction/engine.md).
+        let kept = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = text.len }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = kept, count = 0 }
+        slice::copy(u8){ dst = kept, src = text }
+        let bytes = try res::load{ fs = &w.fs, rm = w.rm.*, name = kept, kind = restype::Type::dlg, realloc = heap::alloc, heap = w.heap } ifnull { return no_such_dialog }
+        let doc = gff::parse{ data = bytes, realloc = heap::alloc, heap = w.heap } iferr err{ error } {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = bytes, count = 0 }
+            return error
+        }
+        defer gff::free{ doc, realloc = heap::alloc, heap = w.heap }
+        return build{ &w, doc, bytes } iferr err{ error } {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = bytes, count = 0 }
+            return error
+        }
+    }
+
+    fn build { mut w: world::World, doc: gff::Doc, bytes: alloc::Bytes } -> !Dialog {
+        let root = gff::ROOT
+        let entry_structs = gff::get_list{ doc, s = root, label = "EntryList" } ifnull { return no_such_dialog }
+        let reply_structs = gff::get_list{ doc, s = root, label = "ReplyList" } ifnull { return no_such_dialog }
+        let start_structs = gff::get_list{ doc, s = root, label = "StartingList" } ifnull { return no_such_dialog }
+        let stunt_structs = gff::get_list{ doc, s = root, label = "StuntList" } ifnull { slice::empty(u32){} }
+        // Counts first, so the flat arrays are allocated once.
+        let mut nlinks: usize = start_structs.len
+        let mut nanims: usize = 0
+        let mut i: usize = 0
+        while i < entry_structs.len {
+            nlinks = nlinks + list_len{ doc, s = entry_structs[i], label = "RepliesList" }
+            nanims = nanims + list_len{ doc, s = entry_structs[i], label = "AnimList" }
+            i = i + 1
+        }
+        i = 0
+        while i < reply_structs.len {
+            nlinks = nlinks + list_len{ doc, s = reply_structs[i], label = "EntriesList" }
+            nanims = nanims + list_len{ doc, s = reply_structs[i], label = "AnimList" }
+            i = i + 1
+        }
+        let entries = try alloc::resize(Node, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(Node){}, count = entry_structs.len }
+        let replies = try alloc::resize(Node, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(Node){}, count = reply_structs.len }
+        let stunts = try alloc::resize(Stunt, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(Stunt){}, count = stunt_structs.len }
+        let links = try alloc::resize(Link, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(Link){}, count = nlinks }
+        let anims = try alloc::resize(Anim, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(Anim){}, count = nanims }
+        let mut d = Dialog{
+            bytes, entries, replies, starting = links[..start_structs.len], stunts, links, anims,
+            camera_model = resref_of{ doc, s = root, label = "CameraModel" },
+            end_script = resref_of{ doc, s = root, label = "EndConversation" },
+            abort_script = resref_of{ doc, s = root, label = "EndConverAbort" },
+            ambient_track = resref_of{ doc, s = root, label = "AmbientTrack" },
+            skippable = flag{ doc, s = root, label = "Skippable", default = true },
+            conversation_type = @trunc(i32, num{ doc, s = root, label = "ConversationType", default = 0 }),
+            computer_type = @trunc(u8, num{ doc, s = root, label = "ComputerType", default = 0 }),
+            unequip_items = flag{ doc, s = root, label = "UnequipItems", default = false },
+            unequip_held = flag{ doc, s = root, label = "UnequipHItem", default = false },
+            animated_cut = flag{ doc, s = root, label = "AnimatedCut", default = false },
+            old_hit_check = flag{ doc, s = root, label = "OldHitCheck", default = false },
+            delay_entry = @trunc(u32, num{ doc, s = root, label = "DelayEntry", default = 0 }),
+        }
+        let mut cur = Cursor{ links, link_at = start_structs.len, anims, anim_at = 0 }
+        i = 0
+        while i < start_structs.len {
+            d.starting[i] = read_link{ doc, s = start_structs[i] }
+            i = i + 1
+        }
+        i = 0
+        while i < entry_structs.len {
+            d.entries[i] = read_node{ doc, s = entry_structs[i], cur = &cur, links_label = "RepliesList", delay_entry = d.delay_entry }
+            i = i + 1
+        }
+        i = 0
+        while i < reply_structs.len {
+            d.replies[i] = read_node{ doc, s = reply_structs[i], cur = &cur, links_label = "EntriesList", delay_entry = d.delay_entry }
+            i = i + 1
+        }
+        i = 0
+        while i < stunt_structs.len {
+            d.stunts[i] = Stunt{
+                participant = gff::get_string{ doc, s = stunt_structs[i], label = "Participant" } ifnull "",
+                model = resref_of{ doc, s = stunt_structs[i], label = "StuntModel" },
+            }
+            i = i + 1
+        }
+        // A link past its target list fails the load (reply to entry links may point one past:
+        // the original's check is off by one there).
+        i = 0
+        while i < d.starting.len {
+            if @as(usize, d.starting[i].index) >= d.entries.len { return bad_link }
+            i = i + 1
+        }
+        i = 0
+        while i < d.entries.len {
+            let ls = d.entries[i].links
+            let mut k: usize = 0
+            while k < ls.len {
+                if @as(usize, ls[k].index) >= d.replies.len { return bad_link }
+                k = k + 1
+            }
+            i = i + 1
+        }
+        i = 0
+        while i < d.replies.len {
+            let ls = d.replies[i].links
+            let mut k: usize = 0
+            while k < ls.len {
+                if @as(usize, ls[k].index) > d.entries.len { return bad_link }
+                k = k + 1
+            }
+            i = i + 1
+        }
+        return d
+    }
+
+    // Field readers over a Doc by value (the engine's tmpl:: ones take it by pointer, which would
+    // tie the dialogue to the local Doc it is read from).
+    fn num { doc: gff::Doc, s: u32, label: []u8, default: i64 } -> i64 {
+        return gff::get_number{ doc, s, label } ifnull default
+    }
+
+    fn real { doc: gff::Doc, s: u32, label: []u8, default: f32 } -> f32 {
+        return gff::get_float{ doc, s, label } ifnull default
+    }
+
+    fn flag { doc: gff::Doc, s: u32, label: []u8, default: bool } -> bool {
+        let n = gff::get_number{ doc, s, label } ifnull { return default }
+        return n != 0
+    }
+
+    fn list_len { doc: gff::Doc, s: u32, label: []u8 } -> usize {
+        let l = gff::get_list{ doc, s, label } ifnull { return 0 }
+        return l.len
+    }
+
+    fn resref_of { doc: gff::Doc, s: u32, label: []u8 } -> resref::ResRef {
+        let r = gff::get_resref{ doc, s, label } ifnull {
+            // Some links name their condition with a plain string field.
+            let t = gff::get_string{ doc, s, label } ifnull { return resref::empty{} }
+            return resref::truncate{ name = t }
+        }
+        return resref::truncate{ name = r }
+    }
+
+    fn read_link { doc: gff::Doc, s: u32 } -> Link {
+        return Link{
+            index = @trunc(u32, num{ doc, s, label = "Index", default = 0 }),
+            active = resref_of{ doc, s, label = "Active" },
+            display_inactive = flag{ doc, s, label = "DisplayInactive", default = false },
+        }
+    }
+
+    // ReadNode and its load-time rules (re/dialogue.md section 3).
+    fn read_node { doc: gff::Doc, s: u32, mut cur: Cursor, links_label: []u8, delay_entry: u32 } -> Node {
+        let nowhere = gff::LocString{ strref = -1, count = 0, body = slice::empty(u8){} }
+        let sound_field = resref_of{ doc, s, label = "Sound" }
+        let vo_field = resref_of{ doc, s, label = "VO_ResRef" }
+        let voice = resref::is_empty{ r = sound_field } and not resref::is_empty{ r = vo_field }
+        let sound = if resref::is_empty{ r = sound_field } { vo_field } else { sound_field }
+        let mut wait_flags = @trunc(u32, num{ doc, s, label = "WaitFlags", default = 0 })
+        let mut delay = @trunc(u32, num{ doc, s, label = "Delay", default = 0xFFFFFFFF })
+        let mut marker: i32 = -1
+        let has_sound = not resref::is_empty{ r = sound }
+        if delay == DELAY_DEFAULT {
+            if has_sound {
+                delay = delay_entry
+                if wait_flags == 0 { wait_flags = WAIT_VOICE }
+            } else if wait_flags != 0 {
+                marker = 0
+                delay = delay_entry
+            }
+        } else {
+            wait_flags = wait_flags | WAIT_EXPLICIT_DELAY
+        }
+        let mut fade_type = @trunc(u32, num{ doc, s, label = "FadeType", default = 0 })
+        let mut fade_length = real{ doc, s, label = "FadeLength", default = 0.0 }
+        let mut fade_delay = real{ doc, s, label = "FadeDelay", default = 0.0 }
+        let mut fade_color = math::vec3::zero{}
+        let c = gff::get_vector{ doc, s, label = "FadeColor" }
+        if c != null { fade_color = math::Vec3{ x = c[0], y = c[1], z = c[2] } }
+        if fade_type == 0 {
+            fade_length = 0.0
+            fade_delay = 0.0
+            fade_color = math::vec3::zero{}
+        } else if fade_type == 1 or fade_type == 2 {
+            fade_length = 0.0
+        }
+        let angle = @trunc(u32, num{ doc, s, label = "CameraAngle", default = 0 })
+        let mut fov = real{ doc, s, label = "CamFieldOfView", default = -1.0 }
+        if fov <= 0.0 { fov = -1.0 }
+        let camera_id: i32 = if angle == ANGLE_STATIC { @trunc(i32, num{ doc, s, label = "CameraID", default = -1 }) } else { -1 }
+        // The node's lists, into the flat arrays.
+        let mut node_anims = cur.anims[..0]
+        let al = gff::get_list{ doc, s, label = "AnimList" } ifnull { slice::empty(u32){} }
+        let a0 = cur.anim_at
+        let mut k: usize = 0
+        while k < al.len {
+            cur.anims[cur.anim_at] = Anim{
+                participant = gff::get_string{ doc, s = al[k], label = "Participant" } ifnull "",
+                animation = @trunc(u32, num{ doc, s = al[k], label = "Animation", default = 10098 }),
+            }
+            cur.anim_at = cur.anim_at + 1
+            k = k + 1
+        }
+        node_anims = cur.anims[a0..cur.anim_at]
+        let ll = gff::get_list{ doc, s, label = links_label } ifnull { slice::empty(u32){} }
+        let l0 = cur.link_at
+        k = 0
+        while k < ll.len {
+            cur.links[cur.link_at] = read_link{ doc, s = ll[k] }
+            cur.link_at = cur.link_at + 1
+            k = k + 1
+        }
+        return Node{
+            speaker = gff::get_string{ doc, s, label = "Speaker" } ifnull "",
+            listener = gff::get_string{ doc, s, label = "Listener" } ifnull "",
+            text = gff::get_locstring{ doc, s, label = "Text" } ifnull nowhere,
+            script = resref_of{ doc, s, label = "Script" },
+            sound, voice,
+            sound_exists = @trunc(i32, num{ doc, s, label = "SoundExists", default = 0x80 }),
+            wait_flags, delay, timer_marker = marker,
+            quest = gff::get_string{ doc, s, label = "Quest" } ifnull "",
+            quest_entry = @trunc(u32, num{ doc, s, label = "QuestEntry", default = 0 }),
+            plot_index = @trunc(i32, num{ doc, s, label = "PlotIndex", default = -1 }),
+            plot_xp = real{ doc, s, label = "PlotXPPercentage", default = 0.0 },
+            anims = node_anims,
+            fade_type, fade_color, fade_length, fade_delay,
+            camera_angle = angle,
+            camera_id,
+            cam_height = real{ doc, s, label = "CamHeightOffset", default = 0.0 },
+            tar_height = real{ doc, s, label = "TarHeightOffset", default = 0.0 },
+            camera_anim = @trunc(u32, num{ doc, s, label = "CameraAnimation", default = 0 }),
+            cam_fov = fov,
+            cam_vid_effect = @trunc(i32, num{ doc, s, label = "CamVidEffect", default = -1 }),
+            links = cur.links[l0..cur.link_at],
+        }
+    }
+
+    // Gives a dialogue's memory back.
+    fn free { mut w: world::World, d: *mut Dialog } {
+        _ = alloc::resize(Node, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = d.entries, count = 0 }
+        _ = alloc::resize(Node, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = d.replies, count = 0 }
+        _ = alloc::resize(Stunt, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = d.stunts, count = 0 }
+        _ = alloc::resize(Link, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = d.links, count = 0 }
+        _ = alloc::resize(Anim, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = d.anims, count = 0 }
+        _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = d.bytes, count = 0 }
+        d.entries = slice::empty(Node){}
+        d.replies = slice::empty(Node){}
+        d.stunts = slice::empty(Stunt){}
+        d.links = slice::empty(Link){}
+        d.anims = slice::empty(Anim){}
+        d.starting = slice::empty(Link){}
+        d.bytes = slice::empty(u8){}
+    }
+
+    // A node's text for the player's gender (0 masculine, 1 feminine): an embedded string for
+    // the table's language when the field has one, else the talk table's.
+    fn text_of { w: *world::World, n: *Node, gender: u32 } -> []u8 {
+        let language: u32 = match w.tlk { some{ value } => { value.language } null => { 0 } }
+        let embedded = gff::loc_text{ ls = n.text, language, gender }
+        if embedded != null { return embedded }
+        if n.text.strref < 0 { return "" }
+        return world::string_by_strref{ w, strref = @trunc(u32, n.text.strref) }
+    }
+}

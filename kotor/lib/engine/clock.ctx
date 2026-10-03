@@ -19,13 +19,15 @@ namespace clock {
         day: u32,               // 1..28
         hour: u32,
         minute: u32,
+        second: u32,
+        millisecond: u32,
         min_per_hour: u32,      // real minutes per game hour (2 in KOTOR)
     }
 
     fn new {} -> Clock {
         return Clock{
             now_us = 0, dt = 0.0, paused = false, pause_bits = 0, speed = 1.0, frame = 0, year = 1340, month = 6,
-            day = 1, hour = 13, minute = 0, min_per_hour = 2,
+            day = 1, hour = 13, minute = 0, second = 0, millisecond = 0, min_per_hour = 2,
         }
     }
 
@@ -62,6 +64,46 @@ namespace clock {
         return m * 60000
     }
     fn ms_per_day { c: Clock } -> u64 { return ms_per_hour{ c } * 24 }
+
+    // The game calendar as absolute milliseconds: years of 12 months of 28 days (the original's
+    // Day field counts days this way: party-items-saves.md's save holds day 450438 in 1340).
+    // calendar_ms is the absolute time at now_us = 0; calendar_now the date and time now.
+    fn calendar_ms { c: Clock } -> u64 {
+        let per_hour = ms_per_hour{ c }
+        let days = (@as(u64, c.year) * 12 + @as(u64, c.month) - 1) * 28 + @as(u64, c.day) - 1
+        return days * ms_per_day{ c } + @as(u64, c.hour) * per_hour + @as(u64, c.minute) * (per_hour / 60) + @as(u64, c.second) * 1000 + @as(u64, c.millisecond)
+    }
+
+    struct Calendar { year: u32, month: u32, day: u32, hour: u32, minute: u32, second: u32, millisecond: u32 }
+
+    fn calendar_of { c: Clock, at: u64 } -> Calendar {
+        let per_day = ms_per_day{ c }
+        let per_hour = ms_per_hour{ c }
+        let days = at / per_day
+        let in_day = at % per_day
+        let minute_ms = per_hour / 60
+        let in_hour = in_day % per_hour
+        return Calendar{
+            year = @trunc(u32, days / 336), month = @trunc(u32, (days % 336) / 28) + 1, day = @trunc(u32, days % 28) + 1,
+            hour = @trunc(u32, in_day / per_hour), minute = @trunc(u32, in_hour / minute_ms),
+            second = @trunc(u32, (in_hour % minute_ms) / 1000), millisecond = @trunc(u32, in_hour % 1000),
+        }
+    }
+
+    fn calendar_now { c: Clock } -> Calendar { return calendar_of{ c, at = calendar_ms{ c } + now_ms{ c } } }
+
+    // Starts the clock over at an absolute calendar time (a save's Mod_PauseDay/Mod_PauseTime).
+    fn set_calendar { mut c: Clock, at: u64 } {
+        let cal = calendar_of{ c, at }
+        c.year = cal.year
+        c.month = cal.month
+        c.day = cal.day
+        c.hour = cal.hour
+        c.minute = cal.minute
+        c.second = cal.second
+        c.millisecond = cal.millisecond
+        c.now_us = 0
+    }
 
     // The time of day: hours, minutes, seconds, milliseconds since midnight of the game day.
     struct TimeOfDay { hour: u32, minute: u32, second: u32, millisecond: u32, day_count: u64 }

@@ -31,6 +31,9 @@ namespace ambience {
         rng: u32,
         started: u32,                   // sounds started, for the report
         listener: math::Vec3,
+        bg_off: bool,                   // a script stopped the background music (MusicBackgroundStop)
+        battle: bool,                   // the battle track is the one playing (MusicBattlePlay)
+        ambient_off: bool,              // a script stopped the ambient bed (AmbientSoundStop)
     }
 
     fn make { heap: *mut heap::Heap, m: *mut mix::Mixer } -> Ambience {
@@ -41,6 +44,7 @@ namespace ambience {
             sounds = map::new(resref::ResRef, usize, heap::Heap){ realloc = heap::alloc, heap, hash = resref::hash, eq = resref::eq },
             waves = list::new([]mut u8, heap::Heap){ realloc = heap::alloc, heap },
             rng = 12345, started = 0, listener = math::vec3::zero{},
+            bg_off = false, battle = false, ambient_off = false,
         }
     }
 
@@ -92,17 +96,11 @@ namespace ambience {
         let ao = world::object{ w = &w, id = w.area } ifnull { return }
         let area = obj::area{ o = ao } ifnull { return }
         a.music_delay = @as(f32, area.music_delay) / 1000.0
-        play_music{ &a, &w, row = area.music_day }
-        let bed = twoda::get_string{ t = w.tables.ambientsound, row = @as(usize, area.ambient_day), column = "resource" } ifnull ""
-        mix::stop{ m = a.m, h = a.ambient, fade = 0.0 }
-        stop_bytes{ &a, bytes = a.ambient_bytes }
-        a.ambient_bytes = read_stream{ &a, &w, name = bed }
-        if a.ambient_bytes.len > 0 {
-            let mut p = mix::sound_2d{ group = mix::Group::sfx, volume = @as(f32, area.ambient_day_volume) / 127.0 }
-            p.looping = true
-            a.ambient = mix::play{ m = a.m, bytes = a.ambient_bytes, p } iferr { mix::Handle{ slot = 0, id = 0 } }
-            a.started = a.started + 1
-        }
+        a.bg_off = false
+        a.battle = false
+        a.ambient_off = false
+        play_music{ &a, &w, row = background_row{ area } }
+        start_ambient{ &a, &w }
         let all = list::items{ list = w.objects.all }
         let mut i: usize = 0
         while i < all.len {
@@ -132,6 +130,130 @@ namespace ambience {
         }
     }
 
+    // ---- what scripts change (MusicBackgroundPlay and its relatives, AmbientSoundPlay, SoundObject*)
+    //
+    // The routines have already changed the area's rows and the sound object's fields; these make
+    // the sound follow. The state they keep is three flags: a script stopped the background music
+    // (bg_off), the battle track plays instead of it (battle), a script stopped the ambient bed
+    // (ambient_off). start_area clears them.
+
+    // The row of ambientmusic.2da the area plays in the background at this time of day (0: none).
+    fn background_row { area: *obj::Area } -> i32 {
+        return if area.is_night { area.music_night } else { area.music_day }
+    }
+
+    fn area_of { w: *world::World } -> ?*mut obj::Area {
+        let ao = world::object{ w, id = w.area } ifnull { return null }
+        return obj::area{ o = ao }
+    }
+
+    // Switches the music to ambientmusic.2da row `row`. play_music fades the old track out but
+    // gives its bytes back at once, and the mixer needs them until the voice is done: stop it first.
+    fn change_music { mut a: Ambience, mut w: world::World, row: i32 } {
+        mix::stop{ m = a.m, h = a.music, fade = 0.0 }
+        play_music{ &a, &w, row }
+    }
+
+    // The area's ambient bed for the time of day (ambientsound.2da's resource, looping at the
+    // area's volume out of 127), replacing the one playing.
+    fn start_ambient { mut a: Ambience, mut w: world::World } {
+        mix::stop{ m = a.m, h = a.ambient, fade = 0.0 }
+        stop_bytes{ &a, bytes = a.ambient_bytes }
+        a.ambient_bytes = slice::empty(u8){}
+        let area = area_of{ w = &w } ifnull { return }
+        let row = if area.is_night { area.ambient_night } else { area.ambient_day }
+        let volume = if area.is_night { area.ambient_night_volume } else { area.ambient_day_volume }
+        let bed = twoda::get_string{ t = w.tables.ambientsound, row = @as(usize, if row < 0 { 0 } else { row }), column = "resource" } ifnull ""
+        a.ambient_bytes = read_stream{ &a, &w, name = bed }
+        if a.ambient_bytes.len == 0 { return }
+        let mut p = mix::sound_2d{ group = mix::Group::sfx, volume = @as(f32, volume) / 127.0 }
+        p.looping = true
+        a.ambient = mix::play{ m = a.m, bytes = a.ambient_bytes, p } iferr { mix::Handle{ slot = 0, id = 0 } }
+        a.started = a.started + 1
+    }
+
+    // MusicBackgroundPlay / MusicBackgroundStop. The track that plays when a battle ends is this one.
+    fn background_music { mut a: Ambience, mut w: world::World, play: bool } {
+        let was_off = a.bg_off
+        a.bg_off = not play
+        if a.battle { return }
+        if not play {
+            change_music{ &a, &w, row = 0 }
+            return
+        }
+        // Already on: leave it be, it would only start over.
+        if not was_off and a.music_bytes.len > 0 { return }
+        let area = area_of{ w = &w } ifnull { return }
+        change_music{ &a, &w, row = background_row{ area } }
+    }
+
+    // MusicBattlePlay / MusicBattleStop: the area's battle track instead of the background one
+    // (an area without one keeps its background music), and the background one again after.
+    fn battle_music { mut a: Ambience, mut w: world::World, play: bool } {
+        let area = area_of{ w = &w } ifnull { return }
+        if play {
+            if a.battle or area.music_battle <= 0 { return }
+            a.battle = true
+            change_music{ &a, &w, row = area.music_battle }
+            return
+        }
+        if not a.battle { return }
+        a.battle = false
+        change_music{ &a, &w, row = if a.bg_off { 0 } else { background_row{ area } } }
+    }
+
+    // A music row of the area changed: the sound follows if that is the track it plays now.
+    fn music_changed { mut a: Ambience, mut w: world::World, kind: outbox::Music, row: i32 } {
+        let area = area_of{ w = &w } ifnull { return }
+        if kind == outbox::Music::battle {
+            if a.battle { change_music{ &a, &w, row } }
+            return
+        }
+        if a.battle or a.bg_off { return }
+        let night = kind == outbox::Music::night
+        if night == area.is_night { change_music{ &a, &w, row } }
+    }
+
+    // AmbientSoundPlay / AmbientSoundStop.
+    fn ambient_bed { mut a: Ambience, mut w: world::World, play: bool } {
+        a.ambient_off = not play
+        if play { start_ambient{ &a, &w } } else {
+            mix::stop{ m = a.m, h = a.ambient, fade = 0.0 }
+            stop_bytes{ &a, bytes = a.ambient_bytes }
+            a.ambient_bytes = slice::empty(u8){}
+        }
+    }
+
+    // An ambient row or volume of the area changed: the bed follows if it is the one playing.
+    fn ambient_changed { mut a: Ambience, mut w: world::World, night: bool } {
+        let area = area_of{ w = &w } ifnull { return }
+        if a.ambient_off or night != area.is_night { return }
+        start_ambient{ &a, &w }
+    }
+
+    // SoundObjectSetVolume: a sound playing now takes the new volume (out of 127).
+    fn set_sound_volume { mut a: Ambience, id: u32, volume: i32 } {
+        let placed = list::items{ list = a.placed }
+        let mut i: usize = 0
+        while i < placed.len {
+            if placed[i].id == id { mix::set_volume{ m = a.m, h = placed[i].handle, volume = @as(f32, volume) / 127.0 } }
+            i = i + 1
+        }
+    }
+
+    // SoundObjectFadeAndStop (SoundObjectStop is the same with a short fade).
+    fn fade_sound { mut a: Ambience, id: u32, seconds: f32 } {
+        let placed = list::items{ list = a.placed }
+        let mut i: usize = 0
+        while i < placed.len {
+            if placed[i].id == id {
+                mix::stop{ m = a.m, h = placed[i].handle, fade = seconds }
+                placed[i].playing = false
+            }
+            i = i + 1
+        }
+    }
+
     // One outbox note, if it is a sound.
     fn take { mut a: Ambience, mut w: world::World, note: outbox::Note } {
         match note {
@@ -142,19 +264,20 @@ namespace ambience {
                 _ = mix::play{ m = a.m, bytes, p } iferr { mix::Handle{ slot = 0, id = 0 } }
                 a.started = a.started + 1
             }
-            sound_object{ id, play } => {
-                if play { return }
-                let placed = list::items{ list = a.placed }
-                let mut i: usize = 0
-                while i < placed.len {
-                    if placed[i].id == id {
-                        mix::stop{ m = a.m, h = placed[i].handle, fade = 0.2 }
-                        placed[i].playing = false
-                    }
-                    i = i + 1
+            sound_object{ id, play, volume } => {
+                if volume >= 0 {
+                    set_sound_volume{ &a, id, volume }
+                } else if not play {
+                    fade_sound{ &a, id, seconds = 0.2 }
                 }
             }
-            music_row{ kind, row } => { if kind == outbox::Music::day { play_music{ &a, &w, row } } }
+            sound_fade{ id, seconds } => { fade_sound{ &a, id, seconds } }
+            music{ kind, play } => {
+                if kind == outbox::Music::battle { battle_music{ &a, &w, play } } else { background_music{ &a, &w, play } }
+            }
+            music_row{ kind, row } => { music_changed{ &a, &w, kind, row } }
+            ambient{ play } => { ambient_bed{ &a, &w, play } }
+            ambient_row{ night } => { ambient_changed{ &a, &w, night } }
             else => {}
         }
     }
@@ -219,6 +342,8 @@ namespace ambience {
             mix::sound_3d{ group = mix::Group::sfx, volume, position = at, min_distance = s.min_distance, max_distance = s.max_distance }
         } else { mix::sound_2d{ group = mix::Group::sfx, volume } }
         p.looping = looping
+        // SoundObjectSetFixedVariance: a constant multiplier on the sound's pitch.
+        if s.fixed_variance > 0.0 { p.pitch = s.fixed_variance }
         let h = mix::play{ m = a.m, bytes, p } iferr { return none }
         a.started = a.started + 1
         return h

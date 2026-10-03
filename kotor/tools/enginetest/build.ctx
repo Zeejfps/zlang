@@ -10,6 +10,9 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "../../lib/walk" }
     build::add_sources{ &b, exe, dir = "../../lib/script" }
     build::add_sources{ &b, exe, dir = "../../lib/engine" }
+    build::add_sources{ &b, exe, dir = "../../lib/dialog/core" }
+    build::add_sources{ &b, exe, dir = "../../lib/save" }
+    build::add_sources{ &b, exe, dir = "../../lib/rules" }
     build::add_sources{ &b, exe, dir = "../common" }
     build::optimize{ &b, exe, level = 2 }
 }
