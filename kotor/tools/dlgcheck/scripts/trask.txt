@@ -1,0 +1,9 @@
+# The Endar Spire's opening and Trask's conversation, headless:
+#   kotor/out/kotor.exe --module end_m01aa --headless --frames 1400 --log dialog \
+#       --input kotor/tools/dlgcheck/scripts/trask.txt \
+#       --screenshot-at 200:kotor/out/dlg/cutscene.png --screenshot-at 700:kotor/out/dlg/entry.png \
+#       --screenshot-at 830:kotor/out/dlg/replies.png
+# m01aa_c01 (the animated cutscene, frame 6 to 548) runs by itself; end_trask01 follows at 551:
+# entry 55 is voiced (frames 553 to 723), then two replies are offered. Reply 2 is picked by
+# the number key, at frame 830 (`ui reply 2` would pick it without the panels).
+830 ui key 2

@@ -165,7 +165,7 @@ namespace dlgview {
                 if r != null { rig = r; have = true }
             }
             fixed => {
-                let id = if w.conversation.static_camera >= 0 { w.conversation.static_camera } else { v.static_id }
+                let id = v.static_id
                 let c = dlg::camera_by_id{ s = &w.conversation, id }
                 if c != null { rig = dlgcam::static_rig{ c }; have = true }
             }
