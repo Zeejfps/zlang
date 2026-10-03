@@ -8,12 +8,12 @@ The orchestrator keeps this file current. Rules and layout are in [AGENTS.md](AG
 |---|---|---|
 | 0 | [Foundations](#0-foundations): multi-directory builds, RE pipeline, format docs, SDL+GL spike | done |
 | 1 | [Data layer](#1-data-layer): resources, GFF and tables, textures, models, walkmeshes, audio, NCS VM, Bink | done |
-| 2 | [Rendering](#2-rendering): the render seam, GL 4.1 backend, viewers | in progress |
+| 2 | [Rendering](#2-rendering): the render seam, GL 4.1 backend, viewers | done |
 | 3 | [Engine core](#3-engine-core): modules, objects, scene, camera, movement, scripting runtime | in progress |
 | 4 | [GUI and presentation](#4-gui-and-presentation): GUI system, menus, HUD, dialogue, movies | in progress |
-| 5 | [Rules](#5-rules): d20 combat, feats, powers, effects, items, party, AI | planned |
-| 6 | [Persistence](#6-persistence): saves and loads | planned |
-| 7 | [Minigames](#7-minigames): pazaak, swoop racing, turrets | planned |
+| 5 | [Rules](#5-rules): d20 combat, feats, powers, effects, items, party, AI | in progress |
+| 6 | [Persistence](#6-persistence): saves and loads | in progress |
+| 7 | [Minigames](#7-minigames): pazaak, swoop racing, turrets | in progress |
 | 8 | [Playthrough](#8-playthrough): the game start to finish, performance, polish | planned |
 
 ## 0. Foundations
@@ -97,3 +97,27 @@ Pazaak, swoop racing, turret sequences.
 ## 8. Playthrough
 
 Play from the Endar Spire to the end. Fix what breaks, profile, polish.
+
+## Backlog
+
+Open items the leads left, by owner. Remove an item when it lands.
+
+**Engine** (lib/engine, lib/scene, game):
+- The journal in `World` (now held by the journal panel), with plot XP; saved.
+- The party's shared inventory and credits (the leader's bag stands in); saved.
+- Equip and unequip actions, with the in-combat rules; HUD equipping goes through them.
+- `rules::Creature` attached per creature, so the character sheet shows its numbers.
+- In-game options' Save, Load and Return wired to lib/save.
+- Conversations: head look-at, equipment hidden, hostiles frozen, walking into range before
+  talking, `bUseLeader` and the ignore-name arguments.
+- Creature stats and party members (`AVAILNPC`) written into saves.
+- The remaining routines (`--report routines`; `docs/design/routines.tsv`).
+
+**Render/models:** the engine's real dangly spring and bezier curves, the saber swing trail,
+particle simulation, stencil shadows, light falloff and env-map strength checked against the
+original.
+
+**Audio:** the sound-object scheduler, `prioritygroups.2da` limits, battle music, EAX-style
+reverb.
+
+**Language:** posix `mem::pages` still clears all of its memory up front.
