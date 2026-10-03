@@ -115,16 +115,19 @@ namespace rules {
             i = i + 1
         }
         if best < 0 { return amount }
-        let absorbed = if best_amount < amount { best_amount } else { amount }
+        // A limited resistance (int2 > 0) counts down by the whole damage, not by what it absorbed;
+        // when the damage reaches the limit it absorbs what limit is left and goes (0x004d0e40).
+        let mut absorbed = best_amount
         let limit = c.fx[@as(usize, best)].ints[2]
-        if limit > 0 and not simulate {
-            let left = limit - absorbed
-            if left <= 0 {
-                remove_one{ c = &c, index = @as(usize, best), ev = &ev }
-            } else {
-                c.fx[@as(usize, best)].ints[2] = left
+        if limit > 0 {
+            if limit - amount < 1 {
+                absorbed = limit
+                if not simulate { remove_one{ c = &c, index = @as(usize, best), ev = &ev } }
+            } else if not simulate {
+                c.fx[@as(usize, best)].ints[2] = limit - amount
             }
         }
+        if absorbed > amount { absorbed = amount }
         return amount - absorbed
     }
 
@@ -145,16 +148,17 @@ namespace rules {
         if best < 0 { return amount }
         let e = &c.fx[@as(usize, best)]
         if power >= e.ints[1] { return amount }
-        let absorbed = if best_amount < amount { best_amount } else { amount }
+        let mut absorbed = best_amount
         let limit = e.ints[2]
-        if limit > 0 and not simulate {
-            let left = limit - amount
-            if left < 1 {
-                remove_one{ c = &c, index = @as(usize, best), ev = &ev }
-            } else {
-                c.fx[@as(usize, best)].ints[2] = left
+        if limit > 0 {
+            if limit - amount < 1 {
+                absorbed = limit
+                if not simulate { remove_one{ c = &c, index = @as(usize, best), ev = &ev } }
+            } else if not simulate {
+                c.fx[@as(usize, best)].ints[2] = limit - amount
             }
         }
+        if absorbed > amount { absorbed = amount }
         return amount - absorbed
     }
 

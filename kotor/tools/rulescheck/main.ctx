@@ -1,22 +1,85 @@
+// rulescheck: the rules library over the real install.
+//
+//   rulescheck [--game DIR] [--only examples|census|items|combat|progress]
+//
+// examples  the worked examples of docs/re/rules.md and combat.md as exact tests (no resources)
+// census    every UTC in the install through read_creature: derived stats in plausible ranges
+// items     every UTI through read_item and the item-property handlers, equip examples
+// combat    attack and damage math: worked examples, statistics, every UTC as an attacker
+// progress  Force powers, XP, level-up
+//
+// Exit code 0 when every check passed.
 const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
 
+struct Options {
+    game: []u8,
+    examples: bool,
+    census: bool,
+    items: bool,
+    combat: bool,
+    progress: bool,
+    bad: bool,
+}
+
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let opts = parse_args{ &io, args }
+    if opts.bad { return 2 }
     let mut h = heap::new{ &mem }
-    let mut rm = res::open{ &fs, heap = &h, game = DEFAULT_GAME } iferr err{ error } {
-        _ = @fmt(&io, "rulescheck: can't open the game: {}\n", error)
+    let mut rm = res::open{ &fs, heap = &h, game = opts.game } iferr err{ error } {
+        _ = @fmt(&io, "rulescheck: can't open the game at {}: {}\n", opts.game, error)
         io::flush{ &io }
         return 1
     }
     defer res::close{ &fs, &rm }
     let mut tables: rules::Tables
     rules::load_tables{ &fs, rm, heap = &h, out = &tables } iferr err{ error } {
-        _ = @fmt(&io, "rulescheck: tables: {}\n", error)
+        _ = @fmt(&io, "rulescheck: loading the tables: {}\n", error)
         io::flush{ &io }
         return 1
     }
     defer rules::free_tables{ out = &tables, heap = &h }
-    _ = @fmt(&io, "feats {} spells {} baseitems {} sizes {}\n", tables.feats.len, tables.spells.len, tables.baseitems.len, tables.appearance_size.len)
-    _ = @fmt(&io, "soldier hitdie {} bab20 {} fort1 {} fort20 {}\n", tables.classes[0].hit_die, tables.classes[0].bab[19], tables.classes[0].fort[0], tables.classes[0].fort[19])
-    io::flush{ &io }
-    return 0
+    let mut r = check::new_report{}
+    if opts.examples { check::run_examples{ &io, &r, tables = &tables } }
+    if opts.census { check::run_census{ &io, &fs, heap = &h, &r, tables = &tables, game = opts.game } }
+    return check::summarize{ &io, title = "rulescheck", r }
+}
+
+fn parse_args { mut io: Io, args: Args } -> Options {
+    let mut o = Options{ game = DEFAULT_GAME, examples = false, census = false, items = false, combat = false, progress = false, bad = false }
+    let mut any = false
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if slice::eq_bytes{ a, b = "--game" } and i + 1 < args.len {
+            o.game = args[i + 1]
+            i = i + 2
+            continue
+        }
+        if slice::eq_bytes{ a, b = "--only" } and i + 1 < args.len {
+            let f = args[i + 1]
+            any = true
+            if slice::eq_bytes{ a = f, b = "examples" } { o.examples = true }
+            else if slice::eq_bytes{ a = f, b = "census" } { o.census = true }
+            else if slice::eq_bytes{ a = f, b = "items" } { o.items = true }
+            else if slice::eq_bytes{ a = f, b = "combat" } { o.combat = true }
+            else if slice::eq_bytes{ a = f, b = "progress" } { o.progress = true }
+            else {
+                _ = @fmt(&io, "rulescheck: unknown check {}\n", f)
+                o.bad = true
+            }
+            i = i + 2
+            continue
+        }
+        _ = @fmt(&io, "rulescheck: unknown option {}\n", a)
+        o.bad = true
+        i = i + 1
+    }
+    if not any {
+        o.examples = true
+        o.census = true
+        o.items = true
+        o.combat = true
+        o.progress = true
+    }
+    return o
 }
