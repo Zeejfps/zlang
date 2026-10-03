@@ -55,7 +55,12 @@ a screen opens is a modal on top, whose events the screen answers first (`msgbox
 
 `tmpl::read_store` reads a UTM (and a saved store): `MarkUp`, `MarkDown`, `BuySellFlag`, and the
 `ItemList` of blueprints or whole items (the `Infinite` mark on the element), inserted in ascending value,
-the order `CSWSStore::LoadStore` leaves them in. `obj::Store.stock` is a list of item ids; an item's
+the order `CSWSStore::LoadStore` leaves them in. Identical entries stack as `AddItem` stacks them
+(`xfer::absorb`: the same template and `CompareItem`, up to the base item's `Stacking`): Dantooine's
+general store lists Antidote Kit five times, one infinite, and shows one row. An infinite entry
+swallows its finite twins and stays a single unit (its amount reads "Infinite", never a count: ours,
+the data does not say what the original does); creatures' and containers' item lists and the party
+inventory a joining member's items go into stack the same way. `obj::Store.stock` is a list of item ids; an item's
 `infinite` field is its stock mark. The save writes a store whole (`save::write_merchant`).
 
 Prices (re/party-items-saves.md 5.8), integer arithmetic, no skill enters:
@@ -190,8 +195,8 @@ sword, and the galaxy map's Travel runs the script with the right planet.
 
 ## Not done
 
-- Item property text: `items::describe` (hud) adds only the base item's numbers; the bench's and
-  store's descriptions lack the property lines (itempropdef, the cost tables).
+- Item property lines are ours from the data, not traced in the binary (`GetDescription` 0x0055f340 is
+  not read; see "Item descriptions" in hud.md).
 - Rows in the store and container lists are plain rows with an icon, not the original's `CSWGuiItemEntry`
   hexagon frames and stack count font; stack counts are " x3" in the name.
 - The bench's 3D models (`3D_MODEL`, `3D_MODEL_LS`) and the model of an item in the store.

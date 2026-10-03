@@ -1,0 +1,370 @@
+// The HUD's four self action slots (docs/re/gui.md, "Action menus"): at the bottom right the
+// leader's own actions, each a button with the icon of the selected entry, arrows to cycle the
+// entries, and the slot's tooltip. In order: a friendly Force power, a medical item, another
+// usable item, a mine. A click does the selected entry on the leader.
+//
+// What the RE settles: the slot controls, the cycling, the dimmed icon of an entry that cannot be
+// used now (alpha 0.25), the refusal messages with their reason codes (shown for 5 seconds in the
+// combat message bar), the description of the hovered slot's entry in LBL_ACTIONDESC, the
+// request being the leader's own and replacing its queued actions, and the blink. What it does not
+// (UpdateActionMenus, 0x00689d80, is read for its frame only): which powers and items make up
+// each list. The rules here are ours, from the data:
+//   - powers: the leader's known Force powers (spells.2da usertype 1) that are not hostile
+//     (hostilesetting 0) and are cast at touch or personal range (range T or P), by row;
+//   - medical: carried items with a CastSpell ability on the user (touch or personal range)
+//     whose base item is medical (itemtype 45), droid repair (26) or a squad recovery kit (47);
+//   - items: the other carried items with such an ability the leader can use (stims, shields);
+//     grenades and the like (range L, M) are the target block's, not these;
+//   - mines: none yet: laying a mine needs the engine's trap action, which does not exist.
+// An entry shows dimmed with its reason when the leader cannot use it now: not enough Force
+// points, armour or a weapon the power forbids, a medical item at full vitality, a recovery kit
+// with the party unhurt, the leader dead.
+namespace selfslots {
+    const SLOTS: usize = 4
+    const MAX: usize = 12
+    // How often the lists are rebuilt (seconds): the original rebuilds every frame, the screen only
+    // changes when the bag or the leader does.
+    const REBUILD: f32 = 0.2
+    const MESSAGE_SECONDS: f32 = 5.0
+    const BLINK_SECONDS: f32 = 0.4
+
+    // Why an entry cannot be used now (the original's reason codes).
+    const R_OK: i32 = 0
+    const R_FORCE: i32 = 1
+    const R_ARMOR: i32 = 2
+    const R_ITEM: i32 = 3
+    const R_FULL: i32 = 5
+    const R_DEAD: i32 = 6
+
+    // dialog.tlk: the slots' tooltips and the reasons' messages, by index.
+    const TIPS: [4]u32 = [48486, 48291, 48299, 48295]
+    const REASON_TEXT: [7]u32 = [0, 38613, 38614, 38615, 42422, 42498, 47936]
+
+    const TYPE_REPAIR_KIT: i32 = 26
+    const TYPE_MEDPAC: i32 = 45
+    const TYPE_RECOVERY_KIT: i32 = 47
+
+    // One choice: a power (spells.2da row in `id`, icon from the table) or an item (its object id).
+    struct Entry { id: u32, icon: [24]u8, icon_len: usize, strref: u32, usable: bool, reason: i32 }
+
+    struct Slot {
+        entries: [12]Entry,
+        count: usize,
+        selected: u32,              // the id of the chosen entry, kept when the list is rebuilt
+        sig: u32,                   // what the controls show now
+    }
+
+    struct State {
+        slots: [4]Slot,
+        wait: f32,                  // seconds to the next rebuild
+        message: f32,               // seconds the refusal stays up
+        blink: [4]f32,              // seconds left of each slot's blink
+        hover: i32,                 // the slot under the pointer, -1 none
+        shown_leader: u32,
+    }
+
+    fn empty_entry {} -> Entry {
+        return Entry{ id = obj::INVALID, icon = [0; 24], icon_len = 0, strref = 0, usable = false, reason = R_OK }
+    }
+
+    fn empty_slot {} -> Slot {
+        return Slot{ entries = [empty_entry{}; 12], count = 0, selected = obj::INVALID, sig = 0 }
+    }
+
+    fn new {} -> State {
+        return State{ slots = [empty_slot{}; 4], wait = 0.0, message = 0.0, blink = [0.0; 4], hover = -1, shown_leader = obj::INVALID }
+    }
+
+    // ---- the lists
+
+    fn push { mut sl: Slot, id: u32, icon: []u8, strref: u32, usable: bool, reason: i32 } {
+        if sl.count >= MAX { return }
+        let mut e = empty_entry{}
+        e.id = id
+        let n = if icon.len > 24 { 24 } else { icon.len }
+        slice::copy(u8){ dst = e.icon[..n], src = icon[..n] }
+        e.icon_len = n
+        e.strref = strref
+        e.usable = usable
+        e.reason = reason
+        sl.entries[sl.count] = e
+        sl.count = sl.count + 1
+    }
+
+    // The reason a known power cannot be cast now (R_OK when it can).
+    fn power_reason { w: *world::World, f: *fight::Fighter, spell: i32, alive: bool } -> i32 {
+        let r = rules::can_cast_spell{ tables = w.rules, c = &f.c, spell, alive, from_item = false }
+        if r == rules::cast::DEAD { return R_DEAD }
+        if r == rules::cast::NOT_ENOUGH_FP { return R_FORCE }
+        if r == rules::cast::FORBIDDEN_EQUIPMENT or r == rules::cast::MISSING_EQUIPMENT { return R_ARMOR }
+        return R_OK
+    }
+
+    // Slot 0: the leader's friendly powers.
+    fn fill_powers { w: *world::World, leader: u32, mut out: [4]Slot } {
+        let f = hud::ruled_of{ w, id = leader } ifnull { return }
+        let alive = not hud::is_down{ w, id = leader }
+        let t = w.tables.spells
+        let rows = twoda::rows{ t }
+        let mut r: usize = 0
+        while r < rows and r < 256 {
+            let spell = @as(i32, r)
+            r = r + 1
+            if not rules::knows_power{ c = &f.c, spell } { continue }
+            let row = rules::get_spell{ tables = w.rules, row = spell } ifnull { continue }
+            if not row.valid or row.user_type != 1 or row.hostile { continue }
+            if not items::is_self_ability{ w, spell } { continue }
+            let icon = twoda::get_string{ t, row = r - 1, column = "iconresref" } ifnull { continue }
+            let reason = power_reason{ w, f, spell, alive }
+            push{ sl = &out[0], id = @as(u32, spell), icon, strref = @as(u32, row.name), usable = reason == R_OK, reason }
+        }
+    }
+
+    // Whether any party member has lost hit points.
+    fn any_injured { w: *world::World } -> bool {
+        let ids = party::members{ w }
+        let mut k: usize = 0
+        while k < ids.len {
+            let v = hud::vitality_of{ w, id = ids[k] }
+            if v.hp < v.hp_max { return true }
+            k = k + 1
+        }
+        return false
+    }
+
+    // Slots 1 and 2: the carried items with an ability on the user, medical ones apart.
+    fn fill_items { mut w: world::World, leader: u32, mut out: [4]Slot } {
+        let alive = not hud::is_down{ w = &w, id = leader }
+        let ids = list::items{ list = w.bag }
+        let mut k: usize = 0
+        while k < ids.len {
+            let id = ids[k]
+            k = k + 1
+            if not world::is_valid{ w = &w, id } { continue }
+            let spell = items::ability_of{ w = &w, id }
+            if not items::is_self_ability{ w = &w, spell } or not items::can_use{ &w, who = leader, id } { continue }
+            let kind = items::base_int{ w = &w, id, column = "itemtype", fallback = 0 }
+            let is_medical = kind == TYPE_MEDPAC or kind == TYPE_REPAIR_KIT or kind == TYPE_RECOVERY_KIT
+            let mut reason = R_OK
+            if not alive { reason = R_DEAD }
+            else if kind == TYPE_MEDPAC or kind == TYPE_REPAIR_KIT {
+                let v = hud::vitality_of{ w = &w, id = leader }
+                if v.hp >= v.hp_max { reason = R_FULL }
+            } else if kind == TYPE_RECOVERY_KIT and not any_injured{ w = &w } { reason = R_FULL }
+            let mut buf: [40]u8
+            let icon = items::icon_name{ w = &w, id, into = buf[..] }
+            if is_medical {
+                push{ sl = &out[1], id, icon, strref = 0, usable = reason == R_OK, reason }
+            } else {
+                push{ sl = &out[2], id, icon, strref = 0, usable = reason == R_OK, reason }
+            }
+        }
+    }
+
+    // What the four lists are now for the leader.
+    fn build { mut w: world::World, leader: u32, mut out: [4]Slot } {
+        out = [empty_slot{}; 4]
+        fill_powers{ w = &w, leader, out = &out }
+        fill_items{ &w, leader, out = &out }
+    }
+
+    // A number that changes when what a slot shows would.
+    fn signature { sl: *Slot } -> u32 {
+        let mut h: u32 = @wrap_add(2166136261, @as(u32, sl.count))
+        let mut i: usize = 0
+        while i < sl.count {
+            let e = &sl.entries[i]
+            i = i + 1
+            h = @wrap_mul(h ^ e.id, 16777619)
+            h = @wrap_mul(h ^ (if e.usable { 1 } else { 2 }), 16777619)
+            h = @wrap_mul(h ^ @as(u32, e.reason), 16777619)
+        }
+        return h
+    }
+
+    fn index_of { sl: *Slot, id: u32 } -> usize {
+        let mut i: usize = 0
+        while i < sl.count {
+            if sl.entries[i].id == id { return i }
+            i = i + 1
+        }
+        return 0
+    }
+
+    // ---- the controls
+
+    fn tag_for { into: []mut u8, prefix: []u8, k: usize } -> []u8 { return hud::tag_n{ into, prefix, n = k } }
+
+    // Sets slot `k`'s controls from its list: hidden when empty, the selected entry's picture
+    // (dimmed when it cannot be used), the arrows when there is more than one.
+    fn show_slot { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, k: usize } {
+        let mut buf: [24]u8
+        let sl = &s.slots[k]
+        let has = sl.count > 0
+        gui::set_visible{ &g, panel, tag = tag_for{ into = buf[..], prefix = "BTN_ACTION", k }, visible = has }
+        gui::set_visible{ &g, panel, tag = tag_for{ into = buf[..], prefix = "LBL_ACTION", k }, visible = has }
+        gui::set_visible{ &g, panel, tag = tag_for{ into = buf[..], prefix = "BTN_ACTIONUP", k }, visible = sl.count > 1 }
+        gui::set_visible{ &g, panel, tag = tag_for{ into = buf[..], prefix = "BTN_ACTIONDOWN", k }, visible = sl.count > 1 }
+        gui::set_tooltip{ &g, panel, tag = tag_for{ into = buf[..], prefix = "BTN_ACTION", k }, text = world::string_by_strref{ w = &w, strref = TIPS[k] } } iferr {}
+        if not has { return }
+        let e = sl.entries[index_of{ sl, id = sl.selected }]
+        let lbl = tag_for{ into = buf[..], prefix = "LBL_ACTION", k }
+        let img = if k == 0 { gui::resolve_img{ &g, fs = &w.fs, &dev, name = e.icon[..e.icon_len] } } else { items::icon_of{ &g, &w, &dev, id = e.id } }
+        if img.ok { gui::set_picture{ &g, panel, tag = lbl, texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel, tag = lbl } }
+        if gui::find_control{ &g, panel, tag = lbl } is some{ value = c } {
+            c.border.tinted = not e.usable
+            c.border.color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 0.25 }
+        }
+    }
+
+    // The selected entry's name, for the description under the slots.
+    fn entry_name { mut w: world::World, k: usize, e: Entry } -> []u8 {
+        if k == 0 { return world::string_by_strref{ w = &w, strref = e.strref } }
+        return items::name_of{ w = &w, id = e.id }
+    }
+
+    fn show_description { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } {
+        let k = s.hover
+        let shown = k >= 0 and s.slots[@as(usize, k)].count > 0
+        gui::set_visible{ &g, panel, tag = "LBL_ACTIONDESC", visible = shown }
+        gui::set_visible{ &g, panel, tag = "LBL_ACTIONDESCBG", visible = shown }
+        if not shown { return }
+        let sl = &s.slots[@as(usize, k)]
+        let e = sl.entries[index_of{ sl, id = sl.selected }]
+        gui::set_text{ &g, panel, tag = "LBL_ACTIONDESC", text = entry_name{ &w, k = @as(usize, k), e } } iferr {}
+    }
+
+    // ---- every frame
+
+    // Rebuilds the lists from the leader and the bag now and then and refreshes the slots that
+    // changed; runs the blinks and takes the refusal message down.
+    fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, dt: f32, combat_message: bool } {
+        let leader = party::leader{ w = &w }
+        s.wait = s.wait - dt
+        if s.wait <= 0.0 or leader != s.shown_leader {
+            s.wait = REBUILD
+            let mut next: [4]Slot
+            build{ &w, leader, out = &next }
+            let mut k: usize = 0
+            while k < SLOTS {
+                next[k].sig = signature{ sl = &next[k] }
+                // The chosen entry stays chosen while it is still in the list.
+                let keep = s.slots[k].selected
+                let mut found = false
+                let mut i: usize = 0
+                while i < next[k].count {
+                    if next[k].entries[i].id == keep { found = true }
+                    i = i + 1
+                }
+                next[k].selected = if found { keep } else if next[k].count > 0 { next[k].entries[0].id } else { obj::INVALID }
+                let changed = next[k].sig != s.slots[k].sig or next[k].selected != s.slots[k].selected or leader != s.shown_leader
+                s.slots[k] = next[k]
+                if changed { show_slot{ &s, &g, &w, &dev, panel, k } }
+                k = k + 1
+            }
+            s.shown_leader = leader
+            show_description{ &s, &g, &w, panel }
+        }
+        let mut buf: [24]u8
+        let mut k: usize = 0
+        while k < SLOTS {
+            if s.blink[k] > 0.0 {
+                s.blink[k] = s.blink[k] - dt
+                // Two blinks: dark for the first and third tenth, lit for the others.
+                let phase = if s.blink[k] <= 0.0 { 1 } else { @as(i32, s.blink[k] / 0.1) }
+                gui::set_visible{ &g, panel, tag = tag_for{ into = buf[..], prefix = "LBL_ACTION", k }, visible = s.slots[k].count > 0 and phase % 2 == 1 }
+            }
+            k = k + 1
+        }
+        if s.message > 0.0 {
+            s.message = s.message - dt
+            if s.message <= 0.0 and not combat_message {
+                gui::set_visible{ &g, panel, tag = "LBL_CMBTMSGBG", visible = false }
+                gui::set_visible{ &g, panel, tag = "LBL_CMBTMODEMSG", visible = false }
+            }
+        }
+    }
+
+    // ---- events
+
+    fn slot_of { tag: []u8, prefix: []u8 } -> i32 {
+        let mut buf: [24]u8
+        let mut k: usize = 0
+        while k < SLOTS {
+            if slice::eq_bytes{ a = tag, b = tag_for{ into = buf[..], prefix, k } } { return @as(i32, k) }
+            k = k + 1
+        }
+        return -1
+    }
+
+    // The refusal in the message bar.
+    fn say_reason { mut s: State, mut g: gui::Gui, panel: u32, reason: i32 } {
+        if reason <= 0 or reason >= 7 { return }
+        gui::set_strref{ &g, panel, tag = "LBL_CMBTMODEMSG", strref = REASON_TEXT[@as(usize, reason)] } iferr {}
+        gui::set_visible{ &g, panel, tag = "LBL_CMBTMSGBG", visible = true }
+        gui::set_visible{ &g, panel, tag = "LBL_CMBTMODEMSG", visible = true }
+        s.message = MESSAGE_SECONDS
+    }
+
+    // A slot's button: does its selected entry on the leader (UseSelfAction, 0x0068ad60).
+    fn use_slot { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32, k: usize } {
+        let sl = &s.slots[k]
+        if sl.count == 0 { return }
+        let e = sl.entries[index_of{ sl, id = sl.selected }]
+        if not e.usable {
+            say_reason{ &s, &g, panel, reason = e.reason }
+            gui::play_sound{ &g, n = 2 }
+            return
+        }
+        let leader = party::leader{ w = &w }
+        if k == 0 {
+            actions::clear_all{ &w, id = leader }
+            rt_talent::queue_cast{ &w, me = leader, spell = @as(i32, e.id), target = leader, location = math::vec3::zero{}, cheat = 0, instant = 0, item = obj::INVALID }
+        } else {
+            items::use_item{ &w, who = leader, item = e.id }
+        }
+        gui::play_sound{ &g, n = 6 }
+        s.blink[k] = BLINK_SECONDS
+        s.wait = 0.0
+    }
+
+    // The HUD's events for the slots: the button, the arrows (with wrap-around), the pointer over a
+    // slot. True when it was theirs.
+    fn event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, ev: gui::Event } -> bool {
+        // The icon label lies over the button and takes the pointer, so either one is the slot's.
+        let over_button = slot_of{ tag = ev.tag, prefix = "BTN_ACTION" }
+        let over = if over_button >= 0 { over_button } else { slot_of{ tag = ev.tag, prefix = "LBL_ACTION" } }
+        if over >= 0 {
+            if ev.kind == gui::EventKind::hilight {
+                s.hover = over
+                show_description{ &s, &g, &w, panel }
+                return true
+            }
+            if ev.kind == gui::EventKind::unhilight {
+                if s.hover == over { s.hover = -1 }
+                show_description{ &s, &g, &w, panel }
+                return true
+            }
+            if ev.kind == gui::EventKind::activate {
+                use_slot{ &s, &g, &w, panel, k = @as(usize, over) }
+                return true
+            }
+            return false
+        }
+        if ev.kind != gui::EventKind::activate { return false }
+        let up = slot_of{ tag = ev.tag, prefix = "BTN_ACTIONUP" }
+        let down = slot_of{ tag = ev.tag, prefix = "BTN_ACTIONDOWN" }
+        let k = if up >= 0 { up } else { down }
+        if k < 0 { return false }
+        let sl = &s.slots[@as(usize, k)]
+        if sl.count > 1 {
+            let at = index_of{ sl, id = sl.selected }
+            let to = if down >= 0 { (at + 1) % sl.count } else { (at + sl.count - 1) % sl.count }
+            sl.selected = sl.entries[to].id
+            gui::play_sound{ &g, n = 7 }
+            show_slot{ &s, &g, &w, &dev, panel, k = @as(usize, k) }
+            show_description{ &s, &g, &w, panel }
+        }
+        return true
+    }
+}

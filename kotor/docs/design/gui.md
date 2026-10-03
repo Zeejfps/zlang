@@ -103,7 +103,14 @@ else to the front-most shown panel with a control under the pointer.
 
 `gui::close{ &g, id }` removes it after the frame (events its controls made stay valid until
 `update`). `gui::set_backdrop{ ..., kind }` picks the picture (0 back, 1 store, 2 pazaak, 3 map,
-4 comp, 5 load). `gui::message_box{ &g, &fs, &dev, text, cancel } -> !u32` opens `confirm.gui`
+4 comp, 5 load). The original stretches the picture over the screen, which is right at the five
+sizes it has pictures for (the 640x480 panel then sits in the middle of art made for it: the
+store's frame, the pazaak table, the galaxy map's bars under its name bar and buttons). On any
+other window (a 16:9 one) the stretch makes a second, larger frame around the panel and art that
+no longer lines up with the controls, so kinds 0 to 4 are drawn at their resolution's size
+(800x600 for an unlisted one), centred, with black around (`draw_backdrop`); the loading screen's
+picture (5) stays stretched. Each of these panels has one .gui file (no resolution variants).
+`gui::message_box{ &g, &fs, &dev, text, cancel } -> !u32` opens `confirm.gui`
 sized to its text; take the `activate` events of `BTN_OK` and `BTN_CANCEL` and close it.
 
 ## Defining a screen over a .gui

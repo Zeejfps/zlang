@@ -340,12 +340,13 @@ namespace mdl_anim {
     struct Player {
         current: ?Track,
         previous: ?Track,                      // the animation blending out
+        held: ?Track,                          // an animation held at its last frame under the rest (play_after)
         elapsed: f32,                          // time since the current one started
         transition: f32,                       // how long the blend takes
     }
 
     fn new_player {} -> Player {
-        return Player{ current = null, previous = null, elapsed = 0.0, transition = 0.0 }
+        return Player{ current = null, previous = null, held = null, elapsed = 0.0, transition = 0.0 }
     }
 
     // Starts `binding`'s animation from its beginning. `transition` is the blend-in time in
@@ -356,6 +357,22 @@ namespace mdl_anim {
         player.elapsed = 0.0
         player.transition = if transition >= 0.0 { transition } else { binding.animation.transition }
         if player.previous == null { player.transition = 0.0 }
+    }
+
+    // Like `play`, but the animation that was playing stays at its last frame for the nodes the new
+    // one does not move, instead of those nodes going back to the bind pose: the galaxy map's
+    // planet turns (`rotate`, which moves only the planet) with the camera where `zoomin` left it.
+    fn play_after { mut player: Player, binding: Binding, looping: bool, speed: f32, transition: f32 } {
+        let was = player.current
+        play{ &player, binding, looping, speed, transition }
+        match was {
+            some{ value } => {
+                let mut end = value
+                end.time = end.binding.animation.length
+                player.held = end
+            }
+            null => {}
+        }
     }
 
     // Moves time on by `dt` seconds, calling `on_event` for the current animation's events it
@@ -416,6 +433,8 @@ namespace mdl_anim {
     // over it by how far the blend has got; transforms finished.
     fn evaluate { model: *mdl::Model, player: Player, pose: Pose } {
         reset{ model, pose }
+        let held = player.held
+        if held != null { apply{ model, binding = held.binding, time = held.time, weight = 1.0, pose } }
         let prev = player.previous
         if prev != null { apply{ model, binding = prev.binding, time = prev.time, weight = 1.0, pose } }
         let cur = player.current

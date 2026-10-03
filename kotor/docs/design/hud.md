@@ -73,9 +73,17 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
 - **Level-up and downed marks** on the party widgets, from `exptable.2da` and the hit points.
 - **Window resizes** reopen the HUD fitted to the new size (`ingame::resize` also calls
   `gpu::resize`: nothing else in the loop handles `resized`).
-- **Not built**: the four self action slots (Force powers, medical items, other items, mines) stay
-  hidden until lib/rules gives the leader powers and items an activation; the leader-swap
-  animation, effect-count icons, stealth toggle and bark bubbles (the dialogue lead's).
+- **Self action slots** (`lib/ingame/selfslots.ctx`, re/gui.md "Action menus"): the four buttons at
+  the bottom right hold the leader's friendly Force powers, medical items, other usable items and
+  mines; the arrows cycle, a click casts on the leader in place of its queued actions (the cast
+  action spends the item's use as it begins, `rt_item::spend_use`), an entry that cannot be used
+  shows dimmed and says why in the message bar for five seconds (Force Depleted, Restricted by
+  Armor, Full Health, PC Dead), and the hovered slot's entry is named above the slots. Which
+  entries make up each list is ours (the original's list builder was not read): see the header of
+  the file. Mines are not listed (no trap action in the engine) and the keys (keymap.2da) are not
+  bound. `ui useitem RESREF [N]` is the headless test; `scripts/selfslots.txt` the run.
+- **Not built**: the leader-swap animation, effect-count icons, stealth toggle and bark bubbles
+  (the dialogue lead's).
 
 ## Menus
 
@@ -121,6 +129,23 @@ the tab bar. A panel handles the rest in `on_event`: `activate` for buttons, `ro
 | Party selection | `partysel_panel` | a modal over the map: the available companions, pick two, put back, Done | spawning a companion beside the leader |
 | Options | `options_panel` | the front end's Gameplay, Feedback, Auto-Pause, Graphics and Sound screens over the menu (a `frontend::Front` kept in the panel, the same settings file), sound sliders to the mixer, Exit Game asks and ends the loop via `ingame::wants_quit` | Load and Save show "unavailable"; display changes are not applied (`options_panel::take_display_change` is not read by the loop) |
 
+### Item descriptions
+
+`items::describe` (`items_data.ctx`) builds the text every list box of an item shows (inventory,
+equipment, store, container, bench): the blueprint's identified description (else the plain one), then
+`items_props.ctx`'s property lines, then the base item's own numbers (`Damage: 2d6`, `Armor bonus: +4`;
+these two are ours). A property line is `Name: Subtype Cost (Parameter: Value)` for each active
+property of the item's rules record (the upgrade rule: native, or its upgrade installed, so the bench
+shows the result), every part from the data in the way docs/formats/2da-catalog.md describes:
+`itempropdef.name` is the name, its `subtyperesref` names the 2DA the subtype indexes, the UTI's
+`CostTable` row of `iprp_costtable` names the cost 2DA, `Param1` a row of `iprp_paramtable` the
+parameter's name and 2DA; each row's text is its `name` strref, else its `label`. Two of ours, for
+reading: the melee cost table's plain numbers show as `+1` (it serves the attack, damage, defense
+and enhancement bonuses), and the charge table's text goes in brackets (`Activate Item: Medpac I
+(Single Use)`). The original's own wording was not traced (no Ghidra project was at hand), so the
+format follows the shipped descriptions, which embed lines of the same shape (`Attribute Bonus:
+Strength +4`). Checked over every base-game UTI (`ui describe`, 557 blueprints) and in the store.
+
 The panels were written by four agents against the protocol above; each has headless scripts in
 `tools/ingame/scripts/` with the `go.sh` line in its header and test commands in `test_*.ctx`
 (`ui giveitem`, `ui stock`, `ui journal add`, `ui note`, `ui leader`, ...).
@@ -151,7 +176,7 @@ comment so the rules lead's merge finds it.
 
 ## Open
 
-- Self action slots (Force powers, medical items, other items, mines), the leader-swap
+- Self action slots: the mines slot and the keys; the leader-swap
   animation, effect-count icons, the stealth toggle, bark bubbles (dialogue lead's).
 - Item drag-and-drop; variable-height list rows (the journal splits long texts into rows);
   a scrolling description box.

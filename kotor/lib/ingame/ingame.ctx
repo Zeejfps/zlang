@@ -15,6 +15,7 @@ namespace ingame {
         cache: *mut material::Cache,        // the GUI's textures: panels, portraits, icons
         gui: gui::Gui,                      // shared with whoever else shows panels in game
         hud: hud::Hud,
+        selfs: selfslots::State,            // the HUD's four self action slots
         text: utf8::Builder(heap::Heap),    // scratch for formatted text
         width: i32, height: i32,
         menu: i32,                          // the open menu (MENU_*), NO_MENU
@@ -49,7 +50,7 @@ namespace ingame {
         if mixer != null { gui::set_mixer{ &g, mixer } }
         let h = try hud::open{ &g, &w, &dev }
         let ui = Ingame{
-            heap = w.heap, cache, gui = g, hud = h,
+            heap = w.heap, cache, gui = g, hud = h, selfs = selfslots::new{},
             text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
             width, height, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{}, log = hud::new_log{},
             pause_panel = 0, hud_hidden = false, screens = screens::new{}, bot = bot::new{},
@@ -83,6 +84,7 @@ namespace ingame {
             return
         }
         ui.hud = h
+        ui.selfs = selfslots::new{}
         hud::set_tooltips{ h = &ui.hud, g = &ui.gui, &w, text = &ui.text }
         set_hud_hidden{ &ui, hidden = was_hidden }
     }
@@ -264,6 +266,7 @@ namespace ingame {
         let aspect = @as(f32, ui.width) / @as(f32, ui.height)
         // A conversation covers the screen with its own panels.
         hud::update{ h = &ui.hud, g = &ui.gui, &w, &dev, text = &ui.text, camera, aspect, blocked = is_blocked{ &ui }, dt }
+        selfslots::update{ s = &ui.selfs, g = &ui.gui, &w, &dev, panel = ui.hud.panel, dt, combat_message = ui.hud.combat and ui.hud.combat_message > 0.0 }
         let events = gui::take_events{ g = &ui.gui }
         let mut i: usize = 0
         while i < events.len {
@@ -308,6 +311,7 @@ namespace ingame {
     // What the HUD's own controls ask for: a menu, the pause toggle, a party portrait, the target
     // block's slots.
     fn hud_event { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } {
+        if selfslots::event{ s = &ui.selfs, g = &ui.gui, &w, &dev, panel = ui.hud.panel, ev } { return }
         if hud::block_event{ h = &ui.hud, g = &ui.gui, &w, &dev, ev } { return }
         if hud::combat_event{ h = &ui.hud, g = &ui.gui, &w, ev } { return }
         if ev.kind == gui::EventKind::activate {
