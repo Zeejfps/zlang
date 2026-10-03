@@ -1,0 +1,322 @@
+// The feats step of a level-up (ftchrgen, docs/re/chargen.md H): the feats the class grants this
+// level (dim), the ones the creature has (dim), and those it may pick, in chains by successor; as
+// many picks as featgain.2da gives (regular and bonus).
+namespace lvl {
+    // The record of the picks so far, for the rules' prerequisite checks.
+    fn pending_feats { s: *State } -> rules::LevelRecord {
+        let mut rec: rules::LevelRecord
+        rec.class = s.class
+        rec.nfeats = @as(i32, s.fnchosen)
+        let mut i: usize = 0
+        while i < s.fnchosen {
+            rec.feats[i] = s.fchosen[i]
+            i = i + 1
+        }
+        return rec
+    }
+
+    fn feat_is_chosen { s: *State, feat: i32 } -> bool {
+        let mut i: usize = 0
+        while i < s.fnchosen {
+            if s.fchosen[i] == feat { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Whether the list shows the feat: the class lists it (regular, bonus or granted at this
+    // level) or the creature has it.
+    fn feat_shown { s: *State, w: *world::World, f: *fight::Fighter, feat: i32 } -> bool {
+        let row = rules::get_feat{ tables = w.rules, row = feat } ifnull { return false }
+        if not row.valid { return false }
+        if rules::has_feat{ c = &f.c, feat } { return true }
+        let cx = @as(usize, s.class)
+        let l = row.list[cx]
+        if l == 3 { return row.granted[cx] == s.opts.class_level }
+        return l == 0 or l == 1 or l == 2
+    }
+
+    fn feat_listed { s: *State, feat: i32 } -> bool {
+        let mut i: usize = 0
+        while i < s.fcount {
+            if s.frows[i].id == feat { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    fn add_feat_row { mut s: State, feat: i32 } {
+        if s.fcount >= MAX_FEAT_ROWS or feat_listed{ s = &s, feat } { return }
+        s.frows[s.fcount] = Row{ id = feat, state = FS_SELECTABLE }
+        s.fcount = s.fcount + 1
+    }
+
+    // Root feats of a chain first with the successors after them, then whatever is left.
+    fn build_feat_rows { mut s: State, w: *world::World, f: *fight::Fighter } {
+        s.fcount = 0
+        let total = w.rules.feats.len
+        let mut i: usize = 0
+        while i < total {
+            let id = @as(i32, i)
+            i = i + 1
+            if not feat_shown{ s = &s, w, f, feat = id } or is_successor{ s = &s, w, f, feat = id } { continue }
+            let mut at = id
+            let mut guard: usize = 0
+            while at >= 0 and guard < 16 and feat_shown{ s = &s, w, f, feat = at } and not feat_listed{ s = &s, feat = at } {
+                add_feat_row{ &s, feat = at }
+                at = (rules::get_feat{ tables = w.rules, row = at } ifnull { return }).successor
+                guard = guard + 1
+            }
+        }
+        i = 0
+        while i < total {
+            if feat_shown{ s = &s, w, f, feat = @as(i32, i) } { add_feat_row{ &s, feat = @as(i32, i) } }
+            i = i + 1
+        }
+    }
+
+    fn is_successor { s: *State, w: *world::World, f: *fight::Fighter, feat: i32 } -> bool {
+        let mut i: usize = 0
+        while i < w.rules.feats.len {
+            let row = &w.rules.feats[i]
+            if row.valid and row.successor == feat and feat_shown{ s, w, f, feat = @as(i32, i) } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Each row's state: known, granted this level, picked, open to pick, or out of reach.
+    fn refresh_feat_states { mut s: State, w: *world::World, f: *fight::Fighter } {
+        let rec = pending_feats{ s = &s }
+        let cx = @as(usize, s.class)
+        let mut i: usize = 0
+        while i < s.fcount {
+            let feat = s.frows[i].id
+            let row = rules::get_feat{ tables = w.rules, row = feat } ifnull { return }
+            let sel = rules::feat_selectable_as{ tables = w.rules, class = s.class, feat }
+            if rules::has_feat{ c = &f.c, feat } {
+                s.frows[i].state = if row.list[cx] == 3 and row.granted[cx] == s.opts.class_level { FS_GRANTED } else { FS_KNOWN }
+            } else if feat_is_chosen{ s = &s, feat } {
+                s.frows[i].state = FS_CHOSEN
+            } else if (sel.general or sel.bonus) and rules::meets_feat_requirements{ tables = w.rules, c = &f.c, feat, class = s.class, class_level = s.opts.class_level, pending = &rec } {
+                s.frows[i].state = FS_SELECTABLE
+            } else {
+                s.frows[i].state = FS_UNAVAILABLE
+            }
+            i = i + 1
+        }
+    }
+
+    fn row_color { state: u8 } -> render::Color {
+        if state == FS_CHOSEN { return gui::color_hilight{} }
+        if state == FS_SELECTABLE { return gui::color_menu{} }
+        return gui::color_disabled{}
+    }
+
+    fn open_feats { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        let f = creature_of{ w = &w, id = s.who } ifnull { return }
+        s.fnchosen = 0
+        s.fsel = 0
+        s.fpicks = s.opts.general_feats + s.opts.bonus_feats
+        build_feat_rows{ &s, w = &w, f }
+        refresh_feat_states{ &s, w = &w, f }
+        try fill_feat_list{ &s, &g, &w }
+        try refresh_feat_counts{ &s, &g }
+        try show_feat{ &s, &g, &w }
+        gui::set_focus{ &g, panel = s.step, tag = "LB_FEATS" }
+    }
+
+    fn fill_feat_list { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
+        let p = s.step
+        gui::list_clear{ &g, panel = p, tag = "LB_FEATS" }
+        let mut i: usize = 0
+        while i < s.fcount {
+            let row = rules::get_feat{ tables = w.rules, row = s.frows[i].id } ifnull { return }
+            let name = try gui::tlk_text{ &g, strref = @as(u32, row.name) }
+            defer gui::free_string{ &g, s = name }
+            let r = try gui::list_add{ &g, panel = p, tag = "LB_FEATS", text = name, user = @as(i64, s.frows[i].id) }
+            gui::list_set_color{ &g, panel = p, tag = "LB_FEATS", row = r, color = row_color{ state = s.frows[i].state } }
+            i = i + 1
+        }
+        if s.fsel >= 0 and @as(usize, s.fsel) < s.fcount { gui::list_select{ &g, panel = p, tag = "LB_FEATS", row = s.fsel } }
+    }
+
+    fn recolor_feat_list { mut s: State, mut g: gui::Gui } {
+        let mut i: usize = 0
+        while i < s.fcount {
+            gui::list_set_color{ &g, panel = s.step, tag = "LB_FEATS", row = @as(i32, i), color = row_color{ state = s.frows[i].state } }
+            i = i + 1
+        }
+    }
+
+    fn refresh_feat_counts { mut s: State, mut g: gui::Gui } -> ! {
+        try chargen::set_number{ &g, panel = s.step, tag = "STD_REMAINING_SELECTIONS_LBL", n = s.fpicks }
+    }
+
+    // The selected row's name and description, and what the Add button says.
+    fn show_feat { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
+        if s.fsel < 0 or @as(usize, s.fsel) >= s.fcount { return }
+        let p = s.step
+        let fr = s.frows[@as(usize, s.fsel)]
+        let name_row = rules::get_feat{ tables = w.rules, row = fr.id } ifnull { return }
+        try gui::set_strref{ &g, panel = p, tag = "LBL_NAME", strref = @as(u32, name_row.name) }
+        let desc = twoda::get_int{ t = s.feat_table, row = @as(usize, fr.id), column = "description" } ifnull 0
+        try chargen::set_description{ &g, panel = p, tag = "LB_DESC", strref = @as(u32, desc) }
+        let remove = fr.state == FS_CHOSEN or fr.state == FS_GRANTED or fr.state == FS_KNOWN
+        let verb = try gui::tlk_text{ &g, strref = if remove { 38456 } else { 38455 } }
+        defer gui::free_string{ &g, s = verb }
+        let noun = try gui::tlk_text{ &g, strref = 42487 }
+        defer gui::free_string{ &g, s = noun }
+        let mut buf: [64]u8
+        let mut n = frontend::copy_into{ dst = buf[..], src = verb }
+        n = n + frontend::copy_into{ dst = buf[n..], src = " " }
+        n = n + frontend::copy_into{ dst = buf[n..], src = noun }
+        try gui::set_text{ &g, panel = p, tag = "BTN_SELECT", text = buf[..n] }
+        gui::set_text_color{ &g, panel = p, tag = "BTN_SELECT", color = if fr.state == FS_SELECTABLE or fr.state == FS_CHOSEN { gui::color_menu{} } else { gui::color_disabled{} } }
+    }
+
+    // Adds or removes the selected row's feat, with the original's messages.
+    fn toggle_feat { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        if s.fsel < 0 or @as(usize, s.fsel) >= s.fcount { return }
+        let f = creature_of{ w = &w, id = s.who } ifnull { return }
+        let i = @as(usize, s.fsel)
+        let fr = s.frows[i]
+        if fr.state == FS_GRANTED {
+            try say{ &s, &g, &w, &dev, strref = 42183, ask = ASK_INFO }
+            return
+        }
+        if fr.state == FS_KNOWN {
+            try say{ &s, &g, &w, &dev, strref = 42182, ask = ASK_INFO }
+            return
+        }
+        if fr.state == FS_UNAVAILABLE {
+            try say{ &s, &g, &w, &dev, strref = 42184, ask = ASK_INFO }
+            return
+        }
+        if fr.state == FS_SELECTABLE {
+            let rec = pending_feats{ s = &s }
+            if s.fpicks <= 0 {
+                try say{ &s, &g, &w, &dev, strref = 42530, ask = ASK_INFO }
+                return
+            }
+            // The pools may be full for this kind of feat even with picks left.
+            if not rules::can_select_feat{ tables = w.rules, c = &f.c, feat = fr.id, class = s.class, class_level = s.opts.class_level, general = s.opts.general_feats, bonus = s.opts.bonus_feats, pending = &rec } {
+                try say{ &s, &g, &w, &dev, strref = 42530, ask = ASK_INFO }
+                return
+            }
+            if s.fnchosen < 8 {
+                s.fchosen[s.fnchosen] = fr.id
+                s.fnchosen = s.fnchosen + 1
+                s.fpicks = s.fpicks - 1
+            }
+        } else {
+            drop_feat{ &s, w = &w, f, feat = fr.id }
+        }
+        refresh_feat_states{ &s, w = &w, f }
+        recolor_feat_list{ &s, &g }
+        try refresh_feat_counts{ &s, &g }
+        try show_feat{ &s, &g, &w }
+    }
+
+    // Removes a pick and every pick that needed it.
+    fn drop_feat { mut s: State, w: *world::World, f: *fight::Fighter, feat: i32 } {
+        let mut i: usize = 0
+        while i < s.fnchosen {
+            if s.fchosen[i] == feat {
+                let mut k = i
+                while k + 1 < s.fnchosen {
+                    s.fchosen[k] = s.fchosen[k + 1]
+                    k = k + 1
+                }
+                s.fnchosen = s.fnchosen - 1
+                s.fpicks = s.fpicks + 1
+                break
+            }
+            i = i + 1
+        }
+        let mut j: usize = 0
+        while j < s.fnchosen {
+            let ft = s.fchosen[j]
+            let mut without = pending_feats{ s = &s }
+            without.nfeats = 0
+            let mut m: usize = 0
+            while m < s.fnchosen {
+                if m != j {
+                    without.feats[@as(usize, without.nfeats)] = s.fchosen[m]
+                    without.nfeats = without.nfeats + 1
+                }
+                m = m + 1
+            }
+            if not rules::meets_feat_requirements{ tables = w.rules, c = &f.c, feat = ft, class = s.class, class_level = s.opts.class_level, pending = &without } {
+                drop_feat{ &s, w, f, feat = ft }
+                return
+            }
+            j = j + 1
+        }
+    }
+
+    // The picks the auto-leveller would make.
+    fn recommend_feats { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
+        let f = creature_of{ w = &w, id = s.who } ifnull { return }
+        let mut trial = f.c
+        let mut rec: rules::LevelRecord
+        if not rules::prepare_auto_level{ tables = w.rules, c = &trial, class = s.class, rec = &rec } { return }
+        s.fnchosen = 0
+        s.fpicks = s.opts.general_feats + s.opts.bonus_feats
+        let mut i: usize = 0
+        while i < @as(usize, rec.nfeats) and s.fnchosen < 8 and s.fpicks > 0 {
+            s.fchosen[s.fnchosen] = rec.feats[i]
+            s.fnchosen = s.fnchosen + 1
+            s.fpicks = s.fpicks - 1
+            i = i + 1
+        }
+        refresh_feat_states{ &s, w = &w, f }
+        recolor_feat_list{ &s, &g }
+        try refresh_feat_counts{ &s, &g }
+        try show_feat{ &s, &g, &w }
+    }
+
+    fn feats_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> ! {
+        if ev.kind == gui::EventKind::cancel {
+            close_step{ &s, &g }
+            return
+        }
+        if ev.kind == gui::EventKind::row_selected {
+            s.fsel = ev.row
+            try show_feat{ &s, &g, &w }
+        } else if ev.kind == gui::EventKind::row_activated {
+            s.fsel = ev.row
+            try toggle_feat{ &s, &g, &w, &dev }
+        } else if ev.kind == gui::EventKind::activate {
+            if slice::eq_bytes{ a = ev.tag, b = "BTN_SELECT" } {
+                try toggle_feat{ &s, &g, &w, &dev }
+            } else if slice::eq_bytes{ a = ev.tag, b = "BTN_RECOMMENDED" } {
+                try recommend_feats{ &s, &g, &w }
+            } else if slice::eq_bytes{ a = ev.tag, b = "BTN_ACCEPT" } {
+                // Refused while picks remain and something could still be picked.
+                if s.fpicks > 0 {
+                    let mut any = false
+                    let mut i: usize = 0
+                    while i < s.fcount {
+                        if s.frows[i].state == FS_SELECTABLE { any = true }
+                        i = i + 1
+                    }
+                    if any {
+                        try say{ &s, &g, &w, &dev, strref = 48215, ask = ASK_INFO }
+                        return
+                    }
+                }
+                s.rec.nfeats = @as(i32, s.fnchosen)
+                let mut i: usize = 0
+                while i < s.fnchosen {
+                    s.rec.feats[i] = s.fchosen[i]
+                    i = i + 1
+                }
+                close_step{ &s, &g }
+                step_taken{ &s, &g, &w, step = STEP_FEATS }
+            } else if slice::eq_bytes{ a = ev.tag, b = "BTN_BACK" } {
+                close_step{ &s, &g }
+            }
+        }
+    }
+}

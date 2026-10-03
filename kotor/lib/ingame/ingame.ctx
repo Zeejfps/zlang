@@ -40,6 +40,8 @@ namespace ingame {
             gui::set_tlk{ &g, table = t }
         }
         try gui::load_defaults{ &g, fs = &w.fs, &dev }
+        // The game options the rules read: Auto Level Up NPCs (the options menu keeps it current).
+        w.rules.settings.auto_level = frontend::load_settings{ fs = &w.fs, heap = w.heap, path = "kotor/out/kotor-settings.ini" }.auto_level_up
         if mixer != null { gui::set_mixer{ &g, mixer } }
         let h = try hud::open{ &g, &w, &dev }
         let ui = Ingame{
@@ -239,6 +241,7 @@ namespace ingame {
     fn update { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, sc: scene::Scene, camera: cam::Camera, dt: f32 } {
         gui::update{ g = &ui.gui, dt }
         hud::log_tick{ log = &ui.log, dt }
+        if options_panel::settings{ s = &ui.menus.options } is some{ value = st } { w.rules.settings.auto_level = st.auto_level_up }
         // A conversation or cutscene takes the screen: the HUD and any menu go away for it
         // (re/gui.md, "SetHudMode"), and the world is not picked.
         if w.conversation.active != ui.hud_hidden {

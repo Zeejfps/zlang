@@ -1,0 +1,276 @@
+// Level up: opening the panels, the steps list, the numbers on maincg, and applying the level.
+namespace lvl {
+    const STEP_TAGS: [5][]u8 = ["BTN_STEPNAME1", "BTN_STEPNAME2", "BTN_STEPNAME3", "BTN_STEPNAME4", "BTN_STEPNAME5"]
+    const NUM_TAGS: [5][]u8 = ["LBL_NUM1", "LBL_NUM2", "LBL_NUM3", "LBL_NUM4", "LBL_NUM5"]
+
+    const STR_LEVEL_UP: u32 = 1071
+    const STR_SURE_CANCEL: u32 = 48541
+    const STR_SKILLS_LEFT: u32 = 41815
+
+    // The ability labels of maincg in the panel's order (STR DEX CON WIS INT CHA), and the rules'
+    // index of each.
+    const AB_LABEL: [6][]u8 = ["STR_AB_LBL", "DEX_AB_LBL", "CON_AB_LBL", "WIS_AB_LBL", "INT_AB_LBL", "CHA_AB_LBL"]
+
+    fn creature_of { w: *world::World, id: u32 } -> ?*mut fight::Fighter {
+        let o = world::object{ w, id } ifnull { return null }
+        return fight::of{ o }
+    }
+
+    // ---- opening
+
+    // CSWGuiLevelUpMain: maincg full screen with the steps panel over it, for `who`'s next level in
+    // the class of its last slot. Nothing opens when the creature cannot level.
+    fn begin { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, who: u32 } -> ! {
+        if s.open { return }
+        let f = creature_of{ w = &w, id = who } ifnull { return }
+        if f.c.nclasses < 1 or not levelup::can_level{ w = &w, id = who } { return }
+        let class = f.c.classes[@as(usize, f.c.nclasses - 1)].class
+        if not rules::level_up_options{ tables = w.rules, c = &f.c, class, out = &s.opts } { return }
+        s.who = who
+        s.class = class
+        s.box = msgbox::blank{}
+        s.ask = ASK_NOTHING
+        s.step = 0
+        s.step_kind = NO_STEP
+        s.rec = rules::LevelRecord{
+            class, hp = s.opts.hp, fp = s.opts.fp, ability = -1, skill_left = s.opts.skill_points,
+            skills = [0; 8], nfeats = 0, feats = [0; 8], npowers = 0, powers = [0; 8],
+        }
+        s.needed = [
+            s.opts.ability_point, s.opts.skill_points > 0, s.opts.general_feats + s.opts.bonus_feats > 0,
+            s.opts.powers > 0 and rules::is_force_class{ tables = w.rules, class }, true,
+        ]
+        s.done = [not s.needed[0], not s.needed[1], not s.needed[2], not s.needed[3], false]
+        s.fnchosen = 0
+        s.pnchosen = 0
+        if not s.has_feat_table {
+            s.feat_table = try world::load_table{ fs = &w.fs, heap = w.heap, rm = w.rm.*, name = "feat" }
+            s.has_feat_table = true
+        }
+        s.main = try gui::open{ &g, fs = &w.fs, &dev, name = "maincg", mode = gui::Mode::full_screen, modal = true }
+        gui::ensure_backdrop{ &g, fs = &w.fs, &dev, kind = 0 }
+        s.list = try gui::open{ &g, fs = &w.fs, &dev, name = "leveluppnl", mode = gui::Mode::framed, modal = true }
+        s.open = true
+        gui::play_sound{ &g, n = 4 }
+        try bind_main{ &s, &g, &w, &dev }
+        try refresh_main{ &s, &g, &w }
+        refresh_steps{ &s, &g }
+    }
+
+    // Gives the panels back without applying anything.
+    fn close_panels { mut s: State, mut g: gui::Gui } {
+        if not s.open { return }
+        msgbox::close{ &g, b = &s.box }
+        if s.step != 0 { gui::close{ &g, id = s.step } }
+        gui::close{ &g, id = s.list }
+        gui::close{ &g, id = s.main }
+        gui::play_sound{ &g, n = 5 }
+        s.step = 0
+        s.step_kind = NO_STEP
+        s.open = false
+    }
+
+    // The fixed parts of maincg in level-up mode: the title, name, class, portrait, and the
+    // old/new columns the character generation hides.
+    fn bind_main { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        let p = s.main
+        try gui::set_strref{ &g, panel = p, tag = "MAIN_TITLE_LBL", strref = STR_LEVEL_UP }
+        try gui::set_text{ &g, panel = p, tag = "LBL_NAME", text = hud::name_of{ w = &w, id = s.who } }
+        let row = rules::get_class{ tables = w.rules, row = s.class } ifnull { return }
+        try gui::set_strref{ &g, panel = p, tag = "LBL_CLASS", strref = @as(u32, row.name) }
+        items::show_portrait{ &g, &w, &dev, panel = p, tag = "PORTRAIT_LBL", who = s.who }
+        // The value labels of the character generation share the vitality and defense boxes with
+        // the new-value labels here.
+        gui::set_visible{ &g, panel = p, tag = "LBL_VIT", visible = false }
+        gui::set_visible{ &g, panel = p, tag = "LBL_DEF", visible = false }
+        gui::set_visible{ &g, panel = p, tag = "MODEL_LBL", visible = false }
+    }
+
+    // The ability scores, level, vitality, defense and saves: the creature now, and with the level
+    // as chosen so far.
+    fn numbers_of { w: *world::World, c: *rules::Creature } -> Numbers {
+        return Numbers{
+            level = rules::total_level{ c }, abil = c.stats.abil, hp = c.stats.max_hp,
+            defense = rules::armor_class_sheet{ tables = w.rules, c },
+            save = [c.stats.save_base[0], c.stats.save_base[1], c.stats.save_base[2]],
+        }
+    }
+
+    fn refresh_main { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
+        let f = creature_of{ w = &w, id = s.who } ifnull { return }
+        let before = numbers_of{ w = &w, c = &f.c }
+        let mut trial = f.c
+        _ = rules::apply_level_up{ tables = w.rules, c = &trial, rec = s.rec, alive = true }
+        let after = numbers_of{ w = &w, c = &trial }
+        let p = s.main
+        try chargen::set_number{ &g, panel = p, tag = "LBL_LEVEL_VAL", n = after.level }
+        let mut r: usize = 0
+        while r < 6 {
+            try chargen::set_number{ &g, panel = p, tag = AB_LABEL[r], n = after.abil[chargen::AB_LABEL_STAT[r]] }
+            r = r + 1
+        }
+        try chargen::set_number{ &g, panel = p, tag = "OLD_VIT_LBL", n = before.hp }
+        try chargen::set_number{ &g, panel = p, tag = "NEW_VIT_LBL", n = after.hp }
+        try chargen::set_number{ &g, panel = p, tag = "OLD_DEF_LBL", n = before.defense }
+        try chargen::set_number{ &g, panel = p, tag = "NEW_DEF_LBL", n = after.defense }
+        try chargen::set_number{ &g, panel = p, tag = "OLD_FORT_LBL", n = before.save[0] }
+        try chargen::set_number{ &g, panel = p, tag = "NEW_FORT_LBL", n = after.save[0] }
+        try chargen::set_number{ &g, panel = p, tag = "OLD_REFL_LBL", n = before.save[1] }
+        try chargen::set_number{ &g, panel = p, tag = "NEW_REFL_LBL", n = after.save[1] }
+        try chargen::set_number{ &g, panel = p, tag = "OLD_WILL_LBL", n = before.save[2] }
+        try chargen::set_number{ &g, panel = p, tag = "NEW_WILL_LBL", n = after.save[2] }
+    }
+
+    // The steps list: a step is open to take when it is needed, not done, and every needed step
+    // before it is done; Accept waits for all of them.
+    fn refresh_steps { mut s: State, mut g: gui::Gui } {
+        let mut k: usize = 0
+        let mut blocked = false
+        while k < STEPS {
+            let usable = s.needed[k] and not s.done[k] and not blocked
+            gui::set_enabled{ &g, panel = s.list, tag = STEP_TAGS[k], enabled = usable }
+            gui::set_text_color{ &g, panel = s.list, tag = STEP_TAGS[k], color = if usable { gui::color_menu{} } else { gui::color_disabled{} } }
+            gui::set_text_color{ &g, panel = s.list, tag = NUM_TAGS[k], color = if usable { gui::color_menu{} } else { gui::color_disabled{} } }
+            if s.needed[k] and not s.done[k] { blocked = true }
+            k = k + 1
+        }
+        // The first step still to take has the focus.
+        let mut first: usize = 0
+        while first < STEPS - 1 and (not s.needed[first] or s.done[first]) { first = first + 1 }
+        gui::set_focus{ &g, panel = s.list, tag = STEP_TAGS[first] }
+    }
+
+    fn step_taken { mut s: State, mut g: gui::Gui, mut w: world::World, step: i32 } {
+        s.done[@as(usize, step)] = true
+        refresh_main{ &s, &g, &w } iferr {}
+        refresh_steps{ &s, &g }
+    }
+
+    // ---- messages
+
+    // A dialog.tlk string over the panels (its tokens expanded).
+    fn say { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, strref: u32, ask: i32 } -> ! {
+        if msgbox::is_open{ b = s.box } { return }
+        let text = try gui::tlk_text{ &g, strref }
+        defer gui::free_string{ &g, s = text }
+        s.box = msgbox::show{ &g, &w, &dev, text, cancel = ask != ASK_INFO, what = ask, item = 0 }
+        s.ask = ask
+    }
+
+    // ---- events
+
+    // One GUI event of this frame; true when it belonged to the level-up panels.
+    fn on_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> bool {
+        if not s.open { return false }
+        let a = msgbox::answer{ b = s.box, ev }
+        if a != msgbox::Answer::none {
+            let ask = s.ask
+            msgbox::close{ &g, b = &s.box }
+            s.ask = ASK_NOTHING
+            answered{ &s, &g, &w, &dev, ask, ok = a == msgbox::Answer::ok } iferr err{ error } { _ = @fmt(&w.io, "kotor: level up: {}\n", error) }
+            return true
+        }
+        if ev.panel == s.step and s.step != 0 {
+            if msgbox::is_open{ b = s.box } { return true }
+            step_event{ &s, &g, &w, &dev, ev } iferr err{ error } { _ = @fmt(&w.io, "kotor: level up: {}\n", error) }
+            return true
+        }
+        if ev.panel == s.list and s.step == 0 {
+            if msgbox::is_open{ b = s.box } { return true }
+            list_event{ &s, &g, &w, &dev, ev } iferr err{ error } { _ = @fmt(&w.io, "kotor: level up: {}\n", error) }
+            return true
+        }
+        return ev.panel == s.main or ev.panel == s.list or ev.panel == s.step
+    }
+
+    fn step_number { tag: []u8 } -> i32 {
+        let mut k: usize = 0
+        while k < STEPS {
+            if slice::eq_bytes{ a = tag, b = STEP_TAGS[k] } { return @as(i32, k) }
+            k = k + 1
+        }
+        return -1
+    }
+
+    // A click on the steps list.
+    fn list_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> ! {
+        if ev.kind == gui::EventKind::cancel {
+            try ask_leave{ &s, &g, &w, &dev }
+            return
+        }
+        if ev.kind != gui::EventKind::activate { return }
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_BACK" } {
+            try ask_leave{ &s, &g, &w, &dev }
+            return
+        }
+        let k = step_number{ tag = ev.tag }
+        if k < 0 { return }
+        if k == STEP_ACCEPT {
+            finish{ &s, &g, &w }
+            return
+        }
+        try open_step{ &s, &g, &w, &dev, k }
+    }
+
+    // Back: leaving asks first once something was chosen.
+    fn ask_leave { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        let mut any = false
+        let mut k: usize = 0
+        while k < STEPS - 1 {
+            if s.needed[k] and s.done[k] { any = true }
+            k = k + 1
+        }
+        if any {
+            try say{ &s, &g, &w, &dev, strref = STR_SURE_CANCEL, ask = ASK_CANCEL }
+        } else {
+            close_panels{ &s, &g }
+        }
+    }
+
+    fn answered { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ask: i32, ok: bool } -> ! {
+        if ask == ASK_CANCEL and ok { close_panels{ &s, &g } }
+        if ask == ASK_SKILLS_LEFT and ok { try accept_skills_now{ &s, &g, &w } }
+    }
+
+    // Opens the step panel `k` over the list.
+    fn open_step { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, k: i32 } -> ! {
+        if s.step != 0 { return }
+        let name: []u8 = if k == STEP_ATTRIBUTES { "abchrgen" } else if k == STEP_SKILLS { "skchrgen" } else if k == STEP_FEATS { "ftchrgen" } else { "pwrlvlup" }
+        s.step = try gui::open{ &g, fs = &w.fs, &dev, name, mode = gui::Mode::full_screen, modal = true }
+        s.step_kind = k
+        gui::ensure_backdrop{ &g, fs = &w.fs, &dev, kind = 0 }
+        try gui::set_strref{ &g, panel = s.step, tag = "MAIN_TITLE_LBL", strref = STR_LEVEL_UP }
+        if k == STEP_ATTRIBUTES { try open_abilities{ &s, &g, &w } }
+        else if k == STEP_SKILLS { try open_skills{ &s, &g, &w } }
+        else if k == STEP_FEATS { try open_feats{ &s, &g, &w, &dev } }
+        else { try open_powers{ &s, &g, &w, &dev } }
+    }
+
+    fn close_step { mut s: State, mut g: gui::Gui } {
+        if s.step != 0 { gui::close{ &g, id = s.step } }
+        s.step = 0
+        s.step_kind = NO_STEP
+    }
+
+    fn step_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> ! {
+        if s.step_kind == STEP_ATTRIBUTES { try abilities_event{ &s, &g, &w, &dev, ev } }
+        else if s.step_kind == STEP_SKILLS { try skills_event{ &s, &g, &w, &dev, ev } }
+        else if s.step_kind == STEP_FEATS { try feats_event{ &s, &g, &w, &dev, ev } }
+        else if s.step_kind == STEP_POWERS { try powers_event{ &s, &g, &w, &dev, ev } }
+    }
+
+    // ---- the end
+
+    // Accept: the record goes into the creature through the engine, which heals it and tells the
+    // module; the panels close.
+    fn finish { mut s: State, mut g: gui::Gui, mut w: world::World } {
+        let mut k: usize = 0
+        while k < STEPS - 1 {
+            if s.needed[k] and not s.done[k] { return }
+            k = k + 1
+        }
+        let ok = levelup::apply{ &w, id = s.who, rec = s.rec }
+        if ok { gui::play_sound{ &g, n = 11 } }
+        close_panels{ &s, &g }
+    }
+}

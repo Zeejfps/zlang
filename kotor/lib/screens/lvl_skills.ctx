@@ -1,0 +1,118 @@
+// The skills step of a level-up (skchrgen with the level-up flag set, docs/re/chargen.md G): the
+// level's skill points over the eight skills at one point a rank for class skills and two for the
+// others, up to the level's cap; a skill the creature may not use is greyed.
+namespace lvl {
+    // The rank the panel shows: what the creature has plus what this level bought.
+    fn skill_total { s: *State, w: *world::World, row: usize } -> i32 {
+        return s.opts.skills[row].rank + s.sk[row]
+    }
+
+    fn open_skills { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
+        s.sk = [0; 8]
+        s.sk_points = s.opts.skill_points
+        s.sk_focus = 0
+        try refresh_skills{ &s, &g, &w }
+        gui::set_focus{ &g, panel = s.step, tag = chargen::SK_POINTS_TAG[0] }
+    }
+
+    fn refresh_skills { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
+        let p = s.step
+        let mut r: usize = 0
+        while r < SKILLS {
+            try chargen::set_number{ &g, panel = p, tag = chargen::SK_POINTS_TAG[r], n = skill_total{ s = &s, w = &w, row = r } }
+            let usable = s.opts.skills[r].usable
+            let mut b1: [24]u8
+            gui::set_enabled{ &g, panel = p, tag = chargen::skill_tag{ into = b1[..], row = r, suffix = "_PLUS_BTN" }, enabled = usable }
+            let mut b2: [24]u8
+            gui::set_enabled{ &g, panel = p, tag = chargen::skill_tag{ into = b2[..], row = r, suffix = "_MINUS_BTN" }, enabled = usable and s.sk[r] > 0 }
+            r = r + 1
+        }
+        try chargen::set_number{ &g, panel = p, tag = "REMAINING_SELECTIONS_LBL", n = s.sk_points }
+        try show_skill_focus{ &s, &g }
+    }
+
+    fn show_skill_focus { mut s: State, mut g: gui::Gui } -> ! {
+        let p = s.step
+        let r = s.sk_focus
+        let cost = s.opts.skills[r].cost
+        try gui::set_strref{ &g, panel = p, tag = "CLASSSKL_LBL", strref = if cost == 1 { 38152 } else { 38153 } }
+        try chargen::set_number{ &g, panel = p, tag = "COST_POINTS_LBL", n = cost }
+        try chargen::set_description{ &g, panel = p, tag = "LB_DESC", strref = chargen::SK_DESC[r] }
+    }
+
+    fn skills_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> ! {
+        if ev.kind == gui::EventKind::cancel {
+            close_step{ &s, &g }
+            return
+        }
+        let row = chargen::skill_row_of{ tag = ev.tag }
+        if ev.kind == gui::EventKind::hilight and row >= 0 {
+            if s.sk_focus != @as(usize, row) {
+                s.sk_focus = @as(usize, row)
+                try show_skill_focus{ &s, &g }
+            }
+        } else if ev.kind == gui::EventKind::activate {
+            if row >= 0 and slice::eq_bytes{ a = ev.tag[4..], b = "PLUS_BTN" } {
+                try raise_skill{ &s, &g, &w, &dev, row = @as(usize, row) }
+            } else if row >= 0 and slice::eq_bytes{ a = ev.tag[4..], b = "MINUS_BTN" } {
+                let r = @as(usize, row)
+                s.sk_focus = r
+                if s.sk[r] > 0 {
+                    s.sk[r] = s.sk[r] - 1
+                    s.sk_points = s.sk_points + s.opts.skills[r].cost
+                }
+                try refresh_skills{ &s, &g, &w }
+            } else if slice::eq_bytes{ a = ev.tag, b = "BTN_RECOMMENDED" } {
+                try recommend_skills{ &s, &g, &w }
+            } else if slice::eq_bytes{ a = ev.tag, b = "BTN_ACCEPT" } {
+                if s.sk_points > 0 {
+                    // "You have not spent all of your skill points ... Do you wish to continue?"
+                    try say{ &s, &g, &w, &dev, strref = STR_SKILLS_LEFT, ask = ASK_SKILLS_LEFT }
+                } else {
+                    try accept_skills_now{ &s, &g, &w }
+                }
+            } else if slice::eq_bytes{ a = ev.tag, b = "BTN_BACK" } {
+                close_step{ &s, &g }
+            }
+        }
+    }
+
+    fn raise_skill { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, row: usize } -> ! {
+        s.sk_focus = row
+        let o = s.opts.skills[row]
+        if not o.usable { return }
+        if skill_total{ s = &s, w = &w, row } >= o.max_rank {
+            // "Class skills can have a maximum skill rank of <CUSTOM0> (current level + 3)."
+            let mut buf: [16]u8
+            let len = frontend::put_int{ into = buf[..], at = 0, n = o.max_rank }
+            try gui::set_token{ &g, name = "CUSTOM0", value = buf[..len] }
+            try say{ &s, &g, &w, &dev, strref = if o.cost == 1 { 42178 } else { 42179 }, ask = ASK_INFO }
+            return
+        }
+        if o.cost > s.sk_points {
+            try say{ &s, &g, &w, &dev, strref = 42464, ask = ASK_INFO }
+            return
+        }
+        s.sk[row] = s.sk[row] + 1
+        s.sk_points = s.sk_points - o.cost
+        try refresh_skills{ &s, &g, &w }
+    }
+
+    // The ranks and the points the auto-leveller would leave (the same priority list and caps).
+    fn recommend_skills { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
+        let f = creature_of{ w = &w, id = s.who } ifnull { return }
+        let mut trial = f.c
+        let mut rec: rules::LevelRecord
+        if not rules::prepare_auto_level{ tables = w.rules, c = &trial, class = s.class, rec = &rec } { return }
+        s.sk = rec.skills
+        s.sk_points = rec.skill_left
+        try refresh_skills{ &s, &g, &w }
+    }
+
+    fn accept_skills_now { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
+        s.rec.skills = s.sk
+        s.rec.skill_left = s.sk_points
+        close_step{ &s, &g }
+        step_taken{ &s, &g, &w, step = STEP_SKILLS }
+    }
+}

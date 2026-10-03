@@ -70,6 +70,47 @@ namespace test_screens {
                 _ = @fmt(&w.io, "  {} {} x{}\n", ids[k], items::name_of{ w = &w, id = ids[k] }, items::stack_of{ w = &w, id = ids[k] })
                 k = k + 1
             }
+        } else if ci::eq{ a = cmd, b = "addclass" } {
+            // AddMultiClass for the leader: a new class slot at level 0 (3 Jedi Guardian, 4 Consular, 5 Sentinel).
+            let f = levelup::fighter_of{ w = &w, id = party::leader{ w = &w } } ifnull { return true }
+            let class = @as(i32, text::scan_decimal{ s = args })
+            if f.c.nclasses < rules::MAX_LEVEL_CLASSES {
+                f.c.classes[@as(usize, f.c.nclasses)] = rules::ClassSlot{ class, level = 0 }
+                f.c.nclasses = f.c.nclasses + 1
+            }
+        } else if ci::eq{ a = cmd, b = "autoopt" } {
+            w.rules.settings.auto_level = text::scan_decimal{ s = args } != 0
+        } else if ci::eq{ a = cmd, b = "levels" } {
+            // Every party member's level and XP.
+            let members = party::members{ w = &w }
+            let mut m: usize = 0
+            while m < members.len {
+                if levelup::fighter_of{ w = &w, id = members[m] } is some{ value = f } {
+                    _ = @fmt(&w.io, "member {} {}: level {} xp {} hp {}\n", members[m], hud::name_of{ w = &w, id = members[m] }, rules::total_level{ c = &f.c }, f.c.xp, f.c.stats.max_hp)
+                }
+                m = m + 1
+            }
+        } else if ci::eq{ a = cmd, b = "levelup" } {
+            outbox::post{ out = &w.out, note = outbox::Note::level_up{ who = party::leader{ w = &w } } }
+        } else if ci::eq{ a = cmd, b = "autolevel" } {
+            _ = @fmt(&w.io, "autolevel: {} levels\n", levelup::auto_level{ &w, id = party::leader{ w = &w } })
+        } else if ci::eq{ a = cmd, b = "sheet" } {
+            let f = levelup::fighter_of{ w = &w, id = party::leader{ w = &w } } ifnull { return true }
+            _ = @fmt(&w.io, "sheet: level {} xp {} hp {}/{} fp {} bab {} saves {} {} {} abil {} {} {} {} {} {} classes", rules::total_level{ c = &f.c }, f.c.xp,
+                f.c.stats.max_hp, f.c.stats.max_hp, f.c.stats.max_fp, f.c.stats.bab, f.c.stats.save_base[0], f.c.stats.save_base[1], f.c.stats.save_base[2],
+                f.c.abil[0], f.c.abil[1], f.c.abil[2], f.c.abil[3], f.c.abil[4], f.c.abil[5])
+            let mut k: i32 = 0
+            while k < f.c.nclasses {
+                _ = @fmt(&w.io, " {}x{}", f.c.classes[@as(usize, k)].class, f.c.classes[@as(usize, k)].level)
+                k = k + 1
+            }
+            _ = @fmt(&w.io, " skills")
+            let mut sk: usize = 0
+            while sk < 8 {
+                _ = @fmt(&w.io, " {}", f.c.skills[sk])
+                sk = sk + 1
+            }
+            _ = @fmt(&w.io, " skillpts {}\n", f.c.skill_points)
         } else if ci::eq{ a = cmd, b = "xp" } {
             rt_crea::give_party_xp{ &w, amount = @as(i32, text::scan_decimal{ s = args }) }
         } else {

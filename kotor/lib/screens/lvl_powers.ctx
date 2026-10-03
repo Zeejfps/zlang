@@ -1,0 +1,232 @@
+// The Force powers step of a level-up (pwrlvlup, docs/re/chargen.md I): the powers the Jedi class
+// may take at this level, one list with the ones whose prerequisites are not yet known dim; as
+// many picks as classpowergain.2da gives.
+namespace lvl {
+    fn pending_powers { s: *State } -> rules::LevelRecord {
+        let mut rec: rules::LevelRecord
+        rec.class = s.class
+        rec.npowers = @as(i32, s.pnchosen)
+        let mut i: usize = 0
+        while i < s.pnchosen {
+            rec.powers[i] = s.pchosen[i]
+            i = i + 1
+        }
+        return rec
+    }
+
+    fn power_is_chosen { s: *State, spell: i32 } -> bool {
+        let mut i: usize = 0
+        while i < s.pnchosen {
+            if s.pchosen[i] == spell { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // The powers the list shows: every Force power the creature does not have and the class's level
+    // column reaches, in spells.2da order. Whether one is open to pick depends on the picks so far.
+    fn build_power_rows { mut s: State, w: *world::World, f: *fight::Fighter } {
+        s.pcount = 0
+        let level_before = s.opts.char_level - 1
+        let mut i: usize = 0
+        while i < w.rules.spells.len and s.pcount < MAX_POWER_ROWS {
+            let id = @as(i32, i)
+            let row = &w.rules.spells[i]
+            i = i + 1
+            if not row.valid or (row.user_type != 1 and row.user_type != 5) { continue }
+            if rules::knows_power{ c = &f.c, spell = id } { continue }
+            if level_before < rules::power_class_level{ row, class = s.class } { continue }
+            s.prows[s.pcount] = Row{ id, state = FS_SELECTABLE }
+            s.pcount = s.pcount + 1
+        }
+    }
+
+    fn refresh_power_states { mut s: State, w: *world::World, f: *fight::Fighter } {
+        let rec = pending_powers{ s = &s }
+        let level_before = s.opts.char_level - 1
+        let mut i: usize = 0
+        while i < s.pcount {
+            let spell = s.prows[i].id
+            if power_is_chosen{ s = &s, spell } {
+                s.prows[i].state = FS_CHOSEN
+            } else if rules::can_learn_force_power{ tables = w.rules, c = &f.c, spell, class = s.class, level_before, total_to_gain = s.opts.powers, pending = &rec } {
+                s.prows[i].state = FS_SELECTABLE
+            } else {
+                s.prows[i].state = FS_UNAVAILABLE
+            }
+            i = i + 1
+        }
+    }
+
+    fn open_powers { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        let f = creature_of{ w = &w, id = s.who } ifnull { return }
+        s.pnchosen = 0
+        s.psel = 0
+        s.ppicks = s.opts.powers
+        build_power_rows{ &s, w = &w, f }
+        refresh_power_states{ &s, w = &w, f }
+        try fill_power_list{ &s, &g, &w, &dev }
+        try refresh_power_counts{ &s, &g }
+        try show_power{ &s, &g, &w }
+        gui::set_focus{ &g, panel = s.step, tag = "LB_POWERS" }
+    }
+
+    fn fill_power_list { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        let p = s.step
+        gui::list_clear{ &g, panel = p, tag = "LB_POWERS" }
+        let mut i: usize = 0
+        while i < s.pcount {
+            let spell = s.prows[i].id
+            let row = rules::get_spell{ tables = w.rules, row = spell } ifnull { return }
+            let name = try gui::tlk_text{ &g, strref = @as(u32, row.name) }
+            defer gui::free_string{ &g, s = name }
+            let r = try gui::list_add{ &g, panel = p, tag = "LB_POWERS", text = name, user = @as(i64, spell) }
+            gui::list_set_color{ &g, panel = p, tag = "LB_POWERS", row = r, color = row_color{ state = s.prows[i].state } }
+            let icon_name = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "iconresref" } ifnull ""
+            if icon_name.len > 0 {
+                let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name = icon_name }
+                if img.ok { gui::list_set_icon{ &g, panel = p, tag = "LB_POWERS", row = r, texture = img.tex, w = 32.0, h = 32.0 } }
+            }
+            i = i + 1
+        }
+        if s.psel >= 0 and @as(usize, s.psel) < s.pcount { gui::list_select{ &g, panel = p, tag = "LB_POWERS", row = s.psel } }
+    }
+
+    fn recolor_power_list { mut s: State, mut g: gui::Gui } {
+        let mut i: usize = 0
+        while i < s.pcount {
+            gui::list_set_color{ &g, panel = s.step, tag = "LB_POWERS", row = @as(i32, i), color = row_color{ state = s.prows[i].state } }
+            i = i + 1
+        }
+    }
+
+    fn refresh_power_counts { mut s: State, mut g: gui::Gui } -> ! {
+        try chargen::set_number{ &g, panel = s.step, tag = "REMAINING_SELECTIONS_LBL", n = s.ppicks }
+    }
+
+    fn show_power { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
+        if s.psel < 0 or @as(usize, s.psel) >= s.pcount { return }
+        let p = s.step
+        let pr = s.prows[@as(usize, s.psel)]
+        let row = rules::get_spell{ tables = w.rules, row = pr.id } ifnull { return }
+        try gui::set_strref{ &g, panel = p, tag = "LBL_POWER", strref = @as(u32, row.name) }
+        let desc = twoda::get_int{ t = w.tables.spells, row = @as(usize, pr.id), column = "spelldesc" } ifnull 0
+        try chargen::set_description{ &g, panel = p, tag = "LB_DESC", strref = @as(u32, desc) }
+        let remove = pr.state == FS_CHOSEN
+        try gui::set_strref{ &g, panel = p, tag = "SELECT_BTN", strref = if remove { 38456 } else { 38455 } }
+        gui::set_text_color{ &g, panel = p, tag = "SELECT_BTN", color = if pr.state == FS_SELECTABLE or pr.state == FS_CHOSEN { gui::color_menu{} } else { gui::color_disabled{} } }
+    }
+
+    fn toggle_power { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        if s.psel < 0 or @as(usize, s.psel) >= s.pcount { return }
+        let f = creature_of{ w = &w, id = s.who } ifnull { return }
+        let pr = s.prows[@as(usize, s.psel)]
+        if pr.state == FS_UNAVAILABLE {
+            // Out of picks, or a prerequisite missing: the original says it needs the lower power.
+            try say{ &s, &g, &w, &dev, strref = if s.ppicks <= 0 { 42530 } else { 42184 }, ask = ASK_INFO }
+            return
+        }
+        if pr.state == FS_SELECTABLE {
+            if s.pnchosen < 8 and s.ppicks > 0 {
+                s.pchosen[s.pnchosen] = pr.id
+                s.pnchosen = s.pnchosen + 1
+                s.ppicks = s.ppicks - 1
+            }
+        } else {
+            drop_power{ &s, w = &w, f, spell = pr.id }
+        }
+        refresh_power_states{ &s, w = &w, f }
+        recolor_power_list{ &s, &g }
+        try refresh_power_counts{ &s, &g }
+        try show_power{ &s, &g, &w }
+    }
+
+    // Removes a pick and every pick that needed it.
+    fn drop_power { mut s: State, w: *world::World, f: *fight::Fighter, spell: i32 } {
+        let mut i: usize = 0
+        while i < s.pnchosen {
+            if s.pchosen[i] == spell {
+                let mut k = i
+                while k + 1 < s.pnchosen {
+                    s.pchosen[k] = s.pchosen[k + 1]
+                    k = k + 1
+                }
+                s.pnchosen = s.pnchosen - 1
+                s.ppicks = s.ppicks + 1
+                break
+            }
+            i = i + 1
+        }
+        // A pick that named it as a prerequisite goes too.
+        let mut j: usize = 0
+        while j < s.pnchosen {
+            let row = rules::get_spell{ tables = w.rules, row = s.pchosen[j] } ifnull { return }
+            let mut p: usize = 0
+            while p < @as(usize, row.nprereq) and p < 4 {
+                if row.prereq[p] == spell {
+                    drop_power{ &s, w, f, spell = s.pchosen[j] }
+                    return
+                }
+                p = p + 1
+            }
+            j = j + 1
+        }
+    }
+
+    // The picks the auto-leveller would make.
+    fn recommend_powers { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
+        let f = creature_of{ w = &w, id = s.who } ifnull { return }
+        let mut trial = f.c
+        let mut rec: rules::LevelRecord
+        if not rules::prepare_auto_level{ tables = w.rules, c = &trial, class = s.class, rec = &rec } { return }
+        s.pnchosen = 0
+        s.ppicks = s.opts.powers
+        let mut i: usize = 0
+        while i < @as(usize, rec.npowers) and s.pnchosen < 8 and s.ppicks > 0 {
+            s.pchosen[s.pnchosen] = rec.powers[i]
+            s.pnchosen = s.pnchosen + 1
+            s.ppicks = s.ppicks - 1
+            i = i + 1
+        }
+        refresh_power_states{ &s, w = &w, f }
+        recolor_power_list{ &s, &g }
+        try refresh_power_counts{ &s, &g }
+        try show_power{ &s, &g, &w }
+    }
+
+    fn powers_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> ! {
+        if ev.kind == gui::EventKind::cancel {
+            close_step{ &s, &g }
+            return
+        }
+        if ev.kind == gui::EventKind::row_selected {
+            s.psel = ev.row
+            try show_power{ &s, &g, &w }
+        } else if ev.kind == gui::EventKind::row_activated {
+            s.psel = ev.row
+            try toggle_power{ &s, &g, &w, &dev }
+        } else if ev.kind == gui::EventKind::activate {
+            if slice::eq_bytes{ a = ev.tag, b = "SELECT_BTN" } {
+                try toggle_power{ &s, &g, &w, &dev }
+            } else if slice::eq_bytes{ a = ev.tag, b = "RECOMMENDED_BTN" } {
+                try recommend_powers{ &s, &g, &w }
+            } else if slice::eq_bytes{ a = ev.tag, b = "ACCEPT_BTN" } {
+                if s.ppicks > 0 {
+                    // "You have gained new powers. You must select them before continuing."
+                    try say{ &s, &g, &w, &dev, strref = 48215, ask = ASK_INFO }
+                    return
+                }
+                s.rec.npowers = @as(i32, s.pnchosen)
+                let mut i: usize = 0
+                while i < s.pnchosen {
+                    s.rec.powers[i] = s.pchosen[i]
+                    i = i + 1
+                }
+                close_step{ &s, &g }
+                step_taken{ &s, &g, &w, step = STEP_POWERS }
+            } else if slice::eq_bytes{ a = ev.tag, b = "BACK_BTN" } {
+                close_step{ &s, &g }
+            }
+        }
+    }
+}
