@@ -1,0 +1,130 @@
+// mgdump: prints the minigame setup of the four minigame areas (lib/minigame) with their LYT track
+// and obstacle counts, to check the reader against the survey (docs/re/minigames-swoop-turret.md 1.4).
+//
+//   kotor/tools/ctxc run kotor/tools/mgdump                          the four areas
+//   kotor/tools/ctxc run kotor/tools/mgdump -- tar_m03mg m03mg       one module and its area
+//   kotor/tools/ctxc run kotor/tools/mgdump -- --game DIR --all      also every enemy and obstacle
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let mut game: []u8 = DEFAULT_GAME
+    let mut all = false
+    let mut names: [2][]u8 = ["", ""]
+    let mut n: usize = 0
+    let mut i: usize = 0
+    while i < args.len {
+        if slice::eq_bytes{ a = args[i], b = "--game" } and i + 1 < args.len {
+            game = args[i + 1]
+            i = i + 2
+        } else if slice::eq_bytes{ a = args[i], b = "--all" } {
+            all = true
+            i = i + 1
+        } else {
+            if n < 2 { names[n] = args[i] }
+            n = n + 1
+            i = i + 1
+        }
+    }
+    let mut h = heap::new{ &mem }
+    let mut rm = res::open{ &fs, heap = &h, game } iferr err{ error } {
+        _ = @fmt(&io, "mgdump: can't open the game at {}: {}\n", game, error)
+        io::flush{ &io }
+        return 1
+    }
+    let mut failed: i32 = 0
+    if n >= 2 {
+        failed = dump{ &io, &fs, &rm, &h, module = names[0], area = names[1], all }
+    } else {
+        failed = failed + dump{ &io, &fs, &rm, &h, module = "tar_m03mg", area = "m03mg", all }
+        failed = failed + dump{ &io, &fs, &rm, &h, module = "tat_m17mg", area = "m17mg", all }
+        failed = failed + dump{ &io, &fs, &rm, &h, module = "manm26mg", area = "m26mg", all }
+        failed = failed + dump{ &io, &fs, &rm, &h, module = "M12ab", area = "m12ab", all }
+    }
+    res::close{ &fs, &rm }
+    io::flush{ &io }
+    return if failed == 0 { 0 } else { 1 }
+}
+
+fn dump { mut io: Io, mut fs: Fs, mut rm: res::Manager, mut h: heap::Heap, module: []u8, area: []u8, all: bool } -> i32 {
+    res::mount_module{ &fs, &rm, name = module, save = "" } iferr err{ error } {
+        _ = @fmt(&io, "{}: can't mount: {}\n", module, error)
+        return 1
+    }
+    let loaded = res::load{ &fs, rm, name = area, kind = restype::Type::are, realloc = heap::alloc, heap = &h } iferr err{ error } {
+        _ = @fmt(&io, "{}: {}\n", area, error)
+        return 1
+    }
+    let bytes = loaded ifnull {
+        _ = @fmt(&io, "{}: no such ARE\n", area)
+        return 1
+    }
+    let doc = gff::parse{ data = bytes, realloc = heap::alloc, heap = &h } iferr err{ error } {
+        _ = @fmt(&io, "{}: not a GFF: {}\n", area, error)
+        return 1
+    }
+    let found = mg::read_are{ doc, realloc = heap::alloc, heap = &h } iferr err{ error } {
+        _ = @fmt(&io, "{}: {}\n", area, error)
+        return 1
+    }
+    let a = found ifnull {
+        _ = @fmt(&io, "{} ({}): no MiniGame struct\n", area, module)
+        return 1
+    }
+    let kind: []u8 = if a.kind == mg::SWOOP { "swoop" } else { "turret" }
+    _ = @fmt(&io, "{} ({}): {}  clip {}..{}  fov {}  movement {}/s  lateral {}  inertia {} bumping {} plane {} dof {}  music '{}'\n",
+        area, module, kind, a.near_clip, a.far_clip, a.fov, a.movement_per_sec, a.lateral_accel, a.use_inertia, a.do_bumping,
+        a.bump_plane, a.dof, resref::bytes{ r = &a.music })
+    if a.mouse.present { _ = @fmt(&io, "  mouse axes {} {} flips {} {}\n", a.mouse.axis_x, a.mouse.axis_y, a.mouse.flip_x, a.mouse.flip_y) }
+    show_follower{ &io, who = "player", f = a.player }
+    _ = @fmt(&io, "  {} enemies, {} obstacles", a.enemies.len, a.obstacles.len)
+    let lyt_bytes = res::load{ &fs, rm, name = area, kind = restype::Type::lyt, realloc = heap::alloc, heap = &h } iferr { null }
+    if lyt_bytes != null {
+        let l = lyt::parse{ data = lyt_bytes, realloc = heap::alloc, heap = &h } iferr { return 1 }
+        _ = @fmt(&io, "; the LYT has {} tracks and {} obstacles", l.tracks.len, l.obstacles.len)
+    }
+    _ = @fmt(&io, "\n")
+    if all {
+        let mut i: usize = 0
+        while i < a.enemies.len {
+            show_follower{ &io, who = "enemy", f = a.enemies[i] }
+            i = i + 1
+        }
+        i = 0
+        while i < a.obstacles.len {
+            _ = @fmt(&io, "  obstacle {}\n", resref::bytes{ r = &a.obstacles[i] })
+            i = i + 1
+        }
+    }
+    return 0
+}
+
+fn show_follower { mut io: Io, who: []u8, f: mg::Follower } {
+    _ = @fmt(&io, "  {}: track '{}' loops {} sphere {} invincible {}s hp {}/{} trigger {}\n", who, resref::bytes{ r = &f.track }, f.num_loops,
+        f.sphere_radius, f.invincibility, f.hit_points, f.max_hit_points, f.trigger)
+    let mut i: usize = 0
+    while i < f.model_count {
+        _ = @fmt(&io, "    model {} rotating {}\n", resref::bytes{ r = &f.models[i].name }, f.models[i].rotating)
+        i = i + 1
+    }
+    i = 0
+    while i < mg::SLOT_COUNT {
+        if not resref::is_empty{ r = f.scripts[i] } { _ = @fmt(&io, "    script {} = {}\n", mg::slot_label{ i }, resref::bytes{ r = &f.scripts[i] }) }
+        i = i + 1
+    }
+    i = 0
+    while i < f.bank_count {
+        let b = f.banks[i]
+        _ = @fmt(&io, "    bank {}: gun {} bullet {} damage {} rate {} speed {} life {} target {} fire '{}' hit '{}'\n", b.id,
+            resref::bytes{ r = &b.gun_model }, resref::bytes{ r = &b.bullet_model }, b.damage, b.rate_of_fire, b.speed, b.lifespan,
+            b.target_type, resref::bytes{ r = &b.fire_sound }, resref::bytes{ r = &b.collision_sound })
+        i = i + 1
+    }
+    if f.camera_rotate or not resref::is_empty{ r = f.camera } {
+        _ = @fmt(&io, "    camera '{}' rotate {}\n", resref::bytes{ r = &f.camera }, f.camera_rotate)
+    }
+    if who.len == 6 {
+        _ = @fmt(&io, "    speed {}..{} accel_secs {} start ({} {} {}) tunnel + ({} {} {}) - ({} {} {}) infinite {} {} {}\n", f.min_speed, f.max_speed, f.accel_secs,
+            f.start_offset.x, f.start_offset.y, f.start_offset.z, f.tunnel_pos.x, f.tunnel_pos.y, f.tunnel_pos.z,
+            f.tunnel_neg.x, f.tunnel_neg.y, f.tunnel_neg.z, f.tunnel_infinite[0], f.tunnel_infinite[1], f.tunnel_infinite[2])
+    }
+}

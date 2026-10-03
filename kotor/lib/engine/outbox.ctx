@@ -30,6 +30,9 @@ namespace outbox {
         end_game{ show_gui: bool },                         // EndGame: the credits and the end-game panel
         open_store{ store: u32, customer: u32, markup: i32, markdown: i32 },   // OpenStore, bonuses clamped to +-100
         upgrade_screen{ item: u32 },                        // ShowUpgradeScreen (OBJECT_INVALID: pick one)
+        // PlayPazaak: the opponent's pazaakdecks.2da row (negative: random), the script to run after, the
+        // wager limit (already clamped to the gold), the tutorial, the opponent creature
+        pazaak{ deck: i32, end_script: resref::ResRef, max_wager: i32, tutorial: bool, opponent: u32 },
     }
 
     // Text copied into the outbox's buffer, valid until the outbox is drained.

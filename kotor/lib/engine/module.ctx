@@ -167,6 +167,10 @@ namespace modload {
         a.fog_far = tmpl::real{ doc, s, label = "SunFogFar", default = 100.0 }
         a.fog_color = @trunc(u32, tmpl::number{ doc, s, label = "SunFogColor", default = 0 })
         a.load_screen = @trunc(u32, tmpl::number{ doc, s, label = "LoadScreenID", default = 0 })
+        // the four minigame areas carry a MiniGame struct (docs/design/minigames.md)
+        a.minigame = null
+        let setup = try mg::read_are(arena::Arena){ doc = doc.*, realloc = arena::alloc, heap = w.mod_arena }
+        if setup is some{ value = m } { a.minigame = try alloc::new(mg::Area, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, value = m } }
         tmpl::script{ doc, s, o, label = "OnEnter", slot = obj::Slot::enter }
         tmpl::script{ doc, s, o, label = "OnExit", slot = obj::Slot::exit }
         tmpl::script{ doc, s, o, label = "OnHeartbeat", slot = obj::Slot::heartbeat }
@@ -622,6 +626,7 @@ namespace modload {
         w.layout = null
         w.paths = null
         w.vis = null
+        w.minigame = null
         w.module = obj::INVALID
         w.area = obj::INVALID
         let pc = world::object{ w = &w, id = w.pc }

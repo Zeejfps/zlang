@@ -45,7 +45,11 @@ fn run {
     if opts.module.len > 0 or opts.no_render {
         try modload::enter{ w, name = if opts.module.len > 0 { opts.module } else { "end_m01aa" } }
         arena::reset{ heap = &scratch }
+        if opts.run_script.len > 0 { _ = scripts::run{ w, &vm, engine, name = resref::truncate{ name = opts.run_script }, self = w.area } }
     }
+    // HOOK(minigames): a minigame area gets its run (game/minigame.ctx); the scene does the same in play.ctx.
+    let mut mg_models = mdl_cache::new{ rm = w.rm.*, keep = &module_arena }
+    if opts.no_render and w.module != obj::INVALID { _ = try mg_game::enter{ w, models = &mg_models } }
 
     if opts.no_render {
         let mut frame: u64 = 0
@@ -53,7 +57,20 @@ fn run {
         while opts.frames == 0 or frame < opts.frames {
             clock::advance{ c = &w.clock, seconds = dt }
             world::tick{ w, &vm, engine }
+            // headless there is no one at the controls: the gear key is pressed twice a second, for tests
+            let mr = w.minigame
+            if mr != null { mr.input.fire = frame % 15 == 0 }
+            mg_game::step{ w, &vm, engine, dt }
+            // HOOK(minigames): headless, the AI plays a pazaak game the script asked for (game/pazaak.ctx).
+            let notes = outbox::notes{ out = &w.out }
+            let mut asked: ?pz_game::Request = null
+            let mut n: usize = 0
+            while n < notes.len {
+                if pz_game::request_of{ note = notes[n] } is some{ value = r } { asked = r }
+                n = n + 1
+            }
             outbox::clear{ out = &w.out }
+            if asked is some{ value = r } { try pz_game::visit_auto{ w, &vm, engine, r } }
             arena::reset{ heap = &scratch }
             frame = frame + 1
         }

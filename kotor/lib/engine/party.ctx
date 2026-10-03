@@ -26,6 +26,10 @@ namespace party {
         // SpawnAvailableNPC makes it from, and the XP pool is PT_XP_POOL.
         templates: [12]resref::ResRef,
         xp_pool: i32,
+        // pazaak (docs/re/pazaak.md): the cards owned by id, the side deck chosen last, the last result
+        pazaak_cards: [18]i32,
+        pazaak_deck: [10]i32,
+        pazaak_won: bool,
     }
 
     fn new {} -> Party {
@@ -34,6 +38,7 @@ namespace party {
             selectable = [false; 12], gold = 0, solo = false,
             saved_slots = [-1; 3], saved_count = 0, saved_leader = -1,
             templates = [resref::empty{}; 12], xp_pool = 0,
+            pazaak_cards = [2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], pazaak_deck = [-1; 10], pazaak_won = false,
         }
     }
 

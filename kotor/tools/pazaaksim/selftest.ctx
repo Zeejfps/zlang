@@ -1,0 +1,157 @@
+// The self test of pazaaksim (--selftest): the rules and the AI on hand-made situations, with the
+// answers the original's code gives (docs/re/pazaak.md).
+
+// A side with the given table (values of main-deck cards 1..10, 0 for none) and hand (card ids, -1 none).
+fn side_with { table: [9]i32, hand: [4]i32 } -> pazaak::Side {
+    let mut s = pazaak::new_side{}
+    let mut i: usize = 0
+    while i < 9 {
+        if table[i] > 0 { s.table[i] = pazaak::make_card{ id = pazaak::FIRST_MAIN + table[i] - 1 } }
+        i = i + 1
+    }
+    i = 0
+    while i < 4 {
+        if hand[i] >= 0 { s.hand[i] = pazaak::make_card{ id = hand[i] } }
+        i = i + 1
+    }
+    return s
+}
+
+fn expect { mut io: Io, mut failed: i32, what: []u8, got: i32, want: i32 } {
+    if got != want {
+        _ = @fmt(&io, "FAIL {}: got {} want {}\n", what, got, want)
+        failed = failed + 1
+    }
+}
+
+fn flag { b: bool } -> i32 { return if b { 1 } else { 0 } }
+
+fn result_id { r: pazaak::SetResult } -> i32 { return @as(i32, @as(u8, r)) }
+
+// One step of the AI with `me` as the opponent and `them` as the player, in `state`.
+fn ai_from { me: pazaak::Side, them: pazaak::Side, state: i32 } -> pazaak::Game {
+    let mut g = pazaak::new_game{ seed = 1, wager = 0 }
+    g.opponent = me
+    g.player = them
+    g.ai[1] = state
+    _ = pazaak::ai_step{ g = &g, who = pazaak::Who::opponent }
+    return g
+}
+
+fn run_selftest { mut io: Io } -> i32 {
+    let mut failed: i32 = 0
+    let none: [4]i32 = [-1, -1, -1, -1]
+    // cards: +3, -2, a flip card of 4 either way
+    expect{ &io, &failed, what = "plus", got = pazaak::card_value{ c = pazaak::make_card{ id = 2 } }, want = 3 }
+    expect{ &io, &failed, what = "minus", got = pazaak::card_value{ c = pazaak::make_card{ id = 7 } }, want = -2 }
+    expect{ &io, &failed, what = "flip", got = pazaak::card_value{ c = pazaak::make_card{ id = 15 } }, want = 4 }
+    expect{ &io, &failed, what = "flipped", got = pazaak::card_value{ c = pazaak::Card{ id = 15, flipped = true } }, want = -4 }
+    expect{ &io, &failed, what = "parse +3", got = pazaak::parse_card{ text = "+3" } ifnull -9, want = 2 }
+    expect{ &io, &failed, what = "parse -2", got = pazaak::parse_card{ text = "-2" } ifnull -9, want = 7 }
+    expect{ &io, &failed, what = "parse *4", got = pazaak::parse_card{ text = "*4" } ifnull -9, want = 15 }
+    expect{ &io, &failed, what = "parse junk", got = pazaak::parse_card{ text = "+7" } ifnull -9, want = -9 }
+    // the table: 20 stands, a ninth card stands
+    let mut a = side_with{ table = [10, 7, 0, 0, 0, 0, 0, 0, 0], hand = none }
+    pazaak::place_card{ s = &a, c = pazaak::make_card{ id = pazaak::FIRST_MAIN + 2 } }
+    expect{ &io, &failed, what = "20 total", got = pazaak::total_of{ s = a }, want = 20 }
+    expect{ &io, &failed, what = "20 stands", got = flag{ b = a.standing }, want = 1 }
+    let mut nine = side_with{ table = [1, 1, 1, 1, 1, 1, 1, 1, 0], hand = none }
+    pazaak::place_card{ s = &nine, c = pazaak::make_card{ id = pazaak::FIRST_MAIN } }
+    expect{ &io, &failed, what = "nine stands", got = flag{ b = nine.standing }, want = 1 }
+    // judging: undecided until both stand, higher wins, equal ties, a bust loses, two busts tie
+    let mut g = pazaak::new_game{ seed = 1, wager = 0 }
+    g.player = side_with{ table = [10, 8, 0, 0, 0, 0, 0, 0, 0], hand = none }
+    g.opponent = side_with{ table = [10, 7, 0, 0, 0, 0, 0, 0, 0], hand = none }
+    expect{ &io, &failed, what = "undecided", got = result_id{ r = pazaak::judge_set{ g = &g } }, want = result_id{ r = pazaak::SetResult::undecided } }
+    g.player.standing = true
+    g.opponent.standing = true
+    expect{ &io, &failed, what = "player wins", got = result_id{ r = pazaak::judge_set{ g = &g } }, want = result_id{ r = pazaak::SetResult::player } }
+    g.opponent = side_with{ table = [10, 8, 0, 0, 0, 0, 0, 0, 0], hand = none }
+    g.opponent.standing = true
+    expect{ &io, &failed, what = "tie", got = result_id{ r = pazaak::judge_set{ g = &g } }, want = result_id{ r = pazaak::SetResult::tie } }
+    g.player = side_with{ table = [10, 9, 5, 0, 0, 0, 0, 0, 0], hand = none }
+    expect{ &io, &failed, what = "bust loses", got = result_id{ r = pazaak::judge_set{ g = &g } }, want = result_id{ r = pazaak::SetResult::opponent } }
+    g.opponent = side_with{ table = [10, 9, 6, 0, 0, 0, 0, 0, 0], hand = none }
+    expect{ &io, &failed, what = "two busts tie", got = result_id{ r = pazaak::judge_set{ g = &g } }, want = result_id{ r = pazaak::SetResult::tie } }
+    // the AI, state 1 (after its draw), against a player on 15 who has not stood
+    let calm = side_with{ table = [10, 5, 0, 0, 0, 0, 0, 0, 0], hand = none }
+    let r1 = ai_from{ me = side_with{ table = [10, 8, 0, 0, 0, 0, 0, 0, 0], hand = none }, them = calm, state = 1 }
+    expect{ &io, &failed, what = "stands on 18", got = r1.ai[1], want = pazaak::AI_STOOD }
+    expect{ &io, &failed, what = "18 is standing", got = flag{ b = r1.opponent.standing }, want = 1 }
+    let r2 = ai_from{ me = side_with{ table = [7, 5, 0, 0, 0, 0, 0, 0, 0], hand = none }, them = calm, state = 1 }
+    expect{ &io, &failed, what = "ends the turn on 12", got = r2.ai[1], want = pazaak::AI_ENDED }
+    let r3 = ai_from{ me = side_with{ table = [10, 6, 0, 0, 0, 0, 0, 0, 0], hand = none }, them = calm, state = 1 }
+    expect{ &io, &failed, what = "stands on 16", got = r3.ai[1], want = pazaak::AI_STOOD }
+    let r4 = ai_from{ me = side_with{ table = [10, 5, 0, 0, 0, 0, 0, 0, 0], hand = none }, them = calm, state = 1 }
+    expect{ &io, &failed, what = "ends the turn on 15", got = r4.ai[1], want = pazaak::AI_ENDED }
+    // a +3 makes 20 out of 17; a +2 makes 19 and a +1 makes 18, both worth it from a table of 17
+    let r5 = ai_from{ me = side_with{ table = [10, 7, 0, 0, 0, 0, 0, 0, 0], hand = [2, -1, -1, -1] }, them = calm, state = 1 }
+    expect{ &io, &failed, what = "plays +3 for 20", got = r5.ai[1], want = pazaak::AI_PLAYED }
+    expect{ &io, &failed, what = "20 reached", got = pazaak::total_of{ s = r5.opponent }, want = 20 }
+    let r6 = ai_from{ me = side_with{ table = [10, 7, 0, 0, 0, 0, 0, 0, 0], hand = [1, -1, -1, -1] }, them = calm, state = 1 }
+    expect{ &io, &failed, what = "plays +2 for 19", got = r6.ai[1], want = pazaak::AI_PLAYED }
+    let r7 = ai_from{ me = side_with{ table = [10, 7, 0, 0, 0, 0, 0, 0, 0], hand = [0, -1, -1, -1] }, them = calm, state = 1 }
+    expect{ &io, &failed, what = "plays +1 for 18", got = r7.ai[1], want = pazaak::AI_PLAYED }
+    // a +1 on a table of 12 would make only 13: not played, the turn ends
+    let r7b = ai_from{ me = side_with{ table = [7, 5, 0, 0, 0, 0, 0, 0, 0], hand = [0, -1, -1, -1] }, them = calm, state = 1 }
+    expect{ &io, &failed, what = "keeps a +1 on 12", got = r7b.ai[1], want = pazaak::AI_ENDED }
+    // a bust is fixed with a minus card (24 - 3 = 21 is no fix: nothing playable, so the turn ends)
+    let r8 = ai_from{ me = side_with{ table = [10, 9, 5, 0, 0, 0, 0, 0, 0], hand = [9, -1, -1, -1] }, them = calm, state = 1 }
+    expect{ &io, &failed, what = "fixes a bust with -4", got = r8.ai[1], want = pazaak::AI_PLAYED }
+    expect{ &io, &failed, what = "bust fixed", got = pazaak::total_of{ s = r8.opponent }, want = 20 }
+    let r9 = ai_from{ me = side_with{ table = [10, 9, 5, 0, 0, 0, 0, 0, 0], hand = [8, -1, -1, -1] }, them = calm, state = 1 }
+    expect{ &io, &failed, what = "-3 on 24 still busts", got = r9.ai[1], want = pazaak::AI_ENDED }
+    // behind a player who stands on 19 with 17 on the table: draw again
+    let mut high = side_with{ table = [10, 9, 0, 0, 0, 0, 0, 0, 0], hand = none }
+    high.standing = true
+    let r10 = ai_from{ me = side_with{ table = [10, 7, 0, 0, 0, 0, 0, 0, 0], hand = none }, them = high, state = 1 }
+    expect{ &io, &failed, what = "behind a standing 19", got = r10.ai[1], want = pazaak::AI_ENDED }
+    // ahead of a player who stands: stand
+    let r10b = ai_from{ me = side_with{ table = [10, 8, 0, 0, 0, 0, 0, 0, 0], hand = none }, them = side_with{ table = [10, 5, 0, 0, 0, 0, 0, 0, 0], hand = none }, state = 1 }
+    expect{ &io, &failed, what = "ahead", got = r10b.ai[1], want = pazaak::AI_STOOD }
+    // states 3 and 4 end the turn; a standing side draws nothing in state 0; otherwise it draws
+    let r11 = ai_from{ me = side_with{ table = [10, 5, 0, 0, 0, 0, 0, 0, 0], hand = none }, them = calm, state = 3 }
+    expect{ &io, &failed, what = "state 3 is over", got = r11.ai[1], want = pazaak::AI_IDLE }
+    let mut st = side_with{ table = [10, 8, 0, 0, 0, 0, 0, 0, 0], hand = none }
+    st.standing = true
+    let r12 = ai_from{ me = st, them = calm, state = 0 }
+    expect{ &io, &failed, what = "a standing side does not draw", got = r12.ai[1], want = pazaak::AI_IDLE }
+    let r13 = ai_from{ me = side_with{ table = [4, 0, 0, 0, 0, 0, 0, 0, 0], hand = none }, them = calm, state = 0 }
+    expect{ &io, &failed, what = "draws", got = r13.ai[1], want = pazaak::AI_DREW }
+    expect{ &io, &failed, what = "two cards after the draw", got = @as(i32, pazaak::table_count{ s = r13.opponent }), want = 2 }
+    // a hand is four distinct cards of the ten
+    let mut rng = pazaak::make_rng{ seed = 9 }
+    let mut dealt = pazaak::new_side{}
+    pazaak::deal_hand{ rng = &rng, side = &dealt, deck = pazaak::deck_cards{ ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] } }
+    let mut seen: i32 = 0
+    let mut k: usize = 0
+    while k < 4 {
+        seen = seen | (1 << dealt.hand[k].id)
+        k = k + 1
+    }
+    let mut bits: i32 = 0
+    k = 0
+    while k < 10 {
+        if (seen & (1 << @as(i32, k))) != 0 { bits = bits + 1 }
+        k = k + 1
+    }
+    expect{ &io, &failed, what = "four distinct hand cards", got = bits, want = 4 }
+    // the main deck holds four of each value
+    let mut counts: [28]i32 = [0; 28]
+    let mut deck_game = pazaak::new_game{ seed = 5, wager = 0 }
+    k = 0
+    while k < 40 {
+        let c = pazaak::take_main_card{ g = &deck_game }
+        counts[@as(usize, c.id)] = counts[@as(usize, c.id)] + 1
+        k = k + 1
+    }
+    let mut ok = true
+    k = 18
+    while k < 28 {
+        if counts[k] != 4 { ok = false }
+        k = k + 1
+    }
+    expect{ &io, &failed, what = "the main deck is four of each", got = flag{ b = ok }, want = 1 }
+    if failed == 0 { io::println{ &io, s = "selftest: all passed" } } else { _ = @fmt(&io, "selftest: {} failed\n", failed) }
+    return failed
+}

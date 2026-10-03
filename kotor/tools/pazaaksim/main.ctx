@@ -1,7 +1,9 @@
 // pazaaksim: plays thousands of pazaak matches with the AI on both sides, for sanity: no match
 // hangs or breaks a rule, and the win rates of the four decks in pazaakdecks.2da make sense.
 //
-//   kotor/tools/ctxc run kotor/tools/pazaaksim -- [--games N] [--seed S] [--game DIR]
+//   kotor/tools/ctxc run kotor/tools/pazaaksim -- [--games N] [--seed S] [--game DIR] [--selftest]
+//
+// --selftest checks the rules and the AI on hand-made situations (selftest.ctx) and stops.
 //
 // For every pair of decks (A for the "player", B for the opponent) it prints how often A wins,
 // the share of sets that tied and the average number of sets and of turns a match takes.
@@ -15,6 +17,7 @@ struct Tally {
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut game: []u8 = DEFAULT_GAME
+    let mut selftest = false
     let mut games: i32 = 2000
     let mut seed: u32 = 1
     let mut i: usize = 0
@@ -25,12 +28,20 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
         } else if slice::eq_bytes{ a = args[i], b = "--games" } and i + 1 < args.len {
             games = number{ s = args[i + 1] }
             i = i + 2
+        } else if slice::eq_bytes{ a = args[i], b = "--selftest" } {
+            selftest = true
+            i = i + 1
         } else if slice::eq_bytes{ a = args[i], b = "--seed" } and i + 1 < args.len {
             seed = @as(u32, number{ s = args[i + 1] })
             i = i + 2
         } else {
             i = i + 1
         }
+    }
+    if selftest {
+        let failed = run_selftest{ &io }
+        io::flush{ &io }
+        return if failed == 0 { 0 } else { 1 }
     }
     let mut h = heap::new{ &mem }
     let mut rm = res::open{ &fs, heap = &h, game } iferr err{ error } {

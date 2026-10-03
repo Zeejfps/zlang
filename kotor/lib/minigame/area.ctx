@@ -1,0 +1,254 @@
+// The minigame setup of an area (docs/re/minigames-swoop-turret.md section 1.4): the ARE's `MiniGame`
+// struct read into plain structs. Only four areas have one: the swoop races m03mg, m17mg and
+// m26mg and the Ebon Hawk turret m12ab. The track and obstacle placements come from the area's
+// LYT (lib/formats/lyt.ctx).
+//
+//   let a = try mg::read_are{ doc, realloc = heap::alloc, heap = &h }     // ?mg::Area, null for any other area
+//   mg::free_area{ a, realloc = heap::alloc, heap = &h }
+namespace mg {
+    const SWOOP: u32 = 1
+    const TURRET: u32 = 2
+
+    const MAX_MODELS: usize = 8
+    const MAX_BANKS: usize = 4
+
+    // The ten script slots of a follower, in the engine's order.
+    const ON_CREATE: usize = 0
+    const ON_HIT_BULLET: usize = 1
+    const ON_HIT_FOLLOWER: usize = 2
+    const ON_ANIM_EVENT: usize = 3
+    const ON_HEARTBEAT: usize = 4
+    const ON_DAMAGE: usize = 5
+    const ON_DEATH: usize = 6
+    const ON_FIRE: usize = 7
+    const ON_HIT_OBSTACLE: usize = 8
+    const ON_TRACK_LOOP: usize = 9
+    const SLOT_COUNT: usize = 10
+
+    // The ARE's script labels, by slot.
+    fn slot_label { i: usize } -> []u8 {
+        return match i {
+            0 => { "OnCreate" }
+            1 => { "OnHitBullet" }
+            2 => { "OnHitFollower" }
+            3 => { "OnAnimEvent" }
+            4 => { "OnHeartbeat" }
+            5 => { "OnDamage" }
+            6 => { "OnDeath" }
+            7 => { "OnFire" }
+            8 => { "OnHitObstacle" }
+            else => { "OnTrackLoop" }
+        }
+    }
+
+    struct ModelRef { name: resref::ResRef, rotating: bool }
+
+    // A weapon: its gun model hangs on node `gunbank<id>` of the vehicle; a shot is `bullet`.
+    struct Bank {
+        id: u32,
+        gun_model: resref::ResRef, fire_sound: resref::ResRef,
+        bullet_model: resref::ResRef, collision_sound: resref::ResRef,
+        damage: u32, lifespan: f32, rate_of_fire: f32, speed: f32, target_type: u32,
+        inaccuracy: f32, sensing_radius: f32, horiz_spread: f32, vert_spread: f32,    // enemies aim by these
+    }
+
+    // The player's vehicle or an enemy, pad or fighter: something that rides a track.
+    struct Follower {
+        track: resref::ResRef,              // the model whose `track` animation is its path
+        num_loops: i32,                     // -1: forever
+        sphere_radius: f32, invincibility: f32,
+        hit_points: u32, max_hit_points: u32, bump_damage: i32,
+        death_sound: resref::ResRef, engine_sound: resref::ResRef,
+        models: [8]ModelRef, model_count: usize,
+        scripts: [10]resref::ResRef,
+        banks: [4]Bank, bank_count: usize,
+        trigger: bool,                      // a pad: touching it only runs scripts
+        // the player only
+        camera: resref::ResRef, camera_rotate: bool,
+        min_speed: f32, max_speed: f32, accel_secs: f32,
+        start_offset: math::Vec3, target_offset: math::Vec3,
+        tunnel_pos: math::Vec3, tunnel_neg: math::Vec3, tunnel_infinite: [3]bool,
+    }
+
+    struct Mouse { present: bool, axis_x: u32, axis_y: u32, flip_x: bool, flip_y: bool }
+
+    struct Area {
+        kind: u32,                          // SWOOP or TURRET
+        near_clip: f32, far_clip: f32, fov: f32,
+        bump_plane: u32, dof: u32,
+        use_inertia: bool, do_bumping: bool,
+        movement_per_sec: f32, lateral_accel: f32,
+        music: resref::ResRef,              // empty for none
+        mouse: Mouse,
+        player: Follower,
+        enemies: []mut Follower,
+        obstacles: []mut resref::ResRef,    // obstacle model names (<area>_mgo01 ...)
+    }
+
+    // ---- reading
+
+    // A resref field; a lone space (the toolset's "none") and a missing field are empty.
+    fn ref_of { doc: gff::Doc, s: u32, label: []u8 } -> resref::ResRef {
+        let text = gff::get_resref{ doc, s, label } ifnull ""
+        let mut a: usize = 0
+        while a < text.len and text[a] == ' ' { a = a + 1 }
+        if a >= text.len { return resref::empty{} }
+        return resref::truncate{ name = text[a..] }
+    }
+
+    fn float_of { doc: gff::Doc, s: u32, label: []u8, fallback: f32 } -> f32 { return gff::get_float{ doc, s, label } ifnull fallback }
+
+    fn number_of { doc: gff::Doc, s: u32, label: []u8, fallback: i64 } -> i64 { return gff::get_number{ doc, s, label } ifnull fallback }
+
+    fn vector_of { doc: gff::Doc, s: u32, x: []u8, y: []u8, z: []u8 } -> math::Vec3 {
+        return math::Vec3{ x = float_of{ doc, s, label = x, fallback = 0.0 }, y = float_of{ doc, s, label = y, fallback = 0.0 }, z = float_of{ doc, s, label = z, fallback = 0.0 } }
+    }
+
+    fn read_scripts { doc: gff::Doc, s: u32 } -> [10]resref::ResRef {
+        let mut out: [10]resref::ResRef = [resref::empty{}; 10]
+        let ss = gff::get_struct{ doc, s, label = "Scripts" } ifnull { return out }
+        let mut i: usize = 0
+        while i < SLOT_COUNT {
+            out[i] = ref_of{ doc, s = ss, label = slot_label{ i } }
+            i = i + 1
+        }
+        return out
+    }
+
+    fn no_bank {} -> Bank {
+        return Bank{
+            id = 0, gun_model = resref::empty{}, fire_sound = resref::empty{}, bullet_model = resref::empty{}, collision_sound = resref::empty{},
+            damage = 0, lifespan = 0.0, rate_of_fire = 0.0, speed = 0.0, target_type = 0,
+            inaccuracy = 0.0, sensing_radius = 0.0, horiz_spread = 0.0, vert_spread = 0.0,
+        }
+    }
+
+    fn read_bank { doc: gff::Doc, s: u32 } -> Bank {
+        let mut b = Bank{
+            id = @as(u32, number_of{ doc, s, label = "BankID", fallback = 0 }),
+            gun_model = ref_of{ doc, s, label = "Gun_Model" }, fire_sound = ref_of{ doc, s, label = "Fire_Sound" },
+            bullet_model = resref::empty{}, collision_sound = resref::empty{},
+            damage = 0, lifespan = 0.0, rate_of_fire = 0.0, speed = 0.0, target_type = 0,
+            inaccuracy = float_of{ doc, s, label = "Inaccuracy", fallback = 0.0 },
+            sensing_radius = float_of{ doc, s, label = "Sensing_Radius", fallback = 0.0 },
+            horiz_spread = float_of{ doc, s, label = "Horiz_Spread", fallback = 0.0 },
+            vert_spread = float_of{ doc, s, label = "Vert_Spread", fallback = 0.0 },
+        }
+        let bs = gff::get_struct{ doc, s, label = "Bullet" } ifnull { return b }
+        b.bullet_model = ref_of{ doc, s = bs, label = "Bullet_Model" }
+        b.collision_sound = ref_of{ doc, s = bs, label = "Collision_Sound" }
+        b.damage = @as(u32, number_of{ doc, s = bs, label = "Damage", fallback = 0 })
+        b.lifespan = float_of{ doc, s = bs, label = "Lifespan", fallback = 0.0 }
+        b.rate_of_fire = float_of{ doc, s = bs, label = "Rate_Of_Fire", fallback = 0.0 }
+        b.speed = float_of{ doc, s = bs, label = "Speed", fallback = 0.0 }
+        b.target_type = @as(u32, number_of{ doc, s = bs, label = "Target_Type", fallback = 0 })
+        return b
+    }
+
+    // The player's struct or one entry of `Enemies`.
+    fn read_follower { doc: gff::Doc, s: u32 } -> Follower {
+        let none = ModelRef{ name = resref::empty{}, rotating = false }
+        let mut f = Follower{
+            track = ref_of{ doc, s, label = "Track" },
+            num_loops = @as(i32, number_of{ doc, s, label = "Num_Loops", fallback = -1 }),
+            sphere_radius = float_of{ doc, s, label = "Sphere_Radius", fallback = 1.0 },
+            invincibility = float_of{ doc, s, label = "Invince_Period", fallback = 0.0 },
+            hit_points = @as(u32, number_of{ doc, s, label = "Hit_Points", fallback = 100 }),
+            max_hit_points = @as(u32, number_of{ doc, s, label = "Max_HPs", fallback = 100 }),
+            bump_damage = @as(i32, number_of{ doc, s, label = "Bump_Damage", fallback = 0 }),
+            death_sound = resref::empty{}, engine_sound = resref::empty{},
+            models = [none; 8], model_count = 0,
+            scripts = read_scripts{ doc, s },
+            banks = [no_bank{}; 4], bank_count = 0,
+            trigger = number_of{ doc, s, label = "Trigger", fallback = 0 } != 0,
+            camera = ref_of{ doc, s, label = "Camera" }, camera_rotate = number_of{ doc, s, label = "CameraRotate", fallback = 0 } != 0,
+            min_speed = float_of{ doc, s, label = "Minimum_Speed", fallback = 0.0 },
+            max_speed = float_of{ doc, s, label = "Maximum_Speed", fallback = 0.0 },
+            accel_secs = float_of{ doc, s, label = "Accel_Secs", fallback = 0.0 },
+            start_offset = vector_of{ doc, s, x = "Start_Offset_X", y = "Start_Offset_Y", z = "Start_Offset_Z" },
+            target_offset = vector_of{ doc, s, x = "Target_Offset_X", y = "Target_Offset_Y", z = "Target_Offset_Z" },
+            tunnel_pos = vector_of{ doc, s, x = "TunnelXPos", y = "TunnelYPos", z = "TunnelZPos" },
+            tunnel_neg = vector_of{ doc, s, x = "TunnelXNeg", y = "TunnelYNeg", z = "TunnelZNeg" },
+            tunnel_infinite = [false; 3],
+        }
+        if gff::get_struct{ doc, s, label = "Sounds" } is some{ value = ss } {
+            f.death_sound = ref_of{ doc, s = ss, label = "Death" }
+            f.engine_sound = ref_of{ doc, s = ss, label = "Engine" }
+        }
+        if gff::get_list{ doc, s, label = "Models" } is some{ value = ms } {
+            let mut i: usize = 0
+            while i < ms.len and i < MAX_MODELS {
+                f.models[i] = ModelRef{ name = ref_of{ doc, s = ms[i], label = "Model" }, rotating = number_of{ doc, s = ms[i], label = "RotatingModel", fallback = 0 } != 0 }
+                i = i + 1
+            }
+            f.model_count = i
+        }
+        if gff::get_list{ doc, s, label = "Gun_Banks" } is some{ value = bs } {
+            let mut i: usize = 0
+            while i < bs.len and i < MAX_BANKS {
+                f.banks[i] = read_bank{ doc, s = bs[i] }
+                i = i + 1
+            }
+            f.bank_count = i
+        }
+        if gff::get_vector{ doc, s, label = "TunnelInfinite" } is some{ value = v } {
+            f.tunnel_infinite = [v[0] != 0.0, v[1] != 0.0, v[2] != 0.0]
+        }
+        return f
+    }
+
+    // The `MiniGame` struct of an ARE document, or null if the area has none. The follower lists
+    // are in `heap`.
+    fn read_are(S) { doc: gff::Doc, realloc: alloc::Fn(S), mut heap: S } -> !?Area {
+        let root: u32 = 0
+        let m = gff::get_struct{ doc, s = root, label = "MiniGame" } ifnull { return null }
+        let mut a = Area{
+            kind = @as(u32, number_of{ doc, s = m, label = "Type", fallback = 1 }),
+            near_clip = float_of{ doc, s = m, label = "Near_Clip", fallback = 0.1 },
+            far_clip = float_of{ doc, s = m, label = "Far_Clip", fallback = 2000.0 },
+            fov = float_of{ doc, s = m, label = "CameraViewAngle", fallback = 65.0 },
+            bump_plane = @as(u32, number_of{ doc, s = m, label = "Bump_Plane", fallback = 0 }),
+            dof = @as(u32, number_of{ doc, s = m, label = "DOF", fallback = 0 }),
+            use_inertia = number_of{ doc, s = m, label = "UseInertia", fallback = 1 } != 0,
+            do_bumping = number_of{ doc, s = m, label = "DoBumping", fallback = 0 } != 0,
+            movement_per_sec = float_of{ doc, s = m, label = "MovementPerSec", fallback = 0.0 },
+            lateral_accel = float_of{ doc, s = m, label = "LateralAccel", fallback = 60.0 },
+            music = ref_of{ doc, s = m, label = "Music" },
+            mouse = Mouse{ present = false, axis_x = 0, axis_y = 0, flip_x = false, flip_y = false },
+            player = read_follower{ doc, s = gff::get_struct{ doc, s = m, label = "Player" } ifnull m },
+            enemies = slice::empty(Follower){}, obstacles = slice::empty(resref::ResRef){},
+        }
+        if gff::get_struct{ doc, s = m, label = "Mouse" } is some{ value = ms } {
+            a.mouse = Mouse{
+                present = true, axis_x = @as(u32, number_of{ doc, s = ms, label = "AxisX", fallback = 0 }),
+                axis_y = @as(u32, number_of{ doc, s = ms, label = "AxisY", fallback = 0 }),
+                flip_x = number_of{ doc, s = ms, label = "FlipAxisX", fallback = 0 } != 0,
+                flip_y = number_of{ doc, s = ms, label = "FlipAxisY", fallback = 0 } != 0,
+            }
+        }
+        if gff::get_list{ doc, s = m, label = "Enemies" } is some{ value = es } {
+            let out = try alloc::resize(Follower, S){ realloc, &heap, mem = slice::empty(Follower){}, count = es.len }
+            let mut i: usize = 0
+            while i < es.len {
+                out[i] = read_follower{ doc, s = es[i] }
+                i = i + 1
+            }
+            a.enemies = out
+        }
+        if gff::get_list{ doc, s = m, label = "Obstacles" } is some{ value = os } {
+            let out = try alloc::resize(resref::ResRef, S){ realloc, &heap, mem = slice::empty(resref::ResRef){}, count = os.len }
+            let mut i: usize = 0
+            while i < os.len {
+                out[i] = ref_of{ doc, s = os[i], label = "Name" }
+                i = i + 1
+            }
+            a.obstacles = out
+        }
+        return a
+    }
+
+    fn free_area(S) { a: Area, realloc: alloc::Fn(S), mut heap: S } {
+        if a.enemies.len > 0 { _ = alloc::resize(Follower, S){ realloc, &heap, mem = a.enemies, count = 0 } }
+        if a.obstacles.len > 0 { _ = alloc::resize(resref::ResRef, S){ realloc, &heap, mem = a.obstacles, count = 0 } }
+    }
+}

@@ -205,6 +205,11 @@ fn run {
                 try one_frame{ &fs, &dev, &frame, &g, &w }
                 ci = ci + 1
             }
+        } else if slice::eq_bytes{ a = name, b = "state" } {
+            let m = w.s.m
+            _ = @fmt(&io, "state: stage {} phase {} you {} ({}) them {} ({}) sets {}-{} choose {} prompt {} timer {}\n", @as(u8, w.s.stage), @as(u8, m.phase),
+                pazaak::total_of{ s = m.g.player }, m.g.player.standing, pazaak::total_of{ s = m.g.opponent }, m.g.opponent.standing,
+                m.g.player.sets, m.g.opponent.sets, pazaak::can_choose{ m }, pazaak::has_prompt{ m }, m.timer)
         } else if slice::eq_bytes{ a = name, b = "bot" } {
             let mut n = number{ s = arg }
             while n > 0 and not w.s.done {

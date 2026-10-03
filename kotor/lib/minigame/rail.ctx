@@ -1,0 +1,70 @@
+// Rails (docs/re/minigames-swoop-turret.md 4.3): a track is a model whose `track` animation moves
+// the node `modelhook`; whatever rides the track sits at that node. The animation is sampled once
+// into a list of transforms, so following a rail needs neither the model nor its animation.
+//
+//   let rail = try mg::sample_rail(arena::Arena){ realloc = arena::alloc, heap, model, lookup }   // ?Rail
+//   let at = mg::rail_at{ rail, t = seconds, loops = -1 }                                    // Mat4 of modelhook
+namespace mg {
+    const RAIL_STEP: f32 = 0.05         // seconds between samples
+
+    struct Rail {
+        length: f32,                    // seconds of the animation; 0 for a model with none (a pad: one fixed point)
+        step: f32,
+        mats: []mut math::Mat4,         // modelhook in the track model's space at 0, step, 2 step ...
+    }
+
+    // The `modelhook` node of `model` along its `track` animation. A model without the animation
+    // gives a one-point rail at the bind pose; null if it has no `modelhook` either.
+    fn sample_rail(S) {
+        realloc: alloc::Fn(S), mut heap: S, model: *mdl::Model, lookup: &fn{ name: []u8 } -> ?*mdl::Model,
+    } -> !?Rail {
+        let hook = mdl::find_node{ model, name = "modelhook" } ifnull { return null }
+        let pose = try mdl_anim::make_pose(S){ realloc, &heap, model }
+        let found = mdl_anim::find{ model, name = "track", lookup }
+        if found == null {
+            mdl_anim::reset{ model, pose }
+            mdl_anim::finish{ model, pose }
+            let one = try alloc::resize(math::Mat4, S){ realloc, &heap, mem = slice::empty(math::Mat4){}, count = 1 }
+            one[0] = pose.world[hook]
+            return Rail{ length = 0.0, step = RAIL_STEP, mats = one }
+        }
+        let binding = try mdl_anim::bind(S){ realloc, &heap, model, animation = found.animation }
+        let length = found.animation.length
+        let count = @as(usize, length / RAIL_STEP) + 2
+        let mats = try alloc::resize(math::Mat4, S){ realloc, &heap, mem = slice::empty(math::Mat4){}, count }
+        let mut i: usize = 0
+        while i < count {
+            let t = math::min{ a = @as(f32, i) * RAIL_STEP, b = length }
+            mdl_anim::pose_at{ model, binding, time = t, pose }
+            mats[i] = pose.world[hook]
+            i = i + 1
+        }
+        return Rail{ length, step = RAIL_STEP, mats }
+    }
+
+    // The transform of the hook `t` seconds along the rail. `loops` is the track's Num_Loops: -1
+    // repeats it for ever, anything else holds the last point when the time runs out.
+    fn rail_at { rail: Rail, t: f32, loops: i32 } -> math::Mat4 {
+        if rail.mats.len == 0 { return math::mat4::identity{} }
+        if rail.length <= 0.0 or rail.mats.len == 1 { return rail.mats[0] }
+        let mut tt = t
+        if tt < 0.0 { tt = 0.0 }
+        if loops == -1 {
+            tt = math::fmodf{ x = tt, y = rail.length }
+        } else if tt > rail.length {
+            tt = rail.length
+        }
+        let at = tt / rail.step
+        let i = @as(usize, at)
+        if i + 1 >= rail.mats.len { return rail.mats[rail.mats.len - 1] }
+        let f = at - @as(f32, i)
+        let mut m = rail.mats[i]
+        let a = math::mat4::get_translation{ m = rail.mats[i] }
+        let b = math::mat4::get_translation{ m = rail.mats[i + 1] }
+        let p = math::vec3::lerp{ a, b, t = f }
+        m.m[12] = p.x
+        m.m[13] = p.y
+        m.m[14] = p.z
+        return m
+    }
+}

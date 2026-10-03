@@ -1,0 +1,108 @@
+// mgrun: a minigame's physics without scripts, scene or window (lib/minigame): the player rides its
+// rail at a given speed and steers, and the run reports where it is and what it hits.
+//
+//   kotor/tools/ctxc run kotor/tools/mgrun -- [--module tar_m03mg --area m03mg] [--speed 150] [--steer -1] [--seconds 30]
+//
+// Prints one line a second (time, rail seconds, position, lateral offset, speed) and each script
+// event the run raises (OnHitFollower, OnHitObstacle, ...).
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let mut game: []u8 = DEFAULT_GAME
+    let mut module: []u8 = "tar_m03mg"
+    let mut area: []u8 = "m03mg"
+    let mut speed: f32 = 150.0
+    let mut steer: f32 = 0.0
+    let mut seconds: f32 = 30.0
+    let mut i: usize = 0
+    while i + 1 < args.len {
+        if slice::eq_bytes{ a = args[i], b = "--game" } { game = args[i + 1] }
+        else if slice::eq_bytes{ a = args[i], b = "--module" } { module = args[i + 1] }
+        else if slice::eq_bytes{ a = args[i], b = "--area" } { area = args[i + 1] }
+        else if slice::eq_bytes{ a = args[i], b = "--speed" } { speed = number{ s = args[i + 1] } }
+        else if slice::eq_bytes{ a = args[i], b = "--steer" } { steer = number{ s = args[i + 1] } }
+        else if slice::eq_bytes{ a = args[i], b = "--seconds" } { seconds = number{ s = args[i + 1] } }
+        i = i + 2
+    }
+    let pages = mem::pages{ &mem, size = 268435456 } ifnull { return 1 }
+    let mut arena_ = arena::new{ buf = pages }
+    let mut h = heap::new{ &mem }
+    run{ &io, &fs, &h, keep = &arena_, game, module, area, speed, steer, seconds } iferr err{ error } {
+        _ = @fmt(&io, "mgrun: {}\n", error)
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return 0
+}
+
+fn number { s: []u8 } -> f32 {
+    let mut n: f32 = 0.0
+    let mut frac: f32 = 0.0
+    let mut scale: f32 = 1.0
+    let mut neg = false
+    let mut dot = false
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] == '-' { neg = true }
+        else if s[i] == '.' { dot = true }
+        else if s[i] >= '0' and s[i] <= '9' {
+            if dot {
+                scale = scale / 10.0
+                frac = frac + @as(f32, s[i] - '0') * scale
+            } else {
+                n = n * 10.0 + @as(f32, s[i] - '0')
+            }
+        }
+        i = i + 1
+    }
+    return if neg { -(n + frac) } else { n + frac }
+}
+
+fn run {
+    mut io: Io, mut fs: Fs, mut h: heap::Heap, mut keep: arena::Arena, game: []u8, module: []u8, area: []u8,
+    speed: f32, steer: f32, seconds: f32,
+} -> ! {
+    let mut rm = try res::open{ &fs, heap = &h, game }
+    defer res::close{ &fs, &rm }
+    try res::mount_module{ &fs, &rm, name = module, save = "" }
+    let are_bytes = try res::load{ &fs, rm, name = area, kind = restype::Type::are, realloc = heap::alloc, heap = &h } ifnull { return error_missing{ what = "ARE" } }
+    let doc = try gff::parse{ data = are_bytes, realloc = heap::alloc, heap = &h }
+    let found = try mg::read_are{ doc, realloc = heap::alloc, heap = &h }
+    let setup = found ifnull { return error_missing{ what = "MiniGame" } }
+    let area_ptr = try alloc::new(mg::Area, heap::Heap){ realloc = heap::alloc, heap = &h, value = setup }
+    let lyt_bytes = try res::load{ &fs, rm, name = area, kind = restype::Type::lyt, realloc = heap::alloc, heap = &h } ifnull { return error_missing{ what = "LYT" } }
+    let layout = try lyt::parse(arena::Arena){ data = lyt_bytes, realloc = arena::alloc, heap = &keep }
+    let mut models = mdl_cache::new{ rm, keep = &keep }
+    let lookup = mdl_cache::get{ fs = &fs, cache = &models, _ }
+    let r = try mg::make_run(arena::Arena){ realloc = arena::alloc, heap = &keep, area = area_ptr, layout, lookup }
+    // what the race's own scripts do at the green light: speed limits and the gear
+    r.speed = speed
+    r.min_speed = speed
+    r.max_speed = speed
+    r.accel = 0.0
+    r.tunnel_pos = math::Vec3{ x = 20.0, y = 0.0, z = 0.0 }
+    r.tunnel_neg = math::Vec3{ x = -20.0, y = 0.0, z = 0.0 }
+    r.input.x = steer
+    _ = @fmt(&io, "{} objects, {} rails; the player's rail is {} s long\n", r.count, r.rails.len, if r.objs[0].rail >= 0 { r.rails[@as(usize, r.objs[0].rail)].length } else { 0.0 })
+    let dt: f32 = 1.0 / 30.0
+    let mut t: f32 = 0.0
+    let mut next_report: f32 = 0.0
+    while t < seconds {
+        mg::step_run{ run = r, dt }
+        t = t + dt
+        while true {
+            let e = mg::take_event{ run = r } ifnull { break }
+            if e.slot != mg::ON_HEARTBEAT and e.slot != mg::ON_CREATE {
+                _ = @fmt(&io, "{} event: slot {} on object {} (last hit {} {})\n", t, e.slot, e.object - mg::ID_BASE, @wrap_sub(r.last_follower_hit, mg::ID_BASE), @wrap_sub(r.last_obstacle_hit, mg::ID_BASE))
+            }
+        }
+        if t >= next_report {
+            let p = r.objs[0].position
+            _ = @fmt(&io, "t {}  rail {}  at {} {} {}  offset {}  speed {}\n", t, r.objs[0].t, p.x, p.y, p.z, r.offset.x, r.speed)
+            next_report = next_report + 1.0
+        }
+    }
+}
+
+error error_missing{ what: strlit }

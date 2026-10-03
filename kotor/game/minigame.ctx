@@ -1,0 +1,47 @@
+// The game's side of the swoop races and the turret (docs/design/minigames.md): an area with a
+// MiniGame struct gets a run (lib/minigame) in `w.minigame`, stepped each frame after the world,
+// whose script events are run here; the scene and the camera for it are below (scene part).
+namespace mg_game {
+    // Makes the run for the current area if it is a minigame area and starts it. False if the
+    // area is an ordinary one. `models` caches the track and obstacle models for their rails.
+    fn enter { mut w: world::World, mut models: mdl_cache::Cache } -> !bool {
+        let ao = world::object{ w = &w, id = w.area } ifnull { return false }
+        let a = obj::area{ o = ao } ifnull { return false }
+        let setup = a.minigame ifnull { return false }
+        let layout = w.layout ifnull { return false }
+        let lookup = mdl_cache::get{ fs = &w.fs, cache = &models, _ }
+        let run = try mg::make_run(arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, area = setup, layout, lookup }
+        w.minigame = run
+        mg::start_run{ run }
+        return true
+    }
+
+    // Runs the scripts the run has raised since the last call. A slot without a script gets the
+    // engine's default where there is one (death).
+    fn run_events { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
+        let run = w.minigame ifnull { return }
+        let mut guard: i32 = 0
+        while guard < 256 {
+            guard = guard + 1
+            let e = mg::take_event{ run } ifnull { break }
+            let script = mg::script_of{ run, slot = e.slot, object = e.object }
+            if resref::is_empty{ r = script } {
+                if e.slot == mg::ON_DEATH {
+                    if mg::slot_of{ run, id = e.object } is some{ value = n } { mg::default_death{ run, n } }
+                }
+                continue
+            }
+            _ = scripts::run{ &w, &vm, engine, name = script, self = e.object }
+        }
+    }
+
+    // One step of the run after the world's: physics, then the scripts it raised.
+    fn step { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, dt: f32 } {
+        let run = w.minigame ifnull { return }
+        mg::step_run{ run, dt }
+        run_events{ &w, &vm, engine }
+    }
+
+    // Forgets the run when its module is left (its memory is the module's).
+    fn leave { mut w: world::World } { w.minigame = null }
+}

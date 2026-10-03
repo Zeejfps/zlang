@@ -122,6 +122,7 @@ namespace world {
         fx_ids: rules::EffectIds,
         rev: rules::Events,
         conversation: dlg::State,           // the running conversation (lib/dialog)
+        minigame: ?*mut mg::Run,              // the swoop race or turret in progress, set up by the game loop (game/minigame.ctx); the SWMG_ routines' state
         // HOOK(party): the party table
     }
 
@@ -158,7 +159,7 @@ namespace world {
             module_frame = false,
             serial = 0,
             heartbeats = map::new(u32, u64, heap::Heap){ realloc = heap::alloc, heap, hash = map::hash_u32, eq = map::eq_u32 },
-            cursor_area = 0, cursor_shape = 0,
+            cursor_area = 0, cursor_shape = 0, minigame = null,
             conversation = dlg::new_state{},
             cursor_inside = 0, tokens = tokens::new{ heap }, last_acquired = obj::INVALID, last_acquired_from = obj::INVALID,
             rules = try alloc::new(rules::Tables, heap::Heap){ realloc = heap::alloc, heap, value = blank_rules },
@@ -364,7 +365,7 @@ namespace world {
                     unescapable = false, is_night = false, dyn_ambient = 0, sun_ambient = 0, sun_diffuse = 0, fog_on = false,
                     fog_near = 99.0, fog_far = 100.0, fog_color = 0, load_screen = 0, last_heartbeat = 0,
                     transition_token = 0, transition_pending = 0,
-                    stealth_xp_max = 0, stealth_xp_current = 0, stealth_xp_decrement = 0, stealth_xp_enabled = false,
+                    stealth_xp_max = 0, stealth_xp_current = 0, stealth_xp_decrement = 0, stealth_xp_enabled = false, minigame = null,
                 } } }
             }
             module => {

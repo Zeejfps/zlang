@@ -384,6 +384,7 @@ namespace obj {
         stealth_xp_current: i32,
         stealth_xp_decrement: i32,
         stealth_xp_enabled: bool,
+        minigame: ?*mut mg::Area,               // the ARE's MiniGame struct (lib/minigame); null for every other area. Module memory
     }
 
     struct Module {
