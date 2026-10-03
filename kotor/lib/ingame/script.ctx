@@ -43,6 +43,10 @@ namespace ingame {
             let mut a = actions::make{ kind = actions::Kind::attack_object }
             a.params[0] = actions::Param::object{ id = world::object_by_tag{ w = &w, tag, nth = 0 } }
             _ = actions::add{ &w, id = party::leader{ w = &w }, action = a, force = false }
+        } else if ci::eq{ a = cmd, b = "resize" } {
+            let x = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            let y = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            send{ &ui, &w, &dev, ev = sdl::Event::resized{ width = x, height = y } }
         } else if ci::eq{ a = cmd, b = "flash" } {
             let n = text::next_word{ &words } ifnull { return }
             notify{ &ui, which = @as(usize, text::scan_decimal{ s = n }) }

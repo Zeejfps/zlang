@@ -55,6 +55,7 @@ namespace play {
         ambience::start_area{ a = &amb, &w }
         // HOOK(ingame): the HUD and the in-game menus (docs/design/hud.md).
         let ui = try ingame::make{ &w, &dev, mixer, scratch = texture_scratch, width = @as(i32, opts.width), height = @as(i32, opts.height) }
+        if not opts.headless { _ = sdl::SDL_ShowCursor{ &sdl, toggle = 0 } }    // HOOK(ingame): the GUI draws the pointer
         let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
         let mut keys = ctl::no_keys{}
         let freq = sdl::counter_frequency{ &sdl }

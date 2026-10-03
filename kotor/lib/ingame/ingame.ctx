@@ -59,6 +59,25 @@ namespace ingame {
         material::free_cache{ cache = ui.cache, &dev }
     }
 
+    // The window changed size: the device and the GUI follow, and the HUD is opened again for the
+    // new size (its layout is fitted to the window).
+    fn resize { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, width: i32, height: i32 } {
+        if width < 320 or height < 240 { return }
+        gpu::resize{ &dev, width = @as(u32, width), height = @as(u32, height) } iferr { return }
+        ui.width = width
+        ui.height = height
+        gui::set_screen{ g = &ui.gui, fs = &w.fs, &dev, width, height, scale = 1.0 }
+        let was_hidden = ui.hud_hidden
+        hud::close{ h = &ui.hud, g = &ui.gui, &dev }
+        let h = hud::open{ g = &ui.gui, &w, &dev } iferr err{ error } {
+            _ = @fmt(&w.io, "kotor: HUD: {}\n", error)
+            return
+        }
+        ui.hud = h
+        hud::set_tooltips{ h = &ui.hud, g = &ui.gui, &w, text = &ui.text }
+        set_hud_hidden{ &ui, hidden = was_hidden }
+    }
+
     // Hides or shows the HUD (a conversation covers the screen with its own panels).
     fn set_hud_hidden { mut ui: Ingame, hidden: bool } {
         ui.hud_hidden = hidden
@@ -87,6 +106,10 @@ namespace ingame {
             if down and not repeat {
                 if handle_key{ &ui, &w, &dev, keycode } { return true }
             }
+        }
+        if ev is resized{ width, height } {
+            resize{ &ui, &w, &dev, width, height }
+            return false
         }
         if gui::handle_event{ g = &ui.gui, ev, scale_x, scale_y } { return true }
         if is_blocked{ &ui } { return false }

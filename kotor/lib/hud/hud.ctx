@@ -165,6 +165,14 @@ namespace hud {
         return member
     }
 
+    // Closes the HUD's panel and frees its minimap target (the window changed size, or the game ends).
+    fn close { mut h: Hud, mut g: gui::Gui, mut dev: gpu::Device } {
+        gui::close{ &g, id = h.panel }
+        let t = h.minimap.target
+        if t != null { gpu::free_target{ &dev, t } }
+        h.minimap.target = null
+    }
+
     // The member a widget shows, the inverse of widget_for; -1 for an empty widget.
     fn member_of_widget { count: usize, widget: usize } -> i32 {
         if count == 2 { return if widget == 0 { 0 } else if widget == 2 { 1 } else { -1 } }
