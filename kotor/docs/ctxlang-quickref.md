@@ -98,7 +98,9 @@ let p = try alloc::new(Thing, heap::Heap){ realloc = heap::alloc, heap = &h, val
 - Lists and maps keep a pointer to their allocator state: the state must outlive them.
 - **Escape check:** you can't return or store the address of a local (or anything derived from
   it) where it outlives the local. Put long-lived data in heap memory and keep pointers to it.
-- Arenas (`arena::new{ buf }`) for scratch; the heap for everything with a lifetime.
+- Arenas (`arena::new{ buf }`) for scratch; the heap for everything with a lifetime. For a big
+  arena's buffer, `mem::reserve{ &mem, size }` commits only what the arena reaches (Windows
+  commits all of `mem::pages` at once); nothing but an arena may use it.
 
 ## Capabilities and C (§15, §18)
 
