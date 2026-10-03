@@ -58,6 +58,7 @@ namespace chargen {
     fn bind_screen { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, screen: u32, p: u32 } -> ! {
         if screen == SCR_CLASS {
             draw_slot_portraits{ st }
+            st.slot_timer = [-1.0; SLOTS]
             try show_class_name{ st, &g, p, slot = 0 }
             gui::set_focus{ &g, panel = p, tag = "BTN_SEL1" }
         } else if screen == SCR_MAIN {

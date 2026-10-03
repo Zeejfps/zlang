@@ -2,7 +2,7 @@
 //
 //   let st = try chargen::begin{ &fs, &g, &dev, heap = fe.heap, seed }     // loads the rules tables, opens classsel
 //   each frame: for each GUI event: match chargen::on_event{ st, &g, &fs, &dev, ev } { running => {}, finished => ..., cancelled => ... }
-//               chargen::update{ st, dt }
+//               chargen::update{ st, &g, dt }
 //               chargen::draw_views{ st, &g, &frame, target }              // the 3D creatures, after the panels
 //   chargen::free{ st, &g, &dev }                                           // frees everything, closes the panels
 //
@@ -21,6 +21,7 @@ namespace chargen {
         scratch: *mut rules::Creature,      // a creature the screens ask the rules questions of
         // class selection
         slot_portrait: [SLOTS]i32,          // the random portrait each slot's creature shows
+        slot_timer: [SLOTS]f32,             // the button's grow or shrink in progress: seconds left, -1 none
         // the quick or custom list: which one is up and its step counter
         mode: u32,                          // 0 none yet, 1 quick, 2 custom
         step: i32,
@@ -65,7 +66,7 @@ namespace chargen {
         let st = try alloc::new(State, heap::Heap){ realloc = heap::alloc, heap, value = State{
             heap, tables, data, stack = [Entry{ screen = 0, panel = 0 }; 10], depth = 0, ch = fresh_choices{},
             rng = ltr::seed_rng{ seed }, player = slice::empty(u8){}, scratch,
-            slot_portrait = [0; SLOTS], mode = 0, step = 0, msg_panel = 0, msg_ask = Ask::nothing,
+            slot_portrait = [0; SLOTS], slot_timer = [-1.0; SLOTS], mode = 0, step = 0, msg_panel = 0, msg_ask = Ask::nothing,
             plist = [0; MAX_PORTRAITS], pcount = 0, pidx = 0, portrait_before = 0, appearance_before = 0,
             ab = [8; 6], ab_points = 0, ab_focus = 0, sk = [0; SKILLS], sk_points = 0, sk_focus = 0,
             frows = [FeatRow{ feat = 0, state = 0 }; MAX_FEAT_ROWS], fcount = 0, fpicks = 0, fchosen = [0; 8], fnchosen = 0, fsel = 0,

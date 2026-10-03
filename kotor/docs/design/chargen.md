@@ -47,6 +47,8 @@ The screens follow the original's behaviour (re/chargen.md has the addresses):
   large, Scout medium, Scoundrel small build, the portrait's three appearance columns). Hovering
   writes "Male Scout" and the description; the first button starts with the focus, so the screen
   opens with "Male Scoundrel". Clicking a button makes it the character.
+  The hilighted (hovered or focused) button grows to the large size and the others shrink, over a
+  quarter of a second, with its 3D frame (`animate_slots`, events.ctx); left and right move the focus.
 - **Summary** (`maincg`): name and class, the portrait, the 3D character, the six base scores, defense
   (10 + DEX + class bonus), vitality (hit die + CON) and the three saves of the first level. The value
   labels are blank until Quick builds the character or Attributes is accepted. The level-up panel's
@@ -63,6 +65,10 @@ The screens follow the original's behaviour (re/chargen.md has the addresses):
   Awareness 4, Treat Injury and Repair 2 and Dueling).
 - **Portrait.** The 15 portraits of the gender in table order, arrows wrap, each press changes the
   body and the head at once; Back restores the portrait the panel opened with.
+  The 3D head is drawn over the GUI, so the panel holds back the controls after `LBL_HEAD` (the
+  picture, the bevels, the arrow buttons) and draws them over it (`gui::set_overlay_after`,
+  `gui::draw_overlay`). The left and right arrow keys step the portrait; on the attributes and skills
+  panels they are minus and plus on the focused row (`gui::set_key_events`).
 - **Attributes.** 30 points over scores of 8 to 18; a step costs 1 below 14, 2 for 14 and 15, 3 from
   16 (6, 8, 10, 13, 16 points for 14 to 18); lowering gives back what the step cost. Recommended (while
   points remain) sets the class's scores, which cost exactly 30 for all three classes. Accept with
