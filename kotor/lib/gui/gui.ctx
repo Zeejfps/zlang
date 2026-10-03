@@ -1,0 +1,325 @@
+// The GUI manager (CSWGuiManager): the panel stack, the screen it draws on, the clocks, and
+// drawing the whole thing into a frame (docs/re/gui.md sections 2, 3 and 8; docs/design/gui.md).
+//
+//   let mut g = try gui::make{ heap = &h, rm, cache = &cache, width = 800, height = 600 }
+//   let id = try gui::open{ &g, &fs, &dev, name = "mainmenu", mode = gui::Mode::placed, modal = false }
+//   // each frame
+//   gui::update{ &g, dt }
+//   gui::draw{ &g, &frame }          // begins the UI pass itself
+namespace gui {
+    // Starts a Gui drawing into a window of `width` x `height` pixels. The shared texture
+    // `cache` and the heap outlive it. Fonts, backdrops, cursors and sounds load on `open` and
+    // `load_defaults`.
+    fn make { heap: *mut heap::Heap, rm: res::Manager, cache: *mut material::Cache, width: i32, height: i32 } -> !Gui {
+        let lines = try alloc::resize(Line, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(Line){}, count = MAX_LINES }
+        let mut cursors: [CURSORS]CursorSlot
+        let mut sounds: [SOUNDS]Sound
+        let mut backdrops: [5]Img
+        let mut g = Gui{
+            heap, rm, cache, tlk = null, mixer = null,
+            fonts = list::new(FontSlot, heap::Heap){ realloc = heap::alloc, heap },
+            panels = list::new(*mut Panel, heap::Heap){ realloc = heap::alloc, heap },
+            tokens = list::new(Token, heap::Heap){ realloc = heap::alloc, heap },
+            next_panel = 1,
+            win_w = width, win_h = height, scale = 1.0, ui_w = width, ui_h = height, small_fonts = false,
+            mouse_x = width / 2, mouse_y = height / 2, buttons = 0,
+            hover = Ref{ panel = 0, control = -1 }, capture = Ref{ panel = 0, control = -1 }, capture_button = 0, capture_part = 0,
+            cursor = 0, cursor_visible = true, cursors,
+            time = 0.0, pulse_border = 1.0, pulse_list = 1.0, hover_time = -1.0, tooltip_delay = 1.0, tooltips = true,
+            tooltip_ref = Ref{ panel = 0, control = -1 }, key_repeat = 0.0,
+            backdrops, backdrop_for = [-1, -1, -1, -1, -1],
+            sounds, sound_volume = 1.0,
+            events = list::new(Event, heap::Heap){ realloc = heap::alloc, heap },
+            dropped_events = 0, lines, quads_drawn = 0,
+        }
+        return g
+    }
+
+    // Frees the panels, fonts and strings. Textures belong to the shared cache.
+    fn free { mut g: Gui } {
+        let ps = list::items{ list = g.panels }
+        let mut i: usize = 0
+        while i < ps.len {
+            destroy_panel{ &g, p = ps[i] }
+            i = i + 1
+        }
+        list::free{ list = &g.panels }
+        let fs = list::items{ list = g.fonts }
+        i = 0
+        while i < fs.len {
+            if fs[i].ok { _ = alloc::resize(render::Glyph, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = fs[i].glyphs, count = 0 } }
+            i = i + 1
+        }
+        list::free{ list = &g.fonts }
+        let ts = list::items{ list = g.tokens }
+        i = 0
+        while i < ts.len {
+            free_string{ &g, s = ts[i].name }
+            free_string{ &g, s = ts[i].value }
+            i = i + 1
+        }
+        list::free{ list = &g.tokens }
+        list::free{ list = &g.events }
+        _ = alloc::resize(Line, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = g.lines, count = 0 }
+    }
+
+    fn set_tlk { mut g: Gui, table: *tlk::Table } { g.tlk = table }
+
+    fn set_mixer { mut g: Gui, mixer: *mut mix::Mixer } { g.mixer = mixer }
+
+    // ---- the screen
+
+    // The resolution tag the engine picks for a screen size (0x0040a3e0): 0 for 800x600 and every
+    // size it doesn't list, then 1 1024x768, 2 1280x960, 3 1280x1024, 4 1600x1200.
+    fn resolution_id { w: i32, h: i32 } -> i32 {
+        if w == 1024 and h == 768 { return 1 }
+        if w == 1280 and h == 960 { return 2 }
+        if w == 1280 and h == 1024 { return 3 }
+        if w == 1600 and h == 1200 { return 4 }
+        return 0
+    }
+
+    fn resolution_name { id: i32 } -> []u8 {
+        if id == 1 { return "1024x768" }
+        if id == 2 { return "1280x960" }
+        if id == 3 { return "1280x1024" }
+        if id == 4 { return "1600x1200" }
+        return "800x600"
+    }
+
+    fn backdrop_suffix { kind: u32 } -> []u8 {
+        if kind == 1 { return "store" }
+        if kind == 2 { return "pazaak" }
+        if kind == 3 { return "map" }
+        if kind == 4 { return "comp" }
+        return "back"
+    }
+
+    // Loads the backdrop picture `kind` (0 back, 1 store, 2 pazaak, 3 map, 4 comp) for the
+    // current resolution if it isn't yet. Panels call it when opened.
+    fn ensure_backdrop { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, kind: u32 } {
+        if kind >= 5 { return }
+        let res_id = resolution_id{ w = g.ui_w, h = g.ui_h }
+        if g.backdrop_for[kind] == res_id { return }
+        let a = resolution_name{ id = res_id }
+        let b = backdrop_suffix{ kind }
+        let mut buf: [40]u8
+        slice::copy(u8){ dst = buf[..a.len], src = a }
+        slice::copy(u8){ dst = buf[a.len..a.len + b.len], src = b }
+        g.backdrops[kind] = resolve_img{ &g, &fs, &dev, name = buf[..a.len + b.len] }
+        g.backdrop_for[kind] = res_id
+    }
+
+    // The window changed size (or the scale): the GUI's pixel space is the window over `scale`
+    // (1 is the original's, which never scales); panels are re-placed.
+    fn set_screen { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, width: i32, height: i32, scale: f32 } {
+        g.win_w = width
+        g.win_h = height
+        g.scale = if scale < 0.25 { 1.0 } else { scale }
+        g.ui_w = @as(i32, @as(f32, width) / g.scale)
+        g.ui_h = @as(i32, @as(f32, height) / g.scale)
+        let ps = list::items{ list = g.panels }
+        let mut i: usize = 0
+        while i < ps.len {
+            place{ &g, p = ps[i] }
+            if ps[i].mode == Mode::full_screen { ensure_backdrop{ &g, &fs, &dev, kind = ps[i].backdrop } }
+            i = i + 1
+        }
+    }
+
+    // ---- panels
+
+    fn find_panel { mut g: Gui, id: u32 } -> ?*mut Panel {
+        let ps = list::items{ list = g.panels }
+        let mut i: usize = 0
+        while i < ps.len {
+            if ps[i].id == id { return ps[i] }
+            i = i + 1
+        }
+        return null
+    }
+
+    // Closes panel `id`: it is removed after the current frame's drawing.
+    fn close { mut g: Gui, id: u32 } {
+        let p = find_panel{ &g, id } ifnull { return }
+        p.removing = true
+    }
+
+    // Removes closed panels and drops what pointed into them. Called by `update`.
+    fn reap { mut g: Gui } {
+        let mut i: usize = 0
+        while i < g.panels.len {
+            let p = list::items{ list = g.panels }[i]
+            if p.removing {
+                if g.hover.panel == p.id { g.hover = Ref{ panel = 0, control = -1 } }
+                if g.capture.panel == p.id { g.capture = Ref{ panel = 0, control = -1 } }
+                if g.tooltip_ref.panel == p.id { g.tooltip_ref = Ref{ panel = 0, control = -1 } }
+                destroy_panel{ &g, p }
+                let items = list::items{ list = g.panels }
+                let mut j = i
+                while j + 1 < items.len {
+                    items[j] = items[j + 1]
+                    j = j + 1
+                }
+                _ = list::pop{ list = &g.panels }
+            } else {
+                i = i + 1
+            }
+        }
+    }
+
+    // Whether any modal panel is open (the world pauses on it, docs/re/gameloop.md).
+    fn is_modal_open { mut g: Gui } -> bool {
+        let ps = list::items{ list = g.panels }
+        let mut i: usize = 0
+        while i < ps.len {
+            if ps[i].modal and not ps[i].removing { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Whether any full-screen panel is showing (the 3D world is hidden behind it).
+    fn is_covered { mut g: Gui } -> bool {
+        let ps = list::items{ list = g.panels }
+        let mut i: usize = 0
+        while i < ps.len {
+            if ps[i].mode == Mode::full_screen and not ps[i].removing { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Whether any panel is open.
+    fn has_panels { mut g: Gui } -> bool {
+        let ps = list::items{ list = g.panels }
+        let mut i: usize = 0
+        while i < ps.len {
+            if not ps[i].removing { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // The topmost modal panel, or null. With none, input goes to every panel from the front.
+    fn top_modal { mut g: Gui } -> ?*mut Panel {
+        let ps = list::items{ list = g.panels }
+        let mut i = ps.len
+        while i > 0 {
+            i = i - 1
+            if ps[i].modal and not ps[i].removing { return ps[i] }
+        }
+        return null
+    }
+
+    // Marks which panels show: walking from the top down, every panel shows until the first
+    // full-screen one has (0x0040acc0).
+    fn update_visibility { mut g: Gui } {
+        let ps = list::items{ list = g.panels }
+        let mut covered = false
+        let mut i = ps.len
+        while i > 0 {
+            i = i - 1
+            let p = ps[i]
+            p.shown = not covered and not p.removing
+            if p.shown and p.mode == Mode::full_screen { covered = true }
+        }
+    }
+
+    // ---- clocks
+
+    // A triangle wave between lo and 1 with half period 0.75 s.
+    fn wave { t: f32, lo: f32 } -> f32 {
+        let period: f32 = 1.5
+        let ph = t - period * math::floorf{ x = t / period }
+        let up = if ph < 0.75 { ph / 0.75 } else { 2.0 - ph / 0.75 }
+        return lo + (1.0 - lo) * up
+    }
+
+    // Advances the pulse clocks, the tooltip timer and the panels waiting to close. Call once a
+    // frame with the frame's duration in seconds.
+    fn update { mut g: Gui, dt: f32 } {
+        g.time = g.time + dt
+        g.pulse_border = wave{ t = g.time, lo = 0.4 }
+        g.pulse_list = wave{ t = g.time, lo = 0.2 }
+        if g.hover_time >= 0.0 { g.hover_time = g.hover_time + dt }
+        reap{ &g }
+        update_visibility{ &g }
+        update_tooltip{ &g }
+    }
+
+    // ---- drawing
+
+    // Draws every panel into the frame's UI pass: the backdrop behind full-screen panels, the
+    // panels from the back, modal ones after the rest, then the tooltip and the pointer.
+    // Starts the pass itself (the GUI's pixel space is the window over `scale`).
+    fn draw { mut g: Gui, mut frame: render::Frame } {
+        update_visibility{ &g }
+        render::begin_ui{ &frame, width = @as(f32, g.ui_w), height = @as(f32, g.ui_h), target = null }
+        let screen = rect_of{ x = 0, y = 0, w = g.ui_w, h = g.ui_h }
+        let ps = list::items{ list = g.panels }
+        let mut i: usize = 0
+        let mut kind: u32 = 0
+        let mut any_full = false
+        while i < ps.len {
+            if ps[i].shown and ps[i].mode == Mode::full_screen {
+                any_full = true
+                kind = ps[i].backdrop
+            }
+            i = i + 1
+        }
+        if any_full { draw_backdrop{ &g, &frame, kind } }
+        let mut pass: u32 = 0
+        while pass < 2 {
+            i = 0
+            while i < ps.len {
+                let p = ps[i]
+                if p.shown and (p.modal == (pass == 1)) { draw_panel{ &g, &frame, p, screen } }
+                i = i + 1
+            }
+            pass = pass + 1
+        }
+        draw_tooltip{ &g, &frame, screen }
+        draw_cursor{ &g, &frame, screen }
+    }
+
+    // Black behind, the resolution's picture stretched over the whole screen.
+    fn draw_backdrop { mut g: Gui, mut frame: render::Frame, kind: u32 } {
+        let screen = rect_of{ x = 0, y = 0, w = g.ui_w, h = g.ui_h }
+        put_fill{ &frame, x = 0.0, y = 0.0, w = @as(f32, g.ui_w), h = @as(f32, g.ui_h), color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }, clip = screen }
+        if kind < 5 {
+            let img = g.backdrops[kind]
+            put_image{ &frame, img, x = 0.0, y = 0.0, w = @as(f32, g.ui_w), h = @as(f32, g.ui_h), color = white_color{}, angle = 0.0, clip = screen }
+        }
+    }
+
+    fn draw_panel { mut g: Gui, mut frame: render::Frame, p: *mut Panel, screen: render::Rect } {
+        if p.w <= 0 or p.h <= 0 { return }
+        let clip = rect_of{ x = p.sx, y = p.sy, w = p.w, h = p.h }
+        if p.has_color {
+            put_fill{ &frame, x = clip.x, y = clip.y, w = clip.w, h = clip.h, color = render::Color{ r = p.color.r, g = p.color.g, b = p.color.b, a = p.alpha }, clip }
+        }
+        draw_border{ &g, &frame, b = p.border, x = p.sx, y = p.sy, w = p.w, h = p.h, alpha = p.alpha, clip, override = no_img{} }
+        let cs = list::items{ list = p.controls }
+        let mut i: usize = 0
+        while i < cs.len {
+            let c = &cs[i]
+            if (c.flags & F_VISIBLE) != 0 and (c.flags & F_INTERNAL) == 0 {
+                draw_control{ &g, &frame, p, c, alpha = p.alpha, clip }
+            }
+            i = i + 1
+        }
+    }
+
+    fn draw_cursor { mut g: Gui, mut frame: render::Frame, screen: render::Rect } {
+        if not g.cursor_visible { return }
+        // The `d` picture shows while the left button is down; only the default arrow has its
+        // hot spot at the corner, the rest are centred on the pointer.
+        let k = @as(usize, g.cursor) * 2 + (if (g.buttons & 1) != 0 { 1 } else { 0 })
+        if k >= CURSORS { return }
+        let img = g.cursors[k].tex
+        if not img.ok { return }
+        let off = if g.cursor == CURSOR_DEFAULT { 0.0 } else { -img.w / 2.0 }
+        put_image{ &frame, img, x = @as(f32, g.mouse_x) + off, y = @as(f32, g.mouse_y) + off, w = img.w, h = img.h, color = white_color{}, angle = 0.0, clip = screen }
+    }
+}

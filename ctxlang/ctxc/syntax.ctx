@@ -117,8 +117,10 @@ namespace syntax {
     struct Arm { span: Span, pats: []Pattern, body: Block }
 
     // `variant` or `variant{ binders }`, where the variant may be `null`. An error's name may
-    // have a path, `a::b::variant`: quals are the names before the variant.
-    struct Pattern { span: Span, quals: []Name, variant: Name, binders: []Binder }
+    // have a path, `a::b::variant`: quals are the names before the variant. On an integer
+    // (§8, Match on integers) a pattern is value, an expression: a literal, which leaves variant
+    // empty, or the path a name pattern without binders spells; upto is a range's end.
+    struct Pattern { span: Span, quals: []Name, variant: Name, binders: []Binder, value: ?*Expr, upto: ?*Expr }
 
     // `f`, `&f`, `f = x` or `&f = x`: the local is null unless it is renamed.
     struct Binder { span: Span, by_ref: bool, field: Name, local: ?Name }

@@ -620,7 +620,7 @@ namespace lower {
                 if through_opt{ &l, init, variant = variant.text } {
                     // On a `?U`, for a variant of U: `if not (init is variant{ ... }) { els }`.
                     let mut pats = list::new(syntax::Pattern){ realloc = arena::alloc, heap = l.heap }
-                    try! list::push{ list = &pats, item = syntax::Pattern{ span = s.span, quals = slice::empty(syntax::Name){}, variant, binders } }
+                    try! list::push{ list = &pats, item = syntax::Pattern{ span = s.span, quals = slice::empty(syntax::Name){}, variant, binders, value = null, upto = null } }
                     let test = is_ex{ &l, x = init, pats = list::items{ list = pats } }
                     let c = mk{ ty = test.ty, k = ir::ExprKind::lnot{ e = box{ l, e = test } } }
                     return ir::Stmt::cond{ c, then = block{ &l, b = els }, els = null }
@@ -818,6 +818,8 @@ namespace lower {
         if ft != types::NO_TYPE {
             return ir::Stmt::choose{ scrut, through = false, arms = fail_arms{ &l, x, st = ft, t, value = leaving } }
         }
+        let rs = map::get{ m = l.c.int_cases, key = check::expr_key{ e = x.scrut.* } }
+        if rs != null { return ir::Stmt::switch{ scrut, cases = int_cases{ &l, x, rs, t, value = leaving } } }
         let u = scrut_type{ &l, x }
         if u.enum_decl != NONE {
             return ir::Stmt::switch{ scrut, cases = cases{ &l, x, decl = u.enum_decl, t, value = leaving } }
@@ -1145,10 +1147,49 @@ namespace lower {
                 k = k + 1
             }
             let body = if value { value_block{ &l, b = arm.body, t } } else { block{ &l, b = arm.body } }
-            try! list::push{ list = &out, item = ir::Case{ values = list::items{ list = vals }, body } }
+            try! list::push{ list = &out, item = ir::Case{ values = list::items{ list = vals }, ranges = slice::empty(ir::Range){}, body } }
             i = i + 1
         }
         return list::items{ list = out }
+    }
+
+    // A match on an integer (§8, Match on integers): each arm by the ranges the checker found,
+    // rs, a range of one being a value.
+    fn int_cases { mut l: Lower, x: syntax::Match, rs: [][]ir::Range, t: Id, value: bool } -> []ir::Case {
+        let mut out = list::new(ir::Case){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < x.arms.len {
+            let arm = x.arms[i]
+            let body = if value { value_block{ &l, b = arm.body, t } } else { block{ &l, b = arm.body } }
+            try! list::push{ list = &out, item = int_case{ &l, rs = rs[i], body } }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    fn int_case { mut l: Lower, rs: []ir::Range, body: ir::Block } -> ir::Case {
+        let mut vals = list::new(ir::Int){ realloc = arena::alloc, heap = l.heap }
+        let mut ranges = list::new(ir::Range){ realloc = arena::alloc, heap = l.heap }
+        let mut k: usize = 0
+        while k < rs.len {
+            let r = rs[k]
+            if r.lo.negative == r.hi.negative and r.lo.value == r.hi.value {
+                try! list::push{ list = &vals, item = r.lo }
+            } else {
+                try! list::push{ list = &ranges, item = r }
+            }
+            k = k + 1
+        }
+        return ir::Case{ values = list::items{ list = vals }, ranges = list::items{ list = ranges }, body }
+    }
+
+    // `x is P | Q` on an integer: a switch giving true for arm's ranges and false otherwise.
+    fn int_is { mut l: Lower, x: syntax::Expr, arm: []ir::Range } -> ir::Expr {
+        let scrut = ex{ &l, e = x }
+        let mut cases = list::new(ir::Case){ realloc = arena::alloc, heap = l.heap }
+        try! list::push{ list = &cases, item = int_case{ &l, rs = arm, body = bool_block{ &l, value = true } } }
+        try! list::push{ list = &cases, item = ir::Case{ values = slice::empty(ir::Int){}, ranges = slice::empty(ir::Range){}, body = bool_block{ &l, value = false } } }
+        return mk{ ty = tid{ &l, t = types::BOOL }, k = ir::ExprKind::switchx{ scrut = box{ l, e = scrut }, cases = list::items{ list = cases } } }
     }
 
     fn name_index { names: [][]u8, name: []u8 } -> usize {
@@ -1250,6 +1291,8 @@ namespace lower {
         if ft != types::NO_TYPE {
             return mk{ ty, k = ir::ExprKind::matchx{ scrut = box{ l, e = scrut }, through = false, arms = fail_arms{ &l, x, st = ft, t, value = true } } }
         }
+        let rs = map::get{ m = l.c.int_cases, key = check::expr_key{ e = x.scrut.* } }
+        if rs != null { return mk{ ty, k = ir::ExprKind::switchx{ scrut = box{ l, e = scrut }, cases = int_cases{ &l, x, rs, t, value = true } } } }
         let u = scrut_type{ &l, x }
         if u.enum_decl != NONE {
             return mk{ ty, k = ir::ExprKind::switchx{ scrut = box{ l, e = scrut }, cases = cases{ &l, x, decl = u.enum_decl, t, value = true } } }
@@ -1565,7 +1608,11 @@ namespace lower {
                 let scrut = ex{ &l, e = x.* }
                 return mk{ ty = tid{ &l, t }, k = ir::ExprKind::matchx{ scrut = box{ l, e = scrut }, through = false, arms = try_arms{ &l, x = x.*, value = true, panics, pos = epos{ &l, e } } } }
             }
-            isx{ e = x, pats } => { return is_ex{ &l, x = x.*, pats } }
+            isx{ e = x, pats } => {
+                let rs = map::get{ m = l.c.int_cases, key = check::expr_key{ e } }
+                if rs != null { return int_is{ &l, x = x.*, arm = rs[0] } }
+                return is_ex{ &l, x = x.*, pats }
+            }
             error => { @panic("lower: an expression that didn't parse") }
         }
     }
@@ -1624,8 +1671,8 @@ namespace lower {
                 i = i + 1
             }
             let mut cases = list::new(ir::Case){ realloc = arena::alloc, heap = l.heap }
-            try! list::push{ list = &cases, item = ir::Case{ values = list::items{ list = vals }, body = bool_block{ &l, value = true } } }
-            if not all { try! list::push{ list = &cases, item = ir::Case{ values = slice::empty(ir::Int){}, body = bool_block{ &l, value = false } } } }
+            try! list::push{ list = &cases, item = ir::Case{ values = list::items{ list = vals }, ranges = slice::empty(ir::Range){}, body = bool_block{ &l, value = true } } }
+            if not all { try! list::push{ list = &cases, item = ir::Case{ values = slice::empty(ir::Int){}, ranges = slice::empty(ir::Range){}, body = bool_block{ &l, value = false } } } }
             return mk{ ty, k = ir::ExprKind::switchx{ scrut = box{ l, e = scrut }, cases = list::items{ list = cases } } }
         }
         let mut ps = list::new(ir::Pat){ realloc = arena::alloc, heap = l.heap }
@@ -2226,7 +2273,7 @@ namespace lower {
                 let mut vals = list::new(ir::Int){ realloc = arena::alloc, heap = l.heap }
                 try! list::push{ list = &vals, item = int_of{ v } }
                 let body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = value } }
-                try! list::push{ list = &out, item = ir::Case{ values = list::items{ list = vals }, body } }
+                try! list::push{ list = &out, item = ir::Case{ values = list::items{ list = vals }, ranges = slice::empty(ir::Range){}, body } }
             }
             i = i + 1
         }
@@ -2236,7 +2283,7 @@ namespace lower {
         let mut ps = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
         try! list::push{ list = &ps, item = panic }
         let els = ir::Block{ stmts = list::items{ list = ps }, result = null }
-        try! list::push{ list = &out, item = ir::Case{ values = slice::empty(ir::Int){}, body = els } }
+        try! list::push{ list = &out, item = ir::Case{ values = slice::empty(ir::Int){}, ranges = slice::empty(ir::Range){}, body = els } }
         let ty = tid{ &l, t }
         let x = ex{ &l, e = arg }
         return mk{ ty, k = ir::ExprKind::switchx{ scrut = box{ l, e = x }, cases = list::items{ list = out } } }

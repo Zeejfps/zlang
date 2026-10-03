@@ -1,0 +1,390 @@
+// Loading a .gui file into a Panel (docs/formats/gff-gui.md, docs/re/gui.md section 6): the
+// GFF is read once, every texture and font a control names is resolved to a handle, and the
+// controls are put in draw order (ascending ID) with each list box's prototype row and scroll
+// bar after them as internal controls.
+namespace gui {
+    const NO_STRREF: u32 = 4294967295
+
+    fn no_img {} -> Img {
+        return Img{ tex = render::Texture{ id = 0 }, w = 0.0, h = 0.0, ok = false }
+    }
+
+    fn white_color {} -> render::Color {
+        return render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 1.0 }
+    }
+
+    // ---- GFF helpers
+
+    fn geti { doc: gff::Doc, s: u32, label: []u8, fallback: i32 } -> i32 {
+        let v = gff::get_number{ doc, s, label } ifnull { return fallback }
+        return @as(i32, v)
+    }
+
+    fn getf { doc: gff::Doc, s: u32, label: []u8, fallback: f32 } -> f32 {
+        let v = gff::get_float{ doc, s, label } ifnull { return fallback }
+        return v
+    }
+
+    fn getc { doc: gff::Doc, s: u32, label: []u8, fallback: render::Color } -> render::Color {
+        let v = gff::get_vector{ doc, s, label } ifnull { return fallback }
+        return render::Color{ r = v[0], g = v[1], b = v[2], a = 1.0 }
+    }
+
+    // ---- textures and fonts
+
+    // The texture `name` through the shared cache, with its size; not ok when the install lacks it.
+    fn resolve_img { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, name: []u8 } -> Img {
+        if name.len == 0 or ci::eq{ a = name, b = "NULL" } { return no_img{} }
+        let e = material::get{ cache = g.cache, &fs, &dev, rm = g.rm, name }
+        let t = e.texture ifnull { return no_img{} }
+        let size = gpu::texture_size{ dev, t }
+        return Img{ tex = t, w = @as(f32, size.width), h = @as(f32, size.height), ok = true }
+    }
+
+    // The slot of font `name` (a resref from a file), loading it the first time. The engine
+    // loads NAME + 'b', or NAME + 'a' with the small-fonts option, never the bare name
+    // (docs/re/gui.md section 5); fnt_console has no variants. -1 when the install lacks it.
+    fn font_slot { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, name: []u8 } -> i32 {
+        let key = resref::truncate{ name }
+        let items = list::items{ list = g.fonts }
+        let mut i: usize = 0
+        while i < items.len {
+            if resref::eq{ a = items[i].name, b = key } { return if items[i].ok { @as(i32, i) } else { -1 } }
+            i = i + 1
+        }
+        let glyphs = alloc::resize(render::Glyph, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = slice::empty(render::Glyph){}, count = 256 } iferr {
+            return -1
+        }
+        let mut buf: [17]u8
+        let mut loaded: ?render::Font = null
+        if ci::eq{ a = name, b = "fnt_console" } {
+            loaded = font::load{ &fs, &dev, h = g.heap, rm = g.rm, name, variant = false, glyphs } iferr { null }
+        } else if g.small_fonts and name.len < 16 {
+            slice::copy(u8){ dst = buf[..name.len], src = name }
+            buf[name.len] = 'a'
+            loaded = font::load{ &fs, &dev, h = g.heap, rm = g.rm, name = buf[..name.len + 1], variant = false, glyphs } iferr { null }
+        } else {
+            loaded = font::load{ &fs, &dev, h = g.heap, rm = g.rm, name, variant = true, glyphs } iferr { null }
+        }
+        let f = loaded ifnull {
+            _ = alloc::resize(render::Glyph, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = glyphs, count = 0 }
+            list::push{ list = &g.fonts, item = FontSlot{ name = key, font = empty_font{}, glyphs = slice::empty(render::Glyph){}, ok = false } } iferr {}
+            return -1
+        }
+        list::push{ list = &g.fonts, item = FontSlot{ name = key, font = f, glyphs, ok = true } } iferr { return -1 }
+        return @as(i32, g.fonts.len) - 1
+    }
+
+    fn empty_font {} -> render::Font {
+        return render::Font{
+            texture = render::Texture{ id = 0 }, texture_width = 1.0, texture_height = 1.0,
+            glyphs = slice::empty(render::Glyph){}, height = 0.0, baseline = 0.0, spacing = 0.0,
+        }
+    }
+
+    // The loaded font in `slot`, or an empty one.
+    fn font_of { mut g: Gui, slot: i32 } -> render::Font {
+        if slot < 0 or @as(usize, slot) >= g.fonts.len { return empty_font{} }
+        return list::items{ list = g.fonts }[@as(usize, slot)].font
+    }
+
+    // ---- structs
+
+    fn read_border { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, doc: gff::Doc, s: u32, label: []u8 } -> Border {
+        let bs = gff::get_struct{ doc, s, label } ifnull { return no_border{} }
+        let mut b = no_border{}
+        b.present = true
+        b.corner = resolve_img{ &g, &fs, &dev, name = gff::get_resref{ doc, s = bs, label = "CORNER" } ifnull "" }
+        b.edge = resolve_img{ &g, &fs, &dev, name = gff::get_resref{ doc, s = bs, label = "EDGE" } ifnull "" }
+        b.fill = resolve_img{ &g, &fs, &dev, name = gff::get_resref{ doc, s = bs, label = "FILL" } ifnull "" }
+        b.fill_style = geti{ doc, s = bs, label = "FILLSTYLE", fallback = FILL_STRETCHED }
+        b.dimension = geti{ doc, s = bs, label = "DIMENSION", fallback = 0 }
+        b.inner_offset = geti{ doc, s = bs, label = "INNEROFFSET", fallback = 0 }
+        b.pulsing = @as(u32, geti{ doc, s = bs, label = "PULSING", fallback = 0 })
+        let c = gff::get_vector{ doc, s = bs, label = "COLOR" } ifnull { [1.0, 1.0, 1.0] }
+        b.color = render::Color{ r = c[0], g = c[1], b = c[2], a = 1.0 }
+        // (-1,-1,-1) and the default (1,1,1) both mean untinted.
+        b.tinted = c[0] >= 0.0 and not (c[0] == 1.0 and c[1] == 1.0 and c[2] == 1.0)
+        return b
+    }
+
+    fn no_border {} -> Border {
+        return Border{
+            present = false, corner = no_img{}, edge = no_img{}, fill = no_img{}, fill_style = FILL_STRETCHED,
+            dimension = 0, inner_offset = 0, color = white_color{}, tinted = false, pulsing = 0,
+        }
+    }
+
+    fn no_text {} -> Text {
+        return Text{
+            present = false, font = -1, color = white_color{}, file_color = white_color{},
+            text = slice::empty(u8){}, buf = slice::empty(u8){}, strref = NO_STRREF, align = A_LEFT | A_TOP,
+            pulsing = false, file_pulsing = false,
+        }
+    }
+
+    fn read_text { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, doc: gff::Doc, s: u32 } -> Text {
+        let ts = gff::get_struct{ doc, s, label = "TEXT" } ifnull { return no_text{} }
+        let mut t = no_text{}
+        t.present = true
+        let font_name: []u8 = gff::get_resref{ doc, s = ts, label = "FONT" } ifnull "dialogfont16x16"
+        t.font = font_slot{ &g, &fs, &dev, name = if font_name.len == 0 { "dialogfont16x16" } else { font_name } }
+        t.color = getc{ doc, s = ts, label = "COLOR", fallback = white_color{} }
+        t.file_color = t.color
+        t.align = @as(u32, geti{ doc, s = ts, label = "ALIGNMENT", fallback = 9 })
+        t.file_pulsing = geti{ doc, s = ts, label = "PULSING", fallback = 0 } != 0
+        t.pulsing = t.file_pulsing
+        t.text = gff::get_string{ doc, s = ts, label = "TEXT" } ifnull ""
+        let sr = gff::get_number{ doc, s = ts, label = "STRREF" } ifnull { @as(i64, NO_STRREF) }
+        t.strref = @trunc(u32, sr)
+        if t.strref != NO_STRREF {
+            let str = tlk_text{ &g, strref = t.strref } iferr { slice::empty(u8){} }
+            t.buf = str
+            t.text = str
+        }
+        return t
+    }
+
+    fn read_image { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, doc: gff::Doc, s: u32, label: []u8 } -> Img {
+        let img_s = gff::get_struct{ doc, s, label } ifnull { return no_img{} }
+        return resolve_img{ &g, &fs, &dev, name = gff::get_resref{ doc, s = img_s, label = "IMAGE" } ifnull "" }
+    }
+
+    // One control struct: a CONTROLS entry, or a list box's PROTOITEM or SCROLLBAR.
+    fn read_control { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, doc: gff::Doc, s: u32 } -> Control {
+        let mut c: Control
+        c.kind = @trunc(u8, geti{ doc, s, label = "CONTROLTYPE", fallback = 4 })
+        c.id = geti{ doc, s, label = "ID", fallback = -1 }
+        c.tag = gff::get_string{ doc, s, label = "TAG" } ifnull ""
+        c.parent = geti{ doc, s, label = "Obj_ParentID", fallback = -1 }
+        if c.parent < 0 { c.parent = geti{ doc, s, label = "PARENTID", fallback = -1 } }
+        c.flags = F_VISIBLE | F_ENABLED
+        let es = gff::get_struct{ doc, s, label = "EXTENT" }
+        if es != null {
+            c.x = geti{ doc, s = es, label = "LEFT", fallback = 0 }
+            c.y = geti{ doc, s = es, label = "TOP", fallback = 0 }
+            c.w = geti{ doc, s = es, label = "WIDTH", fallback = 0 }
+            c.h = geti{ doc, s = es, label = "HEIGHT", fallback = 0 }
+        }
+        c.border = read_border{ &g, &fs, &dev, doc, s, label = "BORDER" }
+        c.hilight = read_border{ &g, &fs, &dev, doc, s, label = "HILIGHT" }
+        c.selected = read_border{ &g, &fs, &dev, doc, s, label = "SELECTED" }
+        c.hilight_selected = read_border{ &g, &fs, &dev, doc, s, label = "HILIGHTSELECTED" }
+        c.progress = read_border{ &g, &fs, &dev, doc, s, label = "PROGRESS" }
+        c.text = read_text{ &g, &fs, &dev, doc, s }
+        if c.text.file_pulsing { c.flags = c.flags | F_PULSE_TEXT }
+        c.thumb = read_image{ &g, &fs, &dev, doc, s, label = "THUMB" }
+        c.arrow = read_image{ &g, &fs, &dev, doc, s, label = "DIR" }
+        c.moveto = [-1, -1, -1, -1]
+        let ms = gff::get_struct{ doc, s, label = "MOVETO" }
+        if ms != null {
+            c.moveto = [
+                geti{ doc, s = ms, label = "UP", fallback = -1 },
+                geti{ doc, s = ms, label = "DOWN", fallback = -1 },
+                geti{ doc, s = ms, label = "LEFT", fallback = -1 },
+                geti{ doc, s = ms, label = "RIGHT", fallback = -1 },
+            ]
+        }
+        c.value = geti{ doc, s, label = "CURVALUE", fallback = 0 }
+        c.max = geti{ doc, s, label = "MAXVALUE", fallback = 0 }
+        c.visible_value = geti{ doc, s, label = "VISIBLEVALUE", fallback = 1 }
+        c.draw_mode = geti{ doc, s, label = "DRAWMODE", fallback = 0 }
+        c.from_left = geti{ doc, s, label = "STARTFROMLEFT", fallback = 1 } != 0
+        if geti{ doc, s, label = "ISSELECTED", fallback = 0 } != 0 { c.flags = c.flags | F_CHECKED }
+        c.proto = -1
+        c.scrollbar = -1
+        c.padding = geti{ doc, s, label = "PADDING", fallback = 0 }
+        c.looping = geti{ doc, s, label = "LOOPING", fallback = 0 } != 0
+        c.scroll_left = geti{ doc, s, label = "LEFTSCROLLBAR", fallback = 1 } != 0
+        if c.kind == K_LIST {
+            let lc = getc{ doc, s, label = "COLOR", fallback = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 } }
+            c.list_color = lc
+            c.list_tinted = lc.r >= 0.0
+        }
+        c.rows = slice::empty(Row){}
+        c.selected_row = -1
+        c.hover_row = -1
+        c.click_sound = 0
+        c.hover_sound = 1
+        c.tooltip = ""
+        c.tooltip_buf = slice::empty(u8){}
+        c.max_chars = -1
+        c.override_fill = no_img{}
+        return c
+    }
+
+    // ---- placing
+
+    // Where the panel's origin is on the screen, by its mode (docs/re/gui.md section 2): full-
+    // screen menus and dialogs are centred, the others stay where the file puts them.
+    fn place { mut g: Gui, p: *mut Panel } {
+        if p.mode == Mode::placed {
+            p.sx = p.x
+            p.sy = p.y
+        } else {
+            p.sx = p.x + (g.ui_w - p.w) / 2
+            p.sy = p.y + (g.ui_h - p.h) / 2
+        }
+    }
+
+    // ---- loading
+
+    error no_such_gui{ name: []u8 }
+
+    fn sort_controls { items: []mut Control } {
+        let mut i: usize = 1
+        while i < items.len {
+            if items[i].id < items[i - 1].id {
+                let tmp = items[i]
+                let mut j = i
+                while j > 0 and items[j - 1].id > tmp.id {
+                    items[j] = items[j - 1]
+                    j = j - 1
+                }
+                items[j] = tmp
+            }
+            i = i + 1
+        }
+    }
+
+    // Opens panel `name` (a .gui resref): loads it, centres or places it by `mode`, puts it on
+    // top of the stack and returns its id. `modal` panels take all input while on top. Fails with
+    // no_such_gui or the file's error.
+    fn open { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, name: []u8, mode: Mode, modal: bool } -> !u32 {
+        let bytes = try res::load{ &fs, rm = g.rm, name, kind = restype::Type::gui, realloc = heap::alloc, heap = g.heap } ifnull {
+            return no_such_gui{ name }
+        }
+        let doc = gff::parse{ data = bytes, realloc = heap::alloc, heap = g.heap } iferr err{ error } {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = bytes, count = 0 }
+            return error
+        }
+        let p = try alloc::new(Panel, heap::Heap){ realloc = heap::alloc, heap = g.heap, value = Panel{
+            id = g.next_panel, name = resref::truncate{ name }, mode, modal, removing = false,
+            x = 0, y = 0, w = 0, h = 0, border = no_border{}, color = white_color{}, has_color = false, alpha = 1.0,
+            controls = list::new(Control, heap::Heap){ realloc = heap::alloc, heap = g.heap },
+            bytes, doc, focus = -1, open_sound = -1, sx = 0, sy = 0, shown = true, backdrop = 0,
+        } }
+        g.next_panel = g.next_panel + 1
+        read_panel{ &g, &fs, &dev, p } iferr err{ error } {
+            destroy_panel{ &g, p }
+            return error
+        }
+        try list::push{ list = &g.panels, item = p }
+        place{ &g, p }
+        return p.id
+    }
+
+    fn read_panel { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, p: *mut Panel } -> ! {
+        let doc = p.doc
+        let r = gff::ROOT
+        let es = gff::get_struct{ doc, s = r, label = "EXTENT" }
+        if es != null {
+            p.x = geti{ doc, s = es, label = "LEFT", fallback = 0 }
+            p.y = geti{ doc, s = es, label = "TOP", fallback = 0 }
+            p.w = geti{ doc, s = es, label = "WIDTH", fallback = 0 }
+            p.h = geti{ doc, s = es, label = "HEIGHT", fallback = 0 }
+        }
+        p.alpha = getf{ doc, s = r, label = "ALPHA", fallback = 1.0 }
+        p.border = read_border{ &g, &fs, &dev, doc, s = r, label = "BORDER" }
+        if not p.border.present {
+            // A panel root without BORDER may name a BACKGROUND fill instead.
+            let bg = gff::get_resref{ doc, s = r, label = "BACKGROUND" } ifnull ""
+            if bg.len > 0 {
+                p.border = no_border{}
+                p.border.present = true
+                p.border.fill = resolve_img{ &g, &fs, &dev, name = bg }
+            }
+        }
+        let pc = getc{ doc, s = r, label = "COLOR", fallback = render::Color{ r = -1.0, g = -1.0, b = -1.0, a = 1.0 } }
+        p.color = pc
+        p.has_color = pc.r >= 0.0
+        let items = gff::get_list{ doc, s = r, label = "CONTROLS" } ifnull { slice::empty(u32){} }
+        let mut internals = list::new(Control, heap::Heap){ realloc = heap::alloc, heap = g.heap }
+        defer list::free{ list = &internals }
+        let mut i: usize = 0
+        while i < items.len {
+            let cs = items[i]
+            let mut c = read_control{ &g, &fs, &dev, doc, s = cs }
+            try list::push{ list = &p.controls, item = c }
+            if c.kind == K_LIST {
+                let ps = gff::get_struct{ doc, s = cs, label = "PROTOITEM" }
+                if ps != null {
+                    let mut pc2 = read_control{ &g, &fs, &dev, doc, s = ps }
+                    pc2.parent = c.id
+                    pc2.flags = pc2.flags | F_INTERNAL
+                    pc2.id = -1
+                    try list::push{ list = &internals, item = pc2 }
+                }
+                let ss = gff::get_struct{ doc, s = cs, label = "SCROLLBAR" }
+                if ss != null {
+                    let mut sc = read_control{ &g, &fs, &dev, doc, s = ss }
+                    sc.kind = K_SCROLL
+                    sc.parent = c.id
+                    sc.flags = sc.flags | F_INTERNAL
+                    sc.id = -1
+                    try list::push{ list = &internals, item = sc }
+                }
+            }
+            i = i + 1
+        }
+        sort_controls{ items = list::items{ list = p.controls } }
+        // Internals go after the sorted controls; each list box then points at its own.
+        let ins = list::items{ list = internals }
+        let mut k: usize = 0
+        while k < ins.len {
+            try list::push{ list = &p.controls, item = ins[k] }
+            let at = @as(i32, p.controls.len) - 1
+            let owner = find_by_id{ p, id = ins[k].parent }
+            if owner >= 0 {
+                let oc = list::at{ list = p.controls, i = @as(usize, owner) }
+                if ins[k].kind == K_SCROLL { oc.scrollbar = at } else { oc.proto = at }
+            }
+            k = k + 1
+        }
+    }
+
+    // The index of the control with file ID `id` (not an internal one), or -1.
+    fn find_by_id { p: *mut Panel, id: i32 } -> i32 {
+        let cs = list::items{ list = p.controls }
+        let mut i: usize = 0
+        while i < cs.len {
+            if cs[i].id == id and (cs[i].flags & F_INTERNAL) == 0 { return @as(i32, i) }
+            i = i + 1
+        }
+        return -1
+    }
+
+    // The index of the control tagged `tag` (case-sensitive, as the files are), or -1.
+    fn find_by_tag { p: *mut Panel, tag: []u8 } -> i32 {
+        let cs = list::items{ list = p.controls }
+        let mut i: usize = 0
+        while i < cs.len {
+            if (cs[i].flags & F_INTERNAL) == 0 and slice::eq_bytes{ a = cs[i].tag, b = tag } { return @as(i32, i) }
+            i = i + 1
+        }
+        return -1
+    }
+
+    // Frees a panel and what it owns.
+    fn destroy_panel { mut g: Gui, p: *mut Panel } {
+        let cs = list::items{ list = p.controls }
+        let mut i: usize = 0
+        while i < cs.len {
+            free_string{ &g, s = cs[i].text.buf }
+            free_string{ &g, s = cs[i].tooltip_buf }
+            let mut r: usize = 0
+            while r < @as(usize, cs[i].row_count) {
+                free_string{ &g, s = cs[i].rows[r].text }
+                r = r + 1
+            }
+            if cs[i].rows.len > 0 {
+                _ = alloc::resize(Row, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = cs[i].rows, count = 0 }
+            }
+            i = i + 1
+        }
+        list::free{ list = &p.controls }
+        gff::free(heap::Heap){ doc = p.doc, realloc = heap::alloc, heap = g.heap }
+        _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = p.bytes, count = 0 }
+        alloc::free(Panel, heap::Heap){ realloc = heap::alloc, heap = g.heap, p }
+    }
+}

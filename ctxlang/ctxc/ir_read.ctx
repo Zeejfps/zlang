@@ -338,17 +338,25 @@ namespace ir_read {
         while more{ &r, close = ']' } {
             expect{ &r, c = '(' }
             let mut values = list::new(ir::Int){ realloc = arena::alloc, heap = r.heap }
+            let mut ranges = list::new(ir::Range){ realloc = arena::alloc, heap = r.heap }
             if not none{ &r } {
                 expect{ &r, c = '[' }
                 while more{ &r, close = ']' } {
                     let negative = eat{ &r, c = '-' }
-                    try list::push{ list = &values, item = ir::Int{ negative, value = num{ &r } } }
+                    let lo = ir::Int{ negative, value = num{ &r } }
+                    if eat{ &r, c = '.' } {
+                        expect{ &r, c = '.' }
+                        let hi_negative = eat{ &r, c = '-' }
+                        try list::push{ list = &ranges, item = ir::Range{ lo, hi = ir::Int{ negative = hi_negative, value = num{ &r } } } }
+                    } else {
+                        try list::push{ list = &values, item = lo }
+                    }
                 }
                 expect{ &r, c = ']' }
             }
             let body = try block{ &r }
             expect{ &r, c = ')' }
-            try list::push{ list = &xs, item = ir::Case{ values = list::items{ list = values }, body } }
+            try list::push{ list = &xs, item = ir::Case{ values = list::items{ list = values }, ranges = list::items{ list = ranges }, body } }
         }
         expect{ &r, c = ']' }
         return list::items{ list = xs }

@@ -11,7 +11,9 @@
 //                is the pointer itself, null being 0. Layouts are checked against the IR's with
 //                _Static_assert.
 //   functions    f_NAME, after the function's name (below). Slot i is lI; a `mut` param's slot
-//                is a pointer.
+//                is a pointer, and so is a read-only struct, union or array param over BYREF
+//                bytes, whose uses are (*lI) (spec §14.6). A call passes such an argument's
+//                place if nothing could change it during the call, or a copy (`pass`).
 //   extern fns   eN calls xN, a prototype whose assembler name is the C symbol, so that no
 //                header's declaration of the symbol can clash with it. Capabilities aren't
 //                passed; a `mut` field's pointer is.
@@ -52,6 +54,10 @@ namespace emit {
     type Out = ir_print::Out
 
     const NONE: u32 = 4294967295
+
+    // A read-only struct, union or array param over this many bytes is passed by reference
+    // (spec §14.6): a pointer to the caller's place, or to a copy (`pass`).
+    const BYREF: u64 = 32
 
     // A marker: MARK, a kind (a letter), the IR's id in decimal, END. The C never holds these
     // bytes otherwise: strings escape them.
@@ -950,7 +956,7 @@ namespace emit {
         j = 0
         while j < params.len {
             put{ &e, a = ", " }
-            param_type{ &e, q = params[j] }
+            code_param{ &e, q = params[j] }
             j = j + 1
         }
         put{ &e, a = ");\n" }
@@ -1028,8 +1034,15 @@ namespace emit {
     }
 
     // A function type's field as a C parameter type: `mut` ones are void*.
+    // A C function's param type: a `mut` param's pointer, or the value.
     fn param_type { mut e: E, q: ir::Param } {
         if q.mutable { put{ &e, a = "void *" } } else { tn{ &e, t = q.ty } }
+    }
+
+    // A function value's param type: a big read-only one is a pointer (§14.6).
+    fn code_param { mut e: E, q: ir::Param } {
+        param_type{ &e, q }
+        if by_ref{ e, q } { put{ &e, a = " *" } }
     }
 
     // ---- functions
@@ -1108,6 +1121,7 @@ namespace emit {
                 param_type{ &e, q = f.params[i] }
             } else {
                 tn{ &e, t = f.locals[i].ty }
+                if by_ref{ e, q = f.params[i] } { put{ &e, a = " *" } }
             }
             put{ &e, a = " l" }
             num{ &e, n = i }
@@ -1363,16 +1377,16 @@ namespace emit {
     fn stmt { mut e: E, s: ir::Stmt } {
         match s {
             define{ slot, init } => {
-                local{ &e, slot }
+                target{ &e, slot }
                 put{ &e, a = " = " }
                 expr{ &e, x = init }
                 ch{ &e, c = ';' }
             }
             zero{ slot } => {
                 put{ &e, a = "memset(&" }
-                local{ &e, slot }
+                target{ &e, slot }
                 put{ &e, a = ", 0, sizeof " }
-                local{ &e, slot }
+                target{ &e, slot }
                 put{ &e, a = ");" }
             }
             assign{ place, value } => {
@@ -1545,7 +1559,7 @@ namespace emit {
             let c = cases[i]
             ch{ &e, c = ' ' }
             if i > 0 { put{ &e, a = "else " } }
-            if c.values.len > 0 {
+            if c.values.len > 0 or c.ranges.len > 0 {
                 put{ &e, a = "if (" }
                 let mut j: usize = 0
                 while j < c.values.len {
@@ -1553,6 +1567,20 @@ namespace emit {
                     tmp{ &e, k }
                     put{ &e, a = " == " }
                     int_lit{ &e, t, n = c.values[j] }
+                    j = j + 1
+                }
+                j = 0
+                while j < c.ranges.len {
+                    if j > 0 or c.values.len > 0 { put{ &e, a = " || " } }
+                    put{ &e, a = "(" }
+                    tmp{ &e, k }
+                    put{ &e, a = " >= " }
+                    int_lit{ &e, t, n = c.ranges[j].lo }
+                    put{ &e, a = " && " }
+                    tmp{ &e, k }
+                    put{ &e, a = " <= " }
+                    int_lit{ &e, t, n = c.ranges[j].hi }
+                    put{ &e, a = ")" }
                     j = j + 1
                 }
                 put{ &e, a = ") " }
@@ -1649,7 +1677,7 @@ namespace emit {
         let mut i = 0
         while i < binds.len {
             let b = binds[i]
-            local{ &e, slot = b.slot }
+            target{ &e, slot = b.slot }
             put{ &e, a = " = " }
             if b.by_ref { ch{ &e, c = '&' } }
             if is_nptr{ e, t = union_t } {
@@ -1782,7 +1810,7 @@ namespace emit {
             }
             with{ slot, init, body } => {
                 put{ &e, a = "({ " }
-                local{ &e, slot }
+                target{ &e, slot }
                 put{ &e, a = " = " }
                 expr{ &e, x = init.* }
                 put{ &e, a = "; " }
@@ -2394,23 +2422,36 @@ namespace emit {
     // f_NAME(args in parameter order), evaluated in the IR's order.
     fn call { mut e: E, callee: u32, args: []ir::Arg } {
         let f = e.p.fns[callee]
-        let tt = temps_args{ &e, args }
+        let c = Callee{ params = f.params, ext = f.symbol.len > 0, value = null }
+        let tt = temps_call{ &e, args, c }
         mark_id{ &e, kind = 'f', id = callee }
         ch{ &e, c = '(' }
-        in_order{ &e, args, n = f.params.len, tt }
+        in_order{ &e, args, c, tt }
         ch{ &e, c = ')' }
         close_temps{ &e, tt }
     }
 
-    // The args, by parameter index 0..n.
-    fn in_order { mut e: E, args: []ir::Arg, n: usize, tt: Temps } {
+    // The args, by parameter index.
+    fn in_order { mut e: E, args: []ir::Arg, c: Callee, tt: Temps } {
         let mut j = 0
-        while j < n {
+        while j < c.params.len {
             if j > 0 { put{ &e, a = ", " } }
             let mut i = 0
             while i < args.len {
                 let a = args[i]
-                if a.index == j { operand{ &e, x = a.value, tt, i = @as(u32, i) } }
+                if a.index == j {
+                    let k = @as(u32, i)
+                    match pass{ e, args, i, c } {
+                        value => { operand{ &e, x = a.value, tt, i = k } }
+                        place => {
+                            if tt.on { tmp{ &e, k = tt.base + k } } else { address{ &e, x = a.value } }
+                        }
+                        copy => {
+                            ch{ &e, c = '&' }
+                            tmp{ &e, k = tt.base + k }
+                        }
+                    }
+                }
                 i = i + 1
             }
             j = j + 1
@@ -2424,13 +2465,14 @@ namespace emit {
             return
         }
         let func{ params } = ty{ e, id = callee.ty } else { @panic("emit: call of a non-function") }
+        let c = Callee{ params, ext = false, value = callee }
         let kf = fresh{ &e }
         put{ &e, a = "({ ctx_fn *" }
         tmp{ &e, k = kf }
         put{ &e, a = " = " }
         expr{ &e, x = callee }
         put{ &e, a = "; " }
-        let tt = temps_args{ &e, args }
+        let tt = temps_call{ &e, args, c }
         put{ &e, a = "((" }
         mark_id{ &e, kind = 'c', id = callee.ty }
         put{ &e, a = ")" }
@@ -2438,7 +2480,7 @@ namespace emit {
         put{ &e, a = "->code)(" }
         tmp{ &e, k = kf }
         if params.len > 0 { put{ &e, a = ", " } }
-        in_order{ &e, args, n = params.len, tt }
+        in_order{ &e, args, c, tt }
         ch{ &e, c = ')' }
         close_temps{ &e, tt }
         put{ &e, a = "; })" }
@@ -2458,7 +2500,7 @@ namespace emit {
         if not is_void{ e, t = ret } { put{ &e, a = "return " } }
         mark_id{ &e, kind = 'f', id = callee }
         ch{ &e, c = '(' }
-        forward{ &e, target = f.params, args, given = params }
+        forward{ &e, target = f.params, ext = f.symbol.len > 0, args, given = params }
         put{ &e, a = ");\n}\n\n" }
         to_aux{ &e }
         new_record{ &e, k, inner = null, args }
@@ -2479,7 +2521,7 @@ namespace emit {
         mark_id{ &e, kind = 'c', id = callee.ty }
         put{ &e, a = ")s->inner->code)(s->inner" }
         if target.len > 0 { put{ &e, a = ", " } }
-        forward{ &e, target, args, given = params }
+        forward{ &e, target, ext = false, args, given = params }
         put{ &e, a = ");\n}\n\n" }
         to_aux{ &e }
         new_record{ &e, k, inner = callee, args }
@@ -2563,7 +2605,7 @@ namespace emit {
         let mut i = 0
         while i < params.len {
             put{ &e, a = ", " }
-            param_type{ &e, q = params[i] }
+            code_param{ &e, q = params[i] }
             put{ &e, a = " a" }
             num{ &e, n = i }
             i = i + 1
@@ -2572,10 +2614,13 @@ namespace emit {
     }
 
     // The target's params in order: a captured arg (s->cJ) or the code's param of the same name.
-    fn forward { mut e: E, target: []ir::Param, args: []ir::Arg, given: []ir::Param } {
+    // A param the target takes by reference (§14.6; never one of an extern fn: ext) gets an
+    // address.
+    fn forward { mut e: E, target: []ir::Param, ext: bool, args: []ir::Arg, given: []ir::Param } {
         let mut j = 0
         while j < target.len {
             if j > 0 { put{ &e, a = ", " } }
+            let to_ref = not ext and by_ref{ e, q = target[j] }
             let mut captured = false
             let mut i = 0
             while i < args.len {
@@ -2583,22 +2628,29 @@ namespace emit {
                 i = i + 1
             }
             if captured {
+                if to_ref { ch{ &e, c = '&' } }
                 put{ &e, a = "s->c" }
                 num{ &e, n = j }
             } else {
-                by_name{ &e, name = target[j].name, params = given }
+                by_name{ &e, name = target[j].name, params = given, c = false, to_ref }
             }
             j = j + 1
         }
     }
 
-    // `aI` for the param named `name`.
-    fn by_name { mut e: E, name: ir::Bytes, params: []ir::Param } {
+    // `aI` for the param named `name`: its address if the target takes it by reference and the
+    // code doesn't, its value if the code does and the target doesn't. The code's params are a
+    // C function type's if c.
+    fn by_name { mut e: E, name: ir::Bytes, params: []ir::Param, c: bool, to_ref: bool } {
         let mut i = 0
         while i < params.len {
             if slice::eq_bytes{ a = params[i].name, b = name } {
+                let from_ref = not c and by_ref{ e, q = params[i] }
+                if to_ref and not from_ref { ch{ &e, c = '&' } }
+                if from_ref and not to_ref { put{ &e, a = "(*" } }
                 ch{ &e, c = 'a' }
                 num{ &e, n = i }
+                if from_ref and not to_ref { ch{ &e, c = ')' } }
                 return
             }
             i = i + 1
@@ -2622,7 +2674,7 @@ namespace emit {
         if not is_void{ e, t = ret } { put{ &e, a = "return " } }
         mark_id{ &e, kind = 'f', id = callee }
         ch{ &e, c = '(' }
-        forward{ &e, target = f.params, args = slice::empty(ir::Arg){}, given = params }
+        forward{ &e, target = f.params, ext = f.symbol.len > 0, args = slice::empty(ir::Arg){}, given = params }
         put{ &e, a = ");\n}\nstatic ctx_fn " }
         mark_id{ &e, kind = 'g', id = callee }
         put{ &e, a = " = { (void (*)(void))" }
@@ -2706,7 +2758,7 @@ namespace emit {
                     put{ &e, a = "){}" }
                 }
             } else {
-                by_name{ &e, name = q.name, params }
+                by_name{ &e, name = q.name, params, c = true, to_ref = by_ref{ e, q } }
             }
             j = j + 1
         }
@@ -2748,7 +2800,7 @@ namespace emit {
         mark_id{ &e, kind = 'c', id = q.from }
         put{ &e, a = ")in->code)(in" }
         if src.len > 0 { put{ &e, a = ", " } }
-        forward{ &e, target = src, args = slice::empty(ir::Arg){}, given = dst }
+        forward{ &e, target = src, ext = false, args = slice::empty(ir::Arg){}, given = dst }
         put{ &e, a = ");\n}\n\n" }
     }
 
@@ -2838,6 +2890,258 @@ namespace emit {
             let x = xs[i]
             declare{ &e, t = x.ty, k = base + @as(u32, i) }
             expr{ &e, x }
+            put{ &e, a = "; " }
+            i = i + 1
+        }
+        return Temps{ on = true, base }
+    }
+
+    // ---- arguments passed by reference (spec §14.6)
+    //
+    // A big read-only param (by_ref) takes a pointer. The caller passes the address of the
+    // argument's place when nothing can change that place during the call, so the callee sees
+    // the value the argument had when it was evaluated; otherwise the address of a copy made
+    // then. The place is passed if it is a const's, or the place of a local (or through one, as
+    // `p.*.x` is through `p`) that no other argument, and not the callee, can reach: no
+    // argument whose type holds a pointer comes from that local (`&x`, `x[..]`, `p`, a bind
+    // holding `&x`), no `&fn` local is passed or called, and no argument after it may write
+    // memory. That covers §3.1's overlapping `mut` references, and more.
+
+    // A call's callee: its params, whether it is an extern fn (whose params are C's, never by
+    // reference), and the function value called, if it is one.
+    struct Callee { params: []ir::Param, ext: bool, value: ?ir::Expr }
+
+    // How an argument goes: its value; the address of its place; the address of a temporary.
+    union Pass { value, place, copy }
+
+    fn by_ref { e: E, q: ir::Param } -> bool {
+        if q.mutable { return false }
+        let big = match ty{ e, id = q.ty } {
+            record | tagged | arr => { true }
+            else => { false }
+        }
+        return big and size_of{ e, t = q.ty } > BYREF
+    }
+
+    fn size_of { e: E, t: ir::TypeId } -> u64 {
+        return match ty{ e, id = t } {
+            prim{ p } => { bit_width{ p } / 8 }
+            arr{ n, elem } => { n * size_of{ e, t = elem } }
+            record{ size } | tagged{ size } | cap{ size } => { size }
+            void => { 0 }
+            else => { 8 }
+        }
+    }
+
+    fn pass { e: E, args: []ir::Arg, i: usize, c: Callee } -> Pass {
+        let a = args[i]
+        if c.ext or not by_ref{ e, q = c.params[a.index] } { return Pass::value }
+        let x = a.value
+        if not is_place{ x } { return Pass::copy }
+        let slot = match root{ x } {
+            slot{ n } => { n }
+            constant => { return Pass::place }
+            other => { return Pass::copy }
+        }
+        let mut j = 0
+        while j < args.len {
+            if j != i {
+                let y = args[j].value
+                if j > i and writes{ e, x = y } { return Pass::copy }
+                if reaches{ e, x = y, slot } { return Pass::copy }
+            }
+            j = j + 1
+        }
+        match c.value {
+            some{ value } => { if reaches{ e, x = value, slot } { return Pass::copy } }
+            null => {}
+        }
+        return Pass::place
+    }
+
+    // Where a place's memory is: in a local (or through a pointer read from one), in a const,
+    // or elsewhere.
+    union Root { slot{ n: u32 }, constant, other }
+
+    fn root { x: ir::Expr } -> Root {
+        return match x.k {
+            local{ slot }   => { Root::slot{ n = slot } }
+            constref        => { Root::constant }
+            field{ base = b } | payload{ base = b } | index{ base = b } | sindex{ base = b }
+            | ssub{ base = b } | deref{ ptr = b } | addr{ place = b } => { root{ x = b.* } }
+            else            => { Root::other }
+        }
+    }
+
+    // Could value x point into memory rooted at local `slot` (root)? Only a value whose type
+    // holds a pointer can.
+    fn reaches { e: E, x: ir::Expr, slot: u32 } -> bool {
+        if not has_ptr{ e, t = x.ty } { return false }
+        if ty{ e, id = x.ty } is func { return holds{ e, x, slot } }
+        match root{ x } {
+            slot{ n } => { return n == slot }
+            constant => { return false }
+            other => {}
+        }
+        return match x.k {
+            int | float | boolean | str | sbytes | cstr | nil | fnref | cvar => { false }
+            some{ e = a } | widen{ e = a } | cast{ e = a } | seq{ then = a } | ptradd{ p = a } => {
+                reaches{ e, x = a.*, slot }
+            }
+            with{ init, body } => { reaches{ e, x = init.*, slot } or reaches{ e, x = body.*, slot } }
+            record{ items } | variant{ items } => { reaches_args{ e, args = items, slot } }
+            call{ args } => { reaches_args{ e, args, slot } }
+            array{ elems } => {
+                let mut i = 0
+                while i < elems.len {
+                    if reaches{ e, x = elems[i], slot } { return true }
+                    i = i + 1
+                }
+                false
+            }
+            else => { true }
+        }
+    }
+
+    fn reaches_args { e: E, args: []ir::Arg, slot: u32 } -> bool {
+        let mut i = 0
+        while i < args.len {
+            if reaches{ e, x = args[i].value, slot } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // A function value x: a `fn` holds no places, a bind those its args reach, and a `&fn`
+    // context field none of this function's (§3.1); any other `&fn` may hold any.
+    fn holds { e: E, x: ir::Expr, slot: u32 } -> bool {
+        let func{ bound } = ty{ e, id = x.ty } else { return true }
+        if not bound { return false }
+        return match x.k {
+            fnref | nil => { false }
+            bind{ args } => { reaches_args{ e, args, slot } }
+            dbind{ callee, args } => { reaches{ e, x = callee.*, slot } or reaches_args{ e, args, slot } }
+            fnconv{ e = a } => { holds{ e, x = a.*, slot } }
+            local{ slot = n } => { n >= e.f.params.len }
+            else => { true }
+        }
+    }
+
+    // Does a type hold a pointer: a pointer, a slice, a function value?
+    fn has_ptr { e: E, t: ir::TypeId } -> bool {
+        return match ty{ e, id = t } {
+            ptr | nptr | func | cfn => { true }
+            arr{ elem } => { has_ptr{ e, t = elem } }
+            record{ fields } => { fields_ptr{ e, fields } }
+            tagged{ variants } => {
+                let mut i = 0
+                while i < variants.len {
+                    let fs = variants[i].fields
+                    if fs != null and fields_ptr{ e, fields = fs } { return true }
+                    i = i + 1
+                }
+                false
+            }
+            else => { false }
+        }
+    }
+
+    fn fields_ptr { e: E, fields: []ir::Field } -> bool {
+        let mut i = 0
+        while i < fields.len {
+            if has_ptr{ e, t = fields[i].ty } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // May evaluating x write memory: does it call a function, or run statements?
+    fn writes { e: E, x: ir::Expr } -> bool {
+        return match x.k {
+            int | float | boolean | str | sbytes | cstr | nil | local | constref | cvar | fnref => { false }
+            deref{ ptr = a } | field{ base = a } | payload{ base = a } | addr{ place = a }
+            | lnot{ e = a } | isnull{ e = a } | notnull{ e = a } | widen{ e = a } | some{ e = a }
+            | cast{ e = a } | ptraddr{ e = a } | trunc{ e = a } | fnconv{ e = a } | repeat{ elem = a }
+            | neg{ e = a } | convert{ e = a } => {
+                writes{ e, x = a.* }
+            }
+            seq{ first = a, then = b } | land{ a, b } | lor{ a, b } | cmp{ a, b } | bits{ a, b }
+            | ptradd{ p = a, n = b } | wrap{ a, b } | arith{ a, b } | shift{ a, b }
+            | index{ base = a, i = b } | sindex{ base = a, i = b } | with{ init = a, body = b } => {
+                writes{ e, x = a.* } or writes{ e, x = b.* }
+            }
+            ssub{ base, lo, hi } => {
+                let h = match hi { some{ value } => { writes{ e, x = value.* } } null => { false } }
+                writes{ e, x = base.* } or writes{ e, x = lo.* } or h
+            }
+            record{ items } | variant{ items } | bind{ args = items } => {
+                let mut i = 0
+                while i < items.len {
+                    if writes{ e, x = items[i].value } { return true }
+                    i = i + 1
+                }
+                false
+            }
+            array{ elems } => {
+                let mut i = 0
+                while i < elems.len {
+                    if writes{ e, x = elems[i] } { return true }
+                    i = i + 1
+                }
+                false
+            }
+            else => { true }
+        }
+    }
+
+    // `&(PLACE)`, cast to a pointer that isn't const if the place is a const's.
+    fn address { mut e: E, x: ir::Expr } {
+        if root{ x } is constant {
+            put{ &e, a = "((" }
+            tn{ &e, t = x.ty }
+            put{ &e, a = " *)&(" }
+            expr{ &e, x }
+            put{ &e, a = "))" }
+            return
+        }
+        put{ &e, a = "&(" }
+        expr{ &e, x }
+        ch{ &e, c = ')' }
+    }
+
+    // temps_args for a call: an argument passed as a copy needs its temporary, and one passed
+    // as its place has a pointer to it.
+    fn temps_call { mut e: E, args: []ir::Arg, c: Callee } -> Temps {
+        let mut effects: usize = 0
+        let mut vars: usize = 0
+        let mut copies = false
+        let mut i = 0
+        while i < args.len {
+            let x = args[i].value
+            if not pure{ e, x } { effects = effects + 1 }
+            if not constant{ x } { vars = vars + 1 }
+            if pass{ e, args, i, c } is copy { copies = true }
+            i = i + 1
+        }
+        if not copies and (effects == 0 or vars < 2) { return Temps{ on = false, base = 0 } }
+        let base = e.temp
+        e.temp = e.temp + @as(u32, args.len)
+        put{ &e, a = "({ " }
+        i = 0
+        while i < args.len {
+            let x = args[i].value
+            tn{ &e, t = x.ty }
+            if pass{ e, args, i, c } is place {
+                put{ &e, a = " *" }
+                tmp{ &e, k = base + @as(u32, i) }
+                put{ &e, a = " = " }
+                address{ &e, x }
+            } else {
+                ch{ &e, c = ' ' }
+                tmp{ &e, k = base + @as(u32, i) }
+                put{ &e, a = " = " }
+                expr{ &e, x }
+            }
             put{ &e, a = "; " }
             i = i + 1
         }
@@ -3012,9 +3316,23 @@ namespace emit {
         num{ &e, n = k }
     }
 
+    // Slot `slot`'s value: lN, or (*lN) for a param passed by reference.
     fn local { mut e: E, slot: u32 } {
+        let r = ref_slot{ e, slot }
+        if r { put{ &e, a = "(*" } }
         ch{ &e, c = 'l' }
         num{ &e, n = slot }
+        if r { ch{ &e, c = ')' } }
+    }
+
+    // Slot `slot`, to be written: never a param passed by reference, which is the caller's.
+    fn target { mut e: E, slot: u32 } {
+        if ref_slot{ e, slot } { @panic("emit: a write to a param passed by reference") }
+        local{ &e, slot }
+    }
+
+    fn ref_slot { e: E, slot: u32 } -> bool {
+        return slot < e.f.params.len and e.f.symbol.len == 0 and by_ref{ e, q = e.f.params[slot] }
     }
 
     // Type t's name: a marker, or in the types of a unit (unit_text), its name there.

@@ -1,0 +1,325 @@
+// What panel owners call: find a control by tag, set its text, state and value, fill list boxes,
+// the GUI's sounds and cursors, tooltips (docs/design/gui.md).
+namespace gui {
+    // ---- cursors: the pictures the install has (gui_mp_<stem>u / d / dp); `d` is the look while
+    // the left button is down. Ids are indices into CURSOR_STEMS.
+    const CURSOR_DEFAULT: u32 = 0
+    const CURSOR_ATTACK: u32 = 1
+    const CURSOR_BASH: u32 = 2
+    const CURSOR_DISMINE: u32 = 3
+    const CURSOR_DOOR: u32 = 4
+    const CURSOR_INVALID: u32 = 5
+    const CURSOR_KILL: u32 = 6
+    const CURSOR_PICKUP: u32 = 7
+    const CURSOR_RECMINE: u32 = 8
+    const CURSOR_SELECT: u32 = 9
+    const CURSOR_TALK: u32 = 10
+    const CURSOR_USE: u32 = 11
+
+    fn cursor_stem { id: u32 } -> []u8 {
+        if id == CURSOR_ATTACK { return "attack" }
+        if id == CURSOR_BASH { return "bash" }
+        if id == CURSOR_DISMINE { return "dismine" }
+        if id == CURSOR_DOOR { return "door" }
+        if id == CURSOR_INVALID { return "invalid" }
+        if id == CURSOR_KILL { return "kill" }
+        if id == CURSOR_PICKUP { return "pickup" }
+        if id == CURSOR_RECMINE { return "recmine" }
+        if id == CURSOR_SELECT { return "select" }
+        if id == CURSOR_TALK { return "talk" }
+        if id == CURSOR_USE { return "use" }
+        return "default"
+    }
+
+    // Loads the GUI's sounds (guisounds.2da) and cursor pictures. Call once after `make`; missing
+    // ones are skipped.
+    fn load_defaults { mut g: Gui, mut fs: Fs, mut dev: gpu::Device } -> ! {
+        let mut id: u32 = 0
+        while id < 12 {
+            let stem = cursor_stem{ id }
+            let mut up: u32 = 0
+            while up < 2 {
+                let mut buf: [24]u8
+                let pre: []u8 = "gui_mp_"
+                slice::copy(u8){ dst = buf[..pre.len], src = pre }
+                slice::copy(u8){ dst = buf[pre.len..pre.len + stem.len], src = stem }
+                buf[pre.len + stem.len] = if up == 0 { 'u' } else { 'd' }
+                let n = pre.len + stem.len + 1
+                g.cursors[@as(usize, id * 2 + up)].tex = resolve_img{ &g, &fs, &dev, name = buf[..n] }
+                up = up + 1
+            }
+            id = id + 1
+        }
+        let bytes = try res::load{ &fs, rm = g.rm, name = "guisounds", kind = restype::Type::twoda, realloc = heap::alloc, heap = g.heap } ifnull { return }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = bytes, count = 0 }
+        let t = try twoda::parse{ data = bytes, realloc = heap::alloc, heap = g.heap }
+        defer twoda::free{ t, realloc = heap::alloc, heap = g.heap }
+        let mut row: usize = 0
+        while row < twoda::rows{ t } and row < SOUNDS {
+            let name = twoda::get_string{ t, row, column = "soundresref" } ifnull ""
+            if name.len > 0 {
+                let wav = res::load{ &fs, rm = g.rm, name, kind = restype::Type::wav, realloc = heap::alloc, heap = g.heap } iferr { null }
+                let b = wav ifnull { slice::empty(u8){} }
+                if b.len > 0 { g.sounds[row] = Sound{ bytes = b, ok = true } }
+            }
+            row = row + 1
+        }
+    }
+
+    // Which cursor the pointer shows (a CURSOR_* id).
+    fn set_cursor { mut g: Gui, id: u32 } { g.cursor = if id < 12 { id } else { 0 } }
+
+    fn set_cursor_visible { mut g: Gui, visible: bool } { g.cursor_visible = visible }
+
+    // ---- finding and changing controls
+
+    fn find_control { mut g: Gui, panel: u32, tag: []u8 } -> ?*mut Control {
+        let p = find_panel{ &g, id = panel } ifnull { return null }
+        let i = find_by_tag{ p, tag }
+        if i < 0 { return null }
+        return list::at{ list = p.controls, i = @as(usize, i) }
+    }
+
+    // Whether the panel has a control tagged `tag`.
+    fn has_control { mut g: Gui, panel: u32, tag: []u8 } -> bool {
+        return find_control{ &g, panel, tag } != null
+    }
+
+    // Sets a label, button or edit box's text to `text` as given (no token expansion).
+    fn set_text { mut g: Gui, panel: u32, tag: []u8, text: []u8 } -> ! {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.text.present = true
+        try assign_text{ &g, c, s = text }
+    }
+
+    // Sets the text to dialog.tlk's StrRef `strref`, tokens expanded.
+    fn set_strref { mut g: Gui, panel: u32, tag: []u8, strref: u32 } -> ! {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        let s = try tlk_text{ &g, strref }
+        free_string{ &g, s = c.text.buf }
+        c.text.present = true
+        c.text.buf = s
+        c.text.text = s
+        c.text.strref = strref
+    }
+
+    // Sets the text to `text` with its `<tokens>` expanded.
+    fn set_text_tokens { mut g: Gui, panel: u32, tag: []u8, text: []u8 } -> ! {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        let s = try expand_tokens{ &g, src = text }
+        free_string{ &g, s = c.text.buf }
+        c.text.present = true
+        c.text.buf = s
+        c.text.text = s
+    }
+
+    fn set_text_color { mut g: Gui, panel: u32, tag: []u8, color: render::Color } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.text.color = color
+        c.text.file_color = color
+    }
+
+    fn set_visible { mut g: Gui, panel: u32, tag: []u8, visible: bool } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.flags = if visible { c.flags | F_VISIBLE } else { clear_bits{ f = c.flags, bits = F_VISIBLE } }
+    }
+
+    // A disabled control draws its text dim, ignores the pointer and the keys.
+    fn set_enabled { mut g: Gui, panel: u32, tag: []u8, enabled: bool } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        if enabled {
+            c.flags = c.flags | F_ENABLED
+            c.text.color = c.text.file_color
+        } else {
+            c.flags = clear_bits{ f = c.flags, bits = F_ENABLED | F_HILIGHT }
+            c.text.color = color_disabled{}
+        }
+    }
+
+    fn set_value { mut g: Gui, panel: u32, tag: []u8, value: i32 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.value = value
+    }
+
+    fn set_max { mut g: Gui, panel: u32, tag: []u8, max: i32 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.max = max
+    }
+
+    fn value_of { mut g: Gui, panel: u32, tag: []u8 } -> i32 {
+        let c = find_control{ &g, panel, tag } ifnull { return 0 }
+        return c.value
+    }
+
+    fn set_checked { mut g: Gui, panel: u32, tag: []u8, on: bool } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.flags = if on { c.flags | F_CHECKED } else { clear_bits{ f = c.flags, bits = F_CHECKED } }
+    }
+
+    fn is_checked { mut g: Gui, panel: u32, tag: []u8 } -> bool {
+        let c = find_control{ &g, panel, tag } ifnull { return false }
+        return (c.flags & F_CHECKED) != 0
+    }
+
+    // Shows `texture` (w x h pixels) as the control's fill in place of the file's: a portrait, a
+    // save's screenshot.
+    fn set_picture { mut g: Gui, panel: u32, tag: []u8, texture: render::Texture, w: f32, h: f32 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.override_fill = Img{ tex = texture, w, h, ok = true }
+        if not c.border.present { c.border = no_border{}; c.border.present = true }
+    }
+
+    fn clear_picture { mut g: Gui, panel: u32, tag: []u8 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.override_fill = no_img{}
+    }
+
+    fn set_tooltip { mut g: Gui, panel: u32, tag: []u8, text: []u8 } -> ! {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        let s = try copy_string{ &g, s = text }
+        free_string{ &g, s = c.tooltip_buf }
+        c.tooltip_buf = s
+        c.tooltip = s
+    }
+
+    // Gives the keyboard focus (and the hilight) to the control tagged `tag`.
+    fn set_focus { mut g: Gui, panel: u32, tag: []u8 } {
+        let p = find_panel{ &g, id = panel } ifnull { return }
+        let i = find_by_tag{ p, tag }
+        if i >= 0 { set_focus_index{ &g, p, ci = i, sound = false } }
+    }
+
+    fn set_backdrop { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, panel: u32, kind: u32 } {
+        let p = find_panel{ &g, id = panel } ifnull { return }
+        p.backdrop = kind
+        ensure_backdrop{ &g, &fs, &dev, kind }
+    }
+
+    fn set_max_chars { mut g: Gui, panel: u32, tag: []u8, max: i32 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.max_chars = max
+    }
+
+    // The panel's id of control position (for tools): its extent in screen pixels.
+    fn control_rect { mut g: Gui, panel: u32, tag: []u8 } -> ?render::Rect {
+        let p = find_panel{ &g, id = panel } ifnull { return null }
+        let i = find_by_tag{ p, tag }
+        if i < 0 { return null }
+        let c = list::at{ list = p.controls, i = @as(usize, i) }
+        return rect_of{ x = p.sx + c.x, y = p.sy + c.y, w = c.w, h = c.h }
+    }
+
+    // ---- list boxes
+
+    fn list_clear { mut g: Gui, panel: u32, tag: []u8 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        let mut r: usize = 0
+        while r < @as(usize, c.row_count) {
+            free_string{ &g, s = c.rows[r].text }
+            r = r + 1
+        }
+        c.row_count = 0
+        c.first_row = 0
+        c.selected_row = -1
+        c.hover_row = -1
+    }
+
+    // Appends a row showing `text`; `user` is the owner's value for it. Returns its index.
+    fn list_add { mut g: Gui, panel: u32, tag: []u8, text: []u8, user: i64 } -> !i32 {
+        let c = find_control{ &g, panel, tag } ifnull { return -1 }
+        if @as(usize, c.row_count) >= c.rows.len {
+            let n = if c.rows.len == 0 { 16 } else { c.rows.len * 2 }
+            c.rows = try alloc::resize(Row, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = c.rows, count = n }
+        }
+        let copy = try copy_string{ &g, s = text }
+        c.rows[@as(usize, c.row_count)] = Row{ text = copy, user, color = white_color{}, has_color = false, icon = no_img{}, enabled = true }
+        c.row_count = c.row_count + 1
+        return @as(i32, c.row_count) - 1
+    }
+
+    fn list_set_color { mut g: Gui, panel: u32, tag: []u8, row: i32, color: render::Color } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        if row < 0 or row >= @as(i32, c.row_count) { return }
+        c.rows[@as(usize, row)].color = color
+        c.rows[@as(usize, row)].has_color = true
+    }
+
+    fn list_set_icon { mut g: Gui, panel: u32, tag: []u8, row: i32, texture: render::Texture, w: f32, h: f32 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        if row < 0 or row >= @as(i32, c.row_count) { return }
+        c.rows[@as(usize, row)].icon = Img{ tex = texture, w, h, ok = true }
+    }
+
+    fn list_set_enabled { mut g: Gui, panel: u32, tag: []u8, row: i32, enabled: bool } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        if row < 0 or row >= @as(i32, c.row_count) { return }
+        c.rows[@as(usize, row)].enabled = enabled
+    }
+
+    // Selects a row (no event); -1 clears.
+    fn list_select { mut g: Gui, panel: u32, tag: []u8, row: i32 } {
+        let p = find_panel{ &g, id = panel } ifnull { return }
+        let i = find_by_tag{ p, tag }
+        if i < 0 { return }
+        let c = list::at{ list = p.controls, i = @as(usize, i) }
+        c.selected_row = if row < @as(i32, c.row_count) { row } else { -1 }
+        if c.selected_row >= 0 { ensure_row_visible{ p, c } }
+    }
+
+    fn list_selected { mut g: Gui, panel: u32, tag: []u8 } -> i32 {
+        let c = find_control{ &g, panel, tag } ifnull { return -1 }
+        return c.selected_row
+    }
+
+    fn list_count { mut g: Gui, panel: u32, tag: []u8 } -> i32 {
+        let c = find_control{ &g, panel, tag } ifnull { return 0 }
+        return @as(i32, c.row_count)
+    }
+
+    // ---- tooltips
+
+    // After the pointer rests on a control with tooltip text for the delay, the tooltip shows.
+    fn update_tooltip { mut g: Gui } {
+        if not g.tooltips or g.hover_time < g.tooltip_delay or g.tooltip_ref.panel != 0 { return }
+        if g.hover.panel == 0 or g.hover.control < 0 { return }
+        let p = panel_of{ &g, r = g.hover } ifnull { return }
+        let c = list::at{ list = p.controls, i = @as(usize, g.hover.control) }
+        if c.tooltip.len > 0 { g.tooltip_ref = g.hover }
+    }
+
+    fn set_tooltip_delay { mut g: Gui, seconds: f32, enabled: bool } {
+        g.tooltip_delay = seconds
+        g.tooltips = enabled
+    }
+
+    fn draw_tooltip { mut g: Gui, mut frame: render::Frame, screen: render::Rect } {
+        if g.tooltip_ref.panel == 0 { return }
+        let p = panel_of{ &g, r = g.tooltip_ref } ifnull { return }
+        if g.tooltip_ref.control < 0 or @as(usize, g.tooltip_ref.control) >= p.controls.len { return }
+        let c = list::at{ list = p.controls, i = @as(usize, g.tooltip_ref.control) }
+        if c.tooltip.len == 0 or g.fonts.len == 0 { return }
+        // The small dialog font when loaded, else the first one.
+        let mut slot: usize = 0
+        let fonts = list::items{ list = g.fonts }
+        let mut i: usize = 0
+        while i < fonts.len {
+            if fonts[i].ok and resref::matches{ r = fonts[i].name, name = "dialogfont10x10" } { slot = i }
+            i = i + 1
+        }
+        if not fonts[slot].ok { return }
+        let font = fonts[slot].font
+        let n = layout{ font, text = c.tooltip, width = 280, lines = g.lines }
+        let tw = lines_width{ lines = g.lines, count = n }
+        let w = tw + 8
+        let h = lines_height{ font, count = n } + 8
+        let mut x = g.mouse_x + 15
+        let mut y = g.mouse_y + 15
+        if x + w > g.ui_w - 2 { x = g.ui_w - 2 - w }
+        if y + h > g.ui_h - 2 { y = g.ui_h - 2 - h }
+        if x < 2 { x = 2 }
+        if y < 2 { y = 2 }
+        put_fill{ &frame, x = @as(f32, x - 1), y = @as(f32, y - 1), w = @as(f32, w + 2), h = @as(f32, h + 2), color = color_menu{}, clip = screen }
+        put_fill{ &frame, x = @as(f32, x), y = @as(f32, y), w = @as(f32, w), h = @as(f32, h), color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 0.92 }, clip = screen }
+        draw_lines{ &frame, font, text = c.tooltip, lines = g.lines, count = n, x = x + 4, y = y + 4, w = tw, h = h - 8, align = A_LEFT | A_TOP, color = white_color{}, clip = screen }
+    }
+}

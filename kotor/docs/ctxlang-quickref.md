@@ -31,8 +31,9 @@ namespace gff {                                   // namespaces may span files (
   the rest from same-named locals.
 - **`mut` fields** are pointers to the caller's place; inside, use them as values. Pass `&local`
   (needs `let mut local`). Two `&` of overlapping places in one call is an error (§3.1).
-- **Read-only struct arguments are copied today.** For big structs (mixers, worlds, caches)
-  take `mut` or a `*T` pointer, not a read-only field.
+- **Big read-only arguments are passed by reference** (§14.6): a struct, union or array over
+  32 bytes isn't copied, unless a `&` of the same local, or a later argument that calls a
+  function, is in the same call. So a read-only `mixer: Mixer` field is cheap.
 - **Results must be used:** `_ = f{}` to discard. A bare call statement must return nothing.
 - **No methods:** `list::push{ list = &xs, item }`, not `xs.push`. No operator overloading,
   no traits; a generic `T` can't be compared or hashed unless you pass functions for it.
@@ -66,8 +67,9 @@ let ok{ value = d } = r else err{ error } { return error }
 defer list::free{ list = &xs }                    // runs at block exit
 ```
 
-- `match` does **not** take integers yet: use `if` chains (or an enum via `@as(E, n)`, which
-  panics on unknown values).
+- `match` takes integers (§8, Match on integers): literals, folded consts (`gl::TRIANGLES`) and
+  ranges `'a'..='z'` (both ends included), joined with `|`; `else` is required. `c is '0'..='9'`
+  tests one.
 - Optionals narrow: after `if p == null { return }`, `p` is the payload type (`let` locals only;
   copy a `let mut` first).
 - A `{` after an expression in a condition is a call only if the line continues after its `}`.

@@ -574,10 +574,21 @@ namespace eval {
         let mut i: usize = 0
         while i < cases.len {
             let c = cases[i]
-            if c.values.len == 0 { return block{ &m, b = c.body, res } }
+            if c.values.len == 0 and c.ranges.len == 0 { return block{ &m, b = c.body, res } }
             let mut j: usize = 0
             while j < c.values.len {
                 if int_bits{ negative = c.values[j].negative, n = c.values[j].value, p } == v { return block{ &m, b = c.body, res } }
+                j = j + 1
+            }
+            // Ordered as unsigned, with a signed type's sign bit flipped.
+            let flip: u64 = if signed{ p } { 9223372036854775808 } else { 0 }
+            j = 0
+            while j < c.ranges.len {
+                let r = c.ranges[j]
+                let lo = int_bits{ negative = r.lo.negative, n = r.lo.value, p } ^ flip
+                let hi = int_bits{ negative = r.hi.negative, n = r.hi.value, p } ^ flip
+                let x = v ^ flip
+                if lo <= x and x <= hi { return block{ &m, b = c.body, res } }
                 j = j + 1
             }
             i = i + 1
