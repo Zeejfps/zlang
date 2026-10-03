@@ -1,0 +1,15 @@
+# The HUD's self action slots: a hurt leader with three medpacs and two stims. The medical slot shows
+# a medpac and the item slot a stim, pointing at the medical slot names its entry, a click uses the
+# medpac (the leader heals as the cast ends, one medpac less), and at full health the same slot shows
+# dimmed and a click says why.
+#   MODULE=tar_m02aa sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/selfslots.txt 160 10:ss_slots 16:ss_hover 22:ss_used 110:ss_healed 126:ss_refused 134:ss_dimmed
+3 ui hp 6
+3 ui giveitem g_i_medeqpmnt01 3
+3 ui giveitem g_i_adrnaline001 2
+14 ui move 1161 687
+20 ui click 1161 687
+100 ui hp
+111 ui bag
+118 ui hp 22
+122 ui click 1161 687
+128 ui move 640 300

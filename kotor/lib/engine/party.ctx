@@ -179,6 +179,7 @@ namespace party {
             let item = own[i]
             i = i + 1
             if holds{ w = &w, item } { continue }
+            if xfer::absorb{ &w, l = &w.bag, item } { continue }
             list::push{ list = &w.bag, item } iferr { continue }
             if world::object{ w = &w, id = item } is some{ value = io } {
                 if obj::item{ o = io } is some{ value = it } { it.possessor = w.player }

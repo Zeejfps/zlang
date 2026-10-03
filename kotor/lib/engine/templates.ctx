@@ -196,6 +196,7 @@ namespace tmpl {
             let e = carried[k]
             k = k + 1
             let item = item_of{ &w, doc, s = e, label = "InventoryRes", possessor = o.id } ifnull { continue }
+            if xfer::absorb{ &w, l = &c.inventory, item } { continue }
             list::push{ list = &c.inventory, item } iferr {}
         }
         fight::equip_loaded{ &w, o, c }
