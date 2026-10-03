@@ -67,15 +67,35 @@ kotor/tools/ctxc exe PROGRAM_DIR -o OUT.exe     # build only
 on `PATH`; the wrapper does that, so do the same for any other gcc call. PowerShell needs nothing.
 SDL2 is installed in MSYS2 (`-lSDL2`, `SDL2.dll` on PATH from `/g/Dev/msys64/mingw64/bin`).
 
-A program is a directory of `.ctx` files plus std. See PLAN.md, stage 0, for multi-directory
-programs: until that lands, a program's sources are one flat directory.
+A program is a directory with a `build.ctx` that names its source directories. Template for a
+tool (see `kotor/tools/glspike/build.ctx`):
+
+```
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "gffdump", root = "." }        // this directory's own .ctx files
+    build::add_sources{ &b, exe, dir = "../../lib/base" }           // a directory and all below it
+    build::add_sources{ &b, exe, dir = "../../lib/formats" }
+    build::link{ &b, exe, lib = "SDL2" }                            // only if it uses lib/platform
+    build::optimize{ &b, exe, level = 2 }                           // optional: -O2
+}
+```
+
+- Each program builds in its own directory under `ctxlang/build/run/`, so agents can build
+  different programs at the same time. An unchanged program rebuilds in ~50 ms.
+- **A namespace must live in one file** for now ("already declared" otherwise). Keep each
+  namespace to one file and split big subsystems into several namespaces (`mdl` and
+  `mdl_anim`, say). A language change to let a namespace span files is planned.
+- gcc on one big C file is slow (~60 s at -O1 for ~100K lines). Splitting the C into several
+  files compiled in parallel is planned (`ctxlang/PLAN.md`, 2.3). Until then, tools that include
+  only the libraries they need build much faster than the whole game.
+- `@size_of` checks are your friend for C structs; there's no `@offset_of` yet.
 
 ## Layout
 
 ```
 kotor/
   AGENTS.md PLAN.md FRICTION.md README.md
-  build.ctx          the game executable and every tool (once multi-directory builds land)
+  build.ctx          the game executable
   game/              fn main and the top-level loop
   lib/<area>/        one directory per subsystem, normally one namespace each (below)
   tools/<name>/      dev tools and corpus tests in ctxlang (gffdump, resls, mdlview, ...)
